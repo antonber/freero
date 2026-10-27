@@ -1,0 +1,46 @@
+/* Circular eraser preview following the pointer (world space, constant size on screen). */
+.fr-eraser-cursor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border-style: solid;
+  border-color: var(--fr-ink-2);
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.9);
+  pointer-events: none;
+}
+
+.fr-eraser-options {
+  display: flex;
+  gap: 2px;
+}
+
+.fr-eraser-size {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--fr-radius-sm);
+  background: transparent;
+  cursor: pointer;
+  color: var(--fr-ink-2);
+}
+
+.fr-eraser-size:hover {
+  background: var(--fr-hover);
+}
+
+.fr-eraser-size[aria-pressed='true'] {
+  background: var(--fr-primary-soft);
+  color: var(--fr-primary);
+}
+
+.fr-eraser-size span {
+  display: block;
+  box-sizing: border-box;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+}
