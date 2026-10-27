@@ -1,0 +1,155 @@
+.fr-find {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 12px 16px;
+}
+
+.fr-find__head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 32px; /* lines up with the dock's close button */
+  padding-left: 4px;
+  padding-right: 36px; /* room for the dock's close button */
+}
+
+.fr-find__title {
+  flex: 1;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.fr-find__bar,
+.fr-find__replace {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.fr-find__replace {
+  gap: 6px;
+}
+
+.fr-find__input {
+  flex: 1;
+  min-width: 0;
+}
+
+.fr-find__count {
+  font-size: 12px;
+  color: var(--fr-ink-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.fr-find__results {
+  list-style: none;
+  margin: 0 -4px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fr-find__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 8px;
+  border: 0;
+  border-radius: var(--fr-radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fr-find__row:hover {
+  background: var(--fr-hover);
+}
+
+.fr-find__row.is-current {
+  background: var(--fr-primary-soft);
+}
+
+.fr-find__icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: var(--fr-surface-3);
+  color: var(--fr-ink-2);
+}
+
+.fr-find__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fr-find__snippet {
+  font-size: 13px;
+  line-height: 1.35;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+}
+
+.fr-find__snippet mark {
+  background: #ffe36e;
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+.fr-find__ctx {
+  font-size: 12px;
+  color: var(--fr-ink-3);
+}
+
+.fr-find__more,
+.fr-find__empty {
+  font-size: 13px;
+  color: var(--fr-ink-3);
+}
+
+.fr-find__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 12px;
+  text-align: center;
+}
+
+.fr-find__empty strong {
+  color: var(--fr-ink);
+}
+
+/* Canvas highlights (world space). */
+.fr-find-hl {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid #f5b400;
+  background: rgba(255, 214, 10, 0.12);
+  pointer-events: none;
+}
+
+.fr-find-hl.is-current {
+  border-color: #ff8a00;
+  background: rgba(255, 166, 0, 0.16);
+  box-shadow: 0 0 0 4px rgba(255, 166, 0, 0.18);
+}
+
+.fr-find-hl--pin {
+  border-radius: 50%;
+}
