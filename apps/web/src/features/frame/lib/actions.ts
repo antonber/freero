@@ -5,7 +5,6 @@ import {
   applyPresetSize,
   membershipPatches,
   CONTENT_PADDING,
-  fitCamera,
   DEFAULT_FILL,
   isFrame,
   nextFrameIndex,
@@ -85,13 +84,9 @@ export function frameSelection(editor: Editor): string | null {
   return id || null;
 }
 
-/**
- * Animates the camera to a frame, clear of the board chrome (top bar + title above, toolbar on the
- * left, and the dock when `rightInset` says it is open).
- */
-export function zoomToFrame(editor: Editor, frame: Rect, rightInset = 0): void {
-  const insets = { top: 96, right: Math.max(40, rightInset + 24), bottom: 72, left: 88 };
-  editor.setCamera(fitCamera(frame, editor.getViewportSize(), insets), { animate: true });
+/** Animates the camera to a frame (title included), in the part of the screen the chrome leaves free. */
+export function zoomToFrame(editor: Editor, frame: { id: string }): void {
+  editor.zoomToFit([frame.id], { maxZoom: 2, padding: 32 });
 }
 
 /** Shrinks/grows the frame to its children plus padding. Returns false when it has none. */

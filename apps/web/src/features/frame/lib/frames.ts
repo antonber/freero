@@ -95,24 +95,6 @@ export function membershipPatches(
   return out;
 }
 
-/**
- * Camera that fits `rect` into the part of the viewport not covered by chrome (`insets`, screen px),
- * centered there, never zooming in past `maxZoom`.
- */
-export function fitCamera(
-  rect: Rect,
-  viewport: { width: number; height: number },
-  insets: { top: number; right: number; bottom: number; left: number },
-  maxZoom = 2,
-): { x: number; y: number; zoom: number } {
-  const aw = Math.max(1, viewport.width - insets.left - insets.right);
-  const ah = Math.max(1, viewport.height - insets.top - insets.bottom);
-  const zoom = Math.min(maxZoom, aw / Math.max(rect.w, 1), ah / Math.max(rect.h, 1));
-  const cx = insets.left + aw / 2;
-  const cy = insets.top + ah / 2;
-  return { x: rect.x + rect.w / 2 - cx / zoom, y: rect.y + rect.h / 2 - cy / zoom, zoom };
-}
-
 /** Rect that wraps `content` with `padding` on every side (rounded to whole units). */
 export function padRect(content: Rect, padding = CONTENT_PADDING): Rect {
   const x = Math.floor(content.x - padding);

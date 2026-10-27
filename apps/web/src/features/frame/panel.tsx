@@ -121,7 +121,6 @@ function FramesPanel({ editor }: { editor: Editor }) {
   const selection = useSelection();
   const canEdit = useCanEdit();
   const listRef = useRef<HTMLUListElement>(null);
-  const rootRef = useRef<HTMLDivElement>(null);
   const [drag, setDrag] = useState<{ id: string; to: number } | null>(null);
 
   const { frames, childrenOf } = useMemo(() => {
@@ -171,9 +170,7 @@ function FramesPanel({ editor }: { editor: Editor }) {
       const fresh = editor.getElement<FrameElement>(frame.id);
       if (!fresh) return;
       editor.select([fresh.id]);
-      // Keep the frame clear of this dock, which covers the right side of the board.
-      const dockLeft = rootRef.current?.getBoundingClientRect().left ?? editor.getViewportSize().width;
-      zoomToFrame(editor, fresh, Math.max(0, editor.getViewportSize().width - dockLeft + 16));
+      zoomToFrame(editor, fresh);
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
@@ -189,7 +186,7 @@ function FramesPanel({ editor }: { editor: Editor }) {
   };
 
   return (
-    <div className="fr-frames" ref={rootRef}>
+    <div className="fr-frames">
       <div className="fr-frames__head">
         <h2 className="fr-frames__title">
           Frames{frames.length > 0 && <span className="fr-frames__count">{frames.length}</span>}

@@ -127,4 +127,9 @@ export default defineElement({
   },
   Component: FrameView,
   toPlainText: (el) => el.title,
+  // The title floats above the frame at a constant on-screen size (line + 4px gap + padding).
+  visualOutset: (el, zoom) => {
+    const px = titleSize(el.w * zoom);
+    return px < TITLE_MIN_PX ? {} : { top: (px * 1.25 + 6) / zoom };
+  },
 });

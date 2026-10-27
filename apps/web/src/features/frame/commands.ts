@@ -1,3 +1,4 @@
+import { Frame, GalleryVertical, Maximize2 } from 'lucide-react';
 import { defineCommands } from '@engine';
 import { frameSelection, selectedFrames, zoomToFrame } from './lib/actions';
 import { PANEL_ID } from './lib/frames';
@@ -5,6 +6,7 @@ import { PANEL_ID } from './lib/frames';
 export default defineCommands([
   {
     id: 'frame.wrapSelection',
+    icon: Frame,
     label: 'Frame selection',
     shortcut: 'mod+alt+f',
     menus: ['context'],
@@ -15,6 +17,7 @@ export default defineCommands([
   },
   {
     id: 'frame.zoomTo',
+    icon: Maximize2,
     label: 'Zoom to frame',
     menus: ['context'],
     minRole: 'viewer',
@@ -26,6 +29,7 @@ export default defineCommands([
   },
   {
     id: 'frame.openPanel',
+    icon: GalleryVertical,
     label: 'Frames panel',
     menus: ['board'],
     minRole: 'viewer',
