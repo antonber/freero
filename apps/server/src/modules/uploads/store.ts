@@ -1,11 +1,11 @@
-// Uploaded files live on disk under <dataDir>/uploads as <random id>.<ext>.
-import fs from 'node:fs';
-import path from 'node:path';
+// Uploaded files: validated here, stored through the platform object storage (S3-compatible or
+// local disk) under flat keys "<random id>.<ext>", and always addressed as "/uploads/<key>".
+// User uploads are recorded per owner for the storage quota (UPLOAD_QUOTA_MB).
 import { getConfig } from '../../platform/config';
 import { badRequest, HttpError } from '../../platform/http';
 import { newId } from '../../platform/ids';
-
-export const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
+import { storage } from '../../platform/storage';
+import * as repo from './repo';
 
 export const EXT_BY_TYPE: Record<string, string> = {
   'image/png': 'png',
@@ -21,8 +21,8 @@ export const TYPE_BY_EXT: Record<string, string> = Object.fromEntries(
 
 export const FILE_NAME_RE = /^[A-Za-z0-9_-]{6,64}\.(png|jpg|gif|webp|svg)$/;
 
-export function uploadsDir(): string {
-  return getConfig().uploadsDir;
+export function maxUploadBytes(): number {
+  return getConfig().maxUploadBytes;
 }
 
 /** Normalises a Content-Type header ("image/png; charset=x" -> "image/png"). */
@@ -52,23 +52,45 @@ export function contentMatches(data: Uint8Array, type: string): boolean {
   }
 }
 
-/** Validates and writes a file; returns its public URL ("/uploads/<id>.<ext>"). */
-export function saveUpload(data: Uint8Array, contentType: string): string {
+const mb = (bytes: number) => `${Math.round(bytes / (1024 * 1024))}MB`;
+
+/**
+ * Validates and stores a file; returns its URL ("/uploads/<id>.<ext>"). With `ownerId` the file
+ * counts towards that user's quota (413 when it would exceed it); without (board thumbnails,
+ * which replace each other) it does not.
+ */
+export async function saveUpload(data: Uint8Array, contentType: string, ownerId?: string): Promise<string> {
   const type = mediaType(contentType);
   const ext = EXT_BY_TYPE[type];
+  const max = maxUploadBytes();
   if (!ext) throw new HttpError(415, 'Unsupported file type. Use PNG, JPEG, GIF, WebP or SVG.');
   if (data.byteLength === 0) throw badRequest('Empty upload');
-  if (data.byteLength > MAX_UPLOAD_BYTES) throw new HttpError(413, 'File is too large (max 15MB)');
+  if (data.byteLength > max) throw new HttpError(413, `File is too large (max ${mb(max)})`);
   if (!contentMatches(data, type)) throw badRequest(`File content is not a valid ${ext.toUpperCase()} image`);
   const name = `${newId(16)}.${ext}`;
-  fs.mkdirSync(uploadsDir(), { recursive: true });
-  fs.writeFileSync(path.join(uploadsDir(), name), data);
+  if (ownerId) {
+    const quota = getConfig().uploadQuotaBytes;
+    if (!(await repo.reserveUpload(name, ownerId, data.byteLength, type, quota, Date.now())))
+      throw new HttpError(413, `Upload quota reached (${mb(quota)} per account). Delete unused images to free space.`);
+  }
+  try {
+    await storage().put(name, data, type);
+  } catch (e) {
+    if (ownerId) await repo.deleteUploadRow(name).catch(() => {});
+    throw e;
+  }
   return `/uploads/${name}`;
 }
 
 /** Deletes a file previously returned by saveUpload. Unknown/foreign URLs are ignored. */
-export function deleteUpload(url: string | null | undefined): void {
+export async function deleteUpload(url: string | null | undefined): Promise<void> {
   const name = url?.startsWith('/uploads/') ? url.slice('/uploads/'.length) : null;
   if (!name || !FILE_NAME_RE.test(name)) return;
-  fs.rmSync(path.join(uploadsDir(), name), { force: true });
+  await storage().delete(name);
+  await repo.deleteUploadRow(name);
+}
+
+/** Bytes of upload quota the user has used. */
+export function uploadBytesUsed(ownerId: string): Promise<number> {
+  return repo.bytesUsedBy(ownerId);
 }
