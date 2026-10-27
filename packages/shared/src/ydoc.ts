@@ -1,0 +1,74 @@
+// Layout of the per-board Yjs document.
+//
+// Single-writer rule: every top-level shared type has exactly one owner.
+//   doc.getMap('elements')   owner: engine (apps/web/src/engine/store) — BoardElement by id
+//   doc.getMap('settings')   owner: engine — BoardSettings fields
+//   doc.getMap(<collection>) owner: the feature whose feature.ts declares it in `owns`
+//
+// Feature collections currently claimed (keep in sync with features/*/feature.ts;
+// the engine throws at startup if two features claim the same name):
+//   'comments' -> features/comments   (CommentThread by id)
+//   'tags'     -> features/tags       (Tag by id)
+//   'timer'    -> features/timer      (key 'state' -> TimerState)
+//   'voting'   -> features/voting     (key 'session' -> VotingSession, `${sessionId}:${userId}` -> VoteBallot)
+//
+// The server never interprets contents; it relays and persists updates. It drops
+// all updates from viewers, and for commenters accepts only changes confined to
+// the collections listed in COMMENTER_WRITABLE.
+
+export const Y_ELEMENTS = 'elements';
+export const Y_SETTINGS = 'settings';
+
+/** Top-level types a commenter may modify (server-enforced). */
+export const COMMENTER_WRITABLE = ['comments'] as const;
+
+export interface BoardSettings {
+  background: string;
+  grid: 'dots' | 'lines' | 'none';
+}
+
+export interface TimerState {
+  /** Epoch ms when the timer reaches zero (when running). */
+  endsAt: number | null;
+  /** Total duration in ms for the current run. */
+  duration: number;
+  /** Remaining ms when paused. */
+  pausedRemaining: number | null;
+  running: boolean;
+  startedBy: string | null;
+}
+
+export interface VotingSession {
+  id: string;
+  active: boolean;
+  title: string;
+  votesPerUser: number;
+  /** If set, only these element ids can be voted on; otherwise all stickies/cards/shapes. */
+  elementIds: string[] | null;
+  /** Hide results until the session ends. */
+  anonymous: boolean;
+  startedBy: string;
+  startedAt: number;
+  endedAt: number | null;
+}
+
+export interface VoteBallot {
+  sessionId: string;
+  userId: string;
+  /** May contain duplicates (multiple votes on the same element). */
+  elementIds: string[];
+}
+
+/** Yjs awareness state published by each client (written only by the engine). */
+export interface PresenceState {
+  user: { id: string; name: string; color: string; avatarUrl?: string | null };
+  /** World coordinates, or null when the pointer is off-canvas. */
+  cursor: { x: number; y: number } | null;
+  selection: string[];
+  /** Current camera, used for "follow" and presentation. */
+  viewport: { x: number; y: number; zoom: number; width: number; height: number } | null;
+  /** Free-form per-feature ephemeral state, keyed by feature name (e.g. presenting, reaction). */
+  ext?: Record<string, unknown>;
+  /** Element currently being text-edited by this user. */
+  editingId?: string | null;
+}
