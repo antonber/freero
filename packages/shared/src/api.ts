@@ -36,7 +36,8 @@ export interface BoardSummary {
 export interface BoardMember {
   userId: string;
   name: string;
-  email: string;
+  /** Only sent to people who can manage sharing (owner, editors) and for your own row. */
+  email?: string;
   color: string;
   avatarUrl: string | null;
   role: Role;
@@ -46,11 +47,13 @@ export interface BoardMember {
 // POST /api/auth/signup   body SignupRequest -> AuthResponse  (sets cookie)
 // POST /api/auth/login    body LoginRequest  -> AuthResponse  (sets cookie)
 // POST /api/auth/logout   -> { ok: true }                     (clears cookie)
+// GET  /api/auth/session  -> SessionResponse (always 200; user null when signed out)
 // GET  /api/auth/me       -> AuthResponse | 401
 // PATCH /api/auth/me      body { name?, color?, avatarUrl? } -> AuthResponse
 export interface SignupRequest { name: string; email: string; password: string }
 export interface LoginRequest { email: string; password: string }
 export interface AuthResponse { user: User }
+export interface SessionResponse { user: User | null }
 
 // ---- Boards ----
 // GET    /api/boards?filter=all|mine|shared|starred|recent&q=text -> { boards: BoardSummary[] }
@@ -70,7 +73,8 @@ export interface UpdateBoardRequest { title?: string; description?: string; link
 // ---- Members / sharing ----
 // GET    /api/boards/:id/members              -> { members: BoardMember[] }
 // POST   /api/boards/:id/members  body InviteRequest -> { member: BoardMember }
-//        (owner/editor; user must already have a Freero account, else 404 { error })
+//        (owner/editor; user must already have a Freero account, else 404 { error }; an editor
+//        re-inviting an existing member with a different role gets 409: only the owner changes roles)
 // PATCH  /api/boards/:id/members/:userId body { role } -> { member }   (owner only)
 // DELETE /api/boards/:id/members/:userId -> { ok: true } (owner, or self to leave)
 export interface InviteRequest { email: string; role: Exclude<Role, 'owner'> }

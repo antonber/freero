@@ -64,6 +64,7 @@ export interface VoteBallot {
 
 /** Yjs awareness state published by each client (written only by the engine). */
 export interface PresenceState {
+  /** Replaced by the server with the socket's authenticated user (no impersonation). */
   user: { id: string; name: string; color: string; avatarUrl?: string | null };
   /** World coordinates, or null when the pointer is off-canvas. */
   cursor: { x: number; y: number } | null;
