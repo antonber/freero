@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { CalendarDays, CircleDashed, NotebookText, UserPlus } from 'lucide-react';
 import type { CardElement } from '@freero/shared';
-import { defineFormat, plainToRichText, richTextToPlain, usePeers, type Editor } from '@engine';
+import { defineFormat, plainToRichText, richTextToPlain, type Editor } from '@engine';
 import { Avatar, Button, ColorSwatches, IconButton, Menu, Popover, TextArea } from '@ui';
 import { ACCENTS, ACCENT_NAMES, STATUSES, TOOL_ID, type CardStatus } from './lib/constants';
 import { formatDue, localISODate } from './lib/actions';
-import { onlinePeople, usePerson } from './lib/people';
+import { useBoardPeople, usePerson } from './lib/people';
 
 type Props = { editor: Editor; cards: CardElement[] };
 
@@ -119,9 +119,8 @@ function AssigneeButtonFace({ id }: { id: string }) {
 function AssigneeControl({ editor, cards }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
-  usePeers(); // re-render the list as people come and go
   const assignee = same(cards, 'assigneeId') ?? null;
-  const people = onlinePeople(editor);
+  const people = useBoardPeople(editor, open);
   const assign = (id: string | null) => {
     patchAll(editor, cards, { assigneeId: id });
     setOpen(false);
@@ -153,7 +152,7 @@ function AssigneeControl({ editor, cards }: Props) {
               </button>
             </li>
           </ul>
-          {people.length === 1 && <div className="fr-card-people__hint">Collaborators appear here while they're on the board.</div>}
+          {people.length === 1 && <div className="fr-card-people__hint">Share the board to assign cards to others.</div>}
         </div>
       </Popover>
     </>
@@ -167,13 +166,6 @@ function DetailsControl({ editor, cards }: Props) {
   const card = cards[0];
   const [text, setText] = useState('');
   const gesture = useRef(false);
-  const area = useRef<HTMLTextAreaElement>(null);
-  // The popover is invisible for its first frame (positioning), so autoFocus can't land.
-  useEffect(() => {
-    if (!open) return;
-    const raf = requestAnimationFrame(() => area.current?.focus({ preventScroll: true }));
-    return () => cancelAnimationFrame(raf);
-  }, [open]);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const flush = (value: string) => {
@@ -217,7 +209,7 @@ function DetailsControl({ editor, cards }: Props) {
         <div className="fr-card-pop">
           <div className="fr-card-pop__label">Description</div>
           <TextArea
-            ref={area}
+            autoFocus
             value={text}
             placeholder="Add details, links, acceptance criteria…"
             aria-label="Card description"

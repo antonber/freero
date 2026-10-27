@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { StickyElement } from '@freero/shared';
+import { createTestBoard } from '@engine';
+import manifest from './feature';
 import { cardFromSticky, isOverdue } from './lib/actions';
 import { cardLayout } from './lib/layout';
+import { boardPeople, refreshMembers, resolvePerson } from './lib/people';
 
 describe('due dates', () => {
   it('treats the due date as a local calendar day: due today is never overdue, even late at night', () => {
@@ -59,5 +62,21 @@ describe('convert sticky to card', () => {
     expect(card.frameId).toBe('f1');
     expect(Math.abs(card.x + card.w / 2 - 200)).toBeLessThanOrEqual(1);
     expect(Math.abs(card.y + card.h / 2 - 300)).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('assignees', () => {
+  it('resolves and offers a board member who has never been online here, from the member directory', async () => {
+    const ann = { id: 'ann', name: 'Ann', color: '#e5484d', avatarUrl: null };
+    const bob = { id: 'bob', name: 'Bob', color: '#1fa463', avatarUrl: null };
+    const board = createTestBoard({ users: [ann], members: [ann, bob], features: [manifest] });
+    try {
+      const [editor] = board.editors('card');
+      await refreshMembers(editor);
+      expect(resolvePerson(editor, 'bob')).toMatchObject({ name: 'Bob', color: '#1fa463', online: false });
+      expect(boardPeople(editor).map((p) => p.id)).toEqual(['ann', 'bob']);
+    } finally {
+      board.destroy();
+    }
   });
 });

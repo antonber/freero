@@ -23,7 +23,7 @@ const MAX_TAGS = 2;
 
 function Assignee({ id }: { id: string }) {
   const person = usePerson(id);
-  if (!person) return <span className="fr-card__unknown" title="Someone not on this board right now">?</span>;
+  if (!person) return <span className="fr-card__unknown" title="Someone who no longer has access to this board">?</span>;
   return <Avatar name={person.name} color={person.color} src={person.avatarUrl} size={22} title={person.name} />;
 }
 

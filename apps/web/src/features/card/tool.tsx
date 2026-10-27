@@ -1,4 +1,4 @@
-import { SquareKanban } from 'lucide-react';
+import { ListTodo } from 'lucide-react';
 import { defineTool, usePointer, useToolOptions } from '@engine';
 import { ColorSwatches } from '@ui';
 import { ACCENTS, ACCENT_NAMES, DEFAULT_ACCENT, TOOL_ID, type CardToolOptions } from './lib/constants';
@@ -10,7 +10,7 @@ const GHOST_H = cardLayout({ w: CARD_W, title: '', description: '' }).h;
 export default defineTool({
   id: TOOL_ID,
   label: 'Card',
-  icon: SquareKanban,
+  icon: ListTodo,
   order: 40,
   placement: 'more',
   cursor: 'crosshair',
