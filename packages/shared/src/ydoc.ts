@@ -10,6 +10,7 @@
 //   'comments' -> features/comments   (CommentRecord per key: t:/s:/m:/r:/x: — see elements.ts)
 //   'tags'     -> features/tags       (Tag by id)
 //   'timer'    -> features/timer      (key 'state' -> TimerState)
+//   'tableCells' -> features/table (cell text/fill per key — see TableElement in elements.ts)
 //   'voting'   -> features/voting     (key 'session' -> VotingSession, `${sessionId}:${userId}` -> VoteBallot)
 //
 // The server never interprets contents; it relays and persists updates. It drops
@@ -25,7 +26,14 @@ export const COMMENTER_WRITABLE = ['comments'] as const;
 export interface BoardSettings {
   background: string;
   grid: 'dots' | 'lines' | 'none';
+  /** World units between grid lines/dots (and the snap-to-grid step). */
+  gridSize: number;
+  /** Moves and resizes snap to the grid (Ctrl/⌘ while dragging inverts it). */
+  snapToGrid: boolean;
 }
+
+/** Grid sizes offered in the board menu. */
+export const GRID_SIZES = [8, 16, 24, 32, 48] as const;
 
 export interface TimerState {
   /** Epoch ms when the timer reaches zero (when running). */

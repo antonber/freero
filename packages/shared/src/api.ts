@@ -84,6 +84,28 @@ export interface InviteRequest { email: string; role: Exclude<Role, 'owner'> }
 //                    max 15MB -> { url: string }  e.g. "/uploads/ab12cd.png"
 // GET  /uploads/:file  static file
 
+// ---- Link previews ----
+// GET /api/unfurl?url=<http(s) URL> -> UnfurlResponse   (signed-in users; rate limited)
+//     The server fetches the page itself (http/https only, default ports, no private/loopback/
+//     link-local addresses — checked again for every redirect and at connect time — with
+//     timeouts and size caps) and reads its title / description / preview image.
+//     400 bad URL, 422 not previewable (blocked address, not HTML, too large, timeout).
+export interface UnfurlResponse {
+  /** Final URL after redirects. */
+  url: string;
+  title: string | null;
+  description: string | null;
+  siteName: string | null;
+  /** Preview image as a data: URL (fetched by the server, size-capped), or null. */
+  image: string | null;
+}
+
+/**
+ * Origins whose players a link card may frame (after a click). The web app builds iframe srcs
+ * only on these, and the server's Content-Security-Policy `frame-src` allows exactly these.
+ */
+export const EMBED_FRAME_ORIGINS = ['https://www.youtube-nocookie.com', 'https://player.vimeo.com', 'https://www.loom.com'] as const;
+
 // ---- Realtime ----
 // WebSocket: /ws/boards/:id  — standard y-websocket protocol (sync + awareness),
 // i.e. the client uses `new WebsocketProvider(wsBase + '/ws/boards', boardId, doc)`.

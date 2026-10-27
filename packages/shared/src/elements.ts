@@ -16,7 +16,9 @@ export type ElementType =
   | 'image'
   | 'card'
   | 'emoji'
-  | 'mindmap';
+  | 'mindmap'
+  | 'table'
+  | 'embed';
 
 export interface BaseElement {
   id: string;
@@ -154,9 +156,20 @@ export interface ConnectorElement extends BaseElement {
   startCap: CapStyle;
   endCap: CapStyle;
   label: string;
+  /** Where `label` sits along the route, 0..1 by length (default 0.5). */
+  labelT?: number;
+  /** More labels along the line, each at its own position (double-click the line to add one). */
+  labels?: ConnectorLabel[];
   /** Optional user-dragged control/waypoint offsets, routing-specific. */
   waypoints?: { x: number; y: number }[];
   // x/y/w/h are the derived bounding box, kept updated for hit-testing/culling.
+}
+
+export interface ConnectorLabel {
+  id: string;
+  /** Position along the route, 0..1 by length. */
+  t: number;
+  text: RichText;
 }
 
 export interface PenElement extends BaseElement {
@@ -222,6 +235,42 @@ export interface MindmapElement extends BaseElement {
   collapsed?: boolean;
 }
 
+/**
+ * A table. The element holds the STRUCTURE only (rows, columns, their sizes, header style);
+ * cell contents live in the `tableCells` collection, one key per cell, so two people typing
+ * into different cells at once never overwrite each other (elements are last-writer-wins per
+ * whole element). Row/column ids are stable: inserting or deleting a row never re-keys cells.
+ *
+ *   tableCells key                       value
+ *   t:<tableId>:<rowId>:<colId>          RichText  cell text
+ *   f:<tableId>:<rowId>:<colId>          string    cell fill (css color; '' = none)
+ */
+export interface TableElement extends BaseElement {
+  type: 'table';
+  rows: Array<{ id: string; h: number }>;
+  cols: Array<{ id: string; w: number }>;
+  /** First row is a header (bold, tinted). */
+  header: boolean;
+  fontSize: number;
+}
+
+/** Key of a cell's text / fill in the `tableCells` collection. */
+export const tableCellKey = (kind: 't' | 'f', tableId: string, rowId: string, colId: string): string =>
+  `${kind}:${tableId}:${rowId}:${colId}`;
+
+/** A pasted link: a preview card; known video hosts can play inline (after a click). */
+export interface EmbedElement extends BaseElement {
+  type: 'embed';
+  url: string;
+  title: string | null;
+  description: string | null;
+  siteName: string | null;
+  /** Preview image (an /uploads URL or data: URL), or null. */
+  image: string | null;
+  /** 'loading' while the preview is being fetched. */
+  status: 'loading' | 'ready' | 'failed';
+}
+
 export type BoardElement =
   | StickyElement
   | ShapeElement
@@ -232,7 +281,9 @@ export type BoardElement =
   | ImageElement
   | CardElement
   | EmojiElement
-  | MindmapElement;
+  | MindmapElement
+  | TableElement
+  | EmbedElement;
 
 export type ElementOf<T extends ElementType> = Extract<BoardElement, { type: T }>;
 
