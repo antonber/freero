@@ -1,0 +1,71 @@
+/* Freero design tokens. All UI must use these variables, not raw colors.
+   Brand: violet primary + mint accent, ink-dark text, soft neutral chrome. */
+:root {
+  --fr-primary: #5b3ff0;
+  --fr-primary-hover: #4a2fdc;
+  --fr-primary-soft: #eeeaff;
+  --fr-accent: #2ee6b8;
+  --fr-danger: #e5484d;
+  --fr-warning: #f5a524;
+  --fr-success: #1fa463;
+
+  --fr-ink: #17162b;
+  --fr-ink-2: #4b4a63;
+  --fr-ink-3: #8a89a3;
+  --fr-line: #e4e3ee;
+  --fr-line-strong: #cfcde0;
+  --fr-surface: #ffffff;
+  --fr-surface-2: #f7f6fb;
+  --fr-surface-3: #efeef6;
+  --fr-canvas: #f3f2f8;
+  --fr-canvas-dot: #cdcbdc;
+
+  /* Selection / interaction */
+  --fr-select: #5b3ff0;
+  --fr-select-fill: rgba(91, 63, 240, 0.08);
+  --fr-snap: #ff3d8b;
+
+  --fr-radius-sm: 6px;
+  --fr-radius: 10px;
+  --fr-radius-lg: 14px;
+  --fr-shadow-sm: 0 1px 2px rgba(23, 22, 43, 0.08);
+  --fr-shadow: 0 2px 8px rgba(23, 22, 43, 0.1), 0 0 0 1px rgba(23, 22, 43, 0.04);
+  --fr-shadow-lg: 0 12px 32px rgba(23, 22, 43, 0.16), 0 0 0 1px rgba(23, 22, 43, 0.05);
+
+  --fr-font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --fr-font-serif: 'Source Serif 4', Georgia, serif;
+  --fr-font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --fr-font-hand: 'Caveat', 'Comic Sans MS', cursive;
+
+  --fr-z-canvas-ui: 10;
+  --fr-z-toolbar: 20;
+  --fr-z-popover: 40;
+  --fr-z-modal: 60;
+  --fr-z-toast: 80;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--fr-font);
+  font-size: 14px;
+  color: var(--fr-ink);
+  background: var(--fr-surface);
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
