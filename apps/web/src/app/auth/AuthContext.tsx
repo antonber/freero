@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { User } from '@freero/shared';
+import { useLocation } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 
 export interface AuthValue {
@@ -37,9 +38,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // The offline sandbox (/board/local, dev only) has no account: asking the server there would
+  // only log 401s (or proxy errors when no server runs). Check once the user leaves it.
+  const { pathname } = useLocation();
+  const offline = import.meta.env.DEV && pathname === '/board/local';
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    if (!offline) void refresh();
+  }, [refresh, offline]);
 
   const login = useCallback(async (email: string, password: string) => {
     const { user } = await api.login({ email: email.trim(), password });

@@ -3,7 +3,7 @@
 // to edit when adding a feature.
 import { collectFeatures } from '@engine';
 
-const modules = import.meta.glob('../../features/*/{feature,element,tool,format,panel,commands}.{ts,tsx}', {
+const modules = import.meta.glob('../../features/*/{feature,element,tool,format,panel,commands,decoration}.{ts,tsx}', {
   eager: true,
 });
 

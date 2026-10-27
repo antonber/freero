@@ -1,5 +1,6 @@
 // Thin wrappers over the REST client for building the engine's `Host`
 // (see Host in engine/api.ts). Used from app/board/.
+import type { HostUser } from '@engine';
 import { api } from './api/client';
 
 export function uploadImage(file: Blob): Promise<{ url: string }> {
@@ -12,4 +13,9 @@ export async function renameBoard(id: string, title: string): Promise<void> {
 
 export async function saveThumbnail(id: string, dataUrl: string): Promise<void> {
   await api.putThumbnail(id, dataUrl);
+}
+
+export async function listMembers(id: string): Promise<HostUser[]> {
+  const { members } = await api.listMembers(id);
+  return members.map((m) => ({ id: m.userId, name: m.name, color: m.color, avatarUrl: m.avatarUrl }));
 }

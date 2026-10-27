@@ -9,7 +9,7 @@ import { useAuth } from '../auth/AuthContext';
 import { ShareDialog } from '../components/ShareDialog';
 import { FullPageSpinner } from '../components/FullPageSpinner';
 import { features } from './features';
-import { createLocalHost, createServerHost } from './host';
+import { createLocalHost, createServerHost, toastNotify } from './host';
 import './BoardPage.css';
 
 type LoadState =
@@ -60,7 +60,7 @@ function ServerBoard({ id }: { id: string }) {
   );
   const openShare = useCallback(() => setShareOpen(true), []);
   const go = useCallback((path: string) => navigate(path), [navigate]);
-  const toast = useCallback((m: string, k?: 'info' | 'success' | 'error') => notify(m, k), [notify]);
+  const toast = useMemo(() => toastNotify(notify), [notify]);
 
   const host = useMemo<Host | null>(() => {
     if (!board || !user) return null;
@@ -96,7 +96,7 @@ function LocalBoard() {
   const notify = useToast();
   const [title, setTitle] = useState(() => localStorage.getItem('freero:local-title') ?? 'Local sandbox');
   const go = useCallback((path: string) => navigate(path), [navigate]);
-  const toast = useCallback((m: string, k?: 'info' | 'success' | 'error') => notify(m, k), [notify]);
+  const toast = useMemo(() => toastNotify(notify), [notify]);
   const host = useMemo(
     () =>
       createLocalHost(title, {

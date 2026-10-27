@@ -1,16 +1,29 @@
 // Builds the engine's Host — the one typed contract between the app shell and the engine.
 import type { BoardSummary, Role } from '@freero/shared';
 import type { Host, HostUser } from '@engine';
+import type { ToastApi } from '@ui';
 import { wsBase } from '../api/client';
-import { renameBoard, saveThumbnail, uploadImage } from '../hostServices';
+import { listMembers, renameBoard, saveThumbnail, uploadImage } from '../hostServices';
 import { serverNow, syncServerClock } from './serverClock';
 
 export interface HostDeps {
   user: HostUser;
   navigate(path: string): void;
-  notify(message: string, kind?: 'info' | 'success' | 'error'): void;
+  notify: Host['notify'];
   openShareDialog(): void;
   onTitleChange(title: string): void;
+}
+
+/** Toasts with an action button stay up long enough to read and act on. */
+const ACTION_TOAST_MS = 12000;
+
+/** Host.notify on top of the UI kit's toasts (`useToast()`). */
+export function toastNotify(toast: ToastApi): Host['notify'] {
+  return (message, kind, opts) => {
+    const action = opts?.action;
+    if (!action) return toast(message, kind);
+    toast(message, kind, { duration: ACTION_TOAST_MS, action: { label: action.label, onClick: () => action.run() } });
+  };
 }
 
 export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
@@ -29,6 +42,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     navigate: deps.navigate,
     notify: deps.notify,
     serverNow,
+    listMembers: () => listMembers(board.id),
   };
 }
 
@@ -49,8 +63,9 @@ const LOCAL_ROLES: Role[] = ['owner', 'editor', 'commenter', 'viewer'];
 export function createLocalHost(title: string, deps: Omit<HostDeps, 'user' | 'openShareDialog'>): Host {
   const params = new URLSearchParams(window.location.search);
   const role = (LOCAL_ROLES as string[]).includes(params.get('role') ?? '') ? (params.get('role') as Role) : 'owner';
+  const user: HostUser = { id: 'local-user', name: params.get('name') || 'You', color: '#5b3ff0', avatarUrl: null };
   return {
-    user: { id: 'local-user', name: params.get('name') || 'You', color: '#5b3ff0', avatarUrl: null },
+    user,
     board: { id: 'local', title, role },
     syncUrl: '',
     uploadImage: async (file) => ({ url: await readAsDataUrl(file) }),
@@ -62,5 +77,6 @@ export function createLocalHost(title: string, deps: Omit<HostDeps, 'user' | 'op
     navigate: deps.navigate,
     notify: deps.notify,
     serverNow: () => Date.now(),
+    listMembers: async () => [user],
   };
 }
