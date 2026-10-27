@@ -1,0 +1,36 @@
+.fr-boarderror {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  padding: 24px;
+  background-color: var(--fr-canvas);
+  background-image: radial-gradient(var(--fr-canvas-dot) 1px, transparent 1.2px);
+  background-size: 22px 22px;
+}
+
+.fr-boarderror__card {
+  max-width: 440px;
+  padding: 40px 36px;
+  text-align: center;
+  background: var(--fr-surface);
+  border-radius: var(--fr-radius-xl);
+  box-shadow: var(--fr-shadow-lg);
+}
+
+.fr-boarderror__card h1 {
+  margin: 20px 0 8px;
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.fr-boarderror__card p {
+  margin: 0 0 24px;
+  color: var(--fr-ink-2);
+  line-height: 1.5;
+}
+
+.fr-boarderror__actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
