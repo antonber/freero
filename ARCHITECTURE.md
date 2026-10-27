@@ -57,6 +57,10 @@ app/                Shell: routing, pages, auth, REST client, Host implementatio
 - Raw HTML sinks (`innerHTML =`, `dangerouslySetInnerHTML`, `insertAdjacentHTML`, …) are allowed only
   in `engine/text/`, which sanitizes; board content is untrusted input from other users [W11].
   Parse untrusted HTML only in an inert document (`document.implementation.createHTMLDocument`).
+- CSS classes are owned: Vite never unloads CSS on route changes, so board styles stay active on
+  the dashboard. A `.fr-*` class styled by two sibling owners (app vs engine/feature, or two
+  features) fails [W12]. ui/ and engine classes may be styled in context above them; otherwise
+  prefix by owner (`fr-<feature>-…`, `fr-dash-…`).
 - Features show toasts with `editor.host.notify(message, kind?, { action? })`; `useToast()` in
   `features/` fails [W10].
 

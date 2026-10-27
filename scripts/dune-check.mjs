@@ -226,6 +226,35 @@ function checkFeatureFolders() {
 }
 
 // ---------------------------------------------------------------------------
+// CSS class ownership. Vite never unloads CSS on route changes, so after visiting a board the
+// board's stylesheets also apply to the dashboard. A class styled by two sibling owners leaks.
+// ui/ (design system) and engine/ classes may be styled in context by layers above them; app/
+// and each feature must otherwise use classes nobody else styles.
+// ---------------------------------------------------------------------------
+function checkCssOwnership() {
+  const units = new Map(); // class -> Map(unit -> firstFile)
+  for (const file of walk(WEB).filter((f) => f.endsWith('.css'))) {
+    const r = path.relative(WEB, file).split(path.sep);
+    const unit = r[0] === 'features' ? `features/${r[1]}` : r[0];
+    const css = fs.readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const m of css.matchAll(/\.(fr-[a-zA-Z0-9_-]+)/g)) {
+      if (!units.has(m[1])) units.set(m[1], new Map());
+      if (!units.get(m[1]).has(unit)) units.get(m[1]).set(unit, file);
+    }
+  }
+  for (const [cls, owners] of units) {
+    if (owners.has('ui') || owners.has('engine')) {
+      if (owners.has('engine') && owners.has('app') && !owners.has('ui'))
+        report('W12', owners.get('app'), 1, `.${cls} is styled by both app/ and engine/. Board CSS stays loaded on the dashboard; give app classes their own prefix (e.g. fr-dash-, fr-app-).`);
+      continue;
+    }
+    const names = [...owners.keys()];
+    if (names.length > 1)
+      report('W12', owners.get(names[1]), 1, `.${cls} is styled by ${names.join(' and ')}. CSS stays loaded across routes, so these leak into each other; prefix classes by owner (fr-<feature>-…, fr-dash-…).`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Server layers
 // ---------------------------------------------------------------------------
 function serverLayer(abs) {
@@ -294,6 +323,7 @@ function checkSharedFile(file) {
 // ---------------------------------------------------------------------------
 for (const f of walk(WEB).filter(isCode)) checkWebFile(f);
 checkFeatureFolders();
+checkCssOwnership();
 const owners = serverTableOwners();
 for (const f of walk(SERVER).filter(isCode)) checkServerFile(f, owners);
 for (const f of walk(SHARED).filter(isCode)) checkSharedFile(f);
