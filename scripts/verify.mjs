@@ -297,6 +297,17 @@ async function run() {
       assert((await wsCloseCode('any-board', s.cookie)) === 4401, 'expired session still accepted over WebSocket');
     });
 
+    await check('logging out closes the live board sockets of that session (4401), not just the cookie', async () => {
+      const l = new User('L');
+      await l.signup();
+      const own = (await l.req('POST', '/api/boards', { title: 'L board' })).json.board;
+      const live = connectDoc(l, own.id);
+      await live.ready();
+      assert((await l.req('POST', '/api/auth/logout')).status === 200, 'logout');
+      await waitFor(() => live.closeCodes.includes(4401), 5000, 'the open socket to be closed with 4401');
+      live.destroy();
+    });
+
     // ---- boards + members ----
     await check('A creates a board (default title) and renames it', async () => {
       const r = await A.req('POST', '/api/boards', {});
@@ -322,6 +333,21 @@ async function run() {
       const roles = Object.fromEntries(r.json.members.map((m) => [m.userId, m.role]));
       assert(roles[A.id] === 'owner' && roles[B.id] === 'editor' && roles[C.id] === 'viewer' && roles[D.id] === 'commenter', JSON.stringify(roles));
       assert((await E.req('GET', `/api/boards/${board.id}/members`)).status === 403, 'non-member should get 403');
+    });
+
+    await check('an editor cannot change roles by re-inviting (409); the owner can', async () => {
+      const r = await B.req('POST', `/api/boards/${board.id}/members`, { email: C.email, role: 'editor' });
+      assert(r.status === 409, `editor promoting the viewer -> ${r.status} ${r.text}`);
+      const roles = Object.fromEntries((await A.req('GET', `/api/boards/${board.id}/members`)).json.members.map((m) => [m.userId, m.role]));
+      assert(roles[C.id] === 'viewer', `C's role changed to ${roles[C.id]}`);
+      assert((await B.req('POST', `/api/boards/${board.id}/members`, { email: C.email, role: 'viewer' })).status === 201, 'same-role re-invite');
+    });
+
+    await check('member emails are shown to owner/editors only (a viewer sees just their own)', async () => {
+      const seen = (await C.req('GET', `/api/boards/${board.id}/members`)).json.members.filter((m) => m.email).map((m) => m.userId);
+      assert(seen.length === 1 && seen[0] === C.id, `viewer sees emails of ${JSON.stringify(seen)}`);
+      const byEditor = (await B.req('GET', `/api/boards/${board.id}/members`)).json.members;
+      assert(byEditor.every((m) => m.email), 'editor should see every email');
     });
 
     await check('board permissions: editor renames, only owner sets linkAccess, viewer cannot rename', async () => {
@@ -361,6 +387,14 @@ async function run() {
         5000,
         "A to see C's cursor",
       );
+    });
+
+    await check('presence cannot impersonate: a client claiming to be A shows up as itself', async () => {
+      d.provider.awareness.setLocalStateField('user', { id: A.id, name: 'A (fake)', color: '#000000' });
+      d.provider.awareness.setLocalStateField('cursor', { x: 7, y: 7 });
+      const dState = () => a.provider.awareness.getStates().get(d.doc.clientID);
+      await waitFor(() => dState()?.cursor?.x === 7, 5000, "A to see D's cursor");
+      assert(dState().user.id === D.id && dState().user.name === D.name, `A sees D as ${JSON.stringify(dState().user)}`);
     });
 
     await check("viewer C's writes never reach A, but C keeps receiving updates", async () => {
