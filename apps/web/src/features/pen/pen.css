@@ -1,0 +1,113 @@
+/* A freehand stroke: one filled outline path scaled to the element box. */
+.fr-pen {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/*
+ * Highlighter ink multiplies with whatever is beneath it (text stays legible, overlaps darken
+ * like real markers). The blend must sit on the element's positioned wrapper: that wrapper is a
+ * stacking context, so a blend on the inner svg would only see its own empty box.
+ */
+.fr-el:has(> .fr-pen--highlighter),
+.fr-pen-draft--highlighter {
+  mix-blend-mode: multiply;
+}
+
+/* Live, uncommitted stroke drawn in world space while the pointer is down. */
+.fr-pen-draft {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/* Ink dot under the cursor while the pen tool hovers. */
+.fr-pen-cursor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.9);
+}
+
+/* ---- tool options flyout ---- */
+.fr-pen-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 132px;
+}
+
+.fr-pen-options__modes {
+  display: flex;
+  gap: 2px;
+}
+
+.fr-pen-options__sizes {
+  display: flex;
+  justify-content: space-between;
+}
+
+.fr-pen-size {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--fr-radius-sm);
+  background: transparent;
+  cursor: pointer;
+  color: var(--fr-ink-2);
+}
+
+.fr-pen-size:hover {
+  background: var(--fr-hover);
+}
+
+.fr-pen-size[aria-pressed='true'] {
+  background: var(--fr-primary-soft);
+  color: var(--fr-primary);
+}
+
+.fr-pen-size span {
+  display: block;
+  border-radius: 99px;
+  background: currentColor;
+}
+
+.fr-pen-format-swatch {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--fr-radius-sm);
+  background: transparent;
+  cursor: pointer;
+}
+
+.fr-pen-format-swatch:hover,
+.fr-pen-format-swatch[aria-expanded='true'] {
+  background: var(--fr-hover);
+}
+
+.fr-pen-format-swatch span {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(23, 22, 43, 0.14);
+}
+
+.fr-pen-format-sizes {
+  display: flex;
+  gap: 2px;
+}
