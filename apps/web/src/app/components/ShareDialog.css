@@ -1,0 +1,156 @@
+.fr-share {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.fr-share__loading {
+  display: grid;
+  place-items: center;
+  min-height: 160px;
+  color: var(--fr-primary);
+}
+
+.fr-share__error {
+  padding: 12px 14px;
+  font-size: 13.5px;
+  color: #a1262b;
+  background: var(--fr-danger-soft);
+  border-radius: var(--fr-radius);
+}
+
+.fr-share__invite {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.fr-share__email {
+  flex: 1;
+}
+
+.fr-share__note {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--fr-ink-2);
+  background: var(--fr-surface-2);
+  border-radius: var(--fr-radius);
+}
+
+.fr-share__heading {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fr-ink-3);
+}
+
+.fr-share__members {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.fr-share__member,
+.fr-share__link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 6px 0;
+}
+
+.fr-share__who {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.fr-share__name {
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-share__you {
+  font-weight: 400;
+  color: var(--fr-ink-3);
+}
+
+.fr-share__email-text {
+  font-size: 12.5px;
+  color: var(--fr-ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-share__member-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+
+.fr-share__role {
+  flex: none;
+  padding: 0 8px;
+  font-size: 13px;
+  color: var(--fr-ink-2);
+}
+
+.fr-share__link {
+  padding-top: 14px;
+  border-top: 1px solid var(--fr-line);
+}
+
+.fr-share__link-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  color: var(--fr-ink-2);
+  background: var(--fr-surface-3);
+  border-radius: 50%;
+}
+
+.fr-share__link-icon--open {
+  color: #12916f;
+  background: var(--fr-accent-soft);
+}
+
+.fr-share__leave {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: -6px;
+}
+
+.fr-share__leave .fr-btn {
+  color: var(--fr-danger);
+}
+
+.fr-share__footer {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+}
+
+@media (max-width: 520px) {
+  .fr-share__invite {
+    flex-wrap: wrap;
+  }
+
+  .fr-share__email {
+    flex-basis: 100%;
+  }
+}
