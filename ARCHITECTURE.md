@@ -52,6 +52,8 @@ app/                Shell: routing, pages, auth, REST client, Host implementatio
   layers from outside. Deep imports fail [W0].
 - `yjs`, `y-websocket`, `y-protocols`, `lib0` may only be imported in `engine/store/` [W5].
 - `import.meta.glob` is only allowed in `app/board/features.ts` [W6].
+- Only the app talks to Freero's server: `'/api/…'` / `'/ws/…'` paths in `features/`, `engine/` or
+  `ui/` fail [W9]. Need server data? Add a typed method to `Host` (e.g. `serverNow()`).
 
 ### Features — owned folders discovered through reserved files
 

@@ -106,6 +106,13 @@ function checkWebFile(file) {
   const src = fs.readFileSync(file, 'utf8');
   const me = webLayer(file);
   const meRel = path.relative(WEB, file).split(path.sep).join('/');
+  // Only the app shell talks to Freero's server; everything below it goes through the Host.
+  if (['features', 'engine', 'ui'].includes(me.layer) && !/\.test\.tsx?$/.test(file)) {
+    for (const m of src.matchAll(/['"`]\/(api|ws)\//g)) {
+      const line = src.slice(0, m.index).split('\n').length;
+      report('W9', file, line, `${me.layer}/ must not call Freero's server ('/${m[1]}/…') directly. Use editor.host; if the Host lacks what you need, add a typed method to Host in engine/api.ts and implement it in app/board/host.ts.`);
+    }
+  }
   for (const { spec, line, kind } of parseImports(src)) {
     if (kind === 'glob') {
       if (meRel !== 'app/board/features.ts')

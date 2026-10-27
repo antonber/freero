@@ -45,6 +45,12 @@ export interface Host {
   navigate(path: string): void;
   /** Lightweight toast from anywhere. */
   notify(message: string, kind?: 'info' | 'success' | 'error'): void;
+  /**
+   * Current time on the SERVER's clock (ms). Use it for anything shared that is time-based
+   * (timers, deadlines) so clients with skewed clocks agree. Falls back to the local clock
+   * until measured, and offline.
+   */
+  serverNow(): number;
 }
 
 // ---------------------------------------------------------------------------

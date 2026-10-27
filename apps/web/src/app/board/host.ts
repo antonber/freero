@@ -3,6 +3,7 @@ import type { BoardSummary, Role } from '@freero/shared';
 import type { Host, HostUser } from '@engine';
 import { wsBase } from '../api/client';
 import { renameBoard, saveThumbnail, uploadImage } from '../hostServices';
+import { serverNow, syncServerClock } from './serverClock';
 
 export interface HostDeps {
   user: HostUser;
@@ -13,6 +14,7 @@ export interface HostDeps {
 }
 
 export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
+  syncServerClock();
   return {
     user: deps.user,
     board: { id: board.id, title: board.title, role: board.role },
@@ -26,6 +28,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     openShareDialog: deps.openShareDialog,
     navigate: deps.navigate,
     notify: deps.notify,
+    serverNow,
   };
 }
 
@@ -58,5 +61,6 @@ export function createLocalHost(title: string, deps: Omit<HostDeps, 'user' | 'op
     openShareDialog: () => deps.notify('Sharing needs a real board — the local sandbox is offline.', 'info'),
     navigate: deps.navigate,
     notify: deps.notify,
+    serverNow: () => Date.now(),
   };
 }

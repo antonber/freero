@@ -47,6 +47,7 @@ export function makeHost(role: Role = 'owner'): Host {
     uploadImage: async () => ({ url: '' }),
     renameBoard: async () => undefined,
     saveThumbnail: async () => undefined,
+    serverNow: () => Date.now(),
     openShareDialog: () => undefined,
     navigate: () => undefined,
     notify: () => undefined,
