@@ -106,11 +106,8 @@
 }
 
 /* "<Name> is presenting" banner for everyone else. */
+/* Placed by the engine's 'top-center' column. */
 .fr-present-banner {
-  position: absolute;
-  left: 50%;
-  top: 72px;
-  transform: translateX(-50%);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -121,8 +118,6 @@
   font-size: 13px;
   color: var(--fr-ink-2);
   white-space: nowrap;
-  pointer-events: auto;
-  z-index: var(--fr-z-toolbar);
   animation: fr-present-drop 180ms ease-out;
 }
 
@@ -144,6 +139,6 @@
 @keyframes fr-present-drop {
   from {
     opacity: 0;
-    transform: translate(-50%, -8px);
+    transform: translateY(-8px);
   }
 }

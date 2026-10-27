@@ -183,11 +183,13 @@ function Overlay({ editor }: { editor: Editor }) {
   const presenting = usePresent(editor, (s) => s.presenting);
   // Leaving the board mid-presentation must not leave the chrome hidden for the next board.
   useEffect(() => () => stopPresenting(editor), [editor]);
-  return presenting ? <PresenterOverlay editor={editor} /> : <AudienceOverlay editor={editor} />;
+  return presenting ? <PresenterOverlay editor={editor} /> : null;
 }
 
 export default [
   definePanel({ id: 'present.button', slot: 'topbar-right', order: 80, Component: PresentButton }),
   definePanel({ id: 'present.overlay', slot: 'screen-overlay', order: 80, Component: Overlay }),
+  // In the top-center column with other session bars (an active vote), so they never overlap.
+  definePanel({ id: 'present.banner', slot: 'top-center', order: 10, Component: AudienceOverlay }),
 ];
 
