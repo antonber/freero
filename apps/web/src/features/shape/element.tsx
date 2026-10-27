@@ -2,7 +2,7 @@ import { memo, useMemo } from 'react';
 import type { ShapeElement } from '@freero/shared';
 import { defineElement, ElementText, richTextToPlain, type ElementRenderProps, type NewElement } from '@engine';
 import { anchorOnOutline, hitShape, insetPaths, textBox } from './lib/geometry';
-import { DEFAULT_SIZE, OUTLINE_TOLERANCE } from './lib/constants';
+import { DEFAULT_SIZE } from './lib/constants';
 import { shapeDefaults } from './lib/actions';
 import './shape.css';
 
@@ -69,10 +69,11 @@ export default defineElement({
   }),
   Component: ShapeView,
   toPlainText: (el) => richTextToPlain(el.text),
-  hitTest(el, local) {
+  // Unfilled outlines are thin targets: half the stroke plus the engine's screen tolerance.
+  hitTest(el, local, { tolerance }) {
     return hitShape(el.shape, el.w, el.h, local, {
       filled: el.fill !== 'transparent' && el.fillOpacity > 0.02,
-      tolerance: Math.max(OUTLINE_TOLERANCE, el.strokeWidth / 2 + 3),
+      tolerance: el.strokeWidth / 2 + tolerance,
       hasText: !!el.text && !!richTextToPlain(el.text).trim(),
     });
   },

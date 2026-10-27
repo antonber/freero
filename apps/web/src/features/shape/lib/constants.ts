@@ -4,8 +4,6 @@ export const TOOL_ID = 'shape';
 export const DEFAULT_SIZE = 120;
 /** Below this drag distance (screen px) a press counts as a click. */
 export const CLICK_SLOP_PX = 4;
-/** Outline hit tolerance in world units for unfilled shapes. */
-export const OUTLINE_TOLERANCE = 6;
 
 export const SHAPE_KINDS: Array<{ kind: ShapeKind; label: string }> = [
   { kind: 'rect', label: 'Rectangle' },
