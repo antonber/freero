@@ -1,0 +1,208 @@
+/* Shape element: crisp SVG outline (stroke kept inside the bounds) + text area. */
+.fr-shape {
+  position: absolute;
+  inset: 0;
+}
+
+.fr-shape__svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+}
+
+.fr-shape__text {
+  position: absolute;
+}
+
+/* Ghost following the cursor while the Shapes tool is armed. */
+.fr-shape-ghost {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
+  fill: rgba(91, 63, 240, 0.06);
+  stroke: var(--fr-primary);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-dasharray: 6 5;
+  opacity: 0.75;
+}
+
+/* Tool flyout + kind switcher grid */
+.fr-shape-picker {
+  display: grid;
+  grid-template-columns: repeat(4, 36px);
+  gap: 4px;
+}
+
+.fr-shape-picker--popover {
+  grid-template-columns: repeat(7, 36px);
+}
+
+.fr-shape-picker__item {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--fr-radius-sm);
+  background: transparent;
+  color: var(--fr-ink-2);
+  cursor: pointer;
+}
+
+.fr-shape-picker__item:hover {
+  background: var(--fr-hover, var(--fr-surface-3));
+  color: var(--fr-ink);
+}
+
+.fr-shape-picker__item.is-active {
+  background: var(--fr-primary-soft);
+  color: var(--fr-primary);
+}
+
+.fr-shape-picker__item:focus-visible {
+  outline: 2px solid var(--fr-primary);
+  outline-offset: 1px;
+}
+
+/* Format toolbar buttons */
+.fr-shape-tb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--fr-radius-sm);
+  background: transparent;
+  color: var(--fr-ink-2);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.fr-shape-tb:hover,
+.fr-shape-tb[aria-expanded='true'] {
+  background: var(--fr-hover, var(--fr-surface-3));
+  color: var(--fr-ink);
+}
+
+.fr-shape-tb--text {
+  min-width: 52px;
+  justify-content: space-between;
+}
+
+.fr-shape-dot {
+  display: block;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(23, 22, 43, 0.16);
+}
+
+.fr-shape-dot--ring {
+  background: transparent;
+  border: 4px solid var(--fr-ink);
+  box-shadow: 0 0 0 1px rgba(23, 22, 43, 0.1);
+}
+
+.fr-shape-dot.is-transparent {
+  background:
+    linear-gradient(135deg, transparent 45%, var(--fr-danger) 45%, var(--fr-danger) 55%, transparent 55%),
+    var(--fr-surface);
+  border-color: transparent;
+}
+
+.fr-shape-dot.is-mixed {
+  background: conic-gradient(#ffa9a0 0 25%, #b5d6ff 0 50%, #c2efb0 0 75%, #fff3a3 0);
+  border-color: transparent;
+}
+
+.fr-shape-dot--ring.is-mixed {
+  border-color: transparent;
+  background:
+    radial-gradient(circle, var(--fr-surface) 0 38%, transparent 40%),
+    conic-gradient(#ffa9a0 0 25%, #b5d6ff 0 50%, #c2efb0 0 75%, #fff3a3 0);
+}
+
+.fr-shape-a {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--fr-ink);
+}
+
+.fr-shape-a .fr-shape-dot {
+  width: 16px;
+  height: 4px;
+  margin-top: 2px;
+  border-radius: 2px;
+}
+
+.fr-shape-pop {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 2px;
+}
+
+.fr-shape-pop__label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fr-ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: -4px;
+}
+
+.fr-shape-sizes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fr-shape-sizes__list {
+  display: flex;
+  flex-direction: column;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.fr-shape-sizes__item {
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--fr-radius-sm);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--fr-ink);
+}
+
+.fr-shape-sizes__item:hover {
+  background: var(--fr-hover, var(--fr-surface-3));
+}
+
+.fr-shape-sizes__item.is-active {
+  background: var(--fr-primary-soft);
+  color: var(--fr-primary);
+  font-weight: 600;
+}
+
+.fr-shape-link {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
