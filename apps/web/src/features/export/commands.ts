@@ -1,29 +1,33 @@
+import { Copy, FileDown, ImageDown } from 'lucide-react';
 import { defineCommands } from '@engine';
 import { copySelectionAsImage } from './lib/exporters';
-import { openExportDialog } from './lib/store';
+import { EXPORT_DIALOG } from './lib/dialog';
 
 // Exporting never writes the board, so viewers can do it too.
 export default defineCommands([
   {
     id: 'export.image',
+    icon: ImageDown,
     label: 'Export board as image…',
     menus: ['board'],
     minRole: 'viewer',
-    run() {
-      openExportDialog('image');
+    run(editor) {
+      editor.openPanel(EXPORT_DIALOG, { kind: 'image' });
     },
   },
   {
     id: 'export.pdf',
+    icon: FileDown,
     label: 'Export frames as PDF…',
     menus: ['board'],
     minRole: 'viewer',
-    run() {
-      openExportDialog('pdf');
+    run(editor) {
+      editor.openPanel(EXPORT_DIALOG, { kind: 'pdf' });
     },
   },
   {
     id: 'export.copyImage',
+    icon: Copy,
     label: 'Copy selection as image',
     menus: ['board', 'context'],
     minRole: 'viewer',

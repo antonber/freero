@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FileDown, ImageDown } from 'lucide-react';
-import { definePanel, type Editor } from '@engine';
+import { definePanel, type Editor, type PanelProps } from '@engine';
 import { Button, Modal, SegmentedControl, Toggle } from '@ui';
 import {
   LARGE_BOARD,
@@ -14,10 +14,9 @@ import {
 } from './lib/exporters';
 import { exportFileName } from './lib/files';
 import { buildFramesPdf, framesInPageOrder, type PageSize } from './lib/pdf';
-import { openExportDialog, useExportDialog } from './lib/store';
+import { EXPORT_DIALOG, type ExportKind } from './lib/dialog';
 import './export.css';
 
-const close = () => openExportDialog(null);
 
 function Progress({ label, value }: { label: string; value?: number }) {
   return (
@@ -43,6 +42,7 @@ function Row({ label, children, hint }: { label: string; children: React.ReactNo
 }
 
 function ImageDialog({ editor }: { editor: Editor }) {
+  const close = () => editor.closePanel(EXPORT_DIALOG);
   const [format, setFormat] = useState<ImageFormat>('png');
   const [scale, setScale] = useState<'1' | '2' | '3'>('2');
   const [background, setBackground] = useState(true);
@@ -152,6 +152,7 @@ function ImageDialog({ editor }: { editor: Editor }) {
 }
 
 function PdfDialog({ editor }: { editor: Editor }) {
+  const close = () => editor.closePanel(EXPORT_DIALOG);
   const frames = useMemo(() => framesInPageOrder(boardFrames(editor)), [editor]);
   const [chosen, setChosen] = useState<Set<string>>(() => new Set(frames.map((f) => f.id)));
   const [pageSize, setPageSize] = useState<PageSize>('fit');
@@ -270,19 +271,14 @@ function PdfDialog({ editor }: { editor: Editor }) {
   );
 }
 
-function ExportDialogs({ editor }: { editor: Editor }) {
-  const open = useExportDialog((s) => s.open);
-  // Leaving the board closes any open dialog.
-  useEffect(() => close, []);
-  if (open === 'image') return <ImageDialog editor={editor} />;
-  if (open === 'pdf') return <PdfDialog editor={editor} />;
-  return null;
+function ExportDialog({ editor, props }: PanelProps) {
+  return (props?.kind as ExportKind | undefined) === 'pdf' ? <PdfDialog editor={editor} /> : <ImageDialog editor={editor} />;
 }
 
 export default definePanel({
-  id: 'export.dialogs',
-  slot: 'screen-overlay',
+  id: EXPORT_DIALOG,
+  slot: 'dialog',
   order: 90,
   minRole: 'viewer',
-  Component: ExportDialogs,
+  Component: ExportDialog,
 });

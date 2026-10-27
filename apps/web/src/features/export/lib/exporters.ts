@@ -7,10 +7,8 @@ import type { PdfFrame } from './pdf';
 export type ImageFormat = 'png' | 'jpeg' | 'svg';
 export type ImageScope = 'board' | 'selection' | 'visible';
 
-/** Padding around ids/whole-board exports (world px). */
+/** Padding around ids/whole-board exports (world px), outside what elements draw (frame titles included). */
 export const EXPORT_PADDING = 32;
-/** Frames draw their title above their box (outside its bounds); leave room for it. */
-export const FRAME_PADDING = 64;
 /** The engine caps a rendered side at this many pixels. */
 export const MAX_SIDE_PX = 8192;
 /** Above this many items we warn that rendering takes a moment. */
@@ -37,9 +35,10 @@ export function scopeInfo(editor: Editor, scope: ImageScope): ScopeInfo {
   }
   const ids = scope === 'selection' ? editor.getSelection() : undefined;
   if (ids && !ids.length) return { count: 0, rect: null, request: { ids } };
-  const b = editor.getBounds(ids);
+  // Visual bounds: what elements draw outside their box (frame titles) is in the picture too.
+  const b = editor.getBounds(ids, { visual: true });
   const els = ids ? ids.map((id) => editor.getElement(id)).filter(Boolean) : editor.getElements();
-  const pad = els.some((e) => e!.type === 'frame') ? FRAME_PADDING : EXPORT_PADDING;
+  const pad = EXPORT_PADDING;
   const rect = b && { x: b.x - pad, y: b.y - pad, w: b.w + pad * 2, h: b.h + pad * 2 };
   return { count: els.length, rect, request: { ids, padding: pad } };
 }
