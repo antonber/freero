@@ -25,10 +25,12 @@ Contributors — human or agent — usually see a narrow slice of the code, so t
 
 ## Stack
 
-- npm workspaces. Node 22 (built-in `node:sqlite`, no native deps). `npm run dev` starts both apps.
+- npm workspaces. Node 22, no native deps. `npm run dev` starts both apps (no Docker needed).
 - `packages/shared` — pure types/constants shared by client + server (no imports). Element model
   (`elements.ts`), Yjs doc layout + presence (`ydoc.ts`), REST/WS contract (`api.ts`).
-- `apps/server` — Express 4 + `ws` + Yjs (y-protocols), SQLite, run with `tsx`. Port 4000.
+- `apps/server` — Express 4 + `ws` + Yjs (y-protocols), PostgreSQL, run with `tsx`. Port 4000.
+  Database: `pg` against `DATABASE_URL`; without it PGlite (Postgres in WASM, in-process) under
+  `<FREERO_DATA_DIR>/pg`, or in memory with `FREERO_DATA_DIR=memory` (tests). Same SQL everywhere.
 - `apps/web` — Vite 5 + React 18 + TS, react-router 6, zustand 4, yjs + y-websocket 2,
   lucide-react, perfect-freehand, dompurify, html-to-image + jspdf. Dev on 5173, proxies
   `/api`, `/uploads`, `/ws` to :4000.
@@ -100,7 +102,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | feature collection (e.g. `comments`) | the feature whose `feature.ts` `owns` it | `editor.runCommand` of the owner. Writes from a non-owner throw at runtime [W8 checks unique claims] |
 | camera, selection, active tool, dock | engine | `editor.setCamera/select/setTool/openDock` |
 | presence ext | each feature writes `ext[<its name>]` only | — |
-| SQLite table | the server module whose `schema.sql` creates it; only its `repo.ts` writes it [S4] | that module's exported functions |
+| Database table | the server module whose `migrations/` create it; only its `repo.ts` writes it, only its migrations alter it [S4] | that module's exported functions |
 | auth session cookie | server `modules/auth` | — |
 
 ### Host — the one typed contract between app and engine
@@ -276,6 +278,70 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
   left }`): tagged stickies keep their chip band free.
 - The active tool's Options flyout is kept inside the window by the engine.
 
+Canvas productivity (engine primitives; the product UI lives in `features/arrange`, `find`,
+`layers`, `format-painter`, `select-similar`):
+- `Editor.moveBy([{ id, dx, dy }])`: programmatic moves with drag semantics — connector endpoints
+  and waypoints move, a container's children travel with it, locked items stay put, moved items
+  join/leave frames by the drop rule. Align / distribute / tidy up use it inside
+  `beginGesture()/endGesture()`, so each action is exactly one undo step (never merged with an
+  action a moment earlier by Yjs' capture window).
+- "Hidden for me": `Editor.setViewHidden(ids, hidden)` / `getViewHidden()` / hook
+  `useViewHidden()`. A LOCAL view filter (not synced, not saved, any role): hidden ids, and
+  everything inside a hidden frame, behave like `ElementDefinition.hidden` elements for this
+  viewer only (not drawn, hit-tested, selectable; dropped from the selection). Exports and the
+  dashboard thumbnail still include them (they are board content). Chosen over a synced `hidden`
+  flag because content vanishing for collaborators without a trace is not what whiteboard users
+  expect; the Layers panel says "N hidden for you only · Show all". Not in `@freero/shared`.
+- `BoardSettings.gridSize` (8–48, default 24) and `snapToGrid` (board menu). The drawn grid uses
+  `gridSize`; with snapping on it never subdivides below it, so every drawn line is a snap line.
+  Moves snap the top-left, resizes the dragged edges; Ctrl/⌘ held during a drag inverts the
+  setting for that drag; Alt still disables all snapping.
+- Snapping (`engine/geometry/snap.ts`) adds equal spacing: a dragged box snaps so its gap to a
+  neighbour in the same row/column equals a gap already in that row/column (or centers it between
+  two neighbours), whichever is closer than edge/center alignment, and draws distance markers on
+  every matching gap (`UiState.gaps`).
+- Keyboard: a burst of arrow-key nudges is one undo step (closes after 1 s idle, any other key,
+  a pointer press or blur). Tab / Shift+Tab from the canvas walks items in reading order when no
+  command or element `onKeyDown` claims Tab; once walking, it continues past Tab-claiming types
+  (a sticky's "add to the right" applies to stickies the user picked, not ones Tab reached).
+  Escape walks out: editing → group member → whole group → nothing.
+- `replaceInRichText(html, find, replacement, { caseSensitive? }) → { html, count }` (`@engine`):
+  replaces in rich text's text only, keeping tags; an occurrence split by formatting is skipped.
+- Format toolbar: Group / Ungroup buttons for multi-selections; a locked member gets a lock badge
+  and the Lock button a dot when only some items are locked.
+
+Content (engine primitives; product UI in `features/table`, `embed`, `connector`, `sticky`, `eraser`):
+- Text PARTS — elements with several texts: `ElementDefinition.textPartAt(el, local, { editor,
+  zoom }) → part | null` names the text under a point; double-click there (or a click on the
+  selected element) runs `Editor.startEditing(id, { part })`. `getEditingPart()` / hook
+  `useEditingPart()`. The component renders each part with `<ElementText part value onCommit>`:
+  it shows `value` and writes through `onCommit` (e.g. into the feature's collection) instead of
+  `element[field]`; `onKeyDown(e, { atStart, atEnd })` sees keys first (Tab / arrows between
+  table cells). Switching part ends the previous edit session (one undo step per part).
+  `removeWhenEmpty` never applies to parts. Table cells and extra connector labels use it.
+- `FeatureManifest.undoable: string[]` — owned collections whose local writes join the undo
+  history (same gestures / steps as element writes). For content that belongs to elements
+  (`tableCells`); never for social data (comments, votes).
+- `ElementDefinition.copyContent(el, editor)` / `pasteContent(copy, content, editor)` — content
+  kept outside the elements map travels with copy / cut / paste (inside the clipboard payload,
+  `ClipboardPayload.content`), duplicate and Alt-drag; `pasteContent` runs in the transaction that
+  creates the copy, so a copy never shares or loses it and one undo removes both.
+- Space: a tap first goes to the selected types' `onKeyDown` (mind map: collapse); unclaimed, held
+  Space pans as before.
+- `Host.unfurl(url) → LinkPreview` (server route `GET /api/unfurl`, module `modules/unfurl`, no
+  table): the server fetches the page — http/https on default ports only, no credentials, every
+  hop (redirects included) resolved through a lookup that refuses private / loopback / link-local /
+  CGNAT / multicast addresses at connect time, 1.5 MB / 2 MB caps, 6 s deadlines, per-user rate
+  limit — and returns title / description / site name and the preview image as a data: URL. The
+  embed feature re-hosts that image with `Host.uploadImage`, so viewers and exports never load
+  third-party URLs. Video players (YouTube / Vimeo / Loom) only on `EMBED_FRAME_ORIGINS`
+  (`@freero/shared`), which the CSP `frame-src` allows; iframes are sandboxed, mounted only after a
+  click, and never exported (exports render a fresh component that shows the card).
+- Pasted text is routed by importer priority, never by features importing each other: table
+  (20: TSV / consistent CSV) → embed (10: exactly one URL) → sticky (5: a list — mostly bulleted /
+  numbered lines, or short lines that don't read as a wrapped paragraph, or `<li>`s in the HTML —
+  and any text while stickies are selected) → text box (0: prose).
+
 ## UI kit (`ui/`) — exports from `@ui`
 
 `Button` {variant: 'primary'|'secondary'|'ghost'|'danger', size: 'sm'|'md'|'lg', icon?, loading?} ·
@@ -299,17 +365,20 @@ take Escape first (cancel the edit, `preventDefault`); the next Escape closes th
 main.ts            Composition root. Discovers modules/* by reserved files at startup (readdir) —
                    no hand-maintained module list.
 platform/          Framework: config, db connection + migration runner, http app factory, error
-                   handling, ws upgrade dispatch. NEVER imports modules/.                     [S1]
+                   handling, ws upgrade dispatch, logging/metrics/health, security, rate limits,
+                   Redis, object storage. NEVER imports modules/.                             [S1]
 modules/<name>/    auth, boards, members, uploads, realtime …
   index.ts         public API; other modules import only this                                 [S2]
-  schema.sql       reserved: tables this module OWNS
+  migrations/      reserved: <YYYYMMDDHHMM>_<snake_name>.sql — Postgres DDL creating/altering the
+                   tables this module OWNS. Applied once each at startup, in global timestamp
+                   order across modules                                                   [S4]
   repo.ts          the only file that touches the db; the only writer of the owned tables     [S3][S4]
   routes.ts        reserved: export default (ctx) => express.Router, mounted at /api
                    (optional `export const mountPath = '/'` to mount elsewhere — uploads uses it
                    for GET /uploads/:file)
   ws.ts            reserved: export default (ctx) => WsRoute | WsRoute[]  ({ prefix, handle(ws, req) })
   init.ts          reserved: export default (ctx) => void | Promise<void>; runs once after all
-                   schemas are applied and routes mounted, before listen (e.g. auth seeds the
+                   migrations are applied and routes mounted, before listen (e.g. auth seeds the
                    demo user in non-production and purges expired sessions)
 ```
 
@@ -317,8 +386,77 @@ modules/<name>/    auth, boards, members, uploads, realtime …
 Cross-module imports name the index file explicitly (`'../auth/index'`), which is what [S2] checks.
 Auth is a plain middleware exported by `modules/auth/index.ts` (`requireUser`, `currentUser(req)`),
 not a reserved hook. Server modules today: `auth` (users, sessions), `boards` (boards, stars,
-opens), `members` (board_members, role resolution), `uploads` (files under `<data>/uploads`, no
-table), `realtime` (board_docs; y-websocket protocol + role filter).
+opens), `members` (board_members, role resolution), `uploads` (uploads; files in object storage or
+`<data>/uploads`), `realtime` (board_docs; y-websocket protocol + role filter), `unfurl` (link
+previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`).
+
+### Database (`platform/db.ts`)
+
+- One async API for both drivers: `query<T>(sql, params) → rows`, `one<T>(…) → row | null`,
+  `exec(sql)` (multi-statement, no params), `tx(fn)`. Placeholders are `$1, $2, …`. Only `repo.ts`
+  files (and platform/, main.ts) import it [S3]. Module tests use `platform/testing.ts`
+  (`openTestDb()`: in-memory PGlite with every migration applied) — never the db directly.
+- Types: ids/text `text`, instants `timestamptz` (repos convert to/from epoch ms: `new Date(ms)`
+  in, `.getTime()` out), counters `bigint` (read as JS numbers), binary `bytea` (Yjs state).
+- `tx(fn)`: every query run while `fn` runs — through the handle it gets OR any repo's module-level
+  `query` — joins the transaction, so a service can make several modules' writes atomic (boards'
+  duplicate = board row + realtime's doc row). Rule: never await, inside `fn`, work that was
+  started outside it and queries the db (on PGlite, one connection, that deadlocks) — read first,
+  then open the transaction (see `duplicateBoard`).
+- Every route/service is async; express handlers go through `handle(async (req, res) => …)`. The
+  shape of reserved files does not change. Async opens races the sync driver hid: write single
+  statements instead of read-modify-write (`UPDATE … SET x = COALESCE($2, x)`), let constraints
+  decide uniqueness (map `isUniqueViolation(e, '<constraint>')` to the 409 you would have sent),
+  and treat `isForeignKeyViolation` as "the parent was deleted meanwhile" (404).
+- Ownership: child tables reference their parent with `ON DELETE CASCADE` (deleting a board
+  removes its members, stars, opens and doc); add an index for every column a repo looks up by.
+- Migrations are immutable once applied: the server refuses to start if an applied file changed
+  (checksum; CRLF/LF does not count). Fix forward with a new, later file. Startup applies all
+  pending ones in ONE transaction under a Postgres advisory lock, so several instances can start
+  at once; a failing migration leaves nothing behind. [S4] checks that a migration only
+  ALTERs/DROPs/indexes/writes its own module's tables and REFERENCES only tables created by an
+  earlier migration.
+- Startup fails fast (before listening) with a plain message when Postgres is unreachable, a
+  migration fails, or another process already uses the PGlite directory (`<dir>.lock`). Graceful
+  shutdown: stop sockets → `ctx.shutdown()` (realtime saves every loaded doc) → close the pool.
+- Old dev data: `npm run db:import-sqlite` copies a pre-Postgres `data/freero.db` into the
+  current database (idempotent; never modifies the SQLite file).
+
+### Platform services (production foundation)
+
+Configuration, deployment and operations are documented in `docs/` (configuration, deployment,
+operations). What a module needs to know:
+
+- **Config** (`platform/config.ts`): the only reader of `process.env`. New setting = a typed field
+  validated in `loadConfig` + a row in `docs/configuration.md` + `.env.example`. Modules read it
+  through `ctx.config` / `getConfig()`.
+- **Every request** already gets: a request id (`X-Request-Id`), one structured log line
+  (`platform/requestLog.ts`), a latency observation, security headers + CSP
+  (`platform/security.ts`), the CSRF origin check on non-GET requests, the per-IP `api` rate
+  limit and the JSON body limit. `requireUser` records the user (`setRequestUser`), so logs and
+  per-user limits know who asked. Log with `log`/`logError` (`platform/log.ts`, pino); never log
+  request bodies, cookies or tokens.
+- **Rate limits** (`platform/rateLimit.ts`): `rateLimit('<name>', 'ip' | 'user')` on a route (put
+  `'user'` limits after `requireUser`), or `await consumeRateLimit(name, key)` for other keys
+  (login also limits per email). Names and defaults live in config (`RATE_LIMIT_<NAME>`); a new
+  abuse-prone endpoint (password reset, invites by email, exports) adds a name there and uses it.
+  429 + `Retry-After` comes for free.
+- **Files** go through `platform/storage.ts` (`storage().put/get/delete`: S3 or local disk), and
+  only `modules/uploads` uses it; other modules call `saveUpload`/`deleteUpload`. Board content
+  always references `/uploads/<key>`, whatever the backend.
+- **Metrics** (`platform/metrics.ts`): `histogram`/`counter`/`gaugeFn` register module metrics
+  (`freero_<module>_…`; see `realtime/metrics.ts`). Readiness of a new external dependency:
+  `addReadinessCheck(name, fn)` (`platform/health.ts`).
+- **Shutdown**: SIGTERM → `/readyz` 503 for `SHUTDOWN_DRAIN_SECONDS` → sockets closed →
+  `ctx.onShutdown` hooks → Redis/DB closed; a watchdog exits after 20 s more.
+
+### Realtime ordering rules (`realtime/rooms.ts`)
+
+A socket's messages are queued from the upgrade on and replayed when it joins (auth, access and
+the doc load are async; y-websocket sends sync step 1 immediately). A room loads its doc once;
+sockets arriving meanwhile wait for that load. Saves of one room are serialized. A room unloads
+only when nobody is in it, joining it or saving it. Deleting a board first closes its room and
+waits for in-flight saves. Access refreshes are serialized (the last reflects the latest state).
 
 Trust boundaries in `realtime`: presence from a socket may only write the awareness client ids
 that socket announced, and its `user` is always replaced by the authenticated user's profile
@@ -331,7 +469,9 @@ that socket announced, and its `user` is always replaced by the authenticated us
 - `npm run check` — boundaries + typecheck + unit tests. Must pass before any change is "done".
 - `npm run verify` — real-session end-to-end check (`scripts/verify.mjs`): boots the server on a temp
   data dir, signs up real users, creates a board, connects real Yjs WebSocket clients and checks
-  sync, roles, persistence across restart. No fake harness.
+  sync, roles, persistence across restart. No fake harness. Runs on PGlite by default; with
+  `DATABASE_URL` it runs against that Postgres (fresh database per run, dropped afterwards) and
+  also starts two instances at once on one empty database (migration lock). CI does both.
 - UI: drive the real app in a browser (see `.claude/skills/verify-freero/`).
 
 ### What a test is for

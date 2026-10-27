@@ -33,9 +33,17 @@ Production:
 
 ```bash
 npm run build && npm start     # serves the built web app from the server on :4000
+docker compose up --build -d   # or the full stack: proxy, 2 app replicas, Postgres, Redis, MinIO, Mailpit on :8080
 ```
 
-Configuration: `PORT` (default 4000), `FREERO_DATA_DIR` (default `./data` — SQLite db + uploads).
+Deploying for real: [docs/deployment.md](docs/deployment.md) · every setting:
+[docs/configuration.md](docs/configuration.md) · backups, monitoring, incidents:
+[docs/operations.md](docs/operations.md).
+
+Configuration: `PORT` (default 4000), `FREERO_DATA_DIR` (default `./data` — the built-in PGlite
+database in `data/pg` + uploads), `DATABASE_URL` (use a real Postgres instead), `DATABASE_POOL_MAX`
+(default 10). Had boards from before the move to Postgres? Stop the dev server and run
+`npm run db:import-sqlite` once.
 
 ## Develop
 
@@ -51,5 +59,5 @@ features are isolated folders discovered by reserved file names, every piece of 
 writer, and forbidden dependencies fail `npm run check` with an error that names the supported
 path. Read [ARCHITECTURE.md](ARCHITECTURE.md) before changing code.
 
-Stack: React 18 + TypeScript + Vite, Yjs (CRDT) over WebSockets, Express + `ws`, SQLite
-(`node:sqlite`), Playwright for UI verification.
+Stack: React 18 + TypeScript + Vite, Yjs (CRDT) over WebSockets, Express + `ws`, PostgreSQL
+(`pg`; PGlite for dev/tests), Playwright for UI verification.
