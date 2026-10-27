@@ -1,13 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronLeft, ChevronRight, Eye, MonitorPlay, Users, X } from 'lucide-react';
-import { definePanel, useElements, usePeers, type Editor } from '@engine';
+import { definePanel, useElements, useFollowing, usePeers, type Editor } from '@engine';
 import { Avatar, Button, IconButton, Menu } from '@ui';
 import { activePresenter, currentPosition, navKey, readExt, slides } from './lib/model';
 import {
-  bringEveryone,
   goTo,
-  jumpToViewport,
-  mirror,
   presentStore,
   refit,
   startPresenting,
@@ -121,7 +118,7 @@ function PresenterOverlay({ editor }: { editor: Editor }) {
           </>
         )}
         <span className="fr-present-bar__sep" />
-        {others > 0 && <IconButton icon={Users} label="Bring everyone to me" size={32} onClick={() => bringEveryone(editor)} />}
+        {others > 0 && <IconButton icon={Users} label="Bring everyone to me" size={32} onClick={() => editor.runCommand('presence.bringEveryone')} />}
         <Button size="sm" variant="ghost" icon={X} className="fr-present-bar__exit" onClick={() => stopPresenting(editor)}>
           Exit
         </Button>
@@ -131,95 +128,51 @@ function PresenterOverlay({ editor }: { editor: Editor }) {
 }
 
 // ---------------------------------------------------------------- everyone else
-/** Banner "<Name> is presenting", following, and "Bring everyone to me" for non-presenters. */
+/**
+ * Banner "<Name> is presenting · Follow · Dismiss" for everyone else. Following is the one engine
+ * follow (Editor.follow, the same as following someone from the avatars): while you follow the
+ * presenter, presence's "Following <name>" pill replaces this banner.
+ */
 function AudienceOverlay({ editor }: { editor: Editor }) {
   const peers = usePeers();
   const presenting = usePresent(editor, (s) => s.presenting);
-  const following = usePresent(editor, (s) => s.following);
   const dismissed = usePresent(editor, (s) => s.dismissed);
+  const following = useFollowing();
   const presenter = activePresenter(peers, editor.user.id);
   const pres = presenter ? readExt(presenter).presenting : null;
   const sessionKey = presenter && pres ? `${presenter.clientId}:${pres.startedAt}` : null;
-  const followed = following !== null ? peers.find((p) => p.clientId === following) : undefined;
-  const followedPres = followed ? readExt(followed).presenting : null;
   const store = presentStore(editor);
 
-  // Follow: mirror the presenter's slide whenever it changes.
-  const expectCameraUntil = useRef(0);
-  const followedFrame = followedPres ? followedPres.frameId : undefined;
+  // Started following from this banner: when that presentation ends, hand the camera back.
+  const followedFor = useRef<{ key: string; userId: string; name: string } | null>(null);
   useEffect(() => {
-    if (!followed || followedFrame === undefined) return;
-    expectCameraUntil.current = performance.now() + 700;
-    mirror(editor, followed, followedFrame);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor, followed?.clientId, followedFrame]);
-
-  // The presenter stopped or left: stop following and say so.
-  useEffect(() => {
-    if (following === null || followedPres) return;
-    store.setState({ following: null });
-    editor.host.notify(followed ? `${followed.user.name} ended the presentation` : 'The presentation ended');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [following, !!followedPres]);
-
-  // Taking the camera yourself (pan, zoom) or pressing Esc stops following.
-  useEffect(() => {
-    if (following === null) return;
-    const stop = () => store.setState({ following: null });
-    const offCam = editor.on('camera', () => {
-      if (performance.now() > expectCameraUntil.current) stop();
-    });
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') stop();
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => {
-      offCam();
-      window.removeEventListener('keydown', onKey, true);
-    };
-  }, [editor, following, store]);
-
-  // "Bring everyone to me": jump once to the summoner's viewport for each new nonce. Nonces seen
-  // on first sight (issued before we joined) are recorded, not acted on.
-  const seen = useRef(new Map<number, string | null>());
-  useEffect(() => {
-    for (const p of peers) {
-      const nonce = readExt(p).summon?.nonce ?? null;
-      const known = seen.current.has(p.clientId);
-      const prev = seen.current.get(p.clientId) ?? null;
-      seen.current.set(p.clientId, nonce);
-      if (!known || !nonce || nonce === prev || presenting || p.user?.id === editor.user.id) continue;
-      expectCameraUntil.current = performance.now() + 700;
-      jumpToViewport(editor, p);
-      editor.host.notify(`${p.user.name} brought everyone to their view`);
+    const f = followedFor.current;
+    if (!f) return;
+    if (following?.userId !== f.userId) followedFor.current = null; // you stopped or followed someone else
+    else if (sessionKey !== f.key) {
+      followedFor.current = null;
+      editor.follow(null);
+      editor.host.notify(`${f.name} ended the presentation`);
     }
-  }, [editor, peers, presenting]);
+  }, [editor, following, sessionKey]);
 
-  if (presenting || !presenter || !pres) return null;
-  if (following === presenter.clientId) {
-    return (
-      <div className="fr-present-banner is-following" data-fr-interactive="" role="status">
-        <Avatar name={presenter.user.name} color={presenter.user.color} src={presenter.user.avatarUrl ?? undefined} size={24} />
-        <span>
-          Following <strong>{presenter.user.name}</strong>
-        </span>
-        <Button size="sm" variant="ghost" onClick={() => store.setState({ following: null })}>
-          Stop
-        </Button>
-      </div>
-    );
-  }
-  if (sessionKey && dismissed.includes(sessionKey)) return null;
+  if (presenting || !presenter || !pres || !sessionKey) return null;
+  if (following?.userId === presenter.user.id) return null;
+  if (dismissed.includes(sessionKey)) return null;
+  const follow = () => {
+    followedFor.current = { key: sessionKey, userId: presenter.user.id, name: presenter.user.name };
+    editor.follow({ userId: presenter.user.id, clientId: presenter.clientId });
+  };
   return (
     <div className="fr-present-banner" data-fr-interactive="" role="status">
       <Avatar name={presenter.user.name} color={presenter.user.color} src={presenter.user.avatarUrl ?? undefined} size={24} />
       <span>
         <strong>{presenter.user.name}</strong> is presenting
       </span>
-      <Button size="sm" variant="primary" icon={Eye} onClick={() => store.setState({ following: presenter.clientId })}>
+      <Button size="sm" variant="primary" icon={Eye} onClick={follow}>
         Follow
       </Button>
-      <Button size="sm" variant="ghost" onClick={() => sessionKey && store.setState({ dismissed: [...dismissed, sessionKey] })}>
+      <Button size="sm" variant="ghost" onClick={() => store.setState({ dismissed: [...dismissed, sessionKey] })}>
         Dismiss
       </Button>
     </div>

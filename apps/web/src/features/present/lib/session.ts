@@ -2,7 +2,7 @@
 import { createStore, useStore, type StoreApi } from 'zustand';
 import type { FrameElement } from '@freero/shared';
 import type { Editor, Rect } from '@engine';
-import { currentPosition, slides, type Peer, type PresentExt } from './model';
+import { currentPosition, slides, type PresentExt } from './model';
 
 export interface PresentState {
   presenting: boolean;
@@ -10,8 +10,6 @@ export interface PresentState {
   frameId: string | null;
   /** Last known position, used when the current frame is deleted mid-presentation. */
   position: number;
-  /** Client id of the presenter this user follows, if any. */
-  following: number | null;
   /** Presentations (`clientId:startedAt`) whose banner this user dismissed. */
   dismissed: string[];
 }
@@ -21,7 +19,7 @@ const stores = new Map<string, StoreApi<PresentState>>();
 export function presentStore(editor: Editor): StoreApi<PresentState> {
   let s = stores.get(editor.boardId);
   if (!s) {
-    s = createStore<PresentState>(() => ({ presenting: false, frameId: null, position: 0, following: null, dismissed: [] }));
+    s = createStore<PresentState>(() => ({ presenting: false, frameId: null, position: 0, dismissed: [] }));
     stores.set(editor.boardId, s);
   }
   return s;
@@ -71,7 +69,6 @@ export function startPresenting(editor: Editor, fromFrameId?: string | null) {
   editor.setChromeHidden(true);
   presentStore(editor).setState({
     presenting: true,
-    following: null,
     frameId: start?.id ?? null,
     position: start ? list.indexOf(start) : 0,
   });
@@ -107,24 +104,4 @@ export function step(editor: Editor, delta: number) {
 /** Re-fit the current slide (viewport resized). */
 export function refit(editor: Editor) {
   if (presentStore(editor).getState().presenting) showCurrent(editor, false);
-}
-
-export function bringEveryone(editor: Editor) {
-  publish(editor, { summon: { nonce: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}` } });
-  editor.host.notify('Everyone was brought to your view', 'success');
-}
-
-// ---- following a presenter
-
-/** Mirror a presenter's slide (or their viewport when they present a board without frames). */
-export function mirror(editor: Editor, presenter: Peer, frameId: string | null) {
-  const frame = frameId ? editor.getElement<FrameElement>(frameId) : undefined;
-  if (frame) return editor.zoomToRect(frame, { padding: FIT_PADDING, animate: true });
-  jumpToViewport(editor, presenter);
-}
-
-export function jumpToViewport(editor: Editor, peer: Peer) {
-  const v = peer.viewport;
-  if (!v || !v.zoom) return;
-  editor.zoomToRect({ x: v.x, y: v.y, w: v.width / v.zoom, h: v.height / v.zoom }, { padding: 0, animate: true });
 }

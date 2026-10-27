@@ -4,8 +4,6 @@ import type { BoardElement, FrameElement, PresenceState } from '@freero/shared';
 /** What the presenter publishes in PresenceState.ext.present. */
 export interface PresentExt {
   presenting?: { frameId: string | null; startedAt: number } | null;
-  /** "Bring everyone to me": a fresh nonce asks everyone to jump to this client's viewport once. */
-  summon?: { nonce: string } | null;
 }
 
 export type Peer = PresenceState & { clientId: number };
