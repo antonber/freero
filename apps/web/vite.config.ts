@@ -2,7 +2,8 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
 
-const server = 'http://localhost:4000';
+// FREERO_API_PORT lets several dev setups run side by side (e.g. parallel verification).
+const server = `http://localhost:${process.env.FREERO_API_PORT ?? 4000}`;
 const src = (p: string) => fileURLToPath(new URL(`./src/${p}`, import.meta.url));
 
 export default defineConfig({
