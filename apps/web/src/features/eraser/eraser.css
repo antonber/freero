@@ -44,3 +44,17 @@
   border: 1.5px solid currentColor;
   border-radius: 50%;
 }
+
+.fr-eraser-options {
+  flex-direction: column;
+}
+
+.fr-eraser-row {
+  display: flex;
+  gap: 2px;
+}
+
+.fr-eraser-row + .fr-eraser-row {
+  border-top: 1px solid var(--fr-line);
+  padding-top: 2px;
+}
