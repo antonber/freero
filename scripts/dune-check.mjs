@@ -276,7 +276,7 @@ function checkServerFile(file, tableOwners) {
     const t = serverLayer(abs);
     if (!t) continue;
     if (me.layer === 'platform' && t.layer === 'modules')
-      report('S1', file, line, `platform/ is the framework and never imports modules/. Expose a hook in platform and let the module register through a reserved file (routes.ts, ws.ts, schema.sql).`, spec);
+      report('S1', file, line, `platform/ is the framework and never imports modules/. Expose a hook in platform and let the module register through a reserved file (routes.ts, ws.ts, init.ts, migrations/).`, spec);
     if (me.layer === 'modules' && t.layer === 'modules' && t.module !== me.module && !/^index(\.ts)?$/.test(t.file))
       report('S2', file, line, `modules/${me.module} may use modules/${t.module} only through its public index.ts.`, spec);
     if (t.layer === 'platform' && /^db(\.ts)?$/.test(t.file) && !(me.layer === 'modules' && me.file === 'repo.ts') && me.layer !== 'platform' && me.layer !== 'root')
@@ -289,25 +289,100 @@ function checkServerFile(file, tableOwners) {
     if (!owner) continue;
     const line = src.slice(0, m.index).split('\n').length;
     if (!(me.layer === 'modules' && me.module === owner && me.file === 'repo.ts'))
-      report('S4', file, line, `Table '${table}' is owned by modules/${owner}; only modules/${owner}/repo.ts may write it. Call modules/${owner}'s exported functions.`);
+      report('S4', file, line, `Table '${table}' is owned by modules/${owner} (its migrations create it); only modules/${owner}/repo.ts may write it. Call modules/${owner}'s exported functions.`);
   }
 }
 
-function serverTableOwners() {
+const MIGRATION_FILE_RE = /^(\d{12})_([a-z0-9_]+)\.sql$/;
+const sqlName = String.raw`(?:"([^"]+)"|(\w+))`; // quoted or bare identifier
+const ident = (m, i) => (m[i] ?? m[i + 1]).toLowerCase();
+const stripSqlComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, (c) => ' '.repeat(c.length));
+
+/**
+ * Reads modules/<m>/migrations/*.sql. Table ownership = the module whose migration CREATEs it.
+ * Returns { owners: Map(table -> module), migrations: [{ module, file, abs, stamp, sql }] } in
+ * global apply order (timestamp, module, file) — the order platform/db.ts applies them.
+ */
+function serverMigrations() {
   const owners = new Map();
+  const migrations = [];
   const dir = path.join(SERVER, 'modules');
-  if (!fs.existsSync(dir)) return owners;
+  if (!fs.existsSync(dir)) return { owners, migrations };
   for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
     if (!ent.isDirectory()) continue;
-    const schema = path.join(dir, ent.name, 'schema.sql');
-    if (!fs.existsSync(schema)) continue;
-    for (const m of fs.readFileSync(schema, 'utf8').matchAll(/CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["`]?(\w+)/gi)) {
-      const t = m[1].toLowerCase();
-      if (owners.has(t)) report('S4', schema, 1, `Table '${t}' is already defined by modules/${owners.get(t)}.`);
-      owners.set(t, ent.name);
+    const legacy = path.join(dir, ent.name, 'schema.sql');
+    if (fs.existsSync(legacy))
+      report('S4', legacy, 1, `schema.sql is no longer applied. Put the DDL in modules/${ent.name}/migrations/<YYYYMMDDHHMM>_<name>.sql (Postgres).`);
+    const mdir = path.join(dir, ent.name, 'migrations');
+    if (!fs.existsSync(mdir)) continue;
+    for (const file of fs.readdirSync(mdir)) {
+      const abs = path.join(mdir, file);
+      const m = MIGRATION_FILE_RE.exec(file);
+      if (!m) {
+        report('S4', abs, 1, `Migration files are named <YYYYMMDDHHMM>_<snake_name>.sql (e.g. 202611011200_add_board_color.sql); the server refuses to start otherwise.`);
+        continue;
+      }
+      migrations.push({ module: ent.name, file, abs, stamp: m[1], sql: stripSqlComments(fs.readFileSync(abs, 'utf8')) });
     }
   }
-  return owners;
+  migrations.sort((a, b) => a.stamp.localeCompare(b.stamp) || a.module.localeCompare(b.module) || a.file.localeCompare(b.file));
+  const lineAt = (src, idx) => src.slice(0, idx).split('\n').length;
+  for (const mig of migrations) {
+    for (const m of mig.sql.matchAll(new RegExp(String.raw`\bCREATE\s+(?:UNLOGGED\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public\.)?${sqlName}`, 'gi'))) {
+      const t = ident(m, 1);
+      if (t.startsWith('_'))
+        report('S4', mig.abs, lineAt(mig.sql, m.index), `Table names starting with '_' are reserved for the platform (_migrations). Name it after your module's concept.`);
+      else if (owners.has(t) && owners.get(t) !== mig.module)
+        report('S4', mig.abs, lineAt(mig.sql, m.index), `Table '${t}' is already created by modules/${owners.get(t)}. Each table has one owning module; use that module's exported functions, or give yours a table of its own.`);
+      else owners.set(t, mig.module);
+    }
+  }
+  return { owners, migrations };
+}
+
+/**
+ * In migrations: a module may ALTER/DROP/index/write only its own tables, and may REFERENCE
+ * another module's table only if that table is created by an EARLIER migration (global order).
+ */
+function checkMigrations({ owners, migrations }) {
+  const createdBefore = new Set();
+  const lineAt = (src, idx) => src.slice(0, idx).split('\n').length;
+  const ownTable = (mig, t, idx, verb) => {
+    const owner = owners.get(t);
+    if (!owner)
+      report('S4', mig.abs, lineAt(mig.sql, idx), `${verb} table '${t}', which no migration creates. Create it in a migration of the module that owns it (modules/<owner>/migrations/).`);
+    else if (owner !== mig.module)
+      report('S4', mig.abs, lineAt(mig.sql, idx), `${verb} table '${t}', owned by modules/${owner}. Only the owner changes its tables: add the migration to modules/${owner}/migrations/ (and expose what you need from modules/${owner}/index.ts).`);
+  };
+  for (const mig of migrations) {
+    const q = mig.sql;
+    for (const m of q.matchAll(new RegExp(String.raw`\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?(?:public\.)?${sqlName}`, 'gi')))
+      ownTable(mig, ident(m, 1), m.index, 'ALTERs');
+    for (const m of q.matchAll(new RegExp(String.raw`\bDROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:public\.)?${sqlName}`, 'gi')))
+      ownTable(mig, ident(m, 1), m.index, 'DROPs');
+    for (const m of q.matchAll(new RegExp(String.raw`\bCREATE\s+(?:UNIQUE\s+)?INDEX\b[^;]*?\bON\s+(?:ONLY\s+)?(?:public\.)?${sqlName}`, 'gi')))
+      ownTable(mig, ident(m, 1), m.index, 'Indexes');
+    for (const m of q.matchAll(new RegExp(String.raw`\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(?:ONLY\s+)?(?:public\.)?${sqlName}`, 'gi'))) {
+      const t = ident(m, 1);
+      if (owners.has(t)) ownTable(mig, t, m.index, 'Writes');
+    }
+    // Tables this migration creates count as existing for its own REFERENCES.
+    const mine = [...q.matchAll(new RegExp(String.raw`\bCREATE\s+(?:UNLOGGED\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:public\.)?${sqlName}`, 'gi'))].map((m) => ident(m, 1));
+    for (const m of q.matchAll(new RegExp(String.raw`\bREFERENCES\s+(?:public\.)?${sqlName}`, 'gi'))) {
+      const t = ident(m, 1);
+      if (createdBefore.has(t) || mine.includes(t)) continue;
+      const owner = owners.get(t);
+      report(
+        'S4',
+        mig.abs,
+        lineAt(q, m.index),
+        owner
+          ? `REFERENCES '${t}' (modules/${owner}), which is created by a LATER migration. Migrations run in timestamp order across all modules: give this file a timestamp after the one that creates '${t}'.`
+          : `REFERENCES '${t}', which no migration creates.`,
+      );
+    }
+    for (const t of mine) createdBefore.add(t);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -324,8 +399,9 @@ function checkSharedFile(file) {
 for (const f of walk(WEB).filter(isCode)) checkWebFile(f);
 checkFeatureFolders();
 checkCssOwnership();
-const owners = serverTableOwners();
-for (const f of walk(SERVER).filter(isCode)) checkServerFile(f, owners);
+const schema = serverMigrations();
+checkMigrations(schema);
+for (const f of walk(SERVER).filter(isCode)) checkServerFile(f, schema.owners);
 for (const f of walk(SHARED).filter(isCode)) checkSharedFile(f);
 
 if (errors.length) {

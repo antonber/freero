@@ -1,11 +1,15 @@
 #!/usr/bin/env node
 // Real-session end-to-end check for the Freero server. Run: `npm run verify`.
 //
-// Boots the real server (npx tsx apps/server/src/main.ts) on a free port with a temporary data
-// dir, drives it over REST with real session cookies, connects real y-websocket clients and
+// Boots the real server (node --import tsx apps/server/src/main.ts) on a free port with a temporary
+// data dir, drives it over REST with real session cookies, connects real y-websocket clients and
 // checks sync, role enforcement, persistence across a restart, duplicate/delete, uploads and
 // list filters. No fakes. Prints PASS/FAIL per check, exits non-zero on any failure and always
 // kills the server.
+//
+// Database: PGlite under the temp data dir by default. With DATABASE_URL (any database on a real
+// Postgres server; its user needs CREATEDB), each run creates and finally drops its own databases
+// and also checks that two instances starting at once share the migrations safely.
 
 import { execSync, spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -74,7 +78,8 @@ function freePort() {
   });
 }
 
-let server = null; // { child, port, log: string[] }
+let server = null; // the main server: { child, port, log: string[] }
+const spawned = new Set(); // every server process, killed on exit
 
 function killTree(child) {
   if (!child || child.exitCode !== null || child.signalCode !== null) return;
@@ -86,45 +91,137 @@ function killTree(child) {
   }
 }
 
-async function startServer(dataDir) {
+/** Spawns a server process (node --import tsx, no shell, so signals reach it directly). */
+async function spawnServer(dataDir, env = {}) {
   const port = await freePort();
   const log = [];
-  const child = spawn('npx', ['tsx', 'apps/server/src/main.ts'], {
+  const child = spawn(process.execPath, ['--import', 'tsx', 'apps/server/src/main.ts'], {
     cwd: ROOT,
-    env: { ...process.env, PORT: String(port), FREERO_DATA_DIR: dataDir, NODE_ENV: 'test', FREERO_DOC_IDLE_MS: '1000' },
-    shell: process.platform === 'win32', // npx is a .cmd shim on Windows
+    env: {
+      ...process.env,
+      PORT: String(port),
+      FREERO_DATA_DIR: dataDir,
+      NODE_ENV: 'test',
+      FREERO_DOC_IDLE_MS: '1000',
+      ...(db.url ? { DATABASE_URL: db.url } : {}),
+      ...env,
+    },
     detached: process.platform !== 'win32', // own process group so we can kill the whole tree
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
   child.stdout.on('data', (d) => log.push(String(d)));
   child.stderr.on('data', (d) => log.push(String(d)));
-  server = { child, port, log };
-  const end = Date.now() + 60_000;
+  const proc = { child, port, log, exited: new Promise((r) => child.once('exit', (code) => r(code))) };
+  spawned.add(proc);
+  void proc.exited.then(() => spawned.delete(proc));
+  return proc;
+}
+
+/** Resolves once the server answers (401 on /api/auth/me); throws if it exits or times out. */
+async function waitUp(proc, timeoutMs = 60_000) {
+  const end = Date.now() + timeoutMs;
   while (Date.now() < end) {
-    if (child.exitCode !== null) throw new Error(`server exited early:\n${log.join('')}`);
+    if (proc.child.exitCode !== null) throw new Error(`server exited early (code ${proc.child.exitCode}):\n${proc.log.join('')}`);
     try {
-      const res = await fetch(`http://127.0.0.1:${port}/api/auth/me`);
-      if (res.status === 401) return server;
+      const res = await fetch(`http://127.0.0.1:${proc.port}/api/auth/me`);
+      if (res.status === 401) return proc;
     } catch {
       /* not up yet */
     }
     await sleep(150);
   }
-  throw new Error(`server did not start within 60s:\n${log.join('')}`);
+  throw new Error(`server did not start within ${timeoutMs / 1000}s:\n${proc.log.join('')}`);
+}
+
+async function startServer(dataDir) {
+  server = await spawnServer(dataDir);
+  return waitUp(server);
+}
+
+async function stopProc(proc) {
+  killTree(proc.child);
+  await Promise.race([proc.exited, sleep(5000)]);
 }
 
 async function stopServer() {
   if (!server) return;
-  const { child } = server;
-  const exited = new Promise((r) => (child.exitCode !== null ? r() : child.once('exit', r)));
-  killTree(child);
-  await Promise.race([exited, sleep(5000)]);
+  await stopProc(server);
   server = null;
 }
 
-process.on('exit', () => server && killTree(server.child));
+process.on('exit', () => {
+  for (const p of spawned) killTree(p.child);
+});
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(130));
+
+// ---------------------------------------------------------------------------
+// Database: PGlite under the data dir by default; with DATABASE_URL, a fresh throwaway database
+// on that Postgres server per run (dropped at the end), so every run migrates from scratch.
+// ---------------------------------------------------------------------------
+const MIGRATION_LOCK_KEY = 7_202_610_270; // must match apps/server/src/platform/db.ts
+const ADMIN_URL = process.env.DATABASE_URL?.trim() || null;
+const db = { url: null, kind: ADMIN_URL ? 'postgres' : 'pglite', created: [] };
+
+function dbUrl(name) {
+  const u = new URL(ADMIN_URL);
+  u.pathname = `/${name}`;
+  return u.toString();
+}
+
+async function adminQuery(sql, url = ADMIN_URL) {
+  const { default: pg } = await import('pg');
+  const c = new pg.Client({ connectionString: url });
+  await c.connect();
+  try {
+    return (await c.query(sql)).rows;
+  } finally {
+    await c.end();
+  }
+}
+
+/** A new empty database on the DATABASE_URL server; returns its URL. */
+async function createDatabase() {
+  const name = `freero_verify_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+  await adminQuery(`CREATE DATABASE ${name}`);
+  db.created.push(name);
+  return dbUrl(name);
+}
+
+async function dropDatabases() {
+  for (const name of db.created.splice(0)) {
+    try {
+      await adminQuery(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
+    } catch (e) {
+      console.warn(`(could not drop database ${name}: ${e.message})`);
+    }
+  }
+}
+
+/**
+ * Runs SQL against the server's own database, as an operator would. PGlite is single-process:
+ * only call this while no server runs on `dataDir`.
+ */
+async function withDb(dataDir, fn) {
+  if (db.url) {
+    const { default: pg } = await import('pg');
+    const c = new pg.Client({ connectionString: db.url });
+    await c.connect();
+    try {
+      return await fn((sql, params) => c.query(sql, params).then((r) => r.rows));
+    } finally {
+      await c.end();
+    }
+  }
+  const { PGlite } = await import('@electric-sql/pglite');
+  const pgl = new PGlite(path.join(dataDir, 'pg').split(path.sep).join('/'));
+  await pgl.waitReady;
+  try {
+    return await fn((sql, params) => pgl.query(sql, params).then((r) => r.rows));
+  } finally {
+    await pgl.close();
+  }
+}
 
 // ---------------------------------------------------------------------------
 // REST client with a real cookie jar
@@ -172,7 +269,8 @@ class User {
 // ---------------------------------------------------------------------------
 const providers = new Set();
 
-function connectDoc(user, boardId) {
+/** `prepare(doc)` runs before connecting (local "offline" content the client brings along). */
+function connectDoc(user, boardId, prepare) {
   const cookie = user.cookie;
   class CookieWebSocket extends WebSocket {
     constructor(url, protocols) {
@@ -180,6 +278,7 @@ function connectDoc(user, boardId) {
     }
   }
   const doc = new Y.Doc();
+  prepare?.(doc);
   const provider = new WebsocketProvider(`ws://127.0.0.1:${server.port}/ws/boards`, boardId, doc, {
     WebSocketPolyfill: CookieWebSocket,
     disableBc: true,
@@ -239,13 +338,86 @@ async function run() {
   const C = new User('C'); // viewer
   const D = new User('D'); // commenter
   const E = new User('E'); // not a member
+  const S = new User('S'); // its session expires
   let board = null;
 
   try {
-    await check('server boots (npx tsx apps/server/src/main.ts)', async () => {
+    if (ADMIN_URL) {
+      const ok = await check('Postgres from DATABASE_URL: create a fresh database for this run', async () => {
+        db.url = await createDatabase();
+      });
+      if (!ok) return;
+    }
+    console.log(`database: ${db.kind}${db.url ? ` (${db.created[0]})` : ` (${path.join(dataDir, 'pg')})`}\n`);
+
+    await check(`server boots on ${db.kind} and migrates an empty database`, async () => {
       await startServer(dataDir);
     });
     if (!server) return;
+
+    await check('startup fails fast with a clear message when Postgres is unreachable', async () => {
+      const port = await freePort(); // nothing listens here
+      const p = await spawnServer(path.join(dataDir, 'unused'), {
+        DATABASE_URL: `postgres://freero:s3cret-pw@127.0.0.1:${port}/freero`,
+      });
+      const code = await Promise.race([p.exited, sleep(30_000).then(() => 'still running after 30s')]);
+      if (code === 'still running after 30s') await stopProc(p);
+      const out = p.log.join('');
+      assert(typeof code === 'number' && code !== 0, `exit: ${code}`);
+      assert(/Cannot reach Postgres at postgres:\/\/freero:\*\*\*@127\.0\.0\.1/.test(out), `message:\n${out}`);
+      assert(!out.includes('s3cret-pw'), 'the database password was printed');
+    });
+
+    if (db.kind === 'pglite') {
+      await check('a second server on the same PGlite data dir refuses to start; the first keeps working', async () => {
+        const p = await spawnServer(dataDir);
+        const code = await Promise.race([p.exited, sleep(30_000).then(() => 'still running after 30s')]);
+        if (code === 'still running after 30s') await stopProc(p);
+        assert(typeof code === 'number' && code !== 0, `second instance exit: ${code}`);
+        assert(/in use by another Freero process/.test(p.log.join('')), `message:\n${p.log.join('')}`);
+        assert((await fetch(`http://127.0.0.1:${server.port}/api/auth/me`)).status === 401, 'first instance stopped answering');
+      });
+    } else {
+      await check('two instances starting at once on one empty database: both wait on the migration lock, both come up, each migration applied once', async () => {
+        const { default: pg } = await import('pg');
+        const url = await createDatabase();
+        // Hold the migration lock ourselves so both instances must queue on it, then let go.
+        const holder = new pg.Client({ connectionString: url });
+        await holder.connect();
+        const procs = [];
+        try {
+          await holder.query('BEGIN');
+          await holder.query('SELECT pg_advisory_xact_lock($1)', [MIGRATION_LOCK_KEY]);
+          for (let i = 0; i < 2; i++) procs.push(await spawnServer(path.join(dataDir, `twin${i}`), { DATABASE_URL: url }));
+          await waitFor(
+            async () =>
+              (await holder.query(`SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`)).rows[0].n === 2,
+            60_000,
+            'both instances to wait on the migration advisory lock',
+          );
+          await holder.query('COMMIT');
+          await Promise.all(procs.map((p) => waitUp(p)));
+          const rows = await adminQuery('SELECT id, count(*)::int AS n FROM _migrations GROUP BY id', url);
+          assert(rows.length >= 4 && rows.every((r) => r.n === 1), `_migrations: ${JSON.stringify(rows)}`);
+          const demo = await adminQuery(`SELECT count(*)::int AS n FROM users WHERE email = 'demo@freero.app'`, url);
+          assert(demo[0].n === 1, `demo user seeded ${demo[0].n} times`);
+          // One database behind both: a session made on one instance works on the other.
+          const t = new User('Twin');
+          const r = await fetch(`http://127.0.0.1:${procs[0].port}/api/auth/signup`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ name: 'Twin', email: t.email, password: 'password-123' }),
+          });
+          assert(r.status === 201, `signup on instance 1: ${r.status}`);
+          const cookie = /^freero_session=[^;]*/.exec(r.headers.getSetCookie()[0])[0];
+          const me = await fetch(`http://127.0.0.1:${procs[1].port}/api/auth/me`, { headers: { cookie } });
+          assert(me.status === 200, `the session from instance 1 on instance 2: ${me.status}`);
+        } finally {
+          await holder.end().catch(() => {});
+          for (const p of procs) await stopProc(p);
+        }
+      });
+    }
 
     // ---- auth ----
     await check('signup users A, B, C, D, E via REST (sets session cookie)', async () => {
@@ -268,6 +440,26 @@ async function run() {
       assert((await x.req('POST', '/api/auth/login', { email: 'nobody@x.io', password: 'wrong-password' })).status === 401, 'login2');
     });
 
+    await check('simultaneous signups with one email: exactly one account (201), the others 409, never 500', async () => {
+      const email = `race-${Date.now()}@verify.freero.app`;
+      const statuses = await Promise.all(
+        Array.from({ length: 6 }, (_, i) =>
+          new User(`R${i}`).req('POST', '/api/auth/signup', { name: `Racer ${i}`, email, password: 'password-123' }).then((r) => r.status),
+        ),
+      );
+      assert(statuses.filter((s) => s === 201).length === 1 && statuses.filter((s) => s === 409).length === 5, `statuses ${statuses}`);
+    });
+
+    await check('concurrent profile edits of different fields both stick', async () => {
+      const [n, c] = await Promise.all([
+        A.req('PATCH', '/api/auth/me', { name: 'Concurrent Name' }),
+        A.req('PATCH', '/api/auth/me', { color: '#123456' }),
+      ]);
+      assert(n.status === 200 && c.status === 200, `${n.status} ${c.status}`);
+      const me = (await A.req('GET', '/api/auth/me')).json.user;
+      assert(me.name === 'Concurrent Name' && me.color === '#123456', `lost an edit: ${JSON.stringify(me)}`);
+    });
+
     await check('me / PATCH me / logout / login', async () => {
       const me = await A.req('GET', '/api/auth/me');
       assert(me.status === 200 && me.json.user.id === A.id, `me ${me.status}`);
@@ -281,20 +473,10 @@ async function run() {
       assert((await new User('Q').req('GET', '/api/boards')).status === 401, 'boards without cookie should be 401');
     });
 
-    await check('an expired session is rejected (REST 401, WebSocket 4401)', async () => {
-      const s = new User('S');
-      await s.signup();
-      assert((await s.req('GET', '/api/auth/me')).status === 200, 'fresh session should work');
-      // Simulate 30 days passing: age this user's session in the server's own database.
-      const { DatabaseSync } = await import('node:sqlite');
-      const dbh = new DatabaseSync(path.join(dataDir, 'freero.db'));
-      try {
-        dbh.prepare('UPDATE sessions SET expires_at = ? WHERE user_id = ?').run(Date.now() - 1000, s.id);
-      } finally {
-        dbh.close();
-      }
-      assert((await s.req('GET', '/api/auth/me')).status === 401, 'expired session still accepted over REST');
-      assert((await wsCloseCode('any-board', s.cookie)) === 4401, 'expired session still accepted over WebSocket');
+    // S's session is aged in the database during the restart below (PGlite allows one process).
+    await check('a fresh session works (S; expired after the restart below)', async () => {
+      await S.signup();
+      assert((await S.req('GET', '/api/auth/me')).status === 200, 'fresh session should work');
     });
 
     await check('logging out closes the live board sockets of that session (4401), not just the cookie', async () => {
@@ -503,9 +685,11 @@ async function run() {
     await check('server restarts on the same data dir and the doc persisted', async () => {
       closeAllDocs();
       await sleep(500); // last disconnect persists immediately; small grace for the socket close
-      await stopServer();
+      await stopServer(); // a hard kill: what was saved must be durable without a clean shutdown
+      // Simulate 30 days passing for S: age the session in the server's own database.
+      await withDb(dataDir, (q) => q('UPDATE sessions SET expires_at = $1 WHERE user_id = $2', [new Date(Date.now() - 1000), S.id]));
       await startServer(dataDir);
-      // Cookies must survive the restart (sessions are in SQLite).
+      // Cookies must survive the restart (sessions are in the database).
       const me = await A.req('GET', '/api/auth/me');
       assert(me.status === 200, `session lost across restart: ${me.status}`);
       const a2 = connectDoc(A, board.id);
@@ -516,6 +700,48 @@ async function run() {
       assert(!m.has('c1') && !m.has('d1') && !a2.doc.getMap('comments').has('t2') && !a2.doc.getMap('comments').has('ct'), 'rejected writes were persisted');
       a2.destroy();
     });
+
+    await check('an expired session is rejected (REST 401, WebSocket 4401)', async () => {
+      assert((await S.req('GET', '/api/auth/me')).status === 401, 'expired session still accepted over REST');
+      assert((await wsCloseCode('any-board', S.cookie)) === 4401, 'expired session still accepted over WebSocket');
+    });
+
+    await check('clients opening a board that is still loading all get its content, and their offline edits are kept', async () => {
+      await sleep(1600); // FREERO_DOC_IDLE_MS=1000: the doc is unloaded again
+      const clients = [A, B, A].map((u, i) =>
+        connectDoc(u, board.id, (doc) => doc.getMap('elements').set(`off${i}`, { id: `off${i}`, type: 'sticky', text: `offline ${i}` })),
+      );
+      await Promise.all(clients.map((c) => c.ready()));
+      for (const c of clients) {
+        await waitFor(() => els(c).get('e1')?.text === 'from A' && [0, 1, 2].every((i) => els(c).has(`off${i}`)), 5000, `${c.user.label} to have the stored content and every offline edit`);
+      }
+      for (const c of clients) c.destroy();
+      await sleep(500);
+      const again = connectDoc(A, board.id);
+      await again.ready();
+      assert([0, 1, 2].every((i) => els(again).has(`off${i}`)), `offline edits not saved: ${JSON.stringify([...els(again).keys()])}`);
+      again.destroy();
+    });
+
+    if (process.platform !== 'win32') {
+      await check('SIGTERM saves an edit made just before it (graceful shutdown flushes docs before closing the database)', async () => {
+        const g = connectDoc(A, board.id);
+        await g.ready();
+        els(g).set('sig', { id: 'sig', type: 'sticky', text: 'before SIGTERM' });
+        await sleep(200); // reached the server, but well inside the 1.5s save debounce
+        const proc = server;
+        process.kill(-proc.child.pid, 'SIGTERM');
+        const code = await Promise.race([proc.exited, sleep(15_000).then(() => 'timeout')]);
+        g.destroy();
+        assert(code === 0, `exit code ${code}:\n${proc.log.join('').slice(-2000)}`);
+        server = null;
+        await startServer(dataDir);
+        const after = connectDoc(A, board.id);
+        await after.ready();
+        assert(els(after).get('sig')?.text === 'before SIGTERM', 'the edit was lost on shutdown');
+        after.destroy();
+      });
+    }
 
     // ---- list filters ----
     await check('list filters: all / mine / shared / starred / recent / q', async () => {
@@ -589,6 +815,8 @@ async function run() {
   } finally {
     closeAllDocs();
     await stopServer();
+    for (const p of [...spawned]) await stopProc(p);
+    if (ADMIN_URL) await dropDatabases();
     try {
       fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     } catch (e) {
@@ -597,8 +825,135 @@ async function run() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Production hardening, on its own server with tight limits so it can't disturb the session above:
+// readiness, security headers, CSRF, rate limits (429 + Retry-After), quotas, /metrics.
+// ---------------------------------------------------------------------------
+async function platformChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-platform-'));
+  const METRICS_TOKEN = 'verify-metrics-token';
+  let proc = null;
+  try {
+    const env = { RATE_LIMIT_LOGIN: '5/1m', UPLOAD_QUOTA_MB: '1', MAX_BOARDS_PER_USER: '2', METRICS_TOKEN };
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    const ok = await check('platform server boots with tight limits', async () => {
+      proc = await waitUp(await spawnServer(dataDir, env));
+    });
+    if (!ok) return;
+    const base = `http://127.0.0.1:${proc.port}`;
+    let cookie = '';
+    const call = async (method, url, { body, headers = {}, raw = false } = {}) => {
+      const h = { ...headers };
+      if (cookie) h.cookie = cookie;
+      if (body !== undefined && !raw) h['content-type'] = 'application/json';
+      const res = await fetch(base + url, { method, headers: h, body: body === undefined ? undefined : raw ? body : JSON.stringify(body) });
+      for (const c of res.headers.getSetCookie()) {
+        const m = /^freero_session=([^;]+)/.exec(c);
+        if (m) cookie = `freero_session=${m[1]}`;
+      }
+      const text = await res.text();
+      let json = null;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        /* not json */
+      }
+      return { status: res.status, headers: res.headers, json, text };
+    };
+    const email = `platform-${Date.now()}@verify.freero.app`;
+
+    await check('GET /healthz is live and /readyz reports the database and storage reachable', async () => {
+      assert((await call('GET', '/healthz')).status === 200, 'healthz');
+      const r = await call('GET', '/readyz');
+      assert(r.status === 200 && r.json?.ok === true, `readyz -> ${r.status} ${r.text}`);
+      assert(r.json.checks.db === 'ok' && r.json.checks.storage === 'ok', JSON.stringify(r.json.checks));
+    });
+
+    await check('security headers: CSP (no framing, scripts from self), nosniff, referrer policy, request id', async () => {
+      const r = await call('GET', '/api/auth/session');
+      const csp = r.headers.get('content-security-policy') ?? '';
+      assert(/frame-ancestors 'none'/.test(csp) && /script-src 'self'(;|$)/.test(csp), `CSP: ${csp}`);
+      assert(r.headers.get('x-content-type-options') === 'nosniff', 'nosniff');
+      assert(r.headers.get('referrer-policy') === 'strict-origin-when-cross-origin', 'referrer-policy');
+      assert(r.headers.get('x-frame-options') === 'DENY', 'x-frame-options');
+      assert(/^[0-9a-f-]{36}$/.test(r.headers.get('x-request-id') ?? ''), 'x-request-id');
+      assert(!r.headers.get('strict-transport-security'), 'HSTS must not be sent over plain http');
+      const viaTls = await call('GET', '/healthz', { headers: { 'x-forwarded-proto': 'https' } });
+      assert(!viaTls.headers.get('strict-transport-security'), 'X-Forwarded-Proto trusted without TRUST_PROXY');
+    });
+
+    await check('CSRF: a cross-site POST carrying the session cookie is refused (403) and changes nothing', async () => {
+      const s = await call('POST', '/api/auth/signup', { body: { name: 'Platform', email, password: 'password-123' }, headers: { origin: base } });
+      assert(s.status === 201, `signup -> ${s.status} ${s.text}`);
+      const evil = await call('POST', '/api/boards', { body: { title: 'csrf' }, headers: { origin: 'https://evil.example' } });
+      assert(evil.status === 403, `cross-site POST -> ${evil.status}`);
+      const viaReferer = await call('POST', '/api/boards', { body: { title: 'csrf' }, headers: { referer: 'https://evil.example/x' } });
+      assert(viaReferer.status === 403, `cross-site Referer-only POST -> ${viaReferer.status}`);
+      const list = await call('GET', '/api/boards');
+      assert(list.json.boards.length === 0, `a cross-site POST created a board: ${list.text}`);
+      const same = await call('POST', '/api/boards', { body: { title: 'mine' }, headers: { origin: base, 'sec-fetch-site': 'same-origin' } });
+      assert(same.status === 201, `same-origin POST -> ${same.status} ${same.text}`);
+      const wsStatus = await new Promise((resolve) => {
+        const ws = new WebSocket(`ws://127.0.0.1:${proc.port}/ws/boards/${same.json.board.id}`, { headers: { cookie, origin: 'https://evil.example' } });
+        ws.on('unexpected-response', (_req, res) => resolve(res.statusCode));
+        ws.on('open', () => (ws.close(), resolve('open')));
+        ws.on('error', () => {});
+      });
+      assert(wsStatus === 403, `cross-site WebSocket upgrade -> ${wsStatus}`);
+    });
+
+    await check('quotas: board limit per user (403) and upload quota per user (413)', async () => {
+      const second = await call('POST', '/api/boards', { body: { title: 'two' } });
+      assert(second.status === 201, `2nd board -> ${second.status}`);
+      const third = await call('POST', '/api/boards', { body: { title: 'three' } });
+      assert(third.status === 403 && /limit/i.test(third.json?.error ?? ''), `3rd board -> ${third.status} ${third.text}`);
+      const big = Buffer.concat([PNG_1PX, Buffer.alloc(600 * 1024)]); // 2 x 600KB > 1MB quota
+      const up1 = await call('POST', '/api/uploads', { body: big, raw: true, headers: { 'content-type': 'image/png' } });
+      assert(up1.status === 201, `1st upload -> ${up1.status} ${up1.text}`);
+      const up2 = await call('POST', '/api/uploads', { body: big, raw: true, headers: { 'content-type': 'image/png' } });
+      assert(up2.status === 413 && /quota/i.test(up2.json?.error ?? ''), `upload over quota -> ${up2.status} ${up2.text}`);
+      const served = await call('GET', up1.json.url);
+      assert(served.status === 200 && served.headers.get('content-security-policy')?.includes('sandbox'), 'stored upload is served sandboxed');
+    });
+
+    await check('login burst: the 6th attempt in the window gets 429 + Retry-After, even with the right password', async () => {
+      for (let i = 0; i < 5; i++) {
+        const r = await call('POST', '/api/auth/login', { body: { email, password: `wrong-${i}` } });
+        assert(r.status === 401, `attempt ${i + 1} -> ${r.status}`);
+      }
+      const blocked = await call('POST', '/api/auth/login', { body: { email, password: 'password-123' } });
+      const retryAfter = Number(blocked.headers.get('retry-after'));
+      assert(blocked.status === 429, `6th attempt -> ${blocked.status} ${blocked.text}`);
+      assert(Number.isInteger(retryAfter) && retryAfter > 0 && retryAfter <= 60, `Retry-After: ${blocked.headers.get('retry-after')}`);
+      assert((await call('GET', '/api/auth/session')).status === 200, 'other routes stay available');
+    });
+
+    await check('/metrics needs the token and exposes HTTP latency, WebSocket and realtime metrics', async () => {
+      assert((await call('GET', '/metrics')).status === 401, 'metrics without token');
+      const m = await call('GET', '/metrics', { headers: { authorization: `Bearer ${METRICS_TOKEN}` } });
+      assert(m.status === 200, `metrics -> ${m.status}`);
+      for (const name of [
+        'freero_http_request_duration_seconds_count{method="POST",route="/api/auth/login",status="429"} 1',
+        'freero_rate_limited_total{limit="login"} 1',
+        'freero_realtime_loaded_docs',
+        'freero_realtime_persist_queue',
+      ])
+        assert(m.text.includes(name), `missing ${name}`);
+    });
+  } finally {
+    if (proc) await stopProc(proc);
+    if (ADMIN_URL) await dropDatabases();
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
 const started = Date.now();
 await run().catch((e) => record('verify harness', false, e?.stack ?? String(e)));
+await platformChecks().catch((e) => record('platform checks harness', false, e?.stack ?? String(e)));
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed in ${((Date.now() - started) / 1000).toFixed(1)}s`);
 if (failed.length) {
