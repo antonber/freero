@@ -54,6 +54,9 @@ app/                Shell: routing, pages, auth, REST client, Host implementatio
 - `import.meta.glob` is only allowed in `app/board/features.ts` [W6].
 - Only the app talks to Freero's server: `'/api/…'` / `'/ws/…'` paths in `features/`, `engine/` or
   `ui/` fail [W9]. Need server data? Add a typed method to `Host` (e.g. `serverNow()`).
+- Raw HTML sinks (`innerHTML =`, `dangerouslySetInnerHTML`, `insertAdjacentHTML`, …) are allowed only
+  in `engine/text/`, which sanitizes; board content is untrusted input from other users [W11].
+  Parse untrusted HTML only in an inert document (`document.implementation.createHTMLDocument`).
 - Features show toasts with `editor.host.notify(message, kind?, { action? })`; `useToast()` in
   `features/` fails [W10].
 
@@ -204,12 +207,30 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   write (user move, a feature's `setCamera`), a canvas click, Esc, or the person leaving ends it.
   Presence (avatars) and present (the "is presenting" banner) both use it; presence owns the
   "Following … · Stop" pill and "Bring everyone to me" (`presence.bringEveryone`).
+- `ToolDefinition.onCanvasDoubleClick?(editor, point)`: double-click on empty canvas (or a frame's
+  empty area) with the select tool = "write here". The first tool by `order` that defines it runs
+  (the text tool: a text box with the caret ready), inside the click's gesture.
+- Frame membership has one rule, applied by the engine on drop, create, duplicate and paste: an
+  element belongs to the innermost container under its center (`frameId`), unless it already
+  names an existing container. Features never compute membership for new elements themselves.
+- Typing a character with one EMPTY text item selected starts editing it with that character;
+  items that already have text keep single letters as tool shortcuts (Enter / double-click edit).
+  Undo/redo shortcuts also work while a non-modal popover has focus.
+- Screen/world UI that must stay visible next to a selection (comment pins) marks its node
+  `data-fr-keep-clear`; the format toolbar steps above it, or flips below the selection.
 - `ToolDefinition.onSelect?(editor)`: act-now tools (upload image, templates) run when picked and
   never become the active tool. `ToolPointerEvent.button` is -1 on every move (drag or hover);
   `buttons` is the pressed-buttons bitmask.
 - `CommandDefinition.icon?` (shown in the context and board menus) and `group?` (commands sharing
   a group fold into one "<group> ▸" submenu, e.g. emoji's "React with ▸" stamps).
 - `Host.notify(message, kind?, { action?: { label, run } })` — features never call `useToast`.
+- Panel slot `'top-center'`: session bars under the top bar (an active vote, "X is presenting").
+  The engine stacks them in one centered column (also while presenting), so two bars never
+  overlap; the panel renders only its bar, no positioning. Never place such a bar absolutely in
+  `screen-overlay`.
+- A socket closed with 4401/4403 (removed, link access revoked, signed out) drops the session to
+  read-only (`viewer`) besides showing the banner: writes after that could never reach the server.
+- `Host.user` changes (profile renamed / recolored in any tab) are republished to presence.
 
 Elements, geometry and text (all optional on `ElementDefinition` unless noted):
 - **Reads inside `editor.transact` see its earlier writes** (`getElements()`, `getElement()`,
@@ -294,6 +315,12 @@ Auth is a plain middleware exported by `modules/auth/index.ts` (`requireUser`, `
 not a reserved hook. Server modules today: `auth` (users, sessions), `boards` (boards, stars,
 opens), `members` (board_members, role resolution), `uploads` (files under `<data>/uploads`, no
 table), `realtime` (board_docs; y-websocket protocol + role filter).
+
+Trust boundaries in `realtime`: presence from a socket may only write the awareness client ids
+that socket announced, and its `user` is always replaced by the authenticated user's profile
+(`realtime/awareness.ts`), so nobody can appear as someone else. Logging out
+(`auth.onSessionEnd`) closes every board socket opened with that session (4401). Member emails
+(`GET /members`) are only sent to owners/editors.
 
 ## Verification
 

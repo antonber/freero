@@ -107,6 +107,14 @@ function checkWebFile(file) {
   const src = fs.readFileSync(file, 'utf8');
   const me = webLayer(file);
   const meRel = path.relative(WEB, file).split(path.sep).join('/');
+  // Raw HTML sinks live only in engine/text/, which owns sanitizing (board content is untrusted
+  // input from other users — a stored-XSS bug was found exactly here).
+  if (!meRel.startsWith('engine/text/') && !/\.test\.tsx?$/.test(file)) {
+    for (const m of src.matchAll(/\b(innerHTML\s*=|outerHTML\s*=|insertAdjacentHTML|dangerouslySetInnerHTML|createContextualFragment)/g)) {
+      const line = src.slice(0, m.index).split('\n').length;
+      report('W11', file, line, `Raw HTML sink '${m[1].replace(/\s*=$/, '')}' outside engine/text/. Render rich text with ElementText, or sanitizeRichText/plainToRichText from '@engine' plus normal React text — board content is untrusted.`);
+    }
+  }
   // Only the app shell talks to Freero's server; everything below it goes through the Host.
   if (['features', 'engine', 'ui'].includes(me.layer) && !/\.test\.tsx?$/.test(file)) {
     for (const m of src.matchAll(/['"`]\/(api|ws)\//g)) {
