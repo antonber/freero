@@ -2,7 +2,7 @@
 import type { StickyElement } from '@freero/shared';
 import type { Editor, NewElement, Point } from '@engine';
 import { DEFAULT_COLOR, STICKY_GAP, STICKY_SIZE, TOOL_ID, type StickyToolOptions } from './constants';
-import { nextFreeSlot } from './layout';
+import { nextFreeSlot, type Direction } from './layout';
 
 /** A new sticky centered on `at`, using the last chosen color. */
 export function stickyAt(editor: Editor, at: Point, overrides: Partial<StickyElement> = {}): NewElement<'sticky'> {
@@ -38,11 +38,12 @@ export function selectedSticky(editor: Editor): StickyElement | null {
  * Creates the next sticky beside `from` (same color, size and text style), skipping occupied
  * slots, then starts editing it — the Tab / Mod+Enter flow.
  */
-export function createNextSticky(editor: Editor, from: StickyElement, dir: 'right' | 'below', copyText = false): string {
+export function createNextSticky(editor: Editor, from: StickyElement, dir: Direction, copyText = false): string {
   editor.stopEditing();
   const fresh = editor.getElement<StickyElement>(from.id) ?? from;
   const probe = { x: fresh.x, y: fresh.y, w: fresh.w, h: fresh.h };
-  const area = { x: probe.x - probe.w, y: probe.y - probe.h, w: probe.w * 40, h: probe.h * 40 };
+  const reach = 41;
+  const area = { x: probe.x - probe.w * reach, y: probe.y - probe.h * reach, w: probe.w * reach * 2, h: probe.h * reach * 2 };
   const occupied = editor.elementsInRect(area, 'intersect').filter((el) => el.id !== fresh.id && el.type !== 'frame');
   const pos = nextFreeSlot(probe, dir, occupied, STICKY_GAP);
   const { id: _id, z: _z, createdAt: _c, createdBy: _b, updatedAt: _u, groupId: _g, locked: _l, ...style } = fresh;

@@ -3,12 +3,18 @@ import type { Point, Rect } from '@engine';
 
 const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 
+export type Direction = 'right' | 'below' | 'left' | 'above';
+
 /**
- * The first slot next to `from` (right of it or below it) that doesn't overlap anything in
+ * The first slot next to `from` (on its `dir` side) that doesn't overlap anything in
  * `occupied`, stepping one sticky-width at a time.
  */
-export function nextFreeSlot(from: Rect, dir: 'right' | 'below', occupied: Rect[], gap: number, maxSteps = 40): Point {
-  const step = dir === 'right' ? { x: from.w + gap, y: 0 } : { x: 0, y: from.h + gap };
+export function nextFreeSlot(from: Rect, dir: Direction, occupied: Rect[], gap: number, maxSteps = 40): Point {
+  const step =
+    dir === 'right' ? { x: from.w + gap, y: 0 }
+    : dir === 'left' ? { x: -(from.w + gap), y: 0 }
+    : dir === 'below' ? { x: 0, y: from.h + gap }
+    : { x: 0, y: -(from.h + gap) };
   let candidate = { x: from.x + step.x, y: from.y + step.y, w: from.w, h: from.h };
   for (let i = 0; i < maxSteps && occupied.some((r) => overlaps(r, candidate)); i++) {
     candidate = { ...candidate, x: candidate.x + step.x, y: candidate.y + step.y };

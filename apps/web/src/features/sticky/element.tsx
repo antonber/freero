@@ -11,6 +11,7 @@ import {
 import { STICKY_GAP, STICKY_SIZE } from './lib/constants';
 import { stickyAt } from './lib/actions';
 import { gridPositions } from './lib/layout';
+import { listItems } from './lib/paste';
 import './sticky.css';
 
 /** Below this zoom the text is unreadable anyway: draw cheap "text lines" instead (2000-sticky boards). */
@@ -24,7 +25,6 @@ function tagBand(el: StickyElement): number {
   if (!el.tags?.length) return 0;
   return 30 * Math.min(2.5, Math.max(0.5, Math.min(el.w, el.h) / 200));
 }
-const MAX_IMPORTED = 60;
 
 const StickyView = memo(function StickyView({ element, zoom }: ElementRenderProps<StickyElement>) {
   const bg = STICKY_COLORS[element.color] ?? STICKY_COLORS.yellow;
@@ -71,23 +71,26 @@ export default defineElement({
   }),
   Component: StickyView,
   toPlainText: (el) => richTextToPlain(el.text),
-  // Plain text claims last (low priority): richer importers (images, text boxes) win.
-  importPriority: -10,
+  // Lists become stickies; prose is left to the text box importer (priority 0). See lib/paste.ts.
+  importPriority: 5,
   importData(editor, data, at) {
     const text = data.text?.trim();
     if (!text || data.files.length) return false;
-    const lines = text
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter(Boolean)
-      .slice(0, MAX_IMPORTED);
-    // Short multi-line lists become one sticky per line; prose stays in one sticky.
-    const asList = lines.length > 1 && lines.every((l) => l.length <= 140);
-    const items = asList ? lines : [text];
+    const selected = editor
+      .getSelection()
+      .map((id) => editor.getElement(id))
+      .filter((el): el is StickyElement => el?.type === 'sticky');
+    const items = listItems(text, data.html) ?? (selected.length ? [text] : null);
+    if (!items) return false;
+    // Pasting onto selected stickies keeps their color.
+    const color = selected[0]?.color;
     const positions = gridPositions(items.length, STICKY_SIZE, STICKY_GAP, at);
     editor.createMany(
       items.map((t, i) =>
-        stickyAt(editor, { x: positions[i].x + STICKY_SIZE / 2, y: positions[i].y + STICKY_SIZE / 2 }, { text: plainToRichText(t) }),
+        stickyAt(editor, { x: positions[i].x + STICKY_SIZE / 2, y: positions[i].y + STICKY_SIZE / 2 }, {
+          text: plainToRichText(t),
+          ...(color ? { color } : {}),
+        }),
       ),
       { select: true },
     );
