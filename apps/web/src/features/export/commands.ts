@@ -1,4 +1,4 @@
-import { Copy, FileDown, ImageDown } from 'lucide-react';
+import { ClipboardCopy, FileDown, ImageDown } from 'lucide-react';
 import { defineCommands } from '@engine';
 import { copySelectionAsImage } from './lib/exporters';
 import { EXPORT_DIALOG } from './lib/dialog';
@@ -27,7 +27,7 @@ export default defineCommands([
   },
   {
     id: 'export.copyImage',
-    icon: Copy,
+    icon: ClipboardCopy,
     label: 'Copy selection as image',
     menus: ['board', 'context'],
     minRole: 'viewer',
