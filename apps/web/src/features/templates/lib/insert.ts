@@ -17,8 +17,7 @@ export function insertTemplate(editor: Editor, def: TemplateDef): string[] {
   const els = instantiate(
     def,
     {
-      content: editor.getBounds(),
-      viewportCenter: editor.getViewportCenter(),
+      place: (size) => editor.findFreeSpot(size),
       maxFrameIndex: frames.reduce((m, f) => Math.max(m, f.index ?? 0), -1),
     },
     () => nanoid(),

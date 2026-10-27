@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ElementType } from '@freero/shared';
-import type { NewElement, Rect } from '@engine';
+import type { NewElement } from '@engine';
 import { TEMPLATES } from './lib/catalog';
 import { boundsOf, instantiate, type BoardSnapshot } from './lib/place';
 
@@ -20,8 +20,8 @@ const REQUIRED: Record<ElementType, string[]> = {
 
 let seq = 0;
 const freshId = () => `id${++seq}`;
-const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
-const emptyBoard: BoardSnapshot = { content: null, viewportCenter: { x: 300, y: -200 }, maxFrameIndex: -1 };
+const SPOT = { x: 300, y: -200 };
+const emptyBoard: BoardSnapshot = { place: () => SPOT, maxFrameIndex: -1 };
 
 function anchorOf(el: NewElement, anchor: string) {
   if (anchor === 'top') return { x: el.x + el.w / 2, y: el.y };
@@ -63,7 +63,7 @@ describe.each(TEMPLATES.map((t) => [t.id, t] as const))('template %s', (_id, def
   });
 
   it('after insertion, connector and mind-map references point at elements of the same insert, at their anchors', () => {
-    const board: BoardSnapshot = { content: { x: -500, y: 40, w: 900, h: 700 }, viewportCenter: { x: 0, y: 0 }, maxFrameIndex: 2 };
+    const board: BoardSnapshot = { place: () => ({ x: 1234, y: -567 }), maxFrameIndex: 2 };
     const els = instantiate(def, board, freshId);
     const byId = new Map(els.map((e) => [e.id!, e]));
     expect(byId.size, 'ids are unique').toBe(els.length);
@@ -89,24 +89,11 @@ describe.each(TEMPLATES.map((t) => [t.id, t] as const))('template %s', (_id, def
 });
 
 describe('inserting a template', () => {
-  it('never overlaps existing content, wherever that content is', () => {
-    const existing: Rect[] = [
-      { x: -3000, y: -400, w: 600, h: 600 },
-      { x: 200, y: 900, w: 2400, h: 200 },
-      { x: 1200, y: -2000, w: 300, h: 300 },
-    ];
-    const board: BoardSnapshot = { content: boundsOf(existing), viewportCenter: { x: 0, y: 0 }, maxFrameIndex: 0 };
+  it('fills exactly the free spot the board found for its size, so it covers nothing (the engine keeps that spot clear)', () => {
     for (const def of TEMPLATES) {
-      const placed = boundsOf(instantiate(def, board, freshId))!;
-      for (const r of existing) expect(overlaps(placed, r), `${def.id} overlaps existing content`).toBe(false);
-    }
-  });
-
-  it('lands centred on the viewport on an empty board', () => {
-    for (const def of TEMPLATES) {
-      const b = boundsOf(instantiate(def, emptyBoard, freshId))!;
-      expect(Math.abs(b.x + b.w / 2 - emptyBoard.viewportCenter.x)).toBeLessThanOrEqual(1);
-      expect(Math.abs(b.y + b.h / 2 - emptyBoard.viewportCenter.y)).toBeLessThanOrEqual(1);
+      let asked: { w: number; h: number } | null = null;
+      const placed = boundsOf(instantiate(def, { place: (size) => ((asked = size), SPOT), maxFrameIndex: -1 }, freshId))!;
+      expect(placed, def.id).toEqual({ x: SPOT.x, y: SPOT.y, w: asked!.w, h: asked!.h });
     }
   });
 

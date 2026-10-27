@@ -3,9 +3,6 @@
 import type { NewElement, Point, Rect } from '@engine';
 import type { TemplateCategory, TemplateDef } from './types';
 
-/** Horizontal gap between existing content and an inserted template. */
-export const INSERT_GAP = 200;
-
 export function boundsOf(els: Array<{ x: number; y: number; w: number; h: number }>): Rect | null {
   if (!els.length) return null;
   let x0 = Infinity;
@@ -19,17 +16,6 @@ export function boundsOf(els: Array<{ x: number; y: number; w: number; h: number
     y1 = Math.max(y1, e.y + e.h);
   }
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
-}
-
-/**
- * Translation that puts a template of bounds `tpl` to the right of all existing content
- * (top-aligned with it), or centered on `viewportCenter` when the board is empty.
- */
-export function insertionOffset(tpl: Rect, content: Rect | null, viewportCenter: Point, gap = INSERT_GAP): Point {
-  if (!content) {
-    return { x: Math.round(viewportCenter.x - tpl.w / 2 - tpl.x), y: Math.round(viewportCenter.y - tpl.h / 2 - tpl.y) };
-  }
-  return { x: Math.ceil(content.x + content.w + gap - tpl.x), y: Math.round(content.y - tpl.y) };
 }
 
 /** Moves an element, including absolute nested points (connector endpoints, waypoints). */
@@ -46,21 +32,21 @@ export function translate(el: NewElement, dx: number, dy: number): NewElement {
 }
 
 export interface BoardSnapshot {
-  /** Bounds of everything already on the board (null when empty). */
-  content: Rect | null;
-  viewportCenter: Point;
+  /** Top-left of a free spot for content of `size` (the editor's findFreeSpot). */
+  place(size: { w: number; h: number }): Point;
   /** Highest frame index on the board, or -1 without frames. */
   maxFrameIndex: number;
 }
 
 /**
  * The elements to create for `def` on a board in state `board`: fresh ids (from `newId`),
- * positioned so they don't overlap existing content, frames numbered after existing frames.
+ * moved into the free spot the board offers, frames numbered after existing frames.
  */
 export function instantiate(def: TemplateDef, board: BoardSnapshot, newId: () => string): NewElement[] {
   const els = def.build(newId);
   const b = boundsOf(els) ?? { x: 0, y: 0, w: 0, h: 0 };
-  const off = insertionOffset(b, board.content, board.viewportCenter);
+  const spot = board.place({ w: b.w, h: b.h });
+  const off = { x: spot.x - b.x, y: spot.y - b.y };
   let frameIndex = board.maxFrameIndex;
   return els.map((el) => {
     const moved = translate(el, off.x, off.y);
