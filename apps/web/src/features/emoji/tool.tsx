@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Search, Stamp } from 'lucide-react';
 import { defineTool, usePointer, useCamera, useToolOptions, type Editor } from '@engine';
 import { Input } from '@ui';
@@ -6,7 +6,6 @@ import { DEFAULT_CHOICE, MAX_RECENT, PLACE_SIZE, TOOL_ID, type EmojiToolOptions 
 import { EMOJI_CATEGORIES, searchEmojis } from './lib/emojis';
 import { Glyph } from './lib/Glyph';
 import { STAMP_PREFIX, STAMPS, StampArt } from './lib/stamps';
-import { useFitFlyout } from './lib/useFitFlyout';
 
 /** World size that shows as PLACE_SIZE px on screen right now. */
 function placeSize(zoom: number): number {
@@ -39,12 +38,10 @@ function Picker({ editor }: { editor: Editor }) {
   const emojiHits = useMemo(() => (q ? searchEmojis(q) : null), [q]);
   const category = EMOJI_CATEGORIES.find((c) => c.id === tab) ?? EMOJI_CATEGORIES[0];
   const pick = (v: string) => choose(editor, v);
-  const root = useRef<HTMLDivElement>(null);
-  useFitFlyout(root);
   const recentEmojis = recent.filter((r) => !r.startsWith(STAMP_PREFIX));
 
   return (
-    <div className="fr-emoji-picker" ref={root}>
+    <div className="fr-emoji-picker">
       <Input
         size="sm"
         icon={Search}

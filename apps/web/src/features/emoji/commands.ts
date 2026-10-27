@@ -1,7 +1,7 @@
 import type { BoardElement } from '@freero/shared';
-import { defineCommands, type Editor, type NewElement, type Rect } from '@engine';
-import { DEFAULT_CHOICE, TOOL_ID, type EmojiToolOptions } from './lib/constants';
+import { defineCommands, type CommandDefinition, type Editor, type NewElement, type Rect } from '@engine';
 import { reactionSize, reactionSlot } from './lib/reactions';
+import { STAMP_PREFIX, STAMPS, stampIcon } from './lib/stamps';
 
 /** Elements a reaction can be attached to: the selection minus stamps/emoji themselves. */
 function reactable(editor: Editor): BoardElement[] {
@@ -11,30 +11,32 @@ function reactable(editor: Editor): BoardElement[] {
     .filter((el): el is BoardElement => !!el && el.type !== 'emoji' && el.type !== 'connector');
 }
 
-export default defineCommands([
-  {
-    // Stamps the last emoji/stamp picked in the emoji tool (default "+1") on the top-right corner
-    // of every selected element. One command = one undo step.
-    id: 'emoji.react',
-    label: 'React with stamp',
+/** Stamps `emoji` on the top-right corner of every selected element. One command = one undo step. */
+function react(editor: Editor, emoji: string) {
+  const taken: Rect[] = editor
+    .getElements()
+    .filter((el) => el.type === 'emoji')
+    .map(({ x, y, w, h }) => ({ x, y, w, h }));
+  const stamps: NewElement<'emoji'>[] = [];
+  for (const el of reactable(editor)) {
+    const bounds = editor.getBounds([el.id]);
+    if (!bounds) continue;
+    const size = reactionSize(bounds);
+    const at = reactionSlot(bounds, size, taken);
+    stamps.push({ type: 'emoji', emoji, x: at.x, y: at.y, w: size, h: size, frameId: el.frameId ?? null });
+  }
+  editor.createMany(stamps as NewElement[]);
+}
+
+// Right-click → "React with ▸" → one entry per stamp.
+export default defineCommands(
+  STAMPS.map((stamp): CommandDefinition => ({
+    id: `emoji.react.${stamp.id}`,
+    label: stamp.label,
+    group: 'React with',
+    icon: stampIcon(stamp),
     menus: ['context'],
     when: (editor) => reactable(editor).length > 0,
-    run(editor) {
-      const targets = reactable(editor);
-      const { current = DEFAULT_CHOICE } = editor.getToolOptions<EmojiToolOptions>(TOOL_ID);
-      const taken: Rect[] = editor
-        .getElements()
-        .filter((el) => el.type === 'emoji')
-        .map(({ x, y, w, h }) => ({ x, y, w, h }));
-      const stamps: NewElement<'emoji'>[] = [];
-      for (const el of targets) {
-        const bounds = editor.getBounds([el.id]);
-        if (!bounds) continue;
-        const size = reactionSize(bounds);
-        const at = reactionSlot(bounds, size, taken);
-        stamps.push({ type: 'emoji', emoji: current, x: at.x, y: at.y, w: size, h: size, frameId: el.frameId ?? null });
-      }
-      editor.createMany(stamps as NewElement[]);
-    },
-  },
-]);
+    run: (editor) => react(editor, `${STAMP_PREFIX}${stamp.id}`),
+  })),
+);

@@ -1,5 +1,5 @@
 // Freero's own stamps: simple vector badges drawn on a 100 × 100 grid.
-import type { ReactNode } from 'react';
+import type { ComponentType, ReactNode } from 'react';
 
 export interface StampDef {
   id: string; // stored as `stamp:<id>`
@@ -125,4 +125,15 @@ export function StampArt({ stamp }: { stamp: StampDef }) {
       {stamp.art}
     </svg>
   );
+}
+
+/** A stamp as a menu icon (lucide-style `size` prop). */
+export function stampIcon(stamp: StampDef): ComponentType<{ size?: number | string }> {
+  const Icon = ({ size = 16 }: { size?: number | string }) => (
+    <svg viewBox="0 0 100 100" width={size} height={size} aria-hidden>
+      {stamp.art}
+    </svg>
+  );
+  Icon.displayName = `StampIcon(${stamp.id})`;
+  return Icon;
 }
