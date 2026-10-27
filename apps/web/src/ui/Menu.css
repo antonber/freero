@@ -67,6 +67,18 @@
   margin-left: 16px;
 }
 
+/* Submenu chevron; the open submenu's parent stays highlighted. */
+.fr-menu__more {
+  margin-left: 12px;
+  margin-right: -4px;
+  color: var(--fr-ink-3);
+  flex: none;
+}
+
+.fr-menu__item.is-open {
+  background: var(--fr-surface-3);
+}
+
 .fr-menu .fr-kbd {
   background: transparent;
   border: 0;

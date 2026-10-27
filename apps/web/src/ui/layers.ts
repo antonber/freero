@@ -24,6 +24,12 @@ export interface DismissOptions {
   anchor?: HTMLElement | DOMRect | Box | null;
   closeOnEscape?: boolean;
   closeOnOutside?: boolean;
+  /**
+   * Escape pressed inside the layer goes to the focused content first (an inline editor
+   * cancels its edit); the layer closes only if the content didn't handle it
+   * (preventDefault / stopPropagation).
+   */
+  escapeToContent?: boolean;
 }
 
 /** Registers a dismissable layer; returns its depth in the stack (0 = bottom). */
@@ -34,13 +40,14 @@ export function useDismissableLayer({
   anchor,
   closeOnEscape = true,
   closeOnOutside = true,
+  escapeToContent = false,
 }: DismissOptions): number {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const anchorRef = useRef(anchor);
   anchorRef.current = anchor;
-  const optsRef = useRef({ closeOnEscape, closeOnOutside });
-  optsRef.current = { closeOnEscape, closeOnOutside };
+  const optsRef = useRef({ closeOnEscape, closeOnOutside, escapeToContent });
+  optsRef.current = { closeOnEscape, closeOnOutside, escapeToContent };
   const [depth, setDepth] = useState(0);
 
   useLayoutEffect(() => {
@@ -52,6 +59,16 @@ export function useDismissableLayer({
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || !optsRef.current.closeOnEscape) return;
       if (stack[stack.length - 1] !== layer) return;
+      const el = ref.current;
+      if (optsRef.current.escapeToContent && el && e.target instanceof Node && e.target !== el && el.contains(e.target)) {
+        // Hand the key to the content; if it reaches the window's bubble phase unhandled, close.
+        const after = (ev: KeyboardEvent) => {
+          window.removeEventListener('keydown', after);
+          if (ev === e && !e.defaultPrevented && stack[stack.length - 1] === layer) onCloseRef.current();
+        };
+        window.addEventListener('keydown', after);
+        return;
+      }
       e.preventDefault();
       e.stopPropagation();
       onCloseRef.current();
@@ -157,16 +174,24 @@ export function useFloatingPosition({
   return {
     style: pos
       ? { position: 'fixed', left: Math.round(pos.x), top: Math.round(pos.y) }
-      : { position: 'fixed', left: 0, top: 0, visibility: 'hidden' },
+      : // Not placed yet (only until the layout effect above re-renders, before paint). Invisible
+        // but NOT visibility:hidden, so content can take focus while mounting (autoFocus).
+        { position: 'fixed', left: 0, top: 0, opacity: 0, pointerEvents: 'none' },
     side: pos?.side ?? side,
   };
 }
 
 /** Remembers the focused element when a layer opens and restores it on close. */
 export function useRestoreFocus(open: boolean, ref: RefObject<HTMLElement>) {
+  // Captured while rendering the open: by the time effects run, mount-time autofocus has
+  // already moved focus into the layer.
+  const opener = useRef<HTMLElement | null>(null);
+  const wasOpen = useRef(false);
+  if (open && !wasOpen.current && typeof document !== 'undefined') opener.current = document.activeElement as HTMLElement | null;
+  wasOpen.current = open;
   useEffect(() => {
     if (!open) return;
-    const prev = document.activeElement as HTMLElement | null;
+    const prev = opener.current;
     return () => {
       const el = ref.current;
       const active = document.activeElement;
