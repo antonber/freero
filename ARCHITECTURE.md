@@ -148,6 +148,22 @@ modules/<name>/    auth, boards, members, uploads, realtime …
   sync, roles, persistence across restart. No fake harness.
 - UI: drive the real app in a browser (see `.claude/skills/verify-freero/`).
 
+### What a test is for
+
+Every test guards a behaviour a user or another module relies on, which a plausible change could
+break. Write it from the scenario ("dragging a frame moves its children but not an overlapping
+sticky outside it"), not from the code.
+
+Not allowed (reviewers delete these on sight):
+- asserting a component renders its own label/props ("the Enter button says Enter"), snapshots
+- asserting constants, defaults or config equal what they were set to
+- asserting a mock/stub returns what the test told it to, or that a function was "called"
+  when the observable outcome could be checked instead
+- several tests that would all fail for the same bug — keep the strongest one
+
+Prefer fewer, scenario-level tests at the seam where bugs actually happen (geometry, sync, permissions,
+undo grouping, serialization). Name each test after the failure it prevents.
+
 ## Git
 
 Small, well-named commits, each scoped to one owned area (`engine: …`, `features/sticky: …`,
