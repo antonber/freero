@@ -137,10 +137,19 @@ export function startThumbnails(core: EngineCore): { stop(): Promise<void> } {
     const wait = Math.max(THUMB_FIRST_DELAY_MS, lastSave + THUMB_EVERY_MS - Date.now());
     timer = setTimeout(() => void save(), wait);
   });
+  // Switching tabs or closing the window within the first-save delay would otherwise lose
+  // the thumbnail; save as soon as the page is hidden.
+  const onHidden = () => {
+    if (document.visibilityState !== 'hidden' || !dirty) return;
+    if (timer) clearTimeout(timer);
+    void save();
+  };
+  document.addEventListener('visibilitychange', onHidden);
   return {
     async stop() {
       if (timer) clearTimeout(timer);
       off();
+      document.removeEventListener('visibilitychange', onHidden);
       await save();
     },
   };
