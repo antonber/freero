@@ -114,6 +114,11 @@ export function useEditingId(): string | null {
   return useUi((s) => s.editingId);
 }
 
+/** [additive] Part being edited (Editor.startEditing `part`) of the element being edited, or null. */
+export function useEditingPart(): string | null {
+  return useUi((s) => (s.editingId ? s.editingPart : null));
+}
+
 export function useDock(): string | null {
   return useUi((s) => s.dock);
 }
@@ -160,4 +165,9 @@ export function useCanEdit(): boolean {
 /** [additive] Whose view this client follows (Editor.follow), or null. */
 export function useFollowing(): FollowTarget | null {
   return useUi((s) => s.following);
+}
+
+/** [additive] Ids hidden for this viewer only (Editor.setViewHidden); re-renders when they change. */
+export function useViewHidden(): ReadonlySet<string> {
+  return useUi((s) => s.viewHidden);
 }

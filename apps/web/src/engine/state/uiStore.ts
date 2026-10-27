@@ -2,7 +2,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import type { Role } from '@freero/shared';
 import type { Camera, FollowTarget, Rect } from '../api';
-import type { SnapGuide } from '../geometry/snap';
+import type { GapGuide, SnapGuide } from '../geometry/snap';
 import type { ConnectionStatus } from '../store/BoardStore';
 
 export type TransformKind = 'translate' | 'resize' | 'rotate' | 'marquee' | 'pan' | 'tool' | null;
@@ -11,6 +11,8 @@ export interface EditRequest {
   id: string;
   selectAll?: boolean;
   initialText?: string;
+  /** [additive] Part of the element being edited (ElementDefinition.textPartAt), if any. */
+  part?: string;
   /** Monotonic counter so repeated requests for the same id re-trigger focus. */
   nonce: number;
 }
@@ -29,11 +31,15 @@ export interface UiState {
   viewport: { width: number; height: number };
   editingId: string | null;
   editRequest: EditRequest | null;
+  /** [additive] Part of `editingId` being edited (table cell, extra connector label), or null. */
+  editingPart: string | null;
   dock: string | null;
   toolOptions: Record<string, Record<string, unknown>>;
   hoverId: string | null;
   marquee: Rect | null;
   guides: SnapGuide[];
+  /** Equal-spacing distance markers while dragging (see geometry/snap). */
+  gaps: GapGuide[];
   transforming: TransformKind;
   connection: ConnectionStatus;
   synced: boolean;
@@ -63,6 +69,8 @@ export interface UiState {
   dialog: { id: string; props?: Record<string, unknown> } | null;
   /** Whose view this client follows (Editor.follow). */
   following: FollowTarget | null;
+  /** Elements hidden for this viewer only (Editor.setViewHidden). Replaced, never mutated. */
+  viewHidden: ReadonlySet<string>;
 }
 
 export interface PointerState {
@@ -86,11 +94,13 @@ export function createUiStore(init: { role: Role }): UiStore {
     viewport: { width: 1, height: 1 },
     editingId: null,
     editRequest: null,
+    editingPart: null,
     dock: null,
     toolOptions: {},
     hoverId: null,
     marquee: null,
     guides: [],
+    gaps: [],
     transforming: null,
     connection: 'connecting',
     synced: false,
@@ -109,5 +119,7 @@ export function createUiStore(init: { role: Role }): UiStore {
     chromeHidden: false,
     dialog: null,
     following: null,
+    viewHidden: new Set<string>(),
   }));
+
 }

@@ -142,26 +142,69 @@ export class EditorImpl implements Editor {
   }
 
   /** True when the element's definition says it isn't on the board right now (ElementDefinition.hidden). */
-  isHidden(el: BoardElement): boolean {
+  isOffBoard(el: BoardElement): boolean {
     const reg = this.core.registry.elements.get(el.type);
     return !!reg?.def.hidden && !!reg.def.hidden(el, this.core.scoped(reg.feature));
+  }
+
+  /**
+   * Not shown to this viewer: off the board (isOffBoard), or hidden for this viewer only
+   * (setViewHidden) — itself or a container it sits in.
+   */
+  isHidden(el: BoardElement): boolean {
+    const vh = this.core.ui.getState().viewHidden;
+    if (vh.size) {
+      let cur: BoardElement | undefined = el;
+      for (let depth = 0; cur && depth < 16; depth++) {
+        if (vh.has(cur.id)) return true;
+        cur = cur.frameId ? this.core.store.getElement(cur.frameId) : undefined;
+      }
+    }
+    return this.isOffBoard(el);
   }
 
   /** Elements in render order without hidden ones (what hit tests, marquee, bounds, culling see). */
   getVisibleElements(): BoardElement[] {
     const all = this.getElements();
-    if (![...this.core.registry.elements.values()].some((r) => r.def.hidden)) return all;
+    if (!this.core.ui.getState().viewHidden.size && ![...this.core.registry.elements.values()].some((r) => r.def.hidden)) return all;
     return all.filter((el) => !this.isHidden(el));
+  }
+
+  setViewHidden(ids: string[], hidden: boolean): void {
+    const cur = this.core.ui.getState().viewHidden;
+    const next = new Set(cur);
+    for (const id of ids) {
+      if (hidden) next.add(id);
+      else next.delete(id);
+    }
+    if (next.size === cur.size && [...next].every((id) => cur.has(id))) return;
+    this.core.ui.setState({ viewHidden: next, hoverId: null });
+    // What the viewer can no longer see can't stay selected (Delete would act on it unseen).
+    const sel = this.getSelection();
+    const seen = sel.filter((id) => {
+      const el = this.getElement(id);
+      return !!el && !this.isHidden(el);
+    });
+    if (seen.length !== sel.length) this.select(seen);
+  }
+
+  getViewHidden(): string[] {
+    return [...this.core.ui.getState().viewHidden];
   }
 
   getBounds(ids?: string[], opts: { visual?: boolean } = {}): Rect | null {
     const els = ids
       ? ids.map((id) => this.getElement(id)).filter((e): e is BoardElement => !!e && !this.isHidden(e))
       : this.getVisibleElements();
-    if (!opts.visual) return boundsOf(els);
+    return opts.visual ? this.visualBoundsOf(els) : boundsOf(els);
+  }
+
+  /** Union of the elements' boxes including what each draws outside it (visualOutset). */
+  visualBoundsOf(els: BoardElement[]): Rect | null {
     const zoom = this.getCamera().zoom;
     return rectUnion(els.map((el) => visualAABB(el, this.getDefinition(el.type)?.visualOutset?.(el, zoom))));
   }
+
 
   hitTest(point: Point, opts: { exclude?: string[]; types?: ElementType[] } = {}): BoardElement | null {
     const zoom = this.core.ui.getState().camera.zoom;
@@ -376,12 +419,52 @@ export class EditorImpl implements Editor {
       runFollowers(this.core, [], all);
     });
     const gone = new Set(all);
+    if ([...gone].some((id) => this.core.ui.getState().viewHidden.has(id))) {
+      this.core.ui.setState({ viewHidden: new Set([...this.core.ui.getState().viewHidden].filter((id) => !gone.has(id))) });
+    }
     const sel = this.getSelection();
     if (sel.some((id) => gone.has(id))) this.core.ui.setState({ selection: sel.filter((id) => !gone.has(id)) });
   }
 
   transact(fn: () => void): void {
     this.core.store.transact(fn);
+  }
+
+  moveBy(moves: Array<{ id: string; dx: number; dy: number }>): void {
+    if (!moves.length || !this.guardWrite()) return;
+    const delta = new Map<string, Point>();
+    for (const m of moves) if ((m.dx || m.dy) && Number.isFinite(m.dx) && Number.isFinite(m.dy)) delta.set(m.id, { x: m.dx, y: m.dy });
+    // A container's children travel with it, unless they were given their own move.
+    for (const [id, d] of [...delta]) for (const child of this.withChildren([id])) if (!delta.has(child)) delta.set(child, d);
+    const patches: Array<{ id: string; patch: ElementPatch }> = [];
+    const moved: string[] = [];
+    for (const [id, d] of delta) {
+      const el = this.getElement(id);
+      if (!el || el.locked) continue;
+      const t = translateElement(el, d.x, d.y);
+      const patch: Record<string, unknown> = { x: t.x, y: t.y };
+      if (t.type === 'connector') {
+        patch.start = t.start;
+        patch.end = t.end;
+        if (t.waypoints) patch.waypoints = t.waypoints;
+      }
+      patches.push({ id, patch: patch as ElementPatch });
+      moved.push(id);
+    }
+    if (!patches.length) return;
+    this.core.store.transact(() => {
+      this.updateMany(patches);
+      // Same membership rule as a drop: an element now centered in another container joins it.
+      const movedSet = new Set(moved);
+      const membership: Array<{ id: string; patch: ElementPatch }> = [];
+      for (const id of moved) {
+        const el = this.getElement(id);
+        if (!el || this.getDefinition(el.type)?.container || (el.frameId && movedSet.has(el.frameId))) continue;
+        const fid = this.containerAt(rectCenter(elementAABB(el)), movedSet)?.id ?? null;
+        if ((el.frameId ?? null) !== fid) membership.push({ id, patch: { frameId: fid } });
+      }
+      this.updateMany(membership);
+    });
   }
 
   /** Every local write until endGesture() becomes one undo step. Used by tools and the text editor. */
@@ -429,9 +512,11 @@ export class EditorImpl implements Editor {
     let z = this.core.store.maxZ();
     const now = Date.now();
     const built = moved.map((el) => ({ ...el, z: ++z, createdBy: this.user.id, createdAt: now, updatedAt: now }));
+    const content = this.copyContentOf(source);
     this.core.store.transact(() => {
       for (const el of built) this.core.store.setElement(el);
       this.adoptIntoContainers(built.map((b) => b.id));
+      this.pasteContentInto(built, idMap, content);
     });
     const top = ids.map((id) => idMap.get(id)!).filter(Boolean);
     this.select(top);
@@ -488,9 +573,38 @@ export class EditorImpl implements Editor {
       })
       .filter(Boolean)
       .join('\n');
-    const payload: ClipboardPayload = { app: 'freero', version: 1, boardId: this.boardId, elements };
+    const content = this.copyContentOf(elements);
+    const payload: ClipboardPayload = { app: 'freero', version: 1, boardId: this.boardId, elements, ...(content ? { content } : {}) };
     const s = serializeClipboard(payload, text);
     return { ...s, payload };
+  }
+
+  /** [additive] ElementDefinition.copyContent of each source element that has one, by source id. */
+  private copyContentOf(source: BoardElement[]): Record<string, unknown> | undefined {
+    let out: Record<string, unknown> | undefined;
+    for (const el of source) {
+      const reg = this.core.registry.elements.get(el.type);
+      if (!reg?.def.copyContent) continue;
+      const c = reg.def.copyContent(el as never, this.core.scoped(reg.feature));
+      if (c !== undefined) (out ??= {})[el.id] = c;
+    }
+    return out;
+  }
+
+  /** Hands copied content to pasteContent of each new copy (call inside the creating transaction). */
+  private pasteContentInto(built: BoardElement[], idMap: Map<string, string>, content: Record<string, unknown> | undefined): void {
+    if (!content) return;
+    const byNew = new Map([...idMap].map(([from, to]) => [to, from]));
+    for (const el of built) {
+      const from = byNew.get(el.id);
+      const reg = this.core.registry.elements.get(el.type);
+      if (!from || !(from in content) || !reg?.def.pasteContent) continue;
+      try {
+        reg.def.pasteContent(el as never, content[from], this.core.scoped(reg.feature));
+      } catch (err) {
+        console.error(`pasteContent of '${el.type}' failed`, err);
+      }
+    }
   }
 
   copy(ids?: string[]): void {
@@ -563,7 +677,7 @@ export class EditorImpl implements Editor {
     if (!this.guardWrite()) return [];
     const known = payload.elements.filter((el) => this.core.registry.elements.has(el.type));
     if (!known.length) return [];
-    const { elements } = remapElements(known, () => nanoid());
+    const { elements, idMap } = remapElements(known, () => nanoid());
     // Pasting again without moving the pointer cascades each copy down-right instead of stacking
     // it exactly on the previous one (where it would look like nothing happened).
     const prev = this.shared.lastPaste;
@@ -577,6 +691,7 @@ export class EditorImpl implements Editor {
     this.core.store.transact(() => {
       for (const el of built) this.core.store.setElement(el);
       this.adoptIntoContainers(built.map((b) => b.id));
+      this.pasteContentInto(built, idMap, payload.content);
     });
     // Select top-level pasted elements (not children of pasted frames).
     const pastedIds = new Set(built.map((b) => b.id));
@@ -650,18 +765,24 @@ export class EditorImpl implements Editor {
     return this.core.ui.getState().editingId;
   }
 
-  startEditing(id: string, opts: { selectAll?: boolean; initialText?: string } = {}): void {
+  getEditingPart(): string | null {
+    return this.getEditingId() ? this.core.ui.getState().editingPart : null;
+  }
+
+  startEditing(id: string, opts: { selectAll?: boolean; initialText?: string; part?: string } = {}): void {
     const el = this.getElement(id);
     if (!el) return;
     const def = this.getDefinition(el.type);
-    if (!def?.textField) return;
+    const part = opts.part ?? null;
+    if (!def || (!def.textField && !part)) return;
     if (!this.guardWrite()) return;
     if (el.locked) {
       this.host.notify('Unlock this item to edit it.', 'info');
       return;
     }
     const cur = this.getEditingId();
-    if (cur && cur !== id) this.stopEditing();
+    // Another element, or another part of this one: that edit session ends (its own undo step).
+    if (cur && (cur !== id || this.getEditingPart() !== part)) this.stopEditing();
     if (!this.shared.editingGesture) {
       this.shared.editingGesture = true;
       this.core.store.beginGesture();
@@ -670,7 +791,8 @@ export class EditorImpl implements Editor {
     this.core.ui.setState({
       selection: [id],
       editingId: id,
-      editRequest: { id, selectAll: opts.selectAll, initialText: opts.initialText, nonce: (prev?.nonce ?? 0) + 1 },
+      editingPart: part,
+      editRequest: { id, selectAll: opts.selectAll, initialText: opts.initialText, part: part ?? undefined, nonce: (prev?.nonce ?? 0) + 1 },
       hoverId: null,
     });
   }
@@ -679,10 +801,11 @@ export class EditorImpl implements Editor {
     const id = this.getEditingId();
     if (!id) return;
     this.core.text?.flush();
-    this.core.ui.setState({ editingId: null, editRequest: null });
+    const part = this.core.ui.getState().editingPart;
+    this.core.ui.setState({ editingId: null, editRequest: null, editingPart: null });
     const el = this.getElement(id);
     const def = el && this.getDefinition(el.type);
-    if (el && def?.removeWhenEmpty && def.textField) {
+    if (el && !part && def?.removeWhenEmpty && def.textField) {
       const text = richTextToPlain(String((el as unknown as Record<string, unknown>)[def.textField] ?? '')).trim();
       if (!text) this.remove([id]);
     }
@@ -914,7 +1037,8 @@ export class EditorImpl implements Editor {
       prev.def.onCancel?.(ed);
       prev.def.onDeactivate?.(ed);
     }
-    this.core.ui.setState({ toolId: id, hoverId: null, guides: [], marquee: null });
+    this.core.ui.setState({ toolId: id, hoverId: null, guides: [], gaps: [], marquee: null });
+
     reg.def.onActivate?.(this.core.scoped(reg.feature));
   }
 

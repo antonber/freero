@@ -110,6 +110,13 @@ export function createCore(host: Host, bundles: FeatureBundle[], opts: { persist
     store.destroy();
     throw err;
   }
+  // [additive] Feature collections that join the undo history (FeatureManifest.undoable).
+  for (const { manifest } of bundles)
+    for (const name of manifest.undoable ?? []) {
+      if (!manifest.owns?.includes(name))
+        throw new Error(`Feature '${manifest.name}' lists '${name}' as undoable but doesn't own it; add it to \`owns\`.`);
+      store.trackUndo(name);
+    }
 
   // ---- restore per-user tool options (e.g. last sticky color)
   ui.setState({ toolOptions: loadToolOptions(), connection: store.status, synced: store.synced });

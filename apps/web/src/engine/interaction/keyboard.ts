@@ -5,6 +5,12 @@ import { eventKey, isPrintableKey, matchShortcut, parseShortcut } from '../runti
 import { NATIVE_CLIPBOARD_COMMANDS } from '../editor/engineCommands';
 import { translateElement } from '../editor/clipboard';
 import { richTextToPlain } from '../text/sanitize';
+import { rectContainsRect, rectCenter } from '../geometry/geometry';
+import { readingOrder } from '../geometry/order';
+
+/** A pause this long (ms) after the last arrow-key nudge ends the burst (one undo step). */
+const NUDGE_IDLE_MS = 1000;
+const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'Meta']);
 
 /** Undo/redo shortcuts: they also work from non-modal popovers (see onKeyDown). */
 const UNDO_SHORTCUTS = new Set(['mod+z', 'mod+shift+z', 'mod+y']);
@@ -68,6 +74,70 @@ export function installKeyboard(core: EngineCore): () => void {
     return false;
   };
 
+  // A burst of arrow-key nudges is ONE undo step: the first nudge opens a gesture, which closes
+  // after a pause or as soon as anything else happens (another key, a pointer press, blur).
+  let nudgeTimer: ReturnType<typeof setTimeout> | null = null;
+  const endNudgeBurst = () => {
+    if (!nudgeTimer) return;
+    clearTimeout(nudgeTimer);
+    nudgeTimer = null;
+    editor.endGesture();
+  };
+
+  /**
+   * The selection the last Tab cycle made. While it is still the selection, Tab keeps cycling even
+   * on items whose type claims Tab (a sticky's "add to the right", a mind-map "add child"): those
+   * keep Tab for items the user picked, so Tab-walking never creates notes by surprise.
+   */
+  let cycled: string[] | null = null;
+  const stillCycling = () => {
+    const sel = editor.getSelection();
+    return !!cycled && sel.length === cycled.length && sel.every((id, i) => id === cycled![i]);
+  };
+  const isCycleKey = (e: KeyboardEvent, target: EventTarget | null) =>
+    eventKey(e) === 'tab' &&
+    !e.ctrlKey &&
+    !e.metaKey &&
+    !e.altKey &&
+    // Only from the canvas: focused chrome keeps native Tab focus navigation.
+    (target === document.body || target === core.dom.viewport || target === null);
+
+  /** Tab / Shift+Tab with nothing being edited: select the next/previous item in reading order. */
+  const cycleSelection = (dir: 1 | -1) => {
+    const items = readingOrder(editor.getVisibleElements().filter((el) => el.type !== 'connector'));
+    if (!items.length) return;
+    const sel = editor.getSelection();
+    const selSet = new Set(sel);
+    const groups = new Set(sel.map((id) => editor.getElement(id)?.groupId).filter(Boolean));
+    const at = dir > 0 ? items.map((el) => selSet.has(el.id)).lastIndexOf(true) : items.findIndex((el) => selSet.has(el.id));
+    let next = items[0];
+    if (at < 0 && dir < 0) next = items[items.length - 1];
+    if (at >= 0) {
+      for (let step = 1; step <= items.length; step++) {
+        const cand = items[(at + dir * step + items.length * step) % items.length];
+        if (!selSet.has(cand.id) && !(cand.groupId && groups.has(cand.groupId))) {
+          next = cand;
+          break;
+        }
+      }
+    }
+    const ids = editor.expandGroups([next.id]);
+    editor.select(ids);
+    cycled = editor.getSelection();
+    // Bring it into view (same zoom) when it isn't fully visible in the free part of the screen.
+    const b = editor.getBounds(ids, { visual: true });
+    if (!b) return;
+    const safe = editor.getSafeArea();
+    const tl = editor.screenToWorld({ x: safe.x, y: safe.y });
+    const br = editor.screenToWorld({ x: safe.x + safe.w, y: safe.y + safe.h });
+    if (rectContainsRect({ x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y }, b)) return;
+    const cam = editor.getCamera();
+    if (b.w * cam.zoom > safe.w * 0.9 || b.h * cam.zoom > safe.h * 0.9) return editor.zoomToFit(ids, { maxZoom: cam.zoom });
+    const c = rectCenter(b);
+    const sc = { x: safe.x + safe.w / 2, y: safe.y + safe.h / 2 };
+    editor.setCamera({ x: c.x - sc.x / cam.zoom, y: c.y - sc.y / cam.zoom, zoom: cam.zoom }, { animate: true });
+  };
+
   const nudge = (e: KeyboardEvent): boolean => {
     const k = eventKey(e);
     const dir = { arrowleft: [-1, 0], arrowright: [1, 0], arrowup: [0, -1], arrowdown: [0, 1] }[k];
@@ -81,6 +151,10 @@ export function installKeyboard(core: EngineCore): () => void {
       .withChildren(sel)
       .map((id) => editor.getElement(id))
       .filter((el): el is BoardElement => !!el && !el.locked);
+    if (!els.length) return true;
+    if (nudgeTimer) clearTimeout(nudgeTimer);
+    else editor.beginGesture();
+    nudgeTimer = setTimeout(endNudgeBurst, NUDGE_IDLE_MS);
     editor.updateMany(
       els.map((el) => {
         const t = translateElement(el, dir[0] * step, dir[1] * step);
@@ -92,6 +166,7 @@ export function installKeyboard(core: EngineCore): () => void {
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
+    if (nudgeTimer && !MODIFIER_KEYS.has(e.key) && !eventKey(e).startsWith('arrow')) endNudgeBurst();
     if (e.defaultPrevented || e.isComposing) return;
     const target = e.target;
 
@@ -132,6 +207,12 @@ export function installKeyboard(core: EngineCore): () => void {
       return;
     }
 
+    // [additive] A tap of Space first goes to the selected types (mind map: collapse/expand);
+    // when none claims it, holding Space pans as usual.
+    if (e.key === ' ' && !e.repeat && selectedTypesHandle(e)) {
+      e.preventDefault();
+      return;
+    }
     if (e.key === ' ' && !e.repeat) {
       ui.setState({ spaceHeld: true });
       e.preventDefault();
@@ -145,6 +226,13 @@ export function installKeyboard(core: EngineCore): () => void {
     const toolReg = core.registry.toolsById.get(ui.getState().toolId);
     if (toolReg?.def.onKeyDown?.(core.scoped(toolReg.feature), e)) {
       e.preventDefault();
+      return;
+    }
+
+    // Tab-walking continues past items whose type claims Tab (see `cycled`).
+    if (isCycleKey(e, target) && stillCycling()) {
+      e.preventDefault();
+      cycleSelection(e.shiftKey ? -1 : 1);
       return;
     }
 
@@ -163,6 +251,9 @@ export function installKeyboard(core: EngineCore): () => void {
       if (core.interaction.cancel) return core.interaction.cancel();
       if (s.following) return editor.follow(null);
       if (s.toolId !== 'select') return editor.setTool('select');
+      // Walk out one level: a member picked out of a group (double-click) → the whole group → nothing.
+      const whole = editor.expandGroups(s.selection);
+      if (whole.length > s.selection.length) return editor.select(whole);
       if (s.selection.length) return editor.clearSelection();
       return;
     }
@@ -180,6 +271,14 @@ export function installKeyboard(core: EngineCore): () => void {
       const p = parseShortcut(sc);
       return p.mod || p.alt || p.key.length > 1 || p.shift;
     })) return;
+
+    // Tab / Shift+Tab that no command claimed (sticky "add to the right" on a sticky you picked,
+    // mind-map "add child") cycles through the board's items.
+    if (isCycleKey(e, target)) {
+      e.preventDefault();
+      cycleSelection(e.shiftKey ? -1 : 1);
+      return;
+    }
 
     // Typing on a single selected EMPTY text element (a fresh "+" copy, a new sticky) fills it.
     // Items that already have text keep letters as tool shortcuts (N, T, S… right after Esc must
@@ -216,7 +315,13 @@ export function installKeyboard(core: EngineCore): () => void {
     if (e.key === ' ') ui.setState({ spaceHeld: false });
   };
 
-  const onBlur = () => ui.setState({ spaceHeld: false });
+  const onBlur = () => {
+    endNudgeBurst();
+    ui.setState({ spaceHeld: false });
+  };
+  // Pressing anything (a tool on the canvas, a toolbar button) ends a nudge burst first, so its
+  // own undo step never merges into the nudges.
+  const onPointerDown = () => endNudgeBurst();
 
   // ---- clipboard: the native events carry system clipboard data synchronously.
   const onCopy = (e: ClipboardEvent) => {
@@ -253,6 +358,7 @@ export function installKeyboard(core: EngineCore): () => void {
     );
   };
 
+  window.addEventListener('pointerdown', onPointerDown, true);
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
   window.addEventListener('blur', onBlur);
@@ -260,7 +366,10 @@ export function installKeyboard(core: EngineCore): () => void {
   document.addEventListener('cut', onCut);
   document.addEventListener('paste', onPaste);
   return () => {
+    endNudgeBurst();
+    window.removeEventListener('pointerdown', onPointerDown, true);
     window.removeEventListener('keydown', onKeyDown);
+
     window.removeEventListener('keyup', onKeyUp);
     window.removeEventListener('blur', onBlur);
     document.removeEventListener('copy', onCopy);

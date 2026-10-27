@@ -23,7 +23,12 @@ export const SILENT_ORIGIN = { source: 'freero-silent' };
 
 export type ConnectionStatus = 'local' | 'connecting' | 'connected' | 'disconnected' | 'denied';
 
-export const DEFAULT_SETTINGS: BoardSettings = { background: '#F3F2F8', grid: 'dots' };
+export const DEFAULT_SETTINGS: BoardSettings = { background: '#F3F2F8', grid: 'dots', gridSize: 24, snapToGrid: false };
+
+/** A stored grid size another client wrote: a sane positive number, else the default. */
+function validGridSize(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 4 && v <= 512 ? v : null;
+}
 
 export interface BoardStoreOptions {
   boardId: string;
@@ -271,6 +276,8 @@ export class BoardStore {
     return {
       background: (this.settings.get('background') as string) ?? DEFAULT_SETTINGS.background,
       grid: (this.settings.get('grid') as BoardSettings['grid']) ?? DEFAULT_SETTINGS.grid,
+      gridSize: validGridSize(this.settings.get('gridSize')) ?? DEFAULT_SETTINGS.gridSize,
+      snapToGrid: this.settings.get('snapToGrid') === true,
     };
   }
 
@@ -288,6 +295,11 @@ export class BoardStore {
   /** Raw map for a feature collection. The ownership guard lives in store/collections.ts. */
   collectionMap<T>(name: string): Y.Map<T> {
     return this.doc.getMap<T>(name);
+  }
+
+  /** [additive] Local writes to this collection become part of the undo history (FeatureManifest.undoable). */
+  trackUndo(name: string): void {
+    this.undoManager.addToScope(this.doc.getMap(name));
   }
 
   // ---------------------------------------------------------------- undo

@@ -90,6 +90,40 @@ export function sanitizeRichText(html: string): string {
 
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', '#39': "'" };
 
+const decodeEntities = (s: string) =>
+  s.replace(/&(#\d+|#x[0-9a-f]+|\w+);/gi, (m, e: string) => {
+    if (e[0] === '#') {
+      const code = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+      return Number.isFinite(code) ? String.fromCodePoint(code) : m;
+    }
+    return ENTITIES[e.toLowerCase()] ?? m;
+  });
+
+/**
+ * [additive] Replaces `find` in the TEXT of rich text, keeping every tag (bold, links, colors) as
+ * it was. Works without a DOM. An occurrence split by formatting ("fo<b>o</b>") isn't replaced.
+ */
+export function replaceInRichText(
+  html: string,
+  find: string,
+  replacement: string,
+  opts: { caseSensitive?: boolean } = {},
+): { html: string; count: number } {
+  if (!html || !find) return { html, count: 0 };
+  const re = new RegExp(find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), opts.caseSensitive ? 'g' : 'gi');
+  let count = 0;
+  const out = html.replace(/(<[^>]*>)|([^<]+)/g, (m, tag: string | undefined, text: string | undefined) => {
+    if (tag || !text) return m;
+    const plain = decodeEntities(text);
+    const next = plain.replace(re, () => {
+      count++;
+      return replacement;
+    });
+    return next === plain ? text : escapeHtml(next);
+  });
+  return { html: out, count };
+}
+
 /** Plain text with newlines for line breaks / paragraphs / list items. Works without a DOM. */
 export function richTextToPlain(html: string): string {
   if (!html) return '';
@@ -98,16 +132,10 @@ export function richTextToPlain(html: string): string {
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<(p|div|li)(\s[^>]*)?>/gi, '\n')
     .replace(/<\/(p|div|li|ul|ol)>/gi, '')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&(#\d+|#x[0-9a-f]+|\w+);/gi, (m, e: string) => {
-      if (e[0] === '#') {
-        const code = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
-        return Number.isFinite(code) ? String.fromCodePoint(code) : m;
-      }
-      return ENTITIES[e.toLowerCase()] ?? m;
-    })
-    .replace(/\n+$/, '');
-  return startsWithBlock ? text.replace(/^\n/, '') : text;
+    .replace(/<[^>]+>/g, '');
+  const decoded = decodeEntities(text).replace(/\n+$/, '');
+  return startsWithBlock ? decoded.replace(/^\n/, '') : decoded;
+
 }
 
 const escapeHtml = (s: string) =>

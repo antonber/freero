@@ -2,7 +2,7 @@
 // Feature format sections first (by order), then the engine's common controls.
 import { Fragment, useLayoutEffect, useRef, useState } from 'react';
 import { useStore } from 'zustand';
-import { Copy, Ellipsis, Layers, Lock, LockOpen, Share, Trash2 } from 'lucide-react';
+import { Copy, Ellipsis, Group, Layers, Lock, LockOpen, Share, Trash2, Ungroup } from 'lucide-react';
 import { IconButton, Menu, type MenuItem } from '@ui';
 import { ScopeContext, useCore } from '../context';
 import { useCamera, useRole, useSelectedElements } from '../hooks';
@@ -108,7 +108,14 @@ export function FormatToolbar() {
   if (clearTop !== null) top = clearTop;
   placed.current = { x: Math.round(left), y: Math.round(top), w: size.w, h: size.h };
   const locked = els.every((e) => e.locked);
+  const someLocked = !locked && els.some((e) => e.locked);
   const ids = els.map((e) => e.id);
+  const canRun = (id: string) => {
+    const reg = core.registry.commands.get(id);
+    return !!reg && (!reg.def.when || reg.def.when(core.scoped(reg.feature)));
+  };
+  const canGroup = canRun('engine.group');
+  const canUngroup = canRun('engine.ungroup');
 
   const arrangeItems: MenuItem[] = [
     { id: 'front', label: 'Bring to front', shortcut: 'Mod+]', onSelect: () => editor.bringToFront(ids) },
@@ -146,9 +153,15 @@ export function FormatToolbar() {
         {!locked && (
           <IconButton ref={arrangeRef} icon={Layers} label="Arrange" size={32} active={arrangeOpen} onClick={() => setArrangeOpen((o) => !o)} />
         )}
+        {!locked && canGroup && <IconButton icon={Group} label="Group" shortcut="Mod+G" size={32} onClick={() => editor.runCommand('engine.group')} />}
+        {!locked && canUngroup && (
+          <IconButton icon={Ungroup} label="Ungroup" shortcut="Mod+Shift+G" size={32} onClick={() => editor.runCommand('engine.ungroup')} />
+        )}
         <IconButton
           icon={locked ? LockOpen : Lock}
-          label={locked ? 'Unlock' : 'Lock'}
+          label={locked ? 'Unlock' : someLocked ? 'Lock all (some are locked)' : 'Lock'}
+          className={someLocked ? 'fr-format__partial' : undefined}
+
           shortcut="Mod+Shift+L"
           size={32}
           active={locked}

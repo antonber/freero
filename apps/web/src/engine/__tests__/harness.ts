@@ -48,6 +48,7 @@ export function makeHost(role: Role = 'owner'): Host {
     renameBoard: async () => undefined,
     saveThumbnail: async () => undefined,
     serverNow: () => Date.now(),
+    unfurl: async () => Promise.reject(new Error('No link previews in tests')),
     listMembers: async () => [],
     openShareDialog: () => undefined,
     navigate: () => undefined,

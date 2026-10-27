@@ -40,6 +40,21 @@ export interface ElementTextProps {
   /** Bounds for fontSize 'auto'. Default min 6, max proportional to the box. */
   minFontSize?: number;
   maxFontSize?: number;
+  /**
+   * [additive] One of SEVERAL texts of the element (a table cell, an extra connector label):
+   * this ElementText edits while `startEditing(element.id, { part })` is active, shows `value`
+   * instead of `element[field]`, and writes through `onCommit` (e.g. into the feature's own
+   * collection) instead of updating the element.
+   */
+  part?: string;
+  value?: string;
+  onCommit?(html: string): void;
+  /**
+   * [additive] Keys typed while editing, before the editor's own handling (Tab / arrows that leave
+   * a table cell). `caret` tells whether the caret sits at the very start / end of the text.
+   * Return true when handled.
+   */
+  onKeyDown?(e: KeyboardEvent, caret: { atStart: boolean; atEnd: boolean }): boolean | void;
 }
 
 const sanitizeCache = new Map<string, string>();
@@ -65,9 +80,10 @@ function ElementTextImpl(props: ElementTextProps) {
   const def = core.editor.getDefinition(element.type);
   const field = props.field ?? def?.textField ?? 'text';
   const rec = element as unknown as Record<string, unknown>;
-  const html = String(rec[field] ?? '');
+  const html = props.value !== undefined ? props.value : String(rec[field] ?? '');
   const exporting = useContext(RenderModeContext) === 'export';
-  const editingLive = useStore(core.ui, (s) => s.editingId === element.id);
+  const part = props.part ?? null;
+  const editingLive = useStore(core.ui, (s) => s.editingId === element.id && s.editingPart === part);
   const editing = editingLive && !exporting;
   const p = props.padding ?? 12;
   const pad = typeof p === 'number' ? { top: p, right: p, bottom: p, left: p } : p;
@@ -111,7 +127,10 @@ function ElementTextImpl(props: ElementTextProps) {
       <TextEditor
         id={element.id}
         field={field}
+        part={part}
         html={html}
+        onCommit={props.onCommit}
+        onKey={props.onKeyDown}
         className={props.className}
         style={boxStyle}
         placeholder={props.placeholder ?? 'Type something…'}
@@ -134,7 +153,10 @@ export const ElementText = memo(ElementTextImpl);
 interface TextEditorProps {
   id: string;
   field: string;
+  part: string | null;
   html: string;
+  onCommit?(html: string): void;
+  onKey?: ElementTextProps['onKeyDown'];
   className?: string;
   style: CSSProperties;
   placeholder: string;
@@ -160,6 +182,20 @@ function selectAllIn(el: HTMLElement) {
   sel?.addRange(range);
 }
 
+/** Whether a collapsed caret sits at the very start / end of `el`'s text. */
+function caretEdges(el: HTMLElement): { atStart: boolean; atEnd: boolean } {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount || !el.contains(sel.anchorNode) || !sel.isCollapsed) return { atStart: false, atEnd: false };
+  const caret = sel.getRangeAt(0);
+  const before = document.createRange();
+  before.selectNodeContents(el);
+  before.setEnd(caret.startContainer, caret.startOffset);
+  const after = document.createRange();
+  after.selectNodeContents(el);
+  after.setStart(caret.endContainer, caret.endOffset);
+  return { atStart: !before.toString().length, atEnd: !after.toString().replace(/\n$/, '').length };
+}
+
 function selectionInside(el: HTMLElement): boolean {
   const sel = window.getSelection();
   return !!sel && sel.rangeCount > 0 && el.contains(sel.anchorNode);
@@ -172,7 +208,13 @@ function TextEditor(props: TextEditorProps) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastWritten = useRef(props.html);
   const [empty, setEmpty] = useState(!richTextToPlain(props.html).trim());
-  const request = useStore(core.ui, (s) => (s.editRequest?.id === props.id ? s.editRequest : null));
+  const request = useStore(core.ui, (s) =>
+    s.editRequest?.id === props.id && (s.editRequest.part ?? null) === props.part ? s.editRequest : null,
+  );
+  const commitRef = useRef(props.onCommit);
+  commitRef.current = props.onCommit;
+  const keyRef = useRef(props.onKey);
+  keyRef.current = props.onKey;
 
   const flush = useCallback(() => {
     if (timer.current) {
@@ -184,7 +226,8 @@ function TextEditor(props: TextEditorProps) {
     const html = sanitizeRichText(el.innerHTML);
     if (html === lastWritten.current) return;
     lastWritten.current = html;
-    core.editor.update(props.id, { [props.field]: html } as never);
+    if (commitRef.current) commitRef.current(html);
+    else core.editor.update(props.id, { [props.field]: html } as never);
   }, [core, props.id, props.field]);
 
   const schedule = useCallback(() => {
@@ -304,6 +347,11 @@ function TextEditor(props: TextEditorProps) {
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.nativeEvent.isComposing) return;
+    if (keyRef.current && ref.current && keyRef.current(e.nativeEvent, caretEdges(ref.current))) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       const sel = window.getSelection();
       const inList = !!(sel?.anchorNode && (sel.anchorNode.nodeType === 1 ? (sel.anchorNode as Element) : sel.anchorNode.parentElement)?.closest('li'));
@@ -329,7 +377,8 @@ function TextEditor(props: TextEditorProps) {
       const active = document.activeElement;
       if (active && ref.current?.contains(active)) return;
       if (active instanceof HTMLElement && active.closest('[data-fr-format-toolbar], [data-fr-keep-editing], [role="dialog"], [role="menu"]')) return;
-      if (core.ui.getState().editingId === props.id) core.editor.stopEditing();
+      const st = core.ui.getState();
+      if (st.editingId === props.id && st.editingPart === props.part) core.editor.stopEditing();
     }, 0);
   };
 

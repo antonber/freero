@@ -4,7 +4,6 @@ import type { BoardSettings } from '@freero/shared';
 import type { Camera } from '../api';
 import { useCore } from '../context';
 
-const BASE = 24;
 const MIN_PX = 14;
 
 function luminance(hex: string): number {
@@ -21,20 +20,25 @@ export interface GridLayers {
   minorAlpha: number;
 }
 
-export function gridLayers(zoom: number): GridLayers {
-  let step = BASE;
+/**
+ * `base` = the board's grid size (world units). Zoomed in, the grid subdivides by 4 down to
+ * `finest` (world units); snap-to-grid passes `base`, so every drawn line is a snap line.
+ */
+export function gridLayers(zoom: number, base = 24, finest = base / 64): GridLayers {
+  let step = base;
   while (step * zoom < MIN_PX) step *= 4;
-  while (step * zoom >= MIN_PX * 4 && step > BASE / 64) step /= 4;
+  while (step * zoom >= MIN_PX * 4 && step / 4 >= finest) step /= 4;
   const major = step * zoom;
   const minor = major / 4;
-  return { major, minorAlpha: Math.max(0, Math.min(1, (minor - 5) / (MIN_PX - 5))) };
+  const minorAlpha = step / 4 < finest ? 0 : Math.max(0, Math.min(1, (minor - 5) / (MIN_PX - 5)));
+  return { major, minorAlpha };
 }
 
 export function gridStyle(cam: Camera, settings: BoardSettings): Partial<CSSStyleDeclaration> {
   if (settings.grid === 'none') return { backgroundImage: 'none' };
   const dark = luminance(settings.background) < 0.45;
   const ink = dark ? '255,255,255' : '40,38,70';
-  const { major, minorAlpha } = gridLayers(cam.zoom);
+  const { major, minorAlpha } = gridLayers(cam.zoom, settings.gridSize, settings.snapToGrid ? settings.gridSize : undefined);
   const minor = major / 4;
   const offX = (s: number) => `${(-cam.x * cam.zoom) % s}px`;
   const offY = (s: number) => `${(-cam.y * cam.zoom) % s}px`;

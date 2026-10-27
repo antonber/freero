@@ -32,12 +32,15 @@ export function createExportRenderer(core: EngineCore) {
     await Promise.resolve();
     const editor = core.editor;
     let elements: BoardElement[];
-    if (opts.ids) elements = editor.withChildren(opts.ids).map((id) => editor.getElement(id)!).filter((el) => el && !editor.isHidden(el));
+    // Board content, not this viewer's view: items hidden "for me" (setViewHidden) still export
+    // (the dashboard thumbnail is everyone's); only items off the board (collapsed branches) don't.
+    if (opts.ids) elements = editor.withChildren(opts.ids).map((id) => editor.getElement(id)!).filter((el) => el && !editor.isOffBoard(el));
     else if (opts.rect) elements = editor.elementsInRect(opts.rect, 'intersect');
-    else elements = [...editor.getVisibleElements()];
+    else elements = editor.getElements().filter((el) => !editor.isOffBoard(el));
     elements.sort(compareRenderOrder);
     // Visual bounds: what definitions draw outside their box (frame titles) is part of the picture.
-    const content = opts.rect ?? editor.getBounds(elements.map((el) => el.id), { visual: true }) ?? { x: 0, y: 0, w: 320, h: 200 };
+    const content = opts.rect ?? editor.visualBoundsOf(elements) ?? { x: 0, y: 0, w: 320, h: 200 };
+
     const rect = expandRect(content, opts.padding ?? (opts.rect ? 0 : 32));
     rect.w = Math.max(1, Math.ceil(rect.w));
     rect.h = Math.max(1, Math.ceil(rect.h));

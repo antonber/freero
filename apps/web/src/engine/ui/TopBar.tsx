@@ -2,13 +2,14 @@
 // Top-right: topbar-right panels + Share.
 import { useEffect, useRef, useState, type ComponentType } from 'react';
 import { ArrowLeft, ChevronRight, Ellipsis, Eye, Link2, Maximize, MessageSquare, PencilLine, Share2 } from 'lucide-react';
-import { Button, ColorSwatches, IconButton, Logo, Menu, Popover, SegmentedControl, Tooltip, type MenuAction } from '@ui';
-import type { BoardSettings } from '@freero/shared';
+import { Button, ColorSwatches, IconButton, Logo, Menu, Popover, SegmentedControl, Toggle, Tooltip, type MenuAction } from '@ui';
+import { GRID_SIZES, type BoardSettings } from '@freero/shared';
 import { useCore } from '../context';
 import { useRole, useSettings } from '../hooks';
 import { ROLE_RANK } from '../runtime/core';
 import { PanelSlotView } from './PanelSlot';
-import { formatShortcut } from '../runtime/shortcuts';
+import { formatShortcut, isMac } from '../runtime/shortcuts';
+
 import { commandItem, groupCommands } from './ContextMenu';
 
 export const BACKGROUNDS = ['#F3F2F8', '#FFFFFF', '#F6F1E7', '#EAF4EE', '#E9F1FB', '#F8ECF1', '#2A2838', '#16151F'];
@@ -179,6 +180,27 @@ function BoardMenu() {
                 aria-label="Grid style"
               />
             </div>
+            <div className="fr-boardmenu__section">
+              <div className="fr-boardmenu__label">Grid size</div>
+              <SegmentedControl
+                size="sm"
+                value={String(settings.gridSize)}
+                onChange={(v) => set({ gridSize: Number(v) })}
+                options={GRID_SIZES.map((n) => ({ value: String(n), label: String(n) }))}
+                aria-label="Grid size"
+              />
+            </div>
+            <div className="fr-boardmenu__section">
+              <Toggle
+                size="sm"
+                checked={settings.snapToGrid}
+                onChange={(snapToGrid) => set({ snapToGrid })}
+                label="Snap to grid"
+                aria-label="Snap to grid"
+              />
+              <span className="fr-boardmenu__hint">Hold {isMac ? '⌘' : 'Ctrl'} while dragging to switch it for one move</span>
+            </div>
+
             <div className="fr-boardmenu__divider" />
           </>
         )}

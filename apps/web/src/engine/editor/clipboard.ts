@@ -11,6 +11,11 @@ export interface ClipboardPayload {
   version: 1;
   boardId: string;
   elements: BoardElement[];
+  /**
+   * [additive] Per source element id: content it keeps outside the elements map
+   * (ElementDefinition.copyContent, e.g. table cells), handed to pasteContent of each copy.
+   */
+  content?: Record<string, unknown>;
 }
 
 export interface ClipboardMemory {

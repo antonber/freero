@@ -71,6 +71,20 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
   let state: State = { kind: 'idle' };
   const ed = () => core.editor;
   const def = (el: BoardElement) => core.editor.getDefinition(el.type);
+  /** [additive] The text part of `el` under world point `p` (ElementDefinition.textPartAt), or null. */
+  const partAt = (el: BoardElement, p: Point): string | null => {
+    const reg = core.registry.elements.get(el.type);
+    if (!reg?.def.textPartAt) return null;
+    return reg.def.textPartAt(el as never, worldToLocal(el, p), { editor: core.scoped(reg.feature), zoom: core.editor.getCamera().zoom });
+  };
+  /** Edits the text part under `p`, else the element's textField. False when there is nothing to edit. */
+  const editAt = (el: BoardElement, p: Point): boolean => {
+    const part = partAt(el, p);
+    if (part) ed().startEditing(el.id, { part });
+    else if (def(el)?.textField) ed().startEditing(el.id);
+    else return false;
+    return true;
+  };
   const ui = core.ui;
 
   const zoom = () => ui.getState().camera.zoom;
@@ -88,6 +102,15 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
       if (out.length >= MAX_SNAP_CANDIDATES) break;
     }
     return out;
+  }
+
+  /**
+   * Grid step to snap to, or undefined: the board's snap-to-grid setting, inverted while Ctrl/⌘
+   * is held during the drag (a temporary "snap to grid" / "snap freely").
+   */
+  function gridStep(e: ToolPointerEvent): number | undefined {
+    const s = core.store.getSettings();
+    return s.snapToGrid !== e.metaKey ? s.gridSize : undefined;
   }
 
   function movableSelection(): BoardElement[] {
@@ -193,12 +216,14 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
     let dx = e.point.x - s.start.x;
     let dy = e.point.y - s.start.y;
     let guides: ReturnType<typeof snapMove>['guides'] = [];
+    let gaps: ReturnType<typeof snapMove>['gaps'] = [];
     if (!e.altKey) {
       const moved = { ...s.bounds, x: s.bounds.x + dx, y: s.bounds.y + dy };
-      const snap = snapMove(moved, s.others, SNAP_PX / zoom());
+      const snap = snapMove(moved, s.others, SNAP_PX / zoom(), { grid: gridStep(e) });
       dx += snap.dx;
       dy += snap.dy;
       guides = snap.guides;
+      gaps = snap.gaps;
     }
     dx = Math.round(dx * 100) / 100;
     dy = Math.round(dy * 100) / 100;
@@ -218,7 +243,7 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
     const moved = new Set(s.snapshot.map((x) => x.id));
     const anyContainer = s.snapshot.some((el) => def(el)?.container);
     const drop = anyContainer ? null : ed().containerAt(e.point, moved);
-    ui.setState({ guides, dropTargetId: drop?.id ?? null });
+    ui.setState({ guides, gaps, dropTargetId: drop?.id ?? null });
   }
 
   function applyResize(s: Extract<State, { kind: 'resize' }>, e: ToolPointerEvent) {
@@ -234,7 +259,7 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
       let box = r.box;
       let guides: ReturnType<typeof snapResize>['guides'] = [];
       if (!e.altKey && !keepAspect && !(el.rotation % 360)) {
-        const snapped = snapResize(box, handleEdges(s.handle), s.others, SNAP_PX / zoom());
+        const snapped = snapResize(box, handleEdges(s.handle), s.others, SNAP_PX / zoom(), { grid: gridStep(e) });
         if (snapped.rect.w >= min.w && snapped.rect.h >= min.h) {
           box = { ...snapped.rect, rotation: box.rotation };
           guides = snapped.guides;
@@ -314,7 +339,8 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
 
   function finish() {
     state = { kind: 'idle' };
-    ui.setState({ transforming: null, guides: [], marquee: null, hint: null, dropTargetId: null });
+    ui.setState({ transforming: null, guides: [], gaps: [], marquee: null, hint: null, dropTargetId: null });
+
   }
 
   return {
@@ -352,8 +378,8 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
           // Double-click: dive into a group, or edit text.
           if (target.groupId && sel.length > 1 && sel.includes(target.id)) {
             ed().select([target.id]);
-          } else if (def(target)?.textField && canEdit) {
-            ed().startEditing(target.id);
+          } else if (canEdit) {
+            editAt(target, e.point);
           }
           state = { kind: 'idle' };
           return;
@@ -426,8 +452,8 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
           if (sel.length > s.ids.length) ed().select(s.ids);
           else if (sel.length === 1 && sel[0] === s.hitId) {
             const el = ed().getElement(s.hitId);
-            // Click on an already-selected text element enters editing.
-            if (el && def(el)?.textField && !el.locked && ed().can('editor')) ed().startEditing(el.id);
+            // Click on an already-selected text element enters editing (the part under the pointer).
+            if (el && !el.locked && ed().can('editor')) editAt(el, s.start);
           }
         }
       } else if (s.kind === 'translate') {

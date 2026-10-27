@@ -60,6 +60,24 @@ export interface Host {
    * directory can't be loaded; callers fall back to presence.
    */
   listMembers(): Promise<HostUser[]>;
+  /**
+   * [additive] Link preview for a pasted URL (title, description, image), fetched by the SERVER
+   * (never from the browser: no third-party requests from viewers, no CORS). `image` is a data
+   * URL (already fetched and size-capped) or null. Rejects when the URL can't be previewed
+   * (offline sandbox, private address, timeout); callers fall back to a plain link card.
+   */
+  unfurl(url: string): Promise<LinkPreview>;
+}
+
+/** [additive] What `Host.unfurl` resolves to (wire format: @freero/shared `UnfurlResponse`). */
+export interface LinkPreview {
+  /** Final URL after redirects. */
+  url: string;
+  title: string | null;
+  description: string | null;
+  siteName: string | null;
+  /** data: URL of the preview image (server-fetched, size-capped), or null. */
+  image: string | null;
 }
 
 /** [additive] Extras for `Host.notify`. */
@@ -143,6 +161,23 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
     at: Point,
   ): boolean | Promise<boolean>;
   importPriority?: number;
+  /**
+   * [additive] Elements with SEVERAL texts (table cells, extra connector labels): the part under
+   * `local` (element-local, unrotated). Double-clicking there, or clicking the already selected
+   * element there, edits that part: `startEditing(id, { part })`. The component renders that
+   * part with `<ElementText part=… value=… onCommit=…>`. null = not on a part (the engine falls
+   * back to `textField`, if any).
+   */
+  textPartAt?(element: ElementOf<T>, local: Point, ctx: { editor: Editor; zoom: number }): string | null;
+  /**
+   * [additive] Content an element keeps OUTSIDE the elements map, in its feature's collections
+   * (table cells). Copy/cut put what this returns into the clipboard payload; duplicate,
+   * Alt-drag and paste hand it to `pasteContent` with each NEW copy, inside the transaction that
+   * creates it (one undo step), so copies never share or lose that content.
+   */
+  copyContent?(element: ElementOf<T>, editor: Editor): unknown;
+  /** [additive] See `copyContent`. `element` is the new copy; write with the scoped `editor`. */
+  pasteContent?(element: ElementOf<T>, content: unknown, editor: Editor): void;
   /** [additive] Show the rotate handle for this type. Default true (frames set false). */
   rotatable?: boolean;
   /**
@@ -370,6 +405,12 @@ export interface FeatureManifest {
   description: string;
   /** Yjs top-level maps this feature is the single writer of. */
   owns?: string[];
+  /**
+   * [additive] Owned collections whose LOCAL writes join the undo history like element writes
+   * (one step per gesture / edit session). For content that belongs to elements (table cells);
+   * never for social data (comments, votes) that undo must not take back.
+   */
+  undoable?: string[];
   /** Ephemeral presence key this feature writes (PresenceState.ext[name]). Defaults to `name`. */
 }
 
@@ -466,6 +507,13 @@ export interface Editor {
   /** Groups writes into one undo step and one network update. */
   transact(fn: () => void): void;
   /**
+   * [additive] Moves elements by per-element offsets in one transaction, like a drag would:
+   * connector endpoints/waypoints move along, a container's children travel with it, locked
+   * elements stay put, and moved elements join/leave containers by the drop rule (center).
+   * Programmatic arranging (align, distribute, tidy up) uses it.
+   */
+  moveBy(moves: Array<{ id: string; dx: number; dy: number }>): void;
+  /**
    * [additive] Gesture grouping: every local write between beginGesture() and the matching
    * endGesture() merges into ONE undo step (nestable). The engine already wraps each tool
    * pointer-down → pointer-up sequence and each text edit session in a gesture; call these
@@ -497,7 +545,13 @@ export interface Editor {
   select(ids: string[], mode?: 'replace' | 'add' | 'toggle'): void;
   clearSelection(): void;
   getEditingId(): string | null;
-  startEditing(id: string, opts?: { selectAll?: boolean; initialText?: string }): void;
+  /**
+   * `part` [additive] edits one of the element's several texts (see `textPartAt`) instead of its
+   * `textField`. Switching part ends the previous edit session (one undo step per part).
+   */
+  startEditing(id: string, opts?: { selectAll?: boolean; initialText?: string; part?: string }): void;
+  /** [additive] The part being edited (startEditing's `part`), or null. */
+  getEditingPart(): string | null;
   stopEditing(): void;
   /**
    * Rich-text formatting. While editing, applies to the current text selection; otherwise
@@ -599,6 +653,15 @@ export interface Editor {
    */
   setChromeHidden(hidden: boolean): void;
   isChromeHidden(): boolean;
+  /**
+   * [additive] "Hidden for me": a local view filter (not synced, not saved, any role). Hidden ids —
+   * and everything inside a hidden container — are treated like `ElementDefinition.hidden`
+   * elements for THIS viewer only (not drawn, not hit-tested, not selectable, dropped from the
+   * selection), while collaborators and exports/thumbnails still see them. Hook: useViewHidden().
+   */
+  setViewHidden(ids: string[], hidden: boolean): void;
+  getViewHidden(): string[];
+
 
   // -- events --
   on(event: EditorEvent, cb: () => void): () => void;

@@ -198,3 +198,56 @@
   white-space: nowrap;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
 }
+
+/* Equal-spacing markers while dragging: a measure line between two boxes with end ticks. */
+.fr-ov-gap {
+  position: absolute;
+  pointer-events: none;
+}
+.fr-ov-gap--h {
+  height: 0;
+  border-top: 1px solid var(--fr-snap);
+}
+.fr-ov-gap--v {
+  width: 0;
+  border-left: 1px solid var(--fr-snap);
+}
+.fr-ov-gap::before,
+.fr-ov-gap::after {
+  content: '';
+  position: absolute;
+  background: var(--fr-snap);
+}
+.fr-ov-gap--h::before,
+.fr-ov-gap--h::after {
+  top: -5px;
+  width: 1px;
+  height: 9px;
+}
+.fr-ov-gap--h::before { left: 0; }
+.fr-ov-gap--h::after { right: 0; }
+.fr-ov-gap--v::before,
+.fr-ov-gap--v::after {
+  left: -5px;
+  height: 1px;
+  width: 9px;
+}
+.fr-ov-gap--v::before { top: 0; }
+.fr-ov-gap--v::after { bottom: 0; }
+.fr-ov-gap__label {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--fr-snap);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.fr-ov-outline--member.is-locked {
+  border-style: dashed;
+}

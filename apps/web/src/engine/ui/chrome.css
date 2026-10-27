@@ -500,3 +500,23 @@ button.fr-title:hover {
   left: calc((100% - 372px) / 2);
   max-width: calc(100% - 372px - 24px);
 }
+
+/* Lock button of a selection where only some items are locked: a small dot says "partly". */
+.fr-format__partial {
+  position: relative;
+}
+.fr-format__partial::after {
+  content: '';
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--fr-select);
+}
+
+.fr-boardmenu__hint {
+  font-size: 12px;
+  color: var(--fr-ink-3);
+}

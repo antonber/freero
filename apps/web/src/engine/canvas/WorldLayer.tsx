@@ -65,7 +65,8 @@ function useVisibleIds(): string[] {
     compute(true);
     const offStore = store.subscribeElements(schedule);
     const offUi = ui.subscribe((s, p) => {
-      if (s.selection !== p.selection || s.editingId !== p.editingId) compute(true);
+      if (s.selection !== p.selection || s.editingId !== p.editingId || s.viewHidden !== p.viewHidden) compute(true);
+
       else if (s.camera !== p.camera || s.viewport !== p.viewport) compute(false);
     });
     return () => {

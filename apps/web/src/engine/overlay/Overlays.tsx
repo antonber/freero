@@ -76,7 +76,15 @@ function SelectionOverlay() {
       {!single &&
         els
           .filter((el) => !ownFrame(el))
-          .map((el) => <div key={el.id} className="fr-ov-outline fr-ov-outline--member" style={boxStyle(el, cam)} />)}
+          .map((el) => (
+            <div key={el.id} className={`fr-ov-outline fr-ov-outline--member${el.locked ? ' is-locked' : ''}`} style={boxStyle(el, cam)}>
+              {el.locked && (
+                <div className="fr-ov-lock" title="Locked">
+                  <Lock size={11} strokeWidth={2.4} />
+                </div>
+              )}
+            </div>
+          ))}
       <div className={`fr-ov-selection${editingId ? ' is-editing' : ''}${locked ? ' is-locked' : ''}`} style={style}>
         {handles.map((h) => (
           <div
@@ -119,6 +127,7 @@ function GuidesOverlay() {
   const core = useCore();
   const cam = useCamera();
   const guides = useStore(core.ui, (s) => s.guides);
+  const gaps = useStore(core.ui, (s) => s.gaps);
   const marquee = useStore(core.ui, (s) => s.marquee);
   const hint = useStore(core.ui, (s) => s.hint);
   return (
@@ -133,7 +142,25 @@ function GuidesOverlay() {
         const b = worldToScreen(cam, { x: g.to, y: g.pos });
         return <div key={i} className="fr-ov-guide" style={{ left: a.x, top: a.y, height: 1, width: Math.max(1, b.x - a.x) }} />;
       })}
+      {gaps.map((g, i) => {
+        // Equal-spacing marker: a measure line with end ticks and the distance in world units.
+        const horizontal = g.axis === 'x';
+        const a = worldToScreen(cam, horizontal ? { x: g.from, y: g.at } : { x: g.at, y: g.from });
+        const b = worldToScreen(cam, horizontal ? { x: g.to, y: g.at } : { x: g.at, y: g.to });
+        const len = horizontal ? b.x - a.x : b.y - a.y;
+        if (len < 2) return null;
+        return (
+          <div
+            key={`gap${i}`}
+            className={`fr-ov-gap fr-ov-gap--${horizontal ? 'h' : 'v'}`}
+            style={horizontal ? { left: a.x, top: a.y, width: len } : { left: a.x, top: a.y, height: len }}
+          >
+            <span className="fr-ov-gap__label">{Math.round(g.to - g.from)}</span>
+          </div>
+        );
+      })}
       {marquee && (() => {
+
         const a = worldToScreen(cam, marquee);
         return <div className="fr-ov-marquee" style={{ left: a.x, top: a.y, width: marquee.w * cam.zoom, height: marquee.h * cam.zoom }} />;
       })()}

@@ -52,6 +52,7 @@ export function createTestBoard(opts: TestBoardOptions): TestBoard {
       notify: () => undefined,
       serverNow: opts.now ?? (() => Date.now()),
       listMembers: async () => opts.members ?? [user],
+      unfurl: async () => Promise.reject(new Error('No link previews in tests')),
     };
     const core = createCore(host, bundles);
     core.ui.setState({ viewport: { width: 1000, height: 800 }, camera: { x: 0, y: 0, zoom: 1 } });
