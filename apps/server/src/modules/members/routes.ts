@@ -6,12 +6,16 @@ import { currentUser, findUserByEmail, getUser, requireUser } from '../auth/inde
 import { requireBoardAccess } from '../boards/index';
 import { refreshBoardAccess } from '../realtime/index';
 import * as repo from './repo';
-import { isMemberRole } from './roles';
+import { atLeast, isMemberRole } from './roles';
 
-const toMember = (u: User, role: Role): BoardMember => ({
+/**
+ * Emails are only shown to people who can manage sharing (owner, editors): anyone with a "can
+ * view" link would otherwise harvest every collaborator's address.
+ */
+const toMember = (u: User, role: Role, withEmail: boolean): BoardMember => ({
   userId: u.id,
   name: u.name,
-  email: u.email,
+  ...(withEmail ? { email: u.email } : {}),
   color: u.color,
   avatarUrl: u.avatarUrl,
   role,
@@ -25,13 +29,15 @@ export default function memberRoutes(_ctx: ServerContext): Router {
     '/boards/:id/members',
     handle((req, res) => {
       const boardId = req.params.id;
-      const { ownerId } = requireBoardAccess(boardId, currentUser(req).id);
+      const me = currentUser(req);
+      const { ownerId, role: myRole } = requireBoardAccess(boardId, me.id);
+      const emails = atLeast(myRole, 'editor');
       const members: BoardMember[] = [];
       const owner = getUser(ownerId);
-      if (owner) members.push(toMember(owner, 'owner'));
+      if (owner) members.push(toMember(owner, 'owner', emails || owner.id === me.id));
       for (const m of repo.listByBoard(boardId)) {
         const u = getUser(m.userId);
-        if (u) members.push(toMember(u, m.role));
+        if (u) members.push(toMember(u, m.role, emails || u.id === me.id));
       }
       res.json({ members });
     }),
@@ -41,16 +47,21 @@ export default function memberRoutes(_ctx: ServerContext): Router {
     '/boards/:id/members',
     handle((req, res) => {
       const boardId = req.params.id;
-      const { ownerId } = requireBoardAccess(boardId, currentUser(req).id, 'editor');
+      const { ownerId, role: myRole } = requireBoardAccess(boardId, currentUser(req).id, 'editor');
       const { email, role } = (req.body ?? {}) as { email?: unknown; role?: unknown };
       if (typeof email !== 'string' || !email.trim()) throw badRequest('email is required');
       if (!isMemberRole(role)) throw badRequest('role must be editor, commenter or viewer');
       const invitee = findUserByEmail(email);
       if (!invitee) throw notFound('No Freero account with that email');
       if (invitee.id === ownerId) throw new HttpError(409, 'That person already owns this board');
+      // Re-inviting changes an existing member's role, which only the owner may do (PATCH is
+      // owner-only too): editors could otherwise promote viewers or demote other editors.
+      const existing = repo.getMembership(boardId, invitee.id);
+      if (existing && existing.role !== role && myRole !== 'owner')
+        throw new HttpError(409, `${invitee.name} already has access. Only the board owner can change their role.`);
       repo.upsertMember(boardId, invitee.id, role, Date.now());
       refreshBoardAccess(boardId);
-      res.status(201).json({ member: toMember(invitee, role) });
+      res.status(201).json({ member: toMember(invitee, role, true) });
     }),
   );
 
@@ -66,7 +77,7 @@ export default function memberRoutes(_ctx: ServerContext): Router {
       if (!existing || !u) throw notFound('That person is not a member of this board');
       repo.setRole(boardId, userId, role);
       refreshBoardAccess(boardId);
-      res.json({ member: toMember(u, role) });
+      res.json({ member: toMember(u, role, true) });
     }),
   );
 
