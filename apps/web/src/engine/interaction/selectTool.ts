@@ -114,16 +114,6 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
     ui.setState({ transforming: 'translate', hoverId: null });
   }
 
-  function containerAt(p: Point, exclude: Set<string>): BoardElement | null {
-    const els = ed().getElements();
-    for (let i = els.length - 1; i >= 0; i--) {
-      const el = els[i];
-      if (exclude.has(el.id) || !def(el)?.container) continue;
-      if (rectContainsPoint(elementAABB(el), p)) return el;
-    }
-    return null;
-  }
-
   /** After a move: elements dropped into a container join it; dragged out, they leave. */
   function updateMembership(movedIds: string[]) {
     const moved = new Set(movedIds);
@@ -132,7 +122,7 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
       const el = ed().getElement(id);
       if (!el || def(el)?.container) continue;
       if (el.frameId && moved.has(el.frameId)) continue; // travels with its frame
-      const frame = containerAt(rectCenter(elementAABB(el)), moved);
+      const frame = ed().containerAt(rectCenter(elementAABB(el)), moved);
       const fid = frame?.id ?? null;
       if ((el.frameId ?? null) !== fid) patches.push({ id, patch: { frameId: fid } });
     }
@@ -227,7 +217,7 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
     );
     const moved = new Set(s.snapshot.map((x) => x.id));
     const anyContainer = s.snapshot.some((el) => def(el)?.container);
-    const drop = anyContainer ? null : containerAt(e.point, moved);
+    const drop = anyContainer ? null : ed().containerAt(e.point, moved);
     ui.setState({ guides, dropTargetId: drop?.id ?? null });
   }
 
@@ -347,6 +337,15 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
         return;
       }
       const target = e.target;
+      // Double-click on empty canvas, or on a frame's empty area: "write here" (ToolDefinition.onCanvasDoubleClick).
+      if (core.interaction.clickCount >= 2 && canEdit && (!target || (def(target)?.container && !def(target)?.textField))) {
+        const writer = core.registry.tools.find((t) => t.def.onCanvasDoubleClick && ed().can(t.def.minRole ?? 'editor'));
+        if (writer) {
+          state = { kind: 'idle' };
+          writer.def.onCanvasDoubleClick!(core.scoped(writer.feature), e.point);
+          return;
+        }
+      }
       if (target) {
         const sel = ed().getSelection();
         if (core.interaction.clickCount >= 2) {

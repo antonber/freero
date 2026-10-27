@@ -40,8 +40,17 @@ export function BoardEngine({ host, features }: BoardEngineProps) {
     };
   }, [host.board.id, host.syncUrl, features]);
 
+  const publishedUser = useRef(host.user);
   useEffect(() => {
-    if (core) core.hostRef.current = host;
+    if (!core) return;
+    core.hostRef.current = host;
+    // [QA collab] Profile changed (name, color, avatar) while on the board: collaborators' cursors
+    // and avatars follow without a reload.
+    const u = host.user;
+    const prev = publishedUser.current;
+    publishedUser.current = u;
+    if (prev.name !== u.name || prev.color !== u.color || prev.avatarUrl !== u.avatarUrl)
+      core.store.setPresence({ user: { id: u.id, name: u.name, color: u.color, avatarUrl: u.avatarUrl } });
   }, [core, host]);
 
   if (error)

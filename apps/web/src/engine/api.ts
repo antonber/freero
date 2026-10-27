@@ -265,6 +265,13 @@ export interface ToolDefinition {
    * active (the current tool stays). onActivate/pointer handlers are then unused.
    */
   onSelect?(editor: Editor): void;
+  /**
+   * [additive] Double-click on empty canvas (or a frame's empty area) with the select tool: "write
+   * here". The first tool by `order` that defines it gets the world point (the text tool drops a
+   * text box and starts typing). Runs inside the click's gesture, so it is one undo step with the
+   * typing that follows.
+   */
+  onCanvasDoubleClick?(editor: Editor, point: Point): void;
   onActivate?(editor: Editor): void;
   onDeactivate?(editor: Editor): void;
   onPointerDown?(e: ToolPointerEvent): void;
@@ -297,6 +304,8 @@ export type PanelSlot =
   | 'bottom-right'     // next to zoom controls (minimap toggle, comments toggle)
   | 'dock-right'       // side panel content (comments list, frames, templates)
   | 'screen-overlay'   // full-viewport screen-space layer (cursors, reaction bursts, timers)
+  | 'top-center'       // [additive] session bars under the top bar (voting, "X is presenting"):
+                       // stacked in a column so several never overlap; stays while presenting
   | 'world-overlay'    // world-space layer above elements (comment pins, vote badges)
   | 'dialog';          // [additive] mounted only while opened with editor.openPanel(id, props); stays
                        // available while the chrome is hidden (presenting). Close: editor.closePanel(id).

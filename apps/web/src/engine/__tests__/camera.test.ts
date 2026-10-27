@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PresenceState } from '@freero/shared';
 import type { ElementDefinition, ToolDefinition } from '../api';
 import type { EngineCore } from '../runtime/core';
@@ -92,5 +92,35 @@ describe('act-now tools', () => {
     core.editor.setTool('upload');
     expect(ran).toBe(1);
     expect(core.editor.getToolId()).toBe('draw');
+  });
+});
+
+describe('zoom steps', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it('pressing zoom-out three times in quick succession zooms out three steps, not one', () => {
+    core = makeCore();
+    vi.useFakeTimers({ toFake: ['performance'] });
+    const frames = new Map<number, FrameRequestCallback>();
+    let next = 0;
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => (frames.set(++next, cb), next));
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+    const tick = () => {
+      vi.advanceTimersByTime(16);
+      const due = [...frames.values()];
+      frames.clear();
+      for (const cb of due) cb(performance.now());
+    };
+    core.editor.setCamera({ x: 0, y: 0, zoom: 1 });
+    // Each press lands while the previous zoom animation is still running.
+    for (let i = 0; i < 3; i++) {
+      core.editor.runCommand('engine.zoomOut');
+      tick();
+    }
+    for (let i = 0; i < 50 && frames.size; i++) tick();
+    expect(core.editor.getCamera().zoom).toBe(0.5); // 100% → 75% → 67% → 50%
   });
 });

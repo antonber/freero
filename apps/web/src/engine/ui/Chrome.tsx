@@ -1,4 +1,5 @@
 // Board chrome composition: everything around the canvas.
+import { useRef } from 'react';
 import { useStore } from 'zustand';
 import { WifiOff, X } from 'lucide-react';
 import { IconButton, Spinner } from '@ui';
@@ -36,6 +37,10 @@ function ConnectionBanner() {
   const core = useCore();
   const status = useStore(core.ui, (s) => s.connection);
   const synced = useStore(core.ui, (s) => s.synced);
+  // [QA collab] After a drop the provider reports "connecting" + unsynced again: that is a
+  // reconnect (edits are kept), not the first connect.
+  const wasSynced = useRef(false);
+  if (synced) wasSynced.current = true;
   if (status === 'local' || (status === 'connected' && synced)) return null;
   if (status === 'denied')
     return (
@@ -43,7 +48,7 @@ function ConnectionBanner() {
         <WifiOff size={14} /> You no longer have access to this board.
       </div>
     );
-  if (status === 'connecting' && !synced)
+  if (status === 'connecting' && !synced && !wasSynced.current)
     return (
       <div className="fr-connection" role="status">
         <Spinner size={13} /> Connecting…
@@ -61,6 +66,7 @@ export function Chrome() {
   if (hidden)
     return (
       <div className="fr-chrome">
+        <TopCenter besideDock={false} />
         <ConnectionBanner />
       </div>
     );
@@ -74,9 +80,17 @@ export function Chrome() {
       <FormatToolbar />
       <ContextMenu />
       <Dock />
+      <TopCenter besideDock />
       <ConnectionBanner />
     </div>
   );
+}
+
+/** 'top-center' panels: one column under the top bar, so session bars stack instead of overlapping. */
+function TopCenter({ besideDock }: { besideDock: boolean }) {
+  // An open dock takes the right side: center the column in what is left instead of under it.
+  const dock = useDock();
+  return <PanelSlotView slot="top-center" className={`fr-topcenter${besideDock && dock ? ' fr-topcenter--dock' : ''}`} />;
 }
 
 export function ScreenOverlayPanels() {

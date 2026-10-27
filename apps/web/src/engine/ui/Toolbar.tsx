@@ -20,7 +20,7 @@ export function Toolbar() {
   useStore(core.ui, (s) => s.undoVersion);
   const editor = core.editor;
   const [moreOpen, setMoreOpen] = useState(false);
-  const moreRef = useRef<HTMLButtonElement>(null);
+  const moreRef = useRef<HTMLButtonElement | null>(null);
   const buttons = useRef(new Map<string, HTMLButtonElement>());
   const barRef = useRef<HTMLDivElement>(null);
   const [optionsTop, setOptionsTop] = useState<number | null>(null);
@@ -86,15 +86,22 @@ export function Toolbar() {
     <div className="fr-toolbar" ref={barRef} data-fr-chrome="" data-fr-occludes="">
       <div className="fr-toolbar__group" role="toolbar" aria-label="Tools" aria-orientation="vertical">
         {main.map(toolButton)}
-        {activeMore && toolButton(activeMore)}
         {more.length > 0 && (
           <>
+            {/* While a "more" tool is active, this button wears its icon (and anchors its Options),
+                so picking one never grows the toolbar and shifts every other button. */}
             <IconButton
-              ref={moreRef}
-              icon={Plus}
-              label="More tools"
+              ref={(el) => {
+                moreRef.current = el;
+                if (!activeMore) return;
+                if (el) buttons.current.set(activeMore.def.id, el);
+                else buttons.current.delete(activeMore.def.id);
+              }}
+              icon={activeMore?.def.icon ?? Plus}
+              label={activeMore ? `${activeMore.def.label} · More tools` : 'More tools'}
+              shortcut={activeMore?.def.shortcut?.toUpperCase()}
               tooltipSide="right"
-              active={moreOpen}
+              active={moreOpen || !!activeMore}
               onClick={() => setMoreOpen((o) => !o)}
             />
             <Popover

@@ -131,8 +131,8 @@ export function createEngineCommands(core: EngineCore): CommandDefinition[] {
       run: (e) => user(() => e.zoomToFit(sel(e), { maxZoom: 2 })),
     },
     { id: 'engine.zoom100', label: 'Zoom to 100%', shortcut: 'shift+0', minRole: 'viewer', run: (e) => user(() => e.zoomTo(1)) },
-    { id: 'engine.zoomIn', label: 'Zoom in', shortcut: 'mod+=', minRole: 'viewer', run: (e) => user(() => e.zoomTo(nextZoomStep(e.getCamera().zoom, 1))) },
-    { id: 'engine.zoomOut', label: 'Zoom out', shortcut: 'mod+-', minRole: 'viewer', run: (e) => user(() => e.zoomTo(nextZoomStep(e.getCamera().zoom, -1))) },
+    { id: 'engine.zoomIn', label: 'Zoom in', shortcut: 'mod+=', minRole: 'viewer', run: (e) => user(() => e.zoomTo(nextZoomStep(core.editor.cameraTarget().zoom, 1))) },
+    { id: 'engine.zoomOut', label: 'Zoom out', shortcut: 'mod+-', minRole: 'viewer', run: (e) => user(() => e.zoomTo(nextZoomStep(core.editor.cameraTarget().zoom, -1))) },
     {
       id: 'engine.editText',
       label: 'Edit text',

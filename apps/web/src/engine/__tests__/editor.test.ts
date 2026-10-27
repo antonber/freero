@@ -128,10 +128,20 @@ describe('z-order and grouping', () => {
     });
     const f = core.editor.create({ type: 'frame', x: 0, y: 0 } as never);
     const child = core.editor.create({ type: 'sticky', x: 0, y: 0, frameId: f } as never);
-    const other = core.editor.create({ type: 'sticky', x: 0, y: 0 } as never);
+    const other = core.editor.create({ type: 'sticky', x: 5000, y: 0 } as never);
     core.editor.remove([f]);
     expect(core.editor.getElement(child)).toBeUndefined();
     expect(core.editor.getElement(other)).toBeDefined();
+  });
+
+  it('Ctrl+D on an element inside a frame keeps the copy in that frame (it moves and exports with it)', () => {
+    core = makeCore({
+      bundles: [bundle('boxes', { elements: [boxDef as ElementDefinition<any>, { ...boxDef, type: 'frame', container: true } as ElementDefinition<any>] })],
+    });
+    const f = core.editor.create({ type: 'frame', x: 0, y: 0, w: 1000, h: 1000 } as never);
+    const child = core.editor.create({ type: 'sticky', x: 100, y: 100, frameId: f } as never);
+    const [copy] = core.editor.duplicate([child]);
+    expect(core.editor.getElement(copy)!.frameId).toBe(f);
   });
 });
 

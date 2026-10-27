@@ -4,6 +4,10 @@ import type { EngineCore } from '../runtime/core';
 import { eventKey, isPrintableKey, matchShortcut, parseShortcut } from '../runtime/shortcuts';
 import { NATIVE_CLIPBOARD_COMMANDS } from '../editor/engineCommands';
 import { translateElement } from '../editor/clipboard';
+import { richTextToPlain } from '../text/sanitize';
+
+/** Undo/redo shortcuts: they also work from non-modal popovers (see onKeyDown). */
+const UNDO_SHORTCUTS = new Set(['mod+z', 'mod+shift+z', 'mod+y']);
 
 /** Shortcuts the rich-text editor keeps for itself while editing. */
 const TEXT_RESERVED = new Set(['b', 'i', 'u', 'z', 'y', 'c', 'v', 'x', 'a', 'k', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'backspace', 'delete', 'home', 'end']);
@@ -106,7 +110,14 @@ export function installKeyboard(core: EngineCore): () => void {
       });
       return;
     }
-    if (isTextInput(target) || inForeignUi(target)) return;
+    if (isTextInput(target)) return;
+    if (inForeignUi(target)) {
+      // A non-modal popover (a color picker just used) keeps undo/redo: Ctrl+Z right after
+      // picking a color must undo it, not do nothing until the popover is dismissed.
+      const modal = target instanceof HTMLElement && !!target.closest('[aria-modal="true"]');
+      if (!modal) tryCommands(e, (sc) => UNDO_SHORTCUTS.has(sc));
+      return;
+    }
 
     // Editing just started (e.g. Tab → next sticky) but focus hasn't reached the editor yet:
     // route typed characters into it instead of losing them.
@@ -170,12 +181,16 @@ export function installKeyboard(core: EngineCore): () => void {
       return p.mod || p.alt || p.key.length > 1 || p.shift;
     })) return;
 
-    // Typing on a single selected text element starts editing with that character.
+    // Typing on a single selected EMPTY text element (a fresh "+" copy, a new sticky) fills it.
+    // Items that already have text keep letters as tool shortcuts (N, T, S… right after Esc must
+    // switch tools, not append a stray letter to the note); Enter or double-click edits them.
     if (isPrintableKey(e)) {
       const sel = editor.getSelection();
       if (sel.length === 1 && editor.can('editor')) {
         const el = editor.getElement(sel[0]);
-        if (el && !el.locked && editor.getDefinition(el.type)?.textField) {
+        const field = el && editor.getDefinition(el.type)?.textField;
+        const empty = !!field && !richTextToPlain(String((el as unknown as Record<string, unknown>)[field] ?? '')).trim();
+        if (el && !el.locked && empty) {
           e.preventDefault();
           editor.startEditing(el.id, { initialText: e.key });
           return;

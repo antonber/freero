@@ -202,14 +202,28 @@ button.fr-title:hover {
 }
 
 /* ---- left toolbar ---- */
+/* Centered in the column between the top bar and the bottom edge, never under the top bar. */
 .fr-toolbar {
   position: absolute;
   left: 12px;
-  top: 50%;
-  transform: translateY(-50%);
+  top: 72px;
+  bottom: 12px;
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 8px;
+  pointer-events: none;
+}
+
+.fr-toolbar > * {
+  pointer-events: auto;
+}
+
+/* Short windows: the tools scroll instead of running off the screen. */
+.fr-toolbar > .fr-toolbar__group:first-child {
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
 }
 
 .fr-toolbar__group {
@@ -460,4 +474,29 @@ button.fr-title:hover {
   .fr-topright > .fr-btn .fr-btn__label {
     display: none;
   }
+}
+
+/* ---- top-center session bars ('top-center' slot): stacked, centered under the top bar ---- */
+.fr-topcenter {
+  position: absolute;
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--fr-z-toolbar);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 24px);
+  pointer-events: none;
+}
+
+.fr-topcenter > * {
+  pointer-events: auto;
+}
+
+/* Dock open (360px + 12px margin on the right): center in the remaining width. */
+.fr-topcenter--dock {
+  left: calc((100% - 372px) / 2);
+  max-width: calc(100% - 372px - 24px);
 }

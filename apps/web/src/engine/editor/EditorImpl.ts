@@ -58,12 +58,16 @@ export class EditorImpl implements Editor {
   private readonly shared: {
     collections: Map<string, Collection<unknown>>;
     camAnim: number | null;
+    /** Where the running camera animation ends (null when none runs): see cameraTarget(). */
+    camTarget: Camera | null;
+    /** Where the last paste landed and how many times in a row it landed there (see pastePayload). */
+    lastPaste: { at: Point; n: number } | null;
     lastDenied: number;
     editingGesture: boolean;
     movingTimer: ReturnType<typeof setTimeout> | null;
     /** >0 while a user gesture (wheel, pan, zoom control) is writing the camera: see asUser(). */
     userCamera: number;
-  } = { collections: new Map(), camAnim: null, lastDenied: 0, editingGesture: false, movingTimer: null, userCamera: 0 };
+  } = { collections: new Map(), camAnim: null, camTarget: null, lastPaste: null, lastDenied: 0, editingGesture: false, movingTimer: null, userCamera: 0 };
 
   /**
    * Flags the camera as moving for a short while: the world layer is promoted (will-change)
@@ -253,6 +257,7 @@ export class EditorImpl implements Editor {
     const built = els.map((e) => this.build(e, ++z, now));
     this.core.store.transact(() => {
       for (const el of built) this.core.store.setElement(el);
+      this.adoptIntoContainers(built.map((b) => b.id));
     });
     const ids = built.map((b) => b.id);
     if (opts?.select) this.select(ids);
@@ -286,6 +291,40 @@ export class EditorImpl implements Editor {
       for (const el of next) store.setElement(el);
       runFollowers(this.core, next.map((el) => el.id), []);
     });
+  }
+
+  /**
+   * The container (frame) an element whose center is at `p` belongs to: the innermost visible
+   * container holding the point, ignoring `exclude`. The one membership rule for drops, creates,
+   * duplicates and pastes.
+   */
+  containerAt(p: Point, exclude?: ReadonlySet<string>): BoardElement | null {
+    let best: BoardElement | null = null;
+    for (const el of this.getVisibleElements()) {
+      if (exclude?.has(el.id) || !this.getDefinition(el.type)?.container) continue;
+      const r = elementAABB(el);
+      if (p.x < r.x || p.x > r.x + r.w || p.y < r.y || p.y > r.y + r.h) continue;
+      if (!best || r.w * r.h < best.w * best.h) best = el;
+    }
+    return best;
+  }
+
+  /**
+   * New elements land in the container under their center, like an element dropped there: a
+   * sticky made inside a frame moves, exports and presents with it. Elements already pointing at
+   * an existing container (a template's children, a pasted frame's children) keep it. Runs inside
+   * the creating transaction, so it shares its undo step.
+   */
+  private adoptIntoContainers(ids: string[]): void {
+    const store = this.core.store;
+    const isContainer = (el: BoardElement | undefined) => !!el && !!this.getDefinition(el.type)?.container;
+    if (!this.getElements().some(isContainer)) return;
+    for (const id of ids) {
+      const el = store.getElement(id);
+      if (!el || isContainer(el) || isContainer(el.frameId ? store.getElement(el.frameId) : undefined)) continue;
+      const frame = this.containerAt(rectCenter(elementAABB(el)));
+      if ((frame?.id ?? null) !== (el.frameId ?? null)) store.setElement({ ...el, frameId: frame?.id ?? null });
+    }
   }
 
   /** Ids plus the (recursive) children of any container among them. */
@@ -392,6 +431,7 @@ export class EditorImpl implements Editor {
     const built = moved.map((el) => ({ ...el, z: ++z, createdBy: this.user.id, createdAt: now, updatedAt: now }));
     this.core.store.transact(() => {
       for (const el of built) this.core.store.setElement(el);
+      this.adoptIntoContainers(built.map((b) => b.id));
     });
     const top = ids.map((id) => idMap.get(id)!).filter(Boolean);
     this.select(top);
@@ -524,12 +564,19 @@ export class EditorImpl implements Editor {
     const known = payload.elements.filter((el) => this.core.registry.elements.has(el.type));
     if (!known.length) return [];
     const { elements } = remapElements(known, () => nanoid());
-    const placed = placeAt(elements, at);
+    // Pasting again without moving the pointer cascades each copy down-right instead of stacking
+    // it exactly on the previous one (where it would look like nothing happened).
+    const prev = this.shared.lastPaste;
+    const n = prev && Math.abs(prev.at.x - at.x) < 0.5 && Math.abs(prev.at.y - at.y) < 0.5 ? prev.n + 1 : 0;
+    this.shared.lastPaste = { at, n };
+    const step = (24 * n) / this.getCamera().zoom;
+    const placed = placeAt(elements, { x: at.x + step, y: at.y + step });
     let z = this.core.store.maxZ();
     const now = Date.now();
     const built = placed.map((el) => ({ ...el, z: ++z, createdBy: this.user.id, createdAt: now, updatedAt: now }));
     this.core.store.transact(() => {
       for (const el of built) this.core.store.setElement(el);
+      this.adoptIntoContainers(built.map((b) => b.id));
     });
     // Select top-level pasted elements (not children of pasted frames).
     const pastedIds = new Set(built.map((b) => b.id));
@@ -711,6 +758,7 @@ export class EditorImpl implements Editor {
     if (this.shared.camAnim !== null) {
       cancelAnimationFrame(this.shared.camAnim);
       this.shared.camAnim = null;
+      this.shared.camTarget = null;
     }
     const zoom = clampZoom(camera.zoom);
     if (!Number.isFinite(camera.x) || !Number.isFinite(camera.y) || !Number.isFinite(zoom)) return false;
@@ -739,9 +787,11 @@ export class EditorImpl implements Editor {
       if (t < 1) this.shared.camAnim = requestAnimationFrame(step);
       else {
         this.shared.camAnim = null;
+        this.shared.camTarget = null;
         this.core.ui.setState({ camera: target });
       }
     };
+    this.shared.camTarget = target;
     this.shared.camAnim = requestAnimationFrame(step);
     this.cameraChanged();
   }
@@ -758,10 +808,19 @@ export class EditorImpl implements Editor {
     return worldToScreen(this.getCamera(), p);
   }
 
+  /**
+   * The camera the view is heading to: the running animation's end, else the current camera.
+   * Zoom steps start from it, so pressing Ctrl+− three times quickly zooms out three steps
+   * instead of re-aiming at the first step from a mid-animation zoom.
+   */
+  cameraTarget(): Camera {
+    return this.shared.camTarget ?? this.getCamera();
+  }
+
   zoomTo(zoom: number, screenCenter?: Point): void {
     const vp = this.getViewportSize();
     const c = screenCenter ?? { x: vp.width / 2, y: vp.height / 2 };
-    this.setCamera(zoomAt(this.getCamera(), zoom, c), { animate: true });
+    this.setCamera(zoomAt(this.cameraTarget(), zoom, c), { animate: true });
   }
 
   zoomToFit(ids?: string[], opts: FitOptions = {}): void {
@@ -800,6 +859,7 @@ export class EditorImpl implements Editor {
       // A camera animation in flight would fight the mirror.
       cancelAnimationFrame(this.shared.camAnim);
       this.shared.camAnim = null;
+      this.shared.camTarget = null;
     }
     ui.setState({ following: target ? { userId: target.userId, clientId: target.clientId } : null });
     this.core.store.setPresence({ following: target ? target.userId : null });
@@ -816,9 +876,10 @@ export class EditorImpl implements Editor {
 
   findFreeSpot(size: { w: number; h: number }, opts: { near?: Point; gap?: number } = {}): Point {
     const obstacles = this.getElements().map(elementAABB);
-    const vp = this.getViewportSize();
-    const a = this.screenToWorld({ x: 0, y: 0 });
-    const b = this.screenToWorld({ x: vp.width, y: vp.height });
+    // "In view" = the part of the screen the chrome leaves free, not under the toolbar or dock.
+    const safe = this.getSafeArea();
+    const a = this.screenToWorld({ x: safe.x, y: safe.y });
+    const b = this.screenToWorld({ x: safe.x + safe.w, y: safe.y + safe.h });
     const visible = { x: a.x, y: a.y, w: b.x - a.x, h: b.y - a.y };
     return findFreeSpot(obstacles, size, opts.near ?? this.getViewportCenter(), opts.gap ?? 48, visible);
   }

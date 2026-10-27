@@ -127,6 +127,10 @@ export class BoardStore {
           provider.shouldConnect = false;
           provider.disconnect();
           this.emit(this.statusListeners);
+          // [QA collab] Access is gone: nothing written from now on can ever reach the server, so
+          // the UI drops to read-only instead of offering tools whose writes are silently lost.
+          this.serverRole = 'viewer';
+          this.emit(this.roleListeners);
         }
       });
     } else {

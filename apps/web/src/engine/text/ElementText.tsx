@@ -218,14 +218,8 @@ function TextEditor(props: TextEditorProps) {
     if (!el || !request) return;
     el.focus({ preventScroll: true });
     if (request.initialText !== undefined) {
-      // Typing on a selected element: empty → start with the typed text; otherwise append
-      // (never silently replace existing content).
-      if (!richTextToPlain(htmlRef.current).trim()) el.innerHTML = plainToRichText(request.initialText);
-      else {
-        el.innerHTML = sanitizeRichText(htmlRef.current);
-        placeCaretAtEnd(el);
-        document.execCommand('insertText', false, request.initialText);
-      }
+      // Typing on a selected empty element (keyboard.ts only starts these on empty text).
+      el.innerHTML = plainToRichText(request.initialText);
       placeCaretAtEnd(el);
       refreshLive();
       schedule();

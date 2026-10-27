@@ -14,6 +14,21 @@ import { contextCommandItems } from './ContextMenu';
 const GAP = 14;
 const TOP_SAFE = 68;
 
+/**
+ * Screen rects (viewport px) of world/screen UI that must stay visible above a selection, e.g.
+ * comment pins: any node marked `data-fr-keep-clear` inside the board. The toolbar steps above
+ * them (or flips below the selection) instead of covering them.
+ */
+function keepClearRects(viewport: HTMLElement | null): Array<{ x: number; y: number; w: number; h: number }> {
+  const root = viewport?.parentElement;
+  if (!viewport || !root) return [];
+  const base = viewport.getBoundingClientRect();
+  return [...root.querySelectorAll<HTMLElement>('[data-fr-keep-clear]')].map((el) => {
+    const r = el.getBoundingClientRect();
+    return { x: r.left - base.left, y: r.top - base.top, w: r.width, h: r.height };
+  });
+}
+
 export function FormatToolbar() {
   const core = useCore();
   const editor = core.editor;
@@ -26,6 +41,9 @@ export function FormatToolbar() {
   useStore(core.ui, (s) => s.textStateVersion);
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 44 });
+  /** Toolbar top chosen to clear keep-clear nodes (null = the default placement is clear). */
+  const [clearTop, setClearTop] = useState<number | null>(null);
+  const natural = useRef<{ left: number; top: number; below: boolean; selTop: number; selBottom: number } | null>(null);
   const [arrangeOpen, setArrangeOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const arrangeRef = useRef<HTMLButtonElement>(null);
@@ -43,12 +61,34 @@ export function FormatToolbar() {
   // Publish where we are (useFormatToolbarRect) so screen UI can stay clear of the toolbar.
   const placed = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
   placed.current = null;
+  natural.current = null;
   useLayoutEffect(() => {
     const r = placed.current;
     const p = core.ui.getState().formatToolbarRect;
     if (r?.x !== p?.x || r?.y !== p?.y || r?.w !== p?.w || r?.h !== p?.h) core.ui.setState({ formatToolbarRect: r });
   });
   useLayoutEffect(() => () => core.ui.setState({ formatToolbarRect: null }), [core]);
+
+  // Step clear of keep-clear nodes (comment pins…) that the natural placement would cover.
+  useLayoutEffect(() => {
+    const n = natural.current;
+    let next: number | null = null;
+    if (n) {
+      const pins = keepClearRects(core.dom.viewport).filter((p) => p.x < n.left + size.w + 6 && p.x + p.w > n.left - 6);
+      const hits = (top: number) => pins.filter((p) => p.y < top + size.h + 6 && p.y + p.h > top - 6);
+      if (hits(n.top).length) {
+        // Above the selection: climb over the pins in the way; else try below the selection.
+        let top = n.top;
+        for (let i = 0; i < 8 && hits(top).length; i++) top = Math.min(...hits(top).map((p) => p.y)) - 8 - size.h;
+        if (!n.below && top >= TOP_SAFE && !hits(top).length) next = top;
+        else {
+          const below = n.selBottom + GAP + 34;
+          if (!hits(below).length && below + size.h <= viewport.height - 70) next = below;
+        }
+      }
+    }
+    if (next !== clearTop) setClearTop(next);
+  });
 
   if (!visible) return null;
   // Visual bounds: clear of what elements draw outside their box (a frame's title above it).
@@ -64,6 +104,8 @@ export function FormatToolbar() {
   }
   if (below && top + size.h > viewport.height - 70) top = Math.max(TOP_SAFE, Math.min(tl.y + 8, viewport.height - size.h - 70));
   const left = Math.min(Math.max(12 + 56, cx - size.w / 2), viewport.width - size.w - 12);
+  natural.current = { left, top, below, selTop: tl.y, selBottom: br.y };
+  if (clearTop !== null) top = clearTop;
   placed.current = { x: Math.round(left), y: Math.round(top), w: size.w, h: size.h };
   const locked = els.every((e) => e.locked);
   const ids = els.map((e) => e.id);

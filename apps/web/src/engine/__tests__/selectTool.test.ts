@@ -50,16 +50,16 @@ describe('select tool', () => {
     expect(core.editor.getElement(moving)).toMatchObject({ x: 0, y: 300 }); // original stays put
   });
 
-  it('moving a frame moves its children but not unrelated overlapping elements', () => {
+  it('moving a frame moves what was created inside it, but not elements merely overlapping its edge', () => {
     core = makeCore();
     const frame = core.editor.create({ type: 'frame', x: 0, y: 0, w: 400, h: 300 } as never);
-    const child = box(50, 50, { frameId: frame });
-    const stranger = box(250, 150); // overlaps the frame visually, but isn't a child
+    const child = box(50, 50); // made inside the frame: joins it, like a drop would
+    const stranger = box(360, 260); // overlaps the frame's corner, center outside: not a child
     core.editor.select([frame]);
-    drag(core, { x: 390, y: 290 }, { x: 490, y: 340 });
+    drag(core, { x: 390, y: 20 }, { x: 490, y: 70 });
     expect(core.editor.getElement(frame)).toMatchObject({ x: 100, y: 50 });
     expect(core.editor.getElement(child)).toMatchObject({ x: 150, y: 100 });
-    expect(core.editor.getElement(stranger)).toMatchObject({ x: 250, y: 150 });
+    expect(core.editor.getElement(stranger)).toMatchObject({ x: 360, y: 260 });
   });
 
   it('dropping an element inside a frame makes it a child; dragging it out releases it', () => {
