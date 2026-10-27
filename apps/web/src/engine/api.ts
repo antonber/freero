@@ -114,6 +114,24 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
    * (free text boxes). Default false (stickies/shapes stay).
    */
   removeWhenEmpty?: boolean;
+  /**
+   * [additive] Keeps fields derived from OTHER elements valid (connector endpoints attached to
+   * shapes). Called for every element of this type inside the same transaction (one undo step,
+   * one network update) as each LOCAL `update`/`updateMany`/`remove`, after that change is in
+   * the store. Remote changes never call it, so only the client making a change writes the
+   * derived fields. Return the fields to rewrite, or null (the common, cheap case).
+   */
+  follow?(element: ElementOf<T>, change: FollowChange): ElementPatch<ElementOf<T>> | null;
+}
+
+/** [additive] What `ElementDefinition.follow` is told about a local change. */
+export interface FollowChange {
+  /** Scoped to the defining feature; reads already see the change. Don't write from follow. */
+  editor: Editor;
+  /** Ids written by the change (including the follower itself when it was written). */
+  changed: ReadonlySet<string>;
+  /** Ids deleted by the change. */
+  removed: ReadonlySet<string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -376,6 +394,13 @@ export interface Editor {
   /** Open/close the right dock with a panel id (or null to close). */
   openDock(panelId: string | null): void;
   getDock(): string | null;
+  /**
+   * [additive] Hide the board chrome (toolbar, top bar, zoom controls + minimap, format toolbar,
+   * context menu, docks) and the local selection/hover overlays — used by presentation mode.
+   * 'screen-overlay' and 'world-overlay' panels stay mounted. Not synced; local UI state only.
+   */
+  setChromeHidden(hidden: boolean): void;
+  isChromeHidden(): boolean;
 
   // -- events --
   on(event: EditorEvent, cb: () => void): () => void;

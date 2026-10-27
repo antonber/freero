@@ -142,6 +142,11 @@ export function useSettings(): BoardSettings {
   return useMemo(() => core.store.getSettings(), [core, v]);
 }
 
+/** True while the board chrome is hidden (presentation mode); see Editor.setChromeHidden. */
+export function useChromeHidden(): boolean {
+  return useUi((s) => s.chromeHidden);
+}
+
 export function useCanEdit(): boolean {
   const role = useRole();
   return role === 'editor' || role === 'owner';

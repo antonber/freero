@@ -153,6 +153,17 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
 - URL params: `?el=<id>` selects and zooms to an element (copy-link target); `?dock=<panelId>`
   opens a dock panel on load. `/board/local` (dev only) is an offline sandbox persisted in
   localStorage; `?role=viewer|commenter|editor` and `?name=` preview roles there.
+- `Editor.setChromeHidden(hidden)` / `isChromeHidden()` + hook `useChromeHidden()` (presentation
+  mode): hides the whole board chrome (toolbar, top bar, zoom/minimap, format toolbar, context
+  menu, dock) and the local selection/hover/guide overlays. Local UI state, not synced.
+  `screen-overlay` / `world-overlay` panels and remote cursors stay, so the presenting feature
+  mounts its own controls there.
+- `ElementDefinition.follow?(element, { editor, changed, removed })` (`engine/editor/followers.ts`):
+  for elements whose stored fields derive from OTHER elements (connector endpoints). The engine
+  calls it inside the same transaction as every LOCAL `update`/`updateMany`/`remove` (so the
+  refresh shares the change's undo step and network update) and never for remote changes, so
+  exactly one client — the one making the change — rewrites the derived fields. Renderers should
+  still derive from the live elements (`useElement`) and treat the stored fields as a cache.
 
 ## UI kit (`ui/`) — exports from `@ui`
 

@@ -188,12 +188,17 @@ function PeersOverlay() {
 }
 
 export function ScreenOverlays() {
+  const chromeHidden = useStore(useCore().ui, (s) => s.chromeHidden);
   return (
     <div className="fr-overlays">
       <PeersOverlay />
-      <HoverOverlay />
-      <SelectionOverlay />
-      <GuidesOverlay />
+      {!chromeHidden && (
+        <>
+          <HoverOverlay />
+          <SelectionOverlay />
+          <GuidesOverlay />
+        </>
+      )}
     </div>
   );
 }

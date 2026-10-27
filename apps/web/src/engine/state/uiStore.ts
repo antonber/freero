@@ -55,6 +55,8 @@ export interface UiState {
   hint: { text: string; x: number; y: number } | null;
   /** Container highlighted as the drop target while dragging. */
   dropTargetId: string | null;
+  /** Board chrome hidden (presentation mode). */
+  chromeHidden: boolean;
 }
 
 export interface PointerState {
@@ -97,5 +99,6 @@ export function createUiStore(init: { role: Role }): UiStore {
     cameraMoving: false,
     hint: null,
     dropTargetId: null,
+    chromeHidden: false,
   }));
 }

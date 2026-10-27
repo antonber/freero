@@ -29,6 +29,7 @@ export {
   useTextFormatState,
   useSettings,
   useCanEdit,
+  useChromeHidden,
 } from './hooks';
 
 // Renders an element's rich-text field; switches to the shared editor while editing.

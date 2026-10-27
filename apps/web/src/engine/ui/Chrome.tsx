@@ -57,6 +57,13 @@ function ConnectionBanner() {
 }
 
 export function Chrome() {
+  const hidden = useStore(useCore().ui, (s) => s.chromeHidden);
+  if (hidden)
+    return (
+      <div className="fr-chrome">
+        <ConnectionBanner />
+      </div>
+    );
   return (
     <div className="fr-chrome">
       <TopLeft />

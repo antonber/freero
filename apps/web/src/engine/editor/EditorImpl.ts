@@ -40,6 +40,7 @@ import {
 import { applyFormatToHtml, formatStateOfHtml } from '../text/formatHtml';
 import { EMPTY_FORMAT_STATE, type FormatCommand, type TextFormatState } from '../text/session';
 import { richTextToPlain } from '../text/sanitize';
+import { runFollowers } from './followers';
 
 const EMPTY_OPTIONS = Object.freeze({}) as Record<string, unknown>;
 const CAMERA_ANIM_MS = 320;
@@ -228,6 +229,7 @@ export class EditorImpl implements Editor {
     if (!next.length) return;
     store.transact(() => {
       for (const el of next) store.setElement(el);
+      runFollowers(this.core, next.map((el) => el.id), []);
     });
   }
 
@@ -260,6 +262,7 @@ export class EditorImpl implements Editor {
     if (editing && all.includes(editing)) this.stopEditing();
     this.core.store.transact(() => {
       for (const id of all) this.core.store.deleteElement(id);
+      runFollowers(this.core, [], all);
     });
     const gone = new Set(all);
     const sel = this.getSelection();
@@ -785,6 +788,15 @@ export class EditorImpl implements Editor {
 
   getDock(): string | null {
     return this.core.ui.getState().dock;
+  }
+
+  setChromeHidden(hidden: boolean): void {
+    if (this.core.ui.getState().chromeHidden === hidden) return;
+    this.core.ui.setState(hidden ? { chromeHidden: true, contextMenu: null, hoverId: null } : { chromeHidden: false });
+  }
+
+  isChromeHidden(): boolean {
+    return this.core.ui.getState().chromeHidden;
   }
 
   on(event: EditorEvent, cb: () => void): () => void {
