@@ -128,6 +128,11 @@ export interface TextElement extends BaseElement {
   background: string;
   /** When true, width grows with content; when false, text wraps at w. */
   autoWidth: boolean;
+  /**
+   * Width the auto-layout last set (written by features/text). Lets normalize() tell a
+   * side-handle resize (w differs) apart from an edit or corner scale.
+   */
+  autoW?: number;
 }
 
 export type CapStyle = 'none' | 'arrow' | 'triangle' | 'circle' | 'diamond' | 'bar';
