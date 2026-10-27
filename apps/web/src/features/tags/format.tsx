@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useRef, useState, type KeyboardEvent } from 'react';
 import { nanoid } from 'nanoid';
 import { ArrowLeft, Check, Minus, Plus, Search, Settings2, Tag as TagIcon, Trash2 } from 'lucide-react';
 import type { Tag } from '@freero/shared';
@@ -10,12 +10,6 @@ import './tags.css';
 function Picker({ editor, els, tags, onManage }: { editor: Editor; els: Taggable[]; tags: Tag[]; onManage(): void }) {
   const [query, setQuery] = useState('');
   const [color, setColor] = useState<string | null>(null);
-  const input = useRef<HTMLInputElement>(null);
-  // The popover is invisible for its first frame (positioning), so autoFocus can't land.
-  useEffect(() => {
-    const raf = requestAnimationFrame(() => input.current?.focus({ preventScroll: true }));
-    return () => cancelAnimationFrame(raf);
-  }, []);
   const list = search(tags, query);
   const name = normName(query);
   const exact = tags.find((t) => t.name.toLowerCase() === name.toLowerCase());
@@ -47,7 +41,7 @@ function Picker({ editor, els, tags, onManage }: { editor: Editor; els: Taggable
     <div className="fr-tags-pop">
       <Input
         size="sm"
-        ref={input}
+        autoFocus
         icon={Search}
         value={query}
         onChange={(e) => setQuery(e.target.value)}

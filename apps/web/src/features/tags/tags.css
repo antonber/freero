@@ -175,12 +175,11 @@
   box-shadow: var(--fr-focus-ring);
 }
 
-/* Chips on stickies (world-overlay, world units, scaled with the sticky via --s). */
+/* Chips on stickies (decoration inside the sticky's wrapper, world units, scaled via --s).
+   Stickies with tags keep this band (8 + 18 + 4 px × --s) free of text. */
 .fr-tagchips {
   position: absolute;
-  left: 0;
-  top: 0;
-  transform-origin: center center;
+  inset: 0;
   pointer-events: none;
 }
 
