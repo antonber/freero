@@ -16,6 +16,8 @@ const REQUIRED: Record<ElementType, string[]> = {
   card: ['title', 'description', 'color'],
   emoji: ['emoji'],
   mindmap: ['text', 'parentId', 'rootId', 'color'],
+  table: ['rows', 'cols', 'header', 'fontSize'],
+  embed: ['url', 'title', 'description', 'siteName', 'image', 'status'],
 };
 
 let seq = 0;
