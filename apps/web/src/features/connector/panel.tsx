@@ -1,0 +1,343 @@
+// Screen-space connector UI (constant size at any zoom):
+//  - anchor dots of the hovered element (L tool) and the highlighted snap target while dragging;
+//  - quick-connect "+" handles around a single selected item (drag = new line, click = new
+//    connected copy on that side);
+//  - endpoint + midpoint handles of a single selected connector.
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
+import { useStore } from 'zustand';
+import { Plus } from 'lucide-react';
+import type { BoardElement, ConnectorElement, ConnectorEndpoint } from '@freero/shared';
+import {
+  definePanel,
+  useCamera,
+  useCanEdit,
+  useChromeHidden,
+  useEditingId,
+  useElement,
+  useSelectedElements,
+  useToolId,
+  type Editor,
+  type Point,
+} from '@engine';
+import { DRAG_PX, findTarget, overlay, resetOverlay, snap45, type Target } from './lib/connect';
+import { anchorWorld, centerOf, nearestOnPoly, OPPOSITE, pointAlong, SIDES, sideNormal, type Side } from './lib/geometry';
+import {
+  buildConnector,
+  connectorGeometry,
+  endpoint,
+  isConnectable,
+  localAnchors,
+  patchConnector,
+  styleFromOptions,
+  TOOL_ID,
+  type ConnectorStyle,
+} from './lib/model';
+import { nextToSide, occupiedRects, QUICK_GAP } from './lib/quick';
+
+const PLUS_OFFSET = 26;
+/** The engine's rotate handle sits under the bottom edge: keep the bottom "+" clear of it. */
+const PLUS_OFFSET_BELOW_ROTATE = 58;
+
+// ------------------------------------------------------------------------------ drag plumbing
+interface DragHandlers {
+  move(world: Point, e: PointerEvent): void;
+  up(world: Point, e: PointerEvent, moved: boolean): void;
+  cancel(): void;
+}
+
+/**
+ * Runs a native pointer drag that started on one of our handles (marked data-fr-interactive,
+ * so the canvas ignores it). Everything written until release is one undo step.
+ */
+function runDrag(editor: Editor, root: HTMLElement, down: ReactPointerEvent, h: DragHandlers) {
+  down.preventDefault();
+  down.stopPropagation();
+  const start = { x: down.clientX, y: down.clientY };
+  let moved = false;
+  const world = (e: { clientX: number; clientY: number }) => {
+    const r = root.getBoundingClientRect();
+    return editor.screenToWorld({ x: e.clientX - r.left, y: e.clientY - r.top });
+  };
+  editor.beginGesture();
+  overlay.setState({ dragging: true });
+  const onMove = (e: PointerEvent) => {
+    if (e.pointerId !== down.pointerId) return;
+    if (!moved && Math.hypot(e.clientX - start.x, e.clientY - start.y) < DRAG_PX) return;
+    moved = true;
+    h.move(world(e), e);
+  };
+  const onUp = (e: PointerEvent) => {
+    if (e.pointerId !== down.pointerId) return;
+    done();
+    h.up(world(e), e, moved);
+    editor.endGesture();
+  };
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key !== 'Escape') return;
+    e.preventDefault();
+    e.stopPropagation();
+    done();
+    h.cancel();
+    editor.endGesture();
+  };
+  const done = () => {
+    window.removeEventListener('pointermove', onMove, true);
+    window.removeEventListener('pointerup', onUp, true);
+    window.removeEventListener('pointercancel', onUp, true);
+    window.removeEventListener('keydown', onKey, true);
+    resetOverlay();
+  };
+  window.addEventListener('pointermove', onMove, true);
+  window.addEventListener('pointerup', onUp, true);
+  window.addEventListener('pointercancel', onUp, true);
+  window.addEventListener('keydown', onKey, true);
+}
+
+/** True while a pointer button is held on the board (engine drags: hide our handles). */
+function usePointerHeld(): boolean {
+  const [held, setHeld] = useState(false);
+  useEffect(() => {
+    // Presses on our own handles don't count: hiding the handle on press would unmount it
+    // before React dispatches its pointerdown.
+    const down = (e: PointerEvent) => {
+      if (!(e.target instanceof Element && e.target.closest('.fr-cx-ov'))) setHeld(true);
+    };
+    const up = () => setHeld(false);
+    window.addEventListener('pointerdown', down, true);
+    window.addEventListener('pointerup', up, true);
+    window.addEventListener('pointercancel', up, true);
+    return () => {
+      window.removeEventListener('pointerdown', down, true);
+      window.removeEventListener('pointerup', up, true);
+      window.removeEventListener('pointercancel', up, true);
+    };
+  }, []);
+  return held;
+}
+
+// ------------------------------------------------------------------------------ pieces
+function boxStyle(editor: Editor, el: BoardElement, pad: number): CSSProperties {
+  const z = editor.getCamera().zoom;
+  const c = editor.worldToScreen(centerOf(el));
+  const w = el.w * z + pad * 2;
+  const h = el.h * z + pad * 2;
+  return {
+    width: w,
+    height: h,
+    transform: `translate(${c.x - w / 2}px, ${c.y - h / 2}px)${el.rotation ? ` rotate(${el.rotation}deg)` : ''}`,
+  };
+}
+
+const at = (p: Point): CSSProperties => ({ transform: `translate(${p.x}px, ${p.y}px)` });
+
+/** Anchor dots (and, for a snap target, the highlight) of one element. */
+function TargetMarks({ editor, target, highlight }: { editor: Editor; target: Target; highlight: boolean }) {
+  const el = useElement(target.id);
+  if (!el) return null;
+  const local = localAnchors(editor);
+  return (
+    <>
+      {highlight && <div className="fr-cx-ov__target" style={boxStyle(editor, el, 3)} />}
+      {SIDES.map((side) => (
+        <div
+          key={side}
+          className={`fr-cx-ov__dot${target.anchor === side ? ' is-on' : ''}`}
+          style={at(editor.worldToScreen(anchorWorld(el, side, local)))}
+        />
+      ))}
+    </>
+  );
+}
+
+function QuickConnect({ editor, el, root }: { editor: Editor; el: BoardElement; root: HTMLDivElement }) {
+  const local = localAnchors(editor);
+  const rotates = editor.getDefinition(el.type)?.rotatable !== false;
+  const style = () => styleFromOptions(editor.getToolOptions<Partial<ConnectorStyle>>(TOOL_ID));
+
+  const onDown = (side: Side) => (e: ReactPointerEvent) => {
+    if (e.button !== 0) return;
+    let id: string | null = null;
+    const start: ConnectorEndpoint = endpoint({ id: el.id, anchor: side }, anchorWorld(el, side, local));
+    runDrag(editor, root, e, {
+      move(world, ev) {
+        const target = findTarget(editor, world, [id, el.id]);
+        overlay.setState({ snap: target });
+        let p = world;
+        if (!target && ev.shiftKey && style().routing === 'straight') p = snap45(start, world);
+        const end = endpoint(target, p);
+        if (!id) id = editor.create(buildConnector(editor, start, end, style())) || null;
+        else patchConnector(editor, id, { end });
+      },
+      up(_world, _ev, moved) {
+        if (moved) {
+          if (id) editor.select([id]);
+          return;
+        }
+        // Click: a connected copy of the item on that side, like extending a flowchart.
+        const reach = 4 * (Math.max(el.w, el.h) + QUICK_GAP);
+        const offset = nextToSide(el, side, occupiedRects(editor, el, reach));
+        const [copy] = editor.duplicate([el.id], offset);
+        if (!copy) return;
+        const field = editor.getDefinition(el.type)?.textField;
+        if (field) editor.update(copy, { [field]: '' } as never);
+        const end = endpoint({ id: copy, anchor: OPPOSITE[side] }, centerOf(el));
+        editor.create(buildConnector(editor, start, end, style()));
+        editor.select([copy]);
+      },
+      cancel() {
+        if (id) editor.remove([id]);
+      },
+    });
+  };
+
+  // The format toolbar floats above (or below) the selection: a "+" it would cover steps
+  // further out along its side so it stays reachable.
+  const [bar, setBar] = useState<DOMRect | null>(null);
+  useLayoutEffect(() => {
+    const measure = () => {
+      const r = document.querySelector('[data-fr-format-toolbar]')?.getBoundingClientRect() ?? null;
+      const o = root.getBoundingClientRect();
+      const rel = r && new DOMRect(r.x - o.x, r.y - o.y, r.width, r.height);
+      setBar((cur) => (rel?.x === cur?.x && rel?.y === cur?.y && rel?.width === cur?.width && rel?.height === cur?.height ? cur : rel));
+    };
+    measure();
+    // The toolbar settles its own position after it measures itself: check again next frame.
+    const raf = requestAnimationFrame(measure);
+    return () => cancelAnimationFrame(raf);
+  });
+
+  return (
+    <>
+      {SIDES.map((side) => {
+        let off = side === 'bottom' && rotates ? PLUS_OFFSET_BELOW_ROTATE : PLUS_OFFSET;
+        const n = sideNormal(el, side);
+        const a = editor.worldToScreen(anchorWorld(el, side, local));
+        const covered = (q: Point) => !!bar && q.x > bar.left - 14 && q.x < bar.right + 14 && q.y > bar.top - 14 && q.y < bar.bottom + 14;
+        for (let i = 0; i < 40 && covered({ x: a.x + n.x * off, y: a.y + n.y * off }); i++) off += 4;
+        return (
+          <div
+            key={side}
+            role="button"
+            aria-label={`Connect from ${side} (drag), or add a connected copy (click)`}
+            title="Drag to connect · Click to add a connected copy"
+            className="fr-cx-ov__plus"
+            data-fr-interactive=""
+            style={at({ x: a.x + n.x * off, y: a.y + n.y * off })}
+            onPointerDown={onDown(side)}
+          >
+            <Plus size={12} strokeWidth={2.6} />
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+function ConnectorHandles({ editor, c, root }: { editor: Editor; c: ConnectorElement; root: HTMLDivElement }) {
+  // Follow the attached elements live (also when a collaborator moves them).
+  useElement(c.start.elementId ?? null);
+  useElement(c.end.elementId ?? null);
+  const geo = connectorGeometry(c, (id) => editor.getElement(id), localAnchors(editor));
+  const wp = c.waypoints?.[0];
+  const mid =
+    c.routing === 'straight' ? null : wp ? (c.routing === 'curved' ? wp : nearestOnPoly(wp, geo.route.poly)) : pointAlong(geo.route.poly, 0.5).p;
+
+  const dragEnd = (which: 'start' | 'end') => (e: ReactPointerEvent) => {
+    if (e.button !== 0) return;
+    const before = editor.getElement<ConnectorElement>(c.id);
+    if (!before) return;
+    const other = which === 'start' ? before.end : before.start;
+    runDrag(editor, root, e, {
+      move(world, ev) {
+        // Re-attach (highlighting the target) or detach; never onto the other end's element.
+        const target = findTarget(editor, world, [c.id, other.elementId]);
+        overlay.setState({ snap: target });
+        let p = world;
+        if (!target && ev.shiftKey && before.routing === 'straight') p = snap45(other, world);
+        patchConnector(editor, c.id, { [which]: endpoint(target, p) });
+      },
+      up() {},
+      cancel() {
+        patchConnector(editor, c.id, { start: before.start, end: before.end });
+      },
+    });
+  };
+
+  const dragMid = (e: ReactPointerEvent) => {
+    if (e.button !== 0) return;
+    const before = c.waypoints;
+    runDrag(editor, root, e, {
+      move(world) {
+        patchConnector(editor, c.id, { waypoints: [{ x: Math.round(world.x), y: Math.round(world.y) }] });
+      },
+      up() {},
+      cancel() {
+        patchConnector(editor, c.id, { waypoints: before ?? [] });
+      },
+    });
+  };
+
+  const ends: Array<['start' | 'end', Point, boolean]> = [
+    ['start', geo.start.p, !!c.start.elementId],
+    ['end', geo.end.p, !!c.end.elementId],
+  ];
+  return (
+    <>
+      {mid && (
+        <div
+          className="fr-cx-ov__mid"
+          data-fr-interactive=""
+          title="Drag to bend · Double-click to reset"
+          style={{ transform: `${at(editor.worldToScreen(mid)).transform} rotate(45deg)` }}
+          onPointerDown={dragMid}
+          onDoubleClick={() => patchConnector(editor, c.id, { waypoints: [] })}
+        />
+      )}
+      {ends.map(([which, p, attached]) => (
+        <div
+          key={which}
+          className={`fr-cx-ov__end${attached ? ' is-attached' : ''}`}
+          data-fr-interactive=""
+          title={attached ? 'Drag to re-attach or detach' : 'Drag onto an item to attach'}
+          style={at(editor.worldToScreen(p))}
+          onPointerDown={dragEnd(which)}
+        />
+      ))}
+    </>
+  );
+}
+
+function ConnectorOverlay({ editor }: { editor: Editor }) {
+  useCamera(); // re-render on pan/zoom: everything here is screen-positioned
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [root, setRoot] = useState<HTMLDivElement | null>(null);
+  useEffect(() => setRoot(rootRef.current), []);
+  const { hover, snap, dragging } = useStore(overlay);
+  const toolId = useToolId();
+  const selection = useSelectedElements();
+  const canEdit = useCanEdit();
+  const editingId = useEditingId();
+  const held = usePointerHeld();
+  const hidden = useChromeHidden();
+
+  const single = selection.length === 1 ? selection[0] : null;
+  const idle = toolId === 'select' && canEdit && !editingId && !hidden && single && !single.locked;
+  const quick = idle && !held && !dragging && isConnectable(editor, single) ? single : null;
+  const conn = idle && single.type === 'connector' ? (single as ConnectorElement) : null;
+  const marks = snap ?? (toolId === TOOL_ID ? hover : null);
+
+  return (
+    <div ref={rootRef} className={`fr-cx-ov${single?.type === 'connector' && !hidden ? ' has-connector' : ''}`}>
+      {root && quick && <QuickConnect editor={editor} el={quick} root={root} />}
+      {root && conn && <ConnectorHandles editor={editor} c={conn} root={root} />}
+      {marks && <TargetMarks editor={editor} target={marks} highlight={!!snap} />}
+    </div>
+  );
+}
+
+export default definePanel({
+  id: 'connector.overlay',
+  slot: 'screen-overlay',
+  order: 50,
+  Component: ConnectorOverlay,
+});
