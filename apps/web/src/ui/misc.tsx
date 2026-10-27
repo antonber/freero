@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from 'react';
-import { shortcutKeys, isApplePlatform } from './shortcut';
+import { formatShortcut, shortcutKeys, isApplePlatform } from './shortcut';
 import './misc.css';
 
 export interface DividerProps {
@@ -23,17 +23,28 @@ export interface KbdProps {
   /** A shortcut like "Mod+Shift+Z" (formatted per platform) or any node. */
   children: ReactNode;
   className?: string;
+  /**
+   * One compact label ("Ctrl+Shift+Z", "⌘⇧Z") instead of a keycap per key — for menus, where
+   * the shortcut is a quiet hint at the row's end.
+   */
+  compact?: boolean;
 }
 
-export function Kbd({ children, className }: KbdProps) {
-  const cls = `fr-kbd${className ? ` ${className}` : ''}`;
-  if (typeof children !== 'string') return <kbd className={cls}>{children}</kbd>;
+export function Kbd({ children, className, compact }: KbdProps) {
+  if (typeof children !== 'string') return <kbd className={`fr-kbd${className ? ` ${className}` : ''}`}>{children}</kbd>;
   const apple = isApplePlatform();
-  const keys = shortcutKeys(children, apple);
+  // The caller's class sits on the whole shortcut (one box), never repeated on every key.
+  const group = `fr-kbd-group${compact ? ' fr-kbd-group--compact' : ''}${className ? ` ${className}` : ''}`;
+  if (compact)
+    return (
+      <span className={group} aria-label={children}>
+        <kbd className="fr-kbd">{formatShortcut(children, apple)}</kbd>
+      </span>
+    );
   return (
-    <span className="fr-kbd-group" aria-label={children}>
-      {keys.map((k, i) => (
-        <kbd key={i} className={cls}>
+    <span className={group} aria-label={children}>
+      {shortcutKeys(children, apple).map((k, i) => (
+        <kbd key={i} className="fr-kbd">
           {k}
         </kbd>
       ))}
