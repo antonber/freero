@@ -1,5 +1,11 @@
 import express, { type NextFunction, type Request, type RequestHandler, type Response } from 'express';
+import { getConfig, type Config } from './config';
+import { reportError } from './errorReporting';
+import { healthRoutes } from './health';
 import { logError } from './log';
+import { metricsRoute } from './metrics';
+import { requestLogger } from './requestLog';
+import { csrfGuard, securityHeaders } from './security';
 
 /** Throw from a handler to answer with { error } and the given status. */
 export class HttpError extends Error {
@@ -28,10 +34,20 @@ export function handle(fn: (req: Request, res: Response, next: NextFunction) => 
   };
 }
 
-export function createApp(): express.Express {
+/**
+ * The Express app with the platform middleware every route gets: request id + structured log +
+ * latency metric, security headers, /healthz /readyz /metrics, CSRF origin check, JSON body limit.
+ */
+export function createApp(config: Config = getConfig()): express.Express {
   const app = express();
   app.disable('x-powered-by');
-  app.use(express.json({ limit: '2mb' }));
+  app.set('trust proxy', config.trustProxy);
+  app.use(requestLogger());
+  app.use(securityHeaders(config));
+  app.use(healthRoutes());
+  app.use(metricsRoute(config));
+  app.use(csrfGuard(config));
+  app.use(express.json({ limit: config.bodyLimitBytes }));
   return app;
 }
 
@@ -43,9 +59,13 @@ export function apiNotFound(): RequestHandler {
 }
 
 export function errorHandler() {
-  return (err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  return (err: unknown, req: Request, res: Response, _next: NextFunction) => {
     if (res.headersSent) return;
-    if (err instanceof HttpError) return res.status(err.status).json({ error: err.message });
+    if (err instanceof HttpError) {
+      const retryAfter = (err as { retryAfter?: unknown }).retryAfter;
+      if (typeof retryAfter === 'number') res.setHeader('Retry-After', String(retryAfter));
+      return res.status(err.status).json({ error: err.message });
+    }
     const e = (err ?? {}) as { status?: number; statusCode?: number; type?: string; expose?: boolean; message?: string };
     const status = e.status ?? e.statusCode;
     if (typeof status === 'number' && status >= 400 && status < 500) {
@@ -60,6 +80,7 @@ export function errorHandler() {
       return res.status(status).json({ error: message });
     }
     logError('unhandled error', err);
+    reportError(err, { request: { method: req.method, url: req.path } });
     res.status(500).json({ error: 'Internal server error' });
   };
 }

@@ -1,0 +1,155 @@
+// Object storage behind one interface: S3-compatible (S3_* set: AWS S3, MinIO, R2, GCS interop,
+// Backblaze…) or the local disk (<data>/uploads) otherwise. Keys are flat names ("<id>.png").
+//
+// With S3 configured, reads fall back to the local disk for keys S3 does not have, so files
+// uploaded before the switch keep working until they are copied over (docs/operations.md).
+import fs from 'node:fs';
+import path from 'node:path';
+import { Readable } from 'node:stream';
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadBucketCommand,
+  PutObjectCommand,
+  S3Client,
+  S3ServiceException,
+} from '@aws-sdk/client-s3';
+import type { Config, S3Config } from './config';
+import { addReadinessCheck } from './health';
+
+export interface StoredObject {
+  body: Readable;
+  contentType: string | null;
+  size: number | null;
+}
+
+export interface ObjectStorage {
+  readonly kind: 'local' | 's3';
+  put(key: string, data: Uint8Array, contentType: string): Promise<void>;
+  /** The object, or null when there is no such key. */
+  get(key: string): Promise<StoredObject | null>;
+  /** Deleting a missing key is not an error. */
+  delete(key: string): Promise<void>;
+  /** A URL clients may fetch the object from directly, or null when the app must stream it. */
+  publicUrl(key: string): string | null;
+  ping(): Promise<void>;
+}
+
+const KEY_RE = /^[A-Za-z0-9_.-]{1,128}$/;
+function checkKey(key: string): string {
+  if (!KEY_RE.test(key) || key.startsWith('.')) throw new Error(`invalid storage key: ${key}`);
+  return key;
+}
+
+export class LocalStorage implements ObjectStorage {
+  readonly kind = 'local' as const;
+  constructor(private dir: string) {}
+
+  private file(key: string) {
+    return path.join(this.dir, checkKey(key));
+  }
+  async put(key: string, data: Uint8Array, _contentType?: string): Promise<void> {
+    await fs.promises.mkdir(this.dir, { recursive: true });
+    // Write then rename: a reader never sees a half-written file.
+    const tmp = `${this.file(key)}.${process.pid}.tmp`;
+    await fs.promises.writeFile(tmp, data);
+    await fs.promises.rename(tmp, this.file(key));
+  }
+  async get(key: string): Promise<StoredObject | null> {
+    const file = this.file(key);
+    try {
+      const stat = await fs.promises.stat(file);
+      if (!stat.isFile()) return null;
+      return { body: fs.createReadStream(file), contentType: null, size: stat.size };
+    } catch {
+      return null;
+    }
+  }
+  async delete(key: string): Promise<void> {
+    await fs.promises.rm(this.file(key), { force: true });
+  }
+  publicUrl(): string | null {
+    return null;
+  }
+  async ping(): Promise<void> {
+    await fs.promises.mkdir(this.dir, { recursive: true });
+    await fs.promises.access(this.dir, fs.constants.W_OK);
+  }
+}
+
+export class S3Storage implements ObjectStorage {
+  readonly kind = 's3' as const;
+  private client: S3Client;
+  private prefix = 'uploads/';
+
+  constructor(
+    private s3: S3Config,
+    private fallback: LocalStorage | null,
+  ) {
+    this.client = new S3Client({
+      region: s3.region,
+      endpoint: s3.endpoint ?? undefined,
+      forcePathStyle: s3.forcePathStyle,
+      credentials: { accessKeyId: s3.accessKeyId, secretAccessKey: s3.secretAccessKey },
+    });
+  }
+
+  async put(key: string, data: Uint8Array, contentType: string): Promise<void> {
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.s3.bucket,
+        Key: this.prefix + checkKey(key),
+        Body: data,
+        ContentType: contentType,
+        CacheControl: 'public, max-age=31536000, immutable',
+      }),
+    );
+  }
+
+  async get(key: string): Promise<StoredObject | null> {
+    try {
+      const out = await this.client.send(new GetObjectCommand({ Bucket: this.s3.bucket, Key: this.prefix + checkKey(key) }));
+      if (!out.Body) return null;
+      return { body: out.Body as Readable, contentType: out.ContentType ?? null, size: out.ContentLength ?? null };
+    } catch (e) {
+      if (e instanceof S3ServiceException && (e.name === 'NoSuchKey' || e.$metadata.httpStatusCode === 404))
+        return this.fallback ? this.fallback.get(key) : null;
+      throw e;
+    }
+  }
+
+  async delete(key: string): Promise<void> {
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.s3.bucket, Key: this.prefix + checkKey(key) }));
+    await this.fallback?.delete(key);
+  }
+
+  publicUrl(key: string): string | null {
+    return this.s3.publicUrl ? `${this.s3.publicUrl}/${this.prefix}${checkKey(key)}` : null;
+  }
+
+  async ping(): Promise<void> {
+    await this.client.send(new HeadBucketCommand({ Bucket: this.s3.bucket }));
+  }
+}
+
+let instance: ObjectStorage | null = null;
+
+export function initStorage(config: Config): ObjectStorage {
+  const local = new LocalStorage(config.uploadsDir);
+  instance = config.s3 ? new S3Storage(config.s3, local) : local;
+  const s = instance;
+  addReadinessCheck('storage', () => s.ping());
+  return s;
+}
+
+export function storage(): ObjectStorage {
+  if (!instance) throw new Error('Storage not initialised: call initStorage() from main.ts first');
+  return instance;
+}
+
+/** Collects a stored object into memory (small objects only, e.g. tests and copies). */
+export async function readAll(obj: StoredObject): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const c of obj.body) chunks.push(Buffer.from(c));
+  return Buffer.concat(chunks);
+}

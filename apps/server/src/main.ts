@@ -1,5 +1,6 @@
 // Composition root. Discovers modules/<name>/ by reserved files — there is no module list to edit.
-//   schema.sql  applied at startup (all modules, before anything else)
+//   migrations/<YYYYMMDDHHMM>_<name>.sql  applied at startup (all modules, global timestamp order,
+//               once each, tracked in _migrations) before anything else
 //   routes.ts   export default (ctx) => express.Router; mounted at `export const mountPath` (default '/api')
 //   ws.ts       export default (ctx) => WsRoute | WsRoute[]
 //   init.ts     export default (ctx) => void | Promise<void>; runs after routes are mounted, before listen
@@ -8,11 +9,13 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import express, { type Router } from 'express';
-import { loadConfig } from './platform/config';
+import { ConfigError, loadConfig } from './platform/config';
 import { createContext, type ServerContext } from './platform/context';
-import { closeDb, openDb, runSchema } from './platform/db';
+import { closeDb, DatabaseStartupError, discoverMigrations, migrate, openDb, redactUrl } from './platform/db';
 import { apiNotFound, createApp, errorHandler } from './platform/http';
 import { log, logError } from './platform/log';
+import { rateLimit } from './platform/rateLimit';
+import { drain, startPlatform, stopPlatform } from './platform/runtime';
 import { attachWebSockets, type WsRoute } from './platform/ws';
 
 const MODULES_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'modules');
@@ -37,16 +40,20 @@ async function reserved<T>(name: string, file: string): Promise<T | null> {
 
 async function main(): Promise<void> {
   const config = loadConfig();
+  startPlatform(config);
   const ctx = createContext(config);
   const names = moduleDirs();
 
-  openDb(config.dbFile);
-  for (const name of names) {
-    const schema = path.join(MODULES_DIR, name, 'schema.sql');
-    if (fs.existsSync(schema)) runSchema(fs.readFileSync(schema, 'utf8'));
-  }
+  // Fail fast (before listening) when the database is unreachable or a migration fails.
+  await openDb(config.databaseUrl ? { url: config.databaseUrl, poolSize: config.dbPoolMax } : { pgliteDir: config.pgliteDir });
+  const applied = await migrate(discoverMigrations(MODULES_DIR));
+  log(
+    `database: ${config.databaseUrl ? `postgres ${redactUrl(config.databaseUrl)}` : `pglite ${config.pgliteDir}`}; ` +
+      (applied.length ? `applied ${applied.join(', ')}` : 'schema up to date'),
+  );
 
-  const app = createApp();
+  const app = createApp(config);
+  app.use('/api', rateLimit('api'));
   const wsRoutes: WsRoute[] = [];
   for (const name of names) {
     const routes = await reserved<RoutesModule>(name, 'routes.ts');
@@ -59,7 +66,9 @@ async function main(): Promise<void> {
   // Production: serve the built web app with an SPA fallback.
   const indexHtml = path.join(config.webDist, 'index.html');
   if (fs.existsSync(indexHtml)) {
-    app.use(express.static(config.webDist, { index: false, maxAge: '1h' }));
+    // Vite's /assets are content-hashed: cache forever. Everything else (index.html) revalidates.
+    app.use('/assets', express.static(path.join(config.webDist, 'assets'), { index: false, immutable: true, maxAge: '1y' }));
+    app.use(express.static(config.webDist, { index: false, maxAge: 0 }));
     app.get(/^(?!\/(api|uploads|ws)(\/|$)).*/, (_req, res) => res.sendFile(indexHtml));
     log(`serving web app from ${config.webDist}`);
   }
@@ -71,7 +80,7 @@ async function main(): Promise<void> {
   }
 
   const server = http.createServer(app);
-  const sockets = attachWebSockets(server, wsRoutes);
+  const sockets = attachWebSockets(server, wsRoutes, { app, config });
   await new Promise<void>((resolve) => server.listen(config.port, resolve));
   log(`server listening on http://localhost:${config.port} (data: ${config.dataDir}; modules: ${names.join(', ')})`);
 
@@ -80,10 +89,12 @@ async function main(): Promise<void> {
     if (stopping) return;
     stopping = true;
     log(`${signal}: shutting down`);
+    await drain(config);
     sockets.close();
     server.close();
-    await ctx.shutdown();
-    closeDb();
+    await ctx.shutdown(); // realtime saves every loaded doc here
+    await stopPlatform();
+    await closeDb(); // only after everything that writes has finished
     process.exit(0);
   };
   process.on('SIGINT', () => void stop('SIGINT'));
@@ -91,6 +102,8 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-  logError('failed to start', err);
+  if (err instanceof ConfigError) console.error(err.message);
+  else if (err instanceof DatabaseStartupError) console.error(`Freero cannot start: ${err.message}`);
+  else logError('failed to start', err);
   process.exit(1);
 });
