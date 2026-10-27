@@ -1,0 +1,153 @@
+/* Free text box (rendered through the engine's ElementText). */
+.fr-text.fr-textbox {
+  overflow: visible;
+  border-radius: 4px;
+}
+
+/* Auto width: never wrap; while typing the box grows with the line instead of waiting for the
+   stored width to catch up. */
+.fr-text.fr-textbox--auto {
+  white-space: nowrap;
+}
+
+.fr-text.fr-textbox--auto.fr-text--editing {
+  right: auto;
+  width: max-content;
+  min-width: 100%;
+}
+
+/* Ghost shown under the cursor while the Text tool is armed. */
+.fr-textbox-ghost {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  font-family: var(--fr-font);
+  color: var(--fr-primary);
+  opacity: 0.7;
+}
+
+.fr-textbox-ghost__caret {
+  width: 2px;
+  border-radius: 1px;
+  background: var(--fr-primary);
+}
+
+.fr-textbox-ghost__label {
+  color: var(--fr-ink-3);
+}
+
+/* Width being dragged out with the Text tool. */
+.fr-textbox-dragbox {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  border: 1.5px dashed var(--fr-primary);
+  border-radius: 4px;
+  background: rgba(91, 63, 240, 0.05);
+}
+
+/* Format controls */
+.fr-textfmt-tb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--fr-radius-sm);
+  background: transparent;
+  color: var(--fr-ink-2);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.fr-textfmt-tb:hover,
+.fr-textfmt-tb[aria-expanded='true'] {
+  background: var(--fr-hover);
+  color: var(--fr-ink);
+}
+
+.fr-textfmt-tb--wide {
+  min-width: 52px;
+  justify-content: space-between;
+}
+
+.fr-textfmt-a {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--fr-ink);
+}
+
+.fr-textfmt-bar {
+  display: block;
+  width: 16px;
+  height: 4px;
+  margin-top: 2px;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgba(23, 22, 43, 0.14);
+}
+
+.fr-textfmt-bar.is-mixed {
+  background: linear-gradient(90deg, #ffa9a0 0 33%, #b5d6ff 0 66%, #c2efb0 0);
+}
+
+.fr-textfmt-bar.is-transparent {
+  background:
+    linear-gradient(160deg, transparent 42%, var(--fr-danger) 42%, var(--fr-danger) 58%, transparent 58%),
+    var(--fr-surface);
+}
+
+.fr-textfmt-sizes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fr-textfmt-sizes__list {
+  display: flex;
+  flex-direction: column;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.fr-textfmt-sizes__item {
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--fr-radius-sm);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--fr-ink);
+}
+
+.fr-textfmt-sizes__item:hover {
+  background: var(--fr-hover);
+}
+
+.fr-textfmt-sizes__item.is-active {
+  background: var(--fr-primary-soft);
+  color: var(--fr-primary);
+  font-weight: 600;
+}
+
+.fr-textfmt-link {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
