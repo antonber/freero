@@ -57,6 +57,9 @@ export interface VoteBallot {
   userId: string;
   /** May contain duplicates (multiple votes on the same element). */
   elementIds: string[];
+  /** Voter's display name/color at vote time, for "who has voted" avatars after they leave. */
+  userName?: string;
+  userColor?: string;
 }
 
 /** Yjs awareness state published by each client (written only by the engine). */
