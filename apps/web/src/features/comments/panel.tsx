@@ -46,6 +46,7 @@ const Pin = memo(function Pin(props: {
         ref={pinRef}
         className={`fr-cm-pin${active ? ' is-active' : ''}${resolved ? ' is-resolved' : ''}${ghost ? ' is-ghost' : ''}${unread ? ' is-unread' : ''}`}
         data-fr-interactive=""
+        data-fr-keep-clear=""
         role={onOpen ? 'button' : undefined}
         tabIndex={onOpen ? 0 : undefined}
         aria-label={label}

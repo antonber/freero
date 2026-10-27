@@ -28,7 +28,8 @@ export function useNow(editor: Editor, intervalMs = 30_000): number {
   return now;
 }
 
-const isSend = (e: KeyboardEvent) => e.key === 'Enter' && (e.metaKey || e.ctrlKey);
+/** Enter sends (like every chat and comment box); Shift+Enter is a new line. IME composition never sends. */
+const isSend = (e: KeyboardEvent) => e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing;
 
 /** Grows with its content up to a cap. */
 function AutoText(props: {
@@ -78,7 +79,11 @@ function AutoText(props: {
 }
 
 function SendHint() {
-  return <span className="fr-cm-hint">{formatShortcut('mod+enter')} to send</span>;
+  return (
+    <span className="fr-cm-hint" title={`${formatShortcut('shift+enter')} for a new line`}>
+      Enter to send
+    </span>
+  );
 }
 
 export function authorColor(m: Pick<CommentMessage, 'authorColor' | 'authorId'>): string {
@@ -332,7 +337,7 @@ export function ThreadView({
       {canWrite && !editingId && (
         <div className="fr-cm-reply">
           <AutoText value={text} onChange={setText} onSubmit={send} placeholder="Reply…" label="Reply" autoFocus />
-          <IconButton icon={ArrowUp} label="Send reply" shortcut="Mod+Enter" size={32} variant="solid" disabled={!text.trim()} onClick={send} />
+          <IconButton icon={ArrowUp} label="Send reply" shortcut="Enter" size={32} variant="solid" disabled={!text.trim()} onClick={send} />
         </div>
       )}
     </div>
