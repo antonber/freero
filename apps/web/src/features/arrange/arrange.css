@@ -1,0 +1,9 @@
+.fr-arrange {
+  padding: 6px;
+}
+
+.fr-arrange__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 32px);
+  gap: 2px;
+}
