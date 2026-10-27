@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState, type MouseEvent, type RefObject } from 'react';
 import { ListOrdered, Minus, Plus, Trophy, Vote, X } from 'lucide-react';
-import type { BoardElement } from '@freero/shared';
-import { definePanel, useCanEdit, useDock, type Editor, type Rect } from '@engine';
+import type { BoardElement, Role } from '@freero/shared';
+import { definePanel, useCanEdit, useDock, useRole, type Editor, type Rect } from '@engine';
 import { AvatarStack, Button, Input, Menu, Modal, Slider, Toggle, Tooltip, type MenuItem } from '@ui';
 import { MAX_VOTES, MIN_VOTES } from './lib/voting';
 import { RESULTS_PANEL_ID, START_DIALOG_ID, previewOf, useVoting, useVotingUi, type VotingView } from './lib/state';
@@ -306,8 +306,9 @@ function VotingWorld({ editor }: { editor: Editor }) {
 // ---------------------------------------------------------------------------
 // Floating session bar (screen space)
 // ---------------------------------------------------------------------------
-function votesLeftText(v: VotingView): string {
-  if (!v.canVote) return 'View only: you can watch, but not vote';
+function votesLeftText(v: VotingView, role: Role): string {
+  if (!v.canVote)
+    return role === 'commenter' ? 'You can comment, but only editors vote' : 'View only: you can watch, but not vote';
   if (!v.eligible.length) return 'Nothing to vote on yet';
   if (v.votesLeft === 0) return "You've used all your votes";
   return `You have ${v.votesLeft} vote${v.votesLeft === 1 ? '' : 's'} left`;
@@ -316,6 +317,7 @@ function votesLeftText(v: VotingView): string {
 function SessionBar({ editor }: { editor: Editor }) {
   const v = useVoting();
   const canEdit = useCanEdit();
+  const role = useRole();
   const dock = useDock();
   const { session } = v;
   if (!session || !v.visible) return null;
@@ -329,7 +331,7 @@ function SessionBar({ editor }: { editor: Editor }) {
         </span>
         <div className="fr-vote-bar__text">
           <strong>{session.title}</strong>
-          <span className={v.canVote && v.votesLeft === 0 ? 'is-spent' : undefined}>{votesLeftText(v)}</span>
+          <span className={v.canVote && v.votesLeft === 0 ? 'is-spent' : undefined}>{votesLeftText(v, role)}</span>
         </div>
         <div className="fr-vote-bar__voters">
           {people ? (
@@ -499,7 +501,7 @@ function ResultsPanel({ editor }: { editor: Editor }) {
 export default [
   definePanel({ id: 'voting.button', slot: 'topbar-right', order: 30, Component: VoteButton }),
   definePanel({ id: 'voting.world', slot: 'world-overlay', order: 50, Component: VotingWorld }),
-  definePanel({ id: 'voting.bar', slot: 'screen-overlay', order: 50, Component: SessionBar }),
+  definePanel({ id: 'voting.bar', slot: 'top-center', order: 50, Component: SessionBar }),
   definePanel({ id: RESULTS_PANEL_ID, slot: 'dock-right', order: 50, Component: ResultsPanel }),
   definePanel({ id: START_DIALOG_ID, slot: 'dialog', order: 50, Component: StartDialog }),
 ];

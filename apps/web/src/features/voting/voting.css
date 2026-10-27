@@ -214,16 +214,12 @@
 }
 
 /* ---- session bar ---- */
+/* Placed by the engine's 'top-center' column (stacks with other session bars). */
 .fr-vote-bar {
-  position: absolute;
-  top: 72px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: var(--fr-z-canvas-ui);
   display: flex;
   align-items: center;
   gap: 14px;
-  max-width: calc(100% - 24px);
+  max-width: 100%;
   padding: 8px 8px 8px 10px;
   background: var(--fr-surface);
   border-radius: var(--fr-radius-lg);
@@ -236,7 +232,7 @@
 @keyframes fr-vote-in {
   from {
     opacity: 0;
-    transform: translate(-50%, -6px);
+    transform: translateY(-6px);
   }
 }
 
