@@ -36,6 +36,11 @@ export default defineTool({
   placement: 'main',
   cursor: 'text',
 
+  // Double-click on empty canvas with the select tool: a text box right there, ready to type.
+  onCanvasDoubleClick(editor, point) {
+    place(editor, editor.create(textAtCaret(point), { select: true }));
+  },
+
   onPointerDown({ editor, point, screen, button, target }) {
     if (button !== 0) return;
     // Clicking an existing text box with the Text tool edits it instead of stacking a new one.
