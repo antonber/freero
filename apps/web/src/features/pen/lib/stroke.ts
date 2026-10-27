@@ -1,4 +1,4 @@
-// Pure stroke geometry: capture, simplification, packing, rendering and hit-testing.
+// Pure stroke geometry: capture, simplification, packing, rendering and distance to the ink.
 // Points are stored flat [x0, y0, p0, x1, y1, p1, …] relative to the element's (x, y), in the
 // "base" space the stroke was drawn in (baseW × baseH). Rendering and hit-testing scale that
 // base space to the element's current w × h, so resizing scales the stroke.
@@ -143,28 +143,30 @@ function segDist2(p: Point, a: Point, b: Point): number {
 }
 
 /**
- * True when `local` (element-local, unrotated, in w × h space) is on the drawn stroke: within the
- * outline radius of a centerline segment, plus `tolerance` so thin lines stay clickable.
+ * Distance from `local` (element-local, unrotated, in w × h space) to the drawn ink: distance to
+ * the centerline minus the outline radius there (<= 0 on the ink). The pen's `distanceTo`, so
+ * the engine's hit test and the eraser share it.
  */
-export function hitStroke(el: StrokeShape, local: Point, tolerance: number): boolean {
+export function strokeDistance(el: StrokeShape, local: Point): number {
   const sx = el.w / (el.baseW || 1);
   const sy = el.h / (el.baseH || 1);
   const scale = Math.sqrt(Math.abs(sx * sy)) || 1;
   const pts = el.points;
-  if (pts.length < 3) return false;
+  if (pts.length < 3) return Infinity;
   const at = (i: number): Point => ({ x: pts[i] * sx, y: pts[i + 1] * sy });
   let prev = at(0);
   let prevR = radiusAt(el.strokeWidth, el.highlighter, pts[2]) * scale;
-  if (pts.length === 3) return Math.hypot(local.x - prev.x, local.y - prev.y) <= prevR + tolerance;
+  if (pts.length === 3) return Math.hypot(local.x - prev.x, local.y - prev.y) - prevR;
+  let best = Infinity;
   for (let i = 3; i + 2 < pts.length; i += 3) {
     const cur = at(i);
     const r = radiusAt(el.strokeWidth, el.highlighter, pts[i + 2]) * scale;
-    const lim = Math.max(prevR, r) + tolerance;
-    if (segDist2(local, prev, cur) <= lim * lim) return true;
+    const d = Math.sqrt(segDist2(local, prev, cur)) - Math.max(prevR, r);
+    if (d < best) best = d;
     prev = cur;
     prevR = r;
   }
-  return false;
+  return best;
 }
 
 /**

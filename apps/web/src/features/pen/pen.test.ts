@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PenElement } from '@freero/shared';
-import { buildStroke, hitStroke, rebakeWidth, simplify, unpack, type RawPoint } from './lib/stroke';
+import { buildStroke, rebakeWidth, simplify, strokeDistance, unpack, type RawPoint } from './lib/stroke';
 
 const line = (from: { x: number; y: number }, to: { x: number; y: number }, n = 50): RawPoint[] =>
   Array.from({ length: n }, (_, i) => ({ x: from.x + ((to.x - from.x) * i) / (n - 1), y: from.y + ((to.y - from.y) * i) / (n - 1), p: 0.5 }));
@@ -23,20 +23,30 @@ function stroke(points: RawPoint[], width = 4): PenElement {
 
 const local = (el: PenElement, world: { x: number; y: number }) => ({ x: world.x - el.x, y: world.y - el.y });
 
-describe('pen stroke hit-testing', () => {
+describe('distance to a pen stroke (hit test + eraser)', () => {
   it('clicking empty space inside a diagonal stroke’s bounding box does not grab the stroke', () => {
     const el = stroke(line({ x: 100, y: 100 }, { x: 300, y: 300 }));
-    expect(hitStroke(el, local(el, { x: 200, y: 200 }), 4)).toBe(true);
+    expect(strokeDistance(el, local(el, { x: 200, y: 200 }))).toBeLessThanOrEqual(0);
     // Bottom-left corner of the bbox: inside the box, far from the ink.
-    expect(hitStroke(el, local(el, { x: 110, y: 290 }), 4)).toBe(false);
+    expect(strokeDistance(el, local(el, { x: 110, y: 290 }))).toBeGreaterThan(100);
   });
 
-  it('a stretched stroke is hit where it is drawn now, not where it was before the resize', () => {
+  it('the empty middle of a drawn ring is far from the ink, its rim is on it', () => {
+    const ring = Array.from({ length: 65 }, (_, i) => {
+      const a = (i / 64) * Math.PI * 2;
+      return { x: 200 + Math.cos(a) * 100, y: 200 + Math.sin(a) * 100, p: 0.5 };
+    });
+    const el = stroke(ring);
+    expect(strokeDistance(el, local(el, { x: 200, y: 200 }))).toBeGreaterThan(90);
+    expect(strokeDistance(el, local(el, { x: 300, y: 200 }))).toBeLessThanOrEqual(0.5);
+  });
+
+  it('a stretched stroke is measured where it is drawn now, not where it was before the resize', () => {
     const el = stroke(line({ x: 0, y: 0 }, { x: 200, y: 100 }));
     const wide = { ...el, w: el.w * 2 };
     const mid = local(el, { x: 100, y: 50 }); // middle of the line as drawn
-    expect(hitStroke(wide, { x: mid.x * 2, y: mid.y }, 2)).toBe(true);
-    expect(hitStroke(wide, mid, 2)).toBe(false);
+    expect(strokeDistance(wide, { x: mid.x * 2, y: mid.y })).toBeLessThanOrEqual(0);
+    expect(strokeDistance(wide, mid)).toBeGreaterThan(10);
   });
 });
 

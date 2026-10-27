@@ -8,12 +8,7 @@
   pointer-events: none;
 }
 
-/*
- * Highlighter ink multiplies with whatever is beneath it (text stays legible, overlaps darken
- * like real markers). The blend must sit on the element's positioned wrapper: that wrapper is a
- * stacking context, so a blend on the inner svg would only see its own empty box.
- */
-.fr-el:has(> .fr-pen--highlighter),
+/* Live highlighter ink multiplies like the committed stroke (element.tsx wrapperStyle). */
 .fr-pen-draft--highlighter {
   mix-blend-mode: multiply;
 }

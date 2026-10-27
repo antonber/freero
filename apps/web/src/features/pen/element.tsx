@@ -2,11 +2,8 @@ import { memo, useMemo } from 'react';
 import type { PenElement } from '@freero/shared';
 import { defineElement, type ElementRenderProps, type NewElement } from '@engine';
 import { HIGHLIGHTER_OPACITY, PEN_COLORS, PEN_WIDTHS } from './lib/constants';
-import { hitStroke, strokePath, unpack } from './lib/stroke';
+import { strokeDistance, strokePath, unpack } from './lib/stroke';
 import './pen.css';
-
-/** Extra world units around the stroke that still count as a hit, so thin lines stay clickable. */
-const HIT_TOLERANCE = 4;
 
 const PenView = memo(function PenView({ element }: ElementRenderProps<PenElement>) {
   const { points, strokeWidth, highlighter, baseW, baseH, stroke } = element;
@@ -41,5 +38,9 @@ export default defineElement({
     baseH: 1,
   }),
   Component: PenView,
-  hitTest: (el, local) => hitStroke(el, local, HIT_TOLERANCE),
+  // Hits within the engine's screen tolerance of the ink; the eraser asks the same distance.
+  distanceTo: (el, local) => strokeDistance(el, local),
+  // Highlighter ink multiplies with what's beneath (overlaps darken like real markers). It must
+  // sit on the positioned wrapper: that is the stacking context the blend composites against.
+  wrapperStyle: (el) => (el.highlighter ? { mixBlendMode: 'multiply' } : undefined),
 });
