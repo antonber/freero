@@ -1,7 +1,6 @@
 import { Eraser } from 'lucide-react';
-import type { PenElement } from '@freero/shared';
 import { defineTool, useCamera, usePointer, useToolOptions, type Editor, type Point } from '@engine';
-import { sweepTouchesStroke } from './lib/geometry';
+import { sweepTouches } from './lib/sweep';
 import './eraser.css';
 
 const TOOL_ID = 'eraser';
@@ -20,8 +19,10 @@ function radiusPx(editor: Editor): number {
   return RADII[editor.getToolOptions<EraserOptions>(TOOL_ID).size ?? 1];
 }
 
-/** Deletes every unlocked pen stroke the sweep from → to touches. */
+/** Deletes every unlocked pen stroke the sweep from → to touches (the pen says where its ink is). */
 function sweep(editor: Editor, from: Point, to: Point) {
+  const distanceTo = editor.getDefinition('pen')?.distanceTo;
+  if (!distanceTo) return;
   const r = radiusPx(editor) / editor.getCamera().zoom;
   const box = {
     x: Math.min(from.x, to.x) - r,
@@ -32,7 +33,7 @@ function sweep(editor: Editor, from: Point, to: Point) {
   const hits = editor
     .elementsInRect(box, 'intersect')
     .filter(
-      (el): el is PenElement => el.type === 'pen' && !el.locked && !erased.has(el.id) && sweepTouchesStroke(el, from, to, r),
+      (el) => el.type === 'pen' && !el.locked && !erased.has(el.id) && sweepTouches(distanceTo, el, from, to, r),
     )
     .map((el) => el.id);
   if (!hits.length) return;
