@@ -325,13 +325,13 @@
 }
 
 /* ---- Grid ---- */
-.fr-grid {
+.fr-dash-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
   gap: 20px;
 }
 
-.fr-card {
+.fr-dash-card {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -345,17 +345,17 @@
     transform 0.15s var(--fr-ease);
 }
 
-.fr-card:hover,
-.fr-card--active {
+.fr-dash-card:hover,
+.fr-dash-card--active {
   border-color: transparent;
   box-shadow: var(--fr-shadow-lg);
 }
 
-.fr-card:hover {
+.fr-dash-card:hover {
   transform: translateY(-1px);
 }
 
-.fr-card:focus-within {
+.fr-dash-card:focus-within {
   border-color: var(--fr-primary);
 }
 
@@ -371,7 +371,7 @@
   box-shadow: inset 0 0 0 2px var(--fr-primary);
 }
 
-.fr-card__thumb {
+.fr-dash-card__thumb {
   position: relative;
   aspect-ratio: 16 / 10;
   overflow: hidden;
@@ -390,7 +390,7 @@
   background: #fff;
 }
 
-.fr-card__hover-actions {
+.fr-dash-card__hover-actions {
   position: absolute;
   top: 8px;
   right: 8px;
@@ -399,7 +399,7 @@
   gap: 4px;
 }
 
-.fr-card__hover-actions .fr-iconbtn {
+.fr-dash-card__hover-actions .fr-iconbtn {
   background: rgba(255, 255, 255, 0.94);
   box-shadow: var(--fr-shadow);
   opacity: 0;
@@ -408,14 +408,14 @@
     background-color 0.12s var(--fr-ease);
 }
 
-.fr-card:hover .fr-card__hover-actions .fr-iconbtn,
-.fr-card:focus-within .fr-card__hover-actions .fr-iconbtn,
-.fr-card--active .fr-card__hover-actions .fr-iconbtn,
-.fr-card__hover-actions .fr-board__star--on {
+.fr-dash-card:hover .fr-dash-card__hover-actions .fr-iconbtn,
+.fr-dash-card:focus-within .fr-dash-card__hover-actions .fr-iconbtn,
+.fr-dash-card--active .fr-dash-card__hover-actions .fr-iconbtn,
+.fr-dash-card__hover-actions .fr-board__star--on {
   opacity: 1;
 }
 
-.fr-card__hover-actions .fr-iconbtn:hover {
+.fr-dash-card__hover-actions .fr-iconbtn:hover {
   background: #fff;
 }
 
@@ -425,15 +425,15 @@
   background: transparent;
 }
 
-.fr-card__hover-actions .fr-board__star--on {
+.fr-dash-card__hover-actions .fr-board__star--on {
   background: rgba(255, 255, 255, 0.94);
 }
 
-.fr-card__meta {
+.fr-dash-card__meta {
   padding: 12px 14px 14px;
 }
 
-.fr-card__title {
+.fr-dash-card__title {
   font-size: 14.5px;
   font-weight: 600;
   overflow: hidden;
@@ -441,7 +441,7 @@
   white-space: nowrap;
 }
 
-.fr-card__sub {
+.fr-dash-card__sub {
   display: flex;
   gap: 6px;
   margin-top: 4px;
@@ -451,12 +451,12 @@
   overflow: hidden;
 }
 
-.fr-card__owner {
+.fr-dash-card__owner {
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.fr-card--skeleton:hover {
+.fr-dash-card--skeleton:hover {
   box-shadow: none;
   transform: none;
   border-color: var(--fr-line);

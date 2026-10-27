@@ -281,7 +281,7 @@ export function DashboardPage() {
             ) : visible.length === 0 ? (
               <EmptyState view={view} query={q} filtered={owner !== 'any' && (boards?.length ?? 0) > 0} onCreate={() => create('blank')} creating={creating === 'blank'} />
             ) : layout === 'grid' ? (
-              <div className="fr-grid">
+              <div className="fr-dash-grid">
                 {visible.map((b) => (
                   <BoardItem key={b.id} board={b} layout="grid" sort={sort} userId={user.id} actions={actions} />
                 ))}
@@ -368,11 +368,11 @@ function BoardsSkeleton({ layout }: { layout: 'grid' | 'list' }) {
     );
   }
   return (
-    <div className="fr-grid" aria-busy="true" aria-label="Loading boards">
+    <div className="fr-dash-grid" aria-busy="true" aria-label="Loading boards">
       {Array.from({ length: 8 }, (_, i) => (
-        <div key={i} className="fr-card fr-card--skeleton">
+        <div key={i} className="fr-dash-card fr-dash-card--skeleton">
           <Skeleton height="auto" radius={0} style={{ aspectRatio: '16 / 10' }} />
-          <div className="fr-card__meta">
+          <div className="fr-dash-card__meta">
             <Skeleton width="70%" height={14} />
             <Skeleton width="45%" height={11} style={{ marginTop: 8 }} />
           </div>

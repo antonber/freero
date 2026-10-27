@@ -100,21 +100,21 @@ export const BoardItem = memo(function BoardItem({ board: b, layout, sort, userI
   }
 
   return (
-    <div className={`fr-card${menuOpen ? ' fr-card--active' : ''}`} onContextMenu={(e) => { e.preventDefault(); setMenuOpen(true); }}>
+    <div className={`fr-dash-card${menuOpen ? ' fr-dash-card--active' : ''}`} onContextMenu={(e) => { e.preventDefault(); setMenuOpen(true); }}>
       <Link to={`/board/${b.id}`} className="fr-board__link" aria-label={`Open ${title}`} />
-      <div className="fr-card__thumb">
+      <div className="fr-dash-card__thumb">
         <BoardThumb board={b} />
-        <div className="fr-card__hover-actions">
+        <div className="fr-dash-card__hover-actions">
           {star}
           {more}
         </div>
       </div>
-      <div className="fr-card__meta">
-        <div className="fr-card__title" title={title}>
+      <div className="fr-dash-card__meta">
+        <div className="fr-dash-card__title" title={title}>
           {title}
         </div>
-        <div className="fr-card__sub">
-          <span className="fr-card__owner">{owner}</span>
+        <div className="fr-dash-card__sub">
+          <span className="fr-dash-card__owner">{owner}</span>
           <span aria-hidden>·</span>
           <span>
             {time.label} {relativeTime(time.at)}
