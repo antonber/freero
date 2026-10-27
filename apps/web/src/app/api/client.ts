@@ -8,6 +8,7 @@ import type {
   Role,
   SessionResponse,
   SignupRequest,
+  UnfurlResponse,
   UpdateBoardRequest,
   User,
 } from '@freero/shared';
@@ -78,6 +79,9 @@ export const api = {
     request<{ member: BoardMember }>('PATCH', `/api/boards/${id}/members/${userId}`, { role }),
   removeMember: (id: string, userId: string) =>
     request<{ ok: true }>('DELETE', `/api/boards/${id}/members/${userId}`),
+
+  // link previews
+  unfurl: (url: string) => request<UnfurlResponse>('GET', `/api/unfurl?url=${encodeURIComponent(url)}`),
 
   // uploads
   async uploadImage(file: Blob): Promise<{ url: string }> {

@@ -3,7 +3,7 @@ import type { BoardSummary, Role } from '@freero/shared';
 import type { Host, HostUser } from '@engine';
 import type { ToastApi } from '@ui';
 import { wsBase } from '../api/client';
-import { listMembers, renameBoard, saveThumbnail, uploadImage } from '../hostServices';
+import { listMembers, renameBoard, saveThumbnail, unfurl, uploadImage } from '../hostServices';
 import { serverNow, syncServerClock } from './serverClock';
 
 export interface HostDeps {
@@ -43,6 +43,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     notify: deps.notify,
     serverNow,
     listMembers: () => listMembers(board.id),
+    unfurl,
   };
 }
 
@@ -78,5 +79,7 @@ export function createLocalHost(title: string, deps: Omit<HostDeps, 'user' | 'op
     notify: deps.notify,
     serverNow: () => Date.now(),
     listMembers: async () => [user],
+    // Offline sandbox: no previews (the embed card shows the plain link).
+    unfurl: async () => Promise.reject(new Error('Link previews need a real board.')),
   };
 }
