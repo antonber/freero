@@ -2,6 +2,7 @@
 import type { ElementType } from '@freero/shared';
 import type {
   CommandDefinition,
+  DecorationDefinition,
   ElementDefinition,
   FeatureBundle,
   FeatureManifest,
@@ -30,6 +31,8 @@ export interface Registry {
   collectionOwners: Map<string, string>;
   /** Element definitions with importData, highest priority first. */
   importers: Registered<ElementDefinition<any>>[];
+  /** decoration.tsx contributions, by order. */
+  decorations: Registered<DecorationDefinition>[];
 }
 
 export function buildRegistry(
@@ -47,6 +50,7 @@ export function buildRegistry(
     commands: new Map(),
     collectionOwners: claimCollections(bundles.map((b) => b.manifest)),
     importers: [],
+    decorations: [],
   };
 
   const addTool = (def: ToolDefinition, feature: string) => {
@@ -84,11 +88,16 @@ export function buildRegistry(
       reg.panels.set(p.slot, list);
     }
     for (const c of b.commands) addCommand(c, feature);
+    for (const d of b.decorations ?? []) {
+      if (reg.decorations.some((r) => r.def.id === d.id)) throw new Error(`Decoration id '${d.id}' is defined twice.`);
+      reg.decorations.push({ def: d, feature });
+    }
   }
 
   reg.tools.sort((a, b) => a.def.order - b.def.order);
   reg.formats.sort((a, b) => a.def.order - b.def.order);
   for (const list of reg.panels.values()) list.sort((a, b) => a.def.order - b.def.order);
+  reg.decorations.sort((a, b) => (a.def.order ?? 0) - (b.def.order ?? 0));
   reg.importers.sort((a, b) => (b.def.importPriority ?? 0) - (a.def.importPriority ?? 0));
   return reg;
 }

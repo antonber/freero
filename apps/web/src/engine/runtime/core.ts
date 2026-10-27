@@ -12,6 +12,8 @@ import { EditorImpl } from '../editor/EditorImpl';
 import { createBuiltinTools } from '../interaction/builtinTools';
 import { createEngineCommands } from '../editor/engineCommands';
 import { loadToolOptions, saveToolOptions } from './persist';
+import { subscribeFontEpoch } from '../text/autofit';
+import { installFollow } from '../camera/follow';
 
 export interface ExportOptions {
   ids?: string[];
@@ -56,6 +58,11 @@ export interface EngineCore {
   clipboard: { memory: ClipboardMemory | null; copyIds: string[] | null };
   /** Offscreen renderer, installed by <BoardEngine>. */
   renderExport: ((opts: ExportOptions) => Promise<string>) | null;
+  /**
+   * Ids this client ran `normalize` on (measured text) and nobody else changed since: re-measured
+   * when web fonts finish loading. Only these, so collaborators never fight over each other's frames.
+   */
+  measured: Set<string>;
   destroy(): void;
 }
 
@@ -80,6 +87,7 @@ export function createCore(host: Host, bundles: FeatureBundle[], opts: { persist
     interaction: { handle: null, clickCount: 1, cancel: null },
     clipboard: { memory: null, copyIds: null },
     renderExport: null,
+    measured: new Set<string>(),
     scoped(scope: string): Editor {
       if (scope === 'engine') return core.editor;
       let ed = scopedCache.get(scope);
@@ -110,12 +118,22 @@ export function createCore(host: Host, bundles: FeatureBundle[], opts: { persist
   disposers.push(
     store.subscribeElements(() => {
       const { selection, editingId, hoverId } = ui.getState();
-      if (selection.length && selection.some((id) => !store.getElement(id)))
-        ui.setState({ selection: selection.filter((id) => store.getElement(id)) });
+      // Deleted or now hidden (collapsed mind-map branch): drop from the selection.
+      const gone = (id: string) => {
+        const el = store.getElement(id);
+        return !el || core.editor.isHidden(el);
+      };
+      if (selection.length && selection.some(gone)) ui.setState({ selection: selection.filter((id) => !gone(id)) });
       if (editingId && !store.getElement(editingId)) core.editor.stopEditing();
       if (hoverId && !store.getElement(hoverId)) ui.setState({ hoverId: null });
       core.emitter.emit('elements');
     }),
+    // Someone else (remote, undo) changed it: their measurement stands, ours is no longer ours.
+    store.subscribeForeignKeys((ids) => {
+      for (const id of ids) core.measured.delete(id);
+    }),
+    // Web fonts arrived: text measured with fallback fonts gets its real size (locally, no undo).
+    subscribeFontEpoch(() => core.editor.renormalizeMeasured()),
     store.subscribeStatus(() => {
       ui.setState({ connection: store.status, synced: store.synced });
       core.emitter.emit('connection');
@@ -142,13 +160,25 @@ export function createCore(host: Host, bundles: FeatureBundle[], opts: { persist
   );
 
   // ---- ui → events + presence
+  // Viewport publishing is throttled; while someone follows this user it runs at ~20 Hz so their
+  // view trails by a frame or two instead of a fifth of a second.
   let viewportTimer: ReturnType<typeof setTimeout> | null = null;
+  let followed = false;
   const publishViewport = () => {
     viewportTimer = null;
     const { camera, viewport } = ui.getState();
     store.setPresence({ viewport: { ...camera, width: viewport.width, height: viewport.height } });
   };
   disposers.push(
+    store.subscribePresence(() => {
+      const now = store.getPeers().some((p) => p.following === core.hostRef.current.user.id);
+      if (now && !followed) {
+        if (viewportTimer) clearTimeout(viewportTimer);
+        publishViewport();
+      }
+      followed = now;
+    }),
+    installFollow(core),
     ui.subscribe((s, prev) => {
       if (s.selection !== prev.selection) {
         core.emitter.emit('selection');
@@ -156,7 +186,7 @@ export function createCore(host: Host, bundles: FeatureBundle[], opts: { persist
       }
       if (s.camera !== prev.camera || s.viewport !== prev.viewport) {
         core.emitter.emit('camera');
-        if (!viewportTimer) viewportTimer = setTimeout(publishViewport, 200);
+        if (!viewportTimer) viewportTimer = setTimeout(publishViewport, followed ? 50 : 200);
       }
       if (s.toolId !== prev.toolId) core.emitter.emit('tool');
       if (s.editingId !== prev.editingId) {
@@ -178,6 +208,7 @@ export function createCore(host: Host, bundles: FeatureBundle[], opts: { persist
     viewport: null,
     ext: {},
     editingId: null,
+    following: null,
   });
 
   return core;

@@ -30,6 +30,8 @@ export {
   useSettings,
   useCanEdit,
   useChromeHidden,
+  useFormatToolbarRect,
+  useFollowing,
 } from './hooks';
 
 // Renders an element's rich-text field; switches to the shared editor while editing.
@@ -38,3 +40,14 @@ export type { ElementTextProps } from './text/ElementText';
 // Sanitizes the RichText HTML subset (see @freero/shared RichText).
 export { sanitizeRichText, richTextToPlain, plainToRichText } from './text/sanitize';
 export type { TextFormatState } from './text/session';
+// [additive] Size of rich text exactly as <ElementText> renders it — for `normalize` (text boxes,
+// card titles, mind-map pills). Cached; re-measured by the engine once web fonts load.
+export { measureRichText } from './text/measure';
+export type { MeasureTextOptions, MeasuredText } from './text/measure';
+// [additive] World point → element-local unrotated coordinates (what hitTest / distanceTo take).
+export { worldToLocal } from './geometry/geometry';
+
+// [additive] Test support: several real engine replicas of one board that sync on demand
+// (prove concurrent writes converge). Tests only.
+export { createTestBoard } from './testing';
+export type { TestBoard, TestBoardOptions } from './testing';

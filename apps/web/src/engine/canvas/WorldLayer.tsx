@@ -43,7 +43,7 @@ function useVisibleIds(): string[] {
       const keep = new Set(selection);
       if (editingId) keep.add(editingId);
       const next: string[] = [];
-      for (const el of store.getOrdered()) {
+      for (const el of core.editor.getVisibleElements()) {
         if (keep.has(el.id) || rectsIntersect(elementAABB(el), cullRect)) next.push(el.id);
       }
       if (!sameIds(next, prev)) {
@@ -98,12 +98,17 @@ const ElementView = memo(function ElementView({ id }: { id: string }) {
   return <ElementFrame element={el} selected={selected} editing={editing} zoom={zoom} />;
 });
 
-/** Positions an element and renders its definition's Component inside the feature's scope. */
+/**
+ * Positions an element and renders its definition's Component inside the feature's scope, then
+ * any decorations (decoration.tsx of other features) inside the same wrapper, so they move,
+ * rotate and export with it.
+ */
 export function ElementFrame(props: { element: BoardElement; selected: boolean; editing: boolean; zoom: number }) {
   const core = useCore();
   const { element: el } = props;
   const reg = core.registry.elements.get(el.type);
   const transform = `translate(${el.x}px, ${el.y}px)${el.rotation ? ` rotate(${el.rotation}deg)` : ''}`;
+  const decorations = core.registry.decorations.filter((d) => d.def.appliesTo(el));
   let content: ReactNode;
   if (!reg) {
     content = <div className="fr-el-unknown">Unsupported item ({el.type})</div>;
@@ -120,9 +125,14 @@ export function ElementFrame(props: { element: BoardElement; selected: boolean; 
       className={`fr-el${props.editing ? ' fr-el--editing' : ''}`}
       data-id={el.id}
       data-type={el.type}
-      style={{ width: el.w, height: el.h, transform }}
+      style={{ ...reg?.def.wrapperStyle?.(el as never), width: el.w, height: el.h, transform }}
     >
       {content}
+      {decorations.map(({ def, feature }) => (
+        <ScopeContext.Provider key={def.id} value={feature}>
+          <def.Component element={el} zoom={props.zoom} />
+        </ScopeContext.Provider>
+      ))}
     </div>
   );
 }

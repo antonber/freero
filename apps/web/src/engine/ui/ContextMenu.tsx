@@ -1,41 +1,12 @@
 // Right-click menu: engine items + feature commands with menus: ['context'].
 import { useStore } from 'zustand';
-import {
-  BringToFront,
-  ClipboardPaste,
-  Copy,
-  CopyPlus,
-  Group,
-  Link2,
-  Lock,
-  Maximize,
-  MousePointerSquareDashed,
-  Scissors,
-  SendToBack,
-  Trash2,
-  Ungroup,
-} from 'lucide-react';
-import { Menu, type IconProp, type MenuItem } from '@ui';
+import { Menu, type MenuItem } from '@ui';
 import { useCore } from '../context';
+import type { CommandDefinition } from '../api';
 import type { EngineCore } from '../runtime/core';
 import { ROLE_RANK } from '../runtime/core';
+import type { Registered } from '../runtime/registry';
 import { formatShortcut } from '../runtime/shortcuts';
-
-const ICONS: Record<string, IconProp> = {
-  'engine.cut': Scissors,
-  'engine.copy': Copy,
-  'engine.paste': ClipboardPaste,
-  'engine.duplicate': CopyPlus,
-  'engine.bringToFront': BringToFront,
-  'engine.sendToBack': SendToBack,
-  'engine.group': Group,
-  'engine.ungroup': Ungroup,
-  'engine.lock': Lock,
-  'engine.copyLink': Link2,
-  'engine.delete': Trash2,
-  'engine.selectAll': MousePointerSquareDashed,
-  'engine.zoomToFit': Maximize,
-};
 
 const WITH_SELECTION = [
   ['engine.cut', 'engine.copy', 'engine.paste', 'engine.duplicate'],
@@ -43,6 +14,44 @@ const WITH_SELECTION = [
   ['engine.group', 'engine.ungroup', 'engine.lock', 'engine.copyLink'],
 ];
 const WITHOUT_SELECTION = [['engine.paste', 'engine.selectAll', 'engine.zoomToFit']];
+
+/** A command as a menu item (label, icon, shortcut). */
+export function commandItem({ def }: Registered<CommandDefinition>, onSelect: () => void): MenuItem {
+  return {
+    id: def.id,
+    label: def.label,
+    icon: def.icon,
+    shortcut: def.shortcut ? formatShortcut(def.shortcut) : undefined,
+    danger: def.id === 'engine.delete',
+    onSelect,
+  };
+}
+
+/**
+ * Menu items for commands, folding commands that share a `group` into one "<group> ▸" submenu
+ * placed where the group's first command would be.
+ */
+export function groupCommands(
+  regs: Array<Registered<CommandDefinition>>,
+  toItem: (reg: Registered<CommandDefinition>) => MenuItem,
+): MenuItem[] {
+  const out: MenuItem[] = [];
+  const subs = new Map<string, MenuItem[]>();
+  for (const reg of regs) {
+    const group = reg.def.group;
+    if (!group) {
+      out.push(toItem(reg));
+      continue;
+    }
+    let list = subs.get(group);
+    if (!list) {
+      subs.set(group, (list = []));
+      out.push({ id: `group:${group}`, label: group, icon: reg.def.icon, submenu: list, onSelect: () => undefined });
+    }
+    list.push(toItem(reg));
+  }
+  return out;
+}
 
 /** Builds menu items from engine + feature context commands available right now. */
 export function contextCommandItems(core: EngineCore, opts: { withZOrder?: boolean } = {}): MenuItem[] {
@@ -60,14 +69,7 @@ export function contextCommandItems(core: EngineCore, opts: { withZOrder?: boole
   const item = (id: string): MenuItem | null => {
     const reg = available(id);
     if (!reg) return null;
-    return {
-      id,
-      label: reg.def.label,
-      icon: ICONS[id],
-      shortcut: reg.def.shortcut ? formatShortcut(reg.def.shortcut) : undefined,
-      danger: id === 'engine.delete',
-      onSelect: () => editor.runCommand(id),
-    };
+    return commandItem(reg, () => editor.runCommand(id));
   };
   const groups = (hasSel ? WITH_SELECTION : WITHOUT_SELECTION).filter(
     (g) => opts.withZOrder !== false || !g.includes('engine.bringToFront'),
@@ -81,9 +83,12 @@ export function contextCommandItems(core: EngineCore, opts: { withZOrder?: boole
   };
   for (const g of groups) push(g.map(item));
   push(
-    [...core.registry.commands.values()]
-      .filter(({ def, feature }) => feature !== 'engine' && def.menus?.includes('context'))
-      .map(({ def }) => item(def.id)),
+    groupCommands(
+      [...core.registry.commands.values()].filter(
+        ({ def, feature }) => feature !== 'engine' && def.menus?.includes('context') && !!available(def.id),
+      ),
+      (reg) => item(reg.def.id)!,
+    ),
   );
   if (hasSel) push([item('engine.delete')]);
   return out;

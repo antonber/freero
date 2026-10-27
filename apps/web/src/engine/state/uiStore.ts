@@ -1,7 +1,7 @@
 // Local (non-synced) UI state for one board session. Written only by the engine (Editor + tools).
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import type { Role } from '@freero/shared';
-import type { Camera, Rect } from '../api';
+import type { Camera, FollowTarget, Rect } from '../api';
 import type { SnapGuide } from '../geometry/snap';
 import type { ConnectionStatus } from '../store/BoardStore';
 
@@ -55,8 +55,14 @@ export interface UiState {
   hint: { text: string; x: number; y: number } | null;
   /** Container highlighted as the drop target while dragging. */
   dropTargetId: string | null;
+  /** Where the format toolbar is on screen (viewport px), null while hidden (useFormatToolbarRect). */
+  formatToolbarRect: Rect | null;
   /** Board chrome hidden (presentation mode). */
   chromeHidden: boolean;
+  /** Open 'dialog' panel (Editor.openPanel). */
+  dialog: { id: string; props?: Record<string, unknown> } | null;
+  /** Whose view this client follows (Editor.follow). */
+  following: FollowTarget | null;
 }
 
 export interface PointerState {
@@ -99,6 +105,9 @@ export function createUiStore(init: { role: Role }): UiStore {
     cameraMoving: false,
     hint: null,
     dropTargetId: null,
+    formatToolbarRect: null,
     chromeHidden: false,
+    dialog: null,
+    following: null,
   }));
 }

@@ -48,6 +48,7 @@ export function makeHost(role: Role = 'owner'): Host {
     renameBoard: async () => undefined,
     saveThumbnail: async () => undefined,
     serverNow: () => Date.now(),
+    listMembers: async () => [],
     openShareDialog: () => undefined,
     navigate: () => undefined,
     notify: () => undefined,
@@ -72,6 +73,7 @@ function toolEvent(core: EngineCore, world: Point, mods: { shift?: boolean; alt?
     altKey: !!mods.alt,
     metaKey: false,
     button,
+    buttons: 1, // the helpers only model presses and drags
     pressure: 0.5,
     pointerType: 'mouse',
   } as unknown as ToolPointerEvent;

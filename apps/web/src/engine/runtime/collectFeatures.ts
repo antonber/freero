@@ -2,6 +2,7 @@
 // The glob itself lives in app/board/features.ts (the only allowed glob [W6]).
 import type {
   CommandDefinition,
+  DecorationDefinition,
   ElementDefinition,
   FeatureBundle,
   FeatureManifest,
@@ -10,7 +11,7 @@ import type {
   ToolDefinition,
 } from '../api';
 
-const FILE_RE = /features\/([^/]+)\/(feature|element|tool|format|panel|commands)\.tsx?$/;
+const FILE_RE = /features\/([^/]+)\/(feature|element|tool|format|panel|commands|decoration)\.tsx?$/;
 
 const asArray = <T,>(v: T | T[] | undefined | null): T[] => (v == null ? [] : Array.isArray(v) ? v : [v]);
 
@@ -20,7 +21,7 @@ export function collectFeatures(modules: Record<string, unknown>): FeatureBundle
     const m = path.replace(/\\/g, '/').match(FILE_RE);
     if (!m) continue;
     const [, name, kind] = m;
-    const entry = byName.get(name) ?? { files: [], elements: [], tools: [], formats: [], panels: [], commands: [] };
+    const entry = byName.get(name) ?? { files: [], elements: [], tools: [], formats: [], panels: [], commands: [], decorations: [] };
     byName.set(name, entry);
     entry.files.push(path);
     const value = (mod as { default?: unknown })?.default;
@@ -43,6 +44,9 @@ export function collectFeatures(modules: Record<string, unknown>): FeatureBundle
       case 'commands':
         entry.commands!.push(...asArray(value as CommandDefinition[]).flat());
         break;
+      case 'decoration':
+        entry.decorations!.push(...asArray(value as DecorationDefinition | DecorationDefinition[]));
+        break;
     }
   }
   const bundles: FeatureBundle[] = [];
@@ -57,6 +61,7 @@ export function collectFeatures(modules: Record<string, unknown>): FeatureBundle
       formats: e.formats!,
       panels: e.panels!,
       commands: e.commands!,
+      decorations: e.decorations!,
     });
   }
   bundles.sort((a, b) => a.manifest.name.localeCompare(b.manifest.name));

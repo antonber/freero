@@ -102,7 +102,8 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
         shiftKey: e.shiftKey,
         altKey: e.altKey,
         metaKey: e.metaKey || e.ctrlKey,
-        button: e.buttons === 0 && e.type === 'pointermove' ? -1 : e.button,
+        button: e.type === 'pointermove' ? -1 : e.button,
+        buttons: e.buttons,
         pressure: e.pressure,
         pointerType: e.pointerType,
       } as ToolPointerEvent;
@@ -128,12 +129,17 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
       ui.setState({ transforming: 'pan', hoverId: null });
     };
 
+    /** Camera moves the user makes on the canvas (wheel, pan, pinch): 'camera-user', ends following. */
+    const userCamera = (cam: { x: number; y: number; zoom: number }) => editor.asUser(() => editor.setCameraNow(cam));
+
     const onPointerDown = (e: PointerEvent) => {
       const t = e.target as HTMLElement;
       if (t.closest('[data-fr-text-editor]') || t.closest('[data-fr-interactive]')) return;
       const screen = screenOf(e);
       const world = editor.screenToWorld(screen);
       if (ui.getState().contextMenu) ui.setState({ contextMenu: null });
+      // A plain click on the canvas takes the camera back from whoever you follow.
+      if (editor.getFollowing()) editor.follow(null);
       if (editor.getEditingId()) editor.stopEditing();
       else el.focus({ preventScroll: true });
 
@@ -201,14 +207,14 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
           const d = Math.hypot(a.x - b.x, a.y - b.y);
           const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
           const zoomed = zoomAt(pinch.cam, pinch.cam.zoom * (d / Math.max(1, pinch.d0)), pinch.mid0);
-          editor.setCameraNow({ ...zoomed, x: zoomed.x - (mid.x - pinch.mid0.x) / zoomed.zoom, y: zoomed.y - (mid.y - pinch.mid0.y) / zoomed.zoom });
+          userCamera({ ...zoomed, x: zoomed.x - (mid.x - pinch.mid0.x) / zoomed.zoom, y: zoomed.y - (mid.y - pinch.mid0.y) / zoomed.zoom });
           return;
         }
       }
 
       if (pan) {
         if (e.pointerId !== pan.pointerId) return;
-        editor.setCameraNow({
+        userCamera({
           x: pan.cam.x - (screen.x - pan.start.x) / pan.cam.zoom,
           y: pan.cam.y - (screen.y - pan.start.y) / pan.cam.zoom,
           zoom: pan.cam.zoom,
@@ -279,13 +285,13 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
       if (e.ctrlKey || e.metaKey) {
         // Pinch (trackpads report ctrl+wheel) or Ctrl/⌘+wheel: zoom around the cursor.
         const factor = Math.exp(-Math.max(-30, Math.min(30, dy)) * 0.01);
-        editor.setCameraNow(zoomAt(cam, cam.zoom * factor, screen));
+        userCamera(zoomAt(cam, cam.zoom * factor, screen));
       } else {
         if (e.shiftKey && dx === 0) {
           dx = dy;
           dy = 0;
         }
-        editor.setCameraNow({ x: cam.x + dx / cam.zoom, y: cam.y + dy / cam.zoom, zoom: cam.zoom });
+        userCamera({ x: cam.x + dx / cam.zoom, y: cam.y + dy / cam.zoom, zoom: cam.zoom });
       }
       const world = editor.screenToWorld(screen);
       core.pointer.setState({ screen, world, inside: true });
@@ -300,7 +306,7 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
     const onGestureChange = (e: Event) => {
       e.preventDefault();
       const ge = e as Event & { scale: number; clientX: number; clientY: number };
-      editor.setCameraNow(zoomAt(editor.getCamera(), gestureZoom0 * ge.scale, screenOf(ge)));
+      userCamera(zoomAt(editor.getCamera(), gestureZoom0 * ge.scale, screenOf(ge)));
     };
 
     const onContextMenu = (e: MouseEvent) => {

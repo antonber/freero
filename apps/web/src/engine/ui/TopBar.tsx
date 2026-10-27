@@ -1,14 +1,15 @@
 // Top-left: logo, inline-editable title, board ⋯ menu, topbar-left panels.
 // Top-right: topbar-right panels + Share.
-import { useEffect, useRef, useState } from 'react';
-import { Ellipsis, Eye, Link2, MessageSquare, Share2 } from 'lucide-react';
-import { Button, ColorSwatches, IconButton, Logo, Popover, SegmentedControl, Tooltip } from '@ui';
+import { useEffect, useRef, useState, type ComponentType } from 'react';
+import { ArrowLeft, ChevronRight, Ellipsis, Eye, Link2, Maximize, MessageSquare, PencilLine, Share2 } from 'lucide-react';
+import { Button, ColorSwatches, IconButton, Logo, Menu, Popover, SegmentedControl, Tooltip, type MenuAction } from '@ui';
 import type { BoardSettings } from '@freero/shared';
 import { useCore } from '../context';
 import { useRole, useSettings } from '../hooks';
 import { ROLE_RANK } from '../runtime/core';
 import { PanelSlotView } from './PanelSlot';
 import { formatShortcut } from '../runtime/shortcuts';
+import { commandItem, groupCommands } from './ContextMenu';
 
 export const BACKGROUNDS = ['#F3F2F8', '#FFFFFF', '#F6F1E7', '#EAF4EE', '#E9F1FB', '#F8ECF1', '#2A2838', '#16151F'];
 const BACKGROUND_NAMES: Record<string, string> = {
@@ -89,6 +90,32 @@ function BoardTitle() {
   );
 }
 
+/** A feature command in the board menu: icon + label + shortcut, or a group opening a submenu. */
+function BoardMenuItem({ item }: { item: MenuAction }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLButtonElement>(null);
+  const Icon = item.icon as ComponentType<{ size?: number }> | undefined;
+  return (
+    <>
+      <button
+        ref={ref}
+        type="button"
+        className="fr-boardmenu__item"
+        aria-haspopup={item.submenu ? 'menu' : undefined}
+        aria-expanded={item.submenu ? open : undefined}
+        onClick={() => (item.submenu ? setOpen((o) => !o) : item.onSelect())}
+      >
+        <span className="fr-boardmenu__text">
+          <span className="fr-boardmenu__icon">{Icon && <Icon size={16} />}</span>
+          {item.label}
+        </span>
+        {item.submenu ? <ChevronRight size={15} /> : item.shortcut && <span className="fr-boardmenu__kbd">{item.shortcut}</span>}
+      </button>
+      {item.submenu && <Menu open={open} onClose={() => setOpen(false)} anchor={ref.current} items={item.submenu} side="right" align="start" />}
+    </>
+  );
+}
+
 function BoardMenu() {
   const core = useCore();
   const editor = core.editor;
@@ -120,7 +147,12 @@ function BoardMenu() {
                 window.dispatchEvent(new Event('freero:rename-board'));
               }}
             >
-              Rename board
+              <span className="fr-boardmenu__text">
+                <span className="fr-boardmenu__icon">
+                  <PencilLine size={16} />
+                </span>
+                Rename board
+              </span>
             </button>
             <div className="fr-boardmenu__section">
               <div className="fr-boardmenu__label">Background</div>
@@ -150,20 +182,12 @@ function BoardMenu() {
             <div className="fr-boardmenu__divider" />
           </>
         )}
-        {commands.map(({ def, feature }) => (
-          <button
-            key={def.id}
-            type="button"
-            className="fr-boardmenu__item"
-            onClick={() => {
-              close();
-              def.run(core.scoped(feature));
-            }}
-          >
-            <span>{def.label}</span>
-            {def.shortcut && <span className="fr-boardmenu__kbd">{formatShortcut(def.shortcut)}</span>}
-          </button>
-        ))}
+        {groupCommands(commands, (reg) =>
+          commandItem(reg, () => {
+            close();
+            reg.def.run(core.scoped(reg.feature));
+          }),
+        ).map((item) => ('id' in item ? <BoardMenuItem key={item.id} item={item} /> : null))}
         {commands.length > 0 && <div className="fr-boardmenu__divider" />}
         <button
           type="button"
@@ -176,18 +200,27 @@ function BoardMenu() {
               .catch(() => undefined);
           }}
         >
-          <span>Copy board link</span>
-          <Link2 size={15} />
+          <span className="fr-boardmenu__text">
+            <span className="fr-boardmenu__icon">
+              <Link2 size={16} />
+            </span>
+            Copy board link
+          </span>
         </button>
         <button
           type="button"
           className="fr-boardmenu__item"
           onClick={() => {
             close();
-            editor.zoomToFit();
+            editor.runCommand('engine.zoomToFit');
           }}
         >
-          <span>Zoom to fit</span>
+          <span className="fr-boardmenu__text">
+            <span className="fr-boardmenu__icon">
+              <Maximize size={16} />
+            </span>
+            Zoom to fit
+          </span>
           <span className="fr-boardmenu__kbd">{formatShortcut('shift+1')}</span>
         </button>
         <button
@@ -198,7 +231,12 @@ function BoardMenu() {
             editor.host.navigate('/app');
           }}
         >
-          Back to dashboard
+          <span className="fr-boardmenu__text">
+            <span className="fr-boardmenu__icon">
+              <ArrowLeft size={16} />
+            </span>
+            Back to dashboard
+          </span>
         </button>
       </Popover>
     </>
@@ -209,7 +247,7 @@ export function TopLeft() {
   const core = useCore();
   const role = useRole();
   return (
-    <div className="fr-topleft" data-fr-chrome="">
+    <div className="fr-topleft" data-fr-chrome="" data-fr-occludes="">
       <div className="fr-chrome-card fr-topleft__card">
         <Tooltip content="Back to dashboard" side="bottom">
           <button type="button" className="fr-logo-btn" aria-label="Back to dashboard" onClick={() => core.hostRef.current.navigate('/app')}>
@@ -238,7 +276,7 @@ export function TopLeft() {
 export function TopRight() {
   const core = useCore();
   return (
-    <div className="fr-topright" data-fr-chrome="">
+    <div className="fr-topright" data-fr-chrome="" data-fr-occludes="">
       <PanelSlotView slot="topbar-right" className="fr-chrome-card fr-slot-row fr-topright__panels" />
       <Button variant="primary" icon={Share2} onClick={() => core.hostRef.current.openShareDialog()}>
         Share

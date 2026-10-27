@@ -7,7 +7,7 @@ import { EngineContext } from './context';
 import { createCore, type EngineCore } from './runtime/core';
 import { Canvas } from './canvas/Canvas';
 import { ScreenOverlays } from './overlay/Overlays';
-import { Chrome, ScreenOverlayPanels, WorldOverlayPanels } from './ui/Chrome';
+import { Chrome, DialogPanels, ScreenOverlayPanels, WorldOverlayPanels } from './ui/Chrome';
 import { installKeyboard } from './interaction/keyboard';
 import { createExportRenderer, startThumbnails } from './editor/export';
 import './board.css';
@@ -75,6 +75,7 @@ function BoardView({ core }: { core: EngineCore }) {
     <div className="fr-board">
       <Canvas worldOverlay={<WorldOverlayPanels />} screenOverlay={<><ScreenOverlays /><ScreenOverlayPanels /></>} />
       <Chrome />
+      <DialogPanels />
     </div>
   );
 }

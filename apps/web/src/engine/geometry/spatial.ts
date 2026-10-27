@@ -6,6 +6,12 @@ import { elementAABB, elementInsideRect, elementIntersectsRect, rectsIntersect, 
 export type DefLookup = (type: ElementType) => ElementDefinition<any> | undefined;
 
 /**
+ * How far (screen px) off an element's drawn shape a click still hits it. Callers pass
+ * HIT_TOLERANCE_PX / zoom, so it is the same on screen at every zoom.
+ */
+export const HIT_TOLERANCE_PX = 4;
+
+/**
  * Topmost element under `point`. `ordered` is in render order (bottom → top), so we walk it
  * backwards. `tolerance` (world units) grows thin targets so they stay clickable when zoomed out.
  */
@@ -37,7 +43,8 @@ export function hitTestElement(el: BoardElement, point: Point, getDef: DefLookup
     return false;
   const local = worldToLocal(el, point);
   const def = getDef(el.type);
-  if (def?.hitTest) return def.hitTest(el, local);
+  if (def?.hitTest) return def.hitTest(el, local, { tolerance: tol });
+  if (def?.distanceTo) return def.distanceTo(el, local) <= tol;
   return local.x >= -tol && local.y >= -tol && local.x <= el.w + tol && local.y <= el.h + tol;
 }
 

@@ -59,6 +59,9 @@ function SelectionOverlay() {
   if (!els.length) return null;
   const canEdit = role === 'editor' || role === 'owner';
   const single = els.length === 1;
+  // A type that draws its own selection chrome (connector endpoints) gets no box from us.
+  const ownFrame = (el: BoardElement) => core.editor.getDefinition(el.type)?.selectionFrame === false;
+  if (single && ownFrame(els[0])) return null;
   const box = single ? els[0] : { ...boundsOf(els)!, rotation: 0 };
   const style = boxStyle(box, cam, 0);
   const W = box.w * cam.zoom;
@@ -71,7 +74,9 @@ function SelectionOverlay() {
   return (
     <>
       {!single &&
-        els.map((el) => <div key={el.id} className="fr-ov-outline fr-ov-outline--member" style={boxStyle(el, cam)} />)}
+        els
+          .filter((el) => !ownFrame(el))
+          .map((el) => <div key={el.id} className="fr-ov-outline fr-ov-outline--member" style={boxStyle(el, cam)} />)}
       <div className={`fr-ov-selection${editingId ? ' is-editing' : ''}${locked ? ' is-locked' : ''}`} style={style}>
         {handles.map((h) => (
           <div
@@ -99,7 +104,8 @@ function HoverOverlay() {
   const selected = useStore(core.ui, (s) => (hoverId ? s.selection.includes(hoverId) : false));
   const dropId = useStore(core.ui, (s) => s.dropTargetId);
   useElements(); // follow element moves
-  const hover = hoverId && !selected ? core.store.getElement(hoverId) : undefined;
+  const hovered = hoverId && !selected ? core.store.getElement(hoverId) : undefined;
+  const hover = hovered && core.editor.getDefinition(hovered.type)?.selectionFrame !== false ? hovered : undefined;
   const drop = dropId ? core.store.getElement(dropId) : undefined;
   return (
     <>

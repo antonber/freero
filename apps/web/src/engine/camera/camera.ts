@@ -30,12 +30,17 @@ export function fitRect(
   padding = 64,
   maxZoom = 1,
 ): Camera {
-  const vw = Math.max(1, viewport.width - padding * 2);
-  const vh = Math.max(1, viewport.height - padding * 2);
-  const zoom = clampZoom(Math.min(maxZoom, vw / Math.max(rect.w, 1), vh / Math.max(rect.h, 1)));
+  return fitRectInArea(rect, { x: 0, y: 0, w: viewport.width, h: viewport.height }, padding, maxZoom);
+}
+
+/** Camera that fits world `rect`, centered, into the screen rect `area` (e.g. the safe area), with padding in screen px. */
+export function fitRectInArea(rect: Rect, area: Rect, padding = 64, maxZoom = 1): Camera {
+  const aw = Math.max(1, area.w - padding * 2);
+  const ah = Math.max(1, area.h - padding * 2);
+  const zoom = clampZoom(Math.min(maxZoom, aw / Math.max(rect.w, 1), ah / Math.max(rect.h, 1)));
   return {
-    x: rect.x + rect.w / 2 - viewport.width / 2 / zoom,
-    y: rect.y + rect.h / 2 - viewport.height / 2 / zoom,
+    x: rect.x + rect.w / 2 - (area.x + area.w / 2) / zoom,
+    y: rect.y + rect.h / 2 - (area.y + area.h / 2) / zoom,
     zoom,
   };
 }
@@ -50,8 +55,14 @@ const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
  * Interpolates two cameras so that the motion looks natural when zoom changes a lot:
  * zoom is interpolated in log space and the viewport center follows linearly.
  */
-export function lerpCamera(a: Camera, b: Camera, t: number, viewport: { width: number; height: number }): Camera {
-  const e = easeOutCubic(t);
+export function lerpCamera(
+  a: Camera,
+  b: Camera,
+  t: number,
+  viewport: { width: number; height: number },
+  ease: (t: number) => number = easeOutCubic,
+): Camera {
+  const e = ease(t);
   const za = Math.log(a.zoom);
   const zb = Math.log(b.zoom);
   const zoom = Math.exp(za + (zb - za) * e);

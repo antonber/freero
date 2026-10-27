@@ -80,7 +80,7 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
     const { camera, viewport } = ui.getState();
     const view = expandRect(viewportRect(camera, viewport), 100 / camera.zoom);
     const out: Rect[] = [];
-    for (const el of ed().getElements()) {
+    for (const el of ed().getVisibleElements()) {
       if (exclude.has(el.id)) continue;
       const r = elementAABB(el);
       if (!rectsIntersect(r, view)) continue;
@@ -313,6 +313,15 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
     ui.setState({ hint: { text: `${shown}°`, x: e.screen.x, y: e.screen.y } });
   }
 
+  /** Double-click on a resize handle: the definition fits the element back to its content. */
+  function fitToContent(handle: Handle) {
+    const sel = ed().getSelection();
+    const el = sel.length === 1 ? ed().getElement(sel[0]) : undefined;
+    if (!el || el.locked) return;
+    const patch = def(el)?.fitToContent?.(el as never, handle);
+    if (patch) ed().update(el.id, patch);
+  }
+
   function finish() {
     state = { kind: 'idle' };
     ui.setState({ transforming: null, guides: [], marquee: null, hint: null, dropTargetId: null });
@@ -333,6 +342,7 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
       const canEdit = ed().can('editor');
       if (handle && canEdit) {
         if (handle === 'rotate') beginRotate(e.point);
+        else if (core.interaction.clickCount >= 2) fitToContent(handle as Handle);
         else beginResize(handle as Handle, e.point);
         return;
       }
@@ -375,7 +385,7 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
     onPointerMove(e) {
       switch (state.kind) {
         case 'idle': {
-          const id = e.button === -1 ? (e.target?.id ?? null) : null;
+          const id = e.buttons === 0 ? (e.target?.id ?? null) : null;
           if (ui.getState().hoverId !== id) ui.setState({ hoverId: id });
           return;
         }
@@ -432,9 +442,9 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
 
     onCancel() {
       const s = state;
-      if (s.kind === 'translate' || s.kind === 'resize' || s.kind === 'rotate') {
-        ed().updateMany(s.snapshot.map((el) => ({ id: el.id, patch: el as unknown as Record<string, unknown> })));
-      }
+      // Escape mid-drag: revert everything the gesture wrote (incl. an Alt-drag duplicate) and
+      // leave no undo step behind.
+      if (s.kind === 'translate' || s.kind === 'resize' || s.kind === 'rotate') ed().cancelGesture();
       finish();
     },
 

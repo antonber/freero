@@ -93,8 +93,33 @@ export interface FitOptions {
   max?: number;
 }
 
-/** Largest font size (0.5px steps) in [min, max] at which `text` fits in w×h. */
+/**
+ * Auto-fit sizes snap DOWN to these steps (~12% apart), so neighbouring boxes with similar text
+ * get the same size instead of 31.5 / 33 / 32 px — a board of stickies reads as one system.
+ */
+const FONT_STEPS = [6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 40, 44, 48, 56, 64, 72, 80, 96, 112, 128, 144, 160, 192, 224, 256];
+
+/** The largest step <= size (never below `min`). Beyond the table, multiples of 32. */
+export function snapFontSize(size: number, min = 6): number {
+  let out: number;
+  if (size >= FONT_STEPS[FONT_STEPS.length - 1]) out = Math.floor(size / 32) * 32;
+  else {
+    out = FONT_STEPS[0];
+    for (const s of FONT_STEPS) if (s <= size + 1e-6) out = s;
+  }
+  return Math.max(min, out);
+}
+
+/**
+ * Largest font size in [min, max] at which `text` fits in w×h without breaking a word (only
+ * breaking words when even `min` can't avoid it), snapped down to a FONT_STEPS step.
+ */
 export function fitFontSize(text: string, family: FontFamily, w: number, h: number, opts: FitOptions = {}): number {
+  const min = opts.min ?? 6;
+  return snapFontSize(fitRaw(text, family, w, h, opts), min);
+}
+
+function fitRaw(text: string, family: FontFamily, w: number, h: number, opts: FitOptions): number {
   const min = opts.min ?? 6;
   const max = Math.max(min, opts.max ?? 64);
   // Small safety margin: canvas metrics vs. DOM layout, bold/italic runs.

@@ -3,7 +3,7 @@
 import { useCallback, useContext, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useStore } from 'zustand';
 import type { BoardElement, BoardSettings, ElementType, PresenceState, Role } from '@freero/shared';
-import type { Camera, Editor, Point } from './api';
+import type { Camera, Editor, FollowTarget, Point, Rect } from './api';
 import { ScopeContext, useCore } from './context';
 import type { UiState } from './state/uiStore';
 import type { TextFormatState } from './text/session';
@@ -32,6 +32,11 @@ export function useElements(type?: ElementType): BoardElement[] {
   const subscribe = useCallback((cb: () => void) => store.subscribeElements(cb), [store]);
   const get = useCallback(() => (type ? store.getOrderedOfType(type) : store.getOrdered()), [store, type]);
   return useSyncExternalStore(subscribe, get);
+}
+
+/** [additive] Screen rect (viewport px) of the contextual format toolbar, or null while it's hidden. */
+export function useFormatToolbarRect(): Rect | null {
+  return useUi((s) => s.formatToolbarRect);
 }
 
 export function useSelection(): string[] {
@@ -150,4 +155,9 @@ export function useChromeHidden(): boolean {
 export function useCanEdit(): boolean {
   const role = useRole();
   return role === 'editor' || role === 'owner';
+}
+
+/** [additive] Whose view this client follows (Editor.follow), or null. */
+export function useFollowing(): FollowTarget | null {
+  return useUi((s) => s.following);
 }

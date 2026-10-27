@@ -77,6 +77,28 @@ export function elementAABB(el: Boxy): Rect {
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
 }
 
+/**
+ * AABB of what an element DRAWS: its box grown by a definition's visualOutset (a frame title
+ * above its top edge), rotation applied.
+ */
+export function visualAABB(el: Boxy, outset?: Partial<Record<'top' | 'right' | 'bottom' | 'left', number>> | null): Rect {
+  if (!outset) return elementAABB(el);
+  const t = outset.top ?? 0, r = outset.right ?? 0, b = outset.bottom ?? 0, l = outset.left ?? 0;
+  if (!t && !r && !b && !l) return elementAABB(el);
+  // Grow the box around the same center of rotation (the element's own center).
+  const c = { x: el.x + el.w / 2, y: el.y + el.h / 2 };
+  const corners = [
+    { x: el.x - l, y: el.y - t },
+    { x: el.x + el.w + r, y: el.y - t },
+    { x: el.x + el.w + r, y: el.y + el.h + b },
+    { x: el.x - l, y: el.y + el.h + b },
+  ].map((p) => rotatePoint(p, c, el.rotation || 0));
+  const xs = corners.map((p) => p.x);
+  const ys = corners.map((p) => p.y);
+  const x0 = Math.min(...xs), y0 = Math.min(...ys);
+  return { x: x0, y: y0, w: Math.max(...xs) - x0, h: Math.max(...ys) - y0 };
+}
+
 /** World point → element-local unrotated coordinates relative to its top-left. */
 export function worldToLocal(el: Boxy, p: Point): Point {
   const c = { x: el.x + el.w / 2, y: el.y + el.h / 2 };

@@ -140,6 +140,20 @@ button.fr-title:hover {
   outline: none;
 }
 
+.fr-boardmenu__text {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.fr-boardmenu__icon {
+  display: inline-flex;
+  flex: none;
+  width: 16px;
+  color: var(--fr-ink-2);
+}
+
 .fr-boardmenu__kbd {
   color: var(--fr-ink-3);
   font-size: 12px;

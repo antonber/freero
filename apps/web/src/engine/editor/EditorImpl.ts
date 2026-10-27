@@ -9,6 +9,8 @@ import type {
   EditorEvent,
   ElementDefinition,
   ElementPatch,
+  FitOptions,
+  FollowTarget,
   Host,
   HostUser,
   NewElement,
@@ -17,11 +19,12 @@ import type {
 } from '../api';
 import type { EngineCore } from '../runtime/core';
 import { ROLE_RANK } from '../runtime/core';
-import { boundsOf, elementAABB, localToWorld, rectCenter } from '../geometry/geometry';
-import { elementsInRect, hitTestElements } from '../geometry/spatial';
+import { boundsOf, elementAABB, localToWorld, rectCenter, rectUnion, visualAABB } from '../geometry/geometry';
+import { elementsInRect, hitTestElements, HIT_TOLERANCE_PX } from '../geometry/spatial';
+import { findFreeSpot } from '../geometry/freeSpot';
 import {
   clampZoom,
-  fitRect,
+  fitRectInArea,
   lerpCamera,
   MAX_ZOOM,
   screenToWorld,
@@ -29,6 +32,7 @@ import {
   zoomAt,
 } from '../camera/camera';
 import { createCollection } from '../store/collections';
+import { safeArea } from '../camera/safeArea';
 import {
   parseClipboardHtml,
   placeAt,
@@ -57,7 +61,9 @@ export class EditorImpl implements Editor {
     lastDenied: number;
     editingGesture: boolean;
     movingTimer: ReturnType<typeof setTimeout> | null;
-  } = { collections: new Map(), camAnim: null, lastDenied: 0, editingGesture: false, movingTimer: null };
+    /** >0 while a user gesture (wheel, pan, zoom control) is writing the camera: see asUser(). */
+    userCamera: number;
+  } = { collections: new Map(), camAnim: null, lastDenied: 0, editingGesture: false, movingTimer: null, userCamera: 0 };
 
   /**
    * Flags the camera as moving for a short while: the world layer is promoted (will-change)
@@ -131,21 +137,38 @@ export class EditorImpl implements Editor {
     return this.core.registry.elements.get(type)?.feature ?? 'engine';
   }
 
-  getBounds(ids?: string[]): Rect | null {
-    const els = ids ? ids.map((id) => this.getElement(id)).filter((e): e is BoardElement => !!e) : this.getElements();
-    return boundsOf(els);
+  /** True when the element's definition says it isn't on the board right now (ElementDefinition.hidden). */
+  isHidden(el: BoardElement): boolean {
+    const reg = this.core.registry.elements.get(el.type);
+    return !!reg?.def.hidden && !!reg.def.hidden(el, this.core.scoped(reg.feature));
+  }
+
+  /** Elements in render order without hidden ones (what hit tests, marquee, bounds, culling see). */
+  getVisibleElements(): BoardElement[] {
+    const all = this.getElements();
+    if (![...this.core.registry.elements.values()].some((r) => r.def.hidden)) return all;
+    return all.filter((el) => !this.isHidden(el));
+  }
+
+  getBounds(ids?: string[], opts: { visual?: boolean } = {}): Rect | null {
+    const els = ids
+      ? ids.map((id) => this.getElement(id)).filter((e): e is BoardElement => !!e && !this.isHidden(e))
+      : this.getVisibleElements();
+    if (!opts.visual) return boundsOf(els);
+    const zoom = this.getCamera().zoom;
+    return rectUnion(els.map((el) => visualAABB(el, this.getDefinition(el.type)?.visualOutset?.(el, zoom))));
   }
 
   hitTest(point: Point, opts: { exclude?: string[]; types?: ElementType[] } = {}): BoardElement | null {
     const zoom = this.core.ui.getState().camera.zoom;
-    return hitTestElements(this.getElements(), point, (t) => this.getDefinition(t), {
+    return hitTestElements(this.getVisibleElements(), point, (t) => this.getDefinition(t), {
       ...opts,
-      tolerance: 3 / zoom,
+      tolerance: HIT_TOLERANCE_PX / zoom,
     });
   }
 
   elementsInRect(rect: Rect, mode: 'intersect' | 'contain' = 'intersect'): BoardElement[] {
-    return elementsInRect(this.getElements(), rect, mode);
+    return elementsInRect(this.getVisibleElements(), rect, mode);
   }
 
   getAnchorPoint(id: string, anchor: 'top' | 'right' | 'bottom' | 'left'): Point | null {
@@ -165,10 +188,42 @@ export class EditorImpl implements Editor {
   }
 
   // ------------------------------------------------------------------ element writes
-  private normalized<T extends BoardElement>(el: T): T {
+  private normalized<T extends BoardElement>(el: T, prev?: T): T {
     const def = this.getDefinition(el.type);
-    const patch = def?.normalize?.(el as never);
+    if (!def?.normalize) return el;
+    // Measured with the fonts available now; re-measured once web fonts load (see fonts.ts).
+    this.core.measured.add(el.id);
+    const patch = def.normalize(el as never, prev as never);
     return patch ? ({ ...el, ...patch } as T) : el;
+  }
+
+  /**
+   * Web fonts finished loading: re-runs normalize for the elements THIS client measured (and
+   * nobody changed since), so text sized with fallback fonts gets its real frame. Written
+   * silently (no undo step) and only by this client — never for everyone's elements, so clients
+   * with different fonts can't fight over frames.
+   */
+  renormalizeMeasured(): void {
+    const { measured, store } = this.core;
+    if (!measured.size || !this.can('editor')) return;
+    const next: BoardElement[] = [];
+    for (const id of [...measured]) {
+      const el = store.getElement(id);
+      const def = el && this.getDefinition(el.type);
+      if (!el || !def?.normalize) {
+        measured.delete(id);
+        continue;
+      }
+      // prev = el: nothing changed but the measurement.
+      const patch = def.normalize(el as never, el as never) as Record<string, unknown> | null;
+      const cur = el as unknown as Record<string, unknown>;
+      if (patch && Object.keys(patch).some((k) => patch[k] !== cur[k])) next.push({ ...el, ...patch, id: el.id, type: el.type } as BoardElement);
+    }
+    if (!next.length) return;
+    store.transactSilently(() => {
+      for (const el of next) store.setElement(el);
+      runFollowers(this.core, next.map((el) => el.id), []);
+    });
   }
 
   private build(el: NewElement, z: number, now: number): BoardElement {
@@ -224,7 +279,7 @@ export class EditorImpl implements Editor {
         }
       }
       if (!changed) continue;
-      next.push(this.normalized({ ...cur, ...patch, id: cur.id, type: cur.type, updatedAt: now } as BoardElement));
+      next.push(this.normalized({ ...cur, ...patch, id: cur.id, type: cur.type, updatedAt: now } as BoardElement, cur));
     }
     if (!next.length) return;
     store.transact(() => {
@@ -255,9 +310,26 @@ export class EditorImpl implements Editor {
     return [...out];
   }
 
+  /** withChildren plus, recursively, every definition's removeWith (a mind-map node's subtree). */
+  withDependents(ids: string[]): string[] {
+    const out = new Set(this.withChildren(ids));
+    const queue = [...out];
+    while (queue.length) {
+      const el = this.getElement(queue.pop()!);
+      const reg = el && this.core.registry.elements.get(el.type);
+      if (!el || !reg?.def.removeWith) continue;
+      for (const id of this.withChildren(reg.def.removeWith(el, this.core.scoped(reg.feature)))) {
+        if (out.has(id) || !this.getElement(id)) continue;
+        out.add(id);
+        queue.push(id);
+      }
+    }
+    return [...out];
+  }
+
   remove(ids: string[]): void {
     if (!ids.length || !this.guardWrite()) return;
-    const all = this.withChildren(ids);
+    const all = this.withDependents(ids);
     const editing = this.getEditingId();
     if (editing && all.includes(editing)) this.stopEditing();
     this.core.store.transact(() => {
@@ -280,6 +352,10 @@ export class EditorImpl implements Editor {
 
   endGesture(): void {
     this.core.store.endGesture();
+  }
+
+  cancelGesture(): void {
+    this.core.store.cancelGesture();
   }
 
   bringToFront(ids: string[]): void {
@@ -496,7 +572,10 @@ export class EditorImpl implements Editor {
 
   select(ids: string[], mode: 'replace' | 'add' | 'toggle' = 'replace'): void {
     const store = this.core.store;
-    const valid = ids.filter((id) => store.getElement(id));
+    const valid = ids.filter((id) => {
+      const el = store.getElement(id);
+      return !!el && !this.isHidden(el);
+    });
     const cur = this.getSelection();
     let next: string[];
     if (mode === 'replace') next = [...new Set(valid)];
@@ -607,14 +686,43 @@ export class EditorImpl implements Editor {
 
   /** Immediate camera write (no animation, cancels a running animation). */
   setCameraNow(camera: Camera): void {
+    if (this.writeCamera(camera)) this.cameraChanged();
+  }
+
+  /** The follow loop's camera writes: everything else that moves the camera ends following. */
+  applyFollowCamera(camera: Camera): void {
+    this.writeCamera(camera);
+  }
+
+  /**
+   * Runs `fn` as a USER camera change (wheel, pan, pinch, zoom controls and shortcuts, minimap):
+   * camera writes inside it emit 'camera-user'.
+   */
+  asUser<T>(fn: () => T): T {
+    this.shared.userCamera++;
+    try {
+      return fn();
+    } finally {
+      this.shared.userCamera--;
+    }
+  }
+
+  private writeCamera(camera: Camera): boolean {
     if (this.shared.camAnim !== null) {
       cancelAnimationFrame(this.shared.camAnim);
       this.shared.camAnim = null;
     }
     const zoom = clampZoom(camera.zoom);
-    if (!Number.isFinite(camera.x) || !Number.isFinite(camera.y) || !Number.isFinite(zoom)) return;
+    if (!Number.isFinite(camera.x) || !Number.isFinite(camera.y) || !Number.isFinite(zoom)) return false;
     this.markCameraMoving();
     this.core.ui.setState({ camera: { x: camera.x, y: camera.y, zoom } });
+    return true;
+  }
+
+  /** After every camera write except the follow loop's: reports user moves, ends following. */
+  private cameraChanged(): void {
+    if (this.shared.userCamera > 0) this.core.emitter.emit('camera-user');
+    if (this.core.ui.getState().following) this.follow(null);
   }
 
   setCamera(camera: Camera, opts?: { animate?: boolean }): void {
@@ -635,6 +743,7 @@ export class EditorImpl implements Editor {
       }
     };
     this.shared.camAnim = requestAnimationFrame(step);
+    this.cameraChanged();
   }
 
   getViewportSize(): { width: number; height: number } {
@@ -655,25 +764,63 @@ export class EditorImpl implements Editor {
     this.setCamera(zoomAt(this.getCamera(), zoom, c), { animate: true });
   }
 
-  zoomToFit(ids?: string[], opts: { padding?: number; animate?: boolean; maxZoom?: number } = {}): void {
-    const b = this.getBounds(ids && ids.length ? ids : undefined);
-    const vp = this.getViewportSize();
+  zoomToFit(ids?: string[], opts: FitOptions = {}): void {
+    const b = this.getBounds(ids && ids.length ? ids : undefined, { visual: true });
+    const area = this.fitArea(opts.area);
     if (!b) {
-      this.setCamera({ x: -vp.width / 2, y: -vp.height / 2, zoom: 1 }, { animate: opts.animate ?? true });
+      // Empty board: the origin in the middle of the free area, at 100%.
+      const c = rectCenter(area);
+      this.setCamera({ x: -c.x, y: -c.y, zoom: 1 }, { animate: opts.animate ?? true });
       return;
     }
-    this.setCamera(fitRect(b, vp, opts.padding ?? 80, opts.maxZoom ?? 1), { animate: opts.animate ?? true });
+    this.setCamera(fitRectInArea(b, area, opts.padding ?? 80, opts.maxZoom ?? 1), { animate: opts.animate ?? true });
   }
 
-  zoomToRect(rect: Rect, opts: { padding?: number; animate?: boolean } = {}): void {
-    this.setCamera(fitRect(rect, this.getViewportSize(), opts.padding ?? 40, MAX_ZOOM), {
+  zoomToRect(rect: Rect, opts: FitOptions = {}): void {
+    this.setCamera(fitRectInArea(rect, this.fitArea(opts.area), opts.padding ?? 40, opts.maxZoom ?? MAX_ZOOM), {
       animate: opts.animate ?? true,
     });
+  }
+
+  private fitArea(area: FitOptions['area']): Rect {
+    const vp = this.getViewportSize();
+    return area === 'viewport' ? { x: 0, y: 0, w: vp.width, h: vp.height } : this.getSafeArea();
+  }
+
+  getSafeArea(): Rect {
+    return safeArea(this.core);
+  }
+
+  follow(target: FollowTarget | null): void {
+    const ui = this.core.ui;
+    const cur = ui.getState().following;
+    if (!target && !cur) return;
+    if (target && cur && cur.userId === target.userId && cur.clientId === target.clientId) return;
+    if (target && this.shared.camAnim !== null) {
+      // A camera animation in flight would fight the mirror.
+      cancelAnimationFrame(this.shared.camAnim);
+      this.shared.camAnim = null;
+    }
+    ui.setState({ following: target ? { userId: target.userId, clientId: target.clientId } : null });
+    this.core.store.setPresence({ following: target ? target.userId : null });
+  }
+
+  getFollowing(): FollowTarget | null {
+    return this.core.ui.getState().following;
   }
 
   getViewportCenter(): Point {
     const vp = this.getViewportSize();
     return this.screenToWorld({ x: vp.width / 2, y: vp.height / 2 });
+  }
+
+  findFreeSpot(size: { w: number; h: number }, opts: { near?: Point; gap?: number } = {}): Point {
+    const obstacles = this.getElements().map(elementAABB);
+    const vp = this.getViewportSize();
+    const a = this.screenToWorld({ x: 0, y: 0 });
+    const b = this.screenToWorld({ x: vp.width, y: vp.height });
+    const visible = { x: a.x, y: a.y, w: b.x - a.x, h: b.y - a.y };
+    return findFreeSpot(obstacles, size, opts.near ?? this.getViewportCenter(), opts.gap ?? 48, visible);
   }
 
   // ------------------------------------------------------------------ tools
@@ -689,6 +836,12 @@ export class EditorImpl implements Editor {
     }
     if (!this.can(reg.def.minRole ?? 'editor')) {
       this.guardWrite();
+      return;
+    }
+    if (reg.def.onSelect) {
+      // Act-now tool: do it, keep the current tool.
+      if (this.getEditingId()) this.stopEditing();
+      reg.def.onSelect(this.core.scoped(reg.feature));
       return;
     }
     const prevId = this.getToolId();
@@ -788,6 +941,24 @@ export class EditorImpl implements Editor {
 
   getDock(): string | null {
     return this.core.ui.getState().dock;
+  }
+
+  openPanel(id: string, props?: Record<string, unknown>): void {
+    const reg = this.core.registry.panelsById.get(id);
+    if (!reg) {
+      console.warn(`Unknown panel '${id}'`);
+      return;
+    }
+    if (!this.can(reg.def.minRole ?? 'viewer')) return;
+    if (reg.def.slot === 'dock-right') this.openDock(id);
+    else if (reg.def.slot === 'dialog') this.core.ui.setState({ dialog: { id, props } });
+    else console.warn(`Panel '${id}' lives in the '${reg.def.slot}' slot, which is always mounted; only dialog and dock panels open.`);
+  }
+
+  closePanel(id?: string): void {
+    const s = this.core.ui.getState();
+    if (s.dialog && (!id || s.dialog.id === id)) this.core.ui.setState({ dialog: null });
+    if (id && s.dock === id) this.openDock(null);
   }
 
   setChromeHidden(hidden: boolean): void {

@@ -10,6 +10,9 @@ import { ROLE_RANK } from '../runtime/core';
 import type { Registered } from '../runtime/registry';
 import type { ToolDefinition } from '../api';
 
+/** Gap kept between the tool Options flyout and the window edges (px). */
+const FLYOUT_MARGIN = 12;
+
 export function Toolbar() {
   const core = useCore();
   const toolId = useToolId();
@@ -40,6 +43,29 @@ export function Toolbar() {
     setOptionsTop(b.top - r.top);
   }, [toolId, Options]);
 
+  // Keep the flyout inside the window: it starts level with its tool button and slides up when it
+  // would run past the bottom (tall pickers), re-checked whenever its content resizes.
+  const optionsRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const box = optionsRef.current;
+    const bar = barRef.current;
+    if (!box || !bar || optionsTop === null) return;
+    const fit = () => {
+      const barTop = bar.getBoundingClientRect().top;
+      const h = box.offsetHeight;
+      const maxTop = window.innerHeight - FLYOUT_MARGIN - h - barTop;
+      box.style.top = `${Math.round(Math.max(FLYOUT_MARGIN - barTop, Math.min(optionsTop, maxTop)))}px`;
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(box);
+    window.addEventListener('resize', fit);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', fit);
+    };
+  }, [optionsTop, toolId]);
+
   const toolButton = (t: Registered<ToolDefinition>) => (
     <IconButton
       key={t.def.id}
@@ -57,7 +83,7 @@ export function Toolbar() {
   );
 
   return (
-    <div className="fr-toolbar" ref={barRef} data-fr-chrome="">
+    <div className="fr-toolbar" ref={barRef} data-fr-chrome="" data-fr-occludes="">
       <div className="fr-toolbar__group" role="toolbar" aria-label="Tools" aria-orientation="vertical">
         {main.map(toolButton)}
         {activeMore && toolButton(activeMore)}
@@ -123,7 +149,7 @@ export function Toolbar() {
         </div>
       )}
       {Options && optionsTop !== null && active && (
-        <div className="fr-tool-options" style={{ top: optionsTop }} data-fr-chrome="">
+        <div ref={optionsRef} className="fr-tool-options" style={{ top: optionsTop }} data-fr-chrome="">
           <ScopeContext.Provider value={active.feature}>
             <Options editor={core.scoped(active.feature)} />
           </ScopeContext.Provider>

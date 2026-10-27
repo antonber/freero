@@ -40,8 +40,19 @@ export function FormatToolbar() {
     if (Math.abs(r.width - size.w) > 0.5 || Math.abs(r.height - size.h) > 0.5) setSize({ w: r.width, h: r.height });
   });
 
+  // Publish where we are (useFormatToolbarRect) so screen UI can stay clear of the toolbar.
+  const placed = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
+  placed.current = null;
+  useLayoutEffect(() => {
+    const r = placed.current;
+    const p = core.ui.getState().formatToolbarRect;
+    if (r?.x !== p?.x || r?.y !== p?.y || r?.w !== p?.w || r?.h !== p?.h) core.ui.setState({ formatToolbarRect: r });
+  });
+  useLayoutEffect(() => () => core.ui.setState({ formatToolbarRect: null }), [core]);
+
   if (!visible) return null;
-  const b = boundsOf(els)!;
+  // Visual bounds: clear of what elements draw outside their box (a frame's title above it).
+  const b = editor.getBounds(els.map((e) => e.id), { visual: true }) ?? boundsOf(els)!;
   const tl = worldToScreen(cam, b);
   const br = worldToScreen(cam, { x: b.x + b.w, y: b.y + b.h });
   const cx = (tl.x + br.x) / 2;
@@ -53,6 +64,7 @@ export function FormatToolbar() {
   }
   if (below && top + size.h > viewport.height - 70) top = Math.max(TOP_SAFE, Math.min(tl.y + 8, viewport.height - size.h - 70));
   const left = Math.min(Math.max(12 + 56, cx - size.w / 2), viewport.width - size.w - 12);
+  placed.current = { x: Math.round(left), y: Math.round(top), w: size.w, h: size.h };
   const locked = els.every((e) => e.locked);
   const ids = els.map((e) => e.id);
 

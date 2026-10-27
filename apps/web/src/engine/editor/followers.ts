@@ -19,11 +19,9 @@ export function runFollowers(core: EngineCore, changed: Iterable<string>, remove
   const now = Date.now();
   for (const { def, feature } of followers) {
     const ctx: FollowChange = { ...change, editor: core.scoped(feature) };
-    // The ordered cache still lists the pre-transaction objects: use it for ids only and read
-    // the current value from the store.
-    for (const stale of store.getOrderedOfType(def.type)) {
-      const el = store.getElement(stale.id);
-      if (!el || change.removed.has(el.id)) continue;
+    // Reads inside the transaction are current (the store drops its ordered caches on write).
+    for (const el of store.getOrderedOfType(def.type)) {
+      if (change.removed.has(el.id)) continue;
       const patch = def.follow!(el as never, ctx) as Record<string, unknown> | null;
       if (!patch) continue;
       const cur = el as unknown as Record<string, unknown>;

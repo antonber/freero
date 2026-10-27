@@ -27,8 +27,8 @@ export interface ElementTextProps {
   field?: string;
   /** Shown while editing an empty text. */
   placeholder?: string;
-  /** Inner padding in world px. Default 12. */
-  padding?: number;
+  /** Inner padding in world px (one value, or per side). Default 12. */
+  padding?: number | { top: number; right: number; bottom: number; left: number };
   className?: string;
   style?: CSSProperties;
   // Overrides; by default read from the element's TextStyle fields when present.
@@ -69,14 +69,15 @@ function ElementTextImpl(props: ElementTextProps) {
   const exporting = useContext(RenderModeContext) === 'export';
   const editingLive = useStore(core.ui, (s) => s.editingId === element.id);
   const editing = editingLive && !exporting;
-  const pad = props.padding ?? 12;
+  const p = props.padding ?? 12;
+  const pad = typeof p === 'number' ? { top: p, right: p, bottom: p, left: p } : p;
   const family = (props.fontFamily ?? (rec.fontFamily as FontFamily | undefined) ?? 'sans') as FontFamily;
   const fontSizeSetting = props.fontSize ?? (rec.fontSize as number | 'auto' | undefined) ?? 'auto';
   const align = props.align ?? (rec.align as TextAlign | undefined) ?? 'center';
   const vAlign = props.vAlign ?? (rec.vAlign as VerticalAlign | undefined) ?? 'middle';
   const color = props.color ?? (rec.textColor as string | undefined) ?? 'var(--fr-ink)';
-  const innerW = Math.max(1, element.w - pad * 2);
-  const innerH = Math.max(1, element.h - pad * 2);
+  const innerW = Math.max(1, element.w - pad.left - pad.right);
+  const innerH = Math.max(1, element.h - pad.top - pad.bottom);
 
   // While editing, auto-fit follows the live (uncommitted) text.
   const [livePlain, setLivePlain] = useState<string | null>(null);
@@ -95,7 +96,7 @@ function ElementTextImpl(props: ElementTextProps) {
   }, [fontSizeSetting, plain, family, innerW, innerH, element.w, element.h, props.minFontSize, props.maxFontSize, epoch]);
 
   const boxStyle: CSSProperties = {
-    padding: pad,
+    padding: `${pad.top}px ${pad.right}px ${pad.bottom}px ${pad.left}px`,
     justifyContent: JUSTIFY[vAlign],
     textAlign: align,
     fontSize,

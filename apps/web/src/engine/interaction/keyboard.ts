@@ -49,6 +49,21 @@ export function installKeyboard(core: EngineCore): () => void {
     return false;
   };
 
+  const selectedTypesHandle = (e: KeyboardEvent): boolean => {
+    const selection = editor
+      .getSelection()
+      .map((id) => editor.getElement(id))
+      .filter((el): el is BoardElement => !!el);
+    const asked = new Set<string>();
+    for (const el of selection) {
+      if (asked.has(el.type)) continue;
+      asked.add(el.type);
+      const reg = core.registry.elements.get(el.type);
+      if (reg?.def.onKeyDown?.(e, { editor: core.scoped(reg.feature), selection })) return true;
+    }
+    return false;
+  };
+
   const nudge = (e: KeyboardEvent): boolean => {
     const k = eventKey(e);
     const dir = { arrowleft: [-1, 0], arrowright: [1, 0], arrowup: [0, -1], arrowdown: [0, 1] }[k];
@@ -122,12 +137,20 @@ export function installKeyboard(core: EngineCore): () => void {
       return;
     }
 
+    // Element types in the selection get the key before the engine's own keys and shortcuts
+    // (Enter / Delete / Tab on a mind-map node mean something else than on a sticky).
+    if (e.key !== 'Escape' && selectedTypesHandle(e)) {
+      e.preventDefault();
+      return;
+    }
+
     if (e.key === 'Escape') {
       e.preventDefault();
       if (editingId) return editor.stopEditing();
       const s = ui.getState();
       if (s.contextMenu) return ui.setState({ contextMenu: null });
       if (core.interaction.cancel) return core.interaction.cancel();
+      if (s.following) return editor.follow(null);
       if (s.toolId !== 'select') return editor.setTool('select');
       if (s.selection.length) return editor.clearSelection();
       return;

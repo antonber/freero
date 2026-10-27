@@ -18,6 +18,8 @@ import { compareRenderOrder } from '../geometry/spatial';
 
 /** Transaction origin for every local write; the undo manager tracks only this. */
 export const LOCAL_ORIGIN = { source: 'freero-local' };
+/** Local writes that must never become an undo step (re-measuring text after fonts load). */
+export const SILENT_ORIGIN = { source: 'freero-silent' };
 
 export type ConnectionStatus = 'local' | 'connecting' | 'connected' | 'disconnected' | 'denied';
 
@@ -53,10 +55,13 @@ export class BoardStore {
   private roleListeners = new Set<Listener>();
   private undoListeners = new Set<Listener>();
   private localChangeListeners = new Set<Listener>();
+  private foreignKeyListeners = new Set<(ids: string[]) => void>();
   private sorted: BoardElement[] | null = null;
   private byType = new Map<string, BoardElement[]>();
   private version = 0;
   private gestureDepth = 0;
+  /** Undo stack length when the outermost gesture began (see cancelGesture). */
+  private gestureBase = 0;
   private baseCaptureTimeout: number;
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
   private destroyed = false;
@@ -82,7 +87,12 @@ export class BoardStore {
         if (set) for (const l of [...set]) l();
       }
       this.emit(this.anyListeners);
-      if (ev.transaction.origin === LOCAL_ORIGIN) this.emit(this.localChangeListeners);
+      const origin = ev.transaction.origin;
+      if (origin === LOCAL_ORIGIN) this.emit(this.localChangeListeners);
+      else if (origin !== SILENT_ORIGIN && this.foreignKeyListeners.size) {
+        const ids = [...ev.keysChanged];
+        for (const l of [...this.foreignKeyListeners]) l(ids);
+      }
     });
     this.settings.observe(() => this.emit(this.settingsListeners));
 
@@ -208,12 +218,23 @@ export class BoardStore {
     this.doc.transact(fn, LOCAL_ORIGIN);
   }
 
+  /** Writes that never become an undo step (still synced). Not for user actions. */
+  transactSilently(fn: () => void): void {
+    this.doc.transact(fn, SILENT_ORIGIN);
+  }
+
+  // Writes drop the ordered caches right away (not only when the transaction ends), so reads
+  // inside a transaction — getOrdered(), followers, feature code in editor.transact — see them.
   setElement(el: BoardElement): void {
     this.elements.set(el.id, el);
+    this.sorted = null;
+    this.byType.clear();
   }
 
   deleteElement(id: string): void {
     this.elements.delete(id);
+    this.sorted = null;
+    this.byType.clear();
   }
 
   subscribeElement(id: string, l: Listener): () => void {
@@ -228,6 +249,12 @@ export class BoardStore {
 
   subscribeElements(l: Listener): () => void {
     return this.on(this.anyListeners, l);
+  }
+
+  /** Element ids changed by anything but a local write (remote peers, undo/redo, load). */
+  subscribeForeignKeys(l: (ids: string[]) => void): () => void {
+    this.foreignKeyListeners.add(l);
+    return () => this.foreignKeyListeners.delete(l);
   }
 
   /** Fires after local (undoable) element writes; used for thumbnail dirtiness. */
@@ -290,8 +317,27 @@ export class BoardStore {
     if (this.gestureDepth === 0) {
       this.undoManager.stopCapturing();
       this.undoManager.captureTimeout = Number.POSITIVE_INFINITY;
+      this.gestureBase = this.undoManager.undoStack.length;
     }
     this.gestureDepth++;
+  }
+
+  /**
+   * Ends the outermost gesture by reverting its writes and dropping its undo step, as if it never
+   * happened (Escape mid-drag). A gesture's writes all merge into one stack item, so that is one
+   * undo plus forgetting the resulting redo entry. Nested: just ends that level.
+   */
+  cancelGesture(): void {
+    if (this.gestureDepth === 0) return;
+    if (this.gestureDepth > 1) return this.endGesture();
+    this.gestureDepth = 0;
+    this.undoManager.captureTimeout = this.baseCaptureTimeout;
+    this.undoManager.stopCapturing();
+    if (this.undoManager.undoStack.length > this.gestureBase) {
+      this.undoManager.undo();
+      this.undoManager.redoStack.pop();
+      this.emit(this.undoListeners);
+    }
   }
 
   endGesture(): void {

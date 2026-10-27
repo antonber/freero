@@ -21,7 +21,7 @@ function Dock() {
   if (!reg || reg.def.slot !== 'dock-right' || ROLE_RANK[role] < ROLE_RANK[reg.def.minRole ?? 'viewer']) return null;
   const { def, feature } = reg;
   return (
-    <aside className="fr-dock fr-chrome-card" data-fr-chrome="" aria-label="Side panel">
+    <aside className="fr-dock fr-chrome-card" data-fr-chrome="" data-fr-occludes="dock" aria-label="Side panel">
       <IconButton className="fr-dock__close" icon={X} label="Close panel" size={32} onClick={() => core.editor.openDock(null)} />
       <div className="fr-dock__body" data-fr-scrollable="">
         <ScopeContext.Provider value={feature}>
@@ -85,4 +85,22 @@ export function ScreenOverlayPanels() {
 
 export function WorldOverlayPanels() {
   return <PanelSlotView slot="world-overlay" />;
+}
+
+/**
+ * The open 'dialog' panel (Editor.openPanel). Mounted beside the chrome, not in it, so commands can
+ * open dialogs while the chrome is hidden (presenting).
+ */
+export function DialogPanels() {
+  const core = useCore();
+  const role = useRole();
+  const dialog = useStore(core.ui, (s) => s.dialog);
+  const reg = dialog ? core.registry.panelsById.get(dialog.id) : undefined;
+  if (!dialog || !reg || reg.def.slot !== 'dialog' || ROLE_RANK[role] < ROLE_RANK[reg.def.minRole ?? 'viewer']) return null;
+  const { def, feature } = reg;
+  return (
+    <ScopeContext.Provider value={feature}>
+      <def.Component key={dialog.id} editor={core.scoped(feature)} props={dialog.props} />
+    </ScopeContext.Provider>
+  );
 }

@@ -9,7 +9,7 @@
 // note it in ARCHITECTURE.md, and mention it in your report.
 // ============================================================================
 
-import type { ComponentType, ReactNode } from 'react';
+import type { ComponentType, CSSProperties, ReactNode } from 'react';
 import type {
   BoardElement,
   BoardSettings,
@@ -43,14 +43,28 @@ export interface Host {
   saveThumbnail(dataUrl: string): Promise<void>;
   openShareDialog(): void;
   navigate(path: string): void;
-  /** Lightweight toast from anywhere. */
-  notify(message: string, kind?: 'info' | 'success' | 'error'): void;
+  /**
+   * Lightweight toast from anywhere. [additive] `opts.action` adds one button (e.g. "Go"); toasts
+   * with an action stay up longer.
+   */
+  notify(message: string, kind?: 'info' | 'success' | 'error', opts?: NotifyOptions): void;
   /**
    * Current time on the SERVER's clock (ms). Use it for anything shared that is time-based
    * (timers, deadlines) so clients with skewed clocks agree. Falls back to the local clock
    * until measured, and offline.
    */
   serverNow(): number;
+  /**
+   * [additive] Everyone with access to this board (owner + invited members), including people
+   * who have never been online here. Offline sandbox: just the local user. Rejects when the
+   * directory can't be loaded; callers fall back to presence.
+   */
+  listMembers(): Promise<HostUser[]>;
+}
+
+/** [additive] Extras for `Host.notify`. */
+export interface NotifyOptions {
+  action?: { label: string; run(): void };
 }
 
 // ---------------------------------------------------------------------------
@@ -93,14 +107,30 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
   container?: boolean;
   /** Can connectors attach to it? Default true (false for connector/pen). */
   connectable?: boolean;
-  /** Precise hit test in element-local unrotated coordinates; default = bounding box. */
-  hitTest?(element: ElementOf<T>, local: Point): boolean;
+  /**
+   * Precise hit test in element-local unrotated coordinates; default = `distanceTo` when defined,
+   * else the bounding box. `ctx.tolerance` (world units, a few screen px at the current zoom) is
+   * how far off the drawn shape a click still counts, so thin targets stay clickable.
+   */
+  hitTest?(element: ElementOf<T>, local: Point, ctx: HitTestContext): boolean;
+  /**
+   * [additive] Distance (world units, element-local unrotated `local`) from the point to what is
+   * actually drawn: <= 0 on the ink/fill. Without `hitTest`, a hit is `distanceTo <= tolerance`.
+   * Other features can ask it too (the eraser asks the pen's definition).
+   */
+  distanceTo?(element: ElementOf<T>, local: Point): number;
   /** Point on the outline for an anchor; default = bbox edge midpoints. */
   anchorPoint?(element: ElementOf<T>, anchor: 'top' | 'right' | 'bottom' | 'left'): Point;
   /** Plain-text extraction for search, export alt text, and accessibility. */
   toPlainText?(element: ElementOf<T>): string;
-  /** Called after a geometry/content change so derived fields stay valid (e.g. auto height). */
-  normalize?(element: ElementOf<T>): ElementPatch<ElementOf<T>> | null;
+  /**
+   * Called after a LOCAL create/update so derived fields stay valid (e.g. auto height). `prev` is
+   * the element before this change (undefined on create), so a definition can tell what changed
+   * (a side-handle resize changes `w` alone; a corner scale changes `w` and `fontSize`).
+   * Measure text with `measureRichText` (what ElementText renders). The engine re-runs it for the
+   * elements this client measured once web fonts finish loading (no undo entry).
+   */
+  normalize?(element: ElementOf<T>, prev?: ElementOf<T>): ElementPatch<ElementOf<T>> | null;
   /**
    * Paste / drag-and-drop import. The engine offers clipboard or dropped data to every
    * definition with importData, highest importPriority first, until one returns true.
@@ -128,7 +158,53 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
    * derived fields. Return the fields to rewrite, or null (the common, cheap case).
    */
   follow?(element: ElementOf<T>, change: FollowChange): ElementPatch<ElementOf<T>> | null;
+  /**
+   * [additive] Not on the board right now (a collapsed mind-map branch): not rendered, not
+   * exported, and ignored by hit testing, marquee, selection, snapping, bounds and zoom-to-fit.
+   * Called often: keep it cheap. `editor` is scoped to the defining feature.
+   */
+  hidden?(element: ElementOf<T>, editor: Editor): boolean;
+  /**
+   * [additive] Ids that must be deleted together with this element, in the same transaction
+   * (one undo step restores them all): a mind-map node's subtree. Applied recursively by every
+   * LOCAL `editor.remove` (Delete, cut, context menu, eraser…).
+   */
+  removeWith?(element: ElementOf<T>, editor: Editor): string[];
+  /**
+   * [additive] Keys pressed while this type is selected (and no text is being edited), asked
+   * BEFORE the engine's own keys and command shortcuts (Enter = edit text, Delete, Tab…).
+   * Return true when handled (the engine then prevents the default). `selection` is the whole
+   * selection; `editor` is scoped to the defining feature.
+   */
+  onKeyDown?(e: KeyboardEvent, ctx: { editor: Editor; selection: BoardElement[] }): boolean | void;
+  /** [additive] Extra style for the element's positioned world wrapper (e.g. mix-blend-mode). */
+  wrapperStyle?(element: ElementOf<T>): CSSProperties | undefined;
+  /**
+   * [additive] false = the engine draws no bounding-box selection frame, resize/rotate handles
+   * or hover outline for this type; the feature draws its own (connectors: endpoint handles).
+   * Default true.
+   */
+  selectionFrame?: boolean;
+  /**
+   * [additive] How far (world units) the element draws outside its box, e.g. a frame title above
+   * its top edge. Used for export bounds and anything placed around an element's visual bounds.
+   * `zoom` is the live camera zoom (for decorations sized in screen px).
+   */
+  visualOutset?(element: ElementOf<T>, zoom: number): Partial<Record<'top' | 'right' | 'bottom' | 'left', number>>;
+  /**
+   * [additive] Double-click on a resize handle: the patch that fits the element back to its
+   * content along that handle (a fixed-width text box goes back to auto width). null = ignore.
+   */
+  fitToContent?(element: ElementOf<T>, handle: ResizeHandle): ElementPatch<ElementOf<T>> | null;
 }
+
+/** [additive] What `ElementDefinition.hitTest` is told. */
+export interface HitTestContext {
+  /** World units around the drawn shape that still count as a hit (a few screen px). */
+  tolerance: number;
+}
+
+export type ResizeHandle = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 
 /** [additive] What `ElementDefinition.follow` is told about a local change. */
 export interface FollowChange {
@@ -152,7 +228,13 @@ export interface ToolPointerEvent {
   shiftKey: boolean;
   altKey: boolean;
   metaKey: boolean; // meta OR ctrl
+  /**
+   * The button that changed: on down/up 0 = primary, 1 = middle, 2 = secondary. On EVERY move
+   * (hover and drag alike) it is -1, so never use it to tell a drag from a hover: use `buttons`.
+   */
   button: number;
+  /** [additive] Pressed-buttons bitmask (1 primary, 2 secondary, 4 middle); 0 while hovering. */
+  buttons: number;
   pressure: number;
   pointerType: string;
   /** Element under the pointer, if any (topmost). */
@@ -177,6 +259,12 @@ export interface ToolDefinition {
   Options?: ComponentType<{ editor: Editor }>;
   /** World-space preview layer while the tool is active (e.g. ghost sticky following cursor). */
   Preview?: ComponentType<{ editor: Editor }>;
+  /**
+   * [additive] Act-now tool (upload image, open templates): picking it — toolbar, "+" grid or
+   * shortcut — calls this, still inside the click's user activation, and the tool never becomes
+   * active (the current tool stays). onActivate/pointer handlers are then unused.
+   */
+  onSelect?(editor: Editor): void;
   onActivate?(editor: Editor): void;
   onDeactivate?(editor: Editor): void;
   onPointerDown?(e: ToolPointerEvent): void;
@@ -209,14 +297,22 @@ export type PanelSlot =
   | 'bottom-right'     // next to zoom controls (minimap toggle, comments toggle)
   | 'dock-right'       // side panel content (comments list, frames, templates)
   | 'screen-overlay'   // full-viewport screen-space layer (cursors, reaction bursts, timers)
-  | 'world-overlay';   // world-space layer above elements (comment pins, vote badges)
+  | 'world-overlay'    // world-space layer above elements (comment pins, vote badges)
+  | 'dialog';          // [additive] mounted only while opened with editor.openPanel(id, props); stays
+                       // available while the chrome is hidden (presenting). Close: editor.closePanel(id).
+
+/** [additive] Props every panel component gets. `props` = what `openPanel(id, props)` passed (dialogs). */
+export interface PanelProps {
+  editor: Editor;
+  props?: Record<string, unknown>;
+}
 
 export interface PanelDefinition {
   id: string;
   slot: PanelSlot;
   order: number;
   minRole?: Role;
-  Component: ComponentType<{ editor: Editor }>;
+  Component: ComponentType<PanelProps>;
 }
 
 // ---------------------------------------------------------------------------
@@ -229,9 +325,31 @@ export interface CommandDefinition {
   shortcut?: string;
   /** Where it appears besides the shortcut: right-click menu and/or the board "…" menu. */
   menus?: Array<'context' | 'board'>;
+  /** [additive] Icon shown in the context and board menus (lucide-style component). */
+  icon?: ComponentType<{ size?: number | string; strokeWidth?: number | string }>;
+  /**
+   * [additive] Submenu label: menu commands sharing a `group` show as one "<group> ▸" entry whose
+   * submenu lists them (in definition order), e.g. 'React with' → one command per stamp.
+   */
+  group?: string;
   minRole?: Role;
   when?(editor: Editor): boolean;
   run(editor: Editor): void;
+}
+
+// ---------------------------------------------------------------------------
+// Decorations (features/<name>/decoration.tsx) — [additive] world-space extras drawn INSIDE
+// another feature's element wrapper (sticky tag chips). They move, rotate, cull and EXPORT with
+// the element, unlike world-overlay panels. Render props mirror ElementRenderProps.
+// ---------------------------------------------------------------------------
+export interface DecorationDefinition {
+  id: string;
+  /** Lower = drawn first. */
+  order?: number;
+  /** Cheap check, called on every render of every element. */
+  appliesTo(element: BoardElement): boolean;
+  /** Positioned in the element's box (0,0 = its top-left, w × h, rotated with it). */
+  Component: ComponentType<{ element: BoardElement; zoom: number }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -254,6 +372,8 @@ export interface FeatureBundle {
   formats: FormatDefinition[];
   panels: PanelDefinition[];
   commands: CommandDefinition[];
+  /** [additive] decoration.tsx */
+  decorations?: DecorationDefinition[];
 }
 
 // ---------------------------------------------------------------------------
@@ -281,7 +401,28 @@ export type EditorEvent =
   | 'elements'
   | 'presence'
   | 'editing'
-  | 'connection';
+  | 'connection'
+  /** [additive] The USER moved the camera (wheel, pan, pinch, zoom controls/shortcuts, minimap) — never setCamera. */
+  | 'camera-user'
+  /** [additive] getFollowing() changed. */
+  | 'follow';
+
+/** [additive] Whom this client follows: a user, optionally pinned to one of their tabs. */
+export interface FollowTarget {
+  userId: string;
+  /** Presence client (tab) to mirror; when it leaves, another tab of the same user takes over. */
+  clientId?: number;
+}
+
+/** [additive] Options for zoomToFit / zoomToRect. */
+export interface FitOptions {
+  /** Screen px kept free around the content inside the area. */
+  padding?: number;
+  animate?: boolean;
+  maxZoom?: number;
+  /** 'safe' (default) = the part of the screen not covered by chrome (getSafeArea); 'viewport' = all of it. */
+  area?: 'safe' | 'viewport';
+}
 
 export interface Editor {
   readonly host: Host;
@@ -298,8 +439,11 @@ export interface Editor {
   /** All elements sorted by render order (frames first, then by z). */
   getElements(): BoardElement[];
   getDefinition(type: ElementType): ElementDefinition<any> | undefined;
-  /** Rotated-aware axis-aligned bounds of the given ids (or all elements). */
-  getBounds(ids?: string[]): Rect | null;
+  /**
+   * Rotated-aware axis-aligned bounds of the given ids (or all elements). Hidden elements never
+   * count. `visual` adds each definition's visualOutset (frame titles…), as exports draw them.
+   */
+  getBounds(ids?: string[], opts?: { visual?: boolean }): Rect | null;
   hitTest(point: Point, opts?: { exclude?: string[]; types?: ElementType[] }): BoardElement | null;
   elementsInRect(rect: Rect, mode?: 'intersect' | 'contain'): BoardElement[];
   getAnchorPoint(id: string, anchor: 'top' | 'right' | 'bottom' | 'left'): Point | null;
@@ -320,6 +464,12 @@ export interface Editor {
    */
   beginGesture(): void;
   endGesture(): void;
+  /**
+   * [additive] Ends the outermost gesture by REVERTING every local write made since its
+   * beginGesture(), leaving no undo step (Escape during a drag). Inside a nested gesture it only
+   * ends that level (the outer gesture owns the writes).
+   */
+  cancelGesture(): void;
   bringToFront(ids: string[]): void;
   sendToBack(ids: string[]): void;
   duplicate(ids: string[], offset?: Point): string[];
@@ -358,10 +508,34 @@ export interface Editor {
   screenToWorld(p: Point): Point;
   worldToScreen(p: Point): Point;
   zoomTo(zoom: number, screenCenter?: Point): void;
-  zoomToFit(ids?: string[], opts?: { padding?: number; animate?: boolean; maxZoom?: number }): void;
-  zoomToRect(rect: Rect, opts?: { padding?: number; animate?: boolean }): void;
+  /**
+   * Fits the elements (default: all) — including their visualOutset — into the safe area
+   * (see FitOptions.area). maxZoom defaults to 1.
+   */
+  zoomToFit(ids?: string[], opts?: FitOptions): void;
+  /** Fits a world rect into the safe area (see FitOptions.area). maxZoom defaults to the engine max. */
+  zoomToRect(rect: Rect, opts?: FitOptions): void;
   /** Center of the viewport in world coords (where "insert" actions place content). */
   getViewportCenter(): Point;
+  /**
+   * [additive] Where to insert new content of `size` (world units) without overlapping anything:
+   * the top-left of a box that keeps `gap` (default 48) clear of every element, as close as
+   * possible to having its center on `near` (default: getViewportCenter()), preferring spots
+   * fully in view. Insert actions (templates, uploaded images) use it.
+   */
+  findFreeSpot(size: { w: number; h: number }, opts?: { near?: Point; gap?: number }): Point;
+  /**
+   * [additive] Screen rect (viewport px) not covered by the board chrome: left toolbar, top bar,
+   * bottom-right controls and the open right dock. The whole viewport while the chrome is hidden.
+   */
+  getSafeArea(): Rect;
+  /**
+   * [additive] Follow someone's view: the camera mirrors theirs until this client moves the camera
+   * itself (wheel, pan, zoom, a canvas click, Esc, any setCamera) or they leave. null stops. Others
+   * see it in PresenceState.following, and the followed client publishes its view faster.
+   */
+  follow(target: FollowTarget | null): void;
+  getFollowing(): FollowTarget | null;
 
   // -- tools --
   getToolId(): string;
@@ -394,12 +568,21 @@ export interface Editor {
     scale?: number;
     background?: string | null;
     padding?: number;
+    /** Don't embed web fonts (faster; text falls back to installed fonts). */
+    skipFonts?: boolean;
   }): Promise<string>;
 
   // -- UI state --
   /** Open/close the right dock with a panel id (or null to close). */
   openDock(panelId: string | null): void;
   getDock(): string | null;
+  /**
+   * [additive] Opens a panel from anywhere (a command, a button): a 'dialog' panel mounts with
+   * `props` (one dialog at a time, also while the chrome is hidden); a 'dock-right' panel opens the
+   * dock. closePanel(id) closes it if it is the open one; closePanel() closes the open dialog.
+   */
+  openPanel(id: string, props?: Record<string, unknown>): void;
+  closePanel(id?: string): void;
   /**
    * [additive] Hide the board chrome (toolbar, top bar, zoom controls + minimap, format toolbar,
    * context menu, docks) and the local selection/hover overlays — used by presentation mode.
@@ -422,6 +605,7 @@ export const defineTool = (d: ToolDefinition): ToolDefinition => d;
 export const defineFormat = (d: FormatDefinition): FormatDefinition => d;
 export const definePanel = (d: PanelDefinition): PanelDefinition => d;
 export const defineCommands = (d: CommandDefinition[]): CommandDefinition[] => d;
+export const defineDecoration = (d: DecorationDefinition): DecorationDefinition => d;
 
 /** Children helper type for slot components. */
 export type Slot = { children?: ReactNode };

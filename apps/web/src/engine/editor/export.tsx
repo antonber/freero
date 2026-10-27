@@ -8,8 +8,9 @@ import type { Rect } from '../api';
 import { EngineContext, RenderModeContext } from '../context';
 import type { EngineCore, ExportOptions } from '../runtime/core';
 import { ElementFrame } from '../canvas/WorldLayer';
-import { boundsOf, expandRect } from '../geometry/geometry';
+import { expandRect } from '../geometry/geometry';
 import { compareRenderOrder } from '../geometry/spatial';
+import { fontEmbedCss } from './fontEmbed';
 
 const MAX_PIXELS_SIDE = 8192;
 
@@ -31,11 +32,12 @@ export function createExportRenderer(core: EngineCore) {
     await Promise.resolve();
     const editor = core.editor;
     let elements: BoardElement[];
-    if (opts.ids) elements = editor.withChildren(opts.ids).map((id) => editor.getElement(id)!).filter(Boolean);
+    if (opts.ids) elements = editor.withChildren(opts.ids).map((id) => editor.getElement(id)!).filter((el) => el && !editor.isHidden(el));
     else if (opts.rect) elements = editor.elementsInRect(opts.rect, 'intersect');
-    else elements = [...editor.getElements()];
+    else elements = [...editor.getVisibleElements()];
     elements.sort(compareRenderOrder);
-    const content = opts.rect ?? boundsOf(elements) ?? { x: 0, y: 0, w: 320, h: 200 };
+    // Visual bounds: what definitions draw outside their box (frame titles) is part of the picture.
+    const content = opts.rect ?? editor.getBounds(elements.map((el) => el.id), { visual: true }) ?? { x: 0, y: 0, w: 320, h: 200 };
     const rect = expandRect(content, opts.padding ?? (opts.rect ? 0 : 32));
     rect.w = Math.max(1, Math.ceil(rect.w));
     rect.h = Math.max(1, Math.ceil(rect.h));
@@ -73,18 +75,17 @@ export function createExportRenderer(core: EngineCore) {
         height: rect.h,
         pixelRatio: scale,
         backgroundColor: background ?? undefined,
-        skipFonts: opts.skipFonts,
+        // Our own font CSS (see fontEmbed.ts): html-to-image then never reads the document's
+        // stylesheets, whose cross-origin web-font sheet would log errors. '' = no fonts.
+        fontEmbedCSS: opts.skipFonts ? '' : await fontEmbedCss(node),
+        skipFonts: !!opts.skipFonts,
         cacheBust: false,
       };
-      const run = (o: typeof options) =>
-        opts.format === 'svg' ? toSvg(node, o) : opts.format === 'jpeg' ? toJpeg(node, { ...o, quality: 0.88 }) : toPng(node, o);
-      try {
-        return await run(options);
-      } catch (err) {
-        // Cross-origin font stylesheets can fail to inline; retry without embedded fonts.
-        if (opts.skipFonts) throw err;
-        return await run({ ...options, skipFonts: true });
-      }
+      return await (opts.format === 'svg'
+        ? toSvg(node, options)
+        : opts.format === 'jpeg'
+          ? toJpeg(node, { ...options, quality: 0.88 })
+          : toPng(node, options));
     } finally {
       root.unmount();
       host.remove();
@@ -109,13 +110,13 @@ export function startThumbnails(core: EngineCore): { stop(): Promise<void> } {
   const save = async () => {
     timer = null;
     if (!dirty || saving || !core.editor.can('editor') || !core.renderExport) return;
-    const els = core.store.getOrdered();
-    if (!els.length) return;
+    if (!core.store.getOrdered().length) return;
     dirty = false;
     saving = true;
     lastSave = Date.now();
     try {
-      const b = boundsOf(els)!;
+      const b = core.editor.getBounds(undefined, { visual: true });
+      if (!b) return;
       // Frame the content in a 16:10 card.
       let w = b.w + 120;
       let h = b.h + 120;

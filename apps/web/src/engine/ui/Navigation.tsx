@@ -33,7 +33,7 @@ function ZoomControls() {
         {Math.round(zoom * 100)}%
       </button>
       <IconButton icon={Plus} label="Zoom in" shortcut="Mod++" size={32} tooltipSide="top" onClick={() => editor.runCommand('engine.zoomIn')} />
-      <IconButton icon={Maximize} label="Fit to screen" shortcut="Shift+1" size={32} tooltipSide="top" onClick={() => editor.zoomToFit()} />
+      <IconButton icon={Maximize} label="Fit to screen" shortcut="Shift+1" size={32} tooltipSide="top" onClick={() => editor.runCommand('engine.zoomToFit')} />
       <Menu
         open={menuOpen}
         onClose={() => setMenuOpen(false)}
@@ -42,13 +42,13 @@ function ZoomControls() {
         align="center"
         minWidth={180}
         items={[
-          { id: 'fit', label: 'Zoom to fit', shortcut: 'Shift+1', onSelect: () => editor.zoomToFit() },
+          { id: 'fit', label: 'Zoom to fit', shortcut: 'Shift+1', onSelect: () => editor.runCommand('engine.zoomToFit') },
           {
             id: 'sel',
             label: 'Zoom to selection',
             shortcut: 'Shift+2',
             disabled: editor.getSelection().length === 0,
-            onSelect: () => editor.zoomToFit(editor.getSelection(), { maxZoom: 2 }),
+            onSelect: () => editor.runCommand('engine.zoomToSelection'),
           },
           { divider: true },
           ...[0.5, 1, 2].map((z) => ({
@@ -56,7 +56,7 @@ function ZoomControls() {
             label: `${z * 100}%`,
             shortcut: z === 1 ? 'Shift+0' : undefined,
             checked: Math.abs(zoom - z) < 0.005,
-            onSelect: () => editor.zoomTo(z),
+            onSelect: () => editor.asUser(() => editor.zoomTo(z)),
           })),
         ]}
       />
@@ -163,14 +163,14 @@ function Minimap() {
     else {
       // Jump: center the viewport on the clicked point, then keep dragging from its center.
       drag.current = { dx: view.w / 2, dy: view.h / 2 };
-      core.editor.setCamera({ x: p.x - view.w / 2, y: p.y - view.h / 2, zoom: camera.zoom }, { animate: true });
+      core.editor.asUser(() => core.editor.setCamera({ x: p.x - view.w / 2, y: p.y - view.h / 2, zoom: camera.zoom }, { animate: true }));
     }
   };
   const onPointerMove = (e: React.PointerEvent) => {
     if (!drag.current || !world.current) return;
     const p = toWorld(e);
     const zoom = core.ui.getState().camera.zoom;
-    core.editor.setCameraNow({ x: p.x - drag.current.dx, y: p.y - drag.current.dy, zoom });
+    core.editor.asUser(() => core.editor.setCameraNow({ x: p.x - drag.current!.dx, y: p.y - drag.current!.dy, zoom }));
   };
   const onPointerUp = () => {
     drag.current = null;
@@ -195,7 +195,7 @@ export function BottomRight() {
   const core = useCore();
   const minimapOpen = useStore(core.ui, (s) => s.minimapOpen);
   return (
-    <div className="fr-bottomright" data-fr-chrome="">
+    <div className="fr-bottomright" data-fr-chrome="" data-fr-occludes="">
       {minimapOpen && <Minimap />}
       <div className="fr-bottomright__row">
         <PanelSlotView slot="bottom-right" className="fr-chrome-card fr-slot-row" />
@@ -207,7 +207,7 @@ export function BottomRight() {
 
 export function BottomLeft() {
   return (
-    <div className="fr-bottomleft" data-fr-chrome="">
+    <div className="fr-bottomleft" data-fr-chrome="" data-fr-occludes="">
       <PanelSlotView slot="bottom-left" className="fr-chrome-card fr-slot-row" />
     </div>
   );
