@@ -21,6 +21,7 @@ const FEATURE_RESERVED = new Set([
   'format.tsx',
   'panel.tsx',
   'commands.ts',
+  'decoration.tsx',
 ]);
 
 const rel = (p) => path.relative(ROOT, p).split(path.sep).join('/');
@@ -111,6 +112,13 @@ function checkWebFile(file) {
     for (const m of src.matchAll(/['"`]\/(api|ws)\//g)) {
       const line = src.slice(0, m.index).split('\n').length;
       report('W9', file, line, `${me.layer}/ must not call Freero's server ('/${m[1]}/…') directly. Use editor.host; if the Host lacks what you need, add a typed method to Host in engine/api.ts and implement it in app/board/host.ts.`);
+    }
+  }
+  // Toasts from features go through the Host, so actions and durations stay one app policy.
+  if (me.layer === 'features' && !/\.test\.tsx?$/.test(file)) {
+    for (const m of src.matchAll(/\buseToast\s*\(/g)) {
+      const line = src.slice(0, m.index).split('\n').length;
+      report('W10', file, line, `Features don't call useToast(). Use editor.host.notify(message, kind, { action: { label, run } }).`);
     }
   }
   for (const { spec, line, kind } of parseImports(src)) {

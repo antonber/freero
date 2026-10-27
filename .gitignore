@@ -4,3 +4,5 @@ data/
 *.log
 .DS_Store
 .env
+# Agent scratch folders must never be committed
+int-*/

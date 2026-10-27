@@ -54,6 +54,8 @@ app/                Shell: routing, pages, auth, REST client, Host implementatio
 - `import.meta.glob` is only allowed in `app/board/features.ts` [W6].
 - Only the app talks to Freero's server: `'/api/…'` / `'/ws/…'` paths in `features/`, `engine/` or
   `ui/` fail [W9]. Need server data? Add a typed method to `Host` (e.g. `serverNow()`).
+- Features show toasts with `editor.host.notify(message, kind?, { action? })`; `useToast()` in
+  `features/` fails [W10].
 
 ### Features — owned folders discovered through reserved files
 
@@ -65,13 +67,18 @@ features/<name>/
   format.tsx     optional  export default defineFormat({...})   (contextual toolbar section)
   panel.tsx      optional  export default definePanel({...})    (or an array; mounts into a slot)
   commands.ts    optional  export default defineCommands([...]) (shortcuts + menu entries)
+  decoration.tsx optional  export default defineDecoration({ id, appliesTo(el), Component }) (or an
+                           array): drawn INSIDE other features' element wrappers (sticky tag chips),
+                           so it moves, rotates, culls and exports with the element
   *.css, *.test.ts(x)      allowed at the root
   lib/                     any helpers
 ```
 
 Any other file at a feature root fails [W7]. The manifest `name` must equal the folder name.
 The contract for all of these is `apps/web/src/engine/api.ts`. Scaffold with
-`npm run new:feature <name> -- [--element <type>] [--tool] [--format] [--panel <slot>] [--commands] [--owns a,b]`.
+`npm run new:feature <name> -- [--element <type>] [--tool] [--format] [--panel <slot>] [--commands] [--decoration] [--owns a,b]`.
+Something drawn ON another feature's elements that must appear in image exports is a
+`decoration.tsx`, never a `world-overlay` panel (overlays aren't part of exports).
 
 Features talk to each other only through the engine: elements, `editor.collection(name)` reads,
 `editor.runCommand('<feature>.<verb>')`, and presence.
@@ -107,6 +114,10 @@ engine and features use `editor.host`. Features never import the REST client or 
 - Contextual format toolbar floats above the selection (`format.tsx` sections + engine's common
   controls: z-order, lock, link, more ⋯). Right-click menu: engine items + `menus: ['context']`.
 - `dock-right` panels render in a right side panel opened with `editor.openDock(id)`.
+- `dialog` panels mount only while opened with `editor.openPanel(id, props?)` (one at a time,
+  also while the chrome is hidden); the component gets `props` and closes with
+  `editor.closePanel(id)`. Commands that open feature UI (export, start voting) use this — never a
+  feature-local store + `screen-overlay` panel.
 
 ### Rendering
 
@@ -166,18 +177,96 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   refresh shares the change's undo step and network update) and never for remote changes, so
   exactly one client — the one making the change — rewrites the derived fields. Renderers should
   still derive from the live elements (`useElement`) and treat the stored fields as a cache.
+- `Host.listMembers()`: everyone with access to the board (owner + invited members), including
+  people never seen online — for assignee pickers etc. (`/board/local`: just the local user).
+- `Editor.findFreeSpot(size, { near?, gap? })`: top-left of a box that keeps `gap` clear of
+  every element, nearest to `near` (default: viewport center). Every "insert" action that
+  isn't aimed at a point (templates, the image upload button) places content with it.
+- `createTestBoard({ users, features, members?, now? })` (tests only): several real engine
+  replicas of one board — real Yjs docs and guarded Editors — that exchange updates only on
+  `sync()`. Writes between two syncs are concurrent; use it to prove concurrent writes merge.
+- Collections hold LWW values per key. When several people may change the same logical thing
+  at once, give each independent change its own key (one record per message / reaction /
+  vote) instead of read-modify-writing one big value. Example: `comments` (layout in
+  `@freero/shared` `CommentRecord`).
+- Safe area: `Editor.getSafeArea()` is the screen rect the chrome leaves free (toolbar, top bar,
+  bottom-right controls, open dock; chrome regions mark themselves `data-fr-occludes`). The whole
+  viewport while the chrome is hidden. `zoomToFit`/`zoomToRect` fit into it by default
+  (`FitOptions.area: 'viewport'` opts out); never subtract dock/toolbar widths in a feature.
+  `zoomToFit` includes `ElementDefinition.visualOutset` (frame titles), as does the format
+  toolbar's placement.
+- Camera events: `'camera'` on every change; `'camera-user'` only for the user's own moves (wheel,
+  pan, pinch, zoom controls/shortcuts, minimap), never for `setCamera`.
+- Following: `Editor.follow({ userId, clientId? } | null)` / `getFollowing()` / `useFollowing()` /
+  event `'follow'` (`engine/camera/follow.ts`). The engine eases the camera toward the followed
+  tab's view every frame, publishes `PresenceState.following` (the followed user id) and, while
+  anyone follows this user, publishes its viewport every 50 ms instead of 200 ms. Any other camera
+  write (user move, a feature's `setCamera`), a canvas click, Esc, or the person leaving ends it.
+  Presence (avatars) and present (the "is presenting" banner) both use it; presence owns the
+  "Following … · Stop" pill and "Bring everyone to me" (`presence.bringEveryone`).
+- `ToolDefinition.onSelect?(editor)`: act-now tools (upload image, templates) run when picked and
+  never become the active tool. `ToolPointerEvent.button` is -1 on every move (drag or hover);
+  `buttons` is the pressed-buttons bitmask.
+- `CommandDefinition.icon?` (shown in the context and board menus) and `group?` (commands sharing
+  a group fold into one "<group> ▸" submenu, e.g. emoji's "React with ▸" stamps).
+- `Host.notify(message, kind?, { action?: { label, run } })` — features never call `useToast`.
+
+Elements, geometry and text (all optional on `ElementDefinition` unless noted):
+- **Reads inside `editor.transact` see its earlier writes** (`getElements()`, `getElement()`,
+  followers alike): plan from the live board inside the transaction, never from a copy.
+- `measureRichText(html, { fontFamily?, fontSize, fontWeight?, lineHeight?, width? | maxWidth?,
+  padding?, whiteSpace? }) → { w, h, lines }` (`@engine`): the size ElementText renders, laid out
+  with ElementText's own classes. Use it in `normalize` (text boxes, card titles, mind-map pills);
+  never copy font metrics into a feature. Cached until web fonts change.
+- `normalize(next, prev?)`: `prev` is the element before this local change (undefined on create),
+  so "w changed alone" (a side handle) is told apart from a corner scale or an edit. When web fonts
+  finish loading, the engine re-runs `normalize` for the elements THIS client measured and nobody
+  else changed since, writing silently (no undo step) — never for collaborators' elements.
+- `fitToContent(el, handle)`: double-clicking a resize handle applies the returned patch (a
+  fixed-width text box goes back to auto width).
+- `hitTest(el, local, { tolerance })` — `tolerance` is a few screen px in world units at the live
+  zoom; `distanceTo(el, local)` (≤ 0 on the ink) is the default hit test when there's no
+  `hitTest`, and other features may ask it (`editor.getDefinition('pen').distanceTo` is how the
+  eraser finds ink). `worldToLocal(el, p)` from `@engine` converts.
+- `hidden(el, editor)`: off the board (collapsed mind-map branches). Not rendered or exported, and
+  ignored by hit tests, marquee, selection (dropped from it when they become hidden), snapping,
+  `getBounds` and zoom-to-fit.
+- `removeWith(el, editor) → ids`: deleted along with `el` in the same transaction by every local
+  `editor.remove` (Delete, cut, context menu, eraser); one undo restores all of them.
+- `onKeyDown(e, { editor, selection })`: keys while this type is selected, asked before the
+  engine's own keys and command shortcuts (mind-map Enter = add sibling, Delete = delete branch).
+- `wrapperStyle(el)`: style for the element's world wrapper (highlighter `mix-blend-mode`).
+- `selectionFrame: false`: no engine bounding box / handles / hover outline for that type; the
+  feature draws its own (connector endpoint handles). `useFormatToolbarRect()` tells screen UI
+  where the format toolbar is (never query the chrome's DOM).
+- `visualOutset(el, zoom)`: what's drawn outside the box (frame titles). `getBounds(ids, { visual:
+  true })`, exports, thumbnails and zoom-to-fit include it.
+- `Editor.cancelGesture()`: Escape mid-drag — reverts the outermost gesture's writes and leaves no
+  undo step (the select tool and connector handles use it).
+- `renderToDataUrl({ …, skipFonts? })`: exports inline only the web-font faces the picture uses
+  (fetched once, see `engine/editor/fontEmbed.ts`); html-to-image never reads stylesheets itself,
+  so cross-origin font CSS can't log errors. `skipFonts` (thumbnails) uses installed fonts.
+- Auto-fit text (`fontSize: 'auto'`) snaps to a small set of sizes (~12% apart), so neighbouring
+  stickies with similar text match. `ElementText.padding` may be per side (`{ top, right, bottom,
+  left }`): tagged stickies keep their chip band free.
+- The active tool's Options flyout is kept inside the window by the engine.
 
 ## UI kit (`ui/`) — exports from `@ui`
 
 `Button` {variant: 'primary'|'secondary'|'ghost'|'danger', size: 'sm'|'md'|'lg', icon?, loading?} ·
 `IconButton` {icon, label, active?, size?: 32|40, shortcut?, tooltipSide?} ·
-`Tooltip` {content, shortcut?, side?, children} · `Popover` {open, onClose, anchor: HTMLElement|DOMRect|null, side?, align?, children} ·
-`Menu` {open, onClose, anchor, items: MenuItem[]} where MenuItem = {id, label, icon?, shortcut?, danger?, disabled?, onSelect} | {divider: true} | {heading: string} ·
+`Tooltip` {content, shortcut?, side?, children} · `Popover` {open, onClose, anchor: HTMLElement|DOMRect|null, side?, align?, autoFocus?, escapeToContent?, children} ·
+`Menu` {open, onClose, anchor, items: MenuItem[]} where MenuItem = {id, label, icon?, shortcut?, danger?, disabled?, onSelect, submenu?: MenuItem[]} | {divider: true} | {heading: string} ·
 `Modal` {open, onClose, title, width?, footer?, children} · `Input`, `TextArea`, `Select` {options, value, onChange},
 `Toggle`, `Slider` {min, max, step, value, onChange} · `ColorSwatches` {colors, value, onChange, allowCustom?} ·
 `Divider` {vertical?} · `Avatar` {name, color, src?, size?} · `AvatarStack` {users, max?} · `Kbd` ·
-`Spinner` · `Logo` {size?, withWordmark?} · `ToastProvider` + `useToast()` → `notify(message, kind?)`.
+`Spinner` · `Logo` {size?, withWordmark?} · `ToastProvider` + `useToast()` → `notify(message, kind?, { duration?, action? })` (app only; features use `editor.host.notify`).
 Tokens: `ui/tokens.css` (CSS variables `--fr-*`). Plain co-located CSS, class prefix `fr-`.
+
+Popover focus: content focuses itself while mounting (`autoFocus` on an input, or a layout
+effect); the popover is focusable from its first commit, so no keystroke reaches the board in
+between — never defer focus to the next frame. `escapeToContent` lets an inline editor inside
+take Escape first (cancel the edit, `preventDefault`); the next Escape closes the popover.
 
 ## Server (`apps/server/src`) — enforced by `scripts/dune-check.mjs`
 

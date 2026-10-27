@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Scaffold a Freero feature folder in house style.
 //
-//   npm run new:feature <name> -- [--element <type>] [--tool] [--format] [--panel <slot>] [--commands] [--owns a,b]
+//   npm run new:feature <name> -- [--element <type>] [--tool] [--format] [--panel <slot>] [--commands] [--decoration] [--owns a,b]
 //
 // Examples:
 //   npm run new:feature sticky -- --element sticky --tool --format
@@ -20,7 +20,7 @@ const value = (f) => {
 };
 
 if (!name || !/^[a-z][a-z0-9-]*$/.test(name)) {
-  console.error('Usage: npm run new:feature <kebab-name> -- [--element <type>] [--tool] [--format] [--panel <slot>] [--commands] [--owns a,b]');
+  console.error('Usage: npm run new:feature <kebab-name> -- [--element <type>] [--tool] [--format] [--panel <slot>] [--commands] [--decoration] [--owns a,b]');
   process.exit(1);
 }
 
@@ -126,6 +126,20 @@ export default defineCommands([
     },
   },
 ]);
+`;
+}
+
+if (flag('decoration')) {
+  files['decoration.tsx'] = `import { defineDecoration } from '@engine';
+
+// Drawn inside another element's world wrapper: moves, rotates and exports with it.
+export default defineDecoration({
+  id: '${name}.decoration',
+  appliesTo: (element) => false, // TODO: cheap check, e.g. element.type === 'sticky'
+  Component: ({ element, zoom }) => {
+    return null; // TODO: absolutely positioned inside element.w × element.h
+  },
+});
 `;
 }
 
