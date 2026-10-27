@@ -7,7 +7,7 @@
 //
 // Feature collections currently claimed (keep in sync with features/*/feature.ts;
 // the engine throws at startup if two features claim the same name):
-//   'comments' -> features/comments   (CommentThread by id)
+//   'comments' -> features/comments   (CommentRecord per key: t:/s:/m:/r:/x: — see elements.ts)
 //   'tags'     -> features/tags       (Tag by id)
 //   'timer'    -> features/timer      (key 'state' -> TimerState)
 //   'voting'   -> features/voting     (key 'session' -> VotingSession, `${sessionId}:${userId}` -> VoteBallot)
@@ -74,4 +74,6 @@ export interface PresenceState {
   ext?: Record<string, unknown>;
   /** Element currently being text-edited by this user. */
   editingId?: string | null;
+  /** User id whose view this client is following (Editor.follow), or null. */
+  following?: string | null;
 }

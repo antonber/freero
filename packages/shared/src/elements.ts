@@ -128,11 +128,6 @@ export interface TextElement extends BaseElement {
   background: string;
   /** When true, width grows with content; when false, text wraps at w. */
   autoWidth: boolean;
-  /**
-   * Width the auto-layout last set (written by features/text). Lets normalize() tell a
-   * side-handle resize (w differs) apart from an edit or corner scale.
-   */
-  autoW?: number;
 }
 
 export type CapStyle = 'none' | 'arrow' | 'triangle' | 'circle' | 'diamond' | 'bar';
@@ -241,30 +236,111 @@ export type BoardElement =
 
 export type ElementOf<T extends ElementType> = Extract<BoardElement, { type: T }>;
 
-export interface CommentMessage {
-  id: string;
-  authorId: string;
-  authorName: string;
-  text: string;
-  createdAt: number;
-  editedAt?: number;
-  reactions?: Record<string, string[]>; // emoji -> userIds
-  /** Author's cursor color at write time (avatars render after the author leaves). */
-  authorColor?: string;
-}
+// ---------------------------------------------------------------------------
+// Comments
+//
+// The doc's `comments` map stores ONE SMALL RECORD PER KEY, never a whole thread, so people
+// writing the same thread at once never write the same value: replies, edits, deletes,
+// reactions and resolve from several clients all merge (each Yjs map key is
+// last-writer-wins, and no client ever read-modify-writes a value another client writes).
+// Commenters may write this map only (server-enforced), so every record lives in it.
+//
+//   key                                      value                  written by
+//   t:<threadId>                             CommentThreadRecord    creator; anyone to detach it
+//   s:<threadId>                             CommentStatusRecord    anyone (resolve / reopen)
+//   m:<threadId>:<messageId>                 CommentMessageRecord   the message's author
+//   r:<threadId>:<messageId>:<userId>:<emoji> CommentReactionRecord that user (deleted to un-react)
+//   x:<threadId>  /  x:<threadId>:<messageId> CommentTombstone      whoever deleted the thread/message
+//
+// A tombstone wins over a concurrent edit/reply/detach of what it deletes. Readers assemble
+// the records into `CommentThread` (the read model below).
+// ---------------------------------------------------------------------------
 
-/** Stored in the doc's `comments` map. Pinned to a world point or an element. */
-export interface CommentThread {
+export interface CommentThreadRecord {
+  kind: 'thread';
   id: string;
   x: number;
   y: number;
   /** When set, (x, y) is relative to the element's top-left and follows it. */
   elementId?: string | null;
+  /** Element-pinned threads only: the pin sits just outside this corner (ignores x/y). */
+  corner?: 'top-right' | null;
   /** Absolute fallback point if the pinned element disappears while nobody is online. */
+  origin?: { x: number; y: number };
+  createdAt: number;
+  createdBy: string;
+}
+
+export interface CommentStatusRecord {
+  kind: 'status';
+  threadId: string;
+  resolved: boolean;
+  by: string;
+  at: number;
+}
+
+export interface CommentMessageRecord {
+  kind: 'message';
+  threadId: string;
+  id: string;
+  authorId: string;
+  authorName: string;
+  /** Author's cursor color at write time (avatars render after the author leaves). */
+  authorColor?: string;
+  text: string;
+  createdAt: number;
+  editedAt?: number;
+}
+
+export interface CommentReactionRecord {
+  kind: 'reaction';
+  threadId: string;
+  messageId: string;
+  userId: string;
+  emoji: string;
+}
+
+export interface CommentTombstone {
+  kind: 'deleted';
+  threadId: string;
+  /** Absent when the whole thread was deleted. */
+  messageId?: string;
+  by: string;
+  at: number;
+}
+
+export type CommentRecord =
+  | CommentThreadRecord
+  | CommentStatusRecord
+  | CommentMessageRecord
+  | CommentReactionRecord
+  | CommentTombstone;
+
+/** Read model: one message with its reactions, assembled from the records above. */
+export interface CommentMessage {
+  id: string;
+  authorId: string;
+  authorName: string;
+  authorColor?: string;
+  text: string;
+  createdAt: number;
+  editedAt?: number;
+  /** emoji -> userIds */
+  reactions: Record<string, string[]>;
+}
+
+/** Read model: a thread assembled from its records; messages oldest first. */
+export interface CommentThread {
+  id: string;
+  x: number;
+  y: number;
+  elementId: string | null;
+  corner: 'top-right' | null;
   origin?: { x: number; y: number };
   resolved: boolean;
   messages: CommentMessage[];
   createdAt: number;
+  createdBy: string;
 }
 
 export interface Tag {
