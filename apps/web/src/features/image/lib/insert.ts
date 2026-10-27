@@ -47,14 +47,27 @@ function reportFailures(editor: Editor, tooLarge: number, unreadable: number) {
   if (unreadable) editor.host.notify(unreadable === 1 ? "That file isn't an image Freero can read." : `${unreadable} files aren't images Freero can read.`, 'error');
 }
 
-/** Moves a laid-out batch, as a block, into the nearest free spot around the view. */
+/**
+ * Moves a laid-out batch, as a block, into the nearest free spot around the view. On a busy board
+ * that spot can be partly off-screen, so the camera then glides to it (same zoom or further out):
+ * the person always sees where the upload lands.
+ */
 function intoFreeSpot(editor: Editor, rects: Rect[]): Rect[] {
   const x0 = Math.min(...rects.map((r) => r.x));
   const y0 = Math.min(...rects.map((r) => r.y));
   const w = Math.max(...rects.map((r) => r.x + r.w)) - x0;
   const h = Math.max(...rects.map((r) => r.y + r.h)) - y0;
   const spot = editor.findFreeSpot({ w, h });
+  revealRect(editor, { x: spot.x, y: spot.y, w, h });
   return rects.map((r) => ({ ...r, x: r.x - x0 + spot.x, y: r.y - y0 + spot.y }));
+}
+
+function revealRect(editor: Editor, r: Rect) {
+  const safe = editor.getSafeArea();
+  const a = editor.worldToScreen({ x: r.x, y: r.y });
+  const b = editor.worldToScreen({ x: r.x + r.w, y: r.y + r.h });
+  if (a.x >= safe.x && a.y >= safe.y && b.x <= safe.x + safe.w && b.y <= safe.y + safe.h) return;
+  editor.zoomToRect(r, { maxZoom: editor.getCamera().zoom, padding: 48 });
 }
 
 /**
