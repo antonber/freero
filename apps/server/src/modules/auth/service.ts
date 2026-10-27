@@ -98,16 +98,38 @@ export function startSession(req: Request, res: Response, userId: string): void 
   });
 }
 
+const sessionEndListeners = new Set<(sessionKey: string) => void>();
+
+/**
+ * Called with the opaque session key (see sessionKeyFromCookieHeader) whenever a session ends,
+ * so long-lived connections opened with it (board sockets) are closed too: logging out must not
+ * leave another tab editing with the dead session.
+ */
+export function onSessionEnd(fn: (sessionKey: string) => void): () => void {
+  sessionEndListeners.add(fn);
+  return () => sessionEndListeners.delete(fn);
+}
+
 export function endSession(req: Request, res: Response): void {
   const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
-  if (token) repo.deleteSession(hashToken(token));
+  if (token) {
+    const key = hashToken(token);
+    repo.deleteSession(key);
+    for (const fn of sessionEndListeners) fn(key);
+  }
   res.clearCookie(SESSION_COOKIE, { httpOnly: true, sameSite: 'lax', path: '/' });
 }
 
-export function userFromCookieHeader(cookieHeader: string | undefined): User | null {
+/** Opaque, stable key of the session a request/upgrade carries (never the raw token), or null. */
+export function sessionKeyFromCookieHeader(cookieHeader: string | undefined): string | null {
   const token = parseCookies(cookieHeader)[SESSION_COOKIE];
-  if (!token) return null;
-  const u = repo.findSessionUser(hashToken(token), Date.now());
+  return token ? hashToken(token) : null;
+}
+
+export function userFromCookieHeader(cookieHeader: string | undefined): User | null {
+  const key = sessionKeyFromCookieHeader(cookieHeader);
+  if (!key) return null;
+  const u = repo.findSessionUser(key, Date.now());
   return u ? publicUser(u) : null;
 }
 

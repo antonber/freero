@@ -8,7 +8,9 @@ import { WebSocket } from 'ws';
 import { WS_MESSAGE_ROLE, type Role } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { logError } from '../../platform/log';
+import { getUser } from '../auth/index';
 import { getBoardAccess, touchBoard } from '../boards/index';
+import { sanitizeAwarenessUpdate, type AwarenessIdentity } from './awareness';
 import { decideUpdate } from './filter';
 import * as repo from './repo';
 
@@ -20,11 +22,16 @@ export const MESSAGE_QUERY_AWARENESS = 3;
 const SAVE_DEBOUNCE_MS = 1500;
 const SAVE_MAX_WAIT_MS = 10_000;
 const RESYNC_MIN_INTERVAL_MS = 2000;
+/** How long a socket's identity (name, color) is reused before re-reading the profile. */
+const IDENTITY_TTL_MS = 5000;
 
 interface Conn {
   ws: WebSocket;
   userId: string;
+  /** Session the socket was opened with (auth's opaque key); logging out closes the socket. */
+  sessionKey: string;
   role: Role;
+  identity: { value: AwarenessIdentity; at: number } | null;
   /** Awareness client ids announced over this socket (removed on close). */
   awarenessIds: Set<number>;
   lastResync: number;
@@ -97,10 +104,10 @@ class Room {
     );
   }
 
-  join(ws: WebSocket, userId: string, role: Role): void {
+  join(ws: WebSocket, userId: string, role: Role, sessionKey: string): void {
     if (this.unloadTimer) clearTimeout(this.unloadTimer);
     this.unloadTimer = null;
-    const conn: Conn = { ws, userId, role, awarenessIds: new Set(), lastResync: 0 };
+    const conn: Conn = { ws, userId, sessionKey, role, identity: null, awarenessIds: new Set(), lastResync: 0 };
     this.conns.set(ws, conn);
 
     ws.on('message', (data) => this.onMessage(conn, toBytes(data)));
@@ -145,9 +152,17 @@ class Room {
           }
           break;
         }
-        case MESSAGE_AWARENESS:
-          awarenessProtocol.applyAwarenessUpdate(this.awareness, decoding.readVarUint8Array(decoder), conn.ws);
+        case MESSAGE_AWARENESS: {
+          const update = sanitizeAwarenessUpdate(decoding.readVarUint8Array(decoder), {
+            user: this.identityOf(conn),
+            ownedElsewhere: (id) => {
+              for (const c of this.conns.values()) if (c !== conn && c.awarenessIds.has(id)) return true;
+              return false;
+            },
+          });
+          if (update) awarenessProtocol.applyAwarenessUpdate(this.awareness, update, conn.ws);
           break;
+        }
         case MESSAGE_QUERY_AWARENESS: {
           const e = encoding.createEncoder();
           encoding.writeVarUint(e, MESSAGE_AWARENESS);
@@ -182,6 +197,28 @@ class Room {
       encoding.writeVarUint(e, MESSAGE_SYNC);
       syncProtocol.writeSyncStep2(e, this.doc);
       send(conn.ws, encoding.toUint8Array(e));
+    }
+  }
+
+  /** The socket's user as others should see it (profile changes show up within IDENTITY_TTL_MS). */
+  private identityOf(conn: Conn): AwarenessIdentity {
+    const now = Date.now();
+    if (!conn.identity || now - conn.identity.at > IDENTITY_TTL_MS) {
+      const u = getUser(conn.userId);
+      const value = u
+        ? { id: u.id, name: u.name, color: u.color, avatarUrl: u.avatarUrl }
+        : (conn.identity?.value ?? { id: conn.userId, name: 'Unknown', color: '#868E96', avatarUrl: null });
+      conn.identity = { value, at: now };
+    }
+    return conn.identity.value;
+  }
+
+  /** Closes every socket opened with a session that just ended (logout). */
+  endSession(sessionKey: string): void {
+    for (const conn of [...this.conns.values()]) {
+      if (conn.sessionKey !== sessionKey) continue;
+      conn.ws.close(4401, 'Signed out');
+      this.leave(conn);
     }
   }
 
@@ -275,8 +312,13 @@ function unloadRoom(boardId: string): void {
   rooms.delete(boardId);
 }
 
-export function joinRoom(boardId: string, ws: WebSocket, userId: string, role: Role): void {
-  getRoom(boardId).join(ws, userId, role);
+export function joinRoom(boardId: string, ws: WebSocket, userId: string, role: Role, sessionKey: string): void {
+  getRoom(boardId).join(ws, userId, role, sessionKey);
+}
+
+/** A session ended (logout): its board sockets close with 4401 in every room. */
+export function endSessionSockets(sessionKey: string): void {
+  for (const room of rooms.values()) room.endSession(sessionKey);
 }
 
 export function refreshRoomAccess(boardId: string): void {

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import type { AuthResponse } from '@freero/shared';
+import type { AuthResponse, SessionResponse } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { handle } from '../../platform/http';
 import {
@@ -10,6 +10,7 @@ import {
   requireUser,
   startSession,
   updateProfile,
+  userFromCookieHeader,
 } from './service';
 
 export default function authRoutes(_ctx: ServerContext): Router {
@@ -40,6 +41,11 @@ export default function authRoutes(_ctx: ServerContext): Router {
       res.json({ ok: true });
     }),
   );
+
+  // The app's startup check: always 200, so a signed-out visitor's browser logs no failed request.
+  r.get('/auth/session', (req, res) => {
+    res.json({ user: userFromCookieHeader(req.headers.cookie) } satisfies SessionResponse);
+  });
 
   r.get('/auth/me', requireUser, (req, res) => {
     res.json({ user: currentUser(req) } satisfies AuthResponse);
