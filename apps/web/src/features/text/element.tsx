@@ -36,7 +36,8 @@ export default defineElement({
   normalize: (el, prev) => layoutText(el, prev, (wrap) => measureTextBox(el.text, el.fontFamily, el.fontSize, wrap)),
   // Double-click a side handle: back from a fixed wrapping width to hugging the text.
   fitToContent: (el, handle) => (!el.autoWidth && (handle === 'e' || handle === 'w') ? { autoWidth: true } : null),
-  // Plain text pastes as a text box (stickies only claim it when nothing richer does).
+  // Prose pastes as a text box. Lists (and any paste onto selected stickies) are claimed first by
+  // the sticky importer (priority 5, rule in features/sticky/lib/paste.ts); tables by the table one.
   importPriority: 0,
   importData(editor, data, at) {
     const html = data.files.length ? null : pastedTextToRich(data.text);
