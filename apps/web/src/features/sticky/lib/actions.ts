@@ -46,10 +46,13 @@ export function createNextSticky(editor: Editor, from: StickyElement, dir: 'righ
   const occupied = editor.elementsInRect(area, 'intersect').filter((el) => el.id !== fresh.id && el.type !== 'frame');
   const pos = nextFreeSlot(probe, dir, occupied, STICKY_GAP);
   const { id: _id, z: _z, createdAt: _c, createdBy: _b, updatedAt: _u, groupId: _g, locked: _l, ...style } = fresh;
+  // The new sticky and the text typed into it are ONE undo step, like a sticky made with the tool.
+  editor.beginGesture();
   const id = editor.create<'sticky'>(
     { ...style, x: pos.x, y: pos.y, text: copyText ? fresh.text : '', rotation: fresh.rotation },
     { select: true },
   );
   if (id && !copyText) editor.startEditing(id);
+  editor.endGesture();
   return id;
 }
