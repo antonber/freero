@@ -10,7 +10,7 @@ import type { Editor, ElementPatch, NewElement, Point } from '@engine';
 import { layoutTree, LEVEL_GAP, ROOT_GAP, type LayoutOptions } from './layout';
 import { nodeSize } from './measure';
 import { BRANCH_COLORS, ROOT_COLOR } from './constants';
-import { cx, orphanIds, rootOf, sideOf, subtreeIds, type Direction, type Side, type TreeIndex } from './tree';
+import { cx, orphanIds, rootOf, sideOf, subtreeIds, type Direction, type MindNode, type Side, type TreeIndex } from './tree';
 import { syncTree } from './store';
 
 export const isNode = (el: BoardElement | undefined | null): el is MindmapElement => el?.type === 'mindmap';
@@ -317,4 +317,79 @@ export function dropTargetFor(editor: Editor, index: TreeIndex<MindmapElement>, 
   const hit = editor.hitTest({ x: n.x + n.w / 2, y: n.y + n.h / 2 }, { exclude: sub, types: ['mindmap'] });
   if (!isNode(hit) || hit.id === n.parentId || !rootOf(index, hit.id)) return null;
   return hit;
+}
+
+// ------------------------------------------------------------------ keyboard navigation
+
+export type NavKey = 'ArrowUp' | 'ArrowDown' | 'ArrowLeft' | 'ArrowRight';
+
+/**
+ * Where an arrow key moves the selection from `id` (pure over the tree): toward the parent
+ * (the arrow pointing at it), into the children (the arrow pointing away; the child nearest the
+ * middle), or to the previous / next sibling on the same side. null = nowhere to go.
+ */
+export function navigateFrom(index: TreeIndex, id: string, key: NavKey): string | null {
+  const n = index.byId.get(id);
+  if (!n) return null;
+  const parent = n.parentId ? index.byId.get(n.parentId) : undefined;
+  const side: Side | null = parent ? sideOf(n, parent) : null;
+  const kidsOn = (s: Side) => (n.collapsed ? [] : (index.kids.get(n.id) ?? []).filter((k) => sideOf(k, n) === s));
+  const middle = (ks: MindNode[]) => {
+    if (!ks.length) return null;
+    const c = n.y + n.h / 2;
+    return ks.reduce((best, k) => (Math.abs(k.y + k.h / 2 - c) < Math.abs(best.y + best.h / 2 - c) ? k : best)).id;
+  };
+  if (key === 'ArrowLeft' || key === 'ArrowRight') {
+    const dir: Side = key === 'ArrowLeft' ? 'left' : 'right';
+    // The arrow points back at the parent (a child sits on its parent's `side`).
+    if (parent && side !== dir) return parent.id;
+    return middle(kidsOn(dir));
+  }
+  if (!parent) return null;
+  const sibs = (index.kids.get(parent.id) ?? []).filter((k) => sideOf(k, parent) === side);
+  const i = sibs.findIndex((k) => k.id === id);
+  const j = key === 'ArrowUp' ? i - 1 : i + 1;
+  return j >= 0 && j < sibs.length ? sibs[j].id : null;
+}
+
+/** Alt+↑/↓: moves a node one place up / down among its siblings on the same side. */
+export function moveAmongSiblings(editor: Editor, id: string, delta: -1 | 1) {
+  const index = currentIndex(editor);
+  const n = index.byId.get(id);
+  const parent = n?.parentId ? index.byId.get(n.parentId) : undefined;
+  const root = n && rootOf(index, n.id);
+  if (!n || !parent || !root || n.locked) return;
+  const side = sideOf(n, parent);
+  const sibs = (index.kids.get(parent.id) ?? []).filter((k) => sideOf(k, parent) === side);
+  const other = sibs[sibs.indexOf(n) + delta];
+  if (!other) return;
+  // Order follows position: put this node's center just past the other one's, then re-lay out.
+  const cy = other.y + other.h / 2 + delta * 0.5;
+  commit(editor, [root.id], () => editor.update<MindmapElement>(id, { y: cy - n.h / 2 }));
+}
+
+/**
+ * Shift+Tab: the node (with its branch) moves up a level, to its grandparent, right after its
+ * old parent. Nodes of the root's first level stay put.
+ */
+export function promote(editor: Editor, id: string) {
+  editor.stopEditing();
+  const index = currentIndex(editor);
+  const n = index.byId.get(id);
+  const parent = n?.parentId ? index.byId.get(n.parentId) : undefined;
+  const grand = parent?.parentId ? index.byId.get(parent.parentId) : undefined;
+  const root = n && rootOf(index, n.id);
+  if (!n || !parent || !grand || !root || n.locked) return;
+  // Branch colors: under the root a branch keeps its color; deeper it takes the new parent's.
+  const color = grand.parentId ? grand.color : n.color;
+  const patches: Array<{ id: string; patch: ElementPatch }> = [
+    // Same side as the old parent, centered just below it → ordered right after it.
+    { id, patch: { parentId: grand.id, x: parent.x, y: parent.y + parent.h / 2 + 0.5 - n.h / 2 } as ElementPatch },
+  ];
+  for (const d of subtreeIds(index, id)) {
+    if (d === id) patches[0].patch = { ...patches[0].patch, color } as ElementPatch;
+    else patches.push({ id: d, patch: { color } as ElementPatch });
+  }
+  commit(editor, [root.id], () => editor.updateMany(patches));
+  editor.select([id]);
 }

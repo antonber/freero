@@ -1,4 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import type { MindmapElement } from '@freero/shared';
+import { createTestBoard } from '@engine';
+import manifest from './feature';
+import mindmapDef from './element';
+import { addChild, currentIndex, moveAmongSiblings, navigateFrom, newRoot, promote } from './lib/actions';
 import { layoutTree } from './lib/layout';
 import { planFollow } from './lib/follow';
 import { computeInfo, indexNodes, type Direction, type MindNode } from './lib/tree';
@@ -128,5 +133,78 @@ describe('follow (local changes, same transaction)', () => {
     expect(byId(after, 'a3').y + byId(after, 'a3').h).toBeLessThan(byId(after, 'c1x').y);
     expect(c.y).toBeLessThan(byId(before, 'c').y); // c moved up into b's old slot
     expect(a.y).toBeGreaterThan(byId(before, 'a').y); // and the map stays centered on the root
+  });
+});
+
+describe('keyboard: walking and reshaping the tree', () => {
+  const laid = () => {
+    const nodes = sampleMap();
+    return indexNodes(apply(nodes, layoutTree(indexNodes(nodes), 'root')));
+  };
+
+  it('arrows go to the parent, into the middle child, and between siblings on the same side', () => {
+    const index = laid();
+    expect(navigateFrom(index, 'root', 'ArrowRight')).toBe('b'); // the child level with the root
+    // a's children lay out a2, a3, a1 (sample order by position); a3 is level with a.
+    expect(navigateFrom(index, 'a', 'ArrowRight')).toBe('a3');
+    expect(navigateFrom(index, 'a3', 'ArrowLeft')).toBe('a');
+    expect(navigateFrom(index, 'a3', 'ArrowDown')).toBe('a1');
+    expect(navigateFrom(index, 'a', 'ArrowDown')).toBe('b');
+    expect(navigateFrom(index, 'b', 'ArrowUp')).toBe('a');
+    expect(navigateFrom(index, 'c', 'ArrowDown')).toBeNull(); // last sibling: stays
+    expect(navigateFrom(index, 'root', 'ArrowLeft')).toBeNull(); // nothing on the left
+  });
+
+  it('on a two-sided map, Left from a left-side node goes deeper and Right goes back to its parent', () => {
+    seq = 0;
+    const nodes = [node('root', null, 60, { w: 180, direction: 'both' }), { ...node('r', 'root'), x: 400 }, { ...node('l', 'root'), x: -500 }, { ...node('l1', 'l'), x: -800 }];
+    const index = indexNodes(apply(nodes, layoutTree(indexNodes(nodes), 'root')));
+    expect(navigateFrom(index, 'root', 'ArrowLeft')).toBe('l');
+    expect(navigateFrom(index, 'l', 'ArrowLeft')).toBe('l1');
+    expect(navigateFrom(index, 'l', 'ArrowRight')).toBe('root');
+  });
+
+  it('Shift+Tab moves a node (with its branch) up a level, right after its old parent, in one undo step', () => {
+    const board = createTestBoard({ users: ['ann'], features: [{ manifest, elements: [mindmapDef], tools: [], formats: [], panels: [], commands: [] }] });
+    try {
+      const [ed] = board.editors('mindmap');
+      const root = ed.create(newRoot({ x: 0, y: 0 }));
+      const child = (parent: string) => {
+        addChild(ed, parent);
+        ed.stopEditing();
+        return ed.getSelection()[0];
+      };
+      const a = child(root);
+      const b = child(root);
+      const g = child(a);
+      const gg = child(g);
+      promote(ed, g);
+      const kids = currentIndex(ed).kids.get(root)!.map((k) => k.id);
+      expect(kids).toEqual([a, g, b]);
+      expect(ed.getElement<MindmapElement>(gg)!.parentId).toBe(g);
+      ed.undo();
+      expect(ed.getElement<MindmapElement>(g)!.parentId).toBe(a);
+    } finally {
+      board.destroy();
+    }
+  });
+
+  it('Alt+Up / Alt+Down reorder a node among its siblings', () => {
+    const board = createTestBoard({ users: ['ann'], features: [{ manifest, elements: [mindmapDef], tools: [], formats: [], panels: [], commands: [] }] });
+    try {
+      const [ed] = board.editors('mindmap');
+      const root = ed.create(newRoot({ x: 0, y: 0 }));
+      const ids = [0, 1, 2].map(() => {
+        addChild(ed, root);
+        ed.stopEditing();
+        return ed.getSelection()[0];
+      });
+      moveAmongSiblings(ed, ids[2], -1);
+      expect(currentIndex(ed).kids.get(root)!.map((k) => k.id)).toEqual([ids[0], ids[2], ids[1]]);
+      moveAmongSiblings(ed, ids[0], 1);
+      expect(currentIndex(ed).kids.get(root)!.map((k) => k.id)).toEqual([ids[2], ids[0], ids[1]]);
+    } finally {
+      board.destroy();
+    }
   });
 });

@@ -5,6 +5,7 @@ import {
   currentIndex,
   deleteBranches,
   isNode,
+  promote,
   relayout,
   rootIdsOf,
   selectedNode,
@@ -24,6 +25,22 @@ export default defineCommands([
     run(editor) {
       const n = selectedNode(editor);
       if (n) addChild(editor, n.id);
+    },
+  },
+  {
+    // Works while typing too (Tab commands reach the editor mid-edit).
+    id: 'mindmap.promote',
+    label: 'Move idea up a level',
+    shortcut: 'shift+tab',
+    menus: ['context'],
+    when: (editor) => {
+      const n = selectedNode(editor);
+      const p = n?.parentId ? editor.getElement(n.parentId) : undefined;
+      return !!p && isNode(p) && !!p.parentId;
+    },
+    run(editor) {
+      const n = selectedNode(editor);
+      if (n) promote(editor, n.id);
     },
   },
   {

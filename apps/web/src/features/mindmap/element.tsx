@@ -16,7 +16,18 @@ import { readableTextColor } from '@ui';
 import { NODE_STYLE, nodeSize } from './lib/measure';
 import { HUB_R, ROOT_COLOR } from './lib/constants';
 import { isDragging, isHidden, rootIdOf, syncTree, useIsDropTarget, useNodeInfo } from './lib/store';
-import { addSibling, deleteBranches, isNode, isQuiet, selectedNode, toggleCollapse } from './lib/actions';
+import {
+  addSibling,
+  currentIndex,
+  deleteBranches,
+  isNode,
+  isQuiet,
+  moveAmongSiblings,
+  navigateFrom,
+  selectedNode,
+  toggleCollapse,
+  type NavKey,
+} from './lib/actions';
 import { planFollow } from './lib/follow';
 import './mindmap.css';
 
@@ -166,12 +177,34 @@ export default defineElement({
   hidden: (el, editor) => isHidden(editor, el.id),
   // Deleting or cutting a node takes its subtree along, in the same undo step.
   removeWith: (el, editor) => (syncTree(editor).kids.get(el.id) ?? []).map((k) => k.id),
-  // A selected node owns Enter (add a sibling) and Delete (remove branches, keep keyboard flow
-  // on the parent). Tab (add child) is the mindmap.addChild command.
+  // A selected node owns Enter (add a sibling), Delete (remove branches, keep keyboard flow on the
+  // parent), the arrows (walk the tree: parent / children / siblings), Alt+↑/↓ (reorder siblings)
+  // and Space (collapse / expand). Tab (add child) and Shift+Tab (promote) are commands, so they
+  // also work while typing.
   onKeyDown(e, { editor, selection }) {
-    if (e.ctrlKey || e.metaKey || e.altKey || !editor.can('editor')) return false;
+    if (e.ctrlKey || e.metaKey) return false;
+    const n = selectedNode(editor);
+    const arrow = e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight';
+    if (arrow && n && !e.shiftKey) {
+      if (e.altKey) {
+        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+          if (editor.can('editor')) moveAmongSiblings(editor, n.id, e.key === 'ArrowUp' ? -1 : 1);
+          return true;
+        }
+        return false;
+      }
+      const next = navigateFrom(currentIndex(editor), n.id, e.key as NavKey);
+      if (next) editor.select([next]);
+      // Consumed even at the edge of the tree: nudging a laid-out node by 1 px means nothing.
+      return true;
+    }
+    if (e.altKey || !editor.can('editor')) return false;
+    if (e.key === ' ' && n && !e.shiftKey) {
+      if (!currentIndex(editor).kids.get(n.id)?.length) return false;
+      toggleCollapse(editor, n.id);
+      return true;
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
-      const n = selectedNode(editor);
       if (!n || n.locked) return false;
       addSibling(editor, n.id);
       return true;
