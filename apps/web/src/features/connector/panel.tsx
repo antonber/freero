@@ -3,7 +3,7 @@
 //  - quick-connect "+" handles around a single selected item (drag = new line, click = new
 //    connected copy on that side);
 //  - endpoint + midpoint handles of a single selected connector.
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import { useStore } from 'zustand';
 import { Plus } from 'lucide-react';
 import type { BoardElement, ConnectorElement, ConnectorEndpoint } from '@freero/shared';
@@ -14,6 +14,7 @@ import {
   useChromeHidden,
   useEditingId,
   useElement,
+  useFormatToolbarRect,
   useSelectedElements,
   useToolId,
   type Editor,
@@ -42,12 +43,12 @@ const PLUS_OFFSET_BELOW_ROTATE = 58;
 interface DragHandlers {
   move(world: Point, e: PointerEvent): void;
   up(world: Point, e: PointerEvent, moved: boolean): void;
-  cancel(): void;
 }
 
 /**
  * Runs a native pointer drag that started on one of our handles (marked data-fr-interactive,
- * so the canvas ignores it). Everything written until release is one undo step.
+ * so the canvas ignores it). Everything written until release is one undo step; Escape cancels
+ * the gesture (the engine reverts its writes).
  */
 function runDrag(editor: Editor, root: HTMLElement, down: ReactPointerEvent, h: DragHandlers) {
   down.preventDefault();
@@ -77,8 +78,8 @@ function runDrag(editor: Editor, root: HTMLElement, down: ReactPointerEvent, h: 
     e.preventDefault();
     e.stopPropagation();
     done();
-    h.cancel();
-    editor.endGesture();
+    // Reverts everything this drag wrote and leaves no (empty) undo step behind.
+    editor.cancelGesture();
   };
   const done = () => {
     window.removeEventListener('pointermove', onMove, true);
@@ -184,27 +185,12 @@ function QuickConnect({ editor, el, root }: { editor: Editor; el: BoardElement; 
         editor.create(buildConnector(editor, start, end, style()));
         editor.select([copy]);
       },
-      cancel() {
-        if (id) editor.remove([id]);
-      },
     });
   };
 
   // The format toolbar floats above (or below) the selection: a "+" it would cover steps
   // further out along its side so it stays reachable.
-  const [bar, setBar] = useState<DOMRect | null>(null);
-  useLayoutEffect(() => {
-    const measure = () => {
-      const r = document.querySelector('[data-fr-format-toolbar]')?.getBoundingClientRect() ?? null;
-      const o = root.getBoundingClientRect();
-      const rel = r && new DOMRect(r.x - o.x, r.y - o.y, r.width, r.height);
-      setBar((cur) => (rel?.x === cur?.x && rel?.y === cur?.y && rel?.width === cur?.width && rel?.height === cur?.height ? cur : rel));
-    };
-    measure();
-    // The toolbar settles its own position after it measures itself: check again next frame.
-    const raf = requestAnimationFrame(measure);
-    return () => cancelAnimationFrame(raf);
-  });
+  const bar = useFormatToolbarRect();
 
   return (
     <>
@@ -212,7 +198,7 @@ function QuickConnect({ editor, el, root }: { editor: Editor; el: BoardElement; 
         let off = side === 'bottom' && rotates ? PLUS_OFFSET_BELOW_ROTATE : PLUS_OFFSET;
         const n = sideNormal(el, side);
         const a = editor.worldToScreen(anchorWorld(el, side, local));
-        const covered = (q: Point) => !!bar && q.x > bar.left - 14 && q.x < bar.right + 14 && q.y > bar.top - 14 && q.y < bar.bottom + 14;
+        const covered = (q: Point) => !!bar && q.x > bar.x - 14 && q.x < bar.x + bar.w + 14 && q.y > bar.y - 14 && q.y < bar.y + bar.h + 14;
         for (let i = 0; i < 40 && covered({ x: a.x + n.x * off, y: a.y + n.y * off }); i++) off += 4;
         return (
           <div
@@ -257,23 +243,16 @@ function ConnectorHandles({ editor, c, root }: { editor: Editor; c: ConnectorEle
         patchConnector(editor, c.id, { [which]: endpoint(target, p) });
       },
       up() {},
-      cancel() {
-        patchConnector(editor, c.id, { start: before.start, end: before.end });
-      },
     });
   };
 
   const dragMid = (e: ReactPointerEvent) => {
     if (e.button !== 0) return;
-    const before = c.waypoints;
     runDrag(editor, root, e, {
       move(world) {
         patchConnector(editor, c.id, { waypoints: [{ x: Math.round(world.x), y: Math.round(world.y) }] });
       },
       up() {},
-      cancel() {
-        patchConnector(editor, c.id, { waypoints: before ?? [] });
-      },
     });
   };
 
@@ -327,7 +306,7 @@ function ConnectorOverlay({ editor }: { editor: Editor }) {
   const marks = snap ?? (toolId === TOOL_ID ? hover : null);
 
   return (
-    <div ref={rootRef} className={`fr-cx-ov${single?.type === 'connector' && !hidden ? ' has-connector' : ''}`}>
+    <div ref={rootRef} className="fr-cx-ov">
       {root && quick && <QuickConnect editor={editor} el={quick} root={root} />}
       {root && conn && <ConnectorHandles editor={editor} c={conn} root={root} />}
       {marks && <TargetMarks editor={editor} target={marks} highlight={!!snap} />}

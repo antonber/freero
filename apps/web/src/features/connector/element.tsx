@@ -106,6 +106,8 @@ export default defineElement({
   resize: 'none',
   rotatable: false,
   connectable: false,
+  // The overlay panel draws endpoint/midpoint handles; a bounding box around a line only confuses.
+  selectionFrame: false,
   textField: 'label',
   defaults: (): Omit<NewElement<'connector'>, 'x' | 'y'> => ({
     type: 'connector',
@@ -120,11 +122,12 @@ export default defineElement({
   Component: ConnectorView,
   toPlainText: (c) => richTextToPlain(c.label),
 
-  // Accurate hit test against the drawn path (not the bounding box), plus the label.
-  hitTest(c, local) {
+  // Accurate hit test against the drawn path (not the bounding box), plus the label. Lines are
+  // thin: a little more than the engine's screen tolerance around the stroke.
+  hitTest(c, local, { tolerance }) {
     const p = { x: local.x + c.x, y: local.y + c.y };
     const poly = drawnRoutes.get(c) ?? connectorGeometry(c, () => undefined).route.poly;
-    if (distToPoly(p, poly) <= Math.max(7, c.strokeWidth / 2 + 5)) return true;
+    if (distToPoly(p, poly) <= c.strokeWidth / 2 + tolerance * 1.5) return true;
     const lb = labelBox(richTextToPlain(c.label), pointAlong(poly, 0.5).p);
     return !!lb && p.x >= lb.x && p.x <= lb.x + lb.w && p.y >= lb.y && p.y <= lb.y + lb.h;
   },

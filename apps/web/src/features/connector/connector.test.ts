@@ -123,8 +123,8 @@ describe('hit-testing', () => {
     const c = conn({ x: 0, y: 0 }, { x: 300, y: 300 });
     Object.assign(c, refreshCache(c, lookupOf()));
     const local = (x: number, y: number) => ({ x: x - c.x, y: y - c.y });
-    expect(connectorDef.hitTest!(c, local(290, 10))).toBe(false);
-    expect(connectorDef.hitTest!(c, local(152, 148))).toBe(true);
+    expect(connectorDef.hitTest!(c, local(290, 10), { tolerance: 4 })).toBe(false);
+    expect(connectorDef.hitTest!(c, local(152, 148), { tolerance: 4 })).toBe(true);
   });
 });
 

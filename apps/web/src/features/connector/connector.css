@@ -208,10 +208,3 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-
-/* A lone selected connector shows its own handles + halo; the generic bounding-box frame
-   would only add a confusing rectangle around the line. (Progressive: without :has support
-   the frame simply stays.) */
-.fr-overlays:has(~ .fr-cx-ov.has-connector) .fr-ov-selection {
-  border-color: transparent;
-}

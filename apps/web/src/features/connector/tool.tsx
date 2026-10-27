@@ -1,4 +1,4 @@
-import { CornerDownRight, Slash, Spline, Waypoints } from 'lucide-react';
+import { CornerDownRight, MoveUpRight, Slash, Spline } from 'lucide-react';
 import type { ConnectorEndpoint, ConnectorElement, ConnectorRouting } from '@freero/shared';
 import { defineTool, useToolOptions, type Editor, type Point, type ToolPointerEvent } from '@engine';
 import { SegmentedControl } from '@ui';
@@ -35,7 +35,7 @@ const ROUTING_OPTIONS = [
 export default defineTool({
   id: TOOL_ID,
   label: 'Connection line',
-  icon: Waypoints,
+  icon: MoveUpRight,
   shortcut: 'l',
   order: 40,
   placement: 'main',
