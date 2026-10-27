@@ -20,3 +20,31 @@ jobs:
       # Real-session end-to-end: real server, real Yjs WebSocket clients.
       - run: npm run verify
       - run: npm run build
+
+  # The same real-session check against a real PostgreSQL 17 (the job above uses the built-in
+  # PGlite). verify creates and drops its own databases on this server and also starts two
+  # instances at once on one empty database (migration advisory lock).
+  verify-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: freero
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      DATABASE_URL: postgres://postgres:freero@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run verify

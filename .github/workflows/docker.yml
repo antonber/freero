@@ -1,0 +1,62 @@
+name: docker
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # Builds the production image and smoke-tests a real container against a real Postgres:
+  # readiness, the served SPA, signup, board creation, upload round-trip, CSRF refusal, /metrics.
+  image-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: freero
+          POSTGRES_PASSWORD: freero
+          POSTGRES_DB: freero
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U freero -d freero"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: freero:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Start container (production mode, real Postgres)
+        run: |
+          docker run -d --name freero --network host \
+            -e NODE_ENV=production \
+            -e PORT=4000 \
+            -e PUBLIC_URL=http://localhost:4000 \
+            -e DATABASE_URL=postgres://freero:freero@localhost:5432/freero \
+            -e SESSION_SECRET=ci-only-session-secret-0123456789abcdefghijkl \
+            -e METRICS_TOKEN=ci-metrics-token \
+            -e FREERO_RELEASE=${{ github.sha }} \
+            freero:ci
+      - name: Smoke test
+        run: sh scripts/smoke-test.sh http://localhost:4000 ci-metrics-token
+      - name: Image runs as non-root and reports healthy
+        run: |
+          test "$(docker exec freero id -u)" != "0"
+          for i in $(seq 1 30); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' freero)" = healthy ] && exit 0
+            sleep 2
+          done
+          docker inspect -f '{{json .State.Health}}' freero; exit 1
+      - name: Container logs
+        if: always()
+        run: docker logs freero 2>&1 | tail -200
+      - name: Clean up
+        if: always()
+        run: docker rm -f freero || true

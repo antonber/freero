@@ -1,0 +1,132 @@
+# A full production-like Freero stack on one machine:
+#   proxy (Caddy, :8080) -> app x2 -> postgres 17, redis 7, minio (S3), mailpit (SMTP)
+#
+#   docker compose up --build -d      then open http://localhost:8080
+#   (port taken? FREERO_HTTP_PORT=8580 docker compose up --build -d)
+#   docker compose down -v            stop and delete all data
+#
+# Mailpit UI: http://localhost:8025 · MinIO console: http://localhost:9001 (freero / freero-minio-secret)
+# The secrets below are for this local stack only. Production: docs/deployment.md.
+name: freero
+
+x-app-env: &app-env
+  NODE_ENV: production
+  PORT: "4000"
+  PUBLIC_URL: ${PUBLIC_URL:-http://localhost:${FREERO_HTTP_PORT:-8080}}
+  DATABASE_URL: postgres://freero:freero@postgres:5432/freero
+  REDIS_URL: redis://redis:6379
+  S3_ENDPOINT: http://minio:9000
+  S3_BUCKET: freero
+  S3_REGION: us-east-1
+  S3_ACCESS_KEY_ID: freero
+  S3_SECRET_ACCESS_KEY: freero-minio-secret
+  SMTP_URL: smtp://mailpit:1025
+  MAIL_FROM: Freero <no-reply@freero.local>
+  SESSION_SECRET: ${SESSION_SECRET:-local-compose-only-session-secret-0123456789abcdef}
+  TRUST_PROXY: "1"
+  METRICS_TOKEN: ${METRICS_TOKEN:-local-metrics-token}
+  LOG_LEVEL: info
+  SHUTDOWN_DRAIN_SECONDS: "2"
+
+services:
+  app:
+    build: .
+    image: freero:local
+    environment: *app-env
+    deploy:
+      replicas: 2
+    init: true
+    # SHUTDOWN_DRAIN_SECONDS + time to flush open boards (the app gives itself 20 s more).
+    stop_grace_period: 30s
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+
+  proxy:
+    image: caddy:2.10-alpine
+    ports:
+      - "${FREERO_HTTP_PORT:-8080}:8080"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - app
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: freero
+      POSTGRES_PASSWORD: freero
+      POSTGRES_DB: freero
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U freero -d freero"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  # S3-compatible storage. MinIO stopped publishing official images in 2025; this is Bitnami's
+  # archived build of MinIO. Any S3-compatible server works (swap the image, keep S3_* in sync).
+  minio:
+    image: bitnamilegacy/minio:2025.4.22
+    environment:
+      MINIO_ROOT_USER: freero
+      MINIO_ROOT_PASSWORD: freero-minio-secret
+    ports:
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - miniodata:/bitnami/minio/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  # Creates the bucket (versioned, so overwritten/deleted objects can be recovered) and exits.
+  minio-init:
+    image: bitnamilegacy/minio:2025.4.22
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      HOME: /tmp
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        mc alias set local http://minio:9000 freero freero-minio-secret
+        mc mb --ignore-existing local/freero
+        mc version enable local/freero
+        echo "bucket ready"
+
+  mailpit:
+    image: axllent/mailpit:v1.24
+    ports:
+      - "127.0.0.1:8025:8025"
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:

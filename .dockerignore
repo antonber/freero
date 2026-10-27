@@ -1,0 +1,17 @@
+# Keep the build context small and free of local state and secrets.
+**/node_modules
+**/dist
+data
+.git
+.github
+.claude
+.env
+.env.*
+!.env.example
+*.log
+**/*.tsbuildinfo
+docs
+scripts
+int-*
+docker-compose.yml
+deploy

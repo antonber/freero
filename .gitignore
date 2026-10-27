@@ -6,3 +6,5 @@ data/
 .env
 # Agent scratch folders must never be committed
 int-*/
+# scripts/backup.sh default output
+backups/
