@@ -185,6 +185,12 @@ function AvatarsPanel({ editor }: { editor: Editor }) {
   const rest = people.length - shown.length;
   const openPerson = open && open.userId !== '*' ? people.find((p) => p.userId === open.userId) : undefined;
   const close = () => setOpen(null);
+  // The person left (or reloaded: their avatar button was re-created): the popover would otherwise
+  // reopen anchored to a detached button, i.e. at the window's top-left corner.
+  const personGone = !!open && open.userId !== '*' && !openPerson;
+  useEffect(() => {
+    if (personGone) setOpen(null);
+  }, [personGone]);
 
   return (
     <div className="fr-presence-stack" role="group" aria-label="People on this board">
