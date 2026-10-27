@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { createLogger, defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
 
@@ -6,8 +6,18 @@ import { fileURLToPath } from 'node:url';
 const server = `http://localhost:${process.env.FREERO_API_PORT ?? 4000}`;
 const src = (p: string) => fileURLToPath(new URL(`./src/${p}`, import.meta.url));
 
+// Leaving a board closes its live socket mid-write; Vite's ws proxy logs that as a red stack
+// trace. Those two codes are expected disconnects, so keep them out of the dev console.
+const logger = createLogger();
+const logError = logger.error.bind(logger);
+logger.error = (msg, opts) => {
+  if (msg.includes('ws proxy socket error') && /ECONNABORTED|ECONNRESET/.test(`${msg} ${opts?.error?.message ?? ''}`)) return;
+  logError(msg, opts);
+};
+
 export default defineConfig({
   plugins: [react()],
+  customLogger: logger,
   resolve: {
     // Layer entry points. Features/app import '@engine' and '@ui' only — see ARCHITECTURE.md.
     alias: {
