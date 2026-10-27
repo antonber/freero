@@ -10,7 +10,8 @@ export default defineCommands([
     run: (editor) => editor.openDock(editor.getDock() === PANEL_ID ? null : PANEL_ID),
   },
   {
-    // Right-click an item → comment on it (pinned to its top-right corner).
+    // Right-click an item → comment on it, pinned just outside its top-right corner (clear of
+    // its content and handles, and following it when it is resized).
     id: 'comments.commentOnItem',
     label: 'Add comment',
     menus: ['context'],
@@ -19,7 +20,7 @@ export default defineCommands([
     run(editor) {
       const el = editor.getElement(editor.getSelection()[0]);
       if (!el) return;
-      startDraft(editor, { x: el.w, y: 0, elementId: el.id });
+      startDraft(editor, { x: el.w, y: 0, elementId: el.id, corner: 'top-right' });
     },
   },
 ]);

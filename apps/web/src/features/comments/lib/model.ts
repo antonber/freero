@@ -1,22 +1,162 @@
-// Pure comment-thread logic: pin geometry, idempotent edit operations (so concurrent
-// writers can be reconciled), activity/unread, and list filtering.
-import type { BoardElement, CommentMessage, CommentThread } from '@freero/shared';
+// Pure comment logic: the keyed record layout of the `comments` collection (one small record
+// per key — see CommentRecord in @freero/shared), assembling records into threads, pin
+// geometry, activity/unread and list filtering.
+import type {
+  BoardElement,
+  CommentMessage,
+  CommentMessageRecord,
+  CommentReactionRecord,
+  CommentRecord,
+  CommentStatusRecord,
+  CommentThread,
+  CommentThreadRecord,
+} from '@freero/shared';
 import type { Point } from '@engine';
 
-/** Stored superset of the shared types (extra fields are optional and forward-compatible). */
-export type StoredMessage = CommentMessage & { authorColor?: string };
-export interface StoredThread extends CommentThread {
-  messages: StoredMessage[];
-  /** World point where the thread was first pinned (fallback if its element vanished unseen). */
-  origin?: Point;
+export const MESSAGE_REACTIONS = ['👍', '❤️', '😂', '🎉', '👀', '✅'] as const;
+
+// ---------------------------------------------------------------------------
+// Storage layout
+// ---------------------------------------------------------------------------
+export const keys = {
+  thread: (threadId: string) => `t:${threadId}`,
+  status: (threadId: string) => `s:${threadId}`,
+  message: (threadId: string, messageId: string) => `m:${threadId}:${messageId}`,
+  reaction: (threadId: string, messageId: string, userId: string, emoji: string) => `r:${threadId}:${messageId}:${userId}:${emoji}`,
+  deleted: (threadId: string, messageId?: string) => (messageId ? `x:${threadId}:${messageId}` : `x:${threadId}`),
+};
+
+const isRecord = (v: unknown): v is CommentRecord => !!v && typeof v === 'object' && typeof (v as { kind?: unknown }).kind === 'string';
+
+const threadOf = (r: CommentRecord) => (r.kind === 'thread' ? r.id : r.threadId);
+
+/** Keys of every live record of a thread (what deleting the thread removes). */
+export function threadKeys(entries: Array<[string, unknown]>, threadId: string): string[] {
+  return entries.filter(([, v]) => isRecord(v) && v.kind !== 'deleted' && threadOf(v) === threadId).map(([k]) => k);
 }
 
-export const MESSAGE_REACTIONS = ['👍', '❤️', '😂', '🎉', '👀', '✅'] as const;
+/** Keys of a message's reactions (removed with the message). */
+export function reactionKeys(entries: Array<[string, unknown]>, threadId: string, messageId: string): string[] {
+  return entries
+    .filter(([, v]) => isRecord(v) && v.kind === 'reaction' && v.threadId === threadId && v.messageId === messageId)
+    .map(([k]) => k);
+}
+
+const emojiRank = (e: string) => {
+  const i = (MESSAGE_REACTIONS as readonly string[]).indexOf(e);
+  return i < 0 ? MESSAGE_REACTIONS.length : i;
+};
+
+/**
+ * Builds the read model from the collection's records. Deleted threads/messages (tombstoned)
+ * stay hidden even if a concurrent write re-created one of their records. Threads without a
+ * visible message are dropped. Output is independent of map iteration order, so every replica
+ * renders the same thing.
+ */
+export function assembleThreads(entries: Array<[string, unknown]>): CommentThread[] {
+  const metas: CommentThreadRecord[] = [];
+  const status = new Map<string, CommentStatusRecord>();
+  const messages = new Map<string, CommentMessageRecord[]>();
+  const reactions = new Map<string, CommentReactionRecord[]>();
+  const deleted = new Set<string>();
+  for (const [, v] of entries) {
+    if (!isRecord(v)) continue;
+    switch (v.kind) {
+      case 'thread':
+        metas.push(v);
+        break;
+      case 'status':
+        status.set(v.threadId, v);
+        break;
+      case 'message': {
+        const list = messages.get(v.threadId);
+        if (list) list.push(v);
+        else messages.set(v.threadId, [v]);
+        break;
+      }
+      case 'reaction': {
+        const k = `${v.threadId}:${v.messageId}`;
+        const list = reactions.get(k);
+        if (list) list.push(v);
+        else reactions.set(k, [v]);
+        break;
+      }
+      case 'deleted':
+        deleted.add(v.messageId ? `${v.threadId}:${v.messageId}` : v.threadId);
+        break;
+    }
+  }
+  const out: CommentThread[] = [];
+  for (const meta of metas) {
+    if (deleted.has(meta.id)) continue;
+    const msgs: CommentMessage[] = (messages.get(meta.id) ?? [])
+      .filter((m) => !deleted.has(`${meta.id}:${m.id}`))
+      .sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1))
+      .map((m) => {
+        const byEmoji: Record<string, string[]> = {};
+        const rs = (reactions.get(`${meta.id}:${m.id}`) ?? []).slice().sort((a, b) => emojiRank(a.emoji) - emojiRank(b.emoji) || (a.emoji < b.emoji ? -1 : a.emoji > b.emoji ? 1 : 0) || (a.userId < b.userId ? -1 : 1));
+        for (const r of rs) (byEmoji[r.emoji] ??= []).push(r.userId);
+        return {
+          id: m.id,
+          authorId: m.authorId,
+          authorName: m.authorName,
+          authorColor: m.authorColor,
+          text: m.text,
+          createdAt: m.createdAt,
+          editedAt: m.editedAt,
+          reactions: byEmoji,
+        };
+      });
+    if (!msgs.length) continue;
+    out.push({
+      id: meta.id,
+      x: meta.x,
+      y: meta.y,
+      elementId: meta.elementId ?? null,
+      corner: meta.corner ?? null,
+      origin: meta.origin,
+      resolved: status.get(meta.id)?.resolved ?? false,
+      messages: msgs,
+      createdAt: meta.createdAt,
+      createdBy: meta.createdBy,
+    });
+  }
+  return out.sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1));
+}
+
+/**
+ * Boards written before the keyed layout stored each thread whole under its id. Returns the
+ * records that replace such a value (null when `value` isn't one). Converting is idempotent, so
+ * two clients upgrading the same thread at once write identical records.
+ */
+export function upgradeLegacy(key: string, value: unknown): Array<[string, CommentRecord]> | null {
+  const t = value as {
+    id?: string; x?: number; y?: number; elementId?: string | null; origin?: Point; resolved?: boolean; createdAt?: number;
+    messages?: Array<{ id: string; authorId: string; authorName: string; authorColor?: string; text: string; createdAt: number; editedAt?: number; reactions?: Record<string, string[]> }>;
+  };
+  if (isRecord(value) || !t || typeof t !== 'object' || !Array.isArray(t.messages)) return null;
+  const id = t.id ?? key;
+  const first = t.messages[0];
+  const out: Array<[string, CommentRecord]> = [
+    [keys.thread(id), { kind: 'thread', id, x: t.x ?? 0, y: t.y ?? 0, elementId: t.elementId ?? null, origin: t.origin, createdAt: t.createdAt ?? first?.createdAt ?? 0, createdBy: first?.authorId ?? '' }],
+  ];
+  if (t.resolved) out.push([keys.status(id), { kind: 'status', threadId: id, resolved: true, by: '', at: t.createdAt ?? 0 }]);
+  for (const m of t.messages) {
+    const { reactions, ...rest } = m;
+    out.push([keys.message(id, m.id), { kind: 'message', threadId: id, ...rest }]);
+    for (const [emoji, users] of Object.entries(reactions ?? {}))
+      for (const userId of users) out.push([keys.reaction(id, m.id, userId, emoji), { kind: 'reaction', threadId: id, messageId: m.id, userId, emoji }]);
+  }
+  return out;
+}
 
 // ---------------------------------------------------------------------------
 // Pin geometry
 // ---------------------------------------------------------------------------
 type Geom = Pick<BoardElement, 'x' | 'y' | 'w' | 'h' | 'rotation'>;
+
+/** Screen px between an element's corner and a corner pin's tail (clear of the resize handle). */
+export const CORNER_GAP = 9;
 
 function rotateAround(p: Point, c: Point, deg: number): Point {
   if (!deg) return p;
@@ -36,87 +176,43 @@ export function anchorFor(point: Point, target: (Geom & { id: string }) | null):
   return { x: local.x - target.x, y: local.y - target.y, elementId: target.id };
 }
 
-/** World position of a thread's pin. Element-pinned threads follow their element (incl. rotation). */
-export function threadPoint(t: Pick<StoredThread, 'x' | 'y' | 'elementId' | 'origin'>, el: Geom | undefined): Point {
+/**
+ * World position of a thread's pin tail. Element-pinned threads follow their element (incl.
+ * rotation); corner pins sit CORNER_GAP screen px diagonally outside the corner (pass the zoom),
+ * so the bubble never covers the element's content or its handles.
+ */
+export function threadPoint(
+  t: { x: number; y: number; elementId?: string | null; corner?: 'top-right' | null; origin?: Point },
+  el: Geom | undefined,
+  zoom = 1,
+): Point {
   if (!t.elementId) return { x: t.x, y: t.y };
   if (!el) return t.origin ?? { x: t.x, y: t.y };
+  const local = t.corner === 'top-right' ? { x: el.w + CORNER_GAP / zoom, y: -CORNER_GAP / zoom } : { x: t.x, y: t.y };
   const center = { x: el.x + el.w / 2, y: el.y + el.h / 2 };
-  return rotateAround({ x: el.x + t.x, y: el.y + t.y }, center, el.rotation || 0);
-}
-
-// ---------------------------------------------------------------------------
-// Operations. Each returns its input unchanged when it is already applied, so a pending op
-// can be re-applied on top of whatever state won a concurrent write.
-// ---------------------------------------------------------------------------
-export type ThreadOp = (t: StoredThread) => StoredThread;
-
-function mapMessage(t: StoredThread, id: string, fn: (m: StoredMessage) => StoredMessage): StoredThread {
-  const i = t.messages.findIndex((m) => m.id === id);
-  if (i < 0) return t;
-  const next = fn(t.messages[i]);
-  if (next === t.messages[i]) return t;
-  const messages = t.messages.slice();
-  messages[i] = next;
-  return { ...t, messages };
-}
-
-export const ops = {
-  addMessage: (msg: StoredMessage): ThreadOp => (t) =>
-    t.messages.some((m) => m.id === msg.id) ? t : { ...t, messages: [...t.messages, msg].sort((a, b) => a.createdAt - b.createdAt) },
-
-  editMessage: (id: string, text: string, editedAt: number): ThreadOp => (t) =>
-    mapMessage(t, id, (m) => (m.text === text ? m : { ...m, text, editedAt })),
-
-  deleteMessage: (id: string): ThreadOp => (t) =>
-    t.messages.some((m) => m.id === id) ? { ...t, messages: t.messages.filter((m) => m.id !== id) } : t,
-
-  setReaction: (id: string, emoji: string, userId: string, on: boolean): ThreadOp => (t) =>
-    mapMessage(t, id, (m) => {
-      const users = m.reactions?.[emoji] ?? [];
-      if (users.includes(userId) === on) return m;
-      const nextUsers = on ? [...users, userId] : users.filter((u) => u !== userId);
-      const reactions = { ...(m.reactions ?? {}) };
-      if (nextUsers.length) reactions[emoji] = nextUsers;
-      else delete reactions[emoji];
-      return { ...m, reactions };
-    }),
-
-  setResolved: (resolved: boolean): ThreadOp => (t) => (t.resolved === resolved ? t : { ...t, resolved }),
-
-  /** The pinned element is gone: keep the thread exactly where it was, unpinned. */
-  detach: (at: Point): ThreadOp => (t) => (t.elementId ? { ...t, elementId: null, x: at.x, y: at.y } : t),
-};
-
-/**
- * Re-applies this client's recent ops on top of the current stored thread. Returns the thread
- * to write, or null when the current state already reflects them (nothing to write).
- */
-export function reconcile(current: StoredThread, pending: ThreadOp[]): StoredThread | null {
-  const next = pending.reduce((t, op) => op(t), current);
-  return JSON.stringify(next) === JSON.stringify(current) ? null : next;
+  return rotateAround({ x: el.x + local.x, y: el.y + local.y }, center, el.rotation || 0);
 }
 
 // ---------------------------------------------------------------------------
 // Activity, unread, lists
 // ---------------------------------------------------------------------------
-export function messageActivity(m: StoredMessage): number {
+export function messageActivity(m: CommentMessage): number {
   return Math.max(m.createdAt, m.editedAt ?? 0);
 }
 
-export function latestActivity(t: StoredThread): number {
+export function latestActivity(t: CommentThread): number {
   return t.messages.reduce((acc, m) => Math.max(acc, messageActivity(m)), t.createdAt);
 }
 
 /** Unread = someone else wrote or edited something after you last looked. Your own activity never counts. */
-export function isUnread(t: StoredThread, seenAt: number | undefined, myId: string): boolean {
+export function isUnread(t: CommentThread, seenAt: number | undefined, myId: string): boolean {
   return t.messages.some((m) => m.authorId !== myId && messageActivity(m) > (seenAt ?? 0));
 }
 
 export type ThreadFilter = 'open' | 'resolved' | 'mine';
 
-export function listThreads(threads: StoredThread[], filter: ThreadFilter, myId: string): StoredThread[] {
+export function listThreads(threads: CommentThread[], filter: ThreadFilter, myId: string): CommentThread[] {
   const keep = threads.filter((t) => {
-    if (!t.messages.length) return false;
     if (filter === 'open') return !t.resolved;
     if (filter === 'resolved') return t.resolved;
     return t.messages.some((m) => m.authorId === myId);

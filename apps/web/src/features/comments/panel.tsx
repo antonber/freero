@@ -1,19 +1,19 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Check, MessageCircle, MessageSquareText, Unlink } from 'lucide-react';
-import type { BoardElement } from '@freero/shared';
+import type { BoardElement, CommentThread } from '@freero/shared';
 import { definePanel, useCamera, useCollection, useDock, useElements, useRole, type Editor } from '@engine';
 import { Avatar, IconButton, Popover, SegmentedControl, Toggle, type Box } from '@ui';
-import { isUnread, latestActivity, listThreads, relativeTime, threadPoint, type StoredThread, type ThreadFilter } from './lib/model';
-import { COLLECTION, PANEL_ID, detachThread, focusThread, markSeen, session, setUi, useCommentsUi } from './lib/state';
+import { assembleThreads, isUnread, latestActivity, listThreads, relativeTime, threadPoint, type ThreadFilter } from './lib/model';
+import { COLLECTION, PANEL_ID, detachThread, focusThread, markSeen, session, setUi, useCommentsUi, watchLegacyThreads } from './lib/state';
 import { DraftComposer, ThreadView, authorColor, useNow } from './lib/views';
 import './comments.css';
 
-function useThreads(): StoredThread[] {
-  const entries = useCollection<StoredThread>(COLLECTION);
-  return useMemo(() => entries.map(([, t]) => t).filter((t) => t && Array.isArray(t.messages) && t.messages.length > 0), [entries]);
+function useThreads(): CommentThread[] {
+  const entries = useCollection<unknown>(COLLECTION);
+  return useMemo(() => assembleThreads(entries), [entries]);
 }
 
-function useUnreadCount(editor: Editor, threads: StoredThread[]): number {
+function useUnreadCount(editor: Editor, threads: CommentThread[]): number {
   const seen = useCommentsUi(editor, (s) => s.seen);
   return threads.filter((t) => !t.resolved && isUnread(t, seen[t.id], editor.user.id)).length;
 }
@@ -144,13 +144,13 @@ function Pins({ editor }: { editor: Editor }) {
     return fn;
   };
 
-  const draftPoint = draft ? threadPoint(draft, draft.elementId ? byId.get(draft.elementId) : undefined) : null;
+  const draftPoint = draft ? threadPoint(draft, draft.elementId ? byId.get(draft.elementId) : undefined, cam.zoom) : null;
 
   return (
     <>
       {threads.map((t) => {
         if (t.resolved && !showResolved && t.id !== openId) return null;
-        const p = threadPoint(t, t.elementId ? byId.get(t.elementId) : undefined);
+        const p = threadPoint(t, t.elementId ? byId.get(t.elementId) : undefined, cam.zoom);
         const first = t.messages[0];
         return (
           <Pin
@@ -204,7 +204,9 @@ function Pins({ editor }: { editor: Editor }) {
       </Popover>
       <Popover
         open={!!open && !!openBox}
-        // While editing a message, Esc / clicking away cancels the edit instead of closing.
+        // Esc while editing a message cancels the edit (the edit box keeps Escape); clicking
+        // away while editing also just cancels the edit.
+        escapeToContent
         onClose={() => {
           if (editingId) return setEditingId(null);
           if (openId) justClosed.current = { id: openId, at: performance.now() };
@@ -236,7 +238,7 @@ function Pins({ editor }: { editor: Editor }) {
 // ---------------------------------------------------------------------------
 // Comments list (dock-right)
 // ---------------------------------------------------------------------------
-function ThreadCard({ editor, thread, unread, now, missing }: { editor: Editor; thread: StoredThread; unread: boolean; now: number; missing: boolean }) {
+function ThreadCard({ editor, thread, unread, now, missing }: { editor: Editor; thread: CommentThread; unread: boolean; now: number; missing: boolean }) {
   const first = thread.messages[0];
   const replies = thread.messages.length - 1;
   return (
@@ -343,6 +345,8 @@ function CommentsToggle({ editor }: { editor: Editor }) {
 
 function PinsRoot({ editor }: { editor: Editor }) {
   session(editor);
+  const role = useRole();
+  useEffect(() => watchLegacyThreads(editor), [editor, role]);
   return <Pins editor={editor} />;
 }
 

@@ -4,7 +4,8 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from
 import { ArrowUp, Check, MoreHorizontal, Pencil, RotateCcw, SmilePlus, Trash2, X } from 'lucide-react';
 import { usePeers, type Editor } from '@engine';
 import { Avatar, Button, IconButton, Menu, Popover, Tooltip, formatShortcut } from '@ui';
-import { MESSAGE_REACTIONS, colorFor, relativeTime, type StoredMessage, type StoredThread } from './model';
+import type { CommentMessage, CommentThread } from '@freero/shared';
+import { MESSAGE_REACTIONS, colorFor, relativeTime } from './model';
 import {
   canDeleteThread,
   deleteMessage,
@@ -37,6 +38,8 @@ function AutoText(props: {
   placeholder: string;
   autoFocus?: boolean;
   label: string;
+  /** Handles Escape here (e.g. cancel an edit) instead of letting it close the popover. */
+  onEscape?: () => void;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
@@ -45,26 +48,12 @@ function AutoText(props: {
     el.style.height = 'auto';
     el.style.height = `${Math.min(160, el.scrollHeight)}px`;
   }, [props.value]);
-  // Focus as early as possible so the first keystrokes can't land on the board as tool
-  // shortcuts. A popover that is still being positioned is hidden (unfocusable) during this
-  // layout pass; it becomes visible in a synchronous re-render, so retry in a microtask, and
-  // once more on the next frame as a fallback.
+  // Focused while mounting (the Popover keeps it), caret at the end of any existing text.
   useLayoutEffect(() => {
-    if (!props.autoFocus) return;
-    let cancelled = false;
-    const focus = () => {
-      const el = ref.current;
-      if (cancelled || !el || document.activeElement === el) return;
-      el.focus({ preventScroll: true });
-      el.setSelectionRange(el.value.length, el.value.length);
-    };
-    focus();
-    queueMicrotask(focus);
-    const raf = requestAnimationFrame(focus);
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(raf);
-    };
+    const el = ref.current;
+    if (!props.autoFocus || !el) return;
+    el.focus({ preventScroll: true });
+    el.setSelectionRange(el.value.length, el.value.length);
   }, [props.autoFocus]);
   return (
     <textarea
@@ -79,6 +68,9 @@ function AutoText(props: {
         if (isSend(e)) {
           e.preventDefault();
           props.onSubmit();
+        } else if (e.key === 'Escape' && props.onEscape) {
+          e.preventDefault();
+          props.onEscape();
         }
       }}
     />
@@ -89,7 +81,7 @@ function SendHint() {
   return <span className="fr-cm-hint">{formatShortcut('mod+enter')} to send</span>;
 }
 
-export function authorColor(m: StoredMessage): string {
+export function authorColor(m: Pick<CommentMessage, 'authorColor' | 'authorId'>): string {
   return m.authorColor ?? colorFor(m.authorId);
 }
 
@@ -150,8 +142,8 @@ function ReactionPicker({ onPick }: { onPick: (emoji: string) => void }) {
 
 function MessageRow(props: {
   editor: Editor;
-  thread: StoredThread;
-  message: StoredMessage;
+  thread: CommentThread;
+  message: CommentMessage;
   canWrite: boolean;
   names: Map<string, string>;
   now: number;
@@ -161,7 +153,7 @@ function MessageRow(props: {
   const { editor, thread, message: m, canWrite, names, now, editing, onEdit } = props;
   const [draft, setDraft] = useState(m.text);
   const mine = m.authorId === editor.user.id;
-  const reactions = Object.entries(m.reactions ?? {}).filter(([, users]) => users.length);
+  const reactions = Object.entries(m.reactions).filter(([, users]) => users.length);
   const save = () => {
     if (draft.trim()) editMessage(editor, thread.id, m.id, draft);
     onEdit(false);
@@ -200,7 +192,7 @@ function MessageRow(props: {
         </div>
         {editing ? (
           <div className="fr-cm-edit">
-            <AutoText value={draft} onChange={setDraft} onSubmit={save} placeholder="Edit comment" label="Edit comment" autoFocus />
+            <AutoText value={draft} onChange={setDraft} onSubmit={save} onEscape={() => onEdit(false)} placeholder="Edit comment" label="Edit comment" autoFocus />
             <div className="fr-cm-composer__foot">
               <SendHint />
               <Button size="sm" variant="ghost" onClick={() => onEdit(false)}>
@@ -250,7 +242,7 @@ export function ThreadView({
   setEditingId,
 }: {
   editor: Editor;
-  thread: StoredThread;
+  thread: CommentThread;
   elementMissing: boolean;
   editingId: string | null;
   setEditingId: (id: string | null) => void;

@@ -1,9 +1,12 @@
 // Comments session state: local UI (draft, open thread, filters), "seen" bookkeeping in
-// localStorage, and the one writer of the `comments` collection.
+// localStorage, and the actions that write the `comments` collection. Each write touches only
+// its own small record (see CommentRecord in @freero/shared), so concurrent writers never
+// overwrite each other and nothing needs re-applying.
 import { createStore, useStore, type StoreApi } from 'zustand';
 import { nanoid } from 'nanoid';
+import type { CommentMessageRecord, CommentRecord, CommentThread, CommentThreadRecord } from '@freero/shared';
 import type { Collection, Editor, Point } from '@engine';
-import { ops, reconcile, threadPoint, type StoredMessage, type StoredThread, type ThreadFilter, type ThreadOp } from './model';
+import { assembleThreads, keys, reactionKeys, threadKeys, threadPoint, upgradeLegacy, type ThreadFilter } from './model';
 
 export const COLLECTION = 'comments';
 export const PANEL_ID = 'comments.panel';
@@ -13,6 +16,7 @@ export interface Draft {
   x: number;
   y: number;
   elementId: string | null;
+  corner: 'top-right' | null;
   origin: Point;
 }
 
@@ -27,7 +31,6 @@ export interface CommentsUi {
 
 interface Session {
   ui: StoreApi<CommentsUi>;
-  writer: ThreadWriter;
 }
 
 const sessions = new WeakMap<Editor, Session>();
@@ -68,7 +71,7 @@ export function session(editor: Editor): Session {
       window.addEventListener('storage', (e) => {
         if (e.key === seenKey(editor)) ui.setState({ seen: loadJson(seenKey(editor), {}) });
       });
-    s = { ui, writer: new ThreadWriter(editor.collection<StoredThread>(COLLECTION)) };
+    s = { ui };
     sessions.set(editor, s);
   }
   return s;
@@ -93,70 +96,48 @@ export function markSeen(editor: Editor, threadId: string, at: number) {
 }
 
 // ---------------------------------------------------------------------------
-// Writer
+// Records
 // ---------------------------------------------------------------------------
-const PENDING_MS = 10_000;
+const records = (editor: Editor) => editor.collection<CommentRecord>(COLLECTION);
 
-/**
- * Threads are stored whole (one map value each), so two people writing the same thread at
- * once would otherwise lose one of the writes (last writer wins). The writer keeps this
- * client's recent ops and re-applies them whenever the thread changes underneath, until they
- * have stuck for a while. Ops are idempotent, so re-applying is safe.
- */
-export class ThreadWriter {
-  private pending = new Map<string, Array<{ op: ThreadOp; until: number }>>();
-  private busy = false;
+/** Current threads (read model). */
+export function getThreads(editor: Editor): CommentThread[] {
+  return assembleThreads(records(editor).entries());
+}
 
-  constructor(private coll: Collection<StoredThread>) {
-    coll.observe(() => this.reconcileAll());
-  }
+export function getThread(editor: Editor, threadId: string): CommentThread | undefined {
+  return getThreads(editor).find((t) => t.id === threadId);
+}
 
-  create(thread: StoredThread) {
-    this.coll.set(thread.id, thread);
-  }
+/** Keeps rewriting threads stored whole (before the keyed layout) as records. Returns a stop function. */
+export function watchLegacyThreads(editor: Editor): () => void {
+  const coll = records(editor);
+  upgradeLegacyThreads(editor, coll);
+  return coll.observe(() => upgradeLegacyThreads(editor, coll));
+}
 
-  apply(id: string, op: ThreadOp) {
-    if (!this.coll.get(id)) return;
-    const list = this.pending.get(id) ?? [];
-    list.push({ op, until: Date.now() + PENDING_MS });
-    this.pending.set(id, list);
-    this.reconcileOne(id);
-  }
-
-  remove(id: string) {
-    this.pending.delete(id);
-    this.coll.delete(id);
-  }
-
-  private reconcileOne(id: string) {
-    const now = Date.now();
-    const list = (this.pending.get(id) ?? []).filter((p) => p.until > now);
-    const cur = this.coll.get(id);
-    if (!list.length || !cur) {
-      this.pending.delete(id);
-      return;
+function upgradeLegacyThreads(editor: Editor, coll: Collection<CommentRecord>) {
+  if (!editor.can('commenter')) return;
+  const legacy = coll.entries().flatMap(([k, v]) => {
+    const recs = upgradeLegacy(k, v);
+    return recs ? [{ key: k, recs }] : [];
+  });
+  if (!legacy.length) return;
+  editor.transact(() => {
+    for (const { key, recs } of legacy) {
+      for (const [k, v] of recs) coll.set(k, v);
+      coll.delete(key);
     }
-    this.pending.set(id, list);
-    const next = reconcile(cur, list.map((p) => p.op));
-    if (next) this.coll.set(id, next);
-  }
-
-  private reconcileAll() {
-    if (this.busy) return;
-    this.busy = true;
-    try {
-      for (const id of [...this.pending.keys()]) this.reconcileOne(id);
-    } finally {
-      this.busy = false;
-    }
-  }
+  });
 }
 
 // ---------------------------------------------------------------------------
 // Actions (all writes go through these)
 // ---------------------------------------------------------------------------
-function newMessage(editor: Editor, text: string): StoredMessage {
+function newMessage(editor: Editor, threadId: string, text: string): CommentMessageRecord {
   return {
+    kind: 'message',
+    threadId,
     id: nanoid(10),
     authorId: editor.user.id,
     authorName: editor.user.name,
@@ -167,9 +148,10 @@ function newMessage(editor: Editor, text: string): StoredMessage {
   };
 }
 
-export function startDraft(editor: Editor, at: { x: number; y: number; elementId: string | null }) {
+export function startDraft(editor: Editor, at: { x: number; y: number; elementId: string | null; corner?: 'top-right' | null }) {
   const el = at.elementId ? editor.getElement(at.elementId) : undefined;
-  setUi(editor, { draft: { ...at, origin: threadPoint(at, el) }, openId: null });
+  const draft = { ...at, corner: at.corner ?? null };
+  setUi(editor, { draft: { ...draft, origin: threadPoint(draft, el) }, openId: null });
 }
 
 /** Persists a thread only now that it has its first message. Returns the new id. */
@@ -177,80 +159,104 @@ export function submitDraft(editor: Editor, text: string): string | null {
   const draft = session(editor).ui.getState().draft;
   const body = text.trim();
   if (!draft || !body || !editor.can('commenter')) return null;
-  const msg = newMessage(editor, body);
-  const thread: StoredThread = {
-    id: nanoid(12),
+  const id = nanoid(12);
+  const msg = newMessage(editor, id, body);
+  const thread: CommentThreadRecord = {
+    kind: 'thread',
+    id,
     x: draft.x,
     y: draft.y,
     elementId: draft.elementId,
-    resolved: false,
-    messages: [msg],
-    createdAt: msg.createdAt,
+    corner: draft.corner,
     origin: draft.origin,
+    createdAt: msg.createdAt,
+    createdBy: editor.user.id,
   };
-  session(editor).writer.create(thread);
-  markSeen(editor, thread.id, msg.createdAt);
-  setUi(editor, { draft: null, openId: thread.id });
-  return thread.id;
+  const coll = records(editor);
+  editor.transact(() => {
+    coll.set(keys.thread(id), thread);
+    coll.set(keys.message(id, msg.id), msg);
+  });
+  markSeen(editor, id, msg.createdAt);
+  setUi(editor, { draft: null, openId: id });
+  return id;
 }
 
 export function reply(editor: Editor, threadId: string, text: string) {
   const body = text.trim();
   if (!body) return;
-  session(editor).writer.apply(threadId, ops.addMessage(newMessage(editor, body)));
+  const msg = newMessage(editor, threadId, body);
+  records(editor).set(keys.message(threadId, msg.id), msg);
 }
 
+/** Only the author edits a message, and an edit rewrites just that message's record. */
 export function editMessage(editor: Editor, threadId: string, messageId: string, text: string) {
   const body = text.trim();
-  if (!body) return;
-  session(editor).writer.apply(threadId, ops.editMessage(messageId, body, editor.host.serverNow()));
+  const coll = records(editor);
+  const cur = coll.get(keys.message(threadId, messageId));
+  if (!body || cur?.kind !== 'message' || cur.authorId !== editor.user.id || cur.text === body) return;
+  coll.set(keys.message(threadId, messageId), { ...cur, text: body, editedAt: editor.host.serverNow() });
 }
 
 /** Deleting the last message deletes the thread (an empty thread is never kept). */
 export function deleteMessage(editor: Editor, threadId: string, messageId: string) {
-  const { writer } = session(editor);
-  const t = editor.collection<StoredThread>(COLLECTION).get(threadId);
+  const t = getThread(editor, threadId);
   if (!t) return;
   if (t.messages.every((m) => m.id === messageId)) return deleteThread(editor, threadId);
-  writer.apply(threadId, ops.deleteMessage(messageId));
+  const coll = records(editor);
+  editor.transact(() => {
+    coll.delete(keys.message(threadId, messageId));
+    for (const k of reactionKeys(coll.entries(), threadId, messageId)) coll.delete(k);
+    // The tombstone keeps it deleted even if a concurrent edit re-creates the message record.
+    coll.set(keys.deleted(threadId, messageId), { kind: 'deleted', threadId, messageId, by: editor.user.id, at: editor.host.serverNow() });
+  });
 }
 
+/** One record per (message, person, emoji): toggling never touches anyone else's reaction. */
 export function toggleReaction(editor: Editor, threadId: string, messageId: string, emoji: string) {
-  const t = editor.collection<StoredThread>(COLLECTION).get(threadId);
-  const m = t?.messages.find((x) => x.id === messageId);
-  if (!m) return;
-  const on = !(m.reactions?.[emoji] ?? []).includes(editor.user.id);
-  session(editor).writer.apply(threadId, ops.setReaction(messageId, emoji, editor.user.id, on));
+  const coll = records(editor);
+  const key = keys.reaction(threadId, messageId, editor.user.id, emoji);
+  if (coll.get(key)) coll.delete(key);
+  else coll.set(key, { kind: 'reaction', threadId, messageId, userId: editor.user.id, emoji });
 }
 
 export function setResolved(editor: Editor, threadId: string, resolved: boolean) {
-  session(editor).writer.apply(threadId, ops.setResolved(resolved));
+  records(editor).set(keys.status(threadId), { kind: 'status', threadId, resolved, by: editor.user.id, at: editor.host.serverNow() });
 }
 
 export function deleteThread(editor: Editor, threadId: string) {
-  session(editor).writer.remove(threadId);
+  const coll = records(editor);
+  editor.transact(() => {
+    for (const k of threadKeys(coll.entries(), threadId)) coll.delete(k);
+    // Hides replies (or a detach) written concurrently by someone who hadn't seen the delete yet.
+    coll.set(keys.deleted(threadId), { kind: 'deleted', threadId, by: editor.user.id, at: editor.host.serverNow() });
+  });
   if (session(editor).ui.getState().openId === threadId) setUi(editor, { openId: null });
 }
 
+/** The pinned element is gone: keep the thread exactly where it was, unpinned. */
 export function detachThread(editor: Editor, threadId: string, at: Point) {
-  session(editor).writer.apply(threadId, ops.detach(at));
+  const coll = records(editor);
+  const cur = coll.get(keys.thread(threadId));
+  if (cur?.kind !== 'thread' || !cur.elementId) return;
+  coll.set(keys.thread(threadId), { ...cur, elementId: null, corner: null, x: at.x, y: at.y });
 }
 
-export function canDeleteThread(editor: Editor, t: StoredThread): boolean {
-  return editor.can('editor') || (editor.can('commenter') && t.messages[0]?.authorId === editor.user.id);
+export function canDeleteThread(editor: Editor, t: CommentThread): boolean {
+  return editor.can('editor') || (editor.can('commenter') && t.createdBy === editor.user.id);
 }
 
 /** Pans (and if needed zooms) so the thread's pin sits in the visible part of the canvas, then opens it. */
-export function focusThread(editor: Editor, t: StoredThread) {
+export function focusThread(editor: Editor, t: CommentThread) {
   const el = t.elementId ? editor.getElement(t.elementId) : undefined;
-  const p = threadPoint(t, el);
   const cam = editor.getCamera();
-  const vp = editor.getViewportSize();
   const zoom = Math.min(1.5, Math.max(0.75, cam.zoom));
-  // The dock covers the right side of the canvas: center the pin in what's left.
-  const visibleW = editor.getDock() ? Math.max(320, vp.width - 384) : vp.width;
-  const sx = visibleW / 2 - 120;
-  const sy = vp.height / 2 + 60;
+  const p = threadPoint(t, el, zoom);
+  // Center the pin in the board area the chrome (dock, toolbar…) leaves free, nudged left/up so
+  // the thread card that opens beside it fits too.
+  const area = editor.getSafeArea();
+  const sx = area.x + area.w / 2 - 120;
+  const sy = area.y + area.h / 2 + 60;
   editor.setCamera({ x: p.x - sx / zoom, y: p.y - sy / zoom, zoom }, { animate: true });
   setUi(editor, { openId: t.id, draft: null });
 }
