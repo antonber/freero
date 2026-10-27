@@ -139,14 +139,20 @@ function createAndEdit(
   editor.stopEditing(); // flush the current text first (its size may change the plan)
   const p = plan(currentIndex(editor));
   if (!p) return;
-  commit(editor, [p.rootId], () => {
-    if (p.expand) editor.update<MindmapElement>(p.expand, { collapsed: false });
-    editor.create<'mindmap'>(p.node);
-  });
-  const id = p.node.id!;
-  if (!editor.getElement(id)) return;
-  editor.select([id]);
-  editor.startEditing(id);
+  // The new node and the text typed into it are ONE undo step (the edit session nests in it).
+  editor.beginGesture();
+  try {
+    commit(editor, [p.rootId], () => {
+      if (p.expand) editor.update<MindmapElement>(p.expand, { collapsed: false });
+      editor.create<'mindmap'>(p.node);
+    });
+    const id = p.node.id!;
+    if (!editor.getElement(id)) return;
+    editor.select([id]);
+    editor.startEditing(id);
+  } finally {
+    editor.endGesture();
+  }
 }
 
 /** Tab: a new last child of `parentId` (expanding it if collapsed), then type into it. */
