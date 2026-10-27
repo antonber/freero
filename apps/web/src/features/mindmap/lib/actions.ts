@@ -1,28 +1,28 @@
 // Mind-map actions shared by the tool, commands, format toolbar, node views and the controller.
 //
-// Each action PLANS on an in-memory copy of the nodes (the intended state), computes the layout
-// from it, then COMMITS the structural change and the positions in ONE editor.transact: one undo
-// step, one network update, written only by the client whose user acted. (Inside a transaction
-// editor.getElements() still lists pre-transaction objects, so layouts are never computed
-// mid-transaction from it.) While an action commits, the `follow` hook stands down (quiet()).
+// Each action writes its structural change and then lays the touched maps out from the board as
+// it now is, all in ONE editor.transact (reads inside a transaction see its writes): one undo
+// step, one network update, written only by the client whose user acted. While an action
+// commits, the `follow` hook stands down (quiet()).
 import { nanoid } from 'nanoid';
 import type { BoardElement, MindmapElement } from '@freero/shared';
 import type { Editor, ElementPatch, NewElement, Point } from '@engine';
 import { layoutTree, LEVEL_GAP, ROOT_GAP, type LayoutOptions } from './layout';
 import { nodeSize } from './measure';
 import { BRANCH_COLORS, ROOT_COLOR } from './constants';
-import { cx, indexNodes, orphanIds, rootOf, sideOf, subtreeIds, type Direction, type Side, type TreeIndex } from './tree';
-import { isHidden } from './store';
+import { cx, orphanIds, rootOf, sideOf, subtreeIds, type Direction, type Side, type TreeIndex } from './tree';
+import { syncTree } from './store';
 
 export const isNode = (el: BoardElement | undefined | null): el is MindmapElement => el?.type === 'mindmap';
 
-/** Current mind-map nodes. Outside a transaction only (see the header). */
+/** Current mind-map nodes. */
 export function allNodes(editor: Editor): MindmapElement[] {
   return editor.getElements().filter(isNode);
 }
 
+/** Tree of every mind-map node on the board right now (cached until the board changes). */
 export function currentIndex(editor: Editor): TreeIndex<MindmapElement> {
-  return indexNodes(allNodes(editor));
+  return syncTree(editor);
 }
 
 // ---- while an action commits its own layout, the follow hook must not second-guess it.
@@ -37,47 +37,44 @@ export function quiet<T>(fn: () => T): T {
 }
 export const isQuiet = () => quietDepth > 0;
 
-/** The single selected, visible mind-map node, if the selection is exactly that. */
+/** The single selected mind-map node, if the selection is exactly that (hidden ones can't be selected). */
 export function selectedNode(editor: Editor): MindmapElement | null {
   const sel = editor.getSelection();
   if (sel.length !== 1) return null;
   const el = editor.getElement(sel[0]);
-  return isNode(el) && !isHidden(el.id) ? el : null;
+  return isNode(el) ? el : null;
 }
 
 /**
- * Lays out `rootIds` in the planned state `nodes`, then runs `write` (the structural change) and
- * the resulting position updates in one quiet transaction.
+ * Runs `write` (the structural change), then lays out `rootIds` from the resulting board — all
+ * in one quiet transaction.
  */
-function commit(
-  editor: Editor,
-  nodes: MindmapElement[],
-  rootIds: Iterable<string>,
-  write: (positions: Map<string, Point>) => void,
-  opts?: LayoutOptions,
-) {
-  const index = indexNodes(nodes);
-  const positions = new Map<string, Point>();
-  for (const r of new Set(rootIds)) for (const [id, p] of layoutTree(index, r, opts)) positions.set(id, p);
+function commit(editor: Editor, rootIds: Iterable<string>, write: () => void, opts?: LayoutOptions) {
+  const roots = [...new Set(rootIds)];
   quiet(() =>
     editor.transact(() => {
-      write(positions);
+      write();
+      const index = currentIndex(editor);
       const patches: Array<{ id: string; patch: ElementPatch }> = [];
-      for (const [id, p] of positions) {
-        const cur = editor.getElement(id); // the store read is current inside the transaction
-        if (cur && (cur.x !== p.x || cur.y !== p.y)) patches.push({ id, patch: { x: p.x, y: p.y } });
+      for (const r of roots) {
+        for (const [id, p] of layoutTree(index, r, opts)) {
+          const cur = index.byId.get(id);
+          if (cur && (cur.x !== p.x || cur.y !== p.y)) patches.push({ id, patch: { x: p.x, y: p.y } });
+        }
       }
       editor.updateMany(patches);
     }),
   );
 }
 
-/** "Tidy up": re-lays out maps and drops nodes orphaned by a plain (non-branch) delete. */
+/**
+ * "Tidy up": re-lays out maps and drops orphans (nodes whose parent a collaborator deleted while
+ * they were adding them; local deletes take the whole subtree along, see removeWith).
+ */
 export function relayout(editor: Editor, rootIds: Iterable<string>, opts?: LayoutOptions) {
-  const nodes = allNodes(editor);
-  const orphans = new Set(orphanIds(indexNodes(nodes)));
-  commit(editor, nodes.filter((n) => !orphans.has(n.id)), rootIds, () => {
-    if (orphans.size) editor.remove([...orphans]);
+  const orphans = orphanIds(currentIndex(editor));
+  commit(editor, rootIds, () => {
+    if (orphans.length) editor.remove(orphans);
   }, opts);
 }
 
@@ -130,38 +127,26 @@ function childSide(index: TreeIndex<MindmapElement>, parent: MindmapElement): Si
   return left < kids.length - left ? 'left' : 'right';
 }
 
-/** A full planned element for a node that doesn't exist yet. */
-function planned(editor: Editor, fields: Omit<MindmapElement, 'id' | 'type' | 'z' | 'rotation' | 'createdBy' | 'createdAt' | 'updatedAt' | 'w' | 'h' | 'text'>): MindmapElement {
-  const now = Date.now();
-  return {
-    ...fields,
-    ...nodeSize('', false),
-    id: nanoid(),
-    type: 'mindmap',
-    text: '',
-    z: 0,
-    rotation: 0,
-    createdBy: editor.user.id,
-    createdAt: now,
-    updatedAt: now,
-  };
+/** A new empty node (its x/y only encode where it goes among its siblings; layout places it). */
+function newNode(fields: Pick<MindmapElement, 'parentId' | 'rootId' | 'color' | 'x' | 'y'>): NewElement<'mindmap'> {
+  return { ...fields, ...nodeSize('', false), id: nanoid(), type: 'mindmap', text: '' };
 }
 
-function createAndEdit(editor: Editor, plan: (index: TreeIndex<MindmapElement>) => { node: MindmapElement; rootId: string; expand?: string } | null) {
+function createAndEdit(
+  editor: Editor,
+  plan: (index: TreeIndex<MindmapElement>) => { node: NewElement<'mindmap'>; rootId: string; expand?: string } | null,
+) {
   editor.stopEditing(); // flush the current text first (its size may change the plan)
-  const nodes = allNodes(editor);
-  const p = plan(indexNodes(nodes));
+  const p = plan(currentIndex(editor));
   if (!p) return;
-  const next = nodes.map((n) => (n.id === p.expand ? { ...n, collapsed: false } : n));
-  next.push(p.node);
-  commit(editor, next, [p.rootId], (pos) => {
+  commit(editor, [p.rootId], () => {
     if (p.expand) editor.update<MindmapElement>(p.expand, { collapsed: false });
-    const { z: _z, createdBy: _b, createdAt: _c, updatedAt: _u, ...fields } = p.node;
-    editor.create<'mindmap'>({ ...fields, ...(pos.get(p.node.id) ?? {}) });
+    editor.create<'mindmap'>(p.node);
   });
-  if (!editor.getElement(p.node.id)) return;
-  editor.select([p.node.id]);
-  editor.startEditing(p.node.id);
+  const id = p.node.id!;
+  if (!editor.getElement(id)) return;
+  editor.select([id]);
+  editor.startEditing(id);
 }
 
 /** Tab: a new last child of `parentId` (expanding it if collapsed), then type into it. */
@@ -178,7 +163,7 @@ export function addChild(editor: Editor, parentId: string) {
     return {
       rootId: root.id,
       expand: parent.collapsed ? parent.id : undefined,
-      node: planned(editor, {
+      node: newNode({
         parentId: parent.id,
         rootId: root.id,
         color: parent.parentId ? parent.color : leastUsedColor((index.kids.get(parent.id) ?? []).map((k) => k.color)),
@@ -203,7 +188,7 @@ export function addSibling(editor: Editor, nodeId: string) {
     const size = nodeSize('', false);
     return {
       rootId: root.id,
-      node: planned(editor, {
+      node: newNode({
         parentId: parent.id,
         rootId: root.id,
         color: n.color,
@@ -216,51 +201,37 @@ export function addSibling(editor: Editor, nodeId: string) {
 }
 
 /**
- * Delete key on mind-map nodes: removes each selected node with its whole subtree (and any other
- * selected, unlocked element), re-lays out what's left and selects the parent so keyboard flow
+ * Delete key on mind-map nodes: removes the selected, unlocked elements (a node takes its whole
+ * subtree along: removeWith), re-lays out what's left and selects the parent so keyboard flow
  * continues.
  */
 export function deleteBranches(editor: Editor, ids: string[]) {
-  const nodes = allNodes(editor);
-  const index = indexNodes(nodes);
-  const remove = new Set<string>();
+  const index = currentIndex(editor);
+  const remove = ids.filter((id) => {
+    const el = editor.getElement(id);
+    return !!el && !el.locked;
+  });
+  if (!remove.length) return;
   const roots = new Set<string>();
   let parentToSelect: string | null = null;
-  for (const id of ids) {
-    const el = editor.getElement(id);
-    if (!el || el.locked) continue;
-    if (!isNode(el)) {
-      remove.add(id);
-      continue;
-    }
-    for (const d of subtreeIds(index, id)) remove.add(d);
+  for (const id of remove) {
+    const el = index.byId.get(id);
+    if (!el) continue;
     const root = rootOf(index, id);
     if (root && root.id !== id) roots.add(root.id);
     if (!parentToSelect && el.parentId) parentToSelect = el.parentId;
   }
-  if (!remove.size) return;
-  commit(
-    editor,
-    nodes.filter((n) => !remove.has(n.id)),
-    [...roots].filter((r) => !remove.has(r)),
-    () => editor.remove([...remove]),
-  );
-  if (parentToSelect && !remove.has(parentToSelect) && editor.getElement(parentToSelect)) editor.select([parentToSelect]);
+  commit(editor, roots, () => editor.remove(remove));
+  if (parentToSelect && editor.getElement(parentToSelect)) editor.select([parentToSelect]);
 }
 
 export function toggleCollapse(editor: Editor, id: string, collapsed?: boolean) {
-  const nodes = allNodes(editor);
-  const index = indexNodes(nodes);
+  const index = currentIndex(editor);
   const node = index.byId.get(id);
   const root = node && rootOf(index, id);
   if (!node || !root || !(index.kids.get(id) ?? []).length) return;
   const next = collapsed ?? !node.collapsed;
-  commit(
-    editor,
-    nodes.map((n) => (n.id === id ? { ...n, collapsed: next } : n)),
-    [root.id],
-    () => editor.update<MindmapElement>(id, { collapsed: next }),
-  );
+  commit(editor, [root.id], () => editor.update<MindmapElement>(id, { collapsed: next }));
 }
 
 /** Branch color: a root changes only its own fill; any other node recolors its whole branch. */
@@ -278,14 +249,9 @@ export function setBranchColor(editor: Editor, ids: string[], color: string) {
 }
 
 export function setDirection(editor: Editor, rootIds: string[], direction: Direction) {
-  const roots = new Set(rootIds);
-  commit(
-    editor,
-    allNodes(editor).map((n) => (roots.has(n.id) ? { ...n, direction } : n)),
-    rootIds,
-    () => editor.updateMany(rootIds.map((id) => ({ id, patch: { direction } as ElementPatch }))),
-    { rebalance: direction === 'both' },
-  );
+  commit(editor, rootIds, () => editor.updateMany(rootIds.map((id) => ({ id, patch: { direction } as ElementPatch }))), {
+    rebalance: direction === 'both',
+  });
 }
 
 /**
@@ -294,8 +260,7 @@ export function setDirection(editor: Editor, rootIds: string[], direction: Direc
  * (and, on a 'both' map, its side). Then every touched map is re-laid out.
  */
 export function finishDrag(editor: Editor, draggedIds: string[]) {
-  const nodes = allNodes(editor);
-  const index = indexNodes(nodes);
+  const index = currentIndex(editor);
   const dragged = new Set(draggedIds);
   const roots = new Set<string>();
   const patches = new Map<string, Partial<MindmapElement>>();
@@ -336,18 +301,14 @@ export function finishDrag(editor: Editor, draggedIds: string[]) {
     });
     for (const d of subtreeIds(index, id)) patch(d, { rootId: newRoot.id, color });
   }
-  commit(
-    editor,
-    nodes.map((n) => (patches.has(n.id) ? { ...n, ...patches.get(n.id) } : n)),
-    roots,
-    () => editor.updateMany([...patches].map(([id, p]) => ({ id, patch: p as ElementPatch }))),
-  );
+  commit(editor, roots, () => editor.updateMany([...patches].map(([id, p]) => ({ id, patch: p as ElementPatch }))));
 }
 
 /** The visible node of any map under `n`'s center that isn't `n`'s parent or in its subtree. */
 export function dropTargetFor(editor: Editor, index: TreeIndex<MindmapElement>, n: MindmapElement): MindmapElement | null {
   const sub = subtreeIds(index, n.id);
+  // Hit tests never return hidden (collapsed / orphaned) nodes.
   const hit = editor.hitTest({ x: n.x + n.w / 2, y: n.y + n.h / 2 }, { exclude: sub, types: ['mindmap'] });
-  if (!isNode(hit) || hit.id === n.parentId || isHidden(hit.id) || !rootOf(index, hit.id)) return null;
+  if (!isNode(hit) || hit.id === n.parentId || !rootOf(index, hit.id)) return null;
   return hit;
 }

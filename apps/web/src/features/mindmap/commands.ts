@@ -1,5 +1,4 @@
 import { defineCommands, type Editor } from '@engine';
-import { isHidden } from './lib/store';
 import {
   addChild,
   addSibling,
@@ -12,8 +11,7 @@ import {
   toggleCollapse,
 } from './lib/actions';
 
-const selectedNodes = (editor: Editor) =>
-  editor.getSelection().filter((id) => isNode(editor.getElement(id)) && !isHidden(id));
+const selectedNodes = (editor: Editor) => editor.getSelection().filter((id) => isNode(editor.getElement(id)));
 
 export default defineCommands([
   {
@@ -29,8 +27,8 @@ export default defineCommands([
     },
   },
   {
-    // Shown for discoverability; the Enter key itself is routed by the mindmap controller,
-    // because the engine's own Enter (edit text) is registered first.
+    // Shown for discoverability; the Enter key itself reaches the element definition's
+    // onKeyDown first (before the engine's own Enter = edit text).
     id: 'mindmap.addSibling',
     label: 'Add sibling idea',
     shortcut: 'enter',

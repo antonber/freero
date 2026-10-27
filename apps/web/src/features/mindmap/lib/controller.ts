@@ -1,46 +1,22 @@
 // Board-level mind-map behaviour that no single element owns. Installed once per board by the
 // mindmap panel:
-//   - keeps the derived tree info (hidden / counts / sides) fresh and drops hidden nodes from
-//     the selection (local UI state only);
+//   - keeps the derived tree info (hidden / counts / sides) fresh for the node views;
 //   - tracks the local select-tool drag (the `follow` hook carries dragged branches meanwhile)
 //     and, on drop, reparents/reorders + re-lays out. Our pointerup listener runs in the capture
-//     phase, before the canvas ends the drag gesture, so the drop is part of the drag's undo step;
-//   - keys the engine routes elsewhere: Enter on a selected node adds a sibling (the engine's
-//     own Enter = edit text is registered first), Delete/Backspace removes whole branches.
-import type { MindmapElement } from '@freero/shared';
+//     phase, before the canvas ends the drag gesture, so the drop is part of the drag's undo step.
+// (Hidden nodes, Enter/Delete on a selected node and subtree deletes are the element
+// definition's: hidden, onKeyDown, removeWith.)
 import type { Editor } from '@engine';
-import { computeInfo, indexNodes } from './tree';
-import { isHidden, setDragging, setDropTarget, setInfos } from './store';
-import { addSibling, allNodes, deleteBranches, dropTargetFor, finishDrag, isNode, selectedNode } from './actions';
-
-function isTextInput(t: EventTarget | null): boolean {
-  if (!(t instanceof HTMLElement)) return false;
-  if (t.isContentEditable) return true;
-  if (t.closest('[role="dialog"], [data-fr-keyboard-trap]')) return true;
-  const tag = t.tagName;
-  if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
-  if (tag === 'INPUT') return !['button', 'checkbox', 'radio', 'range', 'color', 'submit'].includes((t as HTMLInputElement).type);
-  return false;
-}
+import { resetTree, setDragging, setDropTarget, syncTree } from './store';
+import { allNodes, dropTargetFor, finishDrag } from './actions';
 
 export function installController(editor: Editor): () => void {
-  let prev: MindmapElement[] = [];
   let armed = false;
   let start = new Map<string, string>();
   const dragged = new Set<string>();
 
-  const dropHiddenFromSelection = () => {
-    const sel = editor.getSelection();
-    if (sel.some(isHidden)) editor.select(sel.filter((id) => !isHidden(id)));
-  };
-
   const refresh = () => {
-    const nodes = allNodes(editor);
-    if (nodes.length === prev.length && nodes.every((n, i) => n === prev[i])) return;
-    prev = nodes;
-    const index = indexNodes(nodes);
-    setInfos(computeInfo(index));
-    dropHiddenFromSelection();
+    const index = syncTree(editor);
     if (!armed) return;
     // Which selected nodes has this drag moved? (Drop hint when it's a single branch.)
     for (const id of editor.getSelection()) {
@@ -76,38 +52,17 @@ export function installController(editor: Editor): () => void {
     if (ids.length && editor.can('editor')) finishDrag(editor, ids);
   };
 
-  const onKeyDown = (e: KeyboardEvent) => {
-    if (e.defaultPrevented || e.isComposing || isTextInput(e.target)) return;
-    if (editor.getEditingId() || !editor.can('editor')) return;
-    if (e.ctrlKey || e.metaKey || e.altKey) return;
-    if (e.key === 'Enter' && !e.shiftKey) {
-      const n = selectedNode(editor);
-      if (!n || n.locked) return;
-      e.preventDefault();
-      addSibling(editor, n.id);
-    } else if (e.key === 'Delete' || e.key === 'Backspace') {
-      const sel = editor.getSelection();
-      if (!sel.some((id) => isNode(editor.getElement(id)))) return;
-      e.preventDefault();
-      deleteBranches(editor, sel);
-    }
-  };
-
   refresh();
   const offElements = editor.on('elements', refresh);
-  const offSelection = editor.on('selection', dropHiddenFromSelection);
   window.addEventListener('pointerdown', onPointerDown, true);
   window.addEventListener('pointerup', onPointerUp, true);
   window.addEventListener('pointercancel', disarm, true);
-  window.addEventListener('keydown', onKeyDown, true);
   return () => {
     offElements();
-    offSelection();
     window.removeEventListener('pointerdown', onPointerDown, true);
     window.removeEventListener('pointerup', onPointerUp, true);
     window.removeEventListener('pointercancel', disarm, true);
-    window.removeEventListener('keydown', onKeyDown, true);
     disarm();
-    setInfos(new Map());
+    resetTree();
   };
 }

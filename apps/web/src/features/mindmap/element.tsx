@@ -15,8 +15,8 @@ import {
 import { readableTextColor } from '@ui';
 import { NODE_STYLE, nodeSize } from './lib/measure';
 import { HUB_R, ROOT_COLOR } from './lib/constants';
-import { getInfo, isDragging, isHidden, useIsDropTarget, useNodeInfo } from './lib/store';
-import { addSibling, isNode, isQuiet, toggleCollapse } from './lib/actions';
+import { isDragging, isHidden, rootIdOf, syncTree, useIsDropTarget, useNodeInfo } from './lib/store';
+import { addSibling, deleteBranches, isNode, isQuiet, selectedNode, toggleCollapse } from './lib/actions';
 import { planFollow } from './lib/follow';
 import './mindmap.css';
 
@@ -84,7 +84,6 @@ const MindmapNode = memo(function MindmapNode({ element, selected, editing }: El
   const parent = useElement<MindmapElement>(element.parentId);
   const drop = useIsDropTarget(element.id);
   const canEdit = useCanEdit();
-  if (info.hidden) return null;
 
   const isRoot = !element.parentId;
   const s = isRoot ? NODE_STYLE.root : NODE_STYLE.node;
@@ -102,7 +101,7 @@ const MindmapNode = memo(function MindmapNode({ element, selected, editing }: El
 
   return (
     <div className="fr-mm" onKeyDownCapture={onKeyDownCapture}>
-      {parent && !isHidden(parent.id) && <Edge node={element} parent={parent} depth={info.depth} />}
+      {parent && <Edge node={element} parent={parent} depth={info.depth} />}
       <div
         className={`fr-mm__pill${isRoot ? ' is-root' : ''}${drop ? ' is-drop' : ''}${selected ? ' is-selected' : ''}`}
         style={{ ['--mm' as string]: color, borderRadius: Math.min(element.h / 2, 26) }}
@@ -140,19 +139,13 @@ function planFor(change: FollowChange): Map<string, Point> {
   let plan = plans.get(change);
   if (plan) return plan;
   const ed = change.editor;
-  // Mid-transaction the ordered list is stale: use it for ids only, read values from the store.
-  const nodes = ed
-    .getElements()
-    .filter(isNode)
-    .map((n) => ed.getElement(n.id))
-    .filter(isNode);
   plan = planFollow({
-    nodes,
+    nodes: ed.getElements().filter(isNode),
     changed: change.changed,
     removed: change.removed,
     selected: new Set(ed.getSelection()),
     dragging: isDragging(),
-    previousRoot: (id) => getInfo(id).root,
+    previousRoot: rootIdOf,
   });
   plans.set(change, plan);
   return plan;
@@ -168,8 +161,27 @@ export default defineElement({
     return { type: 'mindmap', text: '', parentId: null, rootId: '', color: ROOT_COLOR, direction: 'right', w, h };
   },
   Component: MindmapNode,
-  // Nodes under a collapsed branch (or left behind by a plain delete) can't be clicked.
-  hitTest: (el) => !isHidden(el.id),
+  // Under a collapsed branch (or orphaned by a collaborator's delete): off the board entirely —
+  // not rendered, exported, hit, selected, snapped to or counted in bounds.
+  hidden: (el, editor) => isHidden(editor, el.id),
+  // Deleting or cutting a node takes its subtree along, in the same undo step.
+  removeWith: (el, editor) => (syncTree(editor).kids.get(el.id) ?? []).map((k) => k.id),
+  // A selected node owns Enter (add a sibling) and Delete (remove branches, keep keyboard flow
+  // on the parent). Tab (add child) is the mindmap.addChild command.
+  onKeyDown(e, { editor, selection }) {
+    if (e.ctrlKey || e.metaKey || e.altKey || !editor.can('editor')) return false;
+    if (e.key === 'Enter' && !e.shiftKey) {
+      const n = selectedNode(editor);
+      if (!n || n.locked) return false;
+      addSibling(editor, n.id);
+      return true;
+    }
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      deleteBranches(editor, selection.map((el) => el.id));
+      return true;
+    }
+    return false;
+  },
   toPlainText: (el) => richTextToPlain(el.text),
   // Dragged branches travel whole; any other local change to a map re-lays it out — in the
   // same transaction (one undo step), and only on the client that made the change.
@@ -179,7 +191,7 @@ export default defineElement({
     return p && (p.x !== el.x || p.y !== el.y) ? { x: p.x, y: p.y } : null;
   },
   normalize(el) {
-    const { w, h } = nodeSize(richTextToPlain(el.text), !el.parentId);
+    const { w, h } = nodeSize(el.text, !el.parentId);
     return w !== el.w || h !== el.h ? { w, h } : null;
   },
 });
