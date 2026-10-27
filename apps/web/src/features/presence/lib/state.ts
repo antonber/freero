@@ -2,7 +2,7 @@
 import { createStore, useStore, type StoreApi } from 'zustand';
 import { nanoid } from 'nanoid';
 import type { Editor, Point } from '@engine';
-import { BURST_CAPACITY, takeToken, type Bucket, type PresenceExt, type Reaction } from './model';
+import { BURST_CAPACITY, takeToken, type Bucket, type PresenceExt, type Reaction, type Viewport } from './model';
 
 export interface Burst {
   id: string;
@@ -15,7 +15,6 @@ export interface Burst {
 }
 
 export interface PresenceUi {
-  following: { userId: string; name: string; color: string } | null;
   bursts: Burst[];
   bucket: Bucket;
   ext: PresenceExt;
@@ -28,7 +27,6 @@ export function presenceStore(editor: Editor): StoreApi<PresenceUi> {
   let s = stores.get(editor);
   if (!s) {
     s = createStore<PresenceUi>(() => ({
-      following: null,
       bursts: [],
       bucket: { tokens: BURST_CAPACITY, at: Date.now() },
       ext: {},
@@ -93,13 +91,7 @@ export function bringEveryone(editor: Editor) {
   editor.host.notify('Asked everyone to come to your view', 'success');
 }
 
-export function startFollowing(editor: Editor, who: { userId: string; name: string; color: string }) {
-  presenceStore(editor).setState({ following: who });
-  publish(editor, { following: who.userId });
-}
-
-export function stopFollowing(editor: Editor) {
-  if (!presenceStore(editor).getState().following) return;
-  presenceStore(editor).setState({ following: null });
-  publish(editor, { following: null });
+/** Shows exactly what someone sees (their whole screen fits yours), once. */
+export function showView(editor: Editor, view: Viewport) {
+  editor.zoomToRect({ x: view.x, y: view.y, w: view.width / view.zoom, h: view.height / view.zoom }, { padding: 0, area: 'viewport' });
 }

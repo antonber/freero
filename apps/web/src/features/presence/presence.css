@@ -237,6 +237,12 @@
   white-space: nowrap;
 }
 
+/* Their cursor is where the pill would be: it moves up out of the way (below the top bar). */
+.fr-presence-pill.is-top {
+  top: 76px;
+  bottom: auto;
+}
+
 .fr-presence-pill__dot {
   opacity: 0.7;
 }

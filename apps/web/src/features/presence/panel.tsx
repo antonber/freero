@@ -1,45 +1,47 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Crosshair, Eye, EyeOff, Megaphone, SmilePlus } from 'lucide-react';
-import { definePanel, usePeers, usePointer, type Editor } from '@engine';
-import { Avatar, Button, IconButton, Popover, Tooltip, useToast } from '@ui';
+import { definePanel, useCamera, useFollowing, usePeers, usePointer, type Editor } from '@engine';
+import { Avatar, Button, IconButton, Popover, Tooltip } from '@ui';
 import {
   REACTIONS,
-  cameraToShow,
   newSignals,
   peopleOnBoard,
   primaryClient,
   readExt,
-  sameCamera,
-  stepCamera,
   takeToken,
   type Bucket,
   type Peer,
   type Person,
   type PresenceExt,
 } from './lib/model';
-import { bringEveryone, burstOrigin, sendReaction, showBurst, startFollowing, stopFollowing, usePresenceUi, presenceStore } from './lib/state';
+import { bringEveryone, burstOrigin, sendReaction, showBurst, showView, usePresenceUi, presenceStore } from './lib/state';
 import './presence.css';
 
 const MAX_SHOWN = 4;
 const ROLE_LABEL = { owner: 'Owner', editor: 'Can edit', commenter: 'Can comment', viewer: 'Can view' } as const;
 
+/** "Go to view": shows what they see right now, once (a camera move, so it also ends following). */
 function jumpTo(editor: Editor, person: Person) {
   const c = primaryClient(person);
   if (!c?.viewport) return false;
-  stopFollowing(editor);
-  editor.setCamera(cameraToShow(c.viewport, editor.getViewportSize()), { animate: true });
+  showView(editor, c.viewport);
   return true;
 }
 
+/** Following is the engine's (Editor.follow): this picks which of their tabs to mirror. */
+function follow(editor: Editor, person: Person) {
+  editor.follow({ userId: person.userId, clientId: primaryClient(person)?.clientId });
+}
+
 function useFollowers(peers: Peer[], userId: string): number {
-  return useMemo(() => new Set(peers.filter((p) => readExt(p).following === userId).map((p) => p.user.id)).size, [peers, userId]);
+  return useMemo(() => new Set(peers.filter((p) => p.following === userId).map((p) => p.user.id)).size, [peers, userId]);
 }
 
 // ---------------------------------------------------------------------------
 // Avatar stack (topbar-right)
 // ---------------------------------------------------------------------------
 function PersonCard({ editor, person, onDone }: { editor: Editor; person: Person; onDone: () => void }) {
-  const following = usePresenceUi(editor, (s) => s.following);
+  const following = useFollowing();
   const peers = usePeers();
   const followers = useFollowers(peers, editor.user.id);
   const isFollowed = following?.userId === person.userId;
@@ -77,7 +79,7 @@ function PersonCard({ editor, person, onDone }: { editor: Editor; person: Person
             Go to view
           </Button>
           {isFollowed ? (
-            <Button size="sm" icon={EyeOff} onClick={() => stopFollowing(editor)}>
+            <Button size="sm" icon={EyeOff} onClick={() => editor.follow(null)}>
               Stop following
             </Button>
           ) : (
@@ -87,7 +89,7 @@ function PersonCard({ editor, person, onDone }: { editor: Editor; person: Person
               icon={Eye}
               disabled={!client?.viewport}
               onClick={() => {
-                startFollowing(editor, { userId: person.userId, name: person.name, color: person.color });
+                follow(editor, person);
                 onDone();
               }}
             >
@@ -117,7 +119,7 @@ function BringEveryone({ editor, onDone }: { editor: Editor; onDone: () => void 
 }
 
 function PeopleList({ editor, people, onDone }: { editor: Editor; people: Person[]; onDone: () => void }) {
-  const following = usePresenceUi(editor, (s) => s.following);
+  const following = useFollowing();
   return (
     <div className="fr-presence-list">
       <div className="fr-presence-list__heading">On this board · {people.length}</div>
@@ -151,9 +153,9 @@ function PeopleList({ editor, people, onDone }: { editor: Editor; people: Person
                     active={isFollowed}
                     disabled={!c?.viewport}
                     onClick={() => {
-                      if (isFollowed) stopFollowing(editor);
+                      if (isFollowed) editor.follow(null);
                       else {
-                        startFollowing(editor, { userId: p.userId, name: p.name, color: p.color });
+                        follow(editor, p);
                         onDone();
                       }
                     }}
@@ -177,20 +179,12 @@ function PeopleList({ editor, people, onDone }: { editor: Editor; people: Person
 function AvatarsPanel({ editor }: { editor: Editor }) {
   const peers = usePeers();
   const people = useMemo(() => peopleOnBoard(editor.user, peers), [editor.user, peers]);
-  const following = usePresenceUi(editor, (s) => s.following);
+  const following = useFollowing();
   const [open, setOpen] = useState<{ userId: string | '*'; el: HTMLElement } | null>(null);
   const shown = people.length > MAX_SHOWN ? people.slice(0, MAX_SHOWN - 1) : people;
   const rest = people.length - shown.length;
   const openPerson = open && open.userId !== '*' ? people.find((p) => p.userId === open.userId) : undefined;
   const close = () => setOpen(null);
-
-  // Whoever you follow leaves → stop, and say so.
-  useEffect(() => {
-    if (following && !people.some((p) => p.userId === following.userId && p.clients.length)) {
-      stopFollowing(editor);
-      editor.host.notify(`${following.name} left the board`);
-    }
-  }, [editor, following, people]);
 
   return (
     <div className="fr-presence-stack" role="group" aria-label="People on this board">
@@ -291,50 +285,57 @@ function ReactionsPanel({ editor }: { editor: Editor }) {
 // ---------------------------------------------------------------------------
 // Screen overlay: follow frame + pill, reaction bursts, summons.
 // ---------------------------------------------------------------------------
-function FollowController({ editor }: { editor: Editor }) {
-  const following = usePresenceUi(editor, (s) => s.following);
-  useEffect(() => {
-    if (!following) return;
-    let expected = editor.getCamera();
-    let applying = false;
-    let raf = 0;
-    // Cancel any camera animation in flight so it can't be mistaken for the user moving.
-    editor.setCamera(expected);
-    const offCamera = editor.on('camera', () => {
-      if (applying) return;
-      if (!sameCamera(editor.getCamera(), expected)) stopFollowing(editor);
-    });
-    const tick = () => {
-      const target = editor.getPeers().filter((p) => p.user?.id === following.userId);
-      const client = primaryClient({ userId: following.userId, name: '', color: '', avatarUrl: null, isMe: false, clients: target });
-      if (client?.viewport) {
-        const size = editor.getViewportSize();
-        const goal = cameraToShow(client.viewport, size);
-        const cur = editor.getCamera();
-        if (!sameCamera(cur, goal, 0.25)) {
-          applying = true;
-          editor.setCamera(stepCamera(cur, goal, 0.2, size));
-          applying = false;
-        }
-        expected = editor.getCamera();
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => {
-      cancelAnimationFrame(raf);
-      offCamera();
-    };
-  }, [editor, following]);
-  if (!following) return null;
+/** Room the pill needs at the bottom of the screen, and the name label's size right of a cursor (px). */
+const PILL_ZONE = 64;
+const CURSOR_LABEL = { w: 160, h: 40 };
+
+/**
+ * While following (Editor.follow): a frame in their color and a "Following <name> · Stop" pill,
+ * bottom-center — or top-center while their cursor and name label are where the pill would be.
+ * Also says so when the person you follow leaves (the engine then stops following).
+ */
+function FollowIndicator({ editor }: { editor: Editor }) {
+  const following = useFollowing();
+  const peers = usePeers();
+  useCamera(); // their cursor moves on screen as the camera moves
+  const pill = useRef<HTMLDivElement>(null);
+  const [pillW, setPillW] = useState(0);
+  const mine = following ? peers.filter((p) => p.user?.id === following.userId) : [];
+  const who = mine.find((p) => p.clientId === following?.clientId) ?? mine[0];
+
+  // Remember whom, so a stop caused by them leaving can be told apart from you stopping.
+  const last = useRef<{ userId: string; name: string } | null>(null);
+  if (following && who) last.current = { userId: following.userId, name: who.user.name };
+  useEffect(
+    () =>
+      editor.on('follow', () => {
+        const was = last.current;
+        if (editor.getFollowing() || !was) return;
+        last.current = null;
+        if (!editor.getPeers().some((p) => p.user?.id === was.userId)) editor.host.notify(`${was.name} left the board`);
+      }),
+    [editor],
+  );
+  useLayoutEffect(() => {
+    const w = pill.current?.offsetWidth ?? 0;
+    if (w !== pillW) setPillW(w);
+  });
+
+  if (!following || !who) return null;
+  const vp = editor.getViewportSize();
+  const c = who.cursor ? editor.worldToScreen(who.cursor) : null;
+  const pillLeft = (vp.width - pillW) / 2;
+  const atTop =
+    !!c && c.y + CURSOR_LABEL.h > vp.height - PILL_ZONE && c.x + CURSOR_LABEL.w > pillLeft && c.x < pillLeft + pillW;
+  const color = who.user.color;
   return (
     <>
-      <div className="fr-presence-frame" style={{ borderColor: following.color }} aria-hidden />
-      <div className="fr-presence-pill" data-fr-interactive="" style={{ background: following.color }} role="status">
+      <div className="fr-presence-frame" style={{ borderColor: color }} aria-hidden />
+      <div ref={pill} className={`fr-presence-pill${atTop ? ' is-top' : ''}`} data-fr-interactive="" style={{ background: color }} role="status">
         <Eye size={14} />
-        <span>Following {following.name}</span>
+        <span>Following {who.user.name}</span>
         <span className="fr-presence-pill__dot">·</span>
-        <button type="button" onClick={() => stopFollowing(editor)}>
+        <button type="button" onClick={() => editor.follow(null)}>
           Stop
         </button>
       </div>
@@ -384,7 +385,6 @@ function Bursts({ editor }: { editor: Editor }) {
 
 function SignalWatcher({ editor }: { editor: Editor }) {
   const peers = usePeers();
-  const notify = useToast();
   const seenReactions = useRef(new Map<number, string | null>());
   const seenSummons = useRef(new Map<number, string | null>());
   // Receivers throttle too, so a client that ignores the sender-side limit can't flood screens.
@@ -400,22 +400,19 @@ function SignalWatcher({ editor }: { editor: Editor }) {
     for (const { peer } of newSignals(seenSummons.current, peers, (e: PresenceExt) => e.summon)) {
       if (peer.user.id === editor.user.id) continue; // your own other tab
       const clientId = peer.clientId;
-      notify(`${peer.user.name} is asking everyone to join their view`, 'info', {
-        duration: 12000,
+      editor.host.notify(`${peer.user.name} is asking everyone to join their view`, 'info', {
         action: {
           label: 'Go',
-          onClick: () => {
+          run: () => {
             // Their live view if they're still here, else where they were when they asked.
             const live = editor.getPeers().find((p) => p.clientId === clientId);
             const vp = live?.viewport ?? readExt(peer).summon?.viewport;
-            if (!vp) return;
-            stopFollowing(editor);
-            editor.setCamera(cameraToShow(vp, editor.getViewportSize()), { animate: true });
+            if (vp) showView(editor, vp);
           },
         },
       });
     }
-  }, [editor, peers, notify]);
+  }, [editor, peers]);
   return null;
 }
 
@@ -424,7 +421,7 @@ function PresenceOverlay({ editor }: { editor: Editor }) {
   presenceStore(editor);
   return (
     <div className="fr-presence-overlay">
-      <FollowController editor={editor} />
+      <FollowIndicator editor={editor} />
       <Bursts editor={editor} />
       <SignalWatcher editor={editor} />
     </div>

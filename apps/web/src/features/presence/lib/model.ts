@@ -1,7 +1,7 @@
-// Pure presence logic: who is on the board, how to mirror someone's viewport, and which
-// ephemeral signals (reaction bursts, "bring everyone here") are new.
+// Pure presence logic: who is on the board and which ephemeral signals (reaction bursts,
+// "bring everyone here") are new. Following someone's view is the engine's (Editor.follow).
 import type { PresenceState } from '@freero/shared';
-import type { Camera, HostUser } from '@engine';
+import type { HostUser } from '@engine';
 
 export type Peer = PresenceState & { clientId: number };
 export type Viewport = NonNullable<PresenceState['viewport']>;
@@ -15,8 +15,6 @@ export interface PresenceExt {
   reaction?: { id: string; emoji: Reaction; at: { x: number; y: number } | null };
   /** Latest "bring everyone to me" request; a new id = a new request. */
   summon?: { id: string; viewport: Viewport | null };
-  /** User id this client is currently following, if any. */
-  following?: string | null;
 }
 
 /** Reads another client's presence ext defensively (peers are untrusted input). */
@@ -30,7 +28,6 @@ export function readExt(peer: Pick<PresenceState, 'ext'>): PresenceExt {
     out.reaction = { id: reaction.id, emoji: reaction.emoji, at: validPoint(reaction.at) };
   const summon = r.summon as PresenceExt['summon'] | undefined;
   if (summon && typeof summon.id === 'string') out.summon = { id: summon.id, viewport: validViewport(summon.viewport) };
-  if (typeof r.following === 'string') out.following = r.following;
   return out;
 }
 
@@ -92,35 +89,6 @@ export function primaryClient(person: Person): Peer | null {
   const score = (p: Peer) => (p.viewport ? 2 : 0) + (p.cursor ? 1 : 0);
   for (const c of person.clients) if (!best || score(c) > score(best) || (score(c) === score(best) && c.clientId > best.clientId)) best = c;
   return best;
-}
-
-// ---------------------------------------------------------------------------
-// Viewports
-// ---------------------------------------------------------------------------
-/**
- * Camera for a viewport of size `mine` that shows everything someone else sees in theirs
- * (same center; zoomed out if your screen is smaller than theirs).
- */
-export function cameraToShow(view: Viewport, mine: { width: number; height: number }): Camera {
-  const cx = view.x + view.width / (2 * view.zoom);
-  const cy = view.y + view.height / (2 * view.zoom);
-  const zoom = view.zoom * Math.min(mine.width / view.width, mine.height / view.height);
-  return { x: cx - mine.width / (2 * zoom), y: cy - mine.height / (2 * zoom), zoom };
-}
-
-/** One smoothing step from `a` toward `b`: centers interpolate linearly, zoom geometrically. */
-export function stepCamera(a: Camera, b: Camera, t: number, size: { width: number; height: number }): Camera {
-  const zoom = Math.exp(Math.log(a.zoom) + (Math.log(b.zoom) - Math.log(a.zoom)) * t);
-  const ca = { x: a.x + size.width / (2 * a.zoom), y: a.y + size.height / (2 * a.zoom) };
-  const cb = { x: b.x + size.width / (2 * b.zoom), y: b.y + size.height / (2 * b.zoom) };
-  const cx = ca.x + (cb.x - ca.x) * t;
-  const cy = ca.y + (cb.y - ca.y) * t;
-  return { x: cx - size.width / (2 * zoom), y: cy - size.height / (2 * zoom), zoom };
-}
-
-/** Same camera up to sub-pixel noise (screen pixels / zoom ratio). */
-export function sameCamera(a: Camera, b: Camera, px = 0.5): boolean {
-  return Math.abs(a.x - b.x) * a.zoom < px && Math.abs(a.y - b.y) * a.zoom < px && Math.abs(a.zoom / b.zoom - 1) < 1e-3;
 }
 
 // ---------------------------------------------------------------------------

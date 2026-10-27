@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cameraToShow, newSignals, peopleOnBoard, takeToken, type Peer, type PresenceExt } from './lib/model';
+import { newSignals, peopleOnBoard, takeToken, type Peer, type PresenceExt } from './lib/model';
 
 const me = { id: 'u-me', name: 'Mia', color: '#111111', avatarUrl: null };
 const peer = (clientId: number, userId: string, name: string, ext?: PresenceExt): Peer => ({
@@ -17,20 +17,6 @@ describe('avatar stack', () => {
     expect(people.map((p) => p.userId)).toEqual(['u-me', 'u-al', 'u-zoe']);
     expect(people[0].isMe).toBe(true);
     expect(people.find((p) => p.userId === 'u-zoe')!.clients).toHaveLength(2);
-  });
-});
-
-describe('following someone', () => {
-  it('shows everything they see when your screen is smaller than theirs', () => {
-    const theirs = { x: 100, y: 50, zoom: 2, width: 1600, height: 1000 };
-    const cam = cameraToShow(theirs, { width: 800, height: 800 });
-    const visible = (c: { x: number; y: number; zoom: number }, w: number, h: number) => ({ x0: c.x, y0: c.y, x1: c.x + w / c.zoom, y1: c.y + h / c.zoom });
-    const mine = visible(cam, 800, 800);
-    const them = visible(theirs, 1600, 1000);
-    expect(mine.x0).toBeLessThanOrEqual(them.x0 + 1e-9);
-    expect(mine.y0).toBeLessThanOrEqual(them.y0 + 1e-9);
-    expect(mine.x1).toBeGreaterThanOrEqual(them.x1 - 1e-9);
-    expect(mine.y1).toBeGreaterThanOrEqual(them.y1 - 1e-9);
   });
 });
 

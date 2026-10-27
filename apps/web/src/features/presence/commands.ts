@@ -1,9 +1,11 @@
+import { EyeOff, Megaphone } from 'lucide-react';
 import { defineCommands } from '@engine';
-import { bringEveryone, presenceStore, stopFollowing } from './lib/state';
+import { bringEveryone } from './lib/state';
 
 export default defineCommands([
   {
     id: 'presence.bringEveryone',
+    icon: Megaphone,
     label: 'Bring everyone to me',
     menus: ['board'],
     minRole: 'viewer',
@@ -12,9 +14,10 @@ export default defineCommands([
   },
   {
     id: 'presence.stopFollowing',
+    icon: EyeOff,
     label: 'Stop following',
     minRole: 'viewer',
-    when: (editor) => !!presenceStore(editor).getState().following,
-    run: stopFollowing,
+    when: (editor) => !!editor.getFollowing(),
+    run: (editor) => editor.follow(null),
   },
 ]);
