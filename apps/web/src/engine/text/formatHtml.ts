@@ -5,8 +5,16 @@ import { plainToRichText, richTextToPlain, sanitizeRichText } from './sanitize';
 
 const INLINE: Record<string, string> = { bold: 'B', italic: 'I', underline: 'U', strike: 'S' };
 
+/**
+ * Parses into an INERT document: stored rich text comes from other users and is untrusted until
+ * re-sanitized. A <div> owned by the live document would load `<img onerror>` / run `<svg onload>`
+ * the moment innerHTML is set — selecting a collaborator's sticky and pressing Mod+B ran their
+ * script. Nodes in an inert document never load or execute anything.
+ */
+const inert = typeof document === 'undefined' ? null : document.implementation.createHTMLDocument('');
+
 function parse(html: string): HTMLDivElement {
-  const div = document.createElement('div');
+  const div = (inert ?? document).createElement('div');
   div.innerHTML = html;
   return div;
 }
