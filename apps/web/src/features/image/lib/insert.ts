@@ -1,5 +1,5 @@
 // Getting images onto the board: upload (or fall back), measure, lay out, create once.
-import type { Editor, NewElement, Point } from '@engine';
+import type { Editor, NewElement, Point, Rect } from '@engine';
 import { dataUrlToBlob, isImageFile, naturalSizeOf, readAsDataUrl } from './files';
 import { fitGridLayout, fitSize } from './layout';
 import { addPending } from './pending';
@@ -47,12 +47,23 @@ function reportFailures(editor: Editor, tooLarge: number, unreadable: number) {
   if (unreadable) editor.host.notify(unreadable === 1 ? "That file isn't an image Freero can read." : `${unreadable} files aren't images Freero can read.`, 'error');
 }
 
+/** Moves a laid-out batch, as a block, into the nearest free spot around the view. */
+function intoFreeSpot(editor: Editor, rects: Rect[]): Rect[] {
+  const x0 = Math.min(...rects.map((r) => r.x));
+  const y0 = Math.min(...rects.map((r) => r.y));
+  const w = Math.max(...rects.map((r) => r.x + r.w)) - x0;
+  const h = Math.max(...rects.map((r) => r.y + r.h)) - y0;
+  const spot = editor.findFreeSpot({ w, h });
+  return rects.map((r) => ({ ...r, x: r.x - x0 + spot.x, y: r.y - y0 + spot.y }));
+}
+
 /**
- * Uploads image files and places them as one grid centered on `center`, each scaled to fit
- * ~600px. While uploading, local placeholders shimmer where the images will land. The elements
- * are created together once everything settled: one undo step.
+ * Uploads image files and places them as one grid centered on `center` (a drop or paste
+ * point), or — when `center` is null (the upload button) — in a free spot near the view, each
+ * scaled to fit ~600px. While uploading, local placeholders shimmer where the images will land.
+ * The elements are created together once everything settled: one undo step.
  */
-export async function insertImageFiles(editor: Editor, files: File[], center: Point): Promise<string[]> {
+export async function insertImageFiles(editor: Editor, files: File[], center: Point | null): Promise<string[]> {
   const images = files.filter(isImageFile).slice(0, MAX_FILES);
   if (!images.length || !editor.can('editor')) return [];
   const measured = await Promise.all(
@@ -71,11 +82,12 @@ export async function insertImageFiles(editor: Editor, files: File[], center: Po
     reportFailures(editor, 0, unreadable);
     return [];
   }
-  const rects = fitGridLayout(
+  const laidOut = fitGridLayout(
     readable.map((m) => fitSize(m.size.w, m.size.h)),
-    center,
+    center ?? { x: 0, y: 0 },
     visibleArea(editor),
   );
+  const rects = center ? laidOut : intoFreeSpot(editor, laidOut);
   const clear = addPending(rects);
   let stored;
   try {

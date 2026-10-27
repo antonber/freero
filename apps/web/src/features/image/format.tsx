@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { ImageUp, Ratio, Type } from 'lucide-react';
 import type { ImageElement } from '@freero/shared';
 import { defineFormat, type Editor } from '@engine';
@@ -44,14 +44,11 @@ function AltControl({ editor, image }: { editor: Editor; image: ImageElement }) 
   const [value, setValue] = useState('');
   const ref = useRef<HTMLButtonElement>(null);
   const field = useRef<HTMLTextAreaElement>(null);
-  // Focus once the popover is placed (it mounts hidden while it measures itself).
-  useEffect(() => {
+  // Focus and select the current text as the popover opens (it mounts focusable).
+  useLayoutEffect(() => {
     if (!open) return;
-    const raf = requestAnimationFrame(() => {
-      field.current?.focus();
-      field.current?.select();
-    });
-    return () => cancelAnimationFrame(raf);
+    field.current?.focus();
+    field.current?.select();
   }, [open]);
   const save = () => {
     const alt = value.trim();

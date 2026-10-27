@@ -10,13 +10,10 @@ export default defineTool({
   order: 80,
   placement: 'main',
 
-  // Not a drawing tool: activating it opens the file picker (still inside the click's user
-  // activation) and hands control straight back to select. Chosen images land at the
-  // viewport center, laid out as a grid when there are several.
-  onActivate(editor) {
-    void pickImageFiles(true).then((files) => insertImageFiles(editor, files, editor.getViewportCenter()));
-    queueMicrotask(() => {
-      if (editor.getToolId() === 'image') editor.setTool('select');
-    });
+  // Act-now tool: picking it opens the file picker (still inside the click's user activation);
+  // the current tool stays. Chosen images land in a free spot near the viewport center (never
+  // on top of existing content), as a grid when several.
+  onSelect(editor) {
+    void pickImageFiles(true).then((files) => insertImageFiles(editor, files, null));
   },
 });
