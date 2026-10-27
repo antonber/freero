@@ -27,10 +27,12 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // Keep the browser's Host (changeOrigin: false): the server refuses state-changing requests
+    // and socket upgrades whose Origin is not the Host they arrived on (CSRF defence).
     proxy: {
-      '/api': server,
-      '/uploads': server,
-      '/ws': { target: server, ws: true },
+      '/api': { target: server, changeOrigin: false },
+      '/uploads': { target: server, changeOrigin: false },
+      '/ws': { target: server, ws: true, changeOrigin: false },
     },
   },
 });
