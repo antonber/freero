@@ -1,8 +1,7 @@
 import { memo, type CSSProperties } from 'react';
 import type { TextElement } from '@freero/shared';
 import { defineElement, ElementText, richTextToPlain, type ElementRenderProps, type NewElement } from '@engine';
-import { layoutText, textPadding, type LaidOutText } from './lib/layout';
-import { measureTextBox } from './lib/measure';
+import { layoutText, measureTextBox, textPadding } from './lib/layout';
 import { pastedTextToRich, textBlockAt, textDefaults } from './lib/actions';
 import './text.css';
 
@@ -34,8 +33,9 @@ export default defineElement({
   defaults: (): Omit<NewElement<'text'>, 'x' | 'y'> => textDefaults(),
   Component: TextView,
   toPlainText: (el) => richTextToPlain(el.text),
-  normalize: (el) =>
-    layoutText(el as LaidOutText, (wrap) => measureTextBox(el.text, el.fontFamily, el.fontSize, wrap)) as Partial<TextElement> | null,
+  normalize: (el, prev) => layoutText(el, prev, (wrap) => measureTextBox(el.text, el.fontFamily, el.fontSize, wrap)),
+  // Double-click a side handle: back from a fixed wrapping width to hugging the text.
+  fitToContent: (el, handle) => (!el.autoWidth && (handle === 'e' || handle === 'w') ? { autoWidth: true } : null),
   // Plain text pastes as a text box (stickies only claim it when nothing richer does).
   importPriority: 0,
   importData(editor, data, at) {

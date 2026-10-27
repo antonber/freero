@@ -2,8 +2,7 @@
 import type { TextElement } from '@freero/shared';
 import { plainToRichText, type NewElement, type Point } from '@engine';
 import { DEFAULT_FONT_SIZE, PASTE_MAX_WIDTH } from './constants';
-import { textPadding } from './layout';
-import { measureTextBox } from './measure';
+import { measureTextBox, textPadding } from './layout';
 
 export function textDefaults(): Omit<NewElement<'text'>, 'x' | 'y'> {
   return {
