@@ -2,7 +2,8 @@ import { Router } from 'express';
 import type { BoardMember, Role, User } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { badRequest, forbidden, handle, HttpError, notFound } from '../../platform/http';
-import { currentUser, findUserByEmail, getUser, requireUser } from '../auth/index';
+import { rateLimit } from '../../platform/rateLimit';
+import { currentUser, findUserByEmail, getUser, getUsers, requireUser } from '../auth/index';
 import { requireBoardAccess } from '../boards/index';
 import { refreshBoardAccess } from '../realtime/index';
 import * as repo from './repo';
@@ -21,22 +22,26 @@ const toMember = (u: User, role: Role, withEmail: boolean): BoardMember => ({
   role,
 });
 
+const boardGone = () => notFound('Board not found');
+
 export default function memberRoutes(_ctx: ServerContext): Router {
   const r = Router();
   r.use('/boards/:id/members', requireUser);
 
   r.get(
     '/boards/:id/members',
-    handle((req, res) => {
+    handle(async (req, res) => {
       const boardId = req.params.id;
       const me = currentUser(req);
-      const { ownerId, role: myRole } = requireBoardAccess(boardId, me.id);
+      const { ownerId, role: myRole } = await requireBoardAccess(boardId, me.id);
       const emails = atLeast(myRole, 'editor');
+      const rows = await repo.listByBoard(boardId);
+      const users = await getUsers([ownerId, ...rows.map((m) => m.userId)]);
       const members: BoardMember[] = [];
-      const owner = getUser(ownerId);
+      const owner = users.get(ownerId);
       if (owner) members.push(toMember(owner, 'owner', emails || owner.id === me.id));
-      for (const m of repo.listByBoard(boardId)) {
-        const u = getUser(m.userId);
+      for (const m of rows) {
+        const u = users.get(m.userId);
         if (u) members.push(toMember(u, m.role, emails || u.id === me.id));
       }
       res.json({ members });
@@ -45,52 +50,55 @@ export default function memberRoutes(_ctx: ServerContext): Router {
 
   r.post(
     '/boards/:id/members',
-    handle((req, res) => {
+    rateLimit('invite', 'user'),
+    handle(async (req, res) => {
       const boardId = req.params.id;
-      const { ownerId, role: myRole } = requireBoardAccess(boardId, currentUser(req).id, 'editor');
+      const { ownerId, role: myRole } = await requireBoardAccess(boardId, currentUser(req).id, 'editor');
       const { email, role } = (req.body ?? {}) as { email?: unknown; role?: unknown };
       if (typeof email !== 'string' || !email.trim()) throw badRequest('email is required');
       if (!isMemberRole(role)) throw badRequest('role must be editor, commenter or viewer');
-      const invitee = findUserByEmail(email);
+      const invitee = await findUserByEmail(email);
       if (!invitee) throw notFound('No Freero account with that email');
       if (invitee.id === ownerId) throw new HttpError(409, 'That person already owns this board');
-      // Re-inviting changes an existing member's role, which only the owner may do (PATCH is
-      // owner-only too): editors could otherwise promote viewers or demote other editors.
-      const existing = repo.getMembership(boardId, invitee.id);
-      if (existing && existing.role !== role && myRole !== 'owner')
-        throw new HttpError(409, `${invitee.name} already has access. Only the board owner can change their role.`);
-      repo.upsertMember(boardId, invitee.id, role, Date.now());
-      refreshBoardAccess(boardId);
+      if (myRole === 'owner') {
+        if (!(await repo.upsertMember(boardId, invitee.id, role, Date.now()))) throw boardGone();
+      } else {
+        // Re-inviting changes an existing member's role, which only the owner may do (PATCH is
+        // owner-only too): editors could otherwise promote viewers or demote other editors.
+        // One conditional insert, so a concurrent role change cannot slip between check and write.
+        const now = await repo.addMemberIfAbsent(boardId, invitee.id, role, Date.now());
+        if (now === null) throw boardGone();
+        if (now !== role)
+          throw new HttpError(409, `${invitee.name} already has access. Only the board owner can change their role.`);
+      }
+      await refreshBoardAccess(boardId);
       res.status(201).json({ member: toMember(invitee, role, true) });
     }),
   );
 
   r.patch(
     '/boards/:id/members/:userId',
-    handle((req, res) => {
+    handle(async (req, res) => {
       const { id: boardId, userId } = req.params;
-      requireBoardAccess(boardId, currentUser(req).id, 'owner');
+      await requireBoardAccess(boardId, currentUser(req).id, 'owner');
       const role = req.body?.role;
       if (!isMemberRole(role)) throw badRequest('role must be editor, commenter or viewer');
-      const existing = repo.getMembership(boardId, userId);
-      const u = getUser(userId);
-      if (!existing || !u) throw notFound('That person is not a member of this board');
-      repo.setRole(boardId, userId, role);
-      refreshBoardAccess(boardId);
+      const u = await getUser(userId);
+      if (!u || !(await repo.setRole(boardId, userId, role))) throw notFound('That person is not a member of this board');
+      await refreshBoardAccess(boardId);
       res.json({ member: toMember(u, role, true) });
     }),
   );
 
   r.delete(
     '/boards/:id/members/:userId',
-    handle((req, res) => {
+    handle(async (req, res) => {
       const { id: boardId, userId } = req.params;
       const me = currentUser(req);
-      const { role } = requireBoardAccess(boardId, me.id);
+      const { role } = await requireBoardAccess(boardId, me.id);
       if (role !== 'owner' && userId !== me.id) throw forbidden('Only the board owner can remove members');
-      if (!repo.getMembership(boardId, userId)) throw notFound('That person is not a member of this board');
-      repo.removeMember(boardId, userId);
-      refreshBoardAccess(boardId);
+      if (!(await repo.removeMember(boardId, userId))) throw notFound('That person is not a member of this board');
+      await refreshBoardAccess(boardId);
       res.json({ ok: true });
     }),
   );
