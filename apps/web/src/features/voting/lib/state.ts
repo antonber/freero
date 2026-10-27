@@ -19,21 +19,17 @@ import {
 } from './voting';
 
 export const RESULTS_PANEL_ID = 'voting.results';
+/** The "Start voting" dialog panel: editor.openPanel(START_DIALOG_ID). */
+export const START_DIALOG_ID = 'voting.start';
 
 interface VotingUi {
-  dialogOpen: boolean;
   /** Session id whose results this user closed (hides bar + badges locally). */
   hiddenSessionId: string | null;
-  openDialog(): void;
-  closeDialog(): void;
   hide(sessionId: string | null): void;
 }
 
 export const useVotingUi = create<VotingUi>((set) => ({
-  dialogOpen: false,
   hiddenSessionId: null,
-  openDialog: () => set({ dialogOpen: true }),
-  closeDialog: () => set({ dialogOpen: false }),
   hide: (hiddenSessionId) => set({ hiddenSessionId }),
 }));
 

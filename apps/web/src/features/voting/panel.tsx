@@ -4,7 +4,7 @@ import type { BoardElement } from '@freero/shared';
 import { definePanel, useCanEdit, useDock, type Editor, type Rect } from '@engine';
 import { AvatarStack, Button, Input, Menu, Modal, Slider, Toggle, Tooltip, type MenuItem } from '@ui';
 import { MAX_VOTES, MIN_VOTES } from './lib/voting';
-import { RESULTS_PANEL_ID, previewOf, useVoting, useVotingUi, type VotingView } from './lib/state';
+import { RESULTS_PANEL_ID, START_DIALOG_ID, previewOf, useVoting, useVotingUi, type VotingView } from './lib/state';
 import { clear, end, start, unvote, vote } from './lib/actions';
 import './voting.css';
 
@@ -13,25 +13,21 @@ import './voting.css';
 // ---------------------------------------------------------------------------
 type Scope = 'all' | 'selected';
 
+/** Selected elements people could vote on (the dialog snapshots this when it opens). */
+function votableSelection(editor: Editor): string[] {
+  return editor.getSelection().filter((id) => {
+    const t = editor.getElement(id)?.type;
+    return t && t !== 'connector' && t !== 'pen';
+  });
+}
+
 function StartDialog({ editor }: { editor: Editor }) {
-  const open = useVotingUi((s) => s.dialogOpen);
-  const close = useVotingUi((s) => s.closeDialog);
+  const close = () => editor.closePanel(START_DIALOG_ID);
   const [title, setTitle] = useState('');
   const [votes, setVotes] = useState(3);
   const [hide, setHide] = useState(true);
-  const [scope, setScope] = useState<Scope>('all');
-  const [picked, setPicked] = useState<string[]>([]);
-
-  // Snapshot the selection when the dialog opens (the dialog itself never changes it).
-  useEffect(() => {
-    if (!open) return;
-    const sel = editor.getSelection().filter((id) => {
-      const t = editor.getElement(id)?.type;
-      return t && t !== 'connector' && t !== 'pen';
-    });
-    setPicked(sel);
-    setScope(sel.length > 1 ? 'selected' : 'all');
-  }, [open, editor]);
+  const [picked] = useState(() => votableSelection(editor));
+  const [scope, setScope] = useState<Scope>(picked.length > 1 ? 'selected' : 'all');
 
   const submit = () => {
     if (scope === 'selected' && !picked.length) return;
@@ -42,7 +38,7 @@ function StartDialog({ editor }: { editor: Editor }) {
 
   return (
     <Modal
-      open={open}
+      open
       onClose={close}
       title="Start voting"
       description="Everyone with edit access can vote. Votes are private until you choose to show them."
@@ -110,7 +106,7 @@ function VoteButton({ editor }: { editor: Editor }) {
   } else if (session) {
     items.push(
       { id: 'results', label: 'Show results', icon: ListOrdered, onSelect: showResults },
-      { id: 'new', label: 'Start new session', icon: Vote, onSelect: () => useVotingUi.getState().openDialog() },
+      { id: 'new', label: 'Start new session', icon: Vote, onSelect: () => editor.openPanel(START_DIALOG_ID) },
       { divider: true },
       { id: 'clear', label: 'Clear results', icon: X, danger: true, onSelect: () => clear(editor) },
     );
@@ -125,12 +121,11 @@ function VoteButton({ editor }: { editor: Editor }) {
         className={`fr-vote-btn${session?.active ? ' is-live' : ''}`}
         aria-haspopup={session ? 'menu' : 'dialog'}
         aria-expanded={menu}
-        onClick={() => (session ? setMenu((o) => !o) : useVotingUi.getState().openDialog())}
+        onClick={() => (session ? setMenu((o) => !o) : editor.openPanel(START_DIALOG_ID))}
       >
         Vote
       </Button>
       <Menu open={menu} onClose={() => setMenu(false)} anchor={ref.current} side="bottom" align="end" items={items} />
-      <StartDialog editor={editor} />
     </>
   );
 }
@@ -374,7 +369,7 @@ function SessionBar({ editor }: { editor: Editor }) {
         </Button>
       )}
       {canEdit && (
-        <Button size="sm" variant="ghost" icon={Vote} onClick={() => useVotingUi.getState().openDialog()}>
+        <Button size="sm" variant="ghost" icon={Vote} onClick={() => editor.openPanel(START_DIALOG_ID)}>
           Start new session
         </Button>
       )}
@@ -398,19 +393,8 @@ function SessionBar({ editor }: { editor: Editor }) {
 // ---------------------------------------------------------------------------
 // Dock: results list
 // ---------------------------------------------------------------------------
-/** Width the right dock covers (panel + margins). zoomToRect doesn't know about the dock. */
-const DOCK_COVER_PX = 384;
+/** Screen px kept around revealed results (inside the part of the board the chrome leaves free). */
 const PAD_PX = 72;
-
-/** Fits `rect` into the part of the viewport left of the open dock, never zooming past maxZoom. */
-function revealBesideDock(editor: Editor, rect: Rect, maxZoom: number) {
-  const vp = editor.getViewportSize();
-  const usableW = Math.max(200, vp.width - DOCK_COVER_PX);
-  const zoom = Math.min(maxZoom, (usableW - PAD_PX * 2) / Math.max(rect.w, 1), (vp.height - PAD_PX * 2) / Math.max(rect.h, 1));
-  const cx = rect.x + rect.w / 2;
-  const cy = rect.y + rect.h / 2;
-  editor.setCamera({ x: cx - usableW / 2 / zoom, y: cy - vp.height / 2 / zoom, zoom }, { animate: true });
-}
 
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
@@ -424,7 +408,7 @@ function ResultsPanel({ editor }: { editor: Editor }) {
     const el = editor.getElement(id);
     if (!el) return;
     editor.select([id]);
-    revealBesideDock(editor, aabb(el), 1.25);
+    editor.zoomToFit([id], { maxZoom: 1.25, padding: PAD_PX });
   };
   const n = Math.max(1, Math.min(v.ranking.length, Number.parseInt(topN, 10) || 0));
 
@@ -460,8 +444,7 @@ function ResultsPanel({ editor }: { editor: Editor }) {
             onClick={() => {
               const ids = v.ranking.slice(0, n).map((r) => r.id);
               editor.select(ids);
-              const b = editor.getBounds(ids);
-              if (b) revealBesideDock(editor, b, 1);
+              editor.zoomToFit(ids, { maxZoom: 1, padding: PAD_PX });
             }}
           >
             Select
@@ -505,7 +488,7 @@ function ResultsPanel({ editor }: { editor: Editor }) {
       )}
       {body}
       {canEdit && session && !session.active && (
-        <Button variant="secondary" icon={Vote} block onClick={() => useVotingUi.getState().openDialog()}>
+        <Button variant="secondary" icon={Vote} block onClick={() => editor.openPanel(START_DIALOG_ID)}>
           Start new session
         </Button>
       )}
@@ -518,4 +501,5 @@ export default [
   definePanel({ id: 'voting.world', slot: 'world-overlay', order: 50, Component: VotingWorld }),
   definePanel({ id: 'voting.bar', slot: 'screen-overlay', order: 50, Component: SessionBar }),
   definePanel({ id: RESULTS_PANEL_ID, slot: 'dock-right', order: 50, Component: ResultsPanel }),
+  definePanel({ id: START_DIALOG_ID, slot: 'dialog', order: 50, Component: StartDialog }),
 ];
