@@ -3,6 +3,8 @@ export {
   requireUser,
   currentUser,
   getUser,
+  getUsers,
+  createUser,
   findUserByEmail,
   userFromCookieHeader,
   sessionKeyFromCookieHeader,

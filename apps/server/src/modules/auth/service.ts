@@ -3,6 +3,7 @@ import type { Request, RequestHandler, Response } from 'express';
 import { SESSION_COOKIE, type User } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { badRequest, HttpError, parseCookies, unauthorized } from '../../platform/http';
+import { setRequestUser } from '../../platform/requestContext';
 import { newId } from '../../platform/ids';
 import { randomCursorColor } from './colors';
 import { dummyHash, hashPassword, verifyPassword } from './password';
@@ -13,6 +14,8 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
+
+const emailTaken = () => new HttpError(409, 'An account with that email already exists');
 
 export function publicUser(u: User): User {
   return { id: u.id, name: u.name, email: u.email, color: u.color, avatarUrl: u.avatarUrl, createdAt: u.createdAt };
@@ -31,7 +34,7 @@ export async function createUser(input: { name: unknown; email: unknown; passwor
   if (password.length > 512) throw badRequest('Password is too long');
   if (!name) throw badRequest('Please enter your name');
   if (name.length > 80) throw badRequest('Name is too long (max 80 characters)');
-  if (repo.findUserByEmail(email)) throw new HttpError(409, 'An account with that email already exists');
+  if (await repo.findUserByEmail(email)) throw emailTaken(); // fast path; the unique index decides races
   const user: repo.UserWithHash = {
     id: newId(),
     email,
@@ -42,10 +45,10 @@ export async function createUser(input: { name: unknown; email: unknown; passwor
     passwordHash: await hashPassword(password),
   };
   try {
-    repo.insertUser(user);
+    await repo.insertUser(user);
   } catch (e) {
     // Lost a race against a concurrent signup with the same email.
-    if (repo.findUserByEmail(email)) throw new HttpError(409, 'An account with that email already exists');
+    if (e instanceof repo.EmailTakenError) throw emailTaken();
     throw e;
   }
   return publicUser(user);
@@ -54,13 +57,13 @@ export async function createUser(input: { name: unknown; email: unknown; passwor
 export async function checkCredentials(emailIn: unknown, passwordIn: unknown): Promise<User> {
   const email = normalizeEmail(emailIn);
   const password = typeof passwordIn === 'string' ? passwordIn : '';
-  const user = email ? repo.findUserByEmail(email) : null;
+  const user = email ? await repo.findUserByEmail(email) : null;
   const ok = await verifyPassword(password, user?.passwordHash ?? (await dummyHash()));
   if (!user || !ok) throw unauthorized('Incorrect email or password');
   return publicUser(user);
 }
 
-export function updateProfile(userId: string, body: Record<string, unknown>): User {
+export async function updateProfile(userId: string, body: Record<string, unknown>): Promise<User> {
   const patch: { name?: string; color?: string; avatarUrl?: string | null } = {};
   if (body.name !== undefined) {
     const name = typeof body.name === 'string' ? body.name.trim() : '';
@@ -77,18 +80,18 @@ export function updateProfile(userId: string, body: Record<string, unknown>): Us
       throw badRequest('avatarUrl must be an /uploads URL, an http(s) URL or null');
     patch.avatarUrl = v as string | null;
   }
-  repo.updateUserProfile(userId, patch);
-  const u = repo.findUserById(userId);
+  await repo.updateUserProfile(userId, patch);
+  const u = await repo.findUserById(userId);
   if (!u) throw unauthorized();
   return publicUser(u);
 }
 
 // ---- Sessions (the cookie has one writer: this module) ----
 
-export function startSession(req: Request, res: Response, userId: string): void {
+export async function startSession(req: Request, res: Response, userId: string): Promise<void> {
   const token = randomBytes(32).toString('base64url');
   const now = Date.now();
-  repo.insertSession(hashToken(token), userId, now, now + SESSION_TTL_MS);
+  await repo.insertSession(hashToken(token), userId, now, now + SESSION_TTL_MS);
   res.cookie(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
@@ -110,11 +113,11 @@ export function onSessionEnd(fn: (sessionKey: string) => void): () => void {
   return () => sessionEndListeners.delete(fn);
 }
 
-export function endSession(req: Request, res: Response): void {
+export async function endSession(req: Request, res: Response): Promise<void> {
   const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
   if (token) {
     const key = hashToken(token);
-    repo.deleteSession(key);
+    await repo.deleteSession(key);
     for (const fn of sessionEndListeners) fn(key);
   }
   res.clearCookie(SESSION_COOKIE, { httpOnly: true, sameSite: 'lax', path: '/' });
@@ -126,10 +129,10 @@ export function sessionKeyFromCookieHeader(cookieHeader: string | undefined): st
   return token ? hashToken(token) : null;
 }
 
-export function userFromCookieHeader(cookieHeader: string | undefined): User | null {
+export async function userFromCookieHeader(cookieHeader: string | undefined): Promise<User | null> {
   const key = sessionKeyFromCookieHeader(cookieHeader);
   if (!key) return null;
-  const u = repo.findSessionUser(key, Date.now());
+  const u = await repo.findSessionUser(key, Date.now());
   return u ? publicUser(u) : null;
 }
 
@@ -137,13 +140,15 @@ const requestUsers = new WeakMap<Request, User>();
 
 /** Express middleware: 401 unless the request carries a valid session cookie. */
 export const requireUser: RequestHandler = (req, res, next) => {
-  const user = userFromCookieHeader(req.headers.cookie);
-  if (!user) {
-    res.status(401).json({ error: 'Not logged in' });
-    return;
-  }
-  requestUsers.set(req, user);
-  next();
+  userFromCookieHeader(req.headers.cookie).then((user) => {
+    if (!user) {
+      res.status(401).json({ error: 'Not logged in' });
+      return;
+    }
+    requestUsers.set(req, user);
+    setRequestUser(req, user.id); // request logs + per-user rate limits
+    next();
+  }, next);
 };
 
 /** The user authenticated by requireUser. */
@@ -153,12 +158,18 @@ export function currentUser(req: Request): User {
   return u;
 }
 
-export function getUser(id: string): User | null {
-  const u = repo.findUserById(id);
+export async function getUser(id: string): Promise<User | null> {
+  const u = await repo.findUserById(id);
   return u ? publicUser(u) : null;
 }
 
-export function findUserByEmail(email: string): User | null {
-  const u = repo.findUserByEmail(normalizeEmail(email));
+/** id -> user for every id that exists (one query). */
+export async function getUsers(ids: Iterable<string>): Promise<Map<string, User>> {
+  const users = await repo.findUsersByIds([...new Set(ids)]);
+  return new Map(users.map((u) => [u.id, publicUser(u)]));
+}
+
+export async function findUserByEmail(email: string): Promise<User | null> {
+  const u = await repo.findUserByEmail(normalizeEmail(email));
   return u ? publicUser(u) : null;
 }

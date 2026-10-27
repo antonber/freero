@@ -1,6 +1,6 @@
 // The only writer of `users` and `sessions` [S4].
 import type { User } from '@freero/shared';
-import { sql } from '../../platform/db';
+import { isUniqueViolation, one, query } from '../../platform/db';
 
 interface UserRow {
   id: string;
@@ -9,7 +9,7 @@ interface UserRow {
   password_hash: string;
   color: string;
   avatar_url: string | null;
-  created_at: number;
+  created_at: Date;
 }
 
 export interface UserWithHash extends User {
@@ -22,61 +22,78 @@ const toUser = (r: UserRow): UserWithHash => ({
   name: r.name,
   color: r.color,
   avatarUrl: r.avatar_url,
-  createdAt: Number(r.created_at),
+  createdAt: r.created_at.getTime(),
   passwordHash: r.password_hash,
 });
 
-export function insertUser(u: UserWithHash): void {
-  sql(
-    `INSERT INTO users (id, email, name, password_hash, color, avatar_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  ).run(u.id, u.email, u.name, u.passwordHash, u.color, u.avatarUrl, u.createdAt);
+/** Thrown by insertUser when the email is taken (possibly by a concurrent signup). */
+export class EmailTakenError extends Error {}
+
+export async function insertUser(u: UserWithHash): Promise<void> {
+  try {
+    await query(
+      `INSERT INTO users (id, email, name, password_hash, color, avatar_url, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [u.id, u.email, u.name, u.passwordHash, u.color, u.avatarUrl, new Date(u.createdAt)],
+    );
+  } catch (e) {
+    if (isUniqueViolation(e, 'users_email_key')) throw new EmailTakenError(u.email);
+    throw e;
+  }
 }
 
-export function findUserById(id: string): UserWithHash | null {
-  const row = sql(`SELECT * FROM users WHERE id = ?`).get(id) as UserRow | undefined;
+export async function findUserById(id: string): Promise<UserWithHash | null> {
+  const row = await one<UserRow>(`SELECT * FROM users WHERE id = $1`, [id]);
   return row ? toUser(row) : null;
 }
 
-export function findUserByEmail(email: string): UserWithHash | null {
-  const row = sql(`SELECT * FROM users WHERE email = ?`).get(email) as UserRow | undefined;
+export async function findUsersByIds(ids: string[]): Promise<UserWithHash[]> {
+  if (ids.length === 0) return [];
+  return (await query<UserRow>(`SELECT * FROM users WHERE id = ANY($1::text[])`, [ids])).map(toUser);
+}
+
+export async function findUserByEmail(email: string): Promise<UserWithHash | null> {
+  const row = await one<UserRow>(`SELECT * FROM users WHERE email = $1`, [email]);
   return row ? toUser(row) : null;
 }
 
-export function countUsers(): number {
-  return Number((sql(`SELECT COUNT(*) AS n FROM users`).get() as { n: number }).n);
+export async function countUsers(): Promise<number> {
+  return (await one<{ n: number }>(`SELECT COUNT(*) AS n FROM users`))!.n;
 }
 
-export function updateUserProfile(id: string, patch: { name?: string; color?: string; avatarUrl?: string | null }): void {
-  const cur = findUserById(id);
-  if (!cur) return;
-  sql(`UPDATE users SET name = ?, color = ?, avatar_url = ? WHERE id = ?`).run(
-    patch.name ?? cur.name,
-    patch.color ?? cur.color,
-    patch.avatarUrl === undefined ? cur.avatarUrl : patch.avatarUrl,
-    id,
+/** Changes only the given fields, in one statement (no read-modify-write that could drop a concurrent edit). */
+export async function updateUserProfile(
+  id: string,
+  patch: { name?: string; color?: string; avatarUrl?: string | null },
+): Promise<void> {
+  await query(
+    `UPDATE users SET name = COALESCE($2, name), color = COALESCE($3, color),
+       avatar_url = CASE WHEN $4 THEN $5 ELSE avatar_url END
+     WHERE id = $1`,
+    [id, patch.name ?? null, patch.color ?? null, patch.avatarUrl !== undefined, patch.avatarUrl ?? null],
   );
 }
 
-export function insertSession(tokenHash: string, userId: string, now: number, expiresAt: number): void {
-  sql(`INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)`).run(
+export async function insertSession(tokenHash: string, userId: string, now: number, expiresAt: number): Promise<void> {
+  await query(`INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES ($1, $2, $3, $4)`, [
     tokenHash,
     userId,
-    now,
-    expiresAt,
-  );
+    new Date(now),
+    new Date(expiresAt),
+  ]);
 }
 
-export function findSessionUser(tokenHash: string, now: number): UserWithHash | null {
-  const row = sql(
-    `SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ? AND s.expires_at > ?`,
-  ).get(tokenHash, now) as UserRow | undefined;
+export async function findSessionUser(tokenHash: string, now: number): Promise<UserWithHash | null> {
+  const row = await one<UserRow>(
+    `SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = $1 AND s.expires_at > $2`,
+    [tokenHash, new Date(now)],
+  );
   return row ? toUser(row) : null;
 }
 
-export function deleteSession(tokenHash: string): void {
-  sql(`DELETE FROM sessions WHERE token_hash = ?`).run(tokenHash);
+export async function deleteSession(tokenHash: string): Promise<void> {
+  await query(`DELETE FROM sessions WHERE token_hash = $1`, [tokenHash]);
 }
 
-export function deleteExpiredSessions(now: number): void {
-  sql(`DELETE FROM sessions WHERE expires_at <= ?`).run(now);
+export async function deleteExpiredSessions(now: number): Promise<void> {
+  await query(`DELETE FROM sessions WHERE expires_at <= $1`, [new Date(now)]);
 }
