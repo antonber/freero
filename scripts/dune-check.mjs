@@ -218,7 +218,9 @@ function checkServerFile(file, tableOwners) {
   const me = serverLayer(file);
   for (const { spec, line } of parseImports(src)) {
     if (!spec.startsWith('.')) continue;
-    const abs = path.resolve(path.dirname(file), spec).replace(/\.js$/, '.ts');
+    let abs = path.resolve(path.dirname(file), spec).replace(/\.js$/, '.ts');
+    // A bare directory import ('../auth') resolves to its index.ts.
+    if (fs.existsSync(abs) && fs.statSync(abs).isDirectory()) abs = path.join(abs, 'index.ts');
     const t = serverLayer(abs);
     if (!t) continue;
     if (me.layer === 'platform' && t.layer === 'modules')
