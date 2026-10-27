@@ -370,6 +370,29 @@ export function nearestOnPoly(p: Point, poly: Point[]): Point {
   return best;
 }
 
+/** Fraction of the polyline's length (0..1) at the point of it closest to p. */
+export function tAlong(poly: Point[], p: Point): number {
+  const total = polyLength(poly);
+  if (poly.length < 2 || total <= 0) return 0.5;
+  let bestT = 0;
+  let bd = Infinity;
+  let walked = 0;
+  for (let i = 1; i < poly.length; i++) {
+    const a = poly[i - 1];
+    const ab = sub(poly[i], a);
+    const l2 = ab.x * ab.x + ab.y * ab.y;
+    const k = l2 ? Math.max(0, Math.min(1, ((p.x - a.x) * ab.x + (p.y - a.y) * ab.y) / l2)) : 0;
+    const d = dist(p, { x: a.x + ab.x * k, y: a.y + ab.y * k });
+    const seg = Math.sqrt(l2);
+    if (d < bd) {
+      bd = d;
+      bestT = (walked + seg * k) / total;
+    }
+    walked += seg;
+  }
+  return bestT;
+}
+
 // ---------------------------------------------------------------------------------- caps
 /** Cap length in world units; grows with the stroke so thick lines keep readable arrowheads. */
 export const capSize = (strokeWidth: number): number => 7 + strokeWidth * 2.5;

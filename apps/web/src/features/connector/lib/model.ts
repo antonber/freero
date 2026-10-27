@@ -2,10 +2,11 @@
 // (endpoint x/y + bounding box) in sync. Rendering always derives from the live attached
 // elements; the stored values are only a cache for hit-testing, culling and deleted targets.
 import type { BoardElement, CapStyle, ConnectorElement, ConnectorEndpoint, ConnectorRouting, StrokeStyle } from '@freero/shared';
-import { richTextToPlain, type Editor, type ElementPatch, type NewElement, type Point } from '@engine';
+import type { Editor, ElementPatch, NewElement, Point } from '@engine';
+import { DEFAULT_LABEL_T, labelBoxes } from './labels';
 import {
+  boundsOfPoints,
   computeRoute,
-  labelBox,
   pointAlong,
   resolveEnds,
   round2,
@@ -49,19 +50,21 @@ export interface ConnectorGeometry {
   start: End;
   end: End;
   route: Route;
-  /** Label center (middle of the route by length). */
+  /** Center of the main label (at labelT along the route, by length). */
   mid: Point;
   bounds: { x: number; y: number; w: number; h: number };
 }
 
-type Shape = Pick<ConnectorElement, 'start' | 'end' | 'routing' | 'waypoints' | 'strokeWidth' | 'label'>;
+type Shape = Pick<ConnectorElement, 'start' | 'end' | 'routing' | 'waypoints' | 'strokeWidth' | 'label' | 'labelT' | 'labels'>;
 
 export function connectorGeometry(c: Shape, lookup: Lookup, local?: LocalAnchorFn): ConnectorGeometry {
   const { start, end } = resolveEnds(c, lookup, local);
   const wps = c.routing === 'straight' ? [] : (c.waypoints ?? []);
   const route = computeRoute(c.routing, start, end, wps);
-  const mid = pointAlong(route.poly, 0.5).p;
-  const bounds = routeBounds(route, c.strokeWidth, labelBox(richTextToPlain(c.label ?? ''), mid));
+  const mid = pointAlong(route.poly, c.labelT ?? DEFAULT_LABEL_T).p;
+  const boxes = labelBoxes(c, route.poly).map((l) => l.box);
+  const labels = boxes.length ? boundsOfPoints(boxes.flatMap((b) => [{ x: b.x, y: b.y }, { x: b.x + b.w, y: b.y + b.h }])) : null;
+  const bounds = routeBounds(route, c.strokeWidth, labels);
   return { start, end, route, mid, bounds };
 }
 

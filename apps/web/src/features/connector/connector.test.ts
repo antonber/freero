@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { BoardElement, ConnectorElement, ConnectorEndpoint } from '@freero/shared';
 import connectorDef from './element';
-import { computeRoute, resolveEnds, type End } from './lib/geometry';
+import { computeRoute, resolveEnds, tAlong, type End } from './lib/geometry';
+import { moveLabel, parsePart, partAt, writeLabel } from './lib/labels';
 import { refreshCache } from './lib/model';
 import { nextToSide } from './lib/quick';
 
@@ -138,5 +139,49 @@ describe('quick-connect copies', () => {
     const second = nextToSide(a, 'right', taken);
     expect(second.x).toBe(first.x);
     expect(Math.abs(second.y)).toBeGreaterThanOrEqual(100);
+  });
+});
+
+describe('connector labels', () => {
+  // A straight line from (0, 0) to (400, 0).
+  const poly = [
+    { x: 0, y: 0 },
+    { x: 400, y: 0 },
+  ];
+  const ids = () => 'new1';
+
+  it('a double-click on a bare line starts the main label right where it was clicked', () => {
+    const part = partAt({ label: '', labels: [] }, poly, { x: 100, y: 2 }, ids);
+    expect(part).toBe('main@0.25');
+    const patch = writeLabel({ label: '', labels: [] }, parsePart(part)!, 'Yes');
+    expect(patch).toEqual({ label: 'Yes', labelT: 0.25 });
+  });
+
+  it('once the line has a label, double-clicking elsewhere adds another one there; on the label edits it', () => {
+    const c = { label: 'Main', labelT: 0.5, labels: [] };
+    const part = partAt(c, poly, { x: 300, y: 0 }, ids)!;
+    expect(parsePart(part)).toEqual({ kind: 'extra', id: 'new1', t: 0.75 });
+    const added = { ...c, ...writeLabel(c, parsePart(part)!, 'Second') };
+    expect(added.labels).toEqual([{ id: 'new1', t: 0.75, text: 'Second' }]);
+    expect(partAt(added, poly, { x: 200, y: 0 }, ids)).toBeNull(); // the main label: engine textField
+    expect(partAt(added, poly, { x: 300, y: 3 }, ids)).toBe('l:new1@0.75');
+    // Clearing an extra label's text removes it.
+    expect(writeLabel(added, parsePart('l:new1@0.75')!, '<br>').labels).toEqual([]);
+  });
+
+  it('dragging a label moves it along the line but never onto an end', () => {
+    const c = { label: 'Main', labels: [{ id: 'x', t: 0.4, text: 'X' }] };
+    expect(moveLabel(c, 'x', 0.6).labels).toEqual([{ id: 'x', t: 0.6, text: 'X' }]);
+    expect(moveLabel(c, null, 1).labelT).toBeLessThan(1);
+    expect(tAlong(poly, { x: 100, y: 50 })).toBeCloseTo(0.25);
+  });
+
+  it('counts every label in the line’s bounds and hit test', () => {
+    const c = conn({ x: 0, y: 0 }, { x: 400, y: 0 }, { label: '', labels: [{ id: 'far', t: 0.9, text: 'A long label text' }] });
+    const cache = refreshCache(c, () => undefined)!;
+    const el = { ...c, ...cache } as ConnectorElement;
+    expect(el.y).toBeLessThan(-8); // the label box reaches above the stroke
+    const at = { x: 360 + 40 - el.x, y: -8 - el.y }; // on the label, off the stroke
+    expect(connectorDef.hitTest!(el, at, { tolerance: 2 })).toBe(true);
   });
 });

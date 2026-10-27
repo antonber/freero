@@ -34,10 +34,16 @@ import {
   type ConnectorStyle,
 } from './lib/model';
 import { nextToSide, occupiedRects, QUICK_GAP } from './lib/quick';
+import { labelBoxes, partAt } from './lib/labels';
 
 const PLUS_OFFSET = 26;
 /** The engine's rotate handle sits under the bottom edge: keep the bottom "+" clear of it. */
 const PLUS_OFFSET_BELOW_ROTATE = 58;
+/**
+ * Stickies have their own "+" (add the next sticky, features/sticky) where ours would be: on them
+ * we show small drag-to-connect dots this much further out instead, so the two never overlap.
+ */
+const STICKY_DOT_EXTRA = 30;
 
 // ------------------------------------------------------------------------------ drag plumbing
 interface DragHandlers {
@@ -154,6 +160,7 @@ function QuickConnect({ editor, el, root }: { editor: Editor; el: BoardElement; 
   const local = localAnchors(editor);
   const rotates = editor.getDefinition(el.type)?.rotatable !== false;
   const style = () => styleFromOptions(editor.getToolOptions<Partial<ConnectorStyle>>(TOOL_ID));
+  const dots = el.type === 'sticky';
 
   const onDown = (side: Side) => (e: ReactPointerEvent) => {
     if (e.button !== 0) return;
@@ -199,19 +206,27 @@ function QuickConnect({ editor, el, root }: { editor: Editor; el: BoardElement; 
         const n = sideNormal(el, side);
         const a = editor.worldToScreen(anchorWorld(el, side, local));
         const covered = (q: Point) => !!bar && q.x > bar.x - 14 && q.x < bar.x + bar.w + 14 && q.y > bar.y - 14 && q.y < bar.y + bar.h + 14;
-        for (let i = 0; i < 40 && covered({ x: a.x + n.x * off, y: a.y + n.y * off }); i++) off += 4;
+        const clear = () => {
+          for (let i = 0; i < 40 && covered({ x: a.x + n.x * off, y: a.y + n.y * off }); i++) off += 4;
+        };
+        clear();
+        // On a sticky its own "+" takes this spot (it steps past the toolbar the same way): go beyond.
+        if (dots) {
+          off += STICKY_DOT_EXTRA;
+          clear();
+        }
         return (
           <div
             key={side}
             role="button"
             aria-label={`Connect from ${side} (drag), or add a connected copy (click)`}
             title="Drag to connect · Click to add a connected copy"
-            className="fr-cx-ov__plus"
+            className={`fr-cx-ov__plus${dots ? ' fr-cx-ov__plus--dot' : ''}`}
             data-fr-interactive=""
             style={at({ x: a.x + n.x * off, y: a.y + n.y * off })}
             onPointerDown={onDown(side)}
           >
-            <Plus size={12} strokeWidth={2.6} />
+            {!dots && <Plus size={12} strokeWidth={2.6} />}
           </div>
         );
       })}
@@ -225,8 +240,12 @@ function ConnectorHandles({ editor, c, root }: { editor: Editor; c: ConnectorEle
   useElement(c.end.elementId ?? null);
   const geo = connectorGeometry(c, (id) => editor.getElement(id), localAnchors(editor));
   const wp = c.waypoints?.[0];
-  const mid =
-    c.routing === 'straight' ? null : wp ? (c.routing === 'curved' ? wp : nearestOnPoly(wp, geo.route.poly)) : pointAlong(geo.route.poly, 0.5).p;
+  // Without a bend yet, the handle sits at the middle, or beside a label that is there (a label
+  // is dragged / edited itself, and the two must not cover each other).
+  const boxes = labelBoxes(c, geo.route.poly).map((l) => l.box);
+  const free = (p: Point) => !boxes.some((b) => p.x >= b.x - 8 && p.x <= b.x + b.w + 8 && p.y >= b.y - 8 && p.y <= b.y + b.h + 8);
+  const spot = () => [0.5, 0.3, 0.7, 0.2, 0.8].map((t) => pointAlong(geo.route.poly, t).p).find(free) ?? pointAlong(geo.route.poly, 0.5).p;
+  const mid = c.routing === 'straight' ? null : wp ? (c.routing === 'curved' ? wp : nearestOnPoly(wp, geo.route.poly)) : spot();
 
   const dragEnd = (which: 'start' | 'end') => (e: ReactPointerEvent) => {
     if (e.button !== 0) return;
@@ -266,10 +285,16 @@ function ConnectorHandles({ editor, c, root }: { editor: Editor; c: ConnectorEle
         <div
           className="fr-cx-ov__mid"
           data-fr-interactive=""
-          title="Drag to bend · Double-click to reset"
+          title={wp ? 'Drag to bend · Double-click to straighten' : 'Drag to bend · Double-click to add a label'}
           style={{ transform: `${at(editor.worldToScreen(mid)).transform} rotate(45deg)` }}
           onPointerDown={dragMid}
-          onDoubleClick={() => patchConnector(editor, c.id, { waypoints: [] })}
+          onDoubleClick={() => {
+            // Double-clicking the middle of a line means "label it" (the handle sits where the
+            // label goes); with a bend, it straightens the line as before.
+            if (wp) return patchConnector(editor, c.id, { waypoints: [] });
+            const part = partAt(c, geo.route.poly, mid);
+            editor.startEditing(c.id, part ? { part } : {});
+          }}
         />
       )}
       {ends.map(([which, p, attached]) => (

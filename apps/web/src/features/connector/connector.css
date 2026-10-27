@@ -208,3 +208,31 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+
+/* On stickies (which have their own "+"): a small drag-to-connect dot further out. */
+.fr-cx-ov__plus--dot {
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  background: var(--fr-select);
+  border-color: var(--fr-surface);
+  opacity: 0.7;
+}
+
+.fr-cx-ov__plus--dot:hover {
+  transform: scale(1.4);
+}
+
+.fr-cx-ov__plus--dot::after {
+  inset: -8px;
+}
+
+/* Labels on a selected line can be dragged along it. */
+.fr-cx-label.is-draggable {
+  cursor: grab;
+  box-shadow: 0 0 0 1px var(--fr-line-strong);
+}
+
+.fr-cx-label.is-draggable:hover {
+  box-shadow: 0 0 0 1.5px var(--fr-select);
+}
