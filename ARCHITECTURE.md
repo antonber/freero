@@ -113,6 +113,47 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
 (handles, toolbars, cursors) lives in overlays so it stays constant size. Text editing is shared
 (`ElementText`). Frames render beneath other elements.
 
+- The engine renders remote cursors and remote selection/"is typing" outlines itself (from
+  presence). Presence features add avatars/follow, not cursors.
+- `ElementRenderProps.zoom` is quantized (half-octave steps) so zooming doesn't re-render every
+  element each frame — use it for level-of-detail only, never for layout.
+- Element components render inside their feature's scope, so `useEditor()` there is scoped.
+  Offscreen exports (`renderToDataUrl`, thumbnails) re-render the same components without
+  editors or selection.
+- The world layer ignores pointer events: hit-testing is geometric (`hitTest`, rotation-aware).
+  Mark a node inside an element with `data-fr-interactive` to receive native pointer events.
+
+### Gestures and undo
+
+- One undo step per gesture. The engine wraps every tool pointer-down → pointer-up in a gesture,
+  and every text edit session (startEditing → stopEditing) in another; nested gestures merge.
+  So a tool that creates on pointer-down and resizes on pointer-move (drag-create) is one undo
+  step without doing anything. Other continuous interactions (a slider) call
+  `editor.beginGesture()/endGesture()`.
+- Only local writes are undoable; undo never reverts another user's change.
+- Role guard: viewers never write the doc; commenters only write `comments`. Every Editor write
+  (including undo/redo, paste, settings) checks the live role (server role message) first and
+  shows a toast instead — the server would otherwise reject the update and everything after it.
+
+### Engine contract additions (additive, `engine/api.ts` / `@engine`)
+
+- `ElementDefinition.rotatable?` (default true; frames false) and `removeWhenEmpty?` (text boxes
+  that vanish when an edit ends empty).
+- `Editor.beginGesture()` / `endGesture()` (see "Gestures and undo").
+- `ElementDefinition.anchorPoint` returns element-local (unrotated) coordinates; the engine applies
+  position and rotation.
+- `@engine` hooks: `usePointer()` (world pointer for tool `Preview`s), `useTextFormatState()`,
+  `useSettings()`, `useCanEdit()`; `plainToRichText()`; types `ElementTextProps`, `TextFormatState`.
+- `useCollection(name)` returns the collection's entries (`Array<[key, value]>`).
+- `CommandDefinition.minRole` defaults to `'editor'`; engine view-safe commands set `'viewer'`.
+  While text is being edited, only command shortcuts using Tab or a modifier (outside the
+  editor's own Mod+B/I/U/Z/C/V/X/A/K) are dispatched.
+- Engine commands are ordinary commands (`engine.copy`, `engine.duplicate`, `engine.lock`,
+  `engine.zoomToFit`, …) so features can `runCommand('engine.<verb>')`.
+- URL params: `?el=<id>` selects and zooms to an element (copy-link target); `?dock=<panelId>`
+  opens a dock panel on load. `/board/local` (dev only) is an offline sandbox persisted in
+  localStorage; `?role=viewer|commenter|editor` and `?name=` preview roles there.
+
 ## UI kit (`ui/`) — exports from `@ui`
 
 `Button` {variant: 'primary'|'secondary'|'ghost'|'danger', size: 'sm'|'md'|'lg', icon?, loading?} ·

@@ -1,0 +1,147 @@
+// Offscreen rendering for renderToDataUrl and thumbnails: mounts the requested elements (no
+// culling, no editors) into a detached world clone, then rasterizes it with html-to-image.
+import { createRoot } from 'react-dom/client';
+import { flushSync } from 'react-dom';
+import { toJpeg, toPng, toSvg } from 'html-to-image';
+import type { BoardElement } from '@freero/shared';
+import type { Rect } from '../api';
+import { EngineContext, RenderModeContext } from '../context';
+import type { EngineCore, ExportOptions } from '../runtime/core';
+import { ElementFrame } from '../canvas/WorldLayer';
+import { boundsOf, expandRect } from '../geometry/geometry';
+import { compareRenderOrder } from '../geometry/spatial';
+
+const MAX_PIXELS_SIDE = 8192;
+
+function ExportWorld({ elements, rect, background }: { elements: BoardElement[]; rect: Rect; background: string | null }) {
+  return (
+    <div style={{ position: 'relative', width: rect.w, height: rect.h, overflow: 'hidden', background: background ?? 'transparent' }}>
+      <div style={{ position: 'absolute', left: 0, top: 0, transform: `translate(${-rect.x}px, ${-rect.y}px)` }}>
+        {elements.map((el) => (
+          <ElementFrame key={el.id} element={el} selected={false} editing={false} zoom={1} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function createExportRenderer(core: EngineCore) {
+  return async function renderExport(opts: ExportOptions): Promise<string> {
+    // Never render synchronously inside a React commit/cleanup (thumbnail on leave).
+    await Promise.resolve();
+    const editor = core.editor;
+    let elements: BoardElement[];
+    if (opts.ids) elements = editor.withChildren(opts.ids).map((id) => editor.getElement(id)!).filter(Boolean);
+    else if (opts.rect) elements = editor.elementsInRect(opts.rect, 'intersect');
+    else elements = [...editor.getElements()];
+    elements.sort(compareRenderOrder);
+    const content = opts.rect ?? boundsOf(elements) ?? { x: 0, y: 0, w: 320, h: 200 };
+    const rect = expandRect(content, opts.padding ?? (opts.rect ? 0 : 32));
+    rect.w = Math.max(1, Math.ceil(rect.w));
+    rect.h = Math.max(1, Math.ceil(rect.h));
+    const background = opts.background === undefined ? editor.getSettings().background : opts.background;
+    const scale = Math.min(opts.scale ?? 2, MAX_PIXELS_SIDE / Math.max(rect.w, rect.h));
+
+    const host = document.createElement('div');
+    host.setAttribute('aria-hidden', 'true');
+    Object.assign(host.style, {
+      position: 'fixed',
+      left: '-100000px',
+      top: '0',
+      width: `${rect.w}px`,
+      height: `${rect.h}px`,
+      pointerEvents: 'none',
+      fontFamily: 'var(--fr-font)',
+    });
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    try {
+      flushSync(() =>
+        root.render(
+          <EngineContext.Provider value={core}>
+            <RenderModeContext.Provider value="export">
+              <ExportWorld elements={elements} rect={rect} background={background} />
+            </RenderModeContext.Provider>
+          </EngineContext.Provider>,
+        ),
+      );
+      await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+      await document.fonts?.ready;
+      const node = host.firstElementChild as HTMLElement;
+      const options = {
+        width: rect.w,
+        height: rect.h,
+        pixelRatio: scale,
+        backgroundColor: background ?? undefined,
+        skipFonts: opts.skipFonts,
+        cacheBust: false,
+      };
+      const run = (o: typeof options) =>
+        opts.format === 'svg' ? toSvg(node, o) : opts.format === 'jpeg' ? toJpeg(node, { ...o, quality: 0.88 }) : toPng(node, o);
+      try {
+        return await run(options);
+      } catch (err) {
+        // Cross-origin font stylesheets can fail to inline; retry without embedded fonts.
+        if (opts.skipFonts) throw err;
+        return await run({ ...options, skipFonts: true });
+      }
+    } finally {
+      root.unmount();
+      host.remove();
+    }
+  };
+}
+
+const THUMB_W = 640;
+const THUMB_ASPECT = 16 / 10;
+const THUMB_EVERY_MS = 60_000;
+const THUMB_FIRST_DELAY_MS = 5_000;
+
+/**
+ * Saves board thumbnails via host.saveThumbnail: throttled while the board is being edited
+ * (first save ~5s after an edit, then at most once a minute) and once on leave. Editor+ only.
+ */
+export function startThumbnails(core: EngineCore): { stop(): Promise<void> } {
+  let dirty = false;
+  let saving = false;
+  let lastSave = 0;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const save = async () => {
+    timer = null;
+    if (!dirty || saving || !core.editor.can('editor') || !core.renderExport) return;
+    const els = core.store.getOrdered();
+    if (!els.length) return;
+    dirty = false;
+    saving = true;
+    lastSave = Date.now();
+    try {
+      const b = boundsOf(els)!;
+      // Frame the content in a 16:10 card.
+      let w = b.w + 120;
+      let h = b.h + 120;
+      if (w / h > THUMB_ASPECT) h = w / THUMB_ASPECT;
+      else w = h * THUMB_ASPECT;
+      const rect = { x: b.x + b.w / 2 - w / 2, y: b.y + b.h / 2 - h / 2, w, h };
+      const url = await core.renderExport({ rect, format: 'jpeg', scale: THUMB_W / w, padding: 0, skipFonts: true });
+      await core.hostRef.current.saveThumbnail(url);
+    } catch (err) {
+      dirty = true;
+      console.warn('Thumbnail save failed', err);
+    } finally {
+      saving = false;
+    }
+  };
+  const off = core.store.subscribeLocalChanges(() => {
+    dirty = true;
+    if (timer) return;
+    const wait = Math.max(THUMB_FIRST_DELAY_MS, lastSave + THUMB_EVERY_MS - Date.now());
+    timer = setTimeout(() => void save(), wait);
+  });
+  return {
+    async stop() {
+      if (timer) clearTimeout(timer);
+      off();
+      await save();
+    },
+  };
+}

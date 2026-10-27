@@ -24,9 +24,16 @@ export {
   useRole,
   useEditingId,
   useDock,
+  // additive (see ARCHITECTURE.md "Engine contract additions")
+  usePointer,
+  useTextFormatState,
+  useSettings,
+  useCanEdit,
 } from './hooks';
 
 // Renders an element's rich-text field; switches to the shared editor while editing.
 export { ElementText } from './text/ElementText';
+export type { ElementTextProps } from './text/ElementText';
 // Sanitizes the RichText HTML subset (see @freero/shared RichText).
-export { sanitizeRichText, richTextToPlain } from './text/sanitize';
+export { sanitizeRichText, richTextToPlain, plainToRichText } from './text/sanitize';
+export type { TextFormatState } from './text/session';

@@ -107,6 +107,13 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
     at: Point,
   ): boolean | Promise<boolean>;
   importPriority?: number;
+  /** [additive] Show the rotate handle for this type. Default true (frames set false). */
+  rotatable?: boolean;
+  /**
+   * [additive] Remove the element when a text edit session ends with empty text
+   * (free text boxes). Default false (stickies/shapes stay).
+   */
+  removeWhenEmpty?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -131,7 +138,8 @@ export interface ToolPointerEvent {
 export interface ToolDefinition {
   id: string;
   label: string;
-  icon: ComponentType<{ size?: number; strokeWidth?: number }>;
+  /** Any icon component accepting lucide-style props (lucide-react icons fit as-is). */
+  icon: ComponentType<{ size?: number | string; strokeWidth?: number | string }>;
   /** Single key, e.g. 'n' for sticky. Shown in tooltip. */
   shortcut?: string;
   /** Position in the left toolbar (lower = higher up). Built-ins: select 0, hand 1. */
@@ -280,6 +288,14 @@ export interface Editor {
   remove(ids: string[]): void;
   /** Groups writes into one undo step and one network update. */
   transact(fn: () => void): void;
+  /**
+   * [additive] Gesture grouping: every local write between beginGesture() and the matching
+   * endGesture() merges into ONE undo step (nestable). The engine already wraps each tool
+   * pointer-down → pointer-up sequence and each text edit session in a gesture; call these
+   * only for other continuous interactions (e.g. dragging a slider in a format section).
+   */
+  beginGesture(): void;
+  endGesture(): void;
   bringToFront(ids: string[]): void;
   sendToBack(ids: string[]): void;
   duplicate(ids: string[], offset?: Point): string[];

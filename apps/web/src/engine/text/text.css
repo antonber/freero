@@ -1,0 +1,64 @@
+.fr-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  white-space: normal;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.fr-text-content {
+  width: 100%;
+  min-height: 1lh;
+  outline: none;
+}
+
+.fr-text-content p,
+.fr-text-content ul,
+.fr-text-content ol {
+  margin: 0;
+}
+
+.fr-text-content ul,
+.fr-text-content ol {
+  padding-left: 1.2em;
+  text-align: left;
+}
+
+.fr-text-content a {
+  color: var(--fr-primary);
+  text-decoration: underline;
+}
+
+.fr-text--editing {
+  pointer-events: auto;
+  cursor: text;
+  user-select: text;
+  -webkit-user-select: text;
+  overflow: visible;
+}
+
+.fr-text-input {
+  cursor: text;
+  caret-color: var(--fr-primary);
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.fr-text-input.is-empty::before {
+  content: attr(data-placeholder);
+  color: rgba(23, 22, 43, 0.35);
+  pointer-events: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+}
+
+.fr-text-input.is-empty {
+  position: relative;
+}

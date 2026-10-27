@@ -1,0 +1,23 @@
+.fr-board {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--fr-canvas);
+  font-family: var(--fr-font);
+  color: var(--fr-ink);
+}
+
+.fr-board--error {
+  display: grid;
+  place-content: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+}
+
+.fr-board--error pre {
+  white-space: pre-wrap;
+  color: var(--fr-danger);
+  font-family: var(--fr-font-mono);
+  font-size: 13px;
+}

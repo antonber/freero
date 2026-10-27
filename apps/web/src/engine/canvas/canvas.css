@@ -1,0 +1,59 @@
+.fr-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  outline: none;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  overscroll-behavior: none;
+}
+
+.fr-grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.fr-world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+/* While the camera moves the layer is promoted (cheap compositing); once it settles the
+   browser re-rasterizes text crisply at the new scale. */
+.fr-world.is-moving {
+  will-change: transform;
+}
+
+.fr-el {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: center center;
+}
+
+.fr-el--editing {
+  pointer-events: auto;
+}
+
+.fr-el [data-fr-interactive] {
+  pointer-events: auto;
+}
+
+.fr-el-unknown {
+  width: 100%;
+  height: 100%;
+  border: 1.5px dashed var(--fr-line-strong);
+  border-radius: var(--fr-radius-sm);
+  display: grid;
+  place-items: center;
+  color: var(--fr-ink-3);
+  font-size: 12px;
+  background: var(--fr-surface-2);
+}
