@@ -1,7 +1,7 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { User } from '@freero/shared';
 import { useLocation } from 'react-router-dom';
-import { api, ApiError } from '../api/client';
+import { api } from '../api/client';
 
 export interface AuthValue {
   /** The signed-in user, or null. */
@@ -11,9 +11,14 @@ export interface AuthValue {
   login(email: string, password: string): Promise<User>;
   signup(name: string, email: string, password: string): Promise<User>;
   logout(): Promise<void>;
-  /** Re-fetches the session (e.g. after a profile update). */
+  /** Re-fetches the session. */
   refresh(): Promise<User | null>;
+  /** Saves name/color; every open tab (boards included) picks the change up. */
+  updateProfile(patch: Partial<Pick<User, 'name' | 'color' | 'avatarUrl'>>): Promise<User>;
 }
+
+/** Other tabs of the app hear about session/profile changes here and re-check the session. */
+const CHANNEL = 'freero:auth';
 
 const AuthContext = createContext<AuthValue | null>(null);
 
@@ -23,14 +28,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      const { user } = await api.me();
+      const { user } = await api.session();
       setUser(user);
       return user;
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 401) {
-        setUser(null);
-        return null;
-      }
+    } catch {
       // Network / server error: keep whatever we had.
       return null;
     } finally {
@@ -46,29 +47,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!offline) void refresh();
   }, [refresh, offline]);
 
+  // Logged out, logged in as someone else or renamed in another tab: follow along. One channel
+  // per tab, used for both directions: a channel never receives its own messages.
+  const channel = useRef<BroadcastChannel | null>(null);
+  useEffect(() => {
+    if (offline || typeof BroadcastChannel === 'undefined') return;
+    const ch = new BroadcastChannel(CHANNEL);
+    ch.onmessage = () => void refresh();
+    channel.current = ch;
+    return () => {
+      channel.current = null;
+      ch.close();
+    };
+  }, [refresh, offline]);
+  const announce = useCallback(() => channel.current?.postMessage('changed'), []);
+
   const login = useCallback(async (email: string, password: string) => {
     const { user } = await api.login({ email: email.trim(), password });
     setUser(user);
+    announce();
     return user;
-  }, []);
+  }, [announce]);
 
   const signup = useCallback(async (name: string, email: string, password: string) => {
     const { user } = await api.signup({ name: name.trim(), email: email.trim(), password });
     setUser(user);
+    announce();
     return user;
-  }, []);
+  }, [announce]);
 
   const logout = useCallback(async () => {
     try {
       await api.logout();
     } finally {
       setUser(null);
+      announce();
     }
-  }, []);
+  }, [announce]);
+
+  const updateProfile = useCallback(async (patch: Partial<Pick<User, 'name' | 'color' | 'avatarUrl'>>) => {
+    const { user } = await api.updateMe(patch);
+    setUser(user);
+    announce();
+    return user;
+  }, [announce]);
 
   const value = useMemo<AuthValue>(
-    () => ({ user, loading, login, signup, logout, refresh }),
-    [user, loading, login, signup, logout, refresh],
+    () => ({ user, loading, login, signup, logout, refresh, updateProfile }),
+    [user, loading, login, signup, logout, refresh, updateProfile],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

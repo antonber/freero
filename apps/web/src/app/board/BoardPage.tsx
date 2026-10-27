@@ -6,6 +6,7 @@ import { BoardEngine, type Host } from '@engine';
 import { Button, Logo, useToast } from '@ui';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
+import { loginPath } from '../lib/nav';
 import { ShareDialog } from '../components/ShareDialog';
 import { FullPageSpinner } from '../components/FullPageSpinner';
 import { features } from './features';
@@ -39,7 +40,7 @@ function ServerBoard({ id }: { id: string }) {
       .catch((err) => {
         if (cancelled) return;
         if (err instanceof ApiError && err.status === 401) {
-          navigate(`/login?next=${encodeURIComponent(`/board/${id}`)}`, { replace: true });
+          navigate(loginPath(`/board/${id}`), { replace: true });
           return;
         }
         setState({
@@ -74,7 +75,7 @@ function ServerBoard({ id }: { id: string }) {
     // Rebuild only for identity-relevant changes; title/role updates flow through a new host object.
   }, [board, user, go, toast, openShare, setTitle]);
 
-  if (state.status === 'error') return <BoardError code={state.code} message={state.message} />;
+  if (state.status === 'error') return <BoardError boardId={id} code={state.code} message={state.message} />;
   if (!host || !board) return <FullPageSpinner label="Opening board" />;
   return (
     <>
@@ -112,11 +113,16 @@ function LocalBoard() {
   return <BoardEngine host={host} features={features} />;
 }
 
-function BoardError({ code, message }: { code: number; message: string }) {
+function BoardError({ boardId, code, message }: { boardId: string; code: number; message: string }) {
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
+  const switchAccount = async () => {
+    await logout();
+    navigate(loginPath(`/board/${boardId}`), { replace: true });
+  };
   const copy =
     code === 403
-      ? { title: "You don't have access to this board", body: 'Ask the board owner to invite you, or check that you are signed in with the right account.' }
+      ? { title: "You don't have access to this board", body: 'Ask the board owner to invite you, or switch to the account they shared it with.' }
       : code === 404
         ? { title: 'This board does not exist', body: 'It may have been deleted, or the link is mistyped.' }
         : { title: "We couldn't open this board", body: message || 'Check your connection and try again.' };
@@ -126,10 +132,20 @@ function BoardError({ code, message }: { code: number; message: string }) {
         <Logo size={36} />
         <h1>{copy.title}</h1>
         <p>{copy.body}</p>
+        {code === 403 && user ? (
+          <p className="fr-boarderror__account">
+            Signed in as <strong>{user.email}</strong>
+          </p>
+        ) : null}
         <div className="fr-boarderror__actions">
           <Button variant="primary" size="lg" onClick={() => navigate('/app')}>
             Back to dashboard
           </Button>
+          {code === 403 && (
+            <Button size="lg" onClick={switchAccount}>
+              Switch account
+            </Button>
+          )}
           {code !== 403 && code !== 404 && (
             <Button size="lg" onClick={() => window.location.reload()}>
               Try again

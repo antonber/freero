@@ -10,7 +10,7 @@ import { ShareDialog } from './ShareDialog';
 
 vi.mock('../api/client', async (importOriginal) => {
   const real = await importOriginal<typeof import('../api/client')>();
-  return { ...real, api: { me: vi.fn(), listMembers: vi.fn(), getBoard: vi.fn() } };
+  return { ...real, api: { session: vi.fn(), listMembers: vi.fn(), getBoard: vi.fn() } };
 });
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -26,14 +26,16 @@ const board = (role: Role): BoardSummary => ({
 let root: Root;
 let host: HTMLDivElement;
 
-async function open(me: User, role: Role) {
-  vi.mocked(api.me).mockResolvedValue({ user: me });
+/** `role` = the server's current role; `pageRole` = what the board page loaded earlier (may be stale). */
+async function open(me: User, role: Role, pageRole: Role = role) {
+  vi.mocked(api.session).mockResolvedValue({ user: me });
+  vi.mocked(api.getBoard).mockResolvedValue({ board: board(role) });
   vi.mocked(api.listMembers).mockResolvedValue({ members: MEMBERS });
   act(() => {
     root.render(
       <MemoryRouter>
         <AuthProvider>
-          <ShareDialog boardId="b1" board={board(role)} open onClose={() => {}} />
+          <ShareDialog boardId="b1" board={board(pageRole)} open onClose={() => {}} />
         </AuthProvider>
       </MemoryRouter>,
     );
@@ -84,8 +86,8 @@ describe('ShareDialog permissions', () => {
     expect(ui.leaveButton()).toBeDefined();
   });
 
-  it('does not offer inviting to a viewer', async () => {
-    const ui = await open(user('u3', 'Cy'), 'viewer');
+  it('does not offer inviting to a viewer, even one demoted from editor after the board page loaded', async () => {
+    const ui = await open(user('u3', 'Cy'), 'viewer', 'editor');
     expect(ui.inviteForm()).toBeNull();
     expect(ui.removeButtons()).toHaveLength(0);
     expect(ui.linkSelect()).toBeNull();

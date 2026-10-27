@@ -89,6 +89,8 @@ export function AuthPage({ mode }: { mode: Mode }) {
   };
 
   const isLogin = mode === 'login';
+  // Arrived from a board link while signed out.
+  const toBoard = next.startsWith('/board/');
   return (
     <div className="fr-authpage">
       <div className="fr-authpage__deco" aria-hidden>
@@ -102,7 +104,13 @@ export function AuthPage({ mode }: { mode: Mode }) {
         </Link>
         <h1 className="fr-authcard__title">{isLogin ? 'Welcome back' : 'Create your Freero account'}</h1>
         <p className="fr-authcard__sub">
-          {isLogin ? 'Log in to pick up where your team left off.' : 'Free forever for your first boards. No card needed.'}
+          {toBoard
+            ? isLogin
+              ? 'Log in to open the board that was shared with you.'
+              : 'Create a free account to open the board that was shared with you.'
+            : isLogin
+              ? 'Log in to pick up where your team left off.'
+              : 'Free forever for your first boards. No card needed.'}
         </p>
 
         <form className="fr-authcard__form" onSubmit={submit} noValidate>

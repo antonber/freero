@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { Avatar, Button, ColorSwatches, Input, Modal, useToast } from '@ui';
-import { api, ApiError } from '../../api/client';
+import { ApiError } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 
 // Same palette the server assigns at signup: saturated enough to read on the canvas.
@@ -10,7 +10,7 @@ const CURSOR_COLORS = [
 ];
 
 export function ProfileModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { user, refresh } = useAuth();
+  const { user, updateProfile } = useAuth();
   const notify = useToast();
   const [name, setName] = useState('');
   const [color, setColor] = useState('#5F3DC4');
@@ -34,8 +34,7 @@ export function ProfileModal({ open, onClose }: { open: boolean; onClose: () => 
     if (n.length > 80) return setError('Keep it under 80 characters');
     setSaving(true);
     try {
-      await api.updateMe({ name: n, color });
-      await refresh();
+      await updateProfile({ name: n, color });
       notify('Profile updated', 'success');
       onClose();
     } catch (err) {

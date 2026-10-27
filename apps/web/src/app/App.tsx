@@ -14,7 +14,7 @@ const BoardPage = lazy(() => import('./board/BoardPage'));
 
 export function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <ToastProvider>
         <AuthProvider>
           <Routes>

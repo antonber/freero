@@ -6,6 +6,7 @@ import type {
   InviteRequest,
   LoginRequest,
   Role,
+  SessionResponse,
   SignupRequest,
   UpdateBoardRequest,
   User,
@@ -41,6 +42,8 @@ export type BoardFilter = 'all' | 'mine' | 'shared' | 'starred' | 'recent';
 export const api = {
   // auth
   me: () => request<AuthResponse>('GET', '/api/auth/me'),
+  /** Startup check: `{ user: null }` when signed out (no failed request in the console). */
+  session: () => request<SessionResponse>('GET', '/api/auth/session'),
   login: (body: LoginRequest) => request<AuthResponse>('POST', '/api/auth/login', body),
   signup: (body: SignupRequest) => request<AuthResponse>('POST', '/api/auth/signup', body),
   logout: () => request<{ ok: true }>('POST', '/api/auth/logout'),

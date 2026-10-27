@@ -11,7 +11,7 @@ import { AuthPage } from '../pages/auth/AuthPage';
 
 vi.mock('../api/client', async (importOriginal) => {
   const real = await importOriginal<typeof import('../api/client')>();
-  return { ...real, api: { me: vi.fn(), login: vi.fn(), signup: vi.fn(), logout: vi.fn() } };
+  return { ...real, api: { session: vi.fn(), login: vi.fn(), signup: vi.fn(), logout: vi.fn() } };
 });
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -60,7 +60,7 @@ beforeEach(() => {
   host = document.createElement('div');
   document.body.appendChild(host);
   root = createRoot(host);
-  vi.mocked(api.me).mockReset();
+  vi.mocked(api.session).mockReset();
   vi.mocked(api.login).mockReset();
 });
 
@@ -71,7 +71,7 @@ afterEach(() => {
 
 describe('auth guard', () => {
   it('sends a signed-out visitor to /login with ?next=, then back to the exact board after logging in', async () => {
-    vi.mocked(api.me).mockRejectedValue(new ApiError(401, 'Not logged in'));
+    vi.mocked(api.session).mockResolvedValue({ user: null });
     vi.mocked(api.login).mockResolvedValue({ user: ada });
     render('/board/b1?dock=templates');
     await flush();
@@ -93,7 +93,7 @@ describe('auth guard', () => {
 
   it('does not bounce a signed-in user to /login while the session check is still in flight', async () => {
     let resolve!: (v: { user: User }) => void;
-    vi.mocked(api.me).mockReturnValue(new Promise((r) => (resolve = r)));
+    vi.mocked(api.session).mockReturnValue(new Promise((r) => (resolve = r)));
     render('/board/b1');
     await flush();
     expect(loc()).toBe('/board/b1');
@@ -105,7 +105,7 @@ describe('auth guard', () => {
   });
 
   it('shows the server error instead of navigating when the login is rejected', async () => {
-    vi.mocked(api.me).mockRejectedValue(new ApiError(401, 'Not logged in'));
+    vi.mocked(api.session).mockResolvedValue({ user: null });
     vi.mocked(api.login).mockRejectedValue(new ApiError(401, 'Incorrect email or password'));
     render('/login?next=%2Fboard%2Fb1');
     await flush();

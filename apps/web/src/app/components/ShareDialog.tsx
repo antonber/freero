@@ -29,7 +29,11 @@ export interface ShareDialogProps {
   boardId: string;
   open: boolean;
   onClose: () => void;
-  /** Optional: the board summary if the caller already has it (skips a fetch). */
+  /**
+   * Optional: the board summary the caller already has, shown while the dialog re-fetches it. The
+   * fetch always happens: your role may have changed since the caller loaded it (demoted while on
+   * the board), and the invite form must match what the server will allow.
+   */
   board?: BoardSummary;
   /** Called after link access changes, with the updated board. */
   onBoardChange?: (board: BoardSummary) => void;
@@ -63,7 +67,7 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
     setInviteError(null);
     setMembers(null);
     if (givenBoard) setBoard(givenBoard);
-    Promise.all([givenBoard ? Promise.resolve({ board: givenBoard }) : api.getBoard(boardId), api.listMembers(boardId)])
+    Promise.all([api.getBoard(boardId), api.listMembers(boardId)])
       .then(([b, m]) => {
         if (cancelled) return;
         setBoard(b.board);
@@ -242,7 +246,7 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
                           {m.name}
                           {isMe ? <span className="fr-share__you"> (you)</span> : null}
                         </span>
-                        <span className="fr-share__email-text">{m.email}</span>
+                        {m.email ? <span className="fr-share__email-text">{m.email}</span> : null}
                       </div>
                       <div className="fr-share__member-actions">
                         {isOwner && m.role !== 'owner' ? (

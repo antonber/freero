@@ -34,3 +34,15 @@
   justify-content: center;
   gap: 8px;
 }
+
+.fr-boarderror__card p.fr-boarderror__account {
+  margin: -12px 0 24px;
+  font-size: 13px;
+  color: var(--fr-ink-3);
+}
+
+.fr-boarderror__account strong {
+  color: var(--fr-ink-2);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
