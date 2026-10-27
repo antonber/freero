@@ -249,6 +249,8 @@ export interface CommentMessage {
   createdAt: number;
   editedAt?: number;
   reactions?: Record<string, string[]>; // emoji -> userIds
+  /** Author's cursor color at write time (avatars render after the author leaves). */
+  authorColor?: string;
 }
 
 /** Stored in the doc's `comments` map. Pinned to a world point or an element. */
@@ -258,6 +260,8 @@ export interface CommentThread {
   y: number;
   /** When set, (x, y) is relative to the element's top-left and follows it. */
   elementId?: string | null;
+  /** Absolute fallback point if the pinned element disappears while nobody is online. */
+  origin?: { x: number; y: number };
   resolved: boolean;
   messages: CommentMessage[];
   createdAt: number;
