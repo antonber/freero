@@ -1,0 +1,166 @@
+/* Link card: white card, optional 16:9-ish picture on top, title / description / host below. */
+.fr-embed {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #fff;
+  color: #17162b;
+  box-shadow:
+    0 0 0 1px rgba(23, 22, 43, 0.1),
+    0 6px 16px -8px rgba(23, 22, 43, 0.3);
+  font-family: var(--fr-font);
+}
+
+.fr-embed__media {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: #ecebf3;
+}
+
+.fr-embed__media.is-video {
+  background: #1d1b30;
+}
+
+.fr-embed__media img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+}
+
+.fr-embed__play {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 60px;
+  height: 60px;
+  margin: -30px 0 0 -30px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(23, 22, 43, 0.72);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  transition:
+    transform 120ms,
+    background 120ms;
+}
+
+.fr-embed__play svg {
+  margin-left: 4px;
+}
+
+.fr-embed__play:hover {
+  transform: scale(1.08);
+  background: var(--fr-primary);
+}
+
+.fr-embed__body {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px 12px;
+  min-width: 0;
+}
+
+.fr-embed__title {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.fr-embed__desc {
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: #55536b;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.fr-embed__host {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 2px;
+  font-size: 12px;
+  color: #77758c;
+  min-width: 0;
+}
+
+.fr-embed__host span {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-embed__open {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: #55536b;
+}
+
+.fr-embed__open:hover {
+  background: #f0eff6;
+  color: var(--fr-primary);
+}
+
+.fr-embed.is-loading .fr-embed__title {
+  color: #77758c;
+  font-weight: 500;
+}
+
+/* Playing: the player fills the card; a small stop button brings the card back. */
+.fr-embed--playing {
+  background: #000;
+}
+
+.fr-embed__player {
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+/* Above the card (the player's own controls fill it). Live UI only: exports never play. */
+.fr-embed--playing {
+  overflow: visible;
+}
+
+.fr-embed__close {
+  position: absolute;
+  top: -28px;
+  right: 0;
+  padding: 3px 9px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(23, 22, 43, 0.75);
+  color: #fff;
+  font: 600 11px var(--fr-font);
+  cursor: pointer;
+}
+
+/* No picture: the text sits in the middle of the card. */
+.fr-embed--text .fr-embed__body {
+  flex: 1 1 auto;
+  justify-content: center;
+}
