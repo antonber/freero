@@ -1,0 +1,22 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Boundaries + types + unit tests (Dune: forbidden dependencies fail mechanically).
+      - run: npm run check
+      # Real-session end-to-end: real server, real Yjs WebSocket clients.
+      - run: npm run verify
+      - run: npm run build
