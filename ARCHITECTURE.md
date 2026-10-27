@@ -137,8 +137,20 @@ modules/<name>/    auth, boards, members, uploads, realtime …
   schema.sql       reserved: tables this module OWNS
   repo.ts          the only file that touches the db; the only writer of the owned tables     [S3][S4]
   routes.ts        reserved: export default (ctx) => express.Router, mounted at /api
-  ws.ts            reserved: WebSocket upgrade handler(s) by path prefix
+                   (optional `export const mountPath = '/'` to mount elsewhere — uploads uses it
+                   for GET /uploads/:file)
+  ws.ts            reserved: export default (ctx) => WsRoute | WsRoute[]  ({ prefix, handle(ws, req) })
+  init.ts          reserved: export default (ctx) => void | Promise<void>; runs once after all
+                   schemas are applied and routes mounted, before listen (e.g. auth seeds the
+                   demo user in non-production and purges expired sessions)
 ```
+
+`ctx` (`platform/context.ts`) carries `config` and `onShutdown(fn)` (realtime flushes docs there).
+Cross-module imports name the index file explicitly (`'../auth/index'`), which is what [S2] checks.
+Auth is a plain middleware exported by `modules/auth/index.ts` (`requireUser`, `currentUser(req)`),
+not a reserved hook. Server modules today: `auth` (users, sessions), `boards` (boards, stars,
+opens), `members` (board_members, role resolution), `uploads` (files under `<data>/uploads`, no
+table), `realtime` (board_docs; y-websocket protocol + role filter).
 
 ## Verification
 
