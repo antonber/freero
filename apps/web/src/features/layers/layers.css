@@ -1,0 +1,183 @@
+.fr-layers {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px 16px;
+}
+
+.fr-layers__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px; /* lines up with the dock's close button */
+  margin: 0 36px 4px 0;
+  padding-left: 4px;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.fr-layers__count {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fr-ink-3);
+}
+
+.fr-layers__hiddenbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 10px;
+  border-radius: var(--fr-radius-sm);
+  background: var(--fr-surface-3);
+  font-size: 12px;
+  color: var(--fr-ink-2);
+}
+
+.fr-layers__hiddenbar span {
+  flex: 1;
+}
+
+.fr-layers__group {
+  display: flex;
+  flex-direction: column;
+}
+
+.fr-layers__head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 2px;
+  border-radius: var(--fr-radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fr-layers__head:hover {
+  background: var(--fr-hover);
+}
+
+.fr-layers__head.is-selected {
+  background: var(--fr-primary-soft);
+}
+
+.fr-layers__headicon {
+  flex: none;
+  color: var(--fr-ink-3);
+}
+
+.fr-layers__headname {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-layers__list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 4px 16px;
+}
+
+.fr-layers__row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 2px 0 8px;
+  border-radius: var(--fr-radius-sm);
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.fr-layers__row:hover {
+  background: var(--fr-hover);
+}
+
+.fr-layers__row.is-selected {
+  background: var(--fr-primary-soft);
+}
+
+.fr-layers__row.is-dragging {
+  opacity: 0.5;
+}
+
+.fr-layers__row.drop-before::before,
+.fr-layers__row.drop-after::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--fr-select);
+}
+
+.fr-layers__row.drop-before::before {
+  top: -1px;
+}
+
+.fr-layers__row.drop-after::after {
+  bottom: -1px;
+}
+
+.fr-layers__row.is-hidden .fr-layers__icon,
+.fr-layers__row.is-hidden .fr-layers__name,
+.fr-layers__group.is-hidden .fr-layers__headname {
+  opacity: 0.45;
+}
+
+.fr-layers__icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--fr-ink-3);
+}
+
+.fr-layers__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-layers__toggles {
+  display: flex;
+  flex: none;
+  opacity: 0;
+}
+
+.fr-layers__row:hover .fr-layers__toggles,
+.fr-layers__head:hover .fr-layers__toggles,
+.fr-layers__toggles:focus-within {
+  opacity: 1;
+}
+
+/* A locked or hidden item always shows that toggle, so its state is visible at a glance. */
+.fr-layers__toggles .is-on {
+  opacity: 1;
+}
+
+.fr-layers__toggles:has(.is-on) {
+  opacity: 1;
+}
+
+.fr-layers__toggles:has(.is-on) > :not(.is-on) {
+  opacity: 0;
+}
+
+.fr-layers__row:hover .fr-layers__toggles > *,
+.fr-layers__head:hover .fr-layers__toggles > * {
+  opacity: 1;
+}
+
+.fr-layers__empty,
+.fr-layers__tip {
+  font-size: 12px;
+  color: var(--fr-ink-3);
+  margin: 6px 0 0;
+}
