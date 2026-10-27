@@ -1,0 +1,27 @@
+.fr-tooltip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 260px;
+  padding: 6px 9px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: #fff;
+  background: var(--fr-ink);
+  border-radius: 8px;
+  box-shadow: var(--fr-shadow);
+  pointer-events: none;
+  animation: fr-fade-in 0.12s var(--fr-ease);
+  white-space: normal;
+}
+
+.fr-tooltip .fr-kbd {
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.16);
+  border-bottom-width: 1px;
+  height: 18px;
+  min-width: 18px;
+  font-size: 10.5px;
+}

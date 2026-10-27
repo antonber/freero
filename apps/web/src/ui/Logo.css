@@ -1,0 +1,19 @@
+.fr-logo {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  color: var(--fr-ink);
+}
+
+.fr-logo svg {
+  display: block;
+  flex: none;
+}
+
+.fr-logo__word {
+  font-family: var(--fr-font);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  padding-bottom: 0.06em;
+}

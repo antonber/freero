@@ -69,3 +69,22 @@ button {
   font: inherit;
   color: inherit;
 }
+
+/* ---- Additive tokens (UI kit) ---- */
+:root {
+  --fr-primary-ink: #ffffff;
+  --fr-primary-press: #3f26c4;
+  --fr-accent-soft: #dcfbf2;
+  --fr-danger-hover: #cf3b40;
+  --fr-danger-soft: #fdecec;
+  --fr-success-soft: #e3f6ec;
+  --fr-warning-soft: #fef3e0;
+  --fr-overlay: rgba(23, 22, 43, 0.36);
+  --fr-hover: rgba(23, 22, 43, 0.05);
+  --fr-press: rgba(23, 22, 43, 0.09);
+  --fr-focus-ring: 0 0 0 3px rgba(91, 63, 240, 0.28);
+  --fr-shadow-xl: 0 24px 64px rgba(23, 22, 43, 0.22), 0 0 0 1px rgba(23, 22, 43, 0.05);
+  --fr-radius-xl: 20px;
+  --fr-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --fr-z-tooltip: 90;
+}

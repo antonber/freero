@@ -1,0 +1,13 @@
+.fr-popover {
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  overflow: auto;
+  padding: 8px;
+  color: var(--fr-ink);
+  background: var(--fr-surface);
+  border-radius: var(--fr-radius-lg);
+  box-shadow: var(--fr-shadow-lg);
+  animation: fr-pop-in 0.14s var(--fr-ease);
+  outline: none;
+  overscroll-behavior: contain;
+}
