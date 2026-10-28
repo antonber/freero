@@ -53,9 +53,24 @@ export function requestOriginKind(req: IncomingMessage, config: Config, secure: 
   return ownOrigins(req, config, secure).has(candidate.toLowerCase()) ? 'same' : 'cross';
 }
 
+const crossSiteEndpoints: Array<{ path: RegExp; reason: string }> = [];
+
+/**
+ * Lets browsers POST to `path` from another site. Only for endpoints whose request carries its own
+ * proof and never acts on the visitor's cookies — the SAML assertion consumer service, where the
+ * identity provider's page posts a signed response (modules/sso) and the sign-in then completes on
+ * a same-site GET bound to the browser that started it. Say why in `reason` (it is logged nowhere,
+ * but read in review).
+ */
+export function allowCrossSitePost(path: RegExp, reason: string): void {
+  if (reason.trim().length < 10) throw new Error('allowCrossSitePost needs a reason');
+  crossSiteEndpoints.push({ path, reason });
+}
+
 export function csrfGuard(config: Config): RequestHandler {
   return (req, res, next) => {
     if (SAFE_METHODS.has(req.method)) return next();
+    if (req.method === 'POST' && crossSiteEndpoints.some((e) => e.path.test(req.path))) return next();
     if (requestOriginKind(req, config, req.secure) === 'cross') {
       res.status(403).json({ error: 'Cross-site request refused' });
       return;

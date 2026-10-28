@@ -21,7 +21,10 @@ export type RateLimitName =
   | 'version'
   | 'wsConnect'
   | 'twoFactor'
-  | 'oidc';
+  | 'oidc'
+  | 'sso'
+  | 'scim'
+  | 'dataExport';
 
 /** `limit` hits per `windowMs`; `null` = not limited. */
 export type RateLimitRule = { limit: number; windowMs: number } | null;
@@ -118,6 +121,15 @@ export interface Config {
   oidcProviders: OidcProviderConfig[];
   /** A MaxMind-format (.mmdb) GeoLite2/GeoIP2 City or Country database for session locations, or null. */
   geoipDbPath: string | null;
+  /**
+   * DNS servers ("ip" or "ip:port") that domain verification for single sign-on asks for TXT
+   * records; empty = the system resolver. Never skips the lookup.
+   */
+  ssoDnsServers: string[];
+  /** How long a finished data export can be downloaded before its file is deleted. */
+  dataExportTtlMs: number;
+  /** How often each instance looks for data exports to build. */
+  dataExportIntervalMs: number;
 }
 
 export class ConfigError extends Error {
@@ -149,6 +161,9 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   wsConnect: '200/1m', // per IP and per user
   twoFactor: '10/15m', // two-factor codes per IP and per account (sign-in second step, enrolment, disabling)
   oidc: '60/10m', // "Sign in with …" starts and callbacks per IP
+  sso: '120/10m', // workspace single sign-on: discovery, starts, assertion posts and callbacks per IP
+  scim: '1200/1m', // SCIM requests per provisioning token (Okta and Entra sync in bursts)
+  dataExport: '5/1d', // data exports requested per user (each builds a ZIP of everything)
 };
 
 const ENV_NAME: Record<RateLimitName, string> = {
@@ -167,6 +182,9 @@ const ENV_NAME: Record<RateLimitName, string> = {
   wsConnect: 'RATE_LIMIT_WS_CONNECT',
   twoFactor: 'RATE_LIMIT_TWO_FACTOR',
   oidc: 'RATE_LIMIT_OIDC',
+  sso: 'RATE_LIMIT_SSO',
+  scim: 'RATE_LIMIT_SCIM',
+  dataExport: 'RATE_LIMIT_DATA_EXPORT',
 };
 
 /** The built-in providers: env prefix, button label, default issuer, extra verified-email claims. */
@@ -317,6 +335,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   const metricsPort = str('METRICS_PORT') === null ? null : int('METRICS_PORT', 0, 1, 65535);
 
+  const ssoDnsServers = (str('SSO_DNS_SERVERS') ?? '')
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean);
+  for (const s of ssoDnsServers)
+    if (!/^(\d{1,3}(\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(:\d{1,5})?$|^[0-9a-fA-F:]+$/.test(s))
+      problems.push(`SSO_DNS_SERVERS: "${s}" is not an IP address (optionally with :port)`);
+
   const config: Config = {
     port: int('PORT', 4000, 0, 65535),
     publicUrl,
@@ -356,6 +382,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     rateLimits,
     oidcProviders,
     geoipDbPath,
+    ssoDnsServers,
+    dataExportTtlMs: int('DATA_EXPORT_TTL_HOURS', 168, 1, 24 * 90) * 3_600_000,
+    dataExportIntervalMs: int('DATA_EXPORT_INTERVAL_SECONDS', 15, 1, 86_400) * 1000,
   };
 
   if (production) {
