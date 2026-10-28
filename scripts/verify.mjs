@@ -1425,6 +1425,17 @@ async function notificationChecks() {
       assert(outbox(dataDir).filter((m) => m.to === B.email && /notification|mentioned/i.test(m.subject)).length === 1, 'emailed after unsubscribing');
     });
 
+    await check('board people lookup keeps a comment author’s profile after they leave, and never answers for unrelated accounts', async () => {
+      const Y = new User('NotifyStranger', port);
+      await Y.signup();
+      assert((await A.req('DELETE', `/api/boards/${board.id}/members/${B.id}`)).status === 200, 'remove B');
+      const r = await A.req('GET', `/api/boards/${board.id}/people?ids=${B.id},${Y.id}`);
+      assert(r.status === 200, `people: ${r.status}`);
+      const ids = r.json.people.map((p) => p.id);
+      assert(ids.includes(B.id) && !ids.includes(Y.id), JSON.stringify(r.json));
+      assert((await Y.req('GET', `/api/boards/${board.id}/people?ids=${B.id}`)).status === 403, 'a non-member could look people up');
+    });
+
     await check('logging out closes that session’s notifications socket', async () => {
       const live = sockets[0];
       await B.req('POST', '/api/auth/logout');
