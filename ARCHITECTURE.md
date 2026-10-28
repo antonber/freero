@@ -1318,12 +1318,19 @@ The room ends the session (`SERVER_ORIGIN`) when the facilitator has had no sock
 presence from another instance for `FREERO_FACILITATOR_GRACE_MS` (30 s). Following the facilitator
 and hidden cursors are views each client applies (`features/facilitation`); not enforceable.
 
-Session features built on these pieces (KAI-130/131/159) add no server rules of their own:
+**Vote budget** (KAI-210, `realtime/votingRules.ts`, same compensation in the same transaction,
+shared doc and every layer doc): a socket may write only its OWN ballot (`${sessionId}:${userId}`,
+matching fields) for the RUNNING session, with at most `votesPerUser` votes; a session needs
+`VOTES_PER_USER_MIN..MAX` and keeps its budget for its id; deleting is always allowed (a new vote
+wipes everyone's ballots). Readers still cap a ballot at the budget (`countedVotes`) for values
+older than the rule.
+
+Session features built on these pieces (KAI-130/131/159) add no other server rules:
 planning poker (`features/estimation`) seals each pick in the picker's private layer with a shared
 "has picked" marker and reveals one item at a time (`revealPrivate` with a per-item prefix), then
 writes the agreed value through `card.setEstimate` (cards keep one writer). Retro mode
 (`features/retro`) stores only its step and drives every other feature through commands that take
-args — `templates.insert`, `private-mode.start/reveal`, `timer.start`, `facilitation.start/set/end`,
+args — `templates.insert`, `private-mode.start/reveal`, `timer.start/stop`, `facilitation.start/set/end`,
 `voting.start/end`, `arrange.clusterByColor` — so private writing, sealed votes and the
 facilitator's limits keep their own guarantees. The laser pointer (`features/present`) is presence
 only (`ext.present.laser`, receivers fade points from their own arrival time); presenter notes are

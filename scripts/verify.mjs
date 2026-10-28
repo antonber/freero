@@ -1076,9 +1076,14 @@ async function run() {
 
     await check('board layers: sealed ballots are revealed into the shared doc only by an owner/editor, while their author is offline', async () => {
       const b1 = await layerClient(B, board.id);
-      b1.layers.private.getMap('voting').set(`s1:${B.id}`, { sessionId: 's1', userId: B.id, elementIds: ['e1', 'e1'] });
+      // A ballot is only taken for the running session (votingRules.ts): B votes in s0, then in s1.
+      const vote = (id) => ({ id, active: true, title: 'Vote', votesPerUser: 3, elementIds: null, anonymous: true, startedBy: B.id, startedAt: Date.now(), endedAt: null });
+      b1.doc.getMap('voting').set('session', vote('s0'));
       b1.layers.private.getMap('voting').set(`s0:${B.id}`, { sessionId: 's0', userId: B.id, elementIds: ['e2'] });
+      b1.doc.getMap('voting').set('session', vote('s1'));
+      b1.layers.private.getMap('voting').set(`s1:${B.id}`, { sessionId: 's1', userId: B.id, elementIds: ['e1', 'e1'] });
       await settled(b1); // the server has both ballots
+      assert(b1.layers.private.getMap('voting').size === 2, `the server undid a ballot: ${JSON.stringify(b1.layers.private.toJSON())}`);
       b1.destroy();
       const c1 = await layerClient(C, board.id); // viewer
       const d1 = await layerClient(D, board.id); // commenter
@@ -4707,6 +4712,39 @@ async function facilitationChecks() {
       fl.layerOp({ type: 'reveal', collection: 'estimation', prefix: 'v:r1:item1:' });
       await waitFor(() => ol.doc.getMap('estimation').get(key)?.value === 'XL-SECRET', 5000, 'the revealed pick');
       for (const c of [pl, ol, fl]) c.destroy();
+    });
+
+    await check('vote budget (KAI-210): a raw socket can neither vote over the budget (shared or sealed), nor as a made-up voter, nor raise the budget — nobody receives it and the voter converges', async () => {
+      const pl = await layerClient(P, board.id, port);
+      const ol = await layerClient(O, board.id, port);
+      clients.push(pl, ol);
+      const vm = (c) => c.doc.getMap('voting');
+      const seen = new Set();
+      vm(ol).observe((e) => e.changes.keys.forEach((_, k) => seen.add(`${k}=${JSON.stringify(vm(ol).get(k) ?? null)}`)));
+      const vote = (patch) => ({ id: 'kv1', active: true, title: 'Vote', votesPerUser: 2, elementIds: null, anonymous: false, startedBy: O.id, startedAt: Date.now(), endedAt: null, ...patch });
+      vm(ol).set('session', vote());
+      await waitFor(() => vm(pl).get('session')?.id === 'kv1', 5000, 'the vote to reach the participant');
+      const own = `kv1:${P.id}`;
+      vm(pl).set(own, { sessionId: 'kv1', userId: P.id, elementIds: ['a', 'a', 'a', 'a', 'a'] });
+      vm(pl).set(`kv1:ghost`, { sessionId: 'kv1', userId: 'ghost', elementIds: ['a', 'a'] });
+      vm(pl).set('session', vote({ votesPerUser: 20 }));
+      await settled(pl, [ol]);
+      await waitFor(() => !vm(pl).has(own) && !vm(pl).has('kv1:ghost') && vm(pl).get('session')?.votesPerUser === 2, 5000, 'the participant to converge');
+      assert(![...seen].some((k) => k.startsWith(own) || k.startsWith('kv1:ghost') || k.includes('"votesPerUser":20')), `the owner received a forbidden vote: ${[...seen].join(' ')}`);
+      vm(pl).set(own, { sessionId: 'kv1', userId: P.id, elementIds: ['a', 'b'] });
+      await waitFor(() => vm(ol).get(own)?.elementIds?.length === 2, 5000, "the participant's vote within budget");
+      // Hidden results: the sealed ballot in the private layer keeps to the same budget.
+      vm(ol).set('session', vote({ id: 'kv2', anonymous: true }));
+      await waitFor(() => vm(pl).get('session')?.id === 'kv2', 5000, 'the hidden vote to reach the participant');
+      pl.layers.private.getMap('voting').set(`kv2:${P.id}`, { sessionId: 'kv2', userId: P.id, elementIds: ['a', 'b', 'c'] });
+      await settled(pl);
+      await waitFor(() => !pl.layers.private.getMap('voting').has(`kv2:${P.id}`), 5000, 'the over-budget sealed ballot to be undone');
+      pl.layers.private.getMap('voting').set(`kv2:${P.id}`, { sessionId: 'kv2', userId: P.id, elementIds: ['c'] });
+      await settled(pl);
+      ol.layerOp({ type: 'reveal', collection: 'voting', prefix: 'kv2:' });
+      await waitFor(() => vm(ol).get(`kv2:${P.id}`)?.elementIds?.join() === 'c', 5000, 'the sealed ballot within budget to be revealed');
+      vm(ol).delete('session');
+      for (const c of [pl, ol]) c.destroy();
     });
 
     await check('the session ends when the facilitator has been gone for the grace period, lifting every limit', async () => {

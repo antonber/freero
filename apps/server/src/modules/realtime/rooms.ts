@@ -46,6 +46,7 @@ import * as Y from 'yjs';
 import { WebSocket } from 'ws';
 import {
   FACILITATION_COLLECTION,
+  VOTING_COLLECTION,
   FACILITATION_KEY,
   WS_CLOSE_BOARD_REMOVED,
   WS_MESSAGE_LAYER,
@@ -66,6 +67,7 @@ import { elementChanges, ELEMENTS, emitBoardChange, hasBoardChangeListeners } fr
 import { commentPeople, COMMENTS_COLLECTION, emitCommentMessages, hasCommentListeners, messageEvents } from './comments';
 import * as store from './docStore';
 import { effectiveAccess, guardSession, readFacilitation, revertForbiddenAdds, sameEffective } from './facilitation';
+import { guardVotes } from './votingRules';
 import { decideUpdate } from './filter';
 import * as layerStore from './layerStore';
 import {
@@ -307,6 +309,8 @@ class Room {
 
     // The facilitation session (facilitation.ts): limits every socket's role, any instance's change.
     this.doc.getMap<unknown>(FACILITATION_COLLECTION).observe(() => this.applyFacilitation());
+    // The vote budget (votingRules.ts): created up front so the guard sees an update's changes.
+    this.doc.getMap<unknown>(VOTING_COLLECTION);
 
     this.ready = this.open();
   }
@@ -390,13 +394,15 @@ class Room {
     } else if (syncType === syncProtocol.messageYjsSyncStep2 || syncType === syncProtocol.messageYjsUpdate) {
       const update = decoding.readVarUint8Array(decoder);
       if (!mayWriteLayer(name, conn)) return;
+      // Guards as for the shared doc (onUpdate): sealed ballots keep to the vote's budget too.
       const addTypes = conn.limits?.addTypes;
-      if (!addTypes) return Y.applyUpdate(doc, update, conn.ws);
       const before = Y.encodeStateVector(doc);
-      let fixed = 0;
+      let fixed = false;
+      doc.getMap<unknown>(VOTING_COLLECTION);
       doc.transact((tr) => {
         Y.applyUpdate(doc, update);
-        fixed = revertForbiddenAdds(tr, doc.getMap<unknown>(ELEMENTS), new Set(addTypes), (id) => this.existsElsewhere(doc, id));
+        fixed = guardVotes(tr, doc, this.doc, conn.userId);
+        if (addTypes) fixed = revertForbiddenAdds(tr, doc.getMap<unknown>(ELEMENTS), new Set(addTypes), (id) => this.existsElsewhere(doc, id)) > 0 || fixed;
       }, conn.ws);
       if (fixed) send(conn.ws, layerMessage(wire, (e) => syncProtocol.writeUpdate(e, Y.encodeStateAsUpdate(doc, before))));
     }
@@ -754,6 +760,7 @@ class Room {
       this.doc.transact((tr) => {
         Y.applyUpdate(this.doc, update);
         fixed = guardSession(tr, this.doc, { userId: conn.userId, access: conn.access });
+        fixed = guardVotes(tr, this.doc, this.doc, conn.userId) || fixed;
         if (addTypes) fixed = revertForbiddenAdds(tr, this.doc.getMap<unknown>(ELEMENTS), new Set(addTypes), (id) => this.existsElsewhere(this.doc, id)) > 0 || fixed;
       }, conn.ws);
       if (fixed) send(conn.ws, syncUpdateMessage(Y.encodeStateAsUpdate(this.doc, before)));
