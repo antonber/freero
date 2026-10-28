@@ -93,6 +93,19 @@ export async function restoreUpload(name: string): Promise<boolean> {
   return true;
 }
 
+/**
+ * Account purge (KAI-178): the user's removed files outlive the account — tombstone (410) and kept
+ * copy alike, with no owner — until an operator restores or purges them, or their retention ends.
+ */
+export function keepRemovedUploadsOf(userId: string): Promise<number> {
+  return repo.detachRemovedOf(userId);
+}
+
+/** Kept copies of files removed before `before`, oldest first: what their retention may purge (KAI-179). */
+export function keptCopiesRemovedBefore(before: number, limit = 200): Promise<Array<{ name: string; removedAt: number }>> {
+  return repo.keptCopiesRemovedBefore(before, limit);
+}
+
 /** Deletes a removed file's kept copy for good (illegal content). The URL keeps answering 410. */
 export async function purgeRemovedUpload(name: string): Promise<boolean> {
   if (!FILE_NAME_RE.test(name)) return false;

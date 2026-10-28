@@ -171,12 +171,13 @@ export async function cancelDeletion(id: string): Promise<boolean> {
   return rows.length > 0;
 }
 
-export async function usersDueForPurge(now: number, limit: number): Promise<UserWithHash[]> {
+export async function usersDueForPurge(now: number, limit: number, skip: readonly string[] = []): Promise<UserWithHash[]> {
   return (
     await query<UserRow>(
       `SELECT * FROM users WHERE deletion_scheduled_for IS NOT NULL AND deletion_scheduled_for <= $1
+         AND NOT (id = ANY($3::text[]))
        ORDER BY deletion_scheduled_for LIMIT $2`,
-      [new Date(now), limit],
+      [new Date(now), limit, [...skip]],
     )
   ).map(toUser);
 }

@@ -19,6 +19,7 @@ import { getUser, getUsers, hasTwoFactor } from '../auth/index';
 import {
   boardIdsInWorkspace,
   cleanUpDeletedBoards,
+  countHeldBoards,
   deleteBoardRowsInWorkspace,
   transferBoardsOwnedIn,
 } from '../boards/index';
@@ -249,17 +250,24 @@ export async function deleteWorkspace(workspaceId: string, userId: string, confi
   const { workspace } = await requireWorkspace(workspaceId, userId, 'owner');
   teamOnly(workspace);
   if (typeof confirm !== 'string' || confirm.trim() !== workspace.name) throw badRequest('Type the workspace name to confirm');
-  await deleteTeamWorkspaceNow(workspace, userId);
+  if (!(await deleteTeamWorkspaceNow(workspace, userId)))
+    throw new HttpError(
+      409,
+      'A board in this workspace was taken down by Freero’s moderators and is under review. The workspace can be deleted once that review is over.',
+      'workspace_board_held',
+    );
 }
 
 /**
  * The deletion is recorded in the workspace's own log (kept for the default retention after the
  * workspace is gone) and in the account log of whoever deleted it (null: the account purge).
+ * False, changing nothing, while a board in it is taken down (held for review, KAI-178).
  */
-async function deleteTeamWorkspaceNow(workspace: Workspace, actorId: string | null): Promise<void> {
+async function deleteTeamWorkspaceNow(workspace: Workspace, actorId: string | null): Promise<boolean> {
   const workspaceId = workspace.id;
   const gone = await repo.transaction(async () => {
-    if (!(await repo.lockWorkspace(workspaceId, 'update'))) return null;
+    if (!(await repo.lockWorkspace(workspaceId, 'update'))) return [];
+    if (await countHeldBoards({ workspaceId })) return null;
     const boards = await deleteBoardRowsInWorkspace(workspaceId);
     await repo.deleteTeam(workspaceId);
     await recordAudit({
@@ -273,7 +281,9 @@ async function deleteTeamWorkspaceNow(workspace: Workspace, actorId: string | nu
     });
     return boards;
   });
-  if (gone) await cleanUpDeletedBoards(gone);
+  if (!gone) return false;
+  await cleanUpDeletedBoards(gone);
+  return true;
 }
 
 /**
@@ -587,11 +597,13 @@ export async function auditScopeOf(userId: string): Promise<string[]> {
 /**
  * Before an account is purged: in every team workspace where the user is the only owner, the
  * longest-standing admin (else member, else guest) becomes owner; a team with nobody else in it is
- * deleted with its boards. Boards the user owned in team workspaces pass to an owner of that
- * workspace, so team content survives. Idempotent (a purge interrupted halfway is simply redone).
- * The personal workspace is not touched here: it goes with the account row.
+ * deleted with its boards — unless one of them is taken down (held for review, KAI-178): then it
+ * is kept, and the result counts it, so the purge waits. Boards the user owned in team workspaces
+ * pass to an owner of that workspace, so team content survives. Idempotent (a purge interrupted
+ * halfway is simply redone). The personal workspace is not touched here: it goes with the account row.
  */
-export async function handOverTeamWorkspaces(userId: string): Promise<void> {
+export async function handOverTeamWorkspaces(userId: string): Promise<{ held: number }> {
+  let held = 0;
   for (const { workspaceId } of await repo.teamMembershipsOf(userId)) {
     const orphaned = await repo.transaction(async () => {
       if (!(await repo.lockWorkspace(workspaceId, 'update'))) return null;
@@ -629,6 +641,7 @@ export async function handOverTeamWorkspaces(userId: string): Promise<void> {
         });
       return null;
     });
-    if (orphaned) await deleteTeamWorkspaceNow(orphaned, null);
+    if (orphaned && !(await deleteTeamWorkspaceNow(orphaned, null))) held++;
   }
+  return { held };
 }
