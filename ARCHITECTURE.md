@@ -81,8 +81,9 @@ features/<name>/
                            so it moves, rotates, culls and exports with the element
   outline.ts     optional  export default defineOutline({ kinds?, annotate? }) (@freero/shared): how
                            its element types read in the board outline, and what its collections
-                           add to items (votes, tags, comments). Runs on the SERVER too, so it is
-                           pure: '@freero/shared', files of its own feature, type-only imports [W13]
+                           add to items (votes, tags, comments). Runs on the SERVER and in the
+                           browser (Editor.getOutline, "Board as list"), so it is pure:
+                           '@freero/shared', files of its own feature, type-only imports [W13]
   *.css, *.test.ts(x)      allowed at the root
   lib/                     any helpers
 ```
@@ -579,6 +580,51 @@ Reference & items (engine primitives; product UI in `features/shortcuts`, `links
   is the image feature's `dialog` panel. `IconElement` stores its own drawing (whitelisted SVG
   primitives), so the lucide index (`features/icons/lib/iconIndex.ts`, imported only with
   `import()`) stays out of the board chunk; keep it that way when touching the icon library.
+
+Accessibility, touch and phones (KAI-108, KAI-139; conformance notes: docs/accessibility.md):
+- Keyboard walk: Tab follows `readingOrderByFrame` (`geometry/order.ts`: a frame's items right
+  after the frame); Alt+arrows jump to the nearest item that way; Alt+Shift+arrows resize
+  (`keyResizePatches`, `editor/exact.ts`, inside the nudge burst's undo step); Enter with a
+  creation tool "clicks" it on a free spot beside the selection; Shift+F10 / Menu key open the
+  context menu at the selection (`ContextMenuState.keyboard`); Alt+F10 focuses the format toolbar;
+  F6 cycles `REGION_ORDER` — chrome containers mark themselves `data-fr-region="<name>"`, so new
+  chrome joins F6 by carrying one. Arrows move along any `role="toolbar"`, Escape in a region
+  returns to the canvas. New engine keys go into `ENGINE_KEYS` (the `?` sheet).
+- Spoken descriptions: `describeElement(editor, el)` (`editor/typeLabel.ts`: `label.one` +
+  `toPlainText`). `ui/LiveRegion.tsx` + `interaction/announce.ts` read the selection and,
+  throttled, collaborators joining / leaving / changing items (`BoardStore.subscribeRemoteKeys`:
+  other participants only, never this client's writes or undo/redo; quiet for 2 s after the first
+  sync). Never announce from a feature by adding regions of your own.
+- `Editor.getOutline()` builds the semantic outline in the browser: the web app now discovers
+  features' `outline.ts` too (`FeatureBundle.outline`), so "Board as list" (`features/board-list`)
+  and the server's `/outline` read a board identically.
+- Reduced motion: `camera/motion.ts` `prefersReducedMotion()` makes `setCamera({ animate })` and
+  following jump. CSS animations are cut globally in `ui/base.css`; don't re-enable them per owner.
+- Forced colours: tokens switch to system colours (`ui/tokens.css`); a new owner whose state is
+  shown only by a background tint or shadow adds a `@media (forced-colors: active)` outline.
+- Touch (`interaction/touch.ts` `routePress`, used by `canvas/Canvas.tsx`): palm rejection while a
+  pen is down, "pen draws, finger pans" after a pen was used, one finger pans empty canvas with the
+  select tool (tap deselects), a 500 ms still press opens the context menu, fingers hit items 14 px
+  off (`Editor.hitTest(p, { tolerancePx })`). `@media (pointer: coarse)` enlarges handles/controls.
+- Phone layout (≤ 600 px, `ui/compact.ts` `useCompactLayout()`): the board root carries
+  `data-fr-layout="phone" | "phone-edit"`; view-and-comment mode shows only tools whose `minRole`
+  is commenter or lower, hides the format toolbar, and docks become a bottom sheet; editors toggle
+  `UiState.phoneEditing` ("Edit board"). Phone CSS hangs off that attribute, not a media query, so
+  JS and CSS can't disagree.
+
+### Installable app (PWA, KAI-140)
+
+`apps/web/public/manifest.webmanifest` + icons (rendered from `freero.svg`; maskable source in
+`public/icons/freero-maskable.svg`), and one hand-written service worker, `app/pwa/sw.ts`, built
+to `dist/sw.js` by the `freero-sw` plugin in `vite.config.ts` (version = hash of the build's entry
+files; it precaches them plus the shell files). Rules, all in `strategyFor` / `respond` (tested):
+- `/api`, `/ws`, `/uploads`, non-GET and other origins are never answered or stored by the worker.
+- Navigations always go to the network (never cached, so sign-in pages and a deploy's new
+  `index.html` are never stale); `offline.html` (no scripts: CSP) when the network fails.
+- Hashed `/assets/*` and the shell files are cache-first; old versions' caches go on activation.
+- `app/pwa/AppUpdates.tsx` registers it (production only), offers "Reload" when a new version
+  waits (`SKIP_WAITING`), and reloads once on `vite:preloadError`. Offline editing is out of scope;
+  anything that must work offline is a new decision, not a new cache rule.
 
 ## UI kit (`ui/`) — exports from `@ui`
 
