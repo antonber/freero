@@ -1,8 +1,9 @@
 // What happened to a board's elements, derived on the server from the changes it applies — the
 // trusted source for the activity feed (modules/activity). Like comments.ts: only changes made
-// through one of THIS instance's sockets are reported (each change once across instances, the
-// same updates this instance appends to the board's update log), attributed to the socket's
-// authenticated user or guest, never to what a client claims.
+// through one of THIS instance's sockets, or on a request it served (realtime.changeBoard: the
+// public API, MCP, insert structure; KAI-207), are reported — each change once across instances,
+// the same updates this instance appends to the board's update log — attributed to the socket's
+// authenticated user or guest, or the request's actor, never to what a client claims.
 //
 // Confidentiality: private layers (drafts, sealed ballots) are never observed. Changes in the
 // 'editors' layer (hidden frames' contents) are reported with `layer: 'editors'`, which activity
@@ -10,6 +11,7 @@
 // is the editors' clients moving it into that layer (the frame was hidden), not news, and would
 // leak how much the frame holds: it is not reported. No element content (text) is ever reported.
 import type * as Y from 'yjs';
+import type { ActingApp } from '@freero/shared';
 import { logError } from '../../platform/log';
 
 export const ELEMENTS = 'elements';
@@ -25,8 +27,10 @@ export interface ElementChange {
 
 export interface BoardChangeEvent {
   boardId: string;
-  /** The socket's user or guest id. */
+  /** The socket's user or guest id; for a change made on a request (changeBoard), its actor. */
   actorId: string;
+  /** The app or token that made a request's change for `actorId` (the API, MCP; KAI-168). */
+  via?: ActingApp;
   /** The name others see them by (a guest's "Guest · <name>"). */
   actorName: string;
   /** Which doc changed: the shared doc, or the hidden frames' 'editors' layer. */
@@ -39,7 +43,7 @@ export interface BoardChangeEvent {
 type Listener = (e: BoardChangeEvent) => void;
 const listeners = new Set<Listener>();
 
-/** Called synchronously for every element change applied from a socket on this instance. Keep it cheap. */
+/** Called synchronously for every element change applied from a socket or a request on this instance. Keep it cheap. */
 export function onBoardChange(fn: Listener): () => void {
   listeners.add(fn);
   return () => listeners.delete(fn);

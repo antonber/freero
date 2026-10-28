@@ -9,7 +9,7 @@
 // (`isOffBoard`).
 import { createHash } from 'node:crypto';
 import * as Y from 'yjs';
-import { Y_ELEMENTS, type BoardElement, type ElementDraft, type ElementType, type Role } from '@freero/shared';
+import { Y_ELEMENTS, type ActingApp, type BoardElement, type ElementDraft, type ElementType, type Role } from '@freero/shared';
 import { FACILITATION_COLLECTION } from '@freero/shared';
 import { commenterMayChangeComments } from './commentRules';
 import { effectiveAccess, readFacilitation } from './facilitation';
@@ -20,6 +20,17 @@ export type ViewLayer = 'shared' | 'editors' | 'private';
 export interface BoardReader {
   userId: string;
   role: Role;
+}
+
+/**
+ * Who makes a change on a request: the person (`userId`, their role), and — for the public API
+ * and MCP — the app or token acting for them (KAI-168), stamped on what it creates
+ * (`createdVia`) and reported with the change (activity, presence).
+ */
+export interface BoardActor extends BoardReader {
+  /** The person's display name now (activity keeps it only for guests). */
+  name?: string;
+  via?: ActingApp | null;
 }
 
 export interface BoardView {
@@ -169,7 +180,7 @@ function underHiddenFrame(el: BoardElement, byId: ReadonlyMap<string, BoardEleme
  * `editors` layer (never in the shared doc, which every viewer's socket receives), and whatever
  * no longer is moves back. Every doc is written in one transaction with `origin`.
  */
-export function applyChange(main: Y.Doc, layers: ReadonlyMap<string, Y.Doc>, change: BoardChange, actor: BoardReader, origin: unknown, now = Date.now()): AppliedChange {
+export function applyChange(main: Y.Doc, layers: ReadonlyMap<string, Y.Doc>, change: BoardChange, actor: BoardActor, origin: unknown, now = Date.now()): AppliedChange {
   for (const name of Object.keys(change.collections ?? {}))
     if (name === Y_ELEMENTS || name === 'settings' || name === FACILITATION_COLLECTION) throw new BoardChangeError(`'${name}' is not a collection`);
   // A facilitator's limits hold for requests too (facilitation.ts), not only for sockets: a locked
@@ -216,7 +227,11 @@ export function applyChange(main: Y.Doc, layers: ReadonlyMap<string, Y.Doc>, cha
   }
   let z = view.elements.reduce((m, e) => Math.max(m, typeof e.el.z === 'number' ? e.el.z : 0), 0);
   for (const d of change.create ?? [])
-    next.set(d.id, { el: { ...d, z: ++z, createdBy: actor.userId, createdAt: now, updatedAt: now } as BoardElement, from: null, changed: true });
+    next.set(d.id, {
+      el: { ...d, z: ++z, createdBy: actor.userId, ...(actor.via ? { createdVia: { ...actor.via } } : {}), createdAt: now, updatedAt: now } as BoardElement,
+      from: null,
+      changed: true,
+    });
 
   const byDoc = new Map<Y.Doc, Array<() => void>>();
   const queue = (doc: Y.Doc | undefined, fn: () => void) => {

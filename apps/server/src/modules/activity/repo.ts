@@ -21,6 +21,8 @@ export interface ActivitySummary {
   userId?: string;
   role?: string;
   via?: 'invite' | 'request';
+  /** Done by an app or token for the actor (the public API, MCP; KAI-168): its name. */
+  app?: string;
 }
 
 export interface ActivityRow {

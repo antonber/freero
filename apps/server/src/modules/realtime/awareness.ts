@@ -42,6 +42,8 @@ export function sanitizeAwarenessUpdate(update: Uint8Array, ctx: AwarenessContex
     const s = state as Record<string, unknown>;
     // Presence without a user (e.g. a client that has not set it yet) carries no identity to fake.
     if (s.user !== undefined) s.user = { ...ctx.user };
+    // Only the server speaks for an app acting for someone (agent presence, KAI-168).
+    delete s.agent;
     kept.push({ clientId, clock, state: JSON.stringify(s) });
   }
   return encodeEntries(kept);
