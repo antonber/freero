@@ -152,8 +152,9 @@ export interface BoardChange {
    */
   remove?: string[];
   /**
-   * Entries to set in feature collections of the shared doc (content kept outside elements).
-   * Commenters may only write `comments`, and there only records they own (commentRules.ts).
+   * Entries to set in feature collections of the shared doc (content kept outside elements); an
+   * owner's or editor's `null` deletes the entry. Commenters may only write `comments`, and there
+   * only records they own (commentRules.ts).
    */
   collections?: Record<string, Record<string, unknown>>;
 }
@@ -305,7 +306,9 @@ export function applyChange(main: Y.Doc, layers: ReadonlyMap<string, Y.Doc>, cha
     if (!isElementContentCollection(name)) {
       const map = main.getMap<unknown>(name);
       queue(main, () => {
-        for (const [k, v] of Object.entries(entries)) map.set(k, v);
+        // An owner's or editor's `null` removes the entry (commenters' records go through their rule above).
+        for (const [k, v] of Object.entries(entries)) if (v === null && editor) map.delete(k);
+        else map.set(k, v);
       });
       continue;
     }
@@ -314,7 +317,11 @@ export function applyChange(main: Y.Doc, layers: ReadonlyMap<string, Y.Doc>, cha
       const owner = elementContentOwner(name, k);
       const layer = (owner && finalLayer.get(owner)) || 'shared';
       const doc = docOf(layer);
-      queue(doc, () => doc!.getMap<unknown>(name).set(k, v));
+      if (v === null && editor) {
+        queue(doc, () => doc!.getMap<unknown>(name).delete(k));
+      } else {
+        queue(doc, () => doc!.getMap<unknown>(name).set(k, v));
+      }
       if (doc !== main && main.share.has(name) && main.getMap<unknown>(name).has(k)) queue(main, () => main.getMap<unknown>(name).delete(k));
     }
   }

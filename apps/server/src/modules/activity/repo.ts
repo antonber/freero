@@ -23,7 +23,27 @@ export interface ActivitySummary {
   via?: 'invite' | 'request';
   /** kind 'board' (KAI-188): what happened to it; renamed: from/to titles; moved: `to` project (null: none);
    * duplicated: `from` = the original's title; version_restored: the version's name (null: automatic). */
-  action?: 'created' | 'duplicated' | 'renamed' | 'moved' | 'trashed' | 'restored' | 'version_restored' | 'suggested';
+  action?:
+    | 'created'
+    | 'duplicated'
+    | 'renamed'
+    | 'moved'
+    | 'trashed'
+    | 'restored'
+    | 'version_restored'
+    | 'suggested'
+    | 'tracker_sent'
+    | 'tracker_imported'
+    | 'tracker_synced'
+    | 'tracker_failed'
+    | 'tracker_unlinked';
+  /** Tracker actions (KAI-153): the tracker's name, the issue key, items sent (by type) or issues imported, fields sent, why it failed. */
+  tracker?: string;
+  issue?: string | null;
+  items?: Record<string, number>;
+  count?: number;
+  fields?: string[];
+  reason?: string;
   /** action 'suggested' (KAI-169): how many changes the proposal holds (shown to owners and editors only). */
   suggestions?: number;
   from?: string | null;

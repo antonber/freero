@@ -1,4 +1,5 @@
 import { tableCellOwner } from './elements';
+import { TRACKER_COLLECTION } from './trackers';
 
 // Layout of the per-board Yjs document.
 //
@@ -27,6 +28,10 @@ import { tableCellOwner } from './elements';
 //   'diagramSources' -> features/from-text (diagram id -> the source a diagram was laid out from
 //                                     and what that layout wrote; board content, so a restored
 //                                     version brings back the source that matches its diagram)
+//   'trackers' -> features/trackers  (link id -> TrackerIssueRecord, see trackers.ts; WRITTEN BY THE
+//                                     SERVER only — modules/trackers through changeBoard; a socket's
+//                                     write is undone (realtime/serverCollections.ts) — the feature
+//                                     reads it for the issue badges)
 //
 // Content some connections must not read (private drafts, sealed ballots, hidden frames'
 // contents) never enters this doc: it lives in server-held LAYER docs with the same layout (an
@@ -90,9 +95,10 @@ export const isElementContentCollection = (name: string): boolean => Object.prot
  * a sealed vote (rolling them back would desync them from the ballots in the private layers), and
  * 'privateMode' is session state: rolling it back could restart private mode (new content going
  * private again) or end it while drafts are still sealed. Layer docs are never versioned or
- * restored (see "Board layers" in ARCHITECTURE.md).
+ * restored (see "Board layers" in ARCHITECTURE.md). 'trackers' mirrors the server's links to tracker
+ * issues (they don't go back in time with the board): an older copy would show stale badges.
  */
-export const Y_KEPT_ON_RESTORE = ['comments', 'voting', 'timer', 'privateMode', 'facilitation', 'estimation', 'retro', 'engageResults', 'call'] as const;
+export const Y_KEPT_ON_RESTORE = ['comments', 'voting', 'timer', 'privateMode', 'facilitation', 'estimation', 'retro', 'engageResults', 'call', 'trackers'] as const;
 
 /**
  * Facilitator controls (KAI-129): the `facilitation` collection, key FACILITATION_KEY. While it is
@@ -184,7 +190,7 @@ export const ENGAGE_RESULTS_COLLECTION = 'engageResults';
  * any socket's change to them). When one of them is also element content
  * (ELEMENT_CONTENT_COLLECTIONS), the server — never a client — keeps each entry with its element.
  */
-export const SERVER_WRITTEN_COLLECTIONS: readonly string[] = [ENGAGE_RESULTS_COLLECTION];
+export const SERVER_WRITTEN_COLLECTIONS: readonly string[] = [ENGAGE_RESULTS_COLLECTION, TRACKER_COLLECTION];
 
 export interface ActivityResults {
   activityId: string;

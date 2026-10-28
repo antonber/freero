@@ -181,6 +181,20 @@ What is sent where, and the safety rules: [ai.md](ai.md).
 | `AI_MAX_OUTPUT_TOKENS` | `4096` | `max_tokens` of each model call. |
 | `AI_TIMEOUT_SECONDS` | `90` | Deadline of one model call. |
 
+## Issue trackers
+
+Jira (Cloud and Data Center), Linear and GitHub, connected by a team's admins (admin console →
+Issue trackers) or by a person for themselves (Settings). How it works and what is stored:
+[trackers.md](trackers.md).
+
+| Variable | Default | Description |
+|---|---|---|
+| `TRACKER_PRIVATE_ENDPOINTS` | `false` | Tracker addresses may use plain http and private / loopback addresses (a self-hosted Jira Data Center on your network). Off: https only, private addresses refused when connecting. |
+| `TRACKER_POLL_SECONDS` | `60` | How often connections set to polling (no webhooks reach Freero) ask their tracker what changed. |
+| `TRACKER_FALLBACK_POLL_SECONDS` | `900` | How often connections with webhooks poll anyway, to catch a delivery that never arrived. |
+| `TRACKER_JIRA_CLIENT_ID` / `TRACKER_JIRA_CLIENT_SECRET` | — | An OAuth 2.0 (3LO) app you registered at developer.atlassian.com (callback `<PUBLIC_URL>/api/trackers/oauth/jira/callback`; scopes `read:jira-work write:jira-work read:jira-user offline_access`). Set: "Connect with Atlassian" is offered next to API tokens. Both or neither. |
+| `TRACKER_JIRA_AUTH_URL` / `TRACKER_JIRA_API_URL` | `https://auth.atlassian.com` / `https://api.atlassian.com` | Atlassian's authorization server and API gateway. Only changed to test against a mock. |
+
 ## Public API and OAuth apps
 
 | Variable | Default | Description |
@@ -255,6 +269,7 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `RATE_LIMIT_AGENT_WRITE` | `60/1m` | Changes to boards per API token, or per authorised app and person (the per-agent write limit, KAI-168): creating, changing or deleting items, inserting structure, comments, new boards — through the REST API or MCP. Separate from the person's own editing in the app, which it never slows down. With at most 500 items per call it also bounds how many items an agent writes per minute. |
 | `RATE_LIMIT_OAUTH_TOKEN` | `60/1m` | OAuth token and revocation requests per IP. |
 | `RATE_LIMIT_OAUTH_REGISTER` | `20/1h` | Apps registering themselves (OAuth dynamic client registration) per IP. |
+| `RATE_LIMIT_TRACKER_SEND` | `60/10m` | Per user: issues created or imported in a tracker, and tracker connections added or tested (each calls the tracker's API). |
 
 Rule format: `<count>/<window>` with the window in `s`, `m`, `h` or `d` and an optional multiplier
 (`10/5m` = 10 per 5 minutes), or `off`. Windows are fixed (they reset `window` after the first hit).

@@ -1,18 +1,19 @@
 // Kanban geometry and the layout plan the engine applies after every local change
 // (ElementDefinition.arrange). Pure: unit-tested without an editor.
-import type { BoardElement, CardStatus, KanbanColumn, KanbanElement } from '@freero/shared';
+import { KANBAN_LAYOUT, type BoardElement, type CardStatus, type KanbanColumn, type KanbanElement } from '@freero/shared';
 import type { ElementPatch } from '@engine';
 
+// The geometry lives in @freero/shared: the server places cards in columns with it too (trackers).
 /** Board title band. */
-export const HEADER_H = 52;
+export const HEADER_H = KANBAN_LAYOUT.headerH;
 /** Column header (title, count, menu). */
-export const COL_HEAD_H = 44;
+export const COL_HEAD_H = KANBAN_LAYOUT.colHeadH;
 /** Between columns and around them. */
-export const GAP = 12;
+export const GAP = KANBAN_LAYOUT.gap;
 /** Inside a column, around its items. */
-export const PAD = 10;
+export const PAD = KANBAN_LAYOUT.pad;
 /** Between stacked items. */
-export const ITEM_GAP = 10;
+export const ITEM_GAP = KANBAN_LAYOUT.itemGap;
 /** An empty column still offers this much room to drop into. */
 export const MIN_BODY = 180;
 export const DEFAULT_COL_W = 280;

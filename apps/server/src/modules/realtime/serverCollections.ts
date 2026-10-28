@@ -1,7 +1,8 @@
 // Collections of the board doc that only the SERVER writes (KAI-132): results it computes from
-// what it keeps elsewhere — today the live activities' results (ENGAGE_RESULTS_COLLECTION), which
-// modules/engage derives from answers that never enter the board. Owners and editors are trusted
-// with the rest of the doc, but results they could rewrite would be results nobody can trust, so
+// what it keeps elsewhere — the live activities' results (ENGAGE_RESULTS_COLLECTION), which
+// modules/engage derives from answers that never enter the board, and the tracker issue badges
+// (TRACKER_COLLECTION), which modules/trackers keeps in step with its links (KAI-153). Owners and
+// editors are trusted with the rest of the doc, but results they could rewrite would be results nobody can trust, so
 // a socket's change to such a collection — in the shared doc or in a layer doc (whence a reveal
 // could carry it into the shared doc) — is undone in the same transaction, like the vote budget
 // (votingRules.ts): the sender is sent the correction and converges.
