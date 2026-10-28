@@ -3,6 +3,7 @@ import type { AcceptInviteResponse, BoardMember, BoardPerson, InviteResponse, Ro
 import type { ServerContext } from '../../platform/context';
 import { badRequest, forbidden, handle, HttpError, notFound } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
+import { recordAuditQuietly } from '../audit/index';
 import { currentUser, findUserByEmail, getUser, getUsers, normalizeEmail, requireUser } from '../auth/index';
 import { requireBoardAccess, teamAccessUserIds } from '../boards/index';
 import { commentPeopleOf, refreshBoardAccess } from '../realtime/index';
@@ -65,7 +66,8 @@ export default function memberRoutes(_ctx: ServerContext): Router {
     handle(async (req, res) => {
       const boardId = req.params.id;
       const me = currentUser(req);
-      const { ownerId, role: myRole, title, canShareExternally, inWorkspace } = await requireBoardAccess(boardId, me.id, 'editor');
+      const { ownerId, role: myRole, title, canShareExternally, inWorkspace, workspaceId } = await requireBoardAccess(boardId, me.id, 'editor');
+      const board = { type: 'board', id: boardId, label: title };
       const { email: rawEmail, role } = (req.body ?? {}) as { email?: unknown; role?: unknown };
       const email = normalizeEmail(rawEmail);
       if (!email) throw badRequest('email is required');
@@ -82,6 +84,7 @@ export default function memberRoutes(_ctx: ServerContext): Router {
         const out = await inviteByEmail(req, { boardId, boardTitle: title, email, role, inviter: me, mayChangeRole: myRole === 'owner' });
         if (out === 'board-gone') throw boardGone();
         if (out === 'role-conflict') throw new HttpError(409, `${email} is already invited. Only the board owner can change their role.`);
+        await recordAuditQuietly({ action: 'board.member_invited', workspaceId, target: board, metadata: { email, role, pending: true } });
         res.status(201).json({ invite: out } satisfies InviteResponse);
         return;
       }
@@ -98,6 +101,7 @@ export default function memberRoutes(_ctx: ServerContext): Router {
           throw new HttpError(409, `${invitee.name} already has access. Only the board owner can change their role.`);
       }
       await refreshBoardAccess(boardId);
+      await recordAuditQuietly({ action: 'board.member_invited', workspaceId, target: board, metadata: { email, userId: invitee.id, role, pending: false } });
       await boardShared({ boardId, boardTitle: title, userId: invitee.id, role, byId: me.id });
       res.status(201).json({ member: toMember(invitee, role, true) } satisfies InviteResponse);
     }),
@@ -176,11 +180,18 @@ export default function memberRoutes(_ctx: ServerContext): Router {
     '/boards/:id/members/:userId',
     handle(async (req, res) => {
       const { id: boardId, userId } = req.params;
-      await requireBoardAccess(boardId, currentUser(req).id, 'owner');
+      const { workspaceId, title } = await requireBoardAccess(boardId, currentUser(req).id, 'owner');
       const role = req.body?.role;
       if (!isMemberRole(role)) throw badRequest('role must be editor, commenter or viewer');
       const u = await getUser(userId);
+      const before = await repo.getMembership(boardId, userId);
       if (!u || !(await repo.setRole(boardId, userId, role))) throw notFound('That person is not a member of this board');
+      await recordAuditQuietly({
+        action: 'board.member_role_changed',
+        workspaceId,
+        target: { type: 'board', id: boardId, label: title },
+        metadata: { userId, email: u.email, from: before?.role ?? null, to: role },
+      });
       await refreshBoardAccess(boardId);
       res.json({ member: toMember(u, role, true) });
     }),
@@ -191,9 +202,10 @@ export default function memberRoutes(_ctx: ServerContext): Router {
     handle(async (req, res) => {
       const { id: boardId, userId } = req.params;
       const me = currentUser(req);
-      const { role } = await requireBoardAccess(boardId, me.id);
+      const { role, workspaceId, title } = await requireBoardAccess(boardId, me.id);
       if (role !== 'owner' && userId !== me.id) throw forbidden('Only the board owner can remove members');
       if (!(await repo.removeMember(boardId, userId))) throw notFound('That person is not a member of this board');
+      await recordAuditQuietly({ action: 'board.member_removed', workspaceId, target: { type: 'board', id: boardId, label: title }, metadata: { userId, left: userId === me.id } });
       await refreshBoardAccess(boardId);
       res.json({ ok: true });
     }),
