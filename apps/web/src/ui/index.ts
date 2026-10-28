@@ -3,8 +3,8 @@
 import './tokens.css';
 import './base.css';
 
-export { Button, IconButton } from './Button';
-export type { ButtonProps, ButtonVariant, ButtonSize, IconButtonProps } from './Button';
+export { Button, IconButton, ToolbarButton } from './Button';
+export type { ButtonProps, ButtonVariant, ButtonSize, IconButtonProps, ToolbarButtonProps } from './Button';
 export { Tooltip } from './Tooltip';
 export type { TooltipProps } from './Tooltip';
 export { Popover } from './Popover';
