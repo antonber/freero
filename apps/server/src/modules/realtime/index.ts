@@ -15,6 +15,8 @@ export {
   commentPeopleOf,
   readBoardView,
   changeBoard,
+  // Results only the server computes (live activities, KAI-132): the one writer of those collections.
+  writeServerCollection,
   // An app writing through the API or MCP, shown on the board for a moment (KAI-168).
   showAgentPresence,
   type AgentPresence,
@@ -37,6 +39,8 @@ export const commentPeopleIn = (view: BoardView): Set<string> => commentPeople(v
 export { onCommentMessage, type CommentMessageEvent } from './comments';
 // Element changes applied from this instance's sockets or requests, attributed to their user (activity feed).
 export { onBoardChange, type BoardChangeEvent, type ElementChange } from './changes';
+// Task cards assigned / given a due date, attributed to who did it (notifications, KAI-135).
+export { onCardAssignment, type CardAssignmentEvent } from './cards';
 // Version restores (the activity feed, KAI-188).
 export { onVersionRestored, type VersionRestoredEvent } from './history';
 // Version history (stored snapshots of a board's document): list them, read one's full Yjs state.

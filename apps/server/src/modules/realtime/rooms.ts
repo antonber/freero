@@ -65,11 +65,13 @@ import { isShared, publish, subscribe, subscribedInstances, type Subscription } 
 import { getUser, noteSessionActivity } from '../auth/index';
 import { getBoardAccess, touchBoard } from '../boards/index';
 import { sanitizeAwarenessUpdate, withoutClients, type AwarenessIdentity } from './awareness';
+import { cardAssignments, emitCardAssignments, hasCardListeners } from './cards';
 import { elementChanges, ELEMENTS, emitBoardChange, hasBoardChangeListeners } from './changes';
 import { commentPeople, COMMENTS_COLLECTION, emitCommentMessages, hasCommentListeners, messageEvents } from './comments';
 import * as store from './docStore';
 import { effectiveAccess, guardSession, readFacilitation, revertForbiddenAdds, sameEffective } from './facilitation';
 import { guardVotes } from './votingRules';
+import { guardServerCollections, prepareServerCollections, SERVER_COLLECTIONS } from './serverCollections';
 import { decideUpdate } from './filter';
 import * as layerStore from './layerStore';
 import {
@@ -314,6 +316,7 @@ class Room {
     // Element changes made through OUR sockets (changes.ts): the activity feed's trusted source.
     const elements = this.doc.getMap<unknown>(ELEMENTS);
     elements.observe((event, tr) => {
+      this.reportCards(elements, event.changes.keys, tr.origin);
       this.noteRemoved(event.changes.keys);
       this.reportChanges('shared', elements, event.changes.keys, tr.origin);
     });
@@ -322,6 +325,8 @@ class Room {
     this.doc.getMap<unknown>(FACILITATION_COLLECTION).observe(() => this.applyFacilitation());
     // The vote budget (votingRules.ts): created up front so the guard sees an update's changes.
     this.doc.getMap<unknown>(VOTING_COLLECTION);
+    // Results only the server writes (serverCollections.ts): likewise.
+    prepareServerCollections(this.doc);
 
     this.ready = this.open();
   }
@@ -394,6 +399,25 @@ class Room {
       emitBoardChange({ boardId: this.id, actorId: request.userId, actorName: request.name ?? '', ...(request.via ? { via: request.via } : {}), layer, changes, frameTitles });
   }
 
+  /**
+   * Card assignments and due dates in the shared doc (cards.ts): from our sockets and requests,
+   * and from reveals of private drafts (SERVER_ORIGIN on elements is only ever a reveal), which are
+   * their authors' changes.
+   */
+  private reportCards(elements: Y.Map<unknown>, keys: Map<string, { action: 'add' | 'update' | 'delete'; oldValue: unknown }>, origin: unknown): void {
+    if (!hasCardListeners()) return;
+    const conn = origin instanceof WebSocket ? this.conns.get(origin) : undefined;
+    const request = origin instanceof RequestOrigin ? origin.actor : undefined;
+    const revealed = origin === SERVER_ORIGIN;
+    if (!conn && !request && !revealed) return;
+    const actorOf = (card: Record<string, unknown>) =>
+      conn ? conn.userId : request ? request.userId : typeof card.createdBy === 'string' && card.createdBy ? card.createdBy : null;
+    // A card that just left the editors layer (its frame was shown) is not a new assignment; a
+    // revealed draft still sits in its private layer at this point, and is one.
+    const movedIn = (id: string) => !revealed && this.existsElsewhere(this.doc, id);
+    emitCardAssignments(cardAssignments(this.id, elements, keys, actorOf, movedIn, request?.via));
+  }
+
   /** Agent presence on this board (KAI-168): client id -> when it goes. */
   private agents = new Map<number, NodeJS.Timeout>();
 
@@ -448,9 +472,11 @@ class Room {
       const before = Y.encodeStateVector(doc);
       let fixed = false;
       doc.getMap<unknown>(VOTING_COLLECTION);
+      prepareServerCollections(doc);
       doc.transact((tr) => {
         Y.applyUpdate(doc, update);
         fixed = guardVotes(tr, doc, this.doc, conn.userId);
+        fixed = guardServerCollections(tr, doc) || fixed;
         if (addTypes) fixed = revertForbiddenAdds(tr, doc.getMap<unknown>(ELEMENTS), new Set(addTypes), (id) => this.existsElsewhere(doc, id)) > 0 || fixed;
       }, conn.ws);
       if (fixed) send(conn.ws, layerMessage(wire, (e) => syncProtocol.writeUpdate(e, Y.encodeStateAsUpdate(doc, before))));
@@ -810,6 +836,7 @@ class Room {
         Y.applyUpdate(this.doc, update);
         fixed = guardSession(tr, this.doc, { userId: conn.userId, access: conn.access });
         fixed = guardVotes(tr, this.doc, this.doc, conn.userId) || fixed;
+        fixed = guardServerCollections(tr, this.doc) || fixed;
         if (addTypes) fixed = revertForbiddenAdds(tr, this.doc.getMap<unknown>(ELEMENTS), new Set(addTypes), (id) => this.existsElsewhere(this.doc, id)) > 0 || fixed;
       }, conn.ws);
       if (fixed) send(conn.ws, syncUpdateMessage(Y.encodeStateAsUpdate(this.doc, before)));
@@ -1335,6 +1362,26 @@ export async function changeBoard<T extends { change: BoardChange }>(
       emitCommentMessages(messageEvents(room.id, comments, before, actor.userId).map((e) => (actor.via ? { ...e, via: actor.via } : e)));
     await room.flush();
     return { ...planned, applied };
+  });
+}
+
+/**
+ * Sets (or, with null, deletes) entries of a collection only the server writes
+ * (serverCollections.ts: live activities' results, KAI-132) on the live board, as one change
+ * every collaborator receives — published to every instance and saved before this resolves.
+ */
+export async function writeServerCollection(boardId: string, collection: string, entries: Record<string, unknown>): Promise<void> {
+  if (!SERVER_COLLECTIONS.includes(collection)) throw new Error(`realtime: '${collection}' is not a server-written collection`);
+  await withLiveRoom(boardId, async (room) => {
+    if (room.destroyed) throw new BoardClosedError(boardId);
+    const map = room.doc.getMap<unknown>(collection);
+    room.doc.transact(() => {
+      for (const [k, v] of Object.entries(entries)) {
+        if (v === null) map.delete(k);
+        else map.set(k, v);
+      }
+    }, SERVER_ORIGIN);
+    await room.flush();
   });
 }
 
