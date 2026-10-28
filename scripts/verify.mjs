@@ -302,10 +302,15 @@ class User {
 function outbox(dataDir) {
   const dir = path.join(dataDir, 'outbox');
   if (!fs.existsSync(dir)) return [];
-  return fs
-    .readdirSync(dir)
-    .map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')))
-    .sort((a, b) => a.sentAt - b.sentAt);
+  const mails = [];
+  for (const f of fs.readdirSync(dir)) {
+    try {
+      mails.push(JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')));
+    } catch {
+      // The server is still writing this one: callers wait (waitFor) and read it next time.
+    }
+  }
+  return mails.sort((a, b) => a.sentAt - b.sentAt);
 }
 
 /** The token of the newest `route` link (e.g. '/reset-password', '/invite') mailed to `to`, waiting for it. */
@@ -1665,8 +1670,9 @@ async function accountPurgeChecks() {
       const comments = v.doc.getMap('comments');
       assert(comments.get('m:t1:u').text === `from ${U.name}` && comments.get('m:t1:v').authorName === V.name, JSON.stringify(comments.toJSON()));
       assert((await V.req('GET', `/api/boards/${theirs.id}`)).status === 200, "V's board survived");
-      const members = (await V.req('GET', `/api/boards/${theirs.id}/members`)).json.members.map((m) => m.userId);
-      assert(!members.includes(U.id), 'purged user still a member');
+      // The account row goes last in the purge (after the boards and the comment renames above).
+      const memberIds = async () => (await V.req('GET', `/api/boards/${theirs.id}/members`)).json.members.map((m) => m.userId);
+      await waitFor(async () => !(await memberIds()).includes(U.id), 10_000, 'the purged user to leave the member list');
       assert((await fetch(`http://127.0.0.1:${proc.port}${avatar}`)).status === 404, "U's avatar still served");
       // Part of V's board now; files nothing references any more are left to the uploads sweep.
       assert((await fetch(`http://127.0.0.1:${proc.port}${upload.json.url}`)).status === 200, "an image U placed on V's board was deleted");
@@ -2085,6 +2091,9 @@ async function signInMethodChecks() {
       GEOIP_DB_PATH: geoDb,
       TRUST_PROXY: 'loopback', // so X-Forwarded-For can stand in for clients on the internet
       RATE_LIMIT_TWO_FACTOR: '200/15m', // every check here comes from 127.0.0.1
+      // With REDIS_URL every server of the run shares the per-IP counters: the main session's resets
+      // must not use up this section's (5/15m by default).
+      RATE_LIMIT_PASSWORD: '100/15m',
     };
     if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
     const ok = await check('sign-in server boots with a provider (local test OpenID provider) and a GeoIP database', async () => {
