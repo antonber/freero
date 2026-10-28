@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { Request, RequestHandler, Response } from 'express';
-import { ACCOUNT_PENDING_DELETION, REAUTH_REQUIRED, SESSION_COOKIE, type Account, type AuditAction, type User } from '@freero/shared';
+import { ACCOUNT_PENDING_DELETION, ACCOUNT_SUSPENDED, REAUTH_REQUIRED, SESSION_COOKIE, type Account, type AuditAction, type User } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { badRequest, HttpError, parseCookies, unauthorized } from '../../platform/http';
 import { newId } from '../../platform/ids';
@@ -214,6 +214,42 @@ export function sessionsEnded(keys: string[]): void {
   }
 }
 
+// ---- Suspension (operators, through modules/moderation) ----
+
+const suspendedError = () =>
+  new HttpError(403, 'This account has been suspended. We emailed you the reason and how to appeal.', ACCOUNT_SUSPENDED);
+
+/** 403 (`account_suspended`) when an operator suspended the account: no way in signs it in. */
+export async function refuseIfSuspended(userId: string): Promise<void> {
+  if ((await repo.suspendedAmong([userId])).size) throw suspendedError();
+}
+
+export async function isSuspended(userId: string): Promise<boolean> {
+  return (await repo.suspendedAmong([userId])).size > 0;
+}
+
+/** Which of these accounts are suspended. */
+export function suspendedUserIds(ids: string[]): Promise<Set<string>> {
+  return repo.suspendedAmong(ids);
+}
+
+/**
+ * Suspends an account: sign-ins are refused from now on and every session it has ends at once,
+ * which closes its board and notification sockets on every instance (onSessionEnd). A session
+ * created by a sign-in racing this never resolves either (findSessionUser ignores suspended
+ * accounts). False when it was already suspended (its sessions are ended again anyway).
+ */
+export async function suspendUser(userId: string): Promise<boolean> {
+  const changed = await repo.suspend(userId, Date.now());
+  await endSessionsOf(userId);
+  return changed;
+}
+
+/** Lifts a suspension (the person signs in again as usual). False when it was not suspended. */
+export function unsuspendUser(userId: string): Promise<boolean> {
+  return repo.unsuspend(userId);
+}
+
 /**
  * Signs the browser in. `method`: 'password', 'email_link' or a provider id; `twoFactor`: it passed
  * the second step. Sign-ins of accounts with two-factor go through signIn.ts (completeSignIn).
@@ -225,6 +261,7 @@ export async function startSession(
   userId: string,
   how: { method?: string; twoFactor?: boolean } = {},
 ): Promise<{ knownDevice: boolean }> {
+  await refuseIfSuspended(userId); // every way in ends here
   const token = newToken();
   const now = Date.now();
   const knownDevice = await rememberDevice(req, res, userId, now); // before this session exists

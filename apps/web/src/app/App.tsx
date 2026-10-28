@@ -15,9 +15,13 @@ import { InvitePage } from './pages/invite/InvitePage';
 import { AccountSettingsPage } from './pages/account/AccountSettingsPage';
 import { UnsubscribePage } from './pages/unsubscribe/UnsubscribePage';
 import { AdminConsolePage } from './pages/admin/AdminConsolePage';
+import { AppealPage } from './pages/appeal/AppealPage';
+import { OperatorPage } from './pages/operator/OperatorPage';
 
 // Owned by the board engine work; loaded on demand.
 const BoardPage = lazy(() => import('./board/BoardPage'));
+// The operator's read-only board preview mounts the board engine too.
+const OperatorPreviewPage = lazy(() => import('./pages/operator/OperatorPreviewPage'));
 
 export function App() {
   return (
@@ -40,6 +44,26 @@ export function App() {
             <Route path="/invite/:token" element={<InvitePage />} />
             <Route path="/workspace-invite/:token" element={<InvitePage kind="workspace" />} />
             <Route path="/unsubscribe" element={<UnsubscribePage />} />
+            {/* Moderation notices link here; works signed out (a suspended account appeals too). */}
+            <Route path="/appeal" element={<AppealPage />} />
+            <Route
+              path="/operator"
+              element={
+                <RequireAuth>
+                  <OperatorPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/operator/boards/:id/preview"
+              element={
+                <RequireAuth>
+                  <Suspense fallback={<FullPageSpinner label="Opening board" />}>
+                    <OperatorPreviewPage />
+                  </Suspense>
+                </RequireAuth>
+              }
+            />
             <Route
               path="/settings"
               element={

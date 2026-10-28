@@ -131,7 +131,12 @@ function BoardError({ boardId, code, message }: { boardId: string; code: number;
     navigate(loginPath(`/board/${boardId}`), { replace: true });
   };
   const copy =
-    code === 403
+    code === 451
+      ? {
+          title: 'This board was removed for review',
+          body: 'Freero’s moderators took it down after a report. If it is your board, we emailed you the reason and how to appeal.',
+        }
+      : code === 403
       ? { title: "You don't have access to this board", body: 'Ask the board owner to invite you, or switch to the account they shared it with.' }
       : code === 404
         ? { title: 'This board does not exist', body: 'It may have been deleted, or the link is mistyped.' }
@@ -156,7 +161,7 @@ function BoardError({ boardId, code, message }: { boardId: string; code: number;
               Switch account
             </Button>
           )}
-          {code !== 403 && code !== 404 && (
+          {code !== 403 && code !== 404 && code !== 451 && (
             <Button size="lg" onClick={() => window.location.reload()}>
               Try again
             </Button>

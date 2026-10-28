@@ -12,12 +12,12 @@ export default function auditAdmin(ctx: ServerContext): AdminCommand[] {
   return [
     {
       name: 'audit:verify',
-      usage: '<workspace id | w:<workspace id> | u:<user id>>',
+      usage: '<workspace id | w:<workspace id> | u:<user id> | freero>',
       summary: 'Re-checks the hash chain of a workspace’s (or an account’s) audit log. Changes nothing.',
       async run(args) {
         const arg = args.positional[0];
         if (!arg) throw new AdminUsageError('Give a workspace id, or a chain (w:<id> / u:<id>)');
-        const chain = /^[wu]:/.test(arg) ? arg : `w:${arg}`;
+        const chain = /^[wu]:/.test(arg) || arg === 'freero' ? arg : `w:${arg}`;
         const r = await verifyChain(chain);
         const iso = (ms: number | null) => (ms === null ? '—' : new Date(ms).toISOString());
         args.print(`chain     ${chain}`);

@@ -36,6 +36,8 @@ export interface AuditInput {
 
 export const workspaceChain = (workspaceId: string) => `w:${workspaceId}`;
 export const accountChain = (userId: string) => `u:${userId}`;
+/** Events about no workspace or account (operators acting on unowned content). Read with audit:verify. */
+export const SYSTEM_CHAIN = 'freero';
 
 type AccountScope = (userId: string) => Promise<string[]> | string[];
 let accountScope: AccountScope = () => [];
@@ -74,7 +76,8 @@ export async function recordAudit(input: AuditInput): Promise<void> {
     if (input.fanOut !== false) for (const id of await accountScope(input.accountId)) workspaceIds.add(id);
   }
   for (const id of workspaceIds) chains.push({ chain: workspaceChain(id), workspaceId: id });
-  if (!chains.length) throw new Error(`audit: ${input.action} names neither a workspace nor an account`);
+  // Neither a workspace nor an account (an operator acting on a file nobody owns): Freero's own log.
+  if (!chains.length) chains.push({ chain: SYSTEM_CHAIN, workspaceId: null });
   const base = {
     actorId: input.actorId !== undefined ? input.actorId : (ctx?.userId ?? null),
     action: input.action,
@@ -94,14 +97,15 @@ export async function recordAudit(input: AuditInput): Promise<void> {
  * be imported, or from the operator CLI. Each becomes an account event of `userId`; who did it is
  * kept in the actor (a user) or the metadata (an operator's name, the emailed link used).
  */
-export function recordPlatformAudit(e: PlatformAuditEvent & { at: number }): Promise<void> {
+export function recordPlatformAudit(e: PlatformAuditEvent & { at: number }, workspaceId: string | null = null): Promise<void> {
   const by: Record<string, AuditValue> =
     e.actor.kind === 'operator' ? { operator: e.actor.name } : e.actor.kind === 'link' ? { via: e.actor.purpose } : e.actor.kind === 'system' ? { by: 'system' } : {};
   return recordAudit({
     action: e.action as AuditAction,
-    accountId: e.userId,
+    accountId: e.userId || null,
+    workspaceId,
     actorId: e.actor.kind === 'user' ? e.actor.userId : null,
-    target: { type: 'user', id: e.userId },
+    target: e.userId ? { type: 'user', id: e.userId } : null,
     metadata: { ...e.detail, ...by },
     at: e.at,
   });

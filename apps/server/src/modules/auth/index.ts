@@ -16,6 +16,11 @@ export {
   onSessionEnd,
   onEmailVerified,
   markEmailVerified,
+  // Operators (modules/moderation): suspended accounts can't sign in and lose every session.
+  suspendUser,
+  unsuspendUser,
+  isSuspended,
+  suspendedUserIds,
 } from './service';
 // A workspace policy requiring two-step verification registers here (Enterprise).
 export { onTwoFactorRequirement } from './twoFactor';

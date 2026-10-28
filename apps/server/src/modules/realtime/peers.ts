@@ -30,7 +30,9 @@ export type PeerMessage =
   | { type: 'sync-reply'; to: string; update: Uint8Array; awareness: Uint8Array | null; layers?: LayerParts }
   | { type: 'layer-update'; layer: string; update: Uint8Array };
 
-export type ControlMessage = { type: 'refresh-access' | 'close-board'; boardId: string } | { type: 'end-session'; sessionKey: string };
+export type ControlMessage =
+  | { type: 'refresh-access' | 'close-board' | 'remove-board'; boardId: string }
+  | { type: 'end-session'; sessionKey: string };
 
 // New types are only ever appended (instances of two versions run side by side during a deploy).
 const PEER_TYPES = ['update', 'awareness', 'sync-request', 'sync-reply', 'layer-update'] as const;
@@ -49,7 +51,8 @@ function readLayers(d: decoding.Decoder): LayerParts {
   for (let n = decoding.readVarUint(d); n > 0; n--) out.push({ layer: decoding.readVarString(d), data: decoding.readVarUint8Array(d) });
   return out;
 }
-const CONTROL_TYPES = ['refresh-access', 'close-board', 'end-session'] as const;
+// Appended only (see PEER_TYPES). 'remove-board': closed like 'close-board', with the taken-down code.
+const CONTROL_TYPES = ['refresh-access', 'close-board', 'end-session', 'remove-board'] as const;
 
 export function encodePeer(m: PeerMessage): Uint8Array {
   const e = encoding.createEncoder();
@@ -120,6 +123,6 @@ export function decodeControl(data: Uint8Array): { from: string; msg: ControlMes
   const type = CONTROL_TYPES[decoding.readVarUint(d)];
   const key = decoding.readVarString(d);
   if (type === 'end-session') return { from, msg: { type, sessionKey: key } };
-  if (type === 'refresh-access' || type === 'close-board') return { from, msg: { type, boardId: key } };
+  if (type === 'refresh-access' || type === 'close-board' || type === 'remove-board') return { from, msg: { type, boardId: key } };
   throw new Error('unknown control message type');
 }

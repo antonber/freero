@@ -1,4 +1,4 @@
-import { useRef, useState, type DragEvent } from 'react';
+import { useEffect, useRef, useState, type DragEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   ChevronsUpDown,
@@ -10,6 +10,7 @@ import {
   LogOut,
   Plus,
   Settings,
+  ShieldAlert,
   ShieldCheck,
   SlidersHorizontal,
   Star,
@@ -19,6 +20,7 @@ import {
 } from 'lucide-react';
 import type { ProjectSummary, WorkspaceSummary } from '@freero/shared';
 import { Avatar, IconButton, Logo, Menu, Tooltip } from '@ui';
+import { api } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { useMediaQuery } from '../../lib/hooks';
 import { personColor } from '../../lib/placeholder';
@@ -82,6 +84,19 @@ export function Sidebar(props: SidebarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const compact = useMediaQuery('(max-width: 1000px)');
+  // Operators (moderation) get a way to the queue in their account menu.
+  const [operator, setOperator] = useState(false);
+  useEffect(() => {
+    if (!user?.emailVerified) return;
+    let live = true;
+    api.moderationAccess().then(
+      (r) => live && setOperator(r.operator),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [user?.id, user?.emailVerified]);
   if (!user) return null;
   const team = current?.kind === 'team';
   const guest = current?.role === 'guest';
@@ -243,6 +258,7 @@ export function Sidebar(props: SidebarProps) {
         items={[
           { heading: user.email },
           { id: 'settings', label: 'Account settings', icon: Settings, onSelect: () => navigate('/settings') },
+          ...(operator ? [{ id: 'moderation', label: 'Moderation queue', icon: ShieldAlert, onSelect: () => navigate('/operator') }] : []),
           { divider: true },
           {
             id: 'logout',

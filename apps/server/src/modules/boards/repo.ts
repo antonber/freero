@@ -16,6 +16,12 @@ export interface Board {
   /** The workspace it belongs to (modules/workspaces) and its project there, if any. */
   workspaceId: string;
   projectId: string | null;
+  /** Taken down by an operator (moderation); null for a board in service. */
+  removedAt: number | null;
+  /** An operator turned link sharing off: `linkAccess` reads 'none' meanwhile. */
+  linkBlocked: boolean;
+  /** The owner's link setting, kept while link sharing is blocked (moderation views). */
+  storedLinkAccess: LinkAccess;
 }
 
 interface Row {
@@ -30,21 +36,31 @@ interface Row {
   deleted_at: Date | null;
   workspace_id: string;
   project_id: string | null;
+  removed_at: Date | null;
+  link_blocked_at: Date | null;
 }
 
+// Link access is resolved here, once: everything that reads a board (roles, lists, sockets,
+// summaries) sees 'none' while an operator blocks the link.
 const toBoard = (r: Row): Board => ({
   id: r.id,
   title: r.title,
   description: r.description,
   ownerId: r.owner_id,
-  linkAccess: r.link_access,
+  linkAccess: r.link_blocked_at ? 'none' : r.link_access,
   thumbnail: r.thumbnail,
   createdAt: r.created_at.getTime(),
   updatedAt: r.updated_at.getTime(),
   deletedAt: r.deleted_at ? r.deleted_at.getTime() : null,
   workspaceId: r.workspace_id,
   projectId: r.project_id,
+  removedAt: r.removed_at ? r.removed_at.getTime() : null,
+  linkBlocked: r.link_blocked_at !== null,
+  storedLinkAccess: r.link_access,
 });
+
+/** A board in service: not in the trash, not taken down by an operator. */
+const LIVE = `deleted_at IS NULL AND removed_at IS NULL`;
 
 /**
  * Runs fn in one database transaction: every write made inside it — by this module or by other
@@ -60,10 +76,34 @@ export async function insertBoard(b: Board): Promise<void> {
   );
 }
 
-/** A live board (null when missing or in the trash). */
+/** A live board (null when missing, in the trash or taken down). */
 export async function getBoard(id: string): Promise<Board | null> {
-  const r = await one<Row>(`SELECT * FROM boards WHERE id = $1 AND deleted_at IS NULL`, [id]);
+  const r = await one<Row>(`SELECT * FROM boards WHERE id = $1 AND ${LIVE}`, [id]);
   return r ? toBoard(r) : null;
+}
+
+/** A board whatever its state (moderation, and telling "taken down" from "no such board"). */
+export async function getBoardAnyState(id: string): Promise<Board | null> {
+  const r = await one<Row>(`SELECT * FROM boards WHERE id = $1`, [id]);
+  return r ? toBoard(r) : null;
+}
+
+/** Takes a board down (`at`) or restores it (null); false when that changed nothing. */
+export async function setRemoved(id: string, at: number | null): Promise<boolean> {
+  const rows =
+    at === null
+      ? await query(`UPDATE boards SET removed_at = NULL WHERE id = $1 AND removed_at IS NOT NULL RETURNING id`, [id])
+      : await query(`UPDATE boards SET removed_at = $2 WHERE id = $1 AND removed_at IS NULL RETURNING id`, [id, new Date(at)]);
+  return rows.length > 0;
+}
+
+/** Blocks the board's link sharing (`at`) or unblocks it (null); false when that changed nothing. */
+export async function setLinkBlocked(id: string, at: number | null): Promise<boolean> {
+  const rows =
+    at === null
+      ? await query(`UPDATE boards SET link_blocked_at = NULL WHERE id = $1 AND link_blocked_at IS NOT NULL RETURNING id`, [id])
+      : await query(`UPDATE boards SET link_blocked_at = $2 WHERE id = $1 AND link_blocked_at IS NULL RETURNING id`, [id, new Date(at)]);
+  return rows.length > 0;
 }
 
 /** A board whether live or in the trash (restore, delete forever). */
@@ -75,7 +115,7 @@ export async function getBoardIncludingTrash(id: string): Promise<Board | null> 
 /** The live boards among ids. */
 export async function getBoards(ids: string[]): Promise<Board[]> {
   if (ids.length === 0) return [];
-  return (await query<Row>(`SELECT * FROM boards WHERE id = ANY($1::text[]) AND deleted_at IS NULL`, [ids])).map(toBoard);
+  return (await query<Row>(`SELECT * FROM boards WHERE id = ANY($1::text[]) AND ${LIVE}`, [ids])).map(toBoard);
 }
 
 /** Ids of the user's live boards. */
@@ -101,7 +141,9 @@ export async function lockOwnerQuota(ownerId: string): Promise<void> {
 /** The user's trashed boards (in one workspace), most recently deleted first. */
 export async function trashedBoardsOf(ownerId: string, workspaceId: string): Promise<Board[]> {
   return (
-    await query<Row>(`SELECT * FROM boards WHERE owner_id = $1 AND workspace_id = $2 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC`, [
+    await query<Row>(
+      `SELECT * FROM boards WHERE owner_id = $1 AND workspace_id = $2 AND deleted_at IS NOT NULL AND removed_at IS NULL ORDER BY deleted_at DESC`,
+      [
       ownerId,
       workspaceId,
     ])
@@ -112,7 +154,7 @@ export async function trashedBoardsOf(ownerId: string, workspaceId: string): Pro
 
 /** The live boards of a workspace. */
 export async function boardsInWorkspace(workspaceId: string): Promise<Board[]> {
-  return (await query<Row>(`SELECT * FROM boards WHERE workspace_id = $1 AND deleted_at IS NULL`, [workspaceId])).map(toBoard);
+  return (await query<Row>(`SELECT * FROM boards WHERE workspace_id = $1 AND ${LIVE}`, [workspaceId])).map(toBoard);
 }
 
 /** Every board of a workspace, trashed ones included. */
@@ -223,7 +265,7 @@ export async function purgeTrashedBefore(
     `DELETE FROM boards WHERE id IN (
        SELECT b.id FROM boards b
        LEFT JOIN unnest($3::text[], $4::timestamptz[]) AS o(workspace_id, before) ON o.workspace_id = b.workspace_id
-       WHERE b.deleted_at < COALESCE(o.before, $1) ORDER BY b.deleted_at LIMIT $2
+       WHERE b.deleted_at < COALESCE(o.before, $1) AND b.removed_at IS NULL ORDER BY b.deleted_at LIMIT $2
      ) RETURNING id, thumbnail, title, workspace_id, owner_id, deleted_at`,
     [new Date(before), limit, byWorkspace.map((w) => w.workspaceId), byWorkspace.map((w) => new Date(w.before))],
   );
@@ -245,7 +287,8 @@ export async function updateBoardFields(
 ): Promise<void> {
   await query(
     `UPDATE boards SET title = COALESCE($2, title), description = COALESCE($3, description),
-       link_access = COALESCE($4, link_access), updated_at = GREATEST(updated_at, $5)
+       link_access = CASE WHEN link_blocked_at IS NULL THEN COALESCE($4, link_access) ELSE link_access END,
+       updated_at = GREATEST(updated_at, $5)
      WHERE id = $1`,
     [id, patch.title ?? null, patch.description ?? null, patch.linkAccess ?? null, new Date(now)],
   );
@@ -271,7 +314,7 @@ export async function touch(id: string, now: number): Promise<void> {
  */
 export async function deleteTrashedBoard(id: string): Promise<string | null | undefined> {
   const r = await one<{ thumbnail: string | null }>(
-    `DELETE FROM boards WHERE id = $1 AND deleted_at IS NOT NULL RETURNING thumbnail`,
+    `DELETE FROM boards WHERE id = $1 AND deleted_at IS NOT NULL AND removed_at IS NULL RETURNING thumbnail`,
     [id],
   );
   return r ? r.thumbnail : undefined;

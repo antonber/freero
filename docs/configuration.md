@@ -133,6 +133,14 @@ connect and disconnect providers in Account settings.
 | `NOTIFY_EMAIL_DELAY_SECONDS` | `900` | How long a notification (mention, reply, board shared with you) waits before it is emailed. Everything a person gets meanwhile goes out as one digest; what they read in the app by then is not emailed. Only verified addresses get these emails; each person turns them off per type in `/settings`, or all at once with the unsubscribe link. |
 | `NOTIFY_EMAIL_INTERVAL_SECONDS` | `60` | How often each instance looks for digests that are due. One instance sends at a time (Postgres advisory lock). |
 
+## Moderation (abuse reports and operators)
+
+| Variable | Default | Description |
+|---|---|---|
+| `OPERATOR_EMAILS` | — | Comma-separated addresses of Freero's operators: they get the moderation queue at `/operator` and its API (everyone else gets 404 there). An account is an operator only while its address is listed AND verified, so someone who signs up with an operator's address gets nothing. Changing the list takes a restart (it is reviewed and deployed like any other configuration). Empty: reports are still collected, nobody can review them (logged at startup in production). See [operations.md](operations.md#moderation). |
+| `ABUSE_CONTACT_EMAIL` | — | Where people reach whoever handles abuse: named in every moderation notice ("questions about this decision") and in `/.well-known/security.txt`. |
+| `SECURITY_CONTACT` | `mailto:<ABUSE_CONTACT_EMAIL>` | RFC 9116 `Contact:` of `/.well-known/security.txt`, a `mailto:` or `https://` URL (your vulnerability disclosure address). With neither set, the file isn't served. |
+
 ## Observability
 
 | Variable | Default | Description |
@@ -174,6 +182,8 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `RATE_LIMIT_TWO_FACTOR_RECOVERY` | `3/1d` | "Lost my authenticator" recoveries started, per IP and per account (each start mails the owner). |
 | `RATE_LIMIT_AUDIT_EXPORT` | `20/1h` | Audit log exports per user (admin console; each reads up to 100,000 events). |
 | `RATE_LIMIT_OIDC` | `60/10m` | "Sign in with …" starts and callbacks per IP. |
+| `RATE_LIMIT_REPORT` | `20/1h` | Abuse reports per IP and, separately, per signed-in user. |
+| `RATE_LIMIT_APPEAL` | `10/1h` | Appeals against moderation decisions per IP. |
 
 Rule format: `<count>/<window>` with the window in `s`, `m`, `h` or `d` and an optional multiplier
 (`10/5m` = 10 per 5 minutes), or `off`. Windows are fixed (they reset `window` after the first hit).
