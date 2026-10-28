@@ -295,6 +295,10 @@ Canvas productivity (engine primitives; the product UI lives in `features/arrang
   dashboard thumbnail still include them (they are board content). Chosen over a synced `hidden`
   flag because content vanishing for collaborators without a trace is not what whiteboard users
   expect; the Layers panel says "N hidden for you only · Show all". Not in `@freero/shared`.
+  `ElementDefinition.hiddenWith(el) → ids` names what an element is drawn against (a connector's
+  attached ends): while one of them is hidden for me, so is the element, so no line is left
+  pointing at empty space. `Editor.isViewHidden(id)` answers the whole rule (itself, a container,
+  or a `hiddenWith` id); features never re-walk it.
 - `BoardSettings.gridSize` (8–48, default 24) and `snapToGrid` (board menu). The drawn grid uses
   `gridSize`; with snapping on it never subdivides below it, so every drawn line is a snap line.
   Moves snap the top-left, resizes the dragged edges; Ctrl/⌘ held during a drag inverts the
