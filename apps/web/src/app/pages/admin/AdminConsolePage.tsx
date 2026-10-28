@@ -1,10 +1,10 @@
 // /admin/:workspaceId — the admin console of a team workspace (owners and admins): overview and
 // usage, members, security, single sign-on, provisioning, AI (when the server offers it), data
-// (retention and export), API & apps and the audit log. Every action is checked again by the
+// (retention and export), API & apps, issue trackers and the audit log. Every action is checked again by the
 // server; this page only hides what the caller's role can't do.
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ChartColumn, Hourglass, KeyRound, Lock, Plug, ScrollText, Sparkles, UserCog, Users } from 'lucide-react';
+import { ArrowLeft, ChartColumn, Hourglass, KeyRound, Lock, Plug, ScrollText, Sparkles, Ticket, UserCog, Users } from 'lucide-react';
 import type { WorkspaceSummary } from '@freero/shared';
 import { Logo, Spinner } from '@ui';
 import { api } from '../../api/client';
@@ -15,6 +15,7 @@ import { AdminDataExport, AdminProvisioning, AdminSso } from './AdminIdentity';
 import { AdminMembers } from './AdminMembers';
 import { AdminOverview } from './AdminOverview';
 import { AdminRetention, AdminSecurity } from './AdminSettings';
+import { AdminTrackers } from './AdminTrackers';
 import './admin.css';
 
 const TABS = [
@@ -26,6 +27,7 @@ const TABS = [
   { id: 'ai', label: 'AI', icon: Sparkles },
   { id: 'retention', label: 'Data', icon: Hourglass },
   { id: 'api', label: 'API & apps', icon: Plug },
+  { id: 'trackers', label: 'Issue trackers', icon: Ticket },
   { id: 'audit', label: 'Audit log', icon: ScrollText },
 ] as const;
 type Tab = (typeof TABS)[number]['id'];
@@ -117,6 +119,7 @@ export function AdminConsolePage() {
               </>
             ) : null}
             {tab === 'api' ? <AdminApi workspace={workspace} /> : null}
+            {tab === 'trackers' ? <AdminTrackers workspace={workspace} /> : null}
             {tab === 'audit' ? <AdminAudit workspace={workspace} /> : null}
           </main>
         </div>

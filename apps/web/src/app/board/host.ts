@@ -1,5 +1,5 @@
 // Builds the engine's Host — the one typed contract between the app shell and the engine.
-import type { BoardAiStatus, BoardSummary, Role } from '@freero/shared';
+import type { BoardAiStatus, BoardSummary, BoardTrackersResponse, Role } from '@freero/shared';
 import { unavailableVersionHistory, type Host, type HostUser } from '@engine';
 import type { ToastApi } from '@ui';
 import { api, wsBase } from '../api/client';
@@ -39,6 +39,8 @@ export interface HostDeps {
   team?: { id: string; name: string } | null;
   /** What the server said about AI on this board for this user (null: AI is off on this server). */
   ai?: BoardAiStatus | null;
+  /** Tracker connections this user may use here (empty: no tracker entry points). */
+  trackers?: BoardTrackersResponse['connections'];
 }
 
 /** Toasts with an action button stay up long enough to read and act on. */
@@ -96,6 +98,20 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     report: reportOn(board.id),
     // AI entry points exist only when the server said this user may use AI here.
     ...(deps.ai?.available ? { ai: { provider: deps.ai.provider ?? '', source: deps.ai.source ?? 'instance', run: (body) => api.runAi(board.id, body) } } : {}),
+    // Tracker entry points exist only when the server listed a connection this user may use here.
+    ...(deps.trackers?.length
+      ? {
+          trackers: {
+            connections: deps.trackers,
+            projects: (connectionId) => api.trackerProjects(board.id, connectionId),
+            preview: async (body) => (await api.trackerPreview(board.id, body)).issues,
+            send: (body) => api.trackerSend(board.id, body),
+            importIssues: (body) => api.trackerImport(board.id, body),
+            sync: async (linkId) => void (await api.trackerSync(board.id, linkId)),
+            unlink: async (linkId) => void (await api.trackerUnlink(board.id, linkId)),
+          },
+        }
+      : {}),
   };
 }
 

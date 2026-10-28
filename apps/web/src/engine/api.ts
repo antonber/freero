@@ -33,6 +33,13 @@ import type {
   SuggestionRecord,
   SuggestionState,
   TextAlign,
+  BoardTrackersResponse,
+  TrackerImportRequest,
+  TrackerImportResponse,
+  TrackerIssuePreview,
+  TrackerProject,
+  TrackerSendRequest,
+  TrackerSendResponse,
   VerticalAlign,
 } from '@freero/shared';
 
@@ -242,6 +249,30 @@ export interface Host {
    * used up, rate limit, the model's answer unusable); nothing is written by a 'preview' run.
    */
   ai?: HostAi;
+  /**
+   * [additive] Issue trackers (KAI-153/154), present only when the server listed at least one
+   * tracker connection this person may use on this board (they can edit, and their team or they
+   * themselves connected one). Absent: hide every tracker entry point. Calls reject with a message
+   * fit for a toast (the tracker refused, the item is already linked, rate limit).
+   */
+  trackers?: HostTrackers;
+}
+
+/** [additive] `Host.trackers` (wire: @freero/shared trackers.ts). */
+export interface HostTrackers {
+  connections: BoardTrackersResponse['connections'];
+  /** The connection's projects (Jira), teams (Linear) or repositories (GitHub), and its import query language. */
+  projects(connectionId: string): Promise<{ projects: TrackerProject[]; queryLanguage: string }>;
+  /** Exactly what `send` would create, nothing written. */
+  preview(request: TrackerSendRequest): Promise<TrackerIssuePreview[]>;
+  /** Creates the issue(s) and links the items; the badge arrives on the board from the server. */
+  send(request: TrackerSendRequest): Promise<TrackerSendResponse>;
+  /** Issues matching a query become linked cards (issues already here are skipped). */
+  importIssues(request: TrackerImportRequest): Promise<TrackerImportResponse>;
+  /** Syncs one linked issue now. */
+  sync(linkId: string): Promise<void>;
+  /** Stops syncing: the items lose their badge, the issue stays in the tracker. */
+  unlink(linkId: string): Promise<void>;
 }
 
 /** [additive] `Host.ai` (wire: @freero/shared `AiActionRequest` / `AiActionResponse`). */
