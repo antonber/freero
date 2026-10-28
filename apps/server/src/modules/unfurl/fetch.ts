@@ -62,21 +62,34 @@ export function isBlockedAddress(ip: string): boolean {
 
 type LookupCb = (err: NodeJS.ErrnoException | null, address: string | dns.LookupAddress[], family?: number) => void;
 
-/** dns.lookup that refuses blocked addresses (used by every outbound connection here). */
-function safeLookup(hostname: string, options: dns.LookupOptions, cb: LookupCb): void {
-  dns.lookup(hostname, { ...options, all: true }, (err, addresses) => {
-    if (err) return cb(err, '');
-    const list = (addresses as dns.LookupAddress[]) ?? [];
-    if (!list.length || list.some((a) => isBlockedAddress(a.address))) {
-      return cb(Object.assign(new UnfurlError('That address is not reachable for previews.'), { code: 'EBLOCKED' }), '');
-    }
-    if (options.all) cb(null, list);
-    else cb(null, list[0].address, list[0].family);
-  });
+/** Resolves a host name to all its addresses. */
+export type Resolver = (
+  hostname: string,
+  options: dns.LookupOptions,
+  cb: (err: NodeJS.ErrnoException | null, addresses: dns.LookupAddress[]) => void,
+) => void;
+
+const dnsResolver: Resolver = (hostname, options, cb) =>
+  dns.lookup(hostname, { ...options, all: true }, (err, addresses) => cb(err, (addresses as dns.LookupAddress[]) ?? []));
+
+/**
+ * dns.lookup that refuses blocked addresses (used by every outbound connection here). `resolve`
+ * and `isBlocked` are only replaced by tests that serve from a local test server.
+ */
+function guardedLookup(resolve: Resolver, isBlocked: (ip: string) => boolean) {
+  return (hostname: string, options: dns.LookupOptions, cb: LookupCb): void =>
+    resolve(hostname, options, (err, list) => {
+      if (err) return cb(err, '');
+      if (!list.length || list.some((a) => isBlocked(a.address))) {
+        return cb(Object.assign(new UnfurlError('That address is not reachable for previews.'), { code: 'EBLOCKED' }), '');
+      }
+      if (options.all) cb(null, list);
+      else cb(null, list[0].address, list[0].family);
+    });
 }
 
 /** Throws unless `raw` is a URL a preview may fetch. */
-export function checkUrl(raw: string): URL {
+export function checkUrl(raw: string, isBlocked: (ip: string) => boolean = isBlockedAddress): URL {
   let url: URL;
   try {
     url = new URL(raw);
@@ -88,7 +101,7 @@ export function checkUrl(raw: string): URL {
   if (url.port && url.port !== '80' && url.port !== '443') throw new UnfurlError('Only default ports are previewed.');
   // Literal IPs are checked here too (the lookup also sees them).
   const host = url.hostname.replace(/^\[|\]$/g, '');
-  if (net.isIP(host) && isBlockedAddress(host)) throw new UnfurlError('That address is not reachable for previews.');
+  if (net.isIP(host) && isBlocked(host)) throw new UnfurlError('That address is not reachable for previews.');
   return url;
 }
 
@@ -110,16 +123,22 @@ export interface FetchOptions {
   allowTruncate?: boolean;
   /** Stop reading once this (lower-case) text has arrived, e.g. '</head>' for page metadata. */
   until?: string;
+  /**
+   * Tests only: reach a local test server. Production callers never set this, so every hop is
+   * checked against isBlockedAddress (by checkUrl and at connect time).
+   */
+  testNetwork?: { resolve: Resolver; isBlocked(ip: string): boolean; port: number };
 }
 
-function requestOnce(url: URL, opts: FetchOptions, deadline: number): Promise<{ res: http.IncomingMessage; req: http.ClientRequest }> {
+function requestOnce(url: URL, opts: FetchOptions, deadline: number, lookup: ReturnType<typeof guardedLookup>): Promise<{ res: http.IncomingMessage; req: http.ClientRequest }> {
   return new Promise((resolve, reject) => {
     const mod = url.protocol === 'https:' ? https : http;
     const req = mod.request(
       url,
       {
         method: 'GET',
-        lookup: safeLookup as unknown as net.LookupFunction,
+        lookup: lookup as unknown as net.LookupFunction,
+        ...(opts.testNetwork ? { port: opts.testNetwork.port } : {}),
         headers: { 'User-Agent': USER_AGENT, Accept: opts.accept, 'Accept-Encoding': 'identity' },
         timeout: Math.max(1, deadline - Date.now()),
       },
@@ -134,14 +153,16 @@ function requestOnce(url: URL, opts: FetchOptions, deadline: number): Promise<{ 
 /** GET with the protections above; follows (and re-checks) redirects. */
 export async function safeFetch(raw: string, opts: FetchOptions): Promise<Fetched> {
   const deadline = Date.now() + opts.timeoutMs;
-  let url = checkUrl(raw);
+  const isBlocked = opts.testNetwork?.isBlocked ?? isBlockedAddress;
+  const lookup = guardedLookup(opts.testNetwork?.resolve ?? dnsResolver, isBlocked);
+  let url = checkUrl(raw, isBlocked);
   for (let hop = 0; ; hop++) {
-    const { res, req } = await requestOnce(url, opts, deadline);
+    const { res, req } = await requestOnce(url, opts, deadline, lookup);
     const status = res.statusCode ?? 0;
     if (status >= 300 && status < 400 && res.headers.location) {
       res.resume();
       if (hop >= MAX_REDIRECTS) throw new UnfurlError('Too many redirects.');
-      url = checkUrl(new URL(res.headers.location, url).toString());
+      url = checkUrl(new URL(res.headers.location, url).toString(), isBlocked);
       continue;
     }
     if (status < 200 || status >= 300) {

@@ -90,6 +90,14 @@ export interface InviteRequest { email: string; role: Exclude<Role, 'owner'> }
 //     link-local addresses — checked again for every redirect and at connect time — with
 //     timeouts and size caps) and reads its title / description / preview image.
 //     400 bad URL, 422 not previewable (blocked address, not HTML, too large, timeout).
+//
+// POST /api/unfurl/image  { url } -> 201 { url: "/uploads/<key>" }   (signed-in; rate limited)
+//     Copies an image placed on a board by URL into the user's uploads (same fetch protections;
+//     the bytes must really be PNG / JPEG / GIF / WebP / SVG). 413 over the upload quota.
+// GET  /api/unfurl/image?url=<http(s) URL> -> the image bytes (nothing stored), for exports of
+//     boards that still link images from hosts without CORS.
+//     Both: 400 bad URL, 422 not reachable / not an image / too large / timeout.
+export interface ImportImageRequest { url: string }
 export interface UnfurlResponse {
   /** Final URL after redirects. */
   url: string;
