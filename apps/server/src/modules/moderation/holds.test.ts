@@ -11,7 +11,7 @@ import { boardForModeration, createBoard, getBoardAccess } from '../boards/index
 import { isUploadRemoved, saveUpload, uploadForModeration } from '../uploads/index';
 import { createTeamWorkspace } from '../workspaces/index';
 import * as repo from './repo';
-import { act } from './service';
+import { act, purgeExpiredKeptCopies, submitAppeal, appealToken } from './service';
 
 const PNG = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
@@ -100,4 +100,25 @@ it('suspending with “take its boards down” takes down every board the accoun
   // A board taken down on its own decision stays down.
   expect((await boardForModeration(earlier.id))?.removedAt).not.toBeNull();
   expect((await repo.childActions(lift.id)).map((x) => [x.action, x.targetId])).toEqual([['board.restore', a.id]]);
+});
+
+// KAI-179: kept copies of removed files must not stay forever, nor vanish while someone appeals.
+it('kept copies of removed files are deleted for good once their retention is over — except one whose removal is being appealed — and each deletion is recorded', async () => {
+  const operator = await user('KeepOp');
+  const owner = await user('Uploader');
+  const [expired, appealed] = await Promise.all([saveUpload(PNG, 'image/png', owner.id), saveUpload(PNG, 'image/png', owner.id)]).then((urls) => urls.map((u) => u.slice('/uploads/'.length)));
+  await act(operator.id, { action: 'upload.remove', targetId: expired, reason: 'illegal', statement: 'Unlawful image.' });
+  const contested = await act(operator.id, { action: 'upload.remove', targetId: appealed, reason: 'copyright', statement: 'Reported as a copy.' });
+  await submitAppeal({ token: appealToken(contested.id), message: 'I made this picture.' });
+
+  await purgeExpiredKeptCopies(Date.now()); // within the retention: both kept
+  expect(await uploadForModeration(expired)).toMatchObject({ restorable: true });
+  const later = Date.now() + getConfig().moderationKeepRemovedMs + 60_000;
+  expect(await purgeExpiredKeptCopies(later)).toBeGreaterThan(0);
+  expect(await uploadForModeration(expired)).toMatchObject({ restorable: false });
+  expect(await isUploadRemoved(expired)).toBe(true); // still 410
+  expect(await uploadForModeration(appealed)).toMatchObject({ restorable: true });
+  const [record] = (await repo.actionsAbout(expired)).filter((a) => a.action === 'upload.purge');
+  expect(record).toMatchObject({ operatorId: null, subjectEmail: owner.email, reason: 'illegal' });
+  expect(await purgeExpiredKeptCopies(later)).toBe(0); // idempotent
 });

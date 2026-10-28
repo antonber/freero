@@ -2,13 +2,17 @@
 //
 // Removing a file makes its URL answer 410 Gone at once and for good, on every instance (the row
 // is checked on every GET), while the bytes move to a kept copy under a key that is never an upload
-// name — so it is neither served nor adopted by the sweep, and a mistaken removal can be undone
-// (restore) until an operator purges the copy. The row stays as a tombstone: the sweep skips
+// name, in storage's private area (with S3 outside the public `uploads/` prefix, KAI-179) — so it
+// is neither served nor adopted by the sweep, and a mistaken removal can be undone (restore) until
+// an operator purges the copy or its retention ends (modules/moderation, MODERATION_KEEP_REMOVED_DAYS). The row stays as a tombstone: the sweep skips
 // removed rows, and since the name has a row its adoption step can never bring the file back.
 import { newId } from '../../platform/ids';
 import { readAll, storage } from '../../platform/storage';
 import * as repo from './repo';
 import { FILE_NAME_RE, TYPE_BY_EXT } from './store';
+
+/** Kept copies never sit where a public bucket URL could reach them. */
+const PRIVATE = { area: 'private' } as const;
 
 export interface ModerationUploadState {
   name: string;
@@ -68,9 +72,9 @@ export async function removeUpload(name: string): Promise<boolean> {
   const bytes = obj ? await readAll(obj) : null;
   // Never an upload name (FILE_NAME_RE has no '.' before the extension), so never served or adopted.
   const quarantineKey = bytes ? `removed.${newId(24)}.${name}` : null;
-  if (bytes && quarantineKey) await storage().put(quarantineKey, bytes, contentType);
+  if (bytes && quarantineKey) await storage().put(quarantineKey, bytes, contentType, PRIVATE);
   if (!(await repo.markRemoved({ name, bytes: bytes?.byteLength ?? row?.bytes ?? 0, contentType, quarantineKey }, Date.now()))) {
-    if (quarantineKey) await storage().delete(quarantineKey); // removed concurrently: theirs wins
+    if (quarantineKey) await storage().delete(quarantineKey, PRIVATE); // removed concurrently: theirs wins
     return false;
   }
   await storage().delete(name);
@@ -81,7 +85,7 @@ export async function removeUpload(name: string): Promise<boolean> {
 export async function restoreUpload(name: string): Promise<boolean> {
   const row = FILE_NAME_RE.test(name) ? await repo.getUploadRow(name) : null;
   if (!row || row.removedAt === null || !row.quarantineKey) return false;
-  const obj = await storage().get(row.quarantineKey);
+  const obj = await storage().get(row.quarantineKey, PRIVATE);
   if (!obj) return false;
   await storage().put(name, await readAll(obj), row.contentType);
   if (!(await repo.clearRemoved(name, row.quarantineKey, Date.now()))) {
@@ -89,7 +93,7 @@ export async function restoreUpload(name: string): Promise<boolean> {
     if (await repo.isRemoved(name)) await storage().delete(name);
     return false;
   }
-  await storage().delete(row.quarantineKey);
+  await storage().delete(row.quarantineKey, PRIVATE);
   return true;
 }
 
@@ -111,6 +115,6 @@ export async function purgeRemovedUpload(name: string): Promise<boolean> {
   if (!FILE_NAME_RE.test(name)) return false;
   const key = await repo.takeQuarantineKey(name);
   if (!key) return false;
-  await storage().delete(key);
+  await storage().delete(key, PRIVATE);
   return true;
 }

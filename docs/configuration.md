@@ -140,6 +140,8 @@ connect and disconnect providers in Account settings.
 | Variable | Default | Description |
 |---|---|---|
 | `OPERATOR_EMAILS` | — | Comma-separated addresses of Freero's operators: they get the moderation queue at `/operator` and its API (everyone else gets 404 there). An account is an operator only while its address is listed AND verified, so someone who signs up with an operator's address gets nothing. Changing the list takes a restart (it is reviewed and deployed like any other configuration). Empty: reports are still collected, nobody can review them (logged at startup in production). See [operations.md](operations.md#moderation). |
+| `MODERATION_KEEP_REMOVED_DAYS` | `30` | How long the kept copy of a file an operator removed stays restorable. After that the retention job deletes it for good (recorded as an automatic "delete kept copy" action); never while a report or appeal about the file is open. The file's URL keeps answering 410 either way. `0`: at the next run. |
+| `MODERATION_RETENTION_INTERVAL_SECONDS` | `3600` | How often that retention runs (one instance at a time). |
 | `ABUSE_CONTACT_EMAIL` | — | Where people reach whoever handles abuse: named in every moderation notice ("questions about this decision") and in `/.well-known/security.txt`. |
 | `SECURITY_CONTACT` | `mailto:<ABUSE_CONTACT_EMAIL>` | RFC 9116 `Contact:` of `/.well-known/security.txt`, a `mailto:` or `https://` URL (your vulnerability disclosure address). With neither set, the file isn't served. |
 

@@ -3710,6 +3710,26 @@ async function moderationChecks() {
       assert(deleted.status === 200 || deleted.status === 204, `${deleted.status} ${deleted.text}`);
     });
 
+    await check('moderation (KAI-179): with MODERATION_KEEP_REMOVED_DAYS=0 the retention job deletes the kept copy of a removed file (the URL stays 410); one with an open report is kept', async () => {
+      await stopServer();
+      env.MODERATION_KEEP_REMOVED_DAYS = '0';
+      env.MODERATION_RETENTION_INTERVAL_SECONDS = '1';
+      await boot();
+      const upload = async () => (await O.req('POST', '/api/uploads', PNG_1PX, { raw: true, headers: { 'content-type': 'image/png' } })).json.url.slice('/uploads/'.length);
+      const [expiring, contested] = [await upload(), await upload()];
+      const shown = await board('Shows the contested file');
+      // Under review before it is removed: the job (every second) never races the report.
+      const reportFile = await L.req('POST', '/api/reports', { boardId: shown.id, target: { kind: 'upload', id: contested }, reason: 'copyright' });
+      assert(reportFile.status === 202 || reportFile.status === 200, `report: ${reportFile.status} ${reportFile.text}`);
+      for (const name of [contested, expiring]) assert((await act({ action: 'upload.remove', targetId: name, reason: 'illegal', statement: 'Unlawful image.' })).status === 200, 'remove');
+      const file = async (name) => (await Op.req('GET', `/api/moderation/uploads/${name}`)).json.upload;
+      await waitFor(async () => (await file(expiring))?.restorable === false, 8000, 'the retention job to delete the kept copy');
+      assert((await fileStatus(`/uploads/${expiring}`)) === 410, 'the removed file is not 410 any more');
+      assert((await file(contested))?.restorable === true, 'the kept copy of a file under appeal was deleted');
+      delete env.MODERATION_KEEP_REMOVED_DAYS;
+      delete env.MODERATION_RETENTION_INTERVAL_SECONDS;
+    });
+
     await check('moderation: reports are rate-limited per address (429 with Retry-After)', async () => {
       let last = null;
       for (let i = 0; i < REPORT_LIMIT + 2 && last?.status !== 429; i++)

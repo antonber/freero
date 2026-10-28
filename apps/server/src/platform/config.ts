@@ -155,6 +155,18 @@ export interface Config {
    * only while its address is listed AND verified.
    */
   operatorEmails: string[];
+  /**
+   * How long the kept copy of a file an operator removed is kept for a possible restore before it
+   * is deleted for good (KAI-179); never while a report or appeal about it is open. 0: at the next run.
+   */
+  moderationKeepRemovedMs: number;
+  /** How often the kept-copy retention runs (one instance at a time). */
+  moderationRetentionIntervalMs: number;
+  /**
+   * How long browsers and caches may reuse an uploaded file without asking again (KAI-177): what
+   * bounds how long a file an operator removed keeps showing where it was already loaded.
+   */
+  uploadCacheSeconds: number;
   /** Where people (and the notices Freero sends) can reach the people handling abuse reports, or null. */
   abuseContactEmail: string | null;
   /** RFC 9116 `Contact:` for /.well-known/security.txt (mailto: or https: URL); defaults to the abuse contact. */
@@ -435,6 +447,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     oidcProviders,
     geoipDbPath,
     operatorEmails,
+    moderationKeepRemovedMs: int('MODERATION_KEEP_REMOVED_DAYS', 30, 0, 3650) * 86_400_000,
+    moderationRetentionIntervalMs: int('MODERATION_RETENTION_INTERVAL_SECONDS', 3600, 1, 86_400) * 1000,
+    uploadCacheSeconds: int('UPLOAD_CACHE_SECONDS', 3600, 0, 31_536_000),
     abuseContactEmail,
     securityContact: securityContact ?? (abuseContactEmail ? `mailto:${abuseContactEmail}` : null),
   };

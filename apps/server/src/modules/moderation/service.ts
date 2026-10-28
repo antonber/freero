@@ -45,7 +45,7 @@ import {
 } from '../boards/index';
 import { notify } from '../notifications/index';
 import { snapshotBoardDoc } from '../realtime/index';
-import { purgeRemovedUpload, removeUpload, restoreUpload, uploadForModeration, uploadName } from '../uploads/index';
+import { keptCopiesRemovedBefore, purgeRemovedUpload, removeUpload, restoreUpload, uploadForModeration, uploadName } from '../uploads/index';
 import { alertOperators, isAdverse, sendActionNotice, sendAppealUpheld, sendReportOutcome } from './notices';
 import * as repo from './repo';
 
@@ -323,7 +323,7 @@ async function record_(a: {
   action: ModerationActionKind;
   targetId: string;
   boardId: string | null;
-  subject: User | null;
+  subject: { id: string | null; name: string | null; email: string | null } | null;
   operatorId: string | null;
   reason: ReportReason;
   statement: string;
@@ -474,6 +474,38 @@ async function undoBoardsOfSuspension(lift: repo.ActionRow): Promise<number> {
     });
   }
   return n;
+}
+
+/**
+ * Retention of kept copies (KAI-179): deletes for good the kept copy of every file removed more than
+ * MODERATION_KEEP_REMOVED_DAYS ago, unless a report or appeal about it is still open (it is under
+ * review: an appeal granted later needs the bytes to restore). Each deletion is recorded as an
+ * automatic `upload.purge` (no operator) about whom the removal was about; nobody is mailed (they
+ * were told when it was removed). Idempotent; one instance at a time (moderation/init.ts).
+ */
+export async function purgeExpiredKeptCopies(now = Date.now()): Promise<number> {
+  const keepMs = getConfig().moderationKeepRemovedMs;
+  const due = await keptCopiesRemovedBefore(now - keepMs);
+  const held = await repo.uploadsUnderReview(due.map((u) => u.name));
+  let purged = 0;
+  for (const u of due) {
+    if (held.has(u.name) || !(await purgeRemovedUpload(u.name))) continue;
+    purged++;
+    const removal = await repo.laterAction(u.name, ['upload.remove'], 0);
+    await record_({
+      action: 'upload.purge',
+      targetId: u.name,
+      boardId: removal?.boardId ?? null,
+      subject: removal ? { id: removal.subjectUserId, name: removal.subjectName, email: removal.subjectEmail } : null,
+      operatorId: null,
+      reason: removal?.reason ?? 'other',
+      statement: '',
+      note: `Automatic: kept for ${Math.round(keepMs / 86_400_000)} day(s) after the removal (MODERATION_KEEP_REMOVED_DAYS).`,
+      itemId: null,
+      parentId: null,
+    });
+  }
+  return purged;
 }
 
 /** The appeal page for an action: signed, so it works without a session (suspended accounts). */
