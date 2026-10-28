@@ -737,7 +737,8 @@ export class EditorImpl implements Editor {
     const moved = elements.map((el) => translateElement(el, d.x, d.y));
     let z = this.core.store.maxZ();
     const now = Date.now();
-    const built = moved.map((el) => ({ ...el, z: ++z, createdBy: this.user.id, createdAt: now, updatedAt: now }));
+    // A copy is its maker's own, not the app's that made the original ("<app> for <person>").
+    const built = moved.map(({ createdVia: _via, ...el }) => ({ ...el, z: ++z, createdBy: this.user.id, createdAt: now, updatedAt: now }));
     const content = this.copyContentOf(source);
     this.core.store.transact(() => {
       this.touched(built.map((b) => b.id), true);
@@ -839,7 +840,7 @@ export class EditorImpl implements Editor {
     const placed = place(elements);
     let z = this.core.store.maxZ();
     const now = Date.now();
-    const built = placed.map((el) => ({ ...el, z: ++z, createdBy: this.user.id, createdAt: now, updatedAt: now }));
+    const built = placed.map(({ createdVia: _via, ...el }) => ({ ...el, z: ++z, createdBy: this.user.id, createdAt: now, updatedAt: now }));
     this.core.store.transact(() => {
       this.touched(built.map((b) => b.id), true);
       for (const el of built) this.core.store.setElement(el);

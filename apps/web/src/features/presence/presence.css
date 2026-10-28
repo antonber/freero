@@ -316,3 +316,24 @@
     animation-duration: 0.8s;
   }
 }
+
+/* An app acting for someone (KAI-168): a small marker on its avatar. */
+.fr-presence-card__avatar {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.fr-presence-card__agent {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  color: #fff;
+  background: var(--fr-ink-2);
+  border: 2px solid var(--fr-surface);
+  border-radius: 50%;
+}
