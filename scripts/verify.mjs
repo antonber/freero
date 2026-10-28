@@ -2136,6 +2136,34 @@ async function multiInstanceChecks() {
       assert(stateOf(a, b).user.id === B.id, `instance 1 shows B as ${JSON.stringify(stateOf(a, b).user)}`);
     });
 
+    await check('outbox across instances (KAI-148): links saved on both instances are indexed, and every board.content event is consumed exactly once in total — never by both', async () => {
+      const consumedOn = async (p) => {
+        const res = await fetch(`http://127.0.0.1:${p.port}/metrics`, { headers: { authorization: `Bearer ${RUN_METRICS_TOKEN}` } });
+        const m = /^freero_outbox_consumed_total\{consumer="references"\} (\S+)$/m.exec(await res.text());
+        return m ? Number(m[1]) : 0;
+      };
+      const events = async () => (await adminQuery(`SELECT count(*)::int AS n FROM _outbox WHERE topic = 'board.content'`, url))[0].n;
+      const target = (await A.req('POST', '/api/boards', { title: 'Linked target' })).json.board;
+      const linkers = [];
+      for (const [who, port, i] of [[A, one, 1], [A, two, 2], [A, one, 3], [A, two, 4]]) {
+        const lb = (await who.req('POST', '/api/boards', { title: `Linker ${i}` })).json.board;
+        const c = connectDoc(who, lb.id, undefined, port);
+        await c.ready();
+        els(c).set('l', { id: 'l', type: 'sticky', x: 0, y: 0, w: 10, h: 10, text: `see freero://board/${target.id}` });
+        await settled(c);
+        linkers.push({ board: lb, client: c });
+      }
+      const listed = async (port) =>
+        ((await A.req('GET', `/api/objects/backlinks?uri=${encodeURIComponent(`freero://board/${target.id}`)}`, undefined, { port })).json?.backlinks ?? []).length;
+      await waitFor(async () => (await listed(one)) === 4 && (await listed(two)) === 4, 15_000, 'both instances to list the four linking boards');
+      for (const l of linkers) l.client.destroy();
+      await waitFor(async () => (await consumedOn(procs[0])) + (await consumedOn(procs[1])) === (await events()), 15_000, 'every outbox event to be consumed once');
+      // A double delivery would show up as more consumed than written, also after a few more polls.
+      await sleep(2500);
+      const [c1, c2, n] = [await consumedOn(procs[0]), await consumedOn(procs[1]), await events()];
+      assert(c1 + c2 === n, `consumed ${c1} + ${c2} events of ${n}`);
+    });
+
     await check('a client leaving instance 2 disappears from presence on instance 1', async () => {
       const g = connectDoc(B, board.id, undefined, two);
       await g.ready();
@@ -5296,6 +5324,131 @@ async function publicApiChecks() {
 }
 
 // ---------------------------------------------------------------------------
+// Suite foundation (KAI-147, KAI-148, KAI-149): object addresses resolved for each reader, the
+// references index derived through the outbox from saved board content, and backlinks that name
+// only what the caller may open. Real server, real sockets; the index is built by the server's
+// own consumer (the checks wait for it, never sleep).
+// ---------------------------------------------------------------------------
+async function suiteChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-suite-'));
+  let proc = null;
+  const clients = [];
+  try {
+    const env = {};
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    const ok = await check('suite server boots', async () => {
+      proc = await waitUp(await spawnServer(dataDir, env));
+    });
+    if (!ok) return;
+    const A = new User('SuiteOwner', proc.port);
+    const B = new User('SuiteReader', proc.port);
+    const C = new User('SuiteStranger', proc.port);
+    for (const u of [A, B, C]) {
+      await u.signup();
+      await u.verifyEmail(dataDir);
+    }
+    const target = (await A.req('POST', '/api/boards', { title: 'Roadmap Q4' })).json.board;
+    const source = (await A.req('POST', '/api/boards', { title: 'Retro notes' })).json.board;
+    const uri = (id, el) => `freero://board/${id}${el ? `#${el}` : ''}`;
+    const join = async (u, boardId) => {
+      const c = connectDoc(u, boardId, undefined, proc.port);
+      clients.push(c);
+      await c.ready();
+      return c;
+    };
+    const t = await join(A, target.id);
+    const s = await join(A, source.id);
+    els(t).set('goal', { id: 'goal', type: 'sticky', x: 0, y: 0, w: 100, h: 100, text: '<p>Ship the importer</p>' });
+    els(s).set('link', { id: 'link', type: 'sticky', x: 0, y: 0, w: 100, h: 100, text: 'see roadmap', link: `/board/${target.id}?el=goal` });
+    els(s).set('chip', { id: 'chip', type: 'objectlink', x: 0, y: 200, w: 300, h: 64, uri: uri(target.id) });
+    const backlinks = (u, of = uri(target.id)) => u.req('GET', `/api/objects/backlinks?uri=${encodeURIComponent(of)}`);
+    const sources = async (u, of) => {
+      const r = await backlinks(u, of);
+      return r.status === 200 ? r.json.backlinks.map((l) => `${l.source.uri} ${l.kinds.join('+')}`).sort() : [`status ${r.status}`];
+    };
+
+    await check('an item link and a smart link saved on one board become backlinks of the other, through the outbox', async () => {
+      const want = [`${uri(source.id, 'chip')} embed`, `${uri(source.id, 'link')} link`];
+      await waitFor(async () => JSON.stringify(await sources(A)) === JSON.stringify(want), 10_000, 'the references index to list both');
+      const r = await backlinks(A);
+      assert(r.json.backlinks.every((l) => l.board.title === 'Retro notes'), `source titles: ${r.text}`);
+    });
+
+    await check('resolve: one call answers many addresses — titles for the owner, nothing but "unavailable" for a stranger, and a renamed item shows its new name', async () => {
+      const uris = [uri(target.id), uri(target.id, 'goal'), uri(source.id), uri('doesNotExist1'), 'https://example.com/x'];
+      const mine = await A.req('POST', '/api/objects/resolve', { uris });
+      assert(mine.status === 200, `resolve: ${mine.status} ${mine.text}`);
+      const st = mine.json.objects.map((o) => o.status).join(',');
+      assert(st === 'ok,ok,ok,unavailable,invalid', `owner statuses: ${st}`);
+      assert(mine.json.objects[1].object.title === 'Ship the importer' && mine.json.objects[1].object.board.title === 'Roadmap Q4', `item: ${JSON.stringify(mine.json.objects[1])}`);
+      const theirs = await C.req('POST', '/api/objects/resolve', { uris });
+      assert(theirs.json.objects.slice(0, 4).every((o) => o.status === 'unavailable' && Object.keys(o).length === 2), `stranger: ${theirs.text}`);
+      assert(!/Roadmap|Retro|importer/.test(theirs.text), `a title leaked to a stranger: ${theirs.text}`);
+      els(t).set('goal', { ...els(t).get('goal'), text: '<p>Ship the new importer</p>' });
+      await waitFor(
+        async () => (await A.req('POST', '/api/objects/resolve', { uris: [uri(target.id, 'goal')] })).json.objects[0].object?.title === 'Ship the new importer',
+        5000,
+        'the renamed item to resolve with its new title',
+      );
+    });
+
+    await check('backlinks name only boards the caller can open: a viewer of the target sees none of the owner’s private boards until invited to one', async () => {
+      assert((await A.req('POST', `/api/boards/${target.id}/members`, { email: B.email, role: 'viewer' })).status === 201, 'invite B to the target');
+      const before = await sources(B);
+      assert(before.length === 0, `B saw private sources: ${before}`);
+      assert((await backlinks(C)).status === 404, 'a stranger got backlinks of a board they can’t open');
+      assert((await A.req('POST', `/api/boards/${source.id}/members`, { email: B.email, role: 'viewer' })).status === 201, 'invite B to the source');
+      const after = await sources(B);
+      assert(after.length === 2, `B after the invite: ${after}`);
+    });
+
+    await check('an address written in a comment and in an item’s text is a backlink too; deleting the linking item removes its backlink', async () => {
+      s.doc.transact(() => {
+        els(s).set('note', { id: 'note', type: 'sticky', x: 0, y: 400, w: 100, h: 100, text: `<p>context: ${uri(target.id, 'goal')}.</p>` });
+        s.doc.getMap('comments').set('t:th1', { kind: 'thread', id: 'th1', x: 0, y: 0, elementId: 'note', createdAt: Date.now(), createdBy: A.id });
+        s.doc.getMap('comments').set('m:th1:m1', { kind: 'message', threadId: 'th1', id: 'm1', authorId: A.id, authorName: A.name, text: `also ${uri(target.id)}`, createdAt: Date.now() });
+      });
+      const want = [`${uri(source.id, 'chip')} embed`, `${uri(source.id, 'link')} link`, `${uri(source.id, 'note')} comment`, `${uri(source.id, 'note')} mention`];
+      await waitFor(async () => JSON.stringify(await sources(A)) === JSON.stringify(want), 10_000, 'the mention and the comment to be indexed');
+      els(s).delete('link');
+      await waitFor(async () => !(await sources(A)).some((x) => x.startsWith(uri(source.id, 'link'))), 10_000, 'the deleted item link to leave the index');
+      const goal = await sources(A, uri(target.id, 'goal'));
+      assert(JSON.stringify(goal) === JSON.stringify([`${uri(source.id, 'note')} mention`]), `the item's own backlinks: ${goal}`);
+    });
+
+    await check('trashing the linking board hides its backlinks at once, restoring it brings them back', async () => {
+      assert((await A.req('DELETE', `/api/boards/${source.id}`)).status === 200, 'trash the source');
+      assert((await sources(A)).length === 0, 'a trashed board still listed as a source');
+      const restored = await A.req('POST', `/api/boards/${source.id}/restore`);
+      assert(restored.status === 200, `restore: ${restored.status} ${restored.text}`);
+      assert((await sources(A)).length === 3, `after restore: ${await sources(A)}`);
+    });
+
+    await check('a link saved right before the server is killed is indexed once it is back (the event outlives the process)', async () => {
+      const s2 = await join(A, source.id);
+      els(s2).set('late', { id: 'late', type: 'sticky', x: 0, y: 600, w: 100, h: 100, text: `last words ${uri(target.id)}` });
+      await settled(s2);
+      for (const c of clients.splice(0)) c.destroy();
+      // Saved (with its outbox event) when the room unloads; killed at once, before the consumer's
+      // wake-up delay is over, so the event is handled by the next process.
+      await waitUnloaded(proc);
+      await stopProc(proc);
+      proc = await waitUp(await spawnServer(dataDir, env));
+      A.port = proc.port;
+      await waitFor(async () => (await sources(A)).includes(`${uri(source.id, 'late')} mention`), 15_000, 'the late link to be indexed after the restart');
+    });
+  } finally {
+    for (const c of clients) c.destroy();
+    if (proc) await stopProc(proc);
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // The remote MCP server (KAI-107) and agent participants (KAI-168), driven by the official MCP
 // client SDK: dynamic client registration + OAuth 2.1 with PKCE against Freero's real
 // authorization server, tools against real boards with a live Yjs client watching, the activity
@@ -5601,6 +5754,7 @@ const SUITES = {
   facilitation: facilitationChecks,
   s3: s3Checks,
   mcp: mcpChecks,
+  suite: suiteChecks,
 };
 const onlyArg = process.argv.indexOf('--only');
 const only = onlyArg >= 0 ? (process.argv[onlyArg + 1] ?? '').split(',').filter(Boolean) : Object.keys(SUITES);

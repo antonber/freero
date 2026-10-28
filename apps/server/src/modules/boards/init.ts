@@ -5,9 +5,12 @@
 import type { ServerContext } from '../../platform/context';
 import { scheduleExclusiveJob } from '../../platform/jobs';
 import { log } from '../../platform/log';
+import { registerBoardObjectTypes } from './objects';
 import { purgeExpiredTrashLocked, TRASH_PURGE_LOCK_KEY } from './service';
 
 export default function initBoards(ctx: ServerContext): void {
+  // Boards and items are objects others can address, check and resolve (modules/objects).
+  registerBoardObjectTypes();
   scheduleExclusiveJob(ctx, {
     name: 'boards:trash-purge',
     lockKey: TRASH_PURGE_LOCK_KEY,

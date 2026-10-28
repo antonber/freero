@@ -111,6 +111,8 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | presence ext | each feature writes `ext[<its name>]` only | — |
 | Database table | the server module whose `migrations/` create it; only its `repo.ts` writes it, only its migrations alter it [S4] | that module's exported functions |
 | auth session cookie | server `modules/auth` | — |
+| `_outbox`, `_outbox_cursors` (platform tables) | `platform/outbox.ts` | `appendOutbox` in the change's transaction; consumers through `consumeOutbox` |
+| Derived indexes (`object_references`) | their module's outbox consumer | never written directly: change the source; `references:rebuild` repairs |
 | API tokens, OAuth apps / consents, a team's API switch | server `modules/apiauth` | its index: `authenticate`, `requireScope`, `useInWorkspace` |
 
 ### Host — the one typed contract between app and engine
@@ -743,7 +745,10 @@ configures; see "AI" below), `apiauth` (api_tokens,
 oauth_clients, oauth_grants, oauth_codes, api_workspace_settings, api_workspace_credentials:
 credentials that act for a person without their session), `api` (no table: the public REST API
 `/api/v1`; see "Public API and OAuth" below), `mcp` (no table: the remote MCP server `/mcp`; see
-"The MCP server" below).
+"The MCP server" below), `objects` (no table: the object registry and the one
+permission check, `POST /objects/resolve`), `references` (object_references, reference_sources: the
+references index derived through the outbox, `GET /objects/backlinks`; both in "Suite foundation"
+below).
 
 - Notifications are created only from trusted server-side events, never from client claims:
   realtime's `onCommentMessage` (a comment message applied from one of THIS instance's sockets,
@@ -1244,6 +1249,86 @@ audit and admin controls are the same code.
   the decision's `grant`). `/mcp` is the `root` resource: the bare `/.well-known/oauth-protected-resource`
   describes it.
 
+### Suite foundation: the outbox, one permission check, object addresses and references (KAI-147, KAI-148, KAI-149)
+
+Every Freero object is a live, permission-checked, linkable thing, so what a board produces
+doesn't die at a hand-off. Three primitives carry that: the API, the MCP server, embeds, search and
+later apps use them instead of re-implementing access or indexes.
+
+**The outbox and derived indexes** (`platform/outbox.ts`, KAI-148). The one way a change in one
+module reliably makes something else happen (a derived index, a webhook, a cleanup another module
+owns):
+- `appendOutbox(topic, key, payload?)` inside the transaction that makes the change: the event
+  commits with it or not at all. In-process `onX(fn)` events called after a commit lose the work
+  when the process dies right there; new reliable reactions use the outbox. (The existing
+  in-process events — members' sharing events, `onCommentMessage`, `onBoardChange`, `onSessionEnd` —
+  stay: they feed live, best-effort delivery (notifications, activity bursts, socket closes) that
+  is either re-derived elsewhere or harmless to miss; moving them means replacing their in-memory
+  state, a change of its own. `workspaces.onMembershipChanged` → templates' unsharing was moved.)
+- `consumeOutbox(ctx, { name, topics, lockKey, handle })` from an init.ts. Every instance polls
+  (1 s, and right after a local commit that appended: `afterCommit` in `platform/db.ts`); each
+  consumer runs on ONE instance at a time (advisory lock). It reads in `(txid, id)` order only up to
+  the oldest running transaction (`pg_snapshot_xmin`), so an event committed late by a slow
+  transaction is never skipped, and moves its cursor (`_outbox_cursors`) only after `handle`
+  returned: at-least-once, resumable anywhere. Backpressure: batches of `batchSize`, coalesced to
+  the newest event per key, a few batches per run; `wakeDelayMs` gathers a burst into one batch.
+  A failing batch is retried, then handled event by event, and an event that still fails is
+  skipped and counted (`freero_outbox_skipped_total`). Events are pruned once every consumer
+  passed them and they are a day old, or after a week regardless.
+- Consumer rules: idempotent — recompute the derived rows of the event's KEY from the CURRENT
+  source (never apply the event as a delta); stamp them with the batch's `version` (a sequence read
+  with each batch, higher than any before on any instance) and never let a lower version replace a
+  higher one; derived rows are HINTS — every read re-checks the reader's live access (objects
+  below), so a few seconds of lag never exposes anything. Each derived index has a rebuild from the
+  source (an admin command, run under `whileConsumerPaused`).
+- The platform's own tables (`_outbox`, `_outbox_cursors`, `_outbox_derive_version`) are created by
+  `platform/migrations/` (same naming and immutability rules; discovered with the modules').
+
+**One permission check** (`modules/objects`, KAI-147). `can(actor, action, ref)`,
+`filterObjects(actor, action, refs)`, `accessOf`, `summarizeObjects`, `resolveObjects(actor, uris)`.
+Actions are `view < comment < edit < manage`. The registry decides nothing itself: each OWNING
+module registers its types from its init.ts (`registerObjectType`) and keeps its rules —
+boards: `board` and `element` (an item or frame, addressed within its board) through
+`describeAccess` / `resolveRole` batched for many boards (owner, membership, team access, link,
+policies, `blocked`, guests on their one board); an item only as the reader's `readBoardView`
+shows it (no hidden frame's contents for viewers, no one's draft). templates: `template` (the
+template list's visibility rule). workspaces: `workspace` (guest view, member edit, admin manage;
+deactivated: nothing) and `project` (projects' `canSee` / `canManage`). A handler answers a whole
+batch in a fixed number of queries (`objects.test.ts` asserts 200 refs cost what 10 do). Purpose
+`'discover'` (backlinks, search) leaves out boards reached ONLY through their link that the reader
+never opened — otherwise an index would hand out the ids a link protects; `'open'` (the reader
+holds the address) counts link access, as the board page does. A new object type (a doc) =
+a handler in its module + a type in `OBJECT_TYPES`; nothing else changes.
+
+**Object addresses** (`@freero/shared` `objects.ts`, KAI-149): `freero://board/<id>`,
+`freero://board/<id>#<elementId>`, `freero://template/<id>`, `freero://workspace/<id>`,
+`freero://project/<id>`. `parseObjectUri` also reads the web URLs people copy
+(`<origin>/board/<id>?el=<item>`, for the app's own origins: PUBLIC_URL and the request's) and the
+same-origin paths item links store; `objectRefsInText` finds them in content.
+`POST /api/objects/resolve` (≤ 200 per call; guests too) answers each with a summary (title, type,
+item kind and board, preview, path, the reader's access) or `unavailable` — the same for "no
+access" and "no such object", and nothing else, so content carrying addresses never tells its
+readers whether a target exists or what it is called.
+
+**References and backlinks** (`modules/references`). Every saved change of a board's shared
+content appends `board.content` (realtime's repo, same transaction as the update-log row). The
+`references` consumer re-derives that board from its SAVED doc as every reader sees it
+(`realtime.storedBoardView`: no layer, nothing under a hidden frame): item links (`link`: `#id` or
+another board's address), smart links and link cards whose address is a Freero object (`embed`),
+addresses in any text field of an item (`mention`) and in comment messages (`comment`, on the item
+the thread is pinned to); `object_references` per source board, replaced whole, with
+`reference_sources.version`. `GET /api/objects/backlinks?uri=` needs view access to the target (404
+otherwise) and lists only sources the caller may open now (`'discover'`); a board's backlinks
+include its items'. Trashed sources vanish at once (access), deleted ones cascade.
+`npm run admin -- references:rebuild [<board>]` re-derives from saved content.
+
+**Web.** `features/smartlink`: a pasted address (this app's board / item URL or `freero://…`) becomes
+an `objectlink` element that stores ONLY the address; the chip resolves the title for each viewer
+on every view (`Host.resolveObjects`, batched per frame, 15 s cache), shows "No access" otherwise,
+and its open button glides to an item on the same board or opens the target. Item links (KAI-54)
+and link cards are indexed as they are. The share dialog's "Linked from" lists the other boards
+pointing at this one that the viewer can open (`app/components/LinkedFrom.tsx`).
+
 ### Audit log, admin console and workspace policies (KAI-48, KAI-47, KAI-51)
 
 **Audit log** (`modules/audit`). Every module records security-relevant changes with
@@ -1399,7 +1484,8 @@ P / M / F terms, and add their row.
   pending ones in ONE transaction under a Postgres advisory lock, so several instances can start
   at once; a failing migration leaves nothing behind. [S4] checks that a migration only
   ALTERs/DROPs/indexes/writes its own module's tables and REFERENCES only tables created by an
-  earlier migration.
+  earlier migration. The platform's own `_` tables (the outbox) come from `platform/migrations/`,
+  applied in the same global timestamp order as module 'platform'.
 - Startup fails fast (before listening) with a plain message when Postgres is unreachable, a
   migration fails, or another process already uses the PGlite directory (`<dir>.lock`). Graceful
   shutdown: stop sockets → `ctx.shutdown()` (realtime saves every loaded doc) → close the pool.
@@ -1442,6 +1528,10 @@ operations). What a module needs to know:
 - **Background jobs** (`platform/jobs.ts`): `scheduleExclusiveJob(ctx, { name, lockKey, intervalMs,
   run })` runs on every instance's timer but one at a time (Postgres advisory lock); jobs must be
   idempotent. `runExclusive(lockKey, fn)` for a one-off.
+- **Outbox** (`platform/outbox.ts`): `appendOutbox(topic, key)` inside the change's transaction,
+  `consumeOutbox(ctx, consumer)` from an init.ts — reliable reactions and derived indexes (see
+  "Suite foundation"). `afterCommit(fn)` (`platform/db.ts`) runs a nudge once the caller's
+  transaction committed.
 - **Metrics** (`platform/metrics.ts`): `histogram`/`counter`/`gaugeFn` register module metrics
   (`freero_<module>_…`; see `realtime/metrics.ts`). Readiness of a new external dependency:
   `addReadinessCheck(name, fn)` (`platform/health.ts`).
@@ -1643,7 +1733,7 @@ only to connections that may read them:
   `S3_BUCKET` and keys (MinIO, SeaweedFS…), the `s3` group checks the S3 backend (prefixes, kept
   copies under `private/`, restore, retention, the S3_PUBLIC_URL redirect and stored Cache-Control);
   all other groups stay on the local disk. CI does all of it.
-  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation,ai,api,mcp,s3` runs some groups (to loop one while hunting a flake).
+  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation,ai,api,mcp,s3,suite` runs some groups (to loop one while hunting a flake).
   The `mcp` group drives the MCP server with the official MCP client SDK, OAuth (dynamic
   registration, consent, PKCE) included; with DATABASE_URL + REDIS_URL one client's requests also
   alternate between two instances.

@@ -26,6 +26,7 @@ import type {
   PresenceState,
   ReportReason,
   ReportTarget,
+  ResolvedObject,
   Role,
   SessionLimits,
   StrokeStyle,
@@ -160,6 +161,13 @@ export interface Host {
    * (offline sandbox, private address, timeout); callers fall back to a plain link card.
    */
   unfurl(url: string): Promise<LinkPreview>;
+  /**
+   * [additive] Resolves Freero object addresses (`freero://…`, see @freero/shared objects.ts) for
+   * THIS viewer: title, type and a small preview of what they may see; `unavailable` (nothing
+   * else) for what they may not see or what no longer exists. Calls made together go out as one
+   * request. Absent / rejecting where there is no server (callers show the address unresolved).
+   */
+  resolveObjects?(uris: string[]): Promise<ResolvedObject[]>;
   /**
    * [additive] Copies an image placed by URL into the board's uploads — fetched by the SERVER, so
    * hosts without CORS work too — and resolves with its own URL (same origin: exports can read

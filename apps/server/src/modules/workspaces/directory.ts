@@ -8,6 +8,7 @@ import type { WorkspaceRole } from '@freero/shared';
 import { HttpError, notFound } from '../../platform/http';
 import { boardIdsInProject } from '../boards/index';
 import { refreshBoardAccess } from '../realtime/index';
+import { recordMembershipChange } from './events';
 import * as repo from './repo';
 import { refreshWorkspaceBoards } from './service';
 
@@ -39,6 +40,7 @@ export async function applyDirectoryMembership(
     }
     if (!overwrite || current === 'owner' || current === role) return { role: current, changed: false };
     await repo.setRole(workspaceId, userId, role);
+    await recordMembershipChange(workspaceId, userId);
     return { role, changed: true };
   });
   if (result.changed) await refreshWorkspaceBoards(workspaceId);

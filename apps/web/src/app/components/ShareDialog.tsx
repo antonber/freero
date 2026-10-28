@@ -6,6 +6,7 @@ import { Avatar, Button, IconButton, Input, Modal, Select, Spinner, useToast, ty
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { copyText } from '../lib/hooks';
+import { LinkedFrom } from './LinkedFrom';
 import './ShareDialog.css';
 
 type InviteRole = Exclude<Role, 'owner'>;
@@ -457,6 +458,14 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
                 <span className="fr-share__role">{LINK_OPTIONS.find((o) => o.value === linkAccess)?.label}</span>
               )}
             </section>
+
+            <LinkedFrom
+              boardId={boardId}
+              onOpen={(path) => {
+                onClose();
+                navigate(path);
+              }}
+            />
 
             {!isOwner && isMember ? (
               <div className="fr-share__leave">

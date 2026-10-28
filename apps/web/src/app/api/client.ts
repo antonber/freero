@@ -78,6 +78,7 @@ import type {
   WorkspaceRole,
   WorkspaceSummary,
 } from '@freero/shared';
+import type { BacklinksResponse, ResolveObjectsResponse } from '@freero/shared';
 
 export class ApiError extends Error {
   constructor(
@@ -429,6 +430,10 @@ export const api = {
   moderate: (body: ModerationActionRequest) => request<{ action: ModerationActionRecord }>('POST', '/api/moderation/actions', body),
   resolveModerationItem: (id: string, outcome: 'actioned' | 'dismissed', note: string) =>
     request<{ item: ModerationItem }>('POST', `/api/moderation/items/${encodeURIComponent(id)}/resolve`, { outcome, note }),
+
+  // object addresses (KAI-149): permission-checked summaries, and what links here
+  resolveObjects: (uris: string[]) => request<ResolveObjectsResponse>('POST', '/api/objects/resolve', { uris }),
+  backlinks: (uri: string) => request<BacklinksResponse>('GET', `/api/objects/backlinks?uri=${encodeURIComponent(uri)}`),
 
   // link previews
   unfurl:(url: string) => request<UnfurlResponse>('GET', `/api/unfurl?url=${encodeURIComponent(url)}`),
