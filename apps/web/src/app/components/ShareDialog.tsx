@@ -7,6 +7,7 @@ import { api, ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { copyText } from '../lib/hooks';
 import { LinkedFrom } from './LinkedFrom';
+import { LinkProtection } from './LinkProtection';
 import './ShareDialog.css';
 
 type InviteRole = Exclude<Role, 'owner'>;
@@ -458,6 +459,15 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
                 <span className="fr-share__role">{LINK_OPTIONS.find((o) => o.value === linkAccess)?.label}</span>
               )}
             </section>
+            {isOwner && !board.linkBlocked && board.linkProtection && (linkAccess !== 'none' || board.linkProtection.storedAccess !== 'none') ? (
+              <LinkProtection
+                board={board}
+                onChange={(updated) => {
+                  setBoard(updated);
+                  onBoardChange?.(updated);
+                }}
+              />
+            ) : null}
 
             <LinkedFrom
               boardId={boardId}

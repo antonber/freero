@@ -187,6 +187,12 @@ What is sent where, and the safety rules: [ai.md](ai.md).
 |---|---|---|
 | `PUBLIC_API` | `true` | The public REST API (`/api/v1`, reference: [api/openapi.json](api/openapi.json)) and the OAuth endpoints apps use. `false` is the instance-wide kill switch for integrations and agents: every API call and token request is refused at once; tokens and app authorisations are kept, so turning it back on restores them. Workspace admins have their own switch in the admin console ("API & apps"). |
 
+## Board calls
+
+| Variable | Default | Description |
+|---|---|---|
+| `JITSI_BASE_URL` | — | An https Jitsi deployment (`https://meet.jit.si`, or your own) where a board can get a call room of its own ("Call link…" → Jitsi room). The room name is derived from the board id with `SESSION_SECRET` (`Freero` + 24 hex characters), so nobody can guess another board's room; rotating the secret gives every board a new room. Unset: boards only use meeting links their editors paste (Meet, Zoom, Teams…, https only). Freero carries no audio or video itself. |
+
 ## Observability
 
 | Variable | Default | Description |
@@ -243,6 +249,8 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `RATE_LIMIT_AI_WORKSPACE` | `300/1h` | AI actions per workspace, all its people together. |
 | `RATE_LIMIT_REPORT` | `20/1h` | Abuse reports per IP and, separately, per signed-in user. |
 | `RATE_LIMIT_APPEAL` | `10/1h` | Appeals against moderation decisions per IP. |
+| `RATE_LIMIT_LINK_PASSWORD` | `10/15m` | Attempts at a board link's password, per IP and, separately, per board and person (or, before a visitor joins as a guest, per board and IP). The password is stored with the account passwords' slow hash. |
+| `RATE_LIMIT_ENGAGE` | `120/1m` | Answers, questions and upvotes in live activities (polls, word clouds, rankings, ratings, Q&A) per person or guest. |
 | `RATE_LIMIT_API_CREDENTIAL` | `300/1m` | Public API calls and MCP requests per API token, or per authorised app and person (its refreshed tokens share the count). Outline, structure, invite and board-creation calls also count against the person's own limits for those. |
 | `RATE_LIMIT_AGENT_WRITE` | `60/1m` | Changes to boards per API token, or per authorised app and person (the per-agent write limit, KAI-168): creating, changing or deleting items, inserting structure, comments, new boards — through the REST API or MCP. Separate from the person's own editing in the app, which it never slows down. With at most 500 items per call it also bounds how many items an agent writes per minute. |
 | `RATE_LIMIT_OAUTH_TOKEN` | `60/1m` | OAuth token and revocation requests per IP. |

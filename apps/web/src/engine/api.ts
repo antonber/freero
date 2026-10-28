@@ -11,7 +11,12 @@
 
 import type { ComponentType, CSSProperties, ReactNode } from 'react';
 import type {
+  ActivityAnswer,
   ActivityEntry,
+  ActivityState,
+  BoardCall,
+  BoardCallResponse,
+  SetBoardCallRequest,
   AiActionRequest,
   AiActionResponse,
   BoardElement,
@@ -94,6 +99,13 @@ export interface Host {
      * no account services, and the report dialog asks for a contact email. Default true.
      */
     signedIn?: boolean;
+    /**
+     * [additive] The board's call link when the board was opened (KAI-134): a meeting URL its
+     * editors set, or its own Jitsi room. Read the live value with `call.get()`.
+     */
+    call?: BoardCall | null;
+    /** [additive] The server can give the board a Jitsi room of its own. */
+    jitsiCalls?: boolean;
   };
   /** Full ws URL prefix; engine connects WebsocketProvider(syncUrl, board.id, doc). */
   syncUrl: string;
@@ -242,6 +254,34 @@ export interface Host {
    * used up, rate limit, the model's answer unusable); nothing is written by a 'preview' run.
    */
   ai?: HostAi;
+  /**
+   * [additive] The board's call link (KAI-134): anyone on the board reads it, owners and editors
+   * set it (`set` rejects with a showable message: not https, no Jitsi on this server, no
+   * permission). Absent in the offline sandbox.
+   */
+  call?: {
+    get(): Promise<BoardCallResponse>;
+    set(request: SetBoardCallRequest): Promise<BoardCallResponse>;
+  };
+  /**
+   * [additive] Live audience activities (KAI-132): answers go to the SERVER, never into the board
+   * (it publishes only results into the `engageResults` collection). Every call resolves with the
+   * caller's view of the activity and rejects with a showable message. Absent in the offline sandbox.
+   */
+  engage?: HostEngage;
+}
+
+/** [additive] `Host.engage` (wire: @freero/shared `ActivityState`, `ActivityAnswer`). */
+export interface HostEngage {
+  state(activityId: string): Promise<ActivityState>;
+  answer(activityId: string, answer: ActivityAnswer): Promise<ActivityState>;
+  withdraw(activityId: string): Promise<ActivityState>;
+  ask(activityId: string, text: string): Promise<ActivityState>;
+  upvote(activityId: string, questionId: string, on: boolean): Promise<ActivityState>;
+  /** Owners and editors. */
+  moderate(activityId: string, questionId: string, patch: { answered?: boolean; hidden?: boolean }): Promise<ActivityState>;
+  reveal(activityId: string, revealed: boolean): Promise<ActivityState>;
+  clear(activityId: string): Promise<ActivityState>;
 }
 
 /** [additive] `Host.ai` (wire: @freero/shared `AiActionRequest` / `AiActionResponse`). */

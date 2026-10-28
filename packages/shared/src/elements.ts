@@ -25,7 +25,8 @@ export type ElementType =
   | 'swimlane'
   | 'media'
   | 'file'
-  | 'objectlink';
+  | 'objectlink'
+  | 'activity';
 
 /**
  * An app (OAuth) or personal token acting for a person: what the board shows as "<name> for
@@ -566,6 +567,43 @@ export interface FileElement extends BaseElement {
   mime: string;
 }
 
+/** Live audience activities (KAI-132). */
+export type ActivityKind = 'poll' | 'wordcloud' | 'ranking' | 'rating' | 'qna';
+export interface ActivityOption {
+  id: string;
+  text: string;
+}
+
+/**
+ * A live audience activity (KAI-132): a poll, word cloud, ranking, rating scale or Q&A. The
+ * element holds the question and its settings (written by editors like any element); answers go
+ * to the SERVER (REST), which keeps them out of the board and publishes only results — counts,
+ * words, averages, questions — into the `engageResults` collection (ENGAGE_RESULTS_COLLECTION,
+ * written by nobody else). So nobody can map an anonymous answer to a person, and sealed results
+ * are on no client until revealed.
+ */
+export interface ActivityElement extends BaseElement {
+  type: 'activity';
+  kind: ActivityKind;
+  question: RichText;
+  /** Poll choices, items to rank, statements to rate (unused by word clouds and Q&A). */
+  options: ActivityOption[];
+  /** Poll: how many choices one person may pick (1: single choice). */
+  maxChoices?: number;
+  /** Rating: the top of the scale (1..scale). */
+  scale?: number;
+  /** Names are never shown with answers (kept with each answer as it was when given). */
+  anonymous: boolean;
+  /** 'live': results as answers arrive; 'reveal': only how many answered, until an editor reveals them. */
+  results: 'live' | 'reveal';
+  /** Visitors without an account (guests on the board's link) may answer. */
+  guests: boolean;
+  /** No more answers (results stay). */
+  closed?: boolean;
+  /** Accent colour. */
+  color: string;
+}
+
 /**
  * A swimlane diagram (a pool): a title band, lanes — rows, or columns when `vertical` — and
  * phases across them. It is a container: items dropped in it join it (`frameId`) and keep their
@@ -611,7 +649,8 @@ export type BoardElement =
   | SwimlaneElement
   | MediaElement
   | FileElement
-  | ObjectLinkElement;
+  | ObjectLinkElement
+  | ActivityElement;
 
 export type ElementOf<T extends ElementType> = Extract<BoardElement, { type: T }>;
 

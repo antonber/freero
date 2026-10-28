@@ -1,15 +1,17 @@
 import { Router } from 'express';
-import type { BoardSummary, GuestBoardInfo, GuestJoinResponse, LinkAccess } from '@freero/shared';
+import type { BoardCallResponse, BoardSummary, GuestBoardInfo, GuestJoinResponse, LinkAccess } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { badRequest, forbidden, handle, HttpError, notFound, unauthorized } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
 import { recordAuditQuietly } from '../audit/index';
-import { currentUser, endGuestSession, guestFromCookieHeader, requireUser, startGuestSession } from '../auth/index';
+import { actorId, currentActor, currentUser, endGuestSession, guestFromCookieHeader, requireUser, requireUserOrGuest, startGuestSession } from '../auth/index';
 import { isLinkAccess, ROLE_RANK } from '../members/index';
 import { mayShareExternally } from '../workspaces/index';
 import { refreshBoardAccess } from '../realtime/index';
 import { deleteUpload, saveUpload } from '../uploads/index';
+import { callOf, cleanCallUrl, jitsiAvailable } from './call';
 import { boardLifecycle } from './events';
+import { changeLinkProtection, checkVisitorPassword, hasLinkProtectionPatch, unlockLink } from './linkProtection';
 import * as repo from './repo';
 import {
   BOARD_FILTERS,
@@ -108,6 +110,7 @@ export default function boardRoutes(_ctx: ServerContext): Router {
         }
         patch.linkAccess = body.linkAccess;
       }
+      if (hasLinkProtectionPatch(body) && role !== 'owner') throw forbidden('Only the board owner can protect its link');
       if ((patch.title !== undefined || patch.description !== undefined) && role !== 'owner' && role !== 'editor')
         throw forbidden('You need editor access to rename this board');
       if (body.projectId !== undefined) {
@@ -115,6 +118,7 @@ export default function boardRoutes(_ctx: ServerContext): Router {
         if ((body.projectId || null) !== board.projectId) await moveToProject(board, user.id, (body.projectId as string | null) || null);
       }
       if (Object.keys(patch).length > 0) await repo.updateBoardFields(board.id, patch, Date.now());
+      if (hasLinkProtectionPatch(body)) await changeLinkProtection(board, user.id, body);
       if (patch.title !== undefined && patch.title !== board.title)
         await boardLifecycle({ boardId: board.id, actorId: user.id, action: 'renamed', from: board.title, to: patch.title });
       if (patch.linkAccess !== undefined && patch.linkAccess !== board.linkAccess) {
@@ -129,6 +133,56 @@ export default function boardRoutes(_ctx: ServerContext): Router {
       }
       const { board: updated, role: newRole, access: newAccess } = await requireAccess(board.id, user.id);
       res.json({ board: await toSummary(updated, user.id, newRole, newAccess) } satisfies Out);
+    }),
+  );
+
+  // Someone signed in gives the password of a board's protected link (KAI-145).
+  r.post(
+    '/boards/:id/link-unlock',
+    requireUser,
+    handle(async (req, res) => {
+      const user = currentUser(req);
+      const board = await repo.getBoard(req.params.id);
+      if (!board || !board.linkPasswordHash || board.linkAccess === 'none') throw notFound('Board not found');
+      await unlockLink(req, board, user.id, req.body?.password);
+      res.json({ ok: true } satisfies Out);
+    }),
+  );
+
+  // The board's call link (KAI-134): anyone who can open the board reads it; editors set it.
+  r.get(
+    '/boards/:id/call',
+    requireUserOrGuest,
+    handle(async (req, res) => {
+      const { board } = await requireAccess(req.params.id, actorId(currentActor(req)));
+      res.json({ call: callOf(board), jitsiAvailable: jitsiAvailable() } satisfies BoardCallResponse);
+    }),
+  );
+
+  r.put(
+    '/boards/:id/call',
+    requireUser,
+    handle(async (req, res) => {
+      const user = currentUser(req);
+      const { board } = await requireAccess(req.params.id, user.id, 'editor');
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      let next: { url: string | null; jitsi: boolean };
+      if (body.jitsi === true) {
+        if (!jitsiAvailable()) throw badRequest('This Freero server has no Jitsi configured: paste a meeting link instead');
+        next = { url: board.callUrl, jitsi: true };
+      } else if (body.url === null || body.url === undefined || body.url === '') next = { url: null, jitsi: false };
+      else next = { url: cleanCallUrl(body.url), jitsi: false };
+      await repo.setCall(board.id, next);
+      const host = next.url ? new URL(next.url).hostname : null;
+      await recordAuditQuietly({
+        action: 'board.call_link_changed',
+        workspaceId: board.workspaceId,
+        actorId: user.id,
+        target: boardTarget(board),
+        // The host only: meeting links often carry their passcode.
+        metadata: { kind: next.jitsi ? 'jitsi' : next.url ? 'link' : 'none', ...(host && !next.jitsi ? { host } : {}) },
+      });
+      res.json({ call: callOf({ ...board, callUrl: next.url, callJitsi: next.jitsi }), jitsiAvailable: jitsiAvailable() } satisfies BoardCallResponse);
     }),
   );
 
@@ -243,7 +297,9 @@ export default function boardRoutes(_ctx: ServerContext): Router {
       const board = await repo.getBoard(req.params.id);
       if (!board) throw notFound('Board not found');
       const role = await guestRoleFor(board);
-      res.json((role ? { allowed: true, role, title: board.title } : { allowed: false }) satisfies GuestBoardInfo);
+      res.json(
+        (role ? { allowed: true, role, title: board.title, ...(board.linkPasswordHash ? { passwordRequired: true } : {}) } : { allowed: false }) satisfies GuestBoardInfo,
+      );
     }),
   );
 
@@ -254,8 +310,11 @@ export default function boardRoutes(_ctx: ServerContext): Router {
       const board = await repo.getBoard(req.params.id);
       if (!board) throw notFound('Board not found');
       if (!(await guestRoleFor(board))) throw forbidden('This board doesn’t let visitors without an account in. Sign in to open it.');
+      // A protected link (KAI-145): the password first, then the guest exists and is remembered as having given it.
+      if (board.linkPasswordHash) await checkVisitorPassword(req, board, req.body?.password);
       const guest = await startGuestSession(req, res, board.id, req.body?.name);
       if (!guest) throw notFound('Board not found');
+      if (board.linkPasswordHash) await repo.recordUnlock(board.id, guest.id, board.linkPasswordRev, Date.now());
       // A visitor, not an account: no actor; the name they gave and their guest id say who.
       await recordAuditQuietly({
         action: 'board.guest_joined',
@@ -285,6 +344,20 @@ export default function boardRoutes(_ctx: ServerContext): Router {
       if (guest.boardId !== req.params.id) throw forbidden();
       const { board, role, access } = await requireAccess(req.params.id, guest.id);
       res.json({ board: await toSummary(board, guest.id, role, access, { starred: false, lastOpenedAt: null, member: false }) } satisfies Out);
+    }),
+  );
+
+  // A guest whose board's link got a password (or a new one) since they joined gives it (KAI-145).
+  r.post(
+    '/guest/boards/:id/unlock',
+    handle(async (req, res) => {
+      const guest = await guestFromCookieHeader(req.headers.cookie);
+      if (!guest) throw unauthorized();
+      if (guest.boardId !== req.params.id) throw forbidden();
+      const board = await repo.getBoard(req.params.id);
+      if (!board || !board.linkPasswordHash || board.linkAccess === 'none') throw notFound('Board not found');
+      await unlockLink(req, board, guest.id, req.body?.password);
+      res.json({ ok: true } satisfies Out);
     }),
   );
 

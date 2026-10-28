@@ -1,4 +1,8 @@
 import type {
+  ActivityAnswer,
+  ActivityState,
+  BoardCallResponse,
+  SetBoardCallRequest,
   AiActionRequest,
   AiActionResponse,
   BoardAiStatus,
@@ -114,6 +118,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   if (!res.ok) throw await failure(res);
   return res.json() as Promise<T>;
 }
+
+const activityPath = (id: string, aid: string) => `/api/boards/${encodeURIComponent(id)}/activities/${encodeURIComponent(aid)}`;
 
 export type BoardFilter = 'all' | 'mine' | 'shared' | 'starred' | 'recent' | 'trash';
 
@@ -249,7 +255,25 @@ export const api = {
 
   // guests (visitors without an account on a shared link)
   guestBoardInfo: (id: string) => request<GuestBoardInfo>('GET', `/api/guest/boards/${encodeURIComponent(id)}`),
-  joinAsGuest: (id: string, name: string) => request<GuestJoinResponse>('POST', `/api/guest/boards/${encodeURIComponent(id)}/join`, { name }),
+  joinAsGuest: (id: string, name: string, password?: string) =>
+    request<GuestJoinResponse>('POST', `/api/guest/boards/${encodeURIComponent(id)}/join`, { name, ...(password ? { password } : {}) }),
+  guestUnlock: (id: string, password: string) => request<{ ok: true }>('POST', `/api/guest/boards/${encodeURIComponent(id)}/unlock`, { password }),
+  // share-link password (KAI-145)
+  unlockBoardLink: (id: string, password: string) => request<{ ok: true }>('POST', `/api/boards/${encodeURIComponent(id)}/link-unlock`, { password }),
+  // the board's call link (KAI-134)
+  boardCall: (id: string) => request<BoardCallResponse>('GET', `/api/boards/${encodeURIComponent(id)}/call`),
+  setBoardCall: (id: string, body: SetBoardCallRequest) => request<BoardCallResponse>('PUT', `/api/boards/${encodeURIComponent(id)}/call`, body),
+  // live activities (KAI-132)
+  activity: (id: string, aid: string) => request<ActivityState>('GET', activityPath(id, aid)),
+  answerActivity: (id: string, aid: string, answer: ActivityAnswer) => request<ActivityState>('PUT', `${activityPath(id, aid)}/answer`, { answer }),
+  withdrawAnswer: (id: string, aid: string) => request<ActivityState>('DELETE', `${activityPath(id, aid)}/answer`),
+  askQuestion: (id: string, aid: string, text: string) => request<ActivityState>('POST', `${activityPath(id, aid)}/questions`, { text }),
+  upvoteQuestion: (id: string, aid: string, qid: string, on: boolean) =>
+    request<ActivityState>('PUT', `${activityPath(id, aid)}/questions/${encodeURIComponent(qid)}/upvote`, { on }),
+  moderateQuestion: (id: string, aid: string, qid: string, patch: { answered?: boolean; hidden?: boolean }) =>
+    request<ActivityState>('PATCH', `${activityPath(id, aid)}/questions/${encodeURIComponent(qid)}`, patch),
+  revealActivity: (id: string, aid: string, revealed: boolean) => request<ActivityState>('POST', `${activityPath(id, aid)}/reveal`, { revealed }),
+  clearActivity: (id: string, aid: string) => request<ActivityState>('DELETE', `${activityPath(id, aid)}/answers`),
   guestMe: () => request<{ guest: GuestInfo | null }>('GET', '/api/guest/me'),
   guestBoard: (id: string) => request<{ board: BoardSummary }>('GET', `/api/guest/boards/${encodeURIComponent(id)}/board`),
   leaveAsGuest: () => request<{ ok: true }>('POST', '/api/guest/leave'),

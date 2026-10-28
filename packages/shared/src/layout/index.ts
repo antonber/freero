@@ -4,6 +4,7 @@
 import { STICKY_COLORS, type StickyColor } from '../elements';
 import { findFreeSpot, unionRects, type Point, type Rect } from '../geometry';
 import { translateDraft } from './kit';
+import { layoutItems } from './items';
 import { parseMermaid } from './mermaid';
 import { layoutClusters, layoutGraph, layoutKanban, layoutMindmap, layoutNote, layoutOrgChart, layoutSequence, layoutStickies, layoutTable, layoutTree, parseIndentedList } from './structures';
 import { LayoutError, type LaidOut, type LayoutContext, type OutlineNodeInput, type StructureInput } from './types';
@@ -90,6 +91,10 @@ export function layoutStructure(input: StructureInput, ctx: LayoutContext): Laid
       return layoutKanban(input.title, input.columns, ctx);
     case 'orgchart':
       return layoutOrgChart(input.people, ctx);
+    case 'items':
+      if (!Array.isArray(input.items)) throw new LayoutError('items needs a list of items');
+      if (input.layout !== undefined && input.layout !== 'grid' && input.layout !== 'kanban') throw new LayoutError('layout must be grid or kanban');
+      return layoutItems(input.items, input.layout ?? 'grid', input.title, ctx);
     default:
       throw new LayoutError(`Unknown structure kind ${String((input as { kind?: unknown }).kind)}`);
   }

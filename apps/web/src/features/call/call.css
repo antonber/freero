@@ -1,0 +1,27 @@
+.fr-call {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fr-call__people {
+  margin-right: 2px;
+}
+
+.fr-call-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fr-call-form__hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fr-ink-3);
+}
+
+.fr-call-form__error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fr-danger);
+}

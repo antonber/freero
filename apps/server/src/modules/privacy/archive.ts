@@ -8,6 +8,7 @@ import { strToU8, zipSync, type Zippable } from 'fflate';
 import { aiUsageExportOf, aiWorkspaceExportOf } from '../ai/index';
 import { apiDataOf } from '../apiauth/index';
 import { exportAccountData, getUser } from '../auth/index';
+import { engageExportOf } from '../engage/index';
 import { boardActivityOf, boardIdsInWorkspace, boardIdsOpenedBy, boardIdsOwnedByUser, boardRecords, type BoardRecord } from '../boards/index';
 import { membershipsOf } from '../members/index';
 import { notificationsExportOf } from '../notifications/index';
@@ -134,6 +135,8 @@ export async function buildUserArchive(userId: string, appOrigin: string): Promi
   }
   a.addJson('comments.json', comments);
   a.addJson('notifications.json', await notificationsExportOf(userId));
+  // Answers and questions in live activities (KAI-132), anonymous ones included: they are theirs.
+  a.addJson('activities.json', await engageExportOf(userId));
 
   for (const t of await templatesExportOf({ ownerId: userId })) a.addJson(`templates/${slug(t.name)}-${t.id}.json`, t);
 

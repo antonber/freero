@@ -27,6 +27,10 @@ export interface NotificationData {
   /** Moderation notices: what was done (a ModerationActionKind) and the signed appeal page. */
   moderationAction?: string;
   appealPath?: string;
+  /** Task cards (KAI-135): the card, its title then, and its due date (YYYY-MM-DD) or null. */
+  elementId?: string;
+  cardTitle?: string;
+  dueDate?: string | null;
 }
 
 export interface NotificationTypeDef {
@@ -50,6 +54,15 @@ const board = (d: NotificationData) => `“${d.boardTitle || 'Untitled board'}�
 const boardPath = (id: string | null) => (id ? `/board/${encodeURIComponent(id)}` : '/app');
 const threadPath = (id: string | null, d: NotificationData) =>
   d.threadId ? `${boardPath(id)}?thread=${encodeURIComponent(d.threadId)}` : boardPath(id);
+
+const itemPath = (id: string | null, d: NotificationData) =>
+  d.elementId ? `${boardPath(id)}?item=${encodeURIComponent(d.elementId)}` : boardPath(id);
+const card = (d: NotificationData) => `“${d.cardTitle || 'Untitled card'}”`;
+/** "Fri 30 Oct" (due dates are calendar days, read in UTC so every reader agrees). */
+export const dueDay = (date: string): string => {
+  const t = Date.parse(`${date}T00:00:00Z`);
+  return Number.isNaN(t) ? date : new Date(t).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+};
 
 const ROLE_PHRASE: Record<string, string> = { editor: 'edit', commenter: 'comment on', viewer: 'view' };
 
@@ -112,6 +125,28 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
       `${actor} added you to the “${d.workspaceName || 'team'}” workspace${d.role && d.role !== 'member' ? ` as ${d.role === 'admin' ? 'an admin' : 'a guest'}` : ''}`,
     link: (_id, d) => (d.workspaceId ? `/app?ws=${encodeURIComponent(d.workspaceId)}` : '/app'),
     linkLabel: 'Open the workspace',
+  },
+  'card.assigned': {
+    label: 'Cards assigned to you',
+    description: 'Someone assigns a task card to you.',
+    title: (actor, d) => `${actor} assigned ${card(d)} to you on ${board(d)}${d.dueDate ? ` · due ${dueDay(d.dueDate)}` : ''}`,
+    link: itemPath,
+    linkLabel: 'Open the card',
+  },
+  'card.due_changed': {
+    label: 'Due dates of your cards',
+    description: 'Someone sets or changes the due date of a card assigned to you.',
+    title: (actor, d) =>
+      d.dueDate ? `${actor} set ${card(d)} on ${board(d)} due ${dueDay(d.dueDate)}` : `${actor} removed the due date of ${card(d)} on ${board(d)}`,
+    link: itemPath,
+    linkLabel: 'Open the card',
+  },
+  'card.due_soon': {
+    label: 'Due-date reminders',
+    description: 'A card assigned to you is due tomorrow.',
+    title: (_actor, d) => `${card(d)} on ${board(d)} is due ${d.dueDate ? dueDay(d.dueDate) : 'soon'}`,
+    link: itemPath,
+    linkLabel: 'Open the card',
   },
   'moderation.action': {
     label: 'Moderation notices',

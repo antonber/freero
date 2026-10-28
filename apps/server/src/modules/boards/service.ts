@@ -1,4 +1,4 @@
-import { BOARD_REMOVED, DOWNLOADS_RESTRICTED, isGuestId, TRASH_RETENTION_DAYS, type BoardPermissions, type BoardSummary, type LinkAccess, type Role } from '@freero/shared';
+import { BOARD_REMOVED, DOWNLOADS_RESTRICTED, isGuestId, LINK_PASSWORD_REQUIRED, TRASH_RETENTION_DAYS, type BoardPermissions, type BoardSummary, type LinkAccess, type Role } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { badRequest, forbidden, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
@@ -33,6 +33,7 @@ import {
   workspaceRole,
   workspaceRolesOf,
 } from '../workspaces/index';
+import { callOf, jitsiAvailable } from './call';
 import { boardLifecycle } from './events';
 import * as repo from './repo';
 import type { Board } from './repo';
@@ -88,18 +89,47 @@ export async function authorizeFileDownload(
 }
 
 /**
+ * The board as its link works for one person (KAI-145): a password-protected link gives nothing to
+ * someone who has not given its CURRENT password (`unlockedRev`: the revision they unlocked).
+ * Expiry is already applied when the board is read (repo.toBoard).
+ */
+export function linkAsSeenBy<B extends Pick<Board, 'linkAccess' | 'linkPasswordHash' | 'linkPasswordRev'>>(board: B, unlockedRev: number | undefined): B {
+  if (!board.linkPasswordHash || board.linkAccess === 'none' || unlockedRev === board.linkPasswordRev) return board;
+  return { ...board, linkAccess: 'none' };
+}
+
+/** What the share dialog shows its owner about the link's protection. */
+export const linkProtectionOf = (board: Board): NonNullable<BoardSummary['linkProtection']> => ({
+  password: board.linkPasswordHash !== null,
+  expiresAt: board.linkExpiresAt,
+  expired: board.linkExpiresAt !== null && board.linkExpiresAt <= Date.now(),
+  storedAccess: board.storedLinkAccess,
+});
+
+const linkLocked = (board: Board) => board.linkPasswordHash !== null && board.linkAccess !== 'none';
+
+/**
  * The role of `userId` on a board and what its workspace contributes (policies, team access).
  * `userId` may be a guest id: a guest gets only the board they joined, as resolveGuestRole allows
- * (never once their session expired).
+ * (never once their session expired). `needsPassword`: no access now, but the board's link would
+ * let them in once they give its password.
  */
-export async function describeAccess(board: Board, userId: string): Promise<{ role: Role | null; access: BoardWorkspaceAccess }> {
+export async function describeAccess(
+  board: Board,
+  userId: string,
+): Promise<{ role: Role | null; access: BoardWorkspaceAccess; needsPassword: boolean }> {
+  const unlocked = linkLocked(board) && userId !== board.ownerId ? (await repo.unlocksOf(userId, [board.id])).get(board.id) : undefined;
+  const seen = linkAsSeenBy(board, unlocked);
   if (isGuestId(userId)) {
     const [guest, access] = await Promise.all([getGuests([userId]), boardAccess(userId, board)]);
     const joined = guest.get(userId)?.boardId === board.id;
-    return { role: joined ? resolveGuestRole(board, access) : null, access };
+    const role = joined ? resolveGuestRole(seen, access) : null;
+    return { role, access, needsPassword: joined && role === null && seen !== board && resolveGuestRole(board, access) !== null };
   }
   const [memberRole, access] = await Promise.all([getMemberRole(board.id, userId), boardAccess(userId, board)]);
-  return { role: resolveRole(board, userId, memberRole, access), access };
+  const role = resolveRole(seen, userId, memberRole, access);
+  const needsPassword = role === null && seen !== board && resolveRole(board, userId, memberRole, access) !== null;
+  return { role, access, needsPassword };
 }
 
 /** May visitors without an account join this board by its link, and as what (null: no)? */
@@ -133,7 +163,8 @@ export async function requireAccess(
 ): Promise<{ board: Board; role: Role; access: BoardWorkspaceAccess }> {
   const board = await repo.getBoard(boardId);
   if (!board) throw (await removedFor(boardId, userId)) ? boardRemoved() : notFound('Board not found');
-  const { role, access } = await describeAccess(board, userId);
+  const { role, access, needsPassword } = await describeAccess(board, userId);
+  if (!role && needsPassword) throw new HttpError(403, 'This board’s link asks for a password', LINK_PASSWORD_REQUIRED);
   if (!role) throw forbidden();
   if (!atLeast(role, min)) throw forbidden(min === 'owner' ? 'Only the board owner can do that' : `You need ${min} access to do that`);
   return { board, role, access };
@@ -150,6 +181,7 @@ export function permissionsFor(board: Board, userId: string, role: Role, access:
     canMove: isOwner || admin,
     canTransfer: isOwner || admin,
     guestLinks: access.anonymousLinks && !access.outsidersBlocked,
+    jitsiCalls: jitsiAvailable(),
   };
 }
 
@@ -207,6 +239,8 @@ export async function toSummary(
     member,
     permissions: permissionsFor(board, userId, role, access),
     ...(board.linkBlocked ? { linkBlocked: true } : {}),
+    ...(role === 'owner' ? { linkProtection: linkProtectionOf(board) } : {}),
+    call: callOf(board),
     ...(board.deletedAt !== null ? { deletedAt: board.deletedAt, purgeAt: board.deletedAt + access.trashRetentionDays * DAY_MS } : {}),
   };
 }
@@ -235,11 +269,12 @@ export async function listBoards(
   if (!myWorkspaces.has(workspaceId)) throw notFound('Workspace not found');
   if (filter === 'trash') return listTrash(userId, workspaceId, q);
 
-  const [memberships, opens, stars, ws] = await Promise.all([
+  const [memberships, opens, stars, ws, unlocks] = await Promise.all([
     membershipsOf(userId),
     repo.opensOf(userId),
     repo.starredBoardIds(userId),
     getWorkspaceInfo(workspaceId),
+    repo.unlocksOf(userId),
   ]);
   const inWorkspace = filter === 'shared' ? [] : await repo.boardsInWorkspace(workspaceId);
   const seen = new Set(inWorkspace.map((b) => b.id));
@@ -257,8 +292,8 @@ export async function listBoards(
   for (const board of boards) {
     if (scope.projectId && board.projectId !== scope.projectId) continue;
     const access = accessOf(board);
-    const role = resolveRole(board, userId, memberships.get(board.id) ?? null, access);
-    if (!role) continue; // e.g. a team board in a private project, or link access revoked
+    const role = resolveRole(linkAsSeenBy(board, unlocks.get(board.id)), userId, memberships.get(board.id) ?? null, access);
+    if (!role) continue; // e.g. a team board in a private project, or link access revoked / locked
     if (filter === 'mine' && role !== 'owner') continue;
     if (filter === 'starred' && !stars.has(board.id)) continue;
     if (filter === 'recent' && !opens.has(board.id)) continue;
@@ -345,6 +380,11 @@ export async function createBoard(
         removedAt: null,
         linkBlocked: false,
         storedLinkAccess: linkAccess,
+        linkPasswordHash: null,
+        linkPasswordRev: 0,
+        linkExpiresAt: null,
+        callUrl: null,
+        callJitsi: false,
       };
       await repo.insertBoard(board);
       await recordAudit({ action: 'board.created', workspaceId, actorId: ownerId, target: boardTarget(board), metadata: { projectId } });

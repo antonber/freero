@@ -20,8 +20,18 @@ export interface Board {
   removedAt: number | null;
   /** An operator turned link sharing off: `linkAccess` reads 'none' meanwhile. */
   linkBlocked: boolean;
-  /** The owner's link setting, kept while link sharing is blocked (moderation views). */
+  /** The owner's link setting, kept while link sharing is blocked or expired (moderation views, the share dialog). */
   storedLinkAccess: LinkAccess;
+  /** scrypt hash of the link's password (KAI-145), or null. Never leaves this module. */
+  linkPasswordHash: string | null;
+  /** Bumped on every password change: unlocks of an earlier revision no longer count. */
+  linkPasswordRev: number;
+  /** When the link stops granting anything, or null. `linkAccess` reads 'none' from then on. */
+  linkExpiresAt: number | null;
+  /** The call link its editors set (KAI-134), or null. */
+  callUrl: string | null;
+  /** Use the board's own room on the operator's Jitsi instead. */
+  callJitsi: boolean;
 }
 
 interface Row {
@@ -38,16 +48,22 @@ interface Row {
   project_id: string | null;
   removed_at: Date | null;
   link_blocked_at: Date | null;
+  link_password_hash: string | null;
+  link_password_rev: number;
+  link_expires_at: Date | null;
+  call_url: string | null;
+  call_jitsi: boolean;
 }
 
 // Link access is resolved here, once: everything that reads a board (roles, lists, sockets,
-// summaries) sees 'none' while an operator blocks the link.
-const toBoard = (r: Row): Board => ({
+// summaries) sees 'none' while an operator blocks the link, and once the owner's expiry passed.
+// (A link password depends on who asks: boards' service applies it per person.)
+const toBoard = (r: Row, now = Date.now()): Board => ({
   id: r.id,
   title: r.title,
   description: r.description,
   ownerId: r.owner_id,
-  linkAccess: r.link_blocked_at ? 'none' : r.link_access,
+  linkAccess: r.link_blocked_at || (r.link_expires_at && r.link_expires_at.getTime() <= now) ? 'none' : r.link_access,
   thumbnail: r.thumbnail,
   createdAt: r.created_at.getTime(),
   updatedAt: r.updated_at.getTime(),
@@ -57,6 +73,11 @@ const toBoard = (r: Row): Board => ({
   removedAt: r.removed_at ? r.removed_at.getTime() : null,
   linkBlocked: r.link_blocked_at !== null,
   storedLinkAccess: r.link_access,
+  linkPasswordHash: r.link_password_hash,
+  linkPasswordRev: r.link_password_rev,
+  linkExpiresAt: r.link_expires_at ? r.link_expires_at.getTime() : null,
+  callUrl: r.call_url,
+  callJitsi: r.call_jitsi,
 });
 
 /** A board in service: not in the trash, not taken down by an operator. */
@@ -115,7 +136,7 @@ export async function getBoardIncludingTrash(id: string): Promise<Board | null> 
 /** The live boards among ids. */
 export async function getBoards(ids: string[]): Promise<Board[]> {
   if (ids.length === 0) return [];
-  return (await query<Row>(`SELECT * FROM boards WHERE id = ANY($1::text[]) AND ${LIVE}`, [ids])).map(toBoard);
+  return (await query<Row>(`SELECT * FROM boards WHERE id = ANY($1::text[]) AND ${LIVE}`, [ids])).map((r) => toBoard(r));
 }
 
 /** Every board id (trash included), for operator rebuilds of derived indexes. */
@@ -127,7 +148,7 @@ export async function allIds(): Promise<string[]> {
 /** The boards with these ids, trashed ones included (data exports). */
 export async function getBoardsIncludingTrash(ids: string[]): Promise<Board[]> {
   if (!ids.length) return [];
-  return (await query<Row>(`SELECT * FROM boards WHERE id = ANY($1::text[]) ORDER BY created_at, id`, [ids])).map(toBoard);
+  return (await query<Row>(`SELECT * FROM boards WHERE id = ANY($1::text[]) ORDER BY created_at, id`, [ids])).map((r) => toBoard(r));
 }
 
 export async function boardIdsOwnedBy(userId: string): Promise<string[]> {
@@ -158,14 +179,14 @@ export async function trashedBoardsOf(ownerId: string, workspaceId: string): Pro
       ownerId,
       workspaceId,
     ])
-  ).map(toBoard);
+  ).map((r) => toBoard(r));
 }
 
 // ---- workspaces and projects ----
 
 /** The live boards of a workspace. */
 export async function boardsInWorkspace(workspaceId: string): Promise<Board[]> {
-  return (await query<Row>(`SELECT * FROM boards WHERE workspace_id = $1 AND ${LIVE}`, [workspaceId])).map(toBoard);
+  return (await query<Row>(`SELECT * FROM boards WHERE workspace_id = $1 AND ${LIVE}`, [workspaceId])).map((r) => toBoard(r));
 }
 
 /** Every board of a workspace, trashed ones included. */
@@ -418,4 +439,75 @@ export async function matchesInThumbnails(pattern: string, among: readonly strin
     [pattern, among],
   );
   return rows.map((r) => r.name);
+}
+
+// ---- share-link protection (KAI-145) ----
+
+/**
+ * Sets the link's password (a hash; null removes it) and/or its expiry, in one statement. A
+ * password change bumps the revision (earlier unlocks stop counting) and drops the old unlocks.
+ * Returns false if the board is gone.
+ */
+export async function setLinkProtection(
+  id: string,
+  patch: { passwordHash?: string | null; expiresAt?: number | null },
+): Promise<boolean> {
+  const pw = patch.passwordHash !== undefined;
+  const ex = patch.expiresAt !== undefined;
+  const r = await one(
+    `UPDATE boards SET
+       link_password_hash = CASE WHEN $2 THEN $3 ELSE link_password_hash END,
+       link_password_rev = CASE WHEN $2 THEN link_password_rev + 1 ELSE link_password_rev END,
+       link_expires_at = CASE WHEN $4 THEN $5::timestamptz ELSE link_expires_at END,
+       link_expiry_applied_at = CASE WHEN $4 THEN NULL ELSE link_expiry_applied_at END
+     WHERE id = $1 RETURNING id`,
+    [id, pw, patch.passwordHash ?? null, ex, patch.expiresAt ? new Date(patch.expiresAt) : null],
+  );
+  if (r && pw) await query(`DELETE FROM board_link_unlocks WHERE board_id = $1`, [id]);
+  return r !== null;
+}
+
+/** A deleted account: the record of which board links it unlocked goes. */
+export async function forgetUnlocksOf(principalId: string): Promise<void> {
+  await query(`DELETE FROM board_link_unlocks WHERE principal_id = $1`, [principalId]);
+}
+
+/** Someone gave the link's password (revision `rev`). */
+export async function recordUnlock(boardId: string, principalId: string, rev: number, now: number): Promise<void> {
+  await query(
+    `INSERT INTO board_link_unlocks (board_id, principal_id, password_rev, unlocked_at) VALUES ($1, $2, $3, $4)
+     ON CONFLICT (board_id, principal_id) DO UPDATE SET password_rev = excluded.password_rev, unlocked_at = excluded.unlocked_at`,
+    [boardId, principalId, rev, new Date(now)],
+  );
+}
+
+/** boardId -> password revision this person unlocked (among `boardIds`, or all of theirs). */
+export async function unlocksOf(principalId: string, boardIds?: string[]): Promise<Map<string, number>> {
+  const rows = await query<{ board_id: string; password_rev: number }>(
+    `SELECT board_id, password_rev FROM board_link_unlocks WHERE principal_id = $1 AND ($2::text[] IS NULL OR board_id = ANY($2::text[]))`,
+    [principalId, boardIds ?? null],
+  );
+  return new Map(rows.map((r) => [r.board_id, r.password_rev]));
+}
+
+/** Links that expired at or before `now` whose live sockets were not re-checked since (the expiry job). */
+export async function expiredLinksToApply(now: number, limit: number): Promise<string[]> {
+  return (
+    await query<{ id: string }>(
+      `SELECT id FROM boards WHERE link_expires_at <= $1 AND (link_expiry_applied_at IS NULL OR link_expiry_applied_at < link_expires_at)
+       ORDER BY link_expires_at LIMIT $2`,
+      [new Date(now), limit],
+    )
+  ).map((r) => r.id);
+}
+
+export async function markExpiryApplied(id: string, now: number): Promise<void> {
+  await query(`UPDATE boards SET link_expiry_applied_at = $2 WHERE id = $1`, [id, new Date(now)]);
+}
+
+// ---- call link (KAI-134) ----
+
+/** Sets the board's call: a meeting link, its Jitsi room, or nothing. False if the board is gone. */
+export async function setCall(id: string, call: { url: string | null; jitsi: boolean }): Promise<boolean> {
+  return (await one(`UPDATE boards SET call_url = $2, call_jitsi = $3 WHERE id = $1 RETURNING id`, [id, call.url, call.jitsi])) !== null;
 }

@@ -53,7 +53,7 @@ export const COMMENTER_WRITABLE = ['comments'] as const;
  * private again) or end it while drafts are still sealed. Layer docs are never versioned or
  * restored (see "Board layers" in ARCHITECTURE.md).
  */
-export const Y_KEPT_ON_RESTORE = ['comments', 'voting', 'timer', 'privateMode', 'facilitation', 'estimation', 'retro'] as const;
+export const Y_KEPT_ON_RESTORE = ['comments', 'voting', 'timer', 'privateMode', 'facilitation', 'estimation', 'retro', 'engageResults', 'call'] as const;
 
 /**
  * Facilitator controls (KAI-129): the `facilitation` collection, key FACILITATION_KEY. While it is
@@ -131,6 +131,32 @@ export interface VotingSession {
   startedBy: string;
   startedAt: number;
   endedAt: number | null;
+}
+
+/**
+ * Live audience activities (KAI-132): results of each `activity` element, keyed by its id. Written
+ * ONLY by the server (modules/engage through realtime): a socket's write to this collection, in
+ * the shared doc or a layer, is undone in the same transaction (realtime/serverCollections.ts).
+ */
+export const ENGAGE_RESULTS_COLLECTION = 'engageResults';
+
+export interface ActivityResults {
+  activityId: string;
+  /** How many people answered (Q&A: asked or upvoted). */
+  respondents: number;
+  /** Results withheld until an editor reveals them (`results: 'reveal'`): only `respondents` is set. */
+  sealed: boolean;
+  updatedAt: number;
+  /** Per choice, in the element's order. `names`: who picked it, only for answers given while not anonymous. */
+  poll?: Array<{ optionId: string; count: number; names?: string[] }>;
+  /** Most frequent first (at most ENGAGE_MAX_CLOUD_WORDS). */
+  words?: Array<{ word: string; count: number }>;
+  /** Best first: Borda points (first place = number of items) and the average place (1 = top). */
+  ranking?: Array<{ optionId: string; points: number; avgRank: number }>;
+  /** Per statement: the average, how many rated it and how many gave each value 1..scale. */
+  rating?: Array<{ optionId: string; avg: number; count: number; dist: number[] }>;
+  /** Most upvoted first; hidden questions left out. `by`: the asker's name unless asked anonymously. */
+  questions?: Array<{ id: string; text: string; by?: string; votes: number; answered: boolean; at: number }>;
 }
 
 /** Private mode: while active, what participants add stays in their private layer until revealed. */
