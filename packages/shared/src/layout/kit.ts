@@ -167,8 +167,9 @@ export function shapeSize(text: string, kind: ShapeKind, fontSize = 16): { w: nu
   let w = Math.max(120, m.w + 40);
   let h = Math.max(60, m.h + 28);
   if (kind === 'diamond') {
-    w = Math.max(150, m.w * 1.6 + 40);
-    h = Math.max(96, m.h * 1.8 + 32);
+    // The text sits in the middle half of a diamond (the shape feature's text box).
+    w = Math.max(150, m.w * 2 + 44);
+    h = Math.max(96, m.h * 2 + 32);
   } else if (kind === 'ellipse') {
     w = Math.max(120, m.w * 1.35 + 40);
     h = Math.max(70, m.h * 1.35 + 28);

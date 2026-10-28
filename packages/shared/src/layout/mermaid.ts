@@ -3,12 +3,14 @@
 // notes). Written in-house: Mermaid's own parser drags in its renderer. Styling directives are
 // skipped; anything else unknown is an error naming the line, so nothing is silently dropped.
 import type { ShapeKind } from '../elements';
-import type { Direction, GraphEdgeInput, GraphGroupInput, GraphNodeInput, SequenceInput } from './types';
+import type { Direction, GraphEdgeInput, GraphGroupInput, GraphNodeInput, OutlineNodeInput, SequenceInput } from './types';
 import { LAYOUT_LIMITS, LayoutError } from './types';
 
 export type MermaidDiagram =
   | { kind: 'graph'; direction: Direction; nodes: GraphNodeInput[]; edges: GraphEdgeInput[]; groups: GraphGroupInput[] }
-  | { kind: 'sequence'; diagram: SequenceInput };
+  | { kind: 'sequence'; diagram: SequenceInput }
+  /** [additive] `mindmap`: one root, nesting by indentation. */
+  | { kind: 'mindmap'; root: OutlineNodeInput };
 
 const IGNORED = /^(style|classDef|class|click|linkStyle|accTitle|accDescr|direction)\b/;
 
@@ -154,6 +156,12 @@ function splitStatements(source: string): Array<{ text: string; line: number }> 
   return out.filter((s) => s.text);
 }
 
+/** A supported diagram header alone on its line (after comments); prose starting "Graph of …" is not one. */
+const HEADER = /^\s*(?:%%[^\n]*\n\s*)*(?:(?:flowchart|graph)(?:[ \t]+(?:TB|TD|BT|RL|LR))?|sequenceDiagram|mindmap)[ \t]*(?:\r?\n|;|$)/i;
+
+/** Whether `text` is Mermaid source this reader handles (pasted text the app turns into a diagram). */
+export const looksLikeMermaid = (text: string | null | undefined): boolean => !!text && HEADER.test(text);
+
 export function parseMermaid(source: string): MermaidDiagram {
   if (typeof source !== 'string' || !source.trim()) throw new LayoutError('The Mermaid source is empty');
   if (source.length > LAYOUT_LIMITS.source) throw new LayoutError(`Mermaid source is longer than ${LAYOUT_LIMITS.source} characters`);
@@ -161,12 +169,70 @@ export function parseMermaid(source: string): MermaidDiagram {
   const head = stmts.shift();
   if (!head) throw new LayoutError('The Mermaid source is empty');
   if (/^sequenceDiagram\b/.test(head.text)) return { kind: 'sequence', diagram: parseSequence(stmts) };
+  // Mind maps nest by indentation, so they are read from the raw lines.
+  if (/^mindmap\s*$/.test(head.text)) return { kind: 'mindmap', root: parseMindmap(source, head.line) };
   const m = /^(?:flowchart|graph)\b\s*(TB|TD|BT|RL|LR)?\s*(.*)$/i.exec(head.text);
-  if (!m) return fail(head.line, `only flowcharts ("flowchart TD") and sequence diagrams are supported, not "${head.text.slice(0, 40)}"`);
+  if (!m) return fail(head.line, `only flowcharts ("flowchart TD"), sequence diagrams and mind maps are supported, not "${head.text.slice(0, 40)}"`);
   const dir = (m[1] ?? 'TB').toUpperCase();
   const direction: Direction = dir === 'TD' ? 'TB' : (dir as Direction);
   if (m[2]) stmts.unshift({ text: m[2], line: head.line });
   return { kind: 'graph', direction, ...parseFlowchart(stmts) };
+}
+
+/** Mind-map node brackets (Mermaid draws them as square, rounded, circle, bang, cloud, hexagon). */
+const MIND_SHAPES: Array<[string, string]> = [
+  ['((', '))'],
+  ['))', '(('],
+  ['{{', '}}'],
+  ['(', ')'],
+  [')', '('],
+  ['[', ']'],
+];
+
+/**
+ * `mindmap` source: one item per line, nested by indentation, the first item the root. An item is
+ * `text` or `id` + brackets around the text; icons (`::icon(…)`) and classes (`:::name`) are
+ * skipped, since the board's mind maps have no such styles.
+ */
+function parseMindmap(source: string, headLine: number): OutlineNodeInput {
+  const lines = source.split(/\r\n?|\n/);
+  let root: OutlineNodeInput | null = null;
+  let rootIndent = -1;
+  const stack: Array<{ indent: number; node: OutlineNodeInput }> = [];
+  let count = 0;
+  for (let i = headLine; i < lines.length; i++) {
+    const raw = lines[i].replace(/%%.*$/, '').replace(/\t/g, '  ');
+    const t = raw.trim();
+    if (!t || /^::icon\(/.test(t) || /^:::/.test(t)) continue;
+    const line = i + 1;
+    const indent = raw.length - raw.trimStart().length;
+    const body = t.replace(/:::[\w\s-]+$/, '').trim();
+    let node: OutlineNodeInput = { text: label(body) };
+    const idm = /^([\w-]*)/.exec(body)!;
+    const after = body.slice(idm[1].length);
+    for (const [open, close] of MIND_SHAPES) {
+      if (!after.startsWith(open) || !after.endsWith(close) || after.length < open.length + close.length) continue;
+      const text = label(after.slice(open.length, after.length - close.length));
+      node = { text, ...(idm[1] ? { id: idm[1] } : {}) };
+      break;
+    }
+    if (!node.text) return fail(line, 'a mind-map item needs a text');
+    if (++count > LAYOUT_LIMITS.elements) throw new LayoutError(`At most ${LAYOUT_LIMITS.elements} items per mind map`);
+    if (!root) {
+      root = node;
+      rootIndent = indent;
+      stack.push({ indent, node });
+      continue;
+    }
+    if (indent <= rootIndent) return fail(line, `a mind map has one root ("${root.text.slice(0, 30)}"); indent "${node.text.slice(0, 30)}" under it`);
+    while (stack.length && stack[stack.length - 1].indent >= indent) stack.pop();
+    const parent = stack[stack.length - 1].node;
+    if (stack.length > LAYOUT_LIMITS.depth) return fail(line, `nested deeper than ${LAYOUT_LIMITS.depth} levels`);
+    (parent.children ??= []).push(node);
+    stack.push({ indent, node });
+  }
+  if (!root) throw new LayoutError('The mind map has no items');
+  return root;
 }
 
 function parseFlowchart(stmts: Array<{ text: string; line: number }>) {
@@ -176,7 +242,7 @@ function parseFlowchart(stmts: Array<{ text: string; line: number }>) {
   const stack: GraphGroupInput[] = [];
   /** Nodes given a text somewhere (an id only ever linked to may be a subgraph's). */
   const declared = new Set<string>();
-  const touch = (n: { id: string; text?: string; shape?: ShapeKind }) => {
+  const touch = (n: { id: string; text?: string; shape?: ShapeKind }, standalone = false) => {
     if (n.text !== undefined) declared.add(n.id);
     if (groups.some((g) => g.id === n.id)) {
       if (n.text !== undefined) throw new LayoutError(`Mermaid: "${n.id}" is a subgraph and a node`);
@@ -191,8 +257,9 @@ function parseFlowchart(stmts: Array<{ text: string; line: number }>) {
       prev.shape = n.shape ?? prev.shape;
     }
     const g = stack[stack.length - 1];
-    // A node belongs to the subgraph where it first appears (or is re-declared with a shape).
-    if (g && (!prev || n.text !== undefined)) {
+    // A node belongs to the subgraph where it first appears, or where it is named on its own line
+    // or re-declared with a shape (Mermaid: listing an existing node in a subgraph moves it there).
+    if (g && (!prev || n.text !== undefined || standalone)) {
       for (const other of groups) other.nodes = other.nodes.filter((id) => id !== n.id);
       g.nodes.push(n.id);
     }
@@ -225,7 +292,8 @@ function parseFlowchart(stmts: Array<{ text: string; line: number }>) {
       left.push(readNode(c));
       ws(c);
     }
-    left.forEach(touch);
+    const standalone = c.i >= c.s.length;
+    left.forEach((n) => touch(n, standalone));
     while (c.i < c.s.length) {
       const link = readLink(c);
       if (!link) fail(line, `can't read "${c.s.slice(c.i, c.i + 30)}"`);
@@ -236,7 +304,7 @@ function parseFlowchart(stmts: Array<{ text: string; line: number }>) {
         right.push(readNode(c));
         ws(c);
       }
-      right.forEach(touch);
+      right.forEach((n) => touch(n));
       for (const a of left)
         for (const b of right) {
           if (edges.length >= LAYOUT_LIMITS.elements) throw new LayoutError(`At most ${LAYOUT_LIMITS.elements} edges per diagram`);

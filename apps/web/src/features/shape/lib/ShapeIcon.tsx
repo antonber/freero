@@ -4,8 +4,10 @@ import { insetPaths } from './geometry';
 const WIDE = new Set<ShapeKind>([
   'arrowRight', 'arrowLeft', 'parallelogram', 'chevron', 'hexagon', 'terminator', 'manualInput', 'manualOperation',
   'display', 'delay', 'storedData', 'loopLimit', 'punchedTape', 'netSwitch', 'netLaptop',
+  'wfBrowser', 'wfDesktop', 'wfButton', 'wfInput', 'wfSearch', 'wfDropdown', 'wfTabs', 'wfNavBar', 'wfCheckbox', 'wfRadio', 'wfToggle',
+  'wfSlider', 'wfProgress', 'wfImage', 'wfTextArea', 'wfModal',
 ]);
-const TALL = new Set<ShapeKind>(['umlActor', 'netPhone', 'collate', 'umlLifeline']);
+const TALL = new Set<ShapeKind>(['umlActor', 'netPhone', 'collate', 'umlLifeline', 'wfPhone', 'wfTablet', 'wfCard']);
 
 /** Small line icon of a shape kind drawn from the same geometry as the element (Freero's own). */
 export function ShapeIcon({ kind, size = 20, strokeWidth = 1.6 }: { kind: ShapeKind; size?: number | string; strokeWidth?: number | string }) {

@@ -20,6 +20,9 @@
 //   'estimation' -> features/estimation (planning poker; sealed estimates in the PRIVATE layer)
 //   'retro'    -> features/retro      (key 'session' -> the guided retro's phase)
 //   'presenterNotes' -> features/present (frame id -> the presenter's notes for that slide)
+//   'diagramSources' -> features/from-text (diagram id -> the source a diagram was laid out from
+//                                     and what that layout wrote; board content, so a restored
+//                                     version brings back the source that matches its diagram)
 //
 // Content some connections must not read (private drafts, sealed ballots, hidden frames'
 // contents) never enters this doc: it lives in server-held LAYER docs with the same layout (an
