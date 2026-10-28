@@ -1717,7 +1717,8 @@ args — `templates.insert`, `private-mode.start/reveal`, `timer.start/stop`, `f
 `voting.start/end`, `arrange.clusterByColor` — so private writing, sealed votes and the
 facilitator's limits keep their own guarantees. The laser pointer (`features/present`) is presence
 only (`ext.present.laser`, receivers fade points from their own arrival time); presenter notes are
-the `presenterNotes` collection (frame id → text), never elements, so never in exports.
+the `presenterNotes` collection (frame id → text), never elements, so never in exports (element
+content: a frame's notes live in the frame's doc, see "Board layers").
 
 **Live activities** (KAI-132, `modules/engage`, `features/engage`): polls, word clouds, rankings,
 rating scales and Q&A. The `activity` element (question, options, settings) is ordinary board
@@ -1745,8 +1746,8 @@ only to connections that may read them:
 
 | layer (wire / stored) | read by | written by | holds |
 |---|---|---|---|
-| `private` / `u:<userId>` | that user's sockets | that user, while owner/editor | private-mode drafts (`elements`), sealed ballots (`voting`), sealed planning-poker picks (`estimation`) |
-| `editors` / `editors` | owner/editor sockets | owners/editors | contents of hidden frames (`elements`); pending suggestions (`suggestions`, created only by the server; see "Suggestions") |
+| `private` / `u:<userId>` | that user's sockets | that user, while owner/editor | private-mode drafts (`elements`, with their element content: see below), sealed ballots (`voting`), sealed planning-poker picks (`estimation`) |
+| `editors` / `editors` | owner/editor sockets | owners/editors | contents of hidden frames (`elements`, with their element content: table cells…); pending suggestions (`suggestions`, created only by the server; see "Suggestions") |
 
 - Wire format: `WS_MESSAGE_LAYER` envelopes around y-protocols sync messages, `WS_MESSAGE_LAYER_OP`
   for reveal/discard (`@freero/shared` api.ts). A socket asking for a layer it may not read gets no
@@ -1802,6 +1803,53 @@ only to connections that may read them:
   were: a frame visible then comes back visible with the content the shared doc had (the editors
   clients' sweep drops a stale editors-layer copy of the same ids), a frame hidden then comes back
   hidden with whatever its editors layer holds NOW (hidden contents are not versioned).
+- **Element content follows its element** (KAI-230): what an element keeps outside the `elements`
+  map — the collections in `@freero/shared` `ELEMENT_CONTENT_COLLECTIONS`, each with a function
+  from an entry's key to the element it belongs to (`tableCells`, `presenterNotes`,
+  `engageResults`) — lives in the SAME doc as that element, so a table in a hidden frame or a private
+  draft never sends its cell text to a socket that may not read the table. One declaration in
+  `@freero/shared` (like `Y_KEPT_ON_RESTORE`) because both runtimes enforce it:
+  - Client (`engine/store`): `editor.collection(name)` of such a collection reads the shared doc and
+    both layers as one; a write goes to the owner element's doc. Every element move between docs
+    (`BoardStore.writeElement`) carries its entries in the same transaction, so dragging a table into
+    or out of a hidden frame is one undo step for the cells too (undoable collections are tracked in
+    the layer docs' undo managers). The owner/editor sweep (`editor/layers.ts`) also places entries
+    left elsewhere (a collaborator typing into a cell while the table was being hidden, untracked
+    content after an undo); a stale editors-layer copy of an element takes its content with it.
+  - Server (`realtime/elementContent.ts`): requests (`applyChange`) write entries into the owner's
+    doc and move them when they move the element; reveal / discard of drafts (`applyLayerOp` on
+    `elements`) carries their entries, and an op naming an element-content collection does nothing
+    (content is never revealed without its element); a socket's write of an entry into the shared doc
+    for an element that lives only in the editors layer (or only in the writer's own private layer)
+    is moved there INSIDE the transaction that applies the update (the shared-doc update other
+    sockets get carries no text, as with the facilitation guards); loading a board places every
+    misplaced entry (idempotent: this migrated boards from before the rule). An element in two docs
+    (a move in flight) or none (deleted) has no home: its entries stay put until it has one.
+  - Collections only the server writes (`SERVER_WRITTEN_COLLECTIONS`, `engageResults`) are moved by
+    the server, never by clients (a socket's change to them is undone): `writeServerCollection` writes
+    each entry into its element's doc, and the room re-places them after every element move it applied.
+  - Readers: `BoardView.collection(name)` merges the layers the reader may read for these collections
+    (the outline, REST/MCP item reads, AI); exports, templates and thumbnails are made on the client
+    from what that user can see; version snapshots and the references index read the shared doc only.
+
+**What else lives outside `elements`, and why it is (not) withheld** (audit, KAI-230):
+
+| Collection | Holds | Withheld with hidden / private items? |
+|---|---|---|
+| `tableCells` | cell text and fill, per table | yes: element content |
+| `presenterNotes` | notes per frame | yes: element content (a frame inside a hidden frame or a draft). A visible frame's notes stay readable by everyone with access, by design (the panel says so) — that includes a hidden frame's OWN notes, since the frame itself is visible |
+| `engageResults` | live activity results | yes: element content, moved by the server |
+| `diagramSources` | a diagram's Mermaid / outline source and the ids it laid out | not element content (one record, many elements): from-text keeps a source only while the WHOLE diagram is shared content, offers editing only then, and refuses to write a source for a diagram that became hidden meanwhile. A diagram hidden after it was shared keeps the source everyone had already seen (hiding is not retroactive) |
+| `comments` | threads pinned to items, messages | NOT yet: a thread on an item in a hidden frame / a draft is in the shared doc (KAI-234). Threads are social records with server readers that only know the shared doc (commenter rules, mention notifications, account purge, references, data export) and their owner is not in the key; moving them is its own change |
+| `voting`, `estimation` | ballots / picks: element ids and values, sealed ones in private layers | ids only, no content: an item in a hidden frame can be voted on or estimated by editors, and viewers learn its id and count, never its text |
+| `tags` | the board's tag vocabulary (name, colour) | no: board-level, shared by many items; an item's tag ids are on the element and follow it |
+| `timer`, `privateMode`, `facilitation`, `retro`, `call`, `shapeLibraries` | session / board settings | nothing item-specific |
+| `suggestions` (editors layer) | proposed changes | already editors-only; accepting writes through the same placement |
+| kanban / swimlane / mind map / `objectlink` | fields of their elements | elements: follow their layer already |
+
+Card notifications (`realtime/cards.ts`) observe the shared doc only, so a card inside a hidden frame
+or a draft notifies nobody (a draft's assignee hears of it when it is revealed), and due-date
+reminders re-check the card in the assignee's own `readBoardView`.
 - Features use it through `Editor.privateCollection(name)` / `usePrivateCollection`,
   `revealPrivate` / `discardPrivate`, `setPrivatePlacement`, `layerOf(id)` and
   `ElementDefinition.hidesContents`. Trust model: owners/editors are trusted with integrity (they can
