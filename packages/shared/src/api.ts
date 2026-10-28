@@ -1007,8 +1007,13 @@ export interface AiActionRequest {
   ids?: string[];
   /** diagram: what to draw (default flowchart). */
   diagram?: AiDiagramKind;
-  /** 'preview' (default): laid out and placed, not written. 'board': written now as one change. */
-  target?: 'board' | 'preview';
+  /**
+   * 'preview' (default): laid out and placed, not written. 'board': written now as one change.
+   * 'suggestions' (KAI-169): proposed for people who can edit to accept ("AI for <Person>"). A
+   * result that moves OTHER people's items (sorting their notes) is always proposed, whatever was
+   * asked: the response's `target` says what happened.
+   */
+  target?: 'board' | 'preview' | 'suggestions';
   near?: string;
   at?: { x: number; y: number };
 }

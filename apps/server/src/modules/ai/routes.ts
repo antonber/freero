@@ -37,7 +37,7 @@ export default function aiRoutes(_ctx: ServerContext): Router {
     rateLimit('ai', 'user'),
     handle(async (req, res) => {
       const result: AiActionResponse = await runAiAction(req.params.id, currentUser(req).id, req.body);
-      res.status(result.target === 'board' ? 201 : 200).json(result);
+      res.status(result.target === 'preview' ? 200 : 201).json(result);
     }),
   );
 
