@@ -4,7 +4,8 @@ import connectorDef from './element';
 import { computeRoute, resolveEnds, tAlong, type End } from './lib/geometry';
 import { moveLabel, parsePart, partAt, writeLabel } from './lib/labels';
 import { refreshCache } from './lib/model';
-import { nextToSide } from './lib/quick';
+import { createTestBoard, type ElementDefinition, type FeatureBundle } from '@engine';
+import { nextToSide, quickSpotTaken } from './lib/quick';
 
 const box = (id: string, x: number, y: number, extra: Partial<BoardElement> = {}): BoardElement =>
   ({ id, type: 'sticky', x, y, w: 100, h: 100, rotation: 0, z: 0, ...extra }) as BoardElement;
@@ -139,6 +140,30 @@ describe('quick-connect copies', () => {
     const second = nextToSide(a, 'right', taken);
     expect(second.x).toBe(first.x);
     expect(Math.abs(second.y)).toBeGreaterThanOrEqual(100);
+  });
+
+  it('leave out a "+" that would sit on a neighbouring item (mind-map sibling), not one inside the frame around it', () => {
+    const def = (type: string, extra: Partial<ElementDefinition> = {}) =>
+      ({ type, Component: () => null, defaults: () => ({ type, w: 100, h: 40 }), ...extra }) as unknown as ElementDefinition;
+    const bundle: FeatureBundle = {
+      manifest: { name: 'items', description: 'test items' },
+      elements: [def('sticky'), def('frame', { container: true })],
+      tools: [], formats: [], panels: [], commands: [],
+    };
+    const board = createTestBoard({ users: ['ann'], features: [bundle] });
+    try {
+      const [ed] = board.editors('items');
+      ed.create({ type: 'frame', x: -200, y: -200, w: 800, h: 600 } as never);
+      // Three siblings stacked 14 px apart, like a mind map's children.
+      for (const y of [0, 54, 108]) ed.create({ type: 'sticky', x: 0, y, w: 100, h: 40 } as never);
+      const mid = ed.getElements().find((e) => e.type === 'sticky' && e.y === 54)!;
+      const r = 12;
+      expect(quickSpotTaken(ed, mid, { x: 50, y: 54 - 26 }, r)).toBe(true); // top: on the sibling above
+      expect(quickSpotTaken(ed, mid, { x: 50, y: 94 + 26 }, r)).toBe(true); // bottom: on the one below
+      expect(quickSpotTaken(ed, mid, { x: 100 + 26, y: 74 }, r)).toBe(false); // right: only the frame
+    } finally {
+      board.destroy();
+    }
   });
 });
 

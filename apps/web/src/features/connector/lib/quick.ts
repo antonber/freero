@@ -35,6 +35,18 @@ export function nextToSide(
   return { x: Math.round(base.x), y: Math.round(base.y) };
 }
 
+/**
+ * True when a quick-connect "+" of `el` drawn at `world` (radius `r`, world units) would sit on
+ * another item — a mind-map sibling just above, the next sticky in a dense grid. That "+" is left
+ * out: it would cover the item and take the clicks meant for it, and a copy on that side would
+ * have to fan out anyway. Containers around the item (frames) and lines don't count.
+ */
+export function quickSpotTaken(editor: Editor, el: BoardElement, world: Point, r: number): boolean {
+  return editor
+    .elementsInRect({ x: world.x - r, y: world.y - r, w: 2 * r, h: 2 * r }, 'intersect')
+    .some((o) => o.id !== el.id && o.attachedTo !== el.id && o.type !== 'connector' && !editor.getDefinition(o.type)?.container);
+}
+
 /** Boxes of the items that a new copy must not land on. */
 export function occupiedRects(editor: Editor, around: BoardElement, radius: number): Rect[] {
   const b = aabb(around);
