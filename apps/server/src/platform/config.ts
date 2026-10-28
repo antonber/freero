@@ -40,7 +40,23 @@ export type RateLimitName =
   | 'apiCredential'
   | 'agentWrite'
   | 'oauthToken'
-  | 'oauthRegister';
+  | 'oauthRegister'
+  | 'trackerSend';
+
+/** Issue-tracker sync (KAI-153; docs/trackers.md). */
+export interface TrackersConfig {
+  /** Trackers may be at private / loopback addresses (a self-hosted Jira Data Center on the LAN). */
+  privateEndpoints: boolean;
+  /** How often connections that poll (no webhooks) ask their tracker what changed. */
+  pollMs: number;
+  /** How often connections with webhooks poll anyway, to catch a delivery that never came. */
+  fallbackPollMs: number;
+  /** Jira Cloud OAuth 2.0 (3LO) app the operator registered at developer.atlassian.com, or null. */
+  jiraOAuth: { clientId: string; clientSecret: string } | null;
+  /** Atlassian's authorization server and API gateway (overridden only to test against a mock). */
+  jiraAuthUrl: string;
+  jiraApiUrl: string;
+}
 
 /** A model endpoint Freero calls for AI features (docs/ai.md). */
 export interface AiProviderConfig {
@@ -191,6 +207,7 @@ export interface Config {
   activityIdleMs: number;
   rateLimits: Record<RateLimitName, RateLimitRule>;
   ai: AiConfig;
+  trackers: TrackersConfig;
   /** Configured sign-in providers (each needs its client id AND secret); empty = password only. */
   oidcProviders: OidcProviderConfig[];
   /** A MaxMind-format (.mmdb) GeoLite2/GeoIP2 City or Country database for session locations, or null. */
@@ -277,6 +294,7 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   agentWrite: '60/1m', // per API token / authorised app: changes it makes to boards (KAI-168), apart from the person's own editing
   oauthToken: '60/1m', // per IP: OAuth token and revocation requests
   oauthRegister: '20/1h', // per IP: OAuth apps registering themselves (dynamic client registration)
+  trackerSend: '60/10m', // per user: issues created or imported in a tracker (each calls the tracker's API)
   report: '20/1h', // abuse reports per IP and per signed-in user
   appeal: '10/1h', // appeals against moderation actions per IP
 };
@@ -313,6 +331,7 @@ const ENV_NAME: Record<RateLimitName, string> = {
   agentWrite: 'RATE_LIMIT_AGENT_WRITE',
   oauthToken: 'RATE_LIMIT_OAUTH_TOKEN',
   oauthRegister: 'RATE_LIMIT_OAUTH_REGISTER',
+  trackerSend: 'RATE_LIMIT_TRACKER_SEND',
   report: 'RATE_LIMIT_REPORT',
   appeal: 'RATE_LIMIT_APPEAL',
 };
@@ -503,6 +522,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
   const aiFor = (str('AI_INSTANCE_FOR') ?? 'teams').toLowerCase().split(',').map((v) => v.trim()).filter(Boolean);
   if (aiFor.some((v) => !['personal', 'teams', 'none'].includes(v))) problems.push('AI_INSTANCE_FOR is a comma-separated list of personal, teams (or none)');
+  const jiraClientId = str('TRACKER_JIRA_CLIENT_ID');
+  const jiraClientSecret = str('TRACKER_JIRA_CLIENT_SECRET');
+  if (!!jiraClientId !== !!jiraClientSecret) problems.push('TRACKER_JIRA_CLIENT_ID and TRACKER_JIRA_CLIENT_SECRET go together (the Jira Cloud OAuth app)');
+  const trackers: TrackersConfig = {
+    privateEndpoints: bool('TRACKER_PRIVATE_ENDPOINTS', false),
+    pollMs: int('TRACKER_POLL_SECONDS', 60, 5, 86_400) * 1000,
+    fallbackPollMs: int('TRACKER_FALLBACK_POLL_SECONDS', 900, 5, 7 * 86_400) * 1000,
+    jiraOAuth: jiraClientId && jiraClientSecret ? { clientId: jiraClientId, clientSecret: jiraClientSecret } : null,
+    jiraAuthUrl: (url('TRACKER_JIRA_AUTH_URL', ['https:', 'http:']) ?? 'https://auth.atlassian.com').replace(/\/+$/, ''),
+    jiraApiUrl: (url('TRACKER_JIRA_API_URL', ['https:', 'http:']) ?? 'https://api.atlassian.com').replace(/\/+$/, ''),
+  };
   const ai: AiConfig = {
     instance: aiInstance,
     instanceFor: { personal: aiFor.includes('personal'), teams: aiFor.includes('teams') },
@@ -561,6 +591,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     activityIdleMs: int('ACTIVITY_IDLE_SECONDS', 60, 1, 3600) * 1000,
     rateLimits,
     ai,
+    trackers,
     oidcProviders,
     geoipDbPath,
     ssoDnsServers,

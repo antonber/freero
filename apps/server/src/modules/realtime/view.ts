@@ -140,8 +140,9 @@ export interface BoardChange {
    */
   remove?: string[];
   /**
-   * Entries to set in feature collections of the shared doc (content kept outside elements).
-   * Commenters may only write `comments`, and there only records they own (commentRules.ts).
+   * Entries to set in feature collections of the shared doc (content kept outside elements); an
+   * owner's or editor's `null` deletes the entry. Commenters may only write `comments`, and there
+   * only records they own (commentRules.ts).
    */
   collections?: Record<string, Record<string, unknown>>;
 }
@@ -281,7 +282,9 @@ export function applyChange(main: Y.Doc, layers: ReadonlyMap<string, Y.Doc>, cha
   for (const [name, entries] of Object.entries(change.collections ?? {})) {
     const map = main.getMap<unknown>(name);
     queue(main, () => {
-      for (const [k, v] of Object.entries(entries)) map.set(k, v);
+      // An owner's or editor's `null` removes the entry (commenters' records go through their rule above).
+      for (const [k, v] of Object.entries(entries)) if (v === null && editor) map.delete(k);
+      else map.set(k, v);
     });
   }
   for (const [doc, writes] of byDoc) doc.transact(() => writes.forEach((w) => w()), origin);
