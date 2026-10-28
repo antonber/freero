@@ -84,7 +84,6 @@ function draw(el: BoardElement, byId: Map<string, BoardElement>) {
       const parent = m.parentId ? byId.get(m.parentId) : null;
       return (
         <g key={el.id}>
-          {parent && <line x1={parent.x + parent.w / 2} y1={parent.y + parent.h / 2} x2={x + w / 2} y2={y + h / 2} stroke={m.color} strokeWidth={2} />}
           <rect x={x} y={y} width={w} height={h} rx={h / 2} fill={parent ? '#fff' : m.color} stroke={m.color} strokeWidth={2} />
           <Box x={x + 8} y={y} w={w - 16} h={h} value={text(el)} size={14} />
         </g>
@@ -122,6 +121,12 @@ export function AiPreview({ elements, moved = [] }: Props) {
           <path d="M0,0 L10,5 L0,10 z" fill="var(--fr-ink-2)" />
         </marker>
       </defs>
+      {/* Mind-map branches under every topic pill. */}
+      {elements.map((el) => {
+        const m = el as BoardElement & { parentId?: string | null; color?: string };
+        const parent = el.type === 'mindmap' && m.parentId ? byId.get(m.parentId) : null;
+        return parent ? <line key={`branch-${el.id}`} x1={parent.x + parent.w / 2} y1={parent.y + parent.h / 2} x2={el.x + el.w / 2} y2={el.y + el.h / 2} stroke={m.color} strokeWidth={2} /> : null;
+      })}
       {sorted.map((el) => draw(el, byId))}
     </svg>
   );
