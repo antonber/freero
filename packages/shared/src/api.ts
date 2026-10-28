@@ -67,7 +67,13 @@ export interface BoardMember {
 // POST /api/auth/password/reset     body { token, password } -> AuthResponse (signs in; ends every other session)
 // POST /api/auth/password           body { currentPassword, newPassword } -> { ok: true } (ends other sessions)
 // POST /api/auth/email              body { email, password } -> { ok: true } (sends a link to the NEW address)
-// POST /api/auth/email/confirm      body { token } -> { ok: true } (the new address becomes the account's)
+// POST /api/auth/email/confirm      body { token } -> { ok: true } (the new address becomes the account's;
+//                                   a verified previous address gets a "this wasn't me" link, 7 days)
+// POST /api/auth/email/revert       body { token, password } -> LoginResponse ("this wasn't me": back to the
+//                                   previous address, new password, two-step/providers added since removed,
+//                                   every session ended; then signs in like a reset link)
+// Security notices (no opt-out) are mailed for password/email/two-step/recovery-code/provider changes,
+// deletion, and a sign-in from a browser that has not signed in to the account before.
 //
 // Sessions (signed-in devices):
 // GET    /api/auth/sessions         -> { sessions: SessionInfo[] }
@@ -90,7 +96,7 @@ export interface BoardMember {
 // least one connected provider.
 //
 // Two-factor (authenticator app, TOTP):
-// POST /api/auth/login, /api/auth/password/reset -> LoginResponse: { twoFactorRequired: true } instead of
+// POST /api/auth/login, /api/auth/password/reset, /api/auth/email/revert -> LoginResponse: { twoFactorRequired: true } instead of
 //      a session when the account has two-factor on (an HttpOnly cookie carries the pending sign-in)
 // POST /api/auth/login/two-factor   body { code } (6 digits, or a recovery code) -> AuthResponse
 // GET  /api/auth/security           -> SecurityInfo

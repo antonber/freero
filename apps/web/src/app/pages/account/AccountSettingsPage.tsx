@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, BadgeCheck, CircleAlert, ImageUp, LogOut, Mail, Monitor, ShieldCheck, Trash2 } from 'lucide-react';
-import type { SecurityInfo, SessionInfo } from '@freero/shared';
+import { describeDevice, type SecurityInfo, type SessionInfo } from '@freero/shared';
 import { Avatar, Button, ColorSwatches, Input, Logo, Modal, Spinner, useToast } from '@ui';
 import { api, ApiError } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
-import { describeDevice } from '../../lib/device';
 import { relativeTime } from '../../lib/time';
 import { Section } from './Section';
 import { isReauthRequired, needsReauth, ReauthPrompt, SignInMethodsSection, TwoFactorSection } from './SecuritySections';
