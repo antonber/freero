@@ -261,6 +261,19 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   is there so workspace-shared templates (KAI-37) need no contract change — offer owner-only
   actions only when it equals `user.id`. The visibility rule is one predicate in
   `modules/templates/repo.ts`.
+- Version history (`features/history`, server `realtime/history.ts` + `routes.ts`):
+  `Host.versions` (`list / load / nameCurrent / rename / restore`; `unavailableVersionHistory()`
+  for hosts without it) and `<StaticBoardView state>` (`@engine`): a read-only board showing a
+  version, built as a SEPARATE local engine session (own doc from `state`, no network, role
+  viewer, hand tool) from the live board's feature bundles — previewing never touches the live
+  doc, and nobody else sees it. Features never apply a version themselves: `restore` runs on the
+  server, which applies it to the live doc as a new change (all clients, all instances converge)
+  after keeping the board as it was as a `before-restore` version. Undo of a restore = restoring
+  that version (the toast's Undo); Ctrl+Z does not revert it (like any change made by someone
+  else). Comments, votes and the timer are not rolled back (`Y_KEPT_ON_RESTORE` in
+  `@freero/shared`; a new social/session collection belongs there). Editors and owners only, in
+  the UI and on the server: an old version can hold content removed before the board was shared
+  with viewers or commenters.
 
 Elements, geometry and text (all optional on `ElementDefinition` unless noted):
 - **Reads inside `editor.transact` see its earlier writes** (`getElements()`, `getElement()`,
@@ -480,19 +493,41 @@ modules/<name>/    auth, boards, members, uploads, realtime …
 `ctx` (`platform/context.ts`) carries `config` and `onShutdown(fn)` (realtime flushes docs there).
 Cross-module imports name the index file explicitly (`'../auth/index'`), which is what [S2] checks.
 Auth is a plain middleware exported by `modules/auth/index.ts` (`requireUser`, `currentUser(req)`),
-not a reserved hook. Server modules today: `auth` (users, sessions), `boards` (boards, stars,
-opens; trash), `members` (board_members, role resolution), `uploads` (uploads; files in object storage or
+not a reserved hook. Server modules today: `auth` (users, sessions, auth_tokens: email
+verification, password reset, email change, session list/revoke, avatars, deletion scheduling),
+`boards` (boards, stars, opens; trash), `members` (board_members, board_invites: pending invites
+for addresses without an account; role resolution), `uploads` (uploads; files in object storage or
 `<data>/uploads`), `realtime` (board_docs, board_doc_updates, board_doc_snapshots; y-websocket
-protocol + role filter + update log), `unfurl` (link previews for pasted URLs; no table; SSRF-safe
-fetch in `unfurl/fetch.ts`), `templates` (saved templates; content is opaque engine JSON).
+protocol + role filter + update log; version history + snapshot retention), `unfurl` (link
+previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`), `templates` (saved
+templates; content is opaque engine JSON), `accounts` (no table: the purge after the deletion grace
+period, orchestrating the owning modules' exports).
 
 - Per-user quotas (boards, templates) count and insert in one transaction under a per-owner
   `pg_advisory_xact_lock(hashtext('<module>.quota'), hashtext(userId))`; a count-then-insert
   lets parallel requests overshoot.
 - Trash: deleting a board sets `boards.deleted_at`; `repo.getBoard`/lists/access treat it as
   gone (sockets refused and closed after the live doc state is stored). Owners restore or delete
-  forever; `boards/init.ts` purges after `TRASH_RETENTION_DAYS` hourly on every instance, under
-  `pg_try_advisory_xact_lock` so replicas never purge at once. Periodic jobs follow this shape.
+  forever; `boards/init.ts` purges after `TRASH_RETENTION_DAYS` hourly on every instance as a
+  `platform/jobs` exclusive job, so replicas never purge at once.
+- Periodic jobs: `scheduleExclusiveJob(ctx, { name, lockKey, intervalMs, run })` from an init.ts
+  (trash purge, account purge). One instance runs a job at a time (a Postgres session advisory
+  lock held for the whole run); jobs must be idempotent, since a run can be cut short anywhere.
+- Accounts: `requireUser` answers 403 `{ code: 'account_pending_deletion' }` while an account is
+  in its deletion grace period (`requireSession` lets restore through), and `userFromCookieHeader`
+  (board sockets) treats it as signed out. Emailed links carry 256-bit single-use tokens stored as
+  sha256 and deleted on use (one `DELETE … RETURNING`, so two concurrent uses can't both win).
+  Proving an address (verification link, reset, email change, an invite link mailed to it) fires
+  `onEmailVerified`, where members turns that address's pending invites into memberships; an
+  unverified account never picks up invites and can't invite or share by link.
+- Ending a session (logout, "sign out" from another device, password reset/change, account
+  deletion) calls auth's in-process `onSessionEnd`; realtime is its listener and closes that
+  session's board sockets on every instance through its `end-session` control message — the one
+  way to drop a session's live connections.
+- Account purge: owned boards (trash included) and the avatar file are deleted, the user's
+  comments elsewhere become "Deleted user" (`realtime.renameCommentAuthor`, through the live room),
+  then the user row (cascades). Other files they uploaded stay — images on other people's boards
+  are part of those boards — and files nothing references are left to the uploads sweep.
 
 ### Database (`platform/db.ts`)
 
@@ -548,6 +583,14 @@ operations). What a module needs to know:
 - **Files** go through `platform/storage.ts` (`storage().put/get/delete`: S3 or local disk), and
   only `modules/uploads` uses it; other modules call `saveUpload`/`deleteUpload`. Board content
   always references `/uploads/<key>`, whatever the backend.
+- **Email** (`platform/mail.ts`): `sendMail({ to, ...renderMail({ subject, title, paragraphs,
+  action, outro }) })` — SMTP with `SMTP_URL`, else the dev outbox (`<data>/outbox/*.json`, which
+  `npm run verify` reads to follow links). `renderMail` escapes everything; links via
+  `appUrl(req, path)`. Never log bodies (they carry tokens). `sendMailLater` when the answer must not
+  depend on (or wait for) the mail.
+- **Background jobs** (`platform/jobs.ts`): `scheduleExclusiveJob(ctx, { name, lockKey, intervalMs,
+  run })` runs on every instance's timer but one at a time (Postgres advisory lock); jobs must be
+  idempotent. `runExclusive(lockKey, fn)` for a one-off.
 - **Metrics** (`platform/metrics.ts`): `histogram`/`counter`/`gaugeFn` register module metrics
   (`freero_<module>_…`; see `realtime/metrics.ts`). Readiness of a new external dependency:
   `addReadinessCheck(name, fn)` (`platform/health.ts`).
@@ -569,7 +612,21 @@ a loaded board's log grows, and after a room unloads) folds the rows it read int
 deletes exactly those rows, guarded by the base's `version` (optimistic lock), so neither a save
 nor another instance's compaction running meanwhile is lost. It keeps a full-state snapshot at most
 every 30 min (`board_doc_snapshots`): the base of version history (`listBoardSnapshots` /
-`loadBoardSnapshot` in `realtime/index.ts`).
+`loadBoardSnapshot` in `realtime/index.ts`; REST in `realtime/routes.ts`). Snapshots have a
+`kind`: `auto` (compaction), `named` (never pruned), `before-restore`. Retention
+(`realtime/retention.ts`, job in `realtime/init.ts`, hourly on every instance under an advisory
+lock): non-named snapshots keep the newest per hour for a day, per day for a month, per week after;
+buckets are epoch-aligned, so a run is idempotent, and a snapshot is only ever deleted in favour of
+a newer one the same plan keeps. `RetentionPolicyFor` is the seam for workspace policies (KAI-51).
+
+Work done for a REQUEST rather than a socket (duplicate, trash, naming or restoring a version)
+goes through `withLiveRoom` (`rooms.ts`): the board's room is loaded on the handling instance
+(held like a joining socket, unloaded as usual after) and caught up with every other instance
+holding it — it sends a sync-request and waits for one sync-reply per other subscriber of the
+board channel (`subscribedInstances`, Redis `PUBSUB NUMSUB`; 2 s cap). So `snapshotBoardDoc` is
+the board as collaborators see it, including edits not saved yet anywhere (KAI-73). Closing a
+board's rooms (trash, delete) saves what each instance's sockets changed before dropping the doc
+(for a deleted board that save finds no board and is dropped).
 
 Several instances (`platform/pubsub.ts`: Redis pub/sub with `REDIS_URL`, in-process otherwise;
 messages in `realtime/peers.ts`): every instance holding a board publishes its own sockets'
@@ -589,8 +646,12 @@ that socket announced, and its `user` is always replaced by the authenticated us
 the server's doc): their own messages and reactions, threads they started (and their tombstones),
 deleting a thread/message together with its tombstone. Resolve/reopen (`s:`) is shared workflow
 state anyone who may comment can set (attributed via `by`); anyone may detach a pin whose element
-is gone. Tombstones are final. Owners and editors are trusted with the whole doc. Logging out
-(`auth.onSessionEnd`) closes every board socket opened with that session (4401). Member emails
+is gone. Tombstones are final. Owners and editors are trusted with the whole doc. Ending a session — logout,
+"sign out" from another device, password reset/change, account deletion — fires
+`auth.onSessionEnd` where it happened; realtime closes every board socket opened with that session
+(4401), on every instance through the `end-session` control message. The
+account purge rewrites the deleted user's comment authorship to "Deleted user" through the live
+room (`renameCommentAuthor`), so open boards update and the save queue persists it. Member emails
 (`GET /members`) are only sent to owners/editors.
 
 ### Board layers — content the server withholds (`realtime/layers.ts`, `engine/store/`)
@@ -654,8 +715,14 @@ only to connections that may read them:
   anyone's private layer; moving a board to the trash keeps every layer exactly as it was (live
   state, like the doc) and restoring brings them back. Saved templates and exports are made on the
   client from what that user can see: never another user's private layer, and hidden frames'
-  contents only for owners/editors (who see them). Version-history snapshots hold the shared doc
-  only (see KAI-49 for what restoring does with layers).
+  contents only for owners/editors (who see them).
+- **Version history** (KAI-49) versions and previews the shared doc only: a snapshot or preview
+  never contains private drafts, sealed ballots or the contents of a frame that was hidden at that
+  moment (history is editor-only anyway). Restoring never touches layer docs; `voting` (sealed
+  markers) and `privateMode` are in `Y_KEPT_ON_RESTORE`. Restoring brings back the frames as they
+  were: a frame visible then comes back visible with the content the shared doc had (the editors
+  clients' sweep drops a stale editors-layer copy of the same ids), a frame hidden then comes back
+  hidden with whatever its editors layer holds NOW (hidden contents are not versioned).
 - Features use it through `Editor.privateCollection(name)` / `usePrivateCollection`,
   `revealPrivate` / `discardPrivate`, `setPrivatePlacement`, `layerOf(id)` and
   `ElementDefinition.hidesContents`. Trust model: owners/editors are trusted with integrity (they can

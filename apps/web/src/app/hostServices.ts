@@ -1,7 +1,7 @@
 // Thin wrappers over the REST client for building the engine's `Host`
 // (see Host in engine/api.ts). Used from app/board/.
 import type { SavedTemplateSummary } from '@freero/shared';
-import type { ElementsSnapshot, Host, HostUser, LinkPreview, SavedTemplateInfo } from '@engine';
+import type { ElementsSnapshot, Host, HostUser, LinkPreview, SavedTemplateInfo, VersionHistory } from '@engine';
 import { api } from './api/client';
 
 const toTemplateInfo = (t: SavedTemplateSummary): SavedTemplateInfo => ({
@@ -27,6 +27,17 @@ export const saveTemplate: Host['saveTemplate'] = async ({ name, description, th
 
 export async function deleteTemplate(id: string): Promise<void> {
   await api.deleteTemplate(id);
+}
+
+/** Host.versions for a real board. */
+export function versionHistory(boardId: string): VersionHistory {
+  return {
+    list: async () => (await api.listVersions(boardId)).versions,
+    load: (id) => api.versionState(boardId, id),
+    nameCurrent: async (name) => (await api.nameVersion(boardId, name)).version,
+    rename: async (id, name) => (await api.renameVersion(boardId, id, name)).version,
+    restore: async (id) => (await api.restoreVersion(boardId, id)).before,
+  };
 }
 
 export function uploadImage(file: Blob): Promise<{ url: string }> {

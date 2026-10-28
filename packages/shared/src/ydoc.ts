@@ -20,16 +20,32 @@
 // contents) never enters this doc: it lives in server-held LAYER docs with the same layout (an
 // `elements` map, feature collections) until revealed — see WS_MESSAGE_LAYER in api.ts.
 //
-// The server relays and persists updates. It drops all updates from viewers, and for
-// commenters accepts only changes confined to the collections listed in COMMENTER_WRITABLE —
-// and in 'comments' only records the commenter owns (see CommentRecord in elements.ts and
-// apps/server/src/modules/realtime/commentRules.ts).
+// A new collection is board CONTENT by default (restoring a version rolls it back); social /
+// session collections go in Y_KEPT_ON_RESTORE below.
+//
+// The server never interprets contents (except to restore a version: top-level maps of JSON
+// values, and to check commenters' writes); it relays and persists updates. It drops all updates
+// from viewers, and for commenters accepts only changes confined to the collections listed in
+// COMMENTER_WRITABLE — and in 'comments' only records the commenter owns (see CommentRecord in
+// elements.ts and apps/server/src/modules/realtime/commentRules.ts).
 
 export const Y_ELEMENTS = 'elements';
 export const Y_SETTINGS = 'settings';
 
 /** Top-level types a commenter may modify (server-enforced). */
 export const COMMENTER_WRITABLE = ['comments'] as const;
+
+/**
+ * Top-level types that restoring an older version (version history) leaves as they are: social
+ * and session data (the conversation, a vote, the timer), not board content. Everything else —
+ * elements, settings and content collections (tags, table cells) — goes back to the version.
+ * A new social / session collection belongs here. 'voting' also holds the "has voted" markers of
+ * a sealed vote (rolling them back would desync them from the ballots in the private layers), and
+ * 'privateMode' is session state: rolling it back could restart private mode (new content going
+ * private again) or end it while drafts are still sealed. Layer docs are never versioned or
+ * restored (see "Board layers" in ARCHITECTURE.md).
+ */
+export const Y_KEPT_ON_RESTORE = ['comments', 'voting', 'timer', 'privateMode'] as const;
 
 export interface BoardSettings {
   background: string;

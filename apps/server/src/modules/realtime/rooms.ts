@@ -34,10 +34,10 @@ import * as awarenessProtocol from 'y-protocols/awareness';
 import * as syncProtocol from 'y-protocols/sync';
 import * as Y from 'yjs';
 import { WebSocket } from 'ws';
-import { WS_MESSAGE_LAYER, WS_MESSAGE_LAYER_OP, WS_MESSAGE_ROLE, type Role } from '@freero/shared';
+import { WS_MESSAGE_LAYER, WS_MESSAGE_LAYER_OP, WS_MESSAGE_ROLE, Y_KEPT_ON_RESTORE, type Role } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { logError } from '../../platform/log';
-import { isShared, publish, subscribe, type Subscription } from '../../platform/pubsub';
+import { isShared, publish, subscribe, subscribedInstances, type Subscription } from '../../platform/pubsub';
 import { getUser } from '../auth/index';
 import { getBoardAccess, touchBoard } from '../boards/index';
 import { sanitizeAwarenessUpdate, withoutClients, type AwarenessIdentity } from './awareness';
@@ -58,6 +58,7 @@ import {
 } from './layers';
 import { peerMessages, persistDuration, persistFailures } from './metrics';
 import { boardChannel, CONTROL_CHANNEL, decodeControl, decodePeer, encodeControl, encodePeer, INSTANCE_ID, type ControlMessage, type PeerMessage } from './peers';
+import { restoreInto } from './restore';
 
 export const MESSAGE_SYNC = 0;
 export const MESSAGE_AWARENESS = 1;
@@ -73,12 +74,19 @@ const IDENTITY_TTL_MS = 5000;
 /** Bytes a socket may send before it has joined (auth + doc load); more closes it. */
 const MAX_QUEUED_BYTES = 16 * 1024 * 1024;
 
+/** The comments feature's collection (layout: CommentRecord in @freero/shared). */
+const COMMENTS_COLLECTION = 'comments';
+
 /** Origin of the persisted state applied on load: not a change, so neither broadcast nor saved. */
 const LOAD_ORIGIN = Symbol('load');
 /** Origin of changes and presence relayed from other instances. */
 const REMOTE_ORIGIN = Symbol('remote');
 /** Origin of changes this instance makes itself (a reveal): published and saved like a socket's. */
 const SERVER_ORIGIN = Symbol('server');
+/** Origin of a version restore: a change made by this instance (relayed, published, saved). */
+const RESTORE_ORIGIN = Symbol('restore');
+/** How long to wait for the other instances holding a board to send what we lack. */
+const PEER_CATCH_UP_TIMEOUT_MS = 2000;
 
 /** Who a socket is, decided once at admission. */
 export interface Admission {
@@ -172,6 +180,8 @@ class Room {
   private pendingSaves = 0;
   private refreshing: Promise<void> = Promise.resolve();
   private subscription: Subscription | null = null;
+  /** Called with the sender of every sync-reply addressed to us (see catchUpWithPeers). */
+  private replyWaiters = new Set<(from: string) => void>();
   /** Applied changes made on other instances (see unloadRoom). */
   sawRemote = false;
 
@@ -362,6 +372,7 @@ class Room {
           Y.applyUpdate(this.doc, msg.update, REMOTE_ORIGIN);
           this.applyPeerLayers(msg.layers);
           if (msg.awareness) this.applyPeerAwareness(msg.awareness);
+          for (const w of [...this.replyWaiters]) w(from);
           break;
         case 'layer-update':
           this.applyPeerLayers([{ layer: msg.layer, data: msg.update }]);
@@ -370,6 +381,44 @@ class Room {
     } catch (err) {
       logError(`realtime: bad message from another instance on board ${this.id}`, err);
     }
+  }
+
+  /**
+   * Resolves once every other instance holding this board has sent what this doc lacks (their
+   * changes not saved yet), or after PEER_CATCH_UP_TIMEOUT_MS. For reads and writes made on behalf
+   * of a request rather than a socket (duplicate, trash, naming or restoring a version), which may
+   * land on an instance that just opened the board. How many answers to expect: the instances
+   * subscribed to the board's channel, minus this one.
+   */
+  async catchUpWithPeers(): Promise<void> {
+    if (this.destroyed || !isShared()) return;
+    const others = (await subscribedInstances(boardChannel(this.id)).catch(() => Number.POSITIVE_INFINITY)) - 1;
+    if (others <= 0 || this.destroyed) return;
+    await new Promise<void>((resolve) => {
+      const heard = new Set<string>();
+      const done = () => {
+        clearTimeout(timer);
+        this.replyWaiters.delete(waiter);
+        resolve();
+      };
+      const waiter = (from: string) => {
+        heard.add(from);
+        if (heard.size >= others) done();
+      };
+      const timer = setTimeout(done, PEER_CATCH_UP_TIMEOUT_MS);
+      this.replyWaiters.add(waiter);
+      this.requestPeerSync();
+    });
+  }
+
+  /**
+   * Makes the live doc's content equal to `version` (restore.ts) as one change of this instance:
+   * sent to every socket here, published to the other instances, saved like a socket's edit.
+   */
+  restore(version: Uint8Array): number {
+    let changed = 0;
+    this.doc.transact(() => (changed = restoreInto(this.doc, version, Y_KEPT_ON_RESTORE)), RESTORE_ORIGIN);
+    return changed;
   }
 
   private applyPeerAwareness(update: Uint8Array): void {
@@ -878,18 +927,50 @@ export function listenToOtherInstances(): () => void {
   return sub.close;
 }
 
-/** Current full state of a board doc (live doc if loaded — waiting for it to load — else the persisted state). */
-export async function snapshotBoardDoc(boardId: string): Promise<Uint8Array | null> {
-  const room = rooms.get(boardId);
-  if (room && !room.destroyed) {
-    try {
-      await room.ready;
-      if (!room.destroyed) return Y.encodeStateAsUpdate(room.doc);
-    } catch {
-      /* failed to load: read the stored state below */
-    }
+/** The board was closed (deleted, trashed) while a request was using its doc. */
+export class BoardClosedError extends Error {}
+
+/**
+ * Runs `fn` with the board's room loaded on THIS instance and caught up with the other instances
+ * holding it (their unsaved changes), without any socket: the room stays loaded meanwhile and
+ * unloads as usual afterwards.
+ */
+async function withLiveRoom<T>(boardId: string, fn: (room: Room) => T | Promise<T>): Promise<T> {
+  const room = getRoom(boardId);
+  room.pendingJoins++;
+  try {
+    await room.ready;
+    await room.catchUpWithPeers();
+    if (room.destroyed) throw new BoardClosedError(boardId);
+    return await fn(room);
+  } finally {
+    room.pendingJoins--;
+    if (!room.destroyed && room.conns.size === 0 && room.pendingJoins === 0) room.scheduleUnload();
   }
-  return (await store.loadDoc(boardId)).state;
+}
+
+/**
+ * The board's current full state, as collaborators see it right now: the live doc, including
+ * changes other instances have not saved yet (KAI-73) — not just what the database holds.
+ * Null when the board has no content.
+ */
+export async function snapshotBoardDoc(boardId: string): Promise<Uint8Array | null> {
+  return withLiveRoom(boardId, (room) => (room.doc.store.clients.size ? Y.encodeStateAsUpdate(room.doc) : null));
+}
+
+/**
+ * Restores a version of the board (`version`: a full state): applied to the live doc as a new
+ * change, so everyone connected, on every instance, converges on it, and saved before this
+ * resolves. `before(state)` runs first with the board as it is right before (caught up with the
+ * other instances) — e.g. to keep it as a version; if it throws, nothing is restored.
+ */
+export async function restoreBoardDoc(boardId: string, version: Uint8Array, before: (state: Uint8Array) => Promise<void>): Promise<void> {
+  await withLiveRoom(boardId, async (room) => {
+    await before(Y.encodeStateAsUpdate(room.doc));
+    if (room.destroyed) throw new BoardClosedError(boardId);
+    room.restore(version);
+    await room.flush();
+  });
 }
 
 /** Current state of one layer of a board (live if loaded, else stored), like snapshotBoardDoc. */
@@ -943,8 +1024,39 @@ export async function closeBoardDoc(boardId: string): Promise<void> {
 async function closeBoardHere(boardId: string): Promise<void> {
   const room = rooms.get(boardId);
   if (!room) return;
-  dropRoom(room, 4403, 'Board deleted');
-  await room.flush(); // queued behind the running save; persists nothing more (destroyed)
+  rooms.delete(boardId);
+  room.closeAll(4403, 'Board deleted');
+  // Save what this instance's sockets changed and nobody saved yet, then drop the doc: a trashed
+  // board keeps those edits (each instance saves its own); for a deleted board the save finds no
+  // board and is dropped. Queued behind any save in flight, so nothing lands after this returns.
+  await room.flush();
+  if (!room.destroyed) room.destroy();
+}
+
+/**
+ * Replaces the author name and color on every comment message `userId` wrote on the board (an
+ * account purge shows them as "Deleted user"). Goes through the board's room — loading it if
+ * needed — so connected clients get the change live and the save queue persists it; resolves
+ * once it is saved. Running it twice changes nothing the second time.
+ */
+export async function renameCommentAuthor(boardId: string, userId: string, name: string, color: string): Promise<void> {
+  const room = getRoom(boardId);
+  room.pendingJoins++;
+  try {
+    await room.ready;
+  } finally {
+    room.pendingJoins--;
+  }
+  if (room.destroyed) return;
+  const comments = room.doc.getMap<Record<string, unknown>>(COMMENTS_COLLECTION);
+  room.doc.transact(() => {
+    for (const [key, value] of comments.entries()) {
+      if (!key.startsWith('m:') || value?.authorId !== userId) continue;
+      if (value.authorName !== name || value.authorColor !== color) comments.set(key, { ...value, authorName: name, authorColor: color });
+    }
+  });
+  await room.flush();
+  if (room.conns.size === 0 && room.pendingJoins === 0 && !room.destroyed) room.scheduleUnload();
 }
 
 /** Saves every loaded doc (graceful shutdown). */

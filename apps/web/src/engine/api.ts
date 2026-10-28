@@ -13,6 +13,7 @@ import type { ComponentType, CSSProperties, ReactNode } from 'react';
 import type {
   BoardElement,
   BoardLayer,
+  BoardVersion,
   BoardSettings,
   ElementOf,
   ElementType,
@@ -106,6 +107,33 @@ export interface Host {
   saveTemplate(template: { name: string; description: string; thumbnail: string | null; content: ElementsSnapshot }): Promise<SavedTemplateInfo>;
   /** [additive] Deletes one of the user's own saved templates. */
   deleteTemplate(id: string): Promise<void>;
+  /**
+   * [additive] Version history of this board (editors and owners only; every call rejects for
+   * other roles and in the offline sandbox, with a message fit for a toast).
+   */
+  versions: VersionHistory;
+}
+
+/**
+ * [additive] `Host.versions`. A version's `state` is opaque board content: show it with
+ * `<StaticBoardView state>`; never apply it to the live board yourself — `restore` does that on
+ * the server, as a new change every collaborator receives.
+ */
+export interface VersionHistory {
+  /** Newest first (wire: @freero/shared `BoardVersion`). */
+  list(): Promise<BoardVersion[]>;
+  /** The full content of a version (for previews). */
+  load(id: number): Promise<Uint8Array>;
+  /** Keeps the board as it is right now (everyone's latest edits) as a named version. */
+  nameCurrent(name: string): Promise<BoardVersion>;
+  /** Names / renames a version (named versions are never pruned). */
+  rename(id: number, name: string): Promise<BoardVersion>;
+  /**
+   * Restores a version for everyone. Resolves with the 'before-restore' version that holds the
+   * board as it was just before: restoring THAT one undoes the restore. Comments, votes and the
+   * timer are left as they are.
+   */
+  restore(id: number): Promise<BoardVersion>;
 }
 
 /** [additive] A saved template as `Host.listTemplates` lists it (wire: @freero/shared `SavedTemplateSummary`). */
@@ -920,6 +948,12 @@ export const defineElement = <T extends ElementType>(d: ElementDefinition<T>): E
 export const defineTool = (d: ToolDefinition): ToolDefinition => d;
 export const defineFormat = (d: FormatDefinition): FormatDefinition => d;
 export const definePanel = (d: PanelDefinition): PanelDefinition => d;
+
+/** [additive] `Host.versions` for hosts without version history (offline sandbox, tests). */
+export function unavailableVersionHistory(reason: string): VersionHistory {
+  const no = async (): Promise<never> => Promise.reject(new Error(reason));
+  return { list: no, load: no, nameCurrent: no, rename: no, restore: no };
+}
 export const defineCommands = (d: CommandDefinition[]): CommandDefinition[] => d;
 export const defineDecoration = (d: DecorationDefinition): DecorationDefinition => d;
 

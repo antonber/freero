@@ -39,6 +39,11 @@ export {
 
 } from './hooks';
 
+// [additive] A read-only board showing a given document state (version previews): its own local
+// engine session, so panning it never touches the live board. Render inside a mounted board.
+export { StaticBoardView } from './canvas/StaticBoardView';
+export type { StaticBoardViewProps } from './canvas/StaticBoardView';
+
 // Renders an element's rich-text field; switches to the shared editor while editing.
 export { ElementText } from './text/ElementText';
 export type { ElementTextProps } from './text/ElementText';

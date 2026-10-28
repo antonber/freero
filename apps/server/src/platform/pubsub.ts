@@ -156,6 +156,18 @@ export function publish(channel: string, data: Uint8Array): void {
     .catch((err) => logThrottled(`pubsub: could not publish to ${channel}`, err));
 }
 
+/**
+ * How many instances are subscribed to `channel` right now, this one included (each instance has
+ * one subscriber connection: Redis PUBSUB NUMSUB). Lets a request/reply exchange know how many
+ * answers to wait for. In-process: 1 if this process subscribes, else 0.
+ */
+export async function subscribedInstances(channel: string): Promise<number> {
+  const redis = getRedis();
+  if (!redis) return channels.get(channel)?.size ? 1 : 0;
+  const res = (await redis.pubsub('NUMSUB', channel)) as unknown[];
+  return Number(res[1]) || 0;
+}
+
 /** True when messages reach other instances (Redis), false when in-process only. */
 export function isShared(): boolean {
   return getRedis() !== null;
