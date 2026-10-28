@@ -29,12 +29,16 @@ export default defineCommands([
   {
     // For other features (find): open a thread by id, its pin brought into view. `quiet`: the
     // caller keeps the keyboard focus. runCommand('comments.openThread', { threadId, quiet? })
+    // Also the deep link /board/<id>?thread=<threadId> (notifications).
     id: 'comments.openThread',
     label: 'Open comment thread',
     minRole: 'viewer',
+    urlParam: 'thread',
     run(editor, args) {
-      const t = typeof args?.threadId === 'string' ? getThread(editor, args.threadId) : undefined;
+      const id = args?.threadId ?? args?.thread;
+      const t = typeof id === 'string' ? getThread(editor, id) : undefined;
       if (t) focusThread(editor, t, { quiet: args?.quiet === true });
+      else if (typeof args?.thread === 'string') editor.host.notify('That comment was deleted.', 'info');
     },
   },
   {

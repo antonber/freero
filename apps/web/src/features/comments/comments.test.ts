@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { CommentMessage, CommentThread } from '@freero/shared';
 import { createTestBoard, type Editor, type TestBoard } from '@engine';
 import manifest from './feature';
+import { decodeMentions, encodeMentions, mentionQuery } from './lib/mentions';
 import { anchorFor, assembleThreads, isUnread, threadPoint, upgradeLegacy } from './lib/model';
 import { deleteMessage, deleteThread, editMessage, getThreads, replaceInMessages, reply, setResolved, startDraft, submitDraft, toggleReaction } from './lib/state';
 
@@ -164,5 +165,33 @@ describe('unread', () => {
 
   it('a reply from someone else after I last looked makes it unread', () => {
     expect(isUnread(thread([msg('a', 'ann', 1), msg('b', 'bob', 7)]), 5, 'me')).toBe(true);
+  });
+});
+
+describe('@mentions', () => {
+  it('only names picked from the member list become mentions, and a mention survives being edited', () => {
+    const picks = [{ id: 'u-ann', name: 'Ann' }, { id: 'u-annlee', name: 'Ann Lee' }];
+    // Typed by hand (nothing picked): plain text, nobody is mentioned or notified.
+    expect(encodeMentions('ask @Ann', [])).toBe('ask @Ann');
+    // The longer picked name wins; a name inside a longer word is not that person.
+    const stored = encodeMentions('@Ann Lee and @Ann, not @Annabel', picks);
+    expect(stored).toBe('<@u-annlee> and <@u-ann>, not @Annabel');
+    // Editing shows names; saving unchanged text stores exactly the same mentions.
+    const names: Record<string, string> = { 'u-ann': 'Ann', 'u-annlee': 'Ann Lee' };
+    const shown = decodeMentions(stored, (id) => names[id]);
+    expect(shown.text).toBe('@Ann Lee and @Ann, not @Annabel');
+    expect(encodeMentions(shown.text, shown.picks)).toBe(stored);
+  });
+
+  it('find & replace in my comments never rewrites the user id inside a mention', () => {
+    const [ann] = twoPeople();
+    const id = startThread(ann, 'ping <@bob> about bob');
+    expect(replaceInMessages(ann, 'bob', 'Rob')).toBe(1);
+    expect(texts(getThreads(ann).find((t) => t.id === id))).toEqual(['ping <@bob> about Rob']);
+  });
+
+  it('an email typed after @ is one query (to invite them), while an address in running text opens nothing', () => {
+    expect(mentionQuery('hi @kim@example.com', 19)).toEqual({ start: 3, query: 'kim@example.com' });
+    expect(mentionQuery('mail kim@example.com', 20)).toBeNull();
   });
 });
