@@ -222,8 +222,10 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
 - Typing a character with one EMPTY text item selected starts editing it with that character;
   items that already have text keep single letters as tool shortcuts (Enter / double-click edit).
   Undo/redo shortcuts also work while a non-modal popover has focus.
-- Screen/world UI that must stay visible next to a selection (comment pins) marks its node
-  `data-fr-keep-clear`; the format toolbar steps above it, or flips below the selection.
+- Screen/world UI that must stay visible next to a selection (comment pins, the top quick-connect
+  "+") marks its node `data-fr-keep-clear`; the format toolbar steps above it, or flips below the
+  selection. The toolbar also steps past unselected items it would cover (a mind-map sibling right
+  above), but only to a free spot within 160 px; otherwise it covers them (dense sticky grids).
 - `ToolDefinition.onSelect?(editor)`: act-now tools (upload image, templates) run when picked and
   never become the active tool. `ToolPointerEvent.button` is -1 on every move (drag or hover);
   `buttons` is the pressed-buttons bitmask.
