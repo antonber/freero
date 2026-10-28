@@ -125,6 +125,32 @@ export const ACCOUNT_PENDING_DELETION = 'account_pending_deletion';
 export interface CreateBoardRequest { title?: string; description?: string }
 export interface UpdateBoardRequest { title?: string; description?: string; linkAccess?: LinkAccess }
 
+// ---- Version history ----
+// Editors and owners only: an older version can hold content someone removed before sharing the
+// board more widely (e.g. with a view link), so viewers and commenters never see history.
+// GET   /api/boards/:id/versions              -> { versions: BoardVersion[] }  (newest first)
+// GET   /api/boards/:id/versions/:vid/state   -> application/octet-stream: the version's Yjs state
+// POST  /api/boards/:id/versions              body { name } -> { version: BoardVersion }
+//       Names the board as it is right now (including edits not saved yet, on any instance).
+// PATCH /api/boards/:id/versions/:vid         body { name } -> { version: BoardVersion }
+//       Names or renames a version; named versions are never pruned.
+// POST  /api/boards/:id/versions/:vid/restore -> { before: BoardVersion }
+//       Applies the version to the live board as a NEW change, so everyone connected (on every
+//       instance) converges on it. The board as it was just before is kept as a 'before-restore'
+//       version (`before`): restoring that one undoes the restore. Comments, votes and the timer
+//       are not rolled back (Y_KEPT_ON_RESTORE).
+export type BoardVersionKind = 'auto' | 'named' | 'before-restore';
+export interface BoardVersion {
+  id: number;
+  kind: BoardVersionKind;
+  /** Set for named versions. */
+  name: string | null;
+  createdAt: number;
+  /** Who named it / who restored (null for automatic versions, or an account deleted since). */
+  createdBy: { id: string; name: string } | null;
+}
+export const MAX_VERSION_NAME = 80;
+
 // ---- Saved templates (a board or a selection saved for reuse) ----
 // Personal for now: you see and insert only your own. Once workspaces land (KAI-37) the same
 // routes also return templates shared with your workspace.

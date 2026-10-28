@@ -257,6 +257,19 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   is there so workspace-shared templates (KAI-37) need no contract change — offer owner-only
   actions only when it equals `user.id`. The visibility rule is one predicate in
   `modules/templates/repo.ts`.
+- Version history (`features/history`, server `realtime/history.ts` + `routes.ts`):
+  `Host.versions` (`list / load / nameCurrent / rename / restore`; `unavailableVersionHistory()`
+  for hosts without it) and `<StaticBoardView state>` (`@engine`): a read-only board showing a
+  version, built as a SEPARATE local engine session (own doc from `state`, no network, role
+  viewer, hand tool) from the live board's feature bundles — previewing never touches the live
+  doc, and nobody else sees it. Features never apply a version themselves: `restore` runs on the
+  server, which applies it to the live doc as a new change (all clients, all instances converge)
+  after keeping the board as it was as a `before-restore` version. Undo of a restore = restoring
+  that version (the toast's Undo); Ctrl+Z does not revert it (like any change made by someone
+  else). Comments, votes and the timer are not rolled back (`Y_KEPT_ON_RESTORE` in
+  `@freero/shared`; a new social/session collection belongs there). Editors and owners only, in
+  the UI and on the server: an old version can hold content removed before the board was shared
+  with viewers or commenters.
 
 Elements, geometry and text (all optional on `ElementDefinition` unless noted):
 - **Reads inside `editor.transact` see its earlier writes** (`getElements()`, `getElement()`,
@@ -481,10 +494,10 @@ verification, password reset, email change, session list/revoke, avatars, deleti
 `boards` (boards, stars, opens; trash), `members` (board_members, board_invites: pending invites
 for addresses without an account; role resolution), `uploads` (uploads; files in object storage or
 `<data>/uploads`), `realtime` (board_docs, board_doc_updates, board_doc_snapshots; y-websocket
-protocol + role filter + update log), `unfurl` (link previews for pasted URLs; no table; SSRF-safe
-fetch in `unfurl/fetch.ts`), `templates` (saved templates; content is opaque engine JSON),
-`accounts` (no table: the purge after the deletion grace period, orchestrating the owning
-modules' exports).
+protocol + role filter + update log; version history + snapshot retention), `unfurl` (link
+previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`), `templates` (saved
+templates; content is opaque engine JSON), `accounts` (no table: the purge after the deletion grace
+period, orchestrating the owning modules' exports).
 
 - Per-user quotas (boards, templates) count and insert in one transaction under a per-owner
   `pg_advisory_xact_lock(hashtext('<module>.quota'), hashtext(userId))`; a count-then-insert
@@ -595,7 +608,21 @@ a loaded board's log grows, and after a room unloads) folds the rows it read int
 deletes exactly those rows, guarded by the base's `version` (optimistic lock), so neither a save
 nor another instance's compaction running meanwhile is lost. It keeps a full-state snapshot at most
 every 30 min (`board_doc_snapshots`): the base of version history (`listBoardSnapshots` /
-`loadBoardSnapshot` in `realtime/index.ts`).
+`loadBoardSnapshot` in `realtime/index.ts`; REST in `realtime/routes.ts`). Snapshots have a
+`kind`: `auto` (compaction), `named` (never pruned), `before-restore`. Retention
+(`realtime/retention.ts`, job in `realtime/init.ts`, hourly on every instance under an advisory
+lock): non-named snapshots keep the newest per hour for a day, per day for a month, per week after;
+buckets are epoch-aligned, so a run is idempotent, and a snapshot is only ever deleted in favour of
+a newer one the same plan keeps. `RetentionPolicyFor` is the seam for workspace policies (KAI-51).
+
+Work done for a REQUEST rather than a socket (duplicate, trash, naming or restoring a version)
+goes through `withLiveRoom` (`rooms.ts`): the board's room is loaded on the handling instance
+(held like a joining socket, unloaded as usual after) and caught up with every other instance
+holding it — it sends a sync-request and waits for one sync-reply per other subscriber of the
+board channel (`subscribedInstances`, Redis `PUBSUB NUMSUB`; 2 s cap). So `snapshotBoardDoc` is
+the board as collaborators see it, including edits not saved yet anywhere (KAI-73). Closing a
+board's rooms (trash, delete) saves what each instance's sockets changed before dropping the doc
+(for a deleted board that save finds no board and is dropped).
 
 Several instances (`platform/pubsub.ts`: Redis pub/sub with `REDIS_URL`, in-process otherwise;
 messages in `realtime/peers.ts`): every instance holding a board publishes its own sockets'

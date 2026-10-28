@@ -45,6 +45,8 @@ export interface EngineCore {
   store: BoardStore;
   ui: UiStore;
   registry: Registry;
+  /** The feature bundles this session was built from (a version preview reuses them). */
+  bundles: FeatureBundle[];
   /** Unscoped ('engine') editor. */
   editor: EditorImpl;
   scoped(scope: string): Editor;
@@ -72,8 +74,17 @@ export interface EngineCore {
 
 export const ROLE_RANK: Record<Role, number> = { viewer: 0, commenter: 1, editor: 2, owner: 3 };
 
-export function createCore(host: Host, bundles: FeatureBundle[], opts: { persistLocal?: boolean } = {}): EngineCore {
-  const store = new BoardStore({ boardId: host.board.id, syncUrl: host.syncUrl, persistLocal: opts.persistLocal });
+export function createCore(
+  host: Host,
+  bundles: FeatureBundle[],
+  opts: { persistLocal?: boolean; initialState?: Uint8Array } = {},
+): EngineCore {
+  const store = new BoardStore({
+    boardId: host.board.id,
+    syncUrl: host.syncUrl,
+    persistLocal: opts.persistLocal,
+    initialState: opts.initialState,
+  });
   const ui = createUiStore({ role: host.board.role });
   const scopedCache = new Map<string, Editor>();
   const disposers: Array<() => void> = [];
@@ -83,6 +94,7 @@ export function createCore(host: Host, bundles: FeatureBundle[], opts: { persist
     store,
     ui,
     registry: null as unknown as Registry,
+    bundles,
     editor: null as unknown as EditorImpl,
     emitter: new Emitter(),
     dom: { viewport: null, world: null },

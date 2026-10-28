@@ -1023,6 +1023,58 @@ async function run() {
       assert((await C.req('GET', `/api/boards/${copy.id}`)).status === 403, "members don't carry over to copies");
     });
 
+    // ---- version history (KAI-49) ----
+    await check('version history is for editors and owners: viewer and commenter get 403, non-members too', async () => {
+      assert((await B.req('GET', `/api/boards/${board.id}/versions`)).status === 200, 'editor lists');
+      for (const u of [C, D]) {
+        assert((await u.req('GET', `/api/boards/${board.id}/versions`)).status === 403, `${u.label} listed versions`);
+        assert((await u.req('POST', `/api/boards/${board.id}/versions`, { name: 'x' })).status === 403, `${u.label} named a version`);
+      }
+      assert((await B.req('POST', `/api/boards/${board.id}/versions`, { name: '   ' })).status === 400, 'blank name');
+    });
+
+    await check('restore across two clients: both converge on the version, comments stay, and restoring "before" undoes it', async () => {
+      const h1 = connectDoc(A, board.id);
+      const h2 = connectDoc(B, board.id);
+      await Promise.all([h1.ready(), h2.ready()]);
+      els(h1).set('h1', { id: 'h1', type: 'sticky', text: 'in v1' });
+      await waitFor(() => els(h2).get('h1')?.text === 'in v1', 5000, 'B to see h1');
+      const named = await B.req('POST', `/api/boards/${board.id}/versions`, { name: 'Verify v1' });
+      assert(named.status === 201 && named.json.version.kind === 'named' && named.json.version.createdBy.id === B.id, named.text);
+      const v1 = named.json.version;
+      // The version's content is served as raw Yjs state.
+      const st = await fetch(`http://127.0.0.1:${server.port}/api/boards/${board.id}/versions/${v1.id}/state`, { headers: { cookie: B.cookie } });
+      const vdoc = new Y.Doc();
+      Y.applyUpdate(vdoc, new Uint8Array(await st.arrayBuffer()));
+      assert(vdoc.getMap('elements').get('h1')?.text === 'in v1', 'version state lacks h1');
+
+      // After v1: an edit, a deletion, a new item, a new comment (A and B both edit).
+      els(h1).set('h1', { id: 'h1', type: 'sticky', text: 'changed after v1' });
+      els(h2).set('h2', { id: 'h2', type: 'sticky', text: 'added after v1' });
+      els(h2).delete('e1');
+      h1.doc.getMap('comments').set('t-after', { text: 'said after v1' });
+      await waitFor(() => els(h1).has('h2') && !els(h1).has('e1') && els(h2).get('h1')?.text === 'changed after v1', 5000, 'clients to converge');
+
+      const r = await B.req('POST', `/api/boards/${board.id}/versions/${v1.id}/restore`);
+      assert(r.status === 200 && r.json.before.kind === 'before-restore', r.text);
+      const atV1 = (c) =>
+        els(c).get('h1')?.text === 'in v1' && !els(c).has('h2') && els(c).get('e1')?.text === 'from A' && c.doc.getMap('comments').get('t-after')?.text === 'said after v1';
+      await waitFor(() => atV1(h1) && atV1(h2), 5000, 'both clients to show v1 (with the later comment kept)');
+      assert((await C.req('POST', `/api/boards/${board.id}/versions/${v1.id}/restore`)).status === 403, 'a viewer restored');
+
+      const list = (await A.req('GET', `/api/boards/${board.id}/versions`)).json.versions;
+      assert(list[0].id === r.json.before.id && list.some((v) => v.id === v1.id && v.name === 'Verify v1'), JSON.stringify(list.slice(0, 3)));
+      const undo = await A.req('POST', `/api/boards/${board.id}/versions/${r.json.before.id}/restore`);
+      assert(undo.status === 200, undo.text);
+      const atNow = (c) => els(c).get('h1')?.text === 'changed after v1' && els(c).has('h2') && !els(c).has('e1');
+      await waitFor(() => atNow(h1) && atNow(h2), 5000, 'both clients to be back where they were before the restore');
+      // Put e1 back for the checks below (as an ordinary edit).
+      els(h1).set('e1', { id: 'e1', type: 'sticky', text: 'from A' });
+      await sleep(100);
+      h1.destroy();
+      h2.destroy();
+    });
+
     await check('member removal: owner removes, member leaves, others cannot remove', async () => {
       assert((await B.req('DELETE', `/api/boards/${board.id}/members/${D.id}`)).status === 403, 'editor removed D');
       assert((await C.req('DELETE', `/api/boards/${board.id}/members/${C.id}`)).status === 200, 'C leave');
@@ -1394,6 +1446,65 @@ async function multiInstanceChecks() {
       assert((await docRows(fresh.id)) === 0, 'the edit was already saved, so this proves nothing about fan-out');
       w.destroy();
       r.destroy();
+    });
+
+    await check('duplicating through instance 2 right after an edit on instance 1 copies the edit not saved yet (KAI-73)', async () => {
+      const src = (await A.req('POST', '/api/boards', { title: 'Dup source' })).json.board;
+      const w = connectDoc(A, src.id, undefined, one);
+      await w.ready();
+      els(w).set('d1', { id: 'd1', type: 'sticky', text: 'unsaved on instance 1' });
+      await sleep(100);
+      const r = await A.req('POST', `/api/boards/${src.id}/duplicate`, undefined, { port: two });
+      assert(r.status === 201, r.text);
+      assert((await docRows(src.id)) === 0, 'the edit was already saved, so this proves nothing');
+      const copy = connectDoc(A, r.json.board.id, undefined, two);
+      await copy.ready();
+      assert(els(copy).get('d1')?.text === 'unsaved on instance 1', 'the copy lacks the edit');
+      copy.destroy();
+      w.destroy();
+    });
+
+    await check('moving a board to the trash through instance 2 keeps an edit instance 1 had not saved yet', async () => {
+      const t = (await A.req('POST', '/api/boards', { title: 'Trash source' })).json.board;
+      const w = connectDoc(A, t.id, undefined, one);
+      await w.ready();
+      els(w).set('t1', { id: 't1', type: 'sticky', text: 'unsaved before trash' });
+      await sleep(100);
+      assert((await A.req('DELETE', `/api/boards/${t.id}`, undefined, { port: two })).status === 200, 'trash');
+      await waitFor(() => w.closeCodes.includes(4403), 5000, 'the socket on instance 1 to close');
+      w.destroy();
+      const back = await A.req('POST', `/api/boards/${t.id}/restore`, undefined, { port: two });
+      assert(back.status === 200, back.text);
+      const r = connectDoc(A, t.id, undefined, two);
+      await r.ready();
+      assert(els(r).get('t1')?.text === 'unsaved before trash', 'the edit was lost in the trash round trip');
+      r.destroy();
+    });
+
+    await check('restoring a version through an instance that does not hold the board reaches clients on both instances; its "before" has their unsaved edits', async () => {
+      const vb = (await A.req('POST', '/api/boards', { title: 'Versions' })).json.board;
+      assert((await A.req('POST', `/api/boards/${vb.id}/members`, { email: B.email, role: 'editor' })).status === 201, 'invite');
+      const w = connectDoc(A, vb.id, undefined, one);
+      await w.ready();
+      els(w).set('r1', { id: 'r1', type: 'sticky', text: 'v1' });
+      await sleep(100);
+      const v1 = (await A.req('POST', `/api/boards/${vb.id}/versions`, { name: 'v1' }, { port: one })).json.version;
+      assert(v1?.kind === 'named', 'name v1');
+      els(w).set('r1', { id: 'r1', type: 'sticky', text: 'v2, not saved yet' });
+      await sleep(100);
+      assert((await docRows(vb.id)) <= 1, 'v2 already saved: this proves less');
+      const restored = await B.req('POST', `/api/boards/${vb.id}/versions/${v1.id}/restore`, undefined, { port: two });
+      assert(restored.status === 200, restored.text);
+      await waitFor(() => els(w).get('r1')?.text === 'v1', 5000, 'the client on instance 1 to see v1');
+      const x = connectDoc(B, vb.id, undefined, two);
+      await x.ready();
+      assert(els(x).get('r1')?.text === 'v1', 'a client on instance 2 sees v1');
+      const undo = await B.req('POST', `/api/boards/${vb.id}/versions/${restored.json.before.id}/restore`, undefined, { port: one });
+      assert(undo.status === 200, undo.text);
+      const atV2 = (c) => els(c).get('r1')?.text === 'v2, not saved yet';
+      await waitFor(() => atV2(w) && atV2(x), 5000, 'both clients back at v2 (the unsaved edit was in "before")');
+      w.destroy();
+      x.destroy();
     });
 
     await check('a role change made through instance 2 applies live to a socket on instance 1', async () => {

@@ -57,3 +57,11 @@
   font-size: 12px;
   background: var(--fr-surface-2);
 }
+
+/* [additive] <StaticBoardView>: a read-only board inside whatever box the caller gives it. */
+.fr-static-board {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
