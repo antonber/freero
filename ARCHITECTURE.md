@@ -800,18 +800,22 @@ members with roles owner / admin / member / guest (separate from board roles).
   started a sign-in can complete it. Account rules: `auth.resolveDirectoryLogin` (identity
   `sso:<workspaceId>` + issuer + subject; else the address's account, connected after its second
   step; else a new verified account) — only for addresses at the workspace's verified domains. A
-  newcomer joins with the connection's default role (`workspaces.applyDirectoryMembership`); the
-  session lasts at most `session_hours`, capped by SAML `SessionNotOnOrAfter`. Enforcing needs a
-  sign-in that went through and an owner as break-glass (exempt while still an owner), and ends the
-  domain's non-SSO sessions; pointing the connection at another IdP drops enforcement.
-- **SCIM** (`scim/`): bearer tokens per workspace (sha256, rotatable). Filters (`filter.ts`) and
-  PATCH (`patch.ts`) are generic over the resource JSON, as Okta and Entra send them. Provisioned
-  people are accounts at verified domains; groups map, by admins in Freero, to a workspace role
-  (highest wins; once any group maps a role the directory owns provisioned people's roles; owners
-  untouched) or a project. Deactivation leaves the workspace through
-  `workspaces.removeDirectoryMember` (boards handed over, sockets re-resolved on every instance)
-  and ends all sessions of an organization address; `sso.onSsoJoin` keeps them from re-entering by
-  just-in-time sign-in.
+  newcomer joins with the connection's default role (`workspaces.applyDirectoryMembership`); a
+  deactivated member is refused. Session lifetime has ONE model: a session belongs to the person,
+  and the strictest session policy of their teams applies to all of it (auth, KAI-51) — SSO has no
+  lifetime setting of its own; only the IdP's own end of a sign-in (SAML `SessionNotOnOrAfter`)
+  shortens that one session. Enforcing needs a sign-in that went through and an owner as
+  break-glass (exempt while still an owner), and ends the domain's non-SSO sessions; pointing the
+  connection at another IdP drops enforcement.
+- **SCIM** (`scim/`): bearer tokens per workspace (sha256; rotate = swap in one step, or overlap).
+  Filters (`filter.ts`) and PATCH (`patch.ts`) are generic over the resource JSON, as Okta and
+  Entra send them. Provisioned people are accounts at verified domains; groups map, by admins in
+  Freero, to a workspace role (highest wins; once any group maps a role the directory owns
+  provisioned people's roles; owners untouched) or a project. Deprovisioning (`active: false`,
+  DELETE) is the admin console's deactivation (`workspaces.setDirectoryDeactivated` →
+  `deactivated_at`, the `blocked` rule of `resolveRole`: one mechanism; keeps role and boards,
+  sockets re-resolved on every instance) and ends all sessions of an organization address. The
+  directory's `active: true` lifts it; its routine syncs never lift an admin's deactivation.
 - **Data exports** (`privacy/`): this module reads no other table; each owning module exports its
   part from its index (`exportAccountData`, `exportMembershipsOf`, `boardRecords`,
   `exportBoardContent` — shared doc plus only the layers the exporter may read — `commentsWrittenBy`,
@@ -819,10 +823,13 @@ members with roles owner / admin / member / guest (separate from board roles).
   data in a new module = an export function in its index + a line in `privacy/archive.ts` + a row
   in the data map (docs/operations.md). Archives are uploads' private files (never served at
   `/uploads/`, never swept).
-- **Seams**: `workspaces.onWorkspaceDeletionHold` (retention / legal holds, KAI-51). Audit events
-  (`platform/audit.ts`) for SSO configuration, every SSO sign-in (enforced flag), SCIM
-  provisioning/deprovisioning, data exports and workspace deletion; the audit log (KAI-48) stores
-  them by registering a sink.
+- **Audit** (`recordAudit`, inside the change's transaction): `sso.*` (domains, the connection,
+  enforcement, every SSO sign-in and refusal, just-in-time joins), `scim.*` (tokens, group
+  mappings, provisioning, deprovisioning — actor null: the directory), `workspace.export_*` in the
+  workspace's log; a person's own `account.export_*` only in their account's log (no fan-out).
+- **Seams**: `workspaces.onWorkspaceDeletionHold` (legal holds; refused deletion with 409).
+- **Admin console**: tabs Single sign-on and Provisioning next to Security; the workspace export
+  under Data (pages/admin/AdminIdentity.tsx).
 ### Audit log, admin console and workspace policies (KAI-48, KAI-47, KAI-51)
 
 **Audit log** (`modules/audit`). Every module records security-relevant changes with

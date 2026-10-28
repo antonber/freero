@@ -178,7 +178,8 @@ What a rotation does not carry over:
 
 ## Workspace single sign-on and provisioning
 
-Owners/admins of a team workspace set these up in Workspace settings; operators only need
+Owners/admins of a team workspace set these up in the admin console (`/admin/<workspace>`, tabs
+Single sign-on and Provisioning); operators only need
 `PUBLIC_URL` (the SAML/OIDC/SCIM URLs are built from it) and outbound DNS (`SSO_DNS_SERVERS` to pick
 the resolver).
 
@@ -191,15 +192,19 @@ the resolver).
   workspace_id = '<id>';` (then everyone at the domain can use their password or a reset link).
 - **Certificate rollover**: paste the IdP's new metadata (it may list both certificates); every
   listed signing certificate is accepted until the next save.
-- **What is refused, and logged** (`sso:` lines at info level): responses that fail signature,
-  audience, recipient, timestamps, InResponseTo or replay checks; IdP-initiated (unsolicited)
-  responses; addresses outside the workspace's verified domains. The IdP's portal tile should
-  point at `/api/sso/<workspace>/start` (SP-initiated).
-- **SCIM tokens** are shown once and stored as sha256. A leaked token: revoke it in Workspace
-  settings (takes effect on the next request) and generate a new one for the directory.
-- **Deprovisioning** (SCIM `active: false` or DELETE) removes the person from the workspace, hands
-  their boards there to an owner, closes their sockets on that workspace's boards on every
-  instance and — for an address at a verified domain — ends all their sessions everywhere.
+- **What is refused** (`sso.login_refused` in the workspace's audit log, with the reason):
+  responses that fail signature, audience, recipient, timestamps, InResponseTo or replay checks;
+  IdP-initiated (unsolicited) responses; addresses outside the workspace's verified domains;
+  deactivated members. The IdP's portal tile should point at `/api/sso/<workspace>/start`
+  (SP-initiated).
+- **Session length** is the workspace's session policy (Security tab), applied to the person like
+  every other sign-in; a SAML `SessionNotOnOrAfter` can only shorten one SSO sign-in.
+- **SCIM tokens** are shown once and stored as sha256. A leaked token: Rotate it in the admin
+  console (the old one stops at once; give the directory the new one), or Revoke it.
+- **Deprovisioning** (SCIM `active: false` or DELETE) is the same deactivation as the Members tab:
+  the person keeps role and boards but opens nothing in the workspace (sockets close on every
+  instance), and — for an address at a verified domain — all their sessions end everywhere. The
+  directory's `active: true` lifts it; an admin's own deactivation stands through directory syncs.
 
 ## Personal data: data map, exports and deletion (GDPR)
 
@@ -241,7 +246,7 @@ workspace (modules/workspaces).
   `private-<random>.zip`, never served at `/uploads/`, never swept), and mails the person a link to
   Account settings, where only they can download it while signed in. It expires after
   `DATA_EXPORT_TTL_HOURS`; the job then deletes the file.
-- **Workspace** (owners/admins of a team): Workspace settings → Export workspace. Every board
+- **Workspace** (owners/admins of a team): admin console → Data → Export workspace. Every board
   (trash included, with hidden frames' contents but never anyone's private drafts), members with
   emails, invitations, projects, SSO settings without secrets, SCIM records. Downloadable only by
   the admin who asked, and only while they still manage the workspace.
@@ -254,11 +259,13 @@ workspace (modules/workspaces).
 - **Workspace**: owners, in Workspace settings (type the name). Immediate; every owner is mailed a
   receipt of what was deleted. **Retention / legal holds**: a module registers
   `onWorkspaceDeletionHold` (`modules/workspaces/index.ts`); while any hold applies, deletion is
-  refused (409) and nothing is removed. Nothing registers one yet (KAI-51 adds retention policies).
-- **Audit trail**: export requests and downloads, workspace deletions, SSO configuration changes,
-  SSO sign-ins (enforced or not) and SCIM provisioning/deprovisioning are audit events
-  (`platform/audit.ts`): an `"audit"` log line today, stored by the Enterprise audit log (KAI-48)
-  once it registers its sink.
+  refused (409) and nothing is removed. Nothing registers one yet (legal holds; time-based
+  retention is the Data tab's settings).
+- **Audit trail** (the workspace's audit log, admin console): workspace export requests and
+  downloads, workspace deletion, every SSO configuration change, SSO sign-ins and refusals,
+  just-in-time joins, SCIM tokens, group mappings, provisioning and deprovisioning. A person's own
+  export requests and downloads go to their account's log only.
+
 ## Moderation
 
 A free service with public links will be abused. Anyone who can open a board — signed in or, once

@@ -3101,7 +3101,7 @@ async function ssoChecks() {
     await check("the SAML connection is configured from the identity provider's metadata (entity ID, SSO URL, signing certificate)", async () => {
       const bad = await O.req('PUT', sso('/connection'), { protocol: 'saml', enabled: true, samlMetadataXml: '<x/>' });
       assert(bad.status === 400, `bad metadata accepted: ${bad.status}`);
-      const r = await O.req('PUT', sso('/connection'), { protocol: 'saml', enabled: true, samlMetadataXml: idp.metadataXml(), defaultRole: 'member', sessionHours: 8 });
+      const r = await O.req('PUT', sso('/connection'), { protocol: 'saml', enabled: true, samlMetadataXml: idp.metadataXml(), defaultRole: 'member' });
       assert(r.status === 200, r.text);
       const c = r.json.connection;
       assert(c.saml.entityId === idp.entityId && c.saml.ssoUrl === idp.ssoUrl && c.saml.certificates.length === 1 && c.testedAt === null, JSON.stringify(c));
@@ -3390,7 +3390,9 @@ async function scimChecks() {
       zed.browser = browser;
     });
 
-    await check('deprovisioning (active: false) closes the person’s board socket at once, signs their organization account out and keeps them out of SSO just-in-time sign-in; reactivating lets them back', async () => {
+    const adminMember = async (id) => (await O.req('GET', `/api/workspaces/${ws.id}/admin/members`)).json.members.find((m) => m.userId === id);
+    const auditActions = async () => (await O.req('GET', `/api/workspaces/${ws.id}/audit?limit=200`)).json.events.map((e) => e.action);
+    await check('deprovisioning (active: false) is the admin console’s deactivation: the board socket closes at once, the organization account is signed out, SSO keeps them out; reactivating lets them back; the directory’s changes are in the workspace’s audit log', async () => {
       const client = connectDoc(asSocketUser(zed.browser, zed.id, 'Zed'), board.id);
       await client.ready();
       assert(client.role === 'editor', `role ${client.role}`);
@@ -3399,13 +3401,26 @@ async function scimChecks() {
       await waitFor(() => client.closeCodes.some((c) => c === 4401 || c === 4403), 5000, "Zed's board socket to close");
       client.destroy();
       assert((await zed.browser.fetch('/api/auth/me')).status === 401, 'session survived deprovisioning');
-      assert(!(await O.req('GET', `/api/workspaces/${ws.id}/members`)).json.members.some((m) => m.userId === zed.id), 'still a member');
+      const m = await adminMember(zed.id);
+      assert(m?.deactivated === true && m.role === 'member', `in the admin console: ${JSON.stringify(m)}`);
       const again = await samlSignIn(port, ws.id, idp, zedEmail);
       assert(again.landed === '/login?error=sso_removed' && !again.browser.jar.has('freero_session'), `SSO after deprovisioning: ${again.landed}`);
       const on = await scim('PATCH', `/Users/${zed.id}`, { schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'], Operations: [{ op: 'Replace', path: 'active', value: 'True' }] });
       assert(on.json.active === true, on.text);
+      assert((await adminMember(zed.id))?.deactivated === false, 'still deactivated after the directory reactivated them');
       const back = await samlSignIn(port, ws.id, idp, zedEmail);
       assert(back.landed === `/app?ws=${ws.id}` &&(await back.browser.fetch('/api/workspaces')).json.workspaces.some((w) => w.id === ws.id), `after reactivating: ${back.landed}`);
+      const actions = await auditActions();
+      for (const a of ['scim.token_created', 'scim.user_provisioned', 'scim.user_deprovisioned', 'scim.user_reactivated', 'sso.login_refused', 'sso.login', 'sso.domain_verified', 'sso.connection_saved'])
+        assert(actions.includes(a), `${a} missing from the audit log (${[...new Set(actions)].join(', ')})`);
+    });
+
+    await check('an admin’s deactivation in the console also keeps someone out of SSO, and the directory’s next sync does not lift it', async () => {
+      assert((await O.req('POST', `/api/workspaces/${ws.id}/admin/members/${zed.id}/deactivate`)).status === 200, 'deactivate');
+      await scim('PUT', `/Users/${zed.id}`, { schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'], userName: zedEmail, name: { givenName: 'Zed', familyName: 'Dir' }, active: true });
+      assert((await adminMember(zed.id))?.deactivated === true, 'a directory sync reactivated someone an admin deactivated');
+      assert((await samlSignIn(port, ws.id, idp, zedEmail)).landed === '/login?error=sso_removed', 'SSO let a deactivated member in');
+      assert((await O.req('POST', `/api/workspaces/${ws.id}/admin/members/${zed.id}/reactivate`)).status === 200, 'reactivate');
     });
 
     await check('directory groups map to roles in Freero: the highest mapped role wins, leaving the group returns the default role, and an owner is never changed', async () => {
@@ -3435,12 +3450,20 @@ async function scimChecks() {
       assert((await zb.fetch(`/api/boards/${secret.id}`)).status !== 200, 'Zed kept the private board after leaving the group');
     });
 
-    await check('token rotation: a new token works at once; a revoked one is refused', async () => {
-      const second = (await O.req('POST', api('/tokens'), { label: 'Okta (rotated)' })).json;
-      const old = second.settings.tokens.find((t) => token.startsWith(t.prefix));
-      assert((await scimClient(base, second.token)('GET', '/Users')).status === 200, 'new token');
-      assert((await O.req('DELETE', api(`/tokens/${old.id}`))).status === 200, 'revoke');
-      assert((await scim('GET', '/Users')).status === 401, 'revoked token still works');
+    await check('token rotation: a rotated token stops working at once and its replacement works; with overlap, a second token works and the revoked one is refused; all audited', async () => {
+      const old = (await O.req('GET', api())).json.tokens.find((t) => token.startsWith(t.prefix));
+      const rotated = await O.req('POST', api(`/tokens/${old.id}/rotate`));
+      assert(rotated.status === 200 && rotated.json.token !== token, rotated.text);
+      assert((await scim('GET', '/Users')).status === 401, 'the rotated token still works');
+      const viaRotated = scimClient(base, rotated.json.token);
+      assert((await viaRotated('GET', '/Users')).status === 200, 'the replacement token');
+      const second = (await O.req('POST', api('/tokens'), { label: 'Okta (overlap)' })).json;
+      assert((await scimClient(base, second.token)('GET', '/Users')).status === 200, 'second token');
+      const replaced = second.settings.tokens.find((t) => rotated.json.token.startsWith(t.prefix));
+      assert((await O.req('DELETE', api(`/tokens/${replaced.id}`))).status === 200, 'revoke');
+      assert((await viaRotated('GET', '/Users')).status === 401, 'revoked token still works');
+      const actions = await auditActions();
+      assert(['scim.token_rotated', 'scim.token_revoked', 'scim.group_mapped'].every((a) => actions.includes(a)), [...new Set(actions)].join(', '));
     });
   } finally {
     closeAllDocs();
@@ -3490,7 +3513,7 @@ async function privacyChecks() {
         30_000,
         `the export mail to ${u.email}`,
       );
-      const page = workspaceId ? `/app?ws=${workspaceId}&view=settings#data` : '/settings#data';
+      const page = workspaceId ? `/admin/${workspaceId}?tab=retention#data` : '/settings#data';
       assert(mail.text.includes(page), `the mail links elsewhere: ${mail.text}`);
       const list = (await u.req('GET', workspaceId ? `/api/workspaces/${workspaceId}/exports` : '/api/me/exports')).json.exports;
       assert(list[0]?.status === 'ready', JSON.stringify(list));
@@ -3584,6 +3607,12 @@ async function privacyChecks() {
       const ws = JSON.parse(strFromU8(z['workspace.json']));
       assert(ws.members.some((m) => m.email === M.email && m.role === 'member') && ws.workspace.id === team.id, JSON.stringify(ws).slice(0, 300));
       assert(Object.keys(z).some((n) => n.endsWith(`-${teamBoard.id}/board.json`)), 'team board missing');
+      // The workspace's export is its own audit event; a member's personal export is not the team's business.
+      assert((await M.req('POST', '/api/me/exports')).status === 202, "the member's own export");
+      await sleep(300);
+      const actions = (await O.req('GET', `/api/workspaces/${team.id}/audit?limit=200`)).json.events.map((e) => e.action);
+      assert(actions.includes('workspace.export_requested') && actions.includes('workspace.export_downloaded'), actions.join(', '));
+      assert(!actions.includes('account.export_requested'), 'a member’s personal export shows in the team’s audit log');
     });
 
     await check('deleting a workspace mails every owner a receipt, and its exports stop being downloadable', async () => {

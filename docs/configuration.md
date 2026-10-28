@@ -129,7 +129,7 @@ connect and disconnect providers in Account settings.
 ## Workspace single sign-on, provisioning and data exports
 
 Single sign-on (SAML 2.0 / OpenID Connect), domains and SCIM provisioning are configured per team
-workspace by its owners/admins in the app (Workspace settings), not here. Data exports are built in
+workspace by its owners/admins in the app (admin console), not here. Data exports are built in
 the background and stored as private files in the uploads storage (S3 or the data dir).
 
 | Variable | Default | Description |
