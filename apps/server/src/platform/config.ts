@@ -72,6 +72,7 @@ export interface Config {
   uploadQuotaBytes: number;
   maxBoardsPerUser: number;
   maxTemplatesPerUser: number;
+  maxWorkspacesPerUser: number;
   /** On SIGTERM, how long /readyz reports 503 before the server stops accepting connections. */
   shutdownDrainMs: number;
   /** How long a deleted account can still be restored before it is purged. */
@@ -261,6 +262,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     uploadQuotaBytes: int('UPLOAD_QUOTA_MB', 1024, 1) * MB,
     maxBoardsPerUser: int('MAX_BOARDS_PER_USER', 5000, 1),
     maxTemplatesPerUser: int('MAX_TEMPLATES_PER_USER', 500, 1),
+    maxWorkspacesPerUser: int('MAX_WORKSPACES_PER_USER', 20, 1),
     shutdownDrainMs: int('SHUTDOWN_DRAIN_SECONDS', production ? 5 : 0, 0, 300) * 1000,
     accountDeletionGraceMs: int('ACCOUNT_DELETION_GRACE_DAYS', 14, 0, 365) * 86_400_000,
     accountPurgeIntervalMs: int('ACCOUNT_PURGE_INTERVAL_SECONDS', 3600, 1, 7 * 86_400) * 1000,
