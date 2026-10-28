@@ -125,8 +125,11 @@ async function spawnServer(dataDir, env = {}) {
       FREERO_DATA_DIR: dataDir,
       NODE_ENV: 'test',
       FREERO_DOC_IDLE_MS: '1000',
-      // Every check signs up accounts from 127.0.0.1; with REDIS_URL all servers of a run share the counters.
+      // Every check signs up and logs in from 127.0.0.1; with REDIS_URL all servers of a run share the
+      // counters, so one suite's logins (two-step recovery logs in dozens of times) would push the
+      // next suites over the default. The login limit itself is checked by platformChecks (own counters).
       RATE_LIMIT_SIGNUP: '1000/1h',
+      RATE_LIMIT_LOGIN: '1000/5m',
       SESSION_SECRET: RUN_SECRET,
       METRICS_TOKEN: RUN_METRICS_TOKEN,
       ...(db.url ? { DATABASE_URL: db.url } : {}),
