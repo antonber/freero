@@ -2,6 +2,7 @@ import type {
   AuthResponse,
   BoardMember,
   BoardSummary,
+  BoardVersion,
   CreateBoardRequest,
   InviteRequest,
   LoginRequest,
@@ -92,8 +93,30 @@ export const api = {
   saveTemplate: (body: SaveTemplateRequest) => request<{ template: SavedTemplateSummary }>('POST', '/api/templates', body),
   deleteTemplate: (id: string) => request<{ ok: true }>('DELETE', `/api/templates/${encodeURIComponent(id)}`),
 
+  // version history (editors and owners)
+  listVersions: (boardId: string) => request<{ versions: BoardVersion[] }>('GET', `/api/boards/${boardId}/versions`),
+  async versionState(boardId: string, versionId: number): Promise<Uint8Array> {
+    const res = await fetch(`/api/boards/${boardId}/versions/${versionId}/state`, { credentials: 'same-origin' });
+    if (!res.ok) {
+      let message = res.statusText;
+      try {
+        message = (await res.json()).error ?? message;
+      } catch {
+        // non-JSON error body
+      }
+      throw new ApiError(res.status, message);
+    }
+    return new Uint8Array(await res.arrayBuffer());
+  },
+  nameVersion: (boardId: string, name: string) =>
+    request<{ version: BoardVersion }>('POST', `/api/boards/${boardId}/versions`, { name }),
+  renameVersion: (boardId: string, versionId: number, name: string) =>
+    request<{ version: BoardVersion }>('PATCH', `/api/boards/${boardId}/versions/${versionId}`, { name }),
+  restoreVersion: (boardId: string, versionId: number) =>
+    request<{ before: BoardVersion }>('POST', `/api/boards/${boardId}/versions/${versionId}/restore`),
+
   // link previews
-  unfurl: (url: string) => request<UnfurlResponse>('GET', `/api/unfurl?url=${encodeURIComponent(url)}`),
+  unfurl:(url: string) => request<UnfurlResponse>('GET', `/api/unfurl?url=${encodeURIComponent(url)}`),
 
   // uploads
   async uploadImage(file: Blob): Promise<{ url: string }> {
