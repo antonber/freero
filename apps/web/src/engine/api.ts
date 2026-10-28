@@ -75,9 +75,24 @@ export interface Host {
   /**
    * [additive] Stores a document (PDF) with the board's uploads, under the same per-account quota
    * as images. Rejects with an Error whose message can be shown (too large, quota reached).
-   * Offline sandbox: a data: URL.
+   * Offline sandbox: a data: URL. [additive] Video and audio (`file.type` video/* or audio/*) go
+   * the same way, under their own size cap: the server keeps them only when their bytes are a
+   * container it serves for playback, else it rejects with `status` 415 on the Error.
    */
   uploadFile(file: Blob): Promise<{ url: string }>;
+  /**
+   * [additive] Stores any other file as an ATTACHMENT (a file card): opaque bytes the server never
+   * serves inline, only through `downloadFile` from a board. Same quota, its own size cap. Rejects
+   * with a showable message. Offline sandbox: a data: URL. Absent where uploads are impossible.
+   */
+  uploadAttachment?(file: Blob): Promise<{ url: string }>;
+  /**
+   * [additive] Saves the file of an item on THIS board (a file card, a video or audio item) to the
+   * person's computer under the item's name. The server checks the workspace's downloads policy
+   * (`board.canExport`) and records it in the audit log; rejects with a showable message (not
+   * allowed, removed by moderators, gone). Absent where nothing can be downloaded.
+   */
+  downloadFile?(item: { id: string; src: string; name: string }): Promise<void>;
   renameBoard(title: string): Promise<void>;
   /**
    * [additive] Tells the server a board export (image, PDF) was made in the browser, for the
@@ -983,6 +998,13 @@ export interface Editor {
    * types are skipped. Selects and returns the top-level inserted ids ([] for read-only roles).
    */
   insertElements(snapshot: ElementsSnapshot, opts?: { at?: Point }): string[];
+  /**
+   * [additive] Offers files (or text) to the element importers exactly like a drop at `at`:
+   * engine clipboard payloads first, then each type's `importData` by priority (images, PDFs,
+   * video / audio and other files…). For "upload" buttons that pick files, so a picked image
+   * becomes an image item and not whatever the button's own feature makes.
+   */
+  importData(data: { files: File[]; text: string | null; html: string | null }, at: Point): Promise<boolean>;
 
   // -- selection & editing --
   getSelection(): string[];
