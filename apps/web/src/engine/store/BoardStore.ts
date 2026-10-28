@@ -69,6 +69,7 @@ export class BoardStore {
   private gestureBase = 0;
   private baseCaptureTimeout: number;
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
+  private connectTimer: ReturnType<typeof setTimeout> | null = null;
   private destroyed = false;
 
   constructor(private opts: BoardStoreOptions) {
@@ -103,8 +104,15 @@ export class BoardStore {
 
     if (opts.syncUrl) {
       this.status = 'connecting';
-      const provider = new WebsocketProvider(opts.syncUrl, opts.boardId, this.doc, { connect: true });
+      // Connect on the next task, not in the constructor: a store created and destroyed in the
+      // same tick (React StrictMode's dev double mount) then never opens a socket, instead of
+      // closing one mid-handshake (a console warning on every board load in dev).
+      const provider = new WebsocketProvider(opts.syncUrl, opts.boardId, this.doc, { connect: false });
       (this as { provider: WebsocketProvider | null }).provider = provider;
+      this.connectTimer = setTimeout(() => {
+        this.connectTimer = null;
+        if (!this.destroyed) provider.connect();
+      }, 0);
       this.awareness = provider.awareness;
       provider.messageHandlers[WS_MESSAGE_ROLE] = (_encoder, decoder) => {
         try {
@@ -413,6 +421,7 @@ export class BoardStore {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    if (this.connectTimer) clearTimeout(this.connectTimer);
     if (this.persistTimer) {
       clearTimeout(this.persistTimer);
       this.persistTimer = null;
