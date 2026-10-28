@@ -112,6 +112,16 @@
   color: var(--fr-ink-3);
 }
 
+.fr-boarderror__account a {
+  color: var(--fr-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.fr-boarderror__account a:hover {
+  text-decoration: underline;
+}
+
 .fr-boarderror__account strong {
   color: var(--fr-ink-2);
   font-weight: 600;

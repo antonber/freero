@@ -144,17 +144,21 @@ function Item({ n, now, onOpen }: { n: AppNotification; now: number; onOpen: () 
   return (
     <div className={`fr-notif-req${n.readAt ? '' : ' is-unread'}`}>
       {button}
-      <RequestActions boardId={n.boardId} requester={n.actor} request={n.accessRequest} />
+      <RequestActions id={n.id} unread={!n.readAt} boardId={n.boardId} requester={n.actor} request={n.accessRequest} />
     </div>
   );
 }
 
 /** Approve (as a role) / decline right in the inbox, or what became of the request. */
 function RequestActions({
+  id,
+  unread,
   boardId,
   requester,
   request,
 }: {
+  id: string;
+  unread: boolean;
   boardId: string;
   requester: NonNullable<AppNotification['actor']>;
   request: NonNullable<AppNotification['accessRequest']>;
@@ -169,6 +173,8 @@ function RequestActions({
     try {
       await api.decideAccessRequest(boardId, requester.id, decision, decision === 'approve' ? role : undefined);
       setDone(decision === 'approve' ? `Approved · ${GRANT_LABEL[role]}` : 'Declined');
+      // Answered: nothing left to look at.
+      if (unread) await markNotificationsRead([id]);
       void loadNotifications();
     } catch (err) {
       notify(err instanceof ApiError ? err.message : 'Could not answer the request', 'error');
