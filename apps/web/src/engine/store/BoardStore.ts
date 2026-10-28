@@ -120,6 +120,7 @@ export class BoardStore {
   private foreignKeyListeners = new Set<(ids: string[]) => void>();
   private remoteKeyListeners = new Set<(ids: string[]) => void>();
   private layerCollectionListeners = new Set<Listener>();
+  private contentListeners = new Map<string, Set<Listener>>();
   private sorted: BoardElement[] | null = null;
   private byType = new Map<string, BoardElement[]>();
   private version = 0;
@@ -230,7 +231,14 @@ export class BoardStore {
     this.history.add(undo);
     const onElements = (ev: Y.YMapEvent<BoardElement>) => this.onElementsEvent(ev);
     elements.observe(onElements);
-    const onAny = () => this.emit(this.layerCollectionListeners);
+    const onAny = (tr: Y.Transaction) => {
+      this.emit(this.layerCollectionListeners);
+      // Element-content readers only when their collection changed here (not every layer edit).
+      for (const [c, set] of this.contentListeners) {
+        const type = doc.share.get(c);
+        if (type && tr.changed.has(type)) this.emit(set);
+      }
+    };
     doc.on('afterTransaction', onAny);
     const onUpdate = (update: Uint8Array, origin: unknown) => {
       if (origin === LAYER_REMOTE_ORIGIN) return;
@@ -285,6 +293,7 @@ export class BoardStore {
     }
     this.emit(this.anyListeners);
     this.emit(this.layerCollectionListeners);
+    for (const set of this.contentListeners.values()) this.emit(set);
   }
 
   /** Runs a reveal/discard on the server (in order with this socket's updates); offline: queued. */
@@ -713,15 +722,17 @@ export class BoardStore {
     }
   }
 
-  /** Fires after any change to collection `name`, in any doc. */
+  /** Fires after any change to collection `name`, in any doc (or a layer doc was reset). */
   subscribeContent(name: string, l: Listener): () => void {
     const m = this.doc.getMap<unknown>(name);
     const h = () => l();
     m.observe(h);
-    const off = this.subscribeLayerCollections(l);
+    let set = this.contentListeners.get(name);
+    if (!set) this.contentListeners.set(name, (set = new Set()));
+    set.add(l);
     return () => {
       m.unobserve(h);
-      off();
+      set!.delete(l);
     };
   }
 
