@@ -630,8 +630,8 @@ lock): non-named snapshots keep the newest per hour for a day, per day for a mon
 buckets are epoch-aligned, so a run is idempotent, and a snapshot is only ever deleted in favour of
 a newer one the same plan keeps. `RetentionPolicyFor` is the seam for workspace policies (KAI-51).
 
-Work done for a REQUEST rather than a socket (duplicate, trash, naming or restoring a version)
-goes through `withLiveRoom` (`rooms.ts`): the board's room is loaded on the handling instance
+Work done for a REQUEST or a job rather than a socket (duplicate, trash, naming or restoring a
+version, the account purge's comment rename) goes through `withLiveRoom` (`rooms.ts`): the board's room is loaded on the handling instance
 (held like a joining socket, unloaded as usual after) and caught up with every other instance
 holding it — it sends a sync-request and waits for one sync-reply per other subscriber of the
 board channel (`subscribedInstances`, Redis `PUBSUB NUMSUB`; 2 s cap). So `snapshotBoardDoc` is
@@ -750,6 +750,12 @@ only to connections that may read them:
   `DATABASE_URL` it runs against that Postgres (fresh database per run, dropped afterwards) and
   also starts two instances at once on one empty database (migration lock); with `REDIS_URL` too,
   it runs two instances on one database + Redis with clients on each. CI does all of it.
+  `--only main,purge,platform,multi` runs some groups (to loop one while hunting a flake).
+  Checks wait on the real condition, never a fixed sleep: `waitFor(cond, ms)` polls until a
+  deadline; `settled(client, observers)` is a barrier (a presence change the server handles after
+  everything the client sent before, relayed in order) for proving something did NOT arrive;
+  `waitUnloaded(proc)` waits until the server holds no doc in memory (`/metrics` gauge), so the
+  next read comes from the database.
 - UI: drive the real app in a browser (see `.claude/skills/verify-freero/`).
 
 ### What a test is for
