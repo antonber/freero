@@ -18,6 +18,8 @@ const REQUIRED: Record<ElementType, string[]> = {
   mindmap: ['text', 'parentId', 'rootId', 'color'],
   table: ['rows', 'cols', 'header', 'fontSize'],
   embed: ['url', 'title', 'description', 'siteName', 'image', 'status'],
+  kanban: ['title', 'columns', 'colW'],
+  pdf: ['src', 'name', 'page', 'pageCount'],
 };
 
 let seq = 0;
