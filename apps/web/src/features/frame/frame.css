@@ -333,7 +333,7 @@
   flex-direction: column;
   gap: 8px;
   min-width: 220px;
-  padding: 4px 2px;
+  padding: 4px 8px;
 }
 
 .fr-frame-grid__row {
