@@ -11,8 +11,9 @@ import type {
   PanelDefinition,
   ToolDefinition,
 } from '../api';
+import type { OutlineFeature } from '@freero/shared';
 
-const FILE_RE = /features\/([^/]+)\/(feature|element|tool|format|panel|commands|decoration)\.tsx?$/;
+const FILE_RE = /features\/([^/]+)\/(feature|element|tool|format|panel|commands|decoration|outline)\.tsx?$/;
 
 const asArray = <T,>(v: T | T[] | undefined | null): T[] => (v == null ? [] : Array.isArray(v) ? v : [v]);
 
@@ -50,6 +51,9 @@ export function collectFeatures(modules: Record<string, unknown>): FeatureBundle
       case 'decoration':
         entry.decorations!.push(...asArray(value as DecorationDefinition | DecorationDefinition[]));
         break;
+      case 'outline':
+        entry.outline = value as OutlineFeature;
+        break;
     }
   }
   const bundles: FeatureBundle[] = [];
@@ -66,6 +70,7 @@ export function collectFeatures(modules: Record<string, unknown>): FeatureBundle
       commands: e.commands!,
       commandFactories: e.commandFactories!,
       decorations: e.decorations!,
+      ...(e.outline ? { outline: e.outline } : {}),
     });
   }
   bundles.sort((a, b) => a.manifest.name.localeCompare(b.manifest.name));
