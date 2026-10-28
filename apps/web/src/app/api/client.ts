@@ -1,5 +1,7 @@
 import type {
   AcceptInviteResponse,
+  AccessRequestState,
+  BoardAccessRequest,
   AuthResponse,
   BoardMember,
   BoardPerson,
@@ -182,6 +184,15 @@ export const api = {
     request<{ ok: true }>('DELETE', `/api/boards/${id}/members/${userId}`),
   boardPeople: (id: string, ids: string[]) =>
     request<{ people: BoardPerson[] }>('GET', `/api/boards/${id}/people?ids=${ids.map(encodeURIComponent).join(',')}`),
+
+  // access requests
+  accessRequestState: (id: string) => request<AccessRequestState>('GET', `/api/boards/${encodeURIComponent(id)}/access-request`),
+  requestAccess: (id: string, role: Exclude<Role, 'owner'>, message: string) =>
+    request<AccessRequestState>('POST', `/api/boards/${encodeURIComponent(id)}/access-request`, { role, message }),
+  withdrawAccessRequest: (id: string) => request<AccessRequestState>('DELETE', `/api/boards/${encodeURIComponent(id)}/access-request`),
+  listAccessRequests: (id: string) => request<{ requests: BoardAccessRequest[] }>('GET', `/api/boards/${encodeURIComponent(id)}/access-requests`),
+  decideAccessRequest: (id: string, userId: string, decision: 'approve' | 'deny', role?: Exclude<Role, 'owner'>) =>
+    request<{ ok: true }>('POST', `/api/boards/${encodeURIComponent(id)}/access-requests/${encodeURIComponent(userId)}`, { decision, role }),
 
   // notifications
   listNotifications: (before?: number) =>

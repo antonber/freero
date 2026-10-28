@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Globe, Link2, Lock, LogOut, Mail, RotateCw, Users, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import type { BoardMember, BoardSummary, LinkAccess, PendingInvite, Role } from '@freero/shared';
+import type { BoardAccessRequest, BoardMember, BoardSummary, LinkAccess, PendingInvite, Role } from '@freero/shared';
 import { Avatar, Button, IconButton, Input, Modal, Select, Spinner, useToast, type SelectOption } from '@ui';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
@@ -72,6 +72,8 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
   const [board, setBoard] = useState<BoardSummary | null>(givenBoard ?? null);
   const [members, setMembers] = useState<BoardMember[] | null>(null);
   const [invites, setInvites] = useState<PendingInvite[]>([]);
+  const [requests, setRequests] = useState<BoardAccessRequest[]>([]);
+  const [grantAs, setGrantAs] = useState<Record<string, InviteRole>>({});
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [email, setEmail] = useState('');
@@ -88,6 +90,7 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
     setInviteError(null);
     setMembers(null);
     setInvites([]);
+    setRequests([]);
     if (givenBoard) setBoard(givenBoard);
     Promise.all([api.getBoard(boardId), api.listMembers(boardId)])
       .then(async ([b, m]) => {
@@ -96,6 +99,11 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
         setMembers(m.members);
         // Pending invites are only shown to people who can invite.
         if (b.board.role === 'owner' || b.board.role === 'editor') {
+          // Access requests: only the people who decide them get an answer (owner, workspace admins).
+          api.listAccessRequests(boardId).then(
+            ({ requests }) => !cancelled && setRequests(requests),
+            () => undefined,
+          );
           const { invites } = await api.listInvites(boardId);
           if (!cancelled) setInvites(invites);
         }
@@ -193,6 +201,19 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
     } catch (err) {
       setInvites(prev);
       notify(err instanceof ApiError ? err.message : 'Could not revoke the invite', 'error');
+    }
+  };
+
+  const decide = async (r: BoardAccessRequest, decision: 'approve' | 'deny') => {
+    const role = grantAs[r.userId] ?? r.role;
+    setRequests((list) => list.filter((x) => x.userId !== r.userId));
+    try {
+      await api.decideAccessRequest(boardId, r.userId, decision, decision === 'approve' ? role : undefined);
+      notify(decision === 'approve' ? `${r.name} now has access (${ROLE_LABEL[role].toLowerCase()})` : `Declined ${r.name}’s request`, decision === 'approve' ? 'success' : 'info');
+      if (decision === 'approve') setMembers((await api.listMembers(boardId)).members);
+    } catch (err) {
+      notify(err instanceof ApiError ? err.message : 'Could not answer the request', 'error');
+      setRequests((await api.listAccessRequests(boardId).catch(() => ({ requests: [] }))).requests);
     }
   };
 
@@ -303,6 +324,38 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
             )}
             {canInvite && !board.permissions.canShareExternally ? (
               <p className="fr-share__note">This workspace’s policy: only people in the workspace can be invited.</p>
+            ) : null}
+
+            {requests.length > 0 ? (
+              <section aria-label="Access requests" className="fr-share__requests">
+                <h3 className="fr-share__heading">Asking for access</h3>
+                <ul className="fr-share__members">
+                  {requests.map((r) => (
+                    <li key={r.userId} className="fr-share__member fr-share__request">
+                      <Avatar name={r.name} color={r.color} src={r.avatarUrl} size={34} />
+                      <div className="fr-share__who">
+                        <span className="fr-share__name">{r.name}</span>
+                        <span className="fr-share__email-text">{r.email}</span>
+                        {r.message ? <span className="fr-share__request-note">“{r.message}”</span> : null}
+                      </div>
+                      <div className="fr-share__member-actions">
+                        <Select<InviteRole>
+                          aria-label={`Let ${r.name} in as`}
+                          size="sm"
+                          variant="ghost"
+                          options={ROLE_OPTIONS}
+                          value={grantAs[r.userId] ?? r.role}
+                          onChange={(role) => setGrantAs((g) => ({ ...g, [r.userId]: role }))}
+                        />
+                        <Button size="sm" variant="primary" onClick={() => void decide(r, 'approve')}>
+                          Approve
+                        </Button>
+                        <IconButton size={32} icon={X} label={`Decline ${r.name}’s request`} tooltipSide="top" onClick={() => void decide(r, 'deny')} />
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
             ) : null}
 
             <section aria-label="People with access">

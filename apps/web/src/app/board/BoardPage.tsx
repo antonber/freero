@@ -12,6 +12,7 @@ import { FullPageSpinner } from '../components/FullPageSpinner';
 import { NotificationBell } from '../notifications/NotificationBell';
 import { features } from './features';
 import { createLocalHost, createServerHost, toastNotify } from './host';
+import { RequestAccess } from './RequestAccess';
 import './BoardPage.css';
 
 type Team = { id: string; name: string } | null;
@@ -31,9 +32,16 @@ function ServerBoard({ id }: { id: string }) {
   const notify = useToast();
   const { user } = useAuth();
   const [state, setState] = useState<LoadState>({ status: 'loading' });
-  const [shareOpen, setShareOpen] = useState(false);
   const location = useLocation();
+  // `?share=requests` (an access-request notification): open the share dialog on its requests.
+  const [shareOpen, setShareOpen] = useState(() => new URLSearchParams(location.search).has('share'));
   const bell = useMemo(() => <NotificationBell />, []);
+  const [attempt, setAttempt] = useState(0);
+  const retry = useCallback(() => setAttempt((a) => a + 1), []);
+
+  useEffect(() => {
+    if (new URLSearchParams(location.search).has('share')) setShareOpen(true);
+  }, [location.search]);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,7 +68,7 @@ function ServerBoard({ id }: { id: string }) {
     return () => {
       cancelled = true;
     };
-  }, [id, navigate]);
+  }, [id, navigate, attempt]);
 
   const board = state.status === 'ready' ? state.board : null;
   const team = state.status === 'ready' ? (state.team ?? null) : null;
@@ -85,6 +93,7 @@ function ServerBoard({ id }: { id: string }) {
     // Rebuild only for identity-relevant changes; title/role updates flow through a new host object.
   }, [board, team, user, go, toast, openShare, setTitle]);
 
+  if (state.status === 'error' && state.code === 403) return <RequestAccess boardId={id} onGranted={retry} />;
   if (state.status === 'error') return <BoardError boardId={id} code={state.code} message={state.message} />;
   if (!host || !board) return <FullPageSpinner label="Opening board" />;
   return (
@@ -93,7 +102,10 @@ function ServerBoard({ id }: { id: string }) {
       <ShareDialog
         boardId={board.id}
         open={shareOpen}
-        onClose={() => setShareOpen(false)}
+        onClose={() => {
+          setShareOpen(false);
+          if (new URLSearchParams(location.search).has('share')) navigate(location.pathname, { replace: true });
+        }}
         board={board}
         onBoardChange={(b) => setState((s) => ({ status: 'ready', board: b, team: s.status === 'ready' ? s.team : null }))}
         onLeft={() => navigate('/app')}
