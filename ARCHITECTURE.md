@@ -239,9 +239,9 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   people never seen online — for assignee pickers etc. (`/board/local`: just the local user).
 - `Host.lookupUsers(ids)`: current profiles (name, color, photo) for ids the board shows — people
   with access and anyone who wrote or is @mentioned in its comments, also after they left
-  (`GET /api/boards/:id/people`, members module; unrelated ids are never answered). Comments
-  render author photos and mention names through it (`features/comments/lib/people.ts`, fed by
-  presence too). `Host.inviteMember(email, role)`: the share flow from inside a feature (the
+  (`GET /api/boards/:id/people`, members module; unrelated ids are never answered). The engine
+  keeps one people directory per board over it and presence, `usePeople(ids)` (KAI-201): comments
+  (author photos, mention names) and find read the same current names through it. `Host.inviteMember(email, role)`: the share flow from inside a feature (the
   @mention picker invites a non-member as commenter); someone who already has access keeps
   their role.
 - Comment @mentions are `<@userId>` tokens in the message text (`MENTION_RE`, `mentionedUserIds`,
@@ -1297,7 +1297,7 @@ is gone. Tombstones are final. A commenter's message carries their own name (KAI
 before a rename elsewhere) or a name taken while connected (`auth.onProfileChanged` refreshes the
 sockets on every instance before the rename answers); an edit may keep the name the message had.
 Account names never start with "Guest ·". Readers show the author's CURRENT name from the people
-lookup (`features/comments/lib/people.ts` `authorName`), the stored one only for ids nobody answers
+lookup (`usePeople` + `@freero/shared` `commentAuthorName`, in comments and find), the stored one only for ids nobody answers
 (deleted accounts: "Deleted user") — so an editor's record, a rename or an old forged name never
 reads as someone else. Owners and editors are trusted with the whole doc. Ending a session — logout,
 "sign out" from another device, password reset/change, account deletion — fires

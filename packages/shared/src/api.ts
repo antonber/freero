@@ -706,6 +706,18 @@ export const MAX_GUEST_NAME = 40;
 export const isGuestId = (id: string): boolean => id.startsWith(GUEST_ID_PREFIX);
 /** How a guest is shown everywhere (presence, comments, activity). */
 export const guestDisplayName = (name: string): string => `Guest · ${name}`;
+/**
+ * The name a comment message is shown under (KAI-187, KAI-201), wherever it is shown (comments,
+ * find): its author's CURRENT name (`current`, from the board's people lookup) when known — so
+ * neither a rename nor a name a crafted client stored can make it read as someone else. The stored
+ * name is only a fallback: before the lookup answers, and for accounts that no longer exist (the
+ * purge rewrote it to "Deleted user"). A guest's always reads as a guest.
+ */
+export function commentAuthorName(m: { authorId: string; authorName: string }, current: string | undefined): string {
+  if (current) return current;
+  if (isGuestId(m.authorId)) return m.authorName.startsWith(guestDisplayName('')) ? m.authorName : guestDisplayName(m.authorName);
+  return m.authorName;
+}
 export interface GuestBoardInfo {
   /** Visitors without an account may join (and as what); the title only then. */
   allowed: boolean;
