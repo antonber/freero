@@ -176,6 +176,82 @@ What a rotation does not carry over:
   opened. The job logs how many; those people sign in with a recovery code and turn two-step
   verification on again. Nothing else is lost.
 
+## Admin CLI
+
+Operator commands run in their own process against the same configuration and database as the
+server, with no HTTP endpoint behind them:
+
+```bash
+npm run admin -- <command> [args]                                       # a checkout
+docker compose exec app node --import tsx apps/server/src/admin.ts <command> [args]   # the image (no npm in it)
+npm run admin                                                           # lists the commands
+```
+
+Give it the server's environment (`DATABASE_URL`, `SESSION_SECRET`, `SMTP_URL`, `PUBLIC_URL`, …) —
+`exec` into a running container does. On Postgres it runs next to the instances; with the
+built-in PGlite database (no `DATABASE_URL`) stop the server first (one process at a time).
+
+Every command that changes an account writes an `"audit"` log line (action, the operator's name,
+their stated reason, the account id). Ship the log; an audit trail kept in the database comes with
+Enterprise (`platform/audit.ts` is the seam).
+
+## Account recovery: someone is locked out by two-step verification
+
+Most people never need you (ARCHITECTURE.md, "Two-step verification recovery", has the threat
+model):
+
+- **Someone else turned it on** (they knew the password): the "Two-step verification is on" notice
+  to the account's verified address has a "This wasn't me" button that works for 72 hours
+  (`TWO_FACTOR_UNDO_HOURS`). If the intruder also changed the email address, the owner first uses
+  "restore my address" from the email-change notice, then that button.
+- **Lost the phone and the recovery codes**: after logging in with the password, on the code screen
+  "Can't use your app? Use a recovery code" → "Lost your recovery codes too?" starts a recovery. After 7 days
+  (`TWO_FACTOR_RECOVERY_DELAY_SECONDS`) the address gets a link that removes two-step verification.
+  Using the authenticator meanwhile cancels it.
+
+Use the operator reset only when neither works — typically: the intruder also changed the password
+and the 72 hours are over, or the owner lost both the password and the authenticator.
+
+### 1. Check who is asking — out of band, never on the mailbox alone
+
+The reset hands the account to whoever reads its address, so first convince yourself the person
+asking is the owner AND controls that address:
+
+1. Look at the account (changes nothing):
+   ```bash
+   npm run admin -- account:show owner@example.com
+   ```
+   Note when two-step verification was turned on, whether a recovery is in progress, and any
+   **WARNING** that the address changed recently (then the current address may be the intruder's:
+   the owner must use "restore my address" from the change notice first; don't reset).
+2. Have them write from the account's address, and answer from your side to that address with a
+   one-time phrase they repeat back on your support channel (proves they read it now).
+3. Ask for things only the owner knows and the notices never contained: names of boards they own,
+   roughly when the account was created, people they share boards with, when and from where they
+   last signed in successfully. Billing details once there are paid plans.
+4. Prefer a cooling-off period for high-value accounts (e.g. a day, with a mail to the address
+   saying a reset was requested). A request that pushes for urgency is a warning sign.
+5. Write down what you checked: it goes into `--reason`.
+
+### 2. Reset
+
+```bash
+npm run admin -- two-factor:reset owner@example.com --operator "Your Name" --reason "TICKET-123: phrase + 3 board names"
+# shows the account and changes nothing; then, to do it:
+npm run admin -- two-factor:reset owner@example.com --operator "Your Name" --reason "TICKET-123: phrase + 3 board names" --yes
+```
+
+It removes the authenticator and recovery codes, a recovery in progress, the password and every
+connected sign-in provider (whoever locked the owner out may know the password or have connected
+their own provider), cancels pending emailed links (except an email change's way back to the
+previous address), ends every session and mails the address a notice with a link to choose a new
+password. The owner then sets a password through that address, signs in and turns two-step
+verification on again.
+
+Open board tabs of the ended sessions stay connected until they reload (the CLI can't reach the
+running instances' sockets). If the intruder may still have a board open, restart the app
+instances (a rolling restart is fine) to drop every socket at once.
+
 ## Incident basics
 
 1. **Assess.** Is it everyone (proxy, DB, deploy) or some boards/users? Check `/readyz` on each

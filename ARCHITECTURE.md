@@ -522,7 +522,15 @@ modules/<name>/    auth, boards, members, uploads, realtime …
   init.ts          reserved: export default (ctx) => void | Promise<void>; runs once after all
                    migrations are applied and routes mounted, before listen (e.g. auth seeds the
                    demo user in non-production and purges expired sessions)
+  admin.ts         reserved: export default (ctx) => AdminCommand[] (platform/admin.ts) —
+                   operator commands, discovered by the CLI root admin.ts (`npm run admin -- …`)
 ```
+
+`src/admin.ts` is the second composition root: the operator CLI. It loads the same config, opens
+the same database (applies pending migrations like a starting instance), discovers every
+`modules/*/admin.ts` and runs one command in its own process, without HTTP. Commands use their
+module's service functions, print what they did, and record an audit event (below). On PGlite
+(one process) the server must be stopped first; on Postgres it runs next to the instances.
 
 `ctx` (`platform/context.ts`) carries `config` and `onShutdown(fn)` (realtime flushes docs there).
 Cross-module imports name the index file explicitly (`'../auth/index'`), which is what [S2] checks.
@@ -531,7 +539,8 @@ not a reserved hook. Server modules today: `auth` (users, sessions, auth_tokens:
 verification, password reset, email change, session list/revoke, avatars, deletion scheduling;
 auth_devices: browsers that signed in (new sign-in notices);
 auth_identities + auth_oidc_flows: sign in with a provider; auth_challenges, user_totp,
-user_recovery_codes: two-step verification),
+user_recovery_codes: two-step verification; auth_two_factor_recoveries: delayed "lost my
+authenticator" recoveries),
 `boards` (boards, stars, opens; trash), `members` (board_members, board_invites: pending invites
 for addresses without an account; role resolution), `uploads` (uploads; files in object storage or
 `<data>/uploads`), `realtime` (board_docs, board_doc_updates, board_doc_snapshots; y-websocket
@@ -593,9 +602,11 @@ notification_prefs: inbox, live delivery, email digests).
   previous address, two-step on/off, new recovery codes, provider connected/disconnected, deletion
   scheduled, and a sign-in from an unrecognised browser), with when / device / approximate place
   and what to do. Account mail, not notifications: no opt-out. Never a code, secret or token, except
-  the "this wasn't me" link an email change sends to a VERIFIED previous address (`revert_email`
-  token, 7 days): it restores that address, sets a new password, removes two-step verification and
-  providers set up since the change, cancels pending links and ends every session. A browser is
+  links that act for whoever reads a VERIFIED address: the "this wasn't me" link an email change
+  sends to the previous address (`revert_email` token, 7 days: it restores that address, sets a
+  new password, removes two-step verification and providers set up since the change, cancels
+  pending links — except a two-step undo link to that same address — and ends every session), and
+  the two-step recovery links below. A browser is
   recognised when it brings a `freero_device` cookie (random, HttpOnly, 400 days) that already
   signed in to the account (`auth_devices`, sha256 only); an account with no browser on record
   recognises one matching a live session's User-Agent and network (so an upgrade mails nobody).
@@ -604,6 +615,12 @@ notification_prefs: inbox, live delivery, email digests).
   and calls `sendSecurityNotice` where the change is made.
   `npm run verify` runs the whole provider flow against `scripts/lib/mock-oidc.mjs` (a local test
   provider with real signed id tokens) and GeoIP against a generated `.mmdb`.
+- Two-step verification recovery (KAI-99, `modules/auth/recovery.ts`) — see the next section.
+- Audit seam (`platform/audit.ts`): `audit({ action, actor, userId, detail })` records a
+  security-relevant action on an account — today one structured log line (`"audit": {…}`), plus
+  every sink registered with `onAuditEvent`. The Enterprise audit log registers its sink there (from
+  its init.ts and admin.ts) and keeps its own table; callers don't change. Never passwords, tokens
+  or codes in `detail`.
 - Ending a session (logout, "sign out" from another device, password reset/change, account
   deletion) calls auth's in-process `onSessionEnd`; realtime is its listener and closes that
   session's board sockets on every instance through its `end-session` control message — the one
@@ -621,6 +638,82 @@ notification_prefs: inbox, live delivery, email digests).
   referenced (`last_referenced_at`), re-checks the candidates right before deleting, and deletes
   rows + files no round has seen referenced for 24 h — freeing quota. New content that stores
   upload URLs outside board docs adds its scan to `SCANS` there. `ObjectStorage.list()` exists for it.
+
+### Two-step verification recovery (KAI-99, `modules/auth/recovery.ts`)
+
+The problem: someone with the password turns on two-step verification with THEIR authenticator.
+The owner still reads the account's address, but a reset link proves only the address, and every
+sign-in ends in the second step (`completeSignIn`), so the owner is locked out. The opposite case
+needs a way back too: the owner lost their own phone and recovery codes. Freero is a hosted
+service with no support staff for the common case.
+
+**Threat model.** Three things can prove who someone is: the password (P), the mailbox of the
+account's address (M) and the second factor (F: the authenticator or a recovery code). Attackers:
+- *P only* (a reused or phished password): must never get in, nor remove F, nor lock the owner
+  out for good.
+- *M only* (a compromised mailbox): today M alone resets P. Once the owner has F, M alone must not
+  remove it — except in the short window right after F was set up (before that, M alone was
+  already enough).
+- *P + M*: can do anything the owner can, except pass F. Two-step verification can't stop them
+  for good — the owner could have lost F the same way — so it buys TIME and NOTICE: removing F
+  takes days, is mailed repeatedly, and the owner stops it by using F once.
+- *F only* (a stolen phone): useless without P or a provider sign-in (unchanged).
+- *Social engineering an operator*: the operator path checks identity beyond M (docs/operations.md).
+- *Notice spam*: starting a recovery takes P (or a connected provider) and is rate-limited.
+
+**Options weighed.** (a) A "this wasn't me" link in the two-step-on notice: precise for the
+lockout (the owner acts the moment it happens) but, while it works, M alone undoes a real
+enrolment — so it must be short and bound to that enrolment. (b) A delayed, self-service recovery:
+covers a lost phone and a lockout noticed late, but by itself is either too weak (M alone starts
+and finishes it) or useless against the lockout (whoever holds F cancels it). (c) An operator reset:
+handles the contested cases neither can, but costs staff time, so it must be the exception.
+(d) A delay before a new authenticator is enforced at sign-in: rejected — it weakens every real
+enrolment for days to help only the lockout, which (a) already covers without that cost. The
+decision is all three of (a)–(c), each closed against the attackers above:
+
+| Path | Who can start | Who can finish | Removes | Window |
+|---|---|---|---|---|
+| (a) undo link (`two_factor_undo`) | — (mailed at enrolment, only to a VERIFIED address) | M, while the address is still the one it went to, for THIS enrolment only (`enabled_at` bound) | F, providers; sets P | `TWO_FACTOR_UNDO_HOURS` (72) |
+| (b) delayed recovery (`auth_two_factor_recoveries`) | a pending sign-in whose first factor is P not set through an emailed link, or an already-connected provider | M (link mailed when ready) | F, providers; sets P | `TWO_FACTOR_RECOVERY_DELAY_SECONDS` (7 days) |
+| (c) operator (`npm run admin -- two-factor:reset`) | an operator after an out-of-band check | M (a reset link) | F, providers, P | immediate |
+
+Rules that make the table hold:
+- **(a) only the enrolment it announced.** The link stores the enrolment's `enabled_at`; once that
+  authenticator is gone or replaced, the link does nothing. It is only sent to a verified address
+  (whoever reads an unproven one may not be the owner). While the address differs from where it went
+  (the intruder then changed the email), it refuses without being used up; the email change's own
+  "restore my address" link — to the same mailbox — keeps it alive, so the owner restores the
+  address first and then removes the authenticator.
+- **(b) needs two of P, M and time, and loses to F.** `users.password_via_link_at` marks a password
+  chosen through an emailed link (reset, "this wasn't me"): it proves M, not P. Such a password, a
+  reset-link sign-in or a provider that is only now being connected can't start a recovery
+  (`recovery_needs_password`), so M alone never starts one; the finishing link goes only to the
+  address, so P alone never finishes one. Any accepted second-factor code (sign-in, turning it off,
+  new recovery codes) cancels a recovery in progress and clears the mark — the factor isn't lost.
+  So do a signed-in device (Settings) and the cancel link in the mails. Mails: started (with cancel
+  link), "completes soon" a day before (cancel link), ready (finishing link, 7 days), completed or
+  cancelled. The job (`auth:two-factor-recovery`, exclusive) claims each mail before sending it, so
+  it goes out once across instances. One recovery per account; `RATE_LIMIT_TWO_FACTOR_RECOVERY`
+  per IP and per account.
+- **Taking an account back is one operation** (`repo.takeBack`, one transaction): new password
+  (none for the operator), two-step verification and every provider sign-in removed (an intruder
+  who planted an authenticator may also have connected their own Google account; the owner
+  reconnects theirs), pending links cancelled except the email change's way back, then every
+  session ended through `endSessionsOf` (so board sockets close) and a notice to the address.
+- **(c) leaves the address as the only way in**, mails how to choose a password, and is logged
+  through the audit seam with the operator's name and stated reason. Its identity check must not
+  rest on M alone (see docs/operations.md).
+
+Residual risks, accepted and documented: for `TWO_FACTOR_UNDO_HOURS` after enrolment the account
+is as strong as before it (M suffices — as it did a minute earlier); P + M removes F after the
+recovery delay if the owner ignores three mails and never signs in with F; once the undo window
+has passed, an intruder who planted an authenticator can keep the owner out of (b) — by changing
+the password (the owner's reset-link password can't start one) or by signing in with their
+authenticator (that cancels it) — and that contested case goes to (c); live board tabs of sessions an
+operator ended from the CLI stay connected until they reload (see docs/operations.md).
+
+New sign-in factors or recovery paths keep this table true: say who can start and finish them in
+P / M / F terms, and add their row.
 
 ### Database (`platform/db.ts`)
 
