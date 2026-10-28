@@ -18,6 +18,7 @@ export default defineTool({
   // Commenters can use it; the server accepts their writes to the comments map only.
   minRole: 'commenter',
   cursor: CURSOR,
+  snapToGrid: false, // a pin goes exactly where it was clicked
 
   // Click pins a draft: to the item under the pointer (it follows the item), else to the
   // board. Nothing is stored until the first message is sent.

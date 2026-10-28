@@ -256,7 +256,10 @@ export interface FollowChange {
 // ---------------------------------------------------------------------------
 export interface ToolPointerEvent {
   editor: Editor;
-  /** World coordinates. */
+  /**
+   * World coordinates. On the grid while grid snapping applies to this event (see
+   * `ToolDefinition.snapToGrid`); `target` is always what is under the real pointer.
+   */
   point: Point;
   /** Screen (viewport-relative) coordinates. */
   screen: Point;
@@ -290,6 +293,14 @@ export interface ToolDefinition {
   /** Minimum role allowed to activate. Default 'editor'. */
   minRole?: Role;
   cursor?: string;
+  /**
+   * [additive] Grid snapping for creation tools, default true. While the board's "Snap to grid"
+   * applies (Ctrl/⌘ inverts it, Alt disables it), the engine hands this tool grid points as
+   * `ToolPointerEvent.point`, and elements it creates during a pointer down/move/up land with
+   * their top-left on the grid (several created at once move together). Freehand tools (pen,
+   * eraser), tools aimed at elements (connector, comments) and select set false.
+   */
+  snapToGrid?: boolean;
   /** Optional flyout shown next to the toolbar while active (shape picker, pen colors…). */
   Options?: ComponentType<{ editor: Editor }>;
   /** World-space preview layer while the tool is active (e.g. ghost sticky following cursor). */

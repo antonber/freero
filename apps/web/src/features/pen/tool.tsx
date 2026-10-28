@@ -151,6 +151,8 @@ export default defineTool({
   order: 50,
   placement: 'main',
   cursor: 'crosshair',
+  // Freehand ink follows the pointer exactly, grid or not.
+  snapToGrid: false,
 
   // One stroke = one element = one undo step: the stroke is drawn locally (Preview) and
   // created once on pointer-up; the engine wraps pointer-down → up in a single gesture.

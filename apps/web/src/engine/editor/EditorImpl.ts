@@ -297,7 +297,16 @@ export class EditorImpl implements Editor {
     if (!els.length || !this.guardWrite()) return [];
     const now = Date.now();
     let z = this.core.store.maxZ();
-    const built = els.map((e) => this.build(e, ++z, now));
+    let built = els.map((e) => this.build(e, ++z, now));
+    // Created by a grid-snapping tool's pointer event: land on the grid like a snapped drag
+    // (top-left of everything created at once, moved together).
+    const grid = this.core.interaction.createGrid;
+    if (grid) {
+      const b = rectUnion(built.map(elementAABB))!;
+      const dx = Math.round(b.x / grid) * grid - b.x;
+      const dy = Math.round(b.y / grid) * grid - b.y;
+      if (dx || dy) built = built.map((el) => translateElement(el, dx, dy));
+    }
     this.core.store.transact(() => {
       for (const el of built) this.core.store.setElement(el);
       this.adoptIntoContainers(built.map((b) => b.id));
