@@ -39,6 +39,12 @@ export interface Host {
   /** Full ws URL prefix; engine connects WebsocketProvider(syncUrl, board.id, doc). */
   syncUrl: string;
   uploadImage(file: Blob): Promise<{ url: string }>;
+  /**
+   * [additive] Stores a document (PDF) with the board's uploads, under the same per-account quota
+   * as images. Rejects with an Error whose message can be shown (too large, quota reached).
+   * Offline sandbox: a data: URL.
+   */
+  uploadFile(file: Blob): Promise<{ url: string }>;
   renameBoard(title: string): Promise<void>;
   saveThumbnail(dataUrl: string): Promise<void>;
   openShareDialog(): void;

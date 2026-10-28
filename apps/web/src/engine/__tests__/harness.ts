@@ -45,6 +45,7 @@ export function makeHost(role: Role = 'owner'): Host {
     board: { id: 'test-board', title: 'Test', role },
     syncUrl: '',
     uploadImage: async () => ({ url: '' }),
+    uploadFile: async () => ({ url: '' }),
     renameBoard: async () => undefined,
     saveThumbnail: async () => undefined,
     serverNow: () => Date.now(),

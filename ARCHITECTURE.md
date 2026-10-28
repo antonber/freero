@@ -186,6 +186,12 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   refresh shares the change's undo step and network update) and never for remote changes, so
   exactly one client — the one making the change — rewrites the derived fields. Renderers should
   still derive from the live elements (`useElement`) and treat the stored fields as a cache.
+- `Host.uploadFile(blob)`: documents (PDF) through the same `/api/uploads` endpoint, checks and
+  per-account quota as images (`modules/uploads` accepts `application/pdf` after a `%PDF-`
+  signature check and always streams PDFs itself, never via the bucket redirect, so `fetch()`
+  stays same-origin). Rejections carry the server's message (too large, quota reached).
+  `features/pdf` lazy-loads pdf.js (`pdfjs-dist`, pinned exactly) with its worker as a same-origin
+  asset (CSP `worker-src 'self'`) and `isEvalSupported: false` (no `unsafe-eval` needed).
 - `Host.listMembers()`: everyone with access to the board (owner + invited members), including
   people never seen online — for assignee pickers etc. (`/board/local`: just the local user).
 - `Editor.findFreeSpot(size, { near?, gap? })`: top-left of a box that keeps `gap` clear of

@@ -45,6 +45,7 @@ export function createTestBoard(opts: TestBoardOptions): TestBoard {
       board: { id: 'test-board', title: 'Test', role: opts.role ?? 'owner' },
       syncUrl: '',
       uploadImage: async () => ({ url: '' }),
+      uploadFile: async () => ({ url: '' }),
       renameBoard: async () => undefined,
       saveThumbnail: async () => undefined,
       openShareDialog: () => undefined,
