@@ -406,7 +406,8 @@ Cross-module imports name the index file explicitly (`'../auth/index'`), which i
 Auth is a plain middleware exported by `modules/auth/index.ts` (`requireUser`, `currentUser(req)`),
 not a reserved hook. Server modules today: `auth` (users, sessions), `boards` (boards, stars,
 opens), `members` (board_members, role resolution), `uploads` (uploads; files in object storage or
-`<data>/uploads`), `realtime` (board_docs; y-websocket protocol + role filter), `unfurl` (link
+`<data>/uploads`), `realtime` (board_docs, board_doc_updates, board_doc_snapshots; y-websocket
+protocol + role filter + update log), `unfurl` (link
 previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`).
 
 ### Database (`platform/db.ts`)
@@ -477,6 +478,26 @@ sockets arriving meanwhile wait for that load. Saves of one room are serialized.
 only when nobody is in it, joining it or saving it. Deleting a board first closes its room and
 waits for in-flight saves. Access refreshes are serialized (the last reflects the latest state).
 
+Storage (`realtime/docStore.ts`): a board's document is a compacted base (`board_docs`) plus an
+append-only log of Yjs updates (`board_doc_updates`); a save appends only what changed since the
+previous one. Loading reads base + log in one statement (one consistent snapshot). Compaction (when
+a loaded board's log grows, and after a room unloads) folds the rows it read into a new base and
+deletes exactly those rows, guarded by the base's `version` (optimistic lock), so neither a save
+nor another instance's compaction running meanwhile is lost. It keeps a full-state snapshot at most
+every 30 min (`board_doc_snapshots`): the base of version history (`listBoardSnapshots` /
+`loadBoardSnapshot` in `realtime/index.ts`).
+
+Several instances (`platform/pubsub.ts`: Redis pub/sub with `REDIS_URL`, in-process otherwise;
+messages in `realtime/peers.ts`): every instance holding a board publishes its own sockets'
+updates and presence on the board's channel and applies the others' with `REMOTE_ORIGIN` (relayed
+to its sockets, never re-published or saved: the instance whose socket made a change saves it). A
+room subscribes, loads, then asks the other instances for what the database lacks (sync-request /
+sync-reply, also after a Redis reconnect). Presence from another instance never overrides a client
+id owned by a local socket (a client that moved here). A room that applied remote changes appends
+what the database still lacks before it unloads. Access refreshes, board deletion and logouts go to
+all instances on a control channel. `npm run verify` with `DATABASE_URL` + `REDIS_URL` runs two
+instances and checks all of this with clients on each.
+
 Trust boundaries in `realtime`: presence from a socket may only write the awareness client ids
 that socket announced, and its `user` is always replaced by the authenticated user's profile
 (`realtime/awareness.ts`), so nobody can appear as someone else. Logging out
@@ -490,7 +511,8 @@ that socket announced, and its `user` is always replaced by the authenticated us
   data dir, signs up real users, creates a board, connects real Yjs WebSocket clients and checks
   sync, roles, persistence across restart. No fake harness. Runs on PGlite by default; with
   `DATABASE_URL` it runs against that Postgres (fresh database per run, dropped afterwards) and
-  also starts two instances at once on one empty database (migration lock). CI does both.
+  also starts two instances at once on one empty database (migration lock); with `REDIS_URL` too,
+  it runs two instances on one database + Redis with clients on each. CI does all of it.
 - UI: drive the real app in a browser (see `.claude/skills/verify-freero/`).
 
 ### What a test is for

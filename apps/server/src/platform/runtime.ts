@@ -8,6 +8,7 @@ import { initErrorReporting, reportError } from './errorReporting';
 import { addReadinessCheck, markDraining } from './health';
 import { configureLogger, log, logError } from './log';
 import { startMetricsServer } from './metrics';
+import { closePubSub } from './pubsub';
 import { closeRedis, initRedis } from './redis';
 import { initStorage } from './storage';
 
@@ -57,5 +58,6 @@ export async function drain(config: Config): Promise<void> {
 
 export async function stopPlatform(): Promise<void> {
   metricsServer?.close();
+  await closePubSub();
   await closeRedis();
 }

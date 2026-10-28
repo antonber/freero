@@ -45,7 +45,7 @@ Migrations run automatically at startup (see [deployment.md](deployment.md#migra
 
 | Variable | Default | Description |
 |---|---|---|
-| `REDIS_URL` | — | `redis://host:6379` or `rediss://` (TLS). Shares rate-limit counters across instances (realtime fan-out next). Unset: in-process. If Redis goes down, rate limits fail open (logged) and `/readyz` reports `redis: error`. |
+| `REDIS_URL` | — | `redis://host:6379` or `rediss://` (TLS). Shares rate-limit counters across instances and fans realtime board edits, presence, access changes and logouts out to every instance (pub/sub on `freero:rt:*` channels; nothing is stored), so any instance can serve any board. **Required for more than one instance.** Unset: in-process (one instance). If Redis goes down, rate limits fail open (logged), collaborators on different instances stop seeing each other's live edits until it is back (they resync then; nothing is lost) and `/readyz` reports `redis: error`. |
 
 ## Object storage (uploads and board thumbnails)
 

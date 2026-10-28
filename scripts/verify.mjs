@@ -10,8 +10,14 @@
 // Database: PGlite under the temp data dir by default. With DATABASE_URL (any database on a real
 // Postgres server; its user needs CREATEDB), each run creates and finally drops its own databases
 // and also checks that two instances starting at once share the migrations safely.
+//
+// Multi-instance: with DATABASE_URL and REDIS_URL, two instances share one fresh database and the
+// Redis, and clients on different instances must see each other's edits and cursors, access
+// changes / logouts / deletes made through the other instance, and every edit saved exactly as
+// if one instance had served them (even one whose instance is killed before it saved).
 
 import { execSync, spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
@@ -54,6 +60,9 @@ async function check(name, fn) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Rate-limit counters are keyed with SESSION_SECRET: a secret of its own keeps this run's servers
+// from sharing (Redis-backed) counters with earlier runs.
+const RUN_SECRET = randomBytes(32).toString('base64url');
 async function waitFor(cond, timeoutMs = 5000, what = 'condition') {
   const end = Date.now() + timeoutMs;
   while (Date.now() < end) {
@@ -103,6 +112,7 @@ async function spawnServer(dataDir, env = {}) {
       FREERO_DATA_DIR: dataDir,
       NODE_ENV: 'test',
       FREERO_DOC_IDLE_MS: '1000',
+      SESSION_SECRET: RUN_SECRET,
       ...(db.url ? { DATABASE_URL: db.url } : {}),
       ...env,
     },
@@ -234,11 +244,12 @@ class User {
     this.email = `${label.toLowerCase()}-${Date.now()}@verify.freero.app`;
     this.name = `User ${label}`;
   }
-  async req(method, url, body, { raw = false, headers = {}, cookie = true } = {}) {
+  /** `port`: which instance to ask (default: the main server). */
+  async req(method, url, body, { raw = false, headers = {}, cookie = true, port = server.port } = {}) {
     const h = { ...headers };
     if (cookie && this.cookie) h.cookie = this.cookie;
     if (body !== undefined && !raw) h['content-type'] = 'application/json';
-    const res = await fetch(`http://127.0.0.1:${server.port}${url}`, {
+    const res = await fetch(`http://127.0.0.1:${port}${url}`, {
       method,
       headers: h,
       body: body === undefined ? undefined : raw ? body : JSON.stringify(body),
@@ -269,8 +280,11 @@ class User {
 // ---------------------------------------------------------------------------
 const providers = new Set();
 
-/** `prepare(doc)` runs before connecting (local "offline" content the client brings along). */
-function connectDoc(user, boardId, prepare) {
+/**
+ * `prepare(doc)` runs before connecting (local "offline" content the client brings along).
+ * `port`: the instance to connect to (default: the main server).
+ */
+function connectDoc(user, boardId, prepare, port = server.port) {
   const cookie = user.cookie;
   class CookieWebSocket extends WebSocket {
     constructor(url, protocols) {
@@ -279,7 +293,7 @@ function connectDoc(user, boardId, prepare) {
   }
   const doc = new Y.Doc();
   prepare?.(doc);
-  const provider = new WebsocketProvider(`ws://127.0.0.1:${server.port}/ws/boards`, boardId, doc, {
+  const provider = new WebsocketProvider(`ws://127.0.0.1:${port}/ws/boards`, boardId, doc, {
     WebSocketPolyfill: CookieWebSocket,
     disableBc: true,
     connect: false,
@@ -834,7 +848,13 @@ async function platformChecks() {
   const METRICS_TOKEN = 'verify-metrics-token';
   let proc = null;
   try {
-    const env = { RATE_LIMIT_LOGIN: '5/1m', UPLOAD_QUOTA_MB: '1', MAX_BOARDS_PER_USER: '2', METRICS_TOKEN };
+    const env = {
+      RATE_LIMIT_LOGIN: '5/1m',
+      UPLOAD_QUOTA_MB: '1',
+      MAX_BOARDS_PER_USER: '2',
+      METRICS_TOKEN,
+      SESSION_SECRET: randomBytes(32).toString('base64url'), // its own rate-limit counters
+    };
     if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
     const ok = await check('platform server boots with tight limits', async () => {
       proc = await waitUp(await spawnServer(dataDir, env));
@@ -951,9 +971,174 @@ async function platformChecks() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Several instances behind a round-robin balancer: two server processes sharing one Postgres and
+// one Redis; every client may land on either (DATABASE_URL + REDIS_URL only).
+// ---------------------------------------------------------------------------
+async function multiInstanceChecks() {
+  const REDIS_URL = process.env.REDIS_URL?.trim();
+  if (!ADMIN_URL || !REDIS_URL) {
+    console.log('\n(multi-instance checks skipped: they need both DATABASE_URL and REDIS_URL)');
+    return;
+  }
+  console.log('\nmulti-instance: two servers, one Postgres database, one Redis\n');
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-multi-'));
+  const procs = [];
+  let url = null;
+  const env = () => ({ DATABASE_URL: url, REDIS_URL });
+  const docRows = async (boardId) =>
+    (await adminQuery(`SELECT count(*)::int AS n FROM board_doc_updates WHERE board_id = '${boardId}'`, url))[0].n;
+  try {
+    const up = await check('two instances start on one database and one Redis', async () => {
+      url = await createDatabase();
+      for (let i = 0; i < 2; i++) procs.push(await spawnServer(path.join(dataDir, `i${i}`), env()));
+      await Promise.all(procs.map((p) => waitUp(p)));
+    });
+    if (!up) return;
+    const [one, two] = procs.map((p) => p.port);
+    server = procs[0]; // REST calls default to instance 1 below unless they name a port
+    const A = new User('MA'); // owner
+    const B = new User('MB'); // editor
+    let board = null;
+    await check('accounts and a shared board, set up through instance 1', async () => {
+      for (const u of [A, B]) await u.signup();
+      board = (await A.req('POST', '/api/boards', { title: 'Two instances' })).json.board;
+      const r = await A.req('POST', `/api/boards/${board.id}/members`, { email: B.email, role: 'editor' });
+      assert(r.status === 201, r.text);
+    });
+    if (!board) return;
+
+    let a, b;
+    await check('edits cross instances both ways (A on instance 1, B on instance 2)', async () => {
+      a = connectDoc(A, board.id, undefined, one);
+      b = connectDoc(B, board.id, undefined, two);
+      await Promise.all([a.ready(), b.ready()]);
+      els(a).set('m1', { id: 'm1', type: 'sticky', text: 'from instance 1' });
+      await waitFor(() => els(b).get('m1')?.text === 'from instance 1', 5000, 'B (instance 2) to receive m1');
+      els(b).set('m2', { id: 'm2', type: 'sticky', text: 'from instance 2' });
+      await waitFor(() => els(a).get('m2')?.text === 'from instance 2', 5000, 'A (instance 1) to receive m2');
+    });
+
+    await check('cursors cross instances, with the identity the server stamped', async () => {
+      b.provider.awareness.setLocalStateField('user', { id: A.id, name: 'not B', color: '#000000' });
+      b.provider.awareness.setLocalStateField('cursor', { x: 21, y: 22 });
+      a.provider.awareness.setLocalStateField('cursor', { x: 11, y: 12 });
+      const stateOf = (viewer, client) => viewer.provider.awareness.getStates().get(client.doc.clientID);
+      await waitFor(() => stateOf(a, b)?.cursor?.x === 21, 5000, "A (instance 1) to see B's cursor");
+      await waitFor(() => stateOf(b, a)?.cursor?.x === 11, 5000, "B (instance 2) to see A's cursor");
+      assert(stateOf(a, b).user.id === B.id, `instance 1 shows B as ${JSON.stringify(stateOf(a, b).user)}`);
+    });
+
+    await check('a client leaving instance 2 disappears from presence on instance 1', async () => {
+      const g = connectDoc(B, board.id, undefined, two);
+      await g.ready();
+      g.provider.awareness.setLocalStateField('cursor', { x: 5, y: 5 });
+      await waitFor(() => a.provider.awareness.getStates().get(g.doc.clientID)?.cursor?.x === 5, 5000, 'A to see the guest cursor');
+      const id = g.doc.clientID;
+      g.destroy();
+      await waitFor(() => !a.provider.awareness.getStates().has(id), 5000, 'the guest cursor to disappear on instance 1');
+    });
+
+    await check("opening the board on instance 2 right after an edit on instance 1 shows it before it is even saved", async () => {
+      const fresh = (await A.req('POST', '/api/boards', { title: 'Unsaved' })).json.board;
+      const w = connectDoc(A, fresh.id, undefined, one);
+      await w.ready();
+      els(w).set('u1', { id: 'u1', type: 'sticky', text: 'not saved yet' });
+      await sleep(100); // reached instance 1; its save waits ~1.5 s (debounce)
+      const r = connectDoc(A, fresh.id, undefined, two); // instance 2 loads the board from the database
+      await r.ready();
+      await waitFor(() => els(r).get('u1')?.text === 'not saved yet', 1000, 'the reader on instance 2 to get the unsaved edit');
+      assert((await docRows(fresh.id)) === 0, 'the edit was already saved, so this proves nothing about fan-out');
+      w.destroy();
+      r.destroy();
+    });
+
+    await check('a role change made through instance 2 applies live to a socket on instance 1', async () => {
+      const b1 = connectDoc(B, board.id, undefined, one);
+      await b1.ready();
+      assert(b1.role === 'editor', `role ${b1.role}`);
+      const r = await A.req('PATCH', `/api/boards/${board.id}/members/${B.id}`, { role: 'viewer' }, { port: two });
+      assert(r.status === 200, r.text);
+      await waitFor(() => b1.role === 'viewer', 5000, 'the socket on instance 1 to become viewer');
+      els(b1).set('ignored', { id: 'ignored', type: 'sticky', text: 'viewer write' });
+      await sleep(600);
+      assert(!els(a).has('ignored') && !els(b).has('ignored'), "a viewer's write crossed instances");
+      assert((await A.req('PATCH', `/api/boards/${board.id}/members/${B.id}`, { role: 'editor' }, { port: two })).status === 200, 'restore');
+      await waitFor(() => b.role === 'editor', 5000, 'B on instance 2 to be editor again');
+      b1.destroy();
+    });
+
+    await check('logging out through instance 2 closes that session\'s socket on instance 1 (4401)', async () => {
+      const L = new User('ML');
+      await L.signup();
+      const own = (await L.req('POST', '/api/boards', { title: 'L' })).json.board;
+      const live = connectDoc(L, own.id, undefined, one);
+      await live.ready();
+      assert((await L.req('POST', '/api/auth/logout', undefined, { port: two })).status === 200, 'logout');
+      await waitFor(() => live.closeCodes.includes(4401), 5000, 'the socket on instance 1 to close with 4401');
+      live.destroy();
+    });
+
+    await check('edits made on both instances at once are all saved, and the log is compacted after both unload', async () => {
+      for (let i = 0; i < 15; i++) {
+        els(a).set(`x${i}`, { id: `x${i}`, type: 'sticky', text: `a${i}` });
+        els(b).set(`y${i}`, { id: `y${i}`, type: 'sticky', text: `b${i}` });
+        await sleep(20);
+      }
+      const all = (c) => Array.from({ length: 15 }, (_, i) => i).every((i) => els(c).has(`x${i}`) && els(c).has(`y${i}`));
+      await waitFor(() => all(a) && all(b), 5000, 'both clients to converge');
+      a.destroy();
+      b.destroy();
+      // Saved on the last disconnect; unloaded (and compacted) after FREERO_DOC_IDLE_MS=1000.
+      await waitFor(async () => (await docRows(board.id)) === 0, 10_000, 'the update log to be compacted into the base');
+      const reader = connectDoc(A, board.id, undefined, two);
+      await reader.ready();
+      assert(all(reader) && els(reader).has('m1') && els(reader).has('m2'), `after reload: ${JSON.stringify([...els(reader).keys()])}`);
+      reader.destroy();
+    });
+
+    await check('an instance killed before saving loses nothing: the other instance saves what it relayed', async () => {
+      const k = connectDoc(A, board.id, undefined, one);
+      const s = connectDoc(B, board.id, undefined, two);
+      await Promise.all([k.ready(), s.ready()]);
+      els(k).set('crash', { id: 'crash', type: 'sticky', text: 'made on the instance that dies' });
+      await waitFor(() => els(s).has('crash'), 5000, 'the edit to reach instance 2');
+      k.destroy(); // its client goes away too (otherwise it would re-send the edit on reconnect)
+      await stopProc(procs[0]); // hard kill, well inside the save debounce
+      s.destroy(); // instance 2 unloads the board after FREERO_DOC_IDLE_MS
+      await sleep(2500);
+      const after = connectDoc(A, board.id, undefined, two);
+      await after.ready();
+      assert(els(after).get('crash')?.text === 'made on the instance that dies', 'the edit died with its instance');
+      after.destroy();
+      // Instance 1 comes back (as after a crash restart) for the delete check below.
+      procs[0] = await waitUp(await spawnServer(path.join(dataDir, 'i0b'), env()));
+    });
+
+    await check('deleting the board through instance 2 disconnects its sockets on instance 1 (4403)', async () => {
+      const live = connectDoc(B, board.id, undefined, procs[0].port);
+      await live.ready();
+      assert((await A.req('DELETE', `/api/boards/${board.id}`, undefined, { port: two })).status === 200, 'delete');
+      await waitFor(() => live.closeCodes.includes(4403), 5000, 'the socket on instance 1 to close with 4403');
+      live.destroy();
+    });
+  } finally {
+    closeAllDocs();
+    server = null;
+    for (const p of procs) await stopProc(p);
+    await dropDatabases();
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
 const started = Date.now();
 await run().catch((e) => record('verify harness', false, e?.stack ?? String(e)));
 await platformChecks().catch((e) => record('platform checks harness', false, e?.stack ?? String(e)));
+await multiInstanceChecks().catch((e) => record('multi-instance checks harness', false, e?.stack ?? String(e)));
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed in ${((Date.now() - started) / 1000).toFixed(1)}s`);
 if (failed.length) {
