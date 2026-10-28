@@ -1,7 +1,7 @@
 // The only writer of `users`, `sessions`, `auth_tokens`, `auth_identities`, `auth_oidc_flows`,
-// `auth_challenges`, `user_totp` and `user_recovery_codes` [S4].
+// `auth_challenges`, `user_totp`, `user_recovery_codes` and `guest_sessions` [S4].
 import type { Account } from '@freero/shared';
-import { isUniqueViolation, one, query, tx } from '../../platform/db';
+import { isForeignKeyViolation, isUniqueViolation, one, query, tx } from '../../platform/db';
 
 interface UserRow {
   id: string;
@@ -644,6 +644,71 @@ export async function rememberDevice(userId: string, deviceHash: string, now: nu
 /** Forgets browsers that have not signed in since `before` (their device cookie has expired too). */
 export async function deleteDevicesUnseenSince(before: number): Promise<void> {
   await query(`DELETE FROM auth_devices WHERE last_seen_at < $1`, [new Date(before)]);
+}
+
+// ---- guest sessions (visitors without an account, one board each) ----
+
+export interface GuestRow {
+  id: string;
+  boardId: string;
+  name: string;
+  color: string;
+  createdAt: number;
+  expiresAt: number;
+}
+interface GuestDbRow {
+  id: string;
+  board_id: string;
+  name: string;
+  color: string;
+  created_at: Date;
+  expires_at: Date;
+}
+const toGuest = (r: GuestDbRow): GuestRow => ({
+  id: r.id,
+  boardId: r.board_id,
+  name: r.name,
+  color: r.color,
+  createdAt: r.created_at.getTime(),
+  expiresAt: r.expires_at.getTime(),
+});
+
+/** False when the board is gone (deleted meanwhile). */
+export async function insertGuest(g: GuestRow & { tokenHash: string; ip: string }): Promise<boolean> {
+  try {
+    await query(
+      `INSERT INTO guest_sessions (id, token_hash, board_id, name, color, ip, created_at, expires_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [g.id, g.tokenHash, g.boardId, g.name, g.color, g.ip, new Date(g.createdAt), new Date(g.expiresAt)],
+    );
+    return true;
+  } catch (e) {
+    if (isForeignKeyViolation(e)) return false;
+    throw e;
+  }
+}
+
+/** The live guest session behind a token hash, or null. */
+export async function findGuestByToken(tokenHash: string, now: number): Promise<GuestRow | null> {
+  const r = await one<GuestDbRow>(`SELECT * FROM guest_sessions WHERE token_hash = $1 AND expires_at > $2`, [tokenHash, new Date(now)]);
+  return r ? toGuest(r) : null;
+}
+
+/** Live guests by id (expired ones are left out). */
+export async function findGuests(ids: string[], now: number): Promise<GuestRow[]> {
+  if (ids.length === 0) return [];
+  return (await query<GuestDbRow>(`SELECT * FROM guest_sessions WHERE id = ANY($1::text[]) AND expires_at > $2`, [ids, new Date(now)])).map(toGuest);
+}
+
+/** Ends one guest session; returns its token hash (to close its sockets), or null. */
+export async function deleteGuestByToken(tokenHash: string): Promise<string | null> {
+  return (await one<{ token_hash: string }>(`DELETE FROM guest_sessions WHERE token_hash = $1 RETURNING token_hash`, [tokenHash]))?.token_hash ?? null;
+}
+
+/** Deletes expired guest sessions; returns their token hashes (to close their sockets). */
+export async function deleteExpiredGuests(now: number): Promise<string[]> {
+  return (await query<{ token_hash: string }>(`DELETE FROM guest_sessions WHERE expires_at <= $1 RETURNING token_hash`, [new Date(now)])).map(
+    (r) => r.token_hash,
+  );
 }
 
 /** Every match of `pattern`'s first group in a profile picture URL (restricted to `among` when given). */

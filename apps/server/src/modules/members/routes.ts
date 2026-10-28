@@ -1,12 +1,23 @@
 import { Router } from 'express';
-import type { AcceptInviteResponse, AccessRequestState, BoardMember, BoardPerson, InviteResponse, Role, User } from '@freero/shared';
-import { decideRequest, listRequests, requestAccess, requestState, withdrawRequest } from './accessRequests';
+import { guestDisplayName, type AcceptInviteResponse, type AccessRequestState, type BoardMember, type BoardPerson, type InviteResponse, type Role, type User } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { badRequest, forbidden, handle, HttpError, notFound } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
-import { currentUser, findUserByEmail, getUser, getUsers, normalizeEmail, requireUser } from '../auth/index';
+import {
+  actorId,
+  currentActor,
+  currentUser,
+  findUserByEmail,
+  getGuests,
+  getUser,
+  getUsers,
+  normalizeEmail,
+  requireUser,
+  requireUserOrGuest,
+} from '../auth/index';
 import { requireBoardAccess, teamAccessMembers, teamAccessUserIds } from '../boards/index';
 import { commentPeopleOf, refreshBoardAccess } from '../realtime/index';
+import { decideRequest, listRequests, requestAccess, requestState, withdrawRequest } from './accessRequests';
 import { boardShared } from './events';
 import { acceptInvite, inviteByEmail, listPending, previewInvite, resendInvite } from './invites';
 import * as repo from './repo';
@@ -105,19 +116,25 @@ export default function memberRoutes(_ctx: ServerContext): Router {
   );
 
   // Profiles for ids a board shows (comment authors, @mentions), including people who left it.
+  // Guests may ask too (their board only): names and photos, never emails.
   r.get(
     '/boards/:id/people',
-    requireUser,
+    requireUserOrGuest,
     handle(async (req, res) => {
       const boardId = req.params.id;
-      const { ownerId } = await requireBoardAccess(boardId, currentUser(req).id);
+      const { ownerId } = await requireBoardAccess(boardId, actorId(currentActor(req)));
       const ids = [...new Set(String(req.query.ids ?? '').split(',').filter(Boolean))];
       if (ids.length > MAX_PEOPLE) throw badRequest(`At most ${MAX_PEOPLE} ids`);
       const onBoard = new Set([ownerId, ...(await repo.listByBoard(boardId)).map((m) => m.userId), ...(await teamAccessUserIds(boardId))]);
       // Only people the board already shows somewhere: never a lookup of arbitrary accounts.
       const inComments = ids.some((id) => !onBoard.has(id)) ? await commentPeopleOf(boardId) : new Set<string>();
-      const users = await getUsers(ids.filter((id) => onBoard.has(id) || inComments.has(id)));
-      const people: BoardPerson[] = [...users.values()].map((u) => ({ id: u.id, name: u.name, color: u.color, avatarUrl: u.avatarUrl }));
+      const shown = ids.filter((id) => onBoard.has(id) || inComments.has(id));
+      const [users, guests] = await Promise.all([getUsers(shown), getGuests(shown)]);
+      const people: BoardPerson[] = [
+        ...[...users.values()].map((u) => ({ id: u.id, name: u.name, color: u.color, avatarUrl: u.avatarUrl })),
+        // Guests who commented here, while their session lasts (their comments keep the name after).
+        ...[...guests.values()].filter((g) => g.boardId === boardId).map((g) => ({ id: g.id, name: guestDisplayName(g.name), color: g.color, avatarUrl: null })),
+      ];
       res.json({ people });
     }),
   );

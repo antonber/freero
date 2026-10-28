@@ -185,4 +185,14 @@ describe('decideUpdate', () => {
     decideUpdate('commenter', server, u, 'dan');
     expect(server.getMap('elements').has('e2')).toBe(false);
   });
+
+  it('does not let a guest comment under any name but the one they joined with ("Guest · …")', () => {
+    const as = (authorName: string) => {
+      const { server, client } = setup();
+      const u = edit(client, (c) => c.set('m:t1:g1', { kind: 'message', threadId: 't1', id: 'g1', authorId: 'guest_x', authorName, text: 'hi', createdAt: 2 }));
+      return decideUpdate('commenter', server, u, 'guest_x', 'Guest · Kim');
+    };
+    expect(as('Ana')).toBe('drop');
+    expect(as('Guest · Kim')).toBe('apply');
+  });
 });

@@ -68,6 +68,8 @@ export interface BoardPermissions {
   canMove: boolean;
   /** Hand the board to someone else (its owner, or the workspace's owners/admins). */
   canTransfer: boolean;
+  /** [additive] The board's link also lets in visitors without an account, as guests (workspace policy `publicLinks`). */
+  guestLinks?: boolean;
 }
 
 // ---- Workspaces ----
@@ -522,6 +524,44 @@ export interface BoardAccessRequest {
   message: string;
   createdAt: number;
 }
+
+// ---- Guests: visitors without an account on a shared link ----
+// When a board's "anyone with the link" is on and its workspace allows visitors without an account
+// (policies.publicLinks 'anyone', and external sharing not 'none'), someone without an account may
+// join THAT board under a name, as "Guest · <name>": at most commenter (an "editor" link gives
+// guests "can comment"), for GUEST_SESSION_HOURS, through an HttpOnly cookie `freero_guest` that
+// opens nothing but that board (its doc socket, its people lookup). Guests never see members'
+// emails or the member list, can't @mention, and get no notifications. Their comments are stored
+// under their guest id with the name "Guest · <name>" (the server refuses any other name for them).
+// Changing the link or the policy re-checks connected guests at once; expired guests are dropped.
+// GET  /api/guest/boards/:id        -> GuestBoardInfo           (no session needed; 404: no such board)
+// POST /api/guest/boards/:id/join   body { name } -> GuestJoinResponse (rate limited per IP; 403 when
+//                                      the board doesn't let guests in)
+// GET  /api/guest/me                -> { guest: GuestInfo | null }
+// GET  /api/guest/boards/:id/board  -> { board: BoardSummary }  (the guest's own board only)
+// POST /api/guest/leave             -> { ok: true }  (ends the guest session)
+export const GUEST_ID_PREFIX = 'guest_';
+export const GUEST_SESSION_HOURS = 12;
+export const MAX_GUEST_NAME = 40;
+/** Guest ids never collide with account ids (those have no underscore). */
+export const isGuestId = (id: string): boolean => id.startsWith(GUEST_ID_PREFIX);
+/** How a guest is shown everywhere (presence, comments, activity). */
+export const guestDisplayName = (name: string): string => `Guest · ${name}`;
+export interface GuestBoardInfo {
+  /** Visitors without an account may join (and as what); the title only then. */
+  allowed: boolean;
+  role?: 'viewer' | 'commenter';
+  title?: string;
+}
+export interface GuestInfo {
+  id: string;
+  /** As typed; shown as guestDisplayName(name). */
+  name: string;
+  color: string;
+  boardId: string;
+  expiresAt: number;
+}
+export interface GuestJoinResponse { guest: GuestInfo }
 
 // ---- Board people ----
 // GET /api/boards/:id/people?ids=a,b,c -> { people: BoardPerson[] }  (any role on the board)

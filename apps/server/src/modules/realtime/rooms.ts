@@ -93,6 +93,8 @@ export interface Admission {
   role: Role;
   sessionKey: string;
   identity: AwarenessIdentity;
+  /** Set for guests: the only author name their comment messages may carry. */
+  authorName?: string;
 }
 export interface Refusal {
   code: number;
@@ -105,6 +107,8 @@ interface Conn {
   /** Session the socket was opened with (auth's opaque key); logging out closes the socket. */
   sessionKey: string;
   role: Role;
+  /** Guests: the author name their comments must carry (commentRules.ts). */
+  authorName: string | undefined;
   identity: { value: AwarenessIdentity; at: number; loading: boolean };
   /** Awareness client ids announced over this socket (removed on close). */
   awarenessIds: Set<number>;
@@ -484,6 +488,7 @@ class Room {
       userId: a.userId,
       sessionKey: a.sessionKey,
       role: a.role,
+      authorName: a.authorName,
       identity: { value: a.identity, at: Date.now(), loading: false },
       awarenessIds: new Set(),
       lastResync: 0,
@@ -569,7 +574,7 @@ class Room {
   }
 
   private onUpdate(conn: Conn, update: Uint8Array, syncType: number): void {
-    if (decideUpdate(conn.role, this.doc, update, conn.userId) === 'apply') {
+    if (decideUpdate(conn.role, this.doc, update, conn.userId, conn.authorName) === 'apply') {
       Y.applyUpdate(this.doc, update, conn.ws);
       return;
     }

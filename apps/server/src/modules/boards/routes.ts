@@ -1,9 +1,9 @@
 import { Router } from 'express';
-import type { BoardSummary, LinkAccess } from '@freero/shared';
+import type { BoardSummary, GuestBoardInfo, GuestJoinResponse, LinkAccess } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
-import { badRequest, forbidden, handle } from '../../platform/http';
+import { badRequest, forbidden, handle, notFound, unauthorized } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
-import { currentUser, requireUser } from '../auth/index';
+import { currentUser, endGuestSession, guestFromCookieHeader, requireUser, startGuestSession } from '../auth/index';
 import { isLinkAccess, ROLE_RANK } from '../members/index';
 import { mayShareExternally } from '../workspaces/index';
 import { refreshBoardAccess } from '../realtime/index';
@@ -17,6 +17,7 @@ import {
   createBoard,
   deleteForever,
   duplicateBoard,
+  guestRoleFor,
   listBoards,
   moveToProject,
   moveToTrash,
@@ -189,6 +190,59 @@ export default function boardRoutes(_ctx: ServerContext): Router {
       // The previous thumbnail as of THIS write (a concurrent save may have replaced the one we read).
       const previous = await repo.setThumbnail(board.id, url);
       await deleteUpload(previous === undefined ? url : previous); // board deleted meanwhile: drop ours
+      res.json({ ok: true } satisfies Out);
+    }),
+  );
+
+  // ---- guests: visitors without an account on a shared link (see @freero/shared api.ts) ----
+
+  r.get(
+    '/guest/boards/:id',
+    handle(async (req, res) => {
+      const board = await repo.getBoard(req.params.id);
+      if (!board) throw notFound('Board not found');
+      const role = await guestRoleFor(board);
+      res.json((role ? { allowed: true, role, title: board.title } : { allowed: false }) satisfies GuestBoardInfo);
+    }),
+  );
+
+  r.post(
+    '/guest/boards/:id/join',
+    rateLimit('guestJoin', 'ip'),
+    handle(async (req, res) => {
+      const board = await repo.getBoard(req.params.id);
+      if (!board) throw notFound('Board not found');
+      if (!(await guestRoleFor(board))) throw forbidden('This board doesn’t let visitors without an account in. Sign in to open it.');
+      const guest = await startGuestSession(req, res, board.id, req.body?.name);
+      if (!guest) throw notFound('Board not found');
+      res.status(201).json({ guest } satisfies GuestJoinResponse);
+    }),
+  );
+
+  // Always 200 (like GET /auth/session): { guest: null } when this browser has no live guest session.
+  r.get(
+    '/guest/me',
+    handle(async (req, res) => {
+      res.json({ guest: await guestFromCookieHeader(req.headers.cookie) });
+    }),
+  );
+
+  // The guest's board as they may see it (only the board they joined; its role re-checked).
+  r.get(
+    '/guest/boards/:id/board',
+    handle(async (req, res) => {
+      const guest = await guestFromCookieHeader(req.headers.cookie);
+      if (!guest) throw unauthorized();
+      if (guest.boardId !== req.params.id) throw forbidden();
+      const { board, role, access } = await requireAccess(req.params.id, guest.id);
+      res.json({ board: await toSummary(board, guest.id, role, access, { starred: false, lastOpenedAt: null, member: false }) } satisfies Out);
+    }),
+  );
+
+  r.post(
+    '/guest/leave',
+    handle(async (req, res) => {
+      await endGuestSession(req, res);
       res.json({ ok: true } satisfies Out);
     }),
   );

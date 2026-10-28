@@ -264,6 +264,8 @@ export interface BoardWorkspaceAccess {
   outsidersBlocked: boolean;
   /** Highest link access the workspace allows. */
   maxLink: LinkAccess;
+  /** The workspace lets a board's link in visitors without an account (policy `publicLinks`). */
+  anonymousLinks: boolean;
 }
 
 type BoardPlace = { workspaceId: string; projectId: string | null };
@@ -296,6 +298,7 @@ export async function boardAccessLoader(userId: string, workspaceIds: string[]):
       inWorkspace: role !== null,
       outsidersBlocked: policies.externalSharing === 'none',
       maxLink: policies.linkSharing,
+      anonymousLinks: policies.publicLinks === 'anyone',
     };
   };
 }

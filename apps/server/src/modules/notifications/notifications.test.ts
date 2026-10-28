@@ -147,6 +147,16 @@ it('team access counts for notifications: a team member is told about a mention 
   expect(await inbox(teammate)).toHaveLength(2);
 });
 
+it('a guest’s reply on a shared board notifies the thread as a guest; their @mentions page nobody', async () => {
+  const [ann, bob] = await Promise.all([person('Ann'), person('Bob')]);
+  const board = await createBoard(ann.id, 'Open house', '', 'commenter');
+  await onCommentMessage(message(board.id, 'guest_abc', `hi ${mentionToken(bob.id)}`, { participantIds: [ann.id, 'guest_other'] }));
+  expect(await inbox(bob)).toHaveLength(0);
+  const [reply] = await inbox(ann);
+  expect(reply).toMatchObject({ type: 'comment.reply', actor: null });
+  expect(reply.title).toMatch(/^Guest · /);
+});
+
 it('an access request reaches the owner with its message and buttons; a "no" reaches the asker without the board’s title', async () => {
   onAccessRequested(service.onAccessRequested);
   onAccessDecided(service.onAccessDecided);

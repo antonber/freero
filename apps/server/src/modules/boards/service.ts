@@ -1,11 +1,11 @@
-import { TRASH_RETENTION_DAYS, type BoardPermissions, type BoardSummary, type LinkAccess, type Role } from '@freero/shared';
+import { isGuestId, TRASH_RETENTION_DAYS, type BoardPermissions, type BoardSummary, type LinkAccess, type Role } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { badRequest, forbidden, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { runExclusive } from '../../platform/jobs';
 import { log } from '../../platform/log';
-import { getUser, getUsers } from '../auth/index';
-import { atLeast, getMemberRole, membershipsOf, ownershipTransferred, resolveRole } from '../members/index';
+import { getGuests, getUser, getUsers } from '../auth/index';
+import { atLeast, getMemberRole, membershipsOf, ownershipTransferred, resolveGuestRole, resolveRole } from '../members/index';
 import {
   closeBoardDoc,
   initBoardDoc,
@@ -40,10 +40,25 @@ const DAY_MS = 86_400_000;
 export const TRASH_RETENTION_MS = TRASH_RETENTION_DAYS * DAY_MS;
 export const DEFAULT_TITLE = 'Untitled board';
 
-/** The user's role on a board and what its workspace contributes (policies, team access). */
+/**
+ * The role of `userId` on a board and what its workspace contributes (policies, team access).
+ * `userId` may be a guest id: a guest gets only the board they joined, as resolveGuestRole allows
+ * (never once their session expired).
+ */
 export async function describeAccess(board: Board, userId: string): Promise<{ role: Role | null; access: BoardWorkspaceAccess }> {
+  if (isGuestId(userId)) {
+    const [guest, access] = await Promise.all([getGuests([userId]), boardAccess(userId, board)]);
+    const joined = guest.get(userId)?.boardId === board.id;
+    return { role: joined ? resolveGuestRole(board, access) : null, access };
+  }
   const [memberRole, access] = await Promise.all([getMemberRole(board.id, userId), boardAccess(userId, board)]);
   return { role: resolveRole(board, userId, memberRole, access), access };
+}
+
+/** May visitors without an account join this board by its link, and as what (null: no)? */
+export async function guestRoleFor(board: Board): Promise<'viewer' | 'commenter' | null> {
+  // The access a workspace gives someone who is in none of its lists (any id outside it will do).
+  return resolveGuestRole(board, await boardAccess('', board));
 }
 
 export async function roleOn(board: Board, userId: string): Promise<Role | null> {
@@ -74,6 +89,7 @@ export function permissionsFor(board: Board, userId: string, role: Role, access:
     maxLinkAccess: access.maxLink,
     canMove: isOwner || admin,
     canTransfer: isOwner || admin,
+    guestLinks: access.anonymousLinks && !access.outsidersBlocked,
   };
 }
 

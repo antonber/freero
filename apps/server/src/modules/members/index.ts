@@ -3,7 +3,7 @@
 import type { Role } from '@freero/shared';
 import * as repo from './repo';
 
-export { resolveRole, atLeast, isLinkAccess, ROLE_RANK, type WorkspaceAccess } from './roles';
+export { resolveRole, resolveGuestRole, atLeast, isLinkAccess, ROLE_RANK, type WorkspaceAccess } from './roles';
 
 /** Ends the user's direct memberships on these boards (removed from the boards' workspace). */
 export async function removeBoardMemberships(boardIds: string[], userId: string): Promise<void> {
