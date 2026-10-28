@@ -6,6 +6,8 @@ import { DOCK_ID } from './lib/insert';
 // (act-now tool; the current tool stays).
 export default defineTool({
   id: 'templates',
+  // Templates add frames, stickies, shapes, text…: offered only while anything may be added.
+  creates: ['frame', 'sticky', 'shape', 'text', 'connector'],
   label: 'Templates',
   icon: LayoutTemplate,
   order: 90,

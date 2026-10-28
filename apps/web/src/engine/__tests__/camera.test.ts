@@ -68,6 +68,25 @@ describe('following someone', () => {
     expect(core.editor.getCamera().x).toBe(cam.x + 40);
   });
 
+  it("a facilitator's follow-me pulls the view back after you pan, survives Esc, Stop and their brief absence, and ends only on release", () => {
+    core = makeCore();
+    join(core, 77, peer(77, 'lead', { x: 0, y: 0, zoom: 1, width: 1000, height: 800 }));
+    core.editor.follow({ userId: 'lead', locked: true }, { force: true });
+    const cam = core.editor.getCamera();
+    core.editor.asUser(() => core.editor.setCameraNow({ ...cam, x: cam.x + 900 })); // wandering off
+    core.editor.follow(null); // Esc, a canvas click, presence's "Stop"
+    for (let i = 0; i < 200; i++) followStep(core);
+    expect(core.editor.getCamera().x).toBeCloseTo(0, 0);
+    leave(core, 77);
+    followStep(core);
+    expect(core.editor.getFollowing()?.userId).toBe('lead');
+
+    core.editor.follow(null, { force: true });
+    core.editor.asUser(() => core.editor.setCameraNow({ ...core.editor.getCamera(), x: 900 }));
+    followStep(core);
+    expect(core.editor.getCamera().x).toBe(900);
+  });
+
   it('switches to their other tab when the followed tab closes, and stops when they leave the board', () => {
     core = makeCore();
     join(core, 5, peer(5, 'zoe', { x: 0, y: 0, zoom: 1, width: 1000, height: 800 }));

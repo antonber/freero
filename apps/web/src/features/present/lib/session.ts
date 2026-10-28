@@ -1,7 +1,8 @@
 // Presentation session: local state (per board), camera moves and presence publishing.
 import { createStore, useStore, type StoreApi } from 'zustand';
 import type { FrameElement } from '@freero/shared';
-import type { Editor, Rect } from '@engine';
+import type { Editor, Point, Rect } from '@engine';
+import { pointLaser, stopLaser } from './laser';
 import { currentPosition, slides, type PresentExt } from './model';
 
 export interface PresentState {
@@ -12,6 +13,10 @@ export interface PresentState {
   position: number;
   /** Presentations (`clientId:startedAt`) whose banner this user dismissed. */
   dismissed: string[];
+  /** Presenting with the laser pointer on (L). */
+  laser: boolean;
+  /** Presenting with my notes pane open (N). */
+  notesOpen: boolean;
 }
 
 const stores = new Map<string, StoreApi<PresentState>>();
@@ -19,7 +24,7 @@ const stores = new Map<string, StoreApi<PresentState>>();
 export function presentStore(editor: Editor): StoreApi<PresentState> {
   let s = stores.get(editor.boardId);
   if (!s) {
-    s = createStore<PresentState>(() => ({ presenting: false, frameId: null, position: 0, dismissed: [] }));
+    s = createStore<PresentState>(() => ({ presenting: false, frameId: null, position: 0, dismissed: [], laser: false, notesOpen: true }));
     stores.set(editor.boardId, s);
   }
   return s;
@@ -31,7 +36,7 @@ export function usePresent<T>(editor: Editor, selector: (s: PresentState) => T):
 
 // ---- presence (ext.present of this client)
 const published = new Map<string, PresentExt>();
-function publish(editor: Editor, patch: PresentExt) {
+export function publish(editor: Editor, patch: PresentExt) {
   const next = { ...(published.get(editor.boardId) ?? {}), ...patch };
   published.set(editor.boardId, next);
   editor.setPresenceExt(next);
@@ -76,9 +81,19 @@ export function startPresenting(editor: Editor, fromFrameId?: string | null) {
   showCurrent(editor, true);
 }
 
+/** Laser pointer: a point of my trail (shared through presence only). */
+export function laserAt(editor: Editor, p: Point) {
+  pointLaser(editor, p, (laser) => publish(editor, { laser }));
+}
+
+export function laserOff(editor: Editor) {
+  stopLaser(editor, (laser) => publish(editor, { laser }));
+}
+
 export function stopPresenting(editor: Editor) {
   if (!presentStore(editor).getState().presenting) return;
-  presentStore(editor).setState({ presenting: false });
+  laserOff(editor);
+  presentStore(editor).setState({ presenting: false, laser: false });
   editor.setChromeHidden(false);
   publish(editor, { presenting: null });
 }

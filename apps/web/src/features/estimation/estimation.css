@@ -1,0 +1,209 @@
+/* Planning poker: the round bar under the top bar, and the ring around the item being estimated. */
+.fr-est-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 100%;
+  padding: 8px 8px 8px 10px;
+  background: var(--fr-surface);
+  border-radius: var(--fr-radius-lg);
+  box-shadow: var(--fr-shadow-lg);
+  pointer-events: auto;
+}
+
+.fr-est-bar__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
+}
+
+.fr-est-bar__icon {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: var(--fr-radius);
+  background: var(--fr-accent-soft);
+  color: var(--fr-accent);
+  display: grid;
+  place-items: center;
+}
+
+.fr-est-bar__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  line-height: 1.25;
+}
+
+.fr-est-bar__text strong {
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+}
+
+.fr-est-bar__text span,
+.fr-est-bar__muted {
+  font-size: 12px;
+  color: var(--fr-ink-2);
+}
+
+.fr-est-bar__voters {
+  display: inline-flex;
+}
+
+.fr-est-bar__nav {
+  display: inline-flex;
+}
+
+.fr-est-bar__close {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--fr-radius);
+  background: none;
+  color: var(--fr-ink-2);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.fr-est-bar__close:hover {
+  background: var(--fr-hover);
+  color: var(--fr-ink);
+}
+
+.fr-est-bar__deck,
+.fr-est-other,
+.fr-est-deckpreview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fr-est-card {
+  min-width: 40px;
+  height: 52px;
+  padding: 0 8px;
+  border: 1px solid var(--fr-line-strong);
+  border-radius: 10px;
+  background: var(--fr-surface);
+  color: var(--fr-ink);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: transform 0.12s var(--fr-ease), background 0.12s;
+}
+
+.fr-est-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--fr-primary);
+}
+
+.fr-est-card.is-mine {
+  background: var(--fr-primary);
+  border-color: var(--fr-primary);
+  color: var(--fr-primary-ink);
+  transform: translateY(-4px);
+}
+
+.fr-est-card.is-small {
+  min-width: 32px;
+  height: 30px;
+  font-size: 13px;
+}
+
+.fr-est-chip {
+  min-width: 28px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--fr-surface-2);
+  font-weight: 600;
+  text-align: center;
+}
+
+.fr-est-bar__results {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.fr-est-dist {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.fr-est-dist__col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 30px;
+}
+
+.fr-est-dist__bar {
+  width: 22px;
+  border-radius: 4px 4px 2px 2px;
+  background: var(--fr-line-strong);
+}
+
+.fr-est-dist__col.is-top .fr-est-dist__bar {
+  background: var(--fr-primary);
+}
+
+.fr-est-dist__value {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.fr-est-dist__count {
+  font-size: 11px;
+  color: var(--fr-ink-2);
+}
+
+.fr-est-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--fr-ink-2);
+}
+
+.fr-est-stats__agree {
+  color: var(--fr-success);
+  font-size: 13px;
+}
+
+.fr-est-stats__outliers {
+  color: var(--fr-ink);
+}
+
+.fr-est-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.fr-est-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.fr-est-highlight {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  border-radius: 6px;
+  outline: calc(3 * var(--fr-est-px, 1px)) solid var(--fr-accent);
+  outline-offset: calc(4 * var(--fr-est-px, 1px));
+  pointer-events: none;
+}

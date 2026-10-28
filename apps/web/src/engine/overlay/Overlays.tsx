@@ -192,6 +192,7 @@ function PeersOverlay() {
   const core = useCore();
   const cam = useCamera();
   const peers = usePeers();
+  const cursorsHidden = useStore(core.ui, (s) => s.cursorsHidden);
   useElements();
   return (
     <>
@@ -213,9 +214,10 @@ function PeersOverlay() {
           </div>
         ));
       })}
-      {peers.map((peer) => (
-        <PeerCursor key={peer.clientId} peer={peer} cam={cam} />
-      ))}
+      {!cursorsHidden &&
+        peers.map((peer) => (
+          <PeerCursor key={peer.clientId} peer={peer} cam={cam} />
+        ))}
     </>
   );
 }

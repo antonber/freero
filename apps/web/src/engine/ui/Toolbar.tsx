@@ -25,7 +25,9 @@ export function Toolbar() {
   const barRef = useRef<HTMLDivElement>(null);
   const [optionsTop, setOptionsTop] = useState<number | null>(null);
 
-  const allowed = (t: Registered<ToolDefinition>) => ROLE_RANK[role] >= ROLE_RANK[t.def.minRole ?? 'editor'];
+  // A facilitator's limits hide the tools that add what participants may not add (Editor.getLimits).
+  useStore(core.ui, (s) => s.limits);
+  const allowed = (t: Registered<ToolDefinition>) => ROLE_RANK[role] >= ROLE_RANK[t.def.minRole ?? 'editor'] && editor.toolAllowed(t.def.id);
   const tools = core.registry.tools.filter(allowed);
   const main = tools.filter((t) => t.def.placement === 'main');
   const more = tools.filter((t) => t.def.placement === 'more');

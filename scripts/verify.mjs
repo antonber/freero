@@ -409,7 +409,10 @@ function connectDoc(user, boardId, prepare, port = user.port ?? server.port) {
   };
   provider.messageHandlers[WS_MESSAGE_ROLE] = (_encoder, decoder) => {
     const msg = JSON.parse(decoding.readVarString(decoder));
-    if (msg.type === 'role') client.role = msg.role;
+    if (msg.type === 'role') {
+      client.role = msg.role;
+      client.limits = msg.limits ?? null; // a facilitator's limits (KAI-129)
+    }
   };
   provider.on('connection-close', (event) => event && client.closeCodes.push(event.code));
   provider.messageHandlers[WS_MESSAGE_LAYER] = () => {}; // layer updates: see withLayers()
@@ -417,6 +420,7 @@ function connectDoc(user, boardId, prepare, port = user.port ?? server.port) {
   provider.connect();
   client.ready = () => waitFor(() => provider.synced && client.role !== null, 8000, `${user.label} to sync`);
   client.destroy = () => {
+    if (!providers.has(client)) return;
     providers.delete(client);
     provider.destroy();
     doc.destroy();
@@ -2054,6 +2058,7 @@ async function multiInstanceChecks() {
   const { startMockDns } = await import('./lib/mock-dns.mjs');
   const multiDns = await startMockDns(); // domain verification (SCIM check)
   const AUTO_VERSION_MS = 1000; // automatic versions of open boards (KAI-82), instead of 30 min
+  const FACILITATOR_GRACE_MS = 1000; // a facilitator gone this long ends their session (KAI-129)
   // Accounts are purged right away, and only by instance 2 (instance 1's job would run hourly).
   const env = (i) => ({
     DATABASE_URL: url,
@@ -2065,6 +2070,7 @@ async function multiInstanceChecks() {
     // closes at once can only have come from an announcement (KAI-146).
     SESSION_RECHECK_SECONDS: i === 0 ? '1' : '3600',
     FREERO_SNAPSHOT_EVERY_MS: String(AUTO_VERSION_MS),
+    FREERO_FACILITATOR_GRACE_MS: String(FACILITATOR_GRACE_MS),
     SSO_DNS_SERVERS: multiDns.server,
     OPERATOR_EMAILS: OP.email,
   });
@@ -2120,6 +2126,27 @@ async function multiInstanceChecks() {
       const id = g.doc.clientID;
       g.destroy();
       await waitFor(() => !a.provider.awareness.getStates().has(id), 5000, 'the guest cursor to disappear on instance 1');
+    });
+
+    await check('facilitator controls across instances (KAI-129): a participant on the other instance is locked at once, and the facilitator there keeps the session past the grace period', async () => {
+      const C = new User('MC');
+      await C.signup();
+      await C.verifyEmail(path.join(dataDir, 'i0'));
+      assert((await A.req('POST', `/api/boards/${board.id}/members`, { email: C.email, role: 'editor' })).status === 201, 'invite C');
+      const c = connectDoc(C, board.id, undefined, one);
+      await c.ready();
+      const fac = (x) => x.doc.getMap('facilitation');
+      fac(b).set('session', { by: B.id, byName: B.name, startedAt: Date.now(), locked: true, allowedTypes: null, follow: false, cursorsHidden: false });
+      await waitFor(() => c.role === 'commenter' && c.limits?.locked, 5000, 'the participant on instance 1 to be locked');
+      els(c).set('lockedOut', { id: 'lockedOut', type: 'sticky' });
+      await settled(c, [a, b]);
+      assert(!els(a).has('lockedOut') && !els(b).has('lockedOut'), "a locked participant's write crossed instances");
+      // Instance 1 holds no socket of the facilitator: only their presence from instance 2 keeps it.
+      await sleep(FACILITATOR_GRACE_MS * 2);
+      assert(fac(a).get('session')?.by === B.id && c.role === 'commenter', 'the session ended while the facilitator was on the other instance');
+      fac(b).delete('session');
+      await waitFor(() => c.role === 'editor' && !c.limits, 5000, 'the participant to be released');
+      c.destroy();
     });
 
     await check("opening the board on instance 2 right after an edit on instance 1 shows it before it is even saved", async () => {
@@ -4589,6 +4616,119 @@ async function mediaChecks() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Facilitator controls (KAI-129): the server enforces a facilitator's lock and "what may be added"
+// against raw clients (no app in the way), and ends the session when the facilitator is gone.
+// ---------------------------------------------------------------------------
+async function facilitationChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-facil-'));
+  let proc = null;
+  const clients = [];
+  try {
+    const env = { FREERO_FACILITATOR_GRACE_MS: '1500' };
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    const ok = await check('facilitation server boots (a facilitator gone 1.5 s ends their session)', async () => {
+      proc = await waitUp(await spawnServer(dataDir, env));
+    });
+    if (!ok) return;
+    const port = proc.port;
+    const O = new User('FacOwner', port);
+    const F = new User('Facilitator', port);
+    const P = new User('Participant', port);
+    for (const u of [O, F, P]) {
+      await u.signup();
+      await u.verifyEmail(dataDir);
+    }
+    const board = (await O.req('POST', '/api/boards', { title: 'Workshop' })).json.board;
+    for (const u of [F, P]) assert((await O.req('POST', `/api/boards/${board.id}/members`, { email: u.email, role: 'editor' })).status === 201, `invite ${u.label}`);
+    const join = async (u) => {
+      const c = connectDoc(u, board.id, undefined, port);
+      clients.push(c);
+      await c.ready();
+      return c;
+    };
+    const o = await join(O);
+    const f = await join(F);
+    const p = await join(P);
+    const session = (patch) => ({ by: F.id, byName: F.name, startedAt: Date.now(), locked: false, allowedTypes: null, follow: false, cursorsHidden: false, ...patch });
+    const fac = (c) => c.doc.getMap('facilitation');
+    /** Every element key `c` was ever told about (to prove something never arrived, even briefly). */
+    const everSeen = (c) => {
+      const seen = new Set();
+      els(c).observe((e) => e.changes.keys.forEach((_, k) => seen.add(k)));
+      return seen;
+    };
+    const oSaw = everSeen(o);
+
+    await check('a locked board: a participant’s raw writes reach nobody and they cannot end the session, the facilitator keeps editing, requests are refused too', async () => {
+      fac(f).set('session', session({ locked: true }));
+      await waitFor(() => p.role === 'commenter' && p.limits?.locked === true, 5000, 'the participant to be told the board is locked');
+      assert(f.role === 'editor' && !f.limits, `the facilitator was limited: ${f.role} ${JSON.stringify(f.limits)}`);
+      assert(o.role === 'owner' && !o.limits, 'the board owner was limited');
+      els(p).set('forged', { id: 'forged', type: 'sticky', x: 0, y: 0, w: 10, h: 10 });
+      fac(p).delete('session');
+      els(f).set('byLead', { id: 'byLead', type: 'sticky', x: 0, y: 0, w: 10, h: 10 });
+      await settled(p, [o]);
+      await waitFor(() => els(o).has('byLead'), 5000, "the facilitator's edit to reach the owner");
+      assert(!oSaw.has('forged'), "a locked participant's element reached the owner");
+      assert(fac(o).get('session')?.locked === true, 'a locked participant ended the session');
+      const r = await P.req('POST', `/api/boards/${board.id}/insert-structure`, { structure: { kind: 'mermaid', source: 'flowchart LR\n  a --> b' } });
+      assert(r.status === 400, `insert-structure while locked -> ${r.status}`);
+    });
+
+    await check('limited to stickies: a forged shape is undone in the same update (nobody ever receives it, the participant converges), stickies go through, no sticky turns into a shape, the limits can’t be widened', async () => {
+      fac(f).set('session', session({ allowedTypes: ['sticky'] }));
+      await waitFor(() => p.role === 'editor' && p.limits?.addTypes?.join() === 'sticky', 5000, 'the participant to be told what they may add');
+      els(p).set('shape1', { id: 'shape1', type: 'shape', x: 0, y: 0, w: 10, h: 10 });
+      els(p).set('note1', { id: 'note1', type: 'sticky', x: 0, y: 0, w: 10, h: 10 });
+      await waitFor(() => els(o).has('note1') && !els(p).has('shape1'), 5000, "the sticky to arrive and the shape to be undone on the participant's side");
+      assert(!oSaw.has('shape1'), 'the owner received the forged shape');
+      els(p).set('note1', { id: 'note1', type: 'shape', x: 0, y: 0, w: 10, h: 10 });
+      fac(p).set('session', session({ allowedTypes: null }));
+      await waitFor(() => els(p).get('note1')?.type === 'sticky' && fac(p).get('session')?.allowedTypes?.join() === 'sticky', 5000, 'the participant to converge');
+      assert(els(o).get('note1')?.type === 'sticky' && fac(o).get('session')?.allowedTypes?.join() === 'sticky', 'a forbidden change reached the owner');
+      // Their doc did not diverge: later edits still apply.
+      els(p).set('note2', { id: 'note2', type: 'sticky', x: 0, y: 0, w: 10, h: 10 });
+      await waitFor(() => els(o).has('note2'), 5000, "the participant's next sticky");
+    });
+
+    await check('planning poker (KAI-131): a raw socket learns only that a participant picked a card, never which, until the facilitator reveals the item', async () => {
+      const pl = await layerClient(P, board.id, port);
+      const ol = await layerClient(O, board.id, port);
+      const fl = await layerClient(F, board.id, port);
+      clients.push(pl, ol, fl);
+      const key = `v:r1:item1:${P.id}`;
+      const me = { roundId: 'r1', itemId: 'item1', userId: P.id, userName: P.name, userColor: '#000' };
+      pl.layers.private.getMap('estimation').set(key, { ...me, value: 'XL-SECRET' });
+      pl.doc.getMap('estimation').set(key, { ...me, sealed: true });
+      await settled(pl, [ol]);
+      await waitFor(() => ol.doc.getMap('estimation').get(key)?.sealed === true, 5000, 'the sealed marker');
+      assert(!sharedText(ol).includes('XL-SECRET') && !JSON.stringify(ol.layers.private.toJSON()).includes('XL-SECRET'), "the owner's socket received the pick");
+      fl.layerOp({ type: 'reveal', collection: 'estimation', prefix: 'v:r1:item1:' });
+      await waitFor(() => ol.doc.getMap('estimation').get(key)?.value === 'XL-SECRET', 5000, 'the revealed pick');
+      for (const c of [pl, ol, fl]) c.destroy();
+    });
+
+    await check('the session ends when the facilitator has been gone for the grace period, lifting every limit', async () => {
+      fac(f).set('session', session({ locked: true }));
+      await waitFor(() => p.role === 'commenter', 5000, 'the lock');
+      f.destroy();
+      await waitFor(() => !fac(o).has('session'), 8000, 'the server to end the session');
+      await waitFor(() => p.role === 'editor' && !p.limits, 5000, 'the participant to edit again');
+      els(p).set('after', { id: 'after', type: 'shape', x: 0, y: 0, w: 10, h: 10 });
+      await waitFor(() => els(o).has('after'), 5000, "the participant's edit after the session");
+    });
+  } finally {
+    for (const c of clients) c.destroy();
+    if (proc) await stopProc(proc);
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
 // `--only <group>[,<group>…]` runs some groups, e.g. to loop one while hunting a flake.
 const SUITES = {
   main: run,
@@ -4607,6 +4747,7 @@ const SUITES = {
   moderation: moderationChecks,
   multi: multiInstanceChecks,
   admin: enterpriseAdminChecks,
+  facilitation: facilitationChecks,
 };
 const onlyArg = process.argv.indexOf('--only');
 const only = onlyArg >= 0 ? (process.argv[onlyArg + 1] ?? '').split(',').filter(Boolean) : Object.keys(SUITES);
