@@ -1,0 +1,112 @@
+.fr-facil-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 100%;
+  padding: 8px 8px 8px 10px;
+  background: var(--fr-surface);
+  border-radius: var(--fr-radius-lg);
+  box-shadow: var(--fr-shadow-lg);
+  pointer-events: auto;
+  white-space: nowrap;
+}
+
+.fr-facil-bar__icon {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: var(--fr-radius);
+  background: var(--fr-primary);
+  color: var(--fr-primary-ink);
+  display: grid;
+  place-items: center;
+}
+
+.fr-facil-bar__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.fr-facil-bar__text strong {
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+
+.fr-facil-bar__text span {
+  font-size: 12px;
+  color: var(--fr-ink-2);
+  white-space: normal;
+  max-width: 360px;
+}
+
+.fr-facil-bar__controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px;
+  border-left: 1px solid var(--fr-line);
+  border-right: 1px solid var(--fr-line);
+}
+
+.fr-facil-bar .fr-btn.is-on {
+  background: var(--fr-primary-soft);
+  color: var(--fr-primary);
+}
+
+.fr-facil-tools {
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+}
+
+.fr-facil-tools__head {
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fr-ink-2);
+}
+
+.fr-facil-tools__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: var(--fr-radius);
+  background: none;
+  color: var(--fr-ink);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fr-facil-tools__row:hover,
+.fr-facil-tools__row:focus-visible {
+  background: var(--fr-hover);
+}
+
+.fr-facil-tools__check {
+  width: 16px;
+  display: grid;
+  place-items: center;
+  color: var(--fr-primary);
+}
+
+.fr-facil-tools__note {
+  margin: 6px 8px 4px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--fr-ink-2);
+  white-space: normal;
+}
+
+@media (max-width: 1000px) {
+  .fr-facil-bar__text span {
+    display: none;
+  }
+}
