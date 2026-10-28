@@ -321,8 +321,12 @@ async function authenticateClient(req: Request, body: Record<string, unknown>): 
   const basic = /^Basic\s+(\S+)$/i.exec(req.headers.authorization ?? '');
   if (basic) {
     const [u, p] = Buffer.from(basic[1], 'base64').toString('utf8').split(':');
-    id = decodeURIComponent(u ?? '');
-    secret = decodeURIComponent(p ?? '');
+    try {
+      id = decodeURIComponent(u ?? '');
+      secret = decodeURIComponent(p ?? '');
+    } catch {
+      throw new OAuthError('invalid_client', 'Malformed client credentials', 401);
+    }
   }
   const client = id ? await repo.getClient(id) : null;
   if (!client) throw new OAuthError('invalid_client', 'Unknown client', 401);
