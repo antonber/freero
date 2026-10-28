@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ChevronsUpDown, Clock, Folder, House, LogOut, Settings, Star, Users } from 'lucide-react';
 import { Avatar, Logo, Menu, Tooltip } from '@ui';
 import { useAuth } from '../../auth/AuthContext';
-import { ProfileModal } from './ProfileModal';
 import { useMediaQuery } from '../../lib/hooks';
 
 export type View = 'home' | 'recent' | 'starred' | 'shared' | 'mine';
@@ -21,7 +20,6 @@ export function Sidebar({ view, onView }: { view: View; onView: (v: View) => voi
   const navigate = useNavigate();
   const accountRef = useRef<HTMLButtonElement>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
   const compact = useMediaQuery('(max-width: 1000px)');
   if (!user) return null;
 
@@ -78,7 +76,7 @@ export function Sidebar({ view, onView }: { view: View; onView: (v: View) => voi
         aria-label="Account"
         items={[
           { heading: user.email },
-          { id: 'profile', label: 'Profile & cursor color', icon: Settings, onSelect: () => setProfileOpen(true) },
+          { id: 'settings', label: 'Account settings', icon: Settings, onSelect: () => navigate('/settings') },
           { divider: true },
           {
             id: 'logout',
@@ -91,7 +89,6 @@ export function Sidebar({ view, onView }: { view: View; onView: (v: View) => voi
           },
         ]}
       />
-      <ProfileModal open={profileOpen} onClose={() => setProfileOpen(false)} />
     </aside>
   );
 }

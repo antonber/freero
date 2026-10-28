@@ -6,6 +6,7 @@ import { Button, IconButton, Input, Kbd, Modal, SegmentedControl, Select, Skelet
 import { api, ApiError, type BoardFilter } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { ShareDialog } from '../../components/ShareDialog';
+import { VerifyEmailBanner } from '../../components/VerifyEmailBanner';
 import { filterByOwner, sortBoards, type BoardSort, type OwnerFilter } from '../../lib/boards';
 import { useDebouncedValue, usePersistentState } from '../../lib/hooks';
 import { BoardItem, type BoardActions } from './BoardItem';
@@ -195,6 +196,7 @@ export function DashboardPage() {
         </header>
 
         <div className="fr-dash__scroll">
+          <VerifyEmailBanner />
           {showCreate && !searching ? (
             <section className="fr-create" aria-label="Create">
               <button type="button" className="fr-create__tile fr-create__tile--blank" onClick={() => create('blank')} disabled={!!creating}>
