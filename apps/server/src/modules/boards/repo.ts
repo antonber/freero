@@ -1,6 +1,8 @@
 // The only writer of `boards`, `board_stars` and `board_opens` [S4].
+import { randomUUID } from 'node:crypto';
 import type { LinkAccess } from '@freero/shared';
 import { one, query, tx } from '../../platform/db';
+import { appendOutbox } from '../../platform/outbox';
 
 export interface Board {
   id: string;
@@ -88,6 +90,29 @@ const LIVE = `deleted_at IS NULL AND removed_at IS NULL`;
  * modules' exported functions — commits together or not at all.
  */
 export const transaction = <T>(fn: () => Promise<T>): Promise<T> => tx(() => fn());
+
+/**
+ * Outbox topic of what happens to a board as a whole (KAI-150): created, renamed, moved, trashed,
+ * restored — appended in the transaction that makes the change, so the event stream
+ * (modules/events) and derived indexes (search: titles) never miss one. Unique key per event: a
+ * consumer's batch coalesces per key, and two changes of one board in a batch are two events.
+ */
+export const BOARD_EVENTS_TOPIC = 'board.events';
+export interface BoardEventRecord {
+  type: 'board.created' | 'board.renamed' | 'board.moved' | 'board.trashed' | 'board.restored';
+  boardId: string;
+  workspaceId: string;
+  actorId: string;
+  at: number;
+  title: string;
+  from?: string | null;
+  to?: string | null;
+  copyOf?: string;
+}
+/** Records a board event in the CALLER'S transaction (call it next to the change it describes). */
+export async function appendBoardEvent(e: Omit<BoardEventRecord, 'at'>, at = Date.now()): Promise<void> {
+  await appendOutbox(BOARD_EVENTS_TOPIC, `${e.boardId}:${randomUUID()}`, { ...e, at } satisfies BoardEventRecord);
+}
 
 export async function insertBoard(b: Board): Promise<void> {
   await query(
@@ -187,6 +212,20 @@ export async function trashedBoardsOf(ownerId: string, workspaceId: string): Pro
 /** The live boards of a workspace. */
 export async function boardsInWorkspace(workspaceId: string): Promise<Board[]> {
   return (await query<Row>(`SELECT * FROM boards WHERE workspace_id = $1 AND ${LIVE}`, [workspaceId])).map((r) => toBoard(r));
+}
+
+/**
+ * Live boards that are in one of `workspaceIds` or are one of `ids`, optionally only those of
+ * `onlyWorkspace` (ids and where they are; the caller decides access).
+ */
+export async function liveIdsAmong(workspaceIds: string[], ids: string[], onlyWorkspace: string | null): Promise<Array<{ id: string; workspaceId: string }>> {
+  return (
+    await query<{ id: string; workspace_id: string }>(
+      `SELECT id, workspace_id FROM boards
+       WHERE (workspace_id = ANY($1::text[]) OR id = ANY($2::text[])) AND ($3::text IS NULL OR workspace_id = $3) AND ${LIVE}`,
+      [workspaceIds, ids, onlyWorkspace],
+    )
+  ).map((r) => ({ id: r.id, workspaceId: r.workspace_id }));
 }
 
 /** Every board of a workspace, trashed ones included. */

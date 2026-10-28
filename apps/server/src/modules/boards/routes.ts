@@ -117,7 +117,12 @@ export default function boardRoutes(_ctx: ServerContext): Router {
         if (body.projectId !== null && typeof body.projectId !== 'string') throw badRequest('projectId must be a project id or null');
         if ((body.projectId || null) !== board.projectId) await moveToProject(board, user.id, (body.projectId as string | null) || null);
       }
-      if (Object.keys(patch).length > 0) await repo.updateBoardFields(board.id, patch, Date.now());
+      if (Object.keys(patch).length > 0)
+        await repo.transaction(async () => {
+          await repo.updateBoardFields(board.id, patch, Date.now());
+          if (patch.title !== undefined && patch.title !== board.title)
+            await repo.appendBoardEvent({ type: 'board.renamed', boardId: board.id, workspaceId: board.workspaceId, actorId: user.id, title: patch.title, from: board.title, to: patch.title });
+        });
       if (hasLinkProtectionPatch(body)) await changeLinkProtection(board, user.id, body);
       if (patch.title !== undefined && patch.title !== board.title)
         await boardLifecycle({ boardId: board.id, actorId: user.id, action: 'renamed', from: board.title, to: patch.title });

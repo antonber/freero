@@ -76,12 +76,12 @@ export async function inviteBoardMember(req: Request | null, boardId: string, me
   }
   if (invitee.id === ownerId) throw new HttpError(409, 'That person already owns this board');
   if (myRole === 'owner') {
-    if (!(await repo.upsertMember(boardId, invitee.id, role, Date.now()))) throw boardGone();
+    if (!(await repo.upsertMember(boardId, invitee.id, role, Date.now(), { actorId: me.id }))) throw boardGone();
   } else {
     // Re-inviting changes an existing member's role, which only the owner may do (PATCH is
     // owner-only too): editors could otherwise promote viewers or demote other editors.
     // One conditional insert, so a concurrent role change cannot slip between check and write.
-    const now = await repo.addMemberIfAbsent(boardId, invitee.id, role, Date.now());
+    const now = await repo.addMemberIfAbsent(boardId, invitee.id, role, Date.now(), { actorId: me.id });
     if (now === null) throw boardGone();
     if (now !== role) throw new HttpError(409, `${invitee.name} already has access. Only the board owner can change their role.`);
   }
@@ -97,7 +97,7 @@ export async function setBoardMemberRole(boardId: string, meId: string, userId: 
   if (!isMemberRole(role)) throw badRequest('role must be editor, commenter or viewer');
   const u = await getUser(userId);
   const before = await repo.getMembership(boardId, userId);
-  if (!u || !(await repo.setRole(boardId, userId, role))) throw notFound('That person is not a member of this board');
+  if (!u || !(await repo.setRole(boardId, userId, role, { actorId: meId }))) throw notFound('That person is not a member of this board');
   await recordAuditQuietly({
     action: 'board.member_role_changed',
     actorId: meId,
@@ -113,7 +113,7 @@ export async function setBoardMemberRole(boardId: string, meId: string, userId: 
 export async function removeBoardMember(boardId: string, meId: string, userId: string): Promise<void> {
   const { role, workspaceId, title } = await requireBoardAccess(boardId, meId);
   if (role !== 'owner' && userId !== meId) throw forbidden('Only the board owner can remove members');
-  if (!(await repo.removeMember(boardId, userId))) throw notFound('That person is not a member of this board');
+  if (!(await repo.removeMember(boardId, userId, { actorId: meId }))) throw notFound('That person is not a member of this board');
   await recordAuditQuietly({ action: 'board.member_removed', workspaceId, actorId: meId, target: { type: 'board', id: boardId, label: title }, metadata: { userId, left: userId === meId } });
   await refreshBoardAccess(boardId);
 }

@@ -1,8 +1,67 @@
 // The only writer of `board_members`, `board_invites` and `board_access_requests` [S4].
+import { randomUUID } from 'node:crypto';
 import { isForeignKeyViolation, one, query, tx } from '../../platform/db';
+import { appendOutbox } from '../../platform/outbox';
 import type { MemberRole } from './roles';
 
 export const transaction = <T>(fn: () => Promise<T>): Promise<T> => tx(() => fn());
+
+/**
+ * Outbox topic of who has access to a board through a membership (KAI-150): member.added,
+ * member.role_changed, member.removed — appended in the transaction of the change, only when the
+ * membership really changed (the event stream, modules/events). Unique key per event.
+ */
+export const MEMBER_EVENTS_TOPIC = 'board.members';
+export interface MemberEventRecord {
+  type: 'member.added' | 'member.role_changed' | 'member.removed';
+  boardId: string;
+  userId: string;
+  /** Who made the change (null: Freero, e.g. an accepted invite with no inviter left). */
+  actorId: string | null;
+  role: MemberRole | null;
+  previousRole: MemberRole | null;
+  at: number;
+}
+/** Who changes a membership, when the change is to be recorded as an event. */
+export interface MemberChangeBy {
+  actorId: string | null;
+}
+
+/**
+ * Runs a write of `userId`'s membership on `boardId` and, in the same transaction, records what it
+ * changed. Without `by` it is just the write. A write that found the board gone (a foreign key
+ * violation, answered false / null) records nothing and ends the transaction without changes.
+ */
+async function recorded<T>(boardId: string, userId: string, by: MemberChangeBy | undefined, write: () => Promise<T>): Promise<T> {
+  if (!by) return write();
+  try {
+    return await tx(async () => {
+      const before = (await one<{ role: MemberRole }>(`SELECT role FROM board_members WHERE board_id = $1 AND user_id = $2 FOR UPDATE`, [boardId, userId]))?.role ?? null;
+      const out = await write();
+      // The board (or account) is gone: the failed statement ended the transaction; roll it back.
+      if (out === false || out === null) throw new Gone(out);
+      const after = (await one<{ role: MemberRole }>(`SELECT role FROM board_members WHERE board_id = $1 AND user_id = $2`, [boardId, userId]))?.role ?? null;
+      if (before === after) return out;
+      const type = before === null ? 'member.added' : after === null ? 'member.removed' : 'member.role_changed';
+      await appendOutbox(MEMBER_EVENTS_TOPIC, `${boardId}:${randomUUID()}`, {
+        type,
+        boardId,
+        userId,
+        actorId: by.actorId,
+        role: after,
+        previousRole: before,
+        at: Date.now(),
+      } satisfies MemberEventRecord);
+      return out;
+    });
+  } catch (e) {
+    if (e instanceof Gone) return e.value as T;
+    throw e;
+  }
+}
+class Gone {
+  constructor(readonly value: unknown) {}
+}
 
 export interface MemberRow {
   boardId: string;
@@ -34,7 +93,10 @@ export async function listByUser(userId: string): Promise<MemberRow[]> {
 }
 
 /** Adds (or re-roles) a member. Returns false if the board (or user) no longer exists. */
-export async function upsertMember(boardId: string, userId: string, role: MemberRole, now: number): Promise<boolean> {
+export async function upsertMember(boardId: string, userId: string, role: MemberRole, now: number, by?: MemberChangeBy): Promise<boolean> {
+  return recorded(boardId, userId, by, () => upsert(boardId, userId, role, now));
+}
+async function upsert(boardId: string, userId: string, role: MemberRole, now: number): Promise<boolean> {
   try {
     await query(
       `INSERT INTO board_members (board_id, user_id, role, created_at) VALUES ($1, $2, $3, $4)
@@ -49,15 +111,19 @@ export async function upsertMember(boardId: string, userId: string, role: Member
 }
 
 /** Returns false if there was no such membership. */
-export async function setRole(boardId: string, userId: string, role: MemberRole): Promise<boolean> {
-  const rows = await query(`UPDATE board_members SET role = $3 WHERE board_id = $1 AND user_id = $2 RETURNING 1`, [boardId, userId, role]);
-  return rows.length > 0;
+export async function setRole(boardId: string, userId: string, role: MemberRole, by?: MemberChangeBy): Promise<boolean> {
+  return recorded(boardId, userId, by, async () => {
+    const rows = await query(`UPDATE board_members SET role = $3 WHERE board_id = $1 AND user_id = $2 RETURNING 1`, [boardId, userId, role]);
+    return rows.length > 0;
+  });
 }
 
 /** Returns false if there was no such membership. */
-export async function removeMember(boardId: string, userId: string): Promise<boolean> {
-  const rows = await query(`DELETE FROM board_members WHERE board_id = $1 AND user_id = $2 RETURNING 1`, [boardId, userId]);
-  return rows.length > 0;
+export async function removeMember(boardId: string, userId: string, by?: MemberChangeBy): Promise<boolean> {
+  return recorded(boardId, userId, by, async () => {
+    const rows = await query(`DELETE FROM board_members WHERE board_id = $1 AND user_id = $2 RETURNING 1`, [boardId, userId]);
+    return rows.length > 0;
+  });
 }
 
 export async function removeMemberships(boardIds: string[], userId: string): Promise<void> {
@@ -69,7 +135,10 @@ export async function removeMemberships(boardIds: string[], userId: string): Pro
  * Adds a member only if they are not one yet (never changes an existing role). Returns the role
  * they now have, or null if the board (or user) no longer exists.
  */
-export async function addMemberIfAbsent(boardId: string, userId: string, role: MemberRole, now: number): Promise<MemberRole | null> {
+export async function addMemberIfAbsent(boardId: string, userId: string, role: MemberRole, now: number, by?: MemberChangeBy): Promise<MemberRole | null> {
+  return recorded(boardId, userId, by, () => addIfAbsent(boardId, userId, role, now));
+}
+async function addIfAbsent(boardId: string, userId: string, role: MemberRole, now: number): Promise<MemberRole | null> {
   try {
     await query(
       `INSERT INTO board_members (board_id, user_id, role, created_at) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
@@ -86,7 +155,10 @@ export async function addMemberIfAbsent(boardId: string, userId: string, role: M
  * Grants `role` through an invite: adds the member, or raises an existing member's role — an
  * invite never lowers access someone already has. Returns false if the board (or user) is gone.
  */
-export async function grantAtLeast(boardId: string, userId: string, role: MemberRole, now: number): Promise<boolean> {
+export async function grantAtLeast(boardId: string, userId: string, role: MemberRole, now: number, by?: MemberChangeBy): Promise<boolean> {
+  return recorded(boardId, userId, by, () => grant(boardId, userId, role, now));
+}
+async function grant(boardId: string, userId: string, role: MemberRole, now: number): Promise<boolean> {
   try {
     await query(
       `INSERT INTO board_members (board_id, user_id, role, created_at) VALUES ($1, $2, $3, $4)
