@@ -78,11 +78,18 @@ export class EditorImpl implements Editor {
    * Editor.transact ends (so a drag never re-stacks under the pointer, and a feature's
    * multi-step transaction is never laid out half-done).
    */
-  private touched(ids: Iterable<string>): void {
+  private touched(ids: Iterable<string>, created = false): void {
     const state = this.shared.arrange;
     if (state.running || !hasArrangers(this.core)) return;
-    for (const id of ids) state.touched.add(id);
-    if (!this.core.store.inGesture() && !state.depth) this.flushArrange();
+    // Remember each element as it was before the first change of this pass (null: new).
+    for (const id of ids) if (!state.before.has(id)) state.before.set(id, created ? null : (this.core.store.getElement(id) ?? null));
+  }
+
+  /** After a local write: run the pass now unless a gesture or Editor.transact is still open. */
+  private settle(): void {
+    const state = this.shared.arrange;
+    if (state.running || !state.before.size || this.core.store.inGesture() || state.depth) return;
+    this.flushArrange();
   }
 
   private flushArrange(): void {
@@ -319,9 +326,10 @@ export class EditorImpl implements Editor {
     let z = this.core.store.maxZ();
     const built = els.map((e) => this.build(e, ++z, now));
     this.core.store.transact(() => {
+      this.touched(built.map((b) => b.id), true);
       for (const el of built) this.core.store.setElement(el);
       this.adoptIntoContainers(built.map((b) => b.id));
-      this.touched(built.map((b) => b.id));
+      this.settle();
     });
     const ids = built.map((b) => b.id);
     if (opts?.select) this.select(ids);
@@ -352,9 +360,10 @@ export class EditorImpl implements Editor {
     }
     if (!next.length) return;
     store.transact(() => {
+      this.touched(next.map((el) => el.id));
       for (const el of next) store.setElement(el);
       runFollowers(this.core, next.map((el) => el.id), []);
-      this.touched(next.map((el) => el.id));
+      this.settle();
     });
   }
 
@@ -437,9 +446,10 @@ export class EditorImpl implements Editor {
     const editing = this.getEditingId();
     if (editing && all.includes(editing)) this.stopEditing();
     this.core.store.transact(() => {
+      this.touched(all);
       for (const id of all) this.core.store.deleteElement(id);
       runFollowers(this.core, [], all);
-      this.touched(all);
+      this.settle();
     });
     const gone = new Set(all);
     if ([...gone].some((id) => this.core.ui.getState().viewHidden.has(id))) {
@@ -513,7 +523,7 @@ export class EditorImpl implements Editor {
   }
 
   cancelGesture(): void {
-    if (this.core.store.isOutermostGesture()) this.shared.arrange.touched.clear();
+    if (this.core.store.isOutermostGesture()) this.shared.arrange.before.clear();
     this.core.store.cancelGesture();
   }
 
@@ -551,10 +561,11 @@ export class EditorImpl implements Editor {
     const built = moved.map((el) => ({ ...el, z: ++z, createdBy: this.user.id, createdAt: now, updatedAt: now }));
     const content = this.copyContentOf(source);
     this.core.store.transact(() => {
+      this.touched(built.map((b) => b.id), true);
       for (const el of built) this.core.store.setElement(el);
       this.adoptIntoContainers(built.map((b) => b.id));
       this.pasteContentInto(built, idMap, content);
-      this.touched(built.map((b) => b.id));
+      this.settle();
     });
     const top = ids.map((id) => idMap.get(id)!).filter(Boolean);
     this.select(top);
@@ -727,10 +738,11 @@ export class EditorImpl implements Editor {
     const now = Date.now();
     const built = placed.map((el) => ({ ...el, z: ++z, createdBy: this.user.id, createdAt: now, updatedAt: now }));
     this.core.store.transact(() => {
+      this.touched(built.map((b) => b.id), true);
       for (const el of built) this.core.store.setElement(el);
       this.adoptIntoContainers(built.map((b) => b.id));
       this.pasteContentInto(built, idMap, payload.content);
-      this.touched(built.map((b) => b.id));
+      this.settle();
     });
     // Select top-level pasted elements (not children of pasted frames).
     const pastedIds = new Set(built.map((b) => b.id));

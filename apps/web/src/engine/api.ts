@@ -247,6 +247,8 @@ export interface ArrangeContext {
   editor: Editor;
   /** Ids written (moved, created, edited) or removed by the local change(s) since the last pass. */
   touched: ReadonlySet<string>;
+  /** Each touched element as it was BEFORE those changes (null: created by them). */
+  previous: ReadonlyMap<string, BoardElement | null>;
 }
 
 /** [additive] What `ElementDefinition.hitTest` is told. */
