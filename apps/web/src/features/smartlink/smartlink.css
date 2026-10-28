@@ -1,0 +1,86 @@
+/* Smart link: a compact chip — type icon, the target's live title, where it is, an open button. */
+.fr-smartlink {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px 0 12px;
+  border-radius: var(--fr-radius);
+  background: var(--fr-surface);
+  color: var(--fr-ink);
+  font-family: var(--fr-font);
+  box-shadow:
+    0 0 0 1px var(--fr-line-strong),
+    0 6px 16px -10px rgba(23, 22, 43, 0.35);
+  overflow: hidden;
+}
+
+.fr-smartlink__icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--fr-radius-sm);
+  background: var(--fr-primary-soft);
+  color: var(--fr-primary);
+}
+
+.fr-smartlink.is-denied .fr-smartlink__icon {
+  background: var(--fr-surface-3);
+  color: var(--fr-ink-3);
+}
+
+.fr-smartlink__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fr-smartlink__title {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fr-smartlink.is-loading .fr-smartlink__title {
+  color: var(--fr-ink-3);
+}
+
+.fr-smartlink__meta {
+  font-size: 12px;
+  line-height: 1.3;
+  color: var(--fr-ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fr-smartlink__open {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: var(--fr-radius-sm);
+  background: transparent;
+  color: var(--fr-ink-2);
+  cursor: pointer;
+}
+
+.fr-smartlink__open:hover {
+  background: var(--fr-hover);
+  color: var(--fr-primary);
+}
+
+.fr-smartlink__open:focus-visible {
+  outline: none;
+  box-shadow: var(--fr-focus-ring);
+}
