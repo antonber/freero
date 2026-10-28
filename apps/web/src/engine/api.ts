@@ -144,8 +144,9 @@ export interface Host {
     shareWithTeam?: boolean;
   }): Promise<SavedTemplateInfo>;
   /**
-   * [additive] Shares one of the user's own templates with `board.team` (or makes it personal
-   * again). Rejects when there is no team to share with (offline sandbox, personal board).
+   * [additive] Shares one of the user's own templates with `board.team`, or stops sharing a team
+   * template (its owner, or an admin of its workspace: `canUnshare`). Sharing rejects when there
+   * is no team to share with (offline sandbox, personal board).
    */
   shareTemplate(id: string, shared: boolean): Promise<SavedTemplateInfo>;
   /** [additive] Deletes one of the user's own saved templates. */
@@ -189,6 +190,13 @@ export interface SavedTemplateInfo {
   ownerId: string;
   /** [additive] Shared with a team workspace (its members see it), not only its owner. */
   shared?: boolean;
+  /** [additive] Who saved it (shown on team templates: "Shared by …"). */
+  ownerName?: string;
+  /**
+   * [additive] The user may stop sharing it with its team (`shareTemplate(id, false)`): its owner,
+   * or an owner/admin of the workspace it is shared with.
+   */
+  canUnshare?: boolean;
   elementCount: number;
   createdAt: number;
 }

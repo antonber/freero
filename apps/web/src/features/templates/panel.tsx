@@ -44,7 +44,10 @@ function SavedCard({ editor, t, canEdit, onInsert }: { editor: Editor; t: SavedT
   const share = async (shared: boolean) => {
     try {
       await setTemplateShared(editor, t.id, shared);
-      editor.host.notify(shared ? `Shared “${t.name}” with ${team?.name}.` : `“${t.name}” is personal again.`, 'success');
+      editor.host.notify(
+        shared ? `Shared “${t.name}” with ${team?.name}.` : mine ? `“${t.name}” is personal again.` : `“${t.name}” is no longer shared with the team.`,
+        'success',
+      );
     } catch (err) {
       editor.host.notify(err instanceof Error && err.message ? err.message : 'Could not change sharing.', 'error');
     }
@@ -73,6 +76,7 @@ function SavedCard({ editor, t, canEdit, onInsert }: { editor: Editor; t: SavedT
         </span>
         <span className="fr-tpl-card__name">{t.name}</span>
         <span className="fr-tpl-card__desc">{t.description || `${t.elementCount} ${t.elementCount === 1 ? 'item' : 'items'}`}</span>
+        {t.shared && !mine && t.ownerName ? <span className="fr-tpl-card__by">Shared by {t.ownerName}</span> : null}
       </button>
       {t.shared ? (
         <span className="fr-tpl-saved__team" title={mine ? 'Shared with your team' : 'Shared by your team'}>
@@ -86,6 +90,17 @@ function SavedCard({ editor, t, canEdit, onInsert }: { editor: Editor; t: SavedT
           aria-label={t.shared ? `Stop sharing ${t.name} with ${team.name}` : `Share ${t.name} with ${team.name}`}
           title={t.shared ? `Stop sharing with ${team.name}` : `Share with ${team.name}`}
           onClick={() => void share(!t.shared)}
+        >
+          <Users size={14} />
+        </button>
+      ) : null}
+      {!mine && t.shared && t.canUnshare ? (
+        <button
+          type="button"
+          className="fr-tpl-saved__share fr-tpl-saved__share--alone"
+          aria-label={`Stop sharing ${t.name} with the team`}
+          title="Stop sharing with the team (it stays with its owner)"
+          onClick={() => void share(false)}
         >
           <Users size={14} />
         </button>

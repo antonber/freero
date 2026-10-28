@@ -11,6 +11,8 @@ const toTemplateInfo = (t: SavedTemplateSummary): SavedTemplateInfo => ({
   thumbnail: t.thumbnail,
   ownerId: t.ownerId,
   shared: t.workspaceId !== null,
+  ownerName: t.ownerName,
+  canUnshare: t.canUnshare,
   elementCount: t.elementCount,
   createdAt: t.createdAt,
 });
@@ -43,10 +45,10 @@ export function saveTemplateFrom(boardId: string, teamId: string | null): Host['
     );
 }
 
-/** Shares one of the user's templates with `teamId` (null: no team to share with here). */
+/** Shares one of the user's templates with `teamId` (null: no team to share with here), or unshares one. */
 export function shareTemplateWith(teamId: string | null): Host['shareTemplate'] {
   return async (id, shared) => {
-    if (!teamId) throw new Error('This board isn’t in a team workspace.');
+    if (shared && !teamId) throw new Error('This board isn’t in a team workspace.');
     return toTemplateInfo((await api.shareTemplate(id, shared ? teamId : null)).template);
   };
 }
