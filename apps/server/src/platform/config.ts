@@ -15,6 +15,7 @@ export type RateLimitName =
   | 'upload'
   | 'boardCreate'
   | 'templateSave'
+  | 'version'
   | 'wsConnect';
 
 /** `limit` hits per `windowMs`; `null` = not limited. */
@@ -98,6 +99,7 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   upload: '60/10m', // per user
   boardCreate: '100/1h', // per user (create + duplicate)
   templateSave: '60/1h', // per user (saving a board or selection as a template)
+  version: '60/1h', // per user (naming or restoring a board version: each keeps a full copy)
   wsConnect: '200/1m', // per IP and per user
 };
 
@@ -111,6 +113,7 @@ const ENV_NAME: Record<RateLimitName, string> = {
   upload: 'RATE_LIMIT_UPLOAD',
   boardCreate: 'RATE_LIMIT_BOARD_CREATE',
   templateSave: 'RATE_LIMIT_TEMPLATE_SAVE',
+  version: 'RATE_LIMIT_VERSION',
   wsConnect: 'RATE_LIMIT_WS_CONNECT',
 };
 
