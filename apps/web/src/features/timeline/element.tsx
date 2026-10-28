@@ -26,6 +26,9 @@ import './timeline.css';
 const LOD_ZOOM = 0.25;
 const TITLE_PART = 'title';
 const COLOR_NAMES = ['Violet', 'Blue', 'Green', 'Amber', 'Coral', 'Grey'];
+/** Bars narrower than this show their title beside them, in this much room. */
+const NARROW_W = 56;
+const OUTSIDE_LABEL_W = 180;
 
 function LaneMenu({ editor, t, lane, index }: { editor: Editor; t: TimelineElement; lane: TimelineLane; index: number }) {
   const [open, setOpen] = useState(false);
@@ -170,9 +173,7 @@ const TimelineView = memo(function TimelineView({ element: t, selected, zoom }: 
       ))}
       <Axis t={t} g={g} lod={lod} />
       {showToday && (
-        <div className="fr-timeline__today" style={{ left: dayX(g, today) + g.ppd / 2, height: g.h - HEAD_H / 2, top: HEAD_H / 2 }}>
-          {!lod && <span>Today</span>}
-        </div>
+        <div className="fr-timeline__today" style={{ left: dayX(g, today) + g.ppd / 2, height: g.h - HEAD_H, top: HEAD_H }} aria-label="Today" />
       )}
       {empty && !lod && !exporting && canEdit && (
         <div className="fr-timeline__hint" style={{ left: LABEL_W + 16, top: g.laneTops[0] + 14 }}>
@@ -203,11 +204,24 @@ const BarView = memo(function BarView({ element: b, zoom }: ElementRenderProps<T
       </div>
     );
   }
+  // Too short for its title (a few days on a month scale): the title goes beside it.
+  const outside = b.w < NARROW_W;
   return (
-    <div className={`fr-tlbar${clip ? ` is-clip-${clip}` : ''}`} style={{ background: color, color: ink }} title={tip}>
-      {!lod && b.w >= 24 && (
-        <div className="fr-tlbar__title">
-          <ElementText element={b} field="title" fontSize={13} fontFamily="sans" align="left" vAlign="middle" color={ink} padding={{ top: 0, right: 8, bottom: 0, left: 10 }} style={{ fontWeight: 600, whiteSpace: 'nowrap' }} placeholder="Bar" />
+    <div className={`fr-tlbar${clip ? ` is-clip-${clip}` : ''}${outside ? ' is-narrow' : ''}`} style={{ ['--bar' as string]: color, color: ink }} title={tip}>
+      {!lod && (
+        <div className="fr-tlbar__title" style={outside ? { left: b.w + 6, width: OUTSIDE_LABEL_W } : undefined}>
+          <ElementText
+            element={b}
+            field="title"
+            fontSize={13}
+            fontFamily="sans"
+            align="left"
+            vAlign="middle"
+            color={outside ? 'var(--fr-ink)' : ink}
+            padding={outside ? 0 : { top: 0, right: 8, bottom: 0, left: 10 }}
+            style={{ fontWeight: 600, whiteSpace: 'nowrap' }}
+            placeholder="Bar"
+          />
         </div>
       )}
     </div>
@@ -287,8 +301,8 @@ const bar = defineElement({
   }),
   Component: BarView,
   toPlainText: (b) => richTextToPlain(b.title),
-  // A milestone's name is drawn to the right of its diamond.
-  visualOutset: (b) => (b.milestone ? { right: 180 } : {}),
+  // A milestone's name, and a short bar's title, are drawn to the right of it.
+  visualOutset: (b) => (b.milestone || b.w < NARROW_W ? { right: OUTSIDE_LABEL_W } : {}),
   sharedStyle: (b) => ({ fill: b.color }),
   applySharedStyle: (_b, { fill }) => (fill && fill !== 'transparent' ? { color: fill } : null),
 });

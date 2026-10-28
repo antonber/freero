@@ -114,19 +114,16 @@
   pointer-events: none;
 }
 
-.fr-timeline__today span {
+.fr-timeline__today::before {
+  content: '';
   position: absolute;
-  top: -2px;
-  left: -1px;
-  transform: translateX(-50%);
-  padding: 1px 6px;
-  border-radius: 999px;
+  top: -5px;
+  left: -6px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
   background: var(--fr-primary);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 14px;
-  white-space: nowrap;
+  box-shadow: 0 0 0 2px #fff;
 }
 
 .fr-timeline__hint {
@@ -144,6 +141,7 @@
   inset: 0;
   overflow: hidden;
   border-radius: 7px;
+  background: var(--bar);
   box-shadow: 0 1px 2px rgba(23, 22, 43, 0.18);
   font-family: var(--fr-font);
 }
@@ -151,6 +149,27 @@
 .fr-tlbar__title {
   position: absolute;
   inset: 0;
+  overflow: hidden;
+}
+
+/* Too short for its title: the strip stays, the title sits beside it. */
+.fr-tlbar.is-narrow {
+  overflow: visible;
+  background: transparent;
+  box-shadow: none;
+}
+
+.fr-tlbar.is-narrow::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 5px;
+  background: var(--bar);
+  box-shadow: 0 1px 2px rgba(23, 22, 43, 0.18);
+}
+
+.fr-tlbar.is-narrow .fr-tlbar__title {
+  right: auto;
 }
 
 /* Dates beyond the range: the cut edge is square and dashed (the bar continues off the axis). */
