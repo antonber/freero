@@ -661,10 +661,14 @@ append-only log of Yjs updates (`board_doc_updates`); a save appends only what c
 previous one. Loading reads base + log in one statement (one consistent snapshot). Compaction (when
 a loaded board's log grows, and after a room unloads) folds the rows it read into a new base and
 deletes exactly those rows, guarded by the base's `version` (optimistic lock), so neither a save
-nor another instance's compaction running meanwhile is lost. It keeps a full-state snapshot at most
-every 30 min (`board_doc_snapshots`): the base of version history (`listBoardSnapshots` /
-`loadBoardSnapshot` in `realtime/index.ts`; REST in `realtime/routes.ts`). Snapshots have a
-`kind`: `auto` (compaction), `named` (never pruned), `before-restore`. Retention
+nor another instance's compaction running meanwhile is lost. Full-state snapshots
+(`board_doc_snapshots`) are the base of version history (`listBoardSnapshots` /
+`loadBoardSnapshot` in `realtime/index.ts`; REST in `realtime/routes.ts`): an automatic one at most
+every `FREERO_SNAPSHOT_EVERY_MS` (30 min), taken by compaction and, while a board stays open, by its
+room on a timer — one period after the first change, then once per period while changes keep coming
+(KAI-82). Every instance holding the board may try; the "newest snapshot old enough?" check and the
+insert run under the base row lock compaction takes, so one instance takes each. Snapshots have a
+`kind`: `auto`, `named` (never pruned), `before-restore`. Retention
 (`realtime/retention.ts`, job in `realtime/init.ts`, hourly on every instance under an advisory
 lock): non-named snapshots keep the newest per hour for a day, per day for a month, per week after;
 buckets are epoch-aligned, so a run is idempotent, and a snapshot is only ever deleted in favour of

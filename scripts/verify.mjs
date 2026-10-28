@@ -1631,6 +1631,7 @@ async function multiInstanceChecks() {
   const procs = [];
   let url = null;
   // Rate-limit counters live in the shared Redis, also across the single-instance run above.
+  const AUTO_VERSION_MS = 1000; // automatic versions of open boards (KAI-82), instead of 30 min
   // Accounts are purged right away, and only by instance 2 (instance 1's job would run hourly).
   const env = (i) => ({
     DATABASE_URL: url,
@@ -1638,6 +1639,7 @@ async function multiInstanceChecks() {
     RATE_LIMIT_SIGNUP: '200/1h',
     ACCOUNT_DELETION_GRACE_DAYS: '0',
     ACCOUNT_PURGE_INTERVAL_SECONDS: i === 0 ? '3600' : '1',
+    FREERO_SNAPSHOT_EVERY_MS: String(AUTO_VERSION_MS),
   });
   const docRows = async (boardId) =>
     (await adminQuery(`SELECT count(*)::int AS n FROM board_doc_updates WHERE board_id = '${boardId}'`, url))[0].n;
@@ -1902,6 +1904,36 @@ async function multiInstanceChecks() {
       await reader.ready();
       assert(all(reader) && els(reader).has('m1') && els(reader).has('m2'), `after reload: ${JSON.stringify([...els(reader).keys()])}`);
       reader.destroy();
+    });
+
+    await check('a board kept open on both instances and edited lightly gets an automatic version every period, one per period across both (KAI-82)', async () => {
+      const open = (await A.req('POST', '/api/boards', { title: 'Open all day' })).json.board;
+      assert((await A.req('POST', `/api/boards/${open.id}/members`, { email: B.email, role: 'editor' })).status === 201, 'invite');
+      const p = connectDoc(A, open.id, undefined, one);
+      const q = connectDoc(B, open.id, undefined, two);
+      await Promise.all([p.ready(), q.ready()]);
+      const autos = async () =>
+        (
+          await adminQuery(
+            `SELECT (extract(epoch FROM created_at) * 1000)::float8 AS at FROM board_doc_snapshots WHERE board_id = '${open.id}' AND kind = 'auto' ORDER BY created_at`,
+            url,
+          )
+        ).map((r) => Number(r.at));
+      // A small edit every 200 ms, alternating instances; both sockets stay connected throughout.
+      let n = 0;
+      await waitFor(
+        async () => {
+          els(n % 2 ? p : q).set('note', { id: 'note', type: 'sticky', text: `edit ${++n}` });
+          await sleep(200);
+          return (await autos()).length >= 3;
+        },
+        20_000,
+        'three automatic versions while the board stays open',
+      );
+      const at = await autos();
+      for (let i = 1; i < at.length; i++) assert(at[i] - at[i - 1] >= AUTO_VERSION_MS, `two automatic versions in one period: ${at.join(', ')}`);
+      p.destroy();
+      q.destroy();
     });
 
     await check("an account purged by instance 2 shows its comment that only instance 1 holds (not saved yet) as \"Deleted user\", live and after a reload", async () => {

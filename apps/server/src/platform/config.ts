@@ -76,6 +76,8 @@ export interface Config {
   release: string | null;
   /** Idle time before an unused board doc is unloaded from memory. */
   docIdleMs: number;
+  /** Automatic versions: at most one per board this often (while it is open, and at compaction). */
+  snapshotEveryMs: number;
   databaseUrl: string | null;
   /** Max Postgres connections per process (DATABASE_POOL_MAX). */
   dbPoolMax: number;
@@ -310,6 +312,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     environment,
     release: str('FREERO_RELEASE'),
     docIdleMs: int('FREERO_DOC_IDLE_MS', 30_000, 100),
+    snapshotEveryMs: int('FREERO_SNAPSHOT_EVERY_MS', 30 * 60_000, 100),
     databaseUrl: url('DATABASE_URL', ['postgres:', 'postgresql:']),
     dbPoolMax: int('DATABASE_POOL_MAX', 10, 1, 1000),
     redisUrl: url('REDIS_URL', ['redis:', 'rediss:']),
