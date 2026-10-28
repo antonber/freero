@@ -242,6 +242,8 @@ export async function removeMember(workspaceId: string, actorId: string, targetI
 
 /** Everything a board access decision needs from the board's workspace (see members/roles.ts resolveRole). */
 export interface BoardWorkspaceAccess {
+  /** The board's workspace as people see it: a team's name, or null for a personal workspace. */
+  team: { name: string; private: boolean } | null;
   workspaceRole: WorkspaceRole | null;
   policies: WorkspacePolicies;
   /** What the workspace grants by itself (team access). */
@@ -271,10 +273,12 @@ export async function boardAccessLoader(userId: string, workspaceIds: string[]):
   const wsById = new Map(workspaces.map((w) => [w.id, w]));
   const projectAccess = new Map(projects.map((p) => [p.id, p.access]));
   return (b) => {
-    const policies = wsById.get(b.workspaceId)?.policies ?? DEFAULT_POLICIES;
+    const ws = wsById.get(b.workspaceId);
+    const policies = ws?.policies ?? DEFAULT_POLICIES;
     const role = roles.get(b.workspaceId) ?? null;
     const access = b.projectId ? projectAccess.get(b.projectId) : undefined;
     return {
+      team: ws?.kind === 'team' ? { name: ws.name, private: access === 'private' } : null,
       workspaceRole: role,
       policies,
       teamRole: teamRole(role, access ? { access, member: myProjects.has(b.projectId!) } : null),

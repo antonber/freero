@@ -38,6 +38,11 @@ export interface BoardSummary {
   /** The workspace the board belongs to, and its project (folder) there, if any. */
   workspaceId: string;
   projectId: string | null;
+  /**
+   * Team access, when the board is in a team workspace: everyone in it (`private`: only the
+   * members of its private project, plus the workspace's owners/admins) can edit it.
+   */
+  team: { name: string; private: boolean } | null;
   /** What the current user may do beyond their role, under the workspace's sharing policies. */
   permissions: BoardPermissions;
 }

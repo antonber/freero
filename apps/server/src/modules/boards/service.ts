@@ -101,6 +101,7 @@ export async function toSummary(
     lastOpenedAt,
     workspaceId: board.workspaceId,
     projectId: board.projectId,
+    team: access.team,
     permissions: permissionsFor(board, userId, role, access),
     ...(board.deletedAt !== null ? { deletedAt: board.deletedAt, purgeAt: board.deletedAt + TRASH_RETENTION_MS } : {}),
   };
