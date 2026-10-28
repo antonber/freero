@@ -2777,7 +2777,7 @@ async function ssoChecks() {
       const replayed = await postToAcs(new Browser(port), request.acsUrl, resp, relay, idp);
       assert(replayed.location === '/login?error=sso_failed', `same response posted again: ${replayed.location}`);
       const fin = await victim.fetch(acs.location);
-      assert(fin.location === '/app' && victim.jar.has('freero_session'), `the real browser: ${fin.location}`);
+      assert(fin.location === `/app?ws=${ws.id}` && victim.jar.has('freero_session'), `the real browser: ${fin.location}`);
       // The same assertion (same ID) answering a fresh request: refused as a replay.
       const c2 = new Browser(port);
       const s2 = await startSaml(c2, ws.id, idp);
@@ -2906,7 +2906,7 @@ async function ssoChecks() {
       const b = new Browser(port);
       wsOidc.queueSignIn({ email: `dana@${betaDomain}`, name: 'Dana' });
       const landed = await b.navigate(`/api/sso/${beta.id}/start?next=%2Fapp`);
-      assert(landed === '/app', `landed on ${landed}`);
+      assert(landed === `/app?ws=${beta.id}`, `landed on ${landed} (not the workspace signed in to)`);
       const me = (await b.fetch('/api/auth/me')).json.user;
       const role = (await b.fetch('/api/workspaces')).json.workspaces.find((w) => w.id === beta.id)?.role;
       assert(me.email === `dana@${betaDomain}` && role === 'guest', `${me.email} ${role}`);
@@ -3009,7 +3009,7 @@ async function scimChecks() {
 
     await check('a provisioned person is a member of the workspace and signs in through SSO to the same account', async () => {
       const { browser, landed } = await samlSignIn(port, ws.id, idp, zedEmail);
-      assert(landed === '/app', `landed ${landed}`);
+      assert(landed === `/app?ws=${ws.id}`, `landed ${landed}`);
       const me = (await browser.fetch('/api/auth/me')).json.user;
       assert(me.id === zed.id && me.name === 'Zed Dir', JSON.stringify(me));
       assert((await browser.fetch('/api/workspaces')).json.workspaces.find((w) => w.id === ws.id)?.role === 'member', 'not a member');
@@ -3031,7 +3031,7 @@ async function scimChecks() {
       const on = await scim('PATCH', `/Users/${zed.id}`, { schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'], Operations: [{ op: 'Replace', path: 'active', value: 'True' }] });
       assert(on.json.active === true, on.text);
       const back = await samlSignIn(port, ws.id, idp, zedEmail);
-      assert(back.landed === '/app' && (await back.browser.fetch('/api/workspaces')).json.workspaces.some((w) => w.id === ws.id), `after reactivating: ${back.landed}`);
+      assert(back.landed === `/app?ws=${ws.id}` &&(await back.browser.fetch('/api/workspaces')).json.workspaces.some((w) => w.id === ws.id), `after reactivating: ${back.landed}`);
     });
 
     await check('directory groups map to roles in Freero: the highest mapped role wins, leaving the group returns the default role, and an owner is never changed', async () => {
@@ -3105,19 +3105,22 @@ async function privacyChecks() {
       await u.signup();
       await u.verifyEmail(dataDir);
     }
-    /** The export mailed to `to` after `after`: its download path. */
-    const mailedExport = async (to, after) => {
-      let link = null;
+    /**
+     * Waits for the "ready" mail to `to` (its link opens the page that lists the export: Account
+     * settings, or the workspace's settings), then returns the newest ready export's download path.
+     */
+    const mailedExport = async (u, after, { workspaceId = null } = {}) => {
+      let mail = null;
       await waitFor(
-        () => {
-          const m = outbox(dataDir).filter((x) => x.to === to && x.sentAt >= after - 50 && /export/i.test(x.subject)).at(-1);
-          link = m ? /\/api\/exports\/[A-Za-z0-9_-]+\/download/.exec(m.text)?.[0] : null;
-          return !!link;
-        },
+        () => (mail = outbox(dataDir).filter((x) => x.to === u.email && x.sentAt >= after - 50 && /export/i.test(x.subject)).at(-1)),
         30_000,
-        `the export mail to ${to}`,
+        `the export mail to ${u.email}`,
       );
-      return link;
+      const page = workspaceId ? `/app?ws=${workspaceId}&view=settings#data` : '/settings#data';
+      assert(mail.text.includes(page), `the mail links elsewhere: ${mail.text}`);
+      const list = (await u.req('GET', workspaceId ? `/api/workspaces/${workspaceId}/exports` : '/api/me/exports')).json.exports;
+      assert(list[0]?.status === 'ready', JSON.stringify(list));
+      return `/api/exports/${list[0].id}/download`;
     };
     const download = async (u, link) => {
       const res = await fetch(`http://127.0.0.1:${port}${link}`, { headers: { cookie: u.cookie } });
@@ -3153,7 +3156,7 @@ async function privacyChecks() {
       const after = Date.now();
       const r = await U.req('POST', '/api/me/exports');
       assert(r.status === 202 && r.json.export.status === 'pending', r.text);
-      const link = await mailedExport(U.email, after);
+      const link = await mailedExport(U, after);
       const dl = await download(U, link);
       assert(dl.status === 200 && dl.type === 'application/zip', `download: ${dl.status} ${dl.type}`);
       files = unzipSync(dl.bytes);
@@ -3200,7 +3203,7 @@ async function privacyChecks() {
       assert((await M.req('POST', `/api/workspaces/${team.id}/exports`)).status === 403, 'a member exported the workspace');
       const after = Date.now();
       assert((await O.req('POST', `/api/workspaces/${team.id}/exports`)).status === 202, 'owner export');
-      wsLink = await mailedExport(O.email, after);
+      wsLink = await mailedExport(O, after, { workspaceId: team.id });
       const dl = await download(O, wsLink);
       assert(dl.status === 200, `download ${dl.status}`);
       const z = unzipSync(dl.bytes);

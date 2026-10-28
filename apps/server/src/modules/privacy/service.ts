@@ -106,9 +106,10 @@ async function build(req: Request | null, e: repo.ExportRecord): Promise<void> {
       title: `Your export of ${what} is ready`,
       paragraphs: [
         `The ZIP file you asked for is ready to download until ${new Date(expiresAt).toUTCString()}. After that it is deleted.`,
-        'Open the link while signed in to Freero as yourself; nobody else can download it.',
+        'Only you can download it, signed in to Freero as yourself.',
       ],
-      action: { label: 'Download the export', url: `${origin}/api/exports/${e.id}/download` },
+      // The page lists it with its Download button (signing in first if needed).
+      action: { label: 'Download the export', url: ws ? `${origin}/app?ws=${encodeURIComponent(ws.id)}&view=settings#data` : `${origin}/settings#data` },
       outro: 'If you didn’t ask for this export, change your password and review your signed-in devices in Account settings.',
     }),
   });

@@ -80,7 +80,12 @@ export async function saveConnection(workspaceId: string, body: Partial<SsoConne
 
   let saml = { entityId: null as string | null, ssoUrl: null as string | null, certs: null as string | null };
   let oidc = { issuer: null as string | null, clientId: null as string | null, secret: null as string | null };
-  if (protocol === 'saml') {
+  // Settings changed without new provider details (enable, default role, session length) keep the provider.
+  const keepProvider = prev?.protocol === protocol && !body.samlMetadataXml && !body.samlEntityId && !body.samlSsoUrl && !body.samlCertificate && !body.oidcIssuer && !body.oidcClientId && !body.oidcClientSecret;
+  if (keepProvider && prev) {
+    saml = { entityId: prev.samlEntityId, ssoUrl: prev.samlSsoUrl, certs: prev.samlCerts };
+    oidc = { issuer: prev.oidcIssuer, clientId: prev.oidcClientId, secret: prev.oidcClientSecret };
+  } else if (protocol === 'saml') {
     if (typeof body.samlMetadataXml === 'string' && body.samlMetadataXml.trim()) {
       const m = parseIdpMetadata(body.samlMetadataXml);
       saml = { entityId: m.entityId, ssoUrl: m.ssoUrl, certs: m.certs.join('\n') };

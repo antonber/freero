@@ -79,7 +79,9 @@ export async function startSso(req: Request, res: Response): Promise<void> {
   const workspaceId = req.params.workspaceId;
   const c = await repo.getConnection(workspaceId);
   if (!c || !c.enabled) return void fail(res, 'sso_unavailable');
-  const returnTo = safeReturnPath(req.query.next, '/app');
+  // No particular destination: the dashboard of the workspace they signed in to.
+  const next = safeReturnPath(req.query.next, '/app');
+  const returnTo = next === '/app' ? `/app?ws=${encodeURIComponent(workspaceId)}` : next;
   const hint = typeof req.query.login_hint === 'string' ? req.query.login_hint.slice(0, 254) : '';
   const now = Date.now();
   const flowId = newId(24);
