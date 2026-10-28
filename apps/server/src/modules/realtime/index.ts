@@ -5,4 +5,5 @@ export {
   closeBoardDoc,
   refreshRoomAccess as refreshBoardAccess,
   flushAllRooms,
+  renameCommentAuthor,
 } from './rooms';
