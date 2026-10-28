@@ -384,9 +384,11 @@ export function AdminProvisioning({ workspace }: { workspace: WorkspaceSummary }
             </div>
           ))}
         </div>
-        <Button icon={KeyRound} loading={busy} onClick={() => void issue(() => api.createScimToken(workspace.id, `Token ${s.tokens.length + 1}`))}>
-          Generate token
-        </Button>
+        <div>
+          <Button icon={KeyRound} loading={busy} onClick={() => void issue(() => api.createScimToken(workspace.id, `Token ${s.tokens.length + 1}`))}>
+            Generate token
+          </Button>
+        </div>
       </div>
 
       {s.groups.length ? (
@@ -469,9 +471,11 @@ export function AdminDataExport({ workspace }: { workspace: WorkspaceSummary }) 
         A ZIP of every board (as JSON and in Freero’s own format, with its images), the members, projects and settings. Only you can download it, for 7 days.
       </p>
       <ExportList exports={exports} />
-      <Button icon={Download} loading={busy} onClick={() => void ask()}>
-        Export workspace
-      </Button>
+      <div>
+        <Button icon={Download} loading={busy} onClick={() => void ask()}>
+          Export workspace
+        </Button>
+      </div>
     </div>
   );
 }
