@@ -1184,8 +1184,85 @@ async function multiInstanceChecks() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Uploads mark-and-sweep (KAI-74), on its own server: files are shared between boards, copies,
+// templates and avatars, so only what nothing references any more may be deleted.
+// ---------------------------------------------------------------------------
+async function uploadSweepChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-sweep-'));
+  const outerDbUrl = db.url;
+  try {
+    if (ADMIN_URL) db.url = await createDatabase();
+    if (!(await check('uploads sweep: server boots', () => startServer(dataDir)))) return;
+    const U = new User('Sweeper');
+    await U.signup();
+    const files = {};
+    const fileStatus = async (url) => (await fetch(`http://127.0.0.1:${server.port}${url}`, { redirect: 'manual' })).status;
+    const board = async (title) => (await U.req('POST', '/api/boards', { title })).json.board.id;
+    const place = async (boardId, url) => {
+      const c = connectDoc(U, boardId);
+      await c.ready();
+      els(c).set('img', { id: 'img', type: 'image', x: 0, y: 0, w: 10, h: 10, src: url });
+      await sleep(200);
+      c.destroy(); // the last client leaving saves the doc right away
+    };
+
+    await check('uploads sweep: images on a live, a trashed, a purged and a copied board, in a template, as an avatar, and one never used', async () => {
+      for (const k of ['live', 'trashed', 'purged', 'copied', 'template', 'avatar', 'unused']) {
+        const r = await U.req('POST', '/api/uploads', PNG_1PX, { raw: true, headers: { 'content-type': 'image/png' } });
+        assert(r.status === 201, `upload ${k} -> ${r.status}`);
+        files[k] = r.json.url;
+      }
+      await place(await board('Live'), files.live);
+      const trashed = await board('Trashed');
+      await place(trashed, files.trashed);
+      assert((await U.req('DELETE', `/api/boards/${trashed}`)).status === 200, 'trash');
+      const purged = await board('Purged');
+      await place(purged, files.purged);
+      assert((await U.req('DELETE', `/api/boards/${purged}`)).status === 200, 'trash before purge');
+      assert((await U.req('DELETE', `/api/boards/${purged}/permanent`)).status === 200, 'delete forever');
+      // A duplicate shares the image URL; deleting the original for good must not break the copy.
+      const original = await board('Original');
+      await place(original, files.copied);
+      assert([200, 201].includes((await U.req('POST', `/api/boards/${original}/duplicate`)).status), 'duplicate');
+      assert((await U.req('DELETE', `/api/boards/${original}`)).status === 200, 'trash original');
+      assert((await U.req('DELETE', `/api/boards/${original}/permanent`)).status === 200, 'delete original forever');
+      const content = { elements: [{ id: 'i', type: 'image', x: 0, y: 0, w: 10, h: 10, src: files.template }] };
+      assert((await U.req('POST', '/api/templates', { name: 'With image', content })).status === 201, 'save template');
+      assert((await U.req('PATCH', '/api/auth/me', { avatarUrl: files.avatar })).status === 200, 'set avatar');
+    });
+
+    await check('uploads sweep: after the grace period only unreferenced files are deleted (files and quota), on startup', async () => {
+      await sleep(500);
+      await stopServer();
+      // Simulate three days passing: age the uploads in the server's own database.
+      await withDb(dataDir, (q) => q(`UPDATE uploads SET created_at = now() - interval '3 days'`));
+      await startServer(dataDir); // the first sweep round runs at startup
+      await waitFor(async () => (await fileStatus(files.unused)) === 404, 15_000, 'the unused upload to be swept');
+      await waitFor(async () => (await fileStatus(files.purged)) === 404, 15_000, 'the purged board image to be swept');
+      for (const k of ['live', 'trashed', 'copied', 'template', 'avatar'])
+        assert((await fileStatus(files[k])) === 200, `${k} image was deleted although it is still used`);
+      await stopServer();
+      const rows = await withDb(dataDir, (q) => q('SELECT name FROM uploads'));
+      const kept = ['live', 'trashed', 'copied', 'template', 'avatar'].map((k) => files[k].slice('/uploads/'.length)).sort();
+      assert(isDeepStrictEqual(rows.map((r) => r.name).sort(), kept), `quota rows left: ${JSON.stringify(rows)}`);
+    });
+  } finally {
+    closeAllDocs();
+    await stopServer();
+    await dropDatabases();
+    db.url = outerDbUrl;
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
 const started = Date.now();
 await run().catch((e) => record('verify harness', false, e?.stack ?? String(e)));
+await uploadSweepChecks().catch((e) => record('uploads sweep checks harness', false, e?.stack ?? String(e)));
 await platformChecks().catch((e) => record('platform checks harness', false, e?.stack ?? String(e)));
 await multiInstanceChecks().catch((e) => record('multi-instance checks harness', false, e?.stack ?? String(e)));
 const failed = results.filter((r) => !r.ok);

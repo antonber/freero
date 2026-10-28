@@ -135,3 +135,22 @@ export async function loadSnapshot(boardId: string, snapshotId: number): Promise
   const r = await one<{ state: Uint8Array }>(`SELECT state FROM board_doc_snapshots WHERE board_id = $1 AND id = $2`, [boardId, snapshotId]);
   return r ? toBytes(r.state) : null;
 }
+
+/**
+ * Every match of `pattern`'s first group in any stored document byte: bases, the update log and
+ * version-history snapshots, of every board including trashed ones (restricted to `among` when
+ * given). Yjs updates store element values as whole UTF-8 strings, and `encode(…, 'escape')`
+ * keeps printable ASCII as is, so a URL in a document is found without decoding it in Node.
+ */
+export async function matchesInStoredDocs(pattern: string, among: readonly string[] | null): Promise<string[]> {
+  const rows = await query<{ name: string }>(
+    `SELECT DISTINCT m[1] AS name FROM (
+       SELECT regexp_matches(encode(state, 'escape'), $1, 'g') AS m FROM board_docs
+       UNION ALL SELECT regexp_matches(encode(data, 'escape'), $1, 'g') FROM board_doc_updates
+       UNION ALL SELECT regexp_matches(encode(state, 'escape'), $1, 'g') FROM board_doc_snapshots
+     ) found
+     WHERE $2::text[] IS NULL OR m[1] = ANY($2::text[])`,
+    [pattern, among],
+  );
+  return rows.map((r) => r.name);
+}
