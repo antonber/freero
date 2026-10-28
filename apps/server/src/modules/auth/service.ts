@@ -343,7 +343,33 @@ export async function endSession(req: Request, res: Response): Promise<void> {
 export async function endSessionsOf(userId: string, keepKey: string | null = null, keepMethod: string | null = null): Promise<number> {
   const keys = await repo.deleteSessionsOf(userId, keepKey, keepMethod);
   sessionsEnded(keys);
+  if (keepKey === null && keepMethod === null) await signedOutEverywhere(userId);
   return keys.length;
+}
+
+// ---- "Signed out everywhere" ----
+// Every path that ends ALL of an account's sessions does so because the account may be in the
+// wrong hands or is leaving: a password reset, "this wasn't me", two-step recovery, an operator's
+// reset or suspension, deletion, a directory deprovisioning the organization's account. Credentials
+// that outlive sessions (API tokens, authorised apps: modules/apiauth) end with them.
+
+type SignedOutListener = (userId: string) => void | Promise<void>;
+const signedOutListeners = new Set<SignedOutListener>();
+
+/** Called (and awaited) whenever every session of an account was ended. */
+export function onSignedOutEverywhere(fn: SignedOutListener): () => void {
+  signedOutListeners.add(fn);
+  return () => signedOutListeners.delete(fn);
+}
+
+async function signedOutEverywhere(userId: string): Promise<void> {
+  for (const fn of signedOutListeners) {
+    try {
+      await fn(userId);
+    } catch (e) {
+      logError('auth: a signed-out-everywhere listener failed', e);
+    }
+  }
 }
 
 /** Opaque, stable key of the session a request/upgrade carries (never the raw token), or null. */
@@ -444,7 +470,7 @@ export async function endSessionsBeyondLimits(people: Array<{ userId: string } &
 /** The session's account (even while deletion is scheduled), or null. Records "last seen". */
 export async function sessionFromCookieHeader(
   cookieHeader: string | undefined,
-): Promise<{ user: Account; key: string; sessionId: string; authAt: number } | null> {
+): Promise<{ user: Account; key: string; sessionId: string; authAt: number; method: string } | null> {
   const key = sessionKeyFromCookieHeader(cookieHeader);
   if (!key) return null;
   const now = Date.now();
@@ -459,7 +485,7 @@ export async function sessionFromCookieHeader(
     return null;
   }
   touch(key, now);
-  return { user: toAccount(found.user), key, sessionId: found.sessionId, authAt: found.authAt };
+  return { user: toAccount(found.user), key, sessionId: found.sessionId, authAt: found.authAt, method: found.method };
 }
 
 /** The signed-in user of a cookie, or null — also null while the account awaits deletion. */
@@ -468,7 +494,7 @@ export async function userFromCookieHeader(cookieHeader: string | undefined): Pr
   return s && s.user.deletionScheduledFor === null ? publicUser(s.user) : null;
 }
 
-const requestSessions = new WeakMap<Request, { user: Account; key: string; sessionId: string; authAt: number }>();
+const requestSessions = new WeakMap<Request, { user: Account; key: string; sessionId: string; authAt: number; method: string }>();
 
 function sessionMiddleware(allowPendingDeletion: boolean): RequestHandler {
   return (req, res, next) => {
@@ -512,6 +538,16 @@ export function currentSessionId(req: Request): string {
   const s = requestSessions.get(req);
   if (!s) throw unauthorized();
   return s.sessionId;
+}
+
+/**
+ * How the request's session signed in ('password', 'email_link', a provider id, 'sso:<workspaceId>'):
+ * credentials made from it carry it, so sign-in restrictions (enforced SSO) apply to them too.
+ */
+export function currentSessionMethod(req: Request): string {
+  const s = requestSessions.get(req);
+  if (!s) throw unauthorized();
+  return s.method;
 }
 
 /** When the request's session last proved who it is (for confirmPassword on passwordless accounts). */

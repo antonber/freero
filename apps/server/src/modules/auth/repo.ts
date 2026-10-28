@@ -256,10 +256,10 @@ export async function insertSession(s: {
 export async function findSessionUser(
   tokenHash: string,
   now: number,
-): Promise<{ user: UserWithHash; sessionId: string; authAt: number; createdAt: number; lastSeenAt: number } | null> {
-  const row = await one<UserRow & { session_id: string; session_auth_at: Date; session_created_at: Date; session_last_seen_at: Date }>(
+): Promise<{ user: UserWithHash; sessionId: string; authAt: number; createdAt: number; lastSeenAt: number; method: string } | null> {
+  const row = await one<UserRow & { session_id: string; session_auth_at: Date; session_created_at: Date; session_last_seen_at: Date; session_method: string }>(
     `SELECT u.*, s.id AS session_id, s.auth_at AS session_auth_at, s.created_at AS session_created_at,
-            s.last_seen_at AS session_last_seen_at
+            s.last_seen_at AS session_last_seen_at, s.method AS session_method
      FROM sessions s JOIN users u ON u.id = s.user_id
      WHERE s.token_hash = $1 AND s.expires_at > $2 AND u.suspended_at IS NULL`,
     [tokenHash, new Date(now)],
@@ -271,6 +271,7 @@ export async function findSessionUser(
         authAt: row.session_auth_at.getTime(),
         createdAt: row.session_created_at.getTime(),
         lastSeenAt: row.session_last_seen_at.getTime(),
+        method: row.session_method,
       }
     : null;
 }
