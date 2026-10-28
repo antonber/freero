@@ -47,6 +47,8 @@ interface Driver {
   query(sql: string, params: unknown[]): Promise<Row[]>;
   exec(sql: string): Promise<void>;
   transaction<T>(fn: (q: Queryable) => Promise<T>): Promise<T>;
+  /** Takes a session-level advisory lock without waiting; returns its release, or null if held elsewhere. */
+  tryLock(key: number): Promise<(() => Promise<void>) | null>;
   close(): Promise<void>;
 }
 
@@ -126,6 +128,28 @@ async function openPg(url: string, poolSize: number): Promise<Driver> {
         client.release(broken);
       }
     },
+    async tryLock(key) {
+      // A session lock lives on one connection: keep a dedicated client until it is released.
+      const client = await pool.connect();
+      try {
+        const r = await client.query('SELECT pg_try_advisory_lock($1) AS ok', [key]);
+        if (r.rows[0]?.ok === true) {
+          return async () => {
+            try {
+              await client.query('SELECT pg_advisory_unlock($1)', [key]);
+              client.release();
+            } catch (e) {
+              client.release(e as Error); // the lock dies with the connection
+            }
+          };
+        }
+      } catch (e) {
+        client.release(e as Error);
+        throw e;
+      }
+      client.release();
+      return null;
+    },
     close: () => pool.end(),
   };
 }
@@ -166,6 +190,8 @@ function lockDir(dir: string): () => void {
   throw new Error(`Could not lock ${file}`);
 }
 
+const pgliteLocks = new Set<number>();
+
 async function openPglite(dir: string | 'memory'): Promise<Driver> {
   const { PGlite } = await import('@electric-sql/pglite');
   const unlock = dir === 'memory' ? () => {} : lockDir(dir);
@@ -191,6 +217,12 @@ async function openPglite(dir: string | 'memory'): Promise<Driver> {
     query: top.query,
     exec: top.exec,
     transaction: (fn) => db.transaction((t) => fn(withOne(q(t) as Queryable))),
+    // One process per PGlite directory (lockDir), so an in-process lock is a database-wide one.
+    async tryLock(key) {
+      if (pgliteLocks.has(key)) return null;
+      pgliteLocks.add(key);
+      return async () => void pgliteLocks.delete(key);
+    },
     async close() {
       try {
         await db.close();
@@ -262,6 +294,29 @@ export async function tx<T>(fn: (t: Tx) => Promise<T>): Promise<T> {
     }
   });
 }
+
+/**
+ * Runs fn while holding the Postgres advisory lock `key`, or returns null right away when another
+ * instance (or another call in this one) holds it. For periodic jobs every instance schedules but
+ * only one may run at a time (account purge). fn's queries use the pool as usual; the lock is held
+ * on a separate connection and released when fn settles (or when that connection dies).
+ */
+export async function withAdvisoryLock<T>(key: number, fn: () => Promise<T>): Promise<T | null> {
+  if (heldLocks.has(key)) return null;
+  heldLocks.add(key);
+  try {
+    const release = await d().tryLock(key);
+    if (!release) return null;
+    try {
+      return await fn();
+    } finally {
+      await release();
+    }
+  } finally {
+    heldLocks.delete(key);
+  }
+}
+const heldLocks = new Set<number>();
 
 /** Readiness probe. */
 export async function pingDb(): Promise<void> {

@@ -2,6 +2,7 @@ import { TRASH_RETENTION_DAYS, type BoardSummary, type LinkAccess, type Role } f
 import { getConfig } from '../../platform/config';
 import { badRequest, forbidden, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
+import { runExclusive } from '../../platform/jobs';
 import { getUser, getUsers } from '../auth/index';
 import { atLeast, getMemberRole, membershipsOf, resolveRole } from '../members/index';
 import { closeBoardDoc, initBoardDoc, snapshotBoardDoc } from '../realtime/index';
@@ -199,17 +200,24 @@ export async function deleteForever(boardId: string, userId: string): Promise<vo
 
 const PURGE_BATCH = 200;
 
+/** Advisory lock key of the trash purge (platform/jobs). */
+export const TRASH_PURGE_LOCK_KEY = 7_202_610_282; // arbitrary, constant across releases
+
 /**
  * Deletes for good every board that has been in the trash longer than TRASH_RETENTION_DAYS.
  * Idempotent and safe to run on every server instance at once: one instance purges (advisory
- * lock), the others skip this round. Returns how many boards this call removed.
+ * lock), the others skip this round (0). Returns how many boards this call removed.
  */
 export async function purgeExpiredTrash(now = Date.now()): Promise<number> {
+  return (await runExclusive(TRASH_PURGE_LOCK_KEY, () => purgeExpiredTrashLocked(now))) ?? 0;
+}
+
+/** The purge itself; the caller holds TRASH_PURGE_LOCK_KEY (purgeExpiredTrash or the scheduled job). */
+export async function purgeExpiredTrashLocked(now = Date.now()): Promise<number> {
   const before = now - TRASH_RETENTION_MS;
   let total = 0;
   for (;;) {
-    const purged = await repo.transaction(async () => ((await repo.tryLockTrashPurge()) ? repo.purgeTrashedBefore(before, PURGE_BATCH) : null));
-    if (!purged) break; // another instance is purging right now
+    const purged = await repo.purgeTrashedBefore(before, PURGE_BATCH);
     for (const b of purged) {
       await closeBoardDoc(b.id);
       await deleteUpload(b.thumbnail);

@@ -129,6 +129,81 @@
   color: var(--fr-danger);
 }
 
+.fr-authcard__success {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: #136c43;
+  background: var(--fr-success-soft);
+  border-radius: var(--fr-radius);
+}
+
+.fr-authcard__success svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--fr-success);
+}
+
+.fr-authcard__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.fr-authcard__forgot {
+  align-self: flex-end;
+  margin-top: -8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fr-primary);
+  text-decoration: none;
+}
+
+.fr-authcard__forgot:hover {
+  text-decoration: underline;
+}
+
+.fr-authcard__invite {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 20px;
+  padding: 14px;
+  background: var(--fr-surface-2);
+  border-radius: var(--fr-radius-lg, 12px);
+}
+
+.fr-authcard__invite-board {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--fr-ink-2);
+}
+
+.fr-authcard__invite-board strong {
+  overflow: hidden;
+  font-size: 15px;
+  color: var(--fr-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-authcard__invite-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  color: var(--fr-primary);
+  background: var(--fr-primary-soft);
+  border-radius: 10px;
+}
+
 .fr-authcard__demo {
   display: flex;
   align-items: center;

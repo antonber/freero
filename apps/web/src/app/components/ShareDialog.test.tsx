@@ -3,19 +3,19 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BoardMember, BoardSummary, Role, User } from '@freero/shared';
+import type { Account, BoardMember, BoardSummary, Role } from '@freero/shared';
 import { api } from '../api/client';
 import { AuthProvider } from '../auth/AuthContext';
 import { ShareDialog } from './ShareDialog';
 
 vi.mock('../api/client', async (importOriginal) => {
   const real = await importOriginal<typeof import('../api/client')>();
-  return { ...real, api: { session: vi.fn(), listMembers: vi.fn(), getBoard: vi.fn() } };
+  return { ...real, api: { session: vi.fn(), listMembers: vi.fn(), getBoard: vi.fn(), listInvites: vi.fn(async () => ({ invites: [] })) } };
 });
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const user = (id: string, name: string): User => ({ id, name, email: `${id}@x.io`, color: '#1C7ED6', avatarUrl: null, createdAt: 0 });
+const user = (id: string, name: string): Account => ({ id, name, email: `${id}@x.io`, color: '#1C7ED6', avatarUrl: null, createdAt: 0, emailVerified: true, deletionScheduledFor: null });
 const member = (id: string, name: string, role: Role): BoardMember => ({ userId: id, name, email: `${id}@x.io`, color: '#1C7ED6', avatarUrl: null, role });
 const MEMBERS = [member('u1', 'Ada', 'owner'), member('u2', 'Bob', 'editor'), member('u3', 'Cy', 'viewer')];
 const board = (role: Role): BoardSummary => ({
@@ -27,7 +27,7 @@ let root: Root;
 let host: HTMLDivElement;
 
 /** `role` = the server's current role; `pageRole` = what the board page loaded earlier (may be stale). */
-async function open(me: User, role: Role, pageRole: Role = role) {
+async function open(me: Account, role: Role, pageRole: Role = role) {
   vi.mocked(api.session).mockResolvedValue({ user: me });
   vi.mocked(api.getBoard).mockResolvedValue({ board: board(role) });
   vi.mocked(api.listMembers).mockResolvedValue({ members: MEMBERS });

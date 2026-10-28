@@ -1,0 +1,418 @@
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowLeft, BadgeCheck, CircleAlert, ImageUp, LogOut, Mail, Monitor, Trash2 } from 'lucide-react';
+import type { SessionInfo } from '@freero/shared';
+import { Avatar, Button, ColorSwatches, Input, Logo, Modal, Spinner, useToast } from '@ui';
+import { api, ApiError } from '../../api/client';
+import { useAuth } from '../../auth/AuthContext';
+import { describeDevice } from '../../lib/device';
+import { relativeTime } from '../../lib/time';
+import './account.css';
+
+// Same palette the server assigns at signup: saturated enough to read on the canvas.
+const CURSOR_COLORS = [
+  '#E8590C', '#2F9E44', '#1C7ED6', '#9C36B5', '#D6336C', '#0C8599',
+  '#F08C00', '#5F3DC4', '#C92A2A', '#087F5B', '#3B5BDB', '#A61E4D',
+];
+
+const errorText = (err: unknown, fallback: string) => (err instanceof ApiError && err.status < 500 ? err.message : fallback);
+
+function Section({ id, title, description, children, danger }: { id: string; title: string; description?: string; children: ReactNode; danger?: boolean }) {
+  return (
+    <section className={`fr-acct-card${danger ? ' fr-acct-card--danger' : ''}`} aria-labelledby={`${id}-title`}>
+      <header className="fr-acct-card__head">
+        <h2 id={`${id}-title`}>{title}</h2>
+        {description ? <p>{description}</p> : null}
+      </header>
+      {children}
+    </section>
+  );
+}
+
+/** /settings — profile, email, password, signed-in devices and account deletion. */
+export function AccountSettingsPage() {
+  useEffect(() => {
+    document.title = 'Account settings · Freero';
+  }, []);
+  return (
+    <div className="fr-acct">
+      <header className="fr-acct__top">
+        <Link to="/app" className="fr-acct__back">
+          <ArrowLeft size={16} aria-hidden /> Back to boards
+        </Link>
+        <Logo size={26} withWordmark />
+      </header>
+      <main className="fr-acct__main">
+        <h1 className="fr-acct__title">Account settings</h1>
+        <ProfileSection />
+        <EmailSection />
+        <PasswordSection />
+        <SessionsSection />
+        <DeleteSection />
+      </main>
+    </div>
+  );
+}
+
+function ProfileSection() {
+  const { user, updateProfile, adopt } = useAuth();
+  const notify = useToast();
+  const [name, setName] = useState(user?.name ?? '');
+  const [color, setColor] = useState(user?.color ?? CURSOR_COLORS[0]);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const file = useRef<HTMLInputElement>(null);
+  if (!user) return null;
+  const dirty = name.trim() !== user.name || color !== user.color;
+
+  const save = async (e: FormEvent) => {
+    e.preventDefault();
+    const n = name.trim();
+    if (!n) return setError('Your name can’t be empty');
+    if (n.length > 80) return setError('Keep it under 80 characters');
+    setSaving(true);
+    try {
+      await updateProfile({ name: n, color });
+      notify('Profile updated', 'success');
+    } catch (err) {
+      notify(errorText(err, 'Could not save your profile'), 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const upload = async (f: File | undefined) => {
+    if (!f) return;
+    setUploading(true);
+    try {
+      adopt((await api.uploadAvatar(f)).user);
+      notify('Photo updated', 'success');
+    } catch (err) {
+      notify(errorText(err, 'Could not upload the photo'), 'error');
+    } finally {
+      setUploading(false);
+      if (file.current) file.current.value = '';
+    }
+  };
+
+  const removePhoto = async () => {
+    try {
+      adopt((await api.removeAvatar()).user);
+    } catch (err) {
+      notify(errorText(err, 'Could not remove the photo'), 'error');
+    }
+  };
+
+  return (
+    <Section id="profile" title="Profile" description="How collaborators see you on boards, in comments and in sharing.">
+      <div className="fr-acct-avatar">
+        <div className="fr-acct-preview">
+          <Avatar name={name || user.name} color={color} src={user.avatarUrl} size={64} />
+          <div className="fr-acct-preview__cursor" aria-hidden>
+            <svg width="18" height="18" viewBox="0 0 18 18">
+              <path d="M2 1.5 L15 8.2 L9.2 9.6 L6.6 15.6 Z" fill={color} stroke="#fff" strokeWidth="1.4" strokeLinejoin="round" />
+            </svg>
+            <span style={{ background: color }}>{name.trim() || user.name}</span>
+          </div>
+        </div>
+        <div className="fr-acct-avatar__actions">
+          <input
+            ref={file}
+            type="file"
+            accept="image/png,image/jpeg,image/gif"
+            hidden
+            aria-label="Choose a profile photo"
+            onChange={(e) => upload(e.target.files?.[0])}
+          />
+          <Button icon={ImageUp} loading={uploading} onClick={() => file.current?.click()}>
+            Upload photo
+          </Button>
+          {user.avatarUrl ? (
+            <Button variant="ghost" onClick={removePhoto}>
+              Remove
+            </Button>
+          ) : null}
+          <span className="fr-acct__hint">PNG, JPEG or GIF. We crop it to a square.</span>
+        </div>
+      </div>
+      <form className="fr-acct-form" onSubmit={save} noValidate>
+        <Input label="Name" value={name} maxLength={80} onChange={(e) => (setName(e.target.value), setError(null))} error={error ?? undefined} />
+        <div className="fr-field">
+          <span className="fr-field__label">Cursor color</span>
+          <ColorSwatches colors={CURSOR_COLORS} value={color} onChange={setColor} size={28} aria-label="Cursor color" />
+        </div>
+        <div className="fr-acct-form__row">
+          <Button type="submit" variant="primary" loading={saving} disabled={!dirty}>
+            Save profile
+          </Button>
+        </div>
+      </form>
+    </Section>
+  );
+}
+
+function EmailSection() {
+  const { user } = useAuth();
+  const notify = useToast();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [sentTo, setSentTo] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (!user) return null;
+
+  const resend = async () => {
+    try {
+      await api.resendVerification();
+      notify(`Confirmation link sent to ${user.email}`, 'success');
+    } catch (err) {
+      notify(errorText(err, 'Could not send the link'), 'error');
+    }
+  };
+
+  const change = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.changeEmail(email.trim(), password);
+      setSentTo(email.trim());
+      setEmail('');
+      setPassword('');
+    } catch (err) {
+      setError(errorText(err, 'Could not start the change'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Section id="email" title="Email address" description="Used to log in and to receive invites.">
+      <div className="fr-acct-email">
+        <Mail size={18} aria-hidden />
+        <span className="fr-acct-email__addr">{user.email}</span>
+        {user.emailVerified ? (
+          <span className="fr-acct-badge fr-acct-badge--ok">
+            <BadgeCheck size={14} aria-hidden /> Verified
+          </span>
+        ) : (
+          <>
+            <span className="fr-acct-badge fr-acct-badge--warn">
+              <CircleAlert size={14} aria-hidden /> Not verified
+            </span>
+            <Button variant="ghost" size="sm" onClick={resend}>
+              Resend link
+            </Button>
+          </>
+        )}
+      </div>
+      <form className="fr-acct-form" onSubmit={change} noValidate>
+        <div className="fr-acct-form__grid">
+          <Input label="New email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <Input label="Current password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        </div>
+        {error ? <p className="fr-acct__error" role="alert">{error}</p> : null}
+        {sentTo ? (
+          <p className="fr-acct__ok" role="status">
+            We sent a confirmation link to {sentTo}. Your address changes when you open it.
+          </p>
+        ) : null}
+        <div className="fr-acct-form__row">
+          <Button type="submit" loading={busy} disabled={!email.trim() || !password}>
+            Change email
+          </Button>
+        </div>
+      </form>
+    </Section>
+  );
+}
+
+function PasswordSection() {
+  const notify = useToast();
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (next.length < 8) return setError('Use at least 8 characters for the new password');
+    setBusy(true);
+    setError(null);
+    try {
+      await api.changePassword(current, next);
+      setCurrent('');
+      setNext('');
+      notify('Password changed. Other devices were signed out.', 'success');
+    } catch (err) {
+      setError(errorText(err, 'Could not change the password'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Section id="password" title="Password" description="Changing it signs you out everywhere else.">
+      <form className="fr-acct-form" onSubmit={submit} noValidate>
+        <div className="fr-acct-form__grid">
+          <Input label="Current password" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
+          <Input label="New password" type="password" autoComplete="new-password" placeholder="At least 8 characters" value={next} onChange={(e) => setNext(e.target.value)} />
+        </div>
+        {error ? <p className="fr-acct__error" role="alert">{error}</p> : null}
+        <div className="fr-acct-form__row">
+          <Button type="submit" loading={busy} disabled={!current || !next}>
+            Change password
+          </Button>
+        </div>
+      </form>
+    </Section>
+  );
+}
+
+function SessionsSection() {
+  const notify = useToast();
+  const [sessions, setSessions] = useState<SessionInfo[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  const load = useCallback(() => {
+    api.listSessions().then(
+      ({ sessions }) => setSessions(sessions),
+      () => setFailed(true),
+    );
+  }, []);
+  useEffect(load, [load]);
+
+  const revoke = async (s: SessionInfo) => {
+    try {
+      await api.revokeSession(s.id);
+      setSessions((list) => list?.filter((x) => x.id !== s.id) ?? null);
+      notify(`Signed out ${describeDevice(s.userAgent)}`, 'info');
+    } catch (err) {
+      notify(errorText(err, 'Could not sign that device out'), 'error');
+    }
+  };
+
+  const revokeOthers = async () => {
+    try {
+      const { revoked } = await api.revokeOtherSessions();
+      setSessions((list) => list?.filter((x) => x.current) ?? null);
+      notify(revoked === 1 ? 'Signed out 1 other session' : `Signed out ${revoked} other sessions`, 'info');
+    } catch (err) {
+      notify(errorText(err, 'Could not sign the other devices out'), 'error');
+    }
+  };
+
+  const others = sessions?.filter((s) => !s.current).length ?? 0;
+  return (
+    <Section id="sessions" title="Where you're signed in" description="Sign out a device you don't recognize; its open boards disconnect right away.">
+      {failed ? (
+        <p className="fr-acct__error">Could not load your sessions.</p>
+      ) : !sessions ? (
+        <Spinner size={20} label="Loading sessions" />
+      ) : (
+        <>
+          <ul className="fr-acct-sessions">
+            {sessions.map((s) => (
+              <li key={s.id} className="fr-acct-session" data-testid="session-row">
+                <span className="fr-acct-session__icon" aria-hidden>
+                  <Monitor size={18} />
+                </span>
+                <span className="fr-acct-session__who">
+                  <span className="fr-acct-session__device">
+                    {describeDevice(s.userAgent)}
+                    {s.current ? <span className="fr-acct-badge fr-acct-badge--ok">This device</span> : null}
+                  </span>
+                  <span className="fr-acct-session__meta">
+                    {[s.network, s.current ? 'Active now' : `Last active ${relativeTime(s.lastSeenAt)}`, `Signed in ${relativeTime(s.createdAt)}`]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </span>
+                </span>
+                {!s.current ? (
+                  <Button size="sm" variant="ghost" icon={LogOut} onClick={() => revoke(s)}>
+                    Sign out
+                  </Button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+          <div className="fr-acct-form__row">
+            <Button onClick={revokeOthers} disabled={others === 0}>
+              Sign out all other sessions
+            </Button>
+          </div>
+        </>
+      )}
+    </Section>
+  );
+}
+
+function DeleteSection() {
+  const { user, adopt } = useAuth();
+  const notify = useToast();
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  if (!user) return null;
+
+  const confirm = async (e?: FormEvent) => {
+    e?.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const { deletionScheduledFor } = await api.deleteAccount(password);
+      const day = new Date(deletionScheduledFor).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
+      navigate('/login', { replace: true }); // before signing out here, or the guard adds ?next=/settings
+      adopt(null);
+      notify(`Your account will be deleted on ${day}. Log in before then to restore it.`, 'info', { duration: 12_000 });
+    } catch (err) {
+      setError(errorText(err, 'Could not delete the account'));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Section id="delete" title="Delete account" description="Removes your account, every board you own and your profile photo." danger>
+      <div className="fr-acct-form__row">
+        <Button variant="danger" icon={Trash2} onClick={() => (setOpen(true), setPassword(''), setError(null))}>
+          Delete my account
+        </Button>
+      </div>
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Delete your account?"
+        width={460}
+        footer={
+          <>
+            <Button onClick={() => setOpen(false)}>Cancel</Button>
+            <Button variant="danger" loading={busy} disabled={!password} onClick={() => confirm()}>
+              Delete account
+            </Button>
+          </>
+        }
+      >
+        <form className="fr-acct-form" onSubmit={confirm} noValidate>
+          <p className="fr-acct__p">
+            You'll be signed out everywhere. For 14 days you can log in and restore everything; after that your
+            account, the boards you own and your profile photo are deleted for good. What you added to other people's
+            boards stays with those boards, and your comments there will show as “Deleted user”.
+          </p>
+          <Input
+            label="Enter your password to confirm"
+            type="password"
+            autoComplete="current-password"
+            autoFocus
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            error={error ?? undefined}
+          />
+          <button type="submit" hidden />
+        </form>
+      </Modal>
+    </Section>
+  );
+}

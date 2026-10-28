@@ -6,7 +6,11 @@ export {
   getUsers,
   createUser,
   findUserByEmail,
+  normalizeEmail,
   userFromCookieHeader,
   sessionKeyFromCookieHeader,
   onSessionEnd,
+  onEmailVerified,
+  markEmailVerified,
 } from './service';
+export { accountsDueForPurge, deleteAccountIfDue, isDueForPurge, scheduleAccountDeletion, restoreAccount } from './account';

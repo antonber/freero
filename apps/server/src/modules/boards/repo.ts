@@ -108,13 +108,16 @@ export async function restoreBoard(id: string): Promise<boolean> {
   return (await one(`UPDATE boards SET deleted_at = NULL WHERE id = $1 AND deleted_at IS NOT NULL RETURNING id`, [id])) !== null;
 }
 
-/**
- * Inside `transaction()`: true if this caller may run the trash purge now, false if another
- * transaction (another server instance) is already purging. Released when the transaction ends.
- */
-export async function tryLockTrashPurge(): Promise<boolean> {
-  const r = await one<{ ok: boolean }>(`SELECT pg_try_advisory_xact_lock(hashtext('boards.purge'), 0) AS ok`);
-  return r?.ok === true;
+/** Every board the user owns, trashed ones included (account purge). */
+export async function allBoardIdsOwnedBy(userId: string): Promise<string[]> {
+  return (await query<{ id: string }>(`SELECT id FROM boards WHERE owner_id = $1`, [userId])).map((r) => r.id);
+}
+
+/** Deletes every board the user owns, trash included; returns their thumbnails (to delete the files). */
+export async function deleteAllOwnedBy(userId: string): Promise<Array<string | null>> {
+  return (await query<{ thumbnail: string | null }>(`DELETE FROM boards WHERE owner_id = $1 RETURNING thumbnail`, [userId])).map(
+    (r) => r.thumbnail,
+  );
 }
 
 /** Deletes up to `limit` boards trashed before `before` for good; returns what was deleted. */

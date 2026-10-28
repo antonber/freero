@@ -1,20 +1,25 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { User } from '@freero/shared';
+import type { Account, User } from '@freero/shared';
 import { useLocation } from 'react-router-dom';
 import { api } from '../api/client';
 
 export interface AuthValue {
-  /** The signed-in user, or null. */
-  user: User | null;
+  /** The signed-in user, or null. `deletionScheduledFor` set: only the restore page is usable. */
+  user: Account | null;
   /** True until the initial session check finishes. */
   loading: boolean;
-  login(email: string, password: string): Promise<User>;
-  signup(name: string, email: string, password: string): Promise<User>;
+  login(email: string, password: string): Promise<Account>;
+  signup(name: string, email: string, password: string): Promise<Account>;
   logout(): Promise<void>;
   /** Re-fetches the session. */
-  refresh(): Promise<User | null>;
+  refresh(): Promise<Account | null>;
   /** Saves name/color; every open tab (boards included) picks the change up. */
-  updateProfile(patch: Partial<Pick<User, 'name' | 'color' | 'avatarUrl'>>): Promise<User>;
+  updateProfile(patch: Partial<Pick<User, 'name' | 'color' | 'avatarUrl'>>): Promise<Account>;
+  /**
+   * Adopts an account the server just returned (avatar change, password reset sign-in, restore)
+   * — or null after it signed this tab out (deletion) — and tells the other tabs.
+   */
+  adopt(user: Account | null): void;
 }
 
 /** Other tabs of the app hear about session/profile changes here and re-check the session. */
@@ -23,7 +28,7 @@ const CHANNEL = 'freero:auth';
 const AuthContext = createContext<AuthValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<Account | null>(null);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
@@ -92,9 +97,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return user;
   }, [announce]);
 
+  const adopt = useCallback((next: Account | null) => {
+    setUser(next);
+    announce();
+  }, [announce]);
+
   const value = useMemo<AuthValue>(
-    () => ({ user, loading, login, signup, logout, refresh, updateProfile }),
-    [user, loading, login, signup, logout, refresh, updateProfile],
+    () => ({ user, loading, login, signup, logout, refresh, updateProfile, adopt }),
+    [user, loading, login, signup, logout, refresh, updateProfile, adopt],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

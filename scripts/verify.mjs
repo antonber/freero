@@ -113,6 +113,8 @@ async function spawnServer(dataDir, env = {}) {
       FREERO_DATA_DIR: dataDir,
       NODE_ENV: 'test',
       FREERO_DOC_IDLE_MS: '1000',
+      // Every check signs up accounts from 127.0.0.1; with REDIS_URL all servers of a run share the counters.
+      RATE_LIMIT_SIGNUP: '1000/1h',
       SESSION_SECRET: RUN_SECRET,
       ...(db.url ? { DATABASE_URL: db.url } : {}),
       ...env,
@@ -238,7 +240,9 @@ async function withDb(dataDir, fn) {
 // REST client with a real cookie jar
 // ---------------------------------------------------------------------------
 class User {
-  constructor(label) {
+  /** `port`: talk to another server than the main one (default: the main server). */
+  constructor(label, port = null) {
+    this.port = port;
     this.label = label;
     this.cookie = '';
     this.id = null;
@@ -246,7 +250,7 @@ class User {
     this.name = `User ${label}`;
   }
   /** `port`: which instance to ask (default: the main server). */
-  async req(method, url, body, { raw = false, headers = {}, cookie = true, port = server.port } = {}) {
+  async req(method, url, body, { raw = false, headers = {}, cookie = true, port = this.port ?? server.port } = {}) {
     const h = { ...headers };
     if (cookie && this.cookie) h.cookie = this.cookie;
     if (body !== undefined && !raw) h['content-type'] = 'application/json';
@@ -269,11 +273,50 @@ class User {
     return { status: res.status, json, text, headers: res.headers };
   }
   async signup() {
-    const r = await this.req('POST', '/api/auth/signup', { name: this.name, email: this.email, password: 'password-123' });
+    const r = await this.req('POST', '/api/auth/signup', { name: this.name, email: this.email, password: this.password ?? 'password-123' });
     assert(r.status === 201 || r.status === 200, `${this.label} signup -> ${r.status} ${r.text}`);
     this.id = r.json.user.id;
     return r;
   }
+  /** Opens the verification link mailed at signup (dev outbox under `dataDir`). */
+  async verifyEmail(dataDir) {
+    const token = await mailedToken(dataDir, this.email, '/verify-email');
+    const r = await this.req('POST', '/api/auth/verify-email', { token });
+    assert(r.status === 200, `${this.label} verify -> ${r.status} ${r.text}`);
+    return token;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The development outbox (no SMTP_URL): every mail is a JSON file under <data>/outbox/
+// ---------------------------------------------------------------------------
+function outbox(dataDir) {
+  const dir = path.join(dataDir, 'outbox');
+  if (!fs.existsSync(dir)) return [];
+  return fs
+    .readdirSync(dir)
+    .map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')))
+    .sort((a, b) => a.sentAt - b.sentAt);
+}
+
+/** The token of the newest `route` link (e.g. '/reset-password', '/invite') mailed to `to`, waiting for it. */
+async function mailedToken(dataDir, to, route, { after = 0, timeoutMs = 8000 } = {}) {
+  const re = new RegExp(`${route.replace(/[/]/g, '\\/')}(?:\\?token=|\\/)([A-Za-z0-9_-]+)`);
+  let token = null;
+  await waitFor(
+    () => {
+      const m = outbox(dataDir)
+        .filter((mail) => mail.to === to && mail.sentAt > after)
+        .map((mail) => re.exec(mail.text))
+        .filter(Boolean)
+        .at(-1);
+      token = m?.[1] ?? null;
+      return token !== null;
+    },
+    timeoutMs,
+    `a ${route} link mailed to ${to}`,
+  );
+  return token;
 }
 
 // ---------------------------------------------------------------------------
@@ -285,7 +328,7 @@ const providers = new Set();
  * `prepare(doc)` runs before connecting (local "offline" content the client brings along).
  * `port`: the instance to connect to (default: the main server).
  */
-function connectDoc(user, boardId, prepare, port = server.port) {
+function connectDoc(user, boardId, prepare, port = user.port ?? server.port) {
   const cookie = user.cookie;
   class CookieWebSocket extends WebSocket {
     constructor(url, protocols) {
@@ -446,6 +489,23 @@ async function run() {
       assert(/HttpOnly/i.test(setCookie) && /SameSite=Lax/i.test(setCookie), `cookie flags: ${setCookie}`);
     });
 
+    await check('signup mails a verification link; inviting and link-sharing are refused until it is opened; the link works once', async () => {
+      const me = await A.req('GET', '/api/auth/me');
+      assert(me.json.user.emailVerified === false, `fresh account verified? ${me.text}`);
+      const own = (await A.req('POST', '/api/boards', { title: 'unverified' })).json.board;
+      const inv = await A.req('POST', `/api/boards/${own.id}/members`, { email: B.email, role: 'viewer' });
+      assert(inv.status === 403 && /verify/i.test(inv.json.error), `invite while unverified -> ${inv.status} ${inv.text}`);
+      const share = await A.req('PATCH', `/api/boards/${own.id}`, { linkAccess: 'viewer' });
+      assert(share.status === 403, `link sharing while unverified -> ${share.status}`);
+      const token = await A.verifyEmail(dataDir);
+      assert((await A.req('GET', '/api/auth/me')).json.user.emailVerified === true, 'not verified after opening the link');
+      const again = await A.req('POST', '/api/auth/verify-email', { token });
+      assert(again.status === 400, `reusing the verification link -> ${again.status}`);
+      assert((await A.req('POST', `/api/boards/${own.id}/members`, { email: B.email, role: 'viewer' })).status === 201, 'invite after verifying');
+      assert((await A.req('DELETE', `/api/boards/${own.id}`)).status === 200, 'cleanup');
+      await B.verifyEmail(dataDir); // B invites as an editor below
+    });
+
     await check('auth validation: duplicate email 409, bad email/short password 400, wrong password 401', async () => {
       const x = new User('X');
       assert((await x.req('POST', '/api/auth/signup', { name: 'X', email: A.email, password: 'password-123' })).status === 409, 'dup');
@@ -516,13 +576,14 @@ async function run() {
     });
     if (!board) return;
 
-    await check('A invites B as editor, C as viewer, D as commenter; unknown email -> 404', async () => {
+    await check('A invites B as editor, C as viewer, D as commenter; an address without an account gets a pending invite', async () => {
       for (const [u, role] of [[B, 'editor'], [C, 'viewer'], [D, 'commenter']]) {
         const r = await A.req('POST', `/api/boards/${board.id}/members`, { email: u.email, role });
         assert(r.status === 201 && r.json.member.role === role && r.json.member.userId === u.id, r.text);
       }
       const r = await A.req('POST', `/api/boards/${board.id}/members`, { email: 'ghost@nowhere.io', role: 'viewer' });
-      assert(r.status === 404 && r.json.error === 'No Freero account with that email', r.text);
+      assert(r.status === 201 && r.json.invite?.email === 'ghost@nowhere.io' && !r.json.member, r.text);
+      assert((await A.req('DELETE', `/api/boards/${board.id}/invites/${r.json.invite.id}`)).status === 200, 'revoke ghost');
     });
 
     await check('members list includes owner (role owner) and invitees', async () => {
@@ -545,6 +606,152 @@ async function run() {
       assert(seen.length === 1 && seen[0] === C.id, `viewer sees emails of ${JSON.stringify(seen)}`);
       const byEditor = (await B.req('GET', `/api/boards/${board.id}/members`)).json.members;
       assert(byEditor.every((m) => m.email), 'editor should see every email');
+    });
+
+    // ---- accounts: invites, verification, password reset, sessions, profile, deletion ----
+    let lateInvite = null; // aged past its expiry while the server is down (restart check below)
+    await check('invite without an account: mailed link -> sign-up -> the board opens over WebSocket with the invited role; single-use; revoked grants nothing', async () => {
+      const N = new User('N');
+      const r = await A.req('POST', `/api/boards/${board.id}/members`, { email: N.email, role: 'commenter' });
+      assert(r.status === 201 && r.json.invite?.role === 'commenter', r.text);
+      const pending = await B.req('GET', `/api/boards/${board.id}/invites`);
+      assert(pending.status === 200 && pending.json.invites.some((i) => i.email === N.email && i.role === 'commenter'), `editor's pending list: ${pending.text}`);
+      assert((await C.req('GET', `/api/boards/${board.id}/invites`)).status === 403, 'a viewer can list pending invites');
+      const token = await mailedToken(dataDir, N.email, '/invite');
+      const preview = await new User('anon').req('GET', `/api/invites/${token}`);
+      assert(preview.status === 200 && preview.json.invite.email === N.email && preview.json.invite.boardTitle === board.title, preview.text);
+      await N.signup();
+      const accepted = await N.req('POST', `/api/invites/${token}/accept`);
+      assert(accepted.status === 200 && accepted.json.boardId === board.id && accepted.json.role === 'commenter', accepted.text);
+      assert((await N.req('GET', '/api/auth/me')).json.user.emailVerified === true, 'following the mailed link proves the address');
+      const live = connectDoc(N, board.id);
+      await live.ready();
+      assert(live.role === 'commenter', `socket role ${live.role}`);
+      live.destroy();
+      const replay = await new User('Other').req('GET', `/api/invites/${token}`);
+      assert(replay.status === 404, `used link still previews: ${replay.status}`);
+      assert((await N.req('POST', `/api/invites/${token}/accept`)).status === 404, 'used link accepted twice');
+      assert(!(await A.req('GET', `/api/boards/${board.id}/invites`)).json.invites.some((i) => i.email === N.email), 'still pending after use');
+
+      const X = new User('X');
+      const rx = await A.req('POST', `/api/boards/${board.id}/members`, { email: X.email, role: 'editor' });
+      const xToken = await mailedToken(dataDir, X.email, '/invite');
+      assert((await B.req('DELETE', `/api/boards/${board.id}/invites/${rx.json.invite.id}`)).status === 404, "an editor revoked the owner's invite");
+      assert((await A.req('DELETE', `/api/boards/${board.id}/invites/${rx.json.invite.id}`)).status === 200, 'owner revokes');
+      await X.signup();
+      assert((await X.req('POST', `/api/invites/${xToken}/accept`)).status === 404, 'revoked link accepted');
+      assert((await X.req('GET', `/api/boards/${board.id}`)).status === 403, 'revoked invite granted access');
+
+      const L = new User('Late');
+      await A.req('POST', `/api/boards/${board.id}/members`, { email: L.email, role: 'editor' });
+      lateInvite = { user: L, token: await mailedToken(dataDir, L.email, '/invite') };
+    });
+
+    await check('password reset: same answer for unknown and known addresses; the link works once and signs out every other session, open board sockets included', async () => {
+      const P = new User('P');
+      await P.signup();
+      const own = (await P.req('POST', '/api/boards', { title: 'P board' })).json.board;
+      const laptop = new User('P-laptop');
+      assert((await laptop.req('POST', '/api/auth/login', { email: P.email, password: 'password-123' })).status === 200, 'second login');
+      const live = connectDoc(laptop, own.id);
+      await live.ready();
+      const anon = new User('anon');
+      const unknown = await anon.req('POST', '/api/auth/password/forgot', { email: `nobody-${Date.now()}@verify.freero.app` });
+      const known = await anon.req('POST', '/api/auth/password/forgot', { email: P.email });
+      assert(unknown.status === 200 && known.status === 200 && unknown.text === known.text, `answers differ: ${unknown.text} / ${known.text}`);
+      const token = await mailedToken(dataDir, P.email, '/reset-password');
+      const reset = await anon.req('POST', '/api/auth/password/reset', { token, password: 'new-password-456' });
+      assert(reset.status === 200 && reset.json.user.id === P.id && anon.cookie, `reset -> ${reset.status} ${reset.text}`);
+      await waitFor(() => live.closeCodes.includes(4401), 5000, "the other session's board socket to close (4401)");
+      live.destroy();
+      assert((await laptop.req('GET', '/api/auth/me')).status === 401 && (await P.req('GET', '/api/auth/me')).status === 401, 'old sessions survived the reset');
+      assert((await anon.req('GET', '/api/auth/me')).status === 200, 'the reset did not sign in');
+      assert((await anon.req('POST', '/api/auth/password/reset', { token, password: 'attacker-pass-1' })).status === 400, 'reset link reused');
+      assert((await new User('t').req('POST', '/api/auth/login', { email: P.email, password: 'password-123' })).status === 401, 'old password still works');
+      assert((await new User('t').req('POST', '/api/auth/login', { email: P.email, password: 'new-password-456' })).status === 200, 'new password rejected');
+    });
+
+    await check('sessions: every device listed (this one marked, address masked); signing one out closes its board socket and cookie; "sign out others" keeps this one', async () => {
+      const Q = new User('Q');
+      await Q.signup();
+      const own = (await Q.req('POST', '/api/boards', { title: 'Q board' })).json.board;
+      const firefox = new User('Q-firefox');
+      const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0';
+      await firefox.req('POST', '/api/auth/login', { email: Q.email, password: 'password-123' }, { headers: { 'user-agent': ua } });
+      const phone = new User('Q-phone');
+      await phone.req('POST', '/api/auth/login', { email: Q.email, password: 'password-123' });
+      const live = connectDoc(firefox, own.id);
+      await live.ready();
+      const list = (await Q.req('GET', '/api/auth/sessions')).json.sessions;
+      assert(list.length === 3 && list.filter((s) => s.current).length === 1, JSON.stringify(list));
+      assert(list.every((s) => !s.network.includes('127.0.0.1')), `full address exposed: ${JSON.stringify(list.map((s) => s.network))}`);
+      const target = list.find((s) => s.userAgent === ua);
+      assert(target && !target.current, 'firefox session not listed');
+      assert((await Q.req('DELETE', `/api/auth/sessions/${target.id}`)).status === 200, 'revoke');
+      await waitFor(() => live.closeCodes.includes(4401), 5000, "the revoked session's board socket to close (4401)");
+      live.destroy();
+      assert((await firefox.req('GET', '/api/auth/me')).status === 401, 'revoked cookie still works');
+      assert((await new User('Stranger').req('DELETE', `/api/auth/sessions/${list.find((s) => s.current).id}`)).status === 401, 'anonymous revoke');
+      const others = await Q.req('POST', '/api/auth/sessions/revoke-others');
+      assert(others.status === 200 && others.json.revoked === 1, others.text);
+      assert((await phone.req('GET', '/api/auth/me')).status === 401 && (await Q.req('GET', '/api/auth/me')).status === 200, 'revoke-others');
+      assert((await Q.req('GET', '/api/auth/sessions')).json.sessions.length === 1, 'sessions left');
+      // Changing the password also signs the other devices out (and keeps this one).
+      const tablet = new User('Q-tablet');
+      await tablet.req('POST', '/api/auth/login', { email: Q.email, password: 'password-123' });
+      assert((await Q.req('POST', '/api/auth/password', { currentPassword: 'nope-nope', newPassword: 'password-789' })).status === 403, 'wrong current password');
+      assert((await Q.req('POST', '/api/auth/password', { currentPassword: 'password-123', newPassword: 'password-789' })).status === 200, 'change');
+      assert((await tablet.req('GET', '/api/auth/me')).status === 401 && (await Q.req('GET', '/api/auth/me')).status === 200, 'password change sessions');
+    });
+
+    await check('profile: an uploaded avatar is resized server-side and shows in member lists; an email change applies only through the link sent to the new address', async () => {
+      const Pf = new User('Pf');
+      await Pf.signup();
+      await A.req('POST', `/api/boards/${board.id}/members`, { email: Pf.email, role: 'viewer' });
+      const { Jimp } = await import('jimp');
+      const photo = await new Jimp({ width: 900, height: 500, color: 0x2f9e44ff }).getBuffer('image/png');
+      const up = await Pf.req('PUT', '/api/auth/me/avatar', photo, { raw: true, headers: { 'content-type': 'image/png' } });
+      assert(up.status === 200 && up.json.user.avatarUrl?.startsWith('/uploads/'), `avatar -> ${up.status} ${up.text}`);
+      const bytes = Buffer.from(await (await fetch(`http://127.0.0.1:${server.port}${up.json.user.avatarUrl}`)).arrayBuffer());
+      assert(bytes.readUInt32BE(16) === 256 && bytes.readUInt32BE(20) === 256, `stored avatar is ${bytes.readUInt32BE(16)}x${bytes.readUInt32BE(20)}`);
+      const listed = (await A.req('GET', `/api/boards/${board.id}/members`)).json.members.find((m) => m.userId === Pf.id);
+      assert(listed?.avatarUrl === up.json.user.avatarUrl, 'avatar missing from the member list');
+      const bad = await Pf.req('PUT', '/api/auth/me/avatar', Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>'), { raw: true, headers: { 'content-type': 'image/svg+xml' } });
+      assert(bad.status === 415, `svg avatar -> ${bad.status}`);
+
+      const next = `pf-new-${Date.now()}@verify.freero.app`;
+      assert((await Pf.req('POST', '/api/auth/email', { email: next, password: 'wrong-pass' })).status === 403, 'email change without the password');
+      assert((await Pf.req('POST', '/api/auth/email', { email: next, password: 'password-123' })).status === 200, 'email change request');
+      assert((await Pf.req('GET', '/api/auth/me')).json.user.email === Pf.email, 'address changed before the link was opened');
+      const token = await mailedToken(dataDir, next, '/confirm-email');
+      assert((await new User('anon').req('POST', '/api/auth/email/confirm', { token })).status === 200, 'confirm');
+      const me = (await Pf.req('GET', '/api/auth/me')).json.user;
+      assert(me.email === next && me.emailVerified, JSON.stringify(me));
+      assert((await new User('t').req('POST', '/api/auth/login', { email: next, password: 'password-123' })).status === 200, 'login with the new address');
+      assert((await new User('t').req('POST', '/api/auth/login', { email: Pf.email, password: 'password-123' })).status === 401, 'old address still logs in');
+    });
+
+    await check('account deletion: needs the password, signs out everywhere (sockets too); during the grace period only restore works; restore brings everything back', async () => {
+      const W = new User('W');
+      await W.signup();
+      const own = (await W.req('POST', '/api/boards', { title: 'W board' })).json.board;
+      const live = connectDoc(W, own.id);
+      await live.ready();
+      assert((await W.req('POST', '/api/auth/account/delete', { password: 'wrong-pass' })).status === 403, 'deleted without the password');
+      const del = await W.req('POST', '/api/auth/account/delete', { password: 'password-123' });
+      assert(del.status === 200 && del.json.deletionScheduledFor > Date.now() + 13 * 86_400_000, del.text);
+      await waitFor(() => live.closeCodes.includes(4401), 5000, 'board socket to close on deletion');
+      live.destroy();
+      assert((await W.req('GET', '/api/auth/me')).status === 401, 'still signed in after deletion');
+      await waitFor(() => outbox(dataDir).some((m) => m.to === W.email && /deleted/i.test(m.subject)), 5000, 'the deletion notice mail');
+      const login = await W.req('POST', '/api/auth/login', { email: W.email, password: 'password-123' });
+      assert(login.status === 200 && login.json.user.deletionScheduledFor, `login during grace: ${login.text}`);
+      const blocked = await W.req('GET', '/api/boards');
+      assert(blocked.status === 403 && blocked.json.code === 'account_pending_deletion', `boards during grace -> ${blocked.status} ${blocked.text}`);
+      assert((await wsCloseCode(own.id, W.cookie)) === 4401, 'board socket during grace');
+      const restored = await W.req('POST', '/api/auth/account/restore');
+      assert(restored.status === 200 && restored.json.user.deletionScheduledFor === null, restored.text);
+      assert(titles(await W.req('GET', '/api/boards')).includes(own.id), 'board lost by restoring');
     });
 
     await check('board permissions: editor renames, only owner sets linkAccess, viewer cannot rename', async () => {
@@ -702,7 +909,11 @@ async function run() {
       await sleep(500); // last disconnect persists immediately; small grace for the socket close
       await stopServer(); // a hard kill: what was saved must be durable without a clean shutdown
       // Simulate 30 days passing for S: age the session in the server's own database.
-      await withDb(dataDir, (q) => q('UPDATE sessions SET expires_at = $1 WHERE user_id = $2', [new Date(Date.now() - 1000), S.id]));
+      await withDb(dataDir, async (q) => {
+        await q('UPDATE sessions SET expires_at = $1 WHERE user_id = $2', [new Date(Date.now() - 1000), S.id]);
+        // ... and 15 days for the invite mailed to Late.
+        if (lateInvite) await q('UPDATE board_invites SET expires_at = $1 WHERE email = $2', [new Date(Date.now() - 1000), lateInvite.user.email]);
+      });
       await startServer(dataDir);
       // Cookies must survive the restart (sessions are in the database).
       const me = await A.req('GET', '/api/auth/me');
@@ -714,6 +925,16 @@ async function run() {
       assert(a2.doc.getMap('comments').get('t1')?.text === 'nice!', "D's comment not persisted");
       assert(!m.has('c1') && !m.has('d1') && !a2.doc.getMap('comments').has('t2') && !a2.doc.getMap('comments').has('ct'), 'rejected writes were persisted');
       a2.destroy();
+    });
+
+    await check('an expired invite link grants nothing (no preview, no access after signing up)', async () => {
+      assert(lateInvite, 'no late invite was sent');
+      const L = lateInvite.user;
+      assert((await L.req('GET', `/api/invites/${lateInvite.token}`)).status === 404, 'expired invite previews');
+      await L.signup();
+      assert((await L.req('POST', `/api/invites/${lateInvite.token}/accept`)).status === 404, 'expired invite accepted');
+      const members = (await A.req('GET', `/api/boards/${board.id}/members`)).json.members.map((m) => m.userId);
+      assert(!members.includes(L.id), 'expired invite made Late a member');
     });
 
     await check('an expired session is rejected (REST 401, WebSocket 4401)', async () => {
@@ -1021,6 +1242,78 @@ async function platformChecks() {
 }
 
 // ---------------------------------------------------------------------------
+// Account purge, on its own server with no grace period and a 1 s purge interval: after deleting
+// an account its boards, avatar and name go for good, while what others own stays.
+// ---------------------------------------------------------------------------
+async function accountPurgeChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-purge-'));
+  let proc = null;
+  const clients = [];
+  try {
+    const env = { ACCOUNT_DELETION_GRACE_DAYS: '0', ACCOUNT_PURGE_INTERVAL_SECONDS: '1' };
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    const ok = await check('purge server boots (deletion grace 0, purge every second)', async () => {
+      proc = await waitUp(await spawnServer(dataDir, env));
+    });
+    if (!ok) return;
+    await check('a deleted account is purged: its boards and avatar go, its comments on others’ boards read "Deleted user" (live); others’ boards keep their content, images it placed included', async () => {
+      const U = new User('Gone', proc.port);
+      const V = new User('Stays', proc.port);
+      await U.signup();
+      await V.signup();
+      await V.verifyEmail(dataDir);
+      const own = (await U.req('POST', '/api/boards', { title: 'U board' })).json.board;
+      const theirs = (await V.req('POST', '/api/boards', { title: 'V board' })).json.board;
+      assert((await V.req('POST', `/api/boards/${theirs.id}/members`, { email: U.email, role: 'commenter' })).status === 201, 'invite U');
+      const upload = await U.req('POST', '/api/uploads', PNG_1PX, { raw: true, headers: { 'content-type': 'image/png' } });
+      assert(upload.status === 201, `upload ${upload.status}`); // an image U places on V's board
+      const avatar = (await U.req('PUT', '/api/auth/me/avatar', PNG_1PX, { raw: true, headers: { 'content-type': 'image/png' } })).json?.user?.avatarUrl;
+      assert(avatar?.startsWith('/uploads/'), 'avatar upload');
+      const u = connectDoc(U, theirs.id);
+      const v = connectDoc(V, theirs.id);
+      clients.push(u, v);
+      await Promise.all([u.ready(), v.ready()]);
+      const msg = (id, who) => ({ kind: 'message', threadId: 't1', id, authorId: who.id, authorName: who.name, authorColor: '#1C7ED6', text: `from ${who.name}`, createdAt: Date.now() });
+      u.doc.getMap('comments').set('m:t1:u', msg('u', U));
+      v.doc.getMap('comments').set('m:t1:v', msg('v', V));
+      await waitFor(() => v.doc.getMap('comments').get('m:t1:u')?.authorName === U.name, 5000, "U's comment to reach V");
+
+      assert((await U.req('POST', '/api/auth/account/delete', { password: 'password-123' })).status === 200, 'delete');
+      await waitFor(async () => (await V.req('GET', `/api/boards/${own.id}`)).status === 404, 10_000, "U's board to be purged").catch((e) => {
+        const logged = proc.log.join('').split(/\r?\n/).filter((l) => /error|purge|accounts/i.test(l));
+        throw new CheckError(`${e.message}; server said: ${logged.slice(-10).join(' | ')}`);
+      });
+      await waitFor(() => v.doc.getMap('comments').get('m:t1:u')?.authorName === 'Deleted user', 5000, "V's open board to show U's comment as Deleted user");
+      const comments = v.doc.getMap('comments');
+      assert(comments.get('m:t1:u').text === `from ${U.name}` && comments.get('m:t1:v').authorName === V.name, JSON.stringify(comments.toJSON()));
+      assert((await V.req('GET', `/api/boards/${theirs.id}`)).status === 200, "V's board survived");
+      const members = (await V.req('GET', `/api/boards/${theirs.id}/members`)).json.members.map((m) => m.userId);
+      assert(!members.includes(U.id), 'purged user still a member');
+      assert((await fetch(`http://127.0.0.1:${proc.port}${avatar}`)).status === 404, "U's avatar still served");
+      // Part of V's board now; files nothing references any more are left to the uploads sweep.
+      assert((await fetch(`http://127.0.0.1:${proc.port}${upload.json.url}`)).status === 200, "an image U placed on V's board was deleted");
+      const login = await new User('t', proc.port).req('POST', '/api/auth/login', { email: U.email, password: 'password-123' });
+      assert(login.status === 401, `purged account can log in: ${login.status}`);
+      // A fresh document load (not just the live room) has the anonymized name too.
+      for (const c of clients.splice(0)) c.destroy();
+      await sleep(1500); // FREERO_DOC_IDLE_MS=1000: unloaded
+      const again = connectDoc(V, theirs.id);
+      clients.push(again);
+      await again.ready();
+      assert(again.doc.getMap('comments').get('m:t1:u')?.authorName === 'Deleted user', 'anonymized name not persisted');
+    });
+  } finally {
+    for (const c of clients) c.destroy();
+    if (proc) await stopProc(proc);
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Several instances behind a round-robin balancer: two server processes sharing one Postgres and
 // one Redis; every client may land on either (DATABASE_URL + REDIS_URL only).
 // ---------------------------------------------------------------------------
@@ -1051,6 +1344,7 @@ async function multiInstanceChecks() {
     let board = null;
     await check('accounts and a shared board, set up through instance 1', async () => {
       for (const u of [A, B]) await u.signup();
+      await A.verifyEmail(path.join(dataDir, 'i0')); // inviting needs a verified address
       board = (await A.req('POST', '/api/boards', { title: 'Two instances' })).json.board;
       const r = await A.req('POST', `/api/boards/${board.id}/members`, { email: B.email, role: 'editor' });
       assert(r.status === 201, r.text);
@@ -1128,6 +1422,21 @@ async function multiInstanceChecks() {
       live.destroy();
     });
 
+    await check('signing a session out from another device through instance 2 closes its socket on instance 1 (4401)', async () => {
+      const Q = new User('MQ');
+      await Q.signup();
+      const own = (await Q.req('POST', '/api/boards', { title: 'Q' })).json.board;
+      const laptop = new User('MQ-laptop');
+      assert((await laptop.req('POST', '/api/auth/login', { email: Q.email, password: 'password-123' })).status === 200, 'second login');
+      const live = connectDoc(laptop, own.id, undefined, one);
+      await live.ready();
+      const target = (await Q.req('GET', '/api/auth/sessions', undefined, { port: two })).json.sessions.find((x) => !x.current);
+      assert((await Q.req('DELETE', `/api/auth/sessions/${target.id}`, undefined, { port: two })).status === 200, 'revoke');
+      await waitFor(() => live.closeCodes.includes(4401), 5000, "the revoked session's socket on instance 1 to close with 4401");
+      live.destroy();
+      assert((await laptop.req('GET', '/api/auth/me', undefined, { port: one })).status === 401, 'revoked cookie still works on instance 1');
+    });
+
     await check('edits made on both instances at once are all saved, and the log is compacted after both unload', async () => {
       for (let i = 0; i < 15; i++) {
         els(a).set(`x${i}`, { id: `x${i}`, type: 'sticky', text: `a${i}` });
@@ -1186,6 +1495,7 @@ async function multiInstanceChecks() {
 
 const started = Date.now();
 await run().catch((e) => record('verify harness', false, e?.stack ?? String(e)));
+await accountPurgeChecks().catch((e) => record('account purge harness', false, e?.stack ?? String(e)));
 await platformChecks().catch((e) => record('platform checks harness', false, e?.stack ?? String(e)));
 await multiInstanceChecks().catch((e) => record('multi-instance checks harness', false, e?.stack ?? String(e)));
 const failed = results.filter((r) => !r.ok);
