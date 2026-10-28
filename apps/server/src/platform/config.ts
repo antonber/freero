@@ -34,7 +34,10 @@ export type RateLimitName =
   | 'report'
   | 'appeal'
   | 'outline'
-  | 'structure';
+  | 'structure'
+  | 'apiCredential'
+  | 'oauthToken'
+  | 'oauthRegister';
 
 /** `limit` hits per `windowMs`; `null` = not limited. */
 export type RateLimitRule = { limit: number; windowMs: number } | null;
@@ -190,6 +193,11 @@ export interface Config {
   abuseContactEmail: string | null;
   /** RFC 9116 `Contact:` for /.well-known/security.txt (mailto: or https: URL); defaults to the abuse contact. */
   securityContact: string | null;
+  /**
+   * The public REST API (/api/v1) and OAuth apps. Off: every API call and token request is refused
+   * (the instance-wide kill switch for integrations and agents); tokens are kept.
+   */
+  publicApi: boolean;
 }
 
 export class ConfigError extends Error {
@@ -231,6 +239,9 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   guestJoin: '20/1h', // per IP: visitors joining a shared board without an account
   outline: '120/1m', // per user: board outlines (each reads and walks the whole board)
   structure: '60/10m', // per user: structure laid out and inserted into a board (KAI-167)
+  apiCredential: '300/1m', // per API token / authorised app: every /api/v1 call (KAI-104)
+  oauthToken: '60/1m', // per IP: OAuth token and revocation requests
+  oauthRegister: '20/1h', // per IP: OAuth apps registering themselves (dynamic client registration)
   report: '20/1h', // abuse reports per IP and per signed-in user
   appeal: '10/1h', // appeals against moderation actions per IP
 };
@@ -261,6 +272,9 @@ const ENV_NAME: Record<RateLimitName, string> = {
   guestJoin: 'RATE_LIMIT_GUEST_JOIN',
   outline: 'RATE_LIMIT_OUTLINE',
   structure: 'RATE_LIMIT_STRUCTURE',
+  apiCredential: 'RATE_LIMIT_API_CREDENTIAL',
+  oauthToken: 'RATE_LIMIT_OAUTH_TOKEN',
+  oauthRegister: 'RATE_LIMIT_OAUTH_REGISTER',
   report: 'RATE_LIMIT_REPORT',
   appeal: 'RATE_LIMIT_APPEAL',
 };
@@ -492,6 +506,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     uploadCacheSeconds: int('UPLOAD_CACHE_SECONDS', 3600, 0, 31_536_000),
     abuseContactEmail,
     securityContact: securityContact ?? (abuseContactEmail ? `mailto:${abuseContactEmail}` : null),
+    publicApi: bool('PUBLIC_API', true),
   };
 
   if (production) {

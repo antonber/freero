@@ -1,6 +1,7 @@
 export * from './elements';
 export * from './ydoc';
 export * from './api';
+export * from './publicApi';
 export * from './device';
 export * from './text';
 export * from './geometry';

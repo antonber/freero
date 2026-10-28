@@ -14,6 +14,19 @@ export { parseIndentedList } from './structures';
 export { layered, spacedFit } from './layered';
 export { measureText, textWidth } from './measure';
 export { translateDraft } from './kit';
+// Single fully-specified drafts (the public API creates items one by one with them).
+export {
+  sticky as stickyDraft,
+  shape as shapeDraft,
+  textBox as textDraft,
+  frame as frameDraft,
+  connector as connectorDraft,
+  anchorPoint,
+  STICKY_SIZE,
+  INK,
+  type ConnectorEnd,
+  type ConnectorStyle,
+} from './kit';
 
 const isColor = (c: unknown): c is StickyColor => typeof c === 'string' && c in STICKY_COLORS;
 const isDirection = (d: unknown) => d === undefined || d === 'TB' || d === 'BT' || d === 'LR' || d === 'RL';

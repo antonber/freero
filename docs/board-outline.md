@@ -13,6 +13,18 @@ contents) only for owners and editors; the caller's OWN private layer (their dra
 `private`), never anyone else's. Viewers and commenters see a hidden frame as `withheld`, with no
 children. Votes appear only when the vote's results may be shown.
 
+The outline is a machine-readable copy of the board, so the workspace's **downloads** policy applies
+to it (KAI-197): someone that policy doesn't let export the board gets `403 { code:
+'downloads_restricted' }`, and the refusal is recorded in the workspace's audit log
+(`board.download_refused`, `via: outline | api`). The same check covers every read built on it —
+the public API's outline, items and comments (`GET /api/v1/boards/:id/…`), and later MCP and in-app
+AI — in `modules/outline` and `boards.requireBoardDownload`. Inserting structure (a write) is not
+gated by it. Personal boards have no policies.
+
+The same read is in the public API as `GET /api/v1/boards/:id/outline` (bearer token, scope
+`boards:read`; reference: `docs/api/openapi.json`), whose JSON wraps the outline as
+`{ notice, outline }`: `notice` says the text is untrusted board content.
+
 Query parameters:
 
 | name | default | meaning |

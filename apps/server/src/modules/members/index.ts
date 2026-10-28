@@ -38,6 +38,8 @@ export {
 // notifications stand (the inbox shows it).
 export { requestAccess, decideRequest as decideAccessRequest, requestOutcomes as accessRequestOutcomes } from './accessRequests';
 export { invitedEmails } from './invites';
+// Sharing a board (its routes and the public API use the same rules).
+export { listBoardMembers, inviteBoardMember, setBoardMemberRole, removeBoardMember } from './service';
 
 /** The explicit membership role of a user on a board (not counting ownership or link access). */
 export async function getMemberRole(boardId: string, userId: string): Promise<Role | null> {
