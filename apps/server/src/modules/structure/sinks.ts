@@ -6,13 +6,13 @@
 // The suggestions layer (KAI-169) adds a sink here that hands the same BoardChange to realtime's
 // suggestions store instead of the shared doc; callers pick it with `target`.
 import type { InsertStructureRequest } from '@freero/shared';
-import { changeBoard, readBoardView, type AppliedChange, type BoardReader } from '../realtime/index';
+import { changeBoard, readBoardView, type AppliedChange, type BoardActor } from '../realtime/index';
 import { planStructure, type Plan } from './plan';
 
 export type StructureTarget = NonNullable<InsertStructureRequest['target']>;
 
 export interface StructureSink {
-  apply(boardId: string, actor: BoardReader, req: InsertStructureRequest, newId: () => string): Promise<Plan & { applied: AppliedChange | null }>;
+  apply(boardId: string, actor: BoardActor, req: InsertStructureRequest, newId: () => string): Promise<Plan & { applied: AppliedChange | null }>;
 }
 
 export const SINKS: Record<StructureTarget, StructureSink> = {

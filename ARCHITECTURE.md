@@ -742,7 +742,8 @@ policies"), `activity` (board_activity: the activity feed; see "Activity" below)
 configures; see "AI" below), `apiauth` (api_tokens,
 oauth_clients, oauth_grants, oauth_codes, api_workspace_settings, api_workspace_credentials:
 credentials that act for a person without their session), `api` (no table: the public REST API
-`/api/v1`; see "Public API and OAuth" below).
+`/api/v1`; see "Public API and OAuth" below), `mcp` (no table: the remote MCP server `/mcp`; see
+"The MCP server" below).
 
 - Notifications are created only from trusted server-side events, never from client claims:
   realtime's `onCommentMessage` (a comment message applied from one of THIS instance's sockets,
@@ -1157,11 +1158,12 @@ signing in with SSO) — a credential can't become a way around the policy; and
 `auth.onSignedOutEverywhere` (fired by `endSessionsOf` when it ends ALL sessions: password reset,
 "this wasn't me", two-step recovery, operator reset, suspension, deletion, a directory
 deprovisioning the organization's account) revokes every token and app consent of the account.
-`modules/api` is the resource server: routes only, no table, calling the same service functions as
-the app (boards, members, outline, structure, realtime) — never a parallel data path. The remote MCP
-server (KAI-107) is a second resource server next to it: it calls `registerProtectedResource('/mcp',
-…)` and `authenticate(req, '/mcp')`, and the same consent screen, scopes, audit and admin controls
-apply unchanged.
+`modules/api` is the resource server: no table; its operations (`api/service.ts`, exported from its
+index) call the same service functions as the app (boards, members, outline, structure, realtime) —
+never a parallel data path — and `routes.ts` is a thin HTTP adapter. The remote MCP server (KAI-107,
+`modules/mcp`) is a second resource server next to it: it calls `registerProtectedResource('/mcp',
+…)` and `authenticate(req, '/mcp')` and then THOSE operations, so the consent screen, scopes, rules,
+audit and admin controls are the same code.
 
 - **Credentials.** 256-bit random secrets with a recognisable prefix (`frp_` personal, `fro_` access,
   `frr_` refresh), stored as sha256 only. Every request looks the credential up (no cache), so a
@@ -1205,6 +1207,14 @@ apply unchanged.
   (400 `confirm_required`). Creates are capped per call (`API_MAX_ITEMS_PER_CALL`) and refused whole.
   Kill switches: `PUBLIC_API=false` (instance), "API & apps" in the admin console (workspace:
   off, or block one token/app there), revoke-all (person), pause/revoke (token).
+- **Agents as participants (KAI-168).** A credential acts as "<app> for <person>": `ActingApp`
+  (`@freero/shared`: the OAuth app, or the personal token by name) rides on realtime's `BoardActor`
+  through `changeBoard`, which stamps it on what it creates (`createdVia`; copies made in the app drop
+  it), reports the change for the activity feed like a socket's (`RequestOrigin`; its own burst,
+  worded "Claude for Maria", KAI-207 — every request write, the app's insert structure included) and
+  `showAgentPresence` shows the app for a few seconds as a server-published presence (its own user
+  id, cursor and selection on what it wrote; sockets can't publish `agent`). Each credential has its
+  own write budget (`RATE_LIMIT_AGENT_WRITE`), apart from the person's editing.
 - **Reads follow the downloads policy (KAI-197).** The outline, items and comments are a
   machine-readable copy of the board, so boards' `requireDownload` (the one check exports,
   duplicates and templates use) refuses them with 403 `downloads_restricted` and records
@@ -1216,6 +1226,23 @@ apply unchanged.
   seed new boards through `changeBoard` (the board is empty, so element ids are kept).
 - **GDPR**: a person's export carries `api.json` (their tokens without secrets, the apps they
   authorised and the apps they registered), from `apiauth.apiDataOf`.
+
+### The MCP server (`modules/mcp`, KAI-107; docs/mcp.md)
+
+- `POST /mcp`, Streamable HTTP with the official SDK (`@modelcontextprotocol/sdk`, pinned), **stateless**:
+  each request builds its own server for its credential (authenticated afresh, no cache) and answers
+  JSON — no session, no stream — so it runs behind round-robin balancing and a revoked token, app or
+  workspace switch refuses the very next request. `GET`/`DELETE` answer 405.
+- Tools (`tools.ts`) are outcome-shaped and call `modules/api`'s operations with the request's
+  credential; each checks its scope first (refused as a tool error naming the permission) and is one
+  `api.call` audit event (`MCP <tool>`). Board text only ever travels in the untrusted envelope
+  (`content.ts`); names, descriptions, instructions, prompts and errors are Freero's own words.
+  `propose_changes` is registered only when `structure.structureTargets()` has the suggestions sink
+  (KAI-169).
+- Scopes: `MCP_SCOPES`; read + suggest by default — `registerProtectedResource(…, { optInScopes })`
+  makes the consent screen offer `boards:write` / `comments:write` unticked (`OAuthConsentInfo.scopes[].optional`,
+  the decision's `grant`). `/mcp` is the `root` resource: the bare `/.well-known/oauth-protected-resource`
+  describes it.
 
 ### Audit log, admin console and workspace policies (KAI-48, KAI-47, KAI-51)
 
@@ -1616,7 +1643,10 @@ only to connections that may read them:
   `S3_BUCKET` and keys (MinIO, SeaweedFS…), the `s3` group checks the S3 backend (prefixes, kept
   copies under `private/`, restore, retention, the S3_PUBLIC_URL redirect and stored Cache-Control);
   all other groups stay on the local disk. CI does all of it.
-  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation` runs some groups (to loop one while hunting a flake).
+  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation,ai,api,mcp,s3` runs some groups (to loop one while hunting a flake).
+  The `mcp` group drives the MCP server with the official MCP client SDK, OAuth (dynamic
+  registration, consent, PKCE) included; with DATABASE_URL + REDIS_URL one client's requests also
+  alternate between two instances.
   Checks wait on the real condition, never a fixed sleep: `waitFor(cond, ms)` polls until a
   deadline; `settled(client, observers)` is a barrier (a presence change the server handles after
   everything the client sent before, relayed in order) for proving something did NOT arrive;

@@ -27,6 +27,8 @@ export interface ActivitySummary {
   from?: string | null;
   to?: string | null;
   version?: string | null;
+  /** Done by an app or token for the actor (the public API, MCP; KAI-168): its name. */
+  app?: string;
 }
 
 export interface ActivityRow {

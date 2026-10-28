@@ -15,6 +15,7 @@
 // A credential acts as its user, capped by its scopes: what it may do on a board is the user's
 // role there AND the scope (a viewer's token with boards:write still can't write). Workspace
 // admins may turn API access off for their workspace or block one credential there.
+import type { ActingApp } from './elements';
 
 /** One scope model for the REST API and the MCP server. */
 export const API_SCOPES = {
@@ -29,6 +30,18 @@ export type ApiScope = keyof typeof API_SCOPES;
 export const isApiScope = (s: unknown): s is ApiScope => typeof s === 'string' && Object.hasOwn(API_SCOPES, s);
 /** What an OAuth app gets when it asks for no scope at all. */
 export const DEFAULT_OAUTH_SCOPES: ApiScope[] = ['boards:read'];
+
+// ---- The remote MCP server (KAI-107): POST /mcp (Streamable HTTP; docs/mcp.md) ----
+// Same credentials, scopes, audit and admin controls as the REST API; tokens are bound to it
+// (`resource=<origin>/mcp`), metadata at /.well-known/oauth-protected-resource/mcp.
+
+/** The scopes the MCP server uses (what an MCP client asks for). */
+export const MCP_SCOPES: ApiScope[] = ['boards:read', 'boards:suggest', 'boards:write', 'comments:write'];
+/**
+ * Read + suggest: what an MCP connection gets unless the person turns more on in the consent
+ * screen. Writing to boards directly (`boards:write`) and commenting are opt-in there.
+ */
+export const MCP_DEFAULT_SCOPES: ApiScope[] = ['boards:read', 'boards:suggest'];
 
 /**
  * Every /api/v1 response that carries text people wrote on a board (titles, items, comments, the
@@ -63,7 +76,8 @@ export const CONFIRM_REQUIRED = 'confirm_required';
 // The consent screen (/oauth/authorize in the web app) asks the server:
 // GET    /api/oauth/authorize?<the authorization request>  -> OAuthConsentInfo | { redirect } (bad request
 //        the app should hear about) | 400 { error } (unknown app or redirect URI: never redirected)
-// POST   /api/oauth/authorize body { …the same parameters, decision: 'allow' | 'deny' } -> { redirect }
+// POST   /api/oauth/authorize body { …the same parameters, decision: 'allow' | 'deny', grant?: ApiScope[] } -> { redirect }
+//        (`grant`: the optional scopes the person turned on; see OAuthConsentInfo)
 //
 // Admin console (owners/admins of a team workspace):
 // GET    /api/workspaces/:id/admin/api      -> WorkspaceApiInfo
@@ -123,7 +137,12 @@ export interface RegisterClientRequest {
 
 export interface OAuthConsentInfo {
   client: { clientId: string; name: string; website: string | null; registration: 'manual' | 'dynamic' };
-  scopes: Array<{ id: ApiScope; label: string }>;
+  /**
+   * What the app asks for. `optional`: off unless the person turns it on (a resource's
+   * powerful scopes, e.g. writing boards directly through MCP); the decision sends the ones turned
+   * on as `grant`. The rest is granted as asked.
+   */
+  scopes: Array<{ id: ApiScope; label: string; optional?: boolean }>;
   /** Where the browser goes afterwards (shown so people can spot a lookalike). */
   redirectOrigin: string;
   /** What the app will act on: the REST API, the MCP server. */
@@ -180,6 +199,8 @@ export interface ApiItem {
   /** Only you see it (a private-mode draft). */
   private?: true;
   createdBy: string | null;
+  /** The app or token that created it for `createdBy` ("<name> for <person>", KAI-168). */
+  createdVia?: ActingApp;
   createdAt: number | null;
   updatedAt: number | null;
   /** The rest of the element as stored (rich text as sanitised HTML). */

@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { LayoutError, type InsertStructureRequest, type InsertStructureResponse } from '@freero/shared';
 import { badRequest } from '../../platform/http';
 import { requireBoardAccess } from '../boards/index';
-import { BoardChangeError } from '../realtime/index';
+import { BoardChangeError, type BoardActor } from '../realtime/index';
 import { asElement } from './plan';
 import { SINKS } from './sinks';
 
@@ -28,13 +28,19 @@ function parseRequest(body: unknown): InsertStructureRequest {
   return { structure: b.structure, near: b.near, at: b.at, target: b.target };
 }
 
-export async function insertStructure(boardId: string, userId: string, body: unknown): Promise<InsertStructureResponse> {
+/**
+ * Lays `body` out and sends it to its sink. `by`: the person (their id), or — for the public API
+ * and MCP — the person and the app acting for them (attributed to both, KAI-168).
+ */
+export async function insertStructure(boardId: string, by: string | Omit<BoardActor, 'role'>, body: unknown): Promise<InsertStructureResponse> {
   const req = parseRequest(body);
+  const actor = typeof by === 'string' ? { userId: by } : by;
+  const userId = actor.userId;
   const { role } = await requireBoardAccess(boardId, userId, 'editor');
   const target = req.target ?? 'board';
   let result;
   try {
-    result = await SINKS[target].apply(boardId, { userId, role }, req, newElementId);
+    result = await SINKS[target].apply(boardId, { ...actor, role }, req, newElementId);
   } catch (e) {
     // Bad input or a board that changed shape under the plan: nothing was written.
     if (e instanceof LayoutError || e instanceof BoardChangeError) throw badRequest(e.message);

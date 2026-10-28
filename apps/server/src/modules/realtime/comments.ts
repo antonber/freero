@@ -6,7 +6,7 @@
 // Layout of the `comments` collection: CommentRecord in @freero/shared (`m:<thread>:<message>`
 // holds one message; `t:` the thread; `x:` tombstones).
 import type * as Y from 'yjs';
-import { mentionedUserIds } from '@freero/shared';
+import { mentionedUserIds, type ActingApp } from '@freero/shared';
 import { logError } from '../../platform/log';
 
 /** The comments feature's collection. */
@@ -23,6 +23,8 @@ export interface CommentMessageEvent {
   previousText: string | null;
   /** Everyone else who wrote a (not deleted) message in the thread, and its creator. */
   participantIds: string[];
+  /** The app or token that wrote it for the author, on a request (the API, MCP; KAI-168). */
+  via?: ActingApp;
 }
 
 type Listener = (e: CommentMessageEvent) => void;

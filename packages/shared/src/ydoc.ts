@@ -170,4 +170,10 @@ export interface PresenceState {
   editingId?: string | null;
   /** User id whose view this client is following (Editor.follow), or null. */
   following?: string | null;
+  /**
+   * Set only by the SERVER, for an app writing through the API or MCP for a person (KAI-168): a
+   * short-lived presence ("Claude for Maria", its cursor on what it just wrote). Sockets can't
+   * publish it: the server replaces a socket's `user`, and agent presence uses a user id of its own.
+   */
+  agent?: { app: string; forUserId: string };
 }

@@ -26,6 +26,19 @@ export type ElementType =
   | 'media'
   | 'file';
 
+/**
+ * An app (OAuth) or personal token acting for a person: what the board shows as "<name> for
+ * <person>" (KAI-168). `id` is the app's client id or the token's id (never a secret).
+ */
+export interface ActingApp {
+  kind: 'app' | 'token';
+  id: string;
+  name: string;
+}
+
+/** "Claude for Maria". */
+export const actingFor = (via: Pick<ActingApp, 'name'>, person: string): string => `${via.name} for ${person}`;
+
 export interface BaseElement {
   id: string;
   type: ElementType;
@@ -53,6 +66,11 @@ export interface BaseElement {
    */
   attachedTo?: string | null;
   createdBy: string;
+  /**
+   * The app or token that created it for `createdBy` (the public API or MCP, KAI-168): read as
+   * "<name> for <person>". Stamped by the server; absent for things people made themselves.
+   */
+  createdVia?: ActingApp | null;
   createdAt: number;
   updatedAt: number;
 }

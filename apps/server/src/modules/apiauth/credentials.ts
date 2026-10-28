@@ -137,14 +137,30 @@ export async function revokeEverything(userId: string, actorId: string | null, r
 
 // ---- authenticating a request ----
 
-/** Paths of protected resources (the REST API; KAI-107 adds the MCP server) and their names. */
-const resources = new Map<string, string>();
+/** A protected resource: the REST API, the MCP server. */
+export interface ProtectedResource {
+  name: string;
+  /** The scopes it uses (its metadata's `scopes_supported`; asked for when an app names none). Default: all. */
+  scopes?: ApiScope[];
+  /**
+   * Scopes an app may ask for that stay OFF unless the person turns them on in the consent screen
+   * (the MCP server: writing boards directly; read + suggest is the default there).
+   */
+  optInScopes?: ApiScope[];
+  /** Served at the bare /.well-known/oauth-protected-resource too (clients that only look there). */
+  root?: boolean;
+}
+
+/** Protected resources by path. */
+const resources = new Map<string, ProtectedResource>();
 
 /** Declares a protected resource (its OAuth metadata is published, apps may ask for tokens for it). */
-export function registerProtectedResource(path: string, name: string): void {
-  resources.set(path, name);
+export function registerProtectedResource(path: string, name: string, opts: Omit<ProtectedResource, 'name'> = {}): void {
+  resources.set(path, { name, ...opts });
 }
-export const protectedResources = (): ReadonlyMap<string, string> => resources;
+export const protectedResources = (): ReadonlyMap<string, ProtectedResource> => resources;
+/** The resource the bare /.well-known/oauth-protected-resource describes. */
+export const rootResource = (): string => [...resources].find(([, r]) => r.root)?.[0] ?? '/api/v1';
 
 /** RFC 9728: where a client learns how to get a token for `resource`. */
 export const resourceMetadataUrl = (req: Request, resource: string) => appUrl(req, `/.well-known/oauth-protected-resource${resource}`);

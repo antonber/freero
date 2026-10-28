@@ -38,6 +38,7 @@ export type RateLimitName =
   | 'ai'
   | 'aiWorkspace'
   | 'apiCredential'
+  | 'agentWrite'
   | 'oauthToken'
   | 'oauthRegister';
 
@@ -272,7 +273,8 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   structure: '60/10m', // per user: structure laid out and inserted into a board (KAI-167)
   ai: '20/10m', // per user: AI actions (each one calls a paid model)
   aiWorkspace: '300/1h', // per workspace: AI actions of all its people together
-  apiCredential: '300/1m', // per API token / authorised app: every /api/v1 call (KAI-104)
+  apiCredential: '300/1m', // per API token / authorised app: every /api/v1 call and MCP request (KAI-104, KAI-107)
+  agentWrite: '60/1m', // per API token / authorised app: changes it makes to boards (KAI-168), apart from the person's own editing
   oauthToken: '60/1m', // per IP: OAuth token and revocation requests
   oauthRegister: '20/1h', // per IP: OAuth apps registering themselves (dynamic client registration)
   report: '20/1h', // abuse reports per IP and per signed-in user
@@ -308,6 +310,7 @@ const ENV_NAME: Record<RateLimitName, string> = {
   ai: 'RATE_LIMIT_AI',
   aiWorkspace: 'RATE_LIMIT_AI_WORKSPACE',
   apiCredential: 'RATE_LIMIT_API_CREDENTIAL',
+  agentWrite: 'RATE_LIMIT_AGENT_WRITE',
   oauthToken: 'RATE_LIMIT_OAUTH_TOKEN',
   oauthRegister: 'RATE_LIMIT_OAUTH_REGISTER',
   report: 'RATE_LIMIT_REPORT',

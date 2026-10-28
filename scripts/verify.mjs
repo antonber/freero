@@ -5295,6 +5295,289 @@ async function publicApiChecks() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// The remote MCP server (KAI-107) and agent participants (KAI-168), driven by the official MCP
+// client SDK: dynamic client registration + OAuth 2.1 with PKCE against Freero's real
+// authorization server, tools against real boards with a live Yjs client watching, the activity
+// feed and the audit log, kill switches. With DATABASE_URL + REDIS_URL also across two instances.
+// ---------------------------------------------------------------------------
+async function mcpChecks() {
+  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+  const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+  const { UnauthorizedError } = await import('@modelcontextprotocol/sdk/client/auth.js');
+  const REDIS_URL = process.env.REDIS_URL?.trim();
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-mcp-'));
+  const env = { ACTIVITY_IDLE_SECONDS: '1', RATE_LIMIT_INVITE: '500/1h', RATE_LIMIT_PASSWORD: '500/15m', ...(REDIS_URL && ADMIN_URL ? { REDIS_URL } : {}) };
+  const procs = [];
+  const live = [];
+  const clients = [];
+  try {
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    if (!(await check('mcp server boots', async () => procs.push(await waitUp(await spawnServer(dataDir, env)))))) return;
+    const [proc] = procs;
+    const mcpUrl = (p = proc) => new URL(`http://127.0.0.1:${p.port}/mcp`);
+    const stamp = Date.now();
+    const verified = async (label) => {
+      const u = new User(label, proc.port);
+      u.email = `${label.toLowerCase()}-${stamp}@mcp.verify.freero.app`;
+      await u.signup();
+      await u.verifyEmail(dataDir);
+      return u;
+    };
+    const token = async (u, scopes, name) => {
+      const r = await u.req('POST', '/api/auth/tokens', { name, scopes, expiresInDays: 30 });
+      assert(r.status === 201, `token: ${r.status} ${r.text}`);
+      return r.json;
+    };
+    /** An MCP client with a bearer token (a personal token: scripted clients). */
+    const withToken = async (secret, p = proc) => {
+      const c = new Client({ name: 'verify-script', version: '1.0.0' });
+      await c.connect(new StreamableHTTPClientTransport(mcpUrl(p), { requestInit: { headers: { Authorization: `Bearer ${secret}` } } }));
+      clients.push(c);
+      return c;
+    };
+    const text = (r) => (r.content ?? []).map((c) => c.text ?? '').join('\n');
+    /** How many items the board has, as its owner reads it. */
+    const itemCount = async (boardId) => {
+      const reader = await withToken((await token(O, ['boards:read'], `count ${Date.now()}`)).secret);
+      const r = await reader.callTool({ name: 'get_board_outline', arguments: { boardId, format: 'json' } });
+      return JSON.parse(text(r)).untrusted_board_content.meta.itemCount;
+    };
+    const O = await verified('Owner');
+    const C = await verified('Commenter');
+    const S = await verified('Stranger');
+    const team = (await O.req('POST', '/api/workspaces', { name: 'MCP team' })).json.workspace.id;
+    const board = (await O.req('POST', '/api/boards', { title: 'MCP board', workspaceId: team })).json.board.id;
+    const strangers = (await S.req('POST', '/api/boards', { title: 'Not yours' })).json.board.id;
+    assert((await O.req('POST', `/api/boards/${board}/members`, { email: C.email, role: 'commenter' })).status === 201, 'invite commenter');
+
+    await check('mcp: without a token the server answers 401 naming its protected-resource metadata (also at the bare well-known path), which names Freero as the authorization server', async () => {
+      const r = await fetch(mcpUrl(), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }),
+      });
+      const challenge = r.headers.get('www-authenticate') ?? '';
+      assert(r.status === 401 && challenge.includes(`resource_metadata="http://127.0.0.1:${proc.port}/.well-known/oauth-protected-resource/mcp"`), `401: ${r.status} ${challenge}`);
+      for (const p of ['/.well-known/oauth-protected-resource/mcp', '/.well-known/oauth-protected-resource']) {
+        const meta = await (await fetch(`http://127.0.0.1:${proc.port}${p}`)).json();
+        assert(meta.resource === `http://127.0.0.1:${proc.port}/mcp` && meta.authorization_servers[0] === `http://127.0.0.1:${proc.port}`, `${p}: ${JSON.stringify(meta)}`);
+        assert(meta.scopes_supported.includes('boards:suggest') && !meta.scopes_supported.includes('members:write'), `${p} scopes: ${meta.scopes_supported}`);
+      }
+      // The REST API keeps its own metadata.
+      const rest = await (await fetch(`http://127.0.0.1:${proc.port}/.well-known/oauth-protected-resource/api/v1`)).json();
+      assert(rest.resource.endsWith('/api/v1'), `rest metadata: ${JSON.stringify(rest)}`);
+    });
+
+    // The MCP SDK's OAuth client: registers itself, sends the person to the consent screen, PKCE.
+    class Provider {
+      constructor() {
+        this.redirect = 'http://127.0.0.1:53682/callback';
+        this.authUrl = null;
+      }
+      get redirectUrl() {
+        return this.redirect;
+      }
+      get clientMetadata() {
+        return { client_name: 'Verify Assistant', redirect_uris: [this.redirect], grant_types: ['authorization_code', 'refresh_token'], response_types: ['code'], token_endpoint_auth_method: 'none' };
+      }
+      clientInformation() {
+        return this.client;
+      }
+      saveClientInformation(c) {
+        this.client = c;
+      }
+      tokens() {
+        return this.saved;
+      }
+      saveTokens(t) {
+        this.saved = t;
+      }
+      redirectToAuthorization(url) {
+        this.authUrl = url;
+      }
+      saveCodeVerifier(v) {
+        this.verifier = v;
+      }
+      codeVerifier() {
+        return this.verifier;
+      }
+    }
+    const provider = new Provider();
+    let agent = null;
+
+    await check('mcp: a client with no credentials registers itself, the person consents (writing is opt-in), PKCE gets it a token, and it lists only boards that person can open', async () => {
+      const first = new StreamableHTTPClientTransport(mcpUrl(), { authProvider: provider });
+      let refused = null;
+      await new Client({ name: 'verify-assistant', version: '1.0.0' }).connect(first).catch((e) => (refused = e));
+      assert(refused instanceof UnauthorizedError && provider.authUrl && provider.client?.client_id?.startsWith('frc_'), `expected a consent redirect: ${refused}`);
+      const params = Object.fromEntries(provider.authUrl.searchParams);
+      assert(params.code_challenge_method === 'S256' && params.resource === mcpUrl().href, `authorization request: ${provider.authUrl}`);
+      const shown = await O.req('GET', `/api/oauth/authorize${provider.authUrl.search}`);
+      const optional = shown.json?.consent?.scopes
+        ?.filter((s) => s.optional)
+        .map((s) => s.id)
+        .sort();
+      assert(shown.status === 200 && JSON.stringify(optional) === JSON.stringify(['boards:write', 'comments:write']), `consent: ${shown.text}`);
+      const decided = await O.req('POST', '/api/oauth/authorize', { ...params, decision: 'allow', grant: ['boards:write', 'comments:write'] });
+      const code = decided.json?.redirect && new URL(decided.json.redirect).searchParams.get('code');
+      assert(code, `decision: ${decided.text}`);
+      await first.finishAuth(code);
+      assert(provider.saved?.access_token?.startsWith('fro_') && provider.saved.scope.split(' ').includes('boards:write'), `tokens: ${JSON.stringify(provider.saved?.scope)}`);
+      agent = new Client({ name: 'verify-assistant', version: '1.0.0' });
+      await agent.connect(new StreamableHTTPClientTransport(mcpUrl(), { authProvider: provider }));
+      clients.push(agent);
+      const tools = (await agent.listTools()).tools.map((t) => t.name);
+      for (const t of ['search_boards', 'list_workspaces', 'get_board_outline', 'create_board', 'add_stickies', 'add_clusters', 'add_diagram', 'add_comment', 'update_items', 'delete_items', 'export_board'])
+        assert(tools.includes(t), `missing tool ${t}: ${tools}`);
+      assert(!tools.includes('propose_changes'), 'propose_changes offered without the suggestions layer');
+      const found = JSON.parse(text(await agent.callTool({ name: 'search_boards', arguments: {} })));
+      const ids = found.untrusted_board_content.boards.map((b) => b.id);
+      assert(ids.includes(board) && !ids.includes(strangers), `boards: ${JSON.stringify(ids)}`);
+    });
+
+    await check('mcp: a 10-node / 12-edge Mermaid flowchart lands without overlaps, connectors attached, live in an open browser — attributed "<app> for <person>", the app shown in presence while it writes', async () => {
+      assert(agent, 'no agent');
+      const browser = connectDoc(O, board, null, proc.port);
+      live.push(browser);
+      await browser.ready();
+      const mermaid = [
+        'flowchart LR',
+        'A[Idea] --> B[Draft]',
+        'B --> C[Review]',
+        'C -->|ok| D[Ship]',
+        'C -->|changes| B',
+        'D --> E[Measure]',
+        'E --> F[Learn]',
+        'F --> A',
+        'A --> G[Research]',
+        'G --> H[Interview]',
+        'H --> I[Synthesis]',
+        'I --> J[Decide]',
+        'J --> B',
+      ].join('\n');
+      const res = await agent.callTool({ name: 'add_diagram', arguments: { boardId: board, mermaid } });
+      assert(!res.isError, `add_diagram: ${text(res)}`);
+      const created = res.structuredContent.created;
+      const els = browser.doc.getMap('elements');
+      await waitFor(() => created.every((id) => els.has(id)), 5000, 'the diagram to reach the open board');
+      const mine = created.map((id) => els.get(id));
+      const shapes = mine.filter((e) => e.type === 'shape');
+      const lines = mine.filter((e) => e.type === 'connector');
+      assert(shapes.length === 10 && lines.length === 12, `shapes ${shapes.length}, connectors ${lines.length}`);
+      for (let i = 0; i < shapes.length; i++)
+        for (let j = i + 1; j < shapes.length; j++) {
+          const a = shapes[i];
+          const b = shapes[j];
+          assert(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y, `overlap: ${a.id} ${b.id}`);
+        }
+      assert(lines.every((l) => l.start?.elementId && l.end?.elementId), `a connector is not attached at both ends: ${JSON.stringify(lines[0].start)}`);
+      assert(mine.every((e) => e.createdBy === O.id && e.createdVia?.name === 'Verify Assistant'), `attribution: ${JSON.stringify(mine[0].createdVia)}`);
+      const agentState = () => [...browser.provider.awareness.getStates().values()].find((s) => s?.agent?.app === 'Verify Assistant');
+      await waitFor(() => agentState(), 5000, 'the app to appear in presence');
+      assert(agentState().user.name === `Verify Assistant for ${O.name}` && agentState().selection.some((id) => created.includes(id)), `presence: ${JSON.stringify(agentState())}`);
+      await waitFor(() => !agentState(), 12_000, 'the app to leave presence once it stopped writing');
+    });
+
+    await check('mcp: the default read + suggest connection and a commenter’s write token can’t add to the board; delete_items without confirm deletes nothing', async () => {
+      const count = await itemCount(board);
+      const suggest = await withToken((await token(O, ['boards:read', 'boards:suggest'], 'Suggester')).secret);
+      const r1 = await suggest.callTool({ name: 'add_stickies', arguments: { boardId: board, stickies: ['nope'] } });
+      assert(r1.isError && text(r1).includes('insufficient_scope'), `read+suggest wrote: ${text(r1)}`);
+      const commenter = await withToken((await token(C, ['boards:read', 'boards:write', 'comments:write'], 'Commenter app')).secret);
+      const r2 = await commenter.callTool({ name: 'add_stickies', arguments: { boardId: board, stickies: ['nope'] } });
+      assert(r2.isError, `a commenter’s app wrote: ${text(r2)}`);
+      const r3 = await commenter.callTool({ name: 'add_comment', arguments: { boardId: board, text: 'A commenter may comment' } });
+      assert(!r3.isError, `commenter comment: ${text(r3)}`);
+      const outline = JSON.parse(text(await agent.callTool({ name: 'get_board_outline', arguments: { boardId: board, format: 'json' } })));
+      const someId = outline.untrusted_board_content.items[0].id;
+      const r4 = await agent.callTool({ name: 'delete_items', arguments: { boardId: board, itemIds: [someId] } });
+      assert(r4.isError && text(r4).includes('confirm_required'), `delete without confirm: ${text(r4)}`);
+      assert((await itemCount(board)) === count, 'the board changed');
+    });
+
+    await check('mcp: what the app did shows in the activity feed as "<app> for <person>", and every tool call is in the team’s audit log with the app', async () => {
+      await waitFor(
+        async () => (await O.req('GET', `/api/boards/${board}/activity`)).json.entries.some((e) => e.actorName === `Verify Assistant for ${O.name}` && /added/.test(e.text)),
+        10_000,
+        'the app’s burst in the activity feed',
+      );
+      const events = (await O.req('GET', `/api/workspaces/${team}/audit?action=api.call&limit=200`)).json.events;
+      const call = events.find((e) => e.metadata.endpoint === 'MCP add_diagram');
+      assert(
+        call && call.actor?.id === O.id && call.metadata.credential === 'app' && call.metadata.credentialName === 'Verify Assistant' && call.metadata.status === 200,
+        `audit: ${JSON.stringify(events.slice(0, 3))}`,
+      );
+      assert(events.some((e) => e.metadata.endpoint === 'MCP delete_items' && e.metadata.status === 400), 'the refused delete is not in the log');
+    });
+
+    await check('mcp: a team’s downloads policy refuses export_board and outline reads; turning API access off stops the next tool call there', async () => {
+      assert((await O.req('POST', `/api/workspaces/${team}/members`, { email: C.email, role: 'member' })).status === 201, 'member');
+      assert((await O.req('PATCH', `/api/workspaces/${team}`, { policies: { downloads: 'admins' } })).status === 200, 'policy');
+      const member = await withToken((await token(C, ['boards:read'], 'Reader')).secret);
+      for (const [name, args] of [
+        ['export_board', { boardId: board }],
+        ['get_board_outline', { boardId: board }],
+      ]) {
+        const r = await member.callTool({ name, arguments: args });
+        assert(r.isError && text(r).includes('downloads_restricted'), `${name}: ${text(r)}`);
+      }
+      await O.req('PATCH', `/api/workspaces/${team}`, { policies: { downloads: 'anyone' } });
+      assert((await O.req('PATCH', `/api/workspaces/${team}/admin/api`, { enabled: false })).status === 200, 'api off');
+      const off = await agent.callTool({ name: 'get_board_outline', arguments: { boardId: board } });
+      assert(off.isError && text(off).includes('api_disabled'), `api off: ${text(off)}`);
+      assert((await O.req('PATCH', `/api/workspaces/${team}/admin/api`, { enabled: true })).status === 200, 'api on');
+    });
+
+    if (ADMIN_URL && REDIS_URL)
+      await check('mcp: stateless across instances — one client’s requests alternate between two instances; its writes and presence reach a browser on the first', async () => {
+        procs.push(await waitUp(await spawnServer(fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-mcp2-')), env)));
+        const browser = connectDoc(O, board, null, procs[0].port);
+        live.push(browser);
+        await browser.ready();
+        // One client, its requests alternating between the two instances (round-robin).
+        let n = 0;
+        const roundRobin = (url, init) => fetch(String(url).replace(`:${procs[0].port}/`, `:${procs[n++ % 2].port}/`), init);
+        const c = new Client({ name: 'verify-rr', version: '1.0.0' });
+        await c.connect(new StreamableHTTPClientTransport(mcpUrl(procs[0]), { authProvider: provider, fetch: roundRobin }));
+        clients.push(c);
+        for (let i = 0; i < 2; i++) {
+          const res = await c.callTool({ name: 'add_stickies', arguments: { boardId: board, stickies: [`rr ${i}`] } });
+          assert(!res.isError, `round robin ${i}: ${text(res)}`);
+          await waitFor(() => res.structuredContent.created.every((id) => browser.doc.getMap('elements').has(id)), 5000, `sticky ${i} on instance 1`);
+        }
+        assert(n >= 4, `requests did not alternate: ${n}`);
+        await waitFor(() => [...browser.provider.awareness.getStates().values()].some((s) => s?.agent?.app === 'Verify Assistant'), 5000, 'the app’s presence across instances');
+      });
+
+    await check('mcp: revoking the token, or the app, refuses the very next MCP request', async () => {
+      const script = await token(O, ['boards:read'], 'Short-lived');
+      const sc = await withToken(script.secret);
+      assert(!(await sc.callTool({ name: 'list_workspaces', arguments: {} })).isError, 'works first');
+      assert((await O.req('DELETE', `/api/auth/tokens/${script.token.id}`)).status === 200, 'revoke token');
+      let gone = null;
+      await sc.callTool({ name: 'list_workspaces', arguments: {} }).catch((e) => (gone = e));
+      assert(gone, 'a revoked token still answered');
+      assert((await O.req('DELETE', `/api/auth/apps/${provider.client.client_id}`)).status === 200, 'revoke app');
+      const r = await fetch(mcpUrl(), {
+        method: 'POST',
+        headers: { authorization: `Bearer ${provider.saved.access_token}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tools/list', params: {} }),
+      });
+      assert(r.status === 401 && /resource_metadata=/.test(r.headers.get('www-authenticate') ?? ''), `revoked app: ${r.status}`);
+    });
+  } finally {
+    for (const c of clients) await c.close().catch(() => undefined);
+    for (const c of live) c.destroy();
+    for (const p of procs) await stopProc(p);
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
 // `--only <group>[,<group>…]` runs some groups, e.g. to loop one while hunting a flake.
 const SUITES = {
   main: run,
@@ -5317,6 +5600,7 @@ const SUITES = {
   api: publicApiChecks,
   facilitation: facilitationChecks,
   s3: s3Checks,
+  mcp: mcpChecks,
 };
 const onlyArg = process.argv.indexOf('--only');
 const only = onlyArg >= 0 ? (process.argv[onlyArg + 1] ?? '').split(',').filter(Boolean) : Object.keys(SUITES);
