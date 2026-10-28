@@ -71,6 +71,7 @@ export default function boardRoutes(_ctx: ServerContext): Router {
       if (body.linkAccess !== undefined) {
         if (role !== 'owner') throw forbidden('Only the board owner can change link sharing');
         if (!isLinkAccess(body.linkAccess)) throw badRequest('linkAccess must be none, viewer, commenter or editor');
+        if (body.linkAccess !== 'none' && !user.emailVerified) throw forbidden('Verify your email address before sharing by link');
         patch.linkAccess = body.linkAccess;
       }
       if ((patch.title !== undefined || patch.description !== undefined) && role !== 'owner' && role !== 'editor')
