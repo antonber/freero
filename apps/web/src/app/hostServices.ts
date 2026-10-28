@@ -70,6 +70,13 @@ export function uploadImage(file: Blob): Promise<{ url: string }> {
   return api.uploadImage(file);
 }
 
+/** Reports to Freero's moderators (anyone who can open the board). */
+export function reportOn(boardId: string): Host['report'] {
+  return async ({ target, reason, note }) => {
+    await api.report({ boardId, target, reason, ...(note ? { note } : {}) });
+  };
+}
+
 /** Documents (PDF) go through the same upload endpoint, quota and checks as images. */
 export function uploadFile(file: Blob): Promise<{ url: string }> {
   return api.uploadImage(file);
@@ -77,6 +84,11 @@ export function uploadFile(file: Blob): Promise<{ url: string }> {
 
 export async function renameBoard(id: string, title: string): Promise<void> {
   await api.updateBoard(id, { title });
+}
+
+/** Reports a browser export to the server's audit log; a failure never bothers the person exporting. */
+export function reportExport(boardId: string, format: string): void {
+  api.reportBoardExport(boardId, format).catch(() => undefined);
 }
 
 export async function saveThumbnail(id: string, dataUrl: string): Promise<void> {

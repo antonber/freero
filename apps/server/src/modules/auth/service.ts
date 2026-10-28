@@ -1,12 +1,13 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { Request, RequestHandler, Response } from 'express';
-import { ACCOUNT_PENDING_DELETION, REAUTH_REQUIRED, SESSION_COOKIE, type Account, type User } from '@freero/shared';
+import { ACCOUNT_PENDING_DELETION, ACCOUNT_SUSPENDED, REAUTH_REQUIRED, SESSION_COOKIE, type Account, type AuditAction, type User } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { badRequest, HttpError, parseCookies, unauthorized } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { logError } from '../../platform/log';
 import { clientIp } from '../../platform/rateLimit';
 import { setRequestUser } from '../../platform/requestContext';
+import { recordAuditQuietly, type AuditInput } from '../audit/index';
 import { randomCursorColor } from './colors';
 import { maskIp } from './geoip';
 import { dummyHash, hashPassword, verifyPassword } from './password';
@@ -101,7 +102,12 @@ export async function checkCredentials(emailIn: unknown, passwordIn: unknown): P
   const user = email ? await repo.findUserByEmail(email) : null;
   // Accounts without a password (provider sign-in only) still cost one hash: uniform timing.
   const ok = await verifyPassword(password, user?.passwordHash ?? (await dummyHash()));
-  if (!user || !user.passwordHash || !ok) throw unauthorized('Incorrect email or password');
+  if (!user || !user.passwordHash || !ok) {
+    // Attempts on an existing account are audited (its owner's workspaces see them); guesses at
+    // addresses without an account are only rate limited.
+    if (user) await recordAuditQuietly({ action: 'auth.login_failed', accountId: user.id, actorId: null, target: { type: 'user', id: user.id, label: user.email }, metadata: { reason: 'password' } });
+    throw unauthorized('Incorrect email or password');
+  }
   return toAccount(user);
 }
 
@@ -208,6 +214,42 @@ export function sessionsEnded(keys: string[]): void {
   }
 }
 
+// ---- Suspension (operators, through modules/moderation) ----
+
+const suspendedError = () =>
+  new HttpError(403, 'This account has been suspended. We emailed you the reason and how to appeal.', ACCOUNT_SUSPENDED);
+
+/** 403 (`account_suspended`) when an operator suspended the account: no way in signs it in. */
+export async function refuseIfSuspended(userId: string): Promise<void> {
+  if ((await repo.suspendedAmong([userId])).size) throw suspendedError();
+}
+
+export async function isSuspended(userId: string): Promise<boolean> {
+  return (await repo.suspendedAmong([userId])).size > 0;
+}
+
+/** Which of these accounts are suspended. */
+export function suspendedUserIds(ids: string[]): Promise<Set<string>> {
+  return repo.suspendedAmong(ids);
+}
+
+/**
+ * Suspends an account: sign-ins are refused from now on and every session it has ends at once,
+ * which closes its board and notification sockets on every instance (onSessionEnd). A session
+ * created by a sign-in racing this never resolves either (findSessionUser ignores suspended
+ * accounts). False when it was already suspended (its sessions are ended again anyway).
+ */
+export async function suspendUser(userId: string): Promise<boolean> {
+  const changed = await repo.suspend(userId, Date.now());
+  await endSessionsOf(userId);
+  return changed;
+}
+
+/** Lifts a suspension (the person signs in again as usual). False when it was not suspended. */
+export function unsuspendUser(userId: string): Promise<boolean> {
+  return repo.unsuspend(userId);
+}
+
 /**
  * Signs the browser in. `method`: 'password', 'email_link' or a provider id; `twoFactor`: it passed
  * the second step. Sign-ins of accounts with two-factor go through signIn.ts (completeSignIn).
@@ -219,6 +261,7 @@ export async function startSession(
   userId: string,
   how: { method?: string; twoFactor?: boolean } = {},
 ): Promise<{ knownDevice: boolean }> {
+  await refuseIfSuspended(userId); // every way in ends here
   const token = newToken();
   const now = Date.now();
   const knownDevice = await rememberDevice(req, res, userId, now); // before this session exists
@@ -283,8 +326,9 @@ export function clearSessionCookie(res: Response): void {
 export async function endSession(req: Request, res: Response): Promise<void> {
   const key = sessionKeyFromCookieHeader(req.headers.cookie);
   if (key) {
-    await repo.deleteSession(key);
+    const userId = await repo.deleteSessionReturningUser(key);
     sessionsEnded([key]);
+    if (userId) await recordAuditQuietly({ action: 'auth.logout', accountId: userId, actorId: userId });
   }
   clearSessionCookie(res);
 }
@@ -304,6 +348,93 @@ export function sessionKeyFromCookieHeader(cookieHeader: string | undefined): st
 
 const lastSeen = new Map<string, number>();
 
+/** Records activity of a session (at most once per LAST_SEEN_RESOLUTION_MS per instance). */
+function touch(key: string, now: number): void {
+  if (now - (lastSeen.get(key) ?? 0) <= LAST_SEEN_RESOLUTION_MS) return;
+  if (lastSeen.size > 50_000) lastSeen.clear();
+  lastSeen.set(key, now);
+  repo.touchSession(key, now).catch((e) => logError('auth: could not record session activity', e));
+}
+
+/**
+ * Activity that doesn't go through a REST request (editing a board over its socket) keeps the
+ * session from idling out. Cheap: a map lookup, and a write at most once a minute.
+ */
+export function noteSessionActivity(sessionKey: string): void {
+  touch(sessionKey, Date.now());
+}
+
+/**
+ * Audits a change someone made to their own account (password, two-step, providers…): it lands in
+ * their account's log and their team workspaces'. Recorded after the change; never fails it.
+ */
+export function auditOwnAccount(action: AuditAction, userId: string, metadata?: AuditInput['metadata']): Promise<void> {
+  return recordAuditQuietly({ action, accountId: userId, actorId: userId, metadata });
+}
+
+// ---- Session policies (workspace session lifetime / idle timeout, KAI-51) ----
+
+/** Limits on a person's sessions (null: none). */
+export interface SessionLimits {
+  maxHours: number | null;
+  idleMinutes: number | null;
+}
+type SessionLimitsFor = (userId: string) => Promise<SessionLimits> | SessionLimits;
+let sessionLimitsFor: SessionLimitsFor = () => ({ maxHours: null, idleMinutes: null });
+const limitsCache = new Map<string, { at: number; limits: SessionLimits }>();
+/** A changed policy reaches requests within this long (the enforcement job ends sessions on time anyway). */
+const LIMITS_CACHE_MS = 30_000;
+
+/**
+ * Where the session limits of a person come from (auth/init.ts sets it from modules/workspaces:
+ * the strictest limits of the team workspaces they are a member of). A session belongs to the
+ * person, not to a workspace, so one limit applies to all of their sessions.
+ */
+export function setSessionLimits(fn: SessionLimitsFor): void {
+  sessionLimitsFor = fn;
+  limitsCache.clear();
+}
+
+async function limitsOf(userId: string, now: number): Promise<SessionLimits> {
+  const hit = limitsCache.get(userId);
+  if (hit && now - hit.at < LIMITS_CACHE_MS) return hit.limits;
+  const limits = await sessionLimitsFor(userId);
+  if (limitsCache.size > 50_000) limitsCache.clear();
+  limitsCache.set(userId, { at: now, limits });
+  return limits;
+}
+
+/** Why a session is over under these limits, or null. */
+export function sessionLimitReached(
+  s: { createdAt: number; lastSeenAt: number },
+  limits: SessionLimits,
+  now: number,
+): 'max_age' | 'idle' | null {
+  if (limits.maxHours !== null && now - s.createdAt >= limits.maxHours * 3_600_000) return 'max_age';
+  if (limits.idleMinutes !== null && now - s.lastSeenAt >= limits.idleMinutes * 60_000) return 'idle';
+  return null;
+}
+
+/**
+ * The enforcement job: ends every session of these people that their limits end (on every
+ * instance: their sockets close too). Idempotent. Returns how many sessions it ended.
+ */
+export async function endSessionsBeyondLimits(people: Array<{ userId: string } & SessionLimits>, now = Date.now()): Promise<number> {
+  let ended = 0;
+  for (const p of people) {
+    const keys = await repo.deleteSessionsBeyond(
+      p.userId,
+      p.maxHours === null ? null : now - p.maxHours * 3_600_000,
+      p.idleMinutes === null ? null : now - p.idleMinutes * 60_000,
+    );
+    if (!keys.length) continue;
+    ended += keys.length;
+    sessionsEnded(keys);
+    await recordAuditQuietly({ action: 'auth.session_expired', accountId: p.userId, actorId: null, target: { type: 'user', id: p.userId }, metadata: { sessions: keys.length } });
+  }
+  return ended;
+}
+
 /** The session's account (even while deletion is scheduled), or null. Records "last seen". */
 export async function sessionFromCookieHeader(
   cookieHeader: string | undefined,
@@ -313,11 +444,15 @@ export async function sessionFromCookieHeader(
   const now = Date.now();
   const found = await repo.findSessionUser(key, now);
   if (!found) return null;
-  if (now - (lastSeen.get(key) ?? 0) > LAST_SEEN_RESOLUTION_MS) {
-    if (lastSeen.size > 50_000) lastSeen.clear();
-    lastSeen.set(key, now);
-    repo.touchSession(key, now).catch((e) => logError('auth: could not record session activity', e));
+  // A workspace's session policy: the session ends here and now (forced re-login).
+  const reason = sessionLimitReached(found, await limitsOf(found.user.id, now), now);
+  if (reason) {
+    await repo.deleteSession(key);
+    sessionsEnded([key]);
+    await recordAuditQuietly({ action: 'auth.session_expired', accountId: found.user.id, actorId: null, target: { type: 'user', id: found.user.id, label: found.user.email }, metadata: { reason } });
+    return null;
   }
+  touch(key, now);
   return { user: toAccount(found.user), key, sessionId: found.sessionId, authAt: found.authAt };
 }
 

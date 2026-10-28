@@ -1,58 +1,11 @@
-// A team workspace's settings (owners/admins): name, sharing policies (enforced by the server —
-// this page only edits them), ownership transfer and deletion (owners).
+// A team workspace's settings (owners/admins): name, ownership transfer and deletion (owners).
+// Policies, security and retention live in the admin console (pages/admin).
 import { useEffect, useState, type FormEvent } from 'react';
-import { Crown, Trash2 } from 'lucide-react';
-import type { LinkAccess, WorkspaceMember, WorkspacePolicies, WorkspaceSummary } from '@freero/shared';
-import { Button, Input, Modal, Select, useToast, type SelectOption } from '@ui';
+import { Link } from 'react-router-dom';
+import { Crown, ShieldCheck, Trash2 } from 'lucide-react';
+import type { WorkspaceMember, WorkspaceSummary } from '@freero/shared';
+import { Button, Input, Modal, Select, useToast } from '@ui';
 import { api, ApiError } from '../../api/client';
-
-const POLICY_FIELDS: Array<{
-  key: keyof WorkspacePolicies;
-  label: string;
-  hint: string;
-  options: SelectOption<string>[];
-}> = [
-  {
-    key: 'externalSharing',
-    label: 'Sharing outside the workspace',
-    hint: 'Who may invite people who aren’t in this workspace to its boards, or share them by link. “Nobody” also ends such access that exists today.',
-    options: [
-      { value: 'anyone', label: 'Board owners and editors' },
-      { value: 'admins', label: 'Owners and admins only' },
-      { value: 'none', label: 'Nobody' },
-    ],
-  },
-  {
-    key: 'linkSharing',
-    label: 'Links to boards',
-    hint: 'The most a board’s “anyone with the link” can grant. Existing links above it are lowered right away.',
-    options: [
-      { value: 'editor', label: 'Up to “can edit”' },
-      { value: 'commenter', label: 'Up to “can comment”' },
-      { value: 'viewer', label: 'Up to “can view”' },
-      { value: 'none', label: 'Links are off' },
-    ] satisfies SelectOption<LinkAccess>[],
-  },
-  {
-    key: 'guestInvites',
-    label: 'Inviting guests',
-    hint: 'Guests see only the boards and projects shared with them.',
-    options: [
-      { value: 'admins', label: 'Owners and admins' },
-      { value: 'members', label: 'Any member' },
-    ],
-  },
-  {
-    key: 'downloads',
-    label: 'Export, download and copy',
-    hint: 'Who may export boards as images or PDF, duplicate them or save them as templates.',
-    options: [
-      { value: 'anyone', label: 'Anyone with access' },
-      { value: 'members', label: 'Members (not guests)' },
-      { value: 'admins', label: 'Owners and admins only' },
-    ],
-  },
-];
 
 export function WorkspaceSettings({
   workspace,
@@ -67,7 +20,6 @@ export function WorkspaceSettings({
   const owner = workspace.role === 'owner';
   const [name, setName] = useState(workspace.name);
   const [saving, setSaving] = useState(false);
-  const [policies, setPolicies] = useState(workspace.policies);
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [heir, setHeir] = useState('');
   const [confirmTransfer, setConfirmTransfer] = useState(false);
@@ -77,7 +29,6 @@ export function WorkspaceSettings({
 
   useEffect(() => {
     setName(workspace.name);
-    setPolicies(workspace.policies);
   }, [workspace]);
 
   useEffect(() => {
@@ -102,17 +53,6 @@ export function WorkspaceSettings({
     }
   };
 
-  const setPolicy = async (key: keyof WorkspacePolicies, value: string) => {
-    const prev = policies;
-    setPolicies({ ...policies, [key]: value });
-    try {
-      onChanged((await api.updateWorkspace(workspace.id, { policies: { [key]: value } })).workspace);
-      notify('Policy updated — it applies to everyone right away', 'success');
-    } catch (err) {
-      setPolicies(prev);
-      notify(err instanceof ApiError ? err.message : 'Could not update the policy', 'error');
-    }
-  };
 
   const transfer = async () => {
     setBusy(true);
@@ -159,16 +99,15 @@ export function WorkspaceSettings({
       </form>
 
       <div className="fr-dash-settings__block">
-        <h2 className="fr-dash-settings__title">Sharing policies</h2>
-        {POLICY_FIELDS.map((f) => (
-          <div key={f.key} className="fr-dash-settings__policy">
-            <div className="fr-dash-settings__policy-text">
-              <span className="fr-dash-settings__label">{f.label}</span>
-              <span className="fr-dash-settings__hint">{f.hint}</span>
-            </div>
-            <Select<string> aria-label={f.label} options={f.options} value={policies[f.key]} onChange={(v) => setPolicy(f.key, v)} width={220} />
-          </div>
-        ))}
+        <h2 className="fr-dash-settings__title">Security, sharing and retention</h2>
+        <p className="fr-dash-settings__hint">
+          Sharing policies, two-step verification, session limits, data retention and the audit log live in the admin console.
+        </p>
+        <div className="fr-dash-settings__row">
+          <Link to={`/admin/${encodeURIComponent(workspace.id)}?tab=security`} className="fr-dash-settings__link">
+            <ShieldCheck size={16} aria-hidden /> Open the admin console
+          </Link>
+        </div>
       </div>
 
       {owner ? (

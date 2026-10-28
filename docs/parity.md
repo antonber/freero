@@ -310,11 +310,11 @@ workflows. For Freero, every row here needs a model provider that the operator o
 | Encryption at rest | Stored data encrypted | Partial: depends on the Postgres and S3 provider; sign-in secrets are sealed by the app (KAI-143) | S | P2 | 1 |
 | SSO | SAML 2.0 / OIDC per workspace, verified domains, enforced SSO | Missing (KAI-45) | L | P2 | 4 |
 | SCIM provisioning | Create and remove users automatically from the identity provider | Missing (KAI-46) | L | P3 | 4 |
-| Admin console | Manage members, roles, security settings and usage | Missing (KAI-47) | L | P2 | 4 |
-| Audit log | Record of security-relevant events, with export and SIEM streaming | Missing (KAI-48) | L | P2 | 4 |
+| Admin console | Manage members, roles, security settings and usage | Have (*in review*, KAI-47: members with two-step status and deactivation, security and retention settings, sharing policies, usage, audit log) | L | P2 | 4 |
+| Audit log | Record of security-relevant events, with export and SIEM streaming | Partial (*in review*, KAI-48: append-only, hash-chained per workspace, filters, CSV/JSON export, integrity check; no SIEM streaming yet) | L | P2 | 4 |
 | Data export and erasure | Per-user and org export and deletion (GDPR) | Partial: self-service account deletion purges personal data; no personal data export, no org-level export or deletion (KAI-50) | M | P2 | 4 |
-| Retention policies | Delete or archive content automatically after a set time | Missing (KAI-51) | M | P3 | 4 |
-| Session policies | Idle timeouts and session length rules | Missing (KAI-51) | S | P3 | 4 |
+| Retention policies | Delete or archive content automatically after a set time | Partial (*in review*, KAI-51: per-workspace trash, version-history and audit-log retention; no content expiry) | M | P3 | 4 |
+| Session policies | Idle timeouts and session length rules | Have (*in review*, KAI-51: per-workspace session lifetime and idle timeout, strictest wins across a person's teams) | S | P3 | 4 |
 | Domain control | Claim a domain, capture accounts, block personal sign-ups | Missing (with verified domains, KAI-45) | M | P3 | 4 |
 | Admin usage analytics | Activity and adoption reports | Missing (in the admin console, KAI-47) | M | P3 | 4 |
 | eDiscovery and legal hold | Keep and export a person's board history for legal cases | Missing | L | P3 | parity |
@@ -322,7 +322,7 @@ workflows. For Freero, every row here needs a model provider that the operator o
 | Customer-managed keys | Encrypt an org's data with keys the org controls | Missing | XL | P3 | parity |
 | Data residency | Choose the region where data is stored | Missing | XL | P3 | parity |
 | Compliance certifications | Independent audits (SOC 2, ISO 27001) and the paperwork that goes with them | Missing | XL | P3 | parity |
-| Abuse reporting and moderation | Report and take down harmful public boards | Missing (KAI-142) | M | P2 | 1 |
+| Abuse reporting and moderation | Report and take down harmful public boards | Missing (*in review*, KAI-142: reports, operator queue, link block / take-down / file removal / suspension, appeals) | M | P2 | 1 |
 
 ## 13. Plans and limits (context only, not counted)
 

@@ -1,9 +1,10 @@
 import express, { Router } from 'express';
 import type { ServerContext } from '../../platform/context';
-import { handle, notFound } from '../../platform/http';
+import { handle, HttpError, notFound } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
 import { storage } from '../../platform/storage';
 import { currentUser, requireUser } from '../auth/index';
+import { isUploadRemoved } from './moderation';
 import { FILE_NAME_RE, TYPE_BY_EXT, maxUploadBytes, saveUpload } from './store';
 
 // Mounted at the root (not /api) because it also serves GET /uploads/:file.
@@ -37,6 +38,11 @@ export default function uploadRoutes(_ctx: ServerContext): Router {
     handle(async (req, res) => {
       const name = req.params.file;
       if (!FILE_NAME_RE.test(name)) throw notFound('File not found');
+      // Removed by an operator: gone for good, whatever caches or the bucket still hold.
+      if (await isUploadRemoved(name)) {
+        res.setHeader('Cache-Control', 'no-store');
+        throw new HttpError(410, 'This file was removed by Freero’s moderators');
+      }
       const ext = name.split('.').pop()!;
       const direct = ext === 'svg' || ext === 'pdf' ? null : storage().publicUrl(name);
       if (direct) {

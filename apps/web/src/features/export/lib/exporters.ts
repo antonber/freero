@@ -88,6 +88,7 @@ export async function exportImage(
   const suffix = o.scope === 'selection' ? 'selection' : o.scope === 'visible' ? 'view' : '';
   const ext = o.format === 'jpeg' ? 'jpg' : o.format;
   downloadBlob(dataUrlToBlob(dataUrl), exportFileName(editor.host.board.title, ext, suffix));
+  editor.host.reportExport?.(ext);
   missing.report();
 }
 

@@ -387,14 +387,16 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
               <div className="fr-share__who">
                 <span className="fr-share__name">Anyone with the link</span>
                 <span className="fr-share__email-text">
-                  {board.permissions.maxLinkAccess === 'none' && linkAccess === 'none'
+                  {board.linkBlocked
+                    ? 'Turned off by Freero’s moderators'
+                    : board.permissions.maxLinkAccess === 'none' && linkAccess === 'none'
                     ? 'Links are turned off in this workspace'
                     : linkAccess === 'none'
                       ? 'Only people added above can open it'
                       : 'Must be signed in to Freero'}
                 </span>
               </div>
-              {isOwner ? (
+              {isOwner && !board.linkBlocked ? (
                 <Select<LinkAccess> aria-label="Link access" size="sm" options={linkOptions(board)} value={linkAccess} onChange={changeLinkAccess} width={136} />
               ) : (
                 <span className="fr-share__role">{LINK_OPTIONS.find((o) => o.value === linkAccess)?.label}</span>

@@ -13,8 +13,10 @@ import {
   listTemplates,
   loadTemplate,
   renameBoard,
+  reportOn,
   saveTemplateFrom,
   saveThumbnail,
+  reportExport,
   shareTemplateWith,
   unfurl,
   uploadFile,
@@ -64,6 +66,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
       deps.onTitleChange(title);
     },
     saveThumbnail: (dataUrl) => saveThumbnail(board.id, dataUrl),
+    reportExport: (format) => reportExport(board.id, format),
     openShareDialog: deps.openShareDialog,
     navigate: deps.navigate,
     notify: deps.notify,
@@ -80,6 +83,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     versions: versionHistory(board.id),
     importImage,
     fetchImage,
+    report: reportOn(board.id),
   };
 }
 
@@ -90,6 +94,40 @@ const readAsDataUrl = (file: Blob) =>
     r.onerror = () => reject(r.error);
     r.readAsDataURL(file);
   });
+
+/**
+ * An operator's read-only preview of a reported board (BoardEngine `initialState`): role viewer,
+ * no network, nothing it could change or send anywhere.
+ */
+export function createPreviewHost(board: { id: string; title: string }, deps: Pick<HostDeps, 'user' | 'navigate' | 'notify'>): Host {
+  const no = (what: string) => async () => Promise.reject(new Error(`${what} isn’t available in a moderation preview.`));
+  return {
+    user: deps.user,
+    board: { id: `preview-${board.id}`, title: board.title, role: 'viewer', canExport: false, team: null },
+    syncUrl: '',
+    uploadImage: no('Uploading'),
+    uploadFile: no('Uploading'),
+    renameBoard: no('Renaming'),
+    saveThumbnail: async () => undefined,
+    openShareDialog: () => deps.notify('This is a read-only snapshot for moderation.', 'info'),
+    navigate: deps.navigate,
+    notify: deps.notify,
+    serverNow: () => Date.now(),
+    listMembers: async () => [],
+    lookupUsers: async () => [],
+    inviteMember: no('Inviting'),
+    unfurl: no('Link previews'),
+    listTemplates: async () => [],
+    loadTemplate: no('Templates'),
+    saveTemplate: no('Templates'),
+    deleteTemplate: no('Templates'),
+    shareTemplate: no('Templates'),
+    versions: unavailableVersionHistory('Version history isn’t available in a moderation preview.'),
+    importImage: no('Copying images'),
+    fetchImage: no('Fetching images'),
+    report: no('Reporting'),
+  };
+}
 
 const LOCAL_ROLES: Role[] = ['owner', 'editor', 'commenter', 'viewer'];
 
@@ -131,5 +169,6 @@ export function createLocalHost(title: string, deps: Omit<HostDeps, 'user' | 'op
     // others are reported as missing by the export).
     importImage: async () => Promise.reject(new Error('Copying images needs a real board.')),
     fetchImage: async () => Promise.reject(new Error('Copying images needs a real board.')),
+    report: async () => Promise.reject(new Error('Reporting needs a real board — the local sandbox is offline.')),
   };
 }

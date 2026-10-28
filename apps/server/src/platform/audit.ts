@@ -1,8 +1,11 @@
 // Security-relevant actions taken on an account (by its owner, by someone holding its address, or
-// by an operator), for an audit trail. Today every event is one structured log line
-// (`"audit": {…}` in the server log). This is the seam for the Enterprise audit log: its module
-// registers a sink with onAuditEvent (from its init.ts, and from its admin.ts for operator
-// commands) and stores events in its own table. Never put passwords, tokens or codes in `detail`.
+// by an operator), for an audit trail. Every event is one structured log line (`"audit": {…}` in
+// the server log) and goes to the registered sinks: modules/audit registers one (from its init.ts,
+// and from its admin.ts for operator commands) that stores it in the audit log as an event of that
+// account (`recordPlatformAudit`). Modules write richer events (a workspace, a target) with
+// modules/audit's recordAudit directly; this seam is for account events raised where that
+// isn't the natural call. The action must be listed in AUDIT_ACTIONS (@freero/shared).
+// Never put passwords, tokens or codes in `detail`.
 import { logError, logger } from './log';
 
 export interface AuditEvent {

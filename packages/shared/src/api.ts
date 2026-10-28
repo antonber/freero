@@ -50,6 +50,11 @@ export interface BoardSummary {
   member: boolean;
   /** What the current user may do beyond their role, under the workspace's sharing policies. */
   permissions: BoardPermissions;
+  /**
+   * Freero's moderators turned link sharing off for this board (KAI-142): `linkAccess` reads
+   * 'none' and the owner can't turn it back on until they restore it.
+   */
+  linkBlocked?: boolean;
 }
 
 /**
@@ -123,6 +128,8 @@ export interface WorkspaceSummary {
   memberCount: number;
   policies: WorkspacePolicies;
   createdAt: number;
+  /** Set when the workspace's boards are closed to you: you were deactivated, or it requires two-step verification you haven't turned on. */
+  blocked: WorkspaceBlock | null;
 }
 export interface WorkspaceMember {
   userId: string;
@@ -313,7 +320,8 @@ export type OidcErrorCode =
   | 'no_email' // the provider shared no address
   | 'identity_in_use' // link: that provider account is connected to another Freero account
   | 'provider_linked' // link: this account already has an identity of that provider
-  | 'wrong_account'; // reauth: a different provider account than the one connected
+  | 'wrong_account' // reauth: a different provider account than the one connected
+  | 'suspended'; // login: Freero's moderators suspended that account
 
 /** The signed-in user's own account (other people only ever see `User`). */
 export interface Account extends User {
@@ -345,6 +353,8 @@ export interface SessionInfo {
 }
 
 export const ACCOUNT_PENDING_DELETION = 'account_pending_deletion';
+/** `code` of a refused sign-in (403): Freero's moderators suspended the account. */
+export const ACCOUNT_SUSPENDED = 'account_suspended';
 
 // ---- Boards ----
 // GET    /api/boards?workspace=<id>&project=<id>&filter=all|mine|shared|starred|recent|trash&q=text
@@ -507,7 +517,7 @@ export interface BoardPerson { id: string; name: string; color: string; avatarUr
 //
 // Types are open-ended: a new source (e.g. workspace invites) adds its type here and its entry in
 // the server's modules/notifications/types.ts; the inbox shows `title` / `body` as sent.
-export type NotificationType = 'board.invite' | 'comment.mention' | 'comment.reply' | 'workspace.invite';
+export type NotificationType = 'board.invite' | 'comment.mention' | 'comment.reply' | 'workspace.invite' | 'moderation.action';
 
 export interface AppNotification {
   id: string;
@@ -614,5 +624,330 @@ export interface LayerOp {
   mine?: boolean;
 }
 
+// ---- Reports and moderation (KAI-142) ----
+// Anyone who can open a board — signed in or (with KAI-43) a visitor on its public link — can
+// report the board, one item on it, an uploaded file shown on it, or a comment. Operators
+// (OPERATOR_EMAILS, verified addresses only) review reports in a queue and act through the
+// modules that own the data; every action is recorded and its subject told why, with an appeal link.
+//
+// POST /api/reports  body ReportRequest -> 202 { ok: true }   (session optional; rate-limited per IP
+//      and per user; 404 "Board not found" alike for unknown boards and boards you can't open)
+// GET  /api/appeals/:token -> { appeal: AppealInfo }          (no session: the signed link from the notice)
+// POST /api/appeals  body { token, message } -> 202 { ok: true } (one open appeal per action)
+// Operators only (404 for everyone else):
+// GET  /api/moderation/access -> { operator: boolean }        (any signed-in user)
+// GET  /api/moderation/queue?status=open|closed -> { items: ModerationItem[] }
+// GET  /api/moderation/boards/:id -> { board: ModeratedBoard, items: ModerationItem[], actions: ModerationActionRecord[] }
+// GET  /api/moderation/boards/:id/preview -> the board's shared document (Yjs update, octet-stream)
+// GET  /api/moderation/uploads/:name -> { upload: ModeratedUpload }
+// GET  /api/moderation/users?email= -> { user: ModeratedUser }
+// POST /api/moderation/actions body ModerationActionRequest -> { action: ModerationActionRecord }
+// POST /api/moderation/items/:id/resolve body { outcome, note? } -> { item: ModerationItem }
+// GET  /.well-known/security.txt (RFC 9116, from SECURITY_CONTACT / ABUSE_CONTACT_EMAIL)
+export type ReportReason = 'spam' | 'phishing' | 'malware' | 'harassment' | 'violence' | 'sexual' | 'illegal' | 'copyright' | 'other';
+export const REPORT_REASONS: ReadonlyArray<{ id: ReportReason; label: string }> = [
+  { id: 'spam', label: 'Spam or misleading ads' },
+  { id: 'phishing', label: 'Phishing or a scam' },
+  { id: 'malware', label: 'Malicious files or links' },
+  { id: 'harassment', label: 'Harassment or hate' },
+  { id: 'violence', label: 'Violence or threats' },
+  { id: 'sexual', label: 'Sexual content' },
+  { id: 'illegal', label: 'Other illegal content' },
+  { id: 'copyright', label: 'Copyright or trademark' },
+  { id: 'other', label: 'Something else' },
+];
+/**
+ * What a report is about. `id`: element id ('element'), upload name ('upload', "<id>.<ext>"),
+ * "<threadId>:<messageId>" ('comment'); none for the whole board.
+ */
+export type ReportTargetKind = 'board' | 'element' | 'upload' | 'comment';
+export interface ReportTarget { kind: ReportTargetKind; id?: string }
+export const MAX_REPORT_NOTE = 2000;
+export interface ReportRequest {
+  boardId: string;
+  target: ReportTarget;
+  reason: ReportReason;
+  note?: string;
+  /** Visitors without an account: where to send the outcome (optional). */
+  contactEmail?: string;
+}
+
+/** Operator actions. Each `restore` undoes the matching action; `upload.purge` deletes a removed file's kept copy for good. */
+export type ModerationActionKind =
+  | 'board.disable_link'
+  | 'board.restore_link'
+  | 'board.take_down'
+  | 'board.restore'
+  | 'upload.remove'
+  | 'upload.restore'
+  | 'upload.purge'
+  | 'user.suspend'
+  | 'user.restore';
+export interface ModerationActionRequest {
+  action: ModerationActionKind;
+  /** Board id, upload name or user id, by the action's kind. */
+  targetId: string;
+  reason: ReportReason;
+  /** Shown to the person affected (the statement of reasons in their notice). */
+  statement: string;
+  /** Operators only. */
+  note?: string;
+  /** The queue item this answers (marked actioned). */
+  itemId?: string;
+  /** For upload actions: the board the file was reported on (its owner is told too). */
+  boardId?: string;
+}
+export interface ModerationActionRecord {
+  id: string;
+  action: ModerationActionKind;
+  targetId: string;
+  boardId: string | null;
+  subjectUserId: string | null;
+  operator: { id: string; name: string } | null;
+  reason: ReportReason;
+  statement: string;
+  note: string;
+  createdAt: number;
+}
+export type ModerationItemStatus = 'open' | 'actioned' | 'dismissed';
+export interface ModerationItem {
+  id: string;
+  /** A report about content, or an appeal against an action. */
+  kind: 'report' | 'appeal';
+  status: ModerationItemStatus;
+  boardId: string | null;
+  boardTitle: string;
+  /** What it is about (appeals against a suspension: the account, `user`). */
+  target: { kind: ReportTargetKind | 'user'; id?: string };
+  reason: ReportReason | null;
+  /** The reporter's note, or the appeal's message. */
+  message: string;
+  reporter: { id: string; name: string; email: string } | null;
+  contactEmail: string | null;
+  /** Appeals: the action appealed against. */
+  action: ModerationActionRecord | null;
+  createdAt: number;
+  resolvedAt: number | null;
+  resolutionNote: string;
+  /** Live state of the board right now (null when it no longer exists). */
+  board: ModeratedBoard | null;
+}
+export interface ModeratedBoard {
+  id: string;
+  title: string;
+  owner: ModeratedUser | null;
+  linkAccess: LinkAccess;
+  linkBlocked: boolean;
+  removedAt: number | null;
+  deletedAt: number | null;
+  thumbnail: string | null;
+}
+export interface ModeratedUpload {
+  name: string;
+  url: string;
+  owner: ModeratedUser | null;
+  contentType: string | null;
+  bytes: number | null;
+  removedAt: number | null;
+  /** A copy is kept while removed, so it can be restored (false after `upload.purge`). */
+  restorable: boolean;
+}
+export interface ModeratedUser { id: string; name: string; email: string; suspended: boolean }
+/** What an appeal link shows (no session needed). */
+export interface AppealInfo {
+  action: ModerationActionKind;
+  reason: ReportReason;
+  statement: string;
+  boardTitle: string | null;
+  createdAt: number;
+  /** An appeal against it is already waiting for review. */
+  pending: boolean;
+  /** It was reversed meanwhile. */
+  reversed: boolean;
+}
+/** `code` of a board Freero's moderators took down (HTTP 451 on REST). */
+export const BOARD_REMOVED = 'board_removed';
+/** Close code of board sockets when the board is taken down (on every instance). */
+export const WS_CLOSE_BOARD_REMOVED = 4451;
+
 export const SESSION_COOKIE = 'freero_session';
 export const SERVER_PORT = 4000;
+
+// ---- Audit log (KAI-48) ----
+// An append-only record of security-relevant events. Each event lands in one or more CHAINS: the
+// workspace it happened in ('w:<workspaceId>') and, for an account's own events (sign-ins,
+// two-step verification, sessions…), the account ('u:<userId>') plus every team workspace the
+// person is a member (not guest) of. Inside a chain events are numbered (`seq`) and hash-linked
+// (`hash` = sha256 over the event and the previous event's hash), so an edited, removed or
+// reordered row shows up when the chain is verified. Retention removes only the oldest events.
+// Owners and admins of a team workspace read its log (see "Admin console").
+export const AUDIT_ACTIONS = {
+  'auth.login': 'Signed in',
+  'auth.login_failed': 'Failed sign-in',
+  'auth.logout': 'Signed out',
+  'auth.session_revoked': 'Ended a session',
+  'auth.sessions_revoked': 'Signed out other devices',
+  'auth.session_expired': 'Session ended by policy',
+  'auth.password_changed': 'Changed password',
+  'auth.password_reset': 'Reset password',
+  'auth.email_changed': 'Changed email address',
+  'auth.email_change_reverted': 'Reverted an email change',
+  'auth.two_factor_enabled': 'Turned on two-step verification',
+  'auth.two_factor_disabled': 'Turned off two-step verification',
+  'auth.recovery_codes_regenerated': 'Made new recovery codes',
+  'auth.two_factor.undone': 'Two-step verification undone from the email link',
+  'auth.two_factor.recovery_started': 'Started two-step recovery',
+  'auth.two_factor.recovery_cancelled': 'Cancelled two-step recovery',
+  'auth.two_factor.recovered': 'Two-step verification removed by recovery',
+  'auth.two_factor.reset_by_operator': 'Two-step verification reset by a Freero operator',
+  'auth.provider_connected': 'Connected a sign-in provider',
+  'auth.provider_disconnected': 'Disconnected a sign-in provider',
+  'account.deletion_scheduled': 'Scheduled account deletion',
+  'account.deletion_cancelled': 'Cancelled account deletion',
+  'account.deleted': 'Account deleted',
+  'workspace.created': 'Created the workspace',
+  'workspace.renamed': 'Renamed the workspace',
+  'workspace.policies_changed': 'Changed sharing policies',
+  'workspace.settings_changed': 'Changed security or retention settings',
+  'workspace.transferred': 'Transferred workspace ownership',
+  'workspace.owner_inherited': 'Became owner (previous owner deleted)',
+  'workspace.deleted': 'Deleted the workspace',
+  'member.invited': 'Invited someone',
+  'member.invite_revoked': 'Revoked an invite',
+  'member.joined': 'Joined the workspace',
+  'member.role_changed': 'Changed a member’s role',
+  'member.removed': 'Removed a member',
+  'member.left': 'Left the workspace',
+  'member.deactivated': 'Deactivated a member',
+  'member.reactivated': 'Reactivated a member',
+  'project.created': 'Created a project',
+  'project.updated': 'Changed a project',
+  'project.deleted': 'Deleted a project',
+  'project.member_added': 'Added someone to a project',
+  'project.member_removed': 'Removed someone from a project',
+  'board.created': 'Created a board',
+  'board.trashed': 'Moved a board to the trash',
+  'board.restored': 'Restored a board from the trash',
+  'board.deleted': 'Deleted a board forever',
+  'board.purged': 'Board purged after trash retention',
+  'board.transferred': 'Transferred board ownership',
+  'board.moved': 'Moved a board to another project',
+  'board.link_sharing_changed': 'Changed link sharing',
+  'board.duplicated': 'Duplicated a board',
+  'board.exported': 'Exported a board',
+  'board.member_invited': 'Shared a board',
+  'board.member_role_changed': 'Changed someone’s board access',
+  'board.member_removed': 'Removed someone from a board',
+  'version.restored': 'Restored a board version',
+  'template.saved': 'Saved a board as a template',
+  'audit.exported': 'Exported the audit log',
+  // Freero's operators acting on reports (modules/moderation).
+  'moderation.board.disable_link': 'Freero turned off a board’s link (moderation)',
+  'moderation.board.restore_link': 'Freero turned a board’s link back on (moderation)',
+  'moderation.board.take_down': 'Freero took a board down (moderation)',
+  'moderation.board.restore': 'Freero restored a board (moderation)',
+  'moderation.upload.remove': 'Freero removed a file (moderation)',
+  'moderation.upload.restore': 'Freero restored a file (moderation)',
+  'moderation.upload.purge': 'Freero purged a removed file (moderation)',
+  'moderation.user.suspend': 'Freero suspended an account (moderation)',
+  'moderation.user.restore': 'Freero lifted an account suspension (moderation)',
+} as const;
+export type AuditAction = keyof typeof AUDIT_ACTIONS;
+export type AuditValue = string | number | boolean | null | string[];
+export type AuditMetadata = Record<string, AuditValue>;
+export interface AuditEvent {
+  /** Global, increasing id (a string: it is a 64-bit counter). */
+  id: string;
+  at: number;
+  action: AuditAction;
+  workspaceId: string | null;
+  /** Who did it (null: Freero itself, e.g. a retention job, or someone not signed in). */
+  actor: { id: string; name: string; email: string | null } | null;
+  target: { type: string; id: string; label: string | null } | null;
+  ip: string | null;
+  userAgent: string | null;
+  metadata: AuditMetadata;
+  /** Position in its chain and the chain hashes (for checking an export independently). */
+  chain: string;
+  seq: number;
+  prevHash: string;
+  hash: string;
+}
+/** Result of re-checking a chain's hashes (GET …/audit/integrity). */
+export interface AuditIntegrity {
+  ok: boolean;
+  /** Events checked (the whole chain as retention left it). */
+  events: number;
+  firstAt: number | null;
+  lastAt: number | null;
+  /** Hash of the newest event: write it down to prove later that nothing before it changed. */
+  headHash: string | null;
+  /** What is wrong, when not ok. */
+  problem: string | null;
+}
+
+// ---- Admin console (KAI-47) and workspace policies (KAI-51) ----
+// Owners and admins of a TEAM workspace; every route re-checks the workspace role on the server.
+// GET   /api/workspaces/:id/admin/usage                 -> { usage: WorkspaceUsage }
+// GET   /api/workspaces/:id/admin/members?q=           -> { members: AdminMember[] }
+// POST  /api/workspaces/:id/admin/members/:userId/deactivate  -> { member: AdminMember }
+// POST  /api/workspaces/:id/admin/members/:userId/reactivate  -> { member: AdminMember }
+//       A deactivated member keeps their role and boards but opens nothing in the workspace (not
+//       even boards they own) until reactivated; live connections are cut at once.
+// GET   /api/workspaces/:id/admin/settings              -> { settings: WorkspaceSettings }
+// PATCH /api/workspaces/:id/admin/settings  body Partial<WorkspaceSettings> -> { settings }
+// GET   /api/workspaces/:id/audit?action=&actor=&target=&from=&to=&before=&limit=
+//                                                       -> { events: AuditEvent[], next: string | null }
+//       `action`: an action or a prefix ending in '.' ('auth.'); `before`: the `next` of the
+//       previous page; from/to: epoch ms.
+// GET   /api/workspaces/:id/audit/export?format=csv|json&(same filters) -> the file (recorded as
+//       'audit.exported')
+// GET   /api/workspaces/:id/audit/integrity             -> { integrity: AuditIntegrity }
+// POST  /api/boards/:id/exported  body { format }       -> { ok: true }  (the web app reports a
+//       client-side export so it is audited; refused like the export itself when not allowed)
+export interface WorkspaceSettings {
+  /** Everyone opening the workspace's boards needs two-step verification on (members can't turn it off). */
+  requireTwoFactor: boolean;
+  /** A member's session ends this many hours after sign-in (null: Freero's default of 30 days). */
+  sessionMaxHours: number | null;
+  /** A member's session ends after this many minutes without activity (null: never). */
+  sessionIdleMinutes: number | null;
+  /** Days a deleted board stays in the trash before it is deleted for good. */
+  trashRetentionDays: number;
+  /** Unnamed versions older than this many days are deleted (null: kept, thinned out over time). */
+  versionRetentionDays: number | null;
+  /** Days audit events are kept. */
+  auditRetentionDays: number;
+}
+export const WORKSPACE_SETTING_LIMITS = {
+  sessionMaxHours: { min: 1, max: 24 * 90 },
+  sessionIdleMinutes: { min: 15, max: 60 * 24 * 30 },
+  trashRetentionDays: { min: 1, max: 365 },
+  versionRetentionDays: { min: 7, max: 3650 },
+  auditRetentionDays: { min: 30, max: 3650 },
+} as const;
+export const DEFAULT_AUDIT_RETENTION_DAYS = 365;
+/** Why the workspace's boards are closed to you right now (see WorkspaceSummary.blocked). */
+export type WorkspaceBlock = 'deactivated' | 'two_factor_required';
+export interface AdminMember extends WorkspaceMember {
+  deactivated: boolean;
+  twoFactor: boolean;
+  /** Last time any of their sessions was active (null: no session right now). */
+  lastActiveAt: number | null;
+  /** Boards they own in this workspace (trash excluded). */
+  boards: number;
+}
+export interface WorkspaceUsage {
+  boards: number;
+  trashedBoards: number;
+  projects: number;
+  members: Record<WorkspaceRole, number>;
+  deactivated: number;
+  pendingInvites: number;
+  /** Distinct people who opened one of its boards in the last 7 / 30 days. */
+  activeUsers7d: number;
+  activeUsers30d: number;
+  /** Stored board content (documents, history, layers) and the files its boards reference. */
+  contentBytes: number;
+  fileBytes: number;
+}
