@@ -323,7 +323,7 @@ export function dropTargetFor(editor: Editor, index: TreeIndex<MindmapElement>, 
 
 /**
  * A pasted outline: under `parentId` when one topic is selected (its items become that topic's
- * last children, in order), otherwise a new map centered on `at`, laid out by the same shared
+ * last children, in order), otherwise a new map on free space nearest `at`, laid out by the same shared
  * layout as server inserts. One undo step either way. Returns the new topics' top-level ids.
  */
 export function insertOutline(editor: Editor, roots: OutlineNodeInput[], at: Point, parentId?: string | null): string[] {
@@ -372,10 +372,12 @@ export function insertOutline(editor: Editor, roots: OutlineNodeInput[], at: Poi
   const laid = layoutStructure({ kind: 'mindmap', root: outline }, { newId: nanoid });
   const now = Date.now();
   let ids: string[] = [];
+  // On free space nearest the paste point, never on top of what is there.
+  const spot = editor.findFreeSpot(laid.size, { near: at });
   editor.transact(() => {
     ids = editor.insertElements(
       { elements: laid.elements.map((d) => ({ ...d, z: 0, createdBy: editor.host.user.id, createdAt: now, updatedAt: now }) as BoardElement) },
-      { at },
+      { at: { x: spot.x + laid.size.w / 2, y: spot.y + laid.size.h / 2 } },
     );
     // The real font measures pills a little differently from the layout's estimate: tidy once.
     relayout(editor, rootIdsOf(editor, ids));
