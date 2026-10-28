@@ -18,6 +18,8 @@ import type {
   ElementOf,
   ElementType,
   PresenceState,
+  ReportReason,
+  ReportTarget,
   Role,
 } from '@freero/shared';
 
@@ -155,6 +157,19 @@ export interface Host {
    * other roles and in the offline sandbox, with a message fit for a toast).
    */
   versions: VersionHistory;
+  /**
+   * [additive] Reports this board, an item on it, an uploaded file it shows or a comment to
+   * Freero's moderators (KAI-142). Anyone who can open the board may. Rejects with a message fit
+   * for a toast (rate limit, offline sandbox, the board is gone).
+   */
+  report(report: ContentReport): Promise<void>;
+}
+
+/** [additive] What `Host.report` sends (wire: @freero/shared `ReportRequest`, without the board id). */
+export interface ContentReport {
+  target: ReportTarget;
+  reason: ReportReason;
+  note: string;
 }
 
 /**

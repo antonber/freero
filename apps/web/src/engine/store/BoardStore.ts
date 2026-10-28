@@ -16,6 +16,7 @@ import * as decoding from 'lib0/decoding';
 import * as encoding from 'lib0/encoding';
 import {
   BOARD_LAYERS,
+  WS_CLOSE_BOARD_REMOVED,
   WS_MESSAGE_LAYER,
   WS_MESSAGE_LAYER_OP,
   WS_MESSAGE_ROLE,
@@ -39,7 +40,8 @@ export const SILENT_ORIGIN = { source: 'freero-silent' };
 /** Layer updates received from the server (never sent back). */
 const LAYER_REMOTE_ORIGIN = { source: 'freero-layer-remote' };
 
-export type ConnectionStatus = 'local' | 'connecting' | 'connected' | 'disconnected' | 'denied';
+/** 'removed': Freero's moderators took the board down (WS_CLOSE_BOARD_REMOVED); otherwise like 'denied'. */
+export type ConnectionStatus = 'local' | 'connecting' | 'connected' | 'disconnected' | 'denied' | 'removed';
 /** Decides the layer an element is written to, given where it is now (null = new). */
 export type Placement = (el: BoardElement, current: ElementLayer | null) => ElementLayer;
 
@@ -158,7 +160,7 @@ export class BoardStore {
       };
       provider.on('status', ({ status }: { status: string }) => {
         if (status === 'connected') for (const name of BOARD_LAYERS) this.requestLayerSync(name);
-        if (this.status === 'denied') return;
+        if (this.status === 'denied' || this.status === 'removed') return;
         this.status = status === 'connected' ? 'connected' : status === 'connecting' ? 'connecting' : 'disconnected';
         this.emit(this.statusListeners);
       });
@@ -168,8 +170,8 @@ export class BoardStore {
         this.emit(this.statusListeners);
       });
       provider.on('connection-close', (event: CloseEvent | null) => {
-        if (event && (event.code === 4401 || event.code === 4403)) {
-          this.status = 'denied';
+        if (event && (event.code === 4401 || event.code === 4403 || event.code === WS_CLOSE_BOARD_REMOVED)) {
+          this.status = event.code === WS_CLOSE_BOARD_REMOVED ? 'removed' : 'denied';
           provider.shouldConnect = false;
           provider.disconnect();
           this.emit(this.statusListeners);
