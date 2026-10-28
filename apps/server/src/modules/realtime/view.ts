@@ -221,7 +221,11 @@ export function applyChange(main: Y.Doc, layers: ReadonlyMap<string, Y.Doc>, cha
   }
   if (editor) {
     const byId = new Map([...next].map(([id, n]) => [id, n.el]));
+    // Only what this change touches is re-placed: its own elements and everything inside a frame it
+    // changed (hidden / shown / moved). Anything else stays where the clients keep it.
+    const touched = withDependents([...next].filter(([, n]) => n.changed).map(([id]) => id), [...byId.values()]);
     for (const [id, n] of next) {
+      if (!touched.has(id)) continue;
       // Private drafts stay private; everything else goes where the hidden-frame rule puts it.
       const to: ViewLayer = n.from === 'private' ? 'private' : underHiddenFrame(n.el, byId) ? 'editors' : 'shared';
       if (!n.changed && n.from === to) continue;

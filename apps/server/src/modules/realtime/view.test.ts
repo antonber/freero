@@ -10,7 +10,7 @@ import { closeTestDb, openTestDb } from '../../platform/testing';
 import { createUser } from '../auth/index';
 import { createBoard } from '../boards/index';
 import { loadDoc } from './docStore';
-import { admitSocket, changeBoard, initBoardDoc, readBoardView, snapshotBoardDoc, snapshotBoardLayer } from './rooms';
+import { admitSocket, changeBoard, initBoardDoc, initBoardLayer, readBoardView, snapshotBoardDoc, snapshotBoardLayer } from './rooms';
 import { BoardChangeError } from './view';
 
 const IDLE_MS = 100;
@@ -104,9 +104,15 @@ it('what a request puts inside a hidden frame never enters the shared doc viewer
   const seed = new Y.Doc();
   seed.getMap('elements').set('h', frame('h', true));
   await initBoardDoc(boardId, Y.encodeStateAsUpdate(seed));
+  // Something the change doesn't touch (a client's move still in flight) stays where it is.
+  const layer = new Y.Doc();
+  layer.getMap('elements').set('inflight', sticky('inflight', 5000, 2));
+  await initBoardLayer(boardId, 'editors', Y.encodeStateAsUpdate(layer));
   await changeBoard(boardId, { userId, role: 'editor' }, () => ({ change: { create: [{ ...draftOf(sticky('secret', 100, 0)), frameId: 'h' }] } }));
   expect(docOf(await snapshotBoardDoc(boardId)).has('secret')).toBe(false);
   expect(docOf(await snapshotBoardLayer(boardId, 'editors')).has('secret')).toBe(true);
+  expect(docOf(await snapshotBoardLayer(boardId, 'editors')).has('inflight')).toBe(true);
+  expect(docOf(await snapshotBoardDoc(boardId)).has('inflight')).toBe(false);
   // A viewer's read of the board doesn't have it either.
   expect((await readBoardView(boardId, { userId: 'viewer', role: 'viewer' })).elements.map((e) => e.el.id)).toEqual(['h']);
 
