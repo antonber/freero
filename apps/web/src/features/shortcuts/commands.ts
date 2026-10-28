@@ -7,7 +7,7 @@ export default defineCommands([
     id: 'shortcuts.open',
     icon: Keyboard,
     label: 'Keyboard shortcuts',
-    // '?' — matched by physical key (Slash) with Shift, like the rest of the router.
+    // '?' — matched by the character typed, so it works wherever the layout puts '?'.
     shortcut: 'shift+/',
     menus: ['board'],
     minRole: 'viewer',

@@ -23,6 +23,22 @@ const ALIASES: Record<string, string> = {
   space: ' ',
 };
 
+/** The character US Shift types on each punctuation key. */
+const US_SHIFTED: Record<string, string> = {
+  '/': '?', '[': '{', ']': '}', ',': '<', '.': '>', ';': ':', "'": '"', '\\': '|', '`': '~', '=': '+', '-': '_',
+};
+/** One shortcut, either character: Ctrl+= and Ctrl++ both zoom in, Ctrl+- and Ctrl+_ both zoom out. */
+const SAME_KEY: Record<string, string> = { '+': '=', '_': '-' };
+
+/** US characters of the punctuation keys, by physical position. */
+const PUNCT_CODES: Record<string, string> = {
+  BracketRight: ']', BracketLeft: '[', Equal: '=', NumpadAdd: '=', Minus: '-', NumpadSubtract: '-',
+  Slash: '/', Backslash: '\\', Period: '.', Comma: ',', Semicolon: ';', Quote: "'", Backquote: '`',
+};
+
+/** A single typed character that is neither a letter, a digit nor whitespace. */
+const isPunctuation = (k: string) => k.length === 1 && !/[\p{L}\p{N}\s]/u.test(k);
+
 const cache = new Map<string, Shortcut>();
 
 export function parseShortcut(s: string): Shortcut {
@@ -36,9 +52,16 @@ export function parseShortcut(s: string): Shortcut {
     key = '=';
   }
   key = ALIASES[key] ?? key;
+  let shift = parts.includes('shift');
+  // Bindings name US keys ('shift+/'); what they mean is the character that types ('?').
+  if (shift && US_SHIFTED[key]) {
+    key = US_SHIFTED[key];
+    shift = false;
+  }
+  key = SAME_KEY[key] ?? key;
   const sc: Shortcut = {
     mod: parts.includes('mod') || parts.includes('ctrl') || parts.includes('cmd'),
-    shift: parts.includes('shift'),
+    shift,
     alt: parts.includes('alt') || parts.includes('option'),
     key,
   };
@@ -46,27 +69,31 @@ export function parseShortcut(s: string): Shortcut {
   return sc;
 }
 
-/** Layout-robust key name: letters/digits from e.code, the rest from e.key. */
-export function eventKey(e: Pick<KeyboardEvent, 'code' | 'key'>): string {
+/**
+ * Every name a key press answers to, its main one first:
+ * - letters by physical key (`code`), so tool keys and Ctrl+Z work on any layout (Cyrillic too);
+ * - punctuation by the character the layout types (`key`): '?' is Shift+ß on a German keyboard and
+ *   Shift+, on a French one, so bindings for '?', '[', ']', '=' and '-' follow what people type;
+ * - digits by physical key too, so Shift+1 still answers 'shift+1' while it types '!';
+ * - a punctuation key that types no punctuation (a letter on a Russian layout) by its US character.
+ */
+export function eventKeys(e: Pick<KeyboardEvent, 'code' | 'key'>): string[] {
   const code = e.code || '';
-  if (code.startsWith('Key')) return code.slice(3).toLowerCase();
-  if (code.startsWith('Digit')) return code.slice(5);
-  switch (code) {
-    case 'BracketRight': return ']';
-    case 'BracketLeft': return '[';
-    case 'Equal':
-    case 'NumpadAdd': return '=';
-    case 'Minus':
-    case 'NumpadSubtract': return '-';
-    case 'Slash': return '/';
-    case 'Backslash': return '\\';
-    case 'Period': return '.';
-    case 'Comma': return ',';
+  const key = e.key || '';
+  const typed = isPunctuation(key) ? (SAME_KEY[key] ?? key) : null;
+  if (code.startsWith('Key')) {
+    const letter = code.slice(3).toLowerCase();
+    return typed ? [letter, typed] : [letter];
   }
-  return (e.key || '').toLowerCase();
+  if (code.startsWith('Digit')) return typed ? [typed, code.slice(5)] : [code.slice(5)];
+  if (typed) return [typed];
+  return [PUNCT_CODES[code] ?? key.toLowerCase()];
 }
 
-const SHIFT_INSENSITIVE = new Set(['=', '-']);
+/** The key's main name (see `eventKeys`): a letter by position, punctuation as typed. */
+export function eventKey(e: Pick<KeyboardEvent, 'code' | 'key'>): string {
+  return eventKeys(e)[0];
+}
 
 export function matchShortcut(
   e: Pick<KeyboardEvent, 'code' | 'key' | 'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey'>,
@@ -76,8 +103,9 @@ export function matchShortcut(
   const mod = isMac ? e.metaKey : e.ctrlKey;
   if (mod !== sc.mod) return false;
   if (e.altKey !== sc.alt) return false;
-  if (!SHIFT_INSENSITIVE.has(sc.key) && e.shiftKey !== sc.shift) return false;
-  return eventKey(e) === sc.key;
+  // A punctuation character already says whether that layout needed Shift to type it.
+  if (!isPunctuation(sc.key) && e.shiftKey !== sc.shift) return false;
+  return eventKeys(e).includes(sc.key);
 }
 
 const KEY_LABELS: Record<string, string> = {
