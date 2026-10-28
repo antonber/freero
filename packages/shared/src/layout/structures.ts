@@ -1,5 +1,5 @@
 // One layout per kind of structure. Each returns elements relative to its own top-left (0, 0).
-import type { Anchor, ShapeKind, StickyColor, TableCopyContent } from '../elements';
+import type { Anchor, CardStatus, ShapeKind, StickyColor, TableCopyContent } from '../elements';
 import { unionRects, type Rect } from '../geometry';
 import { plainToRichText } from '../text';
 import {
@@ -19,6 +19,8 @@ import {
   translateDraft,
 } from './kit';
 import { layered } from './layered';
+import { indexMindNodes, layoutMindTree, type MindNode } from './mindtree';
+import { tidyTree } from './tidy';
 import { measureText } from './measure';
 import {
   LAYOUT_LIMITS,
@@ -28,6 +30,8 @@ import {
   type GraphEdgeInput,
   type GraphGroupInput,
   type GraphNodeInput,
+  type KanbanColumnInput,
+  type OrgPersonInput,
   type LaidOut,
   type LayoutContext,
   type OutlineNodeInput,
@@ -83,6 +87,8 @@ interface FlatNode {
   parent: FlatNode | null;
   kids: FlatNode[];
   depth: number;
+  /** What the source calls it (`OutlineNodeInput.id`), if anything. */
+  name?: string;
 }
 
 function flatten(root: OutlineNodeInput, newId: () => string): FlatNode[] {
@@ -91,7 +97,7 @@ function flatten(root: OutlineNodeInput, newId: () => string): FlatNode[] {
     if (depth > LAYOUT_LIMITS.depth) throw new LayoutError(`The outline is nested deeper than ${LAYOUT_LIMITS.depth} levels`);
     if (out.length >= LAYOUT_LIMITS.elements) throw new LayoutError(`At most ${LAYOUT_LIMITS.elements} items per structure`);
     if (!n || typeof n.text !== 'string') throw new LayoutError('Every outline item needs a text');
-    const f: FlatNode = { id: newId(), text: clip(n.text.trim()), parent, kids: [], depth };
+    const f: FlatNode = { id: newId(), text: clip(n.text.trim()), parent, kids: [], depth, ...(typeof n.id === 'string' && n.id ? { name: n.id } : {}) };
     out.push(f);
     parent?.kids.push(f);
     for (const c of n.children ?? []) walk(c, f, depth + 1);
@@ -100,48 +106,46 @@ function flatten(root: OutlineNodeInput, newId: () => string): FlatNode[] {
   return out;
 }
 
-const ROOT_GAP = 72;
-const LEVEL_GAP = 48;
-const SIBLING_GAP = 14;
+/**
+ * A stable key per outline item for re-layouts of edited source: its source name when it has
+ * one, else its path of texts (a repeated text among siblings gets its ordinal).
+ */
+function outlineKeys(nodes: FlatNode[]): Map<FlatNode, string> {
+  const keys = new Map<FlatNode, string>();
+  const used = new Set<string>();
+  for (const n of nodes) {
+    const base = n.name ? `n:${n.name}` : `t:${n.parent ? keys.get(n.parent) : ''}/${n.text.toLowerCase()}`;
+    let key = base;
+    for (let i = 2; used.has(key); i++) key = `${base}#${i}`;
+    used.add(key);
+    keys.set(n, key);
+  }
+  return keys;
+}
 
 /**
- * A mind map, laid out like the mind-map feature's tidy tree: every node gets a band as tall as
- * its subtree; sibling bands stack and center on their parent. Four or more first-level branches
- * grow on both sides (alternating), fewer grow to the right.
+ * A mind map, laid out by the mind-map feature's own tidy tree (`layoutMindTree`, shared): every
+ * node gets a band as tall as its subtree; sibling bands stack and center on their parent. Four
+ * or more first-level branches grow on both sides (alternating), fewer grow to the right.
  */
 export function layoutMindmap(rootIn: OutlineNodeInput, ctx: LayoutContext): LaidOut {
   const nodes = flatten(rootIn, ctx.newId);
   const root = nodes[0];
   const size = new Map(nodes.map((n) => [n, mindNodeSize(n.text, n === root)]));
-  const pos = new Map<FlatNode, { x: number; y: number }>();
-  const extent = new Map<FlatNode, number>();
-  const ext = (n: FlatNode): number => {
-    const hit = extent.get(n);
-    if (hit !== undefined) return hit;
-    const block = n.kids.reduce((s, k) => s + ext(k), 0) + SIBLING_GAP * Math.max(0, n.kids.length - 1);
-    const e = Math.max(size.get(n)!.h, block);
-    extent.set(n, e);
-    return e;
-  };
-  const place = (n: FlatNode, kids: FlatNode[], side: 'right' | 'left', gap: number) => {
-    const p = pos.get(n)!;
-    const s = size.get(n)!;
-    const block = kids.reduce((acc, k) => acc + ext(k), 0) + SIBLING_GAP * Math.max(0, kids.length - 1);
-    let top = p.y + s.h / 2 - block / 2;
-    for (const k of kids) {
-      const ks = size.get(k)!;
-      const e = ext(k);
-      pos.set(k, { x: Math.round(side === 'right' ? p.x + s.w + gap : p.x - gap - ks.w), y: Math.round(top + (e - ks.h) / 2) });
-      place(k, k.kids, side, LEVEL_GAP);
-      top += e + SIBLING_GAP;
-    }
-  };
-  pos.set(root, { x: 0, y: 0 });
   const both = root.kids.length >= 4;
-  if (both) {
-    place(root, root.kids.filter((_, i) => i % 2 === 0), 'right', ROOT_GAP);
-    place(root, root.kids.filter((_, i) => i % 2 === 1), 'left', ROOT_GAP);
-  } else place(root, root.kids, 'right', ROOT_GAP);
+  // Sibling order is encoded the way the mind-map feature reads it: by position, then creation.
+  const tree: MindNode[] = nodes.map((n, i) => ({
+    id: n.id,
+    parentId: n.parent?.id ?? null,
+    x: 0,
+    y: i,
+    ...size.get(n)!,
+    createdAt: i,
+    ...(n === root ? { direction: both ? ('both' as const) : ('right' as const) } : {}),
+  }));
+  const placed = layoutMindTree(indexMindNodes(tree), root.id, { rebalance: both });
+  const pos = new Map(nodes.map((n) => [n, placed.get(n.id) ?? { x: 0, y: 0 }]));
+  const keyOf = outlineKeys(nodes);
   const colorOf = new Map<FlatNode, string>([[root, MIND_ROOT_COLOR]]);
   root.kids.forEach((k, i) => colorOf.set(k, MIND_BRANCH_COLORS[i % MIND_BRANCH_COLORS.length]));
   const elements: ElementDraft[] = nodes.map((n) => {
@@ -165,13 +169,15 @@ export function layoutMindmap(rootIn: OutlineNodeInput, ctx: LayoutContext): Lai
       ...(n === root ? { direction: both ? ('both' as const) : ('right' as const) } : {}),
     };
   });
-  return finish(elements);
+  return withKeys(finish(elements), new Map(nodes.map((n) => [n.id, keyOf.get(n)!])));
 }
 
 /** An outline as a tree of boxes (an org chart), top-down unless told otherwise. */
 export function layoutTree(rootIn: OutlineNodeInput, direction: Direction, ctx: LayoutContext): LaidOut {
-  let k = 0;
-  const nodes = flatten(rootIn, () => `n${k++}`);
+  const nodes = flatten(rootIn, () => '');
+  // Node ids are the items' stable keys, so the graph's keys (n:<id>, e:…) survive edits.
+  const keys = outlineKeys(nodes);
+  for (const n of nodes) n.id = keys.get(n)!;
   return layoutGraph(
     nodes.map((n) => ({ id: n.id, text: n.text, shape: n.depth === 0 ? 'roundRect' : 'rect' })),
     nodes.flatMap((n) => (n.parent ? [{ from: n.parent.id, to: n.id, arrow: 'none' as const }] : [])),
@@ -180,6 +186,8 @@ export function layoutTree(rootIn: OutlineNodeInput, direction: Direction, ctx: 
     ctx,
   );
 }
+
+const withKeys = (laid: LaidOut, keys: Map<string, string>): LaidOut => ({ ...laid, keys: Object.fromEntries(keys) });
 
 // ---------------------------------------------------------------------------------------------
 // Lists and clusters → stickies.
@@ -420,13 +428,22 @@ export function layoutGraph(
     const g = groupOf.get(n.id);
     elements.push(shape(elementId.get(n.id)!, n.shape ?? 'rect', r, clip(n.text ?? ''), {}, g ? frameIds.get(g) : null));
   }
+  const keys = new Map<string, string>();
+  for (const n of nodes) keys.set(elementId.get(n.id)!, `n:${n.id}`);
+  for (const g of groups) keys.set(frameIds.get(g.id)!, `g:${g.id}`);
+  const pairCount = new Map<string, number>();
   for (const e of edges) {
     const a = rects.get(e.from)!;
     const b = rects.get(e.to)!;
     const [sa, sb] = e.from === e.to ? (['right', 'top'] as [Side, Side]) : anchorsBetween(a, b, tb);
+    const pair = `${e.from}>${e.to}`;
+    const k = (pairCount.get(pair) ?? 0) + 1;
+    pairCount.set(pair, k);
+    const id = ctx.newId();
+    keys.set(id, `e:${pair}#${k}`);
     elements.push(
       connector(
-        ctx.newId(),
+        id,
         { id: elementId.get(e.from)!, anchor: sa, rect: a },
         { id: elementId.get(e.to)!, anchor: sb, rect: b },
         {
@@ -439,7 +456,7 @@ export function layoutGraph(
       ),
     );
   }
-  return finish(elements);
+  return withKeys(finish(elements), keys);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -468,16 +485,25 @@ export function layoutSequence(d: SequenceInput, ctx: LayoutContext): LaidOut {
   const titleH = d.title ? 56 : 0;
   const cx = (i: number) => Math.round(Math.max(...boxW) / 2 + i * span);
   const elements: ElementDraft[] = [];
-  if (d.title) elements.push(textBox(ctx.newId(), 0, 0, Math.max(300, cx(parts.length - 1) + 200), clip(d.title), { size: 24, bold: true }));
+  const keys = new Map<string, string>();
+  const keyed = (key: string) => {
+    const id = ctx.newId();
+    keys.set(id, key);
+    return id;
+  };
+  if (d.title) elements.push(textBox(keyed('title'), 0, 0, Math.max(300, cx(parts.length - 1) + 200), clip(d.title), { size: 24, bold: true }));
   const boxes = parts.map((p, i) => {
     const r = { x: cx(i) - boxW[i] / 2, y: titleH, w: boxW[i], h: BOX_H };
-    const id = ctx.newId();
+    const id = keyed(`p:${p.id}`);
     elements.push(shape(id, p.actor ? 'roundRect' : 'rect', r, clip(p.label), { fill: '#ECE9FB' }));
     return { id, r };
   });
   let y = titleH + BOX_H + 48;
+  let messages = 0;
+  let notes = 0;
   for (const s of d.steps) {
     if (s.kind === 'message') {
+      const mid = keyed(`m:${++messages}`);
       const a = index.get(s.from)!;
       const b = index.get(s.to)!;
       const style = {
@@ -488,10 +514,10 @@ export function layoutSequence(d: SequenceInput, ctx: LayoutContext): LaidOut {
       };
       if (a === b) {
         // A loop out to the right and back (curved through one waypoint).
-        elements.push(connector(ctx.newId(), { point: { x: cx(a), y } }, { point: { x: cx(a), y: y + 32 } }, { ...style, routing: 'curved', waypoints: [{ x: cx(a) + 64, y: y + 16 }] }));
+        elements.push(connector(mid, { point: { x: cx(a), y } }, { point: { x: cx(a), y: y + 32 } }, { ...style, routing: 'curved', waypoints: [{ x: cx(a) + 64, y: y + 16 }] }));
         y += 80;
       } else {
-        elements.push(connector(ctx.newId(), { point: { x: cx(a), y } }, { point: { x: cx(b), y } }, style));
+        elements.push(connector(mid, { point: { x: cx(a), y } }, { point: { x: cx(b), y } }, style));
         y += 64;
       }
     } else {
@@ -502,14 +528,14 @@ export function layoutSequence(d: SequenceInput, ctx: LayoutContext): LaidOut {
       const left = s.side === 'left' ? cx(lo) - w - 16 : s.side === 'right' ? cx(hi) + 16 : (cx(lo) + cx(hi)) / 2 - w / 2;
       const m = measureText(clip(s.text), { fontSize: 15, maxWidth: w - 24 });
       const h = Math.max(64, m.h + 32);
-      elements.push({ ...sticky(ctx.newId(), left, y - 8, clip(s.text), 'yellow'), w: Math.round(w), h: Math.round(h) } as ElementDraft);
+      elements.push({ ...sticky(keyed(`note:${++notes}`), left, y - 8, clip(s.text), 'yellow'), w: Math.round(w), h: Math.round(h) } as ElementDraft);
       y += h + 24;
     }
   }
   const bottom = y + 16;
   // Lifelines go right after the boxes, so messages and notes draw over them.
   const lifelines = boxes.map((b, i) =>
-    connector(ctx.newId(), { id: b.id, anchor: 'bottom', rect: b.r }, { point: { x: cx(i), y: bottom } }, {
+    connector(keyed(`l:${parts[i].id}`), { id: b.id, anchor: 'bottom', rect: b.r }, { point: { x: cx(i), y: bottom } }, {
       routing: 'straight',
       stroke: SOFT_LINE,
       strokeStyle: 'dashed',
@@ -518,7 +544,7 @@ export function layoutSequence(d: SequenceInput, ctx: LayoutContext): LaidOut {
   );
   const firstStep = (d.title ? 1 : 0) + boxes.length;
   elements.splice(firstStep, 0, ...lifelines);
-  return finish(elements);
+  return withKeys(finish(elements), keys);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -593,6 +619,166 @@ export function layoutNote(title: string | undefined, text: string, ctx: LayoutC
   const card = shape(ctx.newId(), 'roundRect', { x: 0, y: 0, w: NOTE_WIDTH, h }, '', { fill: NOTE_BACKGROUND, stroke: 'transparent', fontSize: size });
   const el = { ...card, text: html, align: 'left', vAlign: 'top' } as ElementDraft;
   return finish([el]);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Kanban boards: the kanban feature's geometry (features/kanban/lib/layout.ts), cards stacked in
+// their columns the way its arrange pass stacks them, so nothing jumps when it first lays out.
+
+const KANBAN = { header: 52, colHead: 44, gap: 12, pad: 10, itemGap: 10, minBody: 180, colW: 280 };
+/** Column header accents (the kanban feature's palette); status columns keep their own. */
+export const KANBAN_COLUMN_COLORS = ['#8A89A3', '#2E9BF0', '#F5A524', '#1FA463', '#8B5CF6', '#E64DA6', '#14B8A6', '#E5484D'];
+const STATUS_COLORS: Record<CardStatus, string> = { todo: '#8A89A3', doing: '#2E9BF0', done: '#1FA463' };
+const CARD_ACCENT = '#5B3FF0';
+
+/** The card status a column title stands for ("To do", "In progress", "Done" …), if any. */
+export function columnStatus(title: string): CardStatus | null {
+  const t = title.toLowerCase().trim();
+  if (/^(done|complete(d)?|finished|shipped|closed|released)\b/.test(t)) return 'done';
+  if (/\b(in progress|doing|wip|ongoing|in review|review|building)\b/.test(t)) return 'doing';
+  if (/^(to ?-?do|backlog|next|open|planned|up next|ready)\b/.test(t)) return 'todo';
+  return null;
+}
+
+/** Height a task card settles at for its title (the card feature measures it exactly on insert). */
+function cardHeight(w: number, title: string): number {
+  const t = measureText(title || ' ', { fontSize: 15, maxWidth: Math.max(40, w - 36), bold: true, lineHeight: 20 / 15 });
+  return Math.round(13 + t.h + 10 + 24 + 12);
+}
+
+export function layoutKanban(title: string | undefined, columnsIn: KanbanColumnInput[], ctx: LayoutContext): LaidOut {
+  if (!Array.isArray(columnsIn) || !columnsIn.length) throw new LayoutError('A kanban board needs at least one column');
+  if (columnsIn.length > 40) throw new LayoutError('At most 40 columns per kanban board');
+  for (const c of columnsIn)
+    if (!c || typeof c.title !== 'string' || !Array.isArray(c.items) || c.items.some((i) => typeof i !== 'string'))
+      throw new LayoutError('Every kanban column needs a title and a list of card texts');
+  if (columnsIn.reduce((s, c) => s + c.items.length, 0) + 1 > LAYOUT_LIMITS.elements) throw new LayoutError(`At most ${LAYOUT_LIMITS.elements} items per structure`);
+  const K = KANBAN;
+  const inner = K.colW - 2 * K.pad;
+  const id = ctx.newId();
+  const columns = columnsIn.map((c, i) => {
+    const status = columnStatus(c.title);
+    return { id: ctx.newId(), title: plainToRichText(clip(c.title.trim())), status, color: status ? STATUS_COLORS[status] : KANBAN_COLUMN_COLORS[i % KANBAN_COLUMN_COLORS.length] };
+  });
+  const cards: ElementDraft[] = [];
+  let tallest = 0;
+  columnsIn.forEach((c, ci) => {
+    const x = K.gap + ci * (K.colW + K.gap) + K.pad;
+    let y = K.header + K.colHead + K.pad;
+    for (const text of c.items) {
+      const t = clip(text.trim());
+      const h = cardHeight(inner, t);
+      cards.push({
+        id: ctx.newId(),
+        type: 'card',
+        x,
+        y,
+        w: inner,
+        h,
+        rotation: 0,
+        frameId: id,
+        title: plainToRichText(t),
+        description: '',
+        color: CARD_ACCENT,
+        status: columns[ci].status,
+        assigneeId: null,
+        dueDate: null,
+        tags: [],
+      });
+      y += h + K.itemGap;
+    }
+    tallest = Math.max(tallest, c.items.length ? y - K.itemGap - (K.header + K.colHead + K.pad) : 0);
+  });
+  const board: ElementDraft = {
+    id,
+    type: 'kanban',
+    x: 0,
+    y: 0,
+    w: K.gap + columns.length * (K.colW + K.gap),
+    h: K.header + K.colHead + Math.max(K.minBody, tallest + 2 * K.pad) + K.gap,
+    rotation: 0,
+    title: plainToRichText(clip(title?.trim() || 'Kanban')),
+    columns,
+    colW: K.colW,
+  };
+  return finish([board, ...cards]);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Org charts: people under their managers, as a tidy top-down tree of name / title boxes.
+
+export function layoutOrgChart(people: OrgPersonInput[], ctx: LayoutContext): LaidOut {
+  if (!Array.isArray(people) || !people.length) throw new LayoutError('An org chart needs people');
+  if (people.length * 2 > LAYOUT_LIMITS.elements) throw new LayoutError(`At most ${LAYOUT_LIMITS.elements / 2} people per org chart`);
+  const byKey = new Map<string, OrgPersonInput & { key: string }>();
+  const byName = new Map<string, string>();
+  for (const p of people) {
+    if (!p || typeof p.name !== 'string' || !p.name.trim()) throw new LayoutError('Every person needs a name');
+    const key = (typeof p.id === 'string' && p.id.trim() ? p.id : p.name).trim();
+    if (byKey.has(key)) throw new LayoutError(`"${key}" is listed twice`);
+    byKey.set(key, { ...p, key });
+    const n = p.name.trim().toLowerCase();
+    if (!byName.has(n)) byName.set(n, key);
+  }
+  const managerOf = new Map<string, string>();
+  for (const p of byKey.values()) {
+    const m = typeof p.manager === 'string' ? p.manager.trim() : '';
+    if (!m) continue;
+    const mk = byKey.has(m) ? m : byName.get(m.toLowerCase());
+    if (!mk) throw new LayoutError(`${p.name.trim()}'s manager "${m}" isn't in the list`);
+    if (mk === p.key) throw new LayoutError(`${p.name.trim()} can't be their own manager`);
+    managerOf.set(p.key, mk);
+  }
+  for (const start of byKey.keys()) {
+    const seen = new Set<string>();
+    for (let k: string | undefined = start; k; k = managerOf.get(k)) {
+      if (seen.has(k)) throw new LayoutError(`${[...seen].map((s) => byKey.get(s)!.name.trim()).join(', ')} report to each other in a circle`);
+      seen.add(k);
+    }
+  }
+  const sizeOf = (p: OrgPersonInput) => {
+    const name = measureText(clip(p.name.trim()), { fontSize: 16, maxWidth: 220, bold: true, lineHeight: 1.4 });
+    const title = p.title?.trim() ? measureText(clip(p.title.trim()), { fontSize: 16, maxWidth: 220, lineHeight: 1.4 }) : { w: 0, h: 0 };
+    return { w: Math.round(Math.min(280, Math.max(170, Math.max(name.w, title.w) + 48))), h: Math.round(Math.max(64, name.h + title.h + 32)) };
+  };
+  const units = [...byKey.values()].map((p) => ({ id: p.key, ...sizeOf(p) }));
+  const edges = [...byKey.values()].filter((p) => managerOf.has(p.key)).map((p) => ({ from: managerOf.get(p.key)!, to: p.key }));
+  const t = tidyTree(units, edges, { direction: 'TB', siblingGap: 32, levelGap: 64 });
+  const elementId = new Map(units.map((u) => [u.id, ctx.newId()]));
+  const keys = new Map<string, string>();
+  const rects = new Map<string, Rect>();
+  const elements: ElementDraft[] = [];
+  for (const u of units) {
+    const p = byKey.get(u.id)!;
+    const r = { ...t.pos.get(u.id)!, w: u.w, h: u.h };
+    rects.set(u.id, r);
+    const html = `<b>${plainToRichText(clip(p.name.trim()))}</b>${p.title?.trim() ? `<br>${plainToRichText(clip(p.title.trim()))}` : ''}`;
+    const top = !managerOf.has(u.id);
+    elements.push({ ...shape(elementId.get(u.id)!, 'roundRect', r, '', { fill: top ? '#ECE9FB' : '#FFFFFF' }), text: html } as ElementDraft);
+    keys.set(elementId.get(u.id)!, `n:${u.id}`);
+  }
+  for (const e of edges) {
+    const id = ctx.newId();
+    keys.set(id, `e:${e.from}>${e.to}#1`);
+    elements.push(
+      connector(id, { id: elementId.get(e.from)!, anchor: 'bottom', rect: rects.get(e.from)! }, { id: elementId.get(e.to)!, anchor: 'top', rect: rects.get(e.to)! }, { endCap: 'none' }),
+    );
+  }
+  return withKeys(finish(elements), keys);
+}
+
+/**
+ * Rows of "Name, Title, Manager" (comma- or tab-separated; a header row naming those columns is
+ * skipped) → org-chart people. An empty or missing manager makes a top of the chart.
+ */
+export function parseOrgRows(text: string): OrgPersonInput[] {
+  const rows = text
+    .split(/\r\n?|\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .map((l) => (l.includes('\t') ? l.split('\t') : l.split(/\s*[,;|]\s*/)).map((c) => c.trim().replace(/^"(.*)"$/, '$1')));
+  if (rows.length && /^name$/i.test(rows[0][0] ?? '') && rows[0].slice(1).some((c) => /title|role|manager|reports/i.test(c))) rows.shift();
+  return rows.map(([name, title, manager]) => ({ name: name ?? '', ...(title ? { title } : {}), ...(manager ? { manager } : {}) }));
 }
 
 export type { ShapeKind };

@@ -148,6 +148,9 @@ it('refuses malformed structure with a clear error and writes nothing', async ()
     [{ kind: 'graph', nodes: [{ id: 'a', text: 'A' }], edges: [{ from: 'a', to: 'ghost' }] }, /isn't listed/],
     [{ kind: 'graph', nodes: [{ id: 'a', text: 'A' }], edges: [], groups: [{ id: 'g1', title: 'x', nodes: ['a'], parent: 'g2' }, { id: 'g2', title: 'y', nodes: [], parent: 'g1' }] }, /contain each other/],
     [{ kind: 'clusters', clusters: [{ items: [{ id: 'not-here' }] }] }, /No item not-here/],
+    [{ kind: 'orgchart', people: [{ name: 'Ann' }, { name: 'Bo', manager: 'Ghost' }] }, /manager "Ghost" isn't in the list/],
+    [{ kind: 'orgchart', people: [{ name: 'Ann', manager: 'Bo' }, { name: 'Bo', manager: 'Ann' }] }, /in a circle/],
+    [{ kind: 'mermaid', source: 'mindmap\n  Root\n  Second root' }, /line 3: a mind map has one root/],
   ];
   for (const [structure, message] of cases) await expect(insert(boardId, { structure })).rejects.toMatchObject({ status: 400, message: expect.stringMatching(message) });
   expect((await elementsOf(boardId)).map((e) => e.id)).toEqual(['only']);
@@ -206,4 +209,62 @@ it("lays a sequence diagram out top to bottom, each message between its particip
   expect([messages[2].start.x, messages[2].end.x, messages[2].strokeStyle]).toEqual([lifeline('Database'), lifeline('API'), 'dashed']);
   // Lifelines hang from every participant.
   expect(all.filter((e): e is ConnectorElement => e.type === 'connector' && !!e.start.elementId)).toHaveLength(3);
+});
+
+it('builds a kanban from columns: each card stacked in its column, in order, with the status the column stands for', async () => {
+  const boardId = await boardWith([]);
+  const res = await insert(boardId, { structure: { kind: 'kanban', title: 'Sprint', columns: [{ title: 'To do', items: ['Login', 'Search'] }, { title: 'In progress', items: ['Billing'] }, { title: 'Ideas', items: [] }, { title: 'Done', items: ['Signup'] }] } });
+  const all = (await elementsOf(boardId)).filter((e) => res.created.includes(e.id));
+  const board = all.find((e) => e.type === 'kanban') as BoardElement & { colW: number; columns: Array<{ status: string | null }> };
+  const cards = all.filter((e) => e.type === 'card') as Array<BoardElement & { title: string; status: string | null }>;
+  expect(board.columns.map((c) => c.status)).toEqual(['todo', 'doing', null, 'done']);
+  const column = (el: BoardElement) => Math.floor((el.x + el.w / 2 - board.x) / (board.colW + 12));
+  const at = (t: string) => cards.find((c) => c.title === t)!;
+  expect(['Login', 'Search', 'Billing', 'Signup'].map((t) => [column(at(t)), at(t).frameId, at(t).status])).toEqual([
+    [0, board.id, 'todo'],
+    [0, board.id, 'todo'],
+    [1, board.id, 'doing'],
+    [3, board.id, 'done'],
+  ]);
+  expect(at('Login').y + at('Login').h).toBeLessThan(at('Search').y);
+  for (const c of cards) expect(c.y + c.h).toBeLessThanOrEqual(board.y + board.h);
+});
+
+it('lays an org chart out as a tree: everyone below their manager, the managers centered over their reports, no boxes overlapping', async () => {
+  const boardId = await boardWith([]);
+  const people = [
+    { name: 'Maria', title: 'CEO' },
+    { name: 'Ann', title: 'CTO', manager: 'Maria' },
+    { name: 'Bo', title: 'CFO', manager: 'Maria' },
+    { name: 'Cy', title: 'Engineer', manager: 'Ann' },
+    { name: 'Di', title: 'Engineer', manager: 'Ann' },
+    { name: 'Ed', title: 'Designer', manager: 'Ann' },
+    { name: 'Flo', title: 'Accountant', manager: 'Bo' },
+  ];
+  const res = await insert(boardId, { structure: { kind: 'orgchart', people } });
+  const all = (await elementsOf(boardId)).filter((e) => res.created.includes(e.id));
+  const boxes = new Map(all.filter((e) => e.type === 'shape').map((s) => [/<b>(.*?)<\/b>/.exec((s as { text: string }).text)![1], s]));
+  const center = (b: BoardElement) => b.x + b.w / 2;
+  for (const p of people.filter((p) => p.manager)) expect(boxes.get(p.name)!.y, p.name).toBeGreaterThan(boxes.get(p.manager!)!.y + boxes.get(p.manager!)!.h);
+  const reports = ['Cy', 'Di', 'Ed'].map((n) => boxes.get(n)!);
+  expect(Math.abs(center(boxes.get('Ann')!) - (center(reports[0]) + center(reports[2])) / 2)).toBeLessThan(1);
+  const list = [...boxes.values()];
+  for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) expect(overlap(list[i], list[j])).toBe(false);
+  const lines = all.filter((e): e is ConnectorElement => e.type === 'connector');
+  expect(lines).toHaveLength(6);
+  expect(lines.every((l) => l.start.elementId && l.end.elementId)).toBe(true);
+});
+
+it('reads a Mermaid mind map: nesting by indentation, node brackets, icons and classes left out', async () => {
+  const boardId = await boardWith([]);
+  const source = ['mindmap', '  root((Launch plan))', '    Marketing', '      ::icon(fa fa-book)', '      b1[Blog post]', '      Webinar:::urgent', '    Product', '      Beta)Private beta(', '    %% a comment', '    Sales'].join('\n');
+  const res = await insert(boardId, { structure: { kind: 'mermaid', source } });
+  const nodes = (await elementsOf(boardId)).filter((e) => res.created.includes(e.id)) as Array<BoardElement & { text: string; parentId: string | null }>;
+  const byText = new Map(nodes.map((n) => [n.text, n]));
+  expect([...byText.keys()].sort()).toEqual(['Blog post', 'Launch plan', 'Marketing', 'Private beta', 'Product', 'Sales', 'Webinar']);
+  expect(byText.get('Launch plan')!.parentId).toBe(null);
+  expect(byText.get('Blog post')!.parentId).toBe(byText.get('Marketing')!.id);
+  expect(byText.get('Webinar')!.parentId).toBe(byText.get('Marketing')!.id);
+  expect(byText.get('Private beta')!.parentId).toBe(byText.get('Product')!.id);
+  expect(byText.get('Sales')!.parentId).toBe(byText.get('Launch plan')!.id);
 });
