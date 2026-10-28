@@ -4498,7 +4498,8 @@ async function mediaChecks() {
   const S = new User('MediaStranger');
   // Real caps, small enough to cross: 60 MB for video/audio (a 50 MB clip fits), 1 MB for other
   // files, an 80 MB quota (one clip fits, two don't).
-  const env = { OPERATOR_EMAILS: Op.email, MAX_MEDIA_UPLOAD_MB: '60', MAX_ATTACHMENT_UPLOAD_MB: '1', UPLOAD_QUOTA_MB: '80' };
+  // LOG_LEVEL info: operator downloads are checked in the audit trail's log line (platform/audit).
+  const env = { OPERATOR_EMAILS: Op.email, MAX_MEDIA_UPLOAD_MB: '60', MAX_ATTACHMENT_UPLOAD_MB: '1', UPLOAD_QUOTA_MB: '80', LOG_LEVEL: 'info' };
   const base = () => `http://127.0.0.1:${server.port}`;
   const get = (url, headers = {}) => fetch(`${base()}${url}`, { headers, redirect: 'manual' });
   /** An ISO media (MP4) file of `bytes` bytes: an "ftyp" box, then a recognisable byte pattern. */
@@ -4596,6 +4597,21 @@ async function mediaChecks() {
       assert((await O.req('PATCH', `/api/workspaces/${ws}`, { policies: { downloads: 'anyone' } })).status === 200, 'reset');
     });
 
+    await check('media: an operator downloads a reported file card from the queue to review it (KAI-205) — always as an attachment, audited, and nobody else can use that route', async () => {
+      const name = card.slice('/uploads/'.length);
+      const route = `/api/moderation/uploads/${name}/file`;
+      const r = await Op.req('GET', route);
+      assert(r.status === 200 && r.text === HTML.toString(), `operator download -> ${r.status} ${r.text.slice(0, 100)}`);
+      assert(r.headers.get('content-type') === 'application/octet-stream' && r.headers.get('x-content-type-options') === 'nosniff', `type ${r.headers.get('content-type')}`);
+      assert((r.headers.get('content-disposition') ?? '').startsWith('attachment;'), `disposition: ${r.headers.get('content-disposition')}`);
+      assert(/sandbox/.test(r.headers.get('content-security-policy') ?? ''), `csp: ${r.headers.get('content-security-policy')}`);
+      for (const u of [O, M, S]) assert((await u.req('GET', route)).status === 404, `${u.label} used the operator download`);
+      assert((await fetch(`${base()}${route}`)).status === 401, 'anonymous used the operator download');
+      await waitFor(() => server.log.join('').includes('moderation.upload.download'), 5000, 'the download in the audit trail');
+      const line = server.log.join('').split(/\r?\n/).find((l) => l.includes('moderation.upload.download'));
+      assert(line.includes(Op.id) && line.includes(name), `audit line: ${line}`);
+    });
+
     await check('media: a file an operator removed answers 410 both at /uploads/ and from its board', async () => {
       await place(O, board, { id: 'clip', type: 'media', kind: 'video', src: video, name: 'clip.mp4', size: clip.length, duration: 0, naturalW: 0, naturalH: 0 });
       for (const [url, target] of [
@@ -4607,6 +4623,9 @@ async function mediaChecks() {
         assert((await get(url)).status === 410, `${url} at /uploads/`);
         assert((await O.req('GET', `/api/boards/${board}/files/${target}`)).status === 410, `${target} from the board`);
       }
+      // Operators can still review the kept copy before restoring or purging it.
+      const kept = await Op.req('GET', `/api/moderation/uploads/${card.slice('/uploads/'.length)}/file`);
+      assert(kept.status === 200 && kept.text === HTML.toString(), `kept copy -> ${kept.status}`);
     });
   } finally {
     closeAllDocs();

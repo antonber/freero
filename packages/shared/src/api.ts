@@ -1188,6 +1188,7 @@ export const AUDIT_ACTIONS = {
   'moderation.upload.remove': 'Freero removed a file (moderation)',
   'moderation.upload.restore': 'Freero restored a file (moderation)',
   'moderation.upload.purge': 'Freero purged a removed file (moderation)',
+  'moderation.upload.download': 'A Freero operator downloaded a file to review it (moderation)',
   'moderation.user.suspend': 'Freero suspended an account (moderation)',
   'moderation.user.restore': 'Freero lifted an account suspension (moderation)',
   // Single sign-on (modules/sso).

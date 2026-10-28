@@ -25,6 +25,7 @@ import {
   type SuspensionBoards,
   type User,
 } from '@freero/shared';
+import type { Readable } from 'node:stream';
 import { getConfig } from '../../platform/config';
 import { audit } from '../../platform/audit';
 import { badRequest, HttpError, notFound } from '../../platform/http';
@@ -45,7 +46,7 @@ import {
 } from '../boards/index';
 import { notify } from '../notifications/index';
 import { snapshotBoardDoc } from '../realtime/index';
-import { keptCopiesRemovedBefore, purgeRemovedUpload, removeUpload, restoreUpload, uploadForModeration, uploadName } from '../uploads/index';
+import { keptCopiesRemovedBefore, openUploadForModeration, purgeRemovedUpload, removeUpload, restoreUpload, uploadForModeration, uploadName } from '../uploads/index';
 import { alertOperators, isAdverse, sendActionNotice, sendAppealUpheld, sendReportOutcome } from './notices';
 import * as repo from './repo';
 
@@ -255,6 +256,24 @@ export async function uploadDetail(nameOrUrl: string): Promise<ModeratedUpload> 
     removedAt: u.removedAt,
     restorable: u.restorable,
   };
+}
+
+/**
+ * A reported file's bytes for an operator to review (KAI-205): attachments are never served at
+ * /uploads, and a removed file's URL answers 410, so this is the only way to see what a report is
+ * about. Always a download (the route never renders it), always in the audit trail.
+ */
+export async function uploadFileForReview(operatorId: string, nameOrUrl: string): Promise<{ name: string; body: Readable; size: number | null }> {
+  const name = uploadName(nameOrUrl);
+  const file = name ? await openUploadForModeration(name) : null;
+  if (!name || !file) throw notFound('File not found');
+  await audit({
+    action: 'moderation.upload.download',
+    actor: { kind: 'user', userId: operatorId },
+    userId: file.ownerId ?? '',
+    detail: { upload: name },
+  });
+  return { name, body: file.body, size: file.size };
 }
 
 export async function userByEmail(email: unknown): Promise<ModeratedUser> {

@@ -828,6 +828,11 @@ policies"), `activity` (board_activity: the activity feed; see "Activity" below)
   tombstone stays); auth `users.suspended_at` (sessions ended through `onSessionEnd`, sessions of
   suspended accounts never resolve, `startSession`/`completeSignIn` refuse with
   `account_suspended`).
+- Reviewing a reported file (KAI-205): `GET /api/moderation/uploads/:name/file` (operators only,
+  404 for everyone else) streams the file — or a removed file's kept copy — through uploads'
+  `openUploadForModeration`, always `application/octet-stream` as an attachment with nosniff and
+  a sandbox CSP, and records `moderation.upload.download` in the audit trail. The queue links
+  attachments (`.bin`, never served at /uploads) only there.
 - Moderation owns only the queue and the append-only action record; every action is also a
   platform audit event `moderation.<action>` (`platform/audit.ts`, actor = the operator's user). Each action emails its subject a statement of reasons with a signed,
   session-less appeal link (`/appeal?t=`, `mac('moderation.appeal:<actionId>')`) and adds a

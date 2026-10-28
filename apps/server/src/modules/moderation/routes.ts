@@ -15,6 +15,7 @@ import {
   submitAppeal,
   submitReport,
   uploadDetail,
+  uploadFileForReview,
   userByEmail,
 } from './service';
 
@@ -108,6 +109,21 @@ export default function moderationRoutes(_ctx: ServerContext): Router {
     '/uploads/:name',
     handle(async (req, res) => {
       res.json({ upload: await uploadDetail(req.params.name) });
+    }),
+  );
+  // A reported file, to review before acting (KAI-205): always an attachment, never rendered here.
+  ops.get(
+    '/uploads/:name/file',
+    handle(async (req, res) => {
+      const file = await uploadFileForReview(currentUser(req).id, req.params.name);
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${file.name}"`);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+      res.setHeader('Cache-Control', 'no-store');
+      if (file.size !== null) res.setHeader('Content-Length', String(file.size));
+      file.body.on('error', () => res.destroy());
+      file.body.pipe(res);
     }),
   );
   ops.get(

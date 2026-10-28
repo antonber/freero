@@ -404,6 +404,8 @@ export const api = {
     return new Uint8Array(await res.arrayBuffer());
   },
   moderationUpload: (name: string) => request<{ upload: ModeratedUpload }>('GET', `/api/moderation/uploads/${encodeURIComponent(name)}`),
+  /** Where an operator downloads a reported file to review it (attachments and removed files too; audited). */
+  moderationUploadFileUrl: (name: string) => `/api/moderation/uploads/${encodeURIComponent(name)}/file`,
   moderationUser: (email: string) => request<{ user: ModeratedUser }>('GET', `/api/moderation/users?email=${encodeURIComponent(email)}`),
   moderate: (body: ModerationActionRequest) => request<{ action: ModerationActionRecord }>('POST', '/api/moderation/actions', body),
   resolveModerationItem: (id: string, outcome: 'actioned' | 'dismissed', note: string) =>
