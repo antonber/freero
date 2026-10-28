@@ -167,10 +167,11 @@ export async function updateWorkspace(workspaceId: string, userId: string, body:
     await repo.updateWorkspace(workspaceId, patch, Date.now());
     const target = { type: 'workspace', id: workspaceId, label: patch.name ?? workspace.name };
     if (patch.name !== undefined && patch.name !== workspace.name)
-      await recordAudit({ action: 'workspace.renamed', workspaceId, target, metadata: { from: workspace.name, to: patch.name } });
+      await recordAudit({ action: 'workspace.renamed', workspaceId, actorId: userId, target, metadata: { from: workspace.name, to: patch.name } });
     if (changedPolicies.length)
       await recordAudit({
         action: 'workspace.policies_changed',
+        actorId: userId,
         workspaceId,
         target,
         metadata: Object.fromEntries(changedPolicies.flatMap((k) => [[`${k}.from`, workspace.policies[k]], [`${k}.to`, patch.policies[k]!]])),
@@ -229,6 +230,7 @@ export async function updateSettings(workspaceId: string, userId: string, body: 
     await repo.updateSettings(workspaceId, patch, Date.now());
     await recordAudit({
       action: 'workspace.settings_changed',
+      actorId: userId,
       workspaceId,
       target: { type: 'workspace', id: workspaceId, label: workspace.name },
       metadata: Object.fromEntries(changed.flatMap((k) => [[`${k}.from`, workspace.settings[k]], [`${k}.to`, patch[k]!]])),

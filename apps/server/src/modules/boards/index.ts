@@ -86,6 +86,11 @@ export function boardIdsInWorkspace(workspaceId: string): Promise<string[]> {
   return repo.idsInWorkspace(workspaceId);
 }
 
+/** Board usage of a workspace for its admin console (trash counted apart; owners of live boards). */
+export function workspaceBoardStats(workspaceId: string): ReturnType<typeof repo.workspaceStats> {
+  return repo.workspaceStats(workspaceId, Date.now());
+}
+
 export function boardIdsInProject(projectId: string): Promise<string[]> {
   return repo.idsInProject(projectId);
 }

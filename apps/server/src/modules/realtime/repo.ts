@@ -326,6 +326,34 @@ export async function deleteSnapshots(boardId: string, ids: number[]): Promise<n
 }
 
 /**
+ * What the stored content of these boards takes (documents, update logs, version history,
+ * layers), and the upload names it references (matches of `pattern`'s first group).
+ */
+export async function storedContentOf(boardIds: string[], pattern: string): Promise<{ bytes: number; names: string[] }> {
+  if (!boardIds.length) return { bytes: 0, names: [] };
+  const size = await one<{ n: string | number }>(
+    `SELECT (
+       COALESCE((SELECT sum(octet_length(state)) FROM board_docs WHERE board_id = ANY($1::text[])), 0) +
+       COALESCE((SELECT sum(octet_length(data)) FROM board_doc_updates WHERE board_id = ANY($1::text[])), 0) +
+       COALESCE((SELECT sum(octet_length(state)) FROM board_doc_snapshots WHERE board_id = ANY($1::text[])), 0) +
+       COALESCE((SELECT sum(octet_length(state)) FROM board_layers WHERE board_id = ANY($1::text[])), 0) +
+       COALESCE((SELECT sum(octet_length(data)) FROM board_layer_updates WHERE board_id = ANY($1::text[])), 0)
+     )::bigint AS n`,
+    [boardIds],
+  );
+  const rows = await query<{ name: string }>(
+    `SELECT DISTINCT m[1] AS name FROM (
+       SELECT regexp_matches(encode(state, 'escape'), $2, 'g') AS m FROM board_docs WHERE board_id = ANY($1::text[])
+       UNION ALL SELECT regexp_matches(encode(data, 'escape'), $2, 'g') FROM board_doc_updates WHERE board_id = ANY($1::text[])
+       UNION ALL SELECT regexp_matches(encode(state, 'escape'), $2, 'g') FROM board_layers WHERE board_id = ANY($1::text[])
+       UNION ALL SELECT regexp_matches(encode(data, 'escape'), $2, 'g') FROM board_layer_updates WHERE board_id = ANY($1::text[])
+     ) found`,
+    [boardIds, pattern],
+  );
+  return { bytes: Number(size?.n ?? 0), names: rows.map((r) => r.name) };
+}
+
+/**
  * Every match of `pattern`'s first group in any stored document byte: bases, the update log,
  * version-history snapshots and board layers (private drafts, hidden frames), of every board
  * including trashed ones (restricted to `among` when given). Yjs updates store element values as whole UTF-8 strings, and `encode(…, 'escape')`

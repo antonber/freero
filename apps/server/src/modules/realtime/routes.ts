@@ -73,6 +73,7 @@ export default function versionRoutes(_ctx: ServerContext): Router {
       const before = await restoreVersion(req.params.id, versionId, user.id);
       await recordAuditQuietly({
         action: 'version.restored',
+        actorId: user.id,
         workspaceId: board.workspaceId,
         target: { type: 'board', id: req.params.id, label: board.title },
         metadata: { version: versionId, beforeRestoreVersion: before.id },
