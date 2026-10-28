@@ -6,7 +6,7 @@ import manifest from './feature';
 import mindmapDef from './element';
 import { addChild, currentIndex, newRoot } from './lib/actions';
 import { mapsToOutline, outlineFromPaste } from './lib/outline';
-import type { MindNode } from './lib/tree';
+import { sideOf, type MindNode } from './lib/tree';
 
 const bundle = { manifest, elements: [mindmapDef], tools: [], formats: [], panels: [], commands: [] };
 
@@ -22,6 +22,14 @@ const treeOf = (ed: Editor): Tree[] => {
 const byText = (t: Tree[]): Tree[] => t.map((n) => ({ text: n.text, kids: byText(n.kids) })).sort((a, b) => a.text.localeCompare(b.text));
 const paste = (ed: Editor, text: string) => mindmapDef.importData!(ed, { files: [], text, html: null }, { x: 0, y: 0 });
 const leaf = (text: string): Tree => ({ text, kids: [] });
+/** The root's branches on each side, top to bottom. */
+const sides = (ed: Editor) => {
+  const index = currentIndex(ed);
+  const root = [...index.byId.values()].find((n) => !n.parentId)!;
+  const name = (n: MindNode) => richTextToPlain(ed.getElement<MindmapElement>(n.id)!.text);
+  const kids = index.kids.get(root.id) ?? [];
+  return { right: kids.filter((k) => sideOf(k, root) === 'right').map(name), left: kids.filter((k) => sideOf(k, root) === 'left').map(name) };
+};
 
 describe('outlines', () => {
   it('a pasted 3-level outline becomes a map with that tree in one undo step; copied out as an outline, it pastes back identical', () => {
@@ -42,6 +50,8 @@ describe('outlines', () => {
           ],
         },
       ]);
+      const firstSides = sides(ed);
+      expect(firstSides.right.length + firstSides.left.length).toBe(4);
       ed.undo();
       expect(treeOf(ed)).toEqual([]);
       ed.redo();
@@ -50,7 +60,9 @@ describe('outlines', () => {
       ed.remove([root.id]);
       expect(paste(ed, copied.text)).toBe(true);
       // Same tree, same sibling order on each side (a two-sided map lists its branches alternating).
-      expect(treeOf(ed)).toEqual(first);
+      // (Across the two sides there is no order: branches level with each other tie.)
+      expect(byText(treeOf(ed))).toEqual(byText(first));
+      expect(sides(ed)).toEqual(firstSides);
     } finally {
       board.destroy();
     }
