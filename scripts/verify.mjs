@@ -2983,21 +2983,29 @@ async function uploadSweepChecks() {
     const files = {};
     const fileStatus = async (url) => (await fetch(`http://127.0.0.1:${server.port}${url}`, { redirect: 'manual' })).status;
     const board = async (title) => (await U.req('POST', '/api/boards', { title })).json.board.id;
-    const place = async (boardId, url) => {
+    const place = async (boardId, url, el = { id: 'img', type: 'image' }) => {
       const c = connectDoc(U, boardId);
       await c.ready();
-      els(c).set('img', { id: 'img', type: 'image', x: 0, y: 0, w: 10, h: 10, src: url });
+      els(c).set(el.id, { x: 0, y: 0, w: 10, h: 10, src: url, ...el });
       await settled(c); // the server has it
       c.destroy(); // the last client leaving saves the doc right away
     };
 
-    await check('uploads sweep: images on a live, a trashed, a purged and a copied board, in a template, as an avatar, and one never used', async () => {
+    await check('uploads sweep: images on a live, a trashed, a purged and a copied board, in a template, as an avatar, and one never used; a file card and an attachment never placed', async () => {
       for (const k of ['live', 'trashed', 'purged', 'copied', 'template', 'avatar', 'unused']) {
         const r = await U.req('POST', '/api/uploads', PNG_1PX, { raw: true, headers: { 'content-type': 'image/png' } });
         assert(r.status === 201, `upload ${k} -> ${r.status}`);
         files[k] = r.json.url;
       }
-      await place(await board('Live'), files.live);
+      const live = await board('Live');
+      await place(live, files.live);
+      // File cards (KAI-128): an attachment on the live board, and one never placed.
+      for (const k of ['card', 'cardUnused']) {
+        const r = await U.req('POST', '/api/uploads?as=attachment', Buffer.from(`notes ${k}`), { raw: true, headers: { 'content-type': 'text/plain' } });
+        assert(r.status === 201, `attach ${k} -> ${r.status}`);
+        files[k] = r.json.url;
+      }
+      await place(live, files.card, { id: 'card', type: 'file', name: 'notes.txt', size: 11, mime: 'text/plain' });
       const trashed = await board('Trashed');
       await place(trashed, files.trashed);
       assert((await U.req('DELETE', `/api/boards/${trashed}`)).status === 200, 'trash');
@@ -3031,7 +3039,8 @@ async function uploadSweepChecks() {
         assert((await fileStatus(files[k])) === 200, `${k} image was deleted although it is still used`);
       await stopServer();
       const rows = await withDb(dataDir, (q) => q('SELECT name FROM uploads'));
-      const kept = ['live', 'trashed', 'copied', 'template', 'avatar'].map((k) => files[k].slice('/uploads/'.length)).sort();
+      // The file card on the live board stays; the attachment never placed went with the round.
+      const kept = ['live', 'trashed', 'copied', 'template', 'avatar', 'card'].map((k) => files[k].slice('/uploads/'.length)).sort();
       assert(isDeepStrictEqual(rows.map((r) => r.name).sort(), kept), `quota rows left: ${JSON.stringify(rows)}`);
     });
   } finally {
@@ -4286,6 +4295,144 @@ async function moderationChecks() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Video, audio and any other file on a board (KAI-128), on its own server: media is stored by what
+// its bytes are and served with byte ranges (seeking); attachments are never served at /uploads/,
+// only downloaded from their board — under the workspace's downloads policy, audited, as an
+// attachment — and operator removal answers 410 on both paths.
+// ---------------------------------------------------------------------------
+async function mediaChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-media-'));
+  const outerDbUrl = db.url;
+  const Op = new User('MediaOperator');
+  const O = new User('MediaOwner');
+  const M = new User('MediaMember');
+  const S = new User('MediaStranger');
+  // Real caps, small enough to cross: 60 MB for video/audio (a 50 MB clip fits), 1 MB for other
+  // files, an 80 MB quota (one clip fits, two don't).
+  const env = { OPERATOR_EMAILS: Op.email, MAX_MEDIA_UPLOAD_MB: '60', MAX_ATTACHMENT_UPLOAD_MB: '1', UPLOAD_QUOTA_MB: '80' };
+  const base = () => `http://127.0.0.1:${server.port}`;
+  const get = (url, headers = {}) => fetch(`${base()}${url}`, { headers, redirect: 'manual' });
+  /** An ISO media (MP4) file of `bytes` bytes: an "ftyp" box, then a recognisable byte pattern. */
+  const mp4 = (bytes) => {
+    const b = Buffer.alloc(bytes);
+    for (let i = 0; i < bytes; i += 4096) b.writeUInt32BE(i, i);
+    b.writeUInt32BE(24, 0);
+    b.write('ftypisom', 4, 'latin1');
+    return b;
+  };
+  const place = async (user, boardId, el) => {
+    const c = connectDoc(user, boardId);
+    await c.ready();
+    els(c).set(el.id, { x: 0, y: 0, w: 320, h: 84, rotation: 0, z: 1, ...el });
+    await settled(c);
+    c.destroy();
+  };
+  const HTML = Buffer.from('<!doctype html><script>document.title = document.cookie</script>');
+  try {
+    if (ADMIN_URL) db.url = await createDatabase();
+    if (!(await check('media: server boots', async () => waitUp((server = await spawnServer(dataDir, env)))))) return;
+    for (const u of [Op, O, M, S]) {
+      await u.signup();
+      await u.verifyEmail(dataDir);
+    }
+    const ws = (await O.req('POST', '/api/workspaces', { name: 'Media team' })).json.workspace.id;
+    assert((await O.req('POST', `/api/workspaces/${ws}/members`, { email: M.email, role: 'member' })).status === 201, 'add member');
+    const board = (await O.req('POST', '/api/boards', { title: 'Media', workspaceId: ws })).json.board.id;
+
+    let video = null;
+    const clip = mp4(50 * 1024 * 1024);
+    await check('media: a 50 MB MP4 is stored by its bytes and seeks — byte ranges (start, middle, suffix) return exactly those bytes; past the end is 416', async () => {
+      const up = await O.req('POST', '/api/uploads', clip, { raw: true, headers: { 'content-type': 'video/mp4' } });
+      assert(up.status === 201 && /^\/uploads\/[A-Za-z0-9_-]+\.mp4$/.test(up.json?.url), `upload -> ${up.status} ${up.text.slice(0, 200)}`);
+      video = up.json.url;
+      const full = await get(video);
+      assert(full.status === 200 && full.headers.get('accept-ranges') === 'bytes' && full.headers.get('content-type') === 'video/mp4', `full -> ${full.status} ${[...full.headers]}`);
+      assert(Number(full.headers.get('content-length')) === clip.length && full.headers.get('x-content-type-options') === 'nosniff', 'full length / nosniff');
+      await full.body.cancel();
+      for (const [range, start, end] of [
+        ['bytes=0-1023', 0, 1023],
+        ['bytes=31457280-31461375', 31457280, 31461375],
+        ['bytes=-5000', clip.length - 5000, clip.length - 1],
+        [`bytes=${clip.length - 10}-`, clip.length - 10, clip.length - 1],
+      ]) {
+        const r = await get(video, { range });
+        const body = Buffer.from(await r.arrayBuffer());
+        assert(r.status === 206 && r.headers.get('content-range') === `bytes ${start}-${end}/${clip.length}`, `${range} -> ${r.status} ${r.headers.get('content-range')}`);
+        assert(body.equals(clip.subarray(start, end + 1)), `${range}: wrong bytes`);
+      }
+      const past = await get(video, { range: `bytes=${clip.length}-` });
+      assert(past.status === 416 && past.headers.get('content-range') === `bytes */${clip.length}`, `past the end -> ${past.status}`);
+    });
+
+    await check('media: refused with a clear message — a page labelled as a video (415), a video over its cap, a file over the attachment cap (413); quotas count media', async () => {
+      const fake = await O.req('POST', '/api/uploads', HTML, { raw: true, headers: { 'content-type': 'video/mp4' } });
+      assert(fake.status === 415 && /video or audio format/.test(fake.json?.error), `fake video -> ${fake.status} ${fake.text}`);
+      const big = await O.req('POST', '/api/uploads', mp4(61 * 1024 * 1024), { raw: true, headers: { 'content-type': 'video/mp4' } });
+      assert(big.status === 413 && /max 60MB for video and audio/.test(big.json?.error), `big video -> ${big.status} ${big.text}`);
+      const bigFile = await O.req('POST', '/api/uploads?as=attachment', Buffer.alloc(2 * 1024 * 1024, 7), { raw: true, headers: { 'content-type': 'application/octet-stream' } });
+      assert(bigFile.status === 413 && /max 1MB for files/.test(bigFile.json?.error), `big file -> ${bigFile.status} ${bigFile.text}`);
+      // The 50 MB clip counts toward the 80 MB quota: a second one doesn't fit.
+      const again = await O.req('POST', '/api/uploads', clip, { raw: true, headers: { 'content-type': 'video/mp4' } });
+      assert(again.status === 413 && /quota/i.test(again.json?.error), `second clip -> ${again.status} ${again.text}`);
+    });
+
+    let card = null;
+    await check('media: a file card is never served at /uploads/, downloads from its board as an attachment under its own name, and only from a board it is on', async () => {
+      const up = await O.req('POST', '/api/uploads?as=attachment', HTML, { raw: true, headers: { 'content-type': 'text/html' } });
+      assert(up.status === 201 && /\.bin$/.test(up.json?.url), `attach -> ${up.status} ${up.text}`);
+      card = up.json.url;
+      assert((await get(card)).status === 404, 'an attachment is served at /uploads/');
+      await place(O, board, { id: 'card', type: 'file', src: card, name: 'Plan “final”.html', size: HTML.length, mime: 'text/html' });
+      const r = await O.req('GET', `/api/boards/${board}/files/card`);
+      assert(r.status === 200 && r.text === HTML.toString(), `download -> ${r.status}`);
+      assert(r.headers.get('content-type') === 'application/octet-stream' && r.headers.get('x-content-type-options') === 'nosniff', `type ${r.headers.get('content-type')}`);
+      const cd = r.headers.get('content-disposition') ?? '';
+      assert(cd.startsWith('attachment;') && cd.includes(`filename*=UTF-8''Plan%20%E2%80%9Cfinal%E2%80%9D.html`), `disposition: ${cd}`);
+      const other = (await O.req('POST', '/api/boards', { title: 'Elsewhere', workspaceId: ws })).json.board.id;
+      assert((await O.req('GET', `/api/boards/${other}/files/card`)).status === 404, 'downloaded through a board it is not on');
+      assert((await O.req('GET', `/api/boards/${board}/files/nope`)).status === 404, 'unknown item');
+      assert([403, 404].includes((await S.req('GET', `/api/boards/${board}/files/card`)).status), 'a stranger downloaded it');
+    });
+
+    await check('media: downloads follow the workspace downloads policy and land in its audit log, like exports', async () => {
+      assert((await M.req('GET', `/api/boards/${board}/files/card`)).status === 200, 'member download');
+      assert((await O.req('PATCH', `/api/workspaces/${ws}`, { policies: { downloads: 'admins' } })).status === 200, 'policy');
+      const refused = await M.req('GET', `/api/boards/${board}/files/card`);
+      assert(refused.status === 403, `member downloaded under an admins-only policy -> ${refused.status}`);
+      assert((await O.req('GET', `/api/boards/${board}/files/card`)).status === 200, 'owner refused');
+      const evs = (await O.req('GET', `/api/workspaces/${ws}/audit?limit=50&action=board.file_downloaded`)).json.events;
+      const by = evs.map((e) => e.actor?.id).sort();
+      assert(evs.length === 3 && isDeepStrictEqual(by, [M.id, O.id, O.id].sort()), `audit: ${JSON.stringify(evs)}`);
+      assert(evs.every((e) => e.metadata.file === 'Plan “final”.html' && e.target.id === board), `audit detail: ${JSON.stringify(evs[0])}`);
+      assert((await O.req('PATCH', `/api/workspaces/${ws}`, { policies: { downloads: 'anyone' } })).status === 200, 'reset');
+    });
+
+    await check('media: a file an operator removed answers 410 both at /uploads/ and from its board', async () => {
+      await place(O, board, { id: 'clip', type: 'media', kind: 'video', src: video, name: 'clip.mp4', size: clip.length, duration: 0, naturalW: 0, naturalH: 0 });
+      for (const [url, target] of [
+        [video, 'clip'],
+        [card, 'card'],
+      ]) {
+        const r = await Op.req('POST', '/api/moderation/actions', { action: 'upload.remove', targetId: url, reason: 'illegal', statement: 'Checked by verify.', boardId: board });
+        assert(r.status === 200, `remove ${url}: ${r.text}`);
+        assert((await get(url)).status === 410, `${url} at /uploads/`);
+        assert((await O.req('GET', `/api/boards/${board}/files/${target}`)).status === 410, `${target} from the board`);
+      }
+    });
+  } finally {
+    closeAllDocs();
+    await stopServer();
+    await dropDatabases();
+    db.url = outerDbUrl;
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
 // `--only <group>[,<group>…]` runs some groups, e.g. to loop one while hunting a flake.
 const SUITES = {
   main: run,
@@ -4293,6 +4440,7 @@ const SUITES = {
   recovery: twoFactorRecoveryChecks,
   secrets: secretRotationChecks,
   sweep: uploadSweepChecks,
+  media: mediaChecks,
   purge: accountPurgeChecks,
   notify: notificationChecks,
   teams: teamsChecks,
