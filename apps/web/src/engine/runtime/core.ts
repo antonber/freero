@@ -23,6 +23,7 @@ export interface ExportOptions {
   background?: string | null;
   padding?: number;
   skipFonts?: boolean;
+  onMissingImages?: (count: number) => void;
 }
 
 export class Emitter {
