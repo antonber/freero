@@ -108,9 +108,11 @@ const EmbedView = memo(function EmbedView({ element: el, selected }: ElementRend
 
   if (active && live && !exporting) return <LiveFrame el={el} live={live} selected={selected} onClose={() => setActive(false)} />;
 
+  // Opening it selects it, so the frame takes input right away.
   const activate = (e: MouseEvent) => {
     e.stopPropagation();
     setActive(true);
+    editor.select([el.id]);
   };
   return (
     <div className={`fr-embed${loading ? ' is-loading' : ''}${image || live ? '' : ' fr-embed--text'}`}>
