@@ -234,8 +234,13 @@ export function unsubscribeToken(userId: string): string {
 export function verifyUnsubscribeToken(token: string): string | null {
   const [id, sig] = token.split('.');
   if (!id || !sig) return null;
+  const given = Buffer.from(sig, 'base64url');
+  // Only the exact token we issued: base64url decoding ignores a final character's spare bits (and
+  // stray characters), so a link altered there would otherwise still verify.
+  if (given.toString('base64url') !== sig) return null;
   const userId = Buffer.from(id, 'base64url').toString();
-  return macMatches(message(userId), Buffer.from(sig, 'base64url')) ? userId : null;
+  if (Buffer.from(userId).toString('base64url') !== id) return null;
+  return macMatches(message(userId), given) ? userId : null;
 }
 
 /** Turns all notification emails off for the token's user; returns their address (null: bad token). */

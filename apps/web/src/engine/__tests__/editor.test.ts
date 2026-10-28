@@ -122,6 +122,23 @@ describe('z-order and grouping', () => {
     expect(core.editor.hitTest({ x: 10, y: 10 })!.id).toBe(a);
   });
 
+  it('bring forward passes the next OVERLAPPING item only (one undo step); send backward never jumps a selected item', () => {
+    core = makeCore();
+    const at = (x: number) => core.editor.create({ type: 'sticky', x, y: 0 } as never);
+    const bottom = at(0);
+    const far = at(5000); // between them in z, but nowhere near: stepping past it changes nothing
+    const middle = at(50);
+    const top = at(60);
+    const order = () => core.editor.getElements().map((e) => e.id);
+    core.editor.bringForward([bottom]);
+    expect(order().filter((id) => id !== far)).toEqual([middle, bottom, top]);
+    core.editor.undo();
+    expect(order()).toEqual([bottom, far, middle, top]);
+    // Middle + top selected, stepped back: both pass `bottom`, and keep their own order.
+    core.editor.sendBackward([middle, top]);
+    expect(order().filter((id) => id !== far)).toEqual([middle, top, bottom]);
+  });
+
   it('deleting a frame deletes its children', () => {
     core = makeCore({
       bundles: [bundle('boxes', { elements: [boxDef as ElementDefinition<any>, { ...boxDef, type: 'frame', container: true } as ElementDefinition<any>] })],

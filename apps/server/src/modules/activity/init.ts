@@ -7,7 +7,7 @@ import { onAccessDecided, onBoardShared } from '../members/index';
 import { onBoardChange, onCommentMessage } from '../realtime/index';
 import * as service from './service';
 
-const PRUNE_LOCK_KEY = 7_202_610_302; // arbitrary, constant across releases
+const PRUNE_LOCK_KEY = 7_202_610_432; // arbitrary, constant across releases
 
 /** The activity feed's sources (trusted server events), its burst writer and retention. */
 export default function initActivity(ctx: ServerContext): void {

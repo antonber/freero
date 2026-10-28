@@ -1,9 +1,6 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { generate } from 'otplib';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { outboxDir } from '../../platform/mail';
-import { closeTestDb, openTestDb } from '../../platform/testing';
+import { closeTestDb, mailedLink, mailIdle, openTestDb, outboxMails } from '../../platform/testing';
 import { confirmEmailChange, requestEmailChange, revertEmailChange } from './emails';
 import * as repo from './repo';
 import { checkCredentials, createUser, hashToken, newToken } from './service';
@@ -15,30 +12,10 @@ afterAll(() => closeTestDb());
 let n = 0;
 const email = (label: string) => `${label}-${++n}@notices.test.freero.app`;
 
-type Mail = { to: string; subject: string; text: string; html: string };
-const mailsTo = (to: string): Mail[] => {
-  const dir = outboxDir();
-  if (!fs.existsSync(dir)) return [];
-  return fs
-    .readdirSync(dir)
-    .map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')) as Mail)
-    .filter((m) => m.to === to);
-};
-
-async function mailedToken(to: string, route: string, timeoutMs = 3000): Promise<string> {
-  const end = Date.now() + timeoutMs;
-  for (;;) {
-    const m = mailsTo(to)
-      .map((t) => new RegExp(`${route}\\?token=([A-Za-z0-9_-]+)`).exec(t.text))
-      .find(Boolean);
-    if (m) return m[1];
-    if (Date.now() > end) throw new Error(`no ${route} link mailed to ${to}`);
-    await new Promise((r) => setTimeout(r, 20));
-  }
-}
-
-/** Notices are sent after the answer (sendMailLater): give them a moment to land. */
-const settle = () => new Promise((r) => setTimeout(r, 300));
+const mailsTo = (to: string) => outboxMails().filter((m) => m.to === to);
+const mailedToken = (to: string, route: string) => mailedLink(to, new RegExp(`${route}\\?token=([A-Za-z0-9_-]+)`));
+/** Notices are sent after the answer (sendMailLater): wait until those sends are done. */
+const settle = mailIdle;
 
 async function session(userId: string): Promise<string> {
   const key = hashToken(newToken());

@@ -31,6 +31,7 @@ installed. Copy [`.env.example`](../.env.example) as a starting point.
 | `FREERO_RELEASE` | — | | Release/version tag on logs and error reports (e.g. the git SHA). |
 | `FREERO_WEB_DIST` | `apps/web/dist` | | Built web app to serve. |
 | `FREERO_DOC_IDLE_MS` | `30000` | | Idle time before a board without connections is unloaded from memory. |
+| `FREERO_SNAPSHOT_EVERY_MS` | `1800000` | | Automatic versions (version history): a board that changed gets one at most this often, also while people keep it open. Retention thins old ones. |
 | `SHUTDOWN_DRAIN_SECONDS` | `5` in prod, else `0` | | On SIGTERM, `/readyz` answers 503 for this long before connections close, so load balancers stop routing to the instance first. |
 
 ## Database
@@ -85,6 +86,8 @@ Links in emails point at `PUBLIC_URL` (in development: the origin the request ca
 |---|---|---|
 | `ACCOUNT_DELETION_GRACE_DAYS` | `14` | After someone deletes their account, how long they can log in and restore it before it is purged (`0` = at the next purge run). |
 | `ACCOUNT_PURGE_INTERVAL_SECONDS` | `3600` | How often each instance looks for accounts to purge. One instance purges at a time (Postgres advisory lock); a purge cut short is finished by the next run. |
+| `TWO_FACTOR_UNDO_HOURS` | `72` | How long the "This wasn't me" button in the "two-step verification is on" notice works (1–336). Meanwhile whoever reads the account's address can remove that new authenticator, so keep it short. See ARCHITECTURE.md, "Two-step verification recovery". |
+| `TWO_FACTOR_RECOVERY_DELAY_SECONDS` | `604800` (7 days) | How long a "lost my authenticator" recovery waits before the link that removes two-step verification is mailed. The owner is mailed at the start and a day before the end, and using the authenticator cancels it. At least `86400` in production; shorter only for tests. |
 
 ## Sign in with Google / Microsoft (OpenID Connect)
 
@@ -171,6 +174,7 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `RATE_LIMIT_VERSION` | `60/1h` | Naming or restoring a board version (each keeps a full copy of the board), per user. |
 | `RATE_LIMIT_WS_CONNECT` | `200/1m` | WebSocket connections per IP and, separately, per user. |
 | `RATE_LIMIT_TWO_FACTOR` | `10/15m` | Two-step verification codes: the sign-in second step per IP and per account (each pending sign-in also allows only 5 wrong codes), and turning it on/off or renewing recovery codes per user. |
+| `RATE_LIMIT_TWO_FACTOR_RECOVERY` | `3/1d` | "Lost my authenticator" recoveries started, per IP and per account (each start mails the owner). |
 | `RATE_LIMIT_OIDC` | `60/10m` | "Sign in with …" starts and callbacks per IP. |
 
 Rule format: `<count>/<window>` with the window in `s`, `m`, `h` or `d` and an optional multiplier

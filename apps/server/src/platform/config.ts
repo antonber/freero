@@ -1,6 +1,7 @@
 // The one typed, validated configuration, read from the environment once by main.ts.
 // Every variable is documented in docs/configuration.md (and .env.example). Invalid values fail in
 // every environment; missing production requirements fail at startup with the full list.
+import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -21,6 +22,7 @@ export type RateLimitName =
   | 'version'
   | 'wsConnect'
   | 'twoFactor'
+  | 'twoFactorRecovery'
   | 'oidc'
   | 'accessRequest'
   | 'guestJoin';
@@ -59,6 +61,13 @@ export interface OidcProviderConfig {
   verifiedEmailClaims: string[];
 }
 
+/**
+ * Local files (dev outbox, uploads) of a FREERO_DATA_DIR=memory process. Never just the pid: pids
+ * are reused (quickly, on Windows), and a test reading the outbox of an earlier process with the
+ * same pid found that run's mail to the same address and used its stale link.
+ */
+const MEMORY_FILES_DIR = path.join(os.tmpdir(), `freero-memory-${process.pid}-${randomBytes(6).toString('hex')}`);
+
 export interface Config {
   port: number;
   /** External origin users reach the app at (https://freero.example.com), or null in dev. */
@@ -78,6 +87,8 @@ export interface Config {
   release: string | null;
   /** Idle time before an unused board doc is unloaded from memory. */
   docIdleMs: number;
+  /** Automatic versions: at most one per board this often (while it is open, and at compaction). */
+  snapshotEveryMs: number;
   databaseUrl: string | null;
   /** Max Postgres connections per process (DATABASE_POOL_MAX). */
   dbPoolMax: number;
@@ -108,6 +119,13 @@ export interface Config {
   accountDeletionGraceMs: number;
   /** How often each instance looks for accounts due to be purged. */
   accountPurgeIntervalMs: number;
+  /**
+   * How long a "lost my authenticator" recovery waits before two-step verification can be removed
+   * (the owner is mailed at the start and before the end, and can cancel). At least a day in production.
+   */
+  twoFactorRecoveryDelayMs: number;
+  /** How long the "this wasn't me" link of the two-step-on notice works. */
+  twoFactorUndoMs: number;
   /**
    * How long a notification waits before it is emailed: everything a person got meanwhile goes out
    * as one digest, and what they read in the app by then is not emailed at all.
@@ -152,6 +170,7 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   version: '60/1h', // per user (naming or restoring a board version: each keeps a full copy)
   wsConnect: '200/1m', // per IP and per user
   twoFactor: '10/15m', // two-factor codes per IP and per account (sign-in second step, enrolment, disabling)
+  twoFactorRecovery: '3/1d', // "lost my authenticator" recoveries started, per IP and per account
   oidc: '60/10m', // "Sign in with …" starts and callbacks per IP
   accessRequest: '20/1h', // per user: asking for access to boards
   guestJoin: '20/1h', // per IP: visitors joining a shared board without an account
@@ -172,6 +191,7 @@ const ENV_NAME: Record<RateLimitName, string> = {
   version: 'RATE_LIMIT_VERSION',
   wsConnect: 'RATE_LIMIT_WS_CONNECT',
   twoFactor: 'RATE_LIMIT_TWO_FACTOR',
+  twoFactorRecovery: 'RATE_LIMIT_TWO_FACTOR_RECOVERY',
   oidc: 'RATE_LIMIT_OIDC',
   accessRequest: 'RATE_LIMIT_ACCESS_REQUEST',
   guestJoin: 'RATE_LIMIT_GUEST_JOIN',
@@ -242,10 +262,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   const production = env.NODE_ENV === 'production';
   const environment = str('FREERO_ENV') ?? (production ? 'production' : (env.NODE_ENV ?? 'development'));
-  // FREERO_DATA_DIR=memory: in-memory database (tests); local files go to a temp dir.
+  // FREERO_DATA_DIR=memory: in-memory database (tests); local files go to a temp dir of this process.
   const memory = env.FREERO_DATA_DIR?.trim() === 'memory';
   const dataDir = memory
-    ? path.join(os.tmpdir(), `freero-memory-${process.pid}`)
+    ? MEMORY_FILES_DIR
     : path.resolve(env.FREERO_DATA_DIR || path.join(REPO_ROOT, 'data'));
 
   const publicUrlRaw = url('PUBLIC_URL', ['http:', 'https:']);
@@ -337,6 +357,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     environment,
     release: str('FREERO_RELEASE'),
     docIdleMs: int('FREERO_DOC_IDLE_MS', 30_000, 100),
+    snapshotEveryMs: int('FREERO_SNAPSHOT_EVERY_MS', 30 * 60_000, 100),
     databaseUrl: url('DATABASE_URL', ['postgres:', 'postgresql:']),
     dbPoolMax: int('DATABASE_POOL_MAX', 10, 1, 1000),
     redisUrl: url('REDIS_URL', ['redis:', 'rediss:']),
@@ -359,6 +380,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     shutdownDrainMs: int('SHUTDOWN_DRAIN_SECONDS', production ? 5 : 0, 0, 300) * 1000,
     accountDeletionGraceMs: int('ACCOUNT_DELETION_GRACE_DAYS', 14, 0, 365) * 86_400_000,
     accountPurgeIntervalMs: int('ACCOUNT_PURGE_INTERVAL_SECONDS', 3600, 1, 7 * 86_400) * 1000,
+    // Shorter than a day only outside production (tests); see docs/configuration.md.
+    twoFactorRecoveryDelayMs: int('TWO_FACTOR_RECOVERY_DELAY_SECONDS', 7 * 86_400, production ? 86_400 : 1, 90 * 86_400) * 1000,
+    twoFactorUndoMs: int('TWO_FACTOR_UNDO_HOURS', 72, 1, 14 * 24) * 3_600_000,
     notifyEmailDelayMs: int('NOTIFY_EMAIL_DELAY_SECONDS', 900, 0, 7 * 86_400) * 1000,
     notifyEmailIntervalMs: int('NOTIFY_EMAIL_INTERVAL_SECONDS', 60, 1, 86_400) * 1000,
     activityIdleMs: int('ACTIVITY_IDLE_SECONDS', 60, 1, 3600) * 1000,

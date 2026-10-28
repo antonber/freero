@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BookmarkPlus, LayoutTemplate, Plus, Search, Trash2, Users } from 'lucide-react';
-import { definePanel, useCanEdit, useSelection, type Editor, type SavedTemplateInfo } from '@engine';
+import { DockHeader, definePanel, useCanEdit, useSelection, type Editor, type SavedTemplateInfo } from '@engine';
 import { Button, Input, Spinner, formatShortcut } from '@ui';
 import { TEMPLATES } from './lib/catalog';
 import { DOCK_ID, insertTemplate } from './lib/insert';
@@ -174,10 +174,10 @@ function TemplatesPanel({ editor }: { editor: Editor }) {
 
   return (
     <div className="fr-tpl">
-      <header className="fr-tpl__head">
+      <DockHeader className="fr-tpl__head">
         <h2 className="fr-tpl__title">Templates</h2>
         <p className="fr-tpl__sub">Start from a ready-made layout, or one you saved. Everything stays editable.</p>
-      </header>
+      </DockHeader>
       <Button size="sm" icon={BookmarkPlus} onClick={saveOpen} className="fr-tpl__save">
         {hasSelection ? 'Save selection as template' : 'Save board as template'}
       </Button>

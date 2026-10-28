@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Bookmark, History, Pencil, RotateCw } from 'lucide-react';
 import type { BoardVersion } from '@freero/shared';
-import { definePanel, type Editor, type PanelProps } from '@engine';
+import { DockHeader, definePanel, type Editor, type PanelProps } from '@engine';
 import { Button, IconButton, Spinner } from '@ui';
 import { PANEL_ID, PREVIEW_ID } from './lib/ids';
 import { NameField } from './lib/NameField';
@@ -66,10 +66,12 @@ function HistoryPanel({ editor }: PanelProps) {
 
   return (
     <div className="fr-history">
-      <h2 className="fr-history__title">
-        Version history
-        <IconButton icon={RotateCw} size={32} label="Refresh" disabled={loading} onClick={() => void refreshVersions(editor)} />
-      </h2>
+      <DockHeader className="fr-history__head">
+        <h2 className="fr-history__title">
+          Version history
+          <IconButton icon={RotateCw} size={32} label="Refresh" disabled={loading} onClick={() => void refreshVersions(editor)} />
+        </h2>
+      </DockHeader>
 
       <section className="fr-history__current" aria-label="Current version">
         <div className="fr-history__currenthead">

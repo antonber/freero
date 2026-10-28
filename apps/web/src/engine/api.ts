@@ -18,8 +18,12 @@ import type {
   BoardSettings,
   ElementOf,
   ElementType,
+  FontFamily,
   PresenceState,
   Role,
+  StrokeStyle,
+  TextAlign,
+  VerticalAlign,
 } from '@freero/shared';
 
 /** [additive] Where an element lives (see Editor.layerOf and ARCHITECTURE.md "Board layers"). */
@@ -447,6 +451,38 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
    * unrelated changes. `editor` is scoped to the defining feature.
    */
   arrange?(element: ElementOf<T>, ctx: ArrangeContext): Array<{ id: string; patch: ElementPatch }> | null;
+  /**
+   * [additive] The look this type shares with other types, for editing a mixed selection (a
+   * sticky, two shapes and a text box at once): return the CURRENT value of every `SharedStyle`
+   * key the type has; leave out what it doesn't (a text box has no fill). The engine's
+   * mixed-selection toolbar shows a control when two or more selected items have its key.
+   */
+  sharedStyle?(element: ElementOf<T>): SharedStyle;
+  /**
+   * [additive] The patch that applies `style` (only the keys being changed, and only keys this
+   * type's `sharedStyle` reports) to this element, in its own fields: a sticky maps `fill` to its
+   * nearest paper colour, a text box ignores `fontSize: 'auto'`. null/empty when nothing applies.
+   * Default: each key is written to the field of the same name. The engine writes every selected
+   * element's patch in one `updateMany` (one undo step); the definition stays the only place
+   * that knows its fields.
+   */
+  applySharedStyle?(element: ElementOf<T>, style: SharedStyle): ElementPatch<ElementOf<T>> | null;
+}
+
+/** [additive] Style keys several element types share (see `ElementDefinition.sharedStyle`). */
+export interface SharedStyle {
+  /** Main colour as a css hex colour: a sticky's paper, a shape's or frame's fill, a card's accent. */
+  fill?: string;
+  /** Line / border colour. */
+  stroke?: string;
+  strokeWidth?: number;
+  strokeStyle?: StrokeStyle;
+  fontFamily?: FontFamily;
+  /** px, or 'auto' (shrink to fit) for types that fit text to their box. */
+  fontSize?: number | 'auto';
+  textColor?: string;
+  align?: TextAlign;
+  vAlign?: VerticalAlign;
 }
 
 /** [additive] What `ElementDefinition.arrange` is told. */
@@ -610,6 +646,12 @@ export interface CommandDefinition {
   label: string;
   /** e.g. 'mod+d', 'shift+1', 'g'. 'mod' = Ctrl on Windows/Linux, Cmd on macOS. */
   shortcut?: string;
+  /**
+   * [additive] Further bindings that run the same command, e.g. a layout-independent one for a
+   * punctuation shortcut some keyboards can't press. Listed in the shortcut reference after
+   * `shortcut`; menus show `shortcut` only.
+   */
+  extraShortcuts?: string[];
   /** Where it appears besides the shortcut: right-click menu and/or the board "…" menu. */
   menus?: Array<'context' | 'board'>;
   /** [additive] Icon shown in the context and board menus (lucide-style component). */
@@ -621,6 +663,24 @@ export interface CommandDefinition {
   group?: string;
   minRole?: Role;
   when?(editor: Editor): boolean;
+  /**
+   * [additive] Why `when` is false right now ("Select two or more items"), for the command
+   * palette, which lists unavailable commands greyed out with this reason. A function may name
+   * what's missing from the live board. Without it the palette says "Not available right now".
+   */
+  disabledReason?: string | ((editor: Editor) => string | undefined);
+  /**
+   * [additive] A short live detail shown after the label in menus and the command palette (a
+   * count: "Sticky notes (12)", a state: "Snap to grid (on)"). Called while the menu is open.
+   */
+  detail?(editor: Editor): string | undefined;
+  /**
+   * [additive] Offer it in the command palette (`Editor.listActions`). Default: when it has a
+   * `shortcut` or `menus` — anything a person can already invoke. Commands that only other
+   * features run with `args` have neither, so they never show; `true` lists one that has
+   * neither (board settings), `false` hides one that has them (the palette's own shortcut).
+   */
+  palette?: boolean;
   /**
    * `args` [additive]: what `editor.runCommand(id, args)` passed (undefined from shortcuts and
    * menus). How features ask another feature to act on something specific (open this comment
@@ -659,6 +719,28 @@ export interface ShortcutEntry {
   kind: 'tool' | 'command' | 'key';
   /** Contributing feature ('engine' for built-ins). */
   feature: string;
+}
+
+/**
+ * [additive] One row of `Editor.listActions()`: something a person can do on the board right now
+ * or, greyed out, could do with another selection or role. Run a command with
+ * `editor.runCommand(id)` and a tool with `editor.setTool(id)`.
+ */
+export interface ActionEntry {
+  /** Command or tool id. */
+  id: string;
+  kind: 'command' | 'tool';
+  /** Reads on its own: a command's `group` is folded in ("Select all of this type"). */
+  label: string;
+  /** Raw bindings like `ShortcutEntry.shortcuts` (empty when it has none). */
+  shortcuts: string[];
+  /** Contributing feature ('engine' for built-ins). */
+  feature: string;
+  icon?: ComponentType<{ size?: number | string; strokeWidth?: number | string }>;
+  /** `CommandDefinition.detail` right now. */
+  detail?: string;
+  /** null when it can run now; otherwise why not (role, selection…). */
+  disabledReason: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -815,6 +897,14 @@ export interface Editor {
   cancelGesture(): void;
   bringToFront(ids: string[]): void;
   sendToBack(ids: string[]): void;
+  /**
+   * [additive] One step up / down the stacking order: each item moves past the next item it
+   * overlaps (items it doesn't overlap make no visible difference, so they are skipped), keeping
+   * the selected items' order among themselves; riders (`attachedTo`) move with their item.
+   * Frames only ever step among frames (they always render below other items). One undo step.
+   */
+  bringForward(ids: string[]): void;
+  sendBackward(ids: string[]): void;
   duplicate(ids: string[], offset?: Point): string[];
   group(ids: string[]): void;
   ungroup(ids: string[]): void;
@@ -1016,6 +1106,12 @@ export interface Editor {
    * from the registry, so a shortcut reference built on it can't drift from the real bindings.
    */
   getShortcuts(): ShortcutEntry[];
+  /**
+   * [additive] Every tool and every user-facing command (`CommandDefinition.palette`) with its
+   * shortcuts and, when it can't run now, the reason (role, `when` + `disabledReason`). Built
+   * from the same registry as `getShortcuts`, so a palette built on it can't drift either.
+   */
+  listActions(): ActionEntry[];
   /**
    * [additive] Whether the view filter hides this element for this viewer: it is in
    * getViewHidden(), sits in a container that is, or is drawn against one that is
