@@ -569,4 +569,30 @@ export function layoutTable(rowsIn: string[][], header: boolean, ctx: LayoutCont
   return finish([el], { [id]: cells });
 }
 
+// ---------------------------------------------------------------------------------------------
+// A written note (summaries): a soft rounded card with its text set from the top left, so the text
+// keeps the shape's padding (a bare text box with a background has none).
+
+export const NOTE_WIDTH = 560;
+export const NOTE_BACKGROUND = '#FFF6D9';
+/** Room the shape keeps around its text (its padding plus the rounded corners' inset), generous. */
+const NOTE_PAD = 32;
+
+export function layoutNote(title: string | undefined, text: string, ctx: LayoutContext): LaidOut {
+  const body = (text.length > LAYOUT_LIMITS.note ? text.slice(0, LAYOUT_LIMITS.note) : text)
+    .replace(/\r\n?/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  const head = title?.trim() ? clip(title.trim()).replace(/\s+/g, ' ') : '';
+  const size = 16;
+  const inner = NOTE_WIDTH - NOTE_PAD * 2;
+  const titleH = head ? measureText(head, { fontSize: size, maxWidth: inner, bold: true, lineHeight: 1.4 }).h + size * 1.4 : 0;
+  const bodyH = measureText(body, { fontSize: size, maxWidth: inner, lineHeight: 1.4 }).h;
+  const html = (head ? `<b>${plainToRichText(head)}</b><br><br>` : '') + plainToRichText(body);
+  const h = Math.ceil(titleH + bodyH + NOTE_PAD * 2);
+  const card = shape(ctx.newId(), 'roundRect', { x: 0, y: 0, w: NOTE_WIDTH, h }, '', { fill: NOTE_BACKGROUND, stroke: 'transparent', fontSize: size });
+  const el = { ...card, text: html, align: 'left', vAlign: 'top' } as ElementDraft;
+  return finish([el]);
+}
+
 export type { ShapeKind };

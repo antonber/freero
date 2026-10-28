@@ -102,6 +102,7 @@ export class BoardStore {
   private undoListeners = new Set<Listener>();
   private localChangeListeners = new Set<Listener>();
   private foreignKeyListeners = new Set<(ids: string[]) => void>();
+  private remoteKeyListeners = new Set<(ids: string[]) => void>();
   private layerCollectionListeners = new Set<Listener>();
   private sorted: BoardElement[] | null = null;
   private byType = new Map<string, BoardElement[]>();
@@ -318,6 +319,17 @@ export class BoardStore {
     else if (origin !== SILENT_ORIGIN && this.foreignKeyListeners.size) {
       const ids = [...ev.keysChanged];
       for (const l of [...this.foreignKeyListeners]) l(ids);
+    }
+    // Other people's changes only: not this client's undo/redo, a load or a silent write.
+    if (
+      this.remoteKeyListeners.size &&
+      origin !== LOCAL_ORIGIN &&
+      origin !== SILENT_ORIGIN &&
+      origin !== 'load' &&
+      !(origin instanceof Y.UndoManager)
+    ) {
+      const ids = [...ev.keysChanged];
+      for (const l of [...this.remoteKeyListeners]) l(ids);
     }
   }
 
@@ -544,6 +556,12 @@ export class BoardStore {
   subscribeForeignKeys(l: (ids: string[]) => void): () => void {
     this.foreignKeyListeners.add(l);
     return () => this.foreignKeyListeners.delete(l);
+  }
+
+  /** Element ids changed by another participant (never this client's own writes or undo/redo). */
+  subscribeRemoteKeys(l: (ids: string[]) => void): () => void {
+    this.remoteKeyListeners.add(l);
+    return () => this.remoteKeyListeners.delete(l);
   }
 
   /** Fires after local (undoable) element writes; used for thumbnail dirtiness. */

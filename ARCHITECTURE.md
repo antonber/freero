@@ -81,8 +81,9 @@ features/<name>/
                            so it moves, rotates, culls and exports with the element
   outline.ts     optional  export default defineOutline({ kinds?, annotate? }) (@freero/shared): how
                            its element types read in the board outline, and what its collections
-                           add to items (votes, tags, comments). Runs on the SERVER too, so it is
-                           pure: '@freero/shared', files of its own feature, type-only imports [W13]
+                           add to items (votes, tags, comments). Runs on the SERVER and in the
+                           browser (Editor.getOutline, "Board as list"), so it is pure:
+                           '@freero/shared', files of its own feature, type-only imports [W13]
   *.css, *.test.ts(x)      allowed at the root
   lib/                     any helpers
 ```
@@ -332,6 +333,10 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   with frame children + `copyContent`) and `Editor.insertElements(snapshot, { at? })` — the ONE
   insertion path for copied content (paste uses it): fresh ids, references remapped, content
   restored, one undo step, on a `findFreeSpot` by default. Saved templates go through it.
+- `Host.ai?` (additive, KAI-101): `{ provider, source, run(AiActionRequest) }`, present only when the
+  server said this user may use AI on this board. AI entry points (`features/ai`: the format-toolbar
+  button, the "AI ▸" context/board menu, the dialog) hide without it; never offer AI from `when`
+  alone. Not in the command palette (it lists unavailable commands greyed out).
 - `Host.activity?.list(before?)` (additive): the board's activity feed as the server recorded
   it (see "Activity"); `features/activity` shows it in a dock panel.
 - `SavedTemplateInfo.ownerName` / `canUnshare` (additive): team templates say who shared them;
@@ -606,6 +611,51 @@ Reference & items (engine primitives; product UI in `features/shortcuts`, `links
   primitives), so the lucide index (`features/icons/lib/iconIndex.ts`, imported only with
   `import()`) stays out of the board chunk; keep it that way when touching the icon library.
 
+Accessibility, touch and phones (KAI-108, KAI-139; conformance notes: docs/accessibility.md):
+- Keyboard walk: Tab follows `readingOrderByFrame` (`geometry/order.ts`: a frame's items right
+  after the frame); Alt+arrows jump to the nearest item that way; Alt+Shift+arrows resize
+  (`keyResizePatches`, `editor/exact.ts`, inside the nudge burst's undo step); Enter with a
+  creation tool "clicks" it on a free spot beside the selection; Shift+F10 / Menu key open the
+  context menu at the selection (`ContextMenuState.keyboard`); Alt+F10 focuses the format toolbar;
+  F6 cycles `REGION_ORDER` — chrome containers mark themselves `data-fr-region="<name>"`, so new
+  chrome joins F6 by carrying one. Arrows move along any `role="toolbar"`, Escape in a region
+  returns to the canvas. New engine keys go into `ENGINE_KEYS` (the `?` sheet).
+- Spoken descriptions: `describeElement(editor, el)` (`editor/typeLabel.ts`: `label.one` +
+  `toPlainText`). `ui/LiveRegion.tsx` + `interaction/announce.ts` read the selection and,
+  throttled, collaborators joining / leaving / changing items (`BoardStore.subscribeRemoteKeys`:
+  other participants only, never this client's writes or undo/redo; quiet for 2 s after the first
+  sync). Never announce from a feature by adding regions of your own.
+- `Editor.getOutline()` builds the semantic outline in the browser: the web app now discovers
+  features' `outline.ts` too (`FeatureBundle.outline`), so "Board as list" (`features/board-list`)
+  and the server's `/outline` read a board identically.
+- Reduced motion: `camera/motion.ts` `prefersReducedMotion()` makes `setCamera({ animate })` and
+  following jump. CSS animations are cut globally in `ui/base.css`; don't re-enable them per owner.
+- Forced colours: tokens switch to system colours (`ui/tokens.css`); a new owner whose state is
+  shown only by a background tint or shadow adds a `@media (forced-colors: active)` outline.
+- Touch (`interaction/touch.ts` `routePress`, used by `canvas/Canvas.tsx`): palm rejection while a
+  pen is down, "pen draws, finger pans" after a pen was used, one finger pans empty canvas with the
+  select tool (tap deselects), a 500 ms still press opens the context menu, fingers hit items 14 px
+  off (`Editor.hitTest(p, { tolerancePx })`). `@media (pointer: coarse)` enlarges handles/controls.
+- Phone layout (≤ 600 px, `ui/compact.ts` `useCompactLayout()`): the board root carries
+  `data-fr-layout="phone" | "phone-edit"`; view-and-comment mode shows only tools whose `minRole`
+  is commenter or lower, hides the format toolbar, and docks become a bottom sheet; editors toggle
+  `UiState.phoneEditing` ("Edit board"). Phone CSS hangs off that attribute, not a media query, so
+  JS and CSS can't disagree.
+
+### Installable app (PWA, KAI-140)
+
+`apps/web/public/manifest.webmanifest` + icons (rendered from `freero.svg`; maskable source in
+`public/icons/freero-maskable.svg`), and one hand-written service worker, `app/pwa/sw.ts`, built
+to `dist/sw.js` by the `freero-sw` plugin in `vite.config.ts` (version = hash of the build's entry
+files; it precaches them plus the shell files). Rules, all in `strategyFor` / `respond` (tested):
+- `/api`, `/ws`, `/uploads`, non-GET and other origins are never answered or stored by the worker.
+- Navigations always go to the network (never cached, so sign-in pages and a deploy's new
+  `index.html` are never stale); `offline.html` (no scripts: CSP) when the network fails.
+- Hashed `/assets/*` and the shell files are cache-first; old versions' caches go on activation.
+- `app/pwa/AppUpdates.tsx` registers it (production only), offers "Reload" when a new version
+  waits (`SKIP_WAITING`), and reloads once on `vite:preloadError`. Offline editing is out of scope;
+  anything that must work offline is a new decision, not a new cache rule.
+
 ## UI kit (`ui/`) — exports from `@ui`
 
 `Button` {variant: 'primary'|'secondary'|'ghost'|'danger', size: 'sm'|'md'|'lg', icon?, loading?} ·
@@ -682,7 +732,9 @@ moderation_actions: abuse reports, the operator queue, actions and appeals; see 
 `/scim/v2`), `privacy` (data_exports: personal and workspace data exports; see "Enterprise
 identity and data"), `audit` (audit_events, audit_chains: the append-only audit log), `admin` (no
 table: the admin console of team workspaces; see "Audit log, admin console and workspace
-policies"), `activity` (board_activity: the activity feed; see "Activity" below), `apiauth` (api_tokens,
+policies"), `activity` (board_activity: the activity feed; see "Activity" below), `ai`
+(ai_workspace_settings, ai_usage: AI board actions with a provider the operator or a workspace
+configures; see "AI" below), `apiauth` (api_tokens,
 oauth_clients, oauth_grants, oauth_codes, api_workspace_settings, api_workspace_credentials:
 credentials that act for a person without their session), `api` (no table: the public REST API
 `/api/v1`; see "Public API and OAuth" below).
@@ -1037,6 +1089,40 @@ Agents, the API and AI read and write boards semantically, never by coordinates.
   the view and turns it into a `BoardChange`; `sinks.ts` decides where that goes (`board` →
   `changeBoard`, `preview` → returned for `Editor.insertElements`). The suggestions layer (KAI-169)
   is a new sink, not a new planner.
+  Both modules expose these through their `index.ts` (`boardOutline`, `insertStructure`): other modules
+  (AI, the public API) read and write boards through them, with the caller's own access.
+
+### AI (`modules/ai`, `features/ai`; KAI-101, KAI-102; docs/ai.md)
+
+Off unless configured (`AI_PROVIDER` and/or `AI_WORKSPACE_KEYS`; otherwise every AI route is 404 and
+no AI UI shows). One rule decides who may use AI on a board and through which provider
+(`ai/access.ts` `decideAi`): edit access; personal boards use the operator's provider when
+`AI_INSTANCE_FOR` includes `personal`; team boards need their admins to turn it on (the operator's
+provider if offered to teams, or the workspace's own, key sealed with `platform/secrets`), and the
+person must pass the workspace's "who may use AI". The app asks `GET /boards/:id/ai` when it opens a
+board and builds `Host.ai` only when it says yes.
+- **Read** through the outline (`outline/index.ts`, the caller's own view), budgeted
+  (`AI_MAX_INPUT_TOKENS`); a selection is the outline filtered to those items. Reading content is
+  gated by the workspace's downloads policy (KAI-197): boards' one `requireBoardDownload(…, 'ai')`.
+- **Prompts** are server-side templates per task (`ai/tasks.ts`). Board text (and the person's
+  instruction) go in delimited blocks as ONE JSON string with `<`/`>` escaped (`encodeUntrusted`), and
+  the system prompt says board content is data, never instructions (the KAI-170 boundary).
+- **Providers** (`ai/providers.ts`): plain HTTP, Anthropic Messages (structured output with the
+  task's JSON Schema) and OpenAI-compatible chat completions. Workspace-typed endpoints are untrusted:
+  https only, no redirects, private addresses refused at connect time unless
+  `AI_WORKSPACE_PRIVATE_ENDPOINTS`.
+- **Validate, then write**: each task turns the model's JSON into a `StructureInput` (clamped, ids
+  mapped from numbers the model was shown, Mermaid parsed); one repair turn, then 502 with nothing
+  written. The structure goes through `structure/index.ts` `insertStructure` with `target: 'preview'`
+  (the app's dialog shows it and inserts it with `Editor.insertElements` + `moveBy`, ONE transaction,
+  one undo step) or `'board'` (one attributed server change).
+- **Limits and records**: `RATE_LIMIT_AI` per user, `RATE_LIMIT_AI_WORKSPACE` per workspace, the
+  workspace's monthly token budget and `AI_INSTANCE_MONTHLY_TOKENS_PER_USER` (`ai_usage`, one upsert per
+  call, also for failed calls). Every request that reaches the model is audited
+  as `ai.request` (task, provider, model, tokens, outcome; never the prompt or board text); settings
+  changes as `ai.settings_changed`. Usage is in personal and workspace data exports.
+- `npm run verify --only ai` runs it all against `scripts/lib/mock-model.mjs` (both wire formats,
+  canned answers), never a paid API; the same mock runs standalone for the UI (`--port 4402`).
 
 ### Public API and OAuth (`modules/api`, `modules/apiauth`; KAI-104, KAI-170, KAI-197)
 
@@ -1149,7 +1235,9 @@ module isn't the natural call and for the operator CLI: modules/audit registers 
 workspace, checked on the server by every route (`requireAdmin` → `workspaces.requireWorkspace(…,
 'admin')`). Members (two-step status, last activity, boards, role, deactivate/reactivate), usage,
 security and retention settings, sharing policies, the audit log (filters, paging, CSV/JSON export
-— streamed, rate limited, recorded before it starts, CSV cells can't become formulas).
+— streamed, rate limited, recorded before it starts, CSV cells can't become formulas). Other modules
+add their own tabs with their own routes under `/workspaces/:id/admin/…`, checked with
+`admin/index.ts` `requireAdmin` (SSO and provisioning; AI, shown only when the server offers AI).
 
 **Workspace settings** (`workspaces` columns; `WorkspaceSettings` in `@freero/shared`), each
 enforced by the module that owns the data, wired from that module's `init.ts`:

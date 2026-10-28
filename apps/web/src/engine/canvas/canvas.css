@@ -7,6 +7,21 @@
   user-select: none;
   -webkit-user-select: none;
   overscroll-behavior: none;
+  /* A long press is Freero's context menu, not the system's callout / text magnifier. */
+  -webkit-touch-callout: none;
+}
+
+/* Keyboard focus on the canvas (Tab from the page, F6, Escape from a toolbar): an inset ring, so
+   it is visible without covering the chrome. A pointer press focuses it without the ring. */
+.fr-viewport:focus-visible {
+  box-shadow: inset 0 0 0 3px var(--fr-focus-color);
+}
+
+@media (forced-colors: active) {
+  .fr-viewport:focus-visible {
+    outline: 3px solid Highlight;
+    outline-offset: -3px;
+  }
 }
 
 .fr-grid {

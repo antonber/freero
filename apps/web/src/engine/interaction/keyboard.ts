@@ -4,10 +4,14 @@ import type { EngineCore } from '../runtime/core';
 import { eventKey, isPrintableKey, matchShortcut, parseShortcut } from '../runtime/shortcuts';
 import { NATIVE_CLIPBOARD_COMMANDS } from '../editor/engineCommands';
 import { translateElement } from '../editor/clipboard';
+import { keyResizePatches } from '../editor/exact';
 import { richTextToPlain } from '../text/sanitize';
 import { elementAABB, rectContainsRect, rectCenter, rectUnion } from '../geometry/geometry';
 import { gridNudge } from '../geometry/snap';
-import { readingOrder } from '../geometry/order';
+import { readingOrderByFrame } from '../geometry/order';
+import { dispatchToolPointer } from './toolDispatch';
+import type { Point, Rect, ToolDefinition, ToolPointerEvent } from '../api';
+import type { Registered } from '../runtime/registry';
 
 /** A pause this long (ms) after the last arrow-key nudge ends the burst (one undo step). */
 const NUDGE_IDLE_MS = 1000;
@@ -33,8 +37,28 @@ export const ENGINE_KEYS: Array<{ name: string; label: string; shortcuts: string
   { name: 'nudgeFar', label: 'Nudge selection by 10', shortcuts: ['shift+arrowup', 'shift+arrowdown', 'shift+arrowleft', 'shift+arrowright'], minRole: 'editor' },
   { name: 'cycle', label: 'Select next item', shortcuts: ['tab'], minRole: 'viewer' },
   { name: 'cycleBack', label: 'Select previous item', shortcuts: ['shift+tab'], minRole: 'viewer' },
+  { name: 'jump', label: 'Select the nearest item in that direction', shortcuts: ['alt+arrowup', 'alt+arrowdown', 'alt+arrowleft', 'alt+arrowright'], minRole: 'viewer' },
+  { name: 'resize', label: 'Resize selection (wider, narrower, taller, shorter)', shortcuts: ['alt+shift+arrowright', 'alt+shift+arrowleft', 'alt+shift+arrowdown', 'alt+shift+arrowup'], minRole: 'editor' },
+  { name: 'place', label: 'With a creation tool: place an item next to the selection', shortcuts: ['enter'], minRole: 'editor' },
+  { name: 'menu', label: 'Open the menu of the selection', shortcuts: ['shift+f10', 'contextmenu'], minRole: 'viewer' },
+  { name: 'format', label: 'Move focus to the format toolbar', shortcuts: ['alt+f10'], minRole: 'editor' },
+  { name: 'regions', label: 'Move focus between the canvas and the toolbars', shortcuts: ['f6', 'shift+f6'], minRole: 'viewer' },
   { name: 'pan', label: 'Pan (hold and drag)', shortcuts: ['space'], minRole: 'viewer' },
 ];
+
+/**
+ * Board regions F6 / Shift+F6 move focus between, in this order. Chrome marks its containers
+ * `data-fr-region="<name>"` (the canvas is the viewport itself).
+ */
+export const REGION_ORDER = ['canvas', 'tools', 'board', 'people', 'format', 'dock', 'view'] as const;
+
+const FOCUSABLE =
+  'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/** Focusable controls inside `root`, in DOM order, that are actually shown. */
+function focusables(root: Element): HTMLElement[] {
+  return [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => el.getClientRects().length > 0 || el === document.activeElement);
+}
 
 export function isTextInput(t: EventTarget | null): boolean {
   if (!(t instanceof HTMLElement)) return false;
@@ -121,9 +145,181 @@ export function installKeyboard(core: EngineCore): () => void {
     // Only from the canvas: focused chrome keeps native Tab focus navigation.
     (target === document.body || target === core.dom.viewport || target === null);
 
+  /** What keyboard walking reaches: every visible item but lines (they're read with their ends). */
+  const walkable = () => editor.getVisibleElements().filter((el) => el.type !== 'connector');
+
+  /** Selects `id` (with its group) by keyboard and brings it into view at the same zoom. */
+  const selectAndReveal = (id: string) => {
+    const ids = editor.expandGroups([id]);
+    editor.select(ids);
+    cycled = editor.getSelection();
+    reveal(ids);
+  };
+
+  /** Bring `ids` into view (same zoom) when they aren't fully visible in the free part of the screen. */
+  const reveal = (ids: string[]) => {
+    const b = editor.getBounds(ids, { visual: true });
+    if (!b) return;
+    const safe = editor.getSafeArea();
+    const tl = editor.screenToWorld({ x: safe.x, y: safe.y });
+    const br = editor.screenToWorld({ x: safe.x + safe.w, y: safe.y + safe.h });
+    if (rectContainsRect({ x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y }, b)) return;
+    const cam = editor.getCamera();
+    if (b.w * cam.zoom > safe.w * 0.9 || b.h * cam.zoom > safe.h * 0.9) return editor.zoomToFit(ids, { maxZoom: cam.zoom });
+    const c = rectCenter(b);
+    const sc = { x: safe.x + safe.w / 2, y: safe.y + safe.h / 2 };
+    editor.setCamera({ x: c.x - sc.x / cam.zoom, y: c.y - sc.y / cam.zoom, zoom: cam.zoom }, { animate: true });
+  };
+
+  /**
+   * Alt+arrow: the nearest item in that direction from the selection's center (what lies more
+   * along the direction than across it wins), skipping the frame the selection sits in.
+   */
+  const jump = (e: KeyboardEvent): boolean => {
+    const dir = { arrowleft: [-1, 0], arrowright: [1, 0], arrowup: [0, -1], arrowdown: [0, 1] }[eventKey(e)];
+    if (!dir || !e.altKey || e.shiftKey || e.ctrlKey || e.metaKey) return false;
+    const items = walkable();
+    if (!items.length) return false;
+    e.preventDefault();
+    const sel = editor.getSelection();
+    const from = sel.length ? editor.getBounds(sel) : null;
+    if (!from) {
+      selectAndReveal(readingOrderByFrame(items)[0].id);
+      return true;
+    }
+    const c = rectCenter(from);
+    const taken = new Set(editor.expandGroups(sel));
+    let best: string | null = null;
+    let bestScore = Infinity;
+    for (const el of items) {
+      if (taken.has(el.id)) continue;
+      const r = elementAABB(el);
+      if (rectContainsRect(r, from)) continue;
+      const p = rectCenter(r);
+      const along = (p.x - c.x) * dir[0] + (p.y - c.y) * dir[1];
+      const across = Math.abs((p.x - c.x) * dir[1] - (p.y - c.y) * dir[0]);
+      if (along <= 0) continue;
+      const score = along + across * 2;
+      if (score < bestScore) {
+        bestScore = score;
+        best = el.id;
+      }
+    }
+    if (best) selectAndReveal(best);
+    return true;
+  };
+
+  /** Alt+Shift+arrow: resize the selection by one step (see keyResizePatches), in the nudge burst. */
+  const keyResize = (e: KeyboardEvent): boolean => {
+    const k = eventKey(e);
+    const spec = ({ arrowright: ['w', 1], arrowleft: ['w', -1], arrowdown: ['h', 1], arrowup: ['h', -1] } as const)[k as 'arrowright'];
+    if (!spec || !e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey) return false;
+    const sel = editor.getSelection();
+    if (!sel.length) return false;
+    e.preventDefault();
+    if (!editor.guardWrite()) return true;
+    const els = sel.map((id) => editor.getElement(id)).filter((el): el is BoardElement => !!el);
+    const patches = keyResizePatches(editor, els, spec[0], spec[1]);
+    if (!patches.length) return true;
+    if (nudgeTimer) clearTimeout(nudgeTimer);
+    else editor.beginGesture();
+    nudgeTimer = setTimeout(endNudgeBurst, NUDGE_IDLE_MS);
+    editor.updateMany(patches);
+    return true;
+  };
+
+  /** Shift+F10 / the Menu key: the context menu, opened at the selection (or the view's center). */
+  const openMenuByKeyboard = () => {
+    const vp = core.dom.viewport;
+    const origin = vp?.getBoundingClientRect() ?? { left: 0, top: 0 };
+    const sel = editor.getSelection();
+    const b: Rect | null = sel.length ? editor.getBounds(sel) : null;
+    const size = editor.getViewportSize();
+    const screen = b
+      ? editor.worldToScreen({ x: b.x + b.w / 2, y: b.y + b.h / 2 })
+      : { x: size.width / 2, y: size.height / 2 };
+    const at = { x: Math.max(0, Math.min(size.width, screen.x)), y: Math.max(0, Math.min(size.height, screen.y)) };
+    ui.setState({ contextMenu: { x: origin.left + at.x, y: origin.top + at.y, world: editor.screenToWorld(at), keyboard: true } });
+  };
+
+  /** F6 / Shift+F6: focus the first control of the next / previous region that is shown. */
+  const cycleRegion = (target: EventTarget | null, dir: 1 | -1) => {
+    const board = core.dom.viewport?.closest('.fr-board');
+    if (!board || !core.dom.viewport) return;
+    const regions = new Map<string, HTMLElement>();
+    regions.set('canvas', core.dom.viewport);
+    for (const el of board.querySelectorAll<HTMLElement>('[data-fr-region]')) regions.set(el.dataset.frRegion!, el);
+    const order = REGION_ORDER.filter((r) => regions.has(r) && (r === 'canvas' || focusables(regions.get(r)!).length));
+    const current = target instanceof HTMLElement ? REGION_ORDER.find((r) => regions.get(r)?.contains(target)) : undefined;
+    const at = current ? order.indexOf(current) : 0;
+    const next = order[(at + dir + order.length) % order.length];
+    if (next === 'canvas') core.dom.viewport.focus({ preventScroll: true });
+    else focusables(regions.get(next)!)[0]?.focus({ preventScroll: true });
+  };
+
+  /** Arrow keys inside a chrome toolbar move between its controls (instead of nudging items). */
+  const toolbarArrows = (e: KeyboardEvent, target: EventTarget | null): boolean => {
+    if (!(target instanceof HTMLElement) || e.altKey || e.ctrlKey || e.metaKey) return false;
+    const bar = target.closest<HTMLElement>('[role="toolbar"]');
+    if (!bar || !core.dom.viewport?.closest('.fr-board')?.contains(bar)) return false;
+    const vertical = bar.getAttribute('aria-orientation') === 'vertical';
+    const k = eventKey(e);
+    const step = (vertical ? { arrowup: -1, arrowdown: 1 } : { arrowleft: -1, arrowright: 1 })[k as 'arrowup'];
+    const items = focusables(bar);
+    if (!items.length) return false;
+    let i = items.indexOf(target);
+    if (step) i = (i + step + items.length) % items.length;
+    else if (k === 'home') i = 0;
+    else if (k === 'end') i = items.length - 1;
+    else return false;
+    e.preventDefault();
+    items[i].focus();
+    return true;
+  };
+
+  /**
+   * Enter with a creation tool (sticky, shape, text, comment…): what a click would make, placed
+   * on a free spot right of the selection (or in the middle of the view) — creation without a mouse.
+   */
+  const placeWithTool = (tool: Registered<ToolDefinition>) => {
+    const size = { w: 200, h: 200 };
+    const sel = editor.getSelection();
+    const b = sel.length ? editor.getBounds(sel) : null;
+    const near: Point | undefined = b ? { x: b.x + b.w + 40 + size.w / 2, y: b.y + b.h / 2 } : undefined;
+    const spot = editor.findFreeSpot(size, { near, gap: 24 });
+    const point = { x: spot.x + size.w / 2, y: spot.y + size.h / 2 };
+    const ev = (kind: 'down' | 'up'): ToolPointerEvent => {
+      const e = {
+        editor: core.scoped(tool.feature),
+        point: { ...point },
+        screen: editor.worldToScreen(point),
+        shiftKey: false,
+        altKey: false,
+        metaKey: false,
+        button: 0,
+        buttons: kind === 'down' ? 1 : 0,
+        pressure: 0.5,
+        pointerType: 'mouse',
+      } as unknown as ToolPointerEvent;
+      Object.defineProperty(e, 'target', { enumerable: true, get: () => editor.hitTest(point) });
+      return e;
+    };
+    core.interaction.handle = null;
+    core.interaction.clickCount = 1;
+    editor.beginGesture();
+    try {
+      dispatchToolPointer(core, tool, 'onPointerDown', ev('down'));
+      dispatchToolPointer(core, tool, 'onPointerUp', ev('up'));
+    } finally {
+      editor.endGesture();
+    }
+    const placed = editor.getSelection();
+    if (placed.length) reveal(placed);
+  };
+
   /** Tab / Shift+Tab with nothing being edited: select the next/previous item in reading order. */
   const cycleSelection = (dir: 1 | -1) => {
-    const items = readingOrder(editor.getVisibleElements().filter((el) => el.type !== 'connector'));
+    const items = readingOrderByFrame(walkable());
     if (!items.length) return;
     const sel = editor.getSelection();
     const selSet = new Set(sel);
@@ -140,21 +336,10 @@ export function installKeyboard(core: EngineCore): () => void {
         }
       }
     }
-    const ids = editor.expandGroups([next.id]);
-    editor.select(ids);
-    cycled = editor.getSelection();
-    // Bring it into view (same zoom) when it isn't fully visible in the free part of the screen.
-    const b = editor.getBounds(ids, { visual: true });
-    if (!b) return;
-    const safe = editor.getSafeArea();
-    const tl = editor.screenToWorld({ x: safe.x, y: safe.y });
-    const br = editor.screenToWorld({ x: safe.x + safe.w, y: safe.y + safe.h });
-    if (rectContainsRect({ x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y }, b)) return;
-    const cam = editor.getCamera();
-    if (b.w * cam.zoom > safe.w * 0.9 || b.h * cam.zoom > safe.h * 0.9) return editor.zoomToFit(ids, { maxZoom: cam.zoom });
-    const c = rectCenter(b);
-    const sc = { x: safe.x + safe.w / 2, y: safe.y + safe.h / 2 };
-    editor.setCamera({ x: c.x - sc.x / cam.zoom, y: c.y - sc.y / cam.zoom, zoom: cam.zoom }, { animate: true });
+    // Keyboard focus belongs on the canvas while walking it (a visible focus ring, screen readers
+    // in the canvas' application mode), not on the page body.
+    if (document.activeElement === document.body) core.dom.viewport?.focus({ preventScroll: true });
+    selectAndReveal(next.id);
   };
 
   const nudge = (e: KeyboardEvent): boolean => {
@@ -198,6 +383,22 @@ export function installKeyboard(core: EngineCore): () => void {
     if (nudgeTimer && !MODIFIER_KEYS.has(e.key) && !eventKey(e).startsWith('arrow')) endNudgeBurst();
     if (e.defaultPrevented || e.isComposing) return;
     const target = e.target;
+    const key = eventKey(e);
+    const inModal = target instanceof HTMLElement && !!target.closest('[aria-modal="true"]');
+
+    // ---- moving focus between the canvas and the chrome (from anywhere but a modal dialog)
+    if (key === 'f6' && !e.ctrlKey && !e.metaKey && !e.altKey && !inModal) {
+      e.preventDefault();
+      if (editor.getEditingId()) editor.stopEditing();
+      cycleRegion(target, e.shiftKey ? -1 : 1);
+      return;
+    }
+    if (key === 'f10' && e.altKey && !e.ctrlKey && !e.metaKey && !inModal) {
+      e.preventDefault();
+      const bar = core.dom.viewport?.closest('.fr-board')?.querySelector('[data-fr-format-toolbar]');
+      if (bar) focusables(bar)[0]?.focus({ preventScroll: true });
+      return;
+    }
 
     // ---- while editing text in the shared editor
     if (inEngineTextEditor(target)) {
@@ -219,6 +420,15 @@ export function installKeyboard(core: EngineCore): () => void {
       return;
     }
     if (isTextInput(target)) return;
+    // Focus in a chrome region (a toolbar button): arrows move along the toolbar, Escape goes back
+    // to the canvas. Other keys keep working as on the canvas (shortcuts, Delete).
+    const inRegion = target instanceof HTMLElement && !!target.closest('[data-fr-region]');
+    if (inRegion && toolbarArrows(e, target)) return;
+    if (inRegion && e.key === 'Escape' && !inForeignUi(target)) {
+      e.preventDefault();
+      core.dom.viewport?.focus({ preventScroll: true });
+      return;
+    }
     if (inForeignUi(target)) {
       // A non-modal popover (a color picker just used) keeps undo/redo: Ctrl+Z right after
       // picking a color must undo it, not do nothing until the popover is dismissed.
@@ -262,6 +472,26 @@ export function installKeyboard(core: EngineCore): () => void {
       return;
     }
 
+    if ((key === 'f10' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) || key === 'contextmenu') {
+      e.preventDefault();
+      openMenuByKeyboard();
+      return;
+    }
+
+    if (
+      key === 'enter' &&
+      !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey &&
+      toolReg &&
+      toolReg.def.id !== 'select' &&
+      toolReg.def.id !== 'hand' &&
+      toolReg.def.onPointerDown &&
+      editor.can(toolReg.def.minRole ?? 'editor')
+    ) {
+      e.preventDefault();
+      placeWithTool(toolReg);
+      return;
+    }
+
     // Tab-walking continues past items whose type claims Tab (see `cycled`).
     if (isCycleKey(e, target) && stillCycling()) {
       e.preventDefault();
@@ -297,7 +527,7 @@ export function installKeyboard(core: EngineCore): () => void {
       return;
     }
 
-    if (nudge(e)) return;
+    if (keyResize(e) || jump(e) || nudge(e)) return;
 
     // Typing on a single selected EMPTY text element (a fresh "+" copy, a new sticky) fills it.
     // Items that already have text keep letters as tool shortcuts (N, T, S… right after Esc must

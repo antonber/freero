@@ -72,7 +72,12 @@ export type StructureInput =
   | { kind: 'mermaid'; source: string }
   | { kind: 'sequence'; diagram: SequenceInput }
   /** Rows of cells → a table (first row the header unless `header: false`). */
-  | { kind: 'table'; rows: string[][]; header?: boolean };
+  | { kind: 'table'; rows: string[][]; header?: boolean }
+  /**
+   * [additive] A written note (a summary): a soft rounded card (a shape) with the title in bold and
+   * the text's paragraphs and bullet lines kept.
+   */
+  | { kind: 'note'; title?: string; text: string };
 
 /** What a layout produced, relative to its own top-left (0, 0). */
 export interface LaidOut {
@@ -104,4 +109,6 @@ export const LAYOUT_LIMITS = {
   depth: 24,
   /** Table cells. */
   cells: 4000,
+  /** Characters of a note's text. */
+  note: 8000,
 } as const;

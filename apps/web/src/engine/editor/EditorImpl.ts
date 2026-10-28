@@ -3,12 +3,14 @@
 import { nanoid } from 'nanoid';
 import {
   acceptClosure,
+  buildOutline,
   COMMENTER_WRITABLE,
   pendingSuggestions,
   rejectClosure,
   suggestionState,
   withoutDanglingRefs,
   type BoardElement,
+  type BoardOutline,
   type BoardSettings,
   type ElementType,
   type Role,
@@ -52,6 +54,7 @@ import {
 } from '../camera/camera';
 import { createCollection } from '../store/collections';
 import { safeArea } from '../camera/safeArea';
+import { prefersReducedMotion } from '../camera/motion';
 import {
   parseClipboardHtml,
   placeAt,
@@ -283,6 +286,27 @@ export class EditorImpl implements Editor {
     return this.core.store.getOrdered();
   }
 
+  getOutline(opts: { personName?: (userId: string) => string | undefined } = {}): BoardOutline {
+    const host = this.core.hostRef.current;
+    const known = new Map<string, string>([[host.user.id, host.user.name]]);
+    for (const p of this.core.store.getPeers()) if (p.user) known.set(p.user.id, p.user.name);
+    const features = this.core.bundles.map((b) => b.outline).filter((f): f is NonNullable<typeof f> => !!f);
+    return buildOutline(
+      {
+        board: { id: host.board.id, title: host.board.title },
+        version: String(this.core.store.getVersion()),
+        readerId: host.user.id,
+        seesHidden: this.can('editor'),
+        elements: this.getElements()
+          .filter((el) => !this.isHidden(el))
+          .map((el) => ({ el, layer: this.layerOf(el.id) ?? 'shared' })),
+        collection: (name) => new Map(this.collection(name).entries()),
+        personName: (id) => known.get(id) ?? opts.personName?.(id),
+      },
+      features,
+    );
+  }
+
   getDefinition(type: ElementType): ElementDefinition<any> | undefined {
     return this.core.registry.elements.get(type)?.def;
   }
@@ -382,11 +406,12 @@ export class EditorImpl implements Editor {
   }
 
 
-  hitTest(point: Point, opts: { exclude?: string[]; types?: ElementType[] } = {}): BoardElement | null {
+  hitTest(point: Point, opts: { exclude?: string[]; types?: ElementType[]; tolerancePx?: number } = {}): BoardElement | null {
     const zoom = this.core.ui.getState().camera.zoom;
     return hitTestElements(this.getVisibleElements(), point, (t) => this.getDefinition(t), {
-      ...opts,
-      tolerance: HIT_TOLERANCE_PX / zoom,
+      exclude: opts.exclude,
+      types: opts.types,
+      tolerance: (opts.tolerancePx ?? HIT_TOLERANCE_PX) / zoom,
     });
   }
 
@@ -1200,7 +1225,7 @@ export class EditorImpl implements Editor {
 
   setCamera(camera: Camera, opts?: { animate?: boolean }): void {
     const target = { ...camera, zoom: clampZoom(camera.zoom) };
-    if (!opts?.animate || typeof requestAnimationFrame === 'undefined') return this.setCameraNow(target);
+    if (!opts?.animate || typeof requestAnimationFrame === 'undefined' || prefersReducedMotion()) return this.setCameraNow(target);
     if (this.shared.camAnim !== null) cancelAnimationFrame(this.shared.camAnim);
     const from = this.getCamera();
     const viewport = this.getViewportSize();
