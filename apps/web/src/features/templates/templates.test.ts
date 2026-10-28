@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { ElementType } from '@freero/shared';
-import type { NewElement } from '@engine';
+import type { ElementType, FrameElement } from '@freero/shared';
+import { createTestBoard, type ElementDefinition, type FeatureBundle, type NewElement } from '@engine';
+import manifest from './feature';
 import { TEMPLATES } from './lib/catalog';
 import { boundsOf, instantiate, type BoardSnapshot } from './lib/place';
+import { insertSavedTemplate, saveAsTemplate } from './lib/saved';
 
 // Every field of each shared element type that the engine does NOT fill in on create.
 const REQUIRED: Record<ElementType, string[]> = {
@@ -104,6 +106,39 @@ describe('inserting a template', () => {
     const a = instantiate(def, emptyBoard, freshId).map((e) => e.id);
     const b = instantiate(def, emptyBoard, freshId).map((e) => e.id);
     expect(a.filter((id) => b.includes(id))).toEqual([]);
+  });
+
+  it('a saved selection added back to the board is a new copy: frames numbered after the board’s own, in their saved order, with their items inside', async () => {
+    // Minimal element types; the real ones live in other features, which tests can't import.
+    const Noop = () => null;
+    const frameDef = { type: 'frame', Component: Noop, resize: 'free', container: true, rotatable: false, defaults: () => ({}) } as unknown as ElementDefinition<'frame'>;
+    const stickyDef = { type: 'sticky', Component: Noop, resize: 'free', defaults: () => ({}) } as unknown as ElementDefinition<'sticky'>;
+    const shapes: FeatureBundle = { manifest: { name: 'shapes', description: '' }, elements: [frameDef, stickyDef], tools: [], formats: [], panels: [], commands: [] };
+    const board = createTestBoard({ users: ['ann'], features: [manifest, shapes] });
+    try {
+      const [editor] = board.editors('templates');
+      const frame = (x: number, index: number) => editor.create({ type: 'frame', x, y: 0, w: 300, h: 200, title: `F${index}`, fill: '#fff', index } as NewElement);
+      const second = frame(400, 1);
+      const first = frame(0, 0);
+      editor.create({ type: 'sticky', x: 450, y: 50, w: 100, h: 100 } as unknown as NewElement);
+      await saveAsTemplate(editor, { ids: [first, second], name: 'Two frames', description: '' });
+      frame(800, 5); // the board grows after saving
+
+      const [saved] = await editor.host.listTemplates();
+      const top = await insertSavedTemplate(editor, saved.id);
+
+      const frames = editor.getElements().filter((el): el is FrameElement => el.type === 'frame');
+      const copies = frames.filter((f) => top.includes(f.id)).sort((a, b) => a.index - b.index);
+      expect(copies.map((f) => [f.title, f.index])).toEqual([
+        ['F0', 6],
+        ['F1', 7],
+      ]);
+      const stickyCopy = editor.getElements().filter((el) => el.type === 'sticky').find((s) => s.frameId === copies[1].id);
+      expect(stickyCopy, 'the sticky moved with its frame copy').toBeDefined();
+      expect(frames.filter((f) => !top.includes(f.id)).map((f) => f.index).sort()).toEqual([0, 1, 5]); // originals untouched
+    } finally {
+      board.destroy();
+    }
   });
 
   it('numbers new frames after the existing ones so presentation order keeps the old frames first', () => {
