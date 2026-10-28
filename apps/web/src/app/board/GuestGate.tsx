@@ -4,7 +4,7 @@
 import { lazy, Suspense, useEffect, useState, type FormEvent } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
 import { Eye, MessageSquare } from 'lucide-react';
-import { guestDisplayName, MAX_GUEST_NAME, type GuestBoardInfo, type GuestInfo } from '@freero/shared';
+import { guestDisplayName, LINK_PASSWORD_MAX, MAX_GUEST_NAME, type GuestBoardInfo, type GuestInfo } from '@freero/shared';
 import { Button, Input, Logo } from '@ui';
 import { api, ApiError } from '../api/client';
 import { FullPageSpinner } from '../components/FullPageSpinner';
@@ -54,6 +54,7 @@ export function GuestGate({ boardId }: { boardId: string }) {
 function JoinAsGuest({ boardId, info, onJoined }: { boardId: string; info: GuestBoardInfo; onJoined: (g: GuestInfo) => void }) {
   const location = useLocation();
   const [name, setName] = useState('');
+  const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const next = location.pathname + location.search;
@@ -61,10 +62,11 @@ function JoinAsGuest({ boardId, info, onJoined }: { boardId: string; info: Guest
   const join = async (e: FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return setError('Enter a name so others know who you are');
+    if (info.passwordRequired && !password) return setError('Enter the link’s password');
     setBusy(true);
     setError(null);
     try {
-      onJoined((await api.joinAsGuest(boardId, name.trim())).guest);
+      onJoined((await api.joinAsGuest(boardId, name.trim(), info.passwordRequired ? password : undefined)).guest);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not join the board');
       setBusy(false);
@@ -93,6 +95,20 @@ function JoinAsGuest({ boardId, info, onJoined }: { boardId: string; info: Guest
             }}
             error={error ?? undefined}
           />
+          {info.passwordRequired ? (
+            <Input
+              type="password"
+              aria-label="Link password"
+              placeholder="Password (ask the board’s owner)"
+              autoComplete="off"
+              maxLength={LINK_PASSWORD_MAX}
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                setError(null);
+              }}
+            />
+          ) : null}
           <span className="fr-guestjoin__hint">Others will see you as “{guestDisplayName(name.trim() || 'your name')}”. Your visit lasts a few hours.</span>
           <Button type="submit" variant="primary" size="lg" loading={busy}>
             Join as guest

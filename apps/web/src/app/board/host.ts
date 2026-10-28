@@ -1,6 +1,6 @@
 // Builds the engine's Host — the one typed contract between the app shell and the engine.
 import type { BoardAiStatus, BoardSummary, Role } from '@freero/shared';
-import { unavailableVersionHistory, type Host, type HostUser } from '@engine';
+import { unavailableVersionHistory, type Host, type HostEngage, type HostUser } from '@engine';
 import type { ToastApi } from '@ui';
 import { api, wsBase } from '../api/client';
 import {
@@ -40,6 +40,25 @@ export interface HostDeps {
   ai?: BoardAiStatus | null;
 }
 
+/** Live activities (KAI-132): the same REST for accounts and guests (the server decides who may answer). */
+export function engageOf(boardId: string): HostEngage {
+  return {
+    state: (aid) => api.activity(boardId, aid),
+    answer: (aid, answer) => api.answerActivity(boardId, aid, answer),
+    withdraw: (aid) => api.withdrawAnswer(boardId, aid),
+    ask: (aid, text) => api.askQuestion(boardId, aid, text),
+    upvote: (aid, qid, on) => api.upvoteQuestion(boardId, aid, qid, on),
+    moderate: (aid, qid, patch) => api.moderateQuestion(boardId, aid, qid, patch),
+    reveal: (aid, revealed) => api.revealActivity(boardId, aid, revealed),
+    clear: (aid) => api.clearActivity(boardId, aid),
+  };
+}
+
+/** The board's call link (KAI-134): anyone on the board reads it, editors set it. */
+export function callOf(boardId: string): NonNullable<Host['call']> {
+  return { get: () => api.boardCall(boardId), set: (req) => api.setBoardCall(boardId, req) };
+}
+
 /** Toasts with an action button stay up long enough to read and act on. */
 const ACTION_TOAST_MS = 12000;
 
@@ -62,6 +81,8 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
       role: board.role,
       canExport: board.permissions.canExport,
       team: deps.team ? { name: deps.team.name } : null,
+      call: board.call ?? null,
+      jitsiCalls: board.permissions.jitsiCalls === true,
     },
     syncUrl: `${wsBase()}/ws/boards`,
     uploadImage,
@@ -92,6 +113,8 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     importImage,
     fetchImage,
     report: reportOn(board.id),
+    engage: engageOf(board.id),
+    call: callOf(board.id),
     // AI entry points exist only when the server said this user may use AI here.
     ...(deps.ai?.available ? { ai: { provider: deps.ai.provider ?? '', source: deps.ai.source ?? 'instance', run: (body) => api.runAi(board.id, body) } } : {}),
   };
@@ -115,7 +138,7 @@ export function createGuestHost(
     });
   return {
     user: deps.user,
-    board: { id: board.id, title: board.title, role: board.role, canExport: board.permissions.canExport, team: null, signedIn: false },
+    board: { id: board.id, title: board.title, role: board.role, canExport: board.permissions.canExport, team: null, signedIn: false, call: board.call ?? null },
     syncUrl: `${wsBase()}/ws/boards`,
     // Guests may report what they can open (KAI-181), with an optional address for the outcome.
     report: async ({ target, reason, note, contactEmail }) => {
@@ -146,6 +169,9 @@ export function createGuestHost(
     activity: { list: (before) => api.boardActivity(board.id, before) },
     importImage: needsAccount('Copying images'),
     fetchImage: needsAccount('Copying images'),
+    // Guests answer live activities when the activity lets visitors in (the server checks).
+    engage: engageOf(board.id),
+    call: { get: () => api.boardCall(board.id), set: needsAccount('Setting the call link') },
   };
 }
 
