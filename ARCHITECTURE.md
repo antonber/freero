@@ -124,6 +124,9 @@ engine and features use `editor.host`. Features never import the REST client or 
 - Contextual format toolbar floats above the selection (`format.tsx` sections + engine's common
   controls: z-order, lock, link, more ⋯). Right-click menu: engine items + `menus: ['context']`.
 - `dock-right` panels render in a right side panel opened with `editor.openDock(id)`.
+  The dock has a fixed header strip with its close button; a panel puts its own header (title,
+  filters) there by wrapping it in `<DockHeader>` (`@engine`), and its content scrolls below the
+  strip, never under the button. Panels never reserve room for the close button themselves.
 - `dialog` panels mount only while opened with `editor.openPanel(id, props?)` (one at a time,
   also while the chrome is hidden); the component gets `props` and closes with
   `editor.closePanel(id)`. Commands that open feature UI (export, start voting) use this — never a
@@ -169,6 +172,11 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   `useSettings()`, `useCanEdit()`; `plainToRichText()`; types `ElementTextProps`, `TextFormatState`.
 - `useCollection(name)` returns the collection's entries (`Array<[key, value]>`).
 - `CommandDefinition.minRole` defaults to `'editor'`; engine view-safe commands set `'viewer'`.
+- `CommandDefinition.extraShortcuts?: string[]`: further bindings for the same command (listed in
+  the shortcut reference; menus show `shortcut`). Punctuation shortcuts match the typed character,
+  and outside text editing AltGr + that character (Windows reports AltGr as Ctrl+Alt) also answers
+  `mod+<character>`, so Ctrl+[ / Ctrl+] work where brackets need AltGr; Bring to front / Send to
+  back also have Ctrl+Shift+↑ / ↓ on every layout.
   While text is being edited, only command shortcuts using Tab or a modifier (outside the
   editor's own Mod+B/I/U/Z/C/V/X/A/K) are dispatched.
 - Engine commands are ordinary commands (`engine.copy`, `engine.duplicate`, `engine.lock`,
@@ -469,12 +477,49 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
   numbered lines, or short lines that don't read as a wrapped paragraph, or `<li>`s in the HTML —
   and any text while stickies are selected) → text box (0: prose).
 
-Reference & items (engine primitives; product UI in `features/shortcuts`, `links`, `image`, `icons`):
+Reference & items (engine primitives; product UI in `features/shortcuts`, `links`, `image`, `icons`,
+`select-similar` — "Select only ▸ <type> (count)" narrows a mixed selection):
 - `Editor.getShortcuts() → ShortcutEntry[]` (`engine/runtime/shortcutList.ts`): every binding the
   board answers for the live role — tool keys, command shortcuts (alternatives with the same label
   fold into one row), element types' declared `keys` (under their feature) and the keys the keyboard router handles itself (`ENGINE_KEYS` in
   `interaction/keyboard.ts`, kept next to the handlers). The `?` sheet renders it with `@ui` `Kbd`
   (⌘ on Apple platforms, Ctrl elsewhere), so the reference can't drift from the real bindings.
+- `Editor.listActions() → ActionEntry[]` (same file, same registry as `getShortcuts`): every tool
+  and every user-facing command with its shortcuts and, when it can't run now, why
+  (`disabledReason`: the role, or the command's `when` + `CommandDefinition.disabledReason`). A
+  command is user-facing when it has a `shortcut` or `menus` (`CommandDefinition.palette`
+  overrides: `true` for board settings, `false` for the palette's own shortcut); commands only other
+  features run with `args` have neither and never show. Grouped labels read as one phrase
+  ("Select all of this type"). `CommandDefinition.detail(editor)` is a live suffix in menus and
+  the palette ("Sticky notes (12)", "Snap to grid (on)"). The board menu's settings are engine
+  commands too (`engine.settings.*`, lists in `engine/editor/boardSettings.ts`), so the palette
+  reaches them. The command palette (`features/shortcuts`, `Mod+/` — Mod+K is the item/text link)
+  is built on it: fuzzy search (abbreviations inside one word, never letters scattered across
+  words), unavailable actions listed greyed out with the reason (Enter does nothing), recent
+  actions first (this browser, per user; localStorage, wrapped), an ARIA combobox + listbox, and
+  closed while text is being edited.
+- `Editor.bringForward(ids)` / `sendBackward(ids)` (`Mod+Shift+]` / `[`; `planStackStep` in
+  `geometry/order.ts`): one step past the next item each one OVERLAPS (non-overlapping items
+  change nothing visible, so they're passed), never past another selected item, riders with
+  their item, frames only among frames. New z values go between the neighbours (no renumbering).
+- Exact size and position (engine chrome: "Size and position" in the format toolbar,
+  `engine/editor/exact.ts`): X / Y move the whole selection through `moveBy` (one item: its own
+  stored top-left; several: their bounding box); W / H / rotation apply to each unlocked item the
+  way its handles would (`resize: 'aspect'` keeps the ratio, `'scale'` / `'width-only'` take a
+  width only, `'none'` and connectors nothing), growing from the item's own (rotated) top-left
+  corner. Typed values land on whole pixels exactly — never grid-snapped, a typed number is meant
+  — while ↑/↓ in a field step to the next grid line when "Snap to grid" is on (Shift: five), else
+  1 px (Shift 10). Each commit is one gesture = one undo step.
+- Mixed selections (`ElementDefinition.sharedStyle(el)` / `applySharedStyle(el, style)`,
+  `SharedStyle` = fill, stroke, strokeWidth, strokeStyle, fontFamily, fontSize, textColor, align,
+  vAlign): a type reports the keys it has; when the selection holds several types, the engine's
+  `MixedStyleSection` (`engine/ui/MixedStyle.tsx`, before the features' sections) shows a control
+  for every key two or more selected items have (MIXED when they disagree) and writes ONE
+  `updateMany` with each item's patch from its own definition (default: the same-named field), so a
+  sticky maps a fill to its nearest paper, a card / mind-map topic to its colour, an icon a line
+  colour to `color`, and a text box ignores `fontSize: 'auto'`. Its text colour does not clear
+  per-word colours (that would touch types that take no text colour). A new type joins mixed
+  editing by defining `sharedStyle` (+ `applySharedStyle` when its fields differ).
 - `BaseElement.link` (`@freero/shared`): an item link — an external URL or `#<elementId>`.
   Untrusted; `isSafeHref(href)` (`@engine`) is the one safe-href rule shared with rich text.
   "Copy link to item" (`engine.copyLink`) builds `/board/<id>?item=<elementId>`; the board selects
@@ -527,7 +572,15 @@ modules/<name>/    auth, boards, members, uploads, realtime …
   init.ts          reserved: export default (ctx) => void | Promise<void>; runs once after all
                    migrations are applied and routes mounted, before listen (e.g. auth seeds the
                    demo user in non-production and purges expired sessions)
+  admin.ts         reserved: export default (ctx) => AdminCommand[] (platform/admin.ts) —
+                   operator commands, discovered by the CLI root admin.ts (`npm run admin -- …`)
 ```
+
+`src/admin.ts` is the second composition root: the operator CLI. It loads the same config, opens
+the same database (applies pending migrations like a starting instance), discovers every
+`modules/*/admin.ts` and runs one command in its own process, without HTTP. Commands use their
+module's service functions, print what they did, and record an audit event (below). On PGlite
+(one process) the server must be stopped first; on Postgres it runs next to the instances.
 
 `ctx` (`platform/context.ts`) carries `config` and `onShutdown(fn)` (realtime flushes docs there).
 Cross-module imports name the index file explicitly (`'../auth/index'`), which is what [S2] checks.
@@ -536,7 +589,8 @@ not a reserved hook. Server modules today: `auth` (users, sessions, auth_tokens:
 verification, password reset, email change, session list/revoke, avatars, deletion scheduling;
 auth_devices: browsers that signed in (new sign-in notices);
 auth_identities + auth_oidc_flows: sign in with a provider; auth_challenges, user_totp,
-user_recovery_codes: two-step verification),
+user_recovery_codes: two-step verification; auth_two_factor_recoveries: delayed "lost my
+authenticator" recoveries),
 `boards` (boards, stars, opens; trash), `members` (board_members, board_invites: pending invites
 for addresses without an account; role resolution), `workspaces` (workspaces, workspace_members,
 workspace_invites, projects, project_members; see "Workspaces" below), `uploads` (uploads; files in object storage or
@@ -606,9 +660,11 @@ personal and workspace data exports). See "Enterprise identity and data" below.
   previous address, two-step on/off, new recovery codes, provider connected/disconnected, deletion
   scheduled, and a sign-in from an unrecognised browser), with when / device / approximate place
   and what to do. Account mail, not notifications: no opt-out. Never a code, secret or token, except
-  the "this wasn't me" link an email change sends to a VERIFIED previous address (`revert_email`
-  token, 7 days): it restores that address, sets a new password, removes two-step verification and
-  providers set up since the change, cancels pending links and ends every session. A browser is
+  links that act for whoever reads a VERIFIED address: the "this wasn't me" link an email change
+  sends to the previous address (`revert_email` token, 7 days: it restores that address, sets a
+  new password, removes two-step verification and providers set up since the change, cancels
+  pending links — except a two-step undo link to that same address — and ends every session), and
+  the two-step recovery links below. A browser is
   recognised when it brings a `freero_device` cookie (random, HttpOnly, 400 days) that already
   signed in to the account (`auth_devices`, sha256 only); an account with no browser on record
   recognises one matching a live session's User-Agent and network (so an upgrade mails nobody).
@@ -617,6 +673,12 @@ personal and workspace data exports). See "Enterprise identity and data" below.
   and calls `sendSecurityNotice` where the change is made.
   `npm run verify` runs the whole provider flow against `scripts/lib/mock-oidc.mjs` (a local test
   provider with real signed id tokens) and GeoIP against a generated `.mmdb`.
+- Two-step verification recovery (KAI-99, `modules/auth/recovery.ts`) — see the next section.
+- Audit seam (`platform/audit.ts`): `audit({ action, actor, userId, detail })` records a
+  security-relevant action on an account — today one structured log line (`"audit": {…}`), plus
+  every sink registered with `onAuditEvent`. The Enterprise audit log registers its sink there (from
+  its init.ts and admin.ts) and keeps its own table; callers don't change. Never passwords, tokens
+  or codes in `detail`.
 - Ending a session (logout, "sign out" from another device, password reset/change, account
   deletion) calls auth's in-process `onSessionEnd`; realtime is its listener and closes that
   session's board sockets on every instance through its `end-session` control message — the one
@@ -714,9 +776,86 @@ members with roles owner / admin / member / guest (separate from board roles).
   data in a new module = an export function in its index + a line in `privacy/archive.ts` + a row
   in the data map (docs/operations.md). Archives are uploads' private files (never served at
   `/uploads/`, never swept).
-- **Seams**: `workspaces.onWorkspaceDeletionHold` (retention / legal holds, KAI-51);
-  `AUDIT(KAI-48)` comments mark where audit events go (SSO config, enforced sign-ins, SCIM
-  provisioning/deprovisioning, exports, workspace deletion).
+- **Seams**: `workspaces.onWorkspaceDeletionHold` (retention / legal holds, KAI-51). Audit events
+  (`platform/audit.ts`) for SSO configuration, every SSO sign-in (enforced flag), SCIM
+  provisioning/deprovisioning, data exports and workspace deletion; the audit log (KAI-48) stores
+  them by registering a sink.
+
+### Two-step verification recovery (KAI-99, `modules/auth/recovery.ts`)
+
+The problem: someone with the password turns on two-step verification with THEIR authenticator.
+The owner still reads the account's address, but a reset link proves only the address, and every
+sign-in ends in the second step (`completeSignIn`), so the owner is locked out. The opposite case
+needs a way back too: the owner lost their own phone and recovery codes. Freero is a hosted
+service with no support staff for the common case.
+
+**Threat model.** Three things can prove who someone is: the password (P), the mailbox of the
+account's address (M) and the second factor (F: the authenticator or a recovery code). Attackers:
+- *P only* (a reused or phished password): must never get in, nor remove F, nor lock the owner
+  out for good.
+- *M only* (a compromised mailbox): today M alone resets P. Once the owner has F, M alone must not
+  remove it — except in the short window right after F was set up (before that, M alone was
+  already enough).
+- *P + M*: can do anything the owner can, except pass F. Two-step verification can't stop them
+  for good — the owner could have lost F the same way — so it buys TIME and NOTICE: removing F
+  takes days, is mailed repeatedly, and the owner stops it by using F once.
+- *F only* (a stolen phone): useless without P or a provider sign-in (unchanged).
+- *Social engineering an operator*: the operator path checks identity beyond M (docs/operations.md).
+- *Notice spam*: starting a recovery takes P (or a connected provider) and is rate-limited.
+
+**Options weighed.** (a) A "this wasn't me" link in the two-step-on notice: precise for the
+lockout (the owner acts the moment it happens) but, while it works, M alone undoes a real
+enrolment — so it must be short and bound to that enrolment. (b) A delayed, self-service recovery:
+covers a lost phone and a lockout noticed late, but by itself is either too weak (M alone starts
+and finishes it) or useless against the lockout (whoever holds F cancels it). (c) An operator reset:
+handles the contested cases neither can, but costs staff time, so it must be the exception.
+(d) A delay before a new authenticator is enforced at sign-in: rejected — it weakens every real
+enrolment for days to help only the lockout, which (a) already covers without that cost. The
+decision is all three of (a)–(c), each closed against the attackers above:
+
+| Path | Who can start | Who can finish | Removes | Window |
+|---|---|---|---|---|
+| (a) undo link (`two_factor_undo`) | — (mailed at enrolment, only to a VERIFIED address) | M, while the address is still the one it went to, for THIS enrolment only (`enabled_at` bound) | F, providers; sets P | `TWO_FACTOR_UNDO_HOURS` (72) |
+| (b) delayed recovery (`auth_two_factor_recoveries`) | a pending sign-in whose first factor is P not set through an emailed link, or an already-connected provider | M (link mailed when ready) | F, providers; sets P | `TWO_FACTOR_RECOVERY_DELAY_SECONDS` (7 days) |
+| (c) operator (`npm run admin -- two-factor:reset`) | an operator after an out-of-band check | M (a reset link) | F, providers, P | immediate |
+
+Rules that make the table hold:
+- **(a) only the enrolment it announced.** The link stores the enrolment's `enabled_at`; once that
+  authenticator is gone or replaced, the link does nothing. It is only sent to a verified address
+  (whoever reads an unproven one may not be the owner). While the address differs from where it went
+  (the intruder then changed the email), it refuses without being used up; the email change's own
+  "restore my address" link — to the same mailbox — keeps it alive, so the owner restores the
+  address first and then removes the authenticator.
+- **(b) needs two of P, M and time, and loses to F.** `users.password_via_link_at` marks a password
+  chosen through an emailed link (reset, "this wasn't me"): it proves M, not P. Such a password, a
+  reset-link sign-in or a provider that is only now being connected can't start a recovery
+  (`recovery_needs_password`), so M alone never starts one; the finishing link goes only to the
+  address, so P alone never finishes one. Any accepted second-factor code (sign-in, turning it off,
+  new recovery codes) cancels a recovery in progress and clears the mark — the factor isn't lost.
+  So do a signed-in device (Settings) and the cancel link in the mails. Mails: started (with cancel
+  link), "completes soon" a day before (cancel link), ready (finishing link, 7 days), completed or
+  cancelled. The job (`auth:two-factor-recovery`, exclusive) claims each mail before sending it, so
+  it goes out once across instances. One recovery per account; `RATE_LIMIT_TWO_FACTOR_RECOVERY`
+  per IP and per account.
+- **Taking an account back is one operation** (`repo.takeBack`, one transaction): new password
+  (none for the operator), two-step verification and every provider sign-in removed (an intruder
+  who planted an authenticator may also have connected their own Google account; the owner
+  reconnects theirs), pending links cancelled except the email change's way back, then every
+  session ended through `endSessionsOf` (so board sockets close) and a notice to the address.
+- **(c) leaves the address as the only way in**, mails how to choose a password, and is logged
+  through the audit seam with the operator's name and stated reason. Its identity check must not
+  rest on M alone (see docs/operations.md).
+
+Residual risks, accepted and documented: for `TWO_FACTOR_UNDO_HOURS` after enrolment the account
+is as strong as before it (M suffices — as it did a minute earlier); P + M removes F after the
+recovery delay if the owner ignores three mails and never signs in with F; once the undo window
+has passed, an intruder who planted an authenticator can keep the owner out of (b) — by changing
+the password (the owner's reset-link password can't start one) or by signing in with their
+authenticator (that cancels it) — and that contested case goes to (c); live board tabs of sessions an
+operator ended from the CLI stay connected until they reload (docs/operations.md; KAI-146).
+
+New sign-in factors or recovery paths keep this table true: say who can start and finish them in
+P / M / F terms, and add their row.
 
 ### Database (`platform/db.ts`)
 
@@ -804,17 +943,21 @@ append-only log of Yjs updates (`board_doc_updates`); a save appends only what c
 previous one. Loading reads base + log in one statement (one consistent snapshot). Compaction (when
 a loaded board's log grows, and after a room unloads) folds the rows it read into a new base and
 deletes exactly those rows, guarded by the base's `version` (optimistic lock), so neither a save
-nor another instance's compaction running meanwhile is lost. It keeps a full-state snapshot at most
-every 30 min (`board_doc_snapshots`): the base of version history (`listBoardSnapshots` /
-`loadBoardSnapshot` in `realtime/index.ts`; REST in `realtime/routes.ts`). Snapshots have a
-`kind`: `auto` (compaction), `named` (never pruned), `before-restore`. Retention
+nor another instance's compaction running meanwhile is lost. Full-state snapshots
+(`board_doc_snapshots`) are the base of version history (`listBoardSnapshots` /
+`loadBoardSnapshot` in `realtime/index.ts`; REST in `realtime/routes.ts`): an automatic one at most
+every `FREERO_SNAPSHOT_EVERY_MS` (30 min), taken by compaction and, while a board stays open, by its
+room on a timer — one period after the first change, then once per period while changes keep coming
+(KAI-82). Every instance holding the board may try; the "newest snapshot old enough?" check and the
+insert run under the base row lock compaction takes, so one instance takes each. Snapshots have a
+`kind`: `auto`, `named` (never pruned), `before-restore`. Retention
 (`realtime/retention.ts`, job in `realtime/init.ts`, hourly on every instance under an advisory
 lock): non-named snapshots keep the newest per hour for a day, per day for a month, per week after;
 buckets are epoch-aligned, so a run is idempotent, and a snapshot is only ever deleted in favour of
 a newer one the same plan keeps. `RetentionPolicyFor` is the seam for workspace policies (KAI-51).
 
-Work done for a REQUEST rather than a socket (duplicate, trash, naming or restoring a version)
-goes through `withLiveRoom` (`rooms.ts`): the board's room is loaded on the handling instance
+Work done for a REQUEST or a job rather than a socket (duplicate, trash, naming or restoring a
+version, the account purge's comment rename) goes through `withLiveRoom` (`rooms.ts`): the board's room is loaded on the handling instance
 (held like a joining socket, unloaded as usual after) and caught up with every other instance
 holding it — it sends a sync-request and waits for one sync-reply per other subscriber of the
 board channel (`subscribedInstances`, Redis `PUBSUB NUMSUB`; 2 s cap). So `snapshotBoardDoc` is
@@ -933,6 +1076,12 @@ only to connections that may read them:
   `DATABASE_URL` it runs against that Postgres (fresh database per run, dropped afterwards) and
   also starts two instances at once on one empty database (migration lock); with `REDIS_URL` too,
   it runs two instances on one database + Redis with clients on each. CI does all of it.
+  `--only main,signin,secrets,sweep,purge,notify,platform,multi` runs some groups (to loop one while hunting a flake).
+  Checks wait on the real condition, never a fixed sleep: `waitFor(cond, ms)` polls until a
+  deadline; `settled(client, observers)` is a barrier (a presence change the server handles after
+  everything the client sent before, relayed in order) for proving something did NOT arrive;
+  `waitUnloaded(proc)` waits until the server holds no doc in memory (`/metrics` gauge), so the
+  next read comes from the database.
 - UI: drive the real app in a browser (see `.claude/skills/verify-freero/`).
 
 ### What a test is for

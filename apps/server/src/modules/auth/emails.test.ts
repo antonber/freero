@@ -1,8 +1,5 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { outboxDir } from '../../platform/mail';
-import { closeTestDb, openTestDb } from '../../platform/testing';
+import { closeTestDb, mailedLink, openTestDb } from '../../platform/testing';
 import { changePassword, confirmEmailChange, requestEmailChange, requestPasswordReset, resetPassword } from './emails';
 import * as repo from './repo';
 import { checkCredentials, createUser, hashToken, newToken } from './service';
@@ -13,19 +10,7 @@ afterAll(() => closeTestDb());
 let n = 0;
 const email = (label: string) => `${label}-${++n}@auth.test.freero.app`;
 
-async function mailedToken(to: string, route: string, timeoutMs = 3000): Promise<string> {
-  const end = Date.now() + timeoutMs;
-  for (;;) {
-    const dir = outboxDir();
-    const texts = fs.existsSync(dir)
-      ? fs.readdirSync(dir).map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')) as { to: string; text: string })
-      : [];
-    const m = texts.filter((t) => t.to === to).map((t) => new RegExp(`${route}\\?token=([A-Za-z0-9_-]+)`).exec(t.text)).find(Boolean);
-    if (m) return m[1];
-    if (Date.now() > end) throw new Error(`no ${route} link mailed to ${to}`);
-    await new Promise((r) => setTimeout(r, 20));
-  }
-}
+const mailedToken = (to: string, route: string) => mailedLink(to, new RegExp(`${route}\\?token=([A-Za-z0-9_-]+)`));
 
 async function session(userId: string): Promise<string> {
   const key = hashToken(newToken());

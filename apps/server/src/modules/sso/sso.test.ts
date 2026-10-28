@@ -52,10 +52,10 @@ it('"Enforce SSO" refuses other ways in for the domain; the break-glass exemptio
   await addDomain(ws.id, domain);
   const claim = (await repo.listDomains(ws.id))[0];
   setTxtLookupForTests(async (name) => (name === txtName(domain) ? [txtValue(claim.token)] : []));
-  await verifyDomain(ws.id, claim.id);
-  await saveConnection(ws.id, { protocol: 'oidc', enabled: true, oidcIssuer: 'https://idp.example', oidcClientId: 'c', oidcClientSecret: 's' });
+  await verifyDomain(ws.id, claim.id, owner.id);
+  await saveConnection(ws.id, owner.id, { protocol: 'oidc', enabled: true, oidcIssuer: 'https://idp.example', oidcClientId: 'c', oidcClientSecret: 's' });
   await repo.markTested(ws.id, Date.now());
-  await setEnforcement(ws.id, 'owner', { enforced: true, breakGlassUserId: owner.id });
+  await setEnforcement(ws.id, { id: owner.id, role: 'owner' }, { enforced: true, breakGlassUserId: owner.id });
 
   const attempt = (u: Account, method: string) => enforcedSsoRestriction({ email: u.email, userId: u.id, method });
   expect(await attempt(other, 'password')).not.toBeNull();
@@ -74,13 +74,14 @@ it('pointing the connection at another identity provider turns enforcement off u
   const owner = await at(domain, 'owner');
   const ws = await createTeamWorkspace(owner.id, 'Switching');
   const conn = { protocol: 'oidc' as const, enabled: true, oidcIssuer: 'https://idp-a.example', oidcClientId: 'c', oidcClientSecret: 's' };
-  await saveConnection(ws.id, conn);
+  const actor = { id: owner.id, role: 'owner' as const };
+  await saveConnection(ws.id, owner.id, conn);
   await repo.markTested(ws.id, Date.now());
-  await setEnforcement(ws.id, 'owner', { enforced: true, breakGlassUserId: owner.id });
-  await saveConnection(ws.id, { ...conn, sessionHours: 4 }); // same provider: still enforced
+  await setEnforcement(ws.id, actor, { enforced: true, breakGlassUserId: owner.id });
+  await saveConnection(ws.id, owner.id, { ...conn, sessionHours: 4 }); // same provider: still enforced
   expect((await repo.getConnection(ws.id))?.enforced).toBe(true);
-  await saveConnection(ws.id, { ...conn, oidcIssuer: 'https://idp-b.example' });
+  await saveConnection(ws.id, owner.id, { ...conn, oidcIssuer: 'https://idp-b.example' });
   const after = await repo.getConnection(ws.id);
   expect([after?.enforced, after?.testedAt]).toEqual([false, null]);
-  await expect(setEnforcement(ws.id, 'owner', { enforced: true, breakGlassUserId: owner.id })).rejects.toMatchObject({ status: 409 });
+  await expect(setEnforcement(ws.id, actor, { enforced: true, breakGlassUserId: owner.id })).rejects.toMatchObject({ status: 409 });
 });

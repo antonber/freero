@@ -1,9 +1,6 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest';
 import type { User } from '@freero/shared';
-import { outboxDir } from '../../platform/mail';
-import { closeTestDb, openTestDb } from '../../platform/testing';
+import { closeTestDb, openTestDb, outboxMails } from '../../platform/testing';
 import { createUser, markEmailVerified, onEmailVerified } from '../auth/index';
 import { createBoard, getBoardAccess } from '../boards/index';
 import { acceptInvite, convertInvitesFor, inviteByEmail, previewInvite, resendInvite } from './invites';
@@ -23,12 +20,7 @@ afterEach(() => vi.useRealTimers());
 
 /** The token of the latest invite link mailed to `to` (dev outbox). */
 function inviteToken(to: string): string {
-  const mails = fs
-    .readdirSync(outboxDir())
-    .map((f) => JSON.parse(fs.readFileSync(path.join(outboxDir(), f), 'utf8')) as { to: string; text: string; sentAt: number })
-    .filter((m) => m.to === to)
-    .sort((a, b) => a.sentAt - b.sentAt);
-  const m = /\/invite\/([A-Za-z0-9_-]+)/.exec(mails.at(-1)?.text ?? '');
+  const m = /\/invite\/([A-Za-z0-9_-]+)/.exec(outboxMails().filter((mail) => mail.to === to).at(-1)?.text ?? '');
   if (!m) throw new Error(`no invite mailed to ${to}`);
   return m[1];
 }

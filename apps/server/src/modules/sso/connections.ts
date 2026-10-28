@@ -1,8 +1,8 @@
 // A team workspace's identity provider: its settings (owners/admins), and "Enforce SSO".
 import type { Request } from 'express';
 import type { SsoConnectionInput, SsoSettings, WorkspaceRole } from '@freero/shared';
+import { audit } from '../../platform/audit';
 import { badRequest, HttpError } from '../../platform/http';
-import { log } from '../../platform/log';
 import { appUrl } from '../../platform/mail';
 import { seal } from '../../platform/secrets';
 import { endSessionsOf, userIdsAtDomain } from '../auth/index';
@@ -68,7 +68,7 @@ const str = (v: unknown, what: string, max = 2048): string => {
 };
 
 /** Saves the identity provider. Pointing it at another provider turns enforcement off until a sign-in proves it. */
-export async function saveConnection(workspaceId: string, body: Partial<SsoConnectionInput>): Promise<void> {
+export async function saveConnection(workspaceId: string, actorId: string, body: Partial<SsoConnectionInput>): Promise<void> {
   const protocol = body.protocol;
   if (protocol !== 'saml' && protocol !== 'oidc') throw badRequest('protocol must be saml or oidc');
   const prev = await repo.getConnection(workspaceId);
@@ -126,14 +126,17 @@ export async function saveConnection(workspaceId: string, body: Partial<SsoConne
     providerChanged,
     Date.now(),
   );
-  // AUDIT(KAI-48): emit `sso.connection_saved` { workspaceId, protocol, enabled, providerChanged } once the audit log lands.
-  log(`sso: workspace ${workspaceId} saved its ${protocol} connection (enabled: ${enabled}${providerChanged ? ', new provider' : ''})`);
+  await audit({
+    action: 'sso.connection_saved',
+    actor: { kind: 'user', userId: actorId },
+    userId: actorId,
+    detail: { workspaceId, protocol, enabled, providerChanged, defaultRole, sessionHours },
+  });
 }
 
-export async function removeConnection(workspaceId: string): Promise<void> {
+export async function removeConnection(workspaceId: string, actorId: string): Promise<void> {
   await repo.deleteConnection(workspaceId);
-  // AUDIT(KAI-48): emit `sso.connection_removed` { workspaceId } once the audit log lands.
-  log(`sso: workspace ${workspaceId} removed its SSO connection`);
+  await audit({ action: 'sso.connection_removed', actor: { kind: 'user', userId: actorId }, userId: actorId, detail: { workspaceId } });
 }
 
 /**
@@ -143,13 +146,17 @@ export async function removeConnection(workspaceId: string): Promise<void> {
  * the verified domains (except the break-glass owner's), on every instance: from then on they are
  * signed in only through the identity provider.
  */
-export async function setEnforcement(workspaceId: string, actorRole: WorkspaceRole, body: { enforced?: unknown; breakGlassUserId?: unknown }): Promise<number> {
+export async function setEnforcement(
+  workspaceId: string,
+  actor: { id: string; role: WorkspaceRole },
+  body: { enforced?: unknown; breakGlassUserId?: unknown },
+): Promise<number> {
   const enforced = body.enforced === true;
   const c = await repo.getConnection(workspaceId);
   if (!c) throw badRequest('Set up the identity provider first');
   let breakGlass: string | null = null;
   if (enforced) {
-    if (actorRole !== 'owner') throw new HttpError(403, 'Only a workspace owner can enforce single sign-on');
+    if (actor.role !== 'owner') throw new HttpError(403, 'Only a workspace owner can enforce single sign-on');
     if (typeof body.breakGlassUserId !== 'string' || !body.breakGlassUserId) throw badRequest('Choose the owner who keeps password sign-in (break-glass)');
     if ((await workspaceRole(workspaceId, body.breakGlassUserId)) !== 'owner') throw badRequest('The break-glass person must be an owner of this workspace');
     breakGlass = body.breakGlassUserId;
@@ -162,7 +169,11 @@ export async function setEnforcement(workspaceId: string, actorRole: WorkspaceRo
     for (const domain of await verifiedDomainsOf(workspaceId))
       for (const userId of await userIdsAtDomain(domain)) if (userId !== breakGlass) ended += await endSessionsOf(userId, null, method);
   }
-  // AUDIT(KAI-48): emit `sso.enforcement_changed` { workspaceId, enforced, breakGlassUserId, sessionsEnded } once the audit log lands.
-  log(`sso: workspace ${workspaceId} ${enforced ? `enforces SSO (ended ${ended} other sessions)` : 'no longer enforces SSO'}`);
+  await audit({
+    action: enforced ? 'sso.enforcement_on' : 'sso.enforcement_off',
+    actor: { kind: 'user', userId: actor.id },
+    userId: actor.id,
+    detail: { workspaceId, breakGlassUserId: breakGlass, sessionsEnded: ended },
+  });
   return ended;
 }

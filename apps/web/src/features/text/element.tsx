@@ -28,6 +28,9 @@ export default defineElement({
   // Corners scale the text (font size follows); side handles set a wrapping width.
   resize: 'scale',
   minSize: { w: 16, h: 8 },
+  sharedStyle: (el) => ({ fontFamily: el.fontFamily, fontSize: el.fontSize, textColor: el.textColor, align: el.align }),
+  // A free text box has no box to fit text into: 'auto' leaves its size alone.
+  applySharedStyle: (_el, { fontSize, ...rest }) => ({ ...rest, ...(typeof fontSize === 'number' ? { fontSize } : {}) }),
   textField: 'text',
   removeWhenEmpty: true,
   defaults: (): Omit<NewElement<'text'>, 'x' | 'y'> => textDefaults(),

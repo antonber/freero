@@ -4,6 +4,7 @@
 // still its owner/admin) until it expires, then deleted.
 import type { Request } from 'express';
 import type { DataExportInfo } from '@freero/shared';
+import { audit } from '../../platform/audit';
 import { getConfig } from '../../platform/config';
 import { HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
@@ -34,8 +35,7 @@ export async function requestExport(by: string, workspaceId: string | null): Pro
   const id = newId(20);
   const ok = await repo.insertExport({ id, kind: workspaceId ? 'workspace' : 'user', requestedBy: by, workspaceId }, Date.now());
   if (!ok) throw new HttpError(409, 'An export is already being prepared. You’ll get an email when it’s ready.');
-  // AUDIT(KAI-48): emit `${workspaceId ? 'workspace' : 'user'}.export_requested` { actorId: by, workspaceId } once the audit log lands.
-  log(`privacy: ${by} requested a ${workspaceId ? `workspace (${workspaceId})` : 'personal'} data export ${id}`);
+  await audit({ action: workspaceId ? 'workspace.export_requested' : 'account.export_requested', actor: { kind: 'user', userId: by }, userId: by, detail: { exportId: id, workspaceId } });
   return info((await repo.getExport(id))!);
 }
 
@@ -55,8 +55,12 @@ export async function openExport(id: string, userId: string) {
   }
   const file = await openPrivateFile(e.fileKey);
   if (!file) throw notFound('That export is not available (it may have expired)');
-  // AUDIT(KAI-48): emit `${e.kind}.export_downloaded` { actorId: userId, exportId: id, workspaceId: e.workspaceId } once the audit log lands.
-  log(`privacy: ${userId} downloaded data export ${id}`);
+  await audit({
+    action: e.kind === 'workspace' ? 'workspace.export_downloaded' : 'account.export_downloaded',
+    actor: { kind: 'user', userId },
+    userId,
+    detail: { exportId: id, workspaceId: e.workspaceId },
+  });
   return { ...file, filename: `freero-${e.kind === 'workspace' ? 'workspace' : 'my-data'}-${new Date(e.readyAt ?? Date.now()).toISOString().slice(0, 10)}.zip` };
 }
 

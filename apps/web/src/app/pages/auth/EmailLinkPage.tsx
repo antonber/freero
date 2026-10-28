@@ -5,7 +5,13 @@ import { api, ApiError } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { AuthNotice, AuthShell } from './AuthShell';
 
-type Mode = 'verify' | 'change';
+type Mode = 'verify' | 'change' | 'cancelRecovery';
+
+const SUBMIT: Record<Mode, (token: string) => Promise<unknown>> = {
+  verify: api.verifyEmail,
+  change: api.confirmEmailChange,
+  cancelRecovery: api.cancelTwoFactorRecoveryByLink,
+};
 
 // Tokens are single-use: a re-run effect (StrictMode, a re-render) must not send one twice.
 const inFlight = new Map<string, Promise<unknown>>();
@@ -13,7 +19,7 @@ function submitOnce(mode: Mode, token: string): Promise<unknown> {
   const key = `${mode}:${token}`;
   let p = inFlight.get(key);
   if (!p) {
-    p = mode === 'verify' ? api.verifyEmail(token) : api.confirmEmailChange(token);
+    p = SUBMIT[mode](token);
     inFlight.set(key, p);
   }
   return p;
@@ -32,9 +38,18 @@ const COPY: Record<Mode, { doc: string; working: string; done: string; doneBody:
     done: 'Email address changed',
     doneBody: 'Use your new address the next time you log in.',
   },
+  cancelRecovery: {
+    doc: 'Cancel account recovery',
+    working: 'Cancelling the recovery…',
+    done: 'Recovery cancelled',
+    doneBody: 'Two-step verification stays on. If you didn’t start the recovery, change your password: whoever did knows it.',
+  },
 };
 
-/** /verify-email?token= and /confirm-email?token= — the links from verification and email-change mails. */
+/**
+ * /verify-email?token=, /confirm-email?token= and /cancel-recovery?token= — the links from
+ * verification, email-change and two-step recovery mails.
+ */
 export function EmailLinkPage({ mode }: { mode: Mode }) {
   const [params] = useSearchParams();
   const token = params.get('token') ?? '';

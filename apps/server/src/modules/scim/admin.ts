@@ -7,7 +7,7 @@ import type { ScimGroupMapping, ScimSettings } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { badRequest, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
-import { log } from '../../platform/log';
+import { audit } from '../../platform/audit';
 import { appUrl } from '../../platform/mail';
 import { projectOfWorkspace } from '../workspaces/index';
 import * as repo from './repo';
@@ -36,8 +36,9 @@ export async function createToken(workspaceId: string, createdBy: string, labelI
   const label = typeof labelIn === 'string' && labelIn.trim() ? labelIn.trim().slice(0, 80) : 'Provisioning';
   if ((await repo.countTokens(workspaceId)) >= MAX_TOKENS) throw new HttpError(409, `A workspace can have at most ${MAX_TOKENS} provisioning tokens. Revoke one first.`);
   const token = `${TOKEN_PREFIX}${randomBytes(32).toString('base64url')}`;
+  const id = newId(12);
   await repo.insertToken({
-    id: newId(12),
+    id,
     workspaceId,
     label,
     tokenHash: createHash('sha256').update(token).digest('hex'),
@@ -45,15 +46,13 @@ export async function createToken(workspaceId: string, createdBy: string, labelI
     createdBy,
     now: Date.now(),
   });
-  // AUDIT(KAI-48): emit `scim.token_created` { workspaceId, actorId: createdBy, label } once the audit log lands.
-  log(`scim: ${createdBy} created a provisioning token for ${workspaceId}`);
+  await audit({ action: 'scim.token_created', actor: { kind: 'user', userId: createdBy }, userId: createdBy, detail: { workspaceId, tokenId: id, label } });
   return token;
 }
 
 export async function revokeToken(workspaceId: string, actorId: string, tokenId: string): Promise<void> {
   if (!(await repo.deleteToken(workspaceId, tokenId))) throw notFound('Token not found');
-  // AUDIT(KAI-48): emit `scim.token_revoked` { workspaceId, actorId, tokenId } once the audit log lands.
-  log(`scim: ${actorId} revoked provisioning token ${tokenId} of ${workspaceId}`);
+  await audit({ action: 'scim.token_revoked', actor: { kind: 'user', userId: actorId }, userId: actorId, detail: { workspaceId, tokenId } });
 }
 
 function cleanMapping(v: unknown): ScimGroupMapping | null {

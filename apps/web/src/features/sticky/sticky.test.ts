@@ -79,3 +79,11 @@ describe('pasting onto selected stickies', () => {
     }
   });
 });
+
+describe('mixed-selection style', () => {
+  it('a fill picked for a sticky + shape selection paints the sticky the closest paper, not the default yellow', () => {
+    const sticky = { ...stickyDef.defaults(), id: 's', x: 0, y: 0 } as unknown as StickyElement;
+    expect(stickyDef.applySharedStyle!(sticky, { fill: '#2F80ED' })).toEqual({ color: 'blue' });
+    expect(stickyDef.applySharedStyle!(sticky, { fill: '#E5484D' })).toEqual({ color: 'coral' });
+  });
+});

@@ -2,6 +2,7 @@
 // a workspace grants on its boards (asked by modules/boards for every access decision).
 import type { LinkAccess, Role, WorkspaceMember, WorkspacePolicies, WorkspaceRole, WorkspaceSummary } from '@freero/shared';
 import type { Request } from 'express';
+import { audit } from '../../platform/audit';
 import { getConfig } from '../../platform/config';
 import { badRequest, forbidden, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
@@ -147,8 +148,7 @@ export async function deleteWorkspace(req: Request | null, workspaceId: string, 
   const owners = (await repo.listMembers(workspaceId)).filter((m) => m.role === 'owner').map((m) => m.userId);
   const boards = await deleteTeamWorkspaceNow(workspaceId);
   if (boards === null) return;
-  // AUDIT(KAI-48): emit `workspace.deleted` { workspaceId, actorId: userId, boards } once the audit log lands.
-  log(`workspaces: ${userId} deleted workspace ${workspaceId} (${boards} boards)`);
+  await audit({ action: 'workspace.deleted', actor: { kind: 'user', userId }, userId, detail: { workspaceId, name: workspace.name, boards } });
   // A receipt for every owner: what went, and that nothing of it can be restored.
   const people = await getUsers([...owners, userId]);
   for (const u of people.values())

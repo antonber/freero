@@ -61,3 +61,8 @@ path. Read [ARCHITECTURE.md](ARCHITECTURE.md) before changing code.
 
 Stack: React 18 + TypeScript + Vite, Yjs (CRDT) over WebSockets, Express + `ws`, PostgreSQL
 (`pg`; PGlite for dev/tests), Playwright for UI verification.
+
+## License
+
+[MIT](LICENSE). Dependencies are kept to permissive licences (MIT, Apache-2.0, MPL-2.0); GPL, AGPL and
+source-available projects are integrated at the protocol level only, never vendored.

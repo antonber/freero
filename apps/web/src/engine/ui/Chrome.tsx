@@ -1,5 +1,5 @@
 // Board chrome composition: everything around the canvas.
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import { WifiOff, X } from 'lucide-react';
 import { IconButton, Spinner } from '@ui';
@@ -12,6 +12,7 @@ import { BottomLeft, BottomRight } from './Navigation';
 import { FormatToolbar } from './FormatToolbar';
 import { ContextMenu } from './ContextMenu';
 import { PanelSlotView } from './PanelSlot';
+import { DockHeaderContext } from './DockHeader';
 import './chrome.css';
 
 function Dock() {
@@ -19,15 +20,26 @@ function Dock() {
   const dock = useDock();
   const role = useRole();
   const reg = dock ? core.registry.panelsById.get(dock) : undefined;
+  const [headSlot, setHeadSlot] = useState<HTMLDivElement | null>(null);
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => setScrolled(false), [dock]);
   if (!reg || reg.def.slot !== 'dock-right' || ROLE_RANK[role] < ROLE_RANK[reg.def.minRole ?? 'viewer']) return null;
   const { def, feature } = reg;
   return (
     <aside className="fr-dock fr-chrome-card" data-fr-chrome="" data-fr-occludes="dock" aria-label="Side panel">
-      <IconButton className="fr-dock__close" icon={X} label="Close panel" size={32} onClick={() => core.editor.openDock(null)} />
-      <div className="fr-dock__body" data-fr-scrollable="">
-        <ScopeContext.Provider value={feature}>
-          <def.Component editor={core.scoped(feature)} />
-        </ScopeContext.Provider>
+      <div className={`fr-dock__head${scrolled ? ' is-scrolled' : ''}`}>
+        <div className="fr-dock__headslot" ref={setHeadSlot} />
+        <IconButton className="fr-dock__close" icon={X} label="Close panel" size={32} onClick={() => core.editor.openDock(null)} />
+      </div>
+      <div className="fr-dock__body" data-fr-scrollable="" onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 0)}>
+        {/* Mounted once the header strip exists, so a panel's header renders there from the start. */}
+        {headSlot && (
+          <DockHeaderContext.Provider value={headSlot}>
+            <ScopeContext.Provider value={feature}>
+              <def.Component editor={core.scoped(feature)} />
+            </ScopeContext.Provider>
+          </DockHeaderContext.Provider>
+        )}
       </div>
     </aside>
   );

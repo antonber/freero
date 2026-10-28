@@ -16,6 +16,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Request, Response } from 'express';
 import { SSO_REQUIRED, type OidcErrorCode } from '@freero/shared';
+import { audit } from '../../platform/audit';
 import { getConfig } from '../../platform/config';
 import { HttpError, parseCookies } from '../../platform/http';
 import { newId } from '../../platform/ids';
@@ -239,8 +240,12 @@ async function completeDirectorySignIn(req: Request, res: Response, c: repo.Conn
     return void fail(res, e.code === SSO_REQUIRED ? 'sso_required' : 'sso_failed');
   }
   await repo.markTested(workspaceId, now);
-  // AUDIT(KAI-48): emit `sso.sign_in` { workspaceId, userId, protocol: c.protocol, enforced: c.enforced, jit: r.created } once the audit log lands.
-  log(`sso: ${r.userId} signed in through workspace ${workspaceId}'s ${c.protocol} provider${c.enforced ? ' (enforced)' : ''}${r.created ? ' (new account)' : ''}`);
+  await audit({
+    action: 'sso.sign_in',
+    actor: { kind: 'user', userId: r.userId },
+    userId: r.userId,
+    detail: { workspaceId, protocol: c.protocol, enforced: c.enforced, newAccount: r.created, secondStepPending: 'twoFactorRequired' in done },
+  });
   if ('twoFactorRequired' in done) return void res.redirect(303, `/login/two-factor?next=${encodeURIComponent(returnTo)}`);
   res.redirect(303, returnTo);
 }

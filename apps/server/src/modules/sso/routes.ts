@@ -39,7 +39,7 @@ export default function ssoRoutes(_ctx: ServerContext): Router {
   }));
   r.post('/workspaces/:id/sso/domains/:domainId/verify', requireUser, rateLimit('sso', 'user'), handle(async (req, res) => {
     await manager(req);
-    await verifyDomain(req.params.id, req.params.domainId);
+    await verifyDomain(req.params.id, req.params.domainId, currentUser(req).id);
     res.json(await ssoSettings(req, req.params.id));
   }));
   r.delete('/workspaces/:id/sso/domains/:domainId', requireUser, handle(async (req, res) => {
@@ -49,18 +49,18 @@ export default function ssoRoutes(_ctx: ServerContext): Router {
   }));
   r.put('/workspaces/:id/sso/connection', requireUser, handle(async (req, res) => {
     await manager(req);
-    await saveConnection(req.params.id, req.body ?? {});
+    await saveConnection(req.params.id, currentUser(req).id, req.body ?? {});
     res.json(await ssoSettings(req, req.params.id));
   }));
   r.delete('/workspaces/:id/sso/connection', requireUser, handle(async (req, res) => {
     const ws = await manager(req);
     if (ws.role !== 'owner') throw badRequest('Only a workspace owner can remove single sign-on');
-    await removeConnection(req.params.id);
+    await removeConnection(req.params.id, currentUser(req).id);
     res.json(await ssoSettings(req, req.params.id));
   }));
   r.post('/workspaces/:id/sso/enforce', requireUser, handle(async (req, res) => {
     const ws = await manager(req);
-    const sessionsEnded = await setEnforcement(req.params.id, ws.role, req.body ?? {});
+    const sessionsEnded = await setEnforcement(req.params.id, { id: currentUser(req).id, role: ws.role }, req.body ?? {});
     res.json({ ...(await ssoSettings(req, req.params.id)), sessionsEnded });
   }));
 

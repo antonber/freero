@@ -6,7 +6,7 @@
 import { randomBytes } from 'node:crypto';
 import { badRequest, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
-import { log } from '../../platform/log';
+import { audit } from '../../platform/audit';
 import { domainHasToken } from './dns';
 import * as repo from './repo';
 
@@ -29,7 +29,7 @@ export async function addDomain(workspaceId: string, input: unknown): Promise<vo
 }
 
 /** Looks the TXT record up now; verified on a match. 409 with a reason otherwise. */
-export async function verifyDomain(workspaceId: string, domainId: string): Promise<void> {
+export async function verifyDomain(workspaceId: string, domainId: string, actorId: string): Promise<void> {
   const d = await repo.getDomain(workspaceId, domainId);
   if (!d) throw notFound('Domain not found');
   if (d.verifiedAt !== null) return;
@@ -51,8 +51,7 @@ export async function verifyDomain(workspaceId: string, domainId: string): Promi
     if (e instanceof repo.DomainTakenError) throw new HttpError(409, `${d.domain} is already verified by another workspace`);
     throw e;
   }
-  // AUDIT(KAI-48): emit `sso.domain_verified` { workspaceId, domain } once the audit log lands.
-  log(`sso: workspace ${workspaceId} verified ${d.domain}`);
+  await audit({ action: 'sso.domain_verified', actor: { kind: 'user', userId: actorId }, userId: actorId, detail: { workspaceId, domain: d.domain } });
 }
 
 export async function removeDomain(workspaceId: string, domainId: string): Promise<void> {

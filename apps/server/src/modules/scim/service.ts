@@ -14,6 +14,7 @@
 // of the people it provisioned, and someone in no role group gets the default role), or a PROJECT
 // (members of mapped groups are its members; projects mapped by groups are directory-managed for
 // provisioned people). Owners are never changed by the directory.
+import { audit } from '../../platform/audit';
 import { getConfig } from '../../platform/config';
 import { HttpError } from '../../platform/http';
 import { newId } from '../../platform/ids';
@@ -129,14 +130,15 @@ async function leaveWorkspace(workspaceId: string, userId: string): Promise<void
   }
 }
 
-/** Deactivation: out of the workspace, live; the organization's own account is signed out everywhere. */
-async function deprovision(workspaceId: string, su: repo.ScimUser): Promise<void> {
+/** Deactivation: out of the workspace, live; the organization's own account is signed out everywhere. Returns the sessions ended. */
+async function deprovision(workspaceId: string, su: repo.ScimUser): Promise<number> {
   await leaveWorkspace(workspaceId, su.userId);
-  if (await isOrganizationEmail(workspaceId, su.email)) {
-    const ended = await endSessionsOf(su.userId);
-    log(`scim: ended ${ended} session(s) of ${su.userId} (deprovisioned from ${workspaceId})`);
-  }
+  return (await isOrganizationEmail(workspaceId, su.email)) ? endSessionsOf(su.userId) : 0;
 }
+
+/** An audit event of the directory (SCIM) acting on someone in the workspace. */
+const directoryEvent = (action: string, workspaceId: string, userId: string, detail: Record<string, string | number | boolean | null> = {}) =>
+  audit({ action, actor: { kind: 'system' }, userId, detail: { workspaceId, via: 'scim', ...detail } });
 
 // ---- Users ----
 
@@ -155,8 +157,7 @@ export async function createUser(workspaceId: string, body: unknown): Promise<re
   }
   if (name && !account.created) await setAccountName(account.userId, name);
   await syncPerson(workspaceId, account.userId);
-  // AUDIT(KAI-48): emit `scim.user_provisioned` { workspaceId, userId, active } once the audit log lands.
-  log(`scim: provisioned ${account.userId} in ${workspaceId}${u.active ? '' : ' (inactive)'}`);
+  await directoryEvent('scim.user_provisioned', workspaceId, account.userId, { active: u.active, newAccount: account.created });
   return (await repo.getUser(workspaceId, account.userId))!;
 }
 
@@ -177,11 +178,12 @@ export async function replaceUser(workspaceId: string, userId: string, body: unk
   }
   const name = personName(u);
   if (name && name !== personName(prev)) await setAccountName(userId, name);
-  if (prev.active && !u.active) await deprovision(workspaceId, prev);
-  else if (u.active) await syncPerson(workspaceId, userId);
-  if (prev.active !== u.active) {
-    // AUDIT(KAI-48): emit `scim.user_${u.active ? 'reactivated' : 'deprovisioned'}` { workspaceId, userId } once the audit log lands.
-    log(`scim: ${u.active ? 'reactivated' : 'deprovisioned'} ${userId} in ${workspaceId}`);
+  if (prev.active && !u.active) {
+    const sessionsEnded = await deprovision(workspaceId, prev);
+    await directoryEvent('scim.user_deprovisioned', workspaceId, userId, { sessionsEnded });
+  } else if (u.active) {
+    await syncPerson(workspaceId, userId);
+    if (!prev.active) await directoryEvent('scim.user_reactivated', workspaceId, userId);
   }
   return (await repo.getUser(workspaceId, userId))!;
 }
@@ -191,10 +193,9 @@ export async function deleteUser(workspaceId: string, userId: string): Promise<v
   const su = await repo.getUser(workspaceId, userId);
   if (!su) throw new ScimError(404, 'User not found');
   // Leaving the workspace also ends its project memberships (removeDirectoryMember).
-  if (su.active) await deprovision(workspaceId, su);
+  const sessionsEnded = su.active ? await deprovision(workspaceId, su) : 0;
   await repo.deleteUser(workspaceId, userId);
-  // AUDIT(KAI-48): emit `scim.user_deleted` { workspaceId, userId } once the audit log lands.
-  log(`scim: deleted ${userId} from ${workspaceId}`);
+  await directoryEvent('scim.user_deleted', workspaceId, userId, { sessionsEnded });
 }
 
 // ---- Groups ----

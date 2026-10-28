@@ -413,15 +413,35 @@ button.fr-title:hover {
   animation: fr-dock-in 180ms var(--fr-ease);
 }
 
+/* The header strip never scrolls: the close button and the panel's own header (<DockHeader>) sit
+   in it, and the panel's content scrolls below it, never under the button. */
+.fr-dock__head {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  min-height: 48px;
+  border-bottom: 1px solid transparent;
+  transition: border-color 120ms var(--fr-ease);
+}
+
+.fr-dock__head.is-scrolled {
+  border-bottom-color: var(--fr-line);
+}
+
+.fr-dock__headslot {
+  flex: 1;
+  min-width: 0;
+}
+
 .fr-dock__close {
-  position: absolute;
-  right: 8px;
-  top: 8px;
-  z-index: 1;
+  flex: none;
+  margin: 8px 8px 0 0;
 }
 
 .fr-dock__body {
   flex: 1;
+  min-height: 0;
   overflow: auto;
 }
 
@@ -525,6 +545,88 @@ button.fr-title:hover {
 }
 
 .fr-boardmenu__hint {
+  font-size: 12px;
+  color: var(--fr-ink-3);
+}
+
+/* Mixed selections (MixedStyle.tsx): fill / border sample on the toolbar button. */
+.fr-mixedstyle-swatch {
+  display: block;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(23, 22, 43, 0.16);
+}
+.fr-mixedstyle-swatch.is-ring {
+  background: transparent;
+  border: 4px solid var(--fr-ink);
+  box-shadow: 0 0 0 1px rgba(23, 22, 43, 0.1);
+}
+.fr-mixedstyle-swatch.is-transparent {
+  background:
+    linear-gradient(135deg, transparent 45%, var(--fr-danger) 45%, var(--fr-danger) 55%, transparent 55%),
+    var(--fr-surface);
+  border-color: transparent;
+}
+.fr-mixedstyle-swatch.is-mixed {
+  background: conic-gradient(#ffa9a0 0 25%, #b5d6ff 0 50%, #c2efb0 0 75%, #fff3a3 0);
+  border-color: transparent;
+}
+.fr-mixedstyle-swatch.is-ring.is-mixed {
+  background:
+    radial-gradient(circle, var(--fr-surface) 0 38%, transparent 40%),
+    conic-gradient(#ffa9a0 0 25%, #b5d6ff 0 50%, #c2efb0 0 75%, #fff3a3 0);
+}
+
+/* Size and position popover (ExactControls.tsx). */
+.fr-exact {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.fr-exact__field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--fr-line-strong);
+  border-radius: var(--fr-radius-sm);
+  background: var(--fr-surface);
+}
+.fr-exact__field:focus-within {
+  border-color: var(--fr-primary);
+  box-shadow: 0 0 0 3px var(--fr-focus-ring);
+}
+.fr-exact__field.is-disabled {
+  background: var(--fr-surface-2);
+  color: var(--fr-ink-3);
+}
+.fr-exact__label,
+.fr-exact__unit {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fr-ink-3);
+}
+.fr-exact__input {
+  flex: 1;
+  width: 0;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fr-ink);
+}
+.fr-exact__input::placeholder {
+  color: var(--fr-ink-3);
+}
+.fr-exact__note {
+  margin: 8px 0 0;
   font-size: 12px;
   color: var(--fr-ink-3);
 }

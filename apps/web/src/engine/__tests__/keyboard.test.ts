@@ -154,3 +154,44 @@ describe('Escape', () => {
     expect(core.editor.getSelection()).toEqual([]);
   });
 });
+
+// German puts '[' / ']' on AltGr+8 / AltGr+9, and Windows reports AltGr as Ctrl+Alt (KAI-84).
+describe('bring to front / send to back where brackets need AltGr', () => {
+  const key = (init: KeyboardEventInit, target: EventTarget = document.body) => {
+    const ev = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init });
+    target.dispatchEvent(ev);
+    return ev;
+  };
+  const altGr = (digit: 8 | 9) => ({ key: digit === 8 ? '[' : ']', code: `Digit${digit}`, ctrlKey: true, altKey: true });
+  const onTop = (id: string, other: string) => core.editor.getElement(id)!.z > core.editor.getElement(other)!.z;
+
+  it('Ctrl+AltGr+9 / +8 reorder the selection, and so do Ctrl+Shift+↑ / ↓ on any layout', () => {
+    setup();
+    const a = box(0, 0);
+    const b = box(50, 50);
+    core.editor.select([a]);
+    key(altGr(9));
+    expect(onTop(a, b)).toBe(true);
+    key(altGr(8));
+    expect(onTop(a, b)).toBe(false);
+    key({ key: 'ArrowUp', code: 'ArrowUp', ctrlKey: true, shiftKey: true });
+    expect(onTop(a, b)).toBe(true);
+    key({ key: 'ArrowDown', code: 'ArrowDown', ctrlKey: true, shiftKey: true });
+    expect(onTop(a, b)).toBe(false);
+  });
+
+  it('typing "]" with AltGr into text being edited types it instead of bringing the item to front', () => {
+    setup();
+    const a = box(0, 0);
+    const b = box(50, 50);
+    core.editor.select([a]);
+    const field = document.createElement('div');
+    field.setAttribute('data-fr-text-editor', '');
+    field.contentEditable = 'true';
+    document.body.append(field);
+    const ev = key(altGr(9), field);
+    field.remove();
+    expect(ev.defaultPrevented).toBe(false);
+    expect(onTop(a, b)).toBe(false);
+  });
+});
