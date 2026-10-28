@@ -1,13 +1,15 @@
 // /admin/:workspaceId — the admin console of a team workspace (owners and admins): overview and
-// usage, members, security, data retention and the audit log. Every action is checked again by the
-// server; this page only hides what the caller's role can't do.
+// usage, members, security, single sign-on, provisioning, data (retention and export) and the
+// audit log. Every action is checked again by the server; this page only hides what the caller's
+// role can't do.
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ChartColumn, Hourglass, Lock, ScrollText, Users } from 'lucide-react';
+import { ArrowLeft, ChartColumn, Hourglass, KeyRound, Lock, ScrollText, UserCog, Users } from 'lucide-react';
 import type { WorkspaceSummary } from '@freero/shared';
 import { Logo, Spinner } from '@ui';
 import { api } from '../../api/client';
 import { AdminAudit } from './AdminAudit';
+import { AdminDataExport, AdminProvisioning, AdminSso } from './AdminIdentity';
 import { AdminMembers } from './AdminMembers';
 import { AdminOverview } from './AdminOverview';
 import { AdminRetention, AdminSecurity } from './AdminSettings';
@@ -17,7 +19,9 @@ const TABS = [
   { id: 'overview', label: 'Overview', icon: ChartColumn },
   { id: 'members', label: 'Members', icon: Users },
   { id: 'security', label: 'Security', icon: Lock },
-  { id: 'retention', label: 'Data retention', icon: Hourglass },
+  { id: 'sso', label: 'Single sign-on', icon: KeyRound },
+  { id: 'provisioning', label: 'Provisioning', icon: UserCog },
+  { id: 'retention', label: 'Data', icon: Hourglass },
   { id: 'audit', label: 'Audit log', icon: ScrollText },
 ] as const;
 type Tab = (typeof TABS)[number]['id'];
@@ -87,7 +91,14 @@ export function AdminConsolePage() {
             {tab === 'overview' ? <AdminOverview workspace={workspace} onOpen={(t) => setParams({ tab: t })} /> : null}
             {tab === 'members' ? <AdminMembers workspace={workspace} /> : null}
             {tab === 'security' ? <AdminSecurity workspace={workspace} onChanged={setWorkspace} /> : null}
-            {tab === 'retention' ? <AdminRetention workspace={workspace} /> : null}
+            {tab === 'sso' ? <AdminSso workspace={workspace} /> : null}
+            {tab === 'provisioning' ? <AdminProvisioning workspace={workspace} /> : null}
+            {tab === 'retention' ? (
+              <>
+                <AdminRetention workspace={workspace} />
+                <AdminDataExport workspace={workspace} />
+              </>
+            ) : null}
             {tab === 'audit' ? <AdminAudit workspace={workspace} /> : null}
           </main>
         </div>

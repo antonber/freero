@@ -126,6 +126,21 @@ connect and disconnect providers in Account settings.
 |---|---|---|
 | `GEOIP_DB_PATH` | — | Path to a MaxMind-format database, e.g. GeoLite2-City.mmdb or GeoLite2-Country.mmdb. With it, the signed-in devices list shows "City, Country" (or the country); without it, the masked network (`203.0.113.x`). Lookups are local and in memory: addresses are never sent anywhere. The file is not shipped with Freero (license): download it from MaxMind with a free account (or use another `.mmdb` provider such as DB-IP Lite) and refresh it periodically (MaxMind's `geoipupdate`); the server reads it at startup, so restart after an update. A missing or unreadable file stops the server. Behind a proxy, set `TRUST_PROXY` so the real client address is used. |
 
+## Workspace single sign-on, provisioning and data exports
+
+Single sign-on (SAML 2.0 / OpenID Connect), domains and SCIM provisioning are configured per team
+workspace by its owners/admins in the app (admin console), not here. Data exports are built in
+the background and stored as private files in the uploads storage (S3 or the data dir).
+
+| Variable | Default | Description |
+|---|---|---|
+| `SSO_DNS_SERVERS` | — (system resolver) | Comma-separated DNS servers (`ip` or `ip:port`) asked for the `_freero-verification.<domain>` TXT records that verify a workspace's domain. Set it to use a specific resolver (e.g. an internal one, or `1.1.1.1` to avoid stale caches). There is no way to skip the lookup. |
+| `DATA_EXPORT_TTL_HOURS` | `168` | How long a finished data export (personal or workspace ZIP) can be downloaded before its file is deleted. |
+| `DATA_EXPORT_INTERVAL_SECONDS` | `15` | How often each instance looks for queued exports to build (one instance builds at a time; a new request also starts one right away). |
+
+`PUBLIC_URL` must be set in production: the SAML entity ID, assertion consumer service URL, OIDC
+redirect URI and SCIM base URL that workspaces give their identity provider are built from it.
+
 ## Notifications
 
 | Variable | Default | Description |
@@ -185,6 +200,9 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `RATE_LIMIT_TWO_FACTOR_RECOVERY` | `3/1d` | "Lost my authenticator" recoveries started, per IP and per account (each start mails the owner). |
 | `RATE_LIMIT_AUDIT_EXPORT` | `20/1h` | Audit log exports per user (admin console; each reads up to 100,000 events). |
 | `RATE_LIMIT_OIDC` | `60/10m` | "Sign in with …" starts and callbacks per IP. |
+| `RATE_LIMIT_SSO` | `120/10m` | Workspace single sign-on per IP: discovery by email domain, starts, assertion posts and callbacks (and domain verification checks per user). |
+| `RATE_LIMIT_SCIM` | `1200/1m` | SCIM requests per provisioning token (directories sync in bursts). `/scim/v2` also counts against `RATE_LIMIT_API` per IP. |
+| `RATE_LIMIT_DATA_EXPORT` | `5/1d` | Data exports requested per user (personal or workspace). |
 | `RATE_LIMIT_OUTLINE` | `120/1m` | Board outlines (`GET /api/boards/:id/outline`, the semantic read model) per user. |
 | `RATE_LIMIT_STRUCTURE` | `60/10m` | Structure laid out into a board (`POST /api/boards/:id/insert-structure`) per user. |
 | `RATE_LIMIT_REPORT` | `20/1h` | Abuse reports per IP and, separately, per signed-in user. |
@@ -208,7 +226,10 @@ get an HTTP 429 the client retries with backoff.
 - **CSRF**: the session cookie is `HttpOnly; SameSite=Lax` (and `Secure` in production behind
   HTTPS). Every POST/PUT/PATCH/DELETE whose `Origin` (or `Referer`) is not this site — or that a
   browser marks `Sec-Fetch-Site: cross-site` — is refused with `403`. WebSocket upgrades get the same
-  origin check (against cross-site WebSocket hijacking).
+  origin check (against cross-site WebSocket hijacking). One reviewed exception: the SAML assertion
+  consumer service (`POST /api/sso/<workspace>/saml/acs`), which the identity provider's page posts
+  to from its own origin; the signed response is the credential, and the sign-in only completes on a
+  same-site request from the browser that started it.
 - **Security notices**: the account's address gets a short mail (no opt-out) when its password is
   changed, set or reset, its email address changes (to the previous address, with a 7-day "this
   wasn't me" link when that address was verified), two-step verification is turned on or off,

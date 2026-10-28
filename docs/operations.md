@@ -176,6 +176,96 @@ What a rotation does not carry over:
   opened. The job logs how many; those people sign in with a recovery code and turn two-step
   verification on again. Nothing else is lost.
 
+## Workspace single sign-on and provisioning
+
+Owners/admins of a team workspace set these up in the admin console (`/admin/<workspace>`, tabs
+Single sign-on and Provisioning); operators only need
+`PUBLIC_URL` (the SAML/OIDC/SCIM URLs are built from it) and outbound DNS (`SSO_DNS_SERVERS` to pick
+the resolver).
+
+- **Domains** are verified by a TXT record `_freero-verification.<domain>` =
+  `freero-verification=<token>`. One workspace at most holds a domain verified. To move a domain
+  to another workspace, its current workspace removes it first.
+- **A broken identity provider** (expired certificate, deleted app): the break-glass owner chosen
+  when "Enforce SSO" was turned on still signs in with their password and fixes or disables the
+  connection. If that person is gone too: `UPDATE sso_connections SET enforced = false WHERE
+  workspace_id = '<id>';` (then everyone at the domain can use their password or a reset link).
+- **Certificate rollover**: paste the IdP's new metadata (it may list both certificates); every
+  listed signing certificate is accepted until the next save.
+- **What is refused** (`sso.login_refused` in the workspace's audit log, with the reason):
+  responses that fail signature, audience, recipient, timestamps, InResponseTo or replay checks;
+  IdP-initiated (unsolicited) responses; addresses outside the workspace's verified domains;
+  deactivated members. The IdP's portal tile should point at `/api/sso/<workspace>/start`
+  (SP-initiated).
+- **Session length** is the workspace's session policy (Security tab), applied to the person like
+  every other sign-in; a SAML `SessionNotOnOrAfter` can only shorten one SSO sign-in.
+- **SCIM tokens** are shown once and stored as sha256. A leaked token: Rotate it in the admin
+  console (the old one stops at once; give the directory the new one), or Revoke it.
+- **Deprovisioning** (SCIM `active: false` or DELETE) is the same deactivation as the Members tab:
+  the person keeps role and boards but opens nothing in the workspace (sockets close on every
+  instance), and — for an address at a verified domain — all their sessions end everywhere. The
+  directory's `active: true` lifts it; an admin's own deactivation stands through directory syncs.
+
+## Personal data: data map, exports and deletion (GDPR)
+
+### Data map
+
+What Freero stores about a person, where, which module owns it, and what happens on export and
+deletion. "Purge" is the account deletion that runs after the grace period
+(`ACCOUNT_DELETION_GRACE_DAYS`, modules/accounts); "workspace deletion" is an owner deleting a team
+workspace (modules/workspaces).
+
+| Data | Store (owner) | In the personal export | On account purge | On workspace deletion |
+|---|---|---|---|---|
+| Name, email, cursor colour, avatar, verified flag, created | `users` + avatar file (auth, uploads) | `account.json`, `uploads/` | deleted (row, avatar file) | — |
+| Password hash, two-step secret (sealed), recovery codes (sha256) | `users`, `user_totp`, `user_recovery_codes` (auth) | only whether they are set — never the secrets | deleted (cascade) | — |
+| Signed-in devices: user agent, IP, sign-in method, times | `sessions`, `auth_devices` (sha256 of a device cookie) (auth) | `account.json` (IP masked) | deleted (cascade) | — |
+| Connected sign-in providers / SSO identities (issuer, subject, email) | `auth_identities` (auth) | `account.json` | deleted (cascade) | SSO identities of that workspace stay on the account (inert: the workspace's IdP is gone) |
+| Emailed single-use tokens, pending sign-ins, OIDC/SSO flows | `auth_tokens`, `auth_challenges`, `auth_oidc_flows`, `sso_flows` | no (transient, minutes to days) | deleted (cascade) / expire | `sso_flows` deleted (cascade) |
+| Workspaces, roles, project memberships, invitations sent/received | `workspaces`, `workspace_members`, `project_members`, `workspace_invites` (workspaces) | `memberships.json` | personal workspace deleted; sole-owned teams handed over (or deleted when empty) | deleted (cascade) |
+| Board memberships and invitations | `board_members`, `board_invites` (members) | `memberships.json` | deleted (cascade) | deleted with the boards |
+| Boards they own: content, comments, version history, layers (incl. their private drafts) | `boards`, `board_docs`, `board_doc_updates`, `board_doc_snapshots`, `board_layers`, `board_layer_updates` (boards, realtime) | `boards/<title>-<id>/board.json` + `board.yjs` + images | deleted (team boards: handed to a team owner first) | deleted (trash included) |
+| Comments they wrote on others' boards | inside those boards' docs (realtime) | `comments.json` (with board, thread and pinned item) | author shown as "Deleted user" (name and colour replaced in every board they could reach) | deleted with the boards |
+| Stars, last-opened times | `board_stars`, `board_opens` (boards) | `activity.json` | deleted (cascade) | deleted with the boards |
+| Files they uploaded (images, PDFs) | object storage + `uploads` (uploads) | `uploads/` (up to 200 MB of files per export; the rest listed in `files-not-included.json`) | row deleted; the file stays while a board, template or avatar elsewhere uses it, then the uploads sweep deletes it (≤ 24 h after the last reference) | files only those boards used: swept within a day |
+| Saved templates | `templates` (templates) | `templates/` | deleted (cascade); shared ones go too | shared-with-team link cleared (the owner's template stays) |
+| Notifications and email preferences; pending mentions | `notifications`, `notification_prefs`, `pending_mentions` (notifications) | `notifications.json` | deleted (cascade) | notifications about its boards: deleted with the boards |
+| What a directory sent about them (SCIM userName, externalId, name, email, active) | `scim_users`, `scim_group_members` (scim) | `memberships.json` → `directoryRecords` | deleted (cascade) | deleted (cascade) |
+| Break-glass role | `sso_connections.break_glass_user_id` (sso) | `memberships.json` → `singleSignOn` | cleared (SET NULL) | deleted (cascade) |
+| Abuse reports they filed, moderation actions about their content or account (suspension) | `moderation_items`, `moderation_actions` (moderation; reporter address only as an HMAC), `users.suspended_at` (auth) | not yet (follow-up: KAI-191) | person references cleared (SET NULL); the records stay as the operators' trail | items about its boards stay with their recorded target |
+| Data exports | `data_exports` + private ZIP files (privacy, uploads) | listed in `activity.json` | rows and files deleted by the export job within `DATA_EXPORT_INTERVAL_SECONDS` | workspace exports' rows and files deleted by the job |
+| Request logs | stdout (pino) → your log pipeline | no | not touched: user ids (never emails, bodies or tokens) — expire them in your log retention | — |
+| Rate-limit counters | Redis / memory, keys are HMACs | no | expire with their window | — |
+| Mail | SMTP provider / dev outbox | no | outside Freero (provider retention) | — |
+| Backups | your `pg_dump` / bucket copies | no | still contain the data until the backup expires: keep backup retention ≤ 35 days (or the period your privacy notice states) | same |
+
+### Exports
+
+- **Personal**: Account settings → Your data → Download my data (`POST /api/me/exports`). A job
+  builds the ZIP (README.txt explains every file), stores it as a private file (key
+  `private-<random>.zip`, never served at `/uploads/`, never swept), and mails the person a link to
+  Account settings, where only they can download it while signed in. It expires after
+  `DATA_EXPORT_TTL_HOURS`; the job then deletes the file.
+- **Workspace** (owners/admins of a team): admin console → Data → Export workspace. Every board
+  (trash included, with hidden frames' contents but never anyone's private drafts), members with
+  emails, invitations, projects, SSO settings without secrets, SCIM records. Downloadable only by
+  the admin who asked, and only while they still manage the workspace.
+- Exports are rate limited (`RATE_LIMIT_DATA_EXPORT`), one at a time per person / workspace. A
+  failed build is retried twice, then marked failed (logged with `privacy:`).
+
+### Deletion
+
+- **Account**: Account settings → Delete account. Grace period, then the purge (table above).
+- **Workspace**: owners, in Workspace settings (type the name). Immediate; every owner is mailed a
+  receipt of what was deleted. **Retention / legal holds**: a module registers
+  `onWorkspaceDeletionHold` (`modules/workspaces/index.ts`); while any hold applies, deletion is
+  refused (409) and nothing is removed. Nothing registers one yet (legal holds; time-based
+  retention is the Data tab's settings).
+- **Audit trail** (the workspace's audit log, admin console): workspace export requests and
+  downloads, workspace deletion, every SSO configuration change, SSO sign-ins and refusals,
+  just-in-time joins, SCIM tokens, group mappings, provisioning and deprovisioning. A person's own
+  export requests and downloads go to their account's log only.
+
 ## Moderation
 
 A free service with public links will be abused. Anyone who can open a board — signed in or, once

@@ -16,7 +16,8 @@ import { authorizationUrl, newAuthorizationChecks, OidcUnavailableError, redeemA
 import { sendSecurityNotice } from './notices';
 import { connectIdentity, isConnectedIdentity, linkProvider, providerConfig, providerLabel, resolveProviderLogin } from './providers';
 import * as repo from './repo';
-import { getAccount, hashToken, isSuspended, newToken, refuseIfSuspended, sessionFromCookieHeader, startSession } from './service';
+import { assertSignInAllowed, signInRestriction, SignInRestrictedError } from './restrictions';
+import { getAccount, hashToken, isSuspended, newToken, normalizeEmail, refuseIfSuspended, sessionFromCookieHeader, startSession } from './service';
 import { useSecondFactor } from './twoFactor';
 
 const CHALLENGE_COOKIE = 'freero_2fa';
@@ -43,18 +44,23 @@ export async function completeSignIn(
   res: Response,
   userId: string,
   method: string,
-  { link = null, newAccount = false }: { link?: repo.PendingLink | null; newAccount?: boolean } = {},
+  {
+    link = null,
+    newAccount = false,
+    sessionExpiresAt = null,
+  }: { link?: repo.PendingLink | null; newAccount?: boolean; sessionExpiresAt?: number | null } = {},
 ): Promise<LoginResponse> {
   await refuseIfSuspended(userId); // before asking for a second step it could never finish
+  await assertSignInAllowed({ email: (await getAccount(userId)).email, userId, method });
   if (await repo.twoFactorEnabled(userId)) {
     const token = newToken();
     const now = Date.now();
-    await repo.insertChallenge(hashToken(token), { userId, method, link }, now, now + CHALLENGE_TTL_MS);
+    await repo.insertChallenge(hashToken(token), { userId, method, link, sessionExpiresAt }, now, now + CHALLENGE_TTL_MS);
     res.cookie(CHALLENGE_COOKIE, token, cookieOptions(req, CHALLENGE_PATH, CHALLENGE_TTL_MS));
     return { twoFactorRequired: true };
   }
   if (link) await connectIdentity(req, userId, link);
-  await openSession(req, res, userId, { method, newAccount });
+  await openSession(req, res, userId, { method, newAccount, expiresAt: sessionExpiresAt });
   return { user: await getAccount(userId) };
 }
 
@@ -63,7 +69,12 @@ export async function completeSignIn(
  * had not signed in to the account before. Not for a reset link (its "password reset" notice
  * already says so) or a just-created account.
  */
-async function openSession(req: Request, res: Response, userId: string, how: { method: string; twoFactor?: boolean; newAccount?: boolean }): Promise<void> {
+async function openSession(
+  req: Request,
+  res: Response,
+  userId: string,
+  how: { method: string; twoFactor?: boolean; newAccount?: boolean; expiresAt?: number | null },
+): Promise<void> {
   const { knownDevice } = await startSession(req, res, userId, how);
   await recordAuditQuietly({
     action: 'auth.login',
@@ -108,8 +119,10 @@ export async function finishTwoFactorSignIn(req: Request, res: Response, code: u
   // Single use: of two requests racing with right codes, one signs in.
   if (!(await repo.deleteChallenge(key))) throw signInExpired();
   res.clearCookie(CHALLENGE_COOKIE, { path: CHALLENGE_PATH });
+  // The policy may have changed while the code was being typed.
+  await assertSignInAllowed({ email: (await getAccount(challenge.userId)).email, userId: challenge.userId, method: challenge.method });
   if (challenge.link) await connectIdentity(req, challenge.userId, challenge.link);
-  await openSession(req, res, challenge.userId, { method: challenge.method, twoFactor: true });
+  await openSession(req, res, challenge.userId, { method: challenge.method, twoFactor: true, expiresAt: challenge.sessionExpiresAt });
   return getAccount(challenge.userId);
 }
 
@@ -200,10 +213,24 @@ export async function providerCallback(req: Request, res: Response): Promise<voi
   }
 
   if (flow.intent === 'login') {
+    // Before an account may be made for the address: an organization that enforces single sign-on
+    // for it signs its people in only through its own identity provider.
+    const asserted = claims.email ? normalizeEmail(claims.email) : '';
+    if (asserted) {
+      const owner = await repo.findUserByEmail(asserted);
+      if (await signInRestriction({ email: asserted, userId: owner?.id ?? null, method: provider }))
+        return void res.redirect(`/login?error=sso_required&email=${encodeURIComponent(asserted)}`);
+    }
     const r = await resolveProviderLogin(provider, claims);
     if ('error' in r) return fail(r.error);
     if (await isSuspended(r.userId)) return fail('suspended');
-    const done = await completeSignIn(req, res, r.userId, provider, { link: r.link, newAccount: r.created });
+    let done: LoginResponse;
+    try {
+      done = await completeSignIn(req, res, r.userId, provider, { link: r.link, newAccount: r.created });
+    } catch (e) {
+      if (!(e instanceof SignInRestrictedError)) throw e;
+      return void res.redirect(`/login?error=sso_required${asserted ? `&email=${encodeURIComponent(asserted)}` : ''}`);
+    }
     if (r.created && !claims.emailVerified) {
       // The provider didn't vouch for the address: prove it the usual way.
       getAccount(r.userId)

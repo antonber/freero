@@ -141,6 +141,49 @@ export function transferBoardsOwnedIn(workspaceId: string, from: string, to: str
   return repo.transferOwnedIn(workspaceId, from, to);
 }
 
+// ---- data exports (modules/privacy) ----
+
+export interface BoardRecord {
+  id: string;
+  title: string;
+  description: string;
+  ownerId: string;
+  workspaceId: string;
+  projectId: string | null;
+  linkAccess: string;
+  createdAt: string;
+  updatedAt: string;
+  /** Set for a board in its owner's trash. */
+  deletedAt: string | null;
+}
+
+/** The boards' records (trash included), in creation order. */
+export async function boardRecords(ids: string[]): Promise<BoardRecord[]> {
+  return (await repo.getBoardsIncludingTrash([...new Set(ids)])).map((b) => ({
+    id: b.id,
+    title: b.title,
+    description: b.description,
+    ownerId: b.ownerId,
+    workspaceId: b.workspaceId,
+    projectId: b.projectId,
+    linkAccess: b.linkAccess,
+    createdAt: new Date(b.createdAt).toISOString(),
+    updatedAt: new Date(b.updatedAt).toISOString(),
+    deletedAt: b.deletedAt === null ? null : new Date(b.deletedAt).toISOString(),
+  }));
+}
+
+/** Every board the user owns, trash included. */
+export function boardIdsOwnedByUser(userId: string): Promise<string[]> {
+  return repo.allBoardIdsOwnedBy(userId);
+}
+
+/** The person's stars and when they last opened each board. */
+export async function boardActivityOf(userId: string): Promise<{ starred: string[]; opened: Array<{ boardId: string; at: string }> }> {
+  const [stars, opens] = await Promise.all([repo.starredBoardIds(userId), repo.opensOf(userId)]);
+  return { starred: [...stars], opened: [...opens].map(([boardId, at]) => ({ boardId, at: new Date(at).toISOString() })) };
+}
+
 /** Upload names used as board thumbnails (restricted to `among` when given): the uploads sweep keeps them. */
 export function thumbnailUploadReferences(among?: readonly string[]): Promise<string[]> {
   return repo.matchesInThumbnails(UPLOAD_REF_PATTERN, among ?? null);

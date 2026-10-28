@@ -167,6 +167,53 @@
   text-decoration: underline;
 }
 
+/* Single sign-on route for the typed address's domain. */
+.fr-authcard__sso {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--fr-ink-2);
+  background: var(--fr-primary-soft);
+  border-radius: var(--fr-radius);
+}
+
+.fr-authcard__sso-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 44px;
+  font-weight: 650;
+  color: var(--fr-primary-ink);
+  text-decoration: none;
+  background: var(--fr-primary);
+  border-radius: var(--fr-radius);
+}
+
+.fr-authcard__sso-btn:hover {
+  background: var(--fr-primary-hover);
+}
+
+.fr-authcard__sso-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--fr-focus-ring);
+}
+
+.fr-authcard__sso-alt {
+  align-self: center;
+  padding: 0;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--fr-ink-3);
+  text-decoration: underline;
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+
 .fr-authcard__invite {
   display: flex;
   align-items: center;

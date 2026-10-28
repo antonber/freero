@@ -7,7 +7,18 @@ import { createUser, scheduleAccountDeletion } from '../auth/index';
 import { createBoard, getBoardAccess } from '../boards/index';
 import { inviteToWorkspace } from './invites';
 import { createProject, deleteProject, updateProject } from './projects';
-import { allSessionLimits, changeRole, createTeamWorkspace, listWorkspaces, removeMember, sessionLimitsFor, updateSettings, updateWorkspace } from './service';
+import { onWorkspaceDeletionHold } from './holds';
+import {
+  allSessionLimits,
+  changeRole,
+  createTeamWorkspace,
+  deleteWorkspace,
+  listWorkspaces,
+  removeMember,
+  sessionLimitsFor,
+  updateSettings,
+  updateWorkspace,
+} from './service';
 
 beforeAll(() => openTestDb());
 afterAll(() => closeTestDb());
@@ -130,6 +141,19 @@ it('deleting the account of a team’s only owner hands the team and their board
   expect((await getBoardAccess(board.id, admin.id)).role).toBe('owner');
   expect((await getBoardAccess(board.id, member.id)).role).toBe('editor');
   expect((await getBoardAccess(soloBoard.id, admin.id)).exists).toBe(false);
+});
+
+it('a retention or legal hold keeps a workspace and its boards from being deleted; without it the deletion goes through', async () => {
+  const owner = await user('Held');
+  const ws = await team(owner, []);
+  const name = (await listWorkspaces(owner.id)).find((w) => w.id === ws)!.name;
+  const board = await createBoard(owner.id, 'Evidence', '', 'none', { workspaceId: ws });
+  const release = onWorkspaceDeletionHold((id) => (id === ws ? 'legal hold for case 42' : null));
+  await expect(deleteWorkspace(null, ws, owner.id, name)).rejects.toMatchObject({ status: 409 });
+  expect((await getBoardAccess(board.id, owner.id)).role).toBe('owner');
+  release();
+  await deleteWorkspace(null, ws, owner.id, name);
+  expect((await getBoardAccess(board.id, owner.id)).exists).toBe(false);
 });
 
 it('someone in several teams gets the strictest session limits of the teams they are a member of — never a limit from a team that only has them as a guest', async () => {
