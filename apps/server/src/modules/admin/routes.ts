@@ -20,11 +20,12 @@ const pageSize = (req: Request) => {
 export default function adminRoutes(_ctx: ServerContext): Router {
   const r = Router();
   const base = '/workspaces/:id';
-  r.use(`${base}/admin`, requireUser);
-  r.use(`${base}/audit`, requireUser);
+  // requireUser on each route, not r.use(`${base}/admin`, …): modules/ai serves under
+  // /workspaces/:id/admin too (dune-check S6, KAI-190).
 
   r.get(
     `${base}/admin/usage`,
+    requireUser,
     handle(async (req, res) => {
       await requireAdmin(req.params.id, currentUser(req).id);
       res.json({ usage: (await workspaceUsage(req.params.id)) satisfies WorkspaceUsage });
@@ -33,6 +34,7 @@ export default function adminRoutes(_ctx: ServerContext): Router {
 
   r.get(
     `${base}/admin/members`,
+    requireUser,
     handle(async (req, res) => {
       await requireAdmin(req.params.id, currentUser(req).id);
       const q = typeof req.query.q === 'string' ? req.query.q.slice(0, 200) : '';
@@ -59,6 +61,7 @@ export default function adminRoutes(_ctx: ServerContext): Router {
 
   r.get(
     `${base}/admin/settings`,
+    requireUser,
     handle(async (req, res) => {
       res.json({ settings: (await getWorkspaceSettings(req.params.id, currentUser(req).id)) satisfies WorkspaceSettings });
     }),
@@ -66,6 +69,7 @@ export default function adminRoutes(_ctx: ServerContext): Router {
 
   r.patch(
     `${base}/admin/settings`,
+    requireUser,
     handle(async (req, res) => {
       const body = (req.body ?? {}) as Record<string, unknown>;
       if (typeof body !== 'object' || Array.isArray(body)) throw badRequest('Send the settings to change as an object');
@@ -77,6 +81,7 @@ export default function adminRoutes(_ctx: ServerContext): Router {
 
   r.get(
     `${base}/audit`,
+    requireUser,
     handle(async (req, res) => {
       await requireAdmin(req.params.id, currentUser(req).id);
       const page: { events: AuditEvent[]; next: string | null } = await auditPage(auditFilter(req.params.id, req.query), pageSize(req));
@@ -86,6 +91,7 @@ export default function adminRoutes(_ctx: ServerContext): Router {
 
   r.get(
     `${base}/audit/integrity`,
+    requireUser,
     handle(async (req, res) => {
       await requireAdmin(req.params.id, currentUser(req).id);
       res.json({ integrity: (await verifyWorkspaceAudit(req.params.id)) satisfies AuditIntegrity });
@@ -95,6 +101,7 @@ export default function adminRoutes(_ctx: ServerContext): Router {
   // The export is itself audited (who took the log out, with which filters). Streamed in batches.
   r.get(
     `${base}/audit/export`,
+    requireUser,
     rateLimit('auditExport', 'user'),
     handle(async (req, res) => {
       const { name } = await requireAdmin(req.params.id, currentUser(req).id);
