@@ -165,7 +165,8 @@ export async function enqueueSync(linkIds: string[]): Promise<void> {
 /** Writes a badge (and notes) onto the board as the link's actor; never throws for a board gone. */
 async function writeBoard(boardId: string, actor: BoardActor, plan: (view: BoardView) => BoardChange | null) {
   try {
-    await changeBoard(boardId, actor, (view) => {
+    // Badges live in a server-written collection (sockets and requests can't forge them).
+    await changeBoard(boardId, { ...actor, serverCollections: [TRACKER_COLLECTION] }, (view) => {
       const p = plan(view);
       if (p?.update && !p.update.length) delete p.update;
       return { change: p ?? {} };

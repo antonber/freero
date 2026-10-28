@@ -46,6 +46,12 @@ export interface BoardActor extends BoardReader {
   /** The person's display name now (activity keeps it only for guests). */
   name?: string;
   via?: ActingApp | null;
+  /**
+   * Server-written collections (SERVER_WRITTEN_COLLECTIONS) this actor may write. Set only by the
+   * server module that owns one (trackers' badges); never from a request, whose changes are refused
+   * them below.
+   */
+  serverCollections?: readonly string[];
 }
 
 export interface BoardView {
@@ -212,7 +218,7 @@ function underHiddenFrame(el: BoardElement, byId: ReadonlyMap<string, BoardEleme
  */
 export function applyChange(main: Y.Doc, layers: ReadonlyMap<string, Y.Doc>, change: BoardChange, actor: BoardActor, origin: unknown, now = Date.now()): AppliedChange {
   for (const name of Object.keys(change.collections ?? {}))
-    if (name === Y_ELEMENTS || name === 'settings' || name === FACILITATION_COLLECTION || SERVER_WRITTEN_COLLECTIONS.includes(name))
+    if (name === Y_ELEMENTS || name === 'settings' || name === FACILITATION_COLLECTION || (SERVER_WRITTEN_COLLECTIONS.includes(name) && !actor.serverCollections?.includes(name)))
       throw new BoardChangeError(`'${name}' is not a collection`);
   // A facilitator's limits hold for requests too (facilitation.ts), not only for sockets: a locked
   // board makes its editors commenters for now.
