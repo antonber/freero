@@ -3,15 +3,14 @@
 // tokens and abandoned self-registered apps are cleared hourly (one instance at a time).
 import type { ServerContext } from '../../platform/context';
 import { scheduleExclusiveJob } from '../../platform/jobs';
-import { onSignedOutEverywhere } from '../auth/index';
-import { revokeEverything } from './credentials';
 import * as repo from './repo';
+import { connectRevocation } from './wiring';
 
 const CLEANUP_LOCK_KEY = 7_202_611_021; // arbitrary, constant across releases
 const ABANDONED_CLIENT_MS = 7 * 86_400_000;
 
 export default function initApiAuth(ctx: ServerContext): void {
-  onSignedOutEverywhere((userId) => revokeEverything(userId, null, 'signed_out_everywhere').then(() => undefined));
+  ctx.onShutdown(connectRevocation());
   scheduleExclusiveJob(ctx, {
     name: 'apiauth:cleanup',
     lockKey: CLEANUP_LOCK_KEY,

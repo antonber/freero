@@ -128,7 +128,7 @@ export async function revokePersonalToken(userId: string, id: string): Promise<v
 }
 
 /** Every token and app consent of the person (the per-user "disconnect everything"). */
-export async function revokeEverything(userId: string, actorId: string | null, reason: 'user' | 'signed_out_everywhere'): Promise<{ tokens: number; apps: number }> {
+export async function revokeEverything(userId: string, actorId: string | null, reason: 'user' | 'operator' | 'signed_out_everywhere'): Promise<{ tokens: number; apps: number }> {
   const n = await repo.deleteAllOf(userId);
   if (n.tokens || n.apps)
     await recordAuditQuietly({ action: 'api.token_revoked', accountId: userId, actorId, target: { type: 'user', id: userId }, metadata: { all: true, reason, tokens: n.tokens, apps: n.apps } });
