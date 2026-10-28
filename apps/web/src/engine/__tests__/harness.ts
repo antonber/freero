@@ -55,6 +55,7 @@ export function makeHost(role: Role = 'owner'): Host {
     loadTemplate: async () => Promise.reject(new Error('No saved templates in tests')),
     saveTemplate: async () => Promise.reject(new Error('No saved templates in tests')),
     deleteTemplate: async () => undefined,
+    shareTemplate: async () => Promise.reject(new Error('No teams in tests')),
     importImage: async () => Promise.reject(new Error('No server in tests')),
     fetchImage: async () => Promise.reject(new Error('No server in tests')),
     listMembers: async () => [],
