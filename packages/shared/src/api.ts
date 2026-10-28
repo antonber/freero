@@ -966,7 +966,7 @@ export interface InsertStructureResponse {
 // Board text goes to the model as delimited, untrusted data; the model returns structure only
 // (validated), which modules/structure lays out and places: never coordinates, never markup.
 //
-// GET  /api/boards/:id/ai                      -> { ai: BoardAiStatus }   (anyone who can open the board)
+// GET  /api/boards/:id/ai                      -> { ai: BoardAiStatus | null }   (anyone who can open the board; null when AI is off on this instance)
 // POST /api/boards/:id/ai/actions  body AiActionRequest -> AiActionResponse  (owners/editors the
 //      workspace lets use AI; rate limited per user and per workspace; 429 code 'ai_budget' when the
 //      month's token budget is used up; 403 code 'downloads_restricted' when the workspace's

@@ -356,7 +356,7 @@ export const api = {
     `/api/workspaces/${encodeURIComponent(id)}/audit/export?format=${format}&${auditQuery({ ...filter, before: undefined, limit: undefined })}`,
   auditIntegrity: (id: string) => request<{ integrity: AuditIntegrity }>('GET', `/api/workspaces/${encodeURIComponent(id)}/audit/integrity`),
   // AI (404 while the server offers no AI at all)
-  boardAi: (boardId: string) => request<{ ai: BoardAiStatus }>('GET', `/api/boards/${encodeURIComponent(boardId)}/ai`),
+  boardAi: (boardId: string) => request<{ ai: BoardAiStatus | null }>('GET', `/api/boards/${encodeURIComponent(boardId)}/ai`),
   runAi: (boardId: string, body: AiActionRequest) => request<AiActionResponse>('POST', `/api/boards/${encodeURIComponent(boardId)}/ai/actions`, body),
   workspaceAi: (id: string) => request<WorkspaceAiAdmin>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/ai`),
   updateWorkspaceAi: (id: string, patch: WorkspaceAiPatch) => request<WorkspaceAiAdmin>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/admin/ai`, patch),

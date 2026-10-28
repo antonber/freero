@@ -918,6 +918,14 @@ async function run() {
       assert((await A.req('GET', `/api/boards/doesnotexist`)).status === 404, 'missing board');
     });
 
+    // The board page loads this on every open: with AI off it must answer, not 404, or every board
+    // load logs a console error (and the UI screenshot harness fails on every board).
+    await check('AI off: the board AI status answers { ai: null } while every AI action stays 404', async () => {
+      const s = await A.req('GET', `/api/boards/${board.id}/ai`);
+      assert(s.status === 200 && s.json?.ai === null, `status -> ${s.status} ${s.text}`);
+      assert((await A.req('POST', `/api/boards/${board.id}/ai/actions`, { action: 'ideas', prompt: 'x' })).status === 404, 'action while AI is off');
+    });
+
     // ---- realtime ----
     let a, b, c, d;
     await check('WebSocket clients connect, sync, and receive their role message', async () => {
