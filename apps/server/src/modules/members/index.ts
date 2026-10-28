@@ -4,7 +4,8 @@ import type { Role } from '@freero/shared';
 import * as repo from './repo';
 
 export { resolveRole, atLeast, isLinkAccess, ROLE_RANK } from './roles';
-export { onBoardShared, type BoardSharedEvent } from './events';
+export { onBoardShared, onInviteAccepted, type BoardSharedEvent, type InviteAcceptedEvent } from './events';
+export { invitedEmails } from './invites';
 
 /** The explicit membership role of a user on a board (not counting ownership or link access). */
 export async function getMemberRole(boardId: string, userId: string): Promise<Role | null> {

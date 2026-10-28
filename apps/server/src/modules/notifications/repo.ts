@@ -102,6 +102,54 @@ export async function unclaim(ids: string[]): Promise<void> {
   if (ids.length) await query(`UPDATE notifications SET emailed_at = NULL WHERE id = ANY($1::text[])`, [ids]);
 }
 
+// ---- mentions of invited addresses (pending_mentions) ----
+
+export interface PendingMention {
+  boardId: string;
+  email: string;
+  actorId: string | null;
+  data: NotificationData;
+  dedupeKey: string;
+  createdAt: number;
+}
+
+export async function addPendingMention(p: PendingMention & { id: string }): Promise<void> {
+  try {
+    await query(
+      `INSERT INTO pending_mentions (id, board_id, email, actor_id, data, dedupe_key, created_at)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)
+       ON CONFLICT ON CONSTRAINT pending_mentions_once DO NOTHING`,
+      [p.id, p.boardId, p.email, p.actorId, JSON.stringify(p.data), p.dedupeKey, new Date(p.createdAt)],
+    );
+  } catch (e) {
+    if (!isForeignKeyViolation(e)) throw e; // the board (or author) was deleted meanwhile
+  }
+}
+
+/** Takes (deletes and returns) the board's pending mentions of `email` newer than `since`. */
+export async function takePendingMentions(boardId: string, email: string, since: number): Promise<PendingMention[]> {
+  const rows = await query<{ board_id: string; email: string; actor_id: string | null; data: NotificationData | string; dedupe_key: string; created_at: Date }>(
+    `DELETE FROM pending_mentions WHERE board_id = $1 AND email = $2 RETURNING board_id, email, actor_id, data, dedupe_key, created_at`,
+    [boardId, email],
+  );
+  return rows
+    .map((r) => ({
+      boardId: r.board_id,
+      email: r.email,
+      actorId: r.actor_id,
+      data: typeof r.data === 'string' ? (JSON.parse(r.data) as NotificationData) : r.data,
+      dedupeKey: r.dedupe_key,
+      createdAt: r.created_at.getTime(),
+    }))
+    .filter((p) => p.createdAt >= since)
+    .sort((a, b) => a.createdAt - b.createdAt);
+}
+
+/** Drops pending mentions older than `before` (their invite has expired by then). */
+export async function sweepPendingMentions(before: number): Promise<void> {
+  await query(`DELETE FROM pending_mentions WHERE created_at < $1`, [new Date(before)]);
+}
+
 // ---- preferences ----
 
 /** type ('*' = all emails) -> email on/off, for the rows the user changed from the default. */

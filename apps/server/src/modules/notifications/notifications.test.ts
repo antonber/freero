@@ -8,7 +8,7 @@ import { closeTestDb, openTestDb } from '../../platform/testing';
 import { createUser, markEmailVerified } from '../auth/index';
 import { createBoard } from '../boards/index';
 import type { CommentMessageEvent } from '../realtime/index';
-import { listFor, markRead, onCommentMessage, sendDigests, unsubscribe, unsubscribeToken, updatePrefs } from './service';
+import { emailsIn, listFor, markRead, onCommentMessage, sendDigests, unsubscribe, unsubscribeToken, updatePrefs } from './service';
 
 beforeAll(() => openTestDb());
 afterAll(() => closeTestDb());
@@ -111,6 +111,10 @@ it('the email digest batches everything unread past the delay into one message, 
   await send(`fourth ${mentionToken(bob.id)}`);
   await sendDigests(later + 4 * getConfig().notifyEmailDelayMs + 10_000);
   expect(mailsTo(bob.email)).toHaveLength(1);
+});
+
+it('an invited address written at the end of a sentence, in any case, still names that invite', () => {
+  expect(emailsIn('Looping in Zoe.Doe@Example.com. And kim@ex-ample.org, too')).toEqual(['zoe.doe@example.com', 'kim@ex-ample.org']);
 });
 
 it('an unverified address never gets digest emails', async () => {

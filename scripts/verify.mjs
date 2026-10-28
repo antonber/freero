@@ -596,7 +596,9 @@ async function run() {
             body: JSON.stringify({ name: 'Twin', email: t.email, password: 'password-123' }),
           });
           assert(r.status === 201, `signup on instance 1: ${r.status}`);
-          const cookie = /^freero_session=[^;]*/.exec(r.headers.getSetCookie()[0])[0];
+          // Sign-in also sets the device cookie (security notices): pick the session one.
+          const cookie = r.headers.getSetCookie().map((c) => /^freero_session=[^;]*/.exec(c)?.[0]).find(Boolean);
+          assert(cookie, `no session cookie: ${r.headers.getSetCookie().join(' | ')}`);
           const me = await fetch(`http://127.0.0.1:${procs[1].port}/api/auth/me`, { headers: { cookie } });
           assert(me.status === 200, `the session from instance 1 on instance 2: ${me.status}`);
         } finally {
@@ -1704,6 +1706,31 @@ async function notificationChecks() {
       assert((await list(B)).notifications.every((n) => n.type !== 'comment.reply'), 'B was notified of their own reply');
     });
 
+    await check('a comment naming the address of someone invited without an account becomes their mention once they join (through the invite link, or by verifying that address)', async () => {
+      const Z = new User('NotifyInvitee', port); // joins through the invite link
+      const W = new User('NotifyVerifier', port); // joins by verifying the invited address
+      for (const u of [Z, W])
+        assert((await A.req('POST', `/api/boards/${board.id}/members`, { email: u.email, role: 'commenter' })).json?.invite, `invite ${u.label}`);
+      const now = Date.now();
+      clients[0].doc.transact(() => {
+        const m = clients[0].doc.getMap('comments');
+        m.set('t:t2', { kind: 'thread', id: 't2', x: 50, y: 50, createdAt: now, createdBy: A.id });
+        m.set('m:t2:z1', { kind: 'message', threadId: 't2', id: 'z1', authorId: A.id, authorName: A.name, text: `welcome ${Z.email.toUpperCase()} and ${W.email}.`, createdAt: now });
+      });
+      await sleep(800); // the server records the pending mentions as it applies the message
+      await Z.signup();
+      const token = await mailedToken(dataDir, Z.email, '/invite');
+      assert((await Z.req('POST', `/api/invites/${token}/accept`)).status === 200, 'accept the invite');
+      await W.signup();
+      await W.verifyEmail(dataDir);
+      for (const u of [Z, W]) {
+        await waitFor(async () => (await list(u)).notifications.length > 0, 5000, `${u.label}'s mention`);
+        const all = (await list(u)).notifications;
+        assert(all.length === 1, `${u.label}: ${JSON.stringify(all)}`);
+        assert(all[0].type === 'comment.mention' && all[0].link === `/board/${board.id}?thread=t2` && all[0].actor?.id === A.id, JSON.stringify(all[0]));
+      }
+    });
+
     let digest = null;
     await check('one digest email batches the unread notifications; its links open the board and the thread', async () => {
       await waitFor(() => (digest = outbox(dataDir).find((m) => m.to === B.email && /notification/i.test(m.subject + m.text))), 15_000, 'the digest to B');
@@ -1940,6 +1967,28 @@ async function multiInstanceChecks() {
       assert((await L.req('POST', '/api/auth/logout', undefined, { port: two })).status === 200, 'logout');
       await waitFor(() => live.closeCodes.includes(4401), 5000, 'the socket on instance 1 to close with 4401');
       live.destroy();
+    });
+
+    await check('notifications across instances: an @mention written through a board socket on instance 1 updates the bell on instance 2 live; logging out through instance 1 closes that bell', async () => {
+      // B's phone: its own session, its bell connected to instance 2 (B's board tab stays signed in).
+      const phone = new User('MB-phone');
+      phone.email = B.email;
+      assert((await phone.req('POST', '/api/auth/login', { email: B.email, password: 'password-123' }, { port: two })).status === 200, 'login');
+      const bell = notificationsSocket(phone, two);
+      await waitFor(() => bell.lastUnread() !== null, 5000, 'the first unread count on instance 2');
+      const before = bell.lastUnread();
+      const now = Date.now();
+      a.doc.transact(() => {
+        const m = a.doc.getMap('comments');
+        m.set('t:mt1', { kind: 'thread', id: 'mt1', x: 0, y: 0, createdAt: now, createdBy: A.id });
+        m.set('m:mt1:m1', { kind: 'message', threadId: 'mt1', id: 'm1', authorId: A.id, authorName: A.name, text: `over to you <@${B.id}>`, createdAt: now });
+      });
+      await waitFor(() => bell.lastUnread() === before + 1, 5000, 'the mention to reach the bell on instance 2');
+      const n = (await phone.req('GET', '/api/notifications', undefined, { port: two })).json.notifications[0];
+      assert(n?.type === 'comment.mention' && n.link === `/board/${board.id}?thread=mt1`, JSON.stringify(n));
+      assert((await phone.req('POST', '/api/auth/logout', undefined, { port: one })).status === 200, 'logout');
+      await waitFor(() => bell.closeCode === 4401, 5000, 'the bell on instance 2 to close with 4401');
+      assert((await B.req('GET', '/api/auth/me', undefined, { port: two })).status === 200, "B's other session was signed out too");
     });
 
     // ---- board layers across instances ----

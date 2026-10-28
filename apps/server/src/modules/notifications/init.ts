@@ -1,7 +1,7 @@
 import type { ServerContext } from '../../platform/context';
 import { scheduleExclusiveJob } from '../../platform/jobs';
 import { logError } from '../../platform/log';
-import { onBoardShared } from '../members/index';
+import { onBoardShared, onInviteAccepted } from '../members/index';
 import { onCommentMessage } from '../realtime/index';
 import * as service from './service';
 
@@ -13,12 +13,16 @@ export default function initNotifications(ctx: ServerContext): void {
     // Realtime calls this synchronously while applying the change; the work runs after it.
     onCommentMessage((e) => void service.onCommentMessage(e).catch((err) => logError('notifications: comment notification failed', err))),
     onBoardShared(service.onBoardShared),
+    onInviteAccepted(service.onInviteAccepted),
   ];
   ctx.onShutdown(() => stops.forEach((stop) => stop()));
   scheduleExclusiveJob(ctx, {
     name: 'notifications:digest',
     lockKey: DIGEST_LOCK_KEY,
     intervalMs: ctx.config.notifyEmailIntervalMs,
-    run: () => service.sendDigests(),
+    run: async () => {
+      await service.sweepPendingMentions();
+      return service.sendDigests();
+    },
   });
 }
