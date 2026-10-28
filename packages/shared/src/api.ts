@@ -563,6 +563,31 @@ export interface GuestInfo {
 }
 export interface GuestJoinResponse { guest: GuestInfo }
 
+// ---- Activity ----
+// What people did, one entry per person per burst of work ("Ann added 12 sticky notes in frame
+// “Ideas”"), derived on the server from changes it applied from that person's own socket and from
+// sharing events — never from what a client says. Never names element content. Entries about hidden
+// frames' contents are shown to owners/editors only; private drafts never appear.
+// GET /api/boards/:id/activity?before=<ms>&limit=<n>      -> ActivityResponse  (anyone with access; also guests)
+// GET /api/workspaces/:id/activity?before=<ms>&limit=<n>  -> ActivityResponse  (the boards of that workspace
+//     you can open — in your personal workspace also boards shared with you — with boardTitle set)
+export interface ActivityEntry {
+  id: string;
+  boardId: string;
+  /** Workspace feed only. */
+  boardTitle?: string;
+  /** Null for a guest or a deleted account (`actorName` still names them). */
+  actor: BoardPerson | null;
+  actorName: string;
+  kind: 'edit' | 'comment' | 'share';
+  /** Worded after the actor's name: "added 12 sticky notes in frame “Ideas”". */
+  text: string;
+  startedAt: number;
+  /** When the burst ended (entries are ordered by it). */
+  at: number;
+}
+export interface ActivityResponse { entries: ActivityEntry[]; hasMore: boolean }
+
 // ---- Board people ----
 // GET /api/boards/:id/people?ids=a,b,c -> { people: BoardPerson[] }  (any role on the board)
 //     Profiles (name, color, photo) of the listed users who have access to the board or appear in

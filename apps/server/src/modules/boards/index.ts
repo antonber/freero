@@ -4,7 +4,7 @@ import { closeBoardDoc } from '../realtime/index';
 import { deleteUpload, UPLOAD_REF_PATTERN } from '../uploads/index';
 import { mayShareExternally, teamMembers, workspaceRole } from '../workspaces/index';
 import * as repo from './repo';
-import { describeAccess, requireAccess, requireDownload } from './service';
+import { describeAccess, listBoards, requireAccess, requireDownload } from './service';
 
 export { createBoard, deleteBoardRowsInWorkspace, cleanUpDeletedBoards } from './service';
 
@@ -50,6 +50,14 @@ export async function teamAccessMembers(boardId: string): Promise<Array<{ userId
 export async function requireBoardDownload(boardId: string, userId: string): Promise<void> {
   const { access } = await requireAccess(boardId, userId);
   requireDownload(access);
+}
+
+/**
+ * The boards of a workspace the user can open, with their role (in their personal workspace also
+ * boards shared with them from outside, like the dashboard's "all"). 404 unless they are in it.
+ */
+export async function boardsOpenableIn(userId: string, workspaceId: string): Promise<Array<{ id: string; title: string; role: Role }>> {
+  return (await listBoards(userId, 'all', '', { workspaceId })).map((b) => ({ id: b.id, title: b.title, role: b.role }));
 }
 
 /** Where a (live) board is and who owns it, or null if there is no such board. */

@@ -41,12 +41,14 @@ import { isShared, publish, subscribe, subscribedInstances, type Subscription } 
 import { getUser } from '../auth/index';
 import { getBoardAccess, touchBoard } from '../boards/index';
 import { sanitizeAwarenessUpdate, withoutClients, type AwarenessIdentity } from './awareness';
+import { elementChanges, ELEMENTS, emitBoardChange, hasBoardChangeListeners } from './changes';
 import { commentPeople, COMMENTS_COLLECTION, emitCommentMessages, hasCommentListeners, messageEvents } from './comments';
 import * as store from './docStore';
 import { decideUpdate } from './filter';
 import * as layerStore from './layerStore';
 import {
   applyLayerOp,
+  EDITORS_LAYER,
   isLayerName,
   isPrivateLayer,
   mayRunLayerOp,
@@ -239,6 +241,10 @@ class Room {
       emitCommentMessages(messageEvents(this.id, comments, event.changes.keys, conn.userId));
     });
 
+    // Element changes made through OUR sockets (changes.ts): the activity feed's trusted source.
+    const elements = this.doc.getMap<unknown>(ELEMENTS);
+    elements.observe((event, tr) => this.reportChanges('shared', elements, event.changes.keys, tr.origin));
+
     this.ready = this.open();
   }
 
@@ -285,8 +291,25 @@ class Room {
       created.unsaved.push(update);
       this.markDirty();
     });
+    // Hidden frames' contents: reported for owners/editors only (changes.ts). Private layers never.
+    if (name === EDITORS_LAYER) {
+      const els = created.doc.getMap<unknown>(ELEMENTS);
+      els.observe((event, tr) => this.reportChanges('editors', els, event.changes.keys, tr.origin));
+    }
     this.layers.set(name, created);
     return created;
+  }
+
+  private reportChanges(
+    layer: 'shared' | 'editors',
+    elements: Y.Map<unknown>,
+    keys: Map<string, { action: 'add' | 'update' | 'delete'; oldValue: unknown }>,
+    origin: unknown,
+  ): void {
+    const conn = origin instanceof WebSocket ? this.conns.get(origin) : undefined;
+    if (!conn || !hasBoardChangeListeners()) return;
+    const { changes, frameTitles } = elementChanges(layer, elements, this.doc.getMap<unknown>(ELEMENTS), keys);
+    emitBoardChange({ boardId: this.id, actorId: conn.userId, actorName: conn.identity.value.name, layer, changes, frameTitles });
   }
 
   /** A layer sync message from a socket: answered only for layers it may read. */
