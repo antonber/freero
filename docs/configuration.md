@@ -106,6 +106,7 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `RATE_LIMIT_PASSWORD` | `5/15m` | Password reset/change requests per IP and per email (phase 2 endpoints). |
 | `RATE_LIMIT_INVITE` | `60/1h` | Board invitations per user. |
 | `RATE_LIMIT_UPLOAD` | `60/10m` | Uploads per user. |
+| `RATE_LIMIT_REMOTE_IMAGE` | `200/10m` | Images the server fetches from a URL per user (copying a pasted image link to uploads, and including such images in exports). |
 | `RATE_LIMIT_BOARD_CREATE` | `100/1h` | Board creations + duplications per user. |
 | `RATE_LIMIT_TEMPLATE_SAVE` | `60/1h` | Saving a board or selection as a template, per user. |
 | `RATE_LIMIT_WS_CONNECT` | `200/1m` | WebSocket connections per IP and, separately, per user. |

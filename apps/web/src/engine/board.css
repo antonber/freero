@@ -21,3 +21,12 @@
   font-family: var(--fr-font-mono);
   font-size: 13px;
 }
+
+/* Offscreen exports are still pictures: never capture an element mid-animation (an image's
+   fade-in would come out translucent). */
+[data-fr-export] *,
+[data-fr-export] *::before,
+[data-fr-export] *::after {
+  animation: none !important;
+  transition: none !important;
+}

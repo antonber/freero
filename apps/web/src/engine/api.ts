@@ -74,6 +74,18 @@ export interface Host {
    */
   unfurl(url: string): Promise<LinkPreview>;
   /**
+   * [additive] Copies an image placed by URL into the board's uploads — fetched by the SERVER, so
+   * hosts without CORS work too — and resolves with its own URL (same origin: exports can read
+   * it). Rejects when the server can't fetch it (private address, not an image, too large, rate
+   * limit) or there is no server (offline sandbox); callers keep the original URL.
+   */
+  importImage(url: string): Promise<{ url: string }>;
+  /**
+   * [additive] The bytes of a remote image, fetched by the server (nothing stored). Exports use it
+   * for images a board still links from hosts without CORS. Rejects like `importImage`.
+   */
+  fetchImage(url: string): Promise<Blob>;
+  /**
    * [additive] Saved templates (a board or selection someone saved for reuse) the user may insert:
    * their own today; also their workspace's once workspaces exist — so compare `ownerId` with
    * `user.id` before offering owner-only actions (delete). Newest first. Rejects offline / when
@@ -751,6 +763,11 @@ export interface Editor {
     padding?: number;
     /** Don't embed web fonts (faster; text falls back to installed fonts). */
     skipFonts?: boolean;
+    /**
+     * [additive] Called (before the promise resolves) when some images could not be read — a host
+     * without CORS that the server can't reach either — and were left out of the picture.
+     */
+    onMissingImages?: (count: number) => void;
   }): Promise<string>;
 
   // -- UI state --

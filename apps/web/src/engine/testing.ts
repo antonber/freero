@@ -83,6 +83,8 @@ export function createTestBoard(opts: TestBoardOptions): TestBoard {
         if (i < 0) throw new Error('Template not found');
         templates.splice(i, 1);
       },
+      importImage: async () => Promise.reject(new Error('No server in tests')),
+      fetchImage: async () => Promise.reject(new Error('No server in tests')),
     };
     const core = createCore(host, bundles);
     core.ui.setState({ viewport: { width: 1000, height: 800 }, camera: { x: 0, y: 0, zoom: 1 } });
