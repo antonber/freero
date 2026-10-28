@@ -337,6 +337,13 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
   third-party URLs. Video players (YouTube / Vimeo / Loom) only on `EMBED_FRAME_ORIGINS`
   (`@freero/shared`), which the CSP `frame-src` allows; iframes are sandboxed, mounted only after a
   click, and never exported (exports render a fresh component that shows the card).
+- Images placed by URL (same module, same fetch protections, `remoteImage` rate limit):
+  `Host.importImage(url)` (`POST /api/unfurl/image`) copies the image into the user's uploads —
+  the image feature does this on paste/drop, so boards reference `/uploads/<key>`, not the third
+  party. Boards that still link a third-party image: exports inline every cross-origin `<img>` as
+  a data URL first (`engine/editor/remoteImages.ts`, through `Host.fetchImage(url)` =
+  `GET /api/unfurl/image`, else a CORS read), and `renderToDataUrl({ onMissingImages })` reports
+  what couldn't be read (the export feature says so). Offline sandbox: both reject.
 - Pasted text is routed by importer priority, never by features importing each other: table
   (20: TSV / consistent CSV) → embed (10: exactly one URL) → sticky (5: a list — mostly bulleted /
   numbered lines, or short lines that don't read as a wrapped paragraph, or `<li>`s in the HTML —
