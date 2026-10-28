@@ -1,14 +1,15 @@
 // Two-factor authentication: an authenticator app (TOTP, RFC 6238 via otplib) plus 10 single-use
 // recovery codes. The TOTP secret is stored encrypted (AES-256-GCM, key derived from
-// SESSION_SECRET); recovery codes only as sha256 (they are random, so no slow hash is needed).
-// A code's time step is accepted once (replay guard), and a recovery code once.
-import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes, randomInt } from 'node:crypto';
+// SESSION_SECRET through platform/secrets, so the secret can be rotated); recovery codes only as
+// sha256 (they are random, so no slow hash is needed). A code's time step is accepted once (replay
+// guard), and a recovery code once.
+import { createHash, randomInt } from 'node:crypto';
 import { generateSecret, generateURI, verify } from 'otplib';
 import QRCode from 'qrcode';
 import type { TwoFactorSetup } from '@freero/shared';
-import { getConfig } from '../../platform/config';
 import { badRequest, HttpError } from '../../platform/http';
 import { logError } from '../../platform/log';
+import { seal, unseal } from '../../platform/secrets';
 import * as repo from './repo';
 import { confirmPassword, endSessionsOf } from './service';
 
@@ -21,27 +22,40 @@ const RECOVERY_LENGTH = 10; // ~49.5 bits each
 
 // ---- secret at rest ----
 
-function secretKey(): Buffer {
-  return Buffer.from(hkdfSync('sha256', getConfig().sessionSecret, 'freero', 'two-factor-secret-v1', 32));
+/** The HKDF purpose of the at-rest key. Unchanged since KAI-31, so stored secrets keep opening. */
+const SECRET_PURPOSE = 'two-factor-secret-v1';
+
+/**
+ * The authenticator secret of a stored row, or null when no configured SESSION_SECRET opens it.
+ * One sealed under a previous SESSION_SECRET is sealed again under the current one on the way
+ * (only if the row still holds what was read). Returns the sealed value the row holds now.
+ */
+async function openTotpSecret(userId: string, sealed: string): Promise<{ secret: string; sealed: string } | null> {
+  const opened = unseal(SECRET_PURPOSE, sealed);
+  if (!opened) return null;
+  if (!opened.stale) return { secret: opened.value, sealed };
+  const fresh = seal(SECRET_PURPOSE, opened.value);
+  return { secret: opened.value, sealed: (await repo.resealTotp(userId, sealed, fresh)) ? fresh : sealed };
 }
 
-export function sealSecret(secret: string): string {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv('aes-256-gcm', secretKey(), iv);
-  const data = Buffer.concat([cipher.update(secret, 'utf8'), cipher.final()]);
-  return ['v1', iv.toString('base64url'), cipher.getAuthTag().toString('base64url'), data.toString('base64url')].join('.');
-}
-
-/** The plain secret, or null when it can't be decrypted (SESSION_SECRET changed since enrolment). */
-export function openSecret(sealed: string): string | null {
-  const [v, iv, tag, data] = sealed.split('.');
-  if (v !== 'v1' || !iv || !tag || data === undefined) return null;
-  try {
-    const decipher = createDecipheriv('aes-256-gcm', secretKey(), Buffer.from(iv, 'base64url'));
-    decipher.setAuthTag(Buffer.from(tag, 'base64url'));
-    return Buffer.concat([decipher.update(Buffer.from(data, 'base64url')), decipher.final()]).toString('utf8');
-  } catch {
-    return null;
+/**
+ * Seals every stored authenticator secret that a previous SESSION_SECRET made under the current
+ * one (the job that runs while SESSION_SECRET_PREVIOUS is set, so people who don't sign in during
+ * a rotation are covered too). `unreadable`: rows no configured secret opens.
+ */
+export async function resealTwoFactorSecrets(batch = 200): Promise<{ resealed: number; unreadable: number }> {
+  let resealed = 0;
+  let unreadable = 0;
+  let after = '';
+  for (;;) {
+    const rows = await repo.listTotpSecrets(after, batch);
+    for (const row of rows) {
+      const opened = unseal(SECRET_PURPOSE, row.secret);
+      if (!opened) unreadable++;
+      else if (opened.stale && (await repo.resealTotp(row.userId, row.secret, seal(SECRET_PURPOSE, opened.value)))) resealed++;
+    }
+    if (rows.length < batch) return { resealed, unreadable };
+    after = rows[rows.length - 1].userId;
   }
 }
 
@@ -94,9 +108,8 @@ export async function twoFactorRequiredBy(userId: string): Promise<string | null
 
 const codeOf = (input: unknown) => (typeof input === 'string' ? input.trim() : '');
 
-async function checkTotp(secretSealed: string, token: string, afterTimeStep: number | null): Promise<number | null> {
-  const secret = openSecret(secretSealed);
-  if (!secret) return null;
+/** The time step of a valid code (after `afterTimeStep`, if given), or null. */
+async function checkTotp(secret: string, token: string, afterTimeStep: number | null): Promise<number | null> {
   const r = await verify({ secret, token, epochTolerance: EPOCH_TOLERANCE_S, ...(afterTimeStep === null ? {} : { afterTimeStep }) });
   return r.valid && 'timeStep' in r ? r.timeStep : null;
 }
@@ -110,7 +123,8 @@ export async function useSecondFactor(userId: string, input: unknown): Promise<'
   if (/^\d{6}$/.test(code)) {
     const totp = await repo.findTotp(userId);
     if (!totp || totp.enabledAt === null) return null;
-    const step = await checkTotp(totp.secret, code, totp.lastTimeStep);
+    const opened = await openTotpSecret(userId, totp.secret);
+    const step = opened ? await checkTotp(opened.secret, code, totp.lastTimeStep) : null;
     return step !== null && (await repo.useTotpStep(userId, step)) ? 'totp' : null;
   }
   if (normalizeRecoveryCode(code).length !== RECOVERY_LENGTH) return null;
@@ -126,7 +140,7 @@ export async function beginTwoFactorSetup(userId: string, password: unknown, ses
   const user = await confirmPassword(userId, password, sessionAuthAt);
   if (await repo.twoFactorEnabled(userId)) throw new HttpError(409, 'Two-step verification is already on');
   const secret = generateSecret();
-  if (!(await repo.savePendingTotp(userId, sealSecret(secret), Date.now())))
+  if (!(await repo.savePendingTotp(userId, seal(SECRET_PURPOSE, secret), Date.now())))
     throw new HttpError(409, 'Two-step verification is already on');
   const uri = generateURI({ issuer: ISSUER, label: user.email, secret });
   const qr = await QRCode.toDataURL(uri, { margin: 1, width: 216, errorCorrectionLevel: 'M' });
@@ -143,10 +157,12 @@ export async function enableTwoFactor(userId: string, currentSessionKey: string,
   if (!totp || totp.enabledAt !== null) throw new HttpError(409, 'Start the setup again');
   const code = codeOf(input).replace(/\s/g, '');
   if (!/^\d{6}$/.test(code)) throw badRequest('Enter the 6-digit code from your authenticator app');
-  const step = await checkTotp(totp.secret, code, null);
+  const opened = await openTotpSecret(userId, totp.secret);
+  if (!opened) throw new HttpError(409, 'Start the setup again');
+  const step = await checkTotp(opened.secret, code, null);
   if (step === null) throw wrongCode();
   const { codes, hashes } = newRecoveryCodes();
-  if (!(await repo.enableTotp(userId, totp.secret, step, hashes, Date.now()))) throw new HttpError(409, 'Start the setup again');
+  if (!(await repo.enableTotp(userId, opened.sealed, step, hashes, Date.now()))) throw new HttpError(409, 'Start the setup again');
   await endSessionsOf(userId, currentSessionKey);
   return codes;
 }

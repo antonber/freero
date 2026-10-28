@@ -1,15 +1,39 @@
 import { generate } from 'otplib';
-import { afterAll, beforeAll, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest';
+import { loadConfig } from '../../platform/config';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import * as repo from './repo';
 import { createUser } from './service';
-import { beginTwoFactorSetup, disableTwoFactor, enableTwoFactor, useSecondFactor } from './twoFactor';
+import { beginTwoFactorSetup, disableTwoFactor, enableTwoFactor, resealTwoFactorSecrets, useSecondFactor } from './twoFactor';
 
 beforeAll(() => openTestDb());
 afterAll(() => closeTestDb());
+afterEach(() => {
+  vi.useRealTimers();
+  useSecrets(null);
+});
 
 let n = 0;
 const nowS = () => Math.floor(Date.now() / 1000);
+
+const SECRET_A = 'rotation-test-secret-A-0123456789abcdefghij';
+const SECRET_B = 'rotation-test-secret-B-0123456789abcdefghij';
+const SECRET_C = 'rotation-test-secret-C-0123456789abcdefghij';
+/** Restarts the config with these secrets (null: the test default). */
+function useSecrets(current: string | null, previous: string[] = []) {
+  loadConfig({
+    NODE_ENV: 'test',
+    FREERO_DATA_DIR: 'memory',
+    ...(current ? { SESSION_SECRET: current } : {}),
+    ...(previous.length ? { SESSION_SECRET_PREVIOUS: previous.join(',') } : {}),
+  });
+}
+/** Moves the clock on, so the authenticator shows a code that has not been used yet. */
+function nextCodePeriod() {
+  const now = Date.now();
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(now + 30_000);
+}
 
 async function enrolled() {
   const user = await createUser({ name: 'Two', email: `two-${++n}@auth.test.freero.app`, password: 'password-123' });
@@ -44,4 +68,39 @@ it('each recovery code works once, and turning two-factor off takes the password
   expect(await repo.twoFactorEnabled(user.id)).toBe(false);
   // The remaining recovery codes went with it.
   expect(await useSecondFactor(user.id, recoveryCodes[2])).toBeNull();
+});
+
+it('rotating SESSION_SECRET locks nobody out: the old secret still verifies codes, re-seals on use, and can then be dropped', async () => {
+  useSecrets(SECRET_A);
+  const { user, secret } = await enrolled();
+  const sealedUnderA = (await repo.findTotp(user.id))!.secret;
+
+  useSecrets(SECRET_B, [SECRET_A]);
+  nextCodePeriod();
+  expect(await useSecondFactor(user.id, await generate({ secret }))).toBe('totp');
+  expect((await repo.findTotp(user.id))!.secret).not.toBe(sealedUnderA);
+
+  useSecrets(SECRET_B);
+  nextCodePeriod();
+  expect(await useSecondFactor(user.id, await generate({ secret }))).toBe('totp');
+});
+
+it('people who do not sign in during a rotation are re-sealed by the job before the previous secret is dropped', async () => {
+  useSecrets(SECRET_A);
+  const idle = await enrolled();
+  useSecrets(SECRET_C);
+  const orphan = await enrolled(); // under a secret the rotation below never lists
+
+  useSecrets(SECRET_B, [SECRET_A]);
+  const first = await resealTwoFactorSecrets(1); // a batch of 1: paging must not skip anyone
+  expect(first.resealed).toBeGreaterThanOrEqual(1);
+  expect(first.unreadable).toBeGreaterThanOrEqual(1);
+  expect((await resealTwoFactorSecrets()).resealed).toBe(0);
+
+  useSecrets(SECRET_B);
+  nextCodePeriod();
+  expect(await useSecondFactor(idle.user.id, await generate({ secret: idle.secret }))).toBe('totp');
+  // Unreadable: a refused code (the recovery codes still work), never an error.
+  expect(await useSecondFactor(orphan.user.id, await generate({ secret: orphan.secret }))).toBeNull();
+  expect(await useSecondFactor(orphan.user.id, orphan.recoveryCodes[0])).toBe('recovery');
 });

@@ -553,6 +553,21 @@ async function insertRecoveryCodes(userId: string, codeHashes: string[]): Promis
   await query(`INSERT INTO user_recovery_codes (user_id, code_hash) SELECT $1, unnest($2::text[])`, [userId, codeHashes]);
 }
 
+/** Replaces the sealed secret with the same secret sealed under another key, unless the row changed meanwhile. */
+export async function resealTotp(userId: string, sealed: string, resealed: string): Promise<boolean> {
+  const rows = await query(`UPDATE user_totp SET secret = $3 WHERE user_id = $1 AND secret = $2 RETURNING 1`, [userId, sealed, resealed]);
+  return rows.length > 0;
+}
+
+/** A page of stored (sealed) authenticator secrets, by user id after `afterUserId`. */
+export async function listTotpSecrets(afterUserId: string, limit: number): Promise<{ userId: string; secret: string }[]> {
+  const rows = await query<{ user_id: string; secret: string }>(
+    `SELECT user_id, secret FROM user_totp WHERE user_id > $1 ORDER BY user_id LIMIT $2`,
+    [afterUserId, limit],
+  );
+  return rows.map((r) => ({ userId: r.user_id, secret: r.secret }));
+}
+
 /** Accepts a code's time step once: false if this or a later step was already used. */
 export async function useTotpStep(userId: string, timeStep: number): Promise<boolean> {
   const rows = await query(
