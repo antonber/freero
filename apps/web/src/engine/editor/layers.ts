@@ -45,10 +45,16 @@ export function installLayerPlacement(core: EngineCore, privateRule: () => ((el:
     return insideHiddenContainer(core, el, !current) ? 'editors' : 'shared';
   });
 
+  const hidingTypes = [...core.registry.elements.values()].filter((r) => r.def.hidesContents).map((r) => r.def);
+  const anyHidingContainer = () =>
+    hidingTypes.some((def) => store.getOrderedOfType(def.type).some((el) => def.hidesContents!(el as never)));
+
   let queued = false;
   const sweep = () => {
     queued = false;
     if (!core.editor.can('editor')) return;
+    // Fast path (every drag frame lands here): nothing hidden and nothing to bring back.
+    if (!store.layers.editors.elements.size && !anyHidingContainer()) return;
     const moves: Array<[BoardElement, ElementLayer]> = [];
     for (const el of store.getOrdered()) {
       const cur = store.layerOf(el.id);
