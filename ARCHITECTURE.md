@@ -529,6 +529,7 @@ Cross-module imports name the index file explicitly (`'../auth/index'`), which i
 Auth is a plain middleware exported by `modules/auth/index.ts` (`requireUser`, `currentUser(req)`),
 not a reserved hook. Server modules today: `auth` (users, sessions, auth_tokens: email
 verification, password reset, email change, session list/revoke, avatars, deletion scheduling;
+auth_devices: browsers that signed in (new sign-in notices);
 auth_identities + auth_oidc_flows: sign in with a provider; auth_challenges, user_totp,
 user_recovery_codes: two-step verification),
 `boards` (boards, stars, opens; trash), `members` (board_members, board_invites: pending invites
@@ -587,6 +588,20 @@ notification_prefs: inbox, live delivery, email digests).
   re-confirmed through the provider with `intent=reauth`) where others give their password.
   `onTwoFactorRequirement` (auth index) is the seam for workspace-enforced two-step verification.
   Session locations come from an operator-provided GeoIP `.mmdb` (`GEOIP_DB_PATH`), read locally.
+- Security notices (`modules/auth/notices.ts`, `sendSecurityNotice`): the function that makes a
+  security-relevant change mails the owner once (password changed/set/reset, email changed — to the
+  previous address, two-step on/off, new recovery codes, provider connected/disconnected, deletion
+  scheduled, and a sign-in from an unrecognised browser), with when / device / approximate place
+  and what to do. Account mail, not notifications: no opt-out. Never a code, secret or token, except
+  the "this wasn't me" link an email change sends to a VERIFIED previous address (`revert_email`
+  token, 7 days): it restores that address, sets a new password, removes two-step verification and
+  providers set up since the change, cancels pending links and ends every session. A browser is
+  recognised when it brings a `freero_device` cookie (random, HttpOnly, 400 days) that already
+  signed in to the account (`auth_devices`, sha256 only); an account with no browser on record
+  recognises one matching a live session's User-Agent and network (so an upgrade mails nobody).
+  `startSession` records the browser; signIn.ts mails — not for a just-created account or a reset
+  link (the reset notice covers it). A new change to sign-in security adds a `SecurityNotice` kind
+  and calls `sendSecurityNotice` where the change is made.
   `npm run verify` runs the whole provider flow against `scripts/lib/mock-oidc.mjs` (a local test
   provider with real signed id tokens) and GeoIP against a generated `.mmdb`.
 - Ending a session (logout, "sign out" from another device, password reset/change, account
@@ -666,6 +681,11 @@ operations). What a module needs to know:
   `npm run verify` reads to follow links). `renderMail` escapes everything; links via
   `appUrl(req, path)`. Never log bodies (they carry tokens). `sendMailLater` when the answer must not
   depend on (or wait for) the mail.
+- **Secrets** (`platform/secrets.ts`): the only user of `SESSION_SECRET` [S5]. `seal/unseal(purpose,
+  …)` encrypt data at rest (AES-256-GCM, key = HKDF(secret, purpose)); `mac/macMatches(message)`
+  sign values (prefix the message with its purpose). New values always use the current secret;
+  values made with one in `SESSION_SECRET_PREVIOUS` are still accepted (`unseal` says `stale`, so
+  the owner stores it sealed again), which makes the secret rotatable (docs/operations.md).
 - **Background jobs** (`platform/jobs.ts`): `scheduleExclusiveJob(ctx, { name, lockKey, intervalMs,
   run })` runs on every instance's timer but one at a time (Postgres advisory lock); jobs must be
   idempotent. `runExclusive(lockKey, fn)` for a one-off.

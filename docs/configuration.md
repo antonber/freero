@@ -23,7 +23,8 @@ installed. Copy [`.env.example`](../.env.example) as a starting point.
 | `NODE_ENV` | — | — | `production` enables production checks, `Secure` cookies behind TLS, and disables the demo user. |
 | `PORT` | `4000` | | HTTP + WebSocket port. |
 | `PUBLIC_URL` | — | **yes** | The external origin users open, e.g. `https://whiteboard.example.com`. Used for CSRF origin checks (and links in emails, phase 2). Only the origin part is kept. |
-| `SESSION_SECRET` | dev-only value | **yes** | ≥ 32 random characters (`openssl rand -base64 48`). Keys server-side HMACs (rate-limit keys) and encrypts two-step verification secrets at rest. Sessions survive a rotation, but authenticator apps enrolled before it stop matching: those people log in with a recovery code and turn two-step verification on again. |
+| `SESSION_SECRET` | dev-only value | **yes** | ≥ 32 random characters (`openssl rand -base64 48`). Keys server-side HMACs (rate-limit keys, signed links) and encrypts two-step verification secrets at rest. Rotate it with `SESSION_SECRET_PREVIOUS` (see [operations.md](operations.md#rotating-session_secret)): sessions are unaffected either way, but without the previous secret every authenticator app enrolled before the rotation stops matching. |
+| `SESSION_SECRET_PREVIOUS` | — | | During a rotation: the secret(s) `SESSION_SECRET` replaced, comma-separated, newest first (each ≥ 32 characters). Values made with them are still accepted; two-step verification secrets are sealed again under the current secret on their next use and by a job (at startup, then hourly) that logs when it is done. Remove it once the log says so. |
 | `TRUST_PROXY` | `false` | when behind a proxy | How far to trust `X-Forwarded-For/-Proto/-Host`. `1` = one reverse proxy in front (Caddy, nginx, a cloud load balancer); `2` = CDN + LB; or a list of subnets (`loopback, 10.0.0.0/8`). `true` trusts any hop — only if the app is unreachable except through the proxy. Needed for real client IPs (rate limits, logs), HSTS and `Secure` cookies behind TLS. |
 | `FREERO_DATA_DIR` | `./data` | | Local data: the PGlite database (when `DATABASE_URL` is unset), local uploads (when `S3_*` is unset). The Docker image uses `/data`. |
 | `FREERO_ENV` | `NODE_ENV` | | Environment name on logs and error reports (`production`, `staging`, …). |
@@ -73,7 +74,7 @@ uploaded before the switch keep working (copy them over with `mc mirror` / `aws 
 
 | Variable | Default | Description |
 |---|---|---|
-| `SMTP_URL` | — | `smtp://user:pass@host:587` or `smtps://…:465`. Unset: development outbox — every message (verification, password reset, email change, invites, deletion notices) is written as JSON to `<FREERO_DATA_DIR>/outbox/` and logged. |
+| `SMTP_URL` | — | `smtp://user:pass@host:587` or `smtps://…:465`. Unset: development outbox — every message (verification, password reset, email change, invites, security notices) is written as JSON to `<FREERO_DATA_DIR>/outbox/` and logged. |
 | `MAIL_FROM` | `Freero <no-reply@freero.local>` | Sender address. |
 
 Links in emails point at `PUBLIC_URL` (in development: the origin the request came through).
@@ -187,5 +188,13 @@ get an HTTP 429 the client retries with backoff.
   HTTPS). Every POST/PUT/PATCH/DELETE whose `Origin` (or `Referer`) is not this site — or that a
   browser marks `Sec-Fetch-Site: cross-site` — is refused with `403`. WebSocket upgrades get the same
   origin check (against cross-site WebSocket hijacking).
+- **Security notices**: the account's address gets a short mail (no opt-out) when its password is
+  changed, set or reset, its email address changes (to the previous address, with a 7-day "this
+  wasn't me" link when that address was verified), two-step verification is turned on or off,
+  recovery codes are regenerated, a sign-in provider is connected or disconnected, deletion is
+  scheduled, or someone signs in from a browser that hasn't signed in to the account before (it has
+  no matching `freero_device` cookie, a random HttpOnly id kept 400 days). Each says when, from which
+  device and roughly where (GeoIP city/country when configured, else the masked network), never a
+  code or secret.
 - **Uploads**: type allow-list (PNG, JPEG, GIF, WebP, SVG), magic-byte sniffing, random names,
   `nosniff`, and `default-src 'none'; sandbox` CSP on every served file so an SVG can never run script.

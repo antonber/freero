@@ -83,7 +83,10 @@ export interface Config {
   s3: S3Config | null;
   smtpUrl: string | null;
   mailFrom: string;
+  /** The current secret: keys HMACs and seals data at rest (see platform/secrets.ts). */
   sessionSecret: string;
+  /** Secrets it replaced (SESSION_SECRET_PREVIOUS), still accepted while a rotation settles. */
+  sessionSecretsPrevious: string[];
   /** Express `trust proxy` setting (false = use the socket address, never X-Forwarded-*). */
   trustProxy: boolean | number | string;
   logLevel: string;
@@ -241,6 +244,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   const sessionSecret = str('SESSION_SECRET');
   if (sessionSecret !== null && sessionSecret.length < 32) problems.push('SESSION_SECRET must be at least 32 characters');
+  // Comma-separated (a rotation can still be settling when the next one starts); newest first.
+  const sessionSecretsPrevious = (str('SESSION_SECRET_PREVIOUS') ?? '')
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean);
+  if (sessionSecretsPrevious.some((v) => v.length < 32)) problems.push('SESSION_SECRET_PREVIOUS: each secret must be at least 32 characters');
+  if (sessionSecret !== null && sessionSecretsPrevious.includes(sessionSecret))
+    problems.push('SESSION_SECRET_PREVIOUS must not contain the current SESSION_SECRET');
 
   // TRUST_PROXY: false (default) | true | <hop count> | comma-separated subnets ("loopback, 10.0.0.0/8").
   let trustProxy: boolean | number | string = false;
@@ -324,6 +335,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     smtpUrl: url('SMTP_URL', ['smtp:', 'smtps:']),
     mailFrom: str('MAIL_FROM') ?? 'Freero <no-reply@freero.local>',
     sessionSecret: sessionSecret ?? DEV_SESSION_SECRET,
+    sessionSecretsPrevious,
     trustProxy,
     logLevel,
     metricsToken: str('METRICS_TOKEN'),

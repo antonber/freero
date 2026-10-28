@@ -66,8 +66,13 @@ export function ForgotPasswordPage() {
   );
 }
 
-/** /reset-password?token= — sets the new password; every other session of the account ends. */
-export function ResetPasswordPage() {
+/**
+ * /reset-password?token= — sets the new password; every other session of the account ends.
+ * /revert-email?token= (mode "revert") — "this wasn't me" from the email-change notice sent to the
+ * previous address: the account moves back to it and gets a new password.
+ */
+export function ResetPasswordPage({ mode = 'reset' }: { mode?: 'reset' | 'revert' }) {
+  const revert = mode === 'revert';
   const [params] = useSearchParams();
   const token = params.get('token') ?? '';
   const navigate = useNavigate();
@@ -84,7 +89,7 @@ export function ResetPasswordPage() {
     setBusy(true);
     setError(null);
     try {
-      const res = await api.resetPassword(token, password);
+      const res = revert ? await api.revertEmailChange(token, password) : await api.resetPassword(token, password);
       if ('user' in res) {
         adopt(res.user);
         navigate('/app', { replace: true });
@@ -93,13 +98,21 @@ export function ResetPasswordPage() {
         navigate('/login/two-factor', { replace: true });
       }
     } catch (err) {
-      setError(message(err, 'Could not reset the password. Please try again.'));
+      setError(message(err, revert ? 'Could not restore your address. Please try again.' : 'Could not reset the password. Please try again.'));
       setBusy(false);
     }
   };
 
   return (
-    <AuthShell docTitle="Choose a new password" title="Choose a new password" sub="You'll be signed out on every other device.">
+    <AuthShell
+      docTitle={revert ? 'Restore your email address' : 'Choose a new password'}
+      title={revert ? 'Take your account back' : 'Choose a new password'}
+      sub={
+        revert
+          ? 'Your account moves back to this email address, every device is signed out, and two-step verification or sign-in providers added since the change are removed. Choose a new password to finish.'
+          : "You'll be signed out on every other device."
+      }
+    >
       {!token ? (
         <AuthNotice kind="error">This link is incomplete. Open the link from the email again.</AuthNotice>
       ) : (
@@ -126,12 +139,19 @@ export function ResetPasswordPage() {
           />
           {error ? <AuthNotice kind="error">{error}</AuthNotice> : null}
           <Button type="submit" variant="primary" size="lg" block loading={busy}>
-            Save password and log in
+            {revert ? 'Restore my account and log in' : 'Save password and log in'}
           </Button>
         </form>
       )}
       <p className="fr-authcard__switch">
-        Link expired? <Link to="/forgot-password">Send a new one</Link>
+        {revert ? (
+          // A reset link would go to the address that replaced this one.
+          <>Link expired or already used? Ask whoever runs your Freero for help.</>
+        ) : (
+          <>
+            Link expired? <Link to="/forgot-password">Send a new one</Link>
+          </>
+        )}
       </p>
     </AuthShell>
   );

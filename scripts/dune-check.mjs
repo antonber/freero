@@ -282,6 +282,11 @@ function checkServerFile(file, tableOwners) {
     if (t.layer === 'platform' && /^db(\.ts)?$/.test(t.file) && !(me.layer === 'modules' && me.file === 'repo.ts') && me.layer !== 'platform' && me.layer !== 'root')
       report('S3', file, line, `Only a module's repo.ts may touch the database. Call the owning module's repo/service functions instead.`, spec);
   }
+  // SESSION_SECRET is used only through platform/secrets.ts, which also accepts the previous
+  // secrets during a rotation: anything keyed with the raw secret would break when it is rotated.
+  if (!(me.layer === 'platform' && /^(config|secrets)\.ts$/.test(me.file)))
+    for (const m of src.matchAll(/[\w)\]]\.sessionSecret\b/g))
+      report('S5', file, src.slice(0, m.index).split('\n').length, `Don't key anything with config.sessionSecret directly: rotating SESSION_SECRET would break it. Use platform/secrets.ts — seal/unseal for data at rest, mac/macMatches for signed values — which accepts SESSION_SECRET_PREVIOUS during a rotation.`);
   // Table writes only from the owning module's repo.ts.
   for (const m of src.matchAll(/\b(INSERT(?:\s+OR\s+\w+)?\s+INTO|UPDATE|DELETE\s+FROM|REPLACE\s+INTO)\s+["`]?(\w+)/gi)) {
     const table = m[2].toLowerCase();

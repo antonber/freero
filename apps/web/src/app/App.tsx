@@ -30,6 +30,7 @@ export function App() {
             <Route path="/signup" element={<AuthPage mode="signup" />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route path="/revert-email" element={<ResetPasswordPage mode="revert" />} />
             <Route path="/verify-email" element={<EmailLinkPage mode="verify" />} />
             <Route path="/confirm-email" element={<EmailLinkPage mode="change" />} />
             <Route path="/invite/:token" element={<InvitePage />} />

@@ -2258,9 +2258,109 @@ async function signInMethodChecks() {
       const where = list.map((x) => x.location ?? x.network).sort();
       assert(JSON.stringify(where) === JSON.stringify(['Japan', 'Lyon, France', 'This computer']), JSON.stringify(list));
     });
+
+    // KAI-86: security notices, read from the dev outbox.
+    const noticesTo = (to, subject) => outbox(dataDir).filter((m) => m.to === to && subject.test(m.subject));
+    await check('new-browser sign-in notice: mailed once to the owner with the device and approximate place; the browser that signed up, or one that signed in before, gets none', async () => {
+      const email = address('nora');
+      const firefox = { 'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0', 'x-forwarded-for': '203.0.113.9' };
+      const iphone = {
+        'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+        'x-forwarded-for': '198.51.100.7',
+      };
+      const login = (b, headers) => b.fetch('/api/auth/login', { method: 'POST', body: { email, password: 'password-123' }, headers });
+      const home = new Browser(port);
+      const signup = await home.fetch('/api/auth/signup', { method: 'POST', body: { name: 'Nora', email, password: 'password-123' }, headers: firefox });
+      assert(signup.status === 201 && home.jar.has('freero_device'), `signup: ${signup.status}, device cookie ${home.jar.has('freero_device')}`);
+      await home.fetch('/api/auth/logout', { method: 'POST' });
+      assert((await login(home, firefox)).status === 200, 'login from the signup browser');
+      const phone = new Browser(port);
+      assert((await login(phone, iphone)).status === 200, 'login from a new browser');
+      await waitFor(() => noticesTo(email, /New sign-in/).length === 1, 5000, 'the new sign-in notice');
+      const { text } = noticesTo(email, /New sign-in/)[0];
+      assert(/Safari on iPhone/.test(text) && /Japan/.test(text) && /with its password/.test(text), text);
+      assert(!text.includes('198.51.100.7'), 'the full address is in the mail');
+      await phone.fetch('/api/auth/logout', { method: 'POST' });
+      assert((await login(phone, iphone)).status === 200, 'second login from the phone');
+      await sleep(500);
+      assert(noticesTo(email, /New sign-in/).length === 1, `notices: ${noticesTo(email, /New sign-in/).length} (the signup or a known browser was reported)`);
+    });
+
+    await check('"this wasn\'t me": an email change mails the previous (verified) address a link that takes the account back — new password, intruder signed out — once', async () => {
+      const O = new User('Owner', port);
+      O.email = address('owner');
+      await O.signup();
+      await O.verifyEmail(dataDir);
+      const intruder = new User('Intruder', port);
+      intruder.email = O.email;
+      assert((await intruder.req('POST', '/api/auth/login', { email: O.email, password: 'password-123' })).status === 200, 'intruder login');
+      const theirs = address('theirs');
+      assert((await intruder.req('POST', '/api/auth/email', { email: theirs, password: 'password-123' })).status === 200, 'email change request');
+      const confirm = await mailedToken(dataDir, theirs, '/confirm-email');
+      assert((await intruder.req('POST', '/api/auth/email/confirm', { token: confirm })).status === 200, 'confirm');
+      const revert = await mailedToken(dataDir, O.email, '/revert-email');
+      const notice = noticesTo(O.email, /email address was changed/)[0];
+      assert(notice && !notice.text.includes(theirs), `the old address learns the new one in full: ${notice?.text}`);
+
+      const b = new Browser(port);
+      const back = await b.fetch('/api/auth/email/revert', { method: 'POST', body: { token: revert, password: 'owner-password-2' } });
+      assert(back.status === 200 && back.json.user?.email === O.email && b.jar.has('freero_session'), `revert: ${back.status} ${back.text}`);
+      assert((await intruder.req('GET', '/api/auth/me')).status === 401, "the intruder's session survived");
+      assert((await new User('t', port).req('POST', '/api/auth/login', { email: O.email, password: 'owner-password-2' })).status === 200, 'new password');
+      assert((await new User('t', port).req('POST', '/api/auth/login', { email: O.email, password: 'password-123' })).status === 401, 'old password still works');
+      const again = await new Browser(port).fetch('/api/auth/email/revert', { method: 'POST', body: { token: revert, password: 'intruder-pass-9' } });
+      assert(again.status === 400, `link reused: ${again.status}`);
+    });
   } finally {
     if (proc) await stopProc(proc);
     await idp.close();
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// SESSION_SECRET rotation (KAI-87), on its own server restarted with different secrets: an
+// authenticator enrolled under the old secret must keep working through the whole procedure in
+// docs/operations.md, including for someone who never signs in while it runs.
+// ---------------------------------------------------------------------------
+async function secretRotationChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-rotation-'));
+  const oldSecret = randomBytes(32).toString('base64url');
+  const newSecret = randomBytes(32).toString('base64url');
+  let proc = null;
+  try {
+    const env = { RATE_LIMIT_TWO_FACTOR: '200/15m', LOG_LEVEL: 'info' }; // info: the re-sealing job reports there
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    await check('SESSION_SECRET rotation: an authenticator enrolled under the old secret works after the swap (re-sealed by the job, no sign-in needed) and after the old secret is dropped', async () => {
+      proc = await waitUp(await spawnServer(dataDir, { ...env, SESSION_SECRET: oldSecret }));
+      const u = new User('Rotate', proc.port);
+      await u.signup();
+      const setup = await u.req('POST', '/api/auth/two-factor/setup', { password: 'password-123' });
+      const enable = await u.req('POST', '/api/auth/two-factor/enable', { code: await totpCode({ secret: setup.json.secret }) });
+      assert(enable.status === 200, `enrol: ${enable.text}`);
+      await stopProc(proc);
+
+      proc = await waitUp(await spawnServer(dataDir, { ...env, SESSION_SECRET: newSecret, SESSION_SECRET_PREVIOUS: oldSecret }));
+      const logged = () => proc.log.join('');
+      await waitFor(() => logged().includes('sealed 1 two-step verification secret(s) again'), 15_000, 'the re-sealing job');
+      assert(!/open with no configured SESSION_SECRET/.test(logged()), 'a secret could not be opened');
+      await stopProc(proc);
+
+      proc = await waitUp(await spawnServer(dataDir, { ...env, SESSION_SECRET: newSecret }));
+      const b = new Browser(proc.port);
+      const login = await b.fetch('/api/auth/login', { method: 'POST', body: { email: u.email, password: 'password-123' } });
+      assert(login.json?.twoFactorRequired === true, login.text);
+      const code = await totpCode({ secret: setup.json.secret, epoch: Math.floor(Date.now() / 1000) + 30 });
+      const second = await b.fetch('/api/auth/login/two-factor', { method: 'POST', body: { code } });
+      assert(second.status === 200 && b.jar.has('freero_session'), `authenticator code after the rotation: ${second.status} ${second.text}`);
+    });
+  } finally {
+    if (proc) await stopProc(proc);
+    if (ADMIN_URL) await dropDatabases();
     try {
       fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     } catch {
@@ -2351,6 +2451,7 @@ async function uploadSweepChecks() {
 const started = Date.now();
 await run().catch((e) => record('verify harness', false, e?.stack ?? String(e)));
 await signInMethodChecks().catch((e) => record('sign-in methods harness', false, e?.stack ?? String(e)));
+await secretRotationChecks().catch((e) => record('secret rotation harness', false, e?.stack ?? String(e)));
 await uploadSweepChecks().catch((e) => record('uploads sweep checks harness', false, e?.stack ?? String(e)));
 await accountPurgeChecks().catch((e) => record('account purge harness', false, e?.stack ?? String(e)));
 await notificationChecks().catch((e) => record('notifications harness', false, e?.stack ?? String(e)));

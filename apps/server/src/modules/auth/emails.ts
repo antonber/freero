@@ -1,4 +1,5 @@
-// Flows built on single-use emailed tokens: email verification, password reset, email change.
+// Flows built on single-use emailed tokens: email verification, password reset, email change (and
+// undoing one from the previous address).
 // Tokens are 256-bit random values; only their sha256 is stored, and using one deletes it.
 // Nothing here tells a caller whether an address has an account.
 import type { Request } from 'express';
@@ -6,6 +7,7 @@ import type { Account } from '@freero/shared';
 import { appUrl, renderMail, sendMail, sendMailLater } from '../../platform/mail';
 import { badRequest, HttpError } from '../../platform/http';
 import { logError } from '../../platform/log';
+import { sendSecurityNotice } from './notices';
 import { hashPassword } from './password';
 import * as repo from './repo';
 import {
@@ -25,6 +27,7 @@ const HOUR = 3_600_000;
 export const VERIFY_TTL_MS = 48 * HOUR;
 export const RESET_TTL_MS = 30 * 60_000;
 export const CHANGE_EMAIL_TTL_MS = 24 * HOUR;
+const REVERT_EMAIL_DAYS = 7;
 
 const invalidLink = () => badRequest('This link is invalid or has expired. Request a new one.');
 
@@ -89,7 +92,7 @@ export function requestPasswordReset(req: Request | null, emailIn: unknown): voi
 }
 
 /** Sets a new password from a reset link and ends every session of the account. Returns the account. */
-export async function resetPassword(tokenIn: unknown, passwordIn: unknown): Promise<Account> {
+export async function resetPassword(req: Request | null, tokenIn: unknown, passwordIn: unknown): Promise<Account> {
   const password = validatePassword(passwordIn);
   const token = typeof tokenIn === 'string' ? tokenIn : '';
   const t = token ? await repo.takeToken(hashToken(token), 'reset_password', Date.now()) : null;
@@ -98,7 +101,9 @@ export async function resetPassword(tokenIn: unknown, passwordIn: unknown): Prom
   await endSessionsOf(t.userId);
   // Reading the reset mail proves the address.
   await markEmailVerified(t.userId, t.email);
-  return getAccount(t.userId);
+  const account = await getAccount(t.userId);
+  sendSecurityNotice(req, account.email, { kind: 'password_reset' });
+  return account;
 }
 
 /**
@@ -107,6 +112,7 @@ export async function resetPassword(tokenIn: unknown, passwordIn: unknown): Prom
  * Every other session of theirs ends.
  */
 export async function changePassword(
+  req: Request | null,
   userId: string,
   currentSessionKey: string,
   current: unknown,
@@ -114,10 +120,11 @@ export async function changePassword(
   sessionAuthAt?: number,
 ): Promise<void> {
   const password = validatePassword(next);
-  await confirmPassword(userId, current, sessionAuthAt);
+  const user = await confirmPassword(userId, current, sessionAuthAt);
   await repo.setPasswordHash(userId, await hashPassword(password));
   await repo.deleteTokens(userId, 'reset_password');
   await endSessionsOf(userId, currentSessionKey);
+  sendSecurityNotice(req, user.email, { kind: user.passwordHash ? 'password_changed' : 'password_set' });
 }
 
 // ---- email change ----
@@ -158,9 +165,54 @@ export async function requestEmailChange(
   });
 }
 
-export async function confirmEmailChange(tokenIn: unknown): Promise<void> {
+/**
+ * Applies an email change from the link sent to the new address. The previous address, if it was
+ * verified, gets a notice with a "this wasn't me" link (revertEmailChange) — never an unverified
+ * one: whoever reads it may not be the account's owner.
+ */
+export async function confirmEmailChange(req: Request | null, tokenIn: unknown): Promise<void> {
   const token = typeof tokenIn === 'string' ? tokenIn : '';
   const t = token ? await repo.takeToken(hashToken(token), 'change_email', Date.now()) : null;
+  if (!t) throw invalidLink();
+  const before = await repo.findUserById(t.userId);
+  const now = Date.now();
+  try {
+    if (!before || !(await repo.changeEmail(t.userId, t.email, now))) throw invalidLink();
+  } catch (e) {
+    if (e instanceof repo.EmailTakenError) throw new HttpError(409, 'Another account uses that address now');
+    throw e;
+  }
+  await repo.deleteTokens(t.userId, 'verify_email'); // links for the old address
+  await emailVerified(t.userId, t.email);
+  if (!before.emailVerified || before.email === t.email) return;
+  // Not through issue(): a second change must not cancel the first address's way back.
+  const revert = newToken();
+  await repo.insertToken({
+    tokenHash: hashToken(revert),
+    userId: t.userId,
+    purpose: 'revert_email',
+    email: before.email,
+    now,
+    expiresAt: now + REVERT_EMAIL_DAYS * 24 * HOUR,
+  });
+  sendSecurityNotice(
+    req,
+    before.email,
+    { kind: 'email_changed', newEmail: t.email, revertUrl: appUrl(req, `/revert-email?token=${revert}`), validDays: REVERT_EMAIL_DAYS },
+    now,
+  );
+}
+
+/**
+ * "This wasn't me", from the link an email change sent to the previous address: moves the account
+ * back to that address, sets a new password, removes the two-step verification and provider
+ * sign-ins set up since the change, cancels every pending link and ends every session. Returns the
+ * account (the caller signs this browser in, through the second step if one is still on).
+ */
+export async function revertEmailChange(tokenIn: unknown, passwordIn: unknown): Promise<Account> {
+  const password = validatePassword(passwordIn); // before using the link up
+  const token = typeof tokenIn === 'string' ? tokenIn : '';
+  const t = token ? await repo.takeToken(hashToken(token), 'revert_email', Date.now()) : null;
   if (!t) throw invalidLink();
   try {
     if (!(await repo.changeEmail(t.userId, t.email, Date.now()))) throw invalidLink();
@@ -168,6 +220,10 @@ export async function confirmEmailChange(tokenIn: unknown): Promise<void> {
     if (e instanceof repo.EmailTakenError) throw new HttpError(409, 'Another account uses that address now');
     throw e;
   }
-  await repo.deleteTokens(t.userId, 'verify_email'); // links for the old address
+  await repo.setPasswordHash(t.userId, await hashPassword(password));
+  await repo.removeSecuritySetupSince(t.userId, t.createdAt);
+  await repo.deleteTokens(t.userId); // every pending link, other "this wasn't me" links included
+  await endSessionsOf(t.userId);
   await emailVerified(t.userId, t.email);
+  return getAccount(t.userId);
 }
