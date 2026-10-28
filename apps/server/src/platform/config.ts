@@ -13,6 +13,7 @@ export type RateLimitName =
   | 'password'
   | 'invite'
   | 'upload'
+  | 'remoteImage'
   | 'boardCreate'
   | 'wsConnect';
 
@@ -94,6 +95,7 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   password: '5/15m', // per IP and per email (password reset / change, phase 2)
   invite: '60/1h', // per user
   upload: '60/10m', // per user
+  remoteImage: '200/10m', // per user: images the server fetches from a URL (import + export)
   boardCreate: '100/1h', // per user (create + duplicate)
   wsConnect: '200/1m', // per IP and per user
 };
@@ -106,6 +108,7 @@ const ENV_NAME: Record<RateLimitName, string> = {
   password: 'RATE_LIMIT_PASSWORD',
   invite: 'RATE_LIMIT_INVITE',
   upload: 'RATE_LIMIT_UPLOAD',
+  remoteImage: 'RATE_LIMIT_REMOTE_IMAGE',
   boardCreate: 'RATE_LIMIT_BOARD_CREATE',
   wsConnect: 'RATE_LIMIT_WS_CONNECT',
 };
