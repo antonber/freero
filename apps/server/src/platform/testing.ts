@@ -16,8 +16,9 @@ export async function openTestDb(env: Record<string, string> = {}): Promise<Conf
   return config;
 }
 
-/** Closes the database and removes this process's local files (outbox, uploads). */
+/** Closes the database and removes this process's local files (outbox, uploads), once mail sent in the background has landed. */
 export async function closeTestDb(): Promise<void> {
+  await mailIdle();
   await closeDb();
   fs.rmSync(getConfig().dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }
