@@ -216,6 +216,22 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   stays same-origin). Rejections carry the server's message (too large, quota reached).
   `features/pdf` lazy-loads pdf.js (`pdfjs-dist`, pinned exactly) with its worker as a same-origin
   asset (CSP `worker-src 'self'`) and `isEvalSupported: false` (no `unsafe-eval` needed).
+- Video, audio and any other file (KAI-128, `features/media`: element types `media` and `file`).
+  `Host.uploadFile` also takes video/audio (`file.type` video/* or audio/*; the server keeps it
+  only when the BYTES are a container it serves for playback, else 415 — `status` on the Error);
+  `Host.uploadAttachment?(blob)` stores any other file as an opaque attachment; and
+  `Host.downloadFile?({ id, src, name })` saves an item's file under its name through
+  `GET /api/boards/:id/files/:elementId` (see "Uploads: what is served how"). A drop runs the
+  importers by priority: images (100), PDFs (15), then media (12) takes every other real file —
+  video / audio this browser plays (probed locally, with a JPEG poster frame captured from a
+  `blob:` URL and uploaded as an image) become players, the rest (and media the server refuses
+  with 415) file cards. `Editor.importData(data, at)` (additive) is the same path for "upload"
+  buttons, so a picked image still becomes an image. Playback is each viewer's own, never synced:
+  a remote "play" would hit every browser's autoplay rules (unmuted playback needs that person's
+  own gesture), and buffering makes synced positions drift; presenters bring people to the item
+  with follow / "Bring everyone to me" and press play. The player mounts on the first play only
+  (a board of videos loads nothing until then), Space plays / pauses the selected item, and
+  exports render the poster and the cards (a fresh copy never plays).
 - `Host.listMembers()`: everyone with access to the board (owner + invited members), including
   people never seen online — for assignee pickers etc. (`/board/local`: just the local user).
 - `Host.lookupUsers(ids)`: current profiles (name, color, photo) for ids the board shows — people
@@ -759,6 +775,26 @@ policies"), `activity` (board_activity: the activity feed; see "Activity" below)
   referenced (`last_referenced_at`), re-checks the candidates right before deleting, and deletes
   rows + files no round has seen referenced for 24 h — freeing quota. New content that stores
   upload URLs outside board docs adds its scan to `SCANS` there. `ObjectStorage.list()` exists for it.
+  `UPLOAD_REF_PATTERN` / `FILE_NAME_RE` are built from the one extension list in `uploads/store.ts`,
+  so a new upload kind is seen by every scan (and the account purge) without touching them.
+- Uploads: what is served how (`uploads/store.ts`, `routes.ts`, `download.ts`; KAI-128). What may
+  be served INLINE is an allowlist decided by the bytes, never a name or a declared type: raster
+  images, SVG (sandbox CSP), PDF, and video / audio whose container signature `sniffMedia`
+  recognises (MP4 / M4A / MOV by their `ftyp` brand, WebM's EBML doc type, Ogg, WAV, FLAC, MP3, AAC);
+  they are stored under the type and extension the bytes say. Anything else is an ATTACHMENT
+  (`POST /api/uploads?as=attachment`, stored as `<id>.bin`, `application/octet-stream`): never
+  served at `/uploads/` at all (404), only by `GET /api/boards/:id/files/:elementId` — the item is
+  looked up in the board AS THAT PERSON SEES IT (`readBoardView`: no other board's file, no hidden
+  frame's, no one's draft), the workspace's downloads policy applies (`boards.authorizeFileDownload`,
+  403 like an export, guests included), each download is audited (`board.file_downloaded`, file
+  name + upload), and it goes out as `Content-Disposition: attachment` under the item's own name
+  (RFC 5987), `nosniff`, the sandbox CSP and `no-store`. So an uploaded HTML / SVG / script can
+  never run as same-origin content. Video / audio answer single byte ranges (`Accept-Ranges`, 206,
+  416 past the end; `ObjectStorage.get(key, range)` + `stat`), or redirect to the bucket like
+  raster images (the CSP's `media-src` names it; `blob:` is the local file probed for its poster).
+  Size caps are per kind (`MAX_UPLOAD_MB` images / PDF, `MAX_MEDIA_UPLOAD_MB`,
+  `MAX_ATTACHMENT_UPLOAD_MB`), refused before the body is read when `Content-Length` says so; every
+  kind counts toward the one per-account quota. Moderation removal answers 410 on both paths.
 
 ### Moderation (`modules/moderation`, KAI-142)
 

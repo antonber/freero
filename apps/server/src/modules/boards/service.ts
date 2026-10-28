@@ -61,6 +61,32 @@ export async function recordExport(boardId: string, userId: string, format: unkn
 }
 
 /**
+ * Someone downloading a file from a board (a file card, a video or audio item; modules/uploads
+ * serves it): refused like an export when the workspace's downloads policy forbids it. Returns
+ * their role (what of the board they may read) and how to audit the download once it is served.
+ * `userId` may be a guest id (a visitor: no actor; the guest id is kept in the event).
+ */
+export async function authorizeFileDownload(
+  boardId: string,
+  userId: string,
+): Promise<{ role: Role; record(file: { name: string; upload: string }): Promise<void> }> {
+  const { board, role, access } = await requireAccess(boardId, userId);
+  requireDownload(access);
+  const guest = isGuestId(userId);
+  return {
+    role,
+    record: (file) =>
+      recordAudit({
+        action: 'board.file_downloaded',
+        workspaceId: board.workspaceId,
+        actorId: guest ? null : userId,
+        target: boardTarget(board),
+        metadata: { file: file.name, upload: file.upload, ...(guest ? { guestId: userId } : {}) },
+      }),
+  };
+}
+
+/**
  * The role of `userId` on a board and what its workspace contributes (policies, team access).
  * `userId` may be a guest id: a guest gets only the board they joined, as resolveGuestRole allows
  * (never once their session expired).

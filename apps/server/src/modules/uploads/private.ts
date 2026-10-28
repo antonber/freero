@@ -1,6 +1,6 @@
 // Files that are not board content: data-export archives (modules/privacy). Stored through the
 // same object storage under "private-<random>.zip" keys, which are never served at /uploads/
-// (FILE_NAME_RE accepts images and PDFs only), never adopted or swept by the uploads sweep (same
+// (FILE_NAME_RE accepts upload extensions only, never .zip), never adopted or swept by the uploads sweep (same
 // pattern), and count toward no quota. Whoever stores one deletes it (exports expire).
 import type { Readable } from 'node:stream';
 import { newId } from '../../platform/ids';

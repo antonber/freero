@@ -16,6 +16,7 @@ export type RateLimitName =
   | 'emailVerify'
   | 'invite'
   | 'upload'
+  | 'download'
   | 'remoteImage'
   | 'boardCreate'
   | 'templateSave'
@@ -117,6 +118,10 @@ export interface Config {
   errorReportingDsn: string | null;
   bodyLimitBytes: number;
   maxUploadBytes: number;
+  /** Max size of one video or audio upload (played on the board). */
+  maxMediaUploadBytes: number;
+  /** Max size of one other file (a downloadable file card). */
+  maxAttachmentUploadBytes: number;
   uploadQuotaBytes: number;
   maxBoardsPerUser: number;
   maxTemplatesPerUser: number;
@@ -207,6 +212,7 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   emailVerify: '5/1h', // verification / email-change messages per user
   invite: '60/1h', // per user
   upload: '60/10m', // per user
+  download: '300/10m', // per user or guest: files downloaded from boards (file cards, media)
   remoteImage: '200/10m', // per user: images the server fetches from a URL (import + export)
   boardCreate: '100/1h', // per user (create + duplicate)
   templateSave: '60/1h', // per user (saving a board or selection as a template)
@@ -236,6 +242,7 @@ const ENV_NAME: Record<RateLimitName, string> = {
   emailVerify: 'RATE_LIMIT_EMAIL_VERIFY',
   invite: 'RATE_LIMIT_INVITE',
   upload: 'RATE_LIMIT_UPLOAD',
+  download: 'RATE_LIMIT_DOWNLOAD',
   remoteImage: 'RATE_LIMIT_REMOTE_IMAGE',
   boardCreate: 'RATE_LIMIT_BOARD_CREATE',
   templateSave: 'RATE_LIMIT_TEMPLATE_SAVE',
@@ -454,6 +461,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     errorReportingDsn: url('ERROR_REPORTING_DSN', ['http:', 'https:']),
     bodyLimitBytes: int('BODY_LIMIT_KB', 2048, 16, 64 * 1024) * 1024,
     maxUploadBytes: int('MAX_UPLOAD_MB', 15, 1, 1024) * MB,
+    maxMediaUploadBytes: int('MAX_MEDIA_UPLOAD_MB', 100, 1, 1024) * MB,
+    maxAttachmentUploadBytes: int('MAX_ATTACHMENT_UPLOAD_MB', 50, 1, 1024) * MB,
     uploadQuotaBytes: int('UPLOAD_QUOTA_MB', 1024, 1) * MB,
     maxBoardsPerUser: int('MAX_BOARDS_PER_USER', 5000, 1),
     maxTemplatesPerUser: int('MAX_TEMPLATES_PER_USER', 500, 1),

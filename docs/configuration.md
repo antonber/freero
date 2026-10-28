@@ -180,8 +180,10 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | Variable | Default | Description |
 |---|---|---|
 | `BODY_LIMIT_KB` | `2048` | Max JSON request body (board thumbnails are the largest). |
-| `MAX_UPLOAD_MB` | `15` | Max size of one uploaded file. |
-| `UPLOAD_QUOTA_MB` | `1024` | Total upload storage per account (board thumbnails don't count). Over quota: `413`. |
+| `MAX_UPLOAD_MB` | `15` | Max size of one uploaded image or PDF. |
+| `MAX_MEDIA_UPLOAD_MB` | `100` | Max size of one video or audio file (played on the board). Uploads are held in memory while they are checked, so keep it well below the instance's memory. |
+| `MAX_ATTACHMENT_UPLOAD_MB` | `50` | Max size of any other file (a file card on the board, downloaded on click). Same memory note. |
+| `UPLOAD_QUOTA_MB` | `1024` | Total upload storage per account: images, documents, video, audio and other files alike (board thumbnails don't count). Over quota: `413`. |
 | `UPLOAD_CACHE_SECONDS` | `3600` | How long browsers, proxies and a CDN may reuse an uploaded file before revalidating it (a 304 by ETag). Also stored on S3 objects. It bounds how long a file an operator removed keeps showing where it was already loaded. `0`: revalidate every time. |
 | `MAX_BOARDS_PER_USER` | `5000` | Boards one account may own, counted across ALL its workspaces (boards in the trash don't count). Over it, creating/duplicating/restoring/receiving a board by transfer answers `403`. |
 | `MAX_TEMPLATES_PER_USER` | `500` | Saved templates one account may own. Over it, saving another answers `403`. |
@@ -197,6 +199,7 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `RATE_LIMIT_ACCESS_REQUEST` | `20/1h` | Requests for access to boards per user. |
 | `RATE_LIMIT_GUEST_JOIN` | `20/1h` | Visitors without an account joining shared boards as guests, per IP. |
 | `RATE_LIMIT_UPLOAD` | `60/10m` | Uploads per user. |
+| `RATE_LIMIT_DOWNLOAD` | `300/10m` | Files downloaded from boards (file cards, video and audio items) per user or guest. Each download is also checked against the workspace's downloads policy and audited. |
 | `RATE_LIMIT_REMOTE_IMAGE` | `200/10m` | Images the server fetches from a URL per user (copying a pasted image link to uploads, and including such images in exports). |
 | `RATE_LIMIT_BOARD_CREATE` | `100/1h` | Board creations + duplications per user. |
 | `RATE_LIMIT_TEMPLATE_SAVE` | `60/1h` | Saving a board or selection as a template, per user. |

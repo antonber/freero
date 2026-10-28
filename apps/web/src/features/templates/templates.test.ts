@@ -25,6 +25,8 @@ const REQUIRED: Record<ElementType, string[]> = {
   kanban: ['title', 'columns', 'colW'],
   pdf: ['src', 'name', 'page', 'pageCount'],
   swimlane: ['title', 'lanes', 'phases'],
+  media: ['kind', 'src', 'name', 'size', 'duration', 'naturalW', 'naturalH'],
+  file: ['src', 'name', 'size', 'mime'],
 };
 
 let seq = 0;

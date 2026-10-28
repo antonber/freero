@@ -17,7 +17,7 @@ import {
 import type { BoardChange, BoardView } from '../realtime/index';
 
 /** Kinds of existing items a structure may move into place (loose items, not containers or lines). */
-const MOVABLE = new Set(['sticky', 'card', 'shape', 'text', 'image', 'emoji', 'icon', 'embed', 'pdf']);
+const MOVABLE = new Set(['sticky', 'card', 'shape', 'text', 'image', 'emoji', 'icon', 'embed', 'pdf', 'media', 'file']);
 const GAP = 48;
 
 export interface Plan {

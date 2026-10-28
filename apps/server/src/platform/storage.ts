@@ -15,6 +15,7 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadBucketCommand,
+  HeadObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
@@ -27,6 +28,12 @@ export interface StoredObject {
   body: Readable;
   contentType: string | null;
   size: number | null;
+}
+
+/** Bytes `start` to `end` of an object, both inclusive (an HTTP Range resolved against its size). */
+export interface ByteRange {
+  start: number;
+  end: number;
 }
 
 export interface StoredKey {
@@ -45,8 +52,13 @@ export interface PutOptions {
 export interface ObjectStorage {
   readonly kind: 'local' | 's3';
   put(key: string, data: Uint8Array, contentType: string, opts?: PutOptions): Promise<void>;
-  /** The object, or null when there is no such key. */
-  get(key: string, opts?: { area?: StorageArea }): Promise<StoredObject | null>;
+  /**
+   * The object, or null when there is no such key. With `range`, `body` holds just those bytes
+   * (the caller resolved the range against `stat`); `size` is then the length of the range.
+   */
+  get(key: string, opts?: { area?: StorageArea; range?: ByteRange }): Promise<StoredObject | null>;
+  /** The size of an object of the public area, or null when there is no such key. */
+  stat(key: string): Promise<{ size: number } | null>;
   /** Deleting a missing key is not an error. */
   delete(key: string, opts?: { area?: StorageArea }): Promise<void>;
   /** A URL clients may fetch the object from directly, or null when the app must stream it. */
@@ -78,7 +90,8 @@ export class LocalStorage implements ObjectStorage {
     await fs.promises.writeFile(tmp, data);
     await fs.promises.rename(tmp, this.file(key));
   }
-  async get(key: string): Promise<StoredObject | null> {
+  async get(key: string, opts: { area?: StorageArea; range?: ByteRange } = {}): Promise<StoredObject | null> {
+    const { range } = opts;
     // Open first, then stat and stream that handle: a file deleted meanwhile (the uploads sweep)
     // is either a clean "not found" or still read whole. Stat-then-open by name left a gap where
     // the 200 and its length went out and the stream then failed, cutting the connection.
@@ -91,12 +104,20 @@ export class LocalStorage implements ObjectStorage {
     }
     try {
       const stat = await handle.stat();
-      if (stat.isFile()) return { body: handle.createReadStream(), contentType: null, size: stat.size };
+      if (stat.isFile()) {
+        if (!range) return { body: handle.createReadStream(), contentType: null, size: stat.size };
+        const end = Math.min(range.end, stat.size - 1);
+        return { body: handle.createReadStream({ start: range.start, end }), contentType: null, size: Math.max(0, end - range.start + 1) };
+      }
     } catch {
       /* treated as missing */
     }
     await handle.close().catch(() => {});
     return null;
+  }
+  async stat(key: string): Promise<{ size: number } | null> {
+    const st = await fs.promises.stat(this.file(key)).catch(() => null);
+    return st?.isFile() ? { size: st.size } : null;
   }
   async delete(key: string): Promise<void> {
     await fs.promises.rm(this.file(key), { force: true });
@@ -156,9 +177,11 @@ export class S3Storage implements ObjectStorage {
     );
   }
 
-  private async getObject(objectKey: string): Promise<StoredObject | null> {
+  private async getObject(objectKey: string, range?: ByteRange): Promise<StoredObject | null> {
     try {
-      const out = await this.client.send(new GetObjectCommand({ Bucket: this.s3.bucket, Key: objectKey }));
+      const out = await this.client.send(
+        new GetObjectCommand({ Bucket: this.s3.bucket, Key: objectKey, ...(range ? { Range: `bytes=${range.start}-${range.end}` } : {}) }),
+      );
       if (!out.Body) return null;
       return { body: out.Body as Readable, contentType: out.ContentType ?? null, size: out.ContentLength ?? null };
     } catch (e) {
@@ -167,13 +190,24 @@ export class S3Storage implements ObjectStorage {
     }
   }
 
-  async get(key: string, opts: { area?: StorageArea } = {}): Promise<StoredObject | null> {
+  async get(key: string, opts: { area?: StorageArea; range?: ByteRange } = {}): Promise<StoredObject | null> {
     // A private object made before the private area existed lives under the public prefix.
     return (
-      (await this.getObject(this.objectKey(key, opts.area))) ??
+      (await this.getObject(this.objectKey(key, opts.area), opts.range)) ??
       (opts.area === 'private' ? await this.getObject(this.objectKey(key)) : null) ??
-      (this.fallback ? this.fallback.get(key) : null)
+      (this.fallback ? this.fallback.get(key, { range: opts.range }) : null)
     );
+  }
+
+  async stat(key: string): Promise<{ size: number } | null> {
+    try {
+      const out = await this.client.send(new HeadObjectCommand({ Bucket: this.s3.bucket, Key: this.objectKey(key) }));
+      return { size: out.ContentLength ?? 0 };
+    } catch (e) {
+      if (e instanceof S3ServiceException && (e.name === 'NotFound' || e.name === 'NoSuchKey' || e.$metadata.httpStatusCode === 404))
+        return this.fallback ? this.fallback.stat(key) : null;
+      throw e;
+    }
   }
 
   async delete(key: string, opts: { area?: StorageArea } = {}): Promise<void> {

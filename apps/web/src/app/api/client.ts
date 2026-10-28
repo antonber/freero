@@ -420,22 +420,27 @@ export const api = {
     return res.blob();
   },
 
-  // uploads (images and PDF documents; the server checks type, size and quota)
-  async uploadImage(file: Blob): Promise<{ url: string }> {
-    const res = await fetch('/api/uploads', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': file.type || 'application/octet-stream' },
-      body: file,
-    });
-    if (!res.ok) {
-      // The server's message says why (too large, quota reached, wrong type).
-      const body = (await res.json().catch(() => null)) as { error?: string } | null;
-      throw new ApiError(res.status, body?.error || 'Upload failed');
-    }
-    return res.json();
+  // uploads (images, PDF documents, video and audio; the server checks type, size and quota)
+  uploadImage: (file: Blob) => upload('/api/uploads', file, file.type || 'application/octet-stream'),
+  // any other file: an opaque attachment, only ever downloaded from its board
+  uploadAttachment: (file: Blob) => upload('/api/uploads?as=attachment', file, 'application/octet-stream'),
+  /** The file of a file card / video / audio item on a board (downloads policy, audited). */
+  async downloadBoardFile(boardId: string, elementId: string): Promise<Blob> {
+    const res = await fetch(`/api/boards/${encodeURIComponent(boardId)}/files/${encodeURIComponent(elementId)}`, { credentials: 'same-origin' });
+    if (!res.ok) throw await failure(res);
+    return res.blob();
   },
 };
+
+async function upload(path: string, file: Blob, type: string): Promise<{ url: string }> {
+  const res = await fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': type }, body: file });
+  if (!res.ok) {
+    // The server's message says why (too large, quota reached, wrong type).
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    throw new ApiError(res.status, body?.error || 'Upload failed');
+  }
+  return res.json();
+}
 
 /**
  * Where to send the browser to sign in with a provider (a full navigation, not a fetch): `login`,
