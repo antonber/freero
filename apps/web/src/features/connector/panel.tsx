@@ -35,6 +35,7 @@ import {
   type ConnectorStyle,
 } from './lib/model';
 import { nextToSide, occupiedRects, QUICK_GAP, quickSpotTaken } from './lib/quick';
+import { liveObstacles } from './lib/obstacles';
 import { labelBoxes, partAt } from './lib/labels';
 
 const PLUS_OFFSET = 26;
@@ -258,7 +259,7 @@ function ConnectorHandles({ editor, c, root }: { editor: Editor; c: ConnectorEle
   // Follow the attached elements live (also when a collaborator moves them).
   useElement(c.start.elementId ?? null);
   useElement(c.end.elementId ?? null);
-  const geo = connectorGeometry(c, (id) => editor.getElement(id), localAnchors(editor));
+  const geo = connectorGeometry(c, (id) => editor.getElement(id), localAnchors(editor), liveObstacles(editor));
   const wp = c.waypoints?.[0];
   // Without a bend yet, the handle sits at the middle, or beside a label that is there (a label
   // is dragged / edited itself, and the two must not cover each other).

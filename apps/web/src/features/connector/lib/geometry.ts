@@ -236,9 +236,17 @@ export interface Route {
  * The route between two resolved ends. `obstacles` (other items' boxes, see `routeRegion`) only
  * matter to elbow lines: they detour around them.
  */
-export function computeRoute(routing: ConnectorRouting, s: End, e: End, waypoints: Point[] = [], obstacles: Rect[] = []): Route {
+export function computeRoute(
+  routing: ConnectorRouting,
+  s: End,
+  e: End,
+  waypoints: Point[] = [],
+  obstacles: Rect[] = [],
+  /** Minimum straight run out of each end (long line ends: a crow's foot sits before the first bend). */
+  stubs: { start?: number; end?: number } = {},
+): Route {
   if (routing === 'curved') return curvedRoute(s, e, waypoints);
-  const poly = routing === 'elbow' ? elbowRoute(s, e, waypoints, obstacles) : [s.p, e.p];
+  const poly = routing === 'elbow' ? elbowRoute(s, e, waypoints, obstacles, stubs) : [s.p, e.p];
   return { poly, cubics: null, ...polyTangents(poly) };
 }
 
@@ -328,8 +336,9 @@ export function simplify(pts: Point[]): Point[] {
  * both endpoint elements, and prefers few bends and short length. With a waypoint, the middle
  * segment passes through it.
  */
-function elbowRoute(s: End, e: End, wps: Point[], obstacles: Rect[]): Point[] {
+function elbowRoute(s: End, e: End, wps: Point[], obstacles: Rect[], stubs: { start?: number; end?: number }): Point[] {
   let M = ELBOW_MARGIN;
+  let narrow = false;
   // Free ends leave toward the other end along the dominant axis.
   const ds = s.dir ? axisOf(s.dir) : null;
   const de = e.dir ? axisOf(e.dir) : null;
@@ -338,11 +347,16 @@ function elbowRoute(s: End, e: End, wps: Point[], obstacles: Rect[]): Point[] {
   // looping back around both items.
   if (ds && de && ds.x === -de.x && ds.y === -de.y) {
     const gap = (e.p.x - s.p.x) * ds.x + (e.p.y - s.p.y) * ds.y;
-    if (gap > 0 && gap < 2 * M) M = gap / 2;
+    if (gap > 0 && gap < 2 * M) {
+      M = gap / 2;
+      narrow = true;
+    }
   }
+  const stubS = narrow ? M : Math.max(M, stubs.start ?? 0);
+  const stubE = narrow ? M : Math.max(M, stubs.end ?? 0);
   // An end attached inside its box (a spot on an ellipse's curve) first leaves the box.
-  const A = ds ? add(s.p, mul(ds, M + exitDistance(s, ds))) : s.p;
-  const B = de ? add(e.p, mul(de, M + exitDistance(e, de))) : e.p;
+  const A = ds ? add(s.p, mul(ds, stubS + exitDistance(s, ds))) : s.p;
+  const B = de ? add(e.p, mul(de, stubE + exitDistance(e, de))) : e.p;
   const solid = [s.box, e.box].filter((b): b is Rect => !!b).map((b) => inflate(b, -0.5));
   const near = [s.box, e.box].filter((b): b is Rect => !!b).map((b) => inflate(b, Math.max(0, M - 1)));
   const outer = [s.box, e.box].filter((b): b is Rect => !!b).map((b) => inflate(b, M));
@@ -499,6 +513,16 @@ export function tAlong(poly: Point[], p: Point): number {
 // ---------------------------------------------------------------------------------- caps
 /** Cap length in world units; grows with the stroke so thick lines keep readable arrowheads. */
 export const capSize = (strokeWidth: number): number => 7 + strokeWidth * 2.5;
+
+/** How far back from the tip a line end's mark reaches, along the line. */
+export function capReach(cap: CapStyle, strokeWidth: number): number {
+  const s = capSize(strokeWidth);
+  const reach: Partial<Record<CapStyle, number>> = {
+    arrow: 1, triangle: 1, triangleOpen: 1, circle: 0.8, circleOpen: 0.8, diamond: 1.2, diamondOpen: 1.2,
+    one: 0.9, many: 1.1, zeroOrOne: 1.57, oneOrMany: 1.45, zeroOrMany: 1.87,
+  };
+  return (reach[cap] ?? 0) * s;
+}
 
 /** How far the stroke must stop short of the tip so it doesn't poke through the cap. */
 export function capTrim(cap: CapStyle, strokeWidth: number): number {

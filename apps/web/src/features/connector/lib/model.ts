@@ -7,6 +7,7 @@ import { DEFAULT_LABEL_T, labelBoxes } from './labels';
 import { liveObstacles } from './obstacles';
 import {
   boundsOfPoints,
+  capReach,
   computeRoute,
   pointAlong,
   resolveEnds,
@@ -61,7 +62,11 @@ export interface ConnectorGeometry {
   bounds: { x: number; y: number; w: number; h: number };
 }
 
-type Shape = Pick<ConnectorElement, 'start' | 'end' | 'routing' | 'waypoints' | 'strokeWidth' | 'label' | 'labelT' | 'labels'>;
+type Shape = Pick<ConnectorElement, 'start' | 'end' | 'routing' | 'waypoints' | 'strokeWidth' | 'label' | 'labelT' | 'labels'> &
+  Partial<Pick<ConnectorElement, 'startCap' | 'endCap'>>;
+
+/** A line end's mark sits on the first straight run, never across a bend: long ends get a longer stub. */
+const stubFor = (cap: ConnectorElement['startCap'] | undefined, sw: number) => (cap ? capReach(cap, sw) + 8 : 0);
 
 /** Whether a line routes around other items: elbow lines the user hasn't bent themselves. */
 export const avoidsObstacles = (c: Pick<ConnectorElement, 'routing' | 'waypoints'>) => c.routing === 'elbow' && !c.waypoints?.length;
@@ -70,7 +75,7 @@ export function connectorGeometry(c: Shape, lookup: Lookup, local?: Outline, obs
   const { start, end } = resolveEnds(c, lookup, local);
   const wps = c.routing === 'straight' ? [] : (c.waypoints ?? []);
   const blocks = !obstacles || !avoidsObstacles(c) ? [] : Array.isArray(obstacles) ? obstacles : obstacles(start, end);
-  const route = computeRoute(c.routing, start, end, wps, blocks);
+  const route = computeRoute(c.routing, start, end, wps, blocks, { start: stubFor(c.startCap, c.strokeWidth), end: stubFor(c.endCap, c.strokeWidth) });
   const mid = pointAlong(route.poly, c.labelT ?? DEFAULT_LABEL_T).p;
   const boxes = labelBoxes(c, route.poly).map((l) => l.box);
   const labels = boxes.length ? boundsOfPoints(boxes.flatMap((b) => [{ x: b.x, y: b.y }, { x: b.x + b.w, y: b.y + b.h }])) : null;
