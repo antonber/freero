@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './auth/AuthContext';
 import { RequireAuth } from './auth/RequireAuth';
 import { GuestGate } from './board/GuestGate';
 import { FullPageSpinner } from './components/FullPageSpinner';
+import { AppUpdates } from './pwa/AppUpdates';
 import { LandingPage } from './pages/landing/LandingPage';
 import { AuthPage } from './pages/auth/AuthPage';
 import { DashboardPage } from './pages/dashboard/DashboardPage';
@@ -28,6 +29,7 @@ export function App() {
   return (
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <ToastProvider>
+        <AppUpdates />
         <AuthProvider>
           <Routes>
             <Route path="/" element={<Home />} />
