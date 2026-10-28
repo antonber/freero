@@ -142,7 +142,9 @@ function draw(el: BoardElement, byId: Map<string, BoardElement>) {
       );
     }
     case 'connector': {
-      const c = el as BoardElement & { start: { x: number; y: number }; end: { x: number; y: number }; endCap?: string; strokeStyle?: string };
+      const c = el as BoardElement & { start: { x: number; y: number }; end: { x: number; y: number }; endCap?: string; strokeStyle?: string; label?: string };
+      const label = richTextToPlain(c.label ?? '');
+      const mid = { x: (c.start.x + c.end.x) / 2, y: (c.start.y + c.end.y) / 2 };
       return (
         <g key={el.id}>
           <line
@@ -155,6 +157,11 @@ function draw(el: BoardElement, byId: Map<string, BoardElement>) {
             strokeDasharray={c.strokeStyle === 'dashed' ? '8 6' : undefined}
             markerEnd={c.endCap && c.endCap !== 'none' ? 'url(#fr-elements-preview-arrow)' : undefined}
           />
+          {label && (
+            <text x={mid.x} y={mid.y - 6} fontSize={13} textAnchor="middle" fill="var(--fr-ink-2)" className="fr-elements-preview__label">
+              {label}
+            </text>
+          )}
         </g>
       );
     }

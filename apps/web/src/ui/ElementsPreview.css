@@ -27,3 +27,11 @@
   justify-content: flex-start;
   text-align: left;
 }
+
+.fr-elements-preview__label {
+  font-family: var(--fr-font);
+  paint-order: stroke;
+  stroke: var(--fr-canvas);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
