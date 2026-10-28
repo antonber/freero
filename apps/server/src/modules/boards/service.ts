@@ -552,7 +552,8 @@ export async function duplicateBoard(source: Board, userId: string, role: Role):
   // Read the content BEFORE the transaction: it may wait for the live doc to finish loading,
   // which queries the database outside this transaction.
   const state = await snapshotBoardDoc(source.id);
-  const editors = atLeast(role, 'editor') ? await snapshotBoardLayer(source.id, 'editors') : null;
+  // Pending suggestions stay with the board they were proposed for (KAI-169).
+  const editors = atLeast(role, 'editor') ? await snapshotBoardLayer(source.id, 'editors', { withoutSuggestions: true }) : null;
   return repo.transaction(async () => {
     const copy = await createBoard(userId, `Copy of ${source.title}`.slice(0, 200), source.description, 'none', place);
     await recordAudit({
