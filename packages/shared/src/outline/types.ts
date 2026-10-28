@@ -106,4 +106,30 @@ export interface BoardOutline {
   /** Board-level facts ("Vote … ended · 12 votes"). */
   notes: string[];
   meta: OutlineMeta;
+  /**
+   * [additive] Pending suggestions (KAI-169): changes proposed for people to accept, NOT on the
+   * board. Only when asked for (`include=suggestions`) and only for owners and editors; never
+   * counted in `meta`, never paged or budgeted.
+   */
+  suggestions?: OutlineSuggestion[];
+}
+
+export interface OutlineSuggestion {
+  id: string;
+  groupId: string;
+  op: 'create' | 'update' | 'delete';
+  /** The item it creates (the id it gets when accepted), changes or deletes. */
+  itemId: string;
+  /** How the item reads once accepted (a deletion: the item it deletes), like an OutlineItem. */
+  kind?: string;
+  title?: string;
+  text?: string;
+  /** update: the fields it changes. */
+  changes?: string[];
+  /** Who proposed it ("Claude for Maria"). */
+  by: string;
+  /** What the proposer says the group does. Untrusted, like board text. */
+  description?: string;
+  /** 'ready', or stale: 'changed' (edited since), 'gone' (the item, or one it needs, was deleted). */
+  state: 'ready' | 'changed' | 'gone';
 }

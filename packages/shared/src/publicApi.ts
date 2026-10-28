@@ -20,7 +20,7 @@
 export const API_SCOPES = {
   'boards:read': 'See your boards and read what is on them (as the outline, items and comments)',
   'boards:write': 'Create boards and add, change and delete items on boards you can edit',
-  'boards:suggest': 'Propose changes for people to accept (reserved: suggestions are not available yet)',
+  'boards:suggest': 'Suggest changes on boards you can edit, for people there to accept or reject (never changes the board itself)',
   'comments:write': 'Comment on boards you can comment on',
   'members:read': 'See who has access to your boards',
   'members:write': 'Invite people to boards, change their access and remove them',
@@ -191,5 +191,35 @@ export type ApiCreatableType = (typeof API_CREATABLE_TYPES)[number];
 export const API_MAX_ITEMS_PER_CALL = 500;
 /** Most ids one bulk delete may name. */
 export const API_MAX_DELETE_PER_CALL = 1000;
+/**
+ * A suggestion (KAI-169): a proposed change that is not on the board until someone who can edit
+ * accepts it. Proposed with `boards:suggest`, listed with `boards:read`, decided with `boards:write`.
+ */
+export interface ApiSuggestion {
+  id: string;
+  groupId: string;
+  op: 'create' | 'update' | 'delete';
+  /** The item it creates (the id it gets when accepted), changes or deletes. */
+  itemId: string;
+  /** The item as it would be once accepted; a deletion: the item it deletes; null when that item is gone. */
+  item: ApiItem | null;
+  /** update: the fields it sets, as stored (rich text as sanitised HTML). */
+  patch?: Record<string, unknown>;
+  /**
+   * 'ready': accept applies it as proposed. 'changed': the item was edited since it was proposed
+   * (the fields it changes; anything, for a deletion). 'gone': the item, or one it connects to, is
+   * gone. Stale ones are accepted only with `force`.
+   */
+  state: 'ready' | 'changed' | 'gone';
+}
+export interface ApiSuggestionGroup {
+  id: string;
+  author: { kind: 'person' | 'app' | 'ai'; name: string; userId: string; userName: string };
+  description: string;
+  createdAt: number;
+  suggestions: ApiSuggestion[];
+}
+/** `code` of a 409 when accepting would overwrite changes made since (send force=true to apply anyway). */
+export const SUGGESTION_STALE = 'suggestion_stale';
 export interface ApiCommentMessage { id: string; authorId: string; author: string; text: string; at: number }
 export interface ApiCommentThread { id: string; itemId: string | null; resolved: boolean; messages: ApiCommentMessage[] }

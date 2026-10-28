@@ -52,6 +52,11 @@ export interface BaseElement {
    * places it; the engine clears it on copies whose target wasn't copied.
    */
   attachedTo?: string | null;
+  /**
+   * [additive] Accepted from a suggestion (KAI-169): who proposed it. `createdBy` is the person who
+   * accepted it, so both are on the item.
+   */
+  suggestedBy?: { kind: 'person' | 'app' | 'ai'; name: string; userId: string } | null;
   createdBy: string;
   createdAt: number;
   updatedAt: number;
