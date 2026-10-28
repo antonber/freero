@@ -60,6 +60,11 @@ export async function requireBoardDownload(boardId: string, userId: string): Pro
   requireDownload(access);
 }
 
+/** The workspace a board (trashed or not) belongs to, or null if there is no such board. */
+export async function boardWorkspaceId(boardId: string): Promise<string | null> {
+  return (await repo.getBoardIncludingTrash(boardId))?.workspaceId ?? null;
+}
+
 /** The board's title, or null if there is no such board (invite previews). */
 export async function getBoardTitle(boardId: string): Promise<string | null> {
   return (await repo.getBoard(boardId))?.title ?? null;
@@ -92,6 +97,11 @@ export async function touchBoard(boardId: string, at = Date.now()): Promise<void
 /** Every board of a workspace (trash included): whose access to re-check when the workspace changes. */
 export function boardIdsInWorkspace(workspaceId: string): Promise<string[]> {
   return repo.idsInWorkspace(workspaceId);
+}
+
+/** Board usage of a workspace for its admin console (trash counted apart; owners of live boards). */
+export function workspaceBoardStats(workspaceId: string): ReturnType<typeof repo.workspaceStats> {
+  return repo.workspaceStats(workspaceId, Date.now());
 }
 
 export function boardIdsInProject(projectId: string): Promise<string[]> {

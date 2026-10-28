@@ -353,8 +353,14 @@ Give it the server's environment (`DATABASE_URL`, `SESSION_SECRET`, `SMTP_URL`, 
 built-in PGlite database (no `DATABASE_URL`) stop the server first (one process at a time).
 
 Every command that changes an account writes an `"audit"` log line (action, the operator's name,
-their stated reason, the account id). Ship the log; an audit trail kept in the database comes with
-Enterprise (`platform/audit.ts` is the seam).
+their stated reason, the account id) and records the same event in the audit log: the account's
+own chain and the logs of its team workspaces, where their admins see it.
+
+`npm run admin -- audit:verify <workspace id>` re-checks a workspace's audit log chain (also
+`u:<user id>` for an account's own chain, `freero` for operator actions on unowned content) and
+exits non-zero when it is not intact. Workspace admins run the same check from the admin console
+(Audit log → Integrity) and can export the log as CSV or JSON; each export carries every event's
+chain position and hashes, so it can be re-checked independently.
 
 ## Account recovery: someone is locked out by two-step verification
 

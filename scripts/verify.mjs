@@ -3606,6 +3606,165 @@ async function privacyChecks() {
 }
 
 // ---------------------------------------------------------------------------
+// Enterprise admin (KAI-47, KAI-48, KAI-51), on its own server: the audit log written by real
+// sign-ins and team changes, read and exported only by the workspace's owners/admins; the
+// two-step requirement and deactivation closing the team's boards (REST and sockets); exports
+// reported by the app; an operator's reset from the CLI landing in the team's log.
+// ---------------------------------------------------------------------------
+async function enterpriseAdminChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-admin-'));
+  const env = { RATE_LIMIT_TWO_FACTOR: '200/15m', RATE_LIMIT_LOGIN: '500/5m', RATE_LIMIT_LOGIN_ACCOUNT: '500/5m', RATE_LIMIT_INVITE: '500/1h' };
+  let proc = null;
+  const start = async () => (proc = await waitUp(await spawnServer(dataDir, env)));
+  const socketClose = (port, boardId, cookie) =>
+    new Promise((resolve) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/boards/${boardId}`, { headers: { cookie } });
+      const t = setTimeout(() => {
+        ws.terminate();
+        resolve('open');
+      }, 4000);
+      ws.on('close', (code) => {
+        clearTimeout(t);
+        resolve(code);
+      });
+      ws.on('error', () => {});
+    });
+  try {
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    if (!(await check('admin server boots', start))) return;
+    const stamp = Date.now();
+    const verified = async (label) => {
+      const u = new User(label, proc.port);
+      u.email = `${label.toLowerCase()}-${stamp}@admin.verify.freero.app`;
+      await u.signup();
+      await u.verifyEmail(dataDir);
+      return u;
+    };
+    const enrol = async (u) => {
+      const setup = await u.req('POST', '/api/auth/two-factor/setup', { password: 'password-123' });
+      const enable = await u.req('POST', '/api/auth/two-factor/enable', { code: await totpCode({ secret: setup.json.secret }) });
+      assert(enable.status === 200, `enable: ${enable.text}`);
+    };
+    const O = await verified('Owner');
+    const M = await verified('Member');
+    const G = await verified('Guest');
+    const ws = (await O.req('POST', '/api/workspaces', { name: 'Audited team' })).json.workspace.id;
+    for (const [u, role] of [
+      [M, 'member'],
+      [G, 'guest'],
+    ])
+      assert((await O.req('POST', `/api/workspaces/${ws}/members`, { email: u.email, role })).status === 201, `add ${u.label}`);
+    const board = (await O.req('POST', '/api/boards', { title: 'Plans', workspaceId: ws })).json.board.id;
+    const audit = async (query = '') => (await O.req('GET', `/api/workspaces/${ws}/audit?limit=200${query}`)).json.events;
+
+    await check('the audit log records real sign-ins, failed sign-ins and role changes of the team, with who, from where and what changed', async () => {
+      assert((await new User('x', proc.port).req('POST', '/api/auth/login', { email: M.email, password: 'wrong-password' })).status === 401, 'bad password accepted');
+      const again = new User('Member again', proc.port);
+      assert((await again.req('POST', '/api/auth/login', { email: M.email, password: 'password-123' }, { headers: { 'user-agent': 'VerifyBrowser/1.0' } })).status === 200, 'login');
+      assert((await O.req('PATCH', `/api/workspaces/${ws}/members/${M.id}`, { role: 'admin' })).status === 200, 'role change');
+      assert((await O.req('PATCH', `/api/workspaces/${ws}/members/${M.id}`, { role: 'member' })).status === 200, 'role back');
+      const events = await audit();
+      const failed = events.find((e) => e.action === 'auth.login_failed' && e.target?.id === M.id);
+      assert(failed && failed.actor === null && failed.metadata.reason === 'password' && failed.ip, `failed sign-in: ${JSON.stringify(failed)}`);
+      const login = events.find((e) => e.action === 'auth.login' && e.actor?.id === M.id && e.userAgent === 'VerifyBrowser/1.0');
+      assert(login && login.metadata.method === 'password', `sign-in: ${JSON.stringify(events.filter((e) => e.action === 'auth.login'))}`);
+      const promoted = events.find((e) => e.action === 'member.role_changed' && e.metadata.to === 'admin');
+      assert(promoted && promoted.actor.id === O.id && promoted.metadata.from === 'member' && promoted.target.label === M.email, `role change: ${JSON.stringify(promoted)}`);
+      // A guest's own sign-ins stay theirs: not in the team's log.
+      await new User('Guest again', proc.port).req('POST', '/api/auth/login', { email: G.email, password: 'password-123' });
+      assert(!(await audit('&action=auth.')).some((e) => e.actor?.id === G.id), "a guest's sign-in reached the team's log");
+    });
+
+    await check('only owners/admins of that workspace read its audit log, usage and settings; the export is CSV/JSON, formula-safe and itself audited; the chain verifies', async () => {
+      for (const url of [`/api/workspaces/${ws}/audit`, `/api/workspaces/${ws}/admin/usage`, `/api/workspaces/${ws}/admin/settings`, `/api/workspaces/${ws}/audit/export`]) {
+        const r = await M.req('GET', url);
+        assert(r.status === 403, `member reads ${url}: ${r.status}`);
+      }
+      const outsider = await verified('Outsider');
+      assert((await outsider.req('GET', `/api/workspaces/${ws}/audit`)).status === 404, 'outsider reached the log');
+      assert((await O.req('PATCH', `/api/boards/${board}`, { title: '=HYPERLINK("http://x","y")' })).status === 200, 'rename');
+      assert((await O.req('DELETE', `/api/boards/${board}`)).status === 200 && (await O.req('POST', `/api/boards/${board}/restore`)).status === 200, 'trash + restore');
+      const csv = await O.req('GET', `/api/workspaces/${ws}/audit/export?format=csv`);
+      assert(csv.status === 200 && /text\/csv/.test(csv.headers.get('content-type')) && /attachment; filename="freero-audit-audited-team-/.test(csv.headers.get('content-disposition')), `csv headers: ${csv.status}`);
+      const lines = csv.text.trim().split('\n');
+      assert(lines[0].startsWith('id,time,action,description,actor_id') && lines.some((l) => l.includes(',board.trashed,')), `csv rows: ${lines.slice(0, 3).join(' | ')}`);
+      assert(!lines.some((l) => /,=HYPERLINK/.test(l) || /,"=HYPERLINK/.test(l)), 'a formula reached the CSV unescaped');
+      const json = await O.req('GET', `/api/workspaces/${ws}/audit/export?format=json&action=board.`);
+      assert(json.status === 200 && Array.isArray(json.json) && json.json.length > 0 && json.json.every((e) => e.action.startsWith('board.')), `json export: ${json.text.slice(0, 200)}`);
+      const exported = (await audit('&action=audit.exported')).filter((e) => e.actor?.id === O.id);
+      assert(exported.length === 2 && exported.some((e) => e.metadata.format === 'json' && e.metadata.actions?.[0] === 'board.'), `export not audited: ${JSON.stringify(exported)}`);
+      const integrity = (await O.req('GET', `/api/workspaces/${ws}/audit/integrity`)).json.integrity;
+      assert(integrity.ok && integrity.events > 5 && /^[0-9a-f]{64}$/.test(integrity.headHash), `integrity: ${JSON.stringify(integrity)}`);
+      const usage = (await O.req('GET', `/api/workspaces/${ws}/admin/usage`)).json.usage;
+      assert(usage.boards === 1 && usage.members.owner === 1 && usage.members.member === 1 && usage.members.guest === 1, `usage: ${JSON.stringify(usage)}`);
+    });
+
+    await check('requiring two-step verification closes the team\'s boards to members without it (REST and sockets), keeps them from turning it off, and needs it on for whoever sets it', async () => {
+      const needOwn = await O.req('PATCH', `/api/workspaces/${ws}/admin/settings`, { requireTwoFactor: true });
+      assert(needOwn.status === 403, `set without own two-step: ${needOwn.status}`);
+      await enrol(O);
+      assert((await O.req('PATCH', `/api/workspaces/${ws}/admin/settings`, { requireTwoFactor: true })).json.settings.requireTwoFactor === true, 'setting not saved');
+      assert((await M.req('GET', `/api/boards/${board}`)).status === 403, 'member without two-step still opens the board');
+      assert((await socketClose(proc.port, board, M.cookie)) === 4403, 'socket admitted without two-step');
+      const listed = (await M.req('GET', '/api/workspaces')).json.workspaces.find((w) => w.id === ws);
+      assert(listed.blocked === 'two_factor_required', `blocked: ${listed.blocked}`);
+      await enrol(M);
+      assert((await M.req('GET', `/api/boards/${board}`)).status === 200, 'member with two-step still locked out');
+      const off = await M.req('POST', '/api/auth/two-factor/disable', { password: 'password-123', code: '000000' });
+      assert(off.status === 409 && /Audited team requires two-step verification/.test(off.text), `turned off: ${off.status} ${off.text}`);
+      assert((await O.req('PATCH', `/api/workspaces/${ws}/admin/settings`, { requireTwoFactor: false })).status === 200, 'unset');
+    });
+
+    await check('a deactivated member opens nothing in the workspace until reactivated, while others keep working; deactivation is audited', async () => {
+      const r = await O.req('POST', `/api/workspaces/${ws}/admin/members/${M.id}/deactivate`);
+      assert(r.status === 200 && r.json.member.deactivated === true, `deactivate: ${r.text}`);
+      assert((await M.req('GET', `/api/boards/${board}`)).status === 403, 'deactivated member opens the board');
+      assert((await socketClose(proc.port, board, M.cookie)) === 4403, 'deactivated member socket admitted');
+      assert((await M.req('POST', '/api/boards', { title: 'x', workspaceId: ws })).status === 403, 'deactivated member creates boards');
+      assert((await O.req('GET', `/api/boards/${board}`)).status === 200, 'owner locked out');
+      assert((await O.req('POST', `/api/workspaces/${ws}/admin/members/${M.id}/reactivate`)).status === 200, 'reactivate');
+      assert((await M.req('GET', `/api/boards/${board}`)).status === 200, 'reactivated member still locked out');
+      const evs = await audit('&action=member.deactivated,member.reactivated');
+      assert(evs.length === 2 && evs.every((e) => e.actor.id === O.id && e.target.id === M.id), `audit: ${JSON.stringify(evs)}`);
+    });
+
+    await check('exports the app reports are audited, and refused when the downloads policy forbids them', async () => {
+      assert((await M.req('POST', `/api/boards/${board}/exported`, { format: 'pdf' })).status === 200, 'report');
+      assert((await O.req('PATCH', `/api/workspaces/${ws}`, { policies: { downloads: 'admins' } })).status === 200, 'policy');
+      assert((await M.req('POST', `/api/boards/${board}/exported`, { format: 'png' })).status === 403, 'member export allowed by a policy that forbids it');
+      const evs = await audit('&action=board.exported');
+      assert(evs.length === 1 && evs[0].actor.id === M.id && evs[0].metadata.format === 'pdf', `exports: ${JSON.stringify(evs)}`);
+    });
+
+    await check("operator CLI: a two-step reset lands in the team's audit log naming the operator, and audit:verify re-checks the chain", async () => {
+      const cli = (...args) =>
+        spawnSync(process.execPath, ['--import', 'tsx', 'apps/server/src/admin.ts', ...args], {
+          cwd: ROOT,
+          encoding: 'utf8',
+          env: { ...process.env, ...env, FREERO_DATA_DIR: dataDir, NODE_ENV: 'test', SESSION_SECRET: RUN_SECRET, LOG_LEVEL: 'warn' },
+          timeout: 60_000,
+        });
+      await stopProc(proc); // PGlite is one process (on Postgres the CLI could run alongside)
+      const reset = cli('two-factor:reset', M.email, '--operator', 'Sam from support', '--reason', 'ticket 42', '--yes');
+      assert(reset.status === 0, `reset: ${reset.status} ${reset.stdout} ${reset.stderr}`);
+      const verify = cli('audit:verify', ws);
+      assert(verify.status === 0 && /intact\s+yes/.test(verify.stdout), `audit:verify: ${verify.status} ${verify.stdout} ${verify.stderr}`);
+      await start();
+      O.port = proc.port; // sessions are in the database: the owner is still signed in
+      const ev = (await audit('&action=auth.two_factor.')).find((e) => e.action === 'auth.two_factor.reset_by_operator');
+      assert(ev && ev.actor === null && ev.metadata.operator === 'Sam from support' && ev.metadata.reason === 'ticket 42' && ev.target.id === M.id, `operator event: ${JSON.stringify(ev)}`);
+    });
+  } finally {
+    if (proc) await stopProc(proc);
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Abuse reports and operator moderation (KAI-142): reports from people who can open a board (and
 // only them), the operator queue, and every action enforced live — a link turned off drops
 // link-only sockets, a taken-down board closes and refuses everyone, a removed file answers 410
@@ -3855,6 +4014,7 @@ const SUITES = {
   privacy: privacyChecks,
   moderation: moderationChecks,
   multi: multiInstanceChecks,
+  admin: enterpriseAdminChecks,
 };
 const onlyArg = process.argv.indexOf('--only');
 const only = onlyArg >= 0 ? (process.argv[onlyArg + 1] ?? '').split(',').filter(Boolean) : Object.keys(SUITES);

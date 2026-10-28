@@ -4,6 +4,8 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { createUser } from '../auth/index';
 import { createBoard } from '../boards/index';
+import { createTeamWorkspace, updateWorkspaceSettings } from '../workspaces/index';
+import { pruneSnapshotsByPolicy } from './init';
 import * as repo from './repo';
 import { DEFAULT_RETENTION, pruneSnapshots, snapshotsToPrune, type SnapshotStamp } from './retention';
 
@@ -58,4 +60,26 @@ it('several replicas pruning at once delete exactly what one would, and never a 
   expect(left).toHaveLength(stamps.length - expected);
   expect(left.filter((s) => s.kind === 'named')).toHaveLength(stamps.filter((s) => s.id % 50 === 0).length);
   expect(await pruneSnapshots({ now: NOW })).toBe(0);
+});
+
+it('a workspace’s version retention removes its unnamed versions past the limit — even a board’s only one — and leaves named ones and other workspaces alone', async () => {
+  const team = await createTeamWorkspace(userId, 'Short memory');
+  await updateWorkspaceSettings(team.id, userId, { versionRetentionDays: 30 });
+  const strict = (await createBoard(userId, 'Strict', '', 'none', { workspaceId: team.id })).id;
+  const lone = (await createBoard(userId, 'Lone', '', 'none', { workspaceId: team.id })).id;
+  const relaxed = (await createBoard(userId, 'Relaxed', '')).id; // personal workspace: default retention
+  const state = new Uint8Array([0, 0]);
+  const now = Date.now();
+  for (const b of [strict, relaxed]) {
+    await repo.insertSnapshot(b, { state, kind: 'auto', name: null, createdBy: null }, now - 90 * DAY);
+    await repo.insertSnapshot(b, { state, kind: 'named', name: 'Kickoff', createdBy: null }, now - 80 * DAY);
+    await repo.insertSnapshot(b, { state, kind: 'auto', name: null, createdBy: null }, now - 2 * DAY);
+  }
+  await repo.insertSnapshot(lone, { state, kind: 'before-restore', name: null, createdBy: null }, now - 40 * DAY);
+
+  await pruneSnapshotsByPolicy(now);
+  const ages = async (b: string) => (await repo.snapshotTimeline(b)).map((s) => `${s.kind}:${Math.round((now - s.createdAt) / DAY)}`).sort();
+  expect(await ages(strict)).toEqual(['auto:2', 'named:80']);
+  expect(await ages(lone)).toEqual([]);
+  expect(await ages(relaxed)).toEqual(['auto:2', 'auto:90', 'named:80']);
 });

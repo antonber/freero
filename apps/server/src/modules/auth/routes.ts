@@ -49,6 +49,7 @@ import {
   sessionsEnded,
   startSession,
   updateProfile,
+  auditOwnAccount,
 } from './service';
 
 export default function authRoutes(_ctx: ServerContext): Router {
@@ -314,6 +315,7 @@ export default function authRoutes(_ctx: ServerContext): Router {
       const key = await repo.deleteSessionById(me.id, req.params.id);
       if (!key) throw notFound('That session has already ended');
       sessionsEnded([key]);
+      await auditOwnAccount('auth.session_revoked', me.id, { session: req.params.id });
       if (key === currentSessionKey(req)) clearSessionCookie(res);
       res.json({ ok: true });
     }),
@@ -323,7 +325,9 @@ export default function authRoutes(_ctx: ServerContext): Router {
     '/auth/sessions/revoke-others',
     requireUser,
     handle(async (req, res) => {
-      res.json({ revoked: await endSessionsOf(currentUser(req).id, currentSessionKey(req)) });
+      const revoked = await endSessionsOf(currentUser(req).id, currentSessionKey(req));
+      await auditOwnAccount('auth.sessions_revoked', currentUser(req).id, { sessions: revoked });
+      res.json({ revoked });
     }),
   );
 

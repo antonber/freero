@@ -1,4 +1,9 @@
 import type {
+  AdminMember,
+  AuditEvent,
+  AuditIntegrity,
+  WorkspaceSettings,
+  WorkspaceUsage,
   AcceptInviteResponse,
   AppealInfo,
   ModeratedBoard,
@@ -90,6 +95,22 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 }
 
 export type BoardFilter = 'all' | 'mine' | 'shared' | 'starred' | 'recent' | 'trash';
+
+/** Audit log filters (see GET /api/workspaces/:id/audit). */
+export interface AuditQuery {
+  action?: string;
+  actor?: string;
+  from?: number;
+  to?: number;
+  before?: string;
+  limit?: number;
+}
+
+function auditQuery(f: AuditQuery): string {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(f)) if (v !== undefined && v !== '') p.set(k, String(v));
+  return p.toString();
+}
 
 export const api = {
   // auth
@@ -272,6 +293,28 @@ export const api = {
     request<{ invite: WorkspaceInvitePreview }>('GET', `/api/workspace-invites/${encodeURIComponent(token)}`),
   acceptWorkspaceInvite: (token: string) =>
     request<{ workspaceId: string }>('POST', `/api/workspace-invites/${encodeURIComponent(token)}/accept`),
+
+  // admin console (owners/admins of a team workspace; checked by the server)
+  adminUsage: (id: string) => request<{ usage: WorkspaceUsage }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/usage`),
+  adminMembers: (id: string, q = '') =>
+    request<{ members: AdminMember[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/members${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  setMemberDeactivated: (id: string, userId: string, deactivated: boolean) =>
+    request<{ member: AdminMember }>(
+      'POST',
+      `/api/workspaces/${encodeURIComponent(id)}/admin/members/${encodeURIComponent(userId)}/${deactivated ? 'deactivate' : 'reactivate'}`,
+    ),
+  workspaceSettings: (id: string) => request<{ settings: WorkspaceSettings }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/settings`),
+  updateWorkspaceSettings: (id: string, patch: Partial<WorkspaceSettings>) =>
+    request<{ settings: WorkspaceSettings }>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/admin/settings`, patch),
+  auditEvents: (id: string, filter: AuditQuery) =>
+    request<{ events: AuditEvent[]; next: string | null }>('GET', `/api/workspaces/${encodeURIComponent(id)}/audit?${auditQuery(filter)}`),
+  /** A same-origin URL that downloads the filtered log (the browser handles the file). */
+  auditExportUrl: (id: string, format: 'csv' | 'json', filter: AuditQuery) =>
+    `/api/workspaces/${encodeURIComponent(id)}/audit/export?format=${format}&${auditQuery({ ...filter, before: undefined, limit: undefined })}`,
+  auditIntegrity: (id: string) => request<{ integrity: AuditIntegrity }>('GET', `/api/workspaces/${encodeURIComponent(id)}/audit/integrity`),
+  /** Tells the server a board was exported in the browser (audit log; refused when the workspace forbids exports). */
+  reportBoardExport: (boardId: string, format: string) =>
+    request<{ ok: true }>('POST', `/api/boards/${encodeURIComponent(boardId)}/exported`, { format }),
 
   // projects (folders)
   listProjects: (workspaceId: string) =>

@@ -322,12 +322,15 @@ export async function tryLockSnapshotPrune(): Promise<boolean> {
   return r?.ok === true;
 }
 
-/** Boards (by id, after `afterBoardId`) with more than one snapshot that retention could remove. */
-export async function boardsWithPrunableSnapshots(afterBoardId: string, limit: number): Promise<string[]> {
+/**
+ * Boards (by id, after `afterBoardId`) with snapshots retention could remove: more than one
+ * unnamed snapshot, or (with `loneBefore`) an unnamed one older than that.
+ */
+export async function boardsWithPrunableSnapshots(afterBoardId: string, limit: number, loneBefore: number | null = null): Promise<string[]> {
   const rows = await query<{ board_id: string }>(
     `SELECT board_id FROM board_doc_snapshots WHERE kind <> 'named' AND board_id > $1
-     GROUP BY board_id HAVING count(*) > 1 ORDER BY board_id LIMIT $2`,
-    [afterBoardId, limit],
+     GROUP BY board_id HAVING count(*) > 1 OR min(created_at) < $3 ORDER BY board_id LIMIT $2`,
+    [afterBoardId, limit, loneBefore === null ? null : new Date(loneBefore)],
   );
   return rows.map((r) => r.board_id);
 }
@@ -349,6 +352,34 @@ export async function deleteSnapshots(boardId: string, ids: number[]): Promise<n
     [boardId, ids],
   );
   return rows.length;
+}
+
+/**
+ * What the stored content of these boards takes (documents, update logs, version history,
+ * layers), and the upload names it references (matches of `pattern`'s first group).
+ */
+export async function storedContentOf(boardIds: string[], pattern: string): Promise<{ bytes: number; names: string[] }> {
+  if (!boardIds.length) return { bytes: 0, names: [] };
+  const size = await one<{ n: string | number }>(
+    `SELECT (
+       COALESCE((SELECT sum(octet_length(state)) FROM board_docs WHERE board_id = ANY($1::text[])), 0) +
+       COALESCE((SELECT sum(octet_length(data)) FROM board_doc_updates WHERE board_id = ANY($1::text[])), 0) +
+       COALESCE((SELECT sum(octet_length(state)) FROM board_doc_snapshots WHERE board_id = ANY($1::text[])), 0) +
+       COALESCE((SELECT sum(octet_length(state)) FROM board_layers WHERE board_id = ANY($1::text[])), 0) +
+       COALESCE((SELECT sum(octet_length(data)) FROM board_layer_updates WHERE board_id = ANY($1::text[])), 0)
+     )::bigint AS n`,
+    [boardIds],
+  );
+  const rows = await query<{ name: string }>(
+    `SELECT DISTINCT m[1] AS name FROM (
+       SELECT regexp_matches(encode(state, 'escape'), $2, 'g') AS m FROM board_docs WHERE board_id = ANY($1::text[])
+       UNION ALL SELECT regexp_matches(encode(data, 'escape'), $2, 'g') FROM board_doc_updates WHERE board_id = ANY($1::text[])
+       UNION ALL SELECT regexp_matches(encode(state, 'escape'), $2, 'g') FROM board_layers WHERE board_id = ANY($1::text[])
+       UNION ALL SELECT regexp_matches(encode(data, 'escape'), $2, 'g') FROM board_layer_updates WHERE board_id = ANY($1::text[])
+     ) found`,
+    [boardIds, pattern],
+  );
+  return { bytes: Number(size?.n ?? 0), names: rows.map((r) => r.name) };
 }
 
 /**

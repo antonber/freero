@@ -168,6 +168,37 @@ export async function idsInWorkspace(workspaceId: string): Promise<string[]> {
   return (await query<{ id: string }>(`SELECT id FROM boards WHERE workspace_id = $1`, [workspaceId])).map((r) => r.id);
 }
 
+/** Usage of a workspace's boards (admin console): counts, live boards per owner, recent openers. */
+export async function workspaceStats(
+  workspaceId: string,
+  now: number,
+): Promise<{ live: number; trashed: number; ownedBy: Map<string, number>; active7d: number; active30d: number }> {
+  const DAY = 86_400_000;
+  const [counts, owners, active] = await Promise.all([
+    one<{ live: number; trashed: number }>(
+      `SELECT count(*) FILTER (WHERE deleted_at IS NULL)::int AS live, count(*) FILTER (WHERE deleted_at IS NOT NULL)::int AS trashed
+       FROM boards WHERE workspace_id = $1`,
+      [workspaceId],
+    ),
+    query<{ owner_id: string; n: number }>(
+      `SELECT owner_id, count(*)::int AS n FROM boards WHERE workspace_id = $1 AND deleted_at IS NULL GROUP BY owner_id`,
+      [workspaceId],
+    ),
+    one<{ d7: number; d30: number }>(
+      `SELECT count(DISTINCT o.user_id) FILTER (WHERE o.opened_at > $2)::int AS d7, count(DISTINCT o.user_id) FILTER (WHERE o.opened_at > $3)::int AS d30
+       FROM board_opens o JOIN boards b ON b.id = o.board_id WHERE b.workspace_id = $1`,
+      [workspaceId, new Date(now - 7 * DAY), new Date(now - 30 * DAY)],
+    ),
+  ]);
+  return {
+    live: counts?.live ?? 0,
+    trashed: counts?.trashed ?? 0,
+    ownedBy: new Map(owners.map((o) => [o.owner_id, o.n])),
+    active7d: active?.d7 ?? 0,
+    active30d: active?.d30 ?? 0,
+  };
+}
+
 export async function idsInProject(projectId: string): Promise<string[]> {
   return (await query<{ id: string }>(`SELECT id FROM boards WHERE project_id = $1`, [projectId])).map((r) => r.id);
 }
@@ -227,13 +258,31 @@ export async function deleteAllOwnedBy(userId: string): Promise<Array<string | n
 }
 
 /** Deletes up to `limit` boards trashed before `before` for good; returns what was deleted. */
-export async function purgeTrashedBefore(before: number, limit: number): Promise<Array<{ id: string; thumbnail: string | null }>> {
-  return query<{ id: string; thumbnail: string | null }>(
+/**
+ * Deletes (up to `limit`) trashed boards deleted before their workspace's cutoff: `before` by
+ * default, the `byWorkspace` cutoff for the workspaces listed there.
+ */
+export async function purgeTrashedBefore(
+  before: number,
+  limit: number,
+  byWorkspace: Array<{ workspaceId: string; before: number }> = [],
+): Promise<Array<{ id: string; thumbnail: string | null; title: string; workspaceId: string; ownerId: string; deletedAt: number }>> {
+  const rows = await query<{ id: string; thumbnail: string | null; title: string; workspace_id: string; owner_id: string; deleted_at: Date }>(
     `DELETE FROM boards WHERE id IN (
-       SELECT id FROM boards WHERE deleted_at < $1 AND removed_at IS NULL ORDER BY deleted_at LIMIT $2
-     ) RETURNING id, thumbnail`,
-    [new Date(before), limit],
+       SELECT b.id FROM boards b
+       LEFT JOIN unnest($3::text[], $4::timestamptz[]) AS o(workspace_id, before) ON o.workspace_id = b.workspace_id
+       WHERE b.deleted_at < COALESCE(o.before, $1) AND b.removed_at IS NULL ORDER BY b.deleted_at LIMIT $2
+     ) RETURNING id, thumbnail, title, workspace_id, owner_id, deleted_at`,
+    [new Date(before), limit, byWorkspace.map((w) => w.workspaceId), byWorkspace.map((w) => new Date(w.before))],
   );
+  return rows.map((r) => ({
+    id: r.id,
+    thumbnail: r.thumbnail,
+    title: r.title,
+    workspaceId: r.workspace_id,
+    ownerId: r.owner_id,
+    deletedAt: new Date(r.deleted_at).getTime(),
+  }));
 }
 
 /** Changes only the given fields, in one statement (concurrent PATCHes of different fields both stick). */

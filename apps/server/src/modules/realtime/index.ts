@@ -19,4 +19,4 @@ export { listSnapshots as listBoardSnapshots, loadSnapshot as loadBoardSnapshot,
 // Data exports (modules/privacy): board content and the comments a person wrote.
 export { exportBoardContent, commentsWrittenBy, type BoardContentExport, type CommentThreadExport } from './dataExport';
 // The uploads board documents reference (the uploads sweep keeps those files).
-export { boardUploadReferences } from './uploadRefs';
+export { boardUploadReferences, storedBoardContent } from './uploadRefs';

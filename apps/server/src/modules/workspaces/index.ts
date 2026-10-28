@@ -47,3 +47,15 @@ export async function requireWorkspaceRole(
   const { workspace, role } = await requireWorkspace(workspaceId, userId, min);
   return { id: workspace.id, name: workspace.name, kind: workspace.kind, role };
 }
+// The admin console (modules/admin): the role check, members, security / retention settings.
+export {
+  requireWorkspace,
+  listMembers as listWorkspaceMembers,
+  setMemberDeactivated,
+  getSettings as getWorkspaceSettings,
+  updateSettings as updateWorkspaceSettings,
+  workspaceAdminFacts,
+} from './service';
+// Policies other modules enforce (KAI-51): auth (sessions, two-step), boards (trash), realtime
+// (version history), audit (its retention and which workspaces see an account's own events).
+export { sessionLimitsFor, allSessionLimits, twoFactorRequirementOf, retentionOverrides, auditScopeOf } from './service';

@@ -11,6 +11,7 @@ import { getConfig, type OidcProviderConfig } from '../../platform/config';
 import { HttpError } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { sendSecurityNotice } from './notices';
+import { auditOwnAccount } from './service';
 import type { ProviderClaims } from './oidc';
 import * as repo from './repo';
 import { endSessionsOf, insertAccount, markEmailVerified, normalizeEmail, validEmail } from './service';
@@ -155,6 +156,7 @@ export async function connectIdentity(req: Request | null, userId: string, link:
     await endSessionsOf(userId);
     await markEmailVerified(userId, user.email);
   }
+  await auditOwnAccount('auth.provider_connected', userId, { provider: link.provider, providerEmail: link.email });
   sendSecurityNotice(req, user.email, { kind: 'provider_connected', provider: providerLabel(link.provider), providerEmail: link.email });
 }
 
@@ -173,6 +175,7 @@ export async function linkProvider(req: Request | null, userId: string, provider
   // The provider vouches for the account's own address: that verifies it too.
   if (email && c.emailVerified) await markEmailVerified(userId, email);
   const user = await repo.findUserById(userId);
+  await auditOwnAccount('auth.provider_connected', userId, { provider, providerEmail: email });
   if (user) sendSecurityNotice(req, user.email, { kind: 'provider_connected', provider: providerLabel(provider), providerEmail: email });
   return null;
 }
@@ -188,5 +191,6 @@ export async function disconnectIdentity(req: Request | null, userId: string, id
   if (r === 'missing') throw new HttpError(404, 'That sign-in method is not connected');
   if (r === 'last') throw new HttpError(409, 'Set a password first: this is your only way to log in');
   const user = await repo.findUserById(userId);
+  await auditOwnAccount('auth.provider_disconnected', userId, { provider: identity!.provider });
   if (user) sendSecurityNotice(req, user.email, { kind: 'provider_disconnected', provider: providerLabel(identity!.provider) });
 }

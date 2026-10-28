@@ -16,6 +16,7 @@ import {
   reportOn,
   saveTemplateFrom,
   saveThumbnail,
+  reportExport,
   shareTemplateWith,
   unfurl,
   uploadFile,
@@ -65,6 +66,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
       deps.onTitleChange(title);
     },
     saveThumbnail: (dataUrl) => saveThumbnail(board.id, dataUrl),
+    reportExport: (format) => reportExport(board.id, format),
     openShareDialog: deps.openShareDialog,
     navigate: deps.navigate,
     notify: deps.notify,

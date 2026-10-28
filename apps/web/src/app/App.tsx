@@ -14,6 +14,7 @@ import { TwoFactorPage } from './pages/auth/TwoFactorPage';
 import { InvitePage } from './pages/invite/InvitePage';
 import { AccountSettingsPage } from './pages/account/AccountSettingsPage';
 import { UnsubscribePage } from './pages/unsubscribe/UnsubscribePage';
+import { AdminConsolePage } from './pages/admin/AdminConsolePage';
 import { AppealPage } from './pages/appeal/AppealPage';
 import { OperatorPage } from './pages/operator/OperatorPage';
 
@@ -76,6 +77,14 @@ export function App() {
               element={
                 <RequireAuth>
                   <DashboardPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/admin/:workspaceId"
+              element={
+                <RequireAuth>
+                  <AdminConsolePage />
                 </RequireAuth>
               }
             />

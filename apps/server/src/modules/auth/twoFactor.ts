@@ -13,6 +13,7 @@ import { badRequest, HttpError } from '../../platform/http';
 import { logError } from '../../platform/log';
 import { seal, unseal } from '../../platform/secrets';
 import { sendSecurityNotice } from './notices';
+import { auditOwnAccount } from './service';
 import { cancelTwoFactorRecovery, undoLinkFor } from './recovery';
 import * as repo from './repo';
 import { confirmPassword, endSessionsOf, getAccount } from './service';
@@ -180,6 +181,7 @@ export async function enableTwoFactor(req: Request | null, userId: string, curre
   const enabledAt = Date.now();
   if (!(await repo.enableTotp(userId, opened.sealed, step, hashes, enabledAt))) throw new HttpError(409, 'Start the setup again');
   await endSessionsOf(userId, currentSessionKey);
+  await auditOwnAccount('auth.two_factor_enabled', userId);
   const account = await getAccount(userId);
   // If whoever did this only had the password, the owner reading the (verified) address can undo it.
   const undoUrl = await undoLinkFor(req, account, enabledAt);
@@ -195,6 +197,7 @@ export async function disableTwoFactor(req: Request | null, userId: string, pass
   if (!(await repo.twoFactorEnabled(userId))) return;
   if (!(await useSecondFactor(userId, code, req))) throw wrongCode();
   await repo.deleteTwoFactor(userId);
+  await auditOwnAccount('auth.two_factor_disabled', userId);
   sendSecurityNotice(req, user.email, { kind: 'two_factor_off' });
 }
 
@@ -211,6 +214,7 @@ export async function regenerateRecoveryCodes(
   if (!(await useSecondFactor(userId, code, req))) throw wrongCode();
   const { codes, hashes } = newRecoveryCodes();
   await repo.replaceRecoveryCodes(userId, hashes);
+  await auditOwnAccount('auth.recovery_codes_regenerated', userId);
   sendSecurityNotice(req, user.email, { kind: 'recovery_codes' });
   return codes;
 }
