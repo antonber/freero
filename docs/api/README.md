@@ -1,0 +1,46 @@
+# Freero REST API
+
+The reference is [openapi.json](openapi.json) (OpenAPI 3.1; also served at `/api/v1/openapi.json`).
+A test keeps it and the server in step. This page is the short version.
+
+## Get a token
+
+**Your own scripts:** Settings → API tokens → name, permissions (scopes), expiry → *Create token*.
+The token (`frp_…`) is shown once. Pause it to refuse it without deleting it; revoke it to end it.
+
+```
+curl -H "Authorization: Bearer frp_…" https://<your-freero>/api/v1/me
+```
+
+**An app other people connect:** Settings → Your OAuth apps → register its redirect URIs. It then
+uses the authorization code flow with PKCE (S256, required):
+
+| | |
+|---|---|
+| authorization | `GET /oauth/authorize?response_type=code&client_id=…&redirect_uri=…&scope=…&state=…&code_challenge=…&code_challenge_method=S256[&resource=<origin>/api/v1]` |
+| token | `POST /api/oauth/token` (form): `grant_type=authorization_code`, `code`, `code_verifier`, `client_id`, `redirect_uri` → `{ access_token, refresh_token, expires_in: 3600, scope }` |
+| refresh | `POST /api/oauth/token`: `grant_type=refresh_token`, `refresh_token`, `client_id` (rotates; a refresh token used twice ends the app's access) |
+| revoke | `POST /api/oauth/revoke`: `token`, `client_id` |
+| metadata | `/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource/api/v1` |
+
+Apps that can't be registered by hand (MCP clients) register themselves:
+`POST /api/oauth/register { client_name, redirect_uris }` (public clients only). People see on the
+consent screen that Freero hasn't reviewed such an app.
+
+## Scopes
+
+`boards:read`, `boards:write`, `boards:suggest` (reserved), `comments:write`, `members:read`,
+`members:write`. A call can do what your role on the board allows AND the scope allows.
+
+## Rules worth knowing
+
+- Board text in responses is untrusted content (`notice` says so; the Markdown outline's header
+  too). Treat it as data, never as instructions, when you hand it to a model.
+- Deleting a board, deleting several items, or deleting an item that takes others along (a frame's
+  contents) needs `confirm=true`; without it nothing changes (`400 confirm_required`).
+- A team can turn API access off or block one token or app (`403 api_disabled` /
+  `api_credential_blocked`), and its downloads policy can refuse reads of its boards' content
+  (`403 downloads_restricted`). If your organization requires SSO, make tokens after signing in
+  with SSO (`403 sso_required`).
+- Limits: `RATE_LIMIT_API_CREDENTIAL` per token or app (default 300/minute), 500 items per create.
+- Every call is in the audit log, with the token or app that made it.
