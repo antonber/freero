@@ -1,5 +1,12 @@
 import type {
   SearchResponse,
+  WebhookCreateRequest,
+  WebhookDeliveriesResponse,
+  WebhookDeliveryInfo,
+  WebhookEndpointInfo,
+  WebhookSecretResponse,
+  WebhooksAdminResponse,
+  WebhookUpdateRequest,
   ActivityAnswer,
   ActivityState,
   BoardCallResponse,
@@ -459,6 +466,24 @@ export const api = {
   // object addresses (KAI-149): permission-checked summaries, and what links here
   resolveObjects: (uris: string[]) => request<ResolveObjectsResponse>('POST', '/api/objects/resolve', { uris }),
   backlinks: (uri: string) => request<BacklinksResponse>('GET', `/api/objects/backlinks?uri=${encodeURIComponent(uri)}`),
+
+  // webhooks (KAI-105): a team workspace's endpoints (owners/admins; 404 when the server has none)
+  webhooks: (id: string) => request<WebhooksAdminResponse>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/webhooks`),
+  createWebhook: (id: string, body: WebhookCreateRequest) => request<WebhookSecretResponse>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/webhooks`, body),
+  updateWebhook: (id: string, hookId: string, patch: WebhookUpdateRequest) =>
+    request<{ endpoint: WebhookEndpointInfo }>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/admin/webhooks/${encodeURIComponent(hookId)}`, patch),
+  rotateWebhookSecret: (id: string, hookId: string) =>
+    request<WebhookSecretResponse>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/webhooks/${encodeURIComponent(hookId)}/rotate`),
+  deleteWebhook: (id: string, hookId: string) => request<{ ok: true }>('DELETE', `/api/workspaces/${encodeURIComponent(id)}/admin/webhooks/${encodeURIComponent(hookId)}`),
+  testWebhook: (id: string, hookId: string) =>
+    request<{ delivery: WebhookDeliveryInfo }>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/webhooks/${encodeURIComponent(hookId)}/test`),
+  webhookDeliveries: (id: string, hookId: string) =>
+    request<WebhookDeliveriesResponse>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/webhooks/${encodeURIComponent(hookId)}/deliveries`),
+  redeliverWebhook: (id: string, hookId: string, deliveryId: string) =>
+    request<{ delivery: WebhookDeliveryInfo }>(
+      'POST',
+      `/api/workspaces/${encodeURIComponent(id)}/admin/webhooks/${encodeURIComponent(hookId)}/deliveries/${encodeURIComponent(deliveryId)}/redeliver`,
+    ),
 
   // search inside boards (KAI-151): matches in boards you can open now
   search: (q: string, scope: { workspace?: string; board?: string; cursor?: string | null } = {}) =>
