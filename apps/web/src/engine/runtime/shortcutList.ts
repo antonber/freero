@@ -1,5 +1,5 @@
-// The shortcut reference's source of truth: every binding the registry and the keyboard router
-// answer, for one role. Built on demand from the live registry, so it can't drift.
+// The shortcut reference's source of truth: every binding the registry (tools, commands, element
+// types' declared `keys`) and the keyboard router answer, for one role. Built on demand from the live registry, so it can't drift.
 import type { Role } from '@freero/shared';
 import type { ShortcutEntry } from '../api';
 import type { Registry } from './registry';
@@ -20,6 +20,12 @@ export function listShortcuts(registry: Registry, can: (minRole: Role) => boolea
   for (const { def, feature } of registry.commands.values()) {
     if (!def.shortcut || !can(def.minRole ?? 'editor')) continue;
     add({ id: def.id, label: def.label, shortcuts: [def.shortcut], kind: 'command', feature });
+  }
+  for (const [type, { def, feature }] of registry.elements) {
+    (def.keys ?? []).forEach((k, i) => {
+      if (!can(k.minRole ?? 'editor')) return;
+      add({ id: `${type}.key.${i}`, label: k.label, shortcuts: k.shortcuts, kind: 'key', feature });
+    });
   }
   for (const k of ENGINE_KEYS) {
     if (!can(k.minRole)) continue;

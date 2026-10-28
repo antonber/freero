@@ -303,6 +303,12 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
    * selection; `editor` is scoped to the defining feature.
    */
   onKeyDown?(e: KeyboardEvent, ctx: { editor: Editor; selection: BoardElement[] }): boolean | void;
+  /**
+   * [additive] What `onKeyDown` (and keys this type's text parts handle, like table cells) does,
+   * for the shortcut reference: `Editor.getShortcuts()` lists them under the feature (kind
+   * 'key'). Declare every key next to the handler; undeclared keys are invisible to users.
+   */
+  keys?: ElementKey[];
   /** [additive] Extra style for the element's positioned world wrapper (e.g. mix-blend-mode). */
   wrapperStyle?(element: ElementOf<T>): CSSProperties | undefined;
   /**
@@ -517,6 +523,16 @@ export interface CommandDefinition {
    * thread) without importing it; validate them, they come from another feature.
    */
   run(editor: Editor, args?: Record<string, unknown>): void;
+}
+
+/** [additive] A key an element type handles itself (`ElementDefinition.keys`). */
+export interface ElementKey {
+  /** Raw bindings like `ShortcutEntry.shortcuts` ('enter', 'alt+arrowup'), alternatives in order. */
+  shortcuts: string[];
+  /** What it does, e.g. 'Add a sibling topic'. */
+  label: string;
+  /** Lowest role it does anything for (default 'editor'); lower roles don't see it listed. */
+  minRole?: Role;
 }
 
 /** [additive] One row of `Editor.getShortcuts()`. */

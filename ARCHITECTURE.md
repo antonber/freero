@@ -296,6 +296,8 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
   `editor.remove` (Delete, cut, context menu, eraser); one undo restores all of them.
 - `onKeyDown(e, { editor, selection })`: keys while this type is selected, asked before the
   engine's own keys and command shortcuts (mind-map Enter = add sibling, Delete = delete branch).
+  Declare what it handles (and keys a type's text parts handle) in `keys: [{ shortcuts, label,
+  minRole? }]` next to it, or the `?` sheet can't show them.
 - `wrapperStyle(el)`: style for the element's world wrapper (highlighter `mix-blend-mode`).
 - `selectionFrame: false`: no engine bounding box / handles / hover outline for that type; the
   feature draws its own (connector endpoint handles). `useFormatToolbarRect()` tells screen UI
@@ -416,7 +418,7 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
 Reference & items (engine primitives; product UI in `features/shortcuts`, `links`, `image`, `icons`):
 - `Editor.getShortcuts() → ShortcutEntry[]` (`engine/runtime/shortcutList.ts`): every binding the
   board answers for the live role — tool keys, command shortcuts (alternatives with the same label
-  fold into one row) and the keys the keyboard router handles itself (`ENGINE_KEYS` in
+  fold into one row), element types' declared `keys` (under their feature) and the keys the keyboard router handles itself (`ENGINE_KEYS` in
   `interaction/keyboard.ts`, kept next to the handlers). The `?` sheet renders it with `@ui` `Kbd`
   (⌘ on Apple platforms, Ctrl elsewhere), so the reference can't drift from the real bindings.
 - `BaseElement.link` (`@freero/shared`): an item link — an external URL or `#<elementId>`.
