@@ -196,7 +196,7 @@ export function BottomRight() {
   const core = useCore();
   const minimapOpen = useStore(core.ui, (s) => s.minimapOpen);
   return (
-    <div className="fr-bottomright" data-fr-chrome="" data-fr-occludes="">
+    <div className="fr-bottomright" data-fr-chrome="" data-fr-occludes="" data-fr-region="view" role="region" aria-label="View">
       {minimapOpen && <Minimap />}
       <div className="fr-bottomright__row">
         <PanelSlotView slot="bottom-right" className="fr-chrome-card fr-slot-row" />

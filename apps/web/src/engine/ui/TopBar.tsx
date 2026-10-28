@@ -261,7 +261,7 @@ export function TopLeft() {
   const core = useCore();
   const role = useRole();
   return (
-    <div className="fr-topleft" data-fr-chrome="" data-fr-occludes="">
+    <div className="fr-topleft" data-fr-chrome="" data-fr-occludes="" data-fr-region="board" role="region" aria-label="Board">
       <div className="fr-chrome-card fr-topleft__card">
         <Tooltip content="Back to dashboard" side="bottom">
           <button type="button" className="fr-logo-btn" aria-label="Back to dashboard" onClick={() => core.hostRef.current.navigate('/app')}>
@@ -291,7 +291,7 @@ export function TopRight() {
   const core = useCore();
   const { topbarAccessory } = useContext(AppChromeContext);
   return (
-    <div className="fr-topright" data-fr-chrome="" data-fr-occludes="">
+    <div className="fr-topright" data-fr-chrome="" data-fr-occludes="" data-fr-region="people" role="region" aria-label="People and sharing">
       <PanelSlotView slot="topbar-right" className="fr-chrome-card fr-slot-row fr-topright__panels" />
       {topbarAccessory ? <div className="fr-chrome-card fr-topright__app">{topbarAccessory}</div> : null}
       <Button variant="primary" icon={Share2} onClick={() => core.hostRef.current.openShareDialog()}>

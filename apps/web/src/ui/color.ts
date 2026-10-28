@@ -20,9 +20,23 @@ export function luminance(hex: string): number {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
-/** White or dark ink, whichever reads better on the given background. */
+/** WCAG contrast ratio of two colours (1..21). */
+export function contrastRatio(a: string, b: string): number {
+  const la = luminance(a);
+  const lb = luminance(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+/**
+ * White or dark ink, whichever has the higher contrast on the given background — so a mid-tone
+ * user colour (orange, teal) gets dark initials that pass WCAG AA instead of white ones at ~3.5:1.
+ */
 export function readableTextColor(bg: string, dark = '#17162b', light = '#ffffff'): string {
-  return luminance(bg) > 0.45 ? dark : light;
+  if (!parseHex(bg)) return light;
+  const best = contrastRatio(bg, dark) > contrastRatio(bg, light) ? dark : light;
+  // Some mid-tones (a bright blue, a teal) reach 4.5:1 with neither ink: black does.
+  if (contrastRatio(bg, best) < 4.5 && contrastRatio(bg, '#000000') > contrastRatio(bg, best)) return '#000000';
+  return best;
 }
 
 /** "Ada Lovelace" -> "AL", "ada" -> "A". */

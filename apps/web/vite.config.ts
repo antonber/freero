@@ -1,6 +1,8 @@
-import { createLogger, defineConfig } from 'vite';
+import { createLogger, defineConfig, transformWithEsbuild, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 
 // FREERO_API_PORT lets several dev setups run side by side (e.g. parallel verification).
 const server = `http://localhost:${process.env.FREERO_API_PORT ?? 4000}`;
@@ -15,8 +17,40 @@ logger.error = (msg, opts) => {
   logError(msg, opts);
 };
 
+/**
+ * Builds the service worker (src/app/pwa/sw.ts) into dist/sw.js — at the root, so it controls the
+ * whole app — with this build's version and its app shell to precache: the entry's hashed JS and
+ * CSS plus the static shell files. A new build = a new version = a fresh cache (old ones deleted on
+ * activation). Hand-written, no service-worker library.
+ */
+function freeroServiceWorker(): Plugin {
+  const source = src('app/pwa/sw.ts');
+  return {
+    name: 'freero-sw',
+    apply: 'build',
+    async generateBundle(_options, bundle) {
+      const shell = new Set<string>();
+      for (const out of Object.values(bundle)) {
+        if (out.type !== 'chunk' || !out.isEntry) continue;
+        shell.add(out.fileName);
+        for (const f of out.imports) shell.add(f);
+        for (const f of out.viteMetadata?.importedCss ?? []) shell.add(f);
+      }
+      const precache = ['/offline.html', '/manifest.webmanifest', '/freero.svg', '/icons/icon-192.png', '/icons/icon-512.png', ...[...shell].sort().map((f) => `/${f}`)];
+      const version = createHash('sha256').update(precache.join('\n')).digest('hex').slice(0, 12);
+      const { code } = await transformWithEsbuild(readFileSync(source, 'utf8'), source, {
+        loader: 'ts',
+        format: 'iife',
+        minify: true,
+        define: { __FREERO_SW_VERSION__: JSON.stringify(version), __FREERO_SW_PRECACHE__: JSON.stringify(precache) },
+      });
+      this.emitFile({ type: 'asset', fileName: 'sw.js', source: `// Freero service worker ${version}\n${code}` });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), freeroServiceWorker()],
   customLogger: logger,
   resolve: {
     // Layer entry points. Features/app import '@engine' and '@ui' only — see ARCHITECTURE.md.

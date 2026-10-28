@@ -285,7 +285,7 @@ export function DashboardPage() {
     <div className="fr-dash">
       {sidebar}
 
-      <div className="fr-dash__main">
+      <main className="fr-dash__main">
         <header className="fr-dash__top">
           <Input
             ref={searchRef}
@@ -477,7 +477,7 @@ export function DashboardPage() {
           </>
           )}
         </div>
-      </div>
+      </main>
 
       <RenameModal
         board={renaming}

@@ -16,14 +16,14 @@ export function AuthShell({ title, sub, docTitle, children }: { title: string; s
         <span className="fr-authpage__sticky fr-authpage__sticky--b">ideas welcome</span>
         <span className="fr-authpage__blob" />
       </div>
-      <div className="fr-authcard">
+      <main className="fr-authcard">
         <Link to="/" className="fr-authcard__logo" aria-label="Freero home">
           <Logo size={36} />
         </Link>
         <h1 className="fr-authcard__title">{title}</h1>
         {sub ? <p className="fr-authcard__sub">{sub}</p> : null}
         {children}
-      </div>
+      </main>
     </div>
   );
 }
