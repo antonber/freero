@@ -79,13 +79,18 @@ features/<name>/
   decoration.tsx optional  export default defineDecoration({ id, appliesTo(el), Component }) (or an
                            array): drawn INSIDE other features' element wrappers (sticky tag chips),
                            so it moves, rotates, culls and exports with the element
+  outline.ts     optional  export default defineOutline({ kinds?, annotate? }) (@freero/shared): how
+                           its element types read in the board outline, and what its collections
+                           add to items (votes, tags, comments). Runs on the SERVER too, so it is
+                           pure: '@freero/shared', files of its own feature, type-only imports [W13]
   *.css, *.test.ts(x)      allowed at the root
   lib/                     any helpers
 ```
 
 Any other file at a feature root fails [W7]. The manifest `name` must equal the folder name.
 The contract for all of these is `apps/web/src/engine/api.ts`. Scaffold with
-`npm run new:feature <name> -- [--element <type>] [--tool] [--format] [--panel <slot>] [--commands] [--decoration] [--owns a,b]`.
+`npm run new:feature <name> -- [--element <type>] [--tool] [--format] [--panel <slot>] [--commands] [--decoration] [--outline] [--owns a,b]`
+(`--element` scaffolds `outline.ts` too: a new element type reads in the outline from day one).
 Something drawn ON another feature's elements that must appear in image exports is a
 `decoration.tsx`, never a `world-overlay` panel (overlays aren't part of exports).
 
@@ -221,7 +226,9 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   notifications bell). It is app UI (REST, router), not a feature, and gets no Editor.
 - `Editor.findFreeSpot(size, { near?, gap? })`: top-left of a box that keeps `gap` clear of
   every element, nearest to `near` (default: viewport center). Every "insert" action that
-  isn't aimed at a point (templates, the image upload button) places content with it.
+  isn't aimed at a point (templates, the image upload button) places content with it. The rule
+  itself is `@freero/shared` `findFreeSpot`, so the server places inserted structure the same way;
+  `richTextToPlain` / `plainToRichText` live there too (the server reads board text identically).
 - `createTestBoard({ users, features, members?, now? })` (tests only): several real engine
   replicas of one board — real Yjs docs and guarded Editors — that exchange updates only on
   `sync()`. Writes between two syncs are concurrent; use it to prove concurrent writes merge.
@@ -610,7 +617,9 @@ workspace_invites, projects, project_members; see "Workspaces" below), `uploads`
 `<data>/uploads`), `realtime` (board_docs, board_doc_updates, board_doc_snapshots; y-websocket
 protocol + role filter + update log; version history + snapshot retention), `unfurl` (link
 previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`), `templates` (saved
-templates; content is opaque engine JSON), `accounts` (no table: the purge after the deletion grace
+templates; content is opaque engine JSON), `outline` (no table: the semantic board read model,
+`GET /boards/:id/outline`), `structure` (no table: layout from structure,
+`POST /boards/:id/insert-structure`), `accounts` (no table: the purge after the deletion grace
 period, orchestrating the owning modules' exports), `notifications` (notifications,
 notification_prefs: inbox, live delivery, email digests), `moderation` (moderation_items,
 moderation_actions: abuse reports, the operator queue, actions and appeals; see "Moderation"),
@@ -848,6 +857,33 @@ approval lets the requester in at once.
   (boards the reader can open there). The board panel is `features/activity` (`Host.activity`);
   the dashboard home shows the workspace feed.
 
+
+### Board outline and layout from structure (KAI-166, KAI-167; format: docs/board-outline.md)
+
+Agents, the API and AI read and write boards semantically, never by coordinates.
+
+- **Reading a board on the server** goes through realtime's `readBoardView(boardId, { userId, role })`
+  (`realtime/view.ts`): the live doc (caught up with other instances) plus exactly the layers that
+  reader's socket would get — `editors` for owners/editors, their OWN private layer, never another's
+  — and, for viewers/commenters, nothing under a hidden frame. Any new server-side reader of board
+  content uses it, so access rules have one implementation.
+- **The outline** (`modules/outline`, `GET /boards/:id/outline`): `@freero/shared` `buildOutline`
+  (pure) over that view, with each element type described by its feature's reserved `outline.ts`
+  (discovered from `apps/web/src/features` at startup; the Docker image ships that folder). Then
+  `selectOutline` (scope / pages / token budget) and `renderOutlineMarkdown`. Names are resolved only
+  for people the board shows (as `/boards/:id/people`). Version = a hash of what the reader sees
+  (ETag / 304). Versioning rule: additive within `outlineVersion`.
+- **Writing on a request** goes through realtime's `changeBoard(boardId, actor, plan)`: `plan(view)`
+  runs against the live board and its `BoardChange` (new elements, field patches, collection
+  entries) is applied in the same step as one transaction per doc — stamped (z above everything,
+  `createdBy`, times), published to every instance and saved before it resolves. No other module
+  writes board docs.
+- **Layout from structure** (`modules/structure`, `POST /boards/:id/insert-structure`): `@freero/shared`
+  `layout/` (pure, no dependencies; in-house layered graph layout, Mermaid reader, mind map, sticky
+  clusters, sequence, table) lays a structure out from (0, 0); `plan.ts` places it on a free spot of
+  the view and turns it into a `BoardChange`; `sinks.ts` decides where that goes (`board` →
+  `changeBoard`, `preview` → returned for `Editor.insertElements`). The suggestions layer (KAI-169)
+  is a new sink, not a new planner.
 ### Audit log, admin console and workspace policies (KAI-48, KAI-47, KAI-51)
 
 **Audit log** (`modules/audit`). Every module records security-relevant changes with

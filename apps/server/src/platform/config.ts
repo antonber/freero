@@ -28,7 +28,9 @@ export type RateLimitName =
   | 'accessRequest'
   | 'guestJoin'
   | 'report'
-  | 'appeal';
+  | 'appeal'
+  | 'outline'
+  | 'structure';
 
 /** `limit` hits per `windowMs`; `null` = not limited. */
 export type RateLimitRule = { limit: number; windowMs: number } | null;
@@ -187,6 +189,8 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   oidc: '60/10m', // "Sign in with …" starts and callbacks per IP
   accessRequest: '20/1h', // per user: asking for access to boards
   guestJoin: '20/1h', // per IP: visitors joining a shared board without an account
+  outline: '120/1m', // per user: board outlines (each reads and walks the whole board)
+  structure: '60/10m', // per user: structure laid out and inserted into a board (KAI-167)
   report: '20/1h', // abuse reports per IP and per signed-in user
   appeal: '10/1h', // appeals against moderation actions per IP
 };
@@ -211,6 +215,8 @@ const ENV_NAME: Record<RateLimitName, string> = {
   oidc: 'RATE_LIMIT_OIDC',
   accessRequest: 'RATE_LIMIT_ACCESS_REQUEST',
   guestJoin: 'RATE_LIMIT_GUEST_JOIN',
+  outline: 'RATE_LIMIT_OUTLINE',
+  structure: 'RATE_LIMIT_STRUCTURE',
   report: 'RATE_LIMIT_REPORT',
   appeal: 'RATE_LIMIT_APPEAL',
 };

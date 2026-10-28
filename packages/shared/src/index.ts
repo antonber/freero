@@ -2,3 +2,7 @@ export * from './elements';
 export * from './ydoc';
 export * from './api';
 export * from './device';
+export * from './text';
+export * from './geometry';
+export * from './outline/index';
+export * from './layout/index';
