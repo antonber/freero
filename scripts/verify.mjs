@@ -530,7 +530,9 @@ async function run() {
             body: JSON.stringify({ name: 'Twin', email: t.email, password: 'password-123' }),
           });
           assert(r.status === 201, `signup on instance 1: ${r.status}`);
-          const cookie = /^freero_session=[^;]*/.exec(r.headers.getSetCookie()[0])[0];
+          // Sign-in also sets the device cookie (security notices): pick the session one.
+          const cookie = r.headers.getSetCookie().map((c) => /^freero_session=[^;]*/.exec(c)?.[0]).find(Boolean);
+          assert(cookie, `no session cookie: ${r.headers.getSetCookie().join(' | ')}`);
           const me = await fetch(`http://127.0.0.1:${procs[1].port}/api/auth/me`, { headers: { cookie } });
           assert(me.status === 200, `the session from instance 1 on instance 2: ${me.status}`);
         } finally {
