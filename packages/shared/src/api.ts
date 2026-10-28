@@ -108,6 +108,18 @@ export interface BoardMember {
 // `password` is required when the account has one; passwordless accounts instead need a session that
 // signed in (or re-confirmed with its provider: intent=reauth) within the last few minutes — otherwise
 // 403 { code: 'reauth_required' }. The same applies to email change and account deletion.
+//
+// Two-step recovery (KAI-99; the threat model is in ARCHITECTURE.md):
+// POST /api/auth/two-factor/undo    body { token, password } -> LoginResponse ("this wasn't me" from the
+//                                   two-step-on notice: authenticator + providers removed, new password,
+//                                   every session ended; 409 while the address differs from where it went)
+// POST /api/auth/login/two-factor/recovery -> TwoFactorRecoveryStarted (from the pending sign-in; 403
+//                                   { code: 'recovery_needs_password' } after a reset link or a provider not
+//                                   connected yet; the same one again while it runs)
+// POST /api/auth/two-factor/recovery/finish body { token, password } -> LoginResponse (the link mailed when ready)
+// POST /api/auth/two-factor/recovery/cancel-link body { token } -> { ok: true } (the link in the recovery mails)
+// POST /api/auth/two-factor/recovery/cancel -> SecurityInfo (signed in)
+// Any accepted second-factor code also cancels a recovery in progress.
 export interface SignupRequest { name: string; email: string; password: string }
 export interface LoginRequest { email: string; password: string }
 export type LoginResponse = AuthResponse | { twoFactorRequired: true };
@@ -140,10 +152,19 @@ export interface SecurityInfo {
     recoveryCodesLeft: number;
     /** Set when something (a workspace policy) requires two-factor: it can't be turned off. */
     requiredBy: string | null;
+    /** A "lost my authenticator" recovery in progress (epoch ms): it removes two-step verification from `readyAt` on. */
+    recovery: { startedAt: number; readyAt: number } | null;
   };
   /** Until when this session counts as recently signed in (passwordless confirmations), epoch ms. */
   recentAuthUntil: number;
 }
+
+export interface TwoFactorRecoveryStarted {
+  /** When the link that finishes it will be mailed (epoch ms). */
+  readyAt: number;
+}
+
+export const RECOVERY_NEEDS_PASSWORD = 'recovery_needs_password';
 
 export interface TwoFactorSetup {
   /** Base32 secret, for typing it into an app by hand. */
