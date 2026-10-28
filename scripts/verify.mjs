@@ -5578,6 +5578,197 @@ async function mcpChecks() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Workshop features on a real server with raw clients: live activities (KAI-132), task-card
+// notifications (KAI-135), share-link password and expiry (KAI-145), call links (KAI-134).
+// ---------------------------------------------------------------------------
+async function collabChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-collab-'));
+  let proc = null;
+  const clients = [];
+  try {
+    const ok = await check('collab server boots (Jitsi configured, digest job every second, no email delay)', async () => {
+      const env = { JITSI_BASE_URL: 'https://meet.example.org/', NOTIFY_EMAIL_INTERVAL_SECONDS: '1', NOTIFY_EMAIL_DELAY_SECONDS: '0' };
+      if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+      proc = await waitUp(await spawnServer(dataDir, env));
+    });
+    if (!ok) return;
+    const port = proc.port;
+    const O = new User('CollabOwner', port);
+    const E = new User('CollabEditor', port);
+    const V = new User('CollabViewer', port);
+    const L = new User('CollabLink', port);
+    for (const u of [O, E, V, L]) {
+      await u.signup();
+      await u.verifyEmail(dataDir);
+    }
+    const board = (await O.req('POST', '/api/boards', { title: 'All hands' })).json.board;
+    assert((await O.req('POST', `/api/boards/${board.id}/members`, { email: E.email, role: 'editor' })).status === 201, 'invite editor');
+    assert((await O.req('POST', `/api/boards/${board.id}/members`, { email: V.email, role: 'viewer' })).status === 201, 'invite viewer');
+    const join = async (u, id = board.id) => {
+      const c = connectDoc(u, id, undefined, port);
+      clients.push(c);
+      await c.ready();
+      return c;
+    };
+    const e = await join(E);
+    const v = await join(V);
+    const results = (c) => c.doc.getMap('engageResults');
+    const poll = {
+      id: 'poll1', type: 'activity', x: 0, y: 0, w: 520, h: 340, rotation: 0, z: 1, createdBy: E.id, createdAt: Date.now(), updatedAt: Date.now(),
+      kind: 'poll', question: 'Offsite?', options: [{ id: 'a', text: 'Lisbon' }, { id: 'b', text: 'Oslo' }], maxChoices: 1,
+      anonymous: true, results: 'live', guests: false, color: '#5B3FF0',
+    };
+
+    await check('live poll: a viewer answers over REST, every client gets only the counts — no answerer id or name ever reaches a socket — and a changed answer replaces the old one', async () => {
+      els(e).set(poll.id, poll);
+      await waitFor(() => els(v).has(poll.id), 5000, 'the poll to reach the viewer');
+      const a1 = await V.req('PUT', `/api/boards/${board.id}/activities/${poll.id}/answer`, { answer: { choices: ['a'] } });
+      assert(a1.status === 200 && a1.json.mine?.choices?.[0] === 'a', a1.text);
+      await waitFor(() => results(e).get(poll.id)?.poll?.[0]?.count === 1, 5000, 'the result to reach the editor');
+      const a2 = await V.req('PUT', `/api/boards/${board.id}/activities/${poll.id}/answer`, { answer: { choices: ['b'] } });
+      assert(a2.status === 200, a2.text);
+      await waitFor(() => results(e).get(poll.id)?.poll?.[1]?.count === 1, 5000, 'the changed answer to reach the editor');
+      const r = results(e).get(poll.id);
+      assert(r.respondents === 1 && r.poll[0].count === 0, JSON.stringify(r));
+      for (const c of [e, v]) assert(!sharedText(c).includes(V.id) && !sharedText(c).includes(V.name), `${c.user.label} received who answered`);
+      const two = await V.req('PUT', `/api/boards/${board.id}/activities/${poll.id}/answer`, { answer: { choices: ['a', 'b'] } });
+      assert(two.status === 400, `two choices on a single-choice poll -> ${two.status}`);
+    });
+
+    await check('an editor socket cannot forge or erase published results: its write is undone and it converges', async () => {
+      results(e).set(poll.id, { activityId: poll.id, respondents: 99, sealed: false, updatedAt: 1, poll: [{ optionId: 'a', count: 99 }] });
+      results(e).set('forged', { activityId: 'forged', respondents: 5, sealed: false, updatedAt: 1 });
+      await settled(e, [v]);
+      await waitFor(() => results(e).get(poll.id)?.respondents === 1 && !results(e).has('forged'), 5000, 'the editor to converge back');
+      assert(results(v).get(poll.id)?.respondents === 1 && !results(v).has('forged'), 'a forged result reached the viewer');
+    });
+
+    await check('sealed results stay off every client until an editor reveals them; a viewer can’t reveal', async () => {
+      els(e).set('poll2', { ...poll, id: 'poll2', results: 'reveal' });
+      await waitFor(() => els(v).has('poll2'), 5000, 'the sealed poll');
+      assert((await V.req('PUT', `/api/boards/${board.id}/activities/poll2/answer`, { answer: { choices: ['b'] } })).status === 200, 'answer sealed');
+      await waitFor(() => results(v).get('poll2')?.respondents === 1, 5000, 'the count');
+      assert(results(v).get('poll2').sealed === true && !results(v).get('poll2').poll, JSON.stringify(results(v).get('poll2')));
+      assert((await V.req('POST', `/api/boards/${board.id}/activities/poll2/reveal`, { revealed: true })).status === 403, 'a viewer revealed');
+      assert((await E.req('POST', `/api/boards/${board.id}/activities/poll2/reveal`, { revealed: true })).status === 200, 'reveal');
+      await waitFor(() => results(v).get('poll2')?.poll?.[1]?.count === 1, 5000, 'the revealed result');
+    });
+
+    await check('an activity closed to visitors refuses a guest; the same guest answers once it allows them', async () => {
+      assert((await O.req('PATCH', `/api/boards/${board.id}`, { linkAccess: 'viewer' })).status === 200, 'link on');
+      const G = new User('CollabGuest', port);
+      const joined = await G.req('POST', `/api/guest/boards/${board.id}/join`, { name: 'Kim' });
+      assert(joined.status === 201, joined.text);
+      const refused = await G.req('PUT', `/api/boards/${board.id}/activities/${poll.id}/answer`, { answer: { choices: ['a'] } });
+      assert(refused.status === 409, `guest on a members-only activity -> ${refused.status}`);
+      els(e).set(poll.id, { ...els(e).get(poll.id), guests: true });
+      await settled(e);
+      const ok = await G.req('PUT', `/api/boards/${board.id}/activities/${poll.id}/answer`, { answer: { choices: ['a'] } });
+      assert(ok.status === 200, ok.text);
+      await waitFor(() => results(e).get(poll.id)?.respondents === 2, 5000, 'the guest’s answer to count');
+      assert((await O.req('PATCH', `/api/boards/${board.id}`, { linkAccess: 'none' })).status === 200, 'link off');
+    });
+
+    const handled = () => gauge(proc, 'freero_notifications_card_changes_settled_total');
+    const inbox = async (u) => (await u.req('GET', '/api/notifications')).json.notifications;
+    await check('a card assigned over a socket notifies its assignee once — never the assigner — after the picker settles', async () => {
+      const before = await handled();
+      const card = { id: 'task1', type: 'card', x: 0, y: 600, w: 300, h: 90, rotation: 0, z: 2, createdBy: E.id, createdAt: Date.now(), updatedAt: Date.now(), title: 'Book the venue', description: '', color: '#5B3FF0', status: 'todo', assigneeId: null, dueDate: null, tags: [] };
+      els(e).set(card.id, card);
+      els(e).set(card.id, { ...card, assigneeId: O.id });
+      els(e).set(card.id, { ...card, assigneeId: V.id });
+      await waitFor(async () => (await handled()) > before, 10_000, 'the card change to settle');
+      const got = (await inbox(V)).filter((n) => n.type === 'card.assigned');
+      assert(got.length === 1 && got[0].actor?.id === E.id && got[0].link === `/board/${board.id}?item=task1`, JSON.stringify(got));
+      assert(!(await inbox(O)).some((n) => n.type === 'card.assigned'), 'a passing assignee was notified');
+      assert(!(await inbox(E)).some((n) => n.type?.startsWith('card.')), 'the assigner was notified');
+    });
+
+    await check('a card due tomorrow reminds its assignee once, in their email digest too', async () => {
+      const before = await handled();
+      const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+      els(e).set('task1', { ...els(e).get('task1'), dueDate: tomorrow });
+      await waitFor(async () => (await handled()) > before, 10_000, 'the due date to settle');
+      await waitFor(async () => (await inbox(V)).some((n) => n.type === 'card.due_soon'), 10_000, 'the reminder');
+      const runs = await gauge(proc, 'freero_notifications_digest_runs_total');
+      await waitFor(async () => (await gauge(proc, 'freero_notifications_digest_runs_total')) >= runs + 2, 10_000, 'two more digest runs');
+      assert((await inbox(V)).filter((n) => n.type === 'card.due_soon').length === 1, 'reminded twice');
+      await waitFor(() => outbox(dataDir).some((m) => m.to === V.email && /is due/.test(m.text)), 10_000, 'the reminder in the digest email');
+    });
+
+    await check('a card assigned inside a private draft notifies nobody until the draft is revealed — then its assignee, as from its author', async () => {
+      const p = await layerClient(E, board.id, port);
+      clients.push(p);
+      const card = (id, assigneeId) => ({ id, type: 'card', x: 400, y: 600, w: 300, h: 90, rotation: 0, z: 3, createdBy: E.id, createdAt: Date.now(), updatedAt: Date.now(), title: 'Secret plan', description: '', color: '#5B3FF0', status: 'todo', assigneeId, dueDate: null, tags: [] });
+      const before = await handled();
+      p.layers.private.getMap('elements').set('draft1', card('draft1', V.id));
+      await settled(p);
+      // A barrier: a shared card changed AFTER the draft settles after it; a draft reported like it would have settled first.
+      els(e).set('later1', card('later1', O.id));
+      await waitFor(async () => (await handled()) > before, 10_000, 'the later card to settle');
+      assert(!(await inbox(V)).some((n) => n.link?.endsWith('item=draft1')), 'a private draft notified its assignee');
+      const revealedFrom = await handled();
+      p.layerOp({ type: 'reveal', collection: 'elements', mine: true });
+      await waitFor(async () => (await handled()) > revealedFrom, 10_000, 'the revealed card to settle');
+      const got = (await inbox(V)).filter((n) => n.link?.endsWith('item=draft1'));
+      assert(got.length === 1 && got[0].type === 'card.assigned' && got[0].actor?.id === E.id, JSON.stringify(got));
+    });
+
+    await check('a password-protected link: link-only visitors are refused (REST and socket) until they give it, wrong guesses run out, a new password disconnects them, members never need it', async () => {
+      assert((await O.req('PATCH', `/api/boards/${board.id}`, { linkAccess: 'commenter', linkPassword: 'pass one' })).status === 200, 'protect');
+      const locked = await L.req('GET', `/api/boards/${board.id}`);
+      assert(locked.status === 403 && locked.json?.code === 'link_password_required', locked.text);
+      assert((await wsCloseCode(board.id, L.cookie, port)) === 4403, 'a locked visitor’s socket was admitted');
+      assert((await L.req('POST', `/api/boards/${board.id}/link-unlock`, { password: 'nope' })).status === 403, 'wrong password accepted');
+      assert((await L.req('POST', `/api/boards/${board.id}/link-unlock`, { password: 'pass one' })).status === 200, 'unlock');
+      const l = await join(L);
+      assert(l.role === 'commenter', `link visitor role ${l.role}`);
+      assert((await O.req('PATCH', `/api/boards/${board.id}`, { linkPassword: 'pass two' })).status === 200, 'new password');
+      await waitFor(() => l.closeCodes.includes(4403), 5000, 'the link visitor to be disconnected');
+      assert((await V.req('GET', `/api/boards/${board.id}`)).status === 200, 'a member needed the password');
+      let limited = 0;
+      for (let i = 0; i < 12; i++) if ((await L.req('POST', `/api/boards/${board.id}/link-unlock`, { password: `guess ${i}` })).status === 429) limited++;
+      assert(limited > 0, 'password guesses were never rate limited');
+    });
+
+    await check('an expired link disconnects its link-only visitors (expiry job) while members stay', async () => {
+      assert((await O.req('PATCH', `/api/boards/${board.id}`, { linkPassword: null })).status === 200, 'password off');
+      const l = await join(L);
+      assert(l.role === 'commenter', `link visitor role ${l.role}`);
+      assert((await O.req('PATCH', `/api/boards/${board.id}`, { linkExpiresAt: Date.now() + 1500 })).status === 200, 'expiry');
+      await waitFor(() => l.closeCodes.includes(4403), 20_000, 'the link visitor to be disconnected at expiry');
+      assert((await L.req('GET', `/api/boards/${board.id}`)).status === 403, 'an expired link still opened the board');
+      assert(v.closeCodes.length === 0, 'a member was disconnected');
+      const past = await O.req('PATCH', `/api/boards/${board.id}`, { linkExpiresAt: Date.now() - 1000 });
+      assert(past.status === 400, `an expiry in the past -> ${past.status}`);
+    });
+
+    await check('call link: only https meeting links; the Jitsi room is the same for everyone on a board, differs per board and never contains the board id; viewers read it, only editors set it', async () => {
+      for (const bad of ['javascript:alert(1)', 'http://meet.example.com/x', 'https://user:pw@meet.example.com/x', 'data:text/html,hi'])
+        assert((await E.req('PUT', `/api/boards/${board.id}/call`, { url: bad })).status === 400, `accepted ${bad}`);
+      assert((await V.req('PUT', `/api/boards/${board.id}/call`, { url: 'https://meet.example.com/abc' })).status === 403, 'a viewer set the call');
+      const set = await E.req('PUT', `/api/boards/${board.id}/call`, { jitsi: true });
+      assert(set.status === 200 && set.json.call?.kind === 'jitsi', set.text);
+      const seen = (await V.req('GET', `/api/boards/${board.id}/call`)).json.call;
+      assert(seen.url === set.json.call.url && seen.url.startsWith('https://meet.example.org/') && !seen.url.includes(board.id), seen.url);
+      const other = (await O.req('POST', '/api/boards', { title: 'Other' })).json.board;
+      const otherCall = (await O.req('PUT', `/api/boards/${other.id}/call`, { jitsi: true })).json.call;
+      assert(otherCall.url !== seen.url, 'two boards share a Jitsi room');
+      const link = await E.req('PUT', `/api/boards/${board.id}/call`, { url: 'https://meet.example.com/abc-defg' });
+      assert(link.status === 200 && link.json.call.url === 'https://meet.example.com/abc-defg', link.text);
+    });
+  } finally {
+    for (const c of clients) c.destroy();
+    if (proc) await stopProc(proc);
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
 // `--only <group>[,<group>…]` runs some groups, e.g. to loop one while hunting a flake.
 const SUITES = {
   main: run,
@@ -5601,6 +5792,7 @@ const SUITES = {
   facilitation: facilitationChecks,
   s3: s3Checks,
   mcp: mcpChecks,
+  collab: collabChecks,
 };
 const onlyArg = process.argv.indexOf('--only');
 const only = onlyArg >= 0 ? (process.argv[onlyArg + 1] ?? '').split(',').filter(Boolean) : Object.keys(SUITES);
