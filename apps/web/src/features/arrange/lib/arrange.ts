@@ -68,8 +68,11 @@ export function planAlign(units: Unit[], edge: AlignEdge): Move[] {
 }
 
 /**
- * Equal gaps between consecutive units along the axis, keeping the first and last where they are.
- * Locked units take no part (they stay put and don't count). Needs 3+ movable units.
+ * Equal gaps between consecutive units along the axis, keeping the first and last movable units
+ * where they are. Locked units are fixed obstacles: one lying between the first and last (and
+ * across the row's cross-axis extent) splits the row into segments, and each segment's movable
+ * units are spread evenly between its two fixed ends, so nothing is pushed onto a locked item.
+ * A segment whose units don't fit next to a locked item is left as it is. Needs 3+ movable units.
  */
 export function planDistribute(units: Unit[], axis: DistributeAxis): Move[] {
   const free = units.filter((u) => !u.locked);
@@ -77,17 +80,31 @@ export function planDistribute(units: Unit[], axis: DistributeAxis): Move[] {
   const h = axis === 'horizontal';
   const start = (r: Rect) => (h ? r.x : r.y);
   const size = (r: Rect) => (h ? r.w : r.h);
-  const sorted = [...free].sort((a, b) => start(a.box) + size(a.box) / 2 - (start(b.box) + size(b.box) / 2));
-  const first = Math.min(...sorted.map((u) => start(u.box)));
-  const last = Math.max(...sorted.map((u) => start(u.box) + size(u.box)));
-  const total = sorted.reduce((s, u) => s + size(u.box), 0);
-  const gap = (last - first - total) / (sorted.length - 1);
+  const center = (u: Unit) => start(u.box) + size(u.box) / 2;
+  const sorted = [...free].sort((a, b) => center(a) - center(b));
+  const lo = center(sorted[0]);
+  const hi = center(sorted[sorted.length - 1]);
+  const cross = union(free.map((u) => u.box));
+  const crossOverlaps = (r: Rect) =>
+    h ? r.y < cross.y + cross.h && r.y + r.h > cross.y : r.x < cross.x + cross.w && r.x + r.w > cross.x;
+  const obstacles = units.filter((u) => u.locked && center(u) > lo && center(u) < hi && crossOverlaps(u.box));
+  const row = [...sorted, ...obstacles].sort((a, b) => center(a) - center(b));
   const out: Move[] = [];
-  let at = first;
-  for (const u of sorted) {
-    const d = at - start(u.box);
-    if (Math.abs(d) > 1e-6) out.push({ ids: u.ids, dx: h ? d : 0, dy: h ? 0 : d });
-    at += size(u.box) + gap;
+  let from = 0;
+  for (let to = 1; to < row.length; to++) {
+    if (!row[to].locked && to !== row.length - 1) continue;
+    const between = row.slice(from + 1, to);
+    const begin = start(row[from].box) + size(row[from].box);
+    const gap = (start(row[to].box) - begin - between.reduce((s, u) => s + size(u.box), 0)) / (between.length + 1);
+    if (between.length && (gap >= 0 || !(row[from].locked || row[to].locked))) {
+      let at = begin + gap;
+      for (const u of between) {
+        const d = at - start(u.box);
+        if (Math.abs(d) > 1e-6) out.push({ ids: u.ids, dx: h ? d : 0, dy: h ? 0 : d });
+        at += size(u.box) + gap;
+      }
+    }
+    from = to;
   }
   return out;
 }
@@ -101,7 +118,7 @@ const median = (xs: number[]) => {
  * Tidy up: lay the movable units out in a neat grid from the selection's top-left, in reading
  * order. The current layout picks the column count (a messy row stays a row, a rough grid keeps
  * its columns); columns are as wide as their widest unit, rows as tall as their tallest, with one
- * even gap scaled to the items.
+ * even gap scaled to the items. Locked units never move and are never covered (see below).
  */
 export function planTidy(units: Unit[]): Move[] {
   const free = units.filter((u) => !u.locked);
@@ -127,18 +144,44 @@ export function planTidy(units: Unit[]): Move[] {
   const colW = Array.from({ length: cols }, (_, c) => Math.max(0, ...grid.map((r) => r[c]?.box.w ?? 0)));
   const rowH = grid.map((r) => Math.max(...r.map((u) => u.box.h)));
   const origin = union(free.map((u) => u.box));
-  const out: Move[] = [];
+  const placed: Array<{ u: Unit; x: number; y: number }> = [];
   let y = origin.y;
   grid.forEach((row, ri) => {
     let x = origin.x;
     row.forEach((u, ci) => {
-      const dx = x - u.box.x;
-      const dy = y - u.box.y;
-      if (Math.abs(dx) > 1e-6 || Math.abs(dy) > 1e-6) out.push({ ids: u.ids, dx, dy });
+      placed.push({ u, x, y });
       x += colW[ci] + gap;
     });
     y += rowH[ri] + gap;
   });
+  // Locked units stay put and are obstacles: when the grid would cover one, lay the units out in
+  // even cells instead and skip every cell that would (keeping a gap clear around the obstacle).
+  const obstacles = units.filter((u) => u.locked).map((u) => u.box);
+  const blocked = (x: number, y: number, u: Unit) =>
+    obstacles.some((o) => x < o.x + o.w + gap && x + u.box.w + gap > o.x && y < o.y + o.h + gap && y + u.box.h + gap > o.y);
+  if (placed.some((p) => blocked(p.x, p.y, p.u))) {
+    const cellW = Math.max(...free.map((u) => u.box.w)) + gap;
+    const cellH = Math.max(...free.map((u) => u.box.h)) + gap;
+    placed.length = 0;
+    let cell = 0;
+    for (const u of ordered) {
+      // Obstacles are finite, so a free cell turns up within a few rows; the cap is a safety net.
+      for (let tries = 0; tries < 10_000; tries++, cell++) {
+        const x = origin.x + (cell % cols) * cellW;
+        const y = origin.y + Math.floor(cell / cols) * cellH;
+        if (blocked(x, y, u)) continue;
+        placed.push({ u, x, y });
+        cell++;
+        break;
+      }
+    }
+  }
+  const out: Move[] = [];
+  for (const { u, x, y } of placed) {
+    const dx = x - u.box.x;
+    const dy = y - u.box.y;
+    if (Math.abs(dx) > 1e-6 || Math.abs(dy) > 1e-6) out.push({ ids: u.ids, dx, dy });
+  }
   return out;
 }
 

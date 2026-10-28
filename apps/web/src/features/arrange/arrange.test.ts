@@ -33,6 +33,33 @@ describe('distribute', () => {
   });
 });
 
+const overlaps = (a: { x: number; y: number }, b: Unit['box'], w = 100, h = 100) =>
+  a.x < b.x + b.w && a.x + w > b.x && a.y < b.y + b.h && a.y + h > b.y;
+
+describe('locked items are fixed obstacles', () => {
+  it('distribute spreads items on each side of a locked item instead of pushing one onto it', () => {
+    const lock = unit('lock', 300, 0, 100, 100, true);
+    const units = [unit('a', 0, 0), unit('b', 120, 0), unit('c', 420, 30), unit('d', 900, 0), lock];
+    const pos = after(units, planDistribute(units, 'horizontal'));
+    for (const id of ['a', 'b', 'c', 'd']) expect(overlaps(pos[id], lock.box)).toBe(false);
+    expect(pos.lock).toEqual({ x: 300, y: 0 });
+    // a | b | lock: one even gap; lock | c | d: another.
+    expect(pos.b.x - (pos.a.x + 100)).toBeCloseTo(300 - (pos.b.x + 100));
+    expect(pos.c.x - 400).toBeCloseTo(900 - (pos.c.x + 100));
+  });
+
+  it('tidy up lays the grid out around a locked item instead of stacking an item on it', () => {
+    const lock = unit('lock', 230, 0, 100, 100, true);
+    const units = [unit('a', 0, 0), unit('b', 600, 10), unit('c', 900, 0), lock];
+    const pos = after(units, planTidy(units));
+    for (const id of ['a', 'b', 'c']) expect(overlaps(pos[id], lock.box)).toBe(false);
+    expect(pos.lock).toEqual({ x: 230, y: 0 });
+    // Still a tidy grid: rows share a top, columns a left edge.
+    expect(pos.b.y).toBe(pos.a.y);
+    expect(pos.c.x).toBe(pos.a.x);
+  });
+});
+
 describe('tidy up', () => {
   it('turns a rough two-column layout into an even two-column grid in reading order', () => {
     const units = [unit('a', 3, 0), unit('b', 160, 12), unit('c', 0, 170), unit('d', 140, 150), unit('e', 9, 330)];
