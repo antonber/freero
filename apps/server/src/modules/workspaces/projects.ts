@@ -118,7 +118,15 @@ export async function updateProject(
     workspaceId: project.workspaceId,
     actorId: userId,
     target: projectTarget({ ...project, ...patch }),
-    metadata: { nameFrom: project.name, nameTo: patch.name ?? project.name, accessFrom: project.access, accessTo: patch.access ?? project.access },
+    metadata: {
+      nameFrom: project.name,
+      nameTo: patch.name ?? project.name,
+      accessFrom: project.access,
+      accessTo: patch.access ?? project.access,
+      // The project's own team access level (null: the workspace's), KAI-93.
+      teamAccessFrom: project.teamAccess,
+      teamAccessTo: 'teamAccess' in patch ? (patch.teamAccess ?? null) : project.teamAccess,
+    },
   });
   const accessChanged = (patch.access && patch.access !== project.access) || ('teamAccess' in patch && patch.teamAccess !== project.teamAccess);
   if (accessChanged) await refreshProjectBoards(projectId);

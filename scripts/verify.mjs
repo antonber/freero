@@ -3098,17 +3098,6 @@ async function teamsChecks() {
       assert((await M.req('GET', `/api/workspaces/${ws.id}/activity`)).status === 404, 'someone outside the workspace read its feed');
     });
 
-    await check('turning the link off drops a connected guest at once; guest joins are rate-limited per IP', async () => {
-      const g = clients.find((c) => c.user === G);
-      assert((await O.req('PATCH', `/api/boards/${board.id}`, { linkAccess: 'none' })).status === 200, 'link off');
-      await waitFor(() => g.closeCodes.includes(4403), 5000, 'the guest socket to close with 4403');
-      assert((await G.req('GET', `/api/guest/boards/${board.id}/board`)).status === 403, 'the guest still opens the board');
-      await O.req('PATCH', `/api/boards/${board.id}`, { linkAccess: 'viewer' });
-      const statuses = [];
-      for (let i = 0; i < 4; i++) statuses.push((await new User(`G${i}`, port).req('POST', `/api/guest/boards/${board.id}/join`, { name: `V${i}` })).status);
-      assert(statuses.slice(0, 3).every((s) => s === 201) && statuses[3] === 429, statuses.join(','));
-    });
-
     await check('lowering a team’s access level to "can view" turns a connected member’s socket read-only at once', async () => {
       const team = (await O.req('POST', '/api/workspaces', { name: 'Verify team' })).json.workspace;
       assert((await O.req('POST', `/api/workspaces/${team.id}/members`, { email: M.email, role: 'member' })).status === 201, 'add member');
@@ -3121,6 +3110,31 @@ async function teamsChecks() {
       await waitFor(() => m.role === 'viewer', 5000, 'the member’s live role to drop to viewer');
       const members = (await O.req('GET', `/api/boards/${tb.id}/members`)).json.members;
       assert(members.find((x) => x.userId === M.id)?.role === 'viewer', JSON.stringify(members));
+      // The audit log (KAI-48): the level change, an access request and its approval, a guest joining.
+      await O.req('PATCH', `/api/boards/${tb.id}`, { linkAccess: 'viewer' });
+      const joined = await new User('AuditGuest', port).req('POST', `/api/guest/boards/${tb.id}/join`, { name: 'Lee' });
+      assert(joined.status === 201, joined.text);
+      const privateProject = (await O.req('POST', `/api/workspaces/${team.id}/projects`, { name: 'Private', access: 'private' })).json.project;
+      const pb = (await O.req('POST', '/api/boards', { title: 'Private board', workspaceId: team.id, projectId: privateProject.id })).json.board;
+      assert((await M.req('POST', `/api/boards/${pb.id}/access-request`, { role: 'viewer' })).status === 201, 'request');
+      assert((await O.req('POST', `/api/boards/${pb.id}/access-requests/${M.id}`, { decision: 'approve' })).status === 200, 'approve');
+      const events = (await O.req('GET', `/api/workspaces/${team.id}/audit?limit=200`)).json.events;
+      const has = (action, ok = () => true) => events.some((e) => e.action === action && ok(e));
+      assert(has('workspace.policies_changed', (e) => e.metadata['teamAccess.to'] === 'viewer'), 'no team access level event');
+      assert(has('board.guest_joined', (e) => e.actor === null && e.metadata.name === 'Lee'), 'no guest join event');
+      assert(has('board.access_requested', (e) => e.actor?.id === M.id) && has('board.access_approved', (e) => e.actor?.id === O.id), 'no access request events');
+    });
+
+    await check('turning the link off drops a connected guest at once; guest joins are rate-limited per IP', async () => {
+      const g = clients.find((c) => c.user === G);
+      assert((await O.req('PATCH', `/api/boards/${board.id}`, { linkAccess: 'none' })).status === 200, 'link off');
+      await waitFor(() => g.closeCodes.includes(4403), 5000, 'the guest socket to close with 4403');
+      assert((await G.req('GET', `/api/guest/boards/${board.id}/board`)).status === 403, 'the guest still opens the board');
+      await O.req('PATCH', `/api/boards/${board.id}`, { linkAccess: 'viewer' });
+      // Two joins so far from this address (Kim, and Lee in the team check): two more, then 429.
+      const statuses = [];
+      for (let i = 0; i < 3; i++) statuses.push((await new User(`G${i}`, port).req('POST', `/api/guest/boards/${board.id}/join`, { name: `V${i}` })).status);
+      assert(statuses.join(',') === '201,201,429', statuses.join(','));
     });
 
     await check('moderation and guests: a guest reports with a contact address; a link block and a take-down shut guests out live; visitors can’t report boards only signed-in people may open', async () => {

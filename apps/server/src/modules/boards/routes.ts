@@ -173,6 +173,7 @@ export default function boardRoutes(_ctx: ServerContext): Router {
   // The web app reports exports it made in the browser (image, PDF), so they are audited.
   r.post(
     '/boards/:id/exported',
+    requireUser,
     rateLimit('boardCreate', 'user'),
     handle(async (req, res) => {
       await recordExport(req.params.id, currentUser(req).id, req.body?.format);
@@ -251,6 +252,14 @@ export default function boardRoutes(_ctx: ServerContext): Router {
       if (!(await guestRoleFor(board))) throw forbidden('This board doesn’t let visitors without an account in. Sign in to open it.');
       const guest = await startGuestSession(req, res, board.id, req.body?.name);
       if (!guest) throw notFound('Board not found');
+      // A visitor, not an account: no actor; the name they gave and their guest id say who.
+      await recordAuditQuietly({
+        action: 'board.guest_joined',
+        workspaceId: board.workspaceId,
+        actorId: null,
+        target: { type: 'board', id: board.id, label: board.title },
+        metadata: { guestId: guest.id, name: guest.name },
+      });
       res.status(201).json({ guest } satisfies GuestJoinResponse);
     }),
   );

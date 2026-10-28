@@ -3,7 +3,7 @@ import type { Account } from '@freero/shared';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { createUser, getAccount } from '../auth/index';
 import { createBoard, getBoardAccess } from '../boards/index';
-import { createProject, createTeamWorkspace, inviteToWorkspace, updateWorkspace } from '../workspaces/index';
+import { createProject, createTeamWorkspace, inviteToWorkspace, setMemberDeactivated, updateWorkspace } from '../workspaces/index';
 import { decideRequest, listRequests, requestAccess, requestOutcomes, requestState } from './accessRequests';
 import { onAccessRequested, type AccessRequestedEvent } from './events';
 
@@ -77,4 +77,18 @@ it('when the team keeps its boards to its own people, outsiders can’t ask — 
   expect(await requestState(board.id, asker.id)).toMatchObject({ canRequest: false });
   await expect(decideRequest(board.id, owner, asker.id, { decision: 'approve' })).rejects.toMatchObject({ status: 403 });
   expect((await getBoardAccess(board.id, asker.id)).role).toBeNull();
+});
+
+it('a deactivated member can neither ask for nor be let into a board of the team that paused them', async () => {
+  const [owner, paused] = await Promise.all([person('Pauser'), person('Paused')]);
+  const ws = await createTeamWorkspace(owner.id, 'Paused team');
+  await inviteToWorkspace(null, ws.id, owner, { email: paused.email, role: 'member' });
+  const project = await createProject(ws.id, owner.id, { name: 'Closed', access: 'private' });
+  const board = await createBoard(owner.id, 'Plan', '', 'none', { workspaceId: ws.id, projectId: project.id });
+  await requestAccess(board.id, paused, {}); // still active: a pending request
+  await setMemberDeactivated(ws.id, owner.id, paused.id, true);
+
+  expect(await requestState(board.id, paused.id)).toMatchObject({ canRequest: false });
+  await expect(decideRequest(board.id, owner, paused.id, { decision: 'approve' })).rejects.toMatchObject({ status: 403 });
+  expect((await getBoardAccess(board.id, paused.id)).role).toBeNull();
 });

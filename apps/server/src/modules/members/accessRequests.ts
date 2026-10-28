@@ -9,6 +9,7 @@
 // as its "external sharing" policy allows (like an invite).
 import type { AccessRequestState, Account, BoardAccessRequest } from '@freero/shared';
 import { badRequest, forbidden, HttpError, notFound } from '../../platform/http';
+import { recordAuditQuietly } from '../audit/index';
 import { getUsers } from '../auth/index';
 import { boardPlace, getBoardAccess } from '../boards/index';
 import { refreshBoardAccess } from '../realtime/index';
@@ -29,9 +30,15 @@ async function placeOf(boardId: string): Promise<Place> {
   return place;
 }
 
-/** Why `userId` can't be let in by anyone (a team that keeps its boards to its own people), or null. */
+/**
+ * Why `userId` can't be let in by anyone, or null: the workspace closes its boards to them
+ * (deactivated there, or two-step verification required and off: KAI-51 — nothing a board
+ * membership could override), or keeps its boards to its own people.
+ */
 async function blockedReason(place: Place, userId: string): Promise<string | null> {
   const ws = await boardAccess(userId, place);
+  if (ws.blocked === 'deactivated') return 'Your access to this team workspace is paused. Ask one of its admins.';
+  if (ws.blocked) return 'This team requires two-step verification. Turn it on in your account settings, then try again.';
   if (!ws.inWorkspace && ws.outsidersBlocked) return 'This board is only open to people in its team workspace. Ask its owner to add you to the team.';
   return null;
 }
@@ -66,6 +73,13 @@ export async function requestAccess(boardId: string, user: Account, body: { role
   if (filed === 'board-gone') throw notFound('Board not found');
   if (filed === 'denied') throw new HttpError(429, 'Your request was declined. You can ask again in a little while.');
   if (filed === 'created') {
+    await recordAuditQuietly({
+      action: 'board.access_requested',
+      workspaceId: place.workspaceId,
+      actorId: user.id,
+      target: { type: 'board', id: boardId, label: place.title },
+      metadata: { role },
+    });
     const { notify } = await boardGatekeepers(place);
     const recipients = [...new Set([place.ownerId, ...notify])].filter((id) => id !== user.id);
     await accessRequested({ boardId, boardTitle: place.title, requesterId: user.id, role, message, createdAt: now, recipientIds: recipients });
@@ -118,8 +132,10 @@ export async function decideRequest(
   const approve = body.decision === 'approve';
   const role: MemberRole = (body.role as MemberRole | undefined) ?? pending.role;
   if (approve) {
-    // Like an invite: people outside a team workspace only as its "external sharing" policy allows.
     const [requesterWs, deciderWs] = await Promise.all([boardAccess(requesterId, place), boardAccess(decider.id, place)]);
+    // Never past a workspace that closes its boards to them (deactivated, two-step required).
+    if (requesterWs.blocked) throw forbidden('This person can’t open the team’s boards right now (deactivated, or two-step verification required)');
+    // Like an invite: people outside a team workspace only as its "external sharing" policy allows.
     if (!requesterWs.inWorkspace && (requesterWs.outsidersBlocked || !mayShareExternally(deciderWs.workspaceRole, deciderWs.policies)))
       throw forbidden(
         isManager(deciderWs.workspaceRole) || requesterWs.outsidersBlocked
@@ -133,6 +149,13 @@ export async function decideRequest(
     return d;
   });
   if (!decided) throw new HttpError(409, 'This request was already handled');
+  await recordAuditQuietly({
+    action: approve ? 'board.access_approved' : 'board.access_declined',
+    workspaceId: place.workspaceId,
+    actorId: decider.id,
+    target: { type: 'board', id: boardId, label: place.title },
+    metadata: { userId: requesterId, ...(approve ? { role } : {}) },
+  });
   if (approve) await refreshBoardAccess(boardId);
   await accessDecided({ boardId, boardTitle: place.title, requesterId, deciderId: decider.id, approved: approve, role: approve ? role : null });
 }
