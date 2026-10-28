@@ -23,6 +23,7 @@ import type {
   ReportReason,
   ReportTarget,
   Role,
+  SessionLimits,
   StrokeStyle,
   TextAlign,
   VerticalAlign,
@@ -632,6 +633,12 @@ export interface ToolDefinition {
    */
   onSelect?(editor: Editor): void;
   /**
+   * [additive] Element types this tool adds (default: the element type named like the tool, if
+   * any; none for select, comments, eraser…). A facilitator's limits hide tools that add a type
+   * participants may not add (`Editor.getLimits`), and `listAddableTypes` is built from it.
+   */
+  creates?: ElementType[];
+  /**
    * [additive] Double-click on empty canvas (or a frame's empty area) with the select tool: "write
    * here". The first tool by `order` that defines it gets the world point (the text tool drops a
    * text box and starts typing). Runs inside the click's gesture, so it is one undo step with the
@@ -884,6 +891,12 @@ export interface FollowTarget {
   userId: string;
   /** Presence client (tab) to mirror; when it leaves, another tab of the same user takes over. */
   clientId?: number;
+  /**
+   * [additive] A facilitator's "follow me": the user's own camera moves, Esc and canvas clicks
+   * don't end it (the view eases back), nor does the person leaving for a moment; other
+   * `follow()` calls are ignored until one with `{ force: true }` (the feature that locked it).
+   */
+  locked?: boolean;
 }
 
 /** [additive] Options for zoomToFit / zoomToRect. */
@@ -903,6 +916,20 @@ export interface Editor {
   /** Effective role (from the server's role message; falls back to host.board.role). */
   getRole(): Role;
   can(minRole: Role): boolean;
+  /**
+   * [additive] What a facilitator limits for this user right now (from the server's role message;
+   * null: nothing). The server enforces it; the engine mirrors it: a locked board is commenting
+   * only (`getRole()` is then 'commenter'), and tools / paste / inserts that would add other types
+   * than `addTypes` are refused with a toast and hidden from the toolbar. Hook: useLimits().
+   */
+  getLimits(): SessionLimits | null;
+  /** [additive] May this user add elements of `type` now (role and facilitator limits)? */
+  mayAdd(type: ElementType): boolean;
+  /**
+   * [additive] Element types the board's tools add, in toolbar order (each tool's
+   * `ToolDefinition.creates`): what a facilitator can allow participants to add.
+   */
+  listAddableTypes(): ElementType[];
   /** Feature this editor instance is scoped to ('engine' for the unscoped one). */
   readonly scope: string;
 
@@ -1052,8 +1079,14 @@ export interface Editor {
    * itself (wheel, pan, zoom, a canvas click, Esc, any setCamera) or they leave. null stops. Others
    * see it in PresenceState.following, and the followed client publishes its view faster.
    */
-  follow(target: FollowTarget | null): void;
+  follow(target: FollowTarget | null, opts?: { force?: boolean }): void;
   getFollowing(): FollowTarget | null;
+  /**
+   * [additive] Hide other people's cursors (local view, any role; not synced). Their selections
+   * and "is typing" outlines stay. Hook: useCursorsHidden().
+   */
+  setCursorsHidden(hidden: boolean): void;
+  areCursorsHidden(): boolean;
 
   // -- tools --
   getToolId(): string;

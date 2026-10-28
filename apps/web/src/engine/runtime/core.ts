@@ -168,7 +168,9 @@ export function createCore(
     }),
     store.subscribeRole(() => {
       const role = store.serverRole ?? core.hostRef.current.board.role;
-      ui.setState({ role });
+      ui.setState({ role, limits: store.serverLimits });
+      // A facilitator just limited what may be added: put down a tool that adds something else.
+      if (!core.editor.toolAllowed(ui.getState().toolId)) core.editor.setTool('select');
       // Live role change (e.g. promoted/demoted over REST): drop anything the new role can't do.
       if (ROLE_RANK[role] < ROLE_RANK.editor) {
         if (ui.getState().editingId) core.editor.stopEditing();

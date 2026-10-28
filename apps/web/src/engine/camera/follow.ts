@@ -37,6 +37,7 @@ export function followStep(core: EngineCore): boolean {
   const peers = core.store.getPeers();
   const client = followedClient(peers, target);
   if (!client) {
+    if (target.locked) return true; // a facilitator's "follow me": wait for them to come back
     core.editor.follow(null);
     return false;
   }
