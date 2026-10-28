@@ -50,7 +50,7 @@ export const TrashItem = memo(function TrashItem({
         <div className="fr-row__title" title={title}>
           {title}
         </div>
-        <div className="fr-row__time">{deleted}</div>
+        <div className="fr-row__time">{b.deletedAt ? relativeTime(b.deletedAt) : ''}</div>
         <div className="fr-row__time">{purgeLabel(b.purgeAt)}</div>
         <div className="fr-row__actions fr-dash-trash__actions">
           {restore}
