@@ -676,6 +676,8 @@ export interface TimelineLane {
   title: RichText;
   /** Header tint. */
   color: string;
+  /** Rows of bars the lane is tall enough for (kept by the timeline's layout; at least 2). */
+  rows?: number;
 }
 
 /** A bar (or a milestone: one day, drawn as a diamond) on a timeline, from `start` to `end` inclusive. */

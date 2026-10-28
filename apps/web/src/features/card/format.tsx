@@ -82,6 +82,7 @@ function DueControl({ editor, cards }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
   const due = same(cards, 'dueDate') ?? null;
+  const start = same(cards, 'startDate') ?? null;
   return (
     <>
       <ToolbarButton ref={ref} className="fr-card-fmt-btn" label="Due date" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
@@ -96,6 +97,15 @@ function DueControl({ editor, cards }: Props) {
             aria-label="Due date"
             value={due ?? ''}
             onChange={(e) => patchAll(editor, cards, { dueDate: e.target.value || null })}
+          />
+          {/* A start date makes the card span days on a timeline. */}
+          <div className="fr-card-pop__label">Start date</div>
+          <input
+            type="date"
+            aria-label="Start date"
+            value={start ?? ''}
+            max={due ?? undefined}
+            onChange={(e) => patchAll(editor, cards, { startDate: e.target.value || null })}
           />
           <div className="fr-card-pop__row">
             <Button size="sm" variant="secondary" onClick={() => patchAll(editor, cards, { dueDate: localISODate(new Date(editor.host.serverNow())) })}>

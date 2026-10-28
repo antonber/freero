@@ -10,6 +10,13 @@ export const PAD = { left: 22, right: 14, top: 13, bottom: 12 };
 export const TITLE = { size: 15, weight: 600, line: 20 };
 export const DESC = { size: 13, weight: 400, line: 18, maxLines: 3, gap: 4 };
 export const FOOTER = { h: 24, gap: 10 };
+/**
+ * A card shorter than this is drawn as a BAR (one line: title, status, assignee): only a container
+ * that lays cards out makes one so short (a timeline, KAI-122). Its height is then the container's,
+ * not the content's; once it is this tall or taller again it lays itself out as a card.
+ */
+export const BAR_MAX_H = 48;
+export const isBar = (el: Pick<CardElement, 'h'>): boolean => el.h < BAR_MAX_H;
 
 /** Rendered line count of `html` in a column `width` px wide. */
 function lineCount(html: string, t: { size: number; weight: number; line: number }, width: number): number {
