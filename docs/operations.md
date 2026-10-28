@@ -48,6 +48,9 @@ backups with point-in-time recovery (7–35 days); pg_dump remains your provider
 3. Point `DATABASE_URL` at the restored database (or rename databases) and start the app. Pending
    migrations newer than the dump are applied automatically at startup.
 4. Check `/readyz`, sign in, open a few boards.
+5. Derived indexes (backlinks) catch up by themselves from the outbox events in the dump; if the
+   dump is older than a week (the outbox keeps a week) or the index looks wrong, rebuild it from
+   the saved boards: `npm run admin -- references:rebuild` (safe while the app runs).
 
 Test a restore regularly (e.g. monthly into a scratch database); an untested backup is a hope.
 
@@ -110,6 +113,9 @@ then the local copies can be removed.
 | `freero_realtime_persist_failures_total` | Failed persists (retried) |
 | `freero_realtime_peer_messages_total{direction}` | Realtime messages sent to / received from other instances through Redis |
 | `freero_rate_limited_total{limit}` | Requests refused with 429, per limit |
+| `freero_outbox_lag_seconds` | Age of the oldest outbox event a consumer on this instance has not handled (0 when caught up) |
+| `freero_outbox_appended_total{topic}` / `freero_outbox_consumed_total{consumer}` | Outbox events written / consumed (summed over instances, consumed never exceeds appended) |
+| `freero_outbox_failed_total{consumer}` / `freero_outbox_skipped_total{consumer}` | Consumer batches that failed (retried), events skipped after repeated failures |
 | `freero_process_*`, `freero_nodejs_*` | CPU, memory, event-loop lag, GC, handles |
 
 Suggested alerts:
@@ -119,6 +125,8 @@ Suggested alerts:
 - p95 API latency > 1 s for 10 min.
 - `freero_realtime_persist_failures_total` increasing, or `freero_realtime_persist_queue` > 0 for 5 min.
 - `freero_nodejs_eventloop_lag_p99_seconds` > 0.2.
+- `max(freero_outbox_lag_seconds)` > 300 (a consumer stuck: backlinks stale), or
+  `freero_outbox_skipped_total` increasing (then fix the cause and run `references:rebuild`).
 - Memory (`freero_process_resident_memory_bytes`) near the container limit.
 - `rate(freero_rate_limited_total{limit="login"}[5m])` spikes (credential stuffing).
 - Postgres: connections near `max_connections`, disk > 80 %, replication lag; backup job age > 26 h.
@@ -384,6 +392,10 @@ own chain and the logs of its team workspaces, where their admins see it.
 `npm run admin -- api:revoke-all <user id | email>` revokes every API token and app authorisation of an
 account at once (a compromised integration, an account being taken back): their next API call is
 refused, and it is audited on the account. Turning the whole API off is `PUBLIC_API=false` (restart).
+
+`npm run admin -- references:rebuild [<board id>]` re-derives the references index (backlinks,
+"Linked from") from saved board content — every board, or one. For repair after a restore or a
+fixed extraction bug; safe while the servers run (their live updates pause meanwhile).
 
 `npm run admin -- audit:verify <workspace id>` re-checks a workspace's audit log chain (also
 `u:<user id>` for an account's own chain, `freero` for operator actions on unowned content) and

@@ -15,12 +15,20 @@ export {
   commentPeopleOf,
   readBoardView,
   changeBoard,
+  proposeSuggestions,
+  decideSuggestions,
   // Results only the server computes (live activities, KAI-132): the one writer of those collections.
   writeServerCollection,
   // An app writing through the API or MCP, shown on the board for a moment (KAI-168).
   showAgentPresence,
   type AgentPresence,
 } from './rooms';
+// Suggestions (KAI-169): proposed changes in the editors layer (BoardView.suggestions reads them).
+// proposeSuggestions is THE seam for anything that wants people to review its change first —
+// the public API, structure insertion with target 'suggestions', and in-app AI (modules/ai).
+export { reviewSuggestions, SuggestionNotFoundError, SuggestionStaleError, type ReviewedSuggestion } from './suggestions';
+// Proposals made on this instance, attributed to the person and the app acting for them (activity feed).
+export { onSuggestionsProposed, type SuggestionsProposedEvent } from './suggestionEvents';
 // The board as one reader sees it (their role's layers applied) and the one request-time write
 // path for board content (one transaction, published and saved): the outline and structure
 // modules read and write boards through these, never through Yjs.
@@ -48,5 +56,10 @@ export { onVersionRestored, type VersionRestoredEvent } from './history';
 export { listSnapshots as listBoardSnapshots, loadSnapshot as loadBoardSnapshot, type SnapshotInfo } from './docStore';
 // Data exports (modules/privacy): board content and the comments a person wrote.
 export { exportBoardContent, commentsWrittenBy, type BoardContentExport, type CommentThreadExport } from './dataExport';
+// Board content as saved, as every reader sees it (derived indexes read it from the outbox), and
+// the outbox topic raised in the same transaction as every saved change of it.
+export { storedBoardView } from './stored';
+export { COMMENTS_COLLECTION };
+export { BOARD_CONTENT_TOPIC } from './repo';
 // The uploads board documents reference (the uploads sweep keeps those files).
 export { boardUploadReferences, storedBoardContent } from './uploadRefs';

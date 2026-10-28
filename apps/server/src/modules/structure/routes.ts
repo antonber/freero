@@ -16,7 +16,8 @@ export default function structureRoutes(_ctx: ServerContext): Router {
     rateLimit('structure', 'user'),
     handle(async (req, res) => {
       const result = await insertStructure(req.params.id, currentUser(req).id, req.body);
-      res.status(result.target === 'board' ? 201 : 200).json(result);
+      // 'board' wrote items, 'suggestions' made a proposal; 'preview' changed nothing.
+      res.status(result.target === 'preview' ? 200 : 201).json(result);
     }),
   );
   return r;

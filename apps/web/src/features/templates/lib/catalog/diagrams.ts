@@ -1,5 +1,5 @@
 // Diagramming: org chart, sitemap, swimlane process, Venn diagram, project timeline.
-import type { StickyColor } from '@freero/shared';
+import { tidyTree, type StickyColor } from '@freero/shared';
 import { Kit, rt, titled } from '../kit';
 import { AMBER, CORAL, HEAD, INK_SOFT, LINE, MINT, SKY, TINT, VIOLET } from '../palette';
 import type { TemplateDef } from '../types';
@@ -12,30 +12,40 @@ export const orgChart: TemplateDef = {
   keywords: ['org chart', 'organization', 'organisation', 'hierarchy', 'team structure', 'reporting', 'tree'],
   build(newId) {
     const k = new Kit(newId);
-    const leafW = 220;
-    const gap = 32;
-    const W = 96 + 6 * leafW + 5 * gap;
-    const levelY = [176, 352, 528];
     const boxH = 96;
-    k.frame('Org chart', W, levelY[2] + boxH + 72);
-    k.header('Org chart', 'Double-click a box to rename it. Duplicate a box and connect it to add a person; the lines follow when you move boxes.', W);
-
-    const ceo = k.shape('roundRect', W / 2 - 140, levelY[0], 280, boxH, titled('Jordan Lee', 'Chief Executive'), { fill: VIOLET, textColor: '#FFFFFF', fontSize: 18 });
-    const depts: Array<{ lead: [string, string]; fill: string; tint: string; accent: string; team: Array<[string, string]> }> = [
-      { lead: ['Amara Okafor', 'VP Product'], fill: HEAD.violet, tint: TINT.violet, accent: VIOLET, team: [['Leo Martins', 'Design Lead'], ['Mei Chen', 'Product Manager']] },
-      { lead: ['Tomás Ruiz', 'VP Engineering'], fill: HEAD.sky, tint: TINT.sky, accent: SKY, team: [['Ines Duarte', 'Web Team Lead'], ['Sven Larsen', 'Platform Lead']] },
-      { lead: ['Hana Sato', 'VP Customers'], fill: HEAD.mint, tint: TINT.mint, accent: MINT, team: [['Ravi Patel', 'Support Lead'], ['Clara Novak', 'Sales Lead']] },
+    const people: Array<{ id: string; name: string; role: string; manager?: string; w: number; fill: string; tint?: string; accent?: string }> = [
+      { id: 'ceo', name: 'Jordan Lee', role: 'Chief Executive', w: 280, fill: VIOLET },
+      { id: 'vp1', name: 'Amara Okafor', role: 'VP Product', manager: 'ceo', w: 240, fill: HEAD.violet, tint: TINT.violet, accent: VIOLET },
+      { id: 'vp2', name: 'Tomás Ruiz', role: 'VP Engineering', manager: 'ceo', w: 240, fill: HEAD.sky, tint: TINT.sky, accent: SKY },
+      { id: 'vp3', name: 'Hana Sato', role: 'VP Customers', manager: 'ceo', w: 240, fill: HEAD.mint, tint: TINT.mint, accent: MINT },
+      { id: 'l1', name: 'Leo Martins', role: 'Design Lead', manager: 'vp1', w: 220, fill: '' },
+      { id: 'l2', name: 'Mei Chen', role: 'Product Manager', manager: 'vp1', w: 220, fill: '' },
+      { id: 'l3', name: 'Ines Duarte', role: 'Web Team Lead', manager: 'vp2', w: 220, fill: '' },
+      { id: 'l4', name: 'Sven Larsen', role: 'Platform Lead', manager: 'vp2', w: 220, fill: '' },
+      { id: 'l5', name: 'Ravi Patel', role: 'Support Lead', manager: 'vp3', w: 220, fill: '' },
+      { id: 'l6', name: 'Clara Novak', role: 'Sales Lead', manager: 'vp3', w: 220, fill: '' },
     ];
-    depts.forEach((d, i) => {
-      const center = 48 + 2 * i * (leafW + gap) + (2 * leafW + gap) / 2;
-      const lead = k.shape('roundRect', center - 120, levelY[1], 240, boxH, titled(...d.lead), { fill: d.fill, fontSize: 17 });
-      k.connector({ id: ceo, anchor: 'bottom' }, { id: lead, anchor: 'top' }, { endCap: 'none' });
-      d.team.forEach(([name, role], j) => {
-        const x = 48 + (2 * i + j) * (leafW + gap);
-        const member = k.shape('roundRect', x, levelY[2], leafW, boxH, titled(name, role), { fill: d.tint, stroke: d.accent, strokeWidth: 2, fontSize: 16 });
-        k.connector({ id: lead, anchor: 'bottom' }, { id: member, anchor: 'top' }, { endCap: 'none' });
-      });
-    });
+    // Laid out by the shared tidy tree with Auto-layout ▸ Org chart's spacing, so re-laying the
+    // chart out after adding people keeps its look.
+    const edges = people.filter((p) => p.manager).map((p) => ({ from: p.manager!, to: p.id }));
+    const tree = tidyTree(people.map((p) => ({ id: p.id, w: p.w, h: boxH })), edges, { direction: 'TB', siblingGap: 32, levelGap: 64 });
+    const W = 96 + tree.w;
+    const top = 176;
+    k.frame('Org chart', W, top + tree.h + 72);
+    k.header('Org chart', 'Double-click a box to rename it. Duplicate a box and connect it to add a person; select the chart and use Auto-layout ▸ Org chart to tidy it.', W);
+    const ids = new Map<string, string>();
+    for (const p of people) {
+      const at = tree.pos.get(p.id)!;
+      const lead = people.find((x) => x.id === p.manager);
+      const style =
+        p.id === 'ceo'
+          ? { fill: VIOLET, textColor: '#FFFFFF', fontSize: 18 }
+          : p.tint
+            ? { fill: p.fill, fontSize: 17 }
+            : { fill: lead!.tint!, stroke: lead!.accent!, strokeWidth: 2, fontSize: 16 };
+      ids.set(p.id, k.shape('roundRect', 48 + at.x, top + at.y, p.w, boxH, titled(p.name, p.role), style));
+    }
+    for (const e of edges) k.connector({ id: ids.get(e.from)!, anchor: 'bottom' }, { id: ids.get(e.to)!, anchor: 'top' }, { endCap: 'none' });
     return k.done();
   },
 };

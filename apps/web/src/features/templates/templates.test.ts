@@ -27,6 +27,7 @@ const REQUIRED: Record<ElementType, string[]> = {
   swimlane: ['title', 'lanes', 'phases'],
   media: ['kind', 'src', 'name', 'size', 'duration', 'naturalW', 'naturalH'],
   file: ['src', 'name', 'size', 'mime'],
+  objectlink: ['uri'],
   activity: ['kind', 'question', 'options', 'anonymous', 'results', 'guests', 'color'],
 };
 

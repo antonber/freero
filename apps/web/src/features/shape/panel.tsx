@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Search, SlidersHorizontal } from 'lucide-react';
+import { Search, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { DockHeader, definePanel, useCanEdit, useCollection, type Editor } from '@engine';
 import { Input, Toggle } from '@ui';
 import { LIBRARY_COLLECTION, SHAPE_SETS, enabledSets, searchShapes, type LibraryShape } from './lib/library';
@@ -83,6 +83,13 @@ function ShapeLibraryPanel({ editor }: { editor: Editor }) {
               <Tile key={`${set.id}:${s.label}`} editor={editor} shape={s} canEdit={canEdit} />
             ))}
           </div>
+          {set.id === 'wireframe' && (
+            // Icons for screens come from the icon library (its own feature, reached by command).
+            <button type="button" className="fr-shape-options__more" disabled={!canEdit} onClick={() => editor.runCommand('icons.openLibrary')}>
+              <Sparkles size={14} aria-hidden />
+              Icons for your screens
+            </button>
+          )}
         </section>
       ))}
       {!groups.length && (

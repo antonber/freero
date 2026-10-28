@@ -2,14 +2,20 @@
 // (Object.create(engineEditor) with its own `scope`), so collection writes can be checked.
 import { nanoid } from 'nanoid';
 import {
+  acceptClosure,
   buildOutline,
   COMMENTER_WRITABLE,
+  pendingSuggestions,
+  rejectClosure,
+  suggestionState,
+  withoutDanglingRefs,
   type BoardElement,
   type BoardOutline,
   type BoardSettings,
   type ElementType,
   type Role,
   type SessionLimits,
+  type SuggestionDecision,
 } from '@freero/shared';
 import type {
   Camera,
@@ -28,6 +34,7 @@ import type {
   NewElement,
   Point,
   Rect,
+  Suggestion,
   TextPart,
   ToolDefinition,
 } from '../api';
@@ -1504,6 +1511,81 @@ export class EditorImpl implements Editor {
   discardPrivate(collection: string, opts?: { prefix?: string; mine?: boolean }): void {
     if (!this.guardWrite()) return;
     this.core.store.runLayerOp({ type: 'discard', collection, ...(opts?.prefix !== undefined ? { prefix: opts.prefix } : {}), ...(opts?.mine ? { mine: true } : {}) });
+  }
+
+  // ------------------------------------------------------------------ suggestions (KAI-169)
+  getSuggestions(): Suggestion[] {
+    const pending = pendingSuggestions(this.core.store.suggestionsMap().entries());
+    if (!pending.length) return [];
+    const creates = new Set(pending.flatMap((r) => (r.op === 'create' && r.element ? [r.element.id] : [])));
+    const get = (id: string) => this.core.store.getElement(id);
+    return pending.map((r) => ({ ...r, state: suggestionState(r, get, creates) }));
+  }
+
+  acceptSuggestions(ids: string[], opts: { force?: boolean } = {}): { accepted: string[]; stale: string[] } {
+    const none = { accepted: [], stale: [] };
+    if (!ids.length || !this.guardWrite()) return none;
+    const store = this.core.store;
+    const all = this.getSuggestions();
+    const byId = new Map(all.map((s) => [s.id, s]));
+    const chosen = acceptClosure(ids, all).map((id) => byId.get(id)!);
+    const stale = chosen.filter((s) => s.state !== 'ready').map((s) => s.id);
+    if (!chosen.length || (stale.length && !opts.force)) return { accepted: [], stale };
+
+    // New items keep their proposed ids; references to items that are gone are dropped (force).
+    const accepting = new Set(chosen.flatMap((s) => (s.op === 'create' && s.element ? [s.element.id] : [])));
+    const exists = (id: string) => accepting.has(id) || !!store.getElement(id);
+    const created: NewElement[] = [];
+    const content: Record<string, unknown> = {};
+    for (const s of chosen) {
+      if (s.op !== 'create' || !s.element || store.getElement(s.element.id)) continue;
+      const { z: _z, createdBy: _c, createdAt: _a, updatedAt: _u, ...el } = withoutDanglingRefs(s.element, exists);
+      created.push({ ...el, suggestedBy: { kind: s.author.kind, name: s.author.name, userId: s.author.userId } } as NewElement);
+      if (s.content !== undefined) content[s.element.id] = s.content;
+    }
+    if (!this.guardAdd(created.map((e) => e.type))) return none;
+    const removing = chosen.flatMap((s) => (s.op === 'delete' && s.targetId && store.getElement(s.targetId) ? [s.targetId] : []));
+    const gone = new Set(this.withDependents(removing));
+    const patches = chosen.flatMap((s) =>
+      s.op === 'update' && s.targetId && store.getElement(s.targetId) && !gone.has(s.targetId) ? [{ id: s.targetId, patch: s.patch as ElementPatch }] : [],
+    );
+    const decision: SuggestionDecision = { status: 'accepted', by: this.user.id, at: Date.now(), ...(stale.length ? { forced: true as const } : {}) };
+
+    store.beginGesture();
+    try {
+      this.transact(() => {
+        const made = this.createMany(created);
+        const built = made.map((id) => store.getElement(id)!).filter(Boolean);
+        this.pasteContentInto(built, new Map(made.map((id) => [id, id])), content);
+        this.updateMany(patches);
+        this.remove(removing);
+        this.writeDecisions(chosen, decision);
+      });
+    } finally {
+      store.endGesture();
+    }
+    return { accepted: chosen.map((s) => s.id), stale: [] };
+  }
+
+  rejectSuggestions(ids: string[]): string[] {
+    if (!ids.length || !this.guardWrite()) return [];
+    const all = this.getSuggestions();
+    const byId = new Map(all.map((s) => [s.id, s]));
+    const chosen = rejectClosure(ids, all).map((id) => byId.get(id)!);
+    if (!chosen.length) return [];
+    this.core.store.beginGesture();
+    try {
+      this.transact(() => this.writeDecisions(chosen, { status: 'rejected', by: this.user.id, at: Date.now() }));
+    } finally {
+      this.core.store.endGesture();
+    }
+    return chosen.map((s) => s.id);
+  }
+
+  /** The decision on each record, as the server lets a socket write it (only `decision` changes). */
+  private writeDecisions(list: Suggestion[], decision: SuggestionDecision): void {
+    const map = this.core.store.suggestionsMap();
+    for (const { state: _s, ...record } of list) map.set(record.id, { ...record, decision });
   }
 
   // ------------------------------------------------------------------ presence

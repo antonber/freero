@@ -20,6 +20,8 @@ import {
 } from './service';
 
 export { createBoard, deleteBoardRowsInWorkspace, cleanUpDeletedBoards } from './service';
+// The object registry (modules/objects): boards and items, checked like the board page checks them.
+export { registerBoardObjectTypes, boardRoles, elementTitle } from './objects';
 // Created, duplicated, renamed, moved, trashed, restored (the activity feed, KAI-188).
 export { onBoardLifecycle, type BoardLifecycleEvent, type BoardLifecycleAction } from './events';
 // Files downloaded from a board (modules/uploads): the downloads policy, then the audit log.
@@ -130,6 +132,11 @@ export async function deleteBoardsOwnedBy(userId: string): Promise<number> {
   return thumbnails.length;
 }
 
+/** Records that the user opened the board (recent lists; a link-only board becomes discoverable to them). */
+export async function recordBoardOpen(boardId: string, userId: string, at = Date.now()): Promise<void> {
+  await repo.recordOpen(boardId, userId, at);
+}
+
 /** The account purge: which protected board links the account unlocked (KAI-145) is forgotten. */
 export function forgetLinkUnlocksOf(userId: string): Promise<void> {
   return repo.forgetUnlocksOf(userId);
@@ -143,6 +150,11 @@ export async function boardIdsOpenedBy(userId: string): Promise<string[]> {
 /** Records that the board's content changed (called by realtime, throttled). */
 export async function touchBoard(boardId: string, at = Date.now()): Promise<void> {
   await repo.touch(boardId, at);
+}
+
+/** Every board id, trash included (operator rebuilds of derived indexes, e.g. references). */
+export function allBoardIds(): Promise<string[]> {
+  return repo.allIds();
 }
 
 // ---- for modules/workspaces ----

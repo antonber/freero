@@ -6,11 +6,14 @@ import type { ServerContext } from '../../platform/context';
 import { scheduleExclusiveJob } from '../../platform/jobs';
 import { log } from '../../platform/log';
 import { applyExpiredLinks } from './linkProtection';
+import { registerBoardObjectTypes } from './objects';
 import { purgeExpiredTrashLocked, TRASH_PURGE_LOCK_KEY } from './service';
 
 const LINK_EXPIRY_LOCK_KEY = 7_202_611_031; // arbitrary, constant across releases
 
 export default function initBoards(ctx: ServerContext): void {
+  // Boards and items are objects others can address, check and resolve (modules/objects).
+  registerBoardObjectTypes();
   scheduleExclusiveJob(ctx, {
     name: 'boards:trash-purge',
     lockKey: TRASH_PURGE_LOCK_KEY,

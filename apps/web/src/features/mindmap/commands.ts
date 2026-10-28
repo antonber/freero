@@ -1,4 +1,6 @@
+import { ListTree } from 'lucide-react';
 import { defineCommands, type Editor } from '@engine';
+import { copyOutline } from './lib/clipboard';
 import {
   addChild,
   addSibling,
@@ -76,6 +78,18 @@ export default defineCommands([
     when: (editor) => selectedNodes(editor).length > 0,
     run(editor) {
       deleteBranches(editor, editor.getSelection());
+    },
+  },
+  {
+    // Read-only: anyone who can see the map may copy it out.
+    id: 'mindmap.copyAsOutline',
+    label: 'Copy as outline',
+    icon: ListTree,
+    menus: ['context'],
+    minRole: 'viewer',
+    when: (editor) => selectedNodes(editor).length > 0,
+    run(editor) {
+      void copyOutline(editor, rootIdsOf(editor, selectedNodes(editor)));
     },
   },
   {

@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { AlignStartVertical } from 'lucide-react';
 import { defineFormat } from '@engine';
 import { IconButton, Popover, formatShortcut } from '@ui';
-import { ARRANGE_COMMANDS, CLUSTER_COMMANDS } from './commands';
+import { ARRANGE_COMMANDS, CLUSTER_COMMANDS, LAYOUT_COMMANDS } from './commands';
 import { unitsOf } from './lib/arrange';
 import './arrange.css';
 
@@ -36,6 +36,17 @@ export default defineFormat({
               );
             })}
           </div>
+          {LAYOUT_COMMANDS.some((c) => c.when?.(editor)) && (
+            <div className="fr-arrange__cluster" role="group" aria-label="Auto-layout">
+              <span className="fr-arrange__label">Auto-layout</span>
+              {LAYOUT_COMMANDS.map((c) => (
+                <button key={c.id} type="button" className="fr-arrange__cluster-btn" onClick={() => editor.runCommand(c.id)}>
+                  {c.icon && <c.icon size={16} aria-hidden />}
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          )}
           {CLUSTER_COMMANDS.some((c) => c.when(editor)) && (
             <div className="fr-arrange__cluster" role="group" aria-label="Cluster stickies">
               {CLUSTER_COMMANDS.map((c) => (

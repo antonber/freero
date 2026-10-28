@@ -302,9 +302,15 @@ export const TOOLS: McpTool[] = [
       boardId,
       structure: z.record(z.unknown()).describe('A structure: { kind, … } as for insert structure (docs/board-outline.md).'),
       near,
+      description: z.string().max(500).optional().describe('One line for the reviewers: what this proposal does and why.'),
     },
     async run(call, a) {
-      const out = await insertStructureFor(call, a.boardId, { structure: a.structure, ...(a.near ? { near: a.near } : {}), target: 'suggestions' });
+      const out = await insertStructureFor(call, a.boardId, {
+        structure: a.structure,
+        ...(a.near ? { near: a.near } : {}),
+        ...(a.description ? { description: a.description } : {}),
+        target: 'suggestions',
+      });
       return plain(`Proposed ${out.created.length} item${out.created.length === 1 ? '' : 's'} for review on board ${a.boardId}.`, { proposed: out.created });
     },
   }),

@@ -30,8 +30,9 @@ const cleanTeamAccess = (v: unknown): TeamAccess | null => {
   return v;
 };
 
-const canSee = (p: Project, role: WorkspaceRole | null, member: boolean) => member || isManager(role) || (p.access === 'workspace' && isFullMember(role));
-const canManage = (p: Project, role: WorkspaceRole | null, userId: string) => isManager(role) || (p.createdBy === userId && role !== null);
+/** Who sees a project (and so may address it): its members, the managers, and everyone (not guests) when it is open. */
+export const canSee = (p: Project, role: WorkspaceRole | null, member: boolean) => member || isManager(role) || (p.access === 'workspace' && isFullMember(role));
+export const canManage = (p: Project, role: WorkspaceRole | null, userId: string) => isManager(role) || (p.createdBy === userId && role !== null);
 
 const toSummary = (p: Project, role: WorkspaceRole | null, userId: string): ProjectSummary => ({
   id: p.id,

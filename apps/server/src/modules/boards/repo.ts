@@ -139,6 +139,11 @@ export async function getBoards(ids: string[]): Promise<Board[]> {
   return (await query<Row>(`SELECT * FROM boards WHERE id = ANY($1::text[]) AND ${LIVE}`, [ids])).map((r) => toBoard(r));
 }
 
+/** Every board id (trash included), for operator rebuilds of derived indexes. */
+export async function allIds(): Promise<string[]> {
+  return (await query<{ id: string }>(`SELECT id FROM boards ORDER BY id`)).map((r) => r.id);
+}
+
 /** Ids of the user's live boards. */
 /** The boards with these ids, trashed ones included (data exports). */
 export async function getBoardsIncludingTrash(ids: string[]): Promise<Board[]> {

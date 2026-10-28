@@ -23,7 +23,9 @@ export interface ActivitySummary {
   via?: 'invite' | 'request';
   /** kind 'board' (KAI-188): what happened to it; renamed: from/to titles; moved: `to` project (null: none);
    * duplicated: `from` = the original's title; version_restored: the version's name (null: automatic). */
-  action?: 'created' | 'duplicated' | 'renamed' | 'moved' | 'trashed' | 'restored' | 'version_restored';
+  action?: 'created' | 'duplicated' | 'renamed' | 'moved' | 'trashed' | 'restored' | 'version_restored' | 'suggested';
+  /** action 'suggested' (KAI-169): how many changes the proposal holds (shown to owners and editors only). */
+  suggestions?: number;
   from?: string | null;
   to?: string | null;
   version?: string | null;

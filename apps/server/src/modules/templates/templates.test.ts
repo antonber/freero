@@ -3,10 +3,9 @@ import type { TemplateContent } from '@freero/shared';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { createUser } from '../auth/index';
 import { createBoard } from '../boards/index';
-import type { ServerContext } from '../../platform/context';
-import { createTeamWorkspace, inviteToWorkspace, removeWorkspaceMember, updateWorkspace } from '../workspaces/index';
-import templatesInit from './init';
-import { deleteTemplate, getTemplate, listTemplates, saveTemplate, shareTemplate } from './service';
+import { drainOutbox, registerOutboxConsumer } from '../../platform/outbox';
+import { changeWorkspaceRole, createTeamWorkspace, inviteToWorkspace, removeWorkspaceMember, updateWorkspace } from '../workspaces/index';
+import { deleteTemplate, getTemplate, listTemplates, saveTemplate, shareTemplate, unshareOnLeaveConsumer } from './service';
 
 const LIMIT = 2;
 beforeAll(() => openTestDb({ MAX_TEMPLATES_PER_USER: String(LIMIT) }));
@@ -93,7 +92,7 @@ it('a workspace admin can take down a member’s team template (a member can’t
     [colleague, 'member'],
   ] as const)
     await inviteToWorkspace(null, ws.id, owner, { email: u.email, role });
-  templatesInit({ onShutdown: () => undefined } as unknown as ServerContext);
+  registerOutboxConsumer(unshareOnLeaveConsumer);
 
   const stale = await saveTemplate(author.id, { name: 'Stale', content, workspaceId: ws.id });
   expect((await listTemplates(colleague.id)).find((t) => t.id === stale.id)).toMatchObject({ ownerName: 'UAuthor', canUnshare: false });
@@ -103,7 +102,14 @@ it('a workspace admin can take down a member’s team template (a member can’t
   expect((await listTemplates(colleague.id)).some((t) => t.id === stale.id)).toBe(false);
   expect((await listTemplates(author.id)).some((t) => t.id === stale.id)).toBe(true); // still theirs
 
+  // The membership change is an outbox event of its own transaction; the consumer re-reads the role
+  // when it runs, so a demotion that was undone before it ran unshares nothing.
   const kept = await saveTemplate(author.id, { name: 'Kept', content, workspaceId: ws.id });
+  await changeWorkspaceRole(ws.id, owner.id, author.id, 'guest');
+  await changeWorkspaceRole(ws.id, owner.id, author.id, 'member');
+  await drainOutbox(unshareOnLeaveConsumer.name);
+  expect((await listTemplates(colleague.id)).some((t) => t.id === kept.id)).toBe(true);
   await removeWorkspaceMember(ws.id, author.id, author.id);
+  await drainOutbox(unshareOnLeaveConsumer.name);
   expect((await listTemplates(colleague.id)).some((t) => t.id === kept.id)).toBe(false);
 });

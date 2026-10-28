@@ -14,6 +14,25 @@ export type ElementDraft = BoardElement extends infer E
 export interface OutlineNodeInput {
   text: string;
   children?: OutlineNodeInput[];
+  /**
+   * [additive] A stable name for the item (a Mermaid mind-map node id), so a re-layout of edited
+   * source finds the same item again (`LaidOut.keys`). Default: its path of texts.
+   */
+  id?: string;
+}
+
+/** [additive] A person in an org chart; `manager` names another person's `id` (or `name`). */
+export interface OrgPersonInput {
+  name: string;
+  title?: string;
+  manager?: string | null;
+  id?: string;
+}
+
+/** [additive] A kanban column and the cards in it, top to bottom. */
+export interface KanbanColumnInput {
+  title: string;
+  items: string[];
 }
 
 export interface GraphNodeInput {
@@ -78,6 +97,10 @@ export type StructureInput =
    * the text's paragraphs and bullet lines kept.
    */
   | { kind: 'note'; title?: string; text: string }
+  /** [additive] Columns of task cards → a kanban board (column titles like "To do" / "Done" set card status). */
+  | { kind: 'kanban'; title?: string; columns: KanbanColumnInput[] }
+  /** [additive] People and their managers → an org chart (a top-down tree of name / title boxes). */
+  | { kind: 'orgchart'; people: OrgPersonInput[] }
   /**
    * [additive] Work items (rows of a CSV, KAI-136) → stickies or task cards in a grid, or on a
    * kanban with a column per status (`layout: 'kanban'`).
@@ -109,6 +132,12 @@ export interface LaidOut {
   /** Existing elements moved into the result (their new top-left). */
   moves: Array<{ id: string; x: number; y: number }>;
   size: { w: number; h: number };
+  /**
+   * [additive] Element id → the source item it stands for (`n:<node id>`, `e:<from>><to>#<k>`,
+   * `g:<group id>`, `t:<path of texts>` …): how a re-layout of edited source keeps the elements it
+   * already made (diagrams as code). Kinds without lasting identity (stickies, tables) leave it out.
+   */
+  keys?: Record<string, string>;
 }
 
 /** What the layout may ask about the board (existing stickies to move into clusters). */

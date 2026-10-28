@@ -6,6 +6,7 @@ import { Avatar, Button, IconButton, Input, Modal, Select, Spinner, useToast, ty
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { copyText } from '../lib/hooks';
+import { LinkedFrom } from './LinkedFrom';
 import { LinkProtection } from './LinkProtection';
 import './ShareDialog.css';
 
@@ -467,6 +468,14 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
                 }}
               />
             ) : null}
+
+            <LinkedFrom
+              boardId={boardId}
+              onOpen={(path) => {
+                onClose();
+                navigate(path);
+              }}
+            />
 
             {!isOwner && isMember ? (
               <div className="fr-share__leave">

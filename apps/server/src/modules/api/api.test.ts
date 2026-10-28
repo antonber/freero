@@ -28,7 +28,7 @@ beforeAll(async () => {
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}${mountPath}`;
   const me = await createUser({ name: 'Spec', email: 'spec@api.test.freero.app', password: 'password-123' });
-  full = (await createPersonalToken(me.id, 'password', { name: 'all', scopes: ['boards:read', 'boards:write', 'comments:write', 'members:read', 'members:write'], expiresInDays: 1 })).secret;
+  full = (await createPersonalToken(me.id, 'password', { name: 'all', scopes: ['boards:read', 'boards:write', 'boards:suggest', 'comments:write', 'members:read', 'members:write'], expiresInDays: 1 })).secret;
   readOnly = (await createPersonalToken(me.id, 'password', { name: 'read', scopes: ['boards:read'], expiresInDays: 1 })).secret;
 });
 afterAll(async () => {
@@ -131,6 +131,21 @@ it('what the API answers in a real session has the shapes its reference promises
   await call('GET', `${B}/comments`, '/boards/{boardId}/comments');
   await call('GET', `${B}/members`, '/boards/{boardId}/members');
   await call('POST', `${B}/structure`, '/boards/{boardId}/structure', { structure: { kind: 'stickies', items: ['a', 'b'] }, target: 'preview' });
+  // Suggestions (KAI-169): proposed, listed (also in the outline), stale after an edit, forced, rejected.
+  const proposed = await call('POST', `${B}/suggestions`, '/boards/{boardId}/suggestions', {
+    description: 'Tidy up',
+    create: [{ type: 'sticky', text: 'Idea' }],
+    update: [{ id: sticky.id, text: 'Rewritten' }],
+  });
+  expect(proposed.status).toBe(201);
+  await call('GET', `${B}/suggestions`, '/boards/{boardId}/suggestions');
+  await call('GET', `${B}/outline?include=suggestions&format=markdown`, '/boards/{boardId}/outline');
+  await call('PATCH', `${B}/items/${sticky.id}`, '/boards/{boardId}/items/{itemId}', { text: 'Edited meanwhile' });
+  const groupId = proposed.json.group.id as string;
+  expect((await call('POST', `${B}/suggestions/accept`, '/boards/{boardId}/suggestions/accept', { groupId })).status).toBe(409);
+  await call('POST', `${B}/suggestions/accept`, '/boards/{boardId}/suggestions/accept', { groupId, force: true });
+  const second = await call('POST', `${B}/structure`, '/boards/{boardId}/structure', { structure: { kind: 'stickies', items: ['c'] }, target: 'suggestions' });
+  await call('POST', `${B}/suggestions/reject`, '/boards/{boardId}/suggestions/reject', { groupId: second.json.groupId });
   expect((await call('DELETE', `${B}/items/${frame.id}`, '/boards/{boardId}/items/{itemId}')).status).toBe(400); // takes its contents along
   await call('DELETE', `${B}/items/${frame.id}?confirm=true`, '/boards/{boardId}/items/{itemId}');
   await call('POST', `${B}/items/delete`, '/boards/{boardId}/items/delete', { ids: [card.id, shape.id], confirm: true });

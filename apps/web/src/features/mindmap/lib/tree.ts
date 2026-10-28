@@ -2,49 +2,21 @@
 // links; `rootId` is a denormalized hint only. Everything here is cycle-safe: a broken or
 // cyclic chain makes the affected nodes orphans (hidden), never an infinite loop.
 
-export type Direction = 'right' | 'left' | 'both';
-export type Side = 'right' | 'left';
+import { compareMindSiblings, indexMindNodes, mindCx, mindSideOf, type MindDirection, type MindNode, type MindSide, type MindTreeIndex } from '@freero/shared';
 
-/** The geometric/structural slice of a MindmapElement the algorithms need. */
-export interface MindNode {
-  id: string;
-  parentId: string | null;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  collapsed?: boolean;
-  direction?: Direction;
-  createdAt: number;
-}
+// The tree model and its ordering rules live in @freero/shared (layout/mindtree.ts), next to the
+// tidy-tree layout that layout from structure runs too: one definition for web and server.
+export type Direction = MindDirection;
+export type Side = MindSide;
+export type { MindNode };
+export type TreeIndex<N extends MindNode = MindNode> = MindTreeIndex<N>;
 
-export interface TreeIndex<N extends MindNode = MindNode> {
-  byId: Map<string, N>;
-  /** Children by parent id, in sibling order (top to bottom). */
-  kids: Map<string, N[]>;
-}
-
-const cy = (n: MindNode) => n.y + n.h / 2;
-export const cx = (n: MindNode) => n.x + n.w / 2;
-
+export const cx = mindCx;
 /** Sibling order: top to bottom, ties by creation. Layout preserves it, so it is stable. */
-export function compareSiblings(a: MindNode, b: MindNode): number {
-  return cy(a) - cy(b) || a.createdAt - b.createdAt || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
-}
-
-export function indexNodes<N extends MindNode>(nodes: readonly N[]): TreeIndex<N> {
-  const byId = new Map<string, N>();
-  const kids = new Map<string, N[]>();
-  for (const n of nodes) byId.set(n.id, n);
-  for (const n of nodes) {
-    if (!n.parentId) continue;
-    const list = kids.get(n.parentId);
-    if (list) list.push(n);
-    else kids.set(n.parentId, [n]);
-  }
-  for (const list of kids.values()) list.sort(compareSiblings);
-  return { byId, kids };
-}
+export const compareSiblings = compareMindSiblings;
+export const indexNodes = indexMindNodes;
+/** Which side of its parent a node sits on (decided by position, so it survives drags). */
+export const sideOf = mindSideOf;
 
 /** `id` followed by all its descendants (depth-first). */
 export function subtreeIds(index: TreeIndex, id: string): string[] {
@@ -75,10 +47,6 @@ export function rootOf<N extends MindNode>(index: TreeIndex<N>, id: string): N |
   return null;
 }
 
-/** Which side of its parent a node sits on (decided by position, so it survives drags). */
-export function sideOf(node: MindNode, parent: MindNode): Side {
-  return cx(node) < cx(parent) ? 'left' : 'right';
-}
 
 export interface NodeInfo {
   /** Not rendered and not hit-testable: under a collapsed ancestor, or its parent is gone. */

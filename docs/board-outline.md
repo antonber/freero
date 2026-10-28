@@ -36,6 +36,7 @@ Query parameters:
 | `scope` | — | an item id (a frame, cluster, kanban, mind-map root …): only it and what is under it |
 | `authors` | `0` | `1`: each item's creator (current display name) |
 | `comments` | `1` | `0`: leave comment threads out |
+| `include` | — | `suggestions`: also the pending suggestions (KAI-169), as `suggestions` (JSON) or a "Suggestions" section (Markdown): proposed changes that are NOT on the board, each read the way its item would read once accepted (a deletion: the item it deletes), with who proposed it and whether it is stale. Owners and editors only (an empty list for anyone else); never paged, budgeted or counted in `meta` |
 
 Caching and changes: the `ETag` is the outline `version`, which changes whenever anything the caller
 can see changes; send it back as `If-None-Match` to get `304 Not Modified` cheaply. (Display-name
@@ -137,7 +138,7 @@ files of their own feature, and type-only imports from anywhere [W13]. `npm run 
 Owners and editors. Body (`InsertStructureRequest`):
 
 ```
-{ structure: StructureInput, near?: elementId, at?: { x, y }, target?: 'board' | 'preview' }
+{ structure: StructureInput, near?: elementId, at?: { x, y }, target?: 'board' | 'preview' | 'suggestions', description?: string }
 ```
 
 | `structure.kind` | input | result |
@@ -147,9 +148,11 @@ Owners and editors. Body (`InsertStructureRequest`):
 | `stickies` | `items: string[]`, `title?`, `color?` | a near-square grid of stickies under a title |
 | `clusters` | `clusters: [{ title?, color?, items: Array<string \| { id }> }]` | titled sticky grids side by side; `{ id }` moves a sticky (card, shape …) already on the board into its cluster, with its reaction stamps |
 | `graph` | `nodes: [{ id, text, shape? }]`, `edges: [{ from, to, label?, style?, arrow? }]`, `direction?`, `groups?: [{ id, title, nodes, parent? }]` | shapes joined by attached connectors; groups become frames holding their nodes; an edge may name a group (attaches to its frame) |
-| `mermaid` | `source` | a flowchart (`flowchart`/`graph` TB·TD·BT·LR·RL; node shapes `[] () ([]) [[]] [()] (()) {} {{}} [//] [\\]`; links `-->`, `---`, `-.->`, `==>`, `<-->`, `--o`, `--x`, labels `\|x\|` or `-- x -->`; `&`; subgraphs → frames) or a `sequenceDiagram` (participants / actors, messages `->> -->> -> --> -x -)`, notes); styling directives are skipped |
+| `mermaid` | `source` | a flowchart (`flowchart`/`graph` TB·TD·BT·LR·RL; node shapes `[] () ([]) [[]] [()] (()) {} {{}} [//] [\\]`; links `-->`, `---`, `-.->`, `==>`, `<-->`, `--o`, `--x`, labels `\|x\|` or `-- x -->`; `&`; subgraphs → frames) or a `sequenceDiagram` (participants / actors, messages `->> -->> -> --> -x -)`, notes), or a `mindmap` (one root, nesting by indentation, node brackets `[] () (()) ))(( )( {{}}`; icons and classes skipped) → a mind map; styling directives are skipped |
 | `sequence` | `diagram: { participants, steps }` | same as a Mermaid sequence diagram |
 | `table` | `rows: string[][]`, `header?` | a table, columns and rows sized to their text |
+| `kanban` | `columns: [{ title, items: string[] }]`, `title?` | a kanban board with a task card per item, stacked in its column; a column titled like "To do", "In progress" or "Done" gives its cards that status |
+| `orgchart` | `people: [{ name, title?, manager?, id? }]` (`manager` = another person's `id` or name) | a top-down org chart: name / title boxes, each manager centered over their reports, joined by connectors; an unknown manager or a reporting circle is refused |
 | `note` | `text`, `title?` | a written note (summaries): a soft rounded card, the title in bold, paragraphs and bullet lines kept (8 000 characters) |
 
 Placement: on the free spot nearest to `near` (just right of that element) or `at`, else the middle
@@ -171,9 +174,14 @@ and **nothing written**. Limits (`LAYOUT_LIMITS`): 2 000 elements per structure,
 per text, 100 000 characters of Mermaid, depth 24, 4 000 table cells. Rate limit:
 `RATE_LIMIT_STRUCTURE` per user.
 
+`target: 'suggestions'` (KAI-169) plans it exactly the same way but writes nothing to the board:
+the change becomes ONE group of suggestions (`groupId` in the response; `description` is shown to
+reviewers) that owners and editors accept or reject — see "Suggestions" in ARCHITECTURE.md (201).
+In the public API it needs only `boards:suggest`.
+
 The sink is a seam: `modules/structure/sinks.ts` maps `target` to where the planned `BoardChange`
-goes. The suggestions layer (KAI-169) adds a sink that stores it as suggestions instead of writing the
-shared doc.
+goes (`board` → `realtime.changeBoard`, `preview` → returned, `suggestions` →
+`realtime.proposeSuggestions`).
 
 ### Layout engine (`@freero/shared` `layout/`)
 
@@ -185,3 +193,11 @@ choice: `@freero/shared` has no dependencies (it runs in both apps), so a librar
 the layout to one side; dagre (MIT) was the fallback considered; elkjs (EPL-2.0, weak copyleft) was
 not used. Text is sized from a per-character width table for Inter (slightly generous); the web
 re-measures with the real font when someone edits the element.
+
+Mind maps are laid out by `layoutMindTree` (`layout/mindtree.ts`), the very function the web's
+mind-map feature runs to tidy a map up, so a map inserted here is already tidy there. Org charts use
+`tidyTree` (`layout/tidy.ts`: parents centered over their children), which the app's
+"Auto-layout ▸ Tree / Org chart" runs too. `LaidOut.keys` names the source item behind each element
+(`n:<node>`, `e:<from>><to>#<k>`, `g:<group>`, `t:<path of texts>`, `p:` / `m:` / `note:` in sequences):
+the app keeps an inserted diagram's source and, when it is edited, re-lays it out onto the elements
+it already made (see "Diagrams as code" in ARCHITECTURE.md).

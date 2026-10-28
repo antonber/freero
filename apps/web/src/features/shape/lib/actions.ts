@@ -23,12 +23,38 @@ export function shapeDefaults(kind: ShapeKind): ShapeStyle {
   };
 }
 
+/** Wireframe kit: grey low-fi lines and a readable fixed text size, whatever was used last. */
+const WIREFRAME: Partial<ShapeStyle> = { fill: '#FFFFFF', fillOpacity: 1, stroke: '#4B4A63', strokeWidth: 2, strokeStyle: 'solid', fontSize: 14, textColor: '#4B4A63', align: 'left', vAlign: 'middle' };
+const HINT = '#8A89A3';
+const wire = (text: string, extra: Partial<ShapeStyle> = {}): Partial<ShapeStyle> => ({ ...WIREFRAME, text, ...extra });
+
 /**
  * What a kind needs whatever style was used last: a combined fragment stays see-through (it
  * frames messages), an entity starts as a small table (title, then one attribute per line, keys
- * marked) with its text top-left at a fixed size.
+ * marked) with its text top-left at a fixed size, wireframe controls start low-fi with a label.
  */
 const KIND_STYLE: Partial<Record<ShapeKind, Partial<ShapeStyle>>> = {
+  wfBrowser: wire('example.com', { fontSize: 13, textColor: HINT }),
+  wfPhone: wire('<b>Screen title</b>', { fontSize: 16 }),
+  wfTablet: wire('<b>Screen title</b>', { fontSize: 16 }),
+  wfDesktop: wire('<b>Screen title</b>', { fontSize: 16 }),
+  wfButton: wire('Button', { fill: '#F2F1F7', align: 'center' }),
+  wfInput: wire('Email address', { textColor: HINT }),
+  wfSearch: wire('Search', { textColor: HINT }),
+  wfTextArea: wire('Write a message…', { textColor: HINT, vAlign: 'top' }),
+  wfCheckbox: wire('Remember me'),
+  wfRadio: wire('Option'),
+  wfToggle: wire('Notifications'),
+  wfDropdown: wire('Choose…'),
+  wfTabs: wire('Overview', { align: 'center' }),
+  wfNavBar: wire('<b>Product</b>', { fontSize: 16 }),
+  wfCard: wire('<b>Card title</b>', { vAlign: 'top' }),
+  wfList: wire('<b>List title</b>'),
+  wfImage: wire('', { fill: '#F2F1F7' }),
+  wfAvatar: wire('', { fill: '#F2F1F7', align: 'center' }),
+  wfSlider: wire('Volume'),
+  wfModal: wire('<b>Dialog title</b>', { fontSize: 16 }),
+  wfProgress: wire('', { fill: '#FFFFFF' }),
   umlFragment: { fill: 'transparent', fillOpacity: 0, fontSize: 14, align: 'left' },
   umlActivation: { fill: '#F2F1F7' },
   erdEntity: {

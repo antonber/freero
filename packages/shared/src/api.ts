@@ -1048,12 +1048,18 @@ export interface InsertStructureRequest {
   /**
    * 'board' (default): written to the board now, one change (attributed to the caller, published
    * and saved). 'preview': laid out and placed but not written; the app can insert `snapshot`
-   * itself with Editor.insertElements (one undo step) and apply `moves`.
+   * itself with Editor.insertElements (one undo step) and apply `moves`. 'suggestions' (KAI-169):
+   * proposed, not written: one group of suggestions people who can edit accept or reject
+   * (`suggestion` carries the group's description).
    */
-  target?: 'board' | 'preview';
+  target?: 'board' | 'preview' | 'suggestions';
+  /** target 'suggestions': what the proposal does, shown to reviewers (at most 500 characters). */
+  description?: string;
 }
 export interface InsertStructureResponse {
-  target: 'board' | 'preview';
+  target: 'board' | 'preview' | 'suggestions';
+  /** target 'suggestions': the group the proposal became. */
+  groupId?: string;
   /** Ids of the new elements (written, or in `snapshot`). */
   created: string[];
   /** Existing elements moved into the result (clusters of stickies already on the board). */
@@ -1120,8 +1126,13 @@ export interface AiActionRequest {
   ids?: string[];
   /** diagram: what to draw (default flowchart). */
   diagram?: AiDiagramKind;
-  /** 'preview' (default): laid out and placed, not written. 'board': written now as one change. */
-  target?: 'board' | 'preview';
+  /**
+   * 'preview' (default): laid out and placed, not written. 'board': written now as one change.
+   * 'suggestions' (KAI-169): proposed for people who can edit to accept ("AI for <Person>"). A
+   * result that moves OTHER people's items (sorting their notes) is always proposed, whatever was
+   * asked: the response's `target` says what happened.
+   */
+  target?: 'board' | 'preview' | 'suggestions';
   near?: string;
   at?: { x: number; y: number };
 }
@@ -1402,6 +1413,9 @@ export const AUDIT_ACTIONS = {
   'board.link_password_refused': 'Gave a wrong password for a board’s link',
   'board.call_link_changed': 'Changed a board’s call link',
   'version.restored': 'Restored a board version',
+  'board.suggestion_accepted': 'Accepted suggested changes on a board',
+  'board.suggestion_rejected': 'Rejected suggested changes on a board',
+  'board.suggestion_reopened': 'Undid accepting or rejecting suggested changes',
   'template.saved': 'Saved a board as a template',
   'audit.exported': 'Exported the audit log',
   // The public API (KAI-104) and agent safety (KAI-170): credentials, apps and every API call.

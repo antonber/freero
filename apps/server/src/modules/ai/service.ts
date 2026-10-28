@@ -5,6 +5,7 @@
 // tokens and outcome, never the prompt or board content.
 import {
   AI_LIMITS,
+  MAX_SUGGESTION_DESCRIPTION,
   renderOutlineMarkdown,
   estimateTokens,
   rotatedBounds,
@@ -17,12 +18,14 @@ import {
   type OutlineItem,
   type Point,
   type StructureInput,
+  type SuggestionAuthor,
 } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { badRequest, HttpError } from '../../platform/http';
 import { log } from '../../platform/log';
 import { consumeRateLimit } from '../../platform/rateLimit';
 import { recordAudit } from '../audit/index';
+import { getUser } from '../auth/index';
 import { requireBoardDownload } from '../boards/index';
 import { boardOutline } from '../outline/index';
 import { readBoardView } from '../realtime/index';
@@ -31,6 +34,14 @@ import { decideAi, type AiGrant } from './access';
 import { callModel, ProviderError } from './providers';
 import * as repo from './repo';
 import { clusterTask, diagramTask, ideasTask, InvalidOutput, parseReply, summarizeTask, TASKS, type ClusterItem, type TaskPlan } from './tasks';
+
+/** What an AI action proposes, as its suggestions' description (reviewers read it). */
+const TASK_DESCRIPTIONS: Record<AiActionRequest['task'], string> = {
+  ideas: 'Ideas',
+  cluster: 'Sorted into themes',
+  summarize: 'Summary',
+  diagram: 'Diagram',
+};
 
 /** Calendar month (UTC) usage is counted in. */
 export const monthOf = (at = Date.now()) => new Date(at).toISOString().slice(0, 7);
@@ -48,7 +59,8 @@ function parseActionRequest(body: unknown): AiActionRequest {
   if (b.ids !== undefined && (!Array.isArray(b.ids) || b.ids.length > AI_LIMITS.ids || b.ids.some((id) => typeof id !== 'string' || !id || id.length > 200)))
     throw badRequest(`ids must be a list of at most ${AI_LIMITS.ids} element ids`);
   if (b.diagram !== undefined && !DIAGRAMS.includes(b.diagram)) throw badRequest(`diagram must be one of ${DIAGRAMS.join(', ')}`);
-  if (b.target !== undefined && b.target !== 'board' && b.target !== 'preview') throw badRequest('target must be board or preview');
+  if (b.target !== undefined && b.target !== 'board' && b.target !== 'preview' && b.target !== 'suggestions')
+    throw badRequest('target must be board, preview or suggestions');
   if (b.near !== undefined && (typeof b.near !== 'string' || !b.near || b.near.length > 200)) throw badRequest('near must be an element id');
   if (b.at !== undefined && (typeof b.at !== 'object' || !b.at || !Number.isFinite(b.at.x) || !Number.isFinite(b.at.y))) throw badRequest('at must be { x, y }');
   const prompt = b.prompt?.trim() ?? '';
@@ -131,7 +143,12 @@ async function readContent(boardId: string, userId: string, ids: string[] | unde
 }
 
 /** The selected loose items with text, numbered for clustering (locked ones stay where they are). */
-async function clusterItems(boardId: string, userId: string, role: AiGrant['role'], ids: string[]): Promise<{ items: ClusterItem[]; center: Point | null }> {
+async function clusterItems(
+  boardId: string,
+  userId: string,
+  role: AiGrant['role'],
+  ids: string[],
+): Promise<{ items: ClusterItem[]; center: Point | null; othersOwn: boolean }> {
   const [view, outline] = await Promise.all([
     readBoardView(boardId, { userId, role }),
     boardOutline(boardId, userId, `/board/${boardId}`, { format: 'json', limit: 5000, authors: false, comments: false }),
@@ -146,7 +163,9 @@ async function clusterItems(boardId: string, userId: string, role: AiGrant['role
     }
   const items = els.filter((el) => texts.has(el.id)).map((el) => ({ id: el.id, text: texts.get(el.id)! }));
   const b = unionRects(els.filter((el) => texts.has(el.id)).map((el) => rotatedBounds(el)));
-  return { items, center: b ? { x: b.x + b.w / 2, y: b.y + b.h / 2 } : null };
+  // Sorting moves the notes it sorts: someone else's notes are theirs to agree to move (KAI-169).
+  const othersOwn = els.some((el) => texts.has(el.id) && el.createdBy !== userId);
+  return { items, center: b ? { x: b.x + b.w / 2, y: b.y + b.h / 2 } : null, othersOwn };
 }
 
 /** The selected element furthest right: results about a selection land just right of it. */
@@ -241,13 +260,18 @@ export async function runAiAction(boardId: string, userId: string, body: unknown
   let plan: TaskPlan;
   let near = req.near;
   let at = req.at;
+  // Where the result lands: what was asked, except that a result changing OTHER people's items
+  // is never written (or previewed for writing) by one person's AI action: it is proposed, and
+  // the people who can edit the board accept or reject it (suggestions, KAI-169).
+  let target = req.target ?? 'preview';
   switch (req.task) {
     case 'ideas':
       plan = ideasTask(prompt, ids ? await readContent(boardId, userId, ids) : null);
       break;
     case 'cluster': {
-      const { items, center } = await clusterItems(boardId, userId, g.role, ids!);
+      const { items, center, othersOwn } = await clusterItems(boardId, userId, g.role, ids!);
       if (items.length < 2) throw badRequest('Select at least two unlocked notes with text to cluster');
+      if (othersOwn) target = 'suggestions';
       plan = clusterTask(prompt, items);
       // The groups form where the notes are (free space nearest to them).
       if (!near && center) at = center;
@@ -266,7 +290,7 @@ export async function runAiAction(boardId: string, userId: string, body: unknown
       break;
   }
 
-  const meta = { task: req.task, target: req.target ?? 'preview', items: ids?.length ?? 0 };
+  const meta = { task: req.task, target, items: ids?.length ?? 0 };
   // Tokens the calls used, also when they fail (the audit and the meter count them either way).
   const usage = { inputTokens: 0, outputTokens: 0 };
   let asked: Asked;
@@ -283,7 +307,10 @@ export async function runAiAction(boardId: string, userId: string, body: unknown
   const tokens = { ...usage };
   let placed;
   try {
-    placed = await insertStructure(boardId, userId, { structure: asked.structure, near, at, target: req.target });
+    // Proposed by the AI for this person: the badge reads "AI for <Person>".
+    const description = `${TASK_DESCRIPTIONS[req.task]}${prompt ? `: ${prompt}` : ''}`.slice(0, MAX_SUGGESTION_DESCRIPTION);
+    const author: SuggestionAuthor = { kind: 'ai', name: 'AI', userId, userName: (await getUser(userId))?.name ?? '' };
+    placed = await insertStructure(boardId, userId, { structure: asked.structure, near, at, target, description }, { author });
   } catch (e) {
     await auditAi(g, userId, { ...meta, ...tokens, outcome: 'not_placed' });
     throw e;

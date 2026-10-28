@@ -21,6 +21,7 @@ import {
   addSibling,
   currentIndex,
   deleteBranches,
+  insertOutline,
   isNode,
   isQuiet,
   moveAmongSiblings,
@@ -30,6 +31,7 @@ import {
   type NavKey,
 } from './lib/actions';
 import { planFollow } from './lib/follow';
+import { outlineFromPaste } from './lib/outline';
 import './mindmap.css';
 
 type Side = 'left' | 'right';
@@ -231,6 +233,17 @@ export default defineElement({
     return false;
   },
   toPlainText: (el) => richTextToPlain(el.text),
+  // A pasted outline (two or more levels of indentation) becomes a map, or the selected topic's
+  // branches. Ahead of tables (tab-indented outlines aren't cells) and of the sticky notes' list
+  // rule (flat lists stay stickies); outlineFromPaste says what counts.
+  importPriority: 25,
+  importData(editor, data, at) {
+    if (data.files.length || !editor.mayAdd('mindmap')) return false;
+    const roots = outlineFromPaste(data.text);
+    if (!roots) return false;
+    insertOutline(editor, roots, at, selectedNode(editor)?.id);
+    return true;
+  },
   // Dragged branches travel whole; any other local change to a map re-lays it out — in the
   // same transaction (one undo step), and only on the client that made the change.
   follow(el, change) {

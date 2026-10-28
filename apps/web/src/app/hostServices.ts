@@ -1,6 +1,6 @@
 // Thin wrappers over the REST client for building the engine's `Host`
 // (see Host in engine/api.ts). Used from app/board/.
-import type { SavedTemplateSummary } from '@freero/shared';
+import type { ResolvedObject, SavedTemplateSummary } from '@freero/shared';
 import type { ElementsSnapshot, Host, HostUser, LinkPreview, SavedTemplateInfo, VersionHistory } from '@engine';
 import { api } from './api/client';
 
@@ -126,6 +126,49 @@ export async function saveThumbnail(id: string, dataUrl: string): Promise<void> 
 
 export function unfurl(url: string): Promise<LinkPreview> {
   return api.unfurl(url);
+}
+
+// Object addresses (smart links, KAI-149): every address asked for within one frame goes out as ONE
+// request, and answers are kept briefly so a board full of chips doesn't ask again on every
+// render — but a renamed target shows its new name on the next view.
+const RESOLVE_TTL_MS = 15_000;
+const resolvedCache = new Map<string, { at: number; value: ResolvedObject }>();
+let waiting: Map<string, Array<{ resolve: (r: ResolvedObject) => void; reject: (e: unknown) => void }>> | null = null;
+
+function flushResolve(): void {
+  const batch = waiting;
+  waiting = null;
+  if (!batch) return;
+  const uris = [...batch.keys()];
+  api.resolveObjects(uris).then(
+    ({ objects }) => {
+      const at = Date.now();
+      objects.forEach((r, i) => {
+        resolvedCache.set(uris[i], { at, value: r });
+        for (const w of batch.get(uris[i]) ?? []) w.resolve(r);
+      });
+    },
+    (e) => {
+      for (const ws of batch.values()) for (const w of ws) w.reject(e);
+    },
+  );
+}
+
+export function resolveObjects(uris: string[]): Promise<ResolvedObject[]> {
+  const now = Date.now();
+  return Promise.all(
+    uris.map((uri) => {
+      const hit = resolvedCache.get(uri);
+      if (hit && now - hit.at < RESOLVE_TTL_MS) return Promise.resolve(hit.value);
+      return new Promise<ResolvedObject>((resolve, reject) => {
+        if (!waiting) {
+          waiting = new Map();
+          setTimeout(flushResolve, 16);
+        }
+        waiting.set(uri, [...(waiting.get(uri) ?? []), { resolve, reject }]);
+      });
+    }),
+  );
 }
 
 export function importImage(url: string): Promise<{ url: string }> {

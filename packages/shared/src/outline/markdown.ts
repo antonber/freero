@@ -114,6 +114,21 @@ export function renderOutlineMarkdown(o: BoardOutline, opts: MarkdownOptions = {
     out.push('', '## Notes');
     for (const n of o.notes) out.push(`- ${oneLine(n)}`);
   }
+  if (o.suggestions?.length) {
+    out.push('', '## Suggestions (proposed, not on the board until someone accepts them)');
+    const groups = new Map<string, NonNullable<BoardOutline['suggestions']>>();
+    for (const s of o.suggestions) groups.set(s.groupId, [...(groups.get(s.groupId) ?? []), s]);
+    for (const [groupId, list] of groups) {
+      const first = list[0];
+      out.push(`- group [${groupId}] by ${oneLine(first.by)}${first.description ? `: ${quote(first.description)}` : ''}`);
+      for (const s of list) {
+        const what = s.title && s.text ? `${oneLine(s.title)} — ${oneLine(s.text)}` : oneLine(s.title ?? s.text ?? '');
+        const verb = s.op === 'create' ? 'add' : s.op === 'update' ? `change ${(s.changes ?? []).join(', ')}` : 'delete';
+        const stale = s.state === 'ready' ? '' : ` · stale (${s.state === 'changed' ? 'the item changed since' : 'the item is gone'})`;
+        out.push(`  - suggestion [${s.id}] ${verb} [${s.itemId}] ${s.kind ?? 'item'}${what ? `: ${what}` : ''}${stale}`);
+      }
+    }
+  }
   if (o.meta.truncated) {
     out.push('');
     out.push(

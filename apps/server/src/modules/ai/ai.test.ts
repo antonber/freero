@@ -148,12 +148,13 @@ it('10 000 ideas from the model become at most 30 stickies, laid out by Freero o
 
 it('clustering moves only the selected, unlocked notes; numbers the model invents or repeats are ignored and unplaced notes land in "Other"', async () => {
   const owner = await user('Cluster');
+  const mine = { createdBy: owner.id }; // their own notes: sorting them is theirs to do directly
   const boardId = await boardWith(owner.id, [
-    sticky('a', 0, 0, 'Slow builds'),
-    sticky('b', 220, 0, 'Flaky tests'),
-    sticky('c', 440, 0, 'Great pairing'),
-    sticky('d', 660, 0, 'Nice offsite'),
-    sticky('locked', 880, 0, 'Pinned note', { locked: true }),
+    sticky('a', 0, 0, 'Slow builds', mine),
+    sticky('b', 220, 0, 'Flaky tests', mine),
+    sticky('c', 440, 0, 'Great pairing', mine),
+    sticky('d', 660, 0, 'Nice offsite', mine),
+    sticky('locked', 880, 0, 'Pinned note', { ...mine, locked: true }),
     sticky('other', 2000, 2000, 'Not selected'),
   ]);
   // Items are numbered in the order the model sees them; 'locked' is never offered.
@@ -169,6 +170,21 @@ it('clustering moves only the selected, unlocked notes; numbers the model invent
   expect(els.get('other')).toMatchObject({ x: 2000, y: 2000 });
   const titles = res.created.map((id) => els.get(id)).filter((e) => e?.type === 'text').map((e) => (e as { text: string }).text.replace(/<[^>]+>/g, ''));
   expect(titles.sort()).toEqual(['Other', 'People', 'Tooling']);
+});
+
+it('sorting someone else’s notes never moves them, even when asked to write: it lands as suggestions from "AI for <the person>" (KAI-169)', async () => {
+  const owner = await user('Sorter');
+  const boardId = await boardWith(owner.id, [sticky('p', 0, 0, 'Slow builds'), sticky('q', 220, 0, 'Great pairing', { createdBy: owner.id })]);
+  replies = [JSON.stringify({ clusters: [{ title: 'Tooling', notes: [1] }, { title: 'People', notes: [2] }] })];
+
+  const res = await runAiAction(boardId, owner.id, { task: 'cluster', ids: ['p', 'q'], target: 'board' });
+
+  expect(res.target).toBe('suggestions');
+  const view = await readBoardView(boardId, { userId: owner.id, role: 'owner' });
+  expect(view.elements.map((e) => [e.el.id, e.el.x, e.el.y])).toEqual(expect.arrayContaining([['p', 0, 0], ['q', 220, 0]]));
+  expect(view.elements).toHaveLength(2); // no titles written either
+  expect(view.suggestions.length).toBeGreaterThan(0);
+  expect(view.suggestions.every((s) => s.author.kind === 'ai' && s.author.userName === owner.name && s.groupId === res.groupId)).toBe(true);
 });
 
 // ---- who may use it, budgets, policies ----

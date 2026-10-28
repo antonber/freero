@@ -124,16 +124,29 @@ export default function apiRoutes(_ctx: ServerContext): Router {
     return { body: await api.deleteItems(call, call.req.params.boardId, [...new Set(b.ids as string[])], b.confirm, true) };
   });
 
-  // Layout from structure: the caller says what, Freero places it (preview writes nothing).
+  // Layout from structure: the caller says what, Freero places it (preview writes nothing;
+  // suggestions proposes it for people to accept, KAI-169).
+  const STRUCTURE_SCOPE: Record<string, ApiScope> = { preview: 'boards:read', suggestions: 'boards:suggest' };
   endpoint(
     'post',
     '/boards/:boardId/structure',
-    (req) => ((req.body as { target?: unknown } | undefined)?.target === 'preview' ? 'boards:read' : 'boards:write'),
+    (req) => STRUCTURE_SCOPE[String((req.body as { target?: unknown } | undefined)?.target)] ?? 'boards:write',
     async (call) => {
       const result = await api.insertStructureFor(call, call.req.params.boardId, call.req.body);
-      return { status: result.target === 'board' ? 201 : 200, body: result };
+      return { status: result.target === 'preview' ? 200 : 201, body: result };
     },
   );
+
+  // ---- suggestions (KAI-169): propose with boards:suggest, read with boards:read, decide with boards:write ----
+  endpoint('get', '/boards/:boardId/suggestions', 'boards:read', async (call) => ({
+    body: await api.listSuggestions(call, call.req.params.boardId, { groupId: call.req.query.groupId }),
+  }));
+  endpoint('post', '/boards/:boardId/suggestions', 'boards:suggest', async (call) => ({ status: 201, body: await api.proposeChanges(call, call.req.params.boardId, call.req.body) }));
+  for (const status of ['accepted', 'rejected'] as const)
+    endpoint('post', `/boards/:boardId/suggestions/${status === 'accepted' ? 'accept' : 'reject'}`, 'boards:write', async (call) => {
+      const out = await api.decideSuggestions(call, call.req.params.boardId, status, call.req.body);
+      return 'stale' in out ? { status: 409, body: out } : { body: out };
+    });
 
   // ---- comments ----
   endpoint('get', '/boards/:boardId/comments', 'boards:read', async (call) => ({ body: await api.listComments(call, call.req.params.boardId) }));

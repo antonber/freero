@@ -1,24 +1,28 @@
-// A picture of an AI result before it lands: the previewed elements (and the notes it would move,
-// at their new places) drawn as a small SVG from their own data. Text is set as React text
-// children, never markup, so nothing in a model's answer can inject HTML here.
+// A picture of board content before it lands (AI results, "Insert from text"): the elements (and
+// items that would be moved, at their new places) drawn as a small SVG from their own data. Text is
+// set as React text children, never markup, so nothing in the content can inject HTML here.
 import { STICKY_COLORS, richTextToPlain, type BoardElement } from '@freero/shared';
+import './ElementsPreview.css';
 
-interface Props {
+export interface ElementsPreviewProps {
   elements: BoardElement[];
   /** Existing items shown where the result would move them. */
   moved?: BoardElement[];
+  /** Accessible name (default "Preview"). */
+  label?: string;
+  className?: string;
 }
 
 const text = (el: BoardElement): string => {
   const e = el as { text?: string; title?: string };
-  return richTextToPlain(e.text ?? '') || e.title || '';
+  return richTextToPlain(e.text ?? '') || richTextToPlain(e.title ?? '');
 };
 
 function Box({ x, y, w, h, value, size, align = 'center', bold = false }: { x: number; y: number; w: number; h: number; value: string; size: number; align?: 'center' | 'left'; bold?: boolean }) {
   if (!value) return null;
   return (
     <foreignObject x={x} y={y} width={Math.max(1, w)} height={Math.max(1, h)}>
-      <div className={`fr-ai-preview__text fr-ai-preview__text--${align}`} style={{ fontSize: size, fontWeight: bold ? 600 : 400 }}>
+      <div className={`fr-elements-preview__text fr-elements-preview__text--${align}`} style={{ fontSize: size, fontWeight: bold ? 600 : 400 }}>
         {value}
       </div>
     </foreignObject>
@@ -89,11 +93,75 @@ function draw(el: BoardElement, byId: Map<string, BoardElement>) {
         </g>
       );
     }
-    case 'connector': {
-      const c = el as BoardElement & { start: { x: number; y: number }; end: { x: number; y: number }; label?: string };
+    case 'kanban': {
+      const k = el as BoardElement & { colW: number; columns: Array<{ id: string; title: string; color: string }> };
       return (
         <g key={el.id}>
-          <line x1={c.start.x} y1={c.start.y} x2={c.end.x} y2={c.end.y} stroke="var(--fr-ink-2)" strokeWidth={2} markerEnd="url(#fr-ai-arrow)" />
+          <rect x={x} y={y} width={w} height={h} rx={10} fill="var(--fr-surface-2)" stroke="var(--fr-line)" strokeWidth={2} />
+          <Box x={x + 14} y={y + 8} w={w - 28} h={36} value={text(el)} size={18} align="left" bold />
+          {k.columns.map((c, i) => {
+            const cx = x + 12 + i * (k.colW + 12);
+            return (
+              <g key={c.id}>
+                <rect x={cx} y={y + 52} width={k.colW} height={h - 64} rx={8} fill="#fff" />
+                <rect x={cx} y={y + 52} width={k.colW} height={4} fill={c.color} />
+                <Box x={cx + 10} y={y + 58} w={k.colW - 20} h={32} value={richTextToPlain(c.title)} size={15} align="left" bold />
+              </g>
+            );
+          })}
+        </g>
+      );
+    }
+    case 'card': {
+      const c = el as BoardElement & { color: string };
+      return (
+        <g key={el.id}>
+          <rect x={x} y={y} width={w} height={h} rx={8} fill="#fff" stroke="var(--fr-line)" strokeWidth={1.5} />
+          <rect x={x} y={y} width={5} height={h} rx={2} fill={c.color} />
+          <Box x={x + 18} y={y + 10} w={w - 30} h={h - 20} value={text(el)} size={14} align="left" bold />
+        </g>
+      );
+    }
+    case 'table': {
+      const t = el as BoardElement & { rows: Array<{ id: string; h: number }>; cols: Array<{ id: string; w: number }> };
+      let cy = y;
+      let cx = x;
+      return (
+        <g key={el.id}>
+          <rect x={x} y={y} width={w} height={h} fill="#fff" stroke="var(--fr-line-strong)" strokeWidth={1.5} />
+          <rect x={x} y={y} width={w} height={t.rows[0]?.h ?? 0} fill="var(--fr-surface-3)" />
+          {t.rows.slice(0, -1).map((r) => {
+            cy += r.h;
+            return <line key={r.id} x1={x} x2={x + w} y1={cy} y2={cy} stroke="var(--fr-line-strong)" />;
+          })}
+          {t.cols.slice(0, -1).map((c) => {
+            cx += c.w;
+            return <line key={c.id} x1={cx} x2={cx} y1={y} y2={y + h} stroke="var(--fr-line-strong)" />;
+          })}
+        </g>
+      );
+    }
+    case 'connector': {
+      const c = el as BoardElement & { start: { x: number; y: number }; end: { x: number; y: number }; endCap?: string; strokeStyle?: string; label?: string };
+      const label = richTextToPlain(c.label ?? '');
+      const mid = { x: (c.start.x + c.end.x) / 2, y: (c.start.y + c.end.y) / 2 };
+      return (
+        <g key={el.id}>
+          <line
+            x1={c.start.x}
+            y1={c.start.y}
+            x2={c.end.x}
+            y2={c.end.y}
+            stroke="var(--fr-ink-2)"
+            strokeWidth={2}
+            strokeDasharray={c.strokeStyle === 'dashed' ? '8 6' : undefined}
+            markerEnd={c.endCap && c.endCap !== 'none' ? 'url(#fr-elements-preview-arrow)' : undefined}
+          />
+          {label && (
+            <text x={mid.x} y={mid.y - 6} fontSize={13} textAnchor="middle" fill="var(--fr-ink-2)" className="fr-elements-preview__label">
+              {label}
+            </text>
+          )}
         </g>
       );
     }
@@ -102,7 +170,7 @@ function draw(el: BoardElement, byId: Map<string, BoardElement>) {
   }
 }
 
-export function AiPreview({ elements, moved = [] }: Props) {
+export function ElementsPreview({ elements, moved = [], label = 'Preview', className }: ElementsPreviewProps) {
   const all = [...elements, ...moved];
   if (!all.length) return null;
   const minX = Math.min(...all.map((e) => e.x));
@@ -111,13 +179,19 @@ export function AiPreview({ elements, moved = [] }: Props) {
   const maxY = Math.max(...all.map((e) => e.y + e.h));
   const pad = Math.max(maxX - minX, maxY - minY) * 0.04 + 24;
   const byId = new Map(elements.map((e) => [e.id, e]));
-  // Frames below, lines below boxes (like on the board).
-  const order = (e: BoardElement) => (e.type === 'frame' ? 0 : e.type === 'connector' ? 1 : 2);
+  // Frames and boards below, lines below boxes (like on the board).
+  const order = (e: BoardElement) => (e.type === 'frame' || e.type === 'kanban' ? 0 : e.type === 'connector' ? 1 : 2);
   const sorted = [...all].sort((a, b) => order(a) - order(b));
   return (
-    <svg className="fr-ai-preview" viewBox={`${minX - pad} ${minY - pad} ${maxX - minX + pad * 2} ${maxY - minY + pad * 2}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label="Preview of the result">
+    <svg
+      className={`fr-elements-preview${className ? ` ${className}` : ''}`}
+      viewBox={`${minX - pad} ${minY - pad} ${maxX - minX + pad * 2} ${maxY - minY + pad * 2}`}
+      preserveAspectRatio="xMidYMid meet"
+      role="img"
+      aria-label={label}
+    >
       <defs>
-        <marker id="fr-ai-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <marker id="fr-elements-preview-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
           <path d="M0,0 L10,5 L0,10 z" fill="var(--fr-ink-2)" />
         </marker>
       </defs>

@@ -25,6 +25,7 @@ export type ElementType =
   | 'swimlane'
   | 'media'
   | 'file'
+  | 'objectlink'
   | 'activity';
 
 /**
@@ -66,6 +67,11 @@ export interface BaseElement {
    * places it; the engine clears it on copies whose target wasn't copied.
    */
   attachedTo?: string | null;
+  /**
+   * [additive] Accepted from a suggestion (KAI-169): who proposed it. `createdBy` is the person who
+   * accepted it, so both are on the item.
+   */
+  suggestedBy?: { kind: 'person' | 'app' | 'ai'; name: string; userId: string } | null;
   createdBy: string;
   /**
    * The app or token that created it for `createdBy` (the public API or MCP, KAI-168): read as
@@ -192,7 +198,30 @@ export type ShapeKind =
   | 'netMonitor'
   | 'netLaptop'
   | 'netPhone'
-  | 'netUser';
+  | 'netUser'
+  // [additive] Wireframe kit (KAI-120): device frames and low-fidelity UI controls. Their corners
+  // and marks keep a fixed size when resized. Clients that don't know a kind draw its box.
+  | 'wfBrowser'
+  | 'wfPhone'
+  | 'wfTablet'
+  | 'wfDesktop'
+  | 'wfButton'
+  | 'wfInput'
+  | 'wfSearch'
+  | 'wfTextArea'
+  | 'wfCheckbox'
+  | 'wfRadio'
+  | 'wfToggle'
+  | 'wfDropdown'
+  | 'wfTabs'
+  | 'wfNavBar'
+  | 'wfCard'
+  | 'wfList'
+  | 'wfImage'
+  | 'wfAvatar'
+  | 'wfSlider'
+  | 'wfModal'
+  | 'wfProgress';
 
 export interface ShapeElement extends BaseElement, TextStyle {
   type: 'shape';
@@ -303,7 +332,7 @@ export interface FrameElement extends BaseElement {
   /** Order in presentation mode / frames panel. */
   index: number;
   /** Optional aspect preset used when created. */
-  preset?: 'custom' | '16:9' | '4:3' | '1:1' | 'a4' | 'letter' | 'mobile' | 'desktop';
+  preset?: 'custom' | '16:9' | '4:3' | '1:1' | 'a4' | 'letter' | 'mobile' | 'desktop' | 'tablet' /* [additive] */;
   /**
    * Contents hidden from viewers and commenters. Server-enforced: while set, everything inside
    * lives in the board's 'editors' layer, which the server sends only to owners/editors
@@ -428,6 +457,18 @@ export interface EmbedElement extends BaseElement {
   image: string | null;
   /** 'loading' while the preview is being fetched. */
   status: 'loading' | 'ready' | 'failed';
+}
+
+/**
+ * A smart link (KAI-149): a live chip for a Freero object address (a board, an item on one, a
+ * template…). It stores ONLY the address: the title and preview are resolved for each viewer when
+ * shown, permission-checked, so a board never carries the name of something its readers may not
+ * see, and a renamed target shows its new name.
+ */
+export interface ObjectLinkElement extends BaseElement {
+  type: 'objectlink';
+  /** Canonical object address (`freero://…`, see objects.ts). */
+  uri: string;
 }
 
 /**
@@ -608,6 +649,7 @@ export type BoardElement =
   | SwimlaneElement
   | MediaElement
   | FileElement
+  | ObjectLinkElement
   | ActivityElement;
 
 export type ElementOf<T extends ElementType> = Extract<BoardElement, { type: T }>;
