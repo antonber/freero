@@ -19,6 +19,8 @@ export interface Mail {
   subject: string;
   text: string;
   html: string;
+  /** Extra headers (renderMail sets List-Unsubscribe for messages with an unsubscribe link). */
+  headers?: Record<string, string>;
 }
 
 let transport: Transporter | null = null;
@@ -36,7 +38,7 @@ export function outboxDir(): string {
 export async function sendMail(mail: Mail): Promise<void> {
   const config = getConfig();
   if (config.smtpUrl) {
-    await smtp(config.smtpUrl).sendMail({ from: config.mailFrom, to: mail.to, subject: mail.subject, text: mail.text, html: mail.html });
+    await smtp(config.smtpUrl).sendMail({ from: config.mailFrom, to: mail.to, subject: mail.subject, text: mail.text, html: mail.html, headers: mail.headers });
     log(`mail: sent "${mail.subject}"`);
     return;
   }
@@ -66,30 +68,43 @@ const escapeHtml = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 /**
- * A plain, branded message: a title, paragraphs, an optional button and a closing note. Every
- * string is user-visible text (escaped here), never HTML.
+ * A plain, branded message: a title, paragraphs, optional items (a heading, a quoted excerpt and a
+ * link each — a digest), an optional button and a closing note. Every string is user-visible text
+ * (escaped here), never HTML. `unsubscribe` adds a footer link and the List-Unsubscribe headers
+ * (RFC 8058 one-click: `oneClickUrl` must accept a POST without a session).
  */
 export function renderMail(m: {
   subject: string;
   title: string;
   paragraphs: string[];
+  items?: Array<{ heading: string; quote?: string; link: { label: string; url: string } }>;
   action?: { label: string; url: string };
   outro?: string;
+  unsubscribe?: { label: string; url: string; oneClickUrl: string };
 }): Omit<Mail, 'to'> {
+  const items = m.items ?? [];
   const text = [
     m.title,
     '',
     ...m.paragraphs.flatMap((p) => [p, '']),
+    ...items.flatMap((i) => [i.heading, ...(i.quote ? [`  “${i.quote}”`] : []), `  ${i.link.label}: ${i.link.url}`, '']),
     ...(m.action ? [`${m.action.label}: ${m.action.url}`, ''] : []),
     ...(m.outro ? [m.outro, ''] : []),
     '— Freero',
+    ...(m.unsubscribe ? ['', `${m.unsubscribe.label}: ${m.unsubscribe.url}`] : []),
   ].join('\n');
   const p = (s: string) => `<p style="margin:0 0 16px;font-size:15px;line-height:22px;color:#2b2b33">${escapeHtml(s)}</p>`;
+  const item = (i: (typeof items)[number]) => `<div style="margin:0 0 16px;padding:14px 16px;border:1px solid #e6e6ec;border-radius:10px">
+<div style="font-size:15px;line-height:22px;color:#17171c;font-weight:600">${escapeHtml(i.heading)}</div>
+${i.quote ? `<div style="margin:6px 0 0;padding-left:10px;border-left:3px solid #d9d4fb;font-size:14px;line-height:20px;color:#4a4a55">${escapeHtml(i.quote)}</div>` : ''}
+<a href="${escapeHtml(i.link.url)}" style="display:inline-block;margin-top:8px;font-size:14px;color:#5b3ff0;font-weight:600;text-decoration:none">${escapeHtml(i.link.label)}</a>
+</div>`;
   const html = `<!doctype html><html><body style="margin:0;padding:24px;background:#f5f5f7;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif">
 <div style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:12px;padding:32px">
 <div style="font-weight:700;font-size:18px;color:#5b3ff0;margin-bottom:24px">Freero</div>
 <h1 style="margin:0 0 16px;font-size:20px;color:#17171c">${escapeHtml(m.title)}</h1>
 ${m.paragraphs.map(p).join('\n')}
+${items.map(item).join('\n')}
 ${
   m.action
     ? `<p style="margin:24px 0"><a href="${escapeHtml(m.action.url)}" style="display:inline-block;background:#5b3ff0;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600">${escapeHtml(m.action.label)}</a></p>
@@ -97,6 +112,14 @@ ${
     : ''
 }
 ${m.outro ? `<p style="margin:16px 0 0;font-size:13px;color:#6b6b76">${escapeHtml(m.outro)}</p>` : ''}
-</div></body></html>`;
-  return { subject: m.subject, text, html };
+</div>
+${
+  m.unsubscribe
+    ? `<p style="max-width:520px;margin:16px auto 0;text-align:center;font-size:12px;color:#8a8a95"><a href="${escapeHtml(m.unsubscribe.url)}" style="color:#8a8a95">${escapeHtml(m.unsubscribe.label)}</a></p>`
+    : ''
+}
+</body></html>`;
+  if (!m.unsubscribe) return { subject: m.subject, text, html };
+  const headers = { 'List-Unsubscribe': `<${m.unsubscribe.oneClickUrl}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' };
+  return { subject: m.subject, text, html, headers };
 }

@@ -78,6 +78,13 @@ export interface Config {
   accountDeletionGraceMs: number;
   /** How often each instance looks for accounts due to be purged. */
   accountPurgeIntervalMs: number;
+  /**
+   * How long a notification waits before it is emailed: everything a person got meanwhile goes out
+   * as one digest, and what they read in the app by then is not emailed at all.
+   */
+  notifyEmailDelayMs: number;
+  /** How often each instance looks for notification digests that are due. */
+  notifyEmailIntervalMs: number;
   rateLimits: Record<RateLimitName, RateLimitRule>;
 }
 
@@ -264,6 +271,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     shutdownDrainMs: int('SHUTDOWN_DRAIN_SECONDS', production ? 5 : 0, 0, 300) * 1000,
     accountDeletionGraceMs: int('ACCOUNT_DELETION_GRACE_DAYS', 14, 0, 365) * 86_400_000,
     accountPurgeIntervalMs: int('ACCOUNT_PURGE_INTERVAL_SECONDS', 3600, 1, 7 * 86_400) * 1000,
+    notifyEmailDelayMs: int('NOTIFY_EMAIL_DELAY_SECONDS', 900, 0, 7 * 86_400) * 1000,
+    notifyEmailIntervalMs: int('NOTIFY_EMAIL_INTERVAL_SECONDS', 60, 1, 86_400) * 1000,
     rateLimits,
   };
 
