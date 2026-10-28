@@ -31,9 +31,9 @@ CREATE TABLE sso_connections (
   enforced            boolean NOT NULL DEFAULT false,
   break_glass_user_id text REFERENCES users (id) ON DELETE SET NULL,
   -- Role of people who join through their first SSO sign-in (just-in-time).
+  -- (Session lifetime is the workspace's session policy, which applies to the person; a SAML
+  -- SessionNotOnOrAfter shortens the one session it signs in.)
   default_role        text NOT NULL DEFAULT 'member' CHECK (default_role IN ('admin', 'member', 'guest')),
-  -- Longest session an SSO sign-in gets (SAML SessionNotOnOrAfter shortens it further).
-  session_hours       integer NOT NULL DEFAULT 24 CHECK (session_hours BETWEEN 1 AND 720),
   saml_entity_id      text,                 -- the IdP's entityID (Issuer of its assertions)
   saml_sso_url        text,                 -- its SingleSignOnService (HTTP-Redirect binding)
   saml_certs          text,                 -- its signing certificates (PEM, one or more: rollover)

@@ -49,7 +49,7 @@ it('"Enforce SSO" refuses other ways in for the domain; the break-glass exemptio
   const [owner, other] = [await at(domain, 'owner'), await at(domain, 'other')];
   const ws = await createTeamWorkspace(owner.id, 'Enforced');
   await applyDirectoryMembership(ws.id, other.id, 'member', { overwrite: false });
-  await addDomain(ws.id, domain);
+  await addDomain(ws.id, owner.id, domain);
   const claim = (await repo.listDomains(ws.id))[0];
   setTxtLookupForTests(async (name) => (name === txtName(domain) ? [txtValue(claim.token)] : []));
   await verifyDomain(ws.id, claim.id, owner.id);
@@ -78,7 +78,7 @@ it('pointing the connection at another identity provider turns enforcement off u
   await saveConnection(ws.id, owner.id, conn);
   await repo.markTested(ws.id, Date.now());
   await setEnforcement(ws.id, actor, { enforced: true, breakGlassUserId: owner.id });
-  await saveConnection(ws.id, owner.id, { ...conn, sessionHours: 4 }); // same provider: still enforced
+  await saveConnection(ws.id, owner.id, { ...conn, defaultRole: 'guest' }); // same provider: still enforced
   expect((await repo.getConnection(ws.id))?.enforced).toBe(true);
   await saveConnection(ws.id, owner.id, { ...conn, oidcIssuer: 'https://idp-b.example' });
   const after = await repo.getConnection(ws.id);

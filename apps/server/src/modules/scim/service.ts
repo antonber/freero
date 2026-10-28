@@ -2,11 +2,12 @@
 //
 // Users: a provisioned person is an account at one of the workspace's VERIFIED domains (the
 // existing one, or a new passwordless, verified one) plus a scim_users record with what the
-// directory sent. Active = member of the workspace; `active: false` (or DELETE) deprovisions: they
-// leave the workspace and its projects, their boards there pass to an owner, their board sockets
-// close on every instance, and — the account being the organization's (its domain) — every session
-// they have ends, everywhere. A deactivated person can't come back through SSO just-in-time
-// sign-in; reactivating restores the membership.
+// directory sent. Active = member of the workspace; `active: false` (or DELETE) deprovisions with
+// the admin console's deactivation (one mechanism: the `blocked` rule of members' resolveRole):
+// they keep role and boards but open nothing in the workspace, their board sockets close on every
+// instance, and — the account being the organization's (its domain) — every session they have
+// ends, everywhere. A deactivated member can't sign in through the workspace's SSO; the
+// directory's `active: true` reactivates them.
 //
 // Groups: stored as the directory sends them. What a group grants is mapped by the workspace's
 // admins in Freero (not by the directory): a workspace ROLE (admin / member / guest — the highest
@@ -14,15 +15,16 @@
 // of the people it provisioned, and someone in no role group gets the default role), or a PROJECT
 // (members of mapped groups are its members; projects mapped by groups are directory-managed for
 // provisioned people). Owners are never changed by the directory.
-import { audit } from '../../platform/audit';
+import type { AuditAction, AuditMetadata } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { HttpError } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { log } from '../../platform/log';
 import { appUrl } from '../../platform/mail';
+import { recordAudit } from '../audit/index';
 import { endSessionsOf, provisionDirectoryAccount, setAccountName } from '../auth/index';
 import { defaultJoinRole, isOrganizationEmail } from '../sso/index';
-import { applyDirectoryMembership, removeDirectoryMember, setDirectoryProjectMembership, type DirectoryRole } from '../workspaces/index';
+import { applyDirectoryMembership, setDirectoryDeactivated, setDirectoryProjectMembership, type DirectoryRole } from '../workspaces/index';
 import { getKey } from './filter';
 import { scimBool } from './patch';
 import * as repo from './repo';
@@ -100,15 +102,17 @@ const personName = (u: { displayName: string | null; givenName: string | null; f
 const RANK: Record<DirectoryRole, number> = { guest: 1, member: 2, admin: 3 };
 
 /**
- * Puts a provisioned person where their record and groups say: out of the workspace when
- * deactivated; otherwise in it with the role their groups map to, and in exactly the
- * directory-managed projects their groups map to. `alsoProjects`: projects a change just unmapped.
+ * Puts a provisioned person where their record and groups say: deactivated in the workspace when
+ * the directory says inactive; otherwise a member with the role their groups map to, and in exactly
+ * the directory-managed projects their groups map to. `alsoProjects`: projects a change just
+ * unmapped. Never reactivates someone (only the directory's active: false -> true does, below; an
+ * admin's deactivation stands).
  */
 export async function syncPerson(workspaceId: string, userId: string, alsoProjects: string[] = []): Promise<void> {
   const su = await repo.getUser(workspaceId, userId);
   if (!su) return;
   if (!su.active) {
-    await leaveWorkspace(workspaceId, su.userId);
+    await deactivate(workspaceId, su.userId, true, async () => {});
     return;
   }
   const [all, mine] = await Promise.all([repo.listGroups(workspaceId), repo.groupsOfUser(workspaceId, userId)]);
@@ -121,24 +125,32 @@ export async function syncPerson(workspaceId: string, userId: string, alsoProjec
   for (const p of managed) await setDirectoryProjectMembership(p, userId, wanted.has(p));
 }
 
-async function leaveWorkspace(workspaceId: string, userId: string): Promise<void> {
+/** The admin console's deactivation, by the directory (SCIM errors for its refusals). True when it changed. */
+async function deactivate(workspaceId: string, userId: string, deactivated: boolean, record: () => Promise<void>): Promise<boolean> {
   try {
-    await removeDirectoryMember(workspaceId, userId);
+    return await setDirectoryDeactivated(workspaceId, userId, deactivated, record);
   } catch (e) {
     if (e instanceof HttpError && e.status === 409) throw new ScimError(409, e.message, 'mutability');
     throw e;
   }
 }
 
-/** Deactivation: out of the workspace, live; the organization's own account is signed out everywhere. Returns the sessions ended. */
-async function deprovision(workspaceId: string, su: repo.ScimUser): Promise<number> {
-  await leaveWorkspace(workspaceId, su.userId);
-  return (await isOrganizationEmail(workspaceId, su.email)) ? endSessionsOf(su.userId) : 0;
-}
+/** An audit event of the directory (no person acted) about someone in the workspace. */
+const directoryEvent = (action: AuditAction, workspaceId: string, su: { userId: string; email: string }, metadata: AuditMetadata = {}) =>
+  recordAudit({ action, workspaceId, actorId: null, target: { type: 'user', id: su.userId, label: su.email }, metadata: { via: 'scim', ...metadata } });
 
-/** An audit event of the directory (SCIM) acting on someone in the workspace. */
-const directoryEvent = (action: string, workspaceId: string, userId: string, detail: Record<string, string | number | boolean | null> = {}) =>
-  audit({ action, actor: { kind: 'system' }, userId, detail: { workspaceId, via: 'scim', ...detail } });
+/**
+ * Deprovisioning: deactivated in the workspace (keeps role and boards, opens nothing there, live on
+ * every instance) and — the account being the organization's (its verified domain) — signed out
+ * everywhere. The audit event commits with the deactivation.
+ */
+async function deprovision(workspaceId: string, su: repo.ScimUser, action: 'scim.user_deprovisioned' | 'scim.user_deleted'): Promise<void> {
+  const organization = await isOrganizationEmail(workspaceId, su.email);
+  const metadata = { signedOutEverywhere: organization };
+  const changed = await deactivate(workspaceId, su.userId, true, () => directoryEvent(action, workspaceId, su, metadata));
+  if (!changed) await directoryEvent(action, workspaceId, su, { ...metadata, alreadyDeactivated: true });
+  if (organization) await endSessionsOf(su.userId);
+}
 
 // ---- Users ----
 
@@ -149,15 +161,17 @@ export async function createUser(workspaceId: string, body: unknown): Promise<re
   const name = personName(u);
   const account = await provisionDirectoryAccount(u.email, name);
   try {
-    if (!(await repo.insertUser({ workspaceId, userId: account.userId, ...u }, Date.now())))
-      throw new ScimError(409, 'This person is already provisioned in this workspace', 'uniqueness');
+    await repo.transaction(async () => {
+      if (!(await repo.insertUser({ workspaceId, userId: account.userId, ...u }, Date.now())))
+        throw new ScimError(409, 'This person is already provisioned in this workspace', 'uniqueness');
+      await directoryEvent('scim.user_provisioned', workspaceId, { userId: account.userId, email: u.email }, { active: u.active, newAccount: account.created });
+    });
   } catch (e) {
     if (e instanceof repo.UserNameTakenError) throw new ScimError(409, `userName ${u.userName} is already provisioned`, 'uniqueness');
     throw e;
   }
   if (name && !account.created) await setAccountName(account.userId, name);
   await syncPerson(workspaceId, account.userId);
-  await directoryEvent('scim.user_provisioned', workspaceId, account.userId, { active: u.active, newAccount: account.created });
   return (await repo.getUser(workspaceId, account.userId))!;
 }
 
@@ -179,23 +193,28 @@ export async function replaceUser(workspaceId: string, userId: string, body: unk
   const name = personName(u);
   if (name && name !== personName(prev)) await setAccountName(userId, name);
   if (prev.active && !u.active) {
-    const sessionsEnded = await deprovision(workspaceId, prev);
-    await directoryEvent('scim.user_deprovisioned', workspaceId, userId, { sessionsEnded });
+    await deprovision(workspaceId, prev, 'scim.user_deprovisioned');
   } else if (u.active) {
+    if (!prev.active) {
+      // Reactivated by the directory: the deactivation it made (or an admin's) is lifted.
+      await syncPerson(workspaceId, userId); // a member again (if they had left meanwhile)
+      const changed = await deactivate(workspaceId, userId, false, () => directoryEvent('scim.user_reactivated', workspaceId, { userId, email: u.email }));
+      if (!changed) await directoryEvent('scim.user_reactivated', workspaceId, { userId, email: u.email });
+    }
     await syncPerson(workspaceId, userId);
-    if (!prev.active) await directoryEvent('scim.user_reactivated', workspaceId, userId);
   }
   return (await repo.getUser(workspaceId, userId))!;
 }
 
-/** DELETE: deprovisioned, and the directory's record of them is gone (the account stays theirs). */
+/**
+ * DELETE: deprovisioned (deactivated, like `active: false`) and the directory's record of them is
+ * gone. The account stays theirs; an admin reactivates them in the console if they come back.
+ */
 export async function deleteUser(workspaceId: string, userId: string): Promise<void> {
   const su = await repo.getUser(workspaceId, userId);
   if (!su) throw new ScimError(404, 'User not found');
-  // Leaving the workspace also ends its project memberships (removeDirectoryMember).
-  const sessionsEnded = su.active ? await deprovision(workspaceId, su) : 0;
+  await deprovision(workspaceId, su, 'scim.user_deleted');
   await repo.deleteUser(workspaceId, userId);
-  await directoryEvent('scim.user_deleted', workspaceId, userId, { sessionsEnded });
 }
 
 // ---- Groups ----

@@ -4,8 +4,6 @@ import * as repo from './repo';
 
 // The organization's own addresses (SCIM provisions only these).
 export { isOrganizationEmail, verifiedDomainsOf } from './domains';
-// Someone the directory removed must not come back in through a just-in-time sign-in (SCIM).
-export { onSsoJoin, type JoinGate } from './policy';
 
 /** The role people get when they join the workspace through its directory (SSO default, else member). */
 export async function defaultJoinRole(workspaceId: string): Promise<'admin' | 'member' | 'guest'> {
@@ -28,7 +26,6 @@ export async function ssoExportOf(workspaceId: string): Promise<unknown> {
       enforced: c.enforced,
       breakGlassUserId: c.breakGlassUserId,
       defaultRole: c.defaultRole,
-      sessionHours: c.sessionHours,
       samlEntityId: c.samlEntityId,
       samlSsoUrl: c.samlSsoUrl,
       oidcIssuer: c.oidcIssuer,

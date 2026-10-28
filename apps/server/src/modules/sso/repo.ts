@@ -1,6 +1,9 @@
 // The only writer of `sso_domains`, `sso_connections`, `sso_flows` and `sso_saml_cache` [S4].
 import type { DirectoryRole } from '../workspaces/index';
-import { isUniqueViolation, one, query } from '../../platform/db';
+import { isUniqueViolation, one, query, tx } from '../../platform/db';
+
+/** Runs fn in one transaction (a change and its audit record commit together). */
+export const transaction = <T>(fn: () => Promise<T>): Promise<T> => tx(() => fn());
 
 // ---- domains ----
 
@@ -95,7 +98,6 @@ export interface ConnectionRecord {
   enforced: boolean;
   breakGlassUserId: string | null;
   defaultRole: DirectoryRole;
-  sessionHours: number;
   samlEntityId: string | null;
   samlSsoUrl: string | null;
   samlCerts: string | null;
@@ -114,7 +116,6 @@ interface ConnectionRow {
   enforced: boolean;
   break_glass_user_id: string | null;
   default_role: DirectoryRole;
-  session_hours: number;
   saml_entity_id: string | null;
   saml_sso_url: string | null;
   saml_certs: string | null;
@@ -132,7 +133,6 @@ const toConnection = (r: ConnectionRow): ConnectionRecord => ({
   enforced: r.enforced,
   breakGlassUserId: r.break_glass_user_id,
   defaultRole: r.default_role,
-  sessionHours: r.session_hours,
   samlEntityId: r.saml_entity_id,
   samlSsoUrl: r.saml_sso_url,
   samlCerts: r.saml_certs,
@@ -161,24 +161,23 @@ export async function saveConnection(
   now: number,
 ): Promise<void> {
   await query(
-    `INSERT INTO sso_connections (workspace_id, protocol, enabled, default_role, session_hours,
+    `INSERT INTO sso_connections (workspace_id, protocol, enabled, default_role,
        saml_entity_id, saml_sso_url, saml_certs, oidc_issuer, oidc_client_id, oidc_client_secret, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)
      ON CONFLICT (workspace_id) DO UPDATE SET
        protocol = excluded.protocol, enabled = excluded.enabled,
-       enforced = sso_connections.enforced AND excluded.enabled AND NOT $13::boolean,
+       enforced = sso_connections.enforced AND excluded.enabled AND NOT $12::boolean,
        default_role = excluded.default_role,
-       session_hours = excluded.session_hours, saml_entity_id = excluded.saml_entity_id, saml_sso_url = excluded.saml_sso_url,
+       saml_entity_id = excluded.saml_entity_id, saml_sso_url = excluded.saml_sso_url,
        saml_certs = excluded.saml_certs, oidc_issuer = excluded.oidc_issuer, oidc_client_id = excluded.oidc_client_id,
        oidc_client_secret = excluded.oidc_client_secret,
-       tested_at = CASE WHEN $13::boolean THEN NULL ELSE sso_connections.tested_at END,
+       tested_at = CASE WHEN $12::boolean THEN NULL ELSE sso_connections.tested_at END,
        updated_at = excluded.updated_at`,
     [
       c.workspaceId,
       c.protocol,
       c.enabled,
       c.defaultRole,
-      c.sessionHours,
       c.samlEntityId,
       c.samlSsoUrl,
       c.samlCerts,

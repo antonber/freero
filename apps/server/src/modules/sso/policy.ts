@@ -40,20 +40,3 @@ export async function enforcedSsoRestriction(a: SignInAttempt): Promise<SignInRe
     ssoUrl: `/api/sso/${encodeURIComponent(c.workspaceId)}/start?login_hint=${encodeURIComponent(a.email)}`,
   };
 }
-
-/** Another module may refuse someone at just-in-time sign-in (SCIM: deprovisioned people stay out). */
-export type JoinGate = (workspaceId: string, userId: string) => Promise<string | null> | string | null;
-const gates = new Set<JoinGate>();
-
-export function onSsoJoin(fn: JoinGate): () => void {
-  gates.add(fn);
-  return () => gates.delete(fn);
-}
-
-export async function joinRefusal(workspaceId: string, userId: string): Promise<string | null> {
-  for (const fn of gates) {
-    const reason = await fn(workspaceId, userId);
-    if (reason) return reason;
-  }
-  return null;
-}

@@ -16,7 +16,6 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Request, Response } from 'express';
 import { SSO_REQUIRED, type OidcErrorCode } from '@freero/shared';
-import { audit } from '../../platform/audit';
 import { getConfig } from '../../platform/config';
 import { HttpError, parseCookies } from '../../platform/http';
 import { newId } from '../../platform/ids';
@@ -32,10 +31,10 @@ import {
   safeReturnPath,
   type OidcClientConfig,
 } from '../auth/index';
-import { applyDirectoryMembership } from '../workspaces/index';
+import { recordAudit, recordAuditQuietly } from '../audit/index';
+import { applyDirectoryMembership, isDeactivatedMember } from '../workspaces/index';
 import { CLIENT_SECRET_PURPOSE, serviceProviderUrls, ssoMethod } from './connections';
 import { domainOf, isOrganizationEmail } from './domains';
-import { joinRefusal } from './policy';
 import * as repo from './repo';
 import { claimsFromProfile, SAML_REQUEST_TTL_MS, samlFor, splitCertificates } from './saml';
 
@@ -157,7 +156,7 @@ export async function samlAcs(req: Request, res: Response): Promise<void> {
     if (!profile) throw new Error('not a sign-in response');
     claims = claimsFromProfile(profile, s.acsUrl);
   } catch (e) {
-    log(`sso: workspace ${workspaceId} refused a SAML response: ${e instanceof Error ? e.message : String(e)}`);
+    await refused(workspaceId, `SAML response: ${e instanceof Error ? e.message : String(e)}`);
     return void fail(res, 'sso_failed');
   }
   const parked: DirectoryClaims = {
@@ -169,7 +168,7 @@ export async function samlAcs(req: Request, res: Response): Promise<void> {
   };
   // The RelayState names the flow; it must be the one that sent the request this answers.
   if (!relay || !(await repo.recordSamlResult(workspaceId, relay, claims.inResponseTo, parked, Date.now()))) {
-    log(`sso: workspace ${workspaceId} got a SAML response for no pending sign-in of this flow`);
+    await refused(workspaceId, 'a SAML response for no pending sign-in of this flow (RelayState)', { email: claims.email });
     return void fail(res, 'sso_failed');
   }
   res.redirect(303, `/api/sso/${encodeURIComponent(workspaceId)}/saml/finish?flow=${encodeURIComponent(relay)}`);
@@ -206,11 +205,26 @@ export async function oidcCallback(req: Request, res: Response): Promise<void> {
   try {
     claims = await redeemOidcCode(cfg, callbackUrl, { state, nonce: flow.nonce ?? '', codeVerifier: flow.codeVerifier ?? '' });
   } catch (e) {
-    log(`sso: workspace ${workspaceId} refused an OpenID sign-in: ${e instanceof Error ? e.message : String(e)}`);
+    await refused(workspaceId, `OpenID Connect: ${e instanceof Error ? e.message : String(e)}`);
     return void fail(res, e instanceof OidcUnavailableError ? 'sso_unavailable' : 'sso_failed');
   }
   if (!claims.email) return void fail(res, 'no_email');
   await completeDirectorySignIn(req, res, c, { ...claims, email: claims.email.toLowerCase(), sessionNotOnOrAfter: null }, flow.returnTo);
+}
+
+/**
+ * A refused SSO answer, in the workspace's log (nobody is signed in: no actor). Never fails the
+ * response. `email` only when the IdP's signature was verified (otherwise it is anyone's claim).
+ */
+function refused(workspaceId: string, reason: string, who: { userId?: string; email?: string } = {}): Promise<void> {
+  log(`sso: workspace ${workspaceId} refused a sign-in: ${reason}`);
+  return recordAuditQuietly({
+    action: 'sso.login_refused',
+    workspaceId,
+    actorId: null,
+    target: who.userId || who.email ? { type: 'user', id: who.userId ?? who.email!, label: who.email ?? null } : null,
+    metadata: { reason: reason.slice(0, 300) },
+  });
 }
 
 async function completeDirectorySignIn(req: Request, res: Response, c: repo.ConnectionRecord, claims: DirectoryClaims, returnTo: string): Promise<void> {
@@ -218,33 +232,40 @@ async function completeDirectorySignIn(req: Request, res: Response, c: repo.Conn
   // The IdP is the authority only for addresses at the workspace's verified domains: anything else
   // (a misconfigured or hostile IdP asserting someone@gmail.com) never reaches an account.
   if (!(await isOrganizationEmail(workspaceId, claims.email))) {
-    log(`sso: workspace ${workspaceId}'s identity provider asserted an address at ${domainOf(claims.email)}, which it has not verified`);
+    await refused(workspaceId, `the identity provider asserted an address at ${domainOf(claims.email)}, which this workspace has not verified`, { email: claims.email });
     return void fail(res, 'sso_domain');
   }
   const method = ssoMethod(workspaceId);
   const r = await resolveDirectoryLogin(method, claims);
-  const refused = await joinRefusal(workspaceId, r.userId);
-  if (refused) {
-    log(`sso: workspace ${workspaceId} refused ${r.userId}: ${refused}`);
+  // Deactivated here (by an admin or the directory): this workspace doesn't sign them in.
+  if (await isDeactivatedMember(workspaceId, r.userId)) {
+    await refused(workspaceId, 'deactivated in this workspace', { userId: r.userId, email: claims.email });
     return void fail(res, 'sso_removed');
   }
-  await applyDirectoryMembership(workspaceId, r.userId, c.defaultRole, { overwrite: false });
-  const now = Date.now();
-  const sessionExpiresAt = Math.min(now + c.sessionHours * 3_600_000, claims.sessionNotOnOrAfter ?? Infinity);
+  const target = { type: 'user', id: r.userId, label: claims.email };
+  await applyDirectoryMembership(workspaceId, r.userId, c.defaultRole, {
+    overwrite: false,
+    onJoined: (role) =>
+      recordAudit({ action: 'sso.member_provisioned', workspaceId, actorId: r.userId, target, metadata: { role, newAccount: r.created } }),
+  });
+  // The session belongs to the person: the strictest session policy of their teams applies to it
+  // (auth). Only the IdP's own end of this sign-in (SAML SessionNotOnOrAfter) shortens it further.
+  const sessionExpiresAt = claims.sessionNotOnOrAfter;
   let done;
   try {
     done = await completeSignIn(req, res, r.userId, method, { link: r.link, newAccount: r.created, sessionExpiresAt });
   } catch (e) {
     if (!(e instanceof HttpError) || e.status >= 500) throw e;
-    log(`sso: workspace ${workspaceId} could not finish ${r.userId}'s sign-in: ${e.message}`);
+    await refused(workspaceId, e.message, { userId: r.userId, email: claims.email });
     return void fail(res, e.code === SSO_REQUIRED ? 'sso_required' : 'sso_failed');
   }
-  await repo.markTested(workspaceId, now);
-  await audit({
-    action: 'sso.sign_in',
-    actor: { kind: 'user', userId: r.userId },
-    userId: r.userId,
-    detail: { workspaceId, protocol: c.protocol, enforced: c.enforced, newAccount: r.created, secondStepPending: 'twoFactorRequired' in done },
+  await repo.markTested(workspaceId, Date.now());
+  await recordAuditQuietly({
+    action: 'sso.login',
+    workspaceId,
+    actorId: r.userId,
+    target,
+    metadata: { protocol: c.protocol, enforced: c.enforced, newAccount: r.created, secondStepPending: 'twoFactorRequired' in done },
   });
   if ('twoFactorRequired' in done) return void res.redirect(303, `/login/two-factor?next=${encodeURIComponent(returnTo)}`);
   res.redirect(303, returnTo);

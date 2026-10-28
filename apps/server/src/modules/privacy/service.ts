@@ -3,8 +3,8 @@
 // downloadable by the person who asked (signed in; for a workspace export only while they are
 // still its owner/admin) until it expires, then deleted.
 import type { Request } from 'express';
-import type { DataExportInfo } from '@freero/shared';
-import { audit } from '../../platform/audit';
+import type { AuditAction, DataExportInfo } from '@freero/shared';
+import { recordAudit, type AuditInput } from '../audit/index';
 import { getConfig } from '../../platform/config';
 import { HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
@@ -30,12 +30,23 @@ const info = (e: repo.ExportRecord): DataExportInfo => ({
   bytes: e.bytes,
 });
 
+/**
+ * A workspace export is the workspace's event; a person's own export goes to their account's log
+ * only (their teams have no business knowing they asked for their data).
+ */
+const exportEvent = (action: AuditAction, exportId: string, userId: string, workspaceId: string | null): AuditInput =>
+  workspaceId
+    ? { action, workspaceId, actorId: userId, target: { type: 'export', id: exportId } }
+    : { action, accountId: userId, fanOut: false, actorId: userId, target: { type: 'export', id: exportId } };
+
 /** Queues an export; 409 while one for the same subject is still being built. */
 export async function requestExport(by: string, workspaceId: string | null): Promise<DataExportInfo> {
   const id = newId(20);
-  const ok = await repo.insertExport({ id, kind: workspaceId ? 'workspace' : 'user', requestedBy: by, workspaceId }, Date.now());
-  if (!ok) throw new HttpError(409, 'An export is already being prepared. You’ll get an email when it’s ready.');
-  await audit({ action: workspaceId ? 'workspace.export_requested' : 'account.export_requested', actor: { kind: 'user', userId: by }, userId: by, detail: { exportId: id, workspaceId } });
+  await repo.transaction(async () => {
+    const ok = await repo.insertExport({ id, kind: workspaceId ? 'workspace' : 'user', requestedBy: by, workspaceId }, Date.now());
+    if (!ok) throw new HttpError(409, 'An export is already being prepared. You’ll get an email when it’s ready.');
+    await recordAudit(exportEvent(workspaceId ? 'workspace.export_requested' : 'account.export_requested', id, by, workspaceId));
+  });
   return info((await repo.getExport(id))!);
 }
 
@@ -55,12 +66,7 @@ export async function openExport(id: string, userId: string) {
   }
   const file = await openPrivateFile(e.fileKey);
   if (!file) throw notFound('That export is not available (it may have expired)');
-  await audit({
-    action: e.kind === 'workspace' ? 'workspace.export_downloaded' : 'account.export_downloaded',
-    actor: { kind: 'user', userId },
-    userId,
-    detail: { exportId: id, workspaceId: e.workspaceId },
-  });
+  await recordAudit(exportEvent(e.kind === 'workspace' ? 'workspace.export_downloaded' : 'account.export_downloaded', id, userId, e.workspaceId));
   return { ...file, filename: `freero-${e.kind === 'workspace' ? 'workspace' : 'my-data'}-${new Date(e.readyAt ?? Date.now()).toISOString().slice(0, 10)}.zip` };
 }
 
@@ -113,7 +119,7 @@ async function build(req: Request | null, e: repo.ExportRecord): Promise<void> {
         'Only you can download it, signed in to Freero as yourself.',
       ],
       // The page lists it with its Download button (signing in first if needed).
-      action: { label: 'Download the export', url: ws ? `${origin}/app?ws=${encodeURIComponent(ws.id)}&view=settings#data` : `${origin}/settings#data` },
+      action: { label: 'Download the export', url: ws ? `${origin}/admin/${encodeURIComponent(ws.id)}?tab=retention#data` : `${origin}/settings#data` },
       outro: 'If you didn’t ask for this export, change your password and review your signed-in devices in Account settings.',
     }),
   });

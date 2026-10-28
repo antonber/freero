@@ -6,7 +6,7 @@
 import { randomBytes } from 'node:crypto';
 import { badRequest, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
-import { audit } from '../../platform/audit';
+import { recordAudit } from '../audit/index';
 import { domainHasToken } from './dns';
 import * as repo from './repo';
 
@@ -21,11 +21,17 @@ export function cleanDomain(v: unknown): string {
 
 export const domainOf = (email: string): string => email.slice(email.lastIndexOf('@') + 1).toLowerCase();
 
-export async function addDomain(workspaceId: string, input: unknown): Promise<void> {
+const domainTarget = (id: string, domain: string) => ({ type: 'domain', id, label: domain });
+
+export async function addDomain(workspaceId: string, actorId: string, input: unknown): Promise<void> {
   const domain = cleanDomain(input);
   if ((await repo.listDomains(workspaceId)).length >= MAX_DOMAINS) throw badRequest(`A workspace can claim at most ${MAX_DOMAINS} domains`);
-  const ok = await repo.insertDomain({ id: newId(12), workspaceId, domain, token: randomBytes(16).toString('hex'), now: Date.now() });
-  if (!ok) throw new HttpError(409, `${domain} is already on the list`);
+  const id = newId(12);
+  await repo.transaction(async () => {
+    if (!(await repo.insertDomain({ id, workspaceId, domain, token: randomBytes(16).toString('hex'), now: Date.now() })))
+      throw new HttpError(409, `${domain} is already on the list`);
+    await recordAudit({ action: 'sso.domain_added', workspaceId, actorId, target: domainTarget(id, domain) });
+  });
 }
 
 /** Looks the TXT record up now; verified on a match. 409 with a reason otherwise. */
@@ -46,16 +52,23 @@ export async function verifyDomain(workspaceId: string, domainId: string, actorI
     throw new HttpError(409, `The TXT record isn’t visible yet. DNS changes can take a while to spread; try again later.`);
   }
   try {
-    await repo.markDomainVerified(d.id, now);
+    await repo.transaction(async () => {
+      await repo.markDomainVerified(d.id, now);
+      await recordAudit({ action: 'sso.domain_verified', workspaceId, actorId, target: domainTarget(d.id, d.domain) });
+    });
   } catch (e) {
     if (e instanceof repo.DomainTakenError) throw new HttpError(409, `${d.domain} is already verified by another workspace`);
     throw e;
   }
-  await audit({ action: 'sso.domain_verified', actor: { kind: 'user', userId: actorId }, userId: actorId, detail: { workspaceId, domain: d.domain } });
 }
 
-export async function removeDomain(workspaceId: string, domainId: string): Promise<void> {
-  if (!(await repo.deleteDomain(workspaceId, domainId))) throw notFound('Domain not found');
+export async function removeDomain(workspaceId: string, actorId: string, domainId: string): Promise<void> {
+  const d = await repo.getDomain(workspaceId, domainId);
+  if (!d) throw notFound('Domain not found');
+  await repo.transaction(async () => {
+    if (!(await repo.deleteDomain(workspaceId, domainId))) throw notFound('Domain not found');
+    await recordAudit({ action: 'sso.domain_removed', workspaceId, actorId, target: domainTarget(d.id, d.domain), metadata: { wasVerified: d.verifiedAt !== null } });
+  });
 }
 
 /** The workspace's verified domains. */

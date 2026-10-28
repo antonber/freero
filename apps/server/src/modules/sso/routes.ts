@@ -34,7 +34,7 @@ export default function ssoRoutes(_ctx: ServerContext): Router {
   }));
   r.post('/workspaces/:id/sso/domains', requireUser, handle(async (req, res) => {
     await manager(req);
-    await addDomain(req.params.id, req.body?.domain);
+    await addDomain(req.params.id, currentUser(req).id, req.body?.domain);
     res.status(201).json(await ssoSettings(req, req.params.id));
   }));
   r.post('/workspaces/:id/sso/domains/:domainId/verify', requireUser, rateLimit('sso', 'user'), handle(async (req, res) => {
@@ -44,7 +44,7 @@ export default function ssoRoutes(_ctx: ServerContext): Router {
   }));
   r.delete('/workspaces/:id/sso/domains/:domainId', requireUser, handle(async (req, res) => {
     await manager(req);
-    await removeDomain(req.params.id, req.params.domainId);
+    await removeDomain(req.params.id, currentUser(req).id, req.params.domainId);
     res.json(await ssoSettings(req, req.params.id));
   }));
   r.put('/workspaces/:id/sso/connection', requireUser, handle(async (req, res) => {

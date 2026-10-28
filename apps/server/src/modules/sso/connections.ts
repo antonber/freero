@@ -1,10 +1,10 @@
 // A team workspace's identity provider: its settings (owners/admins), and "Enforce SSO".
 import type { Request } from 'express';
 import type { SsoConnectionInput, SsoSettings, WorkspaceRole } from '@freero/shared';
-import { audit } from '../../platform/audit';
 import { badRequest, HttpError } from '../../platform/http';
 import { appUrl } from '../../platform/mail';
 import { seal } from '../../platform/secrets';
+import { recordAudit } from '../audit/index';
 import { endSessionsOf, userIdsAtDomain } from '../auth/index';
 import { workspaceRole } from '../workspaces/index';
 import { txtName, txtValue } from './dns';
@@ -49,7 +49,6 @@ export async function ssoSettings(req: Request | null, workspaceId: string): Pro
       enforced: c.enforced,
       breakGlassUserId: c.breakGlassUserId,
       defaultRole: c.defaultRole,
-      sessionHours: c.sessionHours,
       saml:
         c.protocol === 'saml' && c.samlEntityId && c.samlSsoUrl
           ? { entityId: c.samlEntityId, ssoUrl: c.samlSsoUrl, certificates: splitCertificates(c.samlCerts).map(certificateInfo) }
@@ -74,13 +73,11 @@ export async function saveConnection(workspaceId: string, actorId: string, body:
   const prev = await repo.getConnection(workspaceId);
   const defaultRole = body.defaultRole ?? prev?.defaultRole ?? 'member';
   if (!(DIRECTORY_ROLES as readonly string[]).includes(defaultRole)) throw badRequest('defaultRole must be admin, member or guest');
-  const sessionHours = body.sessionHours ?? prev?.sessionHours ?? 24;
-  if (!Number.isInteger(sessionHours) || sessionHours < 1 || sessionHours > 720) throw badRequest('sessionHours must be between 1 and 720');
   const enabled = body.enabled === true;
 
   let saml = { entityId: null as string | null, ssoUrl: null as string | null, certs: null as string | null };
   let oidc = { issuer: null as string | null, clientId: null as string | null, secret: null as string | null };
-  // Settings changed without new provider details (enable, default role, session length) keep the provider.
+  // Settings changed without new provider details (enable, default role) keep the provider.
   const keepProvider = prev?.protocol === protocol && !body.samlMetadataXml && !body.samlEntityId && !body.samlSsoUrl && !body.samlCertificate && !body.oidcIssuer && !body.oidcClientId && !body.oidcClientSecret;
   if (keepProvider && prev) {
     saml = { entityId: prev.samlEntityId, ssoUrl: prev.samlSsoUrl, certs: prev.samlCerts };
@@ -109,34 +106,45 @@ export async function saveConnection(workspaceId: string, actorId: string, body:
     !prev ||
     prev.protocol !== protocol ||
     (protocol === 'saml' ? prev.samlEntityId !== saml.entityId || prev.samlSsoUrl !== saml.ssoUrl || prev.samlCerts !== saml.certs : prev.oidcIssuer !== oidc.issuer || prev.oidcClientId !== oidc.clientId);
-  await repo.saveConnection(
-    {
+  await repo.transaction(async () => {
+    await repo.saveConnection(
+      {
+        workspaceId,
+        protocol,
+        enabled,
+        defaultRole,
+        samlEntityId: saml.entityId,
+        samlSsoUrl: saml.ssoUrl,
+        samlCerts: saml.certs,
+        oidcIssuer: oidc.issuer,
+        oidcClientId: oidc.clientId,
+        oidcClientSecret: oidc.secret,
+      },
+      providerChanged,
+      Date.now(),
+    );
+    await recordAudit({
+      action: 'sso.connection_saved',
       workspaceId,
-      protocol,
-      enabled,
-      defaultRole,
-      sessionHours,
-      samlEntityId: saml.entityId,
-      samlSsoUrl: saml.ssoUrl,
-      samlCerts: saml.certs,
-      oidcIssuer: oidc.issuer,
-      oidcClientId: oidc.clientId,
-      oidcClientSecret: oidc.secret,
-    },
-    providerChanged,
-    Date.now(),
-  );
-  await audit({
-    action: 'sso.connection_saved',
-    actor: { kind: 'user', userId: actorId },
-    userId: actorId,
-    detail: { workspaceId, protocol, enabled, providerChanged, defaultRole, sessionHours },
+      actorId,
+      target: { type: 'sso', id: workspaceId, label: protocol === 'saml' ? saml.entityId : oidc.issuer },
+      metadata: {
+        protocol,
+        enabled,
+        defaultRole,
+        providerChanged,
+        // A new provider turns enforcement off until a sign-in proves it.
+        enforcementDropped: providerChanged && !!prev?.enforced,
+      },
+    });
   });
 }
 
 export async function removeConnection(workspaceId: string, actorId: string): Promise<void> {
-  await repo.deleteConnection(workspaceId);
-  await audit({ action: 'sso.connection_removed', actor: { kind: 'user', userId: actorId }, userId: actorId, detail: { workspaceId } });
+  await repo.transaction(async () => {
+    if (!(await repo.deleteConnection(workspaceId))) return;
+    await recordAudit({ action: 'sso.connection_removed', workspaceId, actorId, target: { type: 'sso', id: workspaceId } });
+  });
 }
 
 /**
@@ -161,19 +169,22 @@ export async function setEnforcement(
     if ((await workspaceRole(workspaceId, body.breakGlassUserId)) !== 'owner') throw badRequest('The break-glass person must be an owner of this workspace');
     breakGlass = body.breakGlassUserId;
   }
-  if (!(await repo.setEnforced(workspaceId, enforced, breakGlass, Date.now())))
-    throw new HttpError(409, 'Sign in through the identity provider once (with the connection enabled) before enforcing it');
+  await repo.transaction(async () => {
+    if (!(await repo.setEnforced(workspaceId, enforced, breakGlass, Date.now())))
+      throw new HttpError(409, 'Sign in through the identity provider once (with the connection enabled) before enforcing it');
+    await recordAudit({
+      action: enforced ? 'sso.enforced' : 'sso.unenforced',
+      workspaceId,
+      actorId: actor.id,
+      target: { type: 'sso', id: workspaceId },
+      metadata: { breakGlassUserId: breakGlass },
+    });
+  });
   let ended = 0;
   if (enforced) {
     const method = ssoMethod(workspaceId);
     for (const domain of await verifiedDomainsOf(workspaceId))
       for (const userId of await userIdsAtDomain(domain)) if (userId !== breakGlass) ended += await endSessionsOf(userId, null, method);
   }
-  await audit({
-    action: enforced ? 'sso.enforcement_on' : 'sso.enforcement_off',
-    actor: { kind: 'user', userId: actor.id },
-    userId: actor.id,
-    detail: { workspaceId, breakGlassUserId: breakGlass, sessionsEnded: ended },
-  });
   return ended;
 }

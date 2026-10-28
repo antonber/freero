@@ -1,6 +1,9 @@
 // The only writer of `data_exports` [S4].
 import type { DataExportInfo } from '@freero/shared';
-import { one, query } from '../../platform/db';
+import { one, query, tx } from '../../platform/db';
+
+/** Runs fn in one transaction (a change and its audit record commit together). */
+export const transaction = <T>(fn: () => Promise<T>): Promise<T> => tx(() => fn());
 
 export interface ExportRecord extends DataExportInfo {
   requestedBy: string | null;
