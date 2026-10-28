@@ -13,7 +13,7 @@ import {
   type NewElement,
 } from '@engine';
 import { CELL_PAD, cellAt, cellPart, FONT_SIZE, HEADER_FILL, layoutTable, parseCellPart, parseDelimited, resizeCol, resizeRow, type Move } from './lib/model';
-import { CELLS, plainGrid, readContent, writeContent, type TableContent } from './lib/cells';
+import { CELLS, cellText, plainGrid, readContent, writeContent, type TableContent } from './lib/cells';
 import { commitCell, createFromGrid, editCell, moveCell, rememberCell } from './lib/actions';
 import './table.css';
 
@@ -189,6 +189,21 @@ export default defineElement({
   },
 
   toPlainText: (el) => (liveCells ? plainGrid(liveCells, el).map((r) => r.join('\t')).join('\n') : ''),
+
+  // Every non-empty cell is a text part: board-wide find & replace reads and rewrites cells
+  // through the engine (Editor.getTextParts / setTextParts), never by touching tableCells.
+  textParts: (el, editor) =>
+    el.rows.flatMap((r) =>
+      el.cols.flatMap((c) => {
+        const html = cellText(editor.collection<string>(CELLS), el.id, r.id, c.id);
+        return html ? [{ part: cellPart(r.id, c.id), html }] : [];
+      }),
+    ),
+  writeTextPart(el, part, html, editor) {
+    const cell = parseCellPart(part);
+    if (cell && el.rows.some((r) => r.id === cell.rowId) && el.cols.some((c) => c.id === cell.colId))
+      commitCell(editor, el.id, cell.rowId, cell.colId, html);
+  },
 
   // Copies (duplicate, Alt-drag, copy / paste) get their own copy of every cell.
   copyContent: (el, editor) => readContent(editor, el),
