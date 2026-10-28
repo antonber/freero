@@ -4,7 +4,7 @@ import { badRequest, forbidden, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { getUser, getUsers } from '../auth/index';
 import { atLeast, getMemberRole, membershipsOf, resolveRole } from '../members/index';
-import { initBoardDoc, snapshotBoardDoc } from '../realtime/index';
+import { initBoardDoc, initBoardLayer, snapshotBoardDoc, snapshotBoardLayer } from '../realtime/index';
 import * as repo from './repo';
 import type { Board } from './repo';
 
@@ -111,14 +111,18 @@ export async function createBoard(ownerId: string, title: string, description: s
 /**
  * A copy of `source` owned by `userId`, with the source's current content. The new board row and
  * its content are written in one transaction: if saving the content fails there is no empty copy.
+ * Hidden frames' contents (the 'editors' layer) are copied only for someone who may see them
+ * (`role` owner/editor); nobody's private layer (drafts, sealed ballots) is ever copied.
  */
-export async function duplicateBoard(source: Board, userId: string): Promise<Board> {
+export async function duplicateBoard(source: Board, userId: string, role: Role): Promise<Board> {
   // Read the content BEFORE the transaction: it may wait for the live doc to finish loading,
   // which queries the database outside this transaction.
   const state = await snapshotBoardDoc(source.id);
+  const editors = atLeast(role, 'editor') ? await snapshotBoardLayer(source.id, 'editors') : null;
   return repo.transaction(async () => {
     const copy = await createBoard(userId, `Copy of ${source.title}`.slice(0, 200), source.description);
     if (state) await initBoardDoc(copy.id, state);
+    if (editors) await initBoardLayer(copy.id, 'editors', editors);
     return copy;
   });
 }

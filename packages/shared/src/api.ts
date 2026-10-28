@@ -120,5 +120,33 @@ export const EMBED_FRAME_ORIGINS = ['https://www.youtube-nocookie.com', 'https:/
 // y-websocket's `provider.messageHandlers[WS_MESSAGE_ROLE]`.
 export const WS_MESSAGE_ROLE = 100;
 
+// ---- Board layers (content the server withholds) ----
+// Besides the shared doc, a board has server-held LAYER docs that only some connections may
+// sync (see "Board layers" in ARCHITECTURE.md):
+//   'private'  one per user: only that user's sockets read it, and only while they may edit.
+//              Private-mode drafts and ballots of hidden votes live here until revealed.
+//   'editors'  owners/editors only: contents of hidden frames.
+// They travel over the board's one socket (same instance as the shared doc), in an envelope:
+//   writeVarUint(WS_MESSAGE_LAYER), writeVarString(layer), then a y-protocols sync message
+//   (step 1 / step 2 / update) for that layer's doc, in both directions. The server ignores
+//   envelopes for layers the socket may not read and drops writes from sockets that may not
+//   edit.
+export const WS_MESSAGE_LAYER = 101;
+export type BoardLayer = 'private' | 'editors';
+export const BOARD_LAYERS: readonly BoardLayer[] = ['private', 'editors'];
+
+// Client -> server: writeVarUint(WS_MESSAGE_LAYER_OP), writeVarString(JSON.stringify(op)).
+// Owners/editors only. The server applies it in order with the socket's doc updates.
+//   reveal:  moves the entries of `collection` (keys starting with `prefix`) out of EVERY user's
+//            private layer into the shared doc (one transaction), e.g. revealing private-mode
+//            drafts ('elements') or the ballots of a hidden vote ('voting', `${sessionId}:`).
+//   discard: deletes those entries from every user's private layer without revealing them.
+export const WS_MESSAGE_LAYER_OP = 102;
+export interface LayerOp {
+  type: 'reveal' | 'discard';
+  collection: string;
+  prefix?: string;
+}
+
 export const SESSION_COOKIE = 'freero_session';
 export const SERVER_PORT = 4000;

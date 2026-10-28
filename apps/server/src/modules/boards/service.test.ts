@@ -24,7 +24,7 @@ afterAll(() => closeTestDb());
 it('a duplicate that fails after its content was written leaves no copy behind', async () => {
   const user = await createUser({ name: 'Dup', email: 'dup@test.freero.app', password: 'password-123' });
   const source = await createBoard(user.id, 'Original', '');
-  await expect(duplicateBoard(source, user.id)).rejects.toThrow('connection lost');
+  await expect(duplicateBoard(source, user.id, 'owner')).rejects.toThrow('connection lost');
   const boards = await listBoards(user.id, 'all', '');
   expect(boards.map((b) => b.title)).toEqual(['Original']);
 });

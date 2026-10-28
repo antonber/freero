@@ -13,6 +13,10 @@
 //   'tableCells' -> features/table (cell text/fill per key — see TableElement in elements.ts)
 //   'voting'   -> features/voting     (key 'session' -> VotingSession, `${sessionId}:${userId}` -> VoteBallot)
 //
+// Content some connections must not read (private drafts, sealed ballots, hidden frames'
+// contents) never enters this doc: it lives in server-held LAYER docs with the same layout (an
+// `elements` map, feature collections) until revealed — see WS_MESSAGE_LAYER in api.ts.
+//
 // The server relays and persists updates. It drops all updates from viewers, and for
 // commenters accepts only changes confined to the collections listed in COMMENTER_WRITABLE —
 // and in 'comments' only records the commenter owns (see CommentRecord in elements.ts and

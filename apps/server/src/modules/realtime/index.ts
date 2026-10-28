@@ -2,6 +2,8 @@
 export {
   snapshotBoardDoc,
   initBoardDoc,
+  snapshotBoardLayer,
+  initBoardLayer,
   closeBoardDoc,
   refreshRoomAccess as refreshBoardAccess,
   flushAllRooms,
