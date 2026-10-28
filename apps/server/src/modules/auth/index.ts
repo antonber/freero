@@ -9,10 +9,14 @@ export {
   getUsers,
   createUser,
   findUserByEmail,
+  normalizeEmail,
   userFromCookieHeader,
   sessionKeyFromCookieHeader,
   onSessionEnd,
+  onEmailVerified,
+  markEmailVerified,
 } from './service';
+export { accountsDueForPurge, deleteAccountIfDue, isDueForPurge, scheduleAccountDeletion, restoreAccount } from './account';
 
 /** Upload names used as profile pictures (restricted to `among` when given): the uploads sweep keeps them. */
 export function avatarUploadReferences(among?: readonly string[]): Promise<string[]> {

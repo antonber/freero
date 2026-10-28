@@ -139,6 +139,28 @@
   color: var(--fr-danger);
 }
 
+.fr-share__note--verify {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.fr-share__pending-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  color: var(--fr-ink-3);
+  border: 1.5px dashed var(--fr-line-strong);
+  border-radius: 50%;
+}
+
+.fr-share__expired {
+  color: var(--fr-danger);
+}
+
 .fr-share__footer {
   display: flex;
   justify-content: space-between;

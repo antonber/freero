@@ -8,6 +8,10 @@ import { LandingPage } from './pages/landing/LandingPage';
 import { AuthPage } from './pages/auth/AuthPage';
 import { DashboardPage } from './pages/dashboard/DashboardPage';
 import { NotFoundPage } from './pages/NotFoundPage';
+import { ForgotPasswordPage, ResetPasswordPage } from './pages/auth/PasswordPages';
+import { EmailLinkPage } from './pages/auth/EmailLinkPage';
+import { InvitePage } from './pages/invite/InvitePage';
+import { AccountSettingsPage } from './pages/account/AccountSettingsPage';
 
 // Owned by the board engine work; loaded on demand.
 const BoardPage = lazy(() => import('./board/BoardPage'));
@@ -21,6 +25,19 @@ export function App() {
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<AuthPage mode="login" />} />
             <Route path="/signup" element={<AuthPage mode="signup" />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
+            <Route path="/verify-email" element={<EmailLinkPage mode="verify" />} />
+            <Route path="/confirm-email" element={<EmailLinkPage mode="change" />} />
+            <Route path="/invite/:token" element={<InvitePage />} />
+            <Route
+              path="/settings"
+              element={
+                <RequireAuth>
+                  <AccountSettingsPage />
+                </RequireAuth>
+              }
+            />
             <Route
               path="/app"
               element={
@@ -41,7 +58,8 @@ export function App() {
 function Home() {
   const { user, loading } = useAuth();
   if (loading) return null;
-  if (user) return <Navigate to="/app" replace />;
+  if (user && !user.deletionScheduledFor) return <Navigate to="/app" replace />;
+  if (user) return <RequireAuth>{null}</RequireAuth>;
   return <LandingPage />;
 }
 

@@ -54,6 +54,9 @@ const IDENTITY_TTL_MS = 5000;
 /** Bytes a socket may send before it has joined (auth + doc load); more closes it. */
 const MAX_QUEUED_BYTES = 16 * 1024 * 1024;
 
+/** The comments feature's collection (layout: CommentRecord in @freero/shared). */
+const COMMENTS_COLLECTION = 'comments';
+
 /** Origin of the persisted state applied on load: not a change, so neither broadcast nor saved. */
 const LOAD_ORIGIN = Symbol('load');
 /** Origin of changes and presence relayed from other instances. */
@@ -738,6 +741,32 @@ async function closeBoardHere(boardId: string): Promise<void> {
   if (!room) return;
   dropRoom(room, 4403, 'Board deleted');
   await room.flush(); // queued behind the running save; persists nothing more (destroyed)
+}
+
+/**
+ * Replaces the author name and color on every comment message `userId` wrote on the board (an
+ * account purge shows them as "Deleted user"). Goes through the board's room — loading it if
+ * needed — so connected clients get the change live and the save queue persists it; resolves
+ * once it is saved. Running it twice changes nothing the second time.
+ */
+export async function renameCommentAuthor(boardId: string, userId: string, name: string, color: string): Promise<void> {
+  const room = getRoom(boardId);
+  room.pendingJoins++;
+  try {
+    await room.ready;
+  } finally {
+    room.pendingJoins--;
+  }
+  if (room.destroyed) return;
+  const comments = room.doc.getMap<Record<string, unknown>>(COMMENTS_COLLECTION);
+  room.doc.transact(() => {
+    for (const [key, value] of comments.entries()) {
+      if (!key.startsWith('m:') || value?.authorId !== userId) continue;
+      if (value.authorName !== name || value.authorColor !== color) comments.set(key, { ...value, authorName: name, authorColor: color });
+    }
+  });
+  await room.flush();
+  if (room.conns.size === 0 && room.pendingJoins === 0 && !room.destroyed) room.scheduleUnload();
 }
 
 /** Saves every loaded doc (graceful shutdown). */
