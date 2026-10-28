@@ -163,7 +163,7 @@ export function MentionText(props: MentionTextProps) {
                 ) : (
                   <>
                     <span className="fr-cm-mentions__icon">{inviting ? <Spinner size={14} /> : <MailPlus size={14} />}</span>
-                    <span className="fr-cm-mentions__name">
+                    <span className="fr-cm-mentions__invite">
                       Invite <strong>{o.email}</strong> to comment
                     </span>
                   </>

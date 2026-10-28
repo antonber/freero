@@ -193,7 +193,7 @@ function NotificationsSection() {
       <Section
         id="notifications-settings"
         title="Notification emails"
-        description="Mentions, replies and shared boards always show under the bell. If you haven’t seen them there after about 15 minutes, we email you one summary."
+        description="Mentions, replies and shared boards always show under the bell. What you haven’t seen there a little later, we email you as one summary."
       >
         {failed ? (
           <p className="fr-acct__hint">Email settings couldn’t be loaded. Reload the page to try again.</p>

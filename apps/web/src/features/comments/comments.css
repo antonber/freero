@@ -317,7 +317,14 @@
   white-space: nowrap;
 }
 
+.fr-cm-mentions__invite {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
 .fr-cm-mentions__icon {
+  flex: none;
   display: grid;
   place-items: center;
   width: 22px;
@@ -333,6 +340,8 @@
   background: var(--fr-primary-soft);
   color: var(--fr-primary);
   font-weight: 600;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
 .fr-cm-mention.is-me {

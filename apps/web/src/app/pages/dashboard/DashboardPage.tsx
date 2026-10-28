@@ -221,10 +221,12 @@ export function DashboardPage() {
               )
             }
           />
-          <NotificationBell />
-          <Button variant="primary" icon={Plus} loading={creating === 'blank'} onClick={() => create('blank')} className="fr-dash__new">
-            New board
-          </Button>
+          <div className="fr-dash__actions">
+            <NotificationBell />
+            <Button variant="primary" icon={Plus} loading={creating === 'blank'} onClick={() => create('blank')}>
+              New board
+            </Button>
+          </div>
         </header>
 
         <div className="fr-dash__scroll">
