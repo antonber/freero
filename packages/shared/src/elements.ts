@@ -338,6 +338,14 @@ export interface TableElement extends BaseElement {
 export const tableCellKey = (kind: 't' | 'f', tableId: string, rowId: string, colId: string): string =>
   `${kind}:${tableId}:${rowId}:${colId}`;
 
+/**
+ * What a table carries outside the elements map when it is copied (`ElementsSnapshot.content`
+ * of a table): cell part `"<rowId>:<colId>"` → RichText `t` and fill `f` (absent = empty). Saved
+ * templates persist it and built-in templates write it, so it is a stable format, not a table
+ * internal.
+ */
+export type TableCopyContent = Record<string, { t?: string; f?: string }>;
+
 /** A pasted link: a preview card; known video hosts can play inline (after a click). */
 export interface EmbedElement extends BaseElement {
   type: 'embed';

@@ -3,20 +3,13 @@
 // into different cells at once never overwrite each other, and structural edits (add / remove a
 // row or column) never re-key existing cells. The collection is `undoable` (feature.ts): cell
 // edits are undone like element edits, in the same steps.
-import { tableCellKey, type TableElement } from '@freero/shared';
+import { tableCellKey, type TableCopyContent, type TableElement } from '@freero/shared';
 import { richTextToPlain, type Collection, type Editor } from '@engine';
 
 export const CELLS = 'tableCells';
 
-export interface CellContent {
-  /** RichText; absent = empty. */
-  t?: string;
-  /** Fill color; absent = none. */
-  f?: string;
-}
-
-/** What copy / duplicate carry for a table: cell part ("rowId:colId") → content. */
-export type TableContent = Record<string, CellContent>;
+/** What copy / duplicate carry for a table: cell part ("rowId:colId") → content (@freero/shared). */
+export type TableContent = TableCopyContent;
 
 const cells = (editor: Editor) => editor.collection<string>(CELLS);
 
