@@ -7,3 +7,4 @@ export * from './text';
 export * from './geometry';
 export * from './outline/index';
 export * from './layout/index';
+export * from './objects';

@@ -128,7 +128,7 @@ export interface AppliedChange {
 export class BoardChangeError extends Error {}
 
 const KNOWN_TYPES = new Set<ElementType>([
-  'sticky', 'shape', 'text', 'connector', 'pen', 'frame', 'image', 'card', 'emoji', 'mindmap', 'table', 'embed', 'icon', 'kanban', 'pdf', 'swimlane',
+  'sticky', 'shape', 'text', 'connector', 'pen', 'frame', 'image', 'card', 'emoji', 'mindmap', 'table', 'embed', 'icon', 'kanban', 'pdf', 'swimlane', 'objectlink',
 ]);
 const COMMENTS = 'comments';
 
