@@ -36,6 +36,48 @@
   color: var(--fr-select);
 }
 
+/* Hidden frame: a tag after the title, and (viewers/commenters) a cover over the empty frame. */
+.fr-frame__hidden-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  margin-left: 0.5em;
+  padding: 0 0.5em;
+  border-radius: 999px;
+  background: var(--fr-ink);
+  color: var(--fr-surface);
+  font-size: 0.85em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.fr-frame__cover {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(23, 22, 43, 0.035) 0 12px,
+    rgba(23, 22, 43, 0.07) 12px 24px
+  );
+}
+
+.fr-frame__cover-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--fr-surface);
+  color: var(--fr-ink-2);
+  box-shadow: var(--fr-shadow);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
 .fr-frame__title-input {
   width: max(160px, 60%);
   max-width: 100%;

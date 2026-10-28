@@ -192,7 +192,11 @@ export interface FrameElement extends BaseElement {
   index: number;
   /** Optional aspect preset used when created. */
   preset?: 'custom' | '16:9' | '4:3' | '1:1' | 'a4' | 'letter' | 'mobile' | 'desktop';
-  /** Hide contents from viewers who aren't the owner/editor (Miro-like "hide frame"). */
+  /**
+   * Contents hidden from viewers and commenters. Server-enforced: while set, everything inside
+   * lives in the board's 'editors' layer, which the server sends only to owners/editors
+   * (ElementDefinition.hidesContents; see "Board layers" in ARCHITECTURE.md).
+   */
   hidden?: boolean;
 }
 
