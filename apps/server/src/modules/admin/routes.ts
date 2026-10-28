@@ -48,6 +48,7 @@ export default function adminRoutes(_ctx: ServerContext): Router {
   ] as const) {
     r.post(
       `${base}/admin/members/:userId/${verb}`,
+      requireUser,
       handle(async (req, res) => {
         const me = currentUser(req).id;
         await requireAdmin(req.params.id, me);
