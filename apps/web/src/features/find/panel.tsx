@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { CaseSensitive, ChevronDown, ChevronUp, Replace, Search, TextSearch } from 'lucide-react';
 import { definePanel, useCamera, useCanEdit, type Editor } from '@engine';
 import { Button, IconButton, Input } from '@ui';
-import { PANEL_ID, replaceAll, replacePatch, revealMatch, type Match } from './lib/search';
+import { PANEL_ID, replaceMatches, revealMatch, type Match } from './lib/search';
 import { setFindUi, useFindUi } from './lib/state';
 import { typeInfo } from './lib/types';
 import { useMatches } from './lib/useMatches';
@@ -53,17 +53,22 @@ function FindPanel({ editor }: { editor: Editor }) {
   const replaceCurrent = () => {
     const m = matches[index < 0 ? 0 : index];
     if (!m) return;
-    if (m.source.kind !== 'element') return step(1);
-    const el = editor.getElement(m.source.id);
-    const patch = el && replacePatch(editor, el, query, replacement, opts);
-    if (!el || !patch) {
-      editor.host.notify(el?.locked ? 'Unlock this item to replace its text.' : 'This match can’t be replaced here.', 'info');
+    const s = m.source;
+    const el = s.kind === 'element' ? editor.getElement(s.id) : undefined;
+    const { changed } = replaceMatches(editor, [m], query, replacement, opts);
+    if (!changed) {
+      editor.host.notify(
+        s.kind === 'comment'
+          ? `Only ${s.author} can edit their comment.`
+          : el?.locked
+            ? 'Unlock this item to replace its text.'
+            : 'This match can’t be replaced here.',
+        'info',
+      );
       return step(1);
     }
-    editor.beginGesture();
-    editor.update(el.id, patch);
-    editor.endGesture();
-    // The replaced item usually drops out of the results: the next one is now at the same index.
+    setFindUi(editor, (st) => ({ revision: st.revision + 1 }));
+    // The replaced text usually drops out of the results: the next one is now at the same index.
     const next = matches.filter((x) => x !== m);
     const after = next[Math.min(index < 0 ? 0 : index, next.length - 1)];
     setFindUi(editor, { currentKey: after?.source.key ?? null });
@@ -71,8 +76,10 @@ function FindPanel({ editor }: { editor: Editor }) {
   };
 
   const replaceEverywhere = () => {
-    const n = replaceAll(editor, matches, query, replacement, opts);
-    editor.host.notify(n ? `Replaced in ${n} item${n === 1 ? '' : 's'}` : 'Nothing to replace', n ? 'success' : 'info');
+    const { changed: n, othersComments } = replaceMatches(editor, matches, query, replacement, opts);
+    setFindUi(editor, (st) => ({ revision: st.revision + 1 }));
+    const left = othersComments ? ` · ${othersComments} comment${othersComments === 1 ? '' : 's'} by others left as written` : '';
+    editor.host.notify(n ? `Replaced in ${n} item${n === 1 ? '' : 's'}${left}` : `Nothing to replace${left}`, n ? 'success' : 'info');
   };
 
   return (
@@ -141,7 +148,7 @@ function FindPanel({ editor }: { editor: Editor }) {
       {!query.trim() ? (
         <div className="fr-find__empty">
           <TextSearch size={28} strokeWidth={1.5} />
-          <span>Search every sticky, shape, card, mind map, frame title, connector label and comment.</span>
+          <span>Search every sticky, shape, card, table, mind map, frame title, connector label and comment.</span>
         </div>
       ) : !matches.length ? (
         <div className="fr-find__empty">

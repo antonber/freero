@@ -87,7 +87,7 @@ function Pins({ editor }: { editor: Editor }) {
   const elements = useElements();
   const cam = useCamera();
   const role = useRole();
-  const { draft, openId, showResolved, seen } = useCommentsUi(editor, (s) => s);
+  const { draft, openId, quietId, showResolved, seen } = useCommentsUi(editor, (s) => s);
   // Pin DOM nodes, so popovers can anchor to them. Ref callbacks are cached per id: a fresh
   // callback each render would detach/attach every pin on every render.
   const [pinEls] = useState(() => new Map<string, HTMLDivElement>());
@@ -208,6 +208,7 @@ function Pins({ editor }: { editor: Editor }) {
         // Esc while editing a message cancels the edit (the edit box keeps Escape); clicking
         // away while editing also just cancels the edit.
         escapeToContent
+        autoFocus={quietId !== openId}
         onClose={() => {
           if (editingId) return setEditingId(null);
           if (openId) justClosed.current = { id: openId, at: performance.now() };
@@ -227,6 +228,7 @@ function Pins({ editor }: { editor: Editor }) {
             editor={editor}
             thread={open}
             elementMissing={!!open.elementId && !byId.has(open.elementId)}
+            quiet={quietId === open.id}
             editingId={editingId}
             setEditingId={setEditingId}
           />

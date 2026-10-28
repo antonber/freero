@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import type { TableElement } from '@freero/shared';
 import { defineFormat, useCollection, useEditingPart, useTextFormatState, type Editor } from '@engine';
-import { ColorSwatches, IconButton, Menu, Popover } from '@ui';
+import { ColorSwatches, IconButton, Menu, Popover, Tooltip } from '@ui';
 import { CELLS } from './lib/cells';
 import { activeCell, addCol, addRow, currentFill, deleteCol, deleteRow, exportCsv, fillCells } from './lib/actions';
 
@@ -29,10 +29,12 @@ function FillControl({ editor, table }: { editor: Editor; table: TableElement })
   const target = activeCell(editor, table) ? 'Cell fill' : 'Fill all cells';
   return (
     <>
-      <button ref={ref} type="button" className="fr-table-fmt-btn" aria-label={target} title={target} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        <PaintBucket size={16} strokeWidth={2} />
-        <span className="fr-table-fmt-chip" style={{ background: fill || 'transparent' }} />
-      </button>
+      <Tooltip content={target} side="bottom">
+        <button ref={ref} type="button" className="fr-table-fmt-btn" aria-label={target} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          <PaintBucket size={16} strokeWidth={2} />
+          <span className="fr-table-fmt-chip" style={{ background: fill || 'transparent' }} />
+        </button>
+      </Tooltip>
       <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label={target}>
         <ColorSwatches
           colors={FILLS}
@@ -59,9 +61,11 @@ function StructureMenu({ editor, table }: { editor: Editor; table: TableElement 
   const t = () => editor.getElement<TableElement>(table.id) ?? table;
   return (
     <>
-      <button ref={ref} type="button" className="fr-table-fmt-btn" aria-label="Rows and columns" title="Rows and columns" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        <BetweenHorizontalEnd size={16} strokeWidth={2} />
-      </button>
+      <Tooltip content="Rows and columns" side="bottom">
+        <button ref={ref} type="button" className="fr-table-fmt-btn" aria-label="Rows and columns" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          <BetweenHorizontalEnd size={16} strokeWidth={2} />
+        </button>
+      </Tooltip>
       <Menu
         open={open}
         onClose={() => setOpen(false)}
@@ -76,8 +80,8 @@ function StructureMenu({ editor, table }: { editor: Editor; table: TableElement 
           { id: 'cl', label: 'Insert column left', icon: <BetweenVerticalStart size={16} />, onSelect: run(() => addCol(editor, t(), 'left')) },
           { id: 'cr', label: 'Insert column right', icon: <BetweenVerticalEnd size={16} />, onSelect: run(() => addCol(editor, t(), 'right')) },
           { divider: true },
-          { id: 'dr', label: 'Delete row', icon: <Trash2 size={16} />, danger: true, disabled: table.rows.length <= 1, onSelect: run(() => deleteRow(editor, t())) },
-          { id: 'dc', label: 'Delete column', icon: <Trash2 size={16} />, danger: true, disabled: table.cols.length <= 1, onSelect: run(() => deleteCol(editor, t())) },
+          { id: 'dr', label: 'Delete row', icon: <Trash2 size={16} />, danger: true, disabled: table.rows.length <= 1, disabledReason: 'A table needs at least one row', onSelect: run(() => deleteRow(editor, t())) },
+          { id: 'dc', label: 'Delete column', icon: <Trash2 size={16} />, danger: true, disabled: table.cols.length <= 1, disabledReason: 'A table needs at least one column', onSelect: run(() => deleteCol(editor, t())) },
         ]}
       />
     </>

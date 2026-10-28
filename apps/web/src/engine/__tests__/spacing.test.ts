@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { snapMove } from '../geometry/snap';
+import type { ElementDefinition, ToolDefinition } from '../api';
 import type { EngineCore } from '../runtime/core';
-import { drag, makeCore } from './harness';
+import { boxDef, bundle, click, drag, makeCore } from './harness';
 
 describe('equal-spacing snapping', () => {
   // A row: [0..100] gap 40 [140..240]. The moving box is 100 wide, in the same row.
@@ -65,5 +66,49 @@ describe('grid snapping while dragging', () => {
     tool.onPointerUp!(ev({ x: 57, y: 97 }));
     core.editor.endGesture();
     expect(core.editor.getElement(id)).toMatchObject({ x: 7, y: 47 });
+  });
+});
+
+describe('grid snapping for creation tools', () => {
+  let core: EngineCore;
+  afterEach(() => core?.destroy());
+
+  // A click tool placing a 100×100 sticky centered on the click, a drag tool drawing a box from
+  // press to pointer, and a freehand tool (opted out) dropping one at the exact pointer.
+  let drawing: string | null = null;
+  const tools: ToolDefinition[] = [
+    {
+      id: 'place', label: 'Place', icon: () => null, order: 10, placement: 'main',
+      onPointerDown: ({ editor, point }) => void editor.create({ type: 'sticky', x: point.x - 50, y: point.y - 50 } as never),
+    },
+    {
+      id: 'draw', label: 'Draw', icon: () => null, order: 11, placement: 'main',
+      onPointerDown: ({ editor, point }) => void (drawing = editor.create({ type: 'sticky', x: point.x, y: point.y, w: 1, h: 1 } as never)),
+      onPointerMove: ({ editor, point }) => {
+        const el = editor.getElement(drawing!)!;
+        editor.update(drawing!, { w: point.x - el.x, h: point.y - el.y });
+      },
+    },
+    {
+      id: 'ink', label: 'Ink', icon: () => null, order: 12, placement: 'main', snapToGrid: false,
+      onPointerDown: ({ editor, point }) => void editor.create({ type: 'sticky', x: point.x, y: point.y } as never),
+    },
+  ];
+  const setup = () => {
+    core = makeCore({ bundles: [bundle('boxes', { elements: [boxDef as ElementDefinition<any>], tools })] });
+    core.editor.updateSettings({ snapToGrid: true, gridSize: 20 });
+  };
+  const last = () => core.editor.getElements().at(-1)!;
+
+  it('new items land on the grid; freehand tools and Alt place exactly at the pointer', () => {
+    setup();
+    click(core, { x: 57, y: 83 }, { tool: 'place' });
+    expect([last().x % 20, last().y % 20]).toEqual([0, 0]);
+    drag(core, { x: 23, y: 218 }, { x: 167, y: 331 }, { tool: 'draw' });
+    expect(last()).toMatchObject({ x: 20, y: 220, w: 140, h: 120 });
+    click(core, { x: 57, y: 83 }, { tool: 'ink' });
+    expect(last()).toMatchObject({ x: 57, y: 83 });
+    click(core, { x: 57, y: 83 }, { tool: 'place', alt: true });
+    expect(last()).toMatchObject({ x: 7, y: 33 });
   });
 });

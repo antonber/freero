@@ -11,12 +11,13 @@ import { ElementFrame } from '../canvas/WorldLayer';
 import { expandRect } from '../geometry/geometry';
 import { compareRenderOrder } from '../geometry/spatial';
 import { fontEmbedCss } from './fontEmbed';
+import { createRemoteImageInliner } from './remoteImages';
 
 const MAX_PIXELS_SIDE = 8192;
 
 function ExportWorld({ elements, rect, background }: { elements: BoardElement[]; rect: Rect; background: string | null }) {
   return (
-    <div style={{ position: 'relative', width: rect.w, height: rect.h, overflow: 'hidden', background: background ?? 'transparent' }}>
+    <div data-fr-export="" style={{ position: 'relative', width: rect.w, height: rect.h, overflow: 'hidden', background: background ?? 'transparent' }}>
       <div style={{ position: 'absolute', left: 0, top: 0, transform: `translate(${-rect.x}px, ${-rect.y}px)` }}>
         {elements.map((el) => (
           <ElementFrame key={el.id} element={el} selected={false} editing={false} zoom={1} />
@@ -26,7 +27,10 @@ function ExportWorld({ elements, rect, background }: { elements: BoardElement[];
   );
 }
 
+const nextFrames = () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+
 export function createExportRenderer(core: EngineCore) {
+  const inlineRemoteImages = createRemoteImageInliner(() => core.hostRef.current);
   return async function renderExport(opts: ExportOptions): Promise<string> {
     // Never render synchronously inside a React commit/cleanup (thumbnail on leave).
     await Promise.resolve();
@@ -71,9 +75,14 @@ export function createExportRenderer(core: EngineCore) {
           </EngineContext.Provider>,
         ),
       );
-      await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+      await nextFrames();
       await document.fonts?.ready;
       const node = host.firstElementChild as HTMLElement;
+      // Third-party images become data URLs first, or html-to-image would drop the ones whose
+      // host refuses cross-origin reads. Then let the image components see their loads.
+      const images = await inlineRemoteImages(node);
+      if (images.found) await nextFrames();
+      if (images.missing) opts.onMissingImages?.(images.missing);
       const options = {
         width: rect.w,
         height: rect.h,

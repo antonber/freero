@@ -16,17 +16,62 @@ export interface RawPoint {
 type StrokeShape = Pick<PenElement, 'points' | 'strokeWidth' | 'highlighter' | 'w' | 'h' | 'baseW' | 'baseH'>;
 
 export const PEN_THINNING = 0.5;
+/**
+ * The highlighter responds to pressure more gently than the pen. Mouse/touch highlighter strokes
+ * are captured at a constant 0.5, where thinning has no effect, so they stay even.
+ */
+export const HIGHLIGHTER_THINNING = 0.3;
 
 export function strokeOptions(width: number, highlighter: boolean, last = true): StrokeOptions {
   return highlighter
-    ? { size: width, thinning: 0, smoothing: 0.5, streamline: 0.45, simulatePressure: false, last }
+    ? { size: width, thinning: HIGHLIGHTER_THINNING, smoothing: 0.5, streamline: 0.45, simulatePressure: false, last }
     : { size: width, thinning: PEN_THINNING, smoothing: 0.55, streamline: 0.35, simulatePressure: false, last };
 }
 
 /** Outline radius at pressure p (mirrors perfect-freehand's radius for linear easing). */
 export function radiusAt(width: number, highlighter: boolean, p: number): number {
-  const thinning = highlighter ? 0 : PEN_THINNING;
+  const thinning = highlighter ? HIGHLIGHTER_THINNING : PEN_THINNING;
   return Math.max(0.5, width * (0.5 - thinning * (0.5 - p)));
+}
+
+/**
+ * Pressure to record for a captured point. A stylus' real pressure is kept for the pen and the
+ * highlighter alike; without one, the pen derives a gentle pressure from speed and the
+ * highlighter stays even.
+ */
+export function capturePressure(
+  input: { pressure: number; real: boolean },
+  prev: number,
+  screenDist: number,
+  highlighter: boolean,
+): number {
+  if (input.real) return Math.max(0.05, Math.min(1, input.pressure));
+  if (highlighter) return 0.5;
+  return simulatedPressure(prev, screenDist);
+}
+
+/** Angle step of a Shift-constrained straight stroke. */
+export const STRAIGHT_STEP_DEG = 15;
+
+/**
+ * Shift held: the end of a straight stroke from `from` towards `to`, turned to the nearest
+ * multiple of `stepDeg` and keeping the pointer's distance.
+ */
+export function constrainAngle(from: Point, to: Point, stepDeg = STRAIGHT_STEP_DEG): Point {
+  const d = Math.hypot(to.x - from.x, to.y - from.y);
+  const step = (stepDeg * Math.PI) / 180;
+  const a = Math.round(Math.atan2(to.y - from.y, to.x - from.x) / step) * step;
+  const round = (n: number) => Math.round(n * 100) / 100;
+  return { x: round(from.x + Math.cos(a) * d), y: round(from.y + Math.sin(a) * d) };
+}
+
+/**
+ * Points of a straight stroke, spaced about `spacing` apart so the outline smoothing treats it
+ * like any drawn stroke (two bare points would be streamlined short of the end).
+ */
+export function straightStroke(from: Point, to: Point, p: number, spacing: number): RawPoint[] {
+  const n = Math.max(1, Math.ceil(Math.hypot(to.x - from.x, to.y - from.y) / Math.max(spacing, 1e-6)));
+  return Array.from({ length: n + 1 }, (_, i) => ({ x: from.x + ((to.x - from.x) * i) / n, y: from.y + ((to.y - from.y) * i) / n, p }));
 }
 
 /**

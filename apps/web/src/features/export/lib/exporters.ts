@@ -49,13 +49,37 @@ export function outputSize(rect: Rect, scale: number): { w: number; h: number; c
   return { w: Math.round(rect.w * k), h: Math.round(rect.h * k), capped: k < scale };
 }
 
+/**
+ * Counts images left out of one export — linked from a site that refuses to share them, even with
+ * our server — over its renders (a PDF renders each page), and says so once at the end.
+ */
+export function missingImages(editor: Editor) {
+  let count = 0;
+  return {
+    onMissingImages: (n: number) => {
+      count += n;
+    },
+    report() {
+      if (!count) return;
+      editor.host.notify(
+        count === 1
+          ? "1 image was left out: its website doesn't let Freero copy it. Upload the image as a file to include it."
+          : `${count} images were left out: their websites don't let Freero copy them. Upload the images as files to include them.`,
+        'info',
+      );
+    },
+  };
+}
+
 export async function exportImage(
   editor: Editor,
   o: { format: ImageFormat; scale: number; background: boolean; scope: ImageScope },
 ): Promise<void> {
   const { request } = scopeInfo(editor, o.scope);
+  const missing = missingImages(editor);
   const dataUrl = await editor.renderToDataUrl({
     ...request,
+    onMissingImages: missing.onMissingImages,
     format: o.format,
     scale: o.format === 'svg' ? 1 : o.scale,
     // JPEG has no transparency, so it always gets the board background.
@@ -64,6 +88,7 @@ export async function exportImage(
   const suffix = o.scope === 'selection' ? 'selection' : o.scope === 'visible' ? 'view' : '';
   const ext = o.format === 'jpeg' ? 'jpg' : o.format;
   downloadBlob(dataUrlToBlob(dataUrl), exportFileName(editor.host.board.title, ext, suffix));
+  missing.report();
 }
 
 export function boardFrames(editor: Editor): PdfFrame[] {
@@ -86,16 +111,19 @@ export async function copySelectionAsImage(editor: Editor): Promise<void> {
     notify('Select something first, then copy it as an image.', 'info');
     return;
   }
-  const blob = editor.renderToDataUrl({ ids, format: 'png', scale: 2 }).then(dataUrlToBlob);
+  const missing = missingImages(editor);
+  const blob = editor.renderToDataUrl({ ids, format: 'png', scale: 2, onMissingImages: missing.onMissingImages }).then(dataUrlToBlob);
   try {
     if (typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) throw new Error('Clipboard images unsupported');
     // Pass the promise (not the blob) so the write starts inside the user gesture (Safari).
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
     notify('Copied selection as image.', 'success');
+    missing.report();
   } catch {
     try {
       downloadBlob(await blob, exportFileName(editor.host.board.title, 'png', 'selection'));
       notify('Your browser blocked copying images, so we downloaded a PNG instead.', 'info');
+      missing.report();
     } catch {
       notify('Could not render the selection as an image.', 'error');
     }

@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import type { PenElement } from '@freero/shared';
 import { defineFormat, type Editor } from '@engine';
-import { ColorSwatches, Popover } from '@ui';
+import { ColorSwatches, Popover, Tooltip } from '@ui';
 import {
   HIGHLIGHTER_COLOR_NAMES,
   HIGHLIGHTER_COLORS,
@@ -24,17 +24,18 @@ function ColorControl({ editor, strokes }: { editor: Editor; strokes: PenElement
   const colors = allHighlighter ? HIGHLIGHTER_COLORS : PEN_COLORS;
   return (
     <>
-      <button
-        ref={ref}
-        type="button"
-        className="fr-pen-format-swatch"
-        aria-label="Stroke color"
-        aria-expanded={open}
-        title="Color"
-        onClick={() => setOpen((o) => !o)}
-      >
-        <span style={{ background: mixed ? 'conic-gradient(#E5484D, #F5A524, #1FA463, #2F80ED, #5B3FF0, #E5484D)' : current }} />
-      </button>
+      <Tooltip content="Color" side="bottom">
+        <button
+          ref={ref}
+          type="button"
+          className="fr-pen-format-swatch"
+          aria-label="Stroke color"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+        >
+          <span style={{ background: mixed ? 'conic-gradient(#E5484D, #F5A524, #1FA463, #2F80ED, #5B3FF0, #E5484D)' : current }} />
+        </button>
+      </Tooltip>
       <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label="Stroke color">
         <ColorSwatches
           colors={colors}
@@ -63,17 +64,17 @@ function WidthControl({ editor, strokes }: { editor: Editor; strokes: PenElement
   return (
     <div className="fr-pen-format-sizes" role="group" aria-label="Stroke width">
       {SIZE_LABELS.map((label, i) => (
-        <button
-          key={label}
-          type="button"
-          className="fr-pen-size"
-          aria-pressed={!mixed && current === i}
-          aria-label={label}
-          title={label}
-          onClick={() => apply(i as SizeIndex)}
-        >
-          <span style={{ width: 3 + i * 3, height: 3 + i * 3 }} />
-        </button>
+        <Tooltip key={label} content={label} side="bottom">
+          <button
+            type="button"
+            className="fr-pen-size"
+            aria-pressed={!mixed && current === i}
+            aria-label={label}
+            onClick={() => apply(i as SizeIndex)}
+          >
+            <span style={{ width: 3 + i * 3, height: 3 + i * 3 }} />
+          </button>
+        </Tooltip>
       ))}
     </div>
   );

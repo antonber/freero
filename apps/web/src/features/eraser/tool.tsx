@@ -90,6 +90,7 @@ export default defineTool({
   order: 52,
   placement: 'more',
   cursor: 'none',
+  snapToGrid: false, // erases where the pointer is
 
   // The engine wraps pointer-down → up in one gesture, so a whole drag that cuts or erases many
   // strokes is a single undo step.

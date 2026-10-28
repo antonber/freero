@@ -4,6 +4,7 @@ import { defineElement, ElementText, richTextToPlain, type ElementRenderProps, t
 import { anchorOnOutline, hitShape, insetPaths, textBox } from './lib/geometry';
 import { DEFAULT_SIZE } from './lib/constants';
 import { shapeDefaults } from './lib/actions';
+import { decodeDrag, insertShape } from './lib/insert';
 import './shape.css';
 
 /** Below this zoom text is unreadable: skip laying it out (big boards stay fast). */
@@ -78,4 +79,12 @@ export default defineElement({
     });
   },
   anchorPoint: (el, anchor) => anchorOnOutline(el.shape, el.w, el.h, anchor),
+  // A tile dragged out of the shape library lands where it is dropped.
+  importPriority: 40,
+  importData(editor, data, at) {
+    const s = decodeDrag(data.text);
+    if (!s || data.files.length) return false;
+    insertShape(editor, s, at);
+    return true;
+  },
 });

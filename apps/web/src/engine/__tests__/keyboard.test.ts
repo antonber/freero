@@ -44,6 +44,21 @@ describe('arrow-key nudges', () => {
     expect(core.editor.getElement(id)).toMatchObject({ x: 0, y: 0 });
   });
 
+  it('with snap to grid on, an arrow moves to the next grid line (Shift: five), never off the grid', () => {
+    setup();
+    core.editor.updateSettings({ snapToGrid: true, gridSize: 20 });
+    const id = box(5, 47);
+    core.editor.select([id]);
+    press('ArrowRight');
+    expect(core.editor.getElement(id)).toMatchObject({ x: 20, y: 47 });
+    press('ArrowRight');
+    press('ArrowUp');
+    expect(core.editor.getElement(id)).toMatchObject({ x: 40, y: 40 });
+    press('ArrowLeft', { shift: true });
+    press('ArrowDown', { shift: true });
+    expect(core.editor.getElement(id)).toMatchObject({ x: -60, y: 140 });
+  });
+
   it('a pointer press ends the burst, so the next drag is not swallowed into the nudges', () => {
     vi.useFakeTimers();
     setup();
@@ -93,6 +108,36 @@ describe('Tab cycling', () => {
     press('Tab');
     expect(claimed).toBe(1);
     expect(core.editor.getSelection()).toEqual([a]);
+  });
+});
+
+describe('typing on a selected item', () => {
+  it("'?' typed into a fresh empty note is text, not the shift+/ shortcut; on a note with text the shortcut still works", () => {
+    let opened = 0;
+    core = makeCore({
+      bundles: [
+        bundle('boxes', {
+          elements: [boxDef as ElementDefinition<any>],
+          commands: [{ id: 'help.open', label: 'Help', shortcut: 'shift+/', minRole: 'viewer', run: () => void opened++ }],
+        }),
+      ],
+    });
+    uninstall = installKeyboard(core);
+    const typeQuestionMark = () =>
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: '?', code: 'Slash', shiftKey: true, bubbles: true, cancelable: true }));
+    const empty = box(0, 0);
+    core.editor.select([empty]);
+    typeQuestionMark();
+    expect(opened).toBe(0);
+    expect(core.editor.getEditingId()).toBe(empty);
+    expect(core.ui.getState().editRequest?.initialText).toBe('?');
+
+    core.editor.stopEditing();
+    const filled = core.editor.create({ type: 'sticky', x: 300, y: 0, text: 'Plan' } as never);
+    core.editor.select([filled]);
+    typeQuestionMark();
+    expect(opened).toBe(1);
+    expect(core.editor.getEditingId()).toBeNull();
   });
 });
 

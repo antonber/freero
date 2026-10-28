@@ -6,6 +6,16 @@ const PURIFY_TAGS = ['b', 'strong', 'i', 'em', 'u', 's', 'strike', 'del', 'a', '
 const PURIFY_ATTR = ['href', 'style', 'color'];
 const SAFE_HREF = /^(https?:|mailto:|tel:|#|\/)/i;
 
+/**
+ * [additive] The one safe-href rule (links in rich text, item links): http(s), mailto, tel,
+ * in-board `#…` and same-site `/…` paths. Anything else (javascript:, data:, vbscript:…) is refused.
+ */
+export function isSafeHref(href: string): boolean {
+  const h = href.trim();
+  // Browsers drop tabs/newlines inside a scheme ("java\tscript:"); refuse them outright.
+  return !/[\u0000-\u001f]/.test(h) && SAFE_HREF.test(h);
+}
+
 const RENAME: Record<string, string> = { STRONG: 'b', EM: 'i', STRIKE: 's', DEL: 's', DIV: 'p' };
 
 function rename(el: Element, tag: string): Element {
@@ -46,7 +56,7 @@ function normalize(node: Node) {
     if (el.tagName === 'A') {
       const href = el.getAttribute('href') ?? '';
       for (const a of Array.from(el.attributes)) if (a.name !== 'href') el.removeAttribute(a.name);
-      if (!SAFE_HREF.test(href.trim())) el.removeAttribute('href');
+      if (!isSafeHref(href)) el.removeAttribute('href');
     } else if (el.tagName === 'SPAN') {
       const s = el.style;
       const color = s.color;
@@ -99,9 +109,17 @@ const decodeEntities = (s: string) =>
     return ENTITIES[e.toLowerCase()] ?? m;
   });
 
+/** Tags that start a new line in richTextToPlain: an occurrence never spans one. */
+const LINE_TAG = /^<\/?(br|p|div|li|ul|ol)[\s/>]/i;
+/** Inline formatting left with nothing inside after a replacement. */
+const EMPTY_INLINE = /<(b|i|u|s|span|a)(\s[^>]*)?><\/\1>/gi;
+
 /**
  * [additive] Replaces `find` in the TEXT of rich text, keeping every tag (bold, links, colors) as
- * it was. Works without a DOM. An occurrence split by formatting ("fo<b>o</b>") isn't replaced.
+ * it was. Works without a DOM. Matching sees the text the way richTextToPlain does, so an
+ * occurrence split by formatting ("<b>Hel</b>lo") is replaced too: the replacement takes the
+ * formatting of the occurrence's FIRST character (the run it starts in), and the rest of the
+ * occurrence is removed from the runs after it. An occurrence never spans a line break.
  */
 export function replaceInRichText(
   html: string,
@@ -110,17 +128,56 @@ export function replaceInRichText(
   opts: { caseSensitive?: boolean } = {},
 ): { html: string; count: number } {
   if (!html || !find) return { html, count: 0 };
+  // Tokens: tags, and text runs decoded to plain text. `plain` is the runs joined, with a "\n"
+  // wherever a line tag sits, so occurrences can cross inline tags but never lines.
+  type Run = { raw: string; text: string | null; start: number; edits: Array<{ from: number; to: number; insert: string }> };
+  const runs: Run[] = [];
+  let plain = '';
+  for (const m of html.matchAll(/(<[^>]*>)|([^<]+)/g)) {
+    if (m[1]) {
+      runs.push({ raw: m[1], text: null, start: plain.length, edits: [] });
+      if (LINE_TAG.test(m[1])) plain += '\n';
+    } else {
+      const text = decodeEntities(m[2]);
+      runs.push({ raw: m[2], text, start: plain.length, edits: [] });
+      plain += text;
+    }
+  }
   const re = new RegExp(find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), opts.caseSensitive ? 'g' : 'gi');
+  const textRuns = runs.filter((r) => r.text !== null);
   let count = 0;
-  const out = html.replace(/(<[^>]*>)|([^<]+)/g, (m, tag: string | undefined, text: string | undefined) => {
-    if (tag || !text) return m;
-    const plain = decodeEntities(text);
-    const next = plain.replace(re, () => {
-      count++;
-      return replacement;
-    });
-    return next === plain ? text : escapeHtml(next);
-  });
+  for (const m of plain.matchAll(re)) {
+    const from = m.index ?? 0;
+    const to = from + m[0].length;
+    if (m[0].includes('\n')) continue;
+    count++;
+    let inserted = false;
+    for (const r of textRuns) {
+      const end = r.start + r.text!.length;
+      if (end <= from || r.start >= to) continue;
+      const a = Math.max(from, r.start) - r.start;
+      const b = Math.min(to, end) - r.start;
+      r.edits.push({ from: a, to: b, insert: inserted ? '' : replacement });
+      inserted = true;
+    }
+  }
+  if (!count) return { html, count: 0 };
+  let out = '';
+  for (const r of runs) {
+    if (r.text === null || !r.edits.length) {
+      out += r.raw;
+      continue;
+    }
+    let text = r.text;
+    // Right to left, so earlier offsets stay valid.
+    for (const e of [...r.edits].reverse()) text = text.slice(0, e.from) + e.insert + text.slice(e.to);
+    out += escapeHtml(text);
+  }
+  let prev;
+  do {
+    prev = out;
+    out = out.replace(EMPTY_INLINE, '');
+  } while (out !== prev);
   return { html: out, count };
 }
 

@@ -1,12 +1,12 @@
 import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ChevronsUpDown, Clock, Folder, House, LogOut, Settings, Star, Users } from 'lucide-react';
+import { ChevronsUpDown, Clock, Folder, House, LogOut, Settings, Star, Trash2, Users } from 'lucide-react';
 import { Avatar, Logo, Menu, Tooltip } from '@ui';
 import { useAuth } from '../../auth/AuthContext';
 import { ProfileModal } from './ProfileModal';
 import { useMediaQuery } from '../../lib/hooks';
 
-export type View = 'home' | 'recent' | 'starred' | 'shared' | 'mine';
+export type View = 'home' | 'recent' | 'starred' | 'shared' | 'mine' | 'trash';
 
 export const NAV: { id: View; label: string; icon: typeof House }[] = [
   { id: 'home', label: 'Home', icon: House },
@@ -14,6 +14,7 @@ export const NAV: { id: View; label: string; icon: typeof House }[] = [
   { id: 'starred', label: 'Starred', icon: Star },
   { id: 'shared', label: 'Shared with me', icon: Users },
   { id: 'mine', label: 'My boards', icon: Folder },
+  { id: 'trash', label: 'Trash', icon: Trash2 },
 ];
 
 export function Sidebar({ view, onView }: { view: View; onView: (v: View) => void }) {

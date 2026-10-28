@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { LayoutGrid, LayoutTemplate, List, Plus, RotateCw, Search, X } from 'lucide-react';
-import type { BoardSummary } from '@freero/shared';
+import { TRASH_RETENTION_DAYS, type BoardSummary } from '@freero/shared';
 import { Button, IconButton, Input, Kbd, Modal, SegmentedControl, Select, Skeleton, Spinner, useToast } from '@ui';
 import { api, ApiError, type BoardFilter } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
@@ -10,10 +10,18 @@ import { filterByOwner, sortBoards, type BoardSort, type OwnerFilter } from '../
 import { useDebouncedValue, usePersistentState } from '../../lib/hooks';
 import { BoardItem, type BoardActions } from './BoardItem';
 import { NAV, Sidebar, type View } from './Sidebar';
+import { TrashItem, type TrashActions } from './TrashItem';
 import './dashboard.css';
 
-const VIEW_FILTER: Record<View, BoardFilter> = { home: 'all', recent: 'recent', starred: 'starred', shared: 'shared', mine: 'mine' };
-const VIEW_TITLE: Record<View, string> = { home: 'All boards', recent: 'Recently opened', starred: 'Starred', shared: 'Shared with me', mine: 'My boards' };
+const VIEW_FILTER: Record<View, BoardFilter> = { home: 'all', recent: 'recent', starred: 'starred', shared: 'shared', mine: 'mine', trash: 'trash' };
+const VIEW_TITLE: Record<View, string> = {
+  home: 'All boards',
+  recent: 'Recently opened',
+  starred: 'Starred',
+  shared: 'Shared with me',
+  mine: 'My boards',
+  trash: 'Trash',
+};
 const SORTS = ['opened', 'modified', 'name'] as const;
 const LAYOUTS = ['grid', 'list'] as const;
 
@@ -23,6 +31,7 @@ const EMPTY: Record<View, { title: string; body: string }> = {
   starred: { title: 'No starred boards', body: 'Star the boards you use most to keep them one click away.' },
   shared: { title: 'Nothing shared with you yet', body: 'When teammates invite you to a board, it will show up here.' },
   mine: { title: 'You haven’t created a board yet', body: 'Start a blank board or pick a template to get going.' },
+  trash: { title: 'Trash is empty', body: `Boards you delete stay here for ${TRASH_RETENTION_DAYS} days, so you can restore them.` },
 };
 
 const UNTITLED = 'Untitled board';
@@ -51,6 +60,7 @@ export function DashboardPage() {
   const [renaming, setRenaming] = useState<BoardSummary | null>(null);
   const [deleting, setDeleting] = useState<BoardSummary | null>(null);
   const [leaving, setLeaving] = useState<BoardSummary | null>(null);
+  const [purging, setPurging] = useState<BoardSummary | null>(null);
   const [sharing, setSharing] = useState<BoardSummary | null>(null);
 
   useEffect(() => {
@@ -154,9 +164,29 @@ export function DashboardPage() {
     [navigate, notify, patchBoard],
   );
 
+  const trashActions = useMemo<TrashActions>(
+    () => ({
+      restore: async (b) => {
+        try {
+          await api.restoreBoard(b.id);
+          setBoards((list) => list?.filter((x) => x.id !== b.id) ?? null);
+          notify(`Restored “${b.title || UNTITLED}”`, 'success', {
+            action: { label: 'Open', onClick: () => navigate(`/board/${b.id}`) },
+          });
+        } catch (e) {
+          notify(e instanceof ApiError ? e.message : 'Could not restore the board', 'error');
+        }
+      },
+      deleteForever: (b) => setPurging(b),
+    }),
+    [navigate, notify],
+  );
+
   if (!user) return null;
 
-  const visible = boards ? sortBoards(filterByOwner(boards, owner, user.id), sort) : null;
+  const trash = view === 'trash';
+  // The trash keeps the server's order (most recently deleted first).
+  const visible = boards ? (trash ? boards : sortBoards(filterByOwner(boards, owner, user.id), sort)) : null;
   const showCreate = view === 'home' || view === 'mine';
   const showOwnerTabs = view === 'home' || view === 'recent' || view === 'starred';
   const searching = q.length > 0;
@@ -243,18 +273,20 @@ export function DashboardPage() {
                     ))}
                   </div>
                 ) : null}
-                <Select<BoardSort>
-                  aria-label="Sort boards"
-                  size="sm"
-                  variant="ghost"
-                  value={sort}
-                  onChange={setSort}
-                  options={[
-                    { value: 'opened', label: 'Last opened' },
-                    { value: 'modified', label: 'Last modified' },
-                    { value: 'name', label: 'Name' },
-                  ]}
-                />
+                {trash ? null : (
+                  <Select<BoardSort>
+                    aria-label="Sort boards"
+                    size="sm"
+                    variant="ghost"
+                    value={sort}
+                    onChange={setSort}
+                    options={[
+                      { value: 'opened', label: 'Last opened' },
+                      { value: 'modified', label: 'Last modified' },
+                      { value: 'name', label: 'Name' },
+                    ]}
+                  />
+                )}
                 <SegmentedControl<'grid' | 'list'>
                   aria-label="Layout"
                   size="sm"
@@ -280,6 +312,27 @@ export function DashboardPage() {
               </div>
             ) : visible.length === 0 ? (
               <EmptyState view={view} query={q} filtered={owner !== 'any' && (boards?.length ?? 0) > 0} onCreate={() => create('blank')} creating={creating === 'blank'} />
+            ) : trash ? (
+              layout === 'grid' ? (
+                <div className="fr-dash-grid">
+                  {visible.map((b) => (
+                    <TrashItem key={b.id} board={b} layout="grid" actions={trashActions} />
+                  ))}
+                </div>
+              ) : (
+                <div className="fr-list fr-dash-trash__list" role="list">
+                  <div className="fr-list__head" aria-hidden>
+                    <span />
+                    <span>Name</span>
+                    <span>Deleted</span>
+                    <span>Restorable for</span>
+                    <span />
+                  </div>
+                  {visible.map((b) => (
+                    <TrashItem key={b.id} board={b} layout="list" actions={trashActions} />
+                  ))}
+                </div>
+              )
             ) : layout === 'grid' ? (
               <div className="fr-dash-grid">
                 {visible.map((b) => (
@@ -315,14 +368,39 @@ export function DashboardPage() {
       <ConfirmModal
         open={!!deleting}
         title={`Delete “${deleting?.title || UNTITLED}”?`}
-        body="The board and everything on it will be removed for everyone with access. This can’t be undone."
-        confirmLabel="Delete board"
+        body={`It will be removed for everyone with access and moved to your Trash, where you can restore it for ${TRASH_RETENTION_DAYS} days.`}
+        confirmLabel="Move to trash"
         onClose={() => setDeleting(null)}
         onConfirm={async () => {
           const b = deleting!;
           await api.deleteBoard(b.id);
           setBoards((list) => list?.filter((x) => x.id !== b.id) ?? null);
-          notify('Board deleted', 'info');
+          notify('Board moved to the trash', 'info', {
+            action: {
+              label: 'Undo',
+              onClick: async () => {
+                try {
+                  await api.restoreBoard(b.id);
+                  void load();
+                } catch (e) {
+                  notify(e instanceof ApiError ? e.message : 'Could not restore the board', 'error');
+                }
+              },
+            },
+          });
+        }}
+      />
+      <ConfirmModal
+        open={!!purging}
+        title={`Delete “${purging?.title || UNTITLED}” forever?`}
+        body="The board and everything on it will be gone for good. This can’t be undone."
+        confirmLabel="Delete forever"
+        onClose={() => setPurging(null)}
+        onConfirm={async () => {
+          const b = purging!;
+          await api.deleteBoardForever(b.id);
+          setBoards((list) => list?.filter((x) => x.id !== b.id) ?? null);
+          notify('Board deleted forever', 'info');
         }}
       />
       <ConfirmModal

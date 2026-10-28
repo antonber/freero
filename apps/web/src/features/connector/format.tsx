@@ -2,7 +2,7 @@ import { useRef, useState, type ReactNode } from 'react';
 import { ArrowLeftRight, Bold, CornerDownRight, Italic, Slash, Spline } from 'lucide-react';
 import type { CapStyle, ConnectorElement, ConnectorRouting, StrokeStyle } from '@freero/shared';
 import { defineFormat, richTextToPlain, useTextFormatState, type Editor, type ElementPatch } from '@engine';
-import { ColorSwatches, IconButton, Menu, Popover, SegmentedControl } from '@ui';
+import { ColorSwatches, IconButton, Menu, Popover, SegmentedControl, Tooltip } from '@ui';
 import { capShape } from './lib/geometry';
 import { patchConnector, TOOL_ID, type ConnectorStyle } from './lib/model';
 
@@ -68,9 +68,11 @@ function ColorControl({ editor, conns }: { editor: Editor; conns: ConnectorEleme
   const color = conns[0].stroke;
   return (
     <>
-      <button ref={ref} type="button" className="fr-cx-fmt-swatch" aria-label="Line color" aria-expanded={open} title="Line color" onClick={() => setOpen((o) => !o)}>
-        <span style={{ background: color }} />
-      </button>
+      <Tooltip content="Line color" side="bottom">
+        <button ref={ref} type="button" className="fr-cx-fmt-swatch" aria-label="Line color" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          <span style={{ background: color }} />
+        </button>
+      </Tooltip>
       <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label="Line color">
         <ColorSwatches colors={COLORS} value={color} columns={6} size={24} allowCustom onChange={(stroke) => apply(editor, conns, { stroke })} aria-label="Line color" />
       </Popover>
@@ -83,9 +85,11 @@ function MenuButton(props: { label: string; children: ReactNode; items: Array<{ 
   const ref = useRef<HTMLButtonElement>(null);
   return (
     <>
-      <button ref={ref} type="button" className="fr-cx-fmt-btn" aria-label={props.label} title={props.label} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        {props.children}
-      </button>
+      <Tooltip content={props.label} side="bottom">
+        <button ref={ref} type="button" className="fr-cx-fmt-btn" aria-label={props.label} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          {props.children}
+        </button>
+      </Tooltip>
       <Menu open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" align="center" minWidth={150} items={props.items} aria-label={props.label} />
     </>
   );

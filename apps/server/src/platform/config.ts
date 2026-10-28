@@ -13,7 +13,9 @@ export type RateLimitName =
   | 'password'
   | 'invite'
   | 'upload'
+  | 'remoteImage'
   | 'boardCreate'
+  | 'templateSave'
   | 'wsConnect';
 
 /** `limit` hits per `windowMs`; `null` = not limited. */
@@ -68,6 +70,7 @@ export interface Config {
   maxUploadBytes: number;
   uploadQuotaBytes: number;
   maxBoardsPerUser: number;
+  maxTemplatesPerUser: number;
   /** On SIGTERM, how long /readyz reports 503 before the server stops accepting connections. */
   shutdownDrainMs: number;
   rateLimits: Record<RateLimitName, RateLimitRule>;
@@ -94,7 +97,9 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   password: '5/15m', // per IP and per email (password reset / change, phase 2)
   invite: '60/1h', // per user
   upload: '60/10m', // per user
+  remoteImage: '200/10m', // per user: images the server fetches from a URL (import + export)
   boardCreate: '100/1h', // per user (create + duplicate)
+  templateSave: '60/1h', // per user (saving a board or selection as a template)
   wsConnect: '200/1m', // per IP and per user
 };
 
@@ -106,7 +111,9 @@ const ENV_NAME: Record<RateLimitName, string> = {
   password: 'RATE_LIMIT_PASSWORD',
   invite: 'RATE_LIMIT_INVITE',
   upload: 'RATE_LIMIT_UPLOAD',
+  remoteImage: 'RATE_LIMIT_REMOTE_IMAGE',
   boardCreate: 'RATE_LIMIT_BOARD_CREATE',
+  templateSave: 'RATE_LIMIT_TEMPLATE_SAVE',
   wsConnect: 'RATE_LIMIT_WS_CONNECT',
 };
 
@@ -246,6 +253,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     maxUploadBytes: int('MAX_UPLOAD_MB', 15, 1, 1024) * MB,
     uploadQuotaBytes: int('UPLOAD_QUOTA_MB', 1024, 1) * MB,
     maxBoardsPerUser: int('MAX_BOARDS_PER_USER', 5000, 1),
+    maxTemplatesPerUser: int('MAX_TEMPLATES_PER_USER', 500, 1),
     shutdownDrainMs: int('SHUTDOWN_DRAIN_SECONDS', production ? 5 : 0, 0, 300) * 1000,
     rateLimits,
   };

@@ -10,13 +10,20 @@
 // Database: PGlite under the temp data dir by default. With DATABASE_URL (any database on a real
 // Postgres server; its user needs CREATEDB), each run creates and finally drops its own databases
 // and also checks that two instances starting at once share the migrations safely.
+//
+// Multi-instance: with DATABASE_URL and REDIS_URL, two instances share one fresh database and the
+// Redis, and clients on different instances must see each other's edits and cursors, access
+// changes / logouts / deletes made through the other instance, and every edit saved exactly as
+// if one instance had served them (even one whose instance is killed before it saved).
 
 import { execSync, spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 import * as decoding from 'lib0/decoding';
 import * as encoding from 'lib0/encoding';
 import WebSocket from 'ws';
@@ -58,6 +65,9 @@ async function check(name, fn) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Rate-limit counters are keyed with SESSION_SECRET: a secret of its own keeps this run's servers
+// from sharing (Redis-backed) counters with earlier runs.
+const RUN_SECRET = randomBytes(32).toString('base64url');
 async function waitFor(cond, timeoutMs = 5000, what = 'condition') {
   const end = Date.now() + timeoutMs;
   while (Date.now() < end) {
@@ -107,6 +117,7 @@ async function spawnServer(dataDir, env = {}) {
       FREERO_DATA_DIR: dataDir,
       NODE_ENV: 'test',
       FREERO_DOC_IDLE_MS: '1000',
+      SESSION_SECRET: RUN_SECRET,
       ...(db.url ? { DATABASE_URL: db.url } : {}),
       ...env,
     },
@@ -238,11 +249,12 @@ class User {
     this.email = `${label.toLowerCase()}-${Date.now()}@verify.freero.app`;
     this.name = `User ${label}`;
   }
-  async req(method, url, body, { raw = false, headers = {}, cookie = true } = {}) {
+  /** `port`: which instance to ask (default: the main server). */
+  async req(method, url, body, { raw = false, headers = {}, cookie = true, port = server.port } = {}) {
     const h = { ...headers };
     if (cookie && this.cookie) h.cookie = this.cookie;
     if (body !== undefined && !raw) h['content-type'] = 'application/json';
-    const res = await fetch(`http://127.0.0.1:${server.port}${url}`, {
+    const res = await fetch(`http://127.0.0.1:${port}${url}`, {
       method,
       headers: h,
       body: body === undefined ? undefined : raw ? body : JSON.stringify(body),
@@ -273,8 +285,11 @@ class User {
 // ---------------------------------------------------------------------------
 const providers = new Set();
 
-/** `prepare(doc)` runs before connecting (local "offline" content the client brings along). */
-function connectDoc(user, boardId, prepare) {
+/**
+ * `prepare(doc)` runs before connecting (local "offline" content the client brings along).
+ * `port`: the instance to connect to (default: the main server).
+ */
+function connectDoc(user, boardId, prepare, port = server.port) {
   const cookie = user.cookie;
   class CookieWebSocket extends WebSocket {
     constructor(url, protocols) {
@@ -283,7 +298,7 @@ function connectDoc(user, boardId, prepare) {
   }
   const doc = new Y.Doc();
   prepare?.(doc);
-  const provider = new WebsocketProvider(`ws://127.0.0.1:${server.port}/ws/boards`, boardId, doc, {
+  const provider = new WebsocketProvider(`ws://127.0.0.1:${port}/ws/boards`, boardId, doc, {
     WebSocketPolyfill: CookieWebSocket,
     disableBc: true,
     connect: false,
@@ -350,9 +365,9 @@ function withLayers(client) {
   return client;
 }
 
-/** A client of `user` with layers, synced and having asked for both layers. */
-async function layerClient(user, boardId) {
-  const c = withLayers(connectDoc(user, boardId));
+/** A client of `user` with layers, synced and having asked for both layers (`port`: instance). */
+async function layerClient(user, boardId, port = server.port) {
+  const c = withLayers(connectDoc(user, boardId, undefined, port));
   await c.ready();
   c.askLayer('private');
   c.askLayer('editors');
@@ -964,10 +979,18 @@ async function run() {
       assert(!ids.includes(C.id) && !ids.includes(D.id) && ids.includes(B.id), JSON.stringify(ids));
     });
 
-    await check('delete: only owner; removes board, doc and access; copy survives', async () => {
+    await check('delete: only owner; moves the board to the trash, removing it and its access for everyone; copy survives', async () => {
       assert((await B.req('DELETE', `/api/boards/${board.id}`)).status === 403, 'editor delete');
-      const live = connectDoc(B, board.id);
-      await live.ready();
+      const live = await layerClient(B, board.id);
+      // An edit the server has received but not saved yet (saves are debounced) when the delete lands.
+      const watcher = await layerClient(A, board.id);
+      els(live).set('t1', { id: 't1', type: 'sticky', text: 'just before the delete' });
+      // ...and in a layer: hidden-frame content and a private draft (kept through the trash too).
+      live.layers.editors.getMap('elements').set('t2', { id: 't2', type: 'sticky', text: 'hidden, just before the delete' });
+      live.layers.private.getMap('elements').set('t3', { id: 't3', type: 'sticky', text: 'draft, just before the delete' });
+      await waitFor(() => els(watcher).get('t1') && watcher.layers.editors.getMap('elements').get('t2'), 3000, 'the last edits to reach the server');
+      await sleep(100);
+      watcher.destroy();
       assert((await A.req('DELETE', `/api/boards/${board.id}`)).status === 200, 'owner delete');
       await waitFor(() => live.closeCodes.includes(4403), 5000, 'connected editor to be closed with 4403');
       live.destroy();
@@ -979,6 +1002,52 @@ async function run() {
       await cd.ready();
       assert(els(cd).get('e2')?.text === 'from B', 'copy lost its content');
       cd.destroy();
+    });
+
+    await check('trash: only the owner lists and restores it, with every edit up to the delete; delete forever is final', async () => {
+      const trash = await A.req('GET', '/api/boards?filter=trash');
+      const entry = trash.json?.boards?.find((b) => b.id === board.id);
+      assert(entry && entry.purgeAt - entry.deletedAt === 30 * 86_400_000, `A's trash: ${trash.text}`);
+      assert(!titles(await B.req('GET', '/api/boards?filter=trash')).includes(board.id), "in the editor's trash");
+      assert((await B.req('POST', `/api/boards/${board.id}/restore`)).status === 404, 'editor restore');
+      assert((await B.req('DELETE', `/api/boards/${board.id}/permanent`)).status === 404, 'editor delete forever');
+      const restored = await A.req('POST', `/api/boards/${board.id}/restore`);
+      assert(restored.status === 200 && restored.json.board.deletedAt === undefined, `restore -> ${restored.status} ${restored.text}`);
+      assert((await B.req('GET', `/api/boards/${board.id}`)).status === 200, 'membership did not survive the trash');
+      const back = connectDoc(B, board.id);
+      await back.ready();
+      assert(els(back).get('e2')?.text === 'from B', 'restored board lost its content');
+      assert(els(back).get('t1')?.text === 'just before the delete', 'the edit made right before the delete was lost');
+      back.destroy();
+      const backL = await layerClient(B, board.id);
+      await waitFor(
+        () => backL.layers.editors.getMap('elements').has('t2') && backL.layers.private.getMap('elements').has('t3'),
+        5000,
+        'the layers (hidden content, private draft) to survive the trash',
+      );
+      backL.destroy();
+
+      assert((await A.req('DELETE', `/api/boards/${board.id}/permanent`)).status === 404, 'delete forever of a live board');
+      assert((await A.req('DELETE', `/api/boards/${board.id}`)).status === 200, 'trash again');
+      assert((await A.req('DELETE', `/api/boards/${board.id}/permanent`)).status === 200, 'delete forever');
+      assert(!titles(await A.req('GET', '/api/boards?filter=trash')).includes(board.id), 'still in the trash');
+      assert((await A.req('POST', `/api/boards/${board.id}/restore`)).status === 404, 'restore after delete forever');
+    });
+
+    await check('saved templates: owner saves, lists and loads one; nobody else sees or deletes it', async () => {
+      const content = { elements: [{ id: 'f1', type: 'frame', x: 0, y: 0, w: 400, h: 300, title: 'Retro', index: 0 }] };
+      const saved = await A.req('POST', '/api/templates', { name: 'Retro', description: 'Ours', content, thumbnail: `data:image/png;base64,${PNG_1PX.toString('base64')}` });
+      assert(saved.status === 201 && saved.json.template.thumbnail?.startsWith('/uploads/'), `save -> ${saved.status} ${saved.text}`);
+      const id = saved.json.template.id;
+      assert((await A.req('GET', '/api/templates')).json.templates.some((t) => t.id === id), 'not listed for its owner');
+      const loaded = await A.req('GET', `/api/templates/${id}`);
+      assert(isDeepStrictEqual(loaded.json.template.content, content), `content changed: ${loaded.text}`);
+      assert(!(await B.req('GET', '/api/templates')).json.templates.some((t) => t.id === id), 'listed for someone else');
+      assert((await B.req('GET', `/api/templates/${id}`)).status === 404, 'someone else loads it');
+      assert((await B.req('DELETE', `/api/templates/${id}`)).status === 404, 'someone else deletes it');
+      assert((await A.req('POST', '/api/templates', { name: 'Empty', content: { elements: [] } })).status === 400, 'empty template');
+      assert((await A.req('DELETE', `/api/templates/${id}`)).status === 200, 'owner delete');
+      assert((await A.req('GET', `/api/templates/${id}`)).status === 404, 'still there after delete');
     });
   } finally {
     closeAllDocs();
@@ -1002,7 +1071,13 @@ async function platformChecks() {
   const METRICS_TOKEN = 'verify-metrics-token';
   let proc = null;
   try {
-    const env = { RATE_LIMIT_LOGIN: '5/1m', UPLOAD_QUOTA_MB: '1', MAX_BOARDS_PER_USER: '2', METRICS_TOKEN };
+    const env = {
+      RATE_LIMIT_LOGIN: '5/1m',
+      UPLOAD_QUOTA_MB: '1',
+      MAX_BOARDS_PER_USER: '2',
+      METRICS_TOKEN,
+      SESSION_SECRET: randomBytes(32).toString('base64url'), // its own rate-limit counters
+    };
     if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
     const ok = await check('platform server boots with tight limits', async () => {
       proc = await waitUp(await spawnServer(dataDir, env));
@@ -1070,11 +1145,14 @@ async function platformChecks() {
       assert(wsStatus === 403, `cross-site WebSocket upgrade -> ${wsStatus}`);
     });
 
-    await check('quotas: board limit per user (403) and upload quota per user (413)', async () => {
-      const second = await call('POST', '/api/boards', { body: { title: 'two' } });
-      assert(second.status === 201, `2nd board -> ${second.status}`);
-      const third = await call('POST', '/api/boards', { body: { title: 'three' } });
-      assert(third.status === 403 && /limit/i.test(third.json?.error ?? ''), `3rd board -> ${third.status} ${third.text}`);
+    await check('quotas: board limit per user holds under parallel creates (403) and upload quota per user (413)', async () => {
+      // One board exists ('mine', limit 2): of eight creates sent at once exactly one may land.
+      const burst = await Promise.all(Array.from({ length: 8 }, (_, i) => call('POST', '/api/boards', { body: { title: `burst ${i}` } })));
+      const created = burst.filter((r) => r.status === 201).length;
+      const refused = burst.filter((r) => r.status === 403 && /limit/i.test(r.json?.error ?? '')).length;
+      assert(created === 1 && refused === 7, `parallel creates -> ${burst.map((r) => r.status).join(',')}`);
+      const owned = await call('GET', '/api/boards?filter=mine');
+      assert(owned.json.boards.length === 2, `owns ${owned.json.boards.length} boards with a limit of 2`);
       const big = Buffer.concat([PNG_1PX, Buffer.alloc(600 * 1024)]); // 2 x 600KB > 1MB quota
       const up1 = await call('POST', '/api/uploads', { body: big, raw: true, headers: { 'content-type': 'image/png' } });
       assert(up1.status === 201, `1st upload -> ${up1.status} ${up1.text}`);
@@ -1119,9 +1197,249 @@ async function platformChecks() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Several instances behind a round-robin balancer: two server processes sharing one Postgres and
+// one Redis; every client may land on either (DATABASE_URL + REDIS_URL only).
+// ---------------------------------------------------------------------------
+async function multiInstanceChecks() {
+  const REDIS_URL = process.env.REDIS_URL?.trim();
+  if (!ADMIN_URL || !REDIS_URL) {
+    console.log('\n(multi-instance checks skipped: they need both DATABASE_URL and REDIS_URL)');
+    return;
+  }
+  console.log('\nmulti-instance: two servers, one Postgres database, one Redis\n');
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-multi-'));
+  const procs = [];
+  let url = null;
+  // Rate-limit counters live in the shared Redis, also across the single-instance run above.
+  const env = () => ({ DATABASE_URL: url, REDIS_URL, RATE_LIMIT_SIGNUP: '200/1h' });
+  const docRows = async (boardId) =>
+    (await adminQuery(`SELECT count(*)::int AS n FROM board_doc_updates WHERE board_id = '${boardId}'`, url))[0].n;
+  try {
+    const up = await check('two instances start on one database and one Redis', async () => {
+      url = await createDatabase();
+      for (let i = 0; i < 2; i++) procs.push(await spawnServer(path.join(dataDir, `i${i}`), env()));
+      await Promise.all(procs.map((p) => waitUp(p)));
+    });
+    if (!up) return;
+    const [one, two] = procs.map((p) => p.port);
+    server = procs[0]; // REST calls default to instance 1 below unless they name a port
+    const A = new User('MA'); // owner
+    const B = new User('MB'); // editor
+    let board = null;
+    await check('accounts and a shared board, set up through instance 1', async () => {
+      for (const u of [A, B]) await u.signup();
+      board = (await A.req('POST', '/api/boards', { title: 'Two instances' })).json.board;
+      const r = await A.req('POST', `/api/boards/${board.id}/members`, { email: B.email, role: 'editor' });
+      assert(r.status === 201, r.text);
+    });
+    if (!board) return;
+
+    let a, b;
+    await check('edits cross instances both ways (A on instance 1, B on instance 2)', async () => {
+      a = connectDoc(A, board.id, undefined, one);
+      b = connectDoc(B, board.id, undefined, two);
+      await Promise.all([a.ready(), b.ready()]);
+      els(a).set('m1', { id: 'm1', type: 'sticky', text: 'from instance 1' });
+      await waitFor(() => els(b).get('m1')?.text === 'from instance 1', 5000, 'B (instance 2) to receive m1');
+      els(b).set('m2', { id: 'm2', type: 'sticky', text: 'from instance 2' });
+      await waitFor(() => els(a).get('m2')?.text === 'from instance 2', 5000, 'A (instance 1) to receive m2');
+    });
+
+    await check('cursors cross instances, with the identity the server stamped', async () => {
+      b.provider.awareness.setLocalStateField('user', { id: A.id, name: 'not B', color: '#000000' });
+      b.provider.awareness.setLocalStateField('cursor', { x: 21, y: 22 });
+      a.provider.awareness.setLocalStateField('cursor', { x: 11, y: 12 });
+      const stateOf = (viewer, client) => viewer.provider.awareness.getStates().get(client.doc.clientID);
+      await waitFor(() => stateOf(a, b)?.cursor?.x === 21, 5000, "A (instance 1) to see B's cursor");
+      await waitFor(() => stateOf(b, a)?.cursor?.x === 11, 5000, "B (instance 2) to see A's cursor");
+      assert(stateOf(a, b).user.id === B.id, `instance 1 shows B as ${JSON.stringify(stateOf(a, b).user)}`);
+    });
+
+    await check('a client leaving instance 2 disappears from presence on instance 1', async () => {
+      const g = connectDoc(B, board.id, undefined, two);
+      await g.ready();
+      g.provider.awareness.setLocalStateField('cursor', { x: 5, y: 5 });
+      await waitFor(() => a.provider.awareness.getStates().get(g.doc.clientID)?.cursor?.x === 5, 5000, 'A to see the guest cursor');
+      const id = g.doc.clientID;
+      g.destroy();
+      await waitFor(() => !a.provider.awareness.getStates().has(id), 5000, 'the guest cursor to disappear on instance 1');
+    });
+
+    await check("opening the board on instance 2 right after an edit on instance 1 shows it before it is even saved", async () => {
+      const fresh = (await A.req('POST', '/api/boards', { title: 'Unsaved' })).json.board;
+      const w = connectDoc(A, fresh.id, undefined, one);
+      await w.ready();
+      els(w).set('u1', { id: 'u1', type: 'sticky', text: 'not saved yet' });
+      await sleep(100); // reached instance 1; its save waits ~1.5 s (debounce)
+      const r = connectDoc(A, fresh.id, undefined, two); // instance 2 loads the board from the database
+      await r.ready();
+      await waitFor(() => els(r).get('u1')?.text === 'not saved yet', 1000, 'the reader on instance 2 to get the unsaved edit');
+      assert((await docRows(fresh.id)) === 0, 'the edit was already saved, so this proves nothing about fan-out');
+      w.destroy();
+      r.destroy();
+    });
+
+    await check('a role change made through instance 2 applies live to a socket on instance 1', async () => {
+      const b1 = connectDoc(B, board.id, undefined, one);
+      await b1.ready();
+      assert(b1.role === 'editor', `role ${b1.role}`);
+      const r = await A.req('PATCH', `/api/boards/${board.id}/members/${B.id}`, { role: 'viewer' }, { port: two });
+      assert(r.status === 200, r.text);
+      await waitFor(() => b1.role === 'viewer', 5000, 'the socket on instance 1 to become viewer');
+      els(b1).set('ignored', { id: 'ignored', type: 'sticky', text: 'viewer write' });
+      await sleep(600);
+      assert(!els(a).has('ignored') && !els(b).has('ignored'), "a viewer's write crossed instances");
+      assert((await A.req('PATCH', `/api/boards/${board.id}/members/${B.id}`, { role: 'editor' }, { port: two })).status === 200, 'restore');
+      await waitFor(() => b.role === 'editor', 5000, 'B on instance 2 to be editor again');
+      b1.destroy();
+    });
+
+    await check('logging out through instance 2 closes that session\'s socket on instance 1 (4401)', async () => {
+      const L = new User('ML');
+      await L.signup();
+      const own = (await L.req('POST', '/api/boards', { title: 'L' })).json.board;
+      const live = connectDoc(L, own.id, undefined, one);
+      await live.ready();
+      assert((await L.req('POST', '/api/auth/logout', undefined, { port: two })).status === 200, 'logout');
+      await waitFor(() => live.closeCodes.includes(4401), 5000, 'the socket on instance 1 to close with 4401');
+      live.destroy();
+    });
+
+    // ---- board layers across instances ----
+    const layerRows = async (boardId, layer) =>
+      (
+        await adminQuery(
+          `SELECT (SELECT count(*) FROM board_layers WHERE board_id = '${boardId}' AND layer = '${layer}')
+                + (SELECT count(*) FROM board_layer_updates WHERE board_id = '${boardId}' AND layer = '${layer}') AS n`,
+          url,
+        )
+      )[0].n * 1;
+    const V = new User('MV'); // viewer
+    const R = new User('MR'); // editor, removed later
+    await check('board layers across instances: a private draft reaches only its author (other tab on the other instance); hidden-frame content reaches owner and editor on both, never a viewer', async () => {
+      for (const u of [V, R]) await u.signup();
+      for (const [u, role] of [[V, 'viewer'], [R, 'editor']])
+        assert((await A.req('POST', `/api/boards/${board.id}/members`, { email: u.email, role })).status === 201, 'invite');
+      const b1 = await layerClient(B, board.id, one);
+      const b2 = await layerClient(B, board.id, two);
+      const a2 = await layerClient(A, board.id, two);
+      const v1 = await layerClient(V, board.id, one);
+      const v2 = await layerClient(V, board.id, two);
+      b1.layers.private.getMap('elements').set('mdraft', { id: 'mdraft', type: 'sticky', text: 'MULTI-DRAFT' });
+      a2.layers.editors.getMap('elements').set('mhid', { id: 'mhid', type: 'sticky', text: 'MULTI-HIDDEN' });
+      await waitFor(() => b2.layers.private.getMap('elements').get('mdraft')?.text === 'MULTI-DRAFT', 5000, "B's tab on instance 2 to get B's draft");
+      await waitFor(() => b1.layers.editors.getMap('elements').get('mhid')?.text === 'MULTI-HIDDEN', 5000, 'B on instance 1 to get the hidden content');
+      await sleep(500);
+      for (const o of [a2, v1, v2]) {
+        const all = sharedText(o) + JSON.stringify(o.layers.private.toJSON()) + JSON.stringify(o.layers.editors.toJSON());
+        assert(!all.includes('MULTI-DRAFT'), `${o.user.label} got B's private draft`);
+        if (o.user === V) assert(!all.includes('MULTI-HIDDEN'), 'the viewer got hidden-frame content');
+      }
+      for (const c of [b1, b2, a2, v1, v2]) c.destroy();
+    });
+
+    await check('board layers across instances: opening the board on instance 2 right after a private edit on instance 1 gets it before it is saved', async () => {
+      const fresh = (await A.req('POST', '/api/boards', { title: 'Layer catch-up' })).json.board;
+      const w = await layerClient(A, fresh.id, one);
+      w.layers.private.getMap('elements').set('early', { id: 'early', type: 'sticky', text: 'unsaved draft' });
+      await sleep(100); // reached instance 1; its save waits ~1.5 s (debounce)
+      const r = await layerClient(A, fresh.id, two); // instance 2 loads the board from the database
+      await waitFor(() => r.layers.private.getMap('elements').get('early')?.text === 'unsaved draft', 2000, 'the other tab on instance 2 to get the unsaved draft');
+      assert((await layerRows(fresh.id, `u:${A.id}`)) === 0, 'the draft was already saved, so this proves nothing about fan-out');
+      w.destroy();
+      r.destroy();
+    });
+
+    await check("reveal across instances: the owner reveals through instance 2 while the authors' drafts were made on instance 1 (one author offline, one removed from the board); an edit racing the reveal is never lost", async () => {
+      const b1 = await layerClient(B, board.id, one);
+      const r1 = await layerClient(R, board.id, one);
+      b1.layers.private.getMap('elements').set('rv', { id: 'rv', type: 'sticky', text: 'v1' });
+      b1.layers.private.getMap('elements').set('off', { id: 'off', type: 'sticky', text: 'author offline' });
+      r1.layers.private.getMap('elements').set('rm', { id: 'rm', type: 'sticky', text: 'REMOVED-MEMBER-DRAFT' });
+      await sleep(500);
+      r1.destroy();
+      assert((await A.req('DELETE', `/api/boards/${board.id}/members/${R.id}`)).status === 200, 'remove R');
+      const a2 = await layerClient(A, board.id, two);
+      const v1 = await layerClient(V, board.id, one);
+      // B keeps typing in the draft at the very moment the owner reveals.
+      a2.layerOp({ type: 'reveal', collection: 'elements' });
+      b1.layers.private.getMap('elements').set('rv', { id: 'rv', type: 'sticky', text: 'v2' });
+      await waitFor(() => els(v1).get('off')?.text === 'author offline' && els(v1).has('rv'), 5000, 'the viewer on instance 1 to see the revealed drafts');
+      await sleep(800);
+      const shared = els(v1).get('rv')?.text;
+      const stillPrivate = b1.layers.private.getMap('elements').get('rv')?.text;
+      assert(shared === 'v2' || stillPrivate === 'v2', `the racing edit was lost (shared ${shared}, private ${stillPrivate})`);
+      assert(!sharedText(v1).includes('REMOVED-MEMBER-DRAFT') && !sharedText(a2).includes('REMOVED-MEMBER-DRAFT'), "a removed member's draft was revealed");
+      for (const c of [b1, a2, v1]) c.destroy();
+    });
+
+    await check('edits made on both instances at once are all saved, and the log is compacted after both unload', async () => {
+      for (let i = 0; i < 15; i++) {
+        els(a).set(`x${i}`, { id: `x${i}`, type: 'sticky', text: `a${i}` });
+        els(b).set(`y${i}`, { id: `y${i}`, type: 'sticky', text: `b${i}` });
+        await sleep(20);
+      }
+      const all = (c) => Array.from({ length: 15 }, (_, i) => i).every((i) => els(c).has(`x${i}`) && els(c).has(`y${i}`));
+      await waitFor(() => all(a) && all(b), 5000, 'both clients to converge');
+      a.destroy();
+      b.destroy();
+      // Saved on the last disconnect; unloaded (and compacted) after FREERO_DOC_IDLE_MS=1000.
+      await waitFor(async () => (await docRows(board.id)) === 0, 10_000, 'the update log to be compacted into the base');
+      // Layers too: the removed member's private layer is gone; B's (holding the off-board draft
+      // racing the reveal, if it stayed private) and the editors layer are kept.
+      await waitFor(async () => (await layerRows(board.id, `u:${R.id}`)) === 0, 10_000, "the removed member's private layer to be deleted");
+      const bl = await layerClient(B, board.id, two);
+      await waitFor(() => bl.layers.editors.getMap('elements').get('mhid')?.text === 'MULTI-HIDDEN', 5000, 'the hidden content saved once across instances to reload');
+      bl.destroy();
+      const reader = connectDoc(A, board.id, undefined, two);
+      await reader.ready();
+      assert(all(reader) && els(reader).has('m1') && els(reader).has('m2'), `after reload: ${JSON.stringify([...els(reader).keys()])}`);
+      reader.destroy();
+    });
+
+    await check('an instance killed before saving loses nothing: the other instance saves what it relayed', async () => {
+      const k = connectDoc(A, board.id, undefined, one);
+      const s = connectDoc(B, board.id, undefined, two);
+      await Promise.all([k.ready(), s.ready()]);
+      els(k).set('crash', { id: 'crash', type: 'sticky', text: 'made on the instance that dies' });
+      await waitFor(() => els(s).has('crash'), 5000, 'the edit to reach instance 2');
+      k.destroy(); // its client goes away too (otherwise it would re-send the edit on reconnect)
+      await stopProc(procs[0]); // hard kill, well inside the save debounce
+      s.destroy(); // instance 2 unloads the board after FREERO_DOC_IDLE_MS
+      await sleep(2500);
+      const after = connectDoc(A, board.id, undefined, two);
+      await after.ready();
+      assert(els(after).get('crash')?.text === 'made on the instance that dies', 'the edit died with its instance');
+      after.destroy();
+      // Instance 1 comes back (as after a crash restart) for the delete check below.
+      procs[0] = await waitUp(await spawnServer(path.join(dataDir, 'i0b'), env()));
+    });
+
+    await check('deleting the board through instance 2 disconnects its sockets on instance 1 (4403)', async () => {
+      const live = connectDoc(B, board.id, undefined, procs[0].port);
+      await live.ready();
+      assert((await A.req('DELETE', `/api/boards/${board.id}`, undefined, { port: two })).status === 200, 'delete');
+      await waitFor(() => live.closeCodes.includes(4403), 5000, 'the socket on instance 1 to close with 4403');
+      live.destroy();
+    });
+  } finally {
+    closeAllDocs();
+    server = null;
+    for (const p of procs) await stopProc(p);
+    await dropDatabases();
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
 const started = Date.now();
 await run().catch((e) => record('verify harness', false, e?.stack ?? String(e)));
 await platformChecks().catch((e) => record('platform checks harness', false, e?.stack ?? String(e)));
+await multiInstanceChecks().catch((e) => record('multi-instance checks harness', false, e?.stack ?? String(e)));
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed in ${((Date.now() - started) / 1000).toFixed(1)}s`);
 if (failed.length) {

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { BoardElement } from '@freero/shared';
 import type { ElementDefinition } from '../api';
 import type { EngineCore } from '../runtime/core';
+import { publicCursor } from '../editor/layers';
 import { boxDef, bundle, frameDef, makeCore } from './harness';
 
 let core: EngineCore;
@@ -96,5 +97,33 @@ describe('private mode placement', () => {
     core.editor.undo(); // the draft itself
     expect(core.editor.getElement(draft)).toBeUndefined();
     expect(core.editor.getElement(before)).toBeDefined();
+  });
+});
+
+describe('private mode across the reveal', () => {
+  it("an edit the author made while the server revealed the item is not lost: it replaces the revealed copy", async () => {
+    core = setup();
+    core.editor.setPrivatePlacement((el) => el.type === 'sticky');
+    const id = core.editor.create(sticky(0, 0));
+    core.editor.update(id, { text: 'v1' } as never);
+    const revealed = core.editor.getElement(id)!;
+    core.editor.update(id, { text: 'v2' } as never); // typed on while the reveal was on its way
+    // The server's reveal of v1 arrives (its delete of the private copy missed the v2 edit).
+    core.store.doc.transact(() => core.store.elements.set(id, revealed), 'remote');
+    await settle();
+    expect(core.editor.layerOf(id)).toBe('shared');
+    expect(core.store.elements.get(id)).toMatchObject({ text: 'v2' });
+    expect(core.store.layers.private.elements.has(id)).toBe(false);
+  });
+
+  it("others never learn where the author drafts: no private ids in presence, no cursor where content goes private", () => {
+    core = setup();
+    const shared = core.editor.create(sticky(500, 500));
+    core.editor.setPrivatePlacement((el) => el.type === 'sticky' && el.x < 300);
+    const draft = core.editor.create(sticky(0, 0));
+    core.editor.select([draft, shared]);
+    expect(core.store.getLocalPresence().selection).toEqual([shared]);
+    expect(publicCursor(core, { x: 50, y: 50 })).toBeNull();
+    expect(publicCursor(core, { x: 900, y: 900 })).toEqual({ x: 900, y: 900 });
   });
 });

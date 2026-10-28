@@ -25,6 +25,9 @@ export default defineConfig({
       '@ui': src('ui/index.ts'),
     },
   },
+  // The icon library lazy-loads lucide's per-icon module list; pre-bundle it at startup so the
+  // first open in dev doesn't trigger "new dependencies optimized" and reload the board.
+  optimizeDeps: { include: ['lucide-react/icons/index'] },
   server: {
     port: 5173,
     // Keep the browser's Host (changeOrigin: false): the server refuses state-changing requests

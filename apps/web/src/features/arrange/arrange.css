@@ -7,3 +7,33 @@
   grid-template-columns: repeat(3, 32px);
   gap: 2px;
 }
+
+.fr-arrange__cluster {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--fr-line);
+}
+
+.fr-arrange__cluster-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--fr-radius-sm);
+  background: transparent;
+  color: var(--fr-ink-2);
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.fr-arrange__cluster-btn:hover {
+  background: var(--fr-surface-3);
+  color: var(--fr-ink);
+}

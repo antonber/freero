@@ -16,7 +16,7 @@ import {
   worldToLocal,
   expandRect,
 } from '../geometry/geometry';
-import { snapMove, snapResize } from '../geometry/snap';
+import { gridStepFor, snapMove, snapResize } from '../geometry/snap';
 import {
   angleFromCenter,
   handleEdges,
@@ -109,8 +109,7 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
    * is held during the drag (a temporary "snap to grid" / "snap freely").
    */
   function gridStep(e: ToolPointerEvent): number | undefined {
-    const s = core.store.getSettings();
-    return s.snapToGrid !== e.metaKey ? s.gridSize : undefined;
+    return gridStepFor(core.store.getSettings(), { metaKey: e.metaKey, altKey: false });
   }
 
   function movableSelection(): BoardElement[] {
@@ -351,6 +350,8 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
     order: 0,
     placement: 'main',
     minRole: 'viewer',
+    // Raw points: moves and resizes snap the dragged box themselves (grid, edges, spacing).
+    snapToGrid: false,
 
     onPointerDown(e) {
       if (e.button !== 0) return;
@@ -378,8 +379,10 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
           // Double-click: dive into a group, or edit text.
           if (target.groupId && sel.length > 1 && sel.includes(target.id)) {
             ed().select([target.id]);
-          } else if (canEdit) {
-            editAt(target, e.point);
+          } else if (canEdit && !editAt(target, e.point) && !target.locked) {
+            // [additive] No text there: the type's own double-click (image → crop mode).
+            const reg = core.registry.elements.get(target.type);
+            reg?.def.onDoubleClick?.(target as never, { editor: core.scoped(reg.feature), point: e.point });
           }
           state = { kind: 'idle' };
           return;

@@ -2,6 +2,7 @@
 // All REST endpoints live under /api, send/receive JSON, and authenticate via
 // an HttpOnly cookie named `freero_session`. Errors: { error: string } with a
 // 4xx/5xx status. 401 = not logged in, 403 = no access, 404 = not found.
+import type { BoardElement } from './elements';
 
 export type Role = 'owner' | 'editor' | 'commenter' | 'viewer';
 export type LinkAccess = 'none' | 'viewer' | 'commenter' | 'editor';
@@ -31,7 +32,13 @@ export interface BoardSummary {
   updatedAt: number;
   /** When the current user last opened it. */
   lastOpenedAt: number | null;
+  /** Trash only (filter=trash): when it was deleted, and when it will be deleted for good. */
+  deletedAt?: number;
+  purgeAt?: number;
 }
+
+/** Days a deleted board stays in its owner's trash (restorable) before it is deleted for good. */
+export const TRASH_RETENTION_DAYS = 30;
 
 export interface BoardMember {
   userId: string;
@@ -56,19 +63,64 @@ export interface AuthResponse { user: User }
 export interface SessionResponse { user: User | null }
 
 // ---- Boards ----
-// GET    /api/boards?filter=all|mine|shared|starred|recent&q=text -> { boards: BoardSummary[] }
+// GET    /api/boards?filter=all|mine|shared|starred|recent|trash&q=text -> { boards: BoardSummary[] }
+//                                    (trash: the caller's own deleted boards, with deletedAt/purgeAt)
 // POST   /api/boards               body CreateBoardRequest -> { board: BoardSummary }
 // GET    /api/boards/:id           -> { board: BoardSummary }   (also records lastOpenedAt;
 //                                     if the user has no membership but linkAccess != 'none',
 //                                     returns the board with role = linkAccess)
 // PATCH  /api/boards/:id           body UpdateBoardRequest -> { board: BoardSummary }  (owner/editor; linkAccess owner only)
-// DELETE /api/boards/:id           -> { ok: true }  (owner only)
+// DELETE /api/boards/:id           -> { ok: true }  (owner only) moves it to the trash: gone from every
+//                                    list and for every member (404, sockets closed 4403) until restored;
+//                                    deleted for good TRASH_RETENTION_DAYS later
+// POST   /api/boards/:id/restore   -> { board: BoardSummary }  (owner only; 404 unless in your trash;
+//                                    403 over the board quota)
+// DELETE /api/boards/:id/permanent -> { ok: true }  (owner only; only boards in the trash)
 // POST   /api/boards/:id/duplicate -> { board: BoardSummary }  (copies the Yjs state)
 // PUT    /api/boards/:id/star      -> { ok: true }
 // DELETE /api/boards/:id/star      -> { ok: true }
 // PUT    /api/boards/:id/thumbnail body { dataUrl: string } -> { ok: true } (editor+)
 export interface CreateBoardRequest { title?: string; description?: string }
 export interface UpdateBoardRequest { title?: string; description?: string; linkAccess?: LinkAccess }
+
+// ---- Saved templates (a board or a selection saved for reuse) ----
+// Personal for now: you see and insert only your own. Once workspaces land (KAI-37) the same
+// routes also return templates shared with your workspace.
+// GET    /api/templates      -> { templates: SavedTemplateSummary[] }  (visible to you, newest first)
+// GET    /api/templates/:id  -> { template: SavedTemplate }           (404 unless visible to you)
+// POST   /api/templates      body SaveTemplateRequest -> { template: SavedTemplateSummary }
+//                            (400 invalid / too large, 403 over MAX_TEMPLATES_PER_USER)
+// DELETE /api/templates/:id  -> { ok: true }  (its owner only)
+export interface SavedTemplateSummary {
+  id: string;
+  name: string;
+  description: string;
+  /** /uploads URL of the preview image, or null. */
+  thumbnail: string | null;
+  ownerId: string;
+  elementCount: number;
+  createdAt: number;
+  updatedAt: number;
+}
+/**
+ * Board content as the web engine exports it (elements with their ids as on the source board,
+ * plus per-element content kept outside the elements map). Opaque to the server; inserting it
+ * gives every element a fresh id (the copy/paste path).
+ */
+export interface TemplateContent {
+  elements: BoardElement[];
+  content?: Record<string, unknown>;
+}
+export interface SavedTemplate extends SavedTemplateSummary {
+  content: TemplateContent;
+}
+export interface SaveTemplateRequest {
+  name: string;
+  description?: string;
+  /** PNG/JPEG/WebP data URL (max 512KB), or omitted. */
+  thumbnail?: string;
+  content: TemplateContent;
+}
 
 // ---- Members / sharing ----
 // GET    /api/boards/:id/members              -> { members: BoardMember[] }
@@ -90,6 +142,14 @@ export interface InviteRequest { email: string; role: Exclude<Role, 'owner'> }
 //     link-local addresses — checked again for every redirect and at connect time — with
 //     timeouts and size caps) and reads its title / description / preview image.
 //     400 bad URL, 422 not previewable (blocked address, not HTML, too large, timeout).
+//
+// POST /api/unfurl/image  { url } -> 201 { url: "/uploads/<key>" }   (signed-in; rate limited)
+//     Copies an image placed on a board by URL into the user's uploads (same fetch protections;
+//     the bytes must really be PNG / JPEG / GIF / WebP / SVG). 413 over the upload quota.
+// GET  /api/unfurl/image?url=<http(s) URL> -> the image bytes (nothing stored), for exports of
+//     boards that still link images from hosts without CORS.
+//     Both: 400 bad URL, 422 not reachable / not an image / too large / timeout.
+export interface ImportImageRequest { url: string }
 export interface UnfurlResponse {
   /** Final URL after redirects. */
   url: string;
@@ -126,7 +186,7 @@ export const WS_MESSAGE_ROLE = 100;
 //   'private'  one per user: only that user's sockets read it, and only while they may edit.
 //              Private-mode drafts and ballots of hidden votes live here until revealed.
 //   'editors'  owners/editors only: contents of hidden frames.
-// They travel over the board's one socket (same instance as the shared doc), in an envelope:
+// They travel over the board's socket (relayed between instances by the server), in an envelope:
 //   writeVarUint(WS_MESSAGE_LAYER), writeVarString(layer), then a y-protocols sync message
 //   (step 1 / step 2 / update) for that layer's doc, in both directions. The server ignores
 //   envelopes for layers the socket may not read and drops writes from sockets that may not
@@ -141,11 +201,15 @@ export const BOARD_LAYERS: readonly BoardLayer[] = ['private', 'editors'];
 //            private layer into the shared doc (one transaction), e.g. revealing private-mode
 //            drafts ('elements') or the ballots of a hidden vote ('voting', `${sessionId}:`).
 //   discard: deletes those entries from every user's private layer without revealing them.
+//   `mine: true` limits either to the sender's own private layer (sharing one's leftovers).
+// Only the private layers of people who may still edit the board are revealed; the server holds
+// the sender's later messages until the op is applied, so it stays in order with them.
 export const WS_MESSAGE_LAYER_OP = 102;
 export interface LayerOp {
   type: 'reveal' | 'discard';
   collection: string;
   prefix?: string;
+  mine?: boolean;
 }
 
 export const SESSION_COOKIE = 'freero_session';

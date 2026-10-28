@@ -6,6 +6,7 @@ import { DEFAULT_CHOICE, MAX_RECENT, PLACE_SIZE, TOOL_ID, type EmojiToolOptions 
 import { EMOJI_CATEGORIES, searchEmojis } from './lib/emojis';
 import { Glyph } from './lib/Glyph';
 import { STAMP_PREFIX, STAMPS, StampArt } from './lib/stamps';
+import { stampTargetAt } from './lib/reactions';
 
 /** World size that shows as PLACE_SIZE px on screen right now. */
 function placeSize(zoom: number): number {
@@ -155,7 +156,17 @@ export default defineTool({
     if (button !== 0) return;
     const { current = DEFAULT_CHOICE } = editor.getToolOptions<EmojiToolOptions>(TOOL_ID);
     const s = placeSize(editor.getCamera().zoom);
-    editor.create<'emoji'>({ type: 'emoji', emoji: current, x: Math.round(point.x - s / 2), y: Math.round(point.y - s / 2), w: s, h: s });
+    // Dropped on an item, the stamp rides on it (moves, duplicates and is deleted with it).
+    const on = stampTargetAt(editor, point);
+    editor.create<'emoji'>({
+      type: 'emoji',
+      emoji: current,
+      x: Math.round(point.x - s / 2),
+      y: Math.round(point.y - s / 2),
+      w: s,
+      h: s,
+      attachedTo: on?.id ?? null,
+    });
   },
 
   Options: Picker,

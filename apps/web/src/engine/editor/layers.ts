@@ -11,9 +11,18 @@
 // collaborator's write races ours, so every owner/editor client re-checks shared and editors
 // elements after each change and moves the misplaced ones (silently: a derived write, like
 // follower refreshes). Several editors doing the same move write identical values.
-import type { BoardElement } from '@freero/shared';
+//
+// Reveal racing with an edit: the server moves a private element into the shared doc while its
+// author (maybe on another instance) is still editing it; the edit lands in the private layer
+// after the reveal deleted it there. The author's client (the only one that can see it) then holds
+// the same id in both docs, and publishes its newer private copy over the revealed one.
+//
+// Presence (KAI-80): while private mode applies to this user, others must not learn WHERE they
+// draft either. `publicCursor` withholds the cursor while it is over the user's own private content
+// or where a new item would go private; selection and editing ids never name private elements.
+import type { BoardElement, PresenceState } from '@freero/shared';
 import type { EngineCore } from '../runtime/core';
-import type { ElementLayer } from '../api';
+import type { ElementLayer, Point } from '../api';
 import { elementAABB, rectCenter } from '../geometry/geometry';
 
 const MAX_DEPTH = 16;
@@ -36,6 +45,25 @@ export function insideHiddenContainer(core: EngineCore, el: BoardElement, isNew 
   return false;
 }
 
+/** The cursor others may see for a pointer at `world` (null: withheld, see the header). */
+export function publicCursor(core: EngineCore, world: Point | null): PresenceState['cursor'] {
+  if (!world) return null;
+  const rule = core.editor.getPrivateRule();
+  if (rule) {
+    // "Where a new sticky would go private" (whole board, or inside the private-mode frame).
+    const probe = { id: '', type: 'sticky', x: world.x - 1, y: world.y - 1, w: 2, h: 2, z: 0, rotation: 0 } as unknown as BoardElement;
+    if (rule(probe)) return null;
+  }
+  const hit = core.editor.hitTest(world);
+  if (hit && core.store.layerOf(hit.id) === 'private') return null;
+  return { x: Math.round(world.x), y: Math.round(world.y) };
+}
+
+/** Ids others may see in this user's presence (never private elements'). */
+export function publicIds(core: EngineCore, ids: string[]): string[] {
+  return ids.filter((id) => core.store.layerOf(id) !== 'private');
+}
+
 export function installLayerPlacement(core: EngineCore, privateRule: () => ((el: BoardElement) => boolean) | null): () => void {
   const { store } = core;
   store.setPlacement((el, current) => {
@@ -53,6 +81,17 @@ export function installLayerPlacement(core: EngineCore, privateRule: () => ((el:
   const sweep = () => {
     queued = false;
     if (!core.editor.can('editor')) return;
+    // This user's private copy of an element that is shared now (see "reveal racing" above).
+    const revealed = store.duplicatedInLayers().filter((d) => d.layer === 'private');
+    if (revealed.length) {
+      store.transactSilently(() => {
+        for (const { id } of revealed) {
+          const mine = store.layers.private.elements.get(id);
+          if (mine && JSON.stringify(mine) !== JSON.stringify(store.elements.get(id))) store.moveElement(mine, 'shared');
+          else store.dropLayerCopy(id, 'private');
+        }
+      });
+    }
     // Fast path (every drag frame lands here): nothing hidden and nothing to bring back.
     if (!store.layers.editors.elements.size && !anyHidingContainer()) return;
     const moves: Array<[BoardElement, ElementLayer]> = [];

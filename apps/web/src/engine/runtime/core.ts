@@ -14,7 +14,7 @@ import { createEngineCommands } from '../editor/engineCommands';
 import { loadToolOptions, saveToolOptions } from './persist';
 import { subscribeFontEpoch } from '../text/autofit';
 import { installFollow } from '../camera/follow';
-import { installLayerPlacement } from '../editor/layers';
+import { installLayerPlacement, publicIds } from '../editor/layers';
 
 export interface ExportOptions {
   ids?: string[];
@@ -26,6 +26,7 @@ export interface ExportOptions {
   skipFonts?: boolean;
   /** Only elements of the shared doc (what everyone with access sees): dashboard thumbnails. */
   sharedOnly?: boolean;
+  onMissingImages?: (count: number) => void;
 }
 
 export class Emitter {
@@ -56,8 +57,11 @@ export interface EngineCore {
   text: TextSession | null;
   /** Last known pointer position over the canvas. */
   pointer: StoreApi<PointerState>;
-  /** Transient info from the pointer router to the select tool. */
-  interaction: { handle: string | null; clickCount: number; cancel: (() => void) | null };
+  /**
+   * Transient info from the pointer router to the select tool. `createGrid`: set only while a
+   * grid-snapping tool handles a pointer event; elements created meanwhile land on that grid.
+   */
+  interaction: { handle: string | null; clickCount: number; cancel: (() => void) | null; createGrid?: number };
   clipboard: { memory: ClipboardMemory | null; copyIds: string[] | null };
   /** Offscreen renderer, installed by <BoardEngine>. */
   renderExport: ((opts: ExportOptions) => Promise<string>) | null;
@@ -198,7 +202,7 @@ export function createCore(host: Host, bundles: FeatureBundle[], opts: { persist
     ui.subscribe((s, prev) => {
       if (s.selection !== prev.selection) {
         core.emitter.emit('selection');
-        store.setPresence({ selection: s.selection });
+        store.setPresence({ selection: publicIds(core, s.selection) });
       }
       if (s.camera !== prev.camera || s.viewport !== prev.viewport) {
         core.emitter.emit('camera');
@@ -207,7 +211,7 @@ export function createCore(host: Host, bundles: FeatureBundle[], opts: { persist
       if (s.toolId !== prev.toolId) core.emitter.emit('tool');
       if (s.editingId !== prev.editingId) {
         core.emitter.emit('editing');
-        store.setPresence({ editingId: s.editingId });
+        store.setPresence({ editingId: s.editingId && publicIds(core, [s.editingId]).length ? s.editingId : null });
       }
       if (s.toolOptions !== prev.toolOptions) saveToolOptions(s.toolOptions);
     }),

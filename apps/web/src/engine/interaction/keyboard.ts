@@ -5,11 +5,14 @@ import { eventKey, isPrintableKey, matchShortcut, parseShortcut } from '../runti
 import { NATIVE_CLIPBOARD_COMMANDS } from '../editor/engineCommands';
 import { translateElement } from '../editor/clipboard';
 import { richTextToPlain } from '../text/sanitize';
-import { rectContainsRect, rectCenter } from '../geometry/geometry';
+import { elementAABB, rectContainsRect, rectCenter, rectUnion } from '../geometry/geometry';
+import { gridNudge } from '../geometry/snap';
 import { readingOrder } from '../geometry/order';
 
 /** A pause this long (ms) after the last arrow-key nudge ends the burst (one undo step). */
 const NUDGE_IDLE_MS = 1000;
+/** Grid lines a Shift+arrow nudge moves while snap to grid is on. */
+const GRID_NUDGE_SHIFT_STEPS = 5;
 const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'Meta']);
 
 /** Undo/redo shortcuts: they also work from non-modal popovers (see onKeyDown). */
@@ -17,6 +20,21 @@ const UNDO_SHORTCUTS = new Set(['mod+z', 'mod+shift+z', 'mod+y']);
 
 /** Shortcuts the rich-text editor keeps for itself while editing. */
 const TEXT_RESERVED = new Set(['b', 'i', 'u', 'z', 'y', 'c', 'v', 'x', 'a', 'k', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'backspace', 'delete', 'home', 'end']);
+
+/**
+ * Keys `onKeyDown` below handles itself (not through commands or tool shortcuts), for the
+ * shortcut reference (`Editor.getShortcuts`). Keep in step with `onKeyDown`: a key handled there
+ * and not listed here is a key nobody can discover.
+ */
+export const ENGINE_KEYS: Array<{ name: string; label: string; shortcuts: string[]; minRole: 'viewer' | 'editor' }> = [
+  { name: 'escape', label: 'Deselect, stop editing or cancel', shortcuts: ['escape'], minRole: 'viewer' },
+  { name: 'delete', label: 'Delete', shortcuts: ['backspace'], minRole: 'editor' },
+  { name: 'nudge', label: 'Nudge selection', shortcuts: ['arrowup', 'arrowdown', 'arrowleft', 'arrowright'], minRole: 'editor' },
+  { name: 'nudgeFar', label: 'Nudge selection by 10', shortcuts: ['shift+arrowup', 'shift+arrowdown', 'shift+arrowleft', 'shift+arrowright'], minRole: 'editor' },
+  { name: 'cycle', label: 'Select next item', shortcuts: ['tab'], minRole: 'viewer' },
+  { name: 'cycleBack', label: 'Select previous item', shortcuts: ['shift+tab'], minRole: 'viewer' },
+  { name: 'pan', label: 'Pan (hold and drag)', shortcuts: ['space'], minRole: 'viewer' },
+];
 
 export function isTextInput(t: EventTarget | null): boolean {
   if (!(t instanceof HTMLElement)) return false;
@@ -146,18 +164,28 @@ export function installKeyboard(core: EngineCore): () => void {
     if (!sel.length) return false;
     e.preventDefault();
     if (!editor.guardWrite()) return true;
-    const step = e.shiftKey ? 10 : 1;
     const els = editor
       .withChildren(sel)
       .map((id) => editor.getElement(id))
       .filter((el): el is BoardElement => !!el && !el.locked);
     if (!els.length) return true;
+    // Snap to grid on: one grid line per press (Shift: GRID_NUDGE_SHIFT_STEPS), ending on the grid
+    // like a snapped drag. Off: 1 px (Shift: 10 px).
+    const settings = core.store.getSettings();
+    let dx = dir[0] * (e.shiftKey ? 10 : 1);
+    let dy = dir[1] * (e.shiftKey ? 10 : 1);
+    if (settings.snapToGrid) {
+      const b = rectUnion(els.map(elementAABB))!;
+      const steps = e.shiftKey ? GRID_NUDGE_SHIFT_STEPS : 1;
+      dx = dir[0] ? gridNudge(b.x, dir[0] as -1 | 1, settings.gridSize, steps) : 0;
+      dy = dir[1] ? gridNudge(b.y, dir[1] as -1 | 1, settings.gridSize, steps) : 0;
+    }
     if (nudgeTimer) clearTimeout(nudgeTimer);
     else editor.beginGesture();
     nudgeTimer = setTimeout(endNudgeBurst, NUDGE_IDLE_MS);
     editor.updateMany(
       els.map((el) => {
-        const t = translateElement(el, dir[0] * step, dir[1] * step);
+        const t = translateElement(el, dx, dy);
         const { id: _id, type: _type, ...patch } = t;
         return { id: el.id, patch };
       }),
@@ -266,23 +294,11 @@ export function installKeyboard(core: EngineCore): () => void {
 
     if (nudge(e)) return;
 
-    // Modifier combos and named keys first.
-    if (tryCommands(e, (sc) => {
-      const p = parseShortcut(sc);
-      return p.mod || p.alt || p.key.length > 1 || p.shift;
-    })) return;
-
-    // Tab / Shift+Tab that no command claimed (sticky "add to the right" on a sticky you picked,
-    // mind-map "add child") cycles through the board's items.
-    if (isCycleKey(e, target)) {
-      e.preventDefault();
-      cycleSelection(e.shiftKey ? -1 : 1);
-      return;
-    }
-
     // Typing on a single selected EMPTY text element (a fresh "+" copy, a new sticky) fills it.
     // Items that already have text keep letters as tool shortcuts (N, T, S… right after Esc must
     // switch tools, not append a stray letter to the note); Enter or double-click edits them.
+    // Before the Shift shortcuts: '?', '!' or ')' typed into a fresh note are text like any other
+    // character, not "open the shortcut sheet" / "zoom to fit".
     if (isPrintableKey(e)) {
       const sel = editor.getSelection();
       if (sel.length === 1 && editor.can('editor')) {
@@ -295,6 +311,20 @@ export function installKeyboard(core: EngineCore): () => void {
           return;
         }
       }
+    }
+
+    // Modifier combos and named keys first.
+    if (tryCommands(e, (sc) => {
+      const p = parseShortcut(sc);
+      return p.mod || p.alt || p.key.length > 1 || p.shift;
+    })) return;
+
+    // Tab / Shift+Tab that no command claimed (sticky "add to the right" on a sticky you picked,
+    // mind-map "add child") cycles through the board's items.
+    if (isCycleKey(e, target)) {
+      e.preventDefault();
+      cycleSelection(e.shiftKey ? -1 : 1);
+      return;
     }
 
     // Single-key commands, then tool shortcuts.

@@ -59,6 +59,12 @@ export function start(editor: Editor, frameId: string | null): void {
   editor.collection<PrivateModeSession>(COLLECTION).set(KEY, session);
 }
 
+/** Shares this user's own leftover private items (private mode already ended). */
+export function shareLeftovers(editor: Editor): void {
+  if (!editor.can('editor')) return;
+  editor.revealPrivate('elements', { mine: true });
+}
+
 /** Reveals everyone's private content at once (on the server, authors online or not) and ends. */
 export function revealAndEnd(editor: Editor): void {
   if (!editor.can('editor') || !getSession(editor)) return;

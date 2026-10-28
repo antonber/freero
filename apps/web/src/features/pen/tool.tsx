@@ -16,19 +16,32 @@ import {
   type PenToolOptions,
   type SizeIndex,
 } from './lib/constants';
-import { clearDraft, getDraft, startDraft, touchDraft, useDraftVersion } from './lib/draft';
-import { buildStroke, simplify, simulatedPressure, strokePath } from './lib/stroke';
+import { clearDraft, draftPoints, getDraft, startDraft, touchDraft, useDraftVersion, type Draft } from './lib/draft';
+import { buildStroke, capturePressure, constrainAngle, simplify, straightStroke, strokePath } from './lib/stroke';
 
 /** Minimum screen distance between captured points. */
 const MIN_STEP_PX = 1.5;
+/** Point spacing of a Shift-constrained straight stroke, in screen px. */
+const STRAIGHT_STEP_PX = 4;
 /** Simplification tolerance in screen px (converted to world units at commit). */
 const SIMPLIFY_PX = 0.6;
 const ERASER_TOOL = 'eraser';
 
-function pressureOf(e: ToolPointerEvent, prev: number, screenDist: number, real: boolean, highlighter: boolean): number {
-  if (highlighter) return 0.5;
-  if (real) return Math.max(0.05, Math.min(1, e.pressure));
-  return simulatedPressure(prev, screenDist);
+/** Shift held: a straight stroke from the first point to the pointer, on a 15° step; else freehand. */
+function constrain(d: Draft, e: ToolPointerEvent, lifted = false) {
+  if (!e.shiftKey) {
+    d.line = null;
+    return;
+  }
+  const start = d.points[0];
+  // An even ruler line: the stylus' current pressure (a lifted pen reports 0, so keep the last
+  // one), or the plain width without a stylus.
+  const p = !d.realPressure
+    ? 0.5
+    : lifted
+      ? (d.line?.[0]?.p ?? d.points[d.points.length - 1].p)
+      : capturePressure({ pressure: e.pressure, real: true }, 0.5, 0, d.highlighter);
+  d.line = straightStroke(start, constrainAngle(start, e.point), p, STRAIGHT_STEP_PX / e.editor.getCamera().zoom);
 }
 
 function commit(editor: Editor) {
@@ -36,7 +49,7 @@ function commit(editor: Editor) {
   clearDraft();
   if (!d || !d.points.length) return;
   const tolerance = SIMPLIFY_PX / editor.getCamera().zoom;
-  const points = simplify(d.points, tolerance);
+  const points = simplify(draftPoints(d), tolerance);
   editor.create<'pen'>({
     type: 'pen',
     ...buildStroke(points, d.width, d.highlighter),
@@ -50,7 +63,7 @@ function DraftStroke() {
   const v = useDraftVersion();
   const d = getDraft();
   // `v` changes whenever points are appended (the points array is mutated in place).
-  const path = useMemo(() => (d ? strokePath(d.points, d.width, d.highlighter, false) : ''), [d, v]);
+  const path = useMemo(() => (d ? strokePath(draftPoints(d), d.width, d.highlighter, false) : ''), [d, v]);
   if (!d) return null;
   return (
     <svg className={`fr-pen-draft${d.highlighter ? ' fr-pen-draft--highlighter' : ''}`} aria-hidden>
@@ -138,6 +151,8 @@ export default defineTool({
   order: 50,
   placement: 'main',
   cursor: 'crosshair',
+  // Freehand ink follows the pointer exactly, grid or not.
+  snapToGrid: false,
 
   // One stroke = one element = one undo step: the stroke is drawn locally (Preview) and
   // created once on pointer-up; the engine wraps pointer-down → up in a single gesture.
@@ -152,6 +167,7 @@ export default defineTool({
       highlighter: o.highlighter,
       lastScreen: e.screen,
       realPressure,
+      line: null,
     });
   },
 
@@ -161,8 +177,10 @@ export default defineTool({
     const dist = Math.hypot(e.screen.x - d.lastScreen.x, e.screen.y - d.lastScreen.y);
     if (dist < MIN_STEP_PX) return;
     const prev = d.points[d.points.length - 1];
-    d.points.push({ x: e.point.x, y: e.point.y, p: pressureOf(e, prev.p, dist, d.realPressure, d.highlighter) });
+    const p = capturePressure({ pressure: e.pressure, real: d.realPressure }, prev.p, dist, d.highlighter);
+    d.points.push({ x: e.point.x, y: e.point.y, p });
     d.lastScreen = e.screen;
+    constrain(d, e);
     touchDraft();
   },
 
@@ -171,6 +189,7 @@ export default defineTool({
     if (d) {
       const last = d.points[d.points.length - 1];
       if (last.x !== e.point.x || last.y !== e.point.y) d.points.push({ x: e.point.x, y: e.point.y, p: last.p });
+      constrain(d, e, true);
     }
     commit(e.editor);
   },

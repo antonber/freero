@@ -6,10 +6,28 @@
 //   right on open, and a dropped one leaves the client never synced.
 // - A room exists (in `rooms`) from its first admission and loads its doc once; every socket
 //   arriving meanwhile waits for that same load (never a second, empty doc).
-// - Saves of one room run one after another (a slow older save never overwrites a newer one).
+// - Saves of one room run one after another, each appending only the changes made since the
+//   previous one to the board's update log (docStore.ts); a failed save keeps them for the retry.
 // - A room is unloaded only when nobody is in it, joining it, or saving it (a socket that joins
 //   during the final save keeps the room alive instead of loading a stale copy).
 // - Deleting a board waits for in-flight saves, so none lands after the delete.
+// - The log is compacted into the stored base when it grows long and after a room unloads.
+//
+// Across instances (platform/pubsub.ts: Redis when REDIS_URL is set; peers.ts has the messages):
+// several instances may hold the same board, each with its own sockets. Each publishes the changes
+// and presence of ITS sockets on the board's channel and applies the others' (REMOTE_ORIGIN:
+// relayed to its sockets, never re-published, never saved - the instance whose socket made a
+// change saves it). A room subscribes before it loads and then asks the others for anything the
+// database did not have yet (their unsaved changes) and for their sockets' presence; it asks again
+// whenever its subscription comes back after a Redis outage. Before unloading, a room that applied
+// other instances' changes appends whatever the database still lacks (their instance may have died
+// before saving). Access changes, board deletion and logouts are broadcast on a control channel.
+//
+// Board layers (layers.ts): next to the doc, a room holds the board's layer docs ('editors',
+// 'u:<userId>'), loaded with it, relayed between instances and saved exactly like the doc (peer
+// 'layer-update', layer parts in sync-request/-reply, an append-only log per layer). A layer
+// update is sent to a socket only if that socket may read the layer at that moment. A reveal is a
+// change made by the instance whose socket asked for it: that instance publishes and saves it.
 import * as decoding from 'lib0/decoding';
 import * as encoding from 'lib0/encoding';
 import * as awarenessProtocol from 'y-protocols/awareness';
@@ -19,13 +37,27 @@ import { WebSocket } from 'ws';
 import { WS_MESSAGE_LAYER, WS_MESSAGE_LAYER_OP, WS_MESSAGE_ROLE, type Role } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { logError } from '../../platform/log';
+import { isShared, publish, subscribe, type Subscription } from '../../platform/pubsub';
 import { getUser } from '../auth/index';
 import { getBoardAccess, touchBoard } from '../boards/index';
-import { sanitizeAwarenessUpdate, type AwarenessIdentity } from './awareness';
+import { sanitizeAwarenessUpdate, withoutClients, type AwarenessIdentity } from './awareness';
+import * as store from './docStore';
 import { decideUpdate } from './filter';
-import { applyLayerOp, mayRunLayerOp, mayWriteLayer, parseLayerOp, readableLayer, wireNameFor } from './layers';
-import { persistDuration, persistFailures } from './metrics';
-import * as repo from './repo';
+import * as layerStore from './layerStore';
+import {
+  applyLayerOp,
+  isLayerName,
+  isPrivateLayer,
+  mayRunLayerOp,
+  mayWriteLayer,
+  parseLayerOp,
+  privateLayerOf,
+  privateLayerOwner,
+  readableLayer,
+  wireNameFor,
+} from './layers';
+import { peerMessages, persistDuration, persistFailures } from './metrics';
+import { boardChannel, CONTROL_CHANNEL, decodeControl, decodePeer, encodeControl, encodePeer, INSTANCE_ID, type ControlMessage, type PeerMessage } from './peers';
 
 export const MESSAGE_SYNC = 0;
 export const MESSAGE_AWARENESS = 1;
@@ -43,7 +75,9 @@ const MAX_QUEUED_BYTES = 16 * 1024 * 1024;
 
 /** Origin of the persisted state applied on load: not a change, so neither broadcast nor saved. */
 const LOAD_ORIGIN = Symbol('load');
-/** Origin of writes the server makes itself (revealing layer entries): sent to every reader. */
+/** Origin of changes and presence relayed from other instances. */
+const REMOTE_ORIGIN = Symbol('remote');
+/** Origin of changes this instance makes itself (a reveal): published and saved like a socket's. */
 const SERVER_ORIGIN = Symbol('server');
 
 /** Who a socket is, decided once at admission. */
@@ -69,7 +103,29 @@ interface Conn {
   /** Awareness client ids announced over this socket (removed on close). */
   awarenessIds: Set<number>;
   lastResync: number;
+  /** While a layer op of this socket is being applied: its later messages, held in order. */
+  held: Uint8Array[] | null;
 }
+
+/** One layer doc of a room (see "Board layers" above). */
+interface Layer {
+  doc: Y.Doc;
+  /** Changes made through this instance since the last successful save, in order. */
+  unsaved: Uint8Array[];
+  /** Applied changes made on other instances (saved before unloading if their instance did not). */
+  sawRemote: boolean;
+}
+
+/** [WS_MESSAGE_LAYER][layer wire name][sync message written by `write`]. */
+function layerMessage(wire: string, write: (e: encoding.Encoder) => void): Uint8Array {
+  const e = encoding.createEncoder();
+  encoding.writeVarUint(e, WS_MESSAGE_LAYER);
+  encoding.writeVarString(e, wire);
+  write(e);
+  return encoding.toUint8Array(e);
+}
+
+const canEdit = (role: Role | null) => role === 'owner' || role === 'editor';
 
 export function encodeRoleMessage(role: Role): Uint8Array {
   const e = encoding.createEncoder();
@@ -85,15 +141,6 @@ function send(ws: WebSocket, msg: Uint8Array): void {
   });
 }
 
-/** [WS_MESSAGE_LAYER][layer wire name][sync message written by `write`]. */
-function layerMessage(wire: string, write: (e: encoding.Encoder) => void): Uint8Array {
-  const e = encoding.createEncoder();
-  encoding.writeVarUint(e, WS_MESSAGE_LAYER);
-  encoding.writeVarString(e, wire);
-  write(e);
-  return encoding.toUint8Array(e);
-}
-
 function toBytes(data: WebSocket.RawData): Uint8Array {
   if (Array.isArray(data)) return new Uint8Array(Buffer.concat(data));
   if (data instanceof ArrayBuffer) return new Uint8Array(data);
@@ -104,16 +151,19 @@ class Room {
   readonly doc = new Y.Doc();
   readonly awareness: awarenessProtocol.Awareness;
   readonly conns = new Map<WebSocket, Conn>();
-  /** Layer docs by storage name ('editors', 'u:<userId>'); see layers.ts. */
-  readonly layers = new Map<string, Y.Doc>();
+  /** The board's layer docs by storage name. */
+  readonly layers = new Map<string, Layer>();
   /** Resolves once the persisted state is applied (rejects if it could not be loaded). */
   readonly ready: Promise<void>;
   /** Sockets admitted to this room that are waiting for `ready`. */
   pendingJoins = 0;
   destroyed = false;
   private dirty = false;
-  private mainDirty = false;
-  private dirtyLayers = new Set<string>();
+  /** Changes made through this room's sockets since the last successful save, in order. */
+  private unsaved: Uint8Array[] = [];
+  /** Rows in the board's log that this room knows of (loaded + appended); compaction trigger. */
+  private logRows = 0;
+  private logBytes = 0;
   private firstDirtyAt = 0;
   private saveTimer: NodeJS.Timeout | null = null;
   private unloadTimer: NodeJS.Timeout | null = null;
@@ -121,6 +171,9 @@ class Room {
   private saving: Promise<void> = Promise.resolve();
   private pendingSaves = 0;
   private refreshing: Promise<void> = Promise.resolve();
+  private subscription: Subscription | null = null;
+  /** Applied changes made on other instances (see unloadRoom). */
+  sawRemote = false;
 
   constructor(readonly id: string) {
     this.awareness = new awarenessProtocol.Awareness(this.doc);
@@ -133,7 +186,12 @@ class Room {
       syncProtocol.writeUpdate(e, update);
       const msg = encoding.toUint8Array(e);
       for (const c of this.conns.values()) if (c.ws !== origin) send(c.ws, msg);
-      this.mainDirty = true;
+      if (origin === REMOTE_ORIGIN) {
+        this.sawRemote = true;
+        return;
+      }
+      this.toPeers({ type: 'update', update });
+      this.unsaved.push(update);
       this.markDirty();
     });
 
@@ -142,56 +200,81 @@ class Room {
       ({ added, updated, removed }: { added: number[]; updated: number[]; removed: number[] }, origin: unknown) => {
         const conn = origin instanceof WebSocket ? this.conns.get(origin) : undefined;
         if (conn) {
-          for (const id of added) conn.awarenessIds.add(id);
+          // `updated`, too: a client id seen before (on another instance, or before a reconnect).
+          for (const id of [...added, ...updated]) conn.awarenessIds.add(id);
           for (const id of removed) conn.awarenessIds.delete(id);
         }
         const changed = [...added, ...updated, ...removed];
+        const update = awarenessProtocol.encodeAwarenessUpdate(this.awareness, changed);
         const e = encoding.createEncoder();
         encoding.writeVarUint(e, MESSAGE_AWARENESS);
-        encoding.writeVarUint8Array(e, awarenessProtocol.encodeAwarenessUpdate(this.awareness, changed));
+        encoding.writeVarUint8Array(e, update);
         const msg = encoding.toUint8Array(e);
         // Sent to everyone, including the origin: y-websocket clients rely on the echo of their
         // periodic awareness renewal to know the connection is alive.
         for (const c of this.conns.values()) send(c.ws, msg);
+        // Our sockets' presence (and its removal when they leave). Not other instances' (theirs to
+        // send), nor states that timed out here (every instance times them out on its own).
+        if (origin !== REMOTE_ORIGIN && origin !== 'timeout') this.toPeers({ type: 'awareness', update });
       },
     );
 
-    this.ready = this.load();
+    this.ready = this.open();
+  }
+
+  private async open(): Promise<void> {
+    const sub = subscribe(boardChannel(this.id), {
+      message: (data) => this.onPeerMessage(data),
+      resubscribed: () => this.requestPeerSync(),
+    });
+    this.subscription = sub;
+    if (this.destroyed) sub.close();
+    // Subscribed first, so nothing published from here on is missed; bounded, so a Redis outage
+    // delays opening a board by at most a moment (we ask again once the subscription is up).
+    await sub.ready;
+    await this.load();
+    this.requestPeerSync();
   }
 
   private async load(): Promise<void> {
-    const [state, layers] = await Promise.all([repo.loadState(this.id), repo.loadLayers(this.id)]);
+    const [loaded, layers] = await Promise.all([store.loadDoc(this.id), layerStore.loadLayers(this.id)]);
     if (this.destroyed) return;
-    if (state) Y.applyUpdate(this.doc, state, LOAD_ORIGIN);
-    for (const { layer, state: s } of layers) Y.applyUpdate(this.layerDoc(layer), s, LOAD_ORIGIN);
+    if (loaded.state) Y.applyUpdate(this.doc, loaded.state, LOAD_ORIGIN);
+    this.logRows = loaded.logRows;
+    this.logBytes = loaded.logBytes;
+    for (const l of layers) if (l.state) Y.applyUpdate(this.layer(l.layer).doc, l.state, LOAD_ORIGIN);
   }
 
-  /** The layer doc stored under `name`, created empty on first use. */
-  private layerDoc(name: string): Y.Doc {
-    let doc = this.layers.get(name);
-    if (!doc) {
-      const created = new Y.Doc();
-      created.on('update', (update: Uint8Array, origin: unknown) => {
-        if (origin === LOAD_ORIGIN) return;
-        for (const c of this.conns.values()) {
-          const wire = c.ws !== origin ? wireNameFor(name, c) : null;
-          if (wire) send(c.ws, layerMessage(wire, (e) => syncProtocol.writeUpdate(e, update)));
-        }
-        this.dirtyLayers.add(name);
-        this.markDirty();
-      });
-      this.layers.set(name, created);
-      doc = created;
-    }
-    return doc;
+  /** The layer stored under `name`, created empty on first use. */
+  layer(name: string): Layer {
+    let layer = this.layers.get(name);
+    if (layer) return layer;
+    const created: Layer = { doc: new Y.Doc(), unsaved: [], sawRemote: false };
+    created.doc.on('update', (update: Uint8Array, origin: unknown) => {
+      if (origin === LOAD_ORIGIN) return;
+      // Re-checked per socket at send time: roles change (refreshAccess) while the layer lives.
+      for (const c of this.conns.values()) {
+        const wire = c.ws !== origin ? wireNameFor(name, c) : null;
+        if (wire) send(c.ws, layerMessage(wire, (e) => syncProtocol.writeUpdate(e, update)));
+      }
+      if (origin === REMOTE_ORIGIN) {
+        created.sawRemote = true;
+        return;
+      }
+      this.toPeers({ type: 'layer-update', layer: name, update });
+      created.unsaved.push(update);
+      this.markDirty();
+    });
+    this.layers.set(name, created);
+    return created;
   }
 
-  /** A sync message for a layer: answered only for layers this socket may read. */
+  /** A layer sync message from a socket: answered only for layers it may read. */
   private onLayerMessage(conn: Conn, decoder: decoding.Decoder): void {
     const wire = decoding.readVarString(decoder);
     const name = readableLayer(wire, conn);
     if (!name) return;
-    const doc = this.layerDoc(name);
+    const { doc } = this.layer(name);
     const syncType = decoding.readVarUint(decoder);
     if (syncType === syncProtocol.messageYjsSyncStep1) {
       // Answer with what the client lacks, then ask for what we lack (its offline edits).
@@ -203,11 +286,138 @@ class Room {
     }
   }
 
-  /** Reveal / discard private-layer entries (owners and editors), in order with doc updates. */
+  /**
+   * Reveal / discard (owners and editors). Only the private layers of people who may still edit
+   * the board take part, which takes a database read: the socket's later messages are held
+   * meanwhile, so the op lands in order with them (e.g. a vote's end after its ballots).
+   */
   private onLayerOp(conn: Conn, decoder: decoding.Decoder): void {
     const op = parseLayerOp(decoding.readVarString(decoder));
     if (!op || !mayRunLayerOp(conn)) return;
-    applyLayerOp(op, this.doc, this.layers, SERVER_ORIGIN);
+    const names = op.mine ? [privateLayerOf(conn.userId)] : [...this.layers.keys()].filter(isPrivateLayer);
+    conn.held = [];
+    void Promise.all(names.map(async (n) => ((await getBoardAccess(this.id, privateLayerOwner(n)!)).role)))
+      .then((roles) => {
+        if (this.destroyed || !this.conns.has(conn.ws) || !mayRunLayerOp(conn)) return;
+        const docs = new Map<string, Y.Doc>();
+        names.forEach((n, i) => {
+          const l = this.layers.get(n);
+          if (l && canEdit(roles[i])) docs.set(n, l.doc);
+        });
+        applyLayerOp(op, this.doc, docs, SERVER_ORIGIN);
+      })
+      .catch((err) => logError(`realtime: could not apply a layer op on board ${this.id}`, err))
+      .finally(() => {
+        const held = conn.held ?? [];
+        conn.held = null;
+        for (const msg of held) this.receive(conn, msg);
+      });
+  }
+
+  /** Every message of a socket goes through here (held while one of its layer ops is pending). */
+  private receive(conn: Conn, data: Uint8Array): void {
+    if (conn.held) conn.held.push(data);
+    else this.onMessage(conn, data);
+  }
+
+  private toPeers(msg: PeerMessage): void {
+    if (this.destroyed || !isShared()) return;
+    peerMessages.inc({ direction: 'out' });
+    publish(boardChannel(this.id), encodePeer(msg));
+  }
+
+  /** Asks the other instances holding this board for what we lack and for their presence. */
+  private requestPeerSync(): void {
+    const layers = [...this.layers].map(([layer, l]) => ({ layer, data: Y.encodeStateVector(l.doc) }));
+    this.toPeers({ type: 'sync-request', stateVector: Y.encodeStateVector(this.doc), layers });
+  }
+
+  /** Layer parts from another instance (updates), applied as remote changes. */
+  private applyPeerLayers(parts: Array<{ layer: string; data: Uint8Array }> | undefined): void {
+    for (const { layer, data } of parts ?? []) if (isLayerName(layer)) Y.applyUpdate(this.layer(layer).doc, data, REMOTE_ORIGIN);
+  }
+
+  private onPeerMessage(data: Uint8Array): void {
+    if (this.destroyed) return;
+    try {
+      const { from, msg } = decodePeer(data);
+      if (from === INSTANCE_ID) return; // our own, echoed back
+      peerMessages.inc({ direction: 'in' });
+      switch (msg.type) {
+        case 'update':
+          Y.applyUpdate(this.doc, msg.update, REMOTE_ORIGIN);
+          break;
+        case 'awareness':
+          this.applyPeerAwareness(msg.update);
+          break;
+        case 'sync-request':
+          // Answer from the loaded doc (a request can arrive while we are still loading).
+          this.ready.then(
+            () => this.answerPeer(from, msg.stateVector, msg.layers ?? []),
+            () => {},
+          );
+          break;
+        case 'sync-reply':
+          if (msg.to !== INSTANCE_ID) return;
+          Y.applyUpdate(this.doc, msg.update, REMOTE_ORIGIN);
+          this.applyPeerLayers(msg.layers);
+          if (msg.awareness) this.applyPeerAwareness(msg.awareness);
+          break;
+        case 'layer-update':
+          this.applyPeerLayers([{ layer: msg.layer, data: msg.update }]);
+          break;
+      }
+    } catch (err) {
+      logError(`realtime: bad message from another instance on board ${this.id}`, err);
+    }
+  }
+
+  private applyPeerAwareness(update: Uint8Array): void {
+    const ours = withoutClients(update, (id) => {
+      for (const c of this.conns.values()) if (c.awarenessIds.has(id)) return true;
+      return false;
+    });
+    if (ours) awarenessProtocol.applyAwarenessUpdate(this.awareness, ours, REMOTE_ORIGIN);
+  }
+
+  private answerPeer(to: string, stateVector: Uint8Array, layerVectors: Array<{ layer: string; data: Uint8Array }>): void {
+    if (this.destroyed) return;
+    const theirs = new Map(layerVectors.map((l) => [l.layer, l.data]));
+    // Every layer we hold, as far as they lack it (all of it for a layer they don't have yet).
+    const layers = [...this.layers].map(([layer, l]) => ({ layer, data: Y.encodeStateAsUpdate(l.doc, theirs.get(layer)) }));
+    const ids: number[] = [];
+    const states = this.awareness.getStates();
+    for (const c of this.conns.values()) for (const id of c.awarenessIds) if (states.has(id)) ids.push(id);
+    this.toPeers({
+      type: 'sync-reply',
+      to,
+      update: Y.encodeStateAsUpdate(this.doc, stateVector),
+      awareness: ids.length ? awarenessProtocol.encodeAwarenessUpdate(this.awareness, ids) : null,
+      layers,
+    });
+  }
+
+  /**
+   * Appends what this doc holds and the database lacks (changes relayed from instances that may
+   * have died before saving them). False if that could not be checked or saved.
+   */
+  async saveMissing(): Promise<boolean> {
+    try {
+      if (this.sawRemote) {
+        const missing = await store.missingFromStore(this.id, this.doc);
+        if (missing) await store.appendUpdates(this.id, [missing]);
+      }
+      for (const [name, l] of this.layers) {
+        if (!l.sawRemote) continue;
+        const missing = await layerStore.missingLayerFromStore(this.id, name, l.doc);
+        if (missing) await layerStore.appendLayerUpdates(this.id, name, [missing]);
+      }
+      return true;
+    } catch (err) {
+      if (err instanceof store.BoardGoneError) return true;
+      logError(`realtime: could not save other instances' changes to board ${this.id}`, err);
+      return false;
+    }
   }
 
   /** Adds an admitted socket; `queued` are the messages it sent before joining, in order. */
@@ -222,10 +432,11 @@ class Room {
       identity: { value: a.identity, at: Date.now(), loading: false },
       awarenessIds: new Set(),
       lastResync: 0,
+      held: null,
     };
     this.conns.set(ws, conn);
 
-    ws.on('message', (data) => this.onMessage(conn, toBytes(data)));
+    ws.on('message', (data) => this.receive(conn, toBytes(data)));
     ws.on('close', () => this.leave(conn));
 
     // 1) effective role, 2) sync step 1, 3) current awareness states, then what the client said.
@@ -238,7 +449,7 @@ class Room {
       encoding.writeVarUint8Array(e, awarenessProtocol.encodeAwarenessUpdate(this.awareness, [...states.keys()]));
       send(ws, encoding.toUint8Array(e));
     }
-    for (const msg of queued) this.onMessage(conn, msg);
+    for (const msg of queued) this.receive(conn, msg);
   }
 
   private sendSyncStep1(conn: Conn): void {
@@ -416,8 +627,8 @@ class Room {
   }
 
   /**
-   * Persists the full doc state if it changed, and bumps the board's updatedAt. Queued behind any
-   * save already running; resolves when this one is done (never rejects).
+   * Appends the changes made since the last save to the board's log and bumps its updatedAt.
+   * Queued behind any save already running; resolves when this one is done (never rejects).
    */
   flush(): Promise<void> {
     if (this.saveTimer) clearTimeout(this.saveTimer);
@@ -430,37 +641,55 @@ class Room {
   private async persist(): Promise<void> {
     if (!this.dirty || this.destroyed) return;
     this.dirty = false;
-    const main = this.mainDirty;
-    const layers = [...this.dirtyLayers];
-    this.mainDirty = false;
-    this.dirtyLayers.clear();
     const now = Date.now();
     const timer = persistDuration.startTimer();
+    const updates = this.unsaved;
+    this.unsaved = [];
+    let appended = updates.length === 0;
+    // Layers: each its own log row; a failed one keeps its changes (and everything after it).
+    const layerSaves = [...this.layers].filter(([, l]) => l.unsaved.length).map(([name, l]) => ({ name, l, updates: l.unsaved.splice(0) }));
     try {
-      if (main) await repo.saveState(this.id, Y.encodeStateAsUpdate(this.doc), now);
-      for (const name of layers) {
-        const doc = this.layers.get(name);
-        if (doc) await repo.saveLayer(this.id, name, Y.encodeStateAsUpdate(doc), now);
+      if (!appended) {
+        this.logBytes += await store.appendUpdates(this.id, updates, now);
+        this.logRows++;
+        appended = true;
+        // Only shared changes are board activity: private drafts never bump "edited".
+        await touchBoard(this.id, now);
       }
-      // Only shared changes are board activity: private drafts never bump the board's updatedAt.
-      if (main) await touchBoard(this.id, now);
+      while (layerSaves.length) {
+        const { name, updates: u } = layerSaves[0];
+        await layerStore.appendLayerUpdates(this.id, name, u, now);
+        layerSaves.shift();
+      }
       timer();
+      if (this.logRows >= store.COMPACT_AFTER_ROWS || this.logBytes >= store.COMPACT_AFTER_BYTES) await this.compact();
     } catch (err) {
+      if (!appended) this.unsaved.unshift(...updates); // keep them, before anything newer, for the retry
+      for (const { l, updates: u } of layerSaves) l.unsaved.unshift(...u);
       if (this.destroyed) return;
-      if (err instanceof repo.BoardGoneError) {
+      if (err instanceof store.BoardGoneError) {
         // Deleted while this doc was open (a socket got in during the delete).
         dropRoom(this, 4403, 'Board deleted');
         return;
       }
       this.dirty = true;
-      if (main) this.mainDirty = true;
-      for (const name of layers) this.dirtyLayers.add(name);
       persistFailures.inc();
       logError(`realtime: failed to persist board ${this.id}; retrying`, err);
       if (!this.saveTimer) {
         this.saveTimer = setTimeout(() => void this.flush(), SAVE_RETRY_MS);
         this.saveTimer.unref();
       }
+    }
+  }
+
+  /** Folds the board's log into its stored base (in this room's save queue). */
+  private async compact(): Promise<void> {
+    try {
+      await store.compactDoc(this.id); // 'skipped' = another instance just compacted: also fine
+      this.logRows = 0;
+      this.logBytes = 0;
+    } catch (err) {
+      if (!(err instanceof store.BoardGoneError)) logError(`realtime: could not compact board ${this.id}`, err);
     }
   }
 
@@ -474,9 +703,15 @@ class Room {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     if (this.unloadTimer) clearTimeout(this.unloadTimer);
     this.destroyed = true;
+    this.subscription?.close();
     this.awareness.destroy();
     this.doc.destroy();
-    for (const doc of this.layers.values()) doc.destroy();
+    for (const l of this.layers.values()) l.doc.destroy();
+  }
+
+  /** Did this room apply changes another instance made (to the doc or any layer)? */
+  get sawAnyRemote(): boolean {
+    return this.sawRemote || [...this.layers.values()].some((l) => l.sawRemote);
   }
 }
 
@@ -512,12 +747,34 @@ async function unloadRoom(room: Room): Promise<void> {
   if (!idle()) return;
   await room.flush();
   if (!idle()) return; // someone joined while we were saving: keep it
-  if (room.hasPendingWrites) {
+  if (room.hasPendingWrites || (room.sawAnyRemote && !(await room.saveMissing()))) {
     room.scheduleUnload(); // a save failed or another one is running: try again later
     return;
   }
+  if (!idle()) return; // someone joined while we were checking the database
   rooms.delete(room.id);
   room.destroy();
+  // Leave a single compact base behind, so the next load reads one row (not in the room's queue:
+  // it no longer exists; a new room loading meanwhile reads base + log consistently either way).
+  track(store.compactDoc(room.id));
+  // Layers too; an empty one, or a private one whose owner was removed from the board, is deleted.
+  for (const name of room.layers.keys()) track(compactLayerChecked(room.id, name));
+}
+
+async function compactLayerChecked(boardId: string, layer: string): Promise<void> {
+  const owner = privateLayerOwner(layer);
+  const keep = !owner || (await getBoardAccess(boardId, owner)).role !== null;
+  await layerStore.compactLayer(boardId, layer, keep);
+}
+
+/** Compactions running outside a room; shutdown waits for them before the database closes. */
+const background = new Set<Promise<unknown>>();
+function track(p: Promise<unknown>): void {
+  const done = p.catch((err) => {
+    if (!(err instanceof store.BoardGoneError)) logError('realtime: could not compact a board document', err);
+  });
+  background.add(done);
+  void done.finally(() => background.delete(done));
 }
 
 /**
@@ -571,16 +828,54 @@ export async function admitSocket(
   }
 }
 
-/** A session ended (logout): its board sockets close with 4401 in every room. */
-export function endSessionSockets(sessionKey: string): void {
+function toAllInstances(msg: ControlMessage): void {
+  if (!isShared()) return;
+  peerMessages.inc({ direction: 'out' });
+  publish(CONTROL_CHANNEL, encodeControl(msg));
+}
+
+function endSessionHere(sessionKey: string): void {
   for (const room of rooms.values()) room.endSession(sessionKey);
   for (const p of admitting) if (p.sessionKey === sessionKey) p.ws.close(4401, 'Signed out');
 }
 
-/** Re-resolves the role of everyone connected to the board; resolves once applied. */
-export async function refreshRoomAccess(boardId: string): Promise<void> {
+/** A session ended (logout): its board sockets close with 4401 in every room, on every instance. */
+export function endSessionSockets(sessionKey: string): void {
+  endSessionHere(sessionKey);
+  toAllInstances({ type: 'end-session', sessionKey });
+}
+
+async function refreshAccessHere(boardId: string): Promise<void> {
   accessEpochs.set(boardId, (accessEpochs.get(boardId) ?? 0) + 1);
   await rooms.get(boardId)?.refreshAccess();
+}
+
+/**
+ * Re-resolves the role of everyone connected to the board; resolves once applied on this
+ * instance (other instances apply it moments later).
+ */
+export async function refreshRoomAccess(boardId: string): Promise<void> {
+  toAllInstances({ type: 'refresh-access', boardId });
+  await refreshAccessHere(boardId);
+}
+
+/** Starts applying other instances' control messages; returns the stop function. */
+export function listenToOtherInstances(): () => void {
+  const sub = subscribe(CONTROL_CHANNEL, {
+    message(data) {
+      try {
+        const { from, msg } = decodeControl(data);
+        if (from === INSTANCE_ID) return;
+        peerMessages.inc({ direction: 'in' });
+        if (msg.type === 'end-session') endSessionHere(msg.sessionKey);
+        else if (msg.type === 'refresh-access') void refreshAccessHere(msg.boardId);
+        else void closeBoardHere(msg.boardId);
+      } catch (err) {
+        logError('realtime: bad control message from another instance', err);
+      }
+    },
+  });
+  return sub.close;
 }
 
 /** Current full state of a board doc (live doc if loaded — waiting for it to load — else the persisted state). */
@@ -594,32 +889,46 @@ export async function snapshotBoardDoc(boardId: string): Promise<Uint8Array | nu
       /* failed to load: read the stored state below */
     }
   }
-  return repo.loadState(boardId);
+  return (await store.loadDoc(boardId)).state;
 }
 
-/** Current state of a board's layer doc ('editors' or 'u:<userId>'), like snapshotBoardDoc. */
+/** Current state of one layer of a board (live if loaded, else stored), like snapshotBoardDoc. */
 export async function snapshotBoardLayer(boardId: string, layer: string): Promise<Uint8Array | null> {
   const room = rooms.get(boardId);
   if (room && !room.destroyed) {
     try {
       await room.ready;
-      const doc = room.layers.get(layer);
-      if (!room.destroyed) return doc ? Y.encodeStateAsUpdate(doc) : null;
+      const l = room.layers.get(layer);
+      if (!room.destroyed) return l ? Y.encodeStateAsUpdate(l.doc) : null;
     } catch {
       /* failed to load: read the stored state below */
     }
   }
-  return repo.loadLayer(boardId, layer);
+  return layerStore.loadLayer(boardId, layer);
 }
 
-/** Stores the initial content of a brand-new board's layer (e.g. a duplicate's hidden frames). */
+/** Every layer of a board (live if loaded, else stored): moving a board to the trash keeps them. */
+export async function snapshotBoardLayers(boardId: string): Promise<Array<{ layer: string; state: Uint8Array }>> {
+  const room = rooms.get(boardId);
+  if (room && !room.destroyed) {
+    try {
+      await room.ready;
+      if (!room.destroyed) return [...room.layers].map(([layer, l]) => ({ layer, state: Y.encodeStateAsUpdate(l.doc) }));
+    } catch {
+      /* failed to load: read the stored state below */
+    }
+  }
+  return (await layerStore.loadLayers(boardId)).flatMap((l) => (l.state ? [{ layer: l.layer, state: l.state }] : []));
+}
+
+/** Stores the initial content of a layer of a brand-new (or just trashed) board. */
 export async function initBoardLayer(boardId: string, layer: string, state: Uint8Array): Promise<void> {
-  await repo.saveLayer(boardId, layer, state, Date.now());
+  await layerStore.saveInitialLayer(boardId, layer, state);
 }
 
 /** Stores the initial content of a brand-new board (e.g. a duplicate). */
 export async function initBoardDoc(boardId: string, state: Uint8Array): Promise<void> {
-  await repo.saveState(boardId, state, Date.now());
+  await store.saveInitialState(boardId, state);
 }
 
 /**
@@ -627,6 +936,11 @@ export async function initBoardDoc(boardId: string, state: Uint8Array): Promise<
  * any save in flight. The stored state is removed with the board row (ON DELETE CASCADE).
  */
 export async function closeBoardDoc(boardId: string): Promise<void> {
+  toAllInstances({ type: 'close-board', boardId });
+  await closeBoardHere(boardId);
+}
+
+async function closeBoardHere(boardId: string): Promise<void> {
   const room = rooms.get(boardId);
   if (!room) return;
   dropRoom(room, 4403, 'Board deleted');
@@ -636,6 +950,7 @@ export async function closeBoardDoc(boardId: string): Promise<void> {
 /** Saves every loaded doc (graceful shutdown). */
 export async function flushAllRooms(): Promise<void> {
   await Promise.all([...rooms.values()].map((r) => r.flush()));
+  await Promise.all([...background]);
 }
 
 export function loadedRoomCount(): number {

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { plainToRichText, richTextToPlain, sanitizeRichText } from '../text/sanitize';
 import { applyFormatToHtml, formatStateOfHtml } from '../text/formatHtml';
 import { fitFontSize } from '../text/autofit';
+import { parseFontSize } from '../ui/TextStyleControls';
 
 describe('sanitizeRichText', () => {
   it('removes scripts, handlers and unsafe links but keeps the allowed subset', () => {
@@ -68,5 +69,13 @@ describe('auto-fit text', () => {
 
   it('never goes below the minimum, even for text that cannot fit', () => {
     expect(fitFontSize('word '.repeat(500), 'sans', 100, 100, { min: 8, max: 40 })).toBe(8);
+  });
+});
+
+describe('custom text size field (shared format control)', () => {
+  it('accepts "18px" / "12.5" but never writes an empty, zero or non-numeric size', () => {
+    expect(parseFontSize(' 18px ')).toBe(18);
+    expect(parseFontSize('12.54')).toBe(12.5);
+    for (const bad of ['', '  ', 'px', 'abc', '0', '-4', '3', 'Infinity', '5000']) expect(parseFontSize(bad)).toBeNull();
   });
 });

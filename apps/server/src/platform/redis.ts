@@ -1,5 +1,5 @@
 // The shared Redis connection (REDIS_URL). Null when Redis is not configured: every user of it has
-// an in-process fallback (rate limits today; realtime fan-out next).
+// an in-process fallback (rate limits; realtime fan-out through pubsub.ts).
 import { Redis } from 'ioredis';
 import type { Config } from './config';
 import { addReadinessCheck } from './health';

@@ -187,6 +187,12 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   refresh shares the change's undo step and network update) and never for remote changes, so
   exactly one client — the one making the change — rewrites the derived fields. Renderers should
   still derive from the live elements (`useElement`) and treat the stored fields as a cache.
+- `Host.uploadFile(blob)`: documents (PDF) through the same `/api/uploads` endpoint, checks and
+  per-account quota as images (`modules/uploads` accepts `application/pdf` after a `%PDF-`
+  signature check and always streams PDFs itself, never via the bucket redirect, so `fetch()`
+  stays same-origin). Rejections carry the server's message (too large, quota reached).
+  `features/pdf` lazy-loads pdf.js (`pdfjs-dist`, pinned exactly) with its worker as a same-origin
+  asset (CSP `worker-src 'self'`) and `isEvalSupported: false` (no `unsafe-eval` needed).
 - `Host.listMembers()`: everyone with access to the board (owner + invited members), including
   people never seen online — for assignee pickers etc. (`/board/local`: just the local user).
 - `Editor.findFreeSpot(size, { near?, gap? })`: top-left of a box that keeps `gap` clear of
@@ -223,13 +229,18 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
 - Typing a character with one EMPTY text item selected starts editing it with that character;
   items that already have text keep single letters as tool shortcuts (Enter / double-click edit).
   Undo/redo shortcuts also work while a non-modal popover has focus.
-- Screen/world UI that must stay visible next to a selection (comment pins) marks its node
-  `data-fr-keep-clear`; the format toolbar steps above it, or flips below the selection.
+- Screen/world UI that must stay visible next to a selection (comment pins, the top quick-connect
+  "+") marks its node `data-fr-keep-clear`; the format toolbar steps above it, or flips below the
+  selection. The toolbar also steps past unselected items it would cover (a mind-map sibling right
+  above), but only to a free spot within 160 px; otherwise it covers them (dense sticky grids).
 - `ToolDefinition.onSelect?(editor)`: act-now tools (upload image, templates) run when picked and
   never become the active tool. `ToolPointerEvent.button` is -1 on every move (drag or hover);
   `buttons` is the pressed-buttons bitmask.
 - `CommandDefinition.icon?` (shown in the context and board menus) and `group?` (commands sharing
   a group fold into one "<group> ▸" submenu, e.g. emoji's "React with ▸" stamps).
+- `editor.runCommand(id, args?)` → `run(editor, args)`: how a feature asks another to act on
+  something specific without importing it (find → `comments.openThread { threadId, quiet }`,
+  `comments.replaceText`). Shortcuts and menus pass no args; validate them in `run`.
 - `Host.notify(message, kind?, { action?: { label, run } })` — features never call `useToast`.
 - Panel slot `'top-center'`: session bars under the top bar (an active vote, "X is presenting").
   The engine stacks them in one centered column (also while presenting), so two bars never
@@ -241,6 +252,15 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
 - Board layers (see "Board layers" under Server): `Editor.layerOf(id)`, `setPrivatePlacement(rule)`,
   `privateCollection(name)` + hook `usePrivateCollection`, `revealPrivate` / `discardPrivate`,
   `ElementDefinition.hidesContents(el)`. `ExportOptions.sharedOnly` (thumbnails).
+- `Editor.exportElements(ids?)` → `ElementsSnapshot` (what copy puts on the clipboard: elements
+  with frame children + `copyContent`) and `Editor.insertElements(snapshot, { at? })` — the ONE
+  insertion path for copied content (paste uses it): fresh ids, references remapped, content
+  restored, one undo step, on a `findFreeSpot` by default. Saved templates go through it.
+- `Host.listTemplates / loadTemplate / saveTemplate / deleteTemplate` (server module
+  `templates`): a board or selection saved for reuse. Personal today; `SavedTemplateInfo.ownerId`
+  is there so workspace-shared templates (KAI-37) need no contract change — offer owner-only
+  actions only when it equals `user.id`. The visibility rule is one predicate in
+  `modules/templates/repo.ts`.
 
 Elements, geometry and text (all optional on `ElementDefinition` unless noted):
 - **Reads inside `editor.transact` see its earlier writes** (`getElements()`, `getElement()`,
@@ -252,7 +272,16 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
 - `normalize(next, prev?)`: `prev` is the element before this local change (undefined on create),
   so "w changed alone" (a side handle) is told apart from a corner scale or an edit. When web fonts
   finish loading, the engine re-runs `normalize` for the elements THIS client measured and nobody
-  else changed since, writing silently (no undo step) — never for collaborators' elements.
+  else changed since — never for collaborators' elements. The write is no undo step of its own:
+  it joins the last one (`BoardStore.transactDerived`), because Yjs never undoes a key over a
+  newer untracked value, and waits for the next local change while redo steps exist.
+- `arrange(container, { editor, touched }) → [{ id, patch }] | null` (`engine/editor/arrange.ts`):
+  containers that lay out their children (kanban columns, frames with a grid layout). After every
+  LOCAL change the engine asks each element of that type for the patches that put it back in
+  layout and applies them in the same undo step: inside a gesture once, when the outermost gesture
+  ends (a drag never re-stacks under the pointer; drop + re-stack = one undo), inside
+  `editor.transact` once at its end (never from a half-written state), otherwise right after the
+  write. Remote changes never run it. Must be idempotent — it also runs after unrelated changes.
 - `fitToContent(el, handle)`: double-clicking a resize handle applies the returned patch (a
   fixed-width text box goes back to auto width).
 - `hitTest(el, local, { tolerance })` — `tolerance` is a few screen px in world units at the live
@@ -262,6 +291,11 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
 - `hidden(el, editor)`: off the board (collapsed mind-map branches). Not rendered or exported, and
   ignored by hit tests, marquee, selection (dropped from it when they become hidden), snapping,
   `getBounds` and zoom-to-fit.
+- `BaseElement.attachedTo` (`@freero/shared`): an element that rides on another (a reaction stamp
+  on a sticky). `Editor.withChildren` includes riders like a frame's children, so they move (drag,
+  nudge, `moveBy`), duplicate, copy/paste, come to front and are deleted with their item; copies
+  whose item wasn't copied lose the link. The placing feature sets it (and re-attaches in
+  `follow` when the rider is moved on its own).
 - `removeWith(el, editor) → ids`: deleted along with `el` in the same transaction by every local
   `editor.remove` (Delete, cut, context menu, eraser); one undo restores all of them.
 - `onKeyDown(e, { editor, selection })`: keys while this type is selected, asked before the
@@ -280,7 +314,16 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
 - Auto-fit text (`fontSize: 'auto'`) snaps to a small set of sizes (~12% apart), so neighbouring
   stickies with similar text match. `ElementText.padding` may be per side (`{ top, right, bottom,
   left }`): tagged stickies keep their chip band free.
+- `DecorationDefinition.reserve?(el) → { top?, right?, bottom?, left? }`: the band a decoration
+  draws over inside the element's box. The element gets the per-side maximum as
+  `ElementRenderProps.reserved` (also in exports) and lays its text out clear of it — so the
+  decoration's geometry has one owner (tags' chip band) instead of a copied formula.
 - The active tool's Options flyout is kept inside the window by the engine.
+- Text-style format controls are the engine's (`@engine`): `FontFamilyControl`, `FontSizeControl`
+  (numbers, 'auto', labelled presets, custom field), `TextColorControl`, `TextHighlightControl`,
+  `TextMarkButtons` (pick `marks`), `TextAlignControl` (vertical too when given `vAlign`), with
+  `MIXED` / `commonValue`. A text-bearing feature composes them in `format.tsx` and owns only the
+  write (`onChange` → its patch); never copy them into a feature.
 
 Canvas productivity (engine primitives; the product UI lives in `features/arrange`, `find`,
 `layers`, `format-painter`, `select-similar`):
@@ -296,10 +339,22 @@ Canvas productivity (engine primitives; the product UI lives in `features/arrang
   dashboard thumbnail still include them (they are board content). Chosen over a synced `hidden`
   flag because content vanishing for collaborators without a trace is not what whiteboard users
   expect; the Layers panel says "N hidden for you only · Show all". Not in `@freero/shared`.
+  `ElementDefinition.hiddenWith(el) → ids` names what an element is drawn against (a connector's
+  attached ends): while one of them is hidden for me, so is the element, so no line is left
+  pointing at empty space. `Editor.isViewHidden(id)` answers the whole rule (itself, a container,
+  or a `hiddenWith` id); features never re-walk it.
 - `BoardSettings.gridSize` (8–48, default 24) and `snapToGrid` (board menu). The drawn grid uses
   `gridSize`; with snapping on it never subdivides below it, so every drawn line is a snap line.
   Moves snap the top-left, resizes the dragged edges; Ctrl/⌘ held during a drag inverts the
-  setting for that drag; Alt still disables all snapping.
+  setting for that drag; Alt still disables all snapping. Creation tools snap too, centrally
+  (`engine/interaction/toolDispatch.ts`): while snapping applies (same Ctrl/⌘ / Alt rules) a
+  tool's `ToolPointerEvent.point` is a grid point (`target` stays what is under the real pointer)
+  and whatever it creates during that pointer event lands with its top-left on the grid (several
+  elements created at once move together), so tools never snap by themselves. Tools set
+  `ToolDefinition.snapToGrid: false` to opt out: freehand (pen, eraser), element-aimed
+  (connector, comment pins) and select (snaps its own drags). Arrow-key nudges with snapping on
+  move to the next grid line (an off-grid item lands on the grid first); Shift+arrow moves five
+  grid lines. With snapping off they move 1 px (Shift: 10 px).
 - Snapping (`engine/geometry/snap.ts`) adds equal spacing: a dragged box snaps so its gap to a
   neighbour in the same row/column equals a gap already in that row/column (or centers it between
   two neighbours), whichever is closer than edge/center alignment, and draws distance markers on
@@ -310,7 +365,10 @@ Canvas productivity (engine primitives; the product UI lives in `features/arrang
   (a sticky's "add to the right" applies to stickies the user picked, not ones Tab reached).
   Escape walks out: editing → group member → whole group → nothing.
 - `replaceInRichText(html, find, replacement, { caseSensitive? }) → { html, count }` (`@engine`):
-  replaces in rich text's text only, keeping tags; an occurrence split by formatting is skipped.
+  replaces in rich text's text only, keeping tags. It matches the text as `richTextToPlain` reads
+  it, so an occurrence split by formatting ("<b>Hel</b>lo") is replaced too: the replacement takes
+  the formatting of the run the occurrence starts in, and inline tags left empty are dropped. An
+  occurrence never spans a line break.
 - Format toolbar: Group / Ungroup buttons for multi-selections; a locked member gets a lock badge
   and the Lock button a dot when only some items are locked.
 
@@ -323,6 +381,12 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
   `element[field]`; `onKeyDown(e, { atStart, atEnd })` sees keys first (Tab / arrows between
   table cells). Switching part ends the previous edit session (one undo step per part).
   `removeWhenEmpty` never applies to parts. Table cells and extra connector labels use it.
+  Board-wide tools reach every text through `Editor.getTextParts(id)` (the `textField` as part
+  null, then the definition's `textParts(el, editor)`) and rewrite them with
+  `Editor.setTextParts(id, parts)`: one transaction, and each part is written by the definition's
+  `writeTextPart(el, part, html, editor)` with the DEFINING feature's editor, so a table's cells
+  are still written only by the table feature. Find & replace uses it; a new multi-text element
+  becomes searchable and replaceable by defining `textParts` + `writeTextPart`.
 - `FeatureManifest.undoable: string[]` — owned collections whose local writes join the undo
   history (same gestures / steps as element writes). For content that belongs to elements
   (`tableCells`); never for social data (comments, votes).
@@ -341,17 +405,44 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
   third-party URLs. Video players (YouTube / Vimeo / Loom) only on `EMBED_FRAME_ORIGINS`
   (`@freero/shared`), which the CSP `frame-src` allows; iframes are sandboxed, mounted only after a
   click, and never exported (exports render a fresh component that shows the card).
+- Images placed by URL (same module, same fetch protections, `remoteImage` rate limit):
+  `Host.importImage(url)` (`POST /api/unfurl/image`) copies the image into the user's uploads —
+  the image feature does this on paste/drop, so boards reference `/uploads/<key>`, not the third
+  party. Boards that still link a third-party image: exports inline every cross-origin `<img>` as
+  a data URL first (`engine/editor/remoteImages.ts`, through `Host.fetchImage(url)` =
+  `GET /api/unfurl/image`, else a CORS read), and `renderToDataUrl({ onMissingImages })` reports
+  what couldn't be read (the export feature says so). Offline sandbox: both reject.
 - Pasted text is routed by importer priority, never by features importing each other: table
   (20: TSV / consistent CSV) → embed (10: exactly one URL) → sticky (5: a list — mostly bulleted /
   numbered lines, or short lines that don't read as a wrapped paragraph, or `<li>`s in the HTML —
   and any text while stickies are selected) → text box (0: prose).
 
+Reference & items (engine primitives; product UI in `features/shortcuts`, `links`, `image`, `icons`):
+- `Editor.getShortcuts() → ShortcutEntry[]` (`engine/runtime/shortcutList.ts`): every binding the
+  board answers for the live role — tool keys, command shortcuts (alternatives with the same label
+  fold into one row) and the keys the keyboard router handles itself (`ENGINE_KEYS` in
+  `interaction/keyboard.ts`, kept next to the handlers). The `?` sheet renders it with `@ui` `Kbd`
+  (⌘ on Apple platforms, Ctrl elsewhere), so the reference can't drift from the real bindings.
+- `BaseElement.link` (`@freero/shared`): an item link — an external URL or `#<elementId>`.
+  Untrusted; `isSafeHref(href)` (`@engine`) is the one safe-href rule shared with rich text.
+  "Copy link to item" (`engine.copyLink`) builds `/board/<id>?item=<elementId>`; the board selects
+  and zooms to it on load (`?el=` is still honored).
+- `ElementDefinition.onDoubleClick?(el, { editor, point })`: double-click on an element with no
+  text to edit there (image → crop mode). Editors only, never on locked items.
+- `useIsExporting()`: true inside offscreen exports/thumbnails, so decorations can leave out
+  on-screen affordances (the link badge).
+- `ImageElement.crop` (fractions of the natural picture) is the non-destructive crop; crop mode
+  is the image feature's `dialog` panel. `IconElement` stores its own drawing (whitelisted SVG
+  primitives), so the lucide index (`features/icons/lib/iconIndex.ts`, imported only with
+  `import()`) stays out of the board chunk; keep it that way when touching the icon library.
+
 ## UI kit (`ui/`) — exports from `@ui`
 
 `Button` {variant: 'primary'|'secondary'|'ghost'|'danger', size: 'sm'|'md'|'lg', icon?, loading?} ·
 `IconButton` {icon, label, active?, size?: 32|40, shortcut?, tooltipSide?} ·
+`ToolbarButton` {label, shortcut?, wide?, children} (format-toolbar button showing a value — font, size, a color sample; never a native `title`) ·
 `Tooltip` {content, shortcut?, side?, children} · `Popover` {open, onClose, anchor: HTMLElement|DOMRect|null, side?, align?, autoFocus?, escapeToContent?, children} ·
-`Menu` {open, onClose, anchor, items: MenuItem[]} where MenuItem = {id, label, icon?, shortcut?, danger?, disabled?, onSelect, submenu?: MenuItem[]} | {divider: true} | {heading: string} ·
+`Menu` {open, onClose, anchor, items: MenuItem[]} where MenuItem = {id, label, icon?, shortcut?, danger?, disabled?, disabledReason? (tooltip saying why; give one whenever the reason isn't obvious), onSelect, submenu?: MenuItem[]} | {divider: true} | {heading: string} ·
 `Modal` {open, onClose, title, width?, footer?, children} · `Input`, `TextArea`, `Select` {options, value, onChange},
 `Toggle`, `Slider` {min, max, step, value, onChange} · `ColorSwatches` {colors, value, onChange, allowCustom?} ·
 `Divider` {vertical?} · `Avatar` {name, color, src?, size?} · `AvatarStack` {users, max?} · `Kbd` ·
@@ -390,9 +481,18 @@ modules/<name>/    auth, boards, members, uploads, realtime …
 Cross-module imports name the index file explicitly (`'../auth/index'`), which is what [S2] checks.
 Auth is a plain middleware exported by `modules/auth/index.ts` (`requireUser`, `currentUser(req)`),
 not a reserved hook. Server modules today: `auth` (users, sessions), `boards` (boards, stars,
-opens), `members` (board_members, role resolution), `uploads` (uploads; files in object storage or
-`<data>/uploads`), `realtime` (board_docs; y-websocket protocol + role filter), `unfurl` (link
-previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`).
+opens; trash), `members` (board_members, role resolution), `uploads` (uploads; files in object storage or
+`<data>/uploads`), `realtime` (board_docs, board_doc_updates, board_doc_snapshots; y-websocket
+protocol + role filter + update log), `unfurl` (link previews for pasted URLs; no table; SSRF-safe
+fetch in `unfurl/fetch.ts`), `templates` (saved templates; content is opaque engine JSON).
+
+- Per-user quotas (boards, templates) count and insert in one transaction under a per-owner
+  `pg_advisory_xact_lock(hashtext('<module>.quota'), hashtext(userId))`; a count-then-insert
+  lets parallel requests overshoot.
+- Trash: deleting a board sets `boards.deleted_at`; `repo.getBoard`/lists/access treat it as
+  gone (sockets refused and closed after the live doc state is stored). Owners restore or delete
+  forever; `boards/init.ts` purges after `TRASH_RETENTION_DAYS` hourly on every instance, under
+  `pg_try_advisory_xact_lock` so replicas never purge at once. Periodic jobs follow this shape.
 
 ### Database (`platform/db.ts`)
 
@@ -462,6 +562,26 @@ sockets arriving meanwhile wait for that load. Saves of one room are serialized.
 only when nobody is in it, joining it or saving it. Deleting a board first closes its room and
 waits for in-flight saves. Access refreshes are serialized (the last reflects the latest state).
 
+Storage (`realtime/docStore.ts`): a board's document is a compacted base (`board_docs`) plus an
+append-only log of Yjs updates (`board_doc_updates`); a save appends only what changed since the
+previous one. Loading reads base + log in one statement (one consistent snapshot). Compaction (when
+a loaded board's log grows, and after a room unloads) folds the rows it read into a new base and
+deletes exactly those rows, guarded by the base's `version` (optimistic lock), so neither a save
+nor another instance's compaction running meanwhile is lost. It keeps a full-state snapshot at most
+every 30 min (`board_doc_snapshots`): the base of version history (`listBoardSnapshots` /
+`loadBoardSnapshot` in `realtime/index.ts`).
+
+Several instances (`platform/pubsub.ts`: Redis pub/sub with `REDIS_URL`, in-process otherwise;
+messages in `realtime/peers.ts`): every instance holding a board publishes its own sockets'
+updates and presence on the board's channel and applies the others' with `REMOTE_ORIGIN` (relayed
+to its sockets, never re-published or saved: the instance whose socket made a change saves it). A
+room subscribes, loads, then asks the other instances for what the database lacks (sync-request /
+sync-reply, also after a Redis reconnect). Presence from another instance never overrides a client
+id owned by a local socket (a client that moved here). A room that applied remote changes appends
+what the database still lacks before it unloads. Access refreshes, board deletion and logouts go to
+all instances on a control channel. `npm run verify` with `DATABASE_URL` + `REDIS_URL` runs two
+instances and checks all of this with clients on each.
+
 Trust boundaries in `realtime`: presence from a socket may only write the awareness client ids
 that socket announced, and its `user` is always replaced by the authenticated user's profile
 (`realtime/awareness.ts`), so nobody can appear as someone else. Commenters may write only the
@@ -480,8 +600,8 @@ hidden, private-mode drafts, the contents of a hidden frame. Hiding them in the 
 (every client holds the whole doc), and the server cannot filter the shared doc per connection: a
 Y.Doc replicates as a whole, each client's updates are one gap-free sequence, and a receiver that
 misses some structs can never apply anything that client writes later. So **withheld content never
-enters the shared doc**. It lives in server-held **layer docs**, synced over the board's one socket
-(same instance as the shared doc) only to connections that may read them:
+enters the shared doc**. It lives in server-held **layer docs**, synced over the board's socket
+only to connections that may read them:
 
 | layer (wire / stored) | read by | written by | holds |
 |---|---|---|---|
@@ -490,10 +610,34 @@ enters the shared doc**. It lives in server-held **layer docs**, synced over the
 
 - Wire format: `WS_MESSAGE_LAYER` envelopes around y-protocols sync messages, `WS_MESSAGE_LAYER_OP`
   for reveal/discard (`@freero/shared` api.ts). A socket asking for a layer it may not read gets no
-  answer; writes from sockets that may not write are dropped. Stored in `board_layers` (realtime).
+  answer; writes from sockets that may not write are dropped.
+- **Across instances** (`realtime/rooms.ts`, `peers.ts`): every instance holding the board holds a
+  copy of every layer and relays layer updates like the shared doc's (peer `layer-update`; layers
+  ride along in `sync-request` / `sync-reply`, so opening a board, or catching up after a Redis gap,
+  gets other instances' unsaved layer changes too). Access is re-checked per receiving socket at
+  send time, on whichever instance it is connected to (role changes reach every instance on the
+  control channel).
+- **Persistence**: like the doc, a base plus an append-only log per (board, layer)
+  (`board_layers`, `board_layer_updates`, `realtime/layerStore.ts`). The instance where a change is
+  made saves it (a socket's write, or a reveal it ran); saves are idempotent appends, so instances
+  never overwrite each other; a room that relayed others' layer changes saves what the database
+  lacks before unloading. Compaction after unload folds the log, and deletes a layer that holds
+  nothing or a private layer whose owner was removed from the board.
 - **Reveal** happens on the server: an owner/editor sends `{ type: 'reveal', collection, prefix? }`
-  and the server moves those entries out of EVERY user's private layer into the shared doc in one
-  transaction (so it works while authors are offline, and nobody sees half a result).
+  and the instance holding that socket moves those entries out of the private layers into the
+  shared doc in one transaction (so it works while authors are offline or on other instances, and
+  nobody sees half a result). Only the layers of people who may still edit the board take part
+  (someone removed or made a viewer keeps theirs). That access check reads the database, so the
+  revealer's later messages are held until the reveal is applied (it stays in order with them,
+  e.g. a vote ending after its ballots). `mine: true` reveals only the sender's own layer.
+- **Reveal racing an edit**: an author still typing in a draft while it is revealed (from any
+  instance) writes into a private entry the reveal just deleted, so the newer text stays in their
+  private layer. Their client — the only one that can see it — then holds the id in both docs and
+  publishes the newer private copy over the revealed one (`editor/layers.ts`). Private items made
+  after a reveal, with no private mode running, get a "Share them" bar (reveal `mine`).
+- **Presence**: while private mode applies to a user, others don't see their cursor where a new
+  sticky would go private or over their private items, and presence never names private elements
+  in `selection` / `editingId` (`publicCursor` / `publicIds`, `editor/layers.ts`).
 - Client (`BoardStore`): the shared doc plus both layer docs; `elements` of all three read as one
   board. A local write goes to the element's current layer, or where `editor/layers.ts` places it:
   private stays private; new elements matching private mode's rule (`Editor.setPrivatePlacement`) go
@@ -507,7 +651,11 @@ enters the shared doc**. It lives in server-held **layer docs**, synced over the
 - Losing owner/editor drops the local copy of the `editors` layer (a fresh doc; never synced back
   as deletions); gaining it asks the server for the layer. Dashboard thumbnails render shared
   content only; duplicating a board copies the `editors` layer only for an owner/editor and never
-  anyone's private layer.
+  anyone's private layer; moving a board to the trash keeps every layer exactly as it was (live
+  state, like the doc) and restoring brings them back. Saved templates and exports are made on the
+  client from what that user can see: never another user's private layer, and hidden frames'
+  contents only for owners/editors (who see them). Version-history snapshots hold the shared doc
+  only (see KAI-49 for what restoring does with layers).
 - Features use it through `Editor.privateCollection(name)` / `usePrivateCollection`,
   `revealPrivate` / `discardPrivate`, `setPrivatePlacement`, `layerOf(id)` and
   `ElementDefinition.hidesContents`. Trust model: owners/editors are trusted with integrity (they can
@@ -522,7 +670,8 @@ enters the shared doc**. It lives in server-held **layer docs**, synced over the
   data dir, signs up real users, creates a board, connects real Yjs WebSocket clients and checks
   sync, roles, persistence across restart. No fake harness. Runs on PGlite by default; with
   `DATABASE_URL` it runs against that Postgres (fresh database per run, dropped afterwards) and
-  also starts two instances at once on one empty database (migration lock). CI does both.
+  also starts two instances at once on one empty database (migration lock); with `REDIS_URL` too,
+  it runs two instances on one database + Redis with clients on each. CI does all of it.
 - UI: drive the real app in a browser (see `.claude/skills/verify-freero/`).
 
 ### What a test is for

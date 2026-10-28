@@ -30,14 +30,15 @@ export default function uploadRoutes(_ctx: ServerContext): Router {
 
   // Streamed from storage (S3 or disk), so URLs stay same-origin and every response carries
   // nosniff + the sandbox CSP. With S3_PUBLIC_URL set, raster images redirect to the bucket
-  // instead (SVGs are always streamed: the bucket would not send the sandbox CSP).
+  // instead (SVGs are always streamed: the bucket would not send the sandbox CSP; PDFs too: the
+  // board reads them with fetch(), which a cross-origin bucket without CORS would refuse).
   r.get(
     '/uploads/:file',
     handle(async (req, res) => {
       const name = req.params.file;
       if (!FILE_NAME_RE.test(name)) throw notFound('File not found');
       const ext = name.split('.').pop()!;
-      const direct = ext === 'svg' ? null : storage().publicUrl(name);
+      const direct = ext === 'svg' || ext === 'pdf' ? null : storage().publicUrl(name);
       if (direct) {
         res.setHeader('Cache-Control', 'public, max-age=86400');
         return res.redirect(302, direct);

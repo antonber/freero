@@ -4,9 +4,17 @@ import { useCallback, useContext, useMemo, useRef, useSyncExternalStore } from '
 import { useStore } from 'zustand';
 import type { BoardElement, BoardSettings, ElementType, PresenceState, Role } from '@freero/shared';
 import type { Camera, Collection, Editor, FollowTarget, Point, Rect } from './api';
-import { ScopeContext, useCore } from './context';
+import { RenderModeContext, ScopeContext, useCore } from './context';
 import type { UiState } from './state/uiStore';
 import type { TextFormatState } from './text/session';
+
+/**
+ * [additive] True while rendering offscreen for an image export / thumbnail: element and
+ * decoration components leave out on-screen-only affordances (link badges, hover controls).
+ */
+export function useIsExporting(): boolean {
+  return useContext(RenderModeContext) === 'export';
+}
 
 /** The Editor, scoped to the feature whose component calls it. */
 export function useEditor(): Editor {

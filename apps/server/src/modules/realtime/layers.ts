@@ -12,13 +12,23 @@
 //   'editors'      'editors'   owner/editor sockets          owner/editor sockets
 //
 // Revealing moves entries from the private layers into the shared doc on the server (an owner or
-// editor asks with a LayerOp), so it works while their authors are offline.
+// editor asks with a LayerOp), so it works while their authors are offline. Only the layers of
+// people who may still edit the board take part (someone removed or made a viewer meanwhile keeps
+// their drafts to themselves; compaction deletes a removed member's layer).
+//
+// Across instances (rooms.ts): every instance holding the board keeps a copy of every layer doc
+// and relays layer updates like the shared doc's, re-checking access per receiving socket. The
+// instance where a change is made (a socket's write, or a reveal) publishes and saves it.
 import * as Y from 'yjs';
 import type { BoardLayer, LayerOp, Role } from '@freero/shared';
 
 export const EDITORS_LAYER = 'editors';
 export const privateLayerOf = (userId: string) => `u:${userId}`;
 export const isPrivateLayer = (name: string) => name.startsWith('u:');
+/** The user whose private layer `name` is (null for the editors layer). */
+export const privateLayerOwner = (name: string): string | null => (isPrivateLayer(name) ? name.slice(2) : null);
+/** Storage names are 'editors' or 'u:<id>'; anything else from another instance is ignored. */
+export const isLayerName = (name: string) => name === EDITORS_LAYER || /^u:[A-Za-z0-9_-]{1,64}$/.test(name);
 
 export interface LayerReader {
   userId: string;
@@ -60,17 +70,19 @@ export function parseLayerOp(json: string): LayerOp | null {
     return null;
   }
   if (!v || typeof v !== 'object') return null;
-  const { type, collection, prefix } = v as Record<string, unknown>;
+  const { type, collection, prefix, mine } = v as Record<string, unknown>;
   if (type !== 'reveal' && type !== 'discard') return null;
   if (typeof collection !== 'string' || !NAME_RE.test(collection)) return null;
   if (prefix !== undefined && (typeof prefix !== 'string' || prefix.length > 200)) return null;
-  return { type, collection, ...(prefix !== undefined ? { prefix } : {}) };
+  if (mine !== undefined && typeof mine !== 'boolean') return null;
+  return { type, collection, ...(prefix !== undefined ? { prefix } : {}), ...(mine ? { mine: true } : {}) };
 }
 
 /**
- * Applies `op` to every private layer (and, for 'reveal', the shared doc `main`): matching entries
- * are written to `main` in ONE transaction, then deleted from their layers. Values that are shared
- * types (not plain JSON) are never revealed. Returns how many entries were affected.
+ * Applies `op` to the given private layers (and, for 'reveal', the shared doc `main`): matching
+ * entries are written to `main` in ONE transaction, then deleted from their layers. Values that are
+ * shared types (not plain JSON) are never revealed. Callers pass only the layers that take part
+ * (see the header). Returns how many entries were affected.
  */
 export function applyLayerOp(op: LayerOp, main: Y.Doc, layers: Map<string, Y.Doc>, origin: unknown): number {
   const prefix = op.prefix ?? '';

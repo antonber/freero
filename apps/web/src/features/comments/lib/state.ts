@@ -23,6 +23,8 @@ export interface Draft {
 export interface CommentsUi {
   draft: Draft | null;
   openId: string | null;
+  /** The open thread was opened from elsewhere (find) and must not take the keyboard focus. */
+  quietId: string | null;
   showResolved: boolean;
   filter: ThreadFilter;
   /** threadId -> latest activity timestamp you've seen. */
@@ -62,6 +64,7 @@ export function session(editor: Editor): Session {
     const ui = createStore<CommentsUi>(() => ({
       draft: null,
       openId: null,
+      quietId: null,
       showResolved: loadJson(prefsKey, false),
       filter: 'open',
       seen: typeof localStorage === 'undefined' ? {} : loadJson(seenKey(editor), {}),
@@ -82,7 +85,10 @@ export function useCommentsUi<T>(editor: Editor, sel: (s: CommentsUi) => T): T {
 }
 
 export function setUi(editor: Editor, patch: Partial<CommentsUi>) {
-  session(editor).ui.setState(patch);
+  const { ui } = session(editor);
+  // Opening any other way (or closing) ends the quiet open.
+  if ('openId' in patch && !('quietId' in patch) && patch.openId !== ui.getState().quietId) patch = { ...patch, quietId: null };
+  ui.setState(patch);
   if ('showResolved' in patch) saveJson(prefsKey, patch.showResolved);
 }
 
@@ -198,6 +204,34 @@ export function editMessage(editor: Editor, threadId: string, messageId: string,
   coll.set(keys.message(threadId, messageId), { ...cur, text: body, editedAt: editor.host.serverNow() });
 }
 
+/**
+ * Find & replace in comments: rewrites `find` in YOUR messages only (an edit, like editMessage —
+ * nobody's words are changed under their name), optionally just the listed messages. A message
+ * the replacement would empty is left as it is. Returns how many messages changed.
+ */
+export function replaceInMessages(
+  editor: Editor,
+  find: string,
+  replacement: string,
+  opts: { caseSensitive?: boolean; only?: Array<{ threadId: string; messageId: string }> } = {},
+): number {
+  if (!find) return 0;
+  const re = new RegExp(find.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), opts.caseSensitive ? 'g' : 'gi');
+  const only = opts.only && new Set(opts.only.map((m) => keys.message(m.threadId, m.messageId)));
+  let changed = 0;
+  editor.transact(() => {
+    for (const t of getThreads(editor))
+      for (const m of t.messages) {
+        if (m.authorId !== editor.user.id || (only && !only.has(keys.message(t.id, m.id)))) continue;
+        const next = m.text.replace(re, () => replacement);
+        if (next === m.text || !next.trim()) continue;
+        editMessage(editor, t.id, m.id, next);
+        changed++;
+      }
+  });
+  return changed;
+}
+
 /** Deleting the last message deletes the thread (an empty thread is never kept). */
 export function deleteMessage(editor: Editor, threadId: string, messageId: string) {
   const t = getThread(editor, threadId);
@@ -246,8 +280,11 @@ export function canDeleteThread(editor: Editor, t: CommentThread): boolean {
   return editor.can('editor') || (editor.can('commenter') && t.createdBy === editor.user.id);
 }
 
-/** Pans (and if needed zooms) so the thread's pin sits in the visible part of the canvas, then opens it. */
-export function focusThread(editor: Editor, t: CommentThread) {
+/**
+ * Pans (and if needed zooms) so the thread's pin sits in the visible part of the canvas, then opens
+ * it. `quiet`: the thread card doesn't take the keyboard focus (the opener keeps it).
+ */
+export function focusThread(editor: Editor, t: CommentThread, opts: { quiet?: boolean } = {}) {
   const el = t.elementId ? editor.getElement(t.elementId) : undefined;
   const cam = editor.getCamera();
   const zoom = Math.min(1.5, Math.max(0.75, cam.zoom));
@@ -258,5 +295,5 @@ export function focusThread(editor: Editor, t: CommentThread) {
   const sx = area.x + area.w / 2 - 120;
   const sy = area.y + area.h / 2 + 60;
   editor.setCamera({ x: p.x - sx / zoom, y: p.y - sy / zoom, zoom }, { animate: true });
-  setUi(editor, { openId: t.id, draft: null });
+  setUi(editor, { openId: t.id, draft: null, quietId: opts.quiet ? t.id : null });
 }

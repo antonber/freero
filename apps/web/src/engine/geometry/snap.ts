@@ -34,6 +34,34 @@ export interface SnapOptions {
   grid?: number;
 }
 
+/**
+ * The grid step a pointer gesture snaps to, or undefined: the board's snap-to-grid setting,
+ * inverted while Ctrl/⌘ is held; Alt disables snapping.
+ */
+export function gridStepFor(
+  settings: { snapToGrid: boolean; gridSize: number },
+  mods: { metaKey: boolean; altKey: boolean },
+): number | undefined {
+  if (mods.altKey) return undefined;
+  return settings.snapToGrid !== mods.metaKey ? settings.gridSize : undefined;
+}
+
+/** Nearest grid point. */
+export function snapPointToGrid(p: { x: number; y: number }, step: number): { x: number; y: number } {
+  return { x: Math.round(p.x / step) * step, y: Math.round(p.y / step) * step };
+}
+
+/**
+ * Arrow-key nudge along one axis with the grid on: the distance from the box's left/top `pos` to
+ * the `steps`-th grid line in direction `dir` (an off-grid box first lands on the next line, so a
+ * nudge always ends on the grid, like a snapped drag).
+ */
+export function gridNudge(pos: number, dir: -1 | 1, step: number, steps: number): number {
+  const eps = 1e-6;
+  const next = dir > 0 ? Math.floor(pos / step + eps) * step + step : Math.ceil(pos / step - eps) * step - step;
+  return next + dir * (steps - 1) * step - pos;
+}
+
 type Feature = 'start' | 'center' | 'end';
 const FEATURES: Feature[] = ['start', 'center', 'end'];
 

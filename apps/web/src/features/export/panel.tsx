@@ -6,6 +6,7 @@ import {
   LARGE_BOARD,
   boardFrames,
   exportImage,
+  missingImages,
   outputSize,
   pdfScale,
   scopeInfo,
@@ -174,15 +175,24 @@ function PdfDialog({ editor }: { editor: Editor }) {
     const ctrl = new AbortController();
     abort.current = ctrl;
     setProgress({ done: 0, total: picked.length });
+    const missing = missingImages(editor);
     try {
       const pdf = await buildFramesPdf(picked, {
         pageSize,
         signal: ctrl.signal,
         onProgress: (done, total) => setProgress({ done, total }),
-        render: (f) => editor.renderToDataUrl({ rect: { x: f.x, y: f.y, w: f.w, h: f.h }, padding: 0, format: 'jpeg', scale: pdfScale(f) }),
+        render: (f) =>
+          editor.renderToDataUrl({
+            rect: { x: f.x, y: f.y, w: f.w, h: f.h },
+            padding: 0,
+            format: 'jpeg',
+            scale: pdfScale(f),
+            onMissingImages: missing.onMissingImages,
+          }),
       });
       if (pdf && !ctrl.signal.aborted) {
         pdf.save(exportFileName(editor.host.board.title, 'pdf', picked.length === 1 ? picked[0].title : 'frames'));
+        missing.report();
         close();
       }
     } catch (err) {

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { EngineCore } from '../runtime/core';
-import { makeCore } from './harness';
+import type { ElementDefinition } from '../api';
+import { boxDef, bundle, frameDef, makeCore } from './harness';
 import { replaceInRichText } from '../text/sanitize';
 
 let core: EngineCore;
@@ -44,6 +45,31 @@ describe('hidden for me (Editor.setViewHidden)', () => {
     core.editor.setViewHidden([frame], false);
     expect(core.editor.hitTest({ x: 50, y: 50 })?.id).toBe(child);
   });
+
+  it('a line attached to an item hidden for me (or to something in a hidden frame) hides with it instead of pointing at nothing', () => {
+    const lineDef: ElementDefinition<'connector'> = {
+      type: 'connector',
+      Component: () => null,
+      resize: 'none',
+      defaults: () => ({ type: 'connector', w: 1, h: 1, start: { x: 0, y: 0 }, end: { x: 0, y: 0 } }) as never,
+      hiddenWith: (c) => [c.start.elementId, c.end.elementId],
+    };
+    core = makeCore({ bundles: [bundle('boxes', { elements: [boxDef as ElementDefinition<any>, frameDef as ElementDefinition<any>, lineDef as ElementDefinition<any>] })] });
+    const frame = create({ type: 'frame', x: 0, y: 0, w: 400, h: 300 });
+    const inFrame = create({ type: 'sticky', x: 20, y: 20 });
+    const a = create({ type: 'sticky', x: 600, y: 0 });
+    const b = create({ type: 'sticky', x: 900, y: 0 });
+    const ab = create({ type: 'connector', x: 700, y: 50, w: 200, h: 1, start: { elementId: a }, end: { elementId: b } });
+    const toFrame = create({ type: 'connector', x: 120, y: 50, w: 480, h: 1, start: { elementId: inFrame }, end: { elementId: a } });
+    core.editor.select([ab]);
+    core.editor.setViewHidden([b], true);
+    expect([core.editor.isViewHidden(ab), core.editor.isViewHidden(toFrame)]).toEqual([true, false]);
+    expect(core.editor.getSelection()).toEqual([]);
+    expect(core.editor.getBounds([ab])).toBeNull();
+    core.editor.setViewHidden([b], false);
+    core.editor.setViewHidden([frame], true);
+    expect([core.editor.isViewHidden(ab), core.editor.isViewHidden(toFrame)]).toEqual([false, true]);
+  });
 });
 
 describe('replaceInRichText', () => {
@@ -53,5 +79,11 @@ describe('replaceInRichText', () => {
     expect(r.count).toBe(3);
     expect(r.html).toBe('<b>&lt;done&gt;</b>: fix the <a href="/todo">&lt;done&gt; link</a> &amp; &lt;done&gt; list');
     expect(replaceInRichText(html, 'todo', 'x', { caseSensitive: true }).count).toBe(1);
+  });
+
+  it('replaces a word split by formatting (in the formatting it starts in) but never joins two lines', () => {
+    expect(replaceInRichText('<b>Hel</b>lo world, he<i>llo</i>!', 'hello', 'Hi')).toEqual({ html: '<b>Hi</b> world, Hi!', count: 2 });
+    expect(replaceInRichText('Hel<br>lo', 'hello', 'Hi').count).toBe(0);
+    expect(replaceInRichText('<p>Hel</p><p>lo</p>', 'hello', 'Hi').count).toBe(0);
   });
 });

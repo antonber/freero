@@ -17,16 +17,7 @@ import './sticky.css';
 /** Below this zoom the text is unreadable anyway: draw cheap "text lines" instead (2000-sticky boards). */
 const LOD_ZOOM = 0.18;
 
-/**
- * Tagged stickies keep a bottom band free for the tag chips the tags feature draws there
- * (8 px margin + 18 px chip + 4 px gap, scaled with the sticky like the chips).
- */
-function tagBand(el: StickyElement): number {
-  if (!el.tags?.length) return 0;
-  return 30 * Math.min(2.5, Math.max(0.5, Math.min(el.w, el.h) / 200));
-}
-
-const StickyView = memo(function StickyView({ element, zoom }: ElementRenderProps<StickyElement>) {
+const StickyView = memo(function StickyView({ element, zoom, reserved }: ElementRenderProps<StickyElement>) {
   const bg = STICKY_COLORS[element.color] ?? STICKY_COLORS.yellow;
   const pad = Math.max(8, Math.min(element.w, element.h) * 0.08);
   const lod = zoom < LOD_ZOOM;
@@ -44,7 +35,13 @@ const StickyView = memo(function StickyView({ element, zoom }: ElementRenderProp
         <ElementText
           element={element}
           field="text"
-          padding={{ top: pad, right: pad, bottom: Math.max(pad, tagBand(element)), left: pad }}
+          // Decorations drawn over the paper (tag chips) reserve their band; text stays clear of it.
+          padding={{
+            top: Math.max(pad, reserved?.top ?? 0),
+            right: Math.max(pad, reserved?.right ?? 0),
+            bottom: Math.max(pad, reserved?.bottom ?? 0),
+            left: Math.max(pad, reserved?.left ?? 0),
+          }}
           placeholder=""
         />
       )}

@@ -181,25 +181,10 @@
 }
 
 /* Format toolbar */
+/* Extends ui's ToolbarButton: icon + value side by side. */
 .fr-card-fmt-btn {
-  display: inline-flex;
-  align-items: center;
   gap: 6px;
-  height: 32px;
   padding: 0 8px;
-  border: 0;
-  border-radius: var(--fr-radius-sm);
-  background: transparent;
-  color: var(--fr-ink-2);
-  font: 500 13px var(--fr-font);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.fr-card-fmt-btn:hover,
-.fr-card-fmt-btn[aria-expanded='true'] {
-  background: var(--fr-hover);
-  color: var(--fr-ink);
 }
 
 .fr-card-fmt-btn .fr-card-fmt-dot {

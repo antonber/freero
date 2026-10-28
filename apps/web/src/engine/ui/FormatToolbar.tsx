@@ -6,13 +6,47 @@ import { Copy, Ellipsis, Group, Layers, Lock, LockOpen, Share, Trash2, Ungroup }
 import { IconButton, Menu, type MenuItem } from '@ui';
 import { ScopeContext, useCore } from '../context';
 import { useCamera, useRole, useSelectedElements } from '../hooks';
-import { worldToScreen } from '../camera/camera';
-import { boundsOf } from '../geometry/geometry';
+import { screenToWorld, worldToScreen } from '../camera/camera';
+import { boundsOf, elementAABB } from '../geometry/geometry';
+import type { Camera, Editor, Rect } from '../api';
 import { ROLE_RANK } from '../runtime/core';
 import { contextCommandItems } from './ContextMenu';
 
 const GAP = 14;
 const TOP_SAFE = 68;
+/** How far (screen px) the toolbar may move from its natural spot to keep nearby items clickable. */
+const MAX_DETOUR = 160;
+
+type ScreenRect = { x: number; y: number; w: number; h: number };
+
+/**
+ * Screen rects of the unselected items around the selection that the toolbar could cover.
+ * Ignores containers (frames) and anything overlapping the selection itself (a shape it sits
+ * on, its connectors): those can't be avoided by moving the toolbar up or down.
+ */
+function nearbyItemRects(
+  editor: Editor,
+  cam: Camera,
+  n: { left: number; selTop: number; selBottom: number },
+  size: { w: number; h: number },
+): ScreenRect[] {
+  const selected = new Set(editor.getSelection());
+  const sel = editor.getBounds([...selected]);
+  if (!sel) return [];
+  const tl = screenToWorld(cam, { x: n.left, y: n.selTop - MAX_DETOUR - size.h - GAP });
+  const br = screenToWorld(cam, { x: n.left + size.w, y: n.selBottom + MAX_DETOUR + size.h + GAP + 34 });
+  const overlapsSel = (r: Rect) => r.x < sel.x + sel.w && r.x + r.w > sel.x && r.y < sel.y + sel.h && r.y + r.h > sel.y;
+  return editor
+    .elementsInRect({ x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y }, 'intersect')
+    .filter((el) => !selected.has(el.id) && !editor.getDefinition(el.type)?.container)
+    .map(elementAABB)
+    .filter((r) => !overlapsSel(r))
+    .map((r) => {
+      const a = worldToScreen(cam, r);
+      const b = worldToScreen(cam, { x: r.x + r.w, y: r.y + r.h });
+      return { x: a.x, y: a.y, w: b.x - a.x, h: b.y - a.y };
+    });
+}
 
 /**
  * Screen rects (viewport px) of world/screen UI that must stay visible above a selection, e.g.
@@ -69,21 +103,41 @@ export function FormatToolbar() {
   });
   useLayoutEffect(() => () => core.ui.setState({ formatToolbarRect: null }), [core]);
 
-  // Step clear of keep-clear nodes (comment pins…) that the natural placement would cover.
+  // Step clear of what the natural placement would cover: keep-clear nodes (comment pins, the top
+  // quick-connect "+") must stay visible; other items near the selection (a mind-map sibling right
+  // above) should stay clickable when a spot close by is free.
   useLayoutEffect(() => {
     const n = natural.current;
     let next: number | null = null;
     if (n) {
-      const pins = keepClearRects(core.dom.viewport).filter((p) => p.x < n.left + size.w + 6 && p.x + p.w > n.left - 6);
-      const hits = (top: number) => pins.filter((p) => p.y < top + size.h + 6 && p.y + p.h > top - 6);
-      if (hits(n.top).length) {
-        // Above the selection: climb over the pins in the way; else try below the selection.
+      const inSpan = (p: ScreenRect) => p.x < n.left + size.w + 6 && p.x + p.w > n.left - 6;
+      const pins = keepClearRects(core.dom.viewport).filter(inSpan);
+      const items = nearbyItemRects(core.editor, cam, n, size).filter(inSpan);
+      const hits = (list: ScreenRect[], top: number) => list.filter((p) => p.y < top + size.h + 6 && p.y + p.h > top - 6);
+      const fits = (top: number) => top >= TOP_SAFE && top + size.h <= viewport.height - 70;
+      /** Above the selection, climbing over whatever of `list` is in the way. */
+      const climb = (list: ScreenRect[]) => {
         let top = n.top;
-        for (let i = 0; i < 8 && hits(top).length; i++) top = Math.min(...hits(top).map((p) => p.y)) - 8 - size.h;
-        if (!n.below && top >= TOP_SAFE && !hits(top).length) next = top;
-        else {
-          const below = n.selBottom + GAP + 34;
-          if (!hits(below).length && below + size.h <= viewport.height - 70) next = below;
+        for (let i = 0; i < 8 && hits(list, top).length; i++) top = Math.min(...hits(list, top).map((p) => p.y)) - 8 - size.h;
+        return n.below ? null : top;
+      };
+      /** Below the selection (clear of the rotate handle), stepping down past `list`. */
+      const descend = (list: ScreenRect[]) => {
+        let top = n.selBottom + GAP + 34;
+        for (let i = 0; i < 8 && hits(list, top).length; i++) top = Math.max(...hits(list, top).map((p) => p.y + p.h)) + 8;
+        return top;
+      };
+      const pinned = hits(pins, n.top).length > 0;
+      if (pinned || hits(items, n.top).length) {
+        const all = [...pins, ...items];
+        const near = (top: number) => top >= n.top - MAX_DETOUR && top <= n.selBottom + GAP + 34 + MAX_DETOUR;
+        const clearOfAll = [climb(all), descend(all)].find(
+          (t): t is number => t !== null && fits(t) && near(t) && !hits(all, t).length,
+        );
+        if (clearOfAll !== undefined) next = clearOfAll;
+        else if (pinned) {
+          // No free spot nearby: covering items is acceptable, covering a pin is not.
+          next = [climb(pins), descend(pins)].find((t): t is number => t !== null && fits(t) && !hits(pins, t).length) ?? null;
         }
       }
     }
@@ -167,7 +221,7 @@ export function FormatToolbar() {
           active={locked}
           onClick={() => editor.runCommand('engine.lock')}
         />
-        {els.length === 1 && <IconButton icon={Share} label="Copy link to object" size={32} onClick={() => editor.runCommand('engine.copyLink')} />}
+        {els.length === 1 && <IconButton icon={Share} label="Copy link to item" size={32} onClick={() => editor.runCommand('engine.copyLink')} />}
         {!locked && <IconButton icon={Copy} label="Duplicate" shortcut="Mod+D" size={32} onClick={() => editor.duplicate(ids)} />}
         {!locked && <IconButton icon={Trash2} label="Delete" shortcut="Del" size={32} onClick={() => editor.runCommand('engine.delete')} />}
         <IconButton ref={moreRef} icon={Ellipsis} label="More" size={32} active={moreOpen} onClick={() => setMoreOpen((o) => !o)} />
