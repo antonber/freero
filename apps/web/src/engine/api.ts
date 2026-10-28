@@ -605,7 +605,8 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
   /**
    * [additive] Double-click with the select tool on an element that has no text to edit there
    * (no `textPartAt` part, no `textField`): images enter crop mode. Editors only; runs inside the
-   * click's gesture. `point` is in world coordinates; `editor` is scoped to the defining feature.
+   * click's gesture. A container that defines it gets it on its empty area too, instead of the
+   * canvas's "write here" (a timeline adds a bar where it is double-clicked). `point` is in world coordinates; `editor` is scoped to the defining feature.
    */
   onDoubleClick?(element: ElementOf<T>, ctx: { editor: Editor; point: Point }): void;
   /**

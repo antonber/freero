@@ -365,7 +365,8 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
       }
       const target = e.target;
       // Double-click on empty canvas, or on a frame's empty area: "write here" (ToolDefinition.onCanvasDoubleClick).
-      if (core.interaction.clickCount >= 2 && canEdit && (!target || (def(target)?.container && !def(target)?.textField))) {
+      // A container with a double-click of its own (a timeline adds a bar) keeps it.
+      if (core.interaction.clickCount >= 2 && canEdit && (!target || (def(target)?.container && !def(target)?.textField && !def(target)?.onDoubleClick))) {
         const writer = core.registry.tools.find((t) => t.def.onCanvasDoubleClick && ed().can(t.def.minRole ?? 'editor'));
         if (writer) {
           state = { kind: 'idle' };
