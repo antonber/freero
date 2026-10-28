@@ -10,6 +10,7 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadBucketCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
   S3ServiceException,
@@ -23,6 +24,11 @@ export interface StoredObject {
   size: number | null;
 }
 
+export interface StoredKey {
+  key: string;
+  size: number;
+}
+
 export interface ObjectStorage {
   readonly kind: 'local' | 's3';
   put(key: string, data: Uint8Array, contentType: string): Promise<void>;
@@ -32,6 +38,8 @@ export interface ObjectStorage {
   delete(key: string): Promise<void>;
   /** A URL clients may fetch the object from directly, or null when the app must stream it. */
   publicUrl(key: string): string | null;
+  /** Every stored key (in no particular order; with S3, also the local-disk fallback's). */
+  list(): AsyncIterable<StoredKey>;
   ping(): Promise<void>;
 }
 
@@ -70,6 +78,19 @@ export class LocalStorage implements ObjectStorage {
   }
   publicUrl(): string | null {
     return null;
+  }
+  async *list(): AsyncIterable<StoredKey> {
+    let names: string[];
+    try {
+      names = await fs.promises.readdir(this.dir);
+    } catch {
+      return; // nothing stored yet
+    }
+    for (const name of names) {
+      if (!KEY_RE.test(name) || name.startsWith('.')) continue;
+      const stat = await fs.promises.stat(path.join(this.dir, name)).catch(() => null);
+      if (stat?.isFile()) yield { key: name, size: stat.size };
+    }
   }
   async ping(): Promise<void> {
     await fs.promises.mkdir(this.dir, { recursive: true });
@@ -121,6 +142,21 @@ export class S3Storage implements ObjectStorage {
   async delete(key: string): Promise<void> {
     await this.client.send(new DeleteObjectCommand({ Bucket: this.s3.bucket, Key: this.prefix + checkKey(key) }));
     await this.fallback?.delete(key);
+  }
+
+  async *list(): AsyncIterable<StoredKey> {
+    let token: string | undefined;
+    do {
+      const out = await this.client.send(
+        new ListObjectsV2Command({ Bucket: this.s3.bucket, Prefix: this.prefix, ContinuationToken: token }),
+      );
+      for (const o of out.Contents ?? []) {
+        const key = o.Key?.slice(this.prefix.length);
+        if (key && KEY_RE.test(key)) yield { key, size: o.Size ?? 0 };
+      }
+      token = out.IsTruncated ? out.NextContinuationToken : undefined;
+    } while (token);
+    if (this.fallback) yield* this.fallback.list();
   }
 
   publicUrl(key: string): string | null {
