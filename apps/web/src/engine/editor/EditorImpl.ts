@@ -67,7 +67,9 @@ export class EditorImpl implements Editor {
     movingTimer: ReturnType<typeof setTimeout> | null;
     /** >0 while a user gesture (wheel, pan, zoom control) is writing the camera: see asUser(). */
     userCamera: number;
-  } = { collections: new Map(), camAnim: null, camTarget: null, lastPaste: null, lastDenied: 0, editingGesture: false, movingTimer: null, userCamera: 0 };
+    /** A font re-measure waits for the next local change (redo steps existed): see renormalizeMeasured(). */
+    remeasurePending: boolean;
+  } = { collections: new Map(), camAnim: null, camTarget: null, lastPaste: null, lastDenied: 0, editingGesture: false, movingTimer: null, userCamera: 0, remeasurePending: false };
 
   /**
    * Flags the camera as moving for a short while: the world layer is promoted (will-change)
@@ -246,13 +248,26 @@ export class EditorImpl implements Editor {
 
   /**
    * Web fonts finished loading: re-runs normalize for the elements THIS client measured (and
-   * nobody changed since), so text sized with fallback fonts gets its real frame. Written
-   * silently (no undo step) and only by this client — never for everyone's elements, so clients
-   * with different fonts can't fight over frames.
+   * nobody changed since), so text sized with fallback fonts gets its real frame. Never an undo
+   * step of its own (it joins the last one, see BoardStore.transactDerived, so undo keeps
+   * working for those elements) and only by this client — never for everyone's elements, so
+   * clients with different fonts can't fight over frames.
    */
   renormalizeMeasured(): void {
     const { measured, store } = this.core;
     if (!measured.size || !this.can('editor')) return;
+    if (store.undoManager.redoStack.length) {
+      // Writing now would discard the redo steps: re-measure with the user's next change.
+      if (!this.shared.remeasurePending) {
+        this.shared.remeasurePending = true;
+        const off = store.subscribeLocalChanges(() => {
+          off();
+          this.shared.remeasurePending = false;
+          queueMicrotask(() => this.renormalizeMeasured());
+        });
+      }
+      return;
+    }
     const next: BoardElement[] = [];
     for (const id of [...measured]) {
       const el = store.getElement(id);
@@ -267,7 +282,7 @@ export class EditorImpl implements Editor {
       if (patch && Object.keys(patch).some((k) => patch[k] !== cur[k])) next.push({ ...el, ...patch, id: el.id, type: el.type } as BoardElement);
     }
     if (!next.length) return;
-    store.transactSilently(() => {
+    store.transactDerived(() => {
       for (const el of next) store.setElement(el);
       runFollowers(this.core, next.map((el) => el.id), []);
     });

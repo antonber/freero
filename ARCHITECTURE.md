@@ -250,7 +250,9 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
 - `normalize(next, prev?)`: `prev` is the element before this local change (undefined on create),
   so "w changed alone" (a side handle) is told apart from a corner scale or an edit. When web fonts
   finish loading, the engine re-runs `normalize` for the elements THIS client measured and nobody
-  else changed since, writing silently (no undo step) — never for collaborators' elements.
+  else changed since — never for collaborators' elements. The write is no undo step of its own:
+  it joins the last one (`BoardStore.transactDerived`), because Yjs never undoes a key over a
+  newer untracked value, and waits for the next local change while redo steps exist.
 - `fitToContent(el, handle)`: double-clicking a resize handle applies the returned patch (a
   fixed-width text box goes back to auto width).
 - `hitTest(el, local, { tolerance })` — `tolerance` is a few screen px in world units at the live

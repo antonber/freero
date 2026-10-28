@@ -240,6 +240,29 @@ export class BoardStore {
     this.doc.transact(fn, SILENT_ORIGIN);
   }
 
+  /**
+   * Local writes that follow from earlier local ones without being a user action (text
+   * re-measured once web fonts load). Never a step of their own, but never untracked either:
+   * Yjs never undoes a map key over a newer untracked value, so a silent write to an element in
+   * the undo history would make every undo / redo of that element do nothing. They join the
+   * last undo step (undoing it reverts both); with no history they're silent. Returns false and
+   * writes nothing while redo steps exist (a tracked write would discard them): call again
+   * after the next local change.
+   */
+  transactDerived(fn: () => void): boolean {
+    const um = this.undoManager;
+    if (um.redoStack.length) return false;
+    if (!um.undoStack.length) {
+      this.transactSilently(fn);
+      return true;
+    }
+    // Make the UndoManager append to its last stack item (it does while "capturing").
+    um.lastChange = Date.now();
+    this.doc.transact(fn, LOCAL_ORIGIN);
+    if (this.gestureDepth === 0) um.stopCapturing();
+    return true;
+  }
+
   // Writes drop the ordered caches right away (not only when the transaction ends), so reads
   // inside a transaction — getOrdered(), followers, feature code in editor.transact — see them.
   setElement(el: BoardElement): void {
