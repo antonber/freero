@@ -260,6 +260,11 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
 - `hidden(el, editor)`: off the board (collapsed mind-map branches). Not rendered or exported, and
   ignored by hit tests, marquee, selection (dropped from it when they become hidden), snapping,
   `getBounds` and zoom-to-fit.
+- `BaseElement.attachedTo` (`@freero/shared`): an element that rides on another (a reaction stamp
+  on a sticky). `Editor.withChildren` includes riders like a frame's children, so they move (drag,
+  nudge, `moveBy`), duplicate, copy/paste, come to front and are deleted with their item; copies
+  whose item wasn't copied lose the link. The placing feature sets it (and re-attaches in
+  `follow` when the rider is moved on its own).
 - `removeWith(el, editor) → ids`: deleted along with `el` in the same transaction by every local
   `editor.remove` (Delete, cut, context menu, eraser); one undo restores all of them.
 - `onKeyDown(e, { editor, selection })`: keys while this type is selected, asked before the

@@ -370,23 +370,31 @@ export class EditorImpl implements Editor {
     }
   }
 
-  /** Ids plus the (recursive) children of any container among them. */
+  /**
+   * Ids plus, recursively, the children of any container among them and the elements attached
+   * to any of them (`attachedTo`: reaction stamps) — everything that travels with them.
+   */
   withChildren(ids: string[]): string[] {
     const out = new Set(ids);
-    const containers = ids.filter((id) => {
-      const el = this.getElement(id);
-      return el && this.getDefinition(el.type)?.container;
-    });
-    if (!containers.length) return [...out];
-    const queue = [...containers];
     const all = this.getElements();
+    const isContainer = (el: BoardElement | undefined) => !!el && !!this.getDefinition(el.type)?.container;
+    if (!all.some((el) => el.attachedTo) && !ids.some((id) => isContainer(this.getElement(id)))) return [...out];
+    const riders = new Map<string, BoardElement[]>();
+    const add = (key: string, el: BoardElement) => {
+      const list = riders.get(key);
+      if (list) list.push(el);
+      else riders.set(key, [el]);
+    };
+    for (const el of all) {
+      if (el.attachedTo) add(el.attachedTo, el);
+      if (el.frameId && isContainer(this.getElement(el.frameId))) add(el.frameId, el);
+    }
+    const queue = [...out];
     while (queue.length) {
-      const fid = queue.pop()!;
-      for (const el of all) {
-        if (el.frameId === fid && !out.has(el.id)) {
-          out.add(el.id);
-          if (this.getDefinition(el.type)?.container) queue.push(el.id);
-        }
+      for (const el of riders.get(queue.pop()!) ?? []) {
+        if (out.has(el.id)) continue;
+        out.add(el.id);
+        queue.push(el.id);
       }
     }
     return [...out];

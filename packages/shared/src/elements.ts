@@ -35,6 +35,12 @@ export interface BaseElement {
   frameId?: string | null;
   /** Elements sharing a groupId are selected/moved together. */
   groupId?: string | null;
+  /**
+   * Id of the element this one rides on (a reaction stamp on a sticky): it moves, duplicates,
+   * copies and is deleted with that element, like a frame's children. Set by the feature that
+   * places it; the engine clears it on copies whose target wasn't copied.
+   */
+  attachedTo?: string | null;
   createdBy: string;
   createdAt: number;
   updatedAt: number;
