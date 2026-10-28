@@ -172,6 +172,11 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   `useSettings()`, `useCanEdit()`; `plainToRichText()`; types `ElementTextProps`, `TextFormatState`.
 - `useCollection(name)` returns the collection's entries (`Array<[key, value]>`).
 - `CommandDefinition.minRole` defaults to `'editor'`; engine view-safe commands set `'viewer'`.
+- `CommandDefinition.extraShortcuts?: string[]`: further bindings for the same command (listed in
+  the shortcut reference; menus show `shortcut`). Punctuation shortcuts match the typed character,
+  and outside text editing AltGr + that character (Windows reports AltGr as Ctrl+Alt) also answers
+  `mod+<character>`, so Ctrl+[ / Ctrl+] work where brackets need AltGr; Bring to front / Send to
+  back also have Ctrl+Shift+↑ / ↓ on every layout.
   While text is being edited, only command shortcuts using Tab or a modifier (outside the
   editor's own Mod+B/I/U/Z/C/V/X/A/K) are dispatched.
 - Engine commands are ordinary commands (`engine.copy`, `engine.duplicate`, `engine.lock`,
