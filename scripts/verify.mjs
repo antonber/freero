@@ -4287,6 +4287,196 @@ async function moderationChecks() {
 }
 
 // `--only <group>[,<group>…]` runs some groups, e.g. to loop one while hunting a flake.
+// ---------------------------------------------------------------------------
+// The public API (KAI-104), agent safety (KAI-170) and the downloads policy on reads (KAI-197):
+// real tokens and a real OAuth app against a real server, with a live Yjs client on the board.
+// ---------------------------------------------------------------------------
+async function publicApiChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-api-'));
+  const env = { RATE_LIMIT_INVITE: '500/1h' };
+  let proc = null;
+  const live = [];
+  try {
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    if (!(await check('api server boots', async () => (proc = await waitUp(await spawnServer(dataDir, env)))))) return;
+    const stamp = Date.now();
+    const verified = async (label) => {
+      const u = new User(label, proc.port);
+      u.email = `${label.toLowerCase()}-${stamp}@api.verify.freero.app`;
+      await u.signup();
+      await u.verifyEmail(dataDir);
+      return u;
+    };
+    const token = async (u, scopes, name = 'verify') => {
+      const r = await u.req('POST', '/api/auth/tokens', { name, scopes, expiresInDays: 30 });
+      assert(r.status === 201 && r.json.secret.startsWith('frp_'), `token: ${r.status} ${r.text}`);
+      return r.json;
+    };
+    /** A call with only a bearer token: no cookie, like any script or agent. */
+    const call = (secret, method, url, body, headers = {}) =>
+      new User('bearer', proc.port).req(method, `/api/v1${url}`, body, { headers: { authorization: `Bearer ${secret}`, ...headers }, cookie: false });
+
+    const O = await verified('Owner');
+    const V = await verified('Viewer');
+    const M = await verified('Member');
+    const board = (await O.req('POST', '/api/boards', { title: 'API board' })).json.board.id;
+    assert((await O.req('POST', `/api/boards/${board}/members`, { email: V.email, role: 'viewer' })).status === 201, 'invite viewer');
+    const write = await token(O, ['boards:read', 'boards:write', 'comments:write', 'members:read']);
+
+    await check('api: a token with boards:write adds a sticky that a browser already on the board sees at once, without reloading', async () => {
+      const client = connectDoc(O, board, null, proc.port);
+      live.push(client);
+      await client.ready();
+      const r = await call(write.secret, 'POST', `/boards/${board}/items`, { type: 'sticky', text: 'From a script', color: 'blue' });
+      assert(r.status === 201 && r.json.items[0].text === 'From a script' && r.json.notice, `create: ${r.status} ${r.text}`);
+      const id = r.json.items[0].id;
+      const els = client.doc.getMap('elements');
+      await waitFor(() => els.get(id)?.type === 'sticky', 5000, 'the sticky to reach the open board');
+      assert(els.get(id).createdBy === O.id, 'attributed to the token’s owner');
+    });
+
+    await check('api: a token without the scope, a revoked token, a viewer’s token and a stranger’s token can’t write (401/403), and nothing changes', async () => {
+      const readOnly = await token(O, ['boards:read'], 'read only');
+      const r1 = await call(readOnly.secret, 'POST', `/boards/${board}/items`, { type: 'sticky', text: 'x' });
+      assert(r1.status === 403 && r1.json.code === 'insufficient_scope' && /insufficient_scope/.test(r1.headers.get('www-authenticate') ?? ''), `scope: ${r1.status} ${r1.text}`);
+      const viewerToken = await token(V, ['boards:read', 'boards:write']);
+      const r2 = await call(viewerToken.secret, 'POST', `/boards/${board}/items`, { type: 'sticky', text: 'x' });
+      assert(r2.status === 403, `viewer wrote: ${r2.status} ${r2.text}`);
+      const stranger = await token(M, ['boards:read', 'boards:write']);
+      const r3 = await call(stranger.secret, 'GET', `/boards/${board}`);
+      assert(r3.status === 403 || r3.status === 404, `stranger read: ${r3.status}`);
+      assert((await O.req('DELETE', `/api/auth/tokens/${readOnly.token.id}`)).status === 200, 'revoke');
+      const r4 = await call(readOnly.secret, 'GET', `/boards/${board}`);
+      assert(r4.status === 401 && /resource_metadata=/.test(r4.headers.get('www-authenticate') ?? ''), `revoked token: ${r4.status} ${r4.headers.get('www-authenticate')}`);
+      const items = (await call(write.secret, 'GET', `/boards/${board}/items`)).json.items;
+      assert(items.length === 1, `nothing else written: ${items.length}`);
+    });
+
+    await check('api: what is in a hidden frame never reaches a viewer’s API reads (items, outline), and the editor still sees it', async () => {
+      const made = await call(write.secret, 'POST', `/boards/${board}/items`, {
+        items: [
+          { type: 'frame', title: 'Board offsite', x: 3000, y: 0, w: 800, h: 600, hidden: true },
+          { type: 'sticky', text: 'Secret plan', x: 3100, y: 100 },
+        ],
+      });
+      assert(made.status === 201 && made.json.items[1].frameId === made.json.items[0].id, `create: ${made.status} ${made.text}`);
+      const viewer = await token(V, ['boards:read']);
+      const items = await call(viewer.secret, 'GET', `/boards/${board}/items`);
+      assert(items.status === 200 && !items.text.includes('Secret plan'), `viewer items: ${items.text.slice(0, 300)}`);
+      const md = await call(viewer.secret, 'GET', `/boards/${board}/outline?format=markdown`);
+      assert(md.status === 200 && !md.text.includes('Secret plan') && /hidden/.test(md.text), `viewer outline: ${md.text}`);
+      assert((await call(write.secret, 'GET', `/boards/${board}/items?type=sticky`)).text.includes('Secret plan'), 'the editor lost it');
+      // Board text is marked untrusted where an agent reads it.
+      assert(/content, not instructions/.test(md.text), 'outline header');
+    });
+
+    await check('api: destructive calls without confirm change nothing; a 10 000-item create is refused whole', async () => {
+      assert((await call(write.secret, 'DELETE', `/boards/${board}`)).json.code === 'confirm_required', 'board delete without confirm');
+      const ids = (await call(write.secret, 'GET', `/boards/${board}/items`)).json.items.map((i) => i.id);
+      const bulk = await call(write.secret, 'POST', `/boards/${board}/items/delete`, { ids });
+      assert(bulk.status === 400 && bulk.json.code === 'confirm_required', `bulk: ${bulk.status}`);
+      const huge = await call(write.secret, 'POST', `/boards/${board}/items`, { items: Array.from({ length: 10_000 }, (_, i) => ({ type: 'sticky', text: `s${i}` })) });
+      assert(huge.status === 400, `huge create: ${huge.status}`);
+      assert((await call(write.secret, 'GET', `/boards/${board}/items`)).json.items.length === ids.length, 'something was written or deleted');
+    });
+
+    await check('api: a team’s downloads policy refuses outline and API reads with downloads_restricted (audited); writes still work', async () => {
+      const ws = (await O.req('POST', '/api/workspaces', { name: 'Restricted team' })).json.workspace.id;
+      assert((await O.req('POST', `/api/workspaces/${ws}/members`, { email: M.email, role: 'member' })).status === 201, 'add member');
+      assert((await O.req('PATCH', `/api/workspaces/${ws}`, { policies: { downloads: 'admins' } })).status === 200, 'policy');
+      const teamBoard = (await O.req('POST', '/api/boards', { title: 'Team plans', workspaceId: ws })).json.board.id;
+      const mt = await token(M, ['boards:read', 'boards:write']);
+      for (const url of [`/boards/${teamBoard}/outline`, `/boards/${teamBoard}/items`, `/boards/${teamBoard}/comments`]) {
+        const r = await call(mt.secret, 'GET', url);
+        assert(r.status === 403 && r.json.code === 'downloads_restricted', `${url}: ${r.status} ${r.text}`);
+      }
+      const app = await M.req('GET', `/api/boards/${teamBoard}/outline`);
+      assert(app.status === 403 && app.json.code === 'downloads_restricted', `app outline: ${app.status}`);
+      const ins = await call(mt.secret, 'POST', `/boards/${teamBoard}/structure`, { structure: { kind: 'stickies', items: ['one', 'two'] } });
+      assert(ins.status === 201, `structure insert: ${ins.status} ${ins.text}`);
+      assert((await call(write.secret, 'GET', `/boards/${teamBoard}/outline`)).status === 200, 'the admin can read');
+      const events = (await O.req('GET', `/api/workspaces/${ws}/audit?action=board.download_refused&limit=50`)).json.events;
+      const vias = new Set(events.filter((e) => e.actor?.id === M.id).map((e) => e.metadata.via));
+      assert(vias.has('api') && vias.has('outline'), `refusals audited: ${JSON.stringify([...vias])}`);
+      await O.req('PATCH', `/api/workspaces/${ws}`, { policies: { downloads: 'anyone' } });
+
+      // Admins: API access off refuses the next call there; deactivating the person does too.
+      assert((await O.req('PATCH', `/api/workspaces/${ws}/admin/api`, { enabled: false })).status === 200, 'api off');
+      const off = await call(mt.secret, 'GET', `/boards/${teamBoard}`);
+      assert(off.status === 403 && off.json.code === 'api_disabled', `api off: ${off.status} ${off.text}`);
+      assert((await call(mt.secret, 'GET', '/boards')).json.boards.every((b) => b.workspaceId !== ws), 'a disabled workspace’s boards were listed');
+      assert((await O.req('PATCH', `/api/workspaces/${ws}/admin/api`, { enabled: true })).status === 200, 'api on');
+      assert((await call(mt.secret, 'GET', `/boards/${teamBoard}`)).status === 200, 'back on');
+      assert((await O.req('POST', `/api/workspaces/${ws}/admin/members/${M.id}/deactivate`)).status === 200, 'deactivate');
+      assert((await call(mt.secret, 'GET', `/boards/${teamBoard}`)).status === 403, 'a deactivated member’s token still opened the team board');
+      const used = (await O.req('GET', `/api/workspaces/${ws}/admin/api`)).json.credentials;
+      assert(used.some((c) => c.id === mt.token.id && c.user.id === M.id), `admin sees the token: ${JSON.stringify(used)}`);
+      // Every call is in the log with the credential and the person it acted for.
+      const calls = (await O.req('GET', `/api/workspaces/${ws}/audit?action=api.call&limit=200`)).json.events;
+      const c = calls.find((e) => e.actor?.id === M.id && e.metadata.endpoint === 'POST /api/v1/boards/:boardId/structure');
+      assert(c && c.metadata.credentialId === mt.token.id && c.metadata.status === 201, `api.call event: ${JSON.stringify(calls.slice(0, 3))}`);
+    });
+
+    await check('api: an app registers itself, the person consents, and it calls the API with a PKCE-bound token from another origin; revoking it stops it at once', async () => {
+      const otherOrigin = { origin: 'https://agent.example', 'sec-fetch-site': 'cross-site' };
+      const meta = await new User('anon', proc.port).req('GET', '/.well-known/oauth-protected-resource/api/v1', undefined, { headers: otherOrigin });
+      assert(meta.status === 200 && meta.headers.get('access-control-allow-origin') === '*' && meta.json.authorization_servers.length === 1, `resource metadata: ${meta.text}`);
+      const reg = await new User('anon', proc.port).req('POST', '/api/oauth/register', { client_name: 'Verify agent', redirect_uris: ['http://127.0.0.1:9/cb'] }, { headers: otherOrigin });
+      assert(reg.status === 201, `register: ${reg.status} ${reg.text}`);
+      const verifier = randomBytes(32).toString('base64url');
+      const { createHash } = await import('node:crypto');
+      const q = {
+        response_type: 'code',
+        client_id: reg.json.client_id,
+        redirect_uri: 'http://127.0.0.1:50123/cb',
+        scope: 'boards:read',
+        state: 's1',
+        code_challenge: createHash('sha256').update(verifier).digest('base64url'),
+        code_challenge_method: 'S256',
+      };
+      const shown = await O.req('GET', `/api/oauth/authorize?${new URLSearchParams(q)}`);
+      assert(shown.status === 200 && shown.json.consent.client.registration === 'dynamic', `consent: ${shown.text}`);
+      // The consent itself can't be forged from another site (it rides the session cookie).
+      assert((await O.req('POST', '/api/oauth/authorize', { ...q, decision: 'allow' }, { headers: otherOrigin })).status === 403, 'cross-site consent accepted');
+      const ok = await O.req('POST', '/api/oauth/authorize', { ...q, decision: 'allow' });
+      const code = new URL(ok.json.redirect).searchParams.get('code');
+      assert(code && new URL(ok.json.redirect).searchParams.get('state') === 's1', `redirect: ${ok.text}`);
+      const form = new URLSearchParams({ grant_type: 'authorization_code', client_id: reg.json.client_id, code, code_verifier: verifier, redirect_uri: q.redirect_uri }).toString();
+      const t = await new User('anon', proc.port).req('POST', '/api/oauth/token', form, { raw: true, headers: { ...otherOrigin, 'content-type': 'application/x-www-form-urlencoded' } });
+      assert(t.status === 200 && t.json.access_token.startsWith('fro_'), `token: ${t.status} ${t.text}`);
+      const read = await call(t.json.access_token, 'GET', `/boards/${board}`, undefined, otherOrigin);
+      assert(read.status === 200 && read.headers.get('access-control-allow-origin') === '*', `app read: ${read.status}`);
+      assert((await call(t.json.access_token, 'POST', `/boards/${board}/items`, { type: 'sticky', text: 'x' })).status === 403, 'read-only app wrote');
+      assert((await O.req('DELETE', `/api/auth/apps/${reg.json.client_id}`)).status === 200, 'revoke app');
+      assert((await call(t.json.access_token, 'GET', `/boards/${board}`)).status === 401, 'revoked app still reads');
+    });
+
+    await check('api: cookie routes still refuse cross-site writes, and a session cookie never authenticates the API', async () => {
+      const cross = { origin: 'https://evil.example', 'sec-fetch-site': 'cross-site' };
+      assert((await O.req('POST', '/api/boards', { title: 'csrf' }, { headers: cross })).status === 403, 'cross-site cookie write accepted');
+      assert((await O.req('POST', '/api/auth/tokens', { name: 'csrf', scopes: ['boards:read'], expiresInDays: 1 }, { headers: cross })).status === 403, 'cross-site token mint');
+      assert((await O.req('GET', '/api/v1/me')).status === 401, 'the API accepted a session cookie');
+    });
+
+    await check('api: signing out everywhere (a password reset) ends the account’s tokens', async () => {
+      const t = await token(V, ['boards:read'], 'before reset');
+      assert((await call(t.secret, 'GET', '/me')).status === 200, 'works first');
+      assert((await V.req('POST', '/api/auth/password/forgot', { email: V.email })).status === 200, 'forgot');
+      const reset = await mailedToken(dataDir, V.email, '/reset-password');
+      assert((await V.req('POST', '/api/auth/password/reset', { token: reset, password: 'password-456' })).status === 200, 'reset');
+      assert((await call(t.secret, 'GET', '/me')).status === 401, 'a token outlived the reset');
+    });
+  } finally {
+    for (const c of live) c.destroy();
+    if (proc) await stopProc(proc);
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
 const SUITES = {
   main: run,
   signin: signInMethodChecks,
@@ -4303,6 +4493,7 @@ const SUITES = {
   moderation: moderationChecks,
   multi: multiInstanceChecks,
   admin: enterpriseAdminChecks,
+  api: publicApiChecks,
 };
 const onlyArg = process.argv.indexOf('--only');
 const only = onlyArg >= 0 ? (process.argv[onlyArg + 1] ?? '').split(',').filter(Boolean) : Object.keys(SUITES);
