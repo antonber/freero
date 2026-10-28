@@ -444,7 +444,9 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
                     ? 'Links are turned off in this workspace'
                     : linkAccess === 'none'
                       ? 'Only people added above can open it'
-                      : 'Must be signed in to Freero'}
+                      : board.permissions.guestLinks
+                        ? `Also without an account, as a guest who can ${linkAccess === 'viewer' ? 'view' : 'view and comment'}`
+                        : 'Must be signed in to Freero'}
                 </span>
               </div>
               {isOwner ? (

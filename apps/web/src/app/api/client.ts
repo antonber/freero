@@ -1,5 +1,8 @@
 import type {
   AcceptInviteResponse,
+  GuestBoardInfo,
+  GuestInfo,
+  GuestJoinResponse,
   AccessRequestState,
   BoardAccessRequest,
   AuthResponse,
@@ -184,6 +187,13 @@ export const api = {
     request<{ ok: true }>('DELETE', `/api/boards/${id}/members/${userId}`),
   boardPeople: (id: string, ids: string[]) =>
     request<{ people: BoardPerson[] }>('GET', `/api/boards/${id}/people?ids=${ids.map(encodeURIComponent).join(',')}`),
+
+  // guests (visitors without an account on a shared link)
+  guestBoardInfo: (id: string) => request<GuestBoardInfo>('GET', `/api/guest/boards/${encodeURIComponent(id)}`),
+  joinAsGuest: (id: string, name: string) => request<GuestJoinResponse>('POST', `/api/guest/boards/${encodeURIComponent(id)}/join`, { name }),
+  guestMe: () => request<{ guest: GuestInfo | null }>('GET', '/api/guest/me'),
+  guestBoard: (id: string) => request<{ board: BoardSummary }>('GET', `/api/guest/boards/${encodeURIComponent(id)}/board`),
+  leaveAsGuest: () => request<{ ok: true }>('POST', '/api/guest/leave'),
 
   // access requests
   accessRequestState: (id: string) => request<AccessRequestState>('GET', `/api/boards/${encodeURIComponent(id)}/access-request`),
