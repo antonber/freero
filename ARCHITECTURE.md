@@ -115,6 +115,8 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | `_outbox`, `_outbox_cursors` (platform tables) | `platform/outbox.ts` | `appendOutbox` in the change's transaction; consumers through `consumeOutbox` |
 | Derived indexes (`object_references`) | their module's outbox consumer | never written directly: change the source; `references:rebuild` repairs |
 | API tokens, OAuth apps / consents, a team's API switch | server `modules/apiauth` | its index: `authenticate`, `requireScope`, `useInWorkspace` |
+| Tracker connections, links to issues, what both sides last agreed on | server `modules/trackers` | its routes / index (`sendToTracker`, `importIssues`); syncs only through its outbox consumer |
+| `trackers` collection (issue badges) and items' `trackerLink` | server `modules/trackers` (through realtime's `changeBoard`) | — (the web feature only reads them) |
 
 ### Host — the one typed contract between app and engine
 
@@ -348,6 +350,9 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   server said this user may use AI on this board. AI entry points (`features/ai`: the format-toolbar
   button, the "AI ▸" context/board menu, the dialog) hide without it; never offer AI from `when`
   alone. Not in the command palette (it lists unavailable commands greyed out).
+- `Host.trackers?` (additive, KAI-154): `{ connections, projects, preview, send, importIssues, sync,
+  unlink }`, present only when the server listed a tracker connection this person may use on this
+  board (`GET /boards/:id/trackers`). `features/trackers` hides every entry point without it.
 - `Host.activity?.list(before?)` (additive): the board's activity feed as the server recorded
   it (see "Activity"); `features/activity` shows it in a dock panel.
 - `SavedTemplateInfo.ownerName` / `canUnshare` (additive): team templates say who shared them;
@@ -754,7 +759,8 @@ credentials that act for a person without their session), `api` (no table: the p
 "The MCP server" below), `objects` (no table: the object registry and the one
 permission check, `POST /objects/resolve`), `references` (object_references, reference_sources: the
 references index derived through the outbox, `GET /objects/backlinks`; both in "Suite foundation"
-below).
+below), `trackers` (tracker_connections, tracker_links, tracker_link_sources, tracker_oauth_flows:
+issue-tracker sync; see "Issue trackers" below).
 
 - Notifications are created only from trusted server-side events, never from client claims:
   realtime's `onCommentMessage` (a comment message applied from one of THIS instance's sockets,
@@ -1341,6 +1347,53 @@ and its open button glides to an item on the same board or opens the target. Ite
 and link cards are indexed as they are. The share dialog's "Linked from" lists the other boards
 pointing at this one that the viewer can open (`app/components/LinkedFrom.tsx`).
 
+### Issue trackers: one issue ↔ many items, kept in step (`modules/trackers`, KAI-153..157; docs/trackers.md)
+
+The stickies-to-tickets hand-off without losing fields: board items become ONE issue (a cluster) or
+one each in Jira (Cloud v3 / Data Center v2), Linear or GitHub, and stay linked both ways.
+
+- **Model.** A *connection* is a team's (its admins manage it, its full members use it) or one
+  person's own; credentials and the webhook secret are sealed (`platform/secrets`), never sent back
+  or logged, and a person's own are erased on `auth.onSignedOutEverywhere`. A *link* is one issue ↔
+  its items (`tracker_link_sources`, ordered; an item is in at most one link), the person whose
+  access writes the tracker's changes (`created_by`; paused while they can't edit), and `base`:
+  each field's canonical value on each side when they last agreed.
+- **Providers** (`providers/*.ts`, one file each behind `TrackerProvider`): auth headers, who-am-I,
+  projects, get / create / update / search issues, `changedSince` (polling), backlinks, how a tag
+  becomes a label, and webhook verification. Plain HTTP (`http.ts`): untrusted addresses (https,
+  no private addresses unless `TRACKER_PRIVATE_ENDPOINTS`, no redirects, size caps), retries with
+  backoff honouring `Retry-After`; a longer wait sets the connection's `cooldown_until`.
+- **The mapping and the merge are pure** (`@freero/shared` `trackers.ts`: `issueValuesFromBoard`,
+  `pullableFields`, `canonical`, `mergeField`). Per field against `base`: one-sided changes flow
+  across; the same field changed differently on both sides in one window keeps the tracker's value
+  and the board's goes into a comment on the item; a field a side can't hold (a cluster's title)
+  is never written back. The server previews with the same code the send uses.
+- **One sync path** (`service.ts` `syncLink`), run only by the `trackers` outbox consumer, so a link
+  never syncs twice at once: read the issue, read the items from the live board as the linking
+  person sees them, merge, write the tracker, write the board through `changeBoard` ("Jira for
+  Maria", one transaction: field patches, the badge record, notes), refresh backlinks, store the new
+  base. Triggers only enqueue `tracker.sync` (`link:<id>`): `board.content` events whose items
+  differ from `base` (read from the SAVED board), verified webhooks (`/api/trackers/webhooks/:id`,
+  `allowCrossSitePost`; a delivery only names the issue — it is read back), the `trackers:poll` job
+  (polling connections every `TRACKER_POLL_SECONDS`, webhook ones as a fallback, retries due).
+  Webhook signatures are checked over the raw JSON body (`platform/http.ts` `rawBody`).
+- **The board side**: the server writes each item's `trackerLink` and one `TrackerIssueRecord` per
+  link in the `trackers` collection (key, status, assignee, sources, state); `features/trackers`
+  draws the badge from it (a copy of a linked item shows none: the record doesn't list it) — live
+  for everyone through Yjs, kept on version restore (`Y_KEPT_ON_RESTORE`). `BoardChange.collections`
+  entries set to `null` delete (owners/editors), so unlinking removes the record. A card whose status
+  comes from the tracker moves to the kanban column with that status (`KANBAN_LAYOUT`, shared with
+  the kanban feature). The board side of a send is ONE server change (nobody ever sees part of a
+  cluster linked); like any change the server makes it is not in anyone's Ctrl+Z — "Unlink" undoes it.
+- **Suite primitives**: an issue is an object, `freero://issue/<linkId>` (its board's access); the
+  references index adds kind `tracker` from items to it, so its backlinks are its items. Every sync
+  that changed something is `tracker.synced` in the audit log (fields each way), failures
+  `tracker.sync_failed`; the activity feed shows sends, imports, pushes and failures
+  (`onTrackerActivity`). MCP `sync_to_tracker` is `api/service.ts` `syncToTracker`.
+- `npm run verify -- --only tracker` runs it all against `scripts/lib/mock-jira.mjs` (Cloud, DC,
+  Atlassian OAuth), `mock-linear.mjs` and `mock-github.mjs`, which implement the subset of each
+  public API used, webhooks included.
+
 ### Audit log, admin console and workspace policies (KAI-48, KAI-47, KAI-51)
 
 **Audit log** (`modules/audit`). Every module records security-relevant changes with
@@ -1795,7 +1848,7 @@ the board, deletions. A suggestion is not board content until someone who can ed
   `S3_BUCKET` and keys (MinIO, SeaweedFS…), the `s3` group checks the S3 backend (prefixes, kept
   copies under `private/`, restore, retention, the S3_PUBLIC_URL redirect and stored Cache-Control);
   all other groups stay on the local disk. CI does all of it.
-  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation,ai,api,mcp,s3,suite,suggestions` runs some groups (to loop one while hunting a flake).
+  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation,ai,api,mcp,s3,suite,suggestions,tracker` runs some groups (to loop one while hunting a flake).
   The `mcp` group drives the MCP server with the official MCP client SDK, OAuth (dynamic
   registration, consent, PKCE) included; with DATABASE_URL + REDIS_URL one client's requests also
   alternate between two instances.
