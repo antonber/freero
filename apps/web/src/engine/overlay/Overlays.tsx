@@ -9,6 +9,7 @@ import { boundsOf, rectCenter } from '../geometry/geometry';
 import type { Camera } from '../api';
 import { ALL_HANDLES, CORNER_HANDLES, type Handle } from '../geometry/transform';
 import { Lock, RotateCw } from 'lucide-react';
+import { readableTextColor } from '@ui';
 import './overlays.css';
 
 const HANDLE_ANGLE: Record<Handle, number> = { n: 0, ne: 45, e: 90, se: 135, s: 180, sw: 225, w: 270, nw: 315 };
@@ -181,7 +182,7 @@ const PeerCursor = memo(function PeerCursor({ peer, cam }: { peer: PresenceState
       <svg width="18" height="20" viewBox="0 0 18 20" aria-hidden>
         <path d="M2 1.5 L16 9.2 L9.4 10.6 L6.2 17.6 Z" fill={peer.user.color} stroke="white" strokeWidth="1.6" strokeLinejoin="round" />
       </svg>
-      <span className="fr-ov-cursor-name" style={{ background: peer.user.color }}>
+      <span className="fr-ov-cursor-name" style={{ background: peer.user.color, color: readableTextColor(peer.user.color) }}>
         {peer.user.name}
       </span>
     </div>
@@ -205,7 +206,7 @@ function PeersOverlay() {
             style={{ ...boxStyle(el, cam, 2), borderColor: peer.user.color }}
           >
             {i === 0 && (
-              <span className="fr-ov-peer-tag" style={{ background: peer.user.color }}>
+              <span className="fr-ov-peer-tag" style={{ background: peer.user.color, color: readableTextColor(peer.user.color) }}>
                 {peer.user.name}
                 {peer.editingId === el.id ? ' is typing…' : ''}
               </span>
