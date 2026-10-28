@@ -12,6 +12,7 @@ import { badRequest, HttpError } from '../../platform/http';
 import { logError } from '../../platform/log';
 import { seal, unseal } from '../../platform/secrets';
 import { sendSecurityNotice } from './notices';
+import { auditOwnAccount } from './service';
 import * as repo from './repo';
 import { confirmPassword, endSessionsOf, getAccount } from './service';
 
@@ -166,6 +167,7 @@ export async function enableTwoFactor(req: Request | null, userId: string, curre
   const { codes, hashes } = newRecoveryCodes();
   if (!(await repo.enableTotp(userId, opened.sealed, step, hashes, Date.now()))) throw new HttpError(409, 'Start the setup again');
   await endSessionsOf(userId, currentSessionKey);
+  await auditOwnAccount('auth.two_factor_enabled', userId);
   sendSecurityNotice(req, (await getAccount(userId)).email, { kind: 'two_factor_on' });
   return codes;
 }
@@ -178,6 +180,7 @@ export async function disableTwoFactor(req: Request | null, userId: string, pass
   if (!(await repo.twoFactorEnabled(userId))) return;
   if (!(await useSecondFactor(userId, code))) throw wrongCode();
   await repo.deleteTwoFactor(userId);
+  await auditOwnAccount('auth.two_factor_disabled', userId);
   sendSecurityNotice(req, user.email, { kind: 'two_factor_off' });
 }
 
@@ -194,6 +197,7 @@ export async function regenerateRecoveryCodes(
   if (!(await useSecondFactor(userId, code))) throw wrongCode();
   const { codes, hashes } = newRecoveryCodes();
   await repo.replaceRecoveryCodes(userId, hashes);
+  await auditOwnAccount('auth.recovery_codes_regenerated', userId);
   sendSecurityNotice(req, user.email, { kind: 'recovery_codes' });
   return codes;
 }

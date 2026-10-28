@@ -10,6 +10,7 @@ import { HttpError, parseCookies, unauthorized } from '../../platform/http';
 import { log, logError } from '../../platform/log';
 import { appUrl } from '../../platform/mail';
 import { consumeRateLimit } from '../../platform/rateLimit';
+import { recordAuditQuietly } from '../audit/index';
 import { sendVerification } from './emails';
 import { authorizationUrl, newAuthorizationChecks, OidcUnavailableError, redeemAuthorizationCode } from './oidc';
 import { sendSecurityNotice } from './notices';
@@ -63,6 +64,12 @@ export async function completeSignIn(
  */
 async function openSession(req: Request, res: Response, userId: string, how: { method: string; twoFactor?: boolean; newAccount?: boolean }): Promise<void> {
   const { knownDevice } = await startSession(req, res, userId, how);
+  await recordAuditQuietly({
+    action: 'auth.login',
+    accountId: userId,
+    actorId: userId,
+    metadata: { method: how.method, twoFactor: how.twoFactor ?? false, newDevice: !knownDevice },
+  });
   if (knownDevice || how.newAccount || how.method === 'email_link') return;
   const user = await getAccount(userId);
   sendSecurityNotice(req, user.email, { kind: 'new_sign_in', method: how.method === 'password' ? 'password' : providerLabel(how.method) });
@@ -82,8 +89,10 @@ export async function finishTwoFactorSignIn(req: Request, res: Response, code: u
   }
   // Per account too, so a fresh pending sign-in (a known password) doesn't buy fresh guesses.
   await consumeRateLimit('twoFactor', `user:${challenge.userId}`);
-  if (!(await useSecondFactor(challenge.userId, code)))
+  if (!(await useSecondFactor(challenge.userId, code))) {
+    await recordAuditQuietly({ action: 'auth.login_failed', accountId: challenge.userId, actorId: null, metadata: { reason: 'second_factor' } });
     throw new HttpError(403, 'That code is not right. Check your authenticator app and try again.');
+  }
   // Single use: of two requests racing with right codes, one signs in.
   if (!(await repo.deleteChallenge(key))) throw signInExpired();
   res.clearCookie(CHALLENGE_COOKIE, { path: CHALLENGE_PATH });

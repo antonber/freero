@@ -23,6 +23,8 @@ export interface AuditInput {
    * goes to the account's own log and to every team workspace the person is a member of.
    */
   accountId?: string | null;
+  /** With `accountId`: false keeps the event out of the person's team workspaces (default true). */
+  fanOut?: boolean;
   /** Who did it. Default: the signed-in user of the request being handled; null: Freero itself / nobody signed in. */
   actorId?: string | null;
   target?: { type: string; id: string; label?: string | null } | null;
@@ -68,7 +70,7 @@ export async function recordAudit(input: AuditInput): Promise<void> {
   const chains: Array<{ chain: string; workspaceId: string | null }> = [];
   if (input.accountId) {
     chains.push({ chain: accountChain(input.accountId), workspaceId: null });
-    for (const id of await accountScope(input.accountId)) workspaceIds.add(id);
+    if (input.fanOut !== false) for (const id of await accountScope(input.accountId)) workspaceIds.add(id);
   }
   for (const id of workspaceIds) chains.push({ chain: workspaceChain(id), workspaceId: id });
   if (!chains.length) throw new Error(`audit: ${input.action} names neither a workspace nor an account`);
