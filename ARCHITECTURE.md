@@ -553,9 +553,41 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
   CGNAT / multicast addresses at connect time, 1.5 MB / 2 MB caps, 6 s deadlines, per-user rate
   limit — and returns title / description / site name and the preview image as a data: URL. The
   embed feature re-hosts that image with `Host.uploadImage`, so viewers and exports never load
-  third-party URLs. Video players (YouTube / Vimeo / Loom) only on `EMBED_FRAME_ORIGINS`
-  (`@freero/shared`), which the CSP `frame-src` allows; iframes are sandboxed, mounted only after a
-  click, and never exported (exports render a fresh component that shows the card).
+  third-party URLs.
+- Live embeds (KAI-127, `features/embed/lib/providers.ts`): one allow-list, `EMBED_PROVIDERS` in
+  `@freero/shared` (YouTube, Vimeo, Loom, Figma, Google Docs / Sheets / Slides / Forms, CodePen,
+  CodeSandbox — never another whiteboard), each with its frame origins, `sandbox` and `allow`. The
+  board stores only the pasted URL; the iframe src is REBUILT from ids parsed out of it on the
+  provider's own embed host and checked against the provider's origins, so a URL tampered with in
+  the doc frames nothing else. The CSP `frame-src` (`platform/security.ts`) is exactly
+  `EMBED_FRAME_ORIGINS` plus the operator's `EMBED_EXTRA_ORIGINS` (https origins only; links there are
+  framed as given, `OPERATOR_EMBED_SANDBOX`). A frame mounts only after a click ("Open live" / play),
+  for that viewer only; it takes pointer input only while the item is selected (a board-owned strip
+  above it is the grab handle, with full screen / open / close), so the board stays navigable.
+  Workspace policy `liveEmbeds: 'off'` (admin console → Sharing) keeps every link a card
+  (`BoardPermissions.liveEmbeds` → `Host.board.embeds`). Exports and thumbnails render a fresh copy:
+  never live, always the card with its poster.
+- Code blocks (KAI-125, `features/code`, element `code`): `code` is plain text, never HTML. The
+  highlighter (lowlight over highlight.js grammars, pinned, loaded with `import()` on first use)
+  returns a syntax TREE that is turned into lines of text runs and rendered as React text spans
+  with highlight.js scope class names only — no HTML string is ever built from a block, so W11
+  needs no exception. Editing is a plain `<textarea>` in the block (one gesture per sitting);
+  lines never wrap, so the height follows the line count. A pasted Markdown fence (not ```mermaid)
+  becomes a block (importer priority 45). Exports render the same spans and colours.
+- Timelines (KAI-122, `features/timeline`, elements `timeline` + `timelinebar`): a container whose
+  bars are separate elements (`frameId`), so concurrent edits of different bars never collide.
+  Dates are the truth: `arrange` (pure `lib/layout.ts` `planTimeline`) lays each bar at its dates,
+  lane (under its center) and row; right after a LOCAL move / resize (`ArrangeContext.previous`) the
+  change is read back as whole days. Bars outside the range shrink to a stub at that edge, never
+  lost. Task cards dropped on a timeline become bars spanning `startDate`..`dueDate`; their dates are
+  written only through `card.setDates` (cards keep one writer), and a card laid out shorter than
+  `BAR_MAX_H` draws itself as a one-line bar. Dependencies are ordinary connectors. The suite's
+  roadmap mode (KAI-160) builds on this element.
+- Sticky author labels (KAI-112, `features/sticky/decoration.tsx`): a board setting in the
+  `stickyLabels` collection (editors toggle "Show sticky authors" in the board menu). Names come
+  from the people lookup (`usePeople`, current names; `useGonePeople` → "Deleted user", never an id;
+  "<app> for <person>" for agents). No label while private mode runs nor on a private-layer draft,
+  so a draft's author is never shown, exported or screenshotted before reveal.
 - Images placed by URL (same module, same fetch protections, `remoteImage` rate limit):
   `Host.importImage(url)` (`POST /api/unfurl/image`) copies the image into the user's uploads —
   the image feature does this on paste/drop, so boards reference `/uploads/<key>`, not the third
@@ -650,7 +682,11 @@ Reference & items (engine primitives; product UI in `features/shortcuts`, `links
   "Copy link to item" (`engine.copyLink`) builds `/board/<id>?item=<elementId>`; the board selects
   and zooms to it on load (`?el=` is still honored).
 - `ElementDefinition.onDoubleClick?(el, { editor, point })`: double-click on an element with no
-  text to edit there (image → crop mode). Editors only, never on locked items.
+  text to edit there (image → crop mode). Editors only, never on locked items. A container that
+  defines it keeps double-clicks on its empty area instead of the canvas's "write here" (timeline:
+  add a bar).
+- `ElementDefinition.minSize` may be a function of the element (a card drawn as a timeline bar).
+- `useGonePeople(ids)` (`@engine`): the ids the people lookup answered without (deleted accounts).
 - `useIsExporting()`: true inside offscreen exports/thumbnails, so decorations can leave out
   on-screen affordances (the link badge).
 - `ImageElement.crop` (fractions of the natural picture) is the non-destructive crop; crop mode
@@ -1002,7 +1038,9 @@ members with roles owner / admin / member / guest (separate from board roles).
 - Policies (team workspaces): `externalSharing` (who may invite people outside / share by link),
   `linkSharing` (max link role), `guestInvites`, `downloads` (who may export, duplicate or save
   as template), `teamAccess` (above), `publicLinks` (whether a link also lets in visitors without
-  an account: see "Guests"). All enforced by the endpoint that does the work;
+  an account: see "Guests"), `liveEmbeds` (links may open as live frames; enforced by every
+  viewer's client, the frames being third-party pages the CSP already confines). All other
+  policies are enforced by the endpoint that does the work;
   `BoardSummary.permissions` only tells the UI.
 - Team templates (KAI-96): owners/admins of the workspace a template is shared with may unshare
   it (`templates.shareTemplate(id, null)`); workspaces' `onMembershipChanged` (after a removal or
