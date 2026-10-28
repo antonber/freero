@@ -3,7 +3,7 @@
 import { useCallback, useContext, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useStore } from 'zustand';
 import type { BoardElement, BoardSettings, ElementType, PresenceState, Role } from '@freero/shared';
-import type { Camera, Editor, FollowTarget, Point, Rect } from './api';
+import type { Camera, Collection, Editor, FollowTarget, Point, Rect } from './api';
 import { ScopeContext, useCore } from './context';
 import type { UiState } from './state/uiStore';
 import type { TextFormatState } from './text/session';
@@ -82,6 +82,17 @@ export function useToolOptions<T = Record<string, unknown>>(toolId: string): T {
 export function useCollection<T>(name: string): Array<[string, T]> {
   const editor = useEditor();
   const coll = useMemo(() => editor.collection<T>(name), [editor, name]);
+  return useCollectionEntries(coll);
+}
+
+/** [additive] Entries of this user's private copy of a collection (Editor.privateCollection). */
+export function usePrivateCollection<T>(name: string): Array<[string, T]> {
+  const editor = useEditor();
+  const coll = useMemo(() => editor.privateCollection<T>(name), [editor, name]);
+  return useCollectionEntries(coll);
+}
+
+function useCollectionEntries<T>(coll: Collection<T>): Array<[string, T]> {
   const cache = useRef<{ version: number; value: Array<[string, T]> }>({ version: -1, value: [] });
   const version = useRef(0);
   const subscribe = useCallback(

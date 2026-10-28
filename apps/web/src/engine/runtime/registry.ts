@@ -33,6 +33,8 @@ export interface Registry {
   importers: Registered<ElementDefinition<any>>[];
   /** decoration.tsx contributions, by order. */
   decorations: Registered<DecorationDefinition>[];
+  /** Some element type can hide its contents (ElementDefinition.hidesContents). */
+  hidesContents: boolean;
 }
 
 export function buildRegistry(
@@ -51,6 +53,7 @@ export function buildRegistry(
     collectionOwners: claimCollections(bundles.map((b) => b.manifest)),
     importers: [],
     decorations: [],
+    hidesContents: false,
   };
 
   const addTool = (def: ToolDefinition, feature: string) => {
@@ -76,6 +79,7 @@ export function buildRegistry(
       if (prev) throw new Error(`Element type '${def.type}' is defined by both '${prev.feature}' and '${feature}'.`);
       reg.elements.set(def.type, { def, feature });
       if (def.importData) reg.importers.push({ def, feature });
+      if (def.hidesContents) reg.hidesContents = true;
     }
     for (const t of b.tools) addTool(t, feature);
     for (const f of b.formats) reg.formats.push({ def: f, feature });

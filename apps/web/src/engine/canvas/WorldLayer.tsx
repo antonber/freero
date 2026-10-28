@@ -1,9 +1,10 @@
 // World layer: one transformed container; each element is a memoized view that subscribes to
 // its own element. The list itself only re-renders when the set/order of visible ids changes.
-import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
+import { memo, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useStore } from 'zustand';
+import { EyeOff } from 'lucide-react';
 import type { BoardElement } from '@freero/shared';
-import { useCore, ScopeContext } from '../context';
+import { useCore, RenderModeContext, ScopeContext } from '../context';
 import { useElement } from '../hooks';
 import { quantizeZoom, viewportRect } from '../camera/camera';
 import { elementAABB, expandRect, rectContainsRect, rectsIntersect } from '../geometry/geometry';
@@ -110,6 +111,8 @@ export function ElementFrame(props: { element: BoardElement; selected: boolean; 
   const reg = core.registry.elements.get(el.type);
   const transform = `translate(${el.x}px, ${el.y}px)${el.rotation ? ` rotate(${el.rotation}deg)` : ''}`;
   const decorations = core.registry.decorations.filter((d) => d.def.appliesTo(el));
+  // In this user's private layer (private mode): nobody else can see it until it is revealed.
+  const isPrivate = useContext(RenderModeContext) !== 'export' && core.store.layerOf(el.id) === 'private';
   let content: ReactNode;
   if (!reg) {
     content = <div className="fr-el-unknown">Unsupported item ({el.type})</div>;
@@ -123,7 +126,7 @@ export function ElementFrame(props: { element: BoardElement; selected: boolean; 
   }
   return (
     <div
-      className={`fr-el${props.editing ? ' fr-el--editing' : ''}`}
+      className={`fr-el${props.editing ? ' fr-el--editing' : ''}${isPrivate ? ' fr-el--private' : ''}`}
       data-id={el.id}
       data-type={el.type}
       style={{ ...reg?.def.wrapperStyle?.(el as never), width: el.w, height: el.h, transform }}
@@ -134,6 +137,12 @@ export function ElementFrame(props: { element: BoardElement; selected: boolean; 
           <def.Component element={el} zoom={props.zoom} />
         </ScopeContext.Provider>
       ))}
+      {isPrivate && (
+        <span className="fr-el-private-chip" title="Only you can see this until it is revealed" style={{ transform: `scale(${1 / Math.max(props.zoom, 0.5)})` }}>
+          <EyeOff size={11} strokeWidth={2.5} aria-hidden />
+          Only you
+        </span>
+      )}
     </div>
   );
 }

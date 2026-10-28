@@ -14,6 +14,7 @@ import { createEngineCommands } from '../editor/engineCommands';
 import { loadToolOptions, saveToolOptions } from './persist';
 import { subscribeFontEpoch } from '../text/autofit';
 import { installFollow } from '../camera/follow';
+import { installLayerPlacement } from '../editor/layers';
 
 export interface ExportOptions {
   ids?: string[];
@@ -23,6 +24,8 @@ export interface ExportOptions {
   background?: string | null;
   padding?: number;
   skipFonts?: boolean;
+  /** Only elements of the shared doc (what everyone with access sees): dashboard thumbnails. */
+  sharedOnly?: boolean;
 }
 
 export class Emitter {
@@ -154,8 +157,13 @@ export function createCore(host: Host, bundles: FeatureBundle[], opts: { persist
         const tool = core.registry.toolsById.get(ui.getState().toolId);
         if (tool && ROLE_RANK[role] < ROLE_RANK[tool.def.minRole ?? 'editor']) core.editor.setTool('select');
         // Local undo history can't be replayed by a read-only role.
-        store.undoManager.clear();
+        store.clearUndo();
       }
+      // Hidden frames' contents: only owners/editors may hold them. Losing the role forgets the
+      // local copy; gaining it asks the server for the layer.
+      if (ROLE_RANK[role] < ROLE_RANK.editor) {
+        if (store.layers.editors.elements.size) store.resetLayer('editors');
+      } else store.requestLayerSync('editors');
       core.emitter.emit('connection');
     }),
     store.subscribePresence(() => {
@@ -186,6 +194,7 @@ export function createCore(host: Host, bundles: FeatureBundle[], opts: { persist
       followed = now;
     }),
     installFollow(core),
+    installLayerPlacement(core, () => core.editor.getPrivateRule()),
     ui.subscribe((s, prev) => {
       if (s.selection !== prev.selection) {
         core.emitter.emit('selection');

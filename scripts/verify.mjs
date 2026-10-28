@@ -934,13 +934,25 @@ async function run() {
       assert(r.status === 201 || r.status === 200, r.text);
       copy = r.json.board;
       assert(copy.title === 'Copy of Verify Roadmap' && copy.role === 'owner' && copy.ownerId === A.id && copy.id !== board.id, JSON.stringify(copy));
-      const cd = connectDoc(A, copy.id);
-      await cd.ready();
+      const cd = await layerClient(A, copy.id);
       assert(els(cd).get('e1')?.text === 'from A' && cd.doc.getMap('comments').get('m:t1:m1')?.text === 'nice!', 'copy has no content');
+      // Hidden frames' contents come along for an owner/editor; nobody's private layer does.
+      await waitFor(() => cd.layers.editors.getMap('elements').has('hid1'), 5000, "the owner's copy to keep the hidden frame content");
       cd.destroy();
       const rb = await B.req('POST', `/api/boards/${board.id}/duplicate`);
       assert(rb.json.board.ownerId === B.id && rb.json.board.role === 'owner', 'B copy owner');
+      const bc = await layerClient(B, rb.json.board.id);
+      await sleep(400);
+      assert(!JSON.stringify(bc.layers.private.toJSON()).includes('SECRET-DRAFT'), "B's private draft was copied into B's duplicate");
+      bc.destroy();
       assert((await C.req('GET', `/api/boards/${copy.id}`)).status === 403, "members don't carry over to copies");
+      // A viewer's copy must not contain what the viewer could never read.
+      const rc = await C.req('POST', `/api/boards/${board.id}/duplicate`);
+      assert(rc.status === 201, rc.text);
+      const cc = await layerClient(C, rc.json.board.id);
+      await sleep(400);
+      assert(!cc.layers.editors.getMap('elements').has('hid1'), "a viewer's duplicate contains the hidden frame content");
+      cc.destroy();
     });
 
     await check('member removal: owner removes, member leaves, others cannot remove', async () => {

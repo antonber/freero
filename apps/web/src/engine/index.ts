@@ -34,6 +34,7 @@ export {
   useFollowing,
   useEditingPart,
   useViewHidden,
+  usePrivateCollection,
 
 } from './hooks';
 
