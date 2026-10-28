@@ -247,9 +247,9 @@ workflows. For Freero, every row here needs a model provider that the operator o
 
 | Capability | What it does | Freero status | Size | Priority | Phase |
 |---|---|---|---|---|---|
-| Public REST API | Read and write boards, items and members from code | Missing (KAI-104) | L | P2 | parity |
+| Public REST API | Read and write boards, items and members from code | Have (`/api/v1`, docs/api/; KAI-104) | L | P2 | parity |
 | Webhooks | Push board and item events to other systems | Missing (KAI-105) | M | P2 | parity |
-| API tokens and OAuth apps | Credentials that let third-party apps act for a user | Missing (KAI-104) | M | P2 | parity |
+| API tokens and OAuth apps | Credentials that let third-party apps act for a user | Have (tokens, OAuth 2.1 + PKCE, dynamic registration; KAI-104) | M | P2 | parity |
 | Embed a live board | Put a viewable or editable board in other sites (iframe, oEmbed) | Missing (KAI-106) | M | P2 | parity |
 | In-board app SDK | Third-party apps that run on the canvas and add items or panels | Missing (API and webhooks first, see §16) | XL | P3 | parity |
 | App marketplace | Browse and install third-party apps | Missing (see §16) | XL | P3 | parity |
