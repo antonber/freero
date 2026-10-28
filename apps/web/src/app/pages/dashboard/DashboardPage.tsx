@@ -7,6 +7,7 @@ import { api, ApiError, type BoardFilter } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { ShareDialog } from '../../components/ShareDialog';
 import { VerifyEmailBanner } from '../../components/VerifyEmailBanner';
+import { NotificationBell } from '../../notifications/NotificationBell';
 import { filterByOwner, sortBoards, type BoardSort, type OwnerFilter } from '../../lib/boards';
 import { useDebouncedValue, usePersistentState } from '../../lib/hooks';
 import { BoardItem, type BoardActions } from './BoardItem';
@@ -220,6 +221,7 @@ export function DashboardPage() {
               )
             }
           />
+          <NotificationBell />
           <Button variant="primary" icon={Plus} loading={creating === 'blank'} onClick={() => create('blank')} className="fr-dash__new">
             New board
           </Button>

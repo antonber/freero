@@ -12,6 +12,7 @@ import { ForgotPasswordPage, ResetPasswordPage } from './pages/auth/PasswordPage
 import { EmailLinkPage } from './pages/auth/EmailLinkPage';
 import { InvitePage } from './pages/invite/InvitePage';
 import { AccountSettingsPage } from './pages/account/AccountSettingsPage';
+import { UnsubscribePage } from './pages/unsubscribe/UnsubscribePage';
 
 // Owned by the board engine work; loaded on demand.
 const BoardPage = lazy(() => import('./board/BoardPage'));
@@ -30,6 +31,7 @@ export function App() {
             <Route path="/verify-email" element={<EmailLinkPage mode="verify" />} />
             <Route path="/confirm-email" element={<EmailLinkPage mode="change" />} />
             <Route path="/invite/:token" element={<InvitePage />} />
+            <Route path="/unsubscribe" element={<UnsubscribePage />} />
             <Route
               path="/settings"
               element={

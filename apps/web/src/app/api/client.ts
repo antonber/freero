@@ -2,6 +2,7 @@ import type {
   AcceptInviteResponse,
   AuthResponse,
   BoardMember,
+  BoardPerson,
   BoardSummary,
   CreateBoardRequest,
   ImportImageRequest,
@@ -9,6 +10,9 @@ import type {
   InviteRequest,
   InviteResponse,
   LoginRequest,
+  NotificationPrefs,
+  NotificationsResponse,
+  NotificationType,
   PendingInvite,
   Role,
   SavedTemplate,
@@ -141,6 +145,18 @@ export const api = {
     request<{ member: BoardMember }>('PATCH', `/api/boards/${id}/members/${userId}`, { role }),
   removeMember: (id: string, userId: string) =>
     request<{ ok: true }>('DELETE', `/api/boards/${id}/members/${userId}`),
+  boardPeople: (id: string, ids: string[]) =>
+    request<{ people: BoardPerson[] }>('GET', `/api/boards/${id}/people?ids=${ids.map(encodeURIComponent).join(',')}`),
+
+  // notifications
+  listNotifications: (before?: number) =>
+    request<NotificationsResponse>('GET', `/api/notifications${before ? `?before=${before}` : ''}`),
+  markNotificationsRead: (ids?: string[]) => request<{ unread: number }>('POST', '/api/notifications/read', ids ? { ids } : {}),
+  notificationPrefs: () => request<NotificationPrefs>('GET', '/api/notifications/prefs'),
+  setNotificationPrefs: (body: { emailAll?: boolean; email?: Partial<Record<NotificationType, boolean>> }) =>
+    request<NotificationPrefs>('PUT', '/api/notifications/prefs', body),
+  unsubscribe: (token: string) =>
+    request<{ ok: true; email: string }>('POST', `/api/notifications/unsubscribe?token=${encodeURIComponent(token)}`),
 
   // saved templates
   listTemplates: () => request<{ templates: SavedTemplateSummary[] }>('GET', '/api/templates'),

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, BadgeCheck, CircleAlert, ImageUp, LogOut, Mail, Monitor, Trash2 } from 'lucide-react';
-import type { SessionInfo } from '@freero/shared';
-import { Avatar, Button, ColorSwatches, Input, Logo, Modal, Spinner, useToast } from '@ui';
+import type { NotificationPrefs, SessionInfo } from '@freero/shared';
+import { Avatar, Button, ColorSwatches, Input, Logo, Modal, Spinner, Toggle, useToast } from '@ui';
 import { api, ApiError } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { describeDevice } from '../../lib/device';
@@ -46,6 +46,7 @@ export function AccountSettingsPage() {
         <h1 className="fr-acct__title">Account settings</h1>
         <ProfileSection />
         <EmailSection />
+        <NotificationsSection />
         <PasswordSection />
         <SessionsSection />
         <DeleteSection />
@@ -149,6 +150,91 @@ function ProfileSection() {
         </div>
       </form>
     </Section>
+  );
+}
+
+/** Which notifications are also emailed (as a digest); the in-app inbox always shows them. */
+function NotificationsSection() {
+  const { user } = useAuth();
+  const notify = useToast();
+  const [prefs, setPrefs] = useState<NotificationPrefs | null>(null);
+  const [failed, setFailed] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let live = true;
+    api.notificationPrefs().then(
+      (p) => live && setPrefs(p),
+      () => live && setFailed(true),
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
+  // Arriving from the inbox's "Email settings" link or an unsubscribe page.
+  useEffect(() => {
+    if (prefs && window.location.hash === '#notifications') ref.current?.scrollIntoView({ block: 'start' });
+  }, [prefs]);
+
+  const save = async (patch: Parameters<typeof api.setNotificationPrefs>[0], optimistic: NotificationPrefs) => {
+    const before = prefs;
+    setPrefs(optimistic);
+    try {
+      setPrefs(await api.setNotificationPrefs(patch));
+    } catch (err) {
+      setPrefs(before);
+      notify(errorText(err, 'Could not save your email settings'), 'error');
+    }
+  };
+
+  if (!user) return null;
+  return (
+    <div ref={ref} id="notifications" className="fr-acct-anchor">
+      <Section
+        id="notifications-settings"
+        title="Notification emails"
+        description="Mentions, replies and shared boards always show under the bell. If you haven’t seen them there after about 15 minutes, we email you one summary."
+      >
+        {failed ? (
+          <p className="fr-acct__hint">Email settings couldn’t be loaded. Reload the page to try again.</p>
+        ) : !prefs ? (
+          <Spinner size={20} />
+        ) : (
+          <div className="fr-acct-prefs">
+            {!user.emailVerified && (
+              <p className="fr-acct-prefs__note">
+                <CircleAlert size={15} aria-hidden /> Confirm your email address above to receive these emails.
+              </p>
+            )}
+            <Toggle
+              label={<span className="fr-acct-prefs__label">Email me about activity I haven’t seen</span>}
+              checked={prefs.emailAll}
+              onChange={(on) => save({ emailAll: on }, { ...prefs, emailAll: on })}
+            />
+            <ul className="fr-acct-prefs__types" aria-label="Email me about">
+              {prefs.types.map((t) => (
+                <li key={t.type} className={prefs.emailAll ? undefined : 'is-off'}>
+                  <Toggle
+                    size="sm"
+                    disabled={!prefs.emailAll}
+                    label={
+                      <span className="fr-acct-prefs__type">
+                        <span className="fr-acct-prefs__label">{t.label}</span>
+                        <span className="fr-acct__hint">{t.description}</span>
+                      </span>
+                    }
+                    checked={t.email}
+                    onChange={(on) =>
+                      save({ email: { [t.type]: on } }, { ...prefs, types: prefs.types.map((x) => (x.type === t.type ? { ...x, email: on } : x)) })
+                    }
+                  />
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </Section>
+    </div>
   );
 }
 
