@@ -18,7 +18,8 @@ export type ElementType =
   | 'emoji'
   | 'mindmap'
   | 'table'
-  | 'embed';
+  | 'embed'
+  | 'icon';
 
 export interface BaseElement {
   id: string;
@@ -35,6 +36,11 @@ export interface BaseElement {
   frameId?: string | null;
   /** Elements sharing a groupId are selected/moved together. */
   groupId?: string | null;
+  /**
+   * Item link: an external URL (http(s), mailto, tel) or an in-board target '#<elementId>'.
+   * Untrusted: validate with the web's `isSafeHref` before following it.
+   */
+  link?: string | null;
   createdBy: string;
   createdAt: number;
   updatedAt: number;
@@ -203,6 +209,18 @@ export interface ImageElement extends BaseElement {
   naturalW: number;
   naturalH: number;
   alt?: string;
+  /**
+   * Non-destructive crop: the part of the picture shown in the box, as fractions (0..1) of the
+   * natural image. Absent = the whole picture. The file itself is never changed.
+   */
+  crop?: ImageCrop | null;
+}
+
+export interface ImageCrop {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 }
 
 /** Kanban/task card. */
@@ -271,6 +289,24 @@ export interface EmbedElement extends BaseElement {
   status: 'loading' | 'ready' | 'failed';
 }
 
+/**
+ * A vector icon from the icon library. The drawing is stored IN the element (a short list of
+ * SVG primitives on a 24×24 grid, stroke-only), so it renders and exports without loading the
+ * icon set, and never changes when the library is upgraded.
+ */
+export interface IconElement extends BaseElement {
+  type: 'icon';
+  /** Library name, for search and alt text (e.g. 'rocket'). */
+  name: string;
+  /** [tag, attributes] pairs; tags limited to path/circle/ellipse/line/polyline/polygon/rect. */
+  nodes: IconNode[];
+  color: string;
+  /** Stroke width on the 24-unit grid (lucide's default is 2). */
+  strokeWidth: number;
+}
+
+export type IconNode = [string, Record<string, string | number>];
+
 export type BoardElement =
   | StickyElement
   | ShapeElement
@@ -283,7 +319,8 @@ export type BoardElement =
   | EmojiElement
   | MindmapElement
   | TableElement
-  | EmbedElement;
+  | EmbedElement
+  | IconElement;
 
 export type ElementOf<T extends ElementType> = Extract<BoardElement, { type: T }>;
 
