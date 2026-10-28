@@ -130,9 +130,34 @@ export function altFromName(name: string): string {
 }
 
 /**
- * Places the image behind a pasted URL. Data URLs go through the normal upload path. Remote
- * URLs are copied to our server when the remote allows it (CORS), else linked directly.
- * Resolves false when the URL isn't an image (so plain-text importers can take it).
+ * Our own copy of a remote image, or null. The server fetches it (any public host, CORS or not);
+ * without a server (offline sandbox), or when it can't reach the host, the browser copies it if
+ * the host allows CORS. A data: URL "upload" (sandbox) is no copy worth storing in the board.
+ */
+async function ownCopyOf(editor: Editor, url: string): Promise<string | null> {
+  try {
+    const { url: own } = await editor.host.importImage(url);
+    if (own) return own;
+  } catch {
+    // no server, or it couldn't fetch the image: try the browser
+  }
+  try {
+    const res = await fetch(url, { mode: 'cors', credentials: 'omit' });
+    const blob = res.ok ? await res.blob() : null;
+    if (!blob?.type.startsWith('image/')) return null;
+    const { url: uploaded } = await editor.host.uploadImage(blob);
+    return uploaded && !uploaded.startsWith('data:') ? uploaded : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Places the image behind a pasted or dropped URL. Data URLs go through the normal upload path.
+ * Remote images are copied to our uploads (see ownCopyOf), so viewers and exports never depend on
+ * the third party; only when that fails is the original URL linked (exports then try again and
+ * say so if the image is left out). Resolves false when the URL isn't an image (so plain-text
+ * importers can take it).
  */
 export async function insertImageUrl(editor: Editor, url: string, at: Point): Promise<boolean> {
   if (url.startsWith('data:')) {
@@ -148,14 +173,7 @@ export async function insertImageUrl(editor: Editor, url: string, at: Point): Pr
   const clear = addPending([rect]);
   let src = url;
   try {
-    const res = await fetch(url, { mode: 'cors', credentials: 'omit' });
-    const blob = res.ok ? await res.blob() : null;
-    if (blob && blob.type.startsWith('image/')) {
-      const { url: uploaded } = await editor.host.uploadImage(blob);
-      if (uploaded && !uploaded.startsWith('data:')) src = uploaded;
-    }
-  } catch {
-    // Cross-origin without CORS, or upload failed: keep linking the original URL.
+    src = (await ownCopyOf(editor, url)) ?? url;
   } finally {
     clear();
   }
