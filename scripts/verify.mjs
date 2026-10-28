@@ -1894,7 +1894,9 @@ async function multiInstanceChecks() {
   const procs = [];
   let url = null;
   // Rate-limit counters live in the shared Redis, also across the single-instance run above.
-  const env = () => ({ DATABASE_URL: url, REDIS_URL, RATE_LIMIT_SIGNUP: '200/1h' });
+  const { startMockDns } = await import('./lib/mock-dns.mjs');
+  const multiDns = await startMockDns(); // domain verification (SCIM check at the end)
+  const env = () => ({ DATABASE_URL: url, REDIS_URL, RATE_LIMIT_SIGNUP: '200/1h', SSO_DNS_SERVERS: multiDns.server });
   const docRows = async (boardId) =>
     (await adminQuery(`SELECT count(*)::int AS n FROM board_doc_updates WHERE board_id = '${boardId}'`, url))[0].n;
   try {
@@ -2215,9 +2217,40 @@ async function multiInstanceChecks() {
       await waitFor(() => live.closeCodes.includes(4403), 5000, 'the socket on instance 1 to close with 4403');
       live.destroy();
     });
+
+    await check('SCIM deprovisioning through instance 1 closes the person’s board socket and ends their session on instance 2 (KAI-46)', async () => {
+      const domain = `multi-${Date.now()}.test`;
+      const p1 = procs[0].port; // instance 1 was restarted (i0b) by an earlier check
+      const O = new User('MO', p1);
+      O.email = `owner@${domain}`;
+      await O.signup();
+      await O.verifyEmail(path.join(dataDir, 'i0b'));
+      const Z = new User('MZ', two);
+      Z.email = `zed@${domain}`;
+      await Z.signup(); // a password account at the domain, signed in on instance 2
+      const ws = (await O.req('POST', '/api/workspaces', { name: 'Directory' })).json.workspace;
+      const d = (await O.req('POST', `/api/workspaces/${ws.id}/sso/domains`, { domain })).json.domains[0];
+      multiDns.setTxt(d.txtName, [d.txtValue]);
+      assert((await O.req('POST', `/api/workspaces/${ws.id}/sso/domains/${d.id}/verify`)).status === 200, 'verify domain');
+      const token = (await O.req('POST', `/api/workspaces/${ws.id}/scim/tokens`, {})).json.token;
+      const { scimClient } = await import('./lib/scim-compliance.mjs');
+      const scim = scimClient(`http://127.0.0.1:${p1}/scim/v2`, token);
+      const zed = (await scim('POST', '/Users', { userName: Z.email, active: true })).json;
+      assert(zed.id === Z.id, `provisioned ${JSON.stringify(zed)}`);
+      const tb = (await O.req('POST', '/api/boards', { title: 'Team', workspaceId: ws.id })).json.board;
+      const live = connectDoc(Z, tb.id, undefined, two);
+      await live.ready();
+      assert(live.role === 'editor', `role ${live.role}`);
+      const off = await scim('PATCH', `/Users/${zed.id}`, { Operations: [{ op: 'replace', value: { active: false } }] });
+      assert(off.status === 200, off.text);
+      await waitFor(() => live.closeCodes.some((c) => c === 4401 || c === 4403), 5000, "Zed's socket on instance 2 to close");
+      live.destroy();
+      assert((await Z.req('GET', '/api/auth/me')).status === 401, 'the session on instance 2 survived');
+    });
   } finally {
     closeAllDocs();
     server = null;
+    await multiDns?.close();
     for (const p of procs) await stopProc(p);
     await dropDatabases();
     try {
