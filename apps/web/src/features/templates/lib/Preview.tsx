@@ -1,6 +1,6 @@
 // Mini SVG thumbnail drawn from the template's own element data (no image files): the same
 // data that gets inserted, simplified to boxes, pills and text bars.
-import { memo, type ReactNode } from 'react';
+import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
 import { STICKY_COLORS, type BoardElement, type StickyColor } from '@freero/shared';
 import type { NewElement } from '@engine';
 import { boundsOf } from './place';
@@ -12,7 +12,7 @@ function elementsFor(def: TemplateDef): NewElement[] {
   let els = cache.get(def.id);
   if (!els) {
     let n = 0;
-    els = def.build(() => `p${n++}`);
+    els = def.build(() => `p${n++}`).elements;
     cache.set(def.id, els);
   }
   return els;
@@ -48,7 +48,7 @@ function textBars(x: number, y: number, w: number, h: number, size: number, fill
 
 function shapePath(el: NewElement<'shape'>): ReactNode {
   const { x, y, w, h } = el;
-  const common = { fill: el.fill === 'transparent' ? 'none' : el.fill, stroke: el.stroke === 'transparent' ? 'none' : el.stroke, strokeWidth: el.strokeWidth };
+  const common = { fill: el.fill === 'transparent' ? 'none' : el.fill, fillOpacity: el.fillOpacity, stroke: el.stroke === 'transparent' ? 'none' : el.stroke, strokeWidth: el.strokeWidth };
   switch (el.shape) {
     case 'ellipse':
       return <ellipse cx={x + w / 2} cy={y + h / 2} rx={w / 2} ry={h / 2} {...common} />;
@@ -68,6 +68,11 @@ function connectorPath(el: NewElement<'connector'>): string {
   const e = el.end;
   if (el.routing === 'straight') return `M${s.x},${s.y} L${e.x},${e.y}`;
   const vertical = s.anchor === 'top' || s.anchor === 'bottom';
+  // Both ends on the same side (sitemap brackets): step out, run along, step back in.
+  if (el.routing === 'elbow' && s.anchor === e.anchor && (s.anchor === 'left' || s.anchor === 'right')) {
+    const out = s.anchor === 'left' ? Math.min(s.x, e.x) - 20 : Math.max(s.x, e.x) + 20;
+    return `M${s.x},${s.y} H${out} V${e.y} H${e.x}`;
+  }
   if (el.routing === 'curved') {
     return vertical
       ? `M${s.x},${s.y} C${s.x},${e.y} ${s.x},${e.y} ${e.x},${e.y}`
@@ -162,6 +167,28 @@ function draw(el: El, byId: Map<string, El>): ReactNode {
         />
       );
     }
+    case 'table': {
+      const t = el as NewElement<'table'>;
+      const lines: ReactNode[] = [];
+      let cx = t.x;
+      t.cols.slice(0, -1).forEach((c, i) => {
+        cx += c.w;
+        lines.push(<line key={`${key}-c${i}`} x1={cx} y1={t.y} x2={cx} y2={t.y + t.h} stroke="#DCDAE8" strokeWidth={2} />);
+      });
+      let cy = t.y;
+      t.rows.slice(0, -1).forEach((r, i) => {
+        cy += r.h;
+        lines.push(<line key={`${key}-r${i}`} x1={t.x} y1={cy} x2={t.x + t.w} y2={cy} stroke="#DCDAE8" strokeWidth={2} />);
+      });
+      const headH = t.header ? t.rows[0]?.h ?? 0 : 0;
+      return (
+        <g key={key}>
+          <rect x={t.x} y={t.y} width={t.w} height={t.h} rx={4} fill="#FFFFFF" stroke="#C9C6DA" strokeWidth={2} />
+          {headH ? <rect x={t.x} y={t.y} width={t.w} height={headH} fill="#ECE9FB" /> : null}
+          {lines}
+        </g>
+      );
+    }
     case 'image':
       return <rect key={key} x={el.x} y={el.y} width={el.w} height={el.h} rx={6} fill="#E4E3EE" />;
     case 'pen': {
@@ -173,6 +200,22 @@ function draw(el: El, byId: Map<string, El>): ReactNode {
     default:
       return null;
   }
+}
+
+/**
+ * The preview, built only once its card scrolls near the viewport: opening the picker never
+ * builds the whole catalog.
+ */
+export function LazyTemplatePreview({ def }: { def: TemplateDef }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [seen, setSeen] = useState(() => cache.has(def.id) || typeof IntersectionObserver === 'undefined');
+  useEffect(() => {
+    if (seen || !ref.current) return;
+    const io = new IntersectionObserver((entries) => entries.some((e) => e.isIntersecting) && setSeen(true), { rootMargin: '240px 0px' });
+    io.observe(ref.current);
+    return () => io.disconnect();
+  }, [seen]);
+  return seen ? <TemplatePreview def={def} /> : <span ref={ref} className="fr-tpl-preview fr-tpl-preview--pending" aria-hidden />;
 }
 
 export const TemplatePreview = memo(function TemplatePreview({ def }: { def: TemplateDef }) {

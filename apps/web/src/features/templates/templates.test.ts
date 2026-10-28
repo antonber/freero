@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import type { ElementType, FrameElement } from '@freero/shared';
+import { tableCellKey, type ElementType, type FrameElement, type TableCopyContent, type TableElement } from '@freero/shared';
 import { createTestBoard, type ElementDefinition, type FeatureBundle, type NewElement } from '@engine';
 import manifest from './feature';
 import { TEMPLATES } from './lib/catalog';
-import { boundsOf, instantiate, type BoardSnapshot } from './lib/place';
+import { insertTemplate } from './lib/insert';
+import { boundsOf, filterTemplates, instantiate, type BoardSnapshot } from './lib/place';
 import { insertSavedTemplate, saveAsTemplate } from './lib/saved';
 
 // Every field of each shared element type that the engine does NOT fill in on create.
@@ -37,7 +38,7 @@ function anchorOf(el: NewElement, anchor: string) {
 
 describe.each(TEMPLATES.map((t) => [t.id, t] as const))('template %s', (_id, def) => {
   it('builds only fully specified elements, so nothing renders half-initialised when an element feature lacks defaults', () => {
-    const els = def.build(freshId);
+    const els = def.build(freshId).elements;
     expect(els.length).toBeGreaterThan(3);
     for (const el of els) {
       for (const key of ['x', 'y', 'w', 'h']) {
@@ -53,7 +54,7 @@ describe.each(TEMPLATES.map((t) => [t.id, t] as const))('template %s', (_id, def
   });
 
   it('keeps every element of a frame inside that frame, so moving the frame carries the whole template', () => {
-    const els = def.build(freshId);
+    const els = def.build(freshId).elements;
     const frames = new Map(els.filter((e) => e.type === 'frame').map((f) => [f.id!, f]));
     expect(frames.size).toBeGreaterThan(0);
     for (const el of els) {
@@ -67,9 +68,30 @@ describe.each(TEMPLATES.map((t) => [t.id, t] as const))('template %s', (_id, def
     }
   });
 
-  it('after insertion, connector and mind-map references point at elements of the same insert, at their anchors', () => {
+  it('never stacks one piece of text on another, so every label, note and cell stays readable', () => {
+    const els = def.build(freshId).elements;
+    // Text-bearing items; textless shapes are backgrounds (columns, quadrants, circles).
+    const readable = els.filter((e) => {
+      if (e.type === 'shape') return (e as NewElement<'shape'>).text !== '';
+      return ['sticky', 'text', 'card', 'table', 'mindmap', 'emoji'].includes(e.type);
+    });
+    const label = (e: NewElement) => {
+      const r = e as unknown as { text?: string; title?: string };
+      return `${e.type} "${String(r.text ?? r.title ?? '').slice(0, 40)}"`;
+    };
+    for (let i = 0; i < readable.length; i++)
+      for (let j = i + 1; j < readable.length; j++) {
+        const a = readable[i];
+        const b = readable[j];
+        const w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+        const h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+        expect(w > 1 && h > 1, `${label(a)} overlaps ${label(b)}`).toBe(false);
+      }
+  });
+
+  it('after insertion, connector, mind-map and table-cell references point at elements of the same insert, at their anchors', () => {
     const board: BoardSnapshot = { place: () => ({ x: 1234, y: -567 }), maxFrameIndex: 2 };
-    const els = instantiate(def, board, freshId);
+    const { elements: els, content } = instantiate(def, board, freshId);
     const byId = new Map(els.map((e) => [e.id!, e]));
     expect(byId.size, 'ids are unique').toBe(els.length);
     for (const el of els) {
@@ -89,7 +111,16 @@ describe.each(TEMPLATES.map((t) => [t.id, t] as const))('template %s', (_id, def
         expect(byId.get(m.rootId)?.type).toBe('mindmap');
         if (m.parentId) expect(byId.get(m.parentId)?.type).toBe('mindmap');
       }
+      if (el.type === 'table') {
+        // A cell written for a row or column the table doesn't have would never show up.
+        const t = el as NewElement<'table'>;
+        const parts = new Set(t.rows.flatMap((r) => t.cols.map((c) => `${r.id}:${c.id}`)));
+        for (const part of Object.keys((content[el.id!] ?? {}) as TableCopyContent)) expect(parts.has(part), `${def.id}: cell ${part}`).toBe(true);
+        expect(t.w).toBe(t.cols.reduce((a, c) => a + c.w, 0));
+        expect(t.h).toBe(t.rows.reduce((a, r) => a + r.h, 0));
+      }
     }
+    for (const id of Object.keys(content)) expect(byId.has(id), 'content for an element the template does not build').toBe(true);
   });
 });
 
@@ -97,16 +128,66 @@ describe('inserting a template', () => {
   it('fills exactly the free spot the board found for its size, so it covers nothing (the engine keeps that spot clear)', () => {
     for (const def of TEMPLATES) {
       let asked: { w: number; h: number } | null = null;
-      const placed = boundsOf(instantiate(def, { place: (size) => ((asked = size), SPOT), maxFrameIndex: -1 }, freshId))!;
+      const placed = boundsOf(instantiate(def, { place: (size) => ((asked = size), SPOT), maxFrameIndex: -1 }, freshId).elements)!;
       expect(placed, def.id).toEqual({ x: SPOT.x, y: SPOT.y, w: asked!.w, h: asked!.h });
     }
   });
 
   it('twice in a row never reuses an element id (which would overwrite the first copy)', () => {
     const def = TEMPLATES[0];
-    const a = instantiate(def, emptyBoard, freshId).map((e) => e.id);
-    const b = instantiate(def, emptyBoard, freshId).map((e) => e.id);
+    const a = instantiate(def, emptyBoard, freshId).elements.map((e) => e.id);
+    const b = instantiate(def, emptyBoard, freshId).elements.map((e) => e.id);
     expect(a.filter((id) => b.includes(id))).toEqual([]);
+  });
+
+  it('a template with a table lands whole: the table inside its frame at its place, its cells filled, and one undo removes everything', () => {
+    const def = TEMPLATES.find((t) => t.id === 'competitor-comparison')!;
+    const Noop = () => null;
+    const frameDef = { type: 'frame', Component: Noop, resize: 'free', container: true, rotatable: false, defaults: () => ({}) } as unknown as ElementDefinition<'frame'>;
+    // The table feature can't be imported here; this stand-in stores pasted cells the way it does.
+    const tableDef = {
+      type: 'table',
+      Component: Noop,
+      resize: 'free',
+      defaults: () => ({}),
+      pasteContent: (el: TableElement, content: unknown, editor: { collection(n: string): { set(k: string, v: string): void } }) => {
+        for (const [part, v] of Object.entries(content as TableCopyContent)) {
+          const [r, c] = part.split(':');
+          if (v.t) editor.collection('tableCells').set(tableCellKey('t', el.id, r, c), v.t);
+        }
+      },
+    } as unknown as ElementDefinition<'table'>;
+    const table: FeatureBundle = {
+      manifest: { name: 'table', description: '', owns: ['tableCells'], undoable: ['tableCells'] },
+      elements: [tableDef],
+      tools: [],
+      formats: [],
+      panels: [],
+      commands: [],
+    };
+    const shapes: FeatureBundle = { manifest: { name: 'shapes', description: '' }, elements: [frameDef], tools: [], formats: [], panels: [], commands: [] };
+    const board = createTestBoard({ users: ['ann'], features: [manifest, shapes, table] });
+    try {
+      const [editor] = board.editors('templates');
+      expect(insertTemplate(editor, def).length).toBeGreaterThan(0);
+      const frame = editor.getElements().find((e) => e.type === 'frame')!;
+      const t = editor.getElements().find((e): e is TableElement => e.type === 'table')!;
+      expect(t.frameId, 'the table belongs to the template frame').toBe(frame.id);
+      // Same offset from the frame as in the template, so it doesn't drift onto its neighbours.
+      const built = def.build(freshId).elements;
+      const bFrame = built.find((e) => e.type === 'frame')!;
+      const bTable = built.find((e) => e.type === 'table')!;
+      expect({ dx: t.x - frame.x, dy: t.y - frame.y }).toEqual({ dx: bTable.x - bFrame.x, dy: bTable.y - bFrame.y });
+      const cells = editor.collection<string>('tableCells');
+      const usHeader = tableCellKey('t', t.id, t.rows[0].id, t.cols[1].id);
+      expect(cells.get(usHeader)).toBe('Us');
+
+      editor.undo();
+      expect(editor.getElements()).toEqual([]);
+      expect(cells.get(usHeader)).toBeUndefined();
+    } finally {
+      board.destroy();
+    }
   });
 
   it('a saved selection added back to the board is a new copy: frames numbered after the board’s own, in their saved order, with their items inside', async () => {
@@ -144,7 +225,16 @@ describe('inserting a template', () => {
 
   it('numbers new frames after the existing ones so presentation order keeps the old frames first', () => {
     const board: BoardSnapshot = { ...emptyBoard, maxFrameIndex: 4 };
-    const frames = TEMPLATES.flatMap((d) => instantiate(d, board, freshId)).filter((e) => e.type === 'frame') as NewElement<'frame'>[];
+    const frames = TEMPLATES.flatMap((d) => instantiate(d, board, freshId).elements).filter((e) => e.type === 'frame') as NewElement<'frame'>[];
     for (const f of frames) expect(f.index).toBeGreaterThan(4);
+  });
+});
+
+describe('searching templates', () => {
+  it('finds templates by the words people use for them, listing ones named after the query before ones that only mention it', () => {
+    const retro = filterTemplates(TEMPLATES, 'retro', null).map((t) => t.id);
+    expect(retro[0]).toBe('retrospective');
+    expect(retro).toEqual(expect.arrayContaining(['retro-start-stop-continue', 'retro-4ls']));
+    expect(filterTemplates(TEMPLATES, 'planning poker', null).map((t) => t.id)).toEqual(['relative-sizing']);
   });
 });
