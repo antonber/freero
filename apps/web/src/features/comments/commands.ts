@@ -1,6 +1,6 @@
 import { MessageSquare, MessageSquarePlus } from 'lucide-react';
 import { defineCommands } from '@engine';
-import { PANEL_ID, startDraft } from './lib/state';
+import { focusThread, getThread, PANEL_ID, replaceInMessages, startDraft } from './lib/state';
 
 export default defineCommands([
   {
@@ -24,6 +24,35 @@ export default defineCommands([
       const el = editor.getElement(editor.getSelection()[0]);
       if (!el) return;
       startDraft(editor, { x: el.w, y: 0, elementId: el.id, corner: 'top-right' });
+    },
+  },
+  {
+    // For other features (find): open a thread by id, its pin brought into view. `quiet`: the
+    // caller keeps the keyboard focus. runCommand('comments.openThread', { threadId, quiet? })
+    id: 'comments.openThread',
+    label: 'Open comment thread',
+    minRole: 'viewer',
+    run(editor, args) {
+      const t = typeof args?.threadId === 'string' ? getThread(editor, args.threadId) : undefined;
+      if (t) focusThread(editor, t, { quiet: args?.quiet === true });
+    },
+  },
+  {
+    // For other features (find & replace): replace text in your own comments (see
+    // replaceInMessages). runCommand('comments.replaceText', { find, replacement, caseSensitive?,
+    // only?: [{ threadId, messageId }] })
+    id: 'comments.replaceText',
+    label: 'Replace text in your comments',
+    minRole: 'commenter',
+    run(editor, args) {
+      if (typeof args?.find !== 'string' || typeof args.replacement !== 'string') return;
+      const only = Array.isArray(args.only)
+        ? (args.only as unknown[]).filter(
+            (m): m is { threadId: string; messageId: string } =>
+              !!m && typeof (m as { threadId?: unknown }).threadId === 'string' && typeof (m as { messageId?: unknown }).messageId === 'string',
+          )
+        : undefined;
+      replaceInMessages(editor, args.find, args.replacement, { caseSensitive: args.caseSensitive === true, only });
     },
   },
 ]);

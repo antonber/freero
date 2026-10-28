@@ -3,7 +3,7 @@ import type { CommentMessage, CommentThread } from '@freero/shared';
 import { createTestBoard, type Editor, type TestBoard } from '@engine';
 import manifest from './feature';
 import { anchorFor, assembleThreads, isUnread, threadPoint, upgradeLegacy } from './lib/model';
-import { deleteMessage, deleteThread, editMessage, getThreads, reply, setResolved, startDraft, submitDraft, toggleReaction } from './lib/state';
+import { deleteMessage, deleteThread, editMessage, getThreads, replaceInMessages, reply, setResolved, startDraft, submitDraft, toggleReaction } from './lib/state';
 
 // ---------------------------------------------------------------------------
 // Several people writing one thread: real engine replicas (real Yjs docs) that only see each
@@ -83,6 +83,18 @@ describe('two people writing the same thread at once', () => {
 
     expect(getThreads(ann)).toEqual([]);
     expect(getThreads(bob)).toEqual([]);
+  });
+});
+
+describe('find & replace in comments', () => {
+  it('rewrites only the replacer’s own messages, never words someone else wrote', () => {
+    const [ann, bob] = twoPeople();
+    const id = startThread(ann, 'ship the Beta');
+    reply(bob, id, 'beta is late');
+    board!.sync();
+    expect(replaceInMessages(ann, 'beta', 'GA')).toBe(1);
+    board!.sync();
+    expect(texts(getThreads(bob).find((t) => t.id === id))).toEqual(['ship the GA', 'beta is late']);
   });
 });
 
