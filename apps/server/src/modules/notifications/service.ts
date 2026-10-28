@@ -10,7 +10,7 @@ import { log, logError } from '../../platform/log';
 import { appUrl, renderMail, sendMail } from '../../platform/mail';
 import { getAccount, getUsers } from '../auth/index';
 import { getBoardAccess, getBoardTitle } from '../boards/index';
-import type { BoardSharedEvent } from '../members/index';
+import { invitedEmails, type BoardSharedEvent, type InviteAcceptedEvent } from '../members/index';
 import type { CommentMessageEvent } from '../realtime/index';
 import * as live from './live';
 import * as repo from './repo';
@@ -62,7 +62,10 @@ export async function onCommentMessage(e: CommentMessageEvent): Promise<void> {
   const mentioned = mentionedUserIds(e.text);
   const newMentions = mentioned.filter((id) => !before.has(id) && id !== e.authorId);
   const replyTo = e.previousText === null ? e.participantIds.filter((id) => !mentioned.includes(id)) : [];
-  if (!newMentions.length && !replyTo.length) return;
+  // Addresses of people invited to the board who have no account yet: notified once they join.
+  const hadEmails = new Set(e.previousText === null ? [] : emailsIn(e.previousText));
+  const invited = await invitedEmails(e.boardId, emailsIn(e.text).filter((m) => !hadEmails.has(m)));
+  if (!newMentions.length && !replyTo.length && !invited.length) return;
   const [boardTitle, names] = await Promise.all([getBoardTitle(e.boardId), getUsers(mentioned)]);
   if (boardTitle === null) return;
   const data: NotificationData = {
@@ -76,11 +79,37 @@ export async function onCommentMessage(e: CommentMessageEvent): Promise<void> {
     await notify({ userId, type: 'comment.mention', actorId: e.authorId, boardId: e.boardId, data, dedupeKey: `mention:${key}` });
   for (const userId of replyTo)
     await notify({ userId, type: 'comment.reply', actorId: e.authorId, boardId: e.boardId, data, dedupeKey: `reply:${key}` });
+  for (const email of invited)
+    await repo.addPendingMention({ id: newId(16), boardId: e.boardId, email, actorId: e.authorId, data, dedupeKey: `mention:${key}`, createdAt: Date.now() });
+}
+
+const EMAIL_IN_TEXT = /[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g;
+
+/** Distinct email addresses written in a comment (lower case, as invites store them). */
+export function emailsIn(text: string): string[] {
+  return [...new Set([...text.matchAll(EMAIL_IN_TEXT)].map((m) => m[0].toLowerCase()))];
 }
 
 /** A board was shared with an existing account. */
 export async function onBoardShared(e: BoardSharedEvent): Promise<void> {
   await notify({ userId: e.userId, type: 'board.invite', actorId: e.byId, boardId: e.boardId, data: { boardTitle: e.boardTitle, role: e.role } });
+}
+
+/** How long a mention of an invited address waits for them to join (an invite's lifetime). */
+const PENDING_MENTION_TTL_MS = 14 * 24 * 60 * 60 * 1000;
+
+/**
+ * An invite sent to an address became access: comments that named that address while the
+ * person had no account become mentions for them (linking to the thread, like any mention).
+ */
+export async function onInviteAccepted(e: InviteAcceptedEvent): Promise<void> {
+  for (const p of await repo.takePendingMentions(e.boardId, e.email, Date.now() - PENDING_MENTION_TTL_MS))
+    await notify({ userId: e.userId, type: 'comment.mention', actorId: p.actorId, boardId: p.boardId, data: p.data, dedupeKey: p.dedupeKey });
+}
+
+/** Forgets mentions of invited addresses whose invite has expired meanwhile. */
+export function sweepPendingMentions(now = Date.now()): Promise<void> {
+  return repo.sweepPendingMentions(now - PENDING_MENTION_TTL_MS);
 }
 
 // ---- inbox ----
