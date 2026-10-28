@@ -1607,8 +1607,13 @@ async function notificationChecks() {
         a.doc.getMap('comments').set('t:t1', { kind: 'thread', id: 't1', x: 0, y: 0, createdAt: Date.now(), createdBy: A.id });
         a.doc.getMap('comments').set('m:t1:m1', msg('m1', A, `hey <@${B.id}> and <@${X.id}>, look`));
       });
-      // B's socket writing as A, mentioning C: not B's message, so no notification in A's name.
-      b.doc.getMap('comments').set('m:t1:fake', msg('fake', A, `fake <@${C.id}>`));
+      // A forged client of B's writing as A, mentioning C: the comment rules drop it, and nothing is
+      // notified in A's name. Its own connection: a client whose update was dropped can't get later
+      // updates applied either (they depend on the dropped one), and B's real tab must stay usable.
+      const forged = connectDoc(B, board.id);
+      clients.push(forged);
+      await forged.ready();
+      forged.doc.getMap('comments').set('m:t1:fake', msg('fake', A, `fake <@${C.id}>`));
       await waitFor(async () => (await list(B)).unread === 2, 5000, 'B to have the mention');
       const mention = (await list(B)).notifications.find((n) => n.type === 'comment.mention');
       assert(mention.link === `/board/${board.id}?thread=t1`, mention.link);
@@ -1617,6 +1622,9 @@ async function notificationChecks() {
       assert((await list(C)).notifications.every((n) => n.type === 'board.invite'), 'C was notified by a spoofed message');
       assert((await list(X)).notifications.length === 0, 'someone without access was notified');
       assert((await list(A)).notifications.length === 0, 'the author was notified of their own message');
+      assert(!a.doc.getMap('comments').has('m:t1:fake'), 'the forged message reached other clients');
+      forged.destroy();
+      clients.splice(clients.indexOf(forged), 1);
     });
 
     await check('a reply notifies the thread’s earlier writers (the author not)', async () => {
@@ -2067,6 +2075,9 @@ async function signInMethodChecks() {
       GEOIP_DB_PATH: geoDb,
       TRUST_PROXY: 'loopback', // so X-Forwarded-For can stand in for clients on the internet
       RATE_LIMIT_TWO_FACTOR: '200/15m', // every check here comes from 127.0.0.1
+      // Same, and with REDIS_URL every server of the run shares the per-IP counters: the main
+      // session's resets have used up the default 5/15m before the reset check here runs.
+      RATE_LIMIT_PASSWORD: '200/15m',
     };
     if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
     const ok = await check('sign-in server boots with a provider (local test OpenID provider) and a GeoIP database', async () => {
@@ -2166,7 +2177,8 @@ async function signInMethodChecks() {
       assert(ok2.status === 200 && b.jar.has('freero_session'), ok2.text);
 
       const after = Date.now();
-      await new Browser(port).fetch('/api/auth/password/forgot', { method: 'POST', body: { email: P.email } });
+      const forgot = await new Browser(port).fetch('/api/auth/password/forgot', { method: 'POST', body: { email: P.email } });
+      assert(forgot.status === 200, `forgot: ${forgot.status} ${forgot.text}`);
       const token = await mailedToken(dataDir, P.email, '/reset-password', { after });
       const r = new Browser(port);
       const reset = await r.fetch('/api/auth/password/reset', { method: 'POST', body: { token, password: 'password-456' } });
