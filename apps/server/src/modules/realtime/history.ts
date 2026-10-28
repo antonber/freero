@@ -16,8 +16,8 @@ import { requireBoardAccess } from '../boards/index';
 import * as repo from './repo';
 import { restoreBoardDoc, snapshotBoardDoc } from './rooms';
 
-export async function requireVersionAccess(boardId: string, userId: string): Promise<void> {
-  await requireBoardAccess(boardId, userId, 'editor');
+export async function requireVersionAccess(boardId: string, userId: string): Promise<{ workspaceId: string; title: string }> {
+  return requireBoardAccess(boardId, userId, 'editor');
 }
 
 async function toVersions(infos: repo.SnapshotInfo[]): Promise<BoardVersion[]> {

@@ -116,6 +116,35 @@ export async function compact(boardId: string, c: Compaction, now: number): Prom
   );
 }
 
+/**
+ * Keeps `state` as an automatic snapshot unless the board's newest snapshot (any kind) is younger
+ * than `everyMs`. Checked and written under the board's base row lock — the one compaction takes —
+ * so instances trying at once (or a compaction) write one snapshot per period, never one each.
+ * Returns whether it was taken and when the newest snapshot is from afterwards.
+ */
+export async function insertSnapshotIfDue(
+  boardId: string,
+  state: Uint8Array,
+  everyMs: number,
+  now: number,
+): Promise<{ taken: boolean; newestAt: number }> {
+  return guard(boardId, () =>
+    tx(async (t) => {
+      await t.query(`INSERT INTO board_docs (board_id, state, updated_at) VALUES ($1, $2, $3) ON CONFLICT (board_id) DO NOTHING`, [
+        boardId,
+        EMPTY_UPDATE,
+        new Date(now),
+      ]);
+      await t.query(`SELECT version FROM board_docs WHERE board_id = $1 FOR UPDATE`, [boardId]);
+      const last = await t.one<{ at: Date | null }>(`SELECT max(created_at) AS at FROM board_doc_snapshots WHERE board_id = $1`, [boardId]);
+      const lastAt = last?.at ? new Date(last.at).getTime() : null;
+      if (lastAt !== null && now - lastAt < everyMs) return { taken: false, newestAt: lastAt };
+      await t.query(`INSERT INTO board_doc_snapshots (board_id, state, created_at) VALUES ($1, $2, $3)`, [boardId, toBuffer(state), new Date(now)]);
+      return { taken: true, newestAt: now };
+    }),
+  );
+}
+
 // ---------------------------------------------------------------------------------------------
 // Snapshots: version history (KAI-49) and its retention (KAI-72)
 // ---------------------------------------------------------------------------------------------
@@ -293,12 +322,15 @@ export async function tryLockSnapshotPrune(): Promise<boolean> {
   return r?.ok === true;
 }
 
-/** Boards (by id, after `afterBoardId`) with more than one snapshot that retention could remove. */
-export async function boardsWithPrunableSnapshots(afterBoardId: string, limit: number): Promise<string[]> {
+/**
+ * Boards (by id, after `afterBoardId`) with snapshots retention could remove: more than one
+ * unnamed snapshot, or (with `loneBefore`) an unnamed one older than that.
+ */
+export async function boardsWithPrunableSnapshots(afterBoardId: string, limit: number, loneBefore: number | null = null): Promise<string[]> {
   const rows = await query<{ board_id: string }>(
     `SELECT board_id FROM board_doc_snapshots WHERE kind <> 'named' AND board_id > $1
-     GROUP BY board_id HAVING count(*) > 1 ORDER BY board_id LIMIT $2`,
-    [afterBoardId, limit],
+     GROUP BY board_id HAVING count(*) > 1 OR min(created_at) < $3 ORDER BY board_id LIMIT $2`,
+    [afterBoardId, limit, loneBefore === null ? null : new Date(loneBefore)],
   );
   return rows.map((r) => r.board_id);
 }
@@ -320,6 +352,34 @@ export async function deleteSnapshots(boardId: string, ids: number[]): Promise<n
     [boardId, ids],
   );
   return rows.length;
+}
+
+/**
+ * What the stored content of these boards takes (documents, update logs, version history,
+ * layers), and the upload names it references (matches of `pattern`'s first group).
+ */
+export async function storedContentOf(boardIds: string[], pattern: string): Promise<{ bytes: number; names: string[] }> {
+  if (!boardIds.length) return { bytes: 0, names: [] };
+  const size = await one<{ n: string | number }>(
+    `SELECT (
+       COALESCE((SELECT sum(octet_length(state)) FROM board_docs WHERE board_id = ANY($1::text[])), 0) +
+       COALESCE((SELECT sum(octet_length(data)) FROM board_doc_updates WHERE board_id = ANY($1::text[])), 0) +
+       COALESCE((SELECT sum(octet_length(state)) FROM board_doc_snapshots WHERE board_id = ANY($1::text[])), 0) +
+       COALESCE((SELECT sum(octet_length(state)) FROM board_layers WHERE board_id = ANY($1::text[])), 0) +
+       COALESCE((SELECT sum(octet_length(data)) FROM board_layer_updates WHERE board_id = ANY($1::text[])), 0)
+     )::bigint AS n`,
+    [boardIds],
+  );
+  const rows = await query<{ name: string }>(
+    `SELECT DISTINCT m[1] AS name FROM (
+       SELECT regexp_matches(encode(state, 'escape'), $2, 'g') AS m FROM board_docs WHERE board_id = ANY($1::text[])
+       UNION ALL SELECT regexp_matches(encode(data, 'escape'), $2, 'g') FROM board_doc_updates WHERE board_id = ANY($1::text[])
+       UNION ALL SELECT regexp_matches(encode(state, 'escape'), $2, 'g') FROM board_layers WHERE board_id = ANY($1::text[])
+       UNION ALL SELECT regexp_matches(encode(data, 'escape'), $2, 'g') FROM board_layer_updates WHERE board_id = ANY($1::text[])
+     ) found`,
+    [boardIds, pattern],
+  );
+  return { bytes: Number(size?.n ?? 0), names: rows.map((r) => r.name) };
 }
 
 /**

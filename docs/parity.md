@@ -145,7 +145,7 @@ issue id is in the status note.
 | Paste and drop from outside | Text, images and image links from the clipboard or drag and drop | Have | — | P0 | — |
 | Group | Select and move several items as one | Have | — | P1 | — |
 | Lock items | Pin items so they can't be moved or edited by accident | Have | — | P1 | — |
-| Stacking order | Bring to front, send to back | Partial: front and back, and drag to restack in the Layers panel; no one step forward or back (KAI-110) | S | P2 | parity |
+| Stacking order | Bring to front, send to back | Partial: front and back, and drag to restack in the Layers panel; no one step forward or back (*in review*: Bring forward / Send backward, KAI-110) | S | P2 | parity |
 | Align | Line up the selection's left, centre, right, top, middle or bottom edges | Have | — | P1 | — |
 | Distribute | Space the selection evenly across or down | Have | — | P1 | — |
 | Tidy into a grid | Arrange a messy pile of items into a neat grid | Have (plus cluster stickies by colour or tag) | — | P2 | — |
@@ -153,10 +153,10 @@ issue id is in the status note.
 | Find and replace | Replace text across the board | Have | — | P2 | — |
 | Layers / object list | A panel listing items in stacking order to select, hide or lock them | Have | — | P2 | — |
 | Copy style | Copy one item's formatting onto others | Have (format painter) | — | P2 | — |
-| Edit mixed selections | Change colour or text size across a selection of different item types | Partial: format controls appear only when every selected item has the same type (KAI-111) | M | P2 | parity |
-| Selection filter | Narrow a selection to one item type (e.g. only stickies) | Partial: "select similar" selects every item of a type on the board, but can't narrow the current selection (KAI-110) | S | P2 | parity |
-| Exact size and position | Type width, height, position and rotation for the selection | Missing (KAI-110) | S | P2 | parity |
-| Command palette | Search for any action by name and run it from the keyboard | Missing (the shortcut sheet lists actions but can't run them; KAI-109) | S | P2 | parity |
+| Edit mixed selections | Change colour or text size across a selection of different item types | Partial: format controls appear only when every selected item has the same type (*in review*: shared fill, line, font, size, text colour and alignment for mixed selections, KAI-111) | M | P2 | parity |
+| Selection filter | Narrow a selection to one item type (e.g. only stickies) | Partial: "select similar" selects every item of a type on the board, but can't narrow the current selection (*in review*: "Select only ▸ <type> (count)", KAI-110) | S | P2 | parity |
+| Exact size and position | Type width, height, position and rotation for the selection | Missing (*in review*: "Size and position" in the format toolbar, KAI-110) | S | P2 | parity |
+| Command palette | Search for any action by name and run it from the keyboard | Missing (the shortcut sheet lists actions but can't run them; *in review*: Mod+/ palette, KAI-109) | S | P2 | parity |
 | Version history | Browse, preview and restore earlier states of the board; name versions | Have | — | P1 | — |
 | Activity feed | Who changed what on the board, and when | Missing (KAI-44) | M | P2 | 3 |
 
@@ -310,11 +310,11 @@ workflows. For Freero, every row here needs a model provider that the operator o
 | Encryption at rest | Stored data encrypted | Partial: depends on the Postgres and S3 provider; sign-in secrets are sealed by the app (KAI-143) | S | P2 | 1 |
 | SSO | SAML 2.0 / OIDC per workspace, verified domains, enforced SSO | Missing (KAI-45) | L | P2 | 4 |
 | SCIM provisioning | Create and remove users automatically from the identity provider | Missing (KAI-46) | L | P3 | 4 |
-| Admin console | Manage members, roles, security settings and usage | Missing (KAI-47) | L | P2 | 4 |
-| Audit log | Record of security-relevant events, with export and SIEM streaming | Missing (KAI-48) | L | P2 | 4 |
+| Admin console | Manage members, roles, security settings and usage | Have (*in review*, KAI-47: members with two-step status and deactivation, security and retention settings, sharing policies, usage, audit log) | L | P2 | 4 |
+| Audit log | Record of security-relevant events, with export and SIEM streaming | Partial (*in review*, KAI-48: append-only, hash-chained per workspace, filters, CSV/JSON export, integrity check; no SIEM streaming yet) | L | P2 | 4 |
 | Data export and erasure | Per-user and org export and deletion (GDPR) | Partial: self-service account deletion purges personal data; no personal data export, no org-level export or deletion (KAI-50) | M | P2 | 4 |
-| Retention policies | Delete or archive content automatically after a set time | Missing (KAI-51) | M | P3 | 4 |
-| Session policies | Idle timeouts and session length rules | Missing (KAI-51) | S | P3 | 4 |
+| Retention policies | Delete or archive content automatically after a set time | Partial (*in review*, KAI-51: per-workspace trash, version-history and audit-log retention; no content expiry) | M | P3 | 4 |
+| Session policies | Idle timeouts and session length rules | Have (*in review*, KAI-51: per-workspace session lifetime and idle timeout, strictest wins across a person's teams) | S | P3 | 4 |
 | Domain control | Claim a domain, capture accounts, block personal sign-ups | Missing (with verified domains, KAI-45) | M | P3 | 4 |
 | Admin usage analytics | Activity and adoption reports | Missing (in the admin console, KAI-47) | M | P3 | 4 |
 | eDiscovery and legal hold | Keep and export a person's board history for legal cases | Missing | L | P3 | parity |
@@ -322,7 +322,7 @@ workflows. For Freero, every row here needs a model provider that the operator o
 | Customer-managed keys | Encrypt an org's data with keys the org controls | Missing | XL | P3 | parity |
 | Data residency | Choose the region where data is stored | Missing | XL | P3 | parity |
 | Compliance certifications | Independent audits (SOC 2, ISO 27001) and the paperwork that goes with them | Missing | XL | P3 | parity |
-| Abuse reporting and moderation | Report and take down harmful public boards | Missing (KAI-142) | M | P2 | 1 |
+| Abuse reporting and moderation | Report and take down harmful public boards | Missing (*in review*, KAI-142: reports, operator queue, link block / take-down / file removal / suspension, appeals) | M | P2 | 1 |
 
 ## 13. Plans and limits (context only, not counted)
 

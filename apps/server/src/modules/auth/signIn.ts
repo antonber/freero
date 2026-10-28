@@ -10,12 +10,13 @@ import { HttpError, parseCookies, unauthorized } from '../../platform/http';
 import { log, logError } from '../../platform/log';
 import { appUrl } from '../../platform/mail';
 import { consumeRateLimit } from '../../platform/rateLimit';
+import { recordAuditQuietly } from '../audit/index';
 import { sendVerification } from './emails';
 import { authorizationUrl, newAuthorizationChecks, OidcUnavailableError, redeemAuthorizationCode } from './oidc';
 import { sendSecurityNotice } from './notices';
 import { connectIdentity, isConnectedIdentity, linkProvider, providerConfig, providerLabel, resolveProviderLogin } from './providers';
 import * as repo from './repo';
-import { getAccount, hashToken, newToken, sessionFromCookieHeader, startSession } from './service';
+import { getAccount, hashToken, isSuspended, newToken, refuseIfSuspended, sessionFromCookieHeader, startSession } from './service';
 import { useSecondFactor } from './twoFactor';
 
 const CHALLENGE_COOKIE = 'freero_2fa';
@@ -44,6 +45,7 @@ export async function completeSignIn(
   method: string,
   { link = null, newAccount = false }: { link?: repo.PendingLink | null; newAccount?: boolean } = {},
 ): Promise<LoginResponse> {
+  await refuseIfSuspended(userId); // before asking for a second step it could never finish
   if (await repo.twoFactorEnabled(userId)) {
     const token = newToken();
     const now = Date.now();
@@ -63,6 +65,12 @@ export async function completeSignIn(
  */
 async function openSession(req: Request, res: Response, userId: string, how: { method: string; twoFactor?: boolean; newAccount?: boolean }): Promise<void> {
   const { knownDevice } = await startSession(req, res, userId, how);
+  await recordAuditQuietly({
+    action: 'auth.login',
+    accountId: userId,
+    actorId: userId,
+    metadata: { method: how.method, twoFactor: how.twoFactor ?? false, newDevice: !knownDevice },
+  });
   if (knownDevice || how.newAccount || how.method === 'email_link') return;
   const user = await getAccount(userId);
   sendSecurityNotice(req, user.email, { kind: 'new_sign_in', method: how.method === 'password' ? 'password' : providerLabel(how.method) });
@@ -93,8 +101,10 @@ export async function finishTwoFactorSignIn(req: Request, res: Response, code: u
   }
   // Per account too, so a fresh pending sign-in (a known password) doesn't buy fresh guesses.
   await consumeRateLimit('twoFactor', `user:${challenge.userId}`);
-  if (!(await useSecondFactor(challenge.userId, code, req)))
+  if (!(await useSecondFactor(challenge.userId, code, req))) {
+    await recordAuditQuietly({ action: 'auth.login_failed', accountId: challenge.userId, actorId: null, target: { type: 'user', id: challenge.userId }, metadata: { reason: 'second_factor' } });
     throw new HttpError(403, 'That code is not right. Check your authenticator app and try again.');
+  }
   // Single use: of two requests racing with right codes, one signs in.
   if (!(await repo.deleteChallenge(key))) throw signInExpired();
   res.clearCookie(CHALLENGE_COOKIE, { path: CHALLENGE_PATH });
@@ -192,6 +202,7 @@ export async function providerCallback(req: Request, res: Response): Promise<voi
   if (flow.intent === 'login') {
     const r = await resolveProviderLogin(provider, claims);
     if ('error' in r) return fail(r.error);
+    if (await isSuspended(r.userId)) return fail('suspended');
     const done = await completeSignIn(req, res, r.userId, provider, { link: r.link, newAccount: r.created });
     if (r.created && !claims.emailVerified) {
       // The provider didn't vouch for the address: prove it the usual way.

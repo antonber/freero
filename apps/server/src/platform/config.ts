@@ -1,6 +1,7 @@
 // The one typed, validated configuration, read from the environment once by main.ts.
 // Every variable is documented in docs/configuration.md (and .env.example). Invalid values fail in
 // every environment; missing production requirements fail at startup with the full list.
+import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -22,7 +23,10 @@ export type RateLimitName =
   | 'wsConnect'
   | 'twoFactor'
   | 'twoFactorRecovery'
+  | 'auditExport'
   | 'oidc'
+  | 'report'
+  | 'appeal'
   | 'outline'
   | 'structure';
 
@@ -60,6 +64,13 @@ export interface OidcProviderConfig {
   verifiedEmailClaims: string[];
 }
 
+/**
+ * Local files (dev outbox, uploads) of a FREERO_DATA_DIR=memory process. Never just the pid: pids
+ * are reused (quickly, on Windows), and a test reading the outbox of an earlier process with the
+ * same pid found that run's mail to the same address and used its stale link.
+ */
+const MEMORY_FILES_DIR = path.join(os.tmpdir(), `freero-memory-${process.pid}-${randomBytes(6).toString('hex')}`);
+
 export interface Config {
   port: number;
   /** External origin users reach the app at (https://freero.example.com), or null in dev. */
@@ -79,6 +90,8 @@ export interface Config {
   release: string | null;
   /** Idle time before an unused board doc is unloaded from memory. */
   docIdleMs: number;
+  /** Automatic versions: at most one per board this often (while it is open, and at compaction). */
+  snapshotEveryMs: number;
   databaseUrl: string | null;
   /** Max Postgres connections per process (DATABASE_POOL_MAX). */
   dbPoolMax: number;
@@ -128,6 +141,15 @@ export interface Config {
   oidcProviders: OidcProviderConfig[];
   /** A MaxMind-format (.mmdb) GeoLite2/GeoIP2 City or Country database for session locations, or null. */
   geoipDbPath: string | null;
+  /**
+   * Operators (moderation queue and actions): lower-cased addresses. An account is an operator
+   * only while its address is listed AND verified.
+   */
+  operatorEmails: string[];
+  /** Where people (and the notices Freero sends) can reach the people handling abuse reports, or null. */
+  abuseContactEmail: string | null;
+  /** RFC 9116 `Contact:` for /.well-known/security.txt (mailto: or https: URL); defaults to the abuse contact. */
+  securityContact: string | null;
 }
 
 export class ConfigError extends Error {
@@ -159,9 +181,12 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   wsConnect: '200/1m', // per IP and per user
   twoFactor: '10/15m', // two-factor codes per IP and per account (sign-in second step, enrolment, disabling)
   twoFactorRecovery: '3/1d', // "lost my authenticator" recoveries started, per IP and per account
+  auditExport: '20/1h', // per user: audit log exports (each reads up to 100k events)
   oidc: '60/10m', // "Sign in with …" starts and callbacks per IP
   outline: '120/1m', // per user: board outlines (each reads and walks the whole board)
   structure: '60/10m', // per user: structure laid out and inserted into a board (KAI-167)
+  report: '20/1h', // abuse reports per IP and per signed-in user
+  appeal: '10/1h', // appeals against moderation actions per IP
 };
 
 const ENV_NAME: Record<RateLimitName, string> = {
@@ -180,9 +205,12 @@ const ENV_NAME: Record<RateLimitName, string> = {
   wsConnect: 'RATE_LIMIT_WS_CONNECT',
   twoFactor: 'RATE_LIMIT_TWO_FACTOR',
   twoFactorRecovery: 'RATE_LIMIT_TWO_FACTOR_RECOVERY',
+  auditExport: 'RATE_LIMIT_AUDIT_EXPORT',
   oidc: 'RATE_LIMIT_OIDC',
   outline: 'RATE_LIMIT_OUTLINE',
   structure: 'RATE_LIMIT_STRUCTURE',
+  report: 'RATE_LIMIT_REPORT',
+  appeal: 'RATE_LIMIT_APPEAL',
 };
 
 /** The built-in providers: env prefix, button label, default issuer, extra verified-email claims. */
@@ -250,10 +278,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   const production = env.NODE_ENV === 'production';
   const environment = str('FREERO_ENV') ?? (production ? 'production' : (env.NODE_ENV ?? 'development'));
-  // FREERO_DATA_DIR=memory: in-memory database (tests); local files go to a temp dir.
+  // FREERO_DATA_DIR=memory: in-memory database (tests); local files go to a temp dir of this process.
   const memory = env.FREERO_DATA_DIR?.trim() === 'memory';
   const dataDir = memory
-    ? path.join(os.tmpdir(), `freero-memory-${process.pid}`)
+    ? MEMORY_FILES_DIR
     : path.resolve(env.FREERO_DATA_DIR || path.join(REPO_ROOT, 'data'));
 
   const publicUrlRaw = url('PUBLIC_URL', ['http:', 'https:']);
@@ -333,6 +361,21 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   const metricsPort = str('METRICS_PORT') === null ? null : int('METRICS_PORT', 0, 1, 65535);
 
+  // Moderation (KAI-142): operators by address; the abuse / security contacts people see.
+  const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const operatorEmails = (str('OPERATOR_EMAILS') ?? '')
+    .split(',')
+    .map((v) => v.trim().toLowerCase())
+    .filter(Boolean);
+  for (const e of operatorEmails) if (!EMAIL.test(e)) problems.push(`OPERATOR_EMAILS: "${e}" is not an email address`);
+  const abuseContactEmail = str('ABUSE_CONTACT_EMAIL');
+  if (abuseContactEmail !== null && !EMAIL.test(abuseContactEmail)) problems.push('ABUSE_CONTACT_EMAIL must be an email address');
+  let securityContact = str('SECURITY_CONTACT');
+  if (securityContact !== null && !/^(mailto:[^\s@]+@[^\s@]+|https:\/\/\S+)$/.test(securityContact)) {
+    problems.push('SECURITY_CONTACT must be a mailto: or https:// URL');
+    securityContact = null;
+  }
+
   const config: Config = {
     port: int('PORT', 4000, 0, 65535),
     publicUrl,
@@ -345,6 +388,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     environment,
     release: str('FREERO_RELEASE'),
     docIdleMs: int('FREERO_DOC_IDLE_MS', 30_000, 100),
+    snapshotEveryMs: int('FREERO_SNAPSHOT_EVERY_MS', 30 * 60_000, 100),
     databaseUrl: url('DATABASE_URL', ['postgres:', 'postgresql:']),
     dbPoolMax: int('DATABASE_POOL_MAX', 10, 1, 1000),
     redisUrl: url('REDIS_URL', ['redis:', 'rediss:']),
@@ -375,6 +419,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     rateLimits,
     oidcProviders,
     geoipDbPath,
+    operatorEmails,
+    abuseContactEmail,
+    securityContact: securityContact ?? (abuseContactEmail ? `mailto:${abuseContactEmail}` : null),
   };
 
   if (production) {

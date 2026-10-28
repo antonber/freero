@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { CaseSensitive, ChevronDown, ChevronUp, Replace, Search, TextSearch } from 'lucide-react';
-import { definePanel, useCamera, useCanEdit, type Editor } from '@engine';
+import { DockHeader, definePanel, useCamera, useCanEdit, type Editor } from '@engine';
 import { Button, IconButton, Input } from '@ui';
 import { PANEL_ID, replaceMatches, revealMatch, type Match } from './lib/search';
 import { setFindUi, useFindUi } from './lib/state';
@@ -84,7 +84,7 @@ function FindPanel({ editor }: { editor: Editor }) {
 
   return (
     <div className="fr-find">
-      <div className="fr-find__head">
+      <DockHeader className="fr-find__head">
         <h2 className="fr-find__title">Find on board</h2>
         <IconButton
           icon={CaseSensitive}
@@ -96,7 +96,7 @@ function FindPanel({ editor }: { editor: Editor }) {
         {canEdit && (
           <IconButton icon={Replace} label="Replace" size={32} active={showReplace} onClick={() => setFindUi(editor, { showReplace: !showReplace })} />
         )}
-      </div>
+      </DockHeader>
       <div className="fr-find__bar">
         <Input
           ref={inputRef}

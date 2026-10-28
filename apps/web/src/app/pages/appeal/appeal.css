@@ -1,0 +1,47 @@
+.fr-appeal__decision {
+  margin: 14px 0 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius);
+  background: var(--fr-surface-2);
+  text-align: left;
+}
+
+.fr-appeal__what {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fr-ink);
+}
+
+.fr-appeal__facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.fr-appeal__facts dt {
+  color: var(--fr-ink-3);
+}
+
+.fr-appeal__facts dd {
+  margin: 0;
+  color: var(--fr-ink-2);
+}
+
+.fr-appeal__statement {
+  margin: 12px 0 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--fr-primary-soft);
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--fr-ink-2);
+  white-space: pre-wrap;
+}
+
+.fr-appeal__send {
+  width: 100%;
+  margin-top: 12px;
+}

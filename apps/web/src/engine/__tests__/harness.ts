@@ -60,6 +60,7 @@ export function makeHost(role: Role = 'owner'): Host {
     versions: unavailableVersionHistory('No version history in tests'),
     importImage: async () => Promise.reject(new Error('No server in tests')),
     fetchImage: async () => Promise.reject(new Error('No server in tests')),
+    report: async () => Promise.reject(new Error('No server in tests')),
     listMembers: async () => [],
     lookupUsers: async () => [],
     inviteMember: async () => Promise.reject(new Error('No invites in tests')),

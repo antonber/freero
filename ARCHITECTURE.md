@@ -129,6 +129,9 @@ engine and features use `editor.host`. Features never import the REST client or 
 - Contextual format toolbar floats above the selection (`format.tsx` sections + engine's common
   controls: z-order, lock, link, more ⋯). Right-click menu: engine items + `menus: ['context']`.
 - `dock-right` panels render in a right side panel opened with `editor.openDock(id)`.
+  The dock has a fixed header strip with its close button; a panel puts its own header (title,
+  filters) there by wrapping it in `<DockHeader>` (`@engine`), and its content scrolls below the
+  strip, never under the button. Panels never reserve room for the close button themselves.
 - `dialog` panels mount only while opened with `editor.openPanel(id, props?)` (one at a time,
   also while the chrome is hidden); the component gets `props` and closes with
   `editor.closePanel(id)`. Commands that open feature UI (export, start voting) use this — never a
@@ -174,6 +177,11 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   `useSettings()`, `useCanEdit()`; `plainToRichText()`; types `ElementTextProps`, `TextFormatState`.
 - `useCollection(name)` returns the collection's entries (`Array<[key, value]>`).
 - `CommandDefinition.minRole` defaults to `'editor'`; engine view-safe commands set `'viewer'`.
+- `CommandDefinition.extraShortcuts?: string[]`: further bindings for the same command (listed in
+  the shortcut reference; menus show `shortcut`). Punctuation shortcuts match the typed character,
+  and outside text editing AltGr + that character (Windows reports AltGr as Ctrl+Alt) also answers
+  `mod+<character>`, so Ctrl+[ / Ctrl+] work where brackets need AltGr; Bring to front / Send to
+  back also have Ctrl+Shift+↑ / ↓ on every layout.
   While text is being edited, only command shortcuts using Tab or a modifier (outside the
   editor's own Mod+B/I/U/Z/C/V/X/A/K) are dispatched.
 - Engine commands are ordinary commands (`engine.copy`, `engine.duplicate`, `engine.lock`,
@@ -271,6 +279,12 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   `screen-overlay`.
 - A socket closed with 4401/4403 (removed, link access revoked, signed out) drops the session to
   read-only (`viewer`) besides showing the banner: writes after that could never reach the server.
+  `WS_CLOSE_BOARD_REMOVED` (4451, an operator took the board down) does the same with a "removed
+  for review" banner (`ConnectionStatus` 'removed').
+- `Host.report({ target, reason, note })`: reports to Freero's moderators (KAI-142); the report
+  feature's dialog is the only caller (other features run `report.open` with `{ target }`).
+- `BoardEngineProps.initialState`: a read-only board from a document state, with no network and
+  nothing persisted (the operator's preview of a reported board; host role viewer, `syncUrl` '').
 - `Host.user` changes (profile renamed / recolored in any tab) are republished to presence.
 - Board layers (see "Board layers" under Server): `Editor.layerOf(id)`, `setPrivatePlacement(rule)`,
   `privateCollection(name)` + hook `usePrivateCollection`, `revealPrivate` / `discardPrivate`,
@@ -289,6 +303,8 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
 - `Host.board.canExport` (default true): false when the board's workspace "downloads" policy
   doesn't let this user export or copy its boards — export commands and "Save as template" hide
   (their `when`); the server refuses duplicates and template saves from that board itself.
+  `Host.reportExport?(format)`: export features call it after each browser download (image, PDF)
+  so the workspace's audit log records it (`POST /boards/:id/exported`, refused like the export).
 - Version history (`features/history`, server `realtime/history.ts` + `routes.ts`):
   `Host.versions` (`list / load / nameCurrent / rename / restore`; `unavailableVersionHistory()`
   for hosts without it) and `<StaticBoardView state>` (`@engine`): a read-only board showing a
@@ -476,12 +492,49 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
   numbered lines, or short lines that don't read as a wrapped paragraph, or `<li>`s in the HTML —
   and any text while stickies are selected) → text box (0: prose).
 
-Reference & items (engine primitives; product UI in `features/shortcuts`, `links`, `image`, `icons`):
+Reference & items (engine primitives; product UI in `features/shortcuts`, `links`, `image`, `icons`,
+`select-similar` — "Select only ▸ <type> (count)" narrows a mixed selection):
 - `Editor.getShortcuts() → ShortcutEntry[]` (`engine/runtime/shortcutList.ts`): every binding the
   board answers for the live role — tool keys, command shortcuts (alternatives with the same label
   fold into one row), element types' declared `keys` (under their feature) and the keys the keyboard router handles itself (`ENGINE_KEYS` in
   `interaction/keyboard.ts`, kept next to the handlers). The `?` sheet renders it with `@ui` `Kbd`
   (⌘ on Apple platforms, Ctrl elsewhere), so the reference can't drift from the real bindings.
+- `Editor.listActions() → ActionEntry[]` (same file, same registry as `getShortcuts`): every tool
+  and every user-facing command with its shortcuts and, when it can't run now, why
+  (`disabledReason`: the role, or the command's `when` + `CommandDefinition.disabledReason`). A
+  command is user-facing when it has a `shortcut` or `menus` (`CommandDefinition.palette`
+  overrides: `true` for board settings, `false` for the palette's own shortcut); commands only other
+  features run with `args` have neither and never show. Grouped labels read as one phrase
+  ("Select all of this type"). `CommandDefinition.detail(editor)` is a live suffix in menus and
+  the palette ("Sticky notes (12)", "Snap to grid (on)"). The board menu's settings are engine
+  commands too (`engine.settings.*`, lists in `engine/editor/boardSettings.ts`), so the palette
+  reaches them. The command palette (`features/shortcuts`, `Mod+/` — Mod+K is the item/text link)
+  is built on it: fuzzy search (abbreviations inside one word, never letters scattered across
+  words), unavailable actions listed greyed out with the reason (Enter does nothing), recent
+  actions first (this browser, per user; localStorage, wrapped), an ARIA combobox + listbox, and
+  closed while text is being edited.
+- `Editor.bringForward(ids)` / `sendBackward(ids)` (`Mod+Shift+]` / `[`; `planStackStep` in
+  `geometry/order.ts`): one step past the next item each one OVERLAPS (non-overlapping items
+  change nothing visible, so they're passed), never past another selected item, riders with
+  their item, frames only among frames. New z values go between the neighbours (no renumbering).
+- Exact size and position (engine chrome: "Size and position" in the format toolbar,
+  `engine/editor/exact.ts`): X / Y move the whole selection through `moveBy` (one item: its own
+  stored top-left; several: their bounding box); W / H / rotation apply to each unlocked item the
+  way its handles would (`resize: 'aspect'` keeps the ratio, `'scale'` / `'width-only'` take a
+  width only, `'none'` and connectors nothing), growing from the item's own (rotated) top-left
+  corner. Typed values land on whole pixels exactly — never grid-snapped, a typed number is meant
+  — while ↑/↓ in a field step to the next grid line when "Snap to grid" is on (Shift: five), else
+  1 px (Shift 10). Each commit is one gesture = one undo step.
+- Mixed selections (`ElementDefinition.sharedStyle(el)` / `applySharedStyle(el, style)`,
+  `SharedStyle` = fill, stroke, strokeWidth, strokeStyle, fontFamily, fontSize, textColor, align,
+  vAlign): a type reports the keys it has; when the selection holds several types, the engine's
+  `MixedStyleSection` (`engine/ui/MixedStyle.tsx`, before the features' sections) shows a control
+  for every key two or more selected items have (MIXED when they disagree) and writes ONE
+  `updateMany` with each item's patch from its own definition (default: the same-named field), so a
+  sticky maps a fill to its nearest paper, a card / mind-map topic to its colour, an icon a line
+  colour to `color`, and a text box ignores `fontSize: 'auto'`. Its text colour does not clear
+  per-word colours (that would touch types that take no text colour). A new type joins mixed
+  editing by defining `sharedStyle` (+ `applySharedStyle` when its fields differ).
 - `BaseElement.link` (`@freero/shared`): an item link — an external URL or `#<elementId>`.
   Untrusted; `isSafeHref(href)` (`@engine`) is the one safe-href rule shared with rich text.
   "Copy link to item" (`engine.copyLink`) builds `/board/<id>?item=<elementId>`; the board selects
@@ -563,7 +616,10 @@ templates; content is opaque engine JSON), `outline` (no table: the semantic boa
 `GET /boards/:id/outline`), `structure` (no table: layout from structure,
 `POST /boards/:id/insert-structure`), `accounts` (no table: the purge after the deletion grace
 period, orchestrating the owning modules' exports), `notifications` (notifications,
-notification_prefs: inbox, live delivery, email digests).
+notification_prefs: inbox, live delivery, email digests), `moderation` (moderation_items,
+moderation_actions: abuse reports, the operator queue, actions and appeals; see "Moderation"),
+`audit` (audit_events, audit_chains: the append-only audit log), `admin` (no table: the admin
+console of team workspaces; see "Audit log, admin console and workspace policies").
 
 - Notifications are created only from trusted server-side events, never from client claims:
   realtime's `onCommentMessage` (a comment message applied from one of THIS instance's sockets,
@@ -592,8 +648,9 @@ notification_prefs: inbox, live delivery, email digests).
   lose a team's content).
 - Trash: deleting a board sets `boards.deleted_at`; `repo.getBoard`/lists/access treat it as
   gone (sockets refused and closed after the live doc state is stored). Owners restore or delete
-  forever; `boards/init.ts` purges after `TRASH_RETENTION_DAYS` hourly on every instance as a
-  `platform/jobs` exclusive job, so replicas never purge at once.
+  forever; `boards/init.ts` purges after the workspace's trash retention (`TRASH_RETENTION_DAYS`
+  unless the workspace sets `trashRetentionDays`) hourly on every instance as a `platform/jobs`
+  exclusive job, so replicas never purge at once.
 - Periodic jobs: `scheduleExclusiveJob(ctx, { name, lockKey, intervalMs, run })` from an init.ts
   (trash purge, account purge). One instance runs a job at a time (a Postgres session advisory
   lock held for the whole run); jobs must be idempotent, since a run can be cut short anywhere.
@@ -653,10 +710,40 @@ notification_prefs: inbox, live delivery, email digests).
   Each module that stores `/uploads/<name>` URLs exposes `…UploadReferences(among?)` from its
   index (realtime: stored doc bases + log + version history, trashed boards included, and the live
   docs of this instance; templates; avatars; board thumbnails), searching its own tables in SQL
-  with `UPLOAD_REF_PATTERN`. A round adopts stored files without a row (owner NULL), marks what is
+  with `UPLOAD_REF_PATTERN`. Files an operator removed are tombstones the sweep never touches
+  (see "Moderation"). A round adopts stored files without a row (owner NULL), marks what is
   referenced (`last_referenced_at`), re-checks the candidates right before deleting, and deletes
   rows + files no round has seen referenced for 24 h — freeing quota. New content that stores
   upload URLs outside board docs adds its scan to `SCANS` there. `ObjectStorage.list()` exists for it.
+
+### Moderation (`modules/moderation`, KAI-142)
+
+- Reports: `POST /api/reports` (session optional: KAI-43 visitors report too) about a board, an
+  element, an upload or a comment. Who may report = who may open the board: boards'
+  `reportableBoard(boardId, userId | null)` (a visitor = an outsider with no membership, so only
+  what the link gives, capped by workspace policies); everything else gets the same 404 as an
+  unknown id. Rate-limited per IP and per user; one open report per reporter and target.
+- Operators: a VERIFIED address in `OPERATOR_EMAILS` (`isOperator`), never a database flag. The
+  operator API answers 404 to everyone else.
+- The moderated STATE lives in the owning modules, written only through their indexes [S4]:
+  boards `removed_at` (taken down: `repo.getBoard` and lists treat it as gone like the trash;
+  `requireAccess` answers 451 `board_removed` only to someone who could open it otherwise;
+  sockets close with `WS_CLOSE_BOARD_REMOVED` through realtime's `remove-board` control message,
+  content kept as in `moveToTrash` via `closeKeepingContent`) and `link_blocked_at` (link access
+  resolves as 'none' in `repo.toBoard`, once for every reader; the owner's setting is kept);
+  uploads `removed_at` + `quarantine_key` (410 on every GET; bytes kept under a key that never
+  matches an upload name, so neither served nor adopted; the sweep skips removed rows, so the
+  tombstone stays); auth `users.suspended_at` (sessions ended through `onSessionEnd`, sessions of
+  suspended accounts never resolve, `startSession`/`completeSignIn` refuse with
+  `account_suspended`).
+- Moderation owns only the queue and the append-only action record; every action is also a
+  platform audit event `moderation.<action>` (`platform/audit.ts`, actor = the operator's user). Each action emails its subject a statement of reasons with a signed,
+  session-less appeal link (`/appeal?t=`, `mac('moderation.appeal:<actionId>')`) and adds a
+  `moderation.action` notification (a `direct` type: emailed by its module, never in digests, no
+  email setting). Appeals enter the queue (one open appeal per action).
+- Web: `features/report` (board menu, context menu, `report.open` command for other features —
+  comments' flag), `Host.report`; the app's `/operator` queue, `/operator/boards/:id/preview`
+  (read-only snapshot through `BoardEngineProps.initialState`) and `/appeal`.
 
 ### Workspaces (`modules/workspaces`)
 
@@ -723,6 +810,56 @@ Agents, the API and AI read and write boards semantically, never by coordinates.
   the view and turns it into a `BoardChange`; `sinks.ts` decides where that goes (`board` →
   `changeBoard`, `preview` → returned for `Editor.insertElements`). The suggestions layer (KAI-169)
   is a new sink, not a new planner.
+### Audit log, admin console and workspace policies (KAI-48, KAI-47, KAI-51)
+
+**Audit log** (`modules/audit`). Every module records security-relevant changes with
+`recordAudit({ action, workspaceId?, accountId?, actorId?, target?, metadata? })` from
+`audit/index.ts`, where the change is made — inside its transaction when it has one, so the
+change and its record commit together. IP and user agent come from the request context
+(`platform/requestContext`); pass `actorId` explicitly (jobs have no request). An account's own
+events (`accountId`: sign-ins, failed sign-ins on an existing account, sessions, password, email,
+two-step, providers, deletion) go to the account's chain `u:<id>` AND to every team workspace the
+person is a member of (not a guest: a guest's account is their own). Workspace events go to
+`w:<id>`. Actions and their wording are `AUDIT_ACTIONS` in `@freero/shared`; a new kind of event
+adds itself there. `platform/audit.ts` (`audit(…)`) is the seam for account events raised where the
+module isn't the natural call and for the operator CLI: modules/audit registers its sink from
+`init.ts` AND `admin.ts`, so operator two-step resets and moderation actions land in the same log
+(a moderation action about a board also in that board's workspace).
+- Append-only: no update/delete path in the app; a database trigger refuses UPDATE, TRUNCATE and
+  any DELETE outside retention (which sets `freero.audit_prune` for its own transaction).
+- Tamper-evident: per chain, events are numbered (`seq`) and hash-linked (sha256 over the event and
+  the previous hash, `audit/chain.ts`); `audit_chains` holds the newest seq/hash and the newest
+  pruned one, so an edited row, a gap, a dropped newest event or oldest events removed outside
+  retention all show when the chain is checked (admin console "Integrity", `npm run admin --
+  audit:verify <workspace>`). Someone with database write access could rewrite a whole chain and
+  its head; the head hash shown to admins (and in every export) is what they anchor elsewhere.
+- No foreign keys: the log outlives the workspaces, boards and accounts it names. Actor names are
+  resolved when read (a deleted account reads "Deleted user"); targets keep the label they had.
+- Retention (`audit:retention` job, hourly): each workspace's `auditRetentionDays`, accounts' own
+  chains and deleted workspaces' `DEFAULT_AUDIT_RETENTION_DAYS`; only ever a chain's oldest events.
+
+**Admin console** (`modules/admin`, web `/admin/:workspaceId`): owners and admins of a team
+workspace, checked on the server by every route (`requireAdmin` → `workspaces.requireWorkspace(…,
+'admin')`). Members (two-step status, last activity, boards, role, deactivate/reactivate), usage,
+security and retention settings, sharing policies, the audit log (filters, paging, CSV/JSON export
+— streamed, rate limited, recorded before it starts, CSV cells can't become formulas).
+
+**Workspace settings** (`workspaces` columns; `WorkspaceSettings` in `@freero/shared`), each
+enforced by the module that owns the data, wired from that module's `init.ts`:
+- Deactivated members (`workspace_members.deactivated_at`) and the two-step requirement close the
+  workspace's boards: one rule, `BoardWorkspaceAccess.blocked`, which `resolveRole` honours before
+  anything else — not even a board's owner opens it then. The two-step requirement applies to
+  everyone who opens the workspace's boards (members, guests, invited outsiders) and is registered
+  with auth's `onTwoFactorRequirement`, so members can't turn two-step off; whoever turns the
+  requirement on needs it on themselves. `WorkspaceSummary.blocked` tells the dashboard why.
+- Session lifetime / idle timeout: **a session belongs to a person, not a workspace**, so the
+  strictest limits of the team workspaces someone is a member of (not as a guest) apply to all of
+  their sessions (`workspaces.sessionLimitsFor`, given to auth with `setSessionLimits`). Auth checks
+  each request (forced re-login: the session is deleted and the request answers 401); the
+  `workspaces:session-policy` job (every minute) ends the idle and expired ones everywhere, closing
+  their sockets. Edits over a board socket count as activity (`auth.noteSessionActivity`).
+- Trash retention: boards' purge job; version-history retention: realtime's prune job (above);
+  audit retention: the audit job. All idempotent, one instance at a time.
 
 ### Two-step verification recovery (KAI-99, `modules/auth/recovery.ts`)
 
@@ -886,17 +1023,23 @@ append-only log of Yjs updates (`board_doc_updates`); a save appends only what c
 previous one. Loading reads base + log in one statement (one consistent snapshot). Compaction (when
 a loaded board's log grows, and after a room unloads) folds the rows it read into a new base and
 deletes exactly those rows, guarded by the base's `version` (optimistic lock), so neither a save
-nor another instance's compaction running meanwhile is lost. It keeps a full-state snapshot at most
-every 30 min (`board_doc_snapshots`): the base of version history (`listBoardSnapshots` /
-`loadBoardSnapshot` in `realtime/index.ts`; REST in `realtime/routes.ts`). Snapshots have a
-`kind`: `auto` (compaction), `named` (never pruned), `before-restore`. Retention
+nor another instance's compaction running meanwhile is lost. Full-state snapshots
+(`board_doc_snapshots`) are the base of version history (`listBoardSnapshots` /
+`loadBoardSnapshot` in `realtime/index.ts`; REST in `realtime/routes.ts`): an automatic one at most
+every `FREERO_SNAPSHOT_EVERY_MS` (30 min), taken by compaction and, while a board stays open, by its
+room on a timer — one period after the first change, then once per period while changes keep coming
+(KAI-82). Every instance holding the board may try; the "newest snapshot old enough?" check and the
+insert run under the base row lock compaction takes, so one instance takes each. Snapshots have a
+`kind`: `auto`, `named` (never pruned), `before-restore`. Retention
 (`realtime/retention.ts`, job in `realtime/init.ts`, hourly on every instance under an advisory
 lock): non-named snapshots keep the newest per hour for a day, per day for a month, per week after;
 buckets are epoch-aligned, so a run is idempotent, and a snapshot is only ever deleted in favour of
-a newer one the same plan keeps. `RetentionPolicyFor` is the seam for workspace policies (KAI-51).
+a newer one the same plan keeps. A workspace's `versionRetentionDays` adds `maxAgeMs` to the
+policy (`realtime/init.ts` through `RetentionPolicyFor`): unnamed snapshots older than that go,
+even a board's only one; named versions never.
 
-Work done for a REQUEST rather than a socket (duplicate, trash, naming or restoring a version)
-goes through `withLiveRoom` (`rooms.ts`): the board's room is loaded on the handling instance
+Work done for a REQUEST or a job rather than a socket (duplicate, trash, naming or restoring a
+version, the account purge's comment rename) goes through `withLiveRoom` (`rooms.ts`): the board's room is loaded on the handling instance
 (held like a joining socket, unloaded as usual after) and caught up with every other instance
 holding it — it sends a sync-request and waits for one sync-reply per other subscriber of the
 board channel (`subscribedInstances`, Redis `PUBSUB NUMSUB`; 2 s cap). So `snapshotBoardDoc` is
@@ -1015,6 +1158,12 @@ only to connections that may read them:
   `DATABASE_URL` it runs against that Postgres (fresh database per run, dropped afterwards) and
   also starts two instances at once on one empty database (migration lock); with `REDIS_URL` too,
   it runs two instances on one database + Redis with clients on each. CI does all of it.
+  `--only main,signin,secrets,sweep,purge,notify,platform,multi` runs some groups (to loop one while hunting a flake).
+  Checks wait on the real condition, never a fixed sleep: `waitFor(cond, ms)` polls until a
+  deadline; `settled(client, observers)` is a barrier (a presence change the server handles after
+  everything the client sent before, relayed in order) for proving something did NOT arrive;
+  `waitUnloaded(proc)` waits until the server holds no doc in memory (`/metrics` gauge), so the
+  next read comes from the database.
 - UI: drive the real app in a browser (see `.claude/skills/verify-freero/`).
 
 ### What a test is for

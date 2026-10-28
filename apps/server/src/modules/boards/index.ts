@@ -4,18 +4,31 @@ import { closeBoardDoc } from '../realtime/index';
 import { deleteUpload, UPLOAD_REF_PATTERN } from '../uploads/index';
 import { mayShareExternally, teamMemberIds, workspaceRole } from '../workspaces/index';
 import * as repo from './repo';
-import { describeAccess, requireAccess, requireDownload } from './service';
+import { describeAccess, removedFor, requireAccess, requireDownload } from './service';
 
 export { createBoard, deleteBoardRowsInWorkspace, cleanUpDeletedBoards } from './service';
+// Operators (modules/moderation): take down / restore, block / unblock the link, and who may report.
+export {
+  boardForModeration,
+  reportableBoard,
+  takeDownBoard,
+  restoreTakenDownBoard,
+  blockBoardLink,
+  unblockBoardLink,
+  type ModerationBoardState,
+} from './moderation';
 
-/** The user's effective role on a board (`exists: false` when there is no such board). */
+/**
+ * The user's effective role on a board (`exists: false` when there is no such board, also while
+ * it is trashed or taken down; `removed`: it was taken down and this user could open it otherwise).
+ */
 export async function getBoardAccess(
   boardId: string,
   userId: string,
-): Promise<{ exists: boolean; role: Role | null; ownerId: string | null }> {
+): Promise<{ exists: boolean; role: Role | null; ownerId: string | null; removed: boolean }> {
   const board = await repo.getBoard(boardId);
-  if (!board) return { exists: false, role: null, ownerId: null };
-  return { exists: true, role: (await describeAccess(board, userId)).role, ownerId: board.ownerId };
+  if (!board) return { exists: false, role: null, ownerId: null, removed: await removedFor(boardId, userId) };
+  return { exists: true, role: (await describeAccess(board, userId)).role, ownerId: board.ownerId, removed: false };
 }
 
 /** Throws a 404/403 HttpError unless the user has at least `min` on the board. */
@@ -45,6 +58,11 @@ export async function teamAccessUserIds(boardId: string): Promise<string[]> {
 export async function requireBoardDownload(boardId: string, userId: string): Promise<void> {
   const { access } = await requireAccess(boardId, userId);
   requireDownload(access);
+}
+
+/** The workspace a board (trashed or not) belongs to, or null if there is no such board. */
+export async function boardWorkspaceId(boardId: string): Promise<string | null> {
+  return (await repo.getBoardIncludingTrash(boardId))?.workspaceId ?? null;
 }
 
 /** The board's title, or null if there is no such board (invite previews). */
@@ -79,6 +97,11 @@ export async function touchBoard(boardId: string, at = Date.now()): Promise<void
 /** Every board of a workspace (trash included): whose access to re-check when the workspace changes. */
 export function boardIdsInWorkspace(workspaceId: string): Promise<string[]> {
   return repo.idsInWorkspace(workspaceId);
+}
+
+/** Board usage of a workspace for its admin console (trash counted apart; owners of live boards). */
+export function workspaceBoardStats(workspaceId: string): ReturnType<typeof repo.workspaceStats> {
+  return repo.workspaceStats(workspaceId, Date.now());
 }
 
 export function boardIdsInProject(projectId: string): Promise<string[]> {

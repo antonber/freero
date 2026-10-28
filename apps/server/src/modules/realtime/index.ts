@@ -35,4 +35,4 @@ export { onCommentMessage, type CommentMessageEvent } from './comments';
 // The REST API for it is this module's routes.ts (history.ts); pruning: retention.ts.
 export { listSnapshots as listBoardSnapshots, loadSnapshot as loadBoardSnapshot, type SnapshotInfo } from './docStore';
 // The uploads board documents reference (the uploads sweep keeps those files).
-export { boardUploadReferences } from './uploadRefs';
+export { boardUploadReferences, storedBoardContent } from './uploadRefs';

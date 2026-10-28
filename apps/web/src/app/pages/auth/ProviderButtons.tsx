@@ -60,6 +60,7 @@ const MESSAGES: Record<OidcErrorCode, string> = {
   identity_in_use: 'That account is already connected to another Freero account.',
   provider_linked: 'You already have an account of that provider connected. Disconnect it first to connect another one.',
   wrong_account: 'That’s not the account connected to Freero. Sign in with the one you connected.',
+  suspended: 'This account has been suspended. We emailed you the reason and how to appeal.',
 };
 
 export function providerErrorText(code: string | null): string | null {

@@ -14,6 +14,7 @@ interface UserRow {
   created_at: Date;
   email_verified_at: Date | null;
   deletion_scheduled_for: Date | null;
+  suspended_at: Date | null;
   password_via_link_at: Date | null;
 }
 
@@ -142,6 +143,25 @@ export async function scheduleDeletion(id: string, at: number): Promise<void> {
   await query(`UPDATE users SET deletion_scheduled_for = $2 WHERE id = $1`, [id, new Date(at)]);
 }
 
+// ---- suspension (operators, through modules/moderation) ----
+
+/** Suspends the account; false if it already was (or is gone). */
+export async function suspend(id: string, now: number): Promise<boolean> {
+  return (await query(`UPDATE users SET suspended_at = $2 WHERE id = $1 AND suspended_at IS NULL RETURNING 1`, [id, new Date(now)])).length > 0;
+}
+
+/** Lifts a suspension; false if the account was not suspended (or is gone). */
+export async function unsuspend(id: string): Promise<boolean> {
+  return (await query(`UPDATE users SET suspended_at = NULL WHERE id = $1 AND suspended_at IS NOT NULL RETURNING 1`, [id])).length > 0;
+}
+
+/** Which of these accounts are suspended. */
+export async function suspendedAmong(ids: string[]): Promise<Set<string>> {
+  if (!ids.length) return new Set();
+  const rows = await query<{ id: string }>(`SELECT id FROM users WHERE id = ANY($1::text[]) AND suspended_at IS NOT NULL`, [ids]);
+  return new Set(rows.map((r) => r.id));
+}
+
 /** Returns false if the account was not scheduled for deletion (or is gone). */
 export async function cancelDeletion(id: string): Promise<boolean> {
   const rows = await query(
@@ -236,13 +256,53 @@ export async function insertSession(s: {
 export async function findSessionUser(
   tokenHash: string,
   now: number,
-): Promise<{ user: UserWithHash; sessionId: string; authAt: number } | null> {
-  const row = await one<UserRow & { session_id: string; session_auth_at: Date }>(
-    `SELECT u.*, s.id AS session_id, s.auth_at AS session_auth_at
-     FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = $1 AND s.expires_at > $2`,
+): Promise<{ user: UserWithHash; sessionId: string; authAt: number; createdAt: number; lastSeenAt: number } | null> {
+  const row = await one<UserRow & { session_id: string; session_auth_at: Date; session_created_at: Date; session_last_seen_at: Date }>(
+    `SELECT u.*, s.id AS session_id, s.auth_at AS session_auth_at, s.created_at AS session_created_at,
+            s.last_seen_at AS session_last_seen_at
+     FROM sessions s JOIN users u ON u.id = s.user_id
+     WHERE s.token_hash = $1 AND s.expires_at > $2 AND u.suspended_at IS NULL`,
     [tokenHash, new Date(now)],
   );
-  return row ? { user: toUser(row), sessionId: row.session_id, authAt: row.session_auth_at.getTime() } : null;
+  return row
+    ? {
+        user: toUser(row),
+        sessionId: row.session_id,
+        authAt: row.session_auth_at.getTime(),
+        createdAt: row.session_created_at.getTime(),
+        lastSeenAt: row.session_last_seen_at.getTime(),
+      }
+    : null;
+}
+
+/**
+ * Deletes the user's sessions that a session policy ends: started before `startedBefore`, or not
+ * seen since `seenBefore` (either may be null). Returns the deleted sessions' token hashes.
+ */
+export async function deleteSessionsBeyond(userId: string, startedBefore: number | null, seenBefore: number | null): Promise<string[]> {
+  if (startedBefore === null && seenBefore === null) return [];
+  const rows = await query<{ token_hash: string }>(
+    `DELETE FROM sessions WHERE user_id = $1 AND (created_at < $2 OR last_seen_at < $3) RETURNING token_hash`,
+    [userId, startedBefore === null ? null : new Date(startedBefore), seenBefore === null ? null : new Date(seenBefore)],
+  );
+  return rows.map((r) => r.token_hash);
+}
+
+/** Last activity of each of these users' live sessions (admin console). */
+export async function lastActiveOf(userIds: string[], now: number): Promise<Map<string, number>> {
+  if (!userIds.length) return new Map();
+  const rows = await query<{ user_id: string; at: Date }>(
+    `SELECT user_id, max(last_seen_at) AS at FROM sessions WHERE user_id = ANY($1::text[]) AND expires_at > $2 GROUP BY user_id`,
+    [userIds, new Date(now)],
+  );
+  return new Map(rows.map((r) => [r.user_id, new Date(r.at).getTime()]));
+}
+
+/** Which of these users have two-step verification on. */
+export async function twoFactorEnabledAmong(userIds: string[]): Promise<Set<string>> {
+  if (!userIds.length) return new Set();
+  const rows = await query<{ user_id: string }>(`SELECT user_id FROM user_totp WHERE user_id = ANY($1::text[]) AND enabled_at IS NOT NULL`, [userIds]);
+  return new Set(rows.map((r) => r.user_id));
 }
 
 /** The session proved who it is again (signed in with its provider once more). */
@@ -270,6 +330,11 @@ export async function listSessions(userId: string, now: number): Promise<Session
 
 export async function deleteSession(tokenHash: string): Promise<void> {
   await query(`DELETE FROM sessions WHERE token_hash = $1`, [tokenHash]);
+}
+
+/** Deletes a session; returns whose it was (null: there was none). */
+export async function deleteSessionReturningUser(tokenHash: string): Promise<string | null> {
+  return (await one<{ user_id: string }>(`DELETE FROM sessions WHERE token_hash = $1 RETURNING user_id`, [tokenHash]))?.user_id ?? null;
 }
 
 /** Deletes one of the user's sessions by its public id; returns its token hash, or null. */

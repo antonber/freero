@@ -6,7 +6,8 @@ import type { SaveTemplateRequest, SavedTemplate, SavedTemplateSummary, Template
 import { getConfig } from '../../platform/config';
 import { badRequest, forbidden, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
-import { requireBoardDownload } from '../boards/index';
+import { recordAudit } from '../audit/index';
+import { boardWorkspaceId, getBoardTitle, requireBoardDownload } from '../boards/index';
 import { deleteUpload, saveUpload } from '../uploads/index';
 import { teamWorkspaceIdsFor } from '../workspaces/index';
 import * as repo from './repo';
@@ -80,9 +81,11 @@ export async function saveTemplate(userId: string, body: Partial<SaveTemplateReq
   const content = cleanContent(body?.content);
   const thumb = thumbnailBytes(body?.thumbnail);
   // The source board's workspace may not allow taking its content out ("downloads" policy).
+  let source: { id: string; workspaceId: string; title: string } | null = null;
   if (body?.boardId !== undefined) {
     if (typeof body.boardId !== 'string') throw badRequest('boardId must be a board id');
     await requireBoardDownload(body.boardId, userId);
+    source = { id: body.boardId, workspaceId: (await boardWorkspaceId(body.boardId))!, title: (await getBoardTitle(body.boardId)) ?? '' };
   }
   const workspaceId = await shareTarget(userId, body?.workspaceId);
   // Store the file first (not a db write), and drop it again if the row doesn't make it.
@@ -106,6 +109,15 @@ export async function saveTemplate(userId: string, body: Partial<SaveTemplateReq
       if ((await repo.countOwnedBy(userId)) >= max)
         throw forbidden(`You have reached the limit of ${max} templates. Delete templates you no longer need to save new ones.`);
       await repo.insertTemplate(template);
+      // Content leaving a board (into the template library) is a download: audited in the board's workspace.
+      if (source)
+        await recordAudit({
+          action: 'template.saved',
+          workspaceId: source.workspaceId,
+          actorId: userId,
+          target: { type: 'board', id: source.id, label: source.title },
+          metadata: { template: template.id, name, sharedWith: workspaceId },
+        });
     });
   } catch (e) {
     await deleteUpload(thumbnail);

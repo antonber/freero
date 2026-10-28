@@ -1,9 +1,9 @@
-import { TRASH_RETENTION_DAYS, type BoardPermissions, type BoardSummary, type LinkAccess, type Role } from '@freero/shared';
+import { BOARD_REMOVED, TRASH_RETENTION_DAYS, type BoardPermissions, type BoardSummary, type LinkAccess, type Role } from '@freero/shared';
 import { getConfig } from '../../platform/config';
-import { badRequest, forbidden, notFound } from '../../platform/http';
+import { badRequest, forbidden, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { runExclusive } from '../../platform/jobs';
-import { log } from '../../platform/log';
+import { recordAudit } from '../audit/index';
 import { getUser, getUsers } from '../auth/index';
 import { atLeast, getMemberRole, membershipsOf, ownershipTransferred, resolveRole } from '../members/index';
 import {
@@ -28,6 +28,7 @@ import {
   lockWorkspaceForNewBoard,
   mayDownload,
   mayShareExternally,
+  retentionOverrides,
   workspaceRole,
   workspaceRolesOf,
 } from '../workspaces/index';
@@ -40,6 +41,24 @@ const DAY_MS = 86_400_000;
 export const TRASH_RETENTION_MS = TRASH_RETENTION_DAYS * DAY_MS;
 export const DEFAULT_TITLE = 'Untitled board';
 
+/** A board as an audit event's target (its title as it is now). */
+export const boardTarget = (b: { id: string; title: string }) => ({ type: 'board', id: b.id, label: b.title });
+
+/** EXPORT_FORMATS a client may report (POST /boards/:id/exported). */
+export const EXPORT_FORMATS = ['png', 'jpg', 'svg', 'pdf', 'csv', 'json', 'other'] as const;
+
+/**
+ * A client-side export (image / PDF made in the browser) reported by the web app: refused like
+ * the export itself when the workspace's downloads policy forbids it, otherwise audited. The
+ * server can't see a browser export, so this is as complete as the clients reporting it.
+ */
+export async function recordExport(boardId: string, userId: string, format: unknown): Promise<void> {
+  const { board, access } = await requireAccess(boardId, userId);
+  requireDownload(access);
+  const f = (EXPORT_FORMATS as readonly unknown[]).includes(format) ? (format as string) : 'other';
+  await recordAudit({ action: 'board.exported', workspaceId: board.workspaceId, actorId: userId, target: boardTarget(board), metadata: { format: f } });
+}
+
 /** The user's role on a board and what its workspace contributes (policies, team access). */
 export async function describeAccess(board: Board, userId: string): Promise<{ role: Role | null; access: BoardWorkspaceAccess }> {
   const [memberRole, access] = await Promise.all([getMemberRole(board.id, userId), boardAccess(userId, board)]);
@@ -50,14 +69,27 @@ export async function roleOn(board: Board, userId: string): Promise<Role | null>
   return (await describeAccess(board, userId)).role;
 }
 
-/** Loads a board and checks the user's role: 404 if missing, 403 if below `min`. */
+/**
+ * 451 for a board an operator took down — only to someone who could open it otherwise, so it
+ * tells nobody else that the board exists.
+ */
+export async function removedFor(boardId: string, userId: string): Promise<boolean> {
+  const board = await repo.getBoardAnyState(boardId);
+  if (!board || board.removedAt === null || board.deletedAt !== null) return false;
+  return (await describeAccess(board, userId)).role !== null;
+}
+
+export const boardRemoved = () =>
+  new HttpError(451, 'This board was removed by Freero’s moderators while they review a report.', BOARD_REMOVED);
+
+/** Loads a board and checks the user's role: 404 if missing, 451 if taken down, 403 if below `min`. */
 export async function requireAccess(
   boardId: string,
   userId: string,
   min: Role = 'viewer',
 ): Promise<{ board: Board; role: Role; access: BoardWorkspaceAccess }> {
   const board = await repo.getBoard(boardId);
-  if (!board) throw notFound('Board not found');
+  if (!board) throw (await removedFor(boardId, userId)) ? boardRemoved() : notFound('Board not found');
   const { role, access } = await describeAccess(board, userId);
   if (!role) throw forbidden();
   if (!atLeast(role, min)) throw forbidden(min === 'owner' ? 'Only the board owner can do that' : `You need ${min} access to do that`);
@@ -113,7 +145,8 @@ export async function toSummary(
     team: access.team,
     member,
     permissions: permissionsFor(board, userId, role, access),
-    ...(board.deletedAt !== null ? { deletedAt: board.deletedAt, purgeAt: board.deletedAt + TRASH_RETENTION_MS } : {}),
+    ...(board.linkBlocked ? { linkBlocked: true } : {}),
+    ...(board.deletedAt !== null ? { deletedAt: board.deletedAt, purgeAt: board.deletedAt + access.trashRetentionDays * DAY_MS } : {}),
   };
 }
 
@@ -248,8 +281,12 @@ export async function createBoard(
         deletedAt: null,
         workspaceId,
         projectId,
+        removedAt: null,
+        linkBlocked: false,
+        storedLinkAccess: linkAccess,
       };
       await repo.insertBoard(board);
+      await recordAudit({ action: 'board.created', workspaceId, actorId: ownerId, target: boardTarget(board), metadata: { projectId } });
       return board;
     },
   );
@@ -266,6 +303,7 @@ export async function moveToProject(board: Board, userId: string, projectId: str
   await repo.transaction(async () => {
     if (projectId) await lockProjectForBoard(projectId, board.workspaceId, userId);
     if (!(await repo.setProject(board.id, projectId))) throw notFound('Board not found');
+    await recordAudit({ action: 'board.moved', workspaceId: board.workspaceId, actorId: userId, target: boardTarget(board), metadata: { from: board.projectId, to: projectId } });
   });
   await refreshBoardAccess(board.id);
 }
@@ -305,9 +343,15 @@ export async function transferBoard(board: Board, actorId: string, targetId: unk
     async () => {
       if (!(await repo.setOwner(board.id, targetId, workspaceId, projectId, Date.now()))) throw notFound('Board not found');
       await ownershipTransferred(board.id, targetId, previousOwner, 'editor');
+      await recordAudit({
+        action: 'board.transferred',
+        workspaceId: board.workspaceId,
+        actorId,
+        target: boardTarget(board),
+        metadata: { from: previousOwner, to: targetId, toEmail: target.email, movedToWorkspace: workspaceId === board.workspaceId ? null : workspaceId },
+      });
     },
   );
-  log(`boards: ${actorId} transferred board ${board.id} from ${previousOwner} to ${targetId}`);
   await refreshBoardAccess(board.id);
   return { ...board, ownerId: targetId, workspaceId, projectId };
 }
@@ -332,31 +376,45 @@ async function listTrash(userId: string, workspaceId: string, q: string): Promis
  * (so new sockets are refused), and everyone connected is disconnected. Its content is kept
  * exactly as it was, including edits made in the last moments before the delete.
  */
-export async function moveToTrash(board: Board, now = Date.now()): Promise<void> {
-  if (!(await repo.trashBoard(board.id, now))) return; // trashed meanwhile by another request
-  // The live doc may hold edits not saved yet (saves are debounced) and closing the room drops
-  // them. Take the live state first, then close (which also waits for a save in flight), then
-  // store that state last, so nothing older lands after it. Nobody can rejoin in between: the
-  // board no longer resolves for access.
-  // The same for its layers (hidden frames' contents, private drafts, sealed ballots): restoring
-  // the board brings them back exactly as they were.
-  const state = await snapshotBoardDoc(board.id);
-  const layers = await snapshotBoardLayers(board.id);
-  await closeBoardDoc(board.id);
-  if (state) await initBoardDoc(board.id, state);
-  for (const l of layers) await initBoardLayer(board.id, l.layer, l.state);
+export async function moveToTrash(board: Board, actorId: string, now = Date.now()): Promise<void> {
+  const trashed = await repo.transaction(async () => {
+    if (!(await repo.trashBoard(board.id, now))) return false; // trashed meanwhile by another request
+    await recordAudit({ action: 'board.trashed', workspaceId: board.workspaceId, actorId, target: boardTarget(board) });
+    return true;
+  });
+  if (!trashed) return;
+  await closeKeepingContent(board.id, 'deleted');
+}
+
+/**
+ * Disconnects everyone from a board that no longer resolves for access (trashed, taken down) on
+ * every instance, keeping its content exactly as it was. The live doc may hold edits not saved
+ * yet (saves are debounced) and closing the room drops them. Take the live state first, then
+ * close (which also waits for a save in flight), then store that state last, so nothing older
+ * lands after it. Nobody can rejoin in between: the board no longer resolves for access.
+ * The same for its layers (hidden frames' contents, private drafts, sealed ballots): restoring
+ * the board brings them back exactly as they were.
+ */
+export async function closeKeepingContent(boardId: string, why: 'deleted' | 'removed'): Promise<void> {
+  const state = await snapshotBoardDoc(boardId);
+  const layers = await snapshotBoardLayers(boardId);
+  await closeBoardDoc(boardId, why);
+  if (state) await initBoardDoc(boardId, state);
+  for (const l of layers) await initBoardLayer(boardId, l.layer, l.state);
 }
 
 /** Owner only: takes a board out of the trash (subject to the board quota). */
 export async function restoreFromTrash(boardId: string, userId: string): Promise<Board> {
   const board = await repo.getBoardIncludingTrash(boardId);
   // Not yours / not there: the same answer, so the trash leaks nothing about other people's boards.
-  if (!board || board.deletedAt === null || board.ownerId !== userId) throw notFound('Board not found in your trash');
+  // A board taken down by an operator stays with them until they restore it.
+  if (!board || board.deletedAt === null || board.ownerId !== userId || board.removedAt !== null) throw notFound('Board not found in your trash');
   await withinBoardQuota(
     userId,
     (max) => `You have reached the limit of ${max} boards. Delete boards you no longer need to restore this one.`,
     async () => {
       if (!(await repo.restoreBoard(board.id))) throw notFound('Board not found in your trash');
+      await recordAudit({ action: 'board.restored', workspaceId: board.workspaceId, actorId: userId, target: boardTarget(board) });
     },
   );
   return { ...board, deletedAt: null };
@@ -365,9 +423,13 @@ export async function restoreFromTrash(boardId: string, userId: string): Promise
 /** Owner only: deletes a trashed board and everything on it for good. */
 export async function deleteForever(boardId: string, userId: string): Promise<void> {
   const board = await repo.getBoardIncludingTrash(boardId);
-  if (!board || board.deletedAt === null || board.ownerId !== userId) throw notFound('Board not found in your trash');
-  const thumbnail = await repo.deleteTrashedBoard(board.id);
-  if (thumbnail === undefined) throw notFound('Board not found in your trash'); // restored or purged meanwhile
+  if (!board || board.deletedAt === null || board.ownerId !== userId || board.removedAt !== null) throw notFound('Board not found in your trash');
+  const thumbnail = await repo.transaction(async () => {
+    const t = await repo.deleteTrashedBoard(board.id);
+    if (t === undefined) throw notFound('Board not found in your trash'); // restored or purged meanwhile
+    await recordAudit({ action: 'board.deleted', workspaceId: board.workspaceId, actorId: userId, target: boardTarget(board) });
+    return t;
+  });
   await closeBoardDoc(board.id); // nobody should be connected; make sure nothing saves after the delete
   await deleteUpload(thumbnail);
 }
@@ -378,9 +440,10 @@ const PURGE_BATCH = 200;
 export const TRASH_PURGE_LOCK_KEY = 7_202_610_282; // arbitrary, constant across releases
 
 /**
- * Deletes for good every board that has been in the trash longer than TRASH_RETENTION_DAYS.
- * Idempotent and safe to run on every server instance at once: one instance purges (advisory
- * lock), the others skip this round (0). Returns how many boards this call removed.
+ * Deletes for good every board that has been in the trash longer than its workspace's trash
+ * retention (TRASH_RETENTION_DAYS unless the workspace sets its own). Idempotent and safe to run on
+ * every server instance at once: one instance purges (advisory lock), the others skip this round
+ * (0). Returns how many boards this call removed.
  */
 export async function purgeExpiredTrash(now = Date.now()): Promise<number> {
   return (await runExclusive(TRASH_PURGE_LOCK_KEY, () => purgeExpiredTrashLocked(now))) ?? 0;
@@ -389,9 +452,23 @@ export async function purgeExpiredTrash(now = Date.now()): Promise<number> {
 /** The purge itself; the caller holds TRASH_PURGE_LOCK_KEY (purgeExpiredTrash or the scheduled job). */
 export async function purgeExpiredTrashLocked(now = Date.now()): Promise<number> {
   const before = now - TRASH_RETENTION_MS;
+  const byWorkspace = (await retentionOverrides())
+    .filter((o) => o.trashDays !== TRASH_RETENTION_DAYS)
+    .map((o) => ({ workspaceId: o.id, before: now - o.trashDays * DAY_MS }));
   let total = 0;
   for (;;) {
-    const purged = await repo.purgeTrashedBefore(before, PURGE_BATCH);
+    const purged = await repo.transaction(async () => {
+      const rows = await repo.purgeTrashedBefore(before, PURGE_BATCH, byWorkspace);
+      for (const b of rows)
+        await recordAudit({
+          action: 'board.purged',
+          workspaceId: b.workspaceId,
+          actorId: null,
+          target: { type: 'board', id: b.id, label: b.title },
+          metadata: { owner: b.ownerId, trashedAt: new Date(b.deletedAt).toISOString() },
+        });
+      return rows;
+    });
     for (const b of purged) {
       await closeBoardDoc(b.id);
       await deleteUpload(b.thumbnail);
@@ -418,6 +495,13 @@ export async function duplicateBoard(source: Board, userId: string, role: Role):
   const editors = atLeast(role, 'editor') ? await snapshotBoardLayer(source.id, 'editors') : null;
   return repo.transaction(async () => {
     const copy = await createBoard(userId, `Copy of ${source.title}`.slice(0, 200), source.description, 'none', place);
+    await recordAudit({
+      action: 'board.duplicated',
+      workspaceId: source.workspaceId,
+      actorId: userId,
+      target: boardTarget(source),
+      metadata: { copy: copy.id, copyWorkspace: copy.workspaceId },
+    });
     if (state) await initBoardDoc(copy.id, state);
     if (editors) await initBoardLayer(copy.id, 'editors', editors);
     return copy;

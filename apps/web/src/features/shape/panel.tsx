@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Search, SlidersHorizontal } from 'lucide-react';
-import { definePanel, useCanEdit, useCollection, type Editor } from '@engine';
+import { DockHeader, definePanel, useCanEdit, useCollection, type Editor } from '@engine';
 import { Input, Toggle } from '@ui';
 import { LIBRARY_COLLECTION, SHAPE_SETS, enabledSets, searchShapes, type LibraryShape } from './lib/library';
 import { encodeDrag, insertShape } from './lib/insert';
@@ -41,7 +41,7 @@ function ShapeLibraryPanel({ editor }: { editor: Editor }) {
 
   return (
     <div className="fr-shape-lib">
-      <div className="fr-shape-lib__head">
+      <DockHeader className="fr-shape-lib__head">
         <h2 className="fr-shape-lib__title">Shapes</h2>
         <button
           type="button"
@@ -52,7 +52,7 @@ function ShapeLibraryPanel({ editor }: { editor: Editor }) {
           <SlidersHorizontal size={14} aria-hidden />
           Libraries
         </button>
-      </div>
+      </DockHeader>
       {managing && (
         <ul className="fr-shape-lib__sets" aria-label="Shape libraries on this board">
           {SHAPE_SETS.map((set) => (

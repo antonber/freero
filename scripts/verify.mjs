@@ -37,6 +37,7 @@ import { writeMmdb } from './lib/mmdb-writer.mjs';
 import { startMockOidc } from './lib/mock-oidc.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const MESSAGE_AWARENESS = 1; // y-websocket
 const WS_MESSAGE_ROLE = 100;
 const WS_MESSAGE_LAYER = 101; // board layers (see @freero/shared api.ts)
 const WS_MESSAGE_LAYER_OP = 102;
@@ -73,6 +74,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Rate-limit counters are keyed with SESSION_SECRET: a secret of its own keeps this run's servers
 // from sharing (Redis-backed) counters with earlier runs.
 const RUN_SECRET = randomBytes(32).toString('base64url');
+// Every server of the run exposes /metrics with this token, so checks can wait on its gauges.
+const RUN_METRICS_TOKEN = randomBytes(16).toString('hex');
 async function waitFor(cond, timeoutMs = 5000, what = 'condition') {
   const end = Date.now() + timeoutMs;
   while (Date.now() < end) {
@@ -122,9 +125,13 @@ async function spawnServer(dataDir, env = {}) {
       FREERO_DATA_DIR: dataDir,
       NODE_ENV: 'test',
       FREERO_DOC_IDLE_MS: '1000',
-      // Every check signs up accounts from 127.0.0.1; with REDIS_URL all servers of a run share the counters.
+      // Every check signs up and logs in from 127.0.0.1; with REDIS_URL all servers of a run share the
+      // counters, so one suite's logins (two-step recovery logs in dozens of times) would push the
+      // next suites over the default. The login limit itself is checked by platformChecks (own counters).
       RATE_LIMIT_SIGNUP: '1000/1h',
+      RATE_LIMIT_LOGIN: '1000/5m',
       SESSION_SECRET: RUN_SECRET,
+      METRICS_TOKEN: RUN_METRICS_TOKEN,
       ...(db.url ? { DATABASE_URL: db.url } : {}),
       ...env,
     },
@@ -154,6 +161,23 @@ async function waitUp(proc, timeoutMs = 60_000) {
     await sleep(150);
   }
   throw new Error(`server did not start within ${timeoutMs / 1000}s:\n${proc.log.join('')}`);
+}
+
+/** A gauge of `proc`'s /metrics (servers of this run share RUN_METRICS_TOKEN). */
+async function gauge(proc, name) {
+  const res = await fetch(`http://127.0.0.1:${proc.port}/metrics`, { headers: { authorization: `Bearer ${RUN_METRICS_TOKEN}` } });
+  const m = new RegExp(`^${name} (\\S+)$`, 'm').exec(await res.text());
+  if (!m) throw new Error(`/metrics has no ${name}`);
+  return Number(m[1]);
+}
+
+/**
+ * Resolves once `proc` holds no board document in memory: every room saved what it had and
+ * unloaded (FREERO_DOC_IDLE_MS=1000 after its last socket left). The next socket loads from the
+ * database, so a check reading after this proves persistence, not the live room.
+ */
+async function waitUnloaded(proc = server, timeoutMs = 10_000) {
+  await waitFor(async () => (await gauge(proc, 'freero_realtime_loaded_docs')) === 0, timeoutMs, `every board on :${proc.port} to be saved and unloaded`);
 }
 
 async function startServer(dataDir) {
@@ -299,30 +323,39 @@ class User {
 // ---------------------------------------------------------------------------
 // The development outbox (no SMTP_URL): every mail is a JSON file under <data>/outbox/
 // ---------------------------------------------------------------------------
-function outbox(dataDir) {
+const outboxFiles = (dataDir) => {
   const dir = path.join(dataDir, 'outbox');
-  if (!fs.existsSync(dir)) return [];
-  const mails = [];
-  for (const f of fs.readdirSync(dir)) {
-    try {
-      mails.push(JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')));
-    } catch {
-      // The server is still writing this one: callers wait (waitFor) and read it next time.
-    }
-  }
-  return mails.sort((a, b) => a.sentAt - b.sentAt);
+  return fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+};
+
+/** Every mail in the outbox, oldest first (`file`: its name). One still being written is skipped this time. */
+function outbox(dataDir) {
+  return outboxFiles(dataDir)
+    .flatMap((file) => {
+      try {
+        return [{ ...JSON.parse(fs.readFileSync(path.join(dataDir, 'outbox', file), 'utf8')), file }];
+      } catch {
+        return []; // not completely written yet: the next poll reads it
+      }
+    })
+    .sort((a, b) => a.sentAt - b.sentAt);
 }
 
+/**
+ * The outbox as it is now; `mailedToken(…, { since })` then waits for mail that came after. Not a
+ * timestamp: the server stamps `sentAt` with its own clock, which can be a few ms behind this
+ * process's (Windows), so "sent after Date.now()" missed mail sent right after it.
+ */
+const outboxMark = (dataDir) => new Set(outboxFiles(dataDir));
+
 /** The token of the newest `route` link (e.g. '/reset-password', '/invite') mailed to `to`, waiting for it. */
-async function mailedToken(dataDir, to, route, { after = 0, timeoutMs = 8000 } = {}) {
+async function mailedToken(dataDir, to, route, { since = null, timeoutMs = 8000 } = {}) {
   const re = new RegExp(`${route.replace(/[/]/g, '\\/')}(?:\\?token=|\\/)([A-Za-z0-9_-]+)`);
   let token = null;
   await waitFor(
     () => {
       const m = outbox(dataDir)
-        // The server and this harness read the clock in different processes; on Windows they can
-        // disagree by a timer tick (~16 ms), so "sent after" allows a little slack (the newest wins).
-        .filter((mail) => mail.to === to && mail.sentAt >= after - 50)
+        .filter((mail) => mail.to === to && !since?.has(mail.file))
         .map((mail) => re.exec(mail.text))
         .filter(Boolean)
         .at(-1);
@@ -358,7 +391,19 @@ function connectDoc(user, boardId, prepare, port = user.port ?? server.port) {
     disableBc: true,
     connect: false,
   });
-  const client = { user, doc, provider, role: null, closeCodes: [] };
+  const client = { user, doc, provider, role: null, closeCodes: [], echoedBarrier: 0 };
+  // Notes the server's echo of this client's own presence (see settled()).
+  const onAwareness = provider.messageHandlers[MESSAGE_AWARENESS];
+  provider.messageHandlers[MESSAGE_AWARENESS] = (encoder, decoder, ...rest) => {
+    const update = decoding.createDecoder(decoding.readVarUint8Array(decoding.createDecoder(decoder.arr.subarray(decoder.pos))));
+    for (let i = decoding.readVarUint(update); i > 0; i--) {
+      const id = decoding.readVarUint(update);
+      decoding.readVarUint(update); // clock
+      const state = JSON.parse(decoding.readVarString(update));
+      if (id === doc.clientID && state?.barrier) client.echoedBarrier = state.barrier;
+    }
+    return onAwareness(encoder, decoder, ...rest);
+  };
   provider.messageHandlers[WS_MESSAGE_ROLE] = (_encoder, decoder) => {
     const msg = JSON.parse(decoding.readVarString(decoder));
     if (msg.type === 'role') client.role = msg.role;
@@ -427,6 +472,23 @@ async function layerClient(user, boardId, port = server.port) {
   c.askLayer('private');
   c.askLayer('editors');
   return c;
+}
+
+let barriers = 0;
+/**
+ * Resolves once the server has handled everything `client` sent so far, `client` has received
+ * everything the server sent it meanwhile, and so has every client in `observers`. The barrier is
+ * a presence change: the server handles one socket's messages in order, relays them (and what
+ * they caused) to every socket in order, other instances included, and echoes presence to its
+ * sender too. Use it to prove that something did NOT happen (a rejected write never arrived)
+ * instead of sleeping for a while and hoping that was long enough.
+ */
+async function settled(client, observers = []) {
+  const n = ++barriers;
+  client.provider.awareness.setLocalStateField('barrier', n);
+  await waitFor(() => client.echoedBarrier === n, 5000, `the server to echo ${client.user.label}'s barrier`);
+  for (const o of observers)
+    await waitFor(() => o.provider.awareness.getStates().get(client.doc.clientID)?.barrier === n, 5000, `${o.user.label} to see ${client.user.label}'s barrier`);
 }
 
 /** Every value anywhere in a client's shared doc, as JSON text (to prove something never arrived). */
@@ -881,7 +943,7 @@ async function run() {
       c.doc.getMap('comments').set('ct', { text: 'viewer comment' });
       els(a).set('e3', { id: 'e3', type: 'text', text: 'after viewer write' });
       await waitFor(() => els(c).get('e3') !== undefined, 5000, 'C to receive e3');
-      await sleep(600);
+      await settled(c, [a, b]); // C's writes were handled before its barrier reached A and B
       assert(!els(a).has('c1') && !els(b).has('c1'), 'viewer element leaked to A/B');
       assert(!a.doc.getMap('comments').has('ct'), 'viewer comment leaked to A');
     });
@@ -899,7 +961,7 @@ async function run() {
         d.doc.getMap('comments').set('s:t1', { kind: 'status', threadId: 't1', resolved: true, by: D.id, at: 2 });
         els(d).delete('e1');
       });
-      await sleep(800);
+      await settled(d, [a]);
       assert(!els(a).has('d1'), "commenter's element reached A");
       assert(els(a).has('e1'), "commenter's delete of e1 reached A");
       assert(!a.doc.getMap('comments').has('s:t1'), 'mixed comment+element update was accepted');
@@ -919,7 +981,7 @@ async function run() {
         const raw = connectDoc(D, board.id);
         await raw.ready();
         fn(raw.doc.getMap('comments'));
-        await sleep(600);
+        await settled(raw, [a]);
         raw.destroy();
         const seen = a.doc.getMap('comments');
         assert(seen.get('m:t1:a1')?.text === 'reply from A' && !seen.has('m:t1:f1'), `D could ${what}: ${JSON.stringify(seen.get('m:t1:a1'))}`);
@@ -940,14 +1002,14 @@ async function run() {
       const others = await Promise.all([A, C, D].map((u) => layerClient(u, board.id)));
       b1.layers.private.getMap('elements').set('draft1', { id: 'draft1', type: 'sticky', text: 'SECRET-DRAFT' });
       await waitFor(() => b2.layers.private.getMap('elements').get('draft1')?.text === 'SECRET-DRAFT', 5000, "B's other tab to get B's draft");
-      await sleep(500);
+      await settled(b1, others);
       for (const o of others) {
         const everything = sharedText(o) + JSON.stringify(o.layers.private.toJSON()) + JSON.stringify(o.layers.editors.toJSON());
         assert(!everything.includes('SECRET-DRAFT'), `${o.user.label} received B's private draft`);
       }
       // Asking for "private" always means one's own layer; nobody can name someone else's.
       for (const o of others) o.askLayer(`u:${B.id}`);
-      await sleep(400);
+      for (const o of others) await settled(o); // an answer would have arrived before the echo
       assert(others.every((o) => !o.layerMessages.includes(`u:${B.id}`)), "someone got an answer for B's layer by its storage name");
       for (const c of [b1, b2, ...others]) c.destroy();
     });
@@ -961,7 +1023,9 @@ async function run() {
       await waitFor(() => b1.layers.editors.getMap('elements').get('hid1')?.text === 'HIDDEN-CONTENT', 5000, 'B to get the hidden content');
       c1.layers.editors.getMap('elements').set('cv', { id: 'cv', type: 'sticky', text: 'viewer write' });
       d1.layers.editors.getMap('elements').set('dv', { id: 'dv', type: 'sticky', text: 'commenter write' });
-      await sleep(600);
+      await settled(a1, [c1, d1]);
+      await settled(c1, [a1]);
+      await settled(d1, [a1]);
       for (const o of [c1, d1]) assert(!JSON.stringify(o.layers.editors.toJSON()).includes('HIDDEN-CONTENT') && !sharedText(o).includes('HIDDEN-CONTENT'), `${o.user.label} received hidden content`);
       const seen = a1.layers.editors.getMap('elements');
       assert(!seen.has('cv') && !seen.has('dv'), 'a viewer/commenter wrote the editors layer');
@@ -972,12 +1036,13 @@ async function run() {
       const b1 = await layerClient(B, board.id);
       b1.layers.private.getMap('voting').set(`s1:${B.id}`, { sessionId: 's1', userId: B.id, elementIds: ['e1', 'e1'] });
       b1.layers.private.getMap('voting').set(`s0:${B.id}`, { sessionId: 's0', userId: B.id, elementIds: ['e2'] });
-      await sleep(400);
+      await settled(b1); // the server has both ballots
       b1.destroy();
       const c1 = await layerClient(C, board.id); // viewer
       const d1 = await layerClient(D, board.id); // commenter
       for (const x of [c1, d1]) x.layerOp({ type: 'reveal', collection: 'voting' });
-      await sleep(600);
+      // A socket's messages after a reveal wait until it is applied, so an accepted one would show first.
+      for (const x of [c1, d1]) await settled(x);
       assert(!c1.doc.getMap('voting').has(`s1:${B.id}`), 'a viewer/commenter revealed sealed ballots');
       const a1 = await layerClient(A, board.id);
       a1.layerOp({ type: 'reveal', collection: 'voting', prefix: 's1:' });
@@ -1110,7 +1175,7 @@ async function run() {
 
     await check('server restarts on the same data dir and the doc persisted', async () => {
       closeAllDocs();
-      await sleep(500); // last disconnect persists immediately; small grace for the socket close
+      await waitUnloaded(); // saved; then a hard kill
       await stopServer(); // a hard kill: what was saved must be durable without a clean shutdown
       // Simulate 30 days passing for S: age the session in the server's own database.
       await withDb(dataDir, async (q) => {
@@ -1154,7 +1219,7 @@ async function run() {
     });
 
     await check('clients opening a board that is still loading all get its content, and their offline edits are kept', async () => {
-      await sleep(1600); // FREERO_DOC_IDLE_MS=1000: the doc is unloaded again
+      await waitUnloaded(); // the doc is loaded again by the sockets below, all at once
       const clients = [A, B, A].map((u, i) =>
         connectDoc(u, board.id, (doc) => doc.getMap('elements').set(`off${i}`, { id: `off${i}`, type: 'sticky', text: `offline ${i}` })),
       );
@@ -1163,7 +1228,7 @@ async function run() {
         await waitFor(() => els(c).get('e1')?.text === 'from A' && [0, 1, 2].every((i) => els(c).has(`off${i}`)), 5000, `${c.user.label} to have the stored content and every offline edit`);
       }
       for (const c of clients) c.destroy();
-      await sleep(500);
+      await waitUnloaded(); // read back from the database, not the live room
       const again = connectDoc(A, board.id);
       await again.ready();
       assert([0, 1, 2].every((i) => els(again).has(`off${i}`)), `offline edits not saved: ${JSON.stringify([...els(again).keys()])}`);
@@ -1175,7 +1240,7 @@ async function run() {
         const g = connectDoc(A, board.id);
         await g.ready();
         els(g).set('sig', { id: 'sig', type: 'sticky', text: 'before SIGTERM' });
-        await sleep(200); // reached the server, but well inside the 1.5s save debounce
+        await settled(g); // reached the server, but well inside the 1.5s save debounce
         const proc = server;
         process.kill(-proc.child.pid, 'SIGTERM');
         const code = await Promise.race([proc.exited, sleep(15_000).then(() => 'timeout')]);
@@ -1233,7 +1298,7 @@ async function run() {
       const rb = await B.req('POST', `/api/boards/${board.id}/duplicate`);
       assert(rb.json.board.ownerId === B.id && rb.json.board.role === 'owner', 'B copy owner');
       const bc = await layerClient(B, rb.json.board.id);
-      await sleep(400);
+      await settled(bc); // its layers were answered before the echo
       assert(!JSON.stringify(bc.layers.private.toJSON()).includes('SECRET-DRAFT'), "B's private draft was copied into B's duplicate");
       bc.destroy();
       assert((await C.req('GET', `/api/boards/${copy.id}`)).status === 403, "members don't carry over to copies");
@@ -1241,7 +1306,7 @@ async function run() {
       const rc = await C.req('POST', `/api/boards/${board.id}/duplicate`);
       assert(rc.status === 201, rc.text);
       const cc = await layerClient(C, rc.json.board.id);
-      await sleep(400);
+      await settled(cc);
       assert(!cc.layers.editors.getMap('elements').has('hid1'), "a viewer's duplicate contains the hidden frame content");
       cc.destroy();
     });
@@ -1293,7 +1358,7 @@ async function run() {
       await waitFor(() => atNow(h1) && atNow(h2), 5000, 'both clients to be back where they were before the restore');
       // Put e1 back for the checks below (as an ordinary edit).
       els(h1).set('e1', { id: 'e1', type: 'sticky', text: 'from A' });
-      await sleep(100);
+      await settled(h1);
       h1.destroy();
       h2.destroy();
     });
@@ -1317,7 +1382,7 @@ async function run() {
       live.layers.editors.getMap('elements').set('t2', { id: 't2', type: 'sticky', text: 'hidden, just before the delete' });
       live.layers.private.getMap('elements').set('t3', { id: 't3', type: 'sticky', text: 'draft, just before the delete' });
       await waitFor(() => els(watcher).get('t1') && watcher.layers.editors.getMap('elements').get('t2'), 3000, 'the last edits to reach the server');
-      await sleep(100);
+      await settled(live); // the private draft t3 too
       watcher.destroy();
       assert((await A.req('DELETE', `/api/boards/${board.id}`)).status === 200, 'owner delete');
       await waitFor(() => live.closeCodes.includes(4403), 5000, 'connected editor to be closed with 4403');
@@ -1716,12 +1781,12 @@ async function accountPurgeChecks() {
         throw new CheckError(`${e.message}; server said: ${logged.slice(-10).join(' | ')}`);
       });
       await waitFor(() => v.doc.getMap('comments').get('m:t1:u')?.authorName === 'Deleted user', 5000, "V's open board to show U's comment as Deleted user");
+      // Others see the new name live, before the purge has saved it, deleted the avatar and the
+      // account; its last step (the account row, memberships cascading) is what to wait for.
+      await waitFor(async () => !(await V.req('GET', `/api/boards/${theirs.id}/members`)).json.members.some((m) => m.userId === U.id), 10_000, 'the purge to finish (U no longer a member)');
       const comments = v.doc.getMap('comments');
       assert(comments.get('m:t1:u').text === `from ${U.name}` && comments.get('m:t1:v').authorName === V.name, JSON.stringify(comments.toJSON()));
       assert((await V.req('GET', `/api/boards/${theirs.id}`)).status === 200, "V's board survived");
-      // The account row goes last in the purge (after the boards and the comment renames above).
-      const memberIds = async () => (await V.req('GET', `/api/boards/${theirs.id}/members`)).json.members.map((m) => m.userId);
-      await waitFor(async () => !(await memberIds()).includes(U.id), 10_000, 'the purged user to leave the member list');
       assert((await fetch(`http://127.0.0.1:${proc.port}${avatar}`)).status === 404, "U's avatar still served");
       // Part of V's board now; files nothing references any more are left to the uploads sweep.
       assert((await fetch(`http://127.0.0.1:${proc.port}${upload.json.url}`)).status === 200, "an image U placed on V's board was deleted");
@@ -1729,7 +1794,7 @@ async function accountPurgeChecks() {
       assert(login.status === 401, `purged account can log in: ${login.status}`);
       // A fresh document load (not just the live room) has the anonymized name too.
       for (const c of clients.splice(0)) c.destroy();
-      await sleep(1500); // FREERO_DOC_IDLE_MS=1000: unloaded
+      await waitUnloaded(proc);
       const again = connectDoc(V, theirs.id);
       clients.push(again);
       await again.ready();
@@ -1818,7 +1883,7 @@ async function notificationChecks() {
       const mention = (await list(B)).notifications.find((n) => n.type === 'comment.mention');
       assert(mention.link === `/board/${board.id}?thread=t1`, mention.link);
       assert(mention.body === `hey @${B.name} and @${X.name}, look`, mention.body);
-      await sleep(500);
+      await settled(forged, [a]); // the server has handled (and dropped) the forged message
       assert((await list(C)).notifications.every((n) => n.type === 'board.invite'), 'C was notified by a spoofed message');
       assert((await list(X)).notifications.length === 0, 'someone without access was notified');
       assert((await list(A)).notifications.length === 0, 'the author was notified of their own message');
@@ -1933,14 +1998,25 @@ async function multiInstanceChecks() {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-multi-'));
   const procs = [];
   let url = null;
+  const OP = new User('MOp'); // an operator (moderation), verified below
   // Rate-limit counters live in the shared Redis, also across the single-instance run above.
-  const env = () => ({ DATABASE_URL: url, REDIS_URL, RATE_LIMIT_SIGNUP: '200/1h' });
+  const AUTO_VERSION_MS = 1000; // automatic versions of open boards (KAI-82), instead of 30 min
+  // Accounts are purged right away, and only by instance 2 (instance 1's job would run hourly).
+  const env = (i) => ({
+    DATABASE_URL: url,
+    REDIS_URL,
+    RATE_LIMIT_SIGNUP: '200/1h',
+    ACCOUNT_DELETION_GRACE_DAYS: '0',
+    ACCOUNT_PURGE_INTERVAL_SECONDS: i === 0 ? '3600' : '1',
+    FREERO_SNAPSHOT_EVERY_MS: String(AUTO_VERSION_MS),
+    OPERATOR_EMAILS: OP.email,
+  });
   const docRows = async (boardId) =>
     (await adminQuery(`SELECT count(*)::int AS n FROM board_doc_updates WHERE board_id = '${boardId}'`, url))[0].n;
   try {
     const up = await check('two instances start on one database and one Redis', async () => {
       url = await createDatabase();
-      for (let i = 0; i < 2; i++) procs.push(await spawnServer(path.join(dataDir, `i${i}`), env()));
+      for (let i = 0; i < 2; i++) procs.push(await spawnServer(path.join(dataDir, `i${i}`), env(i)));
       await Promise.all(procs.map((p) => waitUp(p)));
     });
     if (!up) return;
@@ -1994,7 +2070,7 @@ async function multiInstanceChecks() {
       const w = connectDoc(A, fresh.id, undefined, one);
       await w.ready();
       els(w).set('u1', { id: 'u1', type: 'sticky', text: 'not saved yet' });
-      await sleep(100); // reached instance 1; its save waits ~1.5 s (debounce)
+      await settled(w); // reached instance 1; its save waits ~1.5 s (debounce)
       const r = connectDoc(A, fresh.id, undefined, two); // instance 2 loads the board from the database
       await r.ready();
       await waitFor(() => els(r).get('u1')?.text === 'not saved yet', 1000, 'the reader on instance 2 to get the unsaved edit');
@@ -2008,7 +2084,7 @@ async function multiInstanceChecks() {
       const w = connectDoc(A, src.id, undefined, one);
       await w.ready();
       els(w).set('d1', { id: 'd1', type: 'sticky', text: 'unsaved on instance 1' });
-      await sleep(100);
+      await settled(w);
       const r = await A.req('POST', `/api/boards/${src.id}/duplicate`, undefined, { port: two });
       assert(r.status === 201, r.text);
       assert((await docRows(src.id)) === 0, 'the edit was already saved, so this proves nothing');
@@ -2024,7 +2100,7 @@ async function multiInstanceChecks() {
       const w = connectDoc(A, t.id, undefined, one);
       await w.ready();
       els(w).set('t1', { id: 't1', type: 'sticky', text: 'unsaved before trash' });
-      await sleep(100);
+      await settled(w);
       assert((await A.req('DELETE', `/api/boards/${t.id}`, undefined, { port: two })).status === 200, 'trash');
       await waitFor(() => w.closeCodes.includes(4403), 5000, 'the socket on instance 1 to close');
       w.destroy();
@@ -2042,11 +2118,11 @@ async function multiInstanceChecks() {
       const w = connectDoc(A, vb.id, undefined, one);
       await w.ready();
       els(w).set('r1', { id: 'r1', type: 'sticky', text: 'v1' });
-      await sleep(100);
+      await settled(w);
       const v1 = (await A.req('POST', `/api/boards/${vb.id}/versions`, { name: 'v1' }, { port: one })).json.version;
       assert(v1?.kind === 'named', 'name v1');
       els(w).set('r1', { id: 'r1', type: 'sticky', text: 'v2, not saved yet' });
-      await sleep(100);
+      await settled(w);
       assert((await docRows(vb.id)) <= 1, 'v2 already saved: this proves less');
       const restored = await B.req('POST', `/api/boards/${vb.id}/versions/${v1.id}/restore`, undefined, { port: two });
       assert(restored.status === 200, restored.text);
@@ -2070,7 +2146,7 @@ async function multiInstanceChecks() {
       assert(r.status === 200, r.text);
       await waitFor(() => b1.role === 'viewer', 5000, 'the socket on instance 1 to become viewer');
       els(b1).set('ignored', { id: 'ignored', type: 'sticky', text: 'viewer write' });
-      await sleep(600);
+      await settled(b1, [a, b]); // a's on instance 1, b's on instance 2
       assert(!els(a).has('ignored') && !els(b).has('ignored'), "a viewer's write crossed instances");
       assert((await A.req('PATCH', `/api/boards/${board.id}/members/${B.id}`, { role: 'editor' }, { port: two })).status === 200, 'restore');
       await waitFor(() => b.role === 'editor', 5000, 'B on instance 2 to be editor again');
@@ -2087,6 +2163,41 @@ async function multiInstanceChecks() {
       assert(live.role === 'editor', `team member role ${live.role}`);
       assert((await A.req('DELETE', `/api/workspaces/${team.id}/members/${B.id}`, undefined, { port: two })).status === 200, 'remove');
       await waitFor(() => live.closeCodes.includes(4403), 5000, 'the socket on instance 1 to close');
+      live.destroy();
+    });
+
+    await check('moderation across instances: a board taken down through instance 2 closes its sockets on instance 1 (4451) and neither instance lets anyone back in', async () => {
+      await OP.signup();
+      await OP.verifyEmail(path.join(dataDir, 'i0'));
+      const t = (await A.req('POST', '/api/boards', { title: 'Taken down on two' })).json.board;
+      assert((await A.req('POST', `/api/boards/${t.id}/members`, { email: B.email, role: 'editor' })).status === 201, 'invite');
+      const onOne = connectDoc(B, t.id, undefined, one);
+      const onTwo = connectDoc(A, t.id, undefined, two);
+      await Promise.all([onOne.ready(), onTwo.ready()]);
+      const r = await OP.req('POST', '/api/moderation/actions', { action: 'board.take_down', targetId: t.id, reason: 'spam', statement: 'Spam.' }, { port: two });
+      assert(r.status === 200, r.text);
+      await waitFor(() => onOne.closeCodes.includes(4451), 5000, 'the socket on instance 1 to close with 4451');
+      await waitFor(() => onTwo.closeCodes.includes(4451), 5000, 'the socket on instance 2 to close with 4451');
+      for (const port of [one, two]) {
+        assert((await B.req('GET', `/api/boards/${t.id}`, undefined, { port })).status === 451, `REST on ${port}`);
+        const again = connectDoc(B, t.id, undefined, port);
+        await waitFor(() => again.closeCodes.includes(4451), 5000, `a new socket on ${port} to be refused`);
+        again.destroy();
+      }
+      onOne.destroy();
+      onTwo.destroy();
+    });
+
+    await check('moderation across instances: suspending an account through instance 2 closes its socket on instance 1 at once (4401)', async () => {
+      const V = new User('MSusp');
+      await V.signup();
+      const own = (await V.req('POST', '/api/boards', { title: 'V' })).json.board;
+      const live = connectDoc(V, own.id, undefined, one);
+      await live.ready();
+      const r = await OP.req('POST', '/api/moderation/actions', { action: 'user.suspend', targetId: V.id, reason: 'spam', statement: 'Spam.' }, { port: two });
+      assert(r.status === 200, r.text);
+      await waitFor(() => live.closeCodes.includes(4401), 5000, 'the socket on instance 1 to close with 4401');
+      assert((await V.req('GET', '/api/auth/me', undefined, { port: one })).status === 401, 'still signed in on instance 1');
       live.destroy();
     });
 
@@ -2147,7 +2258,8 @@ async function multiInstanceChecks() {
       a2.layers.editors.getMap('elements').set('mhid', { id: 'mhid', type: 'sticky', text: 'MULTI-HIDDEN' });
       await waitFor(() => b2.layers.private.getMap('elements').get('mdraft')?.text === 'MULTI-DRAFT', 5000, "B's tab on instance 2 to get B's draft");
       await waitFor(() => b1.layers.editors.getMap('elements').get('mhid')?.text === 'MULTI-HIDDEN', 5000, 'B on instance 1 to get the hidden content');
-      await sleep(500);
+      await settled(b1, [a2, v1, v2]);
+      await settled(a2, [v1, v2]);
       for (const o of [a2, v1, v2]) {
         const all = sharedText(o) + JSON.stringify(o.layers.private.toJSON()) + JSON.stringify(o.layers.editors.toJSON());
         assert(!all.includes('MULTI-DRAFT'), `${o.user.label} got B's private draft`);
@@ -2160,7 +2272,7 @@ async function multiInstanceChecks() {
       const fresh = (await A.req('POST', '/api/boards', { title: 'Layer catch-up' })).json.board;
       const w = await layerClient(A, fresh.id, one);
       w.layers.private.getMap('elements').set('early', { id: 'early', type: 'sticky', text: 'unsaved draft' });
-      await sleep(100); // reached instance 1; its save waits ~1.5 s (debounce)
+      await settled(w); // reached instance 1; its save waits ~1.5 s (debounce)
       const r = await layerClient(A, fresh.id, two); // instance 2 loads the board from the database
       await waitFor(() => r.layers.private.getMap('elements').get('early')?.text === 'unsaved draft', 2000, 'the other tab on instance 2 to get the unsaved draft');
       assert((await layerRows(fresh.id, `u:${A.id}`)) === 0, 'the draft was already saved, so this proves nothing about fan-out');
@@ -2174,7 +2286,8 @@ async function multiInstanceChecks() {
       b1.layers.private.getMap('elements').set('rv', { id: 'rv', type: 'sticky', text: 'v1' });
       b1.layers.private.getMap('elements').set('off', { id: 'off', type: 'sticky', text: 'author offline' });
       r1.layers.private.getMap('elements').set('rm', { id: 'rm', type: 'sticky', text: 'REMOVED-MEMBER-DRAFT' });
-      await sleep(500);
+      await settled(b1);
+      await settled(r1);
       r1.destroy();
       assert((await A.req('DELETE', `/api/boards/${board.id}/members/${R.id}`)).status === 200, 'remove R');
       const a2 = await layerClient(A, board.id, two);
@@ -2183,7 +2296,10 @@ async function multiInstanceChecks() {
       a2.layerOp({ type: 'reveal', collection: 'elements' });
       b1.layers.private.getMap('elements').set('rv', { id: 'rv', type: 'sticky', text: 'v2' });
       await waitFor(() => els(v1).get('off')?.text === 'author offline' && els(v1).has('rv'), 5000, 'the viewer on instance 1 to see the revealed drafts');
-      await sleep(800);
+      // Settled: the reveal reached instance 1's sockets (a2's later messages wait for it), and B's
+      // racing edit reached both instances.
+      await settled(a2, [b1, v1]);
+      await settled(b1, [a2, v1]);
       const shared = els(v1).get('rv')?.text;
       const stillPrivate = b1.layers.private.getMap('elements').get('rv')?.text;
       assert(shared === 'v2' || stillPrivate === 'v2', `the racing edit was lost (shared ${shared}, private ${stillPrivate})`);
@@ -2230,6 +2346,73 @@ async function multiInstanceChecks() {
       reader.destroy();
     });
 
+    await check('a board kept open on both instances and edited lightly gets an automatic version every period, one per period across both (KAI-82)', async () => {
+      const open = (await A.req('POST', '/api/boards', { title: 'Open all day' })).json.board;
+      assert((await A.req('POST', `/api/boards/${open.id}/members`, { email: B.email, role: 'editor' })).status === 201, 'invite');
+      const p = connectDoc(A, open.id, undefined, one);
+      const q = connectDoc(B, open.id, undefined, two);
+      await Promise.all([p.ready(), q.ready()]);
+      const autos = async () =>
+        (
+          await adminQuery(
+            `SELECT (extract(epoch FROM created_at) * 1000)::float8 AS at FROM board_doc_snapshots WHERE board_id = '${open.id}' AND kind = 'auto' ORDER BY created_at`,
+            url,
+          )
+        ).map((r) => Number(r.at));
+      // A small edit every 200 ms, alternating instances; both sockets stay connected throughout.
+      let n = 0;
+      await waitFor(
+        async () => {
+          els(n % 2 ? p : q).set('note', { id: 'note', type: 'sticky', text: `edit ${++n}` });
+          await sleep(200);
+          return (await autos()).length >= 3;
+        },
+        20_000,
+        'three automatic versions while the board stays open',
+      );
+      const at = await autos();
+      for (let i = 1; i < at.length; i++) assert(at[i] - at[i - 1] >= AUTO_VERSION_MS, `two automatic versions in one period: ${at.join(', ')}`);
+      p.destroy();
+      q.destroy();
+    });
+
+    await check("an account purged by instance 2 shows its comment that only instance 1 holds (not saved yet) as \"Deleted user\", live and after a reload", async () => {
+      const U = new User('MU');
+      await U.signup();
+      const cb = (await A.req('POST', '/api/boards', { title: 'Purge across instances' })).json.board;
+      assert((await A.req('POST', `/api/boards/${cb.id}/members`, { email: U.email, role: 'commenter' })).status === 201, 'invite');
+      const watcher = connectDoc(A, cb.id, undefined, one);
+      const u = connectDoc(U, cb.id, undefined, one);
+      await Promise.all([watcher.ready(), u.ready()]);
+      const comment = () => watcher.doc.getMap('comments').get('m:t1:u');
+      u.doc.getMap('comments').set('m:t1:u', { kind: 'message', threadId: 't1', id: 'u', authorId: U.id, authorName: U.name, authorColor: '#1C7ED6', text: 'unsaved', createdAt: Date.now() });
+      await waitFor(() => comment()?.authorName === U.name, 5000, "U's comment to reach A");
+      // A keeps typing on instance 1, which keeps postponing its (debounced) save while instance 2
+      // purges: the comment is in instance 1's memory only.
+      let typing = true;
+      const keepTyping = (async () => {
+        for (let i = 0; typing; i++) {
+          els(watcher).set('k', { id: 'k', type: 'sticky', text: `typing ${i}` });
+          await sleep(300);
+        }
+      })();
+      try {
+        assert((await U.req('POST', '/api/auth/account/delete', { password: 'password-123' }, { port: two })).status === 200, 'delete');
+        await waitFor(() => comment()?.authorName === 'Deleted user', 8000, "A's open board (instance 1) to show U's comment as Deleted user");
+      } finally {
+        typing = false;
+        await keepTyping;
+      }
+      watcher.destroy();
+      u.destroy();
+      await Promise.all(procs.map((p) => waitUnloaded(p)));
+      const again = connectDoc(A, cb.id, undefined, two);
+      await again.ready();
+      const stored = again.doc.getMap('comments').get('m:t1:u');
+      assert(stored?.authorName === 'Deleted user' && stored.text === 'unsaved', `after reload: ${JSON.stringify(stored)}`);
+      again.destroy();
+    });
+
     await check('an instance killed before saving loses nothing: the other instance saves what it relayed', async () => {
       const k = connectDoc(A, board.id, undefined, one);
       const s = connectDoc(B, board.id, undefined, two);
@@ -2238,14 +2421,14 @@ async function multiInstanceChecks() {
       await waitFor(() => els(s).has('crash'), 5000, 'the edit to reach instance 2');
       k.destroy(); // its client goes away too (otherwise it would re-send the edit on reconnect)
       await stopProc(procs[0]); // hard kill, well inside the save debounce
-      s.destroy(); // instance 2 unloads the board after FREERO_DOC_IDLE_MS
-      await sleep(2500);
+      s.destroy(); // instance 2 saves what it relayed and unloads the board after FREERO_DOC_IDLE_MS
+      await waitUnloaded(procs[1]);
       const after = connectDoc(A, board.id, undefined, two);
       await after.ready();
       assert(els(after).get('crash')?.text === 'made on the instance that dies', 'the edit died with its instance');
       after.destroy();
       // Instance 1 comes back (as after a crash restart) for the delete check below.
-      procs[0] = await waitUp(await spawnServer(path.join(dataDir, 'i0b'), env()));
+      procs[0] = await waitUp(await spawnServer(path.join(dataDir, 'i0b'), env(0)));
     });
 
     await check('deleting the board through instance 2 disconnects its sockets on instance 1 (4403)', async () => {
@@ -2441,10 +2624,10 @@ async function signInMethodChecks() {
       const ok2 = await b.fetch('/api/auth/login/two-factor', { method: 'POST', body: { code: await nextCode(pTotp.secret) } });
       assert(ok2.status === 200 && b.jar.has('freero_session'), ok2.text);
 
-      const after = Date.now();
+      const since = outboxMark(dataDir);
       const forgot = await new Browser(port).fetch('/api/auth/password/forgot', { method: 'POST', body: { email: P.email } });
       assert(forgot.status === 200, `forgot: ${forgot.status} ${forgot.text}`);
-      const token = await mailedToken(dataDir, P.email, '/reset-password', { after });
+      const token = await mailedToken(dataDir, P.email, '/reset-password', { since });
       const r = new Browser(port);
       const reset = await r.fetch('/api/auth/password/reset', { method: 'POST', body: { token, password: 'password-456' } });
       assert(reset.status === 200 && reset.json.twoFactorRequired === true && !r.jar.has('freero_session'), `reset: ${reset.text}`);
@@ -2500,8 +2683,12 @@ async function signInMethodChecks() {
       assert(!text.includes('198.51.100.7'), 'the full address is in the mail');
       await phone.fetch('/api/auth/logout', { method: 'POST' });
       assert((await login(phone, iphone)).status === 200, 'second login from the phone');
-      await sleep(500);
-      assert(noticesTo(email, /New sign-in/).length === 1, `notices: ${noticesTo(email, /New sign-in/).length} (the signup or a known browser was reported)`);
+      // Barrier instead of a pause: one more new browser, whose notice is mailed after any the phone's
+      // second login could have caused; then exactly that one must have been added.
+      assert((await login(new Browser(port), firefox)).status === 200, 'login from another new browser');
+      await waitFor(() => noticesTo(email, /New sign-in/).length >= 2, 5000, 'the notice for the other new browser');
+      const notices = noticesTo(email, /New sign-in/);
+      assert(notices.length === 2 && /Firefox/.test(notices[1].text), `notices: ${notices.map((n) => n.text.slice(0, 80)).join(' | ')} (the signup or a known browser was reported)`);
     });
 
     await check('"this wasn\'t me": an email change mails the previous (verified) address a link that takes the account back — new password, intruder signed out — once', async () => {
@@ -2759,7 +2946,7 @@ async function uploadSweepChecks() {
       const c = connectDoc(U, boardId);
       await c.ready();
       els(c).set('img', { id: 'img', type: 'image', x: 0, y: 0, w: 10, h: 10, src: url });
-      await sleep(200);
+      await settled(c); // the server has it
       c.destroy(); // the last client leaving saves the doc right away
     };
 
@@ -2789,7 +2976,7 @@ async function uploadSweepChecks() {
     });
 
     await check('uploads sweep: after the grace period only unreferenced files are deleted (files and quota), on startup', async () => {
-      await sleep(500);
+      await waitUnloaded(); // every doc saved; then a hard kill
       await stopServer();
       // Simulate three days passing (a round may already have marked some): age the uploads in the
       // server's own database.
@@ -2819,16 +3006,419 @@ async function uploadSweepChecks() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Enterprise admin (KAI-47, KAI-48, KAI-51), on its own server: the audit log written by real
+// sign-ins and team changes, read and exported only by the workspace's owners/admins; the
+// two-step requirement and deactivation closing the team's boards (REST and sockets); exports
+// reported by the app; an operator's reset from the CLI landing in the team's log.
+// ---------------------------------------------------------------------------
+async function enterpriseAdminChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-admin-'));
+  const env = { RATE_LIMIT_TWO_FACTOR: '200/15m', RATE_LIMIT_LOGIN: '500/5m', RATE_LIMIT_LOGIN_ACCOUNT: '500/5m', RATE_LIMIT_INVITE: '500/1h' };
+  let proc = null;
+  const start = async () => (proc = await waitUp(await spawnServer(dataDir, env)));
+  const socketClose = (port, boardId, cookie) =>
+    new Promise((resolve) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/boards/${boardId}`, { headers: { cookie } });
+      const t = setTimeout(() => {
+        ws.terminate();
+        resolve('open');
+      }, 4000);
+      ws.on('close', (code) => {
+        clearTimeout(t);
+        resolve(code);
+      });
+      ws.on('error', () => {});
+    });
+  try {
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    if (!(await check('admin server boots', start))) return;
+    const stamp = Date.now();
+    const verified = async (label) => {
+      const u = new User(label, proc.port);
+      u.email = `${label.toLowerCase()}-${stamp}@admin.verify.freero.app`;
+      await u.signup();
+      await u.verifyEmail(dataDir);
+      return u;
+    };
+    const enrol = async (u) => {
+      const setup = await u.req('POST', '/api/auth/two-factor/setup', { password: 'password-123' });
+      const enable = await u.req('POST', '/api/auth/two-factor/enable', { code: await totpCode({ secret: setup.json.secret }) });
+      assert(enable.status === 200, `enable: ${enable.text}`);
+    };
+    const O = await verified('Owner');
+    const M = await verified('Member');
+    const G = await verified('Guest');
+    const ws = (await O.req('POST', '/api/workspaces', { name: 'Audited team' })).json.workspace.id;
+    for (const [u, role] of [
+      [M, 'member'],
+      [G, 'guest'],
+    ])
+      assert((await O.req('POST', `/api/workspaces/${ws}/members`, { email: u.email, role })).status === 201, `add ${u.label}`);
+    const board = (await O.req('POST', '/api/boards', { title: 'Plans', workspaceId: ws })).json.board.id;
+    const audit = async (query = '') => (await O.req('GET', `/api/workspaces/${ws}/audit?limit=200${query}`)).json.events;
+
+    await check('the audit log records real sign-ins, failed sign-ins and role changes of the team, with who, from where and what changed', async () => {
+      assert((await new User('x', proc.port).req('POST', '/api/auth/login', { email: M.email, password: 'wrong-password' })).status === 401, 'bad password accepted');
+      const again = new User('Member again', proc.port);
+      assert((await again.req('POST', '/api/auth/login', { email: M.email, password: 'password-123' }, { headers: { 'user-agent': 'VerifyBrowser/1.0' } })).status === 200, 'login');
+      assert((await O.req('PATCH', `/api/workspaces/${ws}/members/${M.id}`, { role: 'admin' })).status === 200, 'role change');
+      assert((await O.req('PATCH', `/api/workspaces/${ws}/members/${M.id}`, { role: 'member' })).status === 200, 'role back');
+      const events = await audit();
+      const failed = events.find((e) => e.action === 'auth.login_failed' && e.target?.id === M.id);
+      assert(failed && failed.actor === null && failed.metadata.reason === 'password' && failed.ip, `failed sign-in: ${JSON.stringify(failed)}`);
+      const login = events.find((e) => e.action === 'auth.login' && e.actor?.id === M.id && e.userAgent === 'VerifyBrowser/1.0');
+      assert(login && login.metadata.method === 'password', `sign-in: ${JSON.stringify(events.filter((e) => e.action === 'auth.login'))}`);
+      const promoted = events.find((e) => e.action === 'member.role_changed' && e.metadata.to === 'admin');
+      assert(promoted && promoted.actor.id === O.id && promoted.metadata.from === 'member' && promoted.target.label === M.email, `role change: ${JSON.stringify(promoted)}`);
+      // A guest's own sign-ins stay theirs: not in the team's log.
+      await new User('Guest again', proc.port).req('POST', '/api/auth/login', { email: G.email, password: 'password-123' });
+      assert(!(await audit('&action=auth.')).some((e) => e.actor?.id === G.id), "a guest's sign-in reached the team's log");
+    });
+
+    await check('only owners/admins of that workspace read its audit log, usage and settings; the export is CSV/JSON, formula-safe and itself audited; the chain verifies', async () => {
+      for (const url of [`/api/workspaces/${ws}/audit`, `/api/workspaces/${ws}/admin/usage`, `/api/workspaces/${ws}/admin/settings`, `/api/workspaces/${ws}/audit/export`]) {
+        const r = await M.req('GET', url);
+        assert(r.status === 403, `member reads ${url}: ${r.status}`);
+      }
+      const outsider = await verified('Outsider');
+      assert((await outsider.req('GET', `/api/workspaces/${ws}/audit`)).status === 404, 'outsider reached the log');
+      assert((await O.req('PATCH', `/api/boards/${board}`, { title: '=HYPERLINK("http://x","y")' })).status === 200, 'rename');
+      assert((await O.req('DELETE', `/api/boards/${board}`)).status === 200 && (await O.req('POST', `/api/boards/${board}/restore`)).status === 200, 'trash + restore');
+      const csv = await O.req('GET', `/api/workspaces/${ws}/audit/export?format=csv`);
+      assert(csv.status === 200 && /text\/csv/.test(csv.headers.get('content-type')) && /attachment; filename="freero-audit-audited-team-/.test(csv.headers.get('content-disposition')), `csv headers: ${csv.status}`);
+      const lines = csv.text.trim().split('\n');
+      assert(lines[0].startsWith('id,time,action,description,actor_id') && lines.some((l) => l.includes(',board.trashed,')), `csv rows: ${lines.slice(0, 3).join(' | ')}`);
+      assert(!lines.some((l) => /,=HYPERLINK/.test(l) || /,"=HYPERLINK/.test(l)), 'a formula reached the CSV unescaped');
+      const json = await O.req('GET', `/api/workspaces/${ws}/audit/export?format=json&action=board.`);
+      assert(json.status === 200 && Array.isArray(json.json) && json.json.length > 0 && json.json.every((e) => e.action.startsWith('board.')), `json export: ${json.text.slice(0, 200)}`);
+      const exported = (await audit('&action=audit.exported')).filter((e) => e.actor?.id === O.id);
+      assert(exported.length === 2 && exported.some((e) => e.metadata.format === 'json' && e.metadata.actions?.[0] === 'board.'), `export not audited: ${JSON.stringify(exported)}`);
+      const integrity = (await O.req('GET', `/api/workspaces/${ws}/audit/integrity`)).json.integrity;
+      assert(integrity.ok && integrity.events > 5 && /^[0-9a-f]{64}$/.test(integrity.headHash), `integrity: ${JSON.stringify(integrity)}`);
+      const usage = (await O.req('GET', `/api/workspaces/${ws}/admin/usage`)).json.usage;
+      assert(usage.boards === 1 && usage.members.owner === 1 && usage.members.member === 1 && usage.members.guest === 1, `usage: ${JSON.stringify(usage)}`);
+    });
+
+    await check('requiring two-step verification closes the team\'s boards to members without it (REST and sockets), keeps them from turning it off, and needs it on for whoever sets it', async () => {
+      const needOwn = await O.req('PATCH', `/api/workspaces/${ws}/admin/settings`, { requireTwoFactor: true });
+      assert(needOwn.status === 403, `set without own two-step: ${needOwn.status}`);
+      await enrol(O);
+      assert((await O.req('PATCH', `/api/workspaces/${ws}/admin/settings`, { requireTwoFactor: true })).json.settings.requireTwoFactor === true, 'setting not saved');
+      assert((await M.req('GET', `/api/boards/${board}`)).status === 403, 'member without two-step still opens the board');
+      assert((await socketClose(proc.port, board, M.cookie)) === 4403, 'socket admitted without two-step');
+      const listed = (await M.req('GET', '/api/workspaces')).json.workspaces.find((w) => w.id === ws);
+      assert(listed.blocked === 'two_factor_required', `blocked: ${listed.blocked}`);
+      await enrol(M);
+      assert((await M.req('GET', `/api/boards/${board}`)).status === 200, 'member with two-step still locked out');
+      const off = await M.req('POST', '/api/auth/two-factor/disable', { password: 'password-123', code: '000000' });
+      assert(off.status === 409 && /Audited team requires two-step verification/.test(off.text), `turned off: ${off.status} ${off.text}`);
+      assert((await O.req('PATCH', `/api/workspaces/${ws}/admin/settings`, { requireTwoFactor: false })).status === 200, 'unset');
+    });
+
+    await check('a deactivated member opens nothing in the workspace until reactivated, while others keep working; deactivation is audited', async () => {
+      const r = await O.req('POST', `/api/workspaces/${ws}/admin/members/${M.id}/deactivate`);
+      assert(r.status === 200 && r.json.member.deactivated === true, `deactivate: ${r.text}`);
+      assert((await M.req('GET', `/api/boards/${board}`)).status === 403, 'deactivated member opens the board');
+      assert((await socketClose(proc.port, board, M.cookie)) === 4403, 'deactivated member socket admitted');
+      assert((await M.req('POST', '/api/boards', { title: 'x', workspaceId: ws })).status === 403, 'deactivated member creates boards');
+      assert((await O.req('GET', `/api/boards/${board}`)).status === 200, 'owner locked out');
+      assert((await O.req('POST', `/api/workspaces/${ws}/admin/members/${M.id}/reactivate`)).status === 200, 'reactivate');
+      assert((await M.req('GET', `/api/boards/${board}`)).status === 200, 'reactivated member still locked out');
+      const evs = await audit('&action=member.deactivated,member.reactivated');
+      assert(evs.length === 2 && evs.every((e) => e.actor.id === O.id && e.target.id === M.id), `audit: ${JSON.stringify(evs)}`);
+    });
+
+    await check('exports the app reports are audited, and refused when the downloads policy forbids them', async () => {
+      assert((await M.req('POST', `/api/boards/${board}/exported`, { format: 'pdf' })).status === 200, 'report');
+      assert((await O.req('PATCH', `/api/workspaces/${ws}`, { policies: { downloads: 'admins' } })).status === 200, 'policy');
+      assert((await M.req('POST', `/api/boards/${board}/exported`, { format: 'png' })).status === 403, 'member export allowed by a policy that forbids it');
+      const evs = await audit('&action=board.exported');
+      assert(evs.length === 1 && evs[0].actor.id === M.id && evs[0].metadata.format === 'pdf', `exports: ${JSON.stringify(evs)}`);
+    });
+
+    await check("operator CLI: a two-step reset lands in the team's audit log naming the operator, and audit:verify re-checks the chain", async () => {
+      const cli = (...args) =>
+        spawnSync(process.execPath, ['--import', 'tsx', 'apps/server/src/admin.ts', ...args], {
+          cwd: ROOT,
+          encoding: 'utf8',
+          env: { ...process.env, ...env, FREERO_DATA_DIR: dataDir, NODE_ENV: 'test', SESSION_SECRET: RUN_SECRET, LOG_LEVEL: 'warn' },
+          timeout: 60_000,
+        });
+      await stopProc(proc); // PGlite is one process (on Postgres the CLI could run alongside)
+      const reset = cli('two-factor:reset', M.email, '--operator', 'Sam from support', '--reason', 'ticket 42', '--yes');
+      assert(reset.status === 0, `reset: ${reset.status} ${reset.stdout} ${reset.stderr}`);
+      const verify = cli('audit:verify', ws);
+      assert(verify.status === 0 && /intact\s+yes/.test(verify.stdout), `audit:verify: ${verify.status} ${verify.stdout} ${verify.stderr}`);
+      await start();
+      O.port = proc.port; // sessions are in the database: the owner is still signed in
+      const ev = (await audit('&action=auth.two_factor.')).find((e) => e.action === 'auth.two_factor.reset_by_operator');
+      assert(ev && ev.actor === null && ev.metadata.operator === 'Sam from support' && ev.metadata.reason === 'ticket 42' && ev.target.id === M.id, `operator event: ${JSON.stringify(ev)}`);
+    });
+  } finally {
+    if (proc) await stopProc(proc);
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Abuse reports and operator moderation (KAI-142): reports from people who can open a board (and
+// only them), the operator queue, and every action enforced live — a link turned off drops
+// link-only sockets, a taken-down board closes and refuses everyone, a removed file answers 410
+// (also after the uploads sweep ran), a suspended account is locked out at once — plus appeals.
+// ---------------------------------------------------------------------------
+
+/** The newest /appeal?t= link mailed to `to` (the notice an action sends), waiting for it. */
+async function mailedAppealToken(dataDir, to, after = 0) {
+  let token = null;
+  await waitFor(
+    () => {
+      const m = outbox(dataDir)
+        .filter((mail) => mail.to === to && mail.sentAt >= after - 50)
+        .map((mail) => /\/appeal\?t=([A-Za-z0-9_.%-]+)/.exec(mail.text))
+        .filter(Boolean)
+        .at(-1);
+      token = m ? decodeURIComponent(m[1]) : null;
+      return token !== null;
+    },
+    8000,
+    `an appeal link mailed to ${to}`,
+  );
+  return token;
+}
+
+async function moderationChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-moderation-'));
+  const outerDbUrl = db.url;
+  const Op = new User('Operator'); // listed and verified: an operator
+  const Fake = new User('FakeOp'); // listed but never verified: not an operator
+  const O = new User('ModOwner');
+  const M = new User('ModMember'); // invited editor
+  const L = new User('ModLink'); // reaches boards only through their links
+  const S = new User('ModStranger');
+  const REPORT_LIMIT = 8;
+  const env = {
+    OPERATOR_EMAILS: `${Op.email}, ${Fake.email}`,
+    ABUSE_CONTACT_EMAIL: 'abuse@verify.freero.app',
+    RATE_LIMIT_REPORT: `${REPORT_LIMIT}/1h`,
+  };
+  const boot = async () => {
+    server = await spawnServer(dataDir, env);
+    return waitUp(server);
+  };
+  const act = (body) => Op.req('POST', '/api/moderation/actions', { reason: 'spam', statement: 'Checked by verify.', ...body });
+  const fileStatus = async (url) => (await fetch(`http://127.0.0.1:${server.port}${url}`, { redirect: 'manual' })).status;
+  try {
+    if (ADMIN_URL) db.url = await createDatabase();
+    if (!(await check('moderation: server boots with operators configured', boot))) return;
+    for (const u of [Op, Fake, O, M, L, S]) await u.signup();
+    await Op.verifyEmail(dataDir);
+    await O.verifyEmail(dataDir); // sharing by link needs a verified address
+
+    const board = async (title, linkAccess = 'viewer') => {
+      const b = (await O.req('POST', '/api/boards', { title })).json.board;
+      assert((await O.req('PATCH', `/api/boards/${b.id}`, { linkAccess })).status === 200, 'share by link');
+      assert((await O.req('POST', `/api/boards/${b.id}/members`, { email: M.email, role: 'editor' })).status === 201, 'invite member');
+      return b;
+    };
+
+    await check('moderation: /.well-known/security.txt names the abuse contact and an expiry', async () => {
+      const r = await fetch(`http://127.0.0.1:${server.port}/.well-known/security.txt`);
+      const text = await r.text();
+      assert(r.status === 200 && /^Contact: mailto:abuse@verify\.freero\.app$/m.test(text) && /^Expires: \d{4}-/m.test(text), `${r.status} ${text}`);
+    });
+
+    let reported = null;
+    await check('moderation: a report on a private board gets exactly the answer an unknown board gets; anyone who can open a board — signed out too — can report it', async () => {
+      const hidden = (await O.req('POST', '/api/boards', { title: 'Private' })).json.board;
+      reported = await board('Reported');
+      const body = (boardId) => ({ boardId, target: { kind: 'board' }, reason: 'spam', note: 'ads everywhere' });
+      const unknown = await S.req('POST', '/api/reports', body('zzzzzzzzzz'));
+      const priv = await S.req('POST', '/api/reports', body(hidden.id));
+      assert(unknown.status === 404 && priv.status === unknown.status && priv.text === unknown.text, `${unknown.status} ${unknown.text} / ${priv.status} ${priv.text}`);
+      assert((await L.req('POST', '/api/reports', body(reported.id))).status === 202, 'link visitor report');
+      const anon = await L.req('POST', '/api/reports', { ...body(reported.id), target: { kind: 'element', id: 'el1' }, contactEmail: 'someone@example.com' }, { cookie: false });
+      assert(anon.status === 202, `signed-out report -> ${anon.status} ${anon.text}`);
+    });
+
+    await check('moderation: operators only — others (including an unverified account with an operator address) get 404 from the queue; the operator sees the reports with reporter, reason and note', async () => {
+      for (const u of [S, Fake, O]) assert((await u.req('GET', '/api/moderation/queue')).status === 404, `${u.label} reached the queue`);
+      assert((await Fake.req('GET', '/api/moderation/access')).json?.operator === false, 'an unverified address counts as operator');
+      const q = await Op.req('GET', '/api/moderation/queue');
+      assert(q.status === 200, q.text);
+      const mine = q.json.items.filter((i) => i.boardId === reported.id);
+      const byLink = mine.find((i) => i.reporter?.id === L.id);
+      assert(byLink?.reason === 'spam' && byLink.message === 'ads everywhere' && byLink.board?.owner?.id === O.id, JSON.stringify(mine));
+      assert(mine.some((i) => i.reporter === null && i.contactEmail === 'someone@example.com' && i.target.id === 'el1'), 'the signed-out report is missing');
+      const preview = await fetch(`http://127.0.0.1:${server.port}/api/moderation/boards/${reported.id}/preview`, { headers: { cookie: Op.cookie } });
+      assert(preview.status === 200 && preview.headers.get('content-type')?.includes('octet-stream'), `preview -> ${preview.status}`);
+    });
+
+    await check('moderation: turning a board’s link off drops link-only sockets live, members keep editing, the owner can’t turn it back on and is emailed an appeal link', async () => {
+      const b = await board('Phishing', 'editor');
+      const viaLink = connectDoc(L, b.id);
+      const member = connectDoc(M, b.id);
+      const owner = connectDoc(O, b.id);
+      await Promise.all([viaLink.ready(), member.ready(), owner.ready()]);
+      const since = Date.now();
+      const r = await act({ action: 'board.disable_link', targetId: b.id, reason: 'phishing', statement: 'A login form copying a bank.' });
+      assert(r.status === 200, r.text);
+      await waitFor(() => viaLink.closeCodes.includes(4403), 5000, 'the link-only socket to close');
+      els(member).set('after', { id: 'after', type: 'sticky', text: 'member still edits' });
+      await waitFor(() => els(owner).get('after')?.text === 'member still edits', 5000, 'the member edit to reach the owner');
+      const patch = await O.req('PATCH', `/api/boards/${b.id}`, { linkAccess: 'viewer' });
+      assert(patch.status === 403 && patch.json?.code === 'link_blocked', `owner re-enabled the link: ${patch.status} ${patch.text}`);
+      assert((await L.req('GET', `/api/boards/${b.id}`)).status === 403, 'the link still opens the board');
+      const token = await mailedAppealToken(dataDir, O.email, since);
+      const info = await O.req('GET', `/api/appeals/${encodeURIComponent(token)}`, undefined, { cookie: false });
+      assert(info.status === 200 && info.json.appeal.action === 'board.disable_link', info.text);
+      for (const c of [viaLink, member, owner]) c.destroy();
+    });
+
+    let downBoard = null;
+    await check('moderation: a taken-down board closes every socket (4451), refuses to reopen (REST 451 for people who had access, 404 for others), leaves every list, and its public link is dead', async () => {
+      downBoard = await board('Taken down');
+      const owner = connectDoc(O, downBoard.id);
+      const member = connectDoc(M, downBoard.id);
+      const viaLink = connectDoc(L, downBoard.id);
+      await Promise.all([owner.ready(), member.ready(), viaLink.ready()]);
+      els(owner).set('keep', { id: 'keep', type: 'sticky', text: 'kept for review' });
+      await waitFor(() => els(member).get('keep'), 5000, 'the edit to sync');
+      const r = await act({ action: 'board.take_down', targetId: downBoard.id, statement: 'Spam campaign.' });
+      assert(r.status === 200, r.text);
+      for (const c of [owner, member, viaLink]) await waitFor(() => c.closeCodes.includes(4451), 5000, `${c.user.label}'s socket to close with 4451`);
+      for (const u of [O, M, L]) {
+        const g = await u.req('GET', `/api/boards/${downBoard.id}`);
+        assert(g.status === 451 && g.json?.code === 'board_removed', `${u.label} GET -> ${g.status} ${g.text}`);
+        assert((await wsCloseCode(downBoard.id, u.cookie)) === 4451, `${u.label} could reconnect`);
+      }
+      // Anyone signed in holds a link-shared board's link; a PRIVATE board taken down stays unknown to outsiders.
+      const privateDown = (await O.req('POST', '/api/boards', { title: 'Private, taken down' })).json.board;
+      assert((await act({ action: 'board.take_down', targetId: privateDown.id, statement: 'Spam.' })).status === 200, 'take down private');
+      const outsider = await S.req('GET', `/api/boards/${privateDown.id}`);
+      const unknown = await S.req('GET', '/api/boards/zzzzzzzzzz');
+      assert(outsider.status === 404 && outsider.text === unknown.text, `a stranger learns the board exists: ${outsider.status} ${outsider.text}`);
+      assert(!titles(await O.req('GET', '/api/boards')).includes(downBoard.id), 'still in the owner’s list');
+      assert((await O.req('DELETE', `/api/boards/${downBoard.id}`)).status === 451, 'the owner could trash it');
+      for (const c of [owner, member, viaLink]) c.destroy();
+    });
+
+    await check('moderation: restoring the taken-down board brings it back as it was, and the history records both actions with the operator', async () => {
+      assert((await act({ action: 'board.restore', targetId: downBoard.id, statement: '' })).status === 200, 'restore');
+      const back = connectDoc(M, downBoard.id);
+      await back.ready();
+      assert(els(back).get('keep')?.text === 'kept for review', 'content lost while taken down');
+      back.destroy();
+      const h = await Op.req('GET', `/api/moderation/boards/${downBoard.id}`);
+      const kinds = h.json.actions.map((a) => `${a.action}:${a.operator?.id === Op.id}`);
+      assert(kinds.includes('board.take_down:true') && kinds.includes('board.restore:true'), JSON.stringify(kinds));
+    });
+
+    let removed = null;
+    let unused = null; // never placed anywhere: the sweep deletes it, which proves a round ran
+    await check('moderation: a removed upload answers 410 at once (also to its uploader) and its owner is told', async () => {
+      const up = await O.req('POST', '/api/uploads', PNG_1PX, { raw: true, headers: { 'content-type': 'image/png' } });
+      removed = up.json.url;
+      unused = (await O.req('POST', '/api/uploads', PNG_1PX, { raw: true, headers: { 'content-type': 'image/png' } })).json.url;
+      const b = (await O.req('POST', '/api/boards', { title: 'With image' })).json.board;
+      const c = connectDoc(O, b.id);
+      await c.ready();
+      els(c).set('img', { id: 'img', type: 'image', x: 0, y: 0, w: 10, h: 10, src: removed });
+      await sleep(200);
+      c.destroy();
+      assert((await fileStatus(removed)) === 200, 'upload not served');
+      const since = Date.now();
+      const r = await act({ action: 'upload.remove', targetId: removed, reason: 'illegal', statement: 'Unlawful image.', boardId: b.id });
+      assert(r.status === 200, r.text);
+      assert((await fileStatus(removed)) === 410, `removed file -> ${await fileStatus(removed)}`);
+      await mailedAppealToken(dataDir, O.email, since);
+    });
+
+    await check('moderation: a sweep round days later neither resurrects the removed file nor forgets it (still 410); restoring serves the same bytes again', async () => {
+      await stopServer();
+      // Days pass: age every upload so the sweep that runs at startup considers all of them.
+      await withDb(dataDir, (q) =>
+        q(`UPDATE uploads SET created_at = created_at - interval '5 days', last_referenced_at = last_referenced_at - interval '5 days'`),
+      );
+      await boot();
+      await waitFor(async () => (await fileStatus(unused)) === 404, 15_000, 'the startup sweep round to delete the unused upload');
+      assert((await fileStatus(removed)) === 410, `after the sweep -> ${await fileStatus(removed)}`);
+      // Sessions survive the restart (cookies); restore through the operator.
+      const r = await act({ action: 'upload.restore', targetId: removed, statement: '' });
+      assert(r.status === 200, r.text);
+      const res = await fetch(`http://127.0.0.1:${server.port}${removed}`);
+      assert(res.status === 200 && Buffer.compare(Buffer.from(await res.arrayBuffer()), PNG_1PX) === 0, `restored -> ${res.status}`);
+    });
+
+    await check('moderation: suspending an account locks it out live — board and notification sockets close, REST is signed out, sign-in is refused — and its notice’s appeal link works signed out and reaches the queue', async () => {
+      const b = (await M.req('POST', '/api/boards', { title: 'Member board' })).json.board;
+      const live = connectDoc(M, b.id);
+      await live.ready();
+      const bell = notificationsSocket(M, server.port);
+      await waitFor(() => bell.ws.readyState === WebSocket.OPEN, 5000, 'the bell socket to open');
+      const since = Date.now();
+      const r = await act({ action: 'user.suspend', targetId: M.id, reason: 'harassment', statement: 'Repeated abuse in comments.' });
+      assert(r.status === 200, r.text);
+      await waitFor(() => live.closeCodes.includes(4401), 5000, 'the board socket to close');
+      await waitFor(() => bell.closeCode !== null, 5000, 'the bell socket to close');
+      assert((await M.req('GET', '/api/auth/me')).status === 401, 'still signed in');
+      const login = await M.req('POST', '/api/auth/login', { email: M.email, password: 'password-123' });
+      assert(login.status === 403 && login.json?.code === 'account_suspended', `login -> ${login.status} ${login.text}`);
+      const token = await mailedAppealToken(dataDir, M.email, since);
+      const appeal = await M.req('POST', '/api/appeals', { token, message: 'That was not me.' }, { cookie: false });
+      assert(appeal.status === 202, appeal.text);
+      assert((await M.req('POST', '/api/appeals', { token, message: 'Again' }, { cookie: false })).status === 409, 'a second open appeal');
+      const q = await Op.req('GET', '/api/moderation/queue');
+      assert(q.json.items.some((i) => i.kind === 'appeal' && i.reporter?.id === M.id && i.message === 'That was not me.'), 'appeal not in the queue');
+      live.destroy();
+      bell.ws.close();
+
+      assert((await act({ action: 'user.restore', targetId: M.id, statement: '' })).status === 200, 'lift');
+      assert((await M.req('POST', '/api/auth/login', { email: M.email, password: 'password-123' })).status === 200, 'login after the suspension was lifted');
+    });
+
+    await check('moderation: reports are rate-limited per address (429 with Retry-After)', async () => {
+      let last = null;
+      for (let i = 0; i < REPORT_LIMIT + 2 && last?.status !== 429; i++)
+        last = await S.req('POST', '/api/reports', { boardId: reported.id, target: { kind: 'element', id: `flood${i}` }, reason: 'spam' }, { cookie: false });
+      assert(last?.status === 429 && last.headers.get('retry-after'), `no 429: ${last?.status}`);
+    });
+  } finally {
+    closeAllDocs();
+    await stopServer();
+    await dropDatabases();
+    db.url = outerDbUrl;
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+// `--only <group>[,<group>…]` runs some groups, e.g. to loop one while hunting a flake.
+const SUITES = {
+  main: run,
+  signin: signInMethodChecks,
+  recovery: twoFactorRecoveryChecks,
+  secrets: secretRotationChecks,
+  sweep: uploadSweepChecks,
+  purge: accountPurgeChecks,
+  notify: notificationChecks,
+  platform: platformChecks,
+  moderation: moderationChecks,
+  multi: multiInstanceChecks,
+  admin: enterpriseAdminChecks,
+};
+const onlyArg = process.argv.indexOf('--only');
+const only = onlyArg >= 0 ? (process.argv[onlyArg + 1] ?? '').split(',').filter(Boolean) : Object.keys(SUITES);
+for (const name of only) if (!SUITES[name]) throw new Error(`--only: unknown group "${name}" (${Object.keys(SUITES).join(', ')})`);
 const started = Date.now();
-await run().catch((e) => record('verify harness', false, e?.stack ?? String(e)));
-await signInMethodChecks().catch((e) => record('sign-in methods harness', false, e?.stack ?? String(e)));
-await twoFactorRecoveryChecks().catch((e) => record('two-step recovery harness', false, e?.stack ?? String(e)));
-await secretRotationChecks().catch((e) => record('secret rotation harness', false, e?.stack ?? String(e)));
-await uploadSweepChecks().catch((e) => record('uploads sweep checks harness', false, e?.stack ?? String(e)));
-await accountPurgeChecks().catch((e) => record('account purge harness', false, e?.stack ?? String(e)));
-await notificationChecks().catch((e) => record('notifications harness', false, e?.stack ?? String(e)));
-await platformChecks().catch((e) => record('platform checks harness', false, e?.stack ?? String(e)));
-await multiInstanceChecks().catch((e) => record('multi-instance checks harness', false, e?.stack ?? String(e)));
+for (const name of only) await SUITES[name]().catch((e) => record(`${name} checks harness`, false, e?.stack ?? String(e)));
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed in ${((Date.now() - started) / 1000).toFixed(1)}s`);
 if (failed.length) {

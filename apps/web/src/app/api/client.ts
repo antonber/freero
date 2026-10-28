@@ -1,5 +1,18 @@
 import type {
+  AdminMember,
+  AuditEvent,
+  AuditIntegrity,
+  WorkspaceSettings,
+  WorkspaceUsage,
   AcceptInviteResponse,
+  AppealInfo,
+  ModeratedBoard,
+  ModeratedUpload,
+  ModeratedUser,
+  ModerationActionRecord,
+  ModerationActionRequest,
+  ModerationItem,
+  ReportRequest,
   AuthResponse,
   BoardMember,
   BoardPerson,
@@ -76,6 +89,22 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 }
 
 export type BoardFilter = 'all' | 'mine' | 'shared' | 'starred' | 'recent' | 'trash';
+
+/** Audit log filters (see GET /api/workspaces/:id/audit). */
+export interface AuditQuery {
+  action?: string;
+  actor?: string;
+  from?: number;
+  to?: number;
+  before?: string;
+  limit?: number;
+}
+
+function auditQuery(f: AuditQuery): string {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(f)) if (v !== undefined && v !== '') p.set(k, String(v));
+  return p.toString();
+}
 
 export const api = {
   // auth
@@ -235,6 +264,28 @@ export const api = {
   acceptWorkspaceInvite: (token: string) =>
     request<{ workspaceId: string }>('POST', `/api/workspace-invites/${encodeURIComponent(token)}/accept`),
 
+  // admin console (owners/admins of a team workspace; checked by the server)
+  adminUsage: (id: string) => request<{ usage: WorkspaceUsage }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/usage`),
+  adminMembers: (id: string, q = '') =>
+    request<{ members: AdminMember[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/members${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  setMemberDeactivated: (id: string, userId: string, deactivated: boolean) =>
+    request<{ member: AdminMember }>(
+      'POST',
+      `/api/workspaces/${encodeURIComponent(id)}/admin/members/${encodeURIComponent(userId)}/${deactivated ? 'deactivate' : 'reactivate'}`,
+    ),
+  workspaceSettings: (id: string) => request<{ settings: WorkspaceSettings }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/settings`),
+  updateWorkspaceSettings: (id: string, patch: Partial<WorkspaceSettings>) =>
+    request<{ settings: WorkspaceSettings }>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/admin/settings`, patch),
+  auditEvents: (id: string, filter: AuditQuery) =>
+    request<{ events: AuditEvent[]; next: string | null }>('GET', `/api/workspaces/${encodeURIComponent(id)}/audit?${auditQuery(filter)}`),
+  /** A same-origin URL that downloads the filtered log (the browser handles the file). */
+  auditExportUrl: (id: string, format: 'csv' | 'json', filter: AuditQuery) =>
+    `/api/workspaces/${encodeURIComponent(id)}/audit/export?format=${format}&${auditQuery({ ...filter, before: undefined, limit: undefined })}`,
+  auditIntegrity: (id: string) => request<{ integrity: AuditIntegrity }>('GET', `/api/workspaces/${encodeURIComponent(id)}/audit/integrity`),
+  /** Tells the server a board was exported in the browser (audit log; refused when the workspace forbids exports). */
+  reportBoardExport: (boardId: string, format: string) =>
+    request<{ ok: true }>('POST', `/api/boards/${encodeURIComponent(boardId)}/exported`, { format }),
+
   // projects (folders)
   listProjects: (workspaceId: string) =>
     request<{ projects: ProjectSummary[] }>('GET', `/api/workspaces/${encodeURIComponent(workspaceId)}/projects`),
@@ -274,6 +325,28 @@ export const api = {
     request<{ version: BoardVersion }>('PATCH', `/api/boards/${boardId}/versions/${versionId}`, { name }),
   restoreVersion: (boardId: string, versionId: number) =>
     request<{ before: BoardVersion }>('POST', `/api/boards/${boardId}/versions/${versionId}/restore`),
+
+  // reports and moderation (KAI-142)
+  report: (body: ReportRequest) => request<{ ok: true }>('POST', '/api/reports', body),
+  appeal: (token: string) => request<{ appeal: AppealInfo }>('GET', `/api/appeals/${encodeURIComponent(token)}`),
+  submitAppeal: (token: string, message: string) => request<{ ok: true }>('POST', '/api/appeals', { token, message }),
+  moderationAccess: () => request<{ operator: boolean }>('GET', '/api/moderation/access'),
+  moderationQueue: (status: 'open' | 'closed') => request<{ items: ModerationItem[] }>('GET', `/api/moderation/queue?status=${status}`),
+  moderationBoard: (id: string) =>
+    request<{ board: ModeratedBoard; items: ModerationItem[]; actions: ModerationActionRecord[] }>(
+      'GET',
+      `/api/moderation/boards/${encodeURIComponent(id)}`,
+    ),
+  async moderationPreview(id: string): Promise<Uint8Array> {
+    const res = await fetch(`/api/moderation/boards/${encodeURIComponent(id)}/preview`, { credentials: 'same-origin' });
+    if (!res.ok) throw await failure(res);
+    return new Uint8Array(await res.arrayBuffer());
+  },
+  moderationUpload: (name: string) => request<{ upload: ModeratedUpload }>('GET', `/api/moderation/uploads/${encodeURIComponent(name)}`),
+  moderationUser: (email: string) => request<{ user: ModeratedUser }>('GET', `/api/moderation/users?email=${encodeURIComponent(email)}`),
+  moderate: (body: ModerationActionRequest) => request<{ action: ModerationActionRecord }>('POST', '/api/moderation/actions', body),
+  resolveModerationItem: (id: string, outcome: 'actioned' | 'dismissed', note: string) =>
+    request<{ item: ModerationItem }>('POST', `/api/moderation/items/${encodeURIComponent(id)}/resolve`, { outcome, note }),
 
   // link previews
   unfurl:(url: string) => request<UnfurlResponse>('GET', `/api/unfurl?url=${encodeURIComponent(url)}`),

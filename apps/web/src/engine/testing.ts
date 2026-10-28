@@ -90,6 +90,7 @@ export function createTestBoard(opts: TestBoardOptions): TestBoard {
       versions: unavailableVersionHistory('No version history in tests'),
       importImage: async () => Promise.reject(new Error('No server in tests')),
       fetchImage: async () => Promise.reject(new Error('No server in tests')),
+      report: async () => Promise.reject(new Error('No server in tests')),
     };
     const core = createCore(host, bundles);
     core.ui.setState({ viewport: { width: 1000, height: 800 }, camera: { x: 0, y: 0, zoom: 1 } });

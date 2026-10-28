@@ -192,6 +192,7 @@ function PdfDialog({ editor }: { editor: Editor }) {
       });
       if (pdf && !ctrl.signal.aborted) {
         pdf.save(exportFileName(editor.host.board.title, 'pdf', picked.length === 1 ? picked[0].title : 'frames'));
+        editor.host.reportExport?.('pdf');
         missing.report();
         close();
       }
