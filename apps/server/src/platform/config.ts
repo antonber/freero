@@ -21,6 +21,7 @@ export type RateLimitName =
   | 'version'
   | 'wsConnect'
   | 'twoFactor'
+  | 'twoFactorRecovery'
   | 'oidc';
 
 /** `limit` hits per `windowMs`; `null` = not limited. */
@@ -107,6 +108,13 @@ export interface Config {
   /** How often each instance looks for accounts due to be purged. */
   accountPurgeIntervalMs: number;
   /**
+   * How long a "lost my authenticator" recovery waits before two-step verification can be removed
+   * (the owner is mailed at the start and before the end, and can cancel). At least a day in production.
+   */
+  twoFactorRecoveryDelayMs: number;
+  /** How long the "this wasn't me" link of the two-step-on notice works. */
+  twoFactorUndoMs: number;
+  /**
    * How long a notification waits before it is emailed: everything a person got meanwhile goes out
    * as one digest, and what they read in the app by then is not emailed at all.
    */
@@ -148,6 +156,7 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   version: '60/1h', // per user (naming or restoring a board version: each keeps a full copy)
   wsConnect: '200/1m', // per IP and per user
   twoFactor: '10/15m', // two-factor codes per IP and per account (sign-in second step, enrolment, disabling)
+  twoFactorRecovery: '3/1d', // "lost my authenticator" recoveries started, per IP and per account
   oidc: '60/10m', // "Sign in with …" starts and callbacks per IP
 };
 
@@ -166,6 +175,7 @@ const ENV_NAME: Record<RateLimitName, string> = {
   version: 'RATE_LIMIT_VERSION',
   wsConnect: 'RATE_LIMIT_WS_CONNECT',
   twoFactor: 'RATE_LIMIT_TWO_FACTOR',
+  twoFactorRecovery: 'RATE_LIMIT_TWO_FACTOR_RECOVERY',
   oidc: 'RATE_LIMIT_OIDC',
 };
 
@@ -351,6 +361,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     shutdownDrainMs: int('SHUTDOWN_DRAIN_SECONDS', production ? 5 : 0, 0, 300) * 1000,
     accountDeletionGraceMs: int('ACCOUNT_DELETION_GRACE_DAYS', 14, 0, 365) * 86_400_000,
     accountPurgeIntervalMs: int('ACCOUNT_PURGE_INTERVAL_SECONDS', 3600, 1, 7 * 86_400) * 1000,
+    // Shorter than a day only outside production (tests); see docs/configuration.md.
+    twoFactorRecoveryDelayMs: int('TWO_FACTOR_RECOVERY_DELAY_SECONDS', 7 * 86_400, production ? 86_400 : 1, 90 * 86_400) * 1000,
+    twoFactorUndoMs: int('TWO_FACTOR_UNDO_HOURS', 72, 1, 14 * 24) * 3_600_000,
     notifyEmailDelayMs: int('NOTIFY_EMAIL_DELAY_SECONDS', 900, 0, 7 * 86_400) * 1000,
     notifyEmailIntervalMs: int('NOTIFY_EMAIL_INTERVAL_SECONDS', 60, 1, 86_400) * 1000,
     rateLimits,

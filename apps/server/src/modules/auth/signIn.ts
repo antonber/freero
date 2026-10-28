@@ -70,6 +70,17 @@ async function openSession(req: Request, res: Response, userId: string, how: { m
 
 const signInExpired = () => unauthorized('Your sign-in expired. Please log in again.');
 
+/**
+ * The pending sign-in of this browser (first factor proven, second not yet), without counting an
+ * attempt — for starting a "lost my authenticator" recovery from it. 401 when there is none.
+ */
+export async function pendingSignIn(req: Request): Promise<repo.Challenge> {
+  const token = parseCookies(req.headers.cookie)[CHALLENGE_COOKIE];
+  const challenge = token ? await repo.findChallenge(hashToken(token), Date.now()) : null;
+  if (!challenge) throw signInExpired();
+  return challenge;
+}
+
 /** The second step: a code from the authenticator app or a recovery code. */
 export async function finishTwoFactorSignIn(req: Request, res: Response, code: unknown): Promise<Account> {
   const token = parseCookies(req.headers.cookie)[CHALLENGE_COOKIE];
@@ -82,7 +93,7 @@ export async function finishTwoFactorSignIn(req: Request, res: Response, code: u
   }
   // Per account too, so a fresh pending sign-in (a known password) doesn't buy fresh guesses.
   await consumeRateLimit('twoFactor', `user:${challenge.userId}`);
-  if (!(await useSecondFactor(challenge.userId, code)))
+  if (!(await useSecondFactor(challenge.userId, code, req)))
     throw new HttpError(403, 'That code is not right. Check your authenticator app and try again.');
   // Single use: of two requests racing with right codes, one signs in.
   if (!(await repo.deleteChallenge(key))) throw signInExpired();
