@@ -1544,9 +1544,12 @@ async function uploadSweepChecks() {
     await check('uploads sweep: after the grace period only unreferenced files are deleted (files and quota), on startup', async () => {
       await sleep(500);
       await stopServer();
-      // Simulate three days passing: age the uploads in the server's own database.
-      await withDb(dataDir, (q) => q(`UPDATE uploads SET created_at = now() - interval '3 days'`));
-      await startServer(dataDir); // the first sweep round runs at startup
+      // Simulate three days passing (a round may already have marked some): age the uploads in the
+      // server's own database.
+      await withDb(dataDir, (q) =>
+        q(`UPDATE uploads SET created_at = created_at - interval '3 days', last_referenced_at = last_referenced_at - interval '3 days'`),
+      );
+      await startServer(dataDir); // a sweep round runs shortly after startup
       await waitFor(async () => (await fileStatus(files.unused)) === 404, 15_000, 'the unused upload to be swept');
       await waitFor(async () => (await fileStatus(files.purged)) === 404, 15_000, 'the purged board image to be swept');
       for (const k of ['live', 'trashed', 'copied', 'template', 'avatar'])

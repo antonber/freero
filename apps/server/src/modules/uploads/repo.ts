@@ -52,10 +52,20 @@ export async function idleSince(before: number, limit: number): Promise<string[]
   return rows.map((r) => r.name);
 }
 
-/** Inside `transaction()`: true when no other instance is deleting uploads right now. */
-export async function tryLockSweep(): Promise<boolean> {
-  const r = await one<{ ok: boolean }>(`SELECT pg_try_advisory_xact_lock(hashtext('uploads.sweep'), 0) AS ok`);
-  return r?.ok === true;
+/**
+ * Gives stored files that have no row one (no owner, so no quota), created `now`: board and
+ * template thumbnails, files from before this table, rows lost to a crash. From then on the sweep
+ * treats them like any upload. Names that already have a row are left alone.
+ */
+export async function adoptFiles(files: ReadonlyArray<{ name: string; bytes: number; contentType: string }>, now: number): Promise<void> {
+  if (!files.length) return;
+  await query(
+    `INSERT INTO uploads (name, owner_id, bytes, content_type, created_at)
+     SELECT f.name, NULL, f.bytes, f.content_type, $4
+     FROM unnest($1::text[], $2::bigint[], $3::text[]) AS f(name, bytes, content_type)
+     ON CONFLICT (name) DO NOTHING`,
+    [files.map((f) => f.name), files.map((f) => f.bytes), files.map((f) => f.contentType), new Date(now)],
+  );
 }
 
 /**

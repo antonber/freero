@@ -9,7 +9,7 @@ import { createUser } from '../auth/index';
 import { createBoard } from '../boards/index';
 import { initBoardDoc } from '../realtime/index';
 import { saveUpload, uploadBytesUsed } from './store';
-import { sweepUploads, UPLOAD_GRACE_MS } from './sweep';
+import { sweepUploadsLocked, UPLOAD_GRACE_MS } from './sweep';
 
 const HOUR = 3_600_000;
 const PNG = Buffer.from(
@@ -49,16 +49,16 @@ it('an image removed from its board stays for the grace period after its last re
 
   // Long after the upload, the image is still on the board: kept, and seen referenced now.
   const t0 = Date.now() + 10 * UPLOAD_GRACE_MS;
-  expect(await sweepUploads(t0)).toBe(0);
+  expect(await sweepUploadsLocked(t0)).toBe(0);
   expect(await stored(url)).toBe(true);
 
   // Someone deletes it from the board. An hour later it must still be there for undo.
   await initBoardDoc(board.id, docState([{ id: 's1', type: 'sticky', x: 0, y: 0, w: 10, h: 10, text: 'hi' }]));
-  expect(await sweepUploads(t0 + HOUR)).toBe(0);
+  expect(await sweepUploadsLocked(t0 + HOUR)).toBe(0);
   expect(await stored(url)).toBe(true);
 
   // A grace period after the last round that saw it referenced, it goes, and its bytes are freed.
-  expect(await sweepUploads(t0 + UPLOAD_GRACE_MS + HOUR)).toBe(1);
+  expect(await sweepUploadsLocked(t0 + UPLOAD_GRACE_MS + HOUR)).toBe(1);
   expect(await stored(url)).toBe(false);
   expect(await uploadBytesUsed(owner.id)).toBe(0);
 });
@@ -66,7 +66,7 @@ it('an image removed from its board stays for the grace period after its last re
 it('a fresh upload not placed on any board yet (still on its way) is not swept', async () => {
   const owner = await user('Uploader');
   const url = await saveUpload(PNG, 'image/png', owner.id);
-  await sweepUploads(Date.now() + HOUR);
+  await sweepUploadsLocked(Date.now() + HOUR);
   expect(await stored(url)).toBe(true);
 });
 
@@ -76,7 +76,16 @@ it('an upload referenced while a round runs (after its mark, before the delete) 
   let scans = 0;
   // The mark sees nothing; by the re-check someone has pasted the image onto a board.
   const references = async () => new Set(scans++ === 0 ? [] : [nameOf(url)]);
-  await sweepUploads(Date.now() + 10 * UPLOAD_GRACE_MS, references);
+  await sweepUploadsLocked(Date.now() + 10 * UPLOAD_GRACE_MS, references);
   expect(await stored(url)).toBe(true);
   expect(await uploadBytesUsed(owner.id)).toBe(PNG.byteLength);
+});
+
+it('a stored file with no row (its row went with a deleted account, or it predates quotas) is swept a grace period after it is first seen unreferenced', async () => {
+  const url = await saveUpload(PNG, 'image/png'); // no owner: no row, like a thumbnail
+  const t0 = Date.now() + 10 * UPLOAD_GRACE_MS; // an old file
+  await sweepUploadsLocked(t0);
+  expect(await stored(url)).toBe(true); // first seen now, so it gets the whole grace period
+  await sweepUploadsLocked(t0 + UPLOAD_GRACE_MS + HOUR);
+  expect(await stored(url)).toBe(false);
 });
