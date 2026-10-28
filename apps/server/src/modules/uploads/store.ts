@@ -90,6 +90,16 @@ export async function deleteUpload(url: string | null | undefined): Promise<void
   await repo.deleteUploadRow(name);
 }
 
+/**
+ * Deletes every file the user uploaded (account purge), including images placed on boards they
+ * did not own: an erased account takes its uploads with it. Returns how many.
+ */
+export async function deleteUploadsOwnedBy(ownerId: string): Promise<number> {
+  const names = await repo.namesOwnedBy(ownerId);
+  for (const name of names) await deleteUpload(`/uploads/${name}`);
+  return names.length;
+}
+
 /** Bytes of upload quota the user has used. */
 export function uploadBytesUsed(ownerId: string): Promise<number> {
   return repo.bytesUsedBy(ownerId);

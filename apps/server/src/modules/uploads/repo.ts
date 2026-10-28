@@ -28,6 +28,10 @@ export async function deleteUploadRow(name: string): Promise<void> {
   await query(`DELETE FROM uploads WHERE name = $1`, [name]);
 }
 
+export async function namesOwnedBy(ownerId: string): Promise<string[]> {
+  return (await query<{ name: string }>(`SELECT name FROM uploads WHERE owner_id = $1`, [ownerId])).map((r) => r.name);
+}
+
 export async function bytesUsedBy(ownerId: string): Promise<number> {
   const row = await one<{ n: number | string }>(`SELECT COALESCE(SUM(bytes), 0)::bigint AS n FROM uploads WHERE owner_id = $1`, [ownerId]);
   return Number(row?.n ?? 0);
