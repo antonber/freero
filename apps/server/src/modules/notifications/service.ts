@@ -10,7 +10,14 @@ import { log, logError } from '../../platform/log';
 import { appUrl, renderMail, sendMail } from '../../platform/mail';
 import { getAccount, getUsers } from '../auth/index';
 import { getBoardAccess, getBoardTitle } from '../boards/index';
-import { invitedEmails, type BoardSharedEvent, type InviteAcceptedEvent } from '../members/index';
+import {
+  accessRequestOutcomes,
+  invitedEmails,
+  type AccessDecidedEvent,
+  type AccessRequestedEvent,
+  type BoardSharedEvent,
+  type InviteAcceptedEvent,
+} from '../members/index';
 import type { CommentMessageEvent } from '../realtime/index';
 import * as live from './live';
 import * as repo from './repo';
@@ -90,6 +97,25 @@ export function emailsIn(text: string): string[] {
   return [...new Set([...text.matchAll(EMAIL_IN_TEXT)].map((m) => m[0].toLowerCase()))];
 }
 
+/** Someone asked for access: the people who decide hear about it (with the requester's message). */
+export async function onAccessRequested(e: AccessRequestedEvent): Promise<void> {
+  const data: NotificationData = { boardTitle: e.boardTitle, role: e.role, ...(e.message ? { excerpt: shorten(e.message) } : {}) };
+  for (const userId of e.recipientIds)
+    await notify({ userId, type: 'access.request', actorId: e.requesterId, boardId: e.boardId, data, dedupeKey: `access:${e.boardId}:${e.requesterId}:${e.createdAt}` });
+}
+
+/**
+ * The requester hears back. A "no" doesn't name the board's title (they never had access) and
+ * isn't tied to the board: the notification links to the board's request page instead.
+ */
+export async function onAccessDecided(e: AccessDecidedEvent): Promise<void> {
+  await notify(
+    e.approved
+      ? { userId: e.requesterId, type: 'access.response', actorId: e.deciderId, boardId: e.boardId, data: { boardTitle: e.boardTitle, role: e.role ?? undefined, approved: true } }
+      : { userId: e.requesterId, type: 'access.response', actorId: e.deciderId, boardId: null, data: { approved: false, requestedBoardId: e.boardId } },
+  );
+}
+
 /** A board was shared with an existing account. */
 export async function onBoardShared(e: BoardSharedEvent): Promise<void> {
   await notify({ userId: e.userId, type: 'board.invite', actorId: e.byId, boardId: e.boardId, data: { boardTitle: e.boardTitle, role: e.role } });
@@ -117,20 +143,28 @@ export function sweepPendingMentions(now = Date.now()): Promise<void> {
 const DEFAULT_PAGE = 30;
 const MAX_PAGE = 100;
 
-function present(r: repo.NotificationRow, actors: Map<string, { id: string; name: string; color: string; avatarUrl: string | null }>): AppNotification | null {
+type Outcomes = Awaited<ReturnType<typeof accessRequestOutcomes>>;
+
+function present(
+  r: repo.NotificationRow,
+  actors: Map<string, { id: string; name: string; color: string; avatarUrl: string | null }>,
+  outcomes: Outcomes,
+): AppNotification | null {
   if (!isNotificationType(r.type)) return null; // a type this version does not know (newer instance)
   const def = NOTIFICATION_TYPES[r.type];
   const actor = r.actorId ? actors.get(r.actorId) : undefined;
+  const request = r.type === 'access.request' && r.boardId && actor ? outcomes.get(`${r.boardId}:${actor.id}`) : undefined;
   return {
     id: r.id,
     type: r.type,
     createdAt: r.createdAt,
     readAt: r.readAt,
     actor: actor ? { id: actor.id, name: actor.name, color: actor.color, avatarUrl: actor.avatarUrl } : null,
-    title: def.title(actor?.name ?? 'Someone', r.data),
+    title: def.title(actor?.name ?? r.data.actorName ?? 'Someone', r.data),
     body: r.data.excerpt ?? '',
     link: def.link(r.boardId, r.data),
     boardId: r.boardId,
+    ...(request ? { accessRequest: request } : {}),
   };
 }
 
@@ -139,8 +173,13 @@ export async function listFor(userId: string, opts: { before?: number | null; li
   const [rows, unread] = await Promise.all([repo.list(userId, limit, opts.before ?? null), repo.unreadCount(userId)]);
   const page = rows.slice(0, limit);
   const actors = await getUsers(page.flatMap((r) => (r.actorId ? [r.actorId] : [])));
+  const requests = page.filter((r) => r.type === 'access.request' && r.boardId && r.actorId);
+  const outcomes = await accessRequestOutcomes(
+    userId,
+    requests.map((r) => ({ boardId: r.boardId!, requesterId: r.actorId!, createdAt: r.createdAt })),
+  );
   return {
-    notifications: page.map((r) => present(r, actors)).filter((n): n is AppNotification => n !== null),
+    notifications: page.map((r) => present(r, actors, outcomes)).filter((n): n is AppNotification => n !== null),
     unread,
     hasMore: rows.length > limit,
   };
@@ -251,7 +290,7 @@ async function renderDigest(userId: string, rows: repo.NotificationRow[]) {
   const items = shown.map((r) => {
     const def = NOTIFICATION_TYPES[r.type as NotificationType];
     return {
-      heading: def.title(actors.get(r.actorId ?? '')?.name ?? 'Someone', r.data),
+      heading: def.title(actors.get(r.actorId ?? '')?.name ?? r.data.actorName ?? 'Someone', r.data),
       quote: r.data.excerpt || undefined,
       link: { label: def.linkLabel, url: appUrl(null, def.link(r.boardId, r.data)) },
     };

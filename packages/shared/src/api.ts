@@ -488,6 +488,41 @@ export interface InvitePreview {
 }
 export interface AcceptInviteResponse { boardId: string; role: Role }
 
+// ---- Access requests ----
+// Someone signed in who can't open a board asks for access. Deciders: the board's owner and, for a
+// team board, its workspace's owners/admins (a private project's board: also the project's
+// creator). They hear about it (notification `access.request`: the board owner, plus the admins —
+// or, for a private project's board, the project's creator) and approve as viewer / commenter /
+// editor, or decline; the requester hears back (`access.response`), and the request page lets them
+// in at once. One pending request per person per board; asking again right after a "no" waits.
+// GET    /api/boards/:id/access-request                -> AccessRequestState   (404: no such board)
+// POST   /api/boards/:id/access-request  body { role, message? } -> AccessRequestState (verified
+//        email; rate limited; 403 when the workspace keeps its boards to its own people)
+// DELETE /api/boards/:id/access-request                -> AccessRequestState   (withdraw it)
+// GET    /api/boards/:id/access-requests               -> { requests: BoardAccessRequest[] } (deciders)
+// POST   /api/boards/:id/access-requests/:userId body { decision: 'approve' | 'deny', role? } -> { ok: true }
+//        (deciders; 409 when it was decided meanwhile; approving someone outside a team workspace
+//        follows its "external sharing" policy)
+export interface AccessRequestState {
+  status: 'none' | 'pending' | 'denied' | 'granted';
+  /** status 'granted': your role now. */
+  role?: Role;
+  /** You may ask now (false right after a "no", or when the workspace allows only its own people). */
+  canRequest: boolean;
+  /** Why you can't, in words. */
+  reason?: string;
+}
+export interface BoardAccessRequest {
+  userId: string;
+  name: string;
+  email: string;
+  color: string;
+  avatarUrl: string | null;
+  role: Exclude<Role, 'owner'>;
+  message: string;
+  createdAt: number;
+}
+
 // ---- Board people ----
 // GET /api/boards/:id/people?ids=a,b,c -> { people: BoardPerson[] }  (any role on the board)
 //     Profiles (name, color, photo) of the listed users who have access to the board or appear in
@@ -507,7 +542,13 @@ export interface BoardPerson { id: string; name: string; color: string; avatarUr
 //
 // Types are open-ended: a new source (e.g. workspace invites) adds its type here and its entry in
 // the server's modules/notifications/types.ts; the inbox shows `title` / `body` as sent.
-export type NotificationType = 'board.invite' | 'comment.mention' | 'comment.reply' | 'workspace.invite';
+export type NotificationType =
+  | 'board.invite'
+  | 'comment.mention'
+  | 'comment.reply'
+  | 'workspace.invite'
+  | 'access.request'
+  | 'access.response';
 
 export interface AppNotification {
   id: string;
@@ -523,6 +564,16 @@ export interface AppNotification {
   /** App path to open: the board, or the board with ?thread=<id>. */
   link: string;
   boardId: string | null;
+  /**
+   * type 'access.request': the request as it stands now (`actor` asked). `canDecide`: you may
+   * still approve / decline it here (POST /api/boards/:boardId/access-requests/:actor.id).
+   */
+  accessRequest?: {
+    role: Exclude<Role, 'owner'>;
+    status: 'pending' | 'approved' | 'denied' | 'withdrawn';
+    decidedRole: Exclude<Role, 'owner'> | null;
+    canDecide: boolean;
+  };
 }
 export interface NotificationsResponse { notifications: AppNotification[]; unread: number; hasMore: boolean }
 export interface NotificationTypePref { type: NotificationType; label: string; description: string; email: boolean }

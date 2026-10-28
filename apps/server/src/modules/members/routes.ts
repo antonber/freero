@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import type { AcceptInviteResponse, BoardMember, BoardPerson, InviteResponse, Role, User } from '@freero/shared';
+import type { AcceptInviteResponse, AccessRequestState, BoardMember, BoardPerson, InviteResponse, Role, User } from '@freero/shared';
+import { decideRequest, listRequests, requestAccess, requestState, withdrawRequest } from './accessRequests';
 import type { ServerContext } from '../../platform/context';
 import { badRequest, forbidden, handle, HttpError, notFound } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
@@ -118,6 +119,49 @@ export default function memberRoutes(_ctx: ServerContext): Router {
       const users = await getUsers(ids.filter((id) => onBoard.has(id) || inComments.has(id)));
       const people: BoardPerson[] = [...users.values()].map((u) => ({ id: u.id, name: u.name, color: u.color, avatarUrl: u.avatarUrl }));
       res.json({ people });
+    }),
+  );
+
+  // ---- access requests ----
+  r.get(
+    '/boards/:id/access-request',
+    requireUser,
+    handle(async (req, res) => {
+      res.json((await requestState(req.params.id, currentUser(req).id)) satisfies AccessRequestState);
+    }),
+  );
+
+  r.post(
+    '/boards/:id/access-request',
+    requireUser,
+    rateLimit('accessRequest', 'user'),
+    handle(async (req, res) => {
+      res.status(201).json((await requestAccess(req.params.id, currentUser(req), req.body ?? {})) satisfies AccessRequestState);
+    }),
+  );
+
+  r.delete(
+    '/boards/:id/access-request',
+    requireUser,
+    handle(async (req, res) => {
+      res.json((await withdrawRequest(req.params.id, currentUser(req).id)) satisfies AccessRequestState);
+    }),
+  );
+
+  r.get(
+    '/boards/:id/access-requests',
+    requireUser,
+    handle(async (req, res) => {
+      res.json({ requests: await listRequests(req.params.id, currentUser(req).id) });
+    }),
+  );
+
+  r.post(
+    '/boards/:id/access-requests/:userId',
+    requireUser,
+    handle(async (req, res) => {
+      await decideRequest(req.params.id, currentUser(req), req.params.userId, req.body ?? {});
+      res.json({ ok: true });
     }),
   );
 

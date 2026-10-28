@@ -328,6 +328,29 @@ export async function teamMembers(place: BoardPlace): Promise<Array<{ userId: st
   return out;
 }
 
+/**
+ * Who, besides a board's owner, decides who may join it (access requests) — `deciders`: the
+ * workspace's owners/admins and, for a board in a private project, the project's creator while
+ * still in the workspace (they run the project). `notify`: who hears about a new request — for a
+ * private project's board the people running the project (its creator; the admins when there is
+ * none), elsewhere the admins. Both empty for a personal workspace's board.
+ */
+export async function boardGatekeepers(place: BoardPlace): Promise<{ deciders: string[]; notify: string[] }> {
+  const ws = await repo.getWorkspace(place.workspaceId);
+  if (!ws || ws.kind !== 'team') return { deciders: [], notify: [] };
+  const [members, project] = await Promise.all([
+    repo.listMembers(ws.id),
+    place.projectId ? repo.getProject(place.projectId) : Promise.resolve(null),
+  ]);
+  const admins = members.filter((m) => isManager(m.role)).map((m) => m.userId);
+  const lead =
+    project?.access === 'private' && project.createdBy && members.some((m) => m.userId === project.createdBy && isFullMember(m.role))
+      ? project.createdBy
+      : null;
+  const deciders = lead && !admins.includes(lead) ? [...admins, lead] : admins;
+  return { deciders, notify: project?.access === 'private' && lead ? [lead] : admins };
+}
+
 export async function teamMemberIds(place: BoardPlace): Promise<string[]> {
   return (await teamMembers(place)).map((m) => m.userId);
 }

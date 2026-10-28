@@ -52,6 +52,14 @@ export async function requireBoardDownload(boardId: string, userId: string): Pro
   requireDownload(access);
 }
 
+/** Where a (live) board is and who owns it, or null if there is no such board. */
+export async function boardPlace(
+  boardId: string,
+): Promise<{ id: string; title: string; ownerId: string; workspaceId: string; projectId: string | null } | null> {
+  const b = await repo.getBoard(boardId);
+  return b ? { id: b.id, title: b.title, ownerId: b.ownerId, workspaceId: b.workspaceId, projectId: b.projectId } : null;
+}
+
 /** The board's title, or null if there is no such board (invite previews). */
 export async function getBoardTitle(boardId: string): Promise<string | null> {
   return (await repo.getBoard(boardId))?.title ?? null;

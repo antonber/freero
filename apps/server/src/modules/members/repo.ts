@@ -1,6 +1,8 @@
-// The only writer of `board_members` and `board_invites` [S4].
-import { isForeignKeyViolation, one, query } from '../../platform/db';
+// The only writer of `board_members`, `board_invites` and `board_access_requests` [S4].
+import { isForeignKeyViolation, one, query, tx } from '../../platform/db';
 import type { MemberRole } from './roles';
+
+export const transaction = <T>(fn: () => Promise<T>): Promise<T> => tx(() => fn());
 
 export interface MemberRow {
   boardId: string;
@@ -205,4 +207,125 @@ export async function deleteInvite(boardId: string, id: string, onlyIfSentBy: st
     [boardId, id, onlyIfSentBy],
   );
   return rows.length > 0;
+}
+
+// ---- access requests (board_access_requests) ----
+
+export type AccessRequestStatus = 'pending' | 'approved' | 'denied';
+
+export interface AccessRequestRow {
+  boardId: string;
+  userId: string;
+  role: MemberRole;
+  message: string;
+  status: AccessRequestStatus;
+  createdAt: number;
+  decidedBy: string | null;
+  decidedRole: MemberRole | null;
+  decidedAt: number | null;
+}
+
+interface RequestDbRow {
+  board_id: string;
+  user_id: string;
+  role: MemberRole;
+  message: string;
+  status: AccessRequestStatus;
+  created_at: Date;
+  decided_by: string | null;
+  decided_role: MemberRole | null;
+  decided_at: Date | null;
+}
+
+const toRequest = (r: RequestDbRow): AccessRequestRow => ({
+  boardId: r.board_id,
+  userId: r.user_id,
+  role: r.role,
+  message: r.message,
+  status: r.status,
+  createdAt: r.created_at.getTime(),
+  decidedBy: r.decided_by,
+  decidedRole: r.decided_role,
+  decidedAt: r.decided_at?.getTime() ?? null,
+});
+
+export async function getAccessRequest(boardId: string, userId: string): Promise<AccessRequestRow | null> {
+  const r = await one<RequestDbRow>(`SELECT * FROM board_access_requests WHERE board_id = $1 AND user_id = $2`, [boardId, userId]);
+  return r ? toRequest(r) : null;
+}
+
+/**
+ * Files a request unless one is already pending, or one was denied after `deniedSince` (asking
+ * again right after a "no" would only pester the approvers). One statement, so two tabs asking at
+ * once file it once. Returns 'created', 'pending' (one already was), 'denied' (too soon) or
+ * 'board-gone'.
+ */
+export async function fileAccessRequest(
+  r: { boardId: string; userId: string; role: MemberRole; message: string },
+  now: number,
+  deniedSince: number,
+): Promise<'created' | 'pending' | 'denied' | 'board-gone'> {
+  try {
+    const rows = await query(
+      `INSERT INTO board_access_requests (board_id, user_id, role, message, status, created_at)
+       VALUES ($1, $2, $3, $4, 'pending', $5)
+       ON CONFLICT (board_id, user_id) DO UPDATE
+         SET role = excluded.role, message = excluded.message, status = 'pending', created_at = excluded.created_at,
+             decided_by = NULL, decided_role = NULL, decided_at = NULL
+         WHERE board_access_requests.status = 'approved'
+            OR (board_access_requests.status = 'denied' AND board_access_requests.decided_at < $6)
+       RETURNING 1`,
+      [r.boardId, r.userId, r.role, r.message, new Date(now), new Date(deniedSince)],
+    );
+    if (rows.length > 0) return 'created';
+  } catch (e) {
+    if (isForeignKeyViolation(e)) return 'board-gone';
+    throw e;
+  }
+  return (await getAccessRequest(r.boardId, r.userId))?.status === 'pending' ? 'pending' : 'denied';
+}
+
+/** Withdraws the user's own pending request; false if there was none. */
+export async function withdrawAccessRequest(boardId: string, userId: string): Promise<boolean> {
+  const rows = await query(`DELETE FROM board_access_requests WHERE board_id = $1 AND user_id = $2 AND status = 'pending' RETURNING 1`, [
+    boardId,
+    userId,
+  ]);
+  return rows.length > 0;
+}
+
+export async function pendingAccessRequests(boardId: string): Promise<AccessRequestRow[]> {
+  return (
+    await query<RequestDbRow>(`SELECT * FROM board_access_requests WHERE board_id = $1 AND status = 'pending' ORDER BY created_at`, [boardId])
+  ).map(toRequest);
+}
+
+/**
+ * Decides a PENDING request: only one decision wins when two approvers act at once. Returns the
+ * decided request, or null if it was not pending (any more).
+ */
+export async function decideAccessRequest(
+  boardId: string,
+  userId: string,
+  d: { status: 'approved' | 'denied'; by: string; role: MemberRole | null },
+  now: number,
+): Promise<AccessRequestRow | null> {
+  const r = await one<RequestDbRow>(
+    `UPDATE board_access_requests SET status = $3, decided_by = $4, decided_role = $5, decided_at = $6
+     WHERE board_id = $1 AND user_id = $2 AND status = 'pending' RETURNING *`,
+    [boardId, userId, d.status, d.by, d.role, new Date(now)],
+  );
+  return r ? toRequest(r) : null;
+}
+
+/** The requests behind these (board, requester) pairs, for showing their outcome. */
+export async function accessRequestsFor(pairs: Array<{ boardId: string; userId: string }>): Promise<AccessRequestRow[]> {
+  if (pairs.length === 0) return [];
+  return (
+    await query<RequestDbRow>(
+      `SELECT r.* FROM board_access_requests r
+       JOIN unnest($1::text[], $2::text[]) AS p(board_id, user_id) ON p.board_id = r.board_id AND p.user_id = r.user_id`,
+      [pairs.map((p) => p.boardId), pairs.map((p) => p.userId)],
+    )
+  ).map(toRequest);
 }

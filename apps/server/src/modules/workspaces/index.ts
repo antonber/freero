@@ -13,6 +13,7 @@ export {
   teamWorkspaceIdsFor,
   teamMemberIds,
   teamMembers,
+  boardGatekeepers,
   handOverTeamWorkspaces,
   isManager,
 } from './service';
@@ -21,5 +22,6 @@ export { lockProjectForBoard } from './projects';
 export { onMembershipChanged, type MembershipChangedEvent } from './events';
 // Managing a team (its routes use these; so may provisioning later, e.g. SCIM).
 export { createTeamWorkspace, updateWorkspace, removeMember as removeWorkspaceMember } from './service';
+export { createProject } from './projects';
 export { inviteToWorkspace } from './invites';
 export { mayDownload, mayShareExternally, isFullMember } from './roles';

@@ -21,7 +21,9 @@ export type RateLimitName =
   | 'version'
   | 'wsConnect'
   | 'twoFactor'
-  | 'oidc';
+  | 'oidc'
+  | 'accessRequest'
+  | 'guestJoin';
 
 /** `limit` hits per `windowMs`; `null` = not limited. */
 export type RateLimitRule = { limit: number; windowMs: number } | null;
@@ -149,6 +151,8 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   wsConnect: '200/1m', // per IP and per user
   twoFactor: '10/15m', // two-factor codes per IP and per account (sign-in second step, enrolment, disabling)
   oidc: '60/10m', // "Sign in with …" starts and callbacks per IP
+  accessRequest: '20/1h', // per user: asking for access to boards
+  guestJoin: '20/1h', // per IP: visitors joining a shared board without an account
 };
 
 const ENV_NAME: Record<RateLimitName, string> = {
@@ -167,6 +171,8 @@ const ENV_NAME: Record<RateLimitName, string> = {
   wsConnect: 'RATE_LIMIT_WS_CONNECT',
   twoFactor: 'RATE_LIMIT_TWO_FACTOR',
   oidc: 'RATE_LIMIT_OIDC',
+  accessRequest: 'RATE_LIMIT_ACCESS_REQUEST',
+  guestJoin: 'RATE_LIMIT_GUEST_JOIN',
 };
 
 /** The built-in providers: env prefix, button label, default issuer, extra verified-email claims. */

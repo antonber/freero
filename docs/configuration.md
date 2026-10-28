@@ -161,6 +161,8 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `RATE_LIMIT_PASSWORD` | `5/15m` | Password-reset requests per IP and per email; reset submissions per IP; password changes and account deletions per user. |
 | `RATE_LIMIT_EMAIL_VERIFY` | `5/1h` | Verification re-sends and email-change requests per user. |
 | `RATE_LIMIT_INVITE` | `60/1h` | Board invitations per user. |
+| `RATE_LIMIT_ACCESS_REQUEST` | `20/1h` | Requests for access to boards per user. |
+| `RATE_LIMIT_GUEST_JOIN` | `20/1h` | Visitors without an account joining shared boards as guests, per IP. |
 | `RATE_LIMIT_UPLOAD` | `60/10m` | Uploads per user. |
 | `RATE_LIMIT_REMOTE_IMAGE` | `200/10m` | Images the server fetches from a URL per user (copying a pasted image link to uploads, and including such images in exports). |
 | `RATE_LIMIT_BOARD_CREATE` | `100/1h` | Board creations + duplications per user. |

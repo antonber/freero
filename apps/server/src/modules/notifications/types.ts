@@ -15,6 +15,15 @@ export interface NotificationData {
   /** Workspace notifications: the workspace it is about. */
   workspaceId?: string;
   workspaceName?: string;
+  /** access.response: approved or declined. */
+  approved?: boolean;
+  /**
+   * access.response when declined: the board asked for. Stored here, not as the notification's
+   * board — the requester has no access to it, and its title is not theirs to see.
+   */
+  requestedBoardId?: string;
+  /** Who caused it when that is not an account (a guest on a shared link): their display name. */
+  actorName?: string;
 }
 
 export interface NotificationTypeDef {
@@ -36,7 +45,26 @@ const threadPath = (id: string | null, d: NotificationData) =>
 
 const ROLE_PHRASE: Record<string, string> = { editor: 'edit', commenter: 'comment on', viewer: 'view' };
 
+const ASK_PHRASE: Record<string, string> = { editor: 'edit', commenter: 'comment on', viewer: 'view' };
+
 export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> = {
+  'access.request': {
+    label: 'Access requests',
+    description: 'Someone asks for access to a board you own or administer.',
+    title: (actor, d) => `${actor} asked to ${d.role && ASK_PHRASE[d.role] ? ASK_PHRASE[d.role] : 'open'} ${board(d)}`,
+    link: (id) => `${boardPath(id)}?share=requests`,
+    linkLabel: 'Review the request',
+  },
+  'access.response': {
+    label: 'Answers to your access requests',
+    description: 'Someone approves or declines your request to open a board.',
+    title: (actor, d) =>
+      d.approved
+        ? `${actor} gave you access to ${d.role && ROLE_PHRASE[d.role] ? `${ROLE_PHRASE[d.role]} ` : ''}${board(d)}`
+        : `${actor} declined your request to open a board`,
+    link: (id, d) => boardPath(id ?? d.requestedBoardId ?? null),
+    linkLabel: 'Open the board',
+  },
   'comment.mention': {
     label: 'Mentions',
     description: 'Someone @mentions you in a comment.',
