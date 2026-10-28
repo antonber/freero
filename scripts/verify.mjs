@@ -2008,6 +2008,7 @@ async function multiInstanceChecks() {
   const OP = new User('MOp'); // an operator (moderation), verified below
   // Rate-limit counters live in the shared Redis, also across the single-instance run above.
   const AUTO_VERSION_MS = 1000; // automatic versions of open boards (KAI-82), instead of 30 min
+  const FACILITATOR_GRACE_MS = 1000; // a facilitator gone this long ends their session (KAI-129)
   // Accounts are purged right away, and only by instance 2 (instance 1's job would run hourly).
   const env = (i) => ({
     DATABASE_URL: url,
@@ -2016,6 +2017,7 @@ async function multiInstanceChecks() {
     ACCOUNT_DELETION_GRACE_DAYS: '0',
     ACCOUNT_PURGE_INTERVAL_SECONDS: i === 0 ? '3600' : '1',
     FREERO_SNAPSHOT_EVERY_MS: String(AUTO_VERSION_MS),
+    FREERO_FACILITATOR_GRACE_MS: String(FACILITATOR_GRACE_MS),
     OPERATOR_EMAILS: OP.email,
   });
   const docRows = async (boardId) =>
@@ -2070,6 +2072,27 @@ async function multiInstanceChecks() {
       const id = g.doc.clientID;
       g.destroy();
       await waitFor(() => !a.provider.awareness.getStates().has(id), 5000, 'the guest cursor to disappear on instance 1');
+    });
+
+    await check('facilitator controls across instances (KAI-129): a participant on the other instance is locked at once, and the facilitator there keeps the session past the grace period', async () => {
+      const C = new User('MC');
+      await C.signup();
+      await C.verifyEmail(path.join(dataDir, 'i0'));
+      assert((await A.req('POST', `/api/boards/${board.id}/members`, { email: C.email, role: 'editor' })).status === 201, 'invite C');
+      const c = connectDoc(C, board.id, undefined, one);
+      await c.ready();
+      const fac = (x) => x.doc.getMap('facilitation');
+      fac(b).set('session', { by: B.id, byName: B.name, startedAt: Date.now(), locked: true, allowedTypes: null, follow: false, cursorsHidden: false });
+      await waitFor(() => c.role === 'commenter' && c.limits?.locked, 5000, 'the participant on instance 1 to be locked');
+      els(c).set('lockedOut', { id: 'lockedOut', type: 'sticky' });
+      await settled(c, [a, b]);
+      assert(!els(a).has('lockedOut') && !els(b).has('lockedOut'), "a locked participant's write crossed instances");
+      // Instance 1 holds no socket of the facilitator: only their presence from instance 2 keeps it.
+      await sleep(FACILITATOR_GRACE_MS * 2);
+      assert(fac(a).get('session')?.by === B.id && c.role === 'commenter', 'the session ended while the facilitator was on the other instance');
+      fac(b).delete('session');
+      await waitFor(() => c.role === 'editor' && !c.limits, 5000, 'the participant to be released');
+      c.destroy();
     });
 
     await check("opening the board on instance 2 right after an edit on instance 1 shows it before it is even saved", async () => {
