@@ -161,7 +161,10 @@
   margin-right: 6px;
 }
 
-.fr-dash__new {
+.fr-dash__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-left: auto;
 }
 

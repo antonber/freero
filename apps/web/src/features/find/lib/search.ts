@@ -2,7 +2,7 @@
 // parts such as table cells and extra connector labels — card descriptions, frame titles,
 // comments) and how matches are found, shown and replaced. Texts other features own are
 // rewritten through the engine (Editor.setTextParts) or the owner's command (comments).
-import type { BoardElement, CommentMessageRecord, CommentThreadRecord, ElementType } from '@freero/shared';
+import { mentionsAsNames, type BoardElement, type CommentMessageRecord, type CommentThreadRecord, type ElementType } from '@freero/shared';
 import { replaceInRichText, richTextToPlain, type Editor, type ElementPatch, type Point, type TextPart } from '@engine';
 
 export const PANEL_ID = 'find.panel';
@@ -53,7 +53,12 @@ function threadPoint(t: CommentThreadRecord, el: BoardElement | undefined): Poin
 }
 
 /** Comment messages that still exist (no tombstone on them or their thread), with their pin. */
-export function commentSources(entries: Array<[string, unknown]>, getElement: (id: string) => BoardElement | undefined): Source[] {
+export function commentSources(
+  entries: Array<[string, unknown]>,
+  getElement: (id: string) => BoardElement | undefined,
+  /** Names for @mentions of people who haven't commented here (e.g. who is online). */
+  nameOf: (userId: string) => string | undefined = () => undefined,
+): Source[] {
   const threads = new Map<string, CommentThreadRecord>();
   const deleted = new Set<string>();
   const messages: CommentMessageRecord[] = [];
@@ -64,6 +69,9 @@ export function commentSources(entries: Array<[string, unknown]>, getElement: (i
     else if (rec.kind === 'message') messages.push(rec as CommentMessageRecord);
     else if (rec.kind === 'deleted') deleted.add(key.slice(2));
   }
+  // Mentions read as the names people see ("@Ann"), not the stored <@id> tokens.
+  const authors = new Map(messages.map((m) => [m.authorId, m.authorName]));
+  const name = (id: string) => nameOf(id) ?? authors.get(id);
   const out: Source[] = [];
   for (const m of messages) {
     const t = threads.get(m.threadId);
@@ -73,7 +81,7 @@ export function commentSources(entries: Array<[string, unknown]>, getElement: (i
       key: `c:${m.threadId}:${m.id}`,
       threadId: m.threadId,
       messageId: m.id,
-      text: m.text,
+      text: mentionsAsNames(m.text, name),
       author: m.authorName,
       authorId: m.authorId,
       at: threadPoint(t, t.elementId ? getElement(t.elementId) : undefined),
@@ -100,7 +108,9 @@ export function boardSources(editor: Editor, elements: BoardElement[], comments:
       frameTitle: frame?.type === 'frame' ? frame.title || 'Untitled frame' : null,
     });
   }
-  out.push(...commentSources(comments, (id) => editor.getElement(id)));
+  const online = new Map(editor.getPeers().map((p) => [p.user.id, p.user.name]));
+  online.set(editor.user.id, editor.user.name);
+  out.push(...commentSources(comments, (id) => editor.getElement(id), (id) => online.get(id)));
   return out;
 }
 

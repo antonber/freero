@@ -6,6 +6,7 @@ import { createStore, useStore, type StoreApi } from 'zustand';
 import { nanoid } from 'nanoid';
 import type { CommentMessageRecord, CommentRecord, CommentThread, CommentThreadRecord } from '@freero/shared';
 import type { Collection, Editor, Point } from '@engine';
+import { replaceOutsideMentions } from './mentions';
 import { assembleThreads, keys, reactionKeys, threadKeys, threadPoint, upgradeLegacy, type ThreadFilter } from './model';
 
 export const COLLECTION = 'comments';
@@ -223,7 +224,7 @@ export function replaceInMessages(
     for (const t of getThreads(editor))
       for (const m of t.messages) {
         if (m.authorId !== editor.user.id || (only && !only.has(keys.message(t.id, m.id)))) continue;
-        const next = m.text.replace(re, () => replacement);
+        const next = replaceOutsideMentions(m.text, (plain) => plain.replace(re, () => replacement));
         if (next === m.text || !next.trim()) continue;
         editMessage(editor, t.id, m.id, next);
         changed++;

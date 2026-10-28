@@ -1,0 +1,124 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { afterAll, beforeAll, expect, it } from 'vitest';
+import { mentionToken, type User } from '@freero/shared';
+import { getConfig } from '../../platform/config';
+import { outboxDir } from '../../platform/mail';
+import { closeTestDb, openTestDb } from '../../platform/testing';
+import { createUser, markEmailVerified } from '../auth/index';
+import { createBoard } from '../boards/index';
+import type { CommentMessageEvent } from '../realtime/index';
+import { listFor, markRead, onCommentMessage, sendDigests, unsubscribe, unsubscribeToken, updatePrefs } from './service';
+
+beforeAll(() => openTestDb());
+afterAll(() => closeTestDb());
+
+let n = 0;
+async function person(label: string, verified = true): Promise<User> {
+  const email = `${label.toLowerCase()}-${++n}@notify.test.freero.app`;
+  const u = await createUser({ name: label, email, password: 'password-123' });
+  if (verified) await markEmailVerified(u.id, email);
+  return u;
+}
+
+let seq = 0;
+const message = (boardId: string, authorId: string, text: string, more: Partial<CommentMessageEvent> = {}): CommentMessageEvent => ({
+  boardId,
+  authorId,
+  threadId: 't1',
+  messageId: `m${++seq}`,
+  text,
+  previousText: null,
+  participantIds: [],
+  ...more,
+});
+
+const inbox = async (u: User) => (await listFor(u.id)).notifications;
+
+function mailsTo(to: string): Array<{ subject: string; text: string; headers?: Record<string, string> }> {
+  if (!fs.existsSync(outboxDir())) return [];
+  return fs
+    .readdirSync(outboxDir())
+    .map((f) => JSON.parse(fs.readFileSync(path.join(outboxDir(), f), 'utf8')))
+    .filter((m) => m.to === to);
+}
+
+it('a mention notifies the mentioned person once with a link to the thread — never the author, never someone who cannot open the board', async () => {
+  const [ann, bob, outsider] = [await person('Ann'), await person('Bob'), await person('Outsider')];
+  const open = await createBoard(ann.id, 'Roadmap', '', 'commenter'); // anyone signed in may comment
+  const closed = await createBoard(ann.id, 'Private', '', 'none');
+
+  const e = message(open.id, ann.id, `Hey ${mentionToken(bob.id)} and ${mentionToken(ann.id)}, look`);
+  await onCommentMessage(e);
+  await onCommentMessage({ ...e, previousText: e.text, text: `${e.text}!` }); // an edit keeping the mention
+  await onCommentMessage(message(closed.id, ann.id, `psst ${mentionToken(outsider.id)}`));
+
+  const got = await inbox(bob);
+  expect(got).toHaveLength(1);
+  expect(got[0]).toMatchObject({ type: 'comment.mention', link: `/board/${open.id}?thread=t1`, body: 'Hey @Bob and @Ann, look', actor: { id: ann.id } });
+  expect(got[0].title).toContain('Roadmap');
+  expect(await inbox(ann)).toHaveLength(0);
+  expect(await inbox(outsider)).toHaveLength(0);
+});
+
+it('a reply notifies everyone else in the thread; someone it also mentions gets just the mention, and editing a message never re-notifies replies', async () => {
+  const [ann, bob, cy] = [await person('Ann'), await person('Bob'), await person('Cy')];
+  const board = await createBoard(ann.id, 'Retro', '', 'commenter');
+  const reply = message(board.id, cy.id, `On it ${mentionToken(bob.id)}`, { participantIds: [ann.id, bob.id] });
+  await onCommentMessage(reply);
+  await onCommentMessage({ ...reply, previousText: reply.text, text: `${reply.text} today` });
+
+  expect((await inbox(ann)).map((x) => x.type)).toEqual(['comment.reply']);
+  expect((await inbox(bob)).map((x) => x.type)).toEqual(['comment.mention']);
+  expect(await inbox(cy)).toHaveLength(0);
+});
+
+it('the email digest batches everything unread past the delay into one message, skips what was read or opted out, and its unsubscribe link turns emails off', async () => {
+  const [ann, bob] = [await person('Ann'), await person('Bob')];
+  const board = await createBoard(ann.id, 'Launch', '', 'commenter');
+  const send = (text: string) => onCommentMessage(message(board.id, ann.id, text));
+  await send(`first ${mentionToken(bob.id)}`);
+  await send(`second ${mentionToken(bob.id)}`);
+  await send(`seen already ${mentionToken(bob.id)}`);
+  const seen = (await inbox(bob)).find((x) => x.body.startsWith('seen'))!;
+  await markRead(bob.id, [seen.id]);
+
+  await sendDigests(Date.now()); // nothing is past the delay yet
+  expect(mailsTo(bob.email)).toHaveLength(0);
+  const later = Date.now() + getConfig().notifyEmailDelayMs + 1000;
+  await sendDigests(later);
+  await sendDigests(later + 1000); // already dealt with: nothing twice
+  const mails = mailsTo(bob.email);
+  expect(mails).toHaveLength(1);
+  expect(mails[0].text).toContain('“first @Bob”');
+  expect(mails[0].text).toContain('“second @Bob”');
+  expect(mails[0].text).not.toContain('seen already');
+  expect(mails[0].text).toContain(`/board/${board.id}?thread=t1`);
+  expect(mails[0].headers?.['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click');
+
+  // Opted out of mentions: a new one shows in the app but is never emailed.
+  await updatePrefs(bob.id, { email: { 'comment.mention': false } });
+  await send(`third ${mentionToken(bob.id)}`);
+  await sendDigests(later + 2 * getConfig().notifyEmailDelayMs + 5000);
+  expect(mailsTo(bob.email)).toHaveLength(1);
+  expect((await inbox(bob)).some((x) => x.body.startsWith('third'))).toBe(true);
+
+  // The link is bound to its user; a forged or altered one does nothing.
+  const token = /\/unsubscribe\?token=([^\s]+)/.exec(mails[0].text)![1];
+  expect(await unsubscribe(unsubscribeToken(ann.id).replace(/.$/, (c) => (c === 'A' ? 'B' : 'A')))).toBeNull();
+  expect(await unsubscribe(decodeURIComponent(token))).toBe(bob.email);
+  await updatePrefs(bob.id, { email: { 'comment.mention': true } });
+  await send(`fourth ${mentionToken(bob.id)}`);
+  await sendDigests(later + 4 * getConfig().notifyEmailDelayMs + 10_000);
+  expect(mailsTo(bob.email)).toHaveLength(1);
+});
+
+it('an unverified address never gets digest emails', async () => {
+  const ann = await person('Ann');
+  const ghost = await person('Ghost', false);
+  const board = await createBoard(ann.id, 'Draft', '', 'commenter');
+  await onCommentMessage(message(board.id, ann.id, `hi ${mentionToken(ghost.id)}`));
+  await sendDigests(Date.now() + getConfig().notifyEmailDelayMs + 1000);
+  expect(await inbox(ghost)).toHaveLength(1);
+  expect(mailsTo(ghost.email)).toHaveLength(0);
+});
