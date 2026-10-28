@@ -31,6 +31,9 @@ export function App() {
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/revert-email" element={<ResetPasswordPage mode="revert" />} />
+            <Route path="/undo-two-factor" element={<ResetPasswordPage mode="undo" />} />
+            <Route path="/recover-two-factor" element={<ResetPasswordPage mode="recover" />} />
+            <Route path="/cancel-recovery" element={<EmailLinkPage mode="cancelRecovery" />} />
             <Route path="/verify-email" element={<EmailLinkPage mode="verify" />} />
             <Route path="/confirm-email" element={<EmailLinkPage mode="change" />} />
             <Route path="/invite/:token" element={<InvitePage />} />

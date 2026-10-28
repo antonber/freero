@@ -1,5 +1,5 @@
 import express, { Router } from 'express';
-import type { AuthResponse, LoginResponse, SecurityInfo, SessionInfo, SessionResponse } from '@freero/shared';
+import type { AuthResponse, LoginResponse, SecurityInfo, SessionInfo, SessionResponse, TwoFactorRecoveryStarted } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { handle, notFound } from '../../platform/http';
 import { logError } from '../../platform/log';
@@ -20,7 +20,14 @@ import {
 import { locateIp, maskIp } from './geoip';
 import { configuredProviders, disconnectIdentity, providerLabel, toLinkedIdentity } from './providers';
 import * as repo from './repo';
-import { completeSignIn, finishTwoFactorSignIn, providerCallback, startProviderSignIn } from './signIn';
+import {
+  cancelTwoFactorRecovery,
+  cancelTwoFactorRecoveryByLink,
+  finishTwoFactorRecovery,
+  startTwoFactorRecovery,
+  undoTwoFactor,
+} from './recovery';
+import { completeSignIn, finishTwoFactorSignIn, pendingSignIn, providerCallback, startProviderSignIn } from './signIn';
 import { beginTwoFactorSetup, disableTwoFactor, enableTwoFactor, regenerateRecoveryCodes, twoFactorRequiredBy } from './twoFactor';
 import {
   checkCredentials,
@@ -76,6 +83,44 @@ export default function authRoutes(_ctx: ServerContext): Router {
     rateLimit('twoFactor'), // per IP (and per account inside)
     handle(async (req, res) => {
       res.json({ user: await finishTwoFactorSignIn(req, res, req.body?.code) } satisfies AuthResponse);
+    }),
+  );
+
+  // "Lost access to your authenticator?": starts a delayed recovery from the pending sign-in.
+  r.post(
+    '/auth/login/two-factor/recovery',
+    rateLimit('twoFactorRecovery'), // per IP (and per account inside)
+    handle(async (req, res) => {
+      res.json((await startTwoFactorRecovery(req, await pendingSignIn(req))) satisfies TwoFactorRecoveryStarted);
+    }),
+  );
+
+  // The link mailed once a recovery's waiting period is over: like a reset link, plus the second step goes.
+  r.post(
+    '/auth/two-factor/recovery/finish',
+    rateLimit('password'),
+    handle(async (req, res) => {
+      const user = await finishTwoFactorRecovery(req, req.body?.token, req.body?.password);
+      res.json((await completeSignIn(req, res, user.id, 'email_link')) satisfies LoginResponse);
+    }),
+  );
+
+  // The cancel link of the recovery mails (whoever reads the address can stop a recovery).
+  r.post(
+    '/auth/two-factor/recovery/cancel-link',
+    handle(async (req, res) => {
+      await cancelTwoFactorRecoveryByLink(req, req.body?.token);
+      res.json({ ok: true });
+    }),
+  );
+
+  // "This wasn't me" from the two-step-on notice.
+  r.post(
+    '/auth/two-factor/undo',
+    rateLimit('password'),
+    handle(async (req, res) => {
+      const user = await undoTwoFactor(req, req.body?.token, req.body?.password);
+      res.json((await completeSignIn(req, res, user.id, 'email_link')) satisfies LoginResponse);
     }),
   );
 
@@ -283,6 +328,7 @@ export default function authRoutes(_ctx: ServerContext): Router {
   const security = async (req: express.Request): Promise<SecurityInfo> => {
     const me = currentUser(req);
     const user = await repo.findUserById(me.id);
+    const recovery = await repo.findRecovery(me.id);
     return {
       hasPassword: !!user?.passwordHash,
       identities: (await repo.listIdentities(me.id)).map(toLinkedIdentity),
@@ -291,6 +337,7 @@ export default function authRoutes(_ctx: ServerContext): Router {
         enabled: await repo.twoFactorEnabled(me.id),
         recoveryCodesLeft: await repo.countRecoveryCodes(me.id),
         requiredBy: await twoFactorRequiredBy(me.id),
+        recovery: recovery && { startedAt: recovery.startedAt, readyAt: recovery.readyAt },
       },
       recentAuthUntil: currentSessionAuthAt(req) + RECENT_AUTH_MS,
     };
@@ -343,6 +390,16 @@ export default function authRoutes(_ctx: ServerContext): Router {
       res.json({
         recoveryCodes: await regenerateRecoveryCodes(req, currentUser(req).id, req.body?.password, req.body?.code, currentSessionAuthAt(req)),
       });
+    }),
+  );
+
+  // Anyone still signed in can stop a "lost my authenticator" recovery they didn't start.
+  r.post(
+    '/auth/two-factor/recovery/cancel',
+    requireUser,
+    handle(async (req, res) => {
+      await cancelTwoFactorRecovery(req, currentUser(req).id, 'signed_in');
+      res.json(await security(req));
     }),
   );
 

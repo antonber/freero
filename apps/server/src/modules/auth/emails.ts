@@ -98,7 +98,8 @@ export async function resetPassword(req: Request | null, tokenIn: unknown, passw
   const token = typeof tokenIn === 'string' ? tokenIn : '';
   const t = token ? await repo.takeToken(hashToken(token), 'reset_password', Date.now()) : null;
   if (!t) throw invalidLink();
-  await repo.setPasswordHash(t.userId, await hashPassword(password));
+  // The mailbox, not the old password, chose it: it can't start a two-step recovery (recovery.ts).
+  await repo.setPasswordHash(t.userId, await hashPassword(password), { viaLink: true });
   await endSessionsOf(t.userId);
   // Reading the reset mail proves the address.
   await markEmailVerified(t.userId, t.email);
@@ -224,10 +225,13 @@ export async function revertEmailChange(tokenIn: unknown, passwordIn: unknown): 
     if (e instanceof repo.EmailTakenError) throw new HttpError(409, 'Another account uses that address now');
     throw e;
   }
-  await repo.setPasswordHash(t.userId, await hashPassword(password));
+  await repo.setPasswordHash(t.userId, await hashPassword(password), { viaLink: true });
   await repo.removeSecuritySetupSince(t.userId, t.createdAt);
   await auditOwnAccount('auth.email_change_reverted', t.userId, { to: t.email });
-  await repo.deleteTokens(t.userId); // every pending link, other "this wasn't me" links included
+  // Every pending link, other "this wasn't me" links included — except the two-step-on notice's
+  // undo link sent to this same address (two-step verification turned on BEFORE the change stays
+  // on; that link is how this address removes it, see recovery.ts).
+  await repo.deleteTokensExcept(t.userId, [{ purpose: 'two_factor_undo', email: t.email }]);
   await endSessionsOf(t.userId);
   await emailVerified(t.userId, t.email);
   return getAccount(t.userId);
