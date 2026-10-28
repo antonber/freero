@@ -4,6 +4,7 @@ export {
   currentUser,
   getUser,
   getUsers,
+  getAccount,
   createUser,
   findUserByEmail,
   normalizeEmail,
