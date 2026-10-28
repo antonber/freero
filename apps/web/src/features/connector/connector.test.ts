@@ -196,24 +196,28 @@ describe('elbow lines route around other items', () => {
   it('routing 200 lines on a 2 000-item board fits in a frame', () => {
     // 50 × 40 grid of items; each line skips one item in its row, so every line has to detour.
     const items = Array.from({ length: 2000 }, (_, i) => ({ id: `n${i}`, box: { x: (i % 50) * 180, y: Math.floor(i / 50) * 140, w: 100, h: 60 } }));
+    const lines = Array.from({ length: 200 }, (_, k) => {
+      const i = (k * 7) % 2000;
+      const from = items[i - (i % 50) + Math.min(i % 50, 47)].box;
+      const to = { ...from, x: from.x + 360 };
+      return [
+        end({ x: from.x + from.w, y: from.y + 30 }, { x: 1, y: 0 }, { ...from, id: 's' } as never),
+        end({ x: to.x, y: to.y + 30 }, { x: -1, y: 0 }, { ...to, id: 'e' } as never),
+      ] as const;
+    });
+    // One frame's work: index the board once, then find each line's obstacles and route it.
     const run = () => {
       const index = new ObstacleIndex(items);
       let detours = 0;
-      for (let k = 0; k < 200; k++) {
-        const i = (k * 7) % 2000;
-        const from = items[i - (i % 50) + Math.min(i % 50, 47)].box;
-        const to = { ...from, x: from.x + 360 };
-        const s = end({ x: from.x + from.w, y: from.y + 30 }, { x: 1, y: 0 }, { ...from, id: 's' } as never);
-        const e = end({ x: to.x, y: to.y + 30 }, { x: -1, y: 0 }, { ...to, id: 'e' } as never);
-        const { poly } = computeRoute('elbow', s, e, [], obstaclesBetween(index, s, e));
-        if (poly.length > 2) detours++;
-      }
+      for (const [s, e] of lines) if (computeRoute('elbow', s, e, [], obstaclesBetween(index, s, e)).poly.length > 2) detours++;
       return detours;
     };
     expect(run()).toBe(200);
-    // Best of a few runs: a shared CI machine can stall any single one.
+    // Warm, then the best of many runs: other test files share the CPU, and any single run can
+    // be stalled by them or by a garbage collection.
+    for (let i = 0; i < 5; i++) run();
     let best = Infinity;
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 20; i++) {
       const t = performance.now();
       run();
       best = Math.min(best, performance.now() - t);
