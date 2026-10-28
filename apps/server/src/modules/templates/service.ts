@@ -1,0 +1,114 @@
+// Saved templates: validation, the per-user quota, and the thumbnail file.
+// The content is opaque board data (the web engine's export of elements); the server only checks
+// its shape and size. Inserting it later remaps every id on the client (the copy/paste path), so
+// nothing here depends on the source board, which may be deleted meanwhile.
+import type { SaveTemplateRequest, SavedTemplate, SavedTemplateSummary, TemplateContent } from '@freero/shared';
+import { getConfig } from '../../platform/config';
+import { badRequest, forbidden, notFound } from '../../platform/http';
+import { newId } from '../../platform/ids';
+import { deleteUpload, saveUpload } from '../uploads/index';
+import * as repo from './repo';
+
+export const MAX_ELEMENTS = 5000;
+export const MAX_CONTENT_BYTES = 1536 * 1024;
+const MAX_THUMBNAIL_BYTES = 512 * 1024;
+const DATA_URL_RE = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=\s]+)$/;
+
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+function cleanName(v: unknown): string {
+  if (typeof v !== 'string') throw badRequest('name is required');
+  const t = v.trim().slice(0, 80);
+  if (!t) throw badRequest('Give the template a name');
+  return t;
+}
+
+function cleanDescription(v: unknown): string {
+  if (v === undefined || v === null) return '';
+  if (typeof v !== 'string') throw badRequest('description must be a string');
+  return v.trim().slice(0, 500);
+}
+
+/** Checks the shape the web engine needs to insert it (and that it is not huge). */
+export function cleanContent(v: unknown): TemplateContent {
+  if (!isObject(v) || !Array.isArray(v.elements)) throw badRequest('content.elements must be an array');
+  if (v.elements.length === 0) throw badRequest('A template needs at least one item');
+  if (v.elements.length > MAX_ELEMENTS) throw badRequest(`A template can hold at most ${MAX_ELEMENTS} items`);
+  const ids = new Set<string>();
+  for (const el of v.elements) {
+    if (!isObject(el) || typeof el.id !== 'string' || !el.id || el.id.length > 64 || typeof el.type !== 'string')
+      throw badRequest('Every element needs a string id and type');
+    for (const k of ['x', 'y', 'w', 'h']) if (typeof el[k] !== 'number' || !Number.isFinite(el[k])) throw badRequest(`element ${k} must be a number`);
+    if (ids.has(el.id)) throw badRequest('Element ids must be unique');
+    ids.add(el.id);
+  }
+  if (v.content !== undefined && !isObject(v.content)) throw badRequest('content.content must be an object');
+  const content: TemplateContent = { elements: v.elements as TemplateContent['elements'], ...(v.content ? { content: v.content } : {}) };
+  if (Buffer.byteLength(JSON.stringify(content)) > MAX_CONTENT_BYTES)
+    throw badRequest(`This is too much content for one template (max ${Math.round(MAX_CONTENT_BYTES / 1024 / 1024 * 10) / 10}MB)`);
+  return content;
+}
+
+function thumbnailBytes(v: unknown): { bytes: Buffer; type: string } | null {
+  if (v === undefined || v === null) return null;
+  const m = typeof v === 'string' ? DATA_URL_RE.exec(v) : null;
+  if (!m) throw badRequest('thumbnail must be a base64 PNG, JPEG or WebP data URL');
+  const bytes = Buffer.from(m[2], 'base64');
+  if (bytes.byteLength > MAX_THUMBNAIL_BYTES) throw badRequest('Thumbnail is too large (max 512KB)');
+  return { bytes, type: m[1] };
+}
+
+export function listTemplates(userId: string): Promise<SavedTemplateSummary[]> {
+  return repo.listVisibleTo(userId);
+}
+
+export async function getTemplate(id: string, userId: string): Promise<SavedTemplate> {
+  const t = await repo.getVisible(id, userId);
+  if (!t) throw notFound('Template not found');
+  return t;
+}
+
+/**
+ * Saves a template owned by `userId`. The quota count and the insert share a transaction under
+ * the owner's lock, so parallel saves can't overshoot MAX_TEMPLATES_PER_USER.
+ */
+export async function saveTemplate(userId: string, body: Partial<SaveTemplateRequest> | undefined, now = Date.now()): Promise<SavedTemplateSummary> {
+  const name = cleanName(body?.name);
+  const description = cleanDescription(body?.description);
+  const content = cleanContent(body?.content);
+  const thumb = thumbnailBytes(body?.thumbnail);
+  // Store the file first (not a db write), and drop it again if the row doesn't make it.
+  const thumbnail = thumb ? await saveUpload(thumb.bytes, thumb.type) : null;
+  const template: SavedTemplate = {
+    id: newId(12),
+    ownerId: userId,
+    name,
+    description,
+    thumbnail,
+    elementCount: content.elements.length,
+    content,
+    createdAt: now,
+    updatedAt: now,
+  };
+  try {
+    await repo.transaction(async () => {
+      const max = getConfig().maxTemplatesPerUser;
+      await repo.lockOwnerQuota(userId);
+      if ((await repo.countOwnedBy(userId)) >= max)
+        throw forbidden(`You have reached the limit of ${max} templates. Delete templates you no longer need to save new ones.`);
+      await repo.insertTemplate(template);
+    });
+  } catch (e) {
+    await deleteUpload(thumbnail);
+    throw e;
+  }
+  const { content: _content, ...summary } = template;
+  return summary;
+}
+
+/** Deletes one of the user's own templates (someone else's answers 404, like a missing one). */
+export async function deleteTemplate(id: string, userId: string): Promise<void> {
+  const thumbnail = await repo.deleteOwned(id, userId);
+  if (thumbnail === undefined) throw notFound('Template not found');
+  await deleteUpload(thumbnail);
+}

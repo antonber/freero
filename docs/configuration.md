@@ -96,7 +96,8 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `BODY_LIMIT_KB` | `2048` | Max JSON request body (board thumbnails are the largest). |
 | `MAX_UPLOAD_MB` | `15` | Max size of one uploaded file. |
 | `UPLOAD_QUOTA_MB` | `1024` | Total upload storage per account (board thumbnails don't count). Over quota: `413`. |
-| `MAX_BOARDS_PER_USER` | `5000` | Boards one account may own. Over it, creating/duplicating answers `403`. |
+| `MAX_BOARDS_PER_USER` | `5000` | Boards one account may own (boards in the trash don't count). Over it, creating/duplicating/restoring answers `403`. |
+| `MAX_TEMPLATES_PER_USER` | `500` | Saved templates one account may own. Over it, saving another answers `403`. |
 | `RATE_LIMITS` | — | `off` disables every rate limit (tests, load tests). |
 | `RATE_LIMIT_API` | `1200/1m` | All `/api` requests, per client IP. |
 | `RATE_LIMIT_LOGIN` | `30/5m` | Login attempts per client IP. |
@@ -106,6 +107,7 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `RATE_LIMIT_INVITE` | `60/1h` | Board invitations per user. |
 | `RATE_LIMIT_UPLOAD` | `60/10m` | Uploads per user. |
 | `RATE_LIMIT_BOARD_CREATE` | `100/1h` | Board creations + duplications per user. |
+| `RATE_LIMIT_TEMPLATE_SAVE` | `60/1h` | Saving a board or selection as a template, per user. |
 | `RATE_LIMIT_WS_CONNECT` | `200/1m` | WebSocket connections per IP and, separately, per user. |
 
 Rule format: `<count>/<window>` with the window in `s`, `m`, `h` or `d` and an optional multiplier
