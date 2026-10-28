@@ -102,6 +102,20 @@ export interface ElementRenderProps<T extends BoardElement = BoardElement> {
   /** True while this element's text is being edited locally. */
   editing: boolean;
   zoom: number;
+  /**
+   * [additive] Space other features' decorations draw over inside this element's box (world
+   * units, per side; `DecorationDefinition.reserve`). Lay text out clear of it (sticky text above
+   * the tag chips). Undefined when no decoration reserves anything.
+   */
+  reserved?: Insets;
+}
+
+/** Distances from each edge of a box, in world units. */
+export interface Insets {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
 }
 
 export type ResizeMode =
@@ -394,6 +408,12 @@ export interface DecorationDefinition {
   appliesTo(element: BoardElement): boolean;
   /** Positioned in the element's box (0,0 = its top-left, w × h, rotated with it). */
   Component: ComponentType<{ element: BoardElement; zoom: number }>;
+  /**
+   * Space this decoration covers along the element's edges (world units), so the element keeps
+   * its own content clear of it: the element receives the per-side maximum over all applying
+   * decorations as `ElementRenderProps.reserved`. Pure, cheap; only called when `appliesTo`.
+   */
+  reserve?(element: BoardElement): Partial<Insets>;
 }
 
 // ---------------------------------------------------------------------------

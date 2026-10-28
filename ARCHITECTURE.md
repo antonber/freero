@@ -276,6 +276,10 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
 - Auto-fit text (`fontSize: 'auto'`) snaps to a small set of sizes (~12% apart), so neighbouring
   stickies with similar text match. `ElementText.padding` may be per side (`{ top, right, bottom,
   left }`): tagged stickies keep their chip band free.
+- `DecorationDefinition.reserve?(el) → { top?, right?, bottom?, left? }`: the band a decoration
+  draws over inside the element's box. The element gets the per-side maximum as
+  `ElementRenderProps.reserved` (also in exports) and lays its text out clear of it — so the
+  decoration's geometry has one owner (tags' chip band) instead of a copied formula.
 - The active tool's Options flyout is kept inside the window by the engine.
 - Text-style format controls are the engine's (`@engine`): `FontFamilyControl`, `FontSizeControl`
   (numbers, 'auto', labelled presets, custom field), `TextColorControl`, `TextHighlightControl`,
