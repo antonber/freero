@@ -52,12 +52,12 @@ function reportFailures(editor: Editor, tooLarge: number, unreadable: number) {
  * that spot can be partly off-screen, so the camera then glides to it (same zoom or further out):
  * the person always sees where the upload lands.
  */
-function intoFreeSpot(editor: Editor, rects: Rect[]): Rect[] {
+function intoFreeSpot(editor: Editor, rects: Rect[], near?: Point): Rect[] {
   const x0 = Math.min(...rects.map((r) => r.x));
   const y0 = Math.min(...rects.map((r) => r.y));
   const w = Math.max(...rects.map((r) => r.x + r.w)) - x0;
   const h = Math.max(...rects.map((r) => r.y + r.h)) - y0;
-  const spot = editor.findFreeSpot({ w, h });
+  const spot = editor.findFreeSpot({ w, h }, { near });
   revealRect(editor, { x: spot.x, y: spot.y, w, h });
   return rects.map((r) => ({ ...r, x: r.x - x0 + spot.x, y: r.y - y0 + spot.y }));
 }
@@ -76,7 +76,7 @@ function revealRect(editor: Editor, r: Rect) {
  * scaled to fit ~600px. While uploading, local placeholders shimmer where the images will land.
  * The elements are created together once everything settled: one undo step.
  */
-export async function insertImageFiles(editor: Editor, files: File[], center: Point | null): Promise<string[]> {
+export async function insertImageFiles(editor: Editor, files: File[], center: Point | null, near?: Point): Promise<string[]> {
   const images = files.filter(isImageFile).slice(0, MAX_FILES);
   if (!images.length || !editor.can('editor')) return [];
   const measured = await Promise.all(
@@ -100,8 +100,14 @@ export async function insertImageFiles(editor: Editor, files: File[], center: Po
     center ?? { x: 0, y: 0 },
     visibleArea(editor),
   );
-  const rects = center ? laidOut : intoFreeSpot(editor, laidOut);
-  const clear = addPending(rects);
+  const rects = center ? laidOut : intoFreeSpot(editor, laidOut, near);
+  // Other items of the same drop (videos, files…) are placed beside these, not on them (KAI-204).
+  const clearPending = addPending(rects);
+  const release = editor.reserveSpace(rects);
+  const clear = () => {
+    clearPending();
+    release();
+  };
   let stored;
   try {
     stored = await Promise.all(readable.map((m) => storeImage(editor, m.file)));

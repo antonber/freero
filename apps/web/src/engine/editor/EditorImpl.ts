@@ -15,6 +15,7 @@ import type {
   FollowTarget,
   Host,
   HostUser,
+  ImportData,
   NewElement,
   Point,
   Rect,
@@ -92,7 +93,9 @@ export class EditorImpl implements Editor {
     remeasurePending: boolean;
     /** New elements matching this go to the private layer (setPrivatePlacement). */
     privateRule: ((el: BoardElement) => boolean) | null;
-  } = { collections: new Map(), camAnim: null, camTarget: null, lastPaste: null, lastDenied: 0, editingGesture: false, movingTimer: null, userCamera: 0, arrange: createArrangeState(), remeasurePending: false, privateRule: null };
+    /** Where content is about to land (reserveSpace): findFreeSpot keeps clear of it. */
+    reserved: Set<Rect>;
+  } = { collections: new Map(), camAnim: null, camTarget: null, lastPaste: null, lastDenied: 0, editingGesture: false, movingTimer: null, userCamera: 0, arrange: createArrangeState(), remeasurePending: false, privateRule: null, reserved: new Set() };
 
   /** The private-mode placement rule (read by the engine's layer placement). */
   getPrivateRule(): ((el: BoardElement) => boolean) | null {
@@ -976,13 +979,27 @@ export class EditorImpl implements Editor {
       this.pastePayload(mem.payload, at);
       return true;
     }
+    // A drop of several kinds of files is split (KAI-204): an importer may take some of the files,
+    // and the rest flows on to the next ones, to be placed alongside (never on top of) the first.
+    let offer: ImportData = data;
+    let took = false;
     for (const { def, feature } of this.core.registry.importers) {
+      let claim: boolean | File[];
       try {
-        if (await def.importData!(this.core.scoped(feature), data, at)) return true;
+        claim = await def.importData!(this.core.scoped(feature), offer, at);
       } catch (err) {
         console.error(`importData of '${def.type}' failed`, err);
+        continue;
       }
+      if (claim === true) return true;
+      if (!claim) continue;
+      const left = offer.files.filter((f) => !claim.includes(f));
+      if (left.length === offer.files.length) continue;
+      took = true;
+      if (!left.length) return true;
+      offer = { files: left, text: null, html: null, alongside: true };
     }
+    if (took) return true;
     if (data.files.length || data.text || data.html) this.host.notify("Freero can't paste that here yet.", 'info');
     return false;
   }
@@ -1297,8 +1314,14 @@ export class EditorImpl implements Editor {
     return this.screenToWorld({ x: vp.width / 2, y: vp.height / 2 });
   }
 
+  reserveSpace(rects: Rect[]): () => void {
+    const own = [...rects];
+    for (const r of own) this.shared.reserved.add(r);
+    return () => own.forEach((r) => this.shared.reserved.delete(r));
+  }
+
   findFreeSpot(size: { w: number; h: number }, opts: { near?: Point; gap?: number } = {}): Point {
-    const obstacles = this.getElements().map(elementAABB);
+    const obstacles = [...this.getElements().map(elementAABB), ...this.shared.reserved];
     // "In view" = the part of the screen the chrome leaves free, not under the toolbar or dock.
     const safe = this.getSafeArea();
     const a = this.screenToWorld({ x: safe.x, y: safe.y });

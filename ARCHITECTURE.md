@@ -225,8 +225,11 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   importers by priority: images (100), PDFs (15), then media (12) takes every other real file —
   video / audio this browser plays (probed locally, with a JPEG poster frame captured from a
   `blob:` URL and uploaded as an image) become players, the rest (and media the server refuses
-  with 415) file cards. `Editor.importData(data, at)` (additive) is the same path for "upload"
-  buttons, so a picked image still becomes an image. Playback is each viewer's own, never synced:
+  with 415) file cards. A drop of several kinds is SPLIT (KAI-204): an importer returns the
+  `File[]` it took and the rest flows on with `data.alongside`, to be placed in a free spot near
+  the drop point; the group on the drop point holds its area with `Editor.reserveSpace(rects)`
+  while it uploads, so the others never land on it. `Editor.importData(data, at)` (additive) is
+  the same path for "upload" buttons, so a picked image still becomes an image. Playback is each viewer's own, never synced:
   a remote "play" would hit every browser's autoplay rules (unmuted playback needs that person's
   own gesture), and buffering makes synced positions drift; presenters bring people to the item
   with follow / "Bring everyone to me" and press play. The player mounts on the first play only
