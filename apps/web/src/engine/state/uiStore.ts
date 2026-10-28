@@ -22,6 +22,8 @@ export interface ContextMenuState {
   y: number;
   /** World point where the menu was opened (used by paste). */
   world: { x: number; y: number };
+  /** Opened from the keyboard (Shift+F10 / Menu key) at the selection, not at a pointer. */
+  keyboard?: boolean;
 }
 
 export interface UiState {
@@ -75,6 +77,8 @@ export interface UiState {
   cursorsHidden: boolean;
   /** Elements hidden for this viewer only (Editor.setViewHidden). Replaced, never mutated. */
   viewHidden: ReadonlySet<string>;
+  /** Phone layout: the editor switched from "view and comment" to the full toolbar (ui/compact.ts). */
+  phoneEditing: boolean;
 }
 
 export interface PointerState {
@@ -128,6 +132,7 @@ export function createUiStore(init: { role: Role }): UiStore {
     limits: null,
     cursorsHidden: false,
     viewHidden: new Set<string>(),
+    phoneEditing: false,
   }));
 
 }

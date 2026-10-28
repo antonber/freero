@@ -2,13 +2,14 @@
 // the active tool's Options flyout, undo/redo at the bottom.
 import { useLayoutEffect, useRef, useState } from 'react';
 import { useStore } from 'zustand';
-import { Plus, Redo2, Undo2 } from 'lucide-react';
+import { Check, PencilLine, Plus, Redo2, Undo2 } from 'lucide-react';
 import { IconButton, Popover } from '@ui';
 import { ScopeContext, useCore } from '../context';
 import { useRole, useToolId } from '../hooks';
 import { ROLE_RANK } from '../runtime/core';
 import type { Registered } from '../runtime/registry';
 import type { ToolDefinition } from '../api';
+import { useCompactLayout } from './compact';
 
 /** Gap kept between the tool Options flyout and the window edges (px). */
 const FLYOUT_MARGIN = 12;
@@ -25,14 +26,25 @@ export function Toolbar() {
   const barRef = useRef<HTMLDivElement>(null);
   const [optionsTop, setOptionsTop] = useState<number | null>(null);
 
+  const compact = useCompactLayout();
+  const phoneEditing = useStore(core.ui, (s) => s.phoneEditing);
+  const canEdit = ROLE_RANK[role] >= ROLE_RANK.editor;
+  // Phone, view-and-comment mode: only the tools a commenter has (select, hand, comment).
+  const viewOnly = compact && (!canEdit || !phoneEditing);
   // A facilitator's limits hide the tools that add what participants may not add (Editor.getLimits).
   useStore(core.ui, (s) => s.limits);
-  const allowed = (t: Registered<ToolDefinition>) => ROLE_RANK[role] >= ROLE_RANK[t.def.minRole ?? 'editor'] && editor.toolAllowed(t.def.id);
+  const allowed = (t: Registered<ToolDefinition>) =>
+    ROLE_RANK[role] >= ROLE_RANK[t.def.minRole ?? 'editor'] &&
+    editor.toolAllowed(t.def.id) &&
+    (!viewOnly || ROLE_RANK[t.def.minRole ?? 'editor'] <= ROLE_RANK.commenter);
   const tools = core.registry.tools.filter(allowed);
   const main = tools.filter((t) => t.def.placement === 'main');
   const more = tools.filter((t) => t.def.placement === 'more');
   const activeMore = more.find((t) => t.def.id === toolId);
-  const canEdit = ROLE_RANK[role] >= ROLE_RANK.editor;
+  // Leaving edit mode puts the pointer back in a tool the bar still shows.
+  useLayoutEffect(() => {
+    if (viewOnly && !tools.some((t) => t.def.id === toolId)) editor.setTool('select');
+  }, [viewOnly, toolId, tools, editor]);
   const active = core.registry.toolsById.get(toolId);
   const Options = active?.def.Options;
 
@@ -78,15 +90,15 @@ export function Toolbar() {
       icon={t.def.icon}
       label={t.def.label}
       shortcut={t.def.shortcut?.toUpperCase()}
-      tooltipSide="right"
+      tooltipSide={compact ? 'top' : 'right'}
       active={toolId === t.def.id}
       onClick={() => editor.setTool(t.def.id)}
     />
   );
 
   return (
-    <div className="fr-toolbar" ref={barRef} data-fr-chrome="" data-fr-occludes="">
-      <div className="fr-toolbar__group" role="toolbar" aria-label="Tools" aria-orientation="vertical">
+    <div className="fr-toolbar" ref={barRef} data-fr-chrome="" data-fr-occludes="" data-fr-region="tools" role="region" aria-label="Tools and history">
+      <div className="fr-toolbar__group" role="toolbar" aria-label="Tools" aria-orientation={compact ? 'horizontal' : 'vertical'}>
         {main.map(toolButton)}
         {more.length > 0 && (
           <>
@@ -102,7 +114,7 @@ export function Toolbar() {
               icon={activeMore?.def.icon ?? Plus}
               label={activeMore ? `${activeMore.def.label} · More tools` : 'More tools'}
               shortcut={activeMore?.def.shortcut?.toUpperCase()}
-              tooltipSide="right"
+              tooltipSide={compact ? 'top' : 'right'}
               active={moreOpen || !!activeMore}
               onClick={() => setMoreOpen((o) => !o)}
             />
@@ -110,7 +122,7 @@ export function Toolbar() {
               open={moreOpen}
               onClose={() => setMoreOpen(false)}
               anchor={moreRef.current}
-              side="right"
+              side={compact ? 'top' : 'right'}
               align="start"
               offset={14}
               className="fr-moretools"
@@ -137,13 +149,24 @@ export function Toolbar() {
           </>
         )}
       </div>
-      {canEdit && (
+      {compact && canEdit && (
+        <div className="fr-toolbar__group fr-toolbar__mode">
+          <IconButton
+            icon={phoneEditing ? Check : PencilLine}
+            label={phoneEditing ? 'Done editing' : 'Edit board'}
+            tooltipSide="top"
+            active={phoneEditing}
+            onClick={() => core.ui.setState({ phoneEditing: !phoneEditing })}
+          />
+        </div>
+      )}
+      {canEdit && !viewOnly && (
         <div className="fr-toolbar__group">
           <IconButton
             icon={Undo2}
             label="Undo"
             shortcut="Mod+Z"
-            tooltipSide="right"
+            tooltipSide={compact ? 'top' : 'right'}
             disabled={!editor.canUndo()}
             onClick={() => editor.undo()}
           />
@@ -151,7 +174,7 @@ export function Toolbar() {
             icon={Redo2}
             label="Redo"
             shortcut="Mod+Shift+Z"
-            tooltipSide="right"
+            tooltipSide={compact ? 'top' : 'right'}
             disabled={!editor.canRedo()}
             onClick={() => editor.redo()}
           />

@@ -1,5 +1,6 @@
-// Reading order of board items (Tab / Shift+Tab cycling): rows top to bottom, left to right
-// within a row. A box joins the current row when it starts above the middle of the row's first box.
+// Reading order of board items: rows top to bottom, left to right within a row. A box joins the
+// current row when it starts above the middle of the row's first box. Tab / Shift+Tab walk
+// `readingOrderByFrame` (a frame's contents right after the frame).
 import type { BoardElement } from '@freero/shared';
 import { elementAABB } from './geometry';
 
@@ -16,6 +17,37 @@ export function readingOrder<T extends Pick<BoardElement, 'x' | 'y' | 'w' | 'h' 
     out.push(...boxed.slice(i, j).sort((a, b) => a.r.x - b.r.x || a.r.y - b.r.y).map((b) => b.item));
     i = j;
   }
+  return out;
+}
+
+/**
+ * Reading order that finishes a frame before moving on (keyboard walking, the live region's
+ * "2 of 14"): the board's top level — frames and the items outside any frame — in reading order,
+ * each frame directly followed by its own contents in reading order (nested frames alike). An
+ * item whose frame isn't in `items` counts as top level.
+ */
+export function readingOrderByFrame<T extends Pick<BoardElement, 'id' | 'x' | 'y' | 'w' | 'h' | 'rotation' | 'frameId'>>(items: T[]): T[] {
+  const ids = new Set(items.map((i) => i.id));
+  const kids = new Map<string | null, T[]>();
+  for (const item of items) {
+    const parent = item.frameId && item.frameId !== item.id && ids.has(item.frameId) ? item.frameId : null;
+    const list = kids.get(parent);
+    if (list) list.push(item);
+    else kids.set(parent, [item]);
+  }
+  const out: T[] = [];
+  const seen = new Set<string>();
+  const walk = (parent: string | null) => {
+    for (const item of readingOrder(kids.get(parent) ?? [])) {
+      if (seen.has(item.id)) continue;
+      seen.add(item.id);
+      out.push(item);
+      walk(item.id);
+    }
+  };
+  walk(null);
+  // A frameId cycle (two frames naming each other) leaves items unreached: read them last.
+  for (const item of readingOrder(items.filter((i) => !seen.has(i.id)))) out.push(item);
   return out;
 }
 

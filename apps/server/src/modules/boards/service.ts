@@ -153,7 +153,7 @@ export function permissionsFor(board: Board, userId: string, role: Role, access:
 }
 
 /** How someone tried to take a board's content out (recorded with a refusal). */
-export type DownloadVia = 'export' | 'duplicate' | 'template' | 'file' | 'outline' | 'api';
+export type DownloadVia = 'export' | 'duplicate' | 'template' | 'file' | 'outline' | 'api' | 'ai';
 
 /**
  * The one check of the workspace's "downloads" policy, for everything that takes a board's content

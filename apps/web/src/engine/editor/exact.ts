@@ -94,6 +94,24 @@ export function applyExact(editor: Editor, els: BoardElement[], field: ExactFiel
 }
 
 /**
+ * Alt+Shift+arrow on the canvas: the patches that grow (dir 1) or shrink (dir -1) each unlocked
+ * item's width or height by one step — the next grid line with "Snap to grid" on, else 10 px —
+ * the way its handles would (aspect kept, width-only types take widths only), its top-left corner
+ * staying put. The caller writes them (the keyboard joins them to its nudge burst's undo step).
+ */
+export function keyResizePatches(editor: Editor, els: BoardElement[], field: 'w' | 'h', dir: -1 | 1): Array<{ id: string; patch: ElementPatch }> {
+  const s = editor.getSettings();
+  const out: Array<{ id: string; patch: ElementPatch }> = [];
+  for (const el of exactTargets(editor, els, field)) {
+    const current = el[field];
+    const value = s.snapToGrid ? current + gridNudge(current, dir, s.gridSize, 1) : current + dir * 10;
+    const patch = sizePatch(editor, el, field, value);
+    if (patch) out.push({ id: el.id, patch });
+  }
+  return out;
+}
+
+/**
  * The value one arrow-key step from `current` reaches. With "Snap to grid" on, sizes and
  * positions step to the next grid line (an off-grid value lands on the grid first) and Shift
  * steps five lines; otherwise 1 px (Shift 10). Rotation steps 1° (Shift 15°).

@@ -5,13 +5,13 @@
   --fr-primary-hover: #4a2fdc;
   --fr-primary-soft: #eeeaff;
   --fr-accent: #2ee6b8;
-  --fr-danger: #e5484d;
+  --fr-danger: #c9353a; /* 5.2:1 under white text (WCAG AA) */
   --fr-warning: #f5a524;
   --fr-success: #1fa463;
 
   --fr-ink: #17162b;
   --fr-ink-2: #4b4a63;
-  --fr-ink-3: #8a89a3;
+  --fr-ink-3: #686783; /* muted text: 4.5:1+ on every surface token (WCAG AA) */
   --fr-line: #e4e3ee;
   --fr-line-strong: #cfcde0;
   --fr-surface: #ffffff;
@@ -75,16 +75,30 @@ button {
   --fr-primary-ink: #ffffff;
   --fr-primary-press: #3f26c4;
   --fr-accent-soft: #dcfbf2;
-  --fr-danger-hover: #cf3b40;
+  --fr-danger-hover: #b3292e;
   --fr-danger-soft: #fdecec;
   --fr-success-soft: #e3f6ec;
   --fr-warning-soft: #fef3e0;
   --fr-overlay: rgba(23, 22, 43, 0.36);
   --fr-hover: rgba(23, 22, 43, 0.05);
   --fr-press: rgba(23, 22, 43, 0.09);
-  --fr-focus-ring: 0 0 0 3px rgba(91, 63, 240, 0.28);
+  /* Keyboard focus (WCAG 2.4.7 / 2.4.11): a solid violet ring with a light gap, visible on white,
+     on the canvas and on coloured items alike (3:1 against both). */
+  --fr-focus-color: #5b3ff0;
+  --fr-focus-ring: 0 0 0 2px var(--fr-surface), 0 0 0 4px var(--fr-focus-color);
   --fr-shadow-xl: 0 24px 64px rgba(23, 22, 43, 0.22), 0 0 0 1px rgba(23, 22, 43, 0.05);
   --fr-radius-xl: 20px;
   --fr-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
   --fr-z-tooltip: 90;
+}
+
+/* Windows high contrast / forced colours: selection, focus and the brand accent use the system's
+   highlight colour, which the user picked to stand out against their own canvas colour. */
+@media (forced-colors: active) {
+  :root {
+    --fr-select: Highlight;
+    --fr-focus-color: Highlight;
+    --fr-primary: Highlight;
+    --fr-primary-ink: HighlightText;
+  }
 }

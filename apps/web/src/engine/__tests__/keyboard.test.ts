@@ -109,6 +109,81 @@ describe('Tab cycling', () => {
     expect(claimed).toBe(1);
     expect(core.editor.getSelection()).toEqual([a]);
   });
+
+  it("finishes a frame's items before the item beside the frame (not row by row across the board)", () => {
+    setup();
+    const frame = core.editor.create({ type: 'frame', x: 0, y: 0, w: 400, h: 400, title: 'Retro' } as never);
+    const inTop = box(20, 60);
+    const inLow = box(20, 260);
+    const beside = box(600, 100); // same row as the frame's first note, outside it
+    expect(core.editor.getElement(inLow)?.frameId).toBe(frame);
+    const walk = [frame, inTop, inLow, beside];
+    for (const id of walk) {
+      press('Tab');
+      expect(core.editor.getSelection()).toEqual([id]);
+    }
+  });
+});
+
+describe('keyboard-only moving, resizing and creating', () => {
+  const key = (k: string, mods: { shift?: boolean; alt?: boolean } = {}) =>
+    document.body.dispatchEvent(
+      new KeyboardEvent('keydown', { key: k, code: k, shiftKey: !!mods.shift, altKey: !!mods.alt, bubbles: true, cancelable: true }),
+    );
+
+  it('Alt+arrow jumps to the nearest item that way, preferring one in line over a closer one off to the side', () => {
+    setup();
+    const from = box(0, 0);
+    const inLine = box(500, 0);
+    box(200, 300); // nearer, but mostly below
+    core.editor.select([from]);
+    key('ArrowRight', { alt: true });
+    expect(core.editor.getSelection()).toEqual([inLine]);
+    expect(core.editor.getElement(from)).toMatchObject({ x: 0, y: 0 }); // a jump never moves anything
+  });
+
+  it('Alt+Shift+arrows resize from the top-left corner, and a burst of them undoes in one step', () => {
+    vi.useFakeTimers();
+    setup();
+    const id = box(0, 0);
+    core.store.undoManager.clear();
+    core.editor.select([id]);
+    key('ArrowRight', { alt: true, shift: true });
+    vi.advanceTimersByTime(700);
+    key('ArrowRight', { alt: true, shift: true });
+    key('ArrowUp', { alt: true, shift: true });
+    expect(core.editor.getElement(id)).toMatchObject({ x: 0, y: 0, w: 120, h: 90 });
+    vi.advanceTimersByTime(1500);
+    core.editor.undo();
+    expect(core.editor.getElement(id)).toMatchObject({ w: 100, h: 100 });
+  });
+
+  it('Enter with a creation tool places a new item beside the selection, not on top of it', () => {
+    const note = {
+      id: 'note',
+      label: 'Note',
+      icon: () => null,
+      order: 1,
+      placement: 'main' as const,
+      onPointerDown: (e: { editor: { create(el: unknown): string; select(ids: string[]): void }; point: { x: number; y: number } }) => {
+        const id = e.editor.create({ type: 'sticky', x: e.point.x - 50, y: e.point.y - 50 });
+        e.editor.select([id]);
+      },
+    };
+    core = makeCore({ bundles: [bundle('boxes', { elements: [boxDef as ElementDefinition<any>], tools: [note as never] })] });
+    uninstall = installKeyboard(core);
+    const existing = box(0, 0);
+    core.editor.select([existing]);
+    core.editor.setTool('note');
+    key('Enter');
+    const [made] = core.editor.getSelection();
+    expect(made).not.toBe(existing);
+    const a = core.editor.getElement(existing)!;
+    const b = core.editor.getElement(made)!;
+    expect(b.x).toBeGreaterThanOrEqual(a.x + a.w); // to its right, clear of it
+    expect(b.y + b.h).toBeGreaterThan(a.y);
+    expect(b.y).toBeLessThan(a.y + a.h); // level with it
+  });
 });
 
 describe('typing on a selected item', () => {

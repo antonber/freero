@@ -1,5 +1,6 @@
 // Public API of modules/structure [S2]: laying a structure out and placing it on a board, used by
-// its own route and the public API (modules/api, which the MCP server goes through); later in-app AI.
+// its own route, the public API (modules/api, which the MCP server goes through) and in-app AI
+// (modules/ai).
 import { SINKS } from './sinks';
 
 export { insertStructure, newElementId } from './service';
