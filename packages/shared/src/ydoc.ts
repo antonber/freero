@@ -11,7 +11,10 @@
 //   'tags'     -> features/tags       (Tag by id)
 //   'timer'    -> features/timer      (key 'state' -> TimerState)
 //   'tableCells' -> features/table (cell text/fill per key — see TableElement in elements.ts)
-//   'voting'   -> features/voting     (key 'session' -> VotingSession, `${sessionId}:${userId}` -> VoteBallot)
+//   'privateMode' -> features/private-mode (key 'session' -> PrivateModeSession)
+//   'voting'   -> features/voting     (key 'session' -> VotingSession, `${sessionId}:${userId}` -> VoteBallot;
+//                                     while results are hidden the real ballot is in the voter's
+//                                     PRIVATE layer and the shared key holds a `sealed` marker)
 //
 // Content some connections must not read (private drafts, sealed ballots, hidden frames'
 // contents) never enters this doc: it lives in server-held LAYER docs with the same layout (an
@@ -58,11 +61,24 @@ export interface VotingSession {
   votesPerUser: number;
   /** If set, only these element ids can be voted on; otherwise all stickies/cards/shapes. */
   elementIds: string[] | null;
-  /** Hide results until the session ends. */
+  /**
+   * Hide results until the session ends. Server-enforced: ballots are written to each voter's
+   * private layer (nobody else can read them) and revealed into this doc when the session ends.
+   */
   anonymous: boolean;
   startedBy: string;
   startedAt: number;
   endedAt: number | null;
+}
+
+/** Private mode: while active, what participants add stays in their private layer until revealed. */
+export interface PrivateModeSession {
+  active: boolean;
+  startedBy: string;
+  startedByName: string;
+  startedAt: number;
+  /** Only content added inside this frame goes private (null: the whole board). */
+  frameId: string | null;
 }
 
 export interface VoteBallot {
@@ -70,6 +86,11 @@ export interface VoteBallot {
   userId: string;
   /** May contain duplicates (multiple votes on the same element). */
   elementIds: string[];
+  /**
+   * Marker in the shared doc while results are hidden: this user has voted, the ballot itself is
+   * sealed in their private layer (elementIds is then empty) until the session ends.
+   */
+  sealed?: boolean;
   /** Voter's display name/color at vote time, for "who has voted" avatars after they leave. */
   userName?: string;
   userColor?: string;

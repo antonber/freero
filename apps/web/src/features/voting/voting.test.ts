@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { createTestBoard } from '@engine';
+import manifest from './feature';
+import { end, start, vote } from './lib/actions';
 import {
   ballotKey,
   ballotsOf,
@@ -7,6 +10,7 @@ import {
   retractVote,
   startSession,
   tally,
+  voters,
   type VotingStore,
   type VotingValue,
 } from './lib/voting';
@@ -99,5 +103,27 @@ describe('voting', () => {
     expect(r.entries().map(([k]) => k)).toEqual(['session']);
     // Ana gets her full allowance again.
     for (let i = 0; i < 3; i++) expect(castVote(r, ana, 's1', exists)).toBe(true);
+  });
+
+  it('with hidden results, the other replicas learn only that someone voted, never on what, until the vote ends', () => {
+    const board = createTestBoard({ users: ['ana', 'ben'], features: [manifest] });
+    const [ana, ben] = board.editors('voting');
+    const pick = ana.create({ type: 'sticky', x: 0, y: 0 } as never);
+    start(ana, { title: 'Pick', votesPerUser: 3, hideResults: true, elementIds: null });
+    board.sync();
+    vote(ana, pick);
+    vote(ana, pick);
+    board.sync();
+
+    const seen = ben.collection<VotingValue>('voting').entries();
+    expect(JSON.stringify(seen)).not.toContain(pick);
+    const session = getSession(ben.collection<VotingValue>('voting'))!;
+    expect(voters(ballotsOf(seen, session), session, () => true).map((v) => v.id)).toEqual(['ana']);
+
+    end(ana);
+    board.sync();
+    const after = ben.collection<VotingValue>('voting').entries();
+    expect(tally(session, ballotsOf(after, session), () => true).get(pick)).toBe(2);
+    board.destroy();
   });
 });
