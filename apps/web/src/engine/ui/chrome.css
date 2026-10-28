@@ -642,6 +642,10 @@ button.fr-title:hover {
   }
   .fr-format {
     padding: 4px 6px;
+    /* Clear of the left toolbar (FormatToolbar keeps left ≥ 68 px); the rest scrolls sideways. */
+    max-width: calc(100vw - 92px);
+    overflow-x: auto;
+    scrollbar-width: none;
   }
   .fr-zoom {
     height: 48px;
