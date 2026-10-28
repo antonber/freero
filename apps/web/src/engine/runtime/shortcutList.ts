@@ -19,7 +19,7 @@ export function listShortcuts(registry: Registry, can: (minRole: Role) => boolea
   }
   for (const { def, feature } of registry.commands.values()) {
     if (!def.shortcut || !can(def.minRole ?? 'editor')) continue;
-    add({ id: def.id, label: def.label, shortcuts: [def.shortcut], kind: 'command', feature });
+    add({ id: def.id, label: def.label, shortcuts: [def.shortcut, ...(def.extraShortcuts ?? [])], kind: 'command', feature });
   }
   for (const [type, { def, feature }] of registry.elements) {
     (def.keys ?? []).forEach((k, i) => {

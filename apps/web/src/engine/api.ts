@@ -594,6 +594,12 @@ export interface CommandDefinition {
   label: string;
   /** e.g. 'mod+d', 'shift+1', 'g'. 'mod' = Ctrl on Windows/Linux, Cmd on macOS. */
   shortcut?: string;
+  /**
+   * [additive] Further bindings that run the same command, e.g. a layout-independent one for a
+   * punctuation shortcut some keyboards can't press. Listed in the shortcut reference after
+   * `shortcut`; menus show `shortcut` only.
+   */
+  extraShortcuts?: string[];
   /** Where it appears besides the shortcut: right-click menu and/or the board "…" menu. */
   menus?: Array<'context' | 'board'>;
   /** [additive] Icon shown in the context and board menus (lucide-style component). */

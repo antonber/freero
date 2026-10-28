@@ -1,6 +1,7 @@
 // The one typed, validated configuration, read from the environment once by main.ts.
 // Every variable is documented in docs/configuration.md (and .env.example). Invalid values fail in
 // every environment; missing production requirements fail at startup with the full list.
+import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -58,6 +59,13 @@ export interface OidcProviderConfig {
   verifiedEmailClaims: string[];
 }
 
+/**
+ * Local files (dev outbox, uploads) of a FREERO_DATA_DIR=memory process. Never just the pid: pids
+ * are reused (quickly, on Windows), and a test reading the outbox of an earlier process with the
+ * same pid found that run's mail to the same address and used its stale link.
+ */
+const MEMORY_FILES_DIR = path.join(os.tmpdir(), `freero-memory-${process.pid}-${randomBytes(6).toString('hex')}`);
+
 export interface Config {
   port: number;
   /** External origin users reach the app at (https://freero.example.com), or null in dev. */
@@ -77,6 +85,8 @@ export interface Config {
   release: string | null;
   /** Idle time before an unused board doc is unloaded from memory. */
   docIdleMs: number;
+  /** Automatic versions: at most one per board this often (while it is open, and at compaction). */
+  snapshotEveryMs: number;
   databaseUrl: string | null;
   /** Max Postgres connections per process (DATABASE_POOL_MAX). */
   dbPoolMax: number;
@@ -244,10 +254,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   const production = env.NODE_ENV === 'production';
   const environment = str('FREERO_ENV') ?? (production ? 'production' : (env.NODE_ENV ?? 'development'));
-  // FREERO_DATA_DIR=memory: in-memory database (tests); local files go to a temp dir.
+  // FREERO_DATA_DIR=memory: in-memory database (tests); local files go to a temp dir of this process.
   const memory = env.FREERO_DATA_DIR?.trim() === 'memory';
   const dataDir = memory
-    ? path.join(os.tmpdir(), `freero-memory-${process.pid}`)
+    ? MEMORY_FILES_DIR
     : path.resolve(env.FREERO_DATA_DIR || path.join(REPO_ROOT, 'data'));
 
   const publicUrlRaw = url('PUBLIC_URL', ['http:', 'https:']);
@@ -339,6 +349,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     environment,
     release: str('FREERO_RELEASE'),
     docIdleMs: int('FREERO_DOC_IDLE_MS', 30_000, 100),
+    snapshotEveryMs: int('FREERO_SNAPSHOT_EVERY_MS', 30 * 60_000, 100),
     databaseUrl: url('DATABASE_URL', ['postgres:', 'postgresql:']),
     dbPoolMax: int('DATABASE_POOL_MAX', 10, 1, 1000),
     redisUrl: url('REDIS_URL', ['redis:', 'rediss:']),

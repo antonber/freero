@@ -1,10 +1,7 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { mentionToken, type User } from '@freero/shared';
 import { getConfig } from '../../platform/config';
-import { outboxDir } from '../../platform/mail';
-import { closeTestDb, openTestDb } from '../../platform/testing';
+import { closeTestDb, openTestDb, outboxMails } from '../../platform/testing';
 import { createUser, markEmailVerified } from '../auth/index';
 import { createBoard } from '../boards/index';
 import type { CommentMessageEvent } from '../realtime/index';
@@ -37,11 +34,7 @@ const message = (boardId: string, authorId: string, text: string, more: Partial<
 const inbox = async (u: User) => (await listFor(u.id)).notifications;
 
 function mailsTo(to: string): Array<{ subject: string; text: string; headers?: Record<string, string> }> {
-  if (!fs.existsSync(outboxDir())) return [];
-  return fs
-    .readdirSync(outboxDir())
-    .map((f) => JSON.parse(fs.readFileSync(path.join(outboxDir(), f), 'utf8')))
-    .filter((m) => m.to === to);
+  return outboxMails().filter((m) => m.to === to);
 }
 
 it('a mention notifies the mentioned person once with a link to the thread — never the author, never someone who cannot open the board', async () => {

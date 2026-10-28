@@ -91,8 +91,9 @@ export function createEngineCommands(core: EngineCore): CommandDefinition[] {
       when: (e) => selected(e).some((el) => el.groupId),
       run: (e) => e.ungroup(sel(e)),
     },
-    { id: 'engine.bringToFront', icon: BringToFront, label: 'Bring to front', shortcut: 'mod+]', menus: ['context'], when: hasSel, run: (e) => e.bringToFront(sel(e)) },
-    { id: 'engine.sendToBack', icon: SendToBack, label: 'Send to back', shortcut: 'mod+[', menus: ['context'], when: hasSel, run: (e) => e.sendToBack(sel(e)) },
+    // Brackets need AltGr on many layouts (handled in matchShortcut); the arrows work on every one.
+    { id: 'engine.bringToFront', icon: BringToFront, label: 'Bring to front', shortcut: 'mod+]', extraShortcuts: ['mod+shift+arrowup'], menus: ['context'], when: hasSel, run: (e) => e.bringToFront(sel(e)) },
+    { id: 'engine.sendToBack', icon: SendToBack, label: 'Send to back', shortcut: 'mod+[', extraShortcuts: ['mod+shift+arrowdown'], menus: ['context'], when: hasSel, run: (e) => e.sendToBack(sel(e)) },
     {
       id: 'engine.lock',
       icon: Lock,

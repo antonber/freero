@@ -40,6 +40,11 @@ export {
 
 } from './hooks';
 
+// [additive] A dock panel's header (title, search, filters): rendered in the dock's fixed strip
+// beside its close button, so the panel's content scrolls below it, never under the button.
+export { DockHeader } from './ui/DockHeader';
+export type { DockHeaderProps } from './ui/DockHeader';
+
 // [additive] A read-only board showing a given document state (version previews): its own local
 // engine session, so panning it never touches the live board. Render inside a mounted board.
 export { StaticBoardView } from './canvas/StaticBoardView';

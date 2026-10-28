@@ -64,14 +64,24 @@ export class LocalStorage implements ObjectStorage {
     await fs.promises.rename(tmp, this.file(key));
   }
   async get(key: string): Promise<StoredObject | null> {
+    // Open first, then stat and stream that handle: a file deleted meanwhile (the uploads sweep)
+    // is either a clean "not found" or still read whole. Stat-then-open by name left a gap where
+    // the 200 and its length went out and the stream then failed, cutting the connection.
     const file = this.file(key);
+    let handle: fs.promises.FileHandle;
     try {
-      const stat = await fs.promises.stat(file);
-      if (!stat.isFile()) return null;
-      return { body: fs.createReadStream(file), contentType: null, size: stat.size };
+      handle = await fs.promises.open(file, 'r');
     } catch {
       return null;
     }
+    try {
+      const stat = await handle.stat();
+      if (stat.isFile()) return { body: handle.createReadStream(), contentType: null, size: stat.size };
+    } catch {
+      /* treated as missing */
+    }
+    await handle.close().catch(() => {});
+    return null;
   }
   async delete(key: string): Promise<void> {
     await fs.promises.rm(this.file(key), { force: true });

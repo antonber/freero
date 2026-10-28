@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
-import { definePanel, useCanEdit, type Editor } from '@engine';
+import { DockHeader, definePanel, useCanEdit, type Editor } from '@engine';
 import { Button, Input, Spinner } from '@ui';
 import type { IconEntry } from './lib/iconIndex';
 import { IconSvg } from './lib/nodes';
@@ -39,10 +39,10 @@ function IconLibrary({ editor }: { editor: Editor }) {
 
   return (
     <div className="fr-icons">
-      <header className="fr-icons__head">
+      <DockHeader className="fr-icons__head">
         <h2 className="fr-icons__title">Icons</h2>
         <p className="fr-icons__sub">Click to add, or drag onto the board. Recolour and resize them like any item.</p>
-      </header>
+      </DockHeader>
       <Input
         autoFocus
         icon={Search}
