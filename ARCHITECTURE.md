@@ -346,7 +346,10 @@ Canvas productivity (engine primitives; the product UI lives in `features/arrang
   (`engine/interaction/toolDispatch.ts`): while snapping applies (same Ctrl/⌘ / Alt rules) a
   tool's `ToolPointerEvent.point` is a grid point (`target` stays what is under the real pointer)
   and whatever it creates during that pointer event lands with its top-left on the grid (several
-  elements created at once move together), so tools never snap by themselves. Tools set
+  elements created at once move together), so tools never snap by themselves. A tool's hover
+  ghost uses `useToolGhost({ w, h })` (`@engine`; not `usePointer()`): the top-left of a box
+  centered on the pointer exactly where a click would create it, by the same rules and modifiers
+  (`toolGhostAt` in `toolDispatch.ts`, so preview and placement can't drift apart). Tools set
   `ToolDefinition.snapToGrid: false` to opt out: freehand (pen, eraser), element-aimed
   (connector, comment pins) and select (snaps its own drags). Arrow-key nudges with snapping on
   move to the next grid line (an off-grid item lands on the grid first); Shift+arrow moves five

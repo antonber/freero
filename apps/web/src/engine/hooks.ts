@@ -6,6 +6,7 @@ import type { BoardElement, BoardSettings, ElementType, PresenceState, Role } fr
 import type { Camera, Editor, FollowTarget, Point, Rect } from './api';
 import { RenderModeContext, ScopeContext, useCore } from './context';
 import type { UiState } from './state/uiStore';
+import { toolGhostAt } from './interaction/toolDispatch';
 import type { TextFormatState } from './text/session';
 
 /**
@@ -137,6 +138,20 @@ export function useDock(): string | null {
 export function usePointer(): Point | null {
   const core = useCore();
   return useStore(core.pointer, (s) => (s.inside ? s.world : null));
+}
+
+/**
+ * [additive] For a creation tool's hover ghost: top-left of a `size` box centered on the pointer,
+ * exactly where a click with the active tool would create it — grid snapping included (board
+ * setting, the tool's `snapToGrid`, Ctrl/⌘ inverts, Alt disables). Null off the canvas.
+ */
+export function useToolGhost(size: { w: number; h: number }): Point | null {
+  const core = useCore();
+  // Re-render on what the placement depends on: pointer + modifiers, grid settings, active tool.
+  useStore(core.pointer);
+  useUi((s) => s.settingsVersion);
+  useUi((s) => s.toolId);
+  return toolGhostAt(core, size);
 }
 
 /** Rich-text format state at the caret / of the selection; refreshes as the caret moves. */

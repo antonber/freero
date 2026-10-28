@@ -201,7 +201,7 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
     const onPointerMove = (e: PointerEvent) => {
       const screen = screenOf(e);
       const world = editor.screenToWorld(screen);
-      core.pointer.setState({ screen, world, inside: true });
+      core.pointer.setState({ screen, world, inside: true, mods: { metaKey: e.metaKey || e.ctrlKey, altKey: e.altKey } });
       publishCursor(world);
 
       if (e.pointerType === 'touch' && touches.has(e.pointerId)) {
@@ -263,6 +263,13 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
         ui.setState({ transforming: null });
       }
       if (gesture && e.pointerId === gesture.pointerId) core.interaction.cancel?.();
+    };
+
+    // Ctrl/⌘ or Alt pressed or released while the pointer rests: hover previews re-snap.
+    const onModifierKey = (e: KeyboardEvent) => {
+      const mods = core.pointer.getState().mods;
+      const metaKey = e.metaKey || e.ctrlKey;
+      if (mods.metaKey !== metaKey || mods.altKey !== e.altKey) core.pointer.setState({ mods: { metaKey, altKey: e.altKey } });
     };
 
     const onPointerLeave = () => {
@@ -351,6 +358,8 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
     el.addEventListener('contextmenu', onContextMenu);
     el.addEventListener('dragover', onDragOver);
     el.addEventListener('drop', onDrop);
+    window.addEventListener('keydown', onModifierKey, true);
+    window.addEventListener('keyup', onModifierKey, true);
     return () => {
       if (gesture) core.interaction.cancel?.();
       if (cursorTimer) clearTimeout(cursorTimer);
@@ -365,6 +374,8 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
       el.removeEventListener('contextmenu', onContextMenu);
       el.removeEventListener('dragover', onDragOver);
       el.removeEventListener('drop', onDrop);
+      window.removeEventListener('keydown', onModifierKey, true);
+      window.removeEventListener('keyup', onModifierKey, true);
     };
   }, [core]);
 

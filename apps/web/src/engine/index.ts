@@ -26,6 +26,7 @@ export {
   useDock,
   // additive (see ARCHITECTURE.md "Engine contract additions")
   usePointer,
+  useToolGhost,
   useTextFormatState,
   useSettings,
   useCanEdit,
