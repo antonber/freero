@@ -117,7 +117,7 @@ const EmbedView = memo(function EmbedView({ element: el, selected }: ElementRend
       {(image || live) && (
         <div className={`fr-embed__media${video ? ' is-video' : live ? ' is-doc' : ''}`}>
           {image && <img src={image} alt="" draggable={false} referrerPolicy="no-referrer" />}
-          {live && !exporting && !image && !video && (
+          {live && !image && !video && (
             <div className="fr-embed__poster" aria-hidden>
               <span>{live.label}</span>
             </div>
