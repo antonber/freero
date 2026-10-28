@@ -242,7 +242,9 @@ ${DIAGRAM_RULES[kind]}`,
       const summary =
         parsed.kind === 'sequence'
           ? `Sequence diagram: ${parsed.diagram.participants.length} participants, ${parsed.diagram.steps.length} steps`
-          : `Flowchart: ${parsed.nodes.length} steps, ${parsed.edges.length} connections`;
+          : parsed.kind === 'mindmap'
+            ? `Mind map: ${parsed.root.text}`
+            : `Flowchart: ${parsed.nodes.length} steps, ${parsed.edges.length} connections`;
       if (source.length > LAYOUT_LIMITS.source) throw new InvalidOutput('The diagram is too large.');
       return { structure: { kind: 'mermaid', source }, summary };
     },

@@ -137,6 +137,11 @@ export async function recordBoardOpen(boardId: string, userId: string, at = Date
   await repo.recordOpen(boardId, userId, at);
 }
 
+/** The account purge: which protected board links the account unlocked (KAI-145) is forgotten. */
+export function forgetLinkUnlocksOf(userId: string): Promise<void> {
+  return repo.forgetUnlocksOf(userId);
+}
+
 /** Boards the user ever opened (they may have commented there). */
 export async function boardIdsOpenedBy(userId: string): Promise<string[]> {
   return [...(await repo.opensOf(userId)).keys()];

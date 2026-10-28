@@ -25,7 +25,8 @@ export type ElementType =
   | 'swimlane'
   | 'media'
   | 'file'
-  | 'objectlink';
+  | 'objectlink'
+  | 'activity';
 
 /**
  * An app (OAuth) or personal token acting for a person: what the board shows as "<name> for
@@ -204,7 +205,30 @@ export type ShapeKind =
   | 'netMonitor'
   | 'netLaptop'
   | 'netPhone'
-  | 'netUser';
+  | 'netUser'
+  // [additive] Wireframe kit (KAI-120): device frames and low-fidelity UI controls. Their corners
+  // and marks keep a fixed size when resized. Clients that don't know a kind draw its box.
+  | 'wfBrowser'
+  | 'wfPhone'
+  | 'wfTablet'
+  | 'wfDesktop'
+  | 'wfButton'
+  | 'wfInput'
+  | 'wfSearch'
+  | 'wfTextArea'
+  | 'wfCheckbox'
+  | 'wfRadio'
+  | 'wfToggle'
+  | 'wfDropdown'
+  | 'wfTabs'
+  | 'wfNavBar'
+  | 'wfCard'
+  | 'wfList'
+  | 'wfImage'
+  | 'wfAvatar'
+  | 'wfSlider'
+  | 'wfModal'
+  | 'wfProgress';
 
 export interface ShapeElement extends BaseElement, TextStyle {
   type: 'shape';
@@ -315,7 +339,7 @@ export interface FrameElement extends BaseElement {
   /** Order in presentation mode / frames panel. */
   index: number;
   /** Optional aspect preset used when created. */
-  preset?: 'custom' | '16:9' | '4:3' | '1:1' | 'a4' | 'letter' | 'mobile' | 'desktop';
+  preset?: 'custom' | '16:9' | '4:3' | '1:1' | 'a4' | 'letter' | 'mobile' | 'desktop' | 'tablet' /* [additive] */;
   /**
    * Contents hidden from viewers and commenters. Server-enforced: while set, everything inside
    * lives in the board's 'editors' layer, which the server sends only to owners/editors
@@ -567,6 +591,43 @@ export interface FileElement extends BaseElement {
   mime: string;
 }
 
+/** Live audience activities (KAI-132). */
+export type ActivityKind = 'poll' | 'wordcloud' | 'ranking' | 'rating' | 'qna';
+export interface ActivityOption {
+  id: string;
+  text: string;
+}
+
+/**
+ * A live audience activity (KAI-132): a poll, word cloud, ranking, rating scale or Q&A. The
+ * element holds the question and its settings (written by editors like any element); answers go
+ * to the SERVER (REST), which keeps them out of the board and publishes only results — counts,
+ * words, averages, questions — into the `engageResults` collection (ENGAGE_RESULTS_COLLECTION,
+ * written by nobody else). So nobody can map an anonymous answer to a person, and sealed results
+ * are on no client until revealed.
+ */
+export interface ActivityElement extends BaseElement {
+  type: 'activity';
+  kind: ActivityKind;
+  question: RichText;
+  /** Poll choices, items to rank, statements to rate (unused by word clouds and Q&A). */
+  options: ActivityOption[];
+  /** Poll: how many choices one person may pick (1: single choice). */
+  maxChoices?: number;
+  /** Rating: the top of the scale (1..scale). */
+  scale?: number;
+  /** Names are never shown with answers (kept with each answer as it was when given). */
+  anonymous: boolean;
+  /** 'live': results as answers arrive; 'reveal': only how many answered, until an editor reveals them. */
+  results: 'live' | 'reveal';
+  /** Visitors without an account (guests on the board's link) may answer. */
+  guests: boolean;
+  /** No more answers (results stay). */
+  closed?: boolean;
+  /** Accent colour. */
+  color: string;
+}
+
 /**
  * A swimlane diagram (a pool): a title band, lanes — rows, or columns when `vertical` — and
  * phases across them. It is a container: items dropped in it join it (`frameId`) and keep their
@@ -612,7 +673,8 @@ export type BoardElement =
   | SwimlaneElement
   | MediaElement
   | FileElement
-  | ObjectLinkElement;
+  | ObjectLinkElement
+  | ActivityElement;
 
 export type ElementOf<T extends ElementType> = Extract<BoardElement, { type: T }>;
 

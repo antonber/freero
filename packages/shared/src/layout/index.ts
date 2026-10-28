@@ -4,13 +4,16 @@
 import { STICKY_COLORS, type StickyColor } from '../elements';
 import { findFreeSpot, unionRects, type Point, type Rect } from '../geometry';
 import { translateDraft } from './kit';
+import { layoutItems } from './items';
 import { parseMermaid } from './mermaid';
-import { layoutClusters, layoutGraph, layoutMindmap, layoutNote, layoutSequence, layoutStickies, layoutTable, layoutTree, parseIndentedList } from './structures';
+import { layoutClusters, layoutGraph, layoutKanban, layoutMindmap, layoutNote, layoutOrgChart, layoutSequence, layoutStickies, layoutTable, layoutTree, parseIndentedList } from './structures';
 import { LayoutError, type LaidOut, type LayoutContext, type OutlineNodeInput, type StructureInput } from './types';
 
 export * from './types';
-export { parseMermaid, type MermaidDiagram } from './mermaid';
-export { parseIndentedList } from './structures';
+export { parseMermaid, looksLikeMermaid, type MermaidDiagram } from './mermaid';
+export { parseIndentedList, parseOrgRows, columnStatus } from './structures';
+export * from './mindtree';
+export { tidyTree, type TidyUnit, type TidyOptions } from './tidy';
 export { layered, spacedFit } from './layered';
 export { measureText, textWidth } from './measure';
 export { translateDraft } from './kit';
@@ -71,6 +74,7 @@ export function layoutStructure(input: StructureInput, ctx: LayoutContext): Laid
       return layoutGraph(input.nodes, input.edges ?? [], input.direction ?? 'TB', input.groups ?? [], ctx);
     case 'mermaid': {
       const d = parseMermaid(input.source);
+      if (d.kind === 'mindmap') return layoutMindmap(d.root, ctx);
       return d.kind === 'sequence' ? layoutSequence(d.diagram, ctx) : layoutGraph(d.nodes, d.edges, d.direction, d.groups, ctx);
     }
     case 'sequence':
@@ -82,6 +86,15 @@ export function layoutStructure(input: StructureInput, ctx: LayoutContext): Laid
       if (typeof input.text !== 'string' || !input.text.trim()) throw new LayoutError('A note needs its text');
       if (input.title !== undefined && typeof input.title !== 'string') throw new LayoutError('A note title is text');
       return layoutNote(input.title, input.text, ctx);
+    case 'kanban':
+      if (input.title !== undefined && typeof input.title !== 'string') throw new LayoutError('A kanban title is text');
+      return layoutKanban(input.title, input.columns, ctx);
+    case 'orgchart':
+      return layoutOrgChart(input.people, ctx);
+    case 'items':
+      if (!Array.isArray(input.items)) throw new LayoutError('items needs a list of items');
+      if (input.layout !== undefined && input.layout !== 'grid' && input.layout !== 'kanban') throw new LayoutError('layout must be grid or kanban');
+      return layoutItems(input.items, input.layout ?? 'grid', input.title, ctx);
     default:
       throw new LayoutError(`Unknown structure kind ${String((input as { kind?: unknown }).kind)}`);
   }
@@ -106,6 +119,7 @@ export function placeLaidOut(laid: LaidOut, p: Placement): LaidOut & { bounds: R
     content: laid.content,
     moves: laid.moves.map((m) => ({ id: m.id, x: m.x + spot.x, y: m.y + spot.y })),
     size: laid.size,
+    ...(laid.keys ? { keys: laid.keys } : {}),
     bounds: { x: spot.x, y: spot.y, w: laid.size.w, h: laid.size.h },
   };
 }

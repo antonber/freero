@@ -355,6 +355,14 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   board (`GET /boards/:id/trackers`). `features/trackers` hides every entry point without it.
 - `Host.activity?.list(before?)` (additive): the board's activity feed as the server recorded
   it (see "Activity"); `features/activity` shows it in a dock panel.
+- `Host.engage?` (additive, KAI-132): answering live activities (`state / answer / withdraw / ask /
+  upvote / moderate / reveal / clear`). Answers go to the server, never into the doc; the board
+  shows only the results the server publishes (see "Live activities"). Guests have it too.
+- `Host.call?` (`get / set`) and `Host.board.call` / `jitsiCalls` (additive, KAI-134): the board's
+  call link (`features/call`: "Join call" in the top bar, who is in the call as presence
+  `ext.call`, "Call link…" in the board menu). Changes reach open boards through the `call`
+  collection's `rev`, which makes every client re-read `call.get()`; the link itself lives on the
+  server (`boards.call_url` / `call_jitsi`), checked there (https only) and read as https only.
 - `SavedTemplateInfo.ownerName` / `canUnshare` (additive): team templates say who shared them;
   a workspace admin may `shareTemplate(id, false)` someone else's team template.
 - `Host.listTemplates / loadTemplate / saveTemplate / deleteTemplate` (server module
@@ -560,10 +568,38 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
   a data URL first (`engine/editor/remoteImages.ts`, through `Host.fetchImage(url)` =
   `GET /api/unfurl/image`, else a CORS read), and `renderToDataUrl({ onMissingImages })` reports
   what couldn't be read (the export feature says so). Offline sandbox: both reject.
-- Pasted text is routed by importer priority, never by features importing each other: table
-  (20: TSV / consistent CSV) → embed (10: exactly one URL) → sticky (5: a list — mostly bulleted /
-  numbered lines, or short lines that don't read as a wrapped paragraph, or `<li>`s in the HTML —
-  and any text while stickies are selected) → text box (0: prose).
+- Pasted text is routed by importer priority, never by features importing each other: shape (40:
+  Mermaid source, `looksLikeMermaid` — a header alone on its line — handed to `from-text.insert`)
+  → mind map (25: an outline with two or more indentation levels, tabs only as indentation, not
+  code; under the selected topic if one is selected) → table (20: TSV / consistent CSV) → embed
+  (10: exactly one URL) → sticky (5: a list — mostly bulleted / numbered lines, or short lines that
+  don't read as a wrapped paragraph, or `<li>`s in the HTML — and any text while stickies are
+  selected) → text box (0: prose).
+
+Structure from text and diagrams as code (`features/from-text`, KAI-196 / KAI-119; layout formats:
+docs/board-outline.md):
+- "Insert from text" lays text out in the BROWSER with `@freero/shared` `layoutStructure`, the
+  function the server's insert-structure runs (no round trip; works offline, live preview), puts it
+  on `findFreeSpot` near the view with `createMany` (tables, whose cells live outside the elements,
+  through `insertElements`), one transaction = one undo step, then fits it into view.
+- Mind maps from structure are laid out by `layoutMindTree` (`@freero/shared` layout/mindtree.ts),
+  the function `features/mindmap` runs for tidy up / follow / drag: one function, not a copy.
+  Org charts and Auto-layout ▸ Tree / Org chart use `tidyTree`; flowcharts and Auto-layout ▸
+  Top-down / Left to right use `layered` (`features/arrange/lib/autoLayout.ts`: selected items and
+  the connectors joining them, moved with `moveBy` in one gesture; locked items stay put).
+- Diagrams (Mermaid, tree, org chart, mind map) keep their source in the `diagramSources`
+  collection (owned and undoable by from-text: diagram id → `{ kind, source, ids: sourceKey →
+  elementId, laid: elementId → what the last layout wrote }`). "Edit diagram source" re-lays edited
+  source onto the same elements (`lib/reconcile.ts`): new and old layout matched by
+  `LaidOut.keys`; per field, a value still equal to what the last layout wrote takes the new one,
+  anything changed on the board (text, colour, size, a box moved by hand) is kept; lines always
+  take the new geometry; mind-map topics take the new order and are tidied; removed source items
+  go, locked ones stay. The source is shared board content, so it is kept and editable only while
+  the whole diagram is in the shared doc (never for private-mode drafts or inside a hidden frame,
+  whose text it would reveal). Limits, by design: the source is not rewritten from board edits; copies of
+  a diagram don't carry its source; outline items without a Mermaid id are matched by their path
+  of texts, so a renamed topic is a new topic; concurrent source edits of one diagram are LWW per
+  diagram (the second update re-lays from its own source).
 
 Reference & items (engine primitives; product UI in `features/shortcuts`, `links`, `image`, `icons`,
 `select-similar` — "Select only ▸ <type> (count)" narrows a mixed selection):
@@ -682,7 +718,7 @@ files; it precaches them plus the shell files). Rules, all in `strategyFor` / `r
 `Modal` {open, onClose, title, width?, footer?, children} · `Input`, `TextArea`, `Select` {options, value, onChange},
 `Toggle`, `Slider` {min, max, step, value, onChange} · `ColorSwatches` {colors, value, onChange, allowCustom?} ·
 `Divider` {vertical?} · `Avatar` {name, color, src?, size?} · `AvatarStack` {users, max?} · `Kbd` ·
-`Spinner` · `Logo` {size?, withWordmark?} · `ToastProvider` + `useToast()` → `notify(message, kind?, { duration?, action? })` (app only; features use `editor.host.notify`).
+`Spinner` · `Logo` {size?, withWordmark?} · `ElementsPreview` {elements, moved?, label?} (an SVG picture of content before it lands: AI results, Insert from text) · `ToastProvider` + `useToast()` → `notify(message, kind?, { duration?, action? })` (app only; features use `editor.host.notify`).
 Tokens: `ui/tokens.css` (CSS variables `--fr-*`). Plain co-located CSS, class prefix `fr-`.
 
 Popover focus: content focuses itself while mounting (`autoFocus` on an input, or a layout
@@ -759,14 +795,23 @@ credentials that act for a person without their session), `api` (no table: the p
 "The MCP server" below), `objects` (no table: the object registry and the one
 permission check, `POST /objects/resolve`), `references` (object_references, reference_sources: the
 references index derived through the outbox, `GET /objects/backlinks`; both in "Suite foundation"
-below), `trackers` (tracker_connections, tracker_links, tracker_link_sources, tracker_oauth_flows:
-issue-tracker sync; see "Issue trackers" below).
+below), `engage` (engage_answers, engage_questions, engage_upvotes,
+engage_reveals: live audience activities; see "Live activities" below), `trackers`
+(tracker_connections, tracker_links, tracker_link_sources, tracker_oauth_flows: issue-tracker sync;
+see "Issue trackers" below).
 
 - Notifications are created only from trusted server-side events, never from client claims:
   realtime's `onCommentMessage` (a comment message applied from one of THIS instance's sockets,
   attributed to that socket's authenticated user — a message stored under anyone else's id is
   ignored; each change is reported once across instances), members' `onBoardShared`,
-  `onAccessRequested` / `onAccessDecided` (`access.request`, `access.response`). Each
+  `onAccessRequested` / `onAccessDecided` (`access.request`, `access.response`), and realtime's
+  `onCardAssignment` (KAI-135, `realtime/cards.ts`: a task card's `assigneeId` / `dueDate` changed in
+  the shared doc by a socket, a request or a reveal of a private draft — attributed to the socket's
+  user, the request's actor or the draft's author; a card arriving from the editors layer is not
+  news). `notifications/cards.ts` settles each card's changes for `CARD_SETTLE_MS` (clicking through
+  the picker notifies the last assignee once) into `card.assigned` / `card.due_changed`, and keeps
+  `card_due_watch`, from which the digest job sends `card.due_soon` the day before (UTC dates) —
+  each re-checked on the board as the assignee sees it, one per card and due date. Each
   recipient must have access to the board; the author is never notified; one notification per
   person per message (`dedupe_key`; a mention wins over a reply). Types live in
   `notifications/types.ts` (wording, link, settings label): a new source (workspace invites) adds
@@ -1068,6 +1113,22 @@ approval lets the requester in at once.
   optional `contactEmail`; a visitor without an account may report exactly what a guest could
   open (`reportableBoard(id, null)` → `guestRoleFor`).
 
+### Share-link password and expiry (`boards/linkProtection.ts`, KAI-145)
+
+- The owner may give a board's link a password (scrypt, auth's `hashPassword`) and an expiry. The
+  expiry is applied where a board is read (`repo.toBoard`: `linkAccess` reads 'none' from then on,
+  for everyone, like an operator's block); a job (`boards:link-expiry`, every 10 s, one instance)
+  re-checks the live sockets of links that just expired, so link-only visitors are disconnected.
+- The password depends on who asks, so it is applied by `describeAccess` / `listBoards`
+  (`linkAsSeenBy`): the link grants its role only to someone in `board_link_unlocks` for the CURRENT
+  password revision (`link_password_rev`, bumped by every change) — a server-side fact, not a
+  cookie, so REST, lists, socket admission and access refreshes all agree, and a new password
+  cancels every earlier unlock at once (and disconnects those visitors). Memberships, team access
+  and ownership never depend on the link. `requireAccess` answers 403 `link_password_required` when
+  the link would let that person in after the password; `POST /boards/:id/link-unlock` (and the
+  guest join / `/guest/boards/:id/unlock`) check it, rate limited per IP and per board + person,
+  refusals audited (`board.link_password_refused`), changes audited (`board.link_protection_changed`).
+
 ### Activity (`modules/activity`, `realtime/changes.ts`, KAI-44)
 
 - Sources are trusted server events only: realtime's `onBoardChange` — element changes applied
@@ -1117,7 +1178,9 @@ Agents, the API and AI read and write boards semantically, never by coordinates.
   (`onCommentMessage`: mentions and replies notify).
 - **Layout from structure** (`modules/structure`, `POST /boards/:id/insert-structure`): `@freero/shared`
   `layout/` (pure, no dependencies; in-house layered graph layout, Mermaid reader, mind map, sticky
-  clusters, sequence, table) lays a structure out from (0, 0); `plan.ts` places it on a free spot of
+  clusters, sequence, table, work items as a grid or a kanban by status — the CSV import of
+  `features/csv`, KAI-136, lays rows out with it and creates them with `createMany` in one
+  transaction, tags by name through `tags.applyNames`) lays a structure out from (0, 0); `plan.ts` places it on a free spot of
   the view and turns it into a `BoardChange`; `sinks.ts` decides where that goes (`board` →
   `changeBoard`, `preview` → returned for `Editor.insertElements`, `suggestions` →
   `proposeSuggestions`: the same plan, proposed instead of written; KAI-169).
@@ -1710,6 +1773,20 @@ facilitator's limits keep their own guarantees. The laser pointer (`features/pre
 only (`ext.present.laser`, receivers fade points from their own arrival time); presenter notes are
 the `presenterNotes` collection (frame id → text), never elements, so never in exports.
 
+**Live activities** (KAI-132, `modules/engage`, `features/engage`): polls, word clouds, rankings,
+rating scales and Q&A. The `activity` element (question, options, settings) is ordinary board
+content written by editors. Answers, questions and upvotes are NOT: they go to the server over REST
+(anyone who can open the board, viewers too; guests when the activity allows them; one answer per
+person, a new one replaces it; rate limited), are checked against the element as that person sees
+the board, and are kept in engage's tables. The board gets only results — counts, words, averages,
+questions — in the `engageResults` collection, written through realtime's
+`writeServerCollection` by the server alone: a socket's write to it (shared doc or layer) is undone
+in the same transaction (`realtime/serverCollections.ts`, like the vote budget). So an anonymous
+answer can never be mapped to a person by any client, and a sealed activity (`results: 'reveal'`)
+publishes only how many answered until an editor reveals it. Names appear only on a poll answered
+while it was not anonymous (kept per answer as given). `engageResults` and `call` are in
+`Y_KEPT_ON_RESTORE`. The answer form is a dialog that `?activity=<id>` opens (phones: the answer link).
+
 ### Board layers — content the server withholds (`realtime/layers.ts`, `engine/store/`)
 
 Some content must not reach everyone who can open a board: the ballots of a vote whose results are
@@ -1848,7 +1925,7 @@ the board, deletions. A suggestion is not board content until someone who can ed
   `S3_BUCKET` and keys (MinIO, SeaweedFS…), the `s3` group checks the S3 backend (prefixes, kept
   copies under `private/`, restore, retention, the S3_PUBLIC_URL redirect and stored Cache-Control);
   all other groups stay on the local disk. CI does all of it.
-  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation,ai,api,mcp,s3,suite,suggestions,tracker` runs some groups (to loop one while hunting a flake).
+  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation,ai,api,mcp,s3,suite,suggestions,collab,tracker` runs some groups (to loop one while hunting a flake).
   The `mcp` group drives the MCP server with the official MCP client SDK, OAuth (dynamic
   registration, consent, PKCE) included; with DATABASE_URL + REDIS_URL one client's requests also
   alternate between two instances.

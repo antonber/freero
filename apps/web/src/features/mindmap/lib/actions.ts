@@ -5,8 +5,8 @@
 // step, one network update, written only by the client whose user acted. While an action
 // commits, the `follow` hook stands down (quiet()).
 import { nanoid } from 'nanoid';
-import type { BoardElement, MindmapElement } from '@freero/shared';
-import type { Editor, ElementPatch, NewElement, Point } from '@engine';
+import { layoutStructure, type BoardElement, type MindmapElement, type OutlineNodeInput } from '@freero/shared';
+import { plainToRichText, type Editor, type ElementPatch, type NewElement, type Point } from '@engine';
 import { layoutTree, LEVEL_GAP, ROOT_GAP, type LayoutOptions } from './layout';
 import { nodeSize } from './measure';
 import { BRANCH_COLORS, ROOT_COLOR } from './constants';
@@ -317,6 +317,72 @@ export function dropTargetFor(editor: Editor, index: TreeIndex<MindmapElement>, 
   const hit = editor.hitTest({ x: n.x + n.w / 2, y: n.y + n.h / 2 }, { exclude: sub, types: ['mindmap'] });
   if (!isNode(hit) || hit.id === n.parentId || !rootOf(index, hit.id)) return null;
   return hit;
+}
+
+// ------------------------------------------------------------------ outlines (paste)
+
+/**
+ * A pasted outline: under `parentId` when one topic is selected (its items become that topic's
+ * last children, in order), otherwise a new map on free space nearest `at`, laid out by the same shared
+ * layout as server inserts. One undo step either way. Returns the new topics' top-level ids.
+ */
+export function insertOutline(editor: Editor, roots: OutlineNodeInput[], at: Point, parentId?: string | null): string[] {
+  const index = currentIndex(editor);
+  const parent = parentId ? index.byId.get(parentId) : undefined;
+  const root = parent && rootOf(index, parent.id);
+  if (parent && root && !parent.locked) {
+    const side = childSide(index, parent);
+    const kids = (index.kids.get(parent.id) ?? []).filter((k) => sideOf(k, parent) === side);
+    const last = kids[kids.length - 1];
+    const used = (index.kids.get(parent.id) ?? []).map((k) => k.color);
+    const created: NewElement<'mindmap'>[] = [];
+    // Centers just below the last child's, in order (sibling order follows centers).
+    let center = last ? last.y + last.h : parent.y + parent.h / 2;
+    const add = (n: OutlineNodeInput, under: MindmapElement | NewElement<'mindmap'>, color: string) => {
+      const text = plainToRichText(n.text);
+      const size = nodeSize(text, false);
+      const node: NewElement<'mindmap'> = {
+        id: nanoid(),
+        type: 'mindmap',
+        text,
+        parentId: under.id!,
+        rootId: root.id,
+        color,
+        ...size,
+        // Only order and side matter: the layout places it.
+        x: side === 'right' ? under.x! + (under.w ?? 0) + 1 : under.x! - 1 - size.w,
+        y: (center += 1) - size.h / 2,
+      };
+      created.push(node);
+      for (const c of n.children ?? []) add(c, node, color);
+    };
+    for (const r of roots) {
+      const color = parent.parentId ? parent.color : leastUsedColor([...used, ...created.filter((c) => c.parentId === parent.id).map((c) => c.color)]);
+      add(r, parent, color);
+    }
+    commit(editor, [root.id], () => {
+      if (parent.collapsed) editor.update<MindmapElement>(parent.id, { collapsed: false });
+      editor.createMany(created);
+    });
+    const top = created.filter((c) => c.parentId === parent.id).map((c) => c.id!);
+    editor.select(top);
+    return top;
+  }
+  const outline = roots.length === 1 ? roots[0] : { text: 'Outline', children: roots };
+  const laid = layoutStructure({ kind: 'mindmap', root: outline }, { newId: nanoid });
+  const now = Date.now();
+  let ids: string[] = [];
+  // On free space nearest the paste point, never on top of what is there.
+  const spot = editor.findFreeSpot(laid.size, { near: at });
+  editor.transact(() => {
+    ids = editor.insertElements(
+      { elements: laid.elements.map((d) => ({ ...d, z: 0, createdBy: editor.host.user.id, createdAt: now, updatedAt: now }) as BoardElement) },
+      { at: { x: spot.x + laid.size.w / 2, y: spot.y + laid.size.h / 2 } },
+    );
+    // The real font measures pills a little differently from the layout's estimate: tidy once.
+    relayout(editor, rootIdsOf(editor, ids));
+  });
+  return ids;
 }
 
 // ------------------------------------------------------------------ keyboard navigation

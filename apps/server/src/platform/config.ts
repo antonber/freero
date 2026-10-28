@@ -41,6 +41,8 @@ export type RateLimitName =
   | 'agentWrite'
   | 'oauthToken'
   | 'oauthRegister'
+  | 'linkPassword'
+  | 'engage'
   | 'trackerSend';
 
 /** Issue-tracker sync (KAI-153; docs/trackers.md). */
@@ -247,6 +249,11 @@ export interface Config {
    * (the instance-wide kill switch for integrations and agents); tokens are kept.
    */
   publicApi: boolean;
+  /**
+   * A Jitsi deployment (https://meet.jit.si, or the operator's own) where boards may get a call
+   * room of their own (KAI-134), or null: only meeting links people paste.
+   */
+  jitsiBaseUrl: string | null;
 }
 
 export class ConfigError extends Error {
@@ -297,6 +304,8 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   trackerSend: '60/10m', // per user: issues created or imported in a tracker (each calls the tracker's API)
   report: '20/1h', // abuse reports per IP and per signed-in user
   appeal: '10/1h', // appeals against moderation actions per IP
+  linkPassword: '10/15m', // per IP and per board + person: attempts at a board link's password (KAI-145)
+  engage: '120/1m', // per person or guest: answers, questions and upvotes in live activities (KAI-132)
 };
 
 const ENV_NAME: Record<RateLimitName, string> = {
@@ -334,6 +343,8 @@ const ENV_NAME: Record<RateLimitName, string> = {
   trackerSend: 'RATE_LIMIT_TRACKER_SEND',
   report: 'RATE_LIMIT_REPORT',
   appeal: 'RATE_LIMIT_APPEAL',
+  linkPassword: 'RATE_LIMIT_LINK_PASSWORD',
+  engage: 'RATE_LIMIT_ENGAGE',
 };
 
 /** The built-in providers: env prefix, button label, default issuer, extra verified-email claims. */
@@ -604,6 +615,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     abuseContactEmail,
     securityContact: securityContact ?? (abuseContactEmail ? `mailto:${abuseContactEmail}` : null),
     publicApi: bool('PUBLIC_API', true),
+    jitsiBaseUrl: url('JITSI_BASE_URL', ['https:'])?.replace(/\/+$/, '') ?? null,
   };
 
   if (production) {

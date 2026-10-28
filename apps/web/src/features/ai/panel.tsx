@@ -5,9 +5,8 @@ import { useMemo, useState } from 'react';
 import { FileText, Lightbulb, Shapes, Sparkles, Workflow } from 'lucide-react';
 import { AI_LIMITS, type AiActionResponse, type AiDiagramKind, type AiTask, type BoardElement } from '@freero/shared';
 import { definePanel, type PanelProps } from '@engine';
-import { Button, Modal, SegmentedControl, TextArea } from '@ui';
+import { Button, ElementsPreview, Modal, SegmentedControl, TextArea } from '@ui';
 import { AI_DIALOG, applyPreview, clusterable, suggestedTask } from './lib/actions';
-import { AiPreview } from './lib/Preview';
 import './ai.css';
 
 const TASKS: Array<{ value: AiTask; label: string; icon: typeof Lightbulb }> = [
@@ -148,7 +147,7 @@ function AiDialog({ editor, props }: PanelProps) {
     >
       {result ? (
         <div className="fr-ai__result">
-          <AiPreview elements={result.snapshot?.elements ?? []} moved={moved} />
+          <ElementsPreview elements={result.snapshot?.elements ?? []} moved={moved} label="Preview of the result" />
           <p className="fr-ai__summary">{result.summary}</p>
           <p className="fr-ai__fine">
             Nothing is on the board yet. Insert adds it as one step you can undo. AI can be wrong: check it before you rely on it.

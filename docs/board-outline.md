@@ -148,9 +148,11 @@ Owners and editors. Body (`InsertStructureRequest`):
 | `stickies` | `items: string[]`, `title?`, `color?` | a near-square grid of stickies under a title |
 | `clusters` | `clusters: [{ title?, color?, items: Array<string \| { id }> }]` | titled sticky grids side by side; `{ id }` moves a sticky (card, shape …) already on the board into its cluster, with its reaction stamps |
 | `graph` | `nodes: [{ id, text, shape? }]`, `edges: [{ from, to, label?, style?, arrow? }]`, `direction?`, `groups?: [{ id, title, nodes, parent? }]` | shapes joined by attached connectors; groups become frames holding their nodes; an edge may name a group (attaches to its frame) |
-| `mermaid` | `source` | a flowchart (`flowchart`/`graph` TB·TD·BT·LR·RL; node shapes `[] () ([]) [[]] [()] (()) {} {{}} [//] [\\]`; links `-->`, `---`, `-.->`, `==>`, `<-->`, `--o`, `--x`, labels `\|x\|` or `-- x -->`; `&`; subgraphs → frames) or a `sequenceDiagram` (participants / actors, messages `->> -->> -> --> -x -)`, notes); styling directives are skipped |
+| `mermaid` | `source` | a flowchart (`flowchart`/`graph` TB·TD·BT·LR·RL; node shapes `[] () ([]) [[]] [()] (()) {} {{}} [//] [\\]`; links `-->`, `---`, `-.->`, `==>`, `<-->`, `--o`, `--x`, labels `\|x\|` or `-- x -->`; `&`; subgraphs → frames) or a `sequenceDiagram` (participants / actors, messages `->> -->> -> --> -x -)`, notes), or a `mindmap` (one root, nesting by indentation, node brackets `[] () (()) ))(( )( {{}}`; icons and classes skipped) → a mind map; styling directives are skipped |
 | `sequence` | `diagram: { participants, steps }` | same as a Mermaid sequence diagram |
 | `table` | `rows: string[][]`, `header?` | a table, columns and rows sized to their text |
+| `kanban` | `columns: [{ title, items: string[] }]`, `title?` | a kanban board with a task card per item, stacked in its column; a column titled like "To do", "In progress" or "Done" gives its cards that status |
+| `orgchart` | `people: [{ name, title?, manager?, id? }]` (`manager` = another person's `id` or name) | a top-down org chart: name / title boxes, each manager centered over their reports, joined by connectors; an unknown manager or a reporting circle is refused |
 | `note` | `text`, `title?` | a written note (summaries): a soft rounded card, the title in bold, paragraphs and bullet lines kept (8 000 characters) |
 
 Placement: on the free spot nearest to `near` (just right of that element) or `at`, else the middle
@@ -191,3 +193,11 @@ choice: `@freero/shared` has no dependencies (it runs in both apps), so a librar
 the layout to one side; dagre (MIT) was the fallback considered; elkjs (EPL-2.0, weak copyleft) was
 not used. Text is sized from a per-character width table for Inter (slightly generous); the web
 re-measures with the real font when someone edits the element.
+
+Mind maps are laid out by `layoutMindTree` (`layout/mindtree.ts`), the very function the web's
+mind-map feature runs to tidy a map up, so a map inserted here is already tidy there. Org charts use
+`tidyTree` (`layout/tidy.ts`: parents centered over their children), which the app's
+"Auto-layout ▸ Tree / Org chart" runs too. `LaidOut.keys` names the source item behind each element
+(`n:<node>`, `e:<from>><to>#<k>`, `g:<group>`, `t:<path of texts>`, `p:` / `m:` / `note:` in sequences):
+the app keeps an inserted diagram's source and, when it is edited, re-lays it out onto the elements
+it already made (see "Diagrams as code" in ARCHITECTURE.md).

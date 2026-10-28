@@ -47,6 +47,8 @@ export {
   cleanGuestName,
   type Actor,
 } from './guests';
+// The account password hashing (scrypt), for other secrets people choose: a board link's password (KAI-145).
+export { hashPassword, verifyPassword, dummyHash } from './password';
 // A workspace policy requiring two-step verification registers here (Enterprise).
 export { onTwoFactorRequirement } from './twoFactor';
 // Workspace single sign-on (modules/sso) and provisioning (SCIM): the generic OpenID Connect

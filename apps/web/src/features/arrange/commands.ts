@@ -7,13 +7,18 @@ import {
   AlignStartHorizontal,
   AlignStartVertical,
   AlignVerticalSpaceAround,
+  ArrowDownFromLine,
+  ArrowRightFromLine,
   LayoutGrid,
+  ListTree,
+  Network,
   Palette,
   Tags,
 } from 'lucide-react';
 import { defineCommands, type CommandDefinition, type Editor } from '@engine';
 import { applyMoves, movableCount, planAlign, planDistribute, planTidy, selectedUnits, type AlignEdge, type DistributeAxis } from './lib/arrange';
 import { clusterSelection, selectedStickies } from './lib/cluster';
+import { autoLayout, hasDiagram, type AutoLayoutMode } from './lib/autoLayout';
 
 // Never while typing: Alt+letter shortcuts are dispatched during text edits too.
 const idle = (editor: Editor) => !editor.getEditingId();
@@ -88,4 +93,23 @@ export const CLUSTER_COMMANDS = [
   },
 ] satisfies CommandDefinition[];
 
-export default defineCommands([...ARRANGE_COMMANDS, ...CLUSTER_COMMANDS]);
+const layout = (mode: AutoLayoutMode, label: string, icon: CommandDefinition['icon']): CommandDefinition => ({
+  id: `arrange.autoLayout${mode[0].toUpperCase()}${mode.slice(1)}`,
+  label,
+  icon,
+  menus: ['context'],
+  group: 'Auto-layout',
+  when: (editor) => idle(editor) && hasDiagram(editor),
+  disabledReason: 'Select two or more unlocked items joined by connectors',
+  run: (editor) => autoLayout(editor, mode),
+});
+
+/** A selected diagram (items joined by connectors) laid out again: context menu "Auto-layout ▸", Align popover. */
+export const LAYOUT_COMMANDS = [
+  layout('down', 'Top-down', ArrowDownFromLine),
+  layout('right', 'Left to right', ArrowRightFromLine),
+  layout('tree', 'Tree', ListTree),
+  layout('orgchart', 'Org chart', Network),
+] satisfies CommandDefinition[];
+
+export default defineCommands([...ARRANGE_COMMANDS, ...CLUSTER_COMMANDS, ...LAYOUT_COMMANDS]);

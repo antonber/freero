@@ -17,6 +17,7 @@ export const PRESETS: Array<{ id: FramePreset; label: string; w: number; h: numb
   { id: 'a4', label: 'A4', w: 794, h: 1123, hint: '210 × 297 mm' },
   { id: 'letter', label: 'Letter', w: 816, h: 1056, hint: '8.5 × 11 in' },
   { id: 'mobile', label: 'Mobile', w: 390, h: 844, hint: 'Phone screen' },
+  { id: 'tablet', label: 'Tablet', w: 820, h: 1180, hint: 'Tablet screen' },
   { id: 'desktop', label: 'Desktop', w: 1440, h: 1024, hint: 'Web page' },
   { id: 'custom', label: 'Custom', w: 960, h: 640, hint: 'Drag to size' },
 ];

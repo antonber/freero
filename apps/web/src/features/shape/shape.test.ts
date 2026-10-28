@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ShapeKind } from '@freero/shared';
-import { anchorOnOutline, detailPolylines, distanceToOutline, dragRect, hitShape, outlinePolygons, outlineToward } from './lib/geometry';
+import { anchorOnOutline, detailPolylines, distanceToOutline, dragRect, hitShape, labelBeside, outlinePolygons, outlineToward, textBox } from './lib/geometry';
 import { LIBRARY_KINDS } from './lib/library';
 
 const W = 200;
@@ -10,7 +10,10 @@ const ANCHORS = ['top', 'right', 'bottom', 'left'] as const;
 describe('shape outlines', () => {
   it('every library shape fills its box exactly, so the selection frame, handles and drawing agree', () => {
     for (const kind of LIBRARY_KINDS) {
-      const pts = [...outlinePolygons(kind, W, H), ...detailPolylines(kind, W, H)].flat();
+      // A checkbox, radio, toggle or slider fills the rest of its box with its label.
+      const t = textBox(kind, W, H);
+      const label = labelBeside(kind) ? [{ x: t.x, y: t.y }, { x: t.x + t.w, y: t.y + t.h }] : [];
+      const pts = [...outlinePolygons(kind, W, H), ...detailPolylines(kind, W, H)].flat().concat(label);
       const xs = pts.map((p) => p.x);
       const ys = pts.map((p) => p.y);
       // Never pokes outside its box (strokes would be clipped, anchors off)...
@@ -24,6 +27,17 @@ describe('shape outlines', () => {
       expect(Math.max(...xs), kind).toBeGreaterThan(W - 1.5);
       expect(Math.max(...ys), kind).toBeGreaterThan(H - 1.5);
     }
+  });
+});
+
+describe('wireframe kit', () => {
+  it('a stretched control keeps its corner radius and marks (a wide button is not a pill, a tall phone keeps its corners)', () => {
+    const corner = (kind: ShapeKind, w: number, h: number) => outlinePolygons(kind, w, h)[0][0];
+    expect(corner('wfButton', 560, 44)).toEqual(corner('wfButton', 140, 44));
+    expect(corner('wfPhone', 260, 900)).toEqual(corner('wfPhone', 260, 520));
+    // The checkbox mark stays a square beside a longer label.
+    const mark = (w: number) => outlinePolygons('wfCheckbox', w, 24)[0];
+    expect(mark(400)).toEqual(mark(180));
   });
 });
 

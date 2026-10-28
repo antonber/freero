@@ -635,7 +635,251 @@ function libraryGeometry(kind: ShapeKind, w: number, h: number): ShapeGeometry {
       };
     }
     default:
-      return { outline: poly([P(0, 0), P(w, 0), P(w, h), P(0, h)]), details: none };
+      return wireframeGeometry(kind, w, h) ?? { outline: poly([P(0, 0), P(w, 0), P(w, h), P(0, h)]), details: none };
+  }
+}
+
+// ---- Wireframe kit (KAI-120): low-fidelity device frames and UI controls, Freero's own drawings.
+// Corner radii, marks and bars have fixed sizes (capped by the box), so a resized control keeps
+// its look instead of stretching.
+
+const at = (segs: Seg[], dx: number, dy: number) => mapSegs(segs, (p) => P(p.x + dx, p.y + dy));
+/** Rounded rectangle at (x, y). */
+const rr = (x: number, y: number, w: number, h: number, r: number) => at(roundRect(Math.max(0.5, w), Math.max(0.5, h), r), x, y);
+const circle = (cx: number, cy: number, r: number) => ellipse(cx - r, cy - r, 2 * r, 2 * r);
+
+/** Controls whose label sits beside their mark (checkbox, radio, toggle, slider). */
+const LABEL_BESIDE = new Set<ShapeKind>(['wfCheckbox', 'wfRadio', 'wfToggle', 'wfSlider']);
+export const labelBeside = (kind: ShapeKind) => LABEL_BESIDE.has(kind);
+
+const wf = {
+  browserBar: (h: number) => Math.min(40, h * 0.22),
+  phoneInset: (m: number) => Math.min(10, m * 0.05),
+  tabletInset: (m: number) => Math.min(16, m * 0.05),
+  desktopScreen: (h: number) => h * 0.8,
+  bezel: (m: number) => Math.min(12, m * 0.04),
+  /** Side of a checkbox / radio mark. */
+  mark: (w: number, h: number) => Math.min(h, w, 28),
+  toggleW: (w: number, h: number) => Math.min(w, h * 1.8),
+  sliderLabel: (w: number) => w * 0.3,
+  listTitle: (h: number) => Math.min(36, h * 0.22),
+  modalTitle: (h: number) => Math.min(48, h * 0.2),
+  cardImage: (h: number) => h * 0.5,
+};
+
+function wireframeGeometry(kind: ShapeKind, w: number, h: number): ShapeGeometry | null {
+  const m = Math.min(w, h);
+  const cy = h / 2;
+  switch (kind) {
+    case 'wfBrowser': {
+      const bar = wf.browserBar(h);
+      const dot = Math.min(5, bar * 0.14);
+      const details = [...line(P(0, bar), P(w, bar))];
+      if (w >= 120) details.push(...circle(16, bar / 2, dot), ...circle(32, bar / 2, dot), ...circle(48, bar / 2, dot), ...rr(64, bar * 0.22, w - 80, bar * 0.56, bar * 0.28));
+      return { outline: roundRect(w, h, Math.min(10, m / 4)), details };
+    }
+    case 'wfPhone': {
+      const r = Math.min(32, m * 0.16);
+      const i = wf.phoneInset(m);
+      return {
+        outline: roundRect(w, h, r),
+        details: [
+          ...rr(i, i, w - 2 * i, h - 2 * i, Math.max(2, r - i)),
+          ...line(P(w / 2 - Math.min(22, w * 0.1), i + 10), P(w / 2 + Math.min(22, w * 0.1), i + 10)),
+          ...line(P(w / 2 - Math.min(30, w * 0.14), h - i - 9), P(w / 2 + Math.min(30, w * 0.14), h - i - 9)),
+        ],
+      };
+    }
+    case 'wfTablet': {
+      const r = Math.min(22, m * 0.07);
+      const i = wf.tabletInset(m);
+      return { outline: roundRect(w, h, r), details: [...rr(i, i, w - 2 * i, h - 2 * i, Math.max(2, r - i)), ...circle(w / 2, i / 2, Math.max(1, Math.min(3, i * 0.25)))] };
+    }
+    case 'wfDesktop': {
+      const sh = wf.desktopScreen(h);
+      const i = wf.bezel(m);
+      const foot = h - (h - sh) * 0.3;
+      return {
+        outline: [
+          ...roundRect(w, sh, Math.min(10, m * 0.04)),
+          ...poly([P(w * 0.44, sh), P(w * 0.56, sh), P(w * 0.56, foot), P(w * 0.7, foot), P(w * 0.7, h), P(w * 0.3, h), P(w * 0.3, foot), P(w * 0.44, foot)]),
+        ],
+        details: rr(i, i, w - 2 * i, sh - 2 * i, Math.max(2, Math.min(10, m * 0.04) - i / 2)),
+      };
+    }
+    case 'wfButton':
+      return { outline: roundRect(w, h, Math.min(8, h / 2)), details: [] };
+    case 'wfInput':
+      return { outline: roundRect(w, h, Math.min(6, h / 2)), details: [] };
+    case 'wfSearch': {
+      const r = Math.min(h * 0.17, 9);
+      const c = P(Math.min(h * 0.5, 22) + 1, cy - 1.5);
+      return { outline: roundRect(w, h, h / 2), details: [...circle(c.x, c.y, r), ...line(P(c.x + r * 0.7, c.y + r * 0.7), P(c.x + r * 1.6, c.y + r * 1.6))] };
+    }
+    case 'wfTextArea':
+      return {
+        outline: roundRect(w, h, Math.min(6, m / 2)),
+        details: m >= 24 ? [...line(P(w - 14, h - 4), P(w - 4, h - 14)), ...line(P(w - 9, h - 4), P(w - 4, h - 9))] : [],
+      };
+    case 'wfCheckbox': {
+      const s = wf.mark(w, h);
+      const y = (h - s) / 2;
+      return {
+        outline: rr(0, y, s, s, Math.min(4, s * 0.2)),
+        details: line(P(s * 0.24, cy), P(s * 0.42, cy + s * 0.18), P(s * 0.76, cy - s * 0.2)),
+      };
+    }
+    case 'wfRadio': {
+      const s = wf.mark(w, h);
+      return { outline: circle(s / 2, cy, s / 2), details: circle(s / 2, cy, s * 0.2) };
+    }
+    case 'wfToggle': {
+      const tw = wf.toggleW(w, h);
+      return { outline: rr(0, 0, tw, h, h / 2), details: circle(tw - h / 2, cy, Math.max(1, h / 2 - 4)) };
+    }
+    case 'wfDropdown': {
+      const c = Math.min(5, h * 0.14);
+      const x = w - Math.min(20, w * 0.15);
+      return { outline: roundRect(w, h, Math.min(6, h / 2)), details: line(P(x - c, cy - c / 2), P(x, cy + c / 2), P(x + c, cy - c / 2)) };
+    }
+    case 'wfTabs': {
+      const tw = w / 3;
+      const bar = (x0: number) => line(P(x0 + tw * 0.3, cy), P(x0 + tw * 0.7, cy));
+      return {
+        outline: roundRect(w, h, Math.min(6, h / 2)),
+        details: [...line(P(tw, 0), P(tw, h)), ...line(P(2 * tw, 0), P(2 * tw, h)), ...line(P(Math.min(8, tw / 4), h - 4), P(tw - Math.min(8, tw / 4), h - 4)), ...bar(tw), ...bar(2 * tw)],
+      };
+    }
+    case 'wfNavBar': {
+      const d = h * 0.5;
+      const details = [...circle(12 + d / 2, cy, d / 2)];
+      if (w >= 320) for (let k = 0; k < 3; k++) details.push(...line(P(w - 16 - (k + 1) * 60 + 12, cy), P(w - 16 - k * 60, cy)));
+      return { outline: roundRect(w, h, Math.min(4, m / 2)), details };
+    }
+    case 'wfCard': {
+      const ih = wf.cardImage(h);
+      return {
+        outline: roundRect(w, h, Math.min(10, m * 0.1)),
+        details: [
+          ...line(P(0, ih), P(w, ih)),
+          ...line(P(w * 0.2, ih * 0.8), P(w * 0.42, ih * 0.42), P(w * 0.56, ih * 0.62), P(w * 0.66, ih * 0.5), P(w * 0.8, ih * 0.8)),
+          ...circle(w * 0.72, ih * 0.27, Math.min(9, ih * 0.08)),
+          ...line(P(12, h * 0.82), P(w * 0.72, h * 0.82)),
+          ...line(P(12, h * 0.9), P(w * 0.5, h * 0.9)),
+        ],
+      };
+    }
+    case 'wfList': {
+      const t = wf.listTitle(h);
+      const n = Math.max(1, Math.floor((h - t) / 40));
+      const rowH = (h - t) / n;
+      const details = [...line(P(0, t), P(w, t))];
+      for (let i = 0; i < n; i++) {
+        const y0 = t + i * rowH;
+        if (i > 0) details.push(...line(P(12, y0), P(w - 12, y0)));
+        details.push(...circle(20, y0 + rowH / 2, Math.min(5, rowH * 0.15)), ...line(P(34, y0 + rowH / 2), P(34 + Math.max(4, (w - 60) * (0.8 - 0.18 * (i % 3))), y0 + rowH / 2)));
+      }
+      return { outline: roundRect(w, h, Math.min(8, m * 0.1)), details };
+    }
+    case 'wfImage': {
+      const r = Math.min(4, m * 0.05);
+      const k = r * (1 - Math.SQRT1_2);
+      return { outline: roundRect(w, h, r), details: [...line(P(k, k), P(w - k, h - k)), ...line(P(w - k, k), P(k, h - k))] };
+    }
+    case 'wfAvatar':
+      return {
+        outline: ellipse(0, 0, w, h),
+        details: [
+          ...ellipse(w * 0.32, h * 0.2, w * 0.36, h * 0.36),
+          { t: 'M', p: P(w * 0.2, h * 0.84) },
+          { t: 'C', c1: P(w * 0.26, h * 0.6), c2: P(w * 0.74, h * 0.6), p: P(w * 0.8, h * 0.84) },
+        ],
+      };
+    case 'wfSlider': {
+      const lw = wf.sliderLabel(w);
+      const r = Math.min(h / 2, (w - lw) / 2);
+      const kx = lw + Math.min(Math.max(r, (w - lw) * 0.6), w - lw - r);
+      return { outline: circle(kx, cy, r), details: [...line(P(lw, cy), P(kx - r, cy)), ...line(P(kx + r, cy), P(w, cy))] };
+    }
+    case 'wfModal': {
+      const t = wf.modalTitle(h);
+      const c = Math.min(6, t * 0.15);
+      const bh = Math.min(32, h * 0.13);
+      const details = [
+        ...line(P(0, t), P(w, t)),
+        ...line(P(w - 20 - c, t / 2 - c), P(w - 20 + c, t / 2 + c)),
+        ...line(P(w - 20 + c, t / 2 - c), P(w - 20 - c, t / 2 + c)),
+      ];
+      if (w > 220 && h > t + bh + 24) details.push(...rr(w - 12 - 80, h - bh - 12, 80, bh, 6), ...rr(w - 12 - 168, h - bh - 12, 80, bh, 6));
+      if (h > t + bh + 70) details.push(...line(P(16, t + 22), P(w * 0.8, t + 22)), ...line(P(16, t + 38), P(w * 0.6, t + 38)));
+      return { outline: roundRect(w, h, Math.min(12, m * 0.06)), details };
+    }
+    case 'wfProgress':
+      return { outline: roundRect(w, h, h / 2), details: h > 8 ? rr(3, 3, (w - 6) * 0.6, h - 6, (h - 6) / 2) : line(P(0, cy), P(w * 0.6, cy)) };
+    default:
+      return null;
+  }
+}
+
+/** Where a wireframe kind's label goes (null: not a wireframe kind). */
+function wireframeTextBox(kind: ShapeKind, w: number, h: number): Rect | null {
+  const m = Math.min(w, h);
+  switch (kind) {
+    case 'wfBrowser': {
+      const bar = wf.browserBar(h);
+      return w >= 120 ? { x: 72, y: bar * 0.22, w: Math.max(1, w - 96), h: bar * 0.56 } : { x: 0, y: 0, w, h: bar };
+    }
+    case 'wfPhone': {
+      const i = wf.phoneInset(m);
+      return { x: i + 8, y: i + 22, w: Math.max(1, w - 2 * i - 16), h: Math.min(36, h * 0.1) };
+    }
+    case 'wfTablet':
+    case 'wfDesktop': {
+      const i = kind === 'wfTablet' ? wf.tabletInset(m) : wf.bezel(m);
+      return { x: i + 8, y: i + 8, w: Math.max(1, w - 2 * i - 16), h: Math.min(36, h * 0.1) };
+    }
+    case 'wfInput':
+      return { x: 6, y: 0, w: Math.max(1, w - 12), h };
+    case 'wfSearch': {
+      const left = Math.min(h * 0.5, 22) + Math.min(h * 0.17, 9) * 1.6 + 6;
+      return { x: left, y: 0, w: Math.max(1, w - left - h * 0.4), h };
+    }
+    case 'wfTextArea':
+      return { x: 6, y: 4, w: Math.max(1, w - 12), h: Math.max(1, h - 8) };
+    case 'wfCheckbox':
+    case 'wfRadio': {
+      const x = Math.min(wf.mark(w, h) + 6, w - 1);
+      return { x, y: 0, w: w - x, h };
+    }
+    case 'wfToggle': {
+      const x = Math.min(wf.toggleW(w, h) + 6, w - 1);
+      return { x, y: 0, w: w - x, h };
+    }
+    case 'wfDropdown':
+      return { x: 6, y: 0, w: Math.max(1, w - 12 - Math.min(28, w * 0.2)), h };
+    case 'wfTabs':
+      return { x: 0, y: 0, w: w / 3, h: Math.max(1, h - 4) };
+    case 'wfNavBar': {
+      const d = h * 0.5;
+      return { x: 18 + d, y: 0, w: Math.max(1, w * 0.4), h };
+    }
+    case 'wfCard': {
+      const ih = wf.cardImage(h);
+      return { x: 10, y: ih + 4, w: Math.max(1, w - 20), h: Math.max(1, h * 0.76 - ih - 4) };
+    }
+    case 'wfList':
+      return { x: 10, y: 0, w: Math.max(1, w - 20), h: wf.listTitle(h) };
+    case 'wfSlider':
+      return { x: 0, y: 0, w: Math.max(1, wf.sliderLabel(w) - 6), h };
+    case 'wfModal':
+      return { x: 12, y: 0, w: Math.max(1, w - 52), h: wf.modalTitle(h) };
+    case 'wfButton':
+    case 'wfImage':
+    case 'wfAvatar':
+    case 'wfProgress':
+      return { x: 0, y: 0, w, h };
+    default:
+      return null;
   }
 }
 
@@ -1037,7 +1281,7 @@ export function textBox(kind: ShapeKind, w: number, h: number): Rect {
     case 'netUser':
       return r(0.1, 0.66, 0.8, 0.32);
     default:
-      return { x: 0, y: 0, w, h };
+      return wireframeTextBox(kind, w, h) ?? { x: 0, y: 0, w, h };
   }
 }
 

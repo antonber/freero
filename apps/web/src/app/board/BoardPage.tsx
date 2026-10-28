@@ -1,7 +1,7 @@
 // Route /board/:id — loads the board, builds the Host and mounts the engine.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { guestDisplayName, type BoardAiStatus, type BoardSummary, type BoardTrackersResponse, type GuestInfo } from '@freero/shared';
+import { guestDisplayName, LINK_PASSWORD_REQUIRED, type BoardAiStatus, type BoardSummary, type BoardTrackersResponse, type GuestInfo } from '@freero/shared';
 import { BoardEngine, type Host } from '@engine';
 import { Button, Logo, useToast } from '@ui';
 import { api, ApiError } from '../api/client';
@@ -12,6 +12,7 @@ import { FullPageSpinner } from '../components/FullPageSpinner';
 import { NotificationBell } from '../notifications/NotificationBell';
 import { features } from './features';
 import { createGuestHost, createLocalHost, createServerHost, toastNotify } from './host';
+import { LinkPassword } from './LinkPassword';
 import { RequestAccess } from './RequestAccess';
 import './BoardPage.css';
 
@@ -19,7 +20,7 @@ type Team = { id: string; name: string } | null;
 type LoadState =
   | { status: 'loading' }
   | { status: 'ready'; board: BoardSummary; team?: Team; ai?: BoardAiStatus | null; trackers?: BoardTrackersResponse['connections'] }
-  | { status: 'error'; code: number; message: string };
+  | { status: 'error'; code: number; message: string; reason?: string };
 
 /** `guest`: a visitor without an account who joined this board by its link (GuestGate). */
 export default function BoardPage({ guest, onGuestEnded }: { guest?: GuestInfo; onGuestEnded?: () => void } = {}) {
@@ -37,6 +38,7 @@ function GuestBoard({ id, guest, onEnded }: { id: string; guest: GuestInfo; onEn
   const location = useLocation();
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const next = location.pathname + location.search;
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -44,12 +46,17 @@ function GuestBoard({ id, guest, onEnded }: { id: string; guest: GuestInfo; onEn
       ({ board }) => !cancelled && setState({ status: 'ready', board }),
       (err) =>
         !cancelled &&
-        setState({ status: 'error', code: err instanceof ApiError ? err.status : 0, message: err instanceof Error ? err.message : String(err) }),
+        setState({
+          status: 'error',
+          code: err instanceof ApiError ? err.status : 0,
+          message: err instanceof Error ? err.message : String(err),
+          reason: err instanceof ApiError ? err.code : undefined,
+        }),
     );
     return () => {
       cancelled = true;
     };
-  }, [id]);
+  }, [id, attempt]);
 
   const board = state.status === 'ready' ? state.board : null;
   const go = useCallback((path: string) => navigate(path), [navigate]);
@@ -75,6 +82,9 @@ function GuestBoard({ id, guest, onEnded }: { id: string; guest: GuestInfo; onEn
     [navigate, next],
   );
 
+  // The link got a password (or a new one) since this guest joined (KAI-145).
+  if (state.status === 'error' && state.reason === LINK_PASSWORD_REQUIRED)
+    return <LinkPassword unlock={(pw) => api.guestUnlock(id, pw)} onUnlocked={() => setAttempt((a) => a + 1)} />;
   if (state.status === 'error') {
     const ended = state.code === 401 || state.code === 403;
     const removed = state.code === 451; // taken down by Freero's moderators (KAI-142)
@@ -143,6 +153,7 @@ function ServerBoard({ id }: { id: string }) {
           status: 'error',
           code: err instanceof ApiError ? err.status : 0,
           message: err instanceof Error ? err.message : String(err),
+          reason: err instanceof ApiError ? err.code : undefined,
         });
       });
     return () => {
@@ -177,6 +188,7 @@ function ServerBoard({ id }: { id: string }) {
     // Rebuild only for identity-relevant changes; title/role updates flow through a new host object.
   }, [board, team, ai, trackers, user, go, toast, openShare, setTitle]);
 
+  if (state.status === 'error' && state.reason === LINK_PASSWORD_REQUIRED) return <LinkPassword unlock={(pw) => api.unlockBoardLink(id, pw)} onUnlocked={retry} />;
   if (state.status === 'error' && state.code === 403) return <RequestAccess boardId={id} onGranted={retry} />;
   if (state.status === 'error') return <BoardError boardId={id} code={state.code} message={state.message} />;
   if (!host || !board) return <FullPageSpinner label="Opening board" />;

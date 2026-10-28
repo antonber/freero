@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { MindmapElement } from '@freero/shared';
+import { layoutStructure, type MindmapElement } from '@freero/shared';
 import { createTestBoard } from '@engine';
 import manifest from './feature';
 import mindmapDef from './element';
@@ -55,6 +55,21 @@ describe('mind-map layout', () => {
     }
     expect(byId(laid, 'root')).toMatchObject({ x: 0, y: 0 });
   });
+
+  it.each([2, 5])(
+    'a map laid out from structure (server inserts, Insert from text) is already tidy: Tidy up moves no node (%i branches)',
+    (branches) => {
+      const text = Array.from({ length: branches }, (_, b) => [`- Branch ${b} with a longer title`, ...Array.from({ length: b + 1 }, (_, k) => `  - Leaf ${b}.${k}${k === 1 ? ' that wraps onto a second line because it is long' : ''}`)].join('\n')).join('\n');
+      let n = 0;
+      const laid = layoutStructure({ kind: 'outline', text: `Plan\n${text.replace(/^/gm, '  ')}` }, { newId: () => `m${n++}` });
+      const nodes: MindNode[] = laid.elements.map((el, i) => {
+        const m = el as MindmapElement;
+        return { id: m.id, parentId: m.parentId, x: m.x, y: m.y, w: m.w, h: m.h, direction: m.direction, createdAt: i };
+      });
+      const tidied = layoutTree(indexNodes(nodes), nodes.find((x) => !x.parentId)!.id);
+      for (const node of nodes) expect(tidied.get(node.id), node.id).toEqual({ x: node.x, y: node.y });
+    },
+  );
 
   it('keeps the order users dragged siblings into, so a drop above a sibling reorders', () => {
     const nodes = sampleMap();

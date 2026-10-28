@@ -1,6 +1,6 @@
 import { Shapes as ShapesIcon } from 'lucide-react';
 import { memo, useMemo } from 'react';
-import type { ShapeElement } from '@freero/shared';
+import { looksLikeMermaid, type ShapeElement } from '@freero/shared';
 import { defineElement, ElementText, richTextToPlain, type ElementRenderProps, type NewElement } from '@engine';
 import { anchorOnOutline, ENTITY_FONT, ENTITY_LINE, ENTITY_PAD, entityDivider, hitShape, insetPaths, outlineToward, textBox } from './lib/geometry';
 import { DEFAULT_SIZE } from './lib/constants';
@@ -117,8 +117,15 @@ export default defineElement({
   // A tile dragged out of the shape library lands where it is dropped.
   importPriority: 40,
   importData(editor, data, at) {
+    if (data.files.length) return false;
+    // Pasted Mermaid (diagrams as code) becomes shapes and connectors: the from-text feature lays
+    // it out, keeps its source for later edits, and reports unreadable lines.
+    if (looksLikeMermaid(data.text)) {
+      editor.runCommand('from-text.insert', { kind: 'mermaid', text: data.text, at });
+      return true;
+    }
     const s = decodeDrag(data.text);
-    if (!s || data.files.length) return false;
+    if (!s) return false;
     insertShape(editor, s, at);
     return true;
   },

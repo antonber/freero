@@ -29,6 +29,8 @@ export { ToastProvider, useToast } from './Toast';
 export type { ToastApi, ToastKind, ToastOptions, NotifyFn } from './Toast';
 export { SegmentedControl } from './SegmentedControl';
 export type { SegmentedControlProps, SegmentedOption } from './SegmentedControl';
+export { ElementsPreview } from './ElementsPreview';
+export type { ElementsPreviewProps } from './ElementsPreview';
 
 // Helpers
 export { Icon, renderIcon } from './icon';

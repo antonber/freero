@@ -28,6 +28,7 @@ const REQUIRED: Record<ElementType, string[]> = {
   media: ['kind', 'src', 'name', 'size', 'duration', 'naturalW', 'naturalH'],
   file: ['src', 'name', 'size', 'mime'],
   objectlink: ['uri'],
+  activity: ['kind', 'question', 'options', 'anonymous', 'results', 'guests', 'color'],
 };
 
 let seq = 0;
