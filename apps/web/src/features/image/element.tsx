@@ -1,5 +1,5 @@
 import { memo, useCallback, useState } from 'react';
-import { ImageOff } from 'lucide-react';
+import { Image as ImageIcon, ImageOff } from 'lucide-react';
 import type { ImageElement } from '@freero/shared';
 import { defineElement, useIsExporting, type ElementRenderProps, type NewElement } from '@engine';
 import { imageUrlFromPaste } from './lib/files';
@@ -59,6 +59,8 @@ const ImageView = memo(function ImageView({ element }: ElementRenderProps<ImageE
 
 export default defineElement({
   type: 'image',
+  label: { one: 'Image', many: 'Images' },
+  icon: ImageIcon,
   resize: 'aspect',
   minSize: { w: 24, h: 24 },
   defaults: (): Omit<NewElement<'image'>, 'x' | 'y'> => ({

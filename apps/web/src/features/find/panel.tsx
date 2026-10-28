@@ -1,18 +1,17 @@
 import { useEffect, useRef } from 'react';
-import { CaseSensitive, ChevronDown, ChevronUp, Replace, Search, TextSearch } from 'lucide-react';
-import { DockHeader, definePanel, useCamera, useCanEdit, type Editor } from '@engine';
+import { CaseSensitive, ChevronDown, ChevronUp, MessageSquare, Replace, Search, TextSearch } from 'lucide-react';
+import { DockHeader, definePanel, describeElementType, useCamera, useCanEdit, type Editor } from '@engine';
 import { Button, IconButton, Input } from '@ui';
 import { PANEL_ID, replaceMatches, revealMatch, type Match } from './lib/search';
 import { setFindUi, useFindUi } from './lib/state';
-import { typeInfo } from './lib/types';
 import { useMatches } from './lib/useMatches';
 import './find.css';
 
 const MAX_ROWS = 200;
 
-function context(m: Match): string {
+function context(editor: Editor, m: Match): string {
   const s = m.source;
-  const parts = s.kind === 'element' ? [typeInfo(s.type).name, s.frameTitle && `in ${s.frameTitle}`] : [`Comment by ${s.author}`];
+  const parts = s.kind === 'element' ? [describeElementType(editor, s.type).one, s.frameTitle && `in ${s.frameTitle}`] : [`Comment by ${s.author}`];
   if (m.count > 1) parts.push(`${m.count} matches`);
   return parts.filter(Boolean).join(' · ');
 }
@@ -158,7 +157,7 @@ function FindPanel({ editor }: { editor: Editor }) {
       ) : (
         <ul className="fr-find__results" ref={listRef} aria-label="Results">
           {matches.slice(0, MAX_ROWS).map((m, i) => {
-            const { icon: Icon } = typeInfo(m.source.kind === 'element' ? m.source.type : 'comment');
+            const Icon = m.source.kind === 'element' ? describeElementType(editor, m.source.type).icon : MessageSquare;
             return (
               <li key={m.source.key} data-key={m.source.key}>
                 <button
@@ -179,7 +178,7 @@ function FindPanel({ editor }: { editor: Editor }) {
                       <mark>{m.snippet.hit}</mark>
                       {m.snippet.after}
                     </span>
-                    <span className="fr-find__ctx">{context(m)}</span>
+                    <span className="fr-find__ctx">{context(editor, m)}</span>
                   </span>
                 </button>
               </li>

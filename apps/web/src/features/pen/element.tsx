@@ -1,3 +1,4 @@
+import { PenLine as PenLineIcon } from 'lucide-react';
 import { memo, useMemo } from 'react';
 import type { PenElement } from '@freero/shared';
 import { defineElement, type ElementRenderProps, type NewElement } from '@engine';
@@ -23,6 +24,8 @@ const PenView = memo(function PenView({ element }: ElementRenderProps<PenElement
 
 export default defineElement({
   type: 'pen',
+  label: { one: 'Drawing', many: 'Drawings' },
+  icon: PenLineIcon,
   resize: 'free',
   minSize: { w: 4, h: 4 },
   sharedStyle: (el) => ({ stroke: el.stroke, strokeWidth: el.strokeWidth }),

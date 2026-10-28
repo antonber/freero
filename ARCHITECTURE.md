@@ -79,13 +79,18 @@ features/<name>/
   decoration.tsx optional  export default defineDecoration({ id, appliesTo(el), Component }) (or an
                            array): drawn INSIDE other features' element wrappers (sticky tag chips),
                            so it moves, rotates, culls and exports with the element
+  outline.ts     optional  export default defineOutline({ kinds?, annotate? }) (@freero/shared): how
+                           its element types read in the board outline, and what its collections
+                           add to items (votes, tags, comments). Runs on the SERVER too, so it is
+                           pure: '@freero/shared', files of its own feature, type-only imports [W13]
   *.css, *.test.ts(x)      allowed at the root
   lib/                     any helpers
 ```
 
 Any other file at a feature root fails [W7]. The manifest `name` must equal the folder name.
 The contract for all of these is `apps/web/src/engine/api.ts`. Scaffold with
-`npm run new:feature <name> -- [--element <type>] [--tool] [--format] [--panel <slot>] [--commands] [--decoration] [--owns a,b]`.
+`npm run new:feature <name> -- [--element <type>] [--tool] [--format] [--panel <slot>] [--commands] [--decoration] [--outline] [--owns a,b]`
+(`--element` scaffolds `outline.ts` too: a new element type reads in the outline from day one).
 Something drawn ON another feature's elements that must appear in image exports is a
 `decoration.tsx`, never a `world-overlay` panel (overlays aren't part of exports).
 
@@ -167,7 +172,17 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   that vanish when an edit ends empty).
 - `Editor.beginGesture()` / `endGesture()` (see "Gestures and undo").
 - `ElementDefinition.anchorPoint` returns element-local (unrotated) coordinates; the engine applies
-  position and rotation.
+  position and rotation. `outlinePoint(el, toward)` (same coordinates) is "attach anywhere": where
+  a line aimed from the center toward a local point meets the drawn outline (shapes project onto
+  their real curve; default the box). A connector end dropped on an outline away from the four
+  dots stores `ConnectorEndpoint.at = { u, v }` (fractions of the box, so it scales with resizes)
+  plus the nearest side as `anchor` (older clients attach there).
+- Elbow connectors without a user bend route around other items (`features/connector/lib/router.ts`:
+  A* over a sparse grid of the obstacles' keep-out edges, deterministic, at most 40 nearest items,
+  only when the simple route would cross one). Obstacles come from a grid index built once per
+  board state; the renderer subscribes with `useElementsQuery(select, isEqual)` (`@engine`), which
+  re-renders a component only when its derived value changes — never re-render every line on every
+  edit elsewhere. `follow` refreshes an elbow line's cache when a connectable item lands on it.
 - `@engine` hooks: `usePointer()` (world pointer for tool `Preview`s), `useTextFormatState()`,
   `useSettings()`, `useCanEdit()`; `plainToRichText()`; types `ElementTextProps`, `TextFormatState`.
 - `useCollection(name)` returns the collection's entries (`Array<[key, value]>`).
@@ -221,7 +236,9 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   notifications bell). It is app UI (REST, router), not a feature, and gets no Editor.
 - `Editor.findFreeSpot(size, { near?, gap? })`: top-left of a box that keeps `gap` clear of
   every element, nearest to `near` (default: viewport center). Every "insert" action that
-  isn't aimed at a point (templates, the image upload button) places content with it.
+  isn't aimed at a point (templates, the image upload button) places content with it. The rule
+  itself is `@freero/shared` `findFreeSpot`, so the server places inserted structure the same way;
+  `richTextToPlain` / `plainToRichText` live there too (the server reads board text identically).
 - `createTestBoard({ users, features, members?, now? })` (tests only): several real engine
   replicas of one board — real Yjs docs and guarded Editors — that exchange updates only on
   `sync()`. Writes between two syncs are concurrent; use it to prove concurrent writes merge.
@@ -346,6 +363,11 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
   if the merge left it out of layout (two drops into one free slot), the participant with the
   highest Yjs client id re-lays it out (the others re-check 1.5 s later), joining its last undo
   step. Bystanders never do, so nobody snaps a collaborator's drag in progress.
+  Swimlanes (`features/swimlane`) use the same hook without restacking: items keep their own
+  positions and belong to the lane / phase under their center; `arrange` only grows a band to fit
+  what is in it and shifts the items of later bands by the growth. Lane edits that change the
+  bands (edge drag, add, remove, reorder, rows ⇄ columns) move the items with `moveBy` in the same
+  transaction, so attached connectors follow and one undo takes back both.
 - `fitToContent(el, handle)`: double-clicking a resize handle applies the returned patch (a
   fixed-width text box goes back to auto width).
 - `hitTest(el, local, { tolerance })` — `tolerance` is a few screen px in world units at the live
@@ -491,6 +513,12 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
 
 Reference & items (engine primitives; product UI in `features/shortcuts`, `links`, `image`, `icons`,
 `select-similar` — "Select only ▸ <type> (count)" narrows a mixed selection):
+- Item type names have one owner: `ElementDefinition.label: { one, many }` and `icon`, set in each
+  `element.tsx`. Layers, Find and "Select only" read them through `describeElementType(editor,
+  type)` (`@engine`; fallback: the capitalised type and a square), so a new type is named once.
+  `defineCommands(({ elements }) => [...])` (a command factory, run once the registry knows every
+  element definition) builds commands per type from the live registry — "Select only" lists every
+  registered type by its `many` name.
 - `Editor.getShortcuts() → ShortcutEntry[]` (`engine/runtime/shortcutList.ts`): every binding the
   board answers for the live role — tool keys, command shortcuts (alternatives with the same label
   fold into one row), element types' declared `keys` (under their feature) and the keys the keyboard router handles itself (`ENGINE_KEYS` in
@@ -610,7 +638,9 @@ workspace_invites, projects, project_members; see "Workspaces" below), `uploads`
 `<data>/uploads`), `realtime` (board_docs, board_doc_updates, board_doc_snapshots; y-websocket
 protocol + role filter + update log; version history + snapshot retention), `unfurl` (link
 previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`), `templates` (saved
-templates; content is opaque engine JSON), `accounts` (no table: the purge after the deletion grace
+templates; content is opaque engine JSON), `outline` (no table: the semantic board read model,
+`GET /boards/:id/outline`), `structure` (no table: layout from structure,
+`POST /boards/:id/insert-structure`), `accounts` (no table: the purge after the deletion grace
 period, orchestrating the owning modules' exports), `notifications` (notifications,
 notification_prefs: inbox, live delivery, email digests), `moderation` (moderation_items,
 moderation_actions: abuse reports, the operator queue, actions and appeals; see "Moderation"),
@@ -903,6 +933,33 @@ approval lets the requester in at once.
   (boards the reader can open there). The board panel is `features/activity` (`Host.activity`);
   the dashboard home shows the workspace feed.
 
+
+### Board outline and layout from structure (KAI-166, KAI-167; format: docs/board-outline.md)
+
+Agents, the API and AI read and write boards semantically, never by coordinates.
+
+- **Reading a board on the server** goes through realtime's `readBoardView(boardId, { userId, role })`
+  (`realtime/view.ts`): the live doc (caught up with other instances) plus exactly the layers that
+  reader's socket would get — `editors` for owners/editors, their OWN private layer, never another's
+  — and, for viewers/commenters, nothing under a hidden frame. Any new server-side reader of board
+  content uses it, so access rules have one implementation.
+- **The outline** (`modules/outline`, `GET /boards/:id/outline`): `@freero/shared` `buildOutline`
+  (pure) over that view, with each element type described by its feature's reserved `outline.ts`
+  (discovered from `apps/web/src/features` at startup; the Docker image ships that folder). Then
+  `selectOutline` (scope / pages / token budget) and `renderOutlineMarkdown`. Names are resolved only
+  for people the board shows (as `/boards/:id/people`). Version = a hash of what the reader sees
+  (ETag / 304). Versioning rule: additive within `outlineVersion`.
+- **Writing on a request** goes through realtime's `changeBoard(boardId, actor, plan)`: `plan(view)`
+  runs against the live board and its `BoardChange` (new elements, field patches, collection
+  entries) is applied in the same step as one transaction per doc — stamped (z above everything,
+  `createdBy`, times), published to every instance and saved before it resolves. No other module
+  writes board docs.
+- **Layout from structure** (`modules/structure`, `POST /boards/:id/insert-structure`): `@freero/shared`
+  `layout/` (pure, no dependencies; in-house layered graph layout, Mermaid reader, mind map, sticky
+  clusters, sequence, table) lays a structure out from (0, 0); `plan.ts` places it on a free spot of
+  the view and turns it into a `BoardChange`; `sinks.ts` decides where that goes (`board` →
+  `changeBoard`, `preview` → returned for `Editor.insertElements`). The suggestions layer (KAI-169)
+  is a new sink, not a new planner.
 ### Audit log, admin console and workspace policies (KAI-48, KAI-47, KAI-51)
 
 **Audit log** (`modules/audit`). Every module records security-relevant changes with

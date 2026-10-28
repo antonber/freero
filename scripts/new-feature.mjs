@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Scaffold a Freero feature folder in house style.
 //
-//   npm run new:feature <name> -- [--element <type>] [--tool] [--format] [--panel <slot>] [--commands] [--decoration] [--owns a,b]
+//   npm run new:feature <name> -- [--element <type>] [--tool] [--format] [--panel <slot>] [--commands] [--decoration] [--outline] [--owns a,b]
 //
 // Examples:
 //   npm run new:feature sticky -- --element sticky --tool --format
@@ -20,7 +20,7 @@ const value = (f) => {
 };
 
 if (!name || !/^[a-z][a-z0-9-]*$/.test(name)) {
-  console.error('Usage: npm run new:feature <kebab-name> -- [--element <type>] [--tool] [--format] [--panel <slot>] [--commands] [--decoration] [--owns a,b]');
+  console.error('Usage: npm run new:feature <kebab-name> -- [--element <type>] [--tool] [--format] [--panel <slot>] [--commands] [--decoration] [--outline] [--owns a,b]');
   process.exit(1);
 }
 
@@ -52,6 +52,8 @@ import './${name}.css';
 
 export default defineElement({
   type: '${elementType}',
+  // How Layers, Find and "Select only" name it (TODO: and an \`icon\` from lucide-react).
+  label: { one: '${elementType[0].toUpperCase()}${elementType.slice(1)}', many: '${elementType[0].toUpperCase()}${elementType.slice(1)}s' },
   resize: 'free',
   minSize: { w: 40, h: 40 },
   defaults: () => ({
@@ -126,6 +128,27 @@ export default defineCommands([
     },
   },
 ]);
+`;
+}
+
+// How the feature's elements (or its collections) read in the board outline — the semantic read
+// model agents, the API and AI use. Runs on the server too: pure, '@freero/shared' only [W13].
+if (elementType || flag('outline')) {
+  files['outline.ts'] = `// How ${name} reads in the board outline (see @freero/shared outline/define.ts).
+import { defineOutline } from '@freero/shared';
+
+export default defineOutline({${
+    elementType
+      ? `
+  kinds: {
+    // TODO: the element's text (ctx.plain(el.text) for RichText), a variant, fields; null = not content.
+    '${elementType}': (el, ctx) => ({ text: '' }),
+  },`
+      : `
+  // TODO: what this feature's collections add to items (votes, tags, comments …), by element id.
+  annotate: (ctx) => ({ items: new Map() }),`
+  }
+});
 `;
 }
 

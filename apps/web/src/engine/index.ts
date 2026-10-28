@@ -37,6 +37,7 @@ export {
   useViewHidden,
   usePrivateCollection,
   useIsExporting,
+  useElementsQuery,
 
 } from './hooks';
 
@@ -77,6 +78,9 @@ export {
   TextAlignControl,
 } from './ui/TextStyleControls';
 export type { Mixed, FontSizeValue, FontSizeOption, TextMark } from './ui/TextStyleControls';
+// [additive] An element type's name and icon (ElementDefinition.label / icon, with one fallback).
+export { describeElementType, elementTypeDescription } from './editor/typeLabel';
+export type { ElementTypeDescription } from './editor/typeLabel';
 // [additive] World point → element-local unrotated coordinates (what hitTest / distanceTo take).
 export { worldToLocal } from './geometry/geometry';
 

@@ -117,7 +117,7 @@ export function emitCommentMessages(events: CommentMessageEvent[]): void {
 }
 
 /** Every user id that appears in the board's comments: message authors and @mentioned people. */
-export function commentPeople(comments: Y.Map<unknown>): Set<string> {
+export function commentPeople(comments: Y.Map<unknown> | ReadonlyMap<string, unknown>): Set<string> {
   const out = new Set<string>();
   for (const [key, value] of comments.entries()) {
     if (!key.startsWith('m:') || !isMessage(value)) continue;

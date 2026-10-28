@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { EyeOff } from 'lucide-react';
+import { EyeOff, Frame as FrameIcon } from 'lucide-react';
 import type { FrameElement } from '@freero/shared';
 import { defineElement, useCanEdit, useChromeHidden, useEditor, type Editor, type ElementRenderProps, type NewElement } from '@engine';
 import { DEFAULT_FILL, presetById } from './lib/frames';
@@ -139,6 +139,8 @@ const FrameView = memo(function FrameView({ element, selected }: ElementRenderPr
 
 export default defineElement({
   type: 'frame',
+  label: { one: 'Frame', many: 'Frames' },
+  icon: FrameIcon,
   resize: 'free',
   minSize: { w: 40, h: 40 },
   sharedStyle: (el) => ({ fill: el.fill || DEFAULT_FILL }),

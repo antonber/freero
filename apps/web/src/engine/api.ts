@@ -307,8 +307,26 @@ export type ResizeMode =
   | 'width-only'   // text with autoWidth=false wraps; height auto
   | 'none';
 
+/** [additive] How an item type reads in lists and menus (Layers, Find, "Select only ▸ …"). */
+export interface ElementLabel {
+  /** One item: 'Sticky note'. */
+  one: string;
+  /** Several, as a menu entry: 'Sticky notes'. */
+  many: string;
+}
+
+/** Any icon component accepting lucide-style props (lucide-react icons fit as-is). */
+export type IconComponent = ComponentType<{ size?: number | string; strokeWidth?: number | string }>;
+
 export interface ElementDefinition<T extends ElementType = ElementType> {
   type: T;
+  /**
+   * [additive] The type's name, defined once by its feature. Layers, Find and "Select only"
+   * read it through `describeElementType`; without it they fall back to the capitalised type.
+   */
+  label?: ElementLabel;
+  /** [additive] The type's icon in those lists (default: a plain square). */
+  icon?: IconComponent;
   /** World-space renderer. Must be pure and cheap; the engine memoizes per element. */
   Component: ComponentType<ElementRenderProps<ElementOf<T>>>;
   /** Defaults merged under user-provided fields on create (tools usually call this). */
@@ -335,6 +353,12 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
   distanceTo?(element: ElementOf<T>, local: Point): number;
   /** Point on the outline for an anchor; default = bbox edge midpoints. */
   anchorPoint?(element: ElementOf<T>, anchor: 'top' | 'right' | 'bottom' | 'left'): Point;
+  /**
+   * [additive] Attach anywhere: where a line aimed from the element's center toward `toward`
+   * (element-local, unrotated) meets its drawn outline, in element-local coordinates. A connector
+   * end dropped on the edge of an ellipse sits on the curve. Default: the bounding box edge.
+   */
+  outlinePoint?(element: ElementOf<T>, toward: Point): Point;
   /**
    * Plain-text extraction for copy as text, previews (Layers, voting) and accessibility. `editor`
    * is the caller's, on the element's board: read content kept outside the element (a table's
@@ -818,6 +842,8 @@ export interface FeatureBundle {
   formats: FormatDefinition[];
   panels: PanelDefinition[];
   commands: CommandDefinition[];
+  /** [additive] commands.ts exporting `defineCommands(ctx => [...])`: run once the registry knows every element. */
+  commandFactories?: CommandFactory[];
   /** [additive] decoration.tsx */
   decorations?: DecorationDefinition[];
 }
@@ -1166,7 +1192,22 @@ export function unavailableVersionHistory(reason: string): VersionHistory {
   const no = async (): Promise<never> => Promise.reject(new Error(reason));
   return { list: no, load: no, nameCurrent: no, rename: no, restore: no };
 }
-export const defineCommands = (d: CommandDefinition[]): CommandDefinition[] => d;
+/**
+ * [additive] What a command factory is told (`defineCommands(ctx => [...])`): the board's live
+ * registry, for commands that exist once per element type ("Select only ▸ Sticky notes").
+ */
+export interface CommandFactoryContext {
+  /** Every registered element definition. */
+  elements: ReadonlyArray<ElementDefinition<any>>;
+}
+
+export type CommandFactory = (ctx: CommandFactoryContext) => CommandDefinition[];
+
+export function defineCommands(d: CommandDefinition[]): CommandDefinition[];
+export function defineCommands(d: CommandFactory): CommandFactory;
+export function defineCommands(d: CommandDefinition[] | CommandFactory): CommandDefinition[] | CommandFactory {
+  return d;
+}
 export const defineDecoration = (d: DecorationDefinition): DecorationDefinition => d;
 
 /** Children helper type for slot components. */

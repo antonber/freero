@@ -98,6 +98,10 @@ export function buildRegistry(
     }
   }
 
+  // Commands built from the registry ("Select only ▸ <type>") once every element is known.
+  const elements = [...reg.elements.values()].map((r) => r.def);
+  for (const b of bundles) for (const make of b.commandFactories ?? []) for (const c of make({ elements })) addCommand(c, b.manifest.name);
+
   reg.tools.sort((a, b) => a.def.order - b.def.order);
   reg.formats.sort((a, b) => a.def.order - b.def.order);
   for (const list of reg.panels.values()) list.sort((a, b) => a.def.order - b.def.order);

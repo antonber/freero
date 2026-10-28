@@ -203,6 +203,8 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `RATE_LIMIT_SSO` | `120/10m` | Workspace single sign-on per IP: discovery by email domain, starts, assertion posts and callbacks (and domain verification checks per user). |
 | `RATE_LIMIT_SCIM` | `1200/1m` | SCIM requests per provisioning token (directories sync in bursts). `/scim/v2` also counts against `RATE_LIMIT_API` per IP. |
 | `RATE_LIMIT_DATA_EXPORT` | `5/1d` | Data exports requested per user (personal or workspace). |
+| `RATE_LIMIT_OUTLINE` | `120/1m` | Board outlines (`GET /api/boards/:id/outline`, the semantic read model) per user. |
+| `RATE_LIMIT_STRUCTURE` | `60/10m` | Structure laid out into a board (`POST /api/boards/:id/insert-structure`) per user. |
 | `RATE_LIMIT_REPORT` | `20/1h` | Abuse reports per IP and, separately, per signed-in user. |
 | `RATE_LIMIT_APPEAL` | `10/1h` | Appeals against moderation decisions per IP. |
 

@@ -2,7 +2,10 @@
 // All REST endpoints live under /api, send/receive JSON, and authenticate via
 // an HttpOnly cookie named `freero_session`. Errors: { error: string } with a
 // 4xx/5xx status. 401 = not logged in, 403 = no access, 404 = not found.
-import type { BoardElement } from './elements';
+import type { BoardElement, TableCopyContent } from './elements';
+import type { Rect } from './geometry';
+import type { StructureInput } from './layout/types';
+import type { BoardOutline } from './outline/types';
 
 export type Role = 'owner' | 'editor' | 'commenter' | 'viewer';
 export type LinkAccess = 'none' | 'viewer' | 'commenter' | 'editor';
@@ -887,6 +890,43 @@ export interface LayerOp {
   mine?: boolean;
 }
 
+// ---- Board outline (KAI-166): GET /api/boards/:id/outline ----
+// The semantic read model of a board as the caller sees it (their role's layers applied).
+// Query: format=json|markdown (default json), budget=<tokens>, limit=<items per page>,
+// cursor=<meta.nextCursor>, scope=<item id>, authors=1, comments=0. ETag = outline `version`;
+// If-None-Match answers 304 while nothing the caller can see changed. Markdown is served as
+// text/markdown. Format reference: docs/board-outline.md.
+export interface BoardOutlineResponse {
+  outline: BoardOutline;
+}
+
+// ---- Insert structure (KAI-167): POST /api/boards/:id/insert-structure (owners, editors) ----
+// The caller says what (StructureInput); the server lays it out and places it on free space.
+export interface InsertStructureRequest {
+  structure: StructureInput;
+  /** Place it next to this element (in free space beside it). */
+  near?: string;
+  /** Or as close as free space allows to this board point (e.g. the viewport center). */
+  at?: { x: number; y: number };
+  /**
+   * 'board' (default): written to the board now, one change (attributed to the caller, published
+   * and saved). 'preview': laid out and placed but not written; the app can insert `snapshot`
+   * itself with Editor.insertElements (one undo step) and apply `moves`.
+   */
+  target?: 'board' | 'preview';
+}
+export interface InsertStructureResponse {
+  target: 'board' | 'preview';
+  /** Ids of the new elements (written, or in `snapshot`). */
+  created: string[];
+  /** Existing elements moved into the result (clusters of stickies already on the board). */
+  moved: string[];
+  /** Where the result landed. */
+  bounds: Rect;
+  /** 'preview' only: an ElementsSnapshot (elements + content by element id) and the moves. */
+  snapshot?: { elements: BoardElement[]; content: Record<string, TableCopyContent> };
+  moves?: Array<{ id: string; x: number; y: number }>;
+}
 // ---- Reports and moderation (KAI-142) ----
 // Anyone who can open a board — signed in or (with KAI-43) a visitor on its public link — can
 // report the board, one item on it, an uploaded file shown on it, or a comment. Operators

@@ -65,6 +65,7 @@ import {
 import { peerMessages, persistDuration, persistFailures } from './metrics';
 import { boardChannel, CONTROL_CHANNEL, decodeControl, decodePeer, encodeControl, encodePeer, INSTANCE_ID, type ControlMessage, type PeerMessage } from './peers';
 import { restoreInto } from './restore';
+import { applyChange, viewOf, type AppliedChange, type BoardChange, type BoardReader, type BoardView } from './view';
 
 export const MESSAGE_SYNC = 0;
 export const MESSAGE_AWARENESS = 1;
@@ -1051,6 +1052,38 @@ export async function restoreBoardDoc(boardId: string, version: Uint8Array, befo
     if (room.destroyed) throw new BoardClosedError(boardId);
     room.restore(version);
     await room.flush();
+  });
+}
+
+const layerDocs = (room: Room): Map<string, Y.Doc> => new Map([...room.layers].map(([name, l]) => [name, l.doc]));
+
+/**
+ * The board as `reader` sees it right now (live, caught up with the other instances): the
+ * shared doc plus the layers that reader may read (view.ts). The caller checked access.
+ */
+export async function readBoardView(boardId: string, reader: BoardReader): Promise<BoardView> {
+  return withLiveRoom(boardId, (room) => viewOf(room.doc, layerDocs(room), reader));
+}
+
+/**
+ * Changes board content on a request, as `actor` (an owner or editor; the caller checked):
+ * `plan` sees the live board as the actor does and returns the change, which is applied right
+ * away — nothing can land in between — as one transaction per doc, published to every instance
+ * and saved before this resolves. Collaborators see one remote change (they cannot undo it with
+ * Ctrl+Z, like any change someone else makes). Returns the plan's result next to what changed.
+ */
+export async function changeBoard<T extends { change: BoardChange }>(
+  boardId: string,
+  actor: BoardReader,
+  plan: (view: BoardView) => T,
+): Promise<T & { applied: AppliedChange }> {
+  return withLiveRoom(boardId, async (room) => {
+    const docs = layerDocs(room);
+    const planned = plan(viewOf(room.doc, docs, actor));
+    if (room.destroyed) throw new BoardClosedError(boardId);
+    const applied = applyChange(room.doc, docs, planned.change, actor, SERVER_ORIGIN);
+    await room.flush();
+    return { ...planned, applied };
   });
 }
 
