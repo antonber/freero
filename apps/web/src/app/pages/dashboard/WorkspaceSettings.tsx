@@ -101,7 +101,8 @@ export function WorkspaceSettings({
       <div className="fr-dash-settings__block">
         <h2 className="fr-dash-settings__title">Security, sharing and retention</h2>
         <p className="fr-dash-settings__hint">
-          Sharing policies, two-step verification, session limits, data retention and the audit log live in the admin console.
+          Sharing policies, two-step verification, session limits, single sign-on, provisioning, data retention and export, and the audit log live in the
+          admin console.
         </p>
         <div className="fr-dash-settings__row">
           <Link to={`/admin/${encodeURIComponent(workspace.id)}?tab=security`} className="fr-dash-settings__link">
@@ -131,7 +132,9 @@ export function WorkspaceSettings({
 
           <div className="fr-dash-settings__block fr-dash-settings__block--danger">
             <h2 className="fr-dash-settings__title">Delete workspace</h2>
-            <p className="fr-dash-settings__hint">Deletes the workspace and every board in it, for everyone. This can’t be undone.</p>
+            <p className="fr-dash-settings__hint">
+              Deletes the workspace and every board in it, for everyone. This can’t be undone. Export it first if you need a copy; every owner gets a receipt.
+            </p>
             <Button variant="danger" icon={Trash2} onClick={() => setDeleting(true)}>
               Delete workspace…
             </Button>

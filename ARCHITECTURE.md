@@ -267,7 +267,10 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
 - Frame membership has one rule, applied by the engine on drop, create, duplicate and paste: an
   element belongs to the innermost container under its center (`frameId`), unless it already
   names an existing container. Features never compute membership for new elements themselves.
-- Typing a character with one EMPTY text item selected starts editing it with that character;
+- Typing a character with one EMPTY text item selected starts editing it with that character —
+  AltGr characters too (`isPrintableKey`: Windows reports AltGr as Ctrl+Alt, so a Ctrl+Alt press
+  that typed something other than its key's own letter/digit is text, and on an empty note AltGr+9
+  types "]" instead of Bring to front; Ctrl+Alt+T stays a shortcut);
   items that already have text keep single letters as tool shortcuts (Enter / double-click edit).
   Undo/redo shortcuts also work while a non-modal popover has focus.
 - Screen/world UI that must stay visible next to a selection (comment pins, the top quick-connect
@@ -346,6 +349,10 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   (table cells, in `@freero/shared` `TableCopyContent`, the same format copy/paste and saved
   templates use); those elements go through `insertElements` so the owner's `pasteContent` writes
   it, everything else through `createMany` (so `normalize` measures text), in one transaction.
+  The `Kit` builds containers with their members (`kanban(…)`, `swimlane(…)` + `within(id, …)`:
+  members name the kanban / pool as `frameId`, and the container's own `arrange` settles them on
+  insert), icons from `lucide-react` components (`icon(…)`, drawing copied into the element), and
+  connector ends at a spot on an element (`{ id, at: { u, v } }`, e.g. a message on a lifeline).
 
 Elements, geometry and text (all optional on `ElementDefinition` unless noted):
 - **Reads inside `editor.transact` see its earlier writes** (`getElements()`, `getElement()`,
@@ -653,9 +660,12 @@ templates; content is opaque engine JSON), `outline` (no table: the semantic boa
 period, orchestrating the owning modules' exports), `notifications` (notifications,
 notification_prefs: inbox, live delivery, email digests), `moderation` (moderation_items,
 moderation_actions: abuse reports, the operator queue, actions and appeals; see "Moderation"),
-`audit` (audit_events, audit_chains: the append-only audit log), `admin` (no table: the admin
-console of team workspaces; see "Audit log, admin console and workspace policies"), `activity`
-(board_activity: the activity feed; see "Activity" below).
+`sso` (sso_domains, sso_connections, sso_flows, sso_saml_cache: per-workspace single sign-on),
+`scim` (scim_tokens, scim_users, scim_groups, scim_group_members: SCIM 2.0 provisioning under
+`/scim/v2`), `privacy` (data_exports: personal and workspace data exports; see "Enterprise
+identity and data"), `audit` (audit_events, audit_chains: the append-only audit log), `admin` (no
+table: the admin console of team workspaces; see "Audit log, admin console and workspace
+policies"), `activity` (board_activity: the activity feed; see "Activity" below).
 
 - Notifications are created only from trusted server-side events, never from client claims:
   realtime's `onCommentMessage` (a comment message applied from one of THIS instance's sockets,
@@ -670,7 +680,7 @@ console of team workspaces; see "Audit log, admin console and workspace policies
   "Invite … to comment") is kept in `pending_mentions`; members' `onInviteAccepted` (invite link
   or verified address) turns it into their `comment.mention`. Kept for an invite's lifetime.
   Live: `/ws/notifications` per tab; changes are published on one pubsub channel and each
-  instance pushes the unread count to its own sockets (ended sessions close them everywhere).
+  instance pushes the unread count to its own sockets (ended sessions close them everywhere, through auth).
   Email: the `notifications:digest` exclusive job emails everything a person hasn't read after
   `NOTIFY_EMAIL_DELAY_SECONDS` as ONE digest (claim-then-send; a failed send is handed back),
   only to verified addresses, honoring per-type opt-outs and the master switch that the signed,
@@ -735,9 +745,15 @@ console of team workspaces; see "Audit log, admin console and workspace policies
   its init.ts and admin.ts) and keeps its own table; callers don't change. Never passwords, tokens
   or codes in `detail`.
 - Ending a session (logout, "sign out" from another device, password reset/change, account
-  deletion) calls auth's in-process `onSessionEnd`; realtime is its listener and closes that
-  session's board sockets on every instance through its `end-session` control message — the one
-  way to drop a session's live connections.
+  deletion, suspension, a session policy) goes through auth's `sessionsEnded`, which runs the
+  `onSessionEnd` listeners of THIS process and announces the keys on auth's pubsub channel
+  (`freero:auth:sessions`), so every instance runs its listeners too — also for the operator CLI,
+  which connects to `REDIS_URL` for that. Sessions that vanish without anyone announcing it (raw
+  SQL, expiry, a message lost in a Redis gap) are caught by `recheckLiveSessions`: every instance,
+  every `SESSION_RECHECK_SECONDS`, checks the session keys of its open connections (registered with
+  `trackLiveSessions`) against the database — the rule a new socket is admitted by — and ends the
+  missing ones locally (KAI-146). Listeners (realtime's board sockets, notifications' bells) only
+  close connections on their own instance — the one way to drop a session's live connections.
 - Account purge: owned boards (trash included) and the avatar file are deleted, the user's
   comments elsewhere become "Deleted user" (`realtime.renameCommentAuthor`, through the live room),
   then the user row (cascades). Other files they uploaded stay — images on other people's boards
@@ -778,6 +794,16 @@ console of team workspaces; see "Audit log, admin console and workspace policies
   session-less appeal link (`/appeal?t=`, `mac('moderation.appeal:<actionId>')`) and adds a
   `moderation.action` notification (a `direct` type: emailed by its module, never in digests, no
   email setting). Appeals enter the queue (one open appeal per action).
+- Legal hold (KAI-178): a taken-down board is deleted only by the operator's `board.delete`
+  (boards' `deleteTakenDownBoard`). The account purge waits (after the hand-over, deleting nothing)
+  while the account owns one or is the last member of a team holding one (`countHeldBoards`,
+  `handOverTeamWorkspaces` → `held`), and never blocks the accounts behind it; deleting a team
+  workspace holding one answers 409 `workspace_board_held`. Removed uploads are detached from the
+  account before its row goes (`keepRemovedUploadsOf`). Each action keeps a snapshot of its
+  subject (`subject_name`, `subject_email`).
+- Suspensions (KAI-180): `user.suspend` with `boards: 'take_down' | 'disable_link'` acts on every
+  board the account has in service, each recorded with `parent_id` = the suspension; `user.restore`
+  reverses those children not reversed or deleted since (children of the lift). One notice.
 - Web: `features/report` (board menu, context menu, `report.open` command for other features —
   comments' flag), `Host.report`; the app's `/operator` queue, `/operator/boards/:id/preview`
   (read-only snapshot through `BoardEngineProps.initialState`) and `/appeal`.
@@ -830,6 +856,58 @@ members with roles owner / admin / member / guest (separate from board roles).
   `handOverTeamWorkspaces` (sole-owned teams pass to the longest-standing admin, else member,
   else guest; an otherwise empty team is deleted with its boards; their team boards pass to an
   owner there).
+
+### Enterprise identity and data (`modules/sso`, `modules/scim`, `modules/privacy`)
+
+- **Sign-in restrictions** (`auth/restrictions.ts`, `onSignInRestriction`): every way in asks it —
+  signup, password login (before the password is checked: no oracle), reset and "this wasn't me"
+  links and personal providers (all through `completeSignIn`, plus before a provider sign-in may
+  create an account). sso registers "Enforce SSO" there. A new way of signing in must go through
+  `completeSignIn` and so inherits it.
+- **Domains**: a team proves a domain with a DNS TXT record (`sso/dns.ts`; resolver injectable for
+  tests, `SSO_DNS_SERVERS` for operators, never skipped). Only a VERIFIED domain counts, and one
+  workspace at most holds it: it routes sign-ins (`GET /api/sso/discover`, by domain only), lets the
+  workspace's IdP vouch for addresses at it, scopes SCIM provisioning and "Enforce SSO".
+- **SSO** (`sso/signIn.ts`): SP-initiated only. SAML via `@node-saml/node-saml` (signed assertion
+  required, audience = the workspace's entity ID, `validateInResponseTo: always`, assertion-ID
+  replay cache — both in `sso_saml_cache`, per workspace, shared by instances, consumed in one
+  statement) plus our Recipient check on the verified assertion; claims are read only from the
+  verified assertion. OIDC reuses `auth/oidc.ts`. The SAML POST is cross-site (the one
+  `allowCrossSitePost` in `platform/security.ts`), so it only parks the verified claims on the flow;
+  a same-site GET carrying the HttpOnly cookie set at start finishes it — only the browser that
+  started a sign-in can complete it. Account rules: `auth.resolveDirectoryLogin` (identity
+  `sso:<workspaceId>` + issuer + subject; else the address's account, connected after its second
+  step; else a new verified account) — only for addresses at the workspace's verified domains. A
+  newcomer joins with the connection's default role (`workspaces.applyDirectoryMembership`); a
+  deactivated member is refused. Session lifetime has ONE model: a session belongs to the person,
+  and the strictest session policy of their teams applies to all of it (auth, KAI-51) — SSO has no
+  lifetime setting of its own; only the IdP's own end of a sign-in (SAML `SessionNotOnOrAfter`)
+  shortens that one session. Enforcing needs a sign-in that went through and an owner as
+  break-glass (exempt while still an owner), and ends the domain's non-SSO sessions; pointing the
+  connection at another IdP drops enforcement.
+- **SCIM** (`scim/`): bearer tokens per workspace (sha256; rotate = swap in one step, or overlap).
+  Filters (`filter.ts`) and PATCH (`patch.ts`) are generic over the resource JSON, as Okta and
+  Entra send them. Provisioned people are accounts at verified domains; groups map, by admins in
+  Freero, to a workspace role (highest wins; once any group maps a role the directory owns
+  provisioned people's roles; owners untouched) or a project. Deprovisioning (`active: false`,
+  DELETE) is the admin console's deactivation (`workspaces.setDirectoryDeactivated` →
+  `deactivated_at`, the `blocked` rule of `resolveRole`: one mechanism; keeps role and boards,
+  sockets re-resolved on every instance) and ends all sessions of an organization address. The
+  directory's `active: true` lifts it; its routine syncs never lift an admin's deactivation.
+- **Data exports** (`privacy/`): this module reads no other table; each owning module exports its
+  part from its index (`exportAccountData`, `exportMembershipsOf`, `boardRecords`,
+  `exportBoardContent` — shared doc plus only the layers the exporter may read — `commentsWrittenBy`,
+  `templatesExportOf`, `notificationsExportOf`, `uploadsOwnedBy`, `scimRecordsOf`, …). New personal
+  data in a new module = an export function in its index + a line in `privacy/archive.ts` + a row
+  in the data map (docs/operations.md). Archives are uploads' private files (never served at
+  `/uploads/`, never swept).
+- **Audit** (`recordAudit`, inside the change's transaction): `sso.*` (domains, the connection,
+  enforcement, every SSO sign-in and refusal, just-in-time joins), `scim.*` (tokens, group
+  mappings, provisioning, deprovisioning — actor null: the directory), `workspace.export_*` in the
+  workspace's log; a person's own `account.export_*` only in their account's log (no fan-out).
+- **Seams**: `workspaces.onWorkspaceDeletionHold` (legal holds; refused deletion with 409).
+- **Admin console**: tabs Single sign-on and Provisioning next to Security; the workspace export
+  under Data (pages/admin/AdminIdentity.tsx).
 
 ### Request access (`members/accessRequests.ts`, KAI-40)
 
@@ -1035,8 +1113,9 @@ is as strong as before it (M suffices — as it did a minute earlier); P + M rem
 recovery delay if the owner ignores three mails and never signs in with F; once the undo window
 has passed, an intruder who planted an authenticator can keep the owner out of (b) — by changing
 the password (the owner's reset-link password can't start one) or by signing in with their
-authenticator (that cancels it) — and that contested case goes to (c); live board tabs of sessions an
-operator ended from the CLI stay connected until they reload (docs/operations.md; KAI-146).
+authenticator (that cancels it) — and that contested case goes to (c). Live board tabs of sessions an
+operator ended from the CLI close at once with `REDIS_URL`, else within `SESSION_RECHECK_SECONDS`
+(KAI-146).
 
 New sign-in factors or recovery paths keep this table true: say who can start and finish them in
 P / M / F terms, and add their row.
@@ -1169,10 +1248,17 @@ that socket announced, and its `user` is always replaced by the authenticated us
 the server's doc): their own messages and reactions, threads they started (and their tombstones),
 deleting a thread/message together with its tombstone. Resolve/reopen (`s:`) is shared workflow
 state anyone who may comment can set (attributed via `by`); anyone may detach a pin whose element
-is gone. Tombstones are final. Owners and editors are trusted with the whole doc. Ending a session — logout,
+is gone. Tombstones are final. A commenter's message carries their own name (KAI-187): a guest's
+"Guest · <name>"; an account's current name, a previous one (`users.previous_names`: a tab opened
+before a rename elsewhere) or a name taken while connected (`auth.onProfileChanged` refreshes the
+sockets on every instance before the rename answers); an edit may keep the name the message had.
+Account names never start with "Guest ·". Readers show the author's CURRENT name from the people
+lookup (`features/comments/lib/people.ts` `authorName`), the stored one only for ids nobody answers
+(deleted accounts: "Deleted user") — so an editor's record, a rename or an old forged name never
+reads as someone else. Owners and editors are trusted with the whole doc. Ending a session — logout,
 "sign out" from another device, password reset/change, account deletion — fires
-`auth.onSessionEnd` where it happened; realtime closes every board socket opened with that session
-(4401), on every instance through the `end-session` control message. The
+`auth.onSessionEnd` on every instance (auth announces it; see "Ending a session" above); realtime
+closes every board socket opened with that session (4401) on its own instance. The
 account purge rewrites the deleted user's comment authorship to "Deleted user" through the live
 room (`renameCommentAuthor`), so open boards update and the save queue persists it. Member emails
 (`GET /members`) are only sent to owners/editors.
@@ -1297,7 +1383,10 @@ only to connections that may read them:
   deadline; `settled(client, observers)` is a barrier (a presence change the server handles after
   everything the client sent before, relayed in order) for proving something did NOT arrive;
   `waitUnloaded(proc)` waits until the server holds no doc in memory (`/metrics` gauge), so the
-  next read comes from the database.
+  next read comes from the database. Background work exposes a counter to wait on the same way
+  (`freero_notifications_comment_messages_handled_total`, `freero_notifications_digest_runs_total`:
+  "the comment was handled", "N more digest runs saw it due"); a new async side effect a check
+  depends on adds one rather than a sleep.
 - UI: drive the real app in a browser (see `.claude/skills/verify-freero/`).
 
 ### What a test is for

@@ -2,9 +2,12 @@
 // the shared element types is set, so templates render the same whatever the element
 // feature's defaults are). Coordinates are relative to the template origin; insertion
 // translates them later (see place.ts).
+import type { LucideIcon } from 'lucide-react';
 import type {
   Anchor,
   CapStyle,
+  CardStatus,
+  IconNode,
   ConnectorRouting,
   FontFamily,
   ShapeKind,
@@ -41,7 +44,98 @@ export function list(items: string[], ordered = false): string {
 
 export const STICKY = 160;
 
-type End = Point | { id: string; anchor: Exclude<Anchor, 'auto'> };
+/**
+ * A connector end: a free point, a side's middle (`anchor`), or a spot on the element's box as
+ * fractions (`at`, e.g. a message's height on a sequence-diagram lifeline or an activation bar).
+ * `at` spots must lie on the drawn outline (a box side, or a lifeline's stem at u = 0.5), where
+ * the connector feature's projection keeps them.
+ */
+export type End = Point | { id: string; anchor: Exclude<Anchor, 'auto'> } | { id: string; at: { u: number; v: number } };
+
+/**
+ * Kanban geometry as the kanban element lays itself out. Its arrange pass restacks items on
+ * insert anyway; building them in the same spots keeps the preview and the first frame right.
+ */
+const KANBAN = { header: 52, colHead: 44, gap: 12, pad: 10, itemGap: 10, minBody: 180 };
+/** Swimlane geometry (row pools): title band, lane header column, phase header row. */
+const POOL = { title: 44, laneHead: 150, phaseHead: 36 };
+
+/** A kanban item: a task card, or a sticky note (square unless `h` is given). */
+export type KanbanItem =
+  | { card: string; desc?: string; color: string; due?: string }
+  | { sticky: string; color: StickyColor; h?: number };
+
+export interface KanbanColumnSpec {
+  title: string;
+  /** Cards dropped in this column take this status. */
+  status?: CardStatus | null;
+  wip?: number;
+  color: string;
+  items: KanbanItem[];
+}
+
+/** A table cell with its own fill (a Gantt bar, a RACI letter). */
+export interface TableCell {
+  t: string;
+  f?: string;
+}
+
+/** A mind-map subtree; children inherit the branch color unless they name their own. */
+export interface TreeSpec {
+  text: string;
+  color?: string;
+  children?: TreeSpec[];
+}
+
+export interface BandSpec {
+  title: string;
+  size: number;
+  color: string;
+}
+
+/** A pool's bands in template coordinates (lanes are rows, phases columns). */
+export interface PoolGeometry {
+  id: string;
+  /** Top and height of lane i's body. */
+  lane(i: number): { y: number; h: number };
+  /** Left and width of phase j's body. */
+  phase(j: number): { x: number; w: number };
+  w: number;
+  h: number;
+}
+
+/**
+ * Height a task card settles at for its text and width. The card feature measures it exactly
+ * on insert; this estimate (a little generous) keeps the template's layout close to that.
+ */
+export function cardHeight(w: number, title: string, desc = ''): number {
+  const inner = Math.max(40, w - 36);
+  const lines = (t: string, px: number) => t.split('\n').reduce((n, l) => n + Math.max(1, Math.ceil((l.length * px) / inner)), 0);
+  const t = lines(title, 8.4);
+  const d = desc ? Math.min(3, lines(desc, 7)) : 0;
+  return 13 + t * 20 + (d ? 4 + d * 18 : 0) + 10 + 24 + 12;
+}
+
+const itemHeights = (colW: number, columns: KanbanColumnSpec[]) => {
+  const inner = colW - 2 * KANBAN.pad;
+  return columns.map((c) => c.items.map((it) => ('card' in it ? cardHeight(inner, it.card, it.desc) : Math.min(it.h ?? inner, inner))));
+};
+
+/** The size a kanban with these columns takes (lay out around it before building it). */
+export function kanbanSize(colW: number, columns: KanbanColumnSpec[]): { w: number; h: number } {
+  const K = KANBAN;
+  const tallest = Math.max(0, ...itemHeights(colW, columns).map((hs) => (hs.length ? hs.reduce((a, b) => a + b, 0) + (hs.length - 1) * K.itemGap : 0)));
+  return { w: K.gap + columns.length * (colW + K.gap), h: K.header + K.colHead + Math.max(K.minBody, tallest + 2 * K.pad) + K.gap };
+}
+
+/** The drawing of a lucide icon (the app's icon set), as an icon element stores it. */
+export function iconOf(icon: LucideIcon): { name: string; nodes: IconNode[] } {
+  // lucide components carry their drawing: calling the forwardRef's render once, without
+  // mounting, hands it back (the icon library reads its index the same way).
+  const render = (icon as unknown as { render: (props: object, ref: null) => { props: { icon: { name: string; node: IconNode[] } } } }).render;
+  const data = render({}, null).props.icon;
+  return { name: data.name, nodes: data.node.map(([tag, attrs]) => [tag, Object.fromEntries(Object.entries(attrs).filter(([k]) => k !== 'key'))] as IconNode) };
+}
 
 export interface ShapeOpts {
   fill?: string;
@@ -242,6 +336,20 @@ export class Kit {
   }
 
   private endpoint(end: End) {
+    if ('at' in end) {
+      const r = this.rects.get(end.id);
+      if (!r) throw new Error(`Connector endpoint ${end.id} is not part of this template`);
+      const { u, v } = end.at;
+      // `anchor` names the nearest side (clients without `at` attach there).
+      const sides: Array<[Exclude<Anchor, 'auto'>, number]> = [
+        ['left', u],
+        ['right', 1 - u],
+        ['top', v],
+        ['bottom', 1 - v],
+      ];
+      const anchor = sides.sort((a, b) => a[1] - b[1])[0][0];
+      return { elementId: end.id, anchor, at: { u, v }, x: r.x + u * r.w, y: r.y + v * r.h };
+    }
     if ('id' in end) {
       const r = this.rects.get(end.id);
       if (!r) throw new Error(`Connector endpoint ${end.id} is not part of this template`);
@@ -284,14 +392,15 @@ export class Kit {
 
   /**
    * A table with the given column widths; `rows[i]` is the row height and its cell texts (plain
-   * text; missing cells stay empty). `fills` colors whole columns (by column index), e.g. "us"
-   * in a comparison. The first row is the header unless `header` is false.
+   * text, or `{ t, f }` for a cell with its own fill; missing cells stay empty). `fills` colors
+   * whole columns (by column index), e.g. "us" in a comparison. The first row is the header
+   * unless `header` is false.
    */
   table(
     x: number,
     y: number,
     colWidths: number[],
-    rows: Array<{ h: number; cells: string[] }>,
+    rows: Array<{ h: number; cells: Array<string | TableCell> }>,
     o: { header?: boolean; fontSize?: number; fills?: Record<number, string> } = {},
   ): string {
     const cols = colWidths.map((w) => ({ id: this.newId(), w }));
@@ -299,8 +408,9 @@ export class Kit {
     const cells: TableCopyContent = {};
     rows.forEach((r, ri) =>
       cols.forEach((c, ci) => {
-        const text = r.cells[ci] ?? '';
-        const fill = o.fills?.[ci];
+        const cell = r.cells[ci] ?? '';
+        const text = typeof cell === 'string' ? cell : cell.t;
+        const fill = (typeof cell === 'string' ? undefined : cell.f) ?? o.fills?.[ci];
         if (text || fill) cells[`${rowTracks[ri].id}:${c.id}`] = { ...(text ? { t: rt(text) } : {}), ...(fill ? { f: fill } : {}) };
       }),
     );
@@ -324,10 +434,25 @@ export class Kit {
    * A tinted section with a bold title (and an optional grey hint under it). Returns the first
    * free y inside it, below the title block.
    */
-  section(x: number, y: number, w: number, h: number, title: string, tint: string, o: { accent?: string; hint?: string; size?: number } = {}): number {
+  section(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    title: string,
+    tint: string,
+    o: { accent?: string; hint?: string; size?: number; icon?: LucideIcon } = {},
+  ): number {
     this.panel(x, y, w, h, tint);
     const size = o.size ?? 22;
-    this.text(x + 24, y + 18, w - 48, `<b>${rt(title)}</b>`, { size, color: o.accent ?? INK, h: Math.round(size * 1.45) });
+    const lineH = Math.round(size * 1.45);
+    let tx = x + 24;
+    if (o.icon) {
+      const is = Math.round(size * 1.25);
+      this.icon(tx, y + 18 + (lineH - is) / 2, is, o.icon, o.accent ?? INK);
+      tx += is + 10;
+    }
+    this.text(tx, y + 18, x + w - 24 - tx, `<b>${rt(title)}</b>`, { size, color: o.accent ?? INK, h: lineH });
     if (!o.hint) return y + 18 + Math.round(size * 1.45) + 14;
     this.text(x + 24, y + 22 + size * 1.45, w - 48, rt(o.hint), { size: 14, color: INK_SOFT, h: 22 });
     return y + 22 + Math.round(size * 1.45) + 22 + 18;
@@ -338,6 +463,94 @@ export class Kit {
     const perRow = Math.max(1, Math.floor((w + gap) / (size + gap)));
     texts.forEach((t, i) => this.sticky(x + (i % perRow) * (size + gap), y + Math.floor(i / perRow) * (size + gap), t, color, size));
     return y + Math.ceil(texts.length / perRow) * (size + gap) - gap;
+  }
+
+  /**
+   * A mind map growing right as a tree: one column per level (`cols[level]` = node size), leaves
+   * `rowH` apart, each parent centered on its children. Returns the height it takes.
+   */
+  mindTree(x: number, y: number, cols: Array<{ w: number; h: number }>, gapX: number, rowH: number, root: TreeSpec): number {
+    const leaves = (t: TreeSpec): number => (t.children?.length ? t.children.reduce((n, c) => n + leaves(c), 0) : 1);
+    const place = (t: TreeSpec, level: number, top: number, color: string, parent: { id: string; rootId: string } | null) => {
+      const c = cols[Math.min(level, cols.length - 1)];
+      const span = leaves(t) * rowH;
+      const nx = x + cols.slice(0, level).reduce((a, b) => a + b.w + gapX, 0);
+      const node = this.mindmap(nx, top + span / 2 - c.h / 2, c.w, c.h, t.text, t.color ?? color, parent, parent ? undefined : 'right');
+      let childTop = top;
+      for (const child of t.children ?? []) {
+        place(child, level + 1, childTop, child.color ?? t.color ?? color, node);
+        childTop += leaves(child) * rowH;
+      }
+    };
+    place(root, 0, y, root.color ?? INK, null);
+    return leaves(root) * rowH;
+  }
+
+  /** Builds `fn`'s elements as members of container `id` (a kanban or swimlane), then returns to the frame. */
+  within(id: string, fn: () => void): void {
+    const outer = this.frameId;
+    this.frameId = id;
+    try {
+      fn();
+    } finally {
+      this.frameId = outer;
+    }
+  }
+
+  icon(x: number, y: number, size: number, icon: LucideIcon, color: string = INK, strokeWidth = 2): string {
+    const { name, nodes } = iconOf(icon);
+    return this.push<NewElement<'icon'>>({ type: 'icon', x, y, w: size, h: size, name, nodes, color, strokeWidth, ...this.inFrame() });
+  }
+
+  /**
+   * A kanban board with its items stacked the way the board stacks them (cards take the
+   * column's width). Returns its id and height (the tallest column decides it).
+   */
+  kanban(x: number, y: number, title: string, colW: number, columns: KanbanColumnSpec[]): { id: string; w: number; h: number } {
+    const K = KANBAN;
+    const inner = colW - 2 * K.pad;
+    const heights = itemHeights(colW, columns);
+    const { w, h } = kanbanSize(colW, columns);
+    const id = this.push<NewElement<'kanban'>>({
+      type: 'kanban',
+      x,
+      y,
+      w,
+      h,
+      title: rt(title),
+      colW,
+      columns: columns.map((c) => ({ id: this.newId(), title: rt(c.title), status: c.status ?? null, color: c.color, ...(c.wip ? { wip: c.wip } : {}) })),
+      ...this.inFrame(),
+    });
+    this.within(id, () =>
+      columns.forEach((c, ci) => {
+        const ix = x + K.gap + ci * (colW + K.gap) + K.pad;
+        let iy = y + K.header + K.colHead + K.pad;
+        c.items.forEach((it, ii) => {
+          const ih = heights[ci][ii];
+          if ('card' in it) this.card(ix, iy, inner, ih, it.card, it.desc ?? '', it.color, c.status ?? null, it.due ?? null);
+          else this.sticky(ix + (inner - ih) / 2, iy, it.sticky, it.color, ih);
+          iy += ih + K.itemGap;
+        });
+      }),
+    );
+    return { id, w, h };
+  }
+
+  /**
+   * A swimlane pool, lanes as rows and phases as columns (phase headers show with two or more
+   * phases). Build what goes in it with `within(pool.id, …)` at `lane()` / `phase()` spots.
+   */
+  swimlane(x: number, y: number, title: string, lanes: BandSpec[], phases: BandSpec[]): PoolGeometry {
+    const P = POOL;
+    const top = y + P.title + (phases.length > 1 ? P.phaseHead : 0);
+    const laneTop = lanes.map((_, i) => top + lanes.slice(0, i).reduce((a, b) => a + b.size, 0));
+    const phaseLeft = phases.map((_, j) => x + P.laneHead + phases.slice(0, j).reduce((a, b) => a + b.size, 0));
+    const w = P.laneHead + phases.reduce((a, b) => a + b.size, 0);
+    const h = top - y + lanes.reduce((a, b) => a + b.size, 0);
+    const band = (b: BandSpec) => ({ id: this.newId(), title: rt(b.title), size: b.size, color: b.color });
+    const id = this.push<NewElement<'swimlane'>>({ type: 'swimlane', x, y, w, h, title: rt(title), lanes: lanes.map(band), phases: phases.map(band), ...this.inFrame() });
+    return { id, lane: (i) => ({ y: laneTop[i], h: lanes[i].size }), phase: (j) => ({ x: phaseLeft[j], w: phases[j].size }), w, h };
   }
 
   /** The finished template. */

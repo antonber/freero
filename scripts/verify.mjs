@@ -956,7 +956,8 @@ async function run() {
     });
 
     const dThread = { kind: 'thread', id: 't1', x: 5, y: 5, elementId: null, createdAt: 1, createdBy: D.id };
-    const dMsg = (id, authorId, text) => ({ kind: 'message', threadId: 't1', id, authorId, authorName: authorId, text, createdAt: 1 });
+    // Messages carry their author's name: a commenter's must be their own (KAI-187).
+    const dMsg = (id, authorId, text) => ({ kind: 'message', threadId: 't1', id, authorId, authorName: [A, D].find((u) => u.id === authorId)?.name ?? authorId, text, createdAt: 1 });
     await check("commenter D can write 'comments' but not 'elements'", async () => {
       d.doc.transact(() => {
         d.doc.getMap('comments').set('t:t1', dThread);
@@ -1000,6 +1001,40 @@ async function run() {
       d.doc.getMap('comments').set('r:t1:a1:' + D.id + ':🎉', { kind: 'reaction', threadId: 't1', messageId: 'a1', userId: D.id, emoji: '🎉' });
       await waitFor(() => a.doc.getMap('comments').get('m:t1:m1')?.editedAt === 4, 5000, "A to receive D's edit of D's own message");
       await waitFor(() => a.doc.getMap('comments').has('r:t1:a1:' + D.id + ':🎉'), 5000, "A to receive D's reaction");
+    });
+
+    await check("comment authorship (KAI-187): commenter D's raw client cannot post under another name (a member's, a made-up one, a guest's), but can under a name D just took", async () => {
+      const own = (id, authorName) => ({ ...dMsg(id, D.id, `as ${authorName}`), authorName });
+      const attempts = [
+        ["A's name", own('n1', A.name)],
+        ['a made-up title', own('n2', 'Jane Doe (CEO)')],
+        ["a guest's name", own('n3', 'Guest · Kim')],
+      ];
+      for (const [what, m] of attempts) {
+        const raw = connectDoc(D, board.id); // fresh: a dropped update would sink everything after it
+        await raw.ready();
+        raw.doc.getMap('comments').set(`m:t1:${m.id}`, m);
+        await settled(raw, [a]);
+        raw.destroy();
+        assert(!a.doc.getMap('comments').has(`m:t1:${m.id}`), `D could comment under ${what}`);
+      }
+      // A rename reaches D's open socket before the answer: the next comment under it is accepted.
+      const raw = connectDoc(D, board.id);
+      await raw.ready();
+      const renamed = await D.req('PATCH', '/api/auth/me', { name: 'Dee Renamed' });
+      assert(renamed.status === 200, `rename: ${renamed.status}`);
+      raw.doc.getMap('comments').set('m:t1:n4', own('n4', 'Dee Renamed'));
+      await waitFor(() => a.doc.getMap('comments').has('m:t1:n4'), 5000, "A to receive D's comment under D's new name");
+      raw.destroy();
+      // A tab loaded before that rename (on another device) still writes the old name, even after
+      // its socket reconnects: its comments must not be dropped.
+      const stale = connectDoc(D, board.id);
+      await stale.ready();
+      stale.doc.getMap('comments').set('m:t1:n5', own('n5', D.name));
+      await waitFor(() => a.doc.getMap('comments').has('m:t1:n5'), 5000, "A to receive D's comment under D's previous name");
+      stale.destroy();
+      assert((await D.req('PATCH', '/api/auth/me', { name: 'Guest · Dee' })).status === 400, 'an account took a guest-style name');
+      assert((await D.req('PATCH', '/api/auth/me', { name: D.name })).status === 200, 'rename back');
     });
 
     // ---- board layers: content the server withholds (private drafts, sealed ballots, hidden frames) ----
@@ -1856,6 +1891,14 @@ async function notificationChecks() {
     for (const u of [A, B, C]) await u.verifyEmail(dataDir);
     const board = (await A.req('POST', '/api/boards', { title: 'Notify board' })).json.board;
     const list = async (u) => (await u.req('GET', '/api/notifications')).json;
+    // Conditions to wait on instead of fixed sleeps (KAI-173), from the server's /metrics.
+    const handled = () => gauge(proc, 'freero_notifications_comment_messages_handled_total');
+    const digestRuns = () => gauge(proc, 'freero_notifications_digest_runs_total');
+    /** Resolves after `n` more complete digest runs (each one considered everything due when it started). */
+    const moreDigestRuns = async (n, what) => {
+      const start = await digestRuns();
+      await waitFor(async () => (await digestRuns()) >= start + n + 1, 15_000, what); // +1: one may be mid-run now
+    };
 
     await check('sharing a board with an account notifies them in the app, live on their open notifications socket', async () => {
       const live = notificationsSocket(B, port);
@@ -1912,12 +1955,14 @@ async function notificationChecks() {
       for (const u of [Z, W])
         assert((await A.req('POST', `/api/boards/${board.id}/members`, { email: u.email, role: 'commenter' })).json?.invite, `invite ${u.label}`);
       const now = Date.now();
+      const before = await handled();
       clients[0].doc.transact(() => {
         const m = clients[0].doc.getMap('comments');
         m.set('t:t2', { kind: 'thread', id: 't2', x: 50, y: 50, createdAt: now, createdBy: A.id });
         m.set('m:t2:z1', { kind: 'message', threadId: 't2', id: 'z1', authorId: A.id, authorName: A.name, text: `welcome ${Z.email.toUpperCase()} and ${W.email}.`, createdAt: now });
       });
-      await sleep(800); // the server records the pending mentions as it applies the message
+      // The server records the pending mentions as it handles the message: wait until it has.
+      await waitFor(async () => (await handled()) > before, 10_000, 'the server to handle the message naming the invited addresses');
       await Z.signup();
       const token = await mailedToken(dataDir, Z.email, '/invite');
       assert((await Z.req('POST', `/api/invites/${token}/accept`)).status === 200, 'accept the invite');
@@ -1934,7 +1979,7 @@ async function notificationChecks() {
     let digest = null;
     await check('one digest email batches the unread notifications; its links open the board and the thread', async () => {
       await waitFor(() => (digest = outbox(dataDir).find((m) => m.to === B.email && /notification/i.test(m.subject + m.text))), 15_000, 'the digest to B');
-      await sleep(2500); // a couple more digest runs: nothing is sent twice
+      await moreDigestRuns(2, 'two more digest runs'); // nothing is sent twice
       const toB = outbox(dataDir).filter((m) => m.to === B.email && m.sentAt > 0 && !/confirm|verify/i.test(m.subject));
       assert(toB.length === 1, `mails to B: ${toB.map((m) => m.subject).join(' | ')}`);
       assert(digest.subject === '2 new notifications on Freero', digest.subject);
@@ -1959,7 +2004,10 @@ async function notificationChecks() {
       // A new mention still shows in the app, but no email follows.
       clients[0].doc.getMap('comments').set('m:t1:m3', { kind: 'message', threadId: 't1', id: 'm3', authorId: A.id, authorName: A.name, text: `again <@${B.id}>`, createdAt: Date.now() });
       await waitFor(() => live.lastUnread() === 1, 5000, 'the new mention live');
-      await sleep(7500); // past the 5 s email delay and a few digest runs
+      // Past the 5 s email delay (when it would be due), then two digest runs that saw it due.
+      const due = Date.now() + 5000;
+      await waitFor(() => Date.now() > due, 7000, 'the mention to be due for email');
+      await moreDigestRuns(2, 'two digest runs after the mention was due');
       assert(outbox(dataDir).filter((m) => m.to === B.email && /notification|mentioned/i.test(m.subject)).length === 1, 'emailed after unsubscribing');
     });
 
@@ -2007,6 +2055,8 @@ async function multiInstanceChecks() {
   let url = null;
   const OP = new User('MOp'); // an operator (moderation), verified below
   // Rate-limit counters live in the shared Redis, also across the single-instance run above.
+  const { startMockDns } = await import('./lib/mock-dns.mjs');
+  const multiDns = await startMockDns(); // domain verification (SCIM check)
   const AUTO_VERSION_MS = 1000; // automatic versions of open boards (KAI-82), instead of 30 min
   const FACILITATOR_GRACE_MS = 1000; // a facilitator gone this long ends their session (KAI-129)
   // Accounts are purged right away, and only by instance 2 (instance 1's job would run hourly).
@@ -2016,8 +2066,12 @@ async function multiInstanceChecks() {
     RATE_LIMIT_SIGNUP: '200/1h',
     ACCOUNT_DELETION_GRACE_DAYS: '0',
     ACCOUNT_PURGE_INTERVAL_SECONDS: i === 0 ? '3600' : '1',
+    // Instance 1 re-checks its sockets' sessions every second, instance 2 hourly: what instance 2
+    // closes at once can only have come from an announcement (KAI-146).
+    SESSION_RECHECK_SECONDS: i === 0 ? '1' : '3600',
     FREERO_SNAPSHOT_EVERY_MS: String(AUTO_VERSION_MS),
     FREERO_FACILITATOR_GRACE_MS: String(FACILITATOR_GRACE_MS),
+    SSO_DNS_SERVERS: multiDns.server,
     OPERATOR_EMAILS: OP.email,
   });
   const docRows = async (boardId) =>
@@ -2239,6 +2293,48 @@ async function multiInstanceChecks() {
       await live.ready();
       assert((await L.req('POST', '/api/auth/logout', undefined, { port: two })).status === 200, 'logout');
       await waitFor(() => live.closeCodes.includes(4401), 5000, 'the socket on instance 1 to close with 4401');
+      live.destroy();
+    });
+
+    // KAI-146: sessions ended outside any server process.
+    await check('sessions deleted with SQL lose their open board socket and bell within SESSION_RECHECK_SECONDS (4401); other sessions stay connected', async () => {
+      const S = new User('MSql');
+      await S.signup();
+      const own = (await S.req('POST', '/api/boards', { title: 'S' })).json.board;
+      const keep = new User('MSql-laptop');
+      keep.email = S.email;
+      assert((await keep.req('POST', '/api/auth/login', { email: S.email, password: 'password-123' })).status === 200, 'second login');
+      const live = connectDoc(S, own.id, undefined, one);
+      const bell = notificationsSocket(S, one);
+      const other = connectDoc(keep, own.id, undefined, one);
+      await Promise.all([live.ready(), other.ready()]);
+      await waitFor(() => bell.lastUnread() !== null, 5000, 'the bell to connect');
+      const sid = (await S.req('GET', '/api/auth/sessions')).json.sessions.find((s) => s.current).id;
+      await adminQuery(`DELETE FROM sessions WHERE id = '${sid}'`, url);
+      await waitFor(() => live.closeCodes.includes(4401) && bell.closeCode === 4401, 5000, 'the board socket and the bell of the deleted session to close with 4401');
+      await settled(other);
+      assert(!other.closeCodes.length, `the other session's socket closed too: ${other.closeCodes}`);
+      for (const c of [live, other]) c.destroy();
+    });
+
+    await check('`npm run admin -- two-factor:reset` (its own process, next to the instances) closes the board socket and bell of every session it ends at once (4401), on an instance that would not re-check for an hour', async () => {
+      const R = new User('MReset');
+      await R.signup();
+      const setup = await R.req('POST', '/api/auth/two-factor/setup', { password: 'password-123' });
+      assert((await R.req('POST', '/api/auth/two-factor/enable', { code: await totpCode({ secret: setup.json.secret }) })).status === 200, 'two-step on');
+      const own = (await R.req('POST', '/api/boards', { title: 'R' })).json.board;
+      const live = connectDoc(R, own.id, undefined, two);
+      const bell = notificationsSocket(R, two);
+      await live.ready();
+      await waitFor(() => bell.lastUnread() !== null, 5000, 'the bell to connect');
+      const cli = spawnSync(process.execPath, ['--import', 'tsx', 'apps/server/src/admin.ts', 'two-factor:reset', R.email, '--operator', 'verify', '--reason', 'KAI-146 check', '--yes'], {
+        cwd: ROOT,
+        encoding: 'utf8',
+        env: { ...process.env, ...env(1), FREERO_DATA_DIR: path.join(dataDir, 'i1'), NODE_ENV: 'test', SESSION_SECRET: RUN_SECRET, LOG_LEVEL: 'warn' },
+        timeout: 60_000,
+      });
+      assert(cli.status === 0 && /Done:/.test(cli.stdout), `reset: ${cli.status} ${cli.stdout} ${cli.stderr}`);
+      await waitFor(() => live.closeCodes.includes(4401) && bell.closeCode === 4401, 5000, 'the board socket and the bell on instance 2 to close with 4401');
       live.destroy();
     });
 
@@ -2468,9 +2564,40 @@ async function multiInstanceChecks() {
       await waitFor(() => live.closeCodes.includes(4403), 5000, 'the socket on instance 1 to close with 4403');
       live.destroy();
     });
+
+    await check('SCIM deprovisioning through instance 1 closes the person’s board socket and ends their session on instance 2 (KAI-46)', async () => {
+      const domain = `multi-${Date.now()}.test`;
+      const p1 = procs[0].port; // instance 1 was restarted (i0b) by an earlier check
+      const O = new User('MO', p1);
+      O.email = `owner@${domain}`;
+      await O.signup();
+      await O.verifyEmail(path.join(dataDir, 'i0b'));
+      const Z = new User('MZ', two);
+      Z.email = `zed@${domain}`;
+      await Z.signup(); // a password account at the domain, signed in on instance 2
+      const ws = (await O.req('POST', '/api/workspaces', { name: 'Directory' })).json.workspace;
+      const d = (await O.req('POST', `/api/workspaces/${ws.id}/sso/domains`, { domain })).json.domains[0];
+      multiDns.setTxt(d.txtName, [d.txtValue]);
+      assert((await O.req('POST', `/api/workspaces/${ws.id}/sso/domains/${d.id}/verify`)).status === 200, 'verify domain');
+      const token = (await O.req('POST', `/api/workspaces/${ws.id}/scim/tokens`, {})).json.token;
+      const { scimClient } = await import('./lib/scim-compliance.mjs');
+      const scim = scimClient(`http://127.0.0.1:${p1}/scim/v2`, token);
+      const zed = (await scim('POST', '/Users', { userName: Z.email, active: true })).json;
+      assert(zed.id === Z.id, `provisioned ${JSON.stringify(zed)}`);
+      const tb = (await O.req('POST', '/api/boards', { title: 'Team', workspaceId: ws.id })).json.board;
+      const live = connectDoc(Z, tb.id, undefined, two);
+      await live.ready();
+      assert(live.role === 'editor', `role ${live.role}`);
+      const off = await scim('PATCH', `/Users/${zed.id}`, { Operations: [{ op: 'replace', value: { active: false } }] });
+      assert(off.status === 200, off.text);
+      await waitFor(() => live.closeCodes.some((c) => c === 4401 || c === 4403), 5000, "Zed's socket on instance 2 to close");
+      live.destroy();
+      assert((await Z.req('GET', '/api/auth/me')).status === 401, 'the session on instance 2 survived');
+    });
   } finally {
     closeAllDocs();
     server = null;
+    await multiDns?.close();
     for (const p of procs) await stopProc(p);
     await dropDatabases();
     try {
@@ -2493,15 +2620,19 @@ class Browser {
     this.origin = `http://127.0.0.1:${port}`;
     this.jar = new Map();
   }
-  async fetch(url, { method = 'GET', body, headers = {} } = {}) {
+  /** `form`: an HTML form post (application/x-www-form-urlencoded) instead of a JSON `body`. */
+  async fetch(url, { method = 'GET', body, form, headers = {} } = {}) {
     const abs = new URL(url, this.origin);
     const own = abs.origin === this.origin;
     const h = { ...headers };
     if (own && this.jar.size) h.cookie = [...this.jar].map(([k, v]) => `${k}=${v}`).join('; ');
     if (body !== undefined) h['content-type'] = 'application/json';
-    const res = await fetch(abs, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body), redirect: 'manual' });
+    if (form !== undefined) h['content-type'] = 'application/x-www-form-urlencoded';
+    const payload = form !== undefined ? new URLSearchParams(form).toString() : body === undefined ? undefined : JSON.stringify(body);
+    const res = await fetch(abs, { method, headers: h, body: payload, redirect: 'manual' });
+    const setCookies = res.headers.getSetCookie();
     if (own) {
-      for (const c of res.headers.getSetCookie()) {
+      for (const c of setCookies) {
         const m = /^([^=]+)=([^;]*)/.exec(c);
         if (!m) continue;
         if (!m[2] || /expires=thu, 01 jan 1970/i.test(c)) this.jar.delete(m[1]);
@@ -2515,7 +2646,7 @@ class Browser {
     } catch {
       /* not json */
     }
-    return { status: res.status, location: res.headers.get('location'), json, text, url: abs.href };
+    return { status: res.status, location: res.headers.get('location'), json, text, url: abs.href, setCookies };
   }
   /** Follows redirects (app -> provider -> app) until a page of the app; returns its path + query. */
   async navigate(url) {
@@ -3028,6 +3159,636 @@ async function uploadSweepChecks() {
     await stopServer();
     await dropDatabases();
     db.url = outerDbUrl;
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Enterprise: workspace single sign-on (KAI-45), against a local SAML identity provider that signs
+// with a real key (scripts/lib/mock-saml.mjs), a local OpenID provider, and a local DNS server the
+// server's real resolver asks for the verification TXT records (SSO_DNS_SERVERS).
+// ---------------------------------------------------------------------------
+
+/** The SAMLResponse and RelayState of the identity provider's auto-posting form. */
+function postedForm(html) {
+  const field = (n) => new RegExp(`name="${n}" value="([^"]*)"`).exec(html)?.[1]?.replace(/&amp;/g, '&').replace(/&quot;/g, '"') ?? null;
+  return { SAMLResponse: field('SAMLResponse'), RelayState: field('RelayState'), action: /action="([^"]+)"/.exec(html)?.[1] ?? null };
+}
+
+/** Starts an SP-initiated SAML sign-in in `b`; returns the request it sent and where to post the answer. */
+async function startSaml(b, workspaceId, idp, next = '') {
+  const start = await b.fetch(`/api/sso/${workspaceId}/start${next ? `?next=${encodeURIComponent(next)}` : ''}`);
+  assert(start.status === 302 && start.location?.startsWith(idp.ssoUrl), `start: ${start.status} ${start.location} ${start.text}`);
+  const url = new URL(start.location);
+  const request = await idp.readRequest(url);
+  return { url, request, relay: url.searchParams.get('RelayState') };
+}
+
+/** Posts a SAMLResponse to the ACS from the IdP's origin (cross-site, like the real form); returns the ACS answer. */
+function postToAcs(b, acsUrl, samlResponse, relay, idp) {
+  return b.fetch(acsUrl, { method: 'POST', form: { SAMLResponse: samlResponse, RelayState: relay ?? '' }, headers: { origin: new URL(idp.ssoUrl).origin } });
+}
+
+async function ssoChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-sso-'));
+  const { startMockSaml } = await import('./lib/mock-saml.mjs');
+  const { startMockDns } = await import('./lib/mock-dns.mjs');
+  const { selfSignedCertificate } = await import('./lib/test-cert.mjs');
+  const dns = await startMockDns();
+  const idp = await startMockSaml();
+  const google = await startMockOidc({ clientId: 'freero-google', clientSecret: 'google-secret' });
+  const wsOidc = await startMockOidc({ clientId: 'beta-client', clientSecret: 'beta-secret' });
+  let proc = null;
+  try {
+    const env = {
+      SSO_DNS_SERVERS: dns.server,
+      OIDC_GOOGLE_CLIENT_ID: 'freero-google',
+      OIDC_GOOGLE_CLIENT_SECRET: 'google-secret',
+      OIDC_GOOGLE_ISSUER: google.issuer,
+      RATE_LIMIT_SSO: '5000/10m',
+      RATE_LIMIT_PASSWORD: '200/15m',
+      RATE_LIMIT_LOGIN: '500/5m',
+    };
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    const up = await check('SSO server boots with a DNS server for domain verification', async () => {
+      proc = await waitUp(await spawnServer(dataDir, env));
+    });
+    if (!up) return;
+    const port = proc.port;
+    const stamp = Date.now();
+    const domain = `acme-${stamp}.test`;
+    const at = (local) => `${local}@${domain}`;
+
+    // The owner: a password account at the organization's domain (break-glass later).
+    const O = new User('SsoOwner', port);
+    O.email = at('owner');
+    await O.signup();
+    await O.verifyEmail(dataDir);
+    const ws = (await O.req('POST', '/api/workspaces', { name: `Acme ${stamp}` })).json.workspace;
+    const sso = (sub = '') => `/api/workspaces/${ws.id}/sso${sub}`;
+    // Bob: an existing password account at the domain, signed in before SSO is enforced.
+    const B = new User('SsoBob', port);
+    B.email = at('bob');
+    await B.signup();
+    await B.verifyEmail(dataDir);
+
+    let domainId = null;
+    await check('a domain is verified only by its DNS TXT record (missing or wrong record: refused), and only one workspace can hold it', async () => {
+      const added = await O.req('POST', sso('/domains'), { domain: domain.toUpperCase() });
+      assert(added.status === 201, added.text);
+      const d = added.json.domains[0];
+      assert(d.domain === domain && !d.verified && d.txtName === `_freero-verification.${domain}` && d.txtValue.startsWith('freero-verification='), JSON.stringify(d));
+      domainId = d.id;
+      assert((await O.req('POST', sso(`/domains/${d.id}/verify`))).status === 409, 'verified without a record');
+      dns.setTxt(d.txtName, ['freero-verification=not-the-token', 'v=spf1 -all']);
+      assert((await O.req('POST', sso(`/domains/${d.id}/verify`))).status === 409, 'verified with a wrong record');
+      dns.setTxt(d.txtName, ['v=spf1 -all', d.txtValue]);
+      const ok = await O.req('POST', sso(`/domains/${d.id}/verify`));
+      assert(ok.status === 200 && ok.json.domains[0].verified, ok.text);
+      // Another team claims the same domain and publishes its own token: the first proof wins.
+      const P = new User('SsoRival', port);
+      await P.signup();
+      const rival = (await P.req('POST', '/api/workspaces', { name: 'Rival' })).json.workspace;
+      const claim = (await P.req('POST', `/api/workspaces/${rival.id}/sso/domains`, { domain })).json.domains[0];
+      dns.setTxt(claim.txtName, [d.txtValue, claim.txtValue]);
+      const taken = await P.req('POST', `/api/workspaces/${rival.id}/sso/domains/${claim.id}/verify`);
+      assert(taken.status === 409 && /another workspace/.test(taken.json.error), `${taken.status} ${taken.text}`);
+      // Members can't see or change it.
+      assert((await B.req('GET', sso())).status === 404, 'a non-member reads SSO settings');
+    });
+
+    await check("the SAML connection is configured from the identity provider's metadata (entity ID, SSO URL, signing certificate)", async () => {
+      const bad = await O.req('PUT', sso('/connection'), { protocol: 'saml', enabled: true, samlMetadataXml: '<x/>' });
+      assert(bad.status === 400, `bad metadata accepted: ${bad.status}`);
+      const r = await O.req('PUT', sso('/connection'), { protocol: 'saml', enabled: true, samlMetadataXml: idp.metadataXml(), defaultRole: 'member' });
+      assert(r.status === 200, r.text);
+      const c = r.json.connection;
+      assert(c.saml.entityId === idp.entityId && c.saml.ssoUrl === idp.ssoUrl && c.saml.certificates.length === 1 && c.testedAt === null, JSON.stringify(c));
+      const meta = await new Browser(port).fetch(`/api/sso/${ws.id}/saml/metadata`);
+      assert(meta.status === 200 && meta.text.includes(r.json.serviceProvider.acsUrl), meta.text.slice(0, 300));
+      const early = await O.req('POST', sso('/enforce'), { enforced: true, breakGlassUserId: O.id });
+      assert(early.status === 409, `enforced before any sign-in went through: ${early.status}`);
+    });
+
+    let alice = null;
+    await check('SP-initiated SAML sign-in: a newcomer at the domain gets a verified account and joins the workspace with the default role; the session ends with the IdP session', async () => {
+      const b = new Browser(port);
+      const email = at('alice');
+      const { url } = await startSaml(b, ws.id, idp, '/board/welcome');
+      idp.queueSignIn({ email, name: 'Alice Directory', sessionNotOnOrAfter: Date.now() + 2 * 3_600_000 });
+      const posted = postedForm(await (await fetch(url)).text());
+      assert(posted.SAMLResponse && posted.action.endsWith(`/api/sso/${ws.id}/saml/acs`), JSON.stringify(posted).slice(0, 200));
+      const acs = await postToAcs(b, posted.action, posted.SAMLResponse, posted.RelayState, idp);
+      assert(acs.status === 303 && acs.location.startsWith(`/api/sso/${ws.id}/saml/finish`), `acs: ${acs.status} ${acs.location} ${acs.text}`);
+      const fin = await b.fetch(acs.location);
+      assert(fin.status === 303 && fin.location === '/board/welcome', `finish: ${fin.status} ${fin.location}`);
+      const cookie = fin.setCookies.find((c) => c.startsWith('freero_session='));
+      const maxAge = Number(/Max-Age=(\d+)/i.exec(cookie ?? '')?.[1]);
+      assert(maxAge > 7000 && maxAge <= 7200, `session cookie Max-Age ${maxAge} (IdP session: 2 h)`);
+      const me = (await b.fetch('/api/auth/me')).json.user;
+      assert(me.email === email && me.emailVerified && me.name === 'Alice Directory', JSON.stringify(me));
+      const mine = (await b.fetch('/api/workspaces')).json.workspaces.find((w) => w.id === ws.id);
+      assert(mine?.role === 'member', `membership: ${JSON.stringify(mine)}`);
+      const sessions = (await b.fetch('/api/auth/sessions')).json.sessions;
+      assert(sessions[0].methodLabel === 'Single sign-on', JSON.stringify(sessions));
+      alice = { browser: b, id: me.id, email };
+      const tested = (await O.req('GET', sso())).json.connection.testedAt;
+      assert(tested !== null, 'the connection does not record that a sign-in went through');
+    });
+
+    await check('SAML: only the browser that started the sign-in finishes it, and a response is accepted once (replay of the same response, or of its assertion under a new request, is refused)', async () => {
+      const email = at('carol');
+      const victim = new Browser(port);
+      const { request, relay } = await startSaml(victim, ws.id, idp);
+      const resp = idp.buildResponse({ email, inResponseTo: request.id, acsUrl: request.acsUrl, audience: request.issuer, assertionId: '_fixed-assertion-' + stamp });
+      const acs = await postToAcs(victim, request.acsUrl, resp, relay, idp);
+      assert(acs.status === 303 && acs.location.includes('/saml/finish'), `acs: ${acs.status} ${acs.location}`);
+      // Someone else's browser holding the finish link gets nothing (no binding cookie).
+      const other = new Browser(port);
+      const stolen = await other.fetch(acs.location);
+      assert(stolen.location === '/login?error=sso_failed' && !other.jar.has('freero_session'), `stolen finish: ${stolen.location}`);
+      const replayed = await postToAcs(new Browser(port), request.acsUrl, resp, relay, idp);
+      assert(replayed.location === '/login?error=sso_failed', `same response posted again: ${replayed.location}`);
+      const fin = await victim.fetch(acs.location);
+      assert(fin.location === `/app?ws=${ws.id}` && victim.jar.has('freero_session'), `the real browser: ${fin.location}`);
+      // The same assertion (same ID) answering a fresh request: refused as a replay.
+      const c2 = new Browser(port);
+      const s2 = await startSaml(c2, ws.id, idp);
+      const again = idp.buildResponse({ email, inResponseTo: s2.request.id, acsUrl: s2.request.acsUrl, audience: s2.request.issuer, assertionId: '_fixed-assertion-' + stamp });
+      const r2 = await postToAcs(c2, s2.request.acsUrl, again, s2.relay, idp);
+      assert(r2.location === '/login?error=sso_failed', `replayed assertion ID: ${r2.location}`);
+    });
+
+    await check('SAML responses that fail validation are refused and sign nobody in: unsigned, signed by another key, wrong audience, wrong recipient, expired, not yet valid, unsolicited (IdP-initiated), or answering another request', async () => {
+      const email = at('mallory');
+      const other = selfSignedCertificate('Not the IdP');
+      const cases = {
+        unsigned: { sign: 'none' },
+        'another key': { key: other },
+        'wrong audience': { audience: 'https://elsewhere.example/sp' },
+        'wrong recipient': { recipient: 'https://elsewhere.example/acs' },
+        expired: { issueInstant: Date.now() - 30 * 60_000, now: Date.now() - 30 * 60_000, notOnOrAfter: Date.now() - 20 * 60_000 },
+        'not yet valid': { notBefore: Date.now() + 10 * 60_000 },
+        unsolicited: { inResponseTo: null },
+        'another request': { inResponseTo: '_not-a-request-we-sent' },
+      };
+      const accepted = [];
+      for (const [name, o] of Object.entries(cases)) {
+        const b = new Browser(port);
+        const { request, relay } = await startSaml(b, ws.id, idp);
+        const resp = idp.buildResponse({ email, inResponseTo: request.id, acsUrl: request.acsUrl, audience: request.issuer, ...o });
+        const acs = await postToAcs(b, request.acsUrl, resp, relay, idp);
+        const fin = acs.location?.includes('/saml/finish') ? await b.fetch(acs.location) : null;
+        if (acs.location !== '/login?error=sso_failed' || b.jar.has('freero_session')) accepted.push(`${name}: ${acs.status} ${acs.location} ${fin?.location ?? ''}`);
+      }
+      assert(accepted.length === 0, `accepted: ${accepted.join('; ')}`);
+    });
+
+    await check('XML signature wrapping: a validly signed assertion with a forged one wrapped around it never signs in as the forged address', async () => {
+      const victim = at('victim');
+      const attempts = [];
+      for (const variant of ['forged first', 'signed one hidden in Extensions']) {
+        const b = new Browser(port);
+        const { request, relay } = await startSaml(b, ws.id, idp);
+        const legit = Buffer.from(
+          idp.buildResponse({ email: at('attacker'), inResponseTo: request.id, acsUrl: request.acsUrl, audience: request.issuer }),
+          'base64',
+        ).toString('utf8');
+        const signedAssertion = /<saml:Assertion[\s\S]*<\/saml:Assertion>/.exec(legit)[0];
+        const forged = signedAssertion
+          .replace(/ID="[^"]+"/, 'ID="_forged"')
+          .replace(/<ds:Signature[\s\S]*<\/ds:Signature>/, '')
+          .replaceAll(at('attacker'), victim);
+        const wrapped =
+          variant === 'forged first'
+            ? legit.replace(signedAssertion, forged + signedAssertion)
+            : legit.replace(signedAssertion, `<samlp:Extensions>${signedAssertion}</samlp:Extensions>${forged}`);
+        const acs = await postToAcs(b, request.acsUrl, Buffer.from(wrapped).toString('base64'), relay, idp);
+        if (acs.location?.includes('/saml/finish')) await b.fetch(acs.location);
+        const me = (await b.fetch('/api/auth/me')).json?.user;
+        if (me?.email === victim) attempts.push(`${variant}: signed in as the victim`);
+        else if (me) attempts.push(`${variant}: accepted (as ${me.email})`);
+      }
+      assert(attempts.length === 0, attempts.join('; '));
+    });
+
+    await check("a SAML identity provider can't vouch for addresses outside the workspace's verified domains", async () => {
+      const b = new Browser(port);
+      const { request, relay } = await startSaml(b, ws.id, idp);
+      const acs = await postToAcs(b, request.acsUrl, idp.buildResponse({ email: `ceo-${stamp}@gmail.test`, inResponseTo: request.id, acsUrl: request.acsUrl, audience: request.issuer }), relay, idp);
+      const fin = await b.fetch(acs.location);
+      assert(fin.location === '/login?error=sso_domain' && !b.jar.has('freero_session'), `${acs.location} -> ${fin.location}`);
+    });
+
+    await check('discovery routes an address at the domain to the IdP (by domain only); "Enforce SSO" needs an owner as break-glass', async () => {
+      const d = (await new Browser(port).fetch(`/api/sso/discover?email=${encodeURIComponent(at('anyone'))}&next=%2Fboard%2Fx`)).json.sso;
+      assert(d && d.startUrl.startsWith(`/api/sso/${ws.id}/start?`) && d.startUrl.includes('next=%2Fboard%2Fx') && d.enforced === false, JSON.stringify(d));
+      assert((await new Browser(port).fetch('/api/sso/discover?email=someone@unrelated.test')).json.sso === null, 'routed an unrelated domain');
+      const notOwner = await O.req('POST', sso('/enforce'), { enforced: true, breakGlassUserId: alice.id });
+      assert(notOwner.status === 400, `a member as break-glass: ${notOwner.status}`);
+    });
+
+    await check('"Enforce SSO": password, reset-link, signup and personal-provider sign-ins at the domain are refused (before the password is checked); existing non-SSO sessions end; SSO sessions and the break-glass owner keep working', async () => {
+      assert((await B.req('GET', '/api/auth/me')).status === 200, "Bob's password session before enforcing");
+      const on = await O.req('POST', sso('/enforce'), { enforced: true, breakGlassUserId: O.id });
+      assert(on.status === 200 && on.json.connection.enforced && on.json.sessionsEnded >= 1, on.text);
+      assert((await B.req('GET', '/api/auth/me')).status === 401, "Bob's password session survived");
+      assert((await alice.browser.fetch('/api/auth/me')).status === 200, "Alice's SSO session ended");
+      const wrong = await new User('x', port).req('POST', '/api/auth/login', { email: B.email, password: 'not-his-password' });
+      const right = await new User('x', port).req('POST', '/api/auth/login', { email: B.email, password: 'password-123' });
+      assert(wrong.status === 403 && wrong.json.code === 'sso_required' && right.status === 403 && right.json.code === 'sso_required', `${wrong.status} ${right.status}`);
+      const signup = await new User('x', port).req('POST', '/api/auth/signup', { name: 'New', email: at('newbie'), password: 'password-123' });
+      assert(signup.status === 403 && signup.json.code === 'sso_required', `signup: ${signup.status}`);
+      const after = Date.now();
+      await new Browser(port).fetch('/api/auth/password/forgot', { method: 'POST', body: { email: B.email } });
+      const token = await mailedToken(dataDir, B.email, '/reset-password', { after });
+      const reset = await new Browser(port).fetch('/api/auth/password/reset', { method: 'POST', body: { token, password: 'bob-new-pass-1' } });
+      assert(reset.status === 403 && reset.json.code === 'sso_required', `reset link signed in: ${reset.status} ${reset.text}`);
+      google.queueSignIn({ email: B.email });
+      const viaGoogle = await new Browser(port).navigate('/api/auth/oidc/google/start');
+      assert(viaGoogle.startsWith('/login?error=sso_required'), `Google sign-in: ${viaGoogle}`);
+      google.queueSignIn({ email: at('fresh-google') });
+      assert((await new Browser(port).navigate('/api/auth/oidc/google/start')).startsWith('/login?error=sso_required'), 'Google made an account at the domain');
+      const breakGlass = await new User('x', port).req('POST', '/api/auth/login', { email: O.email, password: 'password-123' });
+      assert(breakGlass.status === 200, `break-glass owner: ${breakGlass.status} ${breakGlass.text}`);
+      // Bob through SSO reaches his existing account (connected to it), not a new one.
+      const b = new Browser(port);
+      const { request, relay } = await startSaml(b, ws.id, idp);
+      const acs = await postToAcs(b, request.acsUrl, idp.buildResponse({ email: B.email, inResponseTo: request.id, acsUrl: request.acsUrl, audience: request.issuer }), relay, idp);
+      await b.fetch(acs.location);
+      assert((await b.fetch('/api/auth/me')).json?.user?.id === B.id, 'SSO did not reach Bob’s account');
+    });
+
+    await check('OpenID Connect per workspace (reusing the generic client): sign-in through the workspace issuer, newcomers join as the default role, the client secret is never sent back', async () => {
+      const betaDomain = `beta-${stamp}.test`;
+      const Q = new User('BetaOwner', port);
+      await Q.signup();
+      const beta = (await Q.req('POST', '/api/workspaces', { name: 'Beta' })).json.workspace;
+      const d = (await Q.req('POST', `/api/workspaces/${beta.id}/sso/domains`, { domain: betaDomain })).json.domains[0];
+      dns.setTxt(d.txtName, [d.txtValue]);
+      assert((await Q.req('POST', `/api/workspaces/${beta.id}/sso/domains/${d.id}/verify`)).status === 200, 'verify beta');
+      const saved = await Q.req('PUT', `/api/workspaces/${beta.id}/sso/connection`, {
+        protocol: 'oidc',
+        enabled: true,
+        oidcIssuer: wsOidc.issuer,
+        oidcClientId: 'beta-client',
+        oidcClientSecret: 'beta-secret',
+        defaultRole: 'guest',
+      });
+      assert(saved.status === 200 && saved.json.connection.oidc.hasClientSecret && !saved.text.includes('beta-secret'), saved.text);
+      const b = new Browser(port);
+      wsOidc.queueSignIn({ email: `dana@${betaDomain}`, name: 'Dana' });
+      const landed = await b.navigate(`/api/sso/${beta.id}/start?next=%2Fapp`);
+      assert(landed === `/app?ws=${beta.id}`, `landed on ${landed} (not the workspace signed in to)`);
+      const me = (await b.fetch('/api/auth/me')).json.user;
+      const role = (await b.fetch('/api/workspaces')).json.workspaces.find((w) => w.id === beta.id)?.role;
+      assert(me.email === `dana@${betaDomain}` && role === 'guest', `${me.email} ${role}`);
+      wsOidc.queueSignIn({ email: `eve@${domain}` }); // Acme's domain, not Beta's
+      assert((await new Browser(port).navigate(`/api/sso/${beta.id}/start`)) === '/login?error=sso_domain', "Beta's provider vouched for Acme's address");
+    });
+  } finally {
+    if (proc) await stopProc(proc);
+    await idp.close();
+    await dns.close();
+    await google.close();
+    await wsOidc.close();
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+/** A team workspace owned by `owner` with `domain` verified (through `dns`) and a SAML connection to `idp`. */
+async function ssoWorkspace(owner, dns, idp, domain, name) {
+  const ws = (await owner.req('POST', '/api/workspaces', { name })).json.workspace;
+  const d = (await owner.req('POST', `/api/workspaces/${ws.id}/sso/domains`, { domain })).json.domains[0];
+  dns.setTxt(d.txtName, [d.txtValue]);
+  const v = await owner.req('POST', `/api/workspaces/${ws.id}/sso/domains/${d.id}/verify`);
+  assert(v.status === 200, `verify ${domain}: ${v.text}`);
+  const c = await owner.req('PUT', `/api/workspaces/${ws.id}/sso/connection`, { protocol: 'saml', enabled: true, samlMetadataXml: idp.metadataXml() });
+  assert(c.status === 200, c.text);
+  return ws;
+}
+
+/** Signs `email` in through the workspace's SAML provider in a fresh browser; returns { browser, landed }. */
+async function samlSignIn(port, workspaceId, idp, email) {
+  const b = new Browser(port);
+  const { request, relay } = await startSaml(b, workspaceId, idp);
+  const acs = await postToAcs(b, request.acsUrl, idp.buildResponse({ email, inResponseTo: request.id, acsUrl: request.acsUrl, audience: request.issuer }), relay, idp);
+  if (!acs.location?.includes('/saml/finish')) return { browser: b, landed: acs.location };
+  return { browser: b, landed: (await b.fetch(acs.location)).location };
+}
+
+/** A connectDoc-able user for a Browser's session. */
+const asSocketUser = (b, id, label) => ({ id, label, name: label, port: b.port, cookie: `freero_session=${b.jar.get('freero_session')}` });
+
+// ---------------------------------------------------------------------------
+// Enterprise: SCIM 2.0 provisioning (KAI-46) — the Okta / Entra request sequences
+// (scripts/lib/scim-compliance.mjs), then what provisioning does in Freero.
+// ---------------------------------------------------------------------------
+async function scimChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-scim-'));
+  const { startMockSaml } = await import('./lib/mock-saml.mjs');
+  const { startMockDns } = await import('./lib/mock-dns.mjs');
+  const { runScimCompliance, scimClient } = await import('./lib/scim-compliance.mjs');
+  const dns = await startMockDns();
+  const idp = await startMockSaml();
+  let proc = null;
+  try {
+    const env = { SSO_DNS_SERVERS: dns.server, RATE_LIMIT_SSO: '5000/10m' };
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    const up = await check('SCIM server boots', async () => {
+      proc = await waitUp(await spawnServer(dataDir, env));
+    });
+    if (!up) return;
+    const port = proc.port;
+    server = proc; // connectDoc / wsCloseCode default to `server`
+    const stamp = Date.now();
+    const domain = `scim-${stamp}.test`;
+    const O = new User('ScimOwner', port);
+    O.email = `owner@${domain}`;
+    await O.signup();
+    await O.verifyEmail(dataDir);
+    const ws = await ssoWorkspace(O, dns, idp, domain, `Directory ${stamp}`);
+    const api = (sub = '') => `/api/workspaces/${ws.id}/scim${sub}`;
+    let token = null;
+
+    await check('provisioning tokens: owners/admins generate them (shown once, stored hashed — never listed), members cannot', async () => {
+      const made = await O.req('POST', api('/tokens'), { label: 'Okta' });
+      assert(made.status === 201 && made.json.token.startsWith('frscim_') && made.json.settings.tokens.length === 1, made.text);
+      token = made.json.token;
+      const listed = await O.req('GET', api());
+      assert(listed.status === 200 && !listed.text.includes(token) && listed.json.tokens[0].prefix === token.slice(0, 13), listed.text);
+      const M = new User('ScimMember', port);
+      await M.signup();
+      assert((await M.req('POST', api('/tokens'), {})).status === 404, 'an outsider made a token');
+    });
+    if (!token) return;
+    const base = `http://127.0.0.1:${port}/scim/v2`;
+    await runScimCompliance({ baseUrl: base, token, domain, check, assert });
+    const scim = scimClient(base, token);
+
+    await check('SCIM provisions only addresses at the workspace’s verified domains', async () => {
+      const r = await scim('POST', '/Users', { schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'], userName: `someone-${stamp}@gmail.test`, active: true });
+      assert(r.status === 400 && r.json.scimType === 'invalidValue', `${r.status} ${r.text}`);
+    });
+
+    // Zed: provisioned, signs in through SSO, opens a team board.
+    const zedEmail = `zed@${domain}`;
+    const zed = (await scim('POST', '/Users', { schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'], userName: zedEmail, name: { givenName: 'Zed', familyName: 'Dir' }, active: true })).json;
+    const board = (await O.req('POST', '/api/boards', { title: 'Team plan', workspaceId: ws.id })).json.board;
+
+    await check('a provisioned person is a member of the workspace and signs in through SSO to the same account', async () => {
+      const { browser, landed } = await samlSignIn(port, ws.id, idp, zedEmail);
+      assert(landed === `/app?ws=${ws.id}`, `landed ${landed}`);
+      const me = (await browser.fetch('/api/auth/me')).json.user;
+      assert(me.id === zed.id && me.name === 'Zed Dir', JSON.stringify(me));
+      assert((await browser.fetch('/api/workspaces')).json.workspaces.find((w) => w.id === ws.id)?.role === 'member', 'not a member');
+      zed.browser = browser;
+    });
+
+    const adminMember = async (id) => (await O.req('GET', `/api/workspaces/${ws.id}/admin/members`)).json.members.find((m) => m.userId === id);
+    const auditActions = async () => (await O.req('GET', `/api/workspaces/${ws.id}/audit?limit=200`)).json.events.map((e) => e.action);
+    await check('deprovisioning (active: false) is the admin console’s deactivation: the board socket closes at once, the organization account is signed out, SSO keeps them out; reactivating lets them back; the directory’s changes are in the workspace’s audit log', async () => {
+      const client = connectDoc(asSocketUser(zed.browser, zed.id, 'Zed'), board.id);
+      await client.ready();
+      assert(client.role === 'editor', `role ${client.role}`);
+      const off = await scim('PATCH', `/Users/${zed.id}`, { schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'], Operations: [{ op: 'replace', value: { active: false } }] });
+      assert(off.status === 200 && off.json.active === false, off.text);
+      await waitFor(() => client.closeCodes.some((c) => c === 4401 || c === 4403), 5000, "Zed's board socket to close");
+      client.destroy();
+      assert((await zed.browser.fetch('/api/auth/me')).status === 401, 'session survived deprovisioning');
+      const m = await adminMember(zed.id);
+      assert(m?.deactivated === true && m.role === 'member', `in the admin console: ${JSON.stringify(m)}`);
+      const again = await samlSignIn(port, ws.id, idp, zedEmail);
+      assert(again.landed === '/login?error=sso_removed' && !again.browser.jar.has('freero_session'), `SSO after deprovisioning: ${again.landed}`);
+      const on = await scim('PATCH', `/Users/${zed.id}`, { schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'], Operations: [{ op: 'Replace', path: 'active', value: 'True' }] });
+      assert(on.json.active === true, on.text);
+      assert((await adminMember(zed.id))?.deactivated === false, 'still deactivated after the directory reactivated them');
+      const back = await samlSignIn(port, ws.id, idp, zedEmail);
+      assert(back.landed === `/app?ws=${ws.id}` &&(await back.browser.fetch('/api/workspaces')).json.workspaces.some((w) => w.id === ws.id), `after reactivating: ${back.landed}`);
+      const actions = await auditActions();
+      for (const a of ['scim.token_created', 'scim.user_provisioned', 'scim.user_deprovisioned', 'scim.user_reactivated', 'sso.login_refused', 'sso.login', 'sso.domain_verified', 'sso.connection_saved'])
+        assert(actions.includes(a), `${a} missing from the audit log (${[...new Set(actions)].join(', ')})`);
+    });
+
+    await check('an admin’s deactivation in the console also keeps someone out of SSO, and the directory’s next sync does not lift it', async () => {
+      assert((await O.req('POST', `/api/workspaces/${ws.id}/admin/members/${zed.id}/deactivate`)).status === 200, 'deactivate');
+      await scim('PUT', `/Users/${zed.id}`, { schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'], userName: zedEmail, name: { givenName: 'Zed', familyName: 'Dir' }, active: true });
+      assert((await adminMember(zed.id))?.deactivated === true, 'a directory sync reactivated someone an admin deactivated');
+      assert((await samlSignIn(port, ws.id, idp, zedEmail)).landed === '/login?error=sso_removed', 'SSO let a deactivated member in');
+      assert((await O.req('POST', `/api/workspaces/${ws.id}/admin/members/${zed.id}/reactivate`)).status === 200, 'reactivate');
+    });
+
+    await check('directory groups map to roles in Freero: the highest mapped role wins, leaving the group returns the default role, and an owner is never changed', async () => {
+      const ownerScim = (await scim('POST', '/Users', { schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'], userName: O.email, active: true })).json;
+      assert(ownerScim.id === O.id, 'the owner was not linked to their account');
+      const admins = (await scim('POST', '/Groups', { schemas: ['urn:ietf:params:scim:schemas:core:2.0:Group'], displayName: `Admins ${stamp}`, members: [{ value: zed.id }, { value: O.id }] })).json;
+      const guests = (await scim('POST', '/Groups', { schemas: ['urn:ietf:params:scim:schemas:core:2.0:Group'], displayName: `Guests ${stamp}`, members: [{ value: O.id }] })).json;
+      const roleOf = async (id) => (await O.req('GET', `/api/workspaces/${ws.id}/members`)).json.members.find((m) => m.userId === id)?.role;
+      assert((await roleOf(zed.id)) === 'member', 'role before mapping');
+      assert((await O.req('PUT', api(`/groups/${admins.id}`), { mapping: { kind: 'role', role: 'admin' } })).status === 200, 'map admins');
+      assert((await O.req('PUT', api(`/groups/${guests.id}`), { mapping: { kind: 'role', role: 'guest' } })).status === 200, 'map guests');
+      assert((await roleOf(zed.id)) === 'admin', `mapped admin: ${await roleOf(zed.id)}`);
+      assert((await roleOf(O.id)) === 'owner', `the owner was changed to ${await roleOf(O.id)}`);
+      await scim('PATCH', `/Groups/${admins.id}`, { schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'], Operations: [{ op: 'remove', path: `members[value eq "${zed.id}"]` }] });
+      assert((await roleOf(zed.id)) === 'member', `after leaving the group: ${await roleOf(zed.id)}`);
+    });
+
+    await check("a directory group mapped to a private project gives its members that project's boards; leaving the group takes them away", async () => {
+      const project = (await O.req('POST', `/api/workspaces/${ws.id}/projects`, { name: 'Secret', access: 'private' })).json.project;
+      const secret = (await O.req('POST', '/api/boards', { title: 'Secret plan', workspaceId: ws.id, projectId: project.id })).json.board;
+      const zb = (await samlSignIn(port, ws.id, idp, zedEmail)).browser;
+      assert((await zb.fetch(`/api/boards/${secret.id}`)).status !== 200, 'Zed sees the private board before the mapping');
+      const team = (await scim('POST', '/Groups', { schemas: ['urn:ietf:params:scim:schemas:core:2.0:Group'], displayName: `Secret team ${stamp}`, members: [{ value: zed.id }] })).json;
+      assert((await O.req('PUT', api(`/groups/${team.id}`), { mapping: { kind: 'project', projectId: project.id } })).status === 200, 'map project');
+      assert((await zb.fetch(`/api/boards/${secret.id}`)).status === 200, 'Zed does not see the private board after the mapping');
+      await scim('PATCH', `/Groups/${team.id}`, { schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'], Operations: [{ op: 'Remove', path: 'members', value: [{ value: zed.id }] }] });
+      assert((await zb.fetch(`/api/boards/${secret.id}`)).status !== 200, 'Zed kept the private board after leaving the group');
+    });
+
+    await check('token rotation: a rotated token stops working at once and its replacement works; with overlap, a second token works and the revoked one is refused; all audited', async () => {
+      const old = (await O.req('GET', api())).json.tokens.find((t) => token.startsWith(t.prefix));
+      const rotated = await O.req('POST', api(`/tokens/${old.id}/rotate`));
+      assert(rotated.status === 200 && rotated.json.token !== token, rotated.text);
+      assert((await scim('GET', '/Users')).status === 401, 'the rotated token still works');
+      const viaRotated = scimClient(base, rotated.json.token);
+      assert((await viaRotated('GET', '/Users')).status === 200, 'the replacement token');
+      const second = (await O.req('POST', api('/tokens'), { label: 'Okta (overlap)' })).json;
+      assert((await scimClient(base, second.token)('GET', '/Users')).status === 200, 'second token');
+      const replaced = second.settings.tokens.find((t) => rotated.json.token.startsWith(t.prefix));
+      assert((await O.req('DELETE', api(`/tokens/${replaced.id}`))).status === 200, 'revoke');
+      assert((await viaRotated('GET', '/Users')).status === 401, 'revoked token still works');
+      const actions = await auditActions();
+      assert(['scim.token_rotated', 'scim.token_revoked', 'scim.group_mapped'].every((a) => actions.includes(a)), [...new Set(actions)].join(', '));
+    });
+  } finally {
+    closeAllDocs();
+    if (proc) await stopProc(proc);
+    server = null;
+    await idp.close();
+    await dns.close();
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Enterprise: data exports and workspace deletion (KAI-50). Built by the job, announced by mail,
+// downloaded with the requester's session; the ZIP's contents are read back.
+// ---------------------------------------------------------------------------
+async function privacyChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-privacy-'));
+  const { unzipSync, strFromU8 } = await import('fflate');
+  let proc = null;
+  try {
+    const env = { DATA_EXPORT_INTERVAL_SECONDS: '1' };
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    const up = await check('privacy server boots', async () => {
+      proc = await waitUp(await spawnServer(dataDir, env));
+    });
+    if (!up) return;
+    const port = proc.port;
+    server = proc;
+    const U = new User('Exporter', port);
+    const W = new User('Other', port);
+    for (const u of [U, W]) {
+      await u.signup();
+      await u.verifyEmail(dataDir);
+    }
+    /**
+     * Waits for the "ready" mail to `to` (its link opens the page that lists the export: Account
+     * settings, or the workspace's settings), then returns the newest ready export's download path.
+     */
+    const mailedExport = async (u, after, { workspaceId = null } = {}) => {
+      let mail = null;
+      await waitFor(
+        () => (mail = outbox(dataDir).filter((x) => x.to === u.email && x.sentAt >= after - 50 && /export/i.test(x.subject)).at(-1)),
+        30_000,
+        `the export mail to ${u.email}`,
+      );
+      const page = workspaceId ? `/admin/${workspaceId}?tab=retention#data` : '/settings#data';
+      assert(mail.text.includes(page), `the mail links elsewhere: ${mail.text}`);
+      const list = (await u.req('GET', workspaceId ? `/api/workspaces/${workspaceId}/exports` : '/api/me/exports')).json.exports;
+      assert(list[0]?.status === 'ready', JSON.stringify(list));
+      return `/api/exports/${list[0].id}/download`;
+    };
+    const download = async (u, link) => {
+      const res = await fetch(`http://127.0.0.1:${port}${link}`, { headers: { cookie: u.cookie } });
+      return { status: res.status, type: res.headers.get('content-type'), bytes: new Uint8Array(await res.arrayBuffer()) };
+    };
+
+    // U's data: a board with a sticky and an image, a comment on W's board (W replies), a template, an avatar.
+    const image = (await U.req('POST', '/api/uploads', PNG_1PX, { raw: true, headers: { 'content-type': 'image/png' } })).json.url;
+    const mine = (await U.req('POST', '/api/boards', { title: 'My roadmap' })).json.board;
+    const wBoard = (await W.req('POST', '/api/boards', { title: 'Their board' })).json.board;
+    await W.req('POST', `/api/boards/${wBoard.id}/members`, { email: U.email, role: 'commenter' });
+    const uc = connectDoc(U, mine.id);
+    await uc.ready();
+    uc.doc.transact(() => {
+      els(uc).set('s1', { id: 's1', type: 'sticky', x: 0, y: 0, w: 200, h: 200, text: '<p>Ship exports</p>', index: 0 });
+      els(uc).set('i1', { id: 'i1', type: 'image', x: 300, y: 0, w: 100, h: 100, src: image, index: 1 });
+    });
+    const onW = connectDoc(U, wBoard.id);
+    await onW.ready();
+    onW.doc.transact(() => {
+      onW.doc.getMap('comments').set('t:th1', { kind: 'thread', id: 'th1', x: 10, y: 10, elementId: null, createdAt: Date.now(), createdBy: U.id });
+      onW.doc.getMap('comments').set('m:th1:m1', { kind: 'message', threadId: 'th1', id: 'm1', authorId: U.id, authorName: U.name, text: 'My exported comment', createdAt: Date.now() });
+    });
+    const wc = connectDoc(W, wBoard.id);
+    await wc.ready();
+    await waitFor(() => wc.doc.getMap('comments').has('m:th1:m1'), 5000, 'W to receive the comment');
+    wc.doc.getMap('comments').set('m:th1:m2', { kind: 'message', threadId: 'th1', id: 'm2', authorId: W.id, authorName: W.name, text: 'W private reply', createdAt: Date.now() });
+    await sleep(800); // saved
+    await U.req('POST', '/api/templates', { name: 'Kickoff', description: '', content: { elements: [{ id: 'f1', type: 'frame', x: 0, y: 0, w: 400, h: 300, title: 'Kickoff', index: 0 }] } });
+
+    let files = null;
+    await check('personal data export: built by the job, mailed as a link, downloaded by its owner as a ZIP of profile, memberships, comments (with board context), owned boards (JSON + Yjs + images), templates, uploads and notifications', async () => {
+      const after = Date.now();
+      const r = await U.req('POST', '/api/me/exports');
+      assert(r.status === 202 && r.json.export.status === 'pending', r.text);
+      const link = await mailedExport(U, after);
+      const dl = await download(U, link);
+      assert(dl.status === 200 && dl.type === 'application/zip', `download: ${dl.status} ${dl.type}`);
+      files = unzipSync(dl.bytes);
+      const read = (p) => JSON.parse(strFromU8(files[p]));
+      const names = Object.keys(files);
+      assert(read('account.json').profile.email === U.email, 'account.json');
+      assert(!strFromU8(files['account.json']).includes('scrypt'), 'a password hash leaked into the export');
+      const comments = read('comments.json');
+      const onTheirs = comments.find((c) => c.board.id === wBoard.id);
+      assert(onTheirs?.board.title === 'Their board' && onTheirs.threads[0].messages.map((m) => m.text).join() === 'My exported comment', JSON.stringify(comments));
+      assert(!strFromU8(files['comments.json']).includes('W private reply'), "another person's reply is in the export");
+      const boardDir = names.find((n) => n.endsWith(`-${mine.id}/board.json`))?.replace('/board.json', '');
+      assert(boardDir, `no board folder in ${names.join(', ')}`);
+      const board = read(`${boardDir}/board.json`);
+      assert(board.board.title === 'My roadmap' && board.content.elements.s1.text.includes('Ship exports'), JSON.stringify(board).slice(0, 300));
+      const yd = new Y.Doc();
+      Y.applyUpdate(yd, files[`${boardDir}/board.yjs`]);
+      assert(yd.getMap('elements').get('i1')?.src === image, 'board.yjs does not hold the board');
+      const imageName = image.slice('/uploads/'.length);
+      assert(files[`${boardDir}/files/${imageName}`]?.length === PNG_1PX.length && files[`uploads/${imageName}`], 'images missing');
+      assert(names.some((n) => /^templates\/kickoff-.*\.json$/.test(n)), 'template missing');
+      assert(read('notifications.json').notifications.some((n) => n.type === 'board.shared' || n.boardId === wBoard.id), JSON.stringify(read('notifications.json')).slice(0, 300));
+      assert(read('memberships.json').boards.some((b) => b.boardId === wBoard.id && b.role === 'commenter'), 'board membership missing');
+    });
+
+    await check("an export link works only for the person who asked for it", async () => {
+      const exports = (await U.req('GET', '/api/me/exports')).json.exports;
+      const link = `/api/exports/${exports[0].id}/download`;
+      assert((await download(W, link)).status === 404, 'someone else downloaded it');
+      assert((await fetch(`http://127.0.0.1:${port}${link}`)).status === 401, 'downloaded signed out');
+    });
+
+    const O = new User('WsOwner', port);
+    const M = new User('WsMember', port);
+    for (const u of [O, M]) {
+      await u.signup();
+      await u.verifyEmail(dataDir);
+    }
+    const team = (await O.req('POST', '/api/workspaces', { name: `Exported team ${Date.now()}` })).json.workspace;
+    assert((await O.req('POST', `/api/workspaces/${team.id}/members`, { email: M.email, role: 'member' })).status === 201, 'add member');
+    const teamBoard = (await O.req('POST', '/api/boards', { title: 'Team board', workspaceId: team.id })).json.board;
+    let wsLink = null;
+    await check('workspace export: owners/admins only; the ZIP holds the directory (members with emails, projects) and every board', async () => {
+      assert((await M.req('POST', `/api/workspaces/${team.id}/exports`)).status === 403, 'a member exported the workspace');
+      const after = Date.now();
+      assert((await O.req('POST', `/api/workspaces/${team.id}/exports`)).status === 202, 'owner export');
+      wsLink = await mailedExport(O, after, { workspaceId: team.id });
+      const dl = await download(O, wsLink);
+      assert(dl.status === 200, `download ${dl.status}`);
+      const z = unzipSync(dl.bytes);
+      const ws = JSON.parse(strFromU8(z['workspace.json']));
+      assert(ws.members.some((m) => m.email === M.email && m.role === 'member') && ws.workspace.id === team.id, JSON.stringify(ws).slice(0, 300));
+      assert(Object.keys(z).some((n) => n.endsWith(`-${teamBoard.id}/board.json`)), 'team board missing');
+      // The workspace's export is its own audit event; a member's personal export is not the team's business.
+      assert((await M.req('POST', '/api/me/exports')).status === 202, "the member's own export");
+      await sleep(300);
+      const actions = (await O.req('GET', `/api/workspaces/${team.id}/audit?limit=200`)).json.events.map((e) => e.action);
+      assert(actions.includes('workspace.export_requested') && actions.includes('workspace.export_downloaded'), actions.join(', '));
+      assert(!actions.includes('account.export_requested'), 'a member’s personal export shows in the team’s audit log');
+    });
+
+    await check('deleting a workspace mails every owner a receipt, and its exports stop being downloadable', async () => {
+      const after = Date.now();
+      const del = await O.req('DELETE', `/api/workspaces/${team.id}`, { confirm: team.name });
+      assert(del.status === 200, del.text);
+      await waitFor(() => outbox(dataDir).some((m) => m.to === O.email && m.sentAt >= after - 50 && /was deleted/.test(m.subject)), 5000, 'the deletion receipt');
+      assert((await download(O, wsLink)).status === 404, 'the deleted workspace’s export is still downloadable');
+    });
+  } finally {
+    closeAllDocs();
+    if (proc) await stopProc(proc);
+    server = null;
     try {
       fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     } catch {
@@ -3626,6 +4387,69 @@ async function moderationChecks() {
       assert((await M.req('POST', '/api/auth/login', { email: M.email, password: 'password-123' })).status === 200, 'login after the suspension was lifted');
     });
 
+    await check('moderation (KAI-180): suspending with "take its boards down" closes every board the account owns to its link visitors at once, each recorded; lifting the suspension opens them again', async () => {
+      const boards = [];
+      for (const title of ['Spam 1', 'Spam 2']) boards.push(await board(title));
+      const visitor = connectDoc(L, boards[0].id);
+      await visitor.ready();
+      const r = await act({ action: 'user.suspend', targetId: O.id, statement: 'Spam account.', boards: 'take_down' });
+      assert(r.status === 200, r.text);
+      await waitFor(() => visitor.closeCodes.includes(4451), 5000, "the link visitor's socket to close as removed");
+      for (const b of boards) assert((await L.req('GET', `/api/boards/${b.id}`)).status === 451, `${b.title} still open to its link`);
+      const history = (await Op.req('GET', `/api/moderation/boards/${boards[1].id}`)).json.actions;
+      assert(history.some((a) => a.action === 'board.take_down' && a.parentId === r.json.action.id && a.subject?.email === O.email), JSON.stringify(history));
+      visitor.destroy();
+      assert((await act({ action: 'user.restore', targetId: O.id, statement: '' })).status === 200, 'lift');
+      for (const b of boards) assert((await L.req('GET', `/api/boards/${b.id}`)).status === 200, `${b.title} not back after the lift`);
+      assert((await O.req('POST', '/api/auth/login', { email: O.email, password: 'password-123' })).status === 200, 'owner signs in again');
+    });
+
+    await check('moderation (KAI-178): a team workspace holding a taken-down board cannot be deleted; once the operator deletes the board for good, it can', async () => {
+      const team = (await O.req('POST', '/api/workspaces', { name: 'Held team' })).json.workspace;
+      const b = (await O.req('POST', '/api/boards', { title: 'Held', workspaceId: team.id })).json.board;
+      assert(b?.workspaceId === team.id, `board in team: ${JSON.stringify(b)}`);
+      assert((await act({ action: 'board.take_down', targetId: b.id, reason: 'illegal', statement: 'Unlawful content.' })).status === 200, 'take down');
+      const refused = await O.req('DELETE', `/api/workspaces/${team.id}`, { confirm: 'Held team' });
+      assert(refused.status === 409 && refused.json?.code === 'workspace_board_held', `${refused.status} ${refused.text}`);
+      assert((await Op.req('GET', `/api/moderation/boards/${b.id}`)).status === 200, 'the held board is gone');
+      assert((await act({ action: 'board.delete', targetId: b.id, reason: 'illegal', statement: 'Deleted after review.' })).status === 200, 'delete for good');
+      assert((await Op.req('GET', `/api/moderation/boards/${b.id}`)).status === 404, 'the board survived its deletion');
+      const deleted = await O.req('DELETE', `/api/workspaces/${team.id}`, { confirm: 'Held team' });
+      assert(deleted.status === 200 || deleted.status === 204, `${deleted.status} ${deleted.text}`);
+    });
+
+    await check('moderation (KAI-177): uploads are cached for an hour, then revalidated cheaply (304 by ETag) — and a browser revalidating a file removed meanwhile gets 410, not its copy', async () => {
+      const url = (await O.req('POST', '/api/uploads', PNG_1PX, { raw: true, headers: { 'content-type': 'image/png' } })).json.url;
+      const get = (headers = {}) => fetch(`http://127.0.0.1:${server.port}${url}`, { headers, redirect: 'manual' });
+      const first = await get();
+      const etag = first.headers.get('etag');
+      assert(first.status === 200 && first.headers.get('cache-control') === 'public, max-age=3600' && etag, `${first.status} ${first.headers.get('cache-control')} ${etag}`);
+      assert((await get({ 'if-none-match': etag })).status === 304, 'revalidation is not a 304');
+      assert((await act({ action: 'upload.remove', targetId: url, reason: 'illegal', statement: 'Unlawful image.' })).status === 200, 'remove');
+      const again = await get({ 'if-none-match': etag });
+      assert(again.status === 410 && again.headers.get('cache-control') === 'no-store', `after removal: ${again.status} ${again.headers.get('cache-control')}`);
+    });
+
+    await check('moderation (KAI-179): with MODERATION_KEEP_REMOVED_DAYS=0 the retention job deletes the kept copy of a removed file (the URL stays 410); one with an open report is kept', async () => {
+      await stopServer();
+      env.MODERATION_KEEP_REMOVED_DAYS = '0';
+      env.MODERATION_RETENTION_INTERVAL_SECONDS = '1';
+      await boot();
+      const upload = async () => (await O.req('POST', '/api/uploads', PNG_1PX, { raw: true, headers: { 'content-type': 'image/png' } })).json.url.slice('/uploads/'.length);
+      const [expiring, contested] = [await upload(), await upload()];
+      const shown = await board('Shows the contested file');
+      // Under review before it is removed: the job (every second) never races the report.
+      const reportFile = await L.req('POST', '/api/reports', { boardId: shown.id, target: { kind: 'upload', id: contested }, reason: 'copyright' });
+      assert(reportFile.status === 202 || reportFile.status === 200, `report: ${reportFile.status} ${reportFile.text}`);
+      for (const name of [contested, expiring]) assert((await act({ action: 'upload.remove', targetId: name, reason: 'illegal', statement: 'Unlawful image.' })).status === 200, 'remove');
+      const file = async (name) => (await Op.req('GET', `/api/moderation/uploads/${name}`)).json.upload;
+      await waitFor(async () => (await file(expiring))?.restorable === false, 8000, 'the retention job to delete the kept copy');
+      assert((await fileStatus(`/uploads/${expiring}`)) === 410, 'the removed file is not 410 any more');
+      assert((await file(contested))?.restorable === true, 'the kept copy of a file under appeal was deleted');
+      delete env.MODERATION_KEEP_REMOVED_DAYS;
+      delete env.MODERATION_RETENTION_INTERVAL_SECONDS;
+    });
+
     await check('moderation: reports are rate-limited per address (429 with Retry-After)', async () => {
       let last = null;
       for (let i = 0; i < REPORT_LIMIT + 2 && last?.status !== 429; i++)
@@ -3769,6 +4593,9 @@ const SUITES = {
   notify: notificationChecks,
   teams: teamsChecks,
   platform: platformChecks,
+  sso: ssoChecks,
+  scim: scimChecks,
+  privacy: privacyChecks,
   moderation: moderationChecks,
   multi: multiInstanceChecks,
   admin: enterpriseAdminChecks,

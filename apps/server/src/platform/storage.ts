@@ -3,6 +3,11 @@
 //
 // With S3 configured, reads fall back to the local disk for keys S3 does not have, so files
 // uploaded before the switch keep working until they are copied over (docs/operations.md).
+//
+// Two areas: 'public' (default; with S3 under `uploads/`, which S3_PUBLIC_URL may expose) and
+// 'private' (with S3 under `private/`, never covered by the public URL: kept copies of files an
+// operator removed, KAI-179). On local disk both live in the same directory, which is never
+// served as such.
 import fs from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
@@ -29,13 +34,21 @@ export interface StoredKey {
   size: number;
 }
 
+export type StorageArea = 'public' | 'private';
+
+export interface PutOptions {
+  area?: StorageArea;
+  /** Cache-Control stored with the object (S3: sent by the bucket and a CDN in front of it). */
+  cacheControl?: string;
+}
+
 export interface ObjectStorage {
   readonly kind: 'local' | 's3';
-  put(key: string, data: Uint8Array, contentType: string): Promise<void>;
+  put(key: string, data: Uint8Array, contentType: string, opts?: PutOptions): Promise<void>;
   /** The object, or null when there is no such key. */
-  get(key: string): Promise<StoredObject | null>;
+  get(key: string, opts?: { area?: StorageArea }): Promise<StoredObject | null>;
   /** Deleting a missing key is not an error. */
-  delete(key: string): Promise<void>;
+  delete(key: string, opts?: { area?: StorageArea }): Promise<void>;
   /** A URL clients may fetch the object from directly, or null when the app must stream it. */
   publicUrl(key: string): string | null;
   /** Every stored key (in no particular order; with S3, also the local-disk fallback's). */
@@ -44,6 +57,8 @@ export interface ObjectStorage {
 }
 
 const KEY_RE = /^[A-Za-z0-9_.-]{1,128}$/;
+/** S3 prefix of the private area: outside `uploads/`, so a public-read policy on that never covers it. */
+const PRIVATE_PREFIX = 'private/';
 function checkKey(key: string): string {
   if (!KEY_RE.test(key) || key.startsWith('.')) throw new Error(`invalid storage key: ${key}`);
   return key;
@@ -56,7 +71,7 @@ export class LocalStorage implements ObjectStorage {
   private file(key: string) {
     return path.join(this.dir, checkKey(key));
   }
-  async put(key: string, data: Uint8Array, _contentType?: string): Promise<void> {
+  async put(key: string, data: Uint8Array, _contentType?: string, _opts?: PutOptions): Promise<void> {
     await fs.promises.mkdir(this.dir, { recursive: true });
     // Write then rename: a reader never sees a half-written file.
     const tmp = `${this.file(key)}.${process.pid}.tmp`;
@@ -125,32 +140,45 @@ export class S3Storage implements ObjectStorage {
     });
   }
 
-  async put(key: string, data: Uint8Array, contentType: string): Promise<void> {
+  private objectKey(key: string, area: StorageArea = 'public'): string {
+    return (area === 'private' ? PRIVATE_PREFIX : this.prefix) + checkKey(key);
+  }
+
+  async put(key: string, data: Uint8Array, contentType: string, opts: PutOptions = {}): Promise<void> {
     await this.client.send(
       new PutObjectCommand({
         Bucket: this.s3.bucket,
-        Key: this.prefix + checkKey(key),
+        Key: this.objectKey(key, opts.area),
         Body: data,
         ContentType: contentType,
-        CacheControl: 'public, max-age=31536000, immutable',
+        CacheControl: opts.area === 'private' ? 'private, no-store' : (opts.cacheControl ?? 'public, max-age=3600'),
       }),
     );
   }
 
-  async get(key: string): Promise<StoredObject | null> {
+  private async getObject(objectKey: string): Promise<StoredObject | null> {
     try {
-      const out = await this.client.send(new GetObjectCommand({ Bucket: this.s3.bucket, Key: this.prefix + checkKey(key) }));
+      const out = await this.client.send(new GetObjectCommand({ Bucket: this.s3.bucket, Key: objectKey }));
       if (!out.Body) return null;
       return { body: out.Body as Readable, contentType: out.ContentType ?? null, size: out.ContentLength ?? null };
     } catch (e) {
-      if (e instanceof S3ServiceException && (e.name === 'NoSuchKey' || e.$metadata.httpStatusCode === 404))
-        return this.fallback ? this.fallback.get(key) : null;
+      if (e instanceof S3ServiceException && (e.name === 'NoSuchKey' || e.$metadata.httpStatusCode === 404)) return null;
       throw e;
     }
   }
 
-  async delete(key: string): Promise<void> {
-    await this.client.send(new DeleteObjectCommand({ Bucket: this.s3.bucket, Key: this.prefix + checkKey(key) }));
+  async get(key: string, opts: { area?: StorageArea } = {}): Promise<StoredObject | null> {
+    // A private object made before the private area existed lives under the public prefix.
+    return (
+      (await this.getObject(this.objectKey(key, opts.area))) ??
+      (opts.area === 'private' ? await this.getObject(this.objectKey(key)) : null) ??
+      (this.fallback ? this.fallback.get(key) : null)
+    );
+  }
+
+  async delete(key: string, opts: { area?: StorageArea } = {}): Promise<void> {
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.s3.bucket, Key: this.objectKey(key, opts.area) }));
+    if (opts.area === 'private') await this.client.send(new DeleteObjectCommand({ Bucket: this.s3.bucket, Key: this.objectKey(key) }));
     await this.fallback?.delete(key);
   }
 

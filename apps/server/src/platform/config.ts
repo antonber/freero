@@ -25,6 +25,9 @@ export type RateLimitName =
   | 'twoFactorRecovery'
   | 'auditExport'
   | 'oidc'
+  | 'sso'
+  | 'scim'
+  | 'dataExport'
   | 'accessRequest'
   | 'guestJoin'
   | 'report'
@@ -127,6 +130,11 @@ export interface Config {
   /** How often each instance looks for accounts due to be purged. */
   accountPurgeIntervalMs: number;
   /**
+   * How often each instance re-checks the sessions of its open board and notification sockets
+   * against the database, closing those whose session ended anywhere (CLI, SQL, expiry).
+   */
+  sessionRecheckMs: number;
+  /**
    * How long a "lost my authenticator" recovery waits before two-step verification can be removed
    * (the owner is mailed at the start and before the end, and can cancel). At least a day in production.
    */
@@ -148,10 +156,31 @@ export interface Config {
   /** A MaxMind-format (.mmdb) GeoLite2/GeoIP2 City or Country database for session locations, or null. */
   geoipDbPath: string | null;
   /**
+   * DNS servers ("ip" or "ip:port") that domain verification for single sign-on asks for TXT
+   * records; empty = the system resolver. Never skips the lookup.
+   */
+  ssoDnsServers: string[];
+  /** How long a finished data export can be downloaded before its file is deleted. */
+  dataExportTtlMs: number;
+  /** How often each instance looks for data exports to build. */
+  dataExportIntervalMs: number;
+  /**
    * Operators (moderation queue and actions): lower-cased addresses. An account is an operator
    * only while its address is listed AND verified.
    */
   operatorEmails: string[];
+  /**
+   * How long the kept copy of a file an operator removed is kept for a possible restore before it
+   * is deleted for good (KAI-179); never while a report or appeal about it is open. 0: at the next run.
+   */
+  moderationKeepRemovedMs: number;
+  /** How often the kept-copy retention runs (one instance at a time). */
+  moderationRetentionIntervalMs: number;
+  /**
+   * How long browsers and caches may reuse an uploaded file without asking again (KAI-177): what
+   * bounds how long a file an operator removed keeps showing where it was already loaded.
+   */
+  uploadCacheSeconds: number;
   /** Where people (and the notices Freero sends) can reach the people handling abuse reports, or null. */
   abuseContactEmail: string | null;
   /** RFC 9116 `Contact:` for /.well-known/security.txt (mailto: or https: URL); defaults to the abuse contact. */
@@ -189,6 +218,9 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   twoFactorRecovery: '3/1d', // "lost my authenticator" recoveries started, per IP and per account
   auditExport: '20/1h', // per user: audit log exports (each reads up to 100k events)
   oidc: '60/10m', // "Sign in with …" starts and callbacks per IP
+  sso: '120/10m', // workspace single sign-on: discovery, starts, assertion posts and callbacks per IP
+  scim: '1200/1m', // SCIM requests per provisioning token (Okta and Entra sync in bursts)
+  dataExport: '5/1d', // data exports requested per user (each builds a ZIP of everything)
   accessRequest: '20/1h', // per user: asking for access to boards
   guestJoin: '20/1h', // per IP: visitors joining a shared board without an account
   outline: '120/1m', // per user: board outlines (each reads and walks the whole board)
@@ -215,6 +247,9 @@ const ENV_NAME: Record<RateLimitName, string> = {
   twoFactorRecovery: 'RATE_LIMIT_TWO_FACTOR_RECOVERY',
   auditExport: 'RATE_LIMIT_AUDIT_EXPORT',
   oidc: 'RATE_LIMIT_OIDC',
+  sso: 'RATE_LIMIT_SSO',
+  scim: 'RATE_LIMIT_SCIM',
+  dataExport: 'RATE_LIMIT_DATA_EXPORT',
   accessRequest: 'RATE_LIMIT_ACCESS_REQUEST',
   guestJoin: 'RATE_LIMIT_GUEST_JOIN',
   outline: 'RATE_LIMIT_OUTLINE',
@@ -371,6 +406,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   const metricsPort = str('METRICS_PORT') === null ? null : int('METRICS_PORT', 0, 1, 65535);
 
+  const ssoDnsServers = (str('SSO_DNS_SERVERS') ?? '')
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean);
+  for (const s of ssoDnsServers)
+    if (!/^(\d{1,3}(\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(:\d{1,5})?$|^[0-9a-fA-F:]+$/.test(s))
+      problems.push(`SSO_DNS_SERVERS: "${s}" is not an IP address (optionally with :port)`);
   // Moderation (KAI-142): operators by address; the abuse / security contacts people see.
   const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const operatorEmails = (str('OPERATOR_EMAILS') ?? '')
@@ -422,6 +464,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     shutdownDrainMs: int('SHUTDOWN_DRAIN_SECONDS', production ? 5 : 0, 0, 300) * 1000,
     accountDeletionGraceMs: int('ACCOUNT_DELETION_GRACE_DAYS', 14, 0, 365) * 86_400_000,
     accountPurgeIntervalMs: int('ACCOUNT_PURGE_INTERVAL_SECONDS', 3600, 1, 7 * 86_400) * 1000,
+    sessionRecheckMs: int('SESSION_RECHECK_SECONDS', 60, 1, 3600) * 1000,
     // Shorter than a day only outside production (tests); see docs/configuration.md.
     twoFactorRecoveryDelayMs: int('TWO_FACTOR_RECOVERY_DELAY_SECONDS', 7 * 86_400, production ? 86_400 : 1, 90 * 86_400) * 1000,
     twoFactorUndoMs: int('TWO_FACTOR_UNDO_HOURS', 72, 1, 14 * 24) * 3_600_000,
@@ -431,7 +474,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     rateLimits,
     oidcProviders,
     geoipDbPath,
+    ssoDnsServers,
+    dataExportTtlMs: int('DATA_EXPORT_TTL_HOURS', 168, 1, 24 * 90) * 3_600_000,
+    dataExportIntervalMs: int('DATA_EXPORT_INTERVAL_SECONDS', 15, 1, 86_400) * 1000,
     operatorEmails,
+    moderationKeepRemovedMs: int('MODERATION_KEEP_REMOVED_DAYS', 30, 0, 3650) * 86_400_000,
+    moderationRetentionIntervalMs: int('MODERATION_RETENTION_INTERVAL_SECONDS', 3600, 1, 86_400) * 1000,
+    uploadCacheSeconds: int('UPLOAD_CACHE_SECONDS', 3600, 0, 31_536_000),
     abuseContactEmail,
     securityContact: securityContact ?? (abuseContactEmail ? `mailto:${abuseContactEmail}` : null),
   };

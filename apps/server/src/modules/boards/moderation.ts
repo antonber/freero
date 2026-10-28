@@ -3,7 +3,8 @@
 // idempotent — false when the board already was in that state — so a retried or doubled request
 // changes nothing twice.
 import type { LinkAccess } from '@freero/shared';
-import { refreshBoardAccess } from '../realtime/index';
+import { closeBoardDoc, refreshBoardAccess } from '../realtime/index';
+import { deleteUpload } from '../uploads/index';
 import * as repo from './repo';
 import type { Board } from './repo';
 import { closeKeepingContent, describeAccess, guestRoleFor } from './service';
@@ -65,6 +66,33 @@ export async function takeDownBoard(boardId: string): Promise<boolean> {
 /** Puts a taken-down board back in service, as it was. */
 export function restoreTakenDownBoard(boardId: string): Promise<boolean> {
   return repo.setRemoved(boardId, null);
+}
+
+/**
+ * Deletes a taken-down board for good (an operator's decision, KAI-178): the row — members, stars,
+ * opens, doc and layers cascade — then its thumbnail. Nothing else ever deletes a taken-down board
+ * (owners can't, the trash purge, account purge and workspace deletion leave it), so this is how
+ * a review that keeps it from its owner ends. False when it isn't taken down.
+ */
+export async function deleteTakenDownBoard(boardId: string): Promise<boolean> {
+  const thumbnail = await repo.deleteTakenDown(boardId);
+  if (thumbnail === undefined) return false;
+  await closeBoardDoc(boardId); // nobody is connected (taken down); make sure nothing saves after
+  await deleteUpload(thumbnail);
+  return true;
+}
+
+/**
+ * Taken-down boards are held for review (KAI-178): the account purge waits while its owner has
+ * any, and a workspace holding one can't be deleted.
+ */
+export function countHeldBoards(by: { ownerId: string } | { workspaceId: string }): Promise<number> {
+  return repo.countHeld(by);
+}
+
+/** The user's boards in service (not trashed, not taken down), oldest first: a suspension's scope (KAI-180). */
+export function liveBoardsOwnedBy(userId: string): Promise<Array<{ id: string; title: string; linkShared: boolean }>> {
+  return repo.liveOwnedBy(userId);
 }
 
 /**

@@ -1,5 +1,6 @@
 // Workspaces: personal + team, members and roles, sharing policies, ownership transfer, and what
 // a workspace grants on its boards (asked by modules/boards for every access decision).
+import type { Request } from 'express';
 import {
   WORKSPACE_SETTING_LIMITS,
   type LinkAccess,
@@ -15,11 +16,14 @@ import {
 import { getConfig } from '../../platform/config';
 import { badRequest, forbidden, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
+import { appUrl, renderMail, sendMailLater } from '../../platform/mail';
 import { recordAudit } from '../audit/index';
 import { getUser, getUsers, hasTwoFactor } from '../auth/index';
+import { deletionHoldOn } from './holds';
 import {
   boardIdsInWorkspace,
   cleanUpDeletedBoards,
+  countHeldBoards,
   deleteBoardRowsInWorkspace,
   transferBoardsOwnedIn,
 } from '../boards/index';
@@ -251,21 +255,51 @@ export async function updateSettings(workspaceId: string, userId: string, body: 
  * name. Board rows go in the same transaction as the workspace, under its lock (so no board can
  * be created in it meanwhile); then everyone connected is disconnected.
  */
-export async function deleteWorkspace(workspaceId: string, userId: string, confirm: unknown): Promise<void> {
+export async function deleteWorkspace(req: Request | null, workspaceId: string, userId: string, confirm: unknown): Promise<void> {
   const { workspace } = await requireWorkspace(workspaceId, userId, 'owner');
   teamOnly(workspace);
   if (typeof confirm !== 'string' || confirm.trim() !== workspace.name) throw badRequest('Type the workspace name to confirm');
-  await deleteTeamWorkspaceNow(workspace, userId);
+  const hold = await deletionHoldOn(workspaceId);
+  if (hold) throw new HttpError(409, `This workspace can’t be deleted: ${hold}`);
+  const owners = (await repo.listMembers(workspaceId)).filter((m) => m.role === 'owner').map((m) => m.userId);
+  const boards = await deleteTeamWorkspaceNow(workspace, userId);
+  if (boards === 'held')
+    throw new HttpError(
+      409,
+      'A board in this workspace was taken down by Freero’s moderators and is under review. The workspace can be deleted once that review is over.',
+      'workspace_board_held',
+    );
+  if (boards === null) return;
+  // A receipt for every owner: what went, and that nothing of it can be restored.
+  const people = await getUsers([...owners, userId]);
+  for (const u of people.values())
+    sendMailLater({
+      to: u.email,
+      ...renderMail({
+        subject: `${workspace.name} was deleted`,
+        title: `${workspace.name} was deleted`,
+        paragraphs: [
+          `${people.get(userId)?.name ?? 'An owner'} deleted the workspace ${workspace.name} on ${new Date().toUTCString()}.`,
+          `Deleted with it: ${boards} board${boards === 1 ? '' : 's'} (their content, comments, version history and private layers), its projects, members, invitations, single sign-on and provisioning settings. Images only those boards used are removed from storage within a day.`,
+          'This can’t be undone. If you didn’t expect this, contact the person who deleted it.',
+        ],
+        action: { label: 'Open Freero', url: appUrl(req, '/app') },
+      }),
+    });
 }
 
 /**
- * The deletion is recorded in the workspace's own log (kept for the default retention after the
- * workspace is gone) and in the account log of whoever deleted it (null: the account purge).
+ * Deletes a team workspace and its boards now; returns how many boards went, or null if it was
+ * gone already, or 'held' (changing nothing) while a board in it is taken down (held for review,
+ * KAI-178; checked under the workspace lock). The deletion is recorded in the workspace's own log
+ * (kept for the default retention after the workspace is gone) and in the account log of whoever
+ * deleted it (null: the account purge).
  */
-async function deleteTeamWorkspaceNow(workspace: Workspace, actorId: string | null): Promise<void> {
+async function deleteTeamWorkspaceNow(workspace: Workspace, actorId: string | null): Promise<number | null | 'held'> {
   const workspaceId = workspace.id;
   const gone = await repo.transaction(async () => {
     if (!(await repo.lockWorkspace(workspaceId, 'update'))) return null;
+    if (await countHeldBoards({ workspaceId })) return 'held' as const;
     const boards = await deleteBoardRowsInWorkspace(workspaceId);
     await repo.deleteTeam(workspaceId);
     await recordAudit({
@@ -279,7 +313,9 @@ async function deleteTeamWorkspaceNow(workspace: Workspace, actorId: string | nu
     });
     return boards;
   });
+  if (gone === 'held') return 'held';
   if (gone) await cleanUpDeletedBoards(gone);
+  return gone ? gone.length : null;
 }
 
 /**
@@ -634,11 +670,13 @@ export async function auditScopeOf(userId: string): Promise<string[]> {
 /**
  * Before an account is purged: in every team workspace where the user is the only owner, the
  * longest-standing admin (else member, else guest) becomes owner; a team with nobody else in it is
- * deleted with its boards. Boards the user owned in team workspaces pass to an owner of that
- * workspace, so team content survives. Idempotent (a purge interrupted halfway is simply redone).
- * The personal workspace is not touched here: it goes with the account row.
+ * deleted with its boards — unless one of them is taken down (held for review, KAI-178): then it
+ * is kept, and the result counts it, so the purge waits. Boards the user owned in team workspaces
+ * pass to an owner of that workspace, so team content survives. Idempotent (a purge interrupted
+ * halfway is simply redone). The personal workspace is not touched here: it goes with the account row.
  */
-export async function handOverTeamWorkspaces(userId: string): Promise<void> {
+export async function handOverTeamWorkspaces(userId: string): Promise<{ held: number }> {
+  let held = 0;
   for (const { workspaceId } of await repo.teamMembershipsOf(userId)) {
     const orphaned = await repo.transaction(async () => {
       if (!(await repo.lockWorkspace(workspaceId, 'update'))) return null;
@@ -676,6 +714,7 @@ export async function handOverTeamWorkspaces(userId: string): Promise<void> {
         });
       return null;
     });
-    if (orphaned) await deleteTeamWorkspaceNow(orphaned, null);
+    if (orphaned && (await deleteTeamWorkspaceNow(orphaned, null)) === 'held') held++;
   }
+  return { held };
 }

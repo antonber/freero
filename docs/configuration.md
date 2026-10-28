@@ -65,8 +65,10 @@ Without them, files are stored under `FREERO_DATA_DIR/uploads`.
 
 **Serving model.** Board content always references files as `/uploads/<id>.<ext>`, independent of
 the backend, so switching backends never rewrites boards. By default the app streams each file from
-storage with `X-Content-Type-Options: nosniff`, a sandbox CSP and a one-year immutable cache header
-(file names are random and never reused) — put a CDN in front of the app to offload the bandwidth.
+storage with `X-Content-Type-Options: nosniff`, a sandbox CSP, `Cache-Control: public, max-age=<UPLOAD_CACHE_SECONDS>`
+and the file name as its ETag (names are random and never reused, so revalidating costs a 304) —
+put a CDN in front of the app to offload the bandwidth. The short lifetime instead of a year is
+what makes a file an operator removed stop showing where it was already loaded (operations.md).
 When S3 is configured, a file missing from the bucket is looked up on the local disk, so files
 uploaded before the switch keep working (copy them over with `mc mirror` / `aws s3 sync`, see
 [operations.md](operations.md#moving-local-uploads-to-object-storage)).
@@ -86,6 +88,7 @@ Links in emails point at `PUBLIC_URL` (in development: the origin the request ca
 |---|---|---|
 | `ACCOUNT_DELETION_GRACE_DAYS` | `14` | After someone deletes their account, how long they can log in and restore it before it is purged (`0` = at the next purge run). |
 | `ACCOUNT_PURGE_INTERVAL_SECONDS` | `3600` | How often each instance looks for accounts to purge. One instance purges at a time (Postgres advisory lock); a purge cut short is finished by the next run. |
+| `SESSION_RECHECK_SECONDS` | `60` | How often each instance re-checks the sessions behind its open board and notification sockets against the database and closes those whose session is gone (deleted by the admin CLI or SQL, expired, account suspended). Sessions ended through the app close their sockets at once; this bounds the delay for everything else. |
 | `TWO_FACTOR_UNDO_HOURS` | `72` | How long the "This wasn't me" button in the "two-step verification is on" notice works (1–336). Meanwhile whoever reads the account's address can remove that new authenticator, so keep it short. See ARCHITECTURE.md, "Two-step verification recovery". |
 | `TWO_FACTOR_RECOVERY_DELAY_SECONDS` | `604800` (7 days) | How long a "lost my authenticator" recovery waits before the link that removes two-step verification is mailed. The owner is mailed at the start and a day before the end, and using the authenticator cancels it. At least `86400` in production; shorter only for tests. |
 
@@ -126,6 +129,21 @@ connect and disconnect providers in Account settings.
 |---|---|---|
 | `GEOIP_DB_PATH` | — | Path to a MaxMind-format database, e.g. GeoLite2-City.mmdb or GeoLite2-Country.mmdb. With it, the signed-in devices list shows "City, Country" (or the country); without it, the masked network (`203.0.113.x`). Lookups are local and in memory: addresses are never sent anywhere. The file is not shipped with Freero (license): download it from MaxMind with a free account (or use another `.mmdb` provider such as DB-IP Lite) and refresh it periodically (MaxMind's `geoipupdate`); the server reads it at startup, so restart after an update. A missing or unreadable file stops the server. Behind a proxy, set `TRUST_PROXY` so the real client address is used. |
 
+## Workspace single sign-on, provisioning and data exports
+
+Single sign-on (SAML 2.0 / OpenID Connect), domains and SCIM provisioning are configured per team
+workspace by its owners/admins in the app (admin console), not here. Data exports are built in
+the background and stored as private files in the uploads storage (S3 or the data dir).
+
+| Variable | Default | Description |
+|---|---|---|
+| `SSO_DNS_SERVERS` | — (system resolver) | Comma-separated DNS servers (`ip` or `ip:port`) asked for the `_freero-verification.<domain>` TXT records that verify a workspace's domain. Set it to use a specific resolver (e.g. an internal one, or `1.1.1.1` to avoid stale caches). There is no way to skip the lookup. |
+| `DATA_EXPORT_TTL_HOURS` | `168` | How long a finished data export (personal or workspace ZIP) can be downloaded before its file is deleted. |
+| `DATA_EXPORT_INTERVAL_SECONDS` | `15` | How often each instance looks for queued exports to build (one instance builds at a time; a new request also starts one right away). |
+
+`PUBLIC_URL` must be set in production: the SAML entity ID, assertion consumer service URL, OIDC
+redirect URI and SCIM base URL that workspaces give their identity provider are built from it.
+
 ## Notifications
 
 | Variable | Default | Description |
@@ -139,6 +157,8 @@ connect and disconnect providers in Account settings.
 | Variable | Default | Description |
 |---|---|---|
 | `OPERATOR_EMAILS` | — | Comma-separated addresses of Freero's operators: they get the moderation queue at `/operator` and its API (everyone else gets 404 there). An account is an operator only while its address is listed AND verified, so someone who signs up with an operator's address gets nothing. Changing the list takes a restart (it is reviewed and deployed like any other configuration). Empty: reports are still collected, nobody can review them (logged at startup in production). See [operations.md](operations.md#moderation). |
+| `MODERATION_KEEP_REMOVED_DAYS` | `30` | How long the kept copy of a file an operator removed stays restorable. After that the retention job deletes it for good (recorded as an automatic "delete kept copy" action); never while a report or appeal about the file is open. The file's URL keeps answering 410 either way. `0`: at the next run. |
+| `MODERATION_RETENTION_INTERVAL_SECONDS` | `3600` | How often that retention runs (one instance at a time). |
 | `ABUSE_CONTACT_EMAIL` | — | Where people reach whoever handles abuse: named in every moderation notice ("questions about this decision") and in `/.well-known/security.txt`. |
 | `SECURITY_CONTACT` | `mailto:<ABUSE_CONTACT_EMAIL>` | RFC 9116 `Contact:` of `/.well-known/security.txt`, a `mailto:` or `https://` URL (your vulnerability disclosure address). With neither set, the file isn't served. |
 
@@ -162,6 +182,7 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `BODY_LIMIT_KB` | `2048` | Max JSON request body (board thumbnails are the largest). |
 | `MAX_UPLOAD_MB` | `15` | Max size of one uploaded file. |
 | `UPLOAD_QUOTA_MB` | `1024` | Total upload storage per account (board thumbnails don't count). Over quota: `413`. |
+| `UPLOAD_CACHE_SECONDS` | `3600` | How long browsers, proxies and a CDN may reuse an uploaded file before revalidating it (a 304 by ETag). Also stored on S3 objects. It bounds how long a file an operator removed keeps showing where it was already loaded. `0`: revalidate every time. |
 | `MAX_BOARDS_PER_USER` | `5000` | Boards one account may own, counted across ALL its workspaces (boards in the trash don't count). Over it, creating/duplicating/restoring/receiving a board by transfer answers `403`. |
 | `MAX_TEMPLATES_PER_USER` | `500` | Saved templates one account may own. Over it, saving another answers `403`. |
 | `MAX_WORKSPACES_PER_USER` | `20` | Team workspaces one account may own. Over it, creating another answers `403`. |
@@ -185,6 +206,9 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `RATE_LIMIT_TWO_FACTOR_RECOVERY` | `3/1d` | "Lost my authenticator" recoveries started, per IP and per account (each start mails the owner). |
 | `RATE_LIMIT_AUDIT_EXPORT` | `20/1h` | Audit log exports per user (admin console; each reads up to 100,000 events). |
 | `RATE_LIMIT_OIDC` | `60/10m` | "Sign in with …" starts and callbacks per IP. |
+| `RATE_LIMIT_SSO` | `120/10m` | Workspace single sign-on per IP: discovery by email domain, starts, assertion posts and callbacks (and domain verification checks per user). |
+| `RATE_LIMIT_SCIM` | `1200/1m` | SCIM requests per provisioning token (directories sync in bursts). `/scim/v2` also counts against `RATE_LIMIT_API` per IP. |
+| `RATE_LIMIT_DATA_EXPORT` | `5/1d` | Data exports requested per user (personal or workspace). |
 | `RATE_LIMIT_OUTLINE` | `120/1m` | Board outlines (`GET /api/boards/:id/outline`, the semantic read model) per user. |
 | `RATE_LIMIT_STRUCTURE` | `60/10m` | Structure laid out into a board (`POST /api/boards/:id/insert-structure`) per user. |
 | `RATE_LIMIT_REPORT` | `20/1h` | Abuse reports per IP and, separately, per signed-in user. |
@@ -208,7 +232,10 @@ get an HTTP 429 the client retries with backoff.
 - **CSRF**: the session cookie is `HttpOnly; SameSite=Lax` (and `Secure` in production behind
   HTTPS). Every POST/PUT/PATCH/DELETE whose `Origin` (or `Referer`) is not this site — or that a
   browser marks `Sec-Fetch-Site: cross-site` — is refused with `403`. WebSocket upgrades get the same
-  origin check (against cross-site WebSocket hijacking).
+  origin check (against cross-site WebSocket hijacking). One reviewed exception: the SAML assertion
+  consumer service (`POST /api/sso/<workspace>/saml/acs`), which the identity provider's page posts
+  to from its own origin; the signed response is the credential, and the sign-in only completes on a
+  same-site request from the browser that started it.
 - **Security notices**: the account's address gets a short mail (no opt-out) when its password is
   changed, set or reset, its email address changes (to the previous address, with a 7-day "this
   wasn't me" link when that address was verified), two-step verification is turned on or off,

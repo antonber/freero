@@ -4,7 +4,7 @@
 // Ids the server doesn't return (deleted accounts) stay unknown: initials / "@someone".
 import { useEffect, useMemo, useState } from 'react';
 import { createStore, useStore, type StoreApi } from 'zustand';
-import { mentionedUserIds } from '@freero/shared';
+import { guestDisplayName, isGuestId, mentionedUserIds } from '@freero/shared';
 import type { Editor, HostUser } from '@engine';
 
 interface Directory {
@@ -89,6 +89,20 @@ export function addMember(editor: Editor, user: HostUser): void {
   const d = directory(editor);
   remember(d, [user]);
   if (d.members) d.members = d.members.then((m) => (m.some((x) => x.id === user.id) ? m : [...m, user]));
+}
+
+/**
+ * The name a message is shown under (KAI-187): its author's CURRENT name when the board knows them
+ * (the lookup, presence) — so neither a rename nor a name typed into the record by a crafted client
+ * can make it read as someone else. The stored name is only a fallback: before the lookup answers,
+ * and for accounts that no longer exist (the purge rewrote it to "Deleted user"). A guest's always
+ * reads as a guest.
+ */
+export function authorName(m: { authorId: string; authorName: string }, people: Record<string, HostUser>): string {
+  const known = people[m.authorId];
+  if (known) return known.name;
+  if (isGuestId(m.authorId)) return m.authorName.startsWith(guestDisplayName('')) ? m.authorName : guestDisplayName(m.authorName);
+  return m.authorName;
 }
 
 /** Profiles for the authors and @mentioned people of these messages. */

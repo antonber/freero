@@ -176,6 +176,96 @@ What a rotation does not carry over:
   opened. The job logs how many; those people sign in with a recovery code and turn two-step
   verification on again. Nothing else is lost.
 
+## Workspace single sign-on and provisioning
+
+Owners/admins of a team workspace set these up in the admin console (`/admin/<workspace>`, tabs
+Single sign-on and Provisioning); operators only need
+`PUBLIC_URL` (the SAML/OIDC/SCIM URLs are built from it) and outbound DNS (`SSO_DNS_SERVERS` to pick
+the resolver).
+
+- **Domains** are verified by a TXT record `_freero-verification.<domain>` =
+  `freero-verification=<token>`. One workspace at most holds a domain verified. To move a domain
+  to another workspace, its current workspace removes it first.
+- **A broken identity provider** (expired certificate, deleted app): the break-glass owner chosen
+  when "Enforce SSO" was turned on still signs in with their password and fixes or disables the
+  connection. If that person is gone too: `UPDATE sso_connections SET enforced = false WHERE
+  workspace_id = '<id>';` (then everyone at the domain can use their password or a reset link).
+- **Certificate rollover**: paste the IdP's new metadata (it may list both certificates); every
+  listed signing certificate is accepted until the next save.
+- **What is refused** (`sso.login_refused` in the workspace's audit log, with the reason):
+  responses that fail signature, audience, recipient, timestamps, InResponseTo or replay checks;
+  IdP-initiated (unsolicited) responses; addresses outside the workspace's verified domains;
+  deactivated members. The IdP's portal tile should point at `/api/sso/<workspace>/start`
+  (SP-initiated).
+- **Session length** is the workspace's session policy (Security tab), applied to the person like
+  every other sign-in; a SAML `SessionNotOnOrAfter` can only shorten one SSO sign-in.
+- **SCIM tokens** are shown once and stored as sha256. A leaked token: Rotate it in the admin
+  console (the old one stops at once; give the directory the new one), or Revoke it.
+- **Deprovisioning** (SCIM `active: false` or DELETE) is the same deactivation as the Members tab:
+  the person keeps role and boards but opens nothing in the workspace (sockets close on every
+  instance), and — for an address at a verified domain — all their sessions end everywhere. The
+  directory's `active: true` lifts it; an admin's own deactivation stands through directory syncs.
+
+## Personal data: data map, exports and deletion (GDPR)
+
+### Data map
+
+What Freero stores about a person, where, which module owns it, and what happens on export and
+deletion. "Purge" is the account deletion that runs after the grace period
+(`ACCOUNT_DELETION_GRACE_DAYS`, modules/accounts); "workspace deletion" is an owner deleting a team
+workspace (modules/workspaces).
+
+| Data | Store (owner) | In the personal export | On account purge | On workspace deletion |
+|---|---|---|---|---|
+| Name, email, cursor colour, avatar, verified flag, created | `users` + avatar file (auth, uploads) | `account.json`, `uploads/` | deleted (row, avatar file) | — |
+| Password hash, two-step secret (sealed), recovery codes (sha256) | `users`, `user_totp`, `user_recovery_codes` (auth) | only whether they are set — never the secrets | deleted (cascade) | — |
+| Signed-in devices: user agent, IP, sign-in method, times | `sessions`, `auth_devices` (sha256 of a device cookie) (auth) | `account.json` (IP masked) | deleted (cascade) | — |
+| Connected sign-in providers / SSO identities (issuer, subject, email) | `auth_identities` (auth) | `account.json` | deleted (cascade) | SSO identities of that workspace stay on the account (inert: the workspace's IdP is gone) |
+| Emailed single-use tokens, pending sign-ins, OIDC/SSO flows | `auth_tokens`, `auth_challenges`, `auth_oidc_flows`, `sso_flows` | no (transient, minutes to days) | deleted (cascade) / expire | `sso_flows` deleted (cascade) |
+| Workspaces, roles, project memberships, invitations sent/received | `workspaces`, `workspace_members`, `project_members`, `workspace_invites` (workspaces) | `memberships.json` | personal workspace deleted; sole-owned teams handed over (or deleted when empty) | deleted (cascade) |
+| Board memberships and invitations | `board_members`, `board_invites` (members) | `memberships.json` | deleted (cascade) | deleted with the boards |
+| Boards they own: content, comments, version history, layers (incl. their private drafts) | `boards`, `board_docs`, `board_doc_updates`, `board_doc_snapshots`, `board_layers`, `board_layer_updates` (boards, realtime) | `boards/<title>-<id>/board.json` + `board.yjs` + images | deleted (team boards: handed to a team owner first) | deleted (trash included) |
+| Comments they wrote on others' boards | inside those boards' docs (realtime) | `comments.json` (with board, thread and pinned item) | author shown as "Deleted user" (name and colour replaced in every board they could reach) | deleted with the boards |
+| Stars, last-opened times | `board_stars`, `board_opens` (boards) | `activity.json` | deleted (cascade) | deleted with the boards |
+| Files they uploaded (images, PDFs) | object storage + `uploads` (uploads) | `uploads/` (up to 200 MB of files per export; the rest listed in `files-not-included.json`) | row deleted; the file stays while a board, template or avatar elsewhere uses it, then the uploads sweep deletes it (≤ 24 h after the last reference) | files only those boards used: swept within a day |
+| Saved templates | `templates` (templates) | `templates/` | deleted (cascade); shared ones go too | shared-with-team link cleared (the owner's template stays) |
+| Notifications and email preferences; pending mentions | `notifications`, `notification_prefs`, `pending_mentions` (notifications) | `notifications.json` | deleted (cascade) | notifications about its boards: deleted with the boards |
+| What a directory sent about them (SCIM userName, externalId, name, email, active) | `scim_users`, `scim_group_members` (scim) | `memberships.json` → `directoryRecords` | deleted (cascade) | deleted (cascade) |
+| Break-glass role | `sso_connections.break_glass_user_id` (sso) | `memberships.json` → `singleSignOn` | cleared (SET NULL) | deleted (cascade) |
+| Abuse reports they filed, moderation actions about their content or account (suspension) | `moderation_items`, `moderation_actions` (moderation; reporter address only as an HMAC), `users.suspended_at` (auth) | not yet (follow-up: KAI-191) | person references cleared (SET NULL); the records stay as the operators' trail | items about its boards stay with their recorded target |
+| Data exports | `data_exports` + private ZIP files (privacy, uploads) | listed in `activity.json` | rows and files deleted by the export job within `DATA_EXPORT_INTERVAL_SECONDS` | workspace exports' rows and files deleted by the job |
+| Request logs | stdout (pino) → your log pipeline | no | not touched: user ids (never emails, bodies or tokens) — expire them in your log retention | — |
+| Rate-limit counters | Redis / memory, keys are HMACs | no | expire with their window | — |
+| Mail | SMTP provider / dev outbox | no | outside Freero (provider retention) | — |
+| Backups | your `pg_dump` / bucket copies | no | still contain the data until the backup expires: keep backup retention ≤ 35 days (or the period your privacy notice states) | same |
+
+### Exports
+
+- **Personal**: Account settings → Your data → Download my data (`POST /api/me/exports`). A job
+  builds the ZIP (README.txt explains every file), stores it as a private file (key
+  `private-<random>.zip`, never served at `/uploads/`, never swept), and mails the person a link to
+  Account settings, where only they can download it while signed in. It expires after
+  `DATA_EXPORT_TTL_HOURS`; the job then deletes the file.
+- **Workspace** (owners/admins of a team): admin console → Data → Export workspace. Every board
+  (trash included, with hidden frames' contents but never anyone's private drafts), members with
+  emails, invitations, projects, SSO settings without secrets, SCIM records. Downloadable only by
+  the admin who asked, and only while they still manage the workspace.
+- Exports are rate limited (`RATE_LIMIT_DATA_EXPORT`), one at a time per person / workspace. A
+  failed build is retried twice, then marked failed (logged with `privacy:`).
+
+### Deletion
+
+- **Account**: Account settings → Delete account. Grace period, then the purge (table above).
+- **Workspace**: owners, in Workspace settings (type the name). Immediate; every owner is mailed a
+  receipt of what was deleted. **Retention / legal holds**: a module registers
+  `onWorkspaceDeletionHold` (`modules/workspaces/index.ts`); while any hold applies, deletion is
+  refused (409) and nothing is removed. Nothing registers one yet (legal holds; time-based
+  retention is the Data tab's settings).
+- **Audit trail** (the workspace's audit log, admin console): workspace export requests and
+  downloads, workspace deletion, every SSO configuration change, SSO sign-ins and refusals,
+  just-in-time joins, SCIM tokens, group mappings, provisioning and deprovisioning. A person's own
+  export requests and downloads go to their account's log only.
+
 ## Moderation
 
 A free service with public links will be abused. Anyone who can open a board — signed in or, once
@@ -225,19 +315,34 @@ an optional internal note. Every action is recorded with who, when, why and what
 | Action | What happens at once (every instance) | Undo |
 |---|---|---|
 | Turn off link | The board's link access reads "no access": people who only had the link lose it and their sockets close; the owner, invited members and the team keep theirs. The owner can't turn the link back on. | Restore link — the owner's previous setting comes back |
-| Take down | The board is "removed for review" for everyone, owner included: open sockets close (the board shows a banner), REST answers 451 to anyone who could open it and 404 to everyone else, it leaves every list, its link is dead. Its content is kept unchanged and the owner can't delete it meanwhile. | Restore board — back exactly as it was |
-| Remove file | `/uploads/<name>` answers 410 Gone wherever the file is used. The bytes move to a kept copy under a name that is never served; the uploads sweep neither deletes the record nor brings the file back. | Restore file — the same bytes, same URL. **Delete kept copy** removes them for good (e.g. illegal content); the URL keeps answering 410. |
-| Suspend account | Every session ends (board and notification sockets close on every instance), and every way of signing in is refused with "this account has been suspended". The account's boards stay as they are: take them down separately if needed. | Lift suspension |
+| Take down | The board is "removed for review" for everyone, owner included: open sockets close (the board shows a banner), REST answers 451 to anyone who could open it and 404 to everyone else, it leaves every list, its link is dead. Its content is kept unchanged and nothing deletes it meanwhile (see "Legal hold"). | Restore board — back exactly as it was. **Delete for good** ends the review the other way: the board and its content are deleted (recorded, and the owner is told). |
+| Remove file | `/uploads/<name>` answers 410 Gone wherever the file is used. The bytes move to a kept copy under a name that is never served (with S3, under the bucket's `private/` prefix, outside the `uploads/*` a public bucket exposes); the uploads sweep neither deletes the record nor brings the file back. The kept copy is deleted automatically after `MODERATION_KEEP_REMOVED_DAYS` (30), unless a report or appeal about the file is still open — recorded as an automatic "Delete kept copy". | Restore file — the same bytes, same URL, while the kept copy exists. **Delete kept copy** removes them for good at once (e.g. illegal content); the URL keeps answering 410. |
+| Suspend account | Every session ends (board and notification sockets close on every instance), and every way of signing in is refused with "this account has been suspended". **Their boards**: leave them, take down every board the account owns, or turn off the link of every board it shares — each board is recorded as its own action under the suspension, and the suspension notice mentions them (one email, not one per board). | Lift suspension — also brings back every board the suspension took down or closed to its link, except those you restored or deleted separately since |
+
+**Legal hold.** A taken-down board is kept until you restore it or delete it for good: owners
+can't trash or delete it, the trash purge skips it, deleting a team workspace that holds one is
+refused ("under review"), and an account deletion waits — the account stays signed out and nothing
+of it is deleted — while it owns one or is the last member of a team holding one. Removed files
+outlive the account that uploaded them (their tombstone and kept copy, with no owner). The action
+record keeps the name and address of the person each action was about, also after their account is
+gone.
 
 The person affected gets an email with what happened, the reason, your statement and a **signed
 appeal link** (`/appeal?t=…`, no sign-in needed, so suspended accounts can appeal) — plus a bell
 notification for board and file actions. Restorations are announced the same way. An appeal goes
 into the queue (one open appeal per decision); grant it by undoing the action from its card.
 
-Caches: a removed file's URL answers 410 from the app at once, but a CDN or proxy in front of
-`/uploads/` may still hold a copy for up to its cache lifetime (raster images are cached for a
-day, streamed files up to a year): purge `/uploads/<name>` there too. With a public bucket
-(`S3_PUBLIC_URL`) the kept copy lives in the bucket under an unguessable name until purged.
+Caches: a removed file's URL answers 410 from the app at once. Browsers, proxies and a CDN may
+reuse a copy they already hold for at most `UPLOAD_CACHE_SECONDS` (an hour by default); after that
+they ask again (`If-None-Match` with the file's ETag, a cheap 304 while it is served) and get the
+410, so a removed file stops showing within that time without any purge. Purge `/uploads/<name>`
+on your CDN only to make it faster than that. With a public bucket (`S3_PUBLIC_URL`) the bucket's
+copy is deleted at removal and the kept copy sits under `private/`, outside what the bucket
+exposes. Objects uploaded to S3 before this release still carry a one-year `immutable` header: to
+bound them too, rewrite their metadata (`aws s3 cp s3://<bucket>/uploads/ s3://<bucket>/uploads/
+--recursive --metadata-directive REPLACE --cache-control "public, max-age=3600"`, once per
+content type with `--content-type`, or the equivalent for your provider), or purge a CDN in front
+of the bucket when you remove one of them.
 
 ### Reports, abuse of the report form, and privacy
 
@@ -332,9 +437,10 @@ previous address), ends every session and mails the address a notice with a link
 password. The owner then sets a password through that address, signs in and turns two-step
 verification on again.
 
-Open board tabs of the ended sessions stay connected until they reload (the CLI can't reach the
-running instances' sockets; KAI-146). If the intruder may still have a board open, restart the app
-instances (a rolling restart is fine) to drop every socket at once.
+Open board tabs and notification bells of the ended sessions are disconnected on every instance:
+at once when the CLI runs with `REDIS_URL` (it announces the ended sessions there), and in any case
+within `SESSION_RECHECK_SECONDS` (default 60), when every instance re-checks the sessions of its
+open sockets against the database. No restart is needed.
 
 ## Incident basics
 
@@ -356,7 +462,7 @@ instances (a rolling restart is fine) to drop every socket at once.
      events show in `freero_rate_limited_total` and as 429 lines in the log.
    - *Leaked secret*: rotate `SESSION_SECRET` (below; keep the leaked one as previous only until the
      re-sealing job reports done, minutes), `METRICS_TOKEN`, DB/S3 credentials; to sign everyone
-     out, `DELETE FROM sessions;`.
+     out, `DELETE FROM sessions;` (open board tabs disconnect within `SESSION_RECHECK_SECONDS`).
 4. **Data recovery.** Database: restore the latest dump into a new database and copy the affected
    rows across, or do a full restore (see above). Files: restore non-current object versions.
 5. **Afterwards.** Write down timeline, impact, root cause and follow-ups; add a check or alert

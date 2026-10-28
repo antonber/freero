@@ -27,6 +27,7 @@ import {
   startTwoFactorRecovery,
   undoTwoFactor,
 } from './recovery';
+import { assertSignInAllowed } from './restrictions';
 import { completeSignIn, finishTwoFactorSignIn, pendingSignIn, providerCallback, startProviderSignIn } from './signIn';
 import { beginTwoFactorSetup, disableTwoFactor, enableTwoFactor, regenerateRecoveryCodes, twoFactorRequiredBy } from './twoFactor';
 import {
@@ -58,6 +59,9 @@ export default function authRoutes(_ctx: ServerContext): Router {
     '/auth/signup',
     rateLimit('signup'),
     handle(async (req, res) => {
+      // An organization that enforces single sign-on for the address makes its accounts itself.
+      const email = normalizeEmail(req.body?.email);
+      if (email) await assertSignInAllowed({ email, userId: null, method: 'password' });
       const user = await createUser(req.body ?? {});
       await startSession(req, res, user.id);
       // The account works without it; a mail outage must not fail the signup.
@@ -71,7 +75,10 @@ export default function authRoutes(_ctx: ServerContext): Router {
     rateLimit('login'), // per IP, ...
     handle(async (req, res) => {
       // ... and per account, so a botnet can't spray guesses at one email from many addresses.
-      await consumeRateLimit('loginAccount', `email:${normalizeEmail(req.body?.email)}`);
+      const email = normalizeEmail(req.body?.email);
+      await consumeRateLimit('loginAccount', `email:${email}`);
+      // Before the password is checked, so a refused account is no password oracle.
+      if (email) await assertSignInAllowed({ email, userId: (await repo.findUserByEmail(email))?.id ?? null, method: 'password' });
       const user = await checkCredentials(req.body?.email, req.body?.password);
       res.json((await completeSignIn(req, res, user.id, 'password')) satisfies LoginResponse);
     }),

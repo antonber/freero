@@ -26,8 +26,8 @@ export async function restoreAccount(userId: string): Promise<Account> {
 }
 
 /** Accounts whose grace period is over, oldest first. */
-export async function accountsDueForPurge(now: number, limit = 50): Promise<User[]> {
-  return (await repo.usersDueForPurge(now, limit)).map(publicUser);
+export async function accountsDueForPurge(now: number, limit = 50, skip: readonly string[] = []): Promise<User[]> {
+  return (await repo.usersDueForPurge(now, limit, skip)).map(publicUser);
 }
 
 /** Hard-deletes the account row if it is still due (a restore may have won). Cascades in the database. */

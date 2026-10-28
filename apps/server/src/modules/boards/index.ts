@@ -13,6 +13,9 @@ export {
   reportableBoard,
   takeDownBoard,
   restoreTakenDownBoard,
+  deleteTakenDownBoard,
+  countHeldBoards,
+  liveBoardsOwnedBy,
   blockBoardLink,
   unblockBoardLink,
   type ModerationBoardState,
@@ -95,6 +98,7 @@ export async function getBoardTitle(boardId: string): Promise<string | null> {
  * Account purge: deletes every board the user still owns, like DELETE /boards/:id does (everyone
  * is disconnected first, then the row — members, stars, opens and doc cascade — then the
  * thumbnail). Boards in team workspaces were handed over before (workspaces.handOverTeamWorkspaces).
+ * Taken-down boards are held for review and never deleted here (the purge waits for them, KAI-178).
  */
 export async function deleteBoardsOwnedBy(userId: string): Promise<number> {
   for (const id of await repo.allBoardIdsOwnedBy(userId)) await closeBoardDoc(id);
@@ -139,6 +143,49 @@ export function countLiveBoardsInProject(projectId: string): Promise<number> {
  */
 export function transferBoardsOwnedIn(workspaceId: string, from: string, to: string): Promise<string[]> {
   return repo.transferOwnedIn(workspaceId, from, to);
+}
+
+// ---- data exports (modules/privacy) ----
+
+export interface BoardRecord {
+  id: string;
+  title: string;
+  description: string;
+  ownerId: string;
+  workspaceId: string;
+  projectId: string | null;
+  linkAccess: string;
+  createdAt: string;
+  updatedAt: string;
+  /** Set for a board in its owner's trash. */
+  deletedAt: string | null;
+}
+
+/** The boards' records (trash included), in creation order. */
+export async function boardRecords(ids: string[]): Promise<BoardRecord[]> {
+  return (await repo.getBoardsIncludingTrash([...new Set(ids)])).map((b) => ({
+    id: b.id,
+    title: b.title,
+    description: b.description,
+    ownerId: b.ownerId,
+    workspaceId: b.workspaceId,
+    projectId: b.projectId,
+    linkAccess: b.linkAccess,
+    createdAt: new Date(b.createdAt).toISOString(),
+    updatedAt: new Date(b.updatedAt).toISOString(),
+    deletedAt: b.deletedAt === null ? null : new Date(b.deletedAt).toISOString(),
+  }));
+}
+
+/** Every board the user owns, trash included. */
+export function boardIdsOwnedByUser(userId: string): Promise<string[]> {
+  return repo.allBoardIdsOwnedBy(userId);
+}
+
+/** The person's stars and when they last opened each board. */
+export async function boardActivityOf(userId: string): Promise<{ starred: string[]; opened: Array<{ boardId: string; at: string }> }> {
+  const [stars, opens] = await Promise.all([repo.starredBoardIds(userId), repo.opensOf(userId)]);
+  return { starred: [...stars], opened: [...opens].map(([boardId, at]) => ({ boardId, at: new Date(at).toISOString() })) };
 }
 
 /** Upload names used as board thumbnails (restricted to `among` when given): the uploads sweep keeps them. */

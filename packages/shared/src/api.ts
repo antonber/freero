@@ -341,7 +341,20 @@ export type OidcErrorCode =
   | 'identity_in_use' // link: that provider account is connected to another Freero account
   | 'provider_linked' // link: this account already has an identity of that provider
   | 'wrong_account' // reauth: a different provider account than the one connected
-  | 'suspended'; // login: Freero's moderators suspended that account
+  | 'suspended' // login: Freero's moderators suspended that account
+  | 'sso_required' // the address's organization signs its people in only through its own SSO
+  // Workspace single sign-on (/api/sso/…):
+  | 'sso_unavailable' // the workspace has no enabled SSO connection, or its provider can't be reached
+  | 'sso_failed' // the identity provider's answer was refused (signature, audience, expiry, replay, …) or expired
+  | 'sso_domain' // the identity provider vouched for an address outside the workspace's verified domains
+  | 'sso_removed'; // the workspace's directory deprovisioned this person (SCIM)
+
+/**
+ * 403 `code` when a way of signing in (password, reset link, a personal provider, signup) is
+ * refused because the address's workspace enforces single sign-on. Discover where to go with
+ * GET /api/sso/discover?email=.
+ */
+export const SSO_REQUIRED = 'sso_required';
 
 /** The signed-in user's own account (other people only ever see `User`). */
 export interface Account extends User {
@@ -375,6 +388,118 @@ export interface SessionInfo {
 export const ACCOUNT_PENDING_DELETION = 'account_pending_deletion';
 /** `code` of a refused sign-in (403): Freero's moderators suspended the account. */
 export const ACCOUNT_SUSPENDED = 'account_suspended';
+
+// ---- Single sign-on per workspace (team workspaces; owners/admins manage it) ----
+// GET    /api/workspaces/:id/sso                      -> SsoSettings
+// POST   /api/workspaces/:id/sso/domains   body { domain }  -> SsoSettings   (adds a claim + the TXT record to publish)
+// POST   /api/workspaces/:id/sso/domains/:domainId/verify -> SsoSettings | 409 (TXT not found yet / domain verified elsewhere)
+// DELETE /api/workspaces/:id/sso/domains/:domainId -> SsoSettings
+// PUT    /api/workspaces/:id/sso/connection body SsoConnectionInput -> SsoSettings
+// POST   /api/workspaces/:id/sso/enforce   body { enforced, breakGlassUserId } -> SsoSettings
+//        (409 until a sign-in went through the connection; the break-glass person must be an owner)
+// DELETE /api/workspaces/:id/sso/connection -> SsoSettings
+// Public (browser navigations unless noted):
+// GET  /api/sso/discover?email=          -> SsoDiscovery (fetch; by domain only, never by account)
+// GET  /api/sso/:workspaceId/start?next=  -> 302 to the identity provider (SAML AuthnRequest or OIDC)
+// GET  /api/sso/:workspaceId/saml/metadata -> the service provider's SAML metadata (XML)
+// POST /api/sso/:workspaceId/saml/acs     <- the identity provider posts SAMLResponse + RelayState;
+//                                          303 to …/saml/finish, which signs in (bound to this browser)
+// GET  /api/sso/:workspaceId/oidc/callback -> 302 to `next`, /login/two-factor?next=…, or /login?error=sso_failed
+// IdP-initiated SAML (an unsolicited response) is refused: tiles in the IdP's portal link to /start.
+export interface SsoDomain {
+  id: string;
+  domain: string;
+  verified: boolean;
+  /** The DNS TXT record to publish: name and value. */
+  txtName: string;
+  txtValue: string;
+  lastCheckedAt: number | null;
+}
+export type SsoProtocol = 'saml' | 'oidc';
+export interface SsoConnectionInfo {
+  protocol: SsoProtocol;
+  enabled: boolean;
+  enforced: boolean;
+  breakGlassUserId: string | null;
+  /** Role of people who join through their first SSO sign-in. */
+  defaultRole: Exclude<WorkspaceRole, 'owner'>;
+  saml: { entityId: string; ssoUrl: string; certificates: Array<{ subject: string; validTo: string; fingerprint: string }> } | null;
+  oidc: { issuer: string; clientId: string; hasClientSecret: boolean } | null;
+  /** When a sign-in last went through it (enforcing needs one). */
+  testedAt: number | null;
+}
+export interface SsoConnectionInput {
+  protocol: SsoProtocol;
+  enabled: boolean;
+  defaultRole?: Exclude<WorkspaceRole, 'owner'>;
+  /** SAML: the IdP's metadata XML, or its parts. */
+  samlMetadataXml?: string;
+  samlEntityId?: string;
+  samlSsoUrl?: string;
+  samlCertificate?: string;
+  /** OIDC: a blank secret keeps the stored one. */
+  oidcIssuer?: string;
+  oidcClientId?: string;
+  oidcClientSecret?: string;
+}
+export interface SsoSettings {
+  domains: SsoDomain[];
+  connection: SsoConnectionInfo | null;
+  /** What to configure at the identity provider. */
+  serviceProvider: { entityId: string; acsUrl: string; metadataUrl: string; oidcRedirectUri: string; startUrl: string };
+}
+export interface SsoDiscovery {
+  sso: { workspaceName: string; startUrl: string; enforced: boolean } | null;
+}
+
+// ---- Provisioning (SCIM 2.0, team workspaces; owners/admins manage it) ----
+// Base URL: <PUBLIC_URL>/scim/v2 (Users, Groups, ServiceProviderConfig, ResourceTypes, Schemas),
+// authenticated with `Authorization: Bearer <token>`; the token names the workspace.
+// GET    /api/workspaces/:id/scim               -> ScimSettings
+// POST   /api/workspaces/:id/scim/tokens  body { label } -> { token: string (shown once), settings: ScimSettings }
+// POST   /api/workspaces/:id/scim/tokens/:tokenId/rotate -> { token, settings }  (a new token replaces it at once)
+// DELETE /api/workspaces/:id/scim/tokens/:tokenId -> ScimSettings   (or overlap: create a new one, then revoke the old)
+// PUT    /api/workspaces/:id/scim/groups/:groupId body { mapping: ScimGroupMapping | null } -> ScimSettings
+export interface ScimTokenInfo {
+  id: string;
+  label: string;
+  /** The first characters, to tell tokens apart. */
+  prefix: string;
+  createdAt: number;
+  lastUsedAt: number | null;
+}
+/** What a directory group grants in Freero: a workspace role, or membership of a project. */
+export type ScimGroupMapping = { kind: 'role'; role: Exclude<WorkspaceRole, 'owner'> } | { kind: 'project'; projectId: string };
+export interface ScimGroupInfo {
+  id: string;
+  displayName: string;
+  memberCount: number;
+  mapping: ScimGroupMapping | null;
+}
+export interface ScimSettings {
+  baseUrl: string;
+  tokens: ScimTokenInfo[];
+  groups: ScimGroupInfo[];
+  /** People the directory manages here, and how many it deactivated. */
+  provisioned: { active: number; deactivated: number };
+}
+
+// ---- Data exports (GDPR) ----
+// POST /api/me/exports                       -> { export: DataExportInfo }  (your data; built in the
+//                                               background, then a link is emailed; rate limited)
+// GET  /api/me/exports                       -> { exports: DataExportInfo[] }
+// POST /api/workspaces/:id/exports           -> { export } (owners/admins of a team workspace)
+// GET  /api/workspaces/:id/exports           -> { exports }
+// GET  /api/exports/:id/download             -> the ZIP (only the person who asked for it, signed in)
+export interface DataExportInfo {
+  id: string;
+  kind: 'user' | 'workspace';
+  status: 'pending' | 'running' | 'ready' | 'failed' | 'expired';
+  createdAt: number;
+  readyAt: number | null;
+  expiresAt: number | null;
+  bytes: number | null;
+}
 
 // ---- Boards ----
 // GET    /api/boards?workspace=<id>&project=<id>&filter=all|mine|shared|starred|recent|trash&q=text
@@ -873,6 +998,8 @@ export type ModerationActionKind =
   | 'board.restore_link'
   | 'board.take_down'
   | 'board.restore'
+  /** Deletes a taken-down board for good: ends its legal hold (KAI-178). */
+  | 'board.delete'
   | 'upload.remove'
   | 'upload.restore'
   | 'upload.purge'
@@ -891,14 +1018,25 @@ export interface ModerationActionRequest {
   itemId?: string;
   /** For upload actions: the board the file was reported on (its owner is told too). */
   boardId?: string;
+  /**
+   * For 'user.suspend' (KAI-180): also take down, or turn off the link of, every board the account
+   * owns. Each board is recorded as its own action; lifting the suspension undoes them all.
+   */
+  boards?: SuspensionBoards;
 }
+export type SuspensionBoards = 'take_down' | 'disable_link';
 export interface ModerationActionRecord {
   id: string;
   action: ModerationActionKind;
   targetId: string;
   boardId: string | null;
   subjectUserId: string | null;
+  /** Who it was about, as they were then (kept after their account is deleted, KAI-178). */
+  subject: { name: string; email: string } | null;
+  /** Null: Freero did it itself (a kept copy's retention ended), or the operator's account is gone. */
   operator: { id: string; name: string } | null;
+  /** The action this one was part of (a board a suspension took down with it, KAI-180). */
+  parentId: string | null;
   reason: ReportReason;
   statement: string;
   note: string;
@@ -1045,11 +1183,37 @@ export const AUDIT_ACTIONS = {
   'moderation.board.restore_link': 'Freero turned a board’s link back on (moderation)',
   'moderation.board.take_down': 'Freero took a board down (moderation)',
   'moderation.board.restore': 'Freero restored a board (moderation)',
+  'moderation.board.delete': 'Freero deleted a taken-down board for good (moderation)',
   'moderation.upload.remove': 'Freero removed a file (moderation)',
   'moderation.upload.restore': 'Freero restored a file (moderation)',
   'moderation.upload.purge': 'Freero purged a removed file (moderation)',
   'moderation.user.suspend': 'Freero suspended an account (moderation)',
   'moderation.user.restore': 'Freero lifted an account suspension (moderation)',
+  // Single sign-on (modules/sso).
+  'sso.domain_added': 'Added a domain for single sign-on',
+  'sso.domain_verified': 'Verified a domain (DNS)',
+  'sso.domain_removed': 'Removed a domain',
+  'sso.connection_saved': 'Changed the identity provider',
+  'sso.connection_removed': 'Removed the identity provider',
+  'sso.enforced': 'Enforced single sign-on',
+  'sso.unenforced': 'Stopped enforcing single sign-on',
+  'sso.login': 'Signed in with single sign-on',
+  'sso.login_refused': 'Single sign-on refused',
+  'sso.member_provisioned': 'Joined through single sign-on (just in time)',
+  // Provisioning (modules/scim).
+  'scim.token_created': 'Created a provisioning token',
+  'scim.token_rotated': 'Rotated a provisioning token',
+  'scim.token_revoked': 'Revoked a provisioning token',
+  'scim.user_provisioned': 'Directory provisioned someone',
+  'scim.user_deprovisioned': 'Directory deactivated someone',
+  'scim.user_reactivated': 'Directory reactivated someone',
+  'scim.user_deleted': 'Directory deleted someone',
+  'scim.group_mapped': 'Changed what a directory group grants',
+  // Data exports (modules/privacy).
+  'account.export_requested': 'Asked for a copy of their data',
+  'account.export_downloaded': 'Downloaded a copy of their data',
+  'workspace.export_requested': 'Asked for an export of the workspace',
+  'workspace.export_downloaded': 'Downloaded an export of the workspace',
 } as const;
 export type AuditAction = keyof typeof AUDIT_ACTIONS;
 export type AuditValue = string | number | boolean | null | string[];

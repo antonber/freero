@@ -87,10 +87,18 @@ export async function updateUserProfile(
 ): Promise<void> {
   await query(
     `UPDATE users SET name = COALESCE($2, name), color = COALESCE($3, color),
-       avatar_url = CASE WHEN $4 THEN $5 ELSE avatar_url END
+       avatar_url = CASE WHEN $4 THEN $5 ELSE avatar_url END,
+       previous_names = CASE WHEN $2 IS NULL OR $2 = name THEN previous_names
+                             ELSE (ARRAY[name] || array_remove(previous_names, name))[1:5] END
      WHERE id = $1`,
     [id, patch.name ?? null, patch.color ?? null, patch.avatarUrl !== undefined, patch.avatarUrl ?? null],
   );
+}
+
+/** The account's current name and the few it had before (comment authorship, KAI-187). */
+export async function namesOf(id: string): Promise<string[]> {
+  const r = await one<{ name: string; previous_names: string[] }>(`SELECT name, previous_names FROM users WHERE id = $1`, [id]);
+  return r ? [r.name, ...r.previous_names] : [];
 }
 
 /** Sets the avatar; returns the previous one (to delete its file), or undefined if no such user. */
@@ -171,12 +179,13 @@ export async function cancelDeletion(id: string): Promise<boolean> {
   return rows.length > 0;
 }
 
-export async function usersDueForPurge(now: number, limit: number): Promise<UserWithHash[]> {
+export async function usersDueForPurge(now: number, limit: number, skip: readonly string[] = []): Promise<UserWithHash[]> {
   return (
     await query<UserRow>(
       `SELECT * FROM users WHERE deletion_scheduled_for IS NOT NULL AND deletion_scheduled_for <= $1
+         AND NOT (id = ANY($3::text[]))
        ORDER BY deletion_scheduled_for LIMIT $2`,
-      [new Date(now), limit],
+      [new Date(now), limit, [...skip]],
     )
   ).map(toUser);
 }
@@ -276,6 +285,24 @@ export async function findSessionUser(
 }
 
 /**
+ * Which of these session keys still sign someone in: an account session that exists, is unexpired
+ * and whose account is neither suspended nor awaiting deletion, or an unexpired guest session (the
+ * rules that admit a socket).
+ */
+export async function liveSessionKeys(tokenHashes: string[], now: number): Promise<Set<string>> {
+  if (!tokenHashes.length) return new Set();
+  const rows = await query<{ token_hash: string }>(
+    `SELECT s.token_hash FROM sessions s JOIN users u ON u.id = s.user_id
+     WHERE s.token_hash = ANY($1::text[]) AND s.expires_at > $2
+       AND u.suspended_at IS NULL AND u.deletion_scheduled_for IS NULL
+     UNION ALL
+     SELECT g.token_hash FROM guest_sessions g WHERE g.token_hash = ANY($1::text[]) AND g.expires_at > $2`,
+    [tokenHashes, new Date(now)],
+  );
+  return new Set(rows.map((r) => r.token_hash));
+}
+
+/**
  * Deletes the user's sessions that a session policy ends: started before `startedBefore`, or not
  * seen since `seenBefore` (either may be null). Returns the deleted sessions' token hashes.
  */
@@ -343,13 +370,22 @@ export async function deleteSessionById(userId: string, id: string): Promise<str
   return r?.token_hash ?? null;
 }
 
-/** Deletes every session of the user except `keepTokenHash`; returns the deleted token hashes. */
-export async function deleteSessionsOf(userId: string, keepTokenHash: string | null = null): Promise<string[]> {
+/**
+ * Deletes every session of the user except `keepTokenHash` (and, with `keepMethod`, except those
+ * that signed in that way); returns the deleted token hashes.
+ */
+export async function deleteSessionsOf(userId: string, keepTokenHash: string | null = null, keepMethod: string | null = null): Promise<string[]> {
   const rows = await query<{ token_hash: string }>(
-    `DELETE FROM sessions WHERE user_id = $1 AND ($2::text IS NULL OR token_hash <> $2) RETURNING token_hash`,
-    [userId, keepTokenHash],
+    `DELETE FROM sessions WHERE user_id = $1 AND ($2::text IS NULL OR token_hash <> $2) AND ($3::text IS NULL OR method <> $3)
+     RETURNING token_hash`,
+    [userId, keepTokenHash, keepMethod],
   );
   return rows.map((r) => r.token_hash);
+}
+
+/** Ids of the accounts whose address is at `domain` (exactly; lower case). */
+export async function userIdsAtDomain(domain: string): Promise<string[]> {
+  return (await query<{ id: string }>(`SELECT id FROM users WHERE split_part(email, '@', 2) = $1`, [domain])).map((r) => r.id);
 }
 
 export async function deleteExpiredSessions(now: number): Promise<void> {
@@ -557,12 +593,23 @@ export interface Challenge {
   userId: string;
   method: string;
   link: PendingLink | null;
+  /** The session this sign-in starts ends at this instant at the latest (single sign-on); null/absent: the usual lifetime. */
+  sessionExpiresAt?: number | null;
 }
 
 export async function insertChallenge(tokenHash: string, c: Challenge, now: number, expiresAt: number): Promise<void> {
   await query(
-    `INSERT INTO auth_challenges (token_hash, user_id, method, link, created_at, expires_at) VALUES ($1, $2, $3, $4, $5, $6)`,
-    [tokenHash, c.userId, c.method, c.link === null ? null : JSON.stringify(c.link), new Date(now), new Date(expiresAt)],
+    `INSERT INTO auth_challenges (token_hash, user_id, method, link, created_at, expires_at, session_expires_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [
+      tokenHash,
+      c.userId,
+      c.method,
+      c.link === null ? null : JSON.stringify(c.link),
+      new Date(now),
+      new Date(expiresAt),
+      c.sessionExpiresAt == null ? null : new Date(c.sessionExpiresAt),
+    ],
   );
 }
 
@@ -571,25 +618,25 @@ export async function insertChallenge(tokenHash: string, c: Challenge, now: numb
  * of attempts. One statement, so parallel guesses can't exceed `maxAttempts`.
  */
 export async function attemptChallenge(tokenHash: string, now: number, maxAttempts: number): Promise<Challenge | null> {
-  const r = await one<{ user_id: string; method: string; link: PendingLink | string | null }>(
+  const r = await one<{ user_id: string; method: string; link: PendingLink | string | null; session_expires_at: Date | null }>(
     `UPDATE auth_challenges SET attempts = attempts + 1
-     WHERE token_hash = $1 AND expires_at > $2 AND attempts < $3 RETURNING user_id, method, link`,
+     WHERE token_hash = $1 AND expires_at > $2 AND attempts < $3 RETURNING user_id, method, link, session_expires_at`,
     [tokenHash, new Date(now), maxAttempts],
   );
   if (!r) return null;
   const link = typeof r.link === 'string' ? (JSON.parse(r.link) as PendingLink) : r.link;
-  return { userId: r.user_id, method: r.method, link };
+  return { userId: r.user_id, method: r.method, link, sessionExpiresAt: r.session_expires_at?.getTime() ?? null };
 }
 
 /** A live challenge (not expired, attempts left), without counting an attempt. */
 export async function findChallenge(tokenHash: string, now: number): Promise<Challenge | null> {
-  const r = await one<{ user_id: string; method: string; link: PendingLink | string | null }>(
-    `SELECT user_id, method, link FROM auth_challenges WHERE token_hash = $1 AND expires_at > $2`,
+  const r = await one<{ user_id: string; method: string; link: PendingLink | string | null; session_expires_at: Date | null }>(
+    `SELECT user_id, method, link, session_expires_at FROM auth_challenges WHERE token_hash = $1 AND expires_at > $2`,
     [tokenHash, new Date(now)],
   );
   if (!r) return null;
   const link = typeof r.link === 'string' ? (JSON.parse(r.link) as PendingLink) : r.link;
-  return { userId: r.user_id, method: r.method, link };
+  return { userId: r.user_id, method: r.method, link, sessionExpiresAt: r.session_expires_at?.getTime() ?? null };
 }
 
 /** Uses up a challenge; false if another request already did. */
