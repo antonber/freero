@@ -14,6 +14,7 @@ import { appUrl, renderMail, sendMail } from '../../platform/mail';
 import { getUser, getUsers, markEmailVerified } from '../auth/index';
 import { getBoardAccess, getBoardTitle } from '../boards/index';
 import { refreshBoardAccess } from '../realtime/index';
+import { inviteAccepted } from './events';
 import * as repo from './repo';
 import type { MemberRole } from './roles';
 
@@ -107,6 +108,7 @@ export async function acceptInvite(token: string, user: { id: string; email: str
   if (row.email === user.email) await markEmailVerified(user.id, user.email);
   const { role } = await getBoardAccess(row.boardId, user.id);
   if (!role) throw deadLink();
+  await inviteAccepted({ boardId: row.boardId, userId: user.id, email: row.email });
   return { boardId: row.boardId, role };
 }
 
@@ -115,6 +117,16 @@ export async function convertInvitesFor(user: { id: string; email: string }): Pr
   for (const row of await repo.takeInvitesForEmail(user.email, Date.now())) {
     const access = await getBoardAccess(row.boardId, user.id);
     if (!access.exists || access.ownerId === user.id) continue;
-    if (await repo.grantAtLeast(row.boardId, user.id, row.role, Date.now())) await refreshBoardAccess(row.boardId);
+    if (!(await repo.grantAtLeast(row.boardId, user.id, row.role, Date.now()))) continue;
+    await refreshBoardAccess(row.boardId);
+    await inviteAccepted({ boardId: row.boardId, userId: user.id, email: row.email });
   }
+}
+
+/** Which of `emails` have a live (unexpired) invite to the board. */
+export async function invitedEmails(boardId: string, emails: string[]): Promise<string[]> {
+  if (!emails.length) return [];
+  const now = Date.now();
+  const live = new Set((await repo.listInvites(boardId)).filter((i) => i.expiresAt > now).map((i) => i.email));
+  return emails.filter((e) => live.has(e));
 }

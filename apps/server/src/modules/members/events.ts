@@ -30,3 +30,30 @@ export async function boardShared(e: BoardSharedEvent): Promise<void> {
     }
   }
 }
+
+export interface InviteAcceptedEvent {
+  boardId: string;
+  /** The account that now has access through the invite. */
+  userId: string;
+  /** The address the invite was sent to. */
+  email: string;
+}
+
+type AcceptedListener = (e: InviteAcceptedEvent) => Promise<void> | void;
+const acceptedListeners = new Set<AcceptedListener>();
+
+/** A pending invite (sent to an address) became access for an account: its link, or a verified address. */
+export function onInviteAccepted(fn: AcceptedListener): () => void {
+  acceptedListeners.add(fn);
+  return () => acceptedListeners.delete(fn);
+}
+
+export async function inviteAccepted(e: InviteAcceptedEvent): Promise<void> {
+  for (const fn of acceptedListeners) {
+    try {
+      await fn(e);
+    } catch (err) {
+      logError('members: an invite-accepted listener failed', err);
+    }
+  }
+}
