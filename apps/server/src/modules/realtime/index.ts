@@ -38,5 +38,10 @@ export { onBoardChange, type BoardChangeEvent, type ElementChange } from './chan
 export { listSnapshots as listBoardSnapshots, loadSnapshot as loadBoardSnapshot, type SnapshotInfo } from './docStore';
 // Data exports (modules/privacy): board content and the comments a person wrote.
 export { exportBoardContent, commentsWrittenBy, type BoardContentExport, type CommentThreadExport } from './dataExport';
+// Board content as saved, as every reader sees it (derived indexes read it from the outbox), and
+// the outbox topic raised in the same transaction as every saved change of it.
+export { storedBoardView } from './stored';
+export { COMMENTS_COLLECTION };
+export { BOARD_CONTENT_TOPIC } from './repo';
 // The uploads board documents reference (the uploads sweep keeps those files).
 export { boardUploadReferences, storedBoardContent } from './uploadRefs';
