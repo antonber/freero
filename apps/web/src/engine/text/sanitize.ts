@@ -1,6 +1,10 @@
 // RichText = a small sanitized HTML subset (see @freero/shared RichText):
 // <b> <i> <u> <s> <a href> <br> <ul> <ol> <li> <p> <span style="color|background-color">.
 import DOMPurify from 'dompurify';
+// The DOM-free readers live in @freero/shared (the server reads board text the same way).
+import { decodeEntities, escapeHtml, plainToRichText, richTextToPlain } from '@freero/shared';
+
+export { richTextToPlain, plainToRichText };
 
 const PURIFY_TAGS = ['b', 'strong', 'i', 'em', 'u', 's', 'strike', 'del', 'a', 'br', 'ul', 'ol', 'li', 'p', 'div', 'span', 'font'];
 const PURIFY_ATTR = ['href', 'style', 'color'];
@@ -98,16 +102,6 @@ export function sanitizeRichText(html: string): string {
   return out;
 }
 
-const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', '#39': "'" };
-
-const decodeEntities = (s: string) =>
-  s.replace(/&(#\d+|#x[0-9a-f]+|\w+);/gi, (m, e: string) => {
-    if (e[0] === '#') {
-      const code = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
-      return Number.isFinite(code) ? String.fromCodePoint(code) : m;
-    }
-    return ENTITIES[e.toLowerCase()] ?? m;
-  });
 
 /** Tags that start a new line in richTextToPlain: an occurrence never spans one. */
 const LINE_TAG = /^<\/?(br|p|div|li|ul|ol)[\s/>]/i;
@@ -179,26 +173,4 @@ export function replaceInRichText(
     out = out.replace(EMPTY_INLINE, '');
   } while (out !== prev);
   return { html: out, count };
-}
-
-/** Plain text with newlines for line breaks / paragraphs / list items. Works without a DOM. */
-export function richTextToPlain(html: string): string {
-  if (!html) return '';
-  const startsWithBlock = /^\s*<(p|div|ul|ol)[\s>]/i.test(html);
-  const text = html
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<(p|div|li)(\s[^>]*)?>/gi, '\n')
-    .replace(/<\/(p|div|li|ul|ol)>/gi, '')
-    .replace(/<[^>]+>/g, '');
-  const decoded = decodeEntities(text).replace(/\n+$/, '');
-  return startsWithBlock ? decoded.replace(/^\n/, '') : decoded;
-
-}
-
-const escapeHtml = (s: string) =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-
-/** Plain text → RichText (escaped, newlines become <br>). */
-export function plainToRichText(text: string): string {
-  return escapeHtml(text).replace(/\r\n?/g, '\n').replace(/\n/g, '<br>');
 }
