@@ -1,3 +1,4 @@
+import { StickyNote as StickyNoteIcon } from 'lucide-react';
 import { memo } from 'react';
 import { STICKY_COLORS, type StickyElement } from '@freero/shared';
 import {
@@ -51,6 +52,8 @@ const StickyView = memo(function StickyView({ element, zoom, reserved }: Element
 
 export default defineElement({
   type: 'sticky',
+  label: { one: 'Sticky note', many: 'Sticky notes' },
+  icon: StickyNoteIcon,
   resize: 'free',
   minSize: { w: 48, h: 48 },
   // Mixed selections: the paper is the fill (any colour lands on the nearest paper); no text

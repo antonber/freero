@@ -1,12 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronDown, ChevronRight, Eye, EyeOff, Frame, Lock, LockOpen } from 'lucide-react';
 import type { BoardElement } from '@freero/shared';
-import { DockHeader, definePanel, richTextToPlain, useCanEdit, useElements, useSelection, useViewHidden, type Editor } from '@engine';
+import { DockHeader, definePanel, describeElementType, richTextToPlain, useCanEdit, useElements, useSelection, useViewHidden, type Editor } from '@engine';
 import { Button, IconButton } from '@ui';
 import { buildOutline, previewOf, restackZ, type OutlineGroup } from './lib/outline';
 import { PANEL_ID } from './lib/ids';
 import { layoutRows, scrollToShow, slotAt, visibleRange, type LayerRow } from './lib/rows';
-import { typeInfo } from './lib/types';
 import './layers.css';
 
 const DRAG_PX = 4;
@@ -19,7 +18,7 @@ function labelOf(editor: Editor, el: BoardElement): string {
     : field
       ? richTextToPlain(String((el as unknown as Record<string, unknown>)[field] ?? ''))
       : '';
-  return previewOf(text ?? '') ?? typeInfo(el.type).name;
+  return previewOf(text ?? '') ?? describeElementType(editor, el.type).one;
 }
 
 function Toggles({ editor, el, viewHidden, canEdit }: { editor: Editor; el: BoardElement; viewHidden: ReadonlySet<string>; canEdit: boolean }) {
@@ -236,7 +235,7 @@ function LayersPanel({ editor }: { editor: Editor }) {
     const { el, index: i, group: g } = r;
     const dragFrom = drag && drag.group === r.groupKey ? g.items.findIndex((x) => x.id === drag.id) : -1;
     const dropAt = drag && drag.group === r.groupKey && drag.to !== dragFrom && drag.to !== dragFrom + 1 ? drag.to : -1;
-    const { icon: Icon } = typeInfo(el.type);
+    const { icon: Icon } = describeElementType(editor, el.type);
     return (
       <div
         key={r.key}

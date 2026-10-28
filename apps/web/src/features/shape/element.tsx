@@ -1,3 +1,4 @@
+import { Shapes as ShapesIcon } from 'lucide-react';
 import { memo, useMemo } from 'react';
 import type { ShapeElement } from '@freero/shared';
 import { defineElement, ElementText, richTextToPlain, type ElementRenderProps, type NewElement } from '@engine';
@@ -60,6 +61,8 @@ const ShapeView = memo(function ShapeView({ element, zoom }: ElementRenderProps<
 
 export default defineElement({
   type: 'shape',
+  label: { one: 'Shape', many: 'Shapes' },
+  icon: ShapesIcon,
   resize: 'free',
   minSize: { w: 8, h: 8 },
   sharedStyle: (el) => ({

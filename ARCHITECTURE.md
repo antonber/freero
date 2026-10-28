@@ -479,6 +479,12 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
 
 Reference & items (engine primitives; product UI in `features/shortcuts`, `links`, `image`, `icons`,
 `select-similar` — "Select only ▸ <type> (count)" narrows a mixed selection):
+- Item type names have one owner: `ElementDefinition.label: { one, many }` and `icon`, set in each
+  `element.tsx`. Layers, Find and "Select only" read them through `describeElementType(editor,
+  type)` (`@engine`; fallback: the capitalised type and a square), so a new type is named once.
+  `defineCommands(({ elements }) => [...])` (a command factory, run once the registry knows every
+  element definition) builds commands per type from the live registry — "Select only" lists every
+  registered type by its `many` name.
 - `Editor.getShortcuts() → ShortcutEntry[]` (`engine/runtime/shortcutList.ts`): every binding the
   board answers for the live role — tool keys, command shortcuts (alternatives with the same label
   fold into one row), element types' declared `keys` (under their feature) and the keys the keyboard router handles itself (`ENGINE_KEYS` in

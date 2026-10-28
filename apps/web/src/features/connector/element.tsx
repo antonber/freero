@@ -1,3 +1,4 @@
+import { Spline as SplineIcon } from 'lucide-react';
 import { memo, useMemo, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import type { BoardElement, ConnectorElement } from '@freero/shared';
 import {
@@ -205,6 +206,8 @@ function Label(props: {
 
 export default defineElement({
   type: 'connector',
+  label: { one: 'Connector', many: 'Connectors' },
+  icon: SplineIcon,
   resize: 'none',
   rotatable: false,
   sharedStyle: (el) => ({ stroke: el.stroke, strokeWidth: el.strokeWidth, strokeStyle: el.strokeStyle }),

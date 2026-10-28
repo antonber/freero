@@ -1,3 +1,4 @@
+import { Type as TypeIcon } from 'lucide-react';
 import { memo, type CSSProperties } from 'react';
 import type { TextElement } from '@freero/shared';
 import { defineElement, ElementText, richTextToPlain, type ElementRenderProps, type NewElement } from '@engine';
@@ -25,6 +26,8 @@ const TextView = memo(function TextView({ element }: ElementRenderProps<TextElem
 
 export default defineElement({
   type: 'text',
+  label: { one: 'Text', many: 'Text' },
+  icon: TypeIcon,
   // Corners scale the text (font size follows); side handles set a wrapping width.
   resize: 'scale',
   minSize: { w: 16, h: 8 },

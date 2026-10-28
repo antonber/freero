@@ -1,3 +1,4 @@
+import { Table as TableIcon } from 'lucide-react';
 import { memo, useEffect, useMemo, type PointerEvent as ReactPointerEvent } from 'react';
 import type { TableElement } from '@freero/shared';
 import {
@@ -150,6 +151,8 @@ const TableView = memo(function TableView({ element: el, selected, editing }: El
 
 export default defineElement({
   type: 'table',
+  label: { one: 'Table', many: 'Tables' },
+  icon: TableIcon,
   resize: 'free',
   minSize: { w: 96, h: 32 },
   defaults: (): Omit<NewElement<'table'>, 'x' | 'y'> => ({

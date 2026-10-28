@@ -100,6 +100,8 @@ const PdfView = memo(function PdfView({ element: el, selected, zoom }: ElementRe
 
 export default defineElement({
   type: 'pdf',
+  label: { one: 'PDF', many: 'PDFs' },
+  icon: FileText,
   resize: 'aspect',
   minSize: { w: 120, h: 120 },
   defaults: (): Omit<NewElement<'pdf'>, 'x' | 'y'> => ({
