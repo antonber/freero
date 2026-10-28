@@ -376,7 +376,7 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
                     {board.team.private ? `Plus the admins of ${board.team.name}` : 'Guests only see boards shared with them'}
                   </span>
                 </div>
-                <span className="fr-share__role">Can edit</span>
+                <span className="fr-share__role">{ROLE_LABEL[board.team.access]}</span>
               </section>
             ) : null}
 

@@ -384,6 +384,13 @@
   gap: 10px;
 }
 
+.fr-dash-projdlg__level {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .fr-dash-projdlg__people {
   display: flex;
   flex-direction: column;

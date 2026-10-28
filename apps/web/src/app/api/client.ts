@@ -35,6 +35,7 @@ import type {
   WorkspaceInvitePreview,
   WorkspaceMember,
   WorkspacePolicies,
+  TeamAccess,
   WorkspaceRole,
   WorkspaceSummary,
 } from '@freero/shared';
@@ -229,9 +230,9 @@ export const api = {
   // projects (folders)
   listProjects: (workspaceId: string) =>
     request<{ projects: ProjectSummary[] }>('GET', `/api/workspaces/${encodeURIComponent(workspaceId)}/projects`),
-  createProject: (workspaceId: string, name: string, access: ProjectAccess) =>
-    request<{ project: ProjectSummary }>('POST', `/api/workspaces/${encodeURIComponent(workspaceId)}/projects`, { name, access }),
-  updateProject: (id: string, body: { name?: string; access?: ProjectAccess }) =>
+  createProject: (workspaceId: string, name: string, access: ProjectAccess, teamAccess: TeamAccess | null = null) =>
+    request<{ project: ProjectSummary }>('POST', `/api/workspaces/${encodeURIComponent(workspaceId)}/projects`, { name, access, teamAccess }),
+  updateProject: (id: string, body: { name?: string; access?: ProjectAccess; teamAccess?: TeamAccess | null }) =>
     request<{ project: ProjectSummary }>('PATCH', `/api/projects/${encodeURIComponent(id)}`, body),
   deleteProject: (id: string) => request<{ ok: true }>('DELETE', `/api/projects/${encodeURIComponent(id)}`),
   listProjectMembers: (id: string) =>
