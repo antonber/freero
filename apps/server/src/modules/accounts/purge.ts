@@ -17,8 +17,9 @@
 import { runExclusive } from '../../platform/jobs';
 import { log, logError } from '../../platform/log';
 import { accountsDueForPurge, deleteAccountIfDue, getUser, isDueForPurge } from '../auth/index';
-import { boardIdsOpenedBy, countHeldBoards, deleteBoardsOwnedBy } from '../boards/index';
+import { boardIdsOpenedBy, countHeldBoards, deleteBoardsOwnedBy, forgetLinkUnlocksOf } from '../boards/index';
 import { membershipsOf } from '../members/index';
+import { forgetEngageRespondent } from '../engage/index';
 import { renameCommentAuthor } from '../realtime/index';
 import { deleteUpload, keepRemovedUploadsOf } from '../uploads/index';
 import { auditScopeOf, handOverTeamWorkspaces } from '../workspaces/index';
@@ -52,6 +53,8 @@ export async function purgeAccount(userId: string, now: number): Promise<boolean
       throw new Error(`could not anonymize comments on board ${boardId}`, { cause: e });
     }
   }
+  await forgetEngageRespondent(userId);
+  await forgetLinkUnlocksOf(userId);
   await deleteUpload((await getUser(userId))?.avatarUrl);
   await keepRemovedUploadsOf(userId);
   const deleted = await deleteAccountIfDue(userId, now);
