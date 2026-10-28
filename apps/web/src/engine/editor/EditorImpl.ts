@@ -235,7 +235,7 @@ export class EditorImpl implements Editor {
     for (const t of types)
       if (!limits.addTypes.includes(t)) {
         const names = limits.addTypes.map((a) => describeElementType(this, a).many.toLowerCase());
-        this.deny(`${limits.byName} limited what can be added right now${names.length ? ` to ${names.join(', ')}` : ''}.`);
+        this.deny(names.length ? `${limits.byName} has limited what you can add to ${names.join(', ')}.` : `${limits.byName} has paused adding new items.`);
         return false;
       }
     return true;
