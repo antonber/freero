@@ -159,7 +159,7 @@ export async function prefsFor(userId: string): Promise<NotificationPrefs> {
   const p = await repo.prefs(userId);
   return {
     emailAll: p.get(ALL) ?? true,
-    types: (Object.keys(NOTIFICATION_TYPES) as NotificationType[]).map((type) => ({
+    types: (Object.keys(NOTIFICATION_TYPES) as NotificationType[]).filter((type) => !NOTIFICATION_TYPES[type].direct).map((type) => ({
       type,
       label: NOTIFICATION_TYPES[type].label,
       description: NOTIFICATION_TYPES[type].description,
@@ -229,7 +229,10 @@ export async function sendDigests(now = Date.now()): Promise<number> {
     const claimed = await repo.claimForEmail(userId, now);
     const prefs = await repo.prefs(userId);
     if (prefs.get(ALL) === false) continue;
-    const due = claimed.filter((r) => r.readAt === null && isNotificationType(r.type) && prefs.get(r.type) !== false);
+    // Direct types were emailed on their own when they were created.
+    const due = claimed.filter(
+      (r) => r.readAt === null && isNotificationType(r.type) && !NOTIFICATION_TYPES[r.type].direct && prefs.get(r.type) !== false,
+    );
     if (!due.length) continue;
     let account;
     try {

@@ -26,7 +26,9 @@ export type RateLimitName =
   | 'oidc'
   | 'sso'
   | 'scim'
-  | 'dataExport';
+  | 'dataExport'
+  | 'report'
+  | 'appeal';
 
 /** `limit` hits per `windowMs`; `null` = not limited. */
 export type RateLimitRule = { limit: number; windowMs: number } | null;
@@ -148,6 +150,15 @@ export interface Config {
   dataExportTtlMs: number;
   /** How often each instance looks for data exports to build. */
   dataExportIntervalMs: number;
+  /**
+   * Operators (moderation queue and actions): lower-cased addresses. An account is an operator
+   * only while its address is listed AND verified.
+   */
+  operatorEmails: string[];
+  /** Where people (and the notices Freero sends) can reach the people handling abuse reports, or null. */
+  abuseContactEmail: string | null;
+  /** RFC 9116 `Contact:` for /.well-known/security.txt (mailto: or https: URL); defaults to the abuse contact. */
+  securityContact: string | null;
 }
 
 export class ConfigError extends Error {
@@ -183,6 +194,8 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   sso: '120/10m', // workspace single sign-on: discovery, starts, assertion posts and callbacks per IP
   scim: '1200/1m', // SCIM requests per provisioning token (Okta and Entra sync in bursts)
   dataExport: '5/1d', // data exports requested per user (each builds a ZIP of everything)
+  report: '20/1h', // abuse reports per IP and per signed-in user
+  appeal: '10/1h', // appeals against moderation actions per IP
 };
 
 const ENV_NAME: Record<RateLimitName, string> = {
@@ -205,6 +218,8 @@ const ENV_NAME: Record<RateLimitName, string> = {
   sso: 'RATE_LIMIT_SSO',
   scim: 'RATE_LIMIT_SCIM',
   dataExport: 'RATE_LIMIT_DATA_EXPORT',
+  report: 'RATE_LIMIT_REPORT',
+  appeal: 'RATE_LIMIT_APPEAL',
 };
 
 /** The built-in providers: env prefix, button label, default issuer, extra verified-email claims. */
@@ -362,6 +377,20 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   for (const s of ssoDnsServers)
     if (!/^(\d{1,3}(\.\d{1,3}){3}|\[[0-9a-fA-F:]+\])(:\d{1,5})?$|^[0-9a-fA-F:]+$/.test(s))
       problems.push(`SSO_DNS_SERVERS: "${s}" is not an IP address (optionally with :port)`);
+  // Moderation (KAI-142): operators by address; the abuse / security contacts people see.
+  const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const operatorEmails = (str('OPERATOR_EMAILS') ?? '')
+    .split(',')
+    .map((v) => v.trim().toLowerCase())
+    .filter(Boolean);
+  for (const e of operatorEmails) if (!EMAIL.test(e)) problems.push(`OPERATOR_EMAILS: "${e}" is not an email address`);
+  const abuseContactEmail = str('ABUSE_CONTACT_EMAIL');
+  if (abuseContactEmail !== null && !EMAIL.test(abuseContactEmail)) problems.push('ABUSE_CONTACT_EMAIL must be an email address');
+  let securityContact = str('SECURITY_CONTACT');
+  if (securityContact !== null && !/^(mailto:[^\s@]+@[^\s@]+|https:\/\/\S+)$/.test(securityContact)) {
+    problems.push('SECURITY_CONTACT must be a mailto: or https:// URL');
+    securityContact = null;
+  }
 
   const config: Config = {
     port: int('PORT', 4000, 0, 65535),
@@ -409,6 +438,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     ssoDnsServers,
     dataExportTtlMs: int('DATA_EXPORT_TTL_HOURS', 168, 1, 24 * 90) * 3_600_000,
     dataExportIntervalMs: int('DATA_EXPORT_INTERVAL_SECONDS', 15, 1, 86_400) * 1000,
+    operatorEmails,
+    abuseContactEmail,
+    securityContact: securityContact ?? (abuseContactEmail ? `mailto:${abuseContactEmail}` : null),
   };
 
   if (production) {

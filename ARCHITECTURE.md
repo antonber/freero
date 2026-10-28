@@ -272,6 +272,12 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   `screen-overlay`.
 - A socket closed with 4401/4403 (removed, link access revoked, signed out) drops the session to
   read-only (`viewer`) besides showing the banner: writes after that could never reach the server.
+  `WS_CLOSE_BOARD_REMOVED` (4451, an operator took the board down) does the same with a "removed
+  for review" banner (`ConnectionStatus` 'removed').
+- `Host.report({ target, reason, note })`: reports to Freero's moderators (KAI-142); the report
+  feature's dialog is the only caller (other features run `report.open` with `{ target }`).
+- `BoardEngineProps.initialState`: a read-only board from a document state, with no network and
+  nothing persisted (the operator's preview of a reported board; host role viewer, `syncUrl` '').
 - `Host.user` changes (profile renamed / recolored in any tab) are republished to presence.
 - Board layers (see "Board layers" under Server): `Editor.layerOf(id)`, `setPrivatePlacement(rule)`,
   `privateCollection(name)` + hook `usePrivateCollection`, `revealPrivate` / `discardPrivate`,
@@ -599,10 +605,12 @@ protocol + role filter + update log; version history + snapshot retention), `unf
 previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`), `templates` (saved
 templates; content is opaque engine JSON), `accounts` (no table: the purge after the deletion grace
 period, orchestrating the owning modules' exports), `notifications` (notifications,
-notification_prefs: inbox, live delivery, email digests), `sso` (sso_domains, sso_connections,
-sso_flows, sso_saml_cache: per-workspace single sign-on), `scim` (scim_tokens, scim_users,
-scim_groups, scim_group_members: SCIM 2.0 provisioning under `/scim/v2`), `privacy` (data_exports:
-personal and workspace data exports). See "Enterprise identity and data" below.
+notification_prefs: inbox, live delivery, email digests), `moderation` (moderation_items,
+moderation_actions: abuse reports, the operator queue, actions and appeals; see "Moderation"),
+`sso` (sso_domains, sso_connections, sso_flows, sso_saml_cache: per-workspace single sign-on),
+`scim` (scim_tokens, scim_users, scim_groups, scim_group_members: SCIM 2.0 provisioning under
+`/scim/v2`), `privacy` (data_exports: personal and workspace data exports). See "Enterprise
+identity and data" below.
 
 - Notifications are created only from trusted server-side events, never from client claims:
   realtime's `onCommentMessage` (a comment message applied from one of THIS instance's sockets,
@@ -692,10 +700,40 @@ personal and workspace data exports). See "Enterprise identity and data" below.
   Each module that stores `/uploads/<name>` URLs exposes `…UploadReferences(among?)` from its
   index (realtime: stored doc bases + log + version history, trashed boards included, and the live
   docs of this instance; templates; avatars; board thumbnails), searching its own tables in SQL
-  with `UPLOAD_REF_PATTERN`. A round adopts stored files without a row (owner NULL), marks what is
+  with `UPLOAD_REF_PATTERN`. Files an operator removed are tombstones the sweep never touches
+  (see "Moderation"). A round adopts stored files without a row (owner NULL), marks what is
   referenced (`last_referenced_at`), re-checks the candidates right before deleting, and deletes
   rows + files no round has seen referenced for 24 h — freeing quota. New content that stores
   upload URLs outside board docs adds its scan to `SCANS` there. `ObjectStorage.list()` exists for it.
+
+### Moderation (`modules/moderation`, KAI-142)
+
+- Reports: `POST /api/reports` (session optional: KAI-43 visitors report too) about a board, an
+  element, an upload or a comment. Who may report = who may open the board: boards'
+  `reportableBoard(boardId, userId | null)` (a visitor = an outsider with no membership, so only
+  what the link gives, capped by workspace policies); everything else gets the same 404 as an
+  unknown id. Rate-limited per IP and per user; one open report per reporter and target.
+- Operators: a VERIFIED address in `OPERATOR_EMAILS` (`isOperator`), never a database flag. The
+  operator API answers 404 to everyone else.
+- The moderated STATE lives in the owning modules, written only through their indexes [S4]:
+  boards `removed_at` (taken down: `repo.getBoard` and lists treat it as gone like the trash;
+  `requireAccess` answers 451 `board_removed` only to someone who could open it otherwise;
+  sockets close with `WS_CLOSE_BOARD_REMOVED` through realtime's `remove-board` control message,
+  content kept as in `moveToTrash` via `closeKeepingContent`) and `link_blocked_at` (link access
+  resolves as 'none' in `repo.toBoard`, once for every reader; the owner's setting is kept);
+  uploads `removed_at` + `quarantine_key` (410 on every GET; bytes kept under a key that never
+  matches an upload name, so neither served nor adopted; the sweep skips removed rows, so the
+  tombstone stays); auth `users.suspended_at` (sessions ended through `onSessionEnd`, sessions of
+  suspended accounts never resolve, `startSession`/`completeSignIn` refuse with
+  `account_suspended`).
+- Moderation owns only the queue and the append-only action record; every action is also a
+  platform audit event `moderation.<action>` (`platform/audit.ts`, actor = the operator's user). Each action emails its subject a statement of reasons with a signed,
+  session-less appeal link (`/appeal?t=`, `mac('moderation.appeal:<actionId>')`) and adds a
+  `moderation.action` notification (a `direct` type: emailed by its module, never in digests, no
+  email setting). Appeals enter the queue (one open appeal per action).
+- Web: `features/report` (board menu, context menu, `report.open` command for other features —
+  comments' flag), `Host.report`; the app's `/operator` queue, `/operator/boards/:id/preview`
+  (read-only snapshot through `BoardEngineProps.initialState`) and `/appeal`.
 
 ### Workspaces (`modules/workspaces`)
 

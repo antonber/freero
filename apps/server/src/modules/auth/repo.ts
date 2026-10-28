@@ -14,6 +14,7 @@ interface UserRow {
   created_at: Date;
   email_verified_at: Date | null;
   deletion_scheduled_for: Date | null;
+  suspended_at: Date | null;
   password_via_link_at: Date | null;
 }
 
@@ -142,6 +143,25 @@ export async function scheduleDeletion(id: string, at: number): Promise<void> {
   await query(`UPDATE users SET deletion_scheduled_for = $2 WHERE id = $1`, [id, new Date(at)]);
 }
 
+// ---- suspension (operators, through modules/moderation) ----
+
+/** Suspends the account; false if it already was (or is gone). */
+export async function suspend(id: string, now: number): Promise<boolean> {
+  return (await query(`UPDATE users SET suspended_at = $2 WHERE id = $1 AND suspended_at IS NULL RETURNING 1`, [id, new Date(now)])).length > 0;
+}
+
+/** Lifts a suspension; false if the account was not suspended (or is gone). */
+export async function unsuspend(id: string): Promise<boolean> {
+  return (await query(`UPDATE users SET suspended_at = NULL WHERE id = $1 AND suspended_at IS NOT NULL RETURNING 1`, [id])).length > 0;
+}
+
+/** Which of these accounts are suspended. */
+export async function suspendedAmong(ids: string[]): Promise<Set<string>> {
+  if (!ids.length) return new Set();
+  const rows = await query<{ id: string }>(`SELECT id FROM users WHERE id = ANY($1::text[]) AND suspended_at IS NOT NULL`, [ids]);
+  return new Set(rows.map((r) => r.id));
+}
+
 /** Returns false if the account was not scheduled for deletion (or is gone). */
 export async function cancelDeletion(id: string): Promise<boolean> {
   const rows = await query(
@@ -239,7 +259,8 @@ export async function findSessionUser(
 ): Promise<{ user: UserWithHash; sessionId: string; authAt: number } | null> {
   const row = await one<UserRow & { session_id: string; session_auth_at: Date }>(
     `SELECT u.*, s.id AS session_id, s.auth_at AS session_auth_at
-     FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = $1 AND s.expires_at > $2`,
+     FROM sessions s JOIN users u ON u.id = s.user_id
+     WHERE s.token_hash = $1 AND s.expires_at > $2 AND u.suspended_at IS NULL`,
     [tokenHash, new Date(now)],
   );
   return row ? { user: toUser(row), sessionId: row.session_id, authAt: row.session_auth_at.getTime() } : null;

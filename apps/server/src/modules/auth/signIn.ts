@@ -16,7 +16,7 @@ import { sendSecurityNotice } from './notices';
 import { connectIdentity, isConnectedIdentity, linkProvider, providerConfig, providerLabel, resolveProviderLogin } from './providers';
 import * as repo from './repo';
 import { assertSignInAllowed, signInRestriction, SignInRestrictedError } from './restrictions';
-import { getAccount, hashToken, newToken, normalizeEmail, sessionFromCookieHeader, startSession } from './service';
+import { getAccount, hashToken, isSuspended, newToken, normalizeEmail, refuseIfSuspended, sessionFromCookieHeader, startSession } from './service';
 import { useSecondFactor } from './twoFactor';
 
 const CHALLENGE_COOKIE = 'freero_2fa';
@@ -49,6 +49,7 @@ export async function completeSignIn(
     sessionExpiresAt = null,
   }: { link?: repo.PendingLink | null; newAccount?: boolean; sessionExpiresAt?: number | null } = {},
 ): Promise<LoginResponse> {
+  await refuseIfSuspended(userId); // before asking for a second step it could never finish
   await assertSignInAllowed({ email: (await getAccount(userId)).email, userId, method });
   if (await repo.twoFactorEnabled(userId)) {
     const token = newToken();
@@ -213,6 +214,7 @@ export async function providerCallback(req: Request, res: Response): Promise<voi
     }
     const r = await resolveProviderLogin(provider, claims);
     if ('error' in r) return fail(r.error);
+    if (await isSuspended(r.userId)) return fail('suspended');
     let done: LoginResponse;
     try {
       done = await completeSignIn(req, res, r.userId, provider, { link: r.link, newAccount: r.created });

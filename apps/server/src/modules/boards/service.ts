@@ -1,6 +1,6 @@
-import { TRASH_RETENTION_DAYS, type BoardPermissions, type BoardSummary, type LinkAccess, type Role } from '@freero/shared';
+import { BOARD_REMOVED, TRASH_RETENTION_DAYS, type BoardPermissions, type BoardSummary, type LinkAccess, type Role } from '@freero/shared';
 import { getConfig } from '../../platform/config';
-import { badRequest, forbidden, notFound } from '../../platform/http';
+import { badRequest, forbidden, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { runExclusive } from '../../platform/jobs';
 import { log } from '../../platform/log';
@@ -50,14 +50,27 @@ export async function roleOn(board: Board, userId: string): Promise<Role | null>
   return (await describeAccess(board, userId)).role;
 }
 
-/** Loads a board and checks the user's role: 404 if missing, 403 if below `min`. */
+/**
+ * 451 for a board an operator took down — only to someone who could open it otherwise, so it
+ * tells nobody else that the board exists.
+ */
+export async function removedFor(boardId: string, userId: string): Promise<boolean> {
+  const board = await repo.getBoardAnyState(boardId);
+  if (!board || board.removedAt === null || board.deletedAt !== null) return false;
+  return (await describeAccess(board, userId)).role !== null;
+}
+
+export const boardRemoved = () =>
+  new HttpError(451, 'This board was removed by Freero’s moderators while they review a report.', BOARD_REMOVED);
+
+/** Loads a board and checks the user's role: 404 if missing, 451 if taken down, 403 if below `min`. */
 export async function requireAccess(
   boardId: string,
   userId: string,
   min: Role = 'viewer',
 ): Promise<{ board: Board; role: Role; access: BoardWorkspaceAccess }> {
   const board = await repo.getBoard(boardId);
-  if (!board) throw notFound('Board not found');
+  if (!board) throw (await removedFor(boardId, userId)) ? boardRemoved() : notFound('Board not found');
   const { role, access } = await describeAccess(board, userId);
   if (!role) throw forbidden();
   if (!atLeast(role, min)) throw forbidden(min === 'owner' ? 'Only the board owner can do that' : `You need ${min} access to do that`);
@@ -113,6 +126,7 @@ export async function toSummary(
     team: access.team,
     member,
     permissions: permissionsFor(board, userId, role, access),
+    ...(board.linkBlocked ? { linkBlocked: true } : {}),
     ...(board.deletedAt !== null ? { deletedAt: board.deletedAt, purgeAt: board.deletedAt + TRASH_RETENTION_MS } : {}),
   };
 }
@@ -248,6 +262,9 @@ export async function createBoard(
         deletedAt: null,
         workspaceId,
         projectId,
+        removedAt: null,
+        linkBlocked: false,
+        storedLinkAccess: linkAccess,
       };
       await repo.insertBoard(board);
       return board;
@@ -334,24 +351,32 @@ async function listTrash(userId: string, workspaceId: string, q: string): Promis
  */
 export async function moveToTrash(board: Board, now = Date.now()): Promise<void> {
   if (!(await repo.trashBoard(board.id, now))) return; // trashed meanwhile by another request
-  // The live doc may hold edits not saved yet (saves are debounced) and closing the room drops
-  // them. Take the live state first, then close (which also waits for a save in flight), then
-  // store that state last, so nothing older lands after it. Nobody can rejoin in between: the
-  // board no longer resolves for access.
-  // The same for its layers (hidden frames' contents, private drafts, sealed ballots): restoring
-  // the board brings them back exactly as they were.
-  const state = await snapshotBoardDoc(board.id);
-  const layers = await snapshotBoardLayers(board.id);
-  await closeBoardDoc(board.id);
-  if (state) await initBoardDoc(board.id, state);
-  for (const l of layers) await initBoardLayer(board.id, l.layer, l.state);
+  await closeKeepingContent(board.id, 'deleted');
+}
+
+/**
+ * Disconnects everyone from a board that no longer resolves for access (trashed, taken down) on
+ * every instance, keeping its content exactly as it was. The live doc may hold edits not saved
+ * yet (saves are debounced) and closing the room drops them. Take the live state first, then
+ * close (which also waits for a save in flight), then store that state last, so nothing older
+ * lands after it. Nobody can rejoin in between: the board no longer resolves for access.
+ * The same for its layers (hidden frames' contents, private drafts, sealed ballots): restoring
+ * the board brings them back exactly as they were.
+ */
+export async function closeKeepingContent(boardId: string, why: 'deleted' | 'removed'): Promise<void> {
+  const state = await snapshotBoardDoc(boardId);
+  const layers = await snapshotBoardLayers(boardId);
+  await closeBoardDoc(boardId, why);
+  if (state) await initBoardDoc(boardId, state);
+  for (const l of layers) await initBoardLayer(boardId, l.layer, l.state);
 }
 
 /** Owner only: takes a board out of the trash (subject to the board quota). */
 export async function restoreFromTrash(boardId: string, userId: string): Promise<Board> {
   const board = await repo.getBoardIncludingTrash(boardId);
   // Not yours / not there: the same answer, so the trash leaks nothing about other people's boards.
-  if (!board || board.deletedAt === null || board.ownerId !== userId) throw notFound('Board not found in your trash');
+  // A board taken down by an operator stays with them until they restore it.
+  if (!board || board.deletedAt === null || board.ownerId !== userId || board.removedAt !== null) throw notFound('Board not found in your trash');
   await withinBoardQuota(
     userId,
     (max) => `You have reached the limit of ${max} boards. Delete boards you no longer need to restore this one.`,
@@ -365,7 +390,7 @@ export async function restoreFromTrash(boardId: string, userId: string): Promise
 /** Owner only: deletes a trashed board and everything on it for good. */
 export async function deleteForever(boardId: string, userId: string): Promise<void> {
   const board = await repo.getBoardIncludingTrash(boardId);
-  if (!board || board.deletedAt === null || board.ownerId !== userId) throw notFound('Board not found in your trash');
+  if (!board || board.deletedAt === null || board.ownerId !== userId || board.removedAt !== null) throw notFound('Board not found in your trash');
   const thumbnail = await repo.deleteTrashedBoard(board.id);
   if (thumbnail === undefined) throw notFound('Board not found in your trash'); // restored or purged meanwhile
   await closeBoardDoc(board.id); // nobody should be connected; make sure nothing saves after the delete

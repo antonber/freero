@@ -8,3 +8,13 @@ import * as repo from './repo';
 export function uploadsOwnedBy(userId: string) {
   return repo.ownedBy(userId);
 }
+// Operators (modules/moderation): remove a file (410 from then on), restore it, purge its kept copy.
+export {
+  uploadName,
+  uploadForModeration,
+  isUploadRemoved,
+  removeUpload,
+  restoreUpload,
+  purgeRemovedUpload,
+  type ModerationUploadState,
+} from './moderation';

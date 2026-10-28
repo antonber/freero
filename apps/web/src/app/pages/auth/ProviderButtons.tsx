@@ -65,6 +65,7 @@ const MESSAGES: Record<OidcErrorCode, string> = {
   sso_failed: 'Your organization’s sign-in didn’t go through, or it expired. Please try again.',
   sso_domain: 'Your identity provider signed you in with an address this workspace hasn’t verified. Ask your workspace admin.',
   sso_removed: 'Your organization has removed your access to this workspace. Ask your workspace admin.',
+  suspended: 'This account has been suspended. We emailed you the reason and how to appeal.',
 };
 
 export function providerErrorText(code: string | null): string | null {

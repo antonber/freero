@@ -54,6 +54,12 @@ function ConnectionBanner() {
   const wasSynced = useRef(false);
   if (synced) wasSynced.current = true;
   if (status === 'local' || (status === 'connected' && synced)) return null;
+  if (status === 'removed')
+    return (
+      <div className="fr-connection fr-connection--error" role="status">
+        <WifiOff size={14} /> This board was removed by Freero’s moderators while they review a report.
+      </div>
+    );
   if (status === 'denied')
     return (
       <div className="fr-connection fr-connection--error" role="status">
