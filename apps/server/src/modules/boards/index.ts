@@ -7,6 +7,8 @@ import * as repo from './repo';
 import { describeAccess, listBoards, removedFor, requireAccess, requireDownload } from './service';
 
 export { createBoard, deleteBoardRowsInWorkspace, cleanUpDeletedBoards } from './service';
+// Files downloaded from a board (modules/uploads): the downloads policy, then the audit log.
+export { authorizeFileDownload } from './service';
 // Operators (modules/moderation): take down / restore, block / unblock the link, and who may report.
 export {
   boardForModeration,
