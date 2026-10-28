@@ -918,13 +918,6 @@ async function run() {
       assert((await A.req('GET', `/api/boards/doesnotexist`)).status === 404, 'missing board');
     });
 
-    // The board page loads this on every open: with AI off it must answer, not 404, or every board
-    // load logs a console error (and the UI screenshot harness fails on every board).
-    await check('AI off: the board AI status answers { ai: null } while every AI action stays 404', async () => {
-      const s = await A.req('GET', `/api/boards/${board.id}/ai`);
-      assert(s.status === 200 && s.json?.ai === null, `status -> ${s.status} ${s.text}`);
-      assert((await A.req('POST', `/api/boards/${board.id}/ai/actions`, { action: 'ideas', prompt: 'x' })).status === 404, 'action while AI is off');
-    });
 
     // ---- realtime ----
     let a, b, c, d;
@@ -4555,10 +4548,10 @@ async function aiChecks() {
     }
     const personal = (await O.req('POST', '/api/boards', { title: 'AI personal' })).json.board;
 
-    await check('ai: with no AI configured, the AI routes do not exist (404) and nothing reaches a model', async () => {
+    await check('ai: with no AI configured, the board status says so ({ ai: null }), the AI actions do not exist (404) and nothing reaches a model', async () => {
       const status = await O.req('GET', `/api/boards/${personal.id}/ai`);
       const run = await O.req('POST', `/api/boards/${personal.id}/ai/actions`, { task: 'ideas', prompt: 'x' });
-      assert(status.status === 404 && run.status === 404, `${status.status} ${run.status}`);
+      assert(status.status === 200 && status.json?.ai === null && run.status === 404, `${status.status} ${status.text} ${run.status}`);
       assert(model.requests.length === 0, 'the model was called');
     });
 
