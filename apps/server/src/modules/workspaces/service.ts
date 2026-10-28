@@ -1,10 +1,13 @@
 // Workspaces: personal + team, members and roles, sharing policies, ownership transfer, and what
 // a workspace grants on its boards (asked by modules/boards for every access decision).
 import type { LinkAccess, Role, WorkspaceMember, WorkspacePolicies, WorkspaceRole, WorkspaceSummary } from '@freero/shared';
+import type { Request } from 'express';
 import { getConfig } from '../../platform/config';
 import { badRequest, forbidden, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { log } from '../../platform/log';
+import { appUrl, renderMail, sendMailLater } from '../../platform/mail';
+import { deletionHoldOn } from './holds';
 import { getUser, getUsers } from '../auth/index';
 import {
   boardIdsInWorkspace,
@@ -135,14 +138,37 @@ export async function updateWorkspace(workspaceId: string, userId: string, body:
  * name. Board rows go in the same transaction as the workspace, under its lock (so no board can
  * be created in it meanwhile); then everyone connected is disconnected.
  */
-export async function deleteWorkspace(workspaceId: string, userId: string, confirm: unknown): Promise<void> {
+export async function deleteWorkspace(req: Request | null, workspaceId: string, userId: string, confirm: unknown): Promise<void> {
   const { workspace } = await requireWorkspace(workspaceId, userId, 'owner');
   teamOnly(workspace);
   if (typeof confirm !== 'string' || confirm.trim() !== workspace.name) throw badRequest('Type the workspace name to confirm');
-  await deleteTeamWorkspaceNow(workspaceId);
+  const hold = await deletionHoldOn(workspaceId);
+  if (hold) throw new HttpError(409, `This workspace can’t be deleted: ${hold}`);
+  const owners = (await repo.listMembers(workspaceId)).filter((m) => m.role === 'owner').map((m) => m.userId);
+  const boards = await deleteTeamWorkspaceNow(workspaceId);
+  if (boards === null) return;
+  // AUDIT(KAI-48): emit `workspace.deleted` { workspaceId, actorId: userId, boards } once the audit log lands.
+  log(`workspaces: ${userId} deleted workspace ${workspaceId} (${boards} boards)`);
+  // A receipt for every owner: what went, and that nothing of it can be restored.
+  const people = await getUsers([...owners, userId]);
+  for (const u of people.values())
+    sendMailLater({
+      to: u.email,
+      ...renderMail({
+        subject: `${workspace.name} was deleted`,
+        title: `${workspace.name} was deleted`,
+        paragraphs: [
+          `${people.get(userId)?.name ?? 'An owner'} deleted the workspace ${workspace.name} on ${new Date().toUTCString()}.`,
+          `Deleted with it: ${boards} board${boards === 1 ? '' : 's'} (their content, comments, version history and private layers), its projects, members, invitations, single sign-on and provisioning settings. Images only those boards used are removed from storage within a day.`,
+          'This can’t be undone. If you didn’t expect this, contact the person who deleted it.',
+        ],
+        action: { label: 'Open Freero', url: appUrl(req, '/app') },
+      }),
+    });
 }
 
-async function deleteTeamWorkspaceNow(workspaceId: string): Promise<void> {
+/** Deletes a team workspace and its boards now; returns how many boards went, or null if it was gone already. */
+async function deleteTeamWorkspaceNow(workspaceId: string): Promise<number | null> {
   const gone = await repo.transaction(async () => {
     if (!(await repo.lockWorkspace(workspaceId, 'update'))) return null;
     const boards = await deleteBoardRowsInWorkspace(workspaceId);
@@ -150,6 +176,7 @@ async function deleteTeamWorkspaceNow(workspaceId: string): Promise<void> {
     return boards;
   });
   if (gone) await cleanUpDeletedBoards(gone);
+  return gone ? gone.length : null;
 }
 
 /**
