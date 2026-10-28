@@ -19,6 +19,14 @@ export function unfurl(url: string): Promise<LinkPreview> {
   return api.unfurl(url);
 }
 
+export function importImage(url: string): Promise<{ url: string }> {
+  return api.importImage(url);
+}
+
+export function fetchImage(url: string): Promise<Blob> {
+  return api.fetchImage(url);
+}
+
 export async function listMembers(id: string): Promise<HostUser[]> {
   const { members } = await api.listMembers(id);
   return members.map((m) => ({ id: m.userId, name: m.name, color: m.color, avatarUrl: m.avatarUrl }));

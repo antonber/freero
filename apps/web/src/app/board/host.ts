@@ -3,7 +3,7 @@ import type { BoardSummary, Role } from '@freero/shared';
 import type { Host, HostUser } from '@engine';
 import type { ToastApi } from '@ui';
 import { wsBase } from '../api/client';
-import { listMembers, renameBoard, saveThumbnail, unfurl, uploadImage } from '../hostServices';
+import { fetchImage, importImage, listMembers, renameBoard, saveThumbnail, unfurl, uploadImage } from '../hostServices';
 import { serverNow, syncServerClock } from './serverClock';
 
 export interface HostDeps {
@@ -44,6 +44,8 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     serverNow,
     listMembers: () => listMembers(board.id),
     unfurl,
+    importImage,
+    fetchImage,
   };
 }
 
@@ -81,5 +83,9 @@ export function createLocalHost(title: string, deps: Omit<HostDeps, 'user' | 'op
     listMembers: async () => [user],
     // Offline sandbox: no previews (the embed card shows the plain link).
     unfurl: async () => Promise.reject(new Error('Link previews need a real board.')),
+    // No server to fetch through: images placed by URL stay linked (CORS hosts still export,
+    // others are reported as missing by the export).
+    importImage: async () => Promise.reject(new Error('Copying images needs a real board.')),
+    fetchImage: async () => Promise.reject(new Error('Copying images needs a real board.')),
   };
 }

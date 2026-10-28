@@ -3,6 +3,7 @@ import type {
   BoardMember,
   BoardSummary,
   CreateBoardRequest,
+  ImportImageRequest,
   InviteRequest,
   LoginRequest,
   Role,
@@ -82,6 +83,14 @@ export const api = {
 
   // link previews
   unfurl: (url: string) => request<UnfurlResponse>('GET', `/api/unfurl?url=${encodeURIComponent(url)}`),
+
+  // images placed by URL (fetched by the server: works for hosts without CORS)
+  importImage: (url: string) => request<{ url: string }>('POST', '/api/unfurl/image', { url } satisfies ImportImageRequest),
+  async fetchImage(url: string): Promise<Blob> {
+    const res = await fetch(`/api/unfurl/image?url=${encodeURIComponent(url)}`, { credentials: 'same-origin' });
+    if (!res.ok) throw new ApiError(res.status, 'Image could not be fetched');
+    return res.blob();
+  },
 
   // uploads
   async uploadImage(file: Blob): Promise<{ url: string }> {
