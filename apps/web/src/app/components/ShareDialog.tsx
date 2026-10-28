@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Globe, Link2, Lock, LogOut, X } from 'lucide-react';
+import { Globe, Link2, Lock, LogOut, Mail, RotateCw, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import type { BoardMember, BoardSummary, LinkAccess, Role } from '@freero/shared';
+import type { BoardMember, BoardSummary, LinkAccess, PendingInvite, Role } from '@freero/shared';
 import { Avatar, Button, IconButton, Input, Modal, Select, Spinner, useToast, type SelectOption } from '@ui';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
@@ -24,6 +24,15 @@ const LINK_OPTIONS: SelectOption<LinkAccess>[] = [
 ];
 
 const ROLE_LABEL: Record<Role, string> = { owner: 'Owner', editor: 'Can edit', commenter: 'Can comment', viewer: 'Can view' };
+
+const DAY = 24 * 60 * 60 * 1000;
+
+/** "Invited by Ada · expires in 13 days" / "Link expired — resend it". */
+export function inviteStatus(inv: PendingInvite, now = Date.now()): string {
+  if (inv.expiresAt <= now) return 'Link expired — resend it';
+  const days = Math.ceil((inv.expiresAt - now) / DAY);
+  return `Invited by ${inv.invitedByName} · expires in ${days === 1 ? '1 day' : `${days} days`}`;
+}
 
 export interface ShareDialogProps {
   boardId: string;
@@ -51,6 +60,7 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
   const navigate = useNavigate();
   const [board, setBoard] = useState<BoardSummary | null>(givenBoard ?? null);
   const [members, setMembers] = useState<BoardMember[] | null>(null);
+  const [invites, setInvites] = useState<PendingInvite[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [email, setEmail] = useState('');
@@ -66,12 +76,18 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
     setLoadError(null);
     setInviteError(null);
     setMembers(null);
+    setInvites([]);
     if (givenBoard) setBoard(givenBoard);
     Promise.all([api.getBoard(boardId), api.listMembers(boardId)])
-      .then(([b, m]) => {
+      .then(async ([b, m]) => {
         if (cancelled) return;
         setBoard(b.board);
         setMembers(m.members);
+        // Pending invites are only shown to people who can invite.
+        if (b.board.role === 'owner' || b.board.role === 'editor') {
+          const { invites } = await api.listInvites(boardId);
+          if (!cancelled) setInvites(invites);
+        }
       })
       .catch((e) => {
         if (!cancelled) setLoadError(e instanceof ApiError ? e.message : 'Could not load sharing settings');
@@ -85,6 +101,7 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
   const myRole: Role | undefined = board?.role;
   const isOwner = myRole === 'owner';
   const canInvite = myRole === 'owner' || myRole === 'editor';
+  const verified = user?.emailVerified !== false;
   const isMember = !!members?.some((m) => m.userId === user?.id);
 
   const sorted = useMemo(() => {
@@ -103,18 +120,19 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
     setInviting(true);
     setInviteError(null);
     try {
-      const { member } = await api.invite(boardId, { email: addr, role: inviteRole });
-      setMembers((list) => [...(list ?? []).filter((m) => m.userId !== member.userId), member]);
+      const out = await api.invite(boardId, { email: addr, role: inviteRole });
+      if (out.member) {
+        const member = out.member;
+        setMembers((list) => [...(list ?? []).filter((m) => m.userId !== member.userId), member]);
+        notify(`${member.name} can now access this board`, 'success');
+      } else {
+        const invite = out.invite;
+        setInvites((list) => [...list.filter((i) => i.id !== invite.id), invite]);
+        notify(`Invite sent to ${invite.email}`, 'success');
+      }
       setEmail('');
-      notify(`${member.name} can now access this board`, 'success');
     } catch (err) {
-      setInviteError(
-        err instanceof ApiError
-          ? err.status === 404
-            ? `No Freero account uses ${addr} yet. Ask them to sign up first.`
-            : err.message
-          : 'Could not send the invite',
-      );
+      setInviteError(err instanceof ApiError ? err.message : 'Could not send the invite');
     } finally {
       setInviting(false);
     }
@@ -140,6 +158,37 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
     } catch (err) {
       setMembers(prev);
       notify(err instanceof ApiError ? err.message : 'Could not remove that person', 'error');
+    }
+  };
+
+  const resend = async (inv: PendingInvite) => {
+    try {
+      const { invite } = await api.resendInvite(boardId, inv.id);
+      setInvites((list) => list.map((i) => (i.id === invite.id ? invite : i)));
+      notify(`Sent a new invite link to ${invite.email}`, 'success');
+    } catch (err) {
+      notify(err instanceof ApiError ? err.message : 'Could not resend the invite', 'error');
+    }
+  };
+
+  const revoke = async (inv: PendingInvite) => {
+    const prev = invites;
+    setInvites((list) => list.filter((i) => i.id !== inv.id));
+    try {
+      await api.revokeInvite(boardId, inv.id);
+      notify(`Invite to ${inv.email} revoked`, 'info');
+    } catch (err) {
+      setInvites(prev);
+      notify(err instanceof ApiError ? err.message : 'Could not revoke the invite', 'error');
+    }
+  };
+
+  const resendVerification = async () => {
+    try {
+      await api.resendVerification();
+      notify(`Check ${user?.email ?? 'your inbox'} for the confirmation link`, 'success');
+    } catch (err) {
+      notify(err instanceof ApiError ? err.message : 'Could not send the link', 'error');
     }
   };
 
@@ -209,7 +258,14 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
           </div>
         ) : (
           <div className="fr-share">
-            {canInvite ? (
+            {canInvite && !verified ? (
+              <div className="fr-share__note fr-share__note--verify" role="status">
+                Confirm your email address to invite people and share by link.
+                <Button variant="ghost" size="sm" icon={Mail} onClick={resendVerification}>
+                  Resend link
+                </Button>
+              </div>
+            ) : canInvite ? (
               <form className="fr-share__invite" onSubmit={invite} noValidate>
                 <Input
                   className="fr-share__email"
@@ -264,6 +320,28 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
                         ) : (
                           <span className="fr-share__role">{ROLE_LABEL[m.role]}</span>
                         )}
+                      </div>
+                    </li>
+                  );
+                })}
+                {invites.map((inv) => {
+                  const expired = inv.expiresAt <= Date.now();
+                  const mayRevoke = isOwner || inv.invitedById === user?.id;
+                  return (
+                    <li key={inv.id} className="fr-share__member fr-share__member--pending" data-testid="share-invite">
+                      <span className="fr-share__pending-icon" aria-hidden>
+                        <Mail size={16} />
+                      </span>
+                      <div className="fr-share__who">
+                        <span className="fr-share__name">{inv.email}</span>
+                        <span className={`fr-share__email-text${expired ? ' fr-share__expired' : ''}`}>{inviteStatus(inv)}</span>
+                      </div>
+                      <div className="fr-share__member-actions">
+                        <span className="fr-share__role">{ROLE_LABEL[inv.role]}</span>
+                        <IconButton size={32} icon={RotateCw} label={`Resend invite to ${inv.email}`} tooltipSide="top" onClick={() => resend(inv)} />
+                        {mayRevoke ? (
+                          <IconButton size={32} icon={X} label={`Revoke invite to ${inv.email}`} tooltipSide="top" onClick={() => revoke(inv)} />
+                        ) : null}
                       </div>
                     </li>
                   );
