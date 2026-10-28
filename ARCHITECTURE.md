@@ -277,6 +277,11 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
   stickies with similar text match. `ElementText.padding` may be per side (`{ top, right, bottom,
   left }`): tagged stickies keep their chip band free.
 - The active tool's Options flyout is kept inside the window by the engine.
+- Text-style format controls are the engine's (`@engine`): `FontFamilyControl`, `FontSizeControl`
+  (numbers, 'auto', labelled presets, custom field), `TextColorControl`, `TextHighlightControl`,
+  `TextMarkButtons` (pick `marks`), `TextAlignControl` (vertical too when given `vAlign`), with
+  `MIXED` / `commonValue`. A text-bearing feature composes them in `format.tsx` and owns only the
+  write (`onChange` → its patch); never copy them into a feature.
 
 Canvas productivity (engine primitives; the product UI lives in `features/arrange`, `find`,
 `layers`, `format-painter`, `select-similar`):
@@ -346,6 +351,7 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
 
 `Button` {variant: 'primary'|'secondary'|'ghost'|'danger', size: 'sm'|'md'|'lg', icon?, loading?} ·
 `IconButton` {icon, label, active?, size?: 32|40, shortcut?, tooltipSide?} ·
+`ToolbarButton` {label, shortcut?, wide?, children} (format-toolbar button showing a value — font, size, a color sample; never a native `title`) ·
 `Tooltip` {content, shortcut?, side?, children} · `Popover` {open, onClose, anchor: HTMLElement|DOMRect|null, side?, align?, autoFocus?, escapeToContent?, children} ·
 `Menu` {open, onClose, anchor, items: MenuItem[]} where MenuItem = {id, label, icon?, shortcut?, danger?, disabled?, onSelect, submenu?: MenuItem[]} | {divider: true} | {heading: string} ·
 `Modal` {open, onClose, title, width?, footer?, children} · `Input`, `TextArea`, `Select` {options, value, onChange},
