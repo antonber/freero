@@ -440,7 +440,27 @@ export type ElementOf<T extends ElementType> = Extract<BoardElement, { type: T }
 //
 // A tombstone wins over a concurrent edit/reply/detach of what it deletes. Readers assemble
 // the records into `CommentThread` (the read model below).
+//
+// Mentions inside a message's text are tokens naming a user ID: `<@userId>`. Readers show the
+// person's CURRENT name for that ID, so typing "@Ann" (or someone renaming themselves) can never
+// make a comment look like it mentions someone else, and the server notifies exactly those IDs.
 // ---------------------------------------------------------------------------
+
+export const MENTION_RE = /<@([A-Za-z0-9_-]{1,64})>/g;
+
+export const mentionToken = (userId: string) => `<@${userId}>`;
+
+/** Distinct user IDs mentioned in `text`, in order of first appearance. */
+export function mentionedUserIds(text: string): string[] {
+  const out = new Set<string>();
+  for (const m of text.matchAll(MENTION_RE)) out.add(m[1]);
+  return [...out];
+}
+
+/** `text` with every mention as "@Name" (unknown IDs: "@someone"). */
+export function mentionsAsNames(text: string, nameOf: (userId: string) => string | undefined): string {
+  return text.replace(MENTION_RE, (_, id: string) => `@${nameOf(id) ?? 'someone'}`);
+}
 
 export interface CommentThreadRecord {
   kind: 'thread';
