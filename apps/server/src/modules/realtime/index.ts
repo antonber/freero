@@ -1,4 +1,7 @@
 // Public API of modules/realtime [S2].
+import { commentPeople, COMMENTS_COLLECTION } from './comments';
+import type { BoardView } from './view';
+
 export {
   snapshotBoardDoc,
   initBoardDoc,
@@ -10,7 +13,22 @@ export {
   flushAllRooms,
   renameCommentAuthor,
   commentPeopleOf,
+  readBoardView,
+  changeBoard,
 } from './rooms';
+// The board as one reader sees it (their role's layers applied) and the one request-time write
+// path for board content (one transaction, published and saved): the outline and structure
+// modules read and write boards through these, never through Yjs.
+export {
+  BoardChangeError,
+  type BoardReader,
+  type BoardView,
+  type BoardChange,
+  type AppliedChange,
+  type ViewLayer,
+} from './view';
+/** User ids that appear in a board view's comments (authors, @mentions). */
+export const commentPeopleIn = (view: BoardView): Set<string> => commentPeople(view.collection(COMMENTS_COLLECTION));
 // Comment messages written on this instance, attributed to the socket's user (notifications).
 export { onCommentMessage, type CommentMessageEvent } from './comments';
 // Version history (stored snapshots of a board's document): list them, read one's full Yjs state.
