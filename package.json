@@ -22,6 +22,10 @@
     "concurrently": "^10.0.6",
     "playwright": "^1.64.1",
     "typescript": "^5.9.3",
+    "vite": "^5.4.21",
     "vitest": "^3.2.7"
+  },
+  "overrides": {
+    "vite": "$vite"
   }
 }
