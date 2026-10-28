@@ -4,6 +4,8 @@
 // all come through here, so the downloads policy (KAI-197) is checked once, for all of them.
 import {
   buildOutline,
+  describeSuggestions,
+  suggestedElement,
   renderOutlineMarkdown,
   selectOutline,
   type BoardOutline,
@@ -15,7 +17,7 @@ import {
 import { getUsers } from '../auth/index';
 import { requireBoardAccess, requireBoardDownload, teamAccessUserIds } from '../boards/index';
 import { memberIdsOf } from '../members/index';
-import { commentPeopleIn, readBoardView, type BoardView } from '../realtime/index';
+import { commentPeopleIn, readBoardView, reviewSuggestions, type BoardView } from '../realtime/index';
 import { outlineFeatures } from './features';
 
 export interface OutlineQuery {
@@ -26,6 +28,8 @@ export interface OutlineQuery {
   budget?: number;
   authors: boolean;
   comments: boolean;
+  /** Also the pending suggestions (`include=suggestions`; owners and editors only). */
+  suggestions?: boolean;
 }
 
 /** Items + edges per response when the caller sets neither a limit nor a budget. */
@@ -90,7 +94,14 @@ async function readOutline(boardId: string, reader: OutlineReader, url: string, 
     o,
   );
   const names = await namesFor(boardId, ownerId, view, wanted);
-  return { outline: buildOutline(source((id) => names.get(id)), features, o), view };
+  const named = source((id) => names.get(id));
+  // Proposed, not on the board: listed apart from its items, read the same way (KAI-169).
+  const suggestions = () => {
+    const byId = new Map(view.elements.map((e) => [e.el.id, e.el]));
+    const list = reviewSuggestions(view.suggestions, view).map(({ record, state }) => ({ record, state, element: suggestedElement(record, (id) => byId.get(id)) }));
+    return describeSuggestions(named, features, list);
+  };
+  return { outline: buildOutline(named, features, o), view, suggestions };
 }
 
 export async function boardOutline(
@@ -113,6 +124,8 @@ export async function boardOutline(
     updatedAt: (id) => updated.get(id),
   };
   const outline = selectOutline(read.outline, selection);
+  // Only an owner's or editor's view holds suggestions; for anyone else this is an empty list.
+  if (q.suggestions) outline.suggestions = read.suggestions();
   return q.format === 'markdown' ? { outline, markdown: renderOutlineMarkdown(outline, { authors: q.authors }) } : { outline };
 }
 

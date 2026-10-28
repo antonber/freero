@@ -104,6 +104,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 |---|---|---|
 | Yjs doc, provider, awareness | `engine/store/` | `Editor` methods |
 | Layer docs (`private`, `editors`; see "Board layers") | `engine/store/` (placement: `engine/editor/layers.ts`); reveal: server `realtime` | `Editor` writes, `privateCollection`, `revealPrivate` |
+| Suggestion records (editors layer `suggestions`; see "Suggestions") | server `realtime` creates them (`proposeSuggestions`); a socket may only set its own `decision` | `Editor.acceptSuggestions` / `rejectSuggestions`, API accept / reject |
 | `elements` map | engine (`editor.create/update/remove/transact`) | same |
 | `settings` map (background, grid) | engine | `editor` settings API |
 | feature collection (e.g. `comments`) | the feature whose `feature.ts` `owns` it | `editor.runCommand` of the owner. Writes from a non-owner throw at runtime [W8 checks unique claims] |
@@ -334,6 +335,11 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
 - Board layers (see "Board layers" under Server): `Editor.layerOf(id)`, `setPrivatePlacement(rule)`,
   `privateCollection(name)` + hook `usePrivateCollection`, `revealPrivate` / `discardPrivate`,
   `ElementDefinition.hidesContents(el)`. `ExportOptions.sharedOnly` (thumbnails).
+- Suggestions (KAI-169; see "Suggestions" under Server): `Editor.getSuggestions()` (pending, with
+  `state`) + hook `useSuggestions()`, `acceptSuggestions(ids, { force? })` → `{ accepted, stale }`,
+  `rejectSuggestions(ids)`; `<ElementPreview element>` (`@engine`) draws an element as it would look
+  without being on the board (ghosts; world coordinates, never selected or hit-tested); test boards
+  get `TestBoard.propose(records)`.
 - `Editor.exportElements(ids?)` → `ElementsSnapshot` (what copy puts on the clipboard: elements
   with frame children + `copyContent`) and `Editor.insertElements(snapshot, { at? })` — the ONE
   insertion path for copied content (paste uses it): fresh ids, references remapped, content
@@ -1107,8 +1113,8 @@ Agents, the API and AI read and write boards semantically, never by coordinates.
   `layout/` (pure, no dependencies; in-house layered graph layout, Mermaid reader, mind map, sticky
   clusters, sequence, table) lays a structure out from (0, 0); `plan.ts` places it on a free spot of
   the view and turns it into a `BoardChange`; `sinks.ts` decides where that goes (`board` →
-  `changeBoard`, `preview` → returned for `Editor.insertElements`). The suggestions layer (KAI-169)
-  is a new sink, not a new planner.
+  `changeBoard`, `preview` → returned for `Editor.insertElements`, `suggestions` →
+  `proposeSuggestions`: the same plan, proposed instead of written; KAI-169).
   Both modules expose these through their `index.ts` (`boardOutline`, `insertStructure`): other modules
   (AI, the public API) read and write boards through them, with the caller's own access.
 
@@ -1177,9 +1183,15 @@ audit and admin controls are the same code.
   accounts and accounts awaiting deletion. 401/403 carry a `WWW-Authenticate` challenge naming the
   protected-resource metadata (RFC 9728), as MCP clients expect.
 - **Scopes** (`API_SCOPES` in `@freero/shared`, one model for REST and MCP): `boards:read`,
-  `boards:write`, `boards:suggest` (reserved for the suggestions layer, KAI-169), `comments:write`,
-  `members:read`, `members:write`. Effective power = the person's role on the board AND the scope:
-  a viewer's write-scoped token still can't write.
+  `boards:write`, `boards:suggest`, `comments:write`, `members:read`, `members:write`. Effective
+  power = the person's role on the board AND the scope: a viewer's write-scoped token still can't
+  write.
+- **Suggestions** (KAI-169, see "Suggestions" below): `POST /boards/:id/suggestions` (and
+  `/structure` with `target: 'suggestions'`) needs `boards:suggest` and an owner/editor behind the
+  token; listing needs `boards:read`; `…/suggestions/accept|reject` need `boards:write`. A token
+  with only `boards:suggest` proposes and never writes or decides. The author is the credential
+  (`kind: 'app'`, its name, the person it acts for). This is the contract the MCP server's
+  `propose_changes` (KAI-107) calls.
 - **OAuth server** (`apiauth/oauth.ts`), built to OAuth 2.1 as the MCP authorization spec requires:
   authorization code only; PKCE S256 mandatory for every client; exact redirect URIs (loopback http
   on any port, RFC 8252; https; an app's own scheme; never `javascript:`/`data:`/fragments); codes
@@ -1658,7 +1670,7 @@ only to connections that may read them:
 | layer (wire / stored) | read by | written by | holds |
 |---|---|---|---|
 | `private` / `u:<userId>` | that user's sockets | that user, while owner/editor | private-mode drafts (`elements`), sealed ballots (`voting`), sealed planning-poker picks (`estimation`) |
-| `editors` / `editors` | owner/editor sockets | owners/editors | contents of hidden frames (`elements`) |
+| `editors` / `editors` | owner/editor sockets | owners/editors | contents of hidden frames (`elements`); pending suggestions (`suggestions`, created only by the server; see "Suggestions") |
 
 - Wire format: `WS_MESSAGE_LAYER` envelopes around y-protocols sync messages, `WS_MESSAGE_LAYER_OP`
   for reveal/discard (`@freero/shared` api.ts). A socket asking for a layer it may not read gets no
@@ -1721,6 +1733,56 @@ only to connections that may read them:
   not send them to. What was in the shared doc before it was hidden was already seen; hiding is not
   retroactive.
 
+### Suggestions — changes proposed for people to accept (KAI-169; `@freero/shared` `suggestions.ts`)
+
+An agent, an app or an AI action can SUGGEST instead of edit: new items, field changes of items on
+the board, deletions. A suggestion is not board content until someone who can edit accepts it.
+
+- **Where they live**: the `suggestions` collection of the `editors` layer — one `SuggestionRecord`
+  per proposed change of ONE item, records of one proposal sharing a `groupId` (each carries the
+  group's `author` and `description`). Not a layer of its own on purpose: the editors layer already
+  reaches exactly the people who may accept (owners/editors; never viewers, commenters or guests
+  who can't edit), is persisted, relayed between instances, left out of thumbnails and exports
+  (suggestions aren't elements) and left alone by version restore — so suggestions inherit all of
+  it. Restoring a version never touches pending suggestions; duplicating a board copies the editors
+  layer WITHOUT them (`snapshotBoardLayer(…, { withoutSuggestions })`).
+- **Single writers**: records are CREATED only by the server — realtime's `proposeSuggestions(boardId,
+  actor, { author, description }, plan)`, the seam everything that wants review goes through (the
+  public API, structure insertion with `target: 'suggestions'`, in-app AI): `plan` returns a
+  `BoardChange` from the SAME planners as a direct write, which becomes the records. So the author
+  badge ("Claude for Maria", "AI for Maria") can't be forged by a socket. A SOCKET may only set or
+  clear the `decision` of an existing record, naming itself (`realtime/suggestions.ts`
+  `guardSuggestionWrites`, inside the transaction that applies its editors-layer update, like the
+  facilitation guards: what it undoes reaches nobody, the sender gets the correction). Decided
+  records stay a day (undo needs them) and are pruned when a room loads.
+- **Accepting** in the app (`Editor.acceptSuggestions`) is an ordinary edit by the acceptor plus the
+  decision, in ONE undo step across the shared doc and the editors layer (its undo manager tracks
+  the collection); undo puts the items back AND makes the suggestions pending again. New items keep
+  their proposed ids (two people accepting at once make one item), `createdBy` is the acceptor and
+  `suggestedBy` the proposer. Accepting a line brings the new items it joins (`acceptClosure`);
+  rejecting a new item rejects lines to it (`rejectClosure`). Role guards and a facilitator's limits
+  apply as to any write (a locked participant is a commenter: no layer writes at all). On a request
+  (`decideSuggestions`, the public API) the change goes through `applyChange` and the decisions are
+  written in the same step.
+- **Stale** (`suggestionState`): an update whose fields changed since it was proposed (its `base`),
+  a deletion of an item that changed in any way (`elementFingerprint`), or an item (or one a new line
+  needs) that is gone. Stale ones are never applied silently: the app asks ("Apply anyway"), the API
+  answers 409 `suggestion_stale` unless `force`.
+- **Audit and activity**: every accept / reject / undo of either is
+  `board.suggestion_accepted|rejected|reopened` in the board's workspace log, recorded by the
+  instance that applied it (`via: board | api`). A proposal is an activity entry for owners and
+  editors ("Claude for Maria suggested 6 changes", realtime `onSuggestionsProposed`); accepting is
+  the acceptor's ordinary edit (a request's carries its app, KAI-168).
+- **Attribution**: a proposal made on a request is from its `BoardActor` — "<app> for <person>"
+  when an app or token acts (`via`, KAI-168), else the person; in-app AI passes its own author
+  ("AI for <person>"). MCP's `propose_changes` is the suggestions sink through `insertStructureFor`
+  (offered because `structureTargets()` lists `suggestions`); REST and MCP share
+  `api/service.ts` (`listSuggestions`, `proposeChanges`, `decideSuggestions`).
+- **Reading**: `BoardView.suggestions` (pending, owners/editors only); the outline lists them only
+  with `include=suggestions`; `GET /api/v1/boards/:id/suggestions`. UI: `features/suggestions`
+  (ghosts drawn with `ElementPreview`, the proposer's badge, accept / reject per item and per group,
+  the review dock, the top-bar count).
+
 ## Verification
 
 - `npm run check` — boundaries + typecheck + unit tests. Must pass before any change is "done".
@@ -1733,7 +1795,7 @@ only to connections that may read them:
   `S3_BUCKET` and keys (MinIO, SeaweedFS…), the `s3` group checks the S3 backend (prefixes, kept
   copies under `private/`, restore, retention, the S3_PUBLIC_URL redirect and stored Cache-Control);
   all other groups stay on the local disk. CI does all of it.
-  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation,ai,api,mcp,s3,suite` runs some groups (to loop one while hunting a flake).
+  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation,ai,api,mcp,s3,suite,suggestions` runs some groups (to loop one while hunting a flake).
   The `mcp` group drives the MCP server with the official MCP client SDK, OAuth (dynamic
   registration, consent, PKCE) included; with DATABASE_URL + REDIS_URL one client's requests also
   alternate between two instances.

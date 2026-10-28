@@ -13,6 +13,7 @@
     { "name": "account" },
     { "name": "boards" },
     { "name": "items" },
+    { "name": "suggestions", "description": "Changes proposed for people to accept (KAI-169): propose with boards:suggest, read with boards:read, decide with boards:write" },
     { "name": "comments" },
     { "name": "members" }
   ],
@@ -235,6 +236,7 @@
           { "name": "cursor", "in": "query", "schema": { "type": "string" } },
           { "name": "scope", "in": "query", "description": "An item id: only it and what is under it", "schema": { "type": "string" } },
           { "name": "authors", "in": "query", "schema": { "type": "string", "enum": ["0", "1"], "default": "0" } },
+          { "name": "include", "in": "query", "description": "suggestions: also the pending suggestions (owners and editors), apart from the items", "schema": { "type": "string", "enum": ["suggestions"] } },
           { "name": "comments", "in": "query", "schema": { "type": "string", "enum": ["0", "1"], "default": "1" } },
           { "name": "If-None-Match", "in": "header", "schema": { "type": "string" } }
         ],
@@ -451,7 +453,7 @@
         "operationId": "insertStructure",
         "tags": ["items"],
         "summary": "Lay out a structure (outline, mind map, clusters, graph, Mermaid, table …) on free space",
-        "description": "Owners and editors. Request and result: docs/board-outline.md \"Insert structure\". `target: \"preview\"` writes nothing and needs only boards:read.",
+        "description": "Owners and editors. Request and result: docs/board-outline.md \"Insert structure\". `target: \"preview\"` writes nothing and needs only boards:read. `target: \"suggestions\"` writes nothing to the board either: the result becomes one group of suggestions (`groupId`) for people who can edit to accept or reject, and needs only boards:suggest.",
         "x-freero-scope": "boards:write",
         "security": [{ "bearer": ["boards:write"] }],
         "requestBody": {
@@ -465,7 +467,8 @@
                   "structure": { "type": "object", "required": ["kind"], "properties": { "kind": { "type": "string" } } },
                   "near": { "type": "string" },
                   "at": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } } },
-                  "target": { "type": "string", "enum": ["board", "preview"] }
+                  "target": { "type": "string", "enum": ["board", "preview", "suggestions"] },
+                  "description": { "type": "string", "maxLength": 500, "description": "target suggestions: what the proposal does, shown to reviewers" }
                 }
               }
             }
@@ -479,6 +482,167 @@
           "403": { "$ref": "#/components/responses/Forbidden" },
           "404": { "$ref": "#/components/responses/NotFound" },
           "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/boards/{boardId}/suggestions": {
+      "parameters": [{ "$ref": "#/components/parameters/BoardId" }],
+      "get": {
+        "operationId": "listSuggestions",
+        "tags": ["suggestions"],
+        "summary": "Pending suggestions, grouped as proposed",
+        "description": "Owners and editors (suggestions are visible only to people who can edit the board). Each suggestion says whether accepting it still applies it as proposed (`state`). Follows the workspace's downloads policy like other reads.",
+        "x-freero-scope": "boards:read",
+        "security": [{ "bearer": ["boards:read"] }],
+        "parameters": [{ "name": "groupId", "in": "query", "description": "Only this group", "schema": { "type": "string" } }],
+        "responses": {
+          "200": {
+            "description": "Pending suggestions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["notice", "groups"],
+                  "properties": {
+                    "notice": { "$ref": "#/components/schemas/Notice" },
+                    "groups": { "type": "array", "items": { "$ref": "#/components/schemas/SuggestionGroup" } }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "post": {
+        "operationId": "proposeChanges",
+        "tags": ["suggestions"],
+        "summary": "Suggest new items, changes and deletions instead of making them",
+        "description": "Proposes ONE group of changes that is not on the board until someone who can edit it accepts it; the board does not change. The credential's owner must be an owner or editor of the board; a token with only boards:suggest can propose but never write the board. `create` takes the same items as POST /items (placed on free space, connectors attach by item id or \"$<index>\" of an earlier create), `update` the same fields as PATCH /items/{itemId} plus the item's `id`, `delete` item ids. Refused whole if any part is wrong (nothing proposed). At most 500 changes per call and 2000 pending suggestions per board.",
+        "x-freero-scope": "boards:suggest",
+        "security": [{ "bearer": ["boards:suggest"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "description": { "type": "string", "maxLength": 500, "description": "What the proposal does, shown to reviewers" },
+                  "create": { "type": "array", "items": { "$ref": "#/components/schemas/ItemInput" } },
+                  "update": {
+                    "type": "array",
+                    "items": { "allOf": [{ "$ref": "#/components/schemas/ItemPatch" }], "type": "object", "required": ["id"], "properties": { "id": { "type": "string" } } }
+                  },
+                  "delete": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The group of suggestions it became",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["notice", "group"],
+                  "properties": {
+                    "notice": { "$ref": "#/components/schemas/Notice" },
+                    "group": { "oneOf": [{ "$ref": "#/components/schemas/SuggestionGroup" }, { "type": "null" }] }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/boards/{boardId}/suggestions/accept": {
+      "parameters": [{ "$ref": "#/components/parameters/BoardId" }],
+      "post": {
+        "operationId": "acceptSuggestions",
+        "tags": ["suggestions"],
+        "summary": "Accept suggestions: apply them to the board",
+        "description": "Owners and editors (a facilitator's lock applies). Applies the suggestions (`ids`, or every pending one of `groupId`) as ONE change, attributed to the caller (`createdBy`) and the proposer (`suggestedBy` on new items). New items they need come along (a connector's ends). If any is stale — its item changed or is gone since it was proposed — nothing is applied: 409 `suggestion_stale` lists them; send `force: true` to apply anyway (an update or deletion of an item that is gone is skipped). Audited.",
+        "x-freero-scope": "boards:write",
+        "security": [{ "bearer": ["boards:write"] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuggestionDecision" } } } },
+        "responses": {
+          "200": {
+            "description": "Accepted, and what changed on the board",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["accepted", "created", "updated", "removed"],
+                  "properties": {
+                    "accepted": { "type": "array", "items": { "type": "string" } },
+                    "created": { "type": "array", "items": { "type": "string" } },
+                    "updated": { "type": "array", "items": { "type": "string" } },
+                    "removed": { "type": "array", "items": { "type": "string" } }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": {
+            "description": "Some are stale (code suggestion_stale); nothing was applied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error", "code", "stale"],
+                  "properties": {
+                    "error": { "type": "string" },
+                    "code": { "const": "suggestion_stale" },
+                    "stale": {
+                      "type": "array",
+                      "items": { "type": "object", "required": ["id", "state"], "properties": { "id": { "type": "string" }, "state": { "type": "string", "enum": ["changed", "gone"] } } }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/boards/{boardId}/suggestions/reject": {
+      "parameters": [{ "$ref": "#/components/parameters/BoardId" }],
+      "post": {
+        "operationId": "rejectSuggestions",
+        "tags": ["suggestions"],
+        "summary": "Reject suggestions",
+        "description": "Owners and editors. Rejects the suggestions (`ids`, or every pending one of `groupId`) and new items that need them (a connector to a rejected item). The board does not change. Audited.",
+        "x-freero-scope": "boards:write",
+        "security": [{ "bearer": ["boards:write"] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SuggestionDecision" } } } },
+        "responses": {
+          "200": {
+            "description": "Rejected",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "required": ["rejected"], "properties": { "rejected": { "type": "array", "items": { "type": "string" } } } }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
         }
       }
     },
@@ -727,7 +891,7 @@
             "scopes": {
               "boards:read": "See your boards and read what is on them",
               "boards:write": "Create boards and add, change and delete items",
-              "boards:suggest": "Propose changes (reserved)",
+              "boards:suggest": "Suggest changes for people to accept (never writes the board)",
               "comments:write": "Comment on boards",
               "members:read": "See who has access to your boards",
               "members:write": "Invite people and change their access"
@@ -770,14 +934,15 @@
         }
       },
       "Structure": {
-        "description": "Where it landed (preview: the elements, not written)",
+        "description": "Where it landed (preview: the elements, not written; suggestions: proposed, not written)",
         "content": {
           "application/json": {
             "schema": {
               "type": "object",
               "required": ["target", "created", "moved", "bounds"],
               "properties": {
-                "target": { "type": "string", "enum": ["board", "preview"] },
+                "target": { "type": "string", "enum": ["board", "preview", "suggestions"] },
+                "groupId": { "type": "string", "description": "target suggestions: the group the proposal became" },
                 "created": { "type": "array", "items": { "type": "string" } },
                 "moved": { "type": "array", "items": { "type": "string" } },
                 "bounds": { "$ref": "#/components/schemas/Rect" },
@@ -967,7 +1132,52 @@
           "edges": { "type": "array", "items": { "type": "object" } },
           "comments": { "type": "array", "items": { "type": "object" } },
           "notes": { "type": "array", "items": { "type": "string" } },
-          "meta": { "type": "object" }
+          "meta": { "type": "object" },
+          "suggestions": { "type": "array", "items": { "type": "object" }, "description": "Pending suggestions, only with include=suggestions (owners and editors)" }
+        }
+      },
+      "Suggestion": {
+        "type": "object",
+        "description": "One proposed change of one item; not on the board until accepted",
+        "required": ["id", "groupId", "op", "itemId", "item", "state"],
+        "properties": {
+          "id": { "type": "string" },
+          "groupId": { "type": "string" },
+          "op": { "type": "string", "enum": ["create", "update", "delete"] },
+          "itemId": { "type": "string", "description": "The item it creates (the id it gets when accepted), changes or deletes" },
+          "item": { "oneOf": [{ "$ref": "#/components/schemas/Item" }, { "type": "null" }], "description": "The item as it would be once accepted; a deletion: the item it deletes; null when that item is gone" },
+          "patch": { "type": "object", "description": "update: the fields it sets, as stored" },
+          "state": { "type": "string", "enum": ["ready", "changed", "gone"], "description": "ready: applies as proposed. changed: the item was edited since. gone: the item, or one it connects to, was deleted" }
+        }
+      },
+      "SuggestionGroup": {
+        "type": "object",
+        "description": "Suggestions proposed together",
+        "required": ["id", "author", "description", "createdAt", "suggestions"],
+        "properties": {
+          "id": { "type": "string" },
+          "author": {
+            "type": "object",
+            "required": ["kind", "name", "userId", "userName"],
+            "properties": {
+              "kind": { "type": "string", "enum": ["person", "app", "ai"] },
+              "name": { "type": "string", "description": "The app's or token's name, or the person's" },
+              "userId": { "type": "string", "description": "The person it acts for" },
+              "userName": { "type": "string" }
+            }
+          },
+          "description": { "type": "string", "description": "Untrusted: written by the proposer" },
+          "createdAt": { "type": "integer" },
+          "suggestions": { "type": "array", "items": { "$ref": "#/components/schemas/Suggestion" } }
+        }
+      },
+      "SuggestionDecision": {
+        "type": "object",
+        "description": "Which suggestions: `ids`, or every pending one of `groupId`",
+        "properties": {
+          "ids": { "type": "array", "minItems": 1, "maxItems": 500, "items": { "type": "string" } },
+          "groupId": { "type": "string" },
+          "force": { "type": "boolean", "description": "accept only: apply stale ones anyway" }
         }
       }
     }

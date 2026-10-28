@@ -15,10 +15,18 @@ export {
   commentPeopleOf,
   readBoardView,
   changeBoard,
+  proposeSuggestions,
+  decideSuggestions,
   // An app writing through the API or MCP, shown on the board for a moment (KAI-168).
   showAgentPresence,
   type AgentPresence,
 } from './rooms';
+// Suggestions (KAI-169): proposed changes in the editors layer (BoardView.suggestions reads them).
+// proposeSuggestions is THE seam for anything that wants people to review its change first —
+// the public API, structure insertion with target 'suggestions', and in-app AI (modules/ai).
+export { reviewSuggestions, SuggestionNotFoundError, SuggestionStaleError, type ReviewedSuggestion } from './suggestions';
+// Proposals made on this instance, attributed to the person and the app acting for them (activity feed).
+export { onSuggestionsProposed, type SuggestionsProposedEvent } from './suggestionEvents';
 // The board as one reader sees it (their role's layers applied) and the one request-time write
 // path for board content (one transaction, published and saved): the outline and structure
 // modules read and write boards through these, never through Yjs.

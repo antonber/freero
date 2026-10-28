@@ -4615,12 +4615,12 @@ async function aiChecks() {
       live.destroy();
     });
 
-    // A team board with notes (laid out by insert-structure), AI off until an admin turns it on.
+    // A team board with a member's notes (laid out by insert-structure), AI off until an admin turns it on.
     const team = (await O.req('POST', '/api/workspaces', { name: 'AI team' })).json.workspace;
     assert((await O.req('POST', `/api/workspaces/${team.id}/members`, { email: M.email, role: 'member' })).status === 201, 'member');
     const tb = (await O.req('POST', '/api/boards', { title: 'Retro', workspaceId: team.id })).json.board;
     const notes = ['Slow CI builds', 'Flaky tests', 'Great pairing sessions', 'Fun offsite', 'Deploys take too long', 'Helpful code reviews'];
-    const seeded = await O.req('POST', `/api/boards/${tb.id}/insert-structure`, { structure: { kind: 'stickies', items: notes } });
+    const seeded = await M.req('POST', `/api/boards/${tb.id}/insert-structure`, { structure: { kind: 'stickies', items: notes } });
     assert(seeded.status === 201, seeded.text);
     const noteIds = seeded.json.created;
 
@@ -4636,7 +4636,7 @@ async function aiChecks() {
       assert(refused.status === 403 && refused.json.code === 'ai_unavailable', `${refused.status} ${refused.text}`);
     });
 
-    await check('ai: a workspace’s own provider gets its own key (never shown again), and clustering moves the selected notes into named groups', async () => {
+    await check('ai: a workspace’s own provider gets its own key (never shown again), and clustering moves the selected notes into named groups (someone else’s notes are only proposed)', async () => {
       const before = model.requests.length;
       const own = await O.req('PATCH', `/api/workspaces/${team.id}/admin/ai`, {
         enabled: true,
@@ -4658,6 +4658,13 @@ async function aiChecks() {
       const outline = (await O.req('GET', `/api/boards/${tb.id}/outline`)).json.outline;
       const titles = JSON.stringify(outline.items);
       assert(titles.includes('Tooling and speed') && titles.includes('Team and collaboration'), titles.slice(0, 400));
+      // Someone else sorting the member's notes moves nothing: it is proposed (KAI-169), "AI for" them.
+      const where = JSON.stringify((await O.req('GET', `/api/boards/${tb.id}/outline`)).json.outline.items);
+      const theirs = await O.req('POST', `/api/boards/${tb.id}/ai/actions`, { task: 'cluster', ids: noteIds, target: 'board' });
+      assert(theirs.status === 201 && theirs.json.target === 'suggestions' && theirs.json.groupId, `${theirs.status} ${theirs.text.slice(0, 300)}`);
+      assert(JSON.stringify((await O.req('GET', `/api/boards/${tb.id}/outline`)).json.outline.items) === where, 'the AI moved someone else’s notes');
+      const proposed = await O.req('GET', `/api/boards/${tb.id}/outline?format=markdown&include=suggestions`);
+      assert(new RegExp(`by AI for ${O.name}`).test(proposed.text), `proposal: ${proposed.text.slice(-400)}`);
     });
 
     await check('ai: a summary and a diagram land as a note and as shapes joined by attached connectors', async () => {
@@ -5449,6 +5456,198 @@ async function suiteChecks() {
 }
 
 // ---------------------------------------------------------------------------
+// Suggestions (KAI-169): changes an agent proposes instead of making them, in the editors layer,
+// reviewed by people. Raw clients on two instances (one Postgres, one Redis) when DATABASE_URL and
+// REDIS_URL are set, on one instance otherwise.
+// ---------------------------------------------------------------------------
+async function suggestionsChecks() {
+  const REDIS_URL = process.env.REDIS_URL?.trim();
+  const multi = !!(ADMIN_URL && REDIS_URL);
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-suggest-'));
+  let procs = [];
+  let clients = [];
+  let url = null;
+  const env = () => ({
+    RATE_LIMIT_INVITE: '500/1h',
+    RATE_LIMIT_SIGNUP: '200/1h',
+    RATE_LIMIT_PASSWORD: '500/15m',
+    ...(url ? { DATABASE_URL: url } : {}),
+    ...(multi ? { REDIS_URL } : {}),
+  });
+  const start = async () => {
+    procs = [];
+    for (let i = 0; i < (multi ? 2 : 1); i++) procs.push(await spawnServer(path.join(dataDir, `i${i}`), env()));
+    await Promise.all(procs.map((p) => waitUp(p)));
+  };
+  const one = () => procs[0].port;
+  const two = () => procs[procs.length - 1].port;
+  try {
+    if (ADMIN_URL) url = await createDatabase();
+    if (!(await check(`suggestions: ${multi ? 'two instances start on one database and one Redis' : 'the server boots'}`, start))) return;
+    const people = [];
+    const person = async (label) => {
+      const u = new User(label, one());
+      await u.signup();
+      await u.verifyEmail(path.join(dataDir, 'i0'));
+      people.push(u);
+      return u;
+    };
+    const O = await person('SgOwner');
+    const E = await person('SgEditor');
+    const V = await person('SgViewer');
+    const C = await person('SgCommenter');
+    const token = async (u, scopes, name) => {
+      const r = await u.req('POST', '/api/auth/tokens', { name, scopes, expiresInDays: 30 });
+      assert(r.status === 201, `token: ${r.status} ${r.text}`);
+      return r.json.secret;
+    };
+    const call = (secret, method, path_, body) =>
+      new User('bearer', one()).req(method, `/api/v1${path_}`, body, { headers: { authorization: `Bearer ${secret}` }, cookie: false });
+    const ws = (await O.req('POST', '/api/workspaces', { name: 'Agent review team' })).json.workspace.id;
+    const board = (await O.req('POST', '/api/boards', { title: 'Retro with an agent', workspaceId: ws })).json.board.id;
+    for (const [u, role] of [[E, 'editor'], [V, 'viewer'], [C, 'commenter']])
+      assert((await O.req('POST', `/api/boards/${board}/members`, { email: u.email, role })).status === 201, `invite ${u.label}`);
+    const S = await token(O, ['boards:suggest'], 'Retro agent');
+    const W = await token(O, ['boards:read', 'boards:write'], 'Review script');
+    const X = (await call(W, 'POST', `/boards/${board}/items`, { type: 'sticky', text: 'Original wording', x: 0, y: 0 })).json.items[0].id;
+    const sug = (cl) => cl.layers.editors.getMap('suggestions');
+    const audited = async (action, pred) =>
+      ((await O.req('GET', `/api/workspaces/${ws}/audit?action=${action}&limit=50`)).json?.events ?? []).some(pred);
+    let o, e, v, c;
+    let first = null;
+
+    await check('suggestions: a token with only boards:suggest proposes ten stickies; editors on every instance get them, the board does not change, viewers and commenters never receive them, and that token can neither write nor accept', async () => {
+      o = await layerClient(O, board, one());
+      e = await layerClient(E, board, two());
+      v = await layerClient(V, board, two());
+      c = await layerClient(C, board, one());
+      clients.push(o, e, v, c);
+      const oSaw = new Set();
+      els(o).observe((ev) => ev.changes.keys.forEach((_, k) => oSaw.add(k)));
+      const r = await call(S, 'POST', `/boards/${board}/suggestions`, {
+        description: 'Ten ideas from the retro',
+        create: Array.from({ length: 10 }, (_, i) => ({ type: 'sticky', text: `Agent idea ${i}` })),
+      });
+      assert(r.status === 201 && r.json.group?.suggestions.length === 10 && r.json.notice, `propose: ${r.status} ${r.text.slice(0, 300)}`);
+      first = r.json.group;
+      await waitFor(() => sug(e).size === 10 && sug(o).size === 10, 5000, 'both editors (on both instances) to receive the ten suggestions');
+      await settled(o, [v, c, e]);
+      assert(!JSON.stringify(v.layers.editors.toJSON()).includes('Agent idea') && !JSON.stringify(c.layers.editors.toJSON()).includes('Agent idea'), 'a viewer or commenter received a suggestion');
+      assert(!sharedText(v).includes('Agent idea') && !sharedText(o).includes('Agent idea'), 'a suggestion reached the board');
+      assert(first.suggestions.every((s) => !oSaw.has(s.itemId)), 'a suggested item was written to the board');
+      // The outline lists them only when asked, and only for people who can edit.
+      const plain = await O.req('GET', `/api/boards/${board}/outline?format=markdown`);
+      const asked = await O.req('GET', `/api/boards/${board}/outline?format=markdown&include=suggestions`);
+      const viewer = await V.req('GET', `/api/boards/${board}/outline?format=markdown&include=suggestions`);
+      assert(!plain.text.includes('Agent idea') && asked.text.includes('Agent idea 7') && asked.text.includes('Retro agent for'), `owner outline: ${asked.text.slice(-600)}`);
+      assert(viewer.status === 200 && !viewer.text.includes('Agent idea'), `viewer outline: ${viewer.text.slice(-300)}`);
+      // Suggest-only: never a write, never a decision; a viewer's token can't propose either.
+      const write = await call(S, 'POST', `/boards/${board}/items`, { type: 'sticky', text: 'direct' });
+      const structure = await call(S, 'POST', `/boards/${board}/structure`, { structure: { kind: 'stickies', items: ['direct'] } });
+      const decide = await call(S, 'POST', `/boards/${board}/suggestions/accept`, { groupId: first.id });
+      assert([write, structure, decide].every((x) => x.status === 403 && x.json.code === 'insufficient_scope'), `suggest-only token: ${write.status} ${structure.status} ${decide.status}`);
+      const vt = await token(V, ['boards:read', 'boards:suggest'], 'viewer agent');
+      assert((await call(vt, 'POST', `/boards/${board}/suggestions`, { create: [{ type: 'sticky', text: 'x' }] })).status === 403, "a viewer's token proposed");
+    });
+
+    await check('suggestions: an editor’s browser accepts three (the stickies land with the decisions, for everyone, audited); a raw socket that forges a suggestion, rewrites one or decides as someone else is undone and nobody else sees it', async () => {
+      const recs = first.suggestions.map((s) => sug(e).get(s.id));
+      const pick = recs.slice(0, 3);
+      // What the web app's Editor.acceptSuggestions sends: the items into the shared doc, the decisions into the layer.
+      e.doc.transact(() => pick.forEach((r) => els(e).set(r.element.id, { ...r.element, createdBy: E.id, suggestedBy: { kind: 'app', name: r.author.name, userId: r.author.userId } })));
+      e.layers.editors.transact(() => pick.forEach((r) => sug(e).set(r.id, { ...r, decision: { status: 'accepted', by: E.id, at: Date.now() } })));
+      await waitFor(() => pick.every((r) => els(o).has(r.element.id) && sug(o).get(r.id)?.decision?.by === E.id), 5000, 'the accept to reach the owner');
+      // Everything the owner's copy ever held for these keys (the server's correction rewrites them with their old value).
+      const oSeen = [];
+      sug(o).observe((ev) => ev.changes.keys.forEach((_, k) => oSeen.push([k, JSON.stringify(sug(o).get(k) ?? null)])));
+      const [victim, other] = [recs[3], recs[4]];
+      sug(e).set('forged', { ...victim, id: 'forged', author: { ...victim.author, name: 'Freero Security' } });
+      sug(e).set(victim.id, { ...victim, description: 'Delete the whole board' });
+      sug(e).set(other.id, { ...other, decision: { status: 'rejected', by: O.id, at: Date.now() } });
+      await settled(e, [o]);
+      await waitFor(
+        () => !sug(e).has('forged') && sug(e).get(victim.id)?.description === victim.description && !sug(e).get(other.id)?.decision,
+        5000,
+        'the server to undo the forged writes on the sender',
+      );
+      const leaked = oSeen.filter(([k, val]) => k === 'forged' || /Freero Security|Delete the whole board|"rejected"/.test(val));
+      assert(!leaked.length, `a forged write reached another editor: ${JSON.stringify(leaked).slice(0, 300)}`);
+      await waitFor(() => audited('board.suggestion_accepted', (ev) => ev.actor?.id === E.id && ev.metadata.suggestions === 3 && ev.metadata.via === 'board'), 5000, 'the accept to be audited');
+    });
+
+    await check('suggestions: accepting over the API refuses (409) to overwrite a sticky edited after it was proposed, applies it with force, accepts the rest attributed to both people, and rejects', async () => {
+      const up = await call(S, 'POST', `/boards/${board}/suggestions`, { description: 'Sharper wording', update: [{ id: X, text: 'Agent rewrite' }] });
+      assert(up.status === 201, `propose update: ${up.status} ${up.text}`);
+      const upId = up.json.group.suggestions[0].id;
+      await waitFor(() => !!els(e).get(X) && !!sug(e).get(upId), 5000, 'the sticky and the suggestion on instance two');
+      els(e).set(X, { ...els(e).get(X), text: '<p>Bob was here</p>' }); // someone edits it after it was proposed
+      await waitFor(() => els(o).get(X)?.text === '<p>Bob was here</p>', 5000, 'the edit');
+      const stale = await call(W, 'POST', `/boards/${board}/suggestions/accept`, { ids: [upId] });
+      assert(stale.status === 409 && stale.json.code === 'suggestion_stale' && stale.json.stale[0]?.state === 'changed', `stale: ${stale.status} ${stale.text}`);
+      await settled(o, [e]);
+      assert(els(e).get(X).text === '<p>Bob was here</p>', 'a stale suggestion overwrote the edit');
+      assert((await call(W, 'POST', `/boards/${board}/suggestions/accept`, { ids: [upId], force: true })).status === 200, 'force');
+      await waitFor(() => /Agent rewrite/.test(els(e).get(X)?.text ?? ''), 5000, 'the forced rewrite on instance two');
+
+      const acc = await call(W, 'POST', `/boards/${board}/suggestions/accept`, { groupId: first.id });
+      assert(acc.status === 200 && acc.json.accepted.length === 7 && acc.json.created.length === 7, `accept the rest: ${acc.status} ${acc.text}`);
+      await waitFor(() => acc.json.created.every((id) => els(e).has(id)), 5000, 'the accepted stickies on instance two');
+      const made = els(e).get(acc.json.created[0]);
+      assert(made.createdBy === O.id && made.suggestedBy?.name === 'Retro agent', `attribution: ${JSON.stringify(made)}`);
+
+      const del = await call(S, 'POST', `/boards/${board}/suggestions`, { description: 'Remove the old note', delete: [X] });
+      const delId = del.json.group.suggestions[0].id;
+      assert((await call(W, 'POST', `/boards/${board}/suggestions/reject`, { groupId: del.json.group.id })).status === 200, 'reject');
+      await waitFor(() => sug(e).get(delId)?.decision?.status === 'rejected', 5000, 'the rejection on instance two');
+      assert(els(o).has(X), 'a rejected deletion deleted');
+      await waitFor(() => audited('board.suggestion_rejected', (ev) => ev.metadata.via === 'api'), 5000, 'the rejection to be audited');
+    });
+
+    await check('suggestions: a facilitator’s lock keeps a participant from accepting (socket and API)', async () => {
+      const p = await call(S, 'POST', `/boards/${board}/suggestions`, { create: [{ type: 'sticky', text: 'While locked' }] });
+      const id = p.json.group.suggestions[0].id;
+      await waitFor(() => !!sug(e).get(id), 5000, 'the suggestion');
+      o.doc.getMap('facilitation').set('session', { by: O.id, byName: O.name, startedAt: Date.now(), locked: true, allowedTypes: null, follow: false, cursorsHidden: false });
+      await waitFor(() => e.role === 'commenter', 5000, 'the lock to reach the editor');
+      sug(e).set(id, { ...sug(e).get(id), decision: { status: 'accepted', by: E.id, at: Date.now() } });
+      await settled(e, [o]);
+      assert(!sug(o).get(id).decision, "a locked participant's accept reached the owner");
+      const et = await token(E, ['boards:read', 'boards:write'], 'editor script');
+      const r = await call(et, 'POST', `/boards/${board}/suggestions/accept`, { ids: [id] });
+      assert(r.status === 400 && /locked/.test(r.json.error), `locked API accept: ${r.status} ${r.text}`);
+      o.doc.getMap('facilitation').delete('session');
+      await waitFor(() => e.role === 'editor', 5000, 'the lock to end');
+    });
+
+    await check('suggestions: restoring a version leaves pending suggestions alone, and they survive a restart', async () => {
+      const named = await O.req('POST', `/api/boards/${board}/versions`, { name: 'Before the agent' });
+      assert(named.status === 201, `name a version: ${named.status} ${named.text}`);
+      const p = await call(S, 'POST', `/boards/${board}/suggestions`, { description: 'After the version', create: [{ type: 'sticky', text: 'Survivor' }] });
+      const id = p.json.group.suggestions[0].id;
+      assert((await O.req('POST', `/api/boards/${board}/versions/${named.json.version.id}/restore`)).status === 200, 'restore');
+      const listed = async () => (await call(W, 'GET', `/boards/${board}/suggestions`)).json;
+      assert(JSON.stringify((await call(W, 'GET', `/boards/${board}/suggestions`)).json).includes(id), 'a restore dropped a pending suggestion');
+      for (const cl of clients) cl.destroy();
+      clients = [];
+      for (const pr of procs) await stopProc(pr);
+      await start();
+      for (const u of people) u.port = one();
+      const after = await listed();
+      const pending = after.groups.flatMap((g) => g.suggestions.map((s) => s.id));
+      assert(pending.includes(id) && after.groups.some((g) => g.description === 'After the version'), `after a restart: ${JSON.stringify(after).slice(0, 300)}`);
+    });
+  } finally {
+    for (const cl of clients) cl.destroy();
+    for (const pr of procs) await stopProc(pr);
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // The remote MCP server (KAI-107) and agent participants (KAI-168), driven by the official MCP
 // client SDK: dynamic client registration + OAuth 2.1 with PKCE against Freero's real
 // authorization server, tools against real boards with a live Yjs client watching, the activity
@@ -5583,7 +5782,7 @@ async function mcpChecks() {
       const tools = (await agent.listTools()).tools.map((t) => t.name);
       for (const t of ['search_boards', 'list_workspaces', 'get_board_outline', 'create_board', 'add_stickies', 'add_clusters', 'add_diagram', 'add_comment', 'update_items', 'delete_items', 'export_board'])
         assert(tools.includes(t), `missing tool ${t}: ${tools}`);
-      assert(!tools.includes('propose_changes'), 'propose_changes offered without the suggestions layer');
+      assert(tools.includes('propose_changes'), 'propose_changes is not offered although the suggestions layer exists (KAI-169)');
       const found = JSON.parse(text(await agent.callTool({ name: 'search_boards', arguments: {} })));
       const ids = found.untrusted_board_content.boards.map((b) => b.id);
       assert(ids.includes(board) && !ids.includes(strangers), `boards: ${JSON.stringify(ids)}`);
@@ -5647,6 +5846,40 @@ async function mcpChecks() {
       const r4 = await agent.callTool({ name: 'delete_items', arguments: { boardId: board, itemIds: [someId] } });
       assert(r4.isError && text(r4).includes('confirm_required'), `delete without confirm: ${text(r4)}`);
       assert((await itemCount(board)) === count, 'the board changed');
+    });
+
+    await check('mcp: a read + suggest connection proposes with propose_changes (the board does not change); an editor accepts it in the app; it reads "<app> for <person>" on the badge, in the outline and in the activity feed (KAI-169)', async () => {
+      const count = await itemCount(board);
+      const suggester = await withToken((await token(O, ['boards:read', 'boards:suggest'], 'Planning agent')).secret);
+      const r = await suggester.callTool({
+        name: 'propose_changes',
+        arguments: { boardId: board, structure: { kind: 'stickies', items: ['Proposed by MCP one', 'Proposed by MCP two'] }, description: 'Two follow-ups' },
+      });
+      assert(!r.isError && r.structuredContent.proposed.length === 2, `propose_changes: ${text(r)}`);
+      assert((await itemCount(board)) === count, 'propose_changes wrote to the board');
+      // The editor's browser: suggestions arrive in the editors layer, from "<app> for <person>".
+      const ed = await layerClient(O, board, proc.port);
+      live.push(ed);
+      const sug = ed.layers.editors.getMap('suggestions');
+      await waitFor(() => [...sug.values()].filter((s) => !s.decision && s.description === 'Two follow-ups').length === 2, 5000, 'the proposal to reach the editor');
+      const recs = [...sug.values()].filter((s) => s.description === 'Two follow-ups');
+      assert(recs.every((s) => s.author.kind === 'app' && s.author.name === 'Planning agent' && s.author.userName === O.name), `author: ${JSON.stringify(recs[0].author)}`);
+      const md = await O.req('GET', `/api/boards/${board}/outline?format=markdown&include=suggestions`);
+      assert(md.text.includes(`by Planning agent for ${O.name}: "Two follow-ups"`), `outline: ${md.text.slice(-400)}`);
+      // Accepting in the app (what Editor.acceptSuggestions writes): the items, and the decisions.
+      const watcher = connectDoc(O, board, null, proc.port);
+      live.push(watcher);
+      await watcher.ready();
+      ed.doc.transact(() => recs.forEach((s) => ed.doc.getMap('elements').set(s.element.id, { ...s.element, createdBy: O.id, suggestedBy: { kind: 'app', name: 'Planning agent', userId: O.id } })));
+      ed.layers.editors.transact(() => recs.forEach((s) => sug.set(s.id, { ...s, decision: { status: 'accepted', by: O.id, at: Date.now() } })));
+      await waitFor(() => recs.every((s) => watcher.doc.getMap('elements').get(s.element.id)?.suggestedBy?.name === 'Planning agent'), 5000, 'the accepted items on the board');
+      const after = await O.req('GET', `/api/boards/${board}/outline?format=markdown`);
+      assert(after.text.includes('Proposed by MCP one') && after.text.includes('Proposed by MCP two'), 'the accepted items are not on the board');
+      await waitFor(
+        async () => (await O.req('GET', `/api/boards/${board}/activity`)).json.entries.some((e) => e.actorName === `Planning agent for ${O.name}` && /suggested 2 changes/.test(e.text)),
+        5000,
+        'the proposal in the activity feed',
+      );
     });
 
     await check('mcp: what the app did shows in the activity feed as "<app> for <person>", and every tool call is in the team’s audit log with the app', async () => {
@@ -5752,6 +5985,7 @@ const SUITES = {
   ai: aiChecks,
   api: publicApiChecks,
   facilitation: facilitationChecks,
+  suggestions: suggestionsChecks,
   s3: s3Checks,
   mcp: mcpChecks,
   suite: suiteChecks,

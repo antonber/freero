@@ -30,12 +30,19 @@ import type {
   Role,
   SessionLimits,
   StrokeStyle,
+  SuggestionRecord,
+  SuggestionState,
   TextAlign,
   VerticalAlign,
 } from '@freero/shared';
 
 /** [additive] Where an element lives (see Editor.layerOf and ARCHITECTURE.md "Board layers"). */
 export type ElementLayer = 'shared' | BoardLayer;
+
+/** [additive] A pending suggestion (KAI-169) and whether it still applies as proposed. */
+export interface Suggestion extends SuggestionRecord {
+  state: SuggestionState;
+}
 
 // ---------------------------------------------------------------------------
 // Geometry
@@ -1217,6 +1224,25 @@ export interface Editor {
   revealPrivate(collection: string, opts?: { prefix?: string; mine?: boolean }): void;
   /** [additive] Like revealPrivate, but deletes those private entries without revealing them. */
   discardPrivate(collection: string, opts?: { prefix?: string; mine?: boolean }): void;
+
+  // -- suggestions: changes proposed for people to accept (KAI-169, @freero/shared suggestions.ts) --
+  /**
+   * [additive] Pending suggestions, oldest first, each with whether it still applies as proposed
+   * (`state`). Only owners and editors receive them (the editors layer); empty for anyone else.
+   * Hook: useSuggestions().
+   */
+  getSuggestions(): Suggestion[];
+  /**
+   * [additive] Accepts suggestions (ids of records): applies them to the board as ONE undo step of
+   * this user — new items keep their proposed ids (two people accepting at once make one item),
+   * attributed to this user (`createdBy`) and the proposer (`suggestedBy`) — and marks them
+   * accepted in the same step (undo makes them pending again). New items they need come along (a
+   * line's ends). Stale ones (`state` not 'ready') are applied only with `force`; otherwise nothing
+   * happens and they are returned in `stale`. Role and facilitator limits apply like any write.
+   */
+  acceptSuggestions(ids: string[], opts?: { force?: boolean }): { accepted: string[]; stale: string[] };
+  /** [additive] Rejects suggestions (and new items that need them): one undo step. Returns the ids rejected. */
+  rejectSuggestions(ids: string[]): string[];
 
   // -- presence --
   getPeers(): Array<PresenceState & { clientId: number }>;

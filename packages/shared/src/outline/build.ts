@@ -7,7 +7,8 @@ import { rotatedBounds, unionRects, type Rect } from '../geometry';
 import { richTextToPlain } from '../text';
 import type { OutlineContext, OutlineDescription, OutlineFeature, OutlineKindFn } from './define';
 import { clusterBoxes, readingOrder } from './spatial';
-import { OUTLINE_VERSION, type BoardOutline, type OutlineEdge, type OutlineItem, type OutlineThread } from './types';
+import type { SuggestionRecord, SuggestionState } from '../suggestions';
+import { OUTLINE_VERSION, type BoardOutline, type OutlineEdge, type OutlineItem, type OutlineSuggestion, type OutlineThread } from './types';
 
 export type OutlineLayer = 'shared' | 'editors' | 'private';
 
@@ -67,11 +68,8 @@ export const MAX_ITEM_TEXT = 4000;
 
 const nonEmpty = (s: string | undefined) => (s && s.trim() ? (s.length > MAX_ITEM_TEXT ? `${s.slice(0, MAX_ITEM_TEXT)}…` : s) : undefined);
 
-export function buildOutline(source: OutlineSource, features: OutlineFeature[], opts: OutlineBuildOptions = {}): BoardOutline {
-  const kinds = outlineKinds(features);
-  const visible = new Map(source.elements.map((e) => [e.el.id, e]));
-  const elements = source.elements.map((e) => e.el);
-  const ctx: OutlineContext = {
+function contextOf(source: OutlineSource, elements: BoardElement[], visible: Map<string, { el: BoardElement }>): OutlineContext {
+  return {
     readerId: source.readerId,
     elements: () => elements,
     element: (id) => visible.get(id)?.el,
@@ -80,6 +78,50 @@ export function buildOutline(source: OutlineSource, features: OutlineFeature[], 
     plain: (html) => mentionsAsNames(richTextToPlain(html), source.personName),
     personName: source.personName,
   };
+}
+
+/**
+ * Pending suggestions (KAI-169) as the outline lists them: each suggested item read the way its
+ * feature describes it (the item as it would be once accepted; a deletion: the item it deletes).
+ */
+export function describeSuggestions(
+  source: OutlineSource,
+  features: OutlineFeature[],
+  list: ReadonlyArray<{ record: SuggestionRecord; element: BoardElement | null; state: SuggestionState }>,
+): OutlineSuggestion[] {
+  const kinds = outlineKinds(features);
+  const elements = source.elements.map((e) => e.el);
+  const ctx = contextOf(source, elements, new Map(source.elements.map((e) => [e.el.id, e])));
+  return list.map(({ record: r, element, state }) => {
+    const out: OutlineSuggestion = {
+      id: r.id,
+      groupId: r.groupId,
+      op: r.op,
+      itemId: r.op === 'create' ? (r.element?.id ?? '') : (r.targetId ?? ''),
+      by: r.author.kind === 'person' ? r.author.name : `${r.author.name} for ${r.author.userName}`,
+      state,
+    };
+    const description = nonEmpty(r.description);
+    if (description) out.description = description;
+    if (r.op === 'update') out.changes = Object.keys(r.patch ?? {}).sort();
+    if (element) {
+      const fn = kinds.get(element.type);
+      const desc = fn ? fn(element as never, ctx) : {};
+      out.kind = desc?.kind ?? element.type;
+      const title = nonEmpty(desc?.title);
+      const text = nonEmpty(desc?.text ?? desc?.edge?.label);
+      if (title) out.title = title;
+      if (text) out.text = text;
+    }
+    return out;
+  });
+}
+
+export function buildOutline(source: OutlineSource, features: OutlineFeature[], opts: OutlineBuildOptions = {}): BoardOutline {
+  const kinds = outlineKinds(features);
+  const visible = new Map(source.elements.map((e) => [e.el.id, e]));
+  const elements = source.elements.map((e) => e.el);
+  const ctx = contextOf(source, elements, visible);
 
   // 1. How each element reads.
   const nodes = new Map<string, Node>();

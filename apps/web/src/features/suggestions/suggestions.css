@@ -1,0 +1,334 @@
+/* ---- on the board (world-overlay: world coordinates) ---- */
+.fr-sg-world,
+.fr-sg-ghost,
+.fr-sg-anchor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+}
+
+.fr-sg-anchor {
+  transform-origin: 0 0;
+}
+
+/* Proposed items: see-through, so what is on the board stays readable underneath. */
+.fr-sg-ghost--create .fr-el {
+  opacity: 0.55;
+  filter: saturate(0.85);
+}
+
+/* A changed item: the new version over the old one, opaque, so its text reads (the review list shows was → now). */
+.fr-sg-ghost--update .fr-el {
+  opacity: 1;
+}
+
+.fr-sg-ghost__box {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: center center;
+  outline: 2px dashed var(--fr-primary);
+  outline-offset: 3px;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.fr-sg-ghost--delete .fr-sg-ghost__box {
+  outline-color: var(--fr-danger);
+  background: repeating-linear-gradient(-45deg, rgba(229, 72, 77, 0.16) 0 6px, transparent 6px 14px);
+}
+
+.fr-sg-ghost.is-stale .fr-sg-ghost__box {
+  outline-color: var(--fr-warning);
+}
+
+/* Per-item accept / reject, at the item's top-right corner (constant size: scale 1/zoom). */
+.fr-sg-item {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--fr-surface);
+  box-shadow: var(--fr-shadow);
+  pointer-events: auto;
+  white-space: nowrap;
+}
+
+.fr-sg-item__btn {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fr-ink-2);
+  cursor: pointer;
+}
+
+.fr-sg-item__btn:hover {
+  background: var(--fr-surface-3);
+  color: var(--fr-ink);
+}
+
+.fr-sg-item__btn--ok {
+  color: var(--fr-success);
+}
+
+.fr-sg-item__stale {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  color: var(--fr-warning);
+}
+
+/* The proposer's badge above a proposal. */
+.fr-sg-badge {
+  position: absolute;
+  left: -3px;
+  bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--fr-ink);
+  color: var(--fr-surface);
+  box-shadow: var(--fr-shadow-lg);
+  font: 500 12px/18px var(--fr-font);
+  white-space: nowrap;
+  pointer-events: auto;
+}
+
+.fr-sg-badge__who {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 3px 7px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.fr-sg-badge__who svg {
+  color: var(--fr-accent);
+}
+
+.fr-sg-badge__who:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.fr-sg-badge__btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: inherit;
+  font: 600 12px/1 var(--fr-font);
+  cursor: pointer;
+}
+
+.fr-sg-badge__btn:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.fr-sg-badge__btn--ok {
+  background: var(--fr-primary);
+}
+
+.fr-sg-badge__btn--ok:hover {
+  background: var(--fr-primary-hover);
+}
+
+/* ---- top bar ---- */
+.fr-sg-topbar.is-open {
+  background: var(--fr-primary-soft);
+  color: var(--fr-primary);
+}
+
+/* ---- review list (dock) ---- */
+.fr-sg-dock {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 12px 16px;
+}
+
+.fr-sg-dock__head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.fr-sg-dock__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 28px 12px;
+  color: var(--fr-ink-3);
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.fr-sg-dock__empty p {
+  margin: 0;
+}
+
+.fr-sg-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius);
+  background: var(--fr-surface);
+}
+
+.fr-sg-group__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fr-sg-group__icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--fr-primary-soft);
+  color: var(--fr-primary);
+  flex: none;
+}
+
+.fr-sg-group__who {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fr-ink);
+  font: 13px/1.35 var(--fr-font);
+  text-align: left;
+  cursor: pointer;
+}
+
+.fr-sg-group__who span {
+  color: var(--fr-ink-3);
+  font-size: 12px;
+}
+
+.fr-sg-group__desc {
+  margin: 0;
+  color: var(--fr-ink-2);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.fr-sg-group__actions {
+  display: flex;
+  gap: 6px;
+}
+
+.fr-sg-group__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--fr-line);
+}
+
+.fr-sg-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--fr-line);
+}
+
+.fr-sg-row:last-child {
+  border-bottom: 0;
+}
+
+.fr-sg-row__main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  padding: 4px;
+  border: 0;
+  border-radius: var(--fr-radius-sm);
+  background: transparent;
+  color: var(--fr-ink);
+  font: 13px/1.35 var(--fr-font);
+  text-align: left;
+  cursor: pointer;
+}
+
+.fr-sg-row__main:hover {
+  background: var(--fr-surface-2);
+}
+
+.fr-sg-row__what {
+  font-weight: 600;
+}
+
+.fr-sg-row__text {
+  overflow: hidden;
+  color: var(--fr-ink-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-sg-row__text del {
+  color: var(--fr-ink-3);
+}
+
+.fr-sg-row__text ins {
+  text-decoration: none;
+  color: var(--fr-ink);
+}
+
+.fr-sg-row__text.is-deleted {
+  text-decoration: line-through;
+}
+
+.fr-sg-row__stale {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--fr-warning-soft);
+  color: var(--fr-ink-2);
+  font-size: 12px;
+}
+
+.fr-sg-row__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}

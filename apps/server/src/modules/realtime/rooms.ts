@@ -88,7 +88,22 @@ import {
 import { peerMessages, persistDuration, persistFailures } from './metrics';
 import { boardChannel, CONTROL_CHANNEL, decodeControl, decodePeer, encodeControl, encodePeer, INSTANCE_ID, type ControlMessage, type PeerMessage } from './peers';
 import { restoreInto } from './restore';
-import { applyChange, viewOf, type AppliedChange, type BoardActor, type BoardChange, type BoardReader, type BoardView } from './view';
+import { auditDecisions } from './suggestionAudit';
+import {
+  guardSuggestionWrites,
+  planDecision,
+  proposeRecords,
+  pruneDecided,
+  suggestionEntries,
+  SUGGESTIONS_COLLECTION,
+  withoutSuggestions,
+  writeDecisions,
+  writeProposal,
+} from './suggestions';
+import { emitSuggestionsProposed } from './suggestionEvents';
+import { applyChange, BoardChangeError, viewOf, type AppliedChange, type BoardActor, type BoardChange, type BoardReader, type BoardView } from './view';
+import { newId } from '../../platform/ids';
+import type { SuggestionAuthor, SuggestionDecision, SuggestionRecord } from '@freero/shared';
 
 export const MESSAGE_SYNC = 0;
 export const MESSAGE_AWARENESS = 1;
@@ -347,6 +362,9 @@ class Room {
     this.logRows = loaded.logRows;
     this.logBytes = loaded.logBytes;
     for (const l of layers) if (l.state) Y.applyUpdate(this.layer(l.layer).doc, l.state, LOAD_ORIGIN);
+    // Suggestions decided longer ago than anyone can undo them: gone (published and saved).
+    const editors = this.layers.get(EDITORS_LAYER);
+    if (editors) pruneDecided(editors.doc, SERVER_ORIGIN);
   }
 
   /** The layer stored under `name`, created empty on first use. */
@@ -354,6 +372,9 @@ class Room {
     let layer = this.layers.get(name);
     if (layer) return layer;
     const created: Layer = { doc: new Y.Doc(), unsaved: [], sawRemote: false };
+    // Before any update arrives: the socket guard reads what a transaction changed in it
+    // (facilitation.changedKeys needs the map to exist before the transaction).
+    if (name === EDITORS_LAYER) created.doc.getMap<unknown>(SUGGESTIONS_COLLECTION);
     created.doc.on('update', (update: Uint8Array, origin: unknown) => {
       if (origin === LOAD_ORIGIN) return;
       // Re-checked per socket at send time: roles change (refreshAccess) while the layer lives.
@@ -445,15 +466,24 @@ class Room {
       if (!mayWriteLayer(name, conn)) return;
       // Guards as for the shared doc (onUpdate): sealed ballots keep to the vote's budget too.
       const addTypes = conn.limits?.addTypes;
+      // The guards run inside the transaction that applies the update: nobody else ever receives
+      // what they undo, and the socket is sent the correction (facilitation.ts, suggestions.ts).
       const before = Y.encodeStateVector(doc);
       let fixed = false;
+      let decided: ReturnType<typeof guardSuggestionWrites>['decided'] = [];
       doc.getMap<unknown>(VOTING_COLLECTION);
       doc.transact((tr) => {
         Y.applyUpdate(doc, update);
         fixed = guardVotes(tr, doc, this.doc, conn.userId);
         if (addTypes) fixed = revertForbiddenAdds(tr, doc.getMap<unknown>(ELEMENTS), new Set(addTypes), (id) => this.existsElsewhere(doc, id)) > 0 || fixed;
+        if (name === EDITORS_LAYER) {
+          const g = guardSuggestionWrites(tr, doc, conn.userId);
+          fixed = g.reverted > 0 || fixed;
+          decided = g.decided;
+        }
       }, conn.ws);
       if (fixed) send(conn.ws, layerMessage(wire, (e) => syncProtocol.writeUpdate(e, Y.encodeStateAsUpdate(doc, before))));
+      if (decided.length) void auditDecisions(this.id, conn.userId, decided, 'board');
     }
   }
 
@@ -1338,6 +1368,81 @@ export async function changeBoard<T extends { change: BoardChange }>(
   });
 }
 
+/** Only owners and editors (as a facilitator's lock leaves them) propose or decide suggestions. */
+function requireEditing(room: Room, actor: BoardReader): void {
+  const limited = effectiveAccess(actor.role, actor.userId, readFacilitation(room.doc));
+  if (canEdit(limited.role)) return;
+  throw new BoardChangeError(limited.limits ? `${limited.limits.byName ?? 'The facilitator'} has locked the board for now` : 'Only owners and editors review suggestions');
+}
+
+/**
+ * Proposes a change instead of making it (KAI-169): `plan` sees the live board as the actor
+ * (an owner or editor; the caller checked) does and returns a BoardChange — from the same
+ * planners as a direct write — which becomes ONE group of suggestions in the editors layer,
+ * published to every editor's socket on every instance and saved before this resolves. The board
+ * itself does not change. `content`: what new tables hold, by element id.
+ */
+export async function proposeSuggestions<T extends { change: BoardChange; content?: Record<string, unknown> }>(
+  boardId: string,
+  actor: BoardActor,
+  opts: { description: string; author?: SuggestionAuthor },
+  plan: (view: BoardView) => T,
+): Promise<T & { records: SuggestionRecord[] }> {
+  const author = opts.author ?? (await suggestionAuthorOf(actor));
+  const out = await withLiveRoom(boardId, async (room) => {
+    requireEditing(room, actor);
+    const editors = room.layer(EDITORS_LAYER).doc;
+    const view = viewOf(room.doc, layerDocs(room), actor);
+    const planned = plan(view);
+    const records = proposeRecords(view, planned.change, { author, description: opts.description, content: planned.content, newId: () => newId(16), pending: view.suggestions.length });
+    if (room.destroyed) throw new BoardClosedError(boardId);
+    writeProposal(editors, records, SERVER_ORIGIN);
+    await room.flush();
+    return { ...planned, records };
+  });
+  // The activity feed's "suggested N changes" (owners and editors only, like the suggestions).
+  emitSuggestionsProposed({ boardId, actorId: actor.userId, via: actor.via ?? null, author, count: out.records.length });
+  return out;
+}
+
+/**
+ * Who a proposal is from: the app acting for the person ("Claude for Maria", KAI-168) when a
+ * request came through the API or MCP, else the person.
+ */
+async function suggestionAuthorOf(actor: BoardActor): Promise<SuggestionAuthor> {
+  const userName = actor.name ?? (await getUser(actor.userId))?.name ?? 'Someone';
+  return actor.via
+    ? { kind: 'app', name: actor.via.name, userId: actor.userId, userName, credentialId: actor.via.id }
+    : { kind: 'person', name: userName, userId: actor.userId, userName };
+}
+
+/**
+ * Accepts or rejects pending suggestions on a request (the public API), as `actor`: accepting
+ * applies them to the live board as one change (applyChange: the facilitator's limits, the
+ * hidden-frame rule) and marks them decided in the same step; rejecting only marks them. Stale
+ * ones are refused unless `force` (SuggestionStaleError). Audited here, like a socket's decision.
+ */
+export async function decideSuggestions(
+  boardId: string,
+  actor: BoardActor,
+  ask: { ids?: string[]; groupId?: string; status: 'accepted' | 'rejected'; force?: boolean },
+): Promise<{ records: SuggestionRecord[]; decision: SuggestionDecision; applied: AppliedChange | null }> {
+  const out = await withLiveRoom(boardId, async (room) => {
+    requireEditing(room, actor);
+    const editors = room.layer(EDITORS_LAYER).doc;
+    const docs = layerDocs(room);
+    const plan = planDecision(suggestionEntries(editors), viewOf(room.doc, docs, actor), { ...ask, by: actor.userId });
+    const { create = [], update = [], remove = [] } = plan.change;
+    // Applied like any request write: attributed to the actor (and the app acting for them) in activity.
+    const applied = create.length || update.length || remove.length ? applyChange(room.doc, docs, plan.change, actor, new RequestOrigin(actor)) : null;
+    writeDecisions(editors, plan.records, plan.decision, SERVER_ORIGIN);
+    await room.flush();
+    return { records: plan.records, decision: plan.decision, applied };
+  });
+  await auditDecisions(boardId, actor.userId, out.records.map((record) => ({ record, from: undefined, to: out.decision })), 'api');
+  return out;
+}
+
 /** An app acting for someone, as other participants see it while it writes (KAI-168). */
 export interface AgentPresence {
   via: ActingApp;
@@ -1363,7 +1468,12 @@ export function showAgentPresence(boardId: string, p: AgentPresence): void {
 }
 
 /** Current state of one layer of a board (live if loaded, else stored), like snapshotBoardDoc. */
-export async function snapshotBoardLayer(boardId: string, layer: string): Promise<Uint8Array | null> {
+export async function snapshotBoardLayer(boardId: string, layer: string, opts: { withoutSuggestions?: boolean } = {}): Promise<Uint8Array | null> {
+  const state = await snapshotLayerState(boardId, layer);
+  return state && opts.withoutSuggestions ? withoutSuggestions(state) : state;
+}
+
+async function snapshotLayerState(boardId: string, layer: string): Promise<Uint8Array | null> {
   const room = rooms.get(boardId);
   if (room && !room.destroyed) {
     try {
