@@ -1,4 +1,4 @@
-// The only writer of `notifications` and `notification_prefs` [S4].
+// The only writer of `notifications`, `notification_prefs`, `pending_mentions` and `card_due_watch` [S4].
 import { isForeignKeyViolation, one, query } from '../../platform/db';
 import type { NotificationData } from './types';
 
@@ -168,4 +168,54 @@ export async function setPref(userId: string, type: string, email: boolean): Pro
   } catch (e) {
     if (!isForeignKeyViolation(e)) throw e; // the account was deleted meanwhile
   }
+}
+
+// ---- due-date reminders (KAI-135) ----
+
+export interface CardDueWatch {
+  boardId: string;
+  elementId: string;
+  assigneeId: string;
+  /** YYYY-MM-DD */
+  dueDate: string;
+  title: string;
+}
+
+/**
+ * Watches a card assigned to `assigneeId` and due on `dueDate` (null for either: stops watching
+ * it). A changed due date may be reminded of again. An assignee that is no account is ignored.
+ */
+export async function setCardDueWatch(boardId: string, elementId: string, w: { assigneeId: string | null; dueDate: string | null; title: string }): Promise<void> {
+  if (!w.assigneeId || !w.dueDate) {
+    await query(`DELETE FROM card_due_watch WHERE board_id = $1 AND element_id = $2`, [boardId, elementId]);
+    return;
+  }
+  try {
+    await query(
+      `INSERT INTO card_due_watch (board_id, element_id, assignee_id, due_date, title) VALUES ($1, $2, $3, $4::date, $5)
+       ON CONFLICT (board_id, element_id) DO UPDATE SET assignee_id = excluded.assignee_id, due_date = excluded.due_date, title = excluded.title,
+         reminded_for = CASE WHEN card_due_watch.due_date = excluded.due_date AND card_due_watch.assignee_id = excluded.assignee_id
+                             THEN card_due_watch.reminded_for ELSE NULL END`,
+      [boardId, elementId, w.assigneeId, w.dueDate, w.title],
+    );
+  } catch (e) {
+    if (isForeignKeyViolation(e)) return; // the board is gone, or the assignee is no account
+    throw e;
+  }
+}
+
+/** Cards due between `firstDay` and `lastDay` (YYYY-MM-DD, inclusive) not yet reminded of for that date. */
+export async function cardsDueBetween(firstDay: string, lastDay: string, limit: number): Promise<CardDueWatch[]> {
+  const rows = await query<{ board_id: string; element_id: string; assignee_id: string; due: string; title: string }>(
+    `SELECT board_id, element_id, assignee_id, to_char(due_date, 'YYYY-MM-DD') AS due, title FROM card_due_watch
+     WHERE due_date BETWEEN $1::date AND $2::date AND (reminded_for IS NULL OR reminded_for <> due_date)
+     ORDER BY due_date LIMIT $3`,
+    [firstDay, lastDay, limit],
+  );
+  return rows.map((r) => ({ boardId: r.board_id, elementId: r.element_id, assigneeId: r.assignee_id, dueDate: r.due, title: r.title }));
+}
+
+/** The reminder for this due date went out (or there is nothing to remind of for it). */
+export async function markCardReminded(boardId: string, elementId: string, dueDate: string): Promise<void> {
+  await query(`UPDATE card_due_watch SET reminded_for = $3::date WHERE board_id = $1 AND element_id = $2 AND due_date = $3::date`, [boardId, elementId, dueDate]);
 }
