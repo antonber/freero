@@ -1,14 +1,16 @@
-// Find on board: what is searchable (every item's text through its definition's toPlainText,
-// frame titles, connector labels, comments) and how matches are found, shown and replaced.
+// Find on board: what is searchable (every text of every item — its text field and its text
+// parts such as table cells and extra connector labels — card descriptions, frame titles,
+// comments) and how matches are found, shown and replaced. Texts other features own are
+// rewritten through the engine (Editor.setTextParts) or the owner's command (comments).
 import type { BoardElement, CommentMessageRecord, CommentThreadRecord, ElementType } from '@freero/shared';
-import { replaceInRichText, richTextToPlain, type Editor, type ElementPatch, type Point } from '@engine';
+import { replaceInRichText, richTextToPlain, type Editor, type ElementPatch, type Point, type TextPart } from '@engine';
 
 export const PANEL_ID = 'find.panel';
 
 /** One searchable text on the board. */
 export type Source =
   | { kind: 'element'; key: string; id: string; type: ElementType; text: string; frameTitle: string | null }
-  | { kind: 'comment'; key: string; threadId: string; messageId: string; text: string; author: string; at: Point };
+  | { kind: 'comment'; key: string; threadId: string; messageId: string; text: string; author: string; authorId: string; at: Point };
 
 export interface Match {
   source: Source;
@@ -24,9 +26,19 @@ export interface SearchOptions {
 
 const SNIPPET_CONTEXT = 28;
 
-/** Plain text of an element for search: its definition's toPlainText, else its rich text field. */
+/**
+ * Plain text of an element for search, as the user reads it (formatting dropped, so "<b>Hel</b>lo"
+ * is "Hello"): every text part for multi-text items (table cells, connector labels), else its
+ * definition's toPlainText, else its rich text field.
+ */
 export function elementText(editor: Editor, el: BoardElement): string {
   const def = editor.getDefinition(el.type);
+  if (def?.textParts)
+    return editor
+      .getTextParts(el.id)
+      .map((p) => richTextToPlain(p.html).trim())
+      .filter(Boolean)
+      .join('\n');
   if (def?.toPlainText) return def.toPlainText(el as never) ?? '';
   const field = def?.textField;
   return field ? richTextToPlain(String((el as unknown as Record<string, unknown>)[field] ?? '')) : '';
@@ -63,6 +75,7 @@ export function commentSources(entries: Array<[string, unknown]>, getElement: (i
       messageId: m.id,
       text: m.text,
       author: m.authorName,
+      authorId: m.authorId,
       at: threadPoint(t, t.elementId ? getElement(t.elementId) : undefined),
     });
   }
@@ -129,59 +142,91 @@ const replacePlain = (s: string, find: string, replacement: string, caseSensitiv
   return s.replace(re, () => replacement);
 };
 
+/** What replacing in one element writes: rich texts by part (engine-routed) and plain fields. */
+export interface ElementReplacement {
+  id: string;
+  parts: TextPart[];
+  patch: ElementPatch | null;
+}
+
 /**
- * The patch that replaces `find` in an element's texts: its rich text field (formatting kept),
- * a card's description, a frame's title. Null when nothing there matches (or it's locked).
+ * What replacing `find` in an element rewrites: every text part (its text field, table cells,
+ * connector labels — formatting kept, see replaceInRichText), a card's description, a frame's
+ * title. Null when nothing there matches (or it's locked).
  */
-export function replacePatch(editor: Editor, el: BoardElement, find: string, replacement: string, opts: SearchOptions = {}): ElementPatch | null {
+export function planReplace(editor: Editor, el: BoardElement, find: string, replacement: string, opts: SearchOptions = {}): ElementReplacement | null {
   if (el.locked || !find) return null;
-  const rec = el as unknown as Record<string, unknown>;
+  const caseSensitive = !!opts.caseSensitive;
+  const parts: TextPart[] = [];
+  for (const p of editor.getTextParts(el.id)) {
+    const r = replaceInRichText(p.html, find, replacement, { caseSensitive });
+    if (r.count) parts.push({ part: p.part, html: r.html });
+  }
   const patch: Record<string, unknown> = {};
-  const rich = [editor.getDefinition(el.type)?.textField, el.type === 'card' ? 'description' : undefined].filter(
-    (f): f is string => !!f && typeof rec[f] === 'string',
-  );
-  for (const f of rich) {
-    const r = replaceInRichText(rec[f] as string, find, replacement, { caseSensitive: opts.caseSensitive });
-    if (r.count) patch[f] = r.html;
+  if (el.type === 'card' && el.description) {
+    const r = replaceInRichText(el.description, find, replacement, { caseSensitive });
+    if (r.count) patch.description = r.html;
   }
   if (el.type === 'frame') {
-    const title = replacePlain(el.title, find, replacement, !!opts.caseSensitive);
+    const title = replacePlain(el.title, find, replacement, caseSensitive);
     if (title !== el.title) patch.title = title;
   }
-  return Object.keys(patch).length ? (patch as ElementPatch) : null;
+  const hasPatch = Object.keys(patch).length > 0;
+  return parts.length || hasPatch ? { id: el.id, parts, patch: hasPatch ? (patch as ElementPatch) : null } : null;
 }
 
-/** Replaces in every matched element as ONE undo step. Returns how many items changed. */
-export function replaceAll(editor: Editor, matches: Match[], find: string, replacement: string, opts: SearchOptions = {}): number {
-  const patches: Array<{ id: string; patch: ElementPatch }> = [];
+function applyReplacement(editor: Editor, r: ElementReplacement) {
+  if (r.patch) editor.update(r.id, r.patch);
+  if (r.parts.length) editor.setTextParts(r.id, r.parts);
+}
+
+const isMine = (editor: Editor, s: Source) => s.kind === 'comment' && s.authorId === editor.user.id;
+
+export interface ReplaceResult {
+  /** Items and comments changed. */
+  changed: number;
+  /** Matching comments written by someone else: never rewritten (only authors edit comments). */
+  othersComments: number;
+}
+
+/**
+ * Replaces in `matches`: items as ONE undo step, your own comments through the comments feature
+ * (comments are social data: not undoable, and only their author edits them).
+ */
+export function replaceMatches(editor: Editor, matches: Match[], find: string, replacement: string, opts: SearchOptions = {}): ReplaceResult {
+  const plans: ElementReplacement[] = [];
+  const mine: Array<{ threadId: string; messageId: string }> = [];
+  let othersComments = 0;
   for (const m of matches) {
-    if (m.source.kind !== 'element') continue;
-    const el = editor.getElement(m.source.id);
-    const patch = el && replacePatch(editor, el, find, replacement, opts);
-    if (patch) patches.push({ id: el.id, patch });
+    const s = m.source;
+    if (s.kind === 'comment') {
+      if (!isMine(editor, s)) othersComments++;
+      else if (replacePlain(s.text, find, replacement, !!opts.caseSensitive).trim()) mine.push({ threadId: s.threadId, messageId: s.messageId });
+      continue;
+    }
+    const el = editor.getElement(s.id);
+    const plan = el && planReplace(editor, el, find, replacement, opts);
+    if (plan) plans.push(plan);
   }
-  if (!patches.length) return 0;
-  editor.beginGesture();
-  try {
-    editor.updateMany(patches);
-  } finally {
-    editor.endGesture();
-  }
-  return patches.length;
+  if (plans.length && editor.can('editor')) {
+    editor.beginGesture();
+    try {
+      editor.transact(() => plans.forEach((p) => applyReplacement(editor, p)));
+    } finally {
+      editor.endGesture();
+    }
+  } else plans.length = 0;
+  if (mine.length) editor.runCommand('comments.replaceText', { find, replacement, caseSensitive: !!opts.caseSensitive, only: mine });
+  return { changed: plans.length + mine.length, othersComments };
 }
 
-/** Brings a match into view: an item fitted (never zoomed in past 100% or out of the current view's zoom needlessly), a comment pin centered. */
+/** Brings a match into view: an item fitted (never zoomed in past 100% or out of the current view's zoom needlessly), a comment's thread opened. */
 export function revealMatch(editor: Editor, m: Match) {
-  const cam = editor.getCamera();
   if (m.source.kind === 'element') {
-    editor.zoomToFit([m.source.id], { maxZoom: Math.max(1, cam.zoom), padding: 120 });
+    editor.zoomToFit([m.source.id], { maxZoom: Math.max(1, editor.getCamera().zoom), padding: 120 });
     return;
   }
-  const zoom = Math.max(0.75, cam.zoom);
-  const area = editor.getSafeArea();
-  const p = m.source.at;
-  editor.setCamera(
-    { x: p.x - (area.x + area.w / 2) / zoom, y: p.y - (area.y + area.h / 2) / zoom, zoom },
-    { animate: true },
-  );
+  // The comments feature brings the pin into view and opens the thread.
+  // Quietly: the find box keeps the focus, so Enter keeps stepping through the results.
+  editor.runCommand('comments.openThread', { threadId: m.source.threadId, quiet: true });
 }

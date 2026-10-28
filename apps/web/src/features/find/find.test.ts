@@ -1,9 +1,17 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { StickyElement } from '@freero/shared';
 import { createTestBoard, richTextToPlain, type ElementDefinition, type TestBoard } from '@engine';
-import { boardSources, commentSources, replaceAll, search, type Source } from './lib/search';
+import { boardSources, commentSources, replaceMatches, search, type Source } from './lib/search';
 
 const src = (key: string, text: string): Source => ({ kind: 'element', key, id: key, type: 'sticky', text, frameTitle: null });
+const feature = (name: string, elements: ElementDefinition<any>[], more: Record<string, unknown> = {}) => ({
+  manifest: { name, description: '', ...more },
+  elements,
+  tools: [],
+  formats: [],
+  panels: [],
+  commands: [],
+});
 
 describe('search', () => {
   it('counts every occurrence, ignores case unless asked, and snippets around the first one', () => {
@@ -47,7 +55,7 @@ describe('replace', () => {
   it('replace all keeps formatting, skips locked items, and is one undo step', () => {
     board = createTestBoard({
       users: ['ann'],
-      features: [{ manifest: { name: 'find', description: '' }, elements: [sticky as ElementDefinition<any>], tools: [], formats: [], panels: [], commands: [] }],
+      features: [feature('find', [sticky as ElementDefinition<any>])],
     });
     const [ed] = board.editors('find');
     const textOf = (id: string) => ed.getElement<StickyElement>(id)!.text;
@@ -58,12 +66,52 @@ describe('replace', () => {
     ] as never);
     const matches = search(boardSources(ed, ed.getElements(), []), 'q3');
     expect(matches).toHaveLength(3);
-    expect(replaceAll(ed, matches, 'q3', 'Q4')).toBe(2);
+    expect(replaceMatches(ed, matches, 'q3', 'Q4').changed).toBe(2);
     expect(textOf(a)).toBe('<b>Q4</b> plan');
     expect(textOf(b)).toBe('Q4 risks');
     expect(textOf(locked)).toBe('Q3 locked');
     ed.undo();
     expect(textOf(a)).toBe('<b>Q3</b> plan');
     expect(textOf(b)).toBe('q3 risks');
+  });
+
+  // A multi-text item whose parts live in its own feature's collection (like table cells).
+  const grid: ElementDefinition<'table'> = {
+    type: 'table',
+    Component: () => null,
+    resize: 'free',
+    defaults: () => ({ type: 'table', w: 100, h: 100, rows: [{ id: 'r', h: 40 }], cols: [{ id: 'a', w: 50 }, { id: 'b', w: 50 }], header: false, fontSize: 14 }),
+    textParts: (el, editor) =>
+      el.cols.flatMap((c) => {
+        const html = editor.collection<string>('cells').get(`${el.id}:${c.id}`);
+        return html ? [{ part: c.id, html }] : [];
+      }),
+    writeTextPart: (el, part, html, editor) => editor.collection<string>('cells').set(`${el.id}:${part}`, html),
+  };
+
+  it('replace all reaches every part of a multi-text item (written by its owner) and words split by formatting, as one undo step', () => {
+    board = createTestBoard({
+      users: ['ann'],
+      features: [
+        feature('find', [sticky as ElementDefinition<any>]),
+        feature('grid', [grid as ElementDefinition<any>], { owns: ['cells'], undoable: ['cells'] }),
+      ],
+    });
+    const [ed] = board.editors('find');
+    const [owner] = board.editors('grid');
+    const [note] = ed.createMany([{ type: 'sticky', x: 0, y: 0, text: '<b>Hel</b>lo team' }] as never);
+    const table = owner.create({ type: 'table', x: 300, y: 0 } as never);
+    owner.collection<string>('cells').set(`${table}:a`, 'hello A');
+    owner.collection<string>('cells').set(`${table}:b`, 'B says <i>he</i>llo');
+    const cell = (c: string) => owner.collection<string>('cells').get(`${table}:${c}`);
+
+    const matches = search(boardSources(ed, ed.getElements(), []), 'hello');
+    expect(matches.map((m) => m.count)).toEqual([1, 2]);
+    expect(replaceMatches(ed, matches, 'hello', 'Hi').changed).toBe(2);
+    expect(ed.getElement<StickyElement>(note)!.text).toBe('<b>Hi</b> team');
+    expect([cell('a'), cell('b')]).toEqual(['Hi A', 'B says <i>Hi</i>']);
+    ed.undo();
+    expect(ed.getElement<StickyElement>(note)!.text).toBe('<b>Hel</b>lo team');
+    expect([cell('a'), cell('b')]).toEqual(['hello A', 'B says <i>he</i>llo']);
   });
 });
