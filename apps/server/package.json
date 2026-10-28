@@ -16,6 +16,7 @@
     "@node-saml/node-saml": "^5.2.0",
     "express": "^4.22.3",
     "ioredis": "^6.0.0",
+    "jimp": "^1.6.1",
     "lib0": "^0.2.119",
     "nodemailer": "^10.2.1",
     "openid-client": "^6.8.8",
