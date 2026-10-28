@@ -10,6 +10,7 @@ import { newId } from '../../platform/ids';
 import { logError } from '../../platform/log';
 import { appUrl, renderMail, sendMail } from '../../platform/mail';
 import { findUserByEmail, getUser, getUsers, markEmailVerified, normalizeEmail } from '../auth/index';
+import { notify } from '../notifications/index';
 import * as repo from './repo';
 import { isInvitableWorkspaceRole, mayInvite, type InvitableWorkspaceRole } from './roles';
 import { memberOf, refreshWorkspaceBoards, requireWorkspace } from './service';
@@ -83,6 +84,15 @@ export async function inviteToWorkspace(
     if (now === null) throw notFound('Workspace not found');
     if (now !== role) throw new HttpError(409, `${invitee.name} is already in this workspace (${now}). Change their role instead.`);
     await refreshWorkspaceBoards(workspaceId); // they may have had some of its boards open
+    // In their bell (and email digest, per their settings): an existing account joins without a link.
+    await notify({
+      userId: invitee.id,
+      type: 'workspace.invite',
+      actorId: inviter.id,
+      boardId: null,
+      data: { workspaceId, workspaceName: workspace.name, role },
+      dedupeKey: `workspace-invite:${workspaceId}:${invitee.id}`, // re-inviting a member does not ping them again
+    }).catch((e) => logError('workspaces: could not notify an invitee', e));
     return { member: (await memberOf(workspaceId, invitee.id))! };
   }
   const token = randomBytes(32).toString('base64url');

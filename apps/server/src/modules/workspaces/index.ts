@@ -11,11 +11,12 @@ export {
   getWorkspaceInfo,
   lockWorkspaceForNewBoard,
   teamWorkspaceIdsFor,
+  teamMemberIds,
   handOverTeamWorkspaces,
   isManager,
 } from './service';
 export { lockProjectForBoard } from './projects';
 // Managing a team (its routes use these; so may provisioning later, e.g. SCIM).
-export { createTeamWorkspace, updateWorkspace } from './service';
+export { createTeamWorkspace, updateWorkspace, removeMember as removeWorkspaceMember } from './service';
 export { inviteToWorkspace } from './invites';
 export { mayDownload, mayShareExternally, isFullMember } from './roles';

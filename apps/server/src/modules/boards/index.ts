@@ -2,7 +2,7 @@
 import type { Role } from '@freero/shared';
 import { closeBoardDoc } from '../realtime/index';
 import { deleteUpload, UPLOAD_REF_PATTERN } from '../uploads/index';
-import { mayShareExternally, workspaceRole } from '../workspaces/index';
+import { mayShareExternally, teamMemberIds, workspaceRole } from '../workspaces/index';
 import * as repo from './repo';
 import { describeAccess, requireAccess, requireDownload } from './service';
 
@@ -33,6 +33,12 @@ export async function requireBoardAccess(
     canShareExternally: mayShareExternally(access.workspaceRole, access.policies),
     inWorkspace: async (other) => (await workspaceRole(board.workspaceId, other)) !== null,
   };
+}
+
+/** People with access to the board through its team workspace (none for a personal workspace's board). */
+export async function teamAccessUserIds(boardId: string): Promise<string[]> {
+  const board = await repo.getBoard(boardId);
+  return board ? teamMemberIds(board) : [];
 }
 
 /** 403 unless the user may export / download the board's content (its workspace's "downloads" policy). */

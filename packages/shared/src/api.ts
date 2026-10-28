@@ -171,6 +171,12 @@ export interface BoardMember {
   color: string;
   avatarUrl: string | null;
   role: Role;
+  /**
+   * Has access through the board's team workspace, not a board invite (role: what the team grants).
+   * The share dialog shows these as one "Everyone in <team>" row; pickers (mentions, assignees)
+   * list them like anyone else.
+   */
+  team?: boolean;
 }
 
 // ---- Auth ----
@@ -474,7 +480,7 @@ export interface BoardPerson { id: string; name: string; color: string; avatarUr
 //
 // Types are open-ended: a new source (e.g. workspace invites) adds its type here and its entry in
 // the server's modules/notifications/types.ts; the inbox shows `title` / `body` as sent.
-export type NotificationType = 'board.invite' | 'comment.mention' | 'comment.reply';
+export type NotificationType = 'board.invite' | 'comment.mention' | 'comment.reply' | 'workspace.invite';
 
 export interface AppNotification {
   id: string;

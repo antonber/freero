@@ -113,12 +113,14 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
   const isOwner = myRole === 'owner';
   const canInvite = myRole === 'owner' || myRole === 'editor';
   const verified = user?.emailVerified !== false;
-  const isMember = !!members?.some((m) => m.userId === user?.id);
+  // People with team access are the "Everyone in <team>" row below, not one row each (and have no
+  // board membership to leave).
+  const isMember = !!members?.some((m) => m.userId === user?.id && !m.team);
 
   const sorted = useMemo(() => {
     if (!members) return [];
     const rank = (m: BoardMember) => (m.role === 'owner' ? 0 : m.userId === user?.id ? 1 : 2);
-    return [...members].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+    return members.filter((m) => !m.team).sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
   }, [members, user?.id]);
 
   const invite = async (e: FormEvent) => {

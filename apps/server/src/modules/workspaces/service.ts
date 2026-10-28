@@ -293,6 +293,25 @@ export async function boardAccess(userId: string, board: BoardPlace): Promise<Bo
   return (await boardAccessLoader(userId, [board.workspaceId]))(board);
 }
 
+/**
+ * Everyone the workspace itself gives access to a board placed at `place` (team access): its
+ * owners/admins, and its members (guests only through a project they are in) unless the board is
+ * in a private project they're outside of. Empty for a personal workspace.
+ */
+export async function teamMemberIds(place: BoardPlace): Promise<string[]> {
+  const ws = await repo.getWorkspace(place.workspaceId);
+  if (!ws || ws.kind !== 'team') return [];
+  const [members, project, inProject] = await Promise.all([
+    repo.listMembers(ws.id),
+    place.projectId ? repo.getProject(place.projectId) : Promise.resolve(null),
+    place.projectId ? repo.projectMemberIds(place.projectId) : Promise.resolve([] as string[]),
+  ]);
+  const inP = new Set(inProject);
+  return members
+    .filter((m) => teamRole(m.role, project ? { access: project.access, member: inP.has(m.userId) } : null) !== null)
+    .map((m) => m.userId);
+}
+
 /** workspaceId -> the user's role, for every workspace they're in. */
 export function workspaceRolesOf(userId: string): Promise<Map<string, WorkspaceRole>> {
   return repo.rolesOf(userId);

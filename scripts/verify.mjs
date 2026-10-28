@@ -1385,6 +1385,11 @@ async function run() {
       const viaTeam = (await WM.req('GET', `/api/boards/${tb.id}`)).json?.board;
       // Team access is not a board membership: nothing to "leave" on the board itself (KAI-94).
       assert(viaTeam?.role === 'editor' && viaTeam.member === false, `member is not a team editor: ${JSON.stringify(viaTeam)}`);
+      // Pickers (mentions, assignees) and comment author names know team members too.
+      const listed = (await WO.req('GET', `/api/boards/${tb.id}/members`)).json.members.find((m) => m.userId === WM.id);
+      assert(listed?.team === true && listed.role === 'editor', `team member not in the member list: ${JSON.stringify(listed)}`);
+      const people = (await WO.req('GET', `/api/boards/${tb.id}/people?ids=${WM.id}`)).json.people;
+      assert(people.some((p) => p.id === WM.id), 'people lookup does not know a team member');
       const g = await WO.req('POST', `/api/workspaces/${team.id}/members`, { email: WN.email, role: 'guest' });
       assert(g.status === 201 && g.json.invite?.email === WN.email.toLowerCase(), g.text);
       await WN.signup();
