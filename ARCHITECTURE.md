@@ -573,7 +573,9 @@ docs/board-outline.md):
   `LaidOut.keys`; per field, a value still equal to what the last layout wrote takes the new one,
   anything changed on the board (text, colour, size, a box moved by hand) is kept; lines always
   take the new geometry; mind-map topics take the new order and are tidied; removed source items
-  go, locked ones stay. Limits, by design: the source is not rewritten from board edits; copies of
+  go, locked ones stay. The source is shared board content, so it is kept and editable only while
+  the whole diagram is in the shared doc (never for private-mode drafts or inside a hidden frame,
+  whose text it would reveal). Limits, by design: the source is not rewritten from board edits; copies of
   a diagram don't carry its source; outline items without a Mermaid id are matched by their path
   of texts, so a renamed topic is a new topic; concurrent source edits of one diagram are LWW per
   diagram (the second update re-lays from its own source).

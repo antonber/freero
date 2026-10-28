@@ -44,7 +44,10 @@ export function insertLaid(editor: Editor, kind: TextKind, source: string, laid:
       return;
     }
     ids = editor.createMany(placed.elements as unknown as NewElement[]);
-    if (EDITABLE.has(kind) && placed.keys && ids.length) editor.collection<DiagramRecord>(DIAGRAMS).set(nanoid(), newRecord(kind, source, placed));
+    // The source is shared board content: kept only for a diagram everyone with access sees (not
+    // private-mode drafts, not inside a hidden frame), so it never reveals withheld text.
+    if (EDITABLE.has(kind) && placed.keys && ids.length && ids.every((id) => editor.layerOf(id) === 'shared'))
+      editor.collection<DiagramRecord>(DIAGRAMS).set(nanoid(), newRecord(kind, source, placed));
     tidyMindMaps(editor, placed.elements.filter((d) => d.type === 'mindmap' && !d.parentId).map((d) => d.id));
   });
   const top = ids.filter((id) => {
@@ -84,7 +87,10 @@ export function diagramOf(editor: Editor, id: string): { diagramId: string; reco
   return null;
 }
 
-/** The selected diagram, when the selection is (part of) exactly one diagram inserted from text. */
+/**
+ * The selected diagram, when the selection is (part of) exactly one diagram inserted from text and
+ * all of it is shared content (its source would otherwise reveal a hidden frame's or a draft's text).
+ */
 export function selectedDiagram(editor: Editor): { diagramId: string; record: DiagramRecord } | null {
   let found: { diagramId: string; record: DiagramRecord } | null = null;
   for (const id of editor.getSelection()) {
@@ -93,6 +99,8 @@ export function selectedDiagram(editor: Editor): { diagramId: string; record: Di
     if (found && found.diagramId !== d.diagramId) return null;
     found = d;
   }
+  const withheld = (id: string) => (editor.layerOf(id) ?? 'shared') !== 'shared';
+  if (found && Object.values(found.record.ids).some(withheld)) return null;
   return found;
 }
 

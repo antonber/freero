@@ -110,6 +110,21 @@ describe('diagrams as code', () => {
     }
   });
 
+  it('a diagram inserted as a private-mode draft keeps no source in the shared doc (it would show the draft’s text to everyone)', () => {
+    const board = createTestBoard({ users: ['ann', 'bob'], features: [manifest] });
+    try {
+      const [ann, bob] = board.editors('from-text');
+      ann.setPrivatePlacement(() => true);
+      insertFlow(ann);
+      expect(shapeNamed(ann, 'Start')).toBeTruthy();
+      board.sync();
+      expect(shapeNamed(bob, 'Start')).toBeUndefined();
+      expect(JSON.stringify(bob.collection(DIAGRAMS).entries())).not.toContain('Start');
+    } finally {
+      board.destroy();
+    }
+  });
+
   it('only a diagram header on its own line reads as Mermaid when pasted (prose about graphs stays text)', () => {
     expect(looksLikeMermaid('graph LR\n  A --> B')).toBe(true);
     expect(looksLikeMermaid('%% notes\nsequenceDiagram\n  A->>B: hi')).toBe(true);
