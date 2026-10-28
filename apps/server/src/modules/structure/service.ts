@@ -1,7 +1,13 @@
 // Inserting structure into a board (KAI-167): validate the request, check the caller may edit,
 // run it through the chosen sink. Agents and AI never pick coordinates: placement is the layout's.
 import { randomBytes } from 'node:crypto';
-import { LayoutError, type InsertStructureRequest, type InsertStructureResponse } from '@freero/shared';
+import {
+  LayoutError,
+  MAX_SUGGESTION_DESCRIPTION,
+  type InsertStructureRequest,
+  type InsertStructureResponse,
+  type SuggestionAuthor,
+} from '@freero/shared';
 import { badRequest } from '../../platform/http';
 import { requireBoardAccess } from '../boards/index';
 import { BoardChangeError, type BoardActor } from '../realtime/index';
@@ -24,15 +30,24 @@ function parseRequest(body: unknown): InsertStructureRequest {
   if (b.near !== undefined && (typeof b.near !== 'string' || !b.near || b.near.length > 200)) throw badRequest('near must be an element id');
   if (b.at !== undefined && (typeof b.at !== 'object' || !b.at || !Number.isFinite(b.at.x) || !Number.isFinite(b.at.y)))
     throw badRequest('at must be { x, y }');
-  if (b.target !== undefined && !(b.target in SINKS)) throw badRequest(`target must be ${Object.keys(SINKS).join(' or ')}`);
-  return { structure: b.structure, near: b.near, at: b.at, target: b.target };
+  if (b.target !== undefined && !Object.hasOwn(SINKS, b.target)) throw badRequest(`target must be ${Object.keys(SINKS).join(', ')}`);
+  if (b.description !== undefined && (typeof b.description !== 'string' || b.description.length > MAX_SUGGESTION_DESCRIPTION))
+    throw badRequest(`description must be text of at most ${MAX_SUGGESTION_DESCRIPTION} characters`);
+  return { structure: b.structure, near: b.near, at: b.at, target: b.target, description: b.description };
 }
 
 /**
  * Lays `body` out and sends it to its sink. `by`: the person (their id), or — for the public API
- * and MCP — the person and the app acting for them (attributed to both, KAI-168).
+ * and MCP — the person and the app acting for them (attributed to both, KAI-168). With target
+ * 'suggestions' that is who the proposal is from ("Claude for Maria"), unless `opts.author` says
+ * otherwise (in-app AI: "AI for Maria").
  */
-export async function insertStructure(boardId: string, by: string | Omit<BoardActor, 'role'>, body: unknown): Promise<InsertStructureResponse> {
+export async function insertStructure(
+  boardId: string,
+  by: string | Omit<BoardActor, 'role'>,
+  body: unknown,
+  opts: { author?: SuggestionAuthor } = {},
+): Promise<InsertStructureResponse> {
   const req = parseRequest(body);
   const actor = typeof by === 'string' ? { userId: by } : by;
   const userId = actor.userId;
@@ -40,7 +55,7 @@ export async function insertStructure(boardId: string, by: string | Omit<BoardAc
   const target = req.target ?? 'board';
   let result;
   try {
-    result = await SINKS[target].apply(boardId, { ...actor, role }, req, newElementId);
+    result = await SINKS[target].apply(boardId, { ...actor, role }, req, newElementId, { description: req.description ?? '', author: opts.author });
   } catch (e) {
     // Bad input or a board that changed shape under the plan: nothing was written.
     if (e instanceof LayoutError || e instanceof BoardChangeError) throw badRequest(e.message);
@@ -52,6 +67,7 @@ export async function insertStructure(boardId: string, by: string | Omit<BoardAc
     created: placed.elements.map((e) => e.id),
     moved: placed.moves.map((m) => m.id),
     bounds: placed.bounds,
+    ...(result.groupId ? { groupId: result.groupId } : {}),
   };
   if (target === 'preview') {
     const now = Date.now();

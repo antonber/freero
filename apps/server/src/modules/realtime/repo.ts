@@ -3,6 +3,15 @@
 // A document = its compacted base (board_docs) + the update log written since (board_doc_updates).
 // Yjs itself lives in docStore.ts; this file only moves bytes.
 import { isForeignKeyViolation, one, query, tx } from '../../platform/db';
+import { appendOutbox } from '../../platform/outbox';
+
+/**
+ * Outbox topic of a board's shared content changing (key `board:<id>`), appended in the same
+ * transaction as the saved change: derived indexes (references) recompute from the stored doc.
+ * Private and editors layers never raise it — what they hold is not every reader's content.
+ */
+export const BOARD_CONTENT_TOPIC = 'board.content';
+const contentChanged = (boardId: string) => appendOutbox(BOARD_CONTENT_TOPIC, `board:${boardId}`);
 
 const toBuffer = (u: Uint8Array) => Buffer.from(u.buffer, u.byteOffset, u.byteLength);
 const toBytes = (b: Uint8Array) => new Uint8Array(b);
@@ -54,19 +63,25 @@ export async function loadDoc(boardId: string): Promise<StoredDoc | null> {
 /** Appends one update to the board's log. */
 export async function appendUpdate(boardId: string, update: Uint8Array, now: number): Promise<void> {
   await guard(boardId, () =>
-    query(`INSERT INTO board_doc_updates (board_id, data, created_at) VALUES ($1, $2, $3)`, [boardId, toBuffer(update), new Date(now)]),
+    tx(async () => {
+      await query(`INSERT INTO board_doc_updates (board_id, data, created_at) VALUES ($1, $2, $3)`, [boardId, toBuffer(update), new Date(now)]);
+      await contentChanged(boardId);
+    }),
   );
 }
 
 /** The whole content of a brand-new board (a duplicate): becomes its base. */
 export async function saveInitialState(boardId: string, state: Uint8Array, now: number): Promise<void> {
   await guard(boardId, () =>
-    query(
-      `INSERT INTO board_docs (board_id, state, updated_at) VALUES ($1, $2, $3)
-       ON CONFLICT (board_id) DO UPDATE SET state = excluded.state, updated_at = excluded.updated_at,
-         version = board_docs.version + 1`,
-      [boardId, toBuffer(state), new Date(now)],
-    ),
+    tx(async () => {
+      await query(
+        `INSERT INTO board_docs (board_id, state, updated_at) VALUES ($1, $2, $3)
+         ON CONFLICT (board_id) DO UPDATE SET state = excluded.state, updated_at = excluded.updated_at,
+           version = board_docs.version + 1`,
+        [boardId, toBuffer(state), new Date(now)],
+      );
+      await contentChanged(boardId);
+    }),
   );
 }
 

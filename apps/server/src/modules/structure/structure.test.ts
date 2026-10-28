@@ -79,7 +79,7 @@ it('places a structure "near X" beside X on free space and never on top of anyth
     const n = 5 + Math.floor(rand() * 60);
     for (let i = 0; i < n; i++) els.push(sticky(`s${i}`, Math.round(rand() * 3000), Math.round(rand() * 3000), { w: 80 + Math.round(rand() * 400), h: 80 + Math.round(rand() * 300), rotation: rand() < 0.2 ? 30 : 0 }));
     const x = els[Math.floor(rand() * n)];
-    const view: BoardView = { elements: els.map((el) => ({ el, layer: 'shared' })), collection: () => new Map(), seesHidden: true, version: '' };
+    const view: BoardView = { elements: els.map((el) => ({ el, layer: 'shared' })), collection: () => new Map(), seesHidden: true, suggestions: [], version: '' };
     let k = 0;
     const plan = planStructure({ structure: { kind: 'stickies', items: ['a', 'b', 'c', 'd', 'e'] }, near: x.id }, view, () => `new${k++}`);
     for (const e of els) expect(overlap(plan.placed.bounds, rotatedBounds(e))).toBe(false);

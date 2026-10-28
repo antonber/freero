@@ -9,7 +9,17 @@
 // (`isOffBoard`).
 import { createHash } from 'node:crypto';
 import * as Y from 'yjs';
-import { Y_ELEMENTS, type ActingApp, type BoardElement, type ElementDraft, type ElementType, type Role } from '@freero/shared';
+import {
+  pendingSuggestions,
+  SUGGESTIONS_COLLECTION,
+  Y_ELEMENTS,
+  type ActingApp,
+  type BoardElement,
+  type ElementDraft,
+  type ElementType,
+  type Role,
+  type SuggestionRecord,
+} from '@freero/shared';
 import { FACILITATION_COLLECTION } from '@freero/shared';
 import { commenterMayChangeComments } from './commentRules';
 import { effectiveAccess, readFacilitation } from './facilitation';
@@ -40,6 +50,11 @@ export interface BoardView {
   collection(name: string): ReadonlyMap<string, unknown>;
   /** The reader may see hidden frames' contents. */
   seesHidden: boolean;
+  /**
+   * Pending suggestions (KAI-169), oldest first: proposed changes that are not on the board. Only
+   * owners and editors see them (the editors layer); empty for everyone else.
+   */
+  suggestions: SuggestionRecord[];
   /** Changes whenever what the reader can see changes. Base64url, 22 chars. */
   version: string;
 }
@@ -108,7 +123,9 @@ export function viewOf(main: Y.Doc, layers: ReadonlyMap<string, Y.Doc>, reader: 
     hash.update(`\n${layer}\n`);
     if (doc) hash.update(Y.encodeStateAsUpdate(doc));
   }
-  return { elements: [...byId.values()], collection, seesHidden, version: hash.digest('base64url').slice(0, 22) };
+  const editors = seesHidden ? layers.get(EDITORS_LAYER) : undefined;
+  const suggestions = editors?.share.has(SUGGESTIONS_COLLECTION) ? pendingSuggestions(editors.getMap<unknown>(SUGGESTIONS_COLLECTION).entries()) : [];
+  return { elements: [...byId.values()], collection, seesHidden, suggestions, version: hash.digest('base64url').slice(0, 22) };
 }
 
 /** One change to a board's content, applied as ONE transaction per doc it touches. */
@@ -139,7 +156,7 @@ export interface AppliedChange {
 export class BoardChangeError extends Error {}
 
 const KNOWN_TYPES = new Set<ElementType>([
-  'sticky', 'shape', 'text', 'connector', 'pen', 'frame', 'image', 'card', 'emoji', 'mindmap', 'table', 'embed', 'icon', 'kanban', 'pdf', 'swimlane',
+  'sticky', 'shape', 'text', 'connector', 'pen', 'frame', 'image', 'card', 'emoji', 'mindmap', 'table', 'embed', 'icon', 'kanban', 'pdf', 'swimlane', 'objectlink',
 ]);
 const COMMENTS = 'comments';
 

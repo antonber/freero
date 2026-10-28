@@ -101,12 +101,15 @@ everyone at once. Every change is in the audit log (`ai.settings_changed`; the k
 `GET /api/boards/:id/ai`, `POST /api/boards/:id/ai/actions` and the admin routes are described in
 `@freero/shared` `api.ts` ("AI"). An action takes `target: 'preview'` (default: placed, not written;
 the app inserts `snapshot` with `Editor.insertElements` and applies `moves`) or `target: 'board'`
-(written now as one change attributed to the caller, through `modules/structure`).
+(written now as one change attributed to the caller, through `modules/structure`) or `target:
+'suggestions'` (proposed for the board's editors to accept or reject, badge "AI for <you>"; KAI-169).
+A result that moves OTHER people's items — sorting notes someone else wrote — is always proposed as
+suggestions, whatever was asked (the response's `target` says so, and the app opens the review
+list): one person's AI action never rearranges a colleague's work without that being reviewable.
 
 ## Not yet
 
 Results are attributed to the person who ran the action (`createdBy`), with "AI" only in the audit
-log; marking items "made with AI" belongs to agent participants (KAI-168). Results that change other
-people's items land directly after the person's preview; a review step for others belongs to the
-suggestions layer (KAI-169). Streaming partial results isn't needed while every result is validated
+log and on suggestions (`suggestedBy` on items accepted from one); marking items "made with AI"
+belongs to agent participants (KAI-168). Streaming partial results isn't needed while every result is validated
 whole before it can be previewed.

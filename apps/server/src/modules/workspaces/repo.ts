@@ -520,6 +520,11 @@ export async function getProject(id: string): Promise<Project | null> {
   return r ? toProject(r) : null;
 }
 
+export async function getProjects(ids: string[]): Promise<Project[]> {
+  if (ids.length === 0) return [];
+  return (await query<PRow>(`SELECT * FROM projects WHERE id = ANY($1::text[])`, [ids])).map(toProject);
+}
+
 export async function projectsIn(workspaceIds: string[]): Promise<Project[]> {
   if (workspaceIds.length === 0) return [];
   return (await query<PRow>(`SELECT * FROM projects WHERE workspace_id = ANY($1::text[]) ORDER BY lower(name), id`, [workspaceIds])).map(toProject);

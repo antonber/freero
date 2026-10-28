@@ -3,7 +3,7 @@
 import { useCallback, useContext, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useStore } from 'zustand';
 import type { BoardElement, BoardSettings, ElementType, PresenceState, Role, SessionLimits } from '@freero/shared';
-import type { Camera, Collection, Editor, FollowTarget, HostUser, Point, Rect } from './api';
+import type { Camera, Collection, Editor, FollowTarget, HostUser, Point, Rect, Suggestion } from './api';
 import { peopleDirectory } from './runtime/people';
 import { RenderModeContext, ScopeContext, useCore } from './context';
 import type { UiState } from './state/uiStore';
@@ -249,4 +249,41 @@ export function useCursorsHidden(): boolean {
 /** [additive] Ids hidden for this viewer only (Editor.setViewHidden); re-renders when they change. */
 export function useViewHidden(): ReadonlySet<string> {
   return useUi((s) => s.viewHidden);
+}
+
+/**
+ * [additive] Pending suggestions with their live state (Editor.getSuggestions, KAI-169).
+ * Re-renders when one arrives or is decided, or turns stale / ready again. A record never
+ * changes once proposed (only its decision), so the same ids in the same states are the same
+ * list; read the items they change with useElement.
+ */
+export function useSuggestions(): Suggestion[] {
+  const core = useCore();
+  const cache = useRef<{ version: number; value: Suggestion[] }>({ version: -1, value: [] });
+  const version = useRef(0);
+  const subscribe = useCallback(
+    (cb: () => void) => {
+      const bump = () => {
+        version.current++;
+        cb();
+      };
+      const offLayers = core.store.subscribeLayerCollections(bump);
+      const offElements = core.store.subscribeElements(bump);
+      return () => {
+        offLayers();
+        offElements();
+      };
+    },
+    [core],
+  );
+  const get = useCallback(() => {
+    const c = cache.current;
+    if (c.version !== version.current) {
+      const next = core.editor.getSuggestions();
+      const same = next.length === c.value.length && next.every((s, i) => s.id === c.value[i].id && s.state === c.value[i].state);
+      cache.current = { version: version.current, value: same ? c.value : next };
+    }
+    return cache.current.value;
+  }, [core]);
+  return useSyncExternalStore(subscribe, get);
 }

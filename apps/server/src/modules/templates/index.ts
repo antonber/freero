@@ -3,7 +3,9 @@
 import { UPLOAD_REF_PATTERN } from '../uploads/index';
 import * as repo from './repo';
 
-export { listTemplates, getTemplate } from './service';
+export { listTemplates, getTemplate, saveTemplate } from './service';
+// The object registry (modules/objects): templates, visible as the template list shows them.
+export { registerTemplateObjectType } from './objects';
 
 /** Data exports: a person's own templates, or those shared with a workspace — with their content. */
 export function templatesExportOf(by: { ownerId: string } | { workspaceId: string }) {

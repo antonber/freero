@@ -34,7 +34,11 @@ export function parseOutlineQuery(req: Request): OutlineQuery {
   const cursor = str(req.query.cursor);
   if (scope !== undefined && (scope.length > 200 || !scope)) throw badRequest('Invalid scope');
   if (cursor !== undefined && cursor.length > 100) throw badRequest('Invalid cursor');
+  // include=suggestions: also the pending suggestions (KAI-169; owners and editors).
+  const include = (str(req.query.include) ?? '').split(',').filter(Boolean);
+  if (include.some((i) => i !== 'suggestions')) throw badRequest('include may only be suggestions');
   return {
+    suggestions: include.includes('suggestions'),
     format: format === 'json' ? 'json' : 'markdown',
     scope,
     cursor,

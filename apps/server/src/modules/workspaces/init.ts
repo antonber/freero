@@ -3,11 +3,13 @@ import { scheduleExclusiveJob } from '../../platform/jobs';
 import { log } from '../../platform/log';
 import { endSessionsBeyondLimits, onEmailVerified, onTwoFactorRequirement, setSessionLimits } from '../auth/index';
 import { convertInvitesFor } from './invites';
+import { registerWorkspaceObjectTypes } from './objects';
 import { allSessionLimits, sessionLimitsFor, twoFactorRequirementOf } from './service';
 
 const SESSION_POLICY_LOCK_KEY = 7_202_610_351; // arbitrary, constant across releases
 
 export default function initWorkspaces(ctx: ServerContext): void {
+  registerWorkspaceObjectTypes();
   // Someone proved an address: the pending workspace invites sent to it become memberships.
   const stop = onEmailVerified(convertInvitesFor);
   ctx.onShutdown(() => void stop());

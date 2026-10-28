@@ -242,6 +242,8 @@ let driver: Driver | null = null;
 interface Scope {
   handle: Queryable;
   open: boolean;
+  /** Run once the transaction committed (afterCommit). */
+  after: Array<() => void>;
 }
 const scope = new AsyncLocalStorage<Scope>();
 
@@ -266,7 +268,14 @@ function current(): Queryable | null {
   return s?.open ? s.handle : null;
 }
 
+let queriesRun = 0;
+/** Statements run through query/one so far in this process (tests assert batched reads stay batched). */
+export function queryCount(): number {
+  return queriesRun;
+}
+
 export async function query<T = Row>(sql: string, params: unknown[] = []): Promise<T[]> {
+  queriesRun++;
   const t = current();
   return (t ? t.query<T>(sql, params) : d().query(sql, params)) as Promise<T[]>;
 }
@@ -284,8 +293,9 @@ export async function exec(sql: string): Promise<void> {
 export async function tx<T>(fn: (t: Tx) => Promise<T>): Promise<T> {
   const outer = current();
   if (outer) return fn(outer);
-  return d().transaction(async (handle) => {
-    const s: Scope = { handle, open: true };
+  const s: Scope = { handle: null as unknown as Queryable, open: true, after: [] };
+  const out = await d().transaction(async (handle) => {
+    s.handle = handle;
     try {
       return await scope.run(s, () => fn(handle));
     } finally {
@@ -293,6 +303,28 @@ export async function tx<T>(fn: (t: Tx) => Promise<T>): Promise<T> {
       s.open = false;
     }
   });
+  for (const cb of s.after) runAfterCommit(cb);
+  return out;
+}
+
+function runAfterCommit(cb: () => void): void {
+  try {
+    cb();
+  } catch (e) {
+    console.error('[freero db] an after-commit callback failed:', e);
+  }
+}
+
+/**
+ * Runs `cb` once the caller's transaction has COMMITTED (never after a rollback), or on the next
+ * tick when the caller runs outside a transaction. For nudges whose work must see the commit
+ * (waking the outbox consumers); never for work that must not be lost — that belongs in the
+ * transaction itself (platform/outbox.ts).
+ */
+export function afterCommit(cb: () => void): void {
+  const s = scope.getStore();
+  if (s?.open) s.after.push(cb);
+  else queueMicrotask(() => runAfterCommit(cb));
 }
 
 /**
@@ -367,20 +399,26 @@ export const MIGRATION_FILE_RE = /^(\d{12})_([a-z0-9_]+)\.sql$/;
 const MIGRATION_LOCK_KEY = 7_202_610_270; // arbitrary, constant across releases
 
 /**
- * Reads modules/<m>/migrations/*.sql under `modulesDir`, in global order: timestamp, then module,
- * then file name. Fails on a file that does not follow <YYYYMMDDHHMM>_<name>.sql.
+ * Reads modules/<m>/migrations/*.sql under `modulesDir`, plus the platform's own (the `_` tables
+ * it owns, e.g. the outbox) in `platform/migrations/` next to that directory, in global order:
+ * timestamp, then module ('platform' for the platform's), then file name. Fails on a file that
+ * does not follow <YYYYMMDDHHMM>_<name>.sql.
  */
 export function discoverMigrations(modulesDir: string): Migration[] {
   const out: Migration[] = [];
-  for (const mod of fs.readdirSync(modulesDir, { withFileTypes: true })) {
-    if (!mod.isDirectory()) continue;
-    const dir = path.join(modulesDir, mod.name, 'migrations');
+  const dirs = fs
+    .readdirSync(modulesDir, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => ({ name: e.name, dir: path.join(modulesDir, e.name, 'migrations') }));
+  dirs.push({ name: 'platform', dir: path.join(path.dirname(modulesDir), 'platform', 'migrations') });
+  for (const mod of dirs) {
+    const dir = mod.dir;
     if (!fs.existsSync(dir)) continue;
     for (const file of fs.readdirSync(dir)) {
       const m = MIGRATION_FILE_RE.exec(file);
       if (!m)
         throw new DatabaseStartupError(
-          `modules/${mod.name}/migrations/${file}: migration files are named <YYYYMMDDHHMM>_<snake_name>.sql ` +
+          `${mod.name === 'platform' ? 'platform' : `modules/${mod.name}`}/migrations/${file}: migration files are named <YYYYMMDDHHMM>_<snake_name>.sql ` +
             `(e.g. ${new Date().toISOString().replace(/\D/g, '').slice(0, 12)}_add_column.sql).`,
         );
       // Line endings depend on the checkout (git autocrlf); the checksum must not.

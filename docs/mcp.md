@@ -90,7 +90,7 @@ connection never adds stickies, whatever it was granted.
 | Permission (scope) | Default | Lets the assistant |
 |---|---|---|
 | `boards:read` | on | find boards, read them (outline, export) |
-| `boards:suggest` | on | propose changes for people to accept — reserved: offered once Freero's suggestions layer ships ([propose_changes](#propose_changes)) |
+| `boards:suggest` | on | propose changes for people to accept, never changing the board itself ([propose_changes](#propose_changes)) |
 | `boards:write` | **off — tick it** | create boards and add, change and delete items directly |
 | `comments:write` | **off — tick it** | comment and reply |
 
@@ -146,7 +146,7 @@ everything an agent adds in free space (next to `near` when given): no coordinat
 | `update_items` | write | Changes several items in one step, all or nothing: text, card fields, colors, frame title / hidden, lock, link, position / size (a moved frame takes its contents). |
 | `delete_items` | write | Deletes items (a frame with everything inside). Only with `confirm: true`. |
 | `export_board` | read | The whole board as a file (embedded resource): Markdown or JSON. Recorded as an export (`board.exported`); refused by a downloads policy. |
-| `propose_changes` | suggest | Proposes a structure (`{ kind, … }` as for the add tools) as suggestions people accept or reject. Listed only once the server has the suggestions layer (KAI-169). |
+| `propose_changes` | suggest | Proposes a structure (`{ kind, … }` as for the add tools; optional `description` for reviewers) as ONE group of suggestions that people who can edit the board accept or reject (KAI-169). The board does not change until they do; the badge, the outline (`include=suggestions`) and the activity feed show it as "<app> for <you>". Your role must be owner or editor. |
 
 **Resources:** `freero://board/{boardId}` — a board's outline (Markdown, ≈ 8000 tokens) in the
 untrusted envelope.

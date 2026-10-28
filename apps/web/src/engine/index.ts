@@ -40,9 +40,12 @@ export {
   usePrivateCollection,
   useIsExporting,
   useElementsQuery,
+  useSuggestions,
   usePeople,
-
 } from './hooks';
+
+// [additive] An element drawn as it would look without being on the board (suggestion ghosts).
+export { ElementPreview } from './canvas/WorldLayer';
 
 // [additive] A dock panel's header (title, search, filters): rendered in the dock's fixed strip
 // beside its close button, so the panel's content scrolls below it, never under the button.

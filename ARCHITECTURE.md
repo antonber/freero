@@ -104,6 +104,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 |---|---|---|
 | Yjs doc, provider, awareness | `engine/store/` | `Editor` methods |
 | Layer docs (`private`, `editors`; see "Board layers") | `engine/store/` (placement: `engine/editor/layers.ts`); reveal: server `realtime` | `Editor` writes, `privateCollection`, `revealPrivate` |
+| Suggestion records (editors layer `suggestions`; see "Suggestions") | server `realtime` creates them (`proposeSuggestions`); a socket may only set its own `decision` | `Editor.acceptSuggestions` / `rejectSuggestions`, API accept / reject |
 | `elements` map | engine (`editor.create/update/remove/transact`) | same |
 | `settings` map (background, grid) | engine | `editor` settings API |
 | feature collection (e.g. `comments`) | the feature whose `feature.ts` `owns` it | `editor.runCommand` of the owner. Writes from a non-owner throw at runtime [W8 checks unique claims] |
@@ -111,6 +112,8 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | presence ext | each feature writes `ext[<its name>]` only | — |
 | Database table | the server module whose `migrations/` create it; only its `repo.ts` writes it, only its migrations alter it [S4] | that module's exported functions |
 | auth session cookie | server `modules/auth` | — |
+| `_outbox`, `_outbox_cursors` (platform tables) | `platform/outbox.ts` | `appendOutbox` in the change's transaction; consumers through `consumeOutbox` |
+| Derived indexes (`object_references`) | their module's outbox consumer | never written directly: change the source; `references:rebuild` repairs |
 | API tokens, OAuth apps / consents, a team's API switch | server `modules/apiauth` | its index: `authenticate`, `requireScope`, `useInWorkspace` |
 
 ### Host — the one typed contract between app and engine
@@ -332,6 +335,11 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
 - Board layers (see "Board layers" under Server): `Editor.layerOf(id)`, `setPrivatePlacement(rule)`,
   `privateCollection(name)` + hook `usePrivateCollection`, `revealPrivate` / `discardPrivate`,
   `ElementDefinition.hidesContents(el)`. `ExportOptions.sharedOnly` (thumbnails).
+- Suggestions (KAI-169; see "Suggestions" under Server): `Editor.getSuggestions()` (pending, with
+  `state`) + hook `useSuggestions()`, `acceptSuggestions(ids, { force? })` → `{ accepted, stale }`,
+  `rejectSuggestions(ids)`; `<ElementPreview element>` (`@engine`) draws an element as it would look
+  without being on the board (ghosts; world coordinates, never selected or hit-tested); test boards
+  get `TestBoard.propose(records)`.
 - `Editor.exportElements(ids?)` → `ElementsSnapshot` (what copy puts on the clipboard: elements
   with frame children + `copyContent`) and `Editor.insertElements(snapshot, { at? })` — the ONE
   insertion path for copied content (paste uses it): fresh ids, references remapped, content
@@ -771,7 +779,10 @@ configures; see "AI" below), `apiauth` (api_tokens,
 oauth_clients, oauth_grants, oauth_codes, api_workspace_settings, api_workspace_credentials:
 credentials that act for a person without their session), `api` (no table: the public REST API
 `/api/v1`; see "Public API and OAuth" below), `mcp` (no table: the remote MCP server `/mcp`; see
-"The MCP server" below).
+"The MCP server" below), `objects` (no table: the object registry and the one
+permission check, `POST /objects/resolve`), `references` (object_references, reference_sources: the
+references index derived through the outbox, `GET /objects/backlinks`; both in "Suite foundation"
+below).
 
 - Notifications are created only from trusted server-side events, never from client claims:
   realtime's `onCommentMessage` (a comment message applied from one of THIS instance's sockets,
@@ -1130,8 +1141,8 @@ Agents, the API and AI read and write boards semantically, never by coordinates.
   `layout/` (pure, no dependencies; in-house layered graph layout, Mermaid reader, mind map, sticky
   clusters, sequence, table) lays a structure out from (0, 0); `plan.ts` places it on a free spot of
   the view and turns it into a `BoardChange`; `sinks.ts` decides where that goes (`board` →
-  `changeBoard`, `preview` → returned for `Editor.insertElements`). The suggestions layer (KAI-169)
-  is a new sink, not a new planner.
+  `changeBoard`, `preview` → returned for `Editor.insertElements`, `suggestions` →
+  `proposeSuggestions`: the same plan, proposed instead of written; KAI-169).
   Both modules expose these through their `index.ts` (`boardOutline`, `insertStructure`): other modules
   (AI, the public API) read and write boards through them, with the caller's own access.
 
@@ -1200,9 +1211,15 @@ audit and admin controls are the same code.
   accounts and accounts awaiting deletion. 401/403 carry a `WWW-Authenticate` challenge naming the
   protected-resource metadata (RFC 9728), as MCP clients expect.
 - **Scopes** (`API_SCOPES` in `@freero/shared`, one model for REST and MCP): `boards:read`,
-  `boards:write`, `boards:suggest` (reserved for the suggestions layer, KAI-169), `comments:write`,
-  `members:read`, `members:write`. Effective power = the person's role on the board AND the scope:
-  a viewer's write-scoped token still can't write.
+  `boards:write`, `boards:suggest`, `comments:write`, `members:read`, `members:write`. Effective
+  power = the person's role on the board AND the scope: a viewer's write-scoped token still can't
+  write.
+- **Suggestions** (KAI-169, see "Suggestions" below): `POST /boards/:id/suggestions` (and
+  `/structure` with `target: 'suggestions'`) needs `boards:suggest` and an owner/editor behind the
+  token; listing needs `boards:read`; `…/suggestions/accept|reject` need `boards:write`. A token
+  with only `boards:suggest` proposes and never writes or decides. The author is the credential
+  (`kind: 'app'`, its name, the person it acts for). This is the contract the MCP server's
+  `propose_changes` (KAI-107) calls.
 - **OAuth server** (`apiauth/oauth.ts`), built to OAuth 2.1 as the MCP authorization spec requires:
   authorization code only; PKCE S256 mandatory for every client; exact redirect URIs (loopback http
   on any port, RFC 8252; https; an app's own scheme; never `javascript:`/`data:`/fragments); codes
@@ -1271,6 +1288,86 @@ audit and admin controls are the same code.
   makes the consent screen offer `boards:write` / `comments:write` unticked (`OAuthConsentInfo.scopes[].optional`,
   the decision's `grant`). `/mcp` is the `root` resource: the bare `/.well-known/oauth-protected-resource`
   describes it.
+
+### Suite foundation: the outbox, one permission check, object addresses and references (KAI-147, KAI-148, KAI-149)
+
+Every Freero object is a live, permission-checked, linkable thing, so what a board produces
+doesn't die at a hand-off. Three primitives carry that: the API, the MCP server, embeds, search and
+later apps use them instead of re-implementing access or indexes.
+
+**The outbox and derived indexes** (`platform/outbox.ts`, KAI-148). The one way a change in one
+module reliably makes something else happen (a derived index, a webhook, a cleanup another module
+owns):
+- `appendOutbox(topic, key, payload?)` inside the transaction that makes the change: the event
+  commits with it or not at all. In-process `onX(fn)` events called after a commit lose the work
+  when the process dies right there; new reliable reactions use the outbox. (The existing
+  in-process events — members' sharing events, `onCommentMessage`, `onBoardChange`, `onSessionEnd` —
+  stay: they feed live, best-effort delivery (notifications, activity bursts, socket closes) that
+  is either re-derived elsewhere or harmless to miss; moving them means replacing their in-memory
+  state, a change of its own. `workspaces.onMembershipChanged` → templates' unsharing was moved.)
+- `consumeOutbox(ctx, { name, topics, lockKey, handle })` from an init.ts. Every instance polls
+  (1 s, and right after a local commit that appended: `afterCommit` in `platform/db.ts`); each
+  consumer runs on ONE instance at a time (advisory lock). It reads in `(txid, id)` order only up to
+  the oldest running transaction (`pg_snapshot_xmin`), so an event committed late by a slow
+  transaction is never skipped, and moves its cursor (`_outbox_cursors`) only after `handle`
+  returned: at-least-once, resumable anywhere. Backpressure: batches of `batchSize`, coalesced to
+  the newest event per key, a few batches per run; `wakeDelayMs` gathers a burst into one batch.
+  A failing batch is retried, then handled event by event, and an event that still fails is
+  skipped and counted (`freero_outbox_skipped_total`). Events are pruned once every consumer
+  passed them and they are a day old, or after a week regardless.
+- Consumer rules: idempotent — recompute the derived rows of the event's KEY from the CURRENT
+  source (never apply the event as a delta); stamp them with the batch's `version` (a sequence read
+  with each batch, higher than any before on any instance) and never let a lower version replace a
+  higher one; derived rows are HINTS — every read re-checks the reader's live access (objects
+  below), so a few seconds of lag never exposes anything. Each derived index has a rebuild from the
+  source (an admin command, run under `whileConsumerPaused`).
+- The platform's own tables (`_outbox`, `_outbox_cursors`, `_outbox_derive_version`) are created by
+  `platform/migrations/` (same naming and immutability rules; discovered with the modules').
+
+**One permission check** (`modules/objects`, KAI-147). `can(actor, action, ref)`,
+`filterObjects(actor, action, refs)`, `accessOf`, `summarizeObjects`, `resolveObjects(actor, uris)`.
+Actions are `view < comment < edit < manage`. The registry decides nothing itself: each OWNING
+module registers its types from its init.ts (`registerObjectType`) and keeps its rules —
+boards: `board` and `element` (an item or frame, addressed within its board) through
+`describeAccess` / `resolveRole` batched for many boards (owner, membership, team access, link,
+policies, `blocked`, guests on their one board); an item only as the reader's `readBoardView`
+shows it (no hidden frame's contents for viewers, no one's draft). templates: `template` (the
+template list's visibility rule). workspaces: `workspace` (guest view, member edit, admin manage;
+deactivated: nothing) and `project` (projects' `canSee` / `canManage`). A handler answers a whole
+batch in a fixed number of queries (`objects.test.ts` asserts 200 refs cost what 10 do). Purpose
+`'discover'` (backlinks, search) leaves out boards reached ONLY through their link that the reader
+never opened — otherwise an index would hand out the ids a link protects; `'open'` (the reader
+holds the address) counts link access, as the board page does. A new object type (a doc) =
+a handler in its module + a type in `OBJECT_TYPES`; nothing else changes.
+
+**Object addresses** (`@freero/shared` `objects.ts`, KAI-149): `freero://board/<id>`,
+`freero://board/<id>#<elementId>`, `freero://template/<id>`, `freero://workspace/<id>`,
+`freero://project/<id>`. `parseObjectUri` also reads the web URLs people copy
+(`<origin>/board/<id>?el=<item>`, for the app's own origins: PUBLIC_URL and the request's) and the
+same-origin paths item links store; `objectRefsInText` finds them in content.
+`POST /api/objects/resolve` (≤ 200 per call; guests too) answers each with a summary (title, type,
+item kind and board, preview, path, the reader's access) or `unavailable` — the same for "no
+access" and "no such object", and nothing else, so content carrying addresses never tells its
+readers whether a target exists or what it is called.
+
+**References and backlinks** (`modules/references`). Every saved change of a board's shared
+content appends `board.content` (realtime's repo, same transaction as the update-log row). The
+`references` consumer re-derives that board from its SAVED doc as every reader sees it
+(`realtime.storedBoardView`: no layer, nothing under a hidden frame): item links (`link`: `#id` or
+another board's address), smart links and link cards whose address is a Freero object (`embed`),
+addresses in any text field of an item (`mention`) and in comment messages (`comment`, on the item
+the thread is pinned to); `object_references` per source board, replaced whole, with
+`reference_sources.version`. `GET /api/objects/backlinks?uri=` needs view access to the target (404
+otherwise) and lists only sources the caller may open now (`'discover'`); a board's backlinks
+include its items'. Trashed sources vanish at once (access), deleted ones cascade.
+`npm run admin -- references:rebuild [<board>]` re-derives from saved content.
+
+**Web.** `features/smartlink`: a pasted address (this app's board / item URL or `freero://…`) becomes
+an `objectlink` element that stores ONLY the address; the chip resolves the title for each viewer
+on every view (`Host.resolveObjects`, batched per frame, 15 s cache), shows "No access" otherwise,
+and its open button glides to an item on the same board or opens the target. Item links (KAI-54)
+and link cards are indexed as they are. The share dialog's "Linked from" lists the other boards
+pointing at this one that the viewer can open (`app/components/LinkedFrom.tsx`).
 
 ### Audit log, admin console and workspace policies (KAI-48, KAI-47, KAI-51)
 
@@ -1427,7 +1524,8 @@ P / M / F terms, and add their row.
   pending ones in ONE transaction under a Postgres advisory lock, so several instances can start
   at once; a failing migration leaves nothing behind. [S4] checks that a migration only
   ALTERs/DROPs/indexes/writes its own module's tables and REFERENCES only tables created by an
-  earlier migration.
+  earlier migration. The platform's own `_` tables (the outbox) come from `platform/migrations/`,
+  applied in the same global timestamp order as module 'platform'.
 - Startup fails fast (before listening) with a plain message when Postgres is unreachable, a
   migration fails, or another process already uses the PGlite directory (`<dir>.lock`). Graceful
   shutdown: stop sockets → `ctx.shutdown()` (realtime saves every loaded doc) → close the pool.
@@ -1470,6 +1568,10 @@ operations). What a module needs to know:
 - **Background jobs** (`platform/jobs.ts`): `scheduleExclusiveJob(ctx, { name, lockKey, intervalMs,
   run })` runs on every instance's timer but one at a time (Postgres advisory lock); jobs must be
   idempotent. `runExclusive(lockKey, fn)` for a one-off.
+- **Outbox** (`platform/outbox.ts`): `appendOutbox(topic, key)` inside the change's transaction,
+  `consumeOutbox(ctx, consumer)` from an init.ts — reliable reactions and derived indexes (see
+  "Suite foundation"). `afterCommit(fn)` (`platform/db.ts`) runs a nudge once the caller's
+  transaction committed.
 - **Metrics** (`platform/metrics.ts`): `histogram`/`counter`/`gaugeFn` register module metrics
   (`freero_<module>_…`; see `realtime/metrics.ts`). Readiness of a new external dependency:
   `addReadinessCheck(name, fn)` (`platform/health.ts`).
@@ -1596,7 +1698,7 @@ only to connections that may read them:
 | layer (wire / stored) | read by | written by | holds |
 |---|---|---|---|
 | `private` / `u:<userId>` | that user's sockets | that user, while owner/editor | private-mode drafts (`elements`), sealed ballots (`voting`), sealed planning-poker picks (`estimation`) |
-| `editors` / `editors` | owner/editor sockets | owners/editors | contents of hidden frames (`elements`) |
+| `editors` / `editors` | owner/editor sockets | owners/editors | contents of hidden frames (`elements`); pending suggestions (`suggestions`, created only by the server; see "Suggestions") |
 
 - Wire format: `WS_MESSAGE_LAYER` envelopes around y-protocols sync messages, `WS_MESSAGE_LAYER_OP`
   for reveal/discard (`@freero/shared` api.ts). A socket asking for a layer it may not read gets no
@@ -1659,6 +1761,56 @@ only to connections that may read them:
   not send them to. What was in the shared doc before it was hidden was already seen; hiding is not
   retroactive.
 
+### Suggestions — changes proposed for people to accept (KAI-169; `@freero/shared` `suggestions.ts`)
+
+An agent, an app or an AI action can SUGGEST instead of edit: new items, field changes of items on
+the board, deletions. A suggestion is not board content until someone who can edit accepts it.
+
+- **Where they live**: the `suggestions` collection of the `editors` layer — one `SuggestionRecord`
+  per proposed change of ONE item, records of one proposal sharing a `groupId` (each carries the
+  group's `author` and `description`). Not a layer of its own on purpose: the editors layer already
+  reaches exactly the people who may accept (owners/editors; never viewers, commenters or guests
+  who can't edit), is persisted, relayed between instances, left out of thumbnails and exports
+  (suggestions aren't elements) and left alone by version restore — so suggestions inherit all of
+  it. Restoring a version never touches pending suggestions; duplicating a board copies the editors
+  layer WITHOUT them (`snapshotBoardLayer(…, { withoutSuggestions })`).
+- **Single writers**: records are CREATED only by the server — realtime's `proposeSuggestions(boardId,
+  actor, { author, description }, plan)`, the seam everything that wants review goes through (the
+  public API, structure insertion with `target: 'suggestions'`, in-app AI): `plan` returns a
+  `BoardChange` from the SAME planners as a direct write, which becomes the records. So the author
+  badge ("Claude for Maria", "AI for Maria") can't be forged by a socket. A SOCKET may only set or
+  clear the `decision` of an existing record, naming itself (`realtime/suggestions.ts`
+  `guardSuggestionWrites`, inside the transaction that applies its editors-layer update, like the
+  facilitation guards: what it undoes reaches nobody, the sender gets the correction). Decided
+  records stay a day (undo needs them) and are pruned when a room loads.
+- **Accepting** in the app (`Editor.acceptSuggestions`) is an ordinary edit by the acceptor plus the
+  decision, in ONE undo step across the shared doc and the editors layer (its undo manager tracks
+  the collection); undo puts the items back AND makes the suggestions pending again. New items keep
+  their proposed ids (two people accepting at once make one item), `createdBy` is the acceptor and
+  `suggestedBy` the proposer. Accepting a line brings the new items it joins (`acceptClosure`);
+  rejecting a new item rejects lines to it (`rejectClosure`). Role guards and a facilitator's limits
+  apply as to any write (a locked participant is a commenter: no layer writes at all). On a request
+  (`decideSuggestions`, the public API) the change goes through `applyChange` and the decisions are
+  written in the same step.
+- **Stale** (`suggestionState`): an update whose fields changed since it was proposed (its `base`),
+  a deletion of an item that changed in any way (`elementFingerprint`), or an item (or one a new line
+  needs) that is gone. Stale ones are never applied silently: the app asks ("Apply anyway"), the API
+  answers 409 `suggestion_stale` unless `force`.
+- **Audit and activity**: every accept / reject / undo of either is
+  `board.suggestion_accepted|rejected|reopened` in the board's workspace log, recorded by the
+  instance that applied it (`via: board | api`). A proposal is an activity entry for owners and
+  editors ("Claude for Maria suggested 6 changes", realtime `onSuggestionsProposed`); accepting is
+  the acceptor's ordinary edit (a request's carries its app, KAI-168).
+- **Attribution**: a proposal made on a request is from its `BoardActor` — "<app> for <person>"
+  when an app or token acts (`via`, KAI-168), else the person; in-app AI passes its own author
+  ("AI for <person>"). MCP's `propose_changes` is the suggestions sink through `insertStructureFor`
+  (offered because `structureTargets()` lists `suggestions`); REST and MCP share
+  `api/service.ts` (`listSuggestions`, `proposeChanges`, `decideSuggestions`).
+- **Reading**: `BoardView.suggestions` (pending, owners/editors only); the outline lists them only
+  with `include=suggestions`; `GET /api/v1/boards/:id/suggestions`. UI: `features/suggestions`
+  (ghosts drawn with `ElementPreview`, the proposer's badge, accept / reject per item and per group,
+  the review dock, the top-bar count).
+
 ## Verification
 
 - `npm run check` — boundaries + typecheck + unit tests. Must pass before any change is "done".
@@ -1671,7 +1823,7 @@ only to connections that may read them:
   `S3_BUCKET` and keys (MinIO, SeaweedFS…), the `s3` group checks the S3 backend (prefixes, kept
   copies under `private/`, restore, retention, the S3_PUBLIC_URL redirect and stored Cache-Control);
   all other groups stay on the local disk. CI does all of it.
-  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation,ai,api,mcp,s3` runs some groups (to loop one while hunting a flake).
+  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation,ai,api,mcp,s3,suite,suggestions` runs some groups (to loop one while hunting a flake).
   The `mcp` group drives the MCP server with the official MCP client SDK, OAuth (dynamic
   registration, consent, PKCE) included; with DATABASE_URL + REDIS_URL one client's requests also
   alternate between two instances.

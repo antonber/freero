@@ -75,6 +75,14 @@ function AiDialog({ editor, props }: PanelProps) {
         target: 'preview',
         at: editor.getViewportCenter(),
       });
+      if (res.target === 'suggestions') {
+        // It moves other people's notes: the server proposed it instead (KAI-169). The proposal on
+        // the board is the preview now, with accept / reject for whoever can edit.
+        close();
+        editor.runCommand('suggestions.open');
+        editor.host.notify('Some of these notes are other people’s, so the AI’s sorting was added as suggestions to accept or reject.', 'info');
+        return;
+      }
       setResult(res);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'The AI request failed. Try again.');

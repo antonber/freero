@@ -28,7 +28,7 @@ import { logError } from '../../platform/log';
 import { getGuests, getUsers } from '../auth/index';
 import { boardsOpenableIn, getBoardAccess } from '../boards/index';
 import type { AccessDecidedEvent, BoardSharedEvent } from '../members/index';
-import type { BoardChangeEvent, CommentMessageEvent } from '../realtime/index';
+import type { BoardChangeEvent, CommentMessageEvent, SuggestionsProposedEvent } from '../realtime/index';
 import * as repo from './repo';
 import type { ActivityRow, ActivitySummary } from './repo';
 
@@ -194,6 +194,15 @@ export async function recordBoardEvent(
   await repo.insertMany([{ id: newId(16), boardId, actorId, actorName: null, kind: 'board', audience: 'all', summary, startedAt: now, endedAt: now }]);
 }
 
+/**
+ * A proposal of changes (KAI-169): "Claude for Maria suggested 6 changes". Owners and editors
+ * only — the suggestions themselves reach nobody else. Accepting them shows as the acceptor's edit.
+ */
+export async function recordSuggestions(e: SuggestionsProposedEvent, now = Date.now()): Promise<void> {
+  const summary: ActivitySummary = { action: 'suggested', suggestions: e.count, ...(e.via ? { app: e.via.name } : {}) };
+  await repo.insertMany([{ id: newId(16), boardId: e.boardId, actorId: e.actorId, actorName: null, kind: 'board', audience: 'editors', summary, startedAt: now, endedAt: now }]);
+}
+
 export const onBoardShared = (e: BoardSharedEvent) => recordShare({ boardId: e.boardId, byId: e.byId, userId: e.userId, role: e.role, via: 'invite' });
 export const onAccessDecided = (e: AccessDecidedEvent) =>
   e.approved && e.role ? recordShare({ boardId: e.boardId, byId: e.deciderId, userId: e.requesterId, role: e.role, via: 'request' }) : undefined;
@@ -247,6 +256,8 @@ function boardWording(s: ActivitySummary): string {
       return 'restored the board from the trash';
     case 'version_restored':
       return s.version ? `restored the version “${s.version}”` : 'restored an earlier version';
+    case 'suggested':
+      return s.suggestions === 1 ? 'suggested a change' : `suggested ${s.suggestions ?? 'some'} changes`;
     default:
       return 'changed the board';
   }

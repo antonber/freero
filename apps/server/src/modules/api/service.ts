@@ -9,6 +9,9 @@
 import type { Request } from 'express';
 import {
   API_MAX_DELETE_PER_CALL,
+  API_MAX_ITEMS_PER_CALL,
+  SUGGESTION_STALE,
+  type ApiSuggestionGroup,
   CONFIRM_REQUIRED,
   OutlineSelectionError,
   tableCellEntries,
@@ -44,11 +47,23 @@ import {
 } from '../boards/index';
 import { inviteBoardMember, listBoardMembers, removeBoardMember, setBoardMemberRole } from '../members/index';
 import { boardComments, boardOutline, type OutlineQuery, type OutlineResult } from '../outline/index';
-import { BoardChangeError, changeBoard, readBoardView, showAgentPresence, type BoardActor, type BoardView } from '../realtime/index';
+import {
+  BoardChangeError,
+  changeBoard,
+  decideSuggestions as decide,
+  proposeSuggestions,
+  readBoardView,
+  showAgentPresence,
+  SuggestionNotFoundError,
+  SuggestionStaleError,
+  type BoardActor,
+  type BoardView,
+} from '../realtime/index';
 import { insertStructure, newElementId } from '../structure/index';
 import { getTemplate, listTemplates } from '../templates/index';
 import { ensurePersonalWorkspace, getWorkspaceInfo, workspaceRolesOf } from '../workspaces/index';
 import { commentSpot, patchUpdates, planCreate, planPatch, readItemInputs, toApiItem } from './items';
+import { planProposal, readProposal, suggestionGroups } from './suggestions';
 
 /** One call of a credential: who, through what, and what its audit event will say. */
 export interface ApiCall {
@@ -404,6 +419,69 @@ export async function insertStructureFor(call: ApiCall, boardId: string, body: u
   call.audit.metadata = { items: result.created.length, moved: result.moved.length, target: result.target };
   if (result.target === 'board') present(call, id, result.created);
   return result;
+}
+
+// ---- suggestions (KAI-169): proposed changes people who can edit accept or reject ----
+
+/** Pending suggestions, grouped as proposed (owners and editors: suggestions are theirs to review). */
+export async function listSuggestions(call: ApiCall, boardId: string, q: { groupId?: unknown } = {}) {
+  const board = await openBoard(call, boardId);
+  await requireBoardAccess(board.id, call.userId, 'editor');
+  await requireBoardDownload(board.id, call.userId, 'api');
+  const groupId = typeof q.groupId === 'string' ? q.groupId : null;
+  const view = await readBoardView(board.id, { userId: call.userId, role: board.role });
+  const groups = suggestionGroups(view).filter((g) => !groupId || g.id === groupId);
+  call.audit.metadata = { returned: groups.reduce((n, g) => n + g.suggestions.length, 0) };
+  return withNotice({ groups });
+}
+
+/**
+ * Proposes new items, changes and deletions instead of making them: ONE group of suggestions,
+ * from "<app> for <person>". Planned exactly as createItems / updateItems / deleteItems would,
+ * so accepting it later does what writing it now would have done. The board does not change.
+ */
+export async function proposeChanges(call: ApiCall, boardId: string, body: unknown): Promise<{ notice: string; group: ApiSuggestionGroup | null }> {
+  const proposal = readProposal(body);
+  const { id, role } = await openBoard(call, boardId);
+  await requireBoardAccess(id, call.userId, 'editor');
+  await agentWrite(call);
+  const out = await change(() => proposeSuggestions(id, actorOf(call, role), { description: proposal.description }, (view) => ({ change: planProposal(proposal, view) })));
+  const groupId = out.records[0].groupId;
+  call.audit.metadata = { suggestions: out.records.length, groupId };
+  // Someone may have decided it already; null then.
+  return withNotice({ group: suggestionGroups(await readBoardView(id, { userId: call.userId, role })).find((g) => g.id === groupId) ?? null });
+}
+
+/**
+ * Accepts or rejects suggestions (`{ ids }` or `{ groupId }`; `force` to accept stale ones).
+ * Accepting applies them as one change attributed to the caller (through their app). A stale one
+ * changes nothing and comes back as `{ code: 'suggestion_stale', stale }` (REST: 409).
+ */
+export async function decideSuggestions(call: ApiCall, boardId: string, status: 'accepted' | 'rejected', body: unknown) {
+  const b = (body ?? {}) as { ids?: unknown; groupId?: unknown; force?: unknown };
+  const ids = b.ids;
+  if (ids !== undefined && (!Array.isArray(ids) || !ids.length || ids.length > API_MAX_ITEMS_PER_CALL || ids.some((i) => typeof i !== 'string')))
+    throw badRequest(`ids must be a list of 1 to ${API_MAX_ITEMS_PER_CALL} suggestion ids`);
+  if (b.groupId !== undefined && typeof b.groupId !== 'string') throw badRequest('groupId must be a suggestion group id');
+  if ((ids === undefined) === (b.groupId === undefined)) throw badRequest('Send { ids: [ … ] } or { groupId }');
+  const { id, role } = await openBoard(call, boardId);
+  await requireBoardAccess(id, call.userId, 'editor');
+  if (status === 'accepted') await agentWrite(call);
+  try {
+    const out = await change(() =>
+      decide(id, actorOf(call, role), { ids: ids as string[] | undefined, groupId: b.groupId as string | undefined, status, force: confirmed(b.force) }),
+    );
+    const decided = out.records.map((r) => r.id);
+    call.audit.metadata = { suggestions: decided.length, ...(out.decision.forced ? { forced: true } : {}) };
+    if (status === 'rejected') return { rejected: decided };
+    const a = out.applied ?? { created: [], updated: [], removed: [] };
+    if (a.created.length || a.updated.length) present(call, id, [...a.created, ...a.updated]);
+    return { accepted: decided, created: a.created, updated: a.updated, removed: a.removed };
+  } catch (e) {
+    if (e instanceof SuggestionNotFoundError) throw notFound(e.message);
+    if (e instanceof SuggestionStaleError) return { error: e.message, code: SUGGESTION_STALE, stale: e.stale };
+    throw e;
+  }
 }
 
 // ---- comments ----

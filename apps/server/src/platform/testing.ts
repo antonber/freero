@@ -24,6 +24,8 @@ export async function closeTestDb(): Promise<void> {
 }
 
 export { mailIdle };
+/** Statements run so far (assert that a batched read stays one batch as its input grows). */
+export { queryCount } from './db';
 
 /** Every mail in this process's dev outbox, oldest first. */
 export function outboxMails(): Array<Mail & { sentAt: number }> {

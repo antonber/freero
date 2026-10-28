@@ -24,7 +24,8 @@ export type ElementType =
   | 'pdf'
   | 'swimlane'
   | 'media'
-  | 'file';
+  | 'file'
+  | 'objectlink';
 
 /**
  * An app (OAuth) or personal token acting for a person: what the board shows as "<name> for
@@ -65,6 +66,11 @@ export interface BaseElement {
    * places it; the engine clears it on copies whose target wasn't copied.
    */
   attachedTo?: string | null;
+  /**
+   * [additive] Accepted from a suggestion (KAI-169): who proposed it. `createdBy` is the person who
+   * accepted it, so both are on the item.
+   */
+  suggestedBy?: { kind: 'person' | 'app' | 'ai'; name: string; userId: string } | null;
   createdBy: string;
   /**
    * The app or token that created it for `createdBy` (the public API or MCP, KAI-168): read as
@@ -453,6 +459,18 @@ export interface EmbedElement extends BaseElement {
 }
 
 /**
+ * A smart link (KAI-149): a live chip for a Freero object address (a board, an item on one, a
+ * template…). It stores ONLY the address: the title and preview are resolved for each viewer when
+ * shown, permission-checked, so a board never carries the name of something its readers may not
+ * see, and a renamed target shows its new name.
+ */
+export interface ObjectLinkElement extends BaseElement {
+  type: 'objectlink';
+  /** Canonical object address (`freero://…`, see objects.ts). */
+  uri: string;
+}
+
+/**
  * A vector icon from the icon library. The drawing is stored IN the element (a short list of
  * SVG primitives on a 24×24 grid, stroke-only), so it renders and exports without loading the
  * icon set, and never changes when the library is upgraded.
@@ -592,7 +610,8 @@ export type BoardElement =
   | PdfElement
   | SwimlaneElement
   | MediaElement
-  | FileElement;
+  | FileElement
+  | ObjectLinkElement;
 
 export type ElementOf<T extends ElementType> = Extract<BoardElement, { type: T }>;
 
