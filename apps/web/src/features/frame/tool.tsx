@@ -1,5 +1,5 @@
 import { Frame } from 'lucide-react';
-import { defineTool, usePointer, useToolOptions, type Editor, type Point } from '@engine';
+import { defineTool, useToolGhost, useToolOptions, type Editor, type Point } from '@engine';
 import { dragRect, PRESETS, presetById, TOOL_ID, type FramePreset } from './lib/frames';
 import { createFrame, syncMembership } from './lib/actions';
 
@@ -94,14 +94,14 @@ export default defineTool({
 
   // Ghost of the frame a click would create, centered on the cursor.
   Preview: () => {
-    const pt = usePointer();
     const { preset = '16:9' } = useToolOptions<FrameToolOptions>(TOOL_ID);
-    if (!pt || drag) return null;
     const p = presetById(preset);
+    const at = useToolGhost(p);
+    if (!at || drag) return null;
     return (
       <div
         className="fr-frame-ghost"
-        style={{ width: p.w, height: p.h, transform: `translate(${pt.x - p.w / 2}px, ${pt.y - p.h / 2}px)` }}
+        style={{ width: p.w, height: p.h, transform: `translate(${at.x}px, ${at.y}px)` }}
       />
     );
   },

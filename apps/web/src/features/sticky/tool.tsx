@@ -1,6 +1,6 @@
 import { StickyNote } from 'lucide-react';
 import { STICKY_COLORS } from '@freero/shared';
-import { defineTool, usePointer, useToolOptions } from '@engine';
+import { defineTool, useToolGhost, useToolOptions } from '@engine';
 import { ColorSwatches } from '@ui';
 import { COLOR_HEX, COLOR_NAMES, DEFAULT_COLOR, STICKY_SIZE, TOOL_ID, colorFromHex, type StickyToolOptions } from './lib/constants';
 import { stickyAt } from './lib/actions';
@@ -44,7 +44,7 @@ export default defineTool({
 
   // Ghost sticky following the cursor (world space).
   Preview: () => {
-    const p = usePointer();
+    const p = useToolGhost({ w: STICKY_SIZE, h: STICKY_SIZE });
     const { color = DEFAULT_COLOR } = useToolOptions<StickyToolOptions>(TOOL_ID);
     if (!p) return null;
     return (
@@ -54,7 +54,7 @@ export default defineTool({
           width: STICKY_SIZE,
           height: STICKY_SIZE,
           background: STICKY_COLORS[color],
-          transform: `translate(${p.x - STICKY_SIZE / 2}px, ${p.y - STICKY_SIZE / 2}px)`,
+          transform: `translate(${p.x}px, ${p.y}px)`,
         }}
       />
     );

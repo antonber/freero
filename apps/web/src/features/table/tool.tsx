@@ -1,5 +1,5 @@
 import { Table2 } from 'lucide-react';
-import { defineTool, usePointer } from '@engine';
+import { defineTool, useToolGhost } from '@engine';
 import { COL_W, ROW_H } from './lib/model';
 import { placeTable } from './lib/actions';
 
@@ -18,10 +18,10 @@ export default defineTool({
     placeTable(editor, point);
   },
   Preview: () => {
-    const p = usePointer();
-    if (!p) return null;
     const w = COL_W * 3;
     const h = ROW_H * 3;
-    return <div className="fr-table-ghost" style={{ width: w, height: h, transform: `translate(${p.x - w / 2}px, ${p.y - h / 2}px)` }} />;
+    const p = useToolGhost({ w, h });
+    if (!p) return null;
+    return <div className="fr-table-ghost" style={{ width: w, height: h, transform: `translate(${p.x}px, ${p.y}px)` }} />;
   },
 });
