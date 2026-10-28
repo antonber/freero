@@ -11,6 +11,8 @@ import { boundsOf, elementAABB } from '../geometry/geometry';
 import type { Camera, Editor, Rect } from '../api';
 import { ROLE_RANK } from '../runtime/core';
 import { contextCommandItems } from './ContextMenu';
+import { ExactControls } from './ExactControls';
+import { MixedStyleSection, hasMixedStyle } from './MixedStyle';
 
 const GAP = 14;
 const TOP_SAFE = 68;
@@ -85,6 +87,8 @@ export function FormatToolbar() {
 
   const visible = els.length > 0 && !transforming && !contextMenu && ROLE_RANK[role] >= ROLE_RANK.editor;
   const sections = visible ? core.registry.formats.filter((f) => f.def.appliesTo(els)) : [];
+  // Several item types selected: the style controls they share (KAI-111), before the features'.
+  const mixed = visible && hasMixedStyle(editor, els);
 
   useLayoutEffect(() => {
     if (!ref.current) return;
@@ -173,6 +177,8 @@ export function FormatToolbar() {
 
   const arrangeItems: MenuItem[] = [
     { id: 'front', label: 'Bring to front', shortcut: 'Mod+]', onSelect: () => editor.bringToFront(ids) },
+    { id: 'forward', label: 'Bring forward', shortcut: 'Mod+Shift+]', onSelect: () => editor.bringForward(ids) },
+    { id: 'backward', label: 'Send backward', shortcut: 'Mod+Shift+[', onSelect: () => editor.sendBackward(ids) },
     { id: 'back', label: 'Send to back', shortcut: 'Mod+[', onSelect: () => editor.sendToBack(ids) },
   ];
 
@@ -191,6 +197,14 @@ export function FormatToolbar() {
         if (!t.closest('input, textarea, select')) e.preventDefault();
       }}
     >
+      {!locked && mixed && (
+        <>
+          <div className="fr-format__section">
+            <MixedStyleSection editor={editor} selection={els} />
+          </div>
+          {sections.length > 0 && <div className="fr-format__sep" />}
+        </>
+      )}
       {!locked &&
         sections.map(({ def, feature }, i) => (
           <Fragment key={def.id}>
@@ -202,11 +216,12 @@ export function FormatToolbar() {
             </ScopeContext.Provider>
           </Fragment>
         ))}
-      {!locked && sections.length > 0 && <div className="fr-format__sep" />}
+      {!locked && (mixed || sections.length > 0) && <div className="fr-format__sep" />}
       <div className="fr-format__section">
         {!locked && (
           <IconButton ref={arrangeRef} icon={Layers} label="Arrange" size={32} active={arrangeOpen} onClick={() => setArrangeOpen((o) => !o)} />
         )}
+        {!locked && <ExactControls editor={editor} selection={els} />}
         {!locked && canGroup && <IconButton icon={Group} label="Group" shortcut="Mod+G" size={32} onClick={() => editor.runCommand('engine.group')} />}
         {!locked && canUngroup && (
           <IconButton icon={Ungroup} label="Ungroup" shortcut="Mod+Shift+G" size={32} onClick={() => editor.runCommand('engine.ungroup')} />
