@@ -40,7 +40,9 @@ export type RateLimitName =
   | 'apiCredential'
   | 'agentWrite'
   | 'oauthToken'
-  | 'oauthRegister';
+  | 'oauthRegister'
+  | 'linkPassword'
+  | 'engage';
 
 /** A model endpoint Freero calls for AI features (docs/ai.md). */
 export interface AiProviderConfig {
@@ -230,6 +232,11 @@ export interface Config {
    * (the instance-wide kill switch for integrations and agents); tokens are kept.
    */
   publicApi: boolean;
+  /**
+   * A Jitsi deployment (https://meet.jit.si, or the operator's own) where boards may get a call
+   * room of their own (KAI-134), or null: only meeting links people paste.
+   */
+  jitsiBaseUrl: string | null;
 }
 
 export class ConfigError extends Error {
@@ -279,6 +286,8 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   oauthRegister: '20/1h', // per IP: OAuth apps registering themselves (dynamic client registration)
   report: '20/1h', // abuse reports per IP and per signed-in user
   appeal: '10/1h', // appeals against moderation actions per IP
+  linkPassword: '10/15m', // per IP and per board + person: attempts at a board link's password (KAI-145)
+  engage: '120/1m', // per person or guest: answers, questions and upvotes in live activities (KAI-132)
 };
 
 const ENV_NAME: Record<RateLimitName, string> = {
@@ -315,6 +324,8 @@ const ENV_NAME: Record<RateLimitName, string> = {
   oauthRegister: 'RATE_LIMIT_OAUTH_REGISTER',
   report: 'RATE_LIMIT_REPORT',
   appeal: 'RATE_LIMIT_APPEAL',
+  linkPassword: 'RATE_LIMIT_LINK_PASSWORD',
+  engage: 'RATE_LIMIT_ENGAGE',
 };
 
 /** The built-in providers: env prefix, button label, default issuer, extra verified-email claims. */
@@ -573,6 +584,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     abuseContactEmail,
     securityContact: securityContact ?? (abuseContactEmail ? `mailto:${abuseContactEmail}` : null),
     publicApi: bool('PUBLIC_API', true),
+    jitsiBaseUrl: url('JITSI_BASE_URL', ['https:'])?.replace(/\/+$/, '') ?? null,
   };
 
   if (production) {
