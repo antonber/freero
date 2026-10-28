@@ -13,8 +13,9 @@ export default defineCommands([
     menus: ['board'],
     run: (editor) => editor.openDock(editor.getDock() === PANEL_ID ? null : PANEL_ID),
   },
-  // For other features (in-app AI, KAI-102): accept / reject given suggestion ids, with the same
-  // safety as the buttons (stale ones ask first).
+  // For other features (in-app AI, KAI-102): show the review list; accept / reject given
+  // suggestion ids, with the same safety as the buttons (stale ones ask first).
+  { id: 'suggestions.open', label: 'Review suggestions', run: (editor) => editor.openDock(PANEL_ID) },
   { id: 'suggestions.accept', label: 'Accept suggestions', run: (editor, args) => accept(editor, idsOf(args)) },
   { id: 'suggestions.reject', label: 'Reject suggestions', run: (editor, args) => reject(editor, idsOf(args)) },
 ]);
