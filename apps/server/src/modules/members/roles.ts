@@ -27,6 +27,8 @@ export interface WorkspaceAccess {
   outsidersBlocked: boolean;
   /** Highest link access the workspace allows. */
   maxLink: LinkAccess;
+  /** Set when the workspace closes its boards to this user (deactivated, two-step required): no access at all. */
+  blocked?: string | null;
 }
 
 const LINK_RANK: Record<LinkAccess, number> = { none: 0, viewer: 1, commenter: 2, editor: 3 };
@@ -34,6 +36,8 @@ const higher = (a: Role | null, b: Role | null): Role | null => (!a ? b : !b ? a
 
 /**
  * The effective role of `userId` on a board, or null for no access.
+ * - nobody gets anything while the workspace blocks them (deactivated, two-step verification
+ *   required and off), not even the board's owner;
  * - the owner is always 'owner';
  * - otherwise the highest of: an explicit membership, what the workspace grants its members
  *   (team access), and the board's link access for any signed-in user;
@@ -47,6 +51,7 @@ export function resolveRole(
   ws?: WorkspaceAccess,
 ): Role | null {
   if (!userId) return null;
+  if (ws?.blocked) return null;
   if (userId === board.ownerId) return 'owner';
   const outsider = !!ws && !ws.inWorkspace && ws.outsidersBlocked;
   const member: Role | null = outsider ? null : memberRole === 'owner' ? 'editor' : memberRole; // only the board owner is 'owner'
