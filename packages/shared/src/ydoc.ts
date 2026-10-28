@@ -13,9 +13,10 @@
 //   'tableCells' -> features/table (cell text/fill per key — see TableElement in elements.ts)
 //   'voting'   -> features/voting     (key 'session' -> VotingSession, `${sessionId}:${userId}` -> VoteBallot)
 //
-// The server never interprets contents; it relays and persists updates. It drops
-// all updates from viewers, and for commenters accepts only changes confined to
-// the collections listed in COMMENTER_WRITABLE.
+// The server relays and persists updates. It drops all updates from viewers, and for
+// commenters accepts only changes confined to the collections listed in COMMENTER_WRITABLE —
+// and in 'comments' only records the commenter owns (see CommentRecord in elements.ts and
+// apps/server/src/modules/realtime/commentRules.ts).
 
 export const Y_ELEMENTS = 'elements';
 export const Y_SETTINGS = 'settings';

@@ -111,7 +111,9 @@ export const EMBED_FRAME_ORIGINS = ['https://www.youtube-nocookie.com', 'https:/
 // i.e. the client uses `new WebsocketProvider(wsBase + '/ws/boards', boardId, doc)`.
 // Auth via the same cookie on the upgrade request. The server closes with
 // code 4401 (unauthenticated) or 4403 (no access). Viewers receive updates but
-// their document updates are dropped; commenters may only modify 'comments'.
+// their document updates are dropped; commenters may only modify 'comments', and there only
+// the records they own (server/realtime/commentRules.ts: their messages and reactions, threads
+// they started; anyone may resolve/reopen and detach).
 // Custom message (server -> client) sent right after connect so the client knows
 // its effective role. Encoding (lib0): writeVarUint(WS_MESSAGE_ROLE) then
 // writeVarString(JSON.stringify({ type: 'role', role })). Clients register it via

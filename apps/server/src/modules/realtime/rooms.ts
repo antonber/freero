@@ -234,7 +234,7 @@ class Room {
   }
 
   private onUpdate(conn: Conn, update: Uint8Array, syncType: number): void {
-    if (decideUpdate(conn.role, this.doc, update) === 'apply') {
+    if (decideUpdate(conn.role, this.doc, update, conn.userId) === 'apply') {
       Y.applyUpdate(this.doc, update, conn.ws);
       return;
     }

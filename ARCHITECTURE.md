@@ -460,7 +460,12 @@ waits for in-flight saves. Access refreshes are serialized (the last reflects th
 
 Trust boundaries in `realtime`: presence from a socket may only write the awareness client ids
 that socket announced, and its `user` is always replaced by the authenticated user's profile
-(`realtime/awareness.ts`), so nobody can appear as someone else. Logging out
+(`realtime/awareness.ts`), so nobody can appear as someone else. Commenters may write only the
+`comments` map, and in it only what they own (`realtime/commentRules.ts`, checked per key against
+the server's doc): their own messages and reactions, threads they started (and their tombstones),
+deleting a thread/message together with its tombstone. Resolve/reopen (`s:`) is shared workflow
+state anyone who may comment can set (attributed via `by`); anyone may detach a pin whose element
+is gone. Tombstones are final. Owners and editors are trusted with the whole doc. Logging out
 (`auth.onSessionEnd`) closes every board socket opened with that session (4401). Member emails
 (`GET /members`) are only sent to owners/editors.
 

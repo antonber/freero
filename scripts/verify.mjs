@@ -589,18 +589,51 @@ async function run() {
       assert(!a.doc.getMap('comments').has('ct'), 'viewer comment leaked to A');
     });
 
+    const dThread = { kind: 'thread', id: 't1', x: 5, y: 5, elementId: null, createdAt: 1, createdBy: D.id };
+    const dMsg = (id, authorId, text) => ({ kind: 'message', threadId: 't1', id, authorId, authorName: authorId, text, createdAt: 1 });
     await check("commenter D can write 'comments' but not 'elements'", async () => {
-      d.doc.getMap('comments').set('t1', { id: 't1', text: 'nice!', author: D.id });
-      await waitFor(() => a.doc.getMap('comments').get('t1')?.text === 'nice!', 5000, "A to receive D's comment");
+      d.doc.transact(() => {
+        d.doc.getMap('comments').set('t:t1', dThread);
+        d.doc.getMap('comments').set('m:t1:m1', dMsg('m1', D.id, 'nice!'));
+      });
+      await waitFor(() => a.doc.getMap('comments').get('m:t1:m1')?.text === 'nice!', 5000, "A to receive D's comment");
       els(d).set('d1', { id: 'd1', type: 'sticky', text: 'from commenter' });
       d.doc.transact(() => {
-        d.doc.getMap('comments').set('t2', { text: 'mixed' });
+        d.doc.getMap('comments').set('s:t1', { kind: 'status', threadId: 't1', resolved: true, by: D.id, at: 2 });
         els(d).delete('e1');
       });
       await sleep(800);
       assert(!els(a).has('d1'), "commenter's element reached A");
       assert(els(a).has('e1'), "commenter's delete of e1 reached A");
-      assert(!a.doc.getMap('comments').has('t2'), 'mixed comment+element update was accepted');
+      assert(!a.doc.getMap('comments').has('s:t1'), 'mixed comment+element update was accepted');
+    });
+
+    await check("comment authorship: commenter D's raw client cannot rewrite or delete A's message; D's own edits still sync", async () => {
+      a.doc.getMap('comments').set('m:t1:a1', dMsg('a1', A.id, 'reply from A'));
+      await waitFor(() => d.doc.getMap('comments').get('m:t1:a1')?.text === 'reply from A', 5000, "D to receive A's reply");
+      // Each attempt from a fresh raw client: after one dropped update, everything later from the
+      // same client would be dropped anyway (missing dependencies), which proves nothing.
+      const attempts = [
+        ["rewrite A's message", (c) => c.set('m:t1:a1', { ...dMsg('a1', A.id, 'A never wrote this'), editedAt: 3 })],
+        ["post a message as A", (c) => c.set('m:t1:f1', dMsg('f1', A.id, "forged in A's name"))],
+        ["delete A's message", (c) => c.delete('m:t1:a1')],
+      ];
+      for (const [what, fn] of attempts) {
+        const raw = connectDoc(D, board.id);
+        await raw.ready();
+        fn(raw.doc.getMap('comments'));
+        await sleep(600);
+        raw.destroy();
+        const seen = a.doc.getMap('comments');
+        assert(seen.get('m:t1:a1')?.text === 'reply from A' && !seen.has('m:t1:f1'), `D could ${what}: ${JSON.stringify(seen.get('m:t1:a1'))}`);
+      }
+      d.destroy(); // holds the rejected writes; reconnect clean
+      d = connectDoc(D, board.id);
+      await d.ready();
+      d.doc.getMap('comments').set('m:t1:m1', { ...dMsg('m1', D.id, 'nice!'), editedAt: 4 });
+      d.doc.getMap('comments').set('r:t1:a1:' + D.id + ':🎉', { kind: 'reaction', threadId: 't1', messageId: 'a1', userId: D.id, emoji: '🎉' });
+      await waitFor(() => a.doc.getMap('comments').get('m:t1:m1')?.editedAt === 4, 5000, "A to receive D's edit of D's own message");
+      await waitFor(() => a.doc.getMap('comments').has('r:t1:a1:' + D.id + ':🎉'), 5000, "A to receive D's reaction");
     });
 
     await check('role changes apply live (owner promotes C to editor over REST)', async () => {
@@ -696,8 +729,8 @@ async function run() {
       await a2.ready();
       const m = els(a2);
       assert(m.get('e1')?.text === 'from A' && m.get('e2')?.text === 'from B' && m.get('e3') && m.get('c2') && m.get('e4'), `elements after restart: ${JSON.stringify([...m.keys()])}`);
-      assert(a2.doc.getMap('comments').get('t1')?.text === 'nice!', "D's comment not persisted");
-      assert(!m.has('c1') && !m.has('d1') && !a2.doc.getMap('comments').has('t2') && !a2.doc.getMap('comments').has('ct'), 'rejected writes were persisted');
+      assert(a2.doc.getMap('comments').get('m:t1:m1')?.text === 'nice!', "D's comment not persisted");
+      assert(!m.has('c1') && !m.has('d1') && !a2.doc.getMap('comments').has('s:t1') && !a2.doc.getMap('comments').has('m:t1:f1') && !a2.doc.getMap('comments').has('ct'), 'rejected writes were persisted');
       a2.destroy();
     });
 
@@ -780,7 +813,7 @@ async function run() {
       assert(copy.title === 'Copy of Verify Roadmap' && copy.role === 'owner' && copy.ownerId === A.id && copy.id !== board.id, JSON.stringify(copy));
       const cd = connectDoc(A, copy.id);
       await cd.ready();
-      assert(els(cd).get('e1')?.text === 'from A' && cd.doc.getMap('comments').get('t1')?.text === 'nice!', 'copy has no content');
+      assert(els(cd).get('e1')?.text === 'from A' && cd.doc.getMap('comments').get('m:t1:m1')?.text === 'nice!', 'copy has no content');
       cd.destroy();
       const rb = await B.req('POST', `/api/boards/${board.id}/duplicate`);
       assert(rb.json.board.ownerId === B.id && rb.json.board.role === 'owner', 'B copy owner');

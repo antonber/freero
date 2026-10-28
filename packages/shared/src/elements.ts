@@ -294,7 +294,9 @@ export type ElementOf<T extends ElementType> = Extract<BoardElement, { type: T }
 // writing the same thread at once never write the same value: replies, edits, deletes,
 // reactions and resolve from several clients all merge (each Yjs map key is
 // last-writer-wins, and no client ever read-modify-writes a value another client writes).
-// Commenters may write this map only (server-enforced), so every record lives in it.
+// Commenters may write this map only (server-enforced), so every record lives in it. For
+// commenters the server also enforces the "written by" column (realtime/commentRules.ts);
+// owners and editors may write any record.
 //
 //   key                                      value                  written by
 //   t:<threadId>                             CommentThreadRecord    creator; anyone to detach it
@@ -302,6 +304,8 @@ export type ElementOf<T extends ElementType> = Extract<BoardElement, { type: T }
 //   m:<threadId>:<messageId>                 CommentMessageRecord   the message's author
 //   r:<threadId>:<messageId>:<userId>:<emoji> CommentReactionRecord that user (deleted to un-react)
 //   x:<threadId>  /  x:<threadId>:<messageId> CommentTombstone      whoever deleted the thread/message
+//                                                                   (the thread's creator or the
+//                                                                   message's author); never removed
 //
 // A tombstone wins over a concurrent edit/reply/detach of what it deletes. Readers assemble
 // the records into `CommentThread` (the read model below).
