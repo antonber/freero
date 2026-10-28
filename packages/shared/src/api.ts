@@ -311,6 +311,51 @@ export interface InvitePreview {
 }
 export interface AcceptInviteResponse { boardId: string; role: Role }
 
+// ---- Board people ----
+// GET /api/boards/:id/people?ids=a,b,c -> { people: BoardPerson[] }  (any role on the board)
+//     Profiles (name, color, photo) of the listed users who have access to the board or appear in
+//     its comments (authors and @mentions), so a comment keeps its author's photo and a mention
+//     its name after they leave. Other ids are left out. At most 100 ids.
+export interface BoardPerson { id: string; name: string; color: string; avatarUrl: string | null }
+
+// ---- Notifications ----
+// GET  /api/notifications?before=<ms>&limit=<n> -> NotificationsResponse  (newest first; 30 by default)
+// POST /api/notifications/read   body { ids?: string[] } -> { unread }  (no ids: mark all read)
+// GET  /api/notifications/prefs  -> NotificationPrefs
+// PUT  /api/notifications/prefs  body { email?: { [type]: boolean }, emailAll?: boolean } -> NotificationPrefs
+// POST /api/notifications/unsubscribe?token=<t>  (no session needed: the signed link from a digest
+//      email, also its RFC 8058 one-click target) -> { ok: true, email } | 400
+// WebSocket /ws/notifications (session cookie): the server sends a JSON NotificationsLiveMessage
+//      whenever the user's notifications change, whichever instance created them.
+//
+// Types are open-ended: a new source (e.g. workspace invites) adds its type here and its entry in
+// the server's modules/notifications/types.ts; the inbox shows `title` / `body` as sent.
+export type NotificationType = 'board.invite' | 'comment.mention' | 'comment.reply';
+
+export interface AppNotification {
+  id: string;
+  type: NotificationType;
+  createdAt: number;
+  readAt: number | null;
+  /** Who caused it (null once their account is gone). */
+  actor: BoardPerson | null;
+  /** Plain text, already worded ("Ann mentioned you in “Roadmap”"). */
+  title: string;
+  /** Plain-text excerpt (a comment, mentions shown as names), or ''. */
+  body: string;
+  /** App path to open: the board, or the board with ?thread=<id>. */
+  link: string;
+  boardId: string | null;
+}
+export interface NotificationsResponse { notifications: AppNotification[]; unread: number; hasMore: boolean }
+export interface NotificationTypePref { type: NotificationType; label: string; description: string; email: boolean }
+export interface NotificationPrefs {
+  /** Master switch for notification emails (the one-click unsubscribe turns it off). */
+  emailAll: boolean;
+  types: NotificationTypePref[];
+}
+export type NotificationsLiveMessage = { type: 'changed'; unread: number };
+
 // ---- Uploads ----
 // POST /api/uploads  raw body (image/png|jpeg|gif|webp|svg+xml), header Content-Type,
 //                    max 15MB -> { url: string }  e.g. "/uploads/ab12cd.png"

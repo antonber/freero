@@ -203,6 +203,22 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   asset (CSP `worker-src 'self'`) and `isEvalSupported: false` (no `unsafe-eval` needed).
 - `Host.listMembers()`: everyone with access to the board (owner + invited members), including
   people never seen online — for assignee pickers etc. (`/board/local`: just the local user).
+- `Host.lookupUsers(ids)`: current profiles (name, color, photo) for ids the board shows — people
+  with access and anyone who wrote or is @mentioned in its comments, also after they left
+  (`GET /api/boards/:id/people`, members module; unrelated ids are never answered). Comments
+  render author photos and mention names through it (`features/comments/lib/people.ts`, fed by
+  presence too). `Host.inviteMember(email, role)`: the share flow from inside a feature (the
+  @mention picker invites a non-member as commenter); someone who already has access keeps
+  their role.
+- Comment @mentions are `<@userId>` tokens in the message text (`MENTION_RE`, `mentionedUserIds`,
+  `mentionsAsNames` in `@freero/shared`); readers show the person's current name, so a typed
+  "@Name" can never pose as a mention. Only names picked from the member list become tokens.
+- `CommandDefinition.urlParam`: deep links into features. With `?<param>=<value>` in the board
+  URL the engine runs the command (args `{ [param]: value }`) once synced — on load and on every
+  in-app navigation while the board is open (`BoardEngineProps.location` = the router location).
+  `comments.openThread` declares `'thread'`: `/board/<id>?thread=<threadId>` (notification links).
+- `BoardEngineProps.topbarAccessory`: an app-owned control the engine places next to Share (the
+  notifications bell). It is app UI (REST, router), not a feature, and gets no Editor.
 - `Editor.findFreeSpot(size, { near?, gap? })`: top-left of a box that keeps `gap` clear of
   every element, nearest to `near` (default: viewport center). Every "insert" action that
   isn't aimed at a point (templates, the image upload button) places content with it.
@@ -529,7 +545,23 @@ for addresses without an account; role resolution), `uploads` (uploads; files in
 protocol + role filter + update log; version history + snapshot retention), `unfurl` (link
 previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`), `templates` (saved
 templates; content is opaque engine JSON), `accounts` (no table: the purge after the deletion grace
-period, orchestrating the owning modules' exports).
+period, orchestrating the owning modules' exports), `notifications` (notifications,
+notification_prefs: inbox, live delivery, email digests).
+
+- Notifications are created only from trusted server-side events, never from client claims:
+  realtime's `onCommentMessage` (a comment message applied from one of THIS instance's sockets,
+  attributed to that socket's authenticated user — a message stored under anyone else's id is
+  ignored; each change is reported once across instances) and members' `onBoardShared`. Each
+  recipient must have access to the board; the author is never notified; one notification per
+  person per message (`dedupe_key`; a mention wins over a reply). Types live in
+  `notifications/types.ts` (wording, link, settings label): a new source (workspace invites) adds
+  its type there + in `NotificationType` and calls `notify` from `notifications/index.ts`.
+  Live: `/ws/notifications` per tab; changes are published on one pubsub channel and each
+  instance pushes the unread count to its own sockets (ended sessions close them everywhere).
+  Email: the `notifications:digest` exclusive job emails everything a person hasn't read after
+  `NOTIFY_EMAIL_DELAY_SECONDS` as ONE digest (claim-then-send; a failed send is handed back),
+  only to verified addresses, honoring per-type opt-outs and the master switch that the signed,
+  session-less unsubscribe link (`List-Unsubscribe` one-click too) turns off.
 
 - Per-user quotas (boards, templates) count and insert in one transaction under a per-owner
   `pg_advisory_xact_lock(hashtext('<module>.quota'), hashtext(userId))`; a count-then-insert

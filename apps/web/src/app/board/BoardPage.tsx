@@ -1,6 +1,6 @@
 // Route /board/:id — loads the board, builds the Host and mounts the engine.
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import type { BoardSummary } from '@freero/shared';
 import { BoardEngine, type Host } from '@engine';
 import { Button, Logo, useToast } from '@ui';
@@ -9,6 +9,7 @@ import { useAuth } from '../auth/AuthContext';
 import { loginPath } from '../lib/nav';
 import { ShareDialog } from '../components/ShareDialog';
 import { FullPageSpinner } from '../components/FullPageSpinner';
+import { NotificationBell } from '../notifications/NotificationBell';
 import { features } from './features';
 import { createLocalHost, createServerHost, toastNotify } from './host';
 import './BoardPage.css';
@@ -30,6 +31,8 @@ function ServerBoard({ id }: { id: string }) {
   const { user } = useAuth();
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   const [shareOpen, setShareOpen] = useState(false);
+  const location = useLocation();
+  const bell = useMemo(() => <NotificationBell />, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,7 +82,7 @@ function ServerBoard({ id }: { id: string }) {
   if (!host || !board) return <FullPageSpinner label="Opening board" />;
   return (
     <>
-      <BoardEngine host={host} features={features} />
+      <BoardEngine host={host} features={features} topbarAccessory={bell} location={location} />
       <ShareDialog
         boardId={board.id}
         open={shareOpen}

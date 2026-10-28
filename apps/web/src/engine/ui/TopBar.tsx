@@ -1,10 +1,10 @@
 // Top-left: logo, inline-editable title, board ⋯ menu, topbar-left panels.
 // Top-right: topbar-right panels + Share.
-import { useEffect, useRef, useState, type ComponentType } from 'react';
+import { useContext, useEffect, useRef, useState, type ComponentType } from 'react';
 import { ArrowLeft, ChevronRight, Ellipsis, Eye, Link2, Maximize, MessageSquare, PencilLine, Share2 } from 'lucide-react';
 import { Button, ColorSwatches, IconButton, Logo, Menu, Popover, SegmentedControl, Toggle, Tooltip, type MenuAction } from '@ui';
 import { GRID_SIZES, type BoardSettings } from '@freero/shared';
-import { useCore } from '../context';
+import { AppChromeContext, useCore } from '../context';
 import { useRole, useSettings } from '../hooks';
 import { ROLE_RANK } from '../runtime/core';
 import { PanelSlotView } from './PanelSlot';
@@ -297,9 +297,11 @@ export function TopLeft() {
 
 export function TopRight() {
   const core = useCore();
+  const { topbarAccessory } = useContext(AppChromeContext);
   return (
     <div className="fr-topright" data-fr-chrome="" data-fr-occludes="">
       <PanelSlotView slot="topbar-right" className="fr-chrome-card fr-slot-row fr-topright__panels" />
+      {topbarAccessory ? <div className="fr-chrome-card fr-topright__app">{topbarAccessory}</div> : null}
       <Button variant="primary" icon={Share2} onClick={() => core.hostRef.current.openShareDialog()}>
         Share
       </Button>

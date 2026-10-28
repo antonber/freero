@@ -1,10 +1,12 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Check, MessageCircle, MessageSquareText, Unlink } from 'lucide-react';
 import type { BoardElement, CommentThread } from '@freero/shared';
-import { DockHeader, definePanel, useCamera, useCollection, useDock, useElements, useRole, type Editor } from '@engine';
+import { DockHeader, definePanel, useCamera, useCollection, useDock, useElements, useRole, type Editor, type HostUser } from '@engine';
 import { Avatar, IconButton, Popover, SegmentedControl, Toggle, type Box } from '@ui';
 import { assembleThreads, isUnread, latestActivity, listThreads, relativeTime, threadPoint, type ThreadFilter } from './lib/model';
 import { COLLECTION, PANEL_ID, detachThread, focusThread, markSeen, session, setUi, useCommentsUi, watchLegacyThreads } from './lib/state';
+import { MessageText } from './lib/composer';
+import { usePeopleOf } from './lib/people';
 import { DraftComposer, ThreadView, authorColor, useNow } from './lib/views';
 import './comments.css';
 
@@ -27,6 +29,7 @@ const Pin = memo(function Pin(props: {
   scale: number;
   name: string;
   color: string;
+  avatarUrl: string | null;
   replies: number;
   unread: boolean;
   resolved: boolean;
@@ -36,7 +39,7 @@ const Pin = memo(function Pin(props: {
   pinRef?: (el: HTMLDivElement | null) => void;
   onOpen?: () => void;
 }) {
-  const { x, y, scale, name, color, replies, unread, resolved, active, ghost, label, pinRef, onOpen } = props;
+  const { x, y, scale, name, color, avatarUrl, replies, unread, resolved, active, ghost, label, pinRef, onOpen } = props;
   return (
     <div
       className="fr-cm-pin-anchor"
@@ -62,7 +65,7 @@ const Pin = memo(function Pin(props: {
           }
         }}
       >
-        {resolved ? <Check size={16} strokeWidth={2.6} /> : <Avatar name={name} color={color} size={26} />}
+        {resolved ? <Check size={16} strokeWidth={2.6} /> : <Avatar name={name} color={color} src={avatarUrl} size={26} />}
         {replies > 0 && <span className="fr-cm-pin__count">{replies}</span>}
         {unread && !resolved && <span className="fr-cm-pin__dot" />}
       </div>
@@ -100,6 +103,8 @@ function Pins({ editor }: { editor: Editor }) {
   const byId = useMemo(() => new Map(elements.map((e) => [e.id, e])), [elements]);
   const scale = 1 / cam.zoom;
   const open = openId ? threads.find((t) => t.id === openId) : undefined;
+  const firsts = useMemo(() => threads.map((t) => t.messages[0]), [threads]);
+  const people = usePeopleOf(editor, firsts);
 
   // Threads on an element that gets deleted stay where the element was (unpinned).
   const lastGeom = useRef(new Map<string, BoardElement>());
@@ -161,6 +166,7 @@ function Pins({ editor }: { editor: Editor }) {
             scale={scale}
             name={first.authorName}
             color={authorColor(first)}
+            avatarUrl={people[first.authorId]?.avatarUrl ?? null}
             replies={t.messages.length - 1}
             unread={isUnread(t, seen[t.id], editor.user.id)}
             resolved={t.resolved}
@@ -182,6 +188,7 @@ function Pins({ editor }: { editor: Editor }) {
           scale={scale}
           name={editor.user.name}
           color={editor.user.color}
+          avatarUrl={editor.user.avatarUrl}
           replies={0}
           unread={false}
           resolved={false}
@@ -195,6 +202,8 @@ function Pins({ editor }: { editor: Editor }) {
         open={!!draft && !!draftBox}
         onClose={() => setUi(editor, { draft: null })}
         anchor={draftBox}
+        // Esc with the @mention list open closes just the list.
+        escapeToContent
         side="right"
         align="start"
         offset={10}
@@ -241,18 +250,21 @@ function Pins({ editor }: { editor: Editor }) {
 // ---------------------------------------------------------------------------
 // Comments list (dock-right)
 // ---------------------------------------------------------------------------
-function ThreadCard({ editor, thread, unread, now, missing }: { editor: Editor; thread: CommentThread; unread: boolean; now: number; missing: boolean }) {
+function ThreadCard(props: { editor: Editor; thread: CommentThread; unread: boolean; now: number; missing: boolean; people: Record<string, HostUser> }) {
+  const { editor, thread, unread, now, missing, people } = props;
   const first = thread.messages[0];
   const replies = thread.messages.length - 1;
   return (
     <button type="button" className={`fr-cm-card${unread ? ' is-unread' : ''}`} onClick={() => focusThread(editor, thread)}>
       <div className="fr-cm-card__head">
-        <Avatar name={first.authorName} color={authorColor(first)} size={24} />
+        <Avatar name={first.authorName} color={authorColor(first)} src={people[first.authorId]?.avatarUrl} size={24} />
         <span className="fr-cm-card__name">{first.authorName}</span>
         <span className="fr-cm-card__time">{relativeTime(latestActivity(thread), now)}</span>
         {unread && <span className="fr-cm-card__dot" aria-label="Unread" />}
       </div>
-      <div className="fr-cm-card__text">{first.text}</div>
+      <div className="fr-cm-card__text">
+        <MessageText text={first.text} people={people} meId={editor.user.id} />
+      </div>
       {(replies > 0 || thread.resolved || missing) && (
         <div className="fr-cm-card__foot">
           {replies > 0 && (
@@ -289,6 +301,8 @@ function CommentsDock({ editor }: { editor: Editor }) {
   const now = useNow(editor);
   const ids = useMemo(() => new Set(elements.map((e) => e.id)), [elements]);
   const list = listThreads(threads, filter, editor.user.id);
+  const firsts = useMemo(() => threads.map((t) => t.messages[0]), [threads]);
+  const people = usePeopleOf(editor, firsts);
   const canWrite = editor.can('commenter');
   return (
     <div className="fr-cm-dock">
@@ -307,6 +321,7 @@ function CommentsDock({ editor }: { editor: Editor }) {
               now={now}
               unread={isUnread(t, seen[t.id], editor.user.id)}
               missing={!!t.elementId && !ids.has(t.elementId)}
+              people={people}
             />
           ))}
         </div>

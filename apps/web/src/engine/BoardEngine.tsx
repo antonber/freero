@@ -1,9 +1,9 @@
 // Composition root of the engine: <BoardEngine host={host} features={bundles} />.
 // Creates one EngineCore per board session (store, UI state, registry, editor), mounts the
 // canvas and chrome, and tears everything down on unmount (saving a last thumbnail).
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { FeatureBundle, Host } from './api';
-import { EngineContext } from './context';
+import { AppChromeContext, EngineContext } from './context';
 import { createCore, type EngineCore } from './runtime/core';
 import { Canvas } from './canvas/Canvas';
 import { ScreenOverlays } from './overlay/Overlays';
@@ -15,9 +15,20 @@ import './board.css';
 export interface BoardEngineProps {
   host: Host;
   features: FeatureBundle[];
+  /**
+   * [additive] App-owned control shown in the top bar next to Share (the notifications bell). It
+   * renders in the app's own scope: it is not a feature and gets no Editor.
+   */
+  topbarAccessory?: ReactNode;
+  /**
+   * [additive] The app's current URL query, with a key that changes on every navigation (react
+   * router's `location`). Commands with `urlParam` run when it carries their param — also when the
+   * app navigates to such a link while this board is already open. Default: the page URL on load.
+   */
+  location?: { search: string; key: string };
 }
 
-export function BoardEngine({ host, features }: BoardEngineProps) {
+export function BoardEngine({ host, features, topbarAccessory, location }: BoardEngineProps) {
   const [core, setCore] = useState<EngineCore | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const hostRef = useRef(host);
@@ -53,6 +64,8 @@ export function BoardEngine({ host, features }: BoardEngineProps) {
       core.store.setPresence({ user: { id: u.id, name: u.name, color: u.color, avatarUrl: u.avatarUrl } });
   }, [core, host]);
 
+  const appChrome = useMemo(() => ({ topbarAccessory }), [topbarAccessory]);
+
   if (error)
     return (
       <div className="fr-board fr-board--error" role="alert">
@@ -63,14 +76,17 @@ export function BoardEngine({ host, features }: BoardEngineProps) {
   if (!core) return <div className="fr-board" />;
   return (
     <EngineContext.Provider value={core}>
-      <BoardView core={core} />
+      <AppChromeContext.Provider value={appChrome}>
+        <BoardView core={core} location={location} />
+      </AppChromeContext.Provider>
     </EngineContext.Provider>
   );
 }
 
-function BoardView({ core }: { core: EngineCore }) {
+function BoardView({ core, location }: { core: EngineCore; location?: BoardEngineProps['location'] }) {
   useEffect(() => installKeyboard(core), [core]);
   useInitialView(core);
+  useUrlCommands(core, location);
   useEffect(() => {
     if (!import.meta.env.DEV) return;
     const w = window as unknown as { __freero?: unknown };
@@ -120,4 +136,32 @@ function useInitialView(core: EngineCore) {
     const off = core.ui.subscribe(tryInit);
     return off;
   }, [core]);
+}
+
+/**
+ * Deep links into features: once the board is measured and synced (after the initial view), runs
+ * every command whose `urlParam` the URL carries, with `{ [urlParam]: value }`. Again on every
+ * navigation (a new location key), so following a link to the board that is already open works.
+ */
+function useUrlCommands(core: EngineCore, location?: { search: string; key: string }) {
+  const search = location?.search;
+  const key = location?.key;
+  useEffect(() => {
+    const params = new URLSearchParams(search ?? window.location.search);
+    const due = [...core.registry.commands.values()].flatMap(({ def }) => {
+      const value = def.urlParam ? params.get(def.urlParam) : null;
+      return def.urlParam && value ? [{ id: def.id, args: { [def.urlParam]: value } }] : [];
+    });
+    if (!due.length) return;
+    let done = false;
+    const tryRun = () => {
+      if (done) return;
+      const s = core.ui.getState();
+      if (s.viewport.width <= 1 || !s.synced) return;
+      done = true;
+      for (const c of due) core.editor.runCommand(c.id, c.args);
+    };
+    tryRun();
+    return core.ui.subscribe(tryRun);
+  }, [core, search, key]);
 }
