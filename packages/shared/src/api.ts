@@ -292,7 +292,20 @@ export type OidcErrorCode =
   | 'no_email' // the provider shared no address
   | 'identity_in_use' // link: that provider account is connected to another Freero account
   | 'provider_linked' // link: this account already has an identity of that provider
-  | 'wrong_account'; // reauth: a different provider account than the one connected
+  | 'wrong_account' // reauth: a different provider account than the one connected
+  | 'sso_required' // the address's organization signs its people in only through its own SSO
+  // Workspace single sign-on (/api/sso/…):
+  | 'sso_unavailable' // the workspace has no enabled SSO connection, or its provider can't be reached
+  | 'sso_failed' // the identity provider's answer was refused (signature, audience, expiry, replay, …) or expired
+  | 'sso_domain' // the identity provider vouched for an address outside the workspace's verified domains
+  | 'sso_removed'; // the workspace's directory deprovisioned this person (SCIM)
+
+/**
+ * 403 `code` when a way of signing in (password, reset link, a personal provider, signup) is
+ * refused because the address's workspace enforces single sign-on. Discover where to go with
+ * GET /api/sso/discover?email=.
+ */
+export const SSO_REQUIRED = 'sso_required';
 
 /** The signed-in user's own account (other people only ever see `User`). */
 export interface Account extends User {
@@ -324,6 +337,119 @@ export interface SessionInfo {
 }
 
 export const ACCOUNT_PENDING_DELETION = 'account_pending_deletion';
+
+// ---- Single sign-on per workspace (team workspaces; owners/admins manage it) ----
+// GET    /api/workspaces/:id/sso                      -> SsoSettings
+// POST   /api/workspaces/:id/sso/domains   body { domain }  -> SsoSettings   (adds a claim + the TXT record to publish)
+// POST   /api/workspaces/:id/sso/domains/:domainId/verify -> SsoSettings | 409 (TXT not found yet / domain verified elsewhere)
+// DELETE /api/workspaces/:id/sso/domains/:domainId -> SsoSettings
+// PUT    /api/workspaces/:id/sso/connection body SsoConnectionInput -> SsoSettings
+// POST   /api/workspaces/:id/sso/enforce   body { enforced, breakGlassUserId } -> SsoSettings
+//        (409 until a sign-in went through the connection; the break-glass person must be an owner)
+// DELETE /api/workspaces/:id/sso/connection -> SsoSettings
+// Public (browser navigations unless noted):
+// GET  /api/sso/discover?email=          -> SsoDiscovery (fetch; by domain only, never by account)
+// GET  /api/sso/:workspaceId/start?next=  -> 302 to the identity provider (SAML AuthnRequest or OIDC)
+// GET  /api/sso/:workspaceId/saml/metadata -> the service provider's SAML metadata (XML)
+// POST /api/sso/:workspaceId/saml/acs     <- the identity provider posts SAMLResponse + RelayState;
+//                                          303 to …/saml/finish, which signs in (bound to this browser)
+// GET  /api/sso/:workspaceId/oidc/callback -> 302 to `next`, /login/two-factor?next=…, or /login?error=sso_failed
+// IdP-initiated SAML (an unsolicited response) is refused: tiles in the IdP's portal link to /start.
+export interface SsoDomain {
+  id: string;
+  domain: string;
+  verified: boolean;
+  /** The DNS TXT record to publish: name and value. */
+  txtName: string;
+  txtValue: string;
+  lastCheckedAt: number | null;
+}
+export type SsoProtocol = 'saml' | 'oidc';
+export interface SsoConnectionInfo {
+  protocol: SsoProtocol;
+  enabled: boolean;
+  enforced: boolean;
+  breakGlassUserId: string | null;
+  /** Role of people who join through their first SSO sign-in. */
+  defaultRole: Exclude<WorkspaceRole, 'owner'>;
+  sessionHours: number;
+  saml: { entityId: string; ssoUrl: string; certificates: Array<{ subject: string; validTo: string; fingerprint: string }> } | null;
+  oidc: { issuer: string; clientId: string; hasClientSecret: boolean } | null;
+  /** When a sign-in last went through it (enforcing needs one). */
+  testedAt: number | null;
+}
+export interface SsoConnectionInput {
+  protocol: SsoProtocol;
+  enabled: boolean;
+  defaultRole?: Exclude<WorkspaceRole, 'owner'>;
+  sessionHours?: number;
+  /** SAML: the IdP's metadata XML, or its parts. */
+  samlMetadataXml?: string;
+  samlEntityId?: string;
+  samlSsoUrl?: string;
+  samlCertificate?: string;
+  /** OIDC: a blank secret keeps the stored one. */
+  oidcIssuer?: string;
+  oidcClientId?: string;
+  oidcClientSecret?: string;
+}
+export interface SsoSettings {
+  domains: SsoDomain[];
+  connection: SsoConnectionInfo | null;
+  /** What to configure at the identity provider. */
+  serviceProvider: { entityId: string; acsUrl: string; metadataUrl: string; oidcRedirectUri: string; startUrl: string };
+}
+export interface SsoDiscovery {
+  sso: { workspaceName: string; startUrl: string; enforced: boolean } | null;
+}
+
+// ---- Provisioning (SCIM 2.0, team workspaces; owners/admins manage it) ----
+// Base URL: <PUBLIC_URL>/scim/v2 (Users, Groups, ServiceProviderConfig, ResourceTypes, Schemas),
+// authenticated with `Authorization: Bearer <token>`; the token names the workspace.
+// GET    /api/workspaces/:id/scim               -> ScimSettings
+// POST   /api/workspaces/:id/scim/tokens  body { label } -> { token: string (shown once), settings: ScimSettings }
+// DELETE /api/workspaces/:id/scim/tokens/:tokenId -> ScimSettings   (rotation: create a new one, then revoke the old)
+// PUT    /api/workspaces/:id/scim/groups/:groupId body { mapping: ScimGroupMapping | null } -> ScimSettings
+export interface ScimTokenInfo {
+  id: string;
+  label: string;
+  /** The first characters, to tell tokens apart. */
+  prefix: string;
+  createdAt: number;
+  lastUsedAt: number | null;
+}
+/** What a directory group grants in Freero: a workspace role, or membership of a project. */
+export type ScimGroupMapping = { kind: 'role'; role: Exclude<WorkspaceRole, 'owner'> } | { kind: 'project'; projectId: string };
+export interface ScimGroupInfo {
+  id: string;
+  displayName: string;
+  memberCount: number;
+  mapping: ScimGroupMapping | null;
+}
+export interface ScimSettings {
+  baseUrl: string;
+  tokens: ScimTokenInfo[];
+  groups: ScimGroupInfo[];
+  /** People the directory manages here, and how many it deactivated. */
+  provisioned: { active: number; deactivated: number };
+}
+
+// ---- Data exports (GDPR) ----
+// POST /api/me/exports                       -> { export: DataExportInfo }  (your data; built in the
+//                                               background, then a link is emailed; rate limited)
+// GET  /api/me/exports                       -> { exports: DataExportInfo[] }
+// POST /api/workspaces/:id/exports           -> { export } (owners/admins of a team workspace)
+// GET  /api/workspaces/:id/exports           -> { exports }
+// GET  /api/exports/:id/download             -> the ZIP (only the person who asked for it, signed in)
+export interface DataExportInfo {
+  id: string;
+  kind: 'user' | 'workspace';
+  status: 'pending' | 'running' | 'ready' | 'failed' | 'expired';
+  createdAt: number;
+  readyAt: number | null;
+  expiresAt: number | null;
+  bytes: number | null;
+}
 
 // ---- Boards ----
 // GET    /api/boards?workspace=<id>&project=<id>&filter=all|mine|shared|starred|recent|trash&q=text
