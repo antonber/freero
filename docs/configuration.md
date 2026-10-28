@@ -86,6 +86,7 @@ Links in emails point at `PUBLIC_URL` (in development: the origin the request ca
 |---|---|---|
 | `ACCOUNT_DELETION_GRACE_DAYS` | `14` | After someone deletes their account, how long they can log in and restore it before it is purged (`0` = at the next purge run). |
 | `ACCOUNT_PURGE_INTERVAL_SECONDS` | `3600` | How often each instance looks for accounts to purge. One instance purges at a time (Postgres advisory lock); a purge cut short is finished by the next run. |
+| `SESSION_RECHECK_SECONDS` | `60` | How often each instance re-checks the sessions behind its open board and notification sockets against the database and closes those whose session is gone (deleted by the admin CLI or SQL, expired, account suspended). Sessions ended through the app close their sockets at once; this bounds the delay for everything else. |
 | `TWO_FACTOR_UNDO_HOURS` | `72` | How long the "This wasn't me" button in the "two-step verification is on" notice works (1–336). Meanwhile whoever reads the account's address can remove that new authenticator, so keep it short. See ARCHITECTURE.md, "Two-step verification recovery". |
 | `TWO_FACTOR_RECOVERY_DELAY_SECONDS` | `604800` (7 days) | How long a "lost my authenticator" recovery waits before the link that removes two-step verification is mailed. The owner is mailed at the start and a day before the end, and using the authenticator cancels it. At least `86400` in production; shorter only for tests. |
 

@@ -1968,6 +1968,9 @@ async function multiInstanceChecks() {
     RATE_LIMIT_SIGNUP: '200/1h',
     ACCOUNT_DELETION_GRACE_DAYS: '0',
     ACCOUNT_PURGE_INTERVAL_SECONDS: i === 0 ? '3600' : '1',
+    // Instance 1 re-checks its sockets' sessions every second, instance 2 hourly: what instance 2
+    // closes at once can only have come from an announcement (KAI-146).
+    SESSION_RECHECK_SECONDS: i === 0 ? '1' : '3600',
     FREERO_SNAPSHOT_EVERY_MS: String(AUTO_VERSION_MS),
     OPERATOR_EMAILS: OP.email,
   });
@@ -2169,6 +2172,48 @@ async function multiInstanceChecks() {
       await live.ready();
       assert((await L.req('POST', '/api/auth/logout', undefined, { port: two })).status === 200, 'logout');
       await waitFor(() => live.closeCodes.includes(4401), 5000, 'the socket on instance 1 to close with 4401');
+      live.destroy();
+    });
+
+    // KAI-146: sessions ended outside any server process.
+    await check('sessions deleted with SQL lose their open board socket and bell within SESSION_RECHECK_SECONDS (4401); other sessions stay connected', async () => {
+      const S = new User('MSql');
+      await S.signup();
+      const own = (await S.req('POST', '/api/boards', { title: 'S' })).json.board;
+      const keep = new User('MSql-laptop');
+      keep.email = S.email;
+      assert((await keep.req('POST', '/api/auth/login', { email: S.email, password: 'password-123' })).status === 200, 'second login');
+      const live = connectDoc(S, own.id, undefined, one);
+      const bell = notificationsSocket(S, one);
+      const other = connectDoc(keep, own.id, undefined, one);
+      await Promise.all([live.ready(), other.ready()]);
+      await waitFor(() => bell.lastUnread() !== null, 5000, 'the bell to connect');
+      const sid = (await S.req('GET', '/api/auth/sessions')).json.sessions.find((s) => s.current).id;
+      await adminQuery(`DELETE FROM sessions WHERE id = '${sid}'`, url);
+      await waitFor(() => live.closeCodes.includes(4401) && bell.closeCode === 4401, 5000, 'the board socket and the bell of the deleted session to close with 4401');
+      await settled(other);
+      assert(!other.closeCodes.length, `the other session's socket closed too: ${other.closeCodes}`);
+      for (const c of [live, other]) c.destroy();
+    });
+
+    await check('`npm run admin -- two-factor:reset` (its own process, next to the instances) closes the board socket and bell of every session it ends at once (4401), on an instance that would not re-check for an hour', async () => {
+      const R = new User('MReset');
+      await R.signup();
+      const setup = await R.req('POST', '/api/auth/two-factor/setup', { password: 'password-123' });
+      assert((await R.req('POST', '/api/auth/two-factor/enable', { code: await totpCode({ secret: setup.json.secret }) })).status === 200, 'two-step on');
+      const own = (await R.req('POST', '/api/boards', { title: 'R' })).json.board;
+      const live = connectDoc(R, own.id, undefined, two);
+      const bell = notificationsSocket(R, two);
+      await live.ready();
+      await waitFor(() => bell.lastUnread() !== null, 5000, 'the bell to connect');
+      const cli = spawnSync(process.execPath, ['--import', 'tsx', 'apps/server/src/admin.ts', 'two-factor:reset', R.email, '--operator', 'verify', '--reason', 'KAI-146 check', '--yes'], {
+        cwd: ROOT,
+        encoding: 'utf8',
+        env: { ...process.env, ...env(1), FREERO_DATA_DIR: path.join(dataDir, 'i1'), NODE_ENV: 'test', SESSION_SECRET: RUN_SECRET, LOG_LEVEL: 'warn' },
+        timeout: 60_000,
+      });
+      assert(cli.status === 0 && /Done:/.test(cli.stdout), `reset: ${cli.status} ${cli.stdout} ${cli.stderr}`);
+      await waitFor(() => live.closeCodes.includes(4401) && bell.closeCode === 4401, 5000, 'the board socket and the bell on instance 2 to close with 4401');
       live.destroy();
     });
 

@@ -332,9 +332,10 @@ previous address), ends every session and mails the address a notice with a link
 password. The owner then sets a password through that address, signs in and turns two-step
 verification on again.
 
-Open board tabs of the ended sessions stay connected until they reload (the CLI can't reach the
-running instances' sockets; KAI-146). If the intruder may still have a board open, restart the app
-instances (a rolling restart is fine) to drop every socket at once.
+Open board tabs and notification bells of the ended sessions are disconnected on every instance:
+at once when the CLI runs with `REDIS_URL` (it announces the ended sessions there), and in any case
+within `SESSION_RECHECK_SECONDS` (default 60), when every instance re-checks the sessions of its
+open sockets against the database. No restart is needed.
 
 ## Incident basics
 
@@ -356,7 +357,7 @@ instances (a rolling restart is fine) to drop every socket at once.
      events show in `freero_rate_limited_total` and as 429 lines in the log.
    - *Leaked secret*: rotate `SESSION_SECRET` (below; keep the leaked one as previous only until the
      re-sealing job reports done, minutes), `METRICS_TOKEN`, DB/S3 credentials; to sign everyone
-     out, `DELETE FROM sessions;`.
+     out, `DELETE FROM sessions;` (open board tabs disconnect within `SESSION_RECHECK_SECONDS`).
 4. **Data recovery.** Database: restore the latest dump into a new database and copy the affected
    rows across, or do a full restore (see above). Files: restore non-current object versions.
 5. **Afterwards.** Write down timeline, impact, root cause and follow-ups; add a check or alert

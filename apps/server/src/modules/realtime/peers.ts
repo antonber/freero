@@ -9,7 +9,8 @@
 //                 sender's sockets or by the sender itself (a reveal); receivers re-check access
 //                 per socket before relaying it. sync-request / sync-reply carry the layers too
 //                 (appended after the shared-doc fields, so older instances still read the rest).
-// Control channel (all instances): access changed, board deleted, session ended.
+// Control channel (all instances): access changed, board deleted (session ended: only from older
+// releases; auth announces ended sessions now).
 import * as decoding from 'lib0/decoding';
 import * as encoding from 'lib0/encoding';
 import { newId } from '../../platform/ids';

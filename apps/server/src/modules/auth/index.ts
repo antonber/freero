@@ -13,7 +13,10 @@ export {
   normalizeEmail,
   userFromCookieHeader,
   sessionKeyFromCookieHeader,
+  // Live connections (board sockets, notification bells): closed when their session ends, also
+  // when it ended in another process or silently (KAI-146).
   onSessionEnd,
+  trackLiveSessions,
   onEmailVerified,
   markEmailVerified,
   // Operators (modules/moderation): suspended accounts can't sign in and lose every session.

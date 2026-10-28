@@ -936,15 +936,19 @@ function toAllInstances(msg: ControlMessage): void {
   publish(CONTROL_CHANNEL, encodeControl(msg));
 }
 
-function endSessionHere(sessionKey: string): void {
+/**
+ * A session ended: its board sockets on THIS instance close with 4401 in every room. auth calls it
+ * on every instance (onSessionEnd: its own broadcast and its periodic re-check, KAI-146).
+ */
+export function endSessionSockets(sessionKey: string): void {
   for (const room of rooms.values()) room.endSession(sessionKey);
   for (const p of admitting) if (p.sessionKey === sessionKey) p.ws.close(4401, 'Signed out');
 }
 
-/** A session ended (logout): its board sockets close with 4401 in every room, on every instance. */
-export function endSessionSockets(sessionKey: string): void {
-  endSessionHere(sessionKey);
-  toAllInstances({ type: 'end-session', sessionKey });
+/** The sessions behind this instance's board sockets, joined or being admitted (auth re-checks them). */
+export function* liveSessionKeys(): Iterable<string> {
+  for (const room of rooms.values()) for (const conn of room.conns.values()) yield conn.sessionKey;
+  for (const p of admitting) if (p.sessionKey) yield p.sessionKey;
 }
 
 async function refreshAccessHere(boardId: string): Promise<void> {
@@ -969,7 +973,8 @@ export function listenToOtherInstances(): () => void {
         const { from, msg } = decodeControl(data);
         if (from === INSTANCE_ID) return;
         peerMessages.inc({ direction: 'in' });
-        if (msg.type === 'end-session') endSessionHere(msg.sessionKey);
+        // Sent only by instances of an older release (auth announces ended sessions now).
+        if (msg.type === 'end-session') endSessionSockets(msg.sessionKey);
         else if (msg.type === 'refresh-access') void refreshAccessHere(msg.boardId);
         else void closeBoardHere(msg.boardId, msg.type === 'remove-board' ? 'removed' : 'deleted');
       } catch (err) {

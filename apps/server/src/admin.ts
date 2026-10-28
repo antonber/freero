@@ -17,6 +17,21 @@ import { createContext, type ServerContext } from './platform/context';
 import { closeDb, DatabaseStartupError, discoverMigrations, migrate, openDb } from './platform/db';
 import { configureLogger, logError } from './platform/log';
 import { mailSettled } from './platform/mail';
+import { closePubSub } from './platform/pubsub';
+import { closeRedis, initRedis } from './platform/redis';
+
+/** Connects to REDIS_URL, if set, waiting up to 5 s (publishes fail fast while it is not ready). */
+async function connectRedis(config: ReturnType<typeof loadConfig>): Promise<void> {
+  const redis = initRedis(config);
+  if (!redis || redis.status === 'ready') return;
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, 5000);
+    redis.once('ready', () => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
 
 const MODULES_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'modules');
 
@@ -49,6 +64,9 @@ async function main(): Promise<number> {
     return command && !cmd ? 2 : 0;
   }
   await openDb(config.databaseUrl ? { url: config.databaseUrl, poolSize: 2 } : { pgliteDir: config.pgliteDir });
+  // With REDIS_URL, what a command announces (sessions it ended: their open board tabs close at
+  // once) reaches the running instances. Without it they notice within SESSION_RECHECK_SECONDS.
+  await connectRedis(config);
   try {
     await migrate(discoverMigrations(MODULES_DIR));
     await cmd.run({ positional, flags, print: (line) => console.log(line) });
@@ -60,6 +78,8 @@ async function main(): Promise<number> {
   } finally {
     await mailSettled(); // notices the command sent
     await ctx.shutdown();
+    await closePubSub();
+    await closeRedis(); // after the publishes queued on it went out
     await closeDb();
   }
 }

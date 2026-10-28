@@ -1,7 +1,8 @@
 // Live delivery to open tabs: each instance keeps its own /ws/notifications sockets per user; a
 // change is published on one channel (platform/pubsub: Redis across instances, in-process
 // otherwise; a publisher receives its own messages), and every instance with a socket of that
-// user tells it the new unread count. Ended sessions close their sockets on every instance too.
+// user tells it the new unread count. Ended sessions close their sockets on every instance through
+// auth (onSessionEnd runs on each instance, KAI-146).
 import type { NotificationsLiveMessage } from '@freero/shared';
 import { WebSocket } from 'ws';
 import { logError } from '../../platform/log';
@@ -26,10 +27,6 @@ export function changed(userId: string): void {
   publish(CHANNEL, encode({ type: 'changed', userId }));
 }
 
-/** A session ended: its notification sockets close on every instance. */
-export function sessionEnded(sessionKey: string): void {
-  publish(CHANNEL, encode({ type: 'end-session', sessionKey }));
-}
 
 async function deliver(userId: string): Promise<void> {
   const socks = byUser.get(userId);
@@ -39,7 +36,8 @@ async function deliver(userId: string): Promise<void> {
   for (const s of socks) if (s.ws.readyState === WebSocket.OPEN) s.ws.send(data);
 }
 
-function closeSession(sessionKey: string): void {
+/** A session ended: its notification sockets on THIS instance close (auth calls it on every instance). */
+export function closeSession(sessionKey: string): void {
   for (const socks of byUser.values())
     for (const s of socks) if (s.sessionKey === sessionKey) s.ws.close(4401, 'Signed out');
 }
@@ -51,7 +49,7 @@ export function listen(): () => void {
       try {
         const m = JSON.parse(new TextDecoder().decode(data)) as Message;
         if (m.type === 'changed') deliver(m.userId).catch((e) => logError('notifications: live delivery failed', e));
-        else if (m.type === 'end-session') closeSession(m.sessionKey);
+        else if (m.type === 'end-session') closeSession(m.sessionKey); // from an instance of an older release
       } catch (e) {
         logError('notifications: bad live message', e);
       }
@@ -73,6 +71,11 @@ export function addSocket(ws: WebSocket, userId: string, sessionKey: string): vo
   // Clients only listen; anything they send is ignored.
   ws.on('message', () => {});
   deliver(userId).catch((e) => logError('notifications: live delivery failed', e));
+}
+
+/** The sessions behind this instance's sockets (auth re-checks them). */
+export function* liveSessionKeys(): Iterable<string> {
+  for (const socks of byUser.values()) for (const s of socks) yield s.sessionKey;
 }
 
 export function closeAll(): void {

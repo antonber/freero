@@ -3,9 +3,9 @@ import type { ServerContext } from '../../platform/context';
 import { gaugeFn } from '../../platform/metrics';
 import { checkRateLimit } from '../../platform/rateLimit';
 import type { WsRoute } from '../../platform/ws';
-import { onSessionEnd, sessionKeyFromCookieHeader, userFromCookieHeader } from '../auth/index';
+import { onSessionEnd, sessionKeyFromCookieHeader, trackLiveSessions, userFromCookieHeader } from '../auth/index';
 import { getBoardAccess } from '../boards/index';
-import { admitSocket, endSessionSockets, flushAllRooms, listenToOtherInstances, loadedRoomCount, pendingPersistCount } from './rooms';
+import { admitSocket, endSessionSockets, flushAllRooms, listenToOtherInstances, liveSessionKeys, loadedRoomCount, pendingPersistCount } from './rooms';
 
 const PREFIX = '/ws/boards/';
 
@@ -13,8 +13,13 @@ const PREFIX = '/ws/boards/';
 export default function realtimeWs(ctx: ServerContext): WsRoute {
   // Graceful shutdown: every loaded doc is saved before the database closes.
   ctx.onShutdown(flushAllRooms);
+  // Ended sessions close their sockets here, wherever and however they ended (auth, KAI-146).
   const stopWatchingSessions = onSessionEnd(endSessionSockets);
-  ctx.onShutdown(() => void stopWatchingSessions());
+  const stopTracking = trackLiveSessions(liveSessionKeys);
+  ctx.onShutdown(() => {
+    stopWatchingSessions();
+    stopTracking();
+  });
   // Access changes, deleted boards and logouts handled by other instances (REDIS_URL).
   ctx.onShutdown(listenToOtherInstances());
   gaugeFn('freero_realtime_loaded_docs', 'Board documents loaded in memory', loadedRoomCount);

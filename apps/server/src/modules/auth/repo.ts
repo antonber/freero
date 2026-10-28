@@ -276,6 +276,21 @@ export async function findSessionUser(
 }
 
 /**
+ * Which of these session keys still sign someone in: the session exists and is unexpired and its
+ * account is neither suspended nor awaiting deletion (the rule that admits a socket).
+ */
+export async function liveSessionKeys(tokenHashes: string[], now: number): Promise<Set<string>> {
+  if (!tokenHashes.length) return new Set();
+  const rows = await query<{ token_hash: string }>(
+    `SELECT s.token_hash FROM sessions s JOIN users u ON u.id = s.user_id
+     WHERE s.token_hash = ANY($1::text[]) AND s.expires_at > $2
+       AND u.suspended_at IS NULL AND u.deletion_scheduled_for IS NULL`,
+    [tokenHashes, new Date(now)],
+  );
+  return new Set(rows.map((r) => r.token_hash));
+}
+
+/**
  * Deletes the user's sessions that a session policy ends: started before `startedBefore`, or not
  * seen since `seenBefore` (either may be null). Returns the deleted sessions' token hashes.
  */
