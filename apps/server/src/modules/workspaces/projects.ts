@@ -4,6 +4,7 @@
 import type { ProjectAccess, ProjectSummary, WorkspaceRole } from '@freero/shared';
 import { badRequest, forbidden, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
+import { recordAudit, recordAuditQuietly } from '../audit/index';
 import { getUsers } from '../auth/index';
 import { boardIdsInProject, countLiveBoardsInProject } from '../boards/index';
 import { refreshBoardAccess } from '../realtime/index';
@@ -56,18 +57,22 @@ export async function createProject(workspaceId: string, userId: string, body: {
     updatedAt: now,
   };
   if (!(await repo.insertProject(p))) throw notFound('Workspace not found');
+  await recordAuditQuietly({ action: 'project.created', workspaceId, actorId: userId, target: projectTarget(p), metadata: { access: p.access } });
   return toSummary(p, role, userId);
 }
 
 /** The project and the user's workspace role, if they can see it (404 otherwise: invisible = absent). */
 async function visibleProject(projectId: string, userId: string): Promise<{ project: Project; role: WorkspaceRole }> {
   const project = await repo.getProject(projectId);
-  const role = project ? await repo.getRole(project.workspaceId, userId) : null;
+  const inWorkspace = project ? await repo.getMember(project.workspaceId, userId) : null;
+  const role = inWorkspace && inWorkspace.deactivatedAt === null ? inWorkspace.role : null; // deactivated: nothing
   if (!project || !role) throw notFound('Project not found');
   const member = (await repo.projectIdsOf(userId, [project.workspaceId])).has(project.id);
   if (!canSee(project, role, member)) throw notFound('Project not found');
   return { project, role };
 }
+
+const projectTarget = (p: { id: string; name: string }) => ({ type: 'project', id: p.id, label: p.name });
 
 async function manageable(projectId: string, userId: string): Promise<{ project: Project; role: WorkspaceRole }> {
   const r = await visibleProject(projectId, userId);
@@ -86,6 +91,13 @@ export async function updateProject(projectId: string, userId: string, body: { n
     ...(body.access !== undefined ? { access: cleanAccess(body.access) } : {}),
   };
   if (!(await repo.updateProject(projectId, patch, Date.now()))) throw notFound('Project not found');
+  await recordAuditQuietly({
+    action: 'project.updated',
+    workspaceId: project.workspaceId,
+    actorId: userId,
+    target: projectTarget({ ...project, ...patch }),
+    metadata: { nameFrom: project.name, nameTo: patch.name ?? project.name, accessFrom: project.access, accessTo: patch.access ?? project.access },
+  });
   if (patch.access && patch.access !== project.access) await refreshProjectBoards(projectId);
   return toSummary({ ...project, ...patch }, role, userId);
 }
@@ -95,12 +107,13 @@ export async function updateProject(projectId: string, userId: string, body: { n
  * a board can't slip into it meanwhile and end up visible to the whole workspace.
  */
 export async function deleteProject(projectId: string, userId: string): Promise<void> {
-  await manageable(projectId, userId);
+  const { project } = await manageable(projectId, userId);
   await repo.transaction(async () => {
     if (!(await repo.lockProject(projectId, 'update'))) throw notFound('Project not found');
     const n = await countLiveBoardsInProject(projectId);
     if (n > 0) throw new HttpError(409, `This project still has ${n} board${n === 1 ? '' : 's'}. Move them out first.`);
     await repo.deleteProject(projectId);
+    await recordAudit({ action: 'project.deleted', workspaceId: project.workspaceId, actorId: userId, target: projectTarget(project) });
   });
 }
 
@@ -115,13 +128,14 @@ export async function addProjectMember(projectId: string, actorId: string, targe
   const { project } = await manageable(projectId, actorId);
   if (!(await repo.getRole(project.workspaceId, targetId))) throw badRequest('Add them to the workspace first');
   if (!(await repo.addProjectMember(projectId, targetId, Date.now()))) throw notFound('Project not found');
+  await recordAuditQuietly({ action: 'project.member_added', workspaceId: project.workspaceId, actorId, target: projectTarget(project), metadata: { userId: targetId } });
   await refreshProjectBoards(projectId);
 }
 
 export async function removeProjectMember(projectId: string, actorId: string, targetId: string): Promise<void> {
-  if (actorId !== targetId) await manageable(projectId, actorId);
-  else await visibleProject(projectId, actorId);
+  const { project } = actorId !== targetId ? await manageable(projectId, actorId) : await visibleProject(projectId, actorId);
   if (!(await repo.removeProjectMember(projectId, targetId))) throw notFound('That person is not in this project');
+  await recordAuditQuietly({ action: 'project.member_removed', workspaceId: project.workspaceId, actorId, target: projectTarget(project), metadata: { userId: targetId } });
   await refreshProjectBoards(projectId);
 }
 
