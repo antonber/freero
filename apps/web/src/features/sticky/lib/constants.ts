@@ -17,6 +17,21 @@ export function colorFromHex(hex: string): StickyColor {
   return hit ?? DEFAULT_COLOR;
 }
 
+/** The sticky paper closest to any css hex colour (a shape's blue fill → the sticky blue). */
+export function nearestColor(hex: string): StickyColor {
+  const rgb = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) return colorFromHex(hex);
+  const [r, g, b] = rgb(hex);
+  let best = DEFAULT_COLOR;
+  let bestD = Infinity;
+  for (const c of COLOR_ORDER) {
+    const [r2, g2, b2] = rgb(STICKY_COLORS[c]);
+    const d = (r - r2) ** 2 + (g - g2) ** 2 + (b - b2) ** 2;
+    if (d < bestD) [best, bestD] = [c, d];
+  }
+  return best;
+}
+
 export const FONT_SIZES: Array<{ id: string; label: string; value: StickyElement['fontSize'] }> = [
   { id: 'auto', label: 'Auto', value: 'auto' },
   { id: 's', label: 'Small', value: 14 },

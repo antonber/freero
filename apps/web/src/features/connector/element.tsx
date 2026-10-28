@@ -207,6 +207,7 @@ export default defineElement({
   type: 'connector',
   resize: 'none',
   rotatable: false,
+  sharedStyle: (el) => ({ stroke: el.stroke, strokeWidth: el.strokeWidth, strokeStyle: el.strokeStyle }),
   connectable: false,
   // The overlay panel draws endpoint/midpoint handles; a bounding box around a line only confuses.
   selectionFrame: false,
