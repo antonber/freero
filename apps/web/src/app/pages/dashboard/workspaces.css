@@ -571,3 +571,40 @@
     padding: 0;
   }
 }
+
+.fr-dash-settings__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fr-primary);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.fr-dash-settings__link:hover {
+  text-decoration: underline;
+}
+
+/* A workspace whose boards are closed to you (deactivated, two-step verification required). */
+.fr-dash-blocked {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  border-radius: var(--fr-radius);
+  background: var(--fr-warning-soft);
+  color: var(--fr-ink);
+  font-size: 14px;
+}
+
+.fr-dash-blocked a {
+  color: var(--fr-primary);
+  font-weight: 600;
+}
+
+/* The admin console entry is a link styled like the sidebar's buttons. */
+a.fr-nav {
+  text-decoration: none;
+}

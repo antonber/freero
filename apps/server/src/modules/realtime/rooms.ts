@@ -41,7 +41,7 @@ import { WS_CLOSE_BOARD_REMOVED, WS_MESSAGE_LAYER, WS_MESSAGE_LAYER_OP, WS_MESSA
 import { getConfig } from '../../platform/config';
 import { logError } from '../../platform/log';
 import { isShared, publish, subscribe, subscribedInstances, type Subscription } from '../../platform/pubsub';
-import { getUser } from '../auth/index';
+import { getUser, noteSessionActivity } from '../auth/index';
 import { getBoardAccess, touchBoard } from '../boards/index';
 import { sanitizeAwarenessUpdate, withoutClients, type AwarenessIdentity } from './awareness';
 import { elementChanges, ELEMENTS, emitBoardChange, hasBoardChangeListeners } from './changes';
@@ -609,6 +609,8 @@ class Room {
   private onUpdate(conn: Conn, update: Uint8Array, syncType: number): void {
     if (decideUpdate(conn.role, this.doc, update, conn.userId, conn.authorName) === 'apply') {
       Y.applyUpdate(this.doc, update, conn.ws);
+      // Editing over the socket is activity: a workspace's idle limit must not sign out someone at work.
+      if (syncType === syncProtocol.messageYjsUpdate) noteSessionActivity(conn.sessionKey);
       return;
     }
     // Dropped. A commenter's client now holds state the server rejected; push the server's full

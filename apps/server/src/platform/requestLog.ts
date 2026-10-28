@@ -27,6 +27,7 @@ const QUIET = new Set(['/healthz', '/readyz', '/metrics']);
 export function requestLogger(): RequestHandler {
   return (req, res, next) => {
     const ctx = createRequestContext(req);
+    ctx.ip = (req.ip ?? req.socket.remoteAddress ?? null)?.slice(0, 64) ?? null; // audit events record it
     res.setHeader('X-Request-Id', ctx.reqId);
     const start = process.hrtime.bigint();
     res.on('finish', () => {

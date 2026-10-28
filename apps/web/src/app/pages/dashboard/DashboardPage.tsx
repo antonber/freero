@@ -17,6 +17,7 @@ import { TrashItem, type TrashActions } from './TrashItem';
 import { CreateWorkspaceDialog, ProjectDialog, TransferBoardDialog } from './WorkspaceDialogs';
 import { WorkspaceMembers } from './WorkspaceMembers';
 import { WorkspaceSettings } from './WorkspaceSettings';
+import { WorkspaceBlockedNotice } from './WorkspaceBlockedNotice';
 import { useWorkspaces, workspaceLabel } from './useWorkspaces';
 import './dashboard.css';
 import './workspaces.css';
@@ -254,8 +255,10 @@ export function DashboardPage() {
   const trash = view === 'trash';
   // The trash keeps the server's order (most recently deleted first).
   const visible = boards ? (trash ? boards : sortBoards(filterByOwner(boards, owner, user.id), sort)) : null;
+  // Guests can't create boards here, nor can anyone the workspace closed its boards to (deactivated, two-step required).
   const guest = workspace?.role === 'guest';
-  const showCreate = !guest && (view === 'home' || view === 'mine' || (view === 'project' && !!project));
+  const mayCreate = !guest && !workspace?.blocked;
+  const showCreate = mayCreate && (view === 'home' || view === 'mine' || (view === 'project' && !!project));
   const showOwnerTabs = view === 'home' || view === 'recent' || view === 'starred' || view === 'project';
   const searching = q.length > 0;
   const title = view === 'project' ? (project?.name ?? 'Project') : boardView ? VIEW_TITLE[boardView as BoardView] : '';
@@ -308,7 +311,7 @@ export function DashboardPage() {
           />
           <div className="fr-dash__actions">
             <NotificationBell />
-            {guest ? null : (
+            {!mayCreate ? null : (
               <Button variant="primary" icon={Plus} loading={creating === 'blank'} onClick={() => create('blank')}>
                 New board
               </Button>
@@ -318,6 +321,7 @@ export function DashboardPage() {
 
         <div className="fr-dash__scroll">
           <VerifyEmailBanner />
+          {workspace?.blocked ? <WorkspaceBlockedNotice workspace={workspace} /> : null}
           {view === 'members' && workspace ? (
             <WorkspaceMembers
               key={workspace.id}

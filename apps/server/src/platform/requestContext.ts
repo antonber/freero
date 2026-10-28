@@ -7,6 +7,9 @@ import type { IncomingMessage } from 'node:http';
 export interface RequestContext {
   reqId: string;
   userId: string | null;
+  /** The client address as the app sees it (TRUST_PROXY applied), once the request logger has run. */
+  ip: string | null;
+  userAgent: string | null;
 }
 
 const storage = new AsyncLocalStorage<RequestContext>();
@@ -18,7 +21,8 @@ const INCOMING_ID_RE = /^[A-Za-z0-9._:-]{8,128}$/;
 export function createRequestContext(req: IncomingMessage): RequestContext {
   const incoming = req.headers['x-request-id'];
   const reqId = typeof incoming === 'string' && INCOMING_ID_RE.test(incoming) ? incoming : randomUUID();
-  const ctx: RequestContext = { reqId, userId: null };
+  const ua = req.headers['user-agent'];
+  const ctx: RequestContext = { reqId, userId: null, ip: null, userAgent: typeof ua === 'string' ? ua.slice(0, 400) : null };
   byRequest.set(req, ctx);
   return ctx;
 }

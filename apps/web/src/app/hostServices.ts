@@ -88,6 +88,11 @@ export async function renameBoard(id: string, title: string): Promise<void> {
   await api.updateBoard(id, { title });
 }
 
+/** Reports a browser export to the server's audit log; a failure never bothers the person exporting. */
+export function reportExport(boardId: string, format: string): void {
+  api.reportBoardExport(boardId, format).catch(() => undefined);
+}
+
 export async function saveThumbnail(id: string, dataUrl: string): Promise<void> {
   await api.putThumbnail(id, dataUrl);
 }

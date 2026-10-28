@@ -1,6 +1,6 @@
 // The only writer of `workspaces`, `workspace_members`, `workspace_invites`, `projects` and
 // `project_members` [S4].
-import type { ProjectAccess, TeamAccess, WorkspaceKind, WorkspacePolicies, WorkspaceRole } from '@freero/shared';
+import type { ProjectAccess, TeamAccess, WorkspaceKind, WorkspacePolicies, WorkspaceRole, WorkspaceSettings } from '@freero/shared';
 import { isForeignKeyViolation, one, query, tx } from '../../platform/db';
 import type { InvitableWorkspaceRole } from './roles';
 
@@ -14,6 +14,7 @@ export interface Workspace {
   kind: WorkspaceKind;
   personalOf: string | null;
   policies: WorkspacePolicies;
+  settings: WorkspaceSettings;
   createdAt: number;
   updatedAt: number;
 }
@@ -29,6 +30,12 @@ interface WsRow {
   downloads: WorkspacePolicies['downloads'];
   team_access: TeamAccess;
   public_links: 'anyone' | 'signed_in';
+  require_two_factor: boolean;
+  session_max_hours: number | null;
+  session_idle_minutes: number | null;
+  trash_retention_days: number;
+  version_retention_days: number | null;
+  audit_retention_days: number;
   created_at: Date;
   updated_at: Date;
 }
@@ -45,6 +52,14 @@ const toWorkspace = (r: WsRow): Workspace => ({
     downloads: r.downloads,
     teamAccess: r.team_access,
     publicLinks: r.public_links === 'signed_in' ? 'signedIn' : 'anyone',
+  },
+  settings: {
+    requireTwoFactor: r.require_two_factor,
+    sessionMaxHours: r.session_max_hours,
+    sessionIdleMinutes: r.session_idle_minutes,
+    trashRetentionDays: r.trash_retention_days,
+    versionRetentionDays: r.version_retention_days,
+    auditRetentionDays: r.audit_retention_days,
   },
   createdAt: r.created_at.getTime(),
   updatedAt: r.updated_at.getTime(),
@@ -137,6 +152,71 @@ export async function updateWorkspace(id: string, patch: { name?: string; polici
   );
 }
 
+/** Security / retention settings: only the given fields (null clears a limit), in one statement. */
+export async function updateSettings(id: string, patch: Partial<WorkspaceSettings>, now: number): Promise<void> {
+  const cols: Array<[keyof WorkspaceSettings, string]> = [
+    ['requireTwoFactor', 'require_two_factor'],
+    ['sessionMaxHours', 'session_max_hours'],
+    ['sessionIdleMinutes', 'session_idle_minutes'],
+    ['trashRetentionDays', 'trash_retention_days'],
+    ['versionRetentionDays', 'version_retention_days'],
+    ['auditRetentionDays', 'audit_retention_days'],
+  ];
+  const sets: string[] = [];
+  const params: unknown[] = [id, new Date(now)];
+  for (const [key, col] of cols) {
+    if (patch[key] === undefined) continue;
+    params.push(patch[key]);
+    sets.push(`${col} = $${params.length}`);
+  }
+  if (!sets.length) return;
+  await query(`UPDATE workspaces SET ${sets.join(', ')}, updated_at = $2 WHERE id = $1`, params);
+}
+
+/**
+ * The strictest session limits over the TEAM workspaces the user is a member of (not as a guest;
+ * deactivated or not): the policy that applies to all their sessions. Nulls when none sets one.
+ */
+export async function sessionLimitsFor(userId: string): Promise<{ maxHours: number | null; idleMinutes: number | null }> {
+  const r = await one<{ max_hours: number | null; idle_minutes: number | null }>(
+    `SELECT min(w.session_max_hours) AS max_hours, min(w.session_idle_minutes) AS idle_minutes
+     FROM workspace_members m JOIN workspaces w ON w.id = m.workspace_id
+     WHERE m.user_id = $1 AND m.role <> 'guest' AND w.kind = 'team'`,
+    [userId],
+  );
+  return { maxHours: r?.max_hours ?? null, idleMinutes: r?.idle_minutes ?? null };
+}
+
+/** Every person some team workspace limits sessions for, with their strictest limits (the enforcement job). */
+export async function allSessionLimits(): Promise<Array<{ userId: string; maxHours: number | null; idleMinutes: number | null }>> {
+  const rows = await query<{ user_id: string; max_hours: number | null; idle_minutes: number | null }>(
+    `SELECT m.user_id, min(w.session_max_hours) AS max_hours, min(w.session_idle_minutes) AS idle_minutes
+     FROM workspaces w JOIN workspace_members m ON m.workspace_id = w.id
+     WHERE (w.session_max_hours IS NOT NULL OR w.session_idle_minutes IS NOT NULL) AND w.kind = 'team' AND m.role <> 'guest'
+     GROUP BY m.user_id ORDER BY m.user_id`,
+  );
+  return rows.map((r) => ({ userId: r.user_id, maxHours: r.max_hours, idleMinutes: r.idle_minutes }));
+}
+
+/** Names of the team workspaces the user is in (any role) that require two-step verification. */
+export async function twoFactorRequiredBy(userId: string): Promise<string[]> {
+  const rows = await query<{ name: string }>(
+    `SELECT w.name FROM workspace_members m JOIN workspaces w ON w.id = m.workspace_id
+     WHERE m.user_id = $1 AND w.require_two_factor AND w.kind = 'team' ORDER BY w.name`,
+    [userId],
+  );
+  return rows.map((r) => r.name);
+}
+
+/** Workspaces whose retention differs from the defaults: trash days and version-history days. */
+export async function retentionOverrides(): Promise<Array<{ id: string; trashDays: number; versionDays: number | null; auditDays: number }>> {
+  const rows = await query<{ id: string; trash_retention_days: number; version_retention_days: number | null; audit_retention_days: number }>(
+    `SELECT id, trash_retention_days, version_retention_days, audit_retention_days FROM workspaces
+     WHERE trash_retention_days <> 30 OR version_retention_days IS NOT NULL OR audit_retention_days <> 365`,
+  );
+  return rows.map((r) => ({ id: r.id, trashDays: r.trash_retention_days, versionDays: r.version_retention_days, auditDays: r.audit_retention_days }));
+}
+
 /** Deletes a team workspace (members, invites, projects cascade). False if it was not there. */
 export async function deleteTeam(id: string): Promise<boolean> {
   return (await query(`DELETE FROM workspaces WHERE id = $1 AND kind = 'team' RETURNING 1`, [id])).length > 0;
@@ -174,17 +254,50 @@ export interface MemberRow {
   userId: string;
   role: WorkspaceRole;
   createdAt: number;
+  deactivatedAt: number | null;
 }
 interface MRow {
   workspace_id: string;
   user_id: string;
   role: WorkspaceRole;
   created_at: Date;
+  deactivated_at: Date | null;
 }
-const toMember = (r: MRow): MemberRow => ({ workspaceId: r.workspace_id, userId: r.user_id, role: r.role, createdAt: r.created_at.getTime() });
+const toMember = (r: MRow): MemberRow => ({
+  workspaceId: r.workspace_id,
+  userId: r.user_id,
+  role: r.role,
+  createdAt: r.created_at.getTime(),
+  deactivatedAt: r.deactivated_at ? r.deactivated_at.getTime() : null,
+});
 
 export async function getRole(workspaceId: string, userId: string): Promise<WorkspaceRole | null> {
   return (await one<{ role: WorkspaceRole }>(`SELECT role FROM workspace_members WHERE workspace_id = $1 AND user_id = $2`, [workspaceId, userId]))?.role ?? null;
+}
+
+export async function getMember(workspaceId: string, userId: string): Promise<MemberRow | null> {
+  const r = await one<MRow>(`SELECT * FROM workspace_members WHERE workspace_id = $1 AND user_id = $2`, [workspaceId, userId]);
+  return r ? toMember(r) : null;
+}
+
+/** Ids of the workspaces where the user is deactivated. */
+export async function deactivatedIn(userId: string): Promise<Set<string>> {
+  const rows = await query<{ workspace_id: string }>(
+    `SELECT workspace_id FROM workspace_members WHERE user_id = $1 AND deactivated_at IS NOT NULL`,
+    [userId],
+  );
+  return new Set(rows.map((r) => r.workspace_id));
+}
+
+/** Deactivates (at) or reactivates (null) a member. False if they are not a member. */
+export async function setDeactivated(workspaceId: string, userId: string, at: number | null): Promise<boolean> {
+  return (
+    await query(`UPDATE workspace_members SET deactivated_at = $3 WHERE workspace_id = $1 AND user_id = $2 RETURNING 1`, [
+      workspaceId,
+      userId,
+      at === null ? null : new Date(at),
+    ])
+  ).length > 0;
 }
 
 export async function listMembers(workspaceId: string): Promise<MemberRow[]> {
@@ -239,9 +352,17 @@ export async function removeMember(workspaceId: string, userId: string): Promise
   return (await query(`DELETE FROM workspace_members WHERE workspace_id = $1 AND user_id = $2 RETURNING 1`, [workspaceId, userId])).length > 0;
 }
 
-export async function countOwners(workspaceId: string): Promise<number> {
-  const r = await one<{ n: number }>(`SELECT count(*)::int AS n FROM workspace_members WHERE workspace_id = $1 AND role = 'owner'`, [workspaceId]);
-  return r?.n ?? 0;
+/**
+ * Is the user an active (not deactivated) owner, and the only one? Then they must stay: a
+ * workspace always keeps an owner who can act.
+ */
+export async function isLastActiveOwner(workspaceId: string, userId: string): Promise<boolean> {
+  const r = await one<{ me: boolean; others: number }>(
+    `SELECT bool_or(user_id = $2) AS me, count(*) FILTER (WHERE user_id <> $2)::int AS others
+     FROM workspace_members WHERE workspace_id = $1 AND role = 'owner' AND deactivated_at IS NULL`,
+    [workspaceId, userId],
+  );
+  return !!r?.me && r.others === 0;
 }
 
 /** Team workspaces the user is in, with their role there. */

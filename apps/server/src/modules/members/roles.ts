@@ -29,6 +29,8 @@ export interface WorkspaceAccess {
   maxLink: LinkAccess;
   /** The workspace lets a board's link in visitors without an account (guests). */
   anonymousLinks: boolean;
+  /** Set when the workspace closes its boards to this user (deactivated, two-step required): no access at all. */
+  blocked?: string | null;
 }
 
 const LINK_RANK: Record<LinkAccess, number> = { none: 0, viewer: 1, commenter: 2, editor: 3 };
@@ -36,6 +38,8 @@ const higher = (a: Role | null, b: Role | null): Role | null => (!a ? b : !b ? a
 
 /**
  * The effective role of `userId` on a board, or null for no access.
+ * - nobody gets anything while the workspace blocks them (deactivated, two-step verification
+ *   required and off), not even the board's owner;
  * - the owner is always 'owner';
  * - otherwise the highest of: an explicit membership, what the workspace grants its members
  *   (team access), and the board's link access for any signed-in user;
@@ -49,6 +53,7 @@ export function resolveRole(
   ws?: WorkspaceAccess,
 ): Role | null {
   if (!userId) return null;
+  if (ws?.blocked) return null;
   if (userId === board.ownerId) return 'owner';
   const outsider = !!ws && !ws.inWorkspace && ws.outsidersBlocked;
   const member: Role | null = outsider ? null : memberRole === 'owner' ? 'editor' : memberRole; // only the board owner is 'owner'
@@ -61,10 +66,12 @@ export function resolveRole(
 /**
  * The role of a GUEST (a visitor without an account who joined this board by its link), or null:
  * the board's link access as the workspace caps it, never above commenter, and only while the
- * workspace lets visitors without an account in (and allows outside access at all).
+ * workspace lets visitors without an account in (and allows outside access at all), and never
+ * where its boards are closed to people without two-step verification.
  */
 export function resolveGuestRole(board: { linkAccess: LinkAccess }, ws?: WorkspaceAccess): 'viewer' | 'commenter' | null {
-  if (ws && (!ws.anonymousLinks || ws.outsidersBlocked)) return null;
+  // A workspace that closes its boards (two-step verification required) closes them to guests too.
+  if (ws && (!ws.anonymousLinks || ws.outsidersBlocked || ws.blocked)) return null;
   let link = board.linkAccess;
   if (ws && LINK_RANK[link] > LINK_RANK[ws.maxLink]) link = ws.maxLink;
   if (link === 'none') return null;

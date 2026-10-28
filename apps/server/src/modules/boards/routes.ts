@@ -3,6 +3,7 @@ import type { BoardSummary, GuestBoardInfo, GuestJoinResponse, LinkAccess } from
 import type { ServerContext } from '../../platform/context';
 import { badRequest, forbidden, handle, HttpError, notFound, unauthorized } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
+import { recordAuditQuietly } from '../audit/index';
 import { currentUser, endGuestSession, guestFromCookieHeader, requireUser, startGuestSession } from '../auth/index';
 import { isLinkAccess, ROLE_RANK } from '../members/index';
 import { mayShareExternally } from '../workspaces/index';
@@ -11,6 +12,8 @@ import { deleteUpload, saveUpload } from '../uploads/index';
 import * as repo from './repo';
 import {
   BOARD_FILTERS,
+  boardTarget,
+  recordExport,
   type BoardFilter,
   cleanDescription,
   cleanTitle,
@@ -110,7 +113,16 @@ export default function boardRoutes(_ctx: ServerContext): Router {
         if ((body.projectId || null) !== board.projectId) await moveToProject(board, user.id, (body.projectId as string | null) || null);
       }
       if (Object.keys(patch).length > 0) await repo.updateBoardFields(board.id, patch, Date.now());
-      if (patch.linkAccess !== undefined && patch.linkAccess !== board.linkAccess) await refreshBoardAccess(board.id);
+      if (patch.linkAccess !== undefined && patch.linkAccess !== board.linkAccess) {
+        await recordAuditQuietly({
+          action: 'board.link_sharing_changed',
+          workspaceId: board.workspaceId,
+          actorId: user.id,
+          target: boardTarget(board),
+          metadata: { from: board.linkAccess, to: patch.linkAccess },
+        });
+        await refreshBoardAccess(board.id);
+      }
       const { board: updated, role: newRole, access: newAccess } = await requireAccess(board.id, user.id);
       res.json({ board: await toSummary(updated, user.id, newRole, newAccess) } satisfies Out);
     }),
@@ -121,7 +133,7 @@ export default function boardRoutes(_ctx: ServerContext): Router {
     requireUser,
     handle(async (req, res) => {
       const { board } = await requireAccess(req.params.id, currentUser(req).id, 'owner');
-      await moveToTrash(board);
+      await moveToTrash(board, currentUser(req).id);
       res.json({ ok: true } satisfies Out);
     }),
   );
@@ -155,6 +167,16 @@ export default function boardRoutes(_ctx: ServerContext): Router {
       requireDownload(access); // a copy takes the content out of the workspace's control
       const copy = await duplicateBoard(board, user.id, role);
       res.status(201).json({ board: await summarize(copy, user.id, { starred: false, lastOpenedAt: null }) } satisfies Out);
+    }),
+  );
+
+  // The web app reports exports it made in the browser (image, PDF), so they are audited.
+  r.post(
+    '/boards/:id/exported',
+    rateLimit('boardCreate', 'user'),
+    handle(async (req, res) => {
+      await recordExport(req.params.id, currentUser(req).id, req.body?.format);
+      res.json({ ok: true } satisfies Out);
     }),
   );
 

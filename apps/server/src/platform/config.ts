@@ -23,6 +23,7 @@ export type RateLimitName =
   | 'wsConnect'
   | 'twoFactor'
   | 'twoFactorRecovery'
+  | 'auditExport'
   | 'oidc'
   | 'accessRequest'
   | 'guestJoin'
@@ -182,6 +183,7 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   wsConnect: '200/1m', // per IP and per user
   twoFactor: '10/15m', // two-factor codes per IP and per account (sign-in second step, enrolment, disabling)
   twoFactorRecovery: '3/1d', // "lost my authenticator" recoveries started, per IP and per account
+  auditExport: '20/1h', // per user: audit log exports (each reads up to 100k events)
   oidc: '60/10m', // "Sign in with …" starts and callbacks per IP
   accessRequest: '20/1h', // per user: asking for access to boards
   guestJoin: '20/1h', // per IP: visitors joining a shared board without an account
@@ -205,6 +207,7 @@ const ENV_NAME: Record<RateLimitName, string> = {
   wsConnect: 'RATE_LIMIT_WS_CONNECT',
   twoFactor: 'RATE_LIMIT_TWO_FACTOR',
   twoFactorRecovery: 'RATE_LIMIT_TWO_FACTOR_RECOVERY',
+  auditExport: 'RATE_LIMIT_AUDIT_EXPORT',
   oidc: 'RATE_LIMIT_OIDC',
   accessRequest: 'RATE_LIMIT_ACCESS_REQUEST',
   guestJoin: 'RATE_LIMIT_GUEST_JOIN',

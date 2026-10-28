@@ -7,7 +7,7 @@ import { createUser, scheduleAccountDeletion } from '../auth/index';
 import { createBoard, getBoardAccess } from '../boards/index';
 import { inviteToWorkspace } from './invites';
 import { createProject, deleteProject, updateProject } from './projects';
-import { changeRole, createTeamWorkspace, listWorkspaces, removeMember, updateWorkspace } from './service';
+import { allSessionLimits, changeRole, createTeamWorkspace, listWorkspaces, removeMember, sessionLimitsFor, updateSettings, updateWorkspace } from './service';
 
 beforeAll(() => openTestDb());
 afterAll(() => closeTestDb());
@@ -130,4 +130,18 @@ it('deleting the account of a team’s only owner hands the team and their board
   expect((await getBoardAccess(board.id, admin.id)).role).toBe('owner');
   expect((await getBoardAccess(board.id, member.id)).role).toBe('editor');
   expect((await getBoardAccess(soloBoard.id, admin.id)).exists).toBe(false);
+});
+
+it('someone in several teams gets the strictest session limits of the teams they are a member of — never a limit from a team that only has them as a guest', async () => {
+  const [a, b, person] = await Promise.all([user('TeamA'), user('TeamB'), user('Person')]);
+  const strict = await team(a, [[person, 'member']]);
+  const lenient = await team(b, [[person, 'member']]);
+  const hosting = await team(a, [[person, 'guest']]);
+  await updateSettings(strict, a.id, { sessionMaxHours: 8 });
+  await updateSettings(lenient, b.id, { sessionMaxHours: 24, sessionIdleMinutes: 60 });
+  await updateSettings(hosting, a.id, { sessionIdleMinutes: 15 });
+  expect(await sessionLimitsFor(person.id)).toEqual({ maxHours: 8, idleMinutes: 60 });
+  expect((await allSessionLimits()).find((l) => l.userId === person.id)).toEqual({ userId: person.id, maxHours: 8, idleMinutes: 60 });
+  await removeMember(lenient, person.id, person.id);
+  expect(await sessionLimitsFor(person.id)).toEqual({ maxHours: 8, idleMinutes: null });
 });

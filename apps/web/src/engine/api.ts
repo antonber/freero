@@ -79,6 +79,12 @@ export interface Host {
    */
   uploadFile(file: Blob): Promise<{ url: string }>;
   renameBoard(title: string): Promise<void>;
+  /**
+   * [additive] Tells the server a board export (image, PDF) was made in the browser, for the
+   * workspace's audit log. Fire and forget; export features call it after each download. Absent in
+   * the offline sandbox.
+   */
+  reportExport?(format: string): void;
   saveThumbnail(dataUrl: string): Promise<void>;
   openShareDialog(): void;
   navigate(path: string): void;

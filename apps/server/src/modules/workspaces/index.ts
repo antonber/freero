@@ -25,3 +25,15 @@ export { createTeamWorkspace, updateWorkspace, removeMember as removeWorkspaceMe
 export { createProject } from './projects';
 export { inviteToWorkspace } from './invites';
 export { mayDownload, mayShareExternally, isFullMember } from './roles';
+// The admin console (modules/admin): the role check, members, security / retention settings.
+export {
+  requireWorkspace,
+  listMembers as listWorkspaceMembers,
+  setMemberDeactivated,
+  getSettings as getWorkspaceSettings,
+  updateSettings as updateWorkspaceSettings,
+  workspaceAdminFacts,
+} from './service';
+// Policies other modules enforce (KAI-51): auth (sessions, two-step), boards (trash), realtime
+// (version history), audit (its retention and which workspaces see an account's own events).
+export { sessionLimitsFor, allSessionLimits, twoFactorRequirementOf, retentionOverrides, auditScopeOf } from './service';

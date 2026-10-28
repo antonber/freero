@@ -300,6 +300,8 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
 - `Host.board.canExport` (default true): false when the board's workspace "downloads" policy
   doesn't let this user export or copy its boards — export commands and "Save as template" hide
   (their `when`); the server refuses duplicates and template saves from that board itself.
+  `Host.reportExport?(format)`: export features call it after each browser download (image, PDF)
+  so the workspace's audit log records it (`POST /boards/:id/exported`, refused like the export).
 - Version history (`features/history`, server `realtime/history.ts` + `routes.ts`):
   `Host.versions` (`list / load / nameCurrent / rename / restore`; `unavailableVersionHistory()`
   for hosts without it) and `<StaticBoardView state>` (`@engine`): a read-only board showing a
@@ -612,7 +614,9 @@ templates; content is opaque engine JSON), `accounts` (no table: the purge after
 period, orchestrating the owning modules' exports), `notifications` (notifications,
 notification_prefs: inbox, live delivery, email digests), `moderation` (moderation_items,
 moderation_actions: abuse reports, the operator queue, actions and appeals; see "Moderation"),
-`activity` (board_activity: the activity feed; see "Activity" below).
+`audit` (audit_events, audit_chains: the append-only audit log), `admin` (no table: the admin
+console of team workspaces; see "Audit log, admin console and workspace policies"), `activity`
+(board_activity: the activity feed; see "Activity" below).
 
 - Notifications are created only from trusted server-side events, never from client claims:
   realtime's `onCommentMessage` (a comment message applied from one of THIS instance's sockets,
@@ -642,8 +646,9 @@ moderation_actions: abuse reports, the operator queue, actions and appeals; see 
   lose a team's content).
 - Trash: deleting a board sets `boards.deleted_at`; `repo.getBoard`/lists/access treat it as
   gone (sockets refused and closed after the live doc state is stored). Owners restore or delete
-  forever; `boards/init.ts` purges after `TRASH_RETENTION_DAYS` hourly on every instance as a
-  `platform/jobs` exclusive job, so replicas never purge at once.
+  forever; `boards/init.ts` purges after the workspace's trash retention (`TRASH_RETENTION_DAYS`
+  unless the workspace sets `trashRetentionDays`) hourly on every instance as a `platform/jobs`
+  exclusive job, so replicas never purge at once.
 - Periodic jobs: `scheduleExclusiveJob(ctx, { name, lockKey, intervalMs, run })` from an init.ts
   (trash purge, account purge). One instance runs a job at a time (a Postgres session advisory
   lock held for the whole run); jobs must be idempotent, since a run can be cut short anywhere.
@@ -817,7 +822,8 @@ approval lets the requester in at once.
   templates or history. Presence names them `guestDisplayName` ("Guest · Kim"); `commentRules`
   refuses any other `authorName` from a guest socket. Their @mentions page nobody and they get no
   notifications; their replies notify thread members with no actor account (`data.actorName`).
-- Join is rate-limited per IP (`RATE_LIMIT_GUEST_JOIN`).
+- Join is rate-limited per IP (`RATE_LIMIT_GUEST_JOIN`). A workspace that requires two-step
+  verification (KAI-51 `blocked`) lets no guest in.
 - Moderation (KAI-142) needs nothing guest-specific: an operator's link block makes the board's
   link read as `none` (so `resolveGuestRole` answers no; the refresh drops connected guests) and a
   take-down makes the board stop resolving (guest sockets close with `WS_CLOSE_BOARD_REMOVED`,
@@ -841,6 +847,57 @@ approval lets the requester in at once.
 - `GET /boards/:id/activity` (anyone with access, guests too) and `GET /workspaces/:id/activity`
   (boards the reader can open there). The board panel is `features/activity` (`Host.activity`);
   the dashboard home shows the workspace feed.
+
+### Audit log, admin console and workspace policies (KAI-48, KAI-47, KAI-51)
+
+**Audit log** (`modules/audit`). Every module records security-relevant changes with
+`recordAudit({ action, workspaceId?, accountId?, actorId?, target?, metadata? })` from
+`audit/index.ts`, where the change is made — inside its transaction when it has one, so the
+change and its record commit together. IP and user agent come from the request context
+(`platform/requestContext`); pass `actorId` explicitly (jobs have no request). An account's own
+events (`accountId`: sign-ins, failed sign-ins on an existing account, sessions, password, email,
+two-step, providers, deletion) go to the account's chain `u:<id>` AND to every team workspace the
+person is a member of (not a guest: a guest's account is their own). Workspace events go to
+`w:<id>`. Actions and their wording are `AUDIT_ACTIONS` in `@freero/shared`; a new kind of event
+adds itself there. `platform/audit.ts` (`audit(…)`) is the seam for account events raised where the
+module isn't the natural call and for the operator CLI: modules/audit registers its sink from
+`init.ts` AND `admin.ts`, so operator two-step resets and moderation actions land in the same log
+(a moderation action about a board also in that board's workspace).
+- Append-only: no update/delete path in the app; a database trigger refuses UPDATE, TRUNCATE and
+  any DELETE outside retention (which sets `freero.audit_prune` for its own transaction).
+- Tamper-evident: per chain, events are numbered (`seq`) and hash-linked (sha256 over the event and
+  the previous hash, `audit/chain.ts`); `audit_chains` holds the newest seq/hash and the newest
+  pruned one, so an edited row, a gap, a dropped newest event or oldest events removed outside
+  retention all show when the chain is checked (admin console "Integrity", `npm run admin --
+  audit:verify <workspace>`). Someone with database write access could rewrite a whole chain and
+  its head; the head hash shown to admins (and in every export) is what they anchor elsewhere.
+- No foreign keys: the log outlives the workspaces, boards and accounts it names. Actor names are
+  resolved when read (a deleted account reads "Deleted user"); targets keep the label they had.
+- Retention (`audit:retention` job, hourly): each workspace's `auditRetentionDays`, accounts' own
+  chains and deleted workspaces' `DEFAULT_AUDIT_RETENTION_DAYS`; only ever a chain's oldest events.
+
+**Admin console** (`modules/admin`, web `/admin/:workspaceId`): owners and admins of a team
+workspace, checked on the server by every route (`requireAdmin` → `workspaces.requireWorkspace(…,
+'admin')`). Members (two-step status, last activity, boards, role, deactivate/reactivate), usage,
+security and retention settings, sharing policies, the audit log (filters, paging, CSV/JSON export
+— streamed, rate limited, recorded before it starts, CSV cells can't become formulas).
+
+**Workspace settings** (`workspaces` columns; `WorkspaceSettings` in `@freero/shared`), each
+enforced by the module that owns the data, wired from that module's `init.ts`:
+- Deactivated members (`workspace_members.deactivated_at`) and the two-step requirement close the
+  workspace's boards: one rule, `BoardWorkspaceAccess.blocked`, which `resolveRole` honours before
+  anything else — not even a board's owner opens it then. The two-step requirement applies to
+  everyone who opens the workspace's boards (members, guests, invited outsiders) and is registered
+  with auth's `onTwoFactorRequirement`, so members can't turn two-step off; whoever turns the
+  requirement on needs it on themselves. `WorkspaceSummary.blocked` tells the dashboard why.
+- Session lifetime / idle timeout: **a session belongs to a person, not a workspace**, so the
+  strictest limits of the team workspaces someone is a member of (not as a guest) apply to all of
+  their sessions (`workspaces.sessionLimitsFor`, given to auth with `setSessionLimits`). Auth checks
+  each request (forced re-login: the session is deleted and the request answers 401); the
+  `workspaces:session-policy` job (every minute) ends the idle and expired ones everywhere, closing
+  their sockets. Edits over a board socket count as activity (`auth.noteSessionActivity`).
+- Trash retention: boards' purge job; version-history retention: realtime's prune job (above);
+  audit retention: the audit job. All idempotent, one instance at a time.
 
 ### Two-step verification recovery (KAI-99, `modules/auth/recovery.ts`)
 
@@ -1015,7 +1072,9 @@ insert run under the base row lock compaction takes, so one instance takes each.
 (`realtime/retention.ts`, job in `realtime/init.ts`, hourly on every instance under an advisory
 lock): non-named snapshots keep the newest per hour for a day, per day for a month, per week after;
 buckets are epoch-aligned, so a run is idempotent, and a snapshot is only ever deleted in favour of
-a newer one the same plan keeps. `RetentionPolicyFor` is the seam for workspace policies (KAI-51).
+a newer one the same plan keeps. A workspace's `versionRetentionDays` adds `maxAgeMs` to the
+policy (`realtime/init.ts` through `RetentionPolicyFor`): unnamed snapshots older than that go,
+even a board's only one; named versions never.
 
 Work done for a REQUEST or a job rather than a socket (duplicate, trash, naming or restoring a
 version, the account purge's comment rename) goes through `withLiveRoom` (`rooms.ts`): the board's room is loaded on the handling instance

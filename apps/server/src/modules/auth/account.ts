@@ -5,6 +5,7 @@ import type { Account, User } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { HttpError } from '../../platform/http';
 import { sendSecurityNotice } from './notices';
+import { auditOwnAccount } from './service';
 import * as repo from './repo';
 import { confirmPassword, endSessionsOf, getAccount, publicUser } from './service';
 
@@ -13,12 +14,14 @@ export async function scheduleAccountDeletion(req: Request | null, userId: strin
   const at = Date.now() + getConfig().accountDeletionGraceMs;
   await repo.scheduleDeletion(userId, at);
   await endSessionsOf(userId);
+  await auditOwnAccount('account.deletion_scheduled', userId, { purgeAt: at });
   sendSecurityNotice(req, user.email, { kind: 'deletion_scheduled', at });
   return at;
 }
 
 export async function restoreAccount(userId: string): Promise<Account> {
   if (!(await repo.cancelDeletion(userId))) throw new HttpError(409, 'This account is not scheduled for deletion');
+  await auditOwnAccount('account.deletion_cancelled', userId);
   return getAccount(userId);
 }
 

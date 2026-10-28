@@ -18,7 +18,8 @@ import { boardIdsOpenedBy, deleteBoardsOwnedBy } from '../boards/index';
 import { membershipsOf } from '../members/index';
 import { renameCommentAuthor } from '../realtime/index';
 import { deleteUpload } from '../uploads/index';
-import { handOverTeamWorkspaces } from '../workspaces/index';
+import { auditScopeOf, handOverTeamWorkspaces } from '../workspaces/index';
+import { recordAuditQuietly } from '../audit/index';
 
 export const PURGE_LOCK_KEY = 7_202_610_281; // arbitrary, constant across releases
 export const DELETED_USER_NAME = 'Deleted user';
@@ -28,6 +29,8 @@ export const DELETED_USER_COLOR = '#868E96';
 export async function purgeAccount(userId: string, now: number): Promise<boolean> {
   if (!(await isDueForPurge(userId, now))) return false;
   const commentedOn = new Set([...(await membershipsOf(userId)).keys(), ...(await boardIdsOpenedBy(userId))]);
+  const teams = await auditScopeOf(userId); // before the memberships go with the account
+  const email = (await getUser(userId))?.email ?? null;
   await handOverTeamWorkspaces(userId);
   const deletedBoards = await deleteBoardsOwnedBy(userId);
   for (const boardId of commentedOn) {
@@ -40,7 +43,12 @@ export async function purgeAccount(userId: string, now: number): Promise<boolean
   }
   await deleteUpload((await getUser(userId))?.avatarUrl);
   const deleted = await deleteAccountIfDue(userId, now);
-  if (deleted) log(`accounts: purged account ${userId} (${deletedBoards} boards)`);
+  if (deleted) {
+    log(`accounts: purged account ${userId} (${deletedBoards} boards)`);
+    const target = { type: 'user', id: userId, label: email };
+    await recordAuditQuietly({ action: 'account.deleted', accountId: userId, fanOut: false, actorId: null, target, metadata: { boards: deletedBoards } });
+    for (const workspaceId of teams) await recordAuditQuietly({ action: 'account.deleted', workspaceId, actorId: null, target });
+  }
   return deleted;
 }
 

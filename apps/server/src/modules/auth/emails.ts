@@ -8,6 +8,7 @@ import { appUrl, renderMail, sendMail, sendMailLater } from '../../platform/mail
 import { badRequest, HttpError } from '../../platform/http';
 import { logError } from '../../platform/log';
 import { sendSecurityNotice } from './notices';
+import { auditOwnAccount } from './service';
 import { hashPassword } from './password';
 import * as repo from './repo';
 import {
@@ -103,6 +104,7 @@ export async function resetPassword(req: Request | null, tokenIn: unknown, passw
   // Reading the reset mail proves the address.
   await markEmailVerified(t.userId, t.email);
   const account = await getAccount(t.userId);
+  await auditOwnAccount('auth.password_reset', t.userId);
   sendSecurityNotice(req, account.email, { kind: 'password_reset' });
   return account;
 }
@@ -125,6 +127,7 @@ export async function changePassword(
   await repo.setPasswordHash(userId, await hashPassword(password));
   await repo.deleteTokens(userId, 'reset_password');
   await endSessionsOf(userId, currentSessionKey);
+  await auditOwnAccount('auth.password_changed', userId, { firstPassword: !user.passwordHash });
   sendSecurityNotice(req, user.email, { kind: user.passwordHash ? 'password_changed' : 'password_set' });
 }
 
@@ -184,6 +187,7 @@ export async function confirmEmailChange(req: Request | null, tokenIn: unknown):
     throw e;
   }
   await repo.deleteTokens(t.userId, 'verify_email'); // links for the old address
+  await auditOwnAccount('auth.email_changed', t.userId, { from: before.email, to: t.email });
   await emailVerified(t.userId, t.email);
   if (!before.emailVerified || before.email === t.email) return;
   // Not through issue(): a second change must not cancel the first address's way back.
@@ -223,6 +227,7 @@ export async function revertEmailChange(tokenIn: unknown, passwordIn: unknown): 
   }
   await repo.setPasswordHash(t.userId, await hashPassword(password), { viaLink: true });
   await repo.removeSecuritySetupSince(t.userId, t.createdAt);
+  await auditOwnAccount('auth.email_change_reverted', t.userId, { to: t.email });
   // Every pending link, other "this wasn't me" links included — except the two-step-on notice's
   // undo link sent to this same address (two-step verification turned on BEFORE the change stays
   // on; that link is how this address removes it, see recovery.ts).

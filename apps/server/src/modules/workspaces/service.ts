@@ -1,11 +1,22 @@
 // Workspaces: personal + team, members and roles, sharing policies, ownership transfer, and what
 // a workspace grants on its boards (asked by modules/boards for every access decision).
-import type { LinkAccess, Role, TeamAccess, WorkspaceMember, WorkspacePolicies, WorkspaceRole, WorkspaceSummary } from '@freero/shared';
+import {
+  WORKSPACE_SETTING_LIMITS,
+  type LinkAccess,
+  type Role,
+  type TeamAccess,
+  type WorkspaceBlock,
+  type WorkspaceMember,
+  type WorkspacePolicies,
+  type WorkspaceRole,
+  type WorkspaceSettings,
+  type WorkspaceSummary,
+} from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { badRequest, forbidden, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
-import { log } from '../../platform/log';
-import { getUser, getUsers } from '../auth/index';
+import { recordAudit } from '../audit/index';
+import { getUser, getUsers, hasTwoFactor } from '../auth/index';
 import {
   boardIdsInWorkspace,
   cleanUpDeletedBoards,
@@ -44,7 +55,7 @@ export function ensurePersonalWorkspace(userId: string): Promise<string> {
   return repo.ensurePersonal(userId, newId(12), Date.now());
 }
 
-const toSummary = (w: Workspace, role: WorkspaceRole, memberCount: number): WorkspaceSummary => ({
+const toSummary = (w: Workspace, role: WorkspaceRole, memberCount: number, blocked: WorkspaceBlock | null): WorkspaceSummary => ({
   id: w.id,
   name: w.name,
   kind: w.kind,
@@ -52,17 +63,39 @@ const toSummary = (w: Workspace, role: WorkspaceRole, memberCount: number): Work
   memberCount,
   policies: w.policies,
   createdAt: w.createdAt,
+  blocked,
 });
+
+/**
+ * Why a workspace's boards are closed to the user, or null. One rule for lists, summaries and
+ * every access decision (boardAccessLoader): deactivated there, or the workspace requires
+ * two-step verification and they haven't turned it on.
+ */
+function blockOf(w: Workspace | undefined, deactivated: boolean, twoFactor: () => boolean): WorkspaceBlock | null {
+  if (deactivated) return 'deactivated';
+  if (w?.kind === 'team' && w.settings.requireTwoFactor && !twoFactor()) return 'two_factor_required';
+  return null;
+}
+
+/** The user's deactivations and (only when some of `workspaces` needs it) their two-step status. */
+async function blockInputs(userId: string, workspaces: Array<Workspace | undefined>): Promise<{ deactivated: Set<string>; twoFactor: boolean }> {
+  const needs2fa = workspaces.some((w) => w?.kind === 'team' && w.settings.requireTwoFactor);
+  const [deactivated, twoFactor] = await Promise.all([repo.deactivatedIn(userId), needs2fa ? hasTwoFactor(userId) : Promise.resolve(true)]);
+  return { deactivated, twoFactor };
+}
 
 export async function listWorkspaces(userId: string): Promise<WorkspaceSummary[]> {
   await ensurePersonalWorkspace(userId);
-  return (await repo.workspacesOf(userId)).map((r) => toSummary(r.workspace, r.role, r.memberCount));
+  const rows = await repo.workspacesOf(userId);
+  const b = await blockInputs(userId, rows.map((r) => r.workspace));
+  return rows.map((r) => toSummary(r.workspace, r.role, r.memberCount, blockOf(r.workspace, b.deactivated.has(r.workspace.id), () => b.twoFactor)));
 }
 
 export async function workspaceSummary(workspaceId: string, userId: string): Promise<WorkspaceSummary> {
   const row = (await repo.workspacesOf(userId)).find((r) => r.workspace.id === workspaceId);
   if (!row) throw notFound('Workspace not found');
-  return toSummary(row.workspace, row.role, row.memberCount);
+  const b = await blockInputs(userId, [row.workspace]);
+  return toSummary(row.workspace, row.role, row.memberCount, blockOf(row.workspace, b.deactivated.has(workspaceId), () => b.twoFactor));
 }
 
 const ROLE_RANK: Record<WorkspaceRole, number> = { guest: 1, member: 2, admin: 3, owner: 4 };
@@ -75,9 +108,13 @@ export async function requireWorkspace(
   workspaceId: string,
   userId: string,
   min: WorkspaceRole = 'guest',
+  { allowDeactivated = false }: { allowDeactivated?: boolean } = {},
 ): Promise<{ workspace: Workspace; role: WorkspaceRole }> {
-  const [workspace, role] = await Promise.all([repo.getWorkspace(workspaceId), repo.getRole(workspaceId, userId)]);
-  if (!workspace || !role) throw notFound('Workspace not found');
+  const [workspace, member] = await Promise.all([repo.getWorkspace(workspaceId), repo.getMember(workspaceId, userId)]);
+  if (!workspace || !member) throw notFound('Workspace not found');
+  const role = member.role;
+  // A deactivated member can do nothing in the workspace but leave it.
+  if (member.deactivatedAt !== null && !allowDeactivated) throw forbidden('Your access to this workspace was deactivated by its admins');
   if (ROLE_RANK[role] < ROLE_RANK[min])
     throw forbidden(min === 'owner' ? 'Only a workspace owner can do that' : min === 'admin' ? 'Only workspace owners and admins can do that' : 'Guests can’t do that');
   return { workspace, role };
@@ -94,6 +131,7 @@ export async function createTeamWorkspace(userId: string, name: string): Promise
     await repo.lockCreateQuota(userId);
     if ((await repo.countOwnedTeams(userId)) >= max) throw forbidden(`You can own at most ${max} team workspaces.`);
     await repo.insertTeam(id, name, userId, Date.now());
+    await recordAudit({ action: 'workspace.created', workspaceId: id, actorId: userId, target: { type: 'workspace', id, label: name } });
   });
   return workspaceSummary(id, userId);
 }
@@ -130,9 +168,82 @@ export async function updateWorkspace(workspaceId: string, userId: string, body:
     ...(body.name !== undefined ? { name: cleanName(body.name) } : {}),
     policies: cleanPolicies(body.policies),
   };
-  await repo.updateWorkspace(workspaceId, patch, Date.now());
+  const changedPolicies = (Object.keys(patch.policies) as Array<keyof WorkspacePolicies>).filter((k) => patch.policies[k] !== workspace.policies[k]);
+  await repo.transaction(async () => {
+    await repo.updateWorkspace(workspaceId, patch, Date.now());
+    const target = { type: 'workspace', id: workspaceId, label: patch.name ?? workspace.name };
+    if (patch.name !== undefined && patch.name !== workspace.name)
+      await recordAudit({ action: 'workspace.renamed', workspaceId, actorId: userId, target, metadata: { from: workspace.name, to: patch.name } });
+    if (changedPolicies.length)
+      await recordAudit({
+        action: 'workspace.policies_changed',
+        actorId: userId,
+        workspaceId,
+        target,
+        metadata: Object.fromEntries(changedPolicies.flatMap((k) => [[`${k}.from`, workspace.policies[k]], [`${k}.to`, patch.policies[k]!]])),
+      });
+  });
   if (Object.keys(patch.policies).length > 0) await refreshWorkspaceBoards(workspaceId);
   return workspaceSummary(workspaceId, userId);
+}
+
+// ---- security and retention settings (admin console) ----
+
+export async function getSettings(workspaceId: string, userId: string): Promise<WorkspaceSettings> {
+  const { workspace } = await requireWorkspace(workspaceId, userId, 'admin');
+  teamOnly(workspace);
+  return workspace.settings;
+}
+
+function cleanSettings(body: Record<string, unknown>): Partial<WorkspaceSettings> {
+  const out: Partial<WorkspaceSettings> = {};
+  if (body.requireTwoFactor !== undefined) {
+    if (typeof body.requireTwoFactor !== 'boolean') throw badRequest('requireTwoFactor must be true or false');
+    out.requireTwoFactor = body.requireTwoFactor;
+  }
+  const num = <K extends keyof typeof WORKSPACE_SETTING_LIMITS>(k: K, nullable: boolean) => {
+    const v = body[k];
+    if (v === undefined) return;
+    const { min, max } = WORKSPACE_SETTING_LIMITS[k];
+    if (v === null && nullable) return void ((out as Record<string, unknown>)[k] = null);
+    if (typeof v !== 'number' || !Number.isInteger(v) || v < min || v > max)
+      throw badRequest(`${k} must be a whole number from ${min} to ${max}${nullable ? ', or null' : ''}`);
+    (out as Record<string, unknown>)[k] = v;
+  };
+  num('sessionMaxHours', true);
+  num('sessionIdleMinutes', true);
+  num('trashRetentionDays', false);
+  num('versionRetentionDays', true);
+  num('auditRetentionDays', false);
+  return out;
+}
+
+/**
+ * Changes security / retention settings (owners and admins of a team workspace). Turning on the
+ * two-step requirement needs it on for the person doing it, so nobody locks themselves out. Takes
+ * effect at once: board access is re-checked everywhere (two-step requirement); sessions and
+ * retention follow from the next request / job run.
+ */
+export async function updateSettings(workspaceId: string, userId: string, body: Record<string, unknown>): Promise<WorkspaceSettings> {
+  const { workspace } = await requireWorkspace(workspaceId, userId, 'admin');
+  teamOnly(workspace);
+  const patch = cleanSettings(body);
+  if (patch.requireTwoFactor && !workspace.settings.requireTwoFactor && !(await hasTwoFactor(userId)))
+    throw forbidden('Turn on two-step verification for your own account first (Settings → Security)');
+  const changed = (Object.keys(patch) as Array<keyof WorkspaceSettings>).filter((k) => patch[k] !== workspace.settings[k]);
+  if (!changed.length) return workspace.settings;
+  await repo.transaction(async () => {
+    await repo.updateSettings(workspaceId, patch, Date.now());
+    await recordAudit({
+      action: 'workspace.settings_changed',
+      actorId: userId,
+      workspaceId,
+      target: { type: 'workspace', id: workspaceId, label: workspace.name },
+      metadata: Object.fromEntries(changed.flatMap((k) => [[`${k}.from`, workspace.settings[k]], [`${k}.to`, patch[k]!]])),
+    });
+  });
+  if (changed.includes('requireTwoFactor')) await refreshWorkspaceBoards(workspaceId);
+  return (await repo.getWorkspace(workspaceId))!.settings;
 }
 
 /**
@@ -144,14 +255,28 @@ export async function deleteWorkspace(workspaceId: string, userId: string, confi
   const { workspace } = await requireWorkspace(workspaceId, userId, 'owner');
   teamOnly(workspace);
   if (typeof confirm !== 'string' || confirm.trim() !== workspace.name) throw badRequest('Type the workspace name to confirm');
-  await deleteTeamWorkspaceNow(workspaceId);
+  await deleteTeamWorkspaceNow(workspace, userId);
 }
 
-async function deleteTeamWorkspaceNow(workspaceId: string): Promise<void> {
+/**
+ * The deletion is recorded in the workspace's own log (kept for the default retention after the
+ * workspace is gone) and in the account log of whoever deleted it (null: the account purge).
+ */
+async function deleteTeamWorkspaceNow(workspace: Workspace, actorId: string | null): Promise<void> {
+  const workspaceId = workspace.id;
   const gone = await repo.transaction(async () => {
     if (!(await repo.lockWorkspace(workspaceId, 'update'))) return null;
     const boards = await deleteBoardRowsInWorkspace(workspaceId);
     await repo.deleteTeam(workspaceId);
+    await recordAudit({
+      action: 'workspace.deleted',
+      workspaceId,
+      accountId: actorId,
+      fanOut: false,
+      actorId,
+      target: { type: 'workspace', id: workspaceId, label: workspace.name },
+      metadata: { boards: boards.length },
+    });
     return boards;
   });
   if (gone) await cleanUpDeletedBoards(gone);
@@ -174,8 +299,14 @@ export async function transferWorkspace(workspaceId: string, userId: string, tar
     if (target === 'guest') throw badRequest('Make them a member first: guests can’t own a workspace');
     await repo.setRole(workspaceId, targetId, 'owner');
     await repo.setRole(workspaceId, userId, 'admin');
+    await recordAudit({
+      action: 'workspace.transferred',
+      workspaceId,
+      actorId: userId,
+      target: { type: 'user', id: targetId, label: (await getUser(targetId))?.email ?? null },
+      metadata: { previousOwnerRole: 'admin', newOwnerPreviousRole: target },
+    });
   });
-  log(`workspaces: ${userId} transferred workspace ${workspaceId} to ${targetId}`);
   return workspaceSummary(workspaceId, userId);
 }
 
@@ -211,8 +342,10 @@ export async function changeRole(workspaceId: string, actorId: string, targetId:
     const from = await repo.getRole(workspaceId, targetId);
     if (!from) throw notFound('That person is not a member of this workspace');
     if (!mayChangeRole(actor, from, role)) throw forbidden('Only a workspace owner can change the role of owners and admins');
-    if (from === 'owner' && role !== 'owner' && (await repo.countOwners(workspaceId)) <= 1) throw lastOwner();
+    if (from === 'owner' && role !== 'owner' && (await repo.isLastActiveOwner(workspaceId, targetId))) throw lastOwner();
     await repo.setRole(workspaceId, targetId, role);
+    if (from !== role)
+      await recordAudit({ action: 'member.role_changed', workspaceId, actorId, target: await userTarget(targetId), metadata: { from, to: role } });
   });
   await refreshWorkspaceBoards(workspaceId);
   await membershipChanged({ workspaceId, userId: targetId, role });
@@ -227,22 +360,62 @@ export async function changeRole(workspaceId: string, actorId: string, targetId:
  * to the person who removed them (or, when leaving, to an owner) — team content stays with the team.
  */
 export async function removeMember(workspaceId: string, actorId: string, targetId: string): Promise<void> {
-  const { workspace, role: actor } = await requireWorkspace(workspaceId, actorId);
-  teamOnly(workspace);
   const self = actorId === targetId;
+  const { workspace, role: actor } = await requireWorkspace(workspaceId, actorId, 'guest', { allowDeactivated: self });
+  teamOnly(workspace);
   await repo.transaction(async () => {
     await repo.lockWorkspace(workspaceId, 'update');
     const target = await repo.getRole(workspaceId, targetId);
     if (!target) throw notFound('That person is not a member of this workspace');
     if (!self && !mayRemove(actor, target)) throw forbidden('Only a workspace owner can remove owners and admins');
-    if (target === 'owner' && (await repo.countOwners(workspaceId)) <= 1) throw lastOwner();
+    if (target === 'owner' && (await repo.isLastActiveOwner(workspaceId, targetId))) throw lastOwner();
     await repo.removeMember(workspaceId, targetId);
     const heir = self ? (await repo.listMembers(workspaceId)).find((m) => m.role === 'owner')!.userId : actorId;
-    await transferBoardsOwnedIn(workspaceId, targetId, heir);
+    const boards = await transferBoardsOwnedIn(workspaceId, targetId, heir);
     await removeBoardMemberships(await boardIdsInWorkspace(workspaceId), targetId);
+    await recordAudit({
+      action: self ? 'member.left' : 'member.removed',
+      workspaceId,
+      actorId,
+      target: await userTarget(targetId),
+      metadata: { role: target, boardsHandedTo: boards.length ? heir : null, boards: boards.length },
+    });
   });
   await refreshWorkspaceBoards(workspaceId);
   await membershipChanged({ workspaceId, userId: targetId, role: null });
+}
+
+/**
+ * Deactivates a member (owners: anyone else; admins: members and guests): they keep their role,
+ * boards and invitations but open nothing in the workspace — not even boards they own — and can
+ * do nothing there but leave, until reactivated. Their live connections lose access at once.
+ * Only an owner deactivates an owner, so an active owner always remains.
+ */
+export async function setMemberDeactivated(workspaceId: string, actorId: string, targetId: string, deactivated: boolean): Promise<void> {
+  const { workspace, role: actor } = await requireWorkspace(workspaceId, actorId, 'admin');
+  teamOnly(workspace);
+  if (actorId === targetId) throw badRequest('You can’t deactivate yourself');
+  await repo.transaction(async () => {
+    await repo.lockWorkspace(workspaceId, 'update');
+    const target = await repo.getMember(workspaceId, targetId);
+    if (!target) throw notFound('That person is not a member of this workspace');
+    if (!mayRemove(actor, target.role)) throw forbidden('Only a workspace owner can deactivate owners and admins');
+    if ((target.deactivatedAt !== null) === deactivated) return;
+    await repo.setDeactivated(workspaceId, targetId, deactivated ? Date.now() : null);
+    await recordAudit({
+      action: deactivated ? 'member.deactivated' : 'member.reactivated',
+      workspaceId,
+      actorId,
+      target: await userTarget(targetId),
+      metadata: { role: target.role },
+    });
+  });
+  await refreshWorkspaceBoards(workspaceId);
+}
+
+/** An audit target for a person: their id and (current) email. */
+async function userTarget(userId: string): Promise<{ type: 'user'; id: string; label: string | null }> {
+  return { type: 'user', id: userId, label: (await getUser(userId))?.email ?? null };
 }
 
 // ---- what a workspace grants on its boards ----
@@ -266,7 +439,17 @@ export interface BoardWorkspaceAccess {
   maxLink: LinkAccess;
   /** The workspace lets a board's link in visitors without an account (policy `publicLinks`). */
   anonymousLinks: boolean;
+  /**
+   * The workspace's boards are closed to this user whatever else they hold (ownership, invites,
+   * links): deactivated there, or two-step verification required and off. The requirement applies
+   * to everyone who opens its boards, members or not.
+   */
+  blocked: WorkspaceBlock | null;
+  /** Days a trashed board of this workspace is kept. */
+  trashRetentionDays: number;
 }
+
+const DEFAULT_TRASH_DAYS = 30;
 
 type BoardPlace = { workspaceId: string; projectId: string | null };
 
@@ -284,6 +467,7 @@ export async function boardAccessLoader(userId: string, workspaceIds: string[]):
   ]);
   const wsById = new Map(workspaces.map((w) => [w.id, w]));
   const projectById = new Map(projects.map((p) => [p.id, p]));
+  const blocks = await blockInputs(userId, workspaces);
   return (b) => {
     const ws = wsById.get(b.workspaceId);
     const policies = ws?.policies ?? DEFAULT_POLICIES;
@@ -299,6 +483,8 @@ export async function boardAccessLoader(userId: string, workspaceIds: string[]):
       outsidersBlocked: policies.externalSharing === 'none',
       maxLink: policies.linkSharing,
       anonymousLinks: policies.publicLinks === 'anyone',
+      blocked: blockOf(ws, blocks.deactivated.has(b.workspaceId), () => blocks.twoFactor),
+      trashRetentionDays: ws?.settings.trashRetentionDays ?? DEFAULT_TRASH_DAYS,
     };
   };
 }
@@ -311,7 +497,7 @@ export async function boardAccess(userId: string, board: BoardPlace): Promise<Bo
  * Everyone the workspace itself gives access to a board placed at `place` (team access), with the
  * role it gives them: its owners/admins (editor), and its members (guests only through a project
  * they are in) unless the board is in a private project they're outside of (the board's team
- * access level). Empty for a personal workspace.
+ * access level). Deactivated members are left out. Empty for a personal workspace.
  */
 export async function teamMembers(place: BoardPlace): Promise<Array<{ userId: string; role: Role; workspaceRole: WorkspaceRole }>> {
   const ws = await repo.getWorkspace(place.workspaceId);
@@ -325,6 +511,7 @@ export async function teamMembers(place: BoardPlace): Promise<Array<{ userId: st
   const level = teamAccessOf(ws.policies, project);
   const out: Array<{ userId: string; role: Role; workspaceRole: WorkspaceRole }> = [];
   for (const m of members) {
+    if (m.deactivatedAt !== null) continue;
     const role = teamRole(m.role, project ? { access: project.access, member: inP.has(m.userId) } : null, level);
     if (role) out.push({ userId: m.userId, role, workspaceRole: m.role });
   }
@@ -379,9 +566,10 @@ export async function getWorkspaceInfo(workspaceId: string): Promise<{ id: strin
  */
 export async function lockWorkspaceForNewBoard(workspaceId: string, userId: string): Promise<void> {
   if (!(await repo.lockWorkspace(workspaceId, 'share'))) throw notFound('Workspace not found');
-  const role = await repo.getRole(workspaceId, userId);
-  if (!role) throw notFound('Workspace not found');
-  if (!isFullMember(role)) throw forbidden('Guests can’t create boards in this workspace');
+  const member = await repo.getMember(workspaceId, userId);
+  if (!member) throw notFound('Workspace not found');
+  if (member.deactivatedAt !== null) throw forbidden('Your access to this workspace was deactivated by its admins');
+  if (!isFullMember(member.role)) throw forbidden('Guests can’t create boards in this workspace');
 }
 
 /** Team workspace ids the user may share templates with (members, not guests). */
@@ -390,6 +578,56 @@ export async function teamWorkspaceIdsFor(userId: string): Promise<string[]> {
 }
 
 export { isManager };
+
+/**
+ * What the admin console shows about a team workspace (the caller checked the role with
+ * requireWorkspace): its members with their state, how many projects and pending invites.
+ */
+export async function workspaceAdminFacts(workspaceId: string): Promise<{
+  members: Array<{ userId: string; role: WorkspaceRole; joinedAt: number; deactivated: boolean }>;
+  projects: number;
+  pendingInvites: number;
+}> {
+  const [members, projects, invites] = await Promise.all([repo.listMembers(workspaceId), repo.projectsIn([workspaceId]), repo.listInvites(workspaceId)]);
+  return {
+    members: members.map((m) => ({ userId: m.userId, role: m.role, joinedAt: m.createdAt, deactivated: m.deactivatedAt !== null })),
+    projects: projects.length,
+    pendingInvites: invites.filter((i) => i.expiresAt > Date.now()).length,
+  };
+}
+
+// ---- policies other modules enforce (KAI-51) ----
+
+/**
+ * The session limits of a person: the strictest of the team workspaces they are a member of (not
+ * as a guest — a guest's account is their own, and a team shouldn't be able to sign people out of
+ * everything by inviting them). Sessions belong to people, not workspaces, so the limit applies to
+ * all of their sessions.
+ */
+export function sessionLimitsFor(userId: string): Promise<{ maxHours: number | null; idleMinutes: number | null }> {
+  return repo.sessionLimitsFor(userId);
+}
+
+/** Everyone with session limits, with their strictest limits (the enforcement job). */
+export function allSessionLimits(): Promise<Array<{ userId: string; maxHours: number | null; idleMinutes: number | null }>> {
+  return repo.allSessionLimits();
+}
+
+/** "Acme requires two-step verification", when a workspace the user is in requires it (auth's seam). */
+export async function twoFactorRequirementOf(userId: string): Promise<string | null> {
+  const names = await repo.twoFactorRequiredBy(userId);
+  return names.length ? `${names.join(', ')} require${names.length === 1 ? 's' : ''} two-step verification` : null;
+}
+
+/** Workspaces whose retention differs from the defaults (trash 30 days, versions kept, audit 365 days). */
+export function retentionOverrides(): Promise<Array<{ id: string; trashDays: number; versionDays: number | null; auditDays: number }>> {
+  return repo.retentionOverrides();
+}
+
+/** Team workspaces whose log shows an account's own events: those the person is a member (not guest) of. */
+export async function auditScopeOf(userId: string): Promise<string[]> {
+  return (await repo.teamMembershipsOf(userId)).filter((m) => isFullMember(m.role)).map((m) => m.workspaceId);
+}
 
 // ---- account deletion ----
 
@@ -403,18 +641,41 @@ export { isManager };
 export async function handOverTeamWorkspaces(userId: string): Promise<void> {
   for (const { workspaceId } of await repo.teamMembershipsOf(userId)) {
     const orphaned = await repo.transaction(async () => {
-      if (!(await repo.lockWorkspace(workspaceId, 'update'))) return false;
+      if (!(await repo.lockWorkspace(workspaceId, 'update'))) return null;
       const others = (await repo.listMembers(workspaceId)).filter((m) => m.userId !== userId); // oldest first
-      let heir = others.find((m) => m.role === 'owner');
+      // Someone who can act: deactivated members inherit only when nobody else is left.
+      const active = others.filter((m) => m.deactivatedAt === null);
+      let heir = active.find((m) => m.role === 'owner');
       if (!heir) {
-        heir = others.find((m) => m.role === 'admin') ?? others.find((m) => m.role === 'member') ?? others.find((m) => m.role === 'guest');
-        if (!heir) return true;
-        await repo.setRole(workspaceId, heir.userId, 'owner');
-        log(`workspaces: ${heir.userId} now owns workspace ${workspaceId} (its owner's account was deleted)`);
+        heir =
+          active.find((m) => m.role === 'admin') ??
+          active.find((m) => m.role === 'member') ??
+          active.find((m) => m.role === 'guest') ??
+          others.find((m) => m.role === 'owner') ??
+          others[0];
+        if (!heir) return repo.getWorkspace(workspaceId);
+        if (heir.role !== 'owner') {
+          await repo.setRole(workspaceId, heir.userId, 'owner');
+          await recordAudit({
+            action: 'workspace.owner_inherited',
+            workspaceId,
+            actorId: null,
+            target: await userTarget(heir.userId),
+            metadata: { previousRole: heir.role, previousOwner: userId },
+          });
+        }
       }
-      await transferBoardsOwnedIn(workspaceId, userId, heir.userId);
-      return false;
+      const boards = await transferBoardsOwnedIn(workspaceId, userId, heir.userId);
+      if (boards.length)
+        await recordAudit({
+          action: 'board.transferred',
+          workspaceId,
+          actorId: null,
+          target: await userTarget(heir.userId),
+          metadata: { from: userId, boards: boards.length, reason: 'account_deleted' },
+        });
+      return null;
     });
-    if (orphaned) await deleteTeamWorkspaceNow(workspaceId);
+    if (orphaned) await deleteTeamWorkspaceNow(orphaned, null);
   }
 }
