@@ -1035,28 +1035,26 @@ async function closeBoardHere(boardId: string): Promise<void> {
 
 /**
  * Replaces the author name and color on every comment message `userId` wrote on the board (an
- * account purge shows them as "Deleted user"). Goes through the board's room — loading it if
- * needed — so connected clients get the change live and the save queue persists it; resolves
- * once it is saved. Running it twice changes nothing the second time.
+ * account purge shows them as "Deleted user"). Goes through the board's live room, caught up with
+ * the other instances holding it (withLiveRoom): a comment another instance has not saved yet is
+ * renamed too, and connected clients everywhere get the change live. Resolves once it is saved.
+ * Running it twice changes nothing the second time; a board closed meanwhile is skipped.
  */
 export async function renameCommentAuthor(boardId: string, userId: string, name: string, color: string): Promise<void> {
-  const room = getRoom(boardId);
-  room.pendingJoins++;
   try {
-    await room.ready;
-  } finally {
-    room.pendingJoins--;
+    await withLiveRoom(boardId, async (room) => {
+      const comments = room.doc.getMap<Record<string, unknown>>(COMMENTS_COLLECTION);
+      room.doc.transact(() => {
+        for (const [key, value] of comments.entries()) {
+          if (!key.startsWith('m:') || value?.authorId !== userId) continue;
+          if (value.authorName !== name || value.authorColor !== color) comments.set(key, { ...value, authorName: name, authorColor: color });
+        }
+      });
+      await room.flush();
+    });
+  } catch (err) {
+    if (!(err instanceof BoardClosedError)) throw err;
   }
-  if (room.destroyed) return;
-  const comments = room.doc.getMap<Record<string, unknown>>(COMMENTS_COLLECTION);
-  room.doc.transact(() => {
-    for (const [key, value] of comments.entries()) {
-      if (!key.startsWith('m:') || value?.authorId !== userId) continue;
-      if (value.authorName !== name || value.authorColor !== color) comments.set(key, { ...value, authorName: name, authorColor: color });
-    }
-  });
-  await room.flush();
-  if (room.conns.size === 0 && room.pendingJoins === 0 && !room.destroyed) room.scheduleUnload();
 }
 
 /** Saves every loaded doc (graceful shutdown). */
