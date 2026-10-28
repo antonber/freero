@@ -79,6 +79,12 @@ export async function getBoards(ids: string[]): Promise<Board[]> {
 }
 
 /** Ids of the user's live boards. */
+/** The boards with these ids, trashed ones included (data exports). */
+export async function getBoardsIncludingTrash(ids: string[]): Promise<Board[]> {
+  if (!ids.length) return [];
+  return (await query<Row>(`SELECT * FROM boards WHERE id = ANY($1::text[]) ORDER BY created_at, id`, [ids])).map(toBoard);
+}
+
 export async function boardIdsOwnedBy(userId: string): Promise<string[]> {
   return (await query<{ id: string }>(`SELECT id FROM boards WHERE owner_id = $1 AND deleted_at IS NULL`, [userId])).map((r) => r.id);
 }
