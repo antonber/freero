@@ -271,6 +271,9 @@ class User {
     for (const c of res.headers.getSetCookie()) {
       const m = /^freero_session=([^;]*)/.exec(c);
       if (m) this.cookie = m[1] ? `freero_session=${m[1]}` : '';
+      // A visitor without an account (KAI-43): the guest cookie is their only one.
+      const g = /^freero_guest=([^;]*)/.exec(c);
+      if (g) this.cookie = g[1] ? `freero_guest=${g[1]}` : '';
     }
     const text = await res.text();
     let json = null;
@@ -436,10 +439,10 @@ function closeAllDocs() {
   for (const c of [...providers]) c.destroy();
 }
 
-/** Opens a raw socket and resolves with the close code the server uses. */
-function wsCloseCode(boardId, cookie) {
+/** Opens a raw socket and resolves with the close code the server uses (`port`: default the main server). */
+function wsCloseCode(boardId, cookie, port = server?.port) {
   return new Promise((resolve) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${server.port}/ws/boards/${boardId}`, {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/boards/${boardId}`, {
       headers: cookie ? { cookie } : {},
     });
     const t = setTimeout(() => {
@@ -2626,6 +2629,168 @@ async function uploadSweepChecks() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Teams & workspaces follow-ups: request access (KAI-40), guests on shared links (KAI-43), the
+// activity feed (KAI-44) and the team access level (KAI-93), on a server of their own.
+// ---------------------------------------------------------------------------
+async function teamsChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-teams-'));
+  let proc = null;
+  const clients = [];
+  const sockets = [];
+  try {
+    const env = { ACTIVITY_IDLE_SECONDS: '1', RATE_LIMIT_GUEST_JOIN: '4/1h' };
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    const ok = await check('teams server boots (activity bursts end after 1 s, 4 guest joins per IP)', async () => {
+      proc = await waitUp(await spawnServer(dataDir, env));
+    });
+    if (!ok) return;
+    const port = proc.port;
+    const O = new User('TeamOwner', port);
+    const R = new User('TeamAsker', port);
+    const M = new User('TeamMember', port);
+    for (const u of [O, R, M]) {
+      await u.signup();
+      await u.verifyEmail(dataDir);
+    }
+    const board = (await O.req('POST', '/api/boards', { title: 'Roadmap Q3' })).json.board;
+    const unread = async (u) => (await u.req('GET', '/api/notifications')).json.unread;
+
+    await check('request access: asking twice files one request, the owner approves it as a role from the inbox, and the waiting requester is let in live', async () => {
+      assert((await R.req('GET', `/api/boards/${board.id}`)).status === 403, 'the requester could open the board');
+      const before = (await R.req('GET', `/api/boards/${board.id}/access-request`)).json;
+      assert(before.status === 'none' && before.canRequest, JSON.stringify(before));
+      const live = notificationsSocket(R, port);
+      sockets.push(live);
+      await waitFor(() => live.lastUnread() === 0, 5000, 'the requester’s notifications socket');
+      const asks = await Promise.all([1, 2].map(() => R.req('POST', `/api/boards/${board.id}/access-request`, { role: 'editor', message: 'Need it for planning' })));
+      assert(asks.every((a) => a.status === 201 && a.json.status === 'pending'), JSON.stringify(asks.map((a) => a.json)));
+      const asked = (await O.req('GET', '/api/notifications')).json.notifications.filter((n) => n.type === 'access.request');
+      assert(asked.length === 1 && asked[0].accessRequest?.canDecide && asked[0].body === 'Need it for planning', JSON.stringify(asked));
+      assert(!asked[0].title.includes('@'), 'an email address in the title');
+      const approve = await O.req('POST', `/api/boards/${board.id}/access-requests/${R.id}`, { decision: 'approve', role: 'commenter' });
+      assert(approve.status === 200, approve.text);
+      await waitFor(() => live.lastUnread() === 1, 5000, 'the answer to reach the requester live');
+      const opened = await R.req('GET', `/api/boards/${board.id}`);
+      assert(opened.status === 200 && opened.json.board.role === 'commenter', opened.text);
+      const again = await O.req('POST', `/api/boards/${board.id}/access-requests/${R.id}`, { decision: 'deny' });
+      assert(again.status === 409, `a second decision -> ${again.status}`);
+    });
+
+    const G = new User('Guest', port);
+    await check('a visitor without an account joins a "can edit" link as a commenter named "Guest · …", and never sees the member list', async () => {
+      assert((await O.req('PATCH', `/api/boards/${board.id}`, { linkAccess: 'editor' })).status === 200, 'link on');
+      const info = (await G.req('GET', `/api/guest/boards/${board.id}`)).json;
+      assert(info.allowed && info.role === 'commenter' && info.title === 'Roadmap Q3', JSON.stringify(info));
+      const joined = await G.req('POST', `/api/guest/boards/${board.id}/join`, { name: '  Kim‮ ' });
+      assert(joined.status === 201 && joined.json.guest.name === 'Kim' && G.cookie.startsWith('freero_guest='), joined.text);
+      G.id = joined.json.guest.id;
+      G.name = 'Guest · Kim';
+      const own = await G.req('GET', `/api/guest/boards/${board.id}/board`);
+      assert(own.status === 200 && own.json.board.role === 'commenter', own.text);
+      assert((await G.req('GET', `/api/boards/${board.id}/members`)).status === 401, 'a guest listed the members');
+      assert((await G.req('GET', '/api/boards')).status === 401, 'a guest listed boards');
+      const people = (await G.req('GET', `/api/boards/${board.id}/people?ids=${O.id}`)).json.people;
+      assert(people.length === 1 && people[0].email === undefined, JSON.stringify(people));
+      const other = (await O.req('POST', '/api/boards', { title: 'Other' })).json.board;
+      await O.req('PATCH', `/api/boards/${other.id}`, { linkAccess: 'viewer' });
+      assert((await G.req('GET', `/api/guest/boards/${other.id}/board`)).status === 403, 'a guest opened a board they did not join');
+      assert((await wsCloseCode(other.id, G.cookie, port)) === 4403, 'a guest socket reached another board');
+    });
+
+    await check('a guest appears in presence as "Guest · …" and can comment only under that name', async () => {
+      const o = connectDoc(O, board.id);
+      const g = connectDoc(G, board.id);
+      clients.push(o, g);
+      await Promise.all([o.ready(), g.ready()]);
+      assert(g.role === 'commenter', `guest role ${g.role}`);
+      await waitFor(() => [...o.provider.awareness.getStates().values()].some((s) => s.user?.name === 'Guest · Kim' && s.user?.id === G.id), 5000, 'the guest in presence');
+      const msg = (id, authorName) => ({ kind: 'message', threadId: 'gt', id, authorId: G.id, authorName, text: 'hello from a guest', createdAt: Date.now() });
+      g.doc.transact(() => {
+        g.doc.getMap('comments').set('t:gt', { kind: 'thread', id: 'gt', x: 0, y: 0, createdAt: Date.now(), createdBy: G.id });
+        g.doc.getMap('comments').set('m:gt:ok', msg('ok', 'Guest · Kim'));
+      });
+      await waitFor(() => o.doc.getMap('comments').has('m:gt:ok'), 5000, 'the guest’s comment');
+      const forger = connectDoc(G, board.id);
+      clients.push(forger);
+      await forger.ready();
+      forger.doc.getMap('comments').set('m:gt:fake', msg('fake', O.name));
+      await sleep(600);
+      assert(!o.doc.getMap('comments').has('m:gt:fake'), 'a guest commented under a member’s name');
+    });
+
+    await check('the activity feed: one entry per burst from the server’s own record, guests included; hidden frames’ contents only for editors', async () => {
+      // R (invited as commenter) stays a commenter: the link no longer gives everyone edit access.
+      assert((await O.req('PATCH', `/api/boards/${board.id}`, { linkAccess: 'commenter' })).status === 200, 'link to commenter');
+      const o = withLayers(connectDoc(O, board.id));
+      clients.push(o);
+      await o.ready();
+      o.askLayer('editors');
+      els(o).set('f1', { id: 'f1', type: 'frame', x: 0, y: 0, w: 800, h: 600, title: 'Ideas', fill: '#fff', index: 1, frameId: null });
+      await sleep(1600); // the frame's burst ends
+      o.doc.transact(() => {
+        for (const id of ['s1', 's2', 's3']) els(o).set(id, { id, type: 'sticky', x: 10, y: 10, w: 100, h: 100, frameId: 'f1', text: `<p>secret ${id}</p>` });
+      });
+      const feed = async (u) => (await u.req('GET', `/api/boards/${board.id}/activity`)).json?.entries ?? [];
+      await waitFor(async () => (await feed(O)).some((e) => e.text === 'added 3 sticky notes in frame “Ideas”'), 8000, 'the sticky burst');
+      // Hide the frame: its contents move into the editors layer (what editors' clients do).
+      o.doc.transact(() => {
+        els(o).set('f1', { ...els(o).get('f1'), hidden: true });
+        for (const id of ['s1', 's2', 's3']) els(o).delete(id);
+      });
+      o.layers.editors.transact(() => {
+        for (const id of ['s4', 's5']) o.layers.editors.getMap('elements').set(id, { id, type: 'sticky', x: 20, y: 20, w: 100, h: 100, frameId: 'f1', text: '<p>hidden</p>' });
+      });
+      await waitFor(async () => (await feed(O)).some((e) => e.text.includes('(hidden from viewers)')), 8000, 'the hidden-frame entry for the owner');
+      const forR = await feed(R);
+      const forGuest = await feed(G);
+      for (const list of [forR, forGuest]) {
+        assert(!list.some((e) => /hidden|removed/.test(e.text)), `leaked: ${JSON.stringify(list.map((e) => e.text))}`);
+        assert(list.some((e) => e.actorName === 'Guest · Kim' && e.text === 'commented'), `no guest comment: ${JSON.stringify(list.map((e) => [e.actorName, e.text]))}`);
+        assert(!JSON.stringify(list).includes('secret'), 'element text in the feed');
+      }
+      const ws = (await O.req('GET', '/api/workspaces')).json.workspaces.find((w) => w.kind === 'personal');
+      const wsFeed = (await O.req('GET', `/api/workspaces/${ws.id}/activity`)).json.entries;
+      assert(wsFeed.some((e) => e.boardTitle === 'Roadmap Q3' && e.actorName === O.name), JSON.stringify(wsFeed));
+      assert((await M.req('GET', `/api/workspaces/${ws.id}/activity`)).status === 404, 'someone outside the workspace read its feed');
+    });
+
+    await check('turning the link off drops a connected guest at once; guest joins are rate-limited per IP', async () => {
+      const g = clients.find((c) => c.user === G);
+      assert((await O.req('PATCH', `/api/boards/${board.id}`, { linkAccess: 'none' })).status === 200, 'link off');
+      await waitFor(() => g.closeCodes.includes(4403), 5000, 'the guest socket to close with 4403');
+      assert((await G.req('GET', `/api/guest/boards/${board.id}/board`)).status === 403, 'the guest still opens the board');
+      await O.req('PATCH', `/api/boards/${board.id}`, { linkAccess: 'viewer' });
+      const statuses = [];
+      for (let i = 0; i < 4; i++) statuses.push((await new User(`G${i}`, port).req('POST', `/api/guest/boards/${board.id}/join`, { name: `V${i}` })).status);
+      assert(statuses.slice(0, 3).every((s) => s === 201) && statuses[3] === 429, statuses.join(','));
+    });
+
+    await check('lowering a team’s access level to "can view" turns a connected member’s socket read-only at once', async () => {
+      const team = (await O.req('POST', '/api/workspaces', { name: 'Verify team' })).json.workspace;
+      assert((await O.req('POST', `/api/workspaces/${team.id}/members`, { email: M.email, role: 'member' })).status === 201, 'add member');
+      const tb = (await O.req('POST', '/api/boards', { title: 'Team board', workspaceId: team.id })).json.board;
+      const m = connectDoc(M, tb.id);
+      clients.push(m);
+      await m.ready();
+      assert(m.role === 'editor', `member role ${m.role}`);
+      assert((await O.req('PATCH', `/api/workspaces/${team.id}`, { policies: { teamAccess: 'viewer' } })).status === 200, 'policy');
+      await waitFor(() => m.role === 'viewer', 5000, 'the member’s live role to drop to viewer');
+      const members = (await O.req('GET', `/api/boards/${tb.id}/members`)).json.members;
+      assert(members.find((x) => x.userId === M.id)?.role === 'viewer', JSON.stringify(members));
+    });
+  } finally {
+    for (const s of sockets) s.ws.terminate();
+    for (const c of clients) c.destroy();
+    if (proc) await stopProc(proc);
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
 const started = Date.now();
 await run().catch((e) => record('verify harness', false, e?.stack ?? String(e)));
 await signInMethodChecks().catch((e) => record('sign-in methods harness', false, e?.stack ?? String(e)));
@@ -2633,6 +2798,7 @@ await secretRotationChecks().catch((e) => record('secret rotation harness', fals
 await uploadSweepChecks().catch((e) => record('uploads sweep checks harness', false, e?.stack ?? String(e)));
 await accountPurgeChecks().catch((e) => record('account purge harness', false, e?.stack ?? String(e)));
 await notificationChecks().catch((e) => record('notifications harness', false, e?.stack ?? String(e)));
+await teamsChecks().catch((e) => record('teams checks harness', false, e?.stack ?? String(e)));
 await platformChecks().catch((e) => record('platform checks harness', false, e?.stack ?? String(e)));
 await multiInstanceChecks().catch((e) => record('multi-instance checks harness', false, e?.stack ?? String(e)));
 const failed = results.filter((r) => !r.ok);
