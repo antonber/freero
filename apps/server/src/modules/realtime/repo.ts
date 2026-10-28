@@ -293,12 +293,15 @@ export async function tryLockSnapshotPrune(): Promise<boolean> {
   return r?.ok === true;
 }
 
-/** Boards (by id, after `afterBoardId`) with more than one snapshot that retention could remove. */
-export async function boardsWithPrunableSnapshots(afterBoardId: string, limit: number): Promise<string[]> {
+/**
+ * Boards (by id, after `afterBoardId`) with snapshots retention could remove: more than one
+ * unnamed snapshot, or (with `loneBefore`) an unnamed one older than that.
+ */
+export async function boardsWithPrunableSnapshots(afterBoardId: string, limit: number, loneBefore: number | null = null): Promise<string[]> {
   const rows = await query<{ board_id: string }>(
     `SELECT board_id FROM board_doc_snapshots WHERE kind <> 'named' AND board_id > $1
-     GROUP BY board_id HAVING count(*) > 1 ORDER BY board_id LIMIT $2`,
-    [afterBoardId, limit],
+     GROUP BY board_id HAVING count(*) > 1 OR min(created_at) < $3 ORDER BY board_id LIMIT $2`,
+    [afterBoardId, limit, loneBefore === null ? null : new Date(loneBefore)],
   );
   return rows.map((r) => r.board_id);
 }

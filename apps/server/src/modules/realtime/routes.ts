@@ -4,6 +4,7 @@ import type { BoardVersion } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { handle } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
+import { recordAuditQuietly } from '../audit/index';
 import { currentUser, requireUser } from '../auth/index';
 import {
   cleanVersionName,
@@ -67,8 +68,16 @@ export default function versionRoutes(_ctx: ServerContext): Router {
     rateLimit('version', 'user'),
     handle(async (req, res) => {
       const user = currentUser(req);
-      await requireVersionAccess(req.params.id, user.id);
-      res.json({ before: await restoreVersion(req.params.id, parseVersionId(req.params.vid), user.id) } satisfies Out);
+      const board = await requireVersionAccess(req.params.id, user.id);
+      const versionId = parseVersionId(req.params.vid);
+      const before = await restoreVersion(req.params.id, versionId, user.id);
+      await recordAuditQuietly({
+        action: 'version.restored',
+        workspaceId: board.workspaceId,
+        target: { type: 'board', id: req.params.id, label: board.title },
+        metadata: { version: versionId, beforeRestoreVersion: before.id },
+      });
+      res.json({ before } satisfies Out);
     }),
   );
 
