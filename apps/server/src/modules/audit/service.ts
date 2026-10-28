@@ -6,6 +6,7 @@
 // There is no update or delete path besides retention (repo.pruneChain); the database refuses
 // anything else (trigger). Each chain is hash-linked (chain.ts), so tampering below the app shows.
 import type { AuditAction, AuditIntegrity, AuditMetadata, AuditValue } from '@freero/shared';
+import type { AuditEvent as PlatformAuditEvent } from '../../platform/audit';
 import { currentRequestContext } from '../../platform/requestContext';
 import { logError } from '../../platform/log';
 import { ChainVerifier } from './chain';
@@ -86,6 +87,24 @@ export async function recordAudit(input: AuditInput): Promise<void> {
     createdAt: input.at ?? Date.now(),
   };
   await repo.appendEvents(chains.map((c) => ({ ...base, ...c })));
+}
+
+/**
+ * The sink behind platform/audit.ts (`audit(…)`): account events raised where modules/audit can't
+ * be imported, or from the operator CLI. Each becomes an account event of `userId`; who did it is
+ * kept in the actor (a user) or the metadata (an operator's name, the emailed link used).
+ */
+export function recordPlatformAudit(e: PlatformAuditEvent & { at: number }): Promise<void> {
+  const by: Record<string, AuditValue> =
+    e.actor.kind === 'operator' ? { operator: e.actor.name } : e.actor.kind === 'link' ? { via: e.actor.purpose } : e.actor.kind === 'system' ? { by: 'system' } : {};
+  return recordAudit({
+    action: e.action as AuditAction,
+    accountId: e.userId,
+    actorId: e.actor.kind === 'user' ? e.actor.userId : null,
+    target: { type: 'user', id: e.userId },
+    metadata: { ...e.detail, ...by },
+    at: e.at,
+  });
 }
 
 /**

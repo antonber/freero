@@ -1,5 +1,9 @@
 import { afterAll, beforeAll, expect, it } from 'vitest';
+import { audit } from '../../platform/audit';
 import { closeTestDb, openTestDb } from '../../platform/testing';
+import { createUser } from '../auth/index';
+import { createTeamWorkspace } from '../workspaces/index';
+import { connectAudit } from './wiring';
 import { chainProblem, eventHash, GENESIS_HASH, type ChainHead, type StoredLink } from './chain';
 import { listAuditEvents, pruneAudit, recordAudit, setAccountScope, verifyWorkspaceAudit } from './service';
 
@@ -77,6 +81,20 @@ it('events recorded at the same moment by parallel requests get consecutive posi
   await Promise.all(Array.from({ length: 25 }, (_, i) => recordAudit({ action: 'board.created', workspaceId: ws, actorId: `u${i}` })));
   const integrity = await verifyWorkspaceAudit(ws);
   expect(integrity).toMatchObject({ ok: true, events: 25 });
+});
+
+it('an operator’s two-step reset (raised through the platform seam) lands in the log of the person’s team, naming the operator', async () => {
+  const disconnect = connectAudit();
+  try {
+    const owner = await createUser({ name: 'Owner', email: 'owner@audit.test.freero.app', password: 'password-123' }, { emailVerified: true });
+    const ws = await createTeamWorkspace(owner.id, 'Audited');
+    await audit({ action: 'auth.two_factor.reset_by_operator', actor: { kind: 'operator', name: 'Sam (support)' }, userId: owner.id, detail: { reason: 'T-1' } });
+    const [e] = await listAuditEvents({ workspaceId: ws.id, actions: ['auth.two_factor.reset_by_operator'] }, 10);
+    expect(e).toMatchObject({ actorId: null, targetId: owner.id, metadata: { operator: 'Sam (support)', reason: 'T-1' } });
+  } finally {
+    disconnect();
+    setAccountScope(() => []);
+  }
 });
 
 it('an account’s sign-in reaches the logs of the team workspaces it belongs to, and only those', async () => {
