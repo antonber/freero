@@ -1,6 +1,6 @@
 // Public API of modules/auth. Other modules import only this file [S2].
 import { UPLOAD_REF_PATTERN } from '../uploads/index';
-import { lastActiveOf, matchesInAvatars, twoFactorEnabled, twoFactorEnabledAmong } from './repo';
+import { lastActiveOf, matchesInAvatars, namesOf, twoFactorEnabled, twoFactorEnabledAmong } from './repo';
 
 export {
   requireUser,
@@ -17,6 +17,7 @@ export {
   // when it ended in another process or silently (KAI-146).
   onSessionEnd,
   trackLiveSessions,
+  onProfileChanged,
   onEmailVerified,
   markEmailVerified,
   // Operators (modules/moderation): suspended accounts can't sign in and lose every session.
@@ -43,6 +44,14 @@ export { onTwoFactorRequirement } from './twoFactor';
 // Workspace session policies (KAI-51): where a person's limits come from, the enforcement job,
 // and activity that doesn't come through REST (board sockets).
 export { setSessionLimits, endSessionsBeyondLimits, noteSessionActivity, type SessionLimits } from './service';
+
+/**
+ * The names a comment of this account may carry (KAI-187): its current name and the few it had
+ * before (a board tab opened before a rename on another device still writes the old one).
+ */
+export function authorNamesOf(userId: string): Promise<string[]> {
+  return namesOf(userId);
+}
 
 /** Whether the user has two-step verification on (workspace policies that require it). */
 export function hasTwoFactor(userId: string): Promise<boolean> {

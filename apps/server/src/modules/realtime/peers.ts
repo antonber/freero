@@ -33,7 +33,8 @@ export type PeerMessage =
 
 export type ControlMessage =
   | { type: 'refresh-access' | 'close-board' | 'remove-board'; boardId: string }
-  | { type: 'end-session'; sessionKey: string };
+  | { type: 'end-session'; sessionKey: string }
+  | { type: 'refresh-profile'; userId: string };
 
 // New types are only ever appended (instances of two versions run side by side during a deploy).
 const PEER_TYPES = ['update', 'awareness', 'sync-request', 'sync-reply', 'layer-update'] as const;
@@ -53,7 +54,8 @@ function readLayers(d: decoding.Decoder): LayerParts {
   return out;
 }
 // Appended only (see PEER_TYPES). 'remove-board': closed like 'close-board', with the taken-down code.
-const CONTROL_TYPES = ['refresh-access', 'close-board', 'end-session', 'remove-board'] as const;
+// 'refresh-profile': a user renamed themselves (KAI-187); instances of an older release ignore it.
+const CONTROL_TYPES = ['refresh-access', 'close-board', 'end-session', 'remove-board', 'refresh-profile'] as const;
 
 export function encodePeer(m: PeerMessage): Uint8Array {
   const e = encoding.createEncoder();
@@ -114,7 +116,7 @@ export function encodeControl(m: ControlMessage): Uint8Array {
   const e = encoding.createEncoder();
   encoding.writeVarString(e, INSTANCE_ID);
   encoding.writeVarUint(e, CONTROL_TYPES.indexOf(m.type));
-  encoding.writeVarString(e, m.type === 'end-session' ? m.sessionKey : m.boardId);
+  encoding.writeVarString(e, m.type === 'end-session' ? m.sessionKey : m.type === 'refresh-profile' ? m.userId : m.boardId);
   return encoding.toUint8Array(e);
 }
 
@@ -124,6 +126,7 @@ export function decodeControl(data: Uint8Array): { from: string; msg: ControlMes
   const type = CONTROL_TYPES[decoding.readVarUint(d)];
   const key = decoding.readVarString(d);
   if (type === 'end-session') return { from, msg: { type, sessionKey: key } };
+  if (type === 'refresh-profile') return { from, msg: { type, userId: key } };
   if (type === 'refresh-access' || type === 'close-board' || type === 'remove-board') return { from, msg: { type, boardId: key } };
   throw new Error('unknown control message type');
 }

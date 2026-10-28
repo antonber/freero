@@ -190,9 +190,32 @@ describe('decideUpdate', () => {
     const as = (authorName: string) => {
       const { server, client } = setup();
       const u = edit(client, (c) => c.set('m:t1:g1', { kind: 'message', threadId: 't1', id: 'g1', authorId: 'guest_x', authorName, text: 'hi', createdAt: 2 }));
-      return decideUpdate('commenter', server, u, 'guest_x', 'Guest · Kim');
+      return decideUpdate('commenter', server, u, 'guest_x', new Set(['Guest · Kim']));
     };
     expect(as('Ana')).toBe('drop');
     expect(as('Guest · Kim')).toBe('apply');
+  });
+
+  // KAI-187: readers show the stored name, so a signed-in commenter must not pick one.
+  it('does not let a signed-in commenter write a message under a name they never had, new or edited; an edit may keep the name it was written under', () => {
+    const { server } = setup();
+    const dan = new Set(['Dan', 'Daniel']); // renamed while connected
+    /** Each attempt from a fresh client synced to the server (a dropped write never reaches it). */
+    const write = (fn: (c: Y.Map<unknown>) => void) => {
+      const client = new Y.Doc();
+      Y.applyUpdate(client, Y.encodeStateAsUpdate(server));
+      const u = edit(client, fn);
+      const d = decideUpdate('commenter', server, u, 'dan', dan);
+      if (d === 'apply') Y.applyUpdate(server, u);
+      return d;
+    };
+    const mine = (authorName: string, text = 'hi') => ({ kind: 'message', threadId: 't1', id: 'd1', authorId: 'dan', authorName, text, createdAt: 2 });
+    expect(write((c) => c.set('m:t1:d1', mine('Jane Doe (CEO)')))).toBe('drop');
+    expect(write((c) => c.set('m:t1:d1', mine('Guest · Kim')))).toBe('drop');
+    expect(write((c) => c.set('m:t1:d1', mine('Dan')))).toBe('apply');
+    expect(write((c) => c.set('m:t1:d1', mine('Ana', 'edited')))).toBe('drop');
+    // Written as "Dan"; now known only as "Daniel": editing the text keeps the stored name.
+    dan.delete('Dan');
+    expect(write((c) => c.set('m:t1:d1', mine('Dan', 'edited')))).toBe('apply');
   });
 });

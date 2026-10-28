@@ -63,6 +63,7 @@ export async function createUser(
   const password = validatePassword(input.password);
   if (!name) throw badRequest('Please enter your name');
   if (name.length > 80) throw badRequest('Name is too long (max 80 characters)');
+  refuseGuestStyleName(name);
   if (await repo.findUserByEmail(email)) throw emailTaken(); // fast path; the unique index decides races
   return insertAccount({ name, email, passwordHash: await hashPassword(password), emailVerified: opts.emailVerified ?? false });
 }
@@ -135,6 +136,7 @@ export async function updateProfile(userId: string, body: Record<string, unknown
   if (body.name !== undefined) {
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     if (!name || name.length > 80) throw badRequest('Name must be 1-80 characters');
+    refuseGuestStyleName(name);
     patch.name = name;
   }
   if (body.color !== undefined) {
@@ -148,7 +150,24 @@ export async function updateProfile(userId: string, body: Record<string, unknown
     patch.avatarUrl = v as string | null;
   }
   await repo.updateUserProfile(userId, patch);
+  // Open boards take the new profile before we answer: a comment under the new name is accepted.
+  await Promise.all(
+    [...profileListeners].map((fn) => Promise.resolve(fn(userId)).catch((e) => logError('auth: a profile listener failed', e))),
+  );
   return getAccount(userId);
+}
+
+const profileListeners = new Set<(userId: string) => Promise<void> | void>();
+
+/** Called after someone changed their profile (name, colour, photo); realtime refreshes their sockets. */
+export function onProfileChanged(fn: (userId: string) => Promise<void> | void): () => void {
+  profileListeners.add(fn);
+  return () => profileListeners.delete(fn);
+}
+
+/** Account names never look like a guest's ("Guest · …"), so nobody can pass for a guest (KAI-187). */
+function refuseGuestStyleName(name: string): void {
+  if (/^guest\s*[·•]/iu.test(name)) throw badRequest('Choose a name that doesn’t start with “Guest ·”');
 }
 
 export async function getAccount(userId: string): Promise<Account> {

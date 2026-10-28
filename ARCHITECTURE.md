@@ -1146,7 +1146,14 @@ that socket announced, and its `user` is always replaced by the authenticated us
 the server's doc): their own messages and reactions, threads they started (and their tombstones),
 deleting a thread/message together with its tombstone. Resolve/reopen (`s:`) is shared workflow
 state anyone who may comment can set (attributed via `by`); anyone may detach a pin whose element
-is gone. Tombstones are final. Owners and editors are trusted with the whole doc. Ending a session — logout,
+is gone. Tombstones are final. A commenter's message carries their own name (KAI-187): a guest's
+"Guest · <name>"; an account's current name, a previous one (`users.previous_names`: a tab opened
+before a rename elsewhere) or a name taken while connected (`auth.onProfileChanged` refreshes the
+sockets on every instance before the rename answers); an edit may keep the name the message had.
+Account names never start with "Guest ·". Readers show the author's CURRENT name from the people
+lookup (`features/comments/lib/people.ts` `authorName`), the stored one only for ids nobody answers
+(deleted accounts: "Deleted user") — so an editor's record, a rename or an old forged name never
+reads as someone else. Owners and editors are trusted with the whole doc. Ending a session — logout,
 "sign out" from another device, password reset/change, account deletion — fires
 `auth.onSessionEnd` on every instance (auth announces it; see "Ending a session" above); realtime
 closes every board socket opened with that session (4401) on its own instance. The

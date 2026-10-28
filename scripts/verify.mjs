@@ -952,7 +952,8 @@ async function run() {
     });
 
     const dThread = { kind: 'thread', id: 't1', x: 5, y: 5, elementId: null, createdAt: 1, createdBy: D.id };
-    const dMsg = (id, authorId, text) => ({ kind: 'message', threadId: 't1', id, authorId, authorName: authorId, text, createdAt: 1 });
+    // Messages carry their author's name: a commenter's must be their own (KAI-187).
+    const dMsg = (id, authorId, text) => ({ kind: 'message', threadId: 't1', id, authorId, authorName: [A, D].find((u) => u.id === authorId)?.name ?? authorId, text, createdAt: 1 });
     await check("commenter D can write 'comments' but not 'elements'", async () => {
       d.doc.transact(() => {
         d.doc.getMap('comments').set('t:t1', dThread);
@@ -996,6 +997,40 @@ async function run() {
       d.doc.getMap('comments').set('r:t1:a1:' + D.id + ':🎉', { kind: 'reaction', threadId: 't1', messageId: 'a1', userId: D.id, emoji: '🎉' });
       await waitFor(() => a.doc.getMap('comments').get('m:t1:m1')?.editedAt === 4, 5000, "A to receive D's edit of D's own message");
       await waitFor(() => a.doc.getMap('comments').has('r:t1:a1:' + D.id + ':🎉'), 5000, "A to receive D's reaction");
+    });
+
+    await check("comment authorship (KAI-187): commenter D's raw client cannot post under another name (a member's, a made-up one, a guest's), but can under a name D just took", async () => {
+      const own = (id, authorName) => ({ ...dMsg(id, D.id, `as ${authorName}`), authorName });
+      const attempts = [
+        ["A's name", own('n1', A.name)],
+        ['a made-up title', own('n2', 'Jane Doe (CEO)')],
+        ["a guest's name", own('n3', 'Guest · Kim')],
+      ];
+      for (const [what, m] of attempts) {
+        const raw = connectDoc(D, board.id); // fresh: a dropped update would sink everything after it
+        await raw.ready();
+        raw.doc.getMap('comments').set(`m:t1:${m.id}`, m);
+        await settled(raw, [a]);
+        raw.destroy();
+        assert(!a.doc.getMap('comments').has(`m:t1:${m.id}`), `D could comment under ${what}`);
+      }
+      // A rename reaches D's open socket before the answer: the next comment under it is accepted.
+      const raw = connectDoc(D, board.id);
+      await raw.ready();
+      const renamed = await D.req('PATCH', '/api/auth/me', { name: 'Dee Renamed' });
+      assert(renamed.status === 200, `rename: ${renamed.status}`);
+      raw.doc.getMap('comments').set('m:t1:n4', own('n4', 'Dee Renamed'));
+      await waitFor(() => a.doc.getMap('comments').has('m:t1:n4'), 5000, "A to receive D's comment under D's new name");
+      raw.destroy();
+      // A tab loaded before that rename (on another device) still writes the old name, even after
+      // its socket reconnects: its comments must not be dropped.
+      const stale = connectDoc(D, board.id);
+      await stale.ready();
+      stale.doc.getMap('comments').set('m:t1:n5', own('n5', D.name));
+      await waitFor(() => a.doc.getMap('comments').has('m:t1:n5'), 5000, "A to receive D's comment under D's previous name");
+      stale.destroy();
+      assert((await D.req('PATCH', '/api/auth/me', { name: 'Guest · Dee' })).status === 400, 'an account took a guest-style name');
+      assert((await D.req('PATCH', '/api/auth/me', { name: D.name })).status === 200, 'rename back');
     });
 
     // ---- board layers: content the server withholds (private drafts, sealed ballots, hidden frames) ----

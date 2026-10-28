@@ -87,10 +87,18 @@ export async function updateUserProfile(
 ): Promise<void> {
   await query(
     `UPDATE users SET name = COALESCE($2, name), color = COALESCE($3, color),
-       avatar_url = CASE WHEN $4 THEN $5 ELSE avatar_url END
+       avatar_url = CASE WHEN $4 THEN $5 ELSE avatar_url END,
+       previous_names = CASE WHEN $2 IS NULL OR $2 = name THEN previous_names
+                             ELSE (ARRAY[name] || array_remove(previous_names, name))[1:5] END
      WHERE id = $1`,
     [id, patch.name ?? null, patch.color ?? null, patch.avatarUrl !== undefined, patch.avatarUrl ?? null],
   );
+}
+
+/** The account's current name and the few it had before (comment authorship, KAI-187). */
+export async function namesOf(id: string): Promise<string[]> {
+  const r = await one<{ name: string; previous_names: string[] }>(`SELECT name, previous_names FROM users WHERE id = $1`, [id]);
+  return r ? [r.name, ...r.previous_names] : [];
 }
 
 /** Sets the avatar; returns the previous one (to delete its file), or undefined if no such user. */
