@@ -58,6 +58,11 @@ export async function removeMember(boardId: string, userId: string): Promise<boo
   return rows.length > 0;
 }
 
+export async function removeMemberships(boardIds: string[], userId: string): Promise<void> {
+  if (boardIds.length === 0) return;
+  await query(`DELETE FROM board_members WHERE board_id = ANY($1::text[]) AND user_id = $2`, [boardIds, userId]);
+}
+
 /**
  * Adds a member only if they are not one yet (never changes an existing role). Returns the role
  * they now have, or null if the board (or user) no longer exists.

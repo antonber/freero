@@ -40,7 +40,23 @@ export interface HostUser { id: string; name: string; color: string; avatarUrl: 
 
 export interface Host {
   user: HostUser;
-  board: { id: string; title: string; role: Role };
+  board: {
+    id: string;
+    title: string;
+    role: Role;
+    /**
+     * [additive] False when the board's workspace doesn't let this user export, download or copy
+     * its boards (policy; the server enforces copies). Export features hide their commands then.
+     * Default true.
+     */
+    canExport?: boolean;
+    /**
+     * [additive] The team workspace the board belongs to, when the user is a full member of it:
+     * templates saved from this board may be shared with that team (`saveTemplate`'s
+     * `shareWithTeam`, `shareTemplate`). Null/absent: personal templates only.
+     */
+    team?: { name: string } | null;
+  };
   /** Full ws URL prefix; engine connects WebsocketProvider(syncUrl, board.id, doc). */
   syncUrl: string;
   uploadImage(file: Blob): Promise<{ url: string }>;
@@ -119,7 +135,19 @@ export interface Host {
    * `thumbnail` is a PNG/JPEG/WebP data URL (≤ 512 KB) or null. Rejects with a message fit for a
    * toast (over the limit, too large, offline sandbox).
    */
-  saveTemplate(template: { name: string; description: string; thumbnail: string | null; content: ElementsSnapshot }): Promise<SavedTemplateInfo>;
+  saveTemplate(template: {
+    name: string;
+    description: string;
+    thumbnail: string | null;
+    content: ElementsSnapshot;
+    /** [additive] Share it with `board.team` right away. */
+    shareWithTeam?: boolean;
+  }): Promise<SavedTemplateInfo>;
+  /**
+   * [additive] Shares one of the user's own templates with `board.team` (or makes it personal
+   * again). Rejects when there is no team to share with (offline sandbox, personal board).
+   */
+  shareTemplate(id: string, shared: boolean): Promise<SavedTemplateInfo>;
   /** [additive] Deletes one of the user's own saved templates. */
   deleteTemplate(id: string): Promise<void>;
   /**
@@ -159,6 +187,8 @@ export interface SavedTemplateInfo {
   /** Preview image URL, or null. */
   thumbnail: string | null;
   ownerId: string;
+  /** [additive] Shared with a team workspace (its members see it), not only its owner. */
+  shared?: boolean;
   elementCount: number;
   createdAt: number;
 }

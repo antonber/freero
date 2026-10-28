@@ -273,10 +273,15 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   insertion path for copied content (paste uses it): fresh ids, references remapped, content
   restored, one undo step, on a `findFreeSpot` by default. Saved templates go through it.
 - `Host.listTemplates / loadTemplate / saveTemplate / deleteTemplate` (server module
-  `templates`): a board or selection saved for reuse. Personal today; `SavedTemplateInfo.ownerId`
-  is there so workspace-shared templates (KAI-37) need no contract change — offer owner-only
-  actions only when it equals `user.id`. The visibility rule is one predicate in
-  `modules/templates/repo.ts`.
+  `templates`): a board or selection saved for reuse — the user's own plus those shared with a
+  team workspace they are a full member of; offer owner-only actions only when
+  `SavedTemplateInfo.ownerId` equals `user.id`. The visibility rule is one predicate in
+  `modules/templates/repo.ts`. `Host.board.team` names the board's team workspace (when the user is
+  a full member): `saveTemplate({ …, shareWithTeam })` and `Host.shareTemplate(id, shared)` share
+  with it; `SavedTemplateInfo.shared` marks shared ones.
+- `Host.board.canExport` (default true): false when the board's workspace "downloads" policy
+  doesn't let this user export or copy its boards — export commands and "Save as template" hide
+  (their `when`); the server refuses duplicates and template saves from that board itself.
 - Version history (`features/history`, server `realtime/history.ts` + `routes.ts`):
   `Host.versions` (`list / load / nameCurrent / rename / restore`; `unavailableVersionHistory()`
   for hosts without it) and `<StaticBoardView state>` (`@engine`): a read-only board showing a
@@ -533,7 +538,8 @@ auth_devices: browsers that signed in (new sign-in notices);
 auth_identities + auth_oidc_flows: sign in with a provider; auth_challenges, user_totp,
 user_recovery_codes: two-step verification),
 `boards` (boards, stars, opens; trash), `members` (board_members, board_invites: pending invites
-for addresses without an account; role resolution), `uploads` (uploads; files in object storage or
+for addresses without an account; role resolution), `workspaces` (workspaces, workspace_members,
+workspace_invites, projects, project_members; see "Workspaces" below), `uploads` (uploads; files in object storage or
 `<data>/uploads`), `realtime` (board_docs, board_doc_updates, board_doc_snapshots; y-websocket
 protocol + role filter + update log; version history + snapshot retention), `unfurl` (link
 previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`), `templates` (saved
@@ -559,9 +565,13 @@ notification_prefs: inbox, live delivery, email digests).
   only to verified addresses, honoring per-type opt-outs and the master switch that the signed,
   session-less unsubscribe link (`List-Unsubscribe` one-click too) turns off.
 
-- Per-user quotas (boards, templates) count and insert in one transaction under a per-owner
-  `pg_advisory_xact_lock(hashtext('<module>.quota'), hashtext(userId))`; a count-then-insert
-  lets parallel requests overshoot.
+- Per-user quotas (boards, templates, team workspaces) count and insert in one transaction under
+  a per-owner `pg_advisory_xact_lock(hashtext('<module>.quota'), hashtext(userId))`; a
+  count-then-insert lets parallel requests overshoot. The board quota is per USER (owner), across
+  all their workspaces, not per workspace: it is an abuse limit on a free service, and a
+  per-workspace count would multiply with every team someone creates. Receiving a board by
+  transfer counts against the new owner (except the account-deletion hand-over, which must not
+  lose a team's content).
 - Trash: deleting a board sets `boards.deleted_at`; `repo.getBoard`/lists/access treat it as
   gone (sockets refused and closed after the live doc state is stored). Owners restore or delete
   forever; `boards/init.ts` purges after `TRASH_RETENTION_DAYS` hourly on every instance as a
@@ -621,6 +631,45 @@ notification_prefs: inbox, live delivery, email digests).
   referenced (`last_referenced_at`), re-checks the candidates right before deleting, and deletes
   rows + files no round has seen referenced for 24 h — freeing quota. New content that stores
   upload URLs outside board docs adds its scan to `SCANS` there. `ObjectStorage.list()` exists for it.
+
+### Workspaces (`modules/workspaces`)
+
+Every board belongs to a workspace (`boards.workspace_id`) and optionally a project in it
+(`boards.project_id`). Each user has one PERSONAL workspace (`workspaces.personal_of`; created on
+first use by `ensurePersonalWorkspace`, so signup — or any future sign-in path — needs no hook;
+deleted with the account row) that only ever holds its owner's boards. TEAM workspaces have
+members with roles owner / admin / member / guest (separate from board roles).
+
+- Board access (`members/roles.ts` `resolveRole`, fed by `workspaces.boardAccess`): the board
+  owner is owner; otherwise the highest of a direct board membership, team access (owners/admins:
+  every board; members: boards not in a private project they're outside of; guests: only private
+  projects they were added to) and link access. Link access never exceeds the workspace's
+  `linkSharing`; with `externalSharing: 'none'` people outside the workspace get nothing from
+  memberships or links. One resolver serves REST, lists and socket admission.
+- Lists (`GET /boards?workspace=`) are scoped to one workspace the caller is in; `shared` lists
+  boards from workspaces they are NOT in that they reach directly; the personal home shows those
+  too. A team board never appears for a non-member without a direct invite or its link.
+- Writes that need a stable member list (role changes, removal, transfer, deletion) lock the
+  workspace row (`FOR UPDATE`); board creation takes `FOR SHARE`, so a board can't land in a
+  workspace being deleted. A workspace always keeps ≥ 1 owner (checked under that lock). Moving a
+  board into a project shares the project's row lock with project deletion, which refuses while
+  the project still holds live boards (their private access would otherwise open up).
+- Every change that can alter access (roles, removal, project access/membership, policies, moves,
+  transfers) re-resolves the live sockets of the affected boards on every instance through
+  realtime's `refreshBoardAccess`. Removing someone also ends their direct board memberships in
+  that workspace and hands boards they owned there to the remover.
+- Invites by email reuse the board-invite mechanics (`workspace_invites`, sha256 tokens, link
+  `/workspace-invite/<token>`, conversion on `auth.onEmailVerified`).
+- Policies (team workspaces): `externalSharing` (who may invite people outside / share by link),
+  `linkSharing` (max link role), `guestInvites`, `downloads` (who may export, duplicate or save
+  as template). All enforced by the endpoint that does the work; `BoardSummary.permissions` only
+  tells the UI.
+- Ownership: `POST /boards/:id/transfer` (team: to a non-guest member; personal: to a board
+  member, moving the board to their personal workspace) and `POST /workspaces/:id/transfer`, each
+  one transaction; the previous owner becomes editor / admin. Account purge first calls
+  `handOverTeamWorkspaces` (sole-owned teams pass to the longest-standing admin, else member,
+  else guest; an otherwise empty team is deleted with its boards; their team boards pass to an
+  owner there).
 
 ### Database (`platform/db.ts`)
 

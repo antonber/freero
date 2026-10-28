@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 // Real-session end-to-end check for the Freero server. Run: `npm run verify`.
+// (Workspaces: a team's boards are reachable only by its members or by people invited to that
+// board itself — listing, opening and the socket — plus roles, projects, policies and transfers.)
 //
 // Boots the real server (node --import tsx apps/server/src/main.ts) on a free port with a temporary
 // data dir, drives it over REST with real session cookies, connects real y-websocket clients and
@@ -300,10 +302,15 @@ class User {
 function outbox(dataDir) {
   const dir = path.join(dataDir, 'outbox');
   if (!fs.existsSync(dir)) return [];
-  return fs
-    .readdirSync(dir)
-    .map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')))
-    .sort((a, b) => a.sentAt - b.sentAt);
+  const mails = [];
+  for (const f of fs.readdirSync(dir)) {
+    try {
+      mails.push(JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')));
+    } catch {
+      // The server is still writing this one: callers wait (waitFor) and read it next time.
+    }
+  }
+  return mails.sort((a, b) => a.sentAt - b.sentAt);
 }
 
 /** The token of the newest `route` link (e.g. '/reset-password', '/invite') mailed to `to`, waiting for it. */
@@ -313,7 +320,9 @@ async function mailedToken(dataDir, to, route, { after = 0, timeoutMs = 8000 } =
   await waitFor(
     () => {
       const m = outbox(dataDir)
-        .filter((mail) => mail.to === to && mail.sentAt > after)
+        // The server and this harness read the clock in different processes; on Windows they can
+        // disagree by a timer tick (~16 ms), so "sent after" allows a little slack (the newest wins).
+        .filter((mail) => mail.to === to && mail.sentAt >= after - 50)
         .map((mail) => re.exec(mail.text))
         .filter(Boolean)
         .at(-1);
@@ -1328,6 +1337,154 @@ async function run() {
       assert((await A.req('DELETE', `/api/templates/${id}`)).status === 200, 'owner delete');
       assert((await A.req('GET', `/api/templates/${id}`)).status === 404, 'still there after delete');
     });
+
+    // ---- workspaces (KAI-37/38/39/41/42) ----
+    const WO = new User('WO'); // team owner
+    const WM = new User('WM'); // member
+    const WM2 = new User('WM2'); // member, later a board owner
+    const WX = new User('WX'); // outsider
+    const WN = new User('WN'); // invited by email before having an account → guest
+    let team = null;
+    let tb = null; // a team board
+    await check('workspaces: everyone gets a personal workspace; a team workspace is created with its creator as owner', async () => {
+      for (const u of [WO, WM, WM2, WX]) await u.signup();
+      await WO.verifyEmail(dataDir);
+      const mine = await WO.req('GET', '/api/workspaces');
+      assert(mine.status === 200 && mine.json.workspaces[0]?.kind === 'personal' && mine.json.workspaces[0].role === 'owner', mine.text);
+      const created = await WO.req('POST', '/api/workspaces', { name: 'Acme' });
+      assert(created.status === 201 && created.json.workspace.role === 'owner' && created.json.workspace.kind === 'team', created.text);
+      team = created.json.workspace;
+      const b = await WO.req('POST', '/api/boards', { title: 'Team plan', workspaceId: team.id });
+      assert(b.status === 201 && b.json.board.workspaceId === team.id, b.text);
+      tb = b.json.board;
+      // A board created without a workspace lands in the personal one.
+      const p = await WO.req('POST', '/api/boards', { title: 'Mine' });
+      assert(p.json.board.workspaceId === mine.json.workspaces[0].id, 'default workspace');
+    });
+    if (!team || !tb) return;
+
+    await check('workspaces: a non-member can’t list, open or join the socket of a team board — until invited to that board directly', async () => {
+      assert((await WX.req('GET', `/api/boards?workspace=${team.id}`)).status === 404, 'listing a workspace you are not in');
+      for (const f of ['all', 'shared', 'recent', 'starred'])
+        assert(!titles(await WX.req('GET', `/api/boards?filter=${f}`)).includes(tb.id), `listed in ${f}`);
+      assert((await WX.req('GET', `/api/boards/${tb.id}`)).status === 403, 'opened');
+      assert((await wsCloseCode(tb.id, WX.cookie)) === 4403, 'socket joined');
+      const inv = await WO.req('POST', `/api/boards/${tb.id}/members`, { email: WX.email, role: 'commenter' });
+      assert(inv.status === 201, inv.text);
+      const direct = (await WX.req('GET', `/api/boards/${tb.id}`)).json?.board;
+      assert(direct?.role === 'commenter' && direct.member === true, `direct invite not honoured: ${JSON.stringify(direct)}`);
+      const c = connectDoc(WX, tb.id);
+      await c.ready();
+      assert(c.role === 'commenter', `socket role ${c.role}`);
+      c.destroy();
+      assert(titles(await WX.req('GET', '/api/boards?filter=shared')).includes(tb.id), 'not in "shared with me"');
+      assert((await WX.req('GET', `/api/boards?workspace=${team.id}`)).status === 404, 'a board invite opened the whole workspace');
+    });
+
+    await check('workspace members: existing accounts join at once, others by an emailed invite (as guest); members see team boards, guests only theirs', async () => {
+      const m = await WO.req('POST', `/api/workspaces/${team.id}/members`, { email: WM.email, role: 'member' });
+      assert(m.status === 201 && m.json.member?.role === 'member', m.text);
+      assert((await WO.req('POST', `/api/workspaces/${team.id}/members`, { email: WM2.email, role: 'member' })).status === 201, 'WM2');
+      assert(titles(await WM.req('GET', `/api/boards?workspace=${team.id}`)).includes(tb.id), 'member does not see the team board');
+      const viaTeam = (await WM.req('GET', `/api/boards/${tb.id}`)).json?.board;
+      // Team access is not a board membership: nothing to "leave" on the board itself (KAI-94).
+      assert(viaTeam?.role === 'editor' && viaTeam.member === false, `member is not a team editor: ${JSON.stringify(viaTeam)}`);
+      // Pickers (mentions, assignees) and comment author names know team members too.
+      const listed = (await WO.req('GET', `/api/boards/${tb.id}/members`)).json.members.find((m) => m.userId === WM.id);
+      assert(listed?.team === true && listed.role === 'editor', `team member not in the member list: ${JSON.stringify(listed)}`);
+      const people = (await WO.req('GET', `/api/boards/${tb.id}/people?ids=${WM.id}`)).json.people;
+      assert(people.some((p) => p.id === WM.id), 'people lookup does not know a team member');
+      const g = await WO.req('POST', `/api/workspaces/${team.id}/members`, { email: WN.email, role: 'guest' });
+      assert(g.status === 201 && g.json.invite?.email === WN.email.toLowerCase(), g.text);
+      await WN.signup();
+      const token = await mailedToken(dataDir, WN.email.toLowerCase(), '/workspace-invite');
+      assert((await WN.req('GET', `/api/workspace-invites/${token}`)).json?.invite?.workspaceName === 'Acme', 'preview');
+      const acc = await WN.req('POST', `/api/workspace-invites/${token}/accept`);
+      assert(acc.status === 200 && acc.json.workspaceId === team.id, acc.text);
+      assert((await WN.req('POST', `/api/workspace-invites/${token}/accept`)).status === 404, 'invite link used twice');
+      const wsList = (await WN.req('GET', '/api/workspaces')).json.workspaces;
+      assert(wsList.some((w) => w.id === team.id && w.role === 'guest'), JSON.stringify(wsList));
+      assert(!titles(await WN.req('GET', `/api/boards?workspace=${team.id}`)).includes(tb.id), 'guest sees a team board');
+      assert((await WN.req('GET', `/api/boards/${tb.id}`)).status === 403, 'guest opens a team board');
+      assert((await WN.req('POST', '/api/boards', { title: 'x', workspaceId: team.id })).status === 403, 'guest creates a board in the team');
+      // Roles: members can't manage; the only owner can't step down.
+      assert((await WM.req('PATCH', `/api/workspaces/${team.id}/members/${WM2.id}`, { role: 'admin' })).status === 403, 'member changed a role');
+      assert((await WO.req('PATCH', `/api/workspaces/${team.id}/members/${WO.id}`, { role: 'admin' })).status === 409, 'last owner stepped down');
+      assert((await WO.req('DELETE', `/api/workspaces/${team.id}/members/${WO.id}`)).status === 409, 'last owner left');
+    });
+
+    await check('projects: a private project hides its boards from members outside it; only owners/admins move boards; a non-empty project can’t be deleted', async () => {
+      const p = await WO.req('POST', `/api/workspaces/${team.id}/projects`, { name: 'Secret', access: 'private' });
+      assert(p.status === 201, p.text);
+      const pid = p.json.project.id;
+      const moved = await WO.req('PATCH', `/api/boards/${tb.id}`, { projectId: pid });
+      assert(moved.status === 200 && moved.json.board.projectId === pid, moved.text);
+      assert((await WM.req('GET', `/api/boards/${tb.id}`)).status === 403, 'member outside the private project opens its board');
+      assert((await WM.req('GET', `/api/boards/${tb.id}/versions`)).status === 403, 'member outside the private project reads its version history');
+      assert(!(await WM.req('GET', `/api/workspaces/${team.id}/projects`)).json.projects.some((x) => x.id === pid), 'member lists the private project');
+      assert((await WO.req('PUT', `/api/projects/${pid}/members/${WM.id}`)).status === 200, 'add to project');
+      assert((await WM.req('GET', `/api/boards/${tb.id}`)).json?.board?.role === 'editor', 'project member can’t open');
+      // Version history is for editors: team access counts like any other editor access.
+      assert((await WM.req('GET', `/api/boards/${tb.id}/versions`)).status === 200, 'team editor can’t read version history');
+      assert(titles(await WM.req('GET', `/api/boards?workspace=${team.id}&project=${pid}`)).includes(tb.id), 'project filter');
+      assert((await WM.req('PATCH', `/api/boards/${tb.id}`, { projectId: null })).status === 403, 'a non-owner member moved the board');
+      assert((await WO.req('DELETE', `/api/projects/${pid}`)).status === 409, 'deleted a project with boards');
+      assert((await WO.req('PATCH', `/api/boards/${tb.id}`, { projectId: null, description: 'Q4 goals' })).json?.board?.description === 'Q4 goals', 'move out + describe');
+      assert((await WO.req('DELETE', `/api/projects/${pid}`)).status === 200, 'empty project delete');
+    });
+
+    await check('sharing policies: link role capped, outside sharing switched off (live outsiders cut), downloads limited — all on the server', async () => {
+      const pol = (policies) => WO.req('PATCH', `/api/workspaces/${team.id}`, { policies });
+      assert((await WM.req('PATCH', `/api/workspaces/${team.id}`, { policies: { linkSharing: 'none' } })).status === 403, 'member changed policies');
+      assert((await pol({ linkSharing: 'viewer' })).status === 200, 'set link max');
+      assert((await WO.req('PATCH', `/api/boards/${tb.id}`, { linkAccess: 'editor' })).status === 403, 'link above the maximum');
+      const okLink = await WO.req('PATCH', `/api/boards/${tb.id}`, { linkAccess: 'viewer' });
+      assert(okLink.status === 200 && okLink.json.board.permissions.maxLinkAccess === 'viewer', okLink.text);
+      // The outsider invited directly is connected when outside sharing is switched off.
+      const live = connectDoc(WX, tb.id);
+      await live.ready();
+      assert((await pol({ externalSharing: 'none' })).status === 200, 'set external none');
+      await waitFor(() => live.closeCodes.includes(4403), 5000, 'the outsider’s socket to close');
+      live.destroy();
+      assert((await WX.req('GET', `/api/boards/${tb.id}`)).status === 403, 'outsider still opens it');
+      assert((await WO.req('POST', `/api/boards/${tb.id}/members`, { email: 'nobody-yet@verify.freero.app', role: 'viewer' })).status === 403, 'invited an outsider');
+      assert((await pol({ externalSharing: 'anyone', downloads: 'admins' })).status === 200, 'set downloads');
+      assert((await WM.req('POST', `/api/boards/${tb.id}/duplicate`)).status === 403, 'member duplicated despite the policy');
+      assert((await WM.req('GET', `/api/boards/${tb.id}`)).json.board.permissions.canExport === false, 'UI not told');
+      assert((await WO.req('POST', `/api/boards/${tb.id}/duplicate`)).status === 201, 'owner duplicate');
+      assert((await pol({ downloads: 'anyone', linkSharing: 'editor' })).status === 200, 'reset');
+      assert((await WO.req('PATCH', `/api/boards/${tb.id}`, { linkAccess: 'none' })).status === 200, 'link off again');
+    });
+
+    await check('transfer: a team board to a member (previous owner keeps editing), the workspace to another owner (previous one becomes admin)', async () => {
+      const t = await WO.req('POST', `/api/boards/${tb.id}/transfer`, { userId: WM2.id });
+      assert(t.status === 200 && t.json.board.ownerId === WM2.id, t.text);
+      assert((await WM2.req('GET', `/api/boards/${tb.id}`)).json.board.role === 'owner', 'new owner');
+      assert((await WO.req('GET', `/api/boards/${tb.id}`)).json.board.role === 'editor', 'previous owner lost access');
+      assert((await WO.req('POST', `/api/boards/${tb.id}/transfer`, { userId: WN.id })).status === 400, 'a guest got a team board');
+      const w = await WO.req('POST', `/api/workspaces/${team.id}/transfer`, { userId: WM2.id });
+      assert(w.status === 200 && w.json.workspace.role === 'admin', w.text);
+      assert((await WM2.req('GET', '/api/workspaces')).json.workspaces.find((x) => x.id === team.id)?.role === 'owner', 'new workspace owner');
+    });
+
+    await check('removing a member cuts their live socket on the team’s boards at once (4403) and they no longer list it', async () => {
+      const live = connectDoc(WM, tb.id);
+      await live.ready();
+      const r = await WM2.req('DELETE', `/api/workspaces/${team.id}/members/${WM.id}`);
+      assert(r.status === 200, r.text);
+      await waitFor(() => live.closeCodes.includes(4403), 5000, 'the removed member’s socket to close');
+      live.destroy();
+      assert((await WM.req('GET', `/api/boards/${tb.id}`)).status === 403, 'removed member opens the board');
+      assert((await WM.req('GET', `/api/boards?workspace=${team.id}`)).status === 404, 'removed member lists the workspace');
+    });
+
+    await check('workspace templates: shared with the team, listed for members, not for outsiders', async () => {
+      const content = { elements: [{ id: 's1', type: 'sticky', x: 0, y: 0, w: 100, h: 100 }] };
+      const t = await WM2.req('POST', '/api/templates', { name: 'Team retro', content, workspaceId: team.id, boardId: tb.id });
+      assert(t.status === 201 && t.json.template.workspaceId === team.id, t.text);
+      assert((await WO.req('GET', '/api/templates')).json.templates.some((x) => x.id === t.json.template.id), 'member does not see it');
+      assert(!(await WX.req('GET', '/api/templates')).json.templates.some((x) => x.id === t.json.template.id), 'outsider sees it');
+    });
   } finally {
     closeAllDocs();
     await stopServer();
@@ -1522,8 +1679,9 @@ async function accountPurgeChecks() {
       const comments = v.doc.getMap('comments');
       assert(comments.get('m:t1:u').text === `from ${U.name}` && comments.get('m:t1:v').authorName === V.name, JSON.stringify(comments.toJSON()));
       assert((await V.req('GET', `/api/boards/${theirs.id}`)).status === 200, "V's board survived");
-      const members = (await V.req('GET', `/api/boards/${theirs.id}/members`)).json.members.map((m) => m.userId);
-      assert(!members.includes(U.id), 'purged user still a member');
+      // The account row goes last in the purge (after the boards and the comment renames above).
+      const memberIds = async () => (await V.req('GET', `/api/boards/${theirs.id}/members`)).json.members.map((m) => m.userId);
+      await waitFor(async () => !(await memberIds()).includes(U.id), 10_000, 'the purged user to leave the member list');
       assert((await fetch(`http://127.0.0.1:${proc.port}${avatar}`)).status === 404, "U's avatar still served");
       // Part of V's board now; files nothing references any more are left to the uploads sweep.
       assert((await fetch(`http://127.0.0.1:${proc.port}${upload.json.url}`)).status === 200, "an image U placed on V's board was deleted");
@@ -1879,6 +2037,19 @@ async function multiInstanceChecks() {
       b1.destroy();
     });
 
+    await check('removing a workspace member through instance 2 closes their socket on instance 1 at once (4403)', async () => {
+      const team = (await A.req('POST', '/api/workspaces', { name: 'Multi team' })).json.workspace;
+      const r = await A.req('POST', `/api/workspaces/${team.id}/members`, { email: B.email, role: 'member' });
+      assert(r.status === 201, r.text);
+      const tboard = (await A.req('POST', '/api/boards', { title: 'Team only', workspaceId: team.id })).json.board;
+      const live = connectDoc(B, tboard.id, undefined, one);
+      await live.ready();
+      assert(live.role === 'editor', `team member role ${live.role}`);
+      assert((await A.req('DELETE', `/api/workspaces/${team.id}/members/${B.id}`, undefined, { port: two })).status === 200, 'remove');
+      await waitFor(() => live.closeCodes.includes(4403), 5000, 'the socket on instance 1 to close');
+      live.destroy();
+    });
+
     await check('logging out through instance 2 closes that session\'s socket on instance 1 (4401)', async () => {
       const L = new User('ML');
       await L.signup();
@@ -2165,6 +2336,11 @@ async function signInMethodChecks() {
       assert((await again.fetch('/api/auth/me')).json.user.id === me.json.user.id, 'a second account was created');
       const sessions = (await again.fetch('/api/auth/sessions')).json.sessions;
       assert(sessions.length === 2 && sessions.every((s) => s.method === 'google' && s.methodLabel === 'Google' && !s.twoFactor), JSON.stringify(sessions));
+      // An account made by a provider gets its personal workspace like any other (on first use).
+      const ws = (await b.fetch('/api/workspaces')).json?.workspaces ?? [];
+      assert(ws.length === 1 && ws[0].kind === 'personal' && ws[0].role === 'owner', `workspaces ${JSON.stringify(ws)}`);
+      const made = await b.fetch('/api/boards', { method: 'POST', body: { title: 'From Google' } });
+      assert(made.status === 201 && made.json.board.workspaceId === ws[0].id, `board ${made.status} ${made.text}`);
       passwordless = { browser: b, email };
     });
 

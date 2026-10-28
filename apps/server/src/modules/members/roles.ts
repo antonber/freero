@@ -15,22 +15,43 @@ export function atLeast(role: Role | null, min: Role): boolean {
 }
 
 /**
+ * What the board's workspace contributes to an access decision (modules/workspaces computes it;
+ * structural here so this file stays pure).
+ */
+export interface WorkspaceAccess {
+  /** What the workspace grants by itself (team access to its boards), or null. */
+  teamRole: Role | null;
+  /** The user is in the board's workspace (any workspace role). */
+  inWorkspace: boolean;
+  /** The workspace allows no outside access: direct invites and links work only for its people. */
+  outsidersBlocked: boolean;
+  /** Highest link access the workspace allows. */
+  maxLink: LinkAccess;
+}
+
+const LINK_RANK: Record<LinkAccess, number> = { none: 0, viewer: 1, commenter: 2, editor: 3 };
+const higher = (a: Role | null, b: Role | null): Role | null => (!a ? b : !b ? a : ROLE_RANK[a] >= ROLE_RANK[b] ? a : b);
+
+/**
  * The effective role of `userId` on a board, or null for no access.
  * - the owner is always 'owner';
- * - an explicit membership grants its role;
- * - any signed-in user gets the board's link access (unless it is 'none').
- * A member never ends up with less than what the shared link gives everyone, so the
- * result is the higher of membership and link access.
+ * - otherwise the highest of: an explicit membership, what the workspace grants its members
+ *   (team access), and the board's link access for any signed-in user;
+ * - link access never exceeds the workspace's maximum; when the workspace allows no outside
+ *   access, people outside it get nothing from memberships or links.
  */
 export function resolveRole(
   board: { ownerId: string; linkAccess: LinkAccess },
   userId: string | null,
   memberRole: Role | null,
+  ws?: WorkspaceAccess,
 ): Role | null {
   if (!userId) return null;
   if (userId === board.ownerId) return 'owner';
-  const member: Role | null = memberRole === 'owner' ? 'editor' : memberRole; // only the board owner is 'owner'
-  const link: Role | null = board.linkAccess === 'none' ? null : board.linkAccess;
-  if (member && link) return ROLE_RANK[member] >= ROLE_RANK[link] ? member : link;
-  return member ?? link;
+  const outsider = !!ws && !ws.inWorkspace && ws.outsidersBlocked;
+  const member: Role | null = outsider ? null : memberRole === 'owner' ? 'editor' : memberRole; // only the board owner is 'owner'
+  let linkAccess = board.linkAccess;
+  if (ws && LINK_RANK[linkAccess] > LINK_RANK[ws.maxLink]) linkAccess = ws.maxLink;
+  const link: Role | null = linkAccess === 'none' || outsider ? null : linkAccess;
+  return higher(higher(member, ws?.teamRole ?? null), link);
 }

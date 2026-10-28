@@ -1,47 +1,84 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { LayoutDashboard } from 'lucide-react';
-import type { InvitePreview } from '@freero/shared';
+import { LayoutDashboard, Users } from 'lucide-react';
 import { Button, Spinner } from '@ui';
 import { api, ApiError } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { AuthNotice, AuthShell } from '../auth/AuthShell';
 
 const ROLE_TEXT = { editor: 'edit', commenter: 'comment on', viewer: 'view' } as const;
+const WS_ROLE_TEXT = { admin: 'as an admin', member: 'as a member', guest: 'as a guest' } as const;
+
+/** What the page shows and does, for a board invite or a workspace invite. */
+interface Preview {
+  inviterName: string;
+  email: string;
+  name: string;
+  sub: string;
+}
+
+const KINDS = {
+  board: {
+    path: '/invite/',
+    noun: 'board',
+    icon: LayoutDashboard,
+    preview: async (token: string): Promise<Preview> => {
+      const { invite } = await api.previewInvite(token);
+      return { inviterName: invite.inviterName, email: invite.email, name: invite.boardTitle, sub: `You can ${ROLE_TEXT[invite.role]} this board.` };
+    },
+    accept: async (token: string) => `/board/${(await api.acceptInvite(token)).boardId}`,
+  },
+  workspace: {
+    path: '/workspace-invite/',
+    noun: 'workspace',
+    icon: Users,
+    preview: async (token: string): Promise<Preview> => {
+      const { invite } = await api.previewWorkspaceInvite(token);
+      return {
+        inviterName: invite.inviterName,
+        email: invite.email,
+        name: invite.workspaceName,
+        sub: `Join their team workspace ${WS_ROLE_TEXT[invite.role]}.`,
+      };
+    },
+    accept: async (token: string) => `/app?ws=${encodeURIComponent((await api.acceptWorkspaceInvite(token)).workspaceId)}`,
+  },
+} as const;
 
 /**
- * /invite/:token — the link from an invite email. Signed out: sign up (email prefilled) or log in,
- * then come back here with ?join=1, which accepts at once and opens the board. Signed in: join.
+ * /invite/:token (a board) and /workspace-invite/:token (a team workspace) — the link from an
+ * invite email. Signed out: sign up (email prefilled) or log in, then come back here with ?join=1,
+ * which accepts at once and opens it. Signed in: join.
  */
-export function InvitePage() {
+export function InvitePage({ kind = 'board' }: { kind?: keyof typeof KINDS }) {
+  const k = KINDS[kind];
   const { token = '' } = useParams();
   const [params] = useSearchParams();
   const autoJoin = params.get('join') === '1';
   const { user, loading } = useAuth();
   const navigate = useNavigate();
-  const [invite, setInvite] = useState<InvitePreview | null>(null);
+  const [invite, setInvite] = useState<Preview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
   const tried = useRef(false);
 
   useEffect(() => {
     let live = true;
-    api.previewInvite(token).then(
-      ({ invite }) => live && setInvite(invite),
+    k.preview(token).then(
+      (invite) => live && setInvite(invite),
       (err) => live && setError(err instanceof ApiError ? err.message : 'Could not reach Freero. Try again.'),
     );
     return () => {
       live = false;
     };
-  }, [token]);
+  }, [token, k]);
 
   const join = async () => {
     setJoining(true);
     try {
-      const { boardId } = await api.acceptInvite(token);
-      navigate(`/board/${boardId}`, { replace: true });
+      navigate(await k.accept(token), { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not join the board. Try again.');
+      setError(err instanceof ApiError ? err.message : `Could not join the ${k.noun}. Try again.`);
       setJoining(false);
     }
   };
@@ -55,7 +92,7 @@ export function InvitePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoJoin, user, invite]);
 
-  const back = `/invite/${encodeURIComponent(token)}?join=1`;
+  const back = `${k.path}${encodeURIComponent(token)}?join=1`;
 
   if (error)
     return (
@@ -78,14 +115,14 @@ export function InvitePage() {
     <AuthShell
       docTitle="You're invited"
       title={`${invite.inviterName} invited you`}
-      sub={`You can ${ROLE_TEXT[invite.role]} this board.`}
+      sub={invite.sub}
     >
       <div className="fr-authcard__invite">
         <span className="fr-authcard__invite-icon" aria-hidden>
-          <LayoutDashboard size={20} />
+          <k.icon size={20} />
         </span>
         <span className="fr-authcard__invite-board">
-          <strong>{invite.boardTitle}</strong>
+          <strong>{invite.name}</strong>
           Sent to {invite.email}
         </span>
       </div>
@@ -93,12 +130,12 @@ export function InvitePage() {
         <>
           {user.email !== invite.email ? (
             <AuthNotice kind="error">
-              You're signed in as {user.email}. Joining adds this account to the board.
+              You're signed in as {user.email}. Joining adds this account to the {k.noun}.
             </AuthNotice>
           ) : null}
           <div className="fr-authcard__actions">
             <Button variant="primary" size="lg" block loading={joining} onClick={join}>
-              Join board
+              Join {k.noun}
             </Button>
           </div>
         </>

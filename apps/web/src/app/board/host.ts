@@ -13,8 +13,9 @@ import {
   listTemplates,
   loadTemplate,
   renameBoard,
-  saveTemplate,
+  saveTemplateFrom,
   saveThumbnail,
+  shareTemplateWith,
   unfurl,
   uploadFile,
   uploadImage,
@@ -28,6 +29,8 @@ export interface HostDeps {
   notify: Host['notify'];
   openShareDialog(): void;
   onTitleChange(title: string): void;
+  /** The board's team workspace, when the user is a full member of it (templates can be shared there). */
+  team?: { id: string; name: string } | null;
 }
 
 /** Toasts with an action button stay up long enough to read and act on. */
@@ -46,7 +49,13 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
   syncServerClock();
   return {
     user: deps.user,
-    board: { id: board.id, title: board.title, role: board.role },
+    board: {
+      id: board.id,
+      title: board.title,
+      role: board.role,
+      canExport: board.permissions.canExport,
+      team: deps.team ? { name: deps.team.name } : null,
+    },
     syncUrl: `${wsBase()}/ws/boards`,
     uploadImage,
     uploadFile,
@@ -65,7 +74,8 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     unfurl,
     listTemplates,
     loadTemplate,
-    saveTemplate,
+    saveTemplate: saveTemplateFrom(board.id, deps.team?.id ?? null),
+    shareTemplate: shareTemplateWith(deps.team?.id ?? null),
     deleteTemplate,
     versions: versionHistory(board.id),
     importImage,
@@ -115,6 +125,7 @@ export function createLocalHost(title: string, deps: Omit<HostDeps, 'user' | 'op
     loadTemplate: async () => Promise.reject(new Error('Saved templates need a real board.')),
     saveTemplate: async () => Promise.reject(new Error('Saving templates needs a real board — the local sandbox is offline.')),
     deleteTemplate: async () => Promise.reject(new Error('Saved templates need a real board.')),
+    shareTemplate: async () => Promise.reject(new Error('Sharing templates needs a real board.')),
     versions: unavailableVersionHistory('Version history needs a real board — the local sandbox keeps no versions.'),
     // No server to fetch through: images placed by URL stay linked (CORS hosts still export,
     // others are reported as missing by the export).

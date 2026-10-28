@@ -8,6 +8,7 @@ import { closeTestDb, openTestDb } from '../../platform/testing';
 import { createUser, markEmailVerified } from '../auth/index';
 import { createBoard } from '../boards/index';
 import type { CommentMessageEvent } from '../realtime/index';
+import { createTeamWorkspace, inviteToWorkspace, removeWorkspaceMember } from '../workspaces/index';
 import { emailsIn, listFor, markRead, onCommentMessage, sendDigests, unsubscribe, unsubscribeToken, updatePrefs } from './service';
 
 beforeAll(() => openTestDb());
@@ -125,4 +126,21 @@ it('an unverified address never gets digest emails', async () => {
   await sendDigests(Date.now() + getConfig().notifyEmailDelayMs + 1000);
   expect(await inbox(ghost)).toHaveLength(1);
   expect(mailsTo(ghost.email)).toHaveLength(0);
+});
+
+it('team access counts for notifications: a team member is told about a mention on a team board and about being added; once removed from the team, nothing more', async () => {
+  const [lead, teammate] = await Promise.all([person('Lead'), person('Teammate')]);
+  const ws = await createTeamWorkspace(lead.id, 'Studio');
+  await inviteToWorkspace(null, ws.id, { ...lead, emailVerified: true }, { email: teammate.email, role: 'member' });
+  expect((await inbox(teammate)).map((x) => x.type)).toEqual(['workspace.invite']);
+  expect((await inbox(teammate))[0].link).toBe(`/app?ws=${ws.id}`);
+
+  // No board invite: the teammate reaches the board through the team only.
+  const board = await createBoard(lead.id, 'Team board', '', 'none', { workspaceId: ws.id });
+  await onCommentMessage(message(board.id, lead.id, `ping ${mentionToken(teammate.id)}`));
+  expect((await inbox(teammate)).map((x) => x.type)).toEqual(['comment.mention', 'workspace.invite']);
+
+  await removeWorkspaceMember(ws.id, lead.id, teammate.id);
+  await onCommentMessage(message(board.id, lead.id, `again ${mentionToken(teammate.id)}`));
+  expect(await inbox(teammate)).toHaveLength(2);
 });

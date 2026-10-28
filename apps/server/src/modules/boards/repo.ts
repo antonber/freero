@@ -13,6 +13,9 @@ export interface Board {
   updatedAt: number;
   /** When it was moved to the trash; null for a live board. */
   deletedAt: number | null;
+  /** The workspace it belongs to (modules/workspaces) and its project there, if any. */
+  workspaceId: string;
+  projectId: string | null;
 }
 
 interface Row {
@@ -25,6 +28,8 @@ interface Row {
   created_at: Date;
   updated_at: Date;
   deleted_at: Date | null;
+  workspace_id: string;
+  project_id: string | null;
 }
 
 const toBoard = (r: Row): Board => ({
@@ -37,6 +42,8 @@ const toBoard = (r: Row): Board => ({
   createdAt: r.created_at.getTime(),
   updatedAt: r.updated_at.getTime(),
   deletedAt: r.deleted_at ? r.deleted_at.getTime() : null,
+  workspaceId: r.workspace_id,
+  projectId: r.project_id,
 });
 
 /**
@@ -47,9 +54,9 @@ export const transaction = <T>(fn: () => Promise<T>): Promise<T> => tx(() => fn(
 
 export async function insertBoard(b: Board): Promise<void> {
   await query(
-    `INSERT INTO boards (id, title, description, owner_id, link_access, thumbnail, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-    [b.id, b.title, b.description, b.ownerId, b.linkAccess, b.thumbnail, new Date(b.createdAt), new Date(b.updatedAt)],
+    `INSERT INTO boards (id, title, description, owner_id, link_access, thumbnail, created_at, updated_at, workspace_id, project_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+    [b.id, b.title, b.description, b.ownerId, b.linkAccess, b.thumbnail, new Date(b.createdAt), new Date(b.updatedAt), b.workspaceId, b.projectId],
   );
 }
 
@@ -91,11 +98,62 @@ export async function lockOwnerQuota(ownerId: string): Promise<void> {
   await query(`SELECT pg_advisory_xact_lock(hashtext('boards.quota'), hashtext($1))`, [ownerId]);
 }
 
-/** The user's trashed boards, most recently deleted first. */
-export async function trashedBoardsOf(ownerId: string): Promise<Board[]> {
+/** The user's trashed boards (in one workspace), most recently deleted first. */
+export async function trashedBoardsOf(ownerId: string, workspaceId: string): Promise<Board[]> {
   return (
-    await query<Row>(`SELECT * FROM boards WHERE owner_id = $1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC`, [ownerId])
+    await query<Row>(`SELECT * FROM boards WHERE owner_id = $1 AND workspace_id = $2 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC`, [
+      ownerId,
+      workspaceId,
+    ])
   ).map(toBoard);
+}
+
+// ---- workspaces and projects ----
+
+/** The live boards of a workspace. */
+export async function boardsInWorkspace(workspaceId: string): Promise<Board[]> {
+  return (await query<Row>(`SELECT * FROM boards WHERE workspace_id = $1 AND deleted_at IS NULL`, [workspaceId])).map(toBoard);
+}
+
+/** Every board of a workspace, trashed ones included. */
+export async function idsInWorkspace(workspaceId: string): Promise<string[]> {
+  return (await query<{ id: string }>(`SELECT id FROM boards WHERE workspace_id = $1`, [workspaceId])).map((r) => r.id);
+}
+
+export async function idsInProject(projectId: string): Promise<string[]> {
+  return (await query<{ id: string }>(`SELECT id FROM boards WHERE project_id = $1`, [projectId])).map((r) => r.id);
+}
+
+export async function countLiveInProject(projectId: string): Promise<number> {
+  const r = await one<{ n: number }>(`SELECT count(*)::int AS n FROM boards WHERE project_id = $1 AND deleted_at IS NULL`, [projectId]);
+  return r?.n ?? 0;
+}
+
+/** Deletes every board of a workspace, trash included; returns what was deleted (to close docs, delete files). */
+export async function deleteAllInWorkspace(workspaceId: string): Promise<Array<{ id: string; thumbnail: string | null }>> {
+  return query<{ id: string; thumbnail: string | null }>(`DELETE FROM boards WHERE workspace_id = $1 RETURNING id, thumbnail`, [workspaceId]);
+}
+
+/** Hands a board to `ownerId`, possibly into another workspace / project. False if the board is gone. */
+export async function setOwner(id: string, ownerId: string, workspaceId: string, projectId: string | null, now: number): Promise<boolean> {
+  return (
+    (await one(
+      `UPDATE boards SET owner_id = $2, workspace_id = $3, project_id = $4, updated_at = GREATEST(updated_at, $5) WHERE id = $1 RETURNING id`,
+      [id, ownerId, workspaceId, projectId, new Date(now)],
+    )) !== null
+  );
+}
+
+/** Every board (trash included) `from` owns in the workspace passes to `to`; returns their ids. */
+export async function transferOwnedIn(workspaceId: string, from: string, to: string): Promise<string[]> {
+  return (
+    await query<{ id: string }>(`UPDATE boards SET owner_id = $3 WHERE workspace_id = $1 AND owner_id = $2 RETURNING id`, [workspaceId, from, to])
+  ).map((r) => r.id);
+}
+
+/** Moves a live board into a project of its workspace (null: the root). False if it is not live. */
+export async function setProject(id: string, projectId: string | null): Promise<boolean> {
+  return (await one(`UPDATE boards SET project_id = $2 WHERE id = $1 AND deleted_at IS NULL RETURNING id`, [id, projectId])) !== null;
 }
 
 /** Moves a live board to the trash; false if it was not live (already trashed or gone). */

@@ -150,8 +150,9 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `BODY_LIMIT_KB` | `2048` | Max JSON request body (board thumbnails are the largest). |
 | `MAX_UPLOAD_MB` | `15` | Max size of one uploaded file. |
 | `UPLOAD_QUOTA_MB` | `1024` | Total upload storage per account (board thumbnails don't count). Over quota: `413`. |
-| `MAX_BOARDS_PER_USER` | `5000` | Boards one account may own (boards in the trash don't count). Over it, creating/duplicating/restoring answers `403`. |
+| `MAX_BOARDS_PER_USER` | `5000` | Boards one account may own, counted across ALL its workspaces (boards in the trash don't count). Over it, creating/duplicating/restoring/receiving a board by transfer answers `403`. |
 | `MAX_TEMPLATES_PER_USER` | `500` | Saved templates one account may own. Over it, saving another answers `403`. |
+| `MAX_WORKSPACES_PER_USER` | `20` | Team workspaces one account may own. Over it, creating another answers `403`. |
 | `RATE_LIMITS` | — | `off` disables every rate limit (tests, load tests). |
 | `RATE_LIMIT_API` | `1200/1m` | All `/api` requests, per client IP. |
 | `RATE_LIMIT_LOGIN` | `30/5m` | Login attempts per client IP. |

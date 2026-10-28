@@ -34,6 +34,7 @@ export function App() {
             <Route path="/verify-email" element={<EmailLinkPage mode="verify" />} />
             <Route path="/confirm-email" element={<EmailLinkPage mode="change" />} />
             <Route path="/invite/:token" element={<InvitePage />} />
+            <Route path="/workspace-invite/:token" element={<InvitePage kind="workspace" />} />
             <Route path="/unsubscribe" element={<UnsubscribePage />} />
             <Route
               path="/settings"
