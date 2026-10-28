@@ -180,6 +180,20 @@ describe('bring to front / send to back where brackets need AltGr', () => {
     expect(onTop(a, b)).toBe(false);
   });
 
+  // KAI-175: Chrome and Safari on macOS take Mod+Shift+] / [ for switching tabs.
+  it('Mod+Alt+↑ / ↓ step the selection one item forward / backward, past the next overlapping item only', () => {
+    setup();
+    const a = box(0, 0);
+    const b = box(20, 20);
+    const c = box(40, 40);
+    const order = () => [a, b, c].sort((x, y) => core.editor.getElement(x)!.z - core.editor.getElement(y)!.z);
+    core.editor.select([a]);
+    key({ key: 'ArrowUp', code: 'ArrowUp', ctrlKey: true, altKey: true });
+    expect(order()).toEqual([b, a, c]);
+    key({ key: 'ArrowDown', code: 'ArrowDown', ctrlKey: true, altKey: true });
+    expect(order()).toEqual([a, b, c]);
+  });
+
   it('typing "]" with AltGr into text being edited types it instead of bringing the item to front', () => {
     setup();
     const a = box(0, 0);
