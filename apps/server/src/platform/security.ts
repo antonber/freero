@@ -123,8 +123,9 @@ export function contentSecurityPolicy(config: Config, host: string | undefined, 
     // https: lets "paste an image URL" fetch and re-host the image, and exports inline web fonts.
     `connect-src 'self' ${ws} https:`.replace(/\s+/g, ' '),
     "worker-src 'self' blob:",
-    // Video players in link cards (features/embed): only these origins, only after a click.
-    `frame-src ${EMBED_FRAME_ORIGINS.join(' ')}`,
+    // Live embeds in link cards (features/embed): the built-in providers' players and viewers plus
+    // the operator's EMBED_EXTRA_ORIGINS — only these origins, only after a click.
+    `frame-src ${[...EMBED_FRAME_ORIGINS, ...config.embedExtraOrigins].join(' ')}`,
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",

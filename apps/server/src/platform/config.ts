@@ -237,6 +237,12 @@ export interface Config {
    * room of their own (KAI-134), or null: only meeting links people paste.
    */
   jitsiBaseUrl: string | null;
+  /**
+   * Further https origins boards may frame as live embeds (KAI-127), besides the built-in providers
+   * (`EMBED_PROVIDERS` in @freero/shared): a link on one of them is framed as given, sandboxed.
+   * Added to the CSP `frame-src`.
+   */
+  embedExtraOrigins: string[];
 }
 
 export class ConfigError extends Error {
@@ -492,6 +498,21 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   for (const e of operatorEmails) if (!EMAIL.test(e)) problems.push(`OPERATOR_EMAILS: "${e}" is not an email address`);
   const abuseContactEmail = str('ABUSE_CONTACT_EMAIL');
   if (abuseContactEmail !== null && !EMAIL.test(abuseContactEmail)) problems.push('ABUSE_CONTACT_EMAIL must be an email address');
+  // Live embeds (KAI-127): extra origins the operator lets boards frame. Origins only (no path),
+  // https only, never this app's own origin (a framed page of ours would run with our cookies).
+  const embedExtraOrigins: string[] = [];
+  for (const v of (str('EMBED_EXTRA_ORIGINS') ?? '').split(',').map((x) => x.trim()).filter(Boolean)) {
+    let u: URL | null = null;
+    try {
+      u = new URL(v);
+    } catch {
+      u = null;
+    }
+    if (!u || u.protocol !== 'https:' || !/^[a-z0-9.-]+$/i.test(u.hostname) || u.origin !== v.replace(/\/+$/, '') || u.username || u.password)
+      problems.push(`EMBED_EXTRA_ORIGINS: "${v}" must be an https origin such as https://embed.example.com (no path)`);
+    else if (publicUrl && u.origin === publicUrl) problems.push('EMBED_EXTRA_ORIGINS must not contain PUBLIC_URL (Freero never frames itself)');
+    else if (!embedExtraOrigins.includes(u.origin)) embedExtraOrigins.push(u.origin);
+  }
   let securityContact = str('SECURITY_CONTACT');
   if (securityContact !== null && !/^(mailto:[^\s@]+@[^\s@]+|https:\/\/\S+)$/.test(securityContact)) {
     problems.push('SECURITY_CONTACT must be a mailto: or https:// URL');
@@ -585,6 +606,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     securityContact: securityContact ?? (abuseContactEmail ? `mailto:${abuseContactEmail}` : null),
     publicApi: bool('PUBLIC_API', true),
     jitsiBaseUrl: url('JITSI_BASE_URL', ['https:'])?.replace(/\/+$/, '') ?? null,
+    embedExtraOrigins,
   };
 
   if (production) {
