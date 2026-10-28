@@ -19,7 +19,9 @@ export type ElementType =
   | 'mindmap'
   | 'table'
   | 'embed'
-  | 'icon';
+  | 'icon'
+  | 'kanban'
+  | 'pdf';
 
 export interface BaseElement {
   id: string;
@@ -112,7 +114,48 @@ export type ShapeKind =
   | 'cylinder'
   | 'document'
   | 'predefinedProcess'
-  | 'callout';
+  | 'callout'
+  // Flowchart
+  | 'terminator'
+  | 'manualInput'
+  | 'manualOperation'
+  | 'delay'
+  | 'display'
+  | 'offPageRef'
+  | 'merge'
+  | 'internalStorage'
+  | 'multiDocument'
+  | 'punchedCard'
+  | 'punchedTape'
+  | 'collate'
+  | 'sort'
+  | 'loopLimit'
+  | 'storedData'
+  | 'summingJunction'
+  | 'orJunction'
+  // UML
+  | 'umlClass'
+  | 'umlActor'
+  | 'umlPackage'
+  | 'umlNote'
+  | 'umlComponent'
+  | 'umlNode'
+  // BPMN
+  | 'bpmnIntermediate'
+  | 'bpmnEnd'
+  | 'bpmnGatewayX'
+  | 'bpmnGatewayPlus'
+  | 'bpmnGatewayO'
+  | 'bpmnSubprocess'
+  // Network
+  | 'netServer'
+  | 'netFirewall'
+  | 'netRouter'
+  | 'netSwitch'
+  | 'netMonitor'
+  | 'netLaptop'
+  | 'netPhone'
+  | 'netUser';
 
 export interface ShapeElement extends BaseElement, TextStyle {
   type: 'shape';
@@ -200,6 +243,15 @@ export interface FrameElement extends BaseElement {
   preset?: 'custom' | '16:9' | '4:3' | '1:1' | 'a4' | 'letter' | 'mobile' | 'desktop';
   /** Hide contents from viewers who aren't the owner/editor (Miro-like "hide frame"). */
   hidden?: boolean;
+  /** Auto-layout: the frame keeps its children in a grid (reading order) of `cols` columns. */
+  layout?: FrameGridLayout | null;
+}
+
+export interface FrameGridLayout {
+  kind: 'grid';
+  cols: number;
+  /** World units between items and around them. */
+  gap: number;
 }
 
 export interface ImageElement extends BaseElement {
@@ -307,6 +359,44 @@ export interface IconElement extends BaseElement {
 
 export type IconNode = [string, Record<string, string | number>];
 
+export type CardStatus = NonNullable<CardElement['status']>;
+
+/**
+ * A kanban board: a header and side-by-side columns. Items dropped onto it join it (it is a
+ * container: their `frameId` is the kanban) and are stacked in the column under their center.
+ * A column with a `status` sets that status on task cards dropped into it.
+ */
+export interface KanbanElement extends BaseElement {
+  type: 'kanban';
+  title: RichText;
+  columns: KanbanColumn[];
+  /** Width of every column (world units); the element's w follows from it. */
+  colW: number;
+}
+
+export interface KanbanColumn {
+  id: string;
+  title: RichText;
+  /** Status set on task cards dropped into this column (null: leave it as it is). */
+  status: CardStatus | null;
+  /** Work-in-progress limit (items); 0 / absent = none. */
+  wip?: number;
+  /** Header accent color. */
+  color: string;
+}
+
+/** A PDF document: shows one page at a time; the file lives in uploads. */
+export interface PdfElement extends BaseElement {
+  type: 'pdf';
+  /** /uploads/<id>.pdf (or a data: URL in the offline sandbox). */
+  src: string;
+  name: string;
+  /** 1-based page shown. */
+  page: number;
+  /** 0 until the document has been opened once. */
+  pageCount: number;
+}
+
 export type BoardElement =
   | StickyElement
   | ShapeElement
@@ -320,7 +410,9 @@ export type BoardElement =
   | MindmapElement
   | TableElement
   | EmbedElement
-  | IconElement;
+  | IconElement
+  | KanbanElement
+  | PdfElement;
 
 export type ElementOf<T extends ElementType> = Extract<BoardElement, { type: T }>;
 

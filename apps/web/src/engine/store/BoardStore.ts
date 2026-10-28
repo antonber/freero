@@ -369,6 +369,11 @@ export class BoardStore {
     return this.gestureDepth > 0;
   }
 
+  /** True while exactly one gesture level is open: its endGesture() closes the undo step. */
+  isOutermostGesture(): boolean {
+    return this.gestureDepth === 1;
+  }
+
   private endAllGestures() {
     if (this.gestureDepth > 0) {
       this.gestureDepth = 1;

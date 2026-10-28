@@ -39,6 +39,12 @@ export interface Host {
   /** Full ws URL prefix; engine connects WebsocketProvider(syncUrl, board.id, doc). */
   syncUrl: string;
   uploadImage(file: Blob): Promise<{ url: string }>;
+  /**
+   * [additive] Stores a document (PDF) with the board's uploads, under the same per-account quota
+   * as images. Rejects with an Error whose message can be shown (too large, quota reached).
+   * Offline sandbox: a data: URL.
+   */
+  uploadFile(file: Blob): Promise<{ url: string }>;
   renameBoard(title: string): Promise<void>;
   saveThumbnail(dataUrl: string): Promise<void>;
   openShareDialog(): void;
@@ -276,6 +282,24 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
    * click's gesture. `point` is in world coordinates; `editor` is scoped to the defining feature.
    */
   onDoubleClick?(element: ElementOf<T>, ctx: { editor: Editor; point: Point }): void;
+  /**
+   * [additive] Containers that LAY OUT their children (kanban columns, frame grids). After every
+   * LOCAL change — when the outermost gesture ends if one is open (drag, edit session), else
+   * right after the write — the engine asks each element of this type for the patches that put
+   * its children (and itself) back in layout, and applies them in the same undo step. Remote
+   * changes never run it. Must be idempotent (null when already laid out): it also runs after
+   * unrelated changes. `editor` is scoped to the defining feature.
+   */
+  arrange?(element: ElementOf<T>, ctx: ArrangeContext): Array<{ id: string; patch: ElementPatch }> | null;
+}
+
+/** [additive] What `ElementDefinition.arrange` is told. */
+export interface ArrangeContext {
+  editor: Editor;
+  /** Ids written (moved, created, edited) or removed by the local change(s) since the last pass. */
+  touched: ReadonlySet<string>;
+  /** Each touched element as it was BEFORE those changes (null: created by them). */
+  previous: ReadonlyMap<string, BoardElement | null>;
 }
 
 /** [additive] What `ElementDefinition.hitTest` is told. */

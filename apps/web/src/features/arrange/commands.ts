@@ -8,9 +8,12 @@ import {
   AlignStartVertical,
   AlignVerticalSpaceAround,
   LayoutGrid,
+  Palette,
+  Tags,
 } from 'lucide-react';
 import { defineCommands, type CommandDefinition, type Editor } from '@engine';
 import { applyMoves, movableCount, planAlign, planDistribute, planTidy, selectedUnits, type AlignEdge, type DistributeAxis } from './lib/arrange';
+import { clusterSelection, selectedStickies } from './lib/cluster';
 
 // Never while typing: Alt+letter shortcuts are dispatched during text edits too.
 const idle = (editor: Editor) => !editor.getEditingId();
@@ -58,4 +61,26 @@ export const ARRANGE_COMMANDS = [
   },
 ] satisfies CommandDefinition[];
 
-export default defineCommands(ARRANGE_COMMANDS);
+/** Sort selected stickies into labelled clusters (context menu "Cluster ▸", Align popover). */
+export const CLUSTER_COMMANDS = [
+  {
+    id: 'arrange.clusterByColor',
+    label: 'Cluster by colour',
+    icon: Palette,
+    menus: ['context'],
+    group: 'Cluster',
+    when: (editor) => idle(editor) && selectedStickies(editor).length >= 2,
+    run: (editor) => clusterSelection(editor, 'color'),
+  },
+  {
+    id: 'arrange.clusterByTag',
+    label: 'Cluster by tag',
+    icon: Tags,
+    menus: ['context'],
+    group: 'Cluster',
+    when: (editor) => idle(editor) && selectedStickies(editor).length >= 2,
+    run: (editor) => clusterSelection(editor, 'tag'),
+  },
+] satisfies CommandDefinition[];
+
+export default defineCommands([...ARRANGE_COMMANDS, ...CLUSTER_COMMANDS]);

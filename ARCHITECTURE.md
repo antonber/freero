@@ -186,6 +186,12 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   refresh shares the change's undo step and network update) and never for remote changes, so
   exactly one client — the one making the change — rewrites the derived fields. Renderers should
   still derive from the live elements (`useElement`) and treat the stored fields as a cache.
+- `Host.uploadFile(blob)`: documents (PDF) through the same `/api/uploads` endpoint, checks and
+  per-account quota as images (`modules/uploads` accepts `application/pdf` after a `%PDF-`
+  signature check and always streams PDFs itself, never via the bucket redirect, so `fetch()`
+  stays same-origin). Rejections carry the server's message (too large, quota reached).
+  `features/pdf` lazy-loads pdf.js (`pdfjs-dist`, pinned exactly) with its worker as a same-origin
+  asset (CSP `worker-src 'self'`) and `isEvalSupported: false` (no `unsafe-eval` needed).
 - `Host.listMembers()`: everyone with access to the board (owner + invited members), including
   people never seen online — for assignee pickers etc. (`/board/local`: just the local user).
 - `Editor.findFreeSpot(size, { near?, gap? })`: top-left of a box that keeps `gap` clear of
@@ -258,6 +264,13 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
   so "w changed alone" (a side handle) is told apart from a corner scale or an edit. When web fonts
   finish loading, the engine re-runs `normalize` for the elements THIS client measured and nobody
   else changed since, writing silently (no undo step) — never for collaborators' elements.
+- `arrange(container, { editor, touched }) → [{ id, patch }] | null` (`engine/editor/arrange.ts`):
+  containers that lay out their children (kanban columns, frames with a grid layout). After every
+  LOCAL change the engine asks each element of that type for the patches that put it back in
+  layout and applies them in the same undo step: inside a gesture once, when the outermost gesture
+  ends (a drag never re-stacks under the pointer; drop + re-stack = one undo), inside
+  `editor.transact` once at its end (never from a half-written state), otherwise right after the
+  write. Remote changes never run it. Must be idempotent — it also runs after unrelated changes.
 - `fitToContent(el, handle)`: double-clicking a resize handle applies the returned patch (a
   fixed-width text box goes back to auto width).
 - `hitTest(el, local, { tolerance })` — `tolerance` is a few screen px in world units at the live
