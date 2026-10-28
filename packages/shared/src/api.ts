@@ -1138,6 +1138,7 @@ export const AUDIT_ACTIONS = {
   'board.link_sharing_changed': 'Changed link sharing',
   'board.duplicated': 'Duplicated a board',
   'board.exported': 'Exported a board',
+  'board.file_downloaded': 'Downloaded a file from a board',
   'board.member_invited': 'Shared a board',
   'board.member_role_changed': 'Changed someone’s board access',
   'board.member_removed': 'Removed someone from a board',
