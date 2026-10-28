@@ -5964,6 +5964,372 @@ async function mcpChecks() {
   }
 }
 
+// Issue-tracker sync (KAI-153/154/155/156/157) against local mock trackers (scripts/lib/mock-*.mjs):
+// Jira Cloud (API token and OAuth 3LO), Jira Data Center (PAT, polling), Linear and GitHub. Real
+// server, real Yjs clients, real webhooks signed like the trackers sign them — no real tracker.
+async function trackerChecks() {
+  const { startMockJira, plainOf } = await import('./lib/mock-jira.mjs');
+  const { startMockLinear } = await import('./lib/mock-linear.mjs');
+  const { startMockGithub } = await import('./lib/mock-github.mjs');
+  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+  const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-trackers-'));
+  const cloud = await startMockJira({ deployment: 'cloud' });
+  const dc = await startMockJira({ deployment: 'datacenter', token: 'dc-personal-access-token' });
+  // Access tokens shorter than Freero's refresh margin: every call refreshes first.
+  const atlassian = await startMockJira({ deployment: 'cloud', tokenTtlSeconds: 30 });
+  const lin = await startMockLinear();
+  const gh = await startMockGithub();
+  const mocks = [cloud, dc, atlassian, lin, gh];
+  let proc = null;
+  const live = [];
+  const mcpClients = [];
+  try {
+    const env = {
+      ACTIVITY_IDLE_SECONDS: '1',
+      TRACKER_PRIVATE_ENDPOINTS: 'true', // the mocks listen on 127.0.0.1
+      TRACKER_POLL_SECONDS: '5',
+      TRACKER_JIRA_CLIENT_ID: atlassian.clientId,
+      TRACKER_JIRA_CLIENT_SECRET: atlassian.clientSecret,
+      TRACKER_JIRA_AUTH_URL: atlassian.url,
+      TRACKER_JIRA_API_URL: atlassian.url,
+      RATE_LIMIT_TRACKER_SEND: '500/10m',
+    };
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    if (!(await check('trackers: server boots', async () => (proc = server = await waitUp(await spawnServer(dataDir, env)))))) return;
+    const O = new User('TrackerOwner', proc.port);
+    const M = new User('TrackerMember', proc.port);
+    const V = new User('TrackerViewer', proc.port);
+    const S = new User('TrackerStranger', proc.port);
+    for (const u of [O, M, V, S]) {
+      await u.signup();
+      await u.verifyEmail(dataDir);
+    }
+    cloud.addUser(M.email, 'Member in Jira');
+    const team = (await O.req('POST', '/api/workspaces', { name: 'Tracker team' })).json.workspace;
+    assert((await O.req('POST', `/api/workspaces/${team.id}/members`, { email: M.email, role: 'member' })).status === 201, 'member');
+    const board = (await O.req('POST', '/api/boards', { title: 'Checkout retro', workspaceId: team.id })).json.board;
+    assert((await O.req('POST', `/api/boards/${board.id}/members`, { email: V.email, role: 'viewer' })).status === 201, 'viewer');
+    const c = connectDoc(O, board.id);
+    live.push(c);
+    await c.ready();
+    const E = els(c);
+    const records = () => c.doc.getMap('trackers');
+    const plain = (html) => String(html ?? '').replace(/<[^>]+>/g, '').trim();
+    const comments = () => [...c.doc.getMap('comments').values()].filter((r) => r?.kind === 'message').map((r) => r.text);
+    const base = { rotation: 0, z: 1, createdBy: O.id, createdAt: Date.now(), updatedAt: Date.now() };
+
+    let cloudConn = null;
+    let secret = '';
+    await check('trackers: a connection is tested before it is kept, its token never comes back, and only the team’s admins manage it', async () => {
+      const body = { provider: 'jira', name: 'Jira Cloud', workspaceId: team.id, site: cloud.url, deployment: 'cloud', email: cloud.email, token: cloud.token, defaults: { project: 'WEB' } };
+      const byMember = await M.req('POST', '/api/trackers/connections', body);
+      assert(byMember.status === 403 || byMember.status === 404, `a member made a team connection: ${byMember.status}`);
+      const wrong = await O.req('POST', '/api/trackers/connections', { ...body, token: 'not-the-token' });
+      assert(wrong.status === 400 && /refused the credentials/.test(wrong.json?.error ?? ''), `wrong token: ${wrong.status} ${wrong.text}`);
+      assert((await O.req('GET', `/api/trackers/connections?workspace=${team.id}`)).json.connections.length === 0, 'a refused token was kept');
+      const made = await O.req('POST', '/api/trackers/connections', body);
+      assert(made.status === 201 && made.json.webhookSecret && made.json.connection.account === cloud.email, `create: ${made.status} ${made.text}`);
+      assert(!made.text.includes(cloud.token), 'the token came back');
+      cloudConn = made.json.connection;
+      secret = made.json.webhookSecret;
+      const listed = await O.req('GET', `/api/trackers/connections?workspace=${team.id}`);
+      assert(!listed.text.includes(cloud.token) && !listed.text.includes(secret), 'the list carries a credential');
+      assert((await M.req('GET', `/api/trackers/connections?workspace=${team.id}`)).status !== 200, 'a member listed the team’s connections');
+      const forMember = (await M.req('GET', `/api/boards/${board.id}/trackers`)).json.connections;
+      assert(forMember.length === 1 && forMember[0].id === cloudConn.id && !JSON.stringify(forMember).includes(cloud.token), `member's board trackers: ${JSON.stringify(forMember)}`);
+    });
+    if (!cloudConn) return;
+    const webhookUrl = `http://127.0.0.1:${proc.port}/api/trackers/webhooks/${cloudConn.id}`;
+
+    // A named cluster: five stickies in a frame, two tagged.
+    c.doc.getMap('tags').set('t-ux', { id: 't-ux', name: 'ux', color: '#5B3FF0' });
+    E.set('cluster', { ...base, id: 'cluster', type: 'frame', x: 0, y: 0, w: 1200, h: 300, z: 0, title: 'Checkout pain' });
+    const notes = ['Card form resets on error', 'No Apple Pay', 'Shipping cost shown too late', 'Coupon field hidden', 'Too many steps'];
+    notes.forEach((t, i) => E.set(`n${i}`, { ...base, id: `n${i}`, type: 'sticky', x: 20 + i * 220, y: 40, w: 200, h: 200, frameId: 'cluster', color: 'yellow', text: `<p>${t}</p>`, tags: i < 2 ? ['t-ux'] : [] }));
+    const stickyIds = notes.map((_, i) => `n${i}`);
+
+    let cluster = null;
+    await check('trackers: five clustered stickies preview and become ONE Jira issue listing all five with links back; every sticky shows its key, all in one change', async () => {
+      const preview = await O.req('POST', `/api/boards/${board.id}/trackers/preview`, { connectionId: cloudConn.id, project: 'WEB', itemIds: stickyIds });
+      assert(preview.status === 200 && preview.json.issues.length === 1, `preview: ${preview.status} ${preview.text}`);
+      const p = preview.json.issues[0].values;
+      assert(p.title === 'Checkout pain' && notes.every((n) => p.description.includes(n)) && (p.description.match(/\?item=/g) ?? []).length === 5, `preview values: ${JSON.stringify(p)}`);
+      assert(JSON.stringify(p.labels) === '["ux"]', `labels: ${JSON.stringify(p.labels)}`);
+      // Nobody may ever see part of a cluster linked: each update leaves 0 or 5 badged stickies.
+      const partial = [];
+      const watch = () => {
+        const n = stickyIds.filter((id) => E.get(id)?.trackerLink).length;
+        if (n > 0 && n < 5) partial.push(n);
+      };
+      c.doc.on('update', watch);
+      const sent = await O.req('POST', `/api/boards/${board.id}/trackers/send`, { connectionId: cloudConn.id, project: 'WEB', itemIds: stickyIds });
+      assert(sent.status === 201 && sent.json.issues.length === 1 && sent.json.issues[0].key === 'WEB-1', `send: ${sent.status} ${sent.text}`);
+      cluster = sent.json.issues[0];
+      const issue = cloud.issue('WEB-1');
+      assert(issue.fields.summary === 'Checkout pain' && notes.every((n) => issue.text.includes(n)), `issue: ${issue.fields.summary} / ${issue.text}`);
+      assert(issue.fields.description?.type === 'doc', 'Cloud got no ADF description');
+      assert(JSON.stringify(issue.fields.labels) === '["ux"]', `jira labels: ${issue.fields.labels}`);
+      assert(issue.remotelinks.length === 5 && stickyIds.every((id) => issue.remotelinks.some((l) => l.globalId === `freero-item=${id}` && l.object.url.includes(`?item=${id}`))), `remote links: ${JSON.stringify(issue.remotelinks)}`);
+      await waitFor(() => stickyIds.every((id) => E.get(id)?.trackerLink === cluster.linkId) && records().get(cluster.linkId)?.key === 'WEB-1', 8000, 'the badges on the board');
+      c.doc.off('update', watch);
+      assert(partial.length === 0, `a half-linked cluster was visible: ${partial}`);
+      assert(records().get(cluster.linkId).sources.length === 5, 'record sources');
+    });
+
+    await check('trackers: the issue is a Freero object whose backlinks are the five stickies — for people who can see the board, nobody else', async () => {
+      const uri = `freero://issue/${cluster.linkId}`;
+      await waitFor(async () => (await O.req('GET', `/api/objects/backlinks?uri=${encodeURIComponent(uri)}`)).json?.backlinks?.length === 5, 10_000, 'the backlinks index');
+      const links = (await O.req('GET', `/api/objects/backlinks?uri=${encodeURIComponent(uri)}`)).json.backlinks;
+      assert(links.every((l) => l.kinds.includes('tracker')) && stickyIds.every((id) => links.some((l) => l.source.uri.endsWith(`#${id}`))), JSON.stringify(links));
+      const mine = await O.req('POST', '/api/objects/resolve', { uris: [uri] });
+      assert(mine.json.objects[0].status === 'ok' && mine.json.objects[0].object.title === 'WEB-1', mine.text);
+      const theirs = await S.req('POST', '/api/objects/resolve', { uris: [uri] });
+      assert(theirs.json.objects[0].status === 'unavailable' && !theirs.text.includes('WEB-1'), theirs.text);
+      assert((await S.req('GET', `/api/objects/backlinks?uri=${encodeURIComponent(uri)}`)).status === 404, 'a stranger read the backlinks');
+    });
+
+    await check('trackers: a viewer has no tracker actions and the server refuses them', async () => {
+      assert((await V.req('GET', `/api/boards/${board.id}/trackers`)).json.connections.length === 0, 'a viewer was offered connections');
+      const r = await V.req('POST', `/api/boards/${board.id}/trackers/send`, { connectionId: cloudConn.id, project: 'WEB', itemIds: ['n0'] });
+      assert(r.status === 403, `viewer send: ${r.status}`);
+    });
+
+    // A kanban with a task card in its "To do" column.
+    const COL = 280;
+    E.set('kb', {
+      ...base,
+      id: 'kb',
+      type: 'kanban',
+      x: 0,
+      y: 1000,
+      w: 12 + 3 * (COL + 12),
+      h: 600,
+      z: 0,
+      title: '<p>Sprint</p>',
+      colW: COL,
+      columns: [
+        { id: 'c1', title: '<p>To do</p>', status: 'todo', color: '#8A89A3' },
+        { id: 'c2', title: '<p>Doing</p>', status: 'doing', color: '#F5A524' },
+        { id: 'c3', title: '<p>Done</p>', status: 'done', color: '#1FA463' },
+      ],
+    });
+    E.set('card', { ...base, id: 'card', type: 'card', x: 22, y: 1106, w: 260, h: 120, frameId: 'kb', title: '<p>Pay with one click</p>', description: '<p>Saved cards</p>', color: '#5B3FF0', status: 'todo', tags: [], assigneeId: null, dueDate: null });
+    let cardIssue = null;
+    await check('trackers: a status change in Jira reaches the board through a signed webhook — the card moves to the column with that status; a forged delivery changes nothing', async () => {
+      const sent = await O.req('POST', `/api/boards/${board.id}/trackers/send`, { connectionId: cloudConn.id, project: 'WEB', itemIds: ['card'] });
+      assert(sent.status === 201, `send card: ${sent.status} ${sent.text}`);
+      cardIssue = sent.json.issues[0];
+      cloud.edit(cardIssue.key, { status: 'doing' });
+      assert((await cloud.webhook(webhookUrl, 'forged-secret', cardIssue.key)) === 401, 'a forged webhook was accepted');
+      const tampered = await fetch(webhookUrl, { method: 'POST', headers: { 'content-type': 'application/json', 'x-hub-signature': 'sha256=' + '0'.repeat(64) }, body: '{"issue":{"id":"1"}}' });
+      assert(tampered.status === 401, `unsigned body: ${tampered.status}`);
+      await settled(c);
+      assert(E.get('card').status === 'todo', 'a forged webhook changed the card');
+      assert((await cloud.webhook(webhookUrl, secret, cardIssue.key)) === 202, 'signed webhook refused');
+      await waitFor(() => E.get('card').status === 'doing', 8000, 'the card to take the new status');
+      const card = E.get('card');
+      const left = 0 + 12 + 1 * (COL + 12);
+      assert(card.x + card.w / 2 >= left && card.x + card.w / 2 < left + COL, `card not in the Doing column: x=${card.x}`);
+      await waitFor(() => records().get(cardIssue.linkId)?.status === 'In Progress', 5000, 'the badge to show the new status');
+      await waitFor(async () => ((await O.req('GET', `/api/boards/${board.id}/activity`)).json?.entries ?? []).some((e) => e.actorName.startsWith('Jira for')), 8000, 'the activity feed to show Jira’s change');
+    });
+
+    await check('trackers: a tag added on the board updates the issue’s labels', async () => {
+      c.doc.getMap('tags').set('t-pay', { id: 't-pay', name: 'checkout flow', color: '#2E9BF0' });
+      E.set('n3', { ...E.get('n3'), tags: ['t-pay'] });
+      await waitFor(() => JSON.stringify([...cloud.issue('WEB-1').fields.labels].sort()) === '["checkout-flow","ux"]', 10_000, `WEB-1 labels (now ${cloud.issue('WEB-1').fields.labels})`);
+    });
+
+    await check('trackers: the same field changed on both sides keeps Jira’s value with a visible note; different fields changed on each side both survive', async () => {
+      cloud.edit(cardIssue.key, { summary: 'One-click checkout (Jira)', status: 'done' }); // no webhook: same sync window
+      E.set('card', { ...E.get('card'), title: '<p>One-click pay (board)</p>', dueDate: '2026-12-01' });
+      await waitFor(() => plain(E.get('card').title) === 'One-click checkout (Jira)' && E.get('card').status === 'done', 10_000, `the merge on the board (title ${plain(E.get('card').title)}, status ${E.get('card').status})`);
+      await waitFor(() => cloud.issue(cardIssue.key).fields.duedate === '2026-12-01', 5000, 'the due date in Jira');
+      assert(cloud.issue(cardIssue.key).fields.summary === 'One-click checkout (Jira)', 'Jira lost its title');
+      await waitFor(() => comments().some((t) => t.includes('One-click pay (board)') && /Title/.test(t)), 5000, 'the conflict note');
+    });
+
+    await check('trackers: moving a card to a status the Jira workflow forbids leaves a note instead of forcing it; story points round-trip with the estimate', async () => {
+      E.set('card2', { ...base, id: 'card2', type: 'card', x: 1400, y: 0, w: 260, h: 120, title: '<p>Refund flow</p>', description: '', color: '#5B3FF0', status: 'todo', tags: [], assigneeId: M.id, dueDate: null, estimate: '5' });
+      const sent = await O.req('POST', `/api/boards/${board.id}/trackers/send`, { connectionId: cloudConn.id, project: 'WEB', itemIds: ['card2'] });
+      assert(sent.status === 201, `send: ${sent.text}`);
+      const key = sent.json.issues[0].key;
+      const issue = cloud.issue(key);
+      assert(issue.fields.customfield_10016 === 5, `story points: ${issue.fields.customfield_10016}`);
+      assert(issue.fields.assignee?.emailAddress === M.email, `assignee: ${JSON.stringify(issue.fields.assignee)}`);
+      cloud.forbidTransition(key, 'done');
+      E.set('card2', { ...E.get('card2'), status: 'done' });
+      await waitFor(() => comments().some((t) => t.includes(key) && /no transition/.test(t)), 10_000, 'the “no transition” note');
+      assert(cloud.issue(key).statusCategory === 'new', 'the status was forced');
+      cloud.edit(key, { estimate: 8 });
+      assert((await cloud.webhook(webhookUrl, secret, key)) === 202, 'webhook');
+      await waitFor(() => E.get('card2').estimate === '8', 8000, 'the estimate from Jira');
+    });
+
+    await check('trackers: deleting a sticky takes it out of the issue’s links back; the issue stays', async () => {
+      E.delete('n4');
+      await waitFor(() => cloud.issue('WEB-1').remotelinks.length === 4, 10_000, `WEB-1 remote links (${cloud.issue('WEB-1').remotelinks.length})`);
+      await waitFor(() => records().get(cluster.linkId)?.sources.length === 4, 5000, 'the badge’s sources');
+      assert(!cloud.issue('WEB-1').remotelinks.some((l) => l.globalId === 'freero-item=n4'), 'the deleted sticky’s link stayed');
+    });
+
+    await check('trackers: a tracker that rate limits Freero is retried after the wait it asked for', async () => {
+      cloud.rateLimitNext(2, 1);
+      E.set('n2', { ...E.get('n2'), text: '<p>Shipping cost shown at the very end</p>' });
+      await waitFor(() => cloud.issue('WEB-1').text.includes('Shipping cost shown at the very end'), 15_000, 'the description after the rate limit');
+      assert(cloud.rateLimitRemaining() === 0, 'the rate-limited answers were never asked for');
+    });
+
+    await check('trackers: Jira Data Center without webhooks syncs by polling (REST v2, wiki markup, personal access token)', async () => {
+      const made = await O.req('POST', '/api/trackers/connections', { provider: 'jira', name: 'Jira DC (mine)', site: dc.url, deployment: 'datacenter', token: dc.token, inbound: 'polling' });
+      assert(made.status === 201 && made.json.connection.scope === 'personal', `personal DC connection: ${made.status} ${made.text}`);
+      const dcConn = made.json.connection;
+      assert(!(await M.req('GET', `/api/boards/${board.id}/trackers`)).json.connections.some((x) => x.id === dcConn.id), 'someone else may use a personal connection');
+      E.set('dc1', { ...base, id: 'dc1', type: 'sticky', x: 1400, y: 400, w: 200, h: 200, color: 'blue', text: '<p>Audit log export</p>', tags: [] });
+      const sent = await O.req('POST', `/api/boards/${board.id}/trackers/send`, { connectionId: dcConn.id, project: 'OPS', itemIds: ['dc1'] });
+      assert(sent.status === 201, `DC send: ${sent.status} ${sent.text}`);
+      const issue = dc.issue(sent.json.issues[0].key);
+      assert(typeof issue.fields.description === 'string' && /\[Open on the Freero board\|http/.test(issue.fields.description), `wiki markup: ${JSON.stringify(issue.fields.description)}`);
+      assert(dc.requests.every((r) => !r.path.startsWith('/rest/api/3')), 'DC was called on REST v3');
+      dc.edit(issue.key, { summary: 'Audit log export (CSV)' });
+      await waitFor(() => plain(E.get('dc1').text) === 'Audit log export (CSV)', 25_000, 'the polled change on the sticky');
+    });
+
+    await check('trackers: importing a JQL query places one linked card per issue without overlap; importing it again adds nothing', async () => {
+      for (let i = 1; i <= 50; i++) cloud.create('OPS', { summary: `Ops task ${i}`, labels: ['ops'], description: { type: 'doc', version: 1, content: [] } });
+      const r = await O.req('POST', `/api/boards/${board.id}/trackers/import`, { connectionId: cloudConn.id, query: 'project = OPS', limit: 50 });
+      assert(r.status === 201 && r.json.created.length === 50 && r.json.skipped === 0, `import: ${r.status} ${r.text.slice(0, 300)}`);
+      await waitFor(() => r.json.created.every((id) => E.get(id)), 8000, 'the imported cards');
+      const cards = r.json.created.map((id) => E.get(id));
+      assert(cards.every((x) => x.type === 'card' && records().get(x.trackerLink)?.sources.includes(x.id)), 'an imported card is not linked');
+      const others = [...E.values()].filter((x) => !r.json.created.includes(x.id) && x.type !== 'kanban');
+      const overlap = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+      for (let i = 0; i < cards.length; i++) {
+        for (let j = i + 1; j < cards.length; j++) assert(!overlap(cards[i], cards[j]), `cards ${i} and ${j} overlap`);
+        for (const o of others) assert(!overlap(cards[i], o), `card ${i} overlaps ${o.id}`);
+      }
+      const again = await O.req('POST', `/api/boards/${board.id}/trackers/import`, { connectionId: cloudConn.id, query: 'project = OPS', limit: 50 });
+      assert(again.status === 201 && again.json.created.length === 0 && again.json.skipped === 50, `re-import: ${again.text}`);
+      await waitFor(() => cloud.issue('OPS-1').remotelinks.length === 1, 10_000, 'the imported issue’s link back to its card');
+      const bad = await O.req('POST', `/api/boards/${board.id}/trackers/import`, { connectionId: cloudConn.id, query: 'assignee was nobody' });
+      assert(bad.status === 400 && /JQL/.test(bad.json.error), `bad JQL: ${bad.status} ${bad.text}`);
+    });
+
+    await check('trackers: MCP sync_to_tracker sends items as one issue for the agent’s person', async () => {
+      const tok = await O.req('POST', '/api/auth/tokens', { name: 'Planner agent', scopes: ['boards:read', 'boards:write'], expiresInDays: 1 });
+      assert(tok.status === 201, tok.text);
+      const mcp = new Client({ name: 'verify-trackers', version: '1.0.0' });
+      await mcp.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${proc.port}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${tok.json.secret}` } } }));
+      mcpClients.push(mcp);
+      E.set('m1', { ...base, id: 'm1', type: 'sticky', x: 1800, y: 0, w: 200, h: 200, color: 'green', text: '<p>Dark mode</p>', tags: [] });
+      E.set('m2', { ...base, id: 'm2', type: 'sticky', x: 2020, y: 0, w: 200, h: 200, color: 'green', text: '<p>High contrast</p>', tags: [] });
+      const res = await mcp.callTool({ name: 'sync_to_tracker', arguments: { boardId: board.id, itemIds: ['m1', 'm2'], connection: 'Jira Cloud', project: 'WEB' } });
+      const text = (res.content ?? []).map((x) => x.text ?? '').join('\n');
+      assert(!res.isError && /Created 1 issue: WEB-\d+ \(2 items\)/.test(text), `mcp: ${text}`);
+      const key = /WEB-\d+/.exec(text)[0];
+      assert(['Dark mode', 'High contrast'].every((t) => cloud.issue(key).text.includes(t)), 'the issue lacks the stickies');
+      const viewer = await V.req('POST', '/api/auth/tokens', { name: 'Viewer agent', scopes: ['boards:read', 'boards:write'], expiresInDays: 1 });
+      const vc = new Client({ name: 'verify-trackers-viewer', version: '1.0.0' });
+      await vc.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${proc.port}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${viewer.json.secret}` } } }));
+      mcpClients.push(vc);
+      const refused = await vc.callTool({ name: 'sync_to_tracker', arguments: { boardId: board.id, itemIds: ['n0'] } });
+      assert(refused.isError, 'a viewer’s agent sent items to the tracker');
+    });
+
+    await check('trackers: Jira Cloud through OAuth (3LO) — only the browser that started the consent finishes it; access tokens are refreshed', async () => {
+      const begin = async () => {
+        const s = await fetch(`http://127.0.0.1:${proc.port}/api/trackers/oauth/jira/start?workspace=${team.id}&name=Jira+via+Atlassian`, { headers: { cookie: O.cookie }, redirect: 'manual' });
+        assert(s.status === 302 && s.headers.get('location').startsWith(`${atlassian.url}/authorize`), `start: ${s.status} ${s.headers.get('location')}`);
+        const browser = /freero_tracker_oauth=([^;]+)/.exec(s.headers.getSetCookie().join(';'))?.[1];
+        const consent = await fetch(s.headers.get('location'), { redirect: 'manual' });
+        return { browser, callback: new URL(consent.headers.get('location')) };
+      };
+      const stolen = await begin();
+      const elsewhere = await fetch(`http://127.0.0.1:${proc.port}${stolen.callback.pathname}${stolen.callback.search}`, { headers: { cookie: O.cookie }, redirect: 'manual' });
+      assert(elsewhere.status === 400, `a callback without the starting browser's cookie: ${elsewhere.status}`);
+      const ok = await begin();
+      const done = await fetch(`http://127.0.0.1:${proc.port}${ok.callback.pathname}${ok.callback.search}`, { headers: { cookie: `${O.cookie}; freero_tracker_oauth=${ok.browser}` }, redirect: 'manual' });
+      assert(done.status === 302 && /tracker_connected=1/.test(done.headers.get('location')), `callback: ${done.status} ${done.headers.get('location')}`);
+      const conn = (await O.req('GET', `/api/trackers/connections?workspace=${team.id}`)).json.connections.find((x) => x.auth === 'oauth');
+      assert(conn && conn.site === atlassian.url, 'no OAuth connection');
+      E.set('o1', { ...base, id: 'o1', type: 'sticky', x: 2400, y: 0, w: 200, h: 200, color: 'pink', text: '<p>Gift cards</p>', tags: [] });
+      const sent = await O.req('POST', `/api/boards/${board.id}/trackers/send`, { connectionId: conn.id, project: 'WEB', itemIds: ['o1'] });
+      assert(sent.status === 201, `OAuth send: ${sent.status} ${sent.text}`);
+      assert(atlassian.requests.some((r) => r.path.startsWith('/ex/jira/cloud-1/rest/api/3/issue')), 'the API gateway was not used');
+      assert(atlassian.requests.filter((r) => r.path === '/oauth/token' && r.body.includes('refresh_token')).length >= 1, 'the expiring access token was never refreshed');
+    });
+
+    await check('trackers: Linear — a cluster becomes one issue with an attachment per sticky, and a signed webhook moves the card', async () => {
+      const made = await O.req('POST', '/api/trackers/connections', { provider: 'linear', name: 'Linear', workspaceId: team.id, site: lin.url, token: lin.apiKey, defaults: { project: 'ENG' } });
+      assert(made.status === 201, `linear connection: ${made.status} ${made.text}`);
+      const lc = made.json.connection;
+      E.set('l1', { ...base, id: 'l1', type: 'sticky', x: 0, y: 2000, w: 200, h: 200, color: 'yellow', text: '<p>Onboarding checklist</p>', tags: ['t-ux'] });
+      E.set('l2', { ...base, id: 'l2', type: 'sticky', x: 220, y: 2000, w: 200, h: 200, color: 'yellow', text: '<p>Welcome email</p>', tags: [] });
+      const sent = await O.req('POST', `/api/boards/${board.id}/trackers/send`, { connectionId: lc.id, project: 'ENG', itemIds: ['l1', 'l2'] });
+      assert(sent.status === 201 && /^ENG-\d+$/.test(sent.json.issues[0].key), `linear send: ${sent.status} ${sent.text}`);
+      const issue = lin.issueByKey(sent.json.issues[0].key);
+      assert(issue.attachments.length === 2 && issue.labels.includes('ux'), `linear issue: ${JSON.stringify(issue)}`);
+      E.set('l3', { ...base, id: 'l3', type: 'card', x: 500, y: 2000, w: 260, h: 120, title: '<p>Invite teammates</p>', description: '', color: '#5B3FF0', status: 'todo', tags: [], assigneeId: null, dueDate: null });
+      const card = await O.req('POST', `/api/boards/${board.id}/trackers/send`, { connectionId: lc.id, project: 'ENG', itemIds: ['l3'] });
+      const key = card.json.issues[0].key;
+      lin.edit(key, { stateType: 'completed' });
+      assert((await lin.webhook(`http://127.0.0.1:${proc.port}/api/trackers/webhooks/${lc.id}`, made.json.webhookSecret, key, { age: 5 * 60_000 })) === 401, 'an old (replayed) Linear delivery was accepted');
+      assert((await lin.webhook(`http://127.0.0.1:${proc.port}/api/trackers/webhooks/${lc.id}`, made.json.webhookSecret, key)) === 202, 'Linear webhook refused');
+      await waitFor(() => E.get('l3').status === 'done', 8000, 'the Linear state on the card');
+    });
+
+    await check('trackers: GitHub — Freero writes only its own section of the issue body; what people write outside it survives a sync', async () => {
+      const made = await O.req('POST', '/api/trackers/connections', { provider: 'github', name: 'GitHub', workspaceId: team.id, site: gh.url, token: gh.token, defaults: { project: 'acme/web' } });
+      assert(made.status === 201, `github connection: ${made.status} ${made.text}`);
+      const gc = made.json.connection;
+      E.set('g1', { ...base, id: 'g1', type: 'sticky', x: 0, y: 2400, w: 200, h: 200, color: 'yellow', text: '<p>Flaky login test</p>', tags: [] });
+      const sent = await O.req('POST', `/api/boards/${board.id}/trackers/send`, { connectionId: gc.id, project: 'acme/web', itemIds: ['g1'] });
+      assert(sent.status === 201 && sent.json.issues[0].key === 'acme/web#1', `github send: ${sent.status} ${sent.text}`);
+      gh.edit('acme/web', 1, { body: `Seen on CI three times this week.\n\n${gh.issue('acme/web', 1).body}` });
+      E.set('g1', { ...E.get('g1'), text: '<p>Flaky login test on Safari</p>' });
+      await waitFor(() => gh.issue('acme/web', 1).body.includes('Flaky login test on Safari'), 10_000, 'the board’s change in the issue');
+      const body = gh.issue('acme/web', 1).body;
+      assert(body.startsWith('Seen on CI three times this week.'), `the text outside Freero's section was lost: ${body}`);
+      assert(/\?item=g1/.test(body), 'no link back to the board item');
+    });
+
+    await check('trackers: every sync is in the workspace’s audit log, and no credential appears there or in the server log', async () => {
+      const events = (await O.req('GET', `/api/workspaces/${team.id}/audit?limit=500`)).json.events;
+      const actions = new Set(events.map((e) => e.action));
+      for (const a of ['tracker.connection_created', 'tracker.issue_created', 'tracker.synced', 'tracker.issues_imported']) assert(actions.has(a), `audit lacks ${a}`);
+      const all = JSON.stringify(events) + proc.log.join('');
+      for (const s of [cloud.token, dc.token, secret, lin.apiKey, gh.token]) assert(!all.includes(s), 'a credential is in the audit log or the server log');
+      const failures = proc.log
+        .join('')
+        .split('\n')
+        .filter((l) => l.includes('"level":"error"') && l.includes('trackers'));
+      assert(!failures.length, `unexpected sync errors: ${failures.join(' | ').slice(0, 2000)}`);
+    });
+
+    await check('trackers: removing the connection stops sync and leaves the board items as they were', async () => {
+      const textBefore = stickyIds.slice(0, 4).map((id) => E.get(id).text);
+      assert((await M.req('DELETE', `/api/trackers/connections/${cloudConn.id}`)).status === 404, 'a member removed the team’s connection');
+      assert((await O.req('DELETE', `/api/trackers/connections/${cloudConn.id}`)).status === 200, 'remove');
+      await waitFor(() => records().get(cluster.linkId)?.state === 'disconnected', 8000, 'the badge to say disconnected');
+      cloud.edit('WEB-1', { summary: 'Renamed after the disconnect' });
+      assert((await cloud.webhook(webhookUrl, secret, 'WEB-1')) === 404, 'a removed connection still took webhooks');
+      await settled(c);
+      assert(stickyIds.slice(0, 4).every((id, i) => E.get(id).text === textBefore[i] && E.get(id).trackerLink === cluster.linkId), 'board items changed');
+    });
+  } finally {
+    for (const m of mcpClients) await m.close().catch(() => undefined);
+    for (const l of live) l.destroy();
+    if (proc) await stopProc(proc);
+    for (const m of mocks) await m.close();
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
 // `--only <group>[,<group>…]` runs some groups, e.g. to loop one while hunting a flake.
 const SUITES = {
   main: run,
@@ -5989,6 +6355,7 @@ const SUITES = {
   s3: s3Checks,
   mcp: mcpChecks,
   suite: suiteChecks,
+  tracker: trackerChecks,
 };
 const onlyArg = process.argv.indexOf('--only');
 const only = onlyArg >= 0 ? (process.argv[onlyArg + 1] ?? '').split(',').filter(Boolean) : Object.keys(SUITES);
