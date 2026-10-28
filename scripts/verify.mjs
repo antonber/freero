@@ -4449,7 +4449,8 @@ async function moderationChecks() {
 // ---------------------------------------------------------------------------
 async function publicApiChecks() {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-api-'));
-  const env = { RATE_LIMIT_INVITE: '500/1h' };
+  // With REDIS_URL every server of the run shares per-IP counters that earlier suites used up.
+  const env = { RATE_LIMIT_INVITE: '500/1h', RATE_LIMIT_PASSWORD: '500/15m' };
   let proc = null;
   const live = [];
   try {
@@ -4617,7 +4618,8 @@ async function publicApiChecks() {
     await check('api: signing out everywhere (a password reset) ends the account’s tokens', async () => {
       const t = await token(V, ['boards:read'], 'before reset');
       assert((await call(t.secret, 'GET', '/me')).status === 200, 'works first');
-      assert((await V.req('POST', '/api/auth/password/forgot', { email: V.email })).status === 200, 'forgot');
+      const forgot = await V.req('POST', '/api/auth/password/forgot', { email: V.email });
+      assert(forgot.status === 200, `forgot: ${forgot.status} ${forgot.text}`);
       const reset = await mailedToken(dataDir, V.email, '/reset-password');
       assert((await V.req('POST', '/api/auth/password/reset', { token: reset, password: 'password-456' })).status === 200, 'reset');
       assert((await call(t.secret, 'GET', '/me')).status === 401, 'a token outlived the reset');
