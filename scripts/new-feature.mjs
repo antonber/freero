@@ -52,6 +52,8 @@ import './${name}.css';
 
 export default defineElement({
   type: '${elementType}',
+  // How Layers, Find and "Select only" name it (TODO: and an \`icon\` from lucide-react).
+  label: { one: '${elementType[0].toUpperCase()}${elementType.slice(1)}', many: '${elementType[0].toUpperCase()}${elementType.slice(1)}s' },
   resize: 'free',
   minSize: { w: 40, h: 40 },
   defaults: () => ({

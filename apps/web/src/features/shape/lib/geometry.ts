@@ -14,6 +14,8 @@ export interface ShapeGeometry {
   outline: Seg[];
   /** Interior detail strokes (cylinder rim, process bars). Not part of the outline. */
   details: Seg[];
+  /** Detail strokes that are always dashed, whatever the line style (a lifeline's stem). */
+  dashed?: Seg[];
 }
 
 const K = 0.5522847498; // cubic Bézier circle constant
@@ -467,6 +469,70 @@ function libraryGeometry(kind: ShapeKind, w: number, h: number): ShapeGeometry {
       };
     }
 
+    // ---- UML sequence diagrams
+    case 'umlLifeline': {
+      const hh = lifelineHead(h);
+      return { outline: poly([P(0, 0), P(w, 0), P(w, hh), P(0, hh)]), details: none, dashed: line(P(cx, hh), P(cx, h)) };
+    }
+    case 'umlActivation':
+      return { outline: poly([P(0, 0), P(w, 0), P(w, h), P(0, h)]), details: none };
+    case 'umlFragment': {
+      const t = fragmentTag(w, h);
+      const c = Math.min(8, t.h / 2);
+      return { outline: poly([P(0, 0), P(w, 0), P(w, h), P(0, h)]), details: line(P(0, t.h), P(t.w - c, t.h), P(t.w, t.h - c), P(t.w, 0)) };
+    }
+
+    // ---- BPMN events with markers
+    case 'bpmnMessageEvent': {
+      const i = m * 0.09;
+      const ew = w * 0.42;
+      const eh = h * 0.3;
+      const x = cx - ew / 2;
+      const y = cy - eh / 2;
+      return {
+        outline: ellipse(0, 0, w, h),
+        details: [...ellipse(i, i, w - 2 * i, h - 2 * i), ...line(P(x, y), P(x + ew, y), P(x + ew, y + eh), P(x, y + eh), P(x, y)), ...line(P(x, y), P(cx, cy + eh * 0.12), P(x + ew, y))],
+      };
+    }
+    case 'bpmnTimerEvent': {
+      const i = m * 0.09;
+      const rx = w * 0.27;
+      const ry = h * 0.27;
+      const ticks: Seg[] = [];
+      for (let k = 0; k < 12; k++) {
+        const a = (k * Math.PI) / 6;
+        const ca = Math.cos(a);
+        const sa = Math.sin(a);
+        ticks.push(...line(P(cx + ca * rx * 0.78, cy + sa * ry * 0.78), P(cx + ca * rx, cy + sa * ry)));
+      }
+      return {
+        outline: ellipse(0, 0, w, h),
+        details: [
+          ...ellipse(i, i, w - 2 * i, h - 2 * i),
+          ...ellipse(cx - rx, cy - ry, 2 * rx, 2 * ry),
+          ...ticks,
+          ...line(P(cx + rx * 0.45, cy - ry * 0.62), P(cx, cy), P(cx + rx * 0.62, cy + ry * 0.1)),
+        ],
+      };
+    }
+    case 'bpmnErrorEvent': {
+      const i = m * 0.035;
+      const q = (x: number, y: number) => P(w * x, h * y);
+      return {
+        outline: ellipse(0, 0, w, h),
+        details: [
+          ...ellipse(i, i, w - 2 * i, h - 2 * i),
+          ...ellipse(2 * i, 2 * i, w - 4 * i, h - 4 * i),
+          ...poly([q(0.3, 0.72), q(0.41, 0.3), q(0.55, 0.52), q(0.7, 0.28), q(0.6, 0.7), q(0.46, 0.48)]),
+        ],
+      };
+    }
+
+    // ---- entity-relationship: the divider under the title line depends on the text size, so the
+    // element draws it (entityDivider).
+    case 'erdEntity':
+      return { outline: roundRect(w, h, Math.min(6, m * 0.05)), details: none };
+
     // ---- network
     case 'netServer': {
       const u = h / 3;
@@ -573,6 +639,24 @@ function libraryGeometry(kind: ShapeKind, w: number, h: number): ShapeGeometry {
   }
 }
 
+/** Height of a lifeline's participant box. */
+export const lifelineHead = (h: number) => Math.min(52, h * 0.3);
+
+/** The name tag in a combined fragment's top-left corner ("alt", "loop"). */
+export const fragmentTag = (w: number, h: number) => ({ w: Math.min(w * 0.35, 88), h: Math.min(h * 0.22, 28) });
+
+/** Line height of an entity's text (looser than other shapes so the title divider has air). */
+export const ENTITY_LINE = 1.7;
+export const ENTITY_PAD = 10;
+/** Text size of an entity whose size is 'auto' (entities are tables: they don't shrink text to fit). */
+export const ENTITY_FONT = 14;
+
+/** y (local) of the divider under an entity's title line, for its text size and border. */
+export function entityDivider(fontSize: number | 'auto', strokeWidth: number): number {
+  const fs = fontSize === 'auto' ? ENTITY_FONT : fontSize;
+  return Math.round(ENTITY_PAD + strokeWidth / 2 + fs * ENTITY_LINE) + 0.5;
+}
+
 const fmt = (n: number) => String(Math.round(n * 100) / 100);
 
 /** SVG path data, offset by (dx, dy). */
@@ -587,10 +671,10 @@ export function toSvgPath(segs: Seg[], dx = 0, dy = 0): string {
  * Path data for drawing the shape with its stroke kept INSIDE the w×h bounds: the outline is
  * computed for a box inset by half the stroke on every side.
  */
-export function insetPaths(kind: ShapeKind, w: number, h: number, strokeWidth: number): { outline: string; details: string } {
+export function insetPaths(kind: ShapeKind, w: number, h: number, strokeWidth: number): { outline: string; details: string; dashed: string } {
   const half = Math.max(0, strokeWidth) / 2;
   const g = shapeGeometry(kind, Math.max(1, w - 2 * half), Math.max(1, h - 2 * half));
-  return { outline: toSvgPath(g.outline, half, half), details: toSvgPath(g.details, half, half) };
+  return { outline: toSvgPath(g.outline, half, half), details: toSvgPath(g.details, half, half), dashed: toSvgPath(g.dashed ?? [], half, half) };
 }
 
 const polyCache = new Map<string, Point[][]>();
@@ -634,7 +718,8 @@ export function detailPolylines(kind: ShapeKind, w: number, h: number, steps = 8
   const out: Point[][] = [];
   let cur: Point[] = [];
   let last = P(0, 0);
-  for (const s of shapeGeometry(kind, w, h).details) {
+  const g = shapeGeometry(kind, w, h);
+  for (const s of [...g.details, ...(g.dashed ?? [])]) {
     if (s.t === 'M') {
       if (cur.length > 1) out.push(cur);
       cur = [s.p];
@@ -750,22 +835,61 @@ export function hitShape(
  * side of a triangle, the top of a star), so connectors touch the drawn shape.
  */
 export function anchorOnOutline(kind: ShapeKind, w: number, h: number, anchor: 'top' | 'right' | 'bottom' | 'left'): Point {
-  const c = P(w / 2, h / 2);
+  if (kind === 'umlLifeline') {
+    // The participant box's top and sides; the bottom anchor is the end of the stem.
+    const hh = lifelineHead(h);
+    return anchor === 'top' ? P(w / 2, 0) : anchor === 'bottom' ? P(w / 2, h) : P(anchor === 'left' ? 0 : w, hh / 2);
+  }
   const dir = anchor === 'top' ? P(0, -1) : anchor === 'bottom' ? P(0, 1) : anchor === 'left' ? P(-1, 0) : P(1, 0);
+  const mid = anchor === 'top' ? P(w / 2, 0) : anchor === 'bottom' ? P(w / 2, h) : anchor === 'left' ? P(0, h / 2) : P(w, h / 2);
+  return rayExit(kind, w, h, P(w / 2, h / 2), dir, mid);
+}
+
+/**
+ * Attach anywhere: where a line aimed from the shape's center toward `toward` (local) meets its
+ * drawn outline — a spot on an ellipse's curve, on a diamond's slanted side. Scaling the shape
+ * scales `toward` with it, so an end attached at 25% of a side stays at 25% after a resize.
+ */
+export function outlineToward(kind: ShapeKind, w: number, h: number, toward: Point): Point {
+  if (kind === 'umlLifeline') {
+    // Below the participant box, messages attach to the stem at their height.
+    const hh = lifelineHead(h);
+    if (toward.y > hh) return P(w / 2, Math.min(h, toward.y));
+    const c = P(w / 2, hh / 2);
+    const d = P(toward.x - c.x, toward.y - c.y);
+    if (Math.hypot(d.x, d.y) < 1e-9) return P(w / 2, 0);
+    return rayExit('rect', w, hh, c, d, toward);
+  }
+  const c = P(w / 2, h / 2);
+  const d = P(toward.x - c.x, toward.y - c.y);
+  if (Math.hypot(d.x, d.y) < 1e-9) return anchorOnOutline(kind, w, h, 'top');
+  return rayExit(kind, w, h, c, d, boxExit(w, h, c, d));
+}
+
+/** Where the ray c + t·d leaves the w×h box. */
+function boxExit(w: number, h: number, c: Point, d: Point): Point {
+  const tx = d.x > 0 ? (w - c.x) / d.x : d.x < 0 ? -c.x / d.x : Infinity;
+  const ty = d.y > 0 ? (h - c.y) / d.y : d.y < 0 ? -c.y / d.y : Infinity;
+  const t = Math.min(tx, ty);
+  return P(c.x + d.x * t, c.y + d.y * t);
+}
+
+/**
+ * First crossing of the ray o + t·d with the outline. When the ray leaves through a gap (an
+ * hourglass waist, a stick figure), the drawn point nearest `fallback` instead of floating at the
+ * bounding box.
+ */
+function rayExit(kind: ShapeKind, w: number, h: number, o: Point, d: Point, fallback: Point): Point {
   let best = Infinity;
   for (const poly of outlinePolygons(kind, w, h, 24)) {
     for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-      const t = raySegment(c, dir, poly[j], poly[i]);
+      const t = raySegment(o, d, poly[j], poly[i]);
       if (t !== null && t > 1e-6) best = Math.min(best, t);
     }
   }
-  if (!Number.isFinite(best)) {
-    // The ray leaves through a gap (an hourglass waist, a stick figure): attach to the drawn
-    // point nearest that side's midpoint instead of floating at the bounding box.
-    const mid = anchor === 'top' ? P(w / 2, 0) : anchor === 'bottom' ? P(w / 2, h) : anchor === 'left' ? P(0, h / 2) : P(w, h / 2);
-    return nearestDrawnPoint([...outlinePolygons(kind, w, h, 24).map((p) => [...p, p[0]]), ...detailPolylines(kind, w, h)], mid) ?? mid;
-  }
-  return P(c.x + dir.x * best, c.y + dir.y * best);
+  if (!Number.isFinite(best))
+    return nearestDrawnPoint([...outlinePolygons(kind, w, h, 24).map((p) => [...p, p[0]]), ...detailPolylines(kind, w, h)], fallback) ?? fallback;
+  return P(o.x + d.x * best, o.y + d.y * best);
 }
 
 /** Distance t along the ray (o + t·d) to segment ab, or null. */
@@ -891,6 +1015,14 @@ export function textBox(kind: ShapeKind, w: number, h: number): Rect {
     }
     case 'bpmnSubprocess':
       return r(0, 0, 1, 0.74);
+    case 'bpmnMessageEvent':
+    case 'bpmnTimerEvent':
+    case 'bpmnErrorEvent':
+      return r(0.18, 0.18, 0.64, 0.64);
+    case 'umlLifeline':
+      return { x: 0, y: 0, w, h: lifelineHead(h) };
+    case 'umlFragment':
+      return { x: 0, y: 0, ...fragmentTag(w, h) };
     case 'netServer':
     case 'netFirewall':
       return r(0, 0, 0.7, 1);

@@ -1,5 +1,5 @@
 import { memo, useState, useSyncExternalStore, type MouseEvent, type PointerEvent } from 'react';
-import { ExternalLink, Globe, Play } from 'lucide-react';
+import { ExternalLink, Globe, Link as LinkIcon, Play } from 'lucide-react';
 import type { EmbedElement } from '@freero/shared';
 import { defineElement, type ElementRenderProps, type NewElement } from '@engine';
 import { asLink, displayHost, safeImageSrc, videoEmbed } from './lib/providers';
@@ -89,6 +89,8 @@ const EmbedView = memo(function EmbedView({ element: el }: ElementRenderProps<Em
 
 export default defineElement({
   type: 'embed',
+  label: { one: 'Link', many: 'Links' },
+  icon: LinkIcon,
   resize: 'free',
   minSize: { w: 200, h: 96 },
   defaults: (): Omit<NewElement<'embed'>, 'x' | 'y'> => ({

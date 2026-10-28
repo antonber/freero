@@ -60,6 +60,11 @@ const MESSAGES: Record<OidcErrorCode, string> = {
   identity_in_use: 'That account is already connected to another Freero account.',
   provider_linked: 'You already have an account of that provider connected. Disconnect it first to connect another one.',
   wrong_account: 'That’s not the account connected to Freero. Sign in with the one you connected.',
+  sso_required: 'Your organization signs you in with single sign-on. Continue with SSO below.',
+  sso_unavailable: 'Single sign-on isn’t available for this workspace right now. Ask your workspace admin.',
+  sso_failed: 'Your organization’s sign-in didn’t go through, or it expired. Please try again.',
+  sso_domain: 'Your identity provider signed you in with an address this workspace hasn’t verified. Ask your workspace admin.',
+  sso_removed: 'Your organization has removed your access to this workspace. Ask your workspace admin.',
   suspended: 'This account has been suspended. We emailed you the reason and how to appeal.',
 };
 

@@ -172,7 +172,17 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   that vanish when an edit ends empty).
 - `Editor.beginGesture()` / `endGesture()` (see "Gestures and undo").
 - `ElementDefinition.anchorPoint` returns element-local (unrotated) coordinates; the engine applies
-  position and rotation.
+  position and rotation. `outlinePoint(el, toward)` (same coordinates) is "attach anywhere": where
+  a line aimed from the center toward a local point meets the drawn outline (shapes project onto
+  their real curve; default the box). A connector end dropped on an outline away from the four
+  dots stores `ConnectorEndpoint.at = { u, v }` (fractions of the box, so it scales with resizes)
+  plus the nearest side as `anchor` (older clients attach there).
+- Elbow connectors without a user bend route around other items (`features/connector/lib/router.ts`:
+  A* over a sparse grid of the obstacles' keep-out edges, deterministic, at most 40 nearest items,
+  only when the simple route would cross one). Obstacles come from a grid index built once per
+  board state; the renderer subscribes with `useElementsQuery(select, isEqual)` (`@engine`), which
+  re-renders a component only when its derived value changes — never re-render every line on every
+  edit elsewhere. `follow` refreshes an elbow line's cache when a connectable item lands on it.
 - `@engine` hooks: `usePointer()` (world pointer for tool `Preview`s), `useTextFormatState()`,
   `useSettings()`, `useCanEdit()`; `plainToRichText()`; types `ElementTextProps`, `TextFormatState`.
 - `useCollection(name)` returns the collection's entries (`Array<[key, value]>`).
@@ -356,6 +366,11 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
   if the merge left it out of layout (two drops into one free slot), the participant with the
   highest Yjs client id re-lays it out (the others re-check 1.5 s later), joining its last undo
   step. Bystanders never do, so nobody snaps a collaborator's drag in progress.
+  Swimlanes (`features/swimlane`) use the same hook without restacking: items keep their own
+  positions and belong to the lane / phase under their center; `arrange` only grows a band to fit
+  what is in it and shifts the items of later bands by the growth. Lane edits that change the
+  bands (edge drag, add, remove, reorder, rows ⇄ columns) move the items with `moveBy` in the same
+  transaction, so attached connectors follow and one undo takes back both.
 - `fitToContent(el, handle)`: double-clicking a resize handle applies the returned patch (a
   fixed-width text box goes back to auto width).
 - `hitTest(el, local, { tolerance })` — `tolerance` is a few screen px in world units at the live
@@ -501,6 +516,12 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
 
 Reference & items (engine primitives; product UI in `features/shortcuts`, `links`, `image`, `icons`,
 `select-similar` — "Select only ▸ <type> (count)" narrows a mixed selection):
+- Item type names have one owner: `ElementDefinition.label: { one, many }` and `icon`, set in each
+  `element.tsx`. Layers, Find and "Select only" read them through `describeElementType(editor,
+  type)` (`@engine`; fallback: the capitalised type and a square), so a new type is named once.
+  `defineCommands(({ elements }) => [...])` (a command factory, run once the registry knows every
+  element definition) builds commands per type from the live registry — "Select only" lists every
+  registered type by its `many` name.
 - `Editor.getShortcuts() → ShortcutEntry[]` (`engine/runtime/shortcutList.ts`): every binding the
   board answers for the live role — tool keys, command shortcuts (alternatives with the same label
   fold into one row), element types' declared `keys` (under their feature) and the keys the keyboard router handles itself (`ENGINE_KEYS` in
@@ -626,9 +647,12 @@ templates; content is opaque engine JSON), `outline` (no table: the semantic boa
 period, orchestrating the owning modules' exports), `notifications` (notifications,
 notification_prefs: inbox, live delivery, email digests), `moderation` (moderation_items,
 moderation_actions: abuse reports, the operator queue, actions and appeals; see "Moderation"),
-`audit` (audit_events, audit_chains: the append-only audit log), `admin` (no table: the admin
-console of team workspaces; see "Audit log, admin console and workspace policies"), `activity`
-(board_activity: the activity feed; see "Activity" below).
+`sso` (sso_domains, sso_connections, sso_flows, sso_saml_cache: per-workspace single sign-on),
+`scim` (scim_tokens, scim_users, scim_groups, scim_group_members: SCIM 2.0 provisioning under
+`/scim/v2`), `privacy` (data_exports: personal and workspace data exports; see "Enterprise
+identity and data"), `audit` (audit_events, audit_chains: the append-only audit log), `admin` (no
+table: the admin console of team workspaces; see "Audit log, admin console and workspace
+policies"), `activity` (board_activity: the activity feed; see "Activity" below).
 
 - Notifications are created only from trusted server-side events, never from client claims:
   realtime's `onCommentMessage` (a comment message applied from one of THIS instance's sockets,
@@ -819,6 +843,58 @@ members with roles owner / admin / member / guest (separate from board roles).
   `handOverTeamWorkspaces` (sole-owned teams pass to the longest-standing admin, else member,
   else guest; an otherwise empty team is deleted with its boards; their team boards pass to an
   owner there).
+
+### Enterprise identity and data (`modules/sso`, `modules/scim`, `modules/privacy`)
+
+- **Sign-in restrictions** (`auth/restrictions.ts`, `onSignInRestriction`): every way in asks it —
+  signup, password login (before the password is checked: no oracle), reset and "this wasn't me"
+  links and personal providers (all through `completeSignIn`, plus before a provider sign-in may
+  create an account). sso registers "Enforce SSO" there. A new way of signing in must go through
+  `completeSignIn` and so inherits it.
+- **Domains**: a team proves a domain with a DNS TXT record (`sso/dns.ts`; resolver injectable for
+  tests, `SSO_DNS_SERVERS` for operators, never skipped). Only a VERIFIED domain counts, and one
+  workspace at most holds it: it routes sign-ins (`GET /api/sso/discover`, by domain only), lets the
+  workspace's IdP vouch for addresses at it, scopes SCIM provisioning and "Enforce SSO".
+- **SSO** (`sso/signIn.ts`): SP-initiated only. SAML via `@node-saml/node-saml` (signed assertion
+  required, audience = the workspace's entity ID, `validateInResponseTo: always`, assertion-ID
+  replay cache — both in `sso_saml_cache`, per workspace, shared by instances, consumed in one
+  statement) plus our Recipient check on the verified assertion; claims are read only from the
+  verified assertion. OIDC reuses `auth/oidc.ts`. The SAML POST is cross-site (the one
+  `allowCrossSitePost` in `platform/security.ts`), so it only parks the verified claims on the flow;
+  a same-site GET carrying the HttpOnly cookie set at start finishes it — only the browser that
+  started a sign-in can complete it. Account rules: `auth.resolveDirectoryLogin` (identity
+  `sso:<workspaceId>` + issuer + subject; else the address's account, connected after its second
+  step; else a new verified account) — only for addresses at the workspace's verified domains. A
+  newcomer joins with the connection's default role (`workspaces.applyDirectoryMembership`); a
+  deactivated member is refused. Session lifetime has ONE model: a session belongs to the person,
+  and the strictest session policy of their teams applies to all of it (auth, KAI-51) — SSO has no
+  lifetime setting of its own; only the IdP's own end of a sign-in (SAML `SessionNotOnOrAfter`)
+  shortens that one session. Enforcing needs a sign-in that went through and an owner as
+  break-glass (exempt while still an owner), and ends the domain's non-SSO sessions; pointing the
+  connection at another IdP drops enforcement.
+- **SCIM** (`scim/`): bearer tokens per workspace (sha256; rotate = swap in one step, or overlap).
+  Filters (`filter.ts`) and PATCH (`patch.ts`) are generic over the resource JSON, as Okta and
+  Entra send them. Provisioned people are accounts at verified domains; groups map, by admins in
+  Freero, to a workspace role (highest wins; once any group maps a role the directory owns
+  provisioned people's roles; owners untouched) or a project. Deprovisioning (`active: false`,
+  DELETE) is the admin console's deactivation (`workspaces.setDirectoryDeactivated` →
+  `deactivated_at`, the `blocked` rule of `resolveRole`: one mechanism; keeps role and boards,
+  sockets re-resolved on every instance) and ends all sessions of an organization address. The
+  directory's `active: true` lifts it; its routine syncs never lift an admin's deactivation.
+- **Data exports** (`privacy/`): this module reads no other table; each owning module exports its
+  part from its index (`exportAccountData`, `exportMembershipsOf`, `boardRecords`,
+  `exportBoardContent` — shared doc plus only the layers the exporter may read — `commentsWrittenBy`,
+  `templatesExportOf`, `notificationsExportOf`, `uploadsOwnedBy`, `scimRecordsOf`, …). New personal
+  data in a new module = an export function in its index + a line in `privacy/archive.ts` + a row
+  in the data map (docs/operations.md). Archives are uploads' private files (never served at
+  `/uploads/`, never swept).
+- **Audit** (`recordAudit`, inside the change's transaction): `sso.*` (domains, the connection,
+  enforcement, every SSO sign-in and refusal, just-in-time joins), `scim.*` (tokens, group
+  mappings, provisioning, deprovisioning — actor null: the directory), `workspace.export_*` in the
+  workspace's log; a person's own `account.export_*` only in their account's log (no fan-out).
+- **Seams**: `workspaces.onWorkspaceDeletionHold` (legal holds; refused deletion with 409).
+- **Admin console**: tabs Single sign-on and Provisioning next to Security; the workspace export
+  under Data (pages/admin/AdminIdentity.tsx).
 
 ### Request access (`members/accessRequests.ts`, KAI-40)
 

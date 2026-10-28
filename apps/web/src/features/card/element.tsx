@@ -1,5 +1,5 @@
 import { memo, type KeyboardEvent } from 'react';
-import { CalendarDays, Check } from 'lucide-react';
+import { CalendarDays, Check, ListTodo as ListTodoIcon } from 'lucide-react';
 import type { CardElement, Tag } from '@freero/shared';
 import {
   defineElement,
@@ -123,6 +123,8 @@ const CardView = memo(function CardView({ element, editing, zoom }: ElementRende
 
 export default defineElement({
   type: 'card',
+  label: { one: 'Card', many: 'Cards' },
+  icon: ListTodoIcon,
   resize: 'width-only',
   minSize: { w: CARD_MIN_W, h: 60 },
   // The accent bar is the card's colour.

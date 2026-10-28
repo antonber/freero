@@ -1,3 +1,4 @@
+import { Network as NetworkIcon } from 'lucide-react';
 import { memo, type CSSProperties, type KeyboardEvent } from 'react';
 import type { MindmapElement } from '@freero/shared';
 import {
@@ -164,6 +165,8 @@ function planFor(change: FollowChange): Map<string, Point> {
 
 export default defineElement({
   type: 'mindmap',
+  label: { one: 'Mind map topic', many: 'Mind map topics' },
+  icon: NetworkIcon,
   resize: 'none',
   rotatable: false,
   // A topic's colour (its pill and branch).

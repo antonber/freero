@@ -340,18 +340,20 @@ export async function startSession(
   req: Request,
   res: Response,
   userId: string,
-  how: { method?: string; twoFactor?: boolean } = {},
+  how: { method?: string; twoFactor?: boolean; expiresAt?: number | null } = {},
 ): Promise<{ knownDevice: boolean }> {
   await refuseIfSuspended(userId); // every way in ends here
   const token = newToken();
   const now = Date.now();
   const knownDevice = await rememberDevice(req, res, userId, now); // before this session exists
+  // Single sign-on caps the session at the identity provider's (never beyond our own maximum).
+  const expiresAt = Math.min(now + SESSION_TTL_MS, how.expiresAt ?? Infinity);
   await repo.insertSession({
     id: newId(20),
     tokenHash: hashToken(token),
     userId,
     now,
-    expiresAt: now + SESSION_TTL_MS,
+    expiresAt,
     userAgent: (req.get('user-agent') ?? '').slice(0, 400),
     ip: clientIp(req).slice(0, 64),
     method: how.method ?? 'password',
@@ -361,7 +363,7 @@ export async function startSession(
     httpOnly: true,
     sameSite: 'lax',
     path: '/',
-    maxAge: SESSION_TTL_MS,
+    maxAge: Math.max(0, expiresAt - now),
     secure: getConfig().production && req.secure,
   });
   return { knownDevice };
@@ -414,9 +416,13 @@ export async function endSession(req: Request, res: Response): Promise<void> {
   clearSessionCookie(res);
 }
 
-/** Ends every session of the user except `keepKey`; returns how many ended. */
-export async function endSessionsOf(userId: string, keepKey: string | null = null): Promise<number> {
-  const keys = await repo.deleteSessionsOf(userId, keepKey);
+/**
+ * Ends every session of the user except `keepKey` (and, with `keepMethod`, except sessions that
+ * signed in that way — enforcing single sign-on keeps the SSO ones); returns how many ended.
+ * Their board and notification sockets close on every instance (onSessionEnd).
+ */
+export async function endSessionsOf(userId: string, keepKey: string | null = null, keepMethod: string | null = null): Promise<number> {
+  const keys = await repo.deleteSessionsOf(userId, keepKey, keepMethod);
   sessionsEnded(keys);
   return keys.length;
 }

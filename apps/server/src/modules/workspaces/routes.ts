@@ -55,7 +55,7 @@ export default function workspaceRoutes(_ctx: ServerContext): Router {
   r.delete(
     '/workspaces/:id',
     handle(async (req, res) => {
-      await deleteWorkspace(req.params.id, currentUser(req).id, req.body?.confirm);
+      await deleteWorkspace(req, req.params.id, currentUser(req).id, req.body?.confirm);
       res.json({ ok: true });
     }),
   );

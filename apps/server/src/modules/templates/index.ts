@@ -5,6 +5,11 @@ import * as repo from './repo';
 
 export { listTemplates, getTemplate } from './service';
 
+/** Data exports: a person's own templates, or those shared with a workspace — with their content. */
+export function templatesExportOf(by: { ownerId: string } | { workspaceId: string }) {
+  return repo.fullTemplates(by);
+}
+
 /**
  * Upload names saved templates reference (images in their content, their thumbnails), restricted
  * to `among` when given. A template outlives the board it came from, so these files must too.

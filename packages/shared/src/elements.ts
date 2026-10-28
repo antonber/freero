@@ -21,7 +21,8 @@ export type ElementType =
   | 'embed'
   | 'icon'
   | 'kanban'
-  | 'pdf';
+  | 'pdf'
+  | 'swimlane';
 
 export interface BaseElement {
   id: string;
@@ -146,6 +147,10 @@ export type ShapeKind =
   | 'umlNote'
   | 'umlComponent'
   | 'umlNode'
+  // UML sequence diagrams
+  | 'umlLifeline'
+  | 'umlActivation'
+  | 'umlFragment'
   // BPMN
   | 'bpmnIntermediate'
   | 'bpmnEnd'
@@ -153,6 +158,11 @@ export type ShapeKind =
   | 'bpmnGatewayPlus'
   | 'bpmnGatewayO'
   | 'bpmnSubprocess'
+  | 'bpmnMessageEvent'
+  | 'bpmnTimerEvent'
+  | 'bpmnErrorEvent'
+  // Entity-relationship (crow's foot)
+  | 'erdEntity'
   // Network
   | 'netServer'
   | 'netFirewall'
@@ -187,7 +197,26 @@ export interface TextElement extends BaseElement {
   autoWidth: boolean;
 }
 
-export type CapStyle = 'none' | 'arrow' | 'triangle' | 'circle' | 'diamond' | 'bar';
+/**
+ * Line ends. Hollow variants (`…Open`) are UML's (generalisation, aggregation). The crow's-foot
+ * cardinalities are ER notation: `one` = exactly one (two bars), `many`, `zeroOrOne`,
+ * `oneOrMany`, `zeroOrMany`. Clients that don't know a cap draw a plain end.
+ */
+export type CapStyle =
+  | 'none'
+  | 'arrow'
+  | 'triangle'
+  | 'circle'
+  | 'diamond'
+  | 'bar'
+  | 'triangleOpen'
+  | 'diamondOpen'
+  | 'circleOpen'
+  | 'one'
+  | 'many'
+  | 'zeroOrOne'
+  | 'oneOrMany'
+  | 'zeroOrMany';
 export type ConnectorRouting = 'straight' | 'elbow' | 'curved';
 export type Anchor = 'auto' | 'top' | 'right' | 'bottom' | 'left';
 
@@ -195,6 +224,13 @@ export interface ConnectorEndpoint {
   /** Attached element id; when set, x/y are recomputed from that element. */
   elementId?: string | null;
   anchor?: Anchor;
+  /**
+   * Attached anywhere on the element's outline: the spot as fractions (0..1) of its unrotated
+   * box, projected onto the drawn outline (a point on an ellipse's curve). It scales with the
+   * element, so 25% along a side stays at 25% after a resize. `anchor` then names the nearest
+   * side (clients that predate this attach there). Absent = `anchor` alone.
+   */
+  at?: { u: number; v: number } | null;
   /** Absolute world point (used when unattached, and cached when attached). */
   x: number;
   y: number;
@@ -427,6 +463,32 @@ export interface PdfElement extends BaseElement {
   pageCount: number;
 }
 
+/**
+ * A swimlane diagram (a pool): a title band, lanes — rows, or columns when `vertical` — and
+ * phases across them. It is a container: items dropped in it join it (`frameId`) and keep their
+ * own positions; an item is in the lane (and phase) under its center. Lanes grow to fit what is
+ * in them and carry their items along when a lane is resized, added, removed or reordered.
+ * Older clients that don't know the type show nothing for it but keep its items.
+ */
+export interface SwimlaneElement extends BaseElement {
+  type: 'swimlane';
+  title: RichText;
+  /** Lanes run top to bottom as columns (default: left to right as rows). */
+  vertical?: boolean;
+  lanes: SwimlaneBand[];
+  /** Phases across the lanes, at least one; their headers show when there are two or more. */
+  phases: SwimlaneBand[];
+}
+
+export interface SwimlaneBand {
+  id: string;
+  title: RichText;
+  /** Thickness across the band's direction (a row lane's height), world units. */
+  size: number;
+  /** Header tint. */
+  color: string;
+}
+
 export type BoardElement =
   | StickyElement
   | ShapeElement
@@ -442,7 +504,8 @@ export type BoardElement =
   | EmbedElement
   | IconElement
   | KanbanElement
-  | PdfElement;
+  | PdfElement
+  | SwimlaneElement;
 
 export type ElementOf<T extends ElementType> = Extract<BoardElement, { type: T }>;
 

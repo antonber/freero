@@ -78,6 +78,15 @@ export async function getVisible(id: string, userId: string, workspaceIds: strin
   return { ...toSummary(r), content: typeof r.content === 'string' ? (JSON.parse(r.content) as TemplateContent) : r.content };
 }
 
+/** Templates with their content (data exports): the owner's, or those shared with a workspace. */
+export async function fullTemplates(by: { ownerId: string } | { workspaceId: string }): Promise<StoredTemplate[]> {
+  const rows = await query<Row & { content: TemplateContent | string }>(
+    `SELECT ${SUMMARY_COLUMNS}, content FROM templates WHERE ${'ownerId' in by ? 'owner_id' : 'workspace_id'} = $1 ORDER BY created_at, id`,
+    ['ownerId' in by ? by.ownerId : by.workspaceId],
+  );
+  return rows.map((r) => ({ ...toSummary(r), content: typeof r.content === 'string' ? (JSON.parse(r.content) as TemplateContent) : r.content }));
+}
+
 export async function countOwnedBy(ownerId: string): Promise<number> {
   const r = await one<{ n: number }>(`SELECT count(*)::int AS n FROM templates WHERE owner_id = $1`, [ownerId]);
   return r?.n ?? 0;

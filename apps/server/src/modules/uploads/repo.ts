@@ -29,6 +29,16 @@ export async function deleteUploadRow(name: string): Promise<void> {
   await query(`DELETE FROM uploads WHERE name = $1 AND removed_at IS NULL`, [name]);
 }
 
+/** The person's uploads, oldest first (data exports); files an operator removed are not theirs to take. */
+export async function ownedBy(ownerId: string): Promise<Array<{ name: string; bytes: number; contentType: string; createdAt: number }>> {
+  return (
+    await query<{ name: string; bytes: number | string; content_type: string; created_at: Date }>(
+      `SELECT name, bytes, content_type, created_at FROM uploads WHERE owner_id = $1 AND removed_at IS NULL ORDER BY created_at, name`,
+      [ownerId],
+    )
+  ).map((r) => ({ name: r.name, bytes: Number(r.bytes), contentType: r.content_type, createdAt: r.created_at.getTime() }));
+}
+
 export async function bytesUsedBy(ownerId: string): Promise<number> {
   const row = await one<{ n: number | string }>(
     `SELECT COALESCE(SUM(bytes), 0)::bigint AS n FROM uploads WHERE owner_id = $1 AND removed_at IS NULL`,

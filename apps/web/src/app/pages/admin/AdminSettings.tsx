@@ -102,7 +102,8 @@ export function AdminSecurity({ workspace, onChanged }: { workspace: WorkspaceSu
         <SettingSelect field="sessionIdleMinutes" settings={settings} save={save} />
         <p className="fr-admin-card__note">
           A sign-in belongs to a person, not to a workspace: someone in several workspaces gets the strictest of their session policies
-          on all their devices. Guests keep their own account’s settings.
+          on all their devices. Guests keep their own account’s settings. Single sign-on follows the same policy; an identity provider’s own
+          session end can only make one sign-in shorter.
         </p>
       </div>
 

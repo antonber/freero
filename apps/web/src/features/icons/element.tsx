@@ -1,3 +1,4 @@
+import { Smile as SmileIcon } from 'lucide-react';
 import { memo } from 'react';
 import type { IconElement } from '@freero/shared';
 import { defineElement, type ElementRenderProps, type NewElement } from '@engine';
@@ -12,6 +13,8 @@ const IconView = memo(function IconView({ element }: ElementRenderProps<IconElem
 
 export default defineElement({
   type: 'icon',
+  label: { one: 'Icon', many: 'Icons' },
+  icon: SmileIcon,
   resize: 'aspect',
   minSize: { w: 12, h: 12 },
   // An icon is line art: its colour is the line colour.
