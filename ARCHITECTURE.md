@@ -356,6 +356,10 @@ Reference & items (engine primitives; product UI in `features/shortcuts`, `links
   text to edit there (image → crop mode). Editors only, never on locked items.
 - `useIsExporting()`: true inside offscreen exports/thumbnails, so decorations can leave out
   on-screen affordances (the link badge).
+- `ImageElement.crop` (fractions of the natural picture) is the non-destructive crop; crop mode
+  is the image feature's `dialog` panel. `IconElement` stores its own drawing (whitelisted SVG
+  primitives), so the lucide index (`features/icons/lib/iconIndex.ts`, imported only with
+  `import()`) stays out of the board chunk; keep it that way when touching the icon library.
 
 ## UI kit (`ui/`) — exports from `@ui`
 
