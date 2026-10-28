@@ -32,9 +32,11 @@ Pick ports nobody else uses (several agents may verify in parallel). Example: AP
 ```
 # terminal A (background) — real server with a throwaway data dir
 PORT=4101 FREERO_DATA_DIR=<scratch>/data npx tsx apps/server/src/main.ts
-# terminal B (background) — Vite proxying to that server
-cd apps/web && FREERO_API_PORT=4101 npx vite --port 5201 --strictPort
+# terminal B (background) — Vite proxying to that server (the same Vite the build uses)
+FREERO_API_PORT=4101 npm run dev -w @freero/web -- --port 5201 --strictPort
 ```
+The repo has exactly one Vite (root `overrides` pin it to the version `apps/web` declares, so
+vitest can't hoist another major); `npx vite --version` in `apps/web` prints the same version.
 
 - `/board/local` is an offline sandbox (no server, no login) — fastest for element/tool work.
 - Real boards: log in as the seeded `demo@freero.app` / `freero123`, create a board with

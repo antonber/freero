@@ -1,6 +1,7 @@
 import type { ServerContext } from '../../platform/context';
 import { HttpError } from '../../platform/http';
 import { log } from '../../platform/log';
+import { openGeoIp } from './geoip';
 import * as repo from './repo';
 import { createUser } from './service';
 
@@ -10,6 +11,8 @@ export default async function initAuth(ctx: ServerContext): Promise<void> {
   const now = Date.now();
   await repo.deleteExpiredSessions(now);
   await repo.deleteExpiredTokens(now);
+  await repo.deleteExpiredAuthFlows(now);
+  if (ctx.config.geoipDbPath) await openGeoIp(ctx.config.geoipDbPath);
   if (ctx.config.production) return;
   if ((await repo.countUsers()) === 0) {
     try {

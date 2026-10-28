@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CardElement, KanbanElement } from '@freero/shared';
 import { createTestBoard, type Editor, type FeatureBundle, type NewElement, type TestBoard } from '@engine';
 import manifest from './feature';
@@ -12,6 +12,7 @@ let board: TestBoard | null = null;
 afterEach(() => {
   board?.destroy();
   board = null;
+  vi.useRealTimers();
 });
 
 function setup(users = ['ann']): Editor[] {
@@ -133,5 +134,69 @@ describe('kanban columns', () => {
     board!.sync();
     for (const ed of [ann, bob]) expect(ed.getElement<CardElement>(ids[0])!.status).toBe('doing');
     expect(ann.getElement<CardElement>(ids[0])!.x).toBeCloseTo(k().x + colLeft(k().colW, 1) + PAD);
+  });
+});
+
+describe('kanban with two people at once', () => {
+  /** Where each card sits: fewer spots than cards = cards on top of each other. */
+  const spots = (ed: Editor, ids: string[]) =>
+    new Set(ids.map((id) => {
+      const c = ed.getElement<CardElement>(id)!;
+      return `${c.x},${c.y}`;
+    }));
+  const snapshot = (ed: Editor) => JSON.stringify(ed.getElements());
+
+  it('two cards dropped into the same column at the same moment end up stacked, not overlapping, fixed by one client only once', () => {
+    vi.useFakeTimers();
+    const [ann, bob] = setup(['ann', 'bob']);
+    const { k, ids } = kanbanWithCards(ann, ['todo']);
+    // A second card alone in Doing, so neither drop re-stacks the card the other person moves.
+    ids.push(ann.create(card(dropPoint(k(), 1).x - 100, dropPoint(k(), 1).y - 40, 'doing')));
+    board!.sync();
+    vi.advanceTimersByTime(60_000); // setting the board up was long ago
+
+    // Both drop into the empty Done column before seeing each other's drop: same free slot.
+    drag(ann, ids[0], dropPoint(k(), 2));
+    drag(bob, ids[1], dropPoint(bob.getElement<KanbanElement>(k().id)!, 2));
+    board!.sync();
+    for (const ed of [ann, bob]) expect(spots(ed, ids).size).toBe(1); // merged: on top of each other
+
+    vi.advanceTimersByTime(1000);
+    // Exactly one of them re-laid the column out (the other waits for it).
+    expect([ann, bob].filter((ed) => spots(ed, ids).size === 2)).toHaveLength(1);
+    board!.sync();
+    for (const ed of [ann, bob]) {
+      const [a, b] = ids.map((id) => ed.getElement<CardElement>(id)!);
+      expect(a.x).toBe(b.x);
+      expect(Math.abs(a.y - b.y)).toBeGreaterThanOrEqual(a.y < b.y ? a.h : b.h); // stacked, no overlap
+      for (const c of [a, b]) expect(c.status).toBe('done');
+    }
+    expect(snapshot(ann)).toBe(snapshot(bob));
+
+    // And nobody keeps rewriting it (no ping-pong between the two clients).
+    const settled = snapshot(ann);
+    for (let i = 0; i < 4; i++) {
+      vi.advanceTimersByTime(2000);
+      board!.sync();
+    }
+    expect(snapshot(ann)).toBe(settled);
+    expect(snapshot(bob)).toBe(settled);
+  });
+
+  it("someone who did not just lay the board out never snaps a collaborator's card mid-drag", () => {
+    vi.useFakeTimers();
+    const [ann, bob] = setup(['ann', 'bob']);
+    const { ids } = kanbanWithCards(ann, ['todo']);
+    board!.sync();
+    vi.advanceTimersByTime(60_000);
+    // Bob is still dragging the card around inside the column (his gesture is open).
+    bob.beginGesture();
+    bob.moveBy([{ id: ids[0], dx: 37, dy: 55 }]);
+    const held = bob.getElement<CardElement>(ids[0])!;
+    board!.sync();
+    vi.advanceTimersByTime(5000);
+    board!.sync();
+    expect(bob.getElement<CardElement>(ids[0])).toMatchObject({ x: held.x, y: held.y });
+    bob.endGesture();
   });
 });

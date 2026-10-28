@@ -8,8 +8,8 @@ import { HttpError } from '../../platform/http';
 import * as repo from './repo';
 import { confirmPassword, endSessionsOf, getAccount, publicUser } from './service';
 
-export async function scheduleAccountDeletion(req: Request | null, userId: string, password: unknown): Promise<number> {
-  const user = await confirmPassword(userId, password);
+export async function scheduleAccountDeletion(req: Request | null, userId: string, password: unknown, sessionAuthAt?: number): Promise<number> {
+  const user = await confirmPassword(userId, password, sessionAuthAt);
   const at = Date.now() + getConfig().accountDeletionGraceMs;
   await repo.scheduleDeletion(userId, at);
   await endSessionsOf(userId);

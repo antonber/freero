@@ -1,0 +1,67 @@
+/* Sign-in provider buttons (login / sign-up) and the provider mark (also used in settings). */
+
+.fr-provider-mark {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--fr-ink);
+  background: var(--fr-surface-2);
+  border: 1px solid var(--fr-line-strong);
+  border-radius: 6px;
+}
+
+.fr-authcard__providers {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.fr-authcard__provider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 44px;
+  padding: 0 16px;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--fr-ink);
+  text-decoration: none;
+  background: var(--fr-surface);
+  border: 1px solid var(--fr-line-strong);
+  border-radius: var(--fr-radius);
+  transition: background 120ms var(--fr-ease), border-color 120ms var(--fr-ease);
+}
+
+.fr-authcard__provider:hover {
+  background: var(--fr-surface-2);
+  border-color: var(--fr-ink-3);
+}
+
+.fr-authcard__provider:focus-visible {
+  outline: none;
+  box-shadow: var(--fr-focus-ring);
+}
+
+.fr-authcard__or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--fr-ink-3);
+}
+
+.fr-authcard__or::before,
+.fr-authcard__or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--fr-line);
+}

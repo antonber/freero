@@ -23,7 +23,7 @@ installed. Copy [`.env.example`](../.env.example) as a starting point.
 | `NODE_ENV` | — | — | `production` enables production checks, `Secure` cookies behind TLS, and disables the demo user. |
 | `PORT` | `4000` | | HTTP + WebSocket port. |
 | `PUBLIC_URL` | — | **yes** | The external origin users open, e.g. `https://whiteboard.example.com`. Used for CSRF origin checks (and links in emails, phase 2). Only the origin part is kept. |
-| `SESSION_SECRET` | dev-only value | **yes** | ≥ 32 random characters (`openssl rand -base64 48`). Keys server-side HMACs (rate-limit keys today; OAuth state and 2FA secrets later). Rotating it resets rate-limit counters only; sessions survive. |
+| `SESSION_SECRET` | dev-only value | **yes** | ≥ 32 random characters (`openssl rand -base64 48`). Keys server-side HMACs (rate-limit keys) and encrypts two-step verification secrets at rest. Sessions survive a rotation, but authenticator apps enrolled before it stop matching: those people log in with a recovery code and turn two-step verification on again. |
 | `TRUST_PROXY` | `false` | when behind a proxy | How far to trust `X-Forwarded-For/-Proto/-Host`. `1` = one reverse proxy in front (Caddy, nginx, a cloud load balancer); `2` = CDN + LB; or a list of subnets (`loopback, 10.0.0.0/8`). `true` trusts any hop — only if the app is unreachable except through the proxy. Needed for real client IPs (rate limits, logs), HSTS and `Secure` cookies behind TLS. |
 | `FREERO_DATA_DIR` | `./data` | | Local data: the PGlite database (when `DATABASE_URL` is unset), local uploads (when `S3_*` is unset). The Docker image uses `/data`. |
 | `FREERO_ENV` | `NODE_ENV` | | Environment name on logs and error reports (`production`, `staging`, …). |
@@ -85,6 +85,43 @@ Links in emails point at `PUBLIC_URL` (in development: the origin the request ca
 | `ACCOUNT_DELETION_GRACE_DAYS` | `14` | After someone deletes their account, how long they can log in and restore it before it is purged (`0` = at the next purge run). |
 | `ACCOUNT_PURGE_INTERVAL_SECONDS` | `3600` | How often each instance looks for accounts to purge. One instance purges at a time (Postgres advisory lock); a purge cut short is finished by the next run. |
 
+## Sign in with Google / Microsoft (OpenID Connect)
+
+Each provider shows its "Continue with …" button only when **both** its client id and secret are
+set (one without the other stops the server). Register this redirect URI with the provider:
+`<PUBLIC_URL>/api/auth/oidc/<google|microsoft>/callback`. Freero uses the authorization code flow
+with PKCE, state and nonce, and validates the id token (signature against the provider's keys,
+issuer, audience, expiry).
+
+| Variable | Default | Description |
+|---|---|---|
+| `OIDC_GOOGLE_CLIENT_ID` / `OIDC_GOOGLE_CLIENT_SECRET` | — | A Google Cloud "OAuth client ID" of type *Web application*. |
+| `OIDC_GOOGLE_ISSUER` | `https://accounts.google.com` | Only change it for a test provider. |
+| `OIDC_MICROSOFT_CLIENT_ID` / `OIDC_MICROSOFT_CLIENT_SECRET` | — | A Microsoft Entra app registration ("Accounts in any organizational directory and personal Microsoft accounts") with a client secret. |
+| `OIDC_MICROSOFT_ISSUER` | `https://login.microsoftonline.com/common/v2.0` | Multi-tenant by default; `…/organizations/v2.0` (work/school only) or `…/<tenant-id>/v2.0` (one organization). |
+
+Issuers must be `https://` in production (plain `http://` is accepted elsewhere for local test
+providers, e.g. `node scripts/lib/mock-oidc.mjs`).
+
+**Accounts.** A provider account (issuer + subject) signs in to the Freero account it is connected
+to. On a first sign-in it is connected automatically only to the account whose email the provider
+asserts as **verified** (`email_verified`; for Microsoft also the optional `xms_edov` claim — add it
+under *Token configuration* so work accounts can match existing Freero accounts; Microsoft's plain
+`email` claim is not proof of ownership). If that account has two-step verification on, it is
+connected only after its second step. If the account's own address had never been confirmed, the
+provider's verified sign-in proves it, and any password, sessions and pending email links of the
+unconfirmed account are removed (so nobody who registered someone else's address keeps access).
+An address the provider doesn't vouch for never matches an existing account; it can start a new one
+that confirms its address by email. New accounts from a provider have no password until their
+owner sets one in settings; an account always keeps at least one way to log in. Signed-in users
+connect and disconnect providers in Account settings.
+
+## GeoIP (approximate session locations)
+
+| Variable | Default | Description |
+|---|---|---|
+| `GEOIP_DB_PATH` | — | Path to a MaxMind-format database, e.g. GeoLite2-City.mmdb or GeoLite2-Country.mmdb. With it, the signed-in devices list shows "City, Country" (or the country); without it, the masked network (`203.0.113.x`). Lookups are local and in memory: addresses are never sent anywhere. The file is not shipped with Freero (license): download it from MaxMind with a free account (or use another `.mmdb` provider such as DB-IP Lite) and refresh it periodically (MaxMind's `geoipupdate`); the server reads it at startup, so restart after an update. A missing or unreadable file stops the server. Behind a proxy, set `TRUST_PROXY` so the real client address is used. |
+
 ## Observability
 
 | Variable | Default | Description |
@@ -121,6 +158,8 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `RATE_LIMIT_TEMPLATE_SAVE` | `60/1h` | Saving a board or selection as a template, per user. |
 | `RATE_LIMIT_VERSION` | `60/1h` | Naming or restoring a board version (each keeps a full copy of the board), per user. |
 | `RATE_LIMIT_WS_CONNECT` | `200/1m` | WebSocket connections per IP and, separately, per user. |
+| `RATE_LIMIT_TWO_FACTOR` | `10/15m` | Two-step verification codes: the sign-in second step per IP and per account (each pending sign-in also allows only 5 wrong codes), and turning it on/off or renewing recovery codes per user. |
+| `RATE_LIMIT_OIDC` | `60/10m` | "Sign in with …" starts and callbacks per IP. |
 
 Rule format: `<count>/<window>` with the window in `s`, `m`, `h` or `d` and an optional multiplier
 (`10/5m` = 10 per 5 minutes), or `off`. Windows are fixed (they reset `window` after the first hit).

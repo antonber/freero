@@ -269,6 +269,28 @@
   text-decoration: underline;
 }
 
+.fr-authcard__linkbtn {
+  align-self: center;
+  padding: 4px 6px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fr-primary);
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.fr-authcard__linkbtn:hover {
+  text-decoration: underline;
+}
+
+.fr-authcard__linkbtn:focus-visible {
+  outline: none;
+  box-shadow: var(--fr-focus-ring);
+}
+
 @media (max-width: 480px) {
   .fr-authcard {
     padding: 28px 22px 22px;

@@ -321,3 +321,24 @@ export async function deleteSnapshots(boardId: string, ids: number[]): Promise<n
   );
   return rows.length;
 }
+
+/**
+ * Every match of `pattern`'s first group in any stored document byte: bases, the update log,
+ * version-history snapshots and board layers (private drafts, hidden frames), of every board
+ * including trashed ones (restricted to `among` when given). Yjs updates store element values as whole UTF-8 strings, and `encode(…, 'escape')`
+ * keeps printable ASCII as is, so a URL in a document is found without decoding it in Node.
+ */
+export async function matchesInStoredDocs(pattern: string, among: readonly string[] | null): Promise<string[]> {
+  const rows = await query<{ name: string }>(
+    `SELECT DISTINCT m[1] AS name FROM (
+       SELECT regexp_matches(encode(state, 'escape'), $1, 'g') AS m FROM board_docs
+       UNION ALL SELECT regexp_matches(encode(data, 'escape'), $1, 'g') FROM board_doc_updates
+       UNION ALL SELECT regexp_matches(encode(state, 'escape'), $1, 'g') FROM board_doc_snapshots
+       UNION ALL SELECT regexp_matches(encode(state, 'escape'), $1, 'g') FROM board_layers
+       UNION ALL SELECT regexp_matches(encode(data, 'escape'), $1, 'g') FROM board_layer_updates
+     ) found
+     WHERE $2::text[] IS NULL OR m[1] = ANY($2::text[])`,
+    [pattern, among],
+  );
+  return rows.map((r) => r.name);
+}

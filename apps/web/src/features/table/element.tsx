@@ -170,7 +170,14 @@ export default defineElement({
     return cell ? cellPart(cell.rowId, cell.colId) : null;
   },
 
-  // Enter on a selected table edits its first cell; typing starts there too.
+  // Enter on a selected table edits its first cell; typing starts there too. In a cell, Tab /
+  // Shift+Tab and the arrows at the text's edge move between cells (the cell's ElementText
+  // onKeyDown above). `keys` lists both in the shortcut sheet: keep it in step.
+  keys: [
+    { shortcuts: ['enter'], label: 'Edit the first cell of a table' },
+    { shortcuts: ['tab', 'shift+tab'], label: 'In a table cell: next / previous cell' },
+    { shortcuts: ['arrowup', 'arrowdown', 'arrowleft', 'arrowright'], label: 'In a table cell, at the edge of its text: the next cell that way' },
+  ],
   onKeyDown(e, { editor, selection }) {
     if (selection.length !== 1 || e.ctrlKey || e.metaKey || e.altKey || !editor.can('editor')) return false;
     const el = selection[0] as TableElement;

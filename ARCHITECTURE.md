@@ -299,7 +299,12 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
   layout and applies them in the same undo step: inside a gesture once, when the outermost gesture
   ends (a drag never re-stacks under the pointer; drop + re-stack = one undo), inside
   `editor.transact` once at its end (never from a half-written state), otherwise right after the
-  write. Remote changes never run it. Must be idempotent — it also runs after unrelated changes.
+  write. Must be idempotent and deterministic (the same board gives the same patches on every
+  client) — it also runs after unrelated changes. Remote changes don't run it, except one case:
+  a client that laid a container out in the last 5 s re-plans it when a remote change settles, and
+  if the merge left it out of layout (two drops into one free slot), the participant with the
+  highest Yjs client id re-lays it out (the others re-check 1.5 s later), joining its last undo
+  step. Bystanders never do, so nobody snaps a collaborator's drag in progress.
 - `fitToContent(el, handle)`: double-clicking a resize handle applies the returned patch (a
   fixed-width text box goes back to auto width).
 - `hitTest(el, local, { tolerance })` — `tolerance` is a few screen px in world units at the live
@@ -318,6 +323,8 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
   `editor.remove` (Delete, cut, context menu, eraser); one undo restores all of them.
 - `onKeyDown(e, { editor, selection })`: keys while this type is selected, asked before the
   engine's own keys and command shortcuts (mind-map Enter = add sibling, Delete = delete branch).
+  Declare what it handles (and keys a type's text parts handle) in `keys: [{ shortcuts, label,
+  minRole? }]` next to it, or the `?` sheet can't show them.
 - `wrapperStyle(el)`: style for the element's world wrapper (highlighter `mix-blend-mode`).
 - `selectionFrame: false`: no engine bounding box / handles / hover outline for that type; the
   feature draws its own (connector endpoint handles). `useFormatToolbarRect()` tells screen UI
@@ -444,7 +451,7 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
 Reference & items (engine primitives; product UI in `features/shortcuts`, `links`, `image`, `icons`):
 - `Editor.getShortcuts() → ShortcutEntry[]` (`engine/runtime/shortcutList.ts`): every binding the
   board answers for the live role — tool keys, command shortcuts (alternatives with the same label
-  fold into one row) and the keys the keyboard router handles itself (`ENGINE_KEYS` in
+  fold into one row), element types' declared `keys` (under their feature) and the keys the keyboard router handles itself (`ENGINE_KEYS` in
   `interaction/keyboard.ts`, kept next to the handlers). The `?` sheet renders it with `@ui` `Kbd`
   (⌘ on Apple platforms, Ctrl elsewhere), so the reference can't drift from the real bindings.
 - `BaseElement.link` (`@freero/shared`): an item link — an external URL or `#<elementId>`.
@@ -505,7 +512,9 @@ modules/<name>/    auth, boards, members, uploads, realtime …
 Cross-module imports name the index file explicitly (`'../auth/index'`), which is what [S2] checks.
 Auth is a plain middleware exported by `modules/auth/index.ts` (`requireUser`, `currentUser(req)`),
 not a reserved hook. Server modules today: `auth` (users, sessions, auth_tokens: email
-verification, password reset, email change, session list/revoke, avatars, deletion scheduling),
+verification, password reset, email change, session list/revoke, avatars, deletion scheduling;
+auth_identities + auth_oidc_flows: sign in with a provider; auth_challenges, user_totp,
+user_recovery_codes: two-step verification),
 `boards` (boards, stars, opens; trash), `members` (board_members, board_invites: pending invites
 for addresses without an account; role resolution), `uploads` (uploads; files in object storage or
 `<data>/uploads`), `realtime` (board_docs, board_doc_updates, board_doc_snapshots; y-websocket
@@ -531,6 +540,20 @@ period, orchestrating the owning modules' exports).
   Proving an address (verification link, reset, email change, an invite link mailed to it) fires
   `onEmailVerified`, where members turns that address's pending invites into memberships; an
   unverified account never picks up invites and can't invite or share by link.
+- Sign-in methods (`modules/auth`): `oidc.ts` is a generic OpenID Connect relying party
+  (openid-client: authorization code + PKCE, state, nonce, id-token validation) configured by issuer
+  + client id/secret — Google and Microsoft (multi-tenant) today, per-workspace SSO later.
+  `providers.ts` holds the account rules: a provider account (issuer + subject) signs in to the
+  account it is connected to; it is connected automatically only on a provider-VERIFIED email match;
+  accounts without a password always keep a way in. Every sign-in (password, reset link, provider)
+  ends in `signIn.ts` `completeSignIn`, which asks for the second step when the account has
+  two-step verification on (and connects a matched identity only after it), so no path skips it.
+  Passwordless accounts confirm sensitive changes with a recent sign-in (`sessions.auth_at`,
+  re-confirmed through the provider with `intent=reauth`) where others give their password.
+  `onTwoFactorRequirement` (auth index) is the seam for workspace-enforced two-step verification.
+  Session locations come from an operator-provided GeoIP `.mmdb` (`GEOIP_DB_PATH`), read locally.
+  `npm run verify` runs the whole provider flow against `scripts/lib/mock-oidc.mjs` (a local test
+  provider with real signed id tokens) and GeoIP against a generated `.mmdb`.
 - Ending a session (logout, "sign out" from another device, password reset/change, account
   deletion) calls auth's in-process `onSessionEnd`; realtime is its listener and closes that
   session's board sockets on every instance through its `end-session` control message — the one
@@ -539,6 +562,15 @@ period, orchestrating the owning modules' exports).
   comments elsewhere become "Deleted user" (`realtime.renameCommentAuthor`, through the live room),
   then the user row (cascades). Other files they uploaded stay — images on other people's boards
   are part of those boards — and files nothing references are left to the uploads sweep.
+- Uploads sweep (`uploads/sweep.ts`, exclusive job every 6 h): uploads are shared (duplicates,
+  templates, pasted copies, avatars), so nobody deletes an upload when one user of it goes away.
+  Each module that stores `/uploads/<name>` URLs exposes `…UploadReferences(among?)` from its
+  index (realtime: stored doc bases + log + version history, trashed boards included, and the live
+  docs of this instance; templates; avatars; board thumbnails), searching its own tables in SQL
+  with `UPLOAD_REF_PATTERN`. A round adopts stored files without a row (owner NULL), marks what is
+  referenced (`last_referenced_at`), re-checks the candidates right before deleting, and deletes
+  rows + files no round has seen referenced for 24 h — freeing quota. New content that stores
+  upload URLs outside board docs adds its scan to `SCANS` there. `ObjectStorage.list()` exists for it.
 
 ### Database (`platform/db.ts`)
 
@@ -750,7 +782,7 @@ only to connections that may read them:
   `DATABASE_URL` it runs against that Postgres (fresh database per run, dropped afterwards) and
   also starts two instances at once on one empty database (migration lock); with `REDIS_URL` too,
   it runs two instances on one database + Redis with clients on each. CI does all of it.
-  `--only main,purge,platform,multi` runs some groups (to loop one while hunting a flake).
+  `--only main,signin,sweep,purge,platform,multi` runs some groups (to loop one while hunting a flake).
   Checks wait on the real condition, never a fixed sleep: `waitFor(cond, ms)` polls until a
   deadline; `settled(client, observers)` is a barrier (a presence change the server handles after
   everything the client sent before, relayed in order) for proving something did NOT arrive;

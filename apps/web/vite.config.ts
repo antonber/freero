@@ -25,9 +25,21 @@ export default defineConfig({
       '@ui': src('ui/index.ts'),
     },
   },
-  // The icon library lazy-loads lucide's per-icon module list; pre-bundle it at startup so the
-  // first open in dev doesn't trigger "new dependencies optimized" and reload the board.
-  optimizeDeps: { include: ['lucide-react/icons/index'] },
+  // Pre-bundle at startup what is only discovered when a board opens, so the first board load in
+  // dev doesn't re-optimize and reload: lucide's per-icon list (lazy icon library) and every
+  // Yjs-family entry the store imports — optimizing those late splits them from the already
+  // bundled `yjs`, which then loads twice ("Yjs was already imported") and breaks sync checks.
+  optimizeDeps: {
+    include: [
+      'lucide-react/icons/index',
+      'yjs',
+      'y-websocket',
+      'y-protocols/sync',
+      'y-protocols/awareness',
+      'lib0/encoding',
+      'lib0/decoding',
+    ],
+  },
   server: {
     port: 5173,
     // Keep the browser's Host (changeOrigin: false): the server refuses state-changing requests
