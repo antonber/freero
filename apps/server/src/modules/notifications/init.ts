@@ -3,6 +3,7 @@ import { scheduleExclusiveJob } from '../../platform/jobs';
 import { logError } from '../../platform/log';
 import { onAccessDecided, onAccessRequested, onBoardShared, onInviteAccepted } from '../members/index';
 import { onCommentMessage } from '../realtime/index';
+import { commentMessagesHandled, digestRuns } from './metrics';
 import * as service from './service';
 
 export const DIGEST_LOCK_KEY = 7_202_610_291; // arbitrary, constant across releases
@@ -11,7 +12,13 @@ export const DIGEST_LOCK_KEY = 7_202_610_291; // arbitrary, constant across rele
 export default function initNotifications(ctx: ServerContext): void {
   const stops = [
     // Realtime calls this synchronously while applying the change; the work runs after it.
-    onCommentMessage((e) => void service.onCommentMessage(e).catch((err) => logError('notifications: comment notification failed', err))),
+    onCommentMessage(
+      (e) =>
+        void service
+          .onCommentMessage(e)
+          .catch((err) => logError('notifications: comment notification failed', err))
+          .finally(() => commentMessagesHandled.inc()),
+    ),
     onBoardShared(service.onBoardShared),
     onInviteAccepted(service.onInviteAccepted),
     onAccessRequested(service.onAccessRequested),
@@ -24,7 +31,9 @@ export default function initNotifications(ctx: ServerContext): void {
     intervalMs: ctx.config.notifyEmailIntervalMs,
     run: async () => {
       await service.sweepPendingMentions();
-      return service.sendDigests();
+      const sent = await service.sendDigests();
+      digestRuns.inc();
+      return sent;
     },
   });
 }

@@ -1887,6 +1887,14 @@ async function notificationChecks() {
     for (const u of [A, B, C]) await u.verifyEmail(dataDir);
     const board = (await A.req('POST', '/api/boards', { title: 'Notify board' })).json.board;
     const list = async (u) => (await u.req('GET', '/api/notifications')).json;
+    // Conditions to wait on instead of fixed sleeps (KAI-173), from the server's /metrics.
+    const handled = () => gauge(proc, 'freero_notifications_comment_messages_handled_total');
+    const digestRuns = () => gauge(proc, 'freero_notifications_digest_runs_total');
+    /** Resolves after `n` more complete digest runs (each one considered everything due when it started). */
+    const moreDigestRuns = async (n, what) => {
+      const start = await digestRuns();
+      await waitFor(async () => (await digestRuns()) >= start + n + 1, 15_000, what); // +1: one may be mid-run now
+    };
 
     await check('sharing a board with an account notifies them in the app, live on their open notifications socket', async () => {
       const live = notificationsSocket(B, port);
@@ -1943,12 +1951,14 @@ async function notificationChecks() {
       for (const u of [Z, W])
         assert((await A.req('POST', `/api/boards/${board.id}/members`, { email: u.email, role: 'commenter' })).json?.invite, `invite ${u.label}`);
       const now = Date.now();
+      const before = await handled();
       clients[0].doc.transact(() => {
         const m = clients[0].doc.getMap('comments');
         m.set('t:t2', { kind: 'thread', id: 't2', x: 50, y: 50, createdAt: now, createdBy: A.id });
         m.set('m:t2:z1', { kind: 'message', threadId: 't2', id: 'z1', authorId: A.id, authorName: A.name, text: `welcome ${Z.email.toUpperCase()} and ${W.email}.`, createdAt: now });
       });
-      await sleep(800); // the server records the pending mentions as it applies the message
+      // The server records the pending mentions as it handles the message: wait until it has.
+      await waitFor(async () => (await handled()) > before, 10_000, 'the server to handle the message naming the invited addresses');
       await Z.signup();
       const token = await mailedToken(dataDir, Z.email, '/invite');
       assert((await Z.req('POST', `/api/invites/${token}/accept`)).status === 200, 'accept the invite');
@@ -1965,7 +1975,7 @@ async function notificationChecks() {
     let digest = null;
     await check('one digest email batches the unread notifications; its links open the board and the thread', async () => {
       await waitFor(() => (digest = outbox(dataDir).find((m) => m.to === B.email && /notification/i.test(m.subject + m.text))), 15_000, 'the digest to B');
-      await sleep(2500); // a couple more digest runs: nothing is sent twice
+      await moreDigestRuns(2, 'two more digest runs'); // nothing is sent twice
       const toB = outbox(dataDir).filter((m) => m.to === B.email && m.sentAt > 0 && !/confirm|verify/i.test(m.subject));
       assert(toB.length === 1, `mails to B: ${toB.map((m) => m.subject).join(' | ')}`);
       assert(digest.subject === '2 new notifications on Freero', digest.subject);
@@ -1990,7 +2000,10 @@ async function notificationChecks() {
       // A new mention still shows in the app, but no email follows.
       clients[0].doc.getMap('comments').set('m:t1:m3', { kind: 'message', threadId: 't1', id: 'm3', authorId: A.id, authorName: A.name, text: `again <@${B.id}>`, createdAt: Date.now() });
       await waitFor(() => live.lastUnread() === 1, 5000, 'the new mention live');
-      await sleep(7500); // past the 5 s email delay and a few digest runs
+      // Past the 5 s email delay (when it would be due), then two digest runs that saw it due.
+      const due = Date.now() + 5000;
+      await waitFor(() => Date.now() > due, 7000, 'the mention to be due for email');
+      await moreDigestRuns(2, 'two digest runs after the mention was due');
       assert(outbox(dataDir).filter((m) => m.to === B.email && /notification|mentioned/i.test(m.subject)).length === 1, 'emailed after unsubscribing');
     });
 

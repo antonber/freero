@@ -1264,7 +1264,10 @@ only to connections that may read them:
   deadline; `settled(client, observers)` is a barrier (a presence change the server handles after
   everything the client sent before, relayed in order) for proving something did NOT arrive;
   `waitUnloaded(proc)` waits until the server holds no doc in memory (`/metrics` gauge), so the
-  next read comes from the database.
+  next read comes from the database. Background work exposes a counter to wait on the same way
+  (`freero_notifications_comment_messages_handled_total`, `freero_notifications_digest_runs_total`:
+  "the comment was handled", "N more digest runs saw it due"); a new async side effect a check
+  depends on adds one rather than a sleep.
 - UI: drive the real app in a browser (see `.claude/skills/verify-freero/`).
 
 ### What a test is for
