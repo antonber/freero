@@ -179,7 +179,8 @@ export function Sidebar(props: SidebarProps) {
         <section className="fr-dash-proj" aria-label="Projects">
           <div className="fr-dash-proj__head">
             <span className="fr-dash-proj__title">Projects</span>
-            {!guest ? <IconButton size={32} icon={Plus} label="New project" tooltipSide="right" onClick={props.onCreateProject} /> : null}
+            {/* Guests can't create projects, nor can anyone the workspace closed its boards to (KAI-193). */}
+            {!guest && !current.blocked ? <IconButton size={32} icon={Plus} label="New project" tooltipSide="right" onClick={props.onCreateProject} /> : null}
           </div>
           {projects.length === 0 ? (
             <p className="fr-dash-proj__empty">{guest ? 'No projects shared with you' : 'Group boards into projects'}</p>

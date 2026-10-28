@@ -267,7 +267,10 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
 - Frame membership has one rule, applied by the engine on drop, create, duplicate and paste: an
   element belongs to the innermost container under its center (`frameId`), unless it already
   names an existing container. Features never compute membership for new elements themselves.
-- Typing a character with one EMPTY text item selected starts editing it with that character;
+- Typing a character with one EMPTY text item selected starts editing it with that character —
+  AltGr characters too (`isPrintableKey`: Windows reports AltGr as Ctrl+Alt, so a Ctrl+Alt press
+  that typed something other than its key's own letter/digit is text, and on an empty note AltGr+9
+  types "]" instead of Bring to front; Ctrl+Alt+T stays a shortcut);
   items that already have text keep single letters as tool shortcuts (Enter / double-click edit).
   Undo/redo shortcuts also work while a non-modal popover has focus.
 - Screen/world UI that must stay visible next to a selection (comment pins, the top quick-connect
@@ -664,7 +667,7 @@ policies"), `activity` (board_activity: the activity feed; see "Activity" below)
   "Invite … to comment") is kept in `pending_mentions`; members' `onInviteAccepted` (invite link
   or verified address) turns it into their `comment.mention`. Kept for an invite's lifetime.
   Live: `/ws/notifications` per tab; changes are published on one pubsub channel and each
-  instance pushes the unread count to its own sockets (ended sessions close them everywhere).
+  instance pushes the unread count to its own sockets (ended sessions close them everywhere, through auth).
   Email: the `notifications:digest` exclusive job emails everything a person hasn't read after
   `NOTIFY_EMAIL_DELAY_SECONDS` as ONE digest (claim-then-send; a failed send is handed back),
   only to verified addresses, honoring per-type opt-outs and the master switch that the signed,
@@ -729,9 +732,15 @@ policies"), `activity` (board_activity: the activity feed; see "Activity" below)
   its init.ts and admin.ts) and keeps its own table; callers don't change. Never passwords, tokens
   or codes in `detail`.
 - Ending a session (logout, "sign out" from another device, password reset/change, account
-  deletion) calls auth's in-process `onSessionEnd`; realtime is its listener and closes that
-  session's board sockets on every instance through its `end-session` control message — the one
-  way to drop a session's live connections.
+  deletion, suspension, a session policy) goes through auth's `sessionsEnded`, which runs the
+  `onSessionEnd` listeners of THIS process and announces the keys on auth's pubsub channel
+  (`freero:auth:sessions`), so every instance runs its listeners too — also for the operator CLI,
+  which connects to `REDIS_URL` for that. Sessions that vanish without anyone announcing it (raw
+  SQL, expiry, a message lost in a Redis gap) are caught by `recheckLiveSessions`: every instance,
+  every `SESSION_RECHECK_SECONDS`, checks the session keys of its open connections (registered with
+  `trackLiveSessions`) against the database — the rule a new socket is admitted by — and ends the
+  missing ones locally (KAI-146). Listeners (realtime's board sockets, notifications' bells) only
+  close connections on their own instance — the one way to drop a session's live connections.
 - Account purge: owned boards (trash included) and the avatar file are deleted, the user's
   comments elsewhere become "Deleted user" (`realtime.renameCommentAuthor`, through the live room),
   then the user row (cascades). Other files they uploaded stay — images on other people's boards
@@ -772,6 +781,16 @@ policies"), `activity` (board_activity: the activity feed; see "Activity" below)
   session-less appeal link (`/appeal?t=`, `mac('moderation.appeal:<actionId>')`) and adds a
   `moderation.action` notification (a `direct` type: emailed by its module, never in digests, no
   email setting). Appeals enter the queue (one open appeal per action).
+- Legal hold (KAI-178): a taken-down board is deleted only by the operator's `board.delete`
+  (boards' `deleteTakenDownBoard`). The account purge waits (after the hand-over, deleting nothing)
+  while the account owns one or is the last member of a team holding one (`countHeldBoards`,
+  `handOverTeamWorkspaces` → `held`), and never blocks the accounts behind it; deleting a team
+  workspace holding one answers 409 `workspace_board_held`. Removed uploads are detached from the
+  account before its row goes (`keepRemovedUploadsOf`). Each action keeps a snapshot of its
+  subject (`subject_name`, `subject_email`).
+- Suspensions (KAI-180): `user.suspend` with `boards: 'take_down' | 'disable_link'` acts on every
+  board the account has in service, each recorded with `parent_id` = the suspension; `user.restore`
+  reverses those children not reversed or deleted since (children of the lift). One notice.
 - Web: `features/report` (board menu, context menu, `report.open` command for other features —
   comments' flag), `Host.report`; the app's `/operator` queue, `/operator/boards/:id/preview`
   (read-only snapshot through `BoardEngineProps.initialState`) and `/appeal`.
@@ -1081,8 +1100,9 @@ is as strong as before it (M suffices — as it did a minute earlier); P + M rem
 recovery delay if the owner ignores three mails and never signs in with F; once the undo window
 has passed, an intruder who planted an authenticator can keep the owner out of (b) — by changing
 the password (the owner's reset-link password can't start one) or by signing in with their
-authenticator (that cancels it) — and that contested case goes to (c); live board tabs of sessions an
-operator ended from the CLI stay connected until they reload (docs/operations.md; KAI-146).
+authenticator (that cancels it) — and that contested case goes to (c). Live board tabs of sessions an
+operator ended from the CLI close at once with `REDIS_URL`, else within `SESSION_RECHECK_SECONDS`
+(KAI-146).
 
 New sign-in factors or recovery paths keep this table true: say who can start and finish them in
 P / M / F terms, and add their row.
@@ -1215,10 +1235,17 @@ that socket announced, and its `user` is always replaced by the authenticated us
 the server's doc): their own messages and reactions, threads they started (and their tombstones),
 deleting a thread/message together with its tombstone. Resolve/reopen (`s:`) is shared workflow
 state anyone who may comment can set (attributed via `by`); anyone may detach a pin whose element
-is gone. Tombstones are final. Owners and editors are trusted with the whole doc. Ending a session — logout,
+is gone. Tombstones are final. A commenter's message carries their own name (KAI-187): a guest's
+"Guest · <name>"; an account's current name, a previous one (`users.previous_names`: a tab opened
+before a rename elsewhere) or a name taken while connected (`auth.onProfileChanged` refreshes the
+sockets on every instance before the rename answers); an edit may keep the name the message had.
+Account names never start with "Guest ·". Readers show the author's CURRENT name from the people
+lookup (`features/comments/lib/people.ts` `authorName`), the stored one only for ids nobody answers
+(deleted accounts: "Deleted user") — so an editor's record, a rename or an old forged name never
+reads as someone else. Owners and editors are trusted with the whole doc. Ending a session — logout,
 "sign out" from another device, password reset/change, account deletion — fires
-`auth.onSessionEnd` where it happened; realtime closes every board socket opened with that session
-(4401), on every instance through the `end-session` control message. The
+`auth.onSessionEnd` on every instance (auth announces it; see "Ending a session" above); realtime
+closes every board socket opened with that session (4401) on its own instance. The
 account purge rewrites the deleted user's comment authorship to "Deleted user" through the live
 room (`renameCommentAuthor`), so open boards update and the save queue persists it. Member emails
 (`GET /members`) are only sent to owners/editors.
@@ -1313,7 +1340,10 @@ only to connections that may read them:
   deadline; `settled(client, observers)` is a barrier (a presence change the server handles after
   everything the client sent before, relayed in order) for proving something did NOT arrive;
   `waitUnloaded(proc)` waits until the server holds no doc in memory (`/metrics` gauge), so the
-  next read comes from the database.
+  next read comes from the database. Background work exposes a counter to wait on the same way
+  (`freero_notifications_comment_messages_handled_total`, `freero_notifications_digest_runs_total`:
+  "the comment was handled", "N more digest runs saw it due"); a new async side effect a check
+  depends on adds one rather than a sleep.
 - UI: drive the real app in a browser (see `.claude/skills/verify-freero/`).
 
 ### What a test is for

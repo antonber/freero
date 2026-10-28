@@ -165,10 +165,12 @@ describe('bring to front / send to back where brackets need AltGr', () => {
   const altGr = (digit: 8 | 9) => ({ key: digit === 8 ? '[' : ']', code: `Digit${digit}`, ctrlKey: true, altKey: true });
   const onTop = (id: string, other: string) => core.editor.getElement(id)!.z > core.editor.getElement(other)!.z;
 
-  it('Ctrl+AltGr+9 / +8 reorder the selection, and so do Ctrl+Shift+↑ / ↓ on any layout', () => {
+  const note = (x: number, y: number) => core.editor.create({ type: 'sticky', x, y, text: 'Plan' } as never);
+
+  it('Ctrl+AltGr+9 / +8 reorder a selected note that has text, and so do Ctrl+Shift+↑ / ↓ on any layout', () => {
     setup();
-    const a = box(0, 0);
-    const b = box(50, 50);
+    const a = note(0, 0);
+    const b = note(50, 50);
     core.editor.select([a]);
     key(altGr(9));
     expect(onTop(a, b)).toBe(true);
@@ -178,6 +180,46 @@ describe('bring to front / send to back where brackets need AltGr', () => {
     expect(onTop(a, b)).toBe(true);
     key({ key: 'ArrowDown', code: 'ArrowDown', ctrlKey: true, shiftKey: true });
     expect(onTop(a, b)).toBe(false);
+  });
+
+  // KAI-175: Chrome and Safari on macOS take Mod+Shift+] / [ for switching tabs.
+  it('Mod+Alt+↑ / ↓ step the selection one item forward / backward, past the next overlapping item only', () => {
+    setup();
+    const a = box(0, 0);
+    const b = box(20, 20);
+    const c = box(40, 40);
+    const order = () => [a, b, c].sort((x, y) => core.editor.getElement(x)!.z - core.editor.getElement(y)!.z);
+    core.editor.select([a]);
+    key({ key: 'ArrowUp', code: 'ArrowUp', ctrlKey: true, altKey: true });
+    expect(order()).toEqual([b, a, c]);
+    key({ key: 'ArrowDown', code: 'ArrowDown', ctrlKey: true, altKey: true });
+    expect(order()).toEqual([a, b, c]);
+  });
+
+  // KAI-98: Windows reports AltGr as Ctrl+Alt, which used to drop '@', '€', '[' … on the floor.
+  it('an AltGr character typed on a selected EMPTY note starts it with that character (even "]"), while a Ctrl+Alt shortcut on a letter stays a shortcut', () => {
+    let tidied = 0;
+    core = makeCore({
+      bundles: [bundle('boxes', { elements: [boxDef as ElementDefinition<any>], commands: [{ id: 'boxes.tidy', label: 'Tidy', shortcut: 'mod+alt+t', run: () => void tidied++ }] })],
+    });
+    uninstall = installKeyboard(core);
+    const fresh = box(0, 0);
+    core.editor.select([fresh]);
+    key({ key: '@', code: 'KeyQ', ctrlKey: true, altKey: true }); // German AltGr+Q
+    expect(core.editor.getEditingId()).toBe(fresh);
+    expect(core.ui.getState().editRequest?.initialText).toBe('@');
+    core.editor.stopEditing();
+
+    const other = box(300, 0);
+    core.editor.select([other]);
+    key(altGr(9)); // ']' on an empty note: typing wins over Bring to front
+    expect(core.ui.getState().editRequest?.initialText).toBe(']');
+    core.editor.stopEditing();
+
+    core.editor.select([box(600, 0)]);
+    key({ key: 't', code: 'KeyT', ctrlKey: true, altKey: true });
+    expect(tidied).toBe(1);
+    expect(core.editor.getEditingId()).toBeNull();
   });
 
   it('typing "]" with AltGr into text being edited types it instead of bringing the item to front', () => {

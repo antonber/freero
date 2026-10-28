@@ -87,10 +87,18 @@ export async function updateUserProfile(
 ): Promise<void> {
   await query(
     `UPDATE users SET name = COALESCE($2, name), color = COALESCE($3, color),
-       avatar_url = CASE WHEN $4 THEN $5 ELSE avatar_url END
+       avatar_url = CASE WHEN $4 THEN $5 ELSE avatar_url END,
+       previous_names = CASE WHEN $2 IS NULL OR $2 = name THEN previous_names
+                             ELSE (ARRAY[name] || array_remove(previous_names, name))[1:5] END
      WHERE id = $1`,
     [id, patch.name ?? null, patch.color ?? null, patch.avatarUrl !== undefined, patch.avatarUrl ?? null],
   );
+}
+
+/** The account's current name and the few it had before (comment authorship, KAI-187). */
+export async function namesOf(id: string): Promise<string[]> {
+  const r = await one<{ name: string; previous_names: string[] }>(`SELECT name, previous_names FROM users WHERE id = $1`, [id]);
+  return r ? [r.name, ...r.previous_names] : [];
 }
 
 /** Sets the avatar; returns the previous one (to delete its file), or undefined if no such user. */
@@ -171,12 +179,13 @@ export async function cancelDeletion(id: string): Promise<boolean> {
   return rows.length > 0;
 }
 
-export async function usersDueForPurge(now: number, limit: number): Promise<UserWithHash[]> {
+export async function usersDueForPurge(now: number, limit: number, skip: readonly string[] = []): Promise<UserWithHash[]> {
   return (
     await query<UserRow>(
       `SELECT * FROM users WHERE deletion_scheduled_for IS NOT NULL AND deletion_scheduled_for <= $1
+         AND NOT (id = ANY($3::text[]))
        ORDER BY deletion_scheduled_for LIMIT $2`,
-      [new Date(now), limit],
+      [new Date(now), limit, [...skip]],
     )
   ).map(toUser);
 }
@@ -273,6 +282,24 @@ export async function findSessionUser(
         lastSeenAt: row.session_last_seen_at.getTime(),
       }
     : null;
+}
+
+/**
+ * Which of these session keys still sign someone in: an account session that exists, is unexpired
+ * and whose account is neither suspended nor awaiting deletion, or an unexpired guest session (the
+ * rules that admit a socket).
+ */
+export async function liveSessionKeys(tokenHashes: string[], now: number): Promise<Set<string>> {
+  if (!tokenHashes.length) return new Set();
+  const rows = await query<{ token_hash: string }>(
+    `SELECT s.token_hash FROM sessions s JOIN users u ON u.id = s.user_id
+     WHERE s.token_hash = ANY($1::text[]) AND s.expires_at > $2
+       AND u.suspended_at IS NULL AND u.deletion_scheduled_for IS NULL
+     UNION ALL
+     SELECT g.token_hash FROM guest_sessions g WHERE g.token_hash = ANY($1::text[]) AND g.expires_at > $2`,
+    [tokenHashes, new Date(now)],
+  );
+  return new Set(rows.map((r) => r.token_hash));
 }
 
 /**

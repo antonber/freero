@@ -103,12 +103,15 @@ export function createEngineCommands(core: EngineCore): CommandDefinition[] {
       run: (e) => e.ungroup(sel(e)),
     },
     // Brackets need AltGr on many layouts (handled in matchShortcut); the arrows work on every one.
+    // Mod+Shift+] / [ is the tab switch of Chrome and Safari on macOS, which can take it before the
+    // board does: Mod+Alt+↑ / ↓ step forward / backward on every platform and layout (KAI-175).
     { id: 'engine.bringToFront', icon: BringToFront, label: 'Bring to front', shortcut: 'mod+]', extraShortcuts: ['mod+shift+arrowup'], menus: ['context'], when: hasSel, disabledReason: NEEDS_SEL, run: (e) => e.bringToFront(sel(e)) },
     {
       id: 'engine.bringForward',
       icon: ArrowUp,
       label: 'Bring forward',
       shortcut: 'mod+shift+]',
+      extraShortcuts: ['mod+alt+arrowup'],
       menus: ['context'],
       when: hasSel,
       disabledReason: NEEDS_SEL,
@@ -119,6 +122,7 @@ export function createEngineCommands(core: EngineCore): CommandDefinition[] {
       icon: ArrowDown,
       label: 'Send backward',
       shortcut: 'mod+shift+[',
+      extraShortcuts: ['mod+alt+arrowdown'],
       menus: ['context'],
       when: hasSel,
       disabledReason: NEEDS_SEL,
