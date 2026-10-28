@@ -53,6 +53,8 @@ import {
   WS_MESSAGE_LAYER_OP,
   WS_MESSAGE_ROLE,
   Y_KEPT_ON_RESTORE,
+  actingFor,
+  type ActingApp,
   type Role,
   type RoleMessage,
   type SessionLimits,
@@ -98,7 +100,8 @@ import {
   writeDecisions,
   writeProposal,
 } from './suggestions';
-import { applyChange, BoardChangeError, viewOf, type AppliedChange, type BoardChange, type BoardReader, type BoardView } from './view';
+import { emitSuggestionsProposed } from './suggestionEvents';
+import { applyChange, BoardChangeError, viewOf, type AppliedChange, type BoardActor, type BoardChange, type BoardReader, type BoardView } from './view';
 import { newId } from '../../platform/ids';
 import type { SuggestionAuthor, SuggestionDecision, SuggestionRecord } from '@freero/shared';
 
@@ -128,6 +131,15 @@ const REMOTE_ORIGIN = Symbol('remote');
 const SERVER_ORIGIN = Symbol('server');
 /** Origin of a version restore: a change made by this instance (relayed, published, saved). */
 const RESTORE_ORIGIN = Symbol('restore');
+/**
+ * Origin of a change made on a request (changeBoard: the public API, MCP, insert structure):
+ * published and saved like a socket's, and reported for the activity feed as its actor's (KAI-207).
+ */
+class RequestOrigin {
+  constructor(readonly actor: BoardActor) {}
+}
+/** How long an app writing through the API or MCP stays on the board after its last write (KAI-168). */
+export const AGENT_PRESENCE_MS = 6000;
 /** How long to wait for the other instances holding a board to send what we lack. */
 const PEER_CATCH_UP_TIMEOUT_MS = 2000;
 
@@ -395,9 +407,47 @@ class Room {
     origin: unknown,
   ): void {
     const conn = origin instanceof WebSocket ? this.conns.get(origin) : undefined;
-    if (!conn || !hasBoardChangeListeners()) return;
+    const request = origin instanceof RequestOrigin ? origin.actor : undefined;
+    if ((!conn && !request) || !hasBoardChangeListeners()) return;
     const { changes, frameTitles } = elementChanges(layer, elements, this.doc.getMap<unknown>(ELEMENTS), keys);
-    emitBoardChange({ boardId: this.id, actorId: conn.userId, actorName: conn.identity.value.name, layer, changes, frameTitles });
+    if (conn) emitBoardChange({ boardId: this.id, actorId: conn.userId, actorName: conn.identity.value.name, layer, changes, frameTitles });
+    else if (request)
+      emitBoardChange({ boardId: this.id, actorId: request.userId, actorName: request.name ?? '', ...(request.via ? { via: request.via } : {}), layer, changes, frameTitles });
+  }
+
+  /** Agent presence on this board (KAI-168): client id -> when it goes. */
+  private agents = new Map<number, NodeJS.Timeout>();
+
+  /**
+   * Shows an app acting for someone as a participant for a moment: "<app> for <person>", its
+   * cursor and selection on what it just wrote. A server-published presence (no socket owns it),
+   * relayed to the other instances like a socket's; removed AGENT_PRESENCE_MS after its last write.
+   */
+  showAgent(p: AgentPresence): void {
+    if (this.destroyed) return;
+    const userId = `app:${p.via.id}:${p.user.id}`;
+    const clientId = agentClientId(userId);
+    const state = {
+      user: { id: userId, name: actingFor(p.via, p.user.name), color: p.user.color, avatarUrl: null },
+      cursor: p.cursor,
+      selection: p.selection,
+      viewport: null,
+      agent: { app: p.via.name, forUserId: p.user.id },
+    };
+    const clock = (this.awareness.meta.get(clientId)?.clock ?? 0) + 1;
+    const e = encoding.createEncoder();
+    encoding.writeVarUint(e, 1);
+    encoding.writeVarUint(e, clientId);
+    encoding.writeVarUint(e, clock);
+    encoding.writeVarString(e, JSON.stringify(state));
+    awarenessProtocol.applyAwarenessUpdate(this.awareness, encoding.toUint8Array(e), SERVER_ORIGIN);
+    clearTimeout(this.agents.get(clientId));
+    const timer = setTimeout(() => {
+      this.agents.delete(clientId);
+      if (!this.destroyed) awarenessProtocol.removeAwarenessStates(this.awareness, [clientId], SERVER_ORIGIN);
+    }, AGENT_PRESENCE_MS);
+    timer.unref();
+    this.agents.set(clientId, timer);
   }
 
   /** A layer sync message from a socket: answered only for layers it may read. */
@@ -1025,6 +1075,7 @@ class Room {
     if (this.unloadTimer) clearTimeout(this.unloadTimer);
     if (this.snapshotTimer) clearTimeout(this.snapshotTimer);
     if (this.facilitatorTimer) clearTimeout(this.facilitatorTimer);
+    for (const t of this.agents.values()) clearTimeout(t);
     this.destroyed = true;
     this.subscription?.close();
     this.awareness.destroy();
@@ -1296,7 +1347,7 @@ export async function readBoardView(boardId: string, reader: BoardReader): Promi
  */
 export async function changeBoard<T extends { change: BoardChange }>(
   boardId: string,
-  actor: BoardReader,
+  actor: BoardActor,
   plan: (view: BoardView) => T,
 ): Promise<T & { applied: AppliedChange }> {
   return withLiveRoom(boardId, async (room) => {
@@ -1308,9 +1359,10 @@ export async function changeBoard<T extends { change: BoardChange }>(
     const comments = room.doc.getMap<unknown>(COMMENTS_COLLECTION);
     const commentKeys = Object.keys(planned.change.collections?.[COMMENTS_COLLECTION] ?? {});
     const before = new Map(commentKeys.map((k) => [k, { action: comments.has(k) ? ('update' as const) : ('add' as const), oldValue: comments.get(k) }]));
-    const applied = applyChange(room.doc, docs, planned.change, actor, SERVER_ORIGIN);
+    const applied = applyChange(room.doc, docs, planned.change, actor, new RequestOrigin(actor));
     // A comment written on a request is the actor's, like one from their socket (mentions, replies).
-    if (before.size && hasCommentListeners()) emitCommentMessages(messageEvents(room.id, comments, before, actor.userId));
+    if (before.size && hasCommentListeners())
+      emitCommentMessages(messageEvents(room.id, comments, before, actor.userId).map((e) => (actor.via ? { ...e, via: actor.via } : e)));
     await room.flush();
     return { ...planned, applied };
   });
@@ -1332,21 +1384,36 @@ function requireEditing(room: Room, actor: BoardReader): void {
  */
 export async function proposeSuggestions<T extends { change: BoardChange; content?: Record<string, unknown> }>(
   boardId: string,
-  actor: BoardReader,
-  opts: { author: SuggestionAuthor; description: string },
+  actor: BoardActor,
+  opts: { description: string; author?: SuggestionAuthor },
   plan: (view: BoardView) => T,
 ): Promise<T & { records: SuggestionRecord[] }> {
-  return withLiveRoom(boardId, async (room) => {
+  const author = opts.author ?? (await suggestionAuthorOf(actor));
+  const out = await withLiveRoom(boardId, async (room) => {
     requireEditing(room, actor);
     const editors = room.layer(EDITORS_LAYER).doc;
     const view = viewOf(room.doc, layerDocs(room), actor);
     const planned = plan(view);
-    const records = proposeRecords(view, planned.change, { ...opts, content: planned.content, newId: () => newId(16), pending: view.suggestions.length });
+    const records = proposeRecords(view, planned.change, { author, description: opts.description, content: planned.content, newId: () => newId(16), pending: view.suggestions.length });
     if (room.destroyed) throw new BoardClosedError(boardId);
     writeProposal(editors, records, SERVER_ORIGIN);
     await room.flush();
     return { ...planned, records };
   });
+  // The activity feed's "suggested N changes" (owners and editors only, like the suggestions).
+  emitSuggestionsProposed({ boardId, actorId: actor.userId, via: actor.via ?? null, author, count: out.records.length });
+  return out;
+}
+
+/**
+ * Who a proposal is from: the app acting for the person ("Claude for Maria", KAI-168) when a
+ * request came through the API or MCP, else the person.
+ */
+async function suggestionAuthorOf(actor: BoardActor): Promise<SuggestionAuthor> {
+  const userName = actor.name ?? (await getUser(actor.userId))?.name ?? 'Someone';
+  return actor.via
+    ? { kind: 'app', name: actor.via.name, userId: actor.userId, userName, credentialId: actor.via.id }
+    : { kind: 'person', name: userName, userId: actor.userId, userName };
 }
 
 /**
@@ -1357,7 +1424,7 @@ export async function proposeSuggestions<T extends { change: BoardChange; conten
  */
 export async function decideSuggestions(
   boardId: string,
-  actor: BoardReader,
+  actor: BoardActor,
   ask: { ids?: string[]; groupId?: string; status: 'accepted' | 'rejected'; force?: boolean },
 ): Promise<{ records: SuggestionRecord[]; decision: SuggestionDecision; applied: AppliedChange | null }> {
   const out = await withLiveRoom(boardId, async (room) => {
@@ -1366,13 +1433,38 @@ export async function decideSuggestions(
     const docs = layerDocs(room);
     const plan = planDecision(suggestionEntries(editors), viewOf(room.doc, docs, actor), { ...ask, by: actor.userId });
     const { create = [], update = [], remove = [] } = plan.change;
-    const applied = create.length || update.length || remove.length ? applyChange(room.doc, docs, plan.change, actor, SERVER_ORIGIN) : null;
+    // Applied like any request write: attributed to the actor (and the app acting for them) in activity.
+    const applied = create.length || update.length || remove.length ? applyChange(room.doc, docs, plan.change, actor, new RequestOrigin(actor)) : null;
     writeDecisions(editors, plan.records, plan.decision, SERVER_ORIGIN);
     await room.flush();
     return { records: plan.records, decision: plan.decision, applied };
   });
   await auditDecisions(boardId, actor.userId, out.records.map((record) => ({ record, from: undefined, to: out.decision })), 'api');
   return out;
+}
+
+/** An app acting for someone, as other participants see it while it writes (KAI-168). */
+export interface AgentPresence {
+  via: ActingApp;
+  user: { id: string; name: string; color: string };
+  cursor: { x: number; y: number } | null;
+  selection: string[];
+}
+
+/** A stable awareness client id for an agent (31 bits, from its user id). */
+function agentClientId(userId: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < userId.length; i++) h = Math.imul(h ^ userId.charCodeAt(i), 16777619);
+  return (h >>> 1) || 1;
+}
+
+/**
+ * Shows an app writing on a board for a moment (KAI-168): on this instance's room if the board is
+ * open here (a request just wrote through it), relayed to the others. Nobody watching: nothing to do.
+ */
+export function showAgentPresence(boardId: string, p: AgentPresence): void {
+  const room = rooms.get(boardId);
+  if (room && !room.destroyed) room.showAgent(p);
 }
 
 /** Current state of one layer of a board (live if loaded, else stored), like snapshotBoardDoc. */

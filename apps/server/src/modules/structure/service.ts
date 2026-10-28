@@ -9,9 +9,8 @@ import {
   type SuggestionAuthor,
 } from '@freero/shared';
 import { badRequest } from '../../platform/http';
-import { getUser } from '../auth/index';
 import { requireBoardAccess } from '../boards/index';
-import { BoardChangeError } from '../realtime/index';
+import { BoardChangeError, type BoardActor } from '../realtime/index';
 import { asElement } from './plan';
 import { SINKS } from './sinks';
 
@@ -38,26 +37,25 @@ function parseRequest(body: unknown): InsertStructureRequest {
 }
 
 /**
- * `opts.author`: who proposes when the target is 'suggestions' (the public API passes its
- * credential); by default the caller themselves.
+ * Lays `body` out and sends it to its sink. `by`: the person (their id), or — for the public API
+ * and MCP — the person and the app acting for them (attributed to both, KAI-168). With target
+ * 'suggestions' that is who the proposal is from ("Claude for Maria"), unless `opts.author` says
+ * otherwise (in-app AI: "AI for Maria").
  */
 export async function insertStructure(
   boardId: string,
-  userId: string,
+  by: string | Omit<BoardActor, 'role'>,
   body: unknown,
   opts: { author?: SuggestionAuthor } = {},
 ): Promise<InsertStructureResponse> {
   const req = parseRequest(body);
+  const actor = typeof by === 'string' ? { userId: by } : by;
+  const userId = actor.userId;
   const { role } = await requireBoardAccess(boardId, userId, 'editor');
   const target = req.target ?? 'board';
-  let author = opts.author;
-  if (!author) {
-    const name = target === 'suggestions' ? ((await getUser(userId))?.name ?? 'Someone') : '';
-    author = { kind: 'person', name, userId, userName: name };
-  }
   let result;
   try {
-    result = await SINKS[target].apply(boardId, { userId, role }, req, newElementId, { author, description: req.description ?? '' });
+    result = await SINKS[target].apply(boardId, { ...actor, role }, req, newElementId, { description: req.description ?? '', author: opts.author });
   } catch (e) {
     // Bad input or a board that changed shape under the plan: nothing was written.
     if (e instanceof LayoutError || e instanceof BoardChangeError) throw badRequest(e.message);

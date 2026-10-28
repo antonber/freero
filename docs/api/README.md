@@ -23,7 +23,8 @@ uses the authorization code flow with PKCE (S256, required):
 | revoke | `POST /api/oauth/revoke`: `token`, `client_id` |
 | metadata | `/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource/api/v1` |
 
-Apps that can't be registered by hand (MCP clients) register themselves:
+The same server signs in MCP clients for Freero's MCP server (`/mcp`, [../mcp.md](../mcp.md)); their
+tokens are bound to it. Apps that can't be registered by hand (MCP clients) register themselves:
 `POST /api/oauth/register { client_name, redirect_uris }` (public clients only). People see on the
 consent screen that Freero hasn't reviewed such an app.
 
@@ -42,5 +43,8 @@ consent screen that Freero hasn't reviewed such an app.
   `api_credential_blocked`), and its downloads policy can refuse reads of its boards' content
   (`403 downloads_restricted`). If your organization requires SSO, make tokens after signing in
   with SSO (`403 sso_required`).
-- Limits: `RATE_LIMIT_API_CREDENTIAL` per token or app (default 300/minute), 500 items per create.
+- Limits: `RATE_LIMIT_API_CREDENTIAL` per token or app (default 300/minute), `RATE_LIMIT_AGENT_WRITE`
+  board changes per token or app (default 60/minute), 500 items per create.
+- What a token or app creates is labelled "<its name> for <you>" (`createdVia` on items, the activity
+  feed, a short-lived presence on the board).
 - Every call is in the audit log, with the token or app that made it.

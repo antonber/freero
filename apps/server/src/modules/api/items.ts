@@ -347,7 +347,7 @@ export function patchUpdates(el: BoardElement, patch: Record<string, unknown>, v
   return out;
 }
 
-const BASE_KEYS = new Set(['id', 'type', 'x', 'y', 'w', 'h', 'rotation', 'z', 'frameId', 'locked', 'createdBy', 'createdAt', 'updatedAt']);
+const BASE_KEYS = new Set(['id', 'type', 'x', 'y', 'w', 'h', 'rotation', 'z', 'frameId', 'locked', 'createdBy', 'createdVia', 'createdAt', 'updatedAt']);
 
 /** An element as the API returns it: the common fields, its text as plain text, the rest under `data`. */
 export function toApiItem(el: BoardElement, layer: 'shared' | 'editors' | 'private'): ApiItem {
@@ -369,6 +369,7 @@ export function toApiItem(el: BoardElement, layer: 'shared' | 'editors' | 'priva
     locked: el.locked === true,
     ...(layer === 'private' ? { private: true as const } : {}),
     createdBy: typeof el.createdBy === 'string' ? el.createdBy : null,
+    ...(el.createdVia && typeof el.createdVia.name === 'string' ? { createdVia: { kind: el.createdVia.kind === 'token' ? 'token' : 'app', id: String(el.createdVia.id), name: el.createdVia.name } } : {}),
     createdAt: n(el.createdAt),
     updatedAt: n(el.updatedAt),
     data,

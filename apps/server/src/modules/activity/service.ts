@@ -1,7 +1,9 @@
 // The activity feed. Sources are trusted server-side events only: element changes realtime applied
-// from a person's own socket (realtime.onBoardChange — the same updates it appends to the board's
-// update log), comment messages (realtime.onCommentMessage) and sharing (members' onBoardShared /
-// onAccessDecided). A person's changes on a board are gathered into one BURST until they pause
+// from a person's own socket or on their request (realtime.onBoardChange — the same updates it
+// appends to the board's update log; requests: the public API, MCP, insert structure, KAI-207),
+// comment messages (realtime.onCommentMessage) and sharing (members' onBoardShared /
+// onAccessDecided). What an app or token did for someone is its own burst, worded "<app> for
+// <person>" (KAI-168). A person's changes on a board are gathered into one BURST until they pause
 // (IDLE_MS) or it grows old (MAX_BURST_MS), then stored as one row per kind/audience with net
 // counts ("added 12 sticky notes"): something added and removed again in the same burst is not
 // news. Bursts live in memory on the instance whose socket made the changes, and are written on
@@ -11,8 +13,10 @@
 // private layers are never observed (realtime/changes.ts). No element text is stored, only types,
 // counts and the title of the frame the changes were in (frames are visible to everyone).
 import {
+  actingFor,
   guestDisplayName,
   isGuestId,
+  type ActingApp,
   type ActivityEntry,
   type ActivityResponse,
   type Role,
@@ -24,7 +28,7 @@ import { logError } from '../../platform/log';
 import { getGuests, getUsers } from '../auth/index';
 import { boardsOpenableIn, getBoardAccess } from '../boards/index';
 import type { AccessDecidedEvent, BoardSharedEvent } from '../members/index';
-import type { BoardChangeEvent, CommentMessageEvent } from '../realtime/index';
+import type { BoardChangeEvent, CommentMessageEvent, SuggestionsProposedEvent } from '../realtime/index';
 import * as repo from './repo';
 import type { ActivityRow, ActivitySummary } from './repo';
 
@@ -45,6 +49,8 @@ interface Burst {
   boardId: string;
   actorId: string;
   actorName: string;
+  /** The app or token that acted for the actor (null: they did it themselves). */
+  via: ActingApp | null;
   startedAt: number;
   lastAt: number;
   shared: Bucket;
@@ -57,11 +63,11 @@ interface Burst {
 const bucket = (): Bucket => ({ added: new Map(), changed: new Map(), removed: new Map(), frameOf: new Map() });
 const bursts = new Map<string, Burst>();
 
-function burstFor(boardId: string, actorId: string, actorName: string, now: number): Burst {
-  const key = `${boardId}\u0000${actorId}`;
+function burstFor(boardId: string, actorId: string, actorName: string, via: ActingApp | null, now: number): Burst {
+  const key = `${boardId}\u0000${actorId}\u0000${via ? `${via.kind}:${via.id}` : ''}`;
   let b = bursts.get(key);
   if (!b) {
-    b = { boardId, actorId, actorName, startedAt: now, lastAt: now, shared: bucket(), editors: bucket(), comments: 0, threads: new Set(), frameTitles: new Map() };
+    b = { boardId, actorId, actorName, via, startedAt: now, lastAt: now, shared: bucket(), editors: bucket(), comments: 0, threads: new Set(), frameTitles: new Map() };
     bursts.set(key, b);
   }
   b.lastAt = now;
@@ -71,7 +77,7 @@ function burstFor(boardId: string, actorId: string, actorName: string, now: numb
 
 /** Element changes from a socket (realtime). Net per element over the burst. */
 export function recordChanges(e: BoardChangeEvent, now = Date.now()): void {
-  const b = burstFor(e.boardId, e.actorId, e.actorName, now);
+  const b = burstFor(e.boardId, e.actorId, e.actorName, e.via ?? null, now);
   const k = e.layer === 'editors' ? b.editors : b.shared;
   for (const [id, title] of Object.entries(e.frameTitles)) b.frameTitles.set(id, title);
   for (const c of e.changes) {
@@ -92,7 +98,7 @@ export function recordChanges(e: BoardChangeEvent, now = Date.now()): void {
 /** A comment message written through a socket (realtime). Edits of a message are not news. */
 export function recordComment(e: CommentMessageEvent, actorName: string, now = Date.now()): void {
   if (e.previousText !== null) return;
-  const b = burstFor(e.boardId, e.authorId, actorName, now);
+  const b = burstFor(e.boardId, e.authorId, actorName, e.via ?? null, now);
   b.comments++;
   b.threads.add(e.threadId);
 }
@@ -133,11 +139,12 @@ export function rowsOf(b: Burst): ActivityRow[] {
     endedAt: b.lastAt,
   };
   const rows: ActivityRow[] = [];
+  const app = b.via ? { app: b.via.name } : {};
   const shared = editSummary(b.shared, b.frameTitles);
-  if (shared) rows.push({ ...base, id: newId(16), kind: 'edit', audience: 'all', summary: shared });
+  if (shared) rows.push({ ...base, id: newId(16), kind: 'edit', audience: 'all', summary: { ...shared, ...app } });
   const editors = editSummary(b.editors, b.frameTitles);
-  if (editors) rows.push({ ...base, id: newId(16), kind: 'edit', audience: 'editors', summary: editors });
-  if (b.comments > 0) rows.push({ ...base, id: newId(16), kind: 'comment', audience: 'all', summary: { comments: b.comments, threads: b.threads.size } });
+  if (editors) rows.push({ ...base, id: newId(16), kind: 'edit', audience: 'editors', summary: { ...editors, ...app } });
+  if (b.comments > 0) rows.push({ ...base, id: newId(16), kind: 'comment', audience: 'all', summary: { comments: b.comments, threads: b.threads.size, ...app } });
   return rows;
 }
 
@@ -185,6 +192,15 @@ export async function recordBoardEvent(
 ): Promise<void> {
   const { boardId, actorId, ...summary } = e;
   await repo.insertMany([{ id: newId(16), boardId, actorId, actorName: null, kind: 'board', audience: 'all', summary, startedAt: now, endedAt: now }]);
+}
+
+/**
+ * A proposal of changes (KAI-169): "Claude for Maria suggested 6 changes". Owners and editors
+ * only — the suggestions themselves reach nobody else. Accepting them shows as the acceptor's edit.
+ */
+export async function recordSuggestions(e: SuggestionsProposedEvent, now = Date.now()): Promise<void> {
+  const summary: ActivitySummary = { action: 'suggested', suggestions: e.count, ...(e.via ? { app: e.via.name } : {}) };
+  await repo.insertMany([{ id: newId(16), boardId: e.boardId, actorId: e.actorId, actorName: null, kind: 'board', audience: 'editors', summary, startedAt: now, endedAt: now }]);
 }
 
 export const onBoardShared = (e: BoardSharedEvent) => recordShare({ boardId: e.boardId, byId: e.byId, userId: e.userId, role: e.role, via: 'invite' });
@@ -240,6 +256,8 @@ function boardWording(s: ActivitySummary): string {
       return 'restored the board from the trash';
     case 'version_restored':
       return s.version ? `restored the version “${s.version}”` : 'restored an earlier version';
+    case 'suggested':
+      return s.suggestions === 1 ? 'suggested a change' : `suggested ${s.suggestions ?? 'some'} changes`;
     default:
       return 'changed the board';
   }
@@ -283,12 +301,14 @@ async function present(rows: ActivityRow[], titles?: Map<string, string>): Promi
   return rows.map((r) => {
     const u = users.get(r.actorId);
     const g = guests.get(r.actorId);
+    const name = u?.name ?? r.actorName ?? (g ? guestDisplayName(g.name) : 'Deleted user');
     return {
       id: r.id,
       boardId: r.boardId,
       ...(titles ? { boardTitle: titles.get(r.boardId) ?? 'Untitled board' } : {}),
       actor: u ? { id: u.id, name: u.name, color: u.color, avatarUrl: u.avatarUrl } : null,
-      actorName: u?.name ?? r.actorName ?? (g ? guestDisplayName(g.name) : 'Deleted user'),
+      actorName: r.summary.app ? actingFor({ name: r.summary.app }, name) : name,
+      ...(r.summary.app ? { via: r.summary.app } : {}),
       kind: r.kind,
       text: describe(r, names),
       startedAt: r.startedAt,

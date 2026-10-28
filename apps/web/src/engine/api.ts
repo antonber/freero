@@ -327,12 +327,12 @@ export interface NotifyOptions {
 // Elements
 // ---------------------------------------------------------------------------
 /** Fields the engine fills in automatically on create. */
-type AutoFields = 'id' | 'z' | 'createdBy' | 'createdAt' | 'updatedAt' | 'rotation';
+type AutoFields = 'id' | 'z' | 'createdBy' | 'createdVia' | 'createdAt' | 'updatedAt' | 'rotation';
 export type NewElement<T extends ElementType = ElementType> =
   Omit<ElementOf<T>, AutoFields> & Partial<Pick<ElementOf<T>, AutoFields>>;
 
 export type ElementPatch<T extends BoardElement = BoardElement> =
-  Partial<Omit<T, 'id' | 'type' | 'createdBy' | 'createdAt'>>;
+  Partial<Omit<T, 'id' | 'type' | 'createdBy' | 'createdVia' | 'createdAt'>>;
 
 export interface ElementRenderProps<T extends BoardElement = BoardElement> {
   element: T;

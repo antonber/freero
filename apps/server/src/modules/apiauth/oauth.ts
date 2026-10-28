@@ -259,29 +259,47 @@ export async function checkAuthorizeRequest(p: AuthorizeParams): Promise<{ ok: V
   if (asked.some((s) => !isApiScope(s))) return back('invalid_scope', `Unknown scope. Freero's scopes: ${Object.keys(API_SCOPES).join(' ')}`);
   const resource = resourcePath(p.resource);
   if (!resource) return back('invalid_target', 'Unknown resource');
-  const scopes = asked.length ? [...new Set(asked as ApiScope[])] : DEFAULT_OAUTH_SCOPES;
+  const scopes = asked.length ? [...new Set(asked as ApiScope[])] : (protectedResources().get(resource)?.scopes ?? DEFAULT_OAUTH_SCOPES);
   return { ok: { client, redirectUri: given, scopes, state, codeChallenge: p.code_challenge, resource } };
+}
+
+const optInScopes = (resource: string): readonly ApiScope[] => protectedResources().get(resource)?.optInScopes ?? [];
+
+/**
+ * The scopes a consent grants: what the app asked for, except the resource's opt-in scopes the
+ * person didn't turn on (`grant`). Null when that leaves nothing.
+ */
+export function grantedScopes(v: Pick<ValidRequest, 'scopes' | 'resource'>, grant: unknown): ApiScope[] | null {
+  const on = new Set(Array.isArray(grant) ? grant.filter(isApiScope) : []);
+  const optIn = optInScopes(v.resource);
+  const out = v.scopes.filter((s) => !optIn.includes(s) || on.has(s));
+  return out.length ? out : null;
 }
 
 /** What the consent screen shows. */
 export function consentInfo(v: ValidRequest): OAuthConsentInfo {
+  const optIn = optInScopes(v.resource);
   return {
     client: { clientId: v.client.id, name: v.client.name, website: v.client.website, registration: v.client.ownerId ? 'manual' : 'dynamic' },
-    scopes: v.scopes.map((id) => ({ id, label: API_SCOPES[id] })),
+    scopes: v.scopes.map((id) => ({ id, label: API_SCOPES[id], ...(optIn.includes(id) ? { optional: true } : {}) })),
     redirectOrigin: (() => {
       const u = new URL(v.redirectUri);
       return u.protocol === 'http:' || u.protocol === 'https:' ? u.origin : `${u.protocol}//${u.host}`;
     })(),
-    resource: protectedResources().get(v.resource) ?? v.resource,
+    resource: protectedResources().get(v.resource)?.name ?? v.resource,
   };
 }
 
 /**
  * The person's answer. Allow: their consent is stored (replacing an earlier one for the app) and a
- * single-use code is sent back to the app. `issuedVia`: how their session signed in.
+ * single-use code is sent back to the app. `issuedVia`: how their session signed in. `grant`: the
+ * opt-in scopes they turned on (grantedScopes); the token's `scope` says what the app got.
  */
-export async function decide(userId: string, issuedVia: string, v: ValidRequest, allow: boolean): Promise<string> {
-  if (!allow) return errorRedirect(v.redirectUri, 'access_denied', 'The person declined', v.state);
+export async function decide(userId: string, issuedVia: string, asked: ValidRequest, allow: boolean, grant?: unknown): Promise<string> {
+  if (!allow) return errorRedirect(asked.redirectUri, 'access_denied', 'The person declined', asked.state);
+  const scopes = grantedScopes(asked, grant);
+  if (!scopes) throw badRequest('Allow at least one thing, or cancel');
+  const v = { ...asked, scopes };
   const code = newSecret('frcode_');
   const now = Date.now();
   await repo.transaction(async () => {
@@ -454,14 +472,14 @@ export function authorizationServerMetadata(req: Request) {
 }
 
 export function protectedResourceMetadata(req: Request, path: string) {
-  const name = protectedResources().get(path);
-  if (!name) return null;
+  const r = protectedResources().get(path);
+  if (!r) return null;
   const base = appUrl(req, '');
   return {
     resource: `${base}${path}`,
-    resource_name: name,
+    resource_name: r.name,
     authorization_servers: [base],
-    scopes_supported: Object.keys(API_SCOPES),
+    scopes_supported: r.scopes ?? Object.keys(API_SCOPES),
     bearer_methods_supported: ['header'],
     resource_documentation: `${base}/api/v1/openapi.json`,
   };

@@ -47,7 +47,7 @@ export const DEFAULT_TITLE = 'Untitled board';
 export const boardTarget = (b: { id: string; title: string }) => ({ type: 'board', id: b.id, label: b.title });
 
 /** EXPORT_FORMATS a client may report (POST /boards/:id/exported). */
-export const EXPORT_FORMATS = ['png', 'jpg', 'svg', 'pdf', 'csv', 'json', 'other'] as const;
+export const EXPORT_FORMATS = ['png', 'jpg', 'svg', 'pdf', 'csv', 'json', 'markdown', 'other'] as const;
 
 /**
  * A client-side export (image / PDF made in the browser) reported by the web app: refused like
