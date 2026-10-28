@@ -737,7 +737,10 @@ export interface ActivityEntry {
   boardTitle?: string;
   /** Null for a guest or a deleted account (`actorName` still names them). */
   actor: BoardPerson | null;
+  /** "Claude for Maria" when an app or token did it for them (`via`). */
   actorName: string;
+  /** The app or token that acted for `actor` (the public API, MCP; KAI-168), else absent. */
+  via?: string;
   kind: 'edit' | 'comment' | 'share';
   /** Worded after the actor's name: "added 12 sticky notes in frame “Ideas”". */
   text: string;
