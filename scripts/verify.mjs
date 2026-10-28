@@ -4566,7 +4566,7 @@ async function aiChecks() {
       assert(refused.status === 403 && refused.json.code === 'ai_unavailable', `${refused.status} ${refused.text}`);
     });
 
-    await check('ai: a workspace’s own provider gets its own key (never shown again), and clustering moves the selected notes into named groups (someone else's notes are only proposed)', async () => {
+    await check('ai: a workspace’s own provider gets its own key (never shown again), and clustering moves the selected notes into named groups (someone else’s notes are only proposed)', async () => {
       const before = model.requests.length;
       const own = await O.req('PATCH', `/api/workspaces/${team.id}/admin/ai`, {
         enabled: true,
