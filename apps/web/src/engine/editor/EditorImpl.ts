@@ -49,7 +49,8 @@ import { EMPTY_FORMAT_STATE, type FormatCommand, type TextFormatState } from '..
 import { richTextToPlain } from '../text/sanitize';
 import { runFollowers } from './followers';
 import { insideHiddenContainer } from './layers';
-import { listShortcuts } from '../runtime/shortcutList';
+import { listActions, listShortcuts } from '../runtime/shortcutList';
+import { planStackStep } from '../geometry/order';
 import {
   CONFLICT_WINDOW_MS,
   FALLBACK_MS,
@@ -659,6 +660,20 @@ export class EditorImpl implements Editor {
       .sort((a, b) => b.z - a.z);
     let z = this.core.store.minZ();
     this.updateMany(els.map((el) => ({ id: el.id, patch: { z: --z } })));
+  }
+
+  bringForward(ids: string[]): void {
+    this.stackStep(ids, 1);
+  }
+
+  sendBackward(ids: string[]): void {
+    this.stackStep(ids, -1);
+  }
+
+  private stackStep(ids: string[], dir: 1 | -1): void {
+    if (!ids.length || !this.guardWrite()) return;
+    const moves = planStackStep(this.getVisibleElements(), new Set(ids), dir);
+    if (moves.length) this.updateMany(moves.map((m) => ({ id: m.id, patch: { z: m.z } })));
   }
 
   duplicate(ids: string[], offset?: Point): string[] {
@@ -1293,6 +1308,13 @@ export class EditorImpl implements Editor {
 
   getShortcuts() {
     return listShortcuts(this.core.registry, (r) => this.can(r));
+  }
+
+  listActions() {
+    return listActions(this.core.registry, {
+      can: (r) => this.can(r),
+      scoped: (feature) => this.core.scoped(feature),
+    });
   }
 
   // ------------------------------------------------------------------ settings

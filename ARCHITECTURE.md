@@ -124,6 +124,9 @@ engine and features use `editor.host`. Features never import the REST client or 
 - Contextual format toolbar floats above the selection (`format.tsx` sections + engine's common
   controls: z-order, lock, link, more ⋯). Right-click menu: engine items + `menus: ['context']`.
 - `dock-right` panels render in a right side panel opened with `editor.openDock(id)`.
+  The dock has a fixed header strip with its close button; a panel puts its own header (title,
+  filters) there by wrapping it in `<DockHeader>` (`@engine`), and its content scrolls below the
+  strip, never under the button. Panels never reserve room for the close button themselves.
 - `dialog` panels mount only while opened with `editor.openPanel(id, props?)` (one at a time,
   also while the chrome is hidden); the component gets `props` and closes with
   `editor.closePanel(id)`. Commands that open feature UI (export, start voting) use this — never a
@@ -169,6 +172,11 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   `useSettings()`, `useCanEdit()`; `plainToRichText()`; types `ElementTextProps`, `TextFormatState`.
 - `useCollection(name)` returns the collection's entries (`Array<[key, value]>`).
 - `CommandDefinition.minRole` defaults to `'editor'`; engine view-safe commands set `'viewer'`.
+- `CommandDefinition.extraShortcuts?: string[]`: further bindings for the same command (listed in
+  the shortcut reference; menus show `shortcut`). Punctuation shortcuts match the typed character,
+  and outside text editing AltGr + that character (Windows reports AltGr as Ctrl+Alt) also answers
+  `mod+<character>`, so Ctrl+[ / Ctrl+] work where brackets need AltGr; Bring to front / Send to
+  back also have Ctrl+Shift+↑ / ↓ on every layout.
   While text is being edited, only command shortcuts using Tab or a modifier (outside the
   editor's own Mod+B/I/U/Z/C/V/X/A/K) are dispatched.
 - Engine commands are ordinary commands (`engine.copy`, `engine.duplicate`, `engine.lock`,
@@ -469,12 +477,49 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
   numbered lines, or short lines that don't read as a wrapped paragraph, or `<li>`s in the HTML —
   and any text while stickies are selected) → text box (0: prose).
 
-Reference & items (engine primitives; product UI in `features/shortcuts`, `links`, `image`, `icons`):
+Reference & items (engine primitives; product UI in `features/shortcuts`, `links`, `image`, `icons`,
+`select-similar` — "Select only ▸ <type> (count)" narrows a mixed selection):
 - `Editor.getShortcuts() → ShortcutEntry[]` (`engine/runtime/shortcutList.ts`): every binding the
   board answers for the live role — tool keys, command shortcuts (alternatives with the same label
   fold into one row), element types' declared `keys` (under their feature) and the keys the keyboard router handles itself (`ENGINE_KEYS` in
   `interaction/keyboard.ts`, kept next to the handlers). The `?` sheet renders it with `@ui` `Kbd`
   (⌘ on Apple platforms, Ctrl elsewhere), so the reference can't drift from the real bindings.
+- `Editor.listActions() → ActionEntry[]` (same file, same registry as `getShortcuts`): every tool
+  and every user-facing command with its shortcuts and, when it can't run now, why
+  (`disabledReason`: the role, or the command's `when` + `CommandDefinition.disabledReason`). A
+  command is user-facing when it has a `shortcut` or `menus` (`CommandDefinition.palette`
+  overrides: `true` for board settings, `false` for the palette's own shortcut); commands only other
+  features run with `args` have neither and never show. Grouped labels read as one phrase
+  ("Select all of this type"). `CommandDefinition.detail(editor)` is a live suffix in menus and
+  the palette ("Sticky notes (12)", "Snap to grid (on)"). The board menu's settings are engine
+  commands too (`engine.settings.*`, lists in `engine/editor/boardSettings.ts`), so the palette
+  reaches them. The command palette (`features/shortcuts`, `Mod+/` — Mod+K is the item/text link)
+  is built on it: fuzzy search (abbreviations inside one word, never letters scattered across
+  words), unavailable actions listed greyed out with the reason (Enter does nothing), recent
+  actions first (this browser, per user; localStorage, wrapped), an ARIA combobox + listbox, and
+  closed while text is being edited.
+- `Editor.bringForward(ids)` / `sendBackward(ids)` (`Mod+Shift+]` / `[`; `planStackStep` in
+  `geometry/order.ts`): one step past the next item each one OVERLAPS (non-overlapping items
+  change nothing visible, so they're passed), never past another selected item, riders with
+  their item, frames only among frames. New z values go between the neighbours (no renumbering).
+- Exact size and position (engine chrome: "Size and position" in the format toolbar,
+  `engine/editor/exact.ts`): X / Y move the whole selection through `moveBy` (one item: its own
+  stored top-left; several: their bounding box); W / H / rotation apply to each unlocked item the
+  way its handles would (`resize: 'aspect'` keeps the ratio, `'scale'` / `'width-only'` take a
+  width only, `'none'` and connectors nothing), growing from the item's own (rotated) top-left
+  corner. Typed values land on whole pixels exactly — never grid-snapped, a typed number is meant
+  — while ↑/↓ in a field step to the next grid line when "Snap to grid" is on (Shift: five), else
+  1 px (Shift 10). Each commit is one gesture = one undo step.
+- Mixed selections (`ElementDefinition.sharedStyle(el)` / `applySharedStyle(el, style)`,
+  `SharedStyle` = fill, stroke, strokeWidth, strokeStyle, fontFamily, fontSize, textColor, align,
+  vAlign): a type reports the keys it has; when the selection holds several types, the engine's
+  `MixedStyleSection` (`engine/ui/MixedStyle.tsx`, before the features' sections) shows a control
+  for every key two or more selected items have (MIXED when they disagree) and writes ONE
+  `updateMany` with each item's patch from its own definition (default: the same-named field), so a
+  sticky maps a fill to its nearest paper, a card / mind-map topic to its colour, an icon a line
+  colour to `color`, and a text box ignores `fontSize: 'auto'`. Its text colour does not clear
+  per-word colours (that would touch types that take no text colour). A new type joins mixed
+  editing by defining `sharedStyle` (+ `applySharedStyle` when its fields differ).
 - `BaseElement.link` (`@freero/shared`): an item link — an external URL or `#<elementId>`.
   Untrusted; `isSafeHref(href)` (`@engine`) is the one safe-href rule shared with rich text.
   "Copy link to item" (`engine.copyLink`) builds `/board/<id>?item=<elementId>`; the board selects
@@ -850,17 +895,21 @@ append-only log of Yjs updates (`board_doc_updates`); a save appends only what c
 previous one. Loading reads base + log in one statement (one consistent snapshot). Compaction (when
 a loaded board's log grows, and after a room unloads) folds the rows it read into a new base and
 deletes exactly those rows, guarded by the base's `version` (optimistic lock), so neither a save
-nor another instance's compaction running meanwhile is lost. It keeps a full-state snapshot at most
-every 30 min (`board_doc_snapshots`): the base of version history (`listBoardSnapshots` /
-`loadBoardSnapshot` in `realtime/index.ts`; REST in `realtime/routes.ts`). Snapshots have a
-`kind`: `auto` (compaction), `named` (never pruned), `before-restore`. Retention
+nor another instance's compaction running meanwhile is lost. Full-state snapshots
+(`board_doc_snapshots`) are the base of version history (`listBoardSnapshots` /
+`loadBoardSnapshot` in `realtime/index.ts`; REST in `realtime/routes.ts`): an automatic one at most
+every `FREERO_SNAPSHOT_EVERY_MS` (30 min), taken by compaction and, while a board stays open, by its
+room on a timer — one period after the first change, then once per period while changes keep coming
+(KAI-82). Every instance holding the board may try; the "newest snapshot old enough?" check and the
+insert run under the base row lock compaction takes, so one instance takes each. Snapshots have a
+`kind`: `auto`, `named` (never pruned), `before-restore`. Retention
 (`realtime/retention.ts`, job in `realtime/init.ts`, hourly on every instance under an advisory
 lock): non-named snapshots keep the newest per hour for a day, per day for a month, per week after;
 buckets are epoch-aligned, so a run is idempotent, and a snapshot is only ever deleted in favour of
 a newer one the same plan keeps. `RetentionPolicyFor` is the seam for workspace policies (KAI-51).
 
-Work done for a REQUEST rather than a socket (duplicate, trash, naming or restoring a version)
-goes through `withLiveRoom` (`rooms.ts`): the board's room is loaded on the handling instance
+Work done for a REQUEST or a job rather than a socket (duplicate, trash, naming or restoring a
+version, the account purge's comment rename) goes through `withLiveRoom` (`rooms.ts`): the board's room is loaded on the handling instance
 (held like a joining socket, unloaded as usual after) and caught up with every other instance
 holding it — it sends a sync-request and waits for one sync-reply per other subscriber of the
 board channel (`subscribedInstances`, Redis `PUBSUB NUMSUB`; 2 s cap). So `snapshotBoardDoc` is
@@ -979,6 +1028,12 @@ only to connections that may read them:
   `DATABASE_URL` it runs against that Postgres (fresh database per run, dropped afterwards) and
   also starts two instances at once on one empty database (migration lock); with `REDIS_URL` too,
   it runs two instances on one database + Redis with clients on each. CI does all of it.
+  `--only main,signin,secrets,sweep,purge,notify,platform,multi` runs some groups (to loop one while hunting a flake).
+  Checks wait on the real condition, never a fixed sleep: `waitFor(cond, ms)` polls until a
+  deadline; `settled(client, observers)` is a barrier (a presence change the server handles after
+  everything the client sent before, relayed in order) for proving something did NOT arrive;
+  `waitUnloaded(proc)` waits until the server holds no doc in memory (`/metrics` gauge), so the
+  next read comes from the database.
 - UI: drive the real app in a browser (see `.claude/skills/verify-freero/`).
 
 ### What a test is for

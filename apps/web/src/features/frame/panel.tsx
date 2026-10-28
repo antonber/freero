@@ -1,7 +1,7 @@
 import { memo, useMemo, useRef, useState } from 'react';
 import { Frame, Pencil, Play, Plus, Trash2 } from 'lucide-react';
 import { STICKY_COLORS, type BoardElement, type FrameElement } from '@freero/shared';
-import { definePanel, useCanEdit, useElements, useSelection, type Editor } from '@engine';
+import { DockHeader, definePanel, useCanEdit, useElements, useSelection, type Editor } from '@engine';
 import { Button, IconButton, Input } from '@ui';
 import { DEFAULT_FILL, isFrame, orderFrames, PANEL_ID, reorderPatches, TOOL_ID } from './lib/frames';
 import { renameFrame, zoomToFrame } from './lib/actions';
@@ -187,14 +187,14 @@ function FramesPanel({ editor }: { editor: Editor }) {
 
   return (
     <div className="fr-frames">
-      <div className="fr-frames__head">
+      <DockHeader className="fr-frames__head">
         <h2 className="fr-frames__title">
           Frames{frames.length > 0 && <span className="fr-frames__count">{frames.length}</span>}
         </h2>
         <Button size="sm" variant="primary" icon={Play} onClick={() => editor.runCommand('present.start')}>
           Present
         </Button>
-      </div>
+      </DockHeader>
       {frames.length ? (
         <ul className="fr-frames__list" ref={listRef} aria-label="Frames">
           {frames.map((f, i) => (

@@ -166,6 +166,9 @@ export default defineElement({
   type: 'mindmap',
   resize: 'none',
   rotatable: false,
+  // A topic's colour (its pill and branch).
+  sharedStyle: (el) => ({ fill: el.color || ROOT_COLOR }),
+  applySharedStyle: (_el, { fill }) => (fill && fill !== 'transparent' ? { color: fill } : null),
   textField: 'text',
   defaults: (): Omit<NewElement<'mindmap'>, 'x' | 'y'> => {
     const { w, h } = nodeSize('', true);

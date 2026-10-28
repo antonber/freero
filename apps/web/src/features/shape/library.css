@@ -31,7 +31,7 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 8px 12px 16px;
+  padding: 4px 12px 16px;
 }
 
 .fr-shape-lib__head {
@@ -39,8 +39,7 @@
   align-items: center;
   gap: 8px;
   min-height: 32px;
-  padding-left: 4px;
-  padding-right: 36px; /* room for the dock's close button */
+  padding: 8px 0 0 16px;
 }
 
 .fr-shape-lib__title {

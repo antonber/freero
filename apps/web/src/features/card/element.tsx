@@ -125,6 +125,9 @@ export default defineElement({
   type: 'card',
   resize: 'width-only',
   minSize: { w: CARD_MIN_W, h: 60 },
+  // The accent bar is the card's colour.
+  sharedStyle: (el) => ({ fill: el.color || DEFAULT_ACCENT }),
+  applySharedStyle: (_el, { fill }) => (fill && fill !== 'transparent' ? { color: fill } : null),
   textField: 'title',
   defaults: (): Omit<NewElement<'card'>, 'x' | 'y'> => ({
     type: 'card',

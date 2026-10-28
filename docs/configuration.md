@@ -31,6 +31,7 @@ installed. Copy [`.env.example`](../.env.example) as a starting point.
 | `FREERO_RELEASE` | — | | Release/version tag on logs and error reports (e.g. the git SHA). |
 | `FREERO_WEB_DIST` | `apps/web/dist` | | Built web app to serve. |
 | `FREERO_DOC_IDLE_MS` | `30000` | | Idle time before a board without connections is unloaded from memory. |
+| `FREERO_SNAPSHOT_EVERY_MS` | `1800000` | | Automatic versions (version history): a board that changed gets one at most this often, also while people keep it open. Retention thins old ones. |
 | `SHUTDOWN_DRAIN_SECONDS` | `5` in prod, else `0` | | On SIGTERM, `/readyz` answers 503 for this long before connections close, so load balancers stop routing to the instance first. |
 
 ## Database

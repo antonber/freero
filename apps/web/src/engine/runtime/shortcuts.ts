@@ -95,14 +95,29 @@ export function eventKey(e: Pick<KeyboardEvent, 'code' | 'key'>): string {
   return eventKeys(e)[0];
 }
 
-export function matchShortcut(
-  e: Pick<KeyboardEvent, 'code' | 'key' | 'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey'>,
-  shortcut: string | Shortcut,
-): boolean {
+type ShortcutEvent = Pick<KeyboardEvent, 'code' | 'key' | 'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey'>;
+
+export interface MatchOptions {
+  /**
+   * Also accept AltGr + a typed punctuation character for a `mod+<that character>` binding (not on
+   * macOS). Windows reports AltGr as Ctrl+Alt, and where '[' / ']' need AltGr (German AltGr+8/9,
+   * French AltGr+5/°) that chord is the only way to press "Ctrl+[" at all. Off while typing text:
+   * there, AltGr+8 must type '['.
+   */
+  altGr?: boolean;
+}
+
+export function matchShortcut(e: ShortcutEvent, shortcut: string | Shortcut, opts: MatchOptions = {}): boolean {
   const sc = typeof shortcut === 'string' ? parseShortcut(shortcut) : shortcut;
+  if (matches(e, sc, e.altKey)) return true;
+  const altGr = !!opts.altGr && !isMac && e.ctrlKey && e.altKey && isPunctuation(e.key);
+  return altGr && sc.mod && !sc.alt && isPunctuation(sc.key) && matches(e, sc, false);
+}
+
+function matches(e: ShortcutEvent, sc: Shortcut, alt: boolean): boolean {
   const mod = isMac ? e.metaKey : e.ctrlKey;
   if (mod !== sc.mod) return false;
-  if (e.altKey !== sc.alt) return false;
+  if (alt !== sc.alt) return false;
   // A punctuation character already says whether that layout needed Shift to type it.
   if (!isPunctuation(sc.key) && e.shiftKey !== sc.shift) return false;
   return eventKeys(e).includes(sc.key);

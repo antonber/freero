@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState, type MouseEvent, type RefObject } from 'react';
 import { ListOrdered, Minus, Plus, Trophy, Vote, X } from 'lucide-react';
 import type { BoardElement, Role } from '@freero/shared';
-import { definePanel, useCanEdit, useDock, useRole, type Editor, type Rect } from '@engine';
+import { DockHeader, definePanel, useCanEdit, useDock, useRole, type Editor, type Rect } from '@engine';
 import { AvatarStack, Button, Input, Menu, Modal, Slider, Toggle, Tooltip, type MenuItem } from '@ui';
 import { MAX_VOTES, MIN_VOTES } from './lib/voting';
 import { RESULTS_PANEL_ID, START_DIALOG_ID, previewOf, useVoting, useVotingUi, type VotingView } from './lib/state';
@@ -485,7 +485,9 @@ function ResultsPanel({ editor }: { editor: Editor }) {
 
   return (
     <div className="fr-vote-results">
-      <h2 className="fr-vote-results__title">Voting results</h2>
+      <DockHeader className="fr-vote-results__head">
+        <h2 className="fr-vote-results__title">Voting results</h2>
+      </DockHeader>
       {session && (
         <div className="fr-vote-results__meta">
           <strong>{session.title}</strong>

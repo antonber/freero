@@ -3,26 +3,18 @@
 import { useContext, useEffect, useRef, useState, type ComponentType } from 'react';
 import { ArrowLeft, ChevronRight, Ellipsis, Eye, Link2, Maximize, MessageSquare, PencilLine, Share2 } from 'lucide-react';
 import { Button, ColorSwatches, IconButton, Logo, Menu, Popover, SegmentedControl, Toggle, Tooltip, type MenuAction } from '@ui';
-import { GRID_SIZES, type BoardSettings } from '@freero/shared';
+import type { BoardSettings } from '@freero/shared';
 import { AppChromeContext, useCore } from '../context';
 import { useRole, useSettings } from '../hooks';
 import { ROLE_RANK } from '../runtime/core';
 import { PanelSlotView } from './PanelSlot';
 import { formatShortcut, isMac } from '../runtime/shortcuts';
+import { BACKGROUNDS, GRID_SIZES, GRID_STYLES } from '../editor/boardSettings';
 
 import { commandItem, groupCommands } from './ContextMenu';
 
-export const BACKGROUNDS = ['#F3F2F8', '#FFFFFF', '#F6F1E7', '#EAF4EE', '#E9F1FB', '#F8ECF1', '#2A2838', '#16151F'];
-const BACKGROUND_NAMES: Record<string, string> = {
-  '#F3F2F8': 'Mist',
-  '#FFFFFF': 'White',
-  '#F6F1E7': 'Paper',
-  '#EAF4EE': 'Sage',
-  '#E9F1FB': 'Sky',
-  '#F8ECF1': 'Blush',
-  '#2A2838': 'Dusk',
-  '#16151F': 'Night',
-};
+const BACKGROUND_COLORS = BACKGROUNDS.map((b) => b.color);
+const BACKGROUND_NAMES: Record<string, string> = Object.fromEntries(BACKGROUNDS.map((b) => [b.color, b.name]));
 
 function BoardTitle() {
   const core = useCore();
@@ -158,7 +150,7 @@ function BoardMenu() {
             <div className="fr-boardmenu__section">
               <div className="fr-boardmenu__label">Background</div>
               <ColorSwatches
-                colors={BACKGROUNDS}
+                colors={BACKGROUND_COLORS}
                 names={BACKGROUND_NAMES}
                 value={settings.background}
                 onChange={(c) => set({ background: c })}
@@ -172,11 +164,7 @@ function BoardMenu() {
                 size="sm"
                 value={settings.grid}
                 onChange={(grid) => set({ grid })}
-                options={[
-                  { value: 'dots', label: 'Dots' },
-                  { value: 'lines', label: 'Lines' },
-                  { value: 'none', label: 'None' },
-                ]}
+                options={[...GRID_STYLES]}
                 aria-label="Grid style"
               />
             </div>
@@ -205,10 +193,14 @@ function BoardMenu() {
           </>
         )}
         {groupCommands(commands, (reg) =>
-          commandItem(reg, () => {
-            close();
-            reg.def.run(core.scoped(reg.feature));
-          }),
+          commandItem(
+            reg,
+            () => {
+              close();
+              reg.def.run(core.scoped(reg.feature));
+            },
+            core,
+          ),
         ).map((item) => ('id' in item ? <BoardMenuItem key={item.id} item={item} /> : null))}
         {commands.length > 0 && <div className="fr-boardmenu__divider" />}
         <button
