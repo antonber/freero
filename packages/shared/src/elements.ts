@@ -331,6 +331,8 @@ export interface CardElement extends BaseElement {
   dueDate?: string | null; // ISO date
   status?: 'todo' | 'doing' | 'done' | null;
   tags?: string[];
+  /** Agreed estimate (story points, a size): written by planning poker through `card.setEstimate`. */
+  estimate?: string | null;
 }
 
 export interface EmojiElement extends BaseElement {
