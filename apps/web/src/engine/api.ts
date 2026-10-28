@@ -213,6 +213,13 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
    */
   hidden?(element: ElementOf<T>, editor: Editor): boolean;
   /**
+   * [additive] Ids this element is drawn against (a connector's attached ends). While any of them
+   * is hidden for this viewer (`Editor.setViewHidden` — itself or a container it sits in), this
+   * element is hidden for them too, so nothing is left pointing at empty space. Called often:
+   * keep it cheap.
+   */
+  hiddenWith?(element: ElementOf<T>): ReadonlyArray<string | null | undefined>;
+  /**
    * [additive] Ids that must be deleted together with this element, in the same transaction
    * (one undo step restores them all): a mind-map node's subtree. Applied recursively by every
    * LOCAL `editor.remove` (Delete, cut, context menu, eraser…).
@@ -698,6 +705,12 @@ export interface Editor {
    */
   setViewHidden(ids: string[], hidden: boolean): void;
   getViewHidden(): string[];
+  /**
+   * [additive] Whether the view filter hides this element for this viewer: it is in
+   * getViewHidden(), sits in a container that is, or is drawn against one that is
+   * (`ElementDefinition.hiddenWith`). False for unknown ids.
+   */
+  isViewHidden(id: string): boolean;
 
 
   // -- events --
