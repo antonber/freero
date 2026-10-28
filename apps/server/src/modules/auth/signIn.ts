@@ -12,7 +12,8 @@ import { appUrl } from '../../platform/mail';
 import { consumeRateLimit } from '../../platform/rateLimit';
 import { sendVerification } from './emails';
 import { authorizationUrl, newAuthorizationChecks, OidcUnavailableError, redeemAuthorizationCode } from './oidc';
-import { connectIdentity, isConnectedIdentity, linkProvider, providerConfig, resolveProviderLogin } from './providers';
+import { sendSecurityNotice } from './notices';
+import { connectIdentity, isConnectedIdentity, linkProvider, providerConfig, providerLabel, resolveProviderLogin } from './providers';
 import * as repo from './repo';
 import { getAccount, hashToken, newToken, sessionFromCookieHeader, startSession } from './service';
 import { useSecondFactor } from './twoFactor';
@@ -34,13 +35,14 @@ function cookieOptions(req: Request, path: string, maxAge: number) {
 /**
  * The first factor is proven (`method`: 'password', 'email_link' or a provider id). Signs in, or
  * answers { twoFactorRequired } and remembers the pending sign-in (and an identity to connect after it).
+ * `newAccount`: this sign-in created the account (no new-browser notice for its first browser).
  */
 export async function completeSignIn(
   req: Request,
   res: Response,
   userId: string,
   method: string,
-  link: repo.PendingLink | null = null,
+  { link = null, newAccount = false }: { link?: repo.PendingLink | null; newAccount?: boolean } = {},
 ): Promise<LoginResponse> {
   if (await repo.twoFactorEnabled(userId)) {
     const token = newToken();
@@ -49,9 +51,21 @@ export async function completeSignIn(
     res.cookie(CHALLENGE_COOKIE, token, cookieOptions(req, CHALLENGE_PATH, CHALLENGE_TTL_MS));
     return { twoFactorRequired: true };
   }
-  if (link) await connectIdentity(userId, link);
-  await startSession(req, res, userId, { method });
+  if (link) await connectIdentity(req, userId, link);
+  await openSession(req, res, userId, { method, newAccount });
   return { user: await getAccount(userId) };
+}
+
+/**
+ * Starts the session of a completed sign-in and mails the owner when it came from a browser that
+ * had not signed in to the account before. Not for a reset link (its "password reset" notice
+ * already says so) or a just-created account.
+ */
+async function openSession(req: Request, res: Response, userId: string, how: { method: string; twoFactor?: boolean; newAccount?: boolean }): Promise<void> {
+  const { knownDevice } = await startSession(req, res, userId, how);
+  if (knownDevice || how.newAccount || how.method === 'email_link') return;
+  const user = await getAccount(userId);
+  sendSecurityNotice(req, user.email, { kind: 'new_sign_in', method: how.method === 'password' ? 'password' : providerLabel(how.method) });
 }
 
 const signInExpired = () => unauthorized('Your sign-in expired. Please log in again.');
@@ -73,8 +87,8 @@ export async function finishTwoFactorSignIn(req: Request, res: Response, code: u
   // Single use: of two requests racing with right codes, one signs in.
   if (!(await repo.deleteChallenge(key))) throw signInExpired();
   res.clearCookie(CHALLENGE_COOKIE, { path: CHALLENGE_PATH });
-  if (challenge.link) await connectIdentity(challenge.userId, challenge.link);
-  await startSession(req, res, challenge.userId, { method: challenge.method, twoFactor: true });
+  if (challenge.link) await connectIdentity(req, challenge.userId, challenge.link);
+  await openSession(req, res, challenge.userId, { method: challenge.method, twoFactor: true });
   return getAccount(challenge.userId);
 }
 
@@ -167,7 +181,7 @@ export async function providerCallback(req: Request, res: Response): Promise<voi
   if (flow.intent === 'login') {
     const r = await resolveProviderLogin(provider, claims);
     if ('error' in r) return fail(r.error);
-    const done = await completeSignIn(req, res, r.userId, provider, r.link);
+    const done = await completeSignIn(req, res, r.userId, provider, { link: r.link, newAccount: r.created });
     if (r.created && !claims.emailVerified) {
       // The provider didn't vouch for the address: prove it the usual way.
       getAccount(r.userId)
@@ -182,7 +196,7 @@ export async function providerCallback(req: Request, res: Response): Promise<voi
   const session = await sessionFromCookieHeader(req.headers.cookie);
   if (!session || session.user.id !== flow.userId) return fail('failed');
   if (flow.intent === 'link') {
-    const error = await linkProvider(session.user.id, provider, claims);
+    const error = await linkProvider(req, session.user.id, provider, claims);
     if (error) return fail(error);
     return void res.redirect(`/settings?connected=${encodeURIComponent(provider)}`);
   }

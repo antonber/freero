@@ -1,7 +1,7 @@
 // Notifications: created from trusted server-side events (comment messages realtime applied from
 // an authenticated socket, boards shared through the members API), listed in the app's inbox,
 // delivered live to open tabs (live.ts) and emailed as batched digests.
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { mac, macMatches } from '../../platform/secrets';
 import type { AppNotification, NotificationPrefs, NotificationsResponse, NotificationType } from '@freero/shared';
 import { mentionedUserIds, mentionsAsNames } from '@freero/shared';
 import { getConfig } from '../../platform/config';
@@ -147,20 +147,20 @@ export async function updatePrefs(userId: string, patch: { emailAll?: boolean; e
 
 // ---- one-click unsubscribe (signed link, no session) ----
 
-const sign = (userId: string) => createHmac('sha256', getConfig().sessionSecret).update(`notifications.unsubscribe:${userId}`).digest();
+// Signed through platform/secrets (same digest as before, so links already sent keep working;
+// links signed under SESSION_SECRET_PREVIOUS keep working through a rotation).
+const message = (userId: string) => `notifications.unsubscribe:${userId}`;
 
 export function unsubscribeToken(userId: string): string {
-  return `${Buffer.from(userId).toString('base64url')}.${sign(userId).toString('base64url')}`;
+  return `${Buffer.from(userId).toString('base64url')}.${mac(message(userId)).toString('base64url')}`;
 }
 
 /** The user the token was made for, or null when it is not one of ours. */
 export function verifyUnsubscribeToken(token: string): string | null {
-  const [id, mac] = token.split('.');
-  if (!id || !mac) return null;
+  const [id, sig] = token.split('.');
+  if (!id || !sig) return null;
   const userId = Buffer.from(id, 'base64url').toString();
-  const given = Buffer.from(mac, 'base64url');
-  const want = sign(userId);
-  return given.length === want.length && timingSafeEqual(given, want) ? userId : null;
+  return macMatches(message(userId), Buffer.from(sig, 'base64url')) ? userId : null;
 }
 
 /** Turns all notification emails off for the token's user; returns their address (null: bad token). */

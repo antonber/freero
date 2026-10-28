@@ -275,7 +275,7 @@ export async function deleteExpiredSessions(now: number): Promise<void> {
 
 // ---- emailed tokens ----
 
-export type TokenPurpose = 'verify_email' | 'change_email' | 'reset_password';
+export type TokenPurpose = 'verify_email' | 'change_email' | 'reset_password' | 'revert_email';
 
 export async function insertToken(t: {
   tokenHash: string;
@@ -295,17 +295,22 @@ export async function insertToken(t: {
  * Uses a token: deletes it and returns what it was for, if it was valid (right purpose, not
  * expired). One statement, so two concurrent uses cannot both succeed.
  */
-export async function takeToken(tokenHash: string, purpose: TokenPurpose, now: number): Promise<{ userId: string; email: string } | null> {
-  const r = await one<{ user_id: string; email: string; expires_at: Date }>(
-    `DELETE FROM auth_tokens WHERE token_hash = $1 AND purpose = $2 RETURNING user_id, email, expires_at`,
+export async function takeToken(
+  tokenHash: string,
+  purpose: TokenPurpose,
+  now: number,
+): Promise<{ userId: string; email: string; createdAt: number } | null> {
+  const r = await one<{ user_id: string; email: string; created_at: Date; expires_at: Date }>(
+    `DELETE FROM auth_tokens WHERE token_hash = $1 AND purpose = $2 RETURNING user_id, email, created_at, expires_at`,
     [tokenHash, purpose],
   );
   if (!r || r.expires_at.getTime() <= now) return null;
-  return { userId: r.user_id, email: r.email };
+  return { userId: r.user_id, email: r.email, createdAt: r.created_at.getTime() };
 }
 
-export async function deleteTokens(userId: string, purpose: TokenPurpose): Promise<void> {
-  await query(`DELETE FROM auth_tokens WHERE user_id = $1 AND purpose = $2`, [userId, purpose]);
+/** Deletes the user's pending links of `purpose` (every pending link without one). */
+export async function deleteTokens(userId: string, purpose?: TokenPurpose): Promise<void> {
+  await query(`DELETE FROM auth_tokens WHERE user_id = $1 AND ($2::text IS NULL OR purpose = $2)`, [userId, purpose ?? null]);
 }
 
 export async function deleteExpiredTokens(now: number): Promise<void> {
@@ -553,6 +558,21 @@ async function insertRecoveryCodes(userId: string, codeHashes: string[]): Promis
   await query(`INSERT INTO user_recovery_codes (user_id, code_hash) SELECT $1, unnest($2::text[])`, [userId, codeHashes]);
 }
 
+/** Replaces the sealed secret with the same secret sealed under another key, unless the row changed meanwhile. */
+export async function resealTotp(userId: string, sealed: string, resealed: string): Promise<boolean> {
+  const rows = await query(`UPDATE user_totp SET secret = $3 WHERE user_id = $1 AND secret = $2 RETURNING 1`, [userId, sealed, resealed]);
+  return rows.length > 0;
+}
+
+/** A page of stored (sealed) authenticator secrets, by user id after `afterUserId`. */
+export async function listTotpSecrets(afterUserId: string, limit: number): Promise<{ userId: string; secret: string }[]> {
+  const rows = await query<{ user_id: string; secret: string }>(
+    `SELECT user_id, secret FROM user_totp WHERE user_id > $1 ORDER BY user_id LIMIT $2`,
+    [afterUserId, limit],
+  );
+  return rows.map((r) => ({ userId: r.user_id, secret: r.secret }));
+}
+
 /** Accepts a code's time step once: false if this or a later step was already used. */
 export async function useTotpStep(userId: string, timeStep: number): Promise<boolean> {
   const rows = await query(
@@ -585,6 +605,45 @@ export async function deleteTwoFactor(userId: string): Promise<void> {
     await query(`DELETE FROM user_totp WHERE user_id = $1`, [userId]);
     await query(`DELETE FROM user_recovery_codes WHERE user_id = $1`, [userId]);
   });
+}
+
+/**
+ * Removes what was set up on the account at or after `since` (the moment an email change took the
+ * account away from its previous address): an authenticator turned on (or being set up) and
+ * provider identities connected since then.
+ */
+export async function removeSecuritySetupSince(userId: string, since: number): Promise<void> {
+  await tx(async () => {
+    const totp = await query(
+      `DELETE FROM user_totp WHERE user_id = $1 AND (enabled_at IS NULL OR enabled_at >= $2) RETURNING 1`,
+      [userId, new Date(since)],
+    );
+    if (totp.length) await query(`DELETE FROM user_recovery_codes WHERE user_id = $1`, [userId]);
+    await query(`DELETE FROM auth_identities WHERE user_id = $1 AND created_at >= $2`, [userId, new Date(since)]);
+  });
+}
+
+// ---- browsers that signed in (new-device notices) ----
+
+/**
+ * Records that the browser with device cookie hash `deviceHash` signed in to the account, and says
+ * whether it had before (`known`) and how many browsers the account had on record before this one.
+ */
+export async function rememberDevice(userId: string, deviceHash: string, now: number): Promise<{ known: boolean; devicesBefore: number }> {
+  const r = await one<{ known: boolean | null; devices_before: number }>(
+    `WITH prior AS (SELECT COUNT(*) AS n, bool_or(device_hash = $2) AS known FROM auth_devices WHERE user_id = $1),
+          upsert AS (
+            INSERT INTO auth_devices (user_id, device_hash, created_at, last_seen_at) VALUES ($1, $2, $3, $3)
+            ON CONFLICT (user_id, device_hash) DO UPDATE SET last_seen_at = EXCLUDED.last_seen_at)
+     SELECT known, n AS devices_before FROM prior`,
+    [userId, deviceHash, new Date(now)],
+  );
+  return { known: !!r?.known, devicesBefore: r?.devices_before ?? 0 };
+}
+
+/** Forgets browsers that have not signed in since `before` (their device cookie has expired too). */
+export async function deleteDevicesUnseenSince(before: number): Promise<void> {
+  await query(`DELETE FROM auth_devices WHERE last_seen_at < $1`, [new Date(before)]);
 }
 
 /** Every match of `pattern`'s first group in a profile picture URL (restricted to `among` when given). */

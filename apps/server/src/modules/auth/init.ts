@@ -1,9 +1,13 @@
 import type { ServerContext } from '../../platform/context';
 import { HttpError } from '../../platform/http';
+import { scheduleExclusiveJob } from '../../platform/jobs';
 import { log } from '../../platform/log';
 import { openGeoIp } from './geoip';
 import * as repo from './repo';
-import { createUser } from './service';
+import { createUser, DEVICE_TTL_MS } from './service';
+import { resealTwoFactorSecrets } from './twoFactor';
+
+const RESEAL_LOCK_KEY = 7_202_610_284; // arbitrary, constant across releases
 
 export const DEMO_USER = { name: 'Demo User', email: 'demo@freero.app', password: 'freero123' };
 
@@ -12,7 +16,9 @@ export default async function initAuth(ctx: ServerContext): Promise<void> {
   await repo.deleteExpiredSessions(now);
   await repo.deleteExpiredTokens(now);
   await repo.deleteExpiredAuthFlows(now);
+  await repo.deleteDevicesUnseenSince(now - DEVICE_TTL_MS);
   if (ctx.config.geoipDbPath) await openGeoIp(ctx.config.geoipDbPath);
+  if (ctx.config.sessionSecretsPrevious.length) scheduleResealing(ctx);
   if (ctx.config.production) return;
   if ((await repo.countUsers()) === 0) {
     try {
@@ -28,4 +34,27 @@ export default async function initAuth(ctx: ServerContext): Promise<void> {
     const demo = await repo.findUserByEmail(DEMO_USER.email);
     if (demo && !demo.emailVerified) await repo.markEmailVerified(demo.id, demo.email, now);
   }
+}
+
+/**
+ * While SESSION_SECRET_PREVIOUS is set (a rotation is settling), seals stored authenticator
+ * secrets under the current SESSION_SECRET — soon after startup, then hourly — and says in the log
+ * when that is done.
+ */
+function scheduleResealing(ctx: ServerContext): void {
+  scheduleExclusiveJob(ctx, {
+    name: 'auth:reseal-two-factor',
+    lockKey: RESEAL_LOCK_KEY,
+    intervalMs: 3_600_000,
+    run: async () => {
+      const { resealed, unreadable } = await resealTwoFactorSecrets();
+      if (resealed) log(`auth: sealed ${resealed} two-step verification secret(s) again under the current SESSION_SECRET`);
+      if (unreadable)
+        log(
+          `auth: ${unreadable} two-step verification secret(s) open with no configured SESSION_SECRET (made under a secret that is no longer configured); those people sign in with a recovery code and enrol again`,
+        );
+      // Repeated every run on purpose: a reminder to finish the rotation.
+      log('auth: every readable two-step verification secret is sealed under the current SESSION_SECRET; SESSION_SECRET_PREVIOUS can be removed once every instance runs with it');
+    },
+  });
 }

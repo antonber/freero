@@ -8,6 +8,7 @@ import { logError } from '../../platform/log';
 import { clientIp } from '../../platform/rateLimit';
 import { setRequestUser } from '../../platform/requestContext';
 import { randomCursorColor } from './colors';
+import { maskIp } from './geoip';
 import { dummyHash, hashPassword, verifyPassword } from './password';
 import * as repo from './repo';
 
@@ -209,15 +210,17 @@ export function sessionsEnded(keys: string[]): void {
 /**
  * Signs the browser in. `method`: 'password', 'email_link' or a provider id; `twoFactor`: it passed
  * the second step. Sign-ins of accounts with two-factor go through signIn.ts (completeSignIn).
+ * `knownDevice`: this browser had signed in to the account before (see rememberDevice).
  */
 export async function startSession(
   req: Request,
   res: Response,
   userId: string,
   how: { method?: string; twoFactor?: boolean } = {},
-): Promise<void> {
+): Promise<{ knownDevice: boolean }> {
   const token = newToken();
   const now = Date.now();
+  const knownDevice = await rememberDevice(req, res, userId, now); // before this session exists
   await repo.insertSession({
     id: newId(20),
     tokenHash: hashToken(token),
@@ -236,6 +239,40 @@ export async function startSession(
     maxAge: SESSION_TTL_MS,
     secure: getConfig().production && req.secure,
   });
+  return { knownDevice };
+}
+
+// ---- Devices: which browsers have signed in to an account (new sign-in notices) ----
+
+/** A random id per browser (not per account or session), kept across sign-outs. */
+const DEVICE_COOKIE = 'freero_device';
+/** Browsers cap cookie lifetimes at 400 days; device records unseen for longer are pruned. */
+export const DEVICE_TTL_MS = 400 * 24 * 60 * 60 * 1000;
+const DEVICE_ID_RE = /^[A-Za-z0-9_-]{43}$/; // newToken()
+
+/**
+ * Records that this browser signed in to the account and says whether it is RECOGNISED: it brings
+ * a device cookie it already signed in to this account with. An account with no browser on record
+ * (created before device records existed, or no sign-in for 400 days) recognises a browser that
+ * matches one of its live sessions in User-Agent and network instead, so nobody gets a notice
+ * for the first sign-in after an upgrade from a browser they already use.
+ */
+async function rememberDevice(req: Request, res: Response, userId: string, now: number): Promise<boolean> {
+  const sent = parseCookies(req.headers.cookie)[DEVICE_COOKIE];
+  const device = sent && DEVICE_ID_RE.test(sent) ? sent : newToken();
+  res.cookie(DEVICE_COOKIE, device, {
+    httpOnly: true,
+    sameSite: 'lax',
+    path: '/',
+    maxAge: DEVICE_TTL_MS,
+    secure: getConfig().production && req.secure,
+  });
+  const { known, devicesBefore } = await repo.rememberDevice(userId, hashToken(device), now);
+  if (known) return true;
+  if (devicesBefore > 0) return false;
+  const userAgent = (req.get('user-agent') ?? '').slice(0, 400);
+  const network = maskIp(clientIp(req));
+  return (await repo.listSessions(userId, now)).some((s) => s.userAgent === userAgent && maskIp(s.ip) === network);
 }
 
 export function clearSessionCookie(res: Response): void {

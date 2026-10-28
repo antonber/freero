@@ -1,3 +1,5 @@
+// Pure helpers shared by the server (security notices) and the app (signed-in devices list).
+
 /**
  * "Chrome on Windows" from a User-Agent string, for the signed-in devices list. Order matters:
  * Edge and Opera also say "Chrome", Chrome also says "Safari", iPad/iPhone also say "Mac OS".

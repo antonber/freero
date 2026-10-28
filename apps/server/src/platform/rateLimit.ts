@@ -4,7 +4,6 @@
 //   router.post('/auth/login', rateLimit('login'), …)                      per client IP
 //   router.post('/boards', requireUser, rateLimit('boardCreate', 'user'), …) per user (after auth)
 //   await consumeRateLimit('login', `email:${email}`)                     anything else (throws 429)
-import { createHmac } from 'node:crypto';
 import type { Request, RequestHandler } from 'express';
 import type { Redis } from 'ioredis';
 import { getConfig, type RateLimitName, type RateLimitRule } from './config';
@@ -13,6 +12,7 @@ import { logError } from './log';
 import { rateLimited } from './metrics';
 import { getRedis } from './redis';
 import { requestUserId } from './requestContext';
+import { mac } from './secrets';
 
 export interface RateLimitResult {
   allowed: boolean;
@@ -78,9 +78,14 @@ function store(): RateLimitStore {
   return redisStore.store;
 }
 
-/** Keys may contain emails: hash them so Redis never holds personal data in clear text. */
+/**
+ * Keys may contain emails: hash them so Redis never holds personal data in clear text. Always the
+ * current secret: after a SESSION_SECRET rotation every counter starts over once (no window is
+ * longer than an hour by default). Counting old-key windows too would cost a store round trip on
+ * every request for a one-off grace of a few attempts, so rotation deliberately resets them.
+ */
 function keyFor(name: RateLimitName, key: string): string {
-  const digest = createHmac('sha256', getConfig().sessionSecret).update(key).digest('base64url').slice(0, 22);
+  const digest = mac(key).toString('base64url').slice(0, 22);
   return `${name}:${digest}`;
 }
 

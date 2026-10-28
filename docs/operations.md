@@ -137,6 +137,45 @@ Set `ERROR_REPORTING_DSN` to a Sentry-compatible DSN (Sentry, GlitchTip). 5xx er
 rejections and uncaught exceptions are sent with the request id and user id, throttled to one
 report per distinct message per minute. No data is sent when it is unset.
 
+## Rotating SESSION_SECRET
+
+`SESSION_SECRET` keys the server's HMACs (rate-limit counter keys, signed links in emails) and
+encrypts every two-step verification (authenticator app) secret at rest. Session
+cookies are random tokens and don't depend on it. Everything derived from it goes through
+`apps/server/src/platform/secrets.ts`, which accepts the current secret and any listed in
+`SESSION_SECRET_PREVIOUS`, and always makes new values with the current one.
+
+Single instance:
+
+1. Generate the new secret: `openssl rand -base64 48`.
+2. Restart with `SESSION_SECRET=<new>` and `SESSION_SECRET_PREVIOUS=<old>`. Nothing breaks:
+   authenticator codes still verify, and links mailed earlier still work.
+3. Shortly after startup the re-sealing job logs
+   `auth: every readable two-step verification secret is sealed under the current SESSION_SECRET …`
+   (anyone signing in in the meantime is re-sealed on the spot). It repeats hourly while
+   `SESSION_SECRET_PREVIOUS` is set.
+4. Remove `SESSION_SECRET_PREVIOUS` and restart. Signed links made before step 2 (in emails sent
+   earlier) stop working from then on, so keep the previous secret for a few days if that matters;
+   keeping it longer costs nothing.
+
+Several instances (rolling deploys): an instance that doesn't know the new secret yet can't open a
+secret another instance re-sealed with it. Go in two deploys:
+
+1. Deploy `SESSION_SECRET=<old>` with `SESSION_SECRET_PREVIOUS=<new>`: every instance now *accepts*
+   the new secret while still making values with the old one.
+2. When every instance runs that, deploy `SESSION_SECRET=<new>` with `SESSION_SECRET_PREVIOUS=<old>`.
+3. Wait for the job's "sealed under the current SESSION_SECRET" log line after the rollout
+   finished, then deploy without `SESSION_SECRET_PREVIOUS`.
+
+What a rotation does not carry over:
+
+- **Rate-limit counters** are keyed with the current secret only, so every window starts over once
+  (an hour at most with the default limits). Deliberate: honouring old counters would cost a Redis
+  round trip on every request.
+- **A secret that is no longer listed**: authenticator secrets still sealed under it can't be
+  opened. The job logs how many; those people sign in with a recovery code and turn two-step
+  verification on again. Nothing else is lost.
+
 ## Incident basics
 
 1. **Assess.** Is it everyone (proxy, DB, deploy) or some boards/users? Check `/readyz` on each
@@ -155,7 +194,8 @@ report per distinct message per minute. No data is sent when it is unset.
    - *Storage down*: uploads and image loads fail; boards keep working.
    - *Abuse / brute force*: tighten `RATE_LIMIT_*` and restart, or block at the proxy. Rate-limit
      events show in `freero_rate_limited_total` and as 429 lines in the log.
-   - *Leaked secret*: rotate `SESSION_SECRET`, `METRICS_TOKEN`, DB/S3 credentials; to sign everyone
+   - *Leaked secret*: rotate `SESSION_SECRET` (below; keep the leaked one as previous only until the
+     re-sealing job reports done, minutes), `METRICS_TOKEN`, DB/S3 credentials; to sign everyone
      out, `DELETE FROM sessions;`.
 4. **Data recovery.** Database: restore the latest dump into a new database and copy the affected
    rows across, or do a full restore (see above). Files: restore non-current object versions.
