@@ -29,6 +29,9 @@ const REQUIRED: Record<ElementType, string[]> = {
   file: ['src', 'name', 'size', 'mime'],
   objectlink: ['uri'],
   activity: ['kind', 'question', 'options', 'anonymous', 'results', 'guests', 'color'],
+  code: ['code', 'language', 'lineNumbers', 'theme'],
+  timeline: ['title', 'start', 'end', 'scale', 'lanes'],
+  timelinebar: ['title', 'start', 'end', 'color'],
 };
 
 let seq = 0;

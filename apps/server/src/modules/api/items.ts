@@ -337,7 +337,7 @@ export function patchUpdates(el: BoardElement, patch: Record<string, unknown>, v
     if (!inside.has(c.id) || c.locked) continue;
     const p: Record<string, unknown> = { x: c.x + __moveChildren.dx, y: c.y + __moveChildren.dy };
     if (c.type === 'connector') {
-      const conn = c as BoardElement & { start: { x: number; y: number }; end: { x: number; y: number }; waypoints?: Array<{ x: number; y: number }> };
+      const conn = c as unknown as { start: { x: number; y: number }; end: { x: number; y: number }; waypoints?: Array<{ x: number; y: number }> };
       p.start = { ...conn.start, x: conn.start.x + __moveChildren.dx, y: conn.start.y + __moveChildren.dy };
       p.end = { ...conn.end, x: conn.end.x + __moveChildren.dx, y: conn.end.y + __moveChildren.dy };
       if (conn.waypoints) p.waypoints = conn.waypoints.map((w) => ({ x: w.x + __moveChildren.dx, y: w.y + __moveChildren.dy }));
