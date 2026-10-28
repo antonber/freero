@@ -29,7 +29,7 @@ import {
 } from '../boards/index';
 import { removeBoardMemberships } from '../members/index';
 import { refreshBoardAccess } from '../realtime/index';
-import { membershipChanged } from './events';
+import { membershipChanged, recordMembershipChange } from './events';
 import * as repo from './repo';
 import type { Workspace } from './repo';
 import {
@@ -380,6 +380,7 @@ export async function changeRole(workspaceId: string, actorId: string, targetId:
     if (!mayChangeRole(actor, from, role)) throw forbidden('Only a workspace owner can change the role of owners and admins');
     if (from === 'owner' && role !== 'owner' && (await repo.isLastActiveOwner(workspaceId, targetId))) throw lastOwner();
     await repo.setRole(workspaceId, targetId, role);
+    if (from !== role) await recordMembershipChange(workspaceId, targetId);
     if (from !== role)
       await recordAudit({ action: 'member.role_changed', workspaceId, actorId, target: await userTarget(targetId), metadata: { from, to: role } });
   });
@@ -406,6 +407,7 @@ export async function removeMember(workspaceId: string, actorId: string, targetI
     if (!self && !mayRemove(actor, target)) throw forbidden('Only a workspace owner can remove owners and admins');
     if (target === 'owner' && (await repo.isLastActiveOwner(workspaceId, targetId))) throw lastOwner();
     await repo.removeMember(workspaceId, targetId);
+    await recordMembershipChange(workspaceId, targetId);
     const heir = self ? (await repo.listMembers(workspaceId)).find((m) => m.role === 'owner')!.userId : actorId;
     const boards = await transferBoardsOwnedIn(workspaceId, targetId, heir);
     await removeBoardMemberships(await boardIdsInWorkspace(workspaceId), targetId);

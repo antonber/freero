@@ -6,11 +6,12 @@ import type { SaveTemplateRequest, SavedTemplate, SavedTemplateSummary, Template
 import { getConfig } from '../../platform/config';
 import { badRequest, forbidden, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
+import type { OutboxConsumer } from '../../platform/outbox';
 import { recordAudit } from '../audit/index';
 import { getUsers } from '../auth/index';
 import { boardWorkspaceId, getBoardTitle, requireBoardDownload } from '../boards/index';
 import { deleteUpload, saveUpload } from '../uploads/index';
-import { isManager, teamWorkspaceIdsFor, workspaceRolesOf } from '../workspaces/index';
+import { isManager, teamWorkspaceIdsFor, WORKSPACE_MEMBERSHIP_TOPIC, workspaceRole, workspaceRolesOf } from '../workspaces/index';
 import * as repo from './repo';
 import type { StoredSummary, StoredTemplate } from './repo';
 
@@ -172,6 +173,23 @@ export async function shareTemplate(id: string, userId: string, workspaceId: unk
 export async function unshareOnLeave(workspaceId: string, userId: string, role: string | null): Promise<void> {
   if (role === null || role === 'guest') await repo.unshareAllOf(userId, workspaceId, Date.now());
 }
+
+/**
+ * Outbox consumer of workspace membership changes: looks at the person's role NOW (the event only
+ * says "look again"), so a late or repeated event never unshares for someone who came back.
+ */
+export const unshareOnLeaveConsumer: OutboxConsumer = {
+  name: 'templates:unshare-on-leave',
+  topics: [WORKSPACE_MEMBERSHIP_TOPIC],
+  lockKey: 7_202_611_032, // arbitrary, constant across releases
+  async handle(events) {
+    for (const e of events) {
+      const p = e.payload as { workspaceId?: unknown; userId?: unknown } | null;
+      if (typeof p?.workspaceId !== 'string' || typeof p.userId !== 'string') continue;
+      await unshareOnLeave(p.workspaceId, p.userId, await workspaceRole(p.workspaceId, p.userId));
+    }
+  },
+};
 
 /** Deletes one of the user's own templates (someone else's answers 404, like a missing one). */
 export async function deleteTemplate(id: string, userId: string): Promise<void> {
