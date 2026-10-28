@@ -511,6 +511,15 @@ modules' exports).
   comments elsewhere become "Deleted user" (`realtime.renameCommentAuthor`, through the live room),
   then the user row (cascades). Other files they uploaded stay — images on other people's boards
   are part of those boards — and files nothing references are left to the uploads sweep.
+- Uploads sweep (`uploads/sweep.ts`, exclusive job every 6 h): uploads are shared (duplicates,
+  templates, pasted copies, avatars), so nobody deletes an upload when one user of it goes away.
+  Each module that stores `/uploads/<name>` URLs exposes `…UploadReferences(among?)` from its
+  index (realtime: stored doc bases + log + version history, trashed boards included, and the live
+  docs of this instance; templates; avatars; board thumbnails), searching its own tables in SQL
+  with `UPLOAD_REF_PATTERN`. A round adopts stored files without a row (owner NULL), marks what is
+  referenced (`last_referenced_at`), re-checks the candidates right before deleting, and deletes
+  rows + files no round has seen referenced for 24 h — freeing quota. New content that stores
+  upload URLs outside board docs adds its scan to `SCANS` there. `ObjectStorage.list()` exists for it.
 
 ### Database (`platform/db.ts`)
 
