@@ -11,6 +11,7 @@
 
 import type { ComponentType, CSSProperties, ReactNode } from 'react';
 import type {
+  ActivityEntry,
   BoardElement,
   BoardLayer,
   BoardVersion,
@@ -156,6 +157,13 @@ export interface Host {
    * other roles and in the offline sandbox, with a message fit for a toast).
    */
   versions: VersionHistory;
+  /**
+   * [additive] The board's activity, newest first (wire: @freero/shared `ActivityEntry`): what
+   * people did, one entry per person per burst of work, as the SERVER saw it — never content of
+   * hidden frames for viewers/commenters, never private drafts. `before`: entries that ended before
+   * this instant (paging). Absent in the offline sandbox.
+   */
+  activity?: { list(before?: number): Promise<{ entries: ActivityEntry[]; hasMore: boolean }> };
 }
 
 /**

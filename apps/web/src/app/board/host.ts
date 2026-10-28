@@ -2,7 +2,7 @@
 import type { BoardSummary, Role } from '@freero/shared';
 import { unavailableVersionHistory, type Host, type HostUser } from '@engine';
 import type { ToastApi } from '@ui';
-import { wsBase } from '../api/client';
+import { api, wsBase } from '../api/client';
 import {
   deleteTemplate,
   fetchImage,
@@ -78,6 +78,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     shareTemplate: shareTemplateWith(deps.team?.id ?? null),
     deleteTemplate,
     versions: versionHistory(board.id),
+    activity: { list: (before) => api.boardActivity(board.id, before) },
     importImage,
     fetchImage,
   };
@@ -122,6 +123,7 @@ export function createGuestHost(
     shareTemplate: needsAccount('Sharing templates'),
     deleteTemplate: needsAccount('Saved templates'),
     versions: unavailableVersionHistory('Version history needs a free Freero account.'),
+    activity: { list: (before) => api.boardActivity(board.id, before) },
     importImage: needsAccount('Copying images'),
     fetchImage: needsAccount('Copying images'),
   };

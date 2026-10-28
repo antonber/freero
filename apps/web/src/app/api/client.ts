@@ -1,5 +1,6 @@
 import type {
   AcceptInviteResponse,
+  ActivityResponse,
   GuestBoardInfo,
   GuestInfo,
   GuestJoinResponse,
@@ -194,6 +195,12 @@ export const api = {
   guestMe: () => request<{ guest: GuestInfo | null }>('GET', '/api/guest/me'),
   guestBoard: (id: string) => request<{ board: BoardSummary }>('GET', `/api/guest/boards/${encodeURIComponent(id)}/board`),
   leaveAsGuest: () => request<{ ok: true }>('POST', '/api/guest/leave'),
+
+  // activity
+  boardActivity: (id: string, before?: number) =>
+    request<ActivityResponse>('GET', `/api/boards/${encodeURIComponent(id)}/activity${before ? `?before=${before}` : ''}`),
+  workspaceActivity: (id: string, before?: number) =>
+    request<ActivityResponse>('GET', `/api/workspaces/${encodeURIComponent(id)}/activity${before ? `?before=${before}` : ''}`),
 
   // access requests
   accessRequestState: (id: string) => request<AccessRequestState>('GET', `/api/boards/${encodeURIComponent(id)}/access-request`),

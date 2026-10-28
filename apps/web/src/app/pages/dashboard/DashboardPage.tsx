@@ -11,6 +11,7 @@ import { NotificationBell } from '../../notifications/NotificationBell';
 import { filterByOwner, sortBoards, type BoardSort, type OwnerFilter } from '../../lib/boards';
 import { useDebouncedValue, usePersistentState } from '../../lib/hooks';
 import { BoardItem, type BoardActions } from './BoardItem';
+import { RecentActivity } from './RecentActivity';
 import { NAV, Sidebar, type BoardView, type View } from './Sidebar';
 import { TrashItem, type TrashActions } from './TrashItem';
 import { CreateWorkspaceDialog, ProjectDialog, TransferBoardDialog } from './WorkspaceDialogs';
@@ -468,6 +469,7 @@ export function DashboardPage() {
               </div>
             )}
           </section>
+          {view === 'home' && !searching && workspaceId ? <RecentActivity workspaceId={workspaceId} /> : null}
           </>
           )}
         </div>
