@@ -1,4 +1,5 @@
 import type {
+  ApiScope,
   AuthorizedApp,
   CreateTokenRequest,
   OAuthClientInfo,
@@ -451,8 +452,8 @@ export const api = {
   deleteOAuthClient: (id: string) => request<{ ok: true }>('DELETE', `/api/oauth/clients/${encodeURIComponent(id)}`),
   /** The authorization request as the app sent it (the consent page's query string). */
   oauthConsent: (query: string) => request<{ consent: OAuthConsentInfo } | { redirect: string }>('GET', `/api/oauth/authorize?${query}`),
-  oauthDecide: (params: Record<string, string>, decision: 'allow' | 'deny') =>
-    request<{ redirect: string }>('POST', '/api/oauth/authorize', { ...params, decision }),
+  oauthDecide: (params: Record<string, string>, decision: 'allow' | 'deny', grant: ApiScope[] = []) =>
+    request<{ redirect: string }>('POST', '/api/oauth/authorize', { ...params, decision, grant }),
   workspaceApi: (id: string) => request<WorkspaceApiInfo>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/api`),
   setWorkspaceApi: (id: string, enabled: boolean) => request<WorkspaceApiInfo>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/admin/api`, { enabled }),
   setWorkspaceCredentialBlocked: (id: string, credentialId: string, blocked: boolean) =>

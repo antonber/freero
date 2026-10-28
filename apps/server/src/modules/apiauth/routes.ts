@@ -11,7 +11,7 @@ import { badRequest, handle, notFound } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
 import { allowCrossSiteApi } from '../../platform/security';
 import { currentSessionMethod, currentUser, requireUser } from '../auth/index';
-import { createPersonalToken, listPersonalTokens, revokeEverything, revokePersonalToken, setTokenPaused } from './credentials';
+import { createPersonalToken, listPersonalTokens, revokeEverything, revokePersonalToken, rootResource, setTokenPaused } from './credentials';
 import {
   authorizationServerMetadata,
   checkAuthorizeRequest,
@@ -64,7 +64,7 @@ export default function apiAuthRoutes(_ctx: ServerContext): Router {
   // ---- metadata (RFC 8414, RFC 9728) ----
   r.get('/.well-known/oauth-authorization-server', (req, res) => res.json(authorizationServerMetadata(req)));
   r.get(/^\/\.well-known\/oauth-protected-resource(\/.*)?$/, (req, res) => {
-    const path = (req.params as Record<string, string | undefined>)[0] ?? '/api/v1';
+    const path = (req.params as Record<string, string | undefined>)[0] ?? rootResource();
     const meta = protectedResourceMetadata(req, path);
     if (!meta) return res.status(404).json({ error: 'No such resource' });
     res.json(meta);
@@ -106,12 +106,12 @@ export default function apiAuthRoutes(_ctx: ServerContext): Router {
     '/api/oauth/authorize',
     requireUser,
     handle(async (req, res) => {
-      const body = (req.body ?? {}) as AuthorizeParams & { decision?: unknown };
+      const body = (req.body ?? {}) as AuthorizeParams & { decision?: unknown; grant?: unknown };
       const checked = await checkAuthorizeRequest(body);
       if ('fatal' in checked) throw badRequest(checked.fatal);
       if ('redirect' in checked) return res.json({ redirect: checked.redirect });
       if (body.decision !== 'allow' && body.decision !== 'deny') throw badRequest("decision must be 'allow' or 'deny'");
-      res.json({ redirect: await decide(currentUser(req).id, currentSessionMethod(req), checked.ok, body.decision === 'allow') });
+      res.json({ redirect: await decide(currentUser(req).id, currentSessionMethod(req), checked.ok, body.decision === 'allow', body.grant) });
     }),
   );
 
