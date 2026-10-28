@@ -39,7 +39,8 @@ const toSummary = (p: Project, role: WorkspaceRole | null, userId: string): Proj
 
 /** The workspace's projects the user can see (guests: only those they were added to). */
 export async function listProjects(workspaceId: string, userId: string): Promise<ProjectSummary[]> {
-  const { role } = await requireWorkspace(workspaceId, userId);
+  const { role } = await requireWorkspace(workspaceId, userId, 'guest', { allowDeactivated: true });
+  if ((await repo.getMember(workspaceId, userId))?.deactivatedAt != null) return []; // sees nothing in it
   const [projects, mine] = await Promise.all([repo.projectsIn([workspaceId]), repo.projectIdsOf(userId, [workspaceId])]);
   return projects.filter((p) => canSee(p, role, mine.has(p.id))).map((p) => toSummary(p, role, userId));
 }
