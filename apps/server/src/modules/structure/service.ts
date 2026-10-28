@@ -1,8 +1,15 @@
 // Inserting structure into a board (KAI-167): validate the request, check the caller may edit,
 // run it through the chosen sink. Agents and AI never pick coordinates: placement is the layout's.
 import { randomBytes } from 'node:crypto';
-import { LayoutError, type InsertStructureRequest, type InsertStructureResponse } from '@freero/shared';
+import {
+  LayoutError,
+  MAX_SUGGESTION_DESCRIPTION,
+  type InsertStructureRequest,
+  type InsertStructureResponse,
+  type SuggestionAuthor,
+} from '@freero/shared';
 import { badRequest } from '../../platform/http';
+import { getUser } from '../auth/index';
 import { requireBoardAccess } from '../boards/index';
 import { BoardChangeError } from '../realtime/index';
 import { asElement } from './plan';
@@ -24,17 +31,33 @@ function parseRequest(body: unknown): InsertStructureRequest {
   if (b.near !== undefined && (typeof b.near !== 'string' || !b.near || b.near.length > 200)) throw badRequest('near must be an element id');
   if (b.at !== undefined && (typeof b.at !== 'object' || !b.at || !Number.isFinite(b.at.x) || !Number.isFinite(b.at.y)))
     throw badRequest('at must be { x, y }');
-  if (b.target !== undefined && !(b.target in SINKS)) throw badRequest(`target must be ${Object.keys(SINKS).join(' or ')}`);
-  return { structure: b.structure, near: b.near, at: b.at, target: b.target };
+  if (b.target !== undefined && !Object.hasOwn(SINKS, b.target)) throw badRequest(`target must be ${Object.keys(SINKS).join(', ')}`);
+  if (b.description !== undefined && (typeof b.description !== 'string' || b.description.length > MAX_SUGGESTION_DESCRIPTION))
+    throw badRequest(`description must be text of at most ${MAX_SUGGESTION_DESCRIPTION} characters`);
+  return { structure: b.structure, near: b.near, at: b.at, target: b.target, description: b.description };
 }
 
-export async function insertStructure(boardId: string, userId: string, body: unknown): Promise<InsertStructureResponse> {
+/**
+ * `opts.author`: who proposes when the target is 'suggestions' (the public API passes its
+ * credential); by default the caller themselves.
+ */
+export async function insertStructure(
+  boardId: string,
+  userId: string,
+  body: unknown,
+  opts: { author?: SuggestionAuthor } = {},
+): Promise<InsertStructureResponse> {
   const req = parseRequest(body);
   const { role } = await requireBoardAccess(boardId, userId, 'editor');
   const target = req.target ?? 'board';
+  let author = opts.author;
+  if (!author) {
+    const name = target === 'suggestions' ? ((await getUser(userId))?.name ?? 'Someone') : '';
+    author = { kind: 'person', name, userId, userName: name };
+  }
   let result;
   try {
-    result = await SINKS[target].apply(boardId, { userId, role }, req, newElementId);
+    result = await SINKS[target].apply(boardId, { userId, role }, req, newElementId, { author, description: req.description ?? '' });
   } catch (e) {
     // Bad input or a board that changed shape under the plan: nothing was written.
     if (e instanceof LayoutError || e instanceof BoardChangeError) throw badRequest(e.message);
@@ -46,6 +69,7 @@ export async function insertStructure(boardId: string, userId: string, body: unk
     created: placed.elements.map((e) => e.id),
     moved: placed.moves.map((m) => m.id),
     bounds: placed.bounds,
+    ...(result.groupId ? { groupId: result.groupId } : {}),
   };
   if (target === 'preview') {
     const now = Date.now();

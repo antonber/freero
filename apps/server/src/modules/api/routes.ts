@@ -14,6 +14,9 @@ import {
   tableCellEntries,
   UNTRUSTED_CONTENT_NOTICE,
   API_MAX_DELETE_PER_CALL,
+  API_MAX_ITEMS_PER_CALL,
+  SUGGESTION_STALE,
+  type SuggestionAuthor,
   type ApiBoard,
   type ApiCommentThread,
   type ApiScope,
@@ -34,11 +37,20 @@ import { recordAuditQuietly } from '../audit/index';
 import { boardSummaryFor, boardWorkspaceId, createBoardFor, listBoardsIn, requireBoardAccess, requireBoardDownload, trashBoard } from '../boards/index';
 import { inviteBoardMember, listBoardMembers, removeBoardMember, setBoardMemberRole } from '../members/index';
 import { boardComments, boardOutline, parseOutlineQuery } from '../outline/index';
-import { BoardChangeError, changeBoard, readBoardView } from '../realtime/index';
+import {
+  BoardChangeError,
+  changeBoard,
+  decideSuggestions,
+  proposeSuggestions,
+  readBoardView,
+  SuggestionNotFoundError,
+  SuggestionStaleError,
+} from '../realtime/index';
 import { insertStructure, newElementId } from '../structure/index';
 import { getTemplate } from '../templates/index';
 import { ensurePersonalWorkspace, getWorkspaceInfo, workspaceRolesOf } from '../workspaces/index';
 import { commentSpot, patchUpdates, planCreate, planPatch, readItemInputs, toApiItem } from './items';
+import { planProposal, readProposal, suggestionGroups } from './suggestions';
 import OPENAPI from '../../../../../docs/api/openapi.json';
 
 export const mountPath = '/api/v1';
@@ -380,20 +392,81 @@ export default function apiRoutes(_ctx: ServerContext): Router {
     return deleteItems(call, [...new Set(body.ids as string[])], body.confirm, true);
   });
 
-  // Layout from structure: the caller says what, Freero places it (preview writes nothing).
+  // Layout from structure: the caller says what, Freero places it (preview writes nothing;
+  // suggestions proposes it for people to accept).
+  const STRUCTURE_SCOPE: Record<string, ApiScope> = { preview: 'boards:read', suggestions: 'boards:suggest' };
   endpoint(
     'post',
     '/boards/:boardId/structure',
-    (req) => ((req.body as { target?: unknown } | undefined)?.target === 'preview' ? 'boards:read' : 'boards:write'),
+    (req) => STRUCTURE_SCOPE[String((req.body as { target?: unknown } | undefined)?.target)] ?? 'boards:write',
     async (call) => {
-      const { req, userId } = call;
+      const { req, userId, cred } = call;
       const { id } = await openBoard(call, req.params.boardId);
       await consumeRateLimit('structure', `user:${userId}`);
-      const result = await insertStructure(id, userId, req.body);
+      const author: SuggestionAuthor = { kind: 'app', name: cred.label, userId, userName: cred.account.name, credentialId: cred.credentialId };
+      const result = await insertStructure(id, userId, req.body, { author });
       call.audit.metadata = { items: result.created.length, moved: result.moved.length, target: result.target };
-      return { status: result.target === 'board' ? 201 : 200, body: result };
+      return { status: result.target === 'preview' ? 200 : 201, body: result };
     },
   );
+
+  // ---- suggestions (KAI-169): propose with boards:suggest, read with boards:read, decide with boards:write ----
+  endpoint('get', '/boards/:boardId/suggestions', 'boards:read', async (call) => {
+    const { req, userId } = call;
+    const board = await openBoard(call, req.params.boardId);
+    // Suggestions live where only owners and editors read (the editors layer).
+    await requireBoardAccess(board.id, userId, 'editor');
+    await requireBoardDownload(board.id, userId, 'api');
+    const groupId = typeof req.query.groupId === 'string' ? req.query.groupId : null;
+    const view = await readBoardView(board.id, { userId, role: board.role });
+    const groups = suggestionGroups(view).filter((g) => !groupId || g.id === groupId);
+    call.audit.metadata = { returned: groups.reduce((n, g) => n + g.suggestions.length, 0) };
+    return { body: withNotice({ groups }) };
+  });
+
+  endpoint('post', '/boards/:boardId/suggestions', 'boards:suggest', async (call) => {
+    const { req, userId, cred } = call;
+    const proposal = readProposal(req.body);
+    const { id, role } = await openBoard(call, req.params.boardId);
+    await requireBoardAccess(id, userId, 'editor');
+    const author: SuggestionAuthor = { kind: 'app', name: cred.label, userId, userName: cred.account.name, credentialId: cred.credentialId };
+    const out = await change(() =>
+      proposeSuggestions(id, { userId, role }, { author, description: proposal.description }, (view) => ({ change: planProposal(proposal, view) })),
+    );
+    const groupId = out.records[0].groupId;
+    const group = suggestionGroups(await readBoardView(id, { userId, role })).find((g) => g.id === groupId);
+    call.audit.metadata = { suggestions: out.records.length, groupId };
+    // Decided already (by someone fast) or not: the group as it was proposed is in `records`.
+    return { status: 201, body: withNotice({ group: group ?? null }) };
+  });
+
+  const decide = (status: 'accepted' | 'rejected') => async (call: Call): Promise<Result> => {
+    const { req, userId } = call;
+    const body = (req.body ?? {}) as { ids?: unknown; groupId?: unknown; force?: unknown };
+    const ids = body.ids === undefined ? undefined : body.ids;
+    if (ids !== undefined && (!Array.isArray(ids) || !ids.length || ids.length > API_MAX_ITEMS_PER_CALL || ids.some((i) => typeof i !== 'string')))
+      throw badRequest(`ids must be a list of 1 to ${API_MAX_ITEMS_PER_CALL} suggestion ids`);
+    if (body.groupId !== undefined && typeof body.groupId !== 'string') throw badRequest('groupId must be a suggestion group id');
+    if ((ids === undefined) === (body.groupId === undefined)) throw badRequest('Send { ids: [ … ] } or { groupId }');
+    const { id, role } = await openBoard(call, req.params.boardId);
+    await requireBoardAccess(id, userId, 'editor');
+    try {
+      const out = await change(() =>
+        decideSuggestions(id, { userId, role }, { ids: ids as string[] | undefined, groupId: body.groupId as string | undefined, status, force: confirmed(body.force) }),
+      );
+      const decided = out.records.map((r) => r.id);
+      call.audit.metadata = { suggestions: decided.length, ...(out.decision.forced ? { forced: true } : {}) };
+      if (status === 'rejected') return { body: { rejected: decided } };
+      const a = out.applied ?? { created: [], updated: [], removed: [] };
+      return { body: { accepted: decided, created: a.created, updated: a.updated, removed: a.removed } };
+    } catch (e) {
+      if (e instanceof SuggestionNotFoundError) throw notFound(e.message);
+      if (e instanceof SuggestionStaleError) return { status: 409, body: { error: e.message, code: SUGGESTION_STALE, stale: e.stale } };
+      throw e;
+    }
+  };
+  endpoint('post', '/boards/:boardId/suggestions/accept', 'boards:write', decide('accepted'));
+  endpoint('post', '/boards/:boardId/suggestions/reject', 'boards:write', decide('rejected'));
 
   // ---- comments ----
   endpoint('get', '/boards/:boardId/comments', 'boards:read', async (call) => {
