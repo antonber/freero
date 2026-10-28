@@ -281,6 +281,8 @@ export const api = {
   scimSettings: (id: string) => request<ScimSettings>('GET', `/api/workspaces/${encodeURIComponent(id)}/scim`),
   createScimToken: (id: string, label: string) =>
     request<{ token: string; settings: ScimSettings }>('POST', `/api/workspaces/${encodeURIComponent(id)}/scim/tokens`, { label }),
+  rotateScimToken: (id: string, tokenId: string) =>
+    request<{ token: string; settings: ScimSettings }>('POST', `/api/workspaces/${encodeURIComponent(id)}/scim/tokens/${encodeURIComponent(tokenId)}/rotate`),
   revokeScimToken: (id: string, tokenId: string) =>
     request<ScimSettings>('DELETE', `/api/workspaces/${encodeURIComponent(id)}/scim/tokens/${encodeURIComponent(tokenId)}`),
   mapScimGroup: (id: string, groupId: string, mapping: ScimGroupMapping | null) =>

@@ -6,7 +6,6 @@ import { Crown, ShieldCheck, Trash2 } from 'lucide-react';
 import type { WorkspaceMember, WorkspaceSummary } from '@freero/shared';
 import { Button, Input, Modal, Select, useToast } from '@ui';
 import { api, ApiError } from '../../api/client';
-import { ScimBlock, SsoBlock, WorkspaceDataBlock } from './WorkspaceEnterprise';
 
 export function WorkspaceSettings({
   workspace,
@@ -102,7 +101,8 @@ export function WorkspaceSettings({
       <div className="fr-dash-settings__block">
         <h2 className="fr-dash-settings__title">Security, sharing and retention</h2>
         <p className="fr-dash-settings__hint">
-          Sharing policies, two-step verification, session limits, data retention and the audit log live in the admin console.
+          Sharing policies, two-step verification, session limits, single sign-on, provisioning, data retention and export, and the audit log live in the
+          admin console.
         </p>
         <div className="fr-dash-settings__row">
           <Link to={`/admin/${encodeURIComponent(workspace.id)}?tab=security`} className="fr-dash-settings__link">
@@ -110,14 +110,6 @@ export function WorkspaceSettings({
           </Link>
         </div>
       </div>
-
-      {workspace.kind === 'team' ? (
-        <>
-          <SsoBlock workspace={workspace} />
-          <ScimBlock workspace={workspace} />
-          <WorkspaceDataBlock workspace={workspace} />
-        </>
-      ) : null}
 
       {owner ? (
         <>

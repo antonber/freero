@@ -6,7 +6,7 @@ import { Avatar, Button, ColorSwatches, Input, Logo, Modal, Spinner, Toggle, use
 import { api, ApiError } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { relativeTime } from '../../lib/time';
-import { ExportList } from '../dashboard/WorkspaceEnterprise';
+import { ExportList } from '../admin/AdminIdentity';
 import { Section } from './Section';
 import { isReauthRequired, needsReauth, ReauthPrompt, SignInMethodsSection, TwoFactorSection } from './SecuritySections';
 import './account.css';

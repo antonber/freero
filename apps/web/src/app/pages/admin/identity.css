@@ -1,12 +1,5 @@
-/* Single sign-on, provisioning and data exports (WorkspaceEnterprise.tsx; the export list also on Account settings). */
-.fr-dash-sso__sub {
-  margin: 18px 0 8px;
-  font-size: 13.5px;
-  font-weight: 650;
-  color: var(--fr-ink-2);
-}
-
-.fr-dash-sso__domain {
+/* Single sign-on, provisioning and data exports in the admin console (AdminIdentity.tsx; the export list also on Account settings). */
+.fr-admin-sso__domain {
   margin-bottom: 10px;
   padding: 10px 12px;
   background: var(--fr-surface-2);
@@ -14,54 +7,31 @@
   border-radius: var(--fr-radius);
 }
 
-.fr-dash-sso__domain-head {
+.fr-admin-sso__domain-head {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.fr-dash-sso__spacer {
+.fr-admin-sso__spacer {
   flex: 1;
 }
 
-.fr-dash-sso__badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--fr-ink-2);
-  background: var(--fr-warning-soft);
-  border-radius: 999px;
-}
-
-.fr-dash-sso__badge--ok {
-  color: var(--fr-success);
-  background: var(--fr-success-soft);
-}
-
-.fr-dash-sso__txt,
-.fr-dash-sso__sp {
+.fr-admin-sso__stack {
   display: flex;
   flex-direction: column;
   gap: 6px;
   margin: 10px 0;
 }
 
-.fr-dash-sso__txt .fr-dash-settings__hint,
-.fr-dash-sso__sp .fr-dash-settings__hint {
-  margin: 0;
-}
-
-.fr-dash-sso__copy {
+.fr-admin-sso__copy {
   display: grid;
   grid-template-columns: 150px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
 }
 
-.fr-dash-sso__copy code {
+.fr-admin-sso__copy code {
   overflow: hidden;
   padding: 5px 8px;
   font-family: var(--fr-font-mono);
@@ -72,34 +42,33 @@
   border-radius: var(--fr-radius-sm);
 }
 
-.fr-dash-sso__form {
+.fr-admin-sso__inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.fr-admin-sso__inline > :first-child {
+  flex: 1;
+  min-width: 200px;
+}
+
+.fr-admin-sso__form {
   display: flex;
   flex-direction: column;
   gap: 12px;
   margin-top: 8px;
 }
 
-.fr-dash-sso__pair {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 16px;
-}
-
-.fr-dash-sso__inline {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.fr-dash-sso__list {
+.fr-admin-sso__list {
   display: flex;
   flex-direction: column;
   gap: 6px;
   margin: 8px 0 12px;
 }
 
-.fr-dash-sso__item {
+.fr-admin-sso__item {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -109,18 +78,18 @@
   border-radius: var(--fr-radius);
 }
 
-.fr-dash-sso__item code {
+.fr-admin-sso__item code {
   font-family: var(--fr-font-mono);
   font-size: 12px;
   color: var(--fr-ink-3);
 }
 
-.fr-dash-sso__item .fr-dash-sso__meta {
+.fr-admin-sso__item .fr-admin-sso__meta {
   flex: 1;
   margin: 0;
 }
 
-.fr-dash-sso__download {
+.fr-admin-sso__download {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -129,17 +98,17 @@
   text-decoration: none;
 }
 
-.fr-dash-sso__modal-text {
+.fr-admin-sso__modal-text {
   margin: 0 0 12px;
   color: var(--fr-ink-2);
 }
 
 @media (max-width: 640px) {
-  .fr-dash-sso__copy {
+  .fr-admin-sso__copy {
     grid-template-columns: minmax(0, 1fr) auto;
   }
 
-  .fr-dash-sso__copy .fr-dash-settings__label {
+  .fr-admin-sso__copy .fr-admin-row__label {
     grid-column: 1 / -1;
   }
 }
