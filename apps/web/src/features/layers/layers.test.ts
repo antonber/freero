@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BoardElement } from '@freero/shared';
 import { buildOutline, restackZ } from './lib/outline';
+import { layoutRows, rowHeight, visibleRange } from './lib/rows';
 
 const el = (id: string, z: number, extra: Record<string, unknown> = {}) =>
   ({ id, type: 'sticky', x: 0, y: 0, w: 10, h: 10, rotation: 0, z, ...extra }) as unknown as BoardElement;
@@ -32,5 +33,27 @@ describe('Layers panel restacking', () => {
       ['f1', ['z', 'x']],
       [null, ['y', 'orphan']],
     ]);
+  });
+});
+
+describe('Layers list windowing', () => {
+  const frame = el('f', 0, { type: 'frame', index: 0, title: 'F' });
+  const items = [
+    frame,
+    ...Array.from({ length: 60 }, (_, i) => el(`in${i}`, i, { frameId: 'f' })),
+    ...Array.from({ length: 300 }, (_, i) => el(`out${i}`, i)),
+  ];
+  const groups = buildOutline(items);
+
+  it('mounts every row the viewport shows (and only about that many) at any scroll position, groups open or folded', () => {
+    for (const collapsed of [new Set<string>(), new Set(['f'])]) {
+      const { rows, height } = layoutRows(groups, collapsed);
+      for (let top = 0; top <= height; top += 13) {
+        const [from, to] = visibleRange(rows, top, 400, 0);
+        const shown = rows.filter((r) => r.top < top + 400 && r.top + rowHeight(r) > top);
+        expect(shown.every((r) => rows.indexOf(r) >= from && rows.indexOf(r) < to)).toBe(true);
+        expect(to - from).toBeLessThanOrEqual(shown.length);
+      }
+    }
   });
 });
