@@ -106,6 +106,12 @@ export interface Host {
     call?: BoardCall | null;
     /** [additive] The server can give the board a Jitsi room of its own. */
     jitsiCalls?: boolean;
+    /**
+     * [additive] Live embeds (KAI-127): `enabled` false when the board's workspace turned them off
+     * (links stay preview cards); `extraOrigins` are https origins the server's operator allows to
+     * be framed besides the built-in providers. Absent: on, no extra origins.
+     */
+    embeds?: { enabled: boolean; extraOrigins: string[] };
   };
   /** Full ws URL prefix; engine connects WebsocketProvider(syncUrl, board.id, doc). */
   syncUrl: string;

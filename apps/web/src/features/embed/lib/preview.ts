@@ -3,12 +3,21 @@
 // it from Freero, never from the third-party site.
 import type { EmbedElement } from '@freero/shared';
 import type { Editor } from '@engine';
-import { videoEmbed } from './providers';
+import { liveEmbed, type LiveEmbed } from './providers';
 
 /** Card sizes (world px). */
 export const CARD_W = 360;
 export const CARD_H_IMAGE = 316;
 export const CARD_H_TEXT = 128;
+/** Links that open as a live document (design file, doc, sheet, playground) get room to read it. */
+export const DOC_W = 560;
+export const DOC_H = 420;
+
+/** The card's size for a link: live documents are bigger; videos and pictures get the media area. */
+export function sizeFor(live: LiveEmbed | null, hasImage: boolean): { w: number; h: number } {
+  if (live?.kind === 'document') return { w: DOC_W, h: DOC_H };
+  return { w: CARD_W, h: hasImage || live ? CARD_H_IMAGE : CARD_H_TEXT };
+}
 const MAX_IMAGE_SIDE = 720;
 
 // Cards whose preview is being fetched by THIS client (a 'loading' card nobody fetches any more,
@@ -59,6 +68,10 @@ export async function fillPreview(editor: Editor, id: string, url: string): Prom
   }
   const cur = editor.getElement<EmbedElement>(id);
   if (!cur || cur.url !== url) return; // deleted or re-pointed meanwhile
-  const h = patch.image || videoEmbed(url) ? CARD_H_IMAGE : CARD_H_TEXT;
+  // The card keeps a size someone gave it meanwhile; otherwise it takes the size its content needs.
+  const live = liveEmbed(url, editor.host.board.embeds?.extraOrigins ?? []);
+  const planned = sizeFor(live, false);
+  const resized = cur.w !== planned.w || cur.h !== planned.h;
+  const h = resized ? cur.h : sizeFor(live, !!patch.image).h;
   editor.update<EmbedElement>(id, { ...patch, h, y: cur.y + (cur.h - h) / 2 });
 }
