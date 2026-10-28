@@ -257,14 +257,21 @@ export function simplify(pts: Point[]): Point[] {
  * segment passes through it.
  */
 function elbowRoute(s: End, e: End, wps: Point[]): Point[] {
-  const M = ELBOW_MARGIN;
+  let M = ELBOW_MARGIN;
   // Free ends leave toward the other end along the dominant axis.
   const ds = s.dir ? axisOf(s.dir) : null;
   const de = e.dir ? axisOf(e.dir) : null;
+  // Sides facing each other across a gap narrower than two stubs (items packed by Tidy up): the
+  // stubs meet in the middle of the gap, so the line crosses it instead of overshooting and
+  // looping back around both items.
+  if (ds && de && ds.x === -de.x && ds.y === -de.y) {
+    const gap = (e.p.x - s.p.x) * ds.x + (e.p.y - s.p.y) * ds.y;
+    if (gap > 0 && gap < 2 * M) M = gap / 2;
+  }
   const A = ds ? add(s.p, mul(ds, M)) : s.p;
   const B = de ? add(e.p, mul(de, M)) : e.p;
   const solid = [s.box, e.box].filter((b): b is Rect => !!b).map((b) => inflate(b, -0.5));
-  const near = [s.box, e.box].filter((b): b is Rect => !!b).map((b) => inflate(b, M - 1));
+  const near = [s.box, e.box].filter((b): b is Rect => !!b).map((b) => inflate(b, Math.max(0, M - 1)));
   const outer = [s.box, e.box].filter((b): b is Rect => !!b).map((b) => inflate(b, M));
 
   const mids: Point[][] = [];

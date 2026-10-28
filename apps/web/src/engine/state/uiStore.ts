@@ -78,10 +78,12 @@ export interface PointerState {
   screen: { x: number; y: number } | null;
   world: { x: number; y: number } | null;
   inside: boolean;
+  /** Modifiers held now (`metaKey` = Ctrl or ⌘), so hover previews follow the grid-snap rules. */
+  mods: { metaKey: boolean; altKey: boolean };
 }
 
 export function createPointerStore(): StoreApi<PointerState> {
-  return createStore<PointerState>(() => ({ screen: null, world: null, inside: false }));
+  return createStore<PointerState>(() => ({ screen: null, world: null, inside: false, mods: { metaKey: false, altKey: false } }));
 }
 
 export type UiStore = StoreApi<UiState>;

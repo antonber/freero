@@ -684,7 +684,7 @@ export class EditorImpl implements Editor {
     const text = elements
       .map((el) => {
         const def = this.getDefinition(el.type);
-        if (def?.toPlainText) return def.toPlainText(el);
+        if (def?.toPlainText) return def.toPlainText(el, this);
         const field = def?.textField;
         return field ? richTextToPlain(String((el as unknown as Record<string, unknown>)[field] ?? '')) : '';
       })

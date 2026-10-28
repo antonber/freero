@@ -7,7 +7,6 @@ import {
   useCollection,
   useEditingPart,
   useEditor,
-  type Collection,
   type Editor,
   type ElementRenderProps,
   type NewElement,
@@ -16,10 +15,6 @@ import { CELL_PAD, cellAt, cellPart, FONT_SIZE, HEADER_FILL, layoutTable, parseC
 import { CELLS, cellText, plainGrid, readContent, writeContent, type TableContent } from './lib/cells';
 import { commitCell, createFromGrid, editCell, moveCell, rememberCell } from './lib/actions';
 import './table.css';
-
-// Cell texts for toPlainText (copy as text, search), which only gets the element: the live
-// collection, captured the first time any table renders or imports on this board.
-let liveCells: Pick<Collection<string>, 'get'> | null = null;
 
 const KEY_MOVES: Record<string, Move> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
 
@@ -62,7 +57,6 @@ const TableView = memo(function TableView({ element: el, selected, editing }: El
     for (const [k, v] of entries) if (k.slice(1, 1 + prefix.length) === prefix) map.set(k, v);
     return map;
   }, [entries, el.id]);
-  liveCells ??= editor.collection<string>(CELLS);
   const active = editing ? parseCellPart(editingPart) : null;
   useEffect(() => {
     if (active) rememberCell(el.id, cellPart(active.rowId, active.colId));
@@ -188,7 +182,10 @@ export default defineElement({
     return false;
   },
 
-  toPlainText: (el) => (liveCells ? plainGrid(liveCells, el).map((r) => r.join('\t')).join('\n') : ''),
+  toPlainText: (el, editor) =>
+    plainGrid(editor.collection<string>(CELLS), el)
+      .map((r) => r.join('\t'))
+      .join('\n'),
 
   // Every non-empty cell is a text part: board-wide find & replace reads and rewrites cells
   // through the engine (Editor.getTextParts / setTextParts), never by touching tableCells.
@@ -215,7 +212,6 @@ export default defineElement({
     if (data.files.length) return false;
     const grid = parseDelimited(data.text);
     if (!grid) return false;
-    liveCells ??= editor.collection<string>(CELLS);
     createFromGrid(editor, grid, at);
     return true;
   },

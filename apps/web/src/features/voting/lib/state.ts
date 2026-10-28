@@ -107,7 +107,7 @@ export function useVoting(): VotingView {
 
 /** One-line text preview of an element for the results list. */
 export function previewOf(editor: Editor, el: BoardElement): string {
-  const fromDef = editor.getDefinition(el.type)?.toPlainText?.(el as never);
+  const fromDef = editor.getDefinition(el.type)?.toPlainText?.(el as never, editor);
   let text = fromDef ?? '';
   if (!text && 'title' in el && typeof el.title === 'string') text = el.title;
   if (!text && 'text' in el && typeof el.text === 'string') text = richTextToPlain(el.text);
