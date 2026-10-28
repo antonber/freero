@@ -10,7 +10,7 @@ import './links.css';
 const BADGE_PX = 22;
 
 /**
- * A small badge at the item's bottom-right corner; clicking it follows the link. Drawn inside the
+ * A small badge in the item's bottom-right corner; clicking it follows the link. Drawn inside the
  * item's wrapper so it moves and rotates with it; left out of image exports.
  */
 const LinkBadge = memo(function LinkBadge({ element, zoom }: { element: BoardElement; zoom: number }) {
@@ -18,7 +18,9 @@ const LinkBadge = memo(function LinkBadge({ element, zoom }: { element: BoardEle
   const exporting = useIsExporting();
   const target = resolveLink(element.link, window.location.origin);
   if (exporting || !target) return null;
-  const size = Math.min(BADGE_PX / zoom, Math.min(element.w, element.h) * 0.6);
+  const size = Math.min(BADGE_PX / zoom, Math.min(element.w, element.h) * 0.5);
+  // Inset from the corner, so the selection's corner resize handle stays grabbable.
+  const inset = Math.min(8 / zoom, Math.min(element.w, element.h) * 0.08);
   const label = target.kind === 'item' ? 'Go to linked item' : `Open ${describeLink(target)}`;
   const Icon = target.kind === 'item' ? Crosshair : ArrowUpRight;
   return (
@@ -28,7 +30,7 @@ const LinkBadge = memo(function LinkBadge({ element, zoom }: { element: BoardEle
       data-fr-interactive=""
       title={label}
       aria-label={label}
-      style={{ width: size, height: size, right: -size * 0.3, bottom: -size * 0.3 }}
+      style={{ width: size, height: size, right: inset, bottom: inset }}
       onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => {
         e.stopPropagation();
