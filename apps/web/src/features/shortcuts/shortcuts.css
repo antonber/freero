@@ -78,3 +78,106 @@
   color: var(--fr-ink-2);
   font-size: 13.5px;
 }
+
+/* ---------------------------------------------------------------- command palette */
+/* Pinned near the top: the field stays put while the list grows and shrinks with the query. */
+.fr-shortcuts-palette {
+  align-self: flex-start;
+  margin-top: min(12vh, 96px);
+}
+
+.fr-shortcuts-palette .fr-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.fr-shortcuts-palette__list {
+  list-style: none;
+  margin: 0 -8px;
+  padding: 0;
+  overflow-y: auto;
+  max-height: min(52vh, 440px);
+}
+
+.fr-shortcuts-palette__item {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: var(--fr-radius-sm);
+  font-size: 13.5px;
+  color: var(--fr-ink);
+  cursor: pointer;
+}
+
+.fr-shortcuts-palette__item.is-active {
+  background: var(--fr-primary-soft);
+}
+
+.fr-shortcuts-palette__item.is-disabled {
+  cursor: default;
+}
+
+.fr-shortcuts-palette__item.is-disabled .fr-shortcuts-palette__label,
+.fr-shortcuts-palette__item.is-disabled .fr-shortcuts-palette__icon {
+  color: var(--fr-ink-3);
+}
+
+.fr-shortcuts-palette__icon {
+  display: inline-flex;
+  color: var(--fr-ink-2);
+}
+
+.fr-shortcuts-palette__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.fr-shortcuts-palette__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-shortcuts-palette__detail,
+.fr-shortcuts-palette__reason {
+  color: var(--fr-ink-3);
+}
+
+.fr-shortcuts-palette__reason {
+  font-size: 12px;
+}
+
+.fr-shortcuts-palette__section {
+  font-size: 12px;
+  color: var(--fr-ink-3);
+  white-space: nowrap;
+}
+
+.fr-shortcuts-palette__keys {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.fr-shortcuts-palette__empty {
+  margin: 8px 0;
+  color: var(--fr-ink-2);
+  font-size: 13.5px;
+}
+
+.fr-shortcuts-palette__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--fr-ink-3);
+}
+
+@media (max-width: 560px) {
+  .fr-shortcuts-palette__section {
+    display: none;
+  }
+}
