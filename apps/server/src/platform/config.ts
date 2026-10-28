@@ -22,7 +22,9 @@ export type RateLimitName =
   | 'wsConnect'
   | 'twoFactor'
   | 'twoFactorRecovery'
-  | 'oidc';
+  | 'oidc'
+  | 'outline'
+  | 'structure';
 
 /** `limit` hits per `windowMs`; `null` = not limited. */
 export type RateLimitRule = { limit: number; windowMs: number } | null;
@@ -158,6 +160,8 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   twoFactor: '10/15m', // two-factor codes per IP and per account (sign-in second step, enrolment, disabling)
   twoFactorRecovery: '3/1d', // "lost my authenticator" recoveries started, per IP and per account
   oidc: '60/10m', // "Sign in with …" starts and callbacks per IP
+  outline: '120/1m', // per user: board outlines (each reads and walks the whole board)
+  structure: '60/10m', // per user: structure laid out and inserted into a board (KAI-167)
 };
 
 const ENV_NAME: Record<RateLimitName, string> = {
@@ -177,6 +181,8 @@ const ENV_NAME: Record<RateLimitName, string> = {
   twoFactor: 'RATE_LIMIT_TWO_FACTOR',
   twoFactorRecovery: 'RATE_LIMIT_TWO_FACTOR_RECOVERY',
   oidc: 'RATE_LIMIT_OIDC',
+  outline: 'RATE_LIMIT_OUTLINE',
+  structure: 'RATE_LIMIT_STRUCTURE',
 };
 
 /** The built-in providers: env prefix, button label, default issuer, extra verified-email claims. */

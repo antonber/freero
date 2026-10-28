@@ -32,6 +32,11 @@ export async function getMemberRole(boardId: string, userId: string): Promise<Ro
   return (await repo.getMembership(boardId, userId))?.role ?? null;
 }
 
+/** User ids with a direct membership on the board (not the owner, not team or link access). */
+export async function memberIdsOf(boardId: string): Promise<string[]> {
+  return (await repo.listByBoard(boardId)).map((m) => m.userId);
+}
+
 /** boardId -> membership role for every board the user was invited to. */
 export async function membershipsOf(userId: string): Promise<Map<string, Role>> {
   return new Map((await repo.listByUser(userId)).map((m) => [m.boardId, m.role]));
