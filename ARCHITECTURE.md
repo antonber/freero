@@ -547,10 +547,36 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
   a data URL first (`engine/editor/remoteImages.ts`, through `Host.fetchImage(url)` =
   `GET /api/unfurl/image`, else a CORS read), and `renderToDataUrl({ onMissingImages })` reports
   what couldn't be read (the export feature says so). Offline sandbox: both reject.
-- Pasted text is routed by importer priority, never by features importing each other: table
-  (20: TSV / consistent CSV) → embed (10: exactly one URL) → sticky (5: a list — mostly bulleted /
-  numbered lines, or short lines that don't read as a wrapped paragraph, or `<li>`s in the HTML —
-  and any text while stickies are selected) → text box (0: prose).
+- Pasted text is routed by importer priority, never by features importing each other: shape (40:
+  Mermaid source, `looksLikeMermaid` — a header alone on its line — handed to `from-text.insert`)
+  → mind map (25: an outline with two or more indentation levels, tabs only as indentation, not
+  code; under the selected topic if one is selected) → table (20: TSV / consistent CSV) → embed
+  (10: exactly one URL) → sticky (5: a list — mostly bulleted / numbered lines, or short lines that
+  don't read as a wrapped paragraph, or `<li>`s in the HTML — and any text while stickies are
+  selected) → text box (0: prose).
+
+Structure from text and diagrams as code (`features/from-text`, KAI-196 / KAI-119; layout formats:
+docs/board-outline.md):
+- "Insert from text" lays text out in the BROWSER with `@freero/shared` `layoutStructure`, the
+  function the server's insert-structure runs (no round trip; works offline, live preview), puts it
+  on `findFreeSpot` near the view with `createMany` (tables, whose cells live outside the elements,
+  through `insertElements`), one transaction = one undo step, then fits it into view.
+- Mind maps from structure are laid out by `layoutMindTree` (`@freero/shared` layout/mindtree.ts),
+  the function `features/mindmap` runs for tidy up / follow / drag: one function, not a copy.
+  Org charts and Auto-layout ▸ Tree / Org chart use `tidyTree`; flowcharts and Auto-layout ▸
+  Top-down / Left to right use `layered` (`features/arrange/lib/autoLayout.ts`: selected items and
+  the connectors joining them, moved with `moveBy` in one gesture; locked items stay put).
+- Diagrams (Mermaid, tree, org chart, mind map) keep their source in the `diagramSources`
+  collection (owned and undoable by from-text: diagram id → `{ kind, source, ids: sourceKey →
+  elementId, laid: elementId → what the last layout wrote }`). "Edit diagram source" re-lays edited
+  source onto the same elements (`lib/reconcile.ts`): new and old layout matched by
+  `LaidOut.keys`; per field, a value still equal to what the last layout wrote takes the new one,
+  anything changed on the board (text, colour, size, a box moved by hand) is kept; lines always
+  take the new geometry; mind-map topics take the new order and are tidied; removed source items
+  go, locked ones stay. Limits, by design: the source is not rewritten from board edits; copies of
+  a diagram don't carry its source; outline items without a Mermaid id are matched by their path
+  of texts, so a renamed topic is a new topic; concurrent source edits of one diagram are LWW per
+  diagram (the second update re-lays from its own source).
 
 Reference & items (engine primitives; product UI in `features/shortcuts`, `links`, `image`, `icons`,
 `select-similar` — "Select only ▸ <type> (count)" narrows a mixed selection):
@@ -669,7 +695,7 @@ files; it precaches them plus the shell files). Rules, all in `strategyFor` / `r
 `Modal` {open, onClose, title, width?, footer?, children} · `Input`, `TextArea`, `Select` {options, value, onChange},
 `Toggle`, `Slider` {min, max, step, value, onChange} · `ColorSwatches` {colors, value, onChange, allowCustom?} ·
 `Divider` {vertical?} · `Avatar` {name, color, src?, size?} · `AvatarStack` {users, max?} · `Kbd` ·
-`Spinner` · `Logo` {size?, withWordmark?} · `ToastProvider` + `useToast()` → `notify(message, kind?, { duration?, action? })` (app only; features use `editor.host.notify`).
+`Spinner` · `Logo` {size?, withWordmark?} · `ElementsPreview` {elements, moved?, label?} (an SVG picture of content before it lands: AI results, Insert from text) · `ToastProvider` + `useToast()` → `notify(message, kind?, { duration?, action? })` (app only; features use `editor.host.notify`).
 Tokens: `ui/tokens.css` (CSS variables `--fr-*`). Plain co-located CSS, class prefix `fr-`.
 
 Popover focus: content focuses itself while mounting (`autoFocus` on an input, or a layout
