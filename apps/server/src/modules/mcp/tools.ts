@@ -8,8 +8,12 @@
 import { z } from 'zod';
 import type { CallToolResult, ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import { API_MAX_DELETE_PER_CALL, API_MAX_ITEMS_PER_CALL, LAYOUT_LIMITS, STICKY_COLORS, type ApiScope, type StickyColor, type StructureInput } from '@freero/shared';
+import { appUrl } from '../../platform/mail';
 import {
   addComment,
+  backlinksForApi,
+  resolveForApi,
+  searchContent,
   boardUrl,
   createBoard,
   deleteItems,
@@ -114,6 +118,64 @@ export const TOOLS: McpTool[] = [
       const out = await searchBoards(call, { q: a.query, workspace: a.workspaceId, limit: a.limit ?? 20, cursor: a.cursor });
       const boards = out.boards.map((b) => ({ id: b.id, title: b.title, url: b.url, role: b.role, workspaceId: b.workspaceId, updatedAt: new Date(b.updatedAt).toISOString() }));
       return untrustedJson({ boards }, { nextCursor: out.nextCursor });
+    },
+  }),
+
+  tool({
+    name: 'search',
+    title: 'Search inside boards',
+    description:
+      'Finds words in what your boards say — titles, sticky notes, text, shapes, cards, frame titles, table cells, tags, connector labels and comments — across the boards you can open (or one workspace or board). Each word matches as a prefix and all words must match. Returns each match’s board id, item id (use with get_board_outline scope, update_items, add_comment `near`), a snippet and a link.',
+    scope: 'boards:read',
+    annotations: READ,
+    input: {
+      query: z.string().min(1).max(200).describe('Words to find.'),
+      workspaceId: z.string().max(200).optional().describe('Only boards of this workspace (from list_workspaces).'),
+      boardId: boardId.optional().describe('Only this board.'),
+      limit: z.number().int().min(1).max(50).optional().describe('How many matches (default 20).'),
+      cursor: z.string().max(20).optional().describe('nextCursor from a previous call, for the next page.'),
+    },
+    async run(call, a) {
+      const out = await searchContent(call, { q: a.query, workspace: a.workspaceId, board: a.boardId, limit: a.limit ?? 20, cursor: a.cursor });
+      const matches = out.hits.map((h) => ({
+        kind: h.kind,
+        boardId: h.board.id,
+        boardTitle: h.board.title,
+        ...(h.itemId ? { itemId: h.itemId, itemType: h.itemType } : {}),
+        ...(h.threadId ? { threadId: h.threadId } : {}),
+        snippet: h.snippet,
+        url: appUrl(call.req, h.path),
+      }));
+      return untrustedJson({ matches }, { returned: matches.length, nextCursor: out.nextCursor });
+    },
+  }),
+
+  tool({
+    name: 'resolve_links',
+    title: 'Resolve Freero links',
+    description:
+      'Tells what Freero links point at (board and item URLs or freero:// addresses, up to 200): each one’s type, title, board and your access — or "unavailable" when you can’t see it or it doesn’t exist (the same answer).',
+    scope: 'boards:read',
+    annotations: READ,
+    input: { uris: z.array(z.string().min(1).max(2000)).min(1).max(200).describe('The links or addresses.') },
+    async run(call, a) {
+      const { objects } = await resolveForApi(call, a.uris);
+      return untrustedJson({ objects }, { resolved: objects.filter((o) => o.status === 'ok').length });
+    },
+  }),
+
+  tool({
+    name: 'find_backlinks',
+    title: 'Find what links here',
+    description:
+      'Lists the items and comments on boards you can open that link to a board or an item (item links, smart links, addresses in text and comments). Give the board or item as its URL or freero:// address.',
+    scope: 'boards:read',
+    annotations: READ,
+    input: { uri: z.string().min(1).max(2000).describe('The board or item: its URL or freero:// address.') },
+    async run(call, a) {
+      const { backlinks } = await backlinksForApi(call, a.uri);
+      const links = backlinks.map((l) => ({ from: l.source.uri, fromBoard: l.board.id, fromBoardTitle: l.board.title, kinds: l.kinds, to: l.target, url: appUrl(call.req, l.source.path) }));
+      return untrustedJson({ backlinks: links }, { returned: links.length });
     },
   }),
 

@@ -33,3 +33,5 @@ export {
   replyToComment,
   type ApiCall,
 } from './service';
+// Search, object addresses and backlinks (KAI-151, KAI-227).
+export { searchContent, resolveForApi, backlinksForApi } from './objects';
