@@ -5,7 +5,7 @@ import * as Y from 'yjs';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { createUser } from '../auth/index';
 import { createBoard } from '../boards/index';
-import { appendUpdates, compactDoc, listSnapshots, loadDoc, loadSnapshot, SNAPSHOT_EVERY_MS } from './docStore';
+import { appendUpdates, compactDoc, listSnapshots, loadDoc, loadSnapshot, snapshotEveryMs, snapshotIfDue } from './docStore';
 
 // Lets a test pause a compaction after it read and folded the log, before it writes.
 const hooks = vi.hoisted(() => ({ beforeWrite: async () => {} }));
@@ -96,6 +96,7 @@ it('a snapshot keeps the board as it was when taken, and compacting more often d
   const board = (await createBoard(userId, 'History', '')).id;
   const edit = editor();
   const t0 = Date.now();
+  const SNAPSHOT_EVERY_MS = snapshotEveryMs();
   await appendUpdates(board, [edit('first')], t0);
   await compactDoc(board, t0);
   await appendUpdates(board, [edit('second')], t0 + 60_000);
@@ -112,4 +113,16 @@ it('a snapshot keeps the board as it was when taken, and compacting more often d
 
   const other = (await createBoard(userId, 'Other', '')).id;
   expect(await loadSnapshot(other, snaps[0].id)).toBeNull(); // a snapshot id only opens its own board
+});
+
+it('two instances keeping the live board as an automatic version at the same moment store one, and a compaction in the same period adds none', async () => {
+  const board = (await createBoard(userId, 'Open on two instances', '')).id;
+  const state = editor()('live');
+  const t0 = Date.now();
+  const both = await Promise.all([snapshotIfDue(board, state, t0), snapshotIfDue(board, state, t0 + 1)]);
+  expect(both.filter((r) => r.taken)).toHaveLength(1);
+  await appendUpdates(board, [editor()('later')], t0 + 60_000);
+  await compactDoc(board, t0 + 60_000);
+  expect(await listSnapshots(board)).toHaveLength(1);
+  expect((await snapshotIfDue(board, state, t0 + snapshotEveryMs())).taken).toBe(true); // a period later
 });

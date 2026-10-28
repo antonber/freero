@@ -83,6 +83,7 @@ export async function insertAccount(
     emailVerified: input.emailVerified,
     deletionScheduledFor: null,
     passwordHash: input.passwordHash,
+    passwordViaLink: false,
   };
   try {
     await repo.insertUser(user, identity && { ...identity, id: newId() });

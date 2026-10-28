@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronDown, ChevronRight, Eye, EyeOff, Frame, Lock, LockOpen } from 'lucide-react';
 import type { BoardElement } from '@freero/shared';
-import { definePanel, richTextToPlain, useCanEdit, useElements, useSelection, useViewHidden, type Editor } from '@engine';
+import { DockHeader, definePanel, richTextToPlain, useCanEdit, useElements, useSelection, useViewHidden, type Editor } from '@engine';
 import { Button, IconButton } from '@ui';
 import { buildOutline, previewOf, restackZ, type OutlineGroup } from './lib/outline';
 import { PANEL_ID } from './lib/ids';
@@ -269,9 +269,11 @@ function LayersPanel({ editor }: { editor: Editor }) {
 
   return (
     <div className="fr-layers">
-      <h2 className="fr-layers__title">
-        Layers<span className="fr-layers__count">{elements.length}</span>
-      </h2>
+      <DockHeader className="fr-layers__dockhead">
+        <h2 className="fr-layers__title">
+          Layers<span className="fr-layers__count">{elements.length}</span>
+        </h2>
+      </DockHeader>
       {hiddenCount > 0 && (
         <div className="fr-layers__hiddenbar" role="status">
           <EyeOff size={14} />

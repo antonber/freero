@@ -8,7 +8,7 @@ import {
   type ElementRenderProps,
   type NewElement,
 } from '@engine';
-import { STICKY_GAP, STICKY_SIZE } from './lib/constants';
+import { STICKY_GAP, STICKY_SIZE, nearestColor } from './lib/constants';
 import { stickyAt } from './lib/actions';
 import { gridPositions } from './lib/layout';
 import { listItems } from './lib/paste';
@@ -53,6 +53,10 @@ export default defineElement({
   type: 'sticky',
   resize: 'free',
   minSize: { w: 48, h: 48 },
+  // Mixed selections: the paper is the fill (any colour lands on the nearest paper); no text
+  // colour (sticky text keeps its readable ink).
+  sharedStyle: (el) => ({ fill: STICKY_COLORS[el.color], fontFamily: el.fontFamily, fontSize: el.fontSize, align: el.align, vAlign: el.vAlign }),
+  applySharedStyle: (_el, { fill, ...rest }) => ({ ...rest, ...(fill ? { color: nearestColor(fill) } : {}) }),
   textField: 'text',
   defaults: (): Omit<NewElement<'sticky'>, 'x' | 'y'> => ({
     type: 'sticky',

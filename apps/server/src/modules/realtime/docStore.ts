@@ -6,8 +6,10 @@
 // - Compaction folds the log into a new base, off the save path: it reads base + rows, merges them
 //   without holding a lock, then swaps the base and deletes exactly the rows it read, provided no
 //   other compaction replaced the base meanwhile. Rows written during a compaction stay in the log.
-// - Compaction keeps a snapshot (full state) at most every SNAPSHOT_EVERY_MS: version history.
+// - A snapshot (full state) is kept at most every `snapshotEveryMs` (config): version history. Taken
+//   by compaction, and by a loaded room on a timer while the board keeps changing (snapshotIfDue).
 import * as Y from 'yjs';
+import { getConfig } from '../../platform/config';
 import * as repo from './repo';
 
 export { BoardGoneError } from './repo';
@@ -16,8 +18,8 @@ export type { SnapshotInfo } from './repo';
 /** Compact once a loaded board's log holds this many rows or bytes. */
 export const COMPACT_AFTER_ROWS = 200;
 export const COMPACT_AFTER_BYTES = 2 * 1024 * 1024;
-/** Minimum time between two snapshots of one board. */
-export const SNAPSHOT_EVERY_MS = 30 * 60_000;
+/** Minimum time between two automatic snapshots of one board (FREERO_SNAPSHOT_EVERY_MS). */
+export const snapshotEveryMs = (): number => getConfig().snapshotEveryMs;
 
 export interface LoadedDoc {
   /** Everything stored, as one update (null: nothing stored yet). */
@@ -65,13 +67,21 @@ export async function compactDoc(boardId: string, now = Date.now()): Promise<'co
     const state = Y.encodeStateAsUpdate(doc);
     const ok = await repo.compact(
       boardId,
-      { fromVersion: stored.version, state, folded: stored.updates.map((u) => u.id), snapshotEveryMs: SNAPSHOT_EVERY_MS },
+      { fromVersion: stored.version, state, folded: stored.updates.map((u) => u.id), snapshotEveryMs: snapshotEveryMs() },
       now,
     );
     return ok ? 'compacted' : 'skipped';
   } finally {
     doc.destroy();
   }
+}
+
+/**
+ * Keeps `state` (the live board) as an automatic snapshot if the newest snapshot is at least
+ * `snapshotEveryMs` old; across instances only one of several trying at once takes it.
+ */
+export function snapshotIfDue(boardId: string, state: Uint8Array, now = Date.now()): Promise<{ taken: boolean; newestAt: number }> {
+  return repo.insertSnapshotIfDue(boardId, state, snapshotEveryMs(), now);
 }
 
 /**

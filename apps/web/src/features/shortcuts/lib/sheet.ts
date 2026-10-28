@@ -31,8 +31,10 @@ const humanize = (feature: string) => {
   return words.charAt(0).toUpperCase() + words.slice(1);
 };
 
-function sectionOf(e: ShortcutEntry): string {
+/** The section a shortcut-sheet row or command-palette entry reads under. */
+export function sectionOf(e: Pick<ShortcutEntry, 'id' | 'feature'> & { kind: string }): string {
   if (e.kind === 'tool') return 'Tools';
+  if (e.id.startsWith('engine.settings.')) return 'Board settings';
   if (e.feature === 'engine') return VIEW_IDS.test(e.id) ? 'View & navigation' : 'Editing';
   return humanize(e.feature);
 }

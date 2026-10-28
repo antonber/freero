@@ -63,10 +63,11 @@ export function installKeyboard(core: EngineCore): () => void {
   const commandsByShortcut = () =>
     [...core.registry.commands.values()].filter((c) => c.def.shortcut && !NATIVE_CLIPBOARD_COMMANDS.has(c.def.id));
 
-  const tryCommands = (e: KeyboardEvent, filter: (shortcut: string) => boolean): boolean => {
+  /** `altGr`: AltGr + a bracket also answers mod+bracket (see MatchOptions); never while typing text. */
+  const tryCommands = (e: KeyboardEvent, filter: (shortcut: string) => boolean, { altGr = true } = {}): boolean => {
     for (const { def, feature } of commandsByShortcut()) {
-      const sc = def.shortcut!;
-      if (!filter(sc) || !matchShortcut(e, sc)) continue;
+      const bindings = [def.shortcut!, ...(def.extraShortcuts ?? [])];
+      if (!bindings.some((sc) => filter(sc) && matchShortcut(e, sc, { altGr }))) continue;
       const scoped = core.scoped(feature);
       if (!editor.can(def.minRole ?? 'editor')) continue;
       if (def.when && !def.when(scoped)) continue;
@@ -206,11 +207,15 @@ export function installKeyboard(core: EngineCore): () => void {
         return;
       }
       // Feature commands that make sense mid-edit (e.g. Tab → next sticky).
-      tryCommands(e, (sc) => {
-        const p = parseShortcut(sc);
-        if (p.key === 'tab') return true;
-        return (p.mod || p.alt) && !TEXT_RESERVED.has(p.key);
-      });
+      tryCommands(
+        e,
+        (sc) => {
+          const p = parseShortcut(sc);
+          if (p.key === 'tab') return true;
+          return (p.mod || p.alt) && !TEXT_RESERVED.has(p.key);
+        },
+        { altGr: false },
+      );
       return;
     }
     if (isTextInput(target)) return;

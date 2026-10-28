@@ -26,6 +26,7 @@ const align = (edge: AlignEdge, label: string, shortcut: string, icon: CommandDe
   menus: ['context'],
   group: 'Align',
   when: (editor) => idle(editor) && selectedUnits(editor).length >= 2 && movableCount(editor) >= 1,
+  disabledReason: 'Select two or more unlocked items',
   run: (editor) => applyMoves(editor, planAlign(selectedUnits(editor), edge)),
 });
 
@@ -37,6 +38,7 @@ const distribute = (axis: DistributeAxis, label: string, shortcut: string, icon:
   menus: ['context'],
   group: 'Align',
   when: (editor) => idle(editor) && movableCount(editor) >= 3,
+  disabledReason: 'Select three or more unlocked items',
   run: (editor) => applyMoves(editor, planDistribute(selectedUnits(editor), axis)),
 });
 
@@ -57,6 +59,7 @@ export const ARRANGE_COMMANDS = [
     menus: ['context'],
     group: 'Align',
     when: (editor) => idle(editor) && movableCount(editor) >= 2,
+    disabledReason: 'Select two or more unlocked items',
     run: (editor) => applyMoves(editor, planTidy(selectedUnits(editor))),
   },
 ] satisfies CommandDefinition[];
@@ -70,6 +73,7 @@ export const CLUSTER_COMMANDS = [
     menus: ['context'],
     group: 'Cluster',
     when: (editor) => idle(editor) && selectedStickies(editor).length >= 2,
+    disabledReason: 'Select two or more sticky notes',
     run: (editor) => clusterSelection(editor, 'color'),
   },
   {
@@ -79,6 +83,7 @@ export const CLUSTER_COMMANDS = [
     menus: ['context'],
     group: 'Cluster',
     when: (editor) => idle(editor) && selectedStickies(editor).length >= 2,
+    disabledReason: 'Select two or more sticky notes',
     run: (editor) => clusterSelection(editor, 'tag'),
   },
 ] satisfies CommandDefinition[];

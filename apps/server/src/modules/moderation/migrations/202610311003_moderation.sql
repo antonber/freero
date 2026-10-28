@@ -31,8 +31,8 @@ CREATE INDEX moderation_items_resolved ON moderation_items (resolved_at) WHERE s
 CREATE INDEX moderation_items_board_id ON moderation_items (board_id);
 
 -- Every operator action, append-only (never updated or deleted): who did what to what, when and
--- why, and what the person affected was told. The seam for an audit log (KAI-48) is
--- onModerationAction in this module's index.
+-- why, and what the person affected was told. Each is also a platform audit event
+-- (platform/audit.ts, `moderation.<action>`), where the audit log (KAI-48) picks it up.
 CREATE TABLE moderation_actions (
   id              text PRIMARY KEY,
   action          text NOT NULL,                          -- a ModerationActionKind

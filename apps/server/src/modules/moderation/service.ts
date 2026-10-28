@@ -6,8 +6,8 @@
 //
 // Actions are calls into the modules that own the data — boards (take down, block the link),
 // uploads (remove a file), auth (suspend an account) — never writes to their tables [S4]. Each is
-// recorded in moderation_actions (append-only) and announced to onModerationAction listeners,
-// and the person affected gets a notice with the reason and, for adverse actions, a signed appeal
+// recorded in moderation_actions (append-only; the queue's history and appeals read it) and as a
+// platform audit event (`moderation.<action>`, platform/audit.ts), and the person affected gets a notice with the reason and, for adverse actions, a signed appeal
 // link that works without signing in (a suspended account can still appeal).
 import {
   MAX_REPORT_NOTE,
@@ -25,6 +25,7 @@ import {
   type User,
 } from '@freero/shared';
 import { getConfig } from '../../platform/config';
+import { audit } from '../../platform/audit';
 import { badRequest, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { log, logError } from '../../platform/log';
@@ -84,17 +85,6 @@ const text = (v: unknown, name: string, max: number): string => {
 /** Operators: a verified address listed in OPERATOR_EMAILS. */
 export function isOperator(user: Pick<Account, 'email' | 'emailVerified'>): boolean {
   return user.emailVerified && getConfig().operatorEmails.includes(user.email.toLowerCase());
-}
-
-// ---- the audit seam ----
-
-export type ModerationActionListener = (a: repo.ActionRow) => void | Promise<void>;
-const listeners = new Set<ModerationActionListener>();
-
-/** Called after every recorded operator action (an audit log, KAI-48, subscribes here). */
-export function onModerationAction(fn: ModerationActionListener): () => void {
-  listeners.add(fn);
-  return () => listeners.delete(fn);
 }
 
 // ---- reports ----
@@ -349,7 +339,13 @@ export async function act(operatorId: string, body: Record<string, unknown>): Pr
   };
   await repo.insertAction(record);
   log(`moderation: ${operatorId} ${kind} ${done.targetId}`);
-  for (const fn of listeners) Promise.resolve(fn(record)).catch((e) => logError('moderation: an action listener failed', e));
+  // The audit trail (KAI-48 stores these through platform/audit's sinks); never throws.
+  await audit({
+    action: `moderation.${kind}`,
+    actor: { kind: 'user', userId: operatorId },
+    userId: record.subjectUserId ?? '',
+    detail: { actionId: record.id, targetId: record.targetId, boardId: record.boardId, reason: record.reason, item: itemId },
+  });
 
   if (itemId) {
     const item = await repo.resolveItem(itemId, 'actioned', operatorId, statement, record.createdAt);

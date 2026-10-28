@@ -141,6 +141,7 @@ export default defineElement({
   type: 'frame',
   resize: 'free',
   minSize: { w: 40, h: 40 },
+  sharedStyle: (el) => ({ fill: el.fill || DEFAULT_FILL }),
   container: true,
   rotatable: false,
   defaults: (): Omit<NewElement<'frame'>, 'x' | 'y'> => {

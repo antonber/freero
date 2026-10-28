@@ -50,3 +50,37 @@ describe('shortcut reference source', () => {
     expect(viewer.filter((s) => s.feature === 'stars').map((s) => s.label)).toEqual(['Walk the stars']);
   });
 });
+
+describe('command palette source', () => {
+  const palette = (role: Role) =>
+    (core = makeCore({
+      role,
+      bundles: [
+        bundle('stars', {
+          tools: [{ id: 'stars.tool', label: 'Star', icon: Star, order: 5, placement: 'more' }],
+          commands: [
+            // Reachable from the context menu only: no shortcut, still a palette entry.
+            { id: 'stars.polish', label: 'Polish', menus: ['context'], when: (e) => e.getSelection().length > 0, disabledReason: 'Select a star', run: () => undefined },
+            { id: 'stars.shine', label: 'Of every star', group: 'Shine', menus: ['context'], minRole: 'viewer', run: () => undefined },
+            // Another feature's API (needs args): never offered to people.
+            { id: 'stars.openById', label: 'Open star', minRole: 'viewer', run: () => undefined },
+          ],
+        }),
+      ],
+    })).editor.listActions();
+
+  it('offers every tool and menu-only command but never args-only APIs, and says why an unavailable one cannot run (selection, role)', () => {
+    const owner = palette('owner');
+    const ids = owner.map((a) => a.id);
+    expect(ids).toEqual(expect.arrayContaining(['stars.tool', 'stars.polish', 'engine.settings.snapToGrid']));
+    expect(ids).not.toContain('stars.openById');
+    expect(owner.find((a) => a.id === 'stars.polish')?.disabledReason).toBe('Select a star');
+    expect(owner.find((a) => a.id === 'stars.shine')?.label).toBe('Shine of every star');
+    core.destroy();
+
+    const viewer = palette('viewer');
+    expect(viewer.find((a) => a.id === 'stars.tool')?.disabledReason).toMatch(/edit access/);
+    expect(viewer.find((a) => a.id === 'stars.polish')?.disabledReason).toMatch(/edit access/);
+    expect(viewer.find((a) => a.id === 'stars.shine')?.disabledReason).toBeNull();
+  });
+});

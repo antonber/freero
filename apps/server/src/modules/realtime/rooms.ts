@@ -12,6 +12,9 @@
 //   during the final save keeps the room alive instead of loading a stale copy).
 // - Deleting a board waits for in-flight saves, so none lands after the delete.
 // - The log is compacted into the stored base when it grows long and after a room unloads.
+// - While loaded, a room whose board keeps changing takes an automatic version (snapshot) every
+//   `snapshotEveryMs`: a board open all day gets versions without anyone leaving (KAI-82). Every
+//   instance holding the board may try; the database lets one take each (docStore.snapshotIfDue).
 //
 // Across instances (platform/pubsub.ts: Redis when REDIS_URL is set; peers.ts has the messages):
 // several instances may hold the same board, each with its own sockets. Each publishes the changes
@@ -69,6 +72,8 @@ export const MESSAGE_QUERY_AWARENESS = 3;
 const SAVE_DEBOUNCE_MS = 1500;
 const SAVE_MAX_WAIT_MS = 10_000;
 const SAVE_RETRY_MS = 5000;
+/** Retry after an automatic snapshot failed (database down). */
+const SNAPSHOT_RETRY_MS = 60_000;
 const RESYNC_MIN_INTERVAL_MS = 2000;
 /** How long a socket's identity (name, color) is reused before re-reading the profile. */
 const IDENTITY_TTL_MS = 5000;
@@ -182,6 +187,10 @@ class Room {
   private replyWaiters = new Set<(from: string) => void>();
   /** Applied changes made on other instances (see unloadRoom). */
   sawRemote = false;
+  /** When the doc last changed (any instance's change), and up to when a snapshot covers it. */
+  private lastChangeAt = 0;
+  private snapshotCovers = 0;
+  private snapshotTimer: NodeJS.Timeout | null = null;
 
   constructor(readonly id: string) {
     this.awareness = new awarenessProtocol.Awareness(this.doc);
@@ -189,6 +198,7 @@ class Room {
 
     this.doc.on('update', (update: Uint8Array, origin: unknown) => {
       if (origin === LOAD_ORIGIN) return;
+      this.noteChange();
       const e = encoding.createEncoder();
       encoding.writeVarUint(e, MESSAGE_SYNC);
       syncProtocol.writeUpdate(e, update);
@@ -748,6 +758,40 @@ class Room {
     }
   }
 
+  /** The doc changed: make sure an automatic snapshot will follow (see autoSnapshot). */
+  private noteChange(): void {
+    this.lastChangeAt = Date.now();
+    if (!this.snapshotTimer && !this.destroyed) this.scheduleSnapshot(store.snapshotEveryMs());
+  }
+
+  private scheduleSnapshot(delayMs: number): void {
+    this.snapshotTimer = setTimeout(() => void this.autoSnapshot(), delayMs);
+    this.snapshotTimer.unref();
+  }
+
+  /**
+   * Keeps the live board as an automatic version when it changed since the newest snapshot and that
+   * one is at least `snapshotEveryMs` old. The first comes one period after the first change (an
+   * edit right after a version is rarely worth one of its own); then one per period while changes
+   * keep coming, none while nothing changes. Another instance (or a compaction) having taken one
+   * meanwhile counts: its snapshot was of the same live board.
+   */
+  private async autoSnapshot(): Promise<void> {
+    this.snapshotTimer = null;
+    if (this.destroyed || this.lastChangeAt <= this.snapshotCovers) return;
+    const now = Date.now();
+    let retryMs: number | null = null;
+    try {
+      this.snapshotCovers = (await store.snapshotIfDue(this.id, Y.encodeStateAsUpdate(this.doc), now)).newestAt;
+    } catch (err) {
+      if (err instanceof store.BoardGoneError) return;
+      logError(`realtime: could not keep an automatic version of board ${this.id}`, err);
+      retryMs = SNAPSHOT_RETRY_MS;
+    }
+    if (this.destroyed || this.snapshotTimer || this.lastChangeAt <= this.snapshotCovers) return;
+    this.scheduleSnapshot(retryMs ?? Math.max(0, this.snapshotCovers + store.snapshotEveryMs() - Date.now()));
+  }
+
   scheduleUnload(): void {
     if (this.unloadTimer) clearTimeout(this.unloadTimer);
     this.unloadTimer = setTimeout(() => void unloadRoom(this), getConfig().docIdleMs);
@@ -757,6 +801,7 @@ class Room {
   destroy(): void {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     if (this.unloadTimer) clearTimeout(this.unloadTimer);
+    if (this.snapshotTimer) clearTimeout(this.snapshotTimer);
     this.destroyed = true;
     this.subscription?.close();
     this.awareness.destroy();
@@ -1044,28 +1089,26 @@ async function closeBoardHere(boardId: string, why: 'deleted' | 'removed'): Prom
 
 /**
  * Replaces the author name and color on every comment message `userId` wrote on the board (an
- * account purge shows them as "Deleted user"). Goes through the board's room — loading it if
- * needed — so connected clients get the change live and the save queue persists it; resolves
- * once it is saved. Running it twice changes nothing the second time.
+ * account purge shows them as "Deleted user"). Goes through the board's live room, caught up with
+ * the other instances holding it (withLiveRoom): a comment another instance has not saved yet is
+ * renamed too, and connected clients everywhere get the change live. Resolves once it is saved.
+ * Running it twice changes nothing the second time; a board closed meanwhile is skipped.
  */
 export async function renameCommentAuthor(boardId: string, userId: string, name: string, color: string): Promise<void> {
-  const room = getRoom(boardId);
-  room.pendingJoins++;
   try {
-    await room.ready;
-  } finally {
-    room.pendingJoins--;
+    await withLiveRoom(boardId, async (room) => {
+      const comments = room.doc.getMap<Record<string, unknown>>(COMMENTS_COLLECTION);
+      room.doc.transact(() => {
+        for (const [key, value] of comments.entries()) {
+          if (!key.startsWith('m:') || value?.authorId !== userId) continue;
+          if (value.authorName !== name || value.authorColor !== color) comments.set(key, { ...value, authorName: name, authorColor: color });
+        }
+      });
+      await room.flush();
+    });
+  } catch (err) {
+    if (!(err instanceof BoardClosedError)) throw err;
   }
-  if (room.destroyed) return;
-  const comments = room.doc.getMap<Record<string, unknown>>(COMMENTS_COLLECTION);
-  room.doc.transact(() => {
-    for (const [key, value] of comments.entries()) {
-      if (!key.startsWith('m:') || value?.authorId !== userId) continue;
-      if (value.authorName !== name || value.authorColor !== color) comments.set(key, { ...value, authorName: name, authorColor: color });
-    }
-  });
-  await room.flush();
-  if (room.conns.size === 0 && room.pendingJoins === 0 && !room.destroyed) room.scheduleUnload();
 }
 
 /** User ids that appear in the board's comments (authors, @mentions), from the live doc if loaded. */
