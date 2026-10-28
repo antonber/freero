@@ -20,6 +20,8 @@ import {
 } from './service';
 
 export { createBoard, deleteBoardRowsInWorkspace, cleanUpDeletedBoards } from './service';
+// Created, duplicated, renamed, moved, trashed, restored (the activity feed, KAI-188).
+export { onBoardLifecycle, type BoardLifecycleEvent, type BoardLifecycleAction } from './events';
 // Files downloaded from a board (modules/uploads): the downloads policy, then the audit log.
 export { authorizeFileDownload } from './service';
 // Operators (modules/moderation): take down / restore, block / unblock the link, and who may report.

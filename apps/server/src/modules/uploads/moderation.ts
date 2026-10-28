@@ -6,6 +6,7 @@
 // is neither served nor adopted by the sweep, and a mistaken removal can be undone (restore) until
 // an operator purges the copy or its retention ends (modules/moderation, MODERATION_KEEP_REMOVED_DAYS). The row stays as a tombstone: the sweep skips
 // removed rows, and since the name has a row its adoption step can never bring the file back.
+import type { Readable } from 'node:stream';
 import { newId } from '../../platform/ids';
 import { readAll, storage } from '../../platform/storage';
 import * as repo from './repo';
@@ -51,6 +52,18 @@ export async function uploadForModeration(name: string): Promise<ModerationUploa
     restorable: row?.quarantineKey != null,
     exists,
   };
+}
+
+/**
+ * An upload's bytes for an operator to inspect before acting (KAI-205): the file itself, or the
+ * kept copy of a removed one. Attachments (`.bin`) are never served at /uploads, so this is how an
+ * operator opens a reported file card. null when there are no bytes (never stored, or purged).
+ */
+export async function openUploadForModeration(name: string): Promise<{ body: Readable; size: number | null; ownerId: string | null } | null> {
+  if (!FILE_NAME_RE.test(name)) return null;
+  const row = await repo.getUploadRow(name);
+  const obj = row?.removedAt != null ? (row.quarantineKey ? await storage().get(row.quarantineKey, PRIVATE) : null) : await storage().get(name);
+  return obj ? { body: obj.body, size: obj.size, ownerId: row?.ownerId ?? null } : null;
 }
 
 /** Whether an operator removed the file (its URL answers 410). */

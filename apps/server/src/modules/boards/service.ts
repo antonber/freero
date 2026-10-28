@@ -33,6 +33,7 @@ import {
   workspaceRole,
   workspaceRolesOf,
 } from '../workspaces/index';
+import { boardLifecycle } from './events';
 import * as repo from './repo';
 import type { Board } from './repo';
 
@@ -360,12 +361,14 @@ export async function createBoard(
 export async function moveToProject(board: Board, userId: string, projectId: string | null): Promise<void> {
   const role = await workspaceRole(board.workspaceId, userId);
   if (board.ownerId !== userId && !isManager(role)) throw forbidden('Only the board owner or a workspace admin can move it');
-  await repo.transaction(async () => {
-    if (projectId) await lockProjectForBoard(projectId, board.workspaceId, userId);
+  const to = await repo.transaction(async () => {
+    const project = projectId ? await lockProjectForBoard(projectId, board.workspaceId, userId) : null;
     if (!(await repo.setProject(board.id, projectId))) throw notFound('Board not found');
     await recordAudit({ action: 'board.moved', workspaceId: board.workspaceId, actorId: userId, target: boardTarget(board), metadata: { from: board.projectId, to: projectId } });
+    return project?.name ?? null;
   });
   await refreshBoardAccess(board.id);
+  await boardLifecycle({ boardId: board.id, actorId: userId, action: 'moved', to });
 }
 
 /**
@@ -444,6 +447,7 @@ export async function moveToTrash(board: Board, actorId: string, now = Date.now(
   });
   if (!trashed) return;
   await closeKeepingContent(board.id, 'deleted');
+  await boardLifecycle({ boardId: board.id, actorId, action: 'trashed' });
 }
 
 /**
@@ -477,6 +481,7 @@ export async function restoreFromTrash(boardId: string, userId: string): Promise
       await recordAudit({ action: 'board.restored', workspaceId: board.workspaceId, actorId: userId, target: boardTarget(board) });
     },
   );
+  await boardLifecycle({ boardId: board.id, actorId: userId, action: 'restored' });
   return { ...board, deletedAt: null };
 }
 
@@ -553,7 +558,7 @@ export async function duplicateBoard(source: Board, userId: string, role: Role):
   // which queries the database outside this transaction.
   const state = await snapshotBoardDoc(source.id);
   const editors = atLeast(role, 'editor') ? await snapshotBoardLayer(source.id, 'editors') : null;
-  return repo.transaction(async () => {
+  const made = await repo.transaction(async () => {
     const copy = await createBoard(userId, `Copy of ${source.title}`.slice(0, 200), source.description, 'none', place);
     await recordAudit({
       action: 'board.duplicated',
@@ -566,6 +571,8 @@ export async function duplicateBoard(source: Board, userId: string, role: Role):
     if (editors) await initBoardLayer(copy.id, 'editors', editors);
     return copy;
   });
+  await boardLifecycle({ boardId: made.id, actorId: userId, action: 'duplicated', from: source.title });
+  return made;
 }
 
 // ---- workspaces (called by modules/workspaces through index.ts) ----

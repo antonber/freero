@@ -37,6 +37,20 @@ describe('search', () => {
     const hits = search(commentSources(entries, () => undefined), 'ship');
     expect(hits.map((h) => h.source.kind === 'comment' && h.source.author)).toEqual(['Ann']);
   });
+
+  it("shows a comment's author and @mentions by their current names, not the name stored in the record (KAI-201)", () => {
+    const entries: Array<[string, unknown]> = [
+      ['t:t1', { kind: 'thread', id: 't1', x: 0, y: 0, createdAt: 0, createdBy: 'mal' }],
+      ['m:t1:m1', { kind: 'message', threadId: 't1', id: 'm1', authorId: 'mal', authorName: 'Jane Doe (CEO)', text: 'ship it <@ann>', createdAt: 0 }],
+      ['m:t1:m2', { kind: 'message', threadId: 't1', id: 'm2', authorId: 'ann', authorName: 'Ann Old', text: 'ship later', createdAt: 0 }],
+    ];
+    const now: Record<string, string> = { mal: 'Mallory', ann: 'Ann Renamed' };
+    const hits = search(commentSources(entries, () => undefined, (id) => now[id]), 'ship');
+    expect(hits.map((h) => h.source.kind === 'comment' && [h.source.author, h.source.text])).toEqual([
+      ['Mallory', 'ship it @Ann Renamed'],
+      ['Ann Renamed', 'ship later'],
+    ]);
+  });
 });
 
 describe('replace', () => {

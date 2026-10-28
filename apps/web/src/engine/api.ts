@@ -41,6 +41,19 @@ export type ElementLayer = 'shared' | BoardLayer;
 // ---------------------------------------------------------------------------
 export interface Point { x: number; y: number }
 export interface Rect { x: number; y: number; w: number; h: number }
+
+/** What paste / drag-and-drop offers to element importers (`ElementDefinition.importData`). */
+export interface ImportData {
+  files: File[];
+  text: string | null;
+  html: string | null;
+  /**
+   * [additive, KAI-204] Another importer took part of this drop and places it at the drop point:
+   * put yours next to it — a free spot near `at` (`findFreeSpot(size, { near: at })`), computed
+   * when you create the items — never on `at` itself.
+   */
+  alongside?: boolean;
+}
 export interface Camera { x: number; y: number; zoom: number } // world point at screen (0,0) = (x,y)
 
 // ---------------------------------------------------------------------------
@@ -414,12 +427,12 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
    * definition with importData, highest importPriority first, until one returns true.
    * (e.g. images claim image files; text claims plain text.) Engine-native clipboard
    * payloads (copied Freero elements) are handled by the engine before this.
+   *
+   * [additive, KAI-204] A drop of several kinds of files is split: return the FILES you took (the
+   * images of `photo.png + talk.mp4`), and the engine offers the rest to the next importers, with
+   * `data.alongside` set and no text/html. Returning true still claims everything.
    */
-  importData?(
-    editor: Editor,
-    data: { files: File[]; text: string | null; html: string | null },
-    at: Point,
-  ): boolean | Promise<boolean>;
+  importData?(editor: Editor, data: ImportData, at: Point): boolean | File[] | Promise<boolean | File[]>;
   importPriority?: number;
   /**
    * [additive] Elements with SEVERAL texts (table cells, extra connector labels): the part under
@@ -1122,6 +1135,12 @@ export interface Editor {
    * fully in view. Insert actions (templates, uploaded images) use it.
    */
   findFreeSpot(size: { w: number; h: number }, opts?: { near?: Point; gap?: number }): Point;
+  /**
+   * [additive, KAI-204] Marks where content is about to land (upload placeholders) so that
+   * findFreeSpot avoids it until the returned release is called — call it when the items are
+   * created (or given up). Local to this client.
+   */
+  reserveSpace(rects: Rect[]): () => void;
   /**
    * [additive] Screen rect (viewport px) not covered by the board chrome: left toolbar, top bar,
    * bottom-right controls and the open right dock. The whole viewport while the chrome is hidden.

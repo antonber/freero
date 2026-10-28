@@ -1,108 +1,45 @@
-// Who's who in comments: current profiles (name, photo) for author and @mention ids. Looked up
-// through the Host — which also knows people who wrote here and then left the board — and
-// refreshed from presence, so a renamed or re-photographed collaborator shows up as they are now.
-// Ids the server doesn't return (deleted accounts) stay unknown: initials / "@someone".
+// Who's who in comments: current profiles (name, photo) for author and @mention ids come from the
+// engine's people directory (usePeople: presence + Host.lookupUsers, shared with find), so a
+// renamed or re-photographed collaborator shows up as they are now. Ids the server doesn't return
+// (deleted accounts) stay unknown: initials / "@someone".
 import { useEffect, useMemo, useState } from 'react';
-import { createStore, useStore, type StoreApi } from 'zustand';
-import { guestDisplayName, isGuestId, mentionedUserIds } from '@freero/shared';
-import type { Editor, HostUser } from '@engine';
+import { commentAuthorName, mentionedUserIds } from '@freero/shared';
+import { usePeople, type Editor, type HostUser } from '@engine';
 
-interface Directory {
-  people: StoreApi<Record<string, HostUser>>;
-  /** Ids asked for (or being asked for): never looked up twice. */
-  requested: Set<string>;
-  pending: Set<string>;
-  timer: ReturnType<typeof setTimeout> | null;
-  members: Promise<HostUser[]> | null;
-}
-
-const directories = new WeakMap<Editor, Directory>();
-
-function directory(editor: Editor): Directory {
-  let d = directories.get(editor);
-  if (!d) {
-    const dir: Directory = { people: createStore(() => ({ [editor.user.id]: editor.user })), requested: new Set([editor.user.id]), pending: new Set(), timer: null, members: null };
-    // Presence carries everyone online's current profile (the server fills it in).
-    editor.on('presence', () => remember(dir, editor.getPeers().map((p) => ({ ...p.user, avatarUrl: p.user.avatarUrl ?? null }))));
-    directories.set(editor, (d = dir));
-  }
-  return d;
-}
-
-function remember(d: Directory, users: HostUser[]): void {
-  const cur = d.people.getState();
-  const changed = users.filter((u) => {
-    const c = cur[u.id];
-    return !c || c.name !== u.name || c.color !== u.color || c.avatarUrl !== u.avatarUrl;
-  });
-  if (changed.length) d.people.setState(Object.fromEntries(changed.map((u) => [u.id, u])));
-}
-
-/** Asks the Host for the ids not known yet (batched over one tick). */
-function request(editor: Editor, ids: Iterable<string>): void {
-  const d = directory(editor);
-  for (const id of ids) if (id && !d.requested.has(id)) (d.requested.add(id), d.pending.add(id));
-  if (!d.pending.size || d.timer) return;
-  d.timer = setTimeout(() => {
-    d.timer = null;
-    const batch = [...d.pending];
-    d.pending.clear();
-    editor.host.lookupUsers(batch).then(
-      (users) => remember(d, users),
-      () => batch.forEach((id) => d.requested.delete(id)), // try again next time they render
-    );
-  }, 0);
-}
-
-/** id -> profile for these ids (and whatever is known already); unknown ids are looked up. */
-export function usePeople(editor: Editor, ids: string[]): Record<string, HostUser> {
-  const d = directory(editor);
-  const key = ids.join(',');
-  useEffect(() => request(editor, key ? key.split(',') : []), [editor, key]);
-  return useStore(d.people);
-}
+/** The board's member list for the @mention picker, loaded once per board session. */
+const memberLists = new WeakMap<Editor['host'], Promise<HostUser[]>>();
 
 /** Everyone with access to the board, for the @mention picker (loaded once per board session). */
 export function useMembers(editor: Editor, enabled: boolean): HostUser[] | null {
-  const d = directory(editor);
   const [members, setMembers] = useState<HostUser[] | null>(null);
   useEffect(() => {
     if (!enabled) return;
     let live = true;
-    d.members ??= editor.host.listMembers().then((m) => (remember(d, m), m));
-    d.members.then(
+    let list = memberLists.get(editor.host);
+    if (!list) memberLists.set(editor.host, (list = editor.host.listMembers()));
+    list.then(
       (m) => live && setMembers(m),
       () => {
-        d.members = null;
+        memberLists.delete(editor.host);
         if (live) setMembers([]);
       },
     );
     return () => {
       live = false;
     };
-  }, [editor, d, enabled]);
+  }, [editor, enabled]);
   return members;
 }
 
 /** A member who joined just now (invited from the picker): the next picker includes them. */
 export function addMember(editor: Editor, user: HostUser): void {
-  const d = directory(editor);
-  remember(d, [user]);
-  if (d.members) d.members = d.members.then((m) => (m.some((x) => x.id === user.id) ? m : [...m, user]));
+  const list = memberLists.get(editor.host);
+  if (list) memberLists.set(editor.host, list.then((m) => (m.some((x) => x.id === user.id) ? m : [...m, user])));
 }
 
-/**
- * The name a message is shown under (KAI-187): its author's CURRENT name when the board knows them
- * (the lookup, presence) — so neither a rename nor a name typed into the record by a crafted client
- * can make it read as someone else. The stored name is only a fallback: before the lookup answers,
- * and for accounts that no longer exist (the purge rewrote it to "Deleted user"). A guest's always
- * reads as a guest.
- */
+/** The name a message is shown under: its author's current name when known (`commentAuthorName`). */
 export function authorName(m: { authorId: string; authorName: string }, people: Record<string, HostUser>): string {
-  const known = people[m.authorId];
-  if (known) return known.name;
-  if (isGuestId(m.authorId)) return m.authorName.startsWith(guestDisplayName('')) ? m.authorName : guestDisplayName(m.authorName);
-  return m.authorName;
+  return commentAuthorName(m, people[m.authorId]?.name);
 }
 
 /** Profiles for the authors and @mentioned people of these messages. */
@@ -115,5 +52,5 @@ export function usePeopleOf(editor: Editor, messages: Array<{ authorId: string; 
     }
     return [...out].sort();
   }, [messages]);
-  return usePeople(editor, ids);
+  return usePeople(ids);
 }

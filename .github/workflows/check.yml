@@ -51,11 +51,18 @@ jobs:
     env:
       DATABASE_URL: postgres://postgres:freero@localhost:5432/postgres
       REDIS_URL: redis://localhost:6379
+      # The `s3` group (KAI-203) against SeaweedFS's S3 gateway; the other groups stay on disk.
+      S3_ENDPOINT: http://localhost:8333
+      S3_BUCKET: freero-verify
+      S3_ACCESS_KEY_ID: verify
+      S3_SECRET_ACCESS_KEY: verify
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+      # A service container can't be given a command, so the S3 gateway starts here.
+      - run: docker run -d --name s3 -p 8333:8333 chrislusf/seaweedfs:4.50 server -s3
       - run: npm ci
       - run: npm run verify

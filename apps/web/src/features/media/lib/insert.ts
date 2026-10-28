@@ -26,15 +26,22 @@ function itemOf(s: Exclude<Stored, { kind: 'error' }>): Omit<NewElement<'media'>
 
 /**
  * Uploads files as video / audio items and file cards, laid out side by side centered on `at` (a
- * drop point) or in a free spot near the view. Placeholders show where they will land meanwhile;
- * the items are created together once every upload settled (one undo step).
+ * drop point) or in a free spot near `near` (default the view). Placeholders show where they will
+ * land meanwhile; the items are created together once every upload settled (one undo step).
  */
-export async function insertFiles(editor: Editor, files: File[], at: Point | null): Promise<string[]> {
+export async function insertFiles(editor: Editor, files: File[], at: Point | null, near?: Point): Promise<string[]> {
   if (!files.length || !editor.can('editor')) return [];
   if (files.length > MAX_FILES) editor.host.notify(`Adding the first ${MAX_FILES} of ${files.length} files.`, 'info');
   const batch = files.slice(0, MAX_FILES);
-  const guess = rowLayout(batch.map(() => ({ w: CARD_W, h: CARD_H })), at ?? editor.getViewportCenter());
-  const clear = addPending(batch.map((f, i) => ({ rect: guess[i], name: f.name })));
+  let guess = rowLayout(batch.map(() => ({ w: CARD_W, h: CARD_H })), at ?? near ?? editor.getViewportCenter());
+  if (!at) guess = intoFreeSpot(editor, guess, near);
+  const clearPending = addPending(batch.map((f, i) => ({ rect: guess[i], name: f.name })));
+  // On the drop point: keep it clear while uploading (other files of the drop go beside these).
+  const release = at ? editor.reserveSpace(guess) : () => {};
+  const clear = () => {
+    clearPending();
+    release();
+  };
   let stored: Stored[];
   try {
     // A couple at a time: big videos don't starve each other, and the rate limit stays clear.
@@ -53,16 +60,19 @@ export async function insertFiles(editor: Editor, files: File[], at: Point | nul
   for (const s of stored) if (s.kind === 'error') editor.host.notify(s.message, 'error');
   const items = stored.filter((s): s is Exclude<Stored, { kind: 'error' }> => s.kind !== 'error').map(itemOf);
   if (!items.length) return [];
-  let rects = rowLayout(items, at ?? editor.getViewportCenter());
-  if (!at) {
-    const b = boundsOf(rects);
-    const spot = editor.findFreeSpot({ w: b.w, h: b.h });
-    rects = rects.map((r) => ({ ...r, x: r.x - b.x + Math.round(spot.x), y: r.y - b.y + Math.round(spot.y) }));
-  }
+  let rects = rowLayout(items, at ?? near ?? editor.getViewportCenter());
+  if (!at) rects = intoFreeSpot(editor, rects, near);
   const els = items.map((it, i) => ({ ...it, x: rects[i].x, y: rects[i].y })) as NewElement[];
   const ids = editor.createMany(els, { select: true });
   if (ids.length) reveal(editor, boundsOf(rects));
   return ids;
+}
+
+/** `rects` moved, as one block, into a free spot near `near` (default the view). */
+function intoFreeSpot(editor: Editor, rects: Rect[], near?: Point): Rect[] {
+  const b = boundsOf(rects);
+  const spot = editor.findFreeSpot({ w: b.w, h: b.h }, { near });
+  return rects.map((r) => ({ ...r, x: r.x - b.x + Math.round(spot.x), y: r.y - b.y + Math.round(spot.y) }));
 }
 
 /** Glides the camera out (never in) when what was just added isn't fully in view. */

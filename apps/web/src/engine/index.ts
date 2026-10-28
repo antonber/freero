@@ -40,6 +40,7 @@ export {
   usePrivateCollection,
   useIsExporting,
   useElementsQuery,
+  usePeople,
 
 } from './hooks';
 

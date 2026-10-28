@@ -13,4 +13,12 @@ export default defineCommands([
       editor.collection<TimerState>('timer').set('state', startTimer(minutes * MINUTE, editor.host.serverNow(), editor.user.id));
     },
   },
+  {
+    // The retro stops its writing timer when the facilitator moves on (as the panel's Stop button).
+    id: 'timer.stop',
+    label: 'Stop the timer',
+    run(editor) {
+      editor.collection<TimerState>('timer').delete('state');
+    },
+  },
 ]);

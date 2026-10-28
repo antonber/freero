@@ -8,12 +8,13 @@
 // collection (Editor.privateCollection — the server sends it to nobody else) and the shared key
 // only holds a `sealed` marker ("has voted"). Ending the session reveals every sealed ballot into
 // the shared collection on the server, replacing the markers.
-import type { BoardElement, ElementType, VoteBallot, VotingSession } from '@freero/shared';
+import { VOTES_PER_USER_MAX, VOTES_PER_USER_MIN, VOTING_SESSION_KEY, type BoardElement, type ElementType, type VoteBallot, type VotingSession } from '@freero/shared';
 import type { Collection } from '@engine';
 
-export const SESSION_KEY = 'session';
-export const MIN_VOTES = 1;
-export const MAX_VOTES = 20;
+export const SESSION_KEY = VOTING_SESSION_KEY;
+export const MIN_VOTES = VOTES_PER_USER_MIN;
+/** The server rejects ballots over the session's budget and budgets over this (votingRules.ts). */
+export const MAX_VOTES = VOTES_PER_USER_MAX;
 /** What "All stickies, cards and shapes" means. */
 export const VOTABLE_TYPES: ReadonlySet<ElementType> = new Set<ElementType>(['sticky', 'card', 'shape']);
 

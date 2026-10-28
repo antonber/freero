@@ -187,6 +187,8 @@ export default defineElement({
   // parent), the arrows (walk the tree: parent / children / siblings), Alt+↑/↓ (reorder siblings)
   // and Space (collapse / expand). Tab (add child) and Shift+Tab (promote) are commands, so they
   // also work while typing. `keys` lists them in the shortcut sheet: keep the two in step.
+  // Never with Ctrl/Cmd held (KAI-202): Mod+Alt+↑/↓ stays the engine's bring forward / send
+  // backward for a topic like for anything else; Alt+↑/↓ alone is the mind map's reorder.
   keys: [
     { shortcuts: ['arrowleft', 'arrowright', 'arrowup', 'arrowdown'], label: 'Go to the parent, a child or a sibling topic', minRole: 'viewer' },
     { shortcuts: ['enter'], label: 'Add a sibling topic' },

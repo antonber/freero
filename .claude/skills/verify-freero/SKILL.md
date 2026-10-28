@@ -24,6 +24,14 @@ docker run -d --rm --name <you>-redis -p 127.0.0.1:<redisport>:6379 redis:7-alpi
 DATABASE_URL=postgres://postgres:freero@127.0.0.1:<pgport>/postgres REDIS_URL=redis://127.0.0.1:<redisport> npm run verify
 docker stop <you>-pg <you>-redis
 ```
+Storage changes (uploads, moderation of files): also run the `s3` group against an S3-compatible
+endpoint (skipped without one; every other group stays on the local disk). `minio/minio` may not
+pull; SeaweedFS does:
+```
+docker run -d --name <you>-s3 -p 127.0.0.1:<s3port>:8333 chrislusf/seaweedfs server -s3
+S3_ENDPOINT=http://127.0.0.1:<s3port> S3_BUCKET=freero-verify S3_ACCESS_KEY_ID=any S3_SECRET_ACCESS_KEY=any npm run verify -- --only s3
+docker rm -f <you>-s3
+```
 
 ## 3. Drive the real UI
 

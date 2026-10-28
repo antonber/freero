@@ -227,8 +227,11 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   importers by priority: images (100), PDFs (15), then media (12) takes every other real file —
   video / audio this browser plays (probed locally, with a JPEG poster frame captured from a
   `blob:` URL and uploaded as an image) become players, the rest (and media the server refuses
-  with 415) file cards. `Editor.importData(data, at)` (additive) is the same path for "upload"
-  buttons, so a picked image still becomes an image. Playback is each viewer's own, never synced:
+  with 415) file cards. A drop of several kinds is SPLIT (KAI-204): an importer returns the
+  `File[]` it took and the rest flows on with `data.alongside`, to be placed in a free spot near
+  the drop point; the group on the drop point holds its area with `Editor.reserveSpace(rects)`
+  while it uploads, so the others never land on it. `Editor.importData(data, at)` (additive) is
+  the same path for "upload" buttons, so a picked image still becomes an image. Playback is each viewer's own, never synced:
   a remote "play" would hit every browser's autoplay rules (unmuted playback needs that person's
   own gesture), and buffering makes synced positions drift; presenters bring people to the item
   with follow / "Bring everyone to me" and press play. The player mounts on the first play only
@@ -238,9 +241,9 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   people never seen online — for assignee pickers etc. (`/board/local`: just the local user).
 - `Host.lookupUsers(ids)`: current profiles (name, color, photo) for ids the board shows — people
   with access and anyone who wrote or is @mentioned in its comments, also after they left
-  (`GET /api/boards/:id/people`, members module; unrelated ids are never answered). Comments
-  render author photos and mention names through it (`features/comments/lib/people.ts`, fed by
-  presence too). `Host.inviteMember(email, role)`: the share flow from inside a feature (the
+  (`GET /api/boards/:id/people`, members module; unrelated ids are never answered). The engine
+  keeps one people directory per board over it and presence, `usePeople(ids)` (KAI-201): comments
+  (author photos, mention names) and find read the same current names through it. `Host.inviteMember(email, role)`: the share flow from inside a feature (the
   @mention picker invites a non-member as commenter); someone who already has access keeps
   their role.
 - Comment @mentions are `<@userId>` tokens in the message text (`MENTION_RE`, `mentionedUserIds`,
@@ -690,7 +693,9 @@ modules/<name>/    auth, boards, members, uploads, realtime …
   repo.ts          the only file that touches the db; the only writer of the owned tables     [S3][S4]
   routes.ts        reserved: export default (ctx) => express.Router, mounted at /api
                    (optional `export const mountPath = '/'` to mount elsewhere — uploads uses it
-                   for GET /uploads/:file)
+                   for GET /uploads/:file). Routers are mounted in readdir order, so middleware
+                   goes on each route (r.get(path, requireUser, …)): a router-level
+                   `r.use('<prefix>', …)` on a prefix another module serves under fails      [S6]
   ws.ts            reserved: export default (ctx) => WsRoute | WsRoute[]  ({ prefix, handle(ws, req) })
   init.ts          reserved: export default (ctx) => void | Promise<void>; runs once after all
                    migrations are applied and routes mounted, before listen (e.g. auth seeds the
@@ -881,6 +886,11 @@ credentials that act for a person without their session), `api` (no table: the p
   tombstone stays); auth `users.suspended_at` (sessions ended through `onSessionEnd`, sessions of
   suspended accounts never resolve, `startSession`/`completeSignIn` refuse with
   `account_suspended`).
+- Reviewing a reported file (KAI-205): `GET /api/moderation/uploads/:name/file` (operators only,
+  404 for everyone else) streams the file — or a removed file's kept copy — through uploads'
+  `openUploadForModeration`, always `application/octet-stream` as an attachment with nosniff and
+  a sandbox CSP, and records `moderation.upload.download` in the audit trail. The queue links
+  attachments (`.bin`, never served at /uploads) only there.
 - Moderation owns only the queue and the append-only action record; every action is also a
   platform audit event `moderation.<action>` (`platform/audit.ts`, actor = the operator's user). Each action emails its subject a statement of reasons with a signed,
   session-less appeal link (`/appeal?t=`, `mac('moderation.appeal:<actionId>')`) and adds a
@@ -1048,6 +1058,10 @@ approval lets the requester in at once.
   layers are never observed; changes in the `editors` layer are stored with audience `editors`
   (owners/editors only); removing a hidden frame's contents from the shared doc (the editors'
   clients moving them into the layer) is not reported; no element text is ever stored.
+- The board as a whole (KAI-188), kind `board`, stored at once: boards' `onBoardLifecycle`
+  (created, duplicated — on the copy, naming the original —, renamed, moved to a project, trashed,
+  restored; fired after the change commits) and realtime's `onVersionRestored` (a version restore
+  is applied by the server, so its element changes are never attributed).
 - Each person's changes on a board form a BURST in memory on that instance (net per element:
   added-and-removed is nothing, a move between the shared doc and the editors layer is nothing)
   until they pause `ACTIVITY_IDLE_SECONDS` or 10 minutes pass; it is stored as one row per
@@ -1467,7 +1481,7 @@ is gone. Tombstones are final. A commenter's message carries their own name (KAI
 before a rename elsewhere) or a name taken while connected (`auth.onProfileChanged` refreshes the
 sockets on every instance before the rename answers); an edit may keep the name the message had.
 Account names never start with "Guest ·". Readers show the author's CURRENT name from the people
-lookup (`features/comments/lib/people.ts` `authorName`), the stored one only for ids nobody answers
+lookup (`usePeople` + `@freero/shared` `commentAuthorName`, in comments and find), the stored one only for ids nobody answers
 (deleted accounts: "Deleted user") — so an editor's record, a rename or an old forged name never
 reads as someone else. Owners and editors are trusted with the whole doc. Ending a session — logout,
 "sign out" from another device, password reset/change, account deletion — fires
@@ -1496,12 +1510,19 @@ The room ends the session (`SERVER_ORIGIN`) when the facilitator has had no sock
 presence from another instance for `FREERO_FACILITATOR_GRACE_MS` (30 s). Following the facilitator
 and hidden cursors are views each client applies (`features/facilitation`); not enforceable.
 
-Session features built on these pieces (KAI-130/131/159) add no server rules of their own:
+**Vote budget** (KAI-210, `realtime/votingRules.ts`, same compensation in the same transaction,
+shared doc and every layer doc): a socket may write only its OWN ballot (`${sessionId}:${userId}`,
+matching fields) for the RUNNING session, with at most `votesPerUser` votes; a session needs
+`VOTES_PER_USER_MIN..MAX` and keeps its budget for its id; deleting is always allowed (a new vote
+wipes everyone's ballots). Readers still cap a ballot at the budget (`countedVotes`) for values
+older than the rule.
+
+Session features built on these pieces (KAI-130/131/159) add no other server rules:
 planning poker (`features/estimation`) seals each pick in the picker's private layer with a shared
 "has picked" marker and reveals one item at a time (`revealPrivate` with a per-item prefix), then
 writes the agreed value through `card.setEstimate` (cards keep one writer). Retro mode
 (`features/retro`) stores only its step and drives every other feature through commands that take
-args — `templates.insert`, `private-mode.start/reveal`, `timer.start`, `facilitation.start/set/end`,
+args — `templates.insert`, `private-mode.start/reveal`, `timer.start/stop`, `facilitation.start/set/end`,
 `voting.start/end`, `arrange.clusterByColor` — so private writing, sealed votes and the
 facilitator's limits keep their own guarantees. The laser pointer (`features/present`) is presence
 only (`ext.present.laser`, receivers fade points from their own arrival time); presenter notes are
@@ -1591,7 +1612,10 @@ only to connections that may read them:
   sync, roles, persistence across restart. No fake harness. Runs on PGlite by default; with
   `DATABASE_URL` it runs against that Postgres (fresh database per run, dropped afterwards) and
   also starts two instances at once on one empty database (migration lock); with `REDIS_URL` too,
-  it runs two instances on one database + Redis with clients on each. CI does all of it.
+  it runs two instances on one database + Redis with clients on each. With `S3_ENDPOINT`,
+  `S3_BUCKET` and keys (MinIO, SeaweedFS…), the `s3` group checks the S3 backend (prefixes, kept
+  copies under `private/`, restore, retention, the S3_PUBLIC_URL redirect and stored Cache-Control);
+  all other groups stay on the local disk. CI does all of it.
   `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation` runs some groups (to loop one while hunting a flake).
   Checks wait on the real condition, never a fixed sleep: `waitFor(cond, ms)` polls until a
   deadline; `settled(client, observers)` is a barrier (a presence change the server handles after

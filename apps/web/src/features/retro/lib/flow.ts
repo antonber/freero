@@ -97,6 +97,7 @@ export function advance(editor: Editor): void {
   switch (next) {
     case 'group':
       editor.runCommand('private-mode.reveal');
+      editor.runCommand('timer.stop'); // writing is over: its countdown would only distract
       break;
     case 'vote':
       editor.runCommand('voting.start', { votesPerUser: s.votes, hideResults: true, title: 'What should we talk about?' });
@@ -135,7 +136,10 @@ export function addAction(editor: Editor): void {
 export function end(editor: Editor): void {
   const s = getSession(editor);
   if (!s || !editor.can('editor')) return;
-  if (s.phase === 'write') editor.runCommand('private-mode.reveal');
+  if (s.phase === 'write') {
+    editor.runCommand('private-mode.reveal');
+    editor.runCommand('timer.stop');
+  }
   if (s.phase === 'vote') editor.runCommand('voting.end');
   if (s.facilitated) editor.runCommand('facilitation.end');
   store(editor).delete(KEY);
