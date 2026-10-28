@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { atLeast, isMemberRole, resolveRole } from './roles';
+import { atLeast, isMemberRole, resolveGuestRole, resolveRole, type WorkspaceAccess } from './roles';
 
 const board = (linkAccess: 'none' | 'viewer' | 'commenter' | 'editor' = 'none') => ({ ownerId: 'owner', linkAccess });
 
@@ -32,6 +32,28 @@ describe('resolveRole precedence (owner > member > link access)', () => {
 
   it('does not grant link access to anonymous requests', () => {
     expect(resolveRole(board('editor'), null, null)).toBeNull();
+  });
+});
+
+describe('guests (visitors without an account on a shared link)', () => {
+  const ws = (o: Partial<WorkspaceAccess> = {}): WorkspaceAccess => ({
+    teamRole: null,
+    inWorkspace: false,
+    outsidersBlocked: false,
+    maxLink: 'editor',
+    anonymousLinks: true,
+    ...o,
+  });
+
+  it('never lets a guest edit, even on a "can edit" link, and caps them by the workspace’s link maximum', () => {
+    expect(resolveGuestRole(board('editor'), ws())).toBe('commenter');
+    expect(resolveGuestRole(board('editor'), ws({ maxLink: 'viewer' }))).toBe('viewer');
+    expect(resolveGuestRole(board('none'), ws())).toBeNull();
+  });
+
+  it('lets no guest in where the workspace requires sign-in or keeps its boards to its own people', () => {
+    expect(resolveGuestRole(board('viewer'), ws({ anonymousLinks: false }))).toBeNull();
+    expect(resolveGuestRole(board('viewer'), ws({ outsidersBlocked: true }))).toBeNull();
   });
 });
 

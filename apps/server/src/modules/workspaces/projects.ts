@@ -1,7 +1,7 @@
 // Projects: folders of boards inside a workspace. An open project ('workspace') is seen by every
 // member; a private one only by its members and the workspace's owners/admins — and so are the
 // boards in it (roles.ts teamRole). Its creator and the workspace's owners/admins manage it.
-import type { ProjectAccess, ProjectSummary, WorkspaceRole } from '@freero/shared';
+import type { ProjectAccess, ProjectSummary, TeamAccess, WorkspaceRole } from '@freero/shared';
 import { badRequest, forbidden, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { recordAudit, recordAuditQuietly } from '../audit/index';
@@ -10,7 +10,7 @@ import { boardIdsInProject, countLiveBoardsInProject } from '../boards/index';
 import { refreshBoardAccess } from '../realtime/index';
 import * as repo from './repo';
 import type { Project } from './repo';
-import { isFullMember, isManager } from './roles';
+import { isFullMember, isManager, isTeamAccess } from './roles';
 import { requireWorkspace } from './service';
 
 const cleanName = (v: unknown): string => {
@@ -23,6 +23,12 @@ const cleanAccess = (v: unknown): ProjectAccess => {
   if (v !== 'workspace' && v !== 'private') throw badRequest('access must be workspace or private');
   return v;
 };
+/** A project's own team access level, or null for the workspace's. */
+const cleanTeamAccess = (v: unknown): TeamAccess | null => {
+  if (v === null) return null;
+  if (!isTeamAccess(v)) throw badRequest('teamAccess must be editor, commenter, viewer or null');
+  return v;
+};
 
 const canSee = (p: Project, role: WorkspaceRole | null, member: boolean) => member || isManager(role) || (p.access === 'workspace' && isFullMember(role));
 const canManage = (p: Project, role: WorkspaceRole | null, userId: string) => isManager(role) || (p.createdBy === userId && role !== null);
@@ -32,6 +38,7 @@ const toSummary = (p: Project, role: WorkspaceRole | null, userId: string): Proj
   workspaceId: p.workspaceId,
   name: p.name,
   access: p.access,
+  teamAccess: p.teamAccess,
   createdBy: p.createdBy,
   canManage: canManage(p, role, userId),
   createdAt: p.createdAt,
@@ -45,7 +52,11 @@ export async function listProjects(workspaceId: string, userId: string): Promise
   return projects.filter((p) => canSee(p, role, mine.has(p.id))).map((p) => toSummary(p, role, userId));
 }
 
-export async function createProject(workspaceId: string, userId: string, body: { name?: unknown; access?: unknown }): Promise<ProjectSummary> {
+export async function createProject(
+  workspaceId: string,
+  userId: string,
+  body: { name?: unknown; access?: unknown; teamAccess?: unknown },
+): Promise<ProjectSummary> {
   const { role } = await requireWorkspace(workspaceId, userId, 'member');
   const now = Date.now();
   const p: Project = {
@@ -53,6 +64,7 @@ export async function createProject(workspaceId: string, userId: string, body: {
     workspaceId,
     name: cleanName(body.name),
     access: body.access === undefined ? 'workspace' : cleanAccess(body.access),
+    teamAccess: body.teamAccess === undefined ? null : cleanTeamAccess(body.teamAccess),
     createdBy: userId,
     createdAt: now,
     updatedAt: now,
@@ -85,11 +97,20 @@ async function refreshProjectBoards(projectId: string): Promise<void> {
   for (const id of await boardIdsInProject(projectId)) await refreshBoardAccess(id);
 }
 
-export async function updateProject(projectId: string, userId: string, body: { name?: unknown; access?: unknown }): Promise<ProjectSummary> {
+/**
+ * Rename, open up / make private, or set the project's own team access level. Changes that alter
+ * who may do what on its boards re-check everyone connected to them, on every instance.
+ */
+export async function updateProject(
+  projectId: string,
+  userId: string,
+  body: { name?: unknown; access?: unknown; teamAccess?: unknown },
+): Promise<ProjectSummary> {
   const { project, role } = await manageable(projectId, userId);
   const patch = {
     ...(body.name !== undefined ? { name: cleanName(body.name) } : {}),
     ...(body.access !== undefined ? { access: cleanAccess(body.access) } : {}),
+    ...(body.teamAccess !== undefined ? { teamAccess: cleanTeamAccess(body.teamAccess) } : {}),
   };
   if (!(await repo.updateProject(projectId, patch, Date.now()))) throw notFound('Project not found');
   await recordAuditQuietly({
@@ -97,9 +118,18 @@ export async function updateProject(projectId: string, userId: string, body: { n
     workspaceId: project.workspaceId,
     actorId: userId,
     target: projectTarget({ ...project, ...patch }),
-    metadata: { nameFrom: project.name, nameTo: patch.name ?? project.name, accessFrom: project.access, accessTo: patch.access ?? project.access },
+    metadata: {
+      nameFrom: project.name,
+      nameTo: patch.name ?? project.name,
+      accessFrom: project.access,
+      accessTo: patch.access ?? project.access,
+      // The project's own team access level (null: the workspace's), KAI-93.
+      teamAccessFrom: project.teamAccess,
+      teamAccessTo: 'teamAccess' in patch ? (patch.teamAccess ?? null) : project.teamAccess,
+    },
   });
-  if (patch.access && patch.access !== project.access) await refreshProjectBoards(projectId);
+  const accessChanged = (patch.access && patch.access !== project.access) || ('teamAccess' in patch && patch.teamAccess !== project.teamAccess);
+  if (accessChanged) await refreshProjectBoards(projectId);
   return toSummary({ ...project, ...patch }, role, userId);
 }
 

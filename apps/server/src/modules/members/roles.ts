@@ -27,6 +27,8 @@ export interface WorkspaceAccess {
   outsidersBlocked: boolean;
   /** Highest link access the workspace allows. */
   maxLink: LinkAccess;
+  /** The workspace lets a board's link in visitors without an account (guests). */
+  anonymousLinks: boolean;
   /** Set when the workspace closes its boards to this user (deactivated, two-step required): no access at all. */
   blocked?: string | null;
 }
@@ -59,4 +61,19 @@ export function resolveRole(
   if (ws && LINK_RANK[linkAccess] > LINK_RANK[ws.maxLink]) linkAccess = ws.maxLink;
   const link: Role | null = linkAccess === 'none' || outsider ? null : linkAccess;
   return higher(higher(member, ws?.teamRole ?? null), link);
+}
+
+/**
+ * The role of a GUEST (a visitor without an account who joined this board by its link), or null:
+ * the board's link access as the workspace caps it, never above commenter, and only while the
+ * workspace lets visitors without an account in (and allows outside access at all), and never
+ * where its boards are closed to people without two-step verification.
+ */
+export function resolveGuestRole(board: { linkAccess: LinkAccess }, ws?: WorkspaceAccess): 'viewer' | 'commenter' | null {
+  // A workspace that closes its boards (two-step verification required) closes them to guests too.
+  if (ws && (!ws.anonymousLinks || ws.outsidersBlocked || ws.blocked)) return null;
+  let link = board.linkAccess;
+  if (ws && LINK_RANK[link] > LINK_RANK[ws.maxLink]) link = ws.maxLink;
+  if (link === 'none') return null;
+  return link === 'viewer' ? 'viewer' : 'commenter';
 }

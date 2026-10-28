@@ -40,9 +40,10 @@ export interface BoardSummary {
   projectId: string | null;
   /**
    * Team access, when the board is in a team workspace: everyone in it (`private`: only the
-   * members of its private project, plus the workspace's owners/admins) can edit it.
+   * members of its private project) gets `access` on it — the project's team access level, else
+   * the workspace's. The workspace's owners/admins always edit.
    */
-  team: { name: string; private: boolean } | null;
+  team: { name: string; private: boolean; access: TeamAccess } | null;
   /**
    * You were invited to this board itself (a board membership you can leave). False when your
    * access comes only from ownership, your team or the link.
@@ -72,6 +73,8 @@ export interface BoardPermissions {
   canMove: boolean;
   /** Hand the board to someone else (its owner, or the workspace's owners/admins). */
   canTransfer: boolean;
+  /** [additive] The board's link also lets in visitors without an account, as guests (workspace policy `publicLinks`). */
+  guestLinks?: boolean;
 }
 
 // ---- Workspaces ----
@@ -102,11 +105,13 @@ export interface BoardPermissions {
 // Projects (folders):
 // GET    /api/workspaces/:id/projects          -> { projects: ProjectSummary[] }  (the ones you can see)
 // POST   /api/workspaces/:id/projects  body { name, access? } -> { project }   (members, not guests)
-// PATCH  /api/projects/:id   body { name?, access? } -> { project }   (its creator or workspace owner/admin)
+// PATCH  /api/projects/:id   body { name?, access?, teamAccess?: TeamAccess | null } -> { project }   (its creator or workspace owner/admin)
 // DELETE /api/projects/:id   -> { ok: true }   (same; 409 while it still holds boards)
 // GET    /api/projects/:id/members -> { members: { userId, name, color, avatarUrl }[] }
 // PUT    /api/projects/:id/members/:userId -> { ok: true }   DELETE … -> { ok: true }  (manage: as PATCH)
 export type WorkspaceKind = 'personal' | 'team';
+/** What a team workspace's members get on its boards (owners/admins always edit). */
+export type TeamAccess = 'editor' | 'commenter' | 'viewer';
 export type WorkspaceRole = 'owner' | 'admin' | 'member' | 'guest';
 export type ProjectAccess = 'workspace' | 'private';
 export interface WorkspacePolicies {
@@ -118,6 +123,16 @@ export interface WorkspacePolicies {
   guestInvites: 'admins' | 'members';
   /** Who may export, download or duplicate its boards: anyone with access, workspace members (not guests), or owners/admins. */
   downloads: 'anyone' | 'members' | 'admins';
+  /**
+   * What members (not guests) get on its boards through the team; a project may set its own
+   * level (`ProjectSummary.teamAccess`). Owners/admins always edit.
+   */
+  teamAccess: TeamAccess;
+  /**
+   * Who a board's link lets in: 'anyone' — also visitors without an account, as a named guest
+   * (at most "can comment", one board, a few hours) — or only signed-in people.
+   */
+  publicLinks: 'anyone' | 'signedIn';
 }
 export interface WorkspaceSummary {
   id: string;
@@ -161,6 +176,8 @@ export interface ProjectSummary {
   workspaceId: string;
   name: string;
   access: ProjectAccess;
+  /** The project's own team access level for its boards; null: the workspace's (`policies.teamAccess`). */
+  teamAccess: TeamAccess | null;
   createdBy: string | null;
   /** You may rename it, change its access, manage its members and delete it. */
   canManage: boolean;
@@ -424,7 +441,9 @@ export const MAX_VERSION_NAME = 80;
 //                            (400 invalid / too large, 403 over MAX_TEMPLATES_PER_USER, or when
 //                            `boardId`'s workspace doesn't let you download its content)
 // PATCH  /api/templates/:id  body { workspaceId: string | null } -> { template }  (its owner; share
-//                            with a team workspace you're a member of, or make it personal again)
+//                            with a team workspace you're a member of, or make it personal again.
+//                            Owners/admins of the workspace it is shared with may unshare it: null)
+// A template stops being shared with a workspace when its owner leaves it or becomes a guest there.
 // DELETE /api/templates/:id  -> { ok: true }  (its owner only)
 export interface SavedTemplateSummary {
   id: string;
@@ -435,6 +454,10 @@ export interface SavedTemplateSummary {
   ownerId: string;
   /** The team workspace it is shared with, or null (personal). */
   workspaceId: string | null;
+  /** Who saved (and shared) it, by their current name. */
+  ownerName: string;
+  /** You may stop sharing it: its owner, or an owner/admin of the workspace it is shared with. */
+  canUnshare: boolean;
   elementCount: number;
   createdAt: number;
   updatedAt: number;
@@ -498,6 +521,104 @@ export interface InvitePreview {
 }
 export interface AcceptInviteResponse { boardId: string; role: Role }
 
+// ---- Access requests ----
+// Someone signed in who can't open a board asks for access. Deciders: the board's owner and, for a
+// team board, its workspace's owners/admins (a private project's board: also the project's
+// creator). They hear about it (notification `access.request`: the board owner, plus the admins —
+// or, for a private project's board, the project's creator) and approve as viewer / commenter /
+// editor, or decline; the requester hears back (`access.response`), and the request page lets them
+// in at once. One pending request per person per board; asking again right after a "no" waits.
+// GET    /api/boards/:id/access-request                -> AccessRequestState   (404: no such board)
+// POST   /api/boards/:id/access-request  body { role, message? } -> AccessRequestState (verified
+//        email; rate limited; 403 when the workspace keeps its boards to its own people)
+// DELETE /api/boards/:id/access-request                -> AccessRequestState   (withdraw it)
+// GET    /api/boards/:id/access-requests               -> { requests: BoardAccessRequest[] } (deciders)
+// POST   /api/boards/:id/access-requests/:userId body { decision: 'approve' | 'deny', role? } -> { ok: true }
+//        (deciders; 409 when it was decided meanwhile; approving someone outside a team workspace
+//        follows its "external sharing" policy)
+export interface AccessRequestState {
+  status: 'none' | 'pending' | 'denied' | 'granted';
+  /** status 'granted': your role now. */
+  role?: Role;
+  /** You may ask now (false right after a "no", or when the workspace allows only its own people). */
+  canRequest: boolean;
+  /** Why you can't, in words. */
+  reason?: string;
+}
+export interface BoardAccessRequest {
+  userId: string;
+  name: string;
+  email: string;
+  color: string;
+  avatarUrl: string | null;
+  role: Exclude<Role, 'owner'>;
+  message: string;
+  createdAt: number;
+}
+
+// ---- Guests: visitors without an account on a shared link ----
+// When a board's "anyone with the link" is on and its workspace allows visitors without an account
+// (policies.publicLinks 'anyone', and external sharing not 'none'), someone without an account may
+// join THAT board under a name, as "Guest · <name>": at most commenter (an "editor" link gives
+// guests "can comment"), for GUEST_SESSION_HOURS, through an HttpOnly cookie `freero_guest` that
+// opens nothing but that board (its doc socket, its people lookup). Guests never see members'
+// emails or the member list, can't @mention, and get no notifications. Their comments are stored
+// under their guest id with the name "Guest · <name>" (the server refuses any other name for them).
+// Changing the link or the policy re-checks connected guests at once; expired guests are dropped.
+// GET  /api/guest/boards/:id        -> GuestBoardInfo           (no session needed; 404: no such board)
+// POST /api/guest/boards/:id/join   body { name } -> GuestJoinResponse (rate limited per IP; 403 when
+//                                      the board doesn't let guests in)
+// GET  /api/guest/me                -> { guest: GuestInfo | null }
+// GET  /api/guest/boards/:id/board  -> { board: BoardSummary }  (the guest's own board only)
+// POST /api/guest/leave             -> { ok: true }  (ends the guest session)
+export const GUEST_ID_PREFIX = 'guest_';
+export const GUEST_SESSION_HOURS = 12;
+export const MAX_GUEST_NAME = 40;
+/** Guest ids never collide with account ids (those have no underscore). */
+export const isGuestId = (id: string): boolean => id.startsWith(GUEST_ID_PREFIX);
+/** How a guest is shown everywhere (presence, comments, activity). */
+export const guestDisplayName = (name: string): string => `Guest · ${name}`;
+export interface GuestBoardInfo {
+  /** Visitors without an account may join (and as what); the title only then. */
+  allowed: boolean;
+  role?: 'viewer' | 'commenter';
+  title?: string;
+}
+export interface GuestInfo {
+  id: string;
+  /** As typed; shown as guestDisplayName(name). */
+  name: string;
+  color: string;
+  boardId: string;
+  expiresAt: number;
+}
+export interface GuestJoinResponse { guest: GuestInfo }
+
+// ---- Activity ----
+// What people did, one entry per person per burst of work ("Ann added 12 sticky notes in frame
+// “Ideas”"), derived on the server from changes it applied from that person's own socket and from
+// sharing events — never from what a client says. Never names element content. Entries about hidden
+// frames' contents are shown to owners/editors only; private drafts never appear.
+// GET /api/boards/:id/activity?before=<ms>&limit=<n>      -> ActivityResponse  (anyone with access; also guests)
+// GET /api/workspaces/:id/activity?before=<ms>&limit=<n>  -> ActivityResponse  (the boards of that workspace
+//     you can open — in your personal workspace also boards shared with you — with boardTitle set)
+export interface ActivityEntry {
+  id: string;
+  boardId: string;
+  /** Workspace feed only. */
+  boardTitle?: string;
+  /** Null for a guest or a deleted account (`actorName` still names them). */
+  actor: BoardPerson | null;
+  actorName: string;
+  kind: 'edit' | 'comment' | 'share';
+  /** Worded after the actor's name: "added 12 sticky notes in frame “Ideas”". */
+  text: string;
+  startedAt: number;
+  /** When the burst ended (entries are ordered by it). */
+  at: number;
+}
+export interface ActivityResponse { entries: ActivityEntry[]; hasMore: boolean }
+
 // ---- Board people ----
 // GET /api/boards/:id/people?ids=a,b,c -> { people: BoardPerson[] }  (any role on the board)
 //     Profiles (name, color, photo) of the listed users who have access to the board or appear in
@@ -517,7 +638,14 @@ export interface BoardPerson { id: string; name: string; color: string; avatarUr
 //
 // Types are open-ended: a new source (e.g. workspace invites) adds its type here and its entry in
 // the server's modules/notifications/types.ts; the inbox shows `title` / `body` as sent.
-export type NotificationType = 'board.invite' | 'comment.mention' | 'comment.reply' | 'workspace.invite' | 'moderation.action';
+export type NotificationType =
+  | 'board.invite'
+  | 'comment.mention'
+  | 'comment.reply'
+  | 'workspace.invite'
+  | 'access.request'
+  | 'access.response'
+  | 'moderation.action';
 
 export interface AppNotification {
   id: string;
@@ -533,6 +661,16 @@ export interface AppNotification {
   /** App path to open: the board, or the board with ?thread=<id>. */
   link: string;
   boardId: string | null;
+  /**
+   * type 'access.request': the request as it stands now (`actor` asked). `canDecide`: you may
+   * still approve / decline it here (POST /api/boards/:boardId/access-requests/:actor.id).
+   */
+  accessRequest?: {
+    role: Exclude<Role, 'owner'>;
+    status: 'pending' | 'approved' | 'denied' | 'withdrawn';
+    decidedRole: Exclude<Role, 'owner'> | null;
+    canDecide: boolean;
+  };
 }
 export interface NotificationsResponse { notifications: AppNotification[]; unread: number; hasMore: boolean }
 export interface NotificationTypePref { type: NotificationType; label: string; description: string; email: boolean }
@@ -838,6 +976,10 @@ export const AUDIT_ACTIONS = {
   'board.member_invited': 'Shared a board',
   'board.member_role_changed': 'Changed someone’s board access',
   'board.member_removed': 'Removed someone from a board',
+  'board.access_requested': 'Asked for access to a board',
+  'board.access_approved': 'Let someone into a board (access request)',
+  'board.access_declined': 'Declined a request for access to a board',
+  'board.guest_joined': 'A visitor without an account joined a board by its link',
   'version.restored': 'Restored a board version',
   'template.saved': 'Saved a board as a template',
   'audit.exported': 'Exported the audit log',

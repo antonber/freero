@@ -41,6 +41,87 @@
   color: var(--fr-ink-3);
 }
 
+.fr-reqaccess {
+  width: min(440px, 100%);
+}
+
+.fr-reqaccess__loading {
+  display: grid;
+  place-items: center;
+  padding: 32px 0 8px;
+}
+
+.fr-reqaccess__badge {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin: 18px auto 0;
+  color: var(--fr-primary);
+  background: var(--fr-primary-soft);
+  border-radius: 50%;
+}
+
+.fr-reqaccess__badge + h1 {
+  margin-top: 12px;
+}
+
+.fr-reqaccess__form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 20px;
+  text-align: left;
+}
+
+.fr-reqaccess__role {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+  color: var(--fr-ink-2);
+}
+
+.fr-boarderror__card p.fr-reqaccess__error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fr-danger);
+}
+
+.fr-boarderror__card p.fr-guestjoin__role {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 20px;
+  font-size: 14px;
+}
+
+.fr-guestjoin__hint {
+  font-size: 12.5px;
+  color: var(--fr-ink-3);
+}
+
+.fr-reqaccess__waiting {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: -8px 0 24px;
+  font-size: 13px;
+  color: var(--fr-ink-3);
+}
+
+.fr-boarderror__account a {
+  color: var(--fr-primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.fr-boarderror__account a:hover {
+  text-decoration: underline;
+}
+
 .fr-boarderror__account strong {
   color: var(--fr-ink-2);
   font-weight: 600;

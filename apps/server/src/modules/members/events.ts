@@ -57,3 +57,61 @@ export async function inviteAccepted(e: InviteAcceptedEvent): Promise<void> {
     }
   }
 }
+
+export interface AccessRequestedEvent {
+  boardId: string;
+  boardTitle: string;
+  requesterId: string;
+  role: Exclude<Role, 'owner'>;
+  message: string;
+  createdAt: number;
+  /** Who should hear about it (the board owner, and the admins or the project's lead). */
+  recipientIds: string[];
+}
+
+export interface AccessDecidedEvent {
+  boardId: string;
+  boardTitle: string;
+  requesterId: string;
+  deciderId: string;
+  approved: boolean;
+  /** The role granted (approved), else null. */
+  role: Exclude<Role, 'owner'> | null;
+}
+
+type RequestedListener = (e: AccessRequestedEvent) => Promise<void> | void;
+type DecidedListener = (e: AccessDecidedEvent) => Promise<void> | void;
+const requestedListeners = new Set<RequestedListener>();
+const decidedListeners = new Set<DecidedListener>();
+
+/** Someone asked for access to a board (a new pending request). */
+export function onAccessRequested(fn: RequestedListener): () => void {
+  requestedListeners.add(fn);
+  return () => requestedListeners.delete(fn);
+}
+
+/** A pending access request was approved or declined. */
+export function onAccessDecided(fn: DecidedListener): () => void {
+  decidedListeners.add(fn);
+  return () => decidedListeners.delete(fn);
+}
+
+export async function accessRequested(e: AccessRequestedEvent): Promise<void> {
+  for (const fn of requestedListeners) {
+    try {
+      await fn(e);
+    } catch (err) {
+      logError('members: an access-requested listener failed', err);
+    }
+  }
+}
+
+export async function accessDecided(e: AccessDecidedEvent): Promise<void> {
+  for (const fn of decidedListeners) {
+    try {
+      await fn(e);
+    } catch (err) {
+      logError('members: an access-decided listener failed', err);
+    }
+  }
+}

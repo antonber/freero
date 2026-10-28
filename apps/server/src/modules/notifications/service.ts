@@ -3,14 +3,21 @@
 // delivered live to open tabs (live.ts) and emailed as batched digests.
 import { mac, macMatches } from '../../platform/secrets';
 import type { AppNotification, NotificationPrefs, NotificationsResponse, NotificationType } from '@freero/shared';
-import { mentionedUserIds, mentionsAsNames } from '@freero/shared';
+import { guestDisplayName, isGuestId, mentionedUserIds, mentionsAsNames } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { newId } from '../../platform/ids';
 import { log, logError } from '../../platform/log';
 import { appUrl, renderMail, sendMail } from '../../platform/mail';
-import { getAccount, getUsers } from '../auth/index';
+import { getAccount, getGuests, getUsers } from '../auth/index';
 import { getBoardAccess, getBoardTitle } from '../boards/index';
-import { invitedEmails, type BoardSharedEvent, type InviteAcceptedEvent } from '../members/index';
+import {
+  accessRequestOutcomes,
+  invitedEmails,
+  type AccessDecidedEvent,
+  type AccessRequestedEvent,
+  type BoardSharedEvent,
+  type InviteAcceptedEvent,
+} from '../members/index';
 import type { CommentMessageEvent } from '../realtime/index';
 import * as live from './live';
 import * as repo from './repo';
@@ -31,6 +38,8 @@ export interface NewNotification {
 /** Creates a notification (unless it is about the recipient's own action, a board they can't open, or a duplicate). */
 export async function notify(n: NewNotification): Promise<boolean> {
   if (n.actorId && n.actorId === n.userId) return false;
+  if (isGuestId(n.userId)) return false; // guests have no inbox
+  if (n.actorId && isGuestId(n.actorId)) throw new Error('notify: a guest is not an account; pass actorId null and data.actorName');
   if (n.boardId && !(await getBoardAccess(n.boardId, n.userId)).role) return false;
   const created = await repo.insert({
     id: newId(16),
@@ -58,27 +67,32 @@ const shorten = (s: string, max = EXCERPT_MAX) => {
  * One notification per person per message: a mention wins over a reply.
  */
 export async function onCommentMessage(e: CommentMessageEvent): Promise<void> {
+  // A guest (no account, on a shared link) can't mention anyone: an anonymous visitor must not be
+  // able to page a board's members or reach invited addresses. Their replies still notify.
+  const guest = isGuestId(e.authorId);
   const before = new Set(e.previousText === null ? [] : mentionedUserIds(e.previousText));
-  const mentioned = mentionedUserIds(e.text);
+  const mentioned = guest ? [] : mentionedUserIds(e.text);
   const newMentions = mentioned.filter((id) => !before.has(id) && id !== e.authorId);
-  const replyTo = e.previousText === null ? e.participantIds.filter((id) => !mentioned.includes(id)) : [];
+  const replyTo = e.previousText === null ? e.participantIds.filter((id) => !mentioned.includes(id) && !isGuestId(id)) : [];
   // Addresses of people invited to the board who have no account yet: notified once they join.
   const hadEmails = new Set(e.previousText === null ? [] : emailsIn(e.previousText));
-  const invited = await invitedEmails(e.boardId, emailsIn(e.text).filter((m) => !hadEmails.has(m)));
+  const invited = guest ? [] : await invitedEmails(e.boardId, emailsIn(e.text).filter((m) => !hadEmails.has(m)));
   if (!newMentions.length && !replyTo.length && !invited.length) return;
-  const [boardTitle, names] = await Promise.all([getBoardTitle(e.boardId), getUsers(mentioned)]);
+  const [boardTitle, names, guests] = await Promise.all([getBoardTitle(e.boardId), getUsers(mentionedUserIds(e.text)), guest ? getGuests([e.authorId]) : null]);
   if (boardTitle === null) return;
   const data: NotificationData = {
     boardTitle,
     threadId: e.threadId,
     messageId: e.messageId,
     excerpt: shorten(mentionsAsNames(e.text, (id) => names.get(id)?.name)),
+    ...(guest ? { actorName: guestDisplayName(guests?.get(e.authorId)?.name ?? 'visitor') } : {}),
   };
+  const actorId = guest ? null : e.authorId;
   const key = `${e.boardId}:${e.threadId}:${e.messageId}`;
   for (const userId of newMentions)
-    await notify({ userId, type: 'comment.mention', actorId: e.authorId, boardId: e.boardId, data, dedupeKey: `mention:${key}` });
+    await notify({ userId, type: 'comment.mention', actorId, boardId: e.boardId, data, dedupeKey: `mention:${key}` });
   for (const userId of replyTo)
-    await notify({ userId, type: 'comment.reply', actorId: e.authorId, boardId: e.boardId, data, dedupeKey: `reply:${key}` });
+    await notify({ userId, type: 'comment.reply', actorId, boardId: e.boardId, data, dedupeKey: `reply:${key}` });
   for (const email of invited)
     await repo.addPendingMention({ id: newId(16), boardId: e.boardId, email, actorId: e.authorId, data, dedupeKey: `mention:${key}`, createdAt: Date.now() });
 }
@@ -88,6 +102,25 @@ const EMAIL_IN_TEXT = /[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-
 /** Distinct email addresses written in a comment (lower case, as invites store them). */
 export function emailsIn(text: string): string[] {
   return [...new Set([...text.matchAll(EMAIL_IN_TEXT)].map((m) => m[0].toLowerCase()))];
+}
+
+/** Someone asked for access: the people who decide hear about it (with the requester's message). */
+export async function onAccessRequested(e: AccessRequestedEvent): Promise<void> {
+  const data: NotificationData = { boardTitle: e.boardTitle, role: e.role, ...(e.message ? { excerpt: shorten(e.message) } : {}) };
+  for (const userId of e.recipientIds)
+    await notify({ userId, type: 'access.request', actorId: e.requesterId, boardId: e.boardId, data, dedupeKey: `access:${e.boardId}:${e.requesterId}:${e.createdAt}` });
+}
+
+/**
+ * The requester hears back. A "no" doesn't name the board's title (they never had access) and
+ * isn't tied to the board: the notification links to the board's request page instead.
+ */
+export async function onAccessDecided(e: AccessDecidedEvent): Promise<void> {
+  await notify(
+    e.approved
+      ? { userId: e.requesterId, type: 'access.response', actorId: e.deciderId, boardId: e.boardId, data: { boardTitle: e.boardTitle, role: e.role ?? undefined, approved: true } }
+      : { userId: e.requesterId, type: 'access.response', actorId: e.deciderId, boardId: null, data: { approved: false, requestedBoardId: e.boardId } },
+  );
 }
 
 /** A board was shared with an existing account. */
@@ -117,20 +150,28 @@ export function sweepPendingMentions(now = Date.now()): Promise<void> {
 const DEFAULT_PAGE = 30;
 const MAX_PAGE = 100;
 
-function present(r: repo.NotificationRow, actors: Map<string, { id: string; name: string; color: string; avatarUrl: string | null }>): AppNotification | null {
+type Outcomes = Awaited<ReturnType<typeof accessRequestOutcomes>>;
+
+function present(
+  r: repo.NotificationRow,
+  actors: Map<string, { id: string; name: string; color: string; avatarUrl: string | null }>,
+  outcomes: Outcomes,
+): AppNotification | null {
   if (!isNotificationType(r.type)) return null; // a type this version does not know (newer instance)
   const def = NOTIFICATION_TYPES[r.type];
   const actor = r.actorId ? actors.get(r.actorId) : undefined;
+  const request = r.type === 'access.request' && r.boardId && actor ? outcomes.get(`${r.boardId}:${actor.id}`) : undefined;
   return {
     id: r.id,
     type: r.type,
     createdAt: r.createdAt,
     readAt: r.readAt,
     actor: actor ? { id: actor.id, name: actor.name, color: actor.color, avatarUrl: actor.avatarUrl } : null,
-    title: def.title(actor?.name ?? 'Someone', r.data),
+    title: def.title(actor?.name ?? r.data.actorName ?? 'Someone', r.data),
     body: r.data.excerpt ?? '',
     link: def.link(r.boardId, r.data),
     boardId: r.boardId,
+    ...(request ? { accessRequest: request } : {}),
   };
 }
 
@@ -139,8 +180,13 @@ export async function listFor(userId: string, opts: { before?: number | null; li
   const [rows, unread] = await Promise.all([repo.list(userId, limit, opts.before ?? null), repo.unreadCount(userId)]);
   const page = rows.slice(0, limit);
   const actors = await getUsers(page.flatMap((r) => (r.actorId ? [r.actorId] : [])));
+  const requests = page.filter((r) => r.type === 'access.request' && r.boardId && r.actorId);
+  const outcomes = await accessRequestOutcomes(
+    userId,
+    requests.map((r) => ({ boardId: r.boardId!, requesterId: r.actorId!, createdAt: r.createdAt })),
+  );
   return {
-    notifications: page.map((r) => present(r, actors)).filter((n): n is AppNotification => n !== null),
+    notifications: page.map((r) => present(r, actors, outcomes)).filter((n): n is AppNotification => n !== null),
     unread,
     hasMore: rows.length > limit,
   };
@@ -259,7 +305,7 @@ async function renderDigest(userId: string, rows: repo.NotificationRow[]) {
   const items = shown.map((r) => {
     const def = NOTIFICATION_TYPES[r.type as NotificationType];
     return {
-      heading: def.title(actors.get(r.actorId ?? '')?.name ?? 'Someone', r.data),
+      heading: def.title(actors.get(r.actorId ?? '')?.name ?? r.data.actorName ?? 'Someone', r.data),
       quote: r.data.excerpt || undefined,
       link: { label: def.linkLabel, url: appUrl(null, def.link(r.boardId, r.data)) },
     };

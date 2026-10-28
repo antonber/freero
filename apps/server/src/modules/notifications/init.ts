@@ -1,7 +1,7 @@
 import type { ServerContext } from '../../platform/context';
 import { scheduleExclusiveJob } from '../../platform/jobs';
 import { logError } from '../../platform/log';
-import { onBoardShared, onInviteAccepted } from '../members/index';
+import { onAccessDecided, onAccessRequested, onBoardShared, onInviteAccepted } from '../members/index';
 import { onCommentMessage } from '../realtime/index';
 import * as service from './service';
 
@@ -14,6 +14,8 @@ export default function initNotifications(ctx: ServerContext): void {
     onCommentMessage((e) => void service.onCommentMessage(e).catch((err) => logError('notifications: comment notification failed', err))),
     onBoardShared(service.onBoardShared),
     onInviteAccepted(service.onInviteAccepted),
+    onAccessRequested(service.onAccessRequested),
+    onAccessDecided(service.onAccessDecided),
   ];
   ctx.onShutdown(() => stops.forEach((stop) => stop()));
   scheduleExclusiveJob(ctx, {

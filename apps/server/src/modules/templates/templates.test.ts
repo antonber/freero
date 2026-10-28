@@ -3,7 +3,9 @@ import type { TemplateContent } from '@freero/shared';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { createUser } from '../auth/index';
 import { createBoard } from '../boards/index';
-import { createTeamWorkspace, inviteToWorkspace, updateWorkspace } from '../workspaces/index';
+import type { ServerContext } from '../../platform/context';
+import { createTeamWorkspace, inviteToWorkspace, removeWorkspaceMember, updateWorkspace } from '../workspaces/index';
+import templatesInit from './init';
 import { deleteTemplate, getTemplate, listTemplates, saveTemplate, shareTemplate } from './service';
 
 const LIMIT = 2;
@@ -78,4 +80,30 @@ it('a team that doesn’t allow downloads keeps its boards from being saved as t
   await updateWorkspace(ws.id, owner.id, { policies: { downloads: 'members' } });
   await expect(saveTemplate(guest.id, { name: 'Copy', content, boardId: board.id })).rejects.toMatchObject({ status: 403 });
   expect(await listTemplates(guest.id)).toEqual([]);
+});
+
+it('a workspace admin can take down a member’s team template (a member can’t), and leaving the team stops sharing what one shared there', async () => {
+  const verified = (name: string) =>
+    createUser({ name, email: `${name.toLowerCase()}${++n}@test.freero.app`, password: 'password-123' }, { emailVerified: true });
+  const [owner, admin, author, colleague] = await Promise.all(['UOwner', 'UAdmin', 'UAuthor', 'UColleague'].map(verified));
+  const ws = await createTeamWorkspace(owner.id, 'Studio');
+  for (const [u, role] of [
+    [admin, 'admin'],
+    [author, 'member'],
+    [colleague, 'member'],
+  ] as const)
+    await inviteToWorkspace(null, ws.id, owner, { email: u.email, role });
+  templatesInit({ onShutdown: () => undefined } as unknown as ServerContext);
+
+  const stale = await saveTemplate(author.id, { name: 'Stale', content, workspaceId: ws.id });
+  expect((await listTemplates(colleague.id)).find((t) => t.id === stale.id)).toMatchObject({ ownerName: 'UAuthor', canUnshare: false });
+  await expect(shareTemplate(stale.id, colleague.id, null)).rejects.toMatchObject({ status: 404 });
+  expect((await listTemplates(admin.id)).find((t) => t.id === stale.id)?.canUnshare).toBe(true);
+  await shareTemplate(stale.id, admin.id, null);
+  expect((await listTemplates(colleague.id)).some((t) => t.id === stale.id)).toBe(false);
+  expect((await listTemplates(author.id)).some((t) => t.id === stale.id)).toBe(true); // still theirs
+
+  const kept = await saveTemplate(author.id, { name: 'Kept', content, workspaceId: ws.id });
+  await removeWorkspaceMember(ws.id, author.id, author.id);
+  expect((await listTemplates(colleague.id)).some((t) => t.id === kept.id)).toBe(false);
 });

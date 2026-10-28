@@ -1,6 +1,6 @@
 // The only writer of `workspaces`, `workspace_members`, `workspace_invites`, `projects` and
 // `project_members` [S4].
-import type { ProjectAccess, WorkspaceKind, WorkspacePolicies, WorkspaceRole, WorkspaceSettings } from '@freero/shared';
+import type { ProjectAccess, TeamAccess, WorkspaceKind, WorkspacePolicies, WorkspaceRole, WorkspaceSettings } from '@freero/shared';
 import { isForeignKeyViolation, one, query, tx } from '../../platform/db';
 import type { InvitableWorkspaceRole } from './roles';
 
@@ -28,6 +28,8 @@ interface WsRow {
   link_sharing: WorkspacePolicies['linkSharing'];
   guest_invites: WorkspacePolicies['guestInvites'];
   downloads: WorkspacePolicies['downloads'];
+  team_access: TeamAccess;
+  public_links: 'anyone' | 'signed_in';
   require_two_factor: boolean;
   session_max_hours: number | null;
   session_idle_minutes: number | null;
@@ -43,7 +45,14 @@ const toWorkspace = (r: WsRow): Workspace => ({
   name: r.name,
   kind: r.kind,
   personalOf: r.personal_of,
-  policies: { externalSharing: r.external_sharing, linkSharing: r.link_sharing, guestInvites: r.guest_invites, downloads: r.downloads },
+  policies: {
+    externalSharing: r.external_sharing,
+    linkSharing: r.link_sharing,
+    guestInvites: r.guest_invites,
+    downloads: r.downloads,
+    teamAccess: r.team_access,
+    publicLinks: r.public_links === 'signed_in' ? 'signedIn' : 'anyone',
+  },
   settings: {
     requireTwoFactor: r.require_two_factor,
     sessionMaxHours: r.session_max_hours,
@@ -126,9 +135,20 @@ export async function updateWorkspace(id: string, patch: { name?: string; polici
   await query(
     `UPDATE workspaces SET name = COALESCE($2, name), external_sharing = COALESCE($3, external_sharing),
        link_sharing = COALESCE($4, link_sharing), guest_invites = COALESCE($5, guest_invites),
-       downloads = COALESCE($6, downloads), updated_at = $7
+       downloads = COALESCE($6, downloads), updated_at = $7, team_access = COALESCE($8, team_access),
+       public_links = COALESCE($9, public_links)
      WHERE id = $1`,
-    [id, patch.name ?? null, p.externalSharing ?? null, p.linkSharing ?? null, p.guestInvites ?? null, p.downloads ?? null, new Date(now)],
+    [
+      id,
+      patch.name ?? null,
+      p.externalSharing ?? null,
+      p.linkSharing ?? null,
+      p.guestInvites ?? null,
+      p.downloads ?? null,
+      new Date(now),
+      p.teamAccess ?? null,
+      p.publicLinks === undefined ? null : p.publicLinks === 'signedIn' ? 'signed_in' : 'anyone',
+    ],
   );
 }
 
@@ -452,6 +472,8 @@ export interface Project {
   workspaceId: string;
   name: string;
   access: ProjectAccess;
+  /** The project's own team access level (null: the workspace's). */
+  teamAccess: TeamAccess | null;
   createdBy: string | null;
   createdAt: number;
   updatedAt: number;
@@ -461,6 +483,7 @@ interface PRow {
   workspace_id: string;
   name: string;
   access: ProjectAccess;
+  team_access: TeamAccess | null;
   created_by: string | null;
   created_at: Date;
   updated_at: Date;
@@ -470,6 +493,7 @@ const toProject = (r: PRow): Project => ({
   workspaceId: r.workspace_id,
   name: r.name,
   access: r.access,
+  teamAccess: r.team_access ?? null,
   createdBy: r.created_by,
   createdAt: r.created_at.getTime(),
   updatedAt: r.updated_at.getTime(),
@@ -479,8 +503,9 @@ const toProject = (r: PRow): Project => ({
 export async function insertProject(p: Project): Promise<boolean> {
   try {
     await query(
-      `INSERT INTO projects (id, workspace_id, name, access, created_by, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [p.id, p.workspaceId, p.name, p.access, p.createdBy, new Date(p.createdAt), new Date(p.updatedAt)],
+      `INSERT INTO projects (id, workspace_id, name, access, created_by, created_at, updated_at, team_access)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [p.id, p.workspaceId, p.name, p.access, p.createdBy, new Date(p.createdAt), new Date(p.updatedAt), p.teamAccess],
     );
     if (p.createdBy) await query(`INSERT INTO project_members (project_id, user_id, created_at) VALUES ($1, $2, $3)`, [p.id, p.createdBy, new Date(p.createdAt)]);
     return true;
@@ -500,14 +525,19 @@ export async function projectsIn(workspaceIds: string[]): Promise<Project[]> {
   return (await query<PRow>(`SELECT * FROM projects WHERE workspace_id = ANY($1::text[]) ORDER BY lower(name), id`, [workspaceIds])).map(toProject);
 }
 
-export async function updateProject(id: string, patch: { name?: string; access?: ProjectAccess }, now: number): Promise<boolean> {
+/** Changes only the given fields (`teamAccess: null`: back to the workspace's level). */
+export async function updateProject(
+  id: string,
+  patch: { name?: string; access?: ProjectAccess; teamAccess?: TeamAccess | null },
+  now: number,
+): Promise<boolean> {
   return (
-    await query(`UPDATE projects SET name = COALESCE($2, name), access = COALESCE($3, access), updated_at = $4 WHERE id = $1 RETURNING 1`, [
-      id,
-      patch.name ?? null,
-      patch.access ?? null,
-      new Date(now),
-    ])
+    await query(
+      `UPDATE projects SET name = COALESCE($2, name), access = COALESCE($3, access), updated_at = $4,
+         team_access = CASE WHEN $5::boolean THEN $6 ELSE team_access END
+       WHERE id = $1 RETURNING 1`,
+      [id, patch.name ?? null, patch.access ?? null, new Date(now), patch.teamAccess !== undefined, patch.teamAccess ?? null],
+    )
   ).length > 0;
 }
 

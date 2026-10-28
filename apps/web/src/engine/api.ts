@@ -11,6 +11,7 @@
 
 import type { ComponentType, CSSProperties, ReactNode } from 'react';
 import type {
+  ActivityEntry,
   BoardElement,
   BoardLayer,
   BoardVersion,
@@ -62,6 +63,11 @@ export interface Host {
      * `shareWithTeam`, `shareTemplate`). Null/absent: personal templates only.
      */
     team?: { name: string } | null;
+    /**
+     * [additive] False for a visitor without an account (a guest on the board's link, KAI-43):
+     * no account services, and the report dialog asks for a contact email. Default true.
+     */
+    signedIn?: boolean;
   };
   /** Full ws URL prefix; engine connects WebsocketProvider(syncUrl, board.id, doc). */
   syncUrl: string;
@@ -156,8 +162,9 @@ export interface Host {
     shareWithTeam?: boolean;
   }): Promise<SavedTemplateInfo>;
   /**
-   * [additive] Shares one of the user's own templates with `board.team` (or makes it personal
-   * again). Rejects when there is no team to share with (offline sandbox, personal board).
+   * [additive] Shares one of the user's own templates with `board.team`, or stops sharing a team
+   * template (its owner, or an admin of its workspace: `canUnshare`). Sharing rejects when there
+   * is no team to share with (offline sandbox, personal board).
    */
   shareTemplate(id: string, shared: boolean): Promise<SavedTemplateInfo>;
   /** [additive] Deletes one of the user's own saved templates. */
@@ -167,6 +174,13 @@ export interface Host {
    * other roles and in the offline sandbox, with a message fit for a toast).
    */
   versions: VersionHistory;
+  /**
+   * [additive] The board's activity, newest first (wire: @freero/shared `ActivityEntry`): what
+   * people did, one entry per person per burst of work, as the SERVER saw it — never content of
+   * hidden frames for viewers/commenters, never private drafts. `before`: entries that ended before
+   * this instant (paging). Absent in the offline sandbox.
+   */
+  activity?: { list(before?: number): Promise<{ entries: ActivityEntry[]; hasMore: boolean }> };
   /**
    * [additive] Reports this board, an item on it, an uploaded file it shows or a comment to
    * Freero's moderators (KAI-142). Anyone who can open the board may. Rejects with a message fit
@@ -180,6 +194,8 @@ export interface ContentReport {
   target: ReportTarget;
   reason: ReportReason;
   note: string;
+  /** [additive] Visitors without an account (`board.signedIn === false`): where to send the outcome. */
+  contactEmail?: string;
 }
 
 /**
@@ -214,6 +230,13 @@ export interface SavedTemplateInfo {
   ownerId: string;
   /** [additive] Shared with a team workspace (its members see it), not only its owner. */
   shared?: boolean;
+  /** [additive] Who saved it (shown on team templates: "Shared by …"). */
+  ownerName?: string;
+  /**
+   * [additive] The user may stop sharing it with its team (`shareTemplate(id, false)`): its owner,
+   * or an owner/admin of the workspace it is shared with.
+   */
+  canUnshare?: boolean;
   elementCount: number;
   createdAt: number;
 }

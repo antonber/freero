@@ -11,8 +11,9 @@
 //   s:<tid>                      `by` is them: anyone may resolve / reopen     the thread is tombstoned
 //                                any thread (shared workflow state, attributed
 //                                and reversible)
-//   m:<tid>:<mid>                `authorId` is them, before and after          they wrote it, or the thread
-//                                                                              is tombstoned
+//   m:<tid>:<mid>                `authorId` is them, before and after (a       they wrote it, or the thread
+//                                guest's `authorName` must also be the name   is tombstoned
+//                                they joined with: "Guest · <name>")
 //   r:<tid>:<mid>:<uid>:<emoji>  <uid> and `userId` are them                   <uid> is them, or the message
 //                                                                              / thread is tombstoned
 //   x:<tid>                      `by` is them and they created the thread, or  never (tombstones are final)
@@ -55,13 +56,15 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
 /**
  * True when every change in `changes` is one `userId` may make as a commenter. `prior(key)` reads
- * the collection as it was before the update; `priorKeys()` lists its keys.
+ * the collection as it was before the update; `priorKeys()` lists its keys. `authorName` (guests):
+ * the only author name their messages may carry, so a guest can never pose as a member.
  */
 export function commenterMayChangeComments(
   changes: KeyChange[],
   userId: string,
   prior: (key: string) => unknown,
   priorKeys: () => Iterable<string>,
+  authorName?: string,
 ): boolean {
   const byKey = new Map(changes.map((c) => [c.key, c]));
   /** Legacy whole-thread values deleted by this update, by thread id. */
@@ -142,6 +145,7 @@ export function commenterMayChangeComments(
         if (!a) return (b as unknown as CommentMessageRecord).authorId === userId || threadTombstoned(tid);
         const m = a as unknown as CommentMessageRecord;
         if (m.kind !== 'message' || m.threadId !== tid || m.id !== mid) return false;
+        if (authorName !== undefined && m.authorId === userId && m.authorName !== authorName) return false;
         if (m.authorId === userId) return !b || (b as unknown as CommentMessageRecord).authorId === userId;
         const lm = !b ? legacyMessage(tid, mid) : undefined;
         return !!lm && lm.authorId === m.authorId && lm.text === m.text;

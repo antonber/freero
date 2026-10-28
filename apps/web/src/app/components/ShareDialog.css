@@ -94,6 +94,19 @@
   white-space: nowrap;
 }
 
+.fr-share__request-note {
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--fr-ink-2);
+  overflow-wrap: anywhere;
+}
+
+.fr-share__requests {
+  padding: 10px 12px 4px;
+  background: var(--fr-primary-soft);
+  border-radius: var(--fr-radius-lg, 12px);
+}
+
 .fr-share__member-actions {
   display: flex;
   align-items: center;
