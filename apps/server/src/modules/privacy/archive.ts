@@ -5,6 +5,7 @@
 //   boards/<title>-<id>/board.json (record + content + the layers you may read), board.yjs, files/<file>
 // workspace: README.txt, workspace.json, templates/…, boards/… (the same board layout).
 import { strToU8, zipSync, type Zippable } from 'fflate';
+import { aiUsageExportOf, aiWorkspaceExportOf } from '../ai/index';
 import { exportAccountData, getUser } from '../auth/index';
 import { boardActivityOf, boardIdsInWorkspace, boardIdsOpenedBy, boardIdsOwnedByUser, boardRecords, type BoardRecord } from '../boards/index';
 import { membershipsOf } from '../members/index';
@@ -72,7 +73,7 @@ const README_USER = (name: string, at: string) => `Freero data export for ${name
 
 account.json        your profile, sign-in methods and signed-in devices (no passwords or secrets)
 memberships.json    workspaces, projects and boards you are a member of; what workspaces' directories (SSO/SCIM) hold about you
-activity.json       boards you starred and when you last opened boards
+activity.json       boards you starred and when you last opened boards; your AI usage (counts only)
 comments.json       every comment you wrote, by board, with the thread and item it is attached to
 notifications.json  your notifications and email settings
 templates/          templates you saved (Freero's own JSON; insertable again)
@@ -86,7 +87,8 @@ files-not-included.json  (only if present) files that could not be included and 
 const README_WORKSPACE = (name: string, at: string) => `Freero export of the workspace ${name}, made ${at}.
 
 workspace.json  the workspace, its sharing policies, members (with email addresses), invitations,
-                projects, single sign-on settings (no secrets) and provisioned directory data
+                projects, single sign-on settings (no secrets), provisioned directory data and
+                AI settings (no key) with AI usage per person and month
 templates/      templates shared with the workspace
 boards/         every board in the workspace (trash included): board.json (readable JSON of every
                 item, comment and setting, and hidden frames' contents — never anyone's private
@@ -109,7 +111,11 @@ export async function buildUserArchive(userId: string, appOrigin: string): Promi
     singleSignOn: sso,
     directoryRecords: scim,
   });
-  a.addJson('activity.json', { ...(await boardActivityOf(userId)), dataExports: (await exportsRequestedBy(userId)).map((e) => ({ kind: e.kind, status: e.status, createdAt: new Date(e.createdAt).toISOString() })) });
+  a.addJson('activity.json', {
+    ...(await boardActivityOf(userId)),
+    dataExports: (await exportsRequestedBy(userId)).map((e) => ({ kind: e.kind, status: e.status, createdAt: new Date(e.createdAt).toISOString() })),
+    aiUsage: await aiUsageExportOf(userId),
+  });
 
   // Comments: on every board they could have written on (owned, invited, opened, their teams').
   const owned = await boardIdsOwnedByUser(userId);
@@ -141,7 +147,12 @@ export async function buildWorkspaceArchive(workspaceId: string, appOrigin: stri
   const directory = await exportWorkspaceDirectory(workspaceId);
   if (!directory) throw new Error('the workspace is gone');
   a.add('README.txt', strToU8(README_WORKSPACE(directory.workspace.name, new Date().toISOString())));
-  a.addJson('workspace.json', { ...directory, singleSignOn: await ssoExportOf(workspaceId), provisioning: await scimExportOf(workspaceId) });
+  a.addJson('workspace.json', {
+    ...directory,
+    singleSignOn: await ssoExportOf(workspaceId),
+    provisioning: await scimExportOf(workspaceId),
+    ai: await aiWorkspaceExportOf(workspaceId),
+  });
   for (const t of await templatesExportOf({ workspaceId })) a.addJson(`templates/${slug(t.name)}-${t.id}.json`, t);
   for (const b of await boardRecords(await boardIdsInWorkspace(workspaceId))) await addBoard(a, b, appOrigin, { editorsLayer: true, privateLayerOf: null });
   return a.zip();
