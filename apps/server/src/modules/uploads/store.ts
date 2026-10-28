@@ -1,6 +1,7 @@
 // Uploaded files: validated here, stored through the platform object storage (S3-compatible or
 // local disk) under flat keys "<random id>.<ext>", and always addressed as "/uploads/<key>".
 // User uploads are recorded per owner for the storage quota (UPLOAD_QUOTA_MB).
+// Images and PDF documents (board PDF items) are accepted; both count toward the same quota.
 import { getConfig } from '../../platform/config';
 import { badRequest, HttpError } from '../../platform/http';
 import { newId } from '../../platform/ids';
@@ -13,13 +14,14 @@ export const EXT_BY_TYPE: Record<string, string> = {
   'image/gif': 'gif',
   'image/webp': 'webp',
   'image/svg+xml': 'svg',
+  'application/pdf': 'pdf',
 };
 
 export const TYPE_BY_EXT: Record<string, string> = Object.fromEntries(
   Object.entries(EXT_BY_TYPE).map(([t, e]) => [e, t]),
 );
 
-export const FILE_NAME_RE = /^[A-Za-z0-9_-]{6,64}\.(png|jpg|gif|webp|svg)$/;
+export const FILE_NAME_RE = /^[A-Za-z0-9_-]{6,64}\.(png|jpg|gif|webp|svg|pdf)$/;
 
 export function maxUploadBytes(): number {
   return getConfig().maxUploadBytes;
@@ -47,6 +49,9 @@ export function contentMatches(data: Uint8Array, type: string): boolean {
       return startsWith(data, [0x52, 0x49, 0x46, 0x46]) && startsWith(data, [0x57, 0x45, 0x42, 0x50], 8);
     case 'image/svg+xml':
       return /<svg[\s>]/i.test(Buffer.from(data.subarray(0, 4096)).toString('utf8'));
+    case 'application/pdf':
+      // "%PDF-" within the first KB (the spec tolerates a little leading junk).
+      return Buffer.from(data.subarray(0, 1024)).includes('%PDF-');
     default:
       return false;
   }
@@ -63,15 +68,15 @@ export async function saveUpload(data: Uint8Array, contentType: string, ownerId?
   const type = mediaType(contentType);
   const ext = EXT_BY_TYPE[type];
   const max = maxUploadBytes();
-  if (!ext) throw new HttpError(415, 'Unsupported file type. Use PNG, JPEG, GIF, WebP or SVG.');
+  if (!ext) throw new HttpError(415, 'Unsupported file type. Use PNG, JPEG, GIF, WebP, SVG or PDF.');
   if (data.byteLength === 0) throw badRequest('Empty upload');
   if (data.byteLength > max) throw new HttpError(413, `File is too large (max ${mb(max)})`);
-  if (!contentMatches(data, type)) throw badRequest(`File content is not a valid ${ext.toUpperCase()} image`);
+  if (!contentMatches(data, type)) throw badRequest(`File content is not a valid ${ext.toUpperCase()} ${ext === 'pdf' ? 'document' : 'image'}`);
   const name = `${newId(16)}.${ext}`;
   if (ownerId) {
     const quota = getConfig().uploadQuotaBytes;
     if (!(await repo.reserveUpload(name, ownerId, data.byteLength, type, quota, Date.now())))
-      throw new HttpError(413, `Upload quota reached (${mb(quota)} per account). Delete unused images to free space.`);
+      throw new HttpError(413, `Upload quota reached (${mb(quota)} per account). Delete unused images or documents to free space.`);
   }
   try {
     await storage().put(name, data, type);
