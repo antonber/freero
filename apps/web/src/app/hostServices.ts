@@ -10,6 +10,7 @@ const toTemplateInfo = (t: SavedTemplateSummary): SavedTemplateInfo => ({
   description: t.description,
   thumbnail: t.thumbnail,
   ownerId: t.ownerId,
+  shared: t.workspaceId !== null,
   elementCount: t.elementCount,
   createdAt: t.createdAt,
 });
@@ -22,8 +23,33 @@ export async function loadTemplate(id: string): Promise<ElementsSnapshot> {
   return (await api.getTemplate(id)).template.content;
 }
 
-export const saveTemplate: Host['saveTemplate'] = async ({ name, description, thumbnail, content }) =>
-  toTemplateInfo((await api.saveTemplate({ name, description, content, ...(thumbnail ? { thumbnail } : {}) })).template);
+/**
+ * Saves a template from board `boardId` (its workspace's download policy applies), shared with
+ * `teamId` when asked.
+ */
+export function saveTemplateFrom(boardId: string, teamId: string | null): Host['saveTemplate'] {
+  return async ({ name, description, thumbnail, content, shareWithTeam }) =>
+    toTemplateInfo(
+      (
+        await api.saveTemplate({
+          name,
+          description,
+          content,
+          boardId,
+          ...(thumbnail ? { thumbnail } : {}),
+          ...(shareWithTeam && teamId ? { workspaceId: teamId } : {}),
+        })
+      ).template,
+    );
+}
+
+/** Shares one of the user's templates with `teamId` (null: no team to share with here). */
+export function shareTemplateWith(teamId: string | null): Host['shareTemplate'] {
+  return async (id, shared) => {
+    if (!teamId) throw new Error('This board isn’t in a team workspace.');
+    return toTemplateInfo((await api.shareTemplate(id, shared ? teamId : null)).template);
+  };
+}
 
 export async function deleteTemplate(id: string): Promise<void> {
   await api.deleteTemplate(id);

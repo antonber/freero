@@ -1,0 +1,485 @@
+/* Workspaces on the dashboard: switcher, projects, members and settings pages, card descriptions. */
+
+/* ---- Workspace switcher ---- */
+.fr-dash-ws {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  margin: 0 0 14px;
+  padding: 7px 8px;
+  text-align: left;
+  color: var(--fr-ink);
+  background: var(--fr-surface-2);
+  border: 1px solid var(--fr-line);
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.fr-dash-ws:hover,
+.fr-dash-ws--open {
+  background: var(--fr-hover);
+}
+
+.fr-dash-ws:focus-visible {
+  outline: none;
+  box-shadow: var(--fr-focus-ring);
+}
+
+.fr-dash-ws--loading {
+  cursor: default;
+}
+
+.fr-dash-ws__badge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: #fff;
+  border-radius: 8px;
+}
+
+.fr-dash-ws__badge--personal {
+  color: var(--fr-primary);
+  background: var(--fr-primary-soft);
+}
+
+.fr-dash-ws__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.fr-dash-ws__name {
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-dash-ws__meta {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--fr-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-dash-ws__chev {
+  flex: none;
+  color: var(--fr-ink-3);
+}
+
+.fr-dash-ws__nav {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--fr-line);
+}
+
+/* ---- Projects ---- */
+.fr-dash-proj {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--fr-line);
+}
+
+.fr-dash-proj__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px 0 12px;
+}
+
+.fr-dash-proj__title {
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fr-ink-3);
+}
+
+.fr-dash-proj__empty {
+  margin: 4px 12px 0;
+  font-size: 12.5px;
+  color: var(--fr-ink-3);
+}
+
+.fr-dash-proj__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 34vh;
+  margin: 2px 0 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.fr-dash-proj__item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: var(--fr-radius);
+}
+
+.fr-dash-proj__item:hover {
+  background: var(--fr-hover);
+}
+
+.fr-dash-proj__item--active,
+.fr-dash-proj__item--active:hover {
+  color: var(--fr-primary);
+  background: var(--fr-primary-soft);
+}
+
+/* A board card dragged over a drop target (a project, or Home = no project). */
+.fr-dash-proj--drop,
+.fr-dash-proj--drop:hover {
+  background: var(--fr-primary-soft);
+  box-shadow: inset 0 0 0 2px var(--fr-primary);
+}
+
+.fr-dash-proj__open {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 4px 0 12px;
+  font-size: 13.5px;
+  font-weight: 500;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: var(--fr-radius);
+  cursor: pointer;
+}
+
+.fr-dash-proj__open:focus-visible {
+  outline: none;
+  box-shadow: var(--fr-focus-ring);
+}
+
+.fr-dash-proj__open svg {
+  flex: none;
+  color: var(--fr-ink-3);
+}
+
+.fr-dash-proj__item--active .fr-dash-proj__open svg {
+  color: var(--fr-primary);
+}
+
+.fr-dash-proj__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-dash-proj__private {
+  flex: none;
+  padding: 1px 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--fr-ink-3);
+  background: var(--fr-surface-2);
+  border-radius: 999px;
+}
+
+.fr-dash-proj__more {
+  opacity: 0;
+}
+
+.fr-dash-proj__item:hover .fr-dash-proj__more,
+.fr-dash-proj__more:focus-visible,
+.fr-dash-proj__more[aria-expanded='true'] {
+  opacity: 1;
+}
+
+/* ---- Members / settings pages ---- */
+.fr-dash-page {
+  max-width: 760px;
+}
+
+.fr-dash-page__head {
+  margin-bottom: 18px;
+}
+
+.fr-dash-page__lead {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--fr-ink-2);
+}
+
+.fr-dash-page__note {
+  margin: 0 0 16px;
+  font-size: 13.5px;
+  color: var(--fr-ink-2);
+}
+
+.fr-dash-members__invite {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.fr-dash-members__invite > :first-child {
+  flex: 1;
+}
+
+.fr-dash-members__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--fr-surface);
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius-lg);
+}
+
+.fr-dash-members__row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 8px 14px;
+}
+
+.fr-dash-members__row + .fr-dash-members__row {
+  border-top: 1px solid var(--fr-line);
+}
+
+.fr-dash-members__pending {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  color: var(--fr-ink-3);
+  background: var(--fr-surface-2);
+  border-radius: 50%;
+}
+
+.fr-dash-members__who {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.fr-dash-members__name {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-dash-members__you {
+  font-weight: 400;
+  color: var(--fr-ink-3);
+}
+
+.fr-dash-members__email {
+  overflow: hidden;
+  font-size: 12.5px;
+  color: var(--fr-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-dash-members__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.fr-dash-members__role {
+  padding: 0 8px;
+  font-size: 13px;
+  color: var(--fr-ink-2);
+}
+
+.fr-dash-settings__block {
+  margin-bottom: 18px;
+  padding: 18px 20px;
+  background: var(--fr-surface);
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius-lg);
+}
+
+.fr-dash-settings__block--danger {
+  border-color: color-mix(in srgb, var(--fr-danger) 35%, var(--fr-line));
+}
+
+.fr-dash-settings__title {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.fr-dash-settings__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.fr-dash-settings__row > :first-child {
+  flex: 1;
+  min-width: 200px;
+}
+
+.fr-dash-settings__policy {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 12px 0;
+}
+
+.fr-dash-settings__policy + .fr-dash-settings__policy {
+  border-top: 1px solid var(--fr-line);
+}
+
+.fr-dash-settings__policy-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fr-dash-settings__label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.fr-dash-settings__hint {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--fr-ink-3);
+}
+
+.fr-dash-settings__policy-text .fr-dash-settings__hint {
+  margin: 0;
+}
+
+.fr-dash-projdlg {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fr-dash-projdlg__people {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+/* ---- Board card description (edited in place) ---- */
+.fr-dash-card__desc {
+  display: -webkit-box;
+  margin: 3px 0 0;
+  overflow: hidden;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--fr-ink-2);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  word-break: break-word;
+}
+
+.fr-dash-card__desc--edit {
+  position: relative;
+  z-index: 2; /* above the card's open-board link */
+  width: 100%;
+  padding: 1px 4px;
+  margin-left: -4px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: text;
+}
+
+.fr-dash-card__desc--edit:hover {
+  background: var(--fr-hover);
+}
+
+.fr-dash-card__desc--edit:focus-visible {
+  outline: none;
+  box-shadow: var(--fr-focus-ring);
+}
+
+.fr-dash-card__desc--empty {
+  color: var(--fr-ink-3);
+  opacity: 0;
+}
+
+.fr-dash-card:hover .fr-dash-card__desc--empty,
+.fr-dash-card__desc--empty:focus-visible {
+  opacity: 1;
+}
+
+.fr-dash-card__desc-input {
+  position: relative;
+  z-index: 2;
+  display: block;
+  width: 100%;
+  margin: 3px 0 0;
+  padding: 4px 6px;
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--fr-ink);
+  resize: none;
+  background: var(--fr-surface);
+  border: 1px solid var(--fr-primary);
+  border-radius: 6px;
+  outline: none;
+  box-shadow: var(--fr-focus-ring);
+}
+
+@media (max-width: 1000px) {
+  .fr-dash-ws {
+    justify-content: center;
+    width: 48px;
+    padding: 6px;
+  }
+
+  .fr-dash-ws__text,
+  .fr-dash-ws__chev,
+  .fr-dash-proj__title,
+  .fr-dash-proj__empty,
+  .fr-dash-proj__name,
+  .fr-dash-proj__private,
+  .fr-dash-proj__more {
+    display: none;
+  }
+
+  .fr-dash-proj__head {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .fr-dash-proj__open {
+    justify-content: center;
+    width: 44px;
+    padding: 0;
+  }
+}

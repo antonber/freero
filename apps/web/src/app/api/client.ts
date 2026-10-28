@@ -20,6 +20,14 @@ import type {
   UnfurlResponse,
   UpdateBoardRequest,
   User,
+  ProjectAccess,
+  ProjectSummary,
+  WorkspaceInvite,
+  WorkspaceInvitePreview,
+  WorkspaceMember,
+  WorkspacePolicies,
+  WorkspaceRole,
+  WorkspaceSummary,
 } from '@freero/shared';
 
 export class ApiError extends Error {
@@ -112,10 +120,13 @@ export const api = {
   acceptInvite: (token: string) => request<AcceptInviteResponse>('POST', `/api/invites/${encodeURIComponent(token)}/accept`),
 
   // boards
-  listBoards: (filter: BoardFilter = 'all', q = '') =>
+  /** Boards of the current workspace (`workspace`; default: your personal one), optionally of one project. */
+  listBoards: (filter: BoardFilter = 'all', q = '', scope: { workspace?: string; project?: string } = {}) =>
     request<{ boards: BoardSummary[] }>(
       'GET',
-      `/api/boards?filter=${filter}&q=${encodeURIComponent(q)}`,
+      `/api/boards?filter=${filter}&q=${encodeURIComponent(q)}` +
+        (scope.workspace ? `&workspace=${encodeURIComponent(scope.workspace)}` : '') +
+        (scope.project ? `&project=${encodeURIComponent(scope.project)}` : ''),
     ),
   createBoard: (body: CreateBoardRequest = {}) =>
     request<{ board: BoardSummary }>('POST', '/api/boards', body),
@@ -128,6 +139,8 @@ export const api = {
   deleteBoardForever: (id: string) => request<{ ok: true }>('DELETE', `/api/boards/${id}/permanent`),
   duplicateBoard: (id: string) =>
     request<{ board: BoardSummary }>('POST', `/api/boards/${id}/duplicate`),
+  /** Hands the board to `userId` (you keep editor access). */
+  transferBoard: (id: string, userId: string) => request<{ board: BoardSummary }>('POST', `/api/boards/${id}/transfer`, { userId }),
   star: (id: string) => request<{ ok: true }>('PUT', `/api/boards/${id}/star`),
   unstar: (id: string) => request<{ ok: true }>('DELETE', `/api/boards/${id}/star`),
   putThumbnail: (id: string, dataUrl: string) =>
@@ -147,6 +160,52 @@ export const api = {
   getTemplate: (id: string) => request<{ template: SavedTemplate }>('GET', `/api/templates/${encodeURIComponent(id)}`),
   saveTemplate: (body: SaveTemplateRequest) => request<{ template: SavedTemplateSummary }>('POST', '/api/templates', body),
   deleteTemplate: (id: string) => request<{ ok: true }>('DELETE', `/api/templates/${encodeURIComponent(id)}`),
+  /** Shares one of your templates with a team workspace (null: personal again). */
+  shareTemplate: (id: string, workspaceId: string | null) =>
+    request<{ template: SavedTemplateSummary }>('PATCH', `/api/templates/${encodeURIComponent(id)}`, { workspaceId }),
+
+  // workspaces
+  listWorkspaces: () => request<{ workspaces: WorkspaceSummary[] }>('GET', '/api/workspaces'),
+  createWorkspace: (name: string) => request<{ workspace: WorkspaceSummary }>('POST', '/api/workspaces', { name }),
+  updateWorkspace: (id: string, body: { name?: string; policies?: Partial<WorkspacePolicies> }) =>
+    request<{ workspace: WorkspaceSummary }>('PATCH', `/api/workspaces/${encodeURIComponent(id)}`, body),
+  deleteWorkspace: (id: string, confirm: string) => request<{ ok: true }>('DELETE', `/api/workspaces/${encodeURIComponent(id)}`, { confirm }),
+  transferWorkspace: (id: string, userId: string) =>
+    request<{ workspace: WorkspaceSummary }>('POST', `/api/workspaces/${encodeURIComponent(id)}/transfer`, { userId }),
+  listWorkspaceMembers: (id: string) =>
+    request<{ members: WorkspaceMember[]; invites: WorkspaceInvite[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/members`),
+  inviteToWorkspace: (id: string, email: string, role: Exclude<WorkspaceRole, 'owner'>) =>
+    request<{ member?: WorkspaceMember; invite?: WorkspaceInvite }>('POST', `/api/workspaces/${encodeURIComponent(id)}/members`, { email, role }),
+  setWorkspaceRole: (id: string, userId: string, role: WorkspaceRole) =>
+    request<{ member: WorkspaceMember }>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`, { role }),
+  removeWorkspaceMember: (id: string, userId: string) =>
+    request<{ ok: true }>('DELETE', `/api/workspaces/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`),
+  resendWorkspaceInvite: (id: string, inviteId: string) =>
+    request<{ invite: WorkspaceInvite }>('POST', `/api/workspaces/${encodeURIComponent(id)}/invites/${encodeURIComponent(inviteId)}/resend`),
+  revokeWorkspaceInvite: (id: string, inviteId: string) =>
+    request<{ ok: true }>('DELETE', `/api/workspaces/${encodeURIComponent(id)}/invites/${encodeURIComponent(inviteId)}`),
+  previewWorkspaceInvite: (token: string) =>
+    request<{ invite: WorkspaceInvitePreview }>('GET', `/api/workspace-invites/${encodeURIComponent(token)}`),
+  acceptWorkspaceInvite: (token: string) =>
+    request<{ workspaceId: string }>('POST', `/api/workspace-invites/${encodeURIComponent(token)}/accept`),
+
+  // projects (folders)
+  listProjects: (workspaceId: string) =>
+    request<{ projects: ProjectSummary[] }>('GET', `/api/workspaces/${encodeURIComponent(workspaceId)}/projects`),
+  createProject: (workspaceId: string, name: string, access: ProjectAccess) =>
+    request<{ project: ProjectSummary }>('POST', `/api/workspaces/${encodeURIComponent(workspaceId)}/projects`, { name, access }),
+  updateProject: (id: string, body: { name?: string; access?: ProjectAccess }) =>
+    request<{ project: ProjectSummary }>('PATCH', `/api/projects/${encodeURIComponent(id)}`, body),
+  deleteProject: (id: string) => request<{ ok: true }>('DELETE', `/api/projects/${encodeURIComponent(id)}`),
+  listProjectMembers: (id: string) =>
+    request<{ members: Array<{ userId: string; name: string; color: string; avatarUrl: string | null }> }>(
+      'GET',
+      `/api/projects/${encodeURIComponent(id)}/members`,
+    ),
+  addProjectMember: (id: string, userId: string) =>
+    request<{ ok: true }>('PUT', `/api/projects/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`),
+  removeProjectMember: (id: string, userId: string) =>
+    request<{ ok: true }>('DELETE', `/api/projects/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`),
 
   // link previews
   unfurl: (url: string) => request<UnfurlResponse>('GET', `/api/unfurl?url=${encodeURIComponent(url)}`),
