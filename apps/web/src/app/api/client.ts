@@ -1,4 +1,5 @@
 import type {
+  SearchResponse,
   ActivityAnswer,
   ActivityState,
   BoardCallResponse,
@@ -458,6 +459,16 @@ export const api = {
   // object addresses (KAI-149): permission-checked summaries, and what links here
   resolveObjects: (uris: string[]) => request<ResolveObjectsResponse>('POST', '/api/objects/resolve', { uris }),
   backlinks: (uri: string) => request<BacklinksResponse>('GET', `/api/objects/backlinks?uri=${encodeURIComponent(uri)}`),
+
+  // search inside boards (KAI-151): matches in boards you can open now
+  search: (q: string, scope: { workspace?: string; board?: string; cursor?: string | null } = {}) =>
+    request<SearchResponse>(
+      'GET',
+      `/api/search?q=${encodeURIComponent(q)}` +
+        (scope.workspace ? `&workspace=${encodeURIComponent(scope.workspace)}` : '') +
+        (scope.board ? `&board=${encodeURIComponent(scope.board)}` : '') +
+        (scope.cursor ? `&cursor=${encodeURIComponent(scope.cursor)}` : ''),
+    ),
 
   // link previews
   unfurl:(url: string) => request<UnfurlResponse>('GET', `/api/unfurl?url=${encodeURIComponent(url)}`),

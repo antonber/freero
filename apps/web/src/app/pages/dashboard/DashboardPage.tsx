@@ -11,6 +11,7 @@ import { NotificationBell } from '../../notifications/NotificationBell';
 import { filterByOwner, sortBoards, type BoardSort, type OwnerFilter } from '../../lib/boards';
 import { useDebouncedValue, usePersistentState } from '../../lib/hooks';
 import { BoardItem, type BoardActions } from './BoardItem';
+import { ContentSearch, useContentSearch } from './ContentSearch';
 import { RecentActivity } from './RecentActivity';
 import { NAV, Sidebar, type BoardView, type View } from './Sidebar';
 import { TrashItem, type TrashActions } from './TrashItem';
@@ -42,6 +43,7 @@ const VIEW_TITLE: Record<BoardView, string> = {
 };
 const SORTS = ['opened', 'modified', 'name'] as const;
 const LAYOUTS = ['grid', 'list'] as const;
+const SEARCH_IN = ['names', 'content'] as const;
 
 const EMPTY: Record<BoardView | 'project', { title: string; body: string }> = {
   home: { title: 'Your canvas is waiting', body: 'Create your first board to sketch, plan and brainstorm with your team.' },
@@ -73,6 +75,8 @@ export function DashboardPage() {
   const [layout, setLayout] = usePersistentState<'grid' | 'list'>('fr.dashboard.layout', 'grid', LAYOUTS);
   const [sort, setSort] = usePersistentState<BoardSort>('fr.dashboard.sort', 'opened', SORTS);
   const [owner, setOwner] = useState<OwnerFilter>('any');
+  // Board names (the list below, filtered) or what the boards say (KAI-141).
+  const [searchIn, setSearchIn] = usePersistentState<(typeof SEARCH_IN)[number]>('fr.dashboard.searchIn', 'names', SEARCH_IN);
 
   const [boards, setBoards] = useState<BoardSummary[] | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -261,6 +265,8 @@ export function DashboardPage() {
   const showCreate = mayCreate && (view === 'home' || view === 'mine' || (view === 'project' && !!project));
   const showOwnerTabs = view === 'home' || view === 'recent' || view === 'starred' || view === 'project';
   const searching = q.length > 0;
+  const contentSearch = useContentSearch(searching && !trash && boardView !== null ? q : '', workspaceId);
+  const inContent = searching && !trash && searchIn === 'content';
   const title = view === 'project' ? (project?.name ?? 'Project') : boardView ? VIEW_TITLE[boardView as BoardView] : '';
 
   const sidebar = (
@@ -367,10 +373,32 @@ export function DashboardPage() {
             <div className="fr-collection__head">
               <h1 className="fr-collection__title">
                 {searching ? `Results for “${q}”` : title}
-                {visible ? <span className="fr-collection__count">{visible.length}</span> : null}
+                {inContent ? null : visible ? <span className="fr-collection__count">{visible.length}</span> : null}
               </h1>
               <div className="fr-collection__controls">
-                {showOwnerTabs ? (
+                {searching && !trash ? (
+                  <div className="fr-tabs" role="tablist" aria-label="Search in">
+                    {(
+                      [
+                        ['names', 'Board names', visible ? String(visible.length) : null],
+                        ['content', 'Inside boards', contentSearch.hits ? `${contentSearch.hits.length}${contentSearch.cursor ? '+' : ''}` : null],
+                      ] as const
+                    ).map(([id, label, count]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        role="tab"
+                        aria-selected={searchIn === id}
+                        className={`fr-tab${searchIn === id ? ' fr-tab--on' : ''}`}
+                        onClick={() => setSearchIn(id)}
+                      >
+                        {label}
+                        {count !== null ? <span className="fr-dash-search__tab-count">{count}</span> : null}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                {showOwnerTabs && !inContent ? (
                   <div className="fr-tabs" role="tablist" aria-label="Owner">
                     {(
                       [
@@ -392,7 +420,7 @@ export function DashboardPage() {
                     ))}
                   </div>
                 ) : null}
-                {trash ? null : (
+                {trash || inContent ? null : (
                   <Select<BoardSort>
                     aria-label="Sort boards"
                     size="sm"
@@ -406,20 +434,24 @@ export function DashboardPage() {
                     ]}
                   />
                 )}
-                <SegmentedControl<'grid' | 'list'>
-                  aria-label="Layout"
-                  size="sm"
-                  value={layout}
-                  onChange={setLayout}
-                  options={[
-                    { value: 'grid', icon: LayoutGrid, title: 'Grid view' },
-                    { value: 'list', icon: List, title: 'List view' },
-                  ]}
-                />
+                {inContent ? null : (
+                  <SegmentedControl<'grid' | 'list'>
+                    aria-label="Layout"
+                    size="sm"
+                    value={layout}
+                    onChange={setLayout}
+                    options={[
+                      { value: 'grid', icon: LayoutGrid, title: 'Grid view' },
+                      { value: 'list', icon: List, title: 'List view' },
+                    ]}
+                  />
+                )}
               </div>
             </div>
 
-            {visible === null ? (
+            {inContent ? (
+              <ContentSearch q={q} search={contentSearch} />
+            ) : visible === null ? (
               <BoardsSkeleton layout={layout} />
             ) : loadFailed && visible.length === 0 ? (
               <div className="fr-empty">
