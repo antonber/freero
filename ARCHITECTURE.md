@@ -257,7 +257,10 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
 - Frame membership has one rule, applied by the engine on drop, create, duplicate and paste: an
   element belongs to the innermost container under its center (`frameId`), unless it already
   names an existing container. Features never compute membership for new elements themselves.
-- Typing a character with one EMPTY text item selected starts editing it with that character;
+- Typing a character with one EMPTY text item selected starts editing it with that character —
+  AltGr characters too (`isPrintableKey`: Windows reports AltGr as Ctrl+Alt, so a Ctrl+Alt press
+  that typed something other than its key's own letter/digit is text, and on an empty note AltGr+9
+  types "]" instead of Bring to front; Ctrl+Alt+T stays a shortcut);
   items that already have text keep single letters as tool shortcuts (Enter / double-click edit).
   Undo/redo shortcuts also work while a non-modal popover has focus.
 - Screen/world UI that must stay visible next to a selection (comment pins, the top quick-connect
