@@ -1471,6 +1471,12 @@ export const AUDIT_ACTIONS = {
   // AI (modules/ai). Never the prompt or the board content: task, model, tokens and outcome only.
   'ai.request': 'Used AI on a board',
   'ai.settings_changed': 'Changed AI settings',
+  // Webhooks (modules/webhooks). Never the secret.
+  'webhook.created': 'Added a webhook',
+  'webhook.updated': 'Changed a webhook',
+  'webhook.secret_rotated': 'Rotated a webhook’s signing secret',
+  'webhook.deleted': 'Removed a webhook',
+  'webhook.disabled': 'A webhook was turned off after failing repeatedly',
 } as const;
 export type AuditAction = keyof typeof AUDIT_ACTIONS;
 export type AuditValue = string | number | boolean | null | string[];

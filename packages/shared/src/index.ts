@@ -9,3 +9,5 @@ export * from './geometry';
 export * from './outline/index';
 export * from './layout/index';
 export * from './objects';
+export * from './search';
+export * from './events';
