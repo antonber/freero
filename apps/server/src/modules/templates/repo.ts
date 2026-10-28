@@ -68,6 +68,12 @@ export async function listVisibleTo(userId: string, workspaceIds: string[]): Pro
   ).map(toSummary);
 }
 
+/** The templates among `ids` visible to the user (summaries; the object registry resolves through it). */
+export async function visibleAmong(ids: string[], userId: string, workspaceIds: string[]): Promise<StoredSummary[]> {
+  if (!ids.length) return [];
+  return (await query<Row>(`SELECT ${SUMMARY_COLUMNS} FROM templates WHERE ${VISIBLE_TO_USER} AND id = ANY($3::text[])`, [userId, workspaceIds, ids])).map(toSummary);
+}
+
 /** One template with its content, or null if missing or not visible to the user. */
 export async function getVisible(id: string, userId: string, workspaceIds: string[]): Promise<StoredTemplate | null> {
   const r = await one<Row & { content: TemplateContent | string }>(
