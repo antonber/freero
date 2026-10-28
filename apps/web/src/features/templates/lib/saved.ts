@@ -57,14 +57,26 @@ async function previewOf(editor: Editor, ids: string[] | undefined): Promise<str
 /** The board (ids undefined) or the given items as a saved template. Rejects with a toast-ready message. */
 export async function saveAsTemplate(
   editor: Editor,
-  opts: { ids?: string[]; name: string; description: string },
+  opts: { ids?: string[]; name: string; description: string; shareWithTeam?: boolean },
 ): Promise<SavedTemplateInfo> {
   const content = editor.exportElements(opts.ids);
   if (!content) throw new Error('There is nothing to save yet.');
   const thumbnail = await previewOf(editor, opts.ids);
-  const saved = await editor.host.saveTemplate({ name: opts.name, description: opts.description, thumbnail, content });
+  const saved = await editor.host.saveTemplate({
+    name: opts.name,
+    description: opts.description,
+    thumbnail,
+    content,
+    ...(opts.shareWithTeam ? { shareWithTeam: true } : {}),
+  });
   savedTemplatesChanged();
   return saved;
+}
+
+/** Shares one of the user's templates with the board's team (or makes it personal again). */
+export async function setTemplateShared(editor: Editor, id: string, shared: boolean): Promise<void> {
+  await editor.host.shareTemplate(id, shared);
+  savedTemplatesChanged();
 }
 
 export async function deleteSavedTemplate(editor: Editor, id: string): Promise<void> {

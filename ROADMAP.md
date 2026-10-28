@@ -14,7 +14,8 @@ S3-compatible storage), runnable on any cloud or a single VM.
 | Files | S3-compatible object storage when `S3_*` is set; local disk otherwise. |
 | Email | SMTP when `SMTP_URL` is set; dev outbox (files under the data dir + log line) otherwise. |
 | Optional services | Every external service has a local fallback, so dev and `npm run verify` need nothing installed. CI additionally runs `verify` against real Postgres + Redis containers. |
-| Tenancy | Every board belongs to a workspace. Each user gets a personal workspace; teams are shared workspaces. All queries are scoped by workspace membership. |
+| Tenancy | Every board belongs to a workspace. Each user gets a personal workspace; teams are shared workspaces. All queries are scoped by workspace membership (plus direct board invites and links, within the workspace's sharing policies). |
+| Quotas | Per user, across workspaces (boards, templates, owned team workspaces): abuse limits on a free service, which per-workspace counts would multiply. |
 
 ## Phases
 
@@ -44,4 +45,7 @@ policies · session/idle policies.
 
 ### 5. Parity polish (continuous)
 Align/distribute · find on board · tables · layers panel · format painter · grid snap · paste
-list as stickies · mind-map keyboard navigation · partial erase.
+list as stickies · mind-map keyboard navigation · partial erase. All of these shipped by
+2026-10-28. The remaining parity work (diagramming depth, structured content, facilitation, developer
+platform, AI, reach) is listed in [docs/parity.md](docs/parity.md) §15 and tracked in the Linear
+project "Freero · Miro parity".

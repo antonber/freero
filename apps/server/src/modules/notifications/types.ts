@@ -12,6 +12,9 @@ export interface NotificationData {
   /** Comment text, mentions shown as names, shortened. */
   excerpt?: string;
   role?: string;
+  /** Workspace notifications: the workspace it is about. */
+  workspaceId?: string;
+  workspaceName?: string;
 }
 
 export interface NotificationTypeDef {
@@ -54,6 +57,14 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
     title: (actor, d) => `${actor} invited you to ${d.role && ROLE_PHRASE[d.role] ? `${ROLE_PHRASE[d.role]} ` : ''}${board(d)}`,
     link: (id) => boardPath(id),
     linkLabel: 'Open the board',
+  },
+  'workspace.invite': {
+    label: 'Workspaces you are added to',
+    description: 'Someone adds you to a team workspace.',
+    title: (actor, d) =>
+      `${actor} added you to the “${d.workspaceName || 'team'}” workspace${d.role && d.role !== 'member' ? ` as ${d.role === 'admin' ? 'an admin' : 'a guest'}` : ''}`,
+    link: (_id, d) => (d.workspaceId ? `/app?ws=${encodeURIComponent(d.workspaceId)}` : '/app'),
+    linkLabel: 'Open the workspace',
   },
 };
 

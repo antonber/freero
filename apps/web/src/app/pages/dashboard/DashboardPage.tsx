@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { LayoutGrid, LayoutTemplate, List, Plus, RotateCw, Search, X } from 'lucide-react';
-import { TRASH_RETENTION_DAYS, type BoardSummary } from '@freero/shared';
+import { Folder, LayoutGrid, LayoutTemplate, List, Plus, RotateCw, Search, X } from 'lucide-react';
+import { TRASH_RETENTION_DAYS, type BoardSummary, type ProjectSummary } from '@freero/shared';
 import { Button, IconButton, Input, Kbd, Modal, SegmentedControl, Select, Skeleton, Spinner, useToast } from '@ui';
 import { api, ApiError, type BoardFilter } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
@@ -11,12 +11,26 @@ import { NotificationBell } from '../../notifications/NotificationBell';
 import { filterByOwner, sortBoards, type BoardSort, type OwnerFilter } from '../../lib/boards';
 import { useDebouncedValue, usePersistentState } from '../../lib/hooks';
 import { BoardItem, type BoardActions } from './BoardItem';
-import { NAV, Sidebar, type View } from './Sidebar';
+import { NAV, Sidebar, type BoardView, type View } from './Sidebar';
 import { TrashItem, type TrashActions } from './TrashItem';
+import { CreateWorkspaceDialog, ProjectDialog, TransferBoardDialog } from './WorkspaceDialogs';
+import { WorkspaceMembers } from './WorkspaceMembers';
+import { WorkspaceSettings } from './WorkspaceSettings';
+import { useWorkspaces, workspaceLabel } from './useWorkspaces';
 import './dashboard.css';
+import './workspaces.css';
 
-const VIEW_FILTER: Record<View, BoardFilter> = { home: 'all', recent: 'recent', starred: 'starred', shared: 'shared', mine: 'mine', trash: 'trash' };
-const VIEW_TITLE: Record<View, string> = {
+const VIEW_FILTER: Record<BoardView | 'project', BoardFilter> = {
+  home: 'all',
+  recent: 'recent',
+  starred: 'starred',
+  shared: 'shared',
+  mine: 'mine',
+  trash: 'trash',
+  project: 'all',
+};
+const VIEWS: View[] = ['home', 'recent', 'starred', 'shared', 'mine', 'trash', 'project', 'members', 'settings'];
+const VIEW_TITLE: Record<BoardView, string> = {
   home: 'All boards',
   recent: 'Recently opened',
   starred: 'Starred',
@@ -27,13 +41,14 @@ const VIEW_TITLE: Record<View, string> = {
 const SORTS = ['opened', 'modified', 'name'] as const;
 const LAYOUTS = ['grid', 'list'] as const;
 
-const EMPTY: Record<View, { title: string; body: string }> = {
+const EMPTY: Record<BoardView | 'project', { title: string; body: string }> = {
   home: { title: 'Your canvas is waiting', body: 'Create your first board to sketch, plan and brainstorm with your team.' },
   recent: { title: 'Nothing opened yet', body: 'Boards you open will line up here so you can jump right back in.' },
   starred: { title: 'No starred boards', body: 'Star the boards you use most to keep them one click away.' },
-  shared: { title: 'Nothing shared with you yet', body: 'When teammates invite you to a board, it will show up here.' },
+  shared: { title: 'Nothing shared with you yet', body: 'Boards people share with you from outside your workspaces show up here.' },
   mine: { title: 'You haven’t created a board yet', body: 'Start a blank board or pick a template to get going.' },
   trash: { title: 'Trash is empty', body: `Boards you delete stay here for ${TRASH_RETENTION_DAYS} days, so you can restore them.` },
+  project: { title: 'This project is empty', body: 'Create a board here, or drag boards onto the project in the sidebar.' },
 };
 
 const UNTITLED = 'Untitled board';
@@ -44,7 +59,12 @@ export function DashboardPage() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const rawView = params.get('view') as View | null;
-  const view: View = rawView && rawView in VIEW_FILTER ? rawView : 'home';
+  const view: View = rawView && VIEWS.includes(rawView) ? rawView : 'home';
+  const projectId = view === 'project' ? params.get('project') : null;
+  const ws = useWorkspaces(params.get('ws'));
+  const workspace = ws.current;
+  const project = projectId ? (ws.projects.find((p) => p.id === projectId) ?? null) : null;
+  const boardView: BoardView | 'project' | null = view === 'members' || view === 'settings' ? null : view;
 
   const [query, setQuery] = useState('');
   const q = useDebouncedValue(query.trim(), 250);
@@ -64,16 +84,22 @@ export function DashboardPage() {
   const [leaving, setLeaving] = useState<BoardSummary | null>(null);
   const [purging, setPurging] = useState<BoardSummary | null>(null);
   const [sharing, setSharing] = useState<BoardSummary | null>(null);
+  const [transferring, setTransferring] = useState<BoardSummary | null>(null);
+  const [newWorkspace, setNewWorkspace] = useState(false);
+  const [editingProject, setEditingProject] = useState<ProjectSummary | 'new' | null>(null);
+  const [deletingProject, setDeletingProject] = useState<ProjectSummary | null>(null);
 
   useEffect(() => {
-    document.title = 'Boards · Freero';
-  }, []);
+    document.title = workspace ? `${workspaceLabel(workspace)} · Freero` : 'Boards · Freero';
+  }, [workspace]);
 
+  const workspaceId = workspace?.id ?? null;
   const load = useCallback(async () => {
+    if (!boardView || !workspaceId) return;
     const id = ++reqId.current;
     setLoadFailed(false);
     try {
-      const { boards } = await api.listBoards(VIEW_FILTER[view], q);
+      const { boards } = await api.listBoards(VIEW_FILTER[boardView], q, { workspace: workspaceId, project: projectId ?? undefined });
       if (id === reqId.current) setBoards(boards);
     } catch (e) {
       if (id !== reqId.current) return;
@@ -81,17 +107,17 @@ export function DashboardPage() {
       setBoards((b) => b ?? []);
       notify(e instanceof ApiError ? e.message : 'Could not load your boards', 'error');
     }
-  }, [view, q, notify]);
+  }, [boardView, workspaceId, projectId, q, notify]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  // Reset the skeleton when switching views (not when searching, to avoid flashes).
+  // Reset the skeleton when switching views or workspaces (not when searching, to avoid flashes).
   useEffect(() => {
     setBoards(null);
     setOwner('any');
-  }, [view]);
+  }, [view, workspaceId, projectId]);
 
   // "/" focuses search.
   useEffect(() => {
@@ -107,20 +133,27 @@ export function DashboardPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const setView = (v: View) => {
-    setQuery('');
-    setParams(v === 'home' ? {} : { view: v });
-  };
+  /** Navigates within the current workspace (keeps `ws` in the URL so links and reloads land here). */
+  const go = useCallback(
+    (v: View, extra: Record<string, string> = {}, wsId = workspaceId) => {
+      setQuery('');
+      const next: Record<string, string> = { ...(wsId ? { ws: wsId } : {}), ...extra };
+      if (v !== 'home') next.view = v;
+      setParams(next);
+    },
+    [setParams, workspaceId],
+  );
+  const setView = (v: View) => go(v);
 
   const patchBoard = useCallback((id: string, patch: Partial<BoardSummary>) => {
     setBoards((list) => list?.map((b) => (b.id === id ? { ...b, ...patch } : b)) ?? null);
   }, []);
 
   const create = async (kind: 'blank' | 'template') => {
-    if (creating) return;
+    if (creating || !workspace) return;
     setCreating(kind);
     try {
-      const { board } = await api.createBoard({ title: UNTITLED });
+      const { board } = await api.createBoard({ title: UNTITLED, workspaceId: workspace.id, projectId: project?.id ?? null });
       navigate(`/board/${board.id}${kind === 'template' ? '?dock=templates' : ''}`);
     } catch (e) {
       notify(e instanceof ApiError ? e.message : 'Could not create a board', 'error');
@@ -128,9 +161,29 @@ export function DashboardPage() {
     }
   };
 
+  const moveBoard = useCallback(
+    async (boardId: string, target: string | null) => {
+      const current = boards?.find((b) => b.id === boardId);
+      if (current && current.projectId === target) return;
+      try {
+        const { board } = await api.updateBoard(boardId, { projectId: target });
+        // In a project view, a board moved elsewhere leaves the list.
+        if (projectId && board.projectId !== projectId) setBoards((list) => list?.filter((x) => x.id !== boardId) ?? null);
+        else patchBoard(boardId, { projectId: board.projectId });
+        const name = target ? (ws.projects.find((p) => p.id === target)?.name ?? 'the project') : 'No project';
+        notify(`Moved “${board.title || UNTITLED}” to ${name}`, 'success');
+      } catch (e) {
+        notify(e instanceof ApiError ? e.message : 'Could not move the board', 'error');
+      }
+    },
+    [boards, projectId, ws.projects, patchBoard, notify],
+  );
+
   // Stable action handlers so memoized cards don't re-render on every keystroke.
   const viewRef = useRef(view);
   viewRef.current = view;
+  const moveRef = useRef(moveBoard);
+  moveRef.current = moveBoard;
   const actions = useMemo<BoardActions>(
     () => ({
       open: (b) => navigate(`/board/${b.id}`),
@@ -138,6 +191,17 @@ export function DashboardPage() {
       share: (b) => setSharing(b),
       remove: (b) => setDeleting(b),
       leave: (b) => setLeaving(b),
+      transfer: (b) => setTransferring(b),
+      move: (b, target) => void moveRef.current(b.id, target),
+      describe: async (b, description) => {
+        patchBoard(b.id, { description });
+        try {
+          await api.updateBoard(b.id, { description });
+        } catch (e) {
+          patchBoard(b.id, { description: b.description });
+          notify(e instanceof ApiError ? e.message : 'Could not save the description', 'error');
+        }
+      },
       duplicate: async (b) => {
         try {
           const { board } = await api.duplicateBoard(b.id);
@@ -189,13 +253,33 @@ export function DashboardPage() {
   const trash = view === 'trash';
   // The trash keeps the server's order (most recently deleted first).
   const visible = boards ? (trash ? boards : sortBoards(filterByOwner(boards, owner, user.id), sort)) : null;
-  const showCreate = view === 'home' || view === 'mine';
-  const showOwnerTabs = view === 'home' || view === 'recent' || view === 'starred';
+  const guest = workspace?.role === 'guest';
+  const showCreate = !guest && (view === 'home' || view === 'mine' || (view === 'project' && !!project));
+  const showOwnerTabs = view === 'home' || view === 'recent' || view === 'starred' || view === 'project';
   const searching = q.length > 0;
+  const title = view === 'project' ? (project?.name ?? 'Project') : boardView ? VIEW_TITLE[boardView as BoardView] : '';
+
+  const sidebar = (
+    <Sidebar
+      view={view}
+      onView={setView}
+      workspaces={ws.workspaces}
+      current={workspace}
+      onSwitchWorkspace={(id) => go('home', {}, id)}
+      onCreateWorkspace={() => setNewWorkspace(true)}
+      projects={ws.projects}
+      projectId={projectId}
+      onProject={(id) => go('project', { project: id })}
+      onCreateProject={() => setEditingProject('new')}
+      onManageProject={(p) => setEditingProject(p)}
+      onDeleteProject={(p) => setDeletingProject(p)}
+      onDropBoard={(id, target) => void moveBoard(id, target)}
+    />
+  );
 
   return (
     <div className="fr-dash">
-      <Sidebar view={view} onView={setView} />
+      {sidebar}
 
       <div className="fr-dash__main">
         <header className="fr-dash__top">
@@ -223,14 +307,38 @@ export function DashboardPage() {
           />
           <div className="fr-dash__actions">
             <NotificationBell />
-            <Button variant="primary" icon={Plus} loading={creating === 'blank'} onClick={() => create('blank')}>
-              New board
-            </Button>
+            {guest ? null : (
+              <Button variant="primary" icon={Plus} loading={creating === 'blank'} onClick={() => create('blank')}>
+                New board
+              </Button>
+            )}
           </div>
         </header>
 
         <div className="fr-dash__scroll">
           <VerifyEmailBanner />
+          {view === 'members' && workspace ? (
+            <WorkspaceMembers
+              key={workspace.id}
+              workspace={workspace}
+              onChanged={() => void ws.reload()}
+              onLeft={() => {
+                void ws.reload();
+                go('home', {}, null);
+              }}
+            />
+          ) : view === 'settings' && workspace ? (
+            <WorkspaceSettings
+              key={workspace.id}
+              workspace={workspace}
+              onChanged={() => void ws.reload()}
+              onDeleted={() => {
+                void ws.reload();
+                go('home', {}, null);
+              }}
+            />
+          ) : (
+          <>
           {showCreate && !searching ? (
             <section className="fr-create" aria-label="Create">
               <button type="button" className="fr-create__tile fr-create__tile--blank" onClick={() => create('blank')} disabled={!!creating}>
@@ -250,10 +358,10 @@ export function DashboardPage() {
             </section>
           ) : null}
 
-          <section className="fr-collection" aria-label={VIEW_TITLE[view]}>
+          <section className="fr-collection" aria-label={title}>
             <div className="fr-collection__head">
               <h1 className="fr-collection__title">
-                {searching ? `Results for “${q}”` : VIEW_TITLE[view]}
+                {searching ? `Results for “${q}”` : title}
                 {visible ? <span className="fr-collection__count">{visible.length}</span> : null}
               </h1>
               <div className="fr-collection__controls">
@@ -317,7 +425,7 @@ export function DashboardPage() {
                 </Button>
               </div>
             ) : visible.length === 0 ? (
-              <EmptyState view={view} query={q} filtered={owner !== 'any' && (boards?.length ?? 0) > 0} onCreate={() => create('blank')} creating={creating === 'blank'} />
+              <EmptyState view={boardView ?? 'home'} canCreate={showCreate} guest={guest} query={q} filtered={owner !== 'any' && (boards?.length ?? 0) > 0} onCreate={() => create('blank')} creating={creating === 'blank'} />
             ) : trash ? (
               layout === 'grid' ? (
                 <div className="fr-dash-grid">
@@ -342,7 +450,7 @@ export function DashboardPage() {
             ) : layout === 'grid' ? (
               <div className="fr-dash-grid">
                 {visible.map((b) => (
-                  <BoardItem key={b.id} board={b} layout="grid" sort={sort} userId={user.id} actions={actions} />
+                  <BoardItem key={b.id} board={b} layout="grid" sort={sort} userId={user.id} actions={actions} projects={ws.projects} workspaceId={workspaceId} />
                 ))}
               </div>
             ) : (
@@ -355,11 +463,13 @@ export function DashboardPage() {
                   <span />
                 </div>
                 {visible.map((b) => (
-                  <BoardItem key={b.id} board={b} layout="list" sort={sort} userId={user.id} actions={actions} />
+                  <BoardItem key={b.id} board={b} layout="list" sort={sort} userId={user.id} actions={actions} projects={ws.projects} workspaceId={workspaceId} />
                 ))}
               </div>
             )}
           </section>
+          </>
+          )}
         </div>
       </div>
 
@@ -422,13 +532,60 @@ export function DashboardPage() {
           notify('You left the board', 'info');
         }}
       />
+      <TransferBoardDialog
+        board={transferring}
+        workspace={workspace}
+        onClose={() => setTransferring(null)}
+        onTransferred={(b) => {
+          setTransferring(null);
+          if (b.workspaceId !== workspaceId) setBoards((list) => list?.filter((x) => x.id !== b.id) ?? null);
+          else patchBoard(b.id, b);
+        }}
+      />
+      <CreateWorkspaceDialog
+        open={newWorkspace}
+        onClose={() => setNewWorkspace(false)}
+        onCreated={(w) => {
+          setNewWorkspace(false);
+          void ws.reload().then(() => go('members', {}, w.id));
+          notify(`Created ${w.name}. Invite your team next.`, 'success');
+        }}
+      />
+      {workspace ? (
+        <ProjectDialog
+          open={editingProject !== null}
+          workspace={workspace}
+          project={editingProject === 'new' ? null : editingProject}
+          onClose={() => setEditingProject(null)}
+          onSaved={(p) => {
+            const created = editingProject === 'new';
+            setEditingProject(null);
+            void ws.reloadProjects();
+            if (created) go('project', { project: p.id });
+          }}
+        />
+      ) : null}
+      <ConfirmModal
+        open={!!deletingProject}
+        title={`Delete the project “${deletingProject?.name ?? ''}”?`}
+        body="Only empty projects can be deleted: move its boards out first. Boards are never deleted with a project."
+        confirmLabel="Delete project"
+        onClose={() => setDeletingProject(null)}
+        onConfirm={async () => {
+          const p = deletingProject!;
+          await api.deleteProject(p.id);
+          await ws.reloadProjects();
+          if (projectId === p.id) go('home');
+          notify('Project deleted', 'info');
+        }}
+      />
       {sharing ? (
         <ShareDialog
           boardId={sharing.id}
           board={sharing}
           open
           onClose={() => setSharing(null)}
-          onBoardChange={(b) => patchBoard(b.id, { linkAccess: b.linkAccess })}
+          onBoardChange={(b) => patchBoard(b.id, { linkAccess: b.linkAccess, permissions: b.permissions })}
           onLeft={() => setBoards((list) => list?.filter((x) => x.id !== sharing.id) ?? null)}
         />
       ) : null}
@@ -468,12 +625,16 @@ function BoardsSkeleton({ layout }: { layout: 'grid' | 'list' }) {
 
 function EmptyState({
   view,
+  canCreate,
+  guest,
   query,
   filtered,
   onCreate,
   creating,
 }: {
-  view: View;
+  view: BoardView | 'project';
+  canCreate: boolean;
+  guest: boolean;
   query: string;
   filtered: boolean;
   onCreate: () => void;
@@ -483,8 +644,10 @@ function EmptyState({
     ? { title: `No boards match “${query}”`, body: 'Try a different word, or check another section.' }
     : filtered
       ? { title: 'No boards here', body: 'Nothing matches this owner filter. Try “All”.' }
-      : EMPTY[view];
-  const Icon = NAV.find((n) => n.id === view)!.icon;
+      : guest && (view === 'home' || view === 'project')
+        ? { title: 'Nothing shared with you here yet', body: 'You’re a guest in this workspace: boards and projects people share with you show up here.' }
+        : EMPTY[view];
+  const Icon = NAV.find((n) => n.id === view)?.icon ?? Folder;
   return (
     <div className="fr-empty">
       <div className="fr-empty__art" aria-hidden>
@@ -494,7 +657,7 @@ function EmptyState({
       </div>
       <h2 className="fr-empty__title">{content.title}</h2>
       <p className="fr-empty__body">{content.body}</p>
-      {!query && !filtered && (view === 'home' || view === 'mine') ? (
+      {!query && !filtered && canCreate ? (
         <Button variant="primary" icon={Plus} loading={creating} onClick={onCreate}>
           New board
         </Button>

@@ -4,7 +4,7 @@ import type { ServerContext } from '../../platform/context';
 import { handle } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
 import { currentUser, requireUser } from '../auth/index';
-import { deleteTemplate, getTemplate, listTemplates, saveTemplate } from './service';
+import { deleteTemplate, getTemplate, listTemplates, saveTemplate, shareTemplate } from './service';
 
 type Out = { templates: SavedTemplateSummary[] } | { template: SavedTemplateSummary | SavedTemplate } | { ok: true };
 
@@ -31,6 +31,13 @@ export default function templateRoutes(_ctx: ServerContext): Router {
     rateLimit('templateSave', 'user'),
     handle(async (req, res) => {
       res.status(201).json({ template: await saveTemplate(currentUser(req).id, req.body) } satisfies Out);
+    }),
+  );
+
+  r.patch(
+    '/templates/:id',
+    handle(async (req, res) => {
+      res.json({ template: await shareTemplate(req.params.id, currentUser(req).id, req.body?.workspaceId) } satisfies Out);
     }),
   );
 

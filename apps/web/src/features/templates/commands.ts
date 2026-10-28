@@ -14,14 +14,15 @@ export default defineCommands([
     },
   },
   // Saving copies content into the user's own template library (never writes the board), so
-  // anyone who can see the board can do it — like copying.
+  // anyone who can see the board can do it — like copying — unless the board's workspace doesn't
+  // let this user copy its content (Host.board.canExport; the server enforces it too).
   {
     id: 'templates.saveBoard',
     icon: BookmarkPlus,
     label: 'Save board as template…',
     menus: ['board'],
     minRole: 'viewer',
-    when: (editor) => editor.getElements().length > 0,
+    when: (editor) => editor.host.board.canExport !== false && editor.getElements().length > 0,
     run(editor) {
       editor.openPanel(SAVE_DIALOG_ID, { scope: 'board' });
     },
@@ -32,7 +33,7 @@ export default defineCommands([
     label: 'Save as template…',
     menus: ['context'],
     minRole: 'viewer',
-    when: (editor) => editor.getSelection().length > 0,
+    when: (editor) => editor.host.board.canExport !== false && editor.getSelection().length > 0,
     run(editor) {
       editor.openPanel(SAVE_DIALOG_ID, { scope: 'selection' });
     },

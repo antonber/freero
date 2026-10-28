@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Globe, Link2, Lock, LogOut, Mail, RotateCw, X } from 'lucide-react';
+import { Globe, Link2, Lock, LogOut, Mail, RotateCw, Users, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { BoardMember, BoardSummary, LinkAccess, PendingInvite, Role } from '@freero/shared';
 import { Avatar, Button, IconButton, Input, Modal, Select, Spinner, useToast, type SelectOption } from '@ui';
@@ -23,12 +23,23 @@ const LINK_OPTIONS: SelectOption<LinkAccess>[] = [
   { value: 'editor', label: 'Can edit' },
 ];
 
+const LINK_RANK: Record<LinkAccess, number> = { none: 0, viewer: 1, commenter: 2, editor: 3 };
+
+/** Link options as the board's workspace allows them (the server refuses the others). */
+export function linkOptions(board: Pick<BoardSummary, 'permissions' | 'linkAccess'>): SelectOption<LinkAccess>[] {
+  const { maxLinkAccess, canShareExternally } = board.permissions;
+  return LINK_OPTIONS.map((o) => ({
+    ...o,
+    disabled: o.value !== 'none' && o.value !== board.linkAccess && (!canShareExternally || LINK_RANK[o.value] > LINK_RANK[maxLinkAccess]),
+  }));
+}
+
 const ROLE_LABEL: Record<Role, string> = { owner: 'Owner', editor: 'Can edit', commenter: 'Can comment', viewer: 'Can view' };
 
 const DAY = 24 * 60 * 60 * 1000;
 
 /** "Invited by Ada · expires in 13 days" / "Link expired — resend it". */
-export function inviteStatus(inv: PendingInvite, now = Date.now()): string {
+export function inviteStatus(inv: Pick<PendingInvite, 'expiresAt' | 'invitedByName'>, now = Date.now()): string {
   if (inv.expiresAt <= now) return 'Link expired — resend it';
   const days = Math.ceil((inv.expiresAt - now) / DAY);
   return `Invited by ${inv.invitedByName} · expires in ${days === 1 ? '1 day' : `${days} days`}`;
@@ -102,12 +113,14 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
   const isOwner = myRole === 'owner';
   const canInvite = myRole === 'owner' || myRole === 'editor';
   const verified = user?.emailVerified !== false;
-  const isMember = !!members?.some((m) => m.userId === user?.id);
+  // People with team access are the "Everyone in <team>" row below, not one row each (and have no
+  // board membership to leave).
+  const isMember = !!members?.some((m) => m.userId === user?.id && !m.team);
 
   const sorted = useMemo(() => {
     if (!members) return [];
     const rank = (m: BoardMember) => (m.role === 'owner' ? 0 : m.userId === user?.id ? 1 : 2);
-    return [...members].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+    return members.filter((m) => !m.team).sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
   }, [members, user?.id]);
 
   const invite = async (e: FormEvent) => {
@@ -288,6 +301,9 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
             ) : (
               <p className="fr-share__note">Only the owner and editors can invite people.</p>
             )}
+            {canInvite && !board.permissions.canShareExternally ? (
+              <p className="fr-share__note">This workspace’s policy: only people in the workspace can be invited.</p>
+            ) : null}
 
             <section aria-label="People with access">
               <h3 className="fr-share__heading">People with access</h3>
@@ -349,6 +365,21 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
               </ul>
             </section>
 
+            {board.team ? (
+              <section className="fr-share__link" aria-label="Team access">
+                <span className="fr-share__link-icon fr-share__link-icon--open">
+                  <Users size={17} aria-hidden />
+                </span>
+                <div className="fr-share__who">
+                  <span className="fr-share__name">{board.team.private ? 'People in its private project' : `Everyone in ${board.team.name}`}</span>
+                  <span className="fr-share__email-text">
+                    {board.team.private ? `Plus the admins of ${board.team.name}` : 'Guests only see boards shared with them'}
+                  </span>
+                </div>
+                <span className="fr-share__role">Can edit</span>
+              </section>
+            ) : null}
+
             <section className="fr-share__link" aria-label="Link access">
               <span className={`fr-share__link-icon${linkAccess === 'none' ? '' : ' fr-share__link-icon--open'}`}>
                 {linkAccess === 'none' ? <Lock size={17} aria-hidden /> : <Globe size={17} aria-hidden />}
@@ -356,11 +387,15 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
               <div className="fr-share__who">
                 <span className="fr-share__name">Anyone with the link</span>
                 <span className="fr-share__email-text">
-                  {linkAccess === 'none' ? 'Only people added above can open it' : 'Must be signed in to Freero'}
+                  {board.permissions.maxLinkAccess === 'none' && linkAccess === 'none'
+                    ? 'Links are turned off in this workspace'
+                    : linkAccess === 'none'
+                      ? 'Only people added above can open it'
+                      : 'Must be signed in to Freero'}
                 </span>
               </div>
               {isOwner ? (
-                <Select<LinkAccess> aria-label="Link access" size="sm" options={LINK_OPTIONS} value={linkAccess} onChange={changeLinkAccess} width={136} />
+                <Select<LinkAccess> aria-label="Link access" size="sm" options={linkOptions(board)} value={linkAccess} onChange={changeLinkAccess} width={136} />
               ) : (
                 <span className="fr-share__role">{LINK_OPTIONS.find((o) => o.value === linkAccess)?.label}</span>
               )}

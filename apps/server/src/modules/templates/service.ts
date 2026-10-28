@@ -6,7 +6,9 @@ import type { SaveTemplateRequest, SavedTemplate, SavedTemplateSummary, Template
 import { getConfig } from '../../platform/config';
 import { badRequest, forbidden, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
+import { requireBoardDownload } from '../boards/index';
 import { deleteUpload, saveUpload } from '../uploads/index';
+import { teamWorkspaceIdsFor } from '../workspaces/index';
 import * as repo from './repo';
 
 export const MAX_ELEMENTS = 5000;
@@ -58,12 +60,12 @@ function thumbnailBytes(v: unknown): { bytes: Buffer; type: string } | null {
   return { bytes, type: m[1] };
 }
 
-export function listTemplates(userId: string): Promise<SavedTemplateSummary[]> {
-  return repo.listVisibleTo(userId);
+export async function listTemplates(userId: string): Promise<SavedTemplateSummary[]> {
+  return repo.listVisibleTo(userId, await teamWorkspaceIdsFor(userId));
 }
 
 export async function getTemplate(id: string, userId: string): Promise<SavedTemplate> {
-  const t = await repo.getVisible(id, userId);
+  const t = await repo.getVisible(id, userId, await teamWorkspaceIdsFor(userId));
   if (!t) throw notFound('Template not found');
   return t;
 }
@@ -77,11 +79,18 @@ export async function saveTemplate(userId: string, body: Partial<SaveTemplateReq
   const description = cleanDescription(body?.description);
   const content = cleanContent(body?.content);
   const thumb = thumbnailBytes(body?.thumbnail);
+  // The source board's workspace may not allow taking its content out ("downloads" policy).
+  if (body?.boardId !== undefined) {
+    if (typeof body.boardId !== 'string') throw badRequest('boardId must be a board id');
+    await requireBoardDownload(body.boardId, userId);
+  }
+  const workspaceId = await shareTarget(userId, body?.workspaceId);
   // Store the file first (not a db write), and drop it again if the row doesn't make it.
   const thumbnail = thumb ? await saveUpload(thumb.bytes, thumb.type) : null;
   const template: SavedTemplate = {
     id: newId(12),
     ownerId: userId,
+    workspaceId,
     name,
     description,
     thumbnail,
@@ -104,6 +113,21 @@ export async function saveTemplate(userId: string, body: Partial<SaveTemplateReq
   }
   const { content: _content, ...summary } = template;
   return summary;
+}
+
+/** null (personal), or a team workspace the user is a full member of. */
+async function shareTarget(userId: string, v: unknown): Promise<string | null> {
+  if (v === undefined || v === null) return null;
+  if (typeof v !== 'string' || !(await teamWorkspaceIdsFor(userId)).includes(v))
+    throw forbidden('You can share templates only with a team workspace you are a member of');
+  return v;
+}
+
+/** The owner shares a template with one of their team workspaces, or makes it personal again (null). */
+export async function shareTemplate(id: string, userId: string, workspaceId: unknown): Promise<SavedTemplateSummary> {
+  const t = await repo.setWorkspace(id, userId, await shareTarget(userId, workspaceId), Date.now());
+  if (!t) throw notFound('Template not found');
+  return t;
 }
 
 /** Deletes one of the user's own templates (someone else's answers 404, like a missing one). */

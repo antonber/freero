@@ -86,6 +86,7 @@ export function createTestBoard(opts: TestBoardOptions): TestBoard {
         if (i < 0) throw new Error('Template not found');
         templates.splice(i, 1);
       },
+      shareTemplate: async () => Promise.reject(new Error('No teams in tests')),
       versions: unavailableVersionHistory('No version history in tests'),
       importImage: async () => Promise.reject(new Error('No server in tests')),
       fetchImage: async () => Promise.reject(new Error('No server in tests')),

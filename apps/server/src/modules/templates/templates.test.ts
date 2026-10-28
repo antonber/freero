@@ -2,7 +2,9 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 import type { TemplateContent } from '@freero/shared';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { createUser } from '../auth/index';
-import { deleteTemplate, getTemplate, listTemplates, saveTemplate } from './service';
+import { createBoard } from '../boards/index';
+import { createTeamWorkspace, inviteToWorkspace, updateWorkspace } from '../workspaces/index';
+import { deleteTemplate, getTemplate, listTemplates, saveTemplate, shareTemplate } from './service';
 
 const LIMIT = 2;
 beforeAll(() => openTestDb({ MAX_TEMPLATES_PER_USER: String(LIMIT) }));
@@ -46,4 +48,34 @@ it('refuses content the board could not insert (no elements, duplicate ids)', as
   const dup = { elements: [content.elements[1], content.elements[1]] } as TemplateContent;
   await expect(saveTemplate(u.id, { name: 'Dup', content: dup })).rejects.toMatchObject({ status: 400 });
   expect(await listTemplates(u.id)).toEqual([]);
+});
+
+it('a template shared with a team reaches its members — not its guests, not outsiders — until its owner makes it personal again', async () => {
+  const verified = (name: string) =>
+    createUser({ name, email: `${name.toLowerCase()}${++n}@test.freero.app`, password: 'password-123' }, { emailVerified: true });
+  const [owner, member, guest, outsider] = await Promise.all(['TOwner', 'TMember', 'TGuest', 'TOutsider'].map(verified));
+  const ws = await createTeamWorkspace(owner.id, 'Design');
+  await inviteToWorkspace(null, ws.id, owner, { email: member.email, role: 'member' });
+  await inviteToWorkspace(null, ws.id, owner, { email: guest.email, role: 'guest' });
+
+  const t = await saveTemplate(owner.id, { name: 'Kickoff', content, workspaceId: ws.id });
+  const sees = async (u: { id: string }) => (await listTemplates(u.id)).some((x) => x.id === t.id);
+  expect([await sees(member), await sees(guest), await sees(outsider)]).toEqual([true, false, false]);
+  expect((await getTemplate(t.id, member.id)).content).toEqual(content);
+  await expect(deleteTemplate(t.id, member.id)).rejects.toMatchObject({ status: 404 }); // only its owner deletes
+  await expect(shareTemplate(t.id, outsider.id, ws.id)).rejects.toMatchObject({ status: 403 });
+
+  await shareTemplate(t.id, owner.id, null);
+  expect(await sees(member)).toBe(false);
+});
+
+it('a team that doesn’t allow downloads keeps its boards from being saved as templates by guests', async () => {
+  const owner = await createUser({ name: 'DOwner', email: `downer${++n}@test.freero.app`, password: 'password-123' }, { emailVerified: true });
+  const guest = await createUser({ name: 'DGuest', email: `dguest${++n}@test.freero.app`, password: 'password-123' }, { emailVerified: true });
+  const ws = await createTeamWorkspace(owner.id, 'Locked');
+  await inviteToWorkspace(null, ws.id, owner, { email: guest.email, role: 'guest' });
+  const board = await createBoard(owner.id, 'Confidential', '', 'viewer', { workspaceId: ws.id });
+  await updateWorkspace(ws.id, owner.id, { policies: { downloads: 'members' } });
+  await expect(saveTemplate(guest.id, { name: 'Copy', content, boardId: board.id })).rejects.toMatchObject({ status: 403 });
+  expect(await listTemplates(guest.id)).toEqual([]);
 });

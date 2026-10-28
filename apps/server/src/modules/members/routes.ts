@@ -4,7 +4,7 @@ import type { ServerContext } from '../../platform/context';
 import { badRequest, forbidden, handle, HttpError, notFound } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
 import { currentUser, findUserByEmail, getUser, getUsers, normalizeEmail, requireUser } from '../auth/index';
-import { requireBoardAccess } from '../boards/index';
+import { requireBoardAccess, teamAccessUserIds } from '../boards/index';
 import { commentPeopleOf, refreshBoardAccess } from '../realtime/index';
 import { boardShared } from './events';
 import { acceptInvite, inviteByEmail, listPending, previewInvite, resendInvite } from './invites';
@@ -39,14 +39,21 @@ export default function memberRoutes(_ctx: ServerContext): Router {
       const me = currentUser(req);
       const { ownerId, role: myRole } = await requireBoardAccess(boardId, me.id);
       const emails = atLeast(myRole, 'editor');
-      const rows = await repo.listByBoard(boardId);
-      const users = await getUsers([ownerId, ...rows.map((m) => m.userId)]);
+      const [rows, team] = await Promise.all([repo.listByBoard(boardId), teamAccessUserIds(boardId)]);
+      const listed = new Set([ownerId, ...rows.map((m) => m.userId)]);
+      const viaTeam = team.filter((id) => !listed.has(id));
+      const users = await getUsers([...listed, ...viaTeam]);
       const members: BoardMember[] = [];
       const owner = users.get(ownerId);
       if (owner) members.push(toMember(owner, 'owner', emails || owner.id === me.id));
       for (const m of rows) {
         const u = users.get(m.userId);
         if (u) members.push(toMember(u, m.role, emails || u.id === me.id));
+      }
+      // Team access (the workspace grants editor; see workspaces/roles.ts).
+      for (const id of viaTeam) {
+        const u = users.get(id);
+        if (u) members.push({ ...toMember(u, 'editor', emails || u.id === me.id), team: true });
       }
       res.json({ members });
     }),
@@ -58,7 +65,7 @@ export default function memberRoutes(_ctx: ServerContext): Router {
     handle(async (req, res) => {
       const boardId = req.params.id;
       const me = currentUser(req);
-      const { ownerId, role: myRole, title } = await requireBoardAccess(boardId, me.id, 'editor');
+      const { ownerId, role: myRole, title, canShareExternally, inWorkspace } = await requireBoardAccess(boardId, me.id, 'editor');
       const { email: rawEmail, role } = (req.body ?? {}) as { email?: unknown; role?: unknown };
       const email = normalizeEmail(rawEmail);
       if (!email) throw badRequest('email is required');
@@ -67,6 +74,10 @@ export default function memberRoutes(_ctx: ServerContext): Router {
       // Otherwise anyone could sign up with a made-up address and mail invites in its name.
       if (!me.emailVerified) throw forbidden('Verify your email address before inviting people');
       const invitee = await findUserByEmail(email);
+      // Workspace policy "external sharing": people outside the board's workspace (an address
+      // without an account always is) need someone allowed to share outside it.
+      if (!canShareExternally && !(invitee && (await inWorkspace(invitee.id))))
+        throw forbidden('This workspace only lets you share its boards with people in it');
       if (!invitee) {
         const out = await inviteByEmail(req, { boardId, boardTitle: title, email, role, inviter: me, mayChangeRole: myRole === 'owner' });
         if (out === 'board-gone') throw boardGone();
@@ -101,7 +112,7 @@ export default function memberRoutes(_ctx: ServerContext): Router {
       const { ownerId } = await requireBoardAccess(boardId, currentUser(req).id);
       const ids = [...new Set(String(req.query.ids ?? '').split(',').filter(Boolean))];
       if (ids.length > MAX_PEOPLE) throw badRequest(`At most ${MAX_PEOPLE} ids`);
-      const onBoard = new Set([ownerId, ...(await repo.listByBoard(boardId)).map((m) => m.userId)]);
+      const onBoard = new Set([ownerId, ...(await repo.listByBoard(boardId)).map((m) => m.userId), ...(await teamAccessUserIds(boardId))]);
       // Only people the board already shows somewhere: never a lookup of arbitrary accounts.
       const inComments = ids.some((id) => !onBoard.has(id)) ? await commentPeopleOf(boardId) : new Set<string>();
       const users = await getUsers(ids.filter((id) => onBoard.has(id) || inComments.has(id)));
@@ -126,8 +137,9 @@ export default function memberRoutes(_ctx: ServerContext): Router {
     rateLimit('invite', 'user'),
     handle(async (req, res) => {
       const me = currentUser(req);
-      const { title } = await requireBoardAccess(req.params.id, me.id, 'editor');
+      const { title, canShareExternally } = await requireBoardAccess(req.params.id, me.id, 'editor');
       if (!me.emailVerified) throw forbidden('Verify your email address before inviting people');
+      if (!canShareExternally) throw forbidden('This workspace only lets you share its boards with people in it');
       res.json({ invite: await resendInvite(req, req.params.id, title, req.params.inviteId, me) });
     }),
   );

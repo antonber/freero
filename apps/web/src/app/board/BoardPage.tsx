@@ -14,9 +14,10 @@ import { features } from './features';
 import { createLocalHost, createServerHost, toastNotify } from './host';
 import './BoardPage.css';
 
+type Team = { id: string; name: string } | null;
 type LoadState =
   | { status: 'loading' }
-  | { status: 'ready'; board: BoardSummary }
+  | { status: 'ready'; board: BoardSummary; team?: Team }
   | { status: 'error'; code: number; message: string };
 
 export default function BoardPage() {
@@ -37,9 +38,13 @@ function ServerBoard({ id }: { id: string }) {
   useEffect(() => {
     let cancelled = false;
     setState({ status: 'loading' });
-    api
-      .getBoard(id)
-      .then(({ board }) => !cancelled && setState({ status: 'ready', board }))
+    // The board, and the team workspace it belongs to when the user is a full member there.
+    Promise.all([api.getBoard(id), api.listWorkspaces().catch(() => ({ workspaces: [] }))])
+      .then(([{ board }, { workspaces }]) => {
+        if (cancelled) return;
+        const w = workspaces.find((x) => x.id === board.workspaceId && x.kind === 'team' && x.role !== 'guest');
+        setState({ status: 'ready', board, team: w ? { id: w.id, name: w.name } : null });
+      })
       .catch((err) => {
         if (cancelled) return;
         if (err instanceof ApiError && err.status === 401) {
@@ -58,8 +63,9 @@ function ServerBoard({ id }: { id: string }) {
   }, [id, navigate]);
 
   const board = state.status === 'ready' ? state.board : null;
+  const team = state.status === 'ready' ? (state.team ?? null) : null;
   const setTitle = useCallback(
-    (title: string) => setState((s) => (s.status === 'ready' ? { status: 'ready', board: { ...s.board, title } } : s)),
+    (title: string) => setState((s) => (s.status === 'ready' ? { ...s, board: { ...s.board, title } } : s)),
     [],
   );
   const openShare = useCallback(() => setShareOpen(true), []);
@@ -74,9 +80,10 @@ function ServerBoard({ id }: { id: string }) {
       notify: toast,
       openShareDialog: openShare,
       onTitleChange: setTitle,
+      team,
     });
     // Rebuild only for identity-relevant changes; title/role updates flow through a new host object.
-  }, [board, user, go, toast, openShare, setTitle]);
+  }, [board, team, user, go, toast, openShare, setTitle]);
 
   if (state.status === 'error') return <BoardError boardId={id} code={state.code} message={state.message} />;
   if (!host || !board) return <FullPageSpinner label="Opening board" />;
@@ -88,7 +95,7 @@ function ServerBoard({ id }: { id: string }) {
         open={shareOpen}
         onClose={() => setShareOpen(false)}
         board={board}
-        onBoardChange={(b) => setState({ status: 'ready', board: b })}
+        onBoardChange={(b) => setState((s) => ({ status: 'ready', board: b, team: s.status === 'ready' ? s.team : null }))}
         onLeft={() => navigate('/app')}
       />
     </>

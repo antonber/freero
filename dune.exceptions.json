@@ -1,1 +1,7 @@
-[]
+[
+  {
+    "rule": "S4",
+    "file": "apps/server/src/platform/upgrade.test.ts",
+    "reason": "Upgrade test for data migrations: it must seed the PREVIOUS release's schema (users, boards before workspaces existed) with raw rows, which no module code can write any more, then apply the new migrations and check the backfill. Test-only; production code still writes these tables only through their owners' repo.ts."
+  }
+]

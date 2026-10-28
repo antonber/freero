@@ -345,3 +345,53 @@
   font-weight: 600;
   cursor: pointer;
 }
+
+/* Saved templates shared with a team workspace. */
+.fr-tpl-saved__team {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fr-primary);
+  background: rgba(255, 255, 255, 0.94);
+  border-radius: 999px;
+  box-shadow: var(--fr-shadow);
+  pointer-events: none;
+}
+
+.fr-tpl-saved__share {
+  position: absolute;
+  top: 6px;
+  right: 38px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--fr-radius-sm);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: var(--fr-shadow);
+  color: var(--fr-ink-2);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s var(--fr-ease);
+}
+
+.fr-tpl-saved:hover .fr-tpl-saved__share,
+.fr-tpl-saved__share:focus-visible {
+  opacity: 1;
+}
+
+.fr-tpl-saved__share:hover {
+  color: var(--fr-primary);
+}
+
+.fr-tpl-saved__share:focus-visible {
+  outline: none;
+  box-shadow: var(--fr-focus-ring);
+}

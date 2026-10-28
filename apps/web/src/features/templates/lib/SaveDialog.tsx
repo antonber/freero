@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { BookmarkPlus } from 'lucide-react';
 import type { Editor, PanelProps } from '@engine';
-import { Button, Input, Modal, SegmentedControl, Spinner, TextArea } from '@ui';
+import { Button, Input, Modal, SegmentedControl, Spinner, TextArea, Toggle } from '@ui';
 import { DOCK_ID } from './insert';
 import { SAVE_DIALOG_ID, saveAsTemplate } from './saved';
 
@@ -40,6 +40,8 @@ export function SaveTemplateDialog({ editor, props }: PanelProps) {
   const preview = usePreview(editor, ids);
   const [name, setName] = useState(() => (scope === 'board' ? editor.host.board.title : ''));
   const [description, setDescription] = useState('');
+  const team = editor.host.board.team ?? null;
+  const [shareWithTeam, setShareWithTeam] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -49,9 +51,9 @@ export function SaveTemplateDialog({ editor, props }: PanelProps) {
     if (!n) return setError('Give your template a name');
     setBusy(true);
     try {
-      const saved = await saveAsTemplate(editor, { ids, name: n, description: description.trim() });
+      const saved = await saveAsTemplate(editor, { ids, name: n, description: description.trim(), shareWithTeam: !!team && shareWithTeam });
       close();
-      editor.host.notify(`Saved “${saved.name}” to your templates.`, 'success', {
+      editor.host.notify(saved.shared && team ? `Saved “${saved.name}” and shared it with ${team.name}.` : `Saved “${saved.name}” to your templates.`, 'success', {
         action: { label: 'View', run: () => editor.openDock(DOCK_ID) },
       });
     } catch (err) {
@@ -116,7 +118,12 @@ export function SaveTemplateDialog({ editor, props }: PanelProps) {
           placeholder="What is it for? (optional)"
           onChange={(e) => setDescription(e.target.value)}
         />
-        <p className="fr-tpl-save__note">Only you can see your templates. Add them to any board from the Templates panel.</p>
+        {team ? <Toggle checked={shareWithTeam} onChange={setShareWithTeam} label={`Share with ${team.name}`} /> : null}
+        <p className="fr-tpl-save__note">
+          {team && shareWithTeam
+            ? `Everyone in ${team.name} (not guests) can add it to their boards. You can stop sharing it later.`
+            : 'Only you can see your templates. Add them to any board from the Templates panel.'}
+        </p>
       </form>
     </Modal>
   );

@@ -101,7 +101,7 @@ export function AuthPage({ mode }: { mode: Mode }) {
 
   const isLogin = mode === 'login';
   // Arrived from a board link (or an invite) while signed out.
-  const toBoard = next.startsWith('/board/') || next.startsWith('/invite/');
+  const toBoard = next.startsWith('/board/') || next.startsWith('/invite/') || next.startsWith('/workspace-invite/');
   return (
     <div className="fr-authpage">
       <div className="fr-authpage__deco" aria-hidden>

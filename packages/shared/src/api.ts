@@ -35,6 +35,129 @@ export interface BoardSummary {
   /** Trash only (filter=trash): when it was deleted, and when it will be deleted for good. */
   deletedAt?: number;
   purgeAt?: number;
+  /** The workspace the board belongs to, and its project (folder) there, if any. */
+  workspaceId: string;
+  projectId: string | null;
+  /**
+   * Team access, when the board is in a team workspace: everyone in it (`private`: only the
+   * members of its private project, plus the workspace's owners/admins) can edit it.
+   */
+  team: { name: string; private: boolean } | null;
+  /**
+   * You were invited to this board itself (a board membership you can leave). False when your
+   * access comes only from ownership, your team or the link.
+   */
+  member: boolean;
+  /** What the current user may do beyond their role, under the workspace's sharing policies. */
+  permissions: BoardPermissions;
+}
+
+/**
+ * Computed by the server for the current user (role + workspace policies); the UI only reflects
+ * it — every one of these is checked again by the endpoint that does the work.
+ */
+export interface BoardPermissions {
+  /** Export / download / duplicate the board (workspace "downloads" policy). */
+  canExport: boolean;
+  /** Invite people who are not in the board's workspace (workspace "external sharing" policy). */
+  canShareExternally: boolean;
+  /** Highest link access the workspace allows ('none': links are off). */
+  maxLinkAccess: LinkAccess;
+  /** Move the board between projects (its owner, or the workspace's owners/admins). */
+  canMove: boolean;
+  /** Hand the board to someone else (its owner, or the workspace's owners/admins). */
+  canTransfer: boolean;
+}
+
+// ---- Workspaces ----
+// Every board belongs to a workspace. Each user has a personal workspace (created on first use;
+// only they are in it); team workspaces have members with workspace roles:
+//   owner   everything, incl. policies, transfer and deletion; a workspace always keeps ≥ 1 owner
+//   admin   manages members (not owners/admins), projects and policies; edits every board
+//   member  creates boards; edits every board not in a private project they're not part of
+//   guest   only boards (or private projects) they were invited to
+// Board access = board owner > max(direct board membership, team access, link access), with link
+// access capped by the workspace's `linkSharing` and outside access cut by `externalSharing`.
+//
+// GET    /api/workspaces                         -> { workspaces: WorkspaceSummary[] } (personal first)
+// POST   /api/workspaces          body { name }  -> { workspace: WorkspaceSummary }    (a team; you own it)
+// PATCH  /api/workspaces/:id      body { name?, policies?: Partial<WorkspacePolicies> } -> { workspace }  (owner/admin; team only)
+// DELETE /api/workspaces/:id      body { confirm: <name> } -> { ok: true }  (owner; team only; deletes its boards)
+// POST   /api/workspaces/:id/transfer body { userId } -> { workspace }  (owner; target becomes owner, you admin)
+// GET    /api/workspaces/:id/members                -> { members: WorkspaceMember[], invites: WorkspaceInvite[] } (not guests)
+// POST   /api/workspaces/:id/members  body { email, role } -> { member } | { invite }  (verified email;
+//        owner/admin any non-owner role; members only guests, and only if guestInvites = 'members')
+// PATCH  /api/workspaces/:id/members/:userId body { role } -> { member }  (owner: any; admin: member/guest)
+// DELETE /api/workspaces/:id/members/:userId -> { ok: true }  (owner/admin, or yourself to leave). Cuts
+//        live access at once; boards they owned there pass to whoever removed them.
+// POST   /api/workspaces/:id/invites/:inviteId/resend -> { invite }   DELETE … -> { ok: true }
+// GET    /api/workspace-invites/:token         -> { invite: WorkspaceInvitePreview } | 404
+// POST   /api/workspace-invites/:token/accept  -> { workspaceId }
+//
+// Projects (folders):
+// GET    /api/workspaces/:id/projects          -> { projects: ProjectSummary[] }  (the ones you can see)
+// POST   /api/workspaces/:id/projects  body { name, access? } -> { project }   (members, not guests)
+// PATCH  /api/projects/:id   body { name?, access? } -> { project }   (its creator or workspace owner/admin)
+// DELETE /api/projects/:id   -> { ok: true }   (same; 409 while it still holds boards)
+// GET    /api/projects/:id/members -> { members: { userId, name, color, avatarUrl }[] }
+// PUT    /api/projects/:id/members/:userId -> { ok: true }   DELETE … -> { ok: true }  (manage: as PATCH)
+export type WorkspaceKind = 'personal' | 'team';
+export type WorkspaceRole = 'owner' | 'admin' | 'member' | 'guest';
+export type ProjectAccess = 'workspace' | 'private';
+export interface WorkspacePolicies {
+  /** Who may give people outside the workspace access to its boards ('none': nobody, and such access stops working). */
+  externalSharing: 'anyone' | 'admins' | 'none';
+  /** Highest role "anyone with the link" may get on its boards; 'none' turns links off. */
+  linkSharing: LinkAccess;
+  /** Who may invite guests into the workspace (owners/admins always may). */
+  guestInvites: 'admins' | 'members';
+  /** Who may export, download or duplicate its boards: anyone with access, workspace members (not guests), or owners/admins. */
+  downloads: 'anyone' | 'members' | 'admins';
+}
+export interface WorkspaceSummary {
+  id: string;
+  name: string;
+  kind: WorkspaceKind;
+  /** Your role in it. */
+  role: WorkspaceRole;
+  memberCount: number;
+  policies: WorkspacePolicies;
+  createdAt: number;
+}
+export interface WorkspaceMember {
+  userId: string;
+  name: string;
+  email: string;
+  color: string;
+  avatarUrl: string | null;
+  role: WorkspaceRole;
+  joinedAt: number;
+}
+export interface WorkspaceInvite {
+  id: string;
+  email: string;
+  role: Exclude<WorkspaceRole, 'owner'>;
+  invitedById: string;
+  invitedByName: string;
+  createdAt: number;
+  expiresAt: number;
+}
+export interface WorkspaceInvitePreview {
+  workspaceName: string;
+  inviterName: string;
+  email: string;
+  role: Exclude<WorkspaceRole, 'owner'>;
+  expiresAt: number;
+}
+export interface ProjectSummary {
+  id: string;
+  workspaceId: string;
+  name: string;
+  access: ProjectAccess;
+  createdBy: string | null;
+  /** You may rename it, change its access, manage its members and delete it. */
+  canManage: boolean;
+  createdAt: number;
 }
 
 /** Days a deleted board stays in its owner's trash (restorable) before it is deleted for good. */
@@ -48,6 +171,12 @@ export interface BoardMember {
   color: string;
   avatarUrl: string | null;
   role: Role;
+  /**
+   * Has access through the board's team workspace, not a board invite (role: what the team grants).
+   * The share dialog shows these as one "Everyone in <team>" row; pickers (mentions, assignees)
+   * list them like anyone else.
+   */
+  team?: boolean;
 }
 
 // ---- Auth ----
@@ -197,9 +326,20 @@ export interface SessionInfo {
 export const ACCOUNT_PENDING_DELETION = 'account_pending_deletion';
 
 // ---- Boards ----
-// GET    /api/boards?filter=all|mine|shared|starred|recent|trash&q=text -> { boards: BoardSummary[] }
-//                                    (trash: the caller's own deleted boards, with deletedAt/purgeAt)
+// GET    /api/boards?workspace=<id>&project=<id>&filter=all|mine|shared|starred|recent|trash&q=text
+//                                 -> { boards: BoardSummary[] }
+//        `workspace` = the current workspace (default: your personal one; 404 unless you're in it).
+//        all/mine/trash: boards of that workspace you can open (trash: your own deleted ones);
+//                        `all` in your PERSONAL workspace also lists boards shared from outside.
+//        shared: boards shared with you directly from workspaces you are NOT in (any workspace).
+//        starred/recent: that workspace's boards plus those shared from outside.
+//        `project`: only that project's boards.
 // POST   /api/boards               body CreateBoardRequest -> { board: BoardSummary }
+//                                 (in `workspaceId`, default personal; not as a guest)
+// POST   /api/boards/:id/transfer  body { userId } -> { board }  (board owner or workspace owner/admin;
+//                                 team workspace: to a non-guest member; personal: to a board member,
+//                                 and the board moves to their personal workspace. The previous
+//                                 owner keeps editor access. 403 over the new owner's board quota)
 // GET    /api/boards/:id           -> { board: BoardSummary }   (also records lastOpenedAt;
 //                                     if the user has no membership but linkAccess != 'none',
 //                                     returns the board with role = linkAccess)
@@ -214,8 +354,9 @@ export const ACCOUNT_PENDING_DELETION = 'account_pending_deletion';
 // PUT    /api/boards/:id/star      -> { ok: true }
 // DELETE /api/boards/:id/star      -> { ok: true }
 // PUT    /api/boards/:id/thumbnail body { dataUrl: string } -> { ok: true } (editor+)
-export interface CreateBoardRequest { title?: string; description?: string }
-export interface UpdateBoardRequest { title?: string; description?: string; linkAccess?: LinkAccess }
+export interface CreateBoardRequest { title?: string; description?: string; workspaceId?: string; projectId?: string | null }
+/** `projectId`: move it into that project of its workspace (null: the workspace root); `permissions.canMove`. */
+export interface UpdateBoardRequest { title?: string; description?: string; linkAccess?: LinkAccess; projectId?: string | null }
 
 // ---- Version history ----
 // Editors and owners only: an older version can hold content someone removed before sharing the
@@ -244,12 +385,15 @@ export interface BoardVersion {
 export const MAX_VERSION_NAME = 80;
 
 // ---- Saved templates (a board or a selection saved for reuse) ----
-// Personal for now: you see and insert only your own. Once workspaces land (KAI-37) the same
-// routes also return templates shared with your workspace.
+// You see your own templates plus those shared with a team workspace you are a member (not a
+// guest) of.
 // GET    /api/templates      -> { templates: SavedTemplateSummary[] }  (visible to you, newest first)
 // GET    /api/templates/:id  -> { template: SavedTemplate }           (404 unless visible to you)
 // POST   /api/templates      body SaveTemplateRequest -> { template: SavedTemplateSummary }
-//                            (400 invalid / too large, 403 over MAX_TEMPLATES_PER_USER)
+//                            (400 invalid / too large, 403 over MAX_TEMPLATES_PER_USER, or when
+//                            `boardId`'s workspace doesn't let you download its content)
+// PATCH  /api/templates/:id  body { workspaceId: string | null } -> { template }  (its owner; share
+//                            with a team workspace you're a member of, or make it personal again)
 // DELETE /api/templates/:id  -> { ok: true }  (its owner only)
 export interface SavedTemplateSummary {
   id: string;
@@ -258,6 +402,8 @@ export interface SavedTemplateSummary {
   /** /uploads URL of the preview image, or null. */
   thumbnail: string | null;
   ownerId: string;
+  /** The team workspace it is shared with, or null (personal). */
+  workspaceId: string | null;
   elementCount: number;
   createdAt: number;
   updatedAt: number;
@@ -280,6 +426,10 @@ export interface SaveTemplateRequest {
   /** PNG/JPEG/WebP data URL (max 512KB), or omitted. */
   thumbnail?: string;
   content: TemplateContent;
+  /** The board the content comes from: its workspace's "downloads" policy applies. */
+  boardId?: string;
+  /** Share it with this team workspace right away (you must be a member). */
+  workspaceId?: string | null;
 }
 
 // ---- Members / sharing ----
@@ -336,7 +486,7 @@ export interface BoardPerson { id: string; name: string; color: string; avatarUr
 //
 // Types are open-ended: a new source (e.g. workspace invites) adds its type here and its entry in
 // the server's modules/notifications/types.ts; the inbox shows `title` / `body` as sent.
-export type NotificationType = 'board.invite' | 'comment.mention' | 'comment.reply';
+export type NotificationType = 'board.invite' | 'comment.mention' | 'comment.reply' | 'workspace.invite';
 
 export interface AppNotification {
   id: string;

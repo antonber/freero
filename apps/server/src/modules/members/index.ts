@@ -3,7 +3,27 @@
 import type { Role } from '@freero/shared';
 import * as repo from './repo';
 
-export { resolveRole, atLeast, isLinkAccess, ROLE_RANK } from './roles';
+export { resolveRole, atLeast, isLinkAccess, ROLE_RANK, type WorkspaceAccess } from './roles';
+
+/** Ends the user's direct memberships on these boards (removed from the boards' workspace). */
+export async function removeBoardMemberships(boardIds: string[], userId: string): Promise<void> {
+  await repo.removeMemberships(boardIds, userId);
+}
+
+/**
+ * Board ownership changed hands (inside the caller's transaction): the new owner's membership row
+ * goes (ownership is stored on the board), the previous owner keeps `previousOwnerRole` (or
+ * nothing, when null).
+ */
+export async function ownershipTransferred(
+  boardId: string,
+  newOwnerId: string,
+  previousOwnerId: string,
+  previousOwnerRole: 'editor' | null,
+): Promise<void> {
+  await repo.removeMember(boardId, newOwnerId);
+  if (previousOwnerRole) await repo.upsertMember(boardId, previousOwnerId, previousOwnerRole, Date.now());
+}
 export { onBoardShared, onInviteAccepted, type BoardSharedEvent, type InviteAcceptedEvent } from './events';
 export { invitedEmails } from './invites';
 

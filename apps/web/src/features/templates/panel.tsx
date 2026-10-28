@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BookmarkPlus, LayoutTemplate, Plus, Search, Trash2 } from 'lucide-react';
+import { BookmarkPlus, LayoutTemplate, Plus, Search, Trash2, Users } from 'lucide-react';
 import { DockHeader, definePanel, useCanEdit, useSelection, type Editor, type SavedTemplateInfo } from '@engine';
 import { Button, Input, Spinner, formatShortcut } from '@ui';
 import { TEMPLATES } from './lib/catalog';
@@ -7,7 +7,7 @@ import { DOCK_ID, insertTemplate } from './lib/insert';
 import { filterTemplates } from './lib/place';
 import { LazyTemplatePreview } from './lib/Preview';
 import { SaveTemplateDialog } from './lib/SaveDialog';
-import { SAVE_DIALOG_ID, deleteSavedTemplate, filterSaved, insertSavedTemplate, onSavedTemplatesChanged } from './lib/saved';
+import { SAVE_DIALOG_ID, deleteSavedTemplate, filterSaved, insertSavedTemplate, onSavedTemplatesChanged, setTemplateShared } from './lib/saved';
 import { CATEGORIES, type TemplateCategory, type TemplateDef } from './lib/types';
 import './templates.css';
 
@@ -40,6 +40,15 @@ function SavedCard({ editor, t, canEdit, onInsert }: { editor: Editor; t: SavedT
   const [confirming, setConfirming] = useState(false);
   const [broken, setBroken] = useState(false);
   const mine = t.ownerId === editor.user.id;
+  const team = editor.host.board.team ?? null;
+  const share = async (shared: boolean) => {
+    try {
+      await setTemplateShared(editor, t.id, shared);
+      editor.host.notify(shared ? `Shared “${t.name}” with ${team?.name}.` : `“${t.name}” is personal again.`, 'success');
+    } catch (err) {
+      editor.host.notify(err instanceof Error && err.message ? err.message : 'Could not change sharing.', 'error');
+    }
+  };
   const remove = async () => {
     try {
       await deleteSavedTemplate(editor, t.id);
@@ -65,6 +74,22 @@ function SavedCard({ editor, t, canEdit, onInsert }: { editor: Editor; t: SavedT
         <span className="fr-tpl-card__name">{t.name}</span>
         <span className="fr-tpl-card__desc">{t.description || `${t.elementCount} ${t.elementCount === 1 ? 'item' : 'items'}`}</span>
       </button>
+      {t.shared ? (
+        <span className="fr-tpl-saved__team" title={mine ? 'Shared with your team' : 'Shared by your team'}>
+          <Users size={12} aria-hidden /> Team
+        </span>
+      ) : null}
+      {mine && team ? (
+        <button
+          type="button"
+          className="fr-tpl-saved__share"
+          aria-label={t.shared ? `Stop sharing ${t.name} with ${team.name}` : `Share ${t.name} with ${team.name}`}
+          title={t.shared ? `Stop sharing with ${team.name}` : `Share with ${team.name}`}
+          onClick={() => void share(!t.shared)}
+        >
+          <Users size={14} />
+        </button>
+      ) : null}
       {mine ? (
         <button type="button" className="fr-tpl-saved__delete" aria-label={`Delete template ${t.name}`} title="Delete template" onClick={() => setConfirming(true)}>
           <Trash2 size={14} />
@@ -163,7 +188,7 @@ function TemplatesPanel({ editor }: { editor: Editor }) {
           All
         </button>
         <button type="button" className="fr-tpl-chip" aria-pressed={filter === 'saved'} onClick={() => setFilter(filter === 'saved' ? null : 'saved')}>
-          Yours
+          Saved
         </button>
         {CATEGORIES.map((c) => (
           <button
@@ -185,8 +210,8 @@ function TemplatesPanel({ editor }: { editor: Editor }) {
             <Spinner size={18} />
           </div>
         ) : mine.length ? (
-          <section aria-label="Your templates">
-            {filter === null ? <h3 className="fr-tpl__section">Your templates</h3> : null}
+          <section aria-label="Saved templates">
+            {filter === null ? <h3 className="fr-tpl__section">Saved templates</h3> : null}
             <div className="fr-tpl__grid">
               {mine.map((t) => (
                 <SavedCard key={t.id} editor={editor} t={t} canEdit={canEdit} onInsert={(x) => void insertSaved(x)} />

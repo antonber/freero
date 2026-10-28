@@ -1,6 +1,5 @@
-// Public API of modules/templates [S2]: saved templates (a board or selection saved for reuse).
-// Only its own routes use it today; workspaces (KAI-37) will share templates per workspace by
-// widening the visibility rule in repo.ts.
+// Public API of modules/templates [S2]: saved templates (a board or selection saved for reuse),
+// personal or shared with a team workspace (the visibility rule in repo.ts).
 import { UPLOAD_REF_PATTERN } from '../uploads/index';
 import * as repo from './repo';
 
