@@ -98,7 +98,7 @@ export async function saveTemplate(userId: string, body: Partial<SaveTemplateReq
   let source: { id: string; workspaceId: string; title: string } | null = null;
   if (body?.boardId !== undefined) {
     if (typeof body.boardId !== 'string') throw badRequest('boardId must be a board id');
-    await requireBoardDownload(body.boardId, userId);
+    await requireBoardDownload(body.boardId, userId, 'template');
     source = { id: body.boardId, workspaceId: (await boardWorkspaceId(body.boardId))!, title: (await getBoardTitle(body.boardId)) ?? '' };
   }
   const workspaceId = await shareTarget(userId, body?.workspaceId);

@@ -1,0 +1,137 @@
+/* Retro mode: the stepper bar under the top bar (above the other session bars). */
+.fr-retro-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 100%;
+  padding: 10px 10px 8px 12px;
+  background: var(--fr-surface);
+  border-radius: var(--fr-radius-lg);
+  box-shadow: var(--fr-shadow-lg);
+  pointer-events: auto;
+}
+
+.fr-retro-steps {
+  display: flex;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fr-ink-3);
+}
+
+.fr-retro-steps li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px 3px 4px;
+  border-radius: 999px;
+}
+
+.fr-retro-steps li + li::before {
+  content: '';
+  width: 14px;
+  height: 1px;
+  margin-right: 4px;
+  background: var(--fr-line-strong);
+}
+
+.fr-retro-steps__dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--fr-surface-2);
+  color: var(--fr-ink-2);
+  font-size: 11px;
+}
+
+.fr-retro-steps li.is-done {
+  color: var(--fr-ink-2);
+}
+
+.fr-retro-steps li.is-done .fr-retro-steps__dot {
+  background: var(--fr-success-soft);
+  color: var(--fr-success);
+}
+
+.fr-retro-steps li.is-current {
+  background: var(--fr-primary-soft);
+  color: var(--fr-primary);
+}
+
+.fr-retro-steps li.is-current .fr-retro-steps__dot {
+  background: var(--fr-primary);
+  color: var(--fr-primary-ink);
+}
+
+.fr-retro-bar__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fr-retro-bar__hint {
+  flex: 1;
+  min-width: 0;
+  max-width: 420px;
+  font-size: 13px;
+  color: var(--fr-ink-2);
+  line-height: 1.35;
+}
+
+.fr-retro-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.fr-retro-form__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.fr-retro-formats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.fr-retro-formats legend {
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.fr-retro-formats__opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.fr-retro-formats__opt.is-on {
+  border-color: var(--fr-primary);
+  background: var(--fr-primary-soft);
+}
+
+@media (max-width: 760px) {
+  .fr-retro-steps li:not(.is-current) {
+    font-size: 0;
+    gap: 0;
+    padding-right: 4px;
+  }
+}

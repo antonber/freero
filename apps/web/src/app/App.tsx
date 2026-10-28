@@ -19,6 +19,7 @@ import { UnsubscribePage } from './pages/unsubscribe/UnsubscribePage';
 import { AdminConsolePage } from './pages/admin/AdminConsolePage';
 import { AppealPage } from './pages/appeal/AppealPage';
 import { OperatorPage } from './pages/operator/OperatorPage';
+import { OAuthConsentPage } from './pages/oauth/OAuthConsentPage';
 
 // Owned by the board engine work; loaded on demand.
 const BoardPage = lazy(() => import('./board/BoardPage'));
@@ -64,6 +65,15 @@ export function App() {
                   <Suspense fallback={<FullPageSpinner label="Opening board" />}>
                     <OperatorPreviewPage />
                   </Suspense>
+                </RequireAuth>
+              }
+            />
+            {/* OAuth apps (and MCP clients) send people here to connect; signed out: log in first, then back. */}
+            <Route
+              path="/oauth/authorize"
+              element={
+                <RequireAuth>
+                  <OAuthConsentPage />
                 </RequireAuth>
               }
             />

@@ -111,6 +111,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | presence ext | each feature writes `ext[<its name>]` only | — |
 | Database table | the server module whose `migrations/` create it; only its `repo.ts` writes it, only its migrations alter it [S4] | that module's exported functions |
 | auth session cookie | server `modules/auth` | — |
+| API tokens, OAuth apps / consents, a team's API switch | server `modules/apiauth` | its index: `authenticate`, `requireScope`, `useInWorkspace` |
 
 ### Host — the one typed contract between app and engine
 
@@ -217,6 +218,22 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   stays same-origin). Rejections carry the server's message (too large, quota reached).
   `features/pdf` lazy-loads pdf.js (`pdfjs-dist`, pinned exactly) with its worker as a same-origin
   asset (CSP `worker-src 'self'`) and `isEvalSupported: false` (no `unsafe-eval` needed).
+- Video, audio and any other file (KAI-128, `features/media`: element types `media` and `file`).
+  `Host.uploadFile` also takes video/audio (`file.type` video/* or audio/*; the server keeps it
+  only when the BYTES are a container it serves for playback, else 415 — `status` on the Error);
+  `Host.uploadAttachment?(blob)` stores any other file as an opaque attachment; and
+  `Host.downloadFile?({ id, src, name })` saves an item's file under its name through
+  `GET /api/boards/:id/files/:elementId` (see "Uploads: what is served how"). A drop runs the
+  importers by priority: images (100), PDFs (15), then media (12) takes every other real file —
+  video / audio this browser plays (probed locally, with a JPEG poster frame captured from a
+  `blob:` URL and uploaded as an image) become players, the rest (and media the server refuses
+  with 415) file cards. `Editor.importData(data, at)` (additive) is the same path for "upload"
+  buttons, so a picked image still becomes an image. Playback is each viewer's own, never synced:
+  a remote "play" would hit every browser's autoplay rules (unmuted playback needs that person's
+  own gesture), and buffering makes synced positions drift; presenters bring people to the item
+  with follow / "Bring everyone to me" and press play. The player mounts on the first play only
+  (a board of videos loads nothing until then), Space plays / pauses the selected item, and
+  exports render the poster and the cards (a fresh copy never plays).
 - `Host.listMembers()`: everyone with access to the board (owner + invited members), including
   people never seen online — for assignee pickers etc. (`/board/local`: just the local user).
 - `Host.lookupUsers(ids)`: current profiles (name, color, photo) for ids the board shows — people
@@ -300,6 +317,15 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
 - `BoardEngineProps.initialState`: a read-only board from a document state, with no network and
   nothing persisted (the operator's preview of a reported board; host role viewer, `syncUrl` '').
 - `Host.user` changes (profile renamed / recolored in any tab) are republished to presence.
+- Facilitator limits (KAI-129; see "Facilitator controls" under Server): `Editor.getLimits()` /
+  hook `useLimits()` (from the server's role message), `mayAdd(type)`, `listAddableTypes()` (from
+  `ToolDefinition.creates`, default: the element type named like the tool). The engine mirrors the
+  server: a locked board is the commenter role with a toast naming the facilitator; `createMany`,
+  `insertElements` / paste and `setTool` refuse types outside `addTypes`, and the toolbar hides
+  those tools. `FollowTarget.locked` ("follow me"): user camera moves, Esc, canvas clicks and the
+  followed person's brief absence don't end it; only `follow(null, { force: true })` does.
+  `Editor.setCursorsHidden(hidden)` / `useCursorsHidden()`: other people's cursors off for this
+  viewer (local).
 - Board layers (see "Board layers" under Server): `Editor.layerOf(id)`, `setPrivatePlacement(rule)`,
   `privateCollection(name)` + hook `usePrivateCollection`, `revealPrivate` / `discardPrivate`,
   `ElementDefinition.hidesContents(el)`. `ExportOptions.sharedOnly` (thumbnails).
@@ -702,7 +728,10 @@ moderation_actions: abuse reports, the operator queue, actions and appeals; see 
 `/scim/v2`), `privacy` (data_exports: personal and workspace data exports; see "Enterprise
 identity and data"), `audit` (audit_events, audit_chains: the append-only audit log), `admin` (no
 table: the admin console of team workspaces; see "Audit log, admin console and workspace
-policies"), `activity` (board_activity: the activity feed; see "Activity" below).
+policies"), `activity` (board_activity: the activity feed; see "Activity" below), `apiauth` (api_tokens,
+oauth_clients, oauth_grants, oauth_codes, api_workspace_settings, api_workspace_credentials:
+credentials that act for a person without their session), `api` (no table: the public REST API
+`/api/v1`; see "Public API and OAuth" below).
 
 - Notifications are created only from trusted server-side events, never from client claims:
   realtime's `onCommentMessage` (a comment message applied from one of THIS instance's sockets,
@@ -805,6 +834,26 @@ policies"), `activity` (board_activity: the activity feed; see "Activity" below)
   referenced (`last_referenced_at`), re-checks the candidates right before deleting, and deletes
   rows + files no round has seen referenced for 24 h — freeing quota. New content that stores
   upload URLs outside board docs adds its scan to `SCANS` there. `ObjectStorage.list()` exists for it.
+  `UPLOAD_REF_PATTERN` / `FILE_NAME_RE` are built from the one extension list in `uploads/store.ts`,
+  so a new upload kind is seen by every scan (and the account purge) without touching them.
+- Uploads: what is served how (`uploads/store.ts`, `routes.ts`, `download.ts`; KAI-128). What may
+  be served INLINE is an allowlist decided by the bytes, never a name or a declared type: raster
+  images, SVG (sandbox CSP), PDF, and video / audio whose container signature `sniffMedia`
+  recognises (MP4 / M4A / MOV by their `ftyp` brand, WebM's EBML doc type, Ogg, WAV, FLAC, MP3, AAC);
+  they are stored under the type and extension the bytes say. Anything else is an ATTACHMENT
+  (`POST /api/uploads?as=attachment`, stored as `<id>.bin`, `application/octet-stream`): never
+  served at `/uploads/` at all (404), only by `GET /api/boards/:id/files/:elementId` — the item is
+  looked up in the board AS THAT PERSON SEES IT (`readBoardView`: no other board's file, no hidden
+  frame's, no one's draft), the workspace's downloads policy applies (`boards.authorizeFileDownload`,
+  403 like an export, guests included), each download is audited (`board.file_downloaded`, file
+  name + upload), and it goes out as `Content-Disposition: attachment` under the item's own name
+  (RFC 5987), `nosniff`, the sandbox CSP and `no-store`. So an uploaded HTML / SVG / script can
+  never run as same-origin content. Video / audio answer single byte ranges (`Accept-Ranges`, 206,
+  416 past the end; `ObjectStorage.get(key, range)` + `stat`), or redirect to the bucket like
+  raster images (the CSP's `media-src` names it; `blob:` is the local file probed for its poster).
+  Size caps are per kind (`MAX_UPLOAD_MB` images / PDF, `MAX_MEDIA_UPLOAD_MB`,
+  `MAX_ATTACHMENT_UPLOAD_MB`), refused before the body is read when `Content-Length` says so; every
+  kind counts toward the one per-account quota. Moderation removal answers 410 on both paths.
 
 ### Moderation (`modules/moderation`, KAI-142)
 
@@ -1019,16 +1068,101 @@ Agents, the API and AI read and write boards semantically, never by coordinates.
   for people the board shows (as `/boards/:id/people`). Version = a hash of what the reader sees
   (ETag / 304). Versioning rule: additive within `outlineVersion`.
 - **Writing on a request** goes through realtime's `changeBoard(boardId, actor, plan)`: `plan(view)`
-  runs against the live board and its `BoardChange` (new elements, field patches, collection
-  entries) is applied in the same step as one transaction per doc — stamped (z above everything,
-  `createdBy`, times), published to every instance and saved before it resolves. No other module
-  writes board docs.
+  runs against the live board and its `BoardChange` (new elements, field patches, deletions,
+  collection entries) is applied in the same step as one transaction per doc — stamped (z above
+  everything, `createdBy`, times), published to every instance and saved before it resolves. No
+  other module writes board docs. `applyChange` keeps the rules a client would: a deletion takes a
+  frame's contents, riders and mind-map branches along; whatever ends up inside a hidden frame is
+  written to the `editors` layer (never the shared doc every viewer's socket receives) and moves back
+  when the frame is shown; commenters may only write their OWN comment records (`commentRules.ts`,
+  the socket's rule). Comment messages written this way are reported like a socket's
+  (`onCommentMessage`: mentions and replies notify).
 - **Layout from structure** (`modules/structure`, `POST /boards/:id/insert-structure`): `@freero/shared`
   `layout/` (pure, no dependencies; in-house layered graph layout, Mermaid reader, mind map, sticky
   clusters, sequence, table) lays a structure out from (0, 0); `plan.ts` places it on a free spot of
   the view and turns it into a `BoardChange`; `sinks.ts` decides where that goes (`board` →
   `changeBoard`, `preview` → returned for `Editor.insertElements`). The suggestions layer (KAI-169)
   is a new sink, not a new planner.
+
+### Public API and OAuth (`modules/api`, `modules/apiauth`; KAI-104, KAI-170, KAI-197)
+
+Scripts, integrations and agents use Freero through `/api/v1` (reference: `docs/api/openapi.json`,
+served at `/api/v1/openapi.json`; `api/api.test.ts` fails when the routes, their scopes or their
+response shapes drift from it). Versioned: within v1 changes are additive only.
+
+**Why two modules, and why not `auth`.** `modules/apiauth` owns every credential that acts for a
+person WITHOUT their session — personal access tokens, Freero's OAuth 2.0 authorization server
+(apps, consents, codes, access/refresh tokens) — and each team's API switch. It is a separate module
+from `auth` on purpose: sessions, sign-in methods, SSO and SCIM live in `auth`/`sso`/`scim` and
+change for their own reasons; tokens are their own lifecycle (scopes, expiry, pause, rotation, an
+admin's per-workspace block) with their own tables and a single writer. They meet at two seams in
+`auth`'s index: a credential records how the session that made it signed in
+(`currentSessionMethod`) and every call re-asks `auth.signInRestriction` with it, so **enforced SSO**
+refuses tokens and apps made from a non-SSO sign-in (403 `sso_required`; make a new one after
+signing in with SSO) — a credential can't become a way around the policy; and
+`auth.onSignedOutEverywhere` (fired by `endSessionsOf` when it ends ALL sessions: password reset,
+"this wasn't me", two-step recovery, operator reset, suspension, deletion, a directory
+deprovisioning the organization's account) revokes every token and app consent of the account.
+`modules/api` is the resource server: routes only, no table, calling the same service functions as
+the app (boards, members, outline, structure, realtime) — never a parallel data path. The remote MCP
+server (KAI-107) is a second resource server next to it: it calls `registerProtectedResource('/mcp',
+…)` and `authenticate(req, '/mcp')`, and the same consent screen, scopes, audit and admin controls
+apply unchanged.
+
+- **Credentials.** 256-bit random secrets with a recognisable prefix (`frp_` personal, `fro_` access,
+  `frr_` refresh), stored as sha256 only. Every request looks the credential up (no cache), so a
+  pause, revoke, app revocation, workspace switch or block takes effect on the next request. Refused:
+  expired / paused tokens, a token for another resource (`resource`, RFC 8707 audience), suspended
+  accounts and accounts awaiting deletion. 401/403 carry a `WWW-Authenticate` challenge naming the
+  protected-resource metadata (RFC 9728), as MCP clients expect.
+- **Scopes** (`API_SCOPES` in `@freero/shared`, one model for REST and MCP): `boards:read`,
+  `boards:write`, `boards:suggest` (reserved for the suggestions layer, KAI-169), `comments:write`,
+  `members:read`, `members:write`. Effective power = the person's role on the board AND the scope:
+  a viewer's write-scoped token still can't write.
+- **OAuth server** (`apiauth/oauth.ts`), built to OAuth 2.1 as the MCP authorization spec requires:
+  authorization code only; PKCE S256 mandatory for every client; exact redirect URIs (loopback http
+  on any port, RFC 8252; https; an app's own scheme; never `javascript:`/`data:`/fragments); codes
+  single use (deleted on redemption, even a failed one), 10 minutes; access tokens 1 hour; refresh
+  tokens rotate, and a replayed one revokes the whole consent; RFC 7591 dynamic client registration
+  (public clients only; unused registrations dropped after a week); RFC 8414 / RFC 9728 metadata;
+  RFC 7009 revocation. The consent screen is the web app's `/oauth/authorize` (signed in; says which
+  app, whether Freero reviewed it — self-registered ones are marked — what it may do and where it
+  sends you), and posts the decision same-site with the session cookie. Settings lists tokens,
+  connected apps and the apps you develop, with revoke; "Disconnect all apps and tokens" is the
+  per-person kill switch, pausing a token the per-token one.
+- **Cross-site by design, cookies never.** `/api/v1/*` and the OAuth token / registration /
+  revocation endpoints authenticate only with what the caller sends (bearer token, PKCE verifier,
+  client secret), never the session cookie (`/api/v1/me` with a cookie is 401). So they register with
+  `platform/security.ts` `allowCrossSiteApi(path, reason, cors)`: exempt from the CSRF origin check
+  for exactly those paths, CORS for any origin without credentials. The consent decision, token
+  management and every other cookie route stay checked.
+- **Every call** (`api/routes.ts` `endpoint`): authenticate → the per-credential rate limit
+  (`RATE_LIMIT_API_CREDENTIAL`; an app's refreshed tokens share one count) plus the person's own
+  limits where the app has them (outline, structure, invites, board creation) → scope → the team's
+  API switch and blocks for the workspace it acts in (`apiauth.useInWorkspace`, which also records
+  the credential for the admin console) → the same service call as the app → one `api.call` audit
+  event (endpoint, status, credential id and name, items touched) in the board's workspace log, else
+  the account's. A workspace member's deactivation (console or SCIM) closes that workspace's boards
+  through `resolveRole`'s `blocked`, so their tokens stop there on the next call too.
+- **Agent safety (KAI-170).** Board text is untrusted: every response carrying it has `notice`
+  (`UNTRUSTED_CONTENT_NOTICE`), the Markdown outline keeps its header line, and board text never
+  appears in names, descriptions or errors the API writes itself. Destructive calls (delete a board,
+  bulk delete, deleting an item that takes others along) need `confirm=true` or change nothing
+  (400 `confirm_required`). Creates are capped per call (`API_MAX_ITEMS_PER_CALL`) and refused whole.
+  Kill switches: `PUBLIC_API=false` (instance), "API & apps" in the admin console (workspace:
+  off, or block one token/app there), revoke-all (person), pause/revoke (token).
+- **Reads follow the downloads policy (KAI-197).** The outline, items and comments are a
+  machine-readable copy of the board, so boards' `requireDownload` (the one check exports,
+  duplicates and templates use) refuses them with 403 `downloads_restricted` and records
+  `board.download_refused` with `via`. Writes (items, structure) are not gated by it.
+- **Items** (`api/items.ts`): created with the shared layout kit's fully specified drafts (they
+  render exactly like the tools' elements), on free space unless the caller gives x/y, in the frame
+  under their center (the app's rule), connectors attached by item id; patches only take fields the
+  type has, re-apply the frame rule on moves and move a frame's contents with it. Saved templates
+  seed new boards through `changeBoard` (the board is empty, so element ids are kept).
+- **GDPR**: a person's export carries `api.json` (their tokens without secrets, the apps they
+  authorised and the apps they registered), from `apiauth.apiDataOf`.
+
 ### Audit log, admin console and workspace policies (KAI-48, KAI-47, KAI-51)
 
 **Audit log** (`modules/audit`). Every module records security-relevant changes with
@@ -1199,7 +1333,8 @@ operations). What a module needs to know:
   through `ctx.config` / `getConfig()`.
 - **Every request** already gets: a request id (`X-Request-Id`), one structured log line
   (`platform/requestLog.ts`), a latency observation, security headers + CSP
-  (`platform/security.ts`), the CSRF origin check on non-GET requests, the per-IP `api` rate
+  (`platform/security.ts`), the CSRF origin check on non-GET requests (except paths registered with
+  `allowCrossSitePost` / `allowCrossSiteApi`, each with its stated reason), the per-IP `api` rate
   limit and the JSON body limit. `requireUser` records the user (`setRequestUser`), so logs and
   per-user limits know who asked. Log with `log`/`logError` (`platform/log.ts`, pino); never log
   request bodies, cookies or tokens.
@@ -1300,6 +1435,36 @@ account purge rewrites the deleted user's comment authorship to "Deleted user" t
 room (`renameCommentAuthor`), so open boards update and the save queue persists it. Member emails
 (`GET /members`) are only sent to owners/editors.
 
+**Facilitator controls** (KAI-129, `realtime/facilitation.ts`, next to the comment rules): the
+`facilitation` collection holds at most one `FacilitationSession` (`@freero/shared`), and the
+server reads it. While it runs, every EDITOR socket except the facilitator's is limited (the board
+owner never is): a socket's `role` in `rooms.ts` is its EFFECTIVE role — its access as limited by
+the session — recomputed whenever the session or the access changes and sent to the client in the
+role message with `limits` (`RoleMessage`, `SessionLimits`). A locked board makes participants
+commenters (comments only; no layer writes); `allowedTypes` limits what they may ADD. Forbidden
+adds, and changes of the session by anyone but its facilitator or the owner, are undone INSIDE the
+transaction that applies the update (`changedKeys` reads the values the transaction replaced), so
+nobody else ever receives them and the sender is sent the correction — dropping the update instead
+would leave every later update of that client pending on the server forever. "Adding" = an id in
+none of the room's docs and not removed from one in the last 30 s (a move between the shared doc
+and a layer arrives as two updates in either order). A participant's write that raced the lock is
+dropped and lands when the lock ends (the room asks the newly writable client for what it lacks),
+never during it. Requests go through the same rule (`applyChange` refuses for a limited actor).
+The room ends the session (`SERVER_ORIGIN`) when the facilitator has had no socket here and no
+presence from another instance for `FREERO_FACILITATOR_GRACE_MS` (30 s). Following the facilitator
+and hidden cursors are views each client applies (`features/facilitation`); not enforceable.
+
+Session features built on these pieces (KAI-130/131/159) add no server rules of their own:
+planning poker (`features/estimation`) seals each pick in the picker's private layer with a shared
+"has picked" marker and reveals one item at a time (`revealPrivate` with a per-item prefix), then
+writes the agreed value through `card.setEstimate` (cards keep one writer). Retro mode
+(`features/retro`) stores only its step and drives every other feature through commands that take
+args — `templates.insert`, `private-mode.start/reveal`, `timer.start`, `facilitation.start/set/end`,
+`voting.start/end`, `arrange.clusterByColor` — so private writing, sealed votes and the
+facilitator's limits keep their own guarantees. The laser pointer (`features/present`) is presence
+only (`ext.present.laser`, receivers fade points from their own arrival time); presenter notes are
+the `presenterNotes` collection (frame id → text), never elements, so never in exports.
+
 ### Board layers — content the server withholds (`realtime/layers.ts`, `engine/store/`)
 
 Some content must not reach everyone who can open a board: the ballots of a vote whose results are
@@ -1312,7 +1477,7 @@ only to connections that may read them:
 
 | layer (wire / stored) | read by | written by | holds |
 |---|---|---|---|
-| `private` / `u:<userId>` | that user's sockets | that user, while owner/editor | private-mode drafts (`elements`), sealed ballots (`voting`) |
+| `private` / `u:<userId>` | that user's sockets | that user, while owner/editor | private-mode drafts (`elements`), sealed ballots (`voting`), sealed planning-poker picks (`estimation`) |
 | `editors` / `editors` | owner/editor sockets | owners/editors | contents of hidden frames (`elements`) |
 
 - Wire format: `WS_MESSAGE_LAYER` envelopes around y-protocols sync messages, `WS_MESSAGE_LAYER_OP`
@@ -1385,7 +1550,7 @@ only to connections that may read them:
   `DATABASE_URL` it runs against that Postgres (fresh database per run, dropped afterwards) and
   also starts two instances at once on one empty database (migration lock); with `REDIS_URL` too,
   it runs two instances on one database + Redis with clients on each. CI does all of it.
-  `--only main,signin,secrets,sweep,purge,notify,platform,multi` runs some groups (to loop one while hunting a flake).
+  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation` runs some groups (to loop one while hunting a flake).
   Checks wait on the real condition, never a fixed sleep: `waitFor(cond, ms)` polls until a
   deadline; `settled(client, observers)` is a barrier (a presence change the server handles after
   everything the client sent before, relayed in order) for proving something did NOT arrive;

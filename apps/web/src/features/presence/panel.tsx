@@ -78,7 +78,7 @@ function PersonCard({ editor, person, onDone }: { editor: Editor; person: Person
           >
             Go to view
           </Button>
-          {isFollowed ? (
+          {isFollowed && editor.getFollowing()?.locked ? null : isFollowed ? (
             <Button size="sm" icon={EyeOff} onClick={() => editor.follow(null)}>
               Stop following
             </Button>
@@ -340,10 +340,15 @@ function FollowIndicator({ editor }: { editor: Editor }) {
       <div ref={pill} className={`fr-presence-pill${atTop ? ' is-top' : ''}`} data-fr-interactive="" style={{ background: color }} role="status">
         <Eye size={14} />
         <span>Following {who.user.name}</span>
-        <span className="fr-presence-pill__dot">·</span>
-        <button type="button" onClick={() => editor.follow(null)}>
-          Stop
-        </button>
+        {/* A facilitator's "follow me" (FollowTarget.locked) ends when they release it. */}
+        {!following.locked && (
+          <>
+            <span className="fr-presence-pill__dot">·</span>
+            <button type="button" onClick={() => editor.follow(null)}>
+              Stop
+            </button>
+          </>
+        )}
       </div>
     </>
   );

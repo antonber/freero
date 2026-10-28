@@ -233,6 +233,7 @@ workspace (modules/workspaces).
 | What a directory sent about them (SCIM userName, externalId, name, email, active) | `scim_users`, `scim_group_members` (scim) | `memberships.json` → `directoryRecords` | deleted (cascade) | deleted (cascade) |
 | Break-glass role | `sso_connections.break_glass_user_id` (sso) | `memberships.json` → `singleSignOn` | cleared (SET NULL) | deleted (cascade) |
 | Abuse reports they filed, moderation actions about their content or account (suspension) | `moderation_items`, `moderation_actions` (moderation; reporter address only as an HMAC), `users.suspended_at` (auth) | not yet (follow-up: KAI-191) | person references cleared (SET NULL); the records stay as the operators' trail | items about its boards stay with their recorded target |
+| API tokens (sha256 only, name, scopes, times), apps they authorised (consents, codes, access/refresh tokens), apps they registered; where their credentials were used in team workspaces | `api_tokens`, `oauth_grants`, `oauth_codes`, `oauth_clients`, `api_workspace_credentials` (apiauth) | `api.json` (never a secret or hash) | deleted (cascade); revoked already when deletion is scheduled (signed out everywhere) | usage rows deleted (cascade) |
 | Data exports | `data_exports` + private ZIP files (privacy, uploads) | listed in `activity.json` | rows and files deleted by the export job within `DATA_EXPORT_INTERVAL_SECONDS` | workspace exports' rows and files deleted by the job |
 | Request logs | stdout (pino) → your log pipeline | no | not touched: user ids (never emails, bodies or tokens) — expire them in your log retention | — |
 | Rate-limit counters | Redis / memory, keys are HMACs | no | expire with their window | — |
@@ -378,6 +379,10 @@ Every command that changes an account writes an `"audit"` log line (action, the 
 their stated reason, the account id) and records the same event in the audit log: the account's
 own chain and the logs of its team workspaces, where their admins see it.
 
+`npm run admin -- api:revoke-all <user id | email>` revokes every API token and app authorisation of an
+account at once (a compromised integration, an account being taken back): their next API call is
+refused, and it is audited on the account. Turning the whole API off is `PUBLIC_API=false` (restart).
+
 `npm run admin -- audit:verify <workspace id>` re-checks a workspace's audit log chain (also
 `u:<user id>` for an account's own chain, `freero` for operator actions on unowned content) and
 exits non-zero when it is not intact. Workspace admins run the same check from the admin console
@@ -460,6 +465,10 @@ open sockets against the database. No restart is needed.
    - *Storage down*: uploads and image loads fail; boards keep working.
    - *Abuse / brute force*: tighten `RATE_LIMIT_*` and restart, or block at the proxy. Rate-limit
      events show in `freero_rate_limited_total` and as 429 lines in the log.
+   - *A leaked API token or a misbehaving agent*: the person revokes it (Settings → API tokens /
+     Connected apps), a workspace admin blocks it or turns API access off (admin console → API &
+     apps), you run `npm run admin -- api:revoke-all <email>`, or `PUBLIC_API=false` stops every
+     integration on the instance. Each takes effect on the next call (nothing is cached).
    - *Leaked secret*: rotate `SESSION_SECRET` (below; keep the leaked one as previous only until the
      re-sealing job reports done, minutes), `METRICS_TOKEN`, DB/S3 credentials; to sign everyone
      out, `DELETE FROM sessions;` (open board tabs disconnect within `SESSION_RECHECK_SECONDS`).

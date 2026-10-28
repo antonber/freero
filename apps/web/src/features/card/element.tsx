@@ -115,6 +115,11 @@ const CardView = memo(function CardView({ element, editing, zoom }: ElementRende
         )}
         {!!element.tags?.length && <TagChips ids={element.tags} />}
         <span className="fr-card__spacer" />
+        {element.estimate && (
+          <span className="fr-card__estimate" title="Estimate">
+            {element.estimate}
+          </span>
+        )}
         {element.assigneeId && <Assignee id={element.assigneeId} />}
       </div>
     </div>

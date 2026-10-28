@@ -8,7 +8,8 @@ diagram and run workshops together.
 - **Canvas** — infinite pan/zoom, dot grid, minimap, snapping and alignment guides, multi-select,
   resize/rotate, groups, lock, undo/redo, copy/paste across boards, drag-and-drop import.
 - **Content** — sticky notes, 21 shapes, rich text, connectors (straight/elbow/curved, attached,
-  labelled), pen + highlighter + eraser, images, emoji and stamps, frames, task cards, mind maps, tags.
+  labelled), pen + highlighter + eraser, images, emoji and stamps, frames, task cards, mind maps, tags,
+  PDFs, video and audio that play on the board, and file cards for any other file.
 - **Collaboration** — live sync, cursors and selections, avatars, follow a collaborator,
   "bring everyone to me", emoji reactions, comment threads, owner/editor/commenter/viewer roles,
   share by invite or link.

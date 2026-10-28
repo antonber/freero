@@ -4,10 +4,11 @@
 // role can't do.
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ChartColumn, Hourglass, KeyRound, Lock, ScrollText, UserCog, Users } from 'lucide-react';
+import { ArrowLeft, ChartColumn, Hourglass, KeyRound, Lock, Plug, ScrollText, UserCog, Users } from 'lucide-react';
 import type { WorkspaceSummary } from '@freero/shared';
 import { Logo, Spinner } from '@ui';
 import { api } from '../../api/client';
+import { AdminApi } from './AdminApi';
 import { AdminAudit } from './AdminAudit';
 import { AdminDataExport, AdminProvisioning, AdminSso } from './AdminIdentity';
 import { AdminMembers } from './AdminMembers';
@@ -22,6 +23,7 @@ const TABS = [
   { id: 'sso', label: 'Single sign-on', icon: KeyRound },
   { id: 'provisioning', label: 'Provisioning', icon: UserCog },
   { id: 'retention', label: 'Data', icon: Hourglass },
+  { id: 'api', label: 'API & apps', icon: Plug },
   { id: 'audit', label: 'Audit log', icon: ScrollText },
 ] as const;
 type Tab = (typeof TABS)[number]['id'];
@@ -99,6 +101,7 @@ export function AdminConsolePage() {
                 <AdminDataExport workspace={workspace} />
               </>
             ) : null}
+            {tab === 'api' ? <AdminApi workspace={workspace} /> : null}
             {tab === 'audit' ? <AdminAudit workspace={workspace} /> : null}
           </main>
         </div>

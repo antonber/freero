@@ -17,7 +17,7 @@ export default defineCommands([
     icon: EyeOff,
     label: 'Stop following',
     minRole: 'viewer',
-    when: (editor) => !!editor.getFollowing(),
+    when: (editor) => !!editor.getFollowing() && !editor.getFollowing()?.locked,
     run: (editor) => editor.follow(null),
   },
 ]);

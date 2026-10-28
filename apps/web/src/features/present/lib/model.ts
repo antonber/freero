@@ -1,9 +1,12 @@
 // Pure presentation model: slide order, navigation and reading other users' presence (unit-tested).
 import type { BoardElement, FrameElement, PresenceState } from '@freero/shared';
+import type { LaserExt } from './laser';
 
 /** What the presenter publishes in PresenceState.ext.present. */
 export interface PresentExt {
   presenting?: { frameId: string | null; startedAt: number } | null;
+  /** Laser pointer trail (lib/laser.ts), null when not pointing. */
+  laser?: LaserExt | null;
 }
 
 export type Peer = PresenceState & { clientId: number };

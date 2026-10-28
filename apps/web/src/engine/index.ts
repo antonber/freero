@@ -33,6 +33,8 @@ export {
   useChromeHidden,
   useFormatToolbarRect,
   useFollowing,
+  useLimits,
+  useCursorsHidden,
   useEditingPart,
   useViewHidden,
   usePrivateCollection,

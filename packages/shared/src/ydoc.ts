@@ -15,6 +15,11 @@
 //   'voting'   -> features/voting     (key 'session' -> VotingSession, `${sessionId}:${userId}` -> VoteBallot;
 //                                     while results are hidden the real ballot is in the voter's
 //                                     PRIVATE layer and the shared key holds a `sealed` marker)
+//   'facilitation' -> features/facilitation (key 'session' -> FacilitationSession; READ BY THE
+//                                     SERVER: realtime/facilitation.ts enforces it)
+//   'estimation' -> features/estimation (planning poker; sealed estimates in the PRIVATE layer)
+//   'retro'    -> features/retro      (key 'session' -> the guided retro's phase)
+//   'presenterNotes' -> features/present (frame id -> the presenter's notes for that slide)
 //
 // Content some connections must not read (private drafts, sealed ballots, hidden frames'
 // contents) never enters this doc: it lives in server-held LAYER docs with the same layout (an
@@ -45,7 +50,33 @@ export const COMMENTER_WRITABLE = ['comments'] as const;
  * private again) or end it while drafts are still sealed. Layer docs are never versioned or
  * restored (see "Board layers" in ARCHITECTURE.md).
  */
-export const Y_KEPT_ON_RESTORE = ['comments', 'voting', 'timer', 'privateMode'] as const;
+export const Y_KEPT_ON_RESTORE = ['comments', 'voting', 'timer', 'privateMode', 'facilitation', 'estimation', 'retro'] as const;
+
+/**
+ * Facilitator controls (KAI-129): the `facilitation` collection, key FACILITATION_KEY. While it is
+ * set, every editor but the facilitator is limited (never the board owner), and the SERVER enforces it
+ * (apps/server/src/modules/realtime/facilitation.ts): a locked board drops their writes except
+ * comments (they are commenters for the session), and they cannot add elements of other types
+ * than `allowedTypes`. Only the facilitator (or the board owner) may change or end it; the server
+ * ends it when the facilitator has been gone for a while. Following and hidden cursors are each
+ * client's view and only applied by the clients.
+ */
+export const FACILITATION_COLLECTION = 'facilitation';
+export const FACILITATION_KEY = 'session';
+export interface FacilitationSession {
+  /** The facilitator's user id: their sockets are never limited. */
+  by: string;
+  byName: string;
+  startedAt: number;
+  /** Everyone else may only comment. */
+  locked: boolean;
+  /** Element types everyone else may ADD (null: any). */
+  allowedTypes: string[] | null;
+  /** Everyone else's view follows the facilitator. */
+  follow: boolean;
+  /** Remote cursors are hidden for everyone. */
+  cursorsHidden: boolean;
+}
 
 export interface BoardSettings {
   background: string;

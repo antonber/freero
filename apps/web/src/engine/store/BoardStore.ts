@@ -28,6 +28,8 @@ import {
   type LayerOp,
   type PresenceState,
   type Role,
+  type RoleMessage,
+  type SessionLimits,
 } from '@freero/shared';
 import type { ElementLayer } from '../api';
 import { compareRenderOrder } from '../geometry/spatial';
@@ -85,6 +87,8 @@ export class BoardStore {
   status: ConnectionStatus;
   synced = false;
   serverRole: Role | null = null;
+  /** A facilitator's limits for this user, from the same role message (null: none). */
+  serverLimits: SessionLimits | null = null;
 
   private history: UndoHistory;
   private placement: Placement = (_el, current) => current ?? 'shared';
@@ -138,7 +142,9 @@ export class BoardStore {
         try {
           const msg = JSON.parse(decoding.readVarString(decoder));
           if (msg && msg.type === 'role') {
-            this.serverRole = msg.role as Role;
+            const m = msg as RoleMessage;
+            this.serverRole = m.role;
+            this.serverLimits = m.limits && typeof m.limits === 'object' ? m.limits : null;
             this.emit(this.roleListeners);
           }
         } catch {
@@ -179,6 +185,7 @@ export class BoardStore {
           // [QA collab] Access is gone: nothing written from now on can ever reach the server, so
           // the UI drops to read-only instead of offering tools whose writes are silently lost.
           this.serverRole = 'viewer';
+          this.serverLimits = null;
           this.emit(this.roleListeners);
         }
       });

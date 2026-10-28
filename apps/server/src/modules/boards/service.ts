@@ -1,10 +1,10 @@
-import { BOARD_REMOVED, isGuestId, TRASH_RETENTION_DAYS, type BoardPermissions, type BoardSummary, type LinkAccess, type Role } from '@freero/shared';
+import { BOARD_REMOVED, DOWNLOADS_RESTRICTED, isGuestId, TRASH_RETENTION_DAYS, type BoardPermissions, type BoardSummary, type LinkAccess, type Role } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { badRequest, forbidden, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { runExclusive } from '../../platform/jobs';
 import { log } from '../../platform/log';
-import { recordAudit } from '../audit/index';
+import { recordAudit, recordAuditQuietly } from '../audit/index';
 import { getGuests, getUser, getUsers } from '../auth/index';
 import { atLeast, getMemberRole, membershipsOf, ownershipTransferred, resolveGuestRole, resolveRole } from '../members/index';
 import {
@@ -55,9 +55,35 @@ export const EXPORT_FORMATS = ['png', 'jpg', 'svg', 'pdf', 'csv', 'json', 'other
  */
 export async function recordExport(boardId: string, userId: string, format: unknown): Promise<void> {
   const { board, access } = await requireAccess(boardId, userId);
-  requireDownload(access);
+  await requireDownload(board, userId, access, 'export');
   const f = (EXPORT_FORMATS as readonly unknown[]).includes(format) ? (format as string) : 'other';
   await recordAudit({ action: 'board.exported', workspaceId: board.workspaceId, actorId: userId, target: boardTarget(board), metadata: { format: f } });
+}
+
+/**
+ * Someone downloading a file from a board (a file card, a video or audio item; modules/uploads
+ * serves it): refused like an export when the workspace's downloads policy forbids it. Returns
+ * their role (what of the board they may read) and how to audit the download once it is served.
+ * `userId` may be a guest id (a visitor: no actor; the guest id is kept in the event).
+ */
+export async function authorizeFileDownload(
+  boardId: string,
+  userId: string,
+): Promise<{ role: Role; record(file: { name: string; upload: string }): Promise<void> }> {
+  const { board, role, access } = await requireAccess(boardId, userId);
+  await requireDownload(board, userId, access, 'file');
+  const guest = isGuestId(userId);
+  return {
+    role,
+    record: (file) =>
+      recordAudit({
+        action: 'board.file_downloaded',
+        workspaceId: board.workspaceId,
+        actorId: guest ? null : userId,
+        target: boardTarget(board),
+        metadata: { file: file.name, upload: file.upload, ...(guest ? { guestId: userId } : {}) },
+      }),
+  };
 }
 
 /**
@@ -126,10 +152,27 @@ export function permissionsFor(board: Board, userId: string, role: Role, access:
   };
 }
 
-/** 403 unless the workspace's "downloads" policy lets the user export / duplicate the board. */
-export function requireDownload(access: BoardWorkspaceAccess): void {
-  if (!mayDownload(access.workspaceRole, access.policies))
-    throw forbidden('This workspace doesn’t allow you to export, download or copy its boards');
+/** How someone tried to take a board's content out (recorded with a refusal). */
+export type DownloadVia = 'export' | 'duplicate' | 'template' | 'file' | 'outline' | 'api';
+
+/**
+ * The one check of the workspace's "downloads" policy, for everything that takes a board's content
+ * out of the workspace's control: exports, duplicates, templates, and machine-readable reads (the
+ * outline, the public API, later MCP and AI — KAI-197). Refusals answer 403 `downloads_restricted`
+ * and are audited. Personal workspaces have no policies, so they always pass.
+ */
+export async function requireDownload(board: Board, userId: string, access: BoardWorkspaceAccess, via: DownloadVia): Promise<void> {
+  if (mayDownload(access.workspaceRole, access.policies)) return;
+  // A visitor without an account is no actor; their guest id is kept in the event.
+  const guest = isGuestId(userId);
+  await recordAuditQuietly({
+    action: 'board.download_refused',
+    workspaceId: board.workspaceId,
+    actorId: guest ? null : userId,
+    target: boardTarget(board),
+    metadata: { via, ...(guest ? { guestId: userId } : {}) },
+  });
+  throw new HttpError(403, 'This workspace doesn’t allow you to export, download or copy its boards', DOWNLOADS_RESTRICTED);
 }
 
 export async function toSummary(

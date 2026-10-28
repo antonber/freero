@@ -1,7 +1,16 @@
 // The Editor: single writer of board state. Feature code receives a scoped instance
 // (Object.create(engineEditor) with its own `scope`), so collection writes can be checked.
 import { nanoid } from 'nanoid';
-import { buildOutline, COMMENTER_WRITABLE, type BoardElement, type BoardOutline, type BoardSettings, type ElementType, type Role } from '@freero/shared';
+import {
+  buildOutline,
+  COMMENTER_WRITABLE,
+  type BoardElement,
+  type BoardOutline,
+  type BoardSettings,
+  type ElementType,
+  type Role,
+  type SessionLimits,
+} from '@freero/shared';
 import type {
   Camera,
   Collection,
@@ -19,7 +28,9 @@ import type {
   Point,
   Rect,
   TextPart,
+  ToolDefinition,
 } from '../api';
+import { describeElementType } from './typeLabel';
 import type { EngineCore } from '../runtime/core';
 import { ROLE_RANK } from '../runtime/core';
 import { boundsOf, elementAABB, localToWorld, rectCenter, rectUnion, visualAABB } from '../geometry/geometry';
@@ -199,16 +210,64 @@ export class EditorImpl implements Editor {
   /** True if the user may edit board content; otherwise shows a (rate-limited) toast. */
   guardWrite(): boolean {
     if (this.can('editor')) return true;
-    const now = Date.now();
-    if (now - this.shared.lastDenied > 2500) {
-      this.shared.lastDenied = now;
-      const role = this.getRole();
-      this.host.notify(
-        role === 'commenter' ? 'You can comment on this board, but not edit it.' : 'This board is view-only for you.',
-        'info',
-      );
-    }
+    const role = this.getRole();
+    const limits = this.getLimits();
+    this.deny(
+      limits?.locked
+        ? `${limits.byName} has locked the board for now. You can still comment.`
+        : role === 'commenter'
+          ? 'You can comment on this board, but not edit it.'
+          : 'This board is view-only for you.',
+    );
     return false;
+  }
+
+  private deny(message: string): void {
+    const now = Date.now();
+    if (now - this.shared.lastDenied <= 2500) return;
+    this.shared.lastDenied = now;
+    this.host.notify(message, 'info');
+  }
+
+  getLimits(): SessionLimits | null {
+    return this.core.store.serverLimits;
+  }
+
+  mayAdd(type: ElementType): boolean {
+    const types = this.getLimits()?.addTypes;
+    return this.can('editor') && (!types || types.includes(type));
+  }
+
+  /** May every one of these types be added now? Otherwise explains why (toast). */
+  private guardAdd(types: Iterable<ElementType>): boolean {
+    const limits = this.getLimits();
+    if (!limits?.addTypes) return true;
+    for (const t of types)
+      if (!limits.addTypes.includes(t)) {
+        const names = limits.addTypes.map((a) => describeElementType(this, a).many.toLowerCase());
+        this.deny(names.length ? `${limits.byName} has limited what you can add to ${names.join(', ')}.` : `${limits.byName} has paused adding new items.`);
+        return false;
+      }
+    return true;
+  }
+
+  /** Element types a tool adds (ToolDefinition.creates, else the type named like the tool). */
+  private toolCreates(def: ToolDefinition): ElementType[] {
+    if (def.creates) return def.creates;
+    return this.core.registry.elements.has(def.id as ElementType) ? [def.id as ElementType] : [];
+  }
+
+  /** May this tool be used under the current limits (its role aside)? */
+  toolAllowed(id: string): boolean {
+    const reg = this.core.registry.toolsById.get(id);
+    const types = this.getLimits()?.addTypes;
+    return !reg || !types || this.toolCreates(reg.def).every((t) => types.includes(t));
+  }
+
+  listAddableTypes(): ElementType[] {
+    const out: ElementType[] = [];
+    for (const t of this.core.registry.tools) for (const type of this.toolCreates(t.def)) if (!out.includes(type)) out.push(type);
+    return out;
   }
 
   // ------------------------------------------------------------------ element reads
@@ -442,7 +501,7 @@ export class EditorImpl implements Editor {
   }
 
   createMany(els: NewElement[], opts?: { select?: boolean }): string[] {
-    if (!els.length || !this.guardWrite()) return [];
+    if (!els.length || !this.guardWrite() || !this.guardAdd(els.map((e) => e.type))) return [];
     const now = Date.now();
     let z = this.core.store.maxZ();
     let built = els.map((e) => this.build(e, ++z, now));
@@ -703,7 +762,7 @@ export class EditorImpl implements Editor {
     if (!ids.length || !this.guardWrite()) return [];
     const all = this.withChildren(ids);
     const source = all.map((id) => this.getElement(id)!).filter(Boolean).sort((a, b) => a.z - b.z);
-    if (!source.length) return [];
+    if (!source.length || !this.guardAdd(source.map((el) => el.type))) return [];
     const zoom = this.getCamera().zoom;
     const d = offset ?? { x: Math.max(24, 20 / zoom), y: Math.max(24, 20 / zoom) };
     const { elements, idMap } = remapElements(source, () => nanoid());
@@ -807,7 +866,7 @@ export class EditorImpl implements Editor {
   private insertSnapshot(snapshot: ElementsSnapshot, place: (elements: BoardElement[]) => BoardElement[]): string[] {
     if (!this.guardWrite()) return [];
     const known = snapshot.elements.filter((el) => this.core.registry.elements.has(el.type));
-    if (!known.length) return [];
+    if (!known.length || !this.guardAdd(known.map((el) => el.type))) return [];
     const { elements, idMap } = remapElements(known, () => nanoid());
     const placed = place(elements);
     let z = this.core.store.maxZ();
@@ -1234,23 +1293,35 @@ export class EditorImpl implements Editor {
     return safeArea(this.core);
   }
 
-  follow(target: FollowTarget | null): void {
+  follow(target: FollowTarget | null, opts?: { force?: boolean }): void {
     const ui = this.core.ui;
     const cur = ui.getState().following;
     if (!target && !cur) return;
-    if (target && cur && cur.userId === target.userId && cur.clientId === target.clientId) return;
+    // A facilitator's "follow me" ends only by the feature that started it (FollowTarget.locked).
+    if (cur?.locked && !opts?.force) return;
+    if (target && cur && cur.userId === target.userId && cur.clientId === target.clientId && !!cur.locked === !!target.locked) return;
     if (target && this.shared.camAnim !== null) {
       // A camera animation in flight would fight the mirror.
       cancelAnimationFrame(this.shared.camAnim);
       this.shared.camAnim = null;
       this.shared.camTarget = null;
     }
-    ui.setState({ following: target ? { userId: target.userId, clientId: target.clientId } : null });
+    ui.setState({
+      following: target ? { userId: target.userId, clientId: target.clientId, ...(target.locked ? { locked: true } : {}) } : null,
+    });
     this.core.store.setPresence({ following: target ? target.userId : null });
   }
 
   getFollowing(): FollowTarget | null {
     return this.core.ui.getState().following;
+  }
+
+  setCursorsHidden(hidden: boolean): void {
+    if (this.core.ui.getState().cursorsHidden !== hidden) this.core.ui.setState({ cursorsHidden: hidden });
+  }
+
+  areCursorsHidden(): boolean {
+    return this.core.ui.getState().cursorsHidden;
   }
 
   getViewportCenter(): Point {
@@ -1281,6 +1352,10 @@ export class EditorImpl implements Editor {
     }
     if (!this.can(reg.def.minRole ?? 'editor')) {
       this.guardWrite();
+      return;
+    }
+    if (!this.toolAllowed(id)) {
+      this.guardAdd(this.toolCreates(reg.def));
       return;
     }
     if (reg.def.onSelect) {
