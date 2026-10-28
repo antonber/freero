@@ -47,6 +47,11 @@ export async function requireBoardDownload(boardId: string, userId: string): Pro
   requireDownload(access);
 }
 
+/** The workspace a board (trashed or not) belongs to, or null if there is no such board. */
+export async function boardWorkspaceId(boardId: string): Promise<string | null> {
+  return (await repo.getBoardIncludingTrash(boardId))?.workspaceId ?? null;
+}
+
 /** The board's title, or null if there is no such board (invite previews). */
 export async function getBoardTitle(boardId: string): Promise<string | null> {
   return (await repo.getBoard(boardId))?.title ?? null;

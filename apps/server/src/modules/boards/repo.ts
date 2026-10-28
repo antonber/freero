@@ -179,13 +179,31 @@ export async function deleteAllOwnedBy(userId: string): Promise<Array<string | n
 }
 
 /** Deletes up to `limit` boards trashed before `before` for good; returns what was deleted. */
-export async function purgeTrashedBefore(before: number, limit: number): Promise<Array<{ id: string; thumbnail: string | null }>> {
-  return query<{ id: string; thumbnail: string | null }>(
+/**
+ * Deletes (up to `limit`) trashed boards deleted before their workspace's cutoff: `before` by
+ * default, the `byWorkspace` cutoff for the workspaces listed there.
+ */
+export async function purgeTrashedBefore(
+  before: number,
+  limit: number,
+  byWorkspace: Array<{ workspaceId: string; before: number }> = [],
+): Promise<Array<{ id: string; thumbnail: string | null; title: string; workspaceId: string; ownerId: string; deletedAt: number }>> {
+  const rows = await query<{ id: string; thumbnail: string | null; title: string; workspace_id: string; owner_id: string; deleted_at: Date }>(
     `DELETE FROM boards WHERE id IN (
-       SELECT id FROM boards WHERE deleted_at < $1 ORDER BY deleted_at LIMIT $2
-     ) RETURNING id, thumbnail`,
-    [new Date(before), limit],
+       SELECT b.id FROM boards b
+       LEFT JOIN unnest($3::text[], $4::timestamptz[]) AS o(workspace_id, before) ON o.workspace_id = b.workspace_id
+       WHERE b.deleted_at < COALESCE(o.before, $1) ORDER BY b.deleted_at LIMIT $2
+     ) RETURNING id, thumbnail, title, workspace_id, owner_id, deleted_at`,
+    [new Date(before), limit, byWorkspace.map((w) => w.workspaceId), byWorkspace.map((w) => new Date(w.before))],
   );
+  return rows.map((r) => ({
+    id: r.id,
+    thumbnail: r.thumbnail,
+    title: r.title,
+    workspaceId: r.workspace_id,
+    ownerId: r.owner_id,
+    deletedAt: new Date(r.deleted_at).getTime(),
+  }));
 }
 
 /** Changes only the given fields, in one statement (concurrent PATCHes of different fields both stick). */
