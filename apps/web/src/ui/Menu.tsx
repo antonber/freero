@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Check, ChevronRight } from 'lucide-react';
 import { Popover } from './Popover';
+import { Tooltip } from './Tooltip';
 import { handleRovingKey } from './layers';
 import { renderIcon, type IconProp } from './icon';
 import { Kbd } from './misc';
@@ -14,6 +15,11 @@ export interface MenuAction {
   shortcut?: string;
   danger?: boolean;
   disabled?: boolean;
+  /**
+   * Why the item is disabled ("Only editors can rename this board"): shown as a tooltip on hover
+   * or keyboard focus. Such an item stays focusable (aria-disabled) so keyboard users hear it too.
+   */
+  disabledReason?: string;
   /** Shows a check mark (toggle / radio style items). */
   checked?: boolean;
   onSelect: () => void;
@@ -53,12 +59,12 @@ export function Menu({ open, onClose, anchor, items, side = 'bottom', align = 's
     if (!open) setSub(null);
   }, [open]);
 
-  useEffect(() => {
+  // Focus the first item in the commit that opens the menu (after the Popover focused its panel,
+  // before paint), like Popover content: no keystroke can reach the board in between, and nothing
+  // is left scheduled to steal focus back after a fast close.
+  useLayoutEffect(() => {
     if (!open || !anchor) return;
-    const raf = requestAnimationFrame(() => {
-      listRef.current?.querySelector<HTMLElement>('[data-fr-item]:not([disabled])')?.focus({ preventScroll: true });
-    });
-    return () => cancelAnimationFrame(raf);
+    listRef.current?.querySelector<HTMLElement>('[data-fr-item]:not([disabled]):not([aria-disabled="true"])')?.focus({ preventScroll: true });
   }, [open, anchor]);
 
   return (
@@ -90,7 +96,8 @@ export function Menu({ open, onClose, anchor, items, side = 'bottom', align = 's
         handleRovingKey(e, listRef.current);
       }}
     >
-      <div ref={listRef} role="menu" aria-label={aria['aria-label']}>
+      {/* Keys pressed on an item (Enter, Space) belong to the menu, never to the board behind it. */}
+      <div ref={listRef} role="menu" aria-label={aria['aria-label']} data-fr-keyboard-trap="">
         {items.map((item, i) => {
           if ('divider' in item) return <div key={`d${i}`} role="separator" className="fr-menu__divider" />;
           if ('heading' in item)
@@ -99,7 +106,10 @@ export function Menu({ open, onClose, anchor, items, side = 'bottom', align = 's
                 {item.heading}
               </div>
             );
-          return (
+          // With a reason, a disabled item stays hoverable/focusable (a disabled button gets no
+          // pointer events, so it could never show its tooltip) and just does nothing.
+          const explained = !!item.disabled && !!item.disabledReason;
+          const button = (
             <button
               key={item.id}
               type="button"
@@ -108,20 +118,22 @@ export function Menu({ open, onClose, anchor, items, side = 'bottom', align = 's
               aria-haspopup={item.submenu ? 'menu' : undefined}
               aria-expanded={item.submenu ? sub?.id === item.id : undefined}
               data-fr-item=""
-              disabled={item.disabled}
+              disabled={item.disabled && !explained}
+              aria-disabled={explained || undefined}
               className={`fr-menu__item${item.danger ? ' fr-menu__item--danger' : ''}${item.submenu && sub?.id === item.id ? ' is-open' : ''}`}
               onMouseEnter={(e) => {
                 if (item.submenu && !item.disabled) setSub({ id: item.id, el: e.currentTarget });
                 else if (sub) setSub(null);
               }}
               onKeyDown={(e) => {
-                if (item.submenu && e.key === 'ArrowRight') {
+                if (item.submenu && !item.disabled && e.key === 'ArrowRight') {
                   e.preventDefault();
                   e.stopPropagation();
                   setSub({ id: item.id, el: e.currentTarget });
                 }
               }}
               onClick={(e) => {
+                if (item.disabled) return;
                 if (item.submenu) {
                   const el = e.currentTarget;
                   setSub((cur) => (cur?.id === item.id ? null : { id: item.id, el }));
@@ -139,6 +151,13 @@ export function Menu({ open, onClose, anchor, items, side = 'bottom', align = 's
               {item.shortcut ? <Kbd className="fr-menu__kbd" compact>{item.shortcut}</Kbd> : null}
               {item.submenu ? <ChevronRight className="fr-menu__more" size={15} aria-hidden /> : null}
             </button>
+          );
+          return explained ? (
+            <Tooltip key={item.id} content={item.disabledReason} side="right">
+              {button}
+            </Tooltip>
+          ) : (
+            button
           );
         })}
       </div>

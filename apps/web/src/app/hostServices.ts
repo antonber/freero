@@ -44,6 +44,11 @@ export function uploadImage(file: Blob): Promise<{ url: string }> {
   return api.uploadImage(file);
 }
 
+/** Documents (PDF) go through the same upload endpoint, quota and checks as images. */
+export function uploadFile(file: Blob): Promise<{ url: string }> {
+  return api.uploadImage(file);
+}
+
 export async function renameBoard(id: string, title: string): Promise<void> {
   await api.updateBoard(id, { title });
 }
@@ -54,6 +59,14 @@ export async function saveThumbnail(id: string, dataUrl: string): Promise<void> 
 
 export function unfurl(url: string): Promise<LinkPreview> {
   return api.unfurl(url);
+}
+
+export function importImage(url: string): Promise<{ url: string }> {
+  return api.importImage(url);
+}
+
+export function fetchImage(url: string): Promise<Blob> {
+  return api.fetchImage(url);
 }
 
 export async function listMembers(id: string): Promise<HostUser[]> {

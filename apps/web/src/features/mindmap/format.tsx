@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { ArrowLeft, ArrowLeftRight, ArrowRight, ChevronsDownUp, ChevronsUpDown, ListTree, Plus } from 'lucide-react';
 import type { MindmapElement } from '@freero/shared';
 import { defineFormat, type Editor } from '@engine';
-import { ColorSwatches, IconButton, Popover, SegmentedControl } from '@ui';
+import { ColorSwatches, IconButton, Popover, SegmentedControl, Tooltip } from '@ui';
 import { BRANCH_COLORS, COLOR_NAMES, ROOT_COLORS } from './lib/constants';
 import { addChild, currentIndex, relayout, rootIdsOf, setBranchColor, setDirection, toggleCollapse } from './lib/actions';
 import type { Direction } from './lib/tree';
@@ -16,17 +16,18 @@ function ColorControl({ editor, nodes }: { editor: Editor; nodes: MindmapElement
   const mixed = nodes.some((n) => n.color !== current);
   return (
     <>
-      <button
-        ref={ref}
-        type="button"
-        className="fr-mm-swatch-btn"
-        aria-label={onlyRoots ? 'Topic color' : 'Branch color'}
-        aria-expanded={open}
-        title={onlyRoots ? 'Topic color' : 'Branch color'}
-        onClick={() => setOpen((o) => !o)}
-      >
-        <span style={{ background: current }} />
-      </button>
+      <Tooltip content={onlyRoots ? 'Topic color' : 'Branch color'} side="bottom">
+        <button
+          ref={ref}
+          type="button"
+          className="fr-mm-swatch-btn"
+          aria-label={onlyRoots ? 'Topic color' : 'Branch color'}
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+        >
+          <span style={{ background: current }} />
+        </button>
+      </Tooltip>
       <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label="Branch color">
         <ColorSwatches
           colors={colors}

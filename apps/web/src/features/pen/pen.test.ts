@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PenElement } from '@freero/shared';
-import { buildStroke, rebakeWidth, simplify, strokeDistance, unpack, type RawPoint } from './lib/stroke';
+import { buildStroke, capturePressure, constrainAngle, radiusAt, rebakeWidth, simplify, strokeDistance, unpack, type RawPoint } from './lib/stroke';
 
 const line = (from: { x: number; y: number }, to: { x: number; y: number }, n = 50): RawPoint[] =>
   Array.from({ length: n }, (_, i) => ({ x: from.x + ((to.x - from.x) * i) / (n - 1), y: from.y + ((to.y - from.y) * i) / (n - 1), p: 0.5 }));
@@ -72,5 +72,33 @@ describe('changing stroke width', () => {
     const pts = unpack(next.points);
     expect(pts[pts.length - 1].x - pts[0].x).toBeCloseTo(300, 0);
     expect(next.w / next.baseW).toBe(1);
+  });
+});
+
+describe('highlighter pressure', () => {
+  it('a stylus highlighter stroke is thinner where it presses lightly; a mouse one stays even', () => {
+    const light = capturePressure({ pressure: 0.1, real: true }, 0.5, 3, true);
+    const firm = capturePressure({ pressure: 0.9, real: true }, 0.5, 3, true);
+    expect(radiusAt(20, true, light)).toBeLessThan(radiusAt(20, true, firm) - 2);
+    const slow = capturePressure({ pressure: 0.5, real: false }, 0.5, 1, true);
+    const fast = capturePressure({ pressure: 0.5, real: false }, 0.5, 40, true);
+    expect(radiusAt(20, true, slow)).toBe(radiusAt(20, true, fast));
+  });
+});
+
+describe('Shift-constrained straight strokes', () => {
+  it('turn a wobbly drag to the nearest 15° step from the start, keeping its length', () => {
+    const from = { x: 100, y: 100 };
+    const at = (deg: number, len = 200) => ({
+      x: from.x + Math.cos((deg * Math.PI) / 180) * len,
+      y: from.y + Math.sin((deg * Math.PI) / 180) * len,
+    });
+    const angle = (p: { x: number; y: number }) => (Math.atan2(p.y - from.y, p.x - from.x) * 180) / Math.PI;
+    expect(angle(constrainAngle(from, at(4)))).toBeCloseTo(0);
+    expect(angle(constrainAngle(from, at(41)))).toBeCloseTo(45);
+    expect(angle(constrainAngle(from, at(-94)))).toBeCloseTo(-90);
+    expect(angle(constrainAngle(from, at(170)))).toBeCloseTo(165);
+    const end = constrainAngle(from, at(41));
+    expect(Math.hypot(end.x - from.x, end.y - from.y)).toBeCloseTo(200, 0);
   });
 });

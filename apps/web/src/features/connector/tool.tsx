@@ -40,6 +40,8 @@ export default defineTool({
   order: 40,
   placement: 'main',
   cursor: 'crosshair',
+  // Endpoints aim at shapes and their anchors under the real pointer.
+  snapToGrid: false,
 
   onPointerDown({ editor, point, screen, button }) {
     if (button !== 0) return;

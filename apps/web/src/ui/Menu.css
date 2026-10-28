@@ -21,13 +21,14 @@
   outline: none;
 }
 
-.fr-menu__item:hover:not(:disabled),
+.fr-menu__item:hover:not(:disabled):not([aria-disabled='true']),
 .fr-menu__item:focus-visible,
 .fr-menu__item:focus {
   background: var(--fr-surface-3);
 }
 
-.fr-menu__item:disabled {
+.fr-menu__item:disabled,
+.fr-menu__item[aria-disabled='true'] {
   color: var(--fr-ink-3);
   cursor: not-allowed;
 }
@@ -36,7 +37,7 @@
   color: var(--fr-danger);
 }
 
-.fr-menu__item--danger:hover:not(:disabled),
+.fr-menu__item--danger:hover:not(:disabled):not([aria-disabled='true']),
 .fr-menu__item--danger:focus {
   background: var(--fr-danger-soft);
 }

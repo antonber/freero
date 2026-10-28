@@ -7,6 +7,7 @@ import { useCore, ScopeContext } from '../context';
 import { Grid } from './Grid';
 import { WorldElements, useWorldTransform } from './WorldLayer';
 import { zoomAt } from '../camera/camera';
+import { dispatchToolPointer, type ToolPointerHandler } from '../interaction/toolDispatch';
 import { useSettings } from '../hooks';
 import type { Registered } from '../runtime/registry';
 import type { ToolDefinition } from '../api';
@@ -115,6 +116,9 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
       return ev;
     };
 
+    const dispatch = (tool: Registered<ToolDefinition>, kind: ToolPointerHandler, e: PointerEvent, screen: Point, world: Point) =>
+      dispatchToolPointer(core, tool, kind, toolEvent(e, screen, world, tool.feature));
+
     const endGesture = () => {
       gesture = null;
       core.interaction.cancel = null;
@@ -191,7 +195,7 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
         // synthetic events in tests
       }
       e.preventDefault();
-      tool.def.onPointerDown?.(toolEvent(e, screen, world, tool.feature));
+      dispatch(tool, 'onPointerDown', e, screen, world);
     };
 
     const onPointerMove = (e: PointerEvent) => {
@@ -223,12 +227,12 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
       }
       if (gesture) {
         if (e.pointerId !== gesture.pointerId) return;
-        gesture.tool.def.onPointerMove?.(toolEvent(e, screen, world, gesture.tool.feature));
+        dispatch(gesture.tool, 'onPointerMove', e, screen, world);
         return;
       }
       if (e.buttons !== 0 || ui.getState().spaceHeld) return;
       const tool = core.registry.toolsById.get(ui.getState().toolId);
-      tool?.def.onPointerMove?.(toolEvent(e, screen, world, tool.feature));
+      if (tool) dispatch(tool, 'onPointerMove', e, screen, world);
     };
 
     const onPointerUp = (e: PointerEvent) => {
@@ -247,7 +251,7 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
       if (!gesture || e.pointerId !== gesture.pointerId) return;
       const g = gesture;
       const screen = screenOf(e);
-      if (!g.cancelled) g.tool.def.onPointerUp?.(toolEvent(e, screen, editor.screenToWorld(screen), g.tool.feature));
+      if (!g.cancelled) dispatch(g.tool, 'onPointerUp', e, screen, editor.screenToWorld(screen));
       endGesture();
     };
 

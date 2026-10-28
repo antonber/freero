@@ -1,19 +1,24 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { Request, RequestHandler, Response } from 'express';
-import { SESSION_COOKIE, type User } from '@freero/shared';
+import { ACCOUNT_PENDING_DELETION, SESSION_COOKIE, type Account, type User } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { badRequest, HttpError, parseCookies, unauthorized } from '../../platform/http';
-import { setRequestUser } from '../../platform/requestContext';
 import { newId } from '../../platform/ids';
+import { logError } from '../../platform/log';
+import { clientIp } from '../../platform/rateLimit';
+import { setRequestUser } from '../../platform/requestContext';
 import { randomCursorColor } from './colors';
 import { dummyHash, hashPassword, verifyPassword } from './password';
 import * as repo from './repo';
 
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/** last_seen_at is written at most this often per session (per instance). */
+const LAST_SEEN_RESOLUTION_MS = 60_000;
+export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
-const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
+export const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
+export const newToken = () => randomBytes(32).toString('base64url');
 
 const emailTaken = () => new HttpError(409, 'An account with that email already exists');
 
@@ -21,17 +26,33 @@ export function publicUser(u: User): User {
   return { id: u.id, name: u.name, email: u.email, color: u.color, avatarUrl: u.avatarUrl, createdAt: u.createdAt };
 }
 
+export function toAccount(u: Account): Account {
+  return { ...publicUser(u), emailVerified: u.emailVerified, deletionScheduledFor: u.deletionScheduledFor };
+}
+
 export function normalizeEmail(email: unknown): string {
   return typeof email === 'string' ? email.trim().toLowerCase() : '';
 }
 
-export async function createUser(input: { name: unknown; email: unknown; password: unknown }): Promise<User> {
+export function validEmail(email: string): boolean {
+  return EMAIL_RE.test(email) && email.length <= 254;
+}
+
+export function validatePassword(password: unknown): string {
+  const p = typeof password === 'string' ? password : '';
+  if (p.length < 8) throw badRequest('Password must be at least 8 characters');
+  if (p.length > 512) throw badRequest('Password is too long');
+  return p;
+}
+
+export async function createUser(
+  input: { name: unknown; email: unknown; password: unknown },
+  opts: { emailVerified?: boolean } = {},
+): Promise<Account> {
   const email = normalizeEmail(input.email);
   const name = typeof input.name === 'string' ? input.name.trim() : '';
-  const password = typeof input.password === 'string' ? input.password : '';
-  if (!EMAIL_RE.test(email) || email.length > 254) throw badRequest('Please enter a valid email address');
-  if (password.length < 8) throw badRequest('Password must be at least 8 characters');
-  if (password.length > 512) throw badRequest('Password is too long');
+  if (!validEmail(email)) throw badRequest('Please enter a valid email address');
+  const password = validatePassword(input.password);
   if (!name) throw badRequest('Please enter your name');
   if (name.length > 80) throw badRequest('Name is too long (max 80 characters)');
   if (await repo.findUserByEmail(email)) throw emailTaken(); // fast path; the unique index decides races
@@ -42,6 +63,8 @@ export async function createUser(input: { name: unknown; email: unknown; passwor
     color: randomCursorColor(),
     avatarUrl: null,
     createdAt: Date.now(),
+    emailVerified: opts.emailVerified ?? false,
+    deletionScheduledFor: null,
     passwordHash: await hashPassword(password),
   };
   try {
@@ -51,19 +74,28 @@ export async function createUser(input: { name: unknown; email: unknown; passwor
     if (e instanceof repo.EmailTakenError) throw emailTaken();
     throw e;
   }
-  return publicUser(user);
+  return toAccount(user);
 }
 
-export async function checkCredentials(emailIn: unknown, passwordIn: unknown): Promise<User> {
+export async function checkCredentials(emailIn: unknown, passwordIn: unknown): Promise<Account> {
   const email = normalizeEmail(emailIn);
   const password = typeof passwordIn === 'string' ? passwordIn : '';
   const user = email ? await repo.findUserByEmail(email) : null;
   const ok = await verifyPassword(password, user?.passwordHash ?? (await dummyHash()));
   if (!user || !ok) throw unauthorized('Incorrect email or password');
-  return publicUser(user);
+  return toAccount(user);
 }
 
-export async function updateProfile(userId: string, body: Record<string, unknown>): Promise<User> {
+/** Re-checks the signed-in user's password before a sensitive change (403, not 401: they stay signed in). */
+export async function confirmPassword(userId: string, password: unknown): Promise<repo.UserWithHash> {
+  const user = await repo.findUserById(userId);
+  if (!user) throw unauthorized();
+  if (!(await verifyPassword(typeof password === 'string' ? password : '', user.passwordHash)))
+    throw new HttpError(403, 'That password is not correct');
+  return user;
+}
+
+export async function updateProfile(userId: string, body: Record<string, unknown>): Promise<Account> {
   const patch: { name?: string; color?: string; avatarUrl?: string | null } = {};
   if (body.name !== undefined) {
     const name = typeof body.name === 'string' ? body.name.trim() : '';
@@ -81,17 +113,85 @@ export async function updateProfile(userId: string, body: Record<string, unknown
     patch.avatarUrl = v as string | null;
   }
   await repo.updateUserProfile(userId, patch);
+  return getAccount(userId);
+}
+
+export async function getAccount(userId: string): Promise<Account> {
   const u = await repo.findUserById(userId);
   if (!u) throw unauthorized();
-  return publicUser(u);
+  return toAccount(u);
+}
+
+// ---- Email verification events ----
+
+const verifiedListeners = new Set<(user: { id: string; email: string }) => Promise<void> | void>();
+
+/**
+ * Called after a user proves they read mail sent to `email` (verification link, password reset,
+ * email change, an invite link sent to that address). Members converts pending invites here.
+ */
+export function onEmailVerified(fn: (user: { id: string; email: string }) => Promise<void> | void): () => void {
+  verifiedListeners.add(fn);
+  return () => verifiedListeners.delete(fn);
+}
+
+/** Marks `email` verified for the user if it is still their address; runs the listeners. */
+export async function markEmailVerified(userId: string, email: string): Promise<boolean> {
+  if (!(await repo.markEmailVerified(userId, email, Date.now()))) return false;
+  await emailVerified(userId, email);
+  return true;
+}
+
+export async function emailVerified(userId: string, email: string): Promise<void> {
+  for (const fn of verifiedListeners) {
+    try {
+      await fn({ id: userId, email });
+    } catch (e) {
+      logError('auth: an email-verified listener failed', e);
+    }
+  }
 }
 
 // ---- Sessions (the cookie has one writer: this module) ----
 
+const sessionEndListeners = new Set<(sessionKey: string) => void>();
+
+/**
+ * Called on the instance that ended a session — logout, signed out from another device, password
+ * reset or change, account deletion — with its opaque key (see sessionKeyFromCookieHeader).
+ * Realtime listens here and closes that session's board sockets on every instance (its
+ * 'end-session' control message): the one way to drop a session's live connections.
+ */
+export function onSessionEnd(fn: (sessionKey: string) => void): () => void {
+  sessionEndListeners.add(fn);
+  return () => sessionEndListeners.delete(fn);
+}
+
+export function sessionsEnded(keys: string[]): void {
+  for (const key of keys) {
+    lastSeen.delete(key);
+    for (const fn of sessionEndListeners) {
+      try {
+        fn(key);
+      } catch (e) {
+        logError('auth: a session-end listener failed', e);
+      }
+    }
+  }
+}
+
 export async function startSession(req: Request, res: Response, userId: string): Promise<void> {
-  const token = randomBytes(32).toString('base64url');
+  const token = newToken();
   const now = Date.now();
-  await repo.insertSession(hashToken(token), userId, now, now + SESSION_TTL_MS);
+  await repo.insertSession({
+    id: newId(20),
+    tokenHash: hashToken(token),
+    userId,
+    now,
+    expiresAt: now + SESSION_TTL_MS,
+    userAgent: (req.get('user-agent') ?? '').slice(0, 400),
+    ip: clientIp(req).slice(0, 64),
+  });
   res.cookie(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
@@ -101,26 +201,24 @@ export async function startSession(req: Request, res: Response, userId: string):
   });
 }
 
-const sessionEndListeners = new Set<(sessionKey: string) => void>();
-
-/**
- * Called with the opaque session key (see sessionKeyFromCookieHeader) whenever a session ends,
- * so long-lived connections opened with it (board sockets) are closed too: logging out must not
- * leave another tab editing with the dead session.
- */
-export function onSessionEnd(fn: (sessionKey: string) => void): () => void {
-  sessionEndListeners.add(fn);
-  return () => sessionEndListeners.delete(fn);
+export function clearSessionCookie(res: Response): void {
+  res.clearCookie(SESSION_COOKIE, { httpOnly: true, sameSite: 'lax', path: '/' });
 }
 
 export async function endSession(req: Request, res: Response): Promise<void> {
-  const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
-  if (token) {
-    const key = hashToken(token);
+  const key = sessionKeyFromCookieHeader(req.headers.cookie);
+  if (key) {
     await repo.deleteSession(key);
-    for (const fn of sessionEndListeners) fn(key);
+    sessionsEnded([key]);
   }
-  res.clearCookie(SESSION_COOKIE, { httpOnly: true, sameSite: 'lax', path: '/' });
+  clearSessionCookie(res);
+}
+
+/** Ends every session of the user except `keepKey`; returns how many ended. */
+export async function endSessionsOf(userId: string, keepKey: string | null = null): Promise<number> {
+  const keys = await repo.deleteSessionsOf(userId, keepKey);
+  sessionsEnded(keys);
+  return keys.length;
 }
 
 /** Opaque, stable key of the session a request/upgrade carries (never the raw token), or null. */
@@ -129,33 +227,75 @@ export function sessionKeyFromCookieHeader(cookieHeader: string | undefined): st
   return token ? hashToken(token) : null;
 }
 
-export async function userFromCookieHeader(cookieHeader: string | undefined): Promise<User | null> {
+const lastSeen = new Map<string, number>();
+
+/** The session's account (even while deletion is scheduled), or null. Records "last seen". */
+export async function sessionFromCookieHeader(
+  cookieHeader: string | undefined,
+): Promise<{ user: Account; key: string; sessionId: string } | null> {
   const key = sessionKeyFromCookieHeader(cookieHeader);
   if (!key) return null;
-  const u = await repo.findSessionUser(key, Date.now());
-  return u ? publicUser(u) : null;
+  const now = Date.now();
+  const found = await repo.findSessionUser(key, now);
+  if (!found) return null;
+  if (now - (lastSeen.get(key) ?? 0) > LAST_SEEN_RESOLUTION_MS) {
+    if (lastSeen.size > 50_000) lastSeen.clear();
+    lastSeen.set(key, now);
+    repo.touchSession(key, now).catch((e) => logError('auth: could not record session activity', e));
+  }
+  return { user: toAccount(found.user), key, sessionId: found.sessionId };
 }
 
-const requestUsers = new WeakMap<Request, User>();
+/** The signed-in user of a cookie, or null — also null while the account awaits deletion. */
+export async function userFromCookieHeader(cookieHeader: string | undefined): Promise<User | null> {
+  const s = await sessionFromCookieHeader(cookieHeader);
+  return s && s.user.deletionScheduledFor === null ? publicUser(s.user) : null;
+}
 
-/** Express middleware: 401 unless the request carries a valid session cookie. */
-export const requireUser: RequestHandler = (req, res, next) => {
-  userFromCookieHeader(req.headers.cookie).then((user) => {
-    if (!user) {
-      res.status(401).json({ error: 'Not logged in' });
-      return;
-    }
-    requestUsers.set(req, user);
-    setRequestUser(req, user.id); // request logs + per-user rate limits
-    next();
-  }, next);
-};
+const requestSessions = new WeakMap<Request, { user: Account; key: string; sessionId: string }>();
 
-/** The user authenticated by requireUser. */
-export function currentUser(req: Request): User {
-  const u = requestUsers.get(req);
-  if (!u) throw unauthorized();
-  return u;
+function sessionMiddleware(allowPendingDeletion: boolean): RequestHandler {
+  return (req, res, next) => {
+    sessionFromCookieHeader(req.headers.cookie).then((s) => {
+      if (!s) {
+        res.status(401).json({ error: 'Not logged in' });
+        return;
+      }
+      if (!allowPendingDeletion && s.user.deletionScheduledFor !== null) {
+        res.status(403).json({ error: 'Your account is scheduled for deletion. Restore it to keep using Freero.', code: ACCOUNT_PENDING_DELETION });
+        return;
+      }
+      requestSessions.set(req, s);
+      setRequestUser(req, s.user.id); // request logs + per-user rate limits
+      next();
+    }, next);
+  };
+}
+
+/** Express middleware: 401 unless the request carries a valid session (403 while deletion is scheduled). */
+export const requireUser: RequestHandler = sessionMiddleware(false);
+
+/** Like requireUser, but also lets an account in its deletion grace period through (restore, sessions). */
+export const requireSession: RequestHandler = sessionMiddleware(true);
+
+/** The user authenticated by requireUser / requireSession. */
+export function currentUser(req: Request): Account {
+  const s = requestSessions.get(req);
+  if (!s) throw unauthorized();
+  return s.user;
+}
+
+/** The session key of the request authenticated by requireUser / requireSession. */
+export function currentSessionKey(req: Request): string {
+  const s = requestSessions.get(req);
+  if (!s) throw unauthorized();
+  return s.key;
+}
+
+export function currentSessionId(req: Request): string {
+  const s = requestSessions.get(req);
+  if (!s) throw unauthorized();
+  return s.sessionId;
 }
 
 export async function getUser(id: string): Promise<User | null> {

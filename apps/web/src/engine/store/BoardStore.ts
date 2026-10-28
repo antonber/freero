@@ -71,6 +71,7 @@ export class BoardStore {
   private gestureBase = 0;
   private baseCaptureTimeout: number;
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
+  private connectTimer: ReturnType<typeof setTimeout> | null = null;
   private destroyed = false;
 
   constructor(private opts: BoardStoreOptions) {
@@ -105,8 +106,15 @@ export class BoardStore {
 
     if (opts.syncUrl) {
       this.status = 'connecting';
-      const provider = new WebsocketProvider(opts.syncUrl, opts.boardId, this.doc, { connect: true });
+      // Connect on the next task, not in the constructor: a store created and destroyed in the
+      // same tick (React StrictMode's dev double mount) then never opens a socket, instead of
+      // closing one mid-handshake (a console warning on every board load in dev).
+      const provider = new WebsocketProvider(opts.syncUrl, opts.boardId, this.doc, { connect: false });
       (this as { provider: WebsocketProvider | null }).provider = provider;
+      this.connectTimer = setTimeout(() => {
+        this.connectTimer = null;
+        if (!this.destroyed) provider.connect();
+      }, 0);
       this.awareness = provider.awareness;
       provider.messageHandlers[WS_MESSAGE_ROLE] = (_encoder, decoder) => {
         try {
@@ -233,6 +241,29 @@ export class BoardStore {
   /** Writes that never become an undo step (still synced). Not for user actions. */
   transactSilently(fn: () => void): void {
     this.doc.transact(fn, SILENT_ORIGIN);
+  }
+
+  /**
+   * Local writes that follow from earlier local ones without being a user action (text
+   * re-measured once web fonts load). Never a step of their own, but never untracked either:
+   * Yjs never undoes a map key over a newer untracked value, so a silent write to an element in
+   * the undo history would make every undo / redo of that element do nothing. They join the
+   * last undo step (undoing it reverts both); with no history they're silent. Returns false and
+   * writes nothing while redo steps exist (a tracked write would discard them): call again
+   * after the next local change.
+   */
+  transactDerived(fn: () => void): boolean {
+    const um = this.undoManager;
+    if (um.redoStack.length) return false;
+    if (!um.undoStack.length) {
+      this.transactSilently(fn);
+      return true;
+    }
+    // Make the UndoManager append to its last stack item (it does while "capturing").
+    um.lastChange = Date.now();
+    this.doc.transact(fn, LOCAL_ORIGIN);
+    if (this.gestureDepth === 0) um.stopCapturing();
+    return true;
   }
 
   // Writes drop the ordered caches right away (not only when the transaction ends), so reads
@@ -372,6 +403,11 @@ export class BoardStore {
     return this.gestureDepth > 0;
   }
 
+  /** True while exactly one gesture level is open: its endGesture() closes the undo step. */
+  isOutermostGesture(): boolean {
+    return this.gestureDepth === 1;
+  }
+
   private endAllGestures() {
     if (this.gestureDepth > 0) {
       this.gestureDepth = 1;
@@ -416,6 +452,7 @@ export class BoardStore {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    if (this.connectTimer) clearTimeout(this.connectTimer);
     if (this.persistTimer) {
       clearTimeout(this.persistTimer);
       this.persistTimer = null;

@@ -5,11 +5,14 @@ import { eventKey, isPrintableKey, matchShortcut, parseShortcut } from '../runti
 import { NATIVE_CLIPBOARD_COMMANDS } from '../editor/engineCommands';
 import { translateElement } from '../editor/clipboard';
 import { richTextToPlain } from '../text/sanitize';
-import { rectContainsRect, rectCenter } from '../geometry/geometry';
+import { elementAABB, rectContainsRect, rectCenter, rectUnion } from '../geometry/geometry';
+import { gridNudge } from '../geometry/snap';
 import { readingOrder } from '../geometry/order';
 
 /** A pause this long (ms) after the last arrow-key nudge ends the burst (one undo step). */
 const NUDGE_IDLE_MS = 1000;
+/** Grid lines a Shift+arrow nudge moves while snap to grid is on. */
+const GRID_NUDGE_SHIFT_STEPS = 5;
 const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'Meta']);
 
 /** Undo/redo shortcuts: they also work from non-modal popovers (see onKeyDown). */
@@ -161,18 +164,28 @@ export function installKeyboard(core: EngineCore): () => void {
     if (!sel.length) return false;
     e.preventDefault();
     if (!editor.guardWrite()) return true;
-    const step = e.shiftKey ? 10 : 1;
     const els = editor
       .withChildren(sel)
       .map((id) => editor.getElement(id))
       .filter((el): el is BoardElement => !!el && !el.locked);
     if (!els.length) return true;
+    // Snap to grid on: one grid line per press (Shift: GRID_NUDGE_SHIFT_STEPS), ending on the grid
+    // like a snapped drag. Off: 1 px (Shift: 10 px).
+    const settings = core.store.getSettings();
+    let dx = dir[0] * (e.shiftKey ? 10 : 1);
+    let dy = dir[1] * (e.shiftKey ? 10 : 1);
+    if (settings.snapToGrid) {
+      const b = rectUnion(els.map(elementAABB))!;
+      const steps = e.shiftKey ? GRID_NUDGE_SHIFT_STEPS : 1;
+      dx = dir[0] ? gridNudge(b.x, dir[0] as -1 | 1, settings.gridSize, steps) : 0;
+      dy = dir[1] ? gridNudge(b.y, dir[1] as -1 | 1, settings.gridSize, steps) : 0;
+    }
     if (nudgeTimer) clearTimeout(nudgeTimer);
     else editor.beginGesture();
     nudgeTimer = setTimeout(endNudgeBurst, NUDGE_IDLE_MS);
     editor.updateMany(
       els.map((el) => {
-        const t = translateElement(el, dir[0] * step, dir[1] * step);
+        const t = translateElement(el, dx, dy);
         const { id: _id, type: _type, ...patch } = t;
         return { id: el.id, patch };
       }),

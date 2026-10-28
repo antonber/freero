@@ -1,11 +1,12 @@
 import { Router } from 'express';
-import type { BoardMember, Role, User } from '@freero/shared';
+import type { AcceptInviteResponse, BoardMember, InviteResponse, Role, User } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { badRequest, forbidden, handle, HttpError, notFound } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
-import { currentUser, findUserByEmail, getUser, getUsers, requireUser } from '../auth/index';
+import { currentUser, findUserByEmail, getUser, getUsers, normalizeEmail, requireUser } from '../auth/index';
 import { requireBoardAccess } from '../boards/index';
 import { refreshBoardAccess } from '../realtime/index';
+import { acceptInvite, inviteByEmail, listPending, previewInvite, resendInvite } from './invites';
 import * as repo from './repo';
 import { atLeast, isMemberRole } from './roles';
 
@@ -23,6 +24,7 @@ const toMember = (u: User, role: Role, withEmail: boolean): BoardMember => ({
 });
 
 const boardGone = () => notFound('Board not found');
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function memberRoutes(_ctx: ServerContext): Router {
   const r = Router();
@@ -53,12 +55,23 @@ export default function memberRoutes(_ctx: ServerContext): Router {
     rateLimit('invite', 'user'),
     handle(async (req, res) => {
       const boardId = req.params.id;
-      const { ownerId, role: myRole } = await requireBoardAccess(boardId, currentUser(req).id, 'editor');
-      const { email, role } = (req.body ?? {}) as { email?: unknown; role?: unknown };
-      if (typeof email !== 'string' || !email.trim()) throw badRequest('email is required');
+      const me = currentUser(req);
+      const { ownerId, role: myRole, title } = await requireBoardAccess(boardId, me.id, 'editor');
+      const { email: rawEmail, role } = (req.body ?? {}) as { email?: unknown; role?: unknown };
+      const email = normalizeEmail(rawEmail);
+      if (!email) throw badRequest('email is required');
+      if (!EMAIL_RE.test(email) || email.length > 254) throw badRequest('Enter a valid email address');
       if (!isMemberRole(role)) throw badRequest('role must be editor, commenter or viewer');
+      // Otherwise anyone could sign up with a made-up address and mail invites in its name.
+      if (!me.emailVerified) throw forbidden('Verify your email address before inviting people');
       const invitee = await findUserByEmail(email);
-      if (!invitee) throw notFound('No Freero account with that email');
+      if (!invitee) {
+        const out = await inviteByEmail(req, { boardId, boardTitle: title, email, role, inviter: me, mayChangeRole: myRole === 'owner' });
+        if (out === 'board-gone') throw boardGone();
+        if (out === 'role-conflict') throw new HttpError(409, `${email} is already invited. Only the board owner can change their role.`);
+        res.status(201).json({ invite: out } satisfies InviteResponse);
+        return;
+      }
       if (invitee.id === ownerId) throw new HttpError(409, 'That person already owns this board');
       if (myRole === 'owner') {
         if (!(await repo.upsertMember(boardId, invitee.id, role, Date.now()))) throw boardGone();
@@ -72,7 +85,57 @@ export default function memberRoutes(_ctx: ServerContext): Router {
           throw new HttpError(409, `${invitee.name} already has access. Only the board owner can change their role.`);
       }
       await refreshBoardAccess(boardId);
-      res.status(201).json({ member: toMember(invitee, role, true) });
+      res.status(201).json({ member: toMember(invitee, role, true) } satisfies InviteResponse);
+    }),
+  );
+
+  // ---- pending invites ----
+  r.use('/boards/:id/invites', requireUser);
+
+  r.get(
+    '/boards/:id/invites',
+    handle(async (req, res) => {
+      await requireBoardAccess(req.params.id, currentUser(req).id, 'editor');
+      res.json({ invites: await listPending(req.params.id) });
+    }),
+  );
+
+  r.post(
+    '/boards/:id/invites/:inviteId/resend',
+    rateLimit('invite', 'user'),
+    handle(async (req, res) => {
+      const me = currentUser(req);
+      const { title } = await requireBoardAccess(req.params.id, me.id, 'editor');
+      if (!me.emailVerified) throw forbidden('Verify your email address before inviting people');
+      res.json({ invite: await resendInvite(req, req.params.id, title, req.params.inviteId, me) });
+    }),
+  );
+
+  r.delete(
+    '/boards/:id/invites/:inviteId',
+    handle(async (req, res) => {
+      const me = currentUser(req);
+      const { role } = await requireBoardAccess(req.params.id, me.id, 'editor');
+      // The owner revokes any invite; an editor only the ones they sent.
+      if (!(await repo.deleteInvite(req.params.id, req.params.inviteId, role === 'owner' ? null : me.id)))
+        throw notFound('No such pending invite (or it was sent by someone else)');
+      res.json({ ok: true });
+    }),
+  );
+
+  // The emailed link. Previewing needs no account (the page offers sign-up); accepting does.
+  r.get(
+    '/invites/:token',
+    handle(async (req, res) => {
+      res.json({ invite: await previewInvite(req.params.token) });
+    }),
+  );
+
+  r.post(
+    '/invites/:token/accept',
+    requireUser,
+    handle(async (req, res) => {
+      res.json((await acceptInvite(req.params.token, currentUser(req))) satisfies AcceptInviteResponse);
     }),
   );
 

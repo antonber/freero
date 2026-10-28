@@ -3,7 +3,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { User } from '@freero/shared';
+import type { Account } from '@freero/shared';
 import { api, ApiError } from '../api/client';
 import { AuthProvider } from './AuthContext';
 import { RequireAuth } from './RequireAuth';
@@ -11,12 +11,12 @@ import { AuthPage } from '../pages/auth/AuthPage';
 
 vi.mock('../api/client', async (importOriginal) => {
   const real = await importOriginal<typeof import('../api/client')>();
-  return { ...real, api: { session: vi.fn(), login: vi.fn(), signup: vi.fn(), logout: vi.fn() } };
+  return { ...real, api: { session: vi.fn(), login: vi.fn(), signup: vi.fn(), logout: vi.fn(), restoreAccount: vi.fn() } };
 });
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const ada: User = { id: 'u1', name: 'Ada', email: 'ada@example.com', color: '#5F3DC4', avatarUrl: null, createdAt: 0 };
+const ada: Account = { id: 'u1', name: 'Ada', email: 'ada@example.com', color: '#5F3DC4', avatarUrl: null, createdAt: 0, emailVerified: true, deletionScheduledFor: null };
 let root: Root;
 let host: HTMLDivElement;
 
@@ -91,8 +91,21 @@ describe('auth guard', () => {
     expect(host.querySelector('[data-testid="board"]')).not.toBeNull();
   });
 
+  it('shows an account awaiting deletion the restore page, never the board, until it is restored', async () => {
+    vi.mocked(api.session).mockResolvedValue({ user: { ...ada, deletionScheduledFor: Date.now() + 86_400_000 } });
+    vi.mocked(api.restoreAccount).mockResolvedValue({ user: ada });
+    render('/board/b1');
+    await flush();
+    expect(host.querySelector('[data-testid="board"]')).toBeNull();
+    const restore = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Restore my account')!;
+    await act(async () => restore.click());
+    await flush();
+    expect(host.querySelector('[data-testid="board"]')).not.toBeNull();
+    expect(loc()).toBe('/board/b1');
+  });
+
   it('does not bounce a signed-in user to /login while the session check is still in flight', async () => {
-    let resolve!: (v: { user: User }) => void;
+    let resolve!: (v: { user: Account }) => void;
     vi.mocked(api.session).mockReturnValue(new Promise((r) => (resolve = r)));
     render('/board/b1');
     await flush();

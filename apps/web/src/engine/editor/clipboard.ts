@@ -65,7 +65,7 @@ export function parseClipboardHtml(html: string | null | undefined): ClipboardPa
  * Gives every element a fresh id and rewrites references between them (frameId, groupId,
  * connector endpoints, mind-map parents…): any string field anywhere in the element that equals
  * an old id is replaced. Group ids get fresh ids too. References to elements outside the set
- * are cleared for frameId and kept elsewhere (e.g. a connector to an element still on the board).
+ * are cleared for frameId / attachedTo and kept elsewhere (e.g. a connector to an element still on the board).
  */
 export function remapElements(
   elements: BoardElement[],
@@ -91,6 +91,7 @@ export function remapElements(
     const copy = rewrite(el) as BoardElement;
     copy.id = idMap.get(el.id)!;
     if (el.frameId && !idMap.has(el.frameId)) copy.frameId = null;
+    if (el.attachedTo && !idMap.has(el.attachedTo)) copy.attachedTo = null;
     if (el.groupId) copy.groupId = groupMap.get(el.groupId)!;
     return copy;
   });

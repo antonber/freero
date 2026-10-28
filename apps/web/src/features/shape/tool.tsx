@@ -1,8 +1,8 @@
 import { useSyncExternalStore } from 'react';
-import { Shapes } from 'lucide-react';
+import { LibraryBig, Shapes } from 'lucide-react';
 import type { ShapeKind } from '@freero/shared';
 import { defineTool, usePointer, useToolOptions, type Editor, type Point } from '@engine';
-import { CLICK_SLOP_PX, DEFAULT_SIZE, SHAPE_KINDS, TOOL_ID, type ShapeToolOptions } from './lib/constants';
+import { CLICK_SLOP_PX, DEFAULT_SIZE, LIBRARY_PANEL_ID, SHAPE_KINDS, TOOL_ID, type ShapeToolOptions } from './lib/constants';
 import { currentKind, shapeInRect } from './lib/actions';
 import { dragRect, insetPaths } from './lib/geometry';
 import { ShapeIcon } from './lib/ShapeIcon';
@@ -85,6 +85,7 @@ export default defineTool({
   Options: ({ editor }) => {
     const { kind = 'rect' } = useToolOptions<ShapeToolOptions>(TOOL_ID);
     return (
+      <div className="fr-shape-options">
       <div className="fr-shape-picker" role="radiogroup" aria-label="Shape">
         {SHAPE_KINDS.map((s) => (
           <button
@@ -100,6 +101,11 @@ export default defineTool({
             <ShapeIcon kind={s.kind} size={22} />
           </button>
         ))}
+      </div>
+      <button type="button" className="fr-shape-options__more" onClick={() => editor.openDock(LIBRARY_PANEL_ID)}>
+        <LibraryBig size={16} aria-hidden />
+        More shapes
+      </button>
       </div>
     );
   },

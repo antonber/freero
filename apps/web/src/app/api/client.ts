@@ -1,15 +1,21 @@
 import type {
+  AcceptInviteResponse,
   AuthResponse,
   BoardMember,
   BoardSummary,
   BoardVersion,
   CreateBoardRequest,
+  ImportImageRequest,
+  InvitePreview,
   InviteRequest,
+  InviteResponse,
   LoginRequest,
+  PendingInvite,
   Role,
   SavedTemplate,
   SavedTemplateSummary,
   SaveTemplateRequest,
+  SessionInfo,
   SessionResponse,
   SignupRequest,
   UnfurlResponse,
@@ -18,9 +24,27 @@ import type {
 } from '@freero/shared';
 
 export class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(
+    public status: number,
+    message: string,
+    /** Machine-readable reason, when the server sends one (e.g. ACCOUNT_PENDING_DELETION). */
+    public code?: string,
+  ) {
     super(message);
   }
+}
+
+async function failure(res: Response): Promise<ApiError> {
+  let message = res.statusText;
+  let code: string | undefined;
+  try {
+    const body = await res.json();
+    message = body.error ?? message;
+    code = typeof body.code === 'string' ? body.code : undefined;
+  } catch {
+    // non-JSON error body
+  }
+  return new ApiError(res.status, message, code);
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -30,15 +54,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  if (!res.ok) {
-    let message = res.statusText;
-    try {
-      message = (await res.json()).error ?? message;
-    } catch {
-      // non-JSON error body
-    }
-    throw new ApiError(res.status, message);
-  }
+  if (!res.ok) throw await failure(res);
   return res.json() as Promise<T>;
 }
 
@@ -54,6 +70,47 @@ export const api = {
   logout: () => request<{ ok: true }>('POST', '/api/auth/logout'),
   updateMe: (body: Partial<Pick<User, 'name' | 'color' | 'avatarUrl'>>) =>
     request<AuthResponse>('PATCH', '/api/auth/me', body),
+  async uploadAvatar(file: Blob): Promise<AuthResponse> {
+    const res = await fetch('/api/auth/me/avatar', {
+      method: 'PUT',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      body: file,
+    });
+    if (!res.ok) throw await failure(res);
+    return res.json();
+  },
+  removeAvatar: () => request<AuthResponse>('DELETE', '/api/auth/me/avatar'),
+
+  // email + password
+  resendVerification: () => request<{ ok: true }>('POST', '/api/auth/verify-email/send'),
+  verifyEmail: (token: string) => request<{ ok: true }>('POST', '/api/auth/verify-email', { token }),
+  forgotPassword: (email: string) => request<{ ok: true }>('POST', '/api/auth/password/forgot', { email }),
+  resetPassword: (token: string, password: string) =>
+    request<AuthResponse>('POST', '/api/auth/password/reset', { token, password }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<{ ok: true }>('POST', '/api/auth/password', { currentPassword, newPassword }),
+  changeEmail: (email: string, password: string) => request<{ ok: true }>('POST', '/api/auth/email', { email, password }),
+  confirmEmailChange: (token: string) => request<{ ok: true }>('POST', '/api/auth/email/confirm', { token }),
+
+  // sessions
+  listSessions: () => request<{ sessions: SessionInfo[] }>('GET', '/api/auth/sessions'),
+  revokeSession: (id: string) => request<{ ok: true }>('DELETE', `/api/auth/sessions/${encodeURIComponent(id)}`),
+  revokeOtherSessions: () => request<{ revoked: number }>('POST', '/api/auth/sessions/revoke-others'),
+
+  // account deletion
+  deleteAccount: (password: string) =>
+    request<{ deletionScheduledFor: number }>('POST', '/api/auth/account/delete', { password }),
+  restoreAccount: () => request<AuthResponse>('POST', '/api/auth/account/restore'),
+
+  // invites (people without an account yet)
+  listInvites: (boardId: string) => request<{ invites: PendingInvite[] }>('GET', `/api/boards/${boardId}/invites`),
+  resendInvite: (boardId: string, inviteId: string) =>
+    request<{ invite: PendingInvite }>('POST', `/api/boards/${boardId}/invites/${inviteId}/resend`),
+  revokeInvite: (boardId: string, inviteId: string) =>
+    request<{ ok: true }>('DELETE', `/api/boards/${boardId}/invites/${inviteId}`),
+  previewInvite: (token: string) => request<{ invite: InvitePreview }>('GET', `/api/invites/${encodeURIComponent(token)}`),
+  acceptInvite: (token: string) => request<AcceptInviteResponse>('POST', `/api/invites/${encodeURIComponent(token)}/accept`),
 
   // boards
   listBoards: (filter: BoardFilter = 'all', q = '') =>
@@ -80,8 +137,7 @@ export const api = {
   // members
   listMembers: (id: string) =>
     request<{ members: BoardMember[] }>('GET', `/api/boards/${id}/members`),
-  invite: (id: string, body: InviteRequest) =>
-    request<{ member: BoardMember }>('POST', `/api/boards/${id}/members`, body),
+  invite: (id: string, body: InviteRequest) => request<InviteResponse>('POST', `/api/boards/${id}/members`, body),
   setMemberRole: (id: string, userId: string, role: Exclude<Role, 'owner'>) =>
     request<{ member: BoardMember }>('PATCH', `/api/boards/${id}/members/${userId}`, { role }),
   removeMember: (id: string, userId: string) =>
@@ -118,7 +174,15 @@ export const api = {
   // link previews
   unfurl:(url: string) => request<UnfurlResponse>('GET', `/api/unfurl?url=${encodeURIComponent(url)}`),
 
-  // uploads
+  // images placed by URL (fetched by the server: works for hosts without CORS)
+  importImage: (url: string) => request<{ url: string }>('POST', '/api/unfurl/image', { url } satisfies ImportImageRequest),
+  async fetchImage(url: string): Promise<Blob> {
+    const res = await fetch(`/api/unfurl/image?url=${encodeURIComponent(url)}`, { credentials: 'same-origin' });
+    if (!res.ok) throw new ApiError(res.status, 'Image could not be fetched');
+    return res.blob();
+  },
+
+  // uploads (images and PDF documents; the server checks type, size and quota)
   async uploadImage(file: Blob): Promise<{ url: string }> {
     const res = await fetch('/api/uploads', {
       method: 'POST',
@@ -126,7 +190,11 @@ export const api = {
       headers: { 'Content-Type': file.type || 'application/octet-stream' },
       body: file,
     });
-    if (!res.ok) throw new ApiError(res.status, 'Upload failed');
+    if (!res.ok) {
+      // The server's message says why (too large, quota reached, wrong type).
+      const body = (await res.json().catch(() => null)) as { error?: string } | null;
+      throw new ApiError(res.status, body?.error || 'Upload failed');
+    }
     return res.json();
   },
 };

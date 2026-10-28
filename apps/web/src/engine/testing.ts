@@ -49,6 +49,7 @@ export function createTestBoard(opts: TestBoardOptions): TestBoard {
       board: { id: 'test-board', title: 'Test', role: opts.role ?? 'owner' },
       syncUrl: '',
       uploadImage: async () => ({ url: '' }),
+      uploadFile: async () => ({ url: '' }),
       renameBoard: async () => undefined,
       saveThumbnail: async () => undefined,
       openShareDialog: () => undefined,
@@ -84,6 +85,8 @@ export function createTestBoard(opts: TestBoardOptions): TestBoard {
         templates.splice(i, 1);
       },
       versions: unavailableVersionHistory('No version history in tests'),
+      importImage: async () => Promise.reject(new Error('No server in tests')),
+      fetchImage: async () => Promise.reject(new Error('No server in tests')),
     };
     const core = createCore(host, bundles);
     core.ui.setState({ viewport: { width: 1000, height: 800 }, camera: { x: 0, y: 0, zoom: 1 } });

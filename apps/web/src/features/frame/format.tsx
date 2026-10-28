@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react';
-import { ChevronDown, Maximize2, Shrink } from 'lucide-react';
+import { ChevronDown, LayoutGrid, Maximize2, Minus, Plus, Shrink } from 'lucide-react';
 import type { FrameElement } from '@freero/shared';
 import { defineFormat, type Editor } from '@engine';
-import { ColorSwatches, IconButton, Menu, Popover } from '@ui';
+import { ColorSwatches, IconButton, Menu, Popover, SegmentedControl, Toggle, Tooltip } from '@ui';
+import { DEFAULT_GRID, GRID_GAPS, MAX_COLS } from './lib/grid';
 import { DEFAULT_FILL, PRESETS, presetById } from './lib/frames';
 import { fitToContent, setPreset, zoomToFrame } from './lib/actions';
 
@@ -27,17 +28,18 @@ function FillControl({ editor, frames }: { editor: Editor; frames: FrameElement[
   const mixed = frames.some((f) => (f.fill || DEFAULT_FILL) !== current);
   return (
     <>
-      <button
-        ref={ref}
-        type="button"
-        className="fr-frame-fill-btn"
-        aria-label="Frame background"
-        aria-expanded={open}
-        title="Background"
-        onClick={() => setOpen((o) => !o)}
-      >
-        <span style={{ background: mixed ? 'conic-gradient(#fff 0 50%, #e4e3ee 0 100%)' : current }} />
-      </button>
+      <Tooltip content="Background" side="bottom">
+        <button
+          ref={ref}
+          type="button"
+          className="fr-frame-fill-btn"
+          aria-label="Frame background"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+        >
+          <span style={{ background: mixed ? 'conic-gradient(#fff 0 50%, #e4e3ee 0 100%)' : current }} />
+        </button>
+      </Tooltip>
       <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label="Frame background">
         <ColorSwatches
           colors={FILLS}
@@ -61,18 +63,19 @@ function PresetControl({ editor, frames }: { editor: Editor; frames: FrameElemen
   const mixed = frames.some((f) => (f.preset ?? 'custom') !== current);
   return (
     <>
-      <button
-        ref={ref}
-        type="button"
-        className="fr-frame-fmt-btn"
-        aria-label="Frame size"
-        aria-expanded={open}
-        title="Frame size"
-        onClick={() => setOpen((o) => !o)}
-      >
-        {mixed ? 'Mixed' : presetById(current).label}
-        <ChevronDown size={14} />
-      </button>
+      <Tooltip content="Frame size" side="bottom">
+        <button
+          ref={ref}
+          type="button"
+          className="fr-frame-fmt-btn"
+          aria-label="Frame size"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+        >
+          {mixed ? 'Mixed' : presetById(current).label}
+          <ChevronDown size={14} />
+        </button>
+      </Tooltip>
       <Menu
         open={open}
         onClose={() => setOpen(false)}
@@ -92,6 +95,47 @@ function PresetControl({ editor, frames }: { editor: Editor; frames: FrameElemen
           onSelect: () => setPreset(editor, frames, p.id),
         }))}
       />
+    </>
+  );
+}
+
+/** Grid auto-layout: on/off, column count and gap. Each change is one undo step with its re-layout. */
+function GridControl({ editor, frame }: { editor: Editor; frame: FrameElement }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLButtonElement>(null);
+  const layout = frame.layout ?? null;
+  const set = (next: FrameElement['layout']) => editor.update<FrameElement>(frame.id, { layout: next });
+  const cols = layout?.cols ?? DEFAULT_GRID.cols;
+  return (
+    <>
+      <IconButton ref={ref} icon={LayoutGrid} label="Grid layout" size={32} active={!!layout || open} onClick={() => setOpen((o) => !o)} />
+      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label="Grid layout" className="fr-frame-grid">
+        <div className="fr-frame-grid__row">
+          <span>Grid layout</span>
+          <Toggle size="sm" checked={!!layout} aria-label="Keep items in a grid" onChange={(on) => set(on ? { ...DEFAULT_GRID } : null)} />
+        </div>
+        <div className={`fr-frame-grid__row${layout ? '' : ' is-off'}`}>
+          <span>Columns</span>
+          <span className="fr-frame-grid__stepper">
+            <IconButton icon={Minus} label="Fewer columns" size={32} disabled={!layout || cols <= 1} onClick={() => layout && set({ ...layout, cols: cols - 1 })} />
+            <span className="fr-frame-grid__num">{cols}</span>
+            <IconButton icon={Plus} label="More columns" size={32} disabled={!layout || cols >= MAX_COLS} onClick={() => layout && set({ ...layout, cols: cols + 1 })} />
+          </span>
+        </div>
+        <div className={`fr-frame-grid__row${layout ? '' : ' is-off'}`}>
+          <span>Gap</span>
+          <SegmentedControl
+            size="sm"
+            aria-label="Gap between items"
+            value={GRID_GAPS.find((g) => g.gap === (layout?.gap ?? DEFAULT_GRID.gap))?.id ?? ''}
+            options={GRID_GAPS.map((g) => ({ value: g.id, label: g.label }))}
+            onChange={(id: string) => {
+              const gap = GRID_GAPS.find((g) => g.id === id)?.gap;
+              if (layout && gap !== undefined) set({ ...layout, gap });
+            }}
+          />
+        </div>
+      </Popover>
     </>
   );
 }
@@ -117,6 +161,7 @@ export default defineFormat({
             if (!fitted) editor.host.notify('Nothing inside this frame to fit to yet.');
           }}
         />
+        {frames.length === 1 && !frames[0].locked && <GridControl editor={editor} frame={frames[0]} />}
         {frames.length === 1 && (
           <IconButton icon={Maximize2} label="Zoom to frame" size={32} onClick={() => zoomToFrame(editor, frames[0])} />
         )}

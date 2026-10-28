@@ -31,10 +31,12 @@ export function AuthPage({ mode }: { mode: Mode }) {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const next = safeNext(params.get('next'));
-  const nextQuery = params.get('next') ? `?next=${encodeURIComponent(params.get('next')!)}` : '';
+  const carried = new URLSearchParams();
+  for (const k of ['next', 'email']) if (params.get(k)) carried.set(k, params.get(k)!);
+  const nextQuery = carried.toString() ? `?${carried}` : '';
 
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(params.get('email') ?? ''); // invite links prefill it
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [errors, setErrors] = useState<Errors>({});
@@ -89,8 +91,8 @@ export function AuthPage({ mode }: { mode: Mode }) {
   };
 
   const isLogin = mode === 'login';
-  // Arrived from a board link while signed out.
-  const toBoard = next.startsWith('/board/');
+  // Arrived from a board link (or an invite) while signed out.
+  const toBoard = next.startsWith('/board/') || next.startsWith('/invite/');
   return (
     <div className="fr-authpage">
       <div className="fr-authpage__deco" aria-hidden>
@@ -159,6 +161,12 @@ export function AuthPage({ mode }: { mode: Mode }) {
               />
             }
           />
+
+          {isLogin ? (
+            <Link className="fr-authcard__forgot" to={`/forgot-password${email.trim() ? `?email=${encodeURIComponent(email.trim())}` : ''}`}>
+              Forgot password?
+            </Link>
+          ) : null}
 
           {serverError ? (
             <div className="fr-authcard__error" role="alert">

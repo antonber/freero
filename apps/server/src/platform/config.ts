@@ -11,8 +11,10 @@ export type RateLimitName =
   | 'loginAccount'
   | 'signup'
   | 'password'
+  | 'emailVerify'
   | 'invite'
   | 'upload'
+  | 'remoteImage'
   | 'boardCreate'
   | 'templateSave'
   | 'version'
@@ -73,6 +75,10 @@ export interface Config {
   maxTemplatesPerUser: number;
   /** On SIGTERM, how long /readyz reports 503 before the server stops accepting connections. */
   shutdownDrainMs: number;
+  /** How long a deleted account can still be restored before it is purged. */
+  accountDeletionGraceMs: number;
+  /** How often each instance looks for accounts due to be purged. */
+  accountPurgeIntervalMs: number;
   rateLimits: Record<RateLimitName, RateLimitRule>;
 }
 
@@ -94,9 +100,11 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   login: '30/5m', // login attempts per client IP
   loginAccount: '10/15m', // login attempts per account email (from any IP)
   signup: '20/1h', // per IP
-  password: '5/15m', // per IP and per email (password reset / change, phase 2)
+  password: '5/15m', // per IP and per email (password reset / change, account deletion)
+  emailVerify: '5/1h', // verification / email-change messages per user
   invite: '60/1h', // per user
   upload: '60/10m', // per user
+  remoteImage: '200/10m', // per user: images the server fetches from a URL (import + export)
   boardCreate: '100/1h', // per user (create + duplicate)
   templateSave: '60/1h', // per user (saving a board or selection as a template)
   version: '60/1h', // per user (naming or restoring a board version: each keeps a full copy)
@@ -109,8 +117,10 @@ const ENV_NAME: Record<RateLimitName, string> = {
   loginAccount: 'RATE_LIMIT_LOGIN_ACCOUNT',
   signup: 'RATE_LIMIT_SIGNUP',
   password: 'RATE_LIMIT_PASSWORD',
+  emailVerify: 'RATE_LIMIT_EMAIL_VERIFY',
   invite: 'RATE_LIMIT_INVITE',
   upload: 'RATE_LIMIT_UPLOAD',
+  remoteImage: 'RATE_LIMIT_REMOTE_IMAGE',
   boardCreate: 'RATE_LIMIT_BOARD_CREATE',
   templateSave: 'RATE_LIMIT_TEMPLATE_SAVE',
   version: 'RATE_LIMIT_VERSION',
@@ -255,6 +265,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     maxBoardsPerUser: int('MAX_BOARDS_PER_USER', 5000, 1),
     maxTemplatesPerUser: int('MAX_TEMPLATES_PER_USER', 500, 1),
     shutdownDrainMs: int('SHUTDOWN_DRAIN_SECONDS', production ? 5 : 0, 0, 300) * 1000,
+    accountDeletionGraceMs: int('ACCOUNT_DELETION_GRACE_DAYS', 14, 0, 365) * 86_400_000,
+    accountPurgeIntervalMs: int('ACCOUNT_PURGE_INTERVAL_SECONDS', 3600, 1, 7 * 86_400) * 1000,
     rateLimits,
   };
 

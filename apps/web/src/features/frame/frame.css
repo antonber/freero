@@ -326,3 +326,38 @@
   gap: 8px;
   padding-top: 4px;
 }
+
+/* Grid layout popover (format toolbar) */
+.fr-frame-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 220px;
+  padding: 4px 8px;
+}
+
+.fr-frame-grid__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+  font-size: 13px;
+  color: var(--fr-ink);
+}
+
+.fr-frame-grid__row.is-off {
+  opacity: 0.5;
+}
+
+.fr-frame-grid__stepper {
+  display: inline-flex;
+  align-items: center;
+}
+
+.fr-frame-grid__num {
+  min-width: 24px;
+  text-align: center;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}

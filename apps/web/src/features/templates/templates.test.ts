@@ -21,6 +21,8 @@ const REQUIRED: Record<ElementType, string[]> = {
   table: ['rows', 'cols', 'header', 'fontSize'],
   embed: ['url', 'title', 'description', 'siteName', 'image', 'status'],
   icon: ['name', 'nodes', 'color', 'strokeWidth'],
+  kanban: ['title', 'columns', 'colW'],
+  pdf: ['src', 'name', 'page', 'pageCount'],
 };
 
 let seq = 0;

@@ -5,6 +5,8 @@ import type { ToastApi } from '@ui';
 import { wsBase } from '../api/client';
 import {
   deleteTemplate,
+  fetchImage,
+  importImage,
   listMembers,
   listTemplates,
   loadTemplate,
@@ -12,6 +14,7 @@ import {
   saveTemplate,
   saveThumbnail,
   unfurl,
+  uploadFile,
   uploadImage,
   versionHistory,
 } from '../hostServices';
@@ -44,6 +47,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     board: { id: board.id, title: board.title, role: board.role },
     syncUrl: `${wsBase()}/ws/boards`,
     uploadImage,
+    uploadFile,
     async renameBoard(title) {
       await renameBoard(board.id, title);
       deps.onTitleChange(title);
@@ -60,6 +64,8 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     saveTemplate,
     deleteTemplate,
     versions: versionHistory(board.id),
+    importImage,
+    fetchImage,
   };
 }
 
@@ -86,6 +92,7 @@ export function createLocalHost(title: string, deps: Omit<HostDeps, 'user' | 'op
     board: { id: 'local', title, role },
     syncUrl: '',
     uploadImage: async (file) => ({ url: await readAsDataUrl(file) }),
+    uploadFile: async (file) => ({ url: await readAsDataUrl(file) }),
     async renameBoard(next) {
       deps.onTitleChange(next);
     },
@@ -103,5 +110,9 @@ export function createLocalHost(title: string, deps: Omit<HostDeps, 'user' | 'op
     saveTemplate: async () => Promise.reject(new Error('Saving templates needs a real board — the local sandbox is offline.')),
     deleteTemplate: async () => Promise.reject(new Error('Saved templates need a real board.')),
     versions: unavailableVersionHistory('Version history needs a real board — the local sandbox keeps no versions.'),
+    // No server to fetch through: images placed by URL stay linked (CORS hosts still export,
+    // others are reported as missing by the export).
+    importImage: async () => Promise.reject(new Error('Copying images needs a real board.')),
+    fetchImage: async () => Promise.reject(new Error('Copying images needs a real board.')),
   };
 }

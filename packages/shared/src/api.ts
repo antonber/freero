@@ -51,16 +51,58 @@ export interface BoardMember {
 }
 
 // ---- Auth ----
-// POST /api/auth/signup   body SignupRequest -> AuthResponse  (sets cookie)
+// POST /api/auth/signup   body SignupRequest -> AuthResponse  (sets cookie; emails a verification link)
 // POST /api/auth/login    body LoginRequest  -> AuthResponse  (sets cookie)
 // POST /api/auth/logout   -> { ok: true }                     (clears cookie)
 // GET  /api/auth/session  -> SessionResponse (always 200; user null when signed out)
 // GET  /api/auth/me       -> AuthResponse | 401
 // PATCH /api/auth/me      body { name?, color?, avatarUrl? } -> AuthResponse
+// PUT  /api/auth/me/avatar raw image body (PNG/JPEG/GIF/WebP) -> AuthResponse (resized server-side)
+// DELETE /api/auth/me/avatar -> AuthResponse
+//
+// Email + password (single-use emailed tokens; answers never reveal whether an email has an account):
+// POST /api/auth/verify-email/send  -> { ok: true }   (signed in; re-sends the verification link)
+// POST /api/auth/verify-email       body { token } -> { ok: true } | 400 (invalid / used / expired)
+// POST /api/auth/password/forgot    body { email } -> { ok: true }   (always, account or not)
+// POST /api/auth/password/reset     body { token, password } -> AuthResponse (signs in; ends every other session)
+// POST /api/auth/password           body { currentPassword, newPassword } -> { ok: true } (ends other sessions)
+// POST /api/auth/email              body { email, password } -> { ok: true } (sends a link to the NEW address)
+// POST /api/auth/email/confirm      body { token } -> { ok: true } (the new address becomes the account's)
+//
+// Sessions (signed-in devices):
+// GET    /api/auth/sessions         -> { sessions: SessionInfo[] }
+// DELETE /api/auth/sessions/:id     -> { ok: true }  (closes that session's board sockets too)
+// POST   /api/auth/sessions/revoke-others -> { revoked: number }
+//
+// Account deletion (grace period, then purged; boards you own are deleted with it):
+// POST /api/auth/account/delete     body { password } -> { deletionScheduledFor } (signs out everywhere)
+// POST /api/auth/account/restore    -> AuthResponse  (signed in with a session made during the grace period)
+// While deletion is scheduled, every other signed-in endpoint answers 403 { code: 'account_pending_deletion' }.
 export interface SignupRequest { name: string; email: string; password: string }
 export interface LoginRequest { email: string; password: string }
-export interface AuthResponse { user: User }
-export interface SessionResponse { user: User | null }
+
+/** The signed-in user's own account (other people only ever see `User`). */
+export interface Account extends User {
+  emailVerified: boolean;
+  /** Set while the account is scheduled for deletion: it is purged at this instant unless restored. */
+  deletionScheduledFor: number | null;
+}
+export interface AuthResponse { user: Account }
+export interface SessionResponse { user: Account | null }
+
+export interface SessionInfo {
+  id: string;
+  /** The session this request was made with. */
+  current: boolean;
+  createdAt: number;
+  lastSeenAt: number;
+  /** Raw User-Agent of the device that signed in (may be empty). */
+  userAgent: string;
+  /** Approximate network: the client address with its host part masked (e.g. "203.0.113.x"). */
+  network: string;
+}
+
+export const ACCOUNT_PENDING_DELETION = 'account_pending_deletion';
 
 // ---- Boards ----
 // GET    /api/boards?filter=all|mine|shared|starred|recent|trash&q=text -> { boards: BoardSummary[] }
@@ -150,12 +192,38 @@ export interface SaveTemplateRequest {
 
 // ---- Members / sharing ----
 // GET    /api/boards/:id/members              -> { members: BoardMember[] }
-// POST   /api/boards/:id/members  body InviteRequest -> { member: BoardMember }
-//        (owner/editor; user must already have a Freero account, else 404 { error }; an editor
-//        re-inviting an existing member with a different role gets 409: only the owner changes roles)
+// POST   /api/boards/:id/members  body InviteRequest -> InviteResponse
+//        (owner/editor with a verified email, else 403). An existing account becomes a member
+//        ({ member }); any other address gets a pending invite emailed to it ({ invite }). An editor
+//        re-inviting with a different role gets 409: only the owner changes roles.
 // PATCH  /api/boards/:id/members/:userId body { role } -> { member }   (owner only)
 // DELETE /api/boards/:id/members/:userId -> { ok: true } (owner, or self to leave)
 export interface InviteRequest { email: string; role: Exclude<Role, 'owner'> }
+export type InviteResponse = { member: BoardMember; invite?: never } | { invite: PendingInvite; member?: never };
+
+// Pending invites (people without an account yet). The emailed link is /invite/<token>.
+// GET    /api/boards/:id/invites                    -> { invites: PendingInvite[] }  (owner/editor)
+// POST   /api/boards/:id/invites/:inviteId/resend   -> { invite: PendingInvite }     (new link + expiry; old link dies)
+// DELETE /api/boards/:id/invites/:inviteId          -> { ok: true }  (owner, or the editor who sent it)
+// GET    /api/invites/:token          -> { invite: InvitePreview } | 404 (unknown, used, revoked or expired)
+// POST   /api/invites/:token/accept   -> { boardId, role }  (signed in; single-use)
+export interface PendingInvite {
+  id: string;
+  email: string;
+  role: Exclude<Role, 'owner'>;
+  invitedById: string;
+  invitedByName: string;
+  createdAt: number;
+  expiresAt: number;
+}
+export interface InvitePreview {
+  boardTitle: string;
+  inviterName: string;
+  email: string;
+  role: Exclude<Role, 'owner'>;
+  expiresAt: number;
+}
+export interface AcceptInviteResponse { boardId: string; role: Role }
 
 // ---- Uploads ----
 // POST /api/uploads  raw body (image/png|jpeg|gif|webp|svg+xml), header Content-Type,
@@ -168,6 +236,14 @@ export interface InviteRequest { email: string; role: Exclude<Role, 'owner'> }
 //     link-local addresses — checked again for every redirect and at connect time — with
 //     timeouts and size caps) and reads its title / description / preview image.
 //     400 bad URL, 422 not previewable (blocked address, not HTML, too large, timeout).
+//
+// POST /api/unfurl/image  { url } -> 201 { url: "/uploads/<key>" }   (signed-in; rate limited)
+//     Copies an image placed on a board by URL into the user's uploads (same fetch protections;
+//     the bytes must really be PNG / JPEG / GIF / WebP / SVG). 413 over the upload quota.
+// GET  /api/unfurl/image?url=<http(s) URL> -> the image bytes (nothing stored), for exports of
+//     boards that still link images from hosts without CORS.
+//     Both: 400 bad URL, 422 not reachable / not an image / too large / timeout.
+export interface ImportImageRequest { url: string }
 export interface UnfurlResponse {
   /** Final URL after redirects. */
   url: string;

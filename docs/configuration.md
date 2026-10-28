@@ -73,8 +73,17 @@ uploaded before the switch keep working (copy them over with `mc mirror` / `aws 
 
 | Variable | Default | Description |
 |---|---|---|
-| `SMTP_URL` | — | `smtp://user:pass@host:587` or `smtps://…:465`. Unset: development outbox (phase 2: verification, reset, invites). |
+| `SMTP_URL` | — | `smtp://user:pass@host:587` or `smtps://…:465`. Unset: development outbox — every message (verification, password reset, email change, invites, deletion notices) is written as JSON to `<FREERO_DATA_DIR>/outbox/` and logged. |
 | `MAIL_FROM` | `Freero <no-reply@freero.local>` | Sender address. |
+
+Links in emails point at `PUBLIC_URL` (in development: the origin the request came through).
+
+## Accounts
+
+| Variable | Default | Description |
+|---|---|---|
+| `ACCOUNT_DELETION_GRACE_DAYS` | `14` | After someone deletes their account, how long they can log in and restore it before it is purged (`0` = at the next purge run). |
+| `ACCOUNT_PURGE_INTERVAL_SECONDS` | `3600` | How often each instance looks for accounts to purge. One instance purges at a time (Postgres advisory lock); a purge cut short is finished by the next run. |
 
 ## Observability
 
@@ -103,9 +112,11 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `RATE_LIMIT_LOGIN` | `30/5m` | Login attempts per client IP. |
 | `RATE_LIMIT_LOGIN_ACCOUNT` | `10/15m` | Login attempts per account email, from any IP (slows credential stuffing against one account). |
 | `RATE_LIMIT_SIGNUP` | `20/1h` | Signups per IP. |
-| `RATE_LIMIT_PASSWORD` | `5/15m` | Password reset/change requests per IP and per email (phase 2 endpoints). |
+| `RATE_LIMIT_PASSWORD` | `5/15m` | Password-reset requests per IP and per email; reset submissions per IP; password changes and account deletions per user. |
+| `RATE_LIMIT_EMAIL_VERIFY` | `5/1h` | Verification re-sends and email-change requests per user. |
 | `RATE_LIMIT_INVITE` | `60/1h` | Board invitations per user. |
 | `RATE_LIMIT_UPLOAD` | `60/10m` | Uploads per user. |
+| `RATE_LIMIT_REMOTE_IMAGE` | `200/10m` | Images the server fetches from a URL per user (copying a pasted image link to uploads, and including such images in exports). |
 | `RATE_LIMIT_BOARD_CREATE` | `100/1h` | Board creations + duplications per user. |
 | `RATE_LIMIT_TEMPLATE_SAVE` | `60/1h` | Saving a board or selection as a template, per user. |
 | `RATE_LIMIT_VERSION` | `60/1h` | Naming or restoring a board version (each keeps a full copy of the board), per user. |

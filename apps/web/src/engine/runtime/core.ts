@@ -23,6 +23,7 @@ export interface ExportOptions {
   background?: string | null;
   padding?: number;
   skipFonts?: boolean;
+  onMissingImages?: (count: number) => void;
 }
 
 export class Emitter {
@@ -55,8 +56,11 @@ export interface EngineCore {
   text: TextSession | null;
   /** Last known pointer position over the canvas. */
   pointer: StoreApi<PointerState>;
-  /** Transient info from the pointer router to the select tool. */
-  interaction: { handle: string | null; clickCount: number; cancel: (() => void) | null };
+  /**
+   * Transient info from the pointer router to the select tool. `createGrid`: set only while a
+   * grid-snapping tool handles a pointer event; elements created meanwhile land on that grid.
+   */
+  interaction: { handle: string | null; clickCount: number; cancel: (() => void) | null; createGrid?: number };
   clipboard: { memory: ClipboardMemory | null; copyIds: string[] | null };
   /** Offscreen renderer, installed by <BoardEngine>. */
   renderExport: ((opts: ExportOptions) => Promise<string>) | null;
