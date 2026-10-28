@@ -6,10 +6,12 @@
 //   right on open, and a dropped one leaves the client never synced.
 // - A room exists (in `rooms`) from its first admission and loads its doc once; every socket
 //   arriving meanwhile waits for that same load (never a second, empty doc).
-// - Saves of one room run one after another (a slow older save never overwrites a newer one).
+// - Saves of one room run one after another, each appending only the changes made since the
+//   previous one to the board's update log (docStore.ts); a failed save keeps them for the retry.
 // - A room is unloaded only when nobody is in it, joining it, or saving it (a socket that joins
 //   during the final save keeps the room alive instead of loading a stale copy).
 // - Deleting a board waits for in-flight saves, so none lands after the delete.
+// - The log is compacted into the stored base when it grows long and after a room unloads.
 import * as decoding from 'lib0/decoding';
 import * as encoding from 'lib0/encoding';
 import * as awarenessProtocol from 'y-protocols/awareness';
@@ -24,7 +26,7 @@ import { getBoardAccess, touchBoard } from '../boards/index';
 import { sanitizeAwarenessUpdate, type AwarenessIdentity } from './awareness';
 import { decideUpdate } from './filter';
 import { persistDuration, persistFailures } from './metrics';
-import * as repo from './repo';
+import * as store from './docStore';
 
 export const MESSAGE_SYNC = 0;
 export const MESSAGE_AWARENESS = 1;
@@ -98,6 +100,11 @@ class Room {
   pendingJoins = 0;
   destroyed = false;
   private dirty = false;
+  /** Changes made through this room's sockets since the last successful save, in order. */
+  private unsaved: Uint8Array[] = [];
+  /** Rows in the board's log that this room knows of (loaded + appended); compaction trigger. */
+  private logRows = 0;
+  private logBytes = 0;
   private firstDirtyAt = 0;
   private saveTimer: NodeJS.Timeout | null = null;
   private unloadTimer: NodeJS.Timeout | null = null;
@@ -117,6 +124,7 @@ class Room {
       syncProtocol.writeUpdate(e, update);
       const msg = encoding.toUint8Array(e);
       for (const c of this.conns.values()) if (c.ws !== origin) send(c.ws, msg);
+      this.unsaved.push(update);
       this.markDirty();
     });
 
@@ -143,8 +151,10 @@ class Room {
   }
 
   private async load(): Promise<void> {
-    const state = await repo.loadState(this.id);
-    if (state && !this.destroyed) Y.applyUpdate(this.doc, state, LOAD_ORIGIN);
+    const loaded = await store.loadDoc(this.id);
+    if (loaded.state && !this.destroyed) Y.applyUpdate(this.doc, loaded.state, LOAD_ORIGIN);
+    this.logRows = loaded.logRows;
+    this.logBytes = loaded.logBytes;
   }
 
   /** Adds an admitted socket; `queued` are the messages it sent before joining, in order. */
@@ -347,8 +357,8 @@ class Room {
   }
 
   /**
-   * Persists the full doc state if it changed, and bumps the board's updatedAt. Queued behind any
-   * save already running; resolves when this one is done (never rejects).
+   * Appends the changes made since the last save to the board's log and bumps its updatedAt.
+   * Queued behind any save already running; resolves when this one is done (never rejects).
    */
   flush(): Promise<void> {
     if (this.saveTimer) clearTimeout(this.saveTimer);
@@ -363,13 +373,22 @@ class Room {
     this.dirty = false;
     const now = Date.now();
     const timer = persistDuration.startTimer();
+    const updates = this.unsaved;
+    this.unsaved = [];
+    let appended = updates.length === 0;
     try {
-      await repo.saveState(this.id, Y.encodeStateAsUpdate(this.doc), now);
+      if (!appended) {
+        this.logBytes += await store.appendUpdates(this.id, updates, now);
+        this.logRows++;
+        appended = true;
+      }
       await touchBoard(this.id, now);
       timer();
+      if (this.logRows >= store.COMPACT_AFTER_ROWS || this.logBytes >= store.COMPACT_AFTER_BYTES) await this.compact();
     } catch (err) {
+      if (!appended) this.unsaved.unshift(...updates); // keep them, before anything newer, for the retry
       if (this.destroyed) return;
-      if (err instanceof repo.BoardGoneError) {
+      if (err instanceof store.BoardGoneError) {
         // Deleted while this doc was open (a socket got in during the delete).
         dropRoom(this, 4403, 'Board deleted');
         return;
@@ -381,6 +400,17 @@ class Room {
         this.saveTimer = setTimeout(() => void this.flush(), SAVE_RETRY_MS);
         this.saveTimer.unref();
       }
+    }
+  }
+
+  /** Folds the board's log into its stored base (in this room's save queue). */
+  private async compact(): Promise<void> {
+    try {
+      await store.compactDoc(this.id); // 'skipped' = another instance just compacted: also fine
+      this.logRows = 0;
+      this.logBytes = 0;
+    } catch (err) {
+      if (!(err instanceof store.BoardGoneError)) logError(`realtime: could not compact board ${this.id}`, err);
     }
   }
 
@@ -437,6 +467,19 @@ async function unloadRoom(room: Room): Promise<void> {
   }
   rooms.delete(room.id);
   room.destroy();
+  // Leave a single compact base behind, so the next load reads one row (not in the room's queue:
+  // it no longer exists; a new room loading meanwhile reads base + log consistently either way).
+  track(store.compactDoc(room.id));
+}
+
+/** Compactions running outside a room; shutdown waits for them before the database closes. */
+const background = new Set<Promise<unknown>>();
+function track(p: Promise<unknown>): void {
+  const done = p.catch((err) => {
+    if (!(err instanceof store.BoardGoneError)) logError('realtime: could not compact a board document', err);
+  });
+  background.add(done);
+  void done.finally(() => background.delete(done));
 }
 
 /**
@@ -513,12 +556,12 @@ export async function snapshotBoardDoc(boardId: string): Promise<Uint8Array | nu
       /* failed to load: read the stored state below */
     }
   }
-  return repo.loadState(boardId);
+  return (await store.loadDoc(boardId)).state;
 }
 
 /** Stores the initial content of a brand-new board (e.g. a duplicate). */
 export async function initBoardDoc(boardId: string, state: Uint8Array): Promise<void> {
-  await repo.saveState(boardId, state, Date.now());
+  await store.saveInitialState(boardId, state);
 }
 
 /**
@@ -535,6 +578,7 @@ export async function closeBoardDoc(boardId: string): Promise<void> {
 /** Saves every loaded doc (graceful shutdown). */
 export async function flushAllRooms(): Promise<void> {
   await Promise.all([...rooms.values()].map((r) => r.flush()));
+  await Promise.all([...background]);
 }
 
 export function loadedRoomCount(): number {

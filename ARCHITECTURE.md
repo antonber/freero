@@ -387,7 +387,8 @@ Cross-module imports name the index file explicitly (`'../auth/index'`), which i
 Auth is a plain middleware exported by `modules/auth/index.ts` (`requireUser`, `currentUser(req)`),
 not a reserved hook. Server modules today: `auth` (users, sessions), `boards` (boards, stars,
 opens), `members` (board_members, role resolution), `uploads` (uploads; files in object storage or
-`<data>/uploads`), `realtime` (board_docs; y-websocket protocol + role filter), `unfurl` (link
+`<data>/uploads`), `realtime` (board_docs, board_doc_updates, board_doc_snapshots; y-websocket
+protocol + role filter + update log), `unfurl` (link
 previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`).
 
 ### Database (`platform/db.ts`)
@@ -457,6 +458,15 @@ the doc load are async; y-websocket sends sync step 1 immediately). A room loads
 sockets arriving meanwhile wait for that load. Saves of one room are serialized. A room unloads
 only when nobody is in it, joining it or saving it. Deleting a board first closes its room and
 waits for in-flight saves. Access refreshes are serialized (the last reflects the latest state).
+
+Storage (`realtime/docStore.ts`): a board's document is a compacted base (`board_docs`) plus an
+append-only log of Yjs updates (`board_doc_updates`); a save appends only what changed since the
+previous one. Loading reads base + log in one statement (one consistent snapshot). Compaction (when
+a loaded board's log grows, and after a room unloads) folds the rows it read into a new base and
+deletes exactly those rows, guarded by the base's `version` (optimistic lock), so neither a save
+nor another instance's compaction running meanwhile is lost. It keeps a full-state snapshot at most
+every 30 min (`board_doc_snapshots`): the base of version history (`listBoardSnapshots` /
+`loadBoardSnapshot` in `realtime/index.ts`).
 
 Trust boundaries in `realtime`: presence from a socket may only write the awareness client ids
 that socket announced, and its `user` is always replaced by the authenticated user's profile
