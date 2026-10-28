@@ -1,0 +1,129 @@
+.fr-trackerconn {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.fr-trackerconn__item {
+  align-self: stretch;
+  padding: 12px 14px;
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius-sm);
+  background: var(--fr-surface);
+}
+
+.fr-trackerconn__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.fr-trackerconn__name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.fr-trackerconn__meta,
+.fr-trackerconn__fine {
+  margin: 2px 0 0;
+  color: var(--fr-ink-2);
+  font-size: 13px;
+}
+
+.fr-trackerconn__pill {
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: var(--fr-success-soft, var(--fr-primary-soft));
+  color: var(--fr-success, var(--fr-primary));
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.fr-trackerconn__pill--bad {
+  background: var(--fr-danger-soft);
+  color: var(--fr-danger);
+}
+
+.fr-trackerconn__error {
+  margin: 6px 0 0;
+  color: var(--fr-danger);
+  font-size: 13px;
+}
+
+.fr-trackerconn__buttons,
+.fr-trackerconn__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.fr-trackerconn__buttons {
+  flex: none;
+  flex-wrap: nowrap;
+}
+
+.fr-trackerconn__webhook {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  color: var(--fr-ink-2);
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+
+.fr-trackerconn__webhook code,
+.fr-trackerconn__secret code {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--fr-surface-2);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.fr-trackerconn__secret {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: var(--fr-radius-sm);
+  background: var(--fr-primary-soft);
+  font-size: 13px;
+}
+
+.fr-trackerconn__secret p {
+  margin: 0 0 6px;
+}
+
+.fr-trackerconn__secret-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.fr-trackerconn__form {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px dashed var(--fr-line-strong);
+  border-radius: var(--fr-radius-sm);
+}
+
+.fr-trackerconn__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.fr-trackerconn__grid label > span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--fr-ink-2);
+  font-size: 12px;
+  font-weight: 600;
+}

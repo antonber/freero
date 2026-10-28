@@ -7,6 +7,7 @@ import { api, ApiError } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { relativeTime } from '../../lib/time';
 import { ExportList } from '../admin/AdminIdentity';
+import { TrackerConnections } from '../../components/TrackerConnections';
 import { ApiTokensSection, ConnectedAppsSection, DeveloperAppsSection } from './ApiSections';
 import { Section } from './Section';
 import { isReauthRequired, needsReauth, ReauthPrompt, SignInMethodsSection, TwoFactorSection } from './SecuritySections';
@@ -55,6 +56,13 @@ export function AccountSettingsPage() {
         <ConnectedAppsSection />
         <ApiTokensSection />
         <DeveloperAppsSection />
+        <Section
+          id="trackers"
+          title="Your issue trackers"
+          description="Your own Jira, Linear or GitHub connections, to send board items as issues on any board you can edit. Your team’s connections are set up in its admin console."
+        >
+          <TrackerConnections workspaceId={null} />
+        </Section>
         <DataSection />
         <DeleteSection security={security} />
       </main>

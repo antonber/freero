@@ -7,13 +7,14 @@
 //   freero://template/<templateId>           a saved template
 //   freero://workspace/<workspaceId>         a workspace
 //   freero://project/<projectId>             a project (folder of boards)
+//   freero://issue/<linkId>                  a tracker issue linked to items on a board (KAI-153)
 //
 // The web form of a board or item address is the page URL people already copy
 // (`<origin>/board/<id>`, `?el=<elementId>`); `parseObjectUri` reads both, plus the same-origin
 // paths item links store (`/board/<id>?el=…`). An address says WHAT, never whether anyone may see
 // it: resolving one (`POST /api/objects/resolve`) is permission-checked for the reader every time.
 
-export const OBJECT_TYPES = ['board', 'element', 'template', 'workspace', 'project'] as const;
+export const OBJECT_TYPES = ['board', 'element', 'template', 'workspace', 'project', 'issue'] as const;
 export type ObjectType = (typeof OBJECT_TYPES)[number];
 
 export type ObjectRef =
@@ -22,7 +23,9 @@ export type ObjectRef =
   | { type: 'element'; boardId: string; id: string }
   | { type: 'template'; id: string }
   | { type: 'workspace'; id: string }
-  | { type: 'project'; id: string };
+  | { type: 'project'; id: string }
+  /** A tracker issue linked to items on one board (modules/trackers): the link's id. */
+  | { type: 'issue'; id: string };
 
 /** What someone may do with an object, weakest first. `can(view)` holds for anyone who may comment, etc. */
 export const OBJECT_ACTIONS = ['view', 'comment', 'edit', 'manage'] as const;
@@ -30,7 +33,7 @@ export type ObjectAction = (typeof OBJECT_ACTIONS)[number];
 
 export const OBJECT_URI_SCHEME = 'freero:';
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
-const URI_TYPES = new Set<string>(['board', 'template', 'workspace', 'project']);
+const URI_TYPES = new Set<string>(['board', 'template', 'workspace', 'project', 'issue']);
 
 /** The canonical address of an object. */
 export function formatObjectUri(ref: ObjectRef): string {
@@ -151,7 +154,8 @@ export interface ResolveObjectsResponse {
 }
 
 /** How a source points at a target (references index, KAI-149). */
-export type ReferenceKind = 'link' | 'mention' | 'embed' | 'comment';
+/** 'tracker': the item was sent to, or imported from, the tracker issue (KAI-153). */
+export type ReferenceKind = 'link' | 'mention' | 'embed' | 'comment' | 'tracker';
 
 /** "What links here": one source the reader may see, with how it points at the target. */
 export interface Backlink {

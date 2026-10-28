@@ -1,7 +1,7 @@
 // Route /board/:id — loads the board, builds the Host and mounts the engine.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { guestDisplayName, LINK_PASSWORD_REQUIRED, type BoardAiStatus, type BoardSummary, type GuestInfo } from '@freero/shared';
+import { guestDisplayName, LINK_PASSWORD_REQUIRED, type BoardAiStatus, type BoardSummary, type BoardTrackersResponse, type GuestInfo } from '@freero/shared';
 import { BoardEngine, type Host } from '@engine';
 import { Button, Logo, useToast } from '@ui';
 import { api, ApiError } from '../api/client';
@@ -19,7 +19,7 @@ import './BoardPage.css';
 type Team = { id: string; name: string } | null;
 type LoadState =
   | { status: 'loading' }
-  | { status: 'ready'; board: BoardSummary; team?: Team; ai?: BoardAiStatus | null }
+  | { status: 'ready'; board: BoardSummary; team?: Team; ai?: BoardAiStatus | null; trackers?: BoardTrackersResponse['connections'] }
   | { status: 'error'; code: number; message: string; reason?: string };
 
 /** `guest`: a visitor without an account who joined this board by its link (GuestGate). */
@@ -131,11 +131,17 @@ function ServerBoard({ id }: { id: string }) {
     setState({ status: 'loading' });
     // The board, and the team workspace it belongs to when the user is a full member there.
     // AI: whether this user may use it on this board (404, or any failure: no AI entry points).
-    Promise.all([api.getBoard(id), api.listWorkspaces().catch(() => ({ workspaces: [] })), api.boardAi(id).catch(() => ({ ai: null }))])
-      .then(([{ board }, { workspaces }, { ai }]) => {
+    // Trackers: the connections this user may use here (any failure: no tracker entry points).
+    Promise.all([
+      api.getBoard(id),
+      api.listWorkspaces().catch(() => ({ workspaces: [] })),
+      api.boardAi(id).catch(() => ({ ai: null })),
+      api.boardTrackers(id).catch(() => ({ connections: [] })),
+    ])
+      .then(([{ board }, { workspaces }, { ai }, { connections }]) => {
         if (cancelled) return;
         const w = workspaces.find((x) => x.id === board.workspaceId && x.kind === 'team' && x.role !== 'guest');
-        setState({ status: 'ready', board, team: w ? { id: w.id, name: w.name } : null, ai });
+        setState({ status: 'ready', board, team: w ? { id: w.id, name: w.name } : null, ai, trackers: connections });
       })
       .catch((err) => {
         if (cancelled) return;
@@ -158,6 +164,7 @@ function ServerBoard({ id }: { id: string }) {
   const board = state.status === 'ready' ? state.board : null;
   const team = state.status === 'ready' ? (state.team ?? null) : null;
   const ai = state.status === 'ready' ? (state.ai ?? null) : null;
+  const trackers = state.status === 'ready' ? state.trackers : undefined;
   const setTitle = useCallback(
     (title: string) => setState((s) => (s.status === 'ready' ? { ...s, board: { ...s.board, title } } : s)),
     [],
@@ -176,9 +183,10 @@ function ServerBoard({ id }: { id: string }) {
       onTitleChange: setTitle,
       team,
       ai,
+      trackers,
     });
     // Rebuild only for identity-relevant changes; title/role updates flow through a new host object.
-  }, [board, team, ai, user, go, toast, openShare, setTitle]);
+  }, [board, team, ai, trackers, user, go, toast, openShare, setTitle]);
 
   if (state.status === 'error' && state.reason === LINK_PASSWORD_REQUIRED) return <LinkPassword unlock={(pw) => api.unlockBoardLink(id, pw)} onUnlocked={retry} />;
   if (state.status === 'error' && state.code === 403) return <RequestAccess boardId={id} onGranted={retry} />;
@@ -195,7 +203,9 @@ function ServerBoard({ id }: { id: string }) {
           if (new URLSearchParams(location.search).has('share')) navigate(location.pathname, { replace: true });
         }}
         board={board}
-        onBoardChange={(b) => setState((s) => ({ status: 'ready', board: b, team: s.status === 'ready' ? s.team : null, ai: s.status === 'ready' ? s.ai : null }))}
+        onBoardChange={(b) =>
+          setState((s) => ({ status: 'ready', board: b, team: s.status === 'ready' ? s.team : null, ai: s.status === 'ready' ? s.ai : null, trackers: s.status === 'ready' ? s.trackers : undefined }))
+        }
         onLeft={() => navigate('/app')}
       />
     </>

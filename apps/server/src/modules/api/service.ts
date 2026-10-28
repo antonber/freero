@@ -62,6 +62,7 @@ import {
 import { insertStructure, newElementId } from '../structure/index';
 import { getTemplate, listTemplates } from '../templates/index';
 import { ensurePersonalWorkspace, getWorkspaceInfo, workspaceRolesOf } from '../workspaces/index';
+import { boardConnections, sendToTracker } from '../trackers/index';
 import { commentSpot, patchUpdates, planCreate, planPatch, readItemInputs, toApiItem } from './items';
 import { planProposal, readProposal, suggestionGroups } from './suggestions';
 
@@ -586,4 +587,24 @@ export async function removeMember(call: ApiCall, boardId: string, memberId: str
   const { id } = await openBoard(call, boardId);
   await removeBoardMember(id, call.userId, memberId);
   return { ok: true };
+}
+
+// ---- issue trackers (KAI-154) ----
+
+/**
+ * Sends items to an issue tracker as ONE issue (or one per item, `mode: 'each'`) through a
+ * connection the person may use on this board (named, or the only one), linking them both ways.
+ * The same operation as the board's "Send to tracker".
+ */
+export async function syncToTracker(call: ApiCall, boardId: string, body: { itemIds?: unknown; connection?: unknown; project?: unknown; issueType?: unknown; mode?: unknown }) {
+  const { id } = await openBoard(call, boardId);
+  await requireBoardAccess(id, call.userId, 'editor');
+  await agentWrite(call);
+  const conns = await boardConnections(call.userId, id);
+  const want = typeof body.connection === 'string' ? body.connection.trim().toLowerCase() : '';
+  const conn = want ? conns.find((c) => c.id === body.connection || c.name.toLowerCase() === want) : conns.length === 1 ? conns[0] : undefined;
+  if (!conn) throw badRequest(conns.length ? `Name the tracker connection to use: ${conns.map((c) => c.name).join(', ')}` : 'No issue tracker is connected for this board');
+  const out = await sendToTracker(call.userId, id, { connectionId: conn.id, itemIds: body.itemIds, project: body.project, issueType: body.issueType, mode: body.mode }, appUrl(call.req, ''));
+  call.audit.metadata = { issues: out.issues.map((i) => i.key), items: out.issues.reduce((n, i) => n + i.itemIds.length, 0) };
+  return out;
 }

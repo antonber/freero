@@ -1542,6 +1542,16 @@ export const AUDIT_ACTIONS = {
   // AI (modules/ai). Never the prompt or the board content: task, model, tokens and outcome only.
   'ai.request': 'Used AI on a board',
   'ai.settings_changed': 'Changed AI settings',
+  // Issue-tracker sync (modules/trackers). Never credentials, never board text: issue keys, fields and outcomes.
+  'tracker.connection_created': 'Connected an issue tracker',
+  'tracker.connection_updated': 'Changed a tracker connection',
+  'tracker.connection_removed': 'Removed a tracker connection',
+  'tracker.webhook_secret_rotated': 'Made a new tracker webhook secret',
+  'tracker.issue_created': 'Sent board items to a tracker as an issue',
+  'tracker.issues_imported': 'Imported tracker issues onto a board',
+  'tracker.synced': 'Synced a tracker issue',
+  'tracker.sync_failed': 'A tracker sync failed',
+  'tracker.unlinked': 'Unlinked a tracker issue',
 } as const;
 export type AuditAction = keyof typeof AUDIT_ACTIONS;
 export type AuditValue = string | number | boolean | null | string[];

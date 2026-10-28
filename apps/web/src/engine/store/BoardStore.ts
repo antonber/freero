@@ -7,7 +7,9 @@
 // private-mode drafts, sealed ballots) and 'editors' (owners/editors only: hidden frames'
 // contents). Their `elements` maps are read as ONE board together with the shared doc's; a write
 // goes to the element's current layer, or where `placement` puts it (new elements, or an element
-// that must move, e.g. into a hidden frame).
+// that must move, e.g. into a hidden frame). Entries of element-content collections
+// (ELEMENT_CONTENT_COLLECTIONS: table cells, presenter notes) live in the same doc as the element
+// they belong to and move with it (KAI-230).
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
 import { Awareness } from 'y-protocols/awareness';
@@ -16,6 +18,8 @@ import * as decoding from 'lib0/decoding';
 import * as encoding from 'lib0/encoding';
 import {
   BOARD_LAYERS,
+  ELEMENT_CONTENT_COLLECTIONS,
+  SERVER_WRITTEN_COLLECTIONS,
   SUGGESTIONS_COLLECTION,
   WS_CLOSE_BOARD_REMOVED,
   WS_MESSAGE_LAYER,
@@ -68,6 +72,18 @@ export interface BoardStoreOptions {
 
 type Listener = () => void;
 
+/** An element-content entry that is not in its element's doc, and where it belongs. */
+export interface ContentMove {
+  name: string;
+  key: string;
+  from: ElementLayer;
+  to: ElementLayer;
+}
+
+const ALL_DOCS: readonly ElementLayer[] = ['shared', ...BOARD_LAYERS];
+/** Element content this client moves with its elements: not what only the server writes (it moves those). */
+const MOVED_HERE = Object.entries(ELEMENT_CONTENT_COLLECTIONS).filter(([name]) => !SERVER_WRITTEN_COLLECTIONS.includes(name));
+
 interface LayerDoc {
   doc: Y.Doc;
   elements: Y.Map<BoardElement>;
@@ -104,6 +120,7 @@ export class BoardStore {
   private foreignKeyListeners = new Set<(ids: string[]) => void>();
   private remoteKeyListeners = new Set<(ids: string[]) => void>();
   private layerCollectionListeners = new Set<Listener>();
+  private contentListeners = new Map<string, Set<Listener>>();
   private sorted: BoardElement[] | null = null;
   private byType = new Map<string, BoardElement[]>();
   private version = 0;
@@ -112,6 +129,8 @@ export class BoardStore {
   private persistTimer: ReturnType<typeof setTimeout> | null = null;
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
   private destroyed = false;
+  /** Collections whose local writes are undoable (FeatureManifest.undoable), in every doc. */
+  private undoable = new Set<string>();
 
   constructor(private opts: BoardStoreOptions) {
     this.elements = this.doc.getMap<BoardElement>(Y_ELEMENTS);
@@ -205,12 +224,21 @@ export class BoardStore {
     const elements = doc.getMap<BoardElement>(Y_ELEMENTS);
     // The editors layer's suggestions (KAI-169): accepting / rejecting one is undoable, in the same
     // step as the board change it made.
-    const scope = name === 'editors' ? [elements, doc.getMap<unknown>(SUGGESTIONS_COLLECTION)] : [elements];
+    const scope: Array<Y.AbstractType<any>> = name === 'editors' ? [elements, doc.getMap<unknown>(SUGGESTIONS_COLLECTION)] : [elements];
+    // Undoable collections can hold element content here too (a hidden table's cells).
+    for (const c of this.undoable) scope.push(doc.getMap(c));
     const undo = new Y.UndoManager(scope, { trackedOrigins: new Set([LOCAL_ORIGIN]), captureTimeout: this.baseCaptureTimeout });
     this.history.add(undo);
     const onElements = (ev: Y.YMapEvent<BoardElement>) => this.onElementsEvent(ev);
     elements.observe(onElements);
-    const onAny = () => this.emit(this.layerCollectionListeners);
+    const onAny = (tr: Y.Transaction) => {
+      this.emit(this.layerCollectionListeners);
+      // Element-content readers only when their collection changed here (not every layer edit).
+      for (const [c, set] of this.contentListeners) {
+        const type = doc.share.get(c);
+        if (type && tr.changed.has(type)) this.emit(set);
+      }
+    };
     doc.on('afterTransaction', onAny);
     const onUpdate = (update: Uint8Array, origin: unknown) => {
       if (origin === LAYER_REMOTE_ORIGIN) return;
@@ -265,6 +293,7 @@ export class BoardStore {
     }
     this.emit(this.anyListeners);
     this.emit(this.layerCollectionListeners);
+    for (const set of this.contentListeners.values()) this.emit(set);
   }
 
   /** Runs a reveal/discard on the server (in order with this socket's updates); offline: queued. */
@@ -287,6 +316,8 @@ export class BoardStore {
 
   /** Offline sandbox: this user's private layer is everyone's. Not undoable, like a server write. */
   private applyLayerOpLocally(op: LayerOp): void {
+    // Element content is never revealed on its own: it follows its element (editor/layers.ts).
+    if (this.isElementContent(op.collection)) return;
     const from = this.layers.private.doc.getMap<unknown>(op.collection);
     const entries = [...from.entries()].filter(([k]) => k.startsWith(op.prefix ?? ''));
     if (!entries.length) return;
@@ -511,7 +542,10 @@ export class BoardStore {
   }
 
   private writeElement(el: BoardElement, current: ElementLayer | null, target: ElementLayer): void {
-    if (current && current !== target) this.mapOf(current).delete(el.id);
+    if (current && current !== target) {
+      this.mapOf(current).delete(el.id);
+      this.moveContentOf(el.id, current, target);
+    }
     this.mapOf(target).set(el.id, el);
     this.sorted = null;
     this.byType.clear();
@@ -536,6 +570,14 @@ export class BoardStore {
   /** Deletes a layer's stale copy of an element that lives in the shared doc. */
   dropLayerCopy(id: string, layer: BoardLayer): void {
     this.layers[layer].elements.delete(id);
+  }
+
+  /** Deletes the element content `layer` holds for element `id` (its stale copy's, see editor/layers.ts). */
+  dropLayerContent(id: string, layer: BoardLayer): void {
+    for (const [name, ownerOf] of MOVED_HERE) {
+      const m = this.contentMap(name, layer);
+      for (const k of [...m.keys()]) if (k.includes(id) && ownerOf(k) === id) m.delete(k);
+    }
   }
 
   subscribeElement(id: string, l: Listener): () => void {
@@ -619,7 +661,129 @@ export class BoardStore {
 
   /** [additive] Local writes to this collection become part of the undo history (FeatureManifest.undoable). */
   trackUndo(name: string): void {
+    this.undoable.add(name);
     this.undoManager.addToScope(this.doc.getMap(name));
+    for (const l of BOARD_LAYERS) this.layers[l].undo.addToScope(this.layers[l].doc.getMap(name));
+  }
+
+  // ---------------------------------------------------------------- element content (KAI-230)
+  // Entries of ELEMENT_CONTENT_COLLECTIONS live where the element they belong to lives. Reads see
+  // the three docs as one collection (like `elements`); writes go to the owner's doc.
+
+  isElementContent(name: string): boolean {
+    return Object.prototype.hasOwnProperty.call(ELEMENT_CONTENT_COLLECTIONS, name);
+  }
+
+  private contentMap(name: string, layer: ElementLayer): Y.Map<unknown> {
+    return layer === 'shared' ? this.doc.getMap<unknown>(name) : this.layers[layer].doc.getMap<unknown>(name);
+  }
+
+  /** The doc entry `key` of `name` belongs in: its element's (null: no such element here). */
+  private contentLayerOf(name: string, key: string): ElementLayer | null {
+    const owner = ELEMENT_CONTENT_COLLECTIONS[name]?.(key);
+    return owner ? this.layerOf(owner) : null;
+  }
+
+  contentGet<T>(name: string, key: string): T | undefined {
+    const home = this.contentLayerOf(name, key);
+    if (home) {
+      const m = this.contentMap(name, home);
+      if (m.has(key)) return m.get(key) as T;
+    }
+    for (const layer of ALL_DOCS) {
+      const m = this.contentMap(name, layer);
+      if (m.has(key)) return m.get(key) as T;
+    }
+    return undefined;
+  }
+
+  contentEntries<T>(name: string): Array<[string, T]> {
+    const keys = new Set<string>();
+    for (const layer of ALL_DOCS) for (const k of this.contentMap(name, layer).keys()) keys.add(k);
+    const out: Array<[string, T]> = [];
+    for (const k of keys) out.push([k, this.contentGet<T>(name, k) as T]);
+    return out;
+  }
+
+  /** Writes an entry into its element's doc (shared when the element is unknown), dropping copies elsewhere. */
+  contentSet(name: string, key: string, value: unknown): void {
+    const home = this.contentLayerOf(name, key) ?? 'shared';
+    for (const layer of ALL_DOCS) {
+      const m = this.contentMap(name, layer);
+      if (layer === home) m.set(key, value);
+      else if (m.has(key)) m.delete(key);
+    }
+  }
+
+  contentDelete(name: string, key: string): void {
+    for (const layer of ALL_DOCS) {
+      const m = this.contentMap(name, layer);
+      if (m.has(key)) m.delete(key);
+    }
+  }
+
+  /** Fires after any change to collection `name`, in any doc (or a layer doc was reset). */
+  subscribeContent(name: string, l: Listener): () => void {
+    const m = this.doc.getMap<unknown>(name);
+    const h = () => l();
+    m.observe(h);
+    let set = this.contentListeners.get(name);
+    if (!set) this.contentListeners.set(name, (set = new Set()));
+    set.add(l);
+    return () => {
+      m.unobserve(h);
+      set!.delete(l);
+    };
+  }
+
+  /** Moves element `id`'s content entries from one doc to another (inside the caller's transaction). */
+  private moveContentOf(id: string, from: ElementLayer, to: ElementLayer): void {
+    for (const [name, ownerOf] of MOVED_HERE) {
+      const src = this.contentMap(name, from);
+      if (!src.size) continue;
+      const moving: Array<[string, unknown]> = [];
+      for (const [k, v] of src) if (k.includes(id) && ownerOf(k) === id && !(v instanceof Y.AbstractType)) moving.push([k, v]);
+      if (!moving.length) continue;
+      const dst = this.contentMap(name, to);
+      for (const [k, v] of moving) {
+        src.delete(k);
+        dst.set(k, v);
+      }
+    }
+  }
+
+  /**
+   * Content entries that are not in their element's doc (a collaborator's write racing a move, an
+   * undo that took the element back but not its untracked content, a board from before KAI-230).
+   * Entries whose element is unknown here stay where they are.
+   */
+  misplacedContent(): ContentMove[] {
+    const out: ContentMove[] = [];
+    // With no element in any layer, every known owner is shared: only layer entries can be misplaced.
+    const anyInLayers = BOARD_LAYERS.some((l) => this.layers[l].elements.size > 0);
+    for (const [name, ownerOf] of MOVED_HERE) {
+      for (const from of ALL_DOCS) {
+        if (from === 'shared' && !anyInLayers) continue;
+        const doc = from === 'shared' ? this.doc : this.layers[from].doc;
+        if (!doc.share.has(name)) continue;
+        for (const [k, v] of this.contentMap(name, from)) {
+          if (v instanceof Y.AbstractType) continue;
+          const owner = ownerOf(k);
+          const to = owner ? this.layerOf(owner) : null;
+          if (to && to !== from) out.push({ name, key: k, from, to });
+        }
+      }
+    }
+    return out;
+  }
+
+  /** Moves one entry (from misplacedContent) into its element's doc, replacing what is there. */
+  placeContent(m: ContentMove): void {
+    const src = this.contentMap(m.name, m.from);
+    if (!src.has(m.key)) return;
+    const v = src.get(m.key);
+    src.delete(m.key);
+    this.contentMap(m.name, m.to).set(m.key, v);
   }
 
   // ---------------------------------------------------------------- undo

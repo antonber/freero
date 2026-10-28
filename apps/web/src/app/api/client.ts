@@ -1,4 +1,13 @@
 import type {
+  BoardTrackersResponse,
+  TrackerConnectionInfo,
+  TrackerConnectionInput,
+  TrackerImportRequest,
+  TrackerImportResponse,
+  TrackerIssuePreview,
+  TrackerProject,
+  TrackerSendRequest,
+  TrackerSendResponse,
   ActivityAnswer,
   ActivityState,
   BoardCallResponse,
@@ -387,6 +396,23 @@ export const api = {
   workspaceAi: (id: string) => request<WorkspaceAiAdmin>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/ai`),
   updateWorkspaceAi: (id: string, patch: WorkspaceAiPatch) => request<WorkspaceAiAdmin>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/admin/ai`, patch),
   testWorkspaceAi: (id: string) => request<{ ok: true; model: string }>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/ai/test`),
+  // Issue trackers (KAI-153/154)
+  boardTrackers: (boardId: string) => request<BoardTrackersResponse>('GET', `/api/boards/${encodeURIComponent(boardId)}/trackers`),
+  trackerProjects: (boardId: string, connectionId: string) =>
+    request<{ projects: TrackerProject[]; queryLanguage: string }>('GET', `/api/boards/${encodeURIComponent(boardId)}/trackers/connections/${encodeURIComponent(connectionId)}/projects`),
+  trackerPreview: (boardId: string, body: TrackerSendRequest) => request<{ issues: TrackerIssuePreview[] }>('POST', `/api/boards/${encodeURIComponent(boardId)}/trackers/preview`, body),
+  trackerSend: (boardId: string, body: TrackerSendRequest) => request<TrackerSendResponse>('POST', `/api/boards/${encodeURIComponent(boardId)}/trackers/send`, body),
+  trackerImport: (boardId: string, body: TrackerImportRequest) => request<TrackerImportResponse>('POST', `/api/boards/${encodeURIComponent(boardId)}/trackers/import`, body),
+  trackerSync: (boardId: string, linkId: string) => request<{ ok: true }>('POST', `/api/boards/${encodeURIComponent(boardId)}/trackers/links/${encodeURIComponent(linkId)}/sync`),
+  trackerUnlink: (boardId: string, linkId: string) => request<{ ok: true }>('DELETE', `/api/boards/${encodeURIComponent(boardId)}/trackers/links/${encodeURIComponent(linkId)}`),
+  /** A team's connections (its admins) or, without `workspaceId`, the person's own. */
+  trackerConnections: (workspaceId: string | null) =>
+    request<{ connections: TrackerConnectionInfo[]; oauth: { jira: boolean } }>('GET', `/api/trackers/connections${workspaceId ? `?workspace=${encodeURIComponent(workspaceId)}` : ''}`),
+  createTrackerConnection: (body: TrackerConnectionInput) => request<{ connection: TrackerConnectionInfo; webhookSecret: string }>('POST', '/api/trackers/connections', body),
+  updateTrackerConnection: (id: string, body: Partial<TrackerConnectionInput>) => request<{ connection: TrackerConnectionInfo }>('PATCH', `/api/trackers/connections/${encodeURIComponent(id)}`, body),
+  testTrackerConnection: (id: string) => request<{ ok: true; account: string | null; connection: TrackerConnectionInfo }>('POST', `/api/trackers/connections/${encodeURIComponent(id)}/test`),
+  rotateTrackerWebhookSecret: (id: string) => request<{ webhookSecret: string }>('POST', `/api/trackers/connections/${encodeURIComponent(id)}/webhook-secret`),
+  deleteTrackerConnection: (id: string) => request<{ ok: true }>('DELETE', `/api/trackers/connections/${encodeURIComponent(id)}`),
   /** Tells the server a board was exported in the browser (audit log; refused when the workspace forbids exports). */
   reportBoardExport: (boardId: string, format: string) =>
     request<{ ok: true }>('POST', `/api/boards/${encodeURIComponent(boardId)}/exported`, { format }),

@@ -81,6 +81,13 @@ export interface BaseElement {
    * "<name> for <person>". Stamped by the server; absent for things people made themselves.
    */
   createdVia?: ActingApp | null;
+  /**
+   * [additive] The tracker issue this item was sent to or imported from (KAI-153): the id of its
+   * record in the board's `trackers` collection. Written only by the server (modules/trackers);
+   * the badge shows only while that record still lists this item among its sources, so a copy of
+   * a linked item carries no link.
+   */
+  trackerLink?: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -434,6 +441,12 @@ export interface TableElement extends BaseElement {
 export const tableCellKey = (kind: 't' | 'f', tableId: string, rowId: string, colId: string): string =>
   `${kind}:${tableId}:${rowId}:${colId}`;
 
+/** The table a `tableCells` key belongs to (null: not a cell key). See ELEMENT_CONTENT_COLLECTIONS. */
+export function tableCellOwner(key: string): string | null {
+  const parts = key.split(':');
+  return parts.length === 4 && (parts[0] === 't' || parts[0] === 'f') && parts[1] ? parts[1] : null;
+}
+
 /**
  * What a table carries outside the elements map when it is copied (`ElementsSnapshot.content`
  * of a table): cell part `"<rowId>:<colId>"` → RichText `t` and fill `f` (absent = empty). Saved
@@ -511,6 +524,23 @@ export interface KanbanElement extends BaseElement {
   /** Width of every column (world units); the element's w follows from it. */
   colW: number;
 }
+
+/**
+ * Kanban geometry (element-local, world units), shared by the kanban feature's layout and the
+ * server, which places a card in the column of the status a tracker reports (modules/trackers).
+ */
+export const KANBAN_LAYOUT = {
+  /** Board title band. */
+  headerH: 52,
+  /** Column header (title, count, menu). */
+  colHeadH: 44,
+  /** Between columns and around them. */
+  gap: 12,
+  /** Inside a column, around its items. */
+  pad: 10,
+  /** Between stacked items. */
+  itemGap: 10,
+} as const;
 
 export interface KanbanColumn {
   id: string;

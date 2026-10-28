@@ -12,6 +12,12 @@
 // elements after each change and moves the misplaced ones (silently: a derived write, like
 // follower refreshes). Several editors doing the same move write identical values.
 //
+// Element content (KAI-230): entries of ELEMENT_CONTENT_COLLECTIONS (table cells, presenter notes)
+// live in their element's doc. The store moves them with every element move it makes (so a user's
+// move stays one undo step); the same sweep puts back whatever still ends up elsewhere (a
+// collaborator typing into a cell while the table was being hidden, untracked content after an
+// undo, boards from before the rule).
+//
 // Reveal racing with an edit: the server moves a private element into the shared doc while its
 // author (maybe on another instance) is still editing it; the edit lands in the private layer
 // after the reveal deleted it there. The author's client (the only one that can see it) then holds
@@ -20,7 +26,7 @@
 // Presence (KAI-80): while private mode applies to this user, others must not learn WHERE they
 // draft either. `publicCursor` withholds the cursor while it is over the user's own private content
 // or where a new item would go private; selection and editing ids never name private elements.
-import type { BoardElement, PresenceState } from '@freero/shared';
+import { ELEMENT_CONTENT_COLLECTIONS, type BoardElement, type PresenceState } from '@freero/shared';
 import type { EngineCore } from '../runtime/core';
 import type { ElementLayer, Point } from '../api';
 import { elementAABB, rectCenter } from '../geometry/geometry';
@@ -93,20 +99,27 @@ export function installLayerPlacement(core: EngineCore, privateRule: () => ((el:
       });
     }
     // Fast path (every drag frame lands here): nothing hidden and nothing to bring back.
-    if (!store.layers.editors.elements.size && !anyHidingContainer()) return;
-    const moves: Array<[BoardElement, ElementLayer]> = [];
-    for (const el of store.getOrdered()) {
-      const cur = store.layerOf(el.id);
-      if (cur === 'private' || !cur) continue;
-      const want: ElementLayer = insideHiddenContainer(core, el) ? 'editors' : 'shared';
-      if (want !== cur) moves.push([el, want]);
+    if (store.layers.editors.elements.size || anyHidingContainer()) {
+      const moves: Array<[BoardElement, ElementLayer]> = [];
+      for (const el of store.getOrdered()) {
+        const cur = store.layerOf(el.id);
+        if (cur === 'private' || !cur) continue;
+        const want: ElementLayer = insideHiddenContainer(core, el) ? 'editors' : 'shared';
+        if (want !== cur) moves.push([el, want]);
+      }
+      const stale = store.duplicatedInLayers().filter((d) => d.layer === 'editors');
+      if (moves.length || stale.length)
+        store.transactSilently(() => {
+          // The shared copy wins, content included (a restored version brought the item back).
+          for (const d of stale) {
+            store.dropLayerCopy(d.id, d.layer);
+            store.dropLayerContent(d.id, d.layer);
+          }
+          for (const [el, layer] of moves) store.moveElement(el, layer);
+        });
     }
-    const stale = store.duplicatedInLayers().filter((d) => d.layer === 'editors');
-    if (!moves.length && !stale.length) return;
-    store.transactSilently(() => {
-      for (const d of stale) store.dropLayerCopy(d.id, d.layer);
-      for (const [el, layer] of moves) store.moveElement(el, layer);
-    });
+    const misplaced = store.misplacedContent();
+    if (misplaced.length) store.transactSilently(() => misplaced.forEach((m) => store.placeContent(m)));
   };
   const schedule = () => {
     if (queued) return;
@@ -115,9 +128,11 @@ export function installLayerPlacement(core: EngineCore, privateRule: () => ((el:
   };
   const offElements = store.subscribeElements(schedule);
   const offRole = store.subscribeRole(schedule);
+  const offContent = Object.keys(ELEMENT_CONTENT_COLLECTIONS).map((name) => store.subscribeContent(name, schedule));
   schedule();
   return () => {
     offElements();
     offRole();
+    offContent.forEach((off) => off());
   };
 }

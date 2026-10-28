@@ -6,7 +6,7 @@ import { LayoutDashboard } from 'lucide-react';
 import { formatObjectUri, type Backlink, type ReferenceKind } from '@freero/shared';
 import { api } from '../api/client';
 
-const KIND_LABEL: Record<ReferenceKind, string> = { link: 'item link', embed: 'smart link', mention: 'mention', comment: 'comment' };
+const KIND_LABEL: Record<ReferenceKind, string> = { link: 'item link', embed: 'smart link', mention: 'mention', comment: 'comment', tracker: 'tracker issue' };
 
 /** One row per source board: how many places there point here, and how. */
 function bySourceBoard(links: Backlink[], selfId: string) {
