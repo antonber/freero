@@ -548,6 +548,9 @@ notification_prefs: inbox, live delivery, email digests).
   person per message (`dedupe_key`; a mention wins over a reply). Types live in
   `notifications/types.ts` (wording, link, settings label): a new source (workspace invites) adds
   its type there + in `NotificationType` and calls `notify` from `notifications/index.ts`.
+  A comment naming the address of someone with a live invite to the board (the @ picker's
+  "Invite … to comment") is kept in `pending_mentions`; members' `onInviteAccepted` (invite link
+  or verified address) turns it into their `comment.mention`. Kept for an invite's lifetime.
   Live: `/ws/notifications` per tab; changes are published on one pubsub channel and each
   instance pushes the unread count to its own sockets (ended sessions close them everywhere).
   Email: the `notifications:digest` exclusive job emails everything a person hasn't read after
