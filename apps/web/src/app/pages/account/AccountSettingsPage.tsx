@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNod
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, BadgeCheck, CircleAlert, Download, ImageUp, LogOut, Mail, Monitor, ShieldCheck, Trash2 } from 'lucide-react';
 import { describeDevice, type DataExportInfo, type NotificationPrefs, type SecurityInfo, type SessionInfo } from '@freero/shared';
-import { Avatar, Button, ColorSwatches, Input, Logo, Modal, Spinner, Toggle, useToast } from '@ui';
+import { Avatar, Button, ColorSwatches, Input, Logo, Modal, Spinner, Toggle, readableTextColor, useToast } from '@ui';
 import { api, ApiError } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { relativeTime } from '../../lib/time';
@@ -117,7 +117,7 @@ function ProfileSection() {
             <svg width="18" height="18" viewBox="0 0 18 18">
               <path d="M2 1.5 L15 8.2 L9.2 9.6 L6.6 15.6 Z" fill={color} stroke="#fff" strokeWidth="1.4" strokeLinejoin="round" />
             </svg>
-            <span style={{ background: color }}>{name.trim() || user.name}</span>
+            <span style={{ background: color, color: readableTextColor(color) }}>{name.trim() || user.name}</span>
           </div>
         </div>
         <div className="fr-acct-avatar__actions">
