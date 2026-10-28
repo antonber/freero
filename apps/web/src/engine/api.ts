@@ -12,6 +12,8 @@
 import type { ComponentType, CSSProperties, ReactNode } from 'react';
 import type {
   ActivityEntry,
+  AiActionRequest,
+  AiActionResponse,
   BoardElement,
   BoardOutline,
   BoardLayer,
@@ -205,6 +207,22 @@ export interface Host {
    * for a toast (rate limit, offline sandbox, the board is gone).
    */
   report(report: ContentReport): Promise<void>;
+  /**
+   * [additive] AI actions on this board (KAI-101/102), present only when the server says this user
+   * may use AI here (the operator configured a provider, the workspace turned it on, the user may
+   * edit). Absent: hide every AI entry point. `run` rejects with a message fit for a toast (budget
+   * used up, rate limit, the model's answer unusable); nothing is written by a 'preview' run.
+   */
+  ai?: HostAi;
+}
+
+/** [additive] `Host.ai` (wire: @freero/shared `AiActionRequest` / `AiActionResponse`). */
+export interface HostAi {
+  /** Where board content goes ("Anthropic (Claude) · claude-sonnet-5-5"), for the data notice. */
+  provider: string;
+  /** Who set the provider up: the Freero server's operator or the workspace's admins. */
+  source: 'instance' | 'workspace';
+  run(request: AiActionRequest): Promise<AiActionResponse>;
 }
 
 /** [additive] What `Host.report` sends (wire: @freero/shared `ReportRequest`, without the board id). */
