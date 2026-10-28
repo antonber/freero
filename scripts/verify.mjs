@@ -1087,6 +1087,75 @@ async function run() {
       for (const c of [a1, b1, c1, d1]) c.destroy();
     });
 
+    // ---- element content follows its element (KAI-230): table cells of a hidden / private table ----
+    /** Every update a raw socket received, shared doc and layers (to prove text NEVER arrived, not just that it is gone). */
+    const rawBytes = (c) => {
+      const seen = [];
+      for (const d of [c.doc, c.layers.private, c.layers.editors]) d.on('update', (u) => seen.push(Buffer.from(u)));
+      return (text) => seen.some((b) => b.includes(Buffer.from(text)));
+    };
+    const tableEl = (id) => ({ id, type: 'table', x: 4000, y: 4000, w: 120, h: 40, z: 1, rotation: 0, rows: [{ id: 'r1', h: 40 }], cols: [{ id: 'c1', w: 120 }], header: false, fontSize: 14 });
+    await check("element content: a hidden table's cell written into the shared doc (a client that hadn't seen the move) reaches owners/editors only; viewers' sockets and outlines never get it", async () => {
+      const a1 = await layerClient(A, board.id);
+      const b1 = await layerClient(B, board.id);
+      const c1 = await layerClient(C, board.id);
+      const d1 = await layerClient(D, board.id);
+      const got = [c1, d1].map(rawBytes);
+      a1.layers.editors.getMap('elements').set('ht1', tableEl('ht1'));
+      await waitFor(() => b1.layers.editors.getMap('elements').has('ht1'), 5000, 'B to get the hidden table');
+      a1.doc.getMap('tableCells').set('t:ht1:r1:c1', 'HIDDEN-CELL');
+      await waitFor(() => b1.layers.editors.getMap('tableCells').get('t:ht1:r1:c1') === 'HIDDEN-CELL', 5000, "B to get the hidden table's cell in the editors layer");
+      await waitFor(() => !a1.doc.getMap('tableCells').has('t:ht1:r1:c1'), 5000, "the writer's shared doc to be corrected");
+      await settled(a1, [c1, d1]);
+      assert(!got.some((has) => has('HIDDEN-CELL')), "a viewer/commenter socket received the hidden table's cell");
+      assert(!b1.doc.getMap('tableCells').has('t:ht1:r1:c1'), "the hidden table's cell is in the shared doc");
+      const outline = async (u) => (await u.req('GET', `/api/boards/${board.id}/outline?format=markdown`)).text;
+      for (const u of [C, D]) assert(!(await outline(u)).includes('HIDDEN-CELL'), `${u.label}'s outline holds the hidden table's cell`);
+      assert((await outline(A)).includes('HIDDEN-CELL'), "the owner's outline lacks the hidden table's cell");
+      // Shown again (moved back to the shared doc, cells and all, as the web app does): everyone reads it.
+      a1.doc.transact(() => {
+        a1.doc.getMap('elements').set('ht1', tableEl('ht1'));
+        a1.doc.getMap('tableCells').set('t:ht1:r1:c1', 'HIDDEN-CELL');
+      });
+      a1.layers.editors.transact(() => {
+        a1.layers.editors.getMap('elements').delete('ht1');
+        a1.layers.editors.getMap('tableCells').delete('t:ht1:r1:c1');
+      });
+      await waitFor(() => c1.doc.getMap('tableCells').get('t:ht1:r1:c1') === 'HIDDEN-CELL', 5000, 'the viewer to read the cell once the table is shared');
+      a1.doc.transact(() => {
+        a1.doc.getMap('elements').delete('ht1');
+        a1.doc.getMap('tableCells').delete('t:ht1:r1:c1');
+      });
+      for (const c of [a1, b1, c1, d1]) c.destroy();
+    });
+
+    await check("element content: a private table's cells reach nobody else until an owner/editor reveals the draft, and then come with it", async () => {
+      const b1 = await layerClient(B, board.id);
+      const others = await Promise.all([A, C, D].map((u) => layerClient(u, board.id)));
+      const got = others.map(rawBytes);
+      b1.layers.private.transact(() => {
+        b1.layers.private.getMap('elements').set('pt1', tableEl('pt1'));
+        b1.layers.private.getMap('tableCells').set('t:pt1:r1:c1', 'PRIVATE-CELL');
+      });
+      // A stale tab of B writing the cell into the shared doc: it goes to B's private layer.
+      b1.doc.getMap('tableCells').set('f:pt1:r1:c1', '#PRIVATE-FILL');
+      await waitFor(() => b1.layers.private.getMap('tableCells').get('f:pt1:r1:c1') === '#PRIVATE-FILL', 5000, "B's misplaced fill to land in B's private layer");
+      await settled(b1, others);
+      assert(!got.some((has) => has('PRIVATE-CELL') || has('#PRIVATE-FILL')), "someone else's socket received B's private table cells");
+      // Cells are never revealed on their own: they follow their table.
+      others[0].layerOp({ type: 'reveal', collection: 'tableCells' });
+      await settled(others[0], [others[1]]);
+      assert(!got.some((has) => has('PRIVATE-CELL')), 'a reveal of tableCells alone revealed a private table');
+      others[0].layerOp({ type: 'reveal', collection: 'elements', prefix: 'pt1' });
+      await waitFor(() => others[1].doc.getMap('tableCells').get('t:pt1:r1:c1') === 'PRIVATE-CELL' && others[1].doc.getMap('elements').has('pt1'), 5000, 'the viewer to get the revealed table with its cells');
+      await waitFor(() => !b1.layers.private.getMap('tableCells').has('t:pt1:r1:c1'), 5000, "the revealed cells to leave B's private layer");
+      others[0].doc.transact(() => {
+        others[0].doc.getMap('elements').delete('pt1');
+        for (const k of ['t:pt1:r1:c1', 'f:pt1:r1:c1']) others[0].doc.getMap('tableCells').delete(k);
+      });
+      for (const c of [b1, ...others]) c.destroy();
+    });
+
     await check('board layers: sealed ballots are revealed into the shared doc only by an owner/editor, while their author is offline', async () => {
       const b1 = await layerClient(B, board.id);
       // A ballot is only taken for the running session (votingRules.ts): B votes in s0, then in s1.
@@ -2438,6 +2507,24 @@ async function multiInstanceChecks() {
         if (o.user === V) assert(!all.includes('MULTI-HIDDEN'), 'the viewer got hidden-frame content');
       }
       for (const c of [b1, b2, a2, v1, v2]) c.destroy();
+    });
+
+    await check("element content across instances: a hidden table's cell written into the shared doc on instance 1 reaches the editor on instance 2 in the editors layer, never a viewer's socket on either (KAI-230)", async () => {
+      const a1 = await layerClient(A, board.id, one);
+      const b2 = await layerClient(B, board.id, two);
+      const v1 = await layerClient(V, board.id, one);
+      const v2 = await layerClient(V, board.id, two);
+      const seen = [];
+      for (const c of [v1, v2]) for (const d of [c.doc, c.layers.private, c.layers.editors]) d.on('update', (u) => seen.push(Buffer.from(u)));
+      const t = { id: 'mtab', type: 'table', x: 9000, y: 9000, w: 120, h: 40, z: 1, rotation: 0, rows: [{ id: 'r1', h: 40 }], cols: [{ id: 'c1', w: 120 }], header: false, fontSize: 14 };
+      a1.layers.editors.getMap('elements').set(t.id, t);
+      await waitFor(() => b2.layers.editors.getMap('elements').has(t.id), 5000, 'the hidden table to reach instance 2');
+      a1.doc.getMap('tableCells').set('t:mtab:r1:c1', 'MULTI-HIDDEN-CELL');
+      await waitFor(() => b2.layers.editors.getMap('tableCells').get('t:mtab:r1:c1') === 'MULTI-HIDDEN-CELL', 5000, "the editor on instance 2 to get the cell in the editors layer");
+      await settled(a1, [b2, v1, v2]);
+      assert(!seen.some((b) => b.includes(Buffer.from('MULTI-HIDDEN-CELL'))), "a viewer's socket received the hidden table's cell");
+      assert(!b2.doc.getMap('tableCells').has('t:mtab:r1:c1'), "the hidden table's cell is in the shared doc on instance 2");
+      for (const c of [a1, b2, v1, v2]) c.destroy();
     });
 
     await check('board layers across instances: opening the board on instance 2 right after a private edit on instance 1 gets it before it is saved', async () => {
@@ -6039,6 +6126,28 @@ async function collabChecks() {
       assert((await V.req('POST', `/api/boards/${board.id}/activities/poll2/reveal`, { revealed: true })).status === 403, 'a viewer revealed');
       assert((await E.req('POST', `/api/boards/${board.id}/activities/poll2/reveal`, { revealed: true })).status === 200, 'reveal');
       await waitFor(() => results(v).get('poll2')?.poll?.[1]?.count === 1, 5000, 'the revealed result');
+    });
+
+    await check('an activity inside a hidden frame publishes its results to owners/editors only; shown again, its results follow it to everyone (KAI-230)', async () => {
+      const eL = await layerClient(E, board.id, port);
+      const vL = await layerClient(V, board.id, port);
+      clients.push(eL, vL);
+      const vBytes = [];
+      for (const d of [vL.doc, vL.layers.private, vL.layers.editors]) d.on('update', (u) => vBytes.push(Buffer.from(u)));
+      const hidden = { ...poll, id: 'pollHidden', question: 'Which team goes?', options: [{ id: 'a', text: 'Team A' }, { id: 'b', text: 'Team B' }] };
+      eL.layers.editors.getMap('elements').set(hidden.id, hidden);
+      await settled(eL);
+      assert((await E.req('PUT', `/api/boards/${board.id}/activities/${hidden.id}/answer`, { answer: { choices: ['b'] } })).status === 200, 'the editor answers');
+      await waitFor(() => eL.layers.editors.getMap('engageResults').get(hidden.id)?.poll?.[1]?.count === 1, 5000, "the hidden activity's results to reach the editor's editors layer");
+      await settled(eL, [vL]);
+      assert(!vBytes.some((b) => b.includes(Buffer.from(hidden.id))), "the viewer's socket received the hidden activity's results");
+      assert(!eL.doc.getMap('engageResults').has(hidden.id), "the hidden activity's results are in the shared doc");
+      // The frame is shown: the activity moves to the shared doc (as the web app moves it), the server moves its results along.
+      eL.doc.getMap('elements').set(hidden.id, hidden);
+      eL.layers.editors.getMap('elements').delete(hidden.id);
+      await waitFor(() => vL.doc.getMap('engageResults').get(hidden.id)?.poll?.[1]?.count === 1, 5000, "the viewer to get the shown activity's results");
+      await waitFor(() => !eL.layers.editors.getMap('engageResults').has(hidden.id), 5000, 'the results to leave the editors layer');
+      eL.doc.getMap('elements').delete(hidden.id);
     });
 
     await check('an activity closed to visitors refuses a guest; the same guest answers once it allows them', async () => {
