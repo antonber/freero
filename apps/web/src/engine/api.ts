@@ -67,6 +67,21 @@ export interface Host {
    */
   listMembers(): Promise<HostUser[]>;
   /**
+   * [additive] Current profiles (name, color, photo) of these users, for ids the board shows: people
+   * with access, and anyone who wrote or is @mentioned in its comments — also after they left.
+   * Other ids (and deleted accounts) are simply missing from the result. Offline sandbox: the
+   * local user only.
+   */
+  lookupUsers(ids: string[]): Promise<HostUser[]>;
+  /**
+   * [additive] Shares this board with an email address (owner/editor; the server checks). An
+   * existing account becomes a member right away (`{ user }`; someone who already has access is
+   * returned as they are, their role unchanged); any other address gets an emailed invite
+   * (`{ pendingEmail }`). Rejects with a message that can be shown (no permission, email not
+   * verified, role conflict).
+   */
+  inviteMember(email: string, role: 'editor' | 'commenter' | 'viewer'): Promise<{ user: HostUser } | { pendingEmail: string }>;
+  /**
    * [additive] Link preview for a pasted URL (title, description, image), fetched by the SERVER
    * (never from the browser: no third-party requests from viewers, no CORS). `image` is a data
    * URL (already fetched and size-capped) or null. Rejects when the URL can't be previewed
@@ -517,6 +532,13 @@ export interface CommandDefinition {
    * thread) without importing it; validate them, they come from another feature.
    */
   run(editor: Editor, args?: Record<string, unknown>): void;
+  /**
+   * [additive] Deep link: when the board URL carries `?<urlParam>=<value>` the engine runs this
+   * command with `{ [urlParam]: value }` once the board is synced — on load, and whenever the app
+   * navigates to such a link while the board is open (a notification opening a comment thread:
+   * `comments.openThread` with `urlParam: 'thread'`). Respects `minRole` like any run.
+   */
+  urlParam?: string;
 }
 
 /** [additive] One row of `Editor.getShortcuts()`. */
