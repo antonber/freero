@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createTestBoard, type TestBoard } from '@engine';
-import { ARRANGE_COMMANDS } from './commands';
+import type { Tag } from '@freero/shared';
+import { ARRANGE_COMMANDS, CLUSTER_COMMANDS } from './commands';
+import { planClusters, type ClusterItem } from './lib/cluster';
 import { planAlign, planDistribute, planTidy, type Move, type Unit } from './lib/arrange';
 
 const unit = (id: string, x: number, y: number, w = 100, h = 100, locked = false): Unit => ({ ids: [id], box: { x, y, w, h }, locked });
@@ -46,6 +48,56 @@ describe('tidy up', () => {
       d: { x: 100 + gap, y: 100 + gap },
       e: { x: 0, y: 200 + 2 * gap },
     });
+  });
+});
+
+describe('cluster', () => {
+  const item = (id: string, x: number, y: number, color: ClusterItem['color'], tags: string[] = []): ClusterItem => ({ id, box: { x, y, w: 100, h: 100 }, color, tags });
+
+  it('groups by first existing tag, alphabetically, untagged last, and no two clusters overlap', () => {
+    const tags = new Map<string, Tag>([
+      ['t1', { id: 't1', name: 'Risks', color: '#f00' }],
+      ['t2', { id: 't2', name: 'Ideas', color: '#0f0' }],
+    ]);
+    const items = [item('a', 0, 0, 'yellow', ['gone', 't1']), item('b', 500, 0, 'blue', ['t2']), item('c', 0, 300, 'pink'), item('d', 300, 300, 'yellow', ['t1'])];
+    const plan = planClusters(items, 'tag', tags);
+    expect(plan.labels.map((l) => l.text)).toEqual(['Ideas · 1', 'Risks · 2', 'No tag · 1']);
+    const boxes = items.map((it) => {
+      const m = plan.moves.find((mv) => mv.id === it.id);
+      return { id: it.id, x: it.box.x + (m?.dx ?? 0), y: it.box.y + (m?.dy ?? 0) };
+    });
+    for (const p of boxes) for (const q of boxes) if (p !== q) expect(Math.abs(p.x - q.x) >= 100 || Math.abs(p.y - q.y) >= 100, `${p.id}/${q.id}`).toBe(true);
+    // Each cluster sits under its own label.
+    const risks = plan.labels[1];
+    for (const id of ['a', 'd']) {
+      const b = boxes.find((x) => x.id === id)!;
+      expect(b.x).toBeGreaterThanOrEqual(risks.x);
+      expect(b.x + 100).toBeLessThanOrEqual(risks.x + risks.w + 1e-6);
+    }
+  });
+
+  it('clustering by colour is one undo step that takes back both the moves and the labels', () => {
+    const board = createTestBoard({
+      users: ['ann'],
+      features: [{ manifest: { name: 'arrange', description: '' }, elements: [], tools: [], formats: [], panels: [], commands: [...ARRANGE_COMMANDS, ...CLUSTER_COMMANDS] }],
+    });
+    const [ed] = board.editors('arrange');
+    const ids = ed.createMany([
+      { type: 'sticky', x: 0, y: 0, w: 100, h: 100, color: 'blue' },
+      { type: 'sticky', x: 400, y: 0, w: 100, h: 100, color: 'yellow' },
+      { type: 'sticky', x: 800, y: 0, w: 100, h: 100, color: 'blue' },
+    ] as never);
+    ed.select(ids);
+    ed.runCommand('arrange.clusterByColor');
+    // Yellow comes first in the palette; both blues are next to each other.
+    const [b1, y, b2] = ids.map((id) => ed.getElement(id)!);
+    expect(y.x).toBeLessThan(b1.x);
+    expect(Math.abs(b1.x - b2.x)).toBeLessThan(200);
+    expect(ed.getElements().filter((el) => el.type === 'text')).toHaveLength(2);
+    ed.undo();
+    expect(ids.map((id) => ed.getElement(id)!.x)).toEqual([0, 400, 800]);
+    expect(ed.getElements().filter((el) => el.type === 'text')).toHaveLength(0);
+    board.destroy();
   });
 });
 
