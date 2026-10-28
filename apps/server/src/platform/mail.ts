@@ -43,9 +43,14 @@ export async function sendMail(mail: Mail): Promise<void> {
     return;
   }
   const dir = outboxDir();
-  await fs.promises.mkdir(dir, { recursive: true });
-  const file = path.join(dir, `${new Date().toISOString().replace(/[:.]/g, '-')}-${newId(6)}.json`);
-  await fs.promises.writeFile(file, JSON.stringify({ from: config.mailFrom, ...mail, sentAt: Date.now() }, null, 2));
+  // Written next to the outbox, then moved in: whoever reads the outbox (verify, tests, a developer
+  // following a link) never sees a half-written mail.
+  const drafts = `${dir}.tmp`;
+  await Promise.all([fs.promises.mkdir(dir, { recursive: true }), fs.promises.mkdir(drafts, { recursive: true })]);
+  const name = `${new Date().toISOString().replace(/[:.]/g, '-')}-${newId(6)}.json`;
+  await fs.promises.writeFile(path.join(drafts, name), JSON.stringify({ from: config.mailFrom, ...mail, sentAt: Date.now() }, null, 2));
+  const file = path.join(dir, name);
+  await fs.promises.rename(path.join(drafts, name), file);
   log(`mail (dev outbox): "${mail.subject}" to ${mail.to} -> ${file}`);
 }
 
