@@ -28,6 +28,8 @@ export type RateLimitName =
   | 'sso'
   | 'scim'
   | 'dataExport'
+  | 'accessRequest'
+  | 'guestJoin'
   | 'report'
   | 'appeal';
 
@@ -137,6 +139,8 @@ export interface Config {
   notifyEmailDelayMs: number;
   /** How often each instance looks for notification digests that are due. */
   notifyEmailIntervalMs: number;
+  /** Activity feed: a person's burst of changes on a board ends after this long without one. */
+  activityIdleMs: number;
   rateLimits: Record<RateLimitName, RateLimitRule>;
   /** Configured sign-in providers (each needs its client id AND secret); empty = password only. */
   oidcProviders: OidcProviderConfig[];
@@ -196,6 +200,8 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   sso: '120/10m', // workspace single sign-on: discovery, starts, assertion posts and callbacks per IP
   scim: '1200/1m', // SCIM requests per provisioning token (Okta and Entra sync in bursts)
   dataExport: '5/1d', // data exports requested per user (each builds a ZIP of everything)
+  accessRequest: '20/1h', // per user: asking for access to boards
+  guestJoin: '20/1h', // per IP: visitors joining a shared board without an account
   report: '20/1h', // abuse reports per IP and per signed-in user
   appeal: '10/1h', // appeals against moderation actions per IP
 };
@@ -221,6 +227,8 @@ const ENV_NAME: Record<RateLimitName, string> = {
   sso: 'RATE_LIMIT_SSO',
   scim: 'RATE_LIMIT_SCIM',
   dataExport: 'RATE_LIMIT_DATA_EXPORT',
+  accessRequest: 'RATE_LIMIT_ACCESS_REQUEST',
+  guestJoin: 'RATE_LIMIT_GUEST_JOIN',
   report: 'RATE_LIMIT_REPORT',
   appeal: 'RATE_LIMIT_APPEAL',
 };
@@ -435,6 +443,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     twoFactorUndoMs: int('TWO_FACTOR_UNDO_HOURS', 72, 1, 14 * 24) * 3_600_000,
     notifyEmailDelayMs: int('NOTIFY_EMAIL_DELAY_SECONDS', 900, 0, 7 * 86_400) * 1000,
     notifyEmailIntervalMs: int('NOTIFY_EMAIL_INTERVAL_SECONDS', 60, 1, 86_400) * 1000,
+    activityIdleMs: int('ACTIVITY_IDLE_SECONDS', 60, 1, 3600) * 1000,
     rateLimits,
     oidcProviders,
     geoipDbPath,

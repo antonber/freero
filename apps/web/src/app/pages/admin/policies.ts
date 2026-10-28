@@ -10,6 +10,16 @@ export const POLICY_FIELDS: Array<{
   options: SelectOption<string>[];
 }> = [
   {
+    key: 'teamAccess',
+    label: 'Members on the team’s boards',
+    hint: 'What every member can do on the workspace’s boards. A project can set its own level; owners and admins always edit, and people invited to a board keep their role.',
+    options: [
+      { value: 'editor', label: 'Can edit' },
+      { value: 'commenter', label: 'Can comment' },
+      { value: 'viewer', label: 'Can view' },
+    ],
+  },
+  {
     key: 'externalSharing',
     label: 'Sharing outside the workspace',
     hint: 'Who may invite people who aren’t in this workspace to its boards, or share them by link. “Nobody” also ends such access that exists today.',
@@ -29,6 +39,15 @@ export const POLICY_FIELDS: Array<{
       { value: 'viewer', label: 'Up to “can view”' },
       { value: 'none', label: 'Links are off' },
     ] satisfies SelectOption<LinkAccess>[],
+  },
+  {
+    key: 'publicLinks',
+    label: 'Visitors without an account',
+    hint: 'Whether a board’s link also lets in people without a Freero account, as a named guest who can view or comment for a few hours.',
+    options: [
+      { value: 'anyone', label: 'Allowed on shared links' },
+      { value: 'signedIn', label: 'Sign-in required' },
+    ],
   },
   {
     key: 'guestInvites',

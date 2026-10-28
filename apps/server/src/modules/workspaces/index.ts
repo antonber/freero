@@ -14,12 +14,17 @@ export {
   lockWorkspaceForNewBoard,
   teamWorkspaceIdsFor,
   teamMemberIds,
+  teamMembers,
+  boardGatekeepers,
   handOverTeamWorkspaces,
   isManager,
 } from './service';
 export { lockProjectForBoard } from './projects';
+// Someone left a workspace or changed role there (templates unshare what they shared with it).
+export { onMembershipChanged, type MembershipChangedEvent } from './events';
 // Managing a team (its routes use these; so may provisioning later, e.g. SCIM).
 export { createTeamWorkspace, updateWorkspace, transferWorkspace, removeMember as removeWorkspaceMember } from './service';
+export { createProject } from './projects';
 export { inviteToWorkspace } from './invites';
 export { mayDownload, mayShareExternally, isFullMember } from './roles';
 // The organization's directory (SSO just-in-time sign-in, SCIM provisioning).

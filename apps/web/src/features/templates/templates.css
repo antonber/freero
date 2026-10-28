@@ -382,6 +382,18 @@
   transition: opacity 0.12s var(--fr-ease);
 }
 
+.fr-tpl-saved__share--alone {
+  right: 6px;
+}
+
+.fr-tpl-card__by {
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--fr-ink-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .fr-tpl-saved:hover .fr-tpl-saved__share,
 .fr-tpl-saved__share:focus-visible {
   opacity: 1;

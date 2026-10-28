@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { MAX_REPORT_NOTE, REPORT_REASONS, type ReportReason } from '@freero/shared';
 import { definePanel, type PanelProps } from '@engine';
-import { Button, Modal, TextArea } from '@ui';
+import { Button, Input, Modal, TextArea } from '@ui';
 import { isReportTarget, REPORT_DIALOG, TARGET_NOUN } from './lib/target';
 import './report.css';
 
@@ -9,6 +9,9 @@ function ReportDialog({ editor, props }: PanelProps) {
   const target = isReportTarget(props?.target) ? props.target : { kind: 'board' as const };
   const [reason, setReason] = useState<ReportReason | null>(null);
   const [note, setNote] = useState('');
+  // A visitor without an account has no inbox: an address (optional) is how they hear the outcome.
+  const visitor = editor.host.board.signedIn === false;
+  const [contact, setContact] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const close = () => editor.closePanel(REPORT_DIALOG);
@@ -18,7 +21,7 @@ function ReportDialog({ editor, props }: PanelProps) {
     setBusy(true);
     setError(null);
     try {
-      await editor.host.report({ target, reason, note: note.trim() });
+      await editor.host.report({ target, reason, note: note.trim(), ...(visitor && contact.trim() ? { contactEmail: contact.trim() } : {}) });
       close();
       editor.host.notify('Thanks for your report. Freero’s moderators will review it.', 'success');
     } catch (e) {
@@ -62,6 +65,18 @@ function ReportDialog({ editor, props }: PanelProps) {
         placeholder="Anything that helps us understand, e.g. where on the board it is"
         onChange={(e) => setNote(e.target.value)}
       />
+      {visitor && (
+        <Input
+          className="fr-report__contact"
+          type="email"
+          label="Your email (optional)"
+          placeholder="To hear what we decided"
+          value={contact}
+          maxLength={254}
+          autoComplete="email"
+          onChange={(e) => setContact(e.target.value)}
+        />
+      )}
       {error && (
         <p className="fr-report__error" role="alert">
           {error}

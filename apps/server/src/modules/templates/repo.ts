@@ -1,5 +1,5 @@
 // The only writer of `templates` [S4].
-import type { SavedTemplate, SavedTemplateSummary, TemplateContent } from '@freero/shared';
+import type { SavedTemplateSummary, TemplateContent } from '@freero/shared';
 import { one, query, tx } from '../../platform/db';
 
 interface Row {
@@ -16,7 +16,11 @@ interface Row {
 
 const SUMMARY_COLUMNS = 'id, owner_id, name, description, thumbnail, workspace_id, element_count, created_at, updated_at';
 
-const toSummary = (r: Row): SavedTemplateSummary => ({
+/** A stored template's summary; `ownerName` / `canUnshare` depend on the reader (service.ts fills them). */
+export type StoredSummary = Omit<SavedTemplateSummary, 'ownerName' | 'canUnshare'>;
+export type StoredTemplate = StoredSummary & { content: TemplateContent };
+
+const toSummary = (r: Row): StoredSummary => ({
   id: r.id,
   ownerId: r.owner_id,
   workspaceId: r.workspace_id,
@@ -38,7 +42,7 @@ const VISIBLE_TO_USER = '(owner_id = $1 OR workspace_id = ANY($2::text[]))';
 
 export const transaction = <T>(fn: () => Promise<T>): Promise<T> => tx(() => fn());
 
-export async function insertTemplate(t: SavedTemplate): Promise<void> {
+export async function insertTemplate(t: StoredTemplate): Promise<void> {
   await query(
     `INSERT INTO templates (id, owner_id, name, description, thumbnail, content, element_count, created_at, updated_at, workspace_id)
      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10)`,
@@ -58,14 +62,14 @@ export async function insertTemplate(t: SavedTemplate): Promise<void> {
 }
 
 /** Templates the user may see, newest first (without their content). */
-export async function listVisibleTo(userId: string, workspaceIds: string[]): Promise<SavedTemplateSummary[]> {
+export async function listVisibleTo(userId: string, workspaceIds: string[]): Promise<StoredSummary[]> {
   return (
     await query<Row>(`SELECT ${SUMMARY_COLUMNS} FROM templates WHERE ${VISIBLE_TO_USER} ORDER BY updated_at DESC, id`, [userId, workspaceIds])
   ).map(toSummary);
 }
 
 /** One template with its content, or null if missing or not visible to the user. */
-export async function getVisible(id: string, userId: string, workspaceIds: string[]): Promise<SavedTemplate | null> {
+export async function getVisible(id: string, userId: string, workspaceIds: string[]): Promise<StoredTemplate | null> {
   const r = await one<Row & { content: TemplateContent | string }>(
     `SELECT ${SUMMARY_COLUMNS}, content FROM templates WHERE ${VISIBLE_TO_USER} AND id = $3`,
     [userId, workspaceIds, id],
@@ -75,7 +79,7 @@ export async function getVisible(id: string, userId: string, workspaceIds: strin
 }
 
 /** Templates with their content (data exports): the owner's, or those shared with a workspace. */
-export async function fullTemplates(by: { ownerId: string } | { workspaceId: string }): Promise<SavedTemplate[]> {
+export async function fullTemplates(by: { ownerId: string } | { workspaceId: string }): Promise<StoredTemplate[]> {
   const rows = await query<Row & { content: TemplateContent | string }>(
     `SELECT ${SUMMARY_COLUMNS}, content FROM templates WHERE ${'ownerId' in by ? 'owner_id' : 'workspace_id'} = $1 ORDER BY created_at, id`,
     ['ownerId' in by ? by.ownerId : by.workspaceId],
@@ -94,12 +98,38 @@ export async function lockOwnerQuota(ownerId: string): Promise<void> {
 }
 
 /** Shares the owner's template with a workspace (null: personal again). Null if it is not theirs. */
-export async function setWorkspace(id: string, ownerId: string, workspaceId: string | null, now: number): Promise<SavedTemplateSummary | null> {
+export async function setWorkspace(id: string, ownerId: string, workspaceId: string | null, now: number): Promise<StoredSummary | null> {
   const r = await one<Row>(
     `UPDATE templates SET workspace_id = $3, updated_at = $4 WHERE id = $1 AND owner_id = $2 RETURNING ${SUMMARY_COLUMNS}`,
     [id, ownerId, workspaceId, new Date(now)],
   );
   return r ? toSummary(r) : null;
+}
+
+/** A workspace admin stops a template being shared with THEIR workspace. Null if it isn't shared there (any more). */
+export async function unshareFrom(id: string, workspaceId: string, now: number): Promise<StoredSummary | null> {
+  const r = await one<Row>(
+    `UPDATE templates SET workspace_id = NULL, updated_at = $3 WHERE id = $1 AND workspace_id = $2 RETURNING ${SUMMARY_COLUMNS}`,
+    [id, workspaceId, new Date(now)],
+  );
+  return r ? toSummary(r) : null;
+}
+
+/** Everything `ownerId` shared with the workspace becomes personal again (they left it). */
+export async function unshareAllOf(ownerId: string, workspaceId: string, now: number): Promise<number> {
+  return (
+    await query(`UPDATE templates SET workspace_id = NULL, updated_at = $3 WHERE owner_id = $1 AND workspace_id = $2 RETURNING 1`, [
+      ownerId,
+      workspaceId,
+      new Date(now),
+    ])
+  ).length;
+}
+
+/** The workspace a template is shared with (null: personal), or undefined if there is no such template. */
+export async function sharedWith(id: string): Promise<string | null | undefined> {
+  const r = await one<{ workspace_id: string | null }>(`SELECT workspace_id FROM templates WHERE id = $1`, [id]);
+  return r ? r.workspace_id : undefined;
 }
 
 /** Deletes the owner's template; returns its thumbnail (to delete the file), or undefined if none was deleted. */

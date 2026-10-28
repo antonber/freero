@@ -44,12 +44,14 @@ import { isShared, publish, subscribe, subscribedInstances, type Subscription } 
 import { getUser, noteSessionActivity } from '../auth/index';
 import { getBoardAccess, touchBoard } from '../boards/index';
 import { sanitizeAwarenessUpdate, withoutClients, type AwarenessIdentity } from './awareness';
+import { elementChanges, ELEMENTS, emitBoardChange, hasBoardChangeListeners } from './changes';
 import { commentPeople, COMMENTS_COLLECTION, emitCommentMessages, hasCommentListeners, messageEvents } from './comments';
 import * as store from './docStore';
 import { decideUpdate } from './filter';
 import * as layerStore from './layerStore';
 import {
   applyLayerOp,
+  EDITORS_LAYER,
   isLayerName,
   isPrivateLayer,
   mayRunLayerOp,
@@ -98,6 +100,8 @@ export interface Admission {
   role: Role;
   sessionKey: string;
   identity: AwarenessIdentity;
+  /** Set for guests: the only author name their comment messages may carry. */
+  authorName?: string;
 }
 export interface Refusal {
   code: number;
@@ -110,6 +114,8 @@ interface Conn {
   /** Session the socket was opened with (auth's opaque key); logging out closes the socket. */
   sessionKey: string;
   role: Role;
+  /** Guests: the author name their comments must carry (commentRules.ts). */
+  authorName: string | undefined;
   identity: { value: AwarenessIdentity; at: number; loading: boolean };
   /** Awareness client ids announced over this socket (removed on close). */
   awarenessIds: Set<number>;
@@ -245,6 +251,10 @@ class Room {
       emitCommentMessages(messageEvents(this.id, comments, event.changes.keys, conn.userId));
     });
 
+    // Element changes made through OUR sockets (changes.ts): the activity feed's trusted source.
+    const elements = this.doc.getMap<unknown>(ELEMENTS);
+    elements.observe((event, tr) => this.reportChanges('shared', elements, event.changes.keys, tr.origin));
+
     this.ready = this.open();
   }
 
@@ -291,8 +301,25 @@ class Room {
       created.unsaved.push(update);
       this.markDirty();
     });
+    // Hidden frames' contents: reported for owners/editors only (changes.ts). Private layers never.
+    if (name === EDITORS_LAYER) {
+      const els = created.doc.getMap<unknown>(ELEMENTS);
+      els.observe((event, tr) => this.reportChanges('editors', els, event.changes.keys, tr.origin));
+    }
     this.layers.set(name, created);
     return created;
+  }
+
+  private reportChanges(
+    layer: 'shared' | 'editors',
+    elements: Y.Map<unknown>,
+    keys: Map<string, { action: 'add' | 'update' | 'delete'; oldValue: unknown }>,
+    origin: unknown,
+  ): void {
+    const conn = origin instanceof WebSocket ? this.conns.get(origin) : undefined;
+    if (!conn || !hasBoardChangeListeners()) return;
+    const { changes, frameTitles } = elementChanges(layer, elements, this.doc.getMap<unknown>(ELEMENTS), keys);
+    emitBoardChange({ boardId: this.id, actorId: conn.userId, actorName: conn.identity.value.name, layer, changes, frameTitles });
   }
 
   /** A layer sync message from a socket: answered only for layers it may read. */
@@ -494,6 +521,7 @@ class Room {
       userId: a.userId,
       sessionKey: a.sessionKey,
       role: a.role,
+      authorName: a.authorName,
       identity: { value: a.identity, at: Date.now(), loading: false },
       awarenessIds: new Set(),
       lastResync: 0,
@@ -579,7 +607,7 @@ class Room {
   }
 
   private onUpdate(conn: Conn, update: Uint8Array, syncType: number): void {
-    if (decideUpdate(conn.role, this.doc, update, conn.userId) === 'apply') {
+    if (decideUpdate(conn.role, this.doc, update, conn.userId, conn.authorName) === 'apply') {
       Y.applyUpdate(this.doc, update, conn.ws);
       // Editing over the socket is activity: a workspace's idle limit must not sign out someone at work.
       if (syncType === syncProtocol.messageYjsUpdate) noteSessionActivity(conn.sessionKey);

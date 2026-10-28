@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes, useParams } from 'react-router-
 import { ToastProvider } from '@ui';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { RequireAuth } from './auth/RequireAuth';
+import { GuestGate } from './board/GuestGate';
 import { FullPageSpinner } from './components/FullPageSpinner';
 import { LandingPage } from './pages/landing/LandingPage';
 import { AuthPage } from './pages/auth/AuthPage';
@@ -106,7 +107,8 @@ function Home() {
 }
 
 function BoardRoute() {
-  const { id } = useParams();
+  const { id = '' } = useParams();
+  const { user, loading } = useAuth();
   const board: ReactNode = (
     <Suspense fallback={<FullPageSpinner label="Opening board" />}>
       <BoardPage />
@@ -114,5 +116,7 @@ function BoardRoute() {
   );
   // The engine's offline sandbox needs no account in development.
   if (import.meta.env.DEV && id === 'local') return board;
+  // Not signed in: a shared link may let visitors in as guests (else GuestGate sends them to sign in).
+  if (!loading && !user) return <GuestGate boardId={id} />;
   return <RequireAuth>{board}</RequireAuth>;
 }

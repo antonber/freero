@@ -2,7 +2,7 @@
 // board ownership transfer.
 import { useEffect, useState, type FormEvent } from 'react';
 import { X } from 'lucide-react';
-import type { BoardSummary, ProjectAccess, ProjectSummary, WorkspaceSummary } from '@freero/shared';
+import type { BoardSummary, ProjectAccess, ProjectSummary, TeamAccess, WorkspaceSummary } from '@freero/shared';
 import { Avatar, Button, IconButton, Input, Modal, Select, useToast, type SelectOption } from '@ui';
 import { api, ApiError } from '../../api/client';
 
@@ -65,8 +65,17 @@ export function CreateWorkspaceDialog({ open, onClose, onCreated }: { open: bool
 }
 
 const ACCESS_OPTIONS: SelectOption<ProjectAccess>[] = [
-  { value: 'workspace', label: 'Everyone in the workspace', description: 'Members see and edit its boards' },
+  { value: 'workspace', label: 'Everyone in the workspace', description: 'Every member sees its boards' },
   { value: 'private', label: 'Private', description: 'Only people you add (and workspace admins)' },
+];
+
+const LEVEL_LABEL: Record<TeamAccess, string> = { editor: 'can edit', commenter: 'can comment', viewer: 'can view' };
+/** '' = the workspace's level. */
+const levelOptions = (workspaceLevel: TeamAccess): SelectOption<TeamAccess | ''>[] => [
+  { value: '', label: `Workspace default (${LEVEL_LABEL[workspaceLevel]})` },
+  { value: 'editor', label: 'Can edit' },
+  { value: 'commenter', label: 'Can comment' },
+  { value: 'viewer', label: 'Can view' },
 ];
 
 type Person = { userId: string; name: string; color: string; avatarUrl: string | null };
@@ -88,6 +97,7 @@ export function ProjectDialog({
   const notify = useToast();
   const [name, setName] = useState('');
   const [access, setAccess] = useState<ProjectAccess>('workspace');
+  const [level, setLevel] = useState<TeamAccess | ''>('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [people, setPeople] = useState<Person[]>([]);
@@ -98,6 +108,7 @@ export function ProjectDialog({
     if (!open) return;
     setName(project?.name ?? '');
     setAccess(project?.access ?? 'workspace');
+    setLevel(project?.teamAccess ?? '');
     setError(null);
     setAdding('');
     setPeople([]);
@@ -113,8 +124,8 @@ export function ProjectDialog({
     setBusy(true);
     try {
       const { project: saved } = project
-        ? await api.updateProject(project.id, { name: name.trim(), access })
-        : await api.createProject(workspace.id, name.trim(), access);
+        ? await api.updateProject(project.id, { name: name.trim(), access, teamAccess: level || null })
+        : await api.createProject(workspace.id, name.trim(), access, level || null);
       onSaved(saved);
     } catch (err) {
       setError(errorText(err, 'Could not save the project'));
@@ -177,6 +188,18 @@ export function ProjectDialog({
           error={error ?? undefined}
         />
         {team ? <Select<ProjectAccess> aria-label="Who can see it" options={ACCESS_OPTIONS} value={access} onChange={setAccess} /> : null}
+        {team ? (
+          <label className="fr-dash-projdlg__level">
+            <span className="fr-dash-settings__label">{access === 'private' ? 'People in the project' : 'Members'} on its boards</span>
+            <Select<TeamAccess | ''>
+              aria-label="What members can do on its boards"
+              options={levelOptions(workspace.policies.teamAccess)}
+              value={level}
+              onChange={setLevel}
+              width={220}
+            />
+          </label>
+        ) : null}
       </form>
       {project && team && access === 'private' ? (
         <div className="fr-dash-projdlg__people">

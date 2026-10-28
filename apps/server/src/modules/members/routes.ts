@@ -1,12 +1,24 @@
 import { Router } from 'express';
-import type { AcceptInviteResponse, BoardMember, BoardPerson, InviteResponse, Role, User } from '@freero/shared';
+import { guestDisplayName, type AcceptInviteResponse, type AccessRequestState, type BoardMember, type BoardPerson, type InviteResponse, type Role, type User } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { badRequest, forbidden, handle, HttpError, notFound } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
 import { recordAuditQuietly } from '../audit/index';
-import { currentUser, findUserByEmail, getUser, getUsers, normalizeEmail, requireUser } from '../auth/index';
-import { requireBoardAccess, teamAccessUserIds } from '../boards/index';
+import {
+  actorId,
+  currentActor,
+  currentUser,
+  findUserByEmail,
+  getGuests,
+  getUser,
+  getUsers,
+  normalizeEmail,
+  requireUser,
+  requireUserOrGuest,
+} from '../auth/index';
+import { requireBoardAccess, teamAccessMembers, teamAccessUserIds } from '../boards/index';
 import { commentPeopleOf, refreshBoardAccess } from '../realtime/index';
+import { decideRequest, listRequests, requestAccess, requestState, withdrawRequest } from './accessRequests';
 import { boardShared } from './events';
 import { acceptInvite, inviteByEmail, listPending, previewInvite, resendInvite } from './invites';
 import * as repo from './repo';
@@ -40,10 +52,10 @@ export default function memberRoutes(_ctx: ServerContext): Router {
       const me = currentUser(req);
       const { ownerId, role: myRole } = await requireBoardAccess(boardId, me.id);
       const emails = atLeast(myRole, 'editor');
-      const [rows, team] = await Promise.all([repo.listByBoard(boardId), teamAccessUserIds(boardId)]);
+      const [rows, team] = await Promise.all([repo.listByBoard(boardId), teamAccessMembers(boardId)]);
       const listed = new Set([ownerId, ...rows.map((m) => m.userId)]);
-      const viaTeam = team.filter((id) => !listed.has(id));
-      const users = await getUsers([...listed, ...viaTeam]);
+      const viaTeam = team.filter((t) => !listed.has(t.userId));
+      const users = await getUsers([...listed, ...viaTeam.map((t) => t.userId)]);
       const members: BoardMember[] = [];
       const owner = users.get(ownerId);
       if (owner) members.push(toMember(owner, 'owner', emails || owner.id === me.id));
@@ -51,10 +63,10 @@ export default function memberRoutes(_ctx: ServerContext): Router {
         const u = users.get(m.userId);
         if (u) members.push(toMember(u, m.role, emails || u.id === me.id));
       }
-      // Team access (the workspace grants editor; see workspaces/roles.ts).
-      for (const id of viaTeam) {
-        const u = users.get(id);
-        if (u) members.push({ ...toMember(u, 'editor', emails || u.id === me.id), team: true });
+      // Team access (the role the workspace grants each of them here; see workspaces/roles.ts).
+      for (const t of viaTeam) {
+        const u = users.get(t.userId);
+        if (u) members.push({ ...toMember(u, t.role, emails || u.id === me.id), team: true });
       }
       res.json({ members });
     }),
@@ -108,20 +120,69 @@ export default function memberRoutes(_ctx: ServerContext): Router {
   );
 
   // Profiles for ids a board shows (comment authors, @mentions), including people who left it.
+  // Guests may ask too (their board only): names and photos, never emails.
   r.get(
     '/boards/:id/people',
-    requireUser,
+    requireUserOrGuest,
     handle(async (req, res) => {
       const boardId = req.params.id;
-      const { ownerId } = await requireBoardAccess(boardId, currentUser(req).id);
+      const { ownerId } = await requireBoardAccess(boardId, actorId(currentActor(req)));
       const ids = [...new Set(String(req.query.ids ?? '').split(',').filter(Boolean))];
       if (ids.length > MAX_PEOPLE) throw badRequest(`At most ${MAX_PEOPLE} ids`);
       const onBoard = new Set([ownerId, ...(await repo.listByBoard(boardId)).map((m) => m.userId), ...(await teamAccessUserIds(boardId))]);
       // Only people the board already shows somewhere: never a lookup of arbitrary accounts.
       const inComments = ids.some((id) => !onBoard.has(id)) ? await commentPeopleOf(boardId) : new Set<string>();
-      const users = await getUsers(ids.filter((id) => onBoard.has(id) || inComments.has(id)));
-      const people: BoardPerson[] = [...users.values()].map((u) => ({ id: u.id, name: u.name, color: u.color, avatarUrl: u.avatarUrl }));
+      const shown = ids.filter((id) => onBoard.has(id) || inComments.has(id));
+      const [users, guests] = await Promise.all([getUsers(shown), getGuests(shown)]);
+      const people: BoardPerson[] = [
+        ...[...users.values()].map((u) => ({ id: u.id, name: u.name, color: u.color, avatarUrl: u.avatarUrl })),
+        // Guests who commented here, while their session lasts (their comments keep the name after).
+        ...[...guests.values()].filter((g) => g.boardId === boardId).map((g) => ({ id: g.id, name: guestDisplayName(g.name), color: g.color, avatarUrl: null })),
+      ];
       res.json({ people });
+    }),
+  );
+
+  // ---- access requests ----
+  r.get(
+    '/boards/:id/access-request',
+    requireUser,
+    handle(async (req, res) => {
+      res.json((await requestState(req.params.id, currentUser(req).id)) satisfies AccessRequestState);
+    }),
+  );
+
+  r.post(
+    '/boards/:id/access-request',
+    requireUser,
+    rateLimit('accessRequest', 'user'),
+    handle(async (req, res) => {
+      res.status(201).json((await requestAccess(req.params.id, currentUser(req), req.body ?? {})) satisfies AccessRequestState);
+    }),
+  );
+
+  r.delete(
+    '/boards/:id/access-request',
+    requireUser,
+    handle(async (req, res) => {
+      res.json((await withdrawRequest(req.params.id, currentUser(req).id)) satisfies AccessRequestState);
+    }),
+  );
+
+  r.get(
+    '/boards/:id/access-requests',
+    requireUser,
+    handle(async (req, res) => {
+      res.json({ requests: await listRequests(req.params.id, currentUser(req).id) });
+    }),
+  );
+
+  r.post(
+    '/boards/:id/access-requests/:userId',
+    requireUser,
+    handle(async (req, res) => {
+      await decideRequest(req.params.id, currentUser(req), req.params.userId, req.body ?? {});
+      res.json({ ok: true });
     }),
   );
 

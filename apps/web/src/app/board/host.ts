@@ -2,7 +2,7 @@
 import type { BoardSummary, Role } from '@freero/shared';
 import { unavailableVersionHistory, type Host, type HostUser } from '@engine';
 import type { ToastApi } from '@ui';
-import { wsBase } from '../api/client';
+import { api, wsBase } from '../api/client';
 import {
   deleteTemplate,
   fetchImage,
@@ -81,9 +81,59 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     shareTemplate: shareTemplateWith(deps.team?.id ?? null),
     deleteTemplate,
     versions: versionHistory(board.id),
+    activity: { list: (before) => api.boardActivity(board.id, before) },
     importImage,
     fetchImage,
     report: reportOn(board.id),
+  };
+}
+
+/**
+ * A guest's Host (a visitor without an account, on the one board they joined): the board's own
+ * services that work for guests (its socket, the people lookup, server time) — everything tied to
+ * an account (uploads, templates, history, sharing, link previews) politely refuses instead of
+ * asking the server.
+ */
+export function createGuestHost(
+  board: BoardSummary,
+  deps: { user: HostUser; navigate(path: string): void; notify: Host['notify']; signUpPath: string },
+): Host {
+  syncServerClock();
+  const needsAccount = (what: string) => () => Promise.reject(new Error(`${what} needs a free Freero account.`));
+  const signUp = () =>
+    deps.notify('Sign up free to share boards, save templates and keep your work.', 'info', {
+      action: { label: 'Sign up', run: () => deps.navigate(deps.signUpPath) },
+    });
+  return {
+    user: deps.user,
+    board: { id: board.id, title: board.title, role: board.role, canExport: board.permissions.canExport, team: null, signedIn: false },
+    syncUrl: `${wsBase()}/ws/boards`,
+    // Guests may report what they can open (KAI-181), with an optional address for the outcome.
+    report: async ({ target, reason, note, contactEmail }) => {
+      await api.report({ boardId: board.id, target, reason, ...(note ? { note } : {}), ...(contactEmail ? { contactEmail } : {}) });
+    },
+    uploadImage: needsAccount('Uploading images'),
+    uploadFile: needsAccount('Uploading files'),
+    renameBoard: needsAccount('Renaming boards'),
+    saveThumbnail: async () => undefined,
+    openShareDialog: signUp,
+    navigate: (path) => (path === '/app' || path === '/' ? signUp() : deps.navigate(path)),
+    notify: deps.notify,
+    serverNow,
+    // Guests never see the member directory (nor anyone's email); presence and comments name people.
+    listMembers: async () => [],
+    lookupUsers: (ids) => lookupUsers(board.id, ids),
+    inviteMember: needsAccount('Inviting people'),
+    unfurl: needsAccount('Link previews'),
+    listTemplates: async () => [],
+    loadTemplate: needsAccount('Saved templates'),
+    saveTemplate: needsAccount('Saving templates'),
+    shareTemplate: needsAccount('Sharing templates'),
+    deleteTemplate: needsAccount('Saved templates'),
+    versions: unavailableVersionHistory('Version history needs a free Freero account.'),
+    activity: { list: (before) => api.boardActivity(board.id, before) },
+    importImage: needsAccount('Copying images'),
+    fetchImage: needsAccount('Copying images'),
   };
 }
 

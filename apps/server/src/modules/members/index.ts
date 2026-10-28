@@ -3,7 +3,7 @@
 import type { Role } from '@freero/shared';
 import * as repo from './repo';
 
-export { resolveRole, atLeast, isLinkAccess, ROLE_RANK, type WorkspaceAccess } from './roles';
+export { resolveRole, resolveGuestRole, atLeast, isLinkAccess, ROLE_RANK, type WorkspaceAccess } from './roles';
 
 /** Ends the user's direct memberships on these boards (removed from the boards' workspace). */
 export async function removeBoardMemberships(boardIds: string[], userId: string): Promise<void> {
@@ -24,7 +24,19 @@ export async function ownershipTransferred(
   await repo.removeMember(boardId, newOwnerId);
   if (previousOwnerRole) await repo.upsertMember(boardId, previousOwnerId, previousOwnerRole, Date.now());
 }
-export { onBoardShared, onInviteAccepted, type BoardSharedEvent, type InviteAcceptedEvent } from './events';
+export {
+  onBoardShared,
+  onInviteAccepted,
+  onAccessRequested,
+  onAccessDecided,
+  type BoardSharedEvent,
+  type InviteAcceptedEvent,
+  type AccessRequestedEvent,
+  type AccessDecidedEvent,
+} from './events';
+// Access requests (routes.ts serves them): filing and deciding one, and where the ones behind
+// notifications stand (the inbox shows it).
+export { requestAccess, decideRequest as decideAccessRequest, requestOutcomes as accessRequestOutcomes } from './accessRequests';
 export { invitedEmails } from './invites';
 
 /** The explicit membership role of a user on a board (not counting ownership or link access). */
