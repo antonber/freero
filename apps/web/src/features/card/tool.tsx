@@ -1,5 +1,5 @@
 import { ListTodo } from 'lucide-react';
-import { defineTool, usePointer, useToolOptions } from '@engine';
+import { defineTool, useToolGhost, useToolOptions } from '@engine';
 import { ColorSwatches } from '@ui';
 import { ACCENTS, ACCENT_NAMES, DEFAULT_ACCENT, TOOL_ID, type CardToolOptions } from './lib/constants';
 import { CARD_W, cardLayout } from './lib/layout';
@@ -42,7 +42,7 @@ export default defineTool({
   },
 
   Preview: () => {
-    const p = usePointer();
+    const p = useToolGhost({ w: CARD_W, h: GHOST_H });
     const { color = DEFAULT_ACCENT } = useToolOptions<CardToolOptions>(TOOL_ID);
     if (!p) return null;
     return (
@@ -52,7 +52,7 @@ export default defineTool({
           width: CARD_W,
           height: GHOST_H,
           ['--accent' as string]: color,
-          transform: `translate(${p.x - CARD_W / 2}px, ${p.y - GHOST_H / 2}px)`,
+          transform: `translate(${p.x}px, ${p.y}px)`,
         }}
       />
     );

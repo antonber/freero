@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Search, Stamp } from 'lucide-react';
-import { defineTool, usePointer, useCamera, useToolOptions, type Editor } from '@engine';
+import { defineTool, useToolGhost, useCamera, useToolOptions, type Editor } from '@engine';
 import { Input } from '@ui';
 import { DEFAULT_CHOICE, MAX_RECENT, PLACE_SIZE, TOOL_ID, type EmojiToolOptions } from './lib/constants';
 import { EMOJI_CATEGORIES, searchEmojis } from './lib/emojis';
@@ -130,13 +130,13 @@ function Picker({ editor }: { editor: Editor }) {
 }
 
 function Ghost() {
-  const p = usePointer();
   const { zoom } = useCamera();
   const { current = DEFAULT_CHOICE } = useToolOptions<EmojiToolOptions>(TOOL_ID);
-  if (!p) return null;
   const s = placeSize(zoom);
+  const p = useToolGhost({ w: s, h: s });
+  if (!p) return null;
   return (
-    <div className="fr-emoji-ghost" style={{ width: s, height: s, transform: `translate(${p.x - s / 2}px, ${p.y - s / 2}px)` }}>
+    <div className="fr-emoji-ghost" style={{ width: s, height: s, transform: `translate(${p.x}px, ${p.y}px)` }}>
       <Glyph value={current} />
     </div>
   );

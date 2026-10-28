@@ -3,9 +3,10 @@
 import { useCallback, useContext, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useStore } from 'zustand';
 import type { BoardElement, BoardSettings, ElementType, PresenceState, Role } from '@freero/shared';
-import type { Camera, Editor, FollowTarget, Point, Rect } from './api';
+import type { Camera, Collection, Editor, FollowTarget, Point, Rect } from './api';
 import { RenderModeContext, ScopeContext, useCore } from './context';
 import type { UiState } from './state/uiStore';
+import { toolGhostAt } from './interaction/toolDispatch';
 import type { TextFormatState } from './text/session';
 
 /**
@@ -90,6 +91,17 @@ export function useToolOptions<T = Record<string, unknown>>(toolId: string): T {
 export function useCollection<T>(name: string): Array<[string, T]> {
   const editor = useEditor();
   const coll = useMemo(() => editor.collection<T>(name), [editor, name]);
+  return useCollectionEntries(coll);
+}
+
+/** [additive] Entries of this user's private copy of a collection (Editor.privateCollection). */
+export function usePrivateCollection<T>(name: string): Array<[string, T]> {
+  const editor = useEditor();
+  const coll = useMemo(() => editor.privateCollection<T>(name), [editor, name]);
+  return useCollectionEntries(coll);
+}
+
+function useCollectionEntries<T>(coll: Collection<T>): Array<[string, T]> {
   const cache = useRef<{ version: number; value: Array<[string, T]> }>({ version: -1, value: [] });
   const version = useRef(0);
   const subscribe = useCallback(
@@ -137,6 +149,20 @@ export function useDock(): string | null {
 export function usePointer(): Point | null {
   const core = useCore();
   return useStore(core.pointer, (s) => (s.inside ? s.world : null));
+}
+
+/**
+ * [additive] For a creation tool's hover ghost: top-left of a `size` box centered on the pointer,
+ * exactly where a click with the active tool would create it — grid snapping included (board
+ * setting, the tool's `snapToGrid`, Ctrl/⌘ inverts, Alt disables). Null off the canvas.
+ */
+export function useToolGhost(size: { w: number; h: number }): Point | null {
+  const core = useCore();
+  // Re-render on what the placement depends on: pointer + modifiers, grid settings, active tool.
+  useStore(core.pointer);
+  useUi((s) => s.settingsVersion);
+  useUi((s) => s.toolId);
+  return toolGhostAt(core, size);
 }
 
 /** Rich-text format state at the caret / of the selection; refreshes as the caret moves. */

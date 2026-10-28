@@ -45,7 +45,7 @@ export const brainstorm: TemplateDef = {
         { routing: 'curved', strokeStyle: 'dashed', stroke: c.accent, endCap: 'none' },
       );
     }
-    return k.els;
+    return k.done();
   },
 };
 
@@ -80,7 +80,7 @@ export const mindmap: TemplateDef = {
         k.mindmap(lx, b.y - 34 + i * 68, leafW, 44, leaf, b.color, child);
       });
     }
-    return k.els;
+    return k.done();
   },
 };
 
@@ -88,7 +88,7 @@ export const icebreaker: TemplateDef = {
   id: 'icebreaker',
   name: 'Weather check-in',
   description: 'A light warm-up: everyone places a sticky under the weather that matches their week.',
-  categories: ['brainstorm', 'meetings'],
+  categories: ['meetings', 'brainstorm'],
   keywords: ['icebreaker', 'check-in', 'warm up', 'mood', 'team'],
   build(newId) {
     const k = new Kit(newId);
@@ -115,6 +115,6 @@ export const icebreaker: TemplateDef = {
     k.sticky(48 + 20, y0 + 220, 'Ana: shipped my first feature!', 'yellow', colW - 40, 150);
     k.sticky(48 + (colW + gap) + 20, y0 + 220, 'Leo: busy, but on track for Friday', 'blue', colW - 40, 150);
     k.sticky(48 + 4 * (colW + gap) + 20, y0 + 220, 'Your name: one sentence about your week', 'green', colW - 40, 150);
-    return k.els;
+    return k.done();
   },
 };

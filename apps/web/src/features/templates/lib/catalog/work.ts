@@ -43,7 +43,7 @@ export const weeklyPlanner: TemplateDef = {
       k.shape('roundRect', x + 12, daysY + 12, colW - 24, 48, `<b>${rt(d.day)}</b>`, { fill: HEAD.gray, fontSize: 18 });
       d.items.forEach(([t, c], j) => k.sticky(x + 16, daysY + 76 + j * 136, t, c, colW - 32, 120));
     });
-    return k.els;
+    return k.done();
   },
 };
 
@@ -102,7 +102,7 @@ export const meetingNotes: TemplateDef = {
       ['Send the recap to stakeholders', 'Owner: you · Due: today', MINT],
     ];
     actions.forEach(([t, d, c], i) => k.card(rightX + 24, botY + 72 + i * 108, rightW - 48, 96, t, d, c, 'todo'));
-    return k.els;
+    return k.done();
   },
 };
 
@@ -135,6 +135,6 @@ export const flowchart: TemplateDef = {
     k.connector({ id: queue, anchor: 'right' }, { id: resolve, anchor: 'bottom' });
     k.connector({ id: resolve, anchor: 'right' }, { id: end, anchor: 'left' }, { routing: 'straight' });
     k.sticky(56, H - 200, 'Tip: add a swimlane per team if more than one team touches the request.', 'yellow', 220, 150);
-    return k.els;
+    return k.done();
   },
 };

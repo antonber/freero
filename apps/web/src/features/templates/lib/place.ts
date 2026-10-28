@@ -1,7 +1,7 @@
 // Pure placement + instantiation (unit-tested): where a template lands and the elements it
 // becomes. No editor access here; insert.ts feeds in the board's state.
 import type { NewElement, Point, Rect } from '@engine';
-import type { TemplateCategory, TemplateDef } from './types';
+import type { BuiltTemplate, TemplateCategory, TemplateDef } from './types';
 
 export function boundsOf(els: Array<{ x: number; y: number; w: number; h: number }>): Rect | null {
   if (!els.length) return null;
@@ -42,26 +42,47 @@ export interface BoardSnapshot {
  * The elements to create for `def` on a board in state `board`: fresh ids (from `newId`),
  * moved into the free spot the board offers, frames numbered after existing frames.
  */
-export function instantiate(def: TemplateDef, board: BoardSnapshot, newId: () => string): NewElement[] {
-  const els = def.build(newId);
-  const b = boundsOf(els) ?? { x: 0, y: 0, w: 0, h: 0 };
+export function instantiate(def: TemplateDef, board: BoardSnapshot, newId: () => string): BuiltTemplate {
+  const { elements, content } = def.build(newId);
+  const b = boundsOf(elements) ?? { x: 0, y: 0, w: 0, h: 0 };
   const spot = board.place({ w: b.w, h: b.h });
   const off = { x: spot.x - b.x, y: spot.y - b.y };
   let frameIndex = board.maxFrameIndex;
-  return els.map((el) => {
-    const moved = translate(el, off.x, off.y);
-    if (moved.type === 'frame') (moved as NewElement<'frame'>).index = ++frameIndex;
-    return moved;
+  const moved = elements.map((el) => {
+    const m = translate(el, off.x, off.y);
+    if (m.type === 'frame') (m as NewElement<'frame'>).index = ++frameIndex;
+    return m;
   });
+  return { elements: moved, content };
 }
 
-/** Templates matching a free-text query and an optional category. */
-export function filterTemplates(all: TemplateDef[], query: string, category: TemplateCategory | null): TemplateDef[] {
+/**
+ * Templates matching a free-text query and an optional category, best matches first: every word
+ * must appear somewhere (name, description, keywords, category); templates whose NAME holds the
+ * words come before ones that only mention them, then keyword hits, then the catalog order.
+ */
+export function filterTemplates(
+  all: TemplateDef[],
+  query: string,
+  category: TemplateCategory | null,
+  categoryLabels: Partial<Record<TemplateCategory, string>> = {},
+): TemplateDef[] {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-  return all.filter((t) => {
-    if (category && !t.categories.includes(category)) return false;
-    if (!words.length) return true;
-    const hay = [t.name, t.description, ...t.keywords, ...t.categories].join(' ').toLowerCase();
-    return words.every((w) => hay.includes(w));
+  const scored: Array<{ t: TemplateDef; score: number; i: number }> = [];
+  all.forEach((t, i) => {
+    if (category && !t.categories.includes(category)) return;
+    if (!words.length) return void scored.push({ t, score: 0, i });
+    const name = t.name.toLowerCase();
+    const keywords = t.keywords.join(' ').toLowerCase();
+    const hay = [name, t.description, keywords, ...t.categories, ...t.categories.map((c) => categoryLabels[c] ?? '')].join(' ').toLowerCase();
+    if (!words.every((w) => hay.includes(w))) return;
+    let score = 0;
+    for (const w of words) {
+      if (name.split(/[^a-z0-9]+/).some((part) => part.startsWith(w))) score += 4;
+      else if (name.includes(w)) score += 3;
+      else if (keywords.includes(w)) score += 2;
+    }
+    scored.push({ t, score, i });
   });
+  return scored.sort((a, b) => b.score - a.score || a.i - b.i).map((s) => s.t);
 }

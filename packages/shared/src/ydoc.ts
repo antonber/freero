@@ -11,17 +11,41 @@
 //   'tags'     -> features/tags       (Tag by id)
 //   'timer'    -> features/timer      (key 'state' -> TimerState)
 //   'tableCells' -> features/table (cell text/fill per key — see TableElement in elements.ts)
-//   'voting'   -> features/voting     (key 'session' -> VotingSession, `${sessionId}:${userId}` -> VoteBallot)
+//   'privateMode' -> features/private-mode (key 'session' -> PrivateModeSession)
+//   'voting'   -> features/voting     (key 'session' -> VotingSession, `${sessionId}:${userId}` -> VoteBallot;
+//                                     while results are hidden the real ballot is in the voter's
+//                                     PRIVATE layer and the shared key holds a `sealed` marker)
 //
-// The server never interprets contents; it relays and persists updates. It drops
-// all updates from viewers, and for commenters accepts only changes confined to
-// the collections listed in COMMENTER_WRITABLE.
+// Content some connections must not read (private drafts, sealed ballots, hidden frames'
+// contents) never enters this doc: it lives in server-held LAYER docs with the same layout (an
+// `elements` map, feature collections) until revealed — see WS_MESSAGE_LAYER in api.ts.
+//
+// A new collection is board CONTENT by default (restoring a version rolls it back); social /
+// session collections go in Y_KEPT_ON_RESTORE below.
+//
+// The server never interprets contents (except to restore a version: top-level maps of JSON
+// values, and to check commenters' writes); it relays and persists updates. It drops all updates
+// from viewers, and for commenters accepts only changes confined to the collections listed in
+// COMMENTER_WRITABLE — and in 'comments' only records the commenter owns (see CommentRecord in
+// elements.ts and apps/server/src/modules/realtime/commentRules.ts).
 
 export const Y_ELEMENTS = 'elements';
 export const Y_SETTINGS = 'settings';
 
 /** Top-level types a commenter may modify (server-enforced). */
 export const COMMENTER_WRITABLE = ['comments'] as const;
+
+/**
+ * Top-level types that restoring an older version (version history) leaves as they are: social
+ * and session data (the conversation, a vote, the timer), not board content. Everything else —
+ * elements, settings and content collections (tags, table cells) — goes back to the version.
+ * A new social / session collection belongs here. 'voting' also holds the "has voted" markers of
+ * a sealed vote (rolling them back would desync them from the ballots in the private layers), and
+ * 'privateMode' is session state: rolling it back could restart private mode (new content going
+ * private again) or end it while drafts are still sealed. Layer docs are never versioned or
+ * restored (see "Board layers" in ARCHITECTURE.md).
+ */
+export const Y_KEPT_ON_RESTORE = ['comments', 'voting', 'timer', 'privateMode'] as const;
 
 export interface BoardSettings {
   background: string;
@@ -53,11 +77,24 @@ export interface VotingSession {
   votesPerUser: number;
   /** If set, only these element ids can be voted on; otherwise all stickies/cards/shapes. */
   elementIds: string[] | null;
-  /** Hide results until the session ends. */
+  /**
+   * Hide results until the session ends. Server-enforced: ballots are written to each voter's
+   * private layer (nobody else can read them) and revealed into this doc when the session ends.
+   */
   anonymous: boolean;
   startedBy: string;
   startedAt: number;
   endedAt: number | null;
+}
+
+/** Private mode: while active, what participants add stays in their private layer until revealed. */
+export interface PrivateModeSession {
+  active: boolean;
+  startedBy: string;
+  startedByName: string;
+  startedAt: number;
+  /** Only content added inside this frame goes private (null: the whole board). */
+  frameId: string | null;
 }
 
 export interface VoteBallot {
@@ -65,6 +102,11 @@ export interface VoteBallot {
   userId: string;
   /** May contain duplicates (multiple votes on the same element). */
   elementIds: string[];
+  /**
+   * Marker in the shared doc while results are hidden: this user has voted, the ballot itself is
+   * sealed in their private layer (elementIds is then empty) until the session ends.
+   */
+  sealed?: boolean;
   /** Voter's display name/color at vote time, for "who has voted" avatars after they leave. */
   userName?: string;
   userColor?: string;

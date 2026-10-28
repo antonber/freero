@@ -5,7 +5,7 @@ import { newId } from '../../platform/ids';
 import { runExclusive } from '../../platform/jobs';
 import { getUser, getUsers } from '../auth/index';
 import { atLeast, getMemberRole, membershipsOf, resolveRole } from '../members/index';
-import { closeBoardDoc, initBoardDoc, snapshotBoardDoc } from '../realtime/index';
+import { closeBoardDoc, initBoardDoc, initBoardLayer, snapshotBoardDoc, snapshotBoardLayer, snapshotBoardLayers } from '../realtime/index';
 import { deleteUpload } from '../uploads/index';
 import * as repo from './repo';
 import type { Board } from './repo';
@@ -168,9 +168,13 @@ export async function moveToTrash(board: Board, now = Date.now()): Promise<void>
   // them. Take the live state first, then close (which also waits for a save in flight), then
   // store that state last, so nothing older lands after it. Nobody can rejoin in between: the
   // board no longer resolves for access.
+  // The same for its layers (hidden frames' contents, private drafts, sealed ballots): restoring
+  // the board brings them back exactly as they were.
   const state = await snapshotBoardDoc(board.id);
+  const layers = await snapshotBoardLayers(board.id);
   await closeBoardDoc(board.id);
   if (state) await initBoardDoc(board.id, state);
+  for (const l of layers) await initBoardLayer(board.id, l.layer, l.state);
 }
 
 /** Owner only: takes a board out of the trash (subject to the board quota). */
@@ -231,14 +235,18 @@ export async function purgeExpiredTrashLocked(now = Date.now()): Promise<number>
 /**
  * A copy of `source` owned by `userId`, with the source's current content. The new board row and
  * its content are written in one transaction: if saving the content fails there is no empty copy.
+ * Hidden frames' contents (the 'editors' layer) are copied only for someone who may see them
+ * (`role` owner/editor); nobody's private layer (drafts, sealed ballots) is ever copied.
  */
-export async function duplicateBoard(source: Board, userId: string): Promise<Board> {
+export async function duplicateBoard(source: Board, userId: string, role: Role): Promise<Board> {
   // Read the content BEFORE the transaction: it may wait for the live doc to finish loading,
   // which queries the database outside this transaction.
   const state = await snapshotBoardDoc(source.id);
+  const editors = atLeast(role, 'editor') ? await snapshotBoardLayer(source.id, 'editors') : null;
   return repo.transaction(async () => {
     const copy = await createBoard(userId, `Copy of ${source.title}`.slice(0, 200), source.description);
     if (state) await initBoardDoc(copy.id, state);
+    if (editors) await initBoardLayer(copy.id, 'editors', editors);
     return copy;
   });
 }

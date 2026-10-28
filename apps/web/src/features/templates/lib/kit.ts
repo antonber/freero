@@ -10,11 +10,13 @@ import type {
   ShapeKind,
   StickyColor,
   StrokeStyle,
+  TableCopyContent,
   TextAlign,
   VerticalAlign,
 } from '@freero/shared';
 import type { NewElement, Point, Rect } from '@engine';
 import { INK, INK_SOFT, LINE } from './palette';
+import type { BuiltTemplate } from './types';
 
 /** Escapes plain text into the RichText subset (newlines become <br>). */
 export function rt(text: string): string {
@@ -80,6 +82,8 @@ export interface ConnectorOpts {
  */
 export class Kit {
   readonly els: NewElement[] = [];
+  /** Content kept outside the elements (table cells), by element id. */
+  private readonly content: Record<string, unknown> = {};
   private frameId: string | null = null;
   private rects = new Map<string, Rect>();
 
@@ -276,6 +280,69 @@ export class Kit {
       label: o.label ?? '',
       ...this.inFrame(),
     });
+  }
+
+  /**
+   * A table with the given column widths; `rows[i]` is the row height and its cell texts (plain
+   * text; missing cells stay empty). `fills` colors whole columns (by column index), e.g. "us"
+   * in a comparison. The first row is the header unless `header` is false.
+   */
+  table(
+    x: number,
+    y: number,
+    colWidths: number[],
+    rows: Array<{ h: number; cells: string[] }>,
+    o: { header?: boolean; fontSize?: number; fills?: Record<number, string> } = {},
+  ): string {
+    const cols = colWidths.map((w) => ({ id: this.newId(), w }));
+    const rowTracks = rows.map((r) => ({ id: this.newId(), h: r.h }));
+    const cells: TableCopyContent = {};
+    rows.forEach((r, ri) =>
+      cols.forEach((c, ci) => {
+        const text = r.cells[ci] ?? '';
+        const fill = o.fills?.[ci];
+        if (text || fill) cells[`${rowTracks[ri].id}:${c.id}`] = { ...(text ? { t: rt(text) } : {}), ...(fill ? { f: fill } : {}) };
+      }),
+    );
+    const id = this.push<NewElement<'table'>>({
+      type: 'table',
+      x,
+      y,
+      w: colWidths.reduce((a, b) => a + b, 0),
+      h: rows.reduce((a, r) => a + r.h, 0),
+      rows: rowTracks,
+      cols,
+      header: o.header ?? true,
+      fontSize: o.fontSize ?? 16,
+      ...this.inFrame(),
+    });
+    this.content[id] = cells;
+    return id;
+  }
+
+  /**
+   * A tinted section with a bold title (and an optional grey hint under it). Returns the first
+   * free y inside it, below the title block.
+   */
+  section(x: number, y: number, w: number, h: number, title: string, tint: string, o: { accent?: string; hint?: string; size?: number } = {}): number {
+    this.panel(x, y, w, h, tint);
+    const size = o.size ?? 22;
+    this.text(x + 24, y + 18, w - 48, `<b>${rt(title)}</b>`, { size, color: o.accent ?? INK, h: Math.round(size * 1.45) });
+    if (!o.hint) return y + 18 + Math.round(size * 1.45) + 14;
+    this.text(x + 24, y + 22 + size * 1.45, w - 48, rt(o.hint), { size: 14, color: INK_SOFT, h: 22 });
+    return y + 22 + Math.round(size * 1.45) + 22 + 18;
+  }
+
+  /** Stickies laid out left to right, wrapping inside `w`. Returns the y below the last row. */
+  stickies(x: number, y: number, w: number, texts: string[], color: StickyColor, size = STICKY, gap = 16): number {
+    const perRow = Math.max(1, Math.floor((w + gap) / (size + gap)));
+    texts.forEach((t, i) => this.sticky(x + (i % perRow) * (size + gap), y + Math.floor(i / perRow) * (size + gap), t, color, size));
+    return y + Math.ceil(texts.length / perRow) * (size + gap) - gap;
+  }
+
+  /** The finished template. */
+  done(): BuiltTemplate {
+    return { elements: this.els, content: this.content };
   }
 
   /** Frame heading + one-line instruction, the common top of every template. */
