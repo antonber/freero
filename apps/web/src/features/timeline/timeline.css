@@ -1,0 +1,266 @@
+/* Timeline: a title corner, a two-row date header, lanes with their names on the left, unit lines
+   down the lanes, a today line. Bars and cards are separate items drawn on top. */
+.fr-timeline {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #fff;
+  color: var(--fr-ink);
+  font-family: var(--fr-font);
+  box-shadow:
+    0 0 0 1px rgba(23, 22, 43, 0.12),
+    0 8px 22px -14px rgba(23, 22, 43, 0.35);
+}
+
+.fr-timeline__corner {
+  position: absolute;
+  left: 0;
+  top: 0;
+  background: #f6f5fb;
+  border-right: 1px solid rgba(23, 22, 43, 0.1);
+  border-bottom: 1px solid rgba(23, 22, 43, 0.12);
+}
+
+.fr-timeline__head {
+  position: absolute;
+  top: 0;
+  background: #f6f5fb;
+  border-bottom: 1px solid rgba(23, 22, 43, 0.12);
+}
+
+.fr-timeline__tick {
+  position: absolute;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 28px;
+  box-sizing: border-box;
+}
+
+.fr-timeline__tick.is-top {
+  top: 0;
+  height: 28px;
+  padding-left: 8px;
+  border-left: 1px solid rgba(23, 22, 43, 0.14);
+  font-weight: 650;
+  color: var(--fr-ink);
+}
+
+.fr-timeline__tick.is-unit {
+  top: 28px;
+  height: 28px;
+  border-left: 1px solid rgba(23, 22, 43, 0.08);
+  text-align: center;
+  color: var(--fr-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.fr-timeline__lane {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-bottom: 1px solid rgba(23, 22, 43, 0.08);
+  background: color-mix(in srgb, var(--lane) 22%, #fff);
+}
+
+.fr-timeline__lane:nth-of-type(even) {
+  background: color-mix(in srgb, var(--lane) 34%, #fff);
+}
+
+.fr-timeline__lane-head {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: var(--lane);
+  border-right: 1px solid rgba(23, 22, 43, 0.1);
+}
+
+.fr-timeline__menu {
+  position: absolute;
+  top: 8px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fr-ink-2);
+  cursor: pointer;
+}
+
+.fr-timeline__menu:hover,
+.fr-timeline__menu.is-open {
+  background: rgba(23, 22, 43, 0.08);
+}
+
+.fr-timeline__col {
+  position: absolute;
+  border-left: 1px solid rgba(23, 22, 43, 0.06);
+  pointer-events: none;
+}
+
+.fr-timeline__col.is-weekend {
+  background: rgba(23, 22, 43, 0.035);
+}
+
+.fr-timeline__today {
+  position: absolute;
+  width: 0;
+  border-left: 2px solid var(--fr-primary);
+  pointer-events: none;
+}
+
+.fr-timeline__today span {
+  position: absolute;
+  top: -2px;
+  left: -1px;
+  transform: translateX(-50%);
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--fr-primary);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
+.fr-timeline__hint {
+  position: absolute;
+  font-size: 13px;
+  color: var(--fr-ink-3);
+  font-style: italic;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* A bar: a rounded strip in its colour, its title on one line. */
+.fr-tlbar {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: 7px;
+  box-shadow: 0 1px 2px rgba(23, 22, 43, 0.18);
+  font-family: var(--fr-font);
+}
+
+.fr-tlbar__title {
+  position: absolute;
+  inset: 0;
+}
+
+/* Dates beyond the range: the cut edge is square and dashed (the bar continues off the axis). */
+.fr-tlbar.is-clip-start,
+.fr-tlbar.is-clip-both {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-left: 2px dashed rgba(255, 255, 255, 0.85);
+}
+
+.fr-tlbar.is-clip-end,
+.fr-tlbar.is-clip-both {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right: 2px dashed rgba(255, 255, 255, 0.85);
+}
+
+.fr-tlbar.is-milestone {
+  overflow: visible;
+  background: transparent;
+  box-shadow: none;
+}
+
+.fr-tlbar__diamond {
+  position: absolute;
+  inset: 5px;
+  transform: rotate(45deg);
+  border-radius: 3px;
+  box-shadow: 0 1px 2px rgba(23, 22, 43, 0.25);
+}
+
+.fr-tlbar.is-milestone.is-clipped .fr-tlbar__diamond {
+  opacity: 0.45;
+}
+
+.fr-tlbar__label {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 180px;
+}
+
+/* Format toolbar. */
+.fr-timeline-fmt {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fr-timeline-fmt__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--fr-radius-sm);
+  background: transparent;
+  color: var(--fr-ink-2);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.fr-timeline-fmt__btn:hover {
+  background: var(--fr-surface-3);
+  color: var(--fr-ink);
+}
+
+.fr-timeline-fmt__dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(23, 22, 43, 0.15);
+}
+
+.fr-timeline-pop {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fr-timeline-pop__label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fr-ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.fr-timeline-pop input[type='date'] {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--fr-line-strong);
+  border-radius: var(--fr-radius-sm);
+  font: 14px var(--fr-font);
+  color: var(--fr-ink);
+  background: var(--fr-surface);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+@media (forced-colors: active) {
+  .fr-tlbar,
+  .fr-timeline__today {
+    outline: 1px solid CanvasText;
+  }
+}
