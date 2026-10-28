@@ -13,7 +13,7 @@ browser ──▶ │ reverse proxy / load balancer (Caddy, nginx, ALB…) │
                        ▼                           ▼
                  freero app #1      …        freero app #N        (stateless, port 4000)
                        │  \                       /  │
-                       │   └── Redis (rate limits, realtime fan-out next)
+                       │   └── Redis (rate limits, realtime fan-out)
                        ├── PostgreSQL 15+ (17 recommended)
                        └── S3-compatible bucket (uploads, thumbnails)
 ```
@@ -102,22 +102,30 @@ Never expose the app port directly while `TRUST_PROXY` is set: a client could th
 The app is stateless over HTTP: sessions, boards and uploads live in Postgres and object storage,
 and rate-limit counters in Redis, so any instance can serve any REST request.
 
-**Realtime (current limitation).** A board's live Yjs document lives in the memory of the instance
-that the board's WebSocket clients are connected to. Until cross-instance fan-out through Redis
-lands (next phase of the roadmap), **all sockets of one board must reach the same instance**:
+**Realtime.** With `REDIS_URL` set, any instance can serve any board WebSocket, so plain
+round-robin (or least-connections) balancing is correct; no stickiness is needed
+(`deploy/Caddyfile` uses `lb_policy round_robin`). Each instance that has a board open keeps its
+own copy of the Yjs document and:
 
-- route `/ws/boards/<id>` with a consistent hash of the URI (Caddy `lb_policy uri_hash`, as in
-  `deploy/Caddyfile`; nginx `hash $request_uri consistent;`; HAProxy `balance uri`), or use
-  cookie-based sticky sessions for everything;
-- known side effects while instances > 1: a membership/role or link-sharing change made through
-  an instance that does not host the board's socket takes effect for already-connected
-  collaborators on their next reconnect (not instantly), and deleting a board does not
-  immediately disconnect sockets on another instance;
-- adding or removing instances re-maps some boards; their clients reconnect and resync
-  automatically (Yjs merges any edits made during the switch).
+- publishes the edits and presence (cursors, selections) of its own sockets on the board's Redis
+  channel and applies the other instances' — collaborators on different instances see each other
+  within milliseconds;
+- when it opens a board, loads it from Postgres and then asks the other instances for anything not
+  saved yet, so a client never misses an edit made moments earlier elsewhere; it asks again after a
+  Redis outage, so the copies converge once Redis is back;
+- saves only the edits made through its own sockets (to the board's update log, see
+  [operations.md](operations.md)); before dropping a board it saves whatever the other instances
+  relayed and the database still lacks, so an instance killed before saving loses nothing that
+  another instance saw;
+- broadcasts membership/role and link-sharing changes, board deletions and logouts, so they apply
+  to sockets on every instance at once.
 
-With a single instance none of this applies. Size Postgres connections as
-`instances × DATABASE_POOL_MAX` < `max_connections`.
+Redis pub/sub keeps no messages, so Redis needs no persistence or backup for this. While Redis is
+down, collaborators on different instances stop seeing each other's live changes (each instance
+keeps saving its own; nothing is lost) and `/readyz` reports `redis: error`. Without `REDIS_URL`,
+run a single instance (or route all sockets of a board to one instance by URI hash).
+
+Size Postgres connections as `instances × DATABASE_POOL_MAX` < `max_connections`.
 
 ## Zero-downtime deploys
 
@@ -151,7 +159,7 @@ migrations ahead of a deploy, start one instance of the new version first.
 - [ ] `DATABASE_URL` with TLS; backups scheduled and a restore tested
 - [ ] `TRUST_PROXY` matches the proxy chain; app port not publicly reachable
 - [ ] `REDIS_URL` and `S3_*` when running more than one instance; bucket versioning on
-- [ ] Board WebSockets sticky per board (until Redis fan-out)
+- [ ] More than one instance: `REDIS_URL` set (realtime fan-out); any balancing policy
 - [ ] `/metrics` protected (`METRICS_TOKEN` or `METRICS_PORT`) and scraped; alerts set up
 - [ ] `ERROR_REPORTING_DSN` set (optional)
 - [ ] Readiness/liveness probes, SIGTERM grace period configured

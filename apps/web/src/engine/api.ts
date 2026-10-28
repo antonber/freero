@@ -39,6 +39,12 @@ export interface Host {
   /** Full ws URL prefix; engine connects WebsocketProvider(syncUrl, board.id, doc). */
   syncUrl: string;
   uploadImage(file: Blob): Promise<{ url: string }>;
+  /**
+   * [additive] Stores a document (PDF) with the board's uploads, under the same per-account quota
+   * as images. Rejects with an Error whose message can be shown (too large, quota reached).
+   * Offline sandbox: a data: URL.
+   */
+  uploadFile(file: Blob): Promise<{ url: string }>;
   renameBoard(title: string): Promise<void>;
   saveThumbnail(dataUrl: string): Promise<void>;
   openShareDialog(): void;
@@ -67,6 +73,45 @@ export interface Host {
    * (offline sandbox, private address, timeout); callers fall back to a plain link card.
    */
   unfurl(url: string): Promise<LinkPreview>;
+  /**
+   * [additive] Saved templates (a board or selection someone saved for reuse) the user may insert:
+   * their own today; also their workspace's once workspaces exist — so compare `ownerId` with
+   * `user.id` before offering owner-only actions (delete). Newest first. Rejects offline / when
+   * the list can't be loaded.
+   */
+  listTemplates(): Promise<SavedTemplateInfo[]>;
+  /** [additive] The content of a saved template, ready for `Editor.insertElements`. */
+  loadTemplate(id: string): Promise<ElementsSnapshot>;
+  /**
+   * [additive] Saves content (from `Editor.exportElements`) as a template owned by the user.
+   * `thumbnail` is a PNG/JPEG/WebP data URL (≤ 512 KB) or null. Rejects with a message fit for a
+   * toast (over the limit, too large, offline sandbox).
+   */
+  saveTemplate(template: { name: string; description: string; thumbnail: string | null; content: ElementsSnapshot }): Promise<SavedTemplateInfo>;
+  /** [additive] Deletes one of the user's own saved templates. */
+  deleteTemplate(id: string): Promise<void>;
+}
+
+/** [additive] A saved template as `Host.listTemplates` lists it (wire: @freero/shared `SavedTemplateSummary`). */
+export interface SavedTemplateInfo {
+  id: string;
+  name: string;
+  description: string;
+  /** Preview image URL, or null. */
+  thumbnail: string | null;
+  ownerId: string;
+  elementCount: number;
+  createdAt: number;
+}
+
+/**
+ * [additive] A portable copy of board content: elements (ids as on the source board) plus what
+ * they keep outside the elements map (`ElementDefinition.copyContent`, by source id). What copy
+ * puts on the clipboard; `Editor.exportElements` makes one, `Editor.insertElements` inserts one.
+ */
+export interface ElementsSnapshot {
+  elements: BoardElement[];
+  content?: Record<string, unknown>;
 }
 
 /** [additive] What `Host.unfurl` resolves to (wire format: @freero/shared `UnfurlResponse`). */
@@ -231,6 +276,30 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
    * content along that handle (a fixed-width text box goes back to auto width). null = ignore.
    */
   fitToContent?(element: ElementOf<T>, handle: ResizeHandle): ElementPatch<ElementOf<T>> | null;
+  /**
+   * [additive] Double-click with the select tool on an element that has no text to edit there
+   * (no `textPartAt` part, no `textField`): images enter crop mode. Editors only; runs inside the
+   * click's gesture. `point` is in world coordinates; `editor` is scoped to the defining feature.
+   */
+  onDoubleClick?(element: ElementOf<T>, ctx: { editor: Editor; point: Point }): void;
+  /**
+   * [additive] Containers that LAY OUT their children (kanban columns, frame grids). After every
+   * LOCAL change — when the outermost gesture ends if one is open (drag, edit session), else
+   * right after the write — the engine asks each element of this type for the patches that put
+   * its children (and itself) back in layout, and applies them in the same undo step. Remote
+   * changes never run it. Must be idempotent (null when already laid out): it also runs after
+   * unrelated changes. `editor` is scoped to the defining feature.
+   */
+  arrange?(element: ElementOf<T>, ctx: ArrangeContext): Array<{ id: string; patch: ElementPatch }> | null;
+}
+
+/** [additive] What `ElementDefinition.arrange` is told. */
+export interface ArrangeContext {
+  editor: Editor;
+  /** Ids written (moved, created, edited) or removed by the local change(s) since the last pass. */
+  touched: ReadonlySet<string>;
+  /** Each touched element as it was BEFORE those changes (null: created by them). */
+  previous: ReadonlyMap<string, BoardElement | null>;
 }
 
 /** [additive] What `ElementDefinition.hitTest` is told. */
@@ -379,6 +448,21 @@ export interface CommandDefinition {
   minRole?: Role;
   when?(editor: Editor): boolean;
   run(editor: Editor): void;
+}
+
+/** [additive] One row of `Editor.getShortcuts()`. */
+export interface ShortcutEntry {
+  /** Tool / command id, or 'engine.key.<name>' for built-in keys. */
+  id: string;
+  label: string;
+  /**
+   * Raw bindings ('mod+shift+z', 'shift+/', 'arrowup'), alternatives in order. 'mod' = ⌘ on
+   * macOS, Ctrl elsewhere: show them with `@ui` `Kbd` / `formatShortcut`, which follow the platform.
+   */
+  shortcuts: string[];
+  kind: 'tool' | 'command' | 'key';
+  /** Contributing feature ('engine' for built-ins). */
+  feature: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -539,6 +623,20 @@ export interface Editor {
   copy(ids?: string[]): void;
   cut(ids?: string[]): void;
   paste(at?: Point): void;
+  /**
+   * [additive] A portable copy of `ids` (default: the whole board) with their frame children and
+   * copied content — exactly what copy puts on the clipboard. null when there is nothing.
+   * Read-only, any role.
+   */
+  exportElements(ids?: string[]): ElementsSnapshot | null;
+  /**
+   * [additive] Inserts a snapshot the way paste does, in one transaction (one undo step): fresh
+   * ids with references between the inserted elements remapped (frames, groups, connectors,
+   * mind-map parents), copied content restored, membership by the drop rule. Lands centered on
+   * `at`, or by default on a free spot near the viewport center (`findFreeSpot`). Unknown element
+   * types are skipped. Selects and returns the top-level inserted ids ([] for read-only roles).
+   */
+  insertElements(snapshot: ElementsSnapshot, opts?: { at?: Point }): string[];
 
   // -- selection & editing --
   getSelection(): string[];
@@ -661,7 +759,12 @@ export interface Editor {
    */
   setViewHidden(ids: string[], hidden: boolean): void;
   getViewHidden(): string[];
-
+  /**
+   * [additive] Every keyboard binding the board answers right now, for the current role: tool
+   * keys, command shortcuts and the engine's built-in keys (Esc, arrows, Tab, Space…). Generated
+   * from the registry, so a shortcut reference built on it can't drift from the real bindings.
+   */
+  getShortcuts(): ShortcutEntry[];
 
   // -- events --
   on(event: EditorEvent, cb: () => void): () => void;

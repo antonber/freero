@@ -8,3 +8,5 @@ data/
 int-*/
 # scripts/backup.sh default output
 backups/
+# Agent git worktrees (Claude Code isolation)
+.claude/worktrees/

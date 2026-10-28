@@ -697,3 +697,54 @@
     display: none;
   }
 }
+
+/* ---- Trash ---- */
+.fr-dash-trash:hover {
+  transform: none;
+}
+
+.fr-dash-trash__thumb .fr-thumb {
+  filter: grayscale(0.85);
+  opacity: 0.7;
+}
+
+.fr-dash-trash__purge {
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--fr-ink-3);
+}
+
+.fr-dash-trash__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.fr-row__actions.fr-dash-trash__actions {
+  margin-top: 0;
+  justify-content: flex-end;
+}
+
+.fr-dash-trash__forever:hover:not(:disabled) {
+  color: var(--fr-danger);
+  background: var(--fr-danger-soft);
+}
+
+.fr-dash-trash__list .fr-list__head,
+.fr-dash-trash__list .fr-row {
+  grid-template-columns: 64px minmax(0, 1fr) 140px 150px 140px;
+}
+
+@media (max-width: 720px) {
+  .fr-dash-trash__list .fr-list__head span:nth-child(4),
+  .fr-dash-trash__list .fr-row > :nth-child(4) {
+    display: none;
+  }
+
+  .fr-dash-trash__list .fr-list__head,
+  .fr-dash-trash__list .fr-row {
+    grid-template-columns: 64px minmax(0, 1fr) 110px 140px;
+  }
+}

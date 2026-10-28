@@ -18,6 +18,21 @@ const UNDO_SHORTCUTS = new Set(['mod+z', 'mod+shift+z', 'mod+y']);
 /** Shortcuts the rich-text editor keeps for itself while editing. */
 const TEXT_RESERVED = new Set(['b', 'i', 'u', 'z', 'y', 'c', 'v', 'x', 'a', 'k', 'arrowleft', 'arrowright', 'arrowup', 'arrowdown', 'backspace', 'delete', 'home', 'end']);
 
+/**
+ * Keys `onKeyDown` below handles itself (not through commands or tool shortcuts), for the
+ * shortcut reference (`Editor.getShortcuts`). Keep in step with `onKeyDown`: a key handled there
+ * and not listed here is a key nobody can discover.
+ */
+export const ENGINE_KEYS: Array<{ name: string; label: string; shortcuts: string[]; minRole: 'viewer' | 'editor' }> = [
+  { name: 'escape', label: 'Deselect, stop editing or cancel', shortcuts: ['escape'], minRole: 'viewer' },
+  { name: 'delete', label: 'Delete', shortcuts: ['backspace'], minRole: 'editor' },
+  { name: 'nudge', label: 'Nudge selection', shortcuts: ['arrowup', 'arrowdown', 'arrowleft', 'arrowright'], minRole: 'editor' },
+  { name: 'nudgeFar', label: 'Nudge selection by 10', shortcuts: ['shift+arrowup', 'shift+arrowdown', 'shift+arrowleft', 'shift+arrowright'], minRole: 'editor' },
+  { name: 'cycle', label: 'Select next item', shortcuts: ['tab'], minRole: 'viewer' },
+  { name: 'cycleBack', label: 'Select previous item', shortcuts: ['shift+tab'], minRole: 'viewer' },
+  { name: 'pan', label: 'Pan (hold and drag)', shortcuts: ['space'], minRole: 'viewer' },
+];
+
 export function isTextInput(t: EventTarget | null): boolean {
   if (!(t instanceof HTMLElement)) return false;
   if (t.isContentEditable) return true;
@@ -266,23 +281,11 @@ export function installKeyboard(core: EngineCore): () => void {
 
     if (nudge(e)) return;
 
-    // Modifier combos and named keys first.
-    if (tryCommands(e, (sc) => {
-      const p = parseShortcut(sc);
-      return p.mod || p.alt || p.key.length > 1 || p.shift;
-    })) return;
-
-    // Tab / Shift+Tab that no command claimed (sticky "add to the right" on a sticky you picked,
-    // mind-map "add child") cycles through the board's items.
-    if (isCycleKey(e, target)) {
-      e.preventDefault();
-      cycleSelection(e.shiftKey ? -1 : 1);
-      return;
-    }
-
     // Typing on a single selected EMPTY text element (a fresh "+" copy, a new sticky) fills it.
     // Items that already have text keep letters as tool shortcuts (N, T, S… right after Esc must
     // switch tools, not append a stray letter to the note); Enter or double-click edits them.
+    // Before the Shift shortcuts: '?', '!' or ')' typed into a fresh note are text like any other
+    // character, not "open the shortcut sheet" / "zoom to fit".
     if (isPrintableKey(e)) {
       const sel = editor.getSelection();
       if (sel.length === 1 && editor.can('editor')) {
@@ -295,6 +298,20 @@ export function installKeyboard(core: EngineCore): () => void {
           return;
         }
       }
+    }
+
+    // Modifier combos and named keys first.
+    if (tryCommands(e, (sc) => {
+      const p = parseShortcut(sc);
+      return p.mod || p.alt || p.key.length > 1 || p.shift;
+    })) return;
+
+    // Tab / Shift+Tab that no command claimed (sticky "add to the right" on a sticky you picked,
+    // mind-map "add child") cycles through the board's items.
+    if (isCycleKey(e, target)) {
+      e.preventDefault();
+      cycleSelection(e.shiftKey ? -1 : 1);
+      return;
     }
 
     // Single-key commands, then tool shortcuts.

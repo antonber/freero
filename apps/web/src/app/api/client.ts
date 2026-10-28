@@ -10,6 +10,9 @@ import type {
   LoginRequest,
   PendingInvite,
   Role,
+  SavedTemplate,
+  SavedTemplateSummary,
+  SaveTemplateRequest,
   SessionInfo,
   SessionResponse,
   SignupRequest,
@@ -53,7 +56,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return res.json() as Promise<T>;
 }
 
-export type BoardFilter = 'all' | 'mine' | 'shared' | 'starred' | 'recent';
+export type BoardFilter = 'all' | 'mine' | 'shared' | 'starred' | 'recent' | 'trash';
 
 export const api = {
   // auth
@@ -118,7 +121,10 @@ export const api = {
   getBoard: (id: string) => request<{ board: BoardSummary }>('GET', `/api/boards/${id}`),
   updateBoard: (id: string, body: UpdateBoardRequest) =>
     request<{ board: BoardSummary }>('PATCH', `/api/boards/${id}`, body),
+  /** Moves the board to its owner's trash (restorable for TRASH_RETENTION_DAYS). */
   deleteBoard: (id: string) => request<{ ok: true }>('DELETE', `/api/boards/${id}`),
+  restoreBoard: (id: string) => request<{ board: BoardSummary }>('POST', `/api/boards/${id}/restore`),
+  deleteBoardForever: (id: string) => request<{ ok: true }>('DELETE', `/api/boards/${id}/permanent`),
   duplicateBoard: (id: string) =>
     request<{ board: BoardSummary }>('POST', `/api/boards/${id}/duplicate`),
   star: (id: string) => request<{ ok: true }>('PUT', `/api/boards/${id}/star`),
@@ -135,10 +141,16 @@ export const api = {
   removeMember: (id: string, userId: string) =>
     request<{ ok: true }>('DELETE', `/api/boards/${id}/members/${userId}`),
 
+  // saved templates
+  listTemplates: () => request<{ templates: SavedTemplateSummary[] }>('GET', '/api/templates'),
+  getTemplate: (id: string) => request<{ template: SavedTemplate }>('GET', `/api/templates/${encodeURIComponent(id)}`),
+  saveTemplate: (body: SaveTemplateRequest) => request<{ template: SavedTemplateSummary }>('POST', '/api/templates', body),
+  deleteTemplate: (id: string) => request<{ ok: true }>('DELETE', `/api/templates/${encodeURIComponent(id)}`),
+
   // link previews
   unfurl: (url: string) => request<UnfurlResponse>('GET', `/api/unfurl?url=${encodeURIComponent(url)}`),
 
-  // uploads
+  // uploads (images and PDF documents; the server checks type, size and quota)
   async uploadImage(file: Blob): Promise<{ url: string }> {
     const res = await fetch('/api/uploads', {
       method: 'POST',
@@ -146,7 +158,11 @@ export const api = {
       headers: { 'Content-Type': file.type || 'application/octet-stream' },
       body: file,
     });
-    if (!res.ok) throw new ApiError(res.status, 'Upload failed');
+    if (!res.ok) {
+      // The server's message says why (too large, quota reached, wrong type).
+      const body = (await res.json().catch(() => null)) as { error?: string } | null;
+      throw new ApiError(res.status, body?.error || 'Upload failed');
+    }
     return res.json();
   },
 };

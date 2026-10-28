@@ -375,7 +375,7 @@ function DeleteSection() {
   };
 
   return (
-    <Section id="delete" title="Delete account" description="Removes your account, every board you own and the files you uploaded." danger>
+    <Section id="delete" title="Delete account" description="Removes your account, every board you own and your profile photo." danger>
       <div className="fr-acct-form__row">
         <Button variant="danger" icon={Trash2} onClick={() => (setOpen(true), setPassword(''), setError(null))}>
           Delete my account
@@ -398,8 +398,8 @@ function DeleteSection() {
         <form className="fr-acct-form" onSubmit={confirm} noValidate>
           <p className="fr-acct__p">
             You'll be signed out everywhere. For 14 days you can log in and restore everything; after that your
-            account, the boards you own and your uploads are deleted for good. Comments you left on other people's
-            boards will show as “Deleted user”.
+            account, the boards you own and your profile photo are deleted for good. What you added to other people's
+            boards stays with those boards, and your comments there will show as “Deleted user”.
           </p>
           <Input
             label="Enter your password to confirm"

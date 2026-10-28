@@ -1,18 +1,20 @@
 // Hard deletion of accounts whose grace period is over. Every instance schedules it; a Postgres
 // advisory lock lets one run at a time. Each step is idempotent, so a purge interrupted halfway
 // (crash, deploy) is simply finished by the next run:
-//   1. boards the user owns are deleted (every board has exactly one owner today);
+//   1. boards the user owns are deleted, trash included (every board has exactly one owner today);
 //   2. on boards they could comment on (member or opened), their comments become "Deleted user";
-//   3. their uploads are deleted;
-//   4. the account row goes; sessions, tokens, memberships, stars, opens and invites cascade.
+//   3. their avatar file is deleted;
+//   4. the account row goes; sessions, tokens, memberships, stars, opens, invites and upload rows cascade.
 // Before step 1 the account is re-checked, so a restore that lands first keeps everything.
+// Other files they uploaded are not deleted here: images they placed on other people's boards stay
+// part of those boards, and files nothing references any more are removed by the uploads sweep.
 import { runExclusive } from '../../platform/jobs';
 import { log, logError } from '../../platform/log';
-import { accountsDueForPurge, deleteAccountIfDue, isDueForPurge } from '../auth/index';
+import { accountsDueForPurge, deleteAccountIfDue, getUser, isDueForPurge } from '../auth/index';
 import { boardIdsOpenedBy, deleteBoardsOwnedBy } from '../boards/index';
 import { membershipsOf } from '../members/index';
 import { renameCommentAuthor } from '../realtime/index';
-import { deleteUploadsOwnedBy } from '../uploads/index';
+import { deleteUpload } from '../uploads/index';
 
 export const PURGE_LOCK_KEY = 7_202_610_281; // arbitrary, constant across releases
 export const DELETED_USER_NAME = 'Deleted user';
@@ -31,9 +33,9 @@ export async function purgeAccount(userId: string, now: number): Promise<boolean
       throw new Error(`could not anonymize comments on board ${boardId}`, { cause: e });
     }
   }
-  const files = await deleteUploadsOwnedBy(userId);
+  await deleteUpload((await getUser(userId))?.avatarUrl);
   const deleted = await deleteAccountIfDue(userId, now);
-  if (deleted) log(`accounts: purged account ${userId} (${deletedBoards} boards, ${files} uploads)`);
+  if (deleted) log(`accounts: purged account ${userId} (${deletedBoards} boards)`);
   return deleted;
 }
 

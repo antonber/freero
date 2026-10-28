@@ -4,9 +4,9 @@ Day-2 operations for a production deployment ([deployment.md](deployment.md)). W
 
 | Data | Where | Protect with |
 |---|---|---|
-| Accounts, sessions, boards, members, board documents (Yjs state), upload index | PostgreSQL | `scripts/backup.sh` (pg_dump) + provider PITR |
+| Accounts, sessions, boards, members, board documents (Yjs: compacted base + update log + snapshots), upload index | PostgreSQL | `scripts/backup.sh` (pg_dump) + provider PITR |
 | Uploaded images, board thumbnails | S3 bucket under `uploads/` (or `FREERO_DATA_DIR/uploads`) | bucket versioning + replication |
-| Rate-limit counters | Redis | nothing — disposable |
+| Rate-limit counters; realtime fan-out between instances (pub/sub, nothing stored) | Redis | nothing — disposable |
 | Open boards | app memory, flushed to Postgres within ~10 s of an edit and on shutdown | — |
 
 ## Backups
@@ -104,6 +104,7 @@ then the local copies can be removed.
 | `freero_realtime_persist_duration_seconds` | Time to persist a board document |
 | `freero_realtime_persist_queue` | Boards with edits not yet persisted |
 | `freero_realtime_persist_failures_total` | Failed persists (retried) |
+| `freero_realtime_peer_messages_total{direction}` | Realtime messages sent to / received from other instances through Redis |
 | `freero_rate_limited_total{limit}` | Requests refused with 429, per limit |
 | `freero_process_*`, `freero_nodejs_*` | CPU, memory, event-loop lag, GC, handles |
 
@@ -143,7 +144,10 @@ report per distinct message per minute. No data is sent when it is unset.
    - *Database unreachable*: `/readyz` shows `db: error`, requests 500. Fix the DB; the pool
      reconnects on its own. Edits on open boards stay in memory and are persisted once it is back
      (watch `freero_realtime_persist_failures_total`).
-   - *Redis down*: rate limits fail open (logged, not enforced), the app keeps working. Restore Redis.
+   - *Redis down*: rate limits fail open (logged, not enforced), the app keeps working, but with
+     several instances, collaborators on different instances stop seeing each other's live edits
+     and cursors (every instance keeps saving its own edits). Restore Redis; open boards resync
+     between instances on their own.
    - *Storage down*: uploads and image loads fail; boards keep working.
    - *Abuse / brute force*: tighten `RATE_LIMIT_*` and restart, or block at the proxy. Rate-limit
      events show in `freero_rate_limited_total` and as 429 lines in the log.

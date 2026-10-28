@@ -5,7 +5,6 @@ import { getConfig } from '../../platform/config';
 import { badRequest, HttpError, parseCookies, unauthorized } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { logError } from '../../platform/log';
-import { publish, subscribe } from '../../platform/pubsub';
 import { clientIp } from '../../platform/rateLimit';
 import { setRequestUser } from '../../platform/requestContext';
 import { randomCursorColor } from './colors';
@@ -155,21 +154,29 @@ export async function emailVerified(userId: string, email: string): Promise<void
 
 // ---- Sessions (the cookie has one writer: this module) ----
 
-const SESSION_END = 'auth:session-end';
+const sessionEndListeners = new Set<(sessionKey: string) => void>();
 
 /**
- * Called with the opaque session key (see sessionKeyFromCookieHeader) whenever a session ends —
- * logout, revoked from another device, password reset, account deletion — on EVERY instance, so
- * long-lived connections opened with it (board sockets) close too.
+ * Called on the instance that ended a session — logout, signed out from another device, password
+ * reset or change, account deletion — with its opaque key (see sessionKeyFromCookieHeader).
+ * Realtime listens here and closes that session's board sockets on every instance (its
+ * 'end-session' control message): the one way to drop a session's live connections.
  */
 export function onSessionEnd(fn: (sessionKey: string) => void): () => void {
-  return subscribe(SESSION_END, fn);
+  sessionEndListeners.add(fn);
+  return () => sessionEndListeners.delete(fn);
 }
 
 export function sessionsEnded(keys: string[]): void {
   for (const key of keys) {
     lastSeen.delete(key);
-    publish(SESSION_END, key);
+    for (const fn of sessionEndListeners) {
+      try {
+        fn(key);
+      } catch (e) {
+        logError('auth: a session-end listener failed', e);
+      }
+    }
   }
 }
 

@@ -90,7 +90,7 @@ function BoardView({ core }: { core: EngineCore }) {
 }
 
 /**
- * Once the viewport is measured and the doc is synced: honor ?el=<id> (select + zoom to it) and
+ * Once the viewport is measured and the doc is synced: honor ?item=<id> (select + zoom to it) and
  * ?dock=<panelId>, otherwise fit the content (or center the origin on an empty board).
  */
 function useInitialView(core: EngineCore) {
@@ -105,7 +105,8 @@ function useInitialView(core: EngineCore) {
       if (s.viewport.width <= 1 || !s.synced) return;
       done = true;
       const editor = core.editor;
-      const el = params.get('el');
+      // ?item=<id> (Copy link to item); ?el=<id> is the older spelling, still honored.
+      const el = params.get('item') ?? params.get('el');
       if (el && editor.getElement(el)) {
         editor.select([el]);
         editor.zoomToFit([el], { animate: false, maxZoom: 1, padding: 160 });

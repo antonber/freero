@@ -15,6 +15,13 @@
   -webkit-user-drag: none;
 }
 
+/* Cropped: the img is sized and offset inline (percentages of the box). */
+.fr-image[data-cropped] img {
+  position: absolute;
+  max-width: none;
+  object-fit: fill;
+}
+
 .fr-image[data-state='loading'] img {
   opacity: 0;
 }
@@ -90,4 +97,113 @@
   display: flex;
   justify-content: flex-end;
   gap: 6px;
+}
+
+/* ---- crop mode (screen space, over the board) ---- */
+.fr-image-crop {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  outline: none;
+  z-index: 5;
+}
+
+.fr-image-crop__frame {
+  position: absolute;
+  transform-origin: center;
+}
+
+.fr-image-crop__full {
+  position: absolute;
+  overflow: hidden;
+  pointer-events: auto;
+  cursor: move;
+  touch-action: none;
+}
+
+.fr-image-crop__full img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* Everything outside the window is dimmed; the hole's shadow is clipped to the picture. */
+.fr-image-crop__hole {
+  position: absolute;
+  box-shadow: 0 0 0 100vmax rgba(24, 20, 44, 0.55);
+  pointer-events: none;
+}
+
+.fr-image-crop__window {
+  position: absolute;
+  pointer-events: auto;
+  cursor: move;
+  touch-action: none;
+  box-shadow: inset 0 0 0 1.5px #fff, 0 0 0 1px rgba(24, 20, 44, 0.35);
+}
+
+/* Rule-of-thirds guides. */
+.fr-image-crop__thirds {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.55) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.55) 1px, transparent 1px);
+  background-size: 33.333% 33.333%;
+  background-position: -1px -1px;
+  clip-path: inset(1px);
+}
+
+.fr-image-crop__handle {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  background: #fff;
+  border: 1.5px solid var(--fr-primary);
+  border-radius: 3px;
+  box-shadow: var(--fr-shadow-sm);
+  touch-action: none;
+}
+
+.fr-image-crop__handle--n,
+.fr-image-crop__handle--s {
+  width: 22px;
+  height: 8px;
+  margin: -4px 0 0 -11px;
+  border-radius: 4px;
+}
+
+.fr-image-crop__handle--e,
+.fr-image-crop__handle--w {
+  width: 8px;
+  height: 22px;
+  margin: -11px 0 0 -4px;
+  border-radius: 4px;
+}
+
+.fr-image-crop__handle--nw { left: 0; top: 0; cursor: nwse-resize; }
+.fr-image-crop__handle--n { left: 50%; top: 0; cursor: ns-resize; }
+.fr-image-crop__handle--ne { left: 100%; top: 0; cursor: nesw-resize; }
+.fr-image-crop__handle--e { left: 100%; top: 50%; cursor: ew-resize; }
+.fr-image-crop__handle--se { left: 100%; top: 100%; cursor: nwse-resize; }
+.fr-image-crop__handle--s { left: 50%; top: 100%; cursor: ns-resize; }
+.fr-image-crop__handle--sw { left: 0; top: 100%; cursor: nesw-resize; }
+.fr-image-crop__handle--w { left: 0; top: 50%; cursor: ew-resize; }
+
+.fr-image-crop__bar {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  transform: translateX(-50%);
+  pointer-events: auto;
+  background: var(--fr-surface);
+  border-radius: var(--fr-radius);
+  box-shadow: var(--fr-shadow);
+  white-space: nowrap;
 }

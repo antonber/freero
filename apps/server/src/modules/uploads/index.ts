@@ -1,2 +1,2 @@
 // Public API of modules/uploads [S2].
-export { saveUpload, deleteUpload, deleteUploadsOwnedBy, uploadBytesUsed } from './store';
+export { saveUpload, deleteUpload, uploadBytesUsed, contentMatches } from './store';

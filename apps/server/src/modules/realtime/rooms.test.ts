@@ -9,6 +9,7 @@ import { WS_MESSAGE_ROLE } from '@freero/shared';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { createUser } from '../auth/index';
 import { createBoard } from '../boards/index';
+import { loadDoc } from './docStore';
 import * as repo from './repo';
 import { admitSocket, loadedRoomCount } from './rooms';
 
@@ -26,13 +27,13 @@ vi.mock('./repo', async (importOriginal) => {
   const real = await importOriginal<typeof import('./repo')>();
   return {
     ...real,
-    loadState: async (id: string) => {
+    loadDoc: async (id: string) => {
       await gates.load;
-      return real.loadState(id);
+      return real.loadDoc(id);
     },
-    saveState: async (id: string, state: Uint8Array, now: number) => {
+    appendUpdate: async (id: string, update: Uint8Array, now: number) => {
       await gates.save;
-      return real.saveState(id, state, now);
+      return real.appendUpdate(id, update, now);
     },
   };
 });
@@ -70,7 +71,7 @@ async function newBoard(stored?: Record<string, string>): Promise<string> {
   if (stored) {
     const d = new Y.Doc();
     for (const [k, v] of Object.entries(stored)) d.getMap('elements').set(k, v);
-    await repo.saveState(board.id, Y.encodeStateAsUpdate(d), Date.now());
+    await repo.saveInitialState(board.id, Y.encodeStateAsUpdate(d), Date.now());
   }
   return board.id;
 }
@@ -120,7 +121,7 @@ it('clients that connect while the board is still loading get the stored content
   for (const c of [a, b]) c.provider.destroy();
   await waitFor(() => loadedRoomCount() === 0, 'the room to unload');
   const saved = new Y.Doc();
-  Y.applyUpdate(saved, (await repo.loadState(boardId))!);
+  Y.applyUpdate(saved, (await loadDoc(boardId)).state!);
   expect([...saved.getMap('elements').keys()].sort()).toEqual(['offlineA', 'offlineB', 'stored']);
 });
 

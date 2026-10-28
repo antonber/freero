@@ -1,15 +1,19 @@
-import type { BoardSummary, LinkAccess, Role } from '@freero/shared';
+import { TRASH_RETENTION_DAYS, type BoardSummary, type LinkAccess, type Role } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { badRequest, forbidden, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
+import { runExclusive } from '../../platform/jobs';
 import { getUser, getUsers } from '../auth/index';
 import { atLeast, getMemberRole, membershipsOf, resolveRole } from '../members/index';
-import { initBoardDoc, snapshotBoardDoc } from '../realtime/index';
+import { closeBoardDoc, initBoardDoc, snapshotBoardDoc } from '../realtime/index';
+import { deleteUpload } from '../uploads/index';
 import * as repo from './repo';
 import type { Board } from './repo';
 
-export type BoardFilter = 'all' | 'mine' | 'shared' | 'starred' | 'recent';
-export const BOARD_FILTERS: BoardFilter[] = ['all', 'mine', 'shared', 'starred', 'recent'];
+export type BoardFilter = 'all' | 'mine' | 'shared' | 'starred' | 'recent' | 'trash';
+export const BOARD_FILTERS: BoardFilter[] = ['all', 'mine', 'shared', 'starred', 'recent', 'trash'];
+const DAY_MS = 86_400_000;
+export const TRASH_RETENTION_MS = TRASH_RETENTION_DAYS * DAY_MS;
 export const DEFAULT_TITLE = 'Untitled board';
 
 export async function roleOn(board: Board, userId: string): Promise<Role | null> {
@@ -49,10 +53,12 @@ export async function toSummary(
     createdAt: board.createdAt,
     updatedAt: board.updatedAt,
     lastOpenedAt,
+    ...(board.deletedAt !== null ? { deletedAt: board.deletedAt, purgeAt: board.deletedAt + TRASH_RETENTION_MS } : {}),
   };
 }
 
 export async function listBoards(userId: string, filter: BoardFilter, q: string): Promise<BoardSummary[]> {
+  if (filter === 'trash') return listTrash(userId, q);
   const [memberships, opens, stars, owned] = await Promise.all([
     membershipsOf(userId),
     repo.opensOf(userId),
@@ -98,14 +104,128 @@ export function cleanDescription(v: unknown): string {
   return v.slice(0, 2000);
 }
 
+/**
+ * Runs `write` (which adds one live board for `ownerId`) only if the owner is below the board
+ * quota. The count and the write happen in one transaction under the owner's quota lock, so
+ * concurrent creates/duplicates/restores of one user can never land over the limit (a plain
+ * count-then-insert lets every parallel request pass the same count). Joins the caller's
+ * transaction if there is one; the lock is then held until that one ends.
+ */
+function withinBoardQuota<T>(ownerId: string, refusal: (max: number) => string, write: () => Promise<T>): Promise<T> {
+  return repo.transaction(async () => {
+    const max = getConfig().maxBoardsPerUser;
+    await repo.lockOwnerQuota(ownerId);
+    if ((await repo.countLiveBoardsOwnedBy(ownerId)) >= max) throw forbidden(refusal(max));
+    return write();
+  });
+}
+
 export async function createBoard(ownerId: string, title: string, description: string, linkAccess: LinkAccess = 'none'): Promise<Board> {
-  const max = getConfig().maxBoardsPerUser;
-  if ((await repo.boardIdsOwnedBy(ownerId)).length >= max)
-    throw forbidden(`You have reached the limit of ${max} boards. Delete boards you no longer need to create new ones.`);
-  const now = Date.now();
-  const board: Board = { id: newId(10), title, description, ownerId, linkAccess, thumbnail: null, createdAt: now, updatedAt: now };
-  await repo.insertBoard(board);
-  return board;
+  return withinBoardQuota(
+    ownerId,
+    (max) => `You have reached the limit of ${max} boards. Delete boards you no longer need to create new ones.`,
+    async () => {
+      const now = Date.now();
+      const board: Board = {
+        id: newId(10),
+        title,
+        description,
+        ownerId,
+        linkAccess,
+        thumbnail: null,
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null,
+      };
+      await repo.insertBoard(board);
+      return board;
+    },
+  );
+}
+
+// ---- trash ----
+
+async function listTrash(userId: string, q: string): Promise<BoardSummary[]> {
+  const needle = q.trim().toLowerCase();
+  const [boards, me] = await Promise.all([repo.trashedBoardsOf(userId), getUser(userId)]);
+  const out: BoardSummary[] = [];
+  for (const b of boards) {
+    if (needle && !b.title.toLowerCase().includes(needle)) continue;
+    // Only owners see (and restore) trashed boards; stars/opens don't matter here.
+    out.push(await toSummary(b, userId, 'owner', { starred: false, lastOpenedAt: null, ownerName: me?.name ?? 'Unknown' }));
+  }
+  return out;
+}
+
+/**
+ * Moves a live board to the trash: it disappears from every list and stops resolving for access
+ * (so new sockets are refused), and everyone connected is disconnected. Its content is kept
+ * exactly as it was, including edits made in the last moments before the delete.
+ */
+export async function moveToTrash(board: Board, now = Date.now()): Promise<void> {
+  if (!(await repo.trashBoard(board.id, now))) return; // trashed meanwhile by another request
+  // The live doc may hold edits not saved yet (saves are debounced) and closing the room drops
+  // them. Take the live state first, then close (which also waits for a save in flight), then
+  // store that state last, so nothing older lands after it. Nobody can rejoin in between: the
+  // board no longer resolves for access.
+  const state = await snapshotBoardDoc(board.id);
+  await closeBoardDoc(board.id);
+  if (state) await initBoardDoc(board.id, state);
+}
+
+/** Owner only: takes a board out of the trash (subject to the board quota). */
+export async function restoreFromTrash(boardId: string, userId: string): Promise<Board> {
+  const board = await repo.getBoardIncludingTrash(boardId);
+  // Not yours / not there: the same answer, so the trash leaks nothing about other people's boards.
+  if (!board || board.deletedAt === null || board.ownerId !== userId) throw notFound('Board not found in your trash');
+  await withinBoardQuota(
+    userId,
+    (max) => `You have reached the limit of ${max} boards. Delete boards you no longer need to restore this one.`,
+    async () => {
+      if (!(await repo.restoreBoard(board.id))) throw notFound('Board not found in your trash');
+    },
+  );
+  return { ...board, deletedAt: null };
+}
+
+/** Owner only: deletes a trashed board and everything on it for good. */
+export async function deleteForever(boardId: string, userId: string): Promise<void> {
+  const board = await repo.getBoardIncludingTrash(boardId);
+  if (!board || board.deletedAt === null || board.ownerId !== userId) throw notFound('Board not found in your trash');
+  const thumbnail = await repo.deleteTrashedBoard(board.id);
+  if (thumbnail === undefined) throw notFound('Board not found in your trash'); // restored or purged meanwhile
+  await closeBoardDoc(board.id); // nobody should be connected; make sure nothing saves after the delete
+  await deleteUpload(thumbnail);
+}
+
+const PURGE_BATCH = 200;
+
+/** Advisory lock key of the trash purge (platform/jobs). */
+export const TRASH_PURGE_LOCK_KEY = 7_202_610_282; // arbitrary, constant across releases
+
+/**
+ * Deletes for good every board that has been in the trash longer than TRASH_RETENTION_DAYS.
+ * Idempotent and safe to run on every server instance at once: one instance purges (advisory
+ * lock), the others skip this round (0). Returns how many boards this call removed.
+ */
+export async function purgeExpiredTrash(now = Date.now()): Promise<number> {
+  return (await runExclusive(TRASH_PURGE_LOCK_KEY, () => purgeExpiredTrashLocked(now))) ?? 0;
+}
+
+/** The purge itself; the caller holds TRASH_PURGE_LOCK_KEY (purgeExpiredTrash or the scheduled job). */
+export async function purgeExpiredTrashLocked(now = Date.now()): Promise<number> {
+  const before = now - TRASH_RETENTION_MS;
+  let total = 0;
+  for (;;) {
+    const purged = await repo.purgeTrashedBefore(before, PURGE_BATCH);
+    for (const b of purged) {
+      await closeBoardDoc(b.id);
+      await deleteUpload(b.thumbnail);
+    }
+    total += purged.length;
+    if (purged.length < PURGE_BATCH) break;
+  }
+  return total;
 }
 
 /**

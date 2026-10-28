@@ -4,7 +4,7 @@ import { checkRateLimit } from '../../platform/rateLimit';
 import type { WsRoute } from '../../platform/ws';
 import { onSessionEnd, sessionKeyFromCookieHeader, userFromCookieHeader } from '../auth/index';
 import { getBoardAccess } from '../boards/index';
-import { admitSocket, endSessionSockets, flushAllRooms, loadedRoomCount, pendingPersistCount } from './rooms';
+import { admitSocket, endSessionSockets, flushAllRooms, listenToOtherInstances, loadedRoomCount, pendingPersistCount } from './rooms';
 
 const PREFIX = '/ws/boards/';
 
@@ -14,6 +14,8 @@ export default function realtimeWs(ctx: ServerContext): WsRoute {
   ctx.onShutdown(flushAllRooms);
   const stopWatchingSessions = onSessionEnd(endSessionSockets);
   ctx.onShutdown(() => void stopWatchingSessions());
+  // Access changes, deleted boards and logouts handled by other instances (REDIS_URL).
+  ctx.onShutdown(listenToOtherInstances());
   gaugeFn('freero_realtime_loaded_docs', 'Board documents loaded in memory', loadedRoomCount);
   gaugeFn('freero_realtime_persist_queue', 'Loaded board documents with changes not yet persisted', pendingPersistCount);
   return {

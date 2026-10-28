@@ -37,13 +37,10 @@ export async function getBoardTitle(boardId: string): Promise<string | null> {
  * disconnected first, then the row — members, stars, opens and doc cascade — then the thumbnail).
  */
 export async function deleteBoardsOwnedBy(userId: string): Promise<number> {
-  const boards = await repo.getBoards(await repo.boardIdsOwnedBy(userId));
-  for (const board of boards) {
-    await closeBoardDoc(board.id);
-    await repo.deleteBoard(board.id);
-    await deleteUpload(board.thumbnail);
-  }
-  return boards.length;
+  for (const id of await repo.allBoardIdsOwnedBy(userId)) await closeBoardDoc(id);
+  const thumbnails = await repo.deleteAllOwnedBy(userId); // trashed ones too
+  for (const t of thumbnails) await deleteUpload(t);
+  return thumbnails.length;
 }
 
 /** Boards the user ever opened (they may have commented there). */

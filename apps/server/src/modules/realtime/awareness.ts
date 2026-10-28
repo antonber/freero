@@ -44,6 +44,28 @@ export function sanitizeAwarenessUpdate(update: Uint8Array, ctx: AwarenessContex
     if (s.user !== undefined) s.user = { ...ctx.user };
     kept.push({ clientId, clock, state: JSON.stringify(s) });
   }
+  return encodeEntries(kept);
+}
+
+/**
+ * Presence from ANOTHER instance (already sanitized there), minus the entries for client ids a
+ * socket of this instance owns: a client that moved here before the old instance noticed it left
+ * must not have its presence removed or overwritten by that instance. Null = nothing left.
+ */
+export function withoutClients(update: Uint8Array, ownedHere: (clientId: number) => boolean): Uint8Array | null {
+  const decoder = decoding.createDecoder(update);
+  const len = decoding.readVarUint(decoder);
+  const kept: Array<{ clientId: number; clock: number; state: string }> = [];
+  for (let i = 0; i < len; i++) {
+    const clientId = decoding.readVarUint(decoder);
+    const clock = decoding.readVarUint(decoder);
+    const state = decoding.readVarString(decoder);
+    if (!ownedHere(clientId)) kept.push({ clientId, clock, state });
+  }
+  return kept.length === len && len > 0 ? update : encodeEntries(kept);
+}
+
+function encodeEntries(kept: Array<{ clientId: number; clock: number; state: string }>): Uint8Array | null {
   if (!kept.length) return null;
   const e = encoding.createEncoder();
   encoding.writeVarUint(e, kept.length);

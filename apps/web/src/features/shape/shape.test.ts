@@ -1,15 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { anchorOnOutline, distanceToOutline, dragRect, hitShape, outlinePolygons } from './lib/geometry';
-import { SHAPE_KINDS } from './lib/constants';
+import { anchorOnOutline, detailPolylines, distanceToOutline, dragRect, hitShape, outlinePolygons } from './lib/geometry';
+import { LIBRARY_KINDS } from './lib/library';
 
 const W = 200;
 const H = 120;
 const ANCHORS = ['top', 'right', 'bottom', 'left'] as const;
 
 describe('shape outlines', () => {
-  it('every shape fills its box exactly, so the selection frame, handles and drawing agree', () => {
-    for (const { kind } of SHAPE_KINDS) {
-      const pts = outlinePolygons(kind, W, H).flat();
+  it('every library shape fills its box exactly, so the selection frame, handles and drawing agree', () => {
+    for (const kind of LIBRARY_KINDS) {
+      const pts = [...outlinePolygons(kind, W, H), ...detailPolylines(kind, W, H)].flat();
       const xs = pts.map((p) => p.x);
       const ys = pts.map((p) => p.y);
       // Never pokes outside its box (strokes would be clipped, anchors off)...
@@ -28,10 +28,11 @@ describe('shape outlines', () => {
 
 describe('connector anchors', () => {
   it('sit on the drawn outline for every shape and side', () => {
-    for (const { kind } of SHAPE_KINDS)
+    for (const kind of LIBRARY_KINDS)
       for (const a of ANCHORS) {
         const p = anchorOnOutline(kind, W, H, a);
-        expect(distanceToOutline(outlinePolygons(kind, W, H), p), `${kind} ${a}`).toBeLessThan(0.75);
+        const drawn = [...outlinePolygons(kind, W, H), ...detailPolylines(kind, W, H)];
+        expect(distanceToOutline(drawn, p), `${kind} ${a}`).toBeLessThan(0.75);
       }
   });
 
@@ -52,6 +53,12 @@ describe('hit testing', () => {
 
   it('an unfilled shape with text is still grabbable by its text', () => {
     expect(hitShape('ellipse', W, H, { x: W / 2, y: H / 2 }, { ...opts, filled: false, hasText: true })).toBe(true);
+  });
+
+  it('a UML actor is grabbable by its limbs, not just its head, but not in the gaps between them', () => {
+    const leg = { x: W * 0.25, y: H * 0.56 + (H - H * 0.56) * 0.5 }; // halfway down the left leg
+    expect(hitShape('umlActor', W, H, leg, { ...opts, filled: true })).toBe(true);
+    expect(hitShape('umlActor', W, H, { x: W / 2, y: H * 0.9 }, { ...opts, filled: true })).toBe(false);
   });
 
   it('the bounding-box corners outside a filled diamond do not count as hits', () => {

@@ -5,7 +5,7 @@ import { badRequest, forbidden, handle } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
 import { currentUser, requireUser } from '../auth/index';
 import { isLinkAccess } from '../members/index';
-import { closeBoardDoc, refreshBoardAccess } from '../realtime/index';
+import { refreshBoardAccess } from '../realtime/index';
 import { deleteUpload, saveUpload } from '../uploads/index';
 import * as repo from './repo';
 import {
@@ -14,9 +14,12 @@ import {
   cleanDescription,
   cleanTitle,
   createBoard,
+  deleteForever,
   duplicateBoard,
   listBoards,
+  moveToTrash,
   requireAccess,
+  restoreFromTrash,
   toSummary,
 } from './service';
 
@@ -87,10 +90,24 @@ export default function boardRoutes(_ctx: ServerContext): Router {
     '/boards/:id',
     handle(async (req, res) => {
       const { board } = await requireAccess(req.params.id, currentUser(req).id, 'owner');
-      // Disconnect everyone and wait for in-flight doc saves first, so none lands after the delete.
-      await closeBoardDoc(board.id);
-      await repo.deleteBoard(board.id); // members, stars, opens and the doc cascade
-      await deleteUpload(board.thumbnail);
+      await moveToTrash(board);
+      res.json({ ok: true } satisfies Out);
+    }),
+  );
+
+  r.post(
+    '/boards/:id/restore',
+    handle(async (req, res) => {
+      const user = currentUser(req);
+      const board = await restoreFromTrash(req.params.id, user.id);
+      res.json({ board: await toSummary(board, user.id, 'owner') } satisfies Out);
+    }),
+  );
+
+  r.delete(
+    '/boards/:id/permanent',
+    handle(async (req, res) => {
+      await deleteForever(req.params.id, currentUser(req).id);
       res.json({ ok: true } satisfies Out);
     }),
   );

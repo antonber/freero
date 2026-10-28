@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { BoardElement, FrameElement, StickyElement } from '@freero/shared';
+import { createTestBoard, type NewElement } from '@engine';
 import { membershipPatches, nextFrameIndex, nextFrameTitle, orderFrames, reorderPatches } from './lib/frames';
+import frameManifest from './feature';
+import frameDef from './element';
 
 const frame = (id: string, index: number, extra: Partial<FrameElement> = {}): FrameElement => ({
   id,
@@ -111,5 +114,41 @@ describe('frame membership when a frame is drawn or resized', () => {
     const member = sticky('m', 1500, 1500, 'big');
     const patches = membershipPatches({ ...big, w: 800, h: 800 }, items([member]), area);
     expect(patches).toEqual([{ id: 'm', frameId: null }]);
+  });
+});
+
+describe('frame grid layout', () => {
+  const setup = () => {
+    const board = createTestBoard({ users: ['ann'], features: [{ manifest: frameManifest, elements: [frameDef], tools: [], formats: [], panels: [], commands: [] }] });
+    const [ed] = board.editors('frame');
+    const fid = ed.create({ type: 'frame', x: 0, y: 0, w: 1000, h: 600, title: 'Grid', fill: '#fff', index: 0 } as NewElement);
+    // Three stickies roughly in a row, then the grid is switched on (2 columns, gap 20).
+    const [a, b, c] = ['a', 'b', 'c'].map((t, i) => ed.create({ type: 'sticky', x: 40 + i * 300, y: 50 + i * 7, w: 100, h: 100, text: t } as NewElement));
+    ed.update<FrameElement>(fid, { layout: { kind: 'grid', cols: 2, gap: 20 } });
+    return { board, ed, fid, a, b, c };
+  };
+  const pos = (ed: ReturnType<typeof setup>['ed'], id: string) => {
+    const el = ed.getElement(id)!;
+    return { x: el.x, y: el.y };
+  };
+
+  it('turning it on lays the items out in reading order and the frame hugs them', () => {
+    const { board, ed, fid, a, b, c } = setup();
+    expect([pos(ed, a), pos(ed, b), pos(ed, c)]).toEqual([{ x: 20, y: 20 }, { x: 140, y: 20 }, { x: 20, y: 140 }]);
+    expect(ed.getElement(fid)).toMatchObject({ w: 260, h: 260 });
+    board.destroy();
+  });
+
+  it('an item dropped between two others takes that slot, as one undo step', () => {
+    const { board, ed, a, b, c } = setup();
+    // Drag c (second row) to just right of a's center: between a and b.
+    ed.beginGesture();
+    ed.moveBy([{ id: c, dx: 100 - 20, dy: 20 - 140 }]);
+    ed.endGesture();
+    expect([pos(ed, a), pos(ed, c), pos(ed, b)]).toEqual([{ x: 20, y: 20 }, { x: 140, y: 20 }, { x: 20, y: 140 }]);
+    ed.undo();
+    expect(pos(ed, c)).toEqual({ x: 20, y: 140 });
+    expect(pos(ed, b)).toEqual({ x: 140, y: 20 });
+    board.destroy();
   });
 });

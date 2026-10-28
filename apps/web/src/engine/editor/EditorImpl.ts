@@ -9,6 +9,7 @@ import type {
   EditorEvent,
   ElementDefinition,
   ElementPatch,
+  ElementsSnapshot,
   FitOptions,
   FollowTarget,
   Host,
@@ -45,6 +46,8 @@ import { applyFormatToHtml, formatStateOfHtml } from '../text/formatHtml';
 import { EMPTY_FORMAT_STATE, type FormatCommand, type TextFormatState } from '../text/session';
 import { richTextToPlain } from '../text/sanitize';
 import { runFollowers } from './followers';
+import { listShortcuts } from '../runtime/shortcutList';
+import { createArrangeState, hasArrangers, runArrangers, type ArrangeState } from './arrange';
 
 const EMPTY_OPTIONS = Object.freeze({}) as Record<string, unknown>;
 const CAMERA_ANIM_MS = 320;
@@ -67,7 +70,33 @@ export class EditorImpl implements Editor {
     movingTimer: ReturnType<typeof setTimeout> | null;
     /** >0 while a user gesture (wheel, pan, zoom control) is writing the camera: see asUser(). */
     userCamera: number;
-  } = { collections: new Map(), camAnim: null, camTarget: null, lastPaste: null, lastDenied: 0, editingGesture: false, movingTimer: null, userCamera: 0 };
+    /** Local changes waiting for the containers' arrange pass (see editor/arrange.ts). */
+    arrange: ArrangeState;
+  } = { collections: new Map(), camAnim: null, camTarget: null, lastPaste: null, lastDenied: 0, editingGesture: false, movingTimer: null, userCamera: 0, arrange: createArrangeState() };
+
+  /**
+   * A local change wrote/removed `ids` (called inside its store transaction): containers with
+   * `arrange` re-lay out now, in that transaction, or when the open gesture / outermost
+   * Editor.transact ends (so a drag never re-stacks under the pointer, and a feature's
+   * multi-step transaction is never laid out half-done).
+   */
+  private touched(ids: Iterable<string>, created = false): void {
+    const state = this.shared.arrange;
+    if (state.running || !hasArrangers(this.core)) return;
+    // Remember each element as it was before the first change of this pass (null: new).
+    for (const id of ids) if (!state.before.has(id)) state.before.set(id, created ? null : (this.core.store.getElement(id) ?? null));
+  }
+
+  /** After a local write: run the pass now unless a gesture or Editor.transact is still open. */
+  private settle(): void {
+    const state = this.shared.arrange;
+    if (state.running || !state.before.size || this.core.store.inGesture() || state.depth) return;
+    this.flushArrange();
+  }
+
+  private flushArrange(): void {
+    runArrangers(this.core, this.shared.arrange, (patches) => this.updateMany(patches));
+  }
 
   /**
    * Flags the camera as moving for a short while: the world layer is promoted (will-change)
@@ -299,8 +328,10 @@ export class EditorImpl implements Editor {
     let z = this.core.store.maxZ();
     const built = els.map((e) => this.build(e, ++z, now));
     this.core.store.transact(() => {
+      this.touched(built.map((b) => b.id), true);
       for (const el of built) this.core.store.setElement(el);
       this.adoptIntoContainers(built.map((b) => b.id));
+      this.settle();
     });
     const ids = built.map((b) => b.id);
     if (opts?.select) this.select(ids);
@@ -331,8 +362,10 @@ export class EditorImpl implements Editor {
     }
     if (!next.length) return;
     store.transact(() => {
+      this.touched(next.map((el) => el.id));
       for (const el of next) store.setElement(el);
       runFollowers(this.core, next.map((el) => el.id), []);
+      this.settle();
     });
   }
 
@@ -415,8 +448,10 @@ export class EditorImpl implements Editor {
     const editing = this.getEditingId();
     if (editing && all.includes(editing)) this.stopEditing();
     this.core.store.transact(() => {
+      this.touched(all);
       for (const id of all) this.core.store.deleteElement(id);
       runFollowers(this.core, [], all);
+      this.settle();
     });
     const gone = new Set(all);
     if ([...gone].some((id) => this.core.ui.getState().viewHidden.has(id))) {
@@ -427,7 +462,18 @@ export class EditorImpl implements Editor {
   }
 
   transact(fn: () => void): void {
-    this.core.store.transact(fn);
+    // Containers re-lay out once the whole transaction is written, never from a half-done state.
+    // Inside the same Yjs transaction, so the re-layout shares the change's undo step.
+    const state = this.shared.arrange;
+    state.depth++;
+    try {
+      this.core.store.transact(() => {
+        fn();
+        if (state.depth === 1 && !this.core.store.inGesture()) this.flushArrange();
+      });
+    } finally {
+      state.depth--;
+    }
   }
 
   moveBy(moves: Array<{ id: string; dx: number; dy: number }>): void {
@@ -452,7 +498,7 @@ export class EditorImpl implements Editor {
       moved.push(id);
     }
     if (!patches.length) return;
-    this.core.store.transact(() => {
+    this.transact(() => {
       this.updateMany(patches);
       // Same membership rule as a drop: an element now centered in another container joins it.
       const movedSet = new Set(moved);
@@ -473,10 +519,13 @@ export class EditorImpl implements Editor {
   }
 
   endGesture(): void {
+    // Containers re-lay out before the step closes: the drop and the re-stack are one undo.
+    if (this.core.store.isOutermostGesture()) this.flushArrange();
     this.core.store.endGesture();
   }
 
   cancelGesture(): void {
+    if (this.core.store.isOutermostGesture()) this.shared.arrange.before.clear();
     this.core.store.cancelGesture();
   }
 
@@ -514,9 +563,11 @@ export class EditorImpl implements Editor {
     const built = moved.map((el) => ({ ...el, z: ++z, createdBy: this.user.id, createdAt: now, updatedAt: now }));
     const content = this.copyContentOf(source);
     this.core.store.transact(() => {
+      this.touched(built.map((b) => b.id), true);
       for (const el of built) this.core.store.setElement(el);
       this.adoptIntoContainers(built.map((b) => b.id));
       this.pasteContentInto(built, idMap, content);
+      this.settle();
     });
     const top = ids.map((id) => idMap.get(id)!).filter(Boolean);
     this.select(top);
@@ -561,9 +612,9 @@ export class EditorImpl implements Editor {
   // ------------------------------------------------------------------ clipboard
   /** Builds the clipboard payload for ids (with frame children), or null when empty. */
   buildClipboard(ids: string[]): { html: string; text: string; payload: ClipboardPayload } | null {
-    const all = this.withChildren(ids);
-    const elements = all.map((id) => this.getElement(id)!).filter(Boolean).sort((a, b) => a.z - b.z);
-    if (!elements.length) return null;
+    const snapshot = this.exportElements(ids);
+    if (!snapshot) return null;
+    const { elements } = snapshot;
     const text = elements
       .map((el) => {
         const def = this.getDefinition(el.type);
@@ -573,10 +624,57 @@ export class EditorImpl implements Editor {
       })
       .filter(Boolean)
       .join('\n');
-    const content = this.copyContentOf(elements);
-    const payload: ClipboardPayload = { app: 'freero', version: 1, boardId: this.boardId, elements, ...(content ? { content } : {}) };
+    const payload: ClipboardPayload = { app: 'freero', version: 1, boardId: this.boardId, ...snapshot };
     const s = serializeClipboard(payload, text);
     return { ...s, payload };
+  }
+
+  exportElements(ids?: string[]): ElementsSnapshot | null {
+    const all = this.withChildren(ids ?? this.getElements().map((el) => el.id));
+    const elements = all.map((id) => this.getElement(id)!).filter(Boolean).sort((a, b) => a.z - b.z);
+    if (!elements.length) return null;
+    const content = this.copyContentOf(elements);
+    return { elements, ...(content ? { content } : {}) };
+  }
+
+  insertElements(snapshot: ElementsSnapshot, opts: { at?: Point } = {}): string[] {
+    return this.insertSnapshot(snapshot, (elements) => {
+      if (opts.at) return placeAt(elements, opts.at);
+      const b = boundsOf(elements);
+      if (!b) return elements;
+      const spot = this.findFreeSpot({ w: b.w, h: b.h });
+      const dx = Math.round(spot.x - b.x);
+      const dy = Math.round(spot.y - b.y);
+      return elements.map((el) => translateElement(el, dx, dy));
+    });
+  }
+
+  /**
+   * The one insertion path for copied content (paste, drop, templates): fresh ids with internal
+   * references remapped, placed by `place`, created in one transaction with their copied content,
+   * adopted into containers; selects and returns the top-level ids.
+   */
+  private insertSnapshot(snapshot: ElementsSnapshot, place: (elements: BoardElement[]) => BoardElement[]): string[] {
+    if (!this.guardWrite()) return [];
+    const known = snapshot.elements.filter((el) => this.core.registry.elements.has(el.type));
+    if (!known.length) return [];
+    const { elements, idMap } = remapElements(known, () => nanoid());
+    const placed = place(elements);
+    let z = this.core.store.maxZ();
+    const now = Date.now();
+    const built = placed.map((el) => ({ ...el, z: ++z, createdBy: this.user.id, createdAt: now, updatedAt: now }));
+    this.core.store.transact(() => {
+      this.touched(built.map((b) => b.id), true);
+      for (const el of built) this.core.store.setElement(el);
+      this.adoptIntoContainers(built.map((b) => b.id));
+      this.pasteContentInto(built, idMap, snapshot.content);
+      this.settle();
+    });
+    // Select top-level inserted elements (not children of inserted frames).
+    const insertedIds = new Set(built.map((b) => b.id));
+    const top = built.filter((el) => !el.frameId || !insertedIds.has(el.frameId)).map((el) => el.id);
+    this.select(top);
+    return top;
   }
 
   /** [additive] ElementDefinition.copyContent of each source element that has one, by source id. */
@@ -674,30 +772,15 @@ export class EditorImpl implements Editor {
   }
 
   pastePayload(payload: ClipboardPayload, at: Point): string[] {
-    if (!this.guardWrite()) return [];
-    const known = payload.elements.filter((el) => this.core.registry.elements.has(el.type));
-    if (!known.length) return [];
-    const { elements, idMap } = remapElements(known, () => nanoid());
-    // Pasting again without moving the pointer cascades each copy down-right instead of stacking
-    // it exactly on the previous one (where it would look like nothing happened).
-    const prev = this.shared.lastPaste;
-    const n = prev && Math.abs(prev.at.x - at.x) < 0.5 && Math.abs(prev.at.y - at.y) < 0.5 ? prev.n + 1 : 0;
-    this.shared.lastPaste = { at, n };
-    const step = (24 * n) / this.getCamera().zoom;
-    const placed = placeAt(elements, { x: at.x + step, y: at.y + step });
-    let z = this.core.store.maxZ();
-    const now = Date.now();
-    const built = placed.map((el) => ({ ...el, z: ++z, createdBy: this.user.id, createdAt: now, updatedAt: now }));
-    this.core.store.transact(() => {
-      for (const el of built) this.core.store.setElement(el);
-      this.adoptIntoContainers(built.map((b) => b.id));
-      this.pasteContentInto(built, idMap, payload.content);
+    return this.insertSnapshot(payload, (elements) => {
+      // Pasting again without moving the pointer cascades each copy down-right instead of stacking
+      // it exactly on the previous one (where it would look like nothing happened).
+      const prev = this.shared.lastPaste;
+      const n = prev && Math.abs(prev.at.x - at.x) < 0.5 && Math.abs(prev.at.y - at.y) < 0.5 ? prev.n + 1 : 0;
+      this.shared.lastPaste = { at, n };
+      const step = (24 * n) / this.getCamera().zoom;
+      return placeAt(elements, { x: at.x + step, y: at.y + step });
     });
-    // Select top-level pasted elements (not children of pasted frames).
-    const pastedIds = new Set(built.map((b) => b.id));
-    const top = built.filter((el) => !el.frameId || !pastedIds.has(el.frameId)).map((el) => el.id);
-    this.select(top);
-    return top;
   }
 
   /**
@@ -811,7 +894,7 @@ export class EditorImpl implements Editor {
     }
     if (this.shared.editingGesture) {
       this.shared.editingGesture = false;
-      this.core.store.endGesture();
+      this.endGesture();
     }
     // Return focus to the canvas so shortcuts keep working.
     this.core.dom.viewport?.focus({ preventScroll: true });
@@ -1066,6 +1149,10 @@ export class EditorImpl implements Editor {
     }
     if (reg.def.when && !reg.def.when(ed)) return;
     reg.def.run(ed);
+  }
+
+  getShortcuts() {
+    return listShortcuts(this.core.registry, (r) => this.can(r));
   }
 
   // ------------------------------------------------------------------ settings

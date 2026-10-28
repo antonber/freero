@@ -186,6 +186,12 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   refresh shares the change's undo step and network update) and never for remote changes, so
   exactly one client — the one making the change — rewrites the derived fields. Renderers should
   still derive from the live elements (`useElement`) and treat the stored fields as a cache.
+- `Host.uploadFile(blob)`: documents (PDF) through the same `/api/uploads` endpoint, checks and
+  per-account quota as images (`modules/uploads` accepts `application/pdf` after a `%PDF-`
+  signature check and always streams PDFs itself, never via the bucket redirect, so `fetch()`
+  stays same-origin). Rejections carry the server's message (too large, quota reached).
+  `features/pdf` lazy-loads pdf.js (`pdfjs-dist`, pinned exactly) with its worker as a same-origin
+  asset (CSP `worker-src 'self'`) and `isEvalSupported: false` (no `unsafe-eval` needed).
 - `Host.listMembers()`: everyone with access to the board (owner + invited members), including
   people never seen online — for assignee pickers etc. (`/board/local`: just the local user).
 - `Editor.findFreeSpot(size, { near?, gap? })`: top-left of a box that keeps `gap` clear of
@@ -237,6 +243,15 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
 - A socket closed with 4401/4403 (removed, link access revoked, signed out) drops the session to
   read-only (`viewer`) besides showing the banner: writes after that could never reach the server.
 - `Host.user` changes (profile renamed / recolored in any tab) are republished to presence.
+- `Editor.exportElements(ids?)` → `ElementsSnapshot` (what copy puts on the clipboard: elements
+  with frame children + `copyContent`) and `Editor.insertElements(snapshot, { at? })` — the ONE
+  insertion path for copied content (paste uses it): fresh ids, references remapped, content
+  restored, one undo step, on a `findFreeSpot` by default. Saved templates go through it.
+- `Host.listTemplates / loadTemplate / saveTemplate / deleteTemplate` (server module
+  `templates`): a board or selection saved for reuse. Personal today; `SavedTemplateInfo.ownerId`
+  is there so workspace-shared templates (KAI-37) need no contract change — offer owner-only
+  actions only when it equals `user.id`. The visibility rule is one predicate in
+  `modules/templates/repo.ts`.
 
 Elements, geometry and text (all optional on `ElementDefinition` unless noted):
 - **Reads inside `editor.transact` see its earlier writes** (`getElements()`, `getElement()`,
@@ -249,6 +264,13 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
   so "w changed alone" (a side handle) is told apart from a corner scale or an edit. When web fonts
   finish loading, the engine re-runs `normalize` for the elements THIS client measured and nobody
   else changed since, writing silently (no undo step) — never for collaborators' elements.
+- `arrange(container, { editor, touched }) → [{ id, patch }] | null` (`engine/editor/arrange.ts`):
+  containers that lay out their children (kanban columns, frames with a grid layout). After every
+  LOCAL change the engine asks each element of that type for the patches that put it back in
+  layout and applies them in the same undo step: inside a gesture once, when the outermost gesture
+  ends (a drag never re-stacks under the pointer; drop + re-stack = one undo), inside
+  `editor.transact` once at its end (never from a half-written state), otherwise right after the
+  write. Remote changes never run it. Must be idempotent — it also runs after unrelated changes.
 - `fitToContent(el, handle)`: double-clicking a resize handle applies the returned patch (a
   fixed-width text box goes back to auto width).
 - `hitTest(el, local, { tolerance })` — `tolerance` is a few screen px in world units at the live
@@ -342,6 +364,25 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
   numbered lines, or short lines that don't read as a wrapped paragraph, or `<li>`s in the HTML —
   and any text while stickies are selected) → text box (0: prose).
 
+Reference & items (engine primitives; product UI in `features/shortcuts`, `links`, `image`, `icons`):
+- `Editor.getShortcuts() → ShortcutEntry[]` (`engine/runtime/shortcutList.ts`): every binding the
+  board answers for the live role — tool keys, command shortcuts (alternatives with the same label
+  fold into one row) and the keys the keyboard router handles itself (`ENGINE_KEYS` in
+  `interaction/keyboard.ts`, kept next to the handlers). The `?` sheet renders it with `@ui` `Kbd`
+  (⌘ on Apple platforms, Ctrl elsewhere), so the reference can't drift from the real bindings.
+- `BaseElement.link` (`@freero/shared`): an item link — an external URL or `#<elementId>`.
+  Untrusted; `isSafeHref(href)` (`@engine`) is the one safe-href rule shared with rich text.
+  "Copy link to item" (`engine.copyLink`) builds `/board/<id>?item=<elementId>`; the board selects
+  and zooms to it on load (`?el=` is still honored).
+- `ElementDefinition.onDoubleClick?(el, { editor, point })`: double-click on an element with no
+  text to edit there (image → crop mode). Editors only, never on locked items.
+- `useIsExporting()`: true inside offscreen exports/thumbnails, so decorations can leave out
+  on-screen affordances (the link badge).
+- `ImageElement.crop` (fractions of the natural picture) is the non-destructive crop; crop mode
+  is the image feature's `dialog` panel. `IconElement` stores its own drawing (whitelisted SVG
+  primitives), so the lucide index (`features/icons/lib/iconIndex.ts`, imported only with
+  `import()`) stays out of the board chunk; keep it that way when touching the icon library.
+
 ## UI kit (`ui/`) — exports from `@ui`
 
 `Button` {variant: 'primary'|'secondary'|'ghost'|'danger', size: 'sm'|'md'|'lg', icon?, loading?} ·
@@ -387,19 +428,39 @@ Cross-module imports name the index file explicitly (`'../auth/index'`), which i
 Auth is a plain middleware exported by `modules/auth/index.ts` (`requireUser`, `currentUser(req)`),
 not a reserved hook. Server modules today: `auth` (users, sessions, auth_tokens: email
 verification, password reset, email change, session list/revoke, avatars, deletion scheduling),
-`boards` (boards, stars, opens), `members` (board_members, board_invites: pending invites for
-addresses without an account; role resolution), `uploads` (uploads; files in object storage or
-`<data>/uploads`), `realtime` (board_docs; y-websocket protocol + role filter), `unfurl` (link
-previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`), `accounts` (no table:
-the purge after the deletion grace period, orchestrating the owning modules' exports).
+`boards` (boards, stars, opens; trash), `members` (board_members, board_invites: pending invites
+for addresses without an account; role resolution), `uploads` (uploads; files in object storage or
+`<data>/uploads`), `realtime` (board_docs, board_doc_updates, board_doc_snapshots; y-websocket
+protocol + role filter + update log), `unfurl` (link previews for pasted URLs; no table; SSRF-safe
+fetch in `unfurl/fetch.ts`), `templates` (saved templates; content is opaque engine JSON),
+`accounts` (no table: the purge after the deletion grace period, orchestrating the owning
+modules' exports).
 
-Accounts: `requireUser` answers 403 `{ code: 'account_pending_deletion' }` while an account is in
-its deletion grace period (`requireSession` lets restore through), and `userFromCookieHeader` (board
-sockets) treats it as signed out. Emailed links carry 256-bit single-use tokens stored as sha256
-and deleted on use (one `DELETE … RETURNING`, so two concurrent uses can't both win). Proving an
-address (verification link, reset, email change, an invite link mailed to it) fires
-`onEmailVerified`, where members turns that address's pending invites into memberships; an
-unverified account never picks up invites and can't invite or share by link.
+- Per-user quotas (boards, templates) count and insert in one transaction under a per-owner
+  `pg_advisory_xact_lock(hashtext('<module>.quota'), hashtext(userId))`; a count-then-insert
+  lets parallel requests overshoot.
+- Trash: deleting a board sets `boards.deleted_at`; `repo.getBoard`/lists/access treat it as
+  gone (sockets refused and closed after the live doc state is stored). Owners restore or delete
+  forever; `boards/init.ts` purges after `TRASH_RETENTION_DAYS` hourly on every instance as a
+  `platform/jobs` exclusive job, so replicas never purge at once.
+- Periodic jobs: `scheduleExclusiveJob(ctx, { name, lockKey, intervalMs, run })` from an init.ts
+  (trash purge, account purge). One instance runs a job at a time (a Postgres session advisory
+  lock held for the whole run); jobs must be idempotent, since a run can be cut short anywhere.
+- Accounts: `requireUser` answers 403 `{ code: 'account_pending_deletion' }` while an account is
+  in its deletion grace period (`requireSession` lets restore through), and `userFromCookieHeader`
+  (board sockets) treats it as signed out. Emailed links carry 256-bit single-use tokens stored as
+  sha256 and deleted on use (one `DELETE … RETURNING`, so two concurrent uses can't both win).
+  Proving an address (verification link, reset, email change, an invite link mailed to it) fires
+  `onEmailVerified`, where members turns that address's pending invites into memberships; an
+  unverified account never picks up invites and can't invite or share by link.
+- Ending a session (logout, "sign out" from another device, password reset/change, account
+  deletion) calls auth's in-process `onSessionEnd`; realtime is its listener and closes that
+  session's board sockets on every instance through its `end-session` control message — the one
+  way to drop a session's live connections.
+- Account purge: owned boards (trash included) and the avatar file are deleted, the user's
+  comments elsewhere become "Deleted user" (`realtime.renameCommentAuthor`, through the live room),
+  then the user row (cascades). Other files they uploaded stay — images on other people's boards
+  are part of those boards — and files nothing references are left to the uploads sweep.
 
 ### Database (`platform/db.ts`)
 
@@ -460,9 +521,6 @@ operations). What a module needs to know:
   `npm run verify` reads to follow links). `renderMail` escapes everything; links via
   `appUrl(req, path)`. Never log bodies (they carry tokens). `sendMailLater` when the answer must not
   depend on (or wait for) the mail.
-- **Instance-wide events** (`platform/pubsub.ts`): `publish(channel, msg)` / `subscribe` reach
-  every instance (Redis pub/sub; in-process without Redis). Best effort: for dropping in-memory
-  state elsewhere (auth's `onSessionEnd` closes a revoked session's sockets on every instance).
 - **Background jobs** (`platform/jobs.ts`): `scheduleExclusiveJob(ctx, { name, lockKey, intervalMs,
   run })` runs on every instance's timer but one at a time (Postgres advisory lock); jobs must be
   idempotent. `runExclusive(lockKey, fn)` for a one-off.
@@ -480,11 +538,32 @@ sockets arriving meanwhile wait for that load. Saves of one room are serialized.
 only when nobody is in it, joining it or saving it. Deleting a board first closes its room and
 waits for in-flight saves. Access refreshes are serialized (the last reflects the latest state).
 
+Storage (`realtime/docStore.ts`): a board's document is a compacted base (`board_docs`) plus an
+append-only log of Yjs updates (`board_doc_updates`); a save appends only what changed since the
+previous one. Loading reads base + log in one statement (one consistent snapshot). Compaction (when
+a loaded board's log grows, and after a room unloads) folds the rows it read into a new base and
+deletes exactly those rows, guarded by the base's `version` (optimistic lock), so neither a save
+nor another instance's compaction running meanwhile is lost. It keeps a full-state snapshot at most
+every 30 min (`board_doc_snapshots`): the base of version history (`listBoardSnapshots` /
+`loadBoardSnapshot` in `realtime/index.ts`).
+
+Several instances (`platform/pubsub.ts`: Redis pub/sub with `REDIS_URL`, in-process otherwise;
+messages in `realtime/peers.ts`): every instance holding a board publishes its own sockets'
+updates and presence on the board's channel and applies the others' with `REMOTE_ORIGIN` (relayed
+to its sockets, never re-published or saved: the instance whose socket made a change saves it). A
+room subscribes, loads, then asks the other instances for what the database lacks (sync-request /
+sync-reply, also after a Redis reconnect). Presence from another instance never overrides a client
+id owned by a local socket (a client that moved here). A room that applied remote changes appends
+what the database still lacks before it unloads. Access refreshes, board deletion and logouts go to
+all instances on a control channel. `npm run verify` with `DATABASE_URL` + `REDIS_URL` runs two
+instances and checks all of this with clients on each.
+
 Trust boundaries in `realtime`: presence from a socket may only write the awareness client ids
 that socket announced, and its `user` is always replaced by the authenticated user's profile
 (`realtime/awareness.ts`), so nobody can appear as someone else. Ending a session — logout,
 "sign out" from another device, password reset/change, account deletion — fires
-`auth.onSessionEnd` on every instance, which closes every board socket opened with it (4401). The
+`auth.onSessionEnd` where it happened; realtime closes every board socket opened with that session
+(4401), on every instance through the `end-session` control message. The
 account purge rewrites the deleted user's comment authorship to "Deleted user" through the live
 room (`renameCommentAuthor`), so open boards update and the save queue persists it. Member emails
 (`GET /members`) are only sent to owners/editors.
@@ -496,7 +575,8 @@ room (`renameCommentAuthor`), so open boards update and the save queue persists 
   data dir, signs up real users, creates a board, connects real Yjs WebSocket clients and checks
   sync, roles, persistence across restart. No fake harness. Runs on PGlite by default; with
   `DATABASE_URL` it runs against that Postgres (fresh database per run, dropped afterwards) and
-  also starts two instances at once on one empty database (migration lock). CI does both.
+  also starts two instances at once on one empty database (migration lock); with `REDIS_URL` too,
+  it runs two instances on one database + Redis with clients on each. CI does all of it.
 - UI: drive the real app in a browser (see `.claude/skills/verify-freero/`).
 
 ### What a test is for

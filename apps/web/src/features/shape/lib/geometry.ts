@@ -242,6 +242,334 @@ export function shapeGeometry(kind: ShapeKind, w: number, h: number): ShapeGeome
         ],
       };
     }
+    default:
+      return libraryGeometry(kind, w, h);
+  }
+}
+
+/** Open polyline as segments (details). */
+function line(...pts: Point[]): Seg[] {
+  return pts.map((p, i) => ({ t: i === 0 ? 'M' : 'L', p }) as Seg);
+}
+
+/** Right half of an ellipse from (x, 0) clockwise to (x, h), bulging by rx. */
+function bulgeRight(x: number, h: number, rx: number): Seg[] {
+  const ry = h / 2;
+  return [
+    { t: 'C', c1: P(x + rx * K, 0), c2: P(x + rx, ry - ry * K), p: P(x + rx, ry) },
+    { t: 'C', c1: P(x + rx, ry + ry * K), c2: P(x + rx * K, h), p: P(x, h) },
+  ];
+}
+
+/** Diamond outline used by decision-like shapes. */
+const diamond = (w: number, h: number) => poly([P(w / 2, 0), P(w, h / 2), P(w / 2, h), P(0, h / 2)]);
+
+// Flowchart, UML, BPMN and network symbols (shape library sets). Every path is Freero's own,
+// drawn from simple proportions of the box.
+function libraryGeometry(kind: ShapeKind, w: number, h: number): ShapeGeometry {
+  const m = Math.min(w, h);
+  const none: Seg[] = [];
+  const cx = w / 2;
+  const cy = h / 2;
+  switch (kind) {
+    // ---- flowchart
+    case 'terminator':
+      return { outline: roundRect(w, h, m / 2), details: none };
+    case 'manualInput':
+      return { outline: poly([P(0, h * 0.28), P(w, 0), P(w, h), P(0, h)]), details: none };
+    case 'manualOperation': {
+      const s = Math.min(w * 0.2, h * 0.6);
+      return { outline: poly([P(0, 0), P(w, 0), P(w - s, h), P(s, h)]), details: none };
+    }
+    case 'delay': {
+      const rx = Math.min(w * 0.5, h * 0.5);
+      return { outline: [{ t: 'M', p: P(0, 0) }, { t: 'L', p: P(w - rx, 0) }, ...bulgeRight(w - rx, h, rx), { t: 'L', p: P(0, h) }, { t: 'Z' }], details: none };
+    }
+    case 'display': {
+      const a = Math.min(w * 0.18, h * 0.5);
+      const rx = Math.min(w * 0.18, h * 0.5);
+      return {
+        outline: [{ t: 'M', p: P(0, cy) }, { t: 'L', p: P(a, 0) }, { t: 'L', p: P(w - rx, 0) }, ...bulgeRight(w - rx, h, rx), { t: 'L', p: P(a, h) }, { t: 'Z' }],
+        details: none,
+      };
+    }
+    case 'offPageRef':
+      return { outline: poly([P(0, 0), P(w, 0), P(w, h * 0.62), P(cx, h), P(0, h * 0.62)]), details: none };
+    case 'merge':
+      return { outline: poly([P(0, 0), P(w, 0), P(cx, h)]), details: none };
+    case 'internalStorage': {
+      const b = Math.min(m * 0.16, 24);
+      return { outline: poly([P(0, 0), P(w, 0), P(w, h), P(0, h)]), details: [...line(P(b, 0), P(b, h)), ...line(P(0, b), P(w, b))] };
+    }
+    case 'multiDocument': {
+      const d = m * 0.08;
+      const H = h - 2 * d;
+      const a = Math.min(H * 0.08, d * 0.8);
+      const s = (4 / 3) * a;
+      const fw = w - 2 * d;
+      const y = h - a;
+      return {
+        outline: [
+          { t: 'M', p: P(2 * d, 0) },
+          { t: 'L', p: P(w, 0) },
+          { t: 'L', p: P(w, H) },
+          { t: 'L', p: P(w - d, H) },
+          { t: 'L', p: P(w - d, H + d) },
+          { t: 'L', p: P(fw, H + d) },
+          { t: 'L', p: P(fw, y) },
+          { t: 'C', c1: P(fw * 0.875, y - s), c2: P(fw * 0.625, y - s), p: P(fw / 2, y) },
+          { t: 'C', c1: P(fw * 0.375, y + s), c2: P(fw * 0.125, y + s), p: P(0, y) },
+          { t: 'L', p: P(0, 2 * d) },
+          { t: 'L', p: P(d, 2 * d) },
+          { t: 'L', p: P(d, d) },
+          { t: 'L', p: P(2 * d, d) },
+          { t: 'Z' },
+        ],
+        details: [...line(P(d, 2 * d), P(fw, 2 * d), P(fw, H + d)), ...line(P(2 * d, d), P(w - d, d), P(w - d, H))],
+      };
+    }
+    case 'punchedCard': {
+      const c = m * 0.22;
+      return { outline: poly([P(c, 0), P(w, 0), P(w, h), P(0, h), P(0, c)]), details: none };
+    }
+    case 'punchedTape': {
+      const a = h * 0.1;
+      const s = (4 / 3) * a;
+      return {
+        outline: [
+          { t: 'M', p: P(0, a) },
+          { t: 'C', c1: P(w * 0.125, a + s), c2: P(w * 0.375, a + s), p: P(cx, a) },
+          { t: 'C', c1: P(w * 0.625, a - s), c2: P(w * 0.875, a - s), p: P(w, a) },
+          { t: 'L', p: P(w, h - a) },
+          { t: 'C', c1: P(w * 0.875, h - a - s), c2: P(w * 0.625, h - a - s), p: P(cx, h - a) },
+          { t: 'C', c1: P(w * 0.375, h - a + s), c2: P(w * 0.125, h - a + s), p: P(0, h - a) },
+          { t: 'Z' },
+        ],
+        details: none,
+      };
+    }
+    case 'collate':
+      return { outline: [...poly([P(0, 0), P(w, 0), P(cx, cy)]), ...poly([P(cx, cy), P(w, h), P(0, h)])], details: none };
+    case 'sort':
+      return { outline: diamond(w, h), details: line(P(0, cy), P(w, cy)) };
+    case 'loopLimit': {
+      const c = Math.min(w * 0.2, h * 0.32);
+      return { outline: poly([P(c, 0), P(w - c, 0), P(w, c), P(w, h), P(0, h), P(0, c)]), details: none };
+    }
+    case 'storedData': {
+      const rx = Math.min(w * 0.15, h * 0.5);
+      const ry = h / 2;
+      return {
+        outline: [
+          { t: 'M', p: P(rx, 0) },
+          { t: 'L', p: P(w, 0) },
+          { t: 'C', c1: P(w - rx * K, 0), c2: P(w - rx, ry - ry * K), p: P(w - rx, ry) },
+          { t: 'C', c1: P(w - rx, ry + ry * K), c2: P(w - rx * K, h), p: P(w, h) },
+          { t: 'L', p: P(rx, h) },
+          { t: 'C', c1: P(rx - rx * K, h), c2: P(0, ry + ry * K), p: P(0, ry) },
+          { t: 'C', c1: P(0, ry - ry * K), c2: P(rx - rx * K, 0), p: P(rx, 0) },
+          { t: 'Z' },
+        ],
+        details: none,
+      };
+    }
+    case 'summingJunction': {
+      const k = Math.SQRT1_2;
+      return {
+        outline: ellipse(0, 0, w, h),
+        details: [...line(P(cx - cx * k, cy - cy * k), P(cx + cx * k, cy + cy * k)), ...line(P(cx + cx * k, cy - cy * k), P(cx - cx * k, cy + cy * k))],
+      };
+    }
+    case 'orJunction':
+      return { outline: ellipse(0, 0, w, h), details: [...line(P(cx, 0), P(cx, h)), ...line(P(0, cy), P(w, cy))] };
+
+    // ---- UML
+    case 'umlClass': {
+      const y1 = Math.min(h * 0.3, 40);
+      const y2 = y1 + (h - y1) * 0.5;
+      return { outline: poly([P(0, 0), P(w, 0), P(w, h), P(0, h)]), details: [...line(P(0, y1), P(w, y1)), ...line(P(0, y2), P(w, y2))] };
+    }
+    case 'umlActor': {
+      const r = Math.min(w * 0.2, h * 0.11);
+      const hip = h * 0.56;
+      return {
+        outline: ellipse(cx - r, 0, 2 * r, 2 * r),
+        details: [
+          ...line(P(cx, 2 * r), P(cx, hip)),
+          ...line(P(0, h * 0.32), P(w, h * 0.32)),
+          ...line(P(0, h), P(cx, hip), P(w, h)),
+        ],
+      };
+    }
+    case 'umlPackage': {
+      const t = Math.min(h * 0.18, 24);
+      const tw = w * 0.4;
+      return { outline: poly([P(0, 0), P(tw, 0), P(tw, t), P(w, t), P(w, h), P(0, h)]), details: line(P(0, t), P(tw, t)) };
+    }
+    case 'umlNote': {
+      const c = Math.min(m * 0.22, 28);
+      return { outline: poly([P(0, 0), P(w - c, 0), P(w, c), P(w, h), P(0, h)]), details: line(P(w - c, 0), P(w - c, c), P(w, c)) };
+    }
+    case 'umlComponent': {
+      const t = Math.min(w * 0.08, 14);
+      const th = Math.min(h * 0.14, 16);
+      const y1 = h * 0.22;
+      const y2 = h * 0.58;
+      return {
+        outline: poly([
+          P(t, 0), P(w, 0), P(w, h), P(t, h),
+          P(t, y2 + th), P(0, y2 + th), P(0, y2), P(t, y2),
+          P(t, y1 + th), P(0, y1 + th), P(0, y1), P(t, y1),
+        ]),
+        details: [...line(P(t, y1), P(2 * t, y1), P(2 * t, y1 + th), P(t, y1 + th)), ...line(P(t, y2), P(2 * t, y2), P(2 * t, y2 + th), P(t, y2 + th))],
+      };
+    }
+    case 'umlNode': {
+      const d = m * 0.15;
+      return {
+        outline: poly([P(0, d), P(d, 0), P(w, 0), P(w, h - d), P(w - d, h), P(0, h)]),
+        details: [...line(P(0, d), P(w - d, d), P(w, 0)), ...line(P(w - d, d), P(w - d, h))],
+      };
+    }
+
+    // ---- BPMN
+    case 'bpmnIntermediate': {
+      const i = m * 0.09;
+      return { outline: ellipse(0, 0, w, h), details: ellipse(i, i, w - 2 * i, h - 2 * i) };
+    }
+    case 'bpmnEnd': {
+      const i = m * 0.035;
+      return { outline: ellipse(0, 0, w, h), details: [...ellipse(i, i, w - 2 * i, h - 2 * i), ...ellipse(2 * i, 2 * i, w - 4 * i, h - 4 * i)] };
+    }
+    case 'bpmnGatewayX': {
+      const a = w * 0.17;
+      const b = h * 0.17;
+      return { outline: diamond(w, h), details: [...line(P(cx - a, cy - b), P(cx + a, cy + b)), ...line(P(cx + a, cy - b), P(cx - a, cy + b))] };
+    }
+    case 'bpmnGatewayPlus': {
+      const a = w * 0.22;
+      const b = h * 0.22;
+      return { outline: diamond(w, h), details: [...line(P(cx - a, cy), P(cx + a, cy)), ...line(P(cx, cy - b), P(cx, cy + b))] };
+    }
+    case 'bpmnGatewayO':
+      return { outline: diamond(w, h), details: ellipse(cx - w * 0.2, cy - h * 0.2, w * 0.4, h * 0.4) };
+    case 'bpmnSubprocess': {
+      const q = Math.min(14, h * 0.2, w * 0.2);
+      const x = cx - q / 2;
+      const y = h - q - Math.min(6, h * 0.06);
+      return {
+        outline: roundRect(w, h, Math.min(16, m * 0.14)),
+        details: [
+          ...line(P(x, y), P(x + q, y), P(x + q, y + q), P(x, y + q), P(x, y)),
+          ...line(P(cx, y + q * 0.2), P(cx, y + q * 0.8)),
+          ...line(P(x + q * 0.2, y + q / 2), P(x + q * 0.8, y + q / 2)),
+        ],
+      };
+    }
+
+    // ---- network
+    case 'netServer': {
+      const u = h / 3;
+      const led = (y: number) => line(P(w * 0.72, y), P(w * 0.86, y));
+      return {
+        outline: roundRect(w, h, Math.min(8, m * 0.08)),
+        details: [...line(P(0, u), P(w, u)), ...line(P(0, 2 * u), P(w, 2 * u)), ...led(u / 2), ...led(u * 1.5), ...led(u * 2.5)],
+      };
+    }
+    case 'netFirewall': {
+      const r1 = h / 3;
+      const r2 = (2 * h) / 3;
+      return {
+        outline: poly([P(0, 0), P(w, 0), P(w, h), P(0, h)]),
+        details: [
+          ...line(P(0, r1), P(w, r1)),
+          ...line(P(0, r2), P(w, r2)),
+          ...line(P(cx, 0), P(cx, r1)),
+          ...line(P(w / 4, r1), P(w / 4, r2)),
+          ...line(P((3 * w) / 4, r1), P((3 * w) / 4, r2)),
+          ...line(P(cx, r2), P(cx, h)),
+        ],
+      };
+    }
+    case 'netRouter': {
+      const a = w * 0.3;
+      const b = h * 0.3;
+      const hx = w * 0.07;
+      const hy = h * 0.07;
+      return {
+        outline: ellipse(0, 0, w, h),
+        details: [
+          ...line(P(cx - a, cy), P(cx + a, cy)),
+          ...line(P(cx, cy - b), P(cx, cy + b)),
+          ...line(P(cx + a - hx, cy - hy), P(cx + a, cy), P(cx + a - hx, cy + hy)),
+          ...line(P(cx - a + hx, cy - hy), P(cx - a, cy), P(cx - a + hx, cy + hy)),
+          ...line(P(cx - hx, cy - b + hy), P(cx, cy - b), P(cx + hx, cy - b + hy)),
+          ...line(P(cx - hx, cy + b - hy), P(cx, cy + b), P(cx + hx, cy + b - hy)),
+        ],
+      };
+    }
+    case 'netSwitch': {
+      const hx = Math.min(w * 0.06, 10);
+      const hy = h * 0.1;
+      const y1 = h * 0.34;
+      const y2 = h * 0.66;
+      return {
+        outline: roundRect(w, h, Math.min(8, m * 0.1)),
+        details: [
+          ...line(P(w * 0.2, y1), P(w * 0.8, y1)),
+          ...line(P(w * 0.8 - hx, y1 - hy), P(w * 0.8, y1), P(w * 0.8 - hx, y1 + hy)),
+          ...line(P(w * 0.2, y2), P(w * 0.8, y2)),
+          ...line(P(w * 0.2 + hx, y2 - hy), P(w * 0.2, y2), P(w * 0.2 + hx, y2 + hy)),
+        ],
+      };
+    }
+    case 'netMonitor': {
+      const sh = h * 0.76;
+      const i = m * 0.06;
+      return {
+        outline: poly([
+          P(0, 0), P(w, 0), P(w, sh), P(w * 0.6, sh), P(w * 0.63, h * 0.9), P(w * 0.76, h * 0.9), P(w * 0.76, h),
+          P(w * 0.24, h), P(w * 0.24, h * 0.9), P(w * 0.37, h * 0.9), P(w * 0.4, sh), P(0, sh),
+        ]),
+        details: line(P(i, i), P(w - i, i), P(w - i, sh - i), P(i, sh - i), P(i, i)),
+      };
+    }
+    case 'netLaptop': {
+      const i = m * 0.05;
+      return {
+        outline: poly([P(w * 0.1, 0), P(w * 0.9, 0), P(w * 0.9, h * 0.8), P(w, h * 0.92), P(w, h), P(0, h), P(0, h * 0.92), P(w * 0.1, h * 0.8)]),
+        details: [
+          ...line(P(w * 0.1 + i, i), P(w * 0.9 - i, i), P(w * 0.9 - i, h * 0.8 - i), P(w * 0.1 + i, h * 0.8 - i), P(w * 0.1 + i, i)),
+          ...line(P(0, h * 0.92), P(w, h * 0.92)),
+        ],
+      };
+    }
+    case 'netPhone': {
+      const top = h * 0.12;
+      const bottom = h * 0.82;
+      const i = w * 0.1;
+      return {
+        outline: roundRect(w, h, m * 0.18),
+        details: [...line(P(i, top), P(w - i, top), P(w - i, bottom), P(i, bottom), P(i, top)), ...line(P(w * 0.4, h * 0.91), P(w * 0.6, h * 0.91))],
+      };
+    }
+    case 'netUser': {
+      const rx = w * 0.22;
+      const ry = h * 0.25;
+      const top = h * 0.57;
+      return {
+        outline: [
+          ...ellipse(cx - rx, 0, 2 * rx, 2 * ry),
+          { t: 'M', p: P(0, h) },
+          { t: 'C', c1: P(0, top + (h - top) * 0.25), c2: P(w * 0.22, top), p: P(cx, top) },
+          { t: 'C', c1: P(w * 0.78, top), c2: P(w, top + (h - top) * 0.25), p: P(w, h) },
+          { t: 'Z' },
+        ],
+        details: none,
+      };
+    }
+    default:
+      return { outline: poly([P(0, 0), P(w, 0), P(w, h), P(0, h)]), details: none };
   }
 }
 
@@ -299,6 +627,50 @@ function samplePolygons(kind: ShapeKind, w: number, h: number, steps: number): P
   }
   if (cur.length > 2) out.push(cur);
   return out;
+}
+
+/** The interior detail strokes as open polylines (curves sampled), for hit testing. */
+export function detailPolylines(kind: ShapeKind, w: number, h: number, steps = 8): Point[][] {
+  const out: Point[][] = [];
+  let cur: Point[] = [];
+  let last = P(0, 0);
+  for (const s of shapeGeometry(kind, w, h).details) {
+    if (s.t === 'M') {
+      if (cur.length > 1) out.push(cur);
+      cur = [s.p];
+    } else if (s.t === 'L') cur.push(s.p);
+    else if (s.t === 'C') for (let i = 1; i <= steps; i++) cur.push(bezier(last, s.c1, s.c2, s.p, i / steps));
+    if (s.t !== 'Z') last = s.p;
+  }
+  if (cur.length > 1) out.push(cur);
+  return out;
+}
+
+function nearestDrawnPoint(lines: Point[][], p: Point): Point | null {
+  let best: Point | null = null;
+  let bestD = Infinity;
+  for (const l of lines)
+    for (let i = 1; i < l.length; i++) {
+      const a = l[i - 1];
+      const b = l[i];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const len2 = dx * dx + dy * dy;
+      const t = len2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2)) : 0;
+      const q = P(a.x + t * dx, a.y + t * dy);
+      const d = Math.hypot(p.x - q.x, p.y - q.y);
+      if (d < bestD) {
+        bestD = d;
+        best = q;
+      }
+    }
+  return best;
+}
+
+function distanceToPolylines(lines: Point[][], p: Point): number {
+  let best = Infinity;
+  for (const l of lines) for (let i = 1; i < l.length; i++) best = Math.min(best, distToSegment(p, l[i - 1], l[i]));
+  return best;
 }
 
 function bezier(a: Point, b: Point, c: Point, d: Point, t: number): Point {
@@ -364,6 +736,8 @@ export function hitShape(
   const polys = outlinePolygons(kind, w, h);
   if (opts.filled && polys.some((poly) => insidePolygon(poly, p))) return true;
   if (distanceToOutline(polys, p) <= opts.tolerance) return true;
+  // Stick figures and inner lines (an actor's limbs) are part of what you see, so they grab too.
+  if (distanceToPolylines(detailPolylines(kind, w, h), p) <= opts.tolerance) return true;
   if (opts.hasText) {
     const t = textBox(kind, w, h);
     return p.x >= t.x && p.x <= t.x + t.w && p.y >= t.y && p.y <= t.y + t.h;
@@ -385,7 +759,12 @@ export function anchorOnOutline(kind: ShapeKind, w: number, h: number, anchor: '
       if (t !== null && t > 1e-6) best = Math.min(best, t);
     }
   }
-  if (!Number.isFinite(best)) return anchor === 'top' ? P(w / 2, 0) : anchor === 'bottom' ? P(w / 2, h) : anchor === 'left' ? P(0, h / 2) : P(w, h / 2);
+  if (!Number.isFinite(best)) {
+    // The ray leaves through a gap (an hourglass waist, a stick figure): attach to the drawn
+    // point nearest that side's midpoint instead of floating at the bounding box.
+    const mid = anchor === 'top' ? P(w / 2, 0) : anchor === 'bottom' ? P(w / 2, h) : anchor === 'left' ? P(0, h / 2) : P(w, h / 2);
+    return nearestDrawnPoint([...outlinePolygons(kind, w, h, 24).map((p) => [...p, p[0]]), ...detailPolylines(kind, w, h)], mid) ?? mid;
+  }
   return P(c.x + dir.x * best, c.y + dir.y * best);
 }
 
@@ -452,6 +831,79 @@ export function textBox(kind: ShapeKind, w: number, h: number): Rect {
       const b = Math.min(w * 0.12, 24);
       return { x: b, y: 0, w: w - 2 * b, h };
     }
+    case 'terminator':
+      return { x: Math.min(w, h) * 0.25, y: 0, w: Math.max(1, w - Math.min(w, h) * 0.5), h };
+    case 'manualInput':
+      return r(0, 0.24, 1, 0.76);
+    case 'manualOperation': {
+      const s = Math.min(w * 0.2, h * 0.6);
+      return { x: s * 0.75, y: 0, w: w - s * 1.5, h };
+    }
+    case 'delay':
+      return r(0, 0, 0.88, 1);
+    case 'display':
+      return r(0.14, 0, 0.74, 1);
+    case 'offPageRef':
+      return r(0, 0, 1, 0.66);
+    case 'merge':
+      return r(0.25, 0.04, 0.5, 0.46);
+    case 'internalStorage': {
+      const b = Math.min(Math.min(w, h) * 0.16, 24);
+      return { x: b, y: b, w: w - b, h: h - b };
+    }
+    case 'multiDocument': {
+      const d = Math.min(w, h) * 0.08;
+      return { x: 0, y: 2 * d, w: w - 2 * d, h: (h - 2 * d) * 0.86 };
+    }
+    case 'punchedTape':
+      return r(0, 0.16, 1, 0.68);
+    case 'sort':
+    case 'bpmnGatewayX':
+    case 'bpmnGatewayPlus':
+    case 'bpmnGatewayO':
+      return r(0.25, 0.25, 0.5, 0.5);
+    case 'storedData':
+      return r(0.12, 0, 0.74, 1);
+    case 'summingJunction':
+    case 'orJunction':
+    case 'bpmnIntermediate':
+    case 'bpmnEnd':
+      return r(0.18, 0.18, 0.64, 0.64);
+    case 'umlClass':
+      return { x: 0, y: 0, w, h: Math.min(h * 0.3, 40) };
+    case 'umlActor':
+      return r(0, 0.82, 1, 0.18);
+    case 'umlPackage': {
+      const t = Math.min(h * 0.18, 24);
+      return { x: 0, y: t, w, h: h - t };
+    }
+    case 'umlNote': {
+      const c = Math.min(Math.min(w, h) * 0.22, 28);
+      return { x: 0, y: c * 0.5, w: w - c * 0.5, h: h - c * 0.5 };
+    }
+    case 'umlComponent': {
+      const t = Math.min(w * 0.08, 14);
+      return { x: 2 * t, y: 0, w: w - 2 * t, h };
+    }
+    case 'umlNode': {
+      const d = Math.min(w, h) * 0.15;
+      return { x: 0, y: d, w: w - d, h: h - d };
+    }
+    case 'bpmnSubprocess':
+      return r(0, 0, 1, 0.74);
+    case 'netServer':
+    case 'netFirewall':
+      return r(0, 0, 0.7, 1);
+    case 'netRouter':
+      return r(0.15, 0.15, 0.7, 0.7);
+    case 'netMonitor':
+      return r(0.06, 0.06, 0.88, 0.64);
+    case 'netLaptop':
+      return r(0.15, 0.05, 0.7, 0.7);
+    case 'netPhone':
+      return r(0.1, 0.12, 0.8, 0.7);
+    case 'netUser':
+      return r(0.1, 0.66, 0.8, 0.32);
     default:
       return { x: 0, y: 0, w, h };
   }

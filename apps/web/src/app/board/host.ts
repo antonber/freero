@@ -3,7 +3,18 @@ import type { BoardSummary, Role } from '@freero/shared';
 import type { Host, HostUser } from '@engine';
 import type { ToastApi } from '@ui';
 import { wsBase } from '../api/client';
-import { listMembers, renameBoard, saveThumbnail, unfurl, uploadImage } from '../hostServices';
+import {
+  deleteTemplate,
+  listMembers,
+  listTemplates,
+  loadTemplate,
+  renameBoard,
+  saveTemplate,
+  saveThumbnail,
+  unfurl,
+  uploadFile,
+  uploadImage,
+} from '../hostServices';
 import { serverNow, syncServerClock } from './serverClock';
 
 export interface HostDeps {
@@ -33,6 +44,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     board: { id: board.id, title: board.title, role: board.role },
     syncUrl: `${wsBase()}/ws/boards`,
     uploadImage,
+    uploadFile,
     async renameBoard(title) {
       await renameBoard(board.id, title);
       deps.onTitleChange(title);
@@ -44,6 +56,10 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     serverNow,
     listMembers: () => listMembers(board.id),
     unfurl,
+    listTemplates,
+    loadTemplate,
+    saveTemplate,
+    deleteTemplate,
   };
 }
 
@@ -70,6 +86,7 @@ export function createLocalHost(title: string, deps: Omit<HostDeps, 'user' | 'op
     board: { id: 'local', title, role },
     syncUrl: '',
     uploadImage: async (file) => ({ url: await readAsDataUrl(file) }),
+    uploadFile: async (file) => ({ url: await readAsDataUrl(file) }),
     async renameBoard(next) {
       deps.onTitleChange(next);
     },
@@ -81,5 +98,10 @@ export function createLocalHost(title: string, deps: Omit<HostDeps, 'user' | 'op
     listMembers: async () => [user],
     // Offline sandbox: no previews (the embed card shows the plain link).
     unfurl: async () => Promise.reject(new Error('Link previews need a real board.')),
+    // Offline sandbox: saved templates live on the server (no account here).
+    listTemplates: async () => [],
+    loadTemplate: async () => Promise.reject(new Error('Saved templates need a real board.')),
+    saveTemplate: async () => Promise.reject(new Error('Saving templates needs a real board — the local sandbox is offline.')),
+    deleteTemplate: async () => Promise.reject(new Error('Saved templates need a real board.')),
   };
 }

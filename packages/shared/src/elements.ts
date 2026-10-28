@@ -18,7 +18,10 @@ export type ElementType =
   | 'emoji'
   | 'mindmap'
   | 'table'
-  | 'embed';
+  | 'embed'
+  | 'icon'
+  | 'kanban'
+  | 'pdf';
 
 export interface BaseElement {
   id: string;
@@ -35,6 +38,11 @@ export interface BaseElement {
   frameId?: string | null;
   /** Elements sharing a groupId are selected/moved together. */
   groupId?: string | null;
+  /**
+   * Item link: an external URL (http(s), mailto, tel) or an in-board target '#<elementId>'.
+   * Untrusted: validate with the web's `isSafeHref` before following it.
+   */
+  link?: string | null;
   createdBy: string;
   createdAt: number;
   updatedAt: number;
@@ -106,7 +114,48 @@ export type ShapeKind =
   | 'cylinder'
   | 'document'
   | 'predefinedProcess'
-  | 'callout';
+  | 'callout'
+  // Flowchart
+  | 'terminator'
+  | 'manualInput'
+  | 'manualOperation'
+  | 'delay'
+  | 'display'
+  | 'offPageRef'
+  | 'merge'
+  | 'internalStorage'
+  | 'multiDocument'
+  | 'punchedCard'
+  | 'punchedTape'
+  | 'collate'
+  | 'sort'
+  | 'loopLimit'
+  | 'storedData'
+  | 'summingJunction'
+  | 'orJunction'
+  // UML
+  | 'umlClass'
+  | 'umlActor'
+  | 'umlPackage'
+  | 'umlNote'
+  | 'umlComponent'
+  | 'umlNode'
+  // BPMN
+  | 'bpmnIntermediate'
+  | 'bpmnEnd'
+  | 'bpmnGatewayX'
+  | 'bpmnGatewayPlus'
+  | 'bpmnGatewayO'
+  | 'bpmnSubprocess'
+  // Network
+  | 'netServer'
+  | 'netFirewall'
+  | 'netRouter'
+  | 'netSwitch'
+  | 'netMonitor'
+  | 'netLaptop'
+  | 'netPhone'
+  | 'netUser';
 
 export interface ShapeElement extends BaseElement, TextStyle {
   type: 'shape';
@@ -194,6 +243,15 @@ export interface FrameElement extends BaseElement {
   preset?: 'custom' | '16:9' | '4:3' | '1:1' | 'a4' | 'letter' | 'mobile' | 'desktop';
   /** Hide contents from viewers who aren't the owner/editor (Miro-like "hide frame"). */
   hidden?: boolean;
+  /** Auto-layout: the frame keeps its children in a grid (reading order) of `cols` columns. */
+  layout?: FrameGridLayout | null;
+}
+
+export interface FrameGridLayout {
+  kind: 'grid';
+  cols: number;
+  /** World units between items and around them. */
+  gap: number;
 }
 
 export interface ImageElement extends BaseElement {
@@ -203,6 +261,18 @@ export interface ImageElement extends BaseElement {
   naturalW: number;
   naturalH: number;
   alt?: string;
+  /**
+   * Non-destructive crop: the part of the picture shown in the box, as fractions (0..1) of the
+   * natural image. Absent = the whole picture. The file itself is never changed.
+   */
+  crop?: ImageCrop | null;
+}
+
+export interface ImageCrop {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 }
 
 /** Kanban/task card. */
@@ -271,6 +341,62 @@ export interface EmbedElement extends BaseElement {
   status: 'loading' | 'ready' | 'failed';
 }
 
+/**
+ * A vector icon from the icon library. The drawing is stored IN the element (a short list of
+ * SVG primitives on a 24×24 grid, stroke-only), so it renders and exports without loading the
+ * icon set, and never changes when the library is upgraded.
+ */
+export interface IconElement extends BaseElement {
+  type: 'icon';
+  /** Library name, for search and alt text (e.g. 'rocket'). */
+  name: string;
+  /** [tag, attributes] pairs; tags limited to path/circle/ellipse/line/polyline/polygon/rect. */
+  nodes: IconNode[];
+  color: string;
+  /** Stroke width on the 24-unit grid (lucide's default is 2). */
+  strokeWidth: number;
+}
+
+export type IconNode = [string, Record<string, string | number>];
+
+export type CardStatus = NonNullable<CardElement['status']>;
+
+/**
+ * A kanban board: a header and side-by-side columns. Items dropped onto it join it (it is a
+ * container: their `frameId` is the kanban) and are stacked in the column under their center.
+ * A column with a `status` sets that status on task cards dropped into it.
+ */
+export interface KanbanElement extends BaseElement {
+  type: 'kanban';
+  title: RichText;
+  columns: KanbanColumn[];
+  /** Width of every column (world units); the element's w follows from it. */
+  colW: number;
+}
+
+export interface KanbanColumn {
+  id: string;
+  title: RichText;
+  /** Status set on task cards dropped into this column (null: leave it as it is). */
+  status: CardStatus | null;
+  /** Work-in-progress limit (items); 0 / absent = none. */
+  wip?: number;
+  /** Header accent color. */
+  color: string;
+}
+
+/** A PDF document: shows one page at a time; the file lives in uploads. */
+export interface PdfElement extends BaseElement {
+  type: 'pdf';
+  /** /uploads/<id>.pdf (or a data: URL in the offline sandbox). */
+  src: string;
+  name: string;
+  /** 1-based page shown. */
+  page: number;
+  /** 0 until the document has been opened once. */
+  pageCount: number;
+}
+
 export type BoardElement =
   | StickyElement
   | ShapeElement
@@ -283,7 +409,10 @@ export type BoardElement =
   | EmojiElement
   | MindmapElement
   | TableElement
-  | EmbedElement;
+  | EmbedElement
+  | IconElement
+  | KanbanElement
+  | PdfElement;
 
 export type ElementOf<T extends ElementType> = Extract<BoardElement, { type: T }>;
 
