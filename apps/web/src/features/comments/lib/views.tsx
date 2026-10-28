@@ -245,10 +245,13 @@ export function ThreadView({
   elementMissing,
   editingId,
   setEditingId,
+  quiet = false,
 }: {
   editor: Editor;
   thread: CommentThread;
   elementMissing: boolean;
+  /** Opened from elsewhere (find): the reply box doesn't take the focus. */
+  quiet?: boolean;
   editingId: string | null;
   setEditingId: (id: string | null) => void;
 }) {
@@ -336,7 +339,7 @@ export function ThreadView({
       </div>
       {canWrite && !editingId && (
         <div className="fr-cm-reply">
-          <AutoText value={text} onChange={setText} onSubmit={send} placeholder="Reply…" label="Reply" autoFocus />
+          <AutoText value={text} onChange={setText} onSubmit={send} placeholder="Reply…" label="Reply" autoFocus={!quiet} />
           <IconButton icon={ArrowUp} label="Send reply" shortcut="Enter" size={32} variant="solid" disabled={!text.trim()} onClick={send} />
         </div>
       )}

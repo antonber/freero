@@ -11,6 +11,8 @@ export interface FindUi {
   /** Key (Source.key) of the current match, or null. */
   currentKey: string | null;
   focusNonce: number;
+  /** Bumped after a replace: texts kept outside the elements map (table cells) changed too. */
+  revision: number;
 }
 
 const sessions = new WeakMap<Editor, StoreApi<FindUi>>();
@@ -26,6 +28,7 @@ export function findStore(editor: Editor): StoreApi<FindUi> {
       showReplace: false,
       currentKey: null,
       focusNonce: 0,
+      revision: 0,
     }));
     sessions.set(editor, s);
   }

@@ -17,6 +17,7 @@ import type {
   NewElement,
   Point,
   Rect,
+  TextPart,
 } from '../api';
 import type { EngineCore } from '../runtime/core';
 import { ROLE_RANK } from '../runtime/core';
@@ -180,18 +181,38 @@ export class EditorImpl implements Editor {
 
   /**
    * Not shown to this viewer: off the board (isOffBoard), or hidden for this viewer only
-   * (setViewHidden) — itself or a container it sits in.
+   * (setViewHidden) — itself, a container it sits in, or what it is drawn against (hiddenWith).
    */
   isHidden(el: BoardElement): boolean {
-    const vh = this.core.ui.getState().viewHidden;
-    if (vh.size) {
-      let cur: BoardElement | undefined = el;
-      for (let depth = 0; cur && depth < 16; depth++) {
-        if (vh.has(cur.id)) return true;
-        cur = cur.frameId ? this.core.store.getElement(cur.frameId) : undefined;
+    return this.viewFiltered(el, this.core.ui.getState().viewHidden) || this.isOffBoard(el);
+  }
+
+  /** In the view filter: itself or a container, or (one level) an element it is drawn against. */
+  private viewFiltered(el: BoardElement, vh: ReadonlySet<string>): boolean {
+    if (!vh.size) return false;
+    if (this.inHiddenChain(el, vh)) return true;
+    const deps = this.core.registry.elements.get(el.type)?.def.hiddenWith?.(el);
+    if (deps)
+      for (const id of deps) {
+        const dep = id ? this.core.store.getElement(id) : undefined;
+        if (dep && this.inHiddenChain(dep, vh)) return true;
       }
+    return false;
+  }
+
+  /** The element or a container it sits in is in the view filter. */
+  private inHiddenChain(el: BoardElement, vh: ReadonlySet<string>): boolean {
+    let cur: BoardElement | undefined = el;
+    for (let depth = 0; cur && depth < 16; depth++) {
+      if (vh.has(cur.id)) return true;
+      cur = cur.frameId ? this.core.store.getElement(cur.frameId) : undefined;
     }
-    return this.isOffBoard(el);
+    return false;
+  }
+
+  isViewHidden(id: string): boolean {
+    const el = this.getElement(id);
+    return !!el && this.viewFiltered(el, this.core.ui.getState().viewHidden);
   }
 
   /** Elements in render order without hidden ones (what hit tests, marquee, bounds, culling see). */
@@ -875,6 +896,34 @@ export class EditorImpl implements Editor {
     return this.getEditingId() ? this.core.ui.getState().editingPart : null;
   }
 
+  getTextParts(id: string): TextPart[] {
+    const el = this.getElement(id);
+    const reg = el && this.core.registry.elements.get(el.type);
+    if (!el || !reg) return [];
+    const out: TextPart[] = [];
+    const field = reg.def.textField;
+    if (field) out.push({ part: null, html: String((el as unknown as Record<string, unknown>)[field] ?? '') });
+    if (reg.def.textParts) out.push(...reg.def.textParts(el as never, this.core.scoped(reg.feature)));
+    return out;
+  }
+
+  setTextParts(id: string, parts: TextPart[]): void {
+    const first = this.getElement(id);
+    const reg = first && this.core.registry.elements.get(first.type);
+    if (!parts.length || !reg || !this.guardWrite()) return;
+    const owner = this.core.scoped(reg.feature);
+    this.transact(() => {
+      for (const { part, html } of parts) {
+        // Live element each time: an earlier write in this transaction may have changed it.
+        const el = this.getElement(id);
+        if (!el) return;
+        if (part === null) {
+          if (reg.def.textField) this.update(id, { [reg.def.textField]: html } as ElementPatch);
+        } else reg.def.writeTextPart?.(el as never, part, html, owner);
+      }
+    });
+  }
+
   startEditing(id: string, opts: { selectAll?: boolean; initialText?: string; part?: string } = {}): void {
     const el = this.getElement(id);
     if (!el) return;
@@ -1159,7 +1208,7 @@ export class EditorImpl implements Editor {
   }
 
   // ------------------------------------------------------------------ commands
-  runCommand(id: string): void {
+  runCommand(id: string, args?: Record<string, unknown>): void {
     const reg = this.core.registry.commands.get(id);
     if (!reg) {
       console.warn(`Unknown command '${id}'`);
@@ -1171,7 +1220,7 @@ export class EditorImpl implements Editor {
       return;
     }
     if (reg.def.when && !reg.def.when(ed)) return;
-    reg.def.run(ed);
+    reg.def.run(ed, args);
   }
 
   getShortcuts() {
