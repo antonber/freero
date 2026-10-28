@@ -118,6 +118,20 @@ describe('routing', () => {
     close(route.startTangent, { x: 0, y: -1 }); // first handle points straight down out of A's bottom
     close(route.endTangent, { x: 1, y: 0 }); // arrives moving right into B's left side
   });
+
+  it('an elbow between two items packed close together (Tidy up) crosses the gap instead of looping around them', () => {
+    // A's right side faces B's left side across a 24 px gap (less than two stubs), B a bit lower.
+    const a = box('a', 0, 0);
+    const b = box('b', 124, 30);
+    const { poly } = computeRoute('elbow', end({ x: 100, y: 50 }, { x: 1, y: 0 }, a), end({ x: 124, y: 80 }, { x: -1, y: 0 }, b));
+    for (const p of poly) {
+      expect(p.x).toBeGreaterThanOrEqual(100);
+      expect(p.x).toBeLessThanOrEqual(124);
+    }
+    let length = 0;
+    for (let i = 0; i < poly.length - 1; i++) length += Math.abs(poly[i + 1].x - poly[i].x) + Math.abs(poly[i + 1].y - poly[i].y);
+    expect(length).toBe(24 + 30);
+  });
 });
 
 describe('hit-testing', () => {
