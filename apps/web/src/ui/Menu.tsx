@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Check, ChevronRight } from 'lucide-react';
 import { Popover } from './Popover';
 import { handleRovingKey } from './layers';
@@ -53,12 +53,12 @@ export function Menu({ open, onClose, anchor, items, side = 'bottom', align = 's
     if (!open) setSub(null);
   }, [open]);
 
-  useEffect(() => {
+  // Focus the first item in the commit that opens the menu (after the Popover focused its panel,
+  // before paint), like Popover content: no keystroke can reach the board in between, and nothing
+  // is left scheduled to steal focus back after a fast close.
+  useLayoutEffect(() => {
     if (!open || !anchor) return;
-    const raf = requestAnimationFrame(() => {
-      listRef.current?.querySelector<HTMLElement>('[data-fr-item]:not([disabled])')?.focus({ preventScroll: true });
-    });
-    return () => cancelAnimationFrame(raf);
+    listRef.current?.querySelector<HTMLElement>('[data-fr-item]:not([disabled])')?.focus({ preventScroll: true });
   }, [open, anchor]);
 
   return (
@@ -90,7 +90,8 @@ export function Menu({ open, onClose, anchor, items, side = 'bottom', align = 's
         handleRovingKey(e, listRef.current);
       }}
     >
-      <div ref={listRef} role="menu" aria-label={aria['aria-label']}>
+      {/* Keys pressed on an item (Enter, Space) belong to the menu, never to the board behind it. */}
+      <div ref={listRef} role="menu" aria-label={aria['aria-label']} data-fr-keyboard-trap="">
         {items.map((item, i) => {
           if ('divider' in item) return <div key={`d${i}`} role="separator" className="fr-menu__divider" />;
           if ('heading' in item)
