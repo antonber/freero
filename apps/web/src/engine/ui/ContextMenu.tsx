@@ -10,16 +10,17 @@ import { formatShortcut } from '../runtime/shortcuts';
 
 const WITH_SELECTION = [
   ['engine.cut', 'engine.copy', 'engine.paste', 'engine.duplicate'],
-  ['engine.bringToFront', 'engine.sendToBack'],
+  ['engine.bringToFront', 'engine.bringForward', 'engine.sendBackward', 'engine.sendToBack'],
   ['engine.group', 'engine.ungroup', 'engine.lock', 'engine.copyLink'],
 ];
 const WITHOUT_SELECTION = [['engine.paste', 'engine.selectAll', 'engine.zoomToFit']];
 
-/** A command as a menu item (label, icon, shortcut). */
-export function commandItem({ def }: Registered<CommandDefinition>, onSelect: () => void): MenuItem {
+/** A command as a menu item (label with its live detail, icon, shortcut). */
+export function commandItem({ def, feature }: Registered<CommandDefinition>, onSelect: () => void, core?: EngineCore): MenuItem {
+  const detail = core && def.detail?.(core.scoped(feature));
   return {
     id: def.id,
-    label: def.label,
+    label: detail ? `${def.label} (${detail})` : def.label,
     icon: def.icon,
     shortcut: def.shortcut ? formatShortcut(def.shortcut) : undefined,
     danger: def.id === 'engine.delete',
@@ -69,7 +70,7 @@ export function contextCommandItems(core: EngineCore, opts: { withZOrder?: boole
   const item = (id: string): MenuItem | null => {
     const reg = available(id);
     if (!reg) return null;
-    return commandItem(reg, () => editor.runCommand(id));
+    return commandItem(reg, () => editor.runCommand(id), core);
   };
   const groups = (hasSel ? WITH_SELECTION : WITHOUT_SELECTION).filter(
     (g) => opts.withZOrder !== false || !g.includes('engine.bringToFront'),

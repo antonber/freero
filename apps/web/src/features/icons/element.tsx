@@ -14,6 +14,9 @@ export default defineElement({
   type: 'icon',
   resize: 'aspect',
   minSize: { w: 12, h: 12 },
+  // An icon is line art: its colour is the line colour.
+  sharedStyle: (el) => ({ stroke: el.color, strokeWidth: el.strokeWidth }),
+  applySharedStyle: (_el, { stroke, ...rest }) => ({ ...rest, ...(stroke ? { color: stroke } : {}) }),
   defaults: (): Omit<NewElement<'icon'>, 'x' | 'y'> => ({
     type: 'icon',
     w: ICON_SIZE,

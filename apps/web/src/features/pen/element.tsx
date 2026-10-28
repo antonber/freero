@@ -25,6 +25,7 @@ export default defineElement({
   type: 'pen',
   resize: 'free',
   minSize: { w: 4, h: 4 },
+  sharedStyle: (el) => ({ stroke: el.stroke, strokeWidth: el.strokeWidth }),
   connectable: false,
   defaults: (): Omit<NewElement<'pen'>, 'x' | 'y'> => ({
     type: 'pen',

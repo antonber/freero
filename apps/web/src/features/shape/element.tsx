@@ -62,6 +62,19 @@ export default defineElement({
   type: 'shape',
   resize: 'free',
   minSize: { w: 8, h: 8 },
+  sharedStyle: (el) => ({
+    fill: el.fill,
+    stroke: el.stroke,
+    strokeWidth: el.strokeWidth,
+    strokeStyle: el.strokeStyle,
+    fontFamily: el.fontFamily,
+    fontSize: el.fontSize,
+    textColor: el.textColor,
+    align: el.align,
+    vAlign: el.vAlign,
+  }),
+  // A fill picked for a see-through shape shows (like the shape's own fill control).
+  applySharedStyle: (el, style) => ({ ...style, ...(style.fill && style.fill !== 'transparent' && el.fillOpacity === 0 ? { fillOpacity: 1 } : {}) }),
   textField: 'text',
   defaults: (): Omit<NewElement<'shape'>, 'x' | 'y'> => ({
     ...shapeDefaults('rect'),

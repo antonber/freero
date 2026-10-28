@@ -477,12 +477,49 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
   numbered lines, or short lines that don't read as a wrapped paragraph, or `<li>`s in the HTML —
   and any text while stickies are selected) → text box (0: prose).
 
-Reference & items (engine primitives; product UI in `features/shortcuts`, `links`, `image`, `icons`):
+Reference & items (engine primitives; product UI in `features/shortcuts`, `links`, `image`, `icons`,
+`select-similar` — "Select only ▸ <type> (count)" narrows a mixed selection):
 - `Editor.getShortcuts() → ShortcutEntry[]` (`engine/runtime/shortcutList.ts`): every binding the
   board answers for the live role — tool keys, command shortcuts (alternatives with the same label
   fold into one row), element types' declared `keys` (under their feature) and the keys the keyboard router handles itself (`ENGINE_KEYS` in
   `interaction/keyboard.ts`, kept next to the handlers). The `?` sheet renders it with `@ui` `Kbd`
   (⌘ on Apple platforms, Ctrl elsewhere), so the reference can't drift from the real bindings.
+- `Editor.listActions() → ActionEntry[]` (same file, same registry as `getShortcuts`): every tool
+  and every user-facing command with its shortcuts and, when it can't run now, why
+  (`disabledReason`: the role, or the command's `when` + `CommandDefinition.disabledReason`). A
+  command is user-facing when it has a `shortcut` or `menus` (`CommandDefinition.palette`
+  overrides: `true` for board settings, `false` for the palette's own shortcut); commands only other
+  features run with `args` have neither and never show. Grouped labels read as one phrase
+  ("Select all of this type"). `CommandDefinition.detail(editor)` is a live suffix in menus and
+  the palette ("Sticky notes (12)", "Snap to grid (on)"). The board menu's settings are engine
+  commands too (`engine.settings.*`, lists in `engine/editor/boardSettings.ts`), so the palette
+  reaches them. The command palette (`features/shortcuts`, `Mod+/` — Mod+K is the item/text link)
+  is built on it: fuzzy search (abbreviations inside one word, never letters scattered across
+  words), unavailable actions listed greyed out with the reason (Enter does nothing), recent
+  actions first (this browser, per user; localStorage, wrapped), an ARIA combobox + listbox, and
+  closed while text is being edited.
+- `Editor.bringForward(ids)` / `sendBackward(ids)` (`Mod+Shift+]` / `[`; `planStackStep` in
+  `geometry/order.ts`): one step past the next item each one OVERLAPS (non-overlapping items
+  change nothing visible, so they're passed), never past another selected item, riders with
+  their item, frames only among frames. New z values go between the neighbours (no renumbering).
+- Exact size and position (engine chrome: "Size and position" in the format toolbar,
+  `engine/editor/exact.ts`): X / Y move the whole selection through `moveBy` (one item: its own
+  stored top-left; several: their bounding box); W / H / rotation apply to each unlocked item the
+  way its handles would (`resize: 'aspect'` keeps the ratio, `'scale'` / `'width-only'` take a
+  width only, `'none'` and connectors nothing), growing from the item's own (rotated) top-left
+  corner. Typed values land on whole pixels exactly — never grid-snapped, a typed number is meant
+  — while ↑/↓ in a field step to the next grid line when "Snap to grid" is on (Shift: five), else
+  1 px (Shift 10). Each commit is one gesture = one undo step.
+- Mixed selections (`ElementDefinition.sharedStyle(el)` / `applySharedStyle(el, style)`,
+  `SharedStyle` = fill, stroke, strokeWidth, strokeStyle, fontFamily, fontSize, textColor, align,
+  vAlign): a type reports the keys it has; when the selection holds several types, the engine's
+  `MixedStyleSection` (`engine/ui/MixedStyle.tsx`, before the features' sections) shows a control
+  for every key two or more selected items have (MIXED when they disagree) and writes ONE
+  `updateMany` with each item's patch from its own definition (default: the same-named field), so a
+  sticky maps a fill to its nearest paper, a card / mind-map topic to its colour, an icon a line
+  colour to `color`, and a text box ignores `fontSize: 'auto'`. Its text colour does not clear
+  per-word colours (that would touch types that take no text colour). A new type joins mixed
+  editing by defining `sharedStyle` (+ `applySharedStyle` when its fields differ).
 - `BaseElement.link` (`@freero/shared`): an item link — an external URL or `#<elementId>`.
   Untrusted; `isSafeHref(href)` (`@engine`) is the one safe-href rule shared with rich text.
   "Copy link to item" (`engine.copyLink`) builds `/board/<id>?item=<elementId>`; the board selects

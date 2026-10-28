@@ -145,7 +145,7 @@ issue id is in the status note.
 | Paste and drop from outside | Text, images and image links from the clipboard or drag and drop | Have | — | P0 | — |
 | Group | Select and move several items as one | Have | — | P1 | — |
 | Lock items | Pin items so they can't be moved or edited by accident | Have | — | P1 | — |
-| Stacking order | Bring to front, send to back | Partial: front and back, and drag to restack in the Layers panel; no one step forward or back (KAI-110) | S | P2 | parity |
+| Stacking order | Bring to front, send to back | Partial: front and back, and drag to restack in the Layers panel; no one step forward or back (*in review*: Bring forward / Send backward, KAI-110) | S | P2 | parity |
 | Align | Line up the selection's left, centre, right, top, middle or bottom edges | Have | — | P1 | — |
 | Distribute | Space the selection evenly across or down | Have | — | P1 | — |
 | Tidy into a grid | Arrange a messy pile of items into a neat grid | Have (plus cluster stickies by colour or tag) | — | P2 | — |
@@ -153,10 +153,10 @@ issue id is in the status note.
 | Find and replace | Replace text across the board | Have | — | P2 | — |
 | Layers / object list | A panel listing items in stacking order to select, hide or lock them | Have | — | P2 | — |
 | Copy style | Copy one item's formatting onto others | Have (format painter) | — | P2 | — |
-| Edit mixed selections | Change colour or text size across a selection of different item types | Partial: format controls appear only when every selected item has the same type (KAI-111) | M | P2 | parity |
-| Selection filter | Narrow a selection to one item type (e.g. only stickies) | Partial: "select similar" selects every item of a type on the board, but can't narrow the current selection (KAI-110) | S | P2 | parity |
-| Exact size and position | Type width, height, position and rotation for the selection | Missing (KAI-110) | S | P2 | parity |
-| Command palette | Search for any action by name and run it from the keyboard | Missing (the shortcut sheet lists actions but can't run them; KAI-109) | S | P2 | parity |
+| Edit mixed selections | Change colour or text size across a selection of different item types | Partial: format controls appear only when every selected item has the same type (*in review*: shared fill, line, font, size, text colour and alignment for mixed selections, KAI-111) | M | P2 | parity |
+| Selection filter | Narrow a selection to one item type (e.g. only stickies) | Partial: "select similar" selects every item of a type on the board, but can't narrow the current selection (*in review*: "Select only ▸ <type> (count)", KAI-110) | S | P2 | parity |
+| Exact size and position | Type width, height, position and rotation for the selection | Missing (*in review*: "Size and position" in the format toolbar, KAI-110) | S | P2 | parity |
+| Command palette | Search for any action by name and run it from the keyboard | Missing (the shortcut sheet lists actions but can't run them; *in review*: Mod+/ palette, KAI-109) | S | P2 | parity |
 | Version history | Browse, preview and restore earlier states of the board; name versions | Have | — | P1 | — |
 | Activity feed | Who changed what on the board, and when | Missing (KAI-44) | M | P2 | 3 |
 

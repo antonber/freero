@@ -3,6 +3,8 @@ import { CircleHelp, Search } from 'lucide-react';
 import { definePanel, useRole, type Editor, type PanelProps } from '@engine';
 import { IconButton, Input, Kbd, Modal } from '@ui';
 import { SHEET_PANEL, buildSheet } from './lib/sheet';
+import { PALETTE_PANEL } from './lib/palette';
+import { Palette } from './lib/PaletteDialog';
 import './shortcuts.css';
 
 function Sheet({ editor }: PanelProps) {
@@ -67,5 +69,6 @@ function HelpButton({ editor }: { editor: Editor }) {
 
 export default [
   definePanel({ id: SHEET_PANEL, slot: 'dialog', order: 50, minRole: 'viewer', Component: Sheet }),
+  definePanel({ id: PALETTE_PANEL, slot: 'dialog', order: 50, minRole: 'viewer', Component: Palette }),
   definePanel({ id: 'shortcuts.help', slot: 'bottom-right', order: 90, minRole: 'viewer', Component: HelpButton }),
 ];
