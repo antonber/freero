@@ -99,6 +99,9 @@ export const api = {
     request<{ ok: true }>('POST', '/api/auth/password', { currentPassword, newPassword }),
   changeEmail: (email: string, password: string) => request<{ ok: true }>('POST', '/api/auth/email', { email, password }),
   confirmEmailChange: (token: string) => request<{ ok: true }>('POST', '/api/auth/email/confirm', { token }),
+  /** "This wasn't me", from the link an email change sends to the previous address. */
+  revertEmailChange: (token: string, password: string) =>
+    request<LoginResponse>('POST', '/api/auth/email/revert', { token, password }),
 
   // sign-in methods + two-factor
   providers: () => request<{ providers: SignInProvider[] }>('GET', '/api/auth/providers'),
