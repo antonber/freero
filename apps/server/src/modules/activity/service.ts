@@ -13,6 +13,7 @@
 // private layers are never observed (realtime/changes.ts). No element text is stored, only types,
 // counts and the title of the frame the changes were in (frames are visible to everyone).
 import {
+  TRACKER_PROVIDERS,
   actingFor,
   guestDisplayName,
   isGuestId,
@@ -29,6 +30,7 @@ import { getGuests, getUsers } from '../auth/index';
 import { boardsOpenableIn, getBoardAccess } from '../boards/index';
 import type { AccessDecidedEvent, BoardSharedEvent } from '../members/index';
 import type { BoardChangeEvent, CommentMessageEvent, SuggestionsProposedEvent } from '../realtime/index';
+import type { TrackerActivityEvent } from '../trackers/index';
 import * as repo from './repo';
 import type { ActivityRow, ActivitySummary } from './repo';
 
@@ -203,6 +205,23 @@ export async function recordSuggestions(e: SuggestionsProposedEvent, now = Date.
   await repo.insertMany([{ id: newId(16), boardId: e.boardId, actorId: e.actorId, actorName: null, kind: 'board', audience: 'editors', summary, startedAt: now, endedAt: now }]);
 }
 
+/** What tracker sync did on a board (KAI-153): sent, imported, synced, failed, unlinked. Owners and editors see syncs' details. */
+export async function recordTrackerEvent(e: TrackerActivityEvent, now = Date.now()): Promise<void> {
+  const tracker = TRACKER_PROVIDERS[e.provider];
+  const summary: ActivitySummary = {
+    action: e.action,
+    tracker,
+    issue: e.issue,
+    ...(e.items ? { items: e.items } : {}),
+    ...(e.count !== undefined ? { count: e.count } : {}),
+    ...(e.fields ? { fields: e.fields } : {}),
+    ...(e.reason ? { reason: e.reason.slice(0, 300) } : {}),
+    // Syncs run on their own: they are the tracker's doing for the person who linked the issue.
+    ...(e.action === 'tracker_synced' || e.action === 'tracker_failed' ? { app: tracker } : {}),
+  };
+  await repo.insertMany([{ id: newId(16), boardId: e.boardId, actorId: e.actorId, actorName: null, kind: 'board', audience: 'all', summary, startedAt: now, endedAt: now }]);
+}
+
 export const onBoardShared = (e: BoardSharedEvent) => recordShare({ boardId: e.boardId, byId: e.byId, userId: e.userId, role: e.role, via: 'invite' });
 export const onAccessDecided = (e: AccessDecidedEvent) =>
   e.approved && e.role ? recordShare({ boardId: e.boardId, byId: e.deciderId, userId: e.requesterId, role: e.role, via: 'request' }) : undefined;
@@ -258,6 +277,16 @@ function boardWording(s: ActivitySummary): string {
       return s.version ? `restored the version “${s.version}”` : 'restored an earlier version';
     case 'suggested':
       return s.suggestions === 1 ? 'suggested a change' : `suggested ${s.suggestions ?? 'some'} changes`;
+    case 'tracker_sent':
+      return `sent ${s.items ? things(s.items) : 'items'} to ${s.tracker ?? 'a tracker'} as ${s.issue ?? 'an issue'}`;
+    case 'tracker_imported':
+      return `imported ${s.count === 1 ? '1 issue' : `${s.count ?? 'some'} issues`} from ${s.tracker ?? 'a tracker'}`;
+    case 'tracker_synced':
+      return `updated ${s.issue ?? 'an issue'} in ${s.tracker ?? 'the tracker'}${s.fields?.length ? ` (${s.fields.join(', ')})` : ''}`;
+    case 'tracker_failed':
+      return `couldn’t sync ${s.issue ?? 'an issue'} with ${s.tracker ?? 'the tracker'}${s.reason ? `: ${s.reason}` : ''}`;
+    case 'tracker_unlinked':
+      return `unlinked ${s.issue ?? 'an issue'} from ${s.tracker ?? 'its tracker'}`;
     default:
       return 'changed the board';
   }

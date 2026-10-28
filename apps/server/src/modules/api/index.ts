@@ -31,5 +31,6 @@ export {
   listComments,
   addComment,
   replyToComment,
+  syncToTracker,
   type ApiCall,
 } from './service';
