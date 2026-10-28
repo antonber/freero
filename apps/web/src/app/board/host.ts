@@ -3,7 +3,17 @@ import type { BoardSummary, Role } from '@freero/shared';
 import type { Host, HostUser } from '@engine';
 import type { ToastApi } from '@ui';
 import { wsBase } from '../api/client';
-import { listMembers, renameBoard, saveThumbnail, unfurl, uploadImage } from '../hostServices';
+import {
+  deleteTemplate,
+  listMembers,
+  listTemplates,
+  loadTemplate,
+  renameBoard,
+  saveTemplate,
+  saveThumbnail,
+  unfurl,
+  uploadImage,
+} from '../hostServices';
 import { serverNow, syncServerClock } from './serverClock';
 
 export interface HostDeps {
@@ -44,6 +54,10 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     serverNow,
     listMembers: () => listMembers(board.id),
     unfurl,
+    listTemplates,
+    loadTemplate,
+    saveTemplate,
+    deleteTemplate,
   };
 }
 
@@ -81,5 +95,10 @@ export function createLocalHost(title: string, deps: Omit<HostDeps, 'user' | 'op
     listMembers: async () => [user],
     // Offline sandbox: no previews (the embed card shows the plain link).
     unfurl: async () => Promise.reject(new Error('Link previews need a real board.')),
+    // Offline sandbox: saved templates live on the server (no account here).
+    listTemplates: async () => [],
+    loadTemplate: async () => Promise.reject(new Error('Saved templates need a real board.')),
+    saveTemplate: async () => Promise.reject(new Error('Saving templates needs a real board — the local sandbox is offline.')),
+    deleteTemplate: async () => Promise.reject(new Error('Saved templates need a real board.')),
   };
 }

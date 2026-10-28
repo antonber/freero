@@ -9,6 +9,7 @@ import type {
   EditorEvent,
   ElementDefinition,
   ElementPatch,
+  ElementsSnapshot,
   FitOptions,
   FollowTarget,
   Host,
@@ -562,9 +563,9 @@ export class EditorImpl implements Editor {
   // ------------------------------------------------------------------ clipboard
   /** Builds the clipboard payload for ids (with frame children), or null when empty. */
   buildClipboard(ids: string[]): { html: string; text: string; payload: ClipboardPayload } | null {
-    const all = this.withChildren(ids);
-    const elements = all.map((id) => this.getElement(id)!).filter(Boolean).sort((a, b) => a.z - b.z);
-    if (!elements.length) return null;
+    const snapshot = this.exportElements(ids);
+    if (!snapshot) return null;
+    const { elements } = snapshot;
     const text = elements
       .map((el) => {
         const def = this.getDefinition(el.type);
@@ -574,10 +575,55 @@ export class EditorImpl implements Editor {
       })
       .filter(Boolean)
       .join('\n');
-    const content = this.copyContentOf(elements);
-    const payload: ClipboardPayload = { app: 'freero', version: 1, boardId: this.boardId, elements, ...(content ? { content } : {}) };
+    const payload: ClipboardPayload = { app: 'freero', version: 1, boardId: this.boardId, ...snapshot };
     const s = serializeClipboard(payload, text);
     return { ...s, payload };
+  }
+
+  exportElements(ids?: string[]): ElementsSnapshot | null {
+    const all = this.withChildren(ids ?? this.getElements().map((el) => el.id));
+    const elements = all.map((id) => this.getElement(id)!).filter(Boolean).sort((a, b) => a.z - b.z);
+    if (!elements.length) return null;
+    const content = this.copyContentOf(elements);
+    return { elements, ...(content ? { content } : {}) };
+  }
+
+  insertElements(snapshot: ElementsSnapshot, opts: { at?: Point } = {}): string[] {
+    return this.insertSnapshot(snapshot, (elements) => {
+      if (opts.at) return placeAt(elements, opts.at);
+      const b = boundsOf(elements);
+      if (!b) return elements;
+      const spot = this.findFreeSpot({ w: b.w, h: b.h });
+      const dx = Math.round(spot.x - b.x);
+      const dy = Math.round(spot.y - b.y);
+      return elements.map((el) => translateElement(el, dx, dy));
+    });
+  }
+
+  /**
+   * The one insertion path for copied content (paste, drop, templates): fresh ids with internal
+   * references remapped, placed by `place`, created in one transaction with their copied content,
+   * adopted into containers; selects and returns the top-level ids.
+   */
+  private insertSnapshot(snapshot: ElementsSnapshot, place: (elements: BoardElement[]) => BoardElement[]): string[] {
+    if (!this.guardWrite()) return [];
+    const known = snapshot.elements.filter((el) => this.core.registry.elements.has(el.type));
+    if (!known.length) return [];
+    const { elements, idMap } = remapElements(known, () => nanoid());
+    const placed = place(elements);
+    let z = this.core.store.maxZ();
+    const now = Date.now();
+    const built = placed.map((el) => ({ ...el, z: ++z, createdBy: this.user.id, createdAt: now, updatedAt: now }));
+    this.core.store.transact(() => {
+      for (const el of built) this.core.store.setElement(el);
+      this.adoptIntoContainers(built.map((b) => b.id));
+      this.pasteContentInto(built, idMap, snapshot.content);
+    });
+    // Select top-level inserted elements (not children of inserted frames).
+    const insertedIds = new Set(built.map((b) => b.id));
+    const top = built.filter((el) => !el.frameId || !insertedIds.has(el.frameId)).map((el) => el.id);
+    this.select(top);
+    return top;
   }
 
   /** [additive] ElementDefinition.copyContent of each source element that has one, by source id. */
@@ -675,30 +721,15 @@ export class EditorImpl implements Editor {
   }
 
   pastePayload(payload: ClipboardPayload, at: Point): string[] {
-    if (!this.guardWrite()) return [];
-    const known = payload.elements.filter((el) => this.core.registry.elements.has(el.type));
-    if (!known.length) return [];
-    const { elements, idMap } = remapElements(known, () => nanoid());
-    // Pasting again without moving the pointer cascades each copy down-right instead of stacking
-    // it exactly on the previous one (where it would look like nothing happened).
-    const prev = this.shared.lastPaste;
-    const n = prev && Math.abs(prev.at.x - at.x) < 0.5 && Math.abs(prev.at.y - at.y) < 0.5 ? prev.n + 1 : 0;
-    this.shared.lastPaste = { at, n };
-    const step = (24 * n) / this.getCamera().zoom;
-    const placed = placeAt(elements, { x: at.x + step, y: at.y + step });
-    let z = this.core.store.maxZ();
-    const now = Date.now();
-    const built = placed.map((el) => ({ ...el, z: ++z, createdBy: this.user.id, createdAt: now, updatedAt: now }));
-    this.core.store.transact(() => {
-      for (const el of built) this.core.store.setElement(el);
-      this.adoptIntoContainers(built.map((b) => b.id));
-      this.pasteContentInto(built, idMap, payload.content);
+    return this.insertSnapshot(payload, (elements) => {
+      // Pasting again without moving the pointer cascades each copy down-right instead of stacking
+      // it exactly on the previous one (where it would look like nothing happened).
+      const prev = this.shared.lastPaste;
+      const n = prev && Math.abs(prev.at.x - at.x) < 0.5 && Math.abs(prev.at.y - at.y) < 0.5 ? prev.n + 1 : 0;
+      this.shared.lastPaste = { at, n };
+      const step = (24 * n) / this.getCamera().zoom;
+      return placeAt(elements, { x: at.x + step, y: at.y + step });
     });
-    // Select top-level pasted elements (not children of pasted frames).
-    const pastedIds = new Set(built.map((b) => b.id));
-    const top = built.filter((el) => !el.frameId || !pastedIds.has(el.frameId)).map((el) => el.id);
-    this.select(top);
-    return top;
   }
 
   /**

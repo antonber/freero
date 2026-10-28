@@ -67,6 +67,45 @@ export interface Host {
    * (offline sandbox, private address, timeout); callers fall back to a plain link card.
    */
   unfurl(url: string): Promise<LinkPreview>;
+  /**
+   * [additive] Saved templates (a board or selection someone saved for reuse) the user may insert:
+   * their own today; also their workspace's once workspaces exist — so compare `ownerId` with
+   * `user.id` before offering owner-only actions (delete). Newest first. Rejects offline / when
+   * the list can't be loaded.
+   */
+  listTemplates(): Promise<SavedTemplateInfo[]>;
+  /** [additive] The content of a saved template, ready for `Editor.insertElements`. */
+  loadTemplate(id: string): Promise<ElementsSnapshot>;
+  /**
+   * [additive] Saves content (from `Editor.exportElements`) as a template owned by the user.
+   * `thumbnail` is a PNG/JPEG/WebP data URL (≤ 512 KB) or null. Rejects with a message fit for a
+   * toast (over the limit, too large, offline sandbox).
+   */
+  saveTemplate(template: { name: string; description: string; thumbnail: string | null; content: ElementsSnapshot }): Promise<SavedTemplateInfo>;
+  /** [additive] Deletes one of the user's own saved templates. */
+  deleteTemplate(id: string): Promise<void>;
+}
+
+/** [additive] A saved template as `Host.listTemplates` lists it (wire: @freero/shared `SavedTemplateSummary`). */
+export interface SavedTemplateInfo {
+  id: string;
+  name: string;
+  description: string;
+  /** Preview image URL, or null. */
+  thumbnail: string | null;
+  ownerId: string;
+  elementCount: number;
+  createdAt: number;
+}
+
+/**
+ * [additive] A portable copy of board content: elements (ids as on the source board) plus what
+ * they keep outside the elements map (`ElementDefinition.copyContent`, by source id). What copy
+ * puts on the clipboard; `Editor.exportElements` makes one, `Editor.insertElements` inserts one.
+ */
+export interface ElementsSnapshot {
+  elements: BoardElement[];
+  content?: Record<string, unknown>;
 }
 
 /** [additive] What `Host.unfurl` resolves to (wire format: @freero/shared `UnfurlResponse`). */
@@ -560,6 +599,20 @@ export interface Editor {
   copy(ids?: string[]): void;
   cut(ids?: string[]): void;
   paste(at?: Point): void;
+  /**
+   * [additive] A portable copy of `ids` (default: the whole board) with their frame children and
+   * copied content — exactly what copy puts on the clipboard. null when there is nothing.
+   * Read-only, any role.
+   */
+  exportElements(ids?: string[]): ElementsSnapshot | null;
+  /**
+   * [additive] Inserts a snapshot the way paste does, in one transaction (one undo step): fresh
+   * ids with references between the inserted elements remapped (frames, groups, connectors,
+   * mind-map parents), copied content restored, membership by the drop rule. Lands centered on
+   * `at`, or by default on a free spot near the viewport center (`findFreeSpot`). Unknown element
+   * types are skipped. Selects and returns the top-level inserted ids ([] for read-only roles).
+   */
+  insertElements(snapshot: ElementsSnapshot, opts?: { at?: Point }): string[];
 
   // -- selection & editing --
   getSelection(): string[];

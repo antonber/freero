@@ -11,6 +11,8 @@ export interface Board {
   thumbnail: string | null;
   createdAt: number;
   updatedAt: number;
+  /** When it was moved to the trash; null for a live board. */
+  deletedAt: number | null;
 }
 
 interface Row {
@@ -22,6 +24,7 @@ interface Row {
   thumbnail: string | null;
   created_at: Date;
   updated_at: Date;
+  deleted_at: Date | null;
 }
 
 const toBoard = (r: Row): Board => ({
@@ -33,6 +36,7 @@ const toBoard = (r: Row): Board => ({
   thumbnail: r.thumbnail,
   createdAt: r.created_at.getTime(),
   updatedAt: r.updated_at.getTime(),
+  deletedAt: r.deleted_at ? r.deleted_at.getTime() : null,
 });
 
 /**
@@ -49,18 +53,78 @@ export async function insertBoard(b: Board): Promise<void> {
   );
 }
 
+/** A live board (null when missing or in the trash). */
 export async function getBoard(id: string): Promise<Board | null> {
+  const r = await one<Row>(`SELECT * FROM boards WHERE id = $1 AND deleted_at IS NULL`, [id]);
+  return r ? toBoard(r) : null;
+}
+
+/** A board whether live or in the trash (restore, delete forever). */
+export async function getBoardIncludingTrash(id: string): Promise<Board | null> {
   const r = await one<Row>(`SELECT * FROM boards WHERE id = $1`, [id]);
   return r ? toBoard(r) : null;
 }
 
+/** The live boards among ids. */
 export async function getBoards(ids: string[]): Promise<Board[]> {
   if (ids.length === 0) return [];
-  return (await query<Row>(`SELECT * FROM boards WHERE id = ANY($1::text[])`, [ids])).map(toBoard);
+  return (await query<Row>(`SELECT * FROM boards WHERE id = ANY($1::text[]) AND deleted_at IS NULL`, [ids])).map(toBoard);
 }
 
+/** Ids of the user's live boards. */
 export async function boardIdsOwnedBy(userId: string): Promise<string[]> {
-  return (await query<{ id: string }>(`SELECT id FROM boards WHERE owner_id = $1`, [userId])).map((r) => r.id);
+  return (await query<{ id: string }>(`SELECT id FROM boards WHERE owner_id = $1 AND deleted_at IS NULL`, [userId])).map((r) => r.id);
+}
+
+/** How many live boards the user owns (the board quota; trashed boards don't count). */
+export async function countLiveBoardsOwnedBy(userId: string): Promise<number> {
+  const r = await one<{ n: number }>(`SELECT count(*)::int AS n FROM boards WHERE owner_id = $1 AND deleted_at IS NULL`, [userId]);
+  return r?.n ?? 0;
+}
+
+/**
+ * Serializes quota-checked writes (create, duplicate, restore) of one owner: blocks until no other
+ * transaction holds this owner's lock, and holds it until the CALLER'S transaction ends. Must run
+ * inside `transaction()` (outside one, the lock would be released at once).
+ */
+export async function lockOwnerQuota(ownerId: string): Promise<void> {
+  await query(`SELECT pg_advisory_xact_lock(hashtext('boards.quota'), hashtext($1))`, [ownerId]);
+}
+
+/** The user's trashed boards, most recently deleted first. */
+export async function trashedBoardsOf(ownerId: string): Promise<Board[]> {
+  return (
+    await query<Row>(`SELECT * FROM boards WHERE owner_id = $1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC`, [ownerId])
+  ).map(toBoard);
+}
+
+/** Moves a live board to the trash; false if it was not live (already trashed or gone). */
+export async function trashBoard(id: string, now: number): Promise<boolean> {
+  return (await one(`UPDATE boards SET deleted_at = $2 WHERE id = $1 AND deleted_at IS NULL RETURNING id`, [id, new Date(now)])) !== null;
+}
+
+/** Takes a board out of the trash; false if it was not in the trash. */
+export async function restoreBoard(id: string): Promise<boolean> {
+  return (await one(`UPDATE boards SET deleted_at = NULL WHERE id = $1 AND deleted_at IS NOT NULL RETURNING id`, [id])) !== null;
+}
+
+/**
+ * Inside `transaction()`: true if this caller may run the trash purge now, false if another
+ * transaction (another server instance) is already purging. Released when the transaction ends.
+ */
+export async function tryLockTrashPurge(): Promise<boolean> {
+  const r = await one<{ ok: boolean }>(`SELECT pg_try_advisory_xact_lock(hashtext('boards.purge'), 0) AS ok`);
+  return r?.ok === true;
+}
+
+/** Deletes up to `limit` boards trashed before `before` for good; returns what was deleted. */
+export async function purgeTrashedBefore(before: number, limit: number): Promise<Array<{ id: string; thumbnail: string | null }>> {
+  return query<{ id: string; thumbnail: string | null }>(
+    `DELETE FROM boards WHERE id IN (
+       SELECT id FROM boards WHERE deleted_at < $1 ORDER BY deleted_at LIMIT $2
+     ) RETURNING id, thumbnail`,
+    [new Date(before), limit],
+  );
 }
 
 /** Changes only the given fields, in one statement (concurrent PATCHes of different fields both stick). */
@@ -91,9 +155,16 @@ export async function touch(id: string, now: number): Promise<void> {
   await query(`UPDATE boards SET updated_at = $2 WHERE id = $1 AND updated_at < $2`, [id, new Date(now)]);
 }
 
-/** Deletes the board; stars, opens, members and the doc go with it (ON DELETE CASCADE). */
-export async function deleteBoard(id: string): Promise<void> {
-  await query(`DELETE FROM boards WHERE id = $1`, [id]);
+/**
+ * Deletes a TRASHED board for good; stars, opens, members and the doc go with it (ON DELETE
+ * CASCADE). Returns its thumbnail (to delete the file), or undefined if it was not in the trash.
+ */
+export async function deleteTrashedBoard(id: string): Promise<string | null | undefined> {
+  const r = await one<{ thumbnail: string | null }>(
+    `DELETE FROM boards WHERE id = $1 AND deleted_at IS NOT NULL RETURNING thumbnail`,
+    [id],
+  );
+  return r ? r.thumbnail : undefined;
 }
 
 // ---- stars ----

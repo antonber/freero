@@ -23,6 +23,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 import * as decoding from 'lib0/decoding';
 import WebSocket from 'ws';
 import { WebsocketProvider } from 'y-websocket';
@@ -810,10 +811,16 @@ async function run() {
       assert(!ids.includes(C.id) && !ids.includes(D.id) && ids.includes(B.id), JSON.stringify(ids));
     });
 
-    await check('delete: only owner; removes board, doc and access; copy survives', async () => {
+    await check('delete: only owner; moves the board to the trash, removing it and its access for everyone; copy survives', async () => {
       assert((await B.req('DELETE', `/api/boards/${board.id}`)).status === 403, 'editor delete');
       const live = connectDoc(B, board.id);
       await live.ready();
+      // An edit the server has received but not saved yet (saves are debounced) when the delete lands.
+      const watcher = connectDoc(A, board.id);
+      await watcher.ready();
+      els(live).set('t1', { id: 't1', type: 'sticky', text: 'just before the delete' });
+      await waitFor(() => els(watcher).get('t1'), 3000, 'the last edit to reach the server');
+      watcher.destroy();
       assert((await A.req('DELETE', `/api/boards/${board.id}`)).status === 200, 'owner delete');
       await waitFor(() => live.closeCodes.includes(4403), 5000, 'connected editor to be closed with 4403');
       live.destroy();
@@ -825,6 +832,45 @@ async function run() {
       await cd.ready();
       assert(els(cd).get('e2')?.text === 'from B', 'copy lost its content');
       cd.destroy();
+    });
+
+    await check('trash: only the owner lists and restores it, with every edit up to the delete; delete forever is final', async () => {
+      const trash = await A.req('GET', '/api/boards?filter=trash');
+      const entry = trash.json?.boards?.find((b) => b.id === board.id);
+      assert(entry && entry.purgeAt - entry.deletedAt === 30 * 86_400_000, `A's trash: ${trash.text}`);
+      assert(!titles(await B.req('GET', '/api/boards?filter=trash')).includes(board.id), "in the editor's trash");
+      assert((await B.req('POST', `/api/boards/${board.id}/restore`)).status === 404, 'editor restore');
+      assert((await B.req('DELETE', `/api/boards/${board.id}/permanent`)).status === 404, 'editor delete forever');
+      const restored = await A.req('POST', `/api/boards/${board.id}/restore`);
+      assert(restored.status === 200 && restored.json.board.deletedAt === undefined, `restore -> ${restored.status} ${restored.text}`);
+      assert((await B.req('GET', `/api/boards/${board.id}`)).status === 200, 'membership did not survive the trash');
+      const back = connectDoc(B, board.id);
+      await back.ready();
+      assert(els(back).get('e2')?.text === 'from B', 'restored board lost its content');
+      assert(els(back).get('t1')?.text === 'just before the delete', 'the edit made right before the delete was lost');
+      back.destroy();
+
+      assert((await A.req('DELETE', `/api/boards/${board.id}/permanent`)).status === 404, 'delete forever of a live board');
+      assert((await A.req('DELETE', `/api/boards/${board.id}`)).status === 200, 'trash again');
+      assert((await A.req('DELETE', `/api/boards/${board.id}/permanent`)).status === 200, 'delete forever');
+      assert(!titles(await A.req('GET', '/api/boards?filter=trash')).includes(board.id), 'still in the trash');
+      assert((await A.req('POST', `/api/boards/${board.id}/restore`)).status === 404, 'restore after delete forever');
+    });
+
+    await check('saved templates: owner saves, lists and loads one; nobody else sees or deletes it', async () => {
+      const content = { elements: [{ id: 'f1', type: 'frame', x: 0, y: 0, w: 400, h: 300, title: 'Retro', index: 0 }] };
+      const saved = await A.req('POST', '/api/templates', { name: 'Retro', description: 'Ours', content, thumbnail: `data:image/png;base64,${PNG_1PX.toString('base64')}` });
+      assert(saved.status === 201 && saved.json.template.thumbnail?.startsWith('/uploads/'), `save -> ${saved.status} ${saved.text}`);
+      const id = saved.json.template.id;
+      assert((await A.req('GET', '/api/templates')).json.templates.some((t) => t.id === id), 'not listed for its owner');
+      const loaded = await A.req('GET', `/api/templates/${id}`);
+      assert(isDeepStrictEqual(loaded.json.template.content, content), `content changed: ${loaded.text}`);
+      assert(!(await B.req('GET', '/api/templates')).json.templates.some((t) => t.id === id), 'listed for someone else');
+      assert((await B.req('GET', `/api/templates/${id}`)).status === 404, 'someone else loads it');
+      assert((await B.req('DELETE', `/api/templates/${id}`)).status === 404, 'someone else deletes it');
+      assert((await A.req('POST', '/api/templates', { name: 'Empty', content: { elements: [] } })).status === 400, 'empty template');
+      assert((await A.req('DELETE', `/api/templates/${id}`)).status === 200, 'owner delete');
+      assert((await A.req('GET', `/api/templates/${id}`)).status === 404, 'still there after delete');
     });
   } finally {
     closeAllDocs();
@@ -922,11 +968,14 @@ async function platformChecks() {
       assert(wsStatus === 403, `cross-site WebSocket upgrade -> ${wsStatus}`);
     });
 
-    await check('quotas: board limit per user (403) and upload quota per user (413)', async () => {
-      const second = await call('POST', '/api/boards', { body: { title: 'two' } });
-      assert(second.status === 201, `2nd board -> ${second.status}`);
-      const third = await call('POST', '/api/boards', { body: { title: 'three' } });
-      assert(third.status === 403 && /limit/i.test(third.json?.error ?? ''), `3rd board -> ${third.status} ${third.text}`);
+    await check('quotas: board limit per user holds under parallel creates (403) and upload quota per user (413)', async () => {
+      // One board exists ('mine', limit 2): of eight creates sent at once exactly one may land.
+      const burst = await Promise.all(Array.from({ length: 8 }, (_, i) => call('POST', '/api/boards', { body: { title: `burst ${i}` } })));
+      const created = burst.filter((r) => r.status === 201).length;
+      const refused = burst.filter((r) => r.status === 403 && /limit/i.test(r.json?.error ?? '')).length;
+      assert(created === 1 && refused === 7, `parallel creates -> ${burst.map((r) => r.status).join(',')}`);
+      const owned = await call('GET', '/api/boards?filter=mine');
+      assert(owned.json.boards.length === 2, `owns ${owned.json.boards.length} boards with a limit of 2`);
       const big = Buffer.concat([PNG_1PX, Buffer.alloc(600 * 1024)]); // 2 x 600KB > 1MB quota
       const up1 = await call('POST', '/api/uploads', { body: big, raw: true, headers: { 'content-type': 'image/png' } });
       assert(up1.status === 201, `1st upload -> ${up1.status} ${up1.text}`);

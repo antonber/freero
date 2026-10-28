@@ -8,7 +8,7 @@
 //   ann.runCommand(…); bob.runCommand(…);   // concurrent
 //   board.sync();                           // both replicas now agree
 import type { Role } from '@freero/shared';
-import type { Editor, FeatureBundle, FeatureManifest, Host, HostUser } from './api';
+import type { Editor, ElementsSnapshot, FeatureBundle, FeatureManifest, Host, HostUser, SavedTemplateInfo } from './api';
 import { createCore, type EngineCore } from './runtime/core';
 import { syncStores } from './store/replicas';
 
@@ -38,6 +38,9 @@ const toBundle = (f: FeatureManifest | FeatureBundle): FeatureBundle =>
 
 export function createTestBoard(opts: TestBoardOptions): TestBoard {
   const bundles = (opts.features ?? []).map(toBundle);
+  // Saved templates live "on the server": shared by the replicas, each user sees their own.
+  const templates: Array<SavedTemplateInfo & { content: ElementsSnapshot }> = [];
+  let templateSeq = 0;
   const cores: EngineCore[] = opts.users.map((u) => {
     const user: HostUser = typeof u === 'string' ? { id: u, name: u, color: '#5b3ff0', avatarUrl: null } : u;
     const host: Host = {
@@ -53,6 +56,32 @@ export function createTestBoard(opts: TestBoardOptions): TestBoard {
       serverNow: opts.now ?? (() => Date.now()),
       listMembers: async () => opts.members ?? [user],
       unfurl: async () => Promise.reject(new Error('No link previews in tests')),
+      listTemplates: async () => templates.filter((t) => t.ownerId === user.id).map(({ content: _c, ...info }) => info).reverse(),
+      async loadTemplate(id) {
+        const t = templates.find((x) => x.id === id && x.ownerId === user.id);
+        if (!t) throw new Error('Template not found');
+        return structuredClone(t.content); // a server round trip: never the saved objects themselves
+      },
+      async saveTemplate({ name, description, thumbnail, content }) {
+        const t = {
+          id: `tpl-${++templateSeq}`,
+          name,
+          description,
+          thumbnail,
+          ownerId: user.id,
+          elementCount: content.elements.length,
+          createdAt: Date.now(),
+          content: structuredClone(content),
+        };
+        templates.push(t);
+        const { content: _c, ...info } = t;
+        return info;
+      },
+      async deleteTemplate(id) {
+        const i = templates.findIndex((x) => x.id === id && x.ownerId === user.id);
+        if (i < 0) throw new Error('Template not found');
+        templates.splice(i, 1);
+      },
     };
     const core = createCore(host, bundles);
     core.ui.setState({ viewport: { width: 1000, height: 800 }, camera: { x: 0, y: 0, zoom: 1 } });

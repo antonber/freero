@@ -237,6 +237,15 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
 - A socket closed with 4401/4403 (removed, link access revoked, signed out) drops the session to
   read-only (`viewer`) besides showing the banner: writes after that could never reach the server.
 - `Host.user` changes (profile renamed / recolored in any tab) are republished to presence.
+- `Editor.exportElements(ids?)` → `ElementsSnapshot` (what copy puts on the clipboard: elements
+  with frame children + `copyContent`) and `Editor.insertElements(snapshot, { at? })` — the ONE
+  insertion path for copied content (paste uses it): fresh ids, references remapped, content
+  restored, one undo step, on a `findFreeSpot` by default. Saved templates go through it.
+- `Host.listTemplates / loadTemplate / saveTemplate / deleteTemplate` (server module
+  `templates`): a board or selection saved for reuse. Personal today; `SavedTemplateInfo.ownerId`
+  is there so workspace-shared templates (KAI-37) need no contract change — offer owner-only
+  actions only when it equals `user.id`. The visibility rule is one predicate in
+  `modules/templates/repo.ts`.
 
 Elements, geometry and text (all optional on `ElementDefinition` unless noted):
 - **Reads inside `editor.transact` see its earlier writes** (`getElements()`, `getElement()`,
@@ -405,10 +414,18 @@ modules/<name>/    auth, boards, members, uploads, realtime …
 Cross-module imports name the index file explicitly (`'../auth/index'`), which is what [S2] checks.
 Auth is a plain middleware exported by `modules/auth/index.ts` (`requireUser`, `currentUser(req)`),
 not a reserved hook. Server modules today: `auth` (users, sessions), `boards` (boards, stars,
-opens), `members` (board_members, role resolution), `uploads` (uploads; files in object storage or
+opens; trash), `members` (board_members, role resolution), `uploads` (uploads; files in object storage or
 `<data>/uploads`), `realtime` (board_docs, board_doc_updates, board_doc_snapshots; y-websocket
-protocol + role filter + update log), `unfurl` (link
-previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`).
+protocol + role filter + update log), `unfurl` (link previews for pasted URLs; no table; SSRF-safe
+fetch in `unfurl/fetch.ts`), `templates` (saved templates; content is opaque engine JSON).
+
+- Per-user quotas (boards, templates) count and insert in one transaction under a per-owner
+  `pg_advisory_xact_lock(hashtext('<module>.quota'), hashtext(userId))`; a count-then-insert
+  lets parallel requests overshoot.
+- Trash: deleting a board sets `boards.deleted_at`; `repo.getBoard`/lists/access treat it as
+  gone (sockets refused and closed after the live doc state is stored). Owners restore or delete
+  forever; `boards/init.ts` purges after `TRASH_RETENTION_DAYS` hourly on every instance, under
+  `pg_try_advisory_xact_lock` so replicas never purge at once. Periodic jobs follow this shape.
 
 ### Database (`platform/db.ts`)
 
