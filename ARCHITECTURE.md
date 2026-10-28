@@ -1196,6 +1196,17 @@ The room ends the session (`SERVER_ORIGIN`) when the facilitator has had no sock
 presence from another instance for `FREERO_FACILITATOR_GRACE_MS` (30 s). Following the facilitator
 and hidden cursors are views each client applies (`features/facilitation`); not enforceable.
 
+Session features built on these pieces (KAI-130/131/159) add no server rules of their own:
+planning poker (`features/estimation`) seals each pick in the picker's private layer with a shared
+"has picked" marker and reveals one item at a time (`revealPrivate` with a per-item prefix), then
+writes the agreed value through `card.setEstimate` (cards keep one writer). Retro mode
+(`features/retro`) stores only its step and drives every other feature through commands that take
+args — `templates.insert`, `private-mode.start/reveal`, `timer.start`, `facilitation.start/set/end`,
+`voting.start/end`, `arrange.clusterByColor` — so private writing, sealed votes and the
+facilitator's limits keep their own guarantees. The laser pointer (`features/present`) is presence
+only (`ext.present.laser`, receivers fade points from their own arrival time); presenter notes are
+the `presenterNotes` collection (frame id → text), never elements, so never in exports.
+
 ### Board layers — content the server withholds (`realtime/layers.ts`, `engine/store/`)
 
 Some content must not reach everyone who can open a board: the ballots of a vote whose results are
@@ -1208,7 +1219,7 @@ only to connections that may read them:
 
 | layer (wire / stored) | read by | written by | holds |
 |---|---|---|---|
-| `private` / `u:<userId>` | that user's sockets | that user, while owner/editor | private-mode drafts (`elements`), sealed ballots (`voting`) |
+| `private` / `u:<userId>` | that user's sockets | that user, while owner/editor | private-mode drafts (`elements`), sealed ballots (`voting`), sealed planning-poker picks (`estimation`) |
 | `editors` / `editors` | owner/editor sockets | owners/editors | contents of hidden frames (`elements`) |
 
 - Wire format: `WS_MESSAGE_LAYER` envelopes around y-protocols sync messages, `WS_MESSAGE_LAYER_OP`
