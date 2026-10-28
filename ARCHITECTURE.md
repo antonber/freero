@@ -754,6 +754,16 @@ console of team workspaces; see "Audit log, admin console and workspace policies
   session-less appeal link (`/appeal?t=`, `mac('moderation.appeal:<actionId>')`) and adds a
   `moderation.action` notification (a `direct` type: emailed by its module, never in digests, no
   email setting). Appeals enter the queue (one open appeal per action).
+- Legal hold (KAI-178): a taken-down board is deleted only by the operator's `board.delete`
+  (boards' `deleteTakenDownBoard`). The account purge waits (after the hand-over, deleting nothing)
+  while the account owns one or is the last member of a team holding one (`countHeldBoards`,
+  `handOverTeamWorkspaces` → `held`), and never blocks the accounts behind it; deleting a team
+  workspace holding one answers 409 `workspace_board_held`. Removed uploads are detached from the
+  account before its row goes (`keepRemovedUploadsOf`). Each action keeps a snapshot of its
+  subject (`subject_name`, `subject_email`).
+- Suspensions (KAI-180): `user.suspend` with `boards: 'take_down' | 'disable_link'` acts on every
+  board the account has in service, each recorded with `parent_id` = the suspension; `user.restore`
+  reverses those children not reversed or deleted since (children of the lift). One notice.
 - Web: `features/report` (board menu, context menu, `report.open` command for other features —
   comments' flag), `Host.report`; the app's `/operator` queue, `/operator/boards/:id/preview`
   (read-only snapshot through `BoardEngineProps.initialState`) and `/appeal`.
