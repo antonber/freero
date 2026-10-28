@@ -426,6 +426,12 @@ export interface TableElement extends BaseElement {
 export const tableCellKey = (kind: 't' | 'f', tableId: string, rowId: string, colId: string): string =>
   `${kind}:${tableId}:${rowId}:${colId}`;
 
+/** The table a `tableCells` key belongs to (null: not a cell key). See ELEMENT_CONTENT_COLLECTIONS. */
+export function tableCellOwner(key: string): string | null {
+  const parts = key.split(':');
+  return parts.length === 4 && (parts[0] === 't' || parts[0] === 'f') && parts[1] ? parts[1] : null;
+}
+
 /**
  * What a table carries outside the elements map when it is copied (`ElementsSnapshot.content`
  * of a table): cell part `"<rowId>:<colId>"` → RichText `t` and fill `f` (absent = empty). Saved
