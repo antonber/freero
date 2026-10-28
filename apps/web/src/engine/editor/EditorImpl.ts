@@ -48,7 +48,17 @@ import { EMPTY_FORMAT_STATE, type FormatCommand, type TextFormatState } from '..
 import { richTextToPlain } from '../text/sanitize';
 import { runFollowers } from './followers';
 import { listShortcuts } from '../runtime/shortcutList';
-import { createArrangeState, hasArrangers, runArrangers, type ArrangeState } from './arrange';
+import {
+  CONFLICT_WINDOW_MS,
+  FALLBACK_MS,
+  REMOTE_SETTLE_MS,
+  createArrangeState,
+  hasArrangers,
+  outOfLayout,
+  rearrange,
+  runArrangers,
+  type ArrangeState,
+} from './arrange';
 
 const EMPTY_OPTIONS = Object.freeze({}) as Record<string, unknown>;
 const CAMERA_ANIM_MS = 320;
@@ -99,6 +109,43 @@ export class EditorImpl implements Editor {
 
   private flushArrange(): void {
     runArrangers(this.core, this.shared.arrange, (patches) => this.updateMany(patches));
+  }
+
+  /**
+   * Someone else (a peer, or undo/redo) changed `ids`. If this client laid out a container just
+   * before, the merge may have left it out of layout (two drops into one column at once): look
+   * once the remote changes settle. See editor/arrange.ts for who re-lays out.
+   */
+  afterForeignChange(ids: string[]): void {
+    const state = this.shared.arrange;
+    if (!state.recent.size) return;
+    const now = Date.now();
+    for (const [id, at] of state.recent) if (now - at > CONFLICT_WINDOW_MS) state.recent.delete(id);
+    if (!state.recent.size) return;
+    for (const id of ids) state.remote.add(id);
+    if (state.remoteTimer) clearTimeout(state.remoteTimer);
+    state.remoteTimer = setTimeout(() => this.settleRemote(new Set(state.recent.keys()), false), REMOTE_SETTLE_MS);
+  }
+
+  private settleRemote(containers: ReadonlySet<string>, fallback: boolean): void {
+    const state = this.shared.arrange;
+    const store = this.core.store;
+    if (!fallback) state.remoteTimer = null;
+    if (store.isDestroyed || !this.can('editor')) return;
+    const touched = new Set(state.remote);
+    if (!fallback) state.remote.clear();
+    // The user is mid-drag or mid-transaction: their own pass at its end lays everything out.
+    if (store.inGesture() || state.depth) return;
+    const broken = new Set(outOfLayout(this.core, containers, touched));
+    if (!broken.size) return;
+    // One writer: the highest client id among this one and the writers of the remote changes.
+    const me = store.clientId;
+    if (!fallback && [...touched].some((id) => (store.lastWriterOf(id) ?? 0) > me)) {
+      setTimeout(() => this.settleRemote(broken, true), FALLBACK_MS);
+      return;
+    }
+    const write = () => rearrange(this.core, state, broken, touched, (patches) => this.updateMany(patches));
+    if (!store.transactDerived(write)) store.transactSilently(write);
   }
 
   /**

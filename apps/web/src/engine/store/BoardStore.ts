@@ -230,9 +230,24 @@ export class BoardStore {
 
   transact(fn: () => void): void {
     // Outside a gesture every write is its own undo step (lock, duplicate, nudge…), however
-    // quickly they follow each other; inside a gesture everything merges.
-    if (this.gestureDepth === 0) this.undoManager.stopCapturing();
+    // quickly they follow each other; inside a gesture everything merges. Nested in an open
+    // transaction (Editor.transact, transactDerived) it joins that one's step.
+    if (this.gestureDepth === 0 && !this.doc._transaction) this.undoManager.stopCapturing();
     this.doc.transact(fn, LOCAL_ORIGIN);
+  }
+
+  get isDestroyed(): boolean {
+    return this.destroyed;
+  }
+
+  /** This replica's Yjs client id. */
+  get clientId(): number {
+    return this.doc.clientID;
+  }
+
+  /** Yjs client id of whoever wrote the element's current value (null when there is none). */
+  lastWriterOf(id: string): number | null {
+    return this.elements._map.get(id)?.id.client ?? null;
   }
 
   /** Writes that never become an undo step (still synced). Not for user actions. */

@@ -277,7 +277,12 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
   layout and applies them in the same undo step: inside a gesture once, when the outermost gesture
   ends (a drag never re-stacks under the pointer; drop + re-stack = one undo), inside
   `editor.transact` once at its end (never from a half-written state), otherwise right after the
-  write. Remote changes never run it. Must be idempotent — it also runs after unrelated changes.
+  write. Must be idempotent and deterministic (the same board gives the same patches on every
+  client) — it also runs after unrelated changes. Remote changes don't run it, except one case:
+  a client that laid a container out in the last 5 s re-plans it when a remote change settles, and
+  if the merge left it out of layout (two drops into one free slot), the participant with the
+  highest Yjs client id re-lays it out (the others re-check 1.5 s later), joining its last undo
+  step. Bystanders never do, so nobody snaps a collaborator's drag in progress.
 - `fitToContent(el, handle)`: double-clicking a resize handle applies the returned patch (a
   fixed-width text box goes back to auto width).
 - `hitTest(el, local, { tolerance })` — `tolerance` is a few screen px in world units at the live
