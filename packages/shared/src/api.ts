@@ -78,8 +78,86 @@ export interface BoardMember {
 // POST /api/auth/account/delete     body { password } -> { deletionScheduledFor } (signs out everywhere)
 // POST /api/auth/account/restore    -> AuthResponse  (signed in with a session made during the grace period)
 // While deletion is scheduled, every other signed-in endpoint answers 403 { code: 'account_pending_deletion' }.
+//
+// Sign in with a provider (OpenID Connect, authorization code + PKCE). Browser navigations, not fetches:
+// GET /api/auth/providers                         -> { providers: SignInProvider[] } (only configured ones)
+// GET /api/auth/oidc/:provider/start?intent=login|link|reauth&next=/path -> 302 to the provider
+// GET /api/auth/oidc/:provider/callback           -> 302 to `next`, to /login/two-factor?next=…, or to
+//                                                    /login?error=<OidcErrorCode> (/settings?error=… for link/reauth)
+// A provider account signs in to the Freero account it is connected to. It is connected
+// automatically only to the account whose address the provider asserts as verified — after that
+// account's second step when it has two-factor on. An account with no password always keeps at
+// least one connected provider.
+//
+// Two-factor (authenticator app, TOTP):
+// POST /api/auth/login, /api/auth/password/reset -> LoginResponse: { twoFactorRequired: true } instead of
+//      a session when the account has two-factor on (an HttpOnly cookie carries the pending sign-in)
+// POST /api/auth/login/two-factor   body { code } (6 digits, or a recovery code) -> AuthResponse
+// GET  /api/auth/security           -> SecurityInfo
+// DELETE /api/auth/identities/:id   -> SecurityInfo  (409 when it is the last way to sign in)
+// POST /api/auth/two-factor/setup   body { password? } -> TwoFactorSetup (enable it with a code from the app)
+// POST /api/auth/two-factor/enable  body { code } -> { recoveryCodes: string[] } (signs out other sessions)
+// POST /api/auth/two-factor/disable body { password?, code } -> { ok: true }
+// POST /api/auth/two-factor/recovery-codes body { password?, code } -> { recoveryCodes: string[] }
+// `password` is required when the account has one; passwordless accounts instead need a session that
+// signed in (or re-confirmed with its provider: intent=reauth) within the last few minutes — otherwise
+// 403 { code: 'reauth_required' }. The same applies to email change and account deletion.
 export interface SignupRequest { name: string; email: string; password: string }
 export interface LoginRequest { email: string; password: string }
+export type LoginResponse = AuthResponse | { twoFactorRequired: true };
+
+export const REAUTH_REQUIRED = 'reauth_required';
+
+export interface SignInProvider {
+  id: string;
+  /** "Google", "Microsoft". */
+  label: string;
+}
+
+export interface LinkedIdentity {
+  id: string;
+  provider: string;
+  providerLabel: string;
+  /** The address the provider last asserted (may differ from the account's). */
+  email: string | null;
+  createdAt: number;
+  lastUsedAt: number;
+}
+
+export interface SecurityInfo {
+  hasPassword: boolean;
+  identities: LinkedIdentity[];
+  /** Configured providers (connect buttons). */
+  providers: SignInProvider[];
+  twoFactor: {
+    enabled: boolean;
+    recoveryCodesLeft: number;
+    /** Set when something (a workspace policy) requires two-factor: it can't be turned off. */
+    requiredBy: string | null;
+  };
+  /** Until when this session counts as recently signed in (passwordless confirmations), epoch ms. */
+  recentAuthUntil: number;
+}
+
+export interface TwoFactorSetup {
+  /** Base32 secret, for typing it into an app by hand. */
+  secret: string;
+  /** otpauth:// URI (what the QR code encodes). */
+  uri: string;
+  /** The QR code as a data: URL (PNG). */
+  qr: string;
+}
+
+/** `?error=` codes the OIDC callback redirects with. */
+export type OidcErrorCode =
+  | 'cancelled' // the user declined at the provider
+  | 'failed' // the provider's answer could not be verified, or the request expired
+  | 'unavailable' // unknown / unconfigured provider, or it could not be reached
+  | 'email_in_use' // an account uses that address, but the provider doesn't vouch for it
+  | 'no_email' // the provider shared no address
+  | 'identity_in_use' // link: that provider account is connected to another Freero account
+  | 'provider_linked' // link: this account already has an identity of that provider
+  | 'wrong_account'; // reauth: a different provider account than the one connected
 
 /** The signed-in user's own account (other people only ever see `User`). */
 export interface Account extends User {
@@ -100,6 +178,14 @@ export interface SessionInfo {
   userAgent: string;
   /** Approximate network: the client address with its host part masked (e.g. "203.0.113.x"). */
   network: string;
+  /** "City, Country" (or the country) when the server has a GeoIP database and knows the address. */
+  location: string | null;
+  /** How it signed in: 'password', 'email_link' (a password reset link) or a provider id. */
+  method: string;
+  /** The provider's label when `method` is a provider ("Google"). */
+  methodLabel: string | null;
+  /** It passed the two-factor step. */
+  twoFactor: boolean;
 }
 
 export const ACCOUNT_PENDING_DELETION = 'account_pending_deletion';

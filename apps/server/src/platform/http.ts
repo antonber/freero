@@ -12,6 +12,8 @@ export class HttpError extends Error {
   constructor(
     public status: number,
     message: string,
+    /** Machine-readable reason sent as `code` next to `error` (e.g. 'reauth_required'). */
+    public code?: string,
   ) {
     super(message);
   }
@@ -64,7 +66,7 @@ export function errorHandler() {
     if (err instanceof HttpError) {
       const retryAfter = (err as { retryAfter?: unknown }).retryAfter;
       if (typeof retryAfter === 'number') res.setHeader('Retry-After', String(retryAfter));
-      return res.status(err.status).json({ error: err.message });
+      return res.status(err.status).json(err.code ? { error: err.message, code: err.code } : { error: err.message });
     }
     const e = (err ?? {}) as { status?: number; statusCode?: number; type?: string; expose?: boolean; message?: string };
     const status = e.status ?? e.statusCode;
