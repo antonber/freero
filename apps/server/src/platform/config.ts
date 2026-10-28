@@ -42,7 +42,8 @@ export type RateLimitName =
   | 'oauthToken'
   | 'oauthRegister'
   | 'linkPassword'
-  | 'engage';
+  | 'engage'
+  | 'search';
 
 /** A model endpoint Freero calls for AI features (docs/ai.md). */
 export interface AiProviderConfig {
@@ -237,6 +238,25 @@ export interface Config {
    * room of their own (KAI-134), or null: only meeting links people paste.
    */
   jitsiBaseUrl: string | null;
+  /** The event stream (modules/events, KAI-150). */
+  events: {
+    /** A board's item and comment events wait until its saved content was quiet this long (a drag is one update). */
+    settleMs: number;
+    retentionDays: number;
+  };
+  /** Workspace webhooks (modules/webhooks, KAI-105). */
+  webhooks: {
+    /** Off: no endpoint can be added and nothing is delivered (the instance-wide switch). */
+    enabled: boolean;
+    /** Endpoints may be plain http and private / loopback addresses (receivers on the operator's own network). */
+    privateEndpoints: boolean;
+    timeoutMs: number;
+    /** First retry delay; each further one is 4× longer, capped at 6 hours. */
+    retryBaseMs: number;
+    maxAttempts: number;
+    /** Failed attempts in a row after which Freero turns an endpoint off (and tells who made it). */
+    disableAfterFailures: number;
+  };
 }
 
 export class ConfigError extends Error {
@@ -288,6 +308,7 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   appeal: '10/1h', // appeals against moderation actions per IP
   linkPassword: '10/15m', // per IP and per board + person: attempts at a board link's password (KAI-145)
   engage: '120/1m', // per person or guest: answers, questions and upvotes in live activities (KAI-132)
+  search: '120/1m', // per person (app) or credential (API, MCP): searches of board content (KAI-151)
 };
 
 const ENV_NAME: Record<RateLimitName, string> = {
@@ -326,6 +347,7 @@ const ENV_NAME: Record<RateLimitName, string> = {
   appeal: 'RATE_LIMIT_APPEAL',
   linkPassword: 'RATE_LIMIT_LINK_PASSWORD',
   engage: 'RATE_LIMIT_ENGAGE',
+  search: 'RATE_LIMIT_SEARCH',
 };
 
 /** The built-in providers: env prefix, button label, default issuer, extra verified-email claims. */
@@ -585,6 +607,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     securityContact: securityContact ?? (abuseContactEmail ? `mailto:${abuseContactEmail}` : null),
     publicApi: bool('PUBLIC_API', true),
     jitsiBaseUrl: url('JITSI_BASE_URL', ['https:'])?.replace(/\/+$/, '') ?? null,
+    events: {
+      settleMs: int('EVENTS_SETTLE_SECONDS', 3, 0, 600) * 1000,
+      retentionDays: int('EVENTS_RETENTION_DAYS', 30, 1, 3650),
+    },
+    webhooks: {
+      enabled: bool('WEBHOOKS', true),
+      privateEndpoints: bool('WEBHOOK_PRIVATE_ENDPOINTS', false),
+      timeoutMs: int('WEBHOOK_TIMEOUT_SECONDS', 10, 1, 60) * 1000,
+      retryBaseMs: int('WEBHOOK_RETRY_BASE_MS', 10_000, 10, 3_600_000),
+      maxAttempts: int('WEBHOOK_MAX_ATTEMPTS', 7, 1, 20),
+      disableAfterFailures: int('WEBHOOK_DISABLE_AFTER_FAILURES', 15, 1, 1000),
+    },
   };
 
   if (production) {
