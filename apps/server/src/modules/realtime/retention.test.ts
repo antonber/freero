@@ -1,0 +1,61 @@
+// Snapshot retention: bounded growth, named versions and the newest one always kept, and safe when
+// every replica runs the job at once.
+import { afterAll, beforeAll, expect, it } from 'vitest';
+import { closeTestDb, openTestDb } from '../../platform/testing';
+import { createUser } from '../auth/index';
+import { createBoard } from '../boards/index';
+import * as repo from './repo';
+import { DEFAULT_RETENTION, pruneSnapshots, snapshotsToPrune, type SnapshotStamp } from './retention';
+
+const MIN = 60_000;
+const DAY = 24 * 60 * MIN;
+const NOW = Date.UTC(2026, 9, 28, 12, 0);
+
+/** A board edited around the clock for `days`: an automatic snapshot every 30 min. */
+function busyBoard(days: number): SnapshotStamp[] {
+  const out: SnapshotStamp[] = [];
+  for (let t = NOW - days * DAY, id = 1; t <= NOW; t += 30 * MIN, id++) out.push({ id, kind: 'auto', createdAt: t });
+  return out;
+}
+
+it('a board edited for months keeps a bounded number of snapshots, every named one and the newest, and a second run removes nothing more', () => {
+  const snaps = busyBoard(120);
+  snaps[10] = { ...snaps[10], kind: 'named' }; // ~4 months old
+  snaps[snaps.length - 3] = { ...snaps[snaps.length - 3], kind: 'named' };
+  const drop = new Set(snapshotsToPrune(snaps, NOW, DEFAULT_RETENTION));
+  const kept = snaps.filter((s) => !drop.has(s.id));
+
+  // ~24 hourly + ~29 daily + ~13 weekly (+ the named ones), not 5760.
+  expect(kept.length).toBeLessThan(75);
+  expect(kept.filter((s) => s.kind === 'named')).toHaveLength(2);
+  expect(kept.some((s) => s.createdAt === NOW)).toBe(true);
+  // Coverage stays useful: something kept from every day of the last month.
+  for (let d = 1; d < 30; d++) expect(kept.some((s) => s.createdAt <= NOW - d * DAY && s.createdAt > NOW - (d + 1) * DAY)).toBe(true);
+  // Idempotent: what survives a run survives the next run at the same time.
+  expect(snapshotsToPrune(kept, NOW, DEFAULT_RETENTION)).toEqual([]);
+});
+
+let userId: string;
+beforeAll(async () => {
+  await openTestDb();
+  userId = (await createUser({ name: 'Keeper', email: 'keeper@test.freero.app', password: 'password-123' })).id;
+});
+afterAll(closeTestDb);
+
+it('several replicas pruning at once delete exactly what one would, and never a named version', async () => {
+  const boardId = (await createBoard(userId, 'Busy', '')).id;
+  const state = new Uint8Array([0, 0]);
+  const stamps = busyBoard(10);
+  for (const s of stamps) {
+    const kind = s.id % 50 === 0 ? 'named' : 'auto';
+    await repo.insertSnapshot(boardId, { state, kind, name: kind === 'named' ? `v${s.id}` : null, createdBy: null }, s.createdAt);
+  }
+  const expected = snapshotsToPrune(await repo.snapshotTimeline(boardId), NOW, DEFAULT_RETENTION).length;
+
+  const rounds = await Promise.all([pruneSnapshots({ now: NOW }), pruneSnapshots({ now: NOW }), pruneSnapshots({ now: NOW })]);
+  expect(rounds.reduce<number>((n, r) => n + (r ?? 0), 0)).toBe(expected);
+  const left = await repo.snapshotTimeline(boardId);
+  expect(left).toHaveLength(stamps.length - expected);
+  expect(left.filter((s) => s.kind === 'named')).toHaveLength(stamps.filter((s) => s.id % 50 === 0).length);
+  expect(await pruneSnapshots({ now: NOW })).toBe(0);
+});
