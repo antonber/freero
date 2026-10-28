@@ -318,23 +318,39 @@ class User {
 // ---------------------------------------------------------------------------
 // The development outbox (no SMTP_URL): every mail is a JSON file under <data>/outbox/
 // ---------------------------------------------------------------------------
-function outbox(dataDir) {
+const outboxFiles = (dataDir) => {
   const dir = path.join(dataDir, 'outbox');
-  if (!fs.existsSync(dir)) return [];
-  return fs
-    .readdirSync(dir)
-    .map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')))
+  return fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+};
+
+/** Every mail in the outbox, oldest first (`file`: its name). One still being written is skipped this time. */
+function outbox(dataDir) {
+  return outboxFiles(dataDir)
+    .flatMap((file) => {
+      try {
+        return [{ ...JSON.parse(fs.readFileSync(path.join(dataDir, 'outbox', file), 'utf8')), file }];
+      } catch {
+        return []; // not completely written yet: the next poll reads it
+      }
+    })
     .sort((a, b) => a.sentAt - b.sentAt);
 }
 
+/**
+ * The outbox as it is now; `mailedToken(…, { since })` then waits for mail that came after. Not a
+ * timestamp: the server stamps `sentAt` with its own clock, which can be a few ms behind this
+ * process's (Windows), so "sent after Date.now()" missed mail sent right after it.
+ */
+const outboxMark = (dataDir) => new Set(outboxFiles(dataDir));
+
 /** The token of the newest `route` link (e.g. '/reset-password', '/invite') mailed to `to`, waiting for it. */
-async function mailedToken(dataDir, to, route, { after = 0, timeoutMs = 8000 } = {}) {
+async function mailedToken(dataDir, to, route, { since = null, timeoutMs = 8000 } = {}) {
   const re = new RegExp(`${route.replace(/[/]/g, '\\/')}(?:\\?token=|\\/)([A-Za-z0-9_-]+)`);
   let token = null;
   await waitFor(
     () => {
       const m = outbox(dataDir)
-        .filter((mail) => mail.to === to && mail.sentAt > after)
+        .filter((mail) => mail.to === to && !since?.has(mail.file))
         .map((mail) => re.exec(mail.text))
         .filter(Boolean)
         .at(-1);
@@ -2128,9 +2144,9 @@ async function signInMethodChecks() {
       const ok2 = await b.fetch('/api/auth/login/two-factor', { method: 'POST', body: { code: await nextCode(pTotp.secret) } });
       assert(ok2.status === 200 && b.jar.has('freero_session'), ok2.text);
 
-      const after = Date.now();
+      const since = outboxMark(dataDir);
       await new Browser(port).fetch('/api/auth/password/forgot', { method: 'POST', body: { email: P.email } });
-      const token = await mailedToken(dataDir, P.email, '/reset-password', { after });
+      const token = await mailedToken(dataDir, P.email, '/reset-password', { since });
       const r = new Browser(port);
       const reset = await r.fetch('/api/auth/password/reset', { method: 'POST', body: { token, password: 'password-456' } });
       assert(reset.status === 200 && reset.json.twoFactorRequired === true && !r.jar.has('freero_session'), `reset: ${reset.text}`);
