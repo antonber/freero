@@ -36,4 +36,7 @@ export default defineDecoration({
   id: 'tags.stickyChips',
   appliesTo: (el) => el.type === 'sticky' && !!el.tags?.length,
   Component: StickyChips,
+  // The chip row's band (8 px margin + 18 px chip + 4 px gap, scaled like the chips): the
+  // sticky's text stays above it.
+  reserve: (el) => ({ bottom: 30 * chipScale(el.w, el.h) }),
 });
