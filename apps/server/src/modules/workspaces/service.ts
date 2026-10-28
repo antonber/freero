@@ -49,6 +49,7 @@ const toSummary = (w: Workspace, role: WorkspaceRole, memberCount: number): Work
   memberCount,
   policies: w.policies,
   createdAt: w.createdAt,
+  blocked: null,
 });
 
 export async function listWorkspaces(userId: string): Promise<WorkspaceSummary[]> {
