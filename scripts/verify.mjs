@@ -4647,6 +4647,15 @@ async function aiChecks() {
     if (proc) await stopProc(proc);
     server = null;
     await model.close();
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Video, audio and any other file on a board (KAI-128), on its own server: media is stored by what
 // its bytes are and served with byte ranges (seeking); attachments are never served at /uploads/,
 // only downloaded from their board — under the workspace's downloads policy, audited, as an
