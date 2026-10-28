@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BookmarkPlus, LayoutTemplate, Plus, Search, Trash2 } from 'lucide-react';
-import { definePanel, useCanEdit, type Editor, type SavedTemplateInfo } from '@engine';
+import { definePanel, useCanEdit, useSelection, type Editor, type SavedTemplateInfo } from '@engine';
 import { Button, Input, Spinner, formatShortcut } from '@ui';
 import { TEMPLATES } from './lib/catalog';
 import { DOCK_ID, insertTemplate } from './lib/insert';
@@ -89,6 +89,7 @@ function TemplatesPanel({ editor }: { editor: Editor }) {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>(null);
   const canEdit = useCanEdit();
+  const hasSelection = useSelection().length > 0;
   const saved = useSavedTemplates(editor);
   const builtIns = useMemo(
     () => (filter === 'saved' ? [] : filterTemplates(TEMPLATES, query, filter)),
@@ -118,7 +119,7 @@ function TemplatesPanel({ editor }: { editor: Editor }) {
     }
   };
 
-  const saveOpen = () => editor.openPanel(SAVE_DIALOG_ID, { scope: editor.getSelection().length ? 'selection' : 'board' });
+  const saveOpen = () => editor.openPanel(SAVE_DIALOG_ID, { scope: hasSelection ? 'selection' : 'board' });
 
   return (
     <div className="fr-tpl">
@@ -127,7 +128,7 @@ function TemplatesPanel({ editor }: { editor: Editor }) {
         <p className="fr-tpl__sub">Start from a ready-made layout, or one you saved. Everything stays editable.</p>
       </header>
       <Button size="sm" icon={BookmarkPlus} onClick={saveOpen} className="fr-tpl__save">
-        {editor.getSelection().length ? 'Save selection as template' : 'Save board as template'}
+        {hasSelection ? 'Save selection as template' : 'Save board as template'}
       </Button>
       <Input
         icon={Search}

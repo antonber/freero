@@ -298,9 +298,15 @@
   color: var(--fr-ink-3);
 }
 
+.fr-tpl-save__preview {
+  position: relative;
+}
+
 .fr-tpl-save__preview img {
-  max-width: 100%;
-  max-height: 100%;
+  position: absolute;
+  inset: 8px;
+  width: calc(100% - 16px);
+  height: calc(100% - 16px);
   object-fit: contain;
 }
 
