@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { StickyElement } from '@freero/shared';
-import { createTestBoard } from '@engine';
+import { createTestBoard, type FeatureBundle } from '@engine';
 import manifest from './feature';
 import stickyDef from './element';
+import commands from './commands';
+import { DELETED_USER, authorLabel, authorLabelsShown } from './lib/authors';
 import { gridPositions, nextFreeSlot } from './lib/layout';
 import { listItems } from './lib/paste';
 
@@ -85,5 +87,39 @@ describe('mixed-selection style', () => {
     const sticky = { ...stickyDef.defaults(), id: 's', x: 0, y: 0 } as unknown as StickyElement;
     expect(stickyDef.applySharedStyle!(sticky, { fill: '#2F80ED' })).toEqual({ color: 'blue' });
     expect(stickyDef.applySharedStyle!(sticky, { fill: '#E5484D' })).toEqual({ color: 'coral' });
+  });
+});
+
+describe('sticky author labels', () => {
+  const ann = { id: 'ann', name: 'Ann Lee', color: '#000', avatarUrl: null };
+  const shared = { privateRunning: false, layer: 'shared' as const, people: { ann }, gone: new Set<string>() };
+
+  it('names a purged author "Deleted user", never by id, and an agent’s note as the app acting for its person', () => {
+    expect(authorLabel({ createdBy: 'u_gone' }, { ...shared, gone: new Set(['u_gone']) })).toBe(DELETED_USER);
+    // Still being looked up: nothing yet rather than the raw id.
+    expect(authorLabel({ createdBy: 'u_later' }, shared)).toBeNull();
+    expect(authorLabel({ createdBy: 'ann', createdVia: { kind: 'app', id: 'c1', name: 'Claude' } }, shared)).toBe('Claude for Ann Lee');
+  });
+
+  it('never names anyone while private mode runs, nor on a private draft that could end up in an export', () => {
+    expect(authorLabel({ createdBy: 'ann' }, { ...shared, privateRunning: true })).toBeNull();
+    expect(authorLabel({ createdBy: 'ann' }, { ...shared, layer: 'private' })).toBeNull();
+    expect(authorLabel({ createdBy: 'ann' }, shared)).toBe('Ann Lee');
+  });
+
+  it('is one setting for the whole board: an editor turning it on turns it on for everyone', () => {
+    const bundle: FeatureBundle = { manifest, elements: [stickyDef as never], tools: [], formats: [], panels: [], commands };
+    const board = createTestBoard({ users: ['ann', 'bob'], features: [bundle] });
+    try {
+      const [a, b] = board.editors('sticky');
+      a.runCommand('sticky.toggleAuthors');
+      board.sync();
+      expect(authorLabelsShown(b)).toBe(true);
+      b.runCommand('sticky.toggleAuthors');
+      board.sync();
+      expect(authorLabelsShown(a)).toBe(false);
+    } finally {
+      board.destroy();
+    }
   });
 });

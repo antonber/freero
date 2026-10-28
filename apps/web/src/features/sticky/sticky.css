@@ -123,3 +123,17 @@
   position: absolute;
   inset: -6px;
 }
+
+/* Who wrote it (KAI-112): small, quiet, in the paper's top padding. */
+.fr-sticky-author {
+  position: absolute;
+  top: calc(4px * var(--s, 1));
+  left: calc(8px * var(--s, 1));
+  right: calc(8px * var(--s, 1));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 600 calc(10.5px * var(--s, 1)) / 1.2 var(--fr-font);
+  color: rgba(23, 22, 43, 0.55);
+  pointer-events: none;
+}
