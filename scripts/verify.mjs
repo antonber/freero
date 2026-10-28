@@ -3698,6 +3698,23 @@ async function facilitationChecks() {
       await waitFor(() => els(o).has('note2'), 5000, "the participant's next sticky");
     });
 
+    await check('planning poker (KAI-131): a raw socket learns only that a participant picked a card, never which, until the facilitator reveals the item', async () => {
+      const pl = await layerClient(P, board.id, port);
+      const ol = await layerClient(O, board.id, port);
+      const fl = await layerClient(F, board.id, port);
+      clients.push(pl, ol, fl);
+      const key = `v:r1:item1:${P.id}`;
+      const me = { roundId: 'r1', itemId: 'item1', userId: P.id, userName: P.name, userColor: '#000' };
+      pl.layers.private.getMap('estimation').set(key, { ...me, value: 'XL-SECRET' });
+      pl.doc.getMap('estimation').set(key, { ...me, sealed: true });
+      await settled(pl, [ol]);
+      await waitFor(() => ol.doc.getMap('estimation').get(key)?.sealed === true, 5000, 'the sealed marker');
+      assert(!sharedText(ol).includes('XL-SECRET') && !JSON.stringify(ol.layers.private.toJSON()).includes('XL-SECRET'), "the owner's socket received the pick");
+      fl.layerOp({ type: 'reveal', collection: 'estimation', prefix: 'v:r1:item1:' });
+      await waitFor(() => ol.doc.getMap('estimation').get(key)?.value === 'XL-SECRET', 5000, 'the revealed pick');
+      for (const c of [pl, ol, fl]) c.destroy();
+    });
+
     await check('the session ends when the facilitator has been gone for the grace period, lifting every limit', async () => {
       fac(f).set('session', session({ locked: true }));
       await waitFor(() => p.role === 'commenter', 5000, 'the lock');
