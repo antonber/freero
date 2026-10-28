@@ -383,6 +383,9 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
   `writeTextPart(el, part, html, editor)` with the DEFINING feature's editor, so a table's cells
   are still written only by the table feature. Find & replace uses it; a new multi-text element
   becomes searchable and replaceable by defining `textParts` + `writeTextPart`.
+  `toPlainText(el, editor)` (copy as text, Layers / voting previews) also gets the caller's editor,
+  so content kept outside the element (a table's cells) is read from that board, never through a
+  module-level handle that outlives a board switch.
 - `FeatureManifest.undoable: string[]` — owned collections whose local writes join the undo
   history (same gestures / steps as element writes). For content that belongs to elements
   (`tableCells`); never for social data (comments, votes).

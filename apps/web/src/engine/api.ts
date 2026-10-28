@@ -210,8 +210,12 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
   distanceTo?(element: ElementOf<T>, local: Point): number;
   /** Point on the outline for an anchor; default = bbox edge midpoints. */
   anchorPoint?(element: ElementOf<T>, anchor: 'top' | 'right' | 'bottom' | 'left'): Point;
-  /** Plain-text extraction for search, export alt text, and accessibility. */
-  toPlainText?(element: ElementOf<T>): string;
+  /**
+   * Plain-text extraction for copy as text, previews (Layers, voting) and accessibility. `editor`
+   * is the caller's, on the element's board: read content kept outside the element (a table's
+   * cells) through it, never through a module-level handle that outlives the board.
+   */
+  toPlainText?(element: ElementOf<T>, editor: Editor): string;
   /**
    * Called after a LOCAL create/update so derived fields stay valid (e.g. auto height). `prev` is
    * the element before this change (undefined on create), so a definition can tell what changed
