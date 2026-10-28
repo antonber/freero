@@ -127,3 +127,72 @@ describe('private mode across the reveal', () => {
     expect(publicCursor(core, { x: 900, y: 900 })).toEqual({ x: 900, y: 900 });
   });
 });
+
+describe('element content follows its element (KAI-230)', () => {
+  // Table cells live in the `tableCells` collection, keyed by table id (@freero/shared tableCellKey).
+  const withCells = () =>
+    makeCore({
+      bundles: [
+        bundle('boxes', { elements: [boxDef as ElementDefinition<any>, hidingFrame as ElementDefinition<any>] }),
+        bundle('table', { manifest: { name: 'table', description: 'cells', owns: ['tableCells'], undoable: ['tableCells'] } }),
+      ],
+    });
+  const cells = () => core.scoped('table').collection<string>('tableCells');
+  const cellKey = (id: string) => `t:${id}:r1:c1`;
+  const sharedCells = () => core.store.doc.getMap('tableCells');
+  /** Every tableCells key ever written to the SHARED doc (what the server relays to everyone). */
+  function sharedCellWrites(c: EngineCore): Set<string> {
+    const seen = new Set<string>();
+    c.store.doc.getMap('tableCells').observe((ev) => ev.keysChanged.forEach((k) => seen.add(k)));
+    return seen;
+  }
+
+  it("a hidden frame's table keeps its cell text out of the shared doc; dragging it out brings the text along in one undo step", () => {
+    core = withCells();
+    core.editor.create({ type: 'frame', x: 0, y: 0, hidden: true } as never);
+    const shared = sharedCellWrites(core);
+    const table = core.editor.create(sticky(100, 100));
+    cells().set(cellKey(table), 'salary bands');
+    expect(shared.has(cellKey(table))).toBe(false);
+    expect(cells().get(cellKey(table))).toBe('salary bands');
+
+    core.editor.moveBy([{ id: table, dx: 900, dy: 0 }]);
+    expect(sharedCells().get(cellKey(table))).toBe('salary bands');
+    expect(core.store.layers.editors.doc.getMap('tableCells').has(cellKey(table))).toBe(false);
+
+    core.editor.undo();
+    expect(core.editor.layerOf(table)).toBe('editors');
+    expect(sharedCells().has(cellKey(table))).toBe(false);
+    expect(cells().get(cellKey(table))).toBe('salary bands');
+  });
+
+  it("hiding a frame takes its table's cells out of the shared doc, and a private draft's cells never enter it", async () => {
+    core = withCells();
+    const frame = core.editor.create({ type: 'frame', x: 0, y: 0 } as never);
+    const table = core.editor.create(sticky(100, 100));
+    cells().set(cellKey(table), 'roadmap');
+    core.editor.update(frame, { hidden: true } as never);
+    await settle();
+    expect(sharedCells().has(cellKey(table))).toBe(false);
+    expect(core.store.layers.editors.doc.getMap('tableCells').get(cellKey(table))).toBe('roadmap');
+
+    const shared = sharedCellWrites(core);
+    core.editor.setPrivatePlacement((el) => el.type === 'sticky');
+    const draft = core.editor.create(sticky(900, 900));
+    cells().set(cellKey(draft), 'my idea');
+    await settle();
+    expect(shared.has(cellKey(draft))).toBe(false);
+    expect(core.store.layers.private.doc.getMap('tableCells').get(cellKey(draft))).toBe('my idea');
+  });
+
+  it('a cell a collaborator typed into the shared doc while the table was being hidden is moved into the hidden layer', async () => {
+    core = withCells();
+    core.editor.create({ type: 'frame', x: 0, y: 0, hidden: true } as never);
+    const table = core.editor.create(sticky(100, 100));
+    // Their client still saw the table as shared content when they typed.
+    core.store.doc.transact(() => sharedCells().set(cellKey(table), 'typed meanwhile'), 'remote');
+    await settle();
+    expect(sharedCells().has(cellKey(table))).toBe(false);
+    expect(cells().get(cellKey(table))).toBe('typed meanwhile');
+  });
+});

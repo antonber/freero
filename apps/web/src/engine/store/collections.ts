@@ -21,6 +21,8 @@ export interface CollectionGuard {
  * A collection view scoped to `scope` (a feature name, or 'engine'). Reads are open to
  * everyone; writes throw unless `scope` owns the collection. `layer: 'private'` is this user's
  * private copy (the private layer doc, see BoardStore): same guard, never seen by others.
+ * Element-content collections (ELEMENT_CONTENT_COLLECTIONS) read and write across the shared doc
+ * and the layers: each entry where the element it belongs to lives.
  */
 export function createCollection<T>(
   store: BoardStore,
@@ -31,25 +33,28 @@ export function createCollection<T>(
 ): Collection<T> {
   // The private layer doc is replaced when access to it is lost: always look the map up again.
   const map = () => (layer === 'private' ? store.privateCollectionMap<T>(name) : store.collectionMap<T>(name));
+  // Element content (table cells…): each entry lives in its element's doc (KAI-230, BoardStore).
+  const content = layer === 'shared' && store.isElementContent(name);
   const assertOwner = () => {
     const owner = guard.ownerOf(name);
     if (owner !== scope) throw ownershipError(name, owner);
   };
   return {
-    get: (key) => map().get(key),
-    entries: () => Array.from(map().entries()),
+    get: (key) => (content ? store.contentGet<T>(name, key) : map().get(key)),
+    entries: () => (content ? store.contentEntries<T>(name) : Array.from(map().entries())),
     set(key, value) {
       assertOwner();
       if (!guard.canWrite(name)) return;
-      store.transact(() => map().set(key, value));
+      store.transact(() => (content ? store.contentSet(name, key, value) : map().set(key, value)));
     },
     delete(key) {
       assertOwner();
       if (!guard.canWrite(name)) return;
-      store.transact(() => map().delete(key));
+      store.transact(() => (content ? store.contentDelete(name, key) : map().delete(key)));
     },
     observe(cb) {
       if (layer === 'private') return store.subscribeLayerCollections(cb);
+      if (content) return store.subscribeContent(name, cb);
       const m = map();
       const h = () => cb();
       m.observe(h);
