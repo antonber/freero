@@ -143,6 +143,13 @@
   }
 }
 
+/* Toggles in the dark bar (laser, notes): a light wash instead of the light theme's pressed look. */
+.fr-present-bar .fr-iconbtn.fr-iconbtn--active,
+.fr-present-bar .fr-iconbtn.fr-iconbtn--active:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
 /* Laser pointer: everyone's trails, drawn over the board, never catching the pointer. */
 .fr-present-laser {
   position: absolute;
