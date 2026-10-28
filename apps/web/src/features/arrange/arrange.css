@@ -37,3 +37,12 @@
   background: var(--fr-surface-3);
   color: var(--fr-ink);
 }
+
+.fr-arrange__label {
+  padding: 2px 8px 0;
+  color: var(--fr-ink-3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
