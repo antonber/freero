@@ -15,7 +15,7 @@ function labelOf(editor: Editor, el: BoardElement): string {
   const def = editor.getDefinition(el.type);
   const field = def?.textField;
   const text = def?.toPlainText
-    ? def.toPlainText(el as never)
+    ? def.toPlainText(el as never, editor)
     : field
       ? richTextToPlain(String((el as unknown as Record<string, unknown>)[field] ?? ''))
       : '';

@@ -114,6 +114,7 @@ export default defineElement({
   Component: PdfView,
   toPlainText: (el) => el.name,
   // PageUp / PageDown page through the selected document.
+  keys: [{ shortcuts: ['pagedown', 'pageup'], label: 'Next / previous page of a document' }],
   onKeyDown(e, { editor, selection }) {
     if (selection.length !== 1 || selection[0].type !== 'pdf' || !editor.can('editor')) return false;
     if (e.key === 'PageDown' || e.key === 'PageUp') {

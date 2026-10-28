@@ -196,8 +196,86 @@ export interface BoardMember {
 // POST /api/auth/account/delete     body { password } -> { deletionScheduledFor } (signs out everywhere)
 // POST /api/auth/account/restore    -> AuthResponse  (signed in with a session made during the grace period)
 // While deletion is scheduled, every other signed-in endpoint answers 403 { code: 'account_pending_deletion' }.
+//
+// Sign in with a provider (OpenID Connect, authorization code + PKCE). Browser navigations, not fetches:
+// GET /api/auth/providers                         -> { providers: SignInProvider[] } (only configured ones)
+// GET /api/auth/oidc/:provider/start?intent=login|link|reauth&next=/path -> 302 to the provider
+// GET /api/auth/oidc/:provider/callback           -> 302 to `next`, to /login/two-factor?next=…, or to
+//                                                    /login?error=<OidcErrorCode> (/settings?error=… for link/reauth)
+// A provider account signs in to the Freero account it is connected to. It is connected
+// automatically only to the account whose address the provider asserts as verified — after that
+// account's second step when it has two-factor on. An account with no password always keeps at
+// least one connected provider.
+//
+// Two-factor (authenticator app, TOTP):
+// POST /api/auth/login, /api/auth/password/reset -> LoginResponse: { twoFactorRequired: true } instead of
+//      a session when the account has two-factor on (an HttpOnly cookie carries the pending sign-in)
+// POST /api/auth/login/two-factor   body { code } (6 digits, or a recovery code) -> AuthResponse
+// GET  /api/auth/security           -> SecurityInfo
+// DELETE /api/auth/identities/:id   -> SecurityInfo  (409 when it is the last way to sign in)
+// POST /api/auth/two-factor/setup   body { password? } -> TwoFactorSetup (enable it with a code from the app)
+// POST /api/auth/two-factor/enable  body { code } -> { recoveryCodes: string[] } (signs out other sessions)
+// POST /api/auth/two-factor/disable body { password?, code } -> { ok: true }
+// POST /api/auth/two-factor/recovery-codes body { password?, code } -> { recoveryCodes: string[] }
+// `password` is required when the account has one; passwordless accounts instead need a session that
+// signed in (or re-confirmed with its provider: intent=reauth) within the last few minutes — otherwise
+// 403 { code: 'reauth_required' }. The same applies to email change and account deletion.
 export interface SignupRequest { name: string; email: string; password: string }
 export interface LoginRequest { email: string; password: string }
+export type LoginResponse = AuthResponse | { twoFactorRequired: true };
+
+export const REAUTH_REQUIRED = 'reauth_required';
+
+export interface SignInProvider {
+  id: string;
+  /** "Google", "Microsoft". */
+  label: string;
+}
+
+export interface LinkedIdentity {
+  id: string;
+  provider: string;
+  providerLabel: string;
+  /** The address the provider last asserted (may differ from the account's). */
+  email: string | null;
+  createdAt: number;
+  lastUsedAt: number;
+}
+
+export interface SecurityInfo {
+  hasPassword: boolean;
+  identities: LinkedIdentity[];
+  /** Configured providers (connect buttons). */
+  providers: SignInProvider[];
+  twoFactor: {
+    enabled: boolean;
+    recoveryCodesLeft: number;
+    /** Set when something (a workspace policy) requires two-factor: it can't be turned off. */
+    requiredBy: string | null;
+  };
+  /** Until when this session counts as recently signed in (passwordless confirmations), epoch ms. */
+  recentAuthUntil: number;
+}
+
+export interface TwoFactorSetup {
+  /** Base32 secret, for typing it into an app by hand. */
+  secret: string;
+  /** otpauth:// URI (what the QR code encodes). */
+  uri: string;
+  /** The QR code as a data: URL (PNG). */
+  qr: string;
+}
+
+/** `?error=` codes the OIDC callback redirects with. */
+export type OidcErrorCode =
+  | 'cancelled' // the user declined at the provider
+  | 'failed' // the provider's answer could not be verified, or the request expired
+  | 'unavailable' // unknown / unconfigured provider, or it could not be reached
+  | 'email_in_use' // an account uses that address, but the provider doesn't vouch for it
+  | 'no_email' // the provider shared no address
+  | 'identity_in_use' // link: that provider account is connected to another Freero account
+  | 'provider_linked' // link: this account already has an identity of that provider
+  | 'wrong_account'; // reauth: a different provider account than the one connected
 
 /** The signed-in user's own account (other people only ever see `User`). */
 export interface Account extends User {
@@ -218,6 +296,14 @@ export interface SessionInfo {
   userAgent: string;
   /** Approximate network: the client address with its host part masked (e.g. "203.0.113.x"). */
   network: string;
+  /** "City, Country" (or the country) when the server has a GeoIP database and knows the address. */
+  location: string | null;
+  /** How it signed in: 'password', 'email_link' (a password reset link) or a provider id. */
+  method: string;
+  /** The provider's label when `method` is a provider ("Google"). */
+  methodLabel: string | null;
+  /** It passed the two-factor step. */
+  twoFactor: boolean;
 }
 
 export const ACCOUNT_PENDING_DELETION = 'account_pending_deletion';
@@ -254,6 +340,32 @@ export const ACCOUNT_PENDING_DELETION = 'account_pending_deletion';
 export interface CreateBoardRequest { title?: string; description?: string; workspaceId?: string; projectId?: string | null }
 /** `projectId`: move it into that project of its workspace (null: the workspace root); `permissions.canMove`. */
 export interface UpdateBoardRequest { title?: string; description?: string; linkAccess?: LinkAccess; projectId?: string | null }
+
+// ---- Version history ----
+// Editors and owners only: an older version can hold content someone removed before sharing the
+// board more widely (e.g. with a view link), so viewers and commenters never see history.
+// GET   /api/boards/:id/versions              -> { versions: BoardVersion[] }  (newest first)
+// GET   /api/boards/:id/versions/:vid/state   -> application/octet-stream: the version's Yjs state
+// POST  /api/boards/:id/versions              body { name } -> { version: BoardVersion }
+//       Names the board as it is right now (including edits not saved yet, on any instance).
+// PATCH /api/boards/:id/versions/:vid         body { name } -> { version: BoardVersion }
+//       Names or renames a version; named versions are never pruned.
+// POST  /api/boards/:id/versions/:vid/restore -> { before: BoardVersion }
+//       Applies the version to the live board as a NEW change, so everyone connected (on every
+//       instance) converges on it. The board as it was just before is kept as a 'before-restore'
+//       version (`before`): restoring that one undoes the restore. Comments, votes and the timer
+//       are not rolled back (Y_KEPT_ON_RESTORE).
+export type BoardVersionKind = 'auto' | 'named' | 'before-restore';
+export interface BoardVersion {
+  id: number;
+  kind: BoardVersionKind;
+  /** Set for named versions. */
+  name: string | null;
+  createdAt: number;
+  /** Who named it / who restored (null for automatic versions, or an account deleted since). */
+  createdBy: { id: string; name: string } | null;
+}
+export const MAX_VERSION_NAME = 80;
 
 // ---- Saved templates (a board or a selection saved for reuse) ----
 // You see your own templates plus those shared with a team workspace you are a member (not a
@@ -378,12 +490,46 @@ export const EMBED_FRAME_ORIGINS = ['https://www.youtube-nocookie.com', 'https:/
 // i.e. the client uses `new WebsocketProvider(wsBase + '/ws/boards', boardId, doc)`.
 // Auth via the same cookie on the upgrade request. The server closes with
 // code 4401 (unauthenticated) or 4403 (no access). Viewers receive updates but
-// their document updates are dropped; commenters may only modify 'comments'.
+// their document updates are dropped; commenters may only modify 'comments', and there only
+// the records they own (server/realtime/commentRules.ts: their messages and reactions, threads
+// they started; anyone may resolve/reopen and detach).
 // Custom message (server -> client) sent right after connect so the client knows
 // its effective role. Encoding (lib0): writeVarUint(WS_MESSAGE_ROLE) then
 // writeVarString(JSON.stringify({ type: 'role', role })). Clients register it via
 // y-websocket's `provider.messageHandlers[WS_MESSAGE_ROLE]`.
 export const WS_MESSAGE_ROLE = 100;
+
+// ---- Board layers (content the server withholds) ----
+// Besides the shared doc, a board has server-held LAYER docs that only some connections may
+// sync (see "Board layers" in ARCHITECTURE.md):
+//   'private'  one per user: only that user's sockets read it, and only while they may edit.
+//              Private-mode drafts and ballots of hidden votes live here until revealed.
+//   'editors'  owners/editors only: contents of hidden frames.
+// They travel over the board's socket (relayed between instances by the server), in an envelope:
+//   writeVarUint(WS_MESSAGE_LAYER), writeVarString(layer), then a y-protocols sync message
+//   (step 1 / step 2 / update) for that layer's doc, in both directions. The server ignores
+//   envelopes for layers the socket may not read and drops writes from sockets that may not
+//   edit.
+export const WS_MESSAGE_LAYER = 101;
+export type BoardLayer = 'private' | 'editors';
+export const BOARD_LAYERS: readonly BoardLayer[] = ['private', 'editors'];
+
+// Client -> server: writeVarUint(WS_MESSAGE_LAYER_OP), writeVarString(JSON.stringify(op)).
+// Owners/editors only. The server applies it in order with the socket's doc updates.
+//   reveal:  moves the entries of `collection` (keys starting with `prefix`) out of EVERY user's
+//            private layer into the shared doc (one transaction), e.g. revealing private-mode
+//            drafts ('elements') or the ballots of a hidden vote ('voting', `${sessionId}:`).
+//   discard: deletes those entries from every user's private layer without revealing them.
+//   `mine: true` limits either to the sender's own private layer (sharing one's leftovers).
+// Only the private layers of people who may still edit the board are revealed; the server holds
+// the sender's later messages until the op is applied, so it stays in order with them.
+export const WS_MESSAGE_LAYER_OP = 102;
+export interface LayerOp {
+  type: 'reveal' | 'discard';
+  collection: string;
+  prefix?: string;
+  mine?: boolean;
+}
 
 export const SESSION_COOKIE = 'freero_session';
 export const SERVER_PORT = 4000;

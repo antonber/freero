@@ -14,6 +14,7 @@ import { createEngineCommands } from '../editor/engineCommands';
 import { loadToolOptions, saveToolOptions } from './persist';
 import { subscribeFontEpoch } from '../text/autofit';
 import { installFollow } from '../camera/follow';
+import { installLayerPlacement, publicIds } from '../editor/layers';
 
 export interface ExportOptions {
   ids?: string[];
@@ -23,6 +24,8 @@ export interface ExportOptions {
   background?: string | null;
   padding?: number;
   skipFonts?: boolean;
+  /** Only elements of the shared doc (what everyone with access sees): dashboard thumbnails. */
+  sharedOnly?: boolean;
   onMissingImages?: (count: number) => void;
 }
 
@@ -45,6 +48,8 @@ export interface EngineCore {
   store: BoardStore;
   ui: UiStore;
   registry: Registry;
+  /** The feature bundles this session was built from (a version preview reuses them). */
+  bundles: FeatureBundle[];
   /** Unscoped ('engine') editor. */
   editor: EditorImpl;
   scoped(scope: string): Editor;
@@ -72,8 +77,17 @@ export interface EngineCore {
 
 export const ROLE_RANK: Record<Role, number> = { viewer: 0, commenter: 1, editor: 2, owner: 3 };
 
-export function createCore(host: Host, bundles: FeatureBundle[], opts: { persistLocal?: boolean } = {}): EngineCore {
-  const store = new BoardStore({ boardId: host.board.id, syncUrl: host.syncUrl, persistLocal: opts.persistLocal });
+export function createCore(
+  host: Host,
+  bundles: FeatureBundle[],
+  opts: { persistLocal?: boolean; initialState?: Uint8Array } = {},
+): EngineCore {
+  const store = new BoardStore({
+    boardId: host.board.id,
+    syncUrl: host.syncUrl,
+    persistLocal: opts.persistLocal,
+    initialState: opts.initialState,
+  });
   const ui = createUiStore({ role: host.board.role });
   const scopedCache = new Map<string, Editor>();
   const disposers: Array<() => void> = [];
@@ -83,6 +97,7 @@ export function createCore(host: Host, bundles: FeatureBundle[], opts: { persist
     store,
     ui,
     registry: null as unknown as Registry,
+    bundles,
     editor: null as unknown as EditorImpl,
     emitter: new Emitter(),
     dom: { viewport: null, world: null },
@@ -142,6 +157,8 @@ export function createCore(host: Host, bundles: FeatureBundle[], opts: { persist
     // Someone else (remote, undo) changed it: their measurement stands, ours is no longer ours.
     store.subscribeForeignKeys((ids) => {
       for (const id of ids) core.measured.delete(id);
+      // A concurrent change may have left a container this client just laid out overlapping.
+      core.editor.afterForeignChange(ids);
     }),
     // Web fonts arrived: text measured with fallback fonts gets its real size (locally, no undo).
     subscribeFontEpoch(() => core.editor.renormalizeMeasured()),
@@ -158,8 +175,13 @@ export function createCore(host: Host, bundles: FeatureBundle[], opts: { persist
         const tool = core.registry.toolsById.get(ui.getState().toolId);
         if (tool && ROLE_RANK[role] < ROLE_RANK[tool.def.minRole ?? 'editor']) core.editor.setTool('select');
         // Local undo history can't be replayed by a read-only role.
-        store.undoManager.clear();
+        store.clearUndo();
       }
+      // Hidden frames' contents: only owners/editors may hold them. Losing the role forgets the
+      // local copy; gaining it asks the server for the layer.
+      if (ROLE_RANK[role] < ROLE_RANK.editor) {
+        if (store.layers.editors.elements.size) store.resetLayer('editors');
+      } else store.requestLayerSync('editors');
       core.emitter.emit('connection');
     }),
     store.subscribePresence(() => {
@@ -190,10 +212,11 @@ export function createCore(host: Host, bundles: FeatureBundle[], opts: { persist
       followed = now;
     }),
     installFollow(core),
+    installLayerPlacement(core, () => core.editor.getPrivateRule()),
     ui.subscribe((s, prev) => {
       if (s.selection !== prev.selection) {
         core.emitter.emit('selection');
-        store.setPresence({ selection: s.selection });
+        store.setPresence({ selection: publicIds(core, s.selection) });
       }
       if (s.camera !== prev.camera || s.viewport !== prev.viewport) {
         core.emitter.emit('camera');
@@ -202,7 +225,7 @@ export function createCore(host: Host, bundles: FeatureBundle[], opts: { persist
       if (s.toolId !== prev.toolId) core.emitter.emit('tool');
       if (s.editingId !== prev.editingId) {
         core.emitter.emit('editing');
-        store.setPresence({ editingId: s.editingId });
+        store.setPresence({ editingId: s.editingId && publicIds(core, [s.editingId]).length ? s.editingId : null });
       }
       if (s.toolOptions !== prev.toolOptions) saveToolOptions(s.toolOptions);
     }),

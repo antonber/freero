@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, BadgeCheck, CircleAlert, ImageUp, LogOut, Mail, Monitor, Trash2 } from 'lucide-react';
-import type { SessionInfo } from '@freero/shared';
+import { ArrowLeft, BadgeCheck, CircleAlert, ImageUp, LogOut, Mail, Monitor, ShieldCheck, Trash2 } from 'lucide-react';
+import type { SecurityInfo, SessionInfo } from '@freero/shared';
 import { Avatar, Button, ColorSwatches, Input, Logo, Modal, Spinner, useToast } from '@ui';
 import { api, ApiError } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { describeDevice } from '../../lib/device';
 import { relativeTime } from '../../lib/time';
+import { Section } from './Section';
+import { isReauthRequired, needsReauth, ReauthPrompt, SignInMethodsSection, TwoFactorSection } from './SecuritySections';
 import './account.css';
 
 // Same palette the server assigns at signup: saturated enough to read on the canvas.
@@ -17,23 +19,21 @@ const CURSOR_COLORS = [
 
 const errorText = (err: unknown, fallback: string) => (err instanceof ApiError && err.status < 500 ? err.message : fallback);
 
-function Section({ id, title, description, children, danger }: { id: string; title: string; description?: string; children: ReactNode; danger?: boolean }) {
-  return (
-    <section className={`fr-acct-card${danger ? ' fr-acct-card--danger' : ''}`} aria-labelledby={`${id}-title`}>
-      <header className="fr-acct-card__head">
-        <h2 id={`${id}-title`}>{title}</h2>
-        {description ? <p>{description}</p> : null}
-      </header>
-      {children}
-    </section>
-  );
-}
-
-/** /settings — profile, email, password, signed-in devices and account deletion. */
+/** /settings — profile, email, sign-in methods, password, two-step verification, devices, deletion. */
 export function AccountSettingsPage() {
   useEffect(() => {
     document.title = 'Account settings · Freero';
   }, []);
+  const [security, setSecurity] = useState<SecurityInfo | null>(null);
+  const [sessionsVersion, setSessionsVersion] = useState(0);
+  const loadSecurity = useCallback(() => {
+    api.security().then(setSecurity, () => undefined);
+  }, []);
+  useEffect(loadSecurity, [loadSecurity]);
+  const securityChanged = useCallback(() => {
+    loadSecurity();
+    setSessionsVersion((v) => v + 1);
+  }, [loadSecurity]);
   return (
     <div className="fr-acct">
       <header className="fr-acct__top">
@@ -45,10 +45,12 @@ export function AccountSettingsPage() {
       <main className="fr-acct__main">
         <h1 className="fr-acct__title">Account settings</h1>
         <ProfileSection />
-        <EmailSection />
-        <PasswordSection />
-        <SessionsSection />
-        <DeleteSection />
+        <EmailSection security={security} />
+        <SignInMethodsSection security={security} onChange={setSecurity} />
+        <PasswordSection security={security} onChanged={securityChanged} />
+        <TwoFactorSection security={security} onChanged={securityChanged} />
+        <SessionsSection version={sessionsVersion} />
+        <DeleteSection security={security} />
       </main>
     </div>
   );
@@ -152,15 +154,18 @@ function ProfileSection() {
   );
 }
 
-function EmailSection() {
+function EmailSection({ security }: { security: SecurityInfo | null }) {
   const { user } = useAuth();
   const notify = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [reauth, setReauth] = useState(false);
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   if (!user) return null;
+  // Accounts without a password confirm with a recent provider sign-in instead.
+  const askPassword = security?.hasPassword ?? true;
 
   const resend = async () => {
     try {
@@ -181,7 +186,8 @@ function EmailSection() {
       setEmail('');
       setPassword('');
     } catch (err) {
-      setError(errorText(err, 'Could not start the change'));
+      if (isReauthRequired(err)) setReauth(true);
+      else setError(errorText(err, 'Could not start the change'));
     } finally {
       setBusy(false);
     }
@@ -210,16 +216,19 @@ function EmailSection() {
       <form className="fr-acct-form" onSubmit={change} noValidate>
         <div className="fr-acct-form__grid">
           <Input label="New email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <Input label="Current password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          {askPassword ? (
+            <Input label="Current password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          ) : null}
         </div>
         {error ? <p className="fr-acct__error" role="alert">{error}</p> : null}
+        {security && (reauth || needsReauth(security)) && !askPassword ? <ReauthPrompt security={security} /> : null}
         {sentTo ? (
           <p className="fr-acct__ok" role="status">
             We sent a confirmation link to {sentTo}. Your address changes when you open it.
           </p>
         ) : null}
         <div className="fr-acct-form__row">
-          <Button type="submit" loading={busy} disabled={!email.trim() || !password}>
+          <Button type="submit" loading={busy} disabled={!email.trim() || (askPassword && !password) || (!askPassword && needsReauth(security))}>
             Change email
           </Button>
         </div>
@@ -228,12 +237,16 @@ function EmailSection() {
   );
 }
 
-function PasswordSection() {
+function PasswordSection({ security, onChanged }: { security: SecurityInfo | null; onChanged: () => void }) {
   const notify = useToast();
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [reauth, setReauth] = useState(false);
   const [busy, setBusy] = useState(false);
+  if (!security) return null;
+  // Signed up with a provider: no password yet. A recent sign-in stands in for the current one.
+  const setting = !security.hasPassword;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -244,25 +257,35 @@ function PasswordSection() {
       await api.changePassword(current, next);
       setCurrent('');
       setNext('');
-      notify('Password changed. Other devices were signed out.', 'success');
+      notify(setting ? 'Password set. You can now also log in with your email.' : 'Password changed. Other devices were signed out.', 'success');
+      if (setting) onChanged();
     } catch (err) {
-      setError(errorText(err, 'Could not change the password'));
+      if (isReauthRequired(err)) setReauth(true);
+      else setError(errorText(err, 'Could not change the password'));
     } finally {
       setBusy(false);
     }
   };
 
+  const blocked = setting && needsReauth(security);
   return (
-    <Section id="password" title="Password" description="Changing it signs you out everywhere else.">
+    <Section
+      id="password"
+      title={setting ? 'Set a password' : 'Password'}
+      description={setting ? 'Add a password to also log in with your email address. Other devices are signed out.' : 'Changing it signs you out everywhere else.'}
+    >
       <form className="fr-acct-form" onSubmit={submit} noValidate>
         <div className="fr-acct-form__grid">
-          <Input label="Current password" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
+          {setting ? null : (
+            <Input label="Current password" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
+          )}
           <Input label="New password" type="password" autoComplete="new-password" placeholder="At least 8 characters" value={next} onChange={(e) => setNext(e.target.value)} />
         </div>
         {error ? <p className="fr-acct__error" role="alert">{error}</p> : null}
+        {setting && (reauth || blocked) ? <ReauthPrompt security={security} /> : null}
         <div className="fr-acct-form__row">
-          <Button type="submit" loading={busy} disabled={!current || !next}>
-            Change password
+          <Button type="submit" loading={busy} disabled={(!setting && !current) || !next || blocked}>
+            {setting ? 'Set password' : 'Change password'}
           </Button>
         </div>
       </form>
@@ -270,7 +293,13 @@ function PasswordSection() {
   );
 }
 
-function SessionsSection() {
+/** "Google", "Password", "Reset link" — how a session signed in. */
+function methodText(s: SessionInfo): string {
+  if (s.methodLabel) return s.methodLabel;
+  return s.method === 'email_link' ? 'Password reset link' : 'Password';
+}
+
+function SessionsSection({ version }: { version: number }) {
   const notify = useToast();
   const [sessions, setSessions] = useState<SessionInfo[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -281,7 +310,7 @@ function SessionsSection() {
       () => setFailed(true),
     );
   }, []);
-  useEffect(load, [load]);
+  useEffect(load, [load, version]);
 
   const revoke = async (s: SessionInfo) => {
     try {
@@ -324,9 +353,17 @@ function SessionsSection() {
                     {s.current ? <span className="fr-acct-badge fr-acct-badge--ok">This device</span> : null}
                   </span>
                   <span className="fr-acct-session__meta">
-                    {[s.network, s.current ? 'Active now' : `Last active ${relativeTime(s.lastSeenAt)}`, `Signed in ${relativeTime(s.createdAt)}`]
+                    {[s.location ?? s.network, s.current ? 'Active now' : `Last active ${relativeTime(s.lastSeenAt)}`, `Signed in ${relativeTime(s.createdAt)}`]
                       .filter(Boolean)
                       .join(' · ')}
+                  </span>
+                  <span className="fr-acct-session__meta">
+                    {`Signed in with ${methodText(s)}`}
+                    {s.twoFactor ? (
+                      <span className="fr-acct-session__2fa">
+                        <ShieldCheck size={13} aria-hidden /> 2-step verified
+                      </span>
+                    ) : null}
                   </span>
                 </span>
                 {!s.current ? (
@@ -348,15 +385,18 @@ function SessionsSection() {
   );
 }
 
-function DeleteSection() {
+function DeleteSection({ security }: { security: SecurityInfo | null }) {
   const { user, adopt } = useAuth();
   const notify = useToast();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [reauth, setReauth] = useState(false);
   const [busy, setBusy] = useState(false);
   if (!user) return null;
+  const askPassword = security?.hasPassword ?? true;
+  const blocked = !askPassword && (reauth || needsReauth(security));
 
   const confirm = async (e?: FormEvent) => {
     e?.preventDefault();
@@ -369,7 +409,8 @@ function DeleteSection() {
       adopt(null);
       notify(`Your account will be deleted on ${day}. Log in before then to restore it.`, 'info', { duration: 12_000 });
     } catch (err) {
-      setError(errorText(err, 'Could not delete the account'));
+      if (isReauthRequired(err)) setReauth(true);
+      else setError(errorText(err, 'Could not delete the account'));
       setBusy(false);
     }
   };
@@ -389,7 +430,7 @@ function DeleteSection() {
         footer={
           <>
             <Button onClick={() => setOpen(false)}>Cancel</Button>
-            <Button variant="danger" loading={busy} disabled={!password} onClick={() => confirm()}>
+            <Button variant="danger" loading={busy} disabled={(askPassword && !password) || blocked} onClick={() => confirm()}>
               Delete account
             </Button>
           </>
@@ -401,15 +442,21 @@ function DeleteSection() {
             account, the boards you own and your profile photo are deleted for good. What you added to other people's
             boards stays with those boards, and your comments there will show as “Deleted user”.
           </p>
-          <Input
-            label="Enter your password to confirm"
-            type="password"
-            autoComplete="current-password"
-            autoFocus
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            error={error ?? undefined}
-          />
+          {askPassword ? (
+            <Input
+              label="Enter your password to confirm"
+              type="password"
+              autoComplete="current-password"
+              autoFocus
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              error={error ?? undefined}
+            />
+          ) : blocked && security ? (
+            <ReauthPrompt security={security} />
+          ) : error ? (
+            <p className="fr-acct__error" role="alert">{error}</p>
+          ) : null}
           <button type="submit" hidden />
         </form>
       </Modal>

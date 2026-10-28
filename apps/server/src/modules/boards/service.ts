@@ -6,7 +6,15 @@ import { runExclusive } from '../../platform/jobs';
 import { log } from '../../platform/log';
 import { getUser, getUsers } from '../auth/index';
 import { atLeast, getMemberRole, membershipsOf, ownershipTransferred, resolveRole } from '../members/index';
-import { closeBoardDoc, initBoardDoc, refreshBoardAccess, snapshotBoardDoc } from '../realtime/index';
+import {
+  closeBoardDoc,
+  initBoardDoc,
+  initBoardLayer,
+  refreshBoardAccess,
+  snapshotBoardDoc,
+  snapshotBoardLayer,
+  snapshotBoardLayers,
+} from '../realtime/index';
 import { deleteUpload } from '../uploads/index';
 import {
   boardAccess,
@@ -327,9 +335,13 @@ export async function moveToTrash(board: Board, now = Date.now()): Promise<void>
   // them. Take the live state first, then close (which also waits for a save in flight), then
   // store that state last, so nothing older lands after it. Nobody can rejoin in between: the
   // board no longer resolves for access.
+  // The same for its layers (hidden frames' contents, private drafts, sealed ballots): restoring
+  // the board brings them back exactly as they were.
   const state = await snapshotBoardDoc(board.id);
+  const layers = await snapshotBoardLayers(board.id);
   await closeBoardDoc(board.id);
   if (state) await initBoardDoc(board.id, state);
+  for (const l of layers) await initBoardLayer(board.id, l.layer, l.state);
 }
 
 /** Owner only: takes a board out of the trash (subject to the board quota). */
@@ -391,17 +403,20 @@ export async function purgeExpiredTrashLocked(now = Date.now()): Promise<number>
  * A copy of `source` owned by `userId`, with the source's current content: in the same workspace
  * and project when the user may create boards there, else in their personal workspace. The new
  * board row and its content are written in one transaction: if saving the content fails there is
- * no empty copy.
+ * no empty copy. Hidden frames' contents (the 'editors' layer) are copied only for someone who may
+ * see them (`role` owner/editor); nobody's private layer (drafts, sealed ballots) is ever copied.
  */
-export async function duplicateBoard(source: Board, userId: string): Promise<Board> {
-  const role = await workspaceRole(source.workspaceId, userId);
-  const place: BoardPlace = isFullMember(role) ? { workspaceId: source.workspaceId, projectId: source.projectId } : {};
+export async function duplicateBoard(source: Board, userId: string, role: Role): Promise<Board> {
+  const wsRole = await workspaceRole(source.workspaceId, userId);
+  const place: BoardPlace = isFullMember(wsRole) ? { workspaceId: source.workspaceId, projectId: source.projectId } : {};
   // Read the content BEFORE the transaction: it may wait for the live doc to finish loading,
   // which queries the database outside this transaction.
   const state = await snapshotBoardDoc(source.id);
+  const editors = atLeast(role, 'editor') ? await snapshotBoardLayer(source.id, 'editors') : null;
   return repo.transaction(async () => {
     const copy = await createBoard(userId, `Copy of ${source.title}`.slice(0, 200), source.description, 'none', place);
     if (state) await initBoardDoc(copy.id, state);
+    if (editors) await initBoardLayer(copy.id, 'editors', editors);
     return copy;
   });
 }

@@ -34,7 +34,7 @@ export const swot: TemplateDef = {
       k.text(x + 24, y + 56, qW - 48, rt(d.q), { size: 15, color: INK_SOFT, h: 24 });
       d.notes.forEach((n, j) => k.sticky(x + 24 + j * (STICKY + 16), y + 108, n, d.color));
     });
-    return k.els;
+    return k.done();
   },
 };
 
@@ -87,7 +87,7 @@ export const prioritization: TemplateDef = {
     ['Dark mode', 'Bulk export to CSV', 'Rewrite the search engine'].forEach((n, j) =>
       k.sticky(sideX + (sideW - STICKY) / 2, y0 + 104 + j * (STICKY + 16), n, 'yellow'),
     );
-    return k.els;
+    return k.done();
   },
 };
 
@@ -95,7 +95,7 @@ export const customerJourney: TemplateDef = {
   id: 'customer-journey',
   name: 'Customer journey',
   description: 'Stages across, lanes for doing, thinking, feeling, pain points and opportunities.',
-  categories: ['strategy', 'diagramming'],
+  categories: ['research', 'strategy', 'diagramming'],
   keywords: ['customer journey', 'journey map', 'experience', 'ux', 'research', 'persona'],
   build(newId) {
     const k = new Kit(newId);
@@ -136,7 +136,7 @@ export const customerJourney: TemplateDef = {
         else k.sticky(x, ly, item, l.color!, colW, l.h);
       });
     });
-    return k.els;
+    return k.done();
   },
 };
 
@@ -212,6 +212,6 @@ export const roadmap: TemplateDef = {
         });
       });
     });
-    return k.els;
+    return k.done();
   },
 };

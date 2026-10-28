@@ -41,7 +41,7 @@ function StartDialog({ editor }: { editor: Editor }) {
       open
       onClose={close}
       title="Start voting"
-      description="Everyone with edit access can vote. Votes are private until you choose to show them."
+      description="Everyone with edit access can vote."
       width={460}
       footer={
         <>
@@ -63,7 +63,14 @@ function StartDialog({ editor }: { editor: Editor }) {
       >
         <Input label="Title" placeholder="What are we deciding?" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} />
         <Slider label="Votes per person" min={MIN_VOTES} max={MAX_VOTES} value={votes} onChange={setVotes} showValue aria-label="Votes per person" />
-        <Toggle label="Hide results until voting ends" checked={hide} onChange={setHide} />
+        <div className="fr-vote-hide">
+          <Toggle label="Hide results until voting ends" checked={hide} onChange={setHide} />
+          <small>
+            {hide
+              ? 'Each ballot stays sealed on the server, so nobody (you included) can see who voted for what until you end the vote.'
+              : 'Everyone sees the running totals while people vote.'}
+          </small>
+        </div>
         <fieldset className="fr-vote-scope">
           <legend>What can people vote on?</legend>
           <label className={`fr-vote-scope__opt${scope === 'all' ? ' is-on' : ''}`}>
@@ -420,7 +427,7 @@ function ResultsPanel({ editor }: { editor: Editor }) {
   } else if (session.active && session.anonymous) {
     body = (
       <p className="fr-vote-results__empty">
-        Results are hidden until voting ends. {v.voters.length} {v.voters.length === 1 ? 'person has' : 'people have'} voted so far.
+        Ballots are sealed on the server until voting ends. {v.voters.length} {v.voters.length === 1 ? 'person has' : 'people have'} voted so far.
       </p>
     );
   } else if (!v.ranking.length) {

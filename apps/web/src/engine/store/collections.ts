@@ -19,31 +19,41 @@ export interface CollectionGuard {
 
 /**
  * A collection view scoped to `scope` (a feature name, or 'engine'). Reads are open to
- * everyone; writes throw unless `scope` owns the collection.
+ * everyone; writes throw unless `scope` owns the collection. `layer: 'private'` is this user's
+ * private copy (the private layer doc, see BoardStore): same guard, never seen by others.
  */
-export function createCollection<T>(store: BoardStore, name: string, scope: string, guard: CollectionGuard): Collection<T> {
-  const map = store.collectionMap<T>(name);
+export function createCollection<T>(
+  store: BoardStore,
+  name: string,
+  scope: string,
+  guard: CollectionGuard,
+  layer: 'shared' | 'private' = 'shared',
+): Collection<T> {
+  // The private layer doc is replaced when access to it is lost: always look the map up again.
+  const map = () => (layer === 'private' ? store.privateCollectionMap<T>(name) : store.collectionMap<T>(name));
   const assertOwner = () => {
     const owner = guard.ownerOf(name);
     if (owner !== scope) throw ownershipError(name, owner);
   };
   return {
-    get: (key) => map.get(key),
-    entries: () => Array.from(map.entries()),
+    get: (key) => map().get(key),
+    entries: () => Array.from(map().entries()),
     set(key, value) {
       assertOwner();
       if (!guard.canWrite(name)) return;
-      store.transact(() => map.set(key, value));
+      store.transact(() => map().set(key, value));
     },
     delete(key) {
       assertOwner();
       if (!guard.canWrite(name)) return;
-      store.transact(() => map.delete(key));
+      store.transact(() => map().delete(key));
     },
     observe(cb) {
+      if (layer === 'private') return store.subscribeLayerCollections(cb);
+      const m = map();
       const h = () => cb();
-      map.observe(h);
-      return () => map.unobserve(h);
+      m.observe(h);
+      return () => m.unobserve(h);
     },
   };
 }

@@ -5,6 +5,7 @@ import { Button, IconButton, Input, Logo } from '@ui';
 import { useAuth } from '../../auth/AuthContext';
 import { ApiError } from '../../api/client';
 import { safeNext } from '../../lib/nav';
+import { ProviderButtons, providerErrorText } from './ProviderButtons';
 import './AuthPage.css';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -41,6 +42,8 @@ export function AuthPage({ mode }: { mode: Mode }) {
   const [showPw, setShowPw] = useState(false);
   const [errors, setErrors] = useState<Errors>({});
   const [serverError, setServerError] = useState<string | null>(null);
+  // A provider sign-in that came back with ?error= (until the next attempt).
+  const [providerError, setProviderError] = useState<string | null>(() => providerErrorText(params.get('error')));
   const [busy, setBusy] = useState(false);
   const [touched, setTouched] = useState(false);
   const firstRef = useRef<HTMLInputElement>(null);
@@ -66,11 +69,17 @@ export function AuthPage({ mode }: { mode: Mode }) {
     const errs = validateAuth(mode, { name, email, password });
     setErrors(errs);
     setServerError(null);
+    setProviderError(null);
     if (Object.keys(errs).length) return;
     setBusy(true);
     try {
-      if (mode === 'login') await login(email, password);
-      else await signup(name, email, password);
+      if (mode === 'login') {
+        if (!(await login(email, password))) {
+          // Two-factor on: the password was right; the second step finishes the sign-in.
+          navigate(`/login/two-factor?next=${encodeURIComponent(next)}`, { replace: true });
+          return;
+        }
+      } else await signup(name, email, password);
       navigate(next, { replace: true });
     } catch (err) {
       setServerError(
@@ -114,6 +123,8 @@ export function AuthPage({ mode }: { mode: Mode }) {
               ? 'Log in to pick up where your team left off.'
               : 'Free forever for your first boards. No card needed.'}
         </p>
+
+        <ProviderButtons next={next} verb={isLogin ? 'Continue' : 'Sign up'} />
 
         <form className="fr-authcard__form" onSubmit={submit} noValidate>
           {!isLogin ? (
@@ -168,10 +179,10 @@ export function AuthPage({ mode }: { mode: Mode }) {
             </Link>
           ) : null}
 
-          {serverError ? (
+          {serverError || providerError ? (
             <div className="fr-authcard__error" role="alert">
               <CircleAlert size={16} aria-hidden />
-              <span>{serverError}</span>
+              <span>{serverError ?? providerError}</span>
             </div>
           ) : null}
 

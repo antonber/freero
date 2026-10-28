@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { LibraryBig, Shapes } from 'lucide-react';
 import type { ShapeKind } from '@freero/shared';
-import { defineTool, usePointer, useToolOptions, type Editor, type Point } from '@engine';
+import { defineTool, useToolGhost, useToolOptions, type Editor, type Point } from '@engine';
 import { CLICK_SLOP_PX, DEFAULT_SIZE, LIBRARY_PANEL_ID, SHAPE_KINDS, TOOL_ID, type ShapeToolOptions } from './lib/constants';
 import { currentKind, shapeInRect } from './lib/actions';
 import { dragRect, insetPaths } from './lib/geometry';
@@ -112,18 +112,18 @@ export default defineTool({
 
   // Ghost of the armed shape under the cursor; hidden once a drag has created the real one.
   Preview: () => {
-    const p = usePointer();
+    const s = DEFAULT_SIZE;
+    const p = useToolGhost({ w: s, h: s });
     const dragging = useDragging();
     const { kind = 'rect' } = useToolOptions<ShapeToolOptions>(TOOL_ID);
     if (!p || dragging) return null;
-    const s = DEFAULT_SIZE;
     const paths = insetPaths(kind, s, s, 2);
     return (
       <svg
         className="fr-shape-ghost"
         width={s}
         height={s}
-        style={{ transform: `translate(${p.x - s / 2}px, ${p.y - s / 2}px)` }}
+        style={{ transform: `translate(${p.x}px, ${p.y}px)` }}
         aria-hidden
       >
         <path d={paths.outline} />

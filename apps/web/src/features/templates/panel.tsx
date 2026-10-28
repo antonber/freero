@@ -5,11 +5,13 @@ import { Button, Input, Spinner, formatShortcut } from '@ui';
 import { TEMPLATES } from './lib/catalog';
 import { DOCK_ID, insertTemplate } from './lib/insert';
 import { filterTemplates } from './lib/place';
-import { TemplatePreview } from './lib/Preview';
+import { LazyTemplatePreview } from './lib/Preview';
 import { SaveTemplateDialog } from './lib/SaveDialog';
 import { SAVE_DIALOG_ID, deleteSavedTemplate, filterSaved, insertSavedTemplate, onSavedTemplatesChanged, setTemplateShared } from './lib/saved';
 import { CATEGORIES, type TemplateCategory, type TemplateDef } from './lib/types';
 import './templates.css';
+
+const CATEGORY_LABELS = Object.fromEntries(CATEGORIES.map((c) => [c.id, c.label])) as Record<TemplateCategory, string>;
 
 /** A built-in category, or the user's own saved templates. */
 type Filter = TemplateCategory | 'saved' | null;
@@ -117,8 +119,17 @@ function TemplatesPanel({ editor }: { editor: Editor }) {
   const hasSelection = useSelection().length > 0;
   const saved = useSavedTemplates(editor);
   const builtIns = useMemo(
-    () => (filter === 'saved' ? [] : filterTemplates(TEMPLATES, query, filter)),
+    () => (filter === 'saved' ? [] : filterTemplates(TEMPLATES, query, filter, CATEGORY_LABELS)),
     [query, filter],
+  );
+  // Browsing everything: one section per category (each template under its first category).
+  // Searching or filtering: one ranked list.
+  const groups = useMemo(
+    () =>
+      filter === null && !query.trim()
+        ? CATEGORIES.map((c) => ({ id: c.id, label: c.label, items: builtIns.filter((t) => t.categories[0] === c.id) })).filter((g) => g.items.length)
+        : [{ id: 'results', label: '', items: builtIns }],
+    [builtIns, filter, query],
   );
   const mine = useMemo(() => (filter === null || filter === 'saved' ? filterSaved(saved ?? [], query) : []), [saved, query, filter]);
   const shownCount = builtIns.length + mine.length;
@@ -217,25 +228,33 @@ function TemplatesPanel({ editor }: { editor: Editor }) {
         ) : null
       ) : null}
 
-      {builtIns.length ? (
-        <section aria-label="Freero templates">
-          {filter === null && mine.length ? <h3 className="fr-tpl__section">Freero templates</h3> : null}
-          <div className="fr-tpl__grid">
-            {builtIns.map((t) => (
-              <button key={t.id} type="button" className="fr-tpl-card" disabled={!canEdit} title={t.description} onClick={() => insert(t)}>
-                <span className="fr-tpl-card__preview">
-                  <TemplatePreview def={t} />
-                  <span className="fr-tpl-card__add" aria-hidden>
-                    <Plus size={14} strokeWidth={2.4} /> Add
+      {groups.map((g) =>
+        g.items.length ? (
+          <section key={g.id} aria-label={g.label || 'Freero templates'}>
+            {g.label ? (
+              <h3 className="fr-tpl__section">
+                {g.label} <span className="fr-tpl__count">{g.items.length}</span>
+              </h3>
+            ) : filter === null && mine.length ? (
+              <h3 className="fr-tpl__section">Freero templates</h3>
+            ) : null}
+            <div className="fr-tpl__grid">
+              {g.items.map((t) => (
+                <button key={t.id} type="button" className="fr-tpl-card" disabled={!canEdit} title={t.description} onClick={() => insert(t)}>
+                  <span className="fr-tpl-card__preview">
+                    <LazyTemplatePreview def={t} />
+                    <span className="fr-tpl-card__add" aria-hidden>
+                      <Plus size={14} strokeWidth={2.4} /> Add
+                    </span>
                   </span>
-                </span>
-                <span className="fr-tpl-card__name">{t.name}</span>
-                <span className="fr-tpl-card__desc">{t.description}</span>
-              </button>
-            ))}
-          </div>
-        </section>
-      ) : null}
+                  <span className="fr-tpl-card__name">{t.name}</span>
+                  <span className="fr-tpl-card__desc">{t.description}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : null,
+      )}
 
       {shownCount === 0 && query ? (
         <div className="fr-tpl__empty">

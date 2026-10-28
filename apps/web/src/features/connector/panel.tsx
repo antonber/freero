@@ -14,6 +14,7 @@ import {
   useChromeHidden,
   useEditingId,
   useElement,
+  useElements,
   useFormatToolbarRect,
   useSelectedElements,
   useToolId,
@@ -33,7 +34,7 @@ import {
   TOOL_ID,
   type ConnectorStyle,
 } from './lib/model';
-import { nextToSide, occupiedRects, QUICK_GAP } from './lib/quick';
+import { nextToSide, occupiedRects, QUICK_GAP, quickSpotTaken } from './lib/quick';
 import { labelBoxes, partAt } from './lib/labels';
 
 const PLUS_OFFSET = 26;
@@ -44,6 +45,8 @@ const PLUS_OFFSET_BELOW_ROTATE = 58;
  * we show small drag-to-connect dots this much further out instead, so the two never overlap.
  */
 const STICKY_DOT_EXTRA = 30;
+/** Half the "+" button (20 px, connector.css) plus a little air: screen px it must keep off items. */
+const PLUS_RADIUS = 12;
 
 // ------------------------------------------------------------------------------ drag plumbing
 interface DragHandlers {
@@ -204,6 +207,9 @@ function QuickConnect({ editor, el, root, inert }: { editor: Editor; el: BoardEl
   // climbs over it. The format toolbar may still flip below the selection: a bottom / side "+" it
   // would cover then steps further out along its side so it stays reachable.
   const bar = useFormatToolbarRect();
+  const { zoom } = editor.getCamera();
+  // Items around it move too (a sibling added, a collaborator's drag): re-check the spots.
+  useElements();
 
   return (
     <>
@@ -223,6 +229,8 @@ function QuickConnect({ editor, el, root, inert }: { editor: Editor; el: BoardEl
           off += STICKY_DOT_EXTRA;
           clear();
         }
+        const q = { x: a.x + n.x * off, y: a.y + n.y * off };
+        if (quickSpotTaken(editor, el, editor.screenToWorld(q), PLUS_RADIUS / zoom)) return null;
         return (
           <div
             key={side}
@@ -233,7 +241,7 @@ function QuickConnect({ editor, el, root, inert }: { editor: Editor; el: BoardEl
             data-fr-interactive=""
             data-fr-keep-clear={top ? '' : undefined}
             aria-hidden={inert || undefined}
-            style={at({ x: a.x + n.x * off, y: a.y + n.y * off })}
+            style={at(q)}
             onPointerDown={onDown(side)}
           >
             {!dots && <Plus size={12} strokeWidth={2.6} />}

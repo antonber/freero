@@ -1,9 +1,9 @@
 // Inserting a template into the live board: one transaction (= one undo step), then select
 // the top-level elements and glide the camera to them.
 import { nanoid } from 'nanoid';
-import type { FrameElement } from '@freero/shared';
+import type { BoardElement, FrameElement } from '@freero/shared';
 import type { Editor } from '@engine';
-import { instantiate } from './place';
+import { boundsOf, instantiate } from './place';
 import type { TemplateDef } from './types';
 
 export const DOCK_ID = 'templates';
@@ -14,7 +14,7 @@ export function insertTemplate(editor: Editor, def: TemplateDef): string[] {
     return [];
   }
   const frames = editor.getElements().filter((e): e is FrameElement => e.type === 'frame');
-  const els = instantiate(
+  const { elements, content } = instantiate(
     def,
     {
       place: (size) => editor.findFreeSpot(size),
@@ -22,12 +22,24 @@ export function insertTemplate(editor: Editor, def: TemplateDef): string[] {
     },
     () => nanoid(),
   );
+  // Elements whose content lives outside the elements map (table cells, owned by the table
+  // feature) go through the engine's one path for copied content, `insertElements`, which hands
+  // that content to the owner's `pasteContent`. Everything else is created normally, so each
+  // element's `normalize` (text measuring) runs. Centering the group on its own center keeps
+  // their positions; the drop rule puts them back into the template's frame.
+  const withContent = elements.filter((e) => e.id! in content);
+  const plain = elements.filter((e) => !(e.id! in content));
   let ids: string[] = [];
   editor.transact(() => {
-    ids = editor.createMany(els);
+    ids = editor.createMany(plain);
+    const b = boundsOf(withContent);
+    if (b) {
+      const snapshot = withContent.map((el) => ({ rotation: 0, z: 0, createdBy: '', createdAt: 0, updatedAt: 0, ...el, frameId: null }) as BoardElement);
+      ids.push(...editor.insertElements({ elements: snapshot, content }, { at: { x: b.x + b.w / 2, y: b.y + b.h / 2 } }));
+    }
   });
   if (!ids.length) return [];
-  const top = els.filter((e) => !e.frameId).map((e) => e.id!);
+  const top = elements.filter((e) => !e.frameId).map((e) => e.id!);
   editor.select(top);
   editor.zoomToFit(ids, { animate: true, padding: 96 });
   return ids;

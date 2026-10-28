@@ -3,20 +3,25 @@ import type {
   AuthResponse,
   BoardMember,
   BoardSummary,
+  BoardVersion,
   CreateBoardRequest,
   ImportImageRequest,
   InvitePreview,
   InviteRequest,
   InviteResponse,
   LoginRequest,
+  LoginResponse,
   PendingInvite,
   Role,
   SavedTemplate,
   SavedTemplateSummary,
   SaveTemplateRequest,
+  SecurityInfo,
   SessionInfo,
   SessionResponse,
+  SignInProvider,
   SignupRequest,
+  TwoFactorSetup,
   UnfurlResponse,
   UpdateBoardRequest,
   User,
@@ -72,7 +77,9 @@ export const api = {
   me: () => request<AuthResponse>('GET', '/api/auth/me'),
   /** Startup check: `{ user: null }` when signed out (no failed request in the console). */
   session: () => request<SessionResponse>('GET', '/api/auth/session'),
-  login: (body: LoginRequest) => request<AuthResponse>('POST', '/api/auth/login', body),
+  /** `{ twoFactorRequired }` when the account has two-factor on: finish with loginTwoFactor. */
+  login: (body: LoginRequest) => request<LoginResponse>('POST', '/api/auth/login', body),
+  loginTwoFactor: (code: string) => request<AuthResponse>('POST', '/api/auth/login/two-factor', { code }),
   signup: (body: SignupRequest) => request<AuthResponse>('POST', '/api/auth/signup', body),
   logout: () => request<{ ok: true }>('POST', '/api/auth/logout'),
   updateMe: (body: Partial<Pick<User, 'name' | 'color' | 'avatarUrl'>>) =>
@@ -94,11 +101,22 @@ export const api = {
   verifyEmail: (token: string) => request<{ ok: true }>('POST', '/api/auth/verify-email', { token }),
   forgotPassword: (email: string) => request<{ ok: true }>('POST', '/api/auth/password/forgot', { email }),
   resetPassword: (token: string, password: string) =>
-    request<AuthResponse>('POST', '/api/auth/password/reset', { token, password }),
+    request<LoginResponse>('POST', '/api/auth/password/reset', { token, password }),
+  /** Also sets the first password of an account without one (`currentPassword` is then ignored). */
   changePassword: (currentPassword: string, newPassword: string) =>
     request<{ ok: true }>('POST', '/api/auth/password', { currentPassword, newPassword }),
   changeEmail: (email: string, password: string) => request<{ ok: true }>('POST', '/api/auth/email', { email, password }),
   confirmEmailChange: (token: string) => request<{ ok: true }>('POST', '/api/auth/email/confirm', { token }),
+
+  // sign-in methods + two-factor
+  providers: () => request<{ providers: SignInProvider[] }>('GET', '/api/auth/providers'),
+  security: () => request<SecurityInfo>('GET', '/api/auth/security'),
+  disconnectIdentity: (id: string) => request<SecurityInfo>('DELETE', `/api/auth/identities/${encodeURIComponent(id)}`),
+  setupTwoFactor: (password?: string) => request<TwoFactorSetup>('POST', '/api/auth/two-factor/setup', { password }),
+  enableTwoFactor: (code: string) => request<{ recoveryCodes: string[] }>('POST', '/api/auth/two-factor/enable', { code }),
+  disableTwoFactor: (code: string, password?: string) => request<{ ok: true }>('POST', '/api/auth/two-factor/disable', { code, password }),
+  regenerateRecoveryCodes: (code: string, password?: string) =>
+    request<{ recoveryCodes: string[] }>('POST', '/api/auth/two-factor/recovery-codes', { code, password }),
 
   // sessions
   listSessions: () => request<{ sessions: SessionInfo[] }>('GET', '/api/auth/sessions'),
@@ -207,8 +225,30 @@ export const api = {
   removeProjectMember: (id: string, userId: string) =>
     request<{ ok: true }>('DELETE', `/api/projects/${encodeURIComponent(id)}/members/${encodeURIComponent(userId)}`),
 
+  // version history (editors and owners)
+  listVersions: (boardId: string) => request<{ versions: BoardVersion[] }>('GET', `/api/boards/${boardId}/versions`),
+  async versionState(boardId: string, versionId: number): Promise<Uint8Array> {
+    const res = await fetch(`/api/boards/${boardId}/versions/${versionId}/state`, { credentials: 'same-origin' });
+    if (!res.ok) {
+      let message = res.statusText;
+      try {
+        message = (await res.json()).error ?? message;
+      } catch {
+        // non-JSON error body
+      }
+      throw new ApiError(res.status, message);
+    }
+    return new Uint8Array(await res.arrayBuffer());
+  },
+  nameVersion: (boardId: string, name: string) =>
+    request<{ version: BoardVersion }>('POST', `/api/boards/${boardId}/versions`, { name }),
+  renameVersion: (boardId: string, versionId: number, name: string) =>
+    request<{ version: BoardVersion }>('PATCH', `/api/boards/${boardId}/versions/${versionId}`, { name }),
+  restoreVersion: (boardId: string, versionId: number) =>
+    request<{ before: BoardVersion }>('POST', `/api/boards/${boardId}/versions/${versionId}/restore`),
+
   // link previews
-  unfurl: (url: string) => request<UnfurlResponse>('GET', `/api/unfurl?url=${encodeURIComponent(url)}`),
+  unfurl:(url: string) => request<UnfurlResponse>('GET', `/api/unfurl?url=${encodeURIComponent(url)}`),
 
   // images placed by URL (fetched by the server: works for hosts without CORS)
   importImage: (url: string) => request<{ url: string }>('POST', '/api/unfurl/image', { url } satisfies ImportImageRequest),
@@ -234,6 +274,16 @@ export const api = {
     return res.json();
   },
 };
+
+/**
+ * Where to send the browser to sign in with a provider (a full navigation, not a fetch): `login`,
+ * `link` (connect it to the signed-in account) or `reauth` (confirm it's you, passwordless accounts).
+ */
+export function providerUrl(provider: string, intent: 'login' | 'link' | 'reauth', next?: string): string {
+  const q = new URLSearchParams({ intent });
+  if (next) q.set('next', next);
+  return `/api/auth/oidc/${encodeURIComponent(provider)}/start?${q}`;
+}
 
 /** Base URL for WebSocket connections (same origin; Vite proxies /ws in dev). */
 export function wsBase(): string {

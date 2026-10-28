@@ -1,6 +1,6 @@
 // Builds the engine's Host — the one typed contract between the app shell and the engine.
 import type { BoardSummary, Role } from '@freero/shared';
-import type { Host, HostUser } from '@engine';
+import { unavailableVersionHistory, type Host, type HostUser } from '@engine';
 import type { ToastApi } from '@ui';
 import { wsBase } from '../api/client';
 import {
@@ -17,6 +17,7 @@ import {
   unfurl,
   uploadFile,
   uploadImage,
+  versionHistory,
 } from '../hostServices';
 import { serverNow, syncServerClock } from './serverClock';
 
@@ -72,6 +73,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     saveTemplate: saveTemplateFrom(board.id, deps.team?.id ?? null),
     shareTemplate: shareTemplateWith(deps.team?.id ?? null),
     deleteTemplate,
+    versions: versionHistory(board.id),
     importImage,
     fetchImage,
   };
@@ -118,6 +120,7 @@ export function createLocalHost(title: string, deps: Omit<HostDeps, 'user' | 'op
     saveTemplate: async () => Promise.reject(new Error('Saving templates needs a real board — the local sandbox is offline.')),
     deleteTemplate: async () => Promise.reject(new Error('Saved templates need a real board.')),
     shareTemplate: async () => Promise.reject(new Error('Sharing templates needs a real board.')),
+    versions: unavailableVersionHistory('Version history needs a real board — the local sandbox keeps no versions.'),
     // No server to fetch through: images placed by URL stay linked (CORS hosts still export,
     // others are reported as missing by the export).
     importImage: async () => Promise.reject(new Error('Copying images needs a real board.')),

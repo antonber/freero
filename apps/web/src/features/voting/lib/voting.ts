@@ -3,6 +3,11 @@
 //   `${sessionId}:${userId}`  -> Ballot (each user writes only their own key)
 // A ballot is one value per *user* (not per tab or per vote), so two tabs of the same user
 // overwrite each other's ballot (last writer wins) instead of adding up past the limit.
+//
+// Hidden results (session.anonymous): the ballot goes to the voter's PRIVATE copy of the
+// collection (Editor.privateCollection — the server sends it to nobody else) and the shared key
+// only holds a `sealed` marker ("has voted"). Ending the session reveals every sealed ballot into
+// the shared collection on the server, replacing the markers.
 import type { BoardElement, ElementType, VoteBallot, VotingSession } from '@freero/shared';
 import type { Collection } from '@engine';
 
@@ -79,7 +84,7 @@ export function ranked(totals: Map<string, number>, order: string[]): Array<{ id
 
 export function voters(ballots: Ballot[], session: VotingSession, exists: (id: string) => boolean): Voter[] {
   return ballots
-    .filter((b) => countedVotes(b, session, exists).length > 0)
+    .filter((b) => b.sealed || countedVotes(b, session, exists).length > 0)
     .map((b) => ({ id: b.userId, name: b.userName || 'Someone', color: b.userColor || '#8a89a3' }));
 }
 
@@ -94,30 +99,53 @@ function writeBallot(store: VotingStore, session: VotingSession, user: Actor, el
   store.set(ballotKey(session.id, user.id), ballot);
 }
 
-/** Adds one vote on `elementId`. Returns false (and writes nothing) when it isn't allowed. */
+/**
+ * Adds one vote on `elementId`. Returns false (and writes nothing) when it isn't allowed. The
+ * session is read from `store`; the ballot is read from and written to `ballots` (the voter's
+ * private copy while results are hidden).
+ */
 export function castVote(
   store: VotingStore,
   user: Actor,
   elementId: string,
   exists: (id: string) => boolean,
+  ballots: VotingStore = store,
 ): boolean {
   const session = getSession(store);
   if (!session?.active || !exists(elementId)) return false;
-  const current = countedVotes(store.get(ballotKey(session.id, user.id)) as Ballot | undefined, session, exists);
+  const current = countedVotes(ballots.get(ballotKey(session.id, user.id)) as Ballot | undefined, session, exists);
   if (current.length >= session.votesPerUser) return false;
-  writeBallot(store, session, user, [...current, elementId]);
+  writeBallot(ballots, session, user, [...current, elementId]);
   return true;
 }
 
-/** Takes back one of your votes on `elementId`. */
-export function retractVote(store: VotingStore, user: Actor, elementId: string, exists: (id: string) => boolean): boolean {
+/** Takes back one of your votes on `elementId` (`ballots` as in castVote). */
+export function retractVote(
+  store: VotingStore,
+  user: Actor,
+  elementId: string,
+  exists: (id: string) => boolean,
+  ballots: VotingStore = store,
+): boolean {
   const session = getSession(store);
   if (!session?.active) return false;
-  const current = countedVotes(store.get(ballotKey(session.id, user.id)) as Ballot | undefined, session, exists);
+  const current = countedVotes(ballots.get(ballotKey(session.id, user.id)) as Ballot | undefined, session, exists);
   const i = current.lastIndexOf(elementId);
   if (i < 0) return false;
-  writeBallot(store, session, user, [...current.slice(0, i), ...current.slice(i + 1)]);
+  writeBallot(ballots, session, user, [...current.slice(0, i), ...current.slice(i + 1)]);
   return true;
+}
+
+/**
+ * Hidden results: keeps the shared "has voted" marker in line with the user's sealed ballot
+ * (`votes` = how many votes it holds). Writes only when that changes.
+ */
+export function syncSealedMarker(store: VotingStore, session: VotingSession, user: Actor, votes: number): void {
+  const key = ballotKey(session.id, user.id);
+  const has = !!(store.get(key) as Ballot | undefined)?.sealed;
+  if (votes > 0 && !has)
+    store.set(key, { sessionId: session.id, userId: user.id, elementIds: [], sealed: true, userName: user.name, userColor: user.color });
+  else if (votes === 0 && has) store.delete(key);
 }
 
 export interface SessionOptions {

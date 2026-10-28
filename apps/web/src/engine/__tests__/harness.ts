@@ -3,6 +3,7 @@
 // (beginGesture → tool handlers → endGesture).
 import type { Role } from '@freero/shared';
 import type { ElementDefinition, FeatureBundle, Host, Point, ToolPointerEvent } from '../api';
+import { unavailableVersionHistory } from '../api';
 import { createCore, type EngineCore } from '../runtime/core';
 import { dispatchToolPointer } from '../interaction/toolDispatch';
 
@@ -56,6 +57,7 @@ export function makeHost(role: Role = 'owner'): Host {
     saveTemplate: async () => Promise.reject(new Error('No saved templates in tests')),
     deleteTemplate: async () => undefined,
     shareTemplate: async () => Promise.reject(new Error('No teams in tests')),
+    versions: unavailableVersionHistory('No version history in tests'),
     importImage: async () => Promise.reject(new Error('No server in tests')),
     fetchImage: async () => Promise.reject(new Error('No server in tests')),
     listMembers: async () => [],

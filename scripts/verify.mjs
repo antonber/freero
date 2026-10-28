@@ -27,12 +27,19 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import * as decoding from 'lib0/decoding';
+import * as encoding from 'lib0/encoding';
+import { generate as totpCode } from 'otplib';
 import WebSocket from 'ws';
+import * as syncProtocol from 'y-protocols/sync';
 import { WebsocketProvider } from 'y-websocket';
 import * as Y from 'yjs';
+import { writeMmdb } from './lib/mmdb-writer.mjs';
+import { startMockOidc } from './lib/mock-oidc.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WS_MESSAGE_ROLE = 100;
+const WS_MESSAGE_LAYER = 101; // board layers (see @freero/shared api.ts)
+const WS_MESSAGE_LAYER_OP = 102;
 const PNG_1PX = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
   'base64',
@@ -350,6 +357,7 @@ function connectDoc(user, boardId, prepare, port = user.port ?? server.port) {
     if (msg.type === 'role') client.role = msg.role;
   };
   provider.on('connection-close', (event) => event && client.closeCodes.push(event.code));
+  provider.messageHandlers[WS_MESSAGE_LAYER] = () => {}; // layer updates: see withLayers()
   provider.awareness.setLocalStateField('user', { id: user.id, name: user.name, color: '#1C7ED6' });
   provider.connect();
   client.ready = () => waitFor(() => provider.synced && client.role !== null, 8000, `${user.label} to sync`);
@@ -361,6 +369,61 @@ function connectDoc(user, boardId, prepare, port = user.port ?? server.port) {
   providers.add(client);
   return client;
 }
+
+/**
+ * Gives a connected client the two board-layer docs ('private', 'editors'), synced over its socket
+ * the way the web app does it (engine/store/BoardStore.ts): it asks for a layer with sync step 1 and
+ * the server answers only if this socket may read it. `layerOp` sends a reveal/discard.
+ */
+function withLayers(client) {
+  const layers = { private: new Y.Doc(), editors: new Y.Doc() };
+  const send = (name, write) => {
+    const ws = client.provider.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const e = encoding.createEncoder();
+    encoding.writeVarUint(e, WS_MESSAGE_LAYER);
+    encoding.writeVarString(e, name);
+    write(e);
+    ws.send(encoding.toUint8Array(e));
+  };
+  client.layerMessages = []; // wire names of every layer message received
+  client.provider.messageHandlers[WS_MESSAGE_LAYER] = (encoder, decoder) => {
+    const name = decoding.readVarString(decoder);
+    client.layerMessages.push(name);
+    const doc = layers[name];
+    if (!doc) return;
+    const reply = encoding.createEncoder();
+    syncProtocol.readSyncMessage(decoder, reply, doc, 'server');
+    if (encoding.length(reply) > 0) {
+      encoding.writeVarUint(encoder, WS_MESSAGE_LAYER);
+      encoding.writeVarString(encoder, name);
+      encoding.writeUint8Array(encoder, encoding.toUint8Array(reply));
+    }
+  };
+  for (const [name, doc] of Object.entries(layers))
+    doc.on('update', (u, origin) => origin !== 'server' && send(name, (e) => syncProtocol.writeUpdate(e, u)));
+  client.layers = layers;
+  client.askLayer = (name) => send(name, (e) => syncProtocol.writeSyncStep1(e, layers[name] ?? new Y.Doc()));
+  client.layerOp = (op) => {
+    const e = encoding.createEncoder();
+    encoding.writeVarUint(e, WS_MESSAGE_LAYER_OP);
+    encoding.writeVarString(e, JSON.stringify(op));
+    client.provider.ws.send(encoding.toUint8Array(e));
+  };
+  return client;
+}
+
+/** A client of `user` with layers, synced and having asked for both layers (`port`: instance). */
+async function layerClient(user, boardId, port = server.port) {
+  const c = withLayers(connectDoc(user, boardId, undefined, port));
+  await c.ready();
+  c.askLayer('private');
+  c.askLayer('editors');
+  return c;
+}
+
+/** Every value anywhere in a client's shared doc, as JSON text (to prove something never arrived). */
+const sharedText = (c) => JSON.stringify(c.doc.toJSON());
 
 function closeAllDocs() {
   for (const c of [...providers]) c.destroy();
@@ -687,6 +750,7 @@ async function run() {
       const list = (await Q.req('GET', '/api/auth/sessions')).json.sessions;
       assert(list.length === 3 && list.filter((s) => s.current).length === 1, JSON.stringify(list));
       assert(list.every((s) => !s.network.includes('127.0.0.1')), `full address exposed: ${JSON.stringify(list.map((s) => s.network))}`);
+      assert(list.every((s) => s.location === null), 'a location without a GeoIP database');
       const target = list.find((s) => s.userAgent === ua);
       assert(target && !target.current, 'firefox session not listed');
       assert((await Q.req('DELETE', `/api/auth/sessions/${target.id}`)).status === 200, 'revoke');
@@ -813,18 +877,107 @@ async function run() {
       assert(!a.doc.getMap('comments').has('ct'), 'viewer comment leaked to A');
     });
 
+    const dThread = { kind: 'thread', id: 't1', x: 5, y: 5, elementId: null, createdAt: 1, createdBy: D.id };
+    const dMsg = (id, authorId, text) => ({ kind: 'message', threadId: 't1', id, authorId, authorName: authorId, text, createdAt: 1 });
     await check("commenter D can write 'comments' but not 'elements'", async () => {
-      d.doc.getMap('comments').set('t1', { id: 't1', text: 'nice!', author: D.id });
-      await waitFor(() => a.doc.getMap('comments').get('t1')?.text === 'nice!', 5000, "A to receive D's comment");
+      d.doc.transact(() => {
+        d.doc.getMap('comments').set('t:t1', dThread);
+        d.doc.getMap('comments').set('m:t1:m1', dMsg('m1', D.id, 'nice!'));
+      });
+      await waitFor(() => a.doc.getMap('comments').get('m:t1:m1')?.text === 'nice!', 5000, "A to receive D's comment");
       els(d).set('d1', { id: 'd1', type: 'sticky', text: 'from commenter' });
       d.doc.transact(() => {
-        d.doc.getMap('comments').set('t2', { text: 'mixed' });
+        d.doc.getMap('comments').set('s:t1', { kind: 'status', threadId: 't1', resolved: true, by: D.id, at: 2 });
         els(d).delete('e1');
       });
       await sleep(800);
       assert(!els(a).has('d1'), "commenter's element reached A");
       assert(els(a).has('e1'), "commenter's delete of e1 reached A");
-      assert(!a.doc.getMap('comments').has('t2'), 'mixed comment+element update was accepted');
+      assert(!a.doc.getMap('comments').has('s:t1'), 'mixed comment+element update was accepted');
+    });
+
+    await check("comment authorship: commenter D's raw client cannot rewrite or delete A's message; D's own edits still sync", async () => {
+      a.doc.getMap('comments').set('m:t1:a1', dMsg('a1', A.id, 'reply from A'));
+      await waitFor(() => d.doc.getMap('comments').get('m:t1:a1')?.text === 'reply from A', 5000, "D to receive A's reply");
+      // Each attempt from a fresh raw client: after one dropped update, everything later from the
+      // same client would be dropped anyway (missing dependencies), which proves nothing.
+      const attempts = [
+        ["rewrite A's message", (c) => c.set('m:t1:a1', { ...dMsg('a1', A.id, 'A never wrote this'), editedAt: 3 })],
+        ["post a message as A", (c) => c.set('m:t1:f1', dMsg('f1', A.id, "forged in A's name"))],
+        ["delete A's message", (c) => c.delete('m:t1:a1')],
+      ];
+      for (const [what, fn] of attempts) {
+        const raw = connectDoc(D, board.id);
+        await raw.ready();
+        fn(raw.doc.getMap('comments'));
+        await sleep(600);
+        raw.destroy();
+        const seen = a.doc.getMap('comments');
+        assert(seen.get('m:t1:a1')?.text === 'reply from A' && !seen.has('m:t1:f1'), `D could ${what}: ${JSON.stringify(seen.get('m:t1:a1'))}`);
+      }
+      d.destroy(); // holds the rejected writes; reconnect clean
+      d = connectDoc(D, board.id);
+      await d.ready();
+      d.doc.getMap('comments').set('m:t1:m1', { ...dMsg('m1', D.id, 'nice!'), editedAt: 4 });
+      d.doc.getMap('comments').set('r:t1:a1:' + D.id + ':🎉', { kind: 'reaction', threadId: 't1', messageId: 'a1', userId: D.id, emoji: '🎉' });
+      await waitFor(() => a.doc.getMap('comments').get('m:t1:m1')?.editedAt === 4, 5000, "A to receive D's edit of D's own message");
+      await waitFor(() => a.doc.getMap('comments').has('r:t1:a1:' + D.id + ':🎉'), 5000, "A to receive D's reaction");
+    });
+
+    // ---- board layers: content the server withholds (private drafts, sealed ballots, hidden frames) ----
+    await check("board layers: an editor's private draft syncs to their own other tab and to nobody else (owner, editor, viewer, commenter)", async () => {
+      const b1 = await layerClient(B, board.id);
+      const b2 = await layerClient(B, board.id);
+      const others = await Promise.all([A, C, D].map((u) => layerClient(u, board.id)));
+      b1.layers.private.getMap('elements').set('draft1', { id: 'draft1', type: 'sticky', text: 'SECRET-DRAFT' });
+      await waitFor(() => b2.layers.private.getMap('elements').get('draft1')?.text === 'SECRET-DRAFT', 5000, "B's other tab to get B's draft");
+      await sleep(500);
+      for (const o of others) {
+        const everything = sharedText(o) + JSON.stringify(o.layers.private.toJSON()) + JSON.stringify(o.layers.editors.toJSON());
+        assert(!everything.includes('SECRET-DRAFT'), `${o.user.label} received B's private draft`);
+      }
+      // Asking for "private" always means one's own layer; nobody can name someone else's.
+      for (const o of others) o.askLayer(`u:${B.id}`);
+      await sleep(400);
+      assert(others.every((o) => !o.layerMessages.includes(`u:${B.id}`)), "someone got an answer for B's layer by its storage name");
+      for (const c of [b1, b2, ...others]) c.destroy();
+    });
+
+    await check("board layers: hidden frames' contents (editors layer) sync between owner and editor, never to a viewer or commenter, who also cannot write it", async () => {
+      const a1 = await layerClient(A, board.id);
+      const b1 = await layerClient(B, board.id);
+      const c1 = await layerClient(C, board.id);
+      const d1 = await layerClient(D, board.id);
+      a1.layers.editors.getMap('elements').set('hid1', { id: 'hid1', type: 'sticky', text: 'HIDDEN-CONTENT' });
+      await waitFor(() => b1.layers.editors.getMap('elements').get('hid1')?.text === 'HIDDEN-CONTENT', 5000, 'B to get the hidden content');
+      c1.layers.editors.getMap('elements').set('cv', { id: 'cv', type: 'sticky', text: 'viewer write' });
+      d1.layers.editors.getMap('elements').set('dv', { id: 'dv', type: 'sticky', text: 'commenter write' });
+      await sleep(600);
+      for (const o of [c1, d1]) assert(!JSON.stringify(o.layers.editors.toJSON()).includes('HIDDEN-CONTENT') && !sharedText(o).includes('HIDDEN-CONTENT'), `${o.user.label} received hidden content`);
+      const seen = a1.layers.editors.getMap('elements');
+      assert(!seen.has('cv') && !seen.has('dv'), 'a viewer/commenter wrote the editors layer');
+      for (const c of [a1, b1, c1, d1]) c.destroy();
+    });
+
+    await check('board layers: sealed ballots are revealed into the shared doc only by an owner/editor, while their author is offline', async () => {
+      const b1 = await layerClient(B, board.id);
+      b1.layers.private.getMap('voting').set(`s1:${B.id}`, { sessionId: 's1', userId: B.id, elementIds: ['e1', 'e1'] });
+      b1.layers.private.getMap('voting').set(`s0:${B.id}`, { sessionId: 's0', userId: B.id, elementIds: ['e2'] });
+      await sleep(400);
+      b1.destroy();
+      const c1 = await layerClient(C, board.id); // viewer
+      const d1 = await layerClient(D, board.id); // commenter
+      for (const x of [c1, d1]) x.layerOp({ type: 'reveal', collection: 'voting' });
+      await sleep(600);
+      assert(!c1.doc.getMap('voting').has(`s1:${B.id}`), 'a viewer/commenter revealed sealed ballots');
+      const a1 = await layerClient(A, board.id);
+      a1.layerOp({ type: 'reveal', collection: 'voting', prefix: 's1:' });
+      await waitFor(() => c1.doc.getMap('voting').get(`s1:${B.id}`)?.elementIds?.length === 2, 5000, "the viewer to see B's revealed ballot");
+      assert(!c1.doc.getMap('voting').has(`s0:${B.id}`), "a ballot of another session was revealed");
+      const b2 = await layerClient(B, board.id);
+      await waitFor(() => b2.layers.private.getMap('voting').has(`s0:${B.id}`), 5000, "B's other sealed ballot to still be in B's layer");
+      assert(!b2.layers.private.getMap('voting').has(`s1:${B.id}`), 'the revealed ballot stayed in the private layer');
+      for (const c of [a1, b2, c1, d1]) c.destroy();
     });
 
     await check('role changes apply live (owner promotes C to editor over REST)', async () => {
@@ -924,9 +1077,16 @@ async function run() {
       await a2.ready();
       const m = els(a2);
       assert(m.get('e1')?.text === 'from A' && m.get('e2')?.text === 'from B' && m.get('e3') && m.get('c2') && m.get('e4'), `elements after restart: ${JSON.stringify([...m.keys()])}`);
-      assert(a2.doc.getMap('comments').get('t1')?.text === 'nice!', "D's comment not persisted");
-      assert(!m.has('c1') && !m.has('d1') && !a2.doc.getMap('comments').has('t2') && !a2.doc.getMap('comments').has('ct'), 'rejected writes were persisted');
+      assert(a2.doc.getMap('comments').get('m:t1:m1')?.text === 'nice!', "D's comment not persisted");
+      assert(!m.has('c1') && !m.has('d1') && !a2.doc.getMap('comments').has('s:t1') && !a2.doc.getMap('comments').has('m:t1:f1') && !a2.doc.getMap('comments').has('ct'), 'rejected writes were persisted');
       a2.destroy();
+      const b3 = await layerClient(B, board.id);
+      await waitFor(
+        () => b3.layers.private.getMap('elements').get('draft1')?.text === 'SECRET-DRAFT' && b3.layers.editors.getMap('elements').has('hid1'),
+        5000,
+        "B's private draft and the hidden frame content to come back after the restart",
+      );
+      b3.destroy();
     });
 
     await check('an expired invite link grants nothing (no preview, no access after signing up)', async () => {
@@ -1016,13 +1176,77 @@ async function run() {
       assert(r.status === 201 || r.status === 200, r.text);
       copy = r.json.board;
       assert(copy.title === 'Copy of Verify Roadmap' && copy.role === 'owner' && copy.ownerId === A.id && copy.id !== board.id, JSON.stringify(copy));
-      const cd = connectDoc(A, copy.id);
-      await cd.ready();
-      assert(els(cd).get('e1')?.text === 'from A' && cd.doc.getMap('comments').get('t1')?.text === 'nice!', 'copy has no content');
+      const cd = await layerClient(A, copy.id);
+      assert(els(cd).get('e1')?.text === 'from A' && cd.doc.getMap('comments').get('m:t1:m1')?.text === 'nice!', 'copy has no content');
+      // Hidden frames' contents come along for an owner/editor; nobody's private layer does.
+      await waitFor(() => cd.layers.editors.getMap('elements').has('hid1'), 5000, "the owner's copy to keep the hidden frame content");
       cd.destroy();
       const rb = await B.req('POST', `/api/boards/${board.id}/duplicate`);
       assert(rb.json.board.ownerId === B.id && rb.json.board.role === 'owner', 'B copy owner');
+      const bc = await layerClient(B, rb.json.board.id);
+      await sleep(400);
+      assert(!JSON.stringify(bc.layers.private.toJSON()).includes('SECRET-DRAFT'), "B's private draft was copied into B's duplicate");
+      bc.destroy();
       assert((await C.req('GET', `/api/boards/${copy.id}`)).status === 403, "members don't carry over to copies");
+      // A viewer's copy must not contain what the viewer could never read.
+      const rc = await C.req('POST', `/api/boards/${board.id}/duplicate`);
+      assert(rc.status === 201, rc.text);
+      const cc = await layerClient(C, rc.json.board.id);
+      await sleep(400);
+      assert(!cc.layers.editors.getMap('elements').has('hid1'), "a viewer's duplicate contains the hidden frame content");
+      cc.destroy();
+    });
+
+    // ---- version history (KAI-49) ----
+    await check('version history is for editors and owners: viewer and commenter get 403, non-members too', async () => {
+      assert((await B.req('GET', `/api/boards/${board.id}/versions`)).status === 200, 'editor lists');
+      for (const u of [C, D]) {
+        assert((await u.req('GET', `/api/boards/${board.id}/versions`)).status === 403, `${u.label} listed versions`);
+        assert((await u.req('POST', `/api/boards/${board.id}/versions`, { name: 'x' })).status === 403, `${u.label} named a version`);
+      }
+      assert((await B.req('POST', `/api/boards/${board.id}/versions`, { name: '   ' })).status === 400, 'blank name');
+    });
+
+    await check('restore across two clients: both converge on the version, comments stay, and restoring "before" undoes it', async () => {
+      const h1 = connectDoc(A, board.id);
+      const h2 = connectDoc(B, board.id);
+      await Promise.all([h1.ready(), h2.ready()]);
+      els(h1).set('h1', { id: 'h1', type: 'sticky', text: 'in v1' });
+      await waitFor(() => els(h2).get('h1')?.text === 'in v1', 5000, 'B to see h1');
+      const named = await B.req('POST', `/api/boards/${board.id}/versions`, { name: 'Verify v1' });
+      assert(named.status === 201 && named.json.version.kind === 'named' && named.json.version.createdBy.id === B.id, named.text);
+      const v1 = named.json.version;
+      // The version's content is served as raw Yjs state.
+      const st = await fetch(`http://127.0.0.1:${server.port}/api/boards/${board.id}/versions/${v1.id}/state`, { headers: { cookie: B.cookie } });
+      const vdoc = new Y.Doc();
+      Y.applyUpdate(vdoc, new Uint8Array(await st.arrayBuffer()));
+      assert(vdoc.getMap('elements').get('h1')?.text === 'in v1', 'version state lacks h1');
+
+      // After v1: an edit, a deletion, a new item, a new comment (A and B both edit).
+      els(h1).set('h1', { id: 'h1', type: 'sticky', text: 'changed after v1' });
+      els(h2).set('h2', { id: 'h2', type: 'sticky', text: 'added after v1' });
+      els(h2).delete('e1');
+      h1.doc.getMap('comments').set('t-after', { text: 'said after v1' });
+      await waitFor(() => els(h1).has('h2') && !els(h1).has('e1') && els(h2).get('h1')?.text === 'changed after v1', 5000, 'clients to converge');
+
+      const r = await B.req('POST', `/api/boards/${board.id}/versions/${v1.id}/restore`);
+      assert(r.status === 200 && r.json.before.kind === 'before-restore', r.text);
+      const atV1 = (c) =>
+        els(c).get('h1')?.text === 'in v1' && !els(c).has('h2') && els(c).get('e1')?.text === 'from A' && c.doc.getMap('comments').get('t-after')?.text === 'said after v1';
+      await waitFor(() => atV1(h1) && atV1(h2), 5000, 'both clients to show v1 (with the later comment kept)');
+      assert((await C.req('POST', `/api/boards/${board.id}/versions/${v1.id}/restore`)).status === 403, 'a viewer restored');
+
+      const list = (await A.req('GET', `/api/boards/${board.id}/versions`)).json.versions;
+      assert(list[0].id === r.json.before.id && list.some((v) => v.id === v1.id && v.name === 'Verify v1'), JSON.stringify(list.slice(0, 3)));
+      const undo = await A.req('POST', `/api/boards/${board.id}/versions/${r.json.before.id}/restore`);
+      assert(undo.status === 200, undo.text);
+      const atNow = (c) => els(c).get('h1')?.text === 'changed after v1' && els(c).has('h2') && !els(c).has('e1');
+      await waitFor(() => atNow(h1) && atNow(h2), 5000, 'both clients to be back where they were before the restore');
+      // Put e1 back for the checks below (as an ordinary edit).
+      els(h1).set('e1', { id: 'e1', type: 'sticky', text: 'from A' });
+      await sleep(100);
+      h1.destroy();
+      h2.destroy();
     });
 
     await check('member removal: owner removes, member leaves, others cannot remove', async () => {
@@ -1036,13 +1260,15 @@ async function run() {
 
     await check('delete: only owner; moves the board to the trash, removing it and its access for everyone; copy survives', async () => {
       assert((await B.req('DELETE', `/api/boards/${board.id}`)).status === 403, 'editor delete');
-      const live = connectDoc(B, board.id);
-      await live.ready();
+      const live = await layerClient(B, board.id);
       // An edit the server has received but not saved yet (saves are debounced) when the delete lands.
-      const watcher = connectDoc(A, board.id);
-      await watcher.ready();
+      const watcher = await layerClient(A, board.id);
       els(live).set('t1', { id: 't1', type: 'sticky', text: 'just before the delete' });
-      await waitFor(() => els(watcher).get('t1'), 3000, 'the last edit to reach the server');
+      // ...and in a layer: hidden-frame content and a private draft (kept through the trash too).
+      live.layers.editors.getMap('elements').set('t2', { id: 't2', type: 'sticky', text: 'hidden, just before the delete' });
+      live.layers.private.getMap('elements').set('t3', { id: 't3', type: 'sticky', text: 'draft, just before the delete' });
+      await waitFor(() => els(watcher).get('t1') && watcher.layers.editors.getMap('elements').get('t2'), 3000, 'the last edits to reach the server');
+      await sleep(100);
       watcher.destroy();
       assert((await A.req('DELETE', `/api/boards/${board.id}`)).status === 200, 'owner delete');
       await waitFor(() => live.closeCodes.includes(4403), 5000, 'connected editor to be closed with 4403');
@@ -1072,6 +1298,13 @@ async function run() {
       assert(els(back).get('e2')?.text === 'from B', 'restored board lost its content');
       assert(els(back).get('t1')?.text === 'just before the delete', 'the edit made right before the delete was lost');
       back.destroy();
+      const backL = await layerClient(B, board.id);
+      await waitFor(
+        () => backL.layers.editors.getMap('elements').has('t2') && backL.layers.private.getMap('elements').has('t3'),
+        5000,
+        'the layers (hidden content, private draft) to survive the trash',
+      );
+      backL.destroy();
 
       assert((await A.req('DELETE', `/api/boards/${board.id}/permanent`)).status === 404, 'delete forever of a live board');
       assert((await A.req('DELETE', `/api/boards/${board.id}`)).status === 200, 'trash again');
@@ -1466,7 +1699,8 @@ async function multiInstanceChecks() {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-multi-'));
   const procs = [];
   let url = null;
-  const env = () => ({ DATABASE_URL: url, REDIS_URL });
+  // Rate-limit counters live in the shared Redis, also across the single-instance run above.
+  const env = () => ({ DATABASE_URL: url, REDIS_URL, RATE_LIMIT_SIGNUP: '200/1h' });
   const docRows = async (boardId) =>
     (await adminQuery(`SELECT count(*)::int AS n FROM board_doc_updates WHERE board_id = '${boardId}'`, url))[0].n;
   try {
@@ -1535,6 +1769,65 @@ async function multiInstanceChecks() {
       r.destroy();
     });
 
+    await check('duplicating through instance 2 right after an edit on instance 1 copies the edit not saved yet (KAI-73)', async () => {
+      const src = (await A.req('POST', '/api/boards', { title: 'Dup source' })).json.board;
+      const w = connectDoc(A, src.id, undefined, one);
+      await w.ready();
+      els(w).set('d1', { id: 'd1', type: 'sticky', text: 'unsaved on instance 1' });
+      await sleep(100);
+      const r = await A.req('POST', `/api/boards/${src.id}/duplicate`, undefined, { port: two });
+      assert(r.status === 201, r.text);
+      assert((await docRows(src.id)) === 0, 'the edit was already saved, so this proves nothing');
+      const copy = connectDoc(A, r.json.board.id, undefined, two);
+      await copy.ready();
+      assert(els(copy).get('d1')?.text === 'unsaved on instance 1', 'the copy lacks the edit');
+      copy.destroy();
+      w.destroy();
+    });
+
+    await check('moving a board to the trash through instance 2 keeps an edit instance 1 had not saved yet', async () => {
+      const t = (await A.req('POST', '/api/boards', { title: 'Trash source' })).json.board;
+      const w = connectDoc(A, t.id, undefined, one);
+      await w.ready();
+      els(w).set('t1', { id: 't1', type: 'sticky', text: 'unsaved before trash' });
+      await sleep(100);
+      assert((await A.req('DELETE', `/api/boards/${t.id}`, undefined, { port: two })).status === 200, 'trash');
+      await waitFor(() => w.closeCodes.includes(4403), 5000, 'the socket on instance 1 to close');
+      w.destroy();
+      const back = await A.req('POST', `/api/boards/${t.id}/restore`, undefined, { port: two });
+      assert(back.status === 200, back.text);
+      const r = connectDoc(A, t.id, undefined, two);
+      await r.ready();
+      assert(els(r).get('t1')?.text === 'unsaved before trash', 'the edit was lost in the trash round trip');
+      r.destroy();
+    });
+
+    await check('restoring a version through an instance that does not hold the board reaches clients on both instances; its "before" has their unsaved edits', async () => {
+      const vb = (await A.req('POST', '/api/boards', { title: 'Versions' })).json.board;
+      assert((await A.req('POST', `/api/boards/${vb.id}/members`, { email: B.email, role: 'editor' })).status === 201, 'invite');
+      const w = connectDoc(A, vb.id, undefined, one);
+      await w.ready();
+      els(w).set('r1', { id: 'r1', type: 'sticky', text: 'v1' });
+      await sleep(100);
+      const v1 = (await A.req('POST', `/api/boards/${vb.id}/versions`, { name: 'v1' }, { port: one })).json.version;
+      assert(v1?.kind === 'named', 'name v1');
+      els(w).set('r1', { id: 'r1', type: 'sticky', text: 'v2, not saved yet' });
+      await sleep(100);
+      assert((await docRows(vb.id)) <= 1, 'v2 already saved: this proves less');
+      const restored = await B.req('POST', `/api/boards/${vb.id}/versions/${v1.id}/restore`, undefined, { port: two });
+      assert(restored.status === 200, restored.text);
+      await waitFor(() => els(w).get('r1')?.text === 'v1', 5000, 'the client on instance 1 to see v1');
+      const x = connectDoc(B, vb.id, undefined, two);
+      await x.ready();
+      assert(els(x).get('r1')?.text === 'v1', 'a client on instance 2 sees v1');
+      const undo = await B.req('POST', `/api/boards/${vb.id}/versions/${restored.json.before.id}/restore`, undefined, { port: one });
+      assert(undo.status === 200, undo.text);
+      const atV2 = (c) => els(c).get('r1')?.text === 'v2, not saved yet';
+      await waitFor(() => atV2(w) && atV2(x), 5000, 'both clients back at v2 (the unsaved edit was in "before")');
+      w.destroy();
+      x.destroy();
+    });
+
     await check('a role change made through instance 2 applies live to a socket on instance 1', async () => {
       const b1 = connectDoc(B, board.id, undefined, one);
       await b1.ready();
@@ -1574,6 +1867,74 @@ async function multiInstanceChecks() {
       live.destroy();
     });
 
+    // ---- board layers across instances ----
+    const layerRows = async (boardId, layer) =>
+      (
+        await adminQuery(
+          `SELECT (SELECT count(*) FROM board_layers WHERE board_id = '${boardId}' AND layer = '${layer}')
+                + (SELECT count(*) FROM board_layer_updates WHERE board_id = '${boardId}' AND layer = '${layer}') AS n`,
+          url,
+        )
+      )[0].n * 1;
+    const V = new User('MV'); // viewer
+    const R = new User('MR'); // editor, removed later
+    await check('board layers across instances: a private draft reaches only its author (other tab on the other instance); hidden-frame content reaches owner and editor on both, never a viewer', async () => {
+      for (const u of [V, R]) await u.signup();
+      for (const [u, role] of [[V, 'viewer'], [R, 'editor']])
+        assert((await A.req('POST', `/api/boards/${board.id}/members`, { email: u.email, role })).status === 201, 'invite');
+      const b1 = await layerClient(B, board.id, one);
+      const b2 = await layerClient(B, board.id, two);
+      const a2 = await layerClient(A, board.id, two);
+      const v1 = await layerClient(V, board.id, one);
+      const v2 = await layerClient(V, board.id, two);
+      b1.layers.private.getMap('elements').set('mdraft', { id: 'mdraft', type: 'sticky', text: 'MULTI-DRAFT' });
+      a2.layers.editors.getMap('elements').set('mhid', { id: 'mhid', type: 'sticky', text: 'MULTI-HIDDEN' });
+      await waitFor(() => b2.layers.private.getMap('elements').get('mdraft')?.text === 'MULTI-DRAFT', 5000, "B's tab on instance 2 to get B's draft");
+      await waitFor(() => b1.layers.editors.getMap('elements').get('mhid')?.text === 'MULTI-HIDDEN', 5000, 'B on instance 1 to get the hidden content');
+      await sleep(500);
+      for (const o of [a2, v1, v2]) {
+        const all = sharedText(o) + JSON.stringify(o.layers.private.toJSON()) + JSON.stringify(o.layers.editors.toJSON());
+        assert(!all.includes('MULTI-DRAFT'), `${o.user.label} got B's private draft`);
+        if (o.user === V) assert(!all.includes('MULTI-HIDDEN'), 'the viewer got hidden-frame content');
+      }
+      for (const c of [b1, b2, a2, v1, v2]) c.destroy();
+    });
+
+    await check('board layers across instances: opening the board on instance 2 right after a private edit on instance 1 gets it before it is saved', async () => {
+      const fresh = (await A.req('POST', '/api/boards', { title: 'Layer catch-up' })).json.board;
+      const w = await layerClient(A, fresh.id, one);
+      w.layers.private.getMap('elements').set('early', { id: 'early', type: 'sticky', text: 'unsaved draft' });
+      await sleep(100); // reached instance 1; its save waits ~1.5 s (debounce)
+      const r = await layerClient(A, fresh.id, two); // instance 2 loads the board from the database
+      await waitFor(() => r.layers.private.getMap('elements').get('early')?.text === 'unsaved draft', 2000, 'the other tab on instance 2 to get the unsaved draft');
+      assert((await layerRows(fresh.id, `u:${A.id}`)) === 0, 'the draft was already saved, so this proves nothing about fan-out');
+      w.destroy();
+      r.destroy();
+    });
+
+    await check("reveal across instances: the owner reveals through instance 2 while the authors' drafts were made on instance 1 (one author offline, one removed from the board); an edit racing the reveal is never lost", async () => {
+      const b1 = await layerClient(B, board.id, one);
+      const r1 = await layerClient(R, board.id, one);
+      b1.layers.private.getMap('elements').set('rv', { id: 'rv', type: 'sticky', text: 'v1' });
+      b1.layers.private.getMap('elements').set('off', { id: 'off', type: 'sticky', text: 'author offline' });
+      r1.layers.private.getMap('elements').set('rm', { id: 'rm', type: 'sticky', text: 'REMOVED-MEMBER-DRAFT' });
+      await sleep(500);
+      r1.destroy();
+      assert((await A.req('DELETE', `/api/boards/${board.id}/members/${R.id}`)).status === 200, 'remove R');
+      const a2 = await layerClient(A, board.id, two);
+      const v1 = await layerClient(V, board.id, one);
+      // B keeps typing in the draft at the very moment the owner reveals.
+      a2.layerOp({ type: 'reveal', collection: 'elements' });
+      b1.layers.private.getMap('elements').set('rv', { id: 'rv', type: 'sticky', text: 'v2' });
+      await waitFor(() => els(v1).get('off')?.text === 'author offline' && els(v1).has('rv'), 5000, 'the viewer on instance 1 to see the revealed drafts');
+      await sleep(800);
+      const shared = els(v1).get('rv')?.text;
+      const stillPrivate = b1.layers.private.getMap('elements').get('rv')?.text;
+      assert(shared === 'v2' || stillPrivate === 'v2', `the racing edit was lost (shared ${shared}, private ${stillPrivate})`);
+      assert(!sharedText(v1).includes('REMOVED-MEMBER-DRAFT') && !sharedText(a2).includes('REMOVED-MEMBER-DRAFT'), "a removed member's draft was revealed");
+      for (const c of [b1, a2, v1]) c.destroy();
+    });
+
     await check('signing a session out from another device through instance 2 closes its socket on instance 1 (4401)', async () => {
       const Q = new User('MQ');
       await Q.signup();
@@ -1601,6 +1962,12 @@ async function multiInstanceChecks() {
       b.destroy();
       // Saved on the last disconnect; unloaded (and compacted) after FREERO_DOC_IDLE_MS=1000.
       await waitFor(async () => (await docRows(board.id)) === 0, 10_000, 'the update log to be compacted into the base');
+      // Layers too: the removed member's private layer is gone; B's (holding the off-board draft
+      // racing the reveal, if it stayed private) and the editors layer are kept.
+      await waitFor(async () => (await layerRows(board.id, `u:${R.id}`)) === 0, 10_000, "the removed member's private layer to be deleted");
+      const bl = await layerClient(B, board.id, two);
+      await waitFor(() => bl.layers.editors.getMap('elements').get('mhid')?.text === 'MULTI-HIDDEN', 5000, 'the hidden content saved once across instances to reload');
+      bl.destroy();
       const reader = connectDoc(A, board.id, undefined, two);
       await reader.ready();
       assert(all(reader) && els(reader).has('m1') && els(reader).has('m2'), `after reload: ${JSON.stringify([...els(reader).keys()])}`);
@@ -1645,8 +2012,299 @@ async function multiInstanceChecks() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Sign-in methods: a provider (OpenID Connect against a local test provider, the real client
+// library end to end: discovery, PKCE, state, nonce, signed id tokens), two-factor, GeoIP.
+// ---------------------------------------------------------------------------
+
+/** A browser: cookie jar for the app (every cookie, not just the session), manual redirects. */
+class Browser {
+  constructor(port) {
+    this.port = port;
+    this.origin = `http://127.0.0.1:${port}`;
+    this.jar = new Map();
+  }
+  async fetch(url, { method = 'GET', body, headers = {} } = {}) {
+    const abs = new URL(url, this.origin);
+    const own = abs.origin === this.origin;
+    const h = { ...headers };
+    if (own && this.jar.size) h.cookie = [...this.jar].map(([k, v]) => `${k}=${v}`).join('; ');
+    if (body !== undefined) h['content-type'] = 'application/json';
+    const res = await fetch(abs, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body), redirect: 'manual' });
+    if (own) {
+      for (const c of res.headers.getSetCookie()) {
+        const m = /^([^=]+)=([^;]*)/.exec(c);
+        if (!m) continue;
+        if (!m[2] || /expires=thu, 01 jan 1970/i.test(c)) this.jar.delete(m[1]);
+        else this.jar.set(m[1], m[2]);
+      }
+    }
+    const text = await res.text();
+    let json = null;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      /* not json */
+    }
+    return { status: res.status, location: res.headers.get('location'), json, text, url: abs.href };
+  }
+  /** Follows redirects (app -> provider -> app) until a page of the app; returns its path + query. */
+  async navigate(url) {
+    let next = new URL(url, this.origin).href;
+    for (let i = 0; i < 10; i++) {
+      const r = await this.fetch(next);
+      if (r.status !== 302 && r.status !== 303) throw new CheckError(`${next} -> ${r.status} ${r.text.slice(0, 200)}`);
+      const loc = new URL(r.location, next);
+      if (loc.origin === this.origin && !loc.pathname.startsWith('/api/')) return loc.pathname + loc.search;
+      next = loc.href;
+    }
+    throw new CheckError(`too many redirects from ${url}`);
+  }
+}
+
+async function signInMethodChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-signin-'));
+  const geoDb = path.join(dataDir, 'test-city.mmdb');
+  writeMmdb(geoDb, [
+    { cidr: '203.0.113.0/24', data: { city: { names: { en: 'Lyon' } }, country: { iso_code: 'FR', names: { en: 'France' } } } },
+    { cidr: '198.51.100.0/24', data: { country: { iso_code: 'JP', names: { en: 'Japan' } } } },
+  ]);
+  const idp = await startMockOidc({ clientId: 'freero-verify', clientSecret: 'verify-secret' });
+  let proc = null;
+  try {
+    const env = {
+      OIDC_GOOGLE_CLIENT_ID: 'freero-verify',
+      OIDC_GOOGLE_CLIENT_SECRET: 'verify-secret',
+      OIDC_GOOGLE_ISSUER: idp.issuer,
+      GEOIP_DB_PATH: geoDb,
+      TRUST_PROXY: 'loopback', // so X-Forwarded-For can stand in for clients on the internet
+      RATE_LIMIT_TWO_FACTOR: '200/15m', // every check here comes from 127.0.0.1
+    };
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    const ok = await check('sign-in server boots with a provider (local test OpenID provider) and a GeoIP database', async () => {
+      proc = await waitUp(await spawnServer(dataDir, env));
+      const providers = (await new Browser(proc.port).fetch('/api/auth/providers')).json.providers;
+      assert(providers.length === 1 && providers[0].id === 'google', JSON.stringify(providers));
+    });
+    if (!ok) return;
+    const port = proc.port;
+    const stamp = Date.now();
+    const address = (label) => `${label}-${stamp}@signin.verify.freero.app`;
+    const twoFactorOn = async (u) => {
+      const setup = await u.req('POST', '/api/auth/two-factor/setup', { password: 'password-123' });
+      assert(setup.status === 200 && setup.json.qr.startsWith('data:image/png;base64,') && setup.json.uri.startsWith('otpauth://totp/'), setup.text);
+      const enable = await u.req('POST', '/api/auth/two-factor/enable', { code: await totpCode({ secret: setup.json.secret }) });
+      assert(enable.status === 200 && enable.json.recoveryCodes.length === 10, enable.text);
+      return { secret: setup.json.secret, recoveryCodes: enable.json.recoveryCodes };
+    };
+    // The enrolment code's time step is used up: the next sign-in takes the next step's code.
+    const nextCode = (secret) => totpCode({ secret, epoch: Math.floor(Date.now() / 1000) + 30 });
+
+    let passwordless = null; // { browser, email }
+    await check('a provider sign-in with a verified address creates a passwordless account (authorization code + PKCE end to end); signing in again reaches the same account', async () => {
+      const email = address('olga');
+      const b = new Browser(port);
+      idp.queueSignIn({ email, name: 'Olga Provider' });
+      const landed = await b.navigate('/api/auth/oidc/google/start?next=%2Fboard%2Fabc');
+      assert(landed === '/board/abc', `landed on ${landed}`);
+      const me = await b.fetch('/api/auth/me');
+      assert(me.status === 200 && me.json.user.email === email && me.json.user.emailVerified && me.json.user.name === 'Olga Provider', me.text);
+      const sec = (await b.fetch('/api/auth/security')).json;
+      assert(sec.hasPassword === false && sec.identities.length === 1 && sec.identities[0].providerLabel === 'Google', JSON.stringify(sec));
+      const again = new Browser(port);
+      idp.queueSignIn({ email });
+      assert((await again.navigate('/api/auth/oidc/google/start')) === '/app', 'second sign-in landing');
+      assert((await again.fetch('/api/auth/me')).json.user.id === me.json.user.id, 'a second account was created');
+      const sessions = (await again.fetch('/api/auth/sessions')).json.sessions;
+      assert(sessions.length === 2 && sessions.every((s) => s.method === 'google' && s.methodLabel === 'Google' && !s.twoFactor), JSON.stringify(sessions));
+      passwordless = { browser: b, email };
+    });
+
+    await check("a provider callback is bound to the browser that started it (another browser can't complete it: login CSRF), and works once", async () => {
+      const victim = new Browser(port);
+      const start = await victim.fetch('/api/auth/oidc/google/start');
+      assert(start.status === 302 && start.location.startsWith(idp.issuer), start.text);
+      const authorize = new URL(start.location);
+      assert(authorize.searchParams.get('code_challenge_method') === 'S256' && authorize.searchParams.get('nonce'), 'PKCE / nonce missing');
+      idp.queueSignIn({ email: address('csrf') });
+      const callback = (await victim.fetch(start.location)).location;
+      const attacker = new Browser(port);
+      const forged = await attacker.fetch(callback);
+      assert(forged.status === 302 && forged.location === '/login?error=failed' && !attacker.jar.has('freero_session'), `forged: ${forged.status} ${forged.location}`);
+      const real = await victim.fetch(callback);
+      assert(real.status === 302 && real.location === '/app' && victim.jar.has('freero_session'), `real: ${real.status} ${real.location}`);
+      const replay = await new Browser(port).fetch(callback);
+      assert(replay.location === '/login?error=failed', `replayed callback: ${replay.location}`);
+    });
+
+    let P = null;
+    let pTotp = null;
+    await check("a provider reaches an existing account only if it vouches for the address, and only after that account's second step (connected only then)", async () => {
+      P = new User('SigninP', port);
+      P.email = address('pat');
+      await P.signup();
+      // Verified: an unverified account would be taken over by the provider-verified owner instead.
+      await P.verifyEmail(dataDir);
+      pTotp = await twoFactorOn(P);
+      const unvouched = new Browser(port);
+      idp.queueSignIn({ email: P.email, emailVerified: false });
+      assert((await unvouched.navigate('/api/auth/oidc/google/start')) === '/login?error=email_in_use', 'unverified address matched an account');
+      assert((await unvouched.fetch('/api/auth/me')).status === 401, 'signed in without a vouched address');
+
+      const b = new Browser(port);
+      idp.queueSignIn({ email: P.email });
+      const landed = await b.navigate('/api/auth/oidc/google/start?next=%2Fsettings');
+      assert(landed === '/login/two-factor?next=%2Fsettings', `landed on ${landed}`);
+      assert((await b.fetch('/api/auth/me')).status === 401, 'signed in before the second step');
+      assert((await P.req('GET', '/api/auth/security')).json.identities.length === 0, 'connected before the second step');
+      assert((await b.fetch('/api/auth/login/two-factor', { method: 'POST', body: { code: '000000' } })).status === 403, 'wrong code');
+      const done = await b.fetch('/api/auth/login/two-factor', { method: 'POST', body: { code: pTotp.recoveryCodes[0] } });
+      assert(done.status === 200 && done.json.user.id === P.id, done.text);
+      assert((await P.req('GET', '/api/auth/security')).json.identities.length === 1, 'not connected after the second step');
+      const viaGoogle = (await P.req('GET', '/api/auth/sessions')).json.sessions.find((s) => s.method === 'google');
+      assert(viaGoogle?.twoFactor === true, 'session not marked as two-factor');
+      assert((await P.req('GET', '/api/auth/security')).json.twoFactor.recoveryCodesLeft === 9, 'recovery code not used up');
+    });
+
+    await check('password sign-in with two-factor on: no session before the second step; 5 wrong codes end the attempt; a reset link does not skip it', async () => {
+      const b = new Browser(port);
+      const login = await b.fetch('/api/auth/login', { method: 'POST', body: { email: P.email, password: 'password-123' } });
+      assert(login.status === 200 && login.json.twoFactorRequired === true && !b.jar.has('freero_session'), login.text);
+      for (let i = 0; i < 5; i++) assert((await b.fetch('/api/auth/login/two-factor', { method: 'POST', body: { code: '111111' } })).status === 403, `wrong code ${i}`);
+      const capped = await b.fetch('/api/auth/login/two-factor', { method: 'POST', body: { code: await nextCode(pTotp.secret) } });
+      assert(capped.status === 401 && !b.jar.has('freero_session'), `after 5 wrong codes: ${capped.status}`);
+      await b.fetch('/api/auth/login', { method: 'POST', body: { email: P.email, password: 'password-123' } });
+      const ok2 = await b.fetch('/api/auth/login/two-factor', { method: 'POST', body: { code: await nextCode(pTotp.secret) } });
+      assert(ok2.status === 200 && b.jar.has('freero_session'), ok2.text);
+
+      const after = Date.now();
+      await new Browser(port).fetch('/api/auth/password/forgot', { method: 'POST', body: { email: P.email } });
+      const token = await mailedToken(dataDir, P.email, '/reset-password', { after });
+      const r = new Browser(port);
+      const reset = await r.fetch('/api/auth/password/reset', { method: 'POST', body: { token, password: 'password-456' } });
+      assert(reset.status === 200 && reset.json.twoFactorRequired === true && !r.jar.has('freero_session'), `reset: ${reset.text}`);
+      const rec = await r.fetch('/api/auth/login/two-factor', { method: 'POST', body: { code: pTotp.recoveryCodes[1] } });
+      assert(rec.status === 200 && (await r.fetch('/api/auth/sessions')).json.sessions.find((s) => s.current)?.method === 'email_link', rec.text);
+    });
+
+    await check('a passwordless account keeps a way in: its last provider can not be disconnected until it sets a password', async () => {
+      const { browser: b, email } = passwordless;
+      const sec = (await b.fetch('/api/auth/security')).json;
+      const last = await b.fetch(`/api/auth/identities/${sec.identities[0].id}`, { method: 'DELETE' });
+      assert(last.status === 409, `disconnected the last way in: ${last.status}`);
+      // Signed in moments ago: that stands in for the (missing) current password.
+      assert((await b.fetch('/api/auth/password', { method: 'POST', body: { newPassword: 'first-password-1' } })).status === 200, 'set a password');
+      const gone = await b.fetch(`/api/auth/identities/${sec.identities[0].id}`, { method: 'DELETE' });
+      assert(gone.status === 200 && gone.json.hasPassword && gone.json.identities.length === 0, gone.text);
+      assert((await new Browser(port).fetch('/api/auth/login', { method: 'POST', body: { email, password: 'first-password-1' } })).status === 200, 'password login');
+    });
+
+    await check('sessions show "City, Country" from the GeoIP database; addresses it does not know keep the masked network', async () => {
+      const G = new User('Geo', port);
+      G.email = address('geo');
+      const fwd = (ip) => ({ headers: { 'x-forwarded-for': ip } });
+      const s = await G.req('POST', '/api/auth/signup', { name: 'Geo', email: G.email, password: 'password-123' }, fwd('203.0.113.9'));
+      assert(s.status === 201, s.text);
+      await new User('Geo-jp', port).req('POST', '/api/auth/login', { email: G.email, password: 'password-123' }, fwd('198.51.100.7'));
+      await new User('Geo-home', port).req('POST', '/api/auth/login', { email: G.email, password: 'password-123' });
+      const list = (await G.req('GET', '/api/auth/sessions')).json.sessions;
+      const where = list.map((x) => x.location ?? x.network).sort();
+      assert(JSON.stringify(where) === JSON.stringify(['Japan', 'Lyon, France', 'This computer']), JSON.stringify(list));
+    });
+  } finally {
+    if (proc) await stopProc(proc);
+    await idp.close();
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Uploads mark-and-sweep (KAI-74), on its own server: files are shared between boards, copies,
+// templates and avatars, so only what nothing references any more may be deleted.
+// ---------------------------------------------------------------------------
+async function uploadSweepChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-sweep-'));
+  const outerDbUrl = db.url;
+  try {
+    if (ADMIN_URL) db.url = await createDatabase();
+    if (!(await check('uploads sweep: server boots', () => startServer(dataDir)))) return;
+    const U = new User('Sweeper');
+    await U.signup();
+    const files = {};
+    const fileStatus = async (url) => (await fetch(`http://127.0.0.1:${server.port}${url}`, { redirect: 'manual' })).status;
+    const board = async (title) => (await U.req('POST', '/api/boards', { title })).json.board.id;
+    const place = async (boardId, url) => {
+      const c = connectDoc(U, boardId);
+      await c.ready();
+      els(c).set('img', { id: 'img', type: 'image', x: 0, y: 0, w: 10, h: 10, src: url });
+      await sleep(200);
+      c.destroy(); // the last client leaving saves the doc right away
+    };
+
+    await check('uploads sweep: images on a live, a trashed, a purged and a copied board, in a template, as an avatar, and one never used', async () => {
+      for (const k of ['live', 'trashed', 'purged', 'copied', 'template', 'avatar', 'unused']) {
+        const r = await U.req('POST', '/api/uploads', PNG_1PX, { raw: true, headers: { 'content-type': 'image/png' } });
+        assert(r.status === 201, `upload ${k} -> ${r.status}`);
+        files[k] = r.json.url;
+      }
+      await place(await board('Live'), files.live);
+      const trashed = await board('Trashed');
+      await place(trashed, files.trashed);
+      assert((await U.req('DELETE', `/api/boards/${trashed}`)).status === 200, 'trash');
+      const purged = await board('Purged');
+      await place(purged, files.purged);
+      assert((await U.req('DELETE', `/api/boards/${purged}`)).status === 200, 'trash before purge');
+      assert((await U.req('DELETE', `/api/boards/${purged}/permanent`)).status === 200, 'delete forever');
+      // A duplicate shares the image URL; deleting the original for good must not break the copy.
+      const original = await board('Original');
+      await place(original, files.copied);
+      assert([200, 201].includes((await U.req('POST', `/api/boards/${original}/duplicate`)).status), 'duplicate');
+      assert((await U.req('DELETE', `/api/boards/${original}`)).status === 200, 'trash original');
+      assert((await U.req('DELETE', `/api/boards/${original}/permanent`)).status === 200, 'delete original forever');
+      const content = { elements: [{ id: 'i', type: 'image', x: 0, y: 0, w: 10, h: 10, src: files.template }] };
+      assert((await U.req('POST', '/api/templates', { name: 'With image', content })).status === 201, 'save template');
+      assert((await U.req('PATCH', '/api/auth/me', { avatarUrl: files.avatar })).status === 200, 'set avatar');
+    });
+
+    await check('uploads sweep: after the grace period only unreferenced files are deleted (files and quota), on startup', async () => {
+      await sleep(500);
+      await stopServer();
+      // Simulate three days passing (a round may already have marked some): age the uploads in the
+      // server's own database.
+      await withDb(dataDir, (q) =>
+        q(`UPDATE uploads SET created_at = created_at - interval '3 days', last_referenced_at = last_referenced_at - interval '3 days'`),
+      );
+      await startServer(dataDir); // a sweep round runs shortly after startup
+      await waitFor(async () => (await fileStatus(files.unused)) === 404, 15_000, 'the unused upload to be swept');
+      await waitFor(async () => (await fileStatus(files.purged)) === 404, 15_000, 'the purged board image to be swept');
+      for (const k of ['live', 'trashed', 'copied', 'template', 'avatar'])
+        assert((await fileStatus(files[k])) === 200, `${k} image was deleted although it is still used`);
+      await stopServer();
+      const rows = await withDb(dataDir, (q) => q('SELECT name FROM uploads'));
+      const kept = ['live', 'trashed', 'copied', 'template', 'avatar'].map((k) => files[k].slice('/uploads/'.length)).sort();
+      assert(isDeepStrictEqual(rows.map((r) => r.name).sort(), kept), `quota rows left: ${JSON.stringify(rows)}`);
+    });
+  } finally {
+    closeAllDocs();
+    await stopServer();
+    await dropDatabases();
+    db.url = outerDbUrl;
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
 const started = Date.now();
 await run().catch((e) => record('verify harness', false, e?.stack ?? String(e)));
+await signInMethodChecks().catch((e) => record('sign-in methods harness', false, e?.stack ?? String(e)));
+await uploadSweepChecks().catch((e) => record('uploads sweep checks harness', false, e?.stack ?? String(e)));
 await accountPurgeChecks().catch((e) => record('account purge harness', false, e?.stack ?? String(e)));
 await platformChecks().catch((e) => record('platform checks harness', false, e?.stack ?? String(e)));
 await multiInstanceChecks().catch((e) => record('multi-instance checks harness', false, e?.stack ?? String(e)));

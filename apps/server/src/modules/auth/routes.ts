@@ -1,5 +1,5 @@
 import express, { Router } from 'express';
-import type { AuthResponse, SessionInfo, SessionResponse } from '@freero/shared';
+import type { AuthResponse, LoginResponse, SecurityInfo, SessionInfo, SessionResponse } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { handle, notFound } from '../../platform/http';
 import { logError } from '../../platform/log';
@@ -16,11 +16,16 @@ import {
   sendVerification,
   verifyEmail,
 } from './emails';
+import { locateIp } from './geoip';
+import { configuredProviders, disconnectIdentity, providerLabel, toLinkedIdentity } from './providers';
 import * as repo from './repo';
+import { completeSignIn, finishTwoFactorSignIn, providerCallback, startProviderSignIn } from './signIn';
+import { beginTwoFactorSetup, disableTwoFactor, enableTwoFactor, regenerateRecoveryCodes, twoFactorRequiredBy } from './twoFactor';
 import {
   checkCredentials,
   clearSessionCookie,
   createUser,
+  currentSessionAuthAt,
   currentSessionId,
   currentSessionKey,
   currentUser,
@@ -28,6 +33,7 @@ import {
   endSessionsOf,
   getAccount,
   normalizeEmail,
+  RECENT_AUTH_MS,
   requireSession,
   requireUser,
   sessionFromCookieHeader,
@@ -67,10 +73,25 @@ export default function authRoutes(_ctx: ServerContext): Router {
       // ... and per account, so a botnet can't spray guesses at one email from many addresses.
       await consumeRateLimit('loginAccount', `email:${normalizeEmail(req.body?.email)}`);
       const user = await checkCredentials(req.body?.email, req.body?.password);
-      await startSession(req, res, user.id);
-      res.json({ user } satisfies AuthResponse);
+      res.json((await completeSignIn(req, res, user.id, 'password')) satisfies LoginResponse);
     }),
   );
+
+  // The second step of a sign-in of an account with two-factor on (the pending sign-in is a cookie).
+  r.post(
+    '/auth/login/two-factor',
+    rateLimit('twoFactor'), // per IP (and per account inside)
+    handle(async (req, res) => {
+      res.json({ user: await finishTwoFactorSignIn(req, res, req.body?.code) } satisfies AuthResponse);
+    }),
+  );
+
+  // ---- sign in with a provider (browser navigations) ----
+  r.get('/auth/providers', (_req, res) => {
+    res.json({ providers: configuredProviders() });
+  });
+  r.get('/auth/oidc/:provider/start', rateLimit('oidc'), handle(startProviderSignIn));
+  r.get('/auth/oidc/:provider/callback', rateLimit('oidc'), handle(providerCallback));
 
   r.post(
     '/auth/logout',
@@ -166,8 +187,8 @@ export default function authRoutes(_ctx: ServerContext): Router {
     rateLimit('password'),
     handle(async (req, res) => {
       const user = await resetPassword(req.body?.token, req.body?.password);
-      await startSession(req, res, user.id);
-      res.json({ user } satisfies AuthResponse);
+      // The reset link proves the address, not the second factor.
+      res.json((await completeSignIn(req, res, user.id, 'email_link')) satisfies LoginResponse);
     }),
   );
 
@@ -176,7 +197,13 @@ export default function authRoutes(_ctx: ServerContext): Router {
     requireUser,
     rateLimit('password', 'user'),
     handle(async (req, res) => {
-      await changePassword(currentUser(req).id, currentSessionKey(req), req.body?.currentPassword, req.body?.newPassword);
+      await changePassword(
+        currentUser(req).id,
+        currentSessionKey(req),
+        req.body?.currentPassword,
+        req.body?.newPassword,
+        currentSessionAuthAt(req),
+      );
       res.json({ ok: true });
     }),
   );
@@ -187,7 +214,7 @@ export default function authRoutes(_ctx: ServerContext): Router {
     requireUser,
     rateLimit('emailVerify', 'user'),
     handle(async (req, res) => {
-      await requestEmailChange(req, currentUser(req).id, req.body?.email, req.body?.password);
+      await requestEmailChange(req, currentUser(req).id, req.body?.email, req.body?.password, currentSessionAuthAt(req));
       res.json({ ok: true });
     }),
   );
@@ -214,6 +241,10 @@ export default function authRoutes(_ctx: ServerContext): Router {
         lastSeenAt: s.lastSeenAt,
         userAgent: s.userAgent,
         network: maskIp(s.ip),
+        location: locateIp(s.ip),
+        method: s.method,
+        methodLabel: s.method === 'password' || s.method === 'email_link' ? null : providerLabel(s.method),
+        twoFactor: s.twoFactor,
       }));
       res.json({ sessions });
     }),
@@ -240,13 +271,78 @@ export default function authRoutes(_ctx: ServerContext): Router {
     }),
   );
 
+  // ---- sign-in methods and two-factor ----
+  const security = async (req: express.Request): Promise<SecurityInfo> => {
+    const me = currentUser(req);
+    const user = await repo.findUserById(me.id);
+    return {
+      hasPassword: !!user?.passwordHash,
+      identities: (await repo.listIdentities(me.id)).map(toLinkedIdentity),
+      providers: configuredProviders(),
+      twoFactor: {
+        enabled: await repo.twoFactorEnabled(me.id),
+        recoveryCodesLeft: await repo.countRecoveryCodes(me.id),
+        requiredBy: await twoFactorRequiredBy(me.id),
+      },
+      recentAuthUntil: currentSessionAuthAt(req) + RECENT_AUTH_MS,
+    };
+  };
+
+  r.get('/auth/security', requireUser, handle(async (req, res) => void res.json(await security(req))));
+
+  r.delete(
+    '/auth/identities/:id',
+    requireUser,
+    handle(async (req, res) => {
+      await disconnectIdentity(currentUser(req).id, req.params.id);
+      res.json(await security(req));
+    }),
+  );
+
+  r.post(
+    '/auth/two-factor/setup',
+    requireUser,
+    rateLimit('twoFactor', 'user'),
+    handle(async (req, res) => {
+      res.json(await beginTwoFactorSetup(currentUser(req).id, req.body?.password, currentSessionAuthAt(req)));
+    }),
+  );
+
+  r.post(
+    '/auth/two-factor/enable',
+    requireUser,
+    rateLimit('twoFactor', 'user'),
+    handle(async (req, res) => {
+      res.json({ recoveryCodes: await enableTwoFactor(currentUser(req).id, currentSessionKey(req), req.body?.code) });
+    }),
+  );
+
+  r.post(
+    '/auth/two-factor/disable',
+    requireUser,
+    rateLimit('twoFactor', 'user'),
+    handle(async (req, res) => {
+      await disableTwoFactor(currentUser(req).id, req.body?.password, req.body?.code, currentSessionAuthAt(req));
+      res.json({ ok: true });
+    }),
+  );
+
+  r.post(
+    '/auth/two-factor/recovery-codes',
+    requireUser,
+    rateLimit('twoFactor', 'user'),
+    handle(async (req, res) => {
+      res.json({ recoveryCodes: await regenerateRecoveryCodes(currentUser(req).id, req.body?.password, req.body?.code, currentSessionAuthAt(req)) });
+    }),
+  );
+
   // ---- account deletion ----
   r.post(
     '/auth/account/delete',
     requireUser,
     rateLimit('password', 'user'),
     handle(async (req, res) => {
-      const deletionScheduledFor = await scheduleAccountDeletion(req, currentUser(req).id, req.body?.password);
+      const deletionScheduledFor = await scheduleAccountDeletion(req, currentUser(req).id, req.body?.password, currentSessionAuthAt(req));
       clearSessionCookie(res);
       res.json({ deletionScheduledFor });
     }),

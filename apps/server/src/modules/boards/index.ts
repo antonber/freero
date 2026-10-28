@@ -1,7 +1,7 @@
 // Public API of modules/boards [S2].
 import type { Role } from '@freero/shared';
 import { closeBoardDoc } from '../realtime/index';
-import { deleteUpload } from '../uploads/index';
+import { deleteUpload, UPLOAD_REF_PATTERN } from '../uploads/index';
 import { mayShareExternally, workspaceRole } from '../workspaces/index';
 import * as repo from './repo';
 import { describeAccess, requireAccess, requireDownload } from './service';
@@ -89,4 +89,9 @@ export function countLiveBoardsInProject(projectId: string): Promise<number> {
  */
 export function transferBoardsOwnedIn(workspaceId: string, from: string, to: string): Promise<string[]> {
   return repo.transferOwnedIn(workspaceId, from, to);
+}
+
+/** Upload names used as board thumbnails (restricted to `among` when given): the uploads sweep keeps them. */
+export function thumbnailUploadReferences(among?: readonly string[]): Promise<string[]> {
+  return repo.matchesInThumbnails(UPLOAD_REF_PATTERN, among ?? null);
 }

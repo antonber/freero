@@ -140,9 +140,9 @@ export default function boardRoutes(_ctx: ServerContext): Router {
     rateLimit('boardCreate', 'user'),
     handle(async (req, res) => {
       const user = currentUser(req);
-      const { board, access } = await requireAccess(req.params.id, user.id);
+      const { board, role, access } = await requireAccess(req.params.id, user.id);
       requireDownload(access); // a copy takes the content out of the workspace's control
-      const copy = await duplicateBoard(board, user.id);
+      const copy = await duplicateBoard(board, user.id, role);
       res.status(201).json({ board: await summarize(copy, user.id, { starred: false, lastOpenedAt: null }) } satisfies Out);
     }),
   );

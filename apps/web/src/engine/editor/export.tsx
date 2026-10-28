@@ -29,6 +29,30 @@ function ExportWorld({ elements, rect, background }: { elements: BoardElement[];
 
 const nextFrames = () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
 
+/** How long an export waits for its pictures to arrive (slow connection, huge file) at most. */
+const IMAGE_WAIT_MS = 15_000;
+
+/**
+ * Waits (capped) until every <img> in `node` has loaded or failed. Items that were never on
+ * screen (culled, a far-away frame) aren't in the browser cache yet, and an image element still
+ * "loading" draws its placeholder, not the picture. True when some had to be waited for.
+ */
+async function settleImages(node: HTMLElement): Promise<boolean> {
+  const pending = Array.from(node.querySelectorAll('img')).filter((img) => !img.complete);
+  if (!pending.length) return false;
+  const settled = pending.map(
+    (img) =>
+      new Promise<void>((resolve) => {
+        img.addEventListener('load', () => resolve(), { once: true });
+        img.addEventListener('error', () => resolve(), { once: true });
+      }),
+  );
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([Promise.all(settled), new Promise<void>((r) => (timer = setTimeout(r, IMAGE_WAIT_MS)))]);
+  clearTimeout(timer);
+  return true;
+}
+
 export function createExportRenderer(core: EngineCore) {
   const inlineRemoteImages = createRemoteImageInliner(() => core.hostRef.current);
   return async function renderExport(opts: ExportOptions): Promise<string> {
@@ -41,6 +65,7 @@ export function createExportRenderer(core: EngineCore) {
     if (opts.ids) elements = editor.withChildren(opts.ids).map((id) => editor.getElement(id)!).filter((el) => el && !editor.isOffBoard(el));
     else if (opts.rect) elements = editor.elementsInRect(opts.rect, 'intersect');
     else elements = editor.getElements().filter((el) => !editor.isOffBoard(el));
+    if (opts.sharedOnly) elements = elements.filter((el) => core.store.layerOf(el.id) === 'shared');
     elements.sort(compareRenderOrder);
     // Visual bounds: what definitions draw outside their box (frame titles) is part of the picture.
     const content = opts.rect ?? editor.visualBoundsOf(elements) ?? { x: 0, y: 0, w: 320, h: 200 };
@@ -78,9 +103,11 @@ export function createExportRenderer(core: EngineCore) {
       await document.fonts?.ready;
       const node = host.firstElementChild as HTMLElement;
       // Third-party images become data URLs first, or html-to-image would drop the ones whose
-      // host refuses cross-origin reads. Then let the image components see their loads.
+      // host refuses cross-origin reads. Then wait for every picture to arrive, and let the image
+      // components see their loads (they draw a placeholder until then).
       const images = await inlineRemoteImages(node);
-      if (images.found) await nextFrames();
+      const waited = await settleImages(node);
+      if (images.found || waited) await nextFrames();
       if (images.missing) opts.onMissingImages?.(images.missing);
       const options = {
         width: rect.w,
@@ -122,12 +149,14 @@ export function startThumbnails(core: EngineCore): { stop(): Promise<void> } {
   const save = async () => {
     timer = null;
     if (!dirty || saving || !core.editor.can('editor') || !core.renderExport) return;
-    if (!core.store.getOrdered().length) return;
+    const shared = core.store.getOrdered().filter((el) => core.store.layerOf(el.id) === 'shared' && !core.editor.isOffBoard(el));
+    if (!shared.length) return;
     dirty = false;
     saving = true;
     lastSave = Date.now();
     try {
-      const b = core.editor.getBounds(undefined, { visual: true });
+      // Everyone's thumbnail: shared content only (never private drafts or hidden frames' contents).
+      const b = core.editor.visualBoundsOf(shared);
       if (!b) return;
       // Frame the content in a 16:10 card.
       let w = b.w + 120;
@@ -135,7 +164,7 @@ export function startThumbnails(core: EngineCore): { stop(): Promise<void> } {
       if (w / h > THUMB_ASPECT) h = w / THUMB_ASPECT;
       else w = h * THUMB_ASPECT;
       const rect = { x: b.x + b.w / 2 - w / 2, y: b.y + b.h / 2 - h / 2, w, h };
-      const url = await core.renderExport({ rect, format: 'jpeg', scale: THUMB_W / w, padding: 0, skipFonts: true });
+      const url = await core.renderExport({ rect, format: 'jpeg', scale: THUMB_W / w, padding: 0, skipFonts: true, sharedOnly: true });
       await core.hostRef.current.saveThumbnail(url);
     } catch (err) {
       dirty = true;

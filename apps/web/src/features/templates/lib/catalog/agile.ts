@@ -54,7 +54,7 @@ export const retrospective: TemplateDef = {
         k.sticky(nx, ny, n, c.color, note);
       });
     });
-    return k.els;
+    return k.done();
   },
 };
 
@@ -111,13 +111,13 @@ export const kanban: TemplateDef = {
     cols.forEach((c, i) => {
       const x = 48 + i * (colW + gap);
       k.panel(x, y0, colW, colH, c.tint);
-      k.text(x + 20, y0 + 20, colW - 40, `<b>${rt(c.title)}</b>`, { size: 22, h: 32 });
+      k.text(x + 20, y0 + 20, colW - 96, `<b>${rt(c.title)}</b>`, { size: 22, h: 32 });
       k.shape('roundRect', x + colW - 56, y0 + 20, 36, 30, `<b>${c.cards.length}</b>`, { fill: c.head, fontSize: 16 });
       c.cards.forEach(([title, desc, color], j) => {
         k.card(x + 16, y0 + 72 + j * (cardH + 14), colW - 32, cardH, title, desc, color, c.status);
       });
     });
-    return k.els;
+    return k.done();
   },
 };
 
@@ -163,6 +163,6 @@ export const storyMap: TemplateDef = {
       k.sticky(x, rows.r1, r1[i], 'green', colW, 130);
       k.sticky(x, rows.r2, r2[i], 'blue', colW, 130);
     });
-    return k.els;
+    return k.done();
   },
 };

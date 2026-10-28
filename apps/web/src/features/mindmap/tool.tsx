@@ -1,5 +1,5 @@
 import { Network } from 'lucide-react';
-import { defineTool, usePointer, type Editor, type Point } from '@engine';
+import { defineTool, useToolGhost, type Editor, type Point } from '@engine';
 import { nodeSize } from './lib/measure';
 import { TOOL_ID } from './lib/constants';
 import { newRoot } from './lib/actions';
@@ -36,11 +36,11 @@ export default defineTool({
   },
 
   Preview: () => {
-    const p = usePointer();
-    if (!p) return null;
     const { w, h } = nodeSize('', true);
+    const p = useToolGhost({ w, h });
+    if (!p) return null;
     return (
-      <div className="fr-mm-ghost" style={{ width: w, height: h, transform: `translate(${p.x - w / 2}px, ${p.y - h / 2}px)` }}>
+      <div className="fr-mm-ghost" style={{ width: w, height: h, transform: `translate(${p.x}px, ${p.y}px)` }}>
         Central topic
       </div>
     );

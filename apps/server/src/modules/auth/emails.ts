@@ -101,10 +101,20 @@ export async function resetPassword(tokenIn: unknown, passwordIn: unknown): Prom
   return getAccount(t.userId);
 }
 
-/** Changes the password of a signed-in user; every other session of theirs ends. */
-export async function changePassword(userId: string, currentSessionKey: string, current: unknown, next: unknown): Promise<void> {
+/**
+ * Changes the password of a signed-in user — or sets the first one of an account that signed up
+ * through a provider (then a recent sign-in stands in for the current password, `sessionAuthAt`).
+ * Every other session of theirs ends.
+ */
+export async function changePassword(
+  userId: string,
+  currentSessionKey: string,
+  current: unknown,
+  next: unknown,
+  sessionAuthAt?: number,
+): Promise<void> {
   const password = validatePassword(next);
-  await confirmPassword(userId, current);
+  await confirmPassword(userId, current, sessionAuthAt);
   await repo.setPasswordHash(userId, await hashPassword(password));
   await repo.deleteTokens(userId, 'reset_password');
   await endSessionsOf(userId, currentSessionKey);
@@ -113,10 +123,16 @@ export async function changePassword(userId: string, currentSessionKey: string, 
 // ---- email change ----
 
 /** Sends a confirmation link to the NEW address; the account keeps its address until it is used. */
-export async function requestEmailChange(req: Request | null, userId: string, emailIn: unknown, password: unknown): Promise<void> {
+export async function requestEmailChange(
+  req: Request | null,
+  userId: string,
+  emailIn: unknown,
+  password: unknown,
+  sessionAuthAt?: number,
+): Promise<void> {
   const email = normalizeEmail(emailIn);
   if (!validEmail(email)) throw badRequest('Please enter a valid email address');
-  const user = await confirmPassword(userId, password);
+  const user = await confirmPassword(userId, password, sessionAuthAt);
   if (email === user.email) throw badRequest('That is already your email address');
   const token = await issue(user.id, 'change_email', email, CHANGE_EMAIL_TTL_MS);
   await sendMail({

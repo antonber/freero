@@ -39,7 +39,7 @@ export function elementText(editor: Editor, el: BoardElement): string {
       .map((p) => richTextToPlain(p.html).trim())
       .filter(Boolean)
       .join('\n');
-  if (def?.toPlainText) return def.toPlainText(el as never) ?? '';
+  if (def?.toPlainText) return def.toPlainText(el as never, editor) ?? '';
   const field = def?.textField;
   return field ? richTextToPlain(String((el as unknown as Record<string, unknown>)[field] ?? '')) : '';
 }

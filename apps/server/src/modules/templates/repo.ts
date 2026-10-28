@@ -101,3 +101,14 @@ export async function deleteOwned(id: string, ownerId: string): Promise<string |
   ]);
   return r ? r.thumbnail : undefined;
 }
+
+/** Every match of `pattern`'s first group in any template's content or thumbnail (restricted to `among` when given). */
+export async function matchesInTemplates(pattern: string, among: readonly string[] | null): Promise<string[]> {
+  const rows = await query<{ name: string }>(
+    `SELECT DISTINCT m[1] AS name
+     FROM (SELECT regexp_matches(content::text || ' ' || COALESCE(thumbnail, ''), $1, 'g') AS m FROM templates) found
+     WHERE $2::text[] IS NULL OR m[1] = ANY($2::text[])`,
+    [pattern, among],
+  );
+  return rows.map((r) => r.name);
+}

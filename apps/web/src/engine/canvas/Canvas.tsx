@@ -11,6 +11,7 @@ import { dispatchToolPointer, type ToolPointerHandler } from '../interaction/too
 import { useSettings } from '../hooks';
 import type { Registered } from '../runtime/registry';
 import type { ToolDefinition } from '../api';
+import { publicCursor } from '../editor/layers';
 import './canvas.css';
 
 const DOUBLE_CLICK_MS = 400;
@@ -87,7 +88,7 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
         lastCursorSent = performance.now();
         cursorTimer = null;
         const p = core.pointer.getState();
-        core.store.setPresence({ cursor: p.inside && p.world ? { x: Math.round(p.world.x), y: Math.round(p.world.y) } : null });
+        core.store.setPresence({ cursor: publicCursor(core, p.inside ? p.world : null) });
       };
       if (world === null) return send();
       if (now - lastCursorSent >= CURSOR_THROTTLE_MS) send();
@@ -201,7 +202,7 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
     const onPointerMove = (e: PointerEvent) => {
       const screen = screenOf(e);
       const world = editor.screenToWorld(screen);
-      core.pointer.setState({ screen, world, inside: true });
+      core.pointer.setState({ screen, world, inside: true, mods: { metaKey: e.metaKey || e.ctrlKey, altKey: e.altKey } });
       publishCursor(world);
 
       if (e.pointerType === 'touch' && touches.has(e.pointerId)) {
@@ -263,6 +264,13 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
         ui.setState({ transforming: null });
       }
       if (gesture && e.pointerId === gesture.pointerId) core.interaction.cancel?.();
+    };
+
+    // Ctrl/⌘ or Alt pressed or released while the pointer rests: hover previews re-snap.
+    const onModifierKey = (e: KeyboardEvent) => {
+      const mods = core.pointer.getState().mods;
+      const metaKey = e.metaKey || e.ctrlKey;
+      if (mods.metaKey !== metaKey || mods.altKey !== e.altKey) core.pointer.setState({ mods: { metaKey, altKey: e.altKey } });
     };
 
     const onPointerLeave = () => {
@@ -351,6 +359,8 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
     el.addEventListener('contextmenu', onContextMenu);
     el.addEventListener('dragover', onDragOver);
     el.addEventListener('drop', onDrop);
+    window.addEventListener('keydown', onModifierKey, true);
+    window.addEventListener('keyup', onModifierKey, true);
     return () => {
       if (gesture) core.interaction.cancel?.();
       if (cursorTimer) clearTimeout(cursorTimer);
@@ -365,6 +375,8 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
       el.removeEventListener('contextmenu', onContextMenu);
       el.removeEventListener('dragover', onDragOver);
       el.removeEventListener('drop', onDrop);
+      window.removeEventListener('keydown', onModifierKey, true);
+      window.removeEventListener('keyup', onModifierKey, true);
     };
   }, [core]);
 

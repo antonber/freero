@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { snapMove } from '../geometry/snap';
+import { toolGhostAt } from '../interaction/toolDispatch';
 import type { ElementDefinition, ToolDefinition } from '../api';
 import type { EngineCore } from '../runtime/core';
 import { boxDef, bundle, click, drag, makeCore } from './harness';
@@ -110,5 +111,16 @@ describe('grid snapping for creation tools', () => {
     expect(last()).toMatchObject({ x: 57, y: 83 });
     click(core, { x: 57, y: 83 }, { tool: 'place', alt: true });
     expect(last()).toMatchObject({ x: 7, y: 33 });
+  });
+
+  it("a creation tool's hover ghost sits exactly where the click puts the item, with and without Alt", () => {
+    setup();
+    core.editor.setTool('place');
+    for (const altKey of [false, true]) {
+      core.pointer.setState({ world: { x: 57, y: 83 }, inside: true, mods: { metaKey: false, altKey } });
+      const ghost = toolGhostAt(core, { w: 100, h: 100 });
+      click(core, { x: 57, y: 83 }, { tool: 'place', alt: altKey });
+      expect(ghost).toEqual({ x: last().x, y: last().y });
+    }
   });
 });

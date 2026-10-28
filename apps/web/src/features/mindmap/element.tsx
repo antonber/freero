@@ -180,7 +180,14 @@ export default defineElement({
   // A selected node owns Enter (add a sibling), Delete (remove branches, keep keyboard flow on the
   // parent), the arrows (walk the tree: parent / children / siblings), Alt+↑/↓ (reorder siblings)
   // and Space (collapse / expand). Tab (add child) and Shift+Tab (promote) are commands, so they
-  // also work while typing.
+  // also work while typing. `keys` lists them in the shortcut sheet: keep the two in step.
+  keys: [
+    { shortcuts: ['arrowleft', 'arrowright', 'arrowup', 'arrowdown'], label: 'Go to the parent, a child or a sibling topic', minRole: 'viewer' },
+    { shortcuts: ['enter'], label: 'Add a sibling topic' },
+    { shortcuts: ['alt+arrowup', 'alt+arrowdown'], label: 'Move a topic up or down among its siblings' },
+    { shortcuts: ['space'], label: 'Collapse or expand a branch' },
+    { shortcuts: ['delete', 'backspace'], label: 'Delete a topic and its branch' },
+  ],
   onKeyDown(e, { editor, selection }) {
     if (e.ctrlKey || e.metaKey) return false;
     const n = selectedNode(editor);

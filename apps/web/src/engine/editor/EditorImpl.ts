@@ -8,6 +8,7 @@ import type {
   Editor,
   EditorEvent,
   ElementDefinition,
+  ElementLayer,
   ElementPatch,
   ElementsSnapshot,
   FitOptions,
@@ -47,8 +48,19 @@ import { applyFormatToHtml, formatStateOfHtml } from '../text/formatHtml';
 import { EMPTY_FORMAT_STATE, type FormatCommand, type TextFormatState } from '../text/session';
 import { richTextToPlain } from '../text/sanitize';
 import { runFollowers } from './followers';
+import { insideHiddenContainer } from './layers';
 import { listShortcuts } from '../runtime/shortcutList';
-import { createArrangeState, hasArrangers, runArrangers, type ArrangeState } from './arrange';
+import {
+  CONFLICT_WINDOW_MS,
+  FALLBACK_MS,
+  REMOTE_SETTLE_MS,
+  createArrangeState,
+  hasArrangers,
+  outOfLayout,
+  rearrange,
+  runArrangers,
+  type ArrangeState,
+} from './arrange';
 
 const EMPTY_OPTIONS = Object.freeze({}) as Record<string, unknown>;
 const CAMERA_ANIM_MS = 320;
@@ -75,8 +87,14 @@ export class EditorImpl implements Editor {
     arrange: ArrangeState;
     /** A font re-measure waits for the next local change (redo steps existed): see renormalizeMeasured(). */
     remeasurePending: boolean;
-  } = { collections: new Map(), camAnim: null, camTarget: null, lastPaste: null, lastDenied: 0, editingGesture: false, movingTimer: null, userCamera: 0, arrange: createArrangeState(), remeasurePending: false };
+    /** New elements matching this go to the private layer (setPrivatePlacement). */
+    privateRule: ((el: BoardElement) => boolean) | null;
+  } = { collections: new Map(), camAnim: null, camTarget: null, lastPaste: null, lastDenied: 0, editingGesture: false, movingTimer: null, userCamera: 0, arrange: createArrangeState(), remeasurePending: false, privateRule: null };
 
+  /** The private-mode placement rule (read by the engine's layer placement). */
+  getPrivateRule(): ((el: BoardElement) => boolean) | null {
+    return this.shared.privateRule;
+  }
   /**
    * A local change wrote/removed `ids` (called inside its store transaction): containers with
    * `arrange` re-lay out now, in that transaction, or when the open gesture / outermost
@@ -99,6 +117,42 @@ export class EditorImpl implements Editor {
 
   private flushArrange(): void {
     runArrangers(this.core, this.shared.arrange, (patches) => this.updateMany(patches));
+  }
+
+  /**
+   * Someone else (a peer, or undo/redo) changed `ids`. If this client laid out a container just
+   * before, the merge may have left it out of layout (two drops into one column at once): look
+   * once the remote changes settle. See editor/arrange.ts for who re-lays out.
+   */
+  afterForeignChange(ids: string[]): void {
+    const state = this.shared.arrange;
+    if (!state.recent.size) return;
+    const now = Date.now();
+    for (const [id, at] of state.recent) if (now - at > CONFLICT_WINDOW_MS) state.recent.delete(id);
+    if (!state.recent.size) return;
+    for (const id of ids) state.remote.add(id);
+    if (state.remoteTimer) clearTimeout(state.remoteTimer);
+    state.remoteTimer = setTimeout(() => this.settleRemote(new Set(state.recent.keys()), false), REMOTE_SETTLE_MS);
+  }
+
+  private settleRemote(containers: ReadonlySet<string>, fallback: boolean): void {
+    const state = this.shared.arrange;
+    const store = this.core.store;
+    if (!fallback) state.remoteTimer = null;
+    if (store.isDestroyed || !this.can('editor')) return;
+    const touched = new Set(state.remote);
+    if (!fallback) state.remote.clear();
+    // The user is mid-drag or mid-transaction: their own pass at its end lays everything out.
+    if (store.inGesture() || state.depth) return;
+    const broken = new Set(outOfLayout(this.core, containers, touched));
+    if (!broken.size) return;
+    // One writer: the highest client id among this one and the writers of the remote changes.
+    if (!fallback && [...touched].some((id) => store.writtenByHigherClient(id))) {
+      setTimeout(() => this.settleRemote(broken, true), FALLBACK_MS);
+      return;
+    }
+    const write = () => rearrange(this.core, state, broken, touched, (patches) => this.updateMany(patches));
+    if (!store.transactDerived(write)) store.transactSilently(write);
   }
 
   /**
@@ -173,10 +227,15 @@ export class EditorImpl implements Editor {
     return this.core.registry.elements.get(type)?.feature ?? 'engine';
   }
 
-  /** True when the element's definition says it isn't on the board right now (ElementDefinition.hidden). */
+  /**
+   * True when the element isn't on the board right now: its definition says so
+   * (ElementDefinition.hidden), or it sits in a container that hides its contents and this user
+   * may not see them (only while the engine moves it out of the shared doc; see editor/layers.ts).
+   */
   isOffBoard(el: BoardElement): boolean {
     const reg = this.core.registry.elements.get(el.type);
-    return !!reg?.def.hidden && !!reg.def.hidden(el, this.core.scoped(reg.feature));
+    if (reg?.def.hidden && reg.def.hidden(el, this.core.scoped(reg.feature))) return true;
+    return this.core.registry.hidesContents && !this.can('editor') && insideHiddenContainer(this.core, el);
   }
 
   /**
@@ -218,7 +277,7 @@ export class EditorImpl implements Editor {
   /** Elements in render order without hidden ones (what hit tests, marquee, bounds, culling see). */
   getVisibleElements(): BoardElement[] {
     const all = this.getElements();
-    if (!this.core.ui.getState().viewHidden.size && ![...this.core.registry.elements.values()].some((r) => r.def.hidden)) return all;
+    if (!this.core.ui.getState().viewHidden.size && !this.core.registry.hidesContents && ![...this.core.registry.elements.values()].some((r) => r.def.hidden)) return all;
     return all.filter((el) => !this.isHidden(el));
   }
 
@@ -671,7 +730,7 @@ export class EditorImpl implements Editor {
     const text = elements
       .map((el) => {
         const def = this.getDefinition(el.type);
-        if (def?.toPlainText) return def.toPlainText(el);
+        if (def?.toPlainText) return def.toPlainText(el, this);
         const field = def?.textField;
         return field ? richTextToPlain(String((el as unknown as Record<string, unknown>)[field] ?? '')) : '';
       })
@@ -1262,6 +1321,45 @@ export class EditorImpl implements Editor {
       this.shared.collections.set(key, c);
     }
     return c as Collection<T>;
+  }
+
+  privateCollection<T>(name: string): Collection<T> {
+    const key = `${this.scope}\u0000private\u0000${name}`;
+    let c = this.shared.collections.get(key);
+    if (!c) {
+      c = createCollection<unknown>(
+        this.core.store,
+        name,
+        this.scope,
+        {
+          ownerOf: (n) => this.core.registry.collectionOwners.get(n),
+          // The server accepts private-layer writes from owners/editors only.
+          canWrite: () => this.guardWrite(),
+        },
+        'private',
+      );
+      this.shared.collections.set(key, c);
+    }
+    return c as Collection<T>;
+  }
+
+  // ------------------------------------------------------------------ board layers
+  layerOf(id: string): ElementLayer | null {
+    return this.core.store.layerOf(id);
+  }
+
+  setPrivatePlacement(rule: ((el: BoardElement) => boolean) | null): void {
+    this.shared.privateRule = rule;
+  }
+
+  revealPrivate(collection: string, opts?: { prefix?: string; mine?: boolean }): void {
+    if (!this.guardWrite()) return;
+    this.core.store.runLayerOp({ type: 'reveal', collection, ...(opts?.prefix !== undefined ? { prefix: opts.prefix } : {}), ...(opts?.mine ? { mine: true } : {}) });
+  }
+
+  discardPrivate(collection: string, opts?: { prefix?: string; mine?: boolean }): void {
+    if (!this.guardWrite()) return;
+    this.core.store.runLayerOp({ type: 'discard', collection, ...(opts?.prefix !== undefined ? { prefix: opts.prefix } : {}), ...(opts?.mine ? { mine: true } : {}) });
   }
 
   // ------------------------------------------------------------------ presence

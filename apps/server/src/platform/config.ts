@@ -1,6 +1,7 @@
 // The one typed, validated configuration, read from the environment once by main.ts.
 // Every variable is documented in docs/configuration.md (and .env.example). Invalid values fail in
 // every environment; missing production requirements fail at startup with the full list.
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,7 +18,10 @@ export type RateLimitName =
   | 'remoteImage'
   | 'boardCreate'
   | 'templateSave'
-  | 'wsConnect';
+  | 'version'
+  | 'wsConnect'
+  | 'twoFactor'
+  | 'oidc';
 
 /** `limit` hits per `windowMs`; `null` = not limited. */
 export type RateLimitRule = { limit: number; windowMs: number } | null;
@@ -31,6 +35,26 @@ export interface S3Config {
   /** Public base URL of the bucket; when set, raster uploads are served by redirect to it. */
   publicUrl: string | null;
   forcePathStyle: boolean;
+}
+
+/**
+ * A "Sign in with …" provider: any OpenID Connect issuer (authorization code + PKCE). Google and
+ * Microsoft are configured from OIDC_GOOGLE_* / OIDC_MICROSOFT_*; workspace SSO reuses the shape.
+ */
+export interface OidcProviderConfig {
+  /** Stable id used in URLs and stored on identities ('google', 'microsoft'). */
+  id: string;
+  /** Shown on the button ("Continue with Google"). */
+  label: string;
+  /** Issuer URL; its /.well-known/openid-configuration is fetched on first use. */
+  issuer: string;
+  clientId: string;
+  clientSecret: string;
+  /**
+   * Boolean id-token claims that, when true, count as the provider vouching for the email address
+   * (besides the standard `email_verified`). Microsoft: `xms_edov` (an optional claim).
+   */
+  verifiedEmailClaims: string[];
 }
 
 export interface Config {
@@ -80,6 +104,10 @@ export interface Config {
   /** How often each instance looks for accounts due to be purged. */
   accountPurgeIntervalMs: number;
   rateLimits: Record<RateLimitName, RateLimitRule>;
+  /** Configured sign-in providers (each needs its client id AND secret); empty = password only. */
+  oidcProviders: OidcProviderConfig[];
+  /** A MaxMind-format (.mmdb) GeoLite2/GeoIP2 City or Country database for session locations, or null. */
+  geoipDbPath: string | null;
 }
 
 export class ConfigError extends Error {
@@ -107,7 +135,10 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   remoteImage: '200/10m', // per user: images the server fetches from a URL (import + export)
   boardCreate: '100/1h', // per user (create + duplicate)
   templateSave: '60/1h', // per user (saving a board or selection as a template)
+  version: '60/1h', // per user (naming or restoring a board version: each keeps a full copy)
   wsConnect: '200/1m', // per IP and per user
+  twoFactor: '10/15m', // two-factor codes per IP and per account (sign-in second step, enrolment, disabling)
+  oidc: '60/10m', // "Sign in with …" starts and callbacks per IP
 };
 
 const ENV_NAME: Record<RateLimitName, string> = {
@@ -122,8 +153,24 @@ const ENV_NAME: Record<RateLimitName, string> = {
   remoteImage: 'RATE_LIMIT_REMOTE_IMAGE',
   boardCreate: 'RATE_LIMIT_BOARD_CREATE',
   templateSave: 'RATE_LIMIT_TEMPLATE_SAVE',
+  version: 'RATE_LIMIT_VERSION',
   wsConnect: 'RATE_LIMIT_WS_CONNECT',
+  twoFactor: 'RATE_LIMIT_TWO_FACTOR',
+  oidc: 'RATE_LIMIT_OIDC',
 };
+
+/** The built-in providers: env prefix, button label, default issuer, extra verified-email claims. */
+const OIDC_PROVIDERS = [
+  { id: 'google', env: 'OIDC_GOOGLE', label: 'Google', issuer: 'https://accounts.google.com', verifiedEmailClaims: [] },
+  {
+    id: 'microsoft',
+    env: 'OIDC_MICROSOFT',
+    label: 'Microsoft',
+    // Multi-tenant: work/school accounts of any organization and personal Microsoft accounts.
+    issuer: 'https://login.microsoftonline.com/common/v2.0',
+    verifiedEmailClaims: ['xms_edov'],
+  },
+] as const;
 
 const UNIT_MS: Record<string, number> = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
 
@@ -231,6 +278,25 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     rateLimits[name] = allOff ? null : (rule ?? parseRateLimit(RATE_LIMIT_DEFAULTS[name])!);
   }
 
+  // Sign-in providers: client id and secret together, or neither (then the button is hidden).
+  const oidcProviders: OidcProviderConfig[] = [];
+  for (const p of OIDC_PROVIDERS) {
+    const clientId = str(`${p.env}_CLIENT_ID`);
+    const clientSecret = str(`${p.env}_CLIENT_SECRET`);
+    if (!clientId && !clientSecret) continue;
+    if (!clientId || !clientSecret) {
+      problems.push(`${p.label} sign-in is partly configured: set both ${p.env}_CLIENT_ID and ${p.env}_CLIENT_SECRET`);
+      continue;
+    }
+    // Plain http issuers only outside production (a local test identity provider).
+    const issuer = url(`${p.env}_ISSUER`, production ? ['https:'] : ['https:', 'http:']) ?? p.issuer;
+    oidcProviders.push({ id: p.id, label: p.label, issuer, clientId, clientSecret, verifiedEmailClaims: [...p.verifiedEmailClaims] });
+  }
+
+  const geoipDbPath = str('GEOIP_DB_PATH') === null ? null : path.resolve(str('GEOIP_DB_PATH')!);
+  if (geoipDbPath !== null && !fs.existsSync(geoipDbPath))
+    problems.push(`GEOIP_DB_PATH points to ${geoipDbPath}, which does not exist (download a GeoLite2 City or Country .mmdb there, or unset it)`);
+
   const metricsPort = str('METRICS_PORT') === null ? null : int('METRICS_PORT', 0, 1, 65535);
 
   const config: Config = {
@@ -267,6 +333,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     accountDeletionGraceMs: int('ACCOUNT_DELETION_GRACE_DAYS', 14, 0, 365) * 86_400_000,
     accountPurgeIntervalMs: int('ACCOUNT_PURGE_INTERVAL_SECONDS', 3600, 1, 7 * 86_400) * 1000,
     rateLimits,
+    oidcProviders,
+    geoipDbPath,
   };
 
   if (production) {
