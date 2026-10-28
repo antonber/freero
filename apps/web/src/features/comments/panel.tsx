@@ -1,7 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Check, MessageCircle, MessageSquareText, Unlink } from 'lucide-react';
 import type { BoardElement, CommentThread } from '@freero/shared';
-import { definePanel, useCamera, useCollection, useDock, useElements, useRole, type Editor } from '@engine';
+import { DockHeader, definePanel, useCamera, useCollection, useDock, useElements, useRole, type Editor } from '@engine';
 import { Avatar, IconButton, Popover, SegmentedControl, Toggle, type Box } from '@ui';
 import { assembleThreads, isUnread, latestActivity, listThreads, relativeTime, threadPoint, type ThreadFilter } from './lib/model';
 import { COLLECTION, PANEL_ID, detachThread, focusThread, markSeen, session, setUi, useCommentsUi, watchLegacyThreads } from './lib/state';
@@ -292,11 +292,11 @@ function CommentsDock({ editor }: { editor: Editor }) {
   const canWrite = editor.can('commenter');
   return (
     <div className="fr-cm-dock">
-      <div className="fr-cm-dock__head">
+      <DockHeader className="fr-cm-dock__head">
         <h2>Comments</h2>
         <SegmentedControl<ThreadFilter> size="sm" value={filter} onChange={(v) => setUi(editor, { filter: v })} options={FILTERS} aria-label="Filter comments" />
         <Toggle size="sm" label="Show resolved on board" checked={showResolved} onChange={(v) => setUi(editor, { showResolved: v })} />
-      </div>
+      </DockHeader>
       {list.length ? (
         <div className="fr-cm-dock__list">
           {list.map((t) => (

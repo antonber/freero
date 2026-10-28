@@ -405,15 +405,35 @@ button.fr-title:hover {
   animation: fr-dock-in 180ms var(--fr-ease);
 }
 
+/* The header strip never scrolls: the close button and the panel's own header (<DockHeader>) sit
+   in it, and the panel's content scrolls below it, never under the button. */
+.fr-dock__head {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  min-height: 48px;
+  border-bottom: 1px solid transparent;
+  transition: border-color 120ms var(--fr-ease);
+}
+
+.fr-dock__head.is-scrolled {
+  border-bottom-color: var(--fr-line);
+}
+
+.fr-dock__headslot {
+  flex: 1;
+  min-width: 0;
+}
+
 .fr-dock__close {
-  position: absolute;
-  right: 8px;
-  top: 8px;
-  z-index: 1;
+  flex: none;
+  margin: 8px 8px 0 0;
 }
 
 .fr-dock__body {
   flex: 1;
+  min-height: 0;
   overflow: auto;
 }
 

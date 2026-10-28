@@ -124,6 +124,9 @@ engine and features use `editor.host`. Features never import the REST client or 
 - Contextual format toolbar floats above the selection (`format.tsx` sections + engine's common
   controls: z-order, lock, link, more ⋯). Right-click menu: engine items + `menus: ['context']`.
 - `dock-right` panels render in a right side panel opened with `editor.openDock(id)`.
+  The dock has a fixed header strip with its close button; a panel puts its own header (title,
+  filters) there by wrapping it in `<DockHeader>` (`@engine`), and its content scrolls below the
+  strip, never under the button. Panels never reserve room for the close button themselves.
 - `dialog` panels mount only while opened with `editor.openPanel(id, props?)` (one at a time,
   also while the chrome is hidden); the component gets `props` and closes with
   `editor.closePanel(id)`. Commands that open feature UI (export, start voting) use this — never a
