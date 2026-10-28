@@ -103,6 +103,8 @@ export interface Admission {
   identity: AwarenessIdentity;
   /** Set for guests: the only author name their comment messages may carry. */
   authorName?: string;
+  /** Accounts: the names their comment messages may carry (current and previous, KAI-187). */
+  authorNames?: string[];
 }
 export interface Refusal {
   code: number;
@@ -117,6 +119,11 @@ interface Conn {
   role: Role;
   /** Guests: the author name their comments must carry (commentRules.ts). */
   authorName: string | undefined;
+  /**
+   * The names a comment message of theirs may carry (commentRules.ts, KAI-187): a guest's one name;
+   * an account's profile name at admission plus every name it had since (refreshes, renames).
+   */
+  authorNames: Set<string>;
   identity: { value: AwarenessIdentity; at: number; loading: boolean };
   /** Awareness client ids announced over this socket (removed on close). */
   awarenessIds: Set<number>;
@@ -523,6 +530,7 @@ class Room {
       sessionKey: a.sessionKey,
       role: a.role,
       authorName: a.authorName,
+      authorNames: new Set(a.authorName !== undefined ? [a.authorName] : [a.identity.name, ...(a.authorNames ?? [])]),
       identity: { value: a.identity, at: Date.now(), loading: false },
       awarenessIds: new Set(),
       lastResync: 0,
@@ -608,7 +616,7 @@ class Room {
   }
 
   private onUpdate(conn: Conn, update: Uint8Array, syncType: number): void {
-    if (decideUpdate(conn.role, this.doc, update, conn.userId, conn.authorName) === 'apply') {
+    if (decideUpdate(conn.role, this.doc, update, conn.userId, conn.authorNames) === 'apply') {
       Y.applyUpdate(this.doc, update, conn.ws);
       // Editing over the socket is activity: a workspace's idle limit must not sign out someone at work.
       if (syncType === syncProtocol.messageYjsUpdate) noteSessionActivity(conn.sessionKey);
@@ -639,7 +647,7 @@ class Room {
       id.loading = true;
       getUser(conn.userId)
         .then((u) => {
-          if (u) id.value = { id: u.id, name: u.name, color: u.color, avatarUrl: u.avatarUrl };
+          if (u) setIdentity(conn, { id: u.id, name: u.name, color: u.color, avatarUrl: u.avatarUrl });
         })
         .catch((err) => logError(`realtime: could not refresh the profile of ${conn.userId}`, err))
         .finally(() => {
@@ -648,6 +656,11 @@ class Room {
         });
     }
     return id.value;
+  }
+
+  /** The user's profile changed (a rename): their sockets here use it from now on. */
+  profileChanged(userId: string, identity: AwarenessIdentity): void {
+    for (const conn of this.conns.values()) if (conn.userId === userId) setIdentity(conn, identity);
   }
 
   /** Closes every socket opened with a session that just ended (logout). */
@@ -959,21 +972,49 @@ export async function admitSocket(
   }
 }
 
+/** A socket's account as it is now; the name joins those its comments may carry (KAI-187). */
+function setIdentity(conn: Conn, identity: AwarenessIdentity): void {
+  conn.identity.value = identity;
+  conn.identity.at = Date.now();
+  if (conn.authorName === undefined) conn.authorNames.add(identity.name);
+}
+
+async function profileChangedHere(userId: string): Promise<void> {
+  if (![...rooms.values()].some((r) => [...r.conns.values()].some((c) => c.userId === userId))) return;
+  const u = await getUser(userId);
+  if (!u) return;
+  for (const room of rooms.values()) room.profileChanged(userId, { id: u.id, name: u.name, color: u.color, avatarUrl: u.avatarUrl });
+}
+
+/**
+ * A user changed their profile (auth.onProfileChanged): their board sockets on every instance take
+ * the new name and colour at once — presence shows it, and comments written under the new name
+ * are accepted (commentRules.ts) — instead of within IDENTITY_TTL_MS. Resolves once applied here.
+ */
+export async function profileChanged(userId: string): Promise<void> {
+  toAllInstances({ type: 'refresh-profile', userId });
+  await profileChangedHere(userId);
+}
+
 function toAllInstances(msg: ControlMessage): void {
   if (!isShared()) return;
   peerMessages.inc({ direction: 'out' });
   publish(CONTROL_CHANNEL, encodeControl(msg));
 }
 
-function endSessionHere(sessionKey: string): void {
+/**
+ * A session ended: its board sockets on THIS instance close with 4401 in every room. auth calls it
+ * on every instance (onSessionEnd: its own broadcast and its periodic re-check, KAI-146).
+ */
+export function endSessionSockets(sessionKey: string): void {
   for (const room of rooms.values()) room.endSession(sessionKey);
   for (const p of admitting) if (p.sessionKey === sessionKey) p.ws.close(4401, 'Signed out');
 }
 
-/** A session ended (logout): its board sockets close with 4401 in every room, on every instance. */
-export function endSessionSockets(sessionKey: string): void {
-  endSessionHere(sessionKey);
-  toAllInstances({ type: 'end-session', sessionKey });
+/** The sessions behind this instance's board sockets, joined or being admitted (auth re-checks them). */
+export function* liveSessionKeys(): Iterable<string> {
+  for (const room of rooms.values()) for (const conn of room.conns.values()) yield conn.sessionKey;
+  for (const p of admitting) if (p.sessionKey) yield p.sessionKey;
 }
 
 async function refreshAccessHere(boardId: string): Promise<void> {
@@ -998,7 +1039,9 @@ export function listenToOtherInstances(): () => void {
         const { from, msg } = decodeControl(data);
         if (from === INSTANCE_ID) return;
         peerMessages.inc({ direction: 'in' });
-        if (msg.type === 'end-session') endSessionHere(msg.sessionKey);
+        // Sent only by instances of an older release (auth announces ended sessions now).
+        if (msg.type === 'end-session') endSessionSockets(msg.sessionKey);
+        else if (msg.type === 'refresh-profile') void profileChangedHere(msg.userId).catch((err) => logError('realtime: could not refresh a profile', err));
         else if (msg.type === 'refresh-access') void refreshAccessHere(msg.boardId);
         else void closeBoardHere(msg.boardId, msg.type === 'remove-board' ? 'removed' : 'deleted');
       } catch (err) {

@@ -982,6 +982,8 @@ export type ModerationActionKind =
   | 'board.restore_link'
   | 'board.take_down'
   | 'board.restore'
+  /** Deletes a taken-down board for good: ends its legal hold (KAI-178). */
+  | 'board.delete'
   | 'upload.remove'
   | 'upload.restore'
   | 'upload.purge'
@@ -1000,14 +1002,25 @@ export interface ModerationActionRequest {
   itemId?: string;
   /** For upload actions: the board the file was reported on (its owner is told too). */
   boardId?: string;
+  /**
+   * For 'user.suspend' (KAI-180): also take down, or turn off the link of, every board the account
+   * owns. Each board is recorded as its own action; lifting the suspension undoes them all.
+   */
+  boards?: SuspensionBoards;
 }
+export type SuspensionBoards = 'take_down' | 'disable_link';
 export interface ModerationActionRecord {
   id: string;
   action: ModerationActionKind;
   targetId: string;
   boardId: string | null;
   subjectUserId: string | null;
+  /** Who it was about, as they were then (kept after their account is deleted, KAI-178). */
+  subject: { name: string; email: string } | null;
+  /** Null: Freero did it itself (a kept copy's retention ended), or the operator's account is gone. */
   operator: { id: string; name: string } | null;
+  /** The action this one was part of (a board a suspension took down with it, KAI-180). */
+  parentId: string | null;
   reason: ReportReason;
   statement: string;
   note: string;
@@ -1168,6 +1181,7 @@ export const AUDIT_ACTIONS = {
   'moderation.board.restore_link': 'Freero turned a board’s link back on (moderation)',
   'moderation.board.take_down': 'Freero took a board down (moderation)',
   'moderation.board.restore': 'Freero restored a board (moderation)',
+  'moderation.board.delete': 'Freero deleted a taken-down board for good (moderation)',
   'moderation.upload.remove': 'Freero removed a file (moderation)',
   'moderation.upload.restore': 'Freero restored a file (moderation)',
   'moderation.upload.purge': 'Freero purged a removed file (moderation)',

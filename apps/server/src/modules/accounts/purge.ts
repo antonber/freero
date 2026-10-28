@@ -7,17 +7,20 @@
 //   2. on boards they could comment on (member or opened), their comments become "Deleted user";
 //   3. their avatar file is deleted;
 //   4. the account row goes; sessions, tokens, memberships, stars, opens, invites, upload rows and
-//      the personal workspace cascade.
+//      the personal workspace cascade — except files an operator removed, which outlive it.
 // Before step 1 the account is re-checked, so a restore that lands first keeps everything.
+// Legal hold (KAI-178): while the account owns a board an operator took down (or is the last
+// member of a team holding one), the purge waits after the hand-over — nothing is deleted — until
+// an operator restores the board or deletes it for good; the account stays signed out meanwhile.
 // Other files they uploaded are not deleted here: images they placed on other people's boards stay
 // part of those boards, and files nothing references any more are removed by the uploads sweep.
 import { runExclusive } from '../../platform/jobs';
 import { log, logError } from '../../platform/log';
 import { accountsDueForPurge, deleteAccountIfDue, getUser, isDueForPurge } from '../auth/index';
-import { boardIdsOpenedBy, deleteBoardsOwnedBy } from '../boards/index';
+import { boardIdsOpenedBy, countHeldBoards, deleteBoardsOwnedBy } from '../boards/index';
 import { membershipsOf } from '../members/index';
 import { renameCommentAuthor } from '../realtime/index';
-import { deleteUpload } from '../uploads/index';
+import { deleteUpload, keepRemovedUploadsOf } from '../uploads/index';
 import { auditScopeOf, handOverTeamWorkspaces } from '../workspaces/index';
 import { recordAuditQuietly } from '../audit/index';
 
@@ -25,13 +28,21 @@ export const PURGE_LOCK_KEY = 7_202_610_281; // arbitrary, constant across relea
 export const DELETED_USER_NAME = 'Deleted user';
 export const DELETED_USER_COLOR = '#868E96';
 
-/** Purges one account (if still due). Safe to repeat. */
-export async function purgeAccount(userId: string, now: number): Promise<boolean> {
+/**
+ * Purges one account (if still due). Safe to repeat. 'held': it waits for boards held for
+ * moderation review (see above).
+ */
+export async function purgeAccount(userId: string, now: number): Promise<boolean | 'held'> {
   if (!(await isDueForPurge(userId, now))) return false;
   const commentedOn = new Set([...(await membershipsOf(userId)).keys(), ...(await boardIdsOpenedBy(userId))]);
   const teams = await auditScopeOf(userId); // before the memberships go with the account
   const email = (await getUser(userId))?.email ?? null;
-  await handOverTeamWorkspaces(userId);
+  const { held: heldTeams } = await handOverTeamWorkspaces(userId);
+  const held = heldTeams + (await countHeldBoards({ ownerId: userId }));
+  if (held) {
+    log(`accounts: purge of ${userId} waits for ${held} board(s) or workspace(s) held for moderation review`);
+    return 'held';
+  }
   const deletedBoards = await deleteBoardsOwnedBy(userId);
   for (const boardId of commentedOn) {
     try {
@@ -42,6 +53,7 @@ export async function purgeAccount(userId: string, now: number): Promise<boolean
     }
   }
   await deleteUpload((await getUser(userId))?.avatarUrl);
+  await keepRemovedUploadsOf(userId);
   const deleted = await deleteAccountIfDue(userId, now);
   if (deleted) {
     log(`accounts: purged account ${userId} (${deletedBoards} boards)`);
@@ -63,13 +75,18 @@ export function purgeDueAccounts(now = Date.now()): Promise<number | null> {
 /** The purge itself; the caller holds PURGE_LOCK_KEY (purgeDueAccounts, or the scheduled job). */
 export async function purgeDueLocked(now = Date.now()): Promise<number> {
   let purged = 0;
+  const held: string[] = []; // waiting for a review: never block the accounts behind them
   for (;;) {
-    const due = await accountsDueForPurge(now, 50);
+    const due = await accountsDueForPurge(now, 50, held);
     if (due.length === 0) return purged;
     let progressed = false;
     for (const u of due) {
       try {
-        if (await purgeAccount(u.id, now)) {
+        const done = await purgeAccount(u.id, now);
+        if (done === 'held') {
+          held.push(u.id);
+          progressed = true;
+        } else if (done) {
           purged++;
           progressed = true;
         }

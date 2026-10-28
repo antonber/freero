@@ -5,6 +5,7 @@ import { getConfig } from '../../platform/config';
 import { badRequest, HttpError, parseCookies, unauthorized } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { logError } from '../../platform/log';
+import { publish, subscribe } from '../../platform/pubsub';
 import { clientIp } from '../../platform/rateLimit';
 import { setRequestUser } from '../../platform/requestContext';
 import { recordAuditQuietly, type AuditInput } from '../audit/index';
@@ -62,6 +63,7 @@ export async function createUser(
   const password = validatePassword(input.password);
   if (!name) throw badRequest('Please enter your name');
   if (name.length > 80) throw badRequest('Name is too long (max 80 characters)');
+  refuseGuestStyleName(name);
   if (await repo.findUserByEmail(email)) throw emailTaken(); // fast path; the unique index decides races
   return insertAccount({ name, email, passwordHash: await hashPassword(password), emailVerified: opts.emailVerified ?? false });
 }
@@ -134,6 +136,7 @@ export async function updateProfile(userId: string, body: Record<string, unknown
   if (body.name !== undefined) {
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     if (!name || name.length > 80) throw badRequest('Name must be 1-80 characters');
+    refuseGuestStyleName(name);
     patch.name = name;
   }
   if (body.color !== undefined) {
@@ -147,7 +150,24 @@ export async function updateProfile(userId: string, body: Record<string, unknown
     patch.avatarUrl = v as string | null;
   }
   await repo.updateUserProfile(userId, patch);
+  // Open boards take the new profile before we answer: a comment under the new name is accepted.
+  await Promise.all(
+    [...profileListeners].map((fn) => Promise.resolve(fn(userId)).catch((e) => logError('auth: a profile listener failed', e))),
+  );
   return getAccount(userId);
+}
+
+const profileListeners = new Set<(userId: string) => Promise<void> | void>();
+
+/** Called after someone changed their profile (name, colour, photo); realtime refreshes their sockets. */
+export function onProfileChanged(fn: (userId: string) => Promise<void> | void): () => void {
+  profileListeners.add(fn);
+  return () => profileListeners.delete(fn);
+}
+
+/** Account names never look like a guest's ("Guest · …"), so nobody can pass for a guest (KAI-187). */
+function refuseGuestStyleName(name: string): void {
+  if (/^guest\s*[·•]/iu.test(name)) throw badRequest('Choose a name that doesn’t start with “Guest ·”');
 }
 
 export async function getAccount(userId: string): Promise<Account> {
@@ -189,19 +209,25 @@ export async function emailVerified(userId: string, email: string): Promise<void
 // ---- Sessions (the cookie has one writer: this module) ----
 
 const sessionEndListeners = new Set<(sessionKey: string) => void>();
+const SESSIONS_CHANNEL = 'freero:auth:sessions';
+/** This process, as seen by the others on SESSIONS_CHANNEL (its own messages come back to it). */
+const INSTANCE = newId(16);
 
 /**
- * Called on the instance that ended a session — logout, signed out from another device, password
- * reset or change, account deletion — with its opaque key (see sessionKeyFromCookieHeader).
- * Realtime listens here and closes that session's board sockets on every instance (its
- * 'end-session' control message): the one way to drop a session's live connections.
+ * Called with the opaque key (see sessionKeyFromCookieHeader) of every ended session, on EVERY
+ * instance: directly when it ended in this process (logout, signed out from another device,
+ * password reset or change, account deletion, suspension, a session policy), through
+ * SESSIONS_CHANNEL when another instance or the operator CLI ended it, and from
+ * recheckLiveSessions when it disappeared without telling anyone (SQL, expiry). Listeners close
+ * the session's live connections on THIS instance (realtime: board sockets; notifications: bells):
+ * the one way to drop a session's live connections.
  */
 export function onSessionEnd(fn: (sessionKey: string) => void): () => void {
   sessionEndListeners.add(fn);
   return () => sessionEndListeners.delete(fn);
 }
 
-export function sessionsEnded(keys: string[]): void {
+function endedHere(keys: Iterable<string>): void {
   for (const key of keys) {
     lastSeen.delete(key);
     for (const fn of sessionEndListeners) {
@@ -212,6 +238,61 @@ export function sessionsEnded(keys: string[]): void {
       }
     }
   }
+}
+
+/** Sessions this process deleted: their connections close here at once and on every other instance. */
+export function sessionsEnded(keys: string[]): void {
+  if (!keys.length) return;
+  endedHere(keys);
+  publish(SESSIONS_CHANNEL, new TextEncoder().encode(JSON.stringify({ from: INSTANCE, keys })));
+}
+
+/**
+ * Applies the sessions other processes ended (other instances; the operator CLI, which publishes
+ * when REDIS_URL is set) to this instance's connections. Returns the stop function (auth/init.ts).
+ */
+export function listenForEndedSessions(): () => void {
+  const sub = subscribe(SESSIONS_CHANNEL, {
+    message(data) {
+      try {
+        const m = JSON.parse(new TextDecoder().decode(data)) as { from?: unknown; keys?: unknown };
+        if (m.from === INSTANCE || !Array.isArray(m.keys)) return;
+        endedHere(m.keys.filter((k): k is string => typeof k === 'string'));
+      } catch (e) {
+        logError('auth: bad ended-sessions message', e);
+      }
+    },
+  });
+  return sub.close;
+}
+
+const liveSessionSources = new Set<() => Iterable<string>>();
+
+/**
+ * Registers the session keys behind this instance's open connections (realtime's board sockets,
+ * notifications' bells), so recheckLiveSessions can close those whose session is gone.
+ */
+export function trackLiveSessions(source: () => Iterable<string>): () => void {
+  liveSessionSources.add(source);
+  return () => liveSessionSources.delete(source);
+}
+
+/**
+ * Re-validates the sessions behind this instance's open connections against the database and
+ * ends, here, those that no longer sign anyone in — deleted where no listener ran (raw SQL, the
+ * CLI without Redis, a message lost in a Redis gap), expired, or of an account suspended or
+ * awaiting deletion: the rule a new socket is admitted by. Every instance runs it every
+ * SESSION_RECHECK_SECONDS (auth/init.ts), which bounds how long such a connection stays open.
+ * Returns how many sessions it ended.
+ */
+export async function recheckLiveSessions(now = Date.now()): Promise<number> {
+  const keys = new Set<string>();
+  for (const source of liveSessionSources) for (const key of source()) keys.add(key);
+  if (!keys.size) return 0;
+  const live = await repo.liveSessionKeys([...keys], now);
+  const gone = [...keys].filter((k) => !live.has(k));
+  endedHere(gone);
+  return gone.length;
 }
 
 // ---- Suspension (operators, through modules/moderation) ----

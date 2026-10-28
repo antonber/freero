@@ -2,15 +2,17 @@ import type { ServerContext } from '../../platform/context';
 import { logError } from '../../platform/log';
 import { checkRateLimit } from '../../platform/rateLimit';
 import type { WsRoute } from '../../platform/ws';
-import { onSessionEnd, sessionKeyFromCookieHeader, userFromCookieHeader } from '../auth/index';
-import { addSocket, closeAll, listen, sessionEnded } from './live';
+import { onSessionEnd, sessionKeyFromCookieHeader, trackLiveSessions, userFromCookieHeader } from '../auth/index';
+import { addSocket, closeAll, closeSession, listen, liveSessionKeys } from './live';
 
 /** /ws/notifications — JSON NotificationsLiveMessage pushes to the signed-in user's open tabs. */
 export default function notificationsWs(ctx: ServerContext): WsRoute {
   ctx.onShutdown(listen());
-  const stopWatchingSessions = onSessionEnd(sessionEnded);
+  const stopWatchingSessions = onSessionEnd(closeSession);
+  const stopTracking = trackLiveSessions(liveSessionKeys);
   ctx.onShutdown(() => {
     stopWatchingSessions();
+    stopTracking();
     closeAll();
   });
   return {

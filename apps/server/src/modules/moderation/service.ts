@@ -22,6 +22,7 @@ import {
   type ModerationItem,
   type ReportReason,
   type ReportTargetKind,
+  type SuspensionBoards,
   type User,
 } from '@freero/shared';
 import { getConfig } from '../../platform/config';
@@ -34,6 +35,8 @@ import { findUserByEmail, getUsers, normalizeEmail, suspendedUserIds, suspendUse
 import {
   blockBoardLink,
   boardForModeration,
+  deleteTakenDownBoard,
+  liveBoardsOwnedBy,
   reportableBoard,
   restoreTakenDownBoard,
   takeDownBoard,
@@ -42,7 +45,7 @@ import {
 } from '../boards/index';
 import { notify } from '../notifications/index';
 import { snapshotBoardDoc } from '../realtime/index';
-import { purgeRemovedUpload, removeUpload, restoreUpload, uploadForModeration, uploadName } from '../uploads/index';
+import { keptCopiesRemovedBefore, purgeRemovedUpload, removeUpload, restoreUpload, uploadForModeration, uploadName } from '../uploads/index';
 import { alertOperators, isAdverse, sendActionNotice, sendAppealUpheld, sendReportOutcome } from './notices';
 import * as repo from './repo';
 
@@ -58,6 +61,7 @@ const ACTIONS: ModerationActionKind[] = [
   'board.restore_link',
   'board.take_down',
   'board.restore',
+  'board.delete',
   'upload.remove',
   'upload.restore',
   'upload.purge',
@@ -172,7 +176,9 @@ function presentAction(a: repo.ActionRow, users: Map<string, User>): ModerationA
     targetId: a.targetId,
     boardId: a.boardId,
     subjectUserId: a.subjectUserId,
+    subject: a.subjectEmail ? { name: a.subjectName ?? '', email: a.subjectEmail } : null,
     operator: op ? { id: op.id, name: op.name } : null,
+    parentId: a.parentId,
     reason: a.reason,
     statement: a.statement,
     note: a.note,
@@ -265,6 +271,7 @@ const nothingToDo: Record<ModerationActionKind, string> = {
   'board.restore_link': 'This board’s link sharing isn’t blocked.',
   'board.take_down': 'This board is already taken down.',
   'board.restore': 'This board isn’t taken down.',
+  'board.delete': 'Only a board that is taken down can be deleted for good, and this one isn’t (or it is gone already).',
   'upload.remove': 'This file is already removed.',
   'upload.restore': 'This file isn’t removed, or its kept copy was purged.',
   'upload.purge': 'This file isn’t removed, or its kept copy was purged already.',
@@ -289,7 +296,9 @@ async function execute(
           ? await unblockBoardLink(b.id)
           : kind === 'board.take_down'
             ? await takeDownBoard(b.id)
-            : await restoreTakenDownBoard(b.id);
+            : kind === 'board.delete'
+              ? await deleteTakenDownBoard(b.id)
+              : await restoreTakenDownBoard(b.id);
     return { changed, boardId: b.id, boardTitle: b.title, subjects: [b.ownerId], targetId: b.id };
   }
   if (kind.startsWith('upload.')) {
@@ -309,6 +318,47 @@ async function execute(
   return { changed, boardId: null, boardTitle: null, subjects: [targetId], targetId };
 }
 
+/** Records an action (append-only) and its platform audit event (`moderation.<action>`). */
+async function record_(a: {
+  action: ModerationActionKind;
+  targetId: string;
+  boardId: string | null;
+  subject: { id: string | null; name: string | null; email: string | null } | null;
+  operatorId: string | null;
+  reason: ReportReason;
+  statement: string;
+  note: string;
+  itemId: string | null;
+  parentId: string | null;
+}): Promise<repo.ActionRow> {
+  const row: repo.ActionRow = {
+    id: newId(16),
+    action: a.action,
+    targetId: a.targetId,
+    boardId: a.boardId,
+    subjectUserId: a.subject?.id ?? null,
+    subjectName: a.subject?.name ?? null,
+    subjectEmail: a.subject?.email ?? null,
+    operatorId: a.operatorId,
+    reason: a.reason,
+    statement: a.statement,
+    note: a.note,
+    itemId: a.itemId,
+    parentId: a.parentId,
+    createdAt: Date.now(),
+  };
+  await repo.insertAction(row);
+  log(`moderation: ${a.operatorId ?? 'freero'} ${a.action} ${a.targetId}`);
+  // The audit trail (KAI-48 stores these through platform/audit's sinks); never throws.
+  await audit({
+    action: `moderation.${a.action}`,
+    actor: a.operatorId ? { kind: 'user', userId: a.operatorId } : { kind: 'system' },
+    userId: row.subjectUserId ?? '',
+    detail: { actionId: row.id, targetId: row.targetId, boardId: row.boardId, reason: row.reason, item: a.itemId, parent: a.parentId },
+  });
+  return row;
+}
+
 /** Takes an action, records it, closes the queue item it answers and tells the people affected. */
 export async function act(operatorId: string, body: Record<string, unknown>): Promise<ModerationActionRecord> {
   const kind = body.action as ModerationActionKind;
@@ -321,39 +371,141 @@ export async function act(operatorId: string, body: Record<string, unknown>): Pr
   const note = text(body.note, 'note', MAX_STATEMENT);
   const itemId = typeof body.itemId === 'string' && body.itemId ? body.itemId : null;
   const boardHint = typeof body.boardId === 'string' && body.boardId ? body.boardId : null;
+  const boards = (body.boards ?? null) as SuspensionBoards | null;
+  if (boards !== null && (kind !== 'user.suspend' || (boards !== 'take_down' && boards !== 'disable_link')))
+    throw badRequest('boards (take_down or disable_link) only goes with user.suspend');
 
   const done = await execute(kind, targetId, operatorId, boardHint);
   if (!done.changed) throw new HttpError(409, nothingToDo[kind]);
-  const record: repo.ActionRow = {
-    id: newId(16),
+  const subjectUserId = done.subjects[0] ?? null;
+  const record = await record_({
     action: kind,
     targetId: done.targetId,
     boardId: done.boardId,
-    subjectUserId: done.subjects[0] ?? null,
+    // Who it is about, as they are now: the record keeps naming them after their account is gone.
+    subject: subjectUserId ? ((await getUsers([subjectUserId])).get(subjectUserId) ?? null) : null,
     operatorId,
     reason: body.reason,
     statement,
     note,
     itemId,
-    createdAt: Date.now(),
-  };
-  await repo.insertAction(record);
-  log(`moderation: ${operatorId} ${kind} ${done.targetId}`);
-  // The audit trail (KAI-48 stores these through platform/audit's sinks); never throws.
-  await audit({
-    action: `moderation.${kind}`,
-    actor: { kind: 'user', userId: operatorId },
-    userId: record.subjectUserId ?? '',
-    detail: { actionId: record.id, targetId: record.targetId, boardId: record.boardId, reason: record.reason, item: itemId },
+    parentId: null,
   });
+
+  // KAI-180: the account's boards go with the suspension, and come back when it is lifted.
+  let boardsChanged = 0;
+  if (kind === 'user.suspend' && boards) boardsChanged = await actOnBoardsOf(record, boards);
+  if (kind === 'user.restore') boardsChanged = await undoBoardsOfSuspension(record);
 
   if (itemId) {
     const item = await repo.resolveItem(itemId, 'actioned', operatorId, statement, record.createdAt);
     if (item?.kind === 'report') await answerReporter(item, true);
   }
-  await tellAffected(record, done.subjects, done.boardTitle);
+  const extra = !boardsChanged
+    ? undefined
+    : kind === 'user.restore'
+      ? `Your ${plural(boardsChanged)} that were removed or closed to their link with the suspension are back as they were.`
+      : boards === 'take_down'
+        ? `Your ${plural(boardsChanged)} were removed for review with it.`
+        : `Link sharing was turned off for your ${plural(boardsChanged)} with it.`;
+  await tellAffected(record, done.subjects, done.boardTitle, extra);
   const users = (await people([operatorId])).users;
   return presentAction(record, users);
+}
+
+const plural = (n: number) => (n === 1 ? 'board' : `${n} boards`);
+
+/**
+ * Takes down (or turns off the link of) every board the suspended account owns that is in service,
+ * each recorded as its own action under the suspension (`parentId`), so lifting it undoes exactly
+ * these. Boards already taken down / link-blocked are left out (they have their own decisions).
+ * The person hears about them in the suspension's notice, not once per board. Returns how many.
+ */
+async function actOnBoardsOf(suspension: repo.ActionRow, mode: SuspensionBoards): Promise<number> {
+  const subject = (await getUsers([suspension.targetId])).get(suspension.targetId) ?? null;
+  let n = 0;
+  for (const b of await liveBoardsOwnedBy(suspension.targetId)) {
+    if (mode === 'disable_link' && !b.linkShared) continue;
+    const changed = mode === 'take_down' ? await takeDownBoard(b.id) : await blockBoardLink(b.id);
+    if (!changed) continue;
+    n++;
+    await record_({
+      action: mode === 'take_down' ? 'board.take_down' : 'board.disable_link',
+      targetId: b.id,
+      boardId: b.id,
+      subject,
+      operatorId: suspension.operatorId,
+      reason: suspension.reason,
+      statement: suspension.statement,
+      note: suspension.note,
+      itemId: null,
+      parentId: suspension.id,
+    });
+  }
+  return n;
+}
+
+/**
+ * Lifting a suspension restores the boards it took down (or whose link it turned off) — those not
+ * restored or deleted since — each recorded under the lift. Returns how many came back.
+ */
+async function undoBoardsOfSuspension(lift: repo.ActionRow): Promise<number> {
+  const suspension = await repo.laterAction(lift.targetId, ['user.suspend'], 0);
+  if (!suspension) return 0;
+  const subject = (await getUsers([lift.targetId])).get(lift.targetId) ?? null;
+  let n = 0;
+  for (const child of await repo.childActions(suspension.id)) {
+    const undo = REVERSAL[child.action];
+    if (!undo || (await reversed(child))) continue;
+    const changed = undo === 'board.restore' ? await restoreTakenDownBoard(child.targetId) : await unblockBoardLink(child.targetId);
+    if (!changed) continue;
+    n++;
+    await record_({
+      action: undo,
+      targetId: child.targetId,
+      boardId: child.boardId,
+      subject,
+      operatorId: lift.operatorId,
+      reason: lift.reason,
+      statement: lift.statement,
+      note: lift.note,
+      itemId: null,
+      parentId: lift.id,
+    });
+  }
+  return n;
+}
+
+/**
+ * Retention of kept copies (KAI-179): deletes for good the kept copy of every file removed more than
+ * MODERATION_KEEP_REMOVED_DAYS ago, unless a report or appeal about it is still open (it is under
+ * review: an appeal granted later needs the bytes to restore). Each deletion is recorded as an
+ * automatic `upload.purge` (no operator) about whom the removal was about; nobody is mailed (they
+ * were told when it was removed). Idempotent; one instance at a time (moderation/init.ts).
+ */
+export async function purgeExpiredKeptCopies(now = Date.now()): Promise<number> {
+  const keepMs = getConfig().moderationKeepRemovedMs;
+  const due = await keptCopiesRemovedBefore(now - keepMs);
+  const held = await repo.uploadsUnderReview(due.map((u) => u.name));
+  let purged = 0;
+  for (const u of due) {
+    if (held.has(u.name) || !(await purgeRemovedUpload(u.name))) continue;
+    purged++;
+    const removal = await repo.laterAction(u.name, ['upload.remove'], 0);
+    await record_({
+      action: 'upload.purge',
+      targetId: u.name,
+      boardId: removal?.boardId ?? null,
+      subject: removal ? { id: removal.subjectUserId, name: removal.subjectName, email: removal.subjectEmail } : null,
+      operatorId: null,
+      reason: removal?.reason ?? 'other',
+      statement: '',
+      note: `Automatic: kept for ${Math.round(keepMs / 86_400_000)} day(s) after the removal (MODERATION_KEEP_REMOVED_DAYS).`,
+      itemId: null,
+      parentId: null,
+    });
+  }
+  return purged;
 }
 
 /** The appeal page for an action: signed, so it works without a session (suspended accounts). */
@@ -369,14 +521,14 @@ function actionIdOf(token: unknown): string | null {
 
 const appealable = (a: ModerationActionKind) => REVERSAL[a] !== undefined;
 
-async function tellAffected(a: repo.ActionRow, subjects: string[], boardTitle: string | null): Promise<void> {
+async function tellAffected(a: repo.ActionRow, subjects: string[], boardTitle: string | null, extra?: string): Promise<void> {
   if (a.action === 'upload.purge') return; // they were told when it was removed
   const appealPath = appealable(a.action) ? `/appeal?t=${encodeURIComponent(appealToken(a.id))}` : null;
   const users = await getUsers(subjects);
   for (const userId of new Set(subjects)) {
     const u = users.get(userId);
     if (!u) continue;
-    sendActionNotice(u.email, { action: a.action, reason: a.reason, statement: a.statement, boardTitle, appealPath });
+    sendActionNotice(u.email, { action: a.action, reason: a.reason, statement: a.statement, boardTitle, appealPath, extra });
     if (a.action.startsWith('user.')) continue; // a suspended account can't see the bell; restored: the email says it
     // No board id for adverse actions: the board may not be open to them any more (notify checks access).
     const restored = a.action === 'board.restore' || a.action === 'board.restore_link';

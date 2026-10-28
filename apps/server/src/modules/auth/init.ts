@@ -1,12 +1,12 @@
 import type { ServerContext } from '../../platform/context';
 import { HttpError } from '../../platform/http';
 import { scheduleExclusiveJob } from '../../platform/jobs';
-import { log } from '../../platform/log';
+import { log, logError } from '../../platform/log';
 import { openGeoIp } from './geoip';
 import { purgeExpiredGuests } from './guests';
 import { processTwoFactorRecoveries } from './recovery';
 import * as repo from './repo';
-import { createUser, DEVICE_TTL_MS } from './service';
+import { createUser, DEVICE_TTL_MS, listenForEndedSessions, recheckLiveSessions } from './service';
 import { resealTwoFactorSecrets } from './twoFactor';
 
 const RESEAL_LOCK_KEY = 7_202_610_284; // arbitrary, constant across releases
@@ -23,6 +23,7 @@ export default async function initAuth(ctx: ServerContext): Promise<void> {
   await repo.deleteDevicesUnseenSince(now - DEVICE_TTL_MS);
   if (ctx.config.geoipDbPath) await openGeoIp(ctx.config.geoipDbPath);
   if (ctx.config.sessionSecretsPrevious.length) scheduleResealing(ctx);
+  watchLiveSessions(ctx);
   // Guests expire: their rows go and their board sockets close (every instance), within minutes.
   scheduleExclusiveJob(ctx, { name: 'auth:expire-guests', lockKey: GUEST_PURGE_LOCK_KEY, intervalMs: 5 * 60_000, run: () => purgeExpiredGuests() });
   scheduleExclusiveJob(ctx, {
@@ -51,6 +52,28 @@ export default async function initAuth(ctx: ServerContext): Promise<void> {
     const demo = await repo.findUserByEmail(DEMO_USER.email);
     if (demo && !demo.emailVerified) await repo.markEmailVerified(demo.id, demo.email, now);
   }
+}
+
+/**
+ * Closes this instance's live connections of sessions that ended elsewhere (KAI-146): at once for
+ * sessions another instance or the operator CLI announced, and within SESSION_RECHECK_SECONDS for
+ * the rest (raw SQL, expiry, a message lost in a Redis gap). Not an exclusive job: every instance
+ * checks its own sockets.
+ */
+function watchLiveSessions(ctx: ServerContext): void {
+  ctx.onShutdown(listenForEndedSessions());
+  let running: Promise<unknown> = Promise.resolve();
+  const timer = setInterval(() => {
+    running = running.then(() => recheckLiveSessions()).then(
+      (n) => n && log(`auth: closed the live connections of ${n} session(s) that ended elsewhere`),
+      (e) => logError('auth: could not re-check the sessions of live connections', e),
+    );
+  }, ctx.config.sessionRecheckMs);
+  timer.unref();
+  ctx.onShutdown(async () => {
+    clearInterval(timer);
+    await running;
+  });
 }
 
 /**

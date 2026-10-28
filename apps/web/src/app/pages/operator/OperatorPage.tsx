@@ -4,7 +4,7 @@
 // action is recorded on the server and its subject is emailed the statement written here.
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Eye, FileX2, History, Link2Off, RefreshCw, Search, ShieldAlert, ShieldCheck, UserX } from 'lucide-react';
+import { ArrowLeft, Eye, FileX2, History, Link2Off, RefreshCw, Search, ShieldAlert, ShieldCheck, Trash2, UserX } from 'lucide-react';
 import {
   REPORT_REASONS,
   type ModeratedBoard,
@@ -14,6 +14,7 @@ import {
   type ModerationActionRecord,
   type ModerationItem,
   type ReportReason,
+  type SuspensionBoards,
 } from '@freero/shared';
 import { Button, Input, Logo, Modal, SegmentedControl, Select, Spinner, TextArea, useToast } from '@ui';
 import { api, ApiError } from '../../api/client';
@@ -26,6 +27,7 @@ const ACTION_LABEL: Record<ModerationActionKind, string> = {
   'board.restore_link': 'Restore link sharing',
   'board.take_down': 'Take board down',
   'board.restore': 'Restore board',
+  'board.delete': 'Delete board for good',
   'upload.remove': 'Remove file',
   'upload.restore': 'Restore file',
   'upload.purge': 'Delete kept copy for good',
@@ -33,7 +35,7 @@ const ACTION_LABEL: Record<ModerationActionKind, string> = {
   'user.restore': 'Lift suspension',
 };
 /** Actions against someone: they get the statement and an appeal link. */
-const ADVERSE: ModerationActionKind[] = ['board.disable_link', 'board.take_down', 'upload.remove', 'upload.purge', 'user.suspend'];
+const ADVERSE: ModerationActionKind[] = ['board.disable_link', 'board.take_down', 'board.delete', 'upload.remove', 'upload.purge', 'user.suspend'];
 const reasonLabel = (r: ReportReason | null) => REPORT_REASONS.find((x) => x.id === r)?.label ?? '—';
 const message = (e: unknown) => (e instanceof ApiError ? e.message : 'Something went wrong. Try again.');
 
@@ -266,9 +268,14 @@ function ItemCard({
               </Button>
             )}
             {b.removedAt !== null ? (
-              <Button size="sm" icon={ShieldCheck} onClick={() => act('board.restore', b.id, `“${b.title}”`)}>
-                Restore board
-              </Button>
+              <>
+                <Button size="sm" icon={ShieldCheck} onClick={() => act('board.restore', b.id, `“${b.title}”`)}>
+                  Restore board
+                </Button>
+                <Button size="sm" variant="ghost" icon={Trash2} onClick={() => act('board.delete', b.id, `“${b.title}”`)}>
+                  Delete for good
+                </Button>
+              </>
             ) : (
               <Button size="sm" variant="danger" onClick={() => act('board.take_down', b.id, `“${b.title}”`)}>
                 Take down
@@ -316,6 +323,7 @@ function ActionDialog({ pending, onClose, onDone }: { pending: PendingAction; on
   const [reason, setReason] = useState<ReportReason>(pending.reason);
   const [statement, setStatement] = useState('');
   const [note, setNote] = useState('');
+  const [boards, setBoards] = useState<SuspensionBoards | 'keep'>('keep');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const run = async () => {
@@ -330,6 +338,7 @@ function ActionDialog({ pending, onClose, onDone }: { pending: PendingAction; on
         note: note.trim() || undefined,
         itemId: pending.itemId,
         boardId: pending.boardId,
+        boards: pending.action === 'user.suspend' && boards !== 'keep' ? boards : undefined,
       });
       onDone(action);
     } catch (e) {
@@ -342,7 +351,7 @@ function ActionDialog({ pending, onClose, onDone }: { pending: PendingAction; on
       open
       onClose={onClose}
       title={ACTION_LABEL[pending.action]}
-      description={`For ${pending.targetLabel}. This is recorded with your name.`}
+      description={`For ${pending.targetLabel}.${pending.action === 'board.delete' ? ' Its content is deleted and can’t be brought back.' : ''} This is recorded with your name.`}
       width={500}
       footer={
         <>
@@ -360,6 +369,25 @@ function ActionDialog({ pending, onClose, onDone }: { pending: PendingAction; on
           Reason
         </label>
         <Select<ReportReason> id="fr-op-reason" aria-label="Reason" value={reason} onChange={setReason} options={REPORT_REASONS.map((r) => ({ value: r.id, label: r.label }))} />
+        {pending.action === 'user.suspend' && (
+          <>
+            <label className="fr-op-form__label" htmlFor="fr-op-boards">
+              Their boards
+            </label>
+            <Select<SuspensionBoards | 'keep'>
+              id="fr-op-boards"
+              aria-label="Their boards"
+              value={boards}
+              onChange={setBoards}
+              options={[
+                { value: 'keep', label: 'Leave them as they are' },
+                { value: 'take_down', label: 'Take down every board they own' },
+                { value: 'disable_link', label: 'Turn off the link of every board they share' },
+              ]}
+            />
+            <p className="fr-op-form__hint">Each board is recorded as its own action. Lifting the suspension brings them all back.</p>
+          </>
+        )}
         <TextArea
           label={adverse ? 'Statement to the person affected (required)' : 'Message to the person affected (optional)'}
           hint="Sent by email with the decision. Say what was wrong and where; it is also what they appeal against."
@@ -402,6 +430,7 @@ function HistoryDialog({ boardId, onClose }: { boardId: string; onClose: () => v
                 <li key={a.id}>
                   <strong>{ACTION_LABEL[a.action]}</strong> · {reasonLabel(a.reason)} · {new Date(a.createdAt).toLocaleString()}
                   {a.operator ? ` · ${a.operator.name}` : ''}
+                  {a.subject && <div className="fr-op-history__note">About {a.subject.name} &lt;{a.subject.email}&gt;</div>}
                   {a.statement && <div className="fr-op-history__text">“{a.statement}”</div>}
                   {a.note && <div className="fr-op-history__note">Note: {a.note}</div>}
                 </li>

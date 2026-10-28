@@ -8,7 +8,7 @@ import type { CommentMessage, CommentThread } from '@freero/shared';
 import { MentionText, MessageText } from './composer';
 import { decodeMentions, encodeMentions, type MentionPick } from './mentions';
 import { MESSAGE_REACTIONS, colorFor, relativeTime } from './model';
-import { usePeopleOf } from './people';
+import { authorName, usePeopleOf } from './people';
 import {
   canDeleteThread,
   deleteMessage,
@@ -152,10 +152,10 @@ function MessageRow(props: {
   };
   return (
     <div className={`fr-cm-msg${editing ? ' is-editing' : ''}`}>
-      <Avatar name={m.authorName} color={authorColor(m)} src={people[m.authorId]?.avatarUrl} size={28} />
+      <Avatar name={authorName(m, people)} color={authorColor(m)} src={people[m.authorId]?.avatarUrl} size={28} />
       <div className="fr-cm-msg__body">
         <div className="fr-cm-msg__head">
-          <span className="fr-cm-msg__name">{m.authorName}</span>
+          <span className="fr-cm-msg__name">{authorName(m, people)}</span>
           <Tooltip content={new Date(m.createdAt).toLocaleString()} side="top">
             <span className="fr-cm-msg__time">
               {relativeTime(m.createdAt, now)}
@@ -273,7 +273,7 @@ export function ThreadView({
   const canWrite = editor.can('commenter');
   const canDelete = canDeleteThread(editor, thread);
   const names = new Map<string, string>();
-  for (const m of thread.messages) names.set(m.authorId, m.authorName);
+  for (const m of thread.messages) names.set(m.authorId, authorName(m, people));
   for (const [id, u] of Object.entries(people)) names.set(id, u.name);
 
   // Keep the newest message in view as replies arrive.

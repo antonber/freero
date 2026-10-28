@@ -315,19 +315,34 @@ an optional internal note. Every action is recorded with who, when, why and what
 | Action | What happens at once (every instance) | Undo |
 |---|---|---|
 | Turn off link | The board's link access reads "no access": people who only had the link lose it and their sockets close; the owner, invited members and the team keep theirs. The owner can't turn the link back on. | Restore link — the owner's previous setting comes back |
-| Take down | The board is "removed for review" for everyone, owner included: open sockets close (the board shows a banner), REST answers 451 to anyone who could open it and 404 to everyone else, it leaves every list, its link is dead. Its content is kept unchanged and the owner can't delete it meanwhile. | Restore board — back exactly as it was |
-| Remove file | `/uploads/<name>` answers 410 Gone wherever the file is used. The bytes move to a kept copy under a name that is never served; the uploads sweep neither deletes the record nor brings the file back. | Restore file — the same bytes, same URL. **Delete kept copy** removes them for good (e.g. illegal content); the URL keeps answering 410. |
-| Suspend account | Every session ends (board and notification sockets close on every instance), and every way of signing in is refused with "this account has been suspended". The account's boards stay as they are: take them down separately if needed. | Lift suspension |
+| Take down | The board is "removed for review" for everyone, owner included: open sockets close (the board shows a banner), REST answers 451 to anyone who could open it and 404 to everyone else, it leaves every list, its link is dead. Its content is kept unchanged and nothing deletes it meanwhile (see "Legal hold"). | Restore board — back exactly as it was. **Delete for good** ends the review the other way: the board and its content are deleted (recorded, and the owner is told). |
+| Remove file | `/uploads/<name>` answers 410 Gone wherever the file is used. The bytes move to a kept copy under a name that is never served (with S3, under the bucket's `private/` prefix, outside the `uploads/*` a public bucket exposes); the uploads sweep neither deletes the record nor brings the file back. The kept copy is deleted automatically after `MODERATION_KEEP_REMOVED_DAYS` (30), unless a report or appeal about the file is still open — recorded as an automatic "Delete kept copy". | Restore file — the same bytes, same URL, while the kept copy exists. **Delete kept copy** removes them for good at once (e.g. illegal content); the URL keeps answering 410. |
+| Suspend account | Every session ends (board and notification sockets close on every instance), and every way of signing in is refused with "this account has been suspended". **Their boards**: leave them, take down every board the account owns, or turn off the link of every board it shares — each board is recorded as its own action under the suspension, and the suspension notice mentions them (one email, not one per board). | Lift suspension — also brings back every board the suspension took down or closed to its link, except those you restored or deleted separately since |
+
+**Legal hold.** A taken-down board is kept until you restore it or delete it for good: owners
+can't trash or delete it, the trash purge skips it, deleting a team workspace that holds one is
+refused ("under review"), and an account deletion waits — the account stays signed out and nothing
+of it is deleted — while it owns one or is the last member of a team holding one. Removed files
+outlive the account that uploaded them (their tombstone and kept copy, with no owner). The action
+record keeps the name and address of the person each action was about, also after their account is
+gone.
 
 The person affected gets an email with what happened, the reason, your statement and a **signed
 appeal link** (`/appeal?t=…`, no sign-in needed, so suspended accounts can appeal) — plus a bell
 notification for board and file actions. Restorations are announced the same way. An appeal goes
 into the queue (one open appeal per decision); grant it by undoing the action from its card.
 
-Caches: a removed file's URL answers 410 from the app at once, but a CDN or proxy in front of
-`/uploads/` may still hold a copy for up to its cache lifetime (raster images are cached for a
-day, streamed files up to a year): purge `/uploads/<name>` there too. With a public bucket
-(`S3_PUBLIC_URL`) the kept copy lives in the bucket under an unguessable name until purged.
+Caches: a removed file's URL answers 410 from the app at once. Browsers, proxies and a CDN may
+reuse a copy they already hold for at most `UPLOAD_CACHE_SECONDS` (an hour by default); after that
+they ask again (`If-None-Match` with the file's ETag, a cheap 304 while it is served) and get the
+410, so a removed file stops showing within that time without any purge. Purge `/uploads/<name>`
+on your CDN only to make it faster than that. With a public bucket (`S3_PUBLIC_URL`) the bucket's
+copy is deleted at removal and the kept copy sits under `private/`, outside what the bucket
+exposes. Objects uploaded to S3 before this release still carry a one-year `immutable` header: to
+bound them too, rewrite their metadata (`aws s3 cp s3://<bucket>/uploads/ s3://<bucket>/uploads/
+--recursive --metadata-directive REPLACE --cache-control "public, max-age=3600"`, once per
+content type with `--content-type`, or the equivalent for your provider), or purge a CDN in front
+of the bucket when you remove one of them.
 
 ### Reports, abuse of the report form, and privacy
 
@@ -422,9 +437,10 @@ previous address), ends every session and mails the address a notice with a link
 password. The owner then sets a password through that address, signs in and turns two-step
 verification on again.
 
-Open board tabs of the ended sessions stay connected until they reload (the CLI can't reach the
-running instances' sockets; KAI-146). If the intruder may still have a board open, restart the app
-instances (a rolling restart is fine) to drop every socket at once.
+Open board tabs and notification bells of the ended sessions are disconnected on every instance:
+at once when the CLI runs with `REDIS_URL` (it announces the ended sessions there), and in any case
+within `SESSION_RECHECK_SECONDS` (default 60), when every instance re-checks the sessions of its
+open sockets against the database. No restart is needed.
 
 ## Incident basics
 
@@ -446,7 +462,7 @@ instances (a rolling restart is fine) to drop every socket at once.
      events show in `freero_rate_limited_total` and as 429 lines in the log.
    - *Leaked secret*: rotate `SESSION_SECRET` (below; keep the leaked one as previous only until the
      re-sealing job reports done, minutes), `METRICS_TOKEN`, DB/S3 credentials; to sign everyone
-     out, `DELETE FROM sessions;`.
+     out, `DELETE FROM sessions;` (open board tabs disconnect within `SESSION_RECHECK_SECONDS`).
 4. **Data recovery.** Database: restore the latest dump into a new database and copy the affected
    rows across, or do a full restore (see above). Files: restore non-current object versions.
 5. **Afterwards.** Write down timeline, impact, root cause and follow-ups; add a check or alert

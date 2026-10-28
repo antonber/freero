@@ -6,7 +6,7 @@ import { Avatar, IconButton, Popover, SegmentedControl, Toggle, type Box } from 
 import { assembleThreads, isUnread, latestActivity, listThreads, relativeTime, threadPoint, type ThreadFilter } from './lib/model';
 import { COLLECTION, PANEL_ID, detachThread, focusThread, markSeen, session, setUi, useCommentsUi, watchLegacyThreads } from './lib/state';
 import { MessageText } from './lib/composer';
-import { usePeopleOf } from './lib/people';
+import { authorName, usePeopleOf } from './lib/people';
 import { DraftComposer, ThreadView, authorColor, useNow } from './lib/views';
 import './comments.css';
 
@@ -164,14 +164,14 @@ function Pins({ editor }: { editor: Editor }) {
             x={p.x}
             y={p.y}
             scale={scale}
-            name={first.authorName}
+            name={authorName(first, people)}
             color={authorColor(first)}
             avatarUrl={people[first.authorId]?.avatarUrl ?? null}
             replies={t.messages.length - 1}
             unread={isUnread(t, seen[t.id], editor.user.id)}
             resolved={t.resolved}
             active={t.id === openId}
-            label={`Comment by ${first.authorName}`}
+            label={`Comment by ${authorName(first, people)}`}
             pinRef={refFor(t.id)}
             onOpen={() => {
               const jc = justClosed.current;
@@ -257,8 +257,8 @@ function ThreadCard(props: { editor: Editor; thread: CommentThread; unread: bool
   return (
     <button type="button" className={`fr-cm-card${unread ? ' is-unread' : ''}`} onClick={() => focusThread(editor, thread)}>
       <div className="fr-cm-card__head">
-        <Avatar name={first.authorName} color={authorColor(first)} src={people[first.authorId]?.avatarUrl} size={24} />
-        <span className="fr-cm-card__name">{first.authorName}</span>
+        <Avatar name={authorName(first, people)} color={authorColor(first)} src={people[first.authorId]?.avatarUrl} size={24} />
+        <span className="fr-cm-card__name">{authorName(first, people)}</span>
         <span className="fr-cm-card__time">{relativeTime(latestActivity(thread), now)}</span>
         {unread && <span className="fr-cm-card__dot" aria-label="Unread" />}
       </div>

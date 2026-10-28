@@ -26,6 +26,9 @@ export {
   reportableBoard,
   takeDownBoard,
   restoreTakenDownBoard,
+  deleteTakenDownBoard,
+  countHeldBoards,
+  liveBoardsOwnedBy,
   blockBoardLink,
   unblockBoardLink,
   type ModerationBoardState,
@@ -111,6 +114,7 @@ export async function getBoardTitle(boardId: string): Promise<string | null> {
  * Account purge: deletes every board the user still owns, like DELETE /boards/:id does (everyone
  * is disconnected first, then the row — members, stars, opens and doc cascade — then the
  * thumbnail). Boards in team workspaces were handed over before (workspaces.handOverTeamWorkspaces).
+ * Taken-down boards are held for review and never deleted here (the purge waits for them, KAI-178).
  */
 export async function deleteBoardsOwnedBy(userId: string): Promise<number> {
   for (const id of await repo.allBoardIdsOwnedBy(userId)) await closeBoardDoc(id);

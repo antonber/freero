@@ -74,6 +74,17 @@ export function contentMatches(data: Uint8Array, type: string): boolean {
 const mb = (bytes: number) => `${Math.round(bytes / (1024 * 1024))}MB`;
 
 /**
+ * How long browsers, proxies and a CDN may reuse an uploaded file before asking again (KAI-177):
+ * UPLOAD_CACHE_SECONDS (an hour). Names are random and never reused, so asking again is a cheap
+ * 304 (the ETag is the name) — and it is what makes a file an operator removed (410) stop showing
+ * within that time where it was already loaded. Not `immutable`: that would keep it for a year.
+ */
+export function uploadCacheControl(): string {
+  const s = getConfig().uploadCacheSeconds;
+  return s > 0 ? `public, max-age=${s}` : 'no-cache';
+}
+
+/**
  * Validates and stores a file; returns its URL ("/uploads/<id>.<ext>"). With `ownerId` the file
  * counts towards that user's quota (413 when it would exceed it); without (board thumbnails,
  * which replace each other) it does not.
@@ -93,7 +104,7 @@ export async function saveUpload(data: Uint8Array, contentType: string, ownerId?
       throw new HttpError(413, `Upload quota reached (${mb(quota)} per account). Delete unused images or documents to free space.`);
   }
   try {
-    await storage().put(name, data, type);
+    await storage().put(name, data, type, { cacheControl: uploadCacheControl() });
   } catch (e) {
     if (ownerId) await repo.deleteUploadRow(name).catch(() => {});
     throw e;

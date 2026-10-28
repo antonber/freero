@@ -140,11 +140,16 @@ export interface ActionRow {
   targetId: string;
   boardId: string | null;
   subjectUserId: string | null;
+  /** The subject as they were then (KAI-178). */
+  subjectName: string | null;
+  subjectEmail: string | null;
   operatorId: string | null;
   reason: ReportReason;
   statement: string;
   note: string;
   itemId: string | null;
+  /** The action this one was part of (KAI-180). */
+  parentId: string | null;
   createdAt: number;
 }
 
@@ -154,11 +159,14 @@ interface ActionDb {
   target_id: string;
   board_id: string | null;
   subject_user_id: string | null;
+  subject_name: string | null;
+  subject_email: string | null;
   operator_id: string | null;
   reason: ReportReason;
   statement: string;
   note: string;
   item_id: string | null;
+  parent_id: string | null;
   created_at: Date;
 }
 
@@ -168,20 +176,55 @@ const toAction = (r: ActionDb): ActionRow => ({
   targetId: r.target_id,
   boardId: r.board_id,
   subjectUserId: r.subject_user_id,
+  subjectName: r.subject_name,
+  subjectEmail: r.subject_email,
   operatorId: r.operator_id,
   reason: r.reason,
   statement: r.statement,
   note: r.note,
   itemId: r.item_id,
+  parentId: r.parent_id,
   createdAt: r.created_at.getTime(),
 });
 
 export async function insertAction(a: ActionRow): Promise<void> {
   await query(
-    `INSERT INTO moderation_actions (id, action, target_id, board_id, subject_user_id, operator_id, reason, statement, note, item_id, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-    [a.id, a.action, a.targetId, a.boardId, a.subjectUserId, a.operatorId, a.reason, a.statement, a.note, a.itemId, new Date(a.createdAt)],
+    `INSERT INTO moderation_actions (id, action, target_id, board_id, subject_user_id, subject_name, subject_email, operator_id,
+       reason, statement, note, item_id, parent_id, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+    [
+      a.id,
+      a.action,
+      a.targetId,
+      a.boardId,
+      a.subjectUserId,
+      a.subjectName,
+      a.subjectEmail,
+      a.operatorId,
+      a.reason,
+      a.statement,
+      a.note,
+      a.itemId,
+      a.parentId,
+      new Date(a.createdAt),
+    ],
   );
+}
+
+/** The actions taken as part of `parentId` (the boards of a suspension), oldest first. */
+export async function childActions(parentId: string): Promise<ActionRow[]> {
+  return (await query<ActionDb>(`SELECT * FROM moderation_actions WHERE parent_id = $1 ORDER BY created_at, id`, [parentId])).map(toAction);
+}
+
+/** Upload names among these with an open report or appeal about them: their kept copy is on hold (KAI-179). */
+export async function uploadsUnderReview(names: string[]): Promise<Set<string>> {
+  if (!names.length) return new Set();
+  const rows = await query<{ target_id: string }>(
+    `SELECT DISTINCT i.target_id FROM moderation_items i
+     WHERE i.status = 'open' AND i.target_kind = 'upload' AND i.target_id = ANY($1::text[])`,
+    [names],
+  );
+  return new Set(rows.map((r) => r.target_id));
 }
 
 export async function getAction(id: string): Promise<ActionRow | null> {
