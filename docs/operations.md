@@ -225,9 +225,17 @@ an optional internal note. Every action is recorded with who, when, why and what
 | Action | What happens at once (every instance) | Undo |
 |---|---|---|
 | Turn off link | The board's link access reads "no access": people who only had the link lose it and their sockets close; the owner, invited members and the team keep theirs. The owner can't turn the link back on. | Restore link — the owner's previous setting comes back |
-| Take down | The board is "removed for review" for everyone, owner included: open sockets close (the board shows a banner), REST answers 451 to anyone who could open it and 404 to everyone else, it leaves every list, its link is dead. Its content is kept unchanged and the owner can't delete it meanwhile. | Restore board — back exactly as it was |
+| Take down | The board is "removed for review" for everyone, owner included: open sockets close (the board shows a banner), REST answers 451 to anyone who could open it and 404 to everyone else, it leaves every list, its link is dead. Its content is kept unchanged and nothing deletes it meanwhile (see "Legal hold"). | Restore board — back exactly as it was. **Delete for good** ends the review the other way: the board and its content are deleted (recorded, and the owner is told). |
 | Remove file | `/uploads/<name>` answers 410 Gone wherever the file is used. The bytes move to a kept copy under a name that is never served; the uploads sweep neither deletes the record nor brings the file back. | Restore file — the same bytes, same URL. **Delete kept copy** removes them for good (e.g. illegal content); the URL keeps answering 410. |
-| Suspend account | Every session ends (board and notification sockets close on every instance), and every way of signing in is refused with "this account has been suspended". The account's boards stay as they are: take them down separately if needed. | Lift suspension |
+| Suspend account | Every session ends (board and notification sockets close on every instance), and every way of signing in is refused with "this account has been suspended". **Their boards**: leave them, take down every board the account owns, or turn off the link of every board it shares — each board is recorded as its own action under the suspension, and the suspension notice mentions them (one email, not one per board). | Lift suspension — also brings back every board the suspension took down or closed to its link, except those you restored or deleted separately since |
+
+**Legal hold.** A taken-down board is kept until you restore it or delete it for good: owners
+can't trash or delete it, the trash purge skips it, deleting a team workspace that holds one is
+refused ("under review"), and an account deletion waits — the account stays signed out and nothing
+of it is deleted — while it owns one or is the last member of a team holding one. Removed files
+outlive the account that uploaded them (their tombstone and kept copy, with no owner). The action
+record keeps the name and address of the person each action was about, also after their account is
+gone.
 
 The person affected gets an email with what happened, the reason, your statement and a **signed
 appeal link** (`/appeal?t=…`, no sign-in needed, so suspended accounts can appeal) — plus a bell

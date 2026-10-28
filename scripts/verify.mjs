@@ -3679,6 +3679,37 @@ async function moderationChecks() {
       assert((await M.req('POST', '/api/auth/login', { email: M.email, password: 'password-123' })).status === 200, 'login after the suspension was lifted');
     });
 
+    await check('moderation (KAI-180): suspending with "take its boards down" closes every board the account owns to its link visitors at once, each recorded; lifting the suspension opens them again', async () => {
+      const boards = [];
+      for (const title of ['Spam 1', 'Spam 2']) boards.push(await board(title));
+      const visitor = connectDoc(L, boards[0].id);
+      await visitor.ready();
+      const r = await act({ action: 'user.suspend', targetId: O.id, statement: 'Spam account.', boards: 'take_down' });
+      assert(r.status === 200, r.text);
+      await waitFor(() => visitor.closeCodes.includes(4451), 5000, "the link visitor's socket to close as removed");
+      for (const b of boards) assert((await L.req('GET', `/api/boards/${b.id}`)).status === 451, `${b.title} still open to its link`);
+      const history = (await Op.req('GET', `/api/moderation/boards/${boards[1].id}`)).json.actions;
+      assert(history.some((a) => a.action === 'board.take_down' && a.parentId === r.json.action.id && a.subject?.email === O.email), JSON.stringify(history));
+      visitor.destroy();
+      assert((await act({ action: 'user.restore', targetId: O.id, statement: '' })).status === 200, 'lift');
+      for (const b of boards) assert((await L.req('GET', `/api/boards/${b.id}`)).status === 200, `${b.title} not back after the lift`);
+      assert((await O.req('POST', '/api/auth/login', { email: O.email, password: 'password-123' })).status === 200, 'owner signs in again');
+    });
+
+    await check('moderation (KAI-178): a team workspace holding a taken-down board cannot be deleted; once the operator deletes the board for good, it can', async () => {
+      const team = (await O.req('POST', '/api/workspaces', { name: 'Held team' })).json.workspace;
+      const b = (await O.req('POST', '/api/boards', { title: 'Held', workspaceId: team.id })).json.board;
+      assert(b?.workspaceId === team.id, `board in team: ${JSON.stringify(b)}`);
+      assert((await act({ action: 'board.take_down', targetId: b.id, reason: 'illegal', statement: 'Unlawful content.' })).status === 200, 'take down');
+      const refused = await O.req('DELETE', `/api/workspaces/${team.id}`, { confirm: 'Held team' });
+      assert(refused.status === 409 && refused.json?.code === 'workspace_board_held', `${refused.status} ${refused.text}`);
+      assert((await Op.req('GET', `/api/moderation/boards/${b.id}`)).status === 200, 'the held board is gone');
+      assert((await act({ action: 'board.delete', targetId: b.id, reason: 'illegal', statement: 'Deleted after review.' })).status === 200, 'delete for good');
+      assert((await Op.req('GET', `/api/moderation/boards/${b.id}`)).status === 404, 'the board survived its deletion');
+      const deleted = await O.req('DELETE', `/api/workspaces/${team.id}`, { confirm: 'Held team' });
+      assert(deleted.status === 200 || deleted.status === 204, `${deleted.status} ${deleted.text}`);
+    });
+
     await check('moderation: reports are rate-limited per address (429 with Retry-After)', async () => {
       let last = null;
       for (let i = 0; i < REPORT_LIMIT + 2 && last?.status !== 429; i++)

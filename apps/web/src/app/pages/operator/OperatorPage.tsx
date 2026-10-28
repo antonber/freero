@@ -14,6 +14,7 @@ import {
   type ModerationActionRecord,
   type ModerationItem,
   type ReportReason,
+  type SuspensionBoards,
 } from '@freero/shared';
 import { Button, Input, Logo, Modal, SegmentedControl, Select, Spinner, TextArea, useToast } from '@ui';
 import { api, ApiError } from '../../api/client';
@@ -322,6 +323,7 @@ function ActionDialog({ pending, onClose, onDone }: { pending: PendingAction; on
   const [reason, setReason] = useState<ReportReason>(pending.reason);
   const [statement, setStatement] = useState('');
   const [note, setNote] = useState('');
+  const [boards, setBoards] = useState<SuspensionBoards | 'keep'>('keep');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const run = async () => {
@@ -336,6 +338,7 @@ function ActionDialog({ pending, onClose, onDone }: { pending: PendingAction; on
         note: note.trim() || undefined,
         itemId: pending.itemId,
         boardId: pending.boardId,
+        boards: pending.action === 'user.suspend' && boards !== 'keep' ? boards : undefined,
       });
       onDone(action);
     } catch (e) {
@@ -366,6 +369,25 @@ function ActionDialog({ pending, onClose, onDone }: { pending: PendingAction; on
           Reason
         </label>
         <Select<ReportReason> id="fr-op-reason" aria-label="Reason" value={reason} onChange={setReason} options={REPORT_REASONS.map((r) => ({ value: r.id, label: r.label }))} />
+        {pending.action === 'user.suspend' && (
+          <>
+            <label className="fr-op-form__label" htmlFor="fr-op-boards">
+              Their boards
+            </label>
+            <Select<SuspensionBoards | 'keep'>
+              id="fr-op-boards"
+              aria-label="Their boards"
+              value={boards}
+              onChange={setBoards}
+              options={[
+                { value: 'keep', label: 'Leave them as they are' },
+                { value: 'take_down', label: 'Take down every board they own' },
+                { value: 'disable_link', label: 'Turn off the link of every board they share' },
+              ]}
+            />
+            <p className="fr-op-form__hint">Each board is recorded as its own action. Lifting the suspension brings them all back.</p>
+          </>
+        )}
         <TextArea
           label={adverse ? 'Statement to the person affected (required)' : 'Message to the person affected (optional)'}
           hint="Sent by email with the decision. Say what was wrong and where; it is also what they appeal against."
