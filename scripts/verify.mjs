@@ -989,6 +989,46 @@ async function run() {
       for (const c of [a1, b2, c1, d1]) c.destroy();
     });
 
+    // ---- semantic read model (KAI-166) + layout from structure (KAI-167), over REST ----
+    await check("board outline: each role reads the board as it sees it — never another user's draft, hidden content only for owners/editors", async () => {
+      const md = async (u) => {
+        const r = await u.req('GET', `/api/boards/${board.id}/outline?format=markdown`);
+        assert(r.status === 200, `${u.label}: ${r.status} ${r.text}`);
+        return r.text;
+      };
+      for (const u of [C, D]) {
+        const t = await md(u);
+        assert(!t.includes('HIDDEN-CONTENT') && !t.includes('SECRET-DRAFT'), `${u.label}'s outline holds withheld content`);
+      }
+      const a = await md(A);
+      assert(a.includes('HIDDEN-CONTENT') && !a.includes('SECRET-DRAFT'), "the owner's outline: hidden content yes, B's draft no");
+      assert((await md(B)).includes('SECRET-DRAFT'), 'B does not see their own draft in the outline');
+      const json = await C.req('GET', `/api/boards/${board.id}/outline`);
+      assert(json.status === 200 && json.json.outline.outlineVersion === 1 && /^W\/"/.test(json.headers.get('etag') ?? ''), json.text);
+    });
+
+    await check('insert structure: an editor lays a Mermaid flowchart into the live board (one change everyone sees, read back through the outline); viewers may not', async () => {
+      const watcher = connectDoc(A, board.id);
+      await watcher.ready();
+      const source = 'flowchart TD\n  plan[VERIFY-Plan] -->|go| build{VERIFY-Build ok?}\n  build -->|yes| ship([VERIFY-Ship])\n  build -->|no| plan';
+      const denied = await C.req('POST', `/api/boards/${board.id}/insert-structure`, { structure: { kind: 'mermaid', source } });
+      assert(denied.status === 403, `a viewer inserted structure: ${denied.status}`);
+      const bad = await B.req('POST', `/api/boards/${board.id}/insert-structure`, { structure: { kind: 'mermaid', source: 'flowchart TD\n  a ~~> b{' } });
+      assert(bad.status === 400 && /line 2/.test(bad.json?.error ?? ''), `malformed Mermaid: ${bad.status} ${bad.text}`);
+      const r = await B.req('POST', `/api/boards/${board.id}/insert-structure`, { structure: { kind: 'mermaid', source } });
+      assert(r.status === 201 && r.json.created.length === 6, `${r.status} ${r.text}`);
+      await waitFor(() => r.json.created.every((id) => els(watcher).has(id)), 5000, 'the owner to see the inserted diagram');
+      assert(r.json.created.every((id) => els(watcher).get(id).createdBy === B.id), 'not attributed to the editor who inserted it');
+      const o = await C.req('GET', `/api/boards/${board.id}/outline`);
+      const outline = o.json.outline;
+      const shapes = JSON.stringify(outline.items);
+      assert(['VERIFY-Plan', 'VERIFY-Build ok?', 'VERIFY-Ship'].every((t) => shapes.includes(t)), 'the viewer does not read the inserted shapes');
+      const ids = new Set(r.json.created);
+      const edges = outline.edges.filter((e) => ids.has(e.id));
+      assert(edges.length === 3 && edges.every((e) => ids.has(e.from) && ids.has(e.to)), `inserted edges: ${JSON.stringify(edges)}`);
+      watcher.destroy();
+    });
+
     await check('role changes apply live (owner promotes C to editor over REST)', async () => {
       // Fresh client: the old one still holds the viewer edits the server dropped, and Yjs would
       // (correctly) sync them once C is allowed to write.
