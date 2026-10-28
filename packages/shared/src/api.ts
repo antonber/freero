@@ -750,7 +750,8 @@ export interface ActivityEntry {
   /** Null for a guest or a deleted account (`actorName` still names them). */
   actor: BoardPerson | null;
   actorName: string;
-  kind: 'edit' | 'comment' | 'share';
+  /** 'board': the board as a whole (created, renamed, moved, trashed / restored, a version restored). */
+  kind: 'edit' | 'comment' | 'share' | 'board';
   /** Worded after the actor's name: "added 12 sticky notes in frame “Ideas”". */
   text: string;
   startedAt: number;

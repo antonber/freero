@@ -3,8 +3,9 @@ import type { ServerContext } from '../../platform/context';
 import { scheduleExclusiveJob } from '../../platform/jobs';
 import { logError } from '../../platform/log';
 import { getGuests, getUser } from '../auth/index';
+import { onBoardLifecycle } from '../boards/index';
 import { onAccessDecided, onBoardShared } from '../members/index';
-import { onBoardChange, onCommentMessage } from '../realtime/index';
+import { onBoardChange, onCommentMessage, onVersionRestored } from '../realtime/index';
 import * as service from './service';
 
 const PRUNE_LOCK_KEY = 7_202_610_432; // arbitrary, constant across releases
@@ -23,6 +24,10 @@ export default function initActivity(ctx: ServerContext): void {
     }),
     onBoardShared((e) => service.onBoardShared(e)),
     onAccessDecided((e) => service.onAccessDecided(e)),
+    // The board as a whole (KAI-188): boards' lifecycle, and version restores (applied by the
+    // server, so its element changes are never attributed to anyone).
+    onBoardLifecycle((e) => service.recordBoardEvent({ boardId: e.boardId, actorId: e.actorId, action: e.action, from: e.from, to: e.to })),
+    onVersionRestored((e) => service.recordBoardEvent({ boardId: e.boardId, actorId: e.userId, action: 'version_restored', version: e.versionName })),
   ];
   // Ended bursts are written soon after (each instance writes its own sockets' bursts).
   const timer = setInterval(() => void service.flushBursts(), Math.min(15_000, ctx.config.activityIdleMs / 2));

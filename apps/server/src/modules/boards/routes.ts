@@ -9,6 +9,7 @@ import { isLinkAccess, ROLE_RANK } from '../members/index';
 import { mayShareExternally } from '../workspaces/index';
 import { refreshBoardAccess } from '../realtime/index';
 import { deleteUpload, saveUpload } from '../uploads/index';
+import { boardLifecycle } from './events';
 import * as repo from './repo';
 import {
   BOARD_FILTERS,
@@ -67,6 +68,7 @@ export default function boardRoutes(_ctx: ServerContext): Router {
         projectId: typeof body.projectId === 'string' ? body.projectId : null,
       };
       const board = await createBoard(user.id, cleanTitle(body.title), cleanDescription(body.description), 'none', place);
+      await boardLifecycle({ boardId: board.id, actorId: user.id, action: 'created' });
       res.status(201).json({ board: await summarize(board, user.id, { starred: false, lastOpenedAt: null }) } satisfies Out);
     }),
   );
@@ -113,6 +115,8 @@ export default function boardRoutes(_ctx: ServerContext): Router {
         if ((body.projectId || null) !== board.projectId) await moveToProject(board, user.id, (body.projectId as string | null) || null);
       }
       if (Object.keys(patch).length > 0) await repo.updateBoardFields(board.id, patch, Date.now());
+      if (patch.title !== undefined && patch.title !== board.title)
+        await boardLifecycle({ boardId: board.id, actorId: user.id, action: 'renamed', from: board.title, to: patch.title });
       if (patch.linkAccess !== undefined && patch.linkAccess !== board.linkAccess) {
         await recordAuditQuietly({
           action: 'board.link_sharing_changed',

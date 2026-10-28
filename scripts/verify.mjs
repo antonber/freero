@@ -3951,6 +3951,31 @@ async function teamsChecks() {
       assert((await M.req('GET', `/api/workspaces/${ws.id}/activity`)).status === 404, 'someone outside the workspace read its feed');
     });
 
+    await check('the activity feed tells what happened to the board as a whole (KAI-188): created, renamed, moved to a project, a version restored, trashed and restored, and a copy names its original', async () => {
+      const team = (await O.req('POST', '/api/workspaces', { name: 'Lifecycle team' })).json.workspace;
+      const project = (await O.req('POST', `/api/workspaces/${team.id}/projects`, { name: 'Launch', access: 'workspace' })).json.project;
+      const b = (await O.req('POST', '/api/boards', { title: 'Plan', workspaceId: team.id })).json.board;
+      assert((await O.req('PATCH', `/api/boards/${b.id}`, { title: 'Plan v2' })).status === 200, 'rename');
+      assert((await O.req('PATCH', `/api/boards/${b.id}`, { projectId: project.id })).status === 200, 'move');
+      const v = (await O.req('POST', `/api/boards/${b.id}/versions`, { name: 'Kickoff' })).json.version;
+      assert((await O.req('POST', `/api/boards/${b.id}/versions/${v.id}/restore`)).status === 200, 'restore version');
+      const copy = (await O.req('POST', `/api/boards/${b.id}/duplicate`)).json.board;
+      assert((await O.req('DELETE', `/api/boards/${b.id}`)).status < 300, 'trash');
+      assert((await O.req('POST', `/api/boards/${b.id}/restore`)).status === 200, 'restore from trash');
+      const feed = async (id) => (await O.req('GET', `/api/boards/${id}/activity`)).json.entries;
+      const texts = (await feed(b.id)).filter((e) => e.kind === 'board' && e.actorName === O.name).map((e) => e.text);
+      for (const t of [
+        'created this board',
+        'renamed the board to “Plan v2” (was “Plan”)',
+        'moved the board to project “Launch”',
+        'restored the version “Kickoff”',
+        'moved the board to the trash',
+        'restored the board from the trash',
+      ])
+        assert(texts.includes(t), `missing “${t}” in ${JSON.stringify(texts)}`);
+      assert((await feed(copy.id)).some((e) => e.kind === 'board' && e.text === 'made this board as a copy of “Plan v2”'), 'copy entry');
+    });
+
     await check('lowering a team’s access level to "can view" turns a connected member’s socket read-only at once', async () => {
       const team = (await O.req('POST', '/api/workspaces', { name: 'Verify team' })).json.workspace;
       assert((await O.req('POST', `/api/workspaces/${team.id}/members`, { email: M.email, role: 'member' })).status === 201, 'add member');

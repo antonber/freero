@@ -1000,6 +1000,10 @@ approval lets the requester in at once.
   layers are never observed; changes in the `editors` layer are stored with audience `editors`
   (owners/editors only); removing a hidden frame's contents from the shared doc (the editors'
   clients moving them into the layer) is not reported; no element text is ever stored.
+- The board as a whole (KAI-188), kind `board`, stored at once: boards' `onBoardLifecycle`
+  (created, duplicated — on the copy, naming the original —, renamed, moved to a project, trashed,
+  restored; fired after the change commits) and realtime's `onVersionRestored` (a version restore
+  is applied by the server, so its element changes are never attributed).
 - Each person's changes on a board form a BURST in memory on that instance (net per element:
   added-and-removed is nothing, a move between the shared doc and the editors layer is nothing)
   until they pause `ACTIVITY_IDLE_SECONDS` or 10 minutes pass; it is stored as one row per
