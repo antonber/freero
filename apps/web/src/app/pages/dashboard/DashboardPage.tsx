@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Folder, LayoutGrid, LayoutTemplate, List, Plus, RotateCw, Search, X } from 'lucide-react';
-import { TRASH_RETENTION_DAYS, type BoardSummary, type ProjectSummary } from '@freero/shared';
+import { Folder, LayoutGrid, LayoutTemplate, List, Plus, RotateCw, Search, ShieldCheck, UserX, X } from 'lucide-react';
+import { TRASH_RETENTION_DAYS, type BoardSummary, type ProjectSummary, type WorkspaceBlock } from '@freero/shared';
 import { Button, IconButton, Input, Kbd, Modal, SegmentedControl, Select, Skeleton, Spinner, useToast } from '@ui';
 import { api, ApiError, type BoardFilter } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
@@ -430,7 +430,7 @@ export function DashboardPage() {
                 </Button>
               </div>
             ) : visible.length === 0 ? (
-              <EmptyState view={boardView ?? 'home'} canCreate={showCreate} guest={guest} query={q} filtered={owner !== 'any' && (boards?.length ?? 0) > 0} onCreate={() => create('blank')} creating={creating === 'blank'} />
+              <EmptyState view={boardView ?? 'home'} canCreate={showCreate} guest={guest} blocked={workspace?.blocked ?? null} query={q} filtered={owner !== 'any' && (boards?.length ?? 0) > 0} onCreate={() => create('blank')} creating={creating === 'blank'} />
             ) : trash ? (
               layout === 'grid' ? (
                 <div className="fr-dash-grid">
@@ -633,6 +633,7 @@ function EmptyState({
   view,
   canCreate,
   guest,
+  blocked,
   query,
   filtered,
   onCreate,
@@ -641,19 +642,27 @@ function EmptyState({
   view: BoardView | 'project';
   canCreate: boolean;
   guest: boolean;
+  /** The workspace closed its boards to you: say what to do instead of inviting you to create one (KAI-193). */
+  blocked: WorkspaceBlock | null;
   query: string;
   filtered: boolean;
   onCreate: () => void;
   creating: boolean;
 }) {
+  const closed = blocked && (view === 'home' || view === 'mine' || view === 'project');
   const content = query
     ? { title: `No boards match “${query}”`, body: 'Try a different word, or check another section.' }
+    : closed
+      ? blocked === 'two_factor_required'
+        ? { title: 'Turn on two-step verification to work here', body: 'This workspace requires it. Once it’s on, you can open and create its boards.' }
+        : { title: 'Your access here is paused', body: 'An admin of this workspace deactivated you. Ask them to reactivate you to open and create its boards.' }
     : filtered
       ? { title: 'No boards here', body: 'Nothing matches this owner filter. Try “All”.' }
       : guest && (view === 'home' || view === 'project')
         ? { title: 'Nothing shared with you here yet', body: 'You’re a guest in this workspace: boards and projects people share with you show up here.' }
         : EMPTY[view];
-  const Icon = NAV.find((n) => n.id === view)?.icon ?? Folder;
+  const navigate = useNavigate();
+  const Icon = closed ? (blocked === 'two_factor_required' ? ShieldCheck : UserX) : (NAV.find((n) => n.id === view)?.icon ?? Folder);
   return (
     <div className="fr-empty">
       <div className="fr-empty__art" aria-hidden>
@@ -663,7 +672,12 @@ function EmptyState({
       </div>
       <h2 className="fr-empty__title">{content.title}</h2>
       <p className="fr-empty__body">{content.body}</p>
-      {!query && !filtered && canCreate ? (
+      {!query && closed && blocked === 'two_factor_required' ? (
+        <Button variant="primary" icon={ShieldCheck} onClick={() => navigate('/settings#two-factor')}>
+          Turn on two-step verification
+        </Button>
+      ) : null}
+      {!query && !filtered && !closed && canCreate ? (
         <Button variant="primary" icon={Plus} loading={creating} onClick={onCreate}>
           New board
         </Button>

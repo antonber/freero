@@ -10,6 +10,7 @@ import { screenToWorld, worldToScreen } from '../camera/camera';
 import { boundsOf, elementAABB } from '../geometry/geometry';
 import type { Camera, Editor, Rect } from '../api';
 import { ROLE_RANK } from '../runtime/core';
+import { isMac } from '../runtime/shortcuts';
 import { contextCommandItems } from './ContextMenu';
 import { ExactControls } from './ExactControls';
 import { MixedStyleSection, hasMixedStyle } from './MixedStyle';
@@ -177,8 +178,9 @@ export function FormatToolbar() {
 
   const arrangeItems: MenuItem[] = [
     { id: 'front', label: 'Bring to front', shortcut: 'Mod+]', onSelect: () => editor.bringToFront(ids) },
-    { id: 'forward', label: 'Bring forward', shortcut: 'Mod+Shift+]', onSelect: () => editor.bringForward(ids) },
-    { id: 'backward', label: 'Send backward', shortcut: 'Mod+Shift+[', onSelect: () => editor.sendBackward(ids) },
+    // On macOS the browser may take Mod+Shift+] / [ (tab switch): show the key that always works there.
+    { id: 'forward', label: 'Bring forward', shortcut: isMac ? 'Mod+Alt+ArrowUp' : 'Mod+Shift+]', onSelect: () => editor.bringForward(ids) },
+    { id: 'backward', label: 'Send backward', shortcut: isMac ? 'Mod+Alt+ArrowDown' : 'Mod+Shift+[', onSelect: () => editor.sendBackward(ids) },
     { id: 'back', label: 'Send to back', shortcut: 'Mod+[', onSelect: () => editor.sendToBack(ids) },
   ];
 

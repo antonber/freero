@@ -3,6 +3,7 @@ import { UPLOAD_REF_PATTERN } from '../uploads/index';
 import {
   lastActiveOf,
   matchesInAvatars,
+  namesOf,
   twoFactorEnabled,
   twoFactorEnabledAmong,
   updateUserProfile,
@@ -20,7 +21,11 @@ export {
   normalizeEmail,
   userFromCookieHeader,
   sessionKeyFromCookieHeader,
+  // Live connections (board sockets, notification bells): closed when their session ends, also
+  // when it ended in another process or silently (KAI-146).
   onSessionEnd,
+  trackLiveSessions,
+  onProfileChanged,
   onEmailVerified,
   markEmailVerified,
   // Operators (modules/moderation): suspended accounts can't sign in and lose every session.
@@ -74,6 +79,14 @@ export async function setAccountName(userId: string, name: string): Promise<void
 // Workspace session policies (KAI-51): where a person's limits come from, the enforcement job,
 // and activity that doesn't come through REST (board sockets).
 export { setSessionLimits, endSessionsBeyondLimits, noteSessionActivity, type SessionLimits } from './service';
+
+/**
+ * The names a comment of this account may carry (KAI-187): its current name and the few it had
+ * before (a board tab opened before a rename on another device still writes the old one).
+ */
+export function authorNamesOf(userId: string): Promise<string[]> {
+  return namesOf(userId);
+}
 
 /** Whether the user has two-step verification on (workspace policies that require it). */
 export function hasTwoFactor(userId: string): Promise<boolean> {

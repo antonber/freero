@@ -57,7 +57,7 @@ export default function authAdmin(): AdminCommand[] {
         await resetTwoFactorByOperator(s.id, operator, reason);
         args.print('');
         args.print(`Done: two-step verification, password and provider sign-ins removed; ${s.sessions} session(s) ended; ${s.email} was mailed how to choose a new password.`);
-        args.print('Board tabs that were already open stay connected until they reload; restart the app instances to drop them at once.');
+        args.print('Their open board tabs are disconnected: at once with REDIS_URL, otherwise within SESSION_RECHECK_SECONDS.');
       },
     },
   ];

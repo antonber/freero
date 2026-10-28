@@ -4,7 +4,7 @@ import type { Request } from 'express';
 import { generate } from 'otplib';
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest';
 import { getConfig } from '../../platform/config';
-import { outboxDir } from '../../platform/mail';
+import { mailSettled, outboxDir } from '../../platform/mail';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { confirmEmailChange, requestEmailChange, requestPasswordReset, resetPassword, revertEmailChange } from './emails';
 import { finishTwoFactorRecovery, processTwoFactorRecoveries, startTwoFactorRecovery, undoTwoFactor } from './recovery';
@@ -136,7 +136,7 @@ it('an unverified address gets no "this wasn’t me" link: whoever reads it may 
   const user = await createUser({ name: 'Unverified', email: to, password: 'password-123' });
   const { secret } = await beginTwoFactorSetup(user.id, 'password-123', Date.now());
   await enableTwoFactor(null, user.id, 'no-session', await generate({ secret }));
-  await new Promise((r) => setTimeout(r, 300));
+  await mailSettled(); // the notice is sent in the background; a fixed wait lost the race under load
   const notice = mailsTo(to).find((m) => /Two-step verification is on/.test(m.subject));
   expect(notice).toBeDefined();
   expect(notice!.text).not.toContain('/undo-two-factor');

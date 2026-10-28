@@ -245,16 +245,45 @@ export async function restoreBoard(id: string): Promise<boolean> {
   return (await one(`UPDATE boards SET deleted_at = NULL WHERE id = $1 AND deleted_at IS NOT NULL RETURNING id`, [id])) !== null;
 }
 
-/** Every board the user owns, trashed ones included (account purge). */
+/** Every board the user owns, trashed ones included, except taken-down ones (account purge). */
 export async function allBoardIdsOwnedBy(userId: string): Promise<string[]> {
-  return (await query<{ id: string }>(`SELECT id FROM boards WHERE owner_id = $1`, [userId])).map((r) => r.id);
+  return (await query<{ id: string }>(`SELECT id FROM boards WHERE owner_id = $1 AND removed_at IS NULL`, [userId])).map((r) => r.id);
 }
 
-/** Deletes every board the user owns, trash included; returns their thumbnails (to delete the files). */
+/**
+ * Deletes every board the user owns, trash included, except taken-down ones (held for review);
+ * returns their thumbnails (to delete the files).
+ */
 export async function deleteAllOwnedBy(userId: string): Promise<Array<string | null>> {
-  return (await query<{ thumbnail: string | null }>(`DELETE FROM boards WHERE owner_id = $1 RETURNING thumbnail`, [userId])).map(
-    (r) => r.thumbnail,
-  );
+  return (
+    await query<{ thumbnail: string | null }>(`DELETE FROM boards WHERE owner_id = $1 AND removed_at IS NULL RETURNING thumbnail`, [userId])
+  ).map((r) => r.thumbnail);
+}
+
+/** How many taken-down boards (held for review) the user owns / the workspace holds. */
+export async function countHeld(by: { ownerId: string } | { workspaceId: string }): Promise<number> {
+  const r =
+    'ownerId' in by
+      ? await one<{ n: number }>(`SELECT count(*)::int AS n FROM boards WHERE owner_id = $1 AND removed_at IS NOT NULL`, [by.ownerId])
+      : await one<{ n: number }>(`SELECT count(*)::int AS n FROM boards WHERE workspace_id = $1 AND removed_at IS NOT NULL`, [by.workspaceId]);
+  return r?.n ?? 0;
+}
+
+/** Deletes a TAKEN-DOWN board for good (an operator's decision); its thumbnail, or undefined if it isn't taken down. */
+export async function deleteTakenDown(id: string): Promise<string | null | undefined> {
+  const r = await one<{ thumbnail: string | null }>(`DELETE FROM boards WHERE id = $1 AND removed_at IS NOT NULL RETURNING thumbnail`, [id]);
+  return r ? r.thumbnail : undefined;
+}
+
+/** The user's boards in service (not trashed, not taken down): what a suspension may take down with it. */
+export async function liveOwnedBy(userId: string): Promise<Array<{ id: string; title: string; linkShared: boolean }>> {
+  return (
+    await query<{ id: string; title: string; link_shared: boolean }>(
+      `SELECT id, title, (link_access <> 'none' AND link_blocked_at IS NULL) AS link_shared FROM boards
+       WHERE owner_id = $1 AND deleted_at IS NULL AND removed_at IS NULL ORDER BY created_at`,
+      [userId],
+    )
+  ).map((r) => ({ id: r.id, title: r.title, linkShared: r.link_shared }));
 }
 
 /** Deletes up to `limit` boards trashed before `before` for good; returns what was deleted. */

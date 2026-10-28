@@ -6,7 +6,18 @@ import { storage, type ByteRange } from '../../platform/storage';
 import { actorId, currentActor, currentUser, requireUser, requireUserOrGuest } from '../auth/index';
 import { openBoardFile } from './download';
 import { isUploadRemoved } from './moderation';
-import { ATTACHMENT_EXT, FILE_NAME_RE, MEDIA_EXTS, TYPE_BY_EXT, saveUpload, tooLarge, uploadKindOf, uploadLimitFor, type UploadKind } from './store';
+import {
+  ATTACHMENT_EXT,
+  FILE_NAME_RE,
+  MEDIA_EXTS,
+  TYPE_BY_EXT,
+  saveUpload,
+  tooLarge,
+  uploadCacheControl,
+  uploadKindOf,
+  uploadLimitFor,
+  type UploadKind,
+} from './store';
 
 // Mounted at the root (not /api) because it also serves GET /uploads/:file.
 export const mountPath = '/';
@@ -100,14 +111,16 @@ export default function uploadRoutes(_ctx: ServerContext): Router {
       }
       const ext = name.split('.').pop()!;
       if (ext === ATTACHMENT_EXT) throw notFound('Files attached to a board are downloaded from the board');
+      // Cached for UPLOAD_CACHE_SECONDS, then revalidated (KAI-177): a name's bytes never change,
+      // so the name is the ETag and asking again costs a 304 — or a 410 once the file was removed.
+      res.setHeader('Cache-Control', uploadCacheControl());
       const direct = ext === 'svg' || ext === 'pdf' ? null : storage().publicUrl(name);
-      if (direct) {
-        res.setHeader('Cache-Control', 'public, max-age=86400');
-        return res.redirect(302, direct);
-      }
+      if (direct) return res.redirect(302, direct);
+      const etag = `"${name}"`;
+      res.setHeader('ETag', etag);
+      if ((req.headers['if-none-match'] ?? '').split(',').some((t) => t.trim() === etag || t.trim() === `W/${etag}`)) return res.status(304).end();
       res.setHeader('Content-Type', TYPE_BY_EXT[ext]);
       contentHeaders(res);
-      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
       let range: ByteRange | 'none' | null = null;
       let total: number | null = null;
       if (MEDIA_EXTS.has(ext)) {
@@ -122,7 +135,7 @@ export default function uploadRoutes(_ctx: ServerContext): Router {
         res.setHeader('Content-Range', `bytes */${total}`);
         return res.status(416).end();
       }
-      const obj = await storage().get(name, range ?? undefined);
+      const obj = await storage().get(name, range ? { range } : {});
       if (!obj) throw notFound('File not found');
       if (range) {
         res.status(206);

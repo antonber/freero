@@ -1,6 +1,6 @@
 // Mini SVG thumbnail drawn from the template's own element data (no image files): the same
 // data that gets inserted, simplified to boxes, pills and text bars.
-import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createElement, memo, useEffect, useRef, useState, type ReactNode } from 'react';
 import { STICKY_COLORS, type BoardElement, type StickyColor } from '@freero/shared';
 import type { NewElement } from '@engine';
 import { boundsOf } from './place';
@@ -54,6 +54,15 @@ function shapePath(el: NewElement<'shape'>): ReactNode {
       return <ellipse cx={x + w / 2} cy={y + h / 2} rx={w / 2} ry={h / 2} {...common} />;
     case 'diamond':
       return <polygon points={`${x + w / 2},${y} ${x + w},${y + h / 2} ${x + w / 2},${y + h} ${x},${y + h / 2}`} {...common} />;
+    case 'umlLifeline': {
+      const hh = Math.min(52, h * 0.3);
+      return (
+        <g>
+          <rect x={x} y={y} width={w} height={hh} {...common} />
+          <line x1={x + w / 2} y1={y + hh} x2={x + w / 2} y2={y + h} stroke={common.stroke} strokeWidth={Math.max(2, el.strokeWidth)} strokeDasharray="10 8" />
+        </g>
+      );
+    }
     case 'chevron': {
       const t = Math.min(h / 2, w / 4);
       return <polygon points={`${x},${y} ${x + w - t},${y} ${x + w},${y + h / 2} ${x + w - t},${y + h} ${x},${y + h} ${x + t},${y + h / 2}`} {...common} />;
@@ -189,6 +198,52 @@ function draw(el: El, byId: Map<string, El>): ReactNode {
         </g>
       );
     }
+    case 'kanban': {
+      const k = el as NewElement<'kanban'>;
+      return (
+        <g key={key}>
+          <rect x={k.x} y={k.y} width={k.w} height={k.h} rx={10} fill="#F4F3F8" stroke="#DCDAE8" strokeWidth={2} />
+          {k.columns.map((c, i) => {
+            const cx = k.x + 12 + i * (k.colW + 12);
+            return (
+              <g key={c.id}>
+                <rect x={cx} y={k.y + 52} width={k.colW} height={k.h - 64} rx={8} fill="#FFFFFF" />
+                <rect x={cx} y={k.y + 52} width={k.colW} height={36} rx={8} fill={c.color} />
+              </g>
+            );
+          })}
+        </g>
+      );
+    }
+    case 'swimlane': {
+      const p = el as NewElement<'swimlane'>;
+      const top = p.y + 44 + (p.phases.length > 1 ? 36 : 0);
+      let ly = top;
+      return (
+        <g key={key}>
+          <rect x={p.x} y={p.y} width={p.w} height={p.h} fill="#FFFFFF" stroke="#C9C6DA" strokeWidth={2} />
+          <rect x={p.x} y={p.y} width={p.w} height={44} fill="#ECE9FB" />
+          {p.lanes.map((b) => {
+            const y = ly;
+            ly += b.size;
+            return (
+              <g key={b.id}>
+                <rect x={p.x} y={y} width={150} height={b.size} fill={b.color} stroke="#C9C6DA" strokeWidth={2} />
+                <line x1={p.x} y1={y} x2={p.x + p.w} y2={y} stroke="#C9C6DA" strokeWidth={2} />
+              </g>
+            );
+          })}
+        </g>
+      );
+    }
+    case 'icon': {
+      const ic = el as NewElement<'icon'>;
+      return (
+        <svg key={key} x={ic.x} y={ic.y} width={ic.w} height={ic.h} viewBox="0 0 24 24" fill="none" stroke={ic.color} strokeWidth={ic.strokeWidth} strokeLinecap="round" strokeLinejoin="round">
+          {ic.nodes.map(([tag, attrs], i) => createElement(tag, { key: i, ...attrs }))}
+        </svg>
+      );
+    }
     case 'image':
       return <rect key={key} x={el.x} y={el.y} width={el.w} height={el.h} rx={6} fill="#E4E3EE" />;
     case 'pen': {
@@ -222,8 +277,9 @@ export const TemplatePreview = memo(function TemplatePreview({ def }: { def: Tem
   const els = elementsFor(def) as El[];
   const b = boundsOf(els) ?? { x: 0, y: 0, w: 1, h: 1 };
   const byId = new Map(els.filter((e) => e.id).map((e) => [e.id!, e]));
-  // Connectors on top of shapes, like on the board.
-  const ordered = [...els.filter((e) => e.type === 'frame'), ...els.filter((e) => e.type !== 'frame')];
+  // Containers first, then their contents; connectors on top of shapes, like on the board.
+  const back = (e: El) => e.type === 'frame' || e.type === 'kanban' || e.type === 'swimlane';
+  const ordered = [...els.filter((e) => e.type === 'frame'), ...els.filter((e) => back(e) && e.type !== 'frame'), ...els.filter((e) => !back(e))];
   const pad = Math.max(b.w, b.h) * 0.02;
   return (
     <svg

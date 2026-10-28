@@ -32,7 +32,26 @@ const REQUIRED: Record<ElementType, string[]> = {
 let seq = 0;
 const freshId = () => `id${++seq}`;
 const SPOT = { x: 300, y: -200 };
+const CONTAINERS: string[] = ['frame', 'kanban', 'swimlane'];
+
+/**
+ * The part of an element its text occupies. Sequence diagrams are crossed by design: messages,
+ * bars and fragments run over a lifeline's stem, and a fragment's label is its corner tag.
+ */
+function textArea(e: NewElement): NewElement {
+  if (e.type !== 'shape') return e;
+  const s = e as NewElement<'shape'>;
+  if (s.shape === 'umlLifeline') return { ...e, h: Math.min(52, e.h * 0.3) };
+  if (s.shape === 'umlFragment') return { ...e, w: Math.min(e.w * 0.35, 88), h: Math.min(e.h * 0.22, 28) };
+  return e;
+}
 const emptyBoard: BoardSnapshot = { place: () => SPOT, maxFrameIndex: -1 };
+
+/** Where an attached connector end sits: a spot given as box fractions, else the side's middle. */
+function endPointOf(el: NewElement, end: { anchor?: string; at?: { u: number; v: number } | null }) {
+  if (end.at) return { x: el.x + end.at.u * el.w, y: el.y + end.at.v * el.h };
+  return anchorOf(el, end.anchor!);
+}
 
 function anchorOf(el: NewElement, anchor: string) {
   if (anchor === 'top') return { x: el.x + el.w / 2, y: el.y };
@@ -58,14 +77,14 @@ describe.each(TEMPLATES.map((t) => [t.id, t] as const))('template %s', (_id, def
     }
   });
 
-  it('keeps every element of a frame inside that frame, so moving the frame carries the whole template', () => {
+  it('keeps every element of a frame (or kanban, or swimlane) inside it, so moving it carries the whole template', () => {
     const els = def.build(freshId).elements;
-    const frames = new Map(els.filter((e) => e.type === 'frame').map((f) => [f.id!, f]));
-    expect(frames.size).toBeGreaterThan(0);
+    const frames = new Map(els.filter((e) => CONTAINERS.includes(e.type)).map((f) => [f.id!, f]));
+    expect(els.some((e) => e.type === 'frame')).toBe(true);
     for (const el of els) {
       if (el.type === 'frame' || !el.frameId) continue;
       const f = frames.get(el.frameId);
-      expect(f, `${el.type} points at a frame outside the template`).toBeDefined();
+      expect(f, `${el.type} points at a container outside the template`).toBeDefined();
       expect(el.x).toBeGreaterThanOrEqual(f!.x);
       expect(el.y).toBeGreaterThanOrEqual(f!.y);
       expect(el.x + el.w).toBeLessThanOrEqual(f!.x + f!.w);
@@ -75,11 +94,13 @@ describe.each(TEMPLATES.map((t) => [t.id, t] as const))('template %s', (_id, def
 
   it('never stacks one piece of text on another, so every label, note and cell stays readable', () => {
     const els = def.build(freshId).elements;
-    // Text-bearing items; textless shapes are backgrounds (columns, quadrants, circles).
-    const readable = els.filter((e) => {
-      if (e.type === 'shape') return (e as NewElement<'shape'>).text !== '';
-      return ['sticky', 'text', 'card', 'table', 'mindmap', 'emoji'].includes(e.type);
-    });
+    // Text-bearing items (and icons); textless shapes are backgrounds (columns, quadrants, circles).
+    const readable = els
+      .filter((e) => {
+        if (e.type === 'shape') return (e as NewElement<'shape'>).text !== '';
+        return ['sticky', 'text', 'card', 'table', 'mindmap', 'emoji', 'icon'].includes(e.type);
+      })
+      .map(textArea);
     const label = (e: NewElement) => {
       const r = e as unknown as { text?: string; title?: string };
       return `${e.type} "${String(r.text ?? r.title ?? '').slice(0, 40)}"`;
@@ -100,7 +121,7 @@ describe.each(TEMPLATES.map((t) => [t.id, t] as const))('template %s', (_id, def
     const byId = new Map(els.map((e) => [e.id!, e]));
     expect(byId.size, 'ids are unique').toBe(els.length);
     for (const el of els) {
-      if (el.frameId) expect(byId.get(el.frameId)?.type).toBe('frame');
+      if (el.frameId) expect(CONTAINERS).toContain(byId.get(el.frameId)?.type);
       if (el.type === 'connector') {
         const c = el as NewElement<'connector'>;
         for (const end of [c.start, c.end]) {
@@ -108,7 +129,7 @@ describe.each(TEMPLATES.map((t) => [t.id, t] as const))('template %s', (_id, def
           const target = byId.get(end.elementId);
           expect(target, 'connector end attached to a missing element').toBeDefined();
           // Cached endpoint must move with the template, or the line flashes at the old spot.
-          expect(end).toMatchObject(anchorOf(target!, end.anchor!));
+          expect(end).toMatchObject(endPointOf(target!, end));
         }
       }
       if (el.type === 'mindmap') {

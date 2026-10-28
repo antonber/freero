@@ -952,7 +952,8 @@ async function run() {
     });
 
     const dThread = { kind: 'thread', id: 't1', x: 5, y: 5, elementId: null, createdAt: 1, createdBy: D.id };
-    const dMsg = (id, authorId, text) => ({ kind: 'message', threadId: 't1', id, authorId, authorName: authorId, text, createdAt: 1 });
+    // Messages carry their author's name: a commenter's must be their own (KAI-187).
+    const dMsg = (id, authorId, text) => ({ kind: 'message', threadId: 't1', id, authorId, authorName: [A, D].find((u) => u.id === authorId)?.name ?? authorId, text, createdAt: 1 });
     await check("commenter D can write 'comments' but not 'elements'", async () => {
       d.doc.transact(() => {
         d.doc.getMap('comments').set('t:t1', dThread);
@@ -996,6 +997,40 @@ async function run() {
       d.doc.getMap('comments').set('r:t1:a1:' + D.id + ':🎉', { kind: 'reaction', threadId: 't1', messageId: 'a1', userId: D.id, emoji: '🎉' });
       await waitFor(() => a.doc.getMap('comments').get('m:t1:m1')?.editedAt === 4, 5000, "A to receive D's edit of D's own message");
       await waitFor(() => a.doc.getMap('comments').has('r:t1:a1:' + D.id + ':🎉'), 5000, "A to receive D's reaction");
+    });
+
+    await check("comment authorship (KAI-187): commenter D's raw client cannot post under another name (a member's, a made-up one, a guest's), but can under a name D just took", async () => {
+      const own = (id, authorName) => ({ ...dMsg(id, D.id, `as ${authorName}`), authorName });
+      const attempts = [
+        ["A's name", own('n1', A.name)],
+        ['a made-up title', own('n2', 'Jane Doe (CEO)')],
+        ["a guest's name", own('n3', 'Guest · Kim')],
+      ];
+      for (const [what, m] of attempts) {
+        const raw = connectDoc(D, board.id); // fresh: a dropped update would sink everything after it
+        await raw.ready();
+        raw.doc.getMap('comments').set(`m:t1:${m.id}`, m);
+        await settled(raw, [a]);
+        raw.destroy();
+        assert(!a.doc.getMap('comments').has(`m:t1:${m.id}`), `D could comment under ${what}`);
+      }
+      // A rename reaches D's open socket before the answer: the next comment under it is accepted.
+      const raw = connectDoc(D, board.id);
+      await raw.ready();
+      const renamed = await D.req('PATCH', '/api/auth/me', { name: 'Dee Renamed' });
+      assert(renamed.status === 200, `rename: ${renamed.status}`);
+      raw.doc.getMap('comments').set('m:t1:n4', own('n4', 'Dee Renamed'));
+      await waitFor(() => a.doc.getMap('comments').has('m:t1:n4'), 5000, "A to receive D's comment under D's new name");
+      raw.destroy();
+      // A tab loaded before that rename (on another device) still writes the old name, even after
+      // its socket reconnects: its comments must not be dropped.
+      const stale = connectDoc(D, board.id);
+      await stale.ready();
+      stale.doc.getMap('comments').set('m:t1:n5', own('n5', D.name));
+      await waitFor(() => a.doc.getMap('comments').has('m:t1:n5'), 5000, "A to receive D's comment under D's previous name");
+      stale.destroy();
+      assert((await D.req('PATCH', '/api/auth/me', { name: 'Guest · Dee' })).status === 400, 'an account took a guest-style name');
+      assert((await D.req('PATCH', '/api/auth/me', { name: D.name })).status === 200, 'rename back');
     });
 
     // ---- board layers: content the server withholds (private drafts, sealed ballots, hidden frames) ----
@@ -1852,6 +1887,14 @@ async function notificationChecks() {
     for (const u of [A, B, C]) await u.verifyEmail(dataDir);
     const board = (await A.req('POST', '/api/boards', { title: 'Notify board' })).json.board;
     const list = async (u) => (await u.req('GET', '/api/notifications')).json;
+    // Conditions to wait on instead of fixed sleeps (KAI-173), from the server's /metrics.
+    const handled = () => gauge(proc, 'freero_notifications_comment_messages_handled_total');
+    const digestRuns = () => gauge(proc, 'freero_notifications_digest_runs_total');
+    /** Resolves after `n` more complete digest runs (each one considered everything due when it started). */
+    const moreDigestRuns = async (n, what) => {
+      const start = await digestRuns();
+      await waitFor(async () => (await digestRuns()) >= start + n + 1, 15_000, what); // +1: one may be mid-run now
+    };
 
     await check('sharing a board with an account notifies them in the app, live on their open notifications socket', async () => {
       const live = notificationsSocket(B, port);
@@ -1908,12 +1951,14 @@ async function notificationChecks() {
       for (const u of [Z, W])
         assert((await A.req('POST', `/api/boards/${board.id}/members`, { email: u.email, role: 'commenter' })).json?.invite, `invite ${u.label}`);
       const now = Date.now();
+      const before = await handled();
       clients[0].doc.transact(() => {
         const m = clients[0].doc.getMap('comments');
         m.set('t:t2', { kind: 'thread', id: 't2', x: 50, y: 50, createdAt: now, createdBy: A.id });
         m.set('m:t2:z1', { kind: 'message', threadId: 't2', id: 'z1', authorId: A.id, authorName: A.name, text: `welcome ${Z.email.toUpperCase()} and ${W.email}.`, createdAt: now });
       });
-      await sleep(800); // the server records the pending mentions as it applies the message
+      // The server records the pending mentions as it handles the message: wait until it has.
+      await waitFor(async () => (await handled()) > before, 10_000, 'the server to handle the message naming the invited addresses');
       await Z.signup();
       const token = await mailedToken(dataDir, Z.email, '/invite');
       assert((await Z.req('POST', `/api/invites/${token}/accept`)).status === 200, 'accept the invite');
@@ -1930,7 +1975,7 @@ async function notificationChecks() {
     let digest = null;
     await check('one digest email batches the unread notifications; its links open the board and the thread', async () => {
       await waitFor(() => (digest = outbox(dataDir).find((m) => m.to === B.email && /notification/i.test(m.subject + m.text))), 15_000, 'the digest to B');
-      await sleep(2500); // a couple more digest runs: nothing is sent twice
+      await moreDigestRuns(2, 'two more digest runs'); // nothing is sent twice
       const toB = outbox(dataDir).filter((m) => m.to === B.email && m.sentAt > 0 && !/confirm|verify/i.test(m.subject));
       assert(toB.length === 1, `mails to B: ${toB.map((m) => m.subject).join(' | ')}`);
       assert(digest.subject === '2 new notifications on Freero', digest.subject);
@@ -1955,7 +2000,10 @@ async function notificationChecks() {
       // A new mention still shows in the app, but no email follows.
       clients[0].doc.getMap('comments').set('m:t1:m3', { kind: 'message', threadId: 't1', id: 'm3', authorId: A.id, authorName: A.name, text: `again <@${B.id}>`, createdAt: Date.now() });
       await waitFor(() => live.lastUnread() === 1, 5000, 'the new mention live');
-      await sleep(7500); // past the 5 s email delay and a few digest runs
+      // Past the 5 s email delay (when it would be due), then two digest runs that saw it due.
+      const due = Date.now() + 5000;
+      await waitFor(() => Date.now() > due, 7000, 'the mention to be due for email');
+      await moreDigestRuns(2, 'two digest runs after the mention was due');
       assert(outbox(dataDir).filter((m) => m.to === B.email && /notification|mentioned/i.test(m.subject)).length === 1, 'emailed after unsubscribing');
     });
 
@@ -2013,6 +2061,9 @@ async function multiInstanceChecks() {
     RATE_LIMIT_SIGNUP: '200/1h',
     ACCOUNT_DELETION_GRACE_DAYS: '0',
     ACCOUNT_PURGE_INTERVAL_SECONDS: i === 0 ? '3600' : '1',
+    // Instance 1 re-checks its sockets' sessions every second, instance 2 hourly: what instance 2
+    // closes at once can only have come from an announcement (KAI-146).
+    SESSION_RECHECK_SECONDS: i === 0 ? '1' : '3600',
     FREERO_SNAPSHOT_EVERY_MS: String(AUTO_VERSION_MS),
     SSO_DNS_SERVERS: multiDns.server,
     OPERATOR_EMAILS: OP.email,
@@ -2215,6 +2266,48 @@ async function multiInstanceChecks() {
       await live.ready();
       assert((await L.req('POST', '/api/auth/logout', undefined, { port: two })).status === 200, 'logout');
       await waitFor(() => live.closeCodes.includes(4401), 5000, 'the socket on instance 1 to close with 4401');
+      live.destroy();
+    });
+
+    // KAI-146: sessions ended outside any server process.
+    await check('sessions deleted with SQL lose their open board socket and bell within SESSION_RECHECK_SECONDS (4401); other sessions stay connected', async () => {
+      const S = new User('MSql');
+      await S.signup();
+      const own = (await S.req('POST', '/api/boards', { title: 'S' })).json.board;
+      const keep = new User('MSql-laptop');
+      keep.email = S.email;
+      assert((await keep.req('POST', '/api/auth/login', { email: S.email, password: 'password-123' })).status === 200, 'second login');
+      const live = connectDoc(S, own.id, undefined, one);
+      const bell = notificationsSocket(S, one);
+      const other = connectDoc(keep, own.id, undefined, one);
+      await Promise.all([live.ready(), other.ready()]);
+      await waitFor(() => bell.lastUnread() !== null, 5000, 'the bell to connect');
+      const sid = (await S.req('GET', '/api/auth/sessions')).json.sessions.find((s) => s.current).id;
+      await adminQuery(`DELETE FROM sessions WHERE id = '${sid}'`, url);
+      await waitFor(() => live.closeCodes.includes(4401) && bell.closeCode === 4401, 5000, 'the board socket and the bell of the deleted session to close with 4401');
+      await settled(other);
+      assert(!other.closeCodes.length, `the other session's socket closed too: ${other.closeCodes}`);
+      for (const c of [live, other]) c.destroy();
+    });
+
+    await check('`npm run admin -- two-factor:reset` (its own process, next to the instances) closes the board socket and bell of every session it ends at once (4401), on an instance that would not re-check for an hour', async () => {
+      const R = new User('MReset');
+      await R.signup();
+      const setup = await R.req('POST', '/api/auth/two-factor/setup', { password: 'password-123' });
+      assert((await R.req('POST', '/api/auth/two-factor/enable', { code: await totpCode({ secret: setup.json.secret }) })).status === 200, 'two-step on');
+      const own = (await R.req('POST', '/api/boards', { title: 'R' })).json.board;
+      const live = connectDoc(R, own.id, undefined, two);
+      const bell = notificationsSocket(R, two);
+      await live.ready();
+      await waitFor(() => bell.lastUnread() !== null, 5000, 'the bell to connect');
+      const cli = spawnSync(process.execPath, ['--import', 'tsx', 'apps/server/src/admin.ts', 'two-factor:reset', R.email, '--operator', 'verify', '--reason', 'KAI-146 check', '--yes'], {
+        cwd: ROOT,
+        encoding: 'utf8',
+        env: { ...process.env, ...env(1), FREERO_DATA_DIR: path.join(dataDir, 'i1'), NODE_ENV: 'test', SESSION_SECRET: RUN_SECRET, LOG_LEVEL: 'warn' },
+        timeout: 60_000,
+      });
+      assert(cli.status === 0 && /Done:/.test(cli.stdout), `reset: ${cli.status} ${cli.stdout} ${cli.stderr}`);
+      await waitFor(() => live.closeCodes.includes(4401) && bell.closeCode === 4401, 5000, 'the board socket and the bell on instance 2 to close with 4401');
       live.destroy();
     });
 
@@ -4274,6 +4367,69 @@ async function moderationChecks() {
 
       assert((await act({ action: 'user.restore', targetId: M.id, statement: '' })).status === 200, 'lift');
       assert((await M.req('POST', '/api/auth/login', { email: M.email, password: 'password-123' })).status === 200, 'login after the suspension was lifted');
+    });
+
+    await check('moderation (KAI-180): suspending with "take its boards down" closes every board the account owns to its link visitors at once, each recorded; lifting the suspension opens them again', async () => {
+      const boards = [];
+      for (const title of ['Spam 1', 'Spam 2']) boards.push(await board(title));
+      const visitor = connectDoc(L, boards[0].id);
+      await visitor.ready();
+      const r = await act({ action: 'user.suspend', targetId: O.id, statement: 'Spam account.', boards: 'take_down' });
+      assert(r.status === 200, r.text);
+      await waitFor(() => visitor.closeCodes.includes(4451), 5000, "the link visitor's socket to close as removed");
+      for (const b of boards) assert((await L.req('GET', `/api/boards/${b.id}`)).status === 451, `${b.title} still open to its link`);
+      const history = (await Op.req('GET', `/api/moderation/boards/${boards[1].id}`)).json.actions;
+      assert(history.some((a) => a.action === 'board.take_down' && a.parentId === r.json.action.id && a.subject?.email === O.email), JSON.stringify(history));
+      visitor.destroy();
+      assert((await act({ action: 'user.restore', targetId: O.id, statement: '' })).status === 200, 'lift');
+      for (const b of boards) assert((await L.req('GET', `/api/boards/${b.id}`)).status === 200, `${b.title} not back after the lift`);
+      assert((await O.req('POST', '/api/auth/login', { email: O.email, password: 'password-123' })).status === 200, 'owner signs in again');
+    });
+
+    await check('moderation (KAI-178): a team workspace holding a taken-down board cannot be deleted; once the operator deletes the board for good, it can', async () => {
+      const team = (await O.req('POST', '/api/workspaces', { name: 'Held team' })).json.workspace;
+      const b = (await O.req('POST', '/api/boards', { title: 'Held', workspaceId: team.id })).json.board;
+      assert(b?.workspaceId === team.id, `board in team: ${JSON.stringify(b)}`);
+      assert((await act({ action: 'board.take_down', targetId: b.id, reason: 'illegal', statement: 'Unlawful content.' })).status === 200, 'take down');
+      const refused = await O.req('DELETE', `/api/workspaces/${team.id}`, { confirm: 'Held team' });
+      assert(refused.status === 409 && refused.json?.code === 'workspace_board_held', `${refused.status} ${refused.text}`);
+      assert((await Op.req('GET', `/api/moderation/boards/${b.id}`)).status === 200, 'the held board is gone');
+      assert((await act({ action: 'board.delete', targetId: b.id, reason: 'illegal', statement: 'Deleted after review.' })).status === 200, 'delete for good');
+      assert((await Op.req('GET', `/api/moderation/boards/${b.id}`)).status === 404, 'the board survived its deletion');
+      const deleted = await O.req('DELETE', `/api/workspaces/${team.id}`, { confirm: 'Held team' });
+      assert(deleted.status === 200 || deleted.status === 204, `${deleted.status} ${deleted.text}`);
+    });
+
+    await check('moderation (KAI-177): uploads are cached for an hour, then revalidated cheaply (304 by ETag) — and a browser revalidating a file removed meanwhile gets 410, not its copy', async () => {
+      const url = (await O.req('POST', '/api/uploads', PNG_1PX, { raw: true, headers: { 'content-type': 'image/png' } })).json.url;
+      const get = (headers = {}) => fetch(`http://127.0.0.1:${server.port}${url}`, { headers, redirect: 'manual' });
+      const first = await get();
+      const etag = first.headers.get('etag');
+      assert(first.status === 200 && first.headers.get('cache-control') === 'public, max-age=3600' && etag, `${first.status} ${first.headers.get('cache-control')} ${etag}`);
+      assert((await get({ 'if-none-match': etag })).status === 304, 'revalidation is not a 304');
+      assert((await act({ action: 'upload.remove', targetId: url, reason: 'illegal', statement: 'Unlawful image.' })).status === 200, 'remove');
+      const again = await get({ 'if-none-match': etag });
+      assert(again.status === 410 && again.headers.get('cache-control') === 'no-store', `after removal: ${again.status} ${again.headers.get('cache-control')}`);
+    });
+
+    await check('moderation (KAI-179): with MODERATION_KEEP_REMOVED_DAYS=0 the retention job deletes the kept copy of a removed file (the URL stays 410); one with an open report is kept', async () => {
+      await stopServer();
+      env.MODERATION_KEEP_REMOVED_DAYS = '0';
+      env.MODERATION_RETENTION_INTERVAL_SECONDS = '1';
+      await boot();
+      const upload = async () => (await O.req('POST', '/api/uploads', PNG_1PX, { raw: true, headers: { 'content-type': 'image/png' } })).json.url.slice('/uploads/'.length);
+      const [expiring, contested] = [await upload(), await upload()];
+      const shown = await board('Shows the contested file');
+      // Under review before it is removed: the job (every second) never races the report.
+      const reportFile = await L.req('POST', '/api/reports', { boardId: shown.id, target: { kind: 'upload', id: contested }, reason: 'copyright' });
+      assert(reportFile.status === 202 || reportFile.status === 200, `report: ${reportFile.status} ${reportFile.text}`);
+      for (const name of [contested, expiring]) assert((await act({ action: 'upload.remove', targetId: name, reason: 'illegal', statement: 'Unlawful image.' })).status === 200, 'remove');
+      const file = async (name) => (await Op.req('GET', `/api/moderation/uploads/${name}`)).json.upload;
+      await waitFor(async () => (await file(expiring))?.restorable === false, 8000, 'the retention job to delete the kept copy');
+      assert((await fileStatus(`/uploads/${expiring}`)) === 410, 'the removed file is not 410 any more');
+      assert((await file(contested))?.restorable === true, 'the kept copy of a file under appeal was deleted');
+      delete env.MODERATION_KEEP_REMOVED_DAYS;
+      delete env.MODERATION_RETENTION_INTERVAL_SECONDS;
     });
 
     await check('moderation: reports are rate-limited per address (429 with Retry-After)', async () => {
