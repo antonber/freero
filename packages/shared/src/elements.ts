@@ -223,6 +223,13 @@ export interface ConnectorEndpoint {
   /** Attached element id; when set, x/y are recomputed from that element. */
   elementId?: string | null;
   anchor?: Anchor;
+  /**
+   * Attached anywhere on the element's outline: the spot as fractions (0..1) of its unrotated
+   * box, projected onto the drawn outline (a point on an ellipse's curve). It scales with the
+   * element, so 25% along a side stays at 25% after a resize. `anchor` then names the nearest
+   * side (clients that predate this attach there). Absent = `anchor` alone.
+   */
+  at?: { u: number; v: number } | null;
   /** Absolute world point (used when unattached, and cached when attached). */
   x: number;
   y: number;

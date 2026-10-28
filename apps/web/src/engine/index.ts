@@ -37,6 +37,7 @@ export {
   useViewHidden,
   usePrivateCollection,
   useIsExporting,
+  useElementsQuery,
 
 } from './hooks';
 

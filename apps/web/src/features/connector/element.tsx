@@ -1,5 +1,5 @@
 import { Spline as SplineIcon } from 'lucide-react';
-import { memo, useMemo, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { memo, useCallback, useMemo, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import type { BoardElement, ConnectorElement } from '@freero/shared';
 import {
   defineElement,
@@ -9,22 +9,42 @@ import {
   useEditingPart,
   useEditor,
   useElement,
+  useElementsQuery,
   useSettings,
   type Editor,
   type ElementRenderProps,
   type NewElement,
   type Point,
+  type Rect,
 } from '@engine';
 import {
+  aabb,
   capShape,
   capTrim,
   distToPoly,
+  inflate,
   pointAlong,
+  resolveEnds,
   routePath,
   tAlong,
   type CapShape,
 } from './lib/geometry';
-import { connectorGeometry, DEFAULT_STYLE, drawnRoutes, localAnchors, refreshCache } from './lib/model';
+import { avoidsObstacles, connectorGeometry, DEFAULT_STYLE, drawnRoutes, localAnchors, refreshCache } from './lib/model';
+import { isConnectable, liveObstacles, obstacleIndex, obstaclesBetween, sameRects } from './lib/obstacles';
+
+const NO_OBSTACLES: Rect[] = [];
+
+/** Did a changed item land where this line runs (its stored bounds, with routing margin)? */
+function obstacleMovedNear(editor: Editor, c: ConnectorElement, changed: ReadonlySet<string>): boolean {
+  const area = inflate({ x: c.x, y: c.y, w: c.w, h: c.h }, 48);
+  for (const id of changed) {
+    const el = editor.getElement(id);
+    if (!el || !isConnectable(editor, el)) continue;
+    const r = aabb(el);
+    if (r.x < area.x + area.w && area.x < r.x + r.w && r.y < area.y + area.h && area.y < r.y + r.h) return true;
+  }
+  return false;
+}
 import { DEFAULT_LABEL_T, extraPart, hasMainLabel, labelBoxes, moveLabel, parsePart, partAt, writeLabel, type LabelPart } from './lib/labels';
 import './connector.css';
 
@@ -70,10 +90,19 @@ const ConnectorView = memo(function ConnectorView({ element: c, selected, editin
   const a = useElement(c.start.elementId ?? null);
   const b = useElement(c.end.elementId ?? null);
   const { background } = useSettings();
-  const geo = useMemo(() => {
-    const lookup = (id: string): BoardElement | undefined => (id === a?.id ? a : id === b?.id ? b : editor.getElement(id));
-    return connectorGeometry(c, lookup, localAnchors(editor));
-  }, [c, a, b, editor]);
+  const lookup = useCallback((id: string): BoardElement | undefined => (id === a?.id ? a : id === b?.id ? b : editor.getElement(id)), [a, b, editor]);
+  // Items in the way of an elbow line: it re-routes only when THEIR boxes change, not on every
+  // edit elsewhere on the board.
+  const selectObstacles = useCallback(
+    (all: BoardElement[]): Rect[] => {
+      if (!avoidsObstacles(c)) return NO_OBSTACLES;
+      const { start, end } = resolveEnds(c, lookup, localAnchors(editor));
+      return obstaclesBetween(obstacleIndex(editor, all), start, end);
+    },
+    [c, lookup, editor],
+  );
+  const obstacles = useElementsQuery(selectObstacles, sameRects);
+  const geo = useMemo(() => connectorGeometry(c, lookup, localAnchors(editor), obstacles), [c, lookup, editor, obstacles]);
   drawnRoutes.set(c, geo.route.poly);
 
   const sw = c.strokeWidth;
@@ -274,10 +303,12 @@ export default defineElement({
   // Engine hook: runs inside every LOCAL change (same undo step / network update). Re-derives
   // the cached endpoints + bounds when an attached element moved, resized, rotated or was
   // deleted (its end then stays where it was, unattached), or when the connector itself changed.
+  // An elbow line also re-routes when an item moved into (or within) its way.
   follow(c, { editor, changed, removed }) {
     const ids = [c.start.elementId, c.end.elementId];
-    if (!changed.has(c.id) && !ids.some((id) => id && (changed.has(id) || removed.has(id)))) return null;
-    return refreshCache(c, (id) => editor.getElement(id), localAnchors(editor), removed);
+    const own = changed.has(c.id) || ids.some((id) => id && (changed.has(id) || removed.has(id)));
+    if (!own && !(avoidsObstacles(c) && obstacleMovedNear(editor, c, changed))) return null;
+    return refreshCache(c, (id) => editor.getElement(id), localAnchors(editor), removed, liveObstacles(editor));
   },
 });
 

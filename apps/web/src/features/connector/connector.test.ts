@@ -3,7 +3,9 @@ import type { BoardElement, ConnectorElement, ConnectorEndpoint } from '@freero/
 import connectorDef from './element';
 import { capShape, capTrim, computeRoute, resolveEnds, tAlong, type End } from './lib/geometry';
 import { moveLabel, parsePart, partAt, writeLabel } from './lib/labels';
-import { refreshCache } from './lib/model';
+import { buildConnector, endpoint, refreshCache, styleFromOptions } from './lib/model';
+import { findTarget } from './lib/connect';
+import { ObstacleIndex, obstaclesBetween } from './lib/obstacles';
 import { createTestBoard, type ElementDefinition, type FeatureBundle } from '@engine';
 import { nextToSide, quickSpotTaken } from './lib/quick';
 
@@ -131,6 +133,92 @@ describe('routing', () => {
     let length = 0;
     for (let i = 0; i < poly.length - 1; i++) length += Math.abs(poly[i + 1].x - poly[i].x) + Math.abs(poly[i + 1].y - poly[i].y);
     expect(length).toBe(24 + 30);
+  });
+});
+
+describe('attach anywhere on the outline', () => {
+  it('an end dropped at 25% along the bottom edge stays at 25% when the item is moved and resized', () => {
+    const def = (type: string, extra: Partial<ElementDefinition> = {}) =>
+      ({ type, Component: () => null, defaults: () => ({ type, w: 100, h: 100 }), resize: 'free', ...extra }) as unknown as ElementDefinition;
+    const bundle: FeatureBundle = {
+      manifest: { name: 'connector', description: 'lines' },
+      elements: [def('sticky'), connectorDef as unknown as ElementDefinition],
+      tools: [], formats: [], panels: [], commands: [],
+    };
+    const board = createTestBoard({ users: ['ann'], features: [bundle] });
+    try {
+      const [ed] = board.editors('connector');
+      const id = ed.create({ type: 'sticky', x: 0, y: 0, w: 200, h: 100 } as never);
+      // Dropped just below the edge, a quarter of the way along: not a side's middle dot.
+      const target = findTarget(ed, { x: 50, y: 103 }, []);
+      expect(target).toMatchObject({ id, anchor: 'bottom', at: { u: 0.25, v: 1 } });
+      const c = ed.create(buildConnector(ed, endpoint(target, { x: 50, y: 103 }), endpoint(null, { x: 50, y: 400 }), styleFromOptions({ routing: 'straight' })));
+      expect(ed.getElement<ConnectorElement>(c)!.start).toMatchObject({ x: 50, y: 100 });
+      ed.update(id, { x: 300, y: 40, w: 400, h: 160 });
+      expect(ed.getElement<ConnectorElement>(c)!.start).toMatchObject({ x: 400, y: 200 });
+    } finally {
+      board.destroy();
+    }
+  });
+});
+
+describe('elbow lines route around other items', () => {
+  const end = (p: { x: number; y: number }, dir: { x: number; y: number } | null, b: BoardElement | null): End => ({
+    p,
+    dir,
+    box: b && { x: b.x, y: b.y, w: b.w, h: b.h },
+    side: null,
+  });
+  const crossesBox = (poly: Array<{ x: number; y: number }>, r: { x: number; y: number; w: number; h: number }) =>
+    poly.some((q, i) => {
+      if (!i) return false;
+      const p = poly[i - 1];
+      return Math.max(p.x, q.x) > r.x && Math.min(p.x, q.x) < r.x + r.w && Math.max(p.y, q.y) > r.y && Math.min(p.y, q.y) < r.y + r.h;
+    });
+
+  it('goes around a third item sitting straight between the two it connects, staying orthogonal', () => {
+    const a = box('a', 0, 0);
+    const b = box('b', 600, 0);
+    const middle = { x: 250, y: -20, w: 100, h: 140 };
+    const s = end({ x: 100, y: 50 }, { x: 1, y: 0 }, a);
+    const e = end({ x: 600, y: 50 }, { x: -1, y: 0 }, b);
+    expect(crossesBox(computeRoute('elbow', s, e).poly, middle)).toBe(true); // without obstacles: straight through
+    const { poly } = computeRoute('elbow', s, e, [], [middle]);
+    expect(crossesBox(poly, middle)).toBe(false);
+    for (const r of [a, b]) expect(crossesBox(poly, { x: r.x + 0.5, y: r.y + 0.5, w: r.w - 1, h: r.h - 1 })).toBe(false);
+    for (let i = 1; i < poly.length; i++) expect(poly[i].x === poly[i - 1].x || poly[i].y === poly[i - 1].y).toBe(true);
+    expect(poly[0]).toEqual({ x: 100, y: 50 });
+    expect(poly[poly.length - 1]).toEqual({ x: 600, y: 50 });
+    // Same board, same route: every client draws the same line.
+    expect(computeRoute('elbow', s, e, [], [middle]).poly).toEqual(poly);
+  });
+
+  it('routing 200 lines on a 2 000-item board fits in a frame', () => {
+    // 50 × 40 grid of items; each line skips one item in its row, so every line has to detour.
+    const items = Array.from({ length: 2000 }, (_, i) => ({ id: `n${i}`, box: { x: (i % 50) * 180, y: Math.floor(i / 50) * 140, w: 100, h: 60 } }));
+    const run = () => {
+      const index = new ObstacleIndex(items);
+      let detours = 0;
+      for (let k = 0; k < 200; k++) {
+        const i = (k * 7) % 2000;
+        const from = items[i - (i % 50) + Math.min(i % 50, 47)].box;
+        const to = { ...from, x: from.x + 360 };
+        const s = end({ x: from.x + from.w, y: from.y + 30 }, { x: 1, y: 0 }, { ...from, id: 's' } as never);
+        const e = end({ x: to.x, y: to.y + 30 }, { x: -1, y: 0 }, { ...to, id: 'e' } as never);
+        const { poly } = computeRoute('elbow', s, e, [], obstaclesBetween(index, s, e));
+        if (poly.length > 2) detours++;
+      }
+      return detours;
+    };
+    expect(run()).toBe(200);
+    // Best of a few runs: a shared CI machine can stall any single one.
+    let best = Infinity;
+    for (let i = 0; i < 5; i++) {
+      const t = performance.now();
+      run();
+      best = Math.min(best, performance.now() - t);
+    }
+    expect(best).toBeLessThan(16);
   });
 });
 

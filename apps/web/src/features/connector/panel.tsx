@@ -22,7 +22,7 @@ import {
   type Point,
 } from '@engine';
 import { DRAG_PX, findTarget, overlay, resetOverlay, snap45, type Target } from './lib/connect';
-import { anchorWorld, centerOf, nearestOnPoly, OPPOSITE, pointAlong, SIDES, sideNormal, type Side } from './lib/geometry';
+import { anchorWorld, centerOf, localToWorld, nearestOnPoly, OPPOSITE, outlineLocal, pointAlong, SIDES, sideNormal, type Side } from './lib/geometry';
 import {
   buildConnector,
   connectorGeometry,
@@ -151,10 +151,12 @@ function TargetMarks({ editor, target, highlight }: { editor: Editor; target: Ta
       {SIDES.map((side) => (
         <div
           key={side}
-          className={`fr-cx-ov__dot${target.anchor === side ? ' is-on' : ''}`}
+          className={`fr-cx-ov__dot${!target.at && target.anchor === side ? ' is-on' : ''}`}
           style={at(editor.worldToScreen(anchorWorld(el, side, local)))}
         />
       ))}
+      {/* Attach anywhere: the spot on the outline the end will hold. */}
+      {target.at && <div className="fr-cx-ov__dot is-on" style={at(editor.worldToScreen(localToWorld(el, outlineLocal(el, target.at, local))))} />}
     </>
   );
 }

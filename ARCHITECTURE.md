@@ -167,7 +167,17 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   that vanish when an edit ends empty).
 - `Editor.beginGesture()` / `endGesture()` (see "Gestures and undo").
 - `ElementDefinition.anchorPoint` returns element-local (unrotated) coordinates; the engine applies
-  position and rotation.
+  position and rotation. `outlinePoint(el, toward)` (same coordinates) is "attach anywhere": where
+  a line aimed from the center toward a local point meets the drawn outline (shapes project onto
+  their real curve; default the box). A connector end dropped on an outline away from the four
+  dots stores `ConnectorEndpoint.at = { u, v }` (fractions of the box, so it scales with resizes)
+  plus the nearest side as `anchor` (older clients attach there).
+- Elbow connectors without a user bend route around other items (`features/connector/lib/router.ts`:
+  A* over a sparse grid of the obstacles' keep-out edges, deterministic, at most 40 nearest items,
+  only when the simple route would cross one). Obstacles come from a grid index built once per
+  board state; the renderer subscribes with `useElementsQuery(select, isEqual)` (`@engine`), which
+  re-renders a component only when its derived value changes — never re-render every line on every
+  edit elsewhere. `follow` refreshes an elbow line's cache when a connectable item lands on it.
 - `@engine` hooks: `usePointer()` (world pointer for tool `Preview`s), `useTextFormatState()`,
   `useSettings()`, `useCanEdit()`; `plainToRichText()`; types `ElementTextProps`, `TextFormatState`.
 - `useCollection(name)` returns the collection's entries (`Array<[key, value]>`).

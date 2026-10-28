@@ -2,6 +2,7 @@
 // (straight / elbow / curved), caps, hit-testing and bounds. No React, no editor.
 import type { BoardElement, CapStyle, ConnectorElement, ConnectorRouting } from '@freero/shared';
 import type { Point, Rect } from '@engine';
+import { routeAround } from './router';
 
 export type Side = 'top' | 'right' | 'bottom' | 'left';
 export const SIDES: readonly Side[] = ['top', 'right', 'bottom', 'left'];
@@ -85,8 +86,14 @@ const LOCAL_NORMAL: Record<Side, Point> = {
   left: { x: -1, y: 0 },
 };
 
-/** Element-local anchor (default: bbox edge midpoints), as ElementDefinition.anchorPoint returns. */
-export type LocalAnchorFn = (el: BoardElement, side: Side) => Point | undefined;
+/**
+ * How an element type draws its outline, from its definition (`anchorPoint`, `outlinePoint`), in
+ * element-local coordinates. undefined = the bounding box (edge midpoints, box edge).
+ */
+export interface Outline {
+  anchor?(el: BoardElement, side: Side): Point | undefined;
+  toward?(el: BoardElement, local: Point): Point | undefined;
+}
 
 export function defaultLocalAnchor(el: Boxy, side: Side): Point {
   switch (side) {
@@ -102,8 +109,63 @@ export function defaultLocalAnchor(el: Boxy, side: Side): Point {
 }
 
 /** World point of an element's anchor; follows the element's rotation. */
-export function anchorWorld(el: BoardElement, side: Side, local?: LocalAnchorFn): Point {
-  return localToWorld(el, local?.(el, side) ?? defaultLocalAnchor(el, side));
+export function anchorWorld(el: BoardElement, side: Side, local?: Outline): Point {
+  return localToWorld(el, local?.anchor?.(el, side) ?? defaultLocalAnchor(el, side));
+}
+
+/** Where a ray from the box center toward `local` leaves the box (element-local). */
+export function boxToward(el: Boxy, local: Point): Point {
+  const c = { x: el.w / 2, y: el.h / 2 };
+  const d = sub(local, c);
+  if (Math.abs(d.x) < 1e-9 && Math.abs(d.y) < 1e-9) return { x: c.x, y: 0 };
+  const tx = d.x ? (d.x > 0 ? el.w - c.x : -c.x) / d.x : Infinity;
+  const ty = d.y ? (d.y > 0 ? el.h - c.y : -c.y) / d.y : Infinity;
+  const t = Math.min(tx, ty);
+  return { x: c.x + d.x * t, y: c.y + d.y * t };
+}
+
+/** The box side a local point on (or near) the outline is closest to; ties go top, right, bottom, left. */
+export function sideOfLocal(el: Boxy, p: Point): Side {
+  const d: Record<Side, number> = { top: p.y, right: el.w - p.x, bottom: el.h - p.y, left: p.x };
+  let best: Side = 'top';
+  for (const s of SIDES) if (d[s] < d[best] - 1e-9) best = s;
+  return best;
+}
+
+const round4 = (n: number) => Math.round(n * 10000) / 10000;
+
+/** The point of the box's perimeter nearest a local point (inside or outside). */
+function nearestOnBox(el: Boxy, p: Point): Point {
+  const x = Math.max(0, Math.min(el.w, p.x));
+  const y = Math.max(0, Math.min(el.h, p.y));
+  const inside = p.x > 0 && p.x < el.w && p.y > 0 && p.y < el.h;
+  if (!inside) return { x, y };
+  const d = [p.y, el.w - p.x, el.h - p.y, p.x];
+  const m = Math.min(...d);
+  return m === d[0] ? { x, y: 0 } : m === d[1] ? { x: el.w, y } : m === d[2] ? { x, y: el.h } : { x: 0, y };
+}
+
+/** Element-local point of an end attached anywhere (`at`): the drawn outline toward that spot. */
+export function outlineLocal(el: BoardElement, at: { u: number; v: number }, local?: Outline): Point {
+  const q = { x: at.u * el.w, y: at.v * el.h };
+  return local?.toward?.(el, q) ?? boxToward(el, q);
+}
+
+/**
+ * Attach anywhere: the spot on `el`'s drawn outline toward world point `p`, as the stored `at`
+ * fractions, with its nearest side, its world point and how far `p` is from it.
+ */
+export function attachNear(el: BoardElement, p: Point, local?: Outline): { at: { u: number; v: number }; side: Side; point: Point; dist: number } {
+  const l = worldToLocal(el, p);
+  const project = (t: Point) => local?.toward?.(el, t) ?? boxToward(el, t);
+  // Aiming from the center through the pointer suits curves; aiming at the nearest box edge point
+  // suits straight sides (the foot of the perpendicular). Keep whichever lands closer.
+  const viaCenter = project(l);
+  const viaEdge = project(nearestOnBox(el, l));
+  const q = dist(viaEdge, l) < dist(viaCenter, l) - 1e-9 ? viaEdge : viaCenter;
+  const at = { u: round4(el.w ? q.x / el.w : 0.5), v: round4(el.h ? q.y / el.h : 0.5) };
+  const point = localToWorld(el, q);
+  return { at, side: sideOfLocal(el, q), point, dist: dist(point, p) };
 }
 
 /** Outward unit normal of a side, in world space. */
@@ -130,11 +192,17 @@ export interface End {
 
 export type Lookup = (id: string) => BoardElement | undefined;
 
-type EndpointLike = Pick<ConnectorElement['start'], 'elementId' | 'anchor' | 'x' | 'y'>;
+type EndpointLike = Pick<ConnectorElement['start'], 'elementId' | 'anchor' | 'at' | 'x' | 'y'>;
 type RouteInput = Pick<ConnectorElement, 'start' | 'end' | 'routing' | 'waypoints'>;
 
-function resolveOne(ep: EndpointLike, el: BoardElement | undefined, ref: Point, local?: LocalAnchorFn): End {
+function resolveOne(ep: EndpointLike, el: BoardElement | undefined, ref: Point, local?: Outline): End {
   if (!el) return { p: { x: ep.x, y: ep.y }, dir: null, box: null, side: null };
+  if (ep.at) {
+    // Attached anywhere: on the outline at that spot, leaving through the nearest side.
+    const q = outlineLocal(el, ep.at, local);
+    const side = sideOfLocal(el, q);
+    return { p: localToWorld(el, q), dir: sideNormal(el, side), box: aabb(el), side };
+  }
   const side: Side = ep.anchor && ep.anchor !== 'auto' ? ep.anchor : facingSide(el, ref);
   return { p: anchorWorld(el, side, local), dir: sideNormal(el, side), box: aabb(el), side };
 }
@@ -143,7 +211,7 @@ function resolveOne(ep: EndpointLike, el: BoardElement | undefined, ref: Point, 
  * Resolves both endpoints against the live attached elements. An endpoint whose element is
  * missing (deleted, or not synced yet) falls back to its cached point.
  */
-export function resolveEnds(c: RouteInput, lookup: Lookup, local?: LocalAnchorFn): { start: End; end: End } {
+export function resolveEnds(c: RouteInput, lookup: Lookup, local?: Outline): { start: End; end: End } {
   const sEl = c.start.elementId ? lookup(c.start.elementId) : undefined;
   const eEl = c.end.elementId ? lookup(c.end.elementId) : undefined;
   const wps = c.routing === 'straight' ? [] : (c.waypoints ?? []);
@@ -164,9 +232,13 @@ export interface Route {
   endTangent: Point;
 }
 
-export function computeRoute(routing: ConnectorRouting, s: End, e: End, waypoints: Point[] = []): Route {
+/**
+ * The route between two resolved ends. `obstacles` (other items' boxes, see `routeRegion`) only
+ * matter to elbow lines: they detour around them.
+ */
+export function computeRoute(routing: ConnectorRouting, s: End, e: End, waypoints: Point[] = [], obstacles: Rect[] = []): Route {
   if (routing === 'curved') return curvedRoute(s, e, waypoints);
-  const poly = routing === 'elbow' ? elbowRoute(s, e, waypoints) : [s.p, e.p];
+  const poly = routing === 'elbow' ? elbowRoute(s, e, waypoints, obstacles) : [s.p, e.p];
   return { poly, cubics: null, ...polyTangents(poly) };
 }
 
@@ -256,7 +328,7 @@ export function simplify(pts: Point[]): Point[] {
  * both endpoint elements, and prefers few bends and short length. With a waypoint, the middle
  * segment passes through it.
  */
-function elbowRoute(s: End, e: End, wps: Point[]): Point[] {
+function elbowRoute(s: End, e: End, wps: Point[], obstacles: Rect[]): Point[] {
   let M = ELBOW_MARGIN;
   // Free ends leave toward the other end along the dominant axis.
   const ds = s.dir ? axisOf(s.dir) : null;
@@ -268,8 +340,9 @@ function elbowRoute(s: End, e: End, wps: Point[]): Point[] {
     const gap = (e.p.x - s.p.x) * ds.x + (e.p.y - s.p.y) * ds.y;
     if (gap > 0 && gap < 2 * M) M = gap / 2;
   }
-  const A = ds ? add(s.p, mul(ds, M)) : s.p;
-  const B = de ? add(e.p, mul(de, M)) : e.p;
+  // An end attached inside its box (a spot on an ellipse's curve) first leaves the box.
+  const A = ds ? add(s.p, mul(ds, M + exitDistance(s, ds))) : s.p;
+  const B = de ? add(e.p, mul(de, M + exitDistance(e, de))) : e.p;
   const solid = [s.box, e.box].filter((b): b is Rect => !!b).map((b) => inflate(b, -0.5));
   const near = [s.box, e.box].filter((b): b is Rect => !!b).map((b) => inflate(b, Math.max(0, M - 1)));
   const outer = [s.box, e.box].filter((b): b is Rect => !!b).map((b) => inflate(b, M));
@@ -317,7 +390,30 @@ function elbowRoute(s: End, e: End, wps: Point[]): Point[] {
       best = pts;
     }
   }
-  return best ?? [s.p, e.p];
+  const simple = best ?? [s.p, e.p];
+  // Other items in the way (never with a user's bend: that route is theirs): search around them.
+  if (w || !obstacles.length) return simple;
+  const blocks = obstacles.map((r) => inflate(r, -0.5));
+  const crosses = simple.some((p, i) => i > 0 && blocks.some((r) => segmentHitsRect(simple[i - 1], p, r)));
+  if (!crosses) return simple;
+  const around = routeAround({
+    from: A,
+    to: B,
+    leave: ds,
+    arrive: de ? mul(de, -1) : null,
+    margin: M,
+    ends: [s.box, e.box].filter((b): b is Rect => !!b),
+    obstacles,
+  });
+  return around ? simplify([s.p, ...around, e.p]) : simple;
+}
+
+/** How far an attached end's point lies inside its box along the way it leaves (0 on the edge). */
+function exitDistance(end: End, d: Point): number {
+  const b = end.box;
+  if (!b) return 0;
+  const g = d.x > 0 ? b.x + b.w - end.p.x : d.x < 0 ? end.p.x - b.x : d.y > 0 ? b.y + b.h - end.p.y : end.p.y - b.y;
+  return g > 0.5 ? g : 0;
 }
 
 // ---------------------------------------------------------------------------------- measuring

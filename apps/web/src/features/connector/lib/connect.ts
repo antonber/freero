@@ -2,7 +2,7 @@
 // endpoint handles of a selected connector: snap-target search and the transient overlay state.
 import { createStore } from 'zustand/vanilla';
 import type { Editor, Point } from '@engine';
-import { anchorWorld, dist, SIDES, type Side } from './geometry';
+import { anchorWorld, attachNear, dist, SIDES, type Side } from './geometry';
 import { isConnectable, localAnchors } from './model';
 
 /** Screen px within which the pointer snaps onto an anchor dot. */
@@ -14,6 +14,8 @@ export interface Target {
   id: string;
   /** A fixed side when dropped on an anchor dot; 'auto' when dropped on the body. */
   anchor: Side | 'auto';
+  /** Dropped on the outline away from the dots: that spot (ConnectorEndpoint.at); `anchor` is its side. */
+  at?: { u: number; v: number };
 }
 
 /** Transient, local-only overlay state (never synced). */
@@ -34,7 +36,8 @@ export function resetOverlay() {
 
 /**
  * What a connector end dropped at `p` attaches to: an anchor dot within snap distance (even
- * just outside the element), else the topmost connectable element body, else nothing.
+ * just outside the element), else that spot of an outline within snap distance (attach
+ * anywhere), else the topmost connectable element body ('auto'), else nothing.
  */
 export function findTarget(editor: Editor, p: Point, exclude: Array<string | null | undefined>): Target | null {
   const skip = new Set(exclude.filter((x): x is string => !!x));
@@ -55,6 +58,8 @@ export function findTarget(editor: Editor, p: Point, exclude: Array<string | nul
       }
     }
     if (best) return { id: el.id, anchor: best };
+    const spot = attachNear(el, p, local);
+    if (spot.dist <= r) return { id: el.id, anchor: spot.side, at: spot.at };
   }
   // Body: walk down through non-connectable things on top (pen strokes, other connectors).
   const ignore = [...skip];

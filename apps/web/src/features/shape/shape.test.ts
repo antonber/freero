@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ShapeKind } from '@freero/shared';
-import { anchorOnOutline, detailPolylines, distanceToOutline, dragRect, hitShape, outlinePolygons } from './lib/geometry';
+import { anchorOnOutline, detailPolylines, distanceToOutline, dragRect, hitShape, outlinePolygons, outlineToward } from './lib/geometry';
 import { LIBRARY_KINDS } from './lib/library';
 
 const W = 200;
@@ -42,6 +42,27 @@ describe('connector anchors', () => {
         const drawn = [...outlinePolygons(kind, W, H), ...detailPolylines(kind, W, H)];
         expect(distanceToOutline(drawn, p), `${kind} ${a}`).toBeLessThan(0.75);
       }
+  });
+
+  it('attach anywhere: a spot aimed at in any direction sits on the drawn outline of every shape', () => {
+    for (const kind of LIBRARY_KINDS)
+      for (let k = 0; k < 16; k++) {
+        const a = (k * Math.PI) / 8 + 0.1;
+        const p = outlineToward(kind, W, H, { x: W / 2 + Math.cos(a) * W, y: H / 2 + Math.sin(a) * H });
+        const drawn = [...outlinePolygons(kind, W, H), ...detailPolylines(kind, W, H)];
+        expect(distanceToOutline(drawn, p), `${kind} ${k}`).toBeLessThan(0.75);
+      }
+  });
+
+  it('a spot on an ellipse stays on its curve, at the same place, when the ellipse is resized', () => {
+    const on = (w: number, h: number, p: { x: number; y: number }) => ((p.x - w / 2) / (w / 2)) ** 2 + ((p.y - h / 2) / (h / 2)) ** 2;
+    // 25% along the bottom of the box, projected onto the curve...
+    const p = outlineToward('ellipse', W, H, { x: W * 0.25, y: H });
+    expect(on(W, H, p)).toBeCloseTo(1, 1);
+    // ...is where the same fractions land on a box twice as wide.
+    const q = outlineToward('ellipse', 2 * W, H, { x: 2 * W * (p.x / W), y: H * (p.y / H) });
+    expect(on(2 * W, H, q)).toBeCloseTo(1, 1);
+    expect(q.x / (2 * W)).toBeCloseTo(p.x / W, 2);
   });
 
   it('touch the slanted side of a triangle rather than floating at the bounding box edge', () => {
