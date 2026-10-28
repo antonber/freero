@@ -105,7 +105,7 @@ const ElementView = memo(function ElementView({ id }: { id: string }) {
  * any decorations (decoration.tsx of other features) inside the same wrapper, so they move,
  * rotate and export with it.
  */
-export function ElementFrame(props: { element: BoardElement; selected: boolean; editing: boolean; zoom: number }) {
+export function ElementFrame(props: { element: BoardElement; selected: boolean; editing: boolean; zoom: number; preview?: boolean }) {
   const core = useCore();
   const { element: el } = props;
   const reg = core.registry.elements.get(el.type);
@@ -128,8 +128,8 @@ export function ElementFrame(props: { element: BoardElement; selected: boolean; 
   }
   return (
     <div
-      className={`fr-el${props.editing ? ' fr-el--editing' : ''}${isPrivate ? ' fr-el--private' : ''}`}
-      data-id={el.id}
+      className={`fr-el${props.editing ? ' fr-el--editing' : ''}${isPrivate ? ' fr-el--private' : ''}${props.preview ? ' fr-el--preview' : ''}`}
+      data-id={props.preview ? undefined : el.id}
       data-type={el.type}
       style={{ ...reg?.def.wrapperStyle?.(el as never), width: el.w, height: el.h, transform }}
     >
@@ -146,6 +146,22 @@ export function ElementFrame(props: { element: BoardElement; selected: boolean; 
         </span>
       )}
     </div>
+  );
+}
+
+/**
+ * [additive] An element drawn as it would look, without being on the board (suggestions,
+ * KAI-169): its own component and decorations, never selected or edited, not hit-tested (the
+ * world layer is geometric), no on-screen affordances (rendered like an export). World
+ * coordinates: render it in a 'world-overlay' panel.
+ */
+export function ElementPreview({ element }: { element: BoardElement }) {
+  const core = useCore();
+  const zoom = useStore(core.ui, (s) => quantizeZoom(s.camera.zoom));
+  return (
+    <RenderModeContext.Provider value="export">
+      <ElementFrame element={element} selected={false} editing={false} zoom={zoom} preview />
+    </RenderModeContext.Provider>
   );
 }
 

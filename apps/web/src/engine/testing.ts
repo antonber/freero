@@ -7,11 +7,11 @@
 //   const [ann, bob] = board.editors('comments');
 //   ann.runCommand(…); bob.runCommand(…);   // concurrent
 //   board.sync();                           // both replicas now agree
-import type { Role } from '@freero/shared';
+import type { Role, SuggestionRecord } from '@freero/shared';
 import type { Editor, ElementsSnapshot, FeatureBundle, FeatureManifest, Host, HostUser, SavedTemplateInfo } from './api';
 import { unavailableVersionHistory } from './api';
 import { createCore, type EngineCore } from './runtime/core';
-import { syncStores } from './store/replicas';
+import { serverPropose, syncStores } from './store/replicas';
 
 export interface TestBoardOptions {
   /** One replica per user (an id, or a full user). */
@@ -31,6 +31,8 @@ export interface TestBoard {
   editors(scope?: string): Editor[];
   /** Delivers every pending change to every replica (one network round). */
   sync(): void;
+  /** [additive] Suggestions arriving from the server (KAI-169): records land in every editor's editors layer. */
+  propose(records: SuggestionRecord[]): void;
   destroy(): void;
 }
 
@@ -98,7 +100,12 @@ export function createTestBoard(opts: TestBoardOptions): TestBoard {
   });
   return {
     editors: (scope = 'engine') => cores.map((c) => c.scoped(scope)),
-    sync: () => syncStores(cores.map((c) => c.store)),
+    sync: () =>
+      syncStores(
+        cores.map((c) => c.store),
+        cores.filter((c) => c.editor.can('editor')).map((c) => c.store),
+      ),
+    propose: (records) => serverPropose(cores.filter((c) => c.editor.can('editor')).map((c) => c.store), records),
     destroy: () => cores.forEach((c) => c.destroy()),
   };
 }

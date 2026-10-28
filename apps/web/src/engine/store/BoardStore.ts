@@ -16,6 +16,7 @@ import * as decoding from 'lib0/decoding';
 import * as encoding from 'lib0/encoding';
 import {
   BOARD_LAYERS,
+  SUGGESTIONS_COLLECTION,
   WS_CLOSE_BOARD_REMOVED,
   WS_MESSAGE_LAYER,
   WS_MESSAGE_LAYER_OP,
@@ -201,7 +202,10 @@ export class BoardStore {
   private createLayer(name: BoardLayer): LayerDoc {
     const doc = new Y.Doc();
     const elements = doc.getMap<BoardElement>(Y_ELEMENTS);
-    const undo = new Y.UndoManager([elements], { trackedOrigins: new Set([LOCAL_ORIGIN]), captureTimeout: this.baseCaptureTimeout });
+    // The editors layer's suggestions (KAI-169): accepting / rejecting one is undoable, in the same
+    // step as the board change it made.
+    const scope = name === 'editors' ? [elements, doc.getMap<unknown>(SUGGESTIONS_COLLECTION)] : [elements];
+    const undo = new Y.UndoManager(scope, { trackedOrigins: new Set([LOCAL_ORIGIN]), captureTimeout: this.baseCaptureTimeout });
     this.history.add(undo);
     const onElements = (ev: Y.YMapEvent<BoardElement>) => this.onElementsEvent(ev);
     elements.observe(onElements);
@@ -579,6 +583,15 @@ export class BoardStore {
    */
   privateCollectionMap<T>(name: string): Y.Map<T> {
     return this.layers.private.doc.getMap<T>(name);
+  }
+
+  /**
+   * [additive] Suggestions (KAI-169): the `suggestions` collection of the EDITORS layer (owners and
+   * editors receive it; the server creates records and lets a socket only decide them). Re-read
+   * on every call: the layer doc can be replaced. Engine-internal: Editor.acceptSuggestions etc.
+   */
+  suggestionsMap(): Y.Map<unknown> {
+    return this.layers.editors.doc.getMap<unknown>(SUGGESTIONS_COLLECTION);
   }
 
   /** Fires after any transaction on a layer doc (private collections changed, or the doc was reset). */
