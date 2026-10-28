@@ -237,6 +237,13 @@ export default defineElement({
     return labelBoxes(c, poly).some(({ box: r }) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h);
   },
 
+  // Extra labels are text parts (the main one is the textField), so find & replace covers them.
+  textParts: (c) => (c.labels ?? []).map((l) => ({ part: extraPart(l), html: l.text })),
+  writeTextPart(c, part, html, editor) {
+    const p = parsePart(part);
+    if (p?.kind === 'extra') editor.update<ConnectorElement>(c.id, writeLabel(c, p, html));
+  },
+
   // Double-click on a label edits it; anywhere else on the line adds a label right there.
   textPartAt(c, local) {
     const poly = drawnRoutes.get(c) ?? connectorGeometry(c, () => undefined).route.poly;
