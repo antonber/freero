@@ -245,9 +245,17 @@ function ItemCard({
       </dl>
       {item.message && <blockquote className="fr-op-card__message">{item.message}</blockquote>}
       {item.target.kind === 'upload' && item.target.id && (
-        <a className="fr-op-card__file" href={`/uploads/${item.target.id}`} target="_blank" rel="noreferrer noopener">
-          Open the file in a new tab
-        </a>
+        <span className="fr-op-card__files">
+          {/* Attachments (file cards) are never served at /uploads: only the audited operator download. */}
+          {!item.target.id.endsWith('.bin') && (
+            <a className="fr-op-card__file" href={`/uploads/${item.target.id}`} target="_blank" rel="noreferrer noopener">
+              Open the file in a new tab
+            </a>
+          )}
+          <a className="fr-op-card__file" href={api.moderationUploadFileUrl(item.target.id)} download>
+            Download to review
+          </a>
+        </span>
       )}
       <div className="fr-op-card__actions">
         {item.boardId && b && (
@@ -534,6 +542,11 @@ function FileLookup({ onAct }: { onAct: (p: PendingAction) => void }) {
           <span>
             {upload.name} · {upload.owner ? upload.owner.email : 'no owner'} {upload.removedAt !== null && <Chip tone="danger">Removed</Chip>}
           </span>
+          {(upload.removedAt === null || upload.restorable) && (
+            <a className="fr-op-card__file" href={api.moderationUploadFileUrl(upload.name)} download>
+              Download to review
+            </a>
+          )}
           <span className="fr-op-chips">
             {upload.removedAt === null ? (
               <Button size="sm" variant="danger" onClick={() => onAct({ action: 'upload.remove', targetId: upload.name, targetLabel: `file ${upload.name}`, reason: 'illegal' })}>

@@ -706,6 +706,18 @@ export const MAX_GUEST_NAME = 40;
 export const isGuestId = (id: string): boolean => id.startsWith(GUEST_ID_PREFIX);
 /** How a guest is shown everywhere (presence, comments, activity). */
 export const guestDisplayName = (name: string): string => `Guest · ${name}`;
+/**
+ * The name a comment message is shown under (KAI-187, KAI-201), wherever it is shown (comments,
+ * find): its author's CURRENT name (`current`, from the board's people lookup) when known — so
+ * neither a rename nor a name a crafted client stored can make it read as someone else. The stored
+ * name is only a fallback: before the lookup answers, and for accounts that no longer exist (the
+ * purge rewrote it to "Deleted user"). A guest's always reads as a guest.
+ */
+export function commentAuthorName(m: { authorId: string; authorName: string }, current: string | undefined): string {
+  if (current) return current;
+  if (isGuestId(m.authorId)) return m.authorName.startsWith(guestDisplayName('')) ? m.authorName : guestDisplayName(m.authorName);
+  return m.authorName;
+}
 export interface GuestBoardInfo {
   /** Visitors without an account may join (and as what); the title only then. */
   allowed: boolean;
@@ -738,7 +750,8 @@ export interface ActivityEntry {
   /** Null for a guest or a deleted account (`actorName` still names them). */
   actor: BoardPerson | null;
   actorName: string;
-  kind: 'edit' | 'comment' | 'share';
+  /** 'board': the board as a whole (created, renamed, moved, trashed / restored, a version restored). */
+  kind: 'edit' | 'comment' | 'share' | 'board';
   /** Worded after the actor's name: "added 12 sticky notes in frame “Ideas”". */
   text: string;
   startedAt: number;
@@ -959,7 +972,7 @@ export interface InsertStructureResponse {
 // Board text goes to the model as delimited, untrusted data; the model returns structure only
 // (validated), which modules/structure lays out and places: never coordinates, never markup.
 //
-// GET  /api/boards/:id/ai                      -> { ai: BoardAiStatus }   (anyone who can open the board)
+// GET  /api/boards/:id/ai                      -> { ai: BoardAiStatus | null }   (anyone who can open the board; null when AI is off on this instance)
 // POST /api/boards/:id/ai/actions  body AiActionRequest -> AiActionResponse  (owners/editors the
 //      workspace lets use AI; rate limited per user and per workspace; 429 code 'ai_budget' when the
 //      month's token budget is used up; 403 code 'downloads_restricted' when the workspace's
@@ -1318,6 +1331,7 @@ export const AUDIT_ACTIONS = {
   'moderation.upload.remove': 'Freero removed a file (moderation)',
   'moderation.upload.restore': 'Freero restored a file (moderation)',
   'moderation.upload.purge': 'Freero purged a removed file (moderation)',
+  'moderation.upload.download': 'A Freero operator downloaded a file to review it (moderation)',
   'moderation.user.suspend': 'Freero suspended an account (moderation)',
   'moderation.user.restore': 'Freero lifted an account suspension (moderation)',
   // Single sign-on (modules/sso).

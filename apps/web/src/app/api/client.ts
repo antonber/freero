@@ -356,7 +356,7 @@ export const api = {
     `/api/workspaces/${encodeURIComponent(id)}/audit/export?format=${format}&${auditQuery({ ...filter, before: undefined, limit: undefined })}`,
   auditIntegrity: (id: string) => request<{ integrity: AuditIntegrity }>('GET', `/api/workspaces/${encodeURIComponent(id)}/audit/integrity`),
   // AI (404 while the server offers no AI at all)
-  boardAi: (boardId: string) => request<{ ai: BoardAiStatus }>('GET', `/api/boards/${encodeURIComponent(boardId)}/ai`),
+  boardAi: (boardId: string) => request<{ ai: BoardAiStatus | null }>('GET', `/api/boards/${encodeURIComponent(boardId)}/ai`),
   runAi: (boardId: string, body: AiActionRequest) => request<AiActionResponse>('POST', `/api/boards/${encodeURIComponent(boardId)}/ai/actions`, body),
   workspaceAi: (id: string) => request<WorkspaceAiAdmin>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/ai`),
   updateWorkspaceAi: (id: string, patch: WorkspaceAiPatch) => request<WorkspaceAiAdmin>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/admin/ai`, patch),
@@ -422,6 +422,8 @@ export const api = {
     return new Uint8Array(await res.arrayBuffer());
   },
   moderationUpload: (name: string) => request<{ upload: ModeratedUpload }>('GET', `/api/moderation/uploads/${encodeURIComponent(name)}`),
+  /** Where an operator downloads a reported file to review it (attachments and removed files too; audited). */
+  moderationUploadFileUrl: (name: string) => `/api/moderation/uploads/${encodeURIComponent(name)}/file`,
   moderationUser: (email: string) => request<{ user: ModeratedUser }>('GET', `/api/moderation/users?email=${encodeURIComponent(email)}`),
   moderate: (body: ModerationActionRequest) => request<{ action: ModerationActionRecord }>('POST', '/api/moderation/actions', body),
   resolveModerationItem: (id: string, outcome: 'actioned' | 'dismissed', note: string) =>

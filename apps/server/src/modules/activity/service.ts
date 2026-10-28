@@ -178,6 +178,15 @@ export async function recordShare(
   ]);
 }
 
+/** Something happened to the board as a whole (KAI-188): stored at once, attributed to who did it. */
+export async function recordBoardEvent(
+  e: { boardId: string; actorId: string; action: NonNullable<ActivitySummary['action']>; from?: string | null; to?: string | null; version?: string | null },
+  now = Date.now(),
+): Promise<void> {
+  const { boardId, actorId, ...summary } = e;
+  await repo.insertMany([{ id: newId(16), boardId, actorId, actorName: null, kind: 'board', audience: 'all', summary, startedAt: now, endedAt: now }]);
+}
+
 export const onBoardShared = (e: BoardSharedEvent) => recordShare({ boardId: e.boardId, byId: e.byId, userId: e.userId, role: e.role, via: 'invite' });
 export const onAccessDecided = (e: AccessDecidedEvent) =>
   e.approved && e.role ? recordShare({ boardId: e.boardId, byId: e.deciderId, userId: e.requesterId, role: e.role, via: 'request' }) : undefined;
@@ -215,6 +224,27 @@ function things(c: Record<string, number>): string {
   return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0];
 }
 
+function boardWording(s: ActivitySummary): string {
+  switch (s.action) {
+    case 'created':
+      return 'created this board';
+    case 'duplicated':
+      return s.from ? `made this board as a copy of “${s.from}”` : 'made this board as a copy';
+    case 'renamed':
+      return `renamed the board to “${s.to ?? ''}”${s.from ? ` (was “${s.from}”)` : ''}`;
+    case 'moved':
+      return s.to ? `moved the board to project “${s.to}”` : 'moved the board out of its project';
+    case 'trashed':
+      return 'moved the board to the trash';
+    case 'restored':
+      return 'restored the board from the trash';
+    case 'version_restored':
+      return s.version ? `restored the version “${s.version}”` : 'restored an earlier version';
+    default:
+      return 'changed the board';
+  }
+}
+
 const ROLE_VERB: Record<string, string> = { editor: 'edit', commenter: 'comment', viewer: 'view' };
 
 /** The entry's text after the actor's name. `people`: names for share targets. */
@@ -224,6 +254,7 @@ export function describe(r: Pick<ActivityRow, 'kind' | 'summary' | 'audience'>, 
     const n = s.comments ?? 1;
     return n === 1 ? 'commented' : `left ${n} comments${(s.threads ?? 1) > 1 ? ` in ${s.threads} threads` : ''}`;
   }
+  if (r.kind === 'board') return boardWording(s);
   if (r.kind === 'share') {
     const who = (s.userId && people.get(s.userId)) || 'someone';
     const verb = s.role && ROLE_VERB[s.role] ? ROLE_VERB[s.role] : 'open it';

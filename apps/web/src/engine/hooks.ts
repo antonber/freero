@@ -1,9 +1,10 @@
 // Reactive hooks for features and engine chrome. All re-render minimally:
 // useElement(id) only re-renders when that element's object changes.
-import { useCallback, useContext, useMemo, useRef, useSyncExternalStore } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useStore } from 'zustand';
 import type { BoardElement, BoardSettings, ElementType, PresenceState, Role, SessionLimits } from '@freero/shared';
-import type { Camera, Collection, Editor, FollowTarget, Point, Rect, Suggestion } from './api';
+import type { Camera, Collection, Editor, FollowTarget, HostUser, Point, Rect, Suggestion } from './api';
+import { peopleDirectory } from './runtime/people';
 import { RenderModeContext, ScopeContext, useCore } from './context';
 import type { UiState } from './state/uiStore';
 import { toolGhostAt } from './interaction/toolDispatch';
@@ -146,6 +147,18 @@ export function usePeers(): Array<PresenceState & { clientId: number }> {
   const v = useUi((s) => s.presenceVersion);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   return useMemo(() => core.store.getPeers(), [core, v]);
+}
+
+/**
+ * [additive, KAI-201] Current profiles for these user ids (comment authors, @mentions…), from
+ * presence and Host.lookupUsers, shared by every feature of the board. Ids not known yet are looked
+ * up; ids nobody answers (deleted accounts) stay missing — fall back to what the content stored.
+ */
+export function usePeople(ids: readonly string[]): Record<string, HostUser> {
+  const dir = peopleDirectory(useCore());
+  const key = [...ids].sort().join(',');
+  useEffect(() => dir.request(key ? key.split(',') : []), [dir, key]);
+  return useStore(dir.people);
 }
 
 export function useRole(): Role {

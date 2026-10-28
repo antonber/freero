@@ -39,6 +39,8 @@ export const commentPeopleIn = (view: BoardView): Set<string> => commentPeople(v
 export { onCommentMessage, type CommentMessageEvent } from './comments';
 // Element changes applied from this instance's sockets, attributed to their user (activity feed).
 export { onBoardChange, type BoardChangeEvent, type ElementChange } from './changes';
+// Version restores (the activity feed, KAI-188).
+export { onVersionRestored, type VersionRestoredEvent } from './history';
 // Version history (stored snapshots of a board's document): list them, read one's full Yjs state.
 // The REST API for it is this module's routes.ts (history.ts); pruning: retention.ts.
 export { listSnapshots as listBoardSnapshots, loadSnapshot as loadBoardSnapshot, type SnapshotInfo } from './docStore';

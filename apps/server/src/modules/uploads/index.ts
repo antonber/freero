@@ -13,6 +13,7 @@ export function uploadsOwnedBy(userId: string) {
 export {
   uploadName,
   uploadForModeration,
+  openUploadForModeration,
   isUploadRemoved,
   removeUpload,
   restoreUpload,

@@ -46,6 +46,7 @@ import * as Y from 'yjs';
 import { WebSocket } from 'ws';
 import {
   FACILITATION_COLLECTION,
+  VOTING_COLLECTION,
   FACILITATION_KEY,
   WS_CLOSE_BOARD_REMOVED,
   WS_MESSAGE_LAYER,
@@ -66,6 +67,7 @@ import { elementChanges, ELEMENTS, emitBoardChange, hasBoardChangeListeners } fr
 import { commentPeople, COMMENTS_COLLECTION, emitCommentMessages, hasCommentListeners, messageEvents } from './comments';
 import * as store from './docStore';
 import { effectiveAccess, guardSession, readFacilitation, revertForbiddenAdds, sameEffective } from './facilitation';
+import { guardVotes } from './votingRules';
 import { decideUpdate } from './filter';
 import * as layerStore from './layerStore';
 import {
@@ -321,6 +323,8 @@ class Room {
 
     // The facilitation session (facilitation.ts): limits every socket's role, any instance's change.
     this.doc.getMap<unknown>(FACILITATION_COLLECTION).observe(() => this.applyFacilitation());
+    // The vote budget (votingRules.ts): created up front so the guard sees an update's changes.
+    this.doc.getMap<unknown>(VOTING_COLLECTION);
 
     this.ready = this.open();
   }
@@ -410,20 +414,21 @@ class Room {
     } else if (syncType === syncProtocol.messageYjsSyncStep2 || syncType === syncProtocol.messageYjsUpdate) {
       const update = decoding.readVarUint8Array(decoder);
       if (!mayWriteLayer(name, conn)) return;
+      // Guards as for the shared doc (onUpdate): sealed ballots keep to the vote's budget too.
       const addTypes = conn.limits?.addTypes;
-      const suggestions = name === EDITORS_LAYER;
-      if (!addTypes && !suggestions) return Y.applyUpdate(doc, update, conn.ws);
       // The guards run inside the transaction that applies the update: nobody else ever receives
       // what they undo, and the socket is sent the correction (facilitation.ts, suggestions.ts).
       const before = Y.encodeStateVector(doc);
-      let fixed = 0;
+      let fixed = false;
       let decided: ReturnType<typeof guardSuggestionWrites>['decided'] = [];
+      doc.getMap<unknown>(VOTING_COLLECTION);
       doc.transact((tr) => {
         Y.applyUpdate(doc, update);
-        if (addTypes) fixed = revertForbiddenAdds(tr, doc.getMap<unknown>(ELEMENTS), new Set(addTypes), (id) => this.existsElsewhere(doc, id));
-        if (suggestions) {
+        fixed = guardVotes(tr, doc, this.doc, conn.userId);
+        if (addTypes) fixed = revertForbiddenAdds(tr, doc.getMap<unknown>(ELEMENTS), new Set(addTypes), (id) => this.existsElsewhere(doc, id)) > 0 || fixed;
+        if (name === EDITORS_LAYER) {
           const g = guardSuggestionWrites(tr, doc, conn.userId);
-          fixed += g.reverted;
+          fixed = g.reverted > 0 || fixed;
           decided = g.decided;
         }
       }, conn.ws);
@@ -784,6 +789,7 @@ class Room {
       this.doc.transact((tr) => {
         Y.applyUpdate(this.doc, update);
         fixed = guardSession(tr, this.doc, { userId: conn.userId, access: conn.access });
+        fixed = guardVotes(tr, this.doc, this.doc, conn.userId) || fixed;
         if (addTypes) fixed = revertForbiddenAdds(tr, this.doc.getMap<unknown>(ELEMENTS), new Set(addTypes), (id) => this.existsElsewhere(this.doc, id)) > 0 || fixed;
       }, conn.ws);
       if (fixed) send(conn.ws, syncUpdateMessage(Y.encodeStateAsUpdate(this.doc, before)));

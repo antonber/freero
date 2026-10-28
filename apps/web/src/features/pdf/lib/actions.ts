@@ -9,10 +9,10 @@ export const isPdfFile = (f: File) => f.type === 'application/pdf' || /\.pdf$/i.
 const message = (e: unknown, fallback: string) => (e instanceof Error && e.message && e.message !== 'Upload failed' ? e.message : fallback);
 
 /**
- * Uploads a PDF and places a document item for it (centered on `at`, or in a free spot near the
- * view). The file is parsed first, so a broken file never reaches the server.
+ * Uploads a PDF and places a document item for it (centered on `at`, or in a free spot near
+ * `near`, default the view). The file is parsed first, so a broken file never reaches the server.
  */
-export async function insertPdf(editor: Editor, file: File, at?: Point): Promise<string | null> {
+export async function insertPdf(editor: Editor, file: File, at?: Point, near?: Point): Promise<string | null> {
   let doc;
   try {
     doc = await openBytes(new Uint8Array(await file.arrayBuffer()));
@@ -21,6 +21,10 @@ export async function insertPdf(editor: Editor, file: File, at?: Point): Promise
     return null;
   }
   const first = await pageSize(doc, 1);
+  const w = ITEM_W;
+  const h = itemHeight(w, first.w, first.h);
+  // On the drop point: keep it clear for this item while it uploads (other files of the drop go beside it).
+  const release = at ? editor.reserveSpace([{ x: at.x - w / 2, y: at.y - h / 2, w, h }]) : () => {};
   let url: string;
   try {
     ({ url } = await editor.host.uploadFile(file));
@@ -28,11 +32,11 @@ export async function insertPdf(editor: Editor, file: File, at?: Point): Promise
     editor.host.notify(message(e, `Couldn't upload “${file.name}”. Try again later.`), 'error');
     void doc.destroy();
     return null;
+  } finally {
+    release();
   }
   rememberDocument(url, doc);
-  const w = ITEM_W;
-  const h = itemHeight(w, first.w, first.h);
-  const pos = at ? { x: at.x - w / 2, y: at.y - h / 2 } : editor.findFreeSpot({ w, h });
+  const pos = at ? { x: at.x - w / 2, y: at.y - h / 2 } : editor.findFreeSpot({ w, h }, { near });
   const el: NewElement<'pdf'> = {
     type: 'pdf',
     x: Math.round(pos.x),

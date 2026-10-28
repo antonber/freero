@@ -17,9 +17,13 @@
 // Redis, and clients on different instances must see each other's edits and cursors, access
 // changes / logouts / deletes made through the other instance, and every edit saved exactly as
 // if one instance had served them (even one whose instance is killed before it saved).
+//
+// S3: with S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY (e.g. MinIO or
+// SeaweedFS in Docker), the `s3` group checks the S3 storage backend; without them it is skipped.
 
 import { execSync, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
@@ -208,6 +212,13 @@ for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(130)
 // ---------------------------------------------------------------------------
 const MIGRATION_LOCK_KEY = 7_202_610_270; // must match apps/server/src/platform/db.ts
 const ADMIN_URL = process.env.DATABASE_URL?.trim() || null;
+// S3 (KAI-203): with S3_ENDPOINT, S3_BUCKET and keys set, the `s3` group runs against that endpoint;
+// every other server of the run keeps to the local disk, so the S3_* variables leave process.env.
+const S3_ENV = (() => {
+  const vars = Object.fromEntries(Object.keys(process.env).filter((k) => k.startsWith('S3_')).map((k) => [k, process.env[k]]));
+  for (const k of Object.keys(vars)) delete process.env[k];
+  return vars.S3_ENDPOINT && vars.S3_BUCKET && vars.S3_ACCESS_KEY_ID && vars.S3_SECRET_ACCESS_KEY ? vars : null;
+})();
 const db = { url: null, kind: ADMIN_URL ? 'postgres' : 'pglite', created: [] };
 
 function dbUrl(name) {
@@ -907,6 +918,7 @@ async function run() {
       assert((await A.req('GET', `/api/boards/doesnotexist`)).status === 404, 'missing board');
     });
 
+
     // ---- realtime ----
     let a, b, c, d;
     await check('WebSocket clients connect, sync, and receive their role message', async () => {
@@ -1077,9 +1089,14 @@ async function run() {
 
     await check('board layers: sealed ballots are revealed into the shared doc only by an owner/editor, while their author is offline', async () => {
       const b1 = await layerClient(B, board.id);
-      b1.layers.private.getMap('voting').set(`s1:${B.id}`, { sessionId: 's1', userId: B.id, elementIds: ['e1', 'e1'] });
+      // A ballot is only taken for the running session (votingRules.ts): B votes in s0, then in s1.
+      const vote = (id) => ({ id, active: true, title: 'Vote', votesPerUser: 3, elementIds: null, anonymous: true, startedBy: B.id, startedAt: Date.now(), endedAt: null });
+      b1.doc.getMap('voting').set('session', vote('s0'));
       b1.layers.private.getMap('voting').set(`s0:${B.id}`, { sessionId: 's0', userId: B.id, elementIds: ['e2'] });
+      b1.doc.getMap('voting').set('session', vote('s1'));
+      b1.layers.private.getMap('voting').set(`s1:${B.id}`, { sessionId: 's1', userId: B.id, elementIds: ['e1', 'e1'] });
       await settled(b1); // the server has both ballots
+      assert(b1.layers.private.getMap('voting').size === 2, `the server undid a ballot: ${JSON.stringify(b1.layers.private.toJSON())}`);
       b1.destroy();
       const c1 = await layerClient(C, board.id); // viewer
       const d1 = await layerClient(D, board.id); // commenter
@@ -3936,6 +3953,31 @@ async function teamsChecks() {
       assert((await M.req('GET', `/api/workspaces/${ws.id}/activity`)).status === 404, 'someone outside the workspace read its feed');
     });
 
+    await check('the activity feed tells what happened to the board as a whole (KAI-188): created, renamed, moved to a project, a version restored, trashed and restored, and a copy names its original', async () => {
+      const team = (await O.req('POST', '/api/workspaces', { name: 'Lifecycle team' })).json.workspace;
+      const project = (await O.req('POST', `/api/workspaces/${team.id}/projects`, { name: 'Launch', access: 'workspace' })).json.project;
+      const b = (await O.req('POST', '/api/boards', { title: 'Plan', workspaceId: team.id })).json.board;
+      assert((await O.req('PATCH', `/api/boards/${b.id}`, { title: 'Plan v2' })).status === 200, 'rename');
+      assert((await O.req('PATCH', `/api/boards/${b.id}`, { projectId: project.id })).status === 200, 'move');
+      const v = (await O.req('POST', `/api/boards/${b.id}/versions`, { name: 'Kickoff' })).json.version;
+      assert((await O.req('POST', `/api/boards/${b.id}/versions/${v.id}/restore`)).status === 200, 'restore version');
+      const copy = (await O.req('POST', `/api/boards/${b.id}/duplicate`)).json.board;
+      assert((await O.req('DELETE', `/api/boards/${b.id}`)).status < 300, 'trash');
+      assert((await O.req('POST', `/api/boards/${b.id}/restore`)).status === 200, 'restore from trash');
+      const feed = async (id) => (await O.req('GET', `/api/boards/${id}/activity`)).json.entries;
+      const texts = (await feed(b.id)).filter((e) => e.kind === 'board' && e.actorName === O.name).map((e) => e.text);
+      for (const t of [
+        'created this board',
+        'renamed the board to “Plan v2” (was “Plan”)',
+        'moved the board to project “Launch”',
+        'restored the version “Kickoff”',
+        'moved the board to the trash',
+        'restored the board from the trash',
+      ])
+        assert(texts.includes(t), `missing “${t}” in ${JSON.stringify(texts)}`);
+      assert((await feed(copy.id)).some((e) => e.kind === 'board' && e.text === 'made this board as a copy of “Plan v2”'), 'copy entry');
+    });
+
     await check('lowering a team’s access level to "can view" turns a connected member’s socket read-only at once', async () => {
       const team = (await O.req('POST', '/api/workspaces', { name: 'Verify team' })).json.workspace;
       assert((await O.req('POST', `/api/workspaces/${team.id}/members`, { email: M.email, role: 'member' })).status === 201, 'add member');
@@ -4506,10 +4548,10 @@ async function aiChecks() {
     }
     const personal = (await O.req('POST', '/api/boards', { title: 'AI personal' })).json.board;
 
-    await check('ai: with no AI configured, the AI routes do not exist (404) and nothing reaches a model', async () => {
+    await check('ai: with no AI configured, the board status says so ({ ai: null }), the AI actions do not exist (404) and nothing reaches a model', async () => {
       const status = await O.req('GET', `/api/boards/${personal.id}/ai`);
       const run = await O.req('POST', `/api/boards/${personal.id}/ai/actions`, { task: 'ideas', prompt: 'x' });
-      assert(status.status === 404 && run.status === 404, `${status.status} ${run.status}`);
+      assert(status.status === 200 && status.json?.ai === null && run.status === 404, `${status.status} ${status.text} ${run.status}`);
       assert(model.requests.length === 0, 'the model was called');
     });
 
@@ -4677,7 +4719,8 @@ async function mediaChecks() {
   const S = new User('MediaStranger');
   // Real caps, small enough to cross: 60 MB for video/audio (a 50 MB clip fits), 1 MB for other
   // files, an 80 MB quota (one clip fits, two don't).
-  const env = { OPERATOR_EMAILS: Op.email, MAX_MEDIA_UPLOAD_MB: '60', MAX_ATTACHMENT_UPLOAD_MB: '1', UPLOAD_QUOTA_MB: '80' };
+  // LOG_LEVEL info: operator downloads are checked in the audit trail's log line (platform/audit).
+  const env = { OPERATOR_EMAILS: Op.email, MAX_MEDIA_UPLOAD_MB: '60', MAX_ATTACHMENT_UPLOAD_MB: '1', UPLOAD_QUOTA_MB: '80', LOG_LEVEL: 'info' };
   const base = () => `http://127.0.0.1:${server.port}`;
   const get = (url, headers = {}) => fetch(`${base()}${url}`, { headers, redirect: 'manual' });
   /** An ISO media (MP4) file of `bytes` bytes: an "ftyp" box, then a recognisable byte pattern. */
@@ -4775,6 +4818,21 @@ async function mediaChecks() {
       assert((await O.req('PATCH', `/api/workspaces/${ws}`, { policies: { downloads: 'anyone' } })).status === 200, 'reset');
     });
 
+    await check('media: an operator downloads a reported file card from the queue to review it (KAI-205) — always as an attachment, audited, and nobody else can use that route', async () => {
+      const name = card.slice('/uploads/'.length);
+      const route = `/api/moderation/uploads/${name}/file`;
+      const r = await Op.req('GET', route);
+      assert(r.status === 200 && r.text === HTML.toString(), `operator download -> ${r.status} ${r.text.slice(0, 100)}`);
+      assert(r.headers.get('content-type') === 'application/octet-stream' && r.headers.get('x-content-type-options') === 'nosniff', `type ${r.headers.get('content-type')}`);
+      assert((r.headers.get('content-disposition') ?? '').startsWith('attachment;'), `disposition: ${r.headers.get('content-disposition')}`);
+      assert(/sandbox/.test(r.headers.get('content-security-policy') ?? ''), `csp: ${r.headers.get('content-security-policy')}`);
+      for (const u of [O, M, S]) assert((await u.req('GET', route)).status === 404, `${u.label} used the operator download`);
+      assert((await fetch(`${base()}${route}`)).status === 401, 'anonymous used the operator download');
+      await waitFor(() => server.log.join('').includes('moderation.upload.download'), 5000, 'the download in the audit trail');
+      const line = server.log.join('').split(/\r?\n/).find((l) => l.includes('moderation.upload.download'));
+      assert(line.includes(Op.id) && line.includes(name), `audit line: ${line}`);
+    });
+
     await check('media: a file an operator removed answers 410 both at /uploads/ and from its board', async () => {
       await place(O, board, { id: 'clip', type: 'media', kind: 'video', src: video, name: 'clip.mp4', size: clip.length, duration: 0, naturalW: 0, naturalH: 0 });
       for (const [url, target] of [
@@ -4786,6 +4844,9 @@ async function mediaChecks() {
         assert((await get(url)).status === 410, `${url} at /uploads/`);
         assert((await O.req('GET', `/api/boards/${board}/files/${target}`)).status === 410, `${target} from the board`);
       }
+      // Operators can still review the kept copy before restoring or purging it.
+      const kept = await Op.req('GET', `/api/moderation/uploads/${card.slice('/uploads/'.length)}/file`);
+      assert(kept.status === 200 && kept.text === HTML.toString(), `kept copy -> ${kept.status}`);
     });
   } finally {
     closeAllDocs();
@@ -4893,6 +4954,39 @@ async function facilitationChecks() {
       for (const c of [pl, ol, fl]) c.destroy();
     });
 
+    await check('vote budget (KAI-210): a raw socket can neither vote over the budget (shared or sealed), nor as a made-up voter, nor raise the budget — nobody receives it and the voter converges', async () => {
+      const pl = await layerClient(P, board.id, port);
+      const ol = await layerClient(O, board.id, port);
+      clients.push(pl, ol);
+      const vm = (c) => c.doc.getMap('voting');
+      const seen = new Set();
+      vm(ol).observe((e) => e.changes.keys.forEach((_, k) => seen.add(`${k}=${JSON.stringify(vm(ol).get(k) ?? null)}`)));
+      const vote = (patch) => ({ id: 'kv1', active: true, title: 'Vote', votesPerUser: 2, elementIds: null, anonymous: false, startedBy: O.id, startedAt: Date.now(), endedAt: null, ...patch });
+      vm(ol).set('session', vote());
+      await waitFor(() => vm(pl).get('session')?.id === 'kv1', 5000, 'the vote to reach the participant');
+      const own = `kv1:${P.id}`;
+      vm(pl).set(own, { sessionId: 'kv1', userId: P.id, elementIds: ['a', 'a', 'a', 'a', 'a'] });
+      vm(pl).set(`kv1:ghost`, { sessionId: 'kv1', userId: 'ghost', elementIds: ['a', 'a'] });
+      vm(pl).set('session', vote({ votesPerUser: 20 }));
+      await settled(pl, [ol]);
+      await waitFor(() => !vm(pl).has(own) && !vm(pl).has('kv1:ghost') && vm(pl).get('session')?.votesPerUser === 2, 5000, 'the participant to converge');
+      assert(![...seen].some((k) => k.startsWith(own) || k.startsWith('kv1:ghost') || k.includes('"votesPerUser":20')), `the owner received a forbidden vote: ${[...seen].join(' ')}`);
+      vm(pl).set(own, { sessionId: 'kv1', userId: P.id, elementIds: ['a', 'b'] });
+      await waitFor(() => vm(ol).get(own)?.elementIds?.length === 2, 5000, "the participant's vote within budget");
+      // Hidden results: the sealed ballot in the private layer keeps to the same budget.
+      vm(ol).set('session', vote({ id: 'kv2', anonymous: true }));
+      await waitFor(() => vm(pl).get('session')?.id === 'kv2', 5000, 'the hidden vote to reach the participant');
+      pl.layers.private.getMap('voting').set(`kv2:${P.id}`, { sessionId: 'kv2', userId: P.id, elementIds: ['a', 'b', 'c'] });
+      await settled(pl);
+      await waitFor(() => !pl.layers.private.getMap('voting').has(`kv2:${P.id}`), 5000, 'the over-budget sealed ballot to be undone');
+      pl.layers.private.getMap('voting').set(`kv2:${P.id}`, { sessionId: 'kv2', userId: P.id, elementIds: ['c'] });
+      await settled(pl);
+      ol.layerOp({ type: 'reveal', collection: 'voting', prefix: 'kv2:' });
+      await waitFor(() => vm(ol).get(`kv2:${P.id}`)?.elementIds?.join() === 'c', 5000, 'the sealed ballot within budget to be revealed');
+      vm(ol).delete('session');
+      for (const c of [pl, ol]) c.destroy();
+    });
+
     await check('the session ends when the facilitator has been gone for the grace period, lifting every limit', async () => {
       fac(f).set('session', session({ locked: true }));
       await waitFor(() => p.role === 'commenter', 5000, 'the lock');
@@ -4905,6 +4999,109 @@ async function facilitationChecks() {
   } finally {
     for (const c of clients) c.destroy();
     if (proc) await stopProc(proc);
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The S3 storage backend (KAI-203), on its own server, only when an S3-compatible endpoint is
+// configured (S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY — e.g. MinIO or
+// SeaweedFS in Docker; the bucket is created when missing). Every other group runs on the local
+// disk as before (the S3_* variables are taken out of their servers' environment). Checks what
+// only S3 does: the `uploads/` and `private/` prefixes (a removed file's kept copy never sits where
+// S3_PUBLIC_URL reaches), restore and retention moving and deleting the objects, the redirect to
+// S3_PUBLIC_URL and the Cache-Control stored on the objects (UPLOAD_CACHE_SECONDS).
+// ---------------------------------------------------------------------------
+async function s3Checks() {
+  if (!S3_ENV) {
+    console.log('SKIP  s3: no S3_ENDPOINT / S3_BUCKET / S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY set');
+    return;
+  }
+  const require = createRequire(import.meta.url);
+  const { S3Client, CreateBucketCommand, HeadObjectCommand, ListObjectsV2Command } = require('@aws-sdk/client-s3');
+  const bucket = S3_ENV.S3_BUCKET;
+  const client = new S3Client({
+    region: S3_ENV.S3_REGION || 'us-east-1',
+    endpoint: S3_ENV.S3_ENDPOINT,
+    forcePathStyle: true,
+    credentials: { accessKeyId: S3_ENV.S3_ACCESS_KEY_ID, secretAccessKey: S3_ENV.S3_SECRET_ACCESS_KEY },
+  });
+  const keys = async (prefix) => {
+    const out = await client.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix }));
+    return (out.Contents ?? []).map((o) => o.Key);
+  };
+  const head = async (key) => {
+    try {
+      return await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+    } catch {
+      return null;
+    }
+  };
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-s3-'));
+  const outerDbUrl = db.url;
+  const Op = new User('S3Operator');
+  const O = new User('S3Owner');
+  const publicUrl = S3_ENV.S3_PUBLIC_URL || `${S3_ENV.S3_ENDPOINT.replace(/\/+$/, '')}/${bucket}`;
+  const env = { ...S3_ENV, S3_PUBLIC_URL: publicUrl, OPERATOR_EMAILS: Op.email, UPLOAD_CACHE_SECONDS: '123' };
+  const get = (url) => fetch(`http://127.0.0.1:${server.port}${url}`, { redirect: 'manual' });
+  const act = (body) => Op.req('POST', '/api/moderation/actions', { reason: 'illegal', statement: 'Checked by verify.', ...body });
+  try {
+    try {
+      await client.send(new CreateBucketCommand({ Bucket: bucket }));
+    } catch (e) {
+      if (!/BucketAlready/.test(e?.name ?? '')) throw e;
+    }
+    if (ADMIN_URL) db.url = await createDatabase();
+    if (!(await check('s3: server boots against the S3 endpoint', async () => waitUp((server = await spawnServer(dataDir, env)))))) return;
+    for (const u of [Op, O]) {
+      await u.signup();
+      await u.verifyEmail(dataDir);
+    }
+    let name = null;
+    await check('s3: an upload is stored under uploads/ with max-age=UPLOAD_CACHE_SECONDS, and its URL redirects to S3_PUBLIC_URL with the same max-age', async () => {
+      const up = await O.req('POST', '/api/uploads', PNG_1PX, { raw: true, headers: { 'content-type': 'image/png' } });
+      assert(up.status === 201, `upload -> ${up.status} ${up.text}`);
+      name = up.json.url.slice('/uploads/'.length);
+      const obj = await head(`uploads/${name}`);
+      assert(obj, `no object uploads/${name}`);
+      assert(/max-age=123\b/.test(obj.CacheControl ?? ''), `stored Cache-Control: ${obj.CacheControl}`);
+      const r = await get(`/uploads/${name}`);
+      assert(r.status === 302 && r.headers.get('location') === `${publicUrl}/uploads/${name}`, `redirect -> ${r.status} ${r.headers.get('location')}`);
+      assert(/max-age=123\b/.test(r.headers.get('cache-control') ?? ''), `redirect Cache-Control: ${r.headers.get('cache-control')}`);
+    });
+
+    await check('s3: removing a file moves its kept copy under private/ (never under the public uploads/ prefix) and the URL answers 410; restoring brings it back under uploads/', async () => {
+      assert(name, 'no upload');
+      assert((await act({ action: 'upload.remove', targetId: name })).status === 200, 'remove');
+      assert(!(await head(`uploads/${name}`)), 'the removed file is still under uploads/');
+      const kept = (await keys('private/')).filter((k) => k.endsWith(`.${name}`));
+      assert(kept.length === 1, `kept copies: ${JSON.stringify(kept)}`);
+      assert(!(await keys('uploads/')).some((k) => k.includes(`.${name}`)), 'a kept copy sits under uploads/');
+      const gone = await get(`/uploads/${name}`);
+      assert(gone.status === 410 && !gone.headers.get('location'), `after removal -> ${gone.status} ${gone.headers.get('location')}`);
+      assert((await act({ action: 'upload.restore', targetId: name, reason: 'other' })).status === 200, 'restore');
+      const back = await head(`uploads/${name}`);
+      assert(back && /max-age=123\b/.test(back.CacheControl ?? ''), `restored object: ${back?.CacheControl}`);
+      assert(!(await keys('private/')).some((k) => k.endsWith(`.${name}`)), 'the kept copy outlived the restore');
+      assert((await get(`/uploads/${name}`)).status === 302, 'the restored file does not redirect');
+    });
+
+    await check('s3: retention (MODERATION_KEEP_REMOVED_DAYS=0) deletes the kept copy under private/, the URL stays 410', async () => {
+      assert((await act({ action: 'upload.remove', targetId: name })).status === 200, 'remove again');
+      assert((await keys('private/')).some((k) => k.endsWith(`.${name}`)), 'no kept copy');
+      await stopProc(server);
+      server = await waitUp(await spawnServer(dataDir, { ...env, MODERATION_KEEP_REMOVED_DAYS: '0', MODERATION_RETENTION_INTERVAL_SECONDS: '1' }));
+      await waitFor(async () => !(await keys('private/')).some((k) => k.endsWith(`.${name}`)), 10_000, 'the kept copy to be deleted');
+      assert((await get(`/uploads/${name}`)).status === 410, 'the URL came back');
+    });
+  } finally {
+    await stopServer();
+    await dropDatabases();
+    db.url = outerDbUrl;
     try {
       fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     } catch {
@@ -5319,6 +5516,7 @@ const SUITES = {
   api: publicApiChecks,
   facilitation: facilitationChecks,
   suggestions: suggestionsChecks,
+  s3: s3Checks,
 };
 const onlyArg = process.argv.indexOf('--only');
 const only = onlyArg >= 0 ? (process.argv[onlyArg + 1] ?? '').split(',').filter(Boolean) : Object.keys(SUITES);

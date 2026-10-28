@@ -41,6 +41,7 @@ export {
   useIsExporting,
   useElementsQuery,
   useSuggestions,
+  usePeople,
 } from './hooks';
 
 // [additive] An element drawn as it would look without being on the board (suggestion ghosts).

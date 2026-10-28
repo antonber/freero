@@ -1,12 +1,13 @@
-// AI routes (contract: @freero/shared api.ts "AI"). All of them answer 404 while AI is off on this
-// instance (no AI_PROVIDER and no workspace keys), so a server without AI shows no trace of it.
+// AI routes (contract: @freero/shared api.ts "AI"). While AI is off on this instance (no AI_PROVIDER
+// and no workspace keys) every route answers 404 — except the board status the board page loads on
+// every open, which answers `{ ai: null }` so a server without AI logs no error on each board load.
 import { Router } from 'express';
 import type { AiActionResponse, BoardAiStatus, WorkspaceAiAdmin } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { handle } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
 import { currentUser, requireUser } from '../auth/index';
-import { decideAi, requireAiOffered, statusOf } from './access';
+import { aiOffered, decideAi, requireAiOffered, statusOf } from './access';
 import { runAiAction } from './service';
 import { getAiAdmin, testAiSettings, updateAiSettings } from './settings';
 
@@ -18,6 +19,10 @@ export default function aiRoutes(_ctx: ServerContext): Router {
     requireUser,
     handle(async (req, res) => {
       res.setHeader('Cache-Control', 'private, no-store');
+      if (!aiOffered()) {
+        res.json({ ai: null });
+        return;
+      }
       res.json({ ai: statusOf(await decideAi(req.params.id, currentUser(req).id)) satisfies BoardAiStatus });
     }),
   );
