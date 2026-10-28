@@ -2240,15 +2240,19 @@ class Browser {
     this.origin = `http://127.0.0.1:${port}`;
     this.jar = new Map();
   }
-  async fetch(url, { method = 'GET', body, headers = {} } = {}) {
+  /** `form`: an HTML form post (application/x-www-form-urlencoded) instead of a JSON `body`. */
+  async fetch(url, { method = 'GET', body, form, headers = {} } = {}) {
     const abs = new URL(url, this.origin);
     const own = abs.origin === this.origin;
     const h = { ...headers };
     if (own && this.jar.size) h.cookie = [...this.jar].map(([k, v]) => `${k}=${v}`).join('; ');
     if (body !== undefined) h['content-type'] = 'application/json';
-    const res = await fetch(abs, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body), redirect: 'manual' });
+    if (form !== undefined) h['content-type'] = 'application/x-www-form-urlencoded';
+    const payload = form !== undefined ? new URLSearchParams(form).toString() : body === undefined ? undefined : JSON.stringify(body);
+    const res = await fetch(abs, { method, headers: h, body: payload, redirect: 'manual' });
+    const setCookies = res.headers.getSetCookie();
     if (own) {
-      for (const c of res.headers.getSetCookie()) {
+      for (const c of setCookies) {
         const m = /^([^=]+)=([^;]*)/.exec(c);
         if (!m) continue;
         if (!m[2] || /expires=thu, 01 jan 1970/i.test(c)) this.jar.delete(m[1]);
@@ -2262,7 +2266,7 @@ class Browser {
     } catch {
       /* not json */
     }
-    return { status: res.status, location: res.headers.get('location'), json, text, url: abs.href };
+    return { status: res.status, location: res.headers.get('location'), json, text, url: abs.href, setCookies };
   }
   /** Follows redirects (app -> provider -> app) until a page of the app; returns its path + query. */
   async navigate(url) {
@@ -2626,15 +2630,475 @@ async function uploadSweepChecks() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Enterprise: workspace single sign-on (KAI-45), against a local SAML identity provider that signs
+// with a real key (scripts/lib/mock-saml.mjs), a local OpenID provider, and a local DNS server the
+// server's real resolver asks for the verification TXT records (SSO_DNS_SERVERS).
+// ---------------------------------------------------------------------------
+
+/** The SAMLResponse and RelayState of the identity provider's auto-posting form. */
+function postedForm(html) {
+  const field = (n) => new RegExp(`name="${n}" value="([^"]*)"`).exec(html)?.[1]?.replace(/&amp;/g, '&').replace(/&quot;/g, '"') ?? null;
+  return { SAMLResponse: field('SAMLResponse'), RelayState: field('RelayState'), action: /action="([^"]+)"/.exec(html)?.[1] ?? null };
+}
+
+/** Starts an SP-initiated SAML sign-in in `b`; returns the request it sent and where to post the answer. */
+async function startSaml(b, workspaceId, idp, next = '') {
+  const start = await b.fetch(`/api/sso/${workspaceId}/start${next ? `?next=${encodeURIComponent(next)}` : ''}`);
+  assert(start.status === 302 && start.location?.startsWith(idp.ssoUrl), `start: ${start.status} ${start.location} ${start.text}`);
+  const url = new URL(start.location);
+  const request = await idp.readRequest(url);
+  return { url, request, relay: url.searchParams.get('RelayState') };
+}
+
+/** Posts a SAMLResponse to the ACS from the IdP's origin (cross-site, like the real form); returns the ACS answer. */
+function postToAcs(b, acsUrl, samlResponse, relay, idp) {
+  return b.fetch(acsUrl, { method: 'POST', form: { SAMLResponse: samlResponse, RelayState: relay ?? '' }, headers: { origin: new URL(idp.ssoUrl).origin } });
+}
+
+async function ssoChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-sso-'));
+  const { startMockSaml } = await import('./lib/mock-saml.mjs');
+  const { startMockDns } = await import('./lib/mock-dns.mjs');
+  const { selfSignedCertificate } = await import('./lib/test-cert.mjs');
+  const dns = await startMockDns();
+  const idp = await startMockSaml();
+  const google = await startMockOidc({ clientId: 'freero-google', clientSecret: 'google-secret' });
+  const wsOidc = await startMockOidc({ clientId: 'beta-client', clientSecret: 'beta-secret' });
+  let proc = null;
+  try {
+    const env = {
+      SSO_DNS_SERVERS: dns.server,
+      OIDC_GOOGLE_CLIENT_ID: 'freero-google',
+      OIDC_GOOGLE_CLIENT_SECRET: 'google-secret',
+      OIDC_GOOGLE_ISSUER: google.issuer,
+      RATE_LIMIT_SSO: '5000/10m',
+      RATE_LIMIT_PASSWORD: '200/15m',
+      RATE_LIMIT_LOGIN: '500/5m',
+    };
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    const up = await check('SSO server boots with a DNS server for domain verification', async () => {
+      proc = await waitUp(await spawnServer(dataDir, env));
+    });
+    if (!up) return;
+    const port = proc.port;
+    const stamp = Date.now();
+    const domain = `acme-${stamp}.test`;
+    const at = (local) => `${local}@${domain}`;
+
+    // The owner: a password account at the organization's domain (break-glass later).
+    const O = new User('SsoOwner', port);
+    O.email = at('owner');
+    await O.signup();
+    await O.verifyEmail(dataDir);
+    const ws = (await O.req('POST', '/api/workspaces', { name: `Acme ${stamp}` })).json.workspace;
+    const sso = (sub = '') => `/api/workspaces/${ws.id}/sso${sub}`;
+    // Bob: an existing password account at the domain, signed in before SSO is enforced.
+    const B = new User('SsoBob', port);
+    B.email = at('bob');
+    await B.signup();
+    await B.verifyEmail(dataDir);
+
+    let domainId = null;
+    await check('a domain is verified only by its DNS TXT record (missing or wrong record: refused), and only one workspace can hold it', async () => {
+      const added = await O.req('POST', sso('/domains'), { domain: domain.toUpperCase() });
+      assert(added.status === 201, added.text);
+      const d = added.json.domains[0];
+      assert(d.domain === domain && !d.verified && d.txtName === `_freero-verification.${domain}` && d.txtValue.startsWith('freero-verification='), JSON.stringify(d));
+      domainId = d.id;
+      assert((await O.req('POST', sso(`/domains/${d.id}/verify`))).status === 409, 'verified without a record');
+      dns.setTxt(d.txtName, ['freero-verification=not-the-token', 'v=spf1 -all']);
+      assert((await O.req('POST', sso(`/domains/${d.id}/verify`))).status === 409, 'verified with a wrong record');
+      dns.setTxt(d.txtName, ['v=spf1 -all', d.txtValue]);
+      const ok = await O.req('POST', sso(`/domains/${d.id}/verify`));
+      assert(ok.status === 200 && ok.json.domains[0].verified, ok.text);
+      // Another team claims the same domain and publishes its own token: the first proof wins.
+      const P = new User('SsoRival', port);
+      await P.signup();
+      const rival = (await P.req('POST', '/api/workspaces', { name: 'Rival' })).json.workspace;
+      const claim = (await P.req('POST', `/api/workspaces/${rival.id}/sso/domains`, { domain })).json.domains[0];
+      dns.setTxt(claim.txtName, [d.txtValue, claim.txtValue]);
+      const taken = await P.req('POST', `/api/workspaces/${rival.id}/sso/domains/${claim.id}/verify`);
+      assert(taken.status === 409 && /another workspace/.test(taken.json.error), `${taken.status} ${taken.text}`);
+      // Members can't see or change it.
+      assert((await B.req('GET', sso())).status === 404, 'a non-member reads SSO settings');
+    });
+
+    await check("the SAML connection is configured from the identity provider's metadata (entity ID, SSO URL, signing certificate)", async () => {
+      const bad = await O.req('PUT', sso('/connection'), { protocol: 'saml', enabled: true, samlMetadataXml: '<x/>' });
+      assert(bad.status === 400, `bad metadata accepted: ${bad.status}`);
+      const r = await O.req('PUT', sso('/connection'), { protocol: 'saml', enabled: true, samlMetadataXml: idp.metadataXml(), defaultRole: 'member', sessionHours: 8 });
+      assert(r.status === 200, r.text);
+      const c = r.json.connection;
+      assert(c.saml.entityId === idp.entityId && c.saml.ssoUrl === idp.ssoUrl && c.saml.certificates.length === 1 && c.testedAt === null, JSON.stringify(c));
+      const meta = await new Browser(port).fetch(`/api/sso/${ws.id}/saml/metadata`);
+      assert(meta.status === 200 && meta.text.includes(r.json.serviceProvider.acsUrl), meta.text.slice(0, 300));
+      const early = await O.req('POST', sso('/enforce'), { enforced: true, breakGlassUserId: O.id });
+      assert(early.status === 409, `enforced before any sign-in went through: ${early.status}`);
+    });
+
+    let alice = null;
+    await check('SP-initiated SAML sign-in: a newcomer at the domain gets a verified account and joins the workspace with the default role; the session ends with the IdP session', async () => {
+      const b = new Browser(port);
+      const email = at('alice');
+      const { url } = await startSaml(b, ws.id, idp, '/board/welcome');
+      idp.queueSignIn({ email, name: 'Alice Directory', sessionNotOnOrAfter: Date.now() + 2 * 3_600_000 });
+      const posted = postedForm(await (await fetch(url)).text());
+      assert(posted.SAMLResponse && posted.action.endsWith(`/api/sso/${ws.id}/saml/acs`), JSON.stringify(posted).slice(0, 200));
+      const acs = await postToAcs(b, posted.action, posted.SAMLResponse, posted.RelayState, idp);
+      assert(acs.status === 303 && acs.location.startsWith(`/api/sso/${ws.id}/saml/finish`), `acs: ${acs.status} ${acs.location} ${acs.text}`);
+      const fin = await b.fetch(acs.location);
+      assert(fin.status === 303 && fin.location === '/board/welcome', `finish: ${fin.status} ${fin.location}`);
+      const cookie = fin.setCookies.find((c) => c.startsWith('freero_session='));
+      const maxAge = Number(/Max-Age=(\d+)/i.exec(cookie ?? '')?.[1]);
+      assert(maxAge > 7000 && maxAge <= 7200, `session cookie Max-Age ${maxAge} (IdP session: 2 h)`);
+      const me = (await b.fetch('/api/auth/me')).json.user;
+      assert(me.email === email && me.emailVerified && me.name === 'Alice Directory', JSON.stringify(me));
+      const mine = (await b.fetch('/api/workspaces')).json.workspaces.find((w) => w.id === ws.id);
+      assert(mine?.role === 'member', `membership: ${JSON.stringify(mine)}`);
+      const sessions = (await b.fetch('/api/auth/sessions')).json.sessions;
+      assert(sessions[0].methodLabel === 'Single sign-on', JSON.stringify(sessions));
+      alice = { browser: b, id: me.id, email };
+      const tested = (await O.req('GET', sso())).json.connection.testedAt;
+      assert(tested !== null, 'the connection does not record that a sign-in went through');
+    });
+
+    await check('SAML: only the browser that started the sign-in finishes it, and a response is accepted once (replay of the same response, or of its assertion under a new request, is refused)', async () => {
+      const email = at('carol');
+      const victim = new Browser(port);
+      const { request, relay } = await startSaml(victim, ws.id, idp);
+      const resp = idp.buildResponse({ email, inResponseTo: request.id, acsUrl: request.acsUrl, audience: request.issuer, assertionId: '_fixed-assertion-' + stamp });
+      const acs = await postToAcs(victim, request.acsUrl, resp, relay, idp);
+      assert(acs.status === 303 && acs.location.includes('/saml/finish'), `acs: ${acs.status} ${acs.location}`);
+      // Someone else's browser holding the finish link gets nothing (no binding cookie).
+      const other = new Browser(port);
+      const stolen = await other.fetch(acs.location);
+      assert(stolen.location === '/login?error=sso_failed' && !other.jar.has('freero_session'), `stolen finish: ${stolen.location}`);
+      const replayed = await postToAcs(new Browser(port), request.acsUrl, resp, relay, idp);
+      assert(replayed.location === '/login?error=sso_failed', `same response posted again: ${replayed.location}`);
+      const fin = await victim.fetch(acs.location);
+      assert(fin.location === '/app' && victim.jar.has('freero_session'), `the real browser: ${fin.location}`);
+      // The same assertion (same ID) answering a fresh request: refused as a replay.
+      const c2 = new Browser(port);
+      const s2 = await startSaml(c2, ws.id, idp);
+      const again = idp.buildResponse({ email, inResponseTo: s2.request.id, acsUrl: s2.request.acsUrl, audience: s2.request.issuer, assertionId: '_fixed-assertion-' + stamp });
+      const r2 = await postToAcs(c2, s2.request.acsUrl, again, s2.relay, idp);
+      assert(r2.location === '/login?error=sso_failed', `replayed assertion ID: ${r2.location}`);
+    });
+
+    await check('SAML responses that fail validation are refused and sign nobody in: unsigned, signed by another key, wrong audience, wrong recipient, expired, not yet valid, unsolicited (IdP-initiated), or answering another request', async () => {
+      const email = at('mallory');
+      const other = selfSignedCertificate('Not the IdP');
+      const cases = {
+        unsigned: { sign: 'none' },
+        'another key': { key: other },
+        'wrong audience': { audience: 'https://elsewhere.example/sp' },
+        'wrong recipient': { recipient: 'https://elsewhere.example/acs' },
+        expired: { issueInstant: Date.now() - 30 * 60_000, now: Date.now() - 30 * 60_000, notOnOrAfter: Date.now() - 20 * 60_000 },
+        'not yet valid': { notBefore: Date.now() + 10 * 60_000 },
+        unsolicited: { inResponseTo: null },
+        'another request': { inResponseTo: '_not-a-request-we-sent' },
+      };
+      const accepted = [];
+      for (const [name, o] of Object.entries(cases)) {
+        const b = new Browser(port);
+        const { request, relay } = await startSaml(b, ws.id, idp);
+        const resp = idp.buildResponse({ email, inResponseTo: request.id, acsUrl: request.acsUrl, audience: request.issuer, ...o });
+        const acs = await postToAcs(b, request.acsUrl, resp, relay, idp);
+        const fin = acs.location?.includes('/saml/finish') ? await b.fetch(acs.location) : null;
+        if (acs.location !== '/login?error=sso_failed' || b.jar.has('freero_session')) accepted.push(`${name}: ${acs.status} ${acs.location} ${fin?.location ?? ''}`);
+      }
+      assert(accepted.length === 0, `accepted: ${accepted.join('; ')}`);
+    });
+
+    await check('XML signature wrapping: a validly signed assertion with a forged one wrapped around it never signs in as the forged address', async () => {
+      const victim = at('victim');
+      const attempts = [];
+      for (const variant of ['forged first', 'signed one hidden in Extensions']) {
+        const b = new Browser(port);
+        const { request, relay } = await startSaml(b, ws.id, idp);
+        const legit = Buffer.from(
+          idp.buildResponse({ email: at('attacker'), inResponseTo: request.id, acsUrl: request.acsUrl, audience: request.issuer }),
+          'base64',
+        ).toString('utf8');
+        const signedAssertion = /<saml:Assertion[\s\S]*<\/saml:Assertion>/.exec(legit)[0];
+        const forged = signedAssertion
+          .replace(/ID="[^"]+"/, 'ID="_forged"')
+          .replace(/<ds:Signature[\s\S]*<\/ds:Signature>/, '')
+          .replaceAll(at('attacker'), victim);
+        const wrapped =
+          variant === 'forged first'
+            ? legit.replace(signedAssertion, forged + signedAssertion)
+            : legit.replace(signedAssertion, `<samlp:Extensions>${signedAssertion}</samlp:Extensions>${forged}`);
+        const acs = await postToAcs(b, request.acsUrl, Buffer.from(wrapped).toString('base64'), relay, idp);
+        if (acs.location?.includes('/saml/finish')) await b.fetch(acs.location);
+        const me = (await b.fetch('/api/auth/me')).json?.user;
+        if (me?.email === victim) attempts.push(`${variant}: signed in as the victim`);
+        else if (me) attempts.push(`${variant}: accepted (as ${me.email})`);
+      }
+      assert(attempts.length === 0, attempts.join('; '));
+    });
+
+    await check("a SAML identity provider can't vouch for addresses outside the workspace's verified domains", async () => {
+      const b = new Browser(port);
+      const { request, relay } = await startSaml(b, ws.id, idp);
+      const acs = await postToAcs(b, request.acsUrl, idp.buildResponse({ email: `ceo-${stamp}@gmail.test`, inResponseTo: request.id, acsUrl: request.acsUrl, audience: request.issuer }), relay, idp);
+      const fin = await b.fetch(acs.location);
+      assert(fin.location === '/login?error=sso_domain' && !b.jar.has('freero_session'), `${acs.location} -> ${fin.location}`);
+    });
+
+    await check('discovery routes an address at the domain to the IdP (by domain only); "Enforce SSO" needs an owner as break-glass', async () => {
+      const d = (await new Browser(port).fetch(`/api/sso/discover?email=${encodeURIComponent(at('anyone'))}&next=%2Fboard%2Fx`)).json.sso;
+      assert(d && d.startUrl.startsWith(`/api/sso/${ws.id}/start?`) && d.startUrl.includes('next=%2Fboard%2Fx') && d.enforced === false, JSON.stringify(d));
+      assert((await new Browser(port).fetch('/api/sso/discover?email=someone@unrelated.test')).json.sso === null, 'routed an unrelated domain');
+      const notOwner = await O.req('POST', sso('/enforce'), { enforced: true, breakGlassUserId: alice.id });
+      assert(notOwner.status === 400, `a member as break-glass: ${notOwner.status}`);
+    });
+
+    await check('"Enforce SSO": password, reset-link, signup and personal-provider sign-ins at the domain are refused (before the password is checked); existing non-SSO sessions end; SSO sessions and the break-glass owner keep working', async () => {
+      assert((await B.req('GET', '/api/auth/me')).status === 200, "Bob's password session before enforcing");
+      const on = await O.req('POST', sso('/enforce'), { enforced: true, breakGlassUserId: O.id });
+      assert(on.status === 200 && on.json.connection.enforced && on.json.sessionsEnded >= 1, on.text);
+      assert((await B.req('GET', '/api/auth/me')).status === 401, "Bob's password session survived");
+      assert((await alice.browser.fetch('/api/auth/me')).status === 200, "Alice's SSO session ended");
+      const wrong = await new User('x', port).req('POST', '/api/auth/login', { email: B.email, password: 'not-his-password' });
+      const right = await new User('x', port).req('POST', '/api/auth/login', { email: B.email, password: 'password-123' });
+      assert(wrong.status === 403 && wrong.json.code === 'sso_required' && right.status === 403 && right.json.code === 'sso_required', `${wrong.status} ${right.status}`);
+      const signup = await new User('x', port).req('POST', '/api/auth/signup', { name: 'New', email: at('newbie'), password: 'password-123' });
+      assert(signup.status === 403 && signup.json.code === 'sso_required', `signup: ${signup.status}`);
+      const after = Date.now();
+      await new Browser(port).fetch('/api/auth/password/forgot', { method: 'POST', body: { email: B.email } });
+      const token = await mailedToken(dataDir, B.email, '/reset-password', { after });
+      const reset = await new Browser(port).fetch('/api/auth/password/reset', { method: 'POST', body: { token, password: 'bob-new-pass-1' } });
+      assert(reset.status === 403 && reset.json.code === 'sso_required', `reset link signed in: ${reset.status} ${reset.text}`);
+      google.queueSignIn({ email: B.email });
+      const viaGoogle = await new Browser(port).navigate('/api/auth/oidc/google/start');
+      assert(viaGoogle.startsWith('/login?error=sso_required'), `Google sign-in: ${viaGoogle}`);
+      google.queueSignIn({ email: at('fresh-google') });
+      assert((await new Browser(port).navigate('/api/auth/oidc/google/start')).startsWith('/login?error=sso_required'), 'Google made an account at the domain');
+      const breakGlass = await new User('x', port).req('POST', '/api/auth/login', { email: O.email, password: 'password-123' });
+      assert(breakGlass.status === 200, `break-glass owner: ${breakGlass.status} ${breakGlass.text}`);
+      // Bob through SSO reaches his existing account (connected to it), not a new one.
+      const b = new Browser(port);
+      const { request, relay } = await startSaml(b, ws.id, idp);
+      const acs = await postToAcs(b, request.acsUrl, idp.buildResponse({ email: B.email, inResponseTo: request.id, acsUrl: request.acsUrl, audience: request.issuer }), relay, idp);
+      await b.fetch(acs.location);
+      assert((await b.fetch('/api/auth/me')).json?.user?.id === B.id, 'SSO did not reach Bob’s account');
+    });
+
+    await check('OpenID Connect per workspace (reusing the generic client): sign-in through the workspace issuer, newcomers join as the default role, the client secret is never sent back', async () => {
+      const betaDomain = `beta-${stamp}.test`;
+      const Q = new User('BetaOwner', port);
+      await Q.signup();
+      const beta = (await Q.req('POST', '/api/workspaces', { name: 'Beta' })).json.workspace;
+      const d = (await Q.req('POST', `/api/workspaces/${beta.id}/sso/domains`, { domain: betaDomain })).json.domains[0];
+      dns.setTxt(d.txtName, [d.txtValue]);
+      assert((await Q.req('POST', `/api/workspaces/${beta.id}/sso/domains/${d.id}/verify`)).status === 200, 'verify beta');
+      const saved = await Q.req('PUT', `/api/workspaces/${beta.id}/sso/connection`, {
+        protocol: 'oidc',
+        enabled: true,
+        oidcIssuer: wsOidc.issuer,
+        oidcClientId: 'beta-client',
+        oidcClientSecret: 'beta-secret',
+        defaultRole: 'guest',
+      });
+      assert(saved.status === 200 && saved.json.connection.oidc.hasClientSecret && !saved.text.includes('beta-secret'), saved.text);
+      const b = new Browser(port);
+      wsOidc.queueSignIn({ email: `dana@${betaDomain}`, name: 'Dana' });
+      const landed = await b.navigate(`/api/sso/${beta.id}/start?next=%2Fapp`);
+      assert(landed === '/app', `landed on ${landed}`);
+      const me = (await b.fetch('/api/auth/me')).json.user;
+      const role = (await b.fetch('/api/workspaces')).json.workspaces.find((w) => w.id === beta.id)?.role;
+      assert(me.email === `dana@${betaDomain}` && role === 'guest', `${me.email} ${role}`);
+      wsOidc.queueSignIn({ email: `eve@${domain}` }); // Acme's domain, not Beta's
+      assert((await new Browser(port).navigate(`/api/sso/${beta.id}/start`)) === '/login?error=sso_domain', "Beta's provider vouched for Acme's address");
+    });
+  } finally {
+    if (proc) await stopProc(proc);
+    await idp.close();
+    await dns.close();
+    await google.close();
+    await wsOidc.close();
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+/** A team workspace owned by `owner` with `domain` verified (through `dns`) and a SAML connection to `idp`. */
+async function ssoWorkspace(owner, dns, idp, domain, name) {
+  const ws = (await owner.req('POST', '/api/workspaces', { name })).json.workspace;
+  const d = (await owner.req('POST', `/api/workspaces/${ws.id}/sso/domains`, { domain })).json.domains[0];
+  dns.setTxt(d.txtName, [d.txtValue]);
+  const v = await owner.req('POST', `/api/workspaces/${ws.id}/sso/domains/${d.id}/verify`);
+  assert(v.status === 200, `verify ${domain}: ${v.text}`);
+  const c = await owner.req('PUT', `/api/workspaces/${ws.id}/sso/connection`, { protocol: 'saml', enabled: true, samlMetadataXml: idp.metadataXml() });
+  assert(c.status === 200, c.text);
+  return ws;
+}
+
+/** Signs `email` in through the workspace's SAML provider in a fresh browser; returns { browser, landed }. */
+async function samlSignIn(port, workspaceId, idp, email) {
+  const b = new Browser(port);
+  const { request, relay } = await startSaml(b, workspaceId, idp);
+  const acs = await postToAcs(b, request.acsUrl, idp.buildResponse({ email, inResponseTo: request.id, acsUrl: request.acsUrl, audience: request.issuer }), relay, idp);
+  if (!acs.location?.includes('/saml/finish')) return { browser: b, landed: acs.location };
+  return { browser: b, landed: (await b.fetch(acs.location)).location };
+}
+
+/** A connectDoc-able user for a Browser's session. */
+const asSocketUser = (b, id, label) => ({ id, label, name: label, port: b.port, cookie: `freero_session=${b.jar.get('freero_session')}` });
+
+// ---------------------------------------------------------------------------
+// Enterprise: SCIM 2.0 provisioning (KAI-46) — the Okta / Entra request sequences
+// (scripts/lib/scim-compliance.mjs), then what provisioning does in Freero.
+// ---------------------------------------------------------------------------
+async function scimChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-scim-'));
+  const { startMockSaml } = await import('./lib/mock-saml.mjs');
+  const { startMockDns } = await import('./lib/mock-dns.mjs');
+  const { runScimCompliance, scimClient } = await import('./lib/scim-compliance.mjs');
+  const dns = await startMockDns();
+  const idp = await startMockSaml();
+  let proc = null;
+  try {
+    const env = { SSO_DNS_SERVERS: dns.server, RATE_LIMIT_SSO: '5000/10m' };
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    const up = await check('SCIM server boots', async () => {
+      proc = await waitUp(await spawnServer(dataDir, env));
+    });
+    if (!up) return;
+    const port = proc.port;
+    server = proc; // connectDoc / wsCloseCode default to `server`
+    const stamp = Date.now();
+    const domain = `scim-${stamp}.test`;
+    const O = new User('ScimOwner', port);
+    O.email = `owner@${domain}`;
+    await O.signup();
+    await O.verifyEmail(dataDir);
+    const ws = await ssoWorkspace(O, dns, idp, domain, `Directory ${stamp}`);
+    const api = (sub = '') => `/api/workspaces/${ws.id}/scim${sub}`;
+    let token = null;
+
+    await check('provisioning tokens: owners/admins generate them (shown once, stored hashed — never listed), members cannot', async () => {
+      const made = await O.req('POST', api('/tokens'), { label: 'Okta' });
+      assert(made.status === 201 && made.json.token.startsWith('frscim_') && made.json.settings.tokens.length === 1, made.text);
+      token = made.json.token;
+      const listed = await O.req('GET', api());
+      assert(listed.status === 200 && !listed.text.includes(token) && listed.json.tokens[0].prefix === token.slice(0, 13), listed.text);
+      const M = new User('ScimMember', port);
+      await M.signup();
+      assert((await M.req('POST', api('/tokens'), {})).status === 404, 'an outsider made a token');
+    });
+    if (!token) return;
+    const base = `http://127.0.0.1:${port}/scim/v2`;
+    await runScimCompliance({ baseUrl: base, token, domain, check, assert });
+    const scim = scimClient(base, token);
+
+    await check('SCIM provisions only addresses at the workspace’s verified domains', async () => {
+      const r = await scim('POST', '/Users', { schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'], userName: `someone-${stamp}@gmail.test`, active: true });
+      assert(r.status === 400 && r.json.scimType === 'invalidValue', `${r.status} ${r.text}`);
+    });
+
+    // Zed: provisioned, signs in through SSO, opens a team board.
+    const zedEmail = `zed@${domain}`;
+    const zed = (await scim('POST', '/Users', { schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'], userName: zedEmail, name: { givenName: 'Zed', familyName: 'Dir' }, active: true })).json;
+    const board = (await O.req('POST', '/api/boards', { title: 'Team plan', workspaceId: ws.id })).json.board;
+
+    await check('a provisioned person is a member of the workspace and signs in through SSO to the same account', async () => {
+      const { browser, landed } = await samlSignIn(port, ws.id, idp, zedEmail);
+      assert(landed === '/app', `landed ${landed}`);
+      const me = (await browser.fetch('/api/auth/me')).json.user;
+      assert(me.id === zed.id && me.name === 'Zed Dir', JSON.stringify(me));
+      assert((await browser.fetch('/api/workspaces')).json.workspaces.find((w) => w.id === ws.id)?.role === 'member', 'not a member');
+      zed.browser = browser;
+    });
+
+    await check('deprovisioning (active: false) closes the person’s board socket at once, signs their organization account out and keeps them out of SSO just-in-time sign-in; reactivating lets them back', async () => {
+      const client = connectDoc(asSocketUser(zed.browser, zed.id, 'Zed'), board.id);
+      await client.ready();
+      assert(client.role === 'editor', `role ${client.role}`);
+      const off = await scim('PATCH', `/Users/${zed.id}`, { schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'], Operations: [{ op: 'replace', value: { active: false } }] });
+      assert(off.status === 200 && off.json.active === false, off.text);
+      await waitFor(() => client.closeCodes.some((c) => c === 4401 || c === 4403), 5000, "Zed's board socket to close");
+      client.destroy();
+      assert((await zed.browser.fetch('/api/auth/me')).status === 401, 'session survived deprovisioning');
+      assert(!(await O.req('GET', `/api/workspaces/${ws.id}/members`)).json.members.some((m) => m.userId === zed.id), 'still a member');
+      const again = await samlSignIn(port, ws.id, idp, zedEmail);
+      assert(again.landed === '/login?error=sso_removed' && !again.browser.jar.has('freero_session'), `SSO after deprovisioning: ${again.landed}`);
+      const on = await scim('PATCH', `/Users/${zed.id}`, { schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'], Operations: [{ op: 'Replace', path: 'active', value: 'True' }] });
+      assert(on.json.active === true, on.text);
+      const back = await samlSignIn(port, ws.id, idp, zedEmail);
+      assert(back.landed === '/app' && (await back.browser.fetch('/api/workspaces')).json.workspaces.some((w) => w.id === ws.id), `after reactivating: ${back.landed}`);
+    });
+
+    await check('directory groups map to roles in Freero: the highest mapped role wins, leaving the group returns the default role, and an owner is never changed', async () => {
+      const ownerScim = (await scim('POST', '/Users', { schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'], userName: O.email, active: true })).json;
+      assert(ownerScim.id === O.id, 'the owner was not linked to their account');
+      const admins = (await scim('POST', '/Groups', { schemas: ['urn:ietf:params:scim:schemas:core:2.0:Group'], displayName: `Admins ${stamp}`, members: [{ value: zed.id }, { value: O.id }] })).json;
+      const guests = (await scim('POST', '/Groups', { schemas: ['urn:ietf:params:scim:schemas:core:2.0:Group'], displayName: `Guests ${stamp}`, members: [{ value: O.id }] })).json;
+      const roleOf = async (id) => (await O.req('GET', `/api/workspaces/${ws.id}/members`)).json.members.find((m) => m.userId === id)?.role;
+      assert((await roleOf(zed.id)) === 'member', 'role before mapping');
+      assert((await O.req('PUT', api(`/groups/${admins.id}`), { mapping: { kind: 'role', role: 'admin' } })).status === 200, 'map admins');
+      assert((await O.req('PUT', api(`/groups/${guests.id}`), { mapping: { kind: 'role', role: 'guest' } })).status === 200, 'map guests');
+      assert((await roleOf(zed.id)) === 'admin', `mapped admin: ${await roleOf(zed.id)}`);
+      assert((await roleOf(O.id)) === 'owner', `the owner was changed to ${await roleOf(O.id)}`);
+      await scim('PATCH', `/Groups/${admins.id}`, { schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'], Operations: [{ op: 'remove', path: `members[value eq "${zed.id}"]` }] });
+      assert((await roleOf(zed.id)) === 'member', `after leaving the group: ${await roleOf(zed.id)}`);
+    });
+
+    await check("a directory group mapped to a private project gives its members that project's boards; leaving the group takes them away", async () => {
+      const project = (await O.req('POST', `/api/workspaces/${ws.id}/projects`, { name: 'Secret', access: 'private' })).json.project;
+      const secret = (await O.req('POST', '/api/boards', { title: 'Secret plan', workspaceId: ws.id, projectId: project.id })).json.board;
+      const zb = (await samlSignIn(port, ws.id, idp, zedEmail)).browser;
+      assert((await zb.fetch(`/api/boards/${secret.id}`)).status !== 200, 'Zed sees the private board before the mapping');
+      const team = (await scim('POST', '/Groups', { schemas: ['urn:ietf:params:scim:schemas:core:2.0:Group'], displayName: `Secret team ${stamp}`, members: [{ value: zed.id }] })).json;
+      assert((await O.req('PUT', api(`/groups/${team.id}`), { mapping: { kind: 'project', projectId: project.id } })).status === 200, 'map project');
+      assert((await zb.fetch(`/api/boards/${secret.id}`)).status === 200, 'Zed does not see the private board after the mapping');
+      await scim('PATCH', `/Groups/${team.id}`, { schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'], Operations: [{ op: 'Remove', path: 'members', value: [{ value: zed.id }] }] });
+      assert((await zb.fetch(`/api/boards/${secret.id}`)).status !== 200, 'Zed kept the private board after leaving the group');
+    });
+
+    await check('token rotation: a new token works at once; a revoked one is refused', async () => {
+      const second = (await O.req('POST', api('/tokens'), { label: 'Okta (rotated)' })).json;
+      const old = second.settings.tokens.find((t) => token.startsWith(t.prefix));
+      assert((await scimClient(base, second.token)('GET', '/Users')).status === 200, 'new token');
+      assert((await O.req('DELETE', api(`/tokens/${old.id}`))).status === 200, 'revoke');
+      assert((await scim('GET', '/Users')).status === 401, 'revoked token still works');
+    });
+  } finally {
+    closeAllDocs();
+    if (proc) await stopProc(proc);
+    server = null;
+    await idp.close();
+    await dns.close();
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+// VERIFY_ONLY=sso,scim,… runs just those sections (while working on one); unset runs everything.
+const only = new Set((process.env.VERIFY_ONLY ?? '').split(',').map((s) => s.trim()).filter(Boolean));
+const section = async (name, fn) => {
+  if (only.size && !only.has(name)) return;
+  await fn().catch((e) => record(`${name} harness`, false, e?.stack ?? String(e)));
+};
 const started = Date.now();
-await run().catch((e) => record('verify harness', false, e?.stack ?? String(e)));
-await signInMethodChecks().catch((e) => record('sign-in methods harness', false, e?.stack ?? String(e)));
-await secretRotationChecks().catch((e) => record('secret rotation harness', false, e?.stack ?? String(e)));
-await uploadSweepChecks().catch((e) => record('uploads sweep checks harness', false, e?.stack ?? String(e)));
-await accountPurgeChecks().catch((e) => record('account purge harness', false, e?.stack ?? String(e)));
-await notificationChecks().catch((e) => record('notifications harness', false, e?.stack ?? String(e)));
-await platformChecks().catch((e) => record('platform checks harness', false, e?.stack ?? String(e)));
-await multiInstanceChecks().catch((e) => record('multi-instance checks harness', false, e?.stack ?? String(e)));
+await section('main', run);
+await section('signin', signInMethodChecks);
+await section('rotation', secretRotationChecks);
+await section('sweep', uploadSweepChecks);
+await section('purge', accountPurgeChecks);
+await section('notifications', notificationChecks);
+await section('platform', platformChecks);
+await section('sso', ssoChecks);
+await section('scim', scimChecks);
+await section('multi', multiInstanceChecks);
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed in ${((Date.now() - started) / 1000).toFixed(1)}s`);
 if (failed.length) {
