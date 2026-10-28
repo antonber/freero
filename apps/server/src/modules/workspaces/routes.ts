@@ -27,11 +27,13 @@ import {
 
 export default function workspaceRoutes(_ctx: ServerContext): Router {
   const r = Router();
-  r.use('/workspaces', requireUser);
-  r.use('/projects', requireUser);
+  // requireUser on each route, never `r.use('/workspaces', …)`: other modules serve under
+  // /workspaces/:id too (admin, activity, scim…), and router-level middleware would run for theirs
+  // depending on module order (dune-check S6, KAI-190).
 
   r.get(
     '/workspaces',
+    requireUser,
     handle(async (req, res) => {
       res.json({ workspaces: await listWorkspaces(currentUser(req).id) });
     }),
@@ -39,6 +41,7 @@ export default function workspaceRoutes(_ctx: ServerContext): Router {
 
   r.post(
     '/workspaces',
+    requireUser,
     rateLimit('boardCreate', 'user'),
     handle(async (req, res) => {
       res.status(201).json({ workspace: await createTeamWorkspace(currentUser(req).id, cleanName(req.body?.name)) });
@@ -47,6 +50,7 @@ export default function workspaceRoutes(_ctx: ServerContext): Router {
 
   r.patch(
     '/workspaces/:id',
+    requireUser,
     handle(async (req, res) => {
       res.json({ workspace: await updateWorkspace(req.params.id, currentUser(req).id, (req.body ?? {}) as Record<string, unknown>) });
     }),
@@ -54,6 +58,7 @@ export default function workspaceRoutes(_ctx: ServerContext): Router {
 
   r.delete(
     '/workspaces/:id',
+    requireUser,
     handle(async (req, res) => {
       await deleteWorkspace(req, req.params.id, currentUser(req).id, req.body?.confirm);
       res.json({ ok: true });
@@ -62,6 +67,7 @@ export default function workspaceRoutes(_ctx: ServerContext): Router {
 
   r.post(
     '/workspaces/:id/transfer',
+    requireUser,
     handle(async (req, res) => {
       res.json({ workspace: await transferWorkspace(req.params.id, currentUser(req).id, req.body?.userId) });
     }),
@@ -70,6 +76,7 @@ export default function workspaceRoutes(_ctx: ServerContext): Router {
   // ---- members ----
   r.get(
     '/workspaces/:id/members',
+    requireUser,
     handle(async (req, res) => {
       const userId = currentUser(req).id;
       const members = await listMembers(req.params.id, userId);
@@ -79,6 +86,7 @@ export default function workspaceRoutes(_ctx: ServerContext): Router {
 
   r.post(
     '/workspaces/:id/members',
+    requireUser,
     rateLimit('invite', 'user'),
     handle(async (req, res) => {
       res.status(201).json(await inviteToWorkspace(req, req.params.id, currentUser(req), req.body ?? {}));
@@ -87,6 +95,7 @@ export default function workspaceRoutes(_ctx: ServerContext): Router {
 
   r.patch(
     '/workspaces/:id/members/:userId',
+    requireUser,
     handle(async (req, res) => {
       res.json({ member: await changeRole(req.params.id, currentUser(req).id, req.params.userId, req.body?.role) });
     }),
@@ -94,6 +103,7 @@ export default function workspaceRoutes(_ctx: ServerContext): Router {
 
   r.delete(
     '/workspaces/:id/members/:userId',
+    requireUser,
     handle(async (req, res) => {
       await removeMember(req.params.id, currentUser(req).id, req.params.userId);
       res.json({ ok: true });
@@ -102,6 +112,7 @@ export default function workspaceRoutes(_ctx: ServerContext): Router {
 
   r.post(
     '/workspaces/:id/invites/:inviteId/resend',
+    requireUser,
     rateLimit('invite', 'user'),
     handle(async (req, res) => {
       res.json({ invite: await resendInvite(req, req.params.id, req.params.inviteId, currentUser(req)) });
@@ -110,6 +121,7 @@ export default function workspaceRoutes(_ctx: ServerContext): Router {
 
   r.delete(
     '/workspaces/:id/invites/:inviteId',
+    requireUser,
     handle(async (req, res) => {
       await revokeInvite(req.params.id, req.params.inviteId, currentUser(req).id);
       res.json({ ok: true });
@@ -135,6 +147,7 @@ export default function workspaceRoutes(_ctx: ServerContext): Router {
   // ---- projects ----
   r.get(
     '/workspaces/:id/projects',
+    requireUser,
     handle(async (req, res) => {
       res.json({ projects: await listProjects(req.params.id, currentUser(req).id) });
     }),
@@ -142,6 +155,7 @@ export default function workspaceRoutes(_ctx: ServerContext): Router {
 
   r.post(
     '/workspaces/:id/projects',
+    requireUser,
     rateLimit('boardCreate', 'user'),
     handle(async (req, res) => {
       res.status(201).json({ project: await createProject(req.params.id, currentUser(req).id, req.body ?? {}) });
@@ -150,6 +164,7 @@ export default function workspaceRoutes(_ctx: ServerContext): Router {
 
   r.patch(
     '/projects/:id',
+    requireUser,
     handle(async (req, res) => {
       res.json({ project: await updateProject(req.params.id, currentUser(req).id, req.body ?? {}) });
     }),
@@ -157,6 +172,7 @@ export default function workspaceRoutes(_ctx: ServerContext): Router {
 
   r.delete(
     '/projects/:id',
+    requireUser,
     handle(async (req, res) => {
       await deleteProject(req.params.id, currentUser(req).id);
       res.json({ ok: true });
@@ -165,6 +181,7 @@ export default function workspaceRoutes(_ctx: ServerContext): Router {
 
   r.get(
     '/projects/:id/members',
+    requireUser,
     handle(async (req, res) => {
       res.json({ members: await listProjectMembers(req.params.id, currentUser(req).id) });
     }),
@@ -172,6 +189,7 @@ export default function workspaceRoutes(_ctx: ServerContext): Router {
 
   r.put(
     '/projects/:id/members/:userId',
+    requireUser,
     handle(async (req, res) => {
       await addProjectMember(req.params.id, currentUser(req).id, req.params.userId);
       res.json({ ok: true });
@@ -180,6 +198,7 @@ export default function workspaceRoutes(_ctx: ServerContext): Router {
 
   r.delete(
     '/projects/:id/members/:userId',
+    requireUser,
     handle(async (req, res) => {
       await removeProjectMember(req.params.id, currentUser(req).id, req.params.userId);
       res.json({ ok: true });

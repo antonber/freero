@@ -642,7 +642,9 @@ modules/<name>/    auth, boards, members, uploads, realtime …
   repo.ts          the only file that touches the db; the only writer of the owned tables     [S3][S4]
   routes.ts        reserved: export default (ctx) => express.Router, mounted at /api
                    (optional `export const mountPath = '/'` to mount elsewhere — uploads uses it
-                   for GET /uploads/:file)
+                   for GET /uploads/:file). Routers are mounted in readdir order, so middleware
+                   goes on each route (r.get(path, requireUser, …)): a router-level
+                   `r.use('<prefix>', …)` on a prefix another module serves under fails      [S6]
   ws.ts            reserved: export default (ctx) => WsRoute | WsRoute[]  ({ prefix, handle(ws, req) })
   init.ts          reserved: export default (ctx) => void | Promise<void>; runs once after all
                    migrations are applied and routes mounted, before listen (e.g. auth seeds the

@@ -450,6 +450,68 @@ function checkMigrations({ owners, migrations }) {
 }
 
 // ---------------------------------------------------------------------------
+// [S6] Router-level middleware on a path another module serves under (KAI-190). Every module's
+// router is mounted at its mountPath ('/api' by default) in readdir order, so `r.use('/boards',
+// requireUser)` in one module also runs for the '/boards/…' routes of every module mounted after it
+// (a guest got 401 from boards before members' own guest check could run). Which module answers
+// then depends on module names. Middleware on a prefix is allowed only where no other module
+// serves a path under it.
+// ---------------------------------------------------------------------------
+const ROUTE_CALL_RE = /\b\w+\.(get|post|put|patch|delete|all|use)\(\s*(?:(['"`])((?:(?!\2).)*)\2|([A-Za-z_$][\w$]*)\s*[,)])/g;
+
+/** Every route / router-level `use` path of a module's routes.ts, with the module's mount path. */
+function routePathsOf(file) {
+  // Comments out (line numbers kept): a comment explaining the rule is not a call.
+  const src = fs
+    .readFileSync(file, 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, ''))
+    .replace(/(^|\s)\/\/.*$/gm, '$1');
+  const mount = /export\s+const\s+mountPath\s*=\s*['"`]([^'"`]*)['"`]/.exec(src)?.[1] ?? '/api';
+  const consts = new Map([...src.matchAll(/\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*['"`]([^'"`$]*)['"`]/g)].map((m) => [m[1], m[2]]));
+  const out = [];
+  for (const m of src.matchAll(ROUTE_CALL_RE)) {
+    let p = m[3] !== undefined ? m[3].replace(/\$\{\s*([A-Za-z_$][\w$]*)\s*\}/g, (all, name) => consts.get(name) ?? all) : consts.get(m[4]);
+    if (p === undefined || !p.startsWith('/') || p.includes('${')) continue; // not a path (middleware, a router)
+    const full = `${mount.replace(/\/+$/, '')}${p}`.replace(/\/+$/, '') || '/';
+    out.push({ method: m[1], path: full, local: p, line: src.slice(0, m.index).split('\n').length });
+  }
+  return out;
+}
+
+const segments = (p) => p.split('/').filter(Boolean);
+/** Does `prefix` cover `p` (segment by segment, a `:param` matching any one segment)? */
+function covers(prefix, p) {
+  const a = segments(prefix);
+  const b = segments(p);
+  return a.length <= b.length && a.every((s, i) => s === b[i] || s.startsWith(':') || b[i].startsWith(':'));
+}
+
+function checkRouterPrefixes() {
+  const modulesDir = path.join(SERVER, 'modules');
+  if (!fs.existsSync(modulesDir)) return;
+  const byModule = [];
+  for (const ent of fs.readdirSync(modulesDir, { withFileTypes: true })) {
+    const file = path.join(modulesDir, ent.name, 'routes.ts');
+    if (ent.isDirectory() && fs.existsSync(file)) byModule.push({ module: ent.name, file, paths: routePathsOf(file) });
+  }
+  for (const me of byModule)
+    for (const use of me.paths.filter((p) => p.method === 'use')) {
+      for (const other of byModule) {
+        if (other === me) continue;
+        const hit = other.paths.find((p) => covers(use.path, p.path));
+        if (!hit) continue;
+        report(
+          'S6',
+          me.file,
+          use.line,
+          `Router-level use('${use.local}', …) also runs for modules/${other.module}'s '${hit.path}' (module routers are mounted in readdir order, so it depends on module names which one answers). Put the middleware on each route instead — r.get(path, requireUser, handle(…)) — or use a prefix only this module serves.`,
+        );
+        break;
+      }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Shared package: pure types/constants, no runtime deps.
 // ---------------------------------------------------------------------------
 function checkSharedFile(file) {
@@ -467,6 +529,7 @@ checkCssOwnership();
 const schema = serverMigrations();
 checkMigrations(schema);
 for (const f of walk(SERVER).filter(isCode)) checkServerFile(f, schema.owners);
+checkRouterPrefixes();
 for (const f of walk(SHARED).filter(isCode)) checkSharedFile(f);
 
 if (errors.length) {
