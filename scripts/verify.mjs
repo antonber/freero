@@ -3082,6 +3082,152 @@ async function scimChecks() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Enterprise: data exports and workspace deletion (KAI-50). Built by the job, announced by mail,
+// downloaded with the requester's session; the ZIP's contents are read back.
+// ---------------------------------------------------------------------------
+async function privacyChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-privacy-'));
+  const { unzipSync, strFromU8 } = await import('fflate');
+  let proc = null;
+  try {
+    const env = { DATA_EXPORT_INTERVAL_SECONDS: '1' };
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    const up = await check('privacy server boots', async () => {
+      proc = await waitUp(await spawnServer(dataDir, env));
+    });
+    if (!up) return;
+    const port = proc.port;
+    server = proc;
+    const U = new User('Exporter', port);
+    const W = new User('Other', port);
+    for (const u of [U, W]) {
+      await u.signup();
+      await u.verifyEmail(dataDir);
+    }
+    /** The export mailed to `to` after `after`: its download path. */
+    const mailedExport = async (to, after) => {
+      let link = null;
+      await waitFor(
+        () => {
+          const m = outbox(dataDir).filter((x) => x.to === to && x.sentAt >= after - 50 && /export/i.test(x.subject)).at(-1);
+          link = m ? /\/api\/exports\/[A-Za-z0-9_-]+\/download/.exec(m.text)?.[0] : null;
+          return !!link;
+        },
+        30_000,
+        `the export mail to ${to}`,
+      );
+      return link;
+    };
+    const download = async (u, link) => {
+      const res = await fetch(`http://127.0.0.1:${port}${link}`, { headers: { cookie: u.cookie } });
+      return { status: res.status, type: res.headers.get('content-type'), bytes: new Uint8Array(await res.arrayBuffer()) };
+    };
+
+    // U's data: a board with a sticky and an image, a comment on W's board (W replies), a template, an avatar.
+    const image = (await U.req('POST', '/api/uploads', PNG_1PX, { raw: true, headers: { 'content-type': 'image/png' } })).json.url;
+    const mine = (await U.req('POST', '/api/boards', { title: 'My roadmap' })).json.board;
+    const wBoard = (await W.req('POST', '/api/boards', { title: 'Their board' })).json.board;
+    await W.req('POST', `/api/boards/${wBoard.id}/members`, { email: U.email, role: 'commenter' });
+    const uc = connectDoc(U, mine.id);
+    await uc.ready();
+    uc.doc.transact(() => {
+      els(uc).set('s1', { id: 's1', type: 'sticky', x: 0, y: 0, w: 200, h: 200, text: '<p>Ship exports</p>', index: 0 });
+      els(uc).set('i1', { id: 'i1', type: 'image', x: 300, y: 0, w: 100, h: 100, src: image, index: 1 });
+    });
+    const onW = connectDoc(U, wBoard.id);
+    await onW.ready();
+    onW.doc.transact(() => {
+      onW.doc.getMap('comments').set('t:th1', { kind: 'thread', id: 'th1', x: 10, y: 10, elementId: null, createdAt: Date.now(), createdBy: U.id });
+      onW.doc.getMap('comments').set('m:th1:m1', { kind: 'message', threadId: 'th1', id: 'm1', authorId: U.id, authorName: U.name, text: 'My exported comment', createdAt: Date.now() });
+    });
+    const wc = connectDoc(W, wBoard.id);
+    await wc.ready();
+    await waitFor(() => wc.doc.getMap('comments').has('m:th1:m1'), 5000, 'W to receive the comment');
+    wc.doc.getMap('comments').set('m:th1:m2', { kind: 'message', threadId: 'th1', id: 'm2', authorId: W.id, authorName: W.name, text: 'W private reply', createdAt: Date.now() });
+    await sleep(800); // saved
+    await U.req('POST', '/api/templates', { name: 'Kickoff', description: '', content: { elements: [{ id: 'f1', type: 'frame', x: 0, y: 0, w: 400, h: 300, title: 'Kickoff', index: 0 }] } });
+
+    let files = null;
+    await check('personal data export: built by the job, mailed as a link, downloaded by its owner as a ZIP of profile, memberships, comments (with board context), owned boards (JSON + Yjs + images), templates, uploads and notifications', async () => {
+      const after = Date.now();
+      const r = await U.req('POST', '/api/me/exports');
+      assert(r.status === 202 && r.json.export.status === 'pending', r.text);
+      const link = await mailedExport(U.email, after);
+      const dl = await download(U, link);
+      assert(dl.status === 200 && dl.type === 'application/zip', `download: ${dl.status} ${dl.type}`);
+      files = unzipSync(dl.bytes);
+      const read = (p) => JSON.parse(strFromU8(files[p]));
+      const names = Object.keys(files);
+      assert(read('account.json').profile.email === U.email, 'account.json');
+      assert(!strFromU8(files['account.json']).includes('scrypt'), 'a password hash leaked into the export');
+      const comments = read('comments.json');
+      const onTheirs = comments.find((c) => c.board.id === wBoard.id);
+      assert(onTheirs?.board.title === 'Their board' && onTheirs.threads[0].messages.map((m) => m.text).join() === 'My exported comment', JSON.stringify(comments));
+      assert(!strFromU8(files['comments.json']).includes('W private reply'), "another person's reply is in the export");
+      const boardDir = names.find((n) => n.endsWith(`-${mine.id}/board.json`))?.replace('/board.json', '');
+      assert(boardDir, `no board folder in ${names.join(', ')}`);
+      const board = read(`${boardDir}/board.json`);
+      assert(board.board.title === 'My roadmap' && board.content.elements.s1.text.includes('Ship exports'), JSON.stringify(board).slice(0, 300));
+      const yd = new Y.Doc();
+      Y.applyUpdate(yd, files[`${boardDir}/board.yjs`]);
+      assert(yd.getMap('elements').get('i1')?.src === image, 'board.yjs does not hold the board');
+      const imageName = image.slice('/uploads/'.length);
+      assert(files[`${boardDir}/files/${imageName}`]?.length === PNG_1PX.length && files[`uploads/${imageName}`], 'images missing');
+      assert(names.some((n) => /^templates\/kickoff-.*\.json$/.test(n)), 'template missing');
+      assert(read('notifications.json').notifications.some((n) => n.type === 'board.shared' || n.boardId === wBoard.id), JSON.stringify(read('notifications.json')).slice(0, 300));
+      assert(read('memberships.json').boards.some((b) => b.boardId === wBoard.id && b.role === 'commenter'), 'board membership missing');
+    });
+
+    await check("an export link works only for the person who asked for it", async () => {
+      const exports = (await U.req('GET', '/api/me/exports')).json.exports;
+      const link = `/api/exports/${exports[0].id}/download`;
+      assert((await download(W, link)).status === 404, 'someone else downloaded it');
+      assert((await fetch(`http://127.0.0.1:${port}${link}`)).status === 401, 'downloaded signed out');
+    });
+
+    const O = new User('WsOwner', port);
+    const M = new User('WsMember', port);
+    for (const u of [O, M]) {
+      await u.signup();
+      await u.verifyEmail(dataDir);
+    }
+    const team = (await O.req('POST', '/api/workspaces', { name: `Exported team ${Date.now()}` })).json.workspace;
+    assert((await O.req('POST', `/api/workspaces/${team.id}/members`, { email: M.email, role: 'member' })).status === 201, 'add member');
+    const teamBoard = (await O.req('POST', '/api/boards', { title: 'Team board', workspaceId: team.id })).json.board;
+    let wsLink = null;
+    await check('workspace export: owners/admins only; the ZIP holds the directory (members with emails, projects) and every board', async () => {
+      assert((await M.req('POST', `/api/workspaces/${team.id}/exports`)).status === 403, 'a member exported the workspace');
+      const after = Date.now();
+      assert((await O.req('POST', `/api/workspaces/${team.id}/exports`)).status === 202, 'owner export');
+      wsLink = await mailedExport(O.email, after);
+      const dl = await download(O, wsLink);
+      assert(dl.status === 200, `download ${dl.status}`);
+      const z = unzipSync(dl.bytes);
+      const ws = JSON.parse(strFromU8(z['workspace.json']));
+      assert(ws.members.some((m) => m.email === M.email && m.role === 'member') && ws.workspace.id === team.id, JSON.stringify(ws).slice(0, 300));
+      assert(Object.keys(z).some((n) => n.endsWith(`-${teamBoard.id}/board.json`)), 'team board missing');
+    });
+
+    await check('deleting a workspace mails every owner a receipt, and its exports stop being downloadable', async () => {
+      const after = Date.now();
+      const del = await O.req('DELETE', `/api/workspaces/${team.id}`, { confirm: team.name });
+      assert(del.status === 200, del.text);
+      await waitFor(() => outbox(dataDir).some((m) => m.to === O.email && m.sentAt >= after - 50 && /was deleted/.test(m.subject)), 5000, 'the deletion receipt');
+      assert((await download(O, wsLink)).status === 404, 'the deleted workspace’s export is still downloadable');
+    });
+  } finally {
+    closeAllDocs();
+    if (proc) await stopProc(proc);
+    server = null;
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
 // VERIFY_ONLY=sso,scim,… runs just those sections (while working on one); unset runs everything.
 const only = new Set((process.env.VERIFY_ONLY ?? '').split(',').map((s) => s.trim()).filter(Boolean));
 const section = async (name, fn) => {
@@ -3098,6 +3244,7 @@ await section('notifications', notificationChecks);
 await section('platform', platformChecks);
 await section('sso', ssoChecks);
 await section('scim', scimChecks);
+await section('privacy', privacyChecks);
 await section('multi', multiInstanceChecks);
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed in ${((Date.now() - started) / 1000).toFixed(1)}s`);
