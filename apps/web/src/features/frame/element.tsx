@@ -4,6 +4,7 @@ import { defineElement, useCanEdit, useChromeHidden, useEditor, type Editor, typ
 import { DEFAULT_FILL, presetById } from './lib/frames';
 import { renameFrame } from './lib/actions';
 import { startTitleDrag } from './lib/titleDrag';
+import { planGrid } from './lib/grid';
 import './frame.css';
 
 /** Title text size on screen (px) while the frame is comfortably large. */
@@ -131,5 +132,13 @@ export default defineElement({
   visualOutset: (el, zoom) => {
     const px = titleSize(el.w * zoom);
     return px < TITLE_MIN_PX ? {} : { top: (px * 1.25 + 6) / zoom };
+  },
+  // Grid auto-layout (frame.layout): children stay in a grid and the frame hugs them.
+  arrange(frame, { editor, previous }) {
+    if (!frame.layout) return null;
+    const children = editor
+      .getElements()
+      .filter((el) => el.frameId === frame.id && !el.locked && el.type !== 'connector' && el.type !== 'pen' && !editor.getDefinition(el.type)?.container);
+    return planGrid(frame, children, previous);
   },
 });
