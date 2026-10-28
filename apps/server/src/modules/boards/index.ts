@@ -3,7 +3,7 @@ import type { BoardSummary, Role } from '@freero/shared';
 import { closeBoardDoc } from '../realtime/index';
 import { deleteUpload, UPLOAD_REF_PATTERN } from '../uploads/index';
 import { membershipsOf } from '../members/index';
-import { boardAccessLoader, getWorkspaceInfo, mayDownload, mayShareExternally, teamMembers, workspaceRole, workspaceRolesOf } from '../workspaces/index';
+import { boardAccessLoader, getWorkspaceInfo, mayDownload, mayShareExternally, openToWholeTeam, teamMembers, workspaceRole, workspaceRolesOf } from '../workspaces/index';
 import * as repo from './repo';
 import {
   cleanDescription,
@@ -182,6 +182,18 @@ export async function boardReadPolicies(userId: string, boardIds: string[]): Pro
   const boards = await repo.getBoards([...new Set(boardIds)]);
   const accessOf = await boardAccessLoader(userId, [...new Set(boards.map((b) => b.workspaceId))]);
   return new Map(boards.map((b) => [b.id, { workspaceId: b.workspaceId, mayDownload: mayDownload(accessOf(b).workspaceRole, accessOf(b).policies) }]));
+}
+
+/**
+ * Of these boards (trash included), the ones every full member of their team workspace can open
+ * through team access alone — what a workspace-wide integration (webhooks) may be told about —
+ * with where they are and their title now. Personal boards, boards in private projects and boards
+ * taken down by an operator are absent.
+ */
+export async function boardsOpenToTheirTeam(boardIds: string[]): Promise<Map<string, { workspaceId: string; title: string }>> {
+  const boards = (await repo.getBoardsIncludingTrash([...new Set(boardIds)])).filter((b) => b.removedAt === null);
+  const open = await openToWholeTeam(boards.map((b) => ({ workspaceId: b.workspaceId, projectId: b.projectId })));
+  return new Map(boards.filter((_, i) => open[i]).map((b) => [b.id, { workspaceId: b.workspaceId, title: b.title }]));
 }
 
 /** Every board id, trash included (operator rebuilds of derived indexes, e.g. references). */

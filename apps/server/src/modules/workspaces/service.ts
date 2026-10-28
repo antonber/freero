@@ -532,6 +532,26 @@ export async function boardAccess(userId: string, board: BoardPlace): Promise<Bo
 }
 
 /**
+ * Whether every full member of a team workspace can open a board placed at each of `places`
+ * through team access alone (not in a private project) — the "workspace-level reader" that
+ * workspace-wide integrations (webhooks) may tell about a board. Always false in a personal
+ * workspace. In the order given; two queries whatever the count.
+ */
+export async function openToWholeTeam(places: BoardPlace[]): Promise<boolean[]> {
+  const ids = [...new Set(places.map((p) => p.workspaceId))];
+  const [workspaces, projects] = await Promise.all([repo.getWorkspaces(ids), repo.projectsIn(ids)]);
+  const wsById = new Map(workspaces.map((w) => [w.id, w]));
+  const projectById = new Map(projects.map((p) => [p.id, p]));
+  return places.map((p) => {
+    const ws = wsById.get(p.workspaceId);
+    if (!ws || ws.kind !== 'team') return false;
+    const project = p.projectId ? (projectById.get(p.projectId) ?? null) : null;
+    if (p.projectId && !project) return false;
+    return teamRole('member', project ? { access: project.access, member: false } : null, teamAccessOf(ws.policies, project)) !== null;
+  });
+}
+
+/**
  * Everyone the workspace itself gives access to a board placed at `place` (team access), with the
  * role it gives them: its owners/admins (editor), and its members (guests only through a project
  * they are in) unless the board is in a private project they're outside of (the board's team
