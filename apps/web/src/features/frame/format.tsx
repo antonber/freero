@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { ChevronDown, Maximize2, Shrink } from 'lucide-react';
 import type { FrameElement } from '@freero/shared';
 import { defineFormat, type Editor } from '@engine';
-import { ColorSwatches, IconButton, Menu, Popover } from '@ui';
+import { ColorSwatches, IconButton, Menu, Popover, Tooltip } from '@ui';
 import { DEFAULT_FILL, PRESETS, presetById } from './lib/frames';
 import { fitToContent, setPreset, zoomToFrame } from './lib/actions';
 
@@ -27,17 +27,18 @@ function FillControl({ editor, frames }: { editor: Editor; frames: FrameElement[
   const mixed = frames.some((f) => (f.fill || DEFAULT_FILL) !== current);
   return (
     <>
-      <button
-        ref={ref}
-        type="button"
-        className="fr-frame-fill-btn"
-        aria-label="Frame background"
-        aria-expanded={open}
-        title="Background"
-        onClick={() => setOpen((o) => !o)}
-      >
-        <span style={{ background: mixed ? 'conic-gradient(#fff 0 50%, #e4e3ee 0 100%)' : current }} />
-      </button>
+      <Tooltip content="Background" side="bottom">
+        <button
+          ref={ref}
+          type="button"
+          className="fr-frame-fill-btn"
+          aria-label="Frame background"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+        >
+          <span style={{ background: mixed ? 'conic-gradient(#fff 0 50%, #e4e3ee 0 100%)' : current }} />
+        </button>
+      </Tooltip>
       <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label="Frame background">
         <ColorSwatches
           colors={FILLS}
@@ -61,18 +62,19 @@ function PresetControl({ editor, frames }: { editor: Editor; frames: FrameElemen
   const mixed = frames.some((f) => (f.preset ?? 'custom') !== current);
   return (
     <>
-      <button
-        ref={ref}
-        type="button"
-        className="fr-frame-fmt-btn"
-        aria-label="Frame size"
-        aria-expanded={open}
-        title="Frame size"
-        onClick={() => setOpen((o) => !o)}
-      >
-        {mixed ? 'Mixed' : presetById(current).label}
-        <ChevronDown size={14} />
-      </button>
+      <Tooltip content="Frame size" side="bottom">
+        <button
+          ref={ref}
+          type="button"
+          className="fr-frame-fmt-btn"
+          aria-label="Frame size"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+        >
+          {mixed ? 'Mixed' : presetById(current).label}
+          <ChevronDown size={14} />
+        </button>
+      </Tooltip>
       <Menu
         open={open}
         onClose={() => setOpen(false)}

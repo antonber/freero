@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import type { TableElement } from '@freero/shared';
 import { defineFormat, useCollection, useEditingPart, useTextFormatState, type Editor } from '@engine';
-import { ColorSwatches, IconButton, Menu, Popover } from '@ui';
+import { ColorSwatches, IconButton, Menu, Popover, Tooltip } from '@ui';
 import { CELLS } from './lib/cells';
 import { activeCell, addCol, addRow, currentFill, deleteCol, deleteRow, exportCsv, fillCells } from './lib/actions';
 
@@ -29,10 +29,12 @@ function FillControl({ editor, table }: { editor: Editor; table: TableElement })
   const target = activeCell(editor, table) ? 'Cell fill' : 'Fill all cells';
   return (
     <>
-      <button ref={ref} type="button" className="fr-table-fmt-btn" aria-label={target} title={target} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        <PaintBucket size={16} strokeWidth={2} />
-        <span className="fr-table-fmt-chip" style={{ background: fill || 'transparent' }} />
-      </button>
+      <Tooltip content={target} side="bottom">
+        <button ref={ref} type="button" className="fr-table-fmt-btn" aria-label={target} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          <PaintBucket size={16} strokeWidth={2} />
+          <span className="fr-table-fmt-chip" style={{ background: fill || 'transparent' }} />
+        </button>
+      </Tooltip>
       <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label={target}>
         <ColorSwatches
           colors={FILLS}
@@ -59,9 +61,11 @@ function StructureMenu({ editor, table }: { editor: Editor; table: TableElement 
   const t = () => editor.getElement<TableElement>(table.id) ?? table;
   return (
     <>
-      <button ref={ref} type="button" className="fr-table-fmt-btn" aria-label="Rows and columns" title="Rows and columns" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        <BetweenHorizontalEnd size={16} strokeWidth={2} />
-      </button>
+      <Tooltip content="Rows and columns" side="bottom">
+        <button ref={ref} type="button" className="fr-table-fmt-btn" aria-label="Rows and columns" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          <BetweenHorizontalEnd size={16} strokeWidth={2} />
+        </button>
+      </Tooltip>
       <Menu
         open={open}
         onClose={() => setOpen(false)}
