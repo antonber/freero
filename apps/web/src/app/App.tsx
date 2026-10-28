@@ -10,6 +10,7 @@ import { DashboardPage } from './pages/dashboard/DashboardPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { ForgotPasswordPage, ResetPasswordPage } from './pages/auth/PasswordPages';
 import { EmailLinkPage } from './pages/auth/EmailLinkPage';
+import { TwoFactorPage } from './pages/auth/TwoFactorPage';
 import { InvitePage } from './pages/invite/InvitePage';
 import { AccountSettingsPage } from './pages/account/AccountSettingsPage';
 
@@ -24,6 +25,7 @@ export function App() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<AuthPage mode="login" />} />
+            <Route path="/login/two-factor" element={<TwoFactorPage />} />
             <Route path="/signup" element={<AuthPage mode="signup" />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
             <Route path="/reset-password" element={<ResetPasswordPage />} />

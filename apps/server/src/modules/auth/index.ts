@@ -13,4 +13,6 @@ export {
   onEmailVerified,
   markEmailVerified,
 } from './service';
+// A workspace policy requiring two-step verification registers here (Enterprise).
+export { onTwoFactorRequirement } from './twoFactor';
 export { accountsDueForPurge, deleteAccountIfDue, isDueForPurge, scheduleAccountDeletion, restoreAccount } from './account';

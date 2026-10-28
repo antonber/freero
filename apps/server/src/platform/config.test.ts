@@ -25,6 +25,16 @@ describe('configuration', () => {
     expect(problemsOf({ RATE_LIMIT_LOGIN: '10 per minute' })).toHaveLength(1);
     expect(problemsOf({ DATABASE_URL: 'mysql://x/y' })).toHaveLength(1);
     expect(problemsOf({ SESSION_SECRET: 'short' })).toHaveLength(1);
+    // A provider with half its credentials would silently hide its button.
+    expect(problemsOf({ OIDC_GOOGLE_CLIENT_ID: 'id-only' })).toHaveLength(1);
+    expect(problemsOf({ GEOIP_DB_PATH: '/nonexistent/GeoLite2-City.mmdb' })).toHaveLength(1);
+  });
+
+  it('refuses a plain-http sign-in provider in production (a test provider must never reach it)', () => {
+    const prod = { NODE_ENV: 'production', DATABASE_URL: 'postgres://u:p@db:5432/f', PUBLIC_URL: 'https://w.example.com', SESSION_SECRET: 'x'.repeat(40) };
+    const provider = { OIDC_GOOGLE_CLIENT_ID: 'id', OIDC_GOOGLE_CLIENT_SECRET: 'secret', OIDC_GOOGLE_ISSUER: 'http://127.0.0.1:4252' };
+    expect(problemsOf({ ...prod, ...provider })).toHaveLength(1);
+    expect(problemsOf({ ...provider })).toHaveLength(0);
   });
 
   it('a complete production environment starts', () => {

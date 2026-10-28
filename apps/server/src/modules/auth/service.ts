@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { Request, RequestHandler, Response } from 'express';
-import { ACCOUNT_PENDING_DELETION, SESSION_COOKIE, type Account, type User } from '@freero/shared';
+import { ACCOUNT_PENDING_DELETION, REAUTH_REQUIRED, SESSION_COOKIE, type Account, type User } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { badRequest, HttpError, parseCookies, unauthorized } from '../../platform/http';
 import { newId } from '../../platform/ids';
@@ -14,6 +14,11 @@ import * as repo from './repo';
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 /** last_seen_at is written at most this often per session (per instance). */
 const LAST_SEEN_RESOLUTION_MS = 60_000;
+/**
+ * How long after signing in (or re-confirming with its provider) a session of a passwordless
+ * account may make sensitive changes (set a password, two-factor, email, deletion).
+ */
+export const RECENT_AUTH_MS = 10 * 60_000;
 export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 
@@ -56,19 +61,30 @@ export async function createUser(
   if (!name) throw badRequest('Please enter your name');
   if (name.length > 80) throw badRequest('Name is too long (max 80 characters)');
   if (await repo.findUserByEmail(email)) throw emailTaken(); // fast path; the unique index decides races
+  return insertAccount({ name, email, passwordHash: await hashPassword(password), emailVerified: opts.emailVerified ?? false });
+}
+
+/**
+ * Inserts a new account (signup, or a first sign-in with a provider: no password). Every new
+ * account goes through here. Throws 409 if the address is taken (the unique index decides races).
+ */
+export async function insertAccount(
+  input: { name: string; email: string; passwordHash: string | null; emailVerified: boolean },
+  identity?: { provider: string; issuer: string; subject: string; email: string | null; emailVerified: boolean },
+): Promise<Account> {
   const user: repo.UserWithHash = {
     id: newId(),
-    email,
-    name,
+    email: input.email,
+    name: input.name,
     color: randomCursorColor(),
     avatarUrl: null,
     createdAt: Date.now(),
-    emailVerified: opts.emailVerified ?? false,
+    emailVerified: input.emailVerified,
     deletionScheduledFor: null,
-    passwordHash: await hashPassword(password),
+    passwordHash: input.passwordHash,
   };
   try {
-    await repo.insertUser(user);
+    await repo.insertUser(user, identity && { ...identity, id: newId() });
   } catch (e) {
     // Lost a race against a concurrent signup with the same email.
     if (e instanceof repo.EmailTakenError) throw emailTaken();
@@ -81,15 +97,25 @@ export async function checkCredentials(emailIn: unknown, passwordIn: unknown): P
   const email = normalizeEmail(emailIn);
   const password = typeof passwordIn === 'string' ? passwordIn : '';
   const user = email ? await repo.findUserByEmail(email) : null;
+  // Accounts without a password (provider sign-in only) still cost one hash: uniform timing.
   const ok = await verifyPassword(password, user?.passwordHash ?? (await dummyHash()));
-  if (!user || !ok) throw unauthorized('Incorrect email or password');
+  if (!user || !user.passwordHash || !ok) throw unauthorized('Incorrect email or password');
   return toAccount(user);
 }
 
-/** Re-checks the signed-in user's password before a sensitive change (403, not 401: they stay signed in). */
-export async function confirmPassword(userId: string, password: unknown): Promise<repo.UserWithHash> {
+/**
+ * Re-checks who is asking before a sensitive change (403, not 401: they stay signed in): the
+ * password, or — for an account without one — that this session signed in or re-confirmed with
+ * its provider within RECENT_AUTH_MS (`sessionAuthAt`, see currentSessionAuthAt).
+ */
+export async function confirmPassword(userId: string, password: unknown, sessionAuthAt?: number): Promise<repo.UserWithHash> {
   const user = await repo.findUserById(userId);
   if (!user) throw unauthorized();
+  if (user.passwordHash === null) {
+    if (sessionAuthAt === undefined || Date.now() - sessionAuthAt > RECENT_AUTH_MS)
+      throw new HttpError(403, 'Please confirm it’s you by signing in again', REAUTH_REQUIRED);
+    return user;
+  }
   if (!(await verifyPassword(typeof password === 'string' ? password : '', user.passwordHash)))
     throw new HttpError(403, 'That password is not correct');
   return user;
@@ -180,7 +206,16 @@ export function sessionsEnded(keys: string[]): void {
   }
 }
 
-export async function startSession(req: Request, res: Response, userId: string): Promise<void> {
+/**
+ * Signs the browser in. `method`: 'password', 'email_link' or a provider id; `twoFactor`: it passed
+ * the second step. Sign-ins of accounts with two-factor go through signIn.ts (completeSignIn).
+ */
+export async function startSession(
+  req: Request,
+  res: Response,
+  userId: string,
+  how: { method?: string; twoFactor?: boolean } = {},
+): Promise<void> {
   const token = newToken();
   const now = Date.now();
   await repo.insertSession({
@@ -191,6 +226,8 @@ export async function startSession(req: Request, res: Response, userId: string):
     expiresAt: now + SESSION_TTL_MS,
     userAgent: (req.get('user-agent') ?? '').slice(0, 400),
     ip: clientIp(req).slice(0, 64),
+    method: how.method ?? 'password',
+    twoFactor: how.twoFactor ?? false,
   });
   res.cookie(SESSION_COOKIE, token, {
     httpOnly: true,
@@ -232,7 +269,7 @@ const lastSeen = new Map<string, number>();
 /** The session's account (even while deletion is scheduled), or null. Records "last seen". */
 export async function sessionFromCookieHeader(
   cookieHeader: string | undefined,
-): Promise<{ user: Account; key: string; sessionId: string } | null> {
+): Promise<{ user: Account; key: string; sessionId: string; authAt: number } | null> {
   const key = sessionKeyFromCookieHeader(cookieHeader);
   if (!key) return null;
   const now = Date.now();
@@ -243,7 +280,7 @@ export async function sessionFromCookieHeader(
     lastSeen.set(key, now);
     repo.touchSession(key, now).catch((e) => logError('auth: could not record session activity', e));
   }
-  return { user: toAccount(found.user), key, sessionId: found.sessionId };
+  return { user: toAccount(found.user), key, sessionId: found.sessionId, authAt: found.authAt };
 }
 
 /** The signed-in user of a cookie, or null — also null while the account awaits deletion. */
@@ -252,7 +289,7 @@ export async function userFromCookieHeader(cookieHeader: string | undefined): Pr
   return s && s.user.deletionScheduledFor === null ? publicUser(s.user) : null;
 }
 
-const requestSessions = new WeakMap<Request, { user: Account; key: string; sessionId: string }>();
+const requestSessions = new WeakMap<Request, { user: Account; key: string; sessionId: string; authAt: number }>();
 
 function sessionMiddleware(allowPendingDeletion: boolean): RequestHandler {
   return (req, res, next) => {
@@ -296,6 +333,13 @@ export function currentSessionId(req: Request): string {
   const s = requestSessions.get(req);
   if (!s) throw unauthorized();
   return s.sessionId;
+}
+
+/** When the request's session last proved who it is (for confirmPassword on passwordless accounts). */
+export function currentSessionAuthAt(req: Request): number {
+  const s = requestSessions.get(req);
+  if (!s) throw unauthorized();
+  return s.authAt;
 }
 
 export async function getUser(id: string): Promise<User | null> {
