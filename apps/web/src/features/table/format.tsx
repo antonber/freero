@@ -80,8 +80,8 @@ function StructureMenu({ editor, table }: { editor: Editor; table: TableElement 
           { id: 'cl', label: 'Insert column left', icon: <BetweenVerticalStart size={16} />, onSelect: run(() => addCol(editor, t(), 'left')) },
           { id: 'cr', label: 'Insert column right', icon: <BetweenVerticalEnd size={16} />, onSelect: run(() => addCol(editor, t(), 'right')) },
           { divider: true },
-          { id: 'dr', label: 'Delete row', icon: <Trash2 size={16} />, danger: true, disabled: table.rows.length <= 1, onSelect: run(() => deleteRow(editor, t())) },
-          { id: 'dc', label: 'Delete column', icon: <Trash2 size={16} />, danger: true, disabled: table.cols.length <= 1, onSelect: run(() => deleteCol(editor, t())) },
+          { id: 'dr', label: 'Delete row', icon: <Trash2 size={16} />, danger: true, disabled: table.rows.length <= 1, disabledReason: 'A table needs at least one row', onSelect: run(() => deleteRow(editor, t())) },
+          { id: 'dc', label: 'Delete column', icon: <Trash2 size={16} />, danger: true, disabled: table.cols.length <= 1, disabledReason: 'A table needs at least one column', onSelect: run(() => deleteCol(editor, t())) },
         ]}
       />
     </>
