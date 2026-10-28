@@ -4,7 +4,7 @@ import { badRequest, handle } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
 import { currentUser, requireUser } from '../auth/index';
 import { requireWorkspaceRole } from '../workspaces/index';
-import { createToken, mapGroup, revokeToken, scimSettings } from './admin';
+import { createToken, mapGroup, revokeToken, scimSettings } from './settings';
 import { scimRouter } from './protocol';
 
 // Mounted at the root: the admin API lives under /api, the SCIM service under /scim/v2.

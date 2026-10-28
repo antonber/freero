@@ -127,6 +127,9 @@ async function spawnServer(dataDir, env = {}) {
       FREERO_DOC_IDLE_MS: '1000',
       // Every check signs up accounts from 127.0.0.1; with REDIS_URL all servers of a run share the counters.
       RATE_LIMIT_SIGNUP: '1000/1h',
+      // Same for logins: with REDIS_URL every group of the run adds to one per-IP counter, and the
+      // default 30 per 5 minutes runs out partway (checks of the limit itself set their own rule).
+      RATE_LIMIT_LOGIN: '1000/5m',
       SESSION_SECRET: RUN_SECRET,
       METRICS_TOKEN: RUN_METRICS_TOKEN,
       ...(db.url ? { DATABASE_URL: db.url } : {}),
