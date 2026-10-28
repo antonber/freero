@@ -222,8 +222,8 @@ export default [
     importData(editor, data, at) {
       const files = droppedFiles(data);
       if (!files.length) return false;
-      void insertFiles(editor, files, at);
-      return true;
+      void insertFiles(editor, files, data.alongside ? null : at, at);
+      return files;
     },
   }),
   defineElement({

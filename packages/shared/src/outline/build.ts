@@ -2,7 +2,7 @@
 // what that is (the server: the shared doc plus the layers the reader may read), and the
 // features' outline.ts files (define.ts) say how each element type reads.
 import type { BoardElement, ElementType } from '../elements';
-import { mentionsAsNames } from '../elements';
+import { actingFor, mentionsAsNames } from '../elements';
 import { rotatedBounds, unionRects, type Rect } from '../geometry';
 import { richTextToPlain } from '../text';
 import type { OutlineContext, OutlineDescription, OutlineFeature, OutlineKindFn } from './define';
@@ -104,7 +104,9 @@ export function buildOutline(source: OutlineSource, features: OutlineFeature[], 
     if (el.link) item.link = el.link;
     if (opts.authors) {
       const name = source.personName(el.createdBy);
-      if (name) item.author = name;
+      // Made by an app for that person (the API, MCP; KAI-168): "Claude for Maria".
+      const via = el.createdVia && typeof el.createdVia.name === 'string' ? el.createdVia : null;
+      if (name) item.author = via ? actingFor(via, name) : name;
     }
     if (layer === 'private') item.private = true;
     if (desc.hidden) {

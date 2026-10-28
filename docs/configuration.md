@@ -162,6 +162,25 @@ redirect URI and SCIM base URL that workspaces give their identity provider are 
 | `ABUSE_CONTACT_EMAIL` | — | Where people reach whoever handles abuse: named in every moderation notice ("questions about this decision") and in `/.well-known/security.txt`. |
 | `SECURITY_CONTACT` | `mailto:<ABUSE_CONTACT_EMAIL>` | RFC 9116 `Contact:` of `/.well-known/security.txt`, a `mailto:` or `https://` URL (your vulnerability disclosure address). With neither set, the file isn't served. |
 
+## AI
+
+Off unless configured; with none of these set there is no AI in the app and the AI routes answer 404.
+What is sent where, and the safety rules: [ai.md](ai.md).
+
+| Variable | Default | Description |
+|---|---|---|
+| `AI_PROVIDER` | — | The server's own model provider: `anthropic` (Messages API) or `openai` (any OpenAI-compatible chat completions endpoint: OpenAI, Azure OpenAI's v1 API, Ollama, vLLM, LM Studio). `off` or unset: none. |
+| `AI_API_KEY` | — | Its API key. Required for the provider's public API; may be empty for a local endpoint (`AI_BASE_URL` set). Never logged or sent to browsers. |
+| `AI_BASE_URL` | `https://api.anthropic.com` / `https://api.openai.com/v1` | API root of the provider (an operator's endpoint may be local or private, e.g. `http://localhost:11434/v1`). |
+| `AI_MODEL` | `claude-sonnet-5-5` (anthropic) | Model id. Required with `AI_PROVIDER=openai`. |
+| `AI_INSTANCE_FOR` | `teams` | Who may use the server's provider: `teams` (team workspaces whose admins turn AI on with it), `personal` (boards in personal workspaces), both (`personal,teams`) or `none`. |
+| `AI_WORKSPACE_KEYS` | `false` | Team workspace admins may configure their own provider, endpoint, model and key (sealed at rest) in the admin console. |
+| `AI_WORKSPACE_PRIVATE_ENDPOINTS` | `false` | Workspace-configured endpoints may use plain http and private / loopback addresses (self-hosted models on your network). Off: https only, private addresses refused when connecting. |
+| `AI_INSTANCE_MONTHLY_TOKENS_PER_USER` | `200000` | Tokens (input + output) one person may use per calendar month (UTC) through the server's provider, across all workspaces. `0`: no cap. Workspace budgets are set by their admins. |
+| `AI_MAX_INPUT_TOKENS` | `12000` | About how much board content one action may send (the outline is cut to it). |
+| `AI_MAX_OUTPUT_TOKENS` | `4096` | `max_tokens` of each model call. |
+| `AI_TIMEOUT_SECONDS` | `90` | Deadline of one model call. |
+
 ## Public API and OAuth apps
 
 | Variable | Default | Description |
@@ -220,9 +239,12 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `RATE_LIMIT_DATA_EXPORT` | `5/1d` | Data exports requested per user (personal or workspace). |
 | `RATE_LIMIT_OUTLINE` | `120/1m` | Board outlines (`GET /api/boards/:id/outline`, the semantic read model) per user. |
 | `RATE_LIMIT_STRUCTURE` | `60/10m` | Structure laid out into a board (`POST /api/boards/:id/insert-structure`) per user. |
+| `RATE_LIMIT_AI` | `20/10m` | AI actions (and admin connection tests) per user: each one calls a paid model. |
+| `RATE_LIMIT_AI_WORKSPACE` | `300/1h` | AI actions per workspace, all its people together. |
 | `RATE_LIMIT_REPORT` | `20/1h` | Abuse reports per IP and, separately, per signed-in user. |
 | `RATE_LIMIT_APPEAL` | `10/1h` | Appeals against moderation decisions per IP. |
-| `RATE_LIMIT_API_CREDENTIAL` | `300/1m` | Public API calls per API token, or per authorised app and person (its refreshed tokens share the count). Outline, structure, invite and board-creation calls also count against the person's own limits for those. |
+| `RATE_LIMIT_API_CREDENTIAL` | `300/1m` | Public API calls and MCP requests per API token, or per authorised app and person (its refreshed tokens share the count). Outline, structure, invite and board-creation calls also count against the person's own limits for those. |
+| `RATE_LIMIT_AGENT_WRITE` | `60/1m` | Changes to boards per API token, or per authorised app and person (the per-agent write limit, KAI-168): creating, changing or deleting items, inserting structure, comments, new boards — through the REST API or MCP. Separate from the person's own editing in the app, which it never slows down. With at most 500 items per call it also bounds how many items an agent writes per minute. |
 | `RATE_LIMIT_OAUTH_TOKEN` | `60/1m` | OAuth token and revocation requests per IP. |
 | `RATE_LIMIT_OAUTH_REGISTER` | `20/1h` | Apps registering themselves (OAuth dynamic client registration) per IP. |
 

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Crosshair, Eye, EyeOff, Megaphone, SmilePlus } from 'lucide-react';
+import { Bot, Crosshair, Eye, EyeOff, Megaphone, SmilePlus } from 'lucide-react';
 import { definePanel, useCamera, useFollowing, usePeers, usePointer, type Editor } from '@engine';
 import { Avatar, Button, IconButton, Popover, Tooltip } from '@ui';
 import {
@@ -47,7 +47,11 @@ function PersonCard({ editor, person, onDone }: { editor: Editor; person: Person
   const isFollowed = following?.userId === person.userId;
   const client = primaryClient(person);
   const tabs = person.clients.length;
-  const subtitle = person.isMe
+  // An app writing through the API or MCP for someone (server-published, KAI-168): no view to follow.
+  const agent = client?.agent;
+  const subtitle = agent
+    ? 'An app working on this board for someone'
+    : person.isMe
     ? followers
       ? `${followers} ${followers === 1 ? 'person is' : 'people are'} following you`
       : `${ROLE_LABEL[editor.getRole()]}${tabs ? ` · also open in ${tabs} other tab${tabs === 1 ? '' : 's'}` : ''}`
@@ -59,13 +63,20 @@ function PersonCard({ editor, person, onDone }: { editor: Editor; person: Person
   return (
     <div className="fr-presence-card">
       <div className="fr-presence-card__who">
-        <Avatar name={person.name} color={person.color} src={person.avatarUrl} size={36} />
+        <span className="fr-presence-card__avatar">
+          <Avatar name={person.name} color={person.color} src={person.avatarUrl} size={36} />
+          {agent ? (
+            <span className="fr-presence-card__agent" title="App" aria-label="App">
+              <Bot size={12} aria-hidden />
+            </span>
+          ) : null}
+        </span>
         <div className="fr-presence-card__text">
           <div className="fr-presence-card__name">{person.isMe ? `${person.name} (you)` : person.name}</div>
           <div className="fr-presence-card__sub">{subtitle}</div>
         </div>
       </div>
-      {!person.isMe && (
+      {!person.isMe && !agent && (
         <div className="fr-presence-card__actions">
           <Button
             size="sm"

@@ -3,7 +3,7 @@ import type { Account } from '@freero/shared';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { createUser, getAccount } from '../auth/index';
 import { createBoard } from '../boards/index';
-import type { BoardChangeEvent, ElementChange } from '../realtime/index';
+import { changeBoard, onBoardChange, type BoardChangeEvent, type ElementChange } from '../realtime/index';
 import { createProject, createTeamWorkspace, inviteToWorkspace } from '../workspaces/index';
 import { getConfig } from '../../platform/config';
 import { boardActivity, flushBursts, recordChanges, recordComment, workspaceActivity } from './service';
@@ -71,4 +71,25 @@ it('the workspace feed lists activity only from boards the reader can open', asy
   const feed = (await workspaceActivity(ws.id, member.id)).entries;
   expect(feed.map((e) => [e.boardTitle, e.actorName, e.text])).toEqual([['Open board', 'Lead', 'added 1 shape']]);
   expect((await workspaceActivity(ws.id, lead.id)).entries).toHaveLength(2);
+});
+
+it('changes an app makes for someone through the API or MCP show in the feed as "<app> for <person>", apart from their own edits (KAI-207, KAI-168)', async () => {
+  const ann = await person('Annie');
+  const board = await createBoard(ann.id, 'Planning', '', 'viewer');
+  const stop = onBoardChange((e) => recordChanges(e));
+  try {
+    const t0 = Date.now();
+    const sticky = (id: string) => ({ id, type: 'sticky', x: 0, y: 0, w: 200, h: 200, rotation: 0, text: id, color: 'yellow', fontFamily: 'sans', fontSize: 'auto', textColor: '#000', align: 'center', vAlign: 'middle' }) as never;
+    const via = { kind: 'app' as const, id: 'frc_claude', name: 'Claude' };
+    await changeBoard(board.id, { userId: ann.id, role: 'owner', name: ann.name, via }, () => ({ change: { create: [sticky('a1'), sticky('a2')] } }));
+    await changeBoard(board.id, { userId: ann.id, role: 'owner', name: ann.name }, () => ({ change: { create: [sticky('own')] } }));
+    await flushBursts(Date.now() + IDLE_MS());
+    const entries = (await boardActivity(board.id, ann.id)).entries.filter((e) => e.startedAt >= t0);
+    expect(entries.map((e) => [e.actorName, e.text]).sort()).toEqual([
+      ['Annie', 'added 1 sticky note'],
+      ['Claude for Annie', 'added 2 sticky notes'],
+    ]);
+  } finally {
+    stop();
+  }
 });

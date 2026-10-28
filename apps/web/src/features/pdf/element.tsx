@@ -133,9 +133,10 @@ export default defineElement({
     void (async () => {
       let i = 0;
       for (const f of pdfs) {
-        await insertPdf(editor, f, i++ ? undefined : at);
+        // Beside the rest of a mixed drop (KAI-204), else the first on the drop point.
+        await insertPdf(editor, f, i++ || data.alongside ? undefined : at, at);
       }
     })();
-    return true;
+    return pdfs;
   },
 });

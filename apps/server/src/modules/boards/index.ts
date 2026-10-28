@@ -22,8 +22,13 @@ import {
 export { createBoard, deleteBoardRowsInWorkspace, cleanUpDeletedBoards } from './service';
 // The object registry (modules/objects): boards and items, checked like the board page checks them.
 export { registerBoardObjectTypes, boardRoles, elementTitle } from './objects';
+// Created, duplicated, renamed, moved, trashed, restored (the activity feed, KAI-188).
+export { onBoardLifecycle, type BoardLifecycleEvent, type BoardLifecycleAction } from './events';
 // Files downloaded from a board (modules/uploads): the downloads policy, then the audit log.
 export { authorizeFileDownload } from './service';
+// An export made outside the browser (the public API / MCP export_board): refused like one by the
+// downloads policy, recorded as board.exported.
+export { recordExport as recordBoardExport } from './service';
 // Operators (modules/moderation): take down / restore, block / unblock the link, and who may report.
 export {
   boardForModeration,

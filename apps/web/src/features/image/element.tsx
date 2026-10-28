@@ -2,7 +2,7 @@ import { memo, useCallback, useState } from 'react';
 import { Image as ImageIcon, ImageOff } from 'lucide-react';
 import type { ImageElement } from '@freero/shared';
 import { defineElement, useIsExporting, type ElementRenderProps, type NewElement } from '@engine';
-import { imageUrlFromPaste } from './lib/files';
+import { imageUrlFromPaste, isImageFile } from './lib/files';
 import { insertImageFiles, insertImageUrl } from './lib/insert';
 import { visibleCrop } from './lib/crop';
 import { CROP_PANEL, useIsCropping } from './lib/cropping';
@@ -81,10 +81,12 @@ export default defineElement({
   // Images claim pasted/dropped image files, image URLs and data URLs before any text importer.
   importPriority: 100,
   importData(editor, data, at) {
-    if (data.files.some((f) => f.type.startsWith('image/'))) {
-      // Claimed right away; the upload continues in the background with local placeholders.
-      void insertImageFiles(editor, data.files, at);
-      return true;
+    const images = data.files.filter(isImageFile);
+    if (images.length) {
+      // Claimed right away; the upload continues in the background with local placeholders. Only
+      // the images: the rest of a mixed drop goes on to the other importers (KAI-204).
+      void insertImageFiles(editor, images, data.alongside ? null : at, at);
+      return images;
     }
     if (data.files.length) return false;
     const url = imageUrlFromPaste(data.text, data.html);

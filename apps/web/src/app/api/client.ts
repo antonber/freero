@@ -1,4 +1,10 @@
 import type {
+  AiActionRequest,
+  AiActionResponse,
+  BoardAiStatus,
+  WorkspaceAiAdmin,
+  WorkspaceAiPatch,
+  ApiScope,
   AuthorizedApp,
   CreateTokenRequest,
   OAuthClientInfo,
@@ -351,6 +357,12 @@ export const api = {
   auditExportUrl: (id: string, format: 'csv' | 'json', filter: AuditQuery) =>
     `/api/workspaces/${encodeURIComponent(id)}/audit/export?format=${format}&${auditQuery({ ...filter, before: undefined, limit: undefined })}`,
   auditIntegrity: (id: string) => request<{ integrity: AuditIntegrity }>('GET', `/api/workspaces/${encodeURIComponent(id)}/audit/integrity`),
+  // AI (404 while the server offers no AI at all)
+  boardAi: (boardId: string) => request<{ ai: BoardAiStatus | null }>('GET', `/api/boards/${encodeURIComponent(boardId)}/ai`),
+  runAi: (boardId: string, body: AiActionRequest) => request<AiActionResponse>('POST', `/api/boards/${encodeURIComponent(boardId)}/ai/actions`, body),
+  workspaceAi: (id: string) => request<WorkspaceAiAdmin>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/ai`),
+  updateWorkspaceAi: (id: string, patch: WorkspaceAiPatch) => request<WorkspaceAiAdmin>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/admin/ai`, patch),
+  testWorkspaceAi: (id: string) => request<{ ok: true; model: string }>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/ai/test`),
   /** Tells the server a board was exported in the browser (audit log; refused when the workspace forbids exports). */
   reportBoardExport: (boardId: string, format: string) =>
     request<{ ok: true }>('POST', `/api/boards/${encodeURIComponent(boardId)}/exported`, { format }),
@@ -412,6 +424,8 @@ export const api = {
     return new Uint8Array(await res.arrayBuffer());
   },
   moderationUpload: (name: string) => request<{ upload: ModeratedUpload }>('GET', `/api/moderation/uploads/${encodeURIComponent(name)}`),
+  /** Where an operator downloads a reported file to review it (attachments and removed files too; audited). */
+  moderationUploadFileUrl: (name: string) => `/api/moderation/uploads/${encodeURIComponent(name)}/file`,
   moderationUser: (email: string) => request<{ user: ModeratedUser }>('GET', `/api/moderation/users?email=${encodeURIComponent(email)}`),
   moderate: (body: ModerationActionRequest) => request<{ action: ModerationActionRecord }>('POST', '/api/moderation/actions', body),
   resolveModerationItem: (id: string, outcome: 'actioned' | 'dismissed', note: string) =>
@@ -456,8 +470,8 @@ export const api = {
   deleteOAuthClient: (id: string) => request<{ ok: true }>('DELETE', `/api/oauth/clients/${encodeURIComponent(id)}`),
   /** The authorization request as the app sent it (the consent page's query string). */
   oauthConsent: (query: string) => request<{ consent: OAuthConsentInfo } | { redirect: string }>('GET', `/api/oauth/authorize?${query}`),
-  oauthDecide: (params: Record<string, string>, decision: 'allow' | 'deny') =>
-    request<{ redirect: string }>('POST', '/api/oauth/authorize', { ...params, decision }),
+  oauthDecide: (params: Record<string, string>, decision: 'allow' | 'deny', grant: ApiScope[] = []) =>
+    request<{ redirect: string }>('POST', '/api/oauth/authorize', { ...params, decision, grant }),
   workspaceApi: (id: string) => request<WorkspaceApiInfo>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/api`),
   setWorkspaceApi: (id: string, enabled: boolean) => request<WorkspaceApiInfo>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/admin/api`, { enabled }),
   setWorkspaceCredentialBlocked: (id: string, credentialId: string, blocked: boolean) =>

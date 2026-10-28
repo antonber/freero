@@ -207,4 +207,28 @@ describe('keyboard: walking and reshaping the tree', () => {
       board.destroy();
     }
   });
+
+  it("a selected topic leaves Mod+Alt+Up/Down to bring forward / send backward instead of reordering siblings (KAI-202)", () => {
+    const board = createTestBoard({ users: ['ann'], features: [{ manifest, elements: [mindmapDef], tools: [], formats: [], panels: [], commands: [] }] });
+    try {
+      const [ed] = board.editors('mindmap');
+      const root = ed.create(newRoot({ x: 0, y: 0 }));
+      const ids = [0, 1].map(() => {
+        addChild(ed, root);
+        ed.stopEditing();
+        return ed.getSelection()[0];
+      });
+      ed.select([ids[1]]);
+      const press = (mods: Partial<KeyboardEvent>) =>
+        mindmapDef.onKeyDown!({ key: 'ArrowUp', altKey: true, shiftKey: false, ctrlKey: false, metaKey: false, ...mods } as KeyboardEvent, { editor: ed, selection: [ed.getElement(ids[1])!] });
+      const order = () => currentIndex(ed).kids.get(root)!.map((k) => k.id);
+      expect(press({ ctrlKey: true })).toBe(false);
+      expect(press({ metaKey: true })).toBe(false);
+      expect(order()).toEqual(ids);
+      expect(press({})).toBe(true);
+      expect(order()).toEqual([ids[1], ids[0]]);
+    } finally {
+      board.destroy();
+    }
+  });
 });

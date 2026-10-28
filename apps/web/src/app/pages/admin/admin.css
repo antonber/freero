@@ -505,3 +505,25 @@ td > .fr-admin-pill:first-child {
     align-items: flex-start;
   }
 }
+
+/* AI (AdminAi.tsx) */
+.fr-admin-ai__form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 8px 0 4px;
+}
+
+.fr-admin-ai__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.fr-admin-ai__actions--test {
+  margin: 12px 0 16px;
+}
+
+.fr-admin-ai__usage {
+  margin-bottom: 16px;
+}

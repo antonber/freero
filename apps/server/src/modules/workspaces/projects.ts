@@ -176,8 +176,9 @@ export async function removeProjectMember(projectId: string, actorId: string, ta
  * `userId` (it exists in that workspace and they can see it), and holds the project's share lock
  * until the transaction ends (see deleteProject).
  */
-export async function lockProjectForBoard(projectId: string, workspaceId: string, userId: string): Promise<void> {
+export async function lockProjectForBoard(projectId: string, workspaceId: string, userId: string): Promise<{ name: string }> {
   if (!(await repo.lockProject(projectId, 'share'))) throw notFound('Project not found');
   const { project } = await visibleProject(projectId, userId);
   if (project.workspaceId !== workspaceId) throw badRequest('That project belongs to another workspace');
+  return { name: project.name };
 }

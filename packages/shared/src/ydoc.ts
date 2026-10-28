@@ -101,6 +101,18 @@ export interface TimerState {
   startedBy: string | null;
 }
 
+/**
+ * Dot voting: the `voting` collection (key VOTING_SESSION_KEY -> VotingSession, `${sessionId}:${userId}`
+ * -> VoteBallot). The SERVER enforces the budget (apps/server/src/modules/realtime/votingRules.ts):
+ * a socket may write only its own ballot, only for the running session, with at most the
+ * session's votesPerUser votes, in the shared doc and in its private layer; and a running session's
+ * budget can't be raised after the fact.
+ */
+export const VOTING_COLLECTION = 'voting';
+export const VOTING_SESSION_KEY = 'session';
+export const VOTES_PER_USER_MIN = 1;
+export const VOTES_PER_USER_MAX = 20;
+
 export interface VotingSession {
   id: string;
   active: boolean;
@@ -158,4 +170,10 @@ export interface PresenceState {
   editingId?: string | null;
   /** User id whose view this client is following (Editor.follow), or null. */
   following?: string | null;
+  /**
+   * Set only by the SERVER, for an app writing through the API or MCP for a person (KAI-168): a
+   * short-lived presence ("Claude for Maria", its cursor on what it just wrote). Sockets can't
+   * publish it: the server replaces a socket's `user`, and agent presence uses a user id of its own.
+   */
+  agent?: { app: string; forUserId: string };
 }

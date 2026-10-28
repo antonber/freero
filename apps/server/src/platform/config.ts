@@ -35,9 +35,40 @@ export type RateLimitName =
   | 'appeal'
   | 'outline'
   | 'structure'
+  | 'ai'
+  | 'aiWorkspace'
   | 'apiCredential'
+  | 'agentWrite'
   | 'oauthToken'
   | 'oauthRegister';
+
+/** A model endpoint Freero calls for AI features (docs/ai.md). */
+export interface AiProviderConfig {
+  provider: 'anthropic' | 'openai';
+  /** API root: https://api.anthropic.com, https://api.openai.com/v1, http://localhost:11434/v1 … */
+  baseUrl: string;
+  /** Empty for endpoints that need none (a local Ollama). */
+  apiKey: string;
+  model: string;
+}
+
+/** AI (KAI-101): off unless configured. */
+export interface AiConfig {
+  /** Freero's own provider (AI_PROVIDER …), or null. */
+  instance: AiProviderConfig | null;
+  /** Who may use the instance provider: boards in personal workspaces, team workspaces whose admins turn it on. */
+  instanceFor: { personal: boolean; teams: boolean };
+  /** Team admins may configure their workspace's own provider and key (AI_WORKSPACE_KEYS). */
+  workspaceKeys: boolean;
+  /** Workspace-configured endpoints may resolve to private / loopback addresses (self-hosted LAN models). */
+  workspacePrivateEndpoints: boolean;
+  /** Tokens per person per calendar month through the instance provider (0: no cap). */
+  instanceMonthlyTokensPerUser: number;
+  maxOutputTokens: number;
+  timeoutMs: number;
+  /** Approximate tokens of board content one action may send. */
+  maxInputTokens: number;
+}
 
 /** `limit` hits per `windowMs`; `null` = not limited. */
 export type RateLimitRule = { limit: number; windowMs: number } | null;
@@ -159,6 +190,7 @@ export interface Config {
   /** Activity feed: a person's burst of changes on a board ends after this long without one. */
   activityIdleMs: number;
   rateLimits: Record<RateLimitName, RateLimitRule>;
+  ai: AiConfig;
   /** Configured sign-in providers (each needs its client id AND secret); empty = password only. */
   oidcProviders: OidcProviderConfig[];
   /** A MaxMind-format (.mmdb) GeoLite2/GeoIP2 City or Country database for session locations, or null. */
@@ -239,7 +271,10 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   guestJoin: '20/1h', // per IP: visitors joining a shared board without an account
   outline: '120/1m', // per user: board outlines (each reads and walks the whole board)
   structure: '60/10m', // per user: structure laid out and inserted into a board (KAI-167)
-  apiCredential: '300/1m', // per API token / authorised app: every /api/v1 call (KAI-104)
+  ai: '20/10m', // per user: AI actions (each one calls a paid model)
+  aiWorkspace: '300/1h', // per workspace: AI actions of all its people together
+  apiCredential: '300/1m', // per API token / authorised app: every /api/v1 call and MCP request (KAI-104, KAI-107)
+  agentWrite: '60/1m', // per API token / authorised app: changes it makes to boards (KAI-168), apart from the person's own editing
   oauthToken: '60/1m', // per IP: OAuth token and revocation requests
   oauthRegister: '20/1h', // per IP: OAuth apps registering themselves (dynamic client registration)
   report: '20/1h', // abuse reports per IP and per signed-in user
@@ -272,7 +307,10 @@ const ENV_NAME: Record<RateLimitName, string> = {
   guestJoin: 'RATE_LIMIT_GUEST_JOIN',
   outline: 'RATE_LIMIT_OUTLINE',
   structure: 'RATE_LIMIT_STRUCTURE',
+  ai: 'RATE_LIMIT_AI',
+  aiWorkspace: 'RATE_LIMIT_AI_WORKSPACE',
   apiCredential: 'RATE_LIMIT_API_CREDENTIAL',
+  agentWrite: 'RATE_LIMIT_AGENT_WRITE',
   oauthToken: 'RATE_LIMIT_OAUTH_TOKEN',
   oauthRegister: 'RATE_LIMIT_OAUTH_REGISTER',
   report: 'RATE_LIMIT_REPORT',
@@ -449,6 +487,33 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     securityContact = null;
   }
 
+  // AI (docs/ai.md): an instance provider only when AI_PROVIDER is set.
+  let aiInstance: AiProviderConfig | null = null;
+  const aiProvider = str('AI_PROVIDER')?.toLowerCase() ?? null;
+  if (aiProvider !== null && aiProvider !== 'off') {
+    if (aiProvider !== 'anthropic' && aiProvider !== 'openai') problems.push('AI_PROVIDER must be anthropic, openai (any OpenAI-compatible endpoint) or off');
+    else {
+      const baseUrl = (url('AI_BASE_URL', ['https:', 'http:']) ?? (aiProvider === 'anthropic' ? 'https://api.anthropic.com' : 'https://api.openai.com/v1')).replace(/\/+$/, '');
+      const model = str('AI_MODEL') ?? (aiProvider === 'anthropic' ? 'claude-sonnet-5-5' : null);
+      const apiKey = str('AI_API_KEY') ?? '';
+      if (!model) problems.push('AI_MODEL is required with AI_PROVIDER=openai (the model id your endpoint serves)');
+      if (!apiKey && str('AI_BASE_URL') === null) problems.push('AI_API_KEY is required for the provider’s public API (set AI_BASE_URL for a local endpoint without a key)');
+      aiInstance = { provider: aiProvider, baseUrl, apiKey, model: model ?? '' };
+    }
+  }
+  const aiFor = (str('AI_INSTANCE_FOR') ?? 'teams').toLowerCase().split(',').map((v) => v.trim()).filter(Boolean);
+  if (aiFor.some((v) => !['personal', 'teams', 'none'].includes(v))) problems.push('AI_INSTANCE_FOR is a comma-separated list of personal, teams (or none)');
+  const ai: AiConfig = {
+    instance: aiInstance,
+    instanceFor: { personal: aiFor.includes('personal'), teams: aiFor.includes('teams') },
+    workspaceKeys: bool('AI_WORKSPACE_KEYS', false),
+    workspacePrivateEndpoints: bool('AI_WORKSPACE_PRIVATE_ENDPOINTS', false),
+    instanceMonthlyTokensPerUser: int('AI_INSTANCE_MONTHLY_TOKENS_PER_USER', 200_000, 0),
+    maxOutputTokens: int('AI_MAX_OUTPUT_TOKENS', 4096, 256, 64_000),
+    timeoutMs: int('AI_TIMEOUT_SECONDS', 90, 5, 600) * 1000,
+    maxInputTokens: int('AI_MAX_INPUT_TOKENS', 12_000, 1000, 500_000),
+  };
+
   const config: Config = {
     port: int('PORT', 4000, 0, 65535),
     publicUrl,
@@ -495,6 +560,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     notifyEmailIntervalMs: int('NOTIFY_EMAIL_INTERVAL_SECONDS', 60, 1, 86_400) * 1000,
     activityIdleMs: int('ACTIVITY_IDLE_SECONDS', 60, 1, 3600) * 1000,
     rateLimits,
+    ai,
     oidcProviders,
     geoipDbPath,
     ssoDnsServers,

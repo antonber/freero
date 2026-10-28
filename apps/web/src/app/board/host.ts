@@ -1,5 +1,5 @@
 // Builds the engine's Host — the one typed contract between the app shell and the engine.
-import type { BoardSummary, Role } from '@freero/shared';
+import type { BoardAiStatus, BoardSummary, Role } from '@freero/shared';
 import { unavailableVersionHistory, type Host, type HostUser } from '@engine';
 import type { ToastApi } from '@ui';
 import { api, wsBase } from '../api/client';
@@ -37,6 +37,8 @@ export interface HostDeps {
   onTitleChange(title: string): void;
   /** The board's team workspace, when the user is a full member of it (templates can be shared there). */
   team?: { id: string; name: string } | null;
+  /** What the server said about AI on this board for this user (null: AI is off on this server). */
+  ai?: BoardAiStatus | null;
 }
 
 /** Toasts with an action button stay up long enough to read and act on. */
@@ -92,6 +94,8 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     importImage,
     fetchImage,
     report: reportOn(board.id),
+    // AI entry points exist only when the server said this user may use AI here.
+    ...(deps.ai?.available ? { ai: { provider: deps.ai.provider ?? '', source: deps.ai.source ?? 'instance', run: (body) => api.runAi(board.id, body) } } : {}),
   };
 }
 

@@ -3,6 +3,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { Request } from 'express';
 import { afterAll, beforeAll, expect, it } from 'vitest';
+import { MCP_SCOPES } from '@freero/shared';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { createUser, endSessionsOf, onSignInRestriction } from '../auth/index';
 import { createTeamWorkspace, ensurePersonalWorkspace } from '../workspaces/index';
@@ -17,6 +18,7 @@ let alice: { id: string };
 beforeAll(async () => {
   const config = await openTestDb({ PUBLIC_URL: 'http://freero.test' });
   registerProtectedResource(R, 'Freero REST API');
+  registerProtectedResource('/mcp', 'Freero MCP server', { scopes: MCP_SCOPES, optInScopes: ['boards:write', 'comments:write'] });
   initApiAuth({ config, onShutdown: () => undefined });
   alice = await createUser({ name: 'Alice', email: 'alice@apiauth.test.freero.app', password: 'password-123' });
 });
@@ -130,4 +132,28 @@ it('turning API access off in a team stops the next call there; an admin’s blo
   expect(await refused(useInWorkspace(a, team))).toBe('api_credential_blocked');
   expect(await refused(useInWorkspace(b, team))).toBeNull();
   expect(await refused(useInWorkspace(a, personal))).toBeNull();
+});
+
+it('an MCP client asking for everything gets read + suggest unless the person turns writing on, and its token works only at /mcp', async () => {
+  const reg = (await registerDynamicClient({ client_name: 'Assistant', redirect_uris: ['http://127.0.0.1:7777/cb'] })) as { client_id: string };
+  const consent = async (grant?: string[]) => {
+    const verifier = randomBytes(32).toString('base64url');
+    const checked = await checkAuthorizeRequest({
+      response_type: 'code',
+      client_id: reg.client_id,
+      redirect_uri: 'http://127.0.0.1:7777/cb',
+      code_challenge: createHash('sha256').update(verifier).digest('base64url'),
+      code_challenge_method: 'S256',
+      resource: 'http://freero.test/mcp',
+    });
+    if (!('ok' in checked)) throw new Error(JSON.stringify(checked));
+    const code = new URL(await decide(alice.id, 'password', checked.ok, true, grant)).searchParams.get('code')!;
+    return exchange({ grant_type: 'authorization_code', client_id: reg.client_id, code, code_verifier: verifier });
+  };
+  const byDefault = await consent();
+  expect(byDefault.scope.split(' ').sort()).toEqual(['boards:read', 'boards:suggest']);
+  expect(await authenticate(bearer(byDefault.access_token), '/mcp').then((c) => c.scopes.sort())).toEqual(['boards:read', 'boards:suggest']);
+  expect(await refusal(byDefault.access_token)).toEqual({ status: 401, code: 'invalid_token' }); // not for the REST API
+  const withWrite = await consent(['boards:write']);
+  expect(withWrite.scope.split(' ').sort()).toEqual(['boards:read', 'boards:suggest', 'boards:write']);
 });

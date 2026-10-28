@@ -17,9 +17,13 @@
 // Redis, and clients on different instances must see each other's edits and cursors, access
 // changes / logouts / deletes made through the other instance, and every edit saved exactly as
 // if one instance had served them (even one whose instance is killed before it saved).
+//
+// S3: with S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY (e.g. MinIO or
+// SeaweedFS in Docker), the `s3` group checks the S3 storage backend; without them it is skipped.
 
 import { execSync, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
@@ -34,6 +38,7 @@ import * as syncProtocol from 'y-protocols/sync';
 import { WebsocketProvider } from 'y-websocket';
 import * as Y from 'yjs';
 import { writeMmdb } from './lib/mmdb-writer.mjs';
+import { startMockModel } from './lib/mock-model.mjs';
 import { startMockOidc } from './lib/mock-oidc.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -207,6 +212,13 @@ for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(130)
 // ---------------------------------------------------------------------------
 const MIGRATION_LOCK_KEY = 7_202_610_270; // must match apps/server/src/platform/db.ts
 const ADMIN_URL = process.env.DATABASE_URL?.trim() || null;
+// S3 (KAI-203): with S3_ENDPOINT, S3_BUCKET and keys set, the `s3` group runs against that endpoint;
+// every other server of the run keeps to the local disk, so the S3_* variables leave process.env.
+const S3_ENV = (() => {
+  const vars = Object.fromEntries(Object.keys(process.env).filter((k) => k.startsWith('S3_')).map((k) => [k, process.env[k]]));
+  for (const k of Object.keys(vars)) delete process.env[k];
+  return vars.S3_ENDPOINT && vars.S3_BUCKET && vars.S3_ACCESS_KEY_ID && vars.S3_SECRET_ACCESS_KEY ? vars : null;
+})();
 const db = { url: null, kind: ADMIN_URL ? 'postgres' : 'pglite', created: [] };
 
 function dbUrl(name) {
@@ -906,6 +918,7 @@ async function run() {
       assert((await A.req('GET', `/api/boards/doesnotexist`)).status === 404, 'missing board');
     });
 
+
     // ---- realtime ----
     let a, b, c, d;
     await check('WebSocket clients connect, sync, and receive their role message', async () => {
@@ -1076,9 +1089,14 @@ async function run() {
 
     await check('board layers: sealed ballots are revealed into the shared doc only by an owner/editor, while their author is offline', async () => {
       const b1 = await layerClient(B, board.id);
-      b1.layers.private.getMap('voting').set(`s1:${B.id}`, { sessionId: 's1', userId: B.id, elementIds: ['e1', 'e1'] });
+      // A ballot is only taken for the running session (votingRules.ts): B votes in s0, then in s1.
+      const vote = (id) => ({ id, active: true, title: 'Vote', votesPerUser: 3, elementIds: null, anonymous: true, startedBy: B.id, startedAt: Date.now(), endedAt: null });
+      b1.doc.getMap('voting').set('session', vote('s0'));
       b1.layers.private.getMap('voting').set(`s0:${B.id}`, { sessionId: 's0', userId: B.id, elementIds: ['e2'] });
+      b1.doc.getMap('voting').set('session', vote('s1'));
+      b1.layers.private.getMap('voting').set(`s1:${B.id}`, { sessionId: 's1', userId: B.id, elementIds: ['e1', 'e1'] });
       await settled(b1); // the server has both ballots
+      assert(b1.layers.private.getMap('voting').size === 2, `the server undid a ballot: ${JSON.stringify(b1.layers.private.toJSON())}`);
       b1.destroy();
       const c1 = await layerClient(C, board.id); // viewer
       const d1 = await layerClient(D, board.id); // commenter
@@ -3963,6 +3981,31 @@ async function teamsChecks() {
       assert((await M.req('GET', `/api/workspaces/${ws.id}/activity`)).status === 404, 'someone outside the workspace read its feed');
     });
 
+    await check('the activity feed tells what happened to the board as a whole (KAI-188): created, renamed, moved to a project, a version restored, trashed and restored, and a copy names its original', async () => {
+      const team = (await O.req('POST', '/api/workspaces', { name: 'Lifecycle team' })).json.workspace;
+      const project = (await O.req('POST', `/api/workspaces/${team.id}/projects`, { name: 'Launch', access: 'workspace' })).json.project;
+      const b = (await O.req('POST', '/api/boards', { title: 'Plan', workspaceId: team.id })).json.board;
+      assert((await O.req('PATCH', `/api/boards/${b.id}`, { title: 'Plan v2' })).status === 200, 'rename');
+      assert((await O.req('PATCH', `/api/boards/${b.id}`, { projectId: project.id })).status === 200, 'move');
+      const v = (await O.req('POST', `/api/boards/${b.id}/versions`, { name: 'Kickoff' })).json.version;
+      assert((await O.req('POST', `/api/boards/${b.id}/versions/${v.id}/restore`)).status === 200, 'restore version');
+      const copy = (await O.req('POST', `/api/boards/${b.id}/duplicate`)).json.board;
+      assert((await O.req('DELETE', `/api/boards/${b.id}`)).status < 300, 'trash');
+      assert((await O.req('POST', `/api/boards/${b.id}/restore`)).status === 200, 'restore from trash');
+      const feed = async (id) => (await O.req('GET', `/api/boards/${id}/activity`)).json.entries;
+      const texts = (await feed(b.id)).filter((e) => e.kind === 'board' && e.actorName === O.name).map((e) => e.text);
+      for (const t of [
+        'created this board',
+        'renamed the board to “Plan v2” (was “Plan”)',
+        'moved the board to project “Launch”',
+        'restored the version “Kickoff”',
+        'moved the board to the trash',
+        'restored the board from the trash',
+      ])
+        assert(texts.includes(t), `missing “${t}” in ${JSON.stringify(texts)}`);
+      assert((await feed(copy.id)).some((e) => e.kind === 'board' && e.text === 'made this board as a copy of “Plan v2”'), 'copy entry');
+    });
+
     await check('lowering a team’s access level to "can view" turns a connected member’s socket read-only at once', async () => {
       const team = (await O.req('POST', '/api/workspaces', { name: 'Verify team' })).json.workspace;
       assert((await O.req('POST', `/api/workspaces/${team.id}/members`, { email: M.email, role: 'member' })).status === 201, 'add member');
@@ -4507,6 +4550,182 @@ async function moderationChecks() {
 }
 
 // ---------------------------------------------------------------------------
+// AI (KAI-101, KAI-102): off unless configured; with a provider, the four board actions against a
+// local mock model (scripts/lib/mock-model.mjs, never a paid API), workspace admin controls, the
+// workspace's own key, rate limit, budget and audit.
+// ---------------------------------------------------------------------------
+async function aiChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-ai-'));
+  const model = await startMockModel();
+  let proc = null;
+  const AI_LIMIT = 6;
+  try {
+    const env = {};
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    const boot = async (extra) => {
+      if (proc) await stopProc(proc);
+      proc = await waitUp(await spawnServer(dataDir, { ...env, ...extra }));
+      server = proc;
+    };
+    if (!(await check('ai: server without AI configured boots', () => boot({})))) return;
+    const O = new User('AiOwner', proc.port);
+    const M = new User('AiMember', proc.port);
+    for (const u of [O, M]) {
+      await u.signup();
+      await u.verifyEmail(dataDir);
+    }
+    const personal = (await O.req('POST', '/api/boards', { title: 'AI personal' })).json.board;
+
+    await check('ai: with no AI configured, the board status says so ({ ai: null }), the AI actions do not exist (404) and nothing reaches a model', async () => {
+      const status = await O.req('GET', `/api/boards/${personal.id}/ai`);
+      const run = await O.req('POST', `/api/boards/${personal.id}/ai/actions`, { task: 'ideas', prompt: 'x' });
+      assert(status.status === 200 && status.json?.ai === null && run.status === 404, `${status.status} ${status.text} ${run.status}`);
+      assert(model.requests.length === 0, 'the model was called');
+    });
+
+    const aiEnv = {
+      AI_PROVIDER: 'openai',
+      AI_BASE_URL: `${model.url}/instance/v1`,
+      AI_MODEL: 'mock-instance',
+      AI_API_KEY: 'instance-secret-key',
+      AI_INSTANCE_FOR: 'personal,teams',
+      AI_WORKSPACE_KEYS: 'true',
+      AI_WORKSPACE_PRIVATE_ENDPOINTS: 'true', // the mock listens on 127.0.0.1
+      RATE_LIMIT_AI: `${AI_LIMIT}/1m`,
+    };
+    if (!(await check('ai: server with a provider boots', () => boot(aiEnv)))) return;
+    for (const u of [O, M]) u.port = proc.port;
+    const outlineCount = async (u, boardId) => (await u.req('GET', `/api/boards/${boardId}/outline`)).json.outline.meta.itemCount;
+
+    await check('ai: a preview writes nothing; the same action on the board lands as one attributed change a connected collaborator receives live', async () => {
+      const st = (await O.req('GET', `/api/boards/${personal.id}/ai`)).json.ai;
+      assert(st?.available === true && !JSON.stringify(st).includes('instance-secret-key'), JSON.stringify(st));
+      const preview = await O.req('POST', `/api/boards/${personal.id}/ai/actions`, { task: 'ideas', prompt: 'Icebreakers for a retro' });
+      assert(preview.status === 200 && preview.json.snapshot.elements.filter((e) => e.type === 'sticky').length === 8, `${preview.status} ${preview.text.slice(0, 300)}`);
+      assert((await outlineCount(O, personal.id)) === 0, 'the preview was written');
+      const live = connectDoc(O, personal.id);
+      await live.ready();
+      const written = await O.req('POST', `/api/boards/${personal.id}/ai/actions`, { task: 'ideas', prompt: 'Icebreakers for a retro', target: 'board' });
+      assert(written.status === 201, `${written.status} ${written.text}`);
+      const els = live.doc.getMap('elements');
+      await waitFor(() => written.json.created.every((id) => els.has(id)), 8000, 'the AI stickies on the live socket');
+      assert(written.json.created.every((id) => els.get(id).createdBy === O.id), 'not attributed to the person who asked');
+      const call = model.requests.at(-1);
+      assert(call.path === '/instance/v1/chat/completions' && call.headers.authorization === 'Bearer instance-secret-key', `${call.path} ${call.headers.authorization}`);
+      live.destroy();
+    });
+
+    // A team board with notes (laid out by insert-structure), AI off until an admin turns it on.
+    const team = (await O.req('POST', '/api/workspaces', { name: 'AI team' })).json.workspace;
+    assert((await O.req('POST', `/api/workspaces/${team.id}/members`, { email: M.email, role: 'member' })).status === 201, 'member');
+    const tb = (await O.req('POST', '/api/boards', { title: 'Retro', workspaceId: team.id })).json.board;
+    const notes = ['Slow CI builds', 'Flaky tests', 'Great pairing sessions', 'Fun offsite', 'Deploys take too long', 'Helpful code reviews'];
+    const seeded = await O.req('POST', `/api/boards/${tb.id}/insert-structure`, { structure: { kind: 'stickies', items: notes } });
+    assert(seeded.status === 201, seeded.text);
+    const noteIds = seeded.json.created;
+
+    await check('ai: on a team board AI is off until an admin turns it on; members then use it, and switching it off stops them at once', async () => {
+      const off = (await M.req('GET', `/api/boards/${tb.id}/ai`)).json.ai;
+      assert(off.available === false && /off/.test(off.reason), JSON.stringify(off));
+      assert((await M.req('PATCH', `/api/workspaces/${team.id}/admin/ai`, { enabled: true })).status === 403, 'a member changed the AI settings');
+      const on = await O.req('PATCH', `/api/workspaces/${team.id}/admin/ai`, { enabled: true, source: 'instance' });
+      assert(on.status === 200 && on.json.settings.enabled, on.text);
+      assert((await M.req('GET', `/api/boards/${tb.id}/ai`)).json.ai.available === true, 'member still off');
+      assert((await O.req('PATCH', `/api/workspaces/${team.id}/admin/ai`, { enabled: false })).status === 200, 'off');
+      const refused = await M.req('POST', `/api/boards/${tb.id}/ai/actions`, { task: 'summarize' });
+      assert(refused.status === 403 && refused.json.code === 'ai_unavailable', `${refused.status} ${refused.text}`);
+    });
+
+    await check('ai: a workspace’s own provider gets its own key (never shown again), and clustering moves the selected notes into named groups', async () => {
+      const before = model.requests.length;
+      const own = await O.req('PATCH', `/api/workspaces/${team.id}/admin/ai`, {
+        enabled: true,
+        source: 'workspace',
+        provider: 'anthropic',
+        baseUrl: model.url,
+        model: 'mock-claude',
+        apiKey: 'sk-team-verify',
+      });
+      assert(own.status === 200 && own.json.settings.hasKey && !own.text.includes('sk-team-verify'), own.text);
+      assert(!(await O.req('GET', `/api/workspaces/${team.id}/admin/ai`)).text.includes('sk-team-verify'), 'the key came back');
+      const r = await M.req('POST', `/api/boards/${tb.id}/ai/actions`, { task: 'cluster', ids: noteIds, target: 'board' });
+      assert(r.status === 201 && r.json.moved.length === notes.length, `${r.status} ${r.text.slice(0, 400)}`);
+      const call = model.requests.slice(before).find((x) => x.path === '/v1/messages');
+      assert(call?.headers['x-api-key'] === 'sk-team-verify' && call.body.model === 'mock-claude', JSON.stringify(call?.headers));
+      // Board text reached the model only inside the delimited data block.
+      const userMsg = call.body.messages[0].content;
+      assert(userMsg.indexOf('Flaky tests') > userMsg.indexOf('<board_content>') && !call.body.system.includes('Flaky tests'), 'board text outside the envelope');
+      const outline = (await O.req('GET', `/api/boards/${tb.id}/outline`)).json.outline;
+      const titles = JSON.stringify(outline.items);
+      assert(titles.includes('Tooling and speed') && titles.includes('Team and collaboration'), titles.slice(0, 400));
+    });
+
+    await check('ai: a summary and a diagram land as a note and as shapes joined by attached connectors', async () => {
+      const s = await M.req('POST', `/api/boards/${tb.id}/ai/actions`, { task: 'summarize', target: 'board' });
+      assert(s.status === 201, s.text);
+      const d = await M.req('POST', `/api/boards/${tb.id}/ai/actions`, { task: 'diagram', prompt: 'Support ticket flow', target: 'board' });
+      assert(d.status === 201, d.text);
+      const live = connectDoc(O, tb.id);
+      await live.ready();
+      const els = live.doc.getMap('elements');
+      const note = els.get(s.json.created[0]);
+      assert(note?.type === 'shape' && /Where the board stands/.test(note.text), JSON.stringify(note));
+      const made = d.json.created.map((id) => els.get(id));
+      const shapes = new Set(made.filter((e) => e.type === 'shape').map((e) => e.id));
+      const lines = made.filter((e) => e.type === 'connector');
+      assert(shapes.size === 7 && lines.length === 7, `${shapes.size} shapes, ${lines.length} lines`);
+      assert(lines.every((c) => shapes.has(c.start.elementId) && shapes.has(c.end.elementId)), 'a connector is not attached at both ends');
+      live.destroy();
+    });
+
+    await check('ai: an answer that is not JSON (even after one repair turn) is refused with nothing written', async () => {
+      const before = await outlineCount(O, tb.id);
+      const r = await M.req('POST', `/api/boards/${tb.id}/ai/actions`, { task: 'ideas', prompt: 'MALFORMED please', target: 'board' });
+      assert(r.status === 502 && r.json.code === 'ai_invalid_output', `${r.status} ${r.text}`);
+      assert((await outlineCount(O, tb.id)) === before, 'something was written');
+    });
+
+    await check('ai: every request is in the workspace audit log with task, model and tokens — never the prompt or board text', async () => {
+      const events = (await O.req('GET', `/api/workspaces/${team.id}/audit?action=ai.&limit=50`)).json.events;
+      const requests = events.filter((e) => e.action === 'ai.request');
+      // cluster, summary, diagram and the refused answer (whose tokens were still spent).
+      assert(requests.length >= 4 && requests.every((e) => e.metadata.model && e.metadata.task && e.metadata.inputTokens > 0), JSON.stringify(requests.map((e) => e.metadata)));
+      assert(events.some((e) => e.action === 'ai.settings_changed' && e.metadata.apiKey === 'replaced'), 'key change not audited');
+      const all = JSON.stringify(events);
+      assert(!all.includes('Support ticket flow') && !all.includes('Flaky tests') && !all.includes('sk-team-verify'), 'content or key in the audit log');
+    });
+
+    await check('ai: the workspace usage shows per-person totals, and a budget that is used up refuses the next action (429)', async () => {
+      const usage = (await O.req('GET', `/api/workspaces/${team.id}/admin/ai`)).json.usage;
+      assert(usage.byUser.some((u) => u.userId === M.id && u.requests >= 4), JSON.stringify(usage));
+      assert((await O.req('PATCH', `/api/workspaces/${team.id}/admin/ai`, { monthlyTokenBudget: 1000 })).status === 200, 'budget');
+      const r = await M.req('POST', `/api/boards/${tb.id}/ai/actions`, { task: 'ideas', prompt: 'More' });
+      assert(r.status === 429 && r.json.code === 'ai_budget', `${r.status} ${r.text}`);
+    });
+
+    await check(`ai: the per-user rate limit refuses call ${AI_LIMIT + 1} in its window (429 with Retry-After)`, async () => {
+      const R = new User('AiRate', proc.port);
+      await R.signup();
+      const b = (await R.req('POST', '/api/boards', { title: 'Rate' })).json.board;
+      const statuses = [];
+      for (let i = 0; i <= AI_LIMIT; i++) statuses.push(await R.req('POST', `/api/boards/${b.id}/ai/actions`, { task: 'ideas', prompt: `Round ${i}` }));
+      assert(statuses.slice(0, AI_LIMIT).every((r) => r.status === 200), statuses.map((r) => r.status).join(','));
+      assert(statuses[AI_LIMIT].status === 429 && statuses[AI_LIMIT].headers.get('retry-after'), `call ${AI_LIMIT + 1}: ${statuses[AI_LIMIT].status}`);
+    });
+  } finally {
+    closeAllDocs();
+    if (proc) await stopProc(proc);
+    server = null;
+    await model.close();
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Video, audio and any other file on a board (KAI-128), on its own server: media is stored by what
 // its bytes are and served with byte ranges (seeking); attachments are never served at /uploads/,
 // only downloaded from their board — under the workspace's downloads policy, audited, as an
@@ -4521,7 +4740,8 @@ async function mediaChecks() {
   const S = new User('MediaStranger');
   // Real caps, small enough to cross: 60 MB for video/audio (a 50 MB clip fits), 1 MB for other
   // files, an 80 MB quota (one clip fits, two don't).
-  const env = { OPERATOR_EMAILS: Op.email, MAX_MEDIA_UPLOAD_MB: '60', MAX_ATTACHMENT_UPLOAD_MB: '1', UPLOAD_QUOTA_MB: '80' };
+  // LOG_LEVEL info: operator downloads are checked in the audit trail's log line (platform/audit).
+  const env = { OPERATOR_EMAILS: Op.email, MAX_MEDIA_UPLOAD_MB: '60', MAX_ATTACHMENT_UPLOAD_MB: '1', UPLOAD_QUOTA_MB: '80', LOG_LEVEL: 'info' };
   const base = () => `http://127.0.0.1:${server.port}`;
   const get = (url, headers = {}) => fetch(`${base()}${url}`, { headers, redirect: 'manual' });
   /** An ISO media (MP4) file of `bytes` bytes: an "ftyp" box, then a recognisable byte pattern. */
@@ -4619,6 +4839,21 @@ async function mediaChecks() {
       assert((await O.req('PATCH', `/api/workspaces/${ws}`, { policies: { downloads: 'anyone' } })).status === 200, 'reset');
     });
 
+    await check('media: an operator downloads a reported file card from the queue to review it (KAI-205) — always as an attachment, audited, and nobody else can use that route', async () => {
+      const name = card.slice('/uploads/'.length);
+      const route = `/api/moderation/uploads/${name}/file`;
+      const r = await Op.req('GET', route);
+      assert(r.status === 200 && r.text === HTML.toString(), `operator download -> ${r.status} ${r.text.slice(0, 100)}`);
+      assert(r.headers.get('content-type') === 'application/octet-stream' && r.headers.get('x-content-type-options') === 'nosniff', `type ${r.headers.get('content-type')}`);
+      assert((r.headers.get('content-disposition') ?? '').startsWith('attachment;'), `disposition: ${r.headers.get('content-disposition')}`);
+      assert(/sandbox/.test(r.headers.get('content-security-policy') ?? ''), `csp: ${r.headers.get('content-security-policy')}`);
+      for (const u of [O, M, S]) assert((await u.req('GET', route)).status === 404, `${u.label} used the operator download`);
+      assert((await fetch(`${base()}${route}`)).status === 401, 'anonymous used the operator download');
+      await waitFor(() => server.log.join('').includes('moderation.upload.download'), 5000, 'the download in the audit trail');
+      const line = server.log.join('').split(/\r?\n/).find((l) => l.includes('moderation.upload.download'));
+      assert(line.includes(Op.id) && line.includes(name), `audit line: ${line}`);
+    });
+
     await check('media: a file an operator removed answers 410 both at /uploads/ and from its board', async () => {
       await place(O, board, { id: 'clip', type: 'media', kind: 'video', src: video, name: 'clip.mp4', size: clip.length, duration: 0, naturalW: 0, naturalH: 0 });
       for (const [url, target] of [
@@ -4630,6 +4865,9 @@ async function mediaChecks() {
         assert((await get(url)).status === 410, `${url} at /uploads/`);
         assert((await O.req('GET', `/api/boards/${board}/files/${target}`)).status === 410, `${target} from the board`);
       }
+      // Operators can still review the kept copy before restoring or purging it.
+      const kept = await Op.req('GET', `/api/moderation/uploads/${card.slice('/uploads/'.length)}/file`);
+      assert(kept.status === 200 && kept.text === HTML.toString(), `kept copy -> ${kept.status}`);
     });
   } finally {
     closeAllDocs();
@@ -4737,6 +4975,39 @@ async function facilitationChecks() {
       for (const c of [pl, ol, fl]) c.destroy();
     });
 
+    await check('vote budget (KAI-210): a raw socket can neither vote over the budget (shared or sealed), nor as a made-up voter, nor raise the budget — nobody receives it and the voter converges', async () => {
+      const pl = await layerClient(P, board.id, port);
+      const ol = await layerClient(O, board.id, port);
+      clients.push(pl, ol);
+      const vm = (c) => c.doc.getMap('voting');
+      const seen = new Set();
+      vm(ol).observe((e) => e.changes.keys.forEach((_, k) => seen.add(`${k}=${JSON.stringify(vm(ol).get(k) ?? null)}`)));
+      const vote = (patch) => ({ id: 'kv1', active: true, title: 'Vote', votesPerUser: 2, elementIds: null, anonymous: false, startedBy: O.id, startedAt: Date.now(), endedAt: null, ...patch });
+      vm(ol).set('session', vote());
+      await waitFor(() => vm(pl).get('session')?.id === 'kv1', 5000, 'the vote to reach the participant');
+      const own = `kv1:${P.id}`;
+      vm(pl).set(own, { sessionId: 'kv1', userId: P.id, elementIds: ['a', 'a', 'a', 'a', 'a'] });
+      vm(pl).set(`kv1:ghost`, { sessionId: 'kv1', userId: 'ghost', elementIds: ['a', 'a'] });
+      vm(pl).set('session', vote({ votesPerUser: 20 }));
+      await settled(pl, [ol]);
+      await waitFor(() => !vm(pl).has(own) && !vm(pl).has('kv1:ghost') && vm(pl).get('session')?.votesPerUser === 2, 5000, 'the participant to converge');
+      assert(![...seen].some((k) => k.startsWith(own) || k.startsWith('kv1:ghost') || k.includes('"votesPerUser":20')), `the owner received a forbidden vote: ${[...seen].join(' ')}`);
+      vm(pl).set(own, { sessionId: 'kv1', userId: P.id, elementIds: ['a', 'b'] });
+      await waitFor(() => vm(ol).get(own)?.elementIds?.length === 2, 5000, "the participant's vote within budget");
+      // Hidden results: the sealed ballot in the private layer keeps to the same budget.
+      vm(ol).set('session', vote({ id: 'kv2', anonymous: true }));
+      await waitFor(() => vm(pl).get('session')?.id === 'kv2', 5000, 'the hidden vote to reach the participant');
+      pl.layers.private.getMap('voting').set(`kv2:${P.id}`, { sessionId: 'kv2', userId: P.id, elementIds: ['a', 'b', 'c'] });
+      await settled(pl);
+      await waitFor(() => !pl.layers.private.getMap('voting').has(`kv2:${P.id}`), 5000, 'the over-budget sealed ballot to be undone');
+      pl.layers.private.getMap('voting').set(`kv2:${P.id}`, { sessionId: 'kv2', userId: P.id, elementIds: ['c'] });
+      await settled(pl);
+      ol.layerOp({ type: 'reveal', collection: 'voting', prefix: 'kv2:' });
+      await waitFor(() => vm(ol).get(`kv2:${P.id}`)?.elementIds?.join() === 'c', 5000, 'the sealed ballot within budget to be revealed');
+      vm(ol).delete('session');
+      for (const c of [pl, ol]) c.destroy();
+    });
+
     await check('the session ends when the facilitator has been gone for the grace period, lifting every limit', async () => {
       fac(f).set('session', session({ locked: true }));
       await waitFor(() => p.role === 'commenter', 5000, 'the lock');
@@ -4757,7 +5028,109 @@ async function facilitationChecks() {
   }
 }
 
-// `--only <group>[,<group>…]` runs some groups, e.g. to loop one while hunting a flake.
+// ---------------------------------------------------------------------------
+// The S3 storage backend (KAI-203), on its own server, only when an S3-compatible endpoint is
+// configured (S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY — e.g. MinIO or
+// SeaweedFS in Docker; the bucket is created when missing). Every other group runs on the local
+// disk as before (the S3_* variables are taken out of their servers' environment). Checks what
+// only S3 does: the `uploads/` and `private/` prefixes (a removed file's kept copy never sits where
+// S3_PUBLIC_URL reaches), restore and retention moving and deleting the objects, the redirect to
+// S3_PUBLIC_URL and the Cache-Control stored on the objects (UPLOAD_CACHE_SECONDS).
+// ---------------------------------------------------------------------------
+async function s3Checks() {
+  if (!S3_ENV) {
+    console.log('SKIP  s3: no S3_ENDPOINT / S3_BUCKET / S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY set');
+    return;
+  }
+  const require = createRequire(import.meta.url);
+  const { S3Client, CreateBucketCommand, HeadObjectCommand, ListObjectsV2Command } = require('@aws-sdk/client-s3');
+  const bucket = S3_ENV.S3_BUCKET;
+  const client = new S3Client({
+    region: S3_ENV.S3_REGION || 'us-east-1',
+    endpoint: S3_ENV.S3_ENDPOINT,
+    forcePathStyle: true,
+    credentials: { accessKeyId: S3_ENV.S3_ACCESS_KEY_ID, secretAccessKey: S3_ENV.S3_SECRET_ACCESS_KEY },
+  });
+  const keys = async (prefix) => {
+    const out = await client.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix }));
+    return (out.Contents ?? []).map((o) => o.Key);
+  };
+  const head = async (key) => {
+    try {
+      return await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+    } catch {
+      return null;
+    }
+  };
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-s3-'));
+  const outerDbUrl = db.url;
+  const Op = new User('S3Operator');
+  const O = new User('S3Owner');
+  const publicUrl = S3_ENV.S3_PUBLIC_URL || `${S3_ENV.S3_ENDPOINT.replace(/\/+$/, '')}/${bucket}`;
+  const env = { ...S3_ENV, S3_PUBLIC_URL: publicUrl, OPERATOR_EMAILS: Op.email, UPLOAD_CACHE_SECONDS: '123' };
+  const get = (url) => fetch(`http://127.0.0.1:${server.port}${url}`, { redirect: 'manual' });
+  const act = (body) => Op.req('POST', '/api/moderation/actions', { reason: 'illegal', statement: 'Checked by verify.', ...body });
+  try {
+    try {
+      await client.send(new CreateBucketCommand({ Bucket: bucket }));
+    } catch (e) {
+      if (!/BucketAlready/.test(e?.name ?? '')) throw e;
+    }
+    if (ADMIN_URL) db.url = await createDatabase();
+    if (!(await check('s3: server boots against the S3 endpoint', async () => waitUp((server = await spawnServer(dataDir, env)))))) return;
+    for (const u of [Op, O]) {
+      await u.signup();
+      await u.verifyEmail(dataDir);
+    }
+    let name = null;
+    await check('s3: an upload is stored under uploads/ with max-age=UPLOAD_CACHE_SECONDS, and its URL redirects to S3_PUBLIC_URL with the same max-age', async () => {
+      const up = await O.req('POST', '/api/uploads', PNG_1PX, { raw: true, headers: { 'content-type': 'image/png' } });
+      assert(up.status === 201, `upload -> ${up.status} ${up.text}`);
+      name = up.json.url.slice('/uploads/'.length);
+      const obj = await head(`uploads/${name}`);
+      assert(obj, `no object uploads/${name}`);
+      assert(/max-age=123\b/.test(obj.CacheControl ?? ''), `stored Cache-Control: ${obj.CacheControl}`);
+      const r = await get(`/uploads/${name}`);
+      assert(r.status === 302 && r.headers.get('location') === `${publicUrl}/uploads/${name}`, `redirect -> ${r.status} ${r.headers.get('location')}`);
+      assert(/max-age=123\b/.test(r.headers.get('cache-control') ?? ''), `redirect Cache-Control: ${r.headers.get('cache-control')}`);
+    });
+
+    await check('s3: removing a file moves its kept copy under private/ (never under the public uploads/ prefix) and the URL answers 410; restoring brings it back under uploads/', async () => {
+      assert(name, 'no upload');
+      assert((await act({ action: 'upload.remove', targetId: name })).status === 200, 'remove');
+      assert(!(await head(`uploads/${name}`)), 'the removed file is still under uploads/');
+      const kept = (await keys('private/')).filter((k) => k.endsWith(`.${name}`));
+      assert(kept.length === 1, `kept copies: ${JSON.stringify(kept)}`);
+      assert(!(await keys('uploads/')).some((k) => k.includes(`.${name}`)), 'a kept copy sits under uploads/');
+      const gone = await get(`/uploads/${name}`);
+      assert(gone.status === 410 && !gone.headers.get('location'), `after removal -> ${gone.status} ${gone.headers.get('location')}`);
+      assert((await act({ action: 'upload.restore', targetId: name, reason: 'other' })).status === 200, 'restore');
+      const back = await head(`uploads/${name}`);
+      assert(back && /max-age=123\b/.test(back.CacheControl ?? ''), `restored object: ${back?.CacheControl}`);
+      assert(!(await keys('private/')).some((k) => k.endsWith(`.${name}`)), 'the kept copy outlived the restore');
+      assert((await get(`/uploads/${name}`)).status === 302, 'the restored file does not redirect');
+    });
+
+    await check('s3: retention (MODERATION_KEEP_REMOVED_DAYS=0) deletes the kept copy under private/, the URL stays 410', async () => {
+      assert((await act({ action: 'upload.remove', targetId: name })).status === 200, 'remove again');
+      assert((await keys('private/')).some((k) => k.endsWith(`.${name}`)), 'no kept copy');
+      await stopProc(server);
+      server = await waitUp(await spawnServer(dataDir, { ...env, MODERATION_KEEP_REMOVED_DAYS: '0', MODERATION_RETENTION_INTERVAL_SECONDS: '1' }));
+      await waitFor(async () => !(await keys('private/')).some((k) => k.endsWith(`.${name}`)), 10_000, 'the kept copy to be deleted');
+      assert((await get(`/uploads/${name}`)).status === 410, 'the URL came back');
+    });
+  } finally {
+    await stopServer();
+    await dropDatabases();
+    db.url = outerDbUrl;
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // The public API (KAI-104), agent safety (KAI-170) and the downloads policy on reads (KAI-197):
 // real tokens and a real OAuth app against a real server, with a live Yjs client on the board.
@@ -5075,6 +5448,290 @@ async function suiteChecks() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// The remote MCP server (KAI-107) and agent participants (KAI-168), driven by the official MCP
+// client SDK: dynamic client registration + OAuth 2.1 with PKCE against Freero's real
+// authorization server, tools against real boards with a live Yjs client watching, the activity
+// feed and the audit log, kill switches. With DATABASE_URL + REDIS_URL also across two instances.
+// ---------------------------------------------------------------------------
+async function mcpChecks() {
+  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+  const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+  const { UnauthorizedError } = await import('@modelcontextprotocol/sdk/client/auth.js');
+  const REDIS_URL = process.env.REDIS_URL?.trim();
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-mcp-'));
+  const env = { ACTIVITY_IDLE_SECONDS: '1', RATE_LIMIT_INVITE: '500/1h', RATE_LIMIT_PASSWORD: '500/15m', ...(REDIS_URL && ADMIN_URL ? { REDIS_URL } : {}) };
+  const procs = [];
+  const live = [];
+  const clients = [];
+  try {
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    if (!(await check('mcp server boots', async () => procs.push(await waitUp(await spawnServer(dataDir, env)))))) return;
+    const [proc] = procs;
+    const mcpUrl = (p = proc) => new URL(`http://127.0.0.1:${p.port}/mcp`);
+    const stamp = Date.now();
+    const verified = async (label) => {
+      const u = new User(label, proc.port);
+      u.email = `${label.toLowerCase()}-${stamp}@mcp.verify.freero.app`;
+      await u.signup();
+      await u.verifyEmail(dataDir);
+      return u;
+    };
+    const token = async (u, scopes, name) => {
+      const r = await u.req('POST', '/api/auth/tokens', { name, scopes, expiresInDays: 30 });
+      assert(r.status === 201, `token: ${r.status} ${r.text}`);
+      return r.json;
+    };
+    /** An MCP client with a bearer token (a personal token: scripted clients). */
+    const withToken = async (secret, p = proc) => {
+      const c = new Client({ name: 'verify-script', version: '1.0.0' });
+      await c.connect(new StreamableHTTPClientTransport(mcpUrl(p), { requestInit: { headers: { Authorization: `Bearer ${secret}` } } }));
+      clients.push(c);
+      return c;
+    };
+    const text = (r) => (r.content ?? []).map((c) => c.text ?? '').join('\n');
+    /** How many items the board has, as its owner reads it. */
+    const itemCount = async (boardId) => {
+      const reader = await withToken((await token(O, ['boards:read'], `count ${Date.now()}`)).secret);
+      const r = await reader.callTool({ name: 'get_board_outline', arguments: { boardId, format: 'json' } });
+      return JSON.parse(text(r)).untrusted_board_content.meta.itemCount;
+    };
+    const O = await verified('Owner');
+    const C = await verified('Commenter');
+    const S = await verified('Stranger');
+    const team = (await O.req('POST', '/api/workspaces', { name: 'MCP team' })).json.workspace.id;
+    const board = (await O.req('POST', '/api/boards', { title: 'MCP board', workspaceId: team })).json.board.id;
+    const strangers = (await S.req('POST', '/api/boards', { title: 'Not yours' })).json.board.id;
+    assert((await O.req('POST', `/api/boards/${board}/members`, { email: C.email, role: 'commenter' })).status === 201, 'invite commenter');
+
+    await check('mcp: without a token the server answers 401 naming its protected-resource metadata (also at the bare well-known path), which names Freero as the authorization server', async () => {
+      const r = await fetch(mcpUrl(), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }),
+      });
+      const challenge = r.headers.get('www-authenticate') ?? '';
+      assert(r.status === 401 && challenge.includes(`resource_metadata="http://127.0.0.1:${proc.port}/.well-known/oauth-protected-resource/mcp"`), `401: ${r.status} ${challenge}`);
+      for (const p of ['/.well-known/oauth-protected-resource/mcp', '/.well-known/oauth-protected-resource']) {
+        const meta = await (await fetch(`http://127.0.0.1:${proc.port}${p}`)).json();
+        assert(meta.resource === `http://127.0.0.1:${proc.port}/mcp` && meta.authorization_servers[0] === `http://127.0.0.1:${proc.port}`, `${p}: ${JSON.stringify(meta)}`);
+        assert(meta.scopes_supported.includes('boards:suggest') && !meta.scopes_supported.includes('members:write'), `${p} scopes: ${meta.scopes_supported}`);
+      }
+      // The REST API keeps its own metadata.
+      const rest = await (await fetch(`http://127.0.0.1:${proc.port}/.well-known/oauth-protected-resource/api/v1`)).json();
+      assert(rest.resource.endsWith('/api/v1'), `rest metadata: ${JSON.stringify(rest)}`);
+    });
+
+    // The MCP SDK's OAuth client: registers itself, sends the person to the consent screen, PKCE.
+    class Provider {
+      constructor() {
+        this.redirect = 'http://127.0.0.1:53682/callback';
+        this.authUrl = null;
+      }
+      get redirectUrl() {
+        return this.redirect;
+      }
+      get clientMetadata() {
+        return { client_name: 'Verify Assistant', redirect_uris: [this.redirect], grant_types: ['authorization_code', 'refresh_token'], response_types: ['code'], token_endpoint_auth_method: 'none' };
+      }
+      clientInformation() {
+        return this.client;
+      }
+      saveClientInformation(c) {
+        this.client = c;
+      }
+      tokens() {
+        return this.saved;
+      }
+      saveTokens(t) {
+        this.saved = t;
+      }
+      redirectToAuthorization(url) {
+        this.authUrl = url;
+      }
+      saveCodeVerifier(v) {
+        this.verifier = v;
+      }
+      codeVerifier() {
+        return this.verifier;
+      }
+    }
+    const provider = new Provider();
+    let agent = null;
+
+    await check('mcp: a client with no credentials registers itself, the person consents (writing is opt-in), PKCE gets it a token, and it lists only boards that person can open', async () => {
+      const first = new StreamableHTTPClientTransport(mcpUrl(), { authProvider: provider });
+      let refused = null;
+      await new Client({ name: 'verify-assistant', version: '1.0.0' }).connect(first).catch((e) => (refused = e));
+      assert(refused instanceof UnauthorizedError && provider.authUrl && provider.client?.client_id?.startsWith('frc_'), `expected a consent redirect: ${refused}`);
+      const params = Object.fromEntries(provider.authUrl.searchParams);
+      assert(params.code_challenge_method === 'S256' && params.resource === mcpUrl().href, `authorization request: ${provider.authUrl}`);
+      const shown = await O.req('GET', `/api/oauth/authorize${provider.authUrl.search}`);
+      const optional = shown.json?.consent?.scopes
+        ?.filter((s) => s.optional)
+        .map((s) => s.id)
+        .sort();
+      assert(shown.status === 200 && JSON.stringify(optional) === JSON.stringify(['boards:write', 'comments:write']), `consent: ${shown.text}`);
+      const decided = await O.req('POST', '/api/oauth/authorize', { ...params, decision: 'allow', grant: ['boards:write', 'comments:write'] });
+      const code = decided.json?.redirect && new URL(decided.json.redirect).searchParams.get('code');
+      assert(code, `decision: ${decided.text}`);
+      await first.finishAuth(code);
+      assert(provider.saved?.access_token?.startsWith('fro_') && provider.saved.scope.split(' ').includes('boards:write'), `tokens: ${JSON.stringify(provider.saved?.scope)}`);
+      agent = new Client({ name: 'verify-assistant', version: '1.0.0' });
+      await agent.connect(new StreamableHTTPClientTransport(mcpUrl(), { authProvider: provider }));
+      clients.push(agent);
+      const tools = (await agent.listTools()).tools.map((t) => t.name);
+      for (const t of ['search_boards', 'list_workspaces', 'get_board_outline', 'create_board', 'add_stickies', 'add_clusters', 'add_diagram', 'add_comment', 'update_items', 'delete_items', 'export_board'])
+        assert(tools.includes(t), `missing tool ${t}: ${tools}`);
+      assert(!tools.includes('propose_changes'), 'propose_changes offered without the suggestions layer');
+      const found = JSON.parse(text(await agent.callTool({ name: 'search_boards', arguments: {} })));
+      const ids = found.untrusted_board_content.boards.map((b) => b.id);
+      assert(ids.includes(board) && !ids.includes(strangers), `boards: ${JSON.stringify(ids)}`);
+    });
+
+    await check('mcp: a 10-node / 12-edge Mermaid flowchart lands without overlaps, connectors attached, live in an open browser — attributed "<app> for <person>", the app shown in presence while it writes', async () => {
+      assert(agent, 'no agent');
+      const browser = connectDoc(O, board, null, proc.port);
+      live.push(browser);
+      await browser.ready();
+      const mermaid = [
+        'flowchart LR',
+        'A[Idea] --> B[Draft]',
+        'B --> C[Review]',
+        'C -->|ok| D[Ship]',
+        'C -->|changes| B',
+        'D --> E[Measure]',
+        'E --> F[Learn]',
+        'F --> A',
+        'A --> G[Research]',
+        'G --> H[Interview]',
+        'H --> I[Synthesis]',
+        'I --> J[Decide]',
+        'J --> B',
+      ].join('\n');
+      const res = await agent.callTool({ name: 'add_diagram', arguments: { boardId: board, mermaid } });
+      assert(!res.isError, `add_diagram: ${text(res)}`);
+      const created = res.structuredContent.created;
+      const els = browser.doc.getMap('elements');
+      await waitFor(() => created.every((id) => els.has(id)), 5000, 'the diagram to reach the open board');
+      const mine = created.map((id) => els.get(id));
+      const shapes = mine.filter((e) => e.type === 'shape');
+      const lines = mine.filter((e) => e.type === 'connector');
+      assert(shapes.length === 10 && lines.length === 12, `shapes ${shapes.length}, connectors ${lines.length}`);
+      for (let i = 0; i < shapes.length; i++)
+        for (let j = i + 1; j < shapes.length; j++) {
+          const a = shapes[i];
+          const b = shapes[j];
+          assert(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y, `overlap: ${a.id} ${b.id}`);
+        }
+      assert(lines.every((l) => l.start?.elementId && l.end?.elementId), `a connector is not attached at both ends: ${JSON.stringify(lines[0].start)}`);
+      assert(mine.every((e) => e.createdBy === O.id && e.createdVia?.name === 'Verify Assistant'), `attribution: ${JSON.stringify(mine[0].createdVia)}`);
+      const agentState = () => [...browser.provider.awareness.getStates().values()].find((s) => s?.agent?.app === 'Verify Assistant');
+      await waitFor(() => agentState(), 5000, 'the app to appear in presence');
+      assert(agentState().user.name === `Verify Assistant for ${O.name}` && agentState().selection.some((id) => created.includes(id)), `presence: ${JSON.stringify(agentState())}`);
+      await waitFor(() => !agentState(), 12_000, 'the app to leave presence once it stopped writing');
+    });
+
+    await check('mcp: the default read + suggest connection and a commenter’s write token can’t add to the board; delete_items without confirm deletes nothing', async () => {
+      const count = await itemCount(board);
+      const suggest = await withToken((await token(O, ['boards:read', 'boards:suggest'], 'Suggester')).secret);
+      const r1 = await suggest.callTool({ name: 'add_stickies', arguments: { boardId: board, stickies: ['nope'] } });
+      assert(r1.isError && text(r1).includes('insufficient_scope'), `read+suggest wrote: ${text(r1)}`);
+      const commenter = await withToken((await token(C, ['boards:read', 'boards:write', 'comments:write'], 'Commenter app')).secret);
+      const r2 = await commenter.callTool({ name: 'add_stickies', arguments: { boardId: board, stickies: ['nope'] } });
+      assert(r2.isError, `a commenter’s app wrote: ${text(r2)}`);
+      const r3 = await commenter.callTool({ name: 'add_comment', arguments: { boardId: board, text: 'A commenter may comment' } });
+      assert(!r3.isError, `commenter comment: ${text(r3)}`);
+      const outline = JSON.parse(text(await agent.callTool({ name: 'get_board_outline', arguments: { boardId: board, format: 'json' } })));
+      const someId = outline.untrusted_board_content.items[0].id;
+      const r4 = await agent.callTool({ name: 'delete_items', arguments: { boardId: board, itemIds: [someId] } });
+      assert(r4.isError && text(r4).includes('confirm_required'), `delete without confirm: ${text(r4)}`);
+      assert((await itemCount(board)) === count, 'the board changed');
+    });
+
+    await check('mcp: what the app did shows in the activity feed as "<app> for <person>", and every tool call is in the team’s audit log with the app', async () => {
+      await waitFor(
+        async () => (await O.req('GET', `/api/boards/${board}/activity`)).json.entries.some((e) => e.actorName === `Verify Assistant for ${O.name}` && /added/.test(e.text)),
+        10_000,
+        'the app’s burst in the activity feed',
+      );
+      const events = (await O.req('GET', `/api/workspaces/${team}/audit?action=api.call&limit=200`)).json.events;
+      const call = events.find((e) => e.metadata.endpoint === 'MCP add_diagram');
+      assert(
+        call && call.actor?.id === O.id && call.metadata.credential === 'app' && call.metadata.credentialName === 'Verify Assistant' && call.metadata.status === 200,
+        `audit: ${JSON.stringify(events.slice(0, 3))}`,
+      );
+      assert(events.some((e) => e.metadata.endpoint === 'MCP delete_items' && e.metadata.status === 400), 'the refused delete is not in the log');
+    });
+
+    await check('mcp: a team’s downloads policy refuses export_board and outline reads; turning API access off stops the next tool call there', async () => {
+      assert((await O.req('POST', `/api/workspaces/${team}/members`, { email: C.email, role: 'member' })).status === 201, 'member');
+      assert((await O.req('PATCH', `/api/workspaces/${team}`, { policies: { downloads: 'admins' } })).status === 200, 'policy');
+      const member = await withToken((await token(C, ['boards:read'], 'Reader')).secret);
+      for (const [name, args] of [
+        ['export_board', { boardId: board }],
+        ['get_board_outline', { boardId: board }],
+      ]) {
+        const r = await member.callTool({ name, arguments: args });
+        assert(r.isError && text(r).includes('downloads_restricted'), `${name}: ${text(r)}`);
+      }
+      await O.req('PATCH', `/api/workspaces/${team}`, { policies: { downloads: 'anyone' } });
+      assert((await O.req('PATCH', `/api/workspaces/${team}/admin/api`, { enabled: false })).status === 200, 'api off');
+      const off = await agent.callTool({ name: 'get_board_outline', arguments: { boardId: board } });
+      assert(off.isError && text(off).includes('api_disabled'), `api off: ${text(off)}`);
+      assert((await O.req('PATCH', `/api/workspaces/${team}/admin/api`, { enabled: true })).status === 200, 'api on');
+    });
+
+    if (ADMIN_URL && REDIS_URL)
+      await check('mcp: stateless across instances — one client’s requests alternate between two instances; its writes and presence reach a browser on the first', async () => {
+        procs.push(await waitUp(await spawnServer(fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-mcp2-')), env)));
+        const browser = connectDoc(O, board, null, procs[0].port);
+        live.push(browser);
+        await browser.ready();
+        // One client, its requests alternating between the two instances (round-robin).
+        let n = 0;
+        const roundRobin = (url, init) => fetch(String(url).replace(`:${procs[0].port}/`, `:${procs[n++ % 2].port}/`), init);
+        const c = new Client({ name: 'verify-rr', version: '1.0.0' });
+        await c.connect(new StreamableHTTPClientTransport(mcpUrl(procs[0]), { authProvider: provider, fetch: roundRobin }));
+        clients.push(c);
+        for (let i = 0; i < 2; i++) {
+          const res = await c.callTool({ name: 'add_stickies', arguments: { boardId: board, stickies: [`rr ${i}`] } });
+          assert(!res.isError, `round robin ${i}: ${text(res)}`);
+          await waitFor(() => res.structuredContent.created.every((id) => browser.doc.getMap('elements').has(id)), 5000, `sticky ${i} on instance 1`);
+        }
+        assert(n >= 4, `requests did not alternate: ${n}`);
+        await waitFor(() => [...browser.provider.awareness.getStates().values()].some((s) => s?.agent?.app === 'Verify Assistant'), 5000, 'the app’s presence across instances');
+      });
+
+    await check('mcp: revoking the token, or the app, refuses the very next MCP request', async () => {
+      const script = await token(O, ['boards:read'], 'Short-lived');
+      const sc = await withToken(script.secret);
+      assert(!(await sc.callTool({ name: 'list_workspaces', arguments: {} })).isError, 'works first');
+      assert((await O.req('DELETE', `/api/auth/tokens/${script.token.id}`)).status === 200, 'revoke token');
+      let gone = null;
+      await sc.callTool({ name: 'list_workspaces', arguments: {} }).catch((e) => (gone = e));
+      assert(gone, 'a revoked token still answered');
+      assert((await O.req('DELETE', `/api/auth/apps/${provider.client.client_id}`)).status === 200, 'revoke app');
+      const r = await fetch(mcpUrl(), {
+        method: 'POST',
+        headers: { authorization: `Bearer ${provider.saved.access_token}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tools/list', params: {} }),
+      });
+      assert(r.status === 401 && /resource_metadata=/.test(r.headers.get('www-authenticate') ?? ''), `revoked app: ${r.status}`);
+    });
+  } finally {
+    for (const c of clients) await c.close().catch(() => undefined);
+    for (const c of live) c.destroy();
+    for (const p of procs) await stopProc(p);
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+// `--only <group>[,<group>…]` runs some groups, e.g. to loop one while hunting a flake.
 const SUITES = {
   main: run,
   signin: signInMethodChecks,
@@ -5092,8 +5749,11 @@ const SUITES = {
   moderation: moderationChecks,
   multi: multiInstanceChecks,
   admin: enterpriseAdminChecks,
+  ai: aiChecks,
   api: publicApiChecks,
   facilitation: facilitationChecks,
+  s3: s3Checks,
+  mcp: mcpChecks,
   suite: suiteChecks,
 };
 const onlyArg = process.argv.indexOf('--only');

@@ -229,8 +229,11 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   importers by priority: images (100), PDFs (15), then media (12) takes every other real file —
   video / audio this browser plays (probed locally, with a JPEG poster frame captured from a
   `blob:` URL and uploaded as an image) become players, the rest (and media the server refuses
-  with 415) file cards. `Editor.importData(data, at)` (additive) is the same path for "upload"
-  buttons, so a picked image still becomes an image. Playback is each viewer's own, never synced:
+  with 415) file cards. A drop of several kinds is SPLIT (KAI-204): an importer returns the
+  `File[]` it took and the rest flows on with `data.alongside`, to be placed in a free spot near
+  the drop point; the group on the drop point holds its area with `Editor.reserveSpace(rects)`
+  while it uploads, so the others never land on it. `Editor.importData(data, at)` (additive) is
+  the same path for "upload" buttons, so a picked image still becomes an image. Playback is each viewer's own, never synced:
   a remote "play" would hit every browser's autoplay rules (unmuted playback needs that person's
   own gesture), and buffering makes synced positions drift; presenters bring people to the item
   with follow / "Bring everyone to me" and press play. The player mounts on the first play only
@@ -240,9 +243,9 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   people never seen online — for assignee pickers etc. (`/board/local`: just the local user).
 - `Host.lookupUsers(ids)`: current profiles (name, color, photo) for ids the board shows — people
   with access and anyone who wrote or is @mentioned in its comments, also after they left
-  (`GET /api/boards/:id/people`, members module; unrelated ids are never answered). Comments
-  render author photos and mention names through it (`features/comments/lib/people.ts`, fed by
-  presence too). `Host.inviteMember(email, role)`: the share flow from inside a feature (the
+  (`GET /api/boards/:id/people`, members module; unrelated ids are never answered). The engine
+  keeps one people directory per board over it and presence, `usePeople(ids)` (KAI-201): comments
+  (author photos, mention names) and find read the same current names through it. `Host.inviteMember(email, role)`: the share flow from inside a feature (the
   @mention picker invites a non-member as commenter); someone who already has access keeps
   their role.
 - Comment @mentions are `<@userId>` tokens in the message text (`MENTION_RE`, `mentionedUserIds`,
@@ -335,6 +338,10 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   with frame children + `copyContent`) and `Editor.insertElements(snapshot, { at? })` — the ONE
   insertion path for copied content (paste uses it): fresh ids, references remapped, content
   restored, one undo step, on a `findFreeSpot` by default. Saved templates go through it.
+- `Host.ai?` (additive, KAI-101): `{ provider, source, run(AiActionRequest) }`, present only when the
+  server said this user may use AI on this board. AI entry points (`features/ai`: the format-toolbar
+  button, the "AI ▸" context/board menu, the dialog) hide without it; never offer AI from `when`
+  alone. Not in the command palette (it lists unavailable commands greyed out).
 - `Host.activity?.list(before?)` (additive): the board's activity feed as the server recorded
   it (see "Activity"); `features/activity` shows it in a dock panel.
 - `SavedTemplateInfo.ownerName` / `canUnshare` (additive): team templates say who shared them;
@@ -688,7 +695,9 @@ modules/<name>/    auth, boards, members, uploads, realtime …
   repo.ts          the only file that touches the db; the only writer of the owned tables     [S3][S4]
   routes.ts        reserved: export default (ctx) => express.Router, mounted at /api
                    (optional `export const mountPath = '/'` to mount elsewhere — uploads uses it
-                   for GET /uploads/:file)
+                   for GET /uploads/:file). Routers are mounted in readdir order, so middleware
+                   goes on each route (r.get(path, requireUser, …)): a router-level
+                   `r.use('<prefix>', …)` on a prefix another module serves under fails      [S6]
   ws.ts            reserved: export default (ctx) => WsRoute | WsRoute[]  ({ prefix, handle(ws, req) })
   init.ts          reserved: export default (ctx) => void | Promise<void>; runs once after all
                    migrations are applied and routes mounted, before listen (e.g. auth seeds the
@@ -730,10 +739,13 @@ moderation_actions: abuse reports, the operator queue, actions and appeals; see 
 `/scim/v2`), `privacy` (data_exports: personal and workspace data exports; see "Enterprise
 identity and data"), `audit` (audit_events, audit_chains: the append-only audit log), `admin` (no
 table: the admin console of team workspaces; see "Audit log, admin console and workspace
-policies"), `activity` (board_activity: the activity feed; see "Activity" below), `apiauth` (api_tokens,
+policies"), `activity` (board_activity: the activity feed; see "Activity" below), `ai`
+(ai_workspace_settings, ai_usage: AI board actions with a provider the operator or a workspace
+configures; see "AI" below), `apiauth` (api_tokens,
 oauth_clients, oauth_grants, oauth_codes, api_workspace_settings, api_workspace_credentials:
 credentials that act for a person without their session), `api` (no table: the public REST API
-`/api/v1`; see "Public API and OAuth" below), `objects` (no table: the object registry and the one
+`/api/v1`; see "Public API and OAuth" below), `mcp` (no table: the remote MCP server `/mcp`; see
+"The MCP server" below), `objects` (no table: the object registry and the one
 permission check, `POST /objects/resolve`), `references` (object_references, reference_sources: the
 references index derived through the outbox, `GET /objects/backlinks`; both in "Suite foundation"
 below).
@@ -880,6 +892,11 @@ below).
   tombstone stays); auth `users.suspended_at` (sessions ended through `onSessionEnd`, sessions of
   suspended accounts never resolve, `startSession`/`completeSignIn` refuse with
   `account_suspended`).
+- Reviewing a reported file (KAI-205): `GET /api/moderation/uploads/:name/file` (operators only,
+  404 for everyone else) streams the file — or a removed file's kept copy — through uploads'
+  `openUploadForModeration`, always `application/octet-stream` as an attachment with nosniff and
+  a sandbox CSP, and records `moderation.upload.download` in the audit trail. The queue links
+  attachments (`.bin`, never served at /uploads) only there.
 - Moderation owns only the queue and the append-only action record; every action is also a
   platform audit event `moderation.<action>` (`platform/audit.ts`, actor = the operator's user). Each action emails its subject a statement of reasons with a signed,
   session-less appeal link (`/appeal?t=`, `mac('moderation.appeal:<actionId>')`) and adds a
@@ -1047,6 +1064,10 @@ approval lets the requester in at once.
   layers are never observed; changes in the `editors` layer are stored with audience `editors`
   (owners/editors only); removing a hidden frame's contents from the shared doc (the editors'
   clients moving them into the layer) is not reported; no element text is ever stored.
+- The board as a whole (KAI-188), kind `board`, stored at once: boards' `onBoardLifecycle`
+  (created, duplicated — on the copy, naming the original —, renamed, moved to a project, trashed,
+  restored; fired after the change commits) and realtime's `onVersionRestored` (a version restore
+  is applied by the server, so its element changes are never attributed).
 - Each person's changes on a board form a BURST in memory on that instance (net per element:
   added-and-removed is nothing, a move between the shared doc and the editors layer is nothing)
   until they pause `ACTIVITY_IDLE_SECONDS` or 10 minutes pass; it is stored as one row per
@@ -1088,6 +1109,40 @@ Agents, the API and AI read and write boards semantically, never by coordinates.
   the view and turns it into a `BoardChange`; `sinks.ts` decides where that goes (`board` →
   `changeBoard`, `preview` → returned for `Editor.insertElements`). The suggestions layer (KAI-169)
   is a new sink, not a new planner.
+  Both modules expose these through their `index.ts` (`boardOutline`, `insertStructure`): other modules
+  (AI, the public API) read and write boards through them, with the caller's own access.
+
+### AI (`modules/ai`, `features/ai`; KAI-101, KAI-102; docs/ai.md)
+
+Off unless configured (`AI_PROVIDER` and/or `AI_WORKSPACE_KEYS`; otherwise every AI route is 404 and
+no AI UI shows). One rule decides who may use AI on a board and through which provider
+(`ai/access.ts` `decideAi`): edit access; personal boards use the operator's provider when
+`AI_INSTANCE_FOR` includes `personal`; team boards need their admins to turn it on (the operator's
+provider if offered to teams, or the workspace's own, key sealed with `platform/secrets`), and the
+person must pass the workspace's "who may use AI". The app asks `GET /boards/:id/ai` when it opens a
+board and builds `Host.ai` only when it says yes.
+- **Read** through the outline (`outline/index.ts`, the caller's own view), budgeted
+  (`AI_MAX_INPUT_TOKENS`); a selection is the outline filtered to those items. Reading content is
+  gated by the workspace's downloads policy (KAI-197): boards' one `requireBoardDownload(…, 'ai')`.
+- **Prompts** are server-side templates per task (`ai/tasks.ts`). Board text (and the person's
+  instruction) go in delimited blocks as ONE JSON string with `<`/`>` escaped (`encodeUntrusted`), and
+  the system prompt says board content is data, never instructions (the KAI-170 boundary).
+- **Providers** (`ai/providers.ts`): plain HTTP, Anthropic Messages (structured output with the
+  task's JSON Schema) and OpenAI-compatible chat completions. Workspace-typed endpoints are untrusted:
+  https only, no redirects, private addresses refused at connect time unless
+  `AI_WORKSPACE_PRIVATE_ENDPOINTS`.
+- **Validate, then write**: each task turns the model's JSON into a `StructureInput` (clamped, ids
+  mapped from numbers the model was shown, Mermaid parsed); one repair turn, then 502 with nothing
+  written. The structure goes through `structure/index.ts` `insertStructure` with `target: 'preview'`
+  (the app's dialog shows it and inserts it with `Editor.insertElements` + `moveBy`, ONE transaction,
+  one undo step) or `'board'` (one attributed server change).
+- **Limits and records**: `RATE_LIMIT_AI` per user, `RATE_LIMIT_AI_WORKSPACE` per workspace, the
+  workspace's monthly token budget and `AI_INSTANCE_MONTHLY_TOKENS_PER_USER` (`ai_usage`, one upsert per
+  call, also for failed calls). Every request that reaches the model is audited
+  as `ai.request` (task, provider, model, tokens, outcome; never the prompt or board text); settings
+  changes as `ai.settings_changed`. Usage is in personal and workspace data exports.
+- `npm run verify --only ai` runs it all against `scripts/lib/mock-model.mjs` (both wire formats,
+  canned answers), never a paid API; the same mock runs standalone for the UI (`--port 4402`).
 
 ### Public API and OAuth (`modules/api`, `modules/apiauth`; KAI-104, KAI-170, KAI-197)
 
@@ -1108,11 +1163,12 @@ signing in with SSO) — a credential can't become a way around the policy; and
 `auth.onSignedOutEverywhere` (fired by `endSessionsOf` when it ends ALL sessions: password reset,
 "this wasn't me", two-step recovery, operator reset, suspension, deletion, a directory
 deprovisioning the organization's account) revokes every token and app consent of the account.
-`modules/api` is the resource server: routes only, no table, calling the same service functions as
-the app (boards, members, outline, structure, realtime) — never a parallel data path. The remote MCP
-server (KAI-107) is a second resource server next to it: it calls `registerProtectedResource('/mcp',
-…)` and `authenticate(req, '/mcp')`, and the same consent screen, scopes, audit and admin controls
-apply unchanged.
+`modules/api` is the resource server: no table; its operations (`api/service.ts`, exported from its
+index) call the same service functions as the app (boards, members, outline, structure, realtime) —
+never a parallel data path — and `routes.ts` is a thin HTTP adapter. The remote MCP server (KAI-107,
+`modules/mcp`) is a second resource server next to it: it calls `registerProtectedResource('/mcp',
+…)` and `authenticate(req, '/mcp')` and then THOSE operations, so the consent screen, scopes, rules,
+audit and admin controls are the same code.
 
 - **Credentials.** 256-bit random secrets with a recognisable prefix (`frp_` personal, `fro_` access,
   `frr_` refresh), stored as sha256 only. Every request looks the credential up (no cache), so a
@@ -1156,6 +1212,14 @@ apply unchanged.
   (400 `confirm_required`). Creates are capped per call (`API_MAX_ITEMS_PER_CALL`) and refused whole.
   Kill switches: `PUBLIC_API=false` (instance), "API & apps" in the admin console (workspace:
   off, or block one token/app there), revoke-all (person), pause/revoke (token).
+- **Agents as participants (KAI-168).** A credential acts as "<app> for <person>": `ActingApp`
+  (`@freero/shared`: the OAuth app, or the personal token by name) rides on realtime's `BoardActor`
+  through `changeBoard`, which stamps it on what it creates (`createdVia`; copies made in the app drop
+  it), reports the change for the activity feed like a socket's (`RequestOrigin`; its own burst,
+  worded "Claude for Maria", KAI-207 — every request write, the app's insert structure included) and
+  `showAgentPresence` shows the app for a few seconds as a server-published presence (its own user
+  id, cursor and selection on what it wrote; sockets can't publish `agent`). Each credential has its
+  own write budget (`RATE_LIMIT_AGENT_WRITE`), apart from the person's editing.
 - **Reads follow the downloads policy (KAI-197).** The outline, items and comments are a
   machine-readable copy of the board, so boards' `requireDownload` (the one check exports,
   duplicates and templates use) refuses them with 403 `downloads_restricted` and records
@@ -1167,6 +1231,23 @@ apply unchanged.
   seed new boards through `changeBoard` (the board is empty, so element ids are kept).
 - **GDPR**: a person's export carries `api.json` (their tokens without secrets, the apps they
   authorised and the apps they registered), from `apiauth.apiDataOf`.
+
+### The MCP server (`modules/mcp`, KAI-107; docs/mcp.md)
+
+- `POST /mcp`, Streamable HTTP with the official SDK (`@modelcontextprotocol/sdk`, pinned), **stateless**:
+  each request builds its own server for its credential (authenticated afresh, no cache) and answers
+  JSON — no session, no stream — so it runs behind round-robin balancing and a revoked token, app or
+  workspace switch refuses the very next request. `GET`/`DELETE` answer 405.
+- Tools (`tools.ts`) are outcome-shaped and call `modules/api`'s operations with the request's
+  credential; each checks its scope first (refused as a tool error naming the permission) and is one
+  `api.call` audit event (`MCP <tool>`). Board text only ever travels in the untrusted envelope
+  (`content.ts`); names, descriptions, instructions, prompts and errors are Freero's own words.
+  `propose_changes` is registered only when `structure.structureTargets()` has the suggestions sink
+  (KAI-169).
+- Scopes: `MCP_SCOPES`; read + suggest by default — `registerProtectedResource(…, { optInScopes })`
+  makes the consent screen offer `boards:write` / `comments:write` unticked (`OAuthConsentInfo.scopes[].optional`,
+  the decision's `grant`). `/mcp` is the `root` resource: the bare `/.well-known/oauth-protected-resource`
+  describes it.
 
 ### Suite foundation: the outbox, one permission check, object addresses and references (KAI-147, KAI-148, KAI-149)
 
@@ -1280,7 +1361,9 @@ module isn't the natural call and for the operator CLI: modules/audit registers 
 workspace, checked on the server by every route (`requireAdmin` → `workspaces.requireWorkspace(…,
 'admin')`). Members (two-step status, last activity, boards, role, deactivate/reactivate), usage,
 security and retention settings, sharing policies, the audit log (filters, paging, CSV/JSON export
-— streamed, rate limited, recorded before it starts, CSV cells can't become formulas).
+— streamed, rate limited, recorded before it starts, CSV cells can't become formulas). Other modules
+add their own tabs with their own routes under `/workspaces/:id/admin/…`, checked with
+`admin/index.ts` `requireAdmin` (SSO and provisioning; AI, shown only when the server offers AI).
 
 **Workspace settings** (`workspaces` columns; `WorkspaceSettings` in `@freero/shared`), each
 enforced by the module that owns the data, wired from that module's `init.ts`:
@@ -1515,7 +1598,7 @@ is gone. Tombstones are final. A commenter's message carries their own name (KAI
 before a rename elsewhere) or a name taken while connected (`auth.onProfileChanged` refreshes the
 sockets on every instance before the rename answers); an edit may keep the name the message had.
 Account names never start with "Guest ·". Readers show the author's CURRENT name from the people
-lookup (`features/comments/lib/people.ts` `authorName`), the stored one only for ids nobody answers
+lookup (`usePeople` + `@freero/shared` `commentAuthorName`, in comments and find), the stored one only for ids nobody answers
 (deleted accounts: "Deleted user") — so an editor's record, a rename or an old forged name never
 reads as someone else. Owners and editors are trusted with the whole doc. Ending a session — logout,
 "sign out" from another device, password reset/change, account deletion — fires
@@ -1544,12 +1627,19 @@ The room ends the session (`SERVER_ORIGIN`) when the facilitator has had no sock
 presence from another instance for `FREERO_FACILITATOR_GRACE_MS` (30 s). Following the facilitator
 and hidden cursors are views each client applies (`features/facilitation`); not enforceable.
 
-Session features built on these pieces (KAI-130/131/159) add no server rules of their own:
+**Vote budget** (KAI-210, `realtime/votingRules.ts`, same compensation in the same transaction,
+shared doc and every layer doc): a socket may write only its OWN ballot (`${sessionId}:${userId}`,
+matching fields) for the RUNNING session, with at most `votesPerUser` votes; a session needs
+`VOTES_PER_USER_MIN..MAX` and keeps its budget for its id; deleting is always allowed (a new vote
+wipes everyone's ballots). Readers still cap a ballot at the budget (`countedVotes`) for values
+older than the rule.
+
+Session features built on these pieces (KAI-130/131/159) add no other server rules:
 planning poker (`features/estimation`) seals each pick in the picker's private layer with a shared
 "has picked" marker and reveals one item at a time (`revealPrivate` with a per-item prefix), then
 writes the agreed value through `card.setEstimate` (cards keep one writer). Retro mode
 (`features/retro`) stores only its step and drives every other feature through commands that take
-args — `templates.insert`, `private-mode.start/reveal`, `timer.start`, `facilitation.start/set/end`,
+args — `templates.insert`, `private-mode.start/reveal`, `timer.start/stop`, `facilitation.start/set/end`,
 `voting.start/end`, `arrange.clusterByColor` — so private writing, sealed votes and the
 facilitator's limits keep their own guarantees. The laser pointer (`features/present`) is presence
 only (`ext.present.laser`, receivers fade points from their own arrival time); presenter notes are
@@ -1639,8 +1729,14 @@ only to connections that may read them:
   sync, roles, persistence across restart. No fake harness. Runs on PGlite by default; with
   `DATABASE_URL` it runs against that Postgres (fresh database per run, dropped afterwards) and
   also starts two instances at once on one empty database (migration lock); with `REDIS_URL` too,
-  it runs two instances on one database + Redis with clients on each. CI does all of it.
-  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation,suite` runs some groups (to loop one while hunting a flake).
+  it runs two instances on one database + Redis with clients on each. With `S3_ENDPOINT`,
+  `S3_BUCKET` and keys (MinIO, SeaweedFS…), the `s3` group checks the S3 backend (prefixes, kept
+  copies under `private/`, restore, retention, the S3_PUBLIC_URL redirect and stored Cache-Control);
+  all other groups stay on the local disk. CI does all of it.
+  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation,ai,api,mcp,s3,suite` runs some groups (to loop one while hunting a flake).
+  The `mcp` group drives the MCP server with the official MCP client SDK, OAuth (dynamic
+  registration, consent, PKCE) included; with DATABASE_URL + REDIS_URL one client's requests also
+  alternate between two instances.
   Checks wait on the real condition, never a fixed sleep: `waitFor(cond, ms)` polls until a
   deadline; `settled(client, observers)` is a barrier (a presence change the server handles after
   everything the client sent before, relayed in order) for proving something did NOT arrive;

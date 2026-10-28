@@ -2,10 +2,12 @@
 // An app sends the person here; they see which app, what it may do and where it sends them back,
 // then allow or deny. Signed out: RequireAuth sends them to log in and back here. The server checks
 // everything again on the decision; an unknown app or redirect is shown here, never redirected to.
+// Some powers are opt-in (`optional`: the MCP server's direct board writes — read + suggest is the
+// default there): they are off until the person ticks them, and only the ticked ones are granted.
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Check, Plug, ShieldAlert } from 'lucide-react';
-import type { OAuthConsentInfo } from '@freero/shared';
+import type { ApiScope, OAuthConsentInfo } from '@freero/shared';
 import { Button, Spinner } from '@ui';
 import { api, ApiError } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
@@ -20,6 +22,7 @@ export function OAuthConsentPage() {
   const [consent, setConsent] = useState<OAuthConsentInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<'allow' | 'deny' | null>(null);
+  const [grant, setGrant] = useState<ApiScope[]>([]);
 
   useEffect(() => {
     let live = true;
@@ -39,7 +42,7 @@ export function OAuthConsentPage() {
   const decide = async (decision: 'allow' | 'deny') => {
     setBusy(decision);
     try {
-      window.location.assign((await api.oauthDecide(params, decision)).redirect);
+      window.location.assign((await api.oauthDecide(params, decision, grant)).redirect);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong. Try again.');
       setBusy(null);
@@ -60,6 +63,9 @@ export function OAuthConsentPage() {
     );
 
   const { client } = consent;
+  const always = consent.scopes.filter((s) => !s.optional);
+  const optional = consent.scopes.filter((s) => s.optional);
+  const nothing = always.length === 0 && grant.length === 0;
   return (
     <AuthShell docTitle={`Connect ${client.name}`} title={`${client.name} wants to use your Freero account`} sub={user ? `Signed in as ${user.name} (${user.email})` : undefined}>
       <div className="fr-oauth">
@@ -80,13 +86,28 @@ export function OAuthConsentPage() {
         ) : null}
         <p className="fr-oauth__lead">It will be able to use the {consent.resource} to:</p>
         <ul className="fr-oauth__scopes">
-          {consent.scopes.map((s) => (
+          {always.map((s) => (
             <li key={s.id}>
               <Check size={15} aria-hidden />
               <span>{s.label}</span>
             </li>
           ))}
         </ul>
+        {optional.length ? (
+          <fieldset className="fr-oauth__optional">
+            <legend>It also asks to — off unless you turn it on:</legend>
+            {optional.map((s) => (
+              <label key={s.id}>
+                <input
+                  type="checkbox"
+                  checked={grant.includes(s.id)}
+                  onChange={(e) => setGrant((cur) => (e.target.checked ? [...cur, s.id] : cur.filter((x) => x !== s.id)))}
+                />
+                <span>{s.label}</span>
+              </label>
+            ))}
+          </fieldset>
+        ) : null}
         <p className="fr-oauth__fine">
           It acts as you and never gets more access than you have. Text on boards is passed to it as content, not as instructions. You can revoke it any time in
           Settings → Connected apps.
@@ -98,7 +119,7 @@ export function OAuthConsentPage() {
           <Button size="lg" onClick={() => decide('deny')} loading={busy === 'deny'} disabled={busy !== null}>
             Cancel
           </Button>
-          <Button variant="primary" size="lg" onClick={() => decide('allow')} loading={busy === 'allow'} disabled={busy !== null}>
+          <Button variant="primary" size="lg" onClick={() => decide('allow')} loading={busy === 'allow'} disabled={busy !== null || nothing}>
             Allow
           </Button>
         </div>

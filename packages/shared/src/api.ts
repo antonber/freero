@@ -706,6 +706,18 @@ export const MAX_GUEST_NAME = 40;
 export const isGuestId = (id: string): boolean => id.startsWith(GUEST_ID_PREFIX);
 /** How a guest is shown everywhere (presence, comments, activity). */
 export const guestDisplayName = (name: string): string => `Guest · ${name}`;
+/**
+ * The name a comment message is shown under (KAI-187, KAI-201), wherever it is shown (comments,
+ * find): its author's CURRENT name (`current`, from the board's people lookup) when known — so
+ * neither a rename nor a name a crafted client stored can make it read as someone else. The stored
+ * name is only a fallback: before the lookup answers, and for accounts that no longer exist (the
+ * purge rewrote it to "Deleted user"). A guest's always reads as a guest.
+ */
+export function commentAuthorName(m: { authorId: string; authorName: string }, current: string | undefined): string {
+  if (current) return current;
+  if (isGuestId(m.authorId)) return m.authorName.startsWith(guestDisplayName('')) ? m.authorName : guestDisplayName(m.authorName);
+  return m.authorName;
+}
 export interface GuestBoardInfo {
   /** Visitors without an account may join (and as what); the title only then. */
   allowed: boolean;
@@ -737,8 +749,12 @@ export interface ActivityEntry {
   boardTitle?: string;
   /** Null for a guest or a deleted account (`actorName` still names them). */
   actor: BoardPerson | null;
+  /** "Claude for Maria" when an app or token did it for them (`via`). */
   actorName: string;
-  kind: 'edit' | 'comment' | 'share';
+  /** The app or token that acted for `actor` (the public API, MCP; KAI-168), else absent. */
+  via?: string;
+  /** 'board': the board as a whole (created, renamed, moved, trashed / restored, a version restored). */
+  kind: 'edit' | 'comment' | 'share' | 'board';
   /** Worded after the actor's name: "added 12 sticky notes in frame “Ideas”". */
   text: string;
   startedAt: number;
@@ -945,6 +961,107 @@ export interface InsertStructureResponse {
   snapshot?: { elements: BoardElement[]; content: Record<string, TableCopyContent> };
   moves?: Array<{ id: string; x: number; y: number }>;
 }
+// ---- AI (KAI-101 foundation, KAI-102 board actions; docs/ai.md) ----
+// Off unless configured: with no instance provider (AI_PROVIDER) and workspace keys not allowed
+// (AI_WORKSPACE_KEYS), every route below answers 404. A team workspace's admins turn AI on for it
+// (Freero's provider, if the operator offers it to teams, or the workspace's own key); boards in
+// personal workspaces use Freero's provider only when the operator allows it (AI_INSTANCE_FOR).
+// Board text goes to the model as delimited, untrusted data; the model returns structure only
+// (validated), which modules/structure lays out and places: never coordinates, never markup.
+//
+// GET  /api/boards/:id/ai                      -> { ai: BoardAiStatus | null }   (anyone who can open the board; null when AI is off on this instance)
+// POST /api/boards/:id/ai/actions  body AiActionRequest -> AiActionResponse  (owners/editors the
+//      workspace lets use AI; rate limited per user and per workspace; 429 code 'ai_budget' when the
+//      month's token budget is used up; 403 code 'downloads_restricted' when the workspace's
+//      downloads policy keeps this user from taking board content out, for actions that read it)
+// GET   /api/workspaces/:id/admin/ai           -> WorkspaceAiAdmin        (owners/admins of a team)
+// PATCH /api/workspaces/:id/admin/ai  body WorkspaceAiPatch -> WorkspaceAiAdmin
+// POST  /api/workspaces/:id/admin/ai/test      -> { ok: true, model: string }  (one tiny call with the saved settings)
+export type AiProviderKind = 'anthropic' | 'openai';
+export const AI_PROVIDER_LABELS: Record<AiProviderKind, string> = {
+  anthropic: 'Anthropic (Claude)',
+  openai: 'OpenAI-compatible (OpenAI, Azure OpenAI, Ollama, vLLM, LM Studio …)',
+};
+/** Who in a team workspace may use AI on its boards (besides needing edit access to the board). */
+export type AiAccess = 'everyone' | 'members' | 'admins';
+export type AiTask = 'ideas' | 'cluster' | 'summarize' | 'diagram';
+export type AiDiagramKind = 'flowchart' | 'sequence' | 'mindmap';
+/** Limits on one action (requests over them are refused; model output over them is clamped). */
+export const AI_LIMITS = {
+  /** Characters of the person's own instruction. */
+  prompt: 2000,
+  /** Selected items one action may read. */
+  ids: 500,
+  /** Stickies one "ideas" result may create. */
+  ideas: 30,
+  /** Clusters one "cluster" result may make. */
+  clusters: 12,
+} as const;
+
+export interface BoardAiStatus {
+  /** This user may run AI actions on this board right now. */
+  available: boolean;
+  /** Why not, in words fit for the UI (when `available` is false). */
+  reason?: string;
+  /** Where board content goes ("Anthropic (Claude) · claude-sonnet-5-5"), for the data notice. */
+  provider?: string;
+  /** Who configured it: Freero's operator ('instance') or the workspace's admins ('workspace'). */
+  source?: 'instance' | 'workspace';
+}
+
+export interface AiActionRequest {
+  task: AiTask;
+  /** The person's instruction (required for ideas and diagram; optional focus for the others). */
+  prompt?: string;
+  /** Selected items the action reads (cluster: the stickies to sort; summarize / diagram: the source). */
+  ids?: string[];
+  /** diagram: what to draw (default flowchart). */
+  diagram?: AiDiagramKind;
+  /** 'preview' (default): laid out and placed, not written. 'board': written now as one change. */
+  target?: 'board' | 'preview';
+  near?: string;
+  at?: { x: number; y: number };
+}
+export interface AiActionResponse extends InsertStructureResponse {
+  task: AiTask;
+  /** What the model made, in words (the dialog shows it next to the picture). */
+  summary: string;
+  usage: { inputTokens: number; outputTokens: number };
+}
+
+export interface WorkspaceAiSettings {
+  enabled: boolean;
+  /** 'instance': Freero's provider (only if the operator offers it to teams); 'workspace': the workspace's own. */
+  source: 'instance' | 'workspace';
+  provider: AiProviderKind;
+  /** Own endpoint (null: the provider's public API). */
+  baseUrl: string | null;
+  /** Own model id (null: the provider's default — required for OpenAI-compatible endpoints). */
+  model: string | null;
+  /** A key is stored (sealed at rest; it is never sent back). */
+  hasKey: boolean;
+  /** Tokens (input + output) the workspace may use per calendar month (UTC); null: no budget. */
+  monthlyTokenBudget: number | null;
+  access: AiAccess;
+}
+/** PATCH body: any settings plus `apiKey` (a new key; null removes the stored one). */
+export type WorkspaceAiPatch = Partial<Omit<WorkspaceAiSettings, 'hasKey'>> & { apiKey?: string | null };
+export interface AiUsageRow {
+  userId: string;
+  name: string;
+  requests: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+export interface WorkspaceAiAdmin {
+  settings: WorkspaceAiSettings;
+  /** What the operator offers: Freero's provider for teams (with its label), own keys. */
+  instance: { available: boolean; provider: string | null };
+  workspaceKeysAllowed: boolean;
+  /** This month (UTC, 'YYYY-MM'): totals and per person. */
+  usage: { month: string; requests: number; inputTokens: number; outputTokens: number; byUser: AiUsageRow[] };
+}
+
 // ---- Reports and moderation (KAI-142) ----
 // Anyone who can open a board — signed in or (with KAI-43) a visitor on its public link — can
 // report the board, one item on it, an uploaded file shown on it, or a comment. Operators
@@ -1203,6 +1320,7 @@ export const AUDIT_ACTIONS = {
   'moderation.upload.remove': 'Freero removed a file (moderation)',
   'moderation.upload.restore': 'Freero restored a file (moderation)',
   'moderation.upload.purge': 'Freero purged a removed file (moderation)',
+  'moderation.upload.download': 'A Freero operator downloaded a file to review it (moderation)',
   'moderation.user.suspend': 'Freero suspended an account (moderation)',
   'moderation.user.restore': 'Freero lifted an account suspension (moderation)',
   // Single sign-on (modules/sso).
@@ -1230,6 +1348,9 @@ export const AUDIT_ACTIONS = {
   'account.export_downloaded': 'Downloaded a copy of their data',
   'workspace.export_requested': 'Asked for an export of the workspace',
   'workspace.export_downloaded': 'Downloaded an export of the workspace',
+  // AI (modules/ai). Never the prompt or the board content: task, model, tokens and outcome only.
+  'ai.request': 'Used AI on a board',
+  'ai.settings_changed': 'Changed AI settings',
 } as const;
 export type AuditAction = keyof typeof AUDIT_ACTIONS;
 export type AuditValue = string | number | boolean | null | string[];

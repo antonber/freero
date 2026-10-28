@@ -11,6 +11,7 @@
 // version first: restoring that one undoes the restore (and is itself listed and restorable).
 import { MAX_VERSION_NAME, type BoardVersion } from '@freero/shared';
 import { badRequest, notFound } from '../../platform/http';
+import { logError } from '../../platform/log';
 import { getUsers } from '../auth/index';
 import { requireBoardAccess } from '../boards/index';
 import * as repo from './repo';
@@ -64,12 +65,37 @@ export async function renameVersion(boardId: string, versionId: number, name: st
   return (await toVersions([info]))[0];
 }
 
+/** A version restore (applied by the server, so element changes don't attribute it): the activity feed, KAI-188. */
+export interface VersionRestoredEvent {
+  boardId: string;
+  userId: string;
+  /** The restored version's name (null: an automatic one) and when it was taken. */
+  versionName: string | null;
+  versionAt: number;
+}
+type RestoredListener = (e: VersionRestoredEvent) => Promise<void> | void;
+const restoredListeners = new Set<RestoredListener>();
+
+export function onVersionRestored(fn: RestoredListener): () => void {
+  restoredListeners.add(fn);
+  return () => restoredListeners.delete(fn);
+}
+
 /** Restores a version; returns the 'before-restore' version (restore it to undo). */
 export async function restoreVersion(boardId: string, versionId: number, userId: string): Promise<BoardVersion> {
   const state = await versionState(boardId, versionId);
+  const info = (await repo.listSnapshots(boardId)).find((s) => s.id === versionId);
   let before: repo.SnapshotInfo | null = null;
   await restoreBoardDoc(boardId, state, async (current) => {
     before = await repo.insertSnapshot(boardId, { state: current, kind: 'before-restore', name: null, createdBy: userId }, Date.now());
   });
+  const e: VersionRestoredEvent = { boardId, userId, versionName: info?.name ?? null, versionAt: info?.createdAt ?? 0 };
+  for (const fn of restoredListeners) {
+    try {
+      await fn(e);
+    } catch (err) {
+      logError('realtime: a version-restored listener failed', err);
+    }
+  }
   return (await toVersions([before!]))[0];
 }

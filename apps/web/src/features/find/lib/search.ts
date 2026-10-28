@@ -2,8 +2,8 @@
 // parts such as table cells and extra connector labels — card descriptions, frame titles,
 // comments) and how matches are found, shown and replaced. Texts other features own are
 // rewritten through the engine (Editor.setTextParts) or the owner's command (comments).
-import { mentionsAsNames, type BoardElement, type CommentMessageRecord, type CommentThreadRecord, type ElementType } from '@freero/shared';
-import { replaceInRichText, richTextToPlain, type Editor, type ElementPatch, type Point, type TextPart } from '@engine';
+import { commentAuthorName, mentionedUserIds, mentionsAsNames, type BoardElement, type CommentMessageRecord, type CommentThreadRecord, type ElementType } from '@freero/shared';
+import { replaceInRichText, richTextToPlain, type Editor, type ElementPatch, type HostUser, type Point, type TextPart } from '@engine';
 
 export const PANEL_ID = 'find.panel';
 
@@ -56,7 +56,7 @@ function threadPoint(t: CommentThreadRecord, el: BoardElement | undefined): Poin
 export function commentSources(
   entries: Array<[string, unknown]>,
   getElement: (id: string) => BoardElement | undefined,
-  /** Names for @mentions of people who haven't commented here (e.g. who is online). */
+  /** People's CURRENT names (the board's people lookup): authors and @mentions read as they are now (KAI-201). */
   nameOf: (userId: string) => string | undefined = () => undefined,
 ): Source[] {
   const threads = new Map<string, CommentThreadRecord>();
@@ -70,8 +70,8 @@ export function commentSources(
     else if (rec.kind === 'deleted') deleted.add(key.slice(2));
   }
   // Mentions read as the names people see ("@Ann"), not the stored <@id> tokens.
-  const authors = new Map(messages.map((m) => [m.authorId, m.authorName]));
-  const name = (id: string) => nameOf(id) ?? authors.get(id);
+  const authors = new Map(messages.map((m) => [m.authorId, commentAuthorName(m, nameOf(m.authorId))]));
+  const name = (id: string) => authors.get(id) ?? nameOf(id);
   const out: Source[] = [];
   for (const m of messages) {
     const t = threads.get(m.threadId);
@@ -82,7 +82,7 @@ export function commentSources(
       threadId: m.threadId,
       messageId: m.id,
       text: mentionsAsNames(m.text, name),
-      author: m.authorName,
+      author: commentAuthorName(m, nameOf(m.authorId)),
       authorId: m.authorId,
       at: threadPoint(t, t.elementId ? getElement(t.elementId) : undefined),
     });
@@ -90,8 +90,20 @@ export function commentSources(
   return out;
 }
 
-/** Every searchable text on the board, in board order, comments last. */
-export function boardSources(editor: Editor, elements: BoardElement[], comments: Array<[string, unknown]>): Source[] {
+/** User ids the comments name (authors, @mentions): whose current names find shows. */
+export function commentPeopleIds(comments: Array<[string, unknown]>): string[] {
+  const ids = new Set<string>();
+  for (const [, v] of comments) {
+    const m = v as Partial<CommentMessageRecord> | null;
+    if (m?.kind !== 'message' || typeof m.authorId !== 'string') continue;
+    ids.add(m.authorId);
+    for (const id of mentionedUserIds(String(m.text ?? ''))) ids.add(id);
+  }
+  return [...ids].sort();
+}
+
+/** Every searchable text on the board, in board order, comments last. `people`: current profiles (usePeople). */
+export function boardSources(editor: Editor, elements: BoardElement[], comments: Array<[string, unknown]>, people: Record<string, HostUser> = {}): Source[] {
   const out: Source[] = [];
   for (const el of elements) {
     // Off the board (a collapsed mind-map branch) or hidden for this viewer: not findable.
@@ -110,7 +122,7 @@ export function boardSources(editor: Editor, elements: BoardElement[], comments:
   }
   const online = new Map(editor.getPeers().map((p) => [p.user.id, p.user.name]));
   online.set(editor.user.id, editor.user.name);
-  out.push(...commentSources(comments, (id) => editor.getElement(id), (id) => online.get(id)));
+  out.push(...commentSources(comments, (id) => editor.getElement(id), (id) => people[id]?.name ?? online.get(id)));
   return out;
 }
 

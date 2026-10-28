@@ -1,7 +1,7 @@
 // The only writer of `board_activity` [S4].
 import { isForeignKeyViolation, one, query } from '../../platform/db';
 
-export type ActivityKind = 'edit' | 'comment' | 'share';
+export type ActivityKind = 'edit' | 'comment' | 'share' | 'board';
 export type Audience = 'all' | 'editors';
 
 /** What a row says happened (worded when read: service.ts). */
@@ -21,6 +21,14 @@ export interface ActivitySummary {
   userId?: string;
   role?: string;
   via?: 'invite' | 'request';
+  /** kind 'board' (KAI-188): what happened to it; renamed: from/to titles; moved: `to` project (null: none);
+   * duplicated: `from` = the original's title; version_restored: the version's name (null: automatic). */
+  action?: 'created' | 'duplicated' | 'renamed' | 'moved' | 'trashed' | 'restored' | 'version_restored';
+  from?: string | null;
+  to?: string | null;
+  version?: string | null;
+  /** Done by an app or token for the actor (the public API, MCP; KAI-168): its name. */
+  app?: string;
 }
 
 export interface ActivityRow {
