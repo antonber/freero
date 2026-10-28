@@ -5,10 +5,12 @@
 // - An address the provider doesn't vouch for never matches an existing account; it may start a
 //   new (unverified) one if nobody uses it.
 // - Signed in, anyone can connect a provider account that is not connected elsewhere.
+import type { Request } from 'express';
 import type { LinkedIdentity, OidcErrorCode, SignInProvider } from '@freero/shared';
 import { getConfig, type OidcProviderConfig } from '../../platform/config';
 import { HttpError } from '../../platform/http';
 import { newId } from '../../platform/ids';
+import { sendSecurityNotice } from './notices';
 import type { ProviderClaims } from './oidc';
 import * as repo from './repo';
 import { endSessionsOf, insertAccount, markEmailVerified, normalizeEmail, validEmail } from './service';
@@ -73,7 +75,7 @@ export async function resolveProviderLogin(provider: string, c: ProviderClaims, 
  * belongs to the person signing in now — not necessarily to whoever created the account with it: a
  * password, sessions and pending email links set up by someone else stop working.
  */
-export async function connectIdentity(userId: string, link: repo.PendingLink): Promise<void> {
+export async function connectIdentity(req: Request | null, userId: string, link: repo.PendingLink): Promise<void> {
   const user = await repo.findUserById(userId);
   if (!user) throw new HttpError(401, 'Not logged in');
   try {
@@ -90,10 +92,11 @@ export async function connectIdentity(userId: string, link: repo.PendingLink): P
     await endSessionsOf(userId);
     await markEmailVerified(userId, user.email);
   }
+  sendSecurityNotice(req, user.email, { kind: 'provider_connected', provider: providerLabel(link.provider), providerEmail: link.email });
 }
 
 /** Signed in: connect another sign-in method. Returns an error code, or null when connected. */
-export async function linkProvider(userId: string, provider: string, c: ProviderClaims): Promise<OidcErrorCode | null> {
+export async function linkProvider(req: Request | null, userId: string, provider: string, c: ProviderClaims): Promise<OidcErrorCode | null> {
   const existing = await repo.findIdentity(provider, c.issuer, c.subject);
   if (existing) return existing.userId === userId ? null : 'identity_in_use';
   const email = c.email ? normalizeEmail(c.email) : null;
@@ -106,6 +109,8 @@ export async function linkProvider(userId: string, provider: string, c: Provider
   }
   // The provider vouches for the account's own address: that verifies it too.
   if (email && c.emailVerified) await markEmailVerified(userId, email);
+  const user = await repo.findUserById(userId);
+  if (user) sendSecurityNotice(req, user.email, { kind: 'provider_connected', provider: providerLabel(provider), providerEmail: email });
   return null;
 }
 
@@ -114,8 +119,11 @@ export async function isConnectedIdentity(userId: string, provider: string, c: P
   return (await repo.findIdentity(provider, c.issuer, c.subject))?.userId === userId;
 }
 
-export async function disconnectIdentity(userId: string, id: string): Promise<void> {
-  const r = await repo.deleteIdentityIfNotLast(userId, id);
+export async function disconnectIdentity(req: Request | null, userId: string, id: string): Promise<void> {
+  const identity = (await repo.listIdentities(userId)).find((i) => i.id === id);
+  const r = identity ? await repo.deleteIdentityIfNotLast(userId, id) : 'missing';
   if (r === 'missing') throw new HttpError(404, 'That sign-in method is not connected');
   if (r === 'last') throw new HttpError(409, 'Set a password first: this is your only way to log in');
+  const user = await repo.findUserById(userId);
+  if (user) sendSecurityNotice(req, user.email, { kind: 'provider_disconnected', provider: providerLabel(identity!.provider) });
 }

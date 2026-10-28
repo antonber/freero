@@ -39,7 +39,7 @@ async function enrolled() {
   const user = await createUser({ name: 'Two', email: `two-${++n}@auth.test.freero.app`, password: 'password-123' });
   const { secret } = await beginTwoFactorSetup(user.id, 'password-123', Date.now());
   const enrolCode = await generate({ secret });
-  const recoveryCodes = await enableTwoFactor(user.id, 'no-session', enrolCode);
+  const recoveryCodes = await enableTwoFactor(null, user.id, 'no-session', enrolCode);
   return { user, secret, enrolCode, recoveryCodes };
 }
 
@@ -61,10 +61,10 @@ it('each recovery code works once, and turning two-factor off takes the password
   expect(await useSecondFactor(user.id, recoveryCodes[0].toUpperCase().replace('-', ''))).toBe('recovery');
   expect(await useSecondFactor(user.id, recoveryCodes[0])).toBeNull();
 
-  await expect(disableTwoFactor(user.id, 'wrong-password', recoveryCodes[1], Date.now())).rejects.toMatchObject({ status: 403 });
-  await expect(disableTwoFactor(user.id, 'password-123', '123456', Date.now())).rejects.toMatchObject({ status: 403 });
+  await expect(disableTwoFactor(null, user.id, 'wrong-password', recoveryCodes[1], Date.now())).rejects.toMatchObject({ status: 403 });
+  await expect(disableTwoFactor(null, user.id, 'password-123', '123456', Date.now())).rejects.toMatchObject({ status: 403 });
   expect(await repo.twoFactorEnabled(user.id)).toBe(true);
-  await disableTwoFactor(user.id, 'password-123', recoveryCodes[1], Date.now());
+  await disableTwoFactor(null, user.id, 'password-123', recoveryCodes[1], Date.now());
   expect(await repo.twoFactorEnabled(user.id)).toBe(false);
   // The remaining recovery codes went with it.
   expect(await useSecondFactor(user.id, recoveryCodes[2])).toBeNull();

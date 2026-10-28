@@ -33,3 +33,12 @@ export function locateIp(ip: string): string | null {
   if (city && country) return `${city}, ${country}`;
   return country ?? city;
 }
+
+/** "203.0.113.42" -> "203.0.113.x"; IPv6 keeps its first three groups. Never the full address. */
+export function maskIp(ip: string): string {
+  if (ip === '::1' || /^(::ffff:)?127\./.test(ip)) return 'This computer';
+  const v4 = /^(?:::ffff:)?(\d+\.\d+\.\d+)\.\d+$/i.exec(ip);
+  if (v4) return `${v4[1]}.x`;
+  if (ip.includes(':')) return `${ip.split(':').slice(0, 3).join(':')}:…`;
+  return ip ? 'unknown network' : '';
+}

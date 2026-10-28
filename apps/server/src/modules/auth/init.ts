@@ -4,7 +4,7 @@ import { scheduleExclusiveJob } from '../../platform/jobs';
 import { log } from '../../platform/log';
 import { openGeoIp } from './geoip';
 import * as repo from './repo';
-import { createUser } from './service';
+import { createUser, DEVICE_TTL_MS } from './service';
 import { resealTwoFactorSecrets } from './twoFactor';
 
 const RESEAL_LOCK_KEY = 7_202_610_284; // arbitrary, constant across releases
@@ -16,6 +16,7 @@ export default async function initAuth(ctx: ServerContext): Promise<void> {
   await repo.deleteExpiredSessions(now);
   await repo.deleteExpiredTokens(now);
   await repo.deleteExpiredAuthFlows(now);
+  await repo.deleteDevicesUnseenSince(now - DEVICE_TTL_MS);
   if (ctx.config.geoipDbPath) await openGeoIp(ctx.config.geoipDbPath);
   if (ctx.config.sessionSecretsPrevious.length) scheduleResealing(ctx);
   if (ctx.config.production) return;

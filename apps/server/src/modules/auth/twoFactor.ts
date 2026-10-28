@@ -4,14 +4,16 @@
 // sha256 (they are random, so no slow hash is needed). A code's time step is accepted once (replay
 // guard), and a recovery code once.
 import { createHash, randomInt } from 'node:crypto';
+import type { Request } from 'express';
 import { generateSecret, generateURI, verify } from 'otplib';
 import QRCode from 'qrcode';
 import type { TwoFactorSetup } from '@freero/shared';
 import { badRequest, HttpError } from '../../platform/http';
 import { logError } from '../../platform/log';
 import { seal, unseal } from '../../platform/secrets';
+import { sendSecurityNotice } from './notices';
 import * as repo from './repo';
-import { confirmPassword, endSessionsOf } from './service';
+import { confirmPassword, endSessionsOf, getAccount } from './service';
 
 export const RECOVERY_CODE_COUNT = 10;
 const ISSUER = 'Freero';
@@ -152,7 +154,7 @@ export async function beginTwoFactorSetup(userId: string, password: unknown, ses
  * returns the recovery codes (shown once). Other sessions are signed out: whoever else might be
  * signed in did not pass the new second step.
  */
-export async function enableTwoFactor(userId: string, currentSessionKey: string, input: unknown): Promise<string[]> {
+export async function enableTwoFactor(req: Request | null, userId: string, currentSessionKey: string, input: unknown): Promise<string[]> {
   const totp = await repo.findTotp(userId);
   if (!totp || totp.enabledAt !== null) throw new HttpError(409, 'Start the setup again');
   const code = codeOf(input).replace(/\s/g, '');
@@ -164,25 +166,34 @@ export async function enableTwoFactor(userId: string, currentSessionKey: string,
   const { codes, hashes } = newRecoveryCodes();
   if (!(await repo.enableTotp(userId, opened.sealed, step, hashes, Date.now()))) throw new HttpError(409, 'Start the setup again');
   await endSessionsOf(userId, currentSessionKey);
+  sendSecurityNotice(req, (await getAccount(userId)).email, { kind: 'two_factor_on' });
   return codes;
 }
 
 /** Turns two-factor off: the password (or a recent sign-in when there is none) AND a code. */
-export async function disableTwoFactor(userId: string, password: unknown, code: unknown, sessionAuthAt: number): Promise<void> {
+export async function disableTwoFactor(req: Request | null, userId: string, password: unknown, code: unknown, sessionAuthAt: number): Promise<void> {
   const requiredBy = await twoFactorRequiredBy(userId);
   if (requiredBy) throw new HttpError(409, `${requiredBy} — it can’t be turned off`);
-  await confirmPassword(userId, password, sessionAuthAt);
+  const user = await confirmPassword(userId, password, sessionAuthAt);
   if (!(await repo.twoFactorEnabled(userId))) return;
   if (!(await useSecondFactor(userId, code))) throw wrongCode();
   await repo.deleteTwoFactor(userId);
+  sendSecurityNotice(req, user.email, { kind: 'two_factor_off' });
 }
 
 /** New recovery codes (the old ones stop working): the password (or a recent sign-in) AND a code. */
-export async function regenerateRecoveryCodes(userId: string, password: unknown, code: unknown, sessionAuthAt: number): Promise<string[]> {
-  await confirmPassword(userId, password, sessionAuthAt);
+export async function regenerateRecoveryCodes(
+  req: Request | null,
+  userId: string,
+  password: unknown,
+  code: unknown,
+  sessionAuthAt: number,
+): Promise<string[]> {
+  const user = await confirmPassword(userId, password, sessionAuthAt);
   if (!(await repo.twoFactorEnabled(userId))) throw new HttpError(409, 'Two-step verification is off');
   if (!(await useSecondFactor(userId, code))) throw wrongCode();
   const { codes, hashes } = newRecoveryCodes();
   await repo.replaceRecoveryCodes(userId, hashes);
+  sendSecurityNotice(req, user.email, { kind: 'recovery_codes' });
   return codes;
 }

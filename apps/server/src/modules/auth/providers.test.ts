@@ -35,7 +35,7 @@ it('a provider-verified sign-in takes over an account whose address was never co
   const r = await resolveProviderLogin('google', claims(address, true));
   if ('error' in r) throw new Error(r.error);
   expect(r.userId).toBe(squatter.id);
-  await connectIdentity(r.userId, r.link!);
+  await connectIdentity(null, r.userId, r.link!);
 
   await expect(checkCredentials(address, 'squatter-pw')).rejects.toMatchObject({ status: 401 });
   expect(await repo.listSessions(squatter.id, Date.now())).toHaveLength(0);
@@ -49,10 +49,10 @@ it('the last way into a passwordless account can not be disconnected, even by tw
   const r = await resolveProviderLogin('google', claims(address, true));
   if ('error' in r) throw new Error(r.error);
   expect(r.created).toBe(true);
-  expect(await linkProvider(r.userId, 'microsoft', claims(email('ms'), true, 'https://ms.test'))).toBeNull();
+  expect(await linkProvider(null, r.userId, 'microsoft', claims(email('ms'), true, 'https://ms.test'))).toBeNull();
   const [a, b] = await repo.listIdentities(r.userId);
 
-  const results = await Promise.allSettled([disconnectIdentity(r.userId, a.id), disconnectIdentity(r.userId, b.id)]);
+  const results = await Promise.allSettled([disconnectIdentity(null, r.userId, a.id), disconnectIdentity(null, r.userId, b.id)]);
   expect(results.filter((x) => x.status === 'fulfilled')).toHaveLength(1);
   expect(results.find((x) => x.status === 'rejected')).toMatchObject({ reason: { status: 409 } });
   expect(await repo.listIdentities(r.userId)).toHaveLength(1);
