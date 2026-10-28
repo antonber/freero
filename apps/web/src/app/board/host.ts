@@ -3,7 +3,7 @@ import type { BoardSummary, Role } from '@freero/shared';
 import type { Host, HostUser } from '@engine';
 import type { ToastApi } from '@ui';
 import { wsBase } from '../api/client';
-import { listMembers, renameBoard, saveThumbnail, unfurl, uploadImage } from '../hostServices';
+import { listMembers, renameBoard, saveThumbnail, unfurl, uploadFile, uploadImage } from '../hostServices';
 import { serverNow, syncServerClock } from './serverClock';
 
 export interface HostDeps {
@@ -33,6 +33,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     board: { id: board.id, title: board.title, role: board.role },
     syncUrl: `${wsBase()}/ws/boards`,
     uploadImage,
+    uploadFile,
     async renameBoard(title) {
       await renameBoard(board.id, title);
       deps.onTitleChange(title);
@@ -70,6 +71,7 @@ export function createLocalHost(title: string, deps: Omit<HostDeps, 'user' | 'op
     board: { id: 'local', title, role },
     syncUrl: '',
     uploadImage: async (file) => ({ url: await readAsDataUrl(file) }),
+    uploadFile: async (file) => ({ url: await readAsDataUrl(file) }),
     async renameBoard(next) {
       deps.onTitleChange(next);
     },

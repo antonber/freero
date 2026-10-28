@@ -83,7 +83,7 @@ export const api = {
   // link previews
   unfurl: (url: string) => request<UnfurlResponse>('GET', `/api/unfurl?url=${encodeURIComponent(url)}`),
 
-  // uploads
+  // uploads (images and PDF documents; the server checks type, size and quota)
   async uploadImage(file: Blob): Promise<{ url: string }> {
     const res = await fetch('/api/uploads', {
       method: 'POST',
@@ -91,7 +91,11 @@ export const api = {
       headers: { 'Content-Type': file.type || 'application/octet-stream' },
       body: file,
     });
-    if (!res.ok) throw new ApiError(res.status, 'Upload failed');
+    if (!res.ok) {
+      // The server's message says why (too large, quota reached, wrong type).
+      const body = (await res.json().catch(() => null)) as { error?: string } | null;
+      throw new ApiError(res.status, body?.error || 'Upload failed');
+    }
     return res.json();
   },
 };

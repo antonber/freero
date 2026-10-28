@@ -7,6 +7,11 @@ export function uploadImage(file: Blob): Promise<{ url: string }> {
   return api.uploadImage(file);
 }
 
+/** Documents (PDF) go through the same upload endpoint, quota and checks as images. */
+export function uploadFile(file: Blob): Promise<{ url: string }> {
+  return api.uploadImage(file);
+}
+
 export async function renameBoard(id: string, title: string): Promise<void> {
   await api.updateBoard(id, { title });
 }
