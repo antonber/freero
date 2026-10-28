@@ -14,6 +14,7 @@ import {
 } from '../boards/index';
 import { removeBoardMemberships } from '../members/index';
 import { refreshBoardAccess } from '../realtime/index';
+import { membershipChanged } from './events';
 import * as repo from './repo';
 import type { Workspace } from './repo';
 import {
@@ -214,6 +215,7 @@ export async function changeRole(workspaceId: string, actorId: string, targetId:
     await repo.setRole(workspaceId, targetId, role);
   });
   await refreshWorkspaceBoards(workspaceId);
+  await membershipChanged({ workspaceId, userId: targetId, role });
   const m = await memberOf(workspaceId, targetId);
   if (!m) throw notFound('That person is not a member of this workspace');
   return m;
@@ -240,6 +242,7 @@ export async function removeMember(workspaceId: string, actorId: string, targetI
     await removeBoardMemberships(await boardIdsInWorkspace(workspaceId), targetId);
   });
   await refreshWorkspaceBoards(workspaceId);
+  await membershipChanged({ workspaceId, userId: targetId, role: null });
 }
 
 // ---- what a workspace grants on its boards ----

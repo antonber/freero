@@ -17,6 +17,8 @@ export {
   isManager,
 } from './service';
 export { lockProjectForBoard } from './projects';
+// Someone left a workspace or changed role there (templates unshare what they shared with it).
+export { onMembershipChanged, type MembershipChangedEvent } from './events';
 // Managing a team (its routes use these; so may provisioning later, e.g. SCIM).
 export { createTeamWorkspace, updateWorkspace, removeMember as removeWorkspaceMember } from './service';
 export { inviteToWorkspace } from './invites';

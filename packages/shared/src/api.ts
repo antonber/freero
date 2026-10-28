@@ -408,7 +408,9 @@ export const MAX_VERSION_NAME = 80;
 //                            (400 invalid / too large, 403 over MAX_TEMPLATES_PER_USER, or when
 //                            `boardId`'s workspace doesn't let you download its content)
 // PATCH  /api/templates/:id  body { workspaceId: string | null } -> { template }  (its owner; share
-//                            with a team workspace you're a member of, or make it personal again)
+//                            with a team workspace you're a member of, or make it personal again.
+//                            Owners/admins of the workspace it is shared with may unshare it: null)
+// A template stops being shared with a workspace when its owner leaves it or becomes a guest there.
 // DELETE /api/templates/:id  -> { ok: true }  (its owner only)
 export interface SavedTemplateSummary {
   id: string;
@@ -419,6 +421,10 @@ export interface SavedTemplateSummary {
   ownerId: string;
   /** The team workspace it is shared with, or null (personal). */
   workspaceId: string | null;
+  /** Who saved (and shared) it, by their current name. */
+  ownerName: string;
+  /** You may stop sharing it: its owner, or an owner/admin of the workspace it is shared with. */
+  canUnshare: boolean;
   elementCount: number;
   createdAt: number;
   updatedAt: number;

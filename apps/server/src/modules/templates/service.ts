@@ -6,10 +6,12 @@ import type { SaveTemplateRequest, SavedTemplate, SavedTemplateSummary, Template
 import { getConfig } from '../../platform/config';
 import { badRequest, forbidden, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
+import { getUsers } from '../auth/index';
 import { requireBoardDownload } from '../boards/index';
 import { deleteUpload, saveUpload } from '../uploads/index';
-import { teamWorkspaceIdsFor } from '../workspaces/index';
+import { isManager, teamWorkspaceIdsFor, workspaceRolesOf } from '../workspaces/index';
 import * as repo from './repo';
+import type { StoredSummary, StoredTemplate } from './repo';
 
 export const MAX_ELEMENTS = 5000;
 export const MAX_CONTENT_BYTES = 1536 * 1024;
@@ -60,14 +62,26 @@ function thumbnailBytes(v: unknown): { bytes: Buffer; type: string } | null {
   return { bytes, type: m[1] };
 }
 
+type ForReader = Pick<SavedTemplateSummary, 'ownerName' | 'canUnshare'>;
+
+/** Adds who shared each template and whether `userId` may unshare it. */
+async function forReader<T extends StoredSummary>(list: T[], userId: string): Promise<Array<T & ForReader>> {
+  const [owners, roles] = await Promise.all([getUsers(list.map((t) => t.ownerId)), workspaceRolesOf(userId)]);
+  return list.map((t) => ({
+    ...t,
+    ownerName: owners.get(t.ownerId)?.name ?? 'Someone',
+    canUnshare: t.workspaceId !== null && (t.ownerId === userId || isManager(roles.get(t.workspaceId) ?? null)),
+  }));
+}
+
 export async function listTemplates(userId: string): Promise<SavedTemplateSummary[]> {
-  return repo.listVisibleTo(userId, await teamWorkspaceIdsFor(userId));
+  return forReader(await repo.listVisibleTo(userId, await teamWorkspaceIdsFor(userId)), userId);
 }
 
 export async function getTemplate(id: string, userId: string): Promise<SavedTemplate> {
   const t = await repo.getVisible(id, userId, await teamWorkspaceIdsFor(userId));
   if (!t) throw notFound('Template not found');
-  return t;
+  return (await forReader([t], userId))[0];
 }
 
 /**
@@ -87,7 +101,7 @@ export async function saveTemplate(userId: string, body: Partial<SaveTemplateReq
   const workspaceId = await shareTarget(userId, body?.workspaceId);
   // Store the file first (not a db write), and drop it again if the row doesn't make it.
   const thumbnail = thumb ? await saveUpload(thumb.bytes, thumb.type) : null;
-  const template: SavedTemplate = {
+  const template: StoredTemplate = {
     id: newId(12),
     ownerId: userId,
     workspaceId,
@@ -112,7 +126,7 @@ export async function saveTemplate(userId: string, body: Partial<SaveTemplateReq
     throw e;
   }
   const { content: _content, ...summary } = template;
-  return summary;
+  return (await forReader([summary], userId))[0];
 }
 
 /** null (personal), or a team workspace the user is a full member of. */
@@ -123,11 +137,28 @@ async function shareTarget(userId: string, v: unknown): Promise<string | null> {
   return v;
 }
 
-/** The owner shares a template with one of their team workspaces, or makes it personal again (null). */
+/**
+ * The owner shares a template with one of their team workspaces, or makes it personal again
+ * (null). An owner/admin of the workspace it is shared with may also make it personal again
+ * (a stale or unsuitable team template); anyone else gets 404, as for a missing template.
+ */
 export async function shareTemplate(id: string, userId: string, workspaceId: unknown): Promise<SavedTemplateSummary> {
-  const t = await repo.setWorkspace(id, userId, await shareTarget(userId, workspaceId), Date.now());
-  if (!t) throw notFound('Template not found');
-  return t;
+  const now = Date.now();
+  const mine = await repo.setWorkspace(id, userId, await shareTarget(userId, workspaceId), now);
+  if (mine) return (await forReader([mine], userId))[0];
+  if (workspaceId === null) {
+    const sharedWith = await repo.sharedWith(id);
+    if (sharedWith && isManager((await workspaceRolesOf(userId)).get(sharedWith) ?? null)) {
+      const t = await repo.unshareFrom(id, sharedWith, now);
+      if (t) return (await forReader([t], userId))[0];
+    }
+  }
+  throw notFound('Template not found');
+}
+
+/** Someone left a workspace or became a guest there: what they shared with it is theirs alone again. */
+export async function unshareOnLeave(workspaceId: string, userId: string, role: string | null): Promise<void> {
+  if (role === null || role === 'guest') await repo.unshareAllOf(userId, workspaceId, Date.now());
 }
 
 /** Deletes one of the user's own templates (someone else's answers 404, like a missing one). */
