@@ -337,6 +337,10 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   (table cells, in `@freero/shared` `TableCopyContent`, the same format copy/paste and saved
   templates use); those elements go through `insertElements` so the owner's `pasteContent` writes
   it, everything else through `createMany` (so `normalize` measures text), in one transaction.
+  The `Kit` builds containers with their members (`kanban(…)`, `swimlane(…)` + `within(id, …)`:
+  members name the kanban / pool as `frameId`, and the container's own `arrange` settles them on
+  insert), icons from `lucide-react` components (`icon(…)`, drawing copied into the element), and
+  connector ends at a spot on an element (`{ id, at: { u, v } }`, e.g. a message on a lifeline).
 
 Elements, geometry and text (all optional on `ElementDefinition` unless noted):
 - **Reads inside `editor.transact` see its earlier writes** (`getElements()`, `getElement()`,

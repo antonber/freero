@@ -203,3 +203,43 @@ export const interviewNotes: TemplateDef = {
     return k.done();
   },
 };
+
+export const serviceBlueprint: TemplateDef = {
+  id: 'service-blueprint',
+  name: 'Service blueprint',
+  description: 'What the customer does, what they see, what happens behind the scenes and the systems that support it.',
+  categories: ['research', 'strategy'],
+  keywords: ['service blueprint', 'service design', 'frontstage', 'backstage', 'customer experience', 'cx', 'touchpoints', 'swimlane', 'line of visibility'],
+  build(newId) {
+    const k = new Kit(newId);
+    const phaseW = 300;
+    const laneH = 180;
+    const note = 130;
+    const phases = ['Discover', 'Book', 'Drop off', 'Repair', 'Pick up'];
+    const lanes: Array<{ title: string; color: string; sticky: StickyColor; cells: string[][] }> = [
+      { title: 'Customer actions', color: HEAD.sky, sticky: 'blue', cells: [['Searches for a repair shop nearby'], ['Picks a time online'], ['Brings the bike in'], ['Approves the quote'], ['Pays and rides away']] },
+      { title: 'Frontstage', color: HEAD.violet, sticky: 'violet', cells: [['Map listing with reviews'], ['Booking page', 'Text to confirm'], ['Mechanic checks the bike with them'], ['Quote by text, one-tap OK'], ['Shows what was fixed']] },
+      { title: 'Backstage', color: HEAD.amber, sticky: 'yellow', cells: [[], ['Calendar blocks a mechanic'], ['Tag the bike, log issues'], ['Order parts', 'Repair and test ride'], ['Clean the bike']] },
+      { title: 'Support systems', color: HEAD.gray, sticky: 'gray', cells: [['Maps listing'], ['Booking tool'], ['Shop app'], ['Parts supplier portal'], ['Card reader, receipts']] },
+    ];
+    const W = 48 + 150 + phases.length * phaseW + 48;
+    const poolH = 44 + 36 + lanes.length * laneH;
+    k.frame('Service blueprint', W, 160 + poolH + 48);
+    k.header('Service blueprint: bike repair', 'Read it top to bottom per step. Everything below the line of visibility is invisible to customers but shapes what they feel.', W);
+    const p = k.swimlane(48, 160, 'Bike repair visit', lanes.map((l) => ({ title: l.title, size: laneH, color: l.color })), phases.map((t) => ({ title: t, size: phaseW, color: HEAD.mint })));
+    k.within(p.id, () =>
+      lanes.forEach((l, i) =>
+        l.cells.forEach((cell, j) => {
+          const { x } = p.phase(j);
+          const { y, h } = p.lane(i);
+          cell.forEach((t, n) => k.sticky(x + 14 + n * (note + 12), y + (h - note) / 2, t, l.sticky, note));
+        }),
+      ),
+    );
+    const across = (y: number, label: string) =>
+      k.connector({ x: p.phase(0).x, y }, { x: 48 + p.w, y }, { routing: 'straight', strokeStyle: 'dashed', stroke: INK_SOFT, endCap: 'none', label });
+    across(p.lane(1).y, 'line of interaction');
+    across(p.lane(2).y, 'line of visibility');
+    return k.done();
+  },
+};
