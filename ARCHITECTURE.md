@@ -342,7 +342,15 @@ Canvas productivity (engine primitives; the product UI lives in `features/arrang
 - `BoardSettings.gridSize` (8–48, default 24) and `snapToGrid` (board menu). The drawn grid uses
   `gridSize`; with snapping on it never subdivides below it, so every drawn line is a snap line.
   Moves snap the top-left, resizes the dragged edges; Ctrl/⌘ held during a drag inverts the
-  setting for that drag; Alt still disables all snapping.
+  setting for that drag; Alt still disables all snapping. Creation tools snap too, centrally
+  (`engine/interaction/toolDispatch.ts`): while snapping applies (same Ctrl/⌘ / Alt rules) a
+  tool's `ToolPointerEvent.point` is a grid point (`target` stays what is under the real pointer)
+  and whatever it creates during that pointer event lands with its top-left on the grid (several
+  elements created at once move together), so tools never snap by themselves. Tools set
+  `ToolDefinition.snapToGrid: false` to opt out: freehand (pen, eraser), element-aimed
+  (connector, comment pins) and select (snaps its own drags). Arrow-key nudges with snapping on
+  move to the next grid line (an off-grid item lands on the grid first); Shift+arrow moves five
+  grid lines. With snapping off they move 1 px (Shift: 10 px).
 - Snapping (`engine/geometry/snap.ts`) adds equal spacing: a dragged box snaps so its gap to a
   neighbour in the same row/column equals a gap already in that row/column (or centers it between
   two neighbours), whichever is closer than edge/center alignment, and draws distance markers on

@@ -11,7 +11,16 @@ export interface Draft {
   /** Last captured screen position and pressure (for spacing + simulated pressure). */
   lastScreen: { x: number; y: number };
   realPressure: boolean;
+  /**
+   * While Shift is held: the straight stroke (from the first point, on a 15° step) that replaces
+   * the freehand points. Releasing Shift drops it and the freehand path, still recorded in
+   * `points`, comes back.
+   */
+  line: RawPoint[] | null;
 }
+
+/** What the draft draws and commits: the straight line while constrained, else the freehand path. */
+export const draftPoints = (d: Draft): RawPoint[] => d.line ?? d.points;
 
 let draft: Draft | null = null;
 let version = 0;

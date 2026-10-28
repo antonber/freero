@@ -44,6 +44,21 @@ describe('arrow-key nudges', () => {
     expect(core.editor.getElement(id)).toMatchObject({ x: 0, y: 0 });
   });
 
+  it('with snap to grid on, an arrow moves to the next grid line (Shift: five), never off the grid', () => {
+    setup();
+    core.editor.updateSettings({ snapToGrid: true, gridSize: 20 });
+    const id = box(5, 47);
+    core.editor.select([id]);
+    press('ArrowRight');
+    expect(core.editor.getElement(id)).toMatchObject({ x: 20, y: 47 });
+    press('ArrowRight');
+    press('ArrowUp');
+    expect(core.editor.getElement(id)).toMatchObject({ x: 40, y: 40 });
+    press('ArrowLeft', { shift: true });
+    press('ArrowDown', { shift: true });
+    expect(core.editor.getElement(id)).toMatchObject({ x: -60, y: 140 });
+  });
+
   it('a pointer press ends the burst, so the next drag is not swallowed into the nudges', () => {
     vi.useFakeTimers();
     setup();

@@ -4,6 +4,7 @@
 import type { Role } from '@freero/shared';
 import type { ElementDefinition, FeatureBundle, Host, Point, ToolPointerEvent } from '../api';
 import { createCore, type EngineCore } from '../runtime/core';
+import { dispatchToolPointer } from '../interaction/toolDispatch';
 
 const Noop = () => null;
 
@@ -72,14 +73,14 @@ export function makeCore(opts: { role?: Role; bundles?: FeatureBundle[] } = {}):
   return core;
 }
 
-function toolEvent(core: EngineCore, world: Point, mods: { shift?: boolean; alt?: boolean } = {}, button = 0): ToolPointerEvent {
+function toolEvent(core: EngineCore, world: Point, mods: { shift?: boolean; alt?: boolean; meta?: boolean } = {}, button = 0): ToolPointerEvent {
   const ev = {
     editor: core.editor,
     point: world,
     screen: core.editor.worldToScreen(world),
     shiftKey: !!mods.shift,
     altKey: !!mods.alt,
-    metaKey: false,
+    metaKey: !!mods.meta,
     button,
     buttons: 1, // the helpers only model presses and drags
     pressure: 0.5,
@@ -89,28 +90,31 @@ function toolEvent(core: EngineCore, world: Point, mods: { shift?: boolean; alt?
   return ev;
 }
 
-/** Drags with the select tool from → to in `steps` moves (world coords), like a real pointer. */
+/**
+ * Drags with a tool (default select) from → to in `steps` moves (world coords), like a real
+ * pointer, through the canvas' own dispatch (grid points for creation tools).
+ */
 export function drag(
   core: EngineCore,
   from: Point,
   to: Point,
-  opts: { shift?: boolean; alt?: boolean; handle?: string; steps?: number } = {},
+  opts: { shift?: boolean; alt?: boolean; meta?: boolean; handle?: string; steps?: number; tool?: string } = {},
 ) {
-  const tool = core.registry.toolsById.get('select')!.def;
+  const tool = core.registry.toolsById.get(opts.tool ?? 'select')!;
   core.interaction.handle = opts.handle ?? null;
   core.interaction.clickCount = 1;
   core.editor.beginGesture();
-  tool.onPointerDown!(toolEvent(core, from, opts));
+  dispatchToolPointer(core, tool, 'onPointerDown', toolEvent(core, from, opts));
   const steps = opts.steps ?? 5;
   for (let i = 1; i <= steps; i++) {
     const p = { x: from.x + ((to.x - from.x) * i) / steps, y: from.y + ((to.y - from.y) * i) / steps };
-    tool.onPointerMove!(toolEvent(core, p, opts));
+    dispatchToolPointer(core, tool, 'onPointerMove', toolEvent(core, p, opts));
   }
-  tool.onPointerUp!(toolEvent(core, to, opts));
+  dispatchToolPointer(core, tool, 'onPointerUp', toolEvent(core, to, opts));
   core.editor.endGesture();
   core.interaction.handle = null;
 }
 
-export function click(core: EngineCore, at: Point, opts: { shift?: boolean } = {}) {
+export function click(core: EngineCore, at: Point, opts: { shift?: boolean; alt?: boolean; tool?: string } = {}) {
   drag(core, at, at, { ...opts, steps: 0 });
 }
