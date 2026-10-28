@@ -1,7 +1,7 @@
 // AI board actions (KAI-102) on the AI foundation (KAI-101): who may, through which provider,
 // within which limits; read the board through the outline, ask the model, validate its answer,
 // and hand the structure to modules/structure (preview or one attributed change). Every request
-// that reaches the model, or is refused by a policy, is recorded in the audit log — task, model,
+// that reaches the model is recorded in the audit log — task, model,
 // tokens and outcome, never the prompt or board content.
 import {
   AI_LIMITS,
@@ -233,16 +233,10 @@ export async function runAiAction(boardId: string, userId: string, body: unknown
   const ids = req.ids?.length ? req.ids : undefined;
 
   // Reading board content takes it out of the board, to a model provider: the workspace's
-  // "downloads" policy applies (KAI-197), as for exports. Ideas from a prompt alone read nothing.
-  if (req.task === 'cluster' || req.task === 'summarize' || ids) {
-    try {
-      await requireBoardDownload(boardId, userId);
-    } catch (e) {
-      if (!(e instanceof HttpError) || e.status !== 403) throw e;
-      await auditAi(g, userId, { task: req.task, outcome: 'refused_downloads' });
-      throw new HttpError(403, 'This workspace doesn’t allow you to take its boards’ content out, so AI can’t read it.', 'downloads_restricted');
-    }
-  }
+  // "downloads" policy applies (KAI-197), as for exports and machine reads — the one shared check,
+  // 403 downloads_restricted, audited as board.download_refused (via 'ai'). Ideas from a prompt
+  // alone read nothing.
+  if (req.task === 'cluster' || req.task === 'summarize' || ids) await requireBoardDownload(boardId, userId, 'ai');
 
   let plan: TaskPlan;
   let near = req.near;

@@ -37,12 +37,13 @@ It keeps:
 - **usage counts** per workspace, person and month (requests, input and output tokens), for budgets
   and the admin console; included in personal and workspace data exports;
 - an **audit log entry for every request** (`ai.request`): who, which board, the task, provider and
-  model, tokens and the outcome (ok, refused by a policy, unusable answer, provider error). Never the
+  model, tokens and the outcome (ok, unusable answer, provider error, couldn't be placed). Never the
   prompt or any board text.
 
 The workspace's **downloads policy** applies: people the workspace doesn't allow to export or copy
-its boards can't run actions that read board content (the refusal is audited). Generating ideas from
-a prompt alone reads nothing from the board.
+its boards can't run actions that read board content (the same check as exports and API reads;
+refusals are audited as `board.download_refused`). Generating ideas from a prompt alone reads nothing
+from the board.
 
 ## Safety
 

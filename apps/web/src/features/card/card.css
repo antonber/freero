@@ -284,3 +284,17 @@
 .fr-card-details textarea {
   min-height: 140px;
 }
+
+.fr-card__estimate {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--fr-primary-soft);
+  color: var(--fr-primary);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}

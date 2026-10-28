@@ -410,7 +410,10 @@ function connectDoc(user, boardId, prepare, port = user.port ?? server.port) {
   };
   provider.messageHandlers[WS_MESSAGE_ROLE] = (_encoder, decoder) => {
     const msg = JSON.parse(decoding.readVarString(decoder));
-    if (msg.type === 'role') client.role = msg.role;
+    if (msg.type === 'role') {
+      client.role = msg.role;
+      client.limits = msg.limits ?? null; // a facilitator's limits (KAI-129)
+    }
   };
   provider.on('connection-close', (event) => event && client.closeCodes.push(event.code));
   provider.messageHandlers[WS_MESSAGE_LAYER] = () => {}; // layer updates: see withLayers()
@@ -418,6 +421,7 @@ function connectDoc(user, boardId, prepare, port = user.port ?? server.port) {
   provider.connect();
   client.ready = () => waitFor(() => provider.synced && client.role !== null, 8000, `${user.label} to sync`);
   client.destroy = () => {
+    if (!providers.has(client)) return;
     providers.delete(client);
     provider.destroy();
     doc.destroy();
@@ -2055,6 +2059,7 @@ async function multiInstanceChecks() {
   const { startMockDns } = await import('./lib/mock-dns.mjs');
   const multiDns = await startMockDns(); // domain verification (SCIM check)
   const AUTO_VERSION_MS = 1000; // automatic versions of open boards (KAI-82), instead of 30 min
+  const FACILITATOR_GRACE_MS = 1000; // a facilitator gone this long ends their session (KAI-129)
   // Accounts are purged right away, and only by instance 2 (instance 1's job would run hourly).
   const env = (i) => ({
     DATABASE_URL: url,
@@ -2066,6 +2071,7 @@ async function multiInstanceChecks() {
     // closes at once can only have come from an announcement (KAI-146).
     SESSION_RECHECK_SECONDS: i === 0 ? '1' : '3600',
     FREERO_SNAPSHOT_EVERY_MS: String(AUTO_VERSION_MS),
+    FREERO_FACILITATOR_GRACE_MS: String(FACILITATOR_GRACE_MS),
     SSO_DNS_SERVERS: multiDns.server,
     OPERATOR_EMAILS: OP.email,
   });
@@ -2121,6 +2127,27 @@ async function multiInstanceChecks() {
       const id = g.doc.clientID;
       g.destroy();
       await waitFor(() => !a.provider.awareness.getStates().has(id), 5000, 'the guest cursor to disappear on instance 1');
+    });
+
+    await check('facilitator controls across instances (KAI-129): a participant on the other instance is locked at once, and the facilitator there keeps the session past the grace period', async () => {
+      const C = new User('MC');
+      await C.signup();
+      await C.verifyEmail(path.join(dataDir, 'i0'));
+      assert((await A.req('POST', `/api/boards/${board.id}/members`, { email: C.email, role: 'editor' })).status === 201, 'invite C');
+      const c = connectDoc(C, board.id, undefined, one);
+      await c.ready();
+      const fac = (x) => x.doc.getMap('facilitation');
+      fac(b).set('session', { by: B.id, byName: B.name, startedAt: Date.now(), locked: true, allowedTypes: null, follow: false, cursorsHidden: false });
+      await waitFor(() => c.role === 'commenter' && c.limits?.locked, 5000, 'the participant on instance 1 to be locked');
+      els(c).set('lockedOut', { id: 'lockedOut', type: 'sticky' });
+      await settled(c, [a, b]);
+      assert(!els(a).has('lockedOut') && !els(b).has('lockedOut'), "a locked participant's write crossed instances");
+      // Instance 1 holds no socket of the facilitator: only their presence from instance 2 keeps it.
+      await sleep(FACILITATOR_GRACE_MS * 2);
+      assert(fac(a).get('session')?.by === B.id && c.role === 'commenter', 'the session ended while the facilitator was on the other instance');
+      fac(b).delete('session');
+      await waitFor(() => c.role === 'editor' && !c.limits, 5000, 'the participant to be released');
+      c.destroy();
     });
 
     await check("opening the board on instance 2 right after an edit on instance 1 shows it before it is even saved", async () => {
@@ -3077,21 +3104,29 @@ async function uploadSweepChecks() {
     const files = {};
     const fileStatus = async (url) => (await fetch(`http://127.0.0.1:${server.port}${url}`, { redirect: 'manual' })).status;
     const board = async (title) => (await U.req('POST', '/api/boards', { title })).json.board.id;
-    const place = async (boardId, url) => {
+    const place = async (boardId, url, el = { id: 'img', type: 'image' }) => {
       const c = connectDoc(U, boardId);
       await c.ready();
-      els(c).set('img', { id: 'img', type: 'image', x: 0, y: 0, w: 10, h: 10, src: url });
+      els(c).set(el.id, { x: 0, y: 0, w: 10, h: 10, src: url, ...el });
       await settled(c); // the server has it
       c.destroy(); // the last client leaving saves the doc right away
     };
 
-    await check('uploads sweep: images on a live, a trashed, a purged and a copied board, in a template, as an avatar, and one never used', async () => {
+    await check('uploads sweep: images on a live, a trashed, a purged and a copied board, in a template, as an avatar, and one never used; a file card and an attachment never placed', async () => {
       for (const k of ['live', 'trashed', 'purged', 'copied', 'template', 'avatar', 'unused']) {
         const r = await U.req('POST', '/api/uploads', PNG_1PX, { raw: true, headers: { 'content-type': 'image/png' } });
         assert(r.status === 201, `upload ${k} -> ${r.status}`);
         files[k] = r.json.url;
       }
-      await place(await board('Live'), files.live);
+      const live = await board('Live');
+      await place(live, files.live);
+      // File cards (KAI-128): an attachment on the live board, and one never placed.
+      for (const k of ['card', 'cardUnused']) {
+        const r = await U.req('POST', '/api/uploads?as=attachment', Buffer.from(`notes ${k}`), { raw: true, headers: { 'content-type': 'text/plain' } });
+        assert(r.status === 201, `attach ${k} -> ${r.status}`);
+        files[k] = r.json.url;
+      }
+      await place(live, files.card, { id: 'card', type: 'file', name: 'notes.txt', size: 11, mime: 'text/plain' });
       const trashed = await board('Trashed');
       await place(trashed, files.trashed);
       assert((await U.req('DELETE', `/api/boards/${trashed}`)).status === 200, 'trash');
@@ -3125,7 +3160,8 @@ async function uploadSweepChecks() {
         assert((await fileStatus(files[k])) === 200, `${k} image was deleted although it is still used`);
       await stopServer();
       const rows = await withDb(dataDir, (q) => q('SELECT name FROM uploads'));
-      const kept = ['live', 'trashed', 'copied', 'template', 'avatar'].map((k) => files[k].slice('/uploads/'.length)).sort();
+      // The file card on the live board stays; the attachment never placed went with the round.
+      const kept = ['live', 'trashed', 'copied', 'template', 'avatar', 'card'].map((k) => files[k].slice('/uploads/'.length)).sort();
       assert(isDeepStrictEqual(rows.map((r) => r.name).sort(), kept), `quota rows left: ${JSON.stringify(rows)}`);
     });
   } finally {
@@ -4611,6 +4647,440 @@ async function aiChecks() {
     if (proc) await stopProc(proc);
     server = null;
     await model.close();
+// Video, audio and any other file on a board (KAI-128), on its own server: media is stored by what
+// its bytes are and served with byte ranges (seeking); attachments are never served at /uploads/,
+// only downloaded from their board — under the workspace's downloads policy, audited, as an
+// attachment — and operator removal answers 410 on both paths.
+// ---------------------------------------------------------------------------
+async function mediaChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-media-'));
+  const outerDbUrl = db.url;
+  const Op = new User('MediaOperator');
+  const O = new User('MediaOwner');
+  const M = new User('MediaMember');
+  const S = new User('MediaStranger');
+  // Real caps, small enough to cross: 60 MB for video/audio (a 50 MB clip fits), 1 MB for other
+  // files, an 80 MB quota (one clip fits, two don't).
+  const env = { OPERATOR_EMAILS: Op.email, MAX_MEDIA_UPLOAD_MB: '60', MAX_ATTACHMENT_UPLOAD_MB: '1', UPLOAD_QUOTA_MB: '80' };
+  const base = () => `http://127.0.0.1:${server.port}`;
+  const get = (url, headers = {}) => fetch(`${base()}${url}`, { headers, redirect: 'manual' });
+  /** An ISO media (MP4) file of `bytes` bytes: an "ftyp" box, then a recognisable byte pattern. */
+  const mp4 = (bytes) => {
+    const b = Buffer.alloc(bytes);
+    for (let i = 0; i < bytes; i += 4096) b.writeUInt32BE(i, i);
+    b.writeUInt32BE(24, 0);
+    b.write('ftypisom', 4, 'latin1');
+    return b;
+  };
+  const place = async (user, boardId, el) => {
+    const c = connectDoc(user, boardId);
+    await c.ready();
+    els(c).set(el.id, { x: 0, y: 0, w: 320, h: 84, rotation: 0, z: 1, ...el });
+    await settled(c);
+    c.destroy();
+  };
+  const HTML = Buffer.from('<!doctype html><script>document.title = document.cookie</script>');
+  try {
+    if (ADMIN_URL) db.url = await createDatabase();
+    if (!(await check('media: server boots', async () => waitUp((server = await spawnServer(dataDir, env)))))) return;
+    for (const u of [Op, O, M, S]) {
+      await u.signup();
+      await u.verifyEmail(dataDir);
+    }
+    const ws = (await O.req('POST', '/api/workspaces', { name: 'Media team' })).json.workspace.id;
+    assert((await O.req('POST', `/api/workspaces/${ws}/members`, { email: M.email, role: 'member' })).status === 201, 'add member');
+    const board = (await O.req('POST', '/api/boards', { title: 'Media', workspaceId: ws })).json.board.id;
+
+    let video = null;
+    const clip = mp4(50 * 1024 * 1024);
+    await check('media: a 50 MB MP4 is stored by its bytes and seeks — byte ranges (start, middle, suffix) return exactly those bytes; past the end is 416', async () => {
+      const up = await O.req('POST', '/api/uploads', clip, { raw: true, headers: { 'content-type': 'video/mp4' } });
+      assert(up.status === 201 && /^\/uploads\/[A-Za-z0-9_-]+\.mp4$/.test(up.json?.url), `upload -> ${up.status} ${up.text.slice(0, 200)}`);
+      video = up.json.url;
+      const full = await get(video);
+      assert(full.status === 200 && full.headers.get('accept-ranges') === 'bytes' && full.headers.get('content-type') === 'video/mp4', `full -> ${full.status} ${[...full.headers]}`);
+      assert(Number(full.headers.get('content-length')) === clip.length && full.headers.get('x-content-type-options') === 'nosniff', 'full length / nosniff');
+      await full.body.cancel();
+      for (const [range, start, end] of [
+        ['bytes=0-1023', 0, 1023],
+        ['bytes=31457280-31461375', 31457280, 31461375],
+        ['bytes=-5000', clip.length - 5000, clip.length - 1],
+        [`bytes=${clip.length - 10}-`, clip.length - 10, clip.length - 1],
+      ]) {
+        const r = await get(video, { range });
+        const body = Buffer.from(await r.arrayBuffer());
+        assert(r.status === 206 && r.headers.get('content-range') === `bytes ${start}-${end}/${clip.length}`, `${range} -> ${r.status} ${r.headers.get('content-range')}`);
+        assert(body.equals(clip.subarray(start, end + 1)), `${range}: wrong bytes`);
+      }
+      const past = await get(video, { range: `bytes=${clip.length}-` });
+      assert(past.status === 416 && past.headers.get('content-range') === `bytes */${clip.length}`, `past the end -> ${past.status}`);
+    });
+
+    await check('media: refused with a clear message — a page labelled as a video (415), a video over its cap, a file over the attachment cap (413); quotas count media', async () => {
+      const fake = await O.req('POST', '/api/uploads', HTML, { raw: true, headers: { 'content-type': 'video/mp4' } });
+      assert(fake.status === 415 && /video or audio format/.test(fake.json?.error), `fake video -> ${fake.status} ${fake.text}`);
+      const big = await O.req('POST', '/api/uploads', mp4(61 * 1024 * 1024), { raw: true, headers: { 'content-type': 'video/mp4' } });
+      assert(big.status === 413 && /max 60MB for video and audio/.test(big.json?.error), `big video -> ${big.status} ${big.text}`);
+      const bigFile = await O.req('POST', '/api/uploads?as=attachment', Buffer.alloc(2 * 1024 * 1024, 7), { raw: true, headers: { 'content-type': 'application/octet-stream' } });
+      assert(bigFile.status === 413 && /max 1MB for files/.test(bigFile.json?.error), `big file -> ${bigFile.status} ${bigFile.text}`);
+      // The 50 MB clip counts toward the 80 MB quota: a second one doesn't fit.
+      const again = await O.req('POST', '/api/uploads', clip, { raw: true, headers: { 'content-type': 'video/mp4' } });
+      assert(again.status === 413 && /quota/i.test(again.json?.error), `second clip -> ${again.status} ${again.text}`);
+    });
+
+    let card = null;
+    await check('media: a file card is never served at /uploads/, downloads from its board as an attachment under its own name, and only from a board it is on', async () => {
+      const up = await O.req('POST', '/api/uploads?as=attachment', HTML, { raw: true, headers: { 'content-type': 'text/html' } });
+      assert(up.status === 201 && /\.bin$/.test(up.json?.url), `attach -> ${up.status} ${up.text}`);
+      card = up.json.url;
+      assert((await get(card)).status === 404, 'an attachment is served at /uploads/');
+      await place(O, board, { id: 'card', type: 'file', src: card, name: 'Plan “final”.html', size: HTML.length, mime: 'text/html' });
+      const r = await O.req('GET', `/api/boards/${board}/files/card`);
+      assert(r.status === 200 && r.text === HTML.toString(), `download -> ${r.status}`);
+      assert(r.headers.get('content-type') === 'application/octet-stream' && r.headers.get('x-content-type-options') === 'nosniff', `type ${r.headers.get('content-type')}`);
+      const cd = r.headers.get('content-disposition') ?? '';
+      assert(cd.startsWith('attachment;') && cd.includes(`filename*=UTF-8''Plan%20%E2%80%9Cfinal%E2%80%9D.html`), `disposition: ${cd}`);
+      const other = (await O.req('POST', '/api/boards', { title: 'Elsewhere', workspaceId: ws })).json.board.id;
+      assert((await O.req('GET', `/api/boards/${other}/files/card`)).status === 404, 'downloaded through a board it is not on');
+      assert((await O.req('GET', `/api/boards/${board}/files/nope`)).status === 404, 'unknown item');
+      assert([403, 404].includes((await S.req('GET', `/api/boards/${board}/files/card`)).status), 'a stranger downloaded it');
+    });
+
+    await check('media: downloads follow the workspace downloads policy and land in its audit log, like exports', async () => {
+      assert((await M.req('GET', `/api/boards/${board}/files/card`)).status === 200, 'member download');
+      assert((await O.req('PATCH', `/api/workspaces/${ws}`, { policies: { downloads: 'admins' } })).status === 200, 'policy');
+      const refused = await M.req('GET', `/api/boards/${board}/files/card`);
+      assert(refused.status === 403, `member downloaded under an admins-only policy -> ${refused.status}`);
+      assert((await O.req('GET', `/api/boards/${board}/files/card`)).status === 200, 'owner refused');
+      const evs = (await O.req('GET', `/api/workspaces/${ws}/audit?limit=50&action=board.file_downloaded`)).json.events;
+      const by = evs.map((e) => e.actor?.id).sort();
+      assert(evs.length === 3 && isDeepStrictEqual(by, [M.id, O.id, O.id].sort()), `audit: ${JSON.stringify(evs)}`);
+      assert(evs.every((e) => e.metadata.file === 'Plan “final”.html' && e.target.id === board), `audit detail: ${JSON.stringify(evs[0])}`);
+      assert((await O.req('PATCH', `/api/workspaces/${ws}`, { policies: { downloads: 'anyone' } })).status === 200, 'reset');
+    });
+
+    await check('media: a file an operator removed answers 410 both at /uploads/ and from its board', async () => {
+      await place(O, board, { id: 'clip', type: 'media', kind: 'video', src: video, name: 'clip.mp4', size: clip.length, duration: 0, naturalW: 0, naturalH: 0 });
+      for (const [url, target] of [
+        [video, 'clip'],
+        [card, 'card'],
+      ]) {
+        const r = await Op.req('POST', '/api/moderation/actions', { action: 'upload.remove', targetId: url, reason: 'illegal', statement: 'Checked by verify.', boardId: board });
+        assert(r.status === 200, `remove ${url}: ${r.text}`);
+        assert((await get(url)).status === 410, `${url} at /uploads/`);
+        assert((await O.req('GET', `/api/boards/${board}/files/${target}`)).status === 410, `${target} from the board`);
+      }
+    });
+  } finally {
+    closeAllDocs();
+    await stopServer();
+    await dropDatabases();
+    db.url = outerDbUrl;
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Facilitator controls (KAI-129): the server enforces a facilitator's lock and "what may be added"
+// against raw clients (no app in the way), and ends the session when the facilitator is gone.
+// ---------------------------------------------------------------------------
+async function facilitationChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-facil-'));
+  let proc = null;
+  const clients = [];
+  try {
+    const env = { FREERO_FACILITATOR_GRACE_MS: '1500' };
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    const ok = await check('facilitation server boots (a facilitator gone 1.5 s ends their session)', async () => {
+      proc = await waitUp(await spawnServer(dataDir, env));
+    });
+    if (!ok) return;
+    const port = proc.port;
+    const O = new User('FacOwner', port);
+    const F = new User('Facilitator', port);
+    const P = new User('Participant', port);
+    for (const u of [O, F, P]) {
+      await u.signup();
+      await u.verifyEmail(dataDir);
+    }
+    const board = (await O.req('POST', '/api/boards', { title: 'Workshop' })).json.board;
+    for (const u of [F, P]) assert((await O.req('POST', `/api/boards/${board.id}/members`, { email: u.email, role: 'editor' })).status === 201, `invite ${u.label}`);
+    const join = async (u) => {
+      const c = connectDoc(u, board.id, undefined, port);
+      clients.push(c);
+      await c.ready();
+      return c;
+    };
+    const o = await join(O);
+    const f = await join(F);
+    const p = await join(P);
+    const session = (patch) => ({ by: F.id, byName: F.name, startedAt: Date.now(), locked: false, allowedTypes: null, follow: false, cursorsHidden: false, ...patch });
+    const fac = (c) => c.doc.getMap('facilitation');
+    /** Every element key `c` was ever told about (to prove something never arrived, even briefly). */
+    const everSeen = (c) => {
+      const seen = new Set();
+      els(c).observe((e) => e.changes.keys.forEach((_, k) => seen.add(k)));
+      return seen;
+    };
+    const oSaw = everSeen(o);
+
+    await check('a locked board: a participant’s raw writes reach nobody and they cannot end the session, the facilitator keeps editing, requests are refused too', async () => {
+      fac(f).set('session', session({ locked: true }));
+      await waitFor(() => p.role === 'commenter' && p.limits?.locked === true, 5000, 'the participant to be told the board is locked');
+      assert(f.role === 'editor' && !f.limits, `the facilitator was limited: ${f.role} ${JSON.stringify(f.limits)}`);
+      assert(o.role === 'owner' && !o.limits, 'the board owner was limited');
+      els(p).set('forged', { id: 'forged', type: 'sticky', x: 0, y: 0, w: 10, h: 10 });
+      fac(p).delete('session');
+      els(f).set('byLead', { id: 'byLead', type: 'sticky', x: 0, y: 0, w: 10, h: 10 });
+      await settled(p, [o]);
+      await waitFor(() => els(o).has('byLead'), 5000, "the facilitator's edit to reach the owner");
+      assert(!oSaw.has('forged'), "a locked participant's element reached the owner");
+      assert(fac(o).get('session')?.locked === true, 'a locked participant ended the session');
+      const r = await P.req('POST', `/api/boards/${board.id}/insert-structure`, { structure: { kind: 'mermaid', source: 'flowchart LR\n  a --> b' } });
+      assert(r.status === 400, `insert-structure while locked -> ${r.status}`);
+    });
+
+    await check('limited to stickies: a forged shape is undone in the same update (nobody ever receives it, the participant converges), stickies go through, no sticky turns into a shape, the limits can’t be widened', async () => {
+      fac(f).set('session', session({ allowedTypes: ['sticky'] }));
+      await waitFor(() => p.role === 'editor' && p.limits?.addTypes?.join() === 'sticky', 5000, 'the participant to be told what they may add');
+      els(p).set('shape1', { id: 'shape1', type: 'shape', x: 0, y: 0, w: 10, h: 10 });
+      els(p).set('note1', { id: 'note1', type: 'sticky', x: 0, y: 0, w: 10, h: 10 });
+      await waitFor(() => els(o).has('note1') && !els(p).has('shape1'), 5000, "the sticky to arrive and the shape to be undone on the participant's side");
+      assert(!oSaw.has('shape1'), 'the owner received the forged shape');
+      els(p).set('note1', { id: 'note1', type: 'shape', x: 0, y: 0, w: 10, h: 10 });
+      fac(p).set('session', session({ allowedTypes: null }));
+      await waitFor(() => els(p).get('note1')?.type === 'sticky' && fac(p).get('session')?.allowedTypes?.join() === 'sticky', 5000, 'the participant to converge');
+      assert(els(o).get('note1')?.type === 'sticky' && fac(o).get('session')?.allowedTypes?.join() === 'sticky', 'a forbidden change reached the owner');
+      // Their doc did not diverge: later edits still apply.
+      els(p).set('note2', { id: 'note2', type: 'sticky', x: 0, y: 0, w: 10, h: 10 });
+      await waitFor(() => els(o).has('note2'), 5000, "the participant's next sticky");
+    });
+
+    await check('planning poker (KAI-131): a raw socket learns only that a participant picked a card, never which, until the facilitator reveals the item', async () => {
+      const pl = await layerClient(P, board.id, port);
+      const ol = await layerClient(O, board.id, port);
+      const fl = await layerClient(F, board.id, port);
+      clients.push(pl, ol, fl);
+      const key = `v:r1:item1:${P.id}`;
+      const me = { roundId: 'r1', itemId: 'item1', userId: P.id, userName: P.name, userColor: '#000' };
+      pl.layers.private.getMap('estimation').set(key, { ...me, value: 'XL-SECRET' });
+      pl.doc.getMap('estimation').set(key, { ...me, sealed: true });
+      await settled(pl, [ol]);
+      await waitFor(() => ol.doc.getMap('estimation').get(key)?.sealed === true, 5000, 'the sealed marker');
+      assert(!sharedText(ol).includes('XL-SECRET') && !JSON.stringify(ol.layers.private.toJSON()).includes('XL-SECRET'), "the owner's socket received the pick");
+      fl.layerOp({ type: 'reveal', collection: 'estimation', prefix: 'v:r1:item1:' });
+      await waitFor(() => ol.doc.getMap('estimation').get(key)?.value === 'XL-SECRET', 5000, 'the revealed pick');
+      for (const c of [pl, ol, fl]) c.destroy();
+    });
+
+    await check('the session ends when the facilitator has been gone for the grace period, lifting every limit', async () => {
+      fac(f).set('session', session({ locked: true }));
+      await waitFor(() => p.role === 'commenter', 5000, 'the lock');
+      f.destroy();
+      await waitFor(() => !fac(o).has('session'), 8000, 'the server to end the session');
+      await waitFor(() => p.role === 'editor' && !p.limits, 5000, 'the participant to edit again');
+      els(p).set('after', { id: 'after', type: 'shape', x: 0, y: 0, w: 10, h: 10 });
+      await waitFor(() => els(o).has('after'), 5000, "the participant's edit after the session");
+    });
+  } finally {
+    for (const c of clients) c.destroy();
+    if (proc) await stopProc(proc);
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The public API (KAI-104), agent safety (KAI-170) and the downloads policy on reads (KAI-197):
+// real tokens and a real OAuth app against a real server, with a live Yjs client on the board.
+// ---------------------------------------------------------------------------
+async function publicApiChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-api-'));
+  // With REDIS_URL every server of the run shares per-IP counters that earlier suites used up.
+  const env = { RATE_LIMIT_INVITE: '500/1h', RATE_LIMIT_PASSWORD: '500/15m' };
+  let proc = null;
+  const live = [];
+  try {
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    if (!(await check('api server boots', async () => (proc = await waitUp(await spawnServer(dataDir, env)))))) return;
+    const stamp = Date.now();
+    const verified = async (label) => {
+      const u = new User(label, proc.port);
+      u.email = `${label.toLowerCase()}-${stamp}@api.verify.freero.app`;
+      await u.signup();
+      await u.verifyEmail(dataDir);
+      return u;
+    };
+    const token = async (u, scopes, name = 'verify') => {
+      const r = await u.req('POST', '/api/auth/tokens', { name, scopes, expiresInDays: 30 });
+      assert(r.status === 201 && r.json.secret.startsWith('frp_'), `token: ${r.status} ${r.text}`);
+      return r.json;
+    };
+    /** A call with only a bearer token: no cookie, like any script or agent. */
+    const call = (secret, method, url, body, headers = {}) =>
+      new User('bearer', proc.port).req(method, `/api/v1${url}`, body, { headers: { authorization: `Bearer ${secret}`, ...headers }, cookie: false });
+
+    const O = await verified('Owner');
+    const V = await verified('Viewer');
+    const M = await verified('Member');
+    const board = (await O.req('POST', '/api/boards', { title: 'API board' })).json.board.id;
+    assert((await O.req('POST', `/api/boards/${board}/members`, { email: V.email, role: 'viewer' })).status === 201, 'invite viewer');
+    const write = await token(O, ['boards:read', 'boards:write', 'comments:write', 'members:read']);
+
+    await check('api: a token with boards:write adds a sticky that a browser already on the board sees at once, without reloading', async () => {
+      const client = connectDoc(O, board, null, proc.port);
+      live.push(client);
+      await client.ready();
+      const r = await call(write.secret, 'POST', `/boards/${board}/items`, { type: 'sticky', text: 'From a script', color: 'blue' });
+      assert(r.status === 201 && r.json.items[0].text === 'From a script' && r.json.notice, `create: ${r.status} ${r.text}`);
+      const id = r.json.items[0].id;
+      const els = client.doc.getMap('elements');
+      await waitFor(() => els.get(id)?.type === 'sticky', 5000, 'the sticky to reach the open board');
+      assert(els.get(id).createdBy === O.id, 'attributed to the token’s owner');
+    });
+
+    await check('api: a token without the scope, a revoked token, a viewer’s token and a stranger’s token can’t write (401/403), and nothing changes', async () => {
+      const readOnly = await token(O, ['boards:read'], 'read only');
+      const r1 = await call(readOnly.secret, 'POST', `/boards/${board}/items`, { type: 'sticky', text: 'x' });
+      assert(r1.status === 403 && r1.json.code === 'insufficient_scope' && /insufficient_scope/.test(r1.headers.get('www-authenticate') ?? ''), `scope: ${r1.status} ${r1.text}`);
+      const viewerToken = await token(V, ['boards:read', 'boards:write']);
+      const r2 = await call(viewerToken.secret, 'POST', `/boards/${board}/items`, { type: 'sticky', text: 'x' });
+      assert(r2.status === 403, `viewer wrote: ${r2.status} ${r2.text}`);
+      const stranger = await token(M, ['boards:read', 'boards:write']);
+      const r3 = await call(stranger.secret, 'GET', `/boards/${board}`);
+      assert(r3.status === 403 || r3.status === 404, `stranger read: ${r3.status}`);
+      assert((await O.req('DELETE', `/api/auth/tokens/${readOnly.token.id}`)).status === 200, 'revoke');
+      const r4 = await call(readOnly.secret, 'GET', `/boards/${board}`);
+      assert(r4.status === 401 && /resource_metadata=/.test(r4.headers.get('www-authenticate') ?? ''), `revoked token: ${r4.status} ${r4.headers.get('www-authenticate')}`);
+      const items = (await call(write.secret, 'GET', `/boards/${board}/items`)).json.items;
+      assert(items.length === 1, `nothing else written: ${items.length}`);
+    });
+
+    await check('api: what is in a hidden frame never reaches a viewer’s API reads (items, outline), and the editor still sees it', async () => {
+      const made = await call(write.secret, 'POST', `/boards/${board}/items`, {
+        items: [
+          { type: 'frame', title: 'Board offsite', x: 3000, y: 0, w: 800, h: 600, hidden: true },
+          { type: 'sticky', text: 'Secret plan', x: 3100, y: 100 },
+        ],
+      });
+      assert(made.status === 201 && made.json.items[1].frameId === made.json.items[0].id, `create: ${made.status} ${made.text}`);
+      const viewer = await token(V, ['boards:read']);
+      const items = await call(viewer.secret, 'GET', `/boards/${board}/items`);
+      assert(items.status === 200 && !items.text.includes('Secret plan'), `viewer items: ${items.text.slice(0, 300)}`);
+      const md = await call(viewer.secret, 'GET', `/boards/${board}/outline?format=markdown`);
+      assert(md.status === 200 && !md.text.includes('Secret plan') && /hidden/.test(md.text), `viewer outline: ${md.text}`);
+      assert((await call(write.secret, 'GET', `/boards/${board}/items?type=sticky`)).text.includes('Secret plan'), 'the editor lost it');
+      // Board text is marked untrusted where an agent reads it.
+      assert(/content, not instructions/.test(md.text), 'outline header');
+    });
+
+    await check('api: destructive calls without confirm change nothing; a 10 000-item create is refused whole', async () => {
+      assert((await call(write.secret, 'DELETE', `/boards/${board}`)).json.code === 'confirm_required', 'board delete without confirm');
+      const ids = (await call(write.secret, 'GET', `/boards/${board}/items`)).json.items.map((i) => i.id);
+      const bulk = await call(write.secret, 'POST', `/boards/${board}/items/delete`, { ids });
+      assert(bulk.status === 400 && bulk.json.code === 'confirm_required', `bulk: ${bulk.status}`);
+      const huge = await call(write.secret, 'POST', `/boards/${board}/items`, { items: Array.from({ length: 10_000 }, (_, i) => ({ type: 'sticky', text: `s${i}` })) });
+      assert(huge.status === 400, `huge create: ${huge.status}`);
+      assert((await call(write.secret, 'GET', `/boards/${board}/items`)).json.items.length === ids.length, 'something was written or deleted');
+    });
+
+    await check('api: a team’s downloads policy refuses outline and API reads with downloads_restricted (audited); writes still work', async () => {
+      const ws = (await O.req('POST', '/api/workspaces', { name: 'Restricted team' })).json.workspace.id;
+      assert((await O.req('POST', `/api/workspaces/${ws}/members`, { email: M.email, role: 'member' })).status === 201, 'add member');
+      assert((await O.req('PATCH', `/api/workspaces/${ws}`, { policies: { downloads: 'admins' } })).status === 200, 'policy');
+      const teamBoard = (await O.req('POST', '/api/boards', { title: 'Team plans', workspaceId: ws })).json.board.id;
+      const mt = await token(M, ['boards:read', 'boards:write']);
+      for (const url of [`/boards/${teamBoard}/outline`, `/boards/${teamBoard}/items`, `/boards/${teamBoard}/comments`]) {
+        const r = await call(mt.secret, 'GET', url);
+        assert(r.status === 403 && r.json.code === 'downloads_restricted', `${url}: ${r.status} ${r.text}`);
+      }
+      const app = await M.req('GET', `/api/boards/${teamBoard}/outline`);
+      assert(app.status === 403 && app.json.code === 'downloads_restricted', `app outline: ${app.status}`);
+      const ins = await call(mt.secret, 'POST', `/boards/${teamBoard}/structure`, { structure: { kind: 'stickies', items: ['one', 'two'] } });
+      assert(ins.status === 201, `structure insert: ${ins.status} ${ins.text}`);
+      assert((await call(write.secret, 'GET', `/boards/${teamBoard}/outline`)).status === 200, 'the admin can read');
+      const events = (await O.req('GET', `/api/workspaces/${ws}/audit?action=board.download_refused&limit=50`)).json.events;
+      const vias = new Set(events.filter((e) => e.actor?.id === M.id).map((e) => e.metadata.via));
+      assert(vias.has('api') && vias.has('outline'), `refusals audited: ${JSON.stringify([...vias])}`);
+      await O.req('PATCH', `/api/workspaces/${ws}`, { policies: { downloads: 'anyone' } });
+
+      // Admins: API access off refuses the next call there; deactivating the person does too.
+      assert((await O.req('PATCH', `/api/workspaces/${ws}/admin/api`, { enabled: false })).status === 200, 'api off');
+      const off = await call(mt.secret, 'GET', `/boards/${teamBoard}`);
+      assert(off.status === 403 && off.json.code === 'api_disabled', `api off: ${off.status} ${off.text}`);
+      assert((await call(mt.secret, 'GET', '/boards')).json.boards.every((b) => b.workspaceId !== ws), 'a disabled workspace’s boards were listed');
+      assert((await O.req('PATCH', `/api/workspaces/${ws}/admin/api`, { enabled: true })).status === 200, 'api on');
+      assert((await call(mt.secret, 'GET', `/boards/${teamBoard}`)).status === 200, 'back on');
+      assert((await O.req('POST', `/api/workspaces/${ws}/admin/members/${M.id}/deactivate`)).status === 200, 'deactivate');
+      assert((await call(mt.secret, 'GET', `/boards/${teamBoard}`)).status === 403, 'a deactivated member’s token still opened the team board');
+      const used = (await O.req('GET', `/api/workspaces/${ws}/admin/api`)).json.credentials;
+      assert(used.some((c) => c.id === mt.token.id && c.user.id === M.id), `admin sees the token: ${JSON.stringify(used)}`);
+      // Every call is in the log with the credential and the person it acted for.
+      const calls = (await O.req('GET', `/api/workspaces/${ws}/audit?action=api.call&limit=200`)).json.events;
+      const c = calls.find((e) => e.actor?.id === M.id && e.metadata.endpoint === 'POST /api/v1/boards/:boardId/structure');
+      assert(c && c.metadata.credentialId === mt.token.id && c.metadata.status === 201, `api.call event: ${JSON.stringify(calls.slice(0, 3))}`);
+    });
+
+    await check('api: an app registers itself, the person consents, and it calls the API with a PKCE-bound token from another origin; revoking it stops it at once', async () => {
+      const otherOrigin = { origin: 'https://agent.example', 'sec-fetch-site': 'cross-site' };
+      const meta = await new User('anon', proc.port).req('GET', '/.well-known/oauth-protected-resource/api/v1', undefined, { headers: otherOrigin });
+      assert(meta.status === 200 && meta.headers.get('access-control-allow-origin') === '*' && meta.json.authorization_servers.length === 1, `resource metadata: ${meta.text}`);
+      const reg = await new User('anon', proc.port).req('POST', '/api/oauth/register', { client_name: 'Verify agent', redirect_uris: ['http://127.0.0.1:9/cb'] }, { headers: otherOrigin });
+      assert(reg.status === 201, `register: ${reg.status} ${reg.text}`);
+      const verifier = randomBytes(32).toString('base64url');
+      const { createHash } = await import('node:crypto');
+      const q = {
+        response_type: 'code',
+        client_id: reg.json.client_id,
+        redirect_uri: 'http://127.0.0.1:50123/cb',
+        scope: 'boards:read',
+        state: 's1',
+        code_challenge: createHash('sha256').update(verifier).digest('base64url'),
+        code_challenge_method: 'S256',
+      };
+      const shown = await O.req('GET', `/api/oauth/authorize?${new URLSearchParams(q)}`);
+      assert(shown.status === 200 && shown.json.consent.client.registration === 'dynamic', `consent: ${shown.text}`);
+      // The consent itself can't be forged from another site (it rides the session cookie).
+      assert((await O.req('POST', '/api/oauth/authorize', { ...q, decision: 'allow' }, { headers: otherOrigin })).status === 403, 'cross-site consent accepted');
+      const ok = await O.req('POST', '/api/oauth/authorize', { ...q, decision: 'allow' });
+      const code = new URL(ok.json.redirect).searchParams.get('code');
+      assert(code && new URL(ok.json.redirect).searchParams.get('state') === 's1', `redirect: ${ok.text}`);
+      const form = new URLSearchParams({ grant_type: 'authorization_code', client_id: reg.json.client_id, code, code_verifier: verifier, redirect_uri: q.redirect_uri }).toString();
+      const t = await new User('anon', proc.port).req('POST', '/api/oauth/token', form, { raw: true, headers: { ...otherOrigin, 'content-type': 'application/x-www-form-urlencoded' } });
+      assert(t.status === 200 && t.json.access_token.startsWith('fro_'), `token: ${t.status} ${t.text}`);
+      const read = await call(t.json.access_token, 'GET', `/boards/${board}`, undefined, otherOrigin);
+      assert(read.status === 200 && read.headers.get('access-control-allow-origin') === '*', `app read: ${read.status}`);
+      assert((await call(t.json.access_token, 'POST', `/boards/${board}/items`, { type: 'sticky', text: 'x' })).status === 403, 'read-only app wrote');
+      assert((await O.req('DELETE', `/api/auth/apps/${reg.json.client_id}`)).status === 200, 'revoke app');
+      assert((await call(t.json.access_token, 'GET', `/boards/${board}`)).status === 401, 'revoked app still reads');
+    });
+
+    await check('api: cookie routes still refuse cross-site writes, and a session cookie never authenticates the API', async () => {
+      const cross = { origin: 'https://evil.example', 'sec-fetch-site': 'cross-site' };
+      assert((await O.req('POST', '/api/boards', { title: 'csrf' }, { headers: cross })).status === 403, 'cross-site cookie write accepted');
+      assert((await O.req('POST', '/api/auth/tokens', { name: 'csrf', scopes: ['boards:read'], expiresInDays: 1 }, { headers: cross })).status === 403, 'cross-site token mint');
+      assert((await O.req('GET', '/api/v1/me')).status === 401, 'the API accepted a session cookie');
+    });
+
+    await check('api: signing out everywhere (a password reset) ends the account’s tokens', async () => {
+      const t = await token(V, ['boards:read'], 'before reset');
+      assert((await call(t.secret, 'GET', '/me')).status === 200, 'works first');
+      const forgot = await V.req('POST', '/api/auth/password/forgot', { email: V.email });
+      assert(forgot.status === 200, `forgot: ${forgot.status} ${forgot.text}`);
+      const reset = await mailedToken(dataDir, V.email, '/reset-password');
+      assert((await V.req('POST', '/api/auth/password/reset', { token: reset, password: 'password-456' })).status === 200, 'reset');
+      assert((await call(t.secret, 'GET', '/me')).status === 401, 'a token outlived the reset');
+    });
+  } finally {
+    for (const c of live) c.destroy();
+    if (proc) await stopProc(proc);
     try {
       fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     } catch {
@@ -4626,6 +5096,7 @@ const SUITES = {
   recovery: twoFactorRecoveryChecks,
   secrets: secretRotationChecks,
   sweep: uploadSweepChecks,
+  media: mediaChecks,
   purge: accountPurgeChecks,
   notify: notificationChecks,
   teams: teamsChecks,
@@ -4637,6 +5108,8 @@ const SUITES = {
   multi: multiInstanceChecks,
   admin: enterpriseAdminChecks,
   ai: aiChecks,
+  api: publicApiChecks,
+  facilitation: facilitationChecks,
 };
 const onlyArg = process.argv.indexOf('--only');
 const only = onlyArg >= 0 ? (process.argv[onlyArg + 1] ?? '').split(',').filter(Boolean) : Object.keys(SUITES);

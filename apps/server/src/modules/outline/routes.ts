@@ -1,5 +1,6 @@
 // GET /api/boards/:id/outline — the semantic board read model (contract: @freero/shared api.ts
-// "Board outline"; format: docs/board-outline.md). Anyone who can open the board may read it;
+// "Board outline"; format: docs/board-outline.md). Anyone who can open the board AND may export it
+// under its workspace's downloads policy may read it (403 downloads_restricted otherwise, audited);
 // what it contains follows their role (no private layers of others, no hidden frames' contents
 // for viewers and commenters).
 import { Router, type Request } from 'express';

@@ -62,8 +62,12 @@ export {
 } from './oidc';
 export { completeSignIn, safeReturnPath } from './signIn';
 export { resolveDirectoryLogin, provisionDirectoryAccount, DIRECTORY_PROVIDER_PREFIX } from './providers';
-export { onSignInRestriction, type SignInAttempt, type SignInRestriction } from './restrictions';
+export { onSignInRestriction, signInRestriction, type SignInAttempt, type SignInRestriction } from './restrictions';
 export { endSessionsOf } from './service';
+// Credentials that outlive sessions (modules/apiauth: API tokens, authorised apps): how the session
+// that made one signed in (sign-in restrictions apply to the credential too), and the moment an
+// account is signed out everywhere (they end with it).
+export { currentSessionMethod, onSignedOutEverywhere } from './service';
 export { exportAccountData, type AccountDataExport } from './dataExport';
 
 /** Ids of the accounts whose address is at `domain` (exactly). */

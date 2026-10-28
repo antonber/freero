@@ -1,11 +1,12 @@
 // Builds the ZIP of a data export from what each owning module exports (this module reads no
 // other module's tables). Layout — personal:
-//   README.txt, account.json, memberships.json, activity.json, comments.json, notifications.json,
+//   README.txt, account.json, api.json, memberships.json, activity.json, comments.json, notifications.json,
 //   templates/<name>-<id>.json, uploads/index.json + uploads/<file>,
 //   boards/<title>-<id>/board.json (record + content + the layers you may read), board.yjs, files/<file>
 // workspace: README.txt, workspace.json, templates/…, boards/… (the same board layout).
 import { strToU8, zipSync, type Zippable } from 'fflate';
 import { aiUsageExportOf, aiWorkspaceExportOf } from '../ai/index';
+import { apiDataOf } from '../apiauth/index';
 import { exportAccountData, getUser } from '../auth/index';
 import { boardActivityOf, boardIdsInWorkspace, boardIdsOpenedBy, boardIdsOwnedByUser, boardRecords, type BoardRecord } from '../boards/index';
 import { membershipsOf } from '../members/index';
@@ -72,6 +73,7 @@ async function addBoard(a: Archive, b: BoardRecord, appOrigin: string, layers: {
 const README_USER = (name: string, at: string) => `Freero data export for ${name}, made ${at}.
 
 account.json        your profile, sign-in methods and signed-in devices (no passwords or secrets)
+api.json            your API tokens, the apps you authorised and the apps you registered (no secrets)
 memberships.json    workspaces, projects and boards you are a member of; what workspaces' directories (SSO/SCIM) hold about you
 activity.json       boards you starred and when you last opened boards; your AI usage (counts only)
 comments.json       every comment you wrote, by board, with the thread and item it is attached to
@@ -102,6 +104,7 @@ export async function buildUserArchive(userId: string, appOrigin: string): Promi
   if (!account) throw new Error('the account is gone');
   a.add('README.txt', strToU8(README_USER(account.profile.name, new Date().toISOString())));
   a.addJson('account.json', account);
+  a.addJson('api.json', await apiDataOf(userId));
 
   const [workspaces, boardRoles, sso, scim] = await Promise.all([exportMembershipsOf(userId), membershipsOf(userId), ssoRolesOf(userId), scimRecordsOf(userId)]);
   const invited = await boardRecords([...boardRoles.keys()]);

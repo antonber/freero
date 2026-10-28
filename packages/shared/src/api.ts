@@ -856,7 +856,24 @@ export const EMBED_FRAME_ORIGINS = ['https://www.youtube-nocookie.com', 'https:/
 // its effective role. Encoding (lib0): writeVarUint(WS_MESSAGE_ROLE) then
 // writeVarString(JSON.stringify({ type: 'role', role })). Clients register it via
 // y-websocket's `provider.messageHandlers[WS_MESSAGE_ROLE]`.
+// The role is the EFFECTIVE one: while a facilitator limits the board (FacilitationSession), the
+// server re-sends it to everyone else with `limits` (a locked board makes them commenters), and
+// again without when the limits end.
 export const WS_MESSAGE_ROLE = 100;
+export interface RoleMessage {
+  type: 'role';
+  role: Role;
+  limits?: SessionLimits;
+}
+/** What a facilitator limits for this connection (enforced by the server, mirrored by the client). */
+export interface SessionLimits {
+  /** Who set them, for the explanation shown to the person limited. */
+  byName: string;
+  /** Board locked: the role was lowered to commenter for the session. */
+  locked: boolean;
+  /** Element types this connection may add (null: any). */
+  addTypes: string[] | null;
+}
 
 // ---- Board layers (content the server withholds) ----
 // Besides the shared doc, a board has server-held LAYER docs that only some connections may
@@ -895,7 +912,8 @@ export interface LayerOp {
 // Query: format=json|markdown (default json), budget=<tokens>, limit=<items per page>,
 // cursor=<meta.nextCursor>, scope=<item id>, authors=1, comments=0. ETag = outline `version`;
 // If-None-Match answers 304 while nothing the caller can see changed. Markdown is served as
-// text/markdown. Format reference: docs/board-outline.md.
+// text/markdown. Format reference: docs/board-outline.md. A machine-readable copy of the board, so
+// the workspace's "downloads" policy applies: 403 { code: 'downloads_restricted' } (KAI-197).
 export interface BoardOutlineResponse {
   outline: BoardOutline;
 }
@@ -1252,6 +1270,8 @@ export const AUDIT_ACTIONS = {
   'board.link_sharing_changed': 'Changed link sharing',
   'board.duplicated': 'Duplicated a board',
   'board.exported': 'Exported a board',
+  'board.download_refused': 'Was refused an export, copy or read of a board (downloads policy)',
+  'board.file_downloaded': 'Downloaded a file from a board',
   'board.member_invited': 'Shared a board',
   'board.member_role_changed': 'Changed someone’s board access',
   'board.member_removed': 'Removed someone from a board',
@@ -1262,6 +1282,19 @@ export const AUDIT_ACTIONS = {
   'version.restored': 'Restored a board version',
   'template.saved': 'Saved a board as a template',
   'audit.exported': 'Exported the audit log',
+  // The public API (KAI-104) and agent safety (KAI-170): credentials, apps and every API call.
+  'api.token_created': 'Created an API token',
+  'api.token_paused': 'Paused an API token',
+  'api.token_resumed': 'Resumed an API token',
+  'api.token_revoked': 'Revoked an API token',
+  'api.app_registered': 'Registered an OAuth app',
+  'api.app_deleted': 'Deleted an OAuth app',
+  'api.app_authorized': 'Authorised an app to act for them',
+  'api.app_revoked': 'Revoked an app’s access',
+  'api.access_changed': 'Turned API access for the workspace on or off',
+  'api.credential_blocked': 'Blocked an API token or app in the workspace',
+  'api.credential_unblocked': 'Unblocked an API token or app in the workspace',
+  'api.call': 'API call',
   // Freero's operators acting on reports (modules/moderation).
   'moderation.board.disable_link': 'Freero turned off a board’s link (moderation)',
   'moderation.board.restore_link': 'Freero turned a board’s link back on (moderation)',

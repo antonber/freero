@@ -1,14 +1,15 @@
 // /admin/:workspaceId — the admin console of a team workspace (owners and admins): overview and
 // usage, members, security, single sign-on, provisioning, AI (when the server offers it), data
-// (retention and export) and the audit log. Every action is checked again by the server; this page only hides what the caller's
-// role can't do.
+// (retention and export), API & apps and the audit log. Every action is checked again by the
+// server; this page only hides what the caller's role can't do.
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ChartColumn, Hourglass, KeyRound, Lock, ScrollText, Sparkles, UserCog, Users } from 'lucide-react';
+import { ArrowLeft, ChartColumn, Hourglass, KeyRound, Lock, Plug, ScrollText, Sparkles, UserCog, Users } from 'lucide-react';
 import type { WorkspaceSummary } from '@freero/shared';
 import { Logo, Spinner } from '@ui';
 import { api } from '../../api/client';
 import { AdminAi, aiOffered } from './AdminAi';
+import { AdminApi } from './AdminApi';
 import { AdminAudit } from './AdminAudit';
 import { AdminDataExport, AdminProvisioning, AdminSso } from './AdminIdentity';
 import { AdminMembers } from './AdminMembers';
@@ -24,6 +25,7 @@ const TABS = [
   { id: 'provisioning', label: 'Provisioning', icon: UserCog },
   { id: 'ai', label: 'AI', icon: Sparkles },
   { id: 'retention', label: 'Data', icon: Hourglass },
+  { id: 'api', label: 'API & apps', icon: Plug },
   { id: 'audit', label: 'Audit log', icon: ScrollText },
 ] as const;
 type Tab = (typeof TABS)[number]['id'];
@@ -114,6 +116,7 @@ export function AdminConsolePage() {
                 <AdminDataExport workspace={workspace} />
               </>
             ) : null}
+            {tab === 'api' ? <AdminApi workspace={workspace} /> : null}
             {tab === 'audit' ? <AdminAudit workspace={workspace} /> : null}
           </main>
         </div>

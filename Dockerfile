@@ -49,6 +49,8 @@ COPY --from=web /app/apps/web/dist apps/web/dist
 # The board outline (modules/outline) reads how each element type reads from the features'
 # pure outline.ts files (and the pure helpers they import), discovered at startup.
 COPY apps/web/src/features apps/web/src/features
+# The public API serves its OpenAPI reference (modules/api) from the checked-in file.
+COPY docs/api docs/api
 # /data holds only local fallbacks (PGlite without DATABASE_URL, uploads without S3_*).
 # npm/yarn/corepack are not needed at runtime: remove them from the runtime filesystem (attack surface).
 RUN mkdir -p /data && chown node:node /data && find apps -name '*.test.ts' -delete \

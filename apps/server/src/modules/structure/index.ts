@@ -1,3 +1,3 @@
-// Public API of modules/structure [S2]: inserting structure into a board (KAI-167) through the
-// same validation, role check and sinks as POST /boards/:id/insert-structure (AI actions use it).
-export { insertStructure } from './service';
+// Public API of modules/structure [S2]: laying a structure out and placing it on a board, used by
+// its own route, the public API (modules/api) and in-app AI (modules/ai); later MCP.
+export { insertStructure, newElementId } from './service';

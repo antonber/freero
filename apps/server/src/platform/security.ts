@@ -53,7 +53,7 @@ export function requestOriginKind(req: IncomingMessage, config: Config, secure: 
   return ownOrigins(req, config, secure).has(candidate.toLowerCase()) ? 'same' : 'cross';
 }
 
-const crossSiteEndpoints: Array<{ path: RegExp; reason: string }> = [];
+const crossSiteEndpoints: Array<{ path: RegExp; methods: ReadonlySet<string>; reason: string }> = [];
 
 /**
  * Lets browsers POST to `path` from another site. Only for endpoints whose request carries its own
@@ -64,13 +64,39 @@ const crossSiteEndpoints: Array<{ path: RegExp; reason: string }> = [];
  */
 export function allowCrossSitePost(path: RegExp, reason: string): void {
   if (reason.trim().length < 10) throw new Error('allowCrossSitePost needs a reason');
-  crossSiteEndpoints.push({ path, reason });
+  crossSiteEndpoints.push({ path, methods: new Set(['POST']), reason });
+}
+
+/**
+ * A cross-site API at `path` (any method): endpoints that authenticate ONLY with a credential the
+ * caller sends explicitly — an `Authorization: Bearer` token, an OAuth client secret or PKCE
+ * verifier — and never read the session cookie, so a request from another site can't ride
+ * anyone's session and the Origin check would only refuse legitimate browser-based integrations.
+ * Returns their CORS middleware: any origin, never `Access-Control-Allow-Credentials` (browsers
+ * then send no cookies at all), preflights answered here. Cookie routes stay checked: a path is
+ * exempt only if it matches `path`.
+ */
+export function allowCrossSiteApi(path: RegExp, reason: string, cors: { methods: string; headers: string; expose?: string }): RequestHandler {
+  if (reason.trim().length < 10) throw new Error('allowCrossSiteApi needs a reason');
+  crossSiteEndpoints.push({ path, methods: new Set(['POST', 'PUT', 'PATCH', 'DELETE']), reason });
+  return (req, res, next) => {
+    if (!path.test(req.originalUrl.split('?')[0])) return next();
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    if (cors.expose) res.setHeader('Access-Control-Expose-Headers', cors.expose);
+    // Cross-origin readers fetch with CORS, which this policy would otherwise block for them.
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    if (req.method !== 'OPTIONS') return next();
+    res.setHeader('Access-Control-Allow-Methods', cors.methods);
+    res.setHeader('Access-Control-Allow-Headers', cors.headers);
+    res.setHeader('Access-Control-Max-Age', '600');
+    res.status(204).end();
+  };
 }
 
 export function csrfGuard(config: Config): RequestHandler {
   return (req, res, next) => {
     if (SAFE_METHODS.has(req.method)) return next();
-    if (req.method === 'POST' && crossSiteEndpoints.some((e) => e.path.test(req.path))) return next();
+    if (crossSiteEndpoints.some((e) => e.methods.has(req.method) && e.path.test(req.path))) return next();
     if (requestOriginKind(req, config, req.secure) === 'cross') {
       res.status(403).json({ error: 'Cross-site request refused' });
       return;
@@ -91,6 +117,9 @@ export function contentSecurityPolicy(config: Config, host: string | undefined, 
     "font-src 'self' data: https://fonts.gstatic.com",
     // Board images may link any https image (pasted URLs); exports render through data:/blob:.
     `img-src 'self' data: blob: https: ${s3}`.trim(),
+    // Video and audio items play our own uploads (redirected to the bucket when it serves them);
+    // blob: is the file being dropped, read locally for its poster frame before it is uploaded.
+    `media-src 'self' blob: ${s3}`.trim(),
     // https: lets "paste an image URL" fetch and re-host the image, and exports inline web fonts.
     `connect-src 'self' ${ws} https:`.replace(/\s+/g, ' '),
     "worker-src 'self' blob:",

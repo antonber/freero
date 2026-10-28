@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FrameElement } from '@freero/shared';
+import { EMPTY_TRAIL, FADE_MS, mergeTrail } from './lib/laser';
 import { activePresenter, currentPosition, slides, type Peer } from './lib/model';
 
 const frame = (id: string, index: number): FrameElement => ({
@@ -51,5 +52,17 @@ describe('who is presenting', () => {
 
   it('shows the most recent presenter when two people present at once', () => {
     expect(activePresenter([peer(1, 'ann', 10), peer(2, 'bob', 20), peer(3, 'cy', null)], 'me')?.user.id).toBe('bob');
+  });
+});
+
+describe('laser pointer trails', () => {
+  it('a faded trail does not come back when presence re-sends the same points with a cursor move', () => {
+    const ext = { pts: [[0, 0, 1], [5, 5, 2]] as Array<[number, number, number]> };
+    let trail = mergeTrail(EMPTY_TRAIL, ext, 0);
+    expect(trail.pts).toHaveLength(2);
+    trail = mergeTrail(trail, ext, FADE_MS + 1); // same points again, after they faded
+    expect(trail.pts).toHaveLength(0);
+    trail = mergeTrail(trail, { pts: [...ext.pts, [9, 9, 3]] }, FADE_MS + 2);
+    expect(trail.pts.map((p) => p.n)).toEqual([3]);
   });
 });

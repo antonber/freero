@@ -209,8 +209,8 @@ it('the downloads policy keeps AI from reading a board for people who may not ta
 
   await expect(runAiAction(boardId, member.id, { task: 'summarize' })).rejects.toMatchObject({ status: 403, code: 'downloads_restricted' });
   expect(seen).toHaveLength(0);
-  const [event] = await listAuditEvents({ workspaceId: ws, actions: ['ai.request'] }, 10);
-  expect(event).toMatchObject({ actorId: member.id, metadata: { task: 'summarize', outcome: 'refused_downloads' } });
+  const [event] = await listAuditEvents({ workspaceId: ws, actions: ['board.download_refused'] }, 10);
+  expect(event).toMatchObject({ actorId: member.id, metadata: { via: 'ai' } });
 });
 
 it('every request is audited with task, model and tokens, never the prompt or the board text', async () => {

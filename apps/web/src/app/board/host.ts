@@ -19,9 +19,12 @@ import {
   reportExport,
   shareTemplateWith,
   unfurl,
+  uploadAttachment,
   uploadFile,
   uploadImage,
   versionHistory,
+  downloadBoardFile,
+  saveAs,
 } from '../hostServices';
 import { serverNow, syncServerClock } from './serverClock';
 
@@ -63,6 +66,8 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     syncUrl: `${wsBase()}/ws/boards`,
     uploadImage,
     uploadFile,
+    uploadAttachment,
+    downloadFile: downloadBoardFile(board.id),
     async renameBoard(title) {
       await renameBoard(board.id, title);
       deps.onTitleChange(title);
@@ -118,6 +123,9 @@ export function createGuestHost(
     },
     uploadImage: needsAccount('Uploading images'),
     uploadFile: needsAccount('Uploading files'),
+    uploadAttachment: needsAccount('Uploading files'),
+    // Visitors may download what the board's workspace lets them (the server decides).
+    downloadFile: downloadBoardFile(board.id),
     renameBoard: needsAccount('Renaming boards'),
     saveThumbnail: async () => undefined,
     openShareDialog: signUp,
@@ -199,6 +207,9 @@ export function createLocalHost(title: string, deps: Omit<HostDeps, 'user' | 'op
     syncUrl: '',
     uploadImage: async (file) => ({ url: await readAsDataUrl(file) }),
     uploadFile: async (file) => ({ url: await readAsDataUrl(file) }),
+    uploadAttachment: async (file) => ({ url: await readAsDataUrl(file) }),
+    // No server, no policy: the item's own data: URL.
+    downloadFile: async ({ src, name }) => saveAs(src, name),
     async renameBoard(next) {
       deps.onTitleChange(next);
     },
