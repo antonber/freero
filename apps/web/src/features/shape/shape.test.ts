@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { ShapeKind } from '@freero/shared';
 import { anchorOnOutline, detailPolylines, distanceToOutline, dragRect, hitShape, outlinePolygons } from './lib/geometry';
 import { LIBRARY_KINDS } from './lib/library';
 
@@ -23,6 +24,13 @@ describe('shape outlines', () => {
       expect(Math.max(...xs), kind).toBeGreaterThan(W - 1.5);
       expect(Math.max(...ys), kind).toBeGreaterThan(H - 1.5);
     }
+  });
+});
+
+describe('boards from a newer version', () => {
+  it('a shape kind this version does not know draws as its box, not nothing', () => {
+    const polys = outlinePolygons('someFutureKind' as ShapeKind, W, H);
+    expect(polys).toEqual([[{ x: 0, y: 0 }, { x: W, y: 0 }, { x: W, y: H }, { x: 0, y: H }]]);
   });
 });
 

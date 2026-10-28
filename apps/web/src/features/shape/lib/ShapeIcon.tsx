@@ -5,7 +5,7 @@ const WIDE = new Set<ShapeKind>([
   'arrowRight', 'arrowLeft', 'parallelogram', 'chevron', 'hexagon', 'terminator', 'manualInput', 'manualOperation',
   'display', 'delay', 'storedData', 'loopLimit', 'punchedTape', 'netSwitch', 'netLaptop',
 ]);
-const TALL = new Set<ShapeKind>(['umlActor', 'netPhone', 'collate']);
+const TALL = new Set<ShapeKind>(['umlActor', 'netPhone', 'collate', 'umlLifeline']);
 
 /** Small line icon of a shape kind drawn from the same geometry as the element (Freero's own). */
 export function ShapeIcon({ kind, size = 20, strokeWidth = 1.6 }: { kind: ShapeKind; size?: number | string; strokeWidth?: number | string }) {
@@ -16,7 +16,7 @@ export function ShapeIcon({ kind, size = 20, strokeWidth = 1.6 }: { kind: ShapeK
   // Wide shapes read better in a slightly wider box.
   const wide = WIDE.has(kind);
   const tall = TALL.has(kind);
-  const w = tall ? box * 0.6 : box;
+  const w = kind === 'umlActivation' ? box * 0.3 : tall ? box * 0.6 : box;
   const h = wide ? box * 0.66 : box;
   const p = insetPaths(kind, w, h, sw);
   return (
@@ -24,6 +24,7 @@ export function ShapeIcon({ kind, size = 20, strokeWidth = 1.6 }: { kind: ShapeK
       <g transform={`translate(${pad + (box - w) / 2} ${pad + (box - h) / 2})`} stroke="currentColor" strokeWidth={sw} strokeLinejoin="miter" strokeLinecap="round">
         <path d={p.outline} />
         {p.details && <path d={p.details} />}
+        {p.dashed && <path d={p.dashed} strokeDasharray={`${sw * 1.6} ${sw * 1.4}`} strokeLinecap="butt" />}
       </g>
     </svg>
   );

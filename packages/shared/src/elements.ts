@@ -146,6 +146,10 @@ export type ShapeKind =
   | 'umlNote'
   | 'umlComponent'
   | 'umlNode'
+  // UML sequence diagrams
+  | 'umlLifeline'
+  | 'umlActivation'
+  | 'umlFragment'
   // BPMN
   | 'bpmnIntermediate'
   | 'bpmnEnd'
@@ -153,6 +157,11 @@ export type ShapeKind =
   | 'bpmnGatewayPlus'
   | 'bpmnGatewayO'
   | 'bpmnSubprocess'
+  | 'bpmnMessageEvent'
+  | 'bpmnTimerEvent'
+  | 'bpmnErrorEvent'
+  // Entity-relationship (crow's foot)
+  | 'erdEntity'
   // Network
   | 'netServer'
   | 'netFirewall'
@@ -187,7 +196,26 @@ export interface TextElement extends BaseElement {
   autoWidth: boolean;
 }
 
-export type CapStyle = 'none' | 'arrow' | 'triangle' | 'circle' | 'diamond' | 'bar';
+/**
+ * Line ends. Hollow variants (`…Open`) are UML's (generalisation, aggregation). The crow's-foot
+ * cardinalities are ER notation: `one` = exactly one (two bars), `many`, `zeroOrOne`,
+ * `oneOrMany`, `zeroOrMany`. Clients that don't know a cap draw a plain end.
+ */
+export type CapStyle =
+  | 'none'
+  | 'arrow'
+  | 'triangle'
+  | 'circle'
+  | 'diamond'
+  | 'bar'
+  | 'triangleOpen'
+  | 'diamondOpen'
+  | 'circleOpen'
+  | 'one'
+  | 'many'
+  | 'zeroOrOne'
+  | 'oneOrMany'
+  | 'zeroOrMany';
 export type ConnectorRouting = 'straight' | 'elbow' | 'curved';
 export type Anchor = 'auto' | 'top' | 'right' | 'bottom' | 'left';
 

@@ -16,7 +16,7 @@ export interface LibraryShape {
   h: number;
 }
 
-export type ShapeSetId = 'basic' | 'flowchart' | 'uml' | 'bpmn' | 'network';
+export type ShapeSetId = 'basic' | 'flowchart' | 'uml' | 'sequence' | 'bpmn' | 'erd' | 'network';
 
 export interface ShapeSet {
   id: ShapeSetId;
@@ -87,22 +87,49 @@ export const SHAPE_SETS: ShapeSet[] = [
     ],
   },
   {
+    id: 'sequence',
+    label: 'Sequence',
+    description: 'Lifelines, activations, fragments',
+    defaultOn: false,
+    shapes: [
+      S('umlLifeline', 'Lifeline', 140, 360, 'participant object uml'),
+      S('umlActivation', 'Activation', 20, 120, 'execution occurrence focus bar'),
+      S('umlActor', 'Actor', 70, 130, 'user person participant'),
+      S('umlFragment', 'Combined fragment', 360, 220, 'alt loop opt par frame'),
+      S('umlNote', 'Note', 160, 100, 'comment'),
+    ],
+  },
+  {
     id: 'bpmn',
     label: 'BPMN',
-    description: 'Tasks, events, gateways (lite)',
+    description: 'Tasks, events, gateways, data',
     defaultOn: false,
     shapes: [
       S('roundRect', 'Task', 160, 90, 'activity'),
       S('bpmnSubprocess', 'Subprocess', 180, 110, 'collapsed'),
       S('ellipse', 'Start event', 56, 56, 'begin'),
       S('bpmnIntermediate', 'Intermediate event', 56, 56, 'catch throw'),
+      S('bpmnMessageEvent', 'Message event', 56, 56, 'envelope mail catch throw'),
+      S('bpmnTimerEvent', 'Timer event', 56, 56, 'clock wait schedule'),
       S('bpmnEnd', 'End event', 56, 56, 'finish stop'),
+      S('bpmnErrorEvent', 'Error event', 56, 56, 'exception fault'),
       S('diamond', 'Gateway', 72, 72, 'decision'),
       S('bpmnGatewayX', 'Exclusive gateway', 72, 72, 'xor'),
       S('bpmnGatewayPlus', 'Parallel gateway', 72, 72, 'and fork join'),
       S('bpmnGatewayO', 'Inclusive gateway', 72, 72, 'or'),
       S('umlNote', 'Data object', 64, 84, 'document file'),
       S('cylinder', 'Data store', 84, 84, 'database'),
+    ],
+  },
+  {
+    id: 'erd',
+    label: 'ERD',
+    description: "Entities for crow's-foot diagrams",
+    defaultOn: false,
+    shapes: [
+      S('erdEntity', 'Entity', 200, 150, 'table attributes keys er relation'),
+      S('rect', 'Entity (name only)', 160, 60, 'table'),
+      S('umlNote', 'Note', 160, 100, 'comment'),
     ],
   },
   {

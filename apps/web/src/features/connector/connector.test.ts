@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BoardElement, ConnectorElement, ConnectorEndpoint } from '@freero/shared';
 import connectorDef from './element';
-import { computeRoute, resolveEnds, tAlong, type End } from './lib/geometry';
+import { capShape, capTrim, computeRoute, resolveEnds, tAlong, type End } from './lib/geometry';
 import { moveLabel, parsePart, partAt, writeLabel } from './lib/labels';
 import { refreshCache } from './lib/model';
 import { createTestBoard, type ElementDefinition, type FeatureBundle } from '@engine';
@@ -131,6 +131,36 @@ describe('routing', () => {
     let length = 0;
     for (let i = 0; i < poly.length - 1; i++) length += Math.abs(poly[i + 1].x - poly[i].x) + Math.abs(poly[i + 1].y - poly[i].y);
     expect(length).toBe(24 + 30);
+  });
+});
+
+describe("crow's-foot ends", () => {
+  it('open toward the item at both ends of a line, whichever way it runs', () => {
+    // A → B left to right: the "many" foot at each end spreads at that item's edge and narrows
+    // back along the line, never the other way round.
+    const a = box('a', 0, 0);
+    const b = box('b', 400, 0);
+    const c = conn({ elementId: 'a', anchor: 'right', x: 0, y: 0 }, { elementId: 'b', anchor: 'left', x: 0, y: 0 }, { startCap: 'many', endCap: 'many' });
+    const { start, end } = resolveEnds(c, lookupOf(a, b));
+    const route = computeRoute('straight', start, end);
+    const atStart = capShape('many', route.poly[0], route.startTangent, 2);
+    const atEnd = capShape('many', route.poly[route.poly.length - 1], route.endTangent, 2);
+    for (const [parts, edgeX, inward] of [[atStart, 100, 1], [atEnd, 400, -1]] as const) {
+      const foot = parts[0];
+      expect(foot.kind).toBe('polyline');
+      const [p1, apex, p2] = (foot as { points: Array<{ x: number; y: number }> }).points;
+      expect(p1.x).toBeCloseTo(edgeX);
+      expect(p2.x).toBeCloseTo(edgeX);
+      expect(Math.abs(p1.y - p2.y)).toBeGreaterThan(8); // wide at the item
+      expect(Math.sign(apex.x - edgeX)).toBe(inward); // narrows toward the middle of the line
+      expect(apex.y).toBeCloseTo(50);
+    }
+  });
+
+  it('a line end from a newer version this one does not know draws as a plain end', () => {
+    const unknown = 'someFutureEnd' as never;
+    expect(capShape(unknown, { x: 0, y: 0 }, { x: 1, y: 0 }, 2)).toEqual([]);
+    expect(capTrim(unknown, 2)).toBe(0);
   });
 });
 

@@ -34,19 +34,33 @@ function dashArray(style: ConnectorElement['strokeStyle'], w: number): string | 
   return undefined;
 }
 
-function Cap({ shape, color, width }: { shape: CapShape | null; color: string; width: number }) {
-  if (!shape) return null;
+/** A line end's pieces; `paper` (the board background) fills hollow marks so the line never shows through. */
+function Cap({ parts, color, paper, width }: { parts: CapShape[]; color: string; paper: string; width: number }) {
   const pts = (p: { x: number; y: number }[]) => p.map((q) => `${q.x},${q.y}`).join(' ');
-  switch (shape.kind) {
-    case 'polyline':
-      return <polyline points={pts(shape.points)} fill="none" stroke={color} strokeWidth={width} strokeLinecap="round" strokeLinejoin="round" />;
-    case 'polygon':
-      return <polygon points={pts(shape.points)} fill={color} stroke={color} strokeWidth={width * 0.5} strokeLinejoin="round" />;
-    case 'circle':
-      return <circle cx={shape.c.x} cy={shape.c.y} r={shape.r} fill={color} />;
-    case 'line':
-      return <line x1={shape.a.x} y1={shape.a.y} x2={shape.b.x} y2={shape.b.y} stroke={color} strokeWidth={width} strokeLinecap="round" />;
-  }
+  return (
+    <>
+      {parts.map((shape, i) => {
+        switch (shape.kind) {
+          case 'polyline':
+            return <polyline key={i} points={pts(shape.points)} fill="none" stroke={color} strokeWidth={width} strokeLinecap="round" strokeLinejoin="round" />;
+          case 'polygon':
+            return shape.fill === 'ink' ? (
+              <polygon key={i} points={pts(shape.points)} fill={color} stroke={color} strokeWidth={width * 0.5} strokeLinejoin="round" />
+            ) : (
+              <polygon key={i} points={pts(shape.points)} fill={paper} stroke={color} strokeWidth={width} strokeLinejoin="round" />
+            );
+          case 'circle':
+            return shape.fill === 'ink' ? (
+              <circle key={i} cx={shape.c.x} cy={shape.c.y} r={shape.r} fill={color} />
+            ) : (
+              <circle key={i} cx={shape.c.x} cy={shape.c.y} r={shape.r} fill={paper} stroke={color} strokeWidth={width} />
+            );
+          case 'line':
+            return <line key={i} x1={shape.a.x} y1={shape.a.y} x2={shape.b.x} y2={shape.b.y} stroke={color} strokeWidth={width} strokeLinecap="round" />;
+        }
+      })}
+    </>
+  );
 }
 
 const ConnectorView = memo(function ConnectorView({ element: c, selected, editing }: ElementRenderProps<ConnectorElement>) {
@@ -89,8 +103,8 @@ const ConnectorView = memo(function ConnectorView({ element: c, selected, editin
             strokeLinecap="round"
             strokeLinejoin="round"
           />
-          <Cap shape={capShape(c.startCap, route.poly[0], route.startTangent, sw)} color={color} width={sw} />
-          <Cap shape={capShape(c.endCap, route.poly[route.poly.length - 1], route.endTangent, sw)} color={color} width={sw} />
+          <Cap parts={capShape(c.startCap, route.poly[0], route.startTangent, sw)} color={color} paper={background} width={sw} />
+          <Cap parts={capShape(c.endCap, route.poly[route.poly.length - 1], route.endTangent, sw)} color={color} paper={background} width={sw} />
         </g>
       </svg>
       {/* Main label: the element's textField (Enter / double-click on it), or a new one being typed. */}

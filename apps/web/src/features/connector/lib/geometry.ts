@@ -416,35 +416,70 @@ export function capTrim(cap: CapStyle, strokeWidth: number): number {
       return s * 0.4;
     case 'diamond':
       return s * 0.6;
+    // Hollow ends: the line stops at their back, so it never shows through them.
+    case 'triangleOpen':
+      return s;
+    case 'diamondOpen':
+      return s * 1.2;
+    case 'circleOpen':
+      return s * 0.8;
+    // Crow's-foot ends (and unknown ones): the line runs to the item; it is the middle prong.
     default:
       return 0;
   }
 }
 
+/**
+ * One drawn piece of a line end. `fill: 'paper'` is filled with the board background (hollow
+ * marks that hide the line under them); `'ink'` with the line colour.
+ */
 export type CapShape =
   | { kind: 'polyline'; points: Point[] }
-  | { kind: 'polygon'; points: Point[] }
-  | { kind: 'circle'; c: Point; r: number }
+  | { kind: 'polygon'; points: Point[]; fill: 'ink' | 'paper' }
+  | { kind: 'circle'; c: Point; r: number; fill: 'ink' | 'paper' }
   | { kind: 'line'; a: Point; b: Point };
 
-/** Geometry of a cap whose tip is `tip`, pointing along `dir` (the direction of travel). */
-export function capShape(cap: CapStyle, tip: Point, dir: Point, strokeWidth: number): CapShape | null {
+/**
+ * The pieces of a line end whose tip is `tip`, pointing along `dir` (the direction of travel).
+ * Ends this client doesn't know (from a newer one) draw nothing: a plain line end.
+ */
+export function capShape(cap: CapStyle, tip: Point, dir: Point, strokeWidth: number): CapShape[] {
   const s = capSize(strokeWidth);
   const n = perp(dir);
   const back = (k: number, w: number) => add(sub(tip, mul(dir, s * k)), mul(n, s * w));
+  const bar = (k: number): CapShape => ({ kind: 'line', a: back(k, 0.6), b: back(k, -0.6) });
+  // Crow's foot: prongs fanning out from a point on the line to the item's edge.
+  const foot: CapShape = { kind: 'polyline', points: [back(0, 0.6), back(1.1, 0), back(0, -0.6)] };
+  const ring = (k: number): CapShape => ({ kind: 'circle', c: back(k, 0), r: s * 0.32, fill: 'paper' });
   switch (cap) {
     case 'arrow':
-      return { kind: 'polyline', points: [back(1, 0.55), tip, back(1, -0.55)] };
+      return [{ kind: 'polyline', points: [back(1, 0.55), tip, back(1, -0.55)] }];
     case 'triangle':
-      return { kind: 'polygon', points: [tip, back(1, 0.5), back(1, -0.5)] };
+      return [{ kind: 'polygon', points: [tip, back(1, 0.5), back(1, -0.5)], fill: 'ink' }];
     case 'circle':
-      return { kind: 'circle', c: sub(tip, mul(dir, s * 0.4)), r: s * 0.4 };
+      return [{ kind: 'circle', c: sub(tip, mul(dir, s * 0.4)), r: s * 0.4, fill: 'ink' }];
     case 'diamond':
-      return { kind: 'polygon', points: [tip, back(0.6, 0.38), back(1.2, 0), back(0.6, -0.38)] };
+      return [{ kind: 'polygon', points: [tip, back(0.6, 0.38), back(1.2, 0), back(0.6, -0.38)], fill: 'ink' }];
     case 'bar':
-      return { kind: 'line', a: back(0, 0.55), b: back(0, -0.55) };
+      return [{ kind: 'line', a: back(0, 0.55), b: back(0, -0.55) }];
+    case 'triangleOpen':
+      return [{ kind: 'polygon', points: [tip, back(1, 0.55), back(1, -0.55)], fill: 'paper' }];
+    case 'diamondOpen':
+      return [{ kind: 'polygon', points: [tip, back(0.6, 0.38), back(1.2, 0), back(0.6, -0.38)], fill: 'paper' }];
+    case 'circleOpen':
+      return [{ kind: 'circle', c: sub(tip, mul(dir, s * 0.4)), r: s * 0.4, fill: 'paper' }];
+    case 'one':
+      return [bar(0.5), bar(0.9)];
+    case 'many':
+      return [foot];
+    case 'zeroOrOne':
+      return [bar(0.5), ring(1.25)];
+    case 'oneOrMany':
+      return [foot, bar(1.45)];
+    case 'zeroOrMany':
+      return [foot, ring(1.55)];
     default:
-      return null;
+      return [];
   }
 }
 

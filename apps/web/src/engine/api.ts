@@ -310,6 +310,12 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
   /** Point on the outline for an anchor; default = bbox edge midpoints. */
   anchorPoint?(element: ElementOf<T>, anchor: 'top' | 'right' | 'bottom' | 'left'): Point;
   /**
+   * [additive] Attach anywhere: where a line aimed from the element's center toward `toward`
+   * (element-local, unrotated) meets its drawn outline, in element-local coordinates. A connector
+   * end dropped on the edge of an ellipse sits on the curve. Default: the bounding box edge.
+   */
+  outlinePoint?(element: ElementOf<T>, toward: Point): Point;
+  /**
    * Plain-text extraction for copy as text, previews (Layers, voting) and accessibility. `editor`
    * is the caller's, on the element's board: read content kept outside the element (a table's
    * cells) through it, never through a module-level handle that outlives the board.
