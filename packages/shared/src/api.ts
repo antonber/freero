@@ -2,6 +2,7 @@
 // All REST endpoints live under /api, send/receive JSON, and authenticate via
 // an HttpOnly cookie named `freero_session`. Errors: { error: string } with a
 // 4xx/5xx status. 401 = not logged in, 403 = no access, 404 = not found.
+import type { BoardElement } from './elements';
 
 export type Role = 'owner' | 'editor' | 'commenter' | 'viewer';
 export type LinkAccess = 'none' | 'viewer' | 'commenter' | 'editor';
@@ -81,6 +82,45 @@ export interface SessionResponse { user: User | null }
 // PUT    /api/boards/:id/thumbnail body { dataUrl: string } -> { ok: true } (editor+)
 export interface CreateBoardRequest { title?: string; description?: string }
 export interface UpdateBoardRequest { title?: string; description?: string; linkAccess?: LinkAccess }
+
+// ---- Saved templates (a board or a selection saved for reuse) ----
+// Personal for now: you see and insert only your own. Once workspaces land (KAI-37) the same
+// routes also return templates shared with your workspace.
+// GET    /api/templates      -> { templates: SavedTemplateSummary[] }  (visible to you, newest first)
+// GET    /api/templates/:id  -> { template: SavedTemplate }           (404 unless visible to you)
+// POST   /api/templates      body SaveTemplateRequest -> { template: SavedTemplateSummary }
+//                            (400 invalid / too large, 403 over MAX_TEMPLATES_PER_USER)
+// DELETE /api/templates/:id  -> { ok: true }  (its owner only)
+export interface SavedTemplateSummary {
+  id: string;
+  name: string;
+  description: string;
+  /** /uploads URL of the preview image, or null. */
+  thumbnail: string | null;
+  ownerId: string;
+  elementCount: number;
+  createdAt: number;
+  updatedAt: number;
+}
+/**
+ * Board content as the web engine exports it (elements with their ids as on the source board,
+ * plus per-element content kept outside the elements map). Opaque to the server; inserting it
+ * gives every element a fresh id (the copy/paste path).
+ */
+export interface TemplateContent {
+  elements: BoardElement[];
+  content?: Record<string, unknown>;
+}
+export interface SavedTemplate extends SavedTemplateSummary {
+  content: TemplateContent;
+}
+export interface SaveTemplateRequest {
+  name: string;
+  description?: string;
+  /** PNG/JPEG/WebP data URL (max 512KB), or omitted. */
+  thumbnail?: string;
+  content: TemplateContent;
+}
 
 // ---- Members / sharing ----
 // GET    /api/boards/:id/members              -> { members: BoardMember[] }
