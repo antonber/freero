@@ -9,7 +9,7 @@
 import { newId } from '../../platform/ids';
 import { readAll, storage } from '../../platform/storage';
 import * as repo from './repo';
-import { FILE_NAME_RE, TYPE_BY_EXT } from './store';
+import { FILE_NAME_RE, TYPE_BY_EXT, uploadCacheControl } from './store';
 
 /** Kept copies never sit where a public bucket URL could reach them. */
 const PRIVATE = { area: 'private' } as const;
@@ -87,7 +87,7 @@ export async function restoreUpload(name: string): Promise<boolean> {
   if (!row || row.removedAt === null || !row.quarantineKey) return false;
   const obj = await storage().get(row.quarantineKey, PRIVATE);
   if (!obj) return false;
-  await storage().put(name, await readAll(obj), row.contentType);
+  await storage().put(name, await readAll(obj), row.contentType, { cacheControl: uploadCacheControl() });
   if (!(await repo.clearRemoved(name, row.quarantineKey, Date.now()))) {
     // Changed meanwhile: restored by someone else (keep the file) or purged (don't bring it back).
     if (await repo.isRemoved(name)) await storage().delete(name);

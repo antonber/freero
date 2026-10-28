@@ -65,8 +65,10 @@ Without them, files are stored under `FREERO_DATA_DIR/uploads`.
 
 **Serving model.** Board content always references files as `/uploads/<id>.<ext>`, independent of
 the backend, so switching backends never rewrites boards. By default the app streams each file from
-storage with `X-Content-Type-Options: nosniff`, a sandbox CSP and a one-year immutable cache header
-(file names are random and never reused) — put a CDN in front of the app to offload the bandwidth.
+storage with `X-Content-Type-Options: nosniff`, a sandbox CSP, `Cache-Control: public, max-age=<UPLOAD_CACHE_SECONDS>`
+and the file name as its ETag (names are random and never reused, so revalidating costs a 304) —
+put a CDN in front of the app to offload the bandwidth. The short lifetime instead of a year is
+what makes a file an operator removed stop showing where it was already loaded (operations.md).
 When S3 is configured, a file missing from the bucket is looked up on the local disk, so files
 uploaded before the switch keep working (copy them over with `mc mirror` / `aws s3 sync`, see
 [operations.md](operations.md#moving-local-uploads-to-object-storage)).
@@ -165,6 +167,7 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `BODY_LIMIT_KB` | `2048` | Max JSON request body (board thumbnails are the largest). |
 | `MAX_UPLOAD_MB` | `15` | Max size of one uploaded file. |
 | `UPLOAD_QUOTA_MB` | `1024` | Total upload storage per account (board thumbnails don't count). Over quota: `413`. |
+| `UPLOAD_CACHE_SECONDS` | `3600` | How long browsers, proxies and a CDN may reuse an uploaded file before revalidating it (a 304 by ETag). Also stored on S3 objects. It bounds how long a file an operator removed keeps showing where it was already loaded. `0`: revalidate every time. |
 | `MAX_BOARDS_PER_USER` | `5000` | Boards one account may own, counted across ALL its workspaces (boards in the trash don't count). Over it, creating/duplicating/restoring/receiving a board by transfer answers `403`. |
 | `MAX_TEMPLATES_PER_USER` | `500` | Saved templates one account may own. Over it, saving another answers `403`. |
 | `MAX_WORKSPACES_PER_USER` | `20` | Team workspaces one account may own. Over it, creating another answers `403`. |

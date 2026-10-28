@@ -242,10 +242,17 @@ appeal link** (`/appeal?t=…`, no sign-in needed, so suspended accounts can app
 notification for board and file actions. Restorations are announced the same way. An appeal goes
 into the queue (one open appeal per decision); grant it by undoing the action from its card.
 
-Caches: a removed file's URL answers 410 from the app at once, but a CDN or proxy in front of
-`/uploads/` may still hold a copy for up to its cache lifetime (raster images are cached for a
-day, streamed files up to a year): purge `/uploads/<name>` there too. With a public bucket
-(`S3_PUBLIC_URL`) the kept copy lives in the bucket under an unguessable name until purged.
+Caches: a removed file's URL answers 410 from the app at once. Browsers, proxies and a CDN may
+reuse a copy they already hold for at most `UPLOAD_CACHE_SECONDS` (an hour by default); after that
+they ask again (`If-None-Match` with the file's ETag, a cheap 304 while it is served) and get the
+410, so a removed file stops showing within that time without any purge. Purge `/uploads/<name>`
+on your CDN only to make it faster than that. With a public bucket (`S3_PUBLIC_URL`) the bucket's
+copy is deleted at removal and the kept copy sits under `private/`, outside what the bucket
+exposes. Objects uploaded to S3 before this release still carry a one-year `immutable` header: to
+bound them too, rewrite their metadata (`aws s3 cp s3://<bucket>/uploads/ s3://<bucket>/uploads/
+--recursive --metadata-directive REPLACE --cache-control "public, max-age=3600"`, once per
+content type with `--content-type`, or the equivalent for your provider), or purge a CDN in front
+of the bucket when you remove one of them.
 
 ### Reports, abuse of the report form, and privacy
 

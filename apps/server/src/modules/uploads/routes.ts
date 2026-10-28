@@ -5,7 +5,7 @@ import { rateLimit } from '../../platform/rateLimit';
 import { storage } from '../../platform/storage';
 import { currentUser, requireUser } from '../auth/index';
 import { isUploadRemoved } from './moderation';
-import { FILE_NAME_RE, TYPE_BY_EXT, maxUploadBytes, saveUpload } from './store';
+import { FILE_NAME_RE, TYPE_BY_EXT, maxUploadBytes, saveUpload, uploadCacheControl } from './store';
 
 // Mounted at the root (not /api) because it also serves GET /uploads/:file.
 export const mountPath = '/';
@@ -44,18 +44,20 @@ export default function uploadRoutes(_ctx: ServerContext): Router {
         throw new HttpError(410, 'This file was removed by Freero’s moderators');
       }
       const ext = name.split('.').pop()!;
+      // Cached for UPLOAD_CACHE_SECONDS, then revalidated (KAI-177): a name's bytes never change,
+      // so the name is the ETag and asking again costs a 304 — or a 410 once the file was removed.
+      res.setHeader('Cache-Control', uploadCacheControl());
       const direct = ext === 'svg' || ext === 'pdf' ? null : storage().publicUrl(name);
-      if (direct) {
-        res.setHeader('Cache-Control', 'public, max-age=86400');
-        return res.redirect(302, direct);
-      }
+      if (direct) return res.redirect(302, direct);
+      const etag = `"${name}"`;
+      res.setHeader('ETag', etag);
+      if ((req.headers['if-none-match'] ?? '').split(',').some((t) => t.trim() === etag || t.trim() === `W/${etag}`)) return res.status(304).end();
       const obj = await storage().get(name);
       if (!obj) throw notFound('File not found');
       res.setHeader('Content-Type', TYPE_BY_EXT[ext]);
       if (obj.size !== null) res.setHeader('Content-Length', String(obj.size));
       res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('Content-Security-Policy', SANDBOX_CSP);
-      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
       obj.body.on('error', () => res.destroy()).pipe(res);
     }),
   );

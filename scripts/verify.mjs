@@ -3710,6 +3710,18 @@ async function moderationChecks() {
       assert(deleted.status === 200 || deleted.status === 204, `${deleted.status} ${deleted.text}`);
     });
 
+    await check('moderation (KAI-177): uploads are cached for an hour, then revalidated cheaply (304 by ETag) — and a browser revalidating a file removed meanwhile gets 410, not its copy', async () => {
+      const url = (await O.req('POST', '/api/uploads', PNG_1PX, { raw: true, headers: { 'content-type': 'image/png' } })).json.url;
+      const get = (headers = {}) => fetch(`http://127.0.0.1:${server.port}${url}`, { headers, redirect: 'manual' });
+      const first = await get();
+      const etag = first.headers.get('etag');
+      assert(first.status === 200 && first.headers.get('cache-control') === 'public, max-age=3600' && etag, `${first.status} ${first.headers.get('cache-control')} ${etag}`);
+      assert((await get({ 'if-none-match': etag })).status === 304, 'revalidation is not a 304');
+      assert((await act({ action: 'upload.remove', targetId: url, reason: 'illegal', statement: 'Unlawful image.' })).status === 200, 'remove');
+      const again = await get({ 'if-none-match': etag });
+      assert(again.status === 410 && again.headers.get('cache-control') === 'no-store', `after removal: ${again.status} ${again.headers.get('cache-control')}`);
+    });
+
     await check('moderation (KAI-179): with MODERATION_KEEP_REMOVED_DAYS=0 the retention job deletes the kept copy of a removed file (the URL stays 410); one with an open report is kept', async () => {
       await stopServer();
       env.MODERATION_KEEP_REMOVED_DAYS = '0';
