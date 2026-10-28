@@ -1,12 +1,28 @@
-import { TRASH_RETENTION_DAYS, type BoardSummary, type LinkAccess, type Role } from '@freero/shared';
+import { TRASH_RETENTION_DAYS, type BoardPermissions, type BoardSummary, type LinkAccess, type Role } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { badRequest, forbidden, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { runExclusive } from '../../platform/jobs';
+import { log } from '../../platform/log';
 import { getUser, getUsers } from '../auth/index';
-import { atLeast, getMemberRole, membershipsOf, resolveRole } from '../members/index';
-import { closeBoardDoc, initBoardDoc, snapshotBoardDoc } from '../realtime/index';
+import { atLeast, getMemberRole, membershipsOf, ownershipTransferred, resolveRole } from '../members/index';
+import { closeBoardDoc, initBoardDoc, refreshBoardAccess, snapshotBoardDoc } from '../realtime/index';
 import { deleteUpload } from '../uploads/index';
+import {
+  boardAccess,
+  boardAccessLoader,
+  type BoardWorkspaceAccess,
+  ensurePersonalWorkspace,
+  getWorkspaceInfo,
+  isFullMember,
+  isManager,
+  lockProjectForBoard,
+  lockWorkspaceForNewBoard,
+  mayDownload,
+  mayShareExternally,
+  workspaceRole,
+  workspaceRolesOf,
+} from '../workspaces/index';
 import * as repo from './repo';
 import type { Board } from './repo';
 
@@ -16,24 +32,54 @@ const DAY_MS = 86_400_000;
 export const TRASH_RETENTION_MS = TRASH_RETENTION_DAYS * DAY_MS;
 export const DEFAULT_TITLE = 'Untitled board';
 
+/** The user's role on a board and what its workspace contributes (policies, team access). */
+export async function describeAccess(board: Board, userId: string): Promise<{ role: Role | null; access: BoardWorkspaceAccess }> {
+  const [memberRole, access] = await Promise.all([getMemberRole(board.id, userId), boardAccess(userId, board)]);
+  return { role: resolveRole(board, userId, memberRole, access), access };
+}
+
 export async function roleOn(board: Board, userId: string): Promise<Role | null> {
-  return resolveRole(board, userId, await getMemberRole(board.id, userId));
+  return (await describeAccess(board, userId)).role;
 }
 
 /** Loads a board and checks the user's role: 404 if missing, 403 if below `min`. */
-export async function requireAccess(boardId: string, userId: string, min: Role = 'viewer'): Promise<{ board: Board; role: Role }> {
+export async function requireAccess(
+  boardId: string,
+  userId: string,
+  min: Role = 'viewer',
+): Promise<{ board: Board; role: Role; access: BoardWorkspaceAccess }> {
   const board = await repo.getBoard(boardId);
   if (!board) throw notFound('Board not found');
-  const role = await roleOn(board, userId);
+  const { role, access } = await describeAccess(board, userId);
   if (!role) throw forbidden();
   if (!atLeast(role, min)) throw forbidden(min === 'owner' ? 'Only the board owner can do that' : `You need ${min} access to do that`);
-  return { board, role };
+  return { board, role, access };
+}
+
+/** What the user may do beyond their role, under the workspace's policies (each re-checked where it's done). */
+export function permissionsFor(board: Board, userId: string, role: Role, access: BoardWorkspaceAccess): BoardPermissions {
+  const isOwner = board.ownerId === userId;
+  const admin = isManager(access.workspaceRole);
+  return {
+    canExport: mayDownload(access.workspaceRole, access.policies),
+    canShareExternally: atLeast(role, 'editor') && mayShareExternally(access.workspaceRole, access.policies),
+    maxLinkAccess: access.maxLink,
+    canMove: isOwner || admin,
+    canTransfer: isOwner || admin,
+  };
+}
+
+/** 403 unless the workspace's "downloads" policy lets the user export / duplicate the board. */
+export function requireDownload(access: BoardWorkspaceAccess): void {
+  if (!mayDownload(access.workspaceRole, access.policies))
+    throw forbidden('This workspace doesn’t allow you to export, download or copy its boards');
 }
 
 export async function toSummary(
   board: Board,
   userId: string,
   role: Role,
+  access: BoardWorkspaceAccess,
   extra?: { starred?: boolean; lastOpenedAt?: number | null; ownerName?: string },
 ): Promise<BoardSummary> {
   const starred = extra?.starred ?? (await repo.isStarred(board.id, userId));
@@ -53,38 +99,72 @@ export async function toSummary(
     createdAt: board.createdAt,
     updatedAt: board.updatedAt,
     lastOpenedAt,
+    workspaceId: board.workspaceId,
+    projectId: board.projectId,
+    permissions: permissionsFor(board, userId, role, access),
     ...(board.deletedAt !== null ? { deletedAt: board.deletedAt, purgeAt: board.deletedAt + TRASH_RETENTION_MS } : {}),
   };
 }
 
-export async function listBoards(userId: string, filter: BoardFilter, q: string): Promise<BoardSummary[]> {
-  if (filter === 'trash') return listTrash(userId, q);
-  const [memberships, opens, stars, owned] = await Promise.all([
+/** The summary of a board for the user (re-reads their role and the workspace context). */
+export async function summarize(board: Board, userId: string, extra?: { starred?: boolean; lastOpenedAt?: number | null }): Promise<BoardSummary> {
+  const { role, access } = await describeAccess(board, userId);
+  if (!role) throw forbidden();
+  return toSummary(board, userId, role, access, extra);
+}
+
+/**
+ * The boards a user can open, scoped to one workspace (see the contract in @freero/shared api.ts):
+ * the workspace's boards they can open, plus — for 'shared', 'starred', 'recent', and 'all' in the
+ * personal workspace — boards shared with them directly from workspaces they are not in. A board of a workspace the user is
+ * not in never appears unless they hold access to that board itself (a direct invite or its link).
+ */
+export async function listBoards(
+  userId: string,
+  filter: BoardFilter,
+  q: string,
+  scope: { workspaceId?: string; projectId?: string } = {},
+): Promise<BoardSummary[]> {
+  const workspaceId = scope.workspaceId || (await ensurePersonalWorkspace(userId));
+  const myWorkspaces = await workspaceRolesOf(userId);
+  if (!myWorkspaces.has(workspaceId)) throw notFound('Workspace not found');
+  if (filter === 'trash') return listTrash(userId, workspaceId, q);
+
+  const [memberships, opens, stars, ws] = await Promise.all([
     membershipsOf(userId),
     repo.opensOf(userId),
     repo.starredBoardIds(userId),
-    repo.boardIdsOwnedBy(userId),
+    getWorkspaceInfo(workspaceId),
   ]);
-  const ids = new Set([...owned, ...memberships.keys(), ...opens.keys(), ...stars]);
-  const needle = q.trim().toLowerCase();
-  const boards = await repo.getBoards([...ids]);
-  const owners = await getUsers(boards.map((b) => b.ownerId));
+  const inWorkspace = filter === 'shared' ? [] : await repo.boardsInWorkspace(workspaceId);
+  const seen = new Set(inWorkspace.map((b) => b.id));
+  // Boards reached from outside — only ones in workspaces the user is not in. The personal
+  // workspace's home shows them too: it is where "everything that isn't a team's" lives.
+  const withOutside = filter === 'shared' || filter === 'starred' || filter === 'recent' || (filter === 'all' && ws?.kind === 'personal');
+  const outsideIds = withOutside ? [...new Set([...memberships.keys(), ...opens.keys(), ...stars])].filter((id) => !seen.has(id)) : [];
+  const outside = (await repo.getBoards(outsideIds)).filter((b) => !myWorkspaces.has(b.workspaceId));
+  const boards = [...inWorkspace, ...outside];
 
+  const accessOf = await boardAccessLoader(userId, [...new Set(boards.map((b) => b.workspaceId))]);
+  const owners = await getUsers(boards.map((b) => b.ownerId));
+  const needle = q.trim().toLowerCase();
   const out: BoardSummary[] = [];
   for (const board of boards) {
-    const role = resolveRole(board, userId, memberships.get(board.id) ?? null);
-    if (!role) continue; // e.g. link access was revoked after the user opened it
-    const s = await toSummary(board, userId, role, {
-      starred: stars.has(board.id),
-      lastOpenedAt: opens.get(board.id) ?? null,
-      ownerName: owners.get(board.ownerId)?.name ?? 'Unknown',
-    });
+    if (scope.projectId && board.projectId !== scope.projectId) continue;
+    const access = accessOf(board);
+    const role = resolveRole(board, userId, memberships.get(board.id) ?? null, access);
+    if (!role) continue; // e.g. a team board in a private project, or link access revoked
     if (filter === 'mine' && role !== 'owner') continue;
-    if (filter === 'shared' && role === 'owner') continue;
-    if (filter === 'starred' && !s.starred) continue;
-    if (filter === 'recent' && s.lastOpenedAt === null) continue;
-    if (needle && !s.title.toLowerCase().includes(needle)) continue;
-    out.push(s);
+    if (filter === 'starred' && !stars.has(board.id)) continue;
+    if (filter === 'recent' && !opens.has(board.id)) continue;
+    if (needle && !board.title.toLowerCase().includes(needle)) continue;
+    out.push(
+      await toSummary(board, userId, role, access, {
+        starred: stars.has(board.id),
+        lastOpenedAt: opens.get(board.id) ?? null,
+        ownerName: owners.get(board.ownerId)?.name ?? 'Unknown',
+      }),
+    );
   }
   if (filter === 'recent') out.sort((a, b) => (b.lastOpenedAt ?? 0) - (a.lastOpenedAt ?? 0));
   else out.sort((a, b) => b.updatedAt - a.updatedAt);
@@ -120,11 +200,29 @@ function withinBoardQuota<T>(ownerId: string, refusal: (max: number) => string, 
   });
 }
 
-export async function createBoard(ownerId: string, title: string, description: string, linkAccess: LinkAccess = 'none'): Promise<Board> {
+/** Where a new board goes: a workspace (default: the owner's personal one) and optionally a project. */
+export interface BoardPlace {
+  workspaceId?: string;
+  projectId?: string | null;
+}
+
+export async function createBoard(
+  ownerId: string,
+  title: string,
+  description: string,
+  linkAccess: LinkAccess = 'none',
+  place: BoardPlace = {},
+): Promise<Board> {
+  const workspaceId = place.workspaceId || (await ensurePersonalWorkspace(ownerId));
+  const projectId = place.projectId || null;
   return withinBoardQuota(
     ownerId,
     (max) => `You have reached the limit of ${max} boards. Delete boards you no longer need to create new ones.`,
     async () => {
+      // Holds the workspace (and project) until this transaction ends, so neither is deleted
+      // underneath the new board.
+      await lockWorkspaceForNewBoard(workspaceId, ownerId);
+      if (projectId) await lockProjectForBoard(projectId, workspaceId, ownerId);
       const now = Date.now();
       const board: Board = {
         id: newId(10),
@@ -136,6 +234,8 @@ export async function createBoard(ownerId: string, title: string, description: s
         createdAt: now,
         updatedAt: now,
         deletedAt: null,
+        workspaceId,
+        projectId,
       };
       await repo.insertBoard(board);
       return board;
@@ -143,16 +243,74 @@ export async function createBoard(ownerId: string, title: string, description: s
   );
 }
 
+/**
+ * Moves a board into another project of its workspace (null: the workspace root). Its owner or the
+ * workspace's owners/admins only: taking a board out of a private project opens it to the team.
+ * Everyone connected is re-checked at once (moving into a private project can cut access).
+ */
+export async function moveToProject(board: Board, userId: string, projectId: string | null): Promise<void> {
+  const role = await workspaceRole(board.workspaceId, userId);
+  if (board.ownerId !== userId && !isManager(role)) throw forbidden('Only the board owner or a workspace admin can move it');
+  await repo.transaction(async () => {
+    if (projectId) await lockProjectForBoard(projectId, board.workspaceId, userId);
+    if (!(await repo.setProject(board.id, projectId))) throw notFound('Board not found');
+  });
+  await refreshBoardAccess(board.id);
+}
+
+/**
+ * Hands a board to another person, in one transaction (subject to their board quota):
+ * - team workspace: to a member who is not a guest; it stays where it is;
+ * - personal workspace: to someone already invited to the board; it moves to THEIR personal
+ *   workspace (a personal workspace only ever holds its owner's boards).
+ * The previous owner keeps editor access through a membership. The board owner or the
+ * workspace's owners/admins may do it.
+ */
+export async function transferBoard(board: Board, actorId: string, targetId: unknown): Promise<Board> {
+  if (typeof targetId !== 'string' || !targetId) throw badRequest('userId is required');
+  if (targetId === board.ownerId) throw badRequest('They already own this board');
+  const [actorWsRole, targetWsRole, ws, target] = await Promise.all([
+    workspaceRole(board.workspaceId, actorId),
+    workspaceRole(board.workspaceId, targetId),
+    getWorkspaceInfo(board.workspaceId),
+    getUser(targetId),
+  ]);
+  if (board.ownerId !== actorId && !isManager(actorWsRole)) throw forbidden('Only the board owner or a workspace admin can transfer it');
+  if (!ws || !target) throw notFound('That person was not found');
+  let workspaceId = board.workspaceId;
+  let projectId = board.projectId;
+  if (ws.kind === 'team') {
+    if (!isFullMember(targetWsRole)) throw badRequest(`${target.name} must be a member (not a guest) of this workspace to own its boards`);
+  } else {
+    if (!(await getMemberRole(board.id, targetId))) throw badRequest(`Invite ${target.name} to the board first`);
+    workspaceId = await ensurePersonalWorkspace(targetId);
+    projectId = null;
+  }
+  const previousOwner = board.ownerId;
+  await withinBoardQuota(
+    targetId,
+    (max) => `${target.name} has reached the limit of ${max} boards and can’t receive this one.`,
+    async () => {
+      if (!(await repo.setOwner(board.id, targetId, workspaceId, projectId, Date.now()))) throw notFound('Board not found');
+      await ownershipTransferred(board.id, targetId, previousOwner, 'editor');
+    },
+  );
+  log(`boards: ${actorId} transferred board ${board.id} from ${previousOwner} to ${targetId}`);
+  await refreshBoardAccess(board.id);
+  return { ...board, ownerId: targetId, workspaceId, projectId };
+}
+
 // ---- trash ----
 
-async function listTrash(userId: string, q: string): Promise<BoardSummary[]> {
+async function listTrash(userId: string, workspaceId: string, q: string): Promise<BoardSummary[]> {
   const needle = q.trim().toLowerCase();
-  const [boards, me] = await Promise.all([repo.trashedBoardsOf(userId), getUser(userId)]);
+  const [boards, me] = await Promise.all([repo.trashedBoardsOf(userId, workspaceId), getUser(userId)]);
+  const accessOf = await boardAccessLoader(userId, [workspaceId]);
   const out: BoardSummary[] = [];
   for (const b of boards) {
     if (needle && !b.title.toLowerCase().includes(needle)) continue;
     // Only owners see (and restore) trashed boards; stars/opens don't matter here.
-    out.push(await toSummary(b, userId, 'owner', { starred: false, lastOpenedAt: null, ownerName: me?.name ?? 'Unknown' }));
+    out.push(await toSummary(b, userId, 'owner', accessOf(b), { starred: false, lastOpenedAt: null, ownerName: me?.name ?? 'Unknown' }));
   }
   return out;
 }
@@ -229,16 +387,35 @@ export async function purgeExpiredTrashLocked(now = Date.now()): Promise<number>
 }
 
 /**
- * A copy of `source` owned by `userId`, with the source's current content. The new board row and
- * its content are written in one transaction: if saving the content fails there is no empty copy.
+ * A copy of `source` owned by `userId`, with the source's current content: in the same workspace
+ * and project when the user may create boards there, else in their personal workspace. The new
+ * board row and its content are written in one transaction: if saving the content fails there is
+ * no empty copy.
  */
 export async function duplicateBoard(source: Board, userId: string): Promise<Board> {
+  const role = await workspaceRole(source.workspaceId, userId);
+  const place: BoardPlace = isFullMember(role) ? { workspaceId: source.workspaceId, projectId: source.projectId } : {};
   // Read the content BEFORE the transaction: it may wait for the live doc to finish loading,
   // which queries the database outside this transaction.
   const state = await snapshotBoardDoc(source.id);
   return repo.transaction(async () => {
-    const copy = await createBoard(userId, `Copy of ${source.title}`.slice(0, 200), source.description);
+    const copy = await createBoard(userId, `Copy of ${source.title}`.slice(0, 200), source.description, 'none', place);
     if (state) await initBoardDoc(copy.id, state);
     return copy;
   });
+}
+
+// ---- workspaces (called by modules/workspaces through index.ts) ----
+
+/** Deletes every board of a workspace (inside the caller's transaction); then call cleanUpDeletedBoards. */
+export function deleteBoardRowsInWorkspace(workspaceId: string): Promise<Array<{ id: string; thumbnail: string | null }>> {
+  return repo.deleteAllInWorkspace(workspaceId);
+}
+
+/** After board rows were deleted: disconnect everyone, make sure nothing saves after, delete thumbnails. */
+export async function cleanUpDeletedBoards(gone: Array<{ id: string; thumbnail: string | null }>): Promise<void> {
+  for (const b of gone) {
+    await closeBoardDoc(b.id);
+    await deleteUpload(b.thumbnail);
+  }
 }
