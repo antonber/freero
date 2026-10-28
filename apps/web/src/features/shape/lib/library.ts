@@ -16,7 +16,7 @@ export interface LibraryShape {
   h: number;
 }
 
-export type ShapeSetId = 'basic' | 'flowchart' | 'uml' | 'sequence' | 'bpmn' | 'erd' | 'network';
+export type ShapeSetId = 'basic' | 'flowchart' | 'uml' | 'sequence' | 'bpmn' | 'erd' | 'network' | 'wireframe';
 
 export interface ShapeSet {
   id: ShapeSetId;
@@ -148,6 +148,35 @@ export const SHAPE_SETS: ShapeSet[] = [
       S('netLaptop', 'Laptop', 140, 100, 'notebook computer'),
       S('netPhone', 'Phone', 64, 110, 'mobile tablet'),
       S('netUser', 'User', 90, 110, 'person client'),
+    ],
+  },
+  {
+    id: 'wireframe',
+    label: 'Wireframe',
+    description: 'Device frames and low-fi UI controls for sketching screens',
+    defaultOn: false,
+    shapes: [
+      S('wfBrowser', 'Browser window', 640, 420, 'web page desktop site window chrome url address'),
+      S('wfPhone', 'Phone', 260, 520, 'mobile smartphone app screen device'),
+      S('wfTablet', 'Tablet', 480, 640, 'device screen'),
+      S('wfDesktop', 'Desktop', 640, 460, 'monitor computer screen display pc'),
+      S('wfButton', 'Button', 140, 44, 'cta action submit primary'),
+      S('wfInput', 'Text field', 240, 44, 'input textbox entry form field email password'),
+      S('wfSearch', 'Search field', 260, 40, 'search bar find query'),
+      S('wfTextArea', 'Text area', 280, 120, 'multiline comment message textbox'),
+      S('wfCheckbox', 'Checkbox', 180, 24, 'check tick option agree'),
+      S('wfRadio', 'Radio button', 180, 24, 'option choice select one'),
+      S('wfToggle', 'Toggle', 180, 28, 'switch on off setting'),
+      S('wfDropdown', 'Dropdown', 220, 44, 'select menu picker combobox'),
+      S('wfTabs', 'Tabs', 360, 44, 'tab bar segmented navigation'),
+      S('wfNavBar', 'Navigation bar', 640, 56, 'header top bar menu navbar app bar logo'),
+      S('wfCard', 'Card', 260, 280, 'tile panel product item'),
+      S('wfList', 'List', 280, 200, 'items rows table feed'),
+      S('wfImage', 'Image placeholder', 240, 160, 'picture photo media banner hero'),
+      S('wfAvatar', 'Avatar', 64, 64, 'profile user person photo picture'),
+      S('wfSlider', 'Slider', 240, 28, 'range volume track'),
+      S('wfModal', 'Dialog', 420, 280, 'modal popup window overlay alert'),
+      S('wfProgress', 'Progress bar', 240, 16, 'loading loader percent meter'),
     ],
   },
 ];

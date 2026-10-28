@@ -191,7 +191,30 @@ export type ShapeKind =
   | 'netMonitor'
   | 'netLaptop'
   | 'netPhone'
-  | 'netUser';
+  | 'netUser'
+  // [additive] Wireframe kit (KAI-120): device frames and low-fidelity UI controls. Their corners
+  // and marks keep a fixed size when resized. Clients that don't know a kind draw its box.
+  | 'wfBrowser'
+  | 'wfPhone'
+  | 'wfTablet'
+  | 'wfDesktop'
+  | 'wfButton'
+  | 'wfInput'
+  | 'wfSearch'
+  | 'wfTextArea'
+  | 'wfCheckbox'
+  | 'wfRadio'
+  | 'wfToggle'
+  | 'wfDropdown'
+  | 'wfTabs'
+  | 'wfNavBar'
+  | 'wfCard'
+  | 'wfList'
+  | 'wfImage'
+  | 'wfAvatar'
+  | 'wfSlider'
+  | 'wfModal'
+  | 'wfProgress';
 
 export interface ShapeElement extends BaseElement, TextStyle {
   type: 'shape';
@@ -302,7 +325,7 @@ export interface FrameElement extends BaseElement {
   /** Order in presentation mode / frames panel. */
   index: number;
   /** Optional aspect preset used when created. */
-  preset?: 'custom' | '16:9' | '4:3' | '1:1' | 'a4' | 'letter' | 'mobile' | 'desktop';
+  preset?: 'custom' | '16:9' | '4:3' | '1:1' | 'a4' | 'letter' | 'mobile' | 'desktop' | 'tablet' /* [additive] */;
   /**
    * Contents hidden from viewers and commenters. Server-enforced: while set, everything inside
    * lives in the board's 'editors' layer, which the server sends only to owners/editors
