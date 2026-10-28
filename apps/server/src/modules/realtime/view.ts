@@ -10,7 +10,9 @@
 import { createHash } from 'node:crypto';
 import * as Y from 'yjs';
 import { Y_ELEMENTS, type BoardElement, type ElementDraft, type ElementType, type Role } from '@freero/shared';
+import { FACILITATION_COLLECTION } from '@freero/shared';
 import { commenterMayChangeComments } from './commentRules';
+import { effectiveAccess, readFacilitation } from './facilitation';
 import { EDITORS_LAYER, privateLayerOf } from './layers';
 
 export type ViewLayer = 'shared' | 'editors' | 'private';
@@ -169,17 +171,24 @@ function underHiddenFrame(el: BoardElement, byId: ReadonlyMap<string, BoardEleme
  */
 export function applyChange(main: Y.Doc, layers: ReadonlyMap<string, Y.Doc>, change: BoardChange, actor: BoardReader, origin: unknown, now = Date.now()): AppliedChange {
   for (const name of Object.keys(change.collections ?? {}))
-    if (name === Y_ELEMENTS || name === 'settings') throw new BoardChangeError(`'${name}' is not a collection`);
-  const editor = canEdit(actor.role);
+    if (name === Y_ELEMENTS || name === 'settings' || name === FACILITATION_COLLECTION) throw new BoardChangeError(`'${name}' is not a collection`);
+  // A facilitator's limits hold for requests too (facilitation.ts), not only for sockets: a locked
+  // board makes its editors commenters for now.
+  const limited = effectiveAccess(actor.role, actor.userId, readFacilitation(main));
+  const editor = canEdit(limited.role);
   if (!editor) {
     const onlyComments =
       !change.create?.length && !change.update?.length && !change.remove?.length && Object.keys(change.collections ?? {}).every((n) => n === COMMENTS);
-    if (actor.role !== 'commenter' || !onlyComments) throw new BoardChangeError('Only owners and editors change board content');
+    if (limited.role !== 'commenter' || !onlyComments)
+      throw new BoardChangeError(limited.limits ? `${limited.limits.byName ?? 'The facilitator'} has locked the board for now` : 'Only owners and editors change board content');
     const comments = main.getMap<unknown>(COMMENTS);
     const changes = Object.entries(change.collections?.[COMMENTS] ?? {}).map(([key, after]) => ({ key, before: comments.get(key), after }));
     if (!commenterMayChangeComments(changes, actor.userId, (k) => comments.get(k), () => comments.keys()))
       throw new BoardChangeError('Commenters may only write their own comments');
   }
+  const addTypes = limited.limits?.addTypes;
+  if (addTypes && (change.create ?? []).some((d) => !addTypes.includes(d.type)))
+    throw new BoardChangeError(`${limited.limits?.byName ?? 'The facilitator'} limited what can be added right now`);
   const view = viewOf(main, layers, actor);
   const where = new Map(view.elements.map((e) => [e.el.id, e]));
   const docOf = (layer: ViewLayer): Y.Doc | undefined =>

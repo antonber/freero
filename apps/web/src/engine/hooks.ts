@@ -2,7 +2,7 @@
 // useElement(id) only re-renders when that element's object changes.
 import { useCallback, useContext, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useStore } from 'zustand';
-import type { BoardElement, BoardSettings, ElementType, PresenceState, Role } from '@freero/shared';
+import type { BoardElement, BoardSettings, ElementType, PresenceState, Role, SessionLimits } from '@freero/shared';
 import type { Camera, Collection, Editor, FollowTarget, Point, Rect } from './api';
 import { RenderModeContext, ScopeContext, useCore } from './context';
 import type { UiState } from './state/uiStore';
@@ -221,6 +221,16 @@ export function useCanEdit(): boolean {
 /** [additive] Whose view this client follows (Editor.follow), or null. */
 export function useFollowing(): FollowTarget | null {
   return useUi((s) => s.following);
+}
+
+/** [additive] A facilitator's limits for this user (Editor.getLimits), null when none. */
+export function useLimits(): SessionLimits | null {
+  return useUi((s) => s.limits);
+}
+
+/** [additive] Other people's cursors hidden for this viewer (Editor.setCursorsHidden). */
+export function useCursorsHidden(): boolean {
+  return useUi((s) => s.cursorsHidden);
 }
 
 /** [additive] Ids hidden for this viewer only (Editor.setViewHidden); re-renders when they change. */

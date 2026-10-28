@@ -79,9 +79,36 @@ export function reportOn(boardId: string): Host['report'] {
   };
 }
 
-/** Documents (PDF) go through the same upload endpoint, quota and checks as images. */
+/** Documents (PDF), video and audio go through the same upload endpoint, quota and checks as images. */
 export function uploadFile(file: Blob): Promise<{ url: string }> {
   return api.uploadImage(file);
+}
+
+/** Any other file: stored as an attachment (never served inline). */
+export function uploadAttachment(file: Blob): Promise<{ url: string }> {
+  return api.uploadAttachment(file);
+}
+
+/** Hands a file to the browser's downloads under `name`. */
+export function saveAs(href: string, name: string): void {
+  const a = document.createElement('a');
+  a.href = href;
+  a.download = name;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+/** Host.downloadFile on a real board: through the server (downloads policy, audit log). */
+export function downloadBoardFile(boardId: string): NonNullable<Host['downloadFile']> {
+  return async ({ id, name }) => {
+    const blob = await api.downloadBoardFile(boardId, id);
+    const url = URL.createObjectURL(blob);
+    saveAs(url, name);
+    // The download has started from the object URL by now; give slow browsers a moment.
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  };
 }
 
 export async function renameBoard(id: string, title: string): Promise<void> {

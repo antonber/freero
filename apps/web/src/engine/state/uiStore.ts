@@ -1,6 +1,6 @@
 // Local (non-synced) UI state for one board session. Written only by the engine (Editor + tools).
 import { createStore, type StoreApi } from 'zustand/vanilla';
-import type { Role } from '@freero/shared';
+import type { Role, SessionLimits } from '@freero/shared';
 import type { Camera, FollowTarget, Rect } from '../api';
 import type { GapGuide, SnapGuide } from '../geometry/snap';
 import type { ConnectionStatus } from '../store/BoardStore';
@@ -69,6 +69,10 @@ export interface UiState {
   dialog: { id: string; props?: Record<string, unknown> } | null;
   /** Whose view this client follows (Editor.follow). */
   following: FollowTarget | null;
+  /** What a facilitator limits for this user (the server's role message), null: nothing. */
+  limits: SessionLimits | null;
+  /** Other people's cursors hidden for this viewer (Editor.setCursorsHidden). */
+  cursorsHidden: boolean;
   /** Elements hidden for this viewer only (Editor.setViewHidden). Replaced, never mutated. */
   viewHidden: ReadonlySet<string>;
 }
@@ -121,6 +125,8 @@ export function createUiStore(init: { role: Role }): UiStore {
     chromeHidden: false,
     dialog: null,
     following: null,
+    limits: null,
+    cursorsHidden: false,
     viewHidden: new Set<string>(),
   }));
 

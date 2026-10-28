@@ -142,3 +142,166 @@
     transform: translateY(-8px);
   }
 }
+
+/* Toggles in the dark bar (laser, notes): a light wash instead of the light theme's pressed look. */
+.fr-present-bar .fr-iconbtn.fr-iconbtn--active,
+.fr-present-bar .fr-iconbtn.fr-iconbtn--active:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+/* Laser pointer: everyone's trails, drawn over the board, never catching the pointer. */
+.fr-present-laser {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.fr-present-catcher.is-laser {
+  cursor: crosshair;
+}
+
+/* The presenter's own notes for the current slide (only on their screen). */
+.fr-present-mynotes {
+  position: absolute;
+  left: 16px;
+  bottom: 80px;
+  width: min(380px, calc(100% - 32px));
+  max-height: 40%;
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  background: rgba(23, 22, 43, 0.92);
+  color: #fff;
+  box-shadow: 0 12px 32px rgba(23, 22, 43, 0.28);
+  pointer-events: auto;
+  backdrop-filter: blur(6px);
+}
+
+.fr-present-mynotes__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px 4px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.fr-present-mynotes__head button {
+  border: 0;
+  border-radius: 6px;
+  padding: 3px 6px;
+  background: none;
+  color: rgba(255, 255, 255, 0.75);
+  font: inherit;
+  cursor: pointer;
+}
+
+.fr-present-mynotes__head button:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.fr-present-mynotes__body {
+  padding: 2px 14px 14px;
+  overflow: auto;
+  font-size: 15px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+/* Presenter notes side panel. */
+.fr-present-notes {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.fr-present-notes__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.fr-present-notes__hint {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 4px 16px 8px;
+  padding: 8px 10px;
+  border-radius: var(--fr-radius);
+  background: var(--fr-surface-2);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--fr-ink-2);
+}
+
+.fr-present-notes__hint svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+.fr-present-notes__empty {
+  margin: 8px 16px;
+  font-size: 13px;
+  color: var(--fr-ink-2);
+}
+
+.fr-present-notes__list {
+  list-style: none;
+  margin: 0;
+  padding: 0 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fr-present-notes__slide {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fr-present-notes__name {
+  align-self: flex-start;
+  border: 0;
+  padding: 2px 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fr-ink);
+  cursor: pointer;
+}
+
+.fr-present-notes__name:hover {
+  color: var(--fr-primary);
+}
+
+.fr-present-notes__field {
+  min-height: 72px;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius);
+  background: var(--fr-surface);
+  color: var(--fr-ink);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.fr-present-notes__field:focus {
+  outline: none;
+  border-color: var(--fr-primary);
+  box-shadow: var(--fr-focus-ring);
+}
+
+.fr-present-notes__field.is-current {
+  border-color: var(--fr-primary);
+}

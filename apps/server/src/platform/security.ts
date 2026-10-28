@@ -117,6 +117,9 @@ export function contentSecurityPolicy(config: Config, host: string | undefined, 
     "font-src 'self' data: https://fonts.gstatic.com",
     // Board images may link any https image (pasted URLs); exports render through data:/blob:.
     `img-src 'self' data: blob: https: ${s3}`.trim(),
+    // Video and audio items play our own uploads (redirected to the bucket when it serves them);
+    // blob: is the file being dropped, read locally for its poster frame before it is uploaded.
+    `media-src 'self' blob: ${s3}`.trim(),
     // https: lets "paste an image URL" fetch and re-host the image, and exports inline web fonts.
     `connect-src 'self' ${ws} https:`.replace(/\s+/g, ' '),
     "worker-src 'self' blob:",

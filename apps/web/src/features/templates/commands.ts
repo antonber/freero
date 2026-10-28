@@ -1,6 +1,7 @@
 import { BookmarkPlus, LayoutTemplate } from 'lucide-react';
 import { defineCommands } from '@engine';
-import { DOCK_ID } from './lib/insert';
+import { DOCK_ID, insertTemplate } from './lib/insert';
+import { TEMPLATES } from './lib/catalog';
 import { SAVE_DIALOG_ID } from './lib/saved';
 
 export default defineCommands([
@@ -11,6 +12,15 @@ export default defineCommands([
     menus: ['board'],
     run(editor) {
       editor.openDock(editor.getDock() === DOCK_ID ? null : DOCK_ID);
+    },
+  },
+  {
+    // For other features (a retro's setup): args { id } of a built-in template. No menus.
+    id: 'templates.insert',
+    label: 'Insert a template',
+    run(editor, args) {
+      const def = TEMPLATES.find((t) => t.id === args?.id);
+      if (def) insertTemplate(editor, def);
     },
   },
   // Saving copies content into the user's own template library (never writes the board), so

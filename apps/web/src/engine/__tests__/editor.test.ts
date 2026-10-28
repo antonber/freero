@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { EngineCore } from '../runtime/core';
-import { boxDef, bundle, makeCore } from './harness';
+import { boxDef, bundle, frameDef, makeCore } from './harness';
 import type { ElementDefinition } from '../api';
 
 let core: EngineCore;
@@ -65,6 +65,30 @@ describe('role-disallowed writes never reach the document', () => {
     core.editor.paste({ x: 0, y: 0 });
     expect(updates()).toBe(0);
     core.scoped('comments').collection('comments').set('t1', { ok: true });
+    expect(updates()).toBe(1);
+  });
+
+  it('a participant a facilitator limited to stickies adds no frame by tool, create, paste or duplicate, and stickies still go through', () => {
+    // The server would undo such an add for everyone; the client must not send it in the first place.
+    core = makeCore({
+      role: 'editor',
+      bundles: [
+        bundle('boxes', {
+          elements: [boxDef as ElementDefinition<any>, frameDef as ElementDefinition<any>],
+          tools: [{ id: 'frame', label: 'Frame', icon: () => null, order: 5, placement: 'main' }],
+        }),
+      ],
+    });
+    const frame = core.editor.create({ type: 'frame', x: 0, y: 0 } as never);
+    core.store.serverLimits = { byName: 'Lead', locked: false, addTypes: ['sticky'] };
+    const updates = countUpdates(core);
+    core.editor.setTool('frame');
+    core.editor.create({ type: 'frame', x: 0, y: 0 } as never);
+    core.editor.insertElements({ elements: [{ id: 'f2', type: 'frame', x: 0, y: 0, w: 10, h: 10 } as never] });
+    core.editor.duplicate([frame]);
+    expect(updates()).toBe(0);
+    expect(core.editor.getToolId()).toBe('select');
+    core.editor.create({ type: 'sticky', x: 0, y: 0 } as never);
     expect(updates()).toBe(1);
   });
 

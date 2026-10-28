@@ -31,13 +31,31 @@
 // 'layer-update', layer parts in sync-request/-reply, an append-only log per layer). A layer
 // update is sent to a socket only if that socket may read the layer at that moment. A reveal is a
 // change made by the instance whose socket asked for it: that instance publishes and saves it.
+//
+// Facilitator controls (facilitation.ts): a socket's `role` is its EFFECTIVE role: its access
+// (`access`) as limited by the board's facilitation session, re-computed whenever that session
+// changes and sent to the client with the limits. Owner/editor updates are applied in one
+// transaction with the facilitation guards, which undo what the socket may not change; the socket
+// is then sent the correction. When the facilitator has been gone `facilitatorGraceMs` (no socket
+// here and no presence from another instance), the room ends the session.
 import * as decoding from 'lib0/decoding';
 import * as encoding from 'lib0/encoding';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as syncProtocol from 'y-protocols/sync';
 import * as Y from 'yjs';
 import { WebSocket } from 'ws';
-import { WS_CLOSE_BOARD_REMOVED, WS_MESSAGE_LAYER, WS_MESSAGE_LAYER_OP, WS_MESSAGE_ROLE, Y_KEPT_ON_RESTORE, type Role } from '@freero/shared';
+import {
+  FACILITATION_COLLECTION,
+  FACILITATION_KEY,
+  WS_CLOSE_BOARD_REMOVED,
+  WS_MESSAGE_LAYER,
+  WS_MESSAGE_LAYER_OP,
+  WS_MESSAGE_ROLE,
+  Y_KEPT_ON_RESTORE,
+  type Role,
+  type RoleMessage,
+  type SessionLimits,
+} from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { logError } from '../../platform/log';
 import { isShared, publish, subscribe, subscribedInstances, type Subscription } from '../../platform/pubsub';
@@ -47,6 +65,7 @@ import { sanitizeAwarenessUpdate, withoutClients, type AwarenessIdentity } from 
 import { elementChanges, ELEMENTS, emitBoardChange, hasBoardChangeListeners } from './changes';
 import { commentPeople, COMMENTS_COLLECTION, emitCommentMessages, hasCommentListeners, messageEvents } from './comments';
 import * as store from './docStore';
+import { effectiveAccess, guardSession, readFacilitation, revertForbiddenAdds, sameEffective } from './facilitation';
 import { decideUpdate } from './filter';
 import * as layerStore from './layerStore';
 import {
@@ -82,6 +101,8 @@ const RESYNC_MIN_INTERVAL_MS = 2000;
 const IDENTITY_TTL_MS = 5000;
 /** Bytes a socket may send before it has joined (auth + doc load); more closes it. */
 const MAX_QUEUED_BYTES = 16 * 1024 * 1024;
+/** An element removed from one doc this recently is not "added" when it lands in another (a move). */
+const MOVE_WINDOW_MS = 30_000;
 
 /** Origin of the persisted state applied on load: not a change, so neither broadcast nor saved. */
 const LOAD_ORIGIN = Symbol('load');
@@ -116,7 +137,12 @@ interface Conn {
   userId: string;
   /** Session the socket was opened with (auth's opaque key); logging out closes the socket. */
   sessionKey: string;
+  /** EFFECTIVE role: `access` as limited by the facilitation session (see the header). */
   role: Role;
+  /** The role the socket's user has on the board. */
+  access: Role;
+  /** What the facilitation session limits for this socket (null: nothing). */
+  limits: SessionLimits | null;
   /** Guests: the author name their comments must carry (commentRules.ts). */
   authorName: string | undefined;
   /**
@@ -152,10 +178,18 @@ function layerMessage(wire: string, write: (e: encoding.Encoder) => void): Uint8
 
 const canEdit = (role: Role | null) => role === 'owner' || role === 'editor';
 
-export function encodeRoleMessage(role: Role): Uint8Array {
+export function encodeRoleMessage(role: Role, limits?: SessionLimits | null): Uint8Array {
   const e = encoding.createEncoder();
   encoding.writeVarUint(e, WS_MESSAGE_ROLE);
-  encoding.writeVarString(e, JSON.stringify({ type: 'role', role }));
+  const msg: RoleMessage = limits ? { type: 'role', role, limits } : { type: 'role', role };
+  encoding.writeVarString(e, JSON.stringify(msg));
+  return encoding.toUint8Array(e);
+}
+
+function syncUpdateMessage(update: Uint8Array): Uint8Array {
+  const e = encoding.createEncoder();
+  encoding.writeVarUint(e, MESSAGE_SYNC);
+  syncProtocol.writeUpdate(e, update);
   return encoding.toUint8Array(e);
 }
 
@@ -205,6 +239,10 @@ class Room {
   private lastChangeAt = 0;
   private snapshotCovers = 0;
   private snapshotTimer: NodeJS.Timeout | null = null;
+  /** Running while the facilitation session's facilitator is gone (see checkFacilitator). */
+  private facilitatorTimer: NodeJS.Timeout | null = null;
+  /** Element ids removed from one of this room's docs lately, by when (see MOVE_WINDOW_MS). */
+  private removedAt = new Map<string, number>();
 
   constructor(readonly id: string) {
     this.awareness = new awarenessProtocol.Awareness(this.doc);
@@ -230,6 +268,7 @@ class Room {
     this.awareness.on(
       'update',
       ({ added, updated, removed }: { added: number[]; updated: number[]; removed: number[] }, origin: unknown) => {
+        if (added.length || removed.length) this.checkFacilitator();
         const conn = origin instanceof WebSocket ? this.conns.get(origin) : undefined;
         if (conn) {
           // `updated`, too: a client id seen before (on another instance, or before a reconnect).
@@ -261,7 +300,13 @@ class Room {
 
     // Element changes made through OUR sockets (changes.ts): the activity feed's trusted source.
     const elements = this.doc.getMap<unknown>(ELEMENTS);
-    elements.observe((event, tr) => this.reportChanges('shared', elements, event.changes.keys, tr.origin));
+    elements.observe((event, tr) => {
+      this.noteRemoved(event.changes.keys);
+      this.reportChanges('shared', elements, event.changes.keys, tr.origin);
+    });
+
+    // The facilitation session (facilitation.ts): limits every socket's role, any instance's change.
+    this.doc.getMap<unknown>(FACILITATION_COLLECTION).observe(() => this.applyFacilitation());
 
     this.ready = this.open();
   }
@@ -310,10 +355,11 @@ class Room {
       this.markDirty();
     });
     // Hidden frames' contents: reported for owners/editors only (changes.ts). Private layers never.
-    if (name === EDITORS_LAYER) {
-      const els = created.doc.getMap<unknown>(ELEMENTS);
-      els.observe((event, tr) => this.reportChanges('editors', els, event.changes.keys, tr.origin));
-    }
+    const els = created.doc.getMap<unknown>(ELEMENTS);
+    els.observe((event, tr) => {
+      this.noteRemoved(event.changes.keys);
+      if (name === EDITORS_LAYER) this.reportChanges('editors', els, event.changes.keys, tr.origin);
+    });
     this.layers.set(name, created);
     return created;
   }
@@ -343,8 +389,87 @@ class Room {
       send(conn.ws, layerMessage(wire, (e) => syncProtocol.writeSyncStep1(e, doc)));
     } else if (syncType === syncProtocol.messageYjsSyncStep2 || syncType === syncProtocol.messageYjsUpdate) {
       const update = decoding.readVarUint8Array(decoder);
-      if (mayWriteLayer(name, conn)) Y.applyUpdate(doc, update, conn.ws);
+      if (!mayWriteLayer(name, conn)) return;
+      const addTypes = conn.limits?.addTypes;
+      if (!addTypes) return Y.applyUpdate(doc, update, conn.ws);
+      const before = Y.encodeStateVector(doc);
+      let fixed = 0;
+      doc.transact((tr) => {
+        Y.applyUpdate(doc, update);
+        fixed = revertForbiddenAdds(tr, doc.getMap<unknown>(ELEMENTS), new Set(addTypes), (id) => this.existsElsewhere(doc, id));
+      }, conn.ws);
+      if (fixed) send(conn.ws, layerMessage(wire, (e) => syncProtocol.writeUpdate(e, Y.encodeStateAsUpdate(doc, before))));
     }
+  }
+
+  // ---------------------------------------------------------------- facilitation (facilitation.ts)
+
+  private noteRemoved(keys: Map<string, { action: string }>): void {
+    const now = Date.now();
+    for (const [id, { action }] of keys) if (action === 'delete') this.removedAt.set(id, now);
+    if (this.removedAt.size > 2000)
+      for (const [id, at] of this.removedAt) if (now - at > MOVE_WINDOW_MS) this.removedAt.delete(id);
+  }
+
+  /** Is element `id` in one of this room's docs other than `doc`, or was it removed from one lately? */
+  private existsElsewhere(doc: Y.Doc, id: string): boolean {
+    const at = this.removedAt.get(id);
+    if (at !== undefined && Date.now() - at <= MOVE_WINDOW_MS) return true;
+    if (doc !== this.doc && this.doc.getMap<unknown>(ELEMENTS).has(id)) return true;
+    for (const l of this.layers.values()) if (l.doc !== doc && l.doc.getMap<unknown>(ELEMENTS).has(id)) return true;
+    return false;
+  }
+
+  /** Re-derives every socket's effective role after the session changed. */
+  private applyFacilitation(): void {
+    if (this.destroyed) return;
+    const session = readFacilitation(this.doc);
+    for (const conn of this.conns.values()) this.setEffective(conn, session);
+    this.checkFacilitator();
+  }
+
+  /** Recomputes a socket's effective role and limits; tells the client when they changed. */
+  private setEffective(conn: Conn, session = readFacilitation(this.doc)): void {
+    const next = effectiveAccess(conn.access, conn.userId, session);
+    if (sameEffective(next, { role: conn.role, limits: conn.limits })) return;
+    const couldWrite = conn.role !== 'viewer';
+    const couldEdit = canEdit(conn.role);
+    conn.role = next.role;
+    conn.limits = next.limits;
+    send(conn.ws, encodeRoleMessage(next.role, next.limits));
+    // Newly writable: ask the client for anything it has that we do not (writes dropped while the
+    // board was locked included: they land now instead of leaving its doc diverged for good).
+    if ((!couldWrite && next.role !== 'viewer') || (!couldEdit && canEdit(next.role))) this.sendSyncStep1(conn);
+    if (!couldEdit && canEdit(next.role))
+      for (const [name, l] of this.layers) {
+        const wire = wireNameFor(name, conn);
+        if (wire) send(conn.ws, layerMessage(wire, (e) => syncProtocol.writeSyncStep1(e, l.doc)));
+      }
+  }
+
+  /** Is the session's facilitator here (a socket on this instance, or presence from another)? */
+  private facilitatorPresent(by: string): boolean {
+    for (const c of this.conns.values()) if (c.userId === by) return true;
+    for (const state of this.awareness.getStates().values()) if ((state as { user?: { id?: string } } | null)?.user?.id === by) return true;
+    return false;
+  }
+
+  /** Starts / stops the countdown that ends a session whose facilitator left. */
+  private checkFacilitator(): void {
+    const session = readFacilitation(this.doc);
+    if (!session || this.destroyed || this.facilitatorPresent(session.by)) {
+      if (this.facilitatorTimer) clearTimeout(this.facilitatorTimer);
+      this.facilitatorTimer = null;
+      return;
+    }
+    if (this.facilitatorTimer) return;
+    this.facilitatorTimer = setTimeout(() => {
+      this.facilitatorTimer = null;
+      const now = readFacilitation(this.doc);
+      if (this.destroyed || !now || now.by !== session.by || now.startedAt !== session.startedAt || this.facilitatorPresent(now.by)) return;
+      this.doc.transact(() => this.doc.getMap<unknown>(FACILITATION_COLLECTION).delete(FACILITATION_KEY), SERVER_ORIGIN);
+    }, getConfig().facilitatorGraceMs);
+    this.facilitatorTimer.unref();
   }
 
   /**
@@ -524,11 +649,14 @@ class Room {
   join(ws: WebSocket, a: Admission, queued: Uint8Array[]): void {
     if (this.unloadTimer) clearTimeout(this.unloadTimer);
     this.unloadTimer = null;
+    const eff = effectiveAccess(a.role, a.userId, readFacilitation(this.doc));
     const conn: Conn = {
       ws,
       userId: a.userId,
       sessionKey: a.sessionKey,
-      role: a.role,
+      role: eff.role,
+      access: a.role,
+      limits: eff.limits,
       authorName: a.authorName,
       authorNames: new Set(a.authorName !== undefined ? [a.authorName] : [a.identity.name, ...(a.authorNames ?? [])]),
       identity: { value: a.identity, at: Date.now(), loading: false },
@@ -542,7 +670,7 @@ class Room {
     ws.on('close', () => this.leave(conn));
 
     // 1) effective role, 2) sync step 1, 3) current awareness states, then what the client said.
-    send(ws, encodeRoleMessage(conn.role));
+    send(ws, encodeRoleMessage(conn.role, conn.limits));
     this.sendSyncStep1(conn);
     const states = this.awareness.getStates();
     if (states.size > 0) {
@@ -552,6 +680,7 @@ class Room {
       send(ws, encoding.toUint8Array(e));
     }
     for (const msg of queued) this.receive(conn, msg);
+    this.checkFacilitator();
   }
 
   private sendSyncStep1(conn: Conn): void {
@@ -616,6 +745,21 @@ class Room {
   }
 
   private onUpdate(conn: Conn, update: Uint8Array, syncType: number): void {
+    if (canEdit(conn.role)) {
+      // With the facilitation guards in the same transaction: nobody else ever receives what they
+      // undo, and the socket is sent the correction (facilitation.ts).
+      const before = Y.encodeStateVector(this.doc);
+      const addTypes = conn.limits?.addTypes;
+      let fixed = false;
+      this.doc.transact((tr) => {
+        Y.applyUpdate(this.doc, update);
+        fixed = guardSession(tr, this.doc, { userId: conn.userId, access: conn.access });
+        if (addTypes) fixed = revertForbiddenAdds(tr, this.doc.getMap<unknown>(ELEMENTS), new Set(addTypes), (id) => this.existsElsewhere(this.doc, id)) > 0 || fixed;
+      }, conn.ws);
+      if (fixed) send(conn.ws, syncUpdateMessage(Y.encodeStateAsUpdate(this.doc, before)));
+      if (syncType === syncProtocol.messageYjsUpdate) noteSessionActivity(conn.sessionKey);
+      return;
+    }
     if (decideUpdate(conn.role, this.doc, update, conn.userId, conn.authorNames) === 'apply') {
       Y.applyUpdate(this.doc, update, conn.ws);
       // Editing over the socket is activity: a workspace's idle limit must not sign out someone at work.
@@ -676,6 +820,7 @@ class Room {
     if (!this.conns.delete(conn.ws)) return;
     if (conn.awarenessIds.size > 0)
       awarenessProtocol.removeAwarenessStates(this.awareness, [...conn.awarenessIds], null);
+    this.checkFacilitator();
     if (this.conns.size === 0) {
       void this.flush();
       this.scheduleUnload();
@@ -709,12 +854,9 @@ class Room {
       if (!role) {
         conn.ws.close(4403, 'Access revoked');
         this.leave(conn);
-      } else if (role !== conn.role) {
-        const couldWrite = conn.role !== 'viewer';
-        conn.role = role;
-        send(conn.ws, encodeRoleMessage(role));
-        // Newly writable: ask the client for anything it has that we do not.
-        if (!couldWrite && role !== 'viewer') this.sendSyncStep1(conn);
+      } else if (role !== conn.access) {
+        conn.access = role;
+        this.setEffective(conn);
       }
     });
   }
@@ -846,6 +988,7 @@ class Room {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     if (this.unloadTimer) clearTimeout(this.unloadTimer);
     if (this.snapshotTimer) clearTimeout(this.snapshotTimer);
+    if (this.facilitatorTimer) clearTimeout(this.facilitatorTimer);
     this.destroyed = true;
     this.subscription?.close();
     this.awareness.destroy();

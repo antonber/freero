@@ -217,6 +217,22 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   stays same-origin). Rejections carry the server's message (too large, quota reached).
   `features/pdf` lazy-loads pdf.js (`pdfjs-dist`, pinned exactly) with its worker as a same-origin
   asset (CSP `worker-src 'self'`) and `isEvalSupported: false` (no `unsafe-eval` needed).
+- Video, audio and any other file (KAI-128, `features/media`: element types `media` and `file`).
+  `Host.uploadFile` also takes video/audio (`file.type` video/* or audio/*; the server keeps it
+  only when the BYTES are a container it serves for playback, else 415 — `status` on the Error);
+  `Host.uploadAttachment?(blob)` stores any other file as an opaque attachment; and
+  `Host.downloadFile?({ id, src, name })` saves an item's file under its name through
+  `GET /api/boards/:id/files/:elementId` (see "Uploads: what is served how"). A drop runs the
+  importers by priority: images (100), PDFs (15), then media (12) takes every other real file —
+  video / audio this browser plays (probed locally, with a JPEG poster frame captured from a
+  `blob:` URL and uploaded as an image) become players, the rest (and media the server refuses
+  with 415) file cards. `Editor.importData(data, at)` (additive) is the same path for "upload"
+  buttons, so a picked image still becomes an image. Playback is each viewer's own, never synced:
+  a remote "play" would hit every browser's autoplay rules (unmuted playback needs that person's
+  own gesture), and buffering makes synced positions drift; presenters bring people to the item
+  with follow / "Bring everyone to me" and press play. The player mounts on the first play only
+  (a board of videos loads nothing until then), Space plays / pauses the selected item, and
+  exports render the poster and the cards (a fresh copy never plays).
 - `Host.listMembers()`: everyone with access to the board (owner + invited members), including
   people never seen online — for assignee pickers etc. (`/board/local`: just the local user).
 - `Host.lookupUsers(ids)`: current profiles (name, color, photo) for ids the board shows — people
@@ -300,6 +316,15 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
 - `BoardEngineProps.initialState`: a read-only board from a document state, with no network and
   nothing persisted (the operator's preview of a reported board; host role viewer, `syncUrl` '').
 - `Host.user` changes (profile renamed / recolored in any tab) are republished to presence.
+- Facilitator limits (KAI-129; see "Facilitator controls" under Server): `Editor.getLimits()` /
+  hook `useLimits()` (from the server's role message), `mayAdd(type)`, `listAddableTypes()` (from
+  `ToolDefinition.creates`, default: the element type named like the tool). The engine mirrors the
+  server: a locked board is the commenter role with a toast naming the facilitator; `createMany`,
+  `insertElements` / paste and `setTool` refuse types outside `addTypes`, and the toolbar hides
+  those tools. `FollowTarget.locked` ("follow me"): user camera moves, Esc, canvas clicks and the
+  followed person's brief absence don't end it; only `follow(null, { force: true })` does.
+  `Editor.setCursorsHidden(hidden)` / `useCursorsHidden()`: other people's cursors off for this
+  viewer (local).
 - Board layers (see "Board layers" under Server): `Editor.layerOf(id)`, `setPrivatePlacement(rule)`,
   `privateCollection(name)` + hook `usePrivateCollection`, `revealPrivate` / `discardPrivate`,
   `ElementDefinition.hidesContents(el)`. `ExportOptions.sharedOnly` (thumbnails).
@@ -763,6 +788,26 @@ credentials that act for a person without their session), `api` (no table: the p
   referenced (`last_referenced_at`), re-checks the candidates right before deleting, and deletes
   rows + files no round has seen referenced for 24 h — freeing quota. New content that stores
   upload URLs outside board docs adds its scan to `SCANS` there. `ObjectStorage.list()` exists for it.
+  `UPLOAD_REF_PATTERN` / `FILE_NAME_RE` are built from the one extension list in `uploads/store.ts`,
+  so a new upload kind is seen by every scan (and the account purge) without touching them.
+- Uploads: what is served how (`uploads/store.ts`, `routes.ts`, `download.ts`; KAI-128). What may
+  be served INLINE is an allowlist decided by the bytes, never a name or a declared type: raster
+  images, SVG (sandbox CSP), PDF, and video / audio whose container signature `sniffMedia`
+  recognises (MP4 / M4A / MOV by their `ftyp` brand, WebM's EBML doc type, Ogg, WAV, FLAC, MP3, AAC);
+  they are stored under the type and extension the bytes say. Anything else is an ATTACHMENT
+  (`POST /api/uploads?as=attachment`, stored as `<id>.bin`, `application/octet-stream`): never
+  served at `/uploads/` at all (404), only by `GET /api/boards/:id/files/:elementId` — the item is
+  looked up in the board AS THAT PERSON SEES IT (`readBoardView`: no other board's file, no hidden
+  frame's, no one's draft), the workspace's downloads policy applies (`boards.authorizeFileDownload`,
+  403 like an export, guests included), each download is audited (`board.file_downloaded`, file
+  name + upload), and it goes out as `Content-Disposition: attachment` under the item's own name
+  (RFC 5987), `nosniff`, the sandbox CSP and `no-store`. So an uploaded HTML / SVG / script can
+  never run as same-origin content. Video / audio answer single byte ranges (`Accept-Ranges`, 206,
+  416 past the end; `ObjectStorage.get(key, range)` + `stat`), or redirect to the bucket like
+  raster images (the CSP's `media-src` names it; `blob:` is the local file probed for its poster).
+  Size caps are per kind (`MAX_UPLOAD_MB` images / PDF, `MAX_MEDIA_UPLOAD_MB`,
+  `MAX_ATTACHMENT_UPLOAD_MB`), refused before the body is read when `Content-Length` says so; every
+  kind counts toward the one per-account quota. Moderation removal answers 410 on both paths.
 
 ### Moderation (`modules/moderation`, KAI-142)
 
@@ -1344,6 +1389,36 @@ account purge rewrites the deleted user's comment authorship to "Deleted user" t
 room (`renameCommentAuthor`), so open boards update and the save queue persists it. Member emails
 (`GET /members`) are only sent to owners/editors.
 
+**Facilitator controls** (KAI-129, `realtime/facilitation.ts`, next to the comment rules): the
+`facilitation` collection holds at most one `FacilitationSession` (`@freero/shared`), and the
+server reads it. While it runs, every EDITOR socket except the facilitator's is limited (the board
+owner never is): a socket's `role` in `rooms.ts` is its EFFECTIVE role — its access as limited by
+the session — recomputed whenever the session or the access changes and sent to the client in the
+role message with `limits` (`RoleMessage`, `SessionLimits`). A locked board makes participants
+commenters (comments only; no layer writes); `allowedTypes` limits what they may ADD. Forbidden
+adds, and changes of the session by anyone but its facilitator or the owner, are undone INSIDE the
+transaction that applies the update (`changedKeys` reads the values the transaction replaced), so
+nobody else ever receives them and the sender is sent the correction — dropping the update instead
+would leave every later update of that client pending on the server forever. "Adding" = an id in
+none of the room's docs and not removed from one in the last 30 s (a move between the shared doc
+and a layer arrives as two updates in either order). A participant's write that raced the lock is
+dropped and lands when the lock ends (the room asks the newly writable client for what it lacks),
+never during it. Requests go through the same rule (`applyChange` refuses for a limited actor).
+The room ends the session (`SERVER_ORIGIN`) when the facilitator has had no socket here and no
+presence from another instance for `FREERO_FACILITATOR_GRACE_MS` (30 s). Following the facilitator
+and hidden cursors are views each client applies (`features/facilitation`); not enforceable.
+
+Session features built on these pieces (KAI-130/131/159) add no server rules of their own:
+planning poker (`features/estimation`) seals each pick in the picker's private layer with a shared
+"has picked" marker and reveals one item at a time (`revealPrivate` with a per-item prefix), then
+writes the agreed value through `card.setEstimate` (cards keep one writer). Retro mode
+(`features/retro`) stores only its step and drives every other feature through commands that take
+args — `templates.insert`, `private-mode.start/reveal`, `timer.start`, `facilitation.start/set/end`,
+`voting.start/end`, `arrange.clusterByColor` — so private writing, sealed votes and the
+facilitator's limits keep their own guarantees. The laser pointer (`features/present`) is presence
+only (`ext.present.laser`, receivers fade points from their own arrival time); presenter notes are
+the `presenterNotes` collection (frame id → text), never elements, so never in exports.
+
 ### Board layers — content the server withholds (`realtime/layers.ts`, `engine/store/`)
 
 Some content must not reach everyone who can open a board: the ballots of a vote whose results are
@@ -1356,7 +1431,7 @@ only to connections that may read them:
 
 | layer (wire / stored) | read by | written by | holds |
 |---|---|---|---|
-| `private` / `u:<userId>` | that user's sockets | that user, while owner/editor | private-mode drafts (`elements`), sealed ballots (`voting`) |
+| `private` / `u:<userId>` | that user's sockets | that user, while owner/editor | private-mode drafts (`elements`), sealed ballots (`voting`), sealed planning-poker picks (`estimation`) |
 | `editors` / `editors` | owner/editor sockets | owners/editors | contents of hidden frames (`elements`) |
 
 - Wire format: `WS_MESSAGE_LAYER` envelopes around y-protocols sync messages, `WS_MESSAGE_LAYER_OP`
@@ -1429,7 +1504,7 @@ only to connections that may read them:
   `DATABASE_URL` it runs against that Postgres (fresh database per run, dropped afterwards) and
   also starts two instances at once on one empty database (migration lock); with `REDIS_URL` too,
   it runs two instances on one database + Redis with clients on each. CI does all of it.
-  `--only main,signin,secrets,sweep,purge,notify,platform,multi` runs some groups (to loop one while hunting a flake).
+  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation` runs some groups (to loop one while hunting a flake).
   Checks wait on the real condition, never a fixed sleep: `waitFor(cond, ms)` polls until a
   deadline; `settled(client, observers)` is a barrier (a presence change the server handles after
   everything the client sent before, relayed in order) for proving something did NOT arrive;

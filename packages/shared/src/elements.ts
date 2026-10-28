@@ -22,7 +22,9 @@ export type ElementType =
   | 'icon'
   | 'kanban'
   | 'pdf'
-  | 'swimlane';
+  | 'swimlane'
+  | 'media'
+  | 'file';
 
 export interface BaseElement {
   id: string;
@@ -331,6 +333,8 @@ export interface CardElement extends BaseElement {
   dueDate?: string | null; // ISO date
   status?: 'todo' | 'doing' | 'done' | null;
   tags?: string[];
+  /** Agreed estimate (story points, a size): written by planning poker through `card.setEstimate`. */
+  estimate?: string | null;
 }
 
 export interface EmojiElement extends BaseElement {
@@ -464,6 +468,46 @@ export interface PdfElement extends BaseElement {
 }
 
 /**
+ * A video or audio file that plays on the board. The file lives in uploads (served with byte
+ * ranges, so it seeks); playback is each viewer's own (never synced). A video shows `poster` (a
+ * frame captured by the uploading browser) until played, and in exports.
+ */
+export interface MediaElement extends BaseElement {
+  type: 'media';
+  kind: 'video' | 'audio';
+  /** /uploads/<id>.<mp4|webm|mov|m4a|mp3|wav|ogg|flac|aac> (or a data: URL in the offline sandbox). */
+  src: string;
+  /** /uploads/<id>.jpg|png: a still of the video (absent for audio, or when none could be taken). */
+  poster?: string | null;
+  /** The original file name (shown, and the name it downloads under). */
+  name: string;
+  /** Bytes. */
+  size: number;
+  /** Seconds; 0 when unknown. */
+  duration: number;
+  /** The video's own size (px), for its aspect ratio; 0 for audio. */
+  naturalW: number;
+  naturalH: number;
+}
+
+/**
+ * Any other file attached to the board: a card with its name, type and size that downloads on
+ * click (never opened in the browser). The bytes live in uploads as an opaque attachment that is
+ * only served through the board (the workspace's downloads policy, the audit log).
+ */
+export interface FileElement extends BaseElement {
+  type: 'file';
+  /** /uploads/<id>.bin (or a data: URL in the offline sandbox). */
+  src: string;
+  /** The original file name, extension included. */
+  name: string;
+  /** Bytes. */
+  size: number;
+  /** The type the uploading browser reported (display only: never trusted, never served). */
+  mime: string;
+}
+
+/**
  * A swimlane diagram (a pool): a title band, lanes — rows, or columns when `vertical` — and
  * phases across them. It is a container: items dropped in it join it (`frameId`) and keep their
  * own positions; an item is in the lane (and phase) under its center. Lanes grow to fit what is
@@ -505,7 +549,9 @@ export type BoardElement =
   | IconElement
   | KanbanElement
   | PdfElement
-  | SwimlaneElement;
+  | SwimlaneElement
+  | MediaElement
+  | FileElement;
 
 export type ElementOf<T extends ElementType> = Extract<BoardElement, { type: T }>;
 
