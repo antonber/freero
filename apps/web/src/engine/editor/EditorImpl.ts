@@ -730,7 +730,7 @@ export class EditorImpl implements Editor {
     if (!ids.length || !this.guardWrite()) return [];
     const all = this.withChildren(ids);
     const source = all.map((id) => this.getElement(id)!).filter(Boolean).sort((a, b) => a.z - b.z);
-    if (!source.length) return [];
+    if (!source.length || !this.guardAdd(source.map((el) => el.type))) return [];
     const zoom = this.getCamera().zoom;
     const d = offset ?? { x: Math.max(24, 20 / zoom), y: Math.max(24, 20 / zoom) };
     const { elements, idMap } = remapElements(source, () => nanoid());

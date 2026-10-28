@@ -68,7 +68,7 @@ describe('role-disallowed writes never reach the document', () => {
     expect(updates()).toBe(1);
   });
 
-  it('a participant a facilitator limited to stickies adds no frame by tool, create or paste, and stickies still go through', () => {
+  it('a participant a facilitator limited to stickies adds no frame by tool, create, paste or duplicate, and stickies still go through', () => {
     // The server would undo such an add for everyone; the client must not send it in the first place.
     core = makeCore({
       role: 'editor',
@@ -79,18 +79,17 @@ describe('role-disallowed writes never reach the document', () => {
         }),
       ],
     });
-    core.store.serverLimits = { byName: 'Lead', locked: false, addTypes: ['sticky'] };
     const frame = core.editor.create({ type: 'frame', x: 0, y: 0 } as never);
+    core.store.serverLimits = { byName: 'Lead', locked: false, addTypes: ['sticky'] };
     const updates = countUpdates(core);
-    core.store.elements.delete(frame);
-    const before = updates();
     core.editor.setTool('frame');
     core.editor.create({ type: 'frame', x: 0, y: 0 } as never);
     core.editor.insertElements({ elements: [{ id: 'f2', type: 'frame', x: 0, y: 0, w: 10, h: 10 } as never] });
-    expect(updates()).toBe(before);
+    core.editor.duplicate([frame]);
+    expect(updates()).toBe(0);
     expect(core.editor.getToolId()).toBe('select');
     core.editor.create({ type: 'sticky', x: 0, y: 0 } as never);
-    expect(updates()).toBe(before + 1);
+    expect(updates()).toBe(1);
   });
 
   it('a live role downgrade (server role message) blocks further writes', () => {
