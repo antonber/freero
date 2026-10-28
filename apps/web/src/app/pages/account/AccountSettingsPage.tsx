@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, BadgeCheck, CircleAlert, ImageUp, LogOut, Mail, Monitor, ShieldCheck, Trash2 } from 'lucide-react';
-import { describeDevice, type NotificationPrefs, type SecurityInfo, type SessionInfo } from '@freero/shared';
+import { ArrowLeft, BadgeCheck, CircleAlert, Download, ImageUp, LogOut, Mail, Monitor, ShieldCheck, Trash2 } from 'lucide-react';
+import { describeDevice, type DataExportInfo, type NotificationPrefs, type SecurityInfo, type SessionInfo } from '@freero/shared';
 import { Avatar, Button, ColorSwatches, Input, Logo, Modal, Spinner, Toggle, useToast } from '@ui';
 import { api, ApiError } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { relativeTime } from '../../lib/time';
+import { ExportList } from '../dashboard/WorkspaceEnterprise';
 import { Section } from './Section';
 import { isReauthRequired, needsReauth, ReauthPrompt, SignInMethodsSection, TwoFactorSection } from './SecuritySections';
 import './account.css';
@@ -50,6 +51,7 @@ export function AccountSettingsPage() {
         <PasswordSection security={security} onChanged={securityChanged} />
         <TwoFactorSection security={security} onChanged={securityChanged} />
         <SessionsSection version={sessionsVersion} />
+        <DataSection />
         <DeleteSection security={security} />
       </main>
     </div>
@@ -466,6 +468,48 @@ function SessionsSection({ version }: { version: number }) {
           </div>
         </>
       )}
+    </Section>
+  );
+}
+
+/** GDPR: a ZIP of everything Freero keeps about you, built in the background and emailed as a link. */
+function DataSection() {
+  const notify = useToast();
+  const [exports, setExports] = useState<DataExportInfo[]>([]);
+  const [busy, setBusy] = useState(false);
+  const refresh = useCallback(() => api.myExports().then(({ exports }) => setExports(exports), () => undefined), []);
+  useEffect(() => void refresh(), [refresh]);
+  // While one is being prepared, look again now and then.
+  const preparing = exports.some((e) => e.status === 'pending' || e.status === 'running');
+  useEffect(() => {
+    if (!preparing) return;
+    const t = setInterval(() => void refresh(), 5000);
+    return () => clearInterval(t);
+  }, [preparing, refresh]);
+  const ask = async () => {
+    setBusy(true);
+    try {
+      await api.requestMyExport();
+      notify('Preparing your data. We’ll email you a link when it’s ready.', 'success');
+      void refresh();
+    } catch (e) {
+      notify(e instanceof ApiError ? e.message : 'Could not start the export', 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Section
+      id="data"
+      title="Your data"
+      description="Download a ZIP of your profile, memberships, comments, the boards you own (as JSON and in Freero’s format, with their images), templates, uploads and notifications. Only you can download it, for 7 days."
+    >
+      <ExportList exports={exports} />
+      <div>
+        <Button icon={Download} loading={busy} disabled={preparing} onClick={() => void ask()}>
+          {preparing ? 'Preparing…' : 'Download my data'}
+        </Button>
+      </div>
     </Section>
   );
 }

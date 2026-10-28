@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
-import { CircleAlert, Eye, EyeOff, Lock, Mail, Sparkles, UserRound } from 'lucide-react';
+import { CircleAlert, Eye, EyeOff, KeyRound, Lock, Mail, Sparkles, UserRound } from 'lucide-react';
+import { SSO_REQUIRED, type SsoDiscovery } from '@freero/shared';
 import { Button, IconButton, Input, Logo } from '@ui';
 import { useAuth } from '../../auth/AuthContext';
-import { ApiError } from '../../api/client';
+import { api, ApiError } from '../../api/client';
 import { safeNext } from '../../lib/nav';
 import { ProviderButtons, providerErrorText } from './ProviderButtons';
 import './AuthPage.css';
@@ -47,6 +48,29 @@ export function AuthPage({ mode }: { mode: Mode }) {
   const [busy, setBusy] = useState(false);
   const [touched, setTouched] = useState(false);
   const firstRef = useRef<HTMLInputElement>(null);
+  // Single sign-on for the address's domain (looked up by domain only, as the address is typed).
+  const [sso, setSso] = useState<SsoDiscovery['sso']>(null);
+  const [breakGlass, setBreakGlass] = useState(false);
+  useEffect(() => {
+    const e = email.trim();
+    if (!EMAIL_RE.test(e)) {
+      setSso(null);
+      return;
+    }
+    let live = true;
+    const t = setTimeout(() => {
+      api.discoverSso(e, next).then(
+        (r) => live && setSso(r.sso),
+        () => live && setSso(null),
+      );
+    }, 300);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [email, next]);
+  // Enforced: the password form is only for the workspace's break-glass owner.
+  const ssoOnly = !!sso?.enforced && !breakGlass;
 
   useEffect(() => {
     setErrors({});
@@ -82,6 +106,11 @@ export function AuthPage({ mode }: { mode: Mode }) {
       } else await signup(name, email, password);
       navigate(next, { replace: true });
     } catch (err) {
+      if (err instanceof ApiError && err.code === SSO_REQUIRED) {
+        // The organization signs this address in through its identity provider.
+        setBreakGlass(false);
+        api.discoverSso(email.trim(), next).then((r) => setSso(r.sso), () => undefined);
+      }
       setServerError(
         err instanceof ApiError
           ? err.status >= 500
@@ -152,32 +181,51 @@ export function AuthPage({ mode }: { mode: Mode }) {
             onChange={(e) => setEmail(e.target.value)}
             error={errors.email}
           />
-          <Input
-            label="Password"
-            icon={Lock}
-            size="lg"
-            type={showPw ? 'text' : 'password'}
-            autoComplete={isLogin ? 'current-password' : 'new-password'}
-            placeholder={isLogin ? 'Your password' : 'At least 8 characters'}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            error={errors.password}
-            suffix={
-              <IconButton
-                size={32}
-                icon={showPw ? EyeOff : Eye}
-                label={showPw ? 'Hide password' : 'Show password'}
-                tooltip={false}
-                onClick={() => setShowPw((s) => !s)}
-              />
-            }
-          />
-
-          {isLogin ? (
-            <Link className="fr-authcard__forgot" to={`/forgot-password${email.trim() ? `?email=${encodeURIComponent(email.trim())}` : ''}`}>
-              Forgot password?
-            </Link>
+          {sso ? (
+            <div className="fr-authcard__sso" data-testid="sso-route">
+              <span>
+                <strong>{sso.workspaceName}</strong> {sso.enforced ? 'signs you in with single sign-on.' : 'uses single sign-on.'}
+              </span>
+              <a className="fr-authcard__sso-btn" href={sso.startUrl}>
+                <KeyRound size={16} aria-hidden /> Continue with SSO
+              </a>
+              {sso.enforced && isLogin ? (
+                <button type="button" className="fr-authcard__sso-alt" onClick={() => setBreakGlass((b) => !b)}>
+                  {breakGlass ? 'Hide password sign-in' : 'Workspace owner? Sign in with your password'}
+                </button>
+              ) : null}
+            </div>
           ) : null}
+          {ssoOnly ? null : (
+            <>
+              <Input
+                label="Password"
+                icon={Lock}
+                size="lg"
+                type={showPw ? 'text' : 'password'}
+                autoComplete={isLogin ? 'current-password' : 'new-password'}
+                placeholder={isLogin ? 'Your password' : 'At least 8 characters'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                error={errors.password}
+                suffix={
+                  <IconButton
+                    size={32}
+                    icon={showPw ? EyeOff : Eye}
+                    label={showPw ? 'Hide password' : 'Show password'}
+                    tooltip={false}
+                    onClick={() => setShowPw((s) => !s)}
+                  />
+                }
+              />
+
+              {isLogin ? (
+                <Link className="fr-authcard__forgot" to={`/forgot-password${email.trim() ? `?email=${encodeURIComponent(email.trim())}` : ''}`}>
+                  Forgot password?
+                </Link>
+              ) : null}
+            </>
+          )}
 
           {serverError || providerError ? (
             <div className="fr-authcard__error" role="alert">
@@ -186,9 +234,11 @@ export function AuthPage({ mode }: { mode: Mode }) {
             </div>
           ) : null}
 
-          <Button type="submit" variant="primary" size="lg" block loading={busy}>
-            {isLogin ? 'Log in' : 'Create account'}
-          </Button>
+          {ssoOnly ? null : (
+            <Button type="submit" variant={sso ? 'secondary' : 'primary'} size="lg" block loading={busy}>
+              {isLogin ? 'Log in' : 'Create account'}
+            </Button>
+          )}
         </form>
 
         {import.meta.env.DEV ? (

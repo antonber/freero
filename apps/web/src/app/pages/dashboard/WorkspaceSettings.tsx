@@ -5,6 +5,7 @@ import { Crown, Trash2 } from 'lucide-react';
 import type { LinkAccess, WorkspaceMember, WorkspacePolicies, WorkspaceSummary } from '@freero/shared';
 import { Button, Input, Modal, Select, useToast, type SelectOption } from '@ui';
 import { api, ApiError } from '../../api/client';
+import { ScimBlock, SsoBlock, WorkspaceDataBlock } from './WorkspaceEnterprise';
 
 const POLICY_FIELDS: Array<{
   key: keyof WorkspacePolicies;
@@ -171,6 +172,14 @@ export function WorkspaceSettings({
         ))}
       </div>
 
+      {workspace.kind === 'team' ? (
+        <>
+          <SsoBlock workspace={workspace} />
+          <ScimBlock workspace={workspace} />
+          <WorkspaceDataBlock workspace={workspace} />
+        </>
+      ) : null}
+
       {owner ? (
         <>
           <div className="fr-dash-settings__block">
@@ -192,7 +201,9 @@ export function WorkspaceSettings({
 
           <div className="fr-dash-settings__block fr-dash-settings__block--danger">
             <h2 className="fr-dash-settings__title">Delete workspace</h2>
-            <p className="fr-dash-settings__hint">Deletes the workspace and every board in it, for everyone. This can’t be undone.</p>
+            <p className="fr-dash-settings__hint">
+              Deletes the workspace and every board in it, for everyone. This can’t be undone. Export it first if you need a copy; every owner gets a receipt.
+            </p>
             <Button variant="danger" icon={Trash2} onClick={() => setDeleting(true)}>
               Delete workspace…
             </Button>

@@ -6,6 +6,12 @@ import type {
   BoardSummary,
   BoardVersion,
   CreateBoardRequest,
+  DataExportInfo,
+  ScimGroupMapping,
+  ScimSettings,
+  SsoConnectionInput,
+  SsoDiscovery,
+  SsoSettings,
   ImportImageRequest,
   InvitePreview,
   InviteRequest,
@@ -221,6 +227,30 @@ export const api = {
     request<{ invite: WorkspaceInvite }>('POST', `/api/workspaces/${encodeURIComponent(id)}/invites/${encodeURIComponent(inviteId)}/resend`),
   revokeWorkspaceInvite: (id: string, inviteId: string) =>
     request<{ ok: true }>('DELETE', `/api/workspaces/${encodeURIComponent(id)}/invites/${encodeURIComponent(inviteId)}`),
+  // single sign-on, provisioning, data exports (team workspaces: owners/admins)
+  ssoSettings: (id: string) => request<SsoSettings>('GET', `/api/workspaces/${encodeURIComponent(id)}/sso`),
+  addSsoDomain: (id: string, domain: string) => request<SsoSettings>('POST', `/api/workspaces/${encodeURIComponent(id)}/sso/domains`, { domain }),
+  verifySsoDomain: (id: string, domainId: string) =>
+    request<SsoSettings>('POST', `/api/workspaces/${encodeURIComponent(id)}/sso/domains/${encodeURIComponent(domainId)}/verify`),
+  removeSsoDomain: (id: string, domainId: string) =>
+    request<SsoSettings>('DELETE', `/api/workspaces/${encodeURIComponent(id)}/sso/domains/${encodeURIComponent(domainId)}`),
+  saveSsoConnection: (id: string, body: SsoConnectionInput) => request<SsoSettings>('PUT', `/api/workspaces/${encodeURIComponent(id)}/sso/connection`, body),
+  removeSsoConnection: (id: string) => request<SsoSettings>('DELETE', `/api/workspaces/${encodeURIComponent(id)}/sso/connection`),
+  enforceSso: (id: string, enforced: boolean, breakGlassUserId: string | null) =>
+    request<SsoSettings & { sessionsEnded: number }>('POST', `/api/workspaces/${encodeURIComponent(id)}/sso/enforce`, { enforced, breakGlassUserId }),
+  discoverSso: (email: string, next: string) =>
+    request<SsoDiscovery>('GET', `/api/sso/discover?email=${encodeURIComponent(email)}&next=${encodeURIComponent(next)}`),
+  scimSettings: (id: string) => request<ScimSettings>('GET', `/api/workspaces/${encodeURIComponent(id)}/scim`),
+  createScimToken: (id: string, label: string) =>
+    request<{ token: string; settings: ScimSettings }>('POST', `/api/workspaces/${encodeURIComponent(id)}/scim/tokens`, { label }),
+  revokeScimToken: (id: string, tokenId: string) =>
+    request<ScimSettings>('DELETE', `/api/workspaces/${encodeURIComponent(id)}/scim/tokens/${encodeURIComponent(tokenId)}`),
+  mapScimGroup: (id: string, groupId: string, mapping: ScimGroupMapping | null) =>
+    request<ScimSettings>('PUT', `/api/workspaces/${encodeURIComponent(id)}/scim/groups/${encodeURIComponent(groupId)}`, { mapping }),
+  requestMyExport: () => request<{ export: DataExportInfo }>('POST', '/api/me/exports'),
+  myExports: () => request<{ exports: DataExportInfo[] }>('GET', '/api/me/exports'),
+  requestWorkspaceExport: (id: string) => request<{ export: DataExportInfo }>('POST', `/api/workspaces/${encodeURIComponent(id)}/exports`),
+  workspaceExports: (id: string) => request<{ exports: DataExportInfo[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/exports`),
   previewWorkspaceInvite: (token: string) =>
     request<{ invite: WorkspaceInvitePreview }>('GET', `/api/workspace-invites/${encodeURIComponent(token)}`),
   acceptWorkspaceInvite: (token: string) =>
