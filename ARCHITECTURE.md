@@ -272,6 +272,10 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   with frame children + `copyContent`) and `Editor.insertElements(snapshot, { at? })` — the ONE
   insertion path for copied content (paste uses it): fresh ids, references remapped, content
   restored, one undo step, on a `findFreeSpot` by default. Saved templates go through it.
+- `Host.activity?.list(before?)` (additive): the board's activity feed as the server recorded
+  it (see "Activity"); `features/activity` shows it in a dock panel.
+- `SavedTemplateInfo.ownerName` / `canUnshare` (additive): team templates say who shared them;
+  a workspace admin may `shareTemplate(id, false)` someone else's team template.
 - `Host.listTemplates / loadTemplate / saveTemplate / deleteTemplate` (server module
   `templates`): a board or selection saved for reuse — the user's own plus those shared with a
   team workspace they are a full member of; offer owner-only actions only when
@@ -536,21 +540,24 @@ not a reserved hook. Server modules today: `auth` (users, sessions, auth_tokens:
 verification, password reset, email change, session list/revoke, avatars, deletion scheduling;
 auth_devices: browsers that signed in (new sign-in notices);
 auth_identities + auth_oidc_flows: sign in with a provider; auth_challenges, user_totp,
-user_recovery_codes: two-step verification),
-`boards` (boards, stars, opens; trash), `members` (board_members, board_invites: pending invites
-for addresses without an account; role resolution), `workspaces` (workspaces, workspace_members,
+user_recovery_codes: two-step verification; guest_sessions: visitors without an account),
+`boards` (boards, stars, opens; trash; the guest join routes), `members` (board_members,
+board_invites: pending invites for addresses without an account; board_access_requests; role
+resolution), `workspaces` (workspaces, workspace_members,
 workspace_invites, projects, project_members; see "Workspaces" below), `uploads` (uploads; files in object storage or
 `<data>/uploads`), `realtime` (board_docs, board_doc_updates, board_doc_snapshots; y-websocket
 protocol + role filter + update log; version history + snapshot retention), `unfurl` (link
 previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`), `templates` (saved
 templates; content is opaque engine JSON), `accounts` (no table: the purge after the deletion grace
 period, orchestrating the owning modules' exports), `notifications` (notifications,
-notification_prefs: inbox, live delivery, email digests).
+notification_prefs: inbox, live delivery, email digests), `activity` (board_activity: the
+activity feed; see "Activity" below).
 
 - Notifications are created only from trusted server-side events, never from client claims:
   realtime's `onCommentMessage` (a comment message applied from one of THIS instance's sockets,
   attributed to that socket's authenticated user — a message stored under anyone else's id is
-  ignored; each change is reported once across instances) and members' `onBoardShared`. Each
+  ignored; each change is reported once across instances), members' `onBoardShared`,
+  `onAccessRequested` / `onAccessDecided` (`access.request`, `access.response`). Each
   recipient must have access to the board; the author is never notified; one notification per
   person per message (`dedupe_key`; a mention wins over a reply). Types live in
   `notifications/types.ts` (wording, link, settings label): a new source (workspace invites) adds
@@ -646,6 +653,11 @@ members with roles owner / admin / member / guest (separate from board roles).
   projects they were added to) and link access. Link access never exceeds the workspace's
   `linkSharing`; with `externalSharing: 'none'` people outside the workspace get nothing from
   memberships or links. One resolver serves REST, lists and socket admission.
+- Team access LEVEL (KAI-93): what team access gives is the policy `teamAccess`
+  (editor / commenter / viewer), overridden per project by `projects.team_access` (null: the
+  workspace's) — `roles.ts` `teamAccessOf` + `teamRole`. Owners/admins always edit (they
+  administer the content); direct board memberships and links still come on top. The share dialog
+  shows the level (`BoardSummary.team.access`) and the member list each team member's real role.
 - Lists (`GET /boards?workspace=`) are scoped to one workspace the caller is in; `shared` lists
   boards from workspaces they are NOT in that they reach directly; the personal home shows those
   too. A team board never appears for a non-member without a direct invite or its link.
@@ -662,14 +674,68 @@ members with roles owner / admin / member / guest (separate from board roles).
   `/workspace-invite/<token>`, conversion on `auth.onEmailVerified`).
 - Policies (team workspaces): `externalSharing` (who may invite people outside / share by link),
   `linkSharing` (max link role), `guestInvites`, `downloads` (who may export, duplicate or save
-  as template). All enforced by the endpoint that does the work; `BoardSummary.permissions` only
-  tells the UI.
+  as template), `teamAccess` (above), `publicLinks` (whether a link also lets in visitors without
+  an account: see "Guests"). All enforced by the endpoint that does the work;
+  `BoardSummary.permissions` only tells the UI.
+- Team templates (KAI-96): owners/admins of the workspace a template is shared with may unshare
+  it (`templates.shareTemplate(id, null)`); workspaces' `onMembershipChanged` (after a removal or
+  role change) makes everything someone shared with a workspace personal again when they leave it
+  or become a guest there (`templates/init.ts`).
 - Ownership: `POST /boards/:id/transfer` (team: to a non-guest member; personal: to a board
   member, moving the board to their personal workspace) and `POST /workspaces/:id/transfer`, each
   one transaction; the previous owner becomes editor / admin. Account purge first calls
   `handOverTeamWorkspaces` (sole-owned teams pass to the longest-standing admin, else member,
   else guest; an otherwise empty team is deleted with its boards; their team boards pass to an
   owner there).
+
+### Request access (`members/accessRequests.ts`, KAI-40)
+
+Someone signed in who can't open a board asks for it (`board_access_requests`: one row per board
+and person, so at most one pending request). Deciders are the board's owner, the workspace's
+owners/admins and, for a board in a private project, the project's creator while still in the
+workspace (`workspaces.boardGatekeepers`). Notified: the owner plus the admins — or, for a private
+project's board, the project's creator instead of every admin. Approval is a board membership at
+the role the decider picks (`grantAtLeast`: never lowers access); the decision is one conditional
+UPDATE, so two deciders can't both win. Outsiders are let in only as the workspace's external
+sharing policy allows, like invites. A declined request can be repeated after an hour. The answer
+(`access.response`) never names the title of a board the requester can't open. The web request
+page waits on the notifications socket (every instance publishes notification changes), so an
+approval lets the requester in at once.
+
+### Guests: visitors without an account (`auth/guests.ts`, boards' `/api/guest/*`, KAI-43)
+
+- `auth` keeps WHO a guest is: `guest_sessions` (HttpOnly cookie `freero_guest`, sha256 only,
+  `GUEST_SESSION_HOURS`), a name, a color, ONE board. Guest ids start with `guest_` (account ids
+  never contain `_`: `isGuestId`). `boards` decides WHETHER a board lets guests in
+  (`members/roles.ts` `resolveGuestRole`: the board's link as the workspace caps it, never above
+  commenter, only with `publicLinks: 'anyone'` and outside access allowed).
+- A guest id resolves through the same `describeAccess` as accounts, and only on the board the
+  guest joined, so socket admission, live access refreshes (link turned off → 4403) and layers
+  follow the usual path. Expired sessions are purged by a job that ends them through
+  `sessionsEnded` (their sockets close on every instance).
+- Guests reach only: their board's socket, `/api/guest/*`, the people lookup and the activity of
+  their board (`requireUserOrGuest`). Never the member list or emails, notifications, uploads,
+  templates or history. Presence names them `guestDisplayName` ("Guest · Kim"); `commentRules`
+  refuses any other `authorName` from a guest socket. Their @mentions page nobody and they get no
+  notifications; their replies notify thread members with no actor account (`data.actorName`).
+- Join is rate-limited per IP (`RATE_LIMIT_GUEST_JOIN`).
+
+### Activity (`modules/activity`, `realtime/changes.ts`, KAI-44)
+
+- Sources are trusted server events only: realtime's `onBoardChange` — element changes applied
+  from one of THIS instance's sockets (the same updates it appends to the update log), attributed
+  to the socket's user or guest — plus `onCommentMessage` and members' sharing events. Private
+  layers are never observed; changes in the `editors` layer are stored with audience `editors`
+  (owners/editors only); removing a hidden frame's contents from the shared doc (the editors'
+  clients moving them into the layer) is not reported; no element text is ever stored.
+- Each person's changes on a board form a BURST in memory on that instance (net per element:
+  added-and-removed is nothing, a move between the shared doc and the editors layer is nothing)
+  until they pause `ACTIVITY_IDLE_SECONDS` or 10 minutes pass; it is stored as one row per
+  kind/audience with counts per element type and the frame they were in, and worded when read.
+  Bursts are written at shutdown too. Retention: 90 days.
+- `GET /boards/:id/activity` (anyone with access, guests too) and `GET /workspaces/:id/activity`
+  (boards the reader can open there). The board panel is `features/activity` (`Host.activity`);
+  the dashboard home shows the workspace feed.
 
 ### Database (`platform/db.ts`)
 
