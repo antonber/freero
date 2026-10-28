@@ -1,6 +1,7 @@
 import type { FontFamily, ShapeElement, ShapeKind, StrokeStyle } from '@freero/shared';
 
 export const TOOL_ID = 'shape';
+export const LIBRARY_PANEL_ID = 'shape.library';
 export const DEFAULT_SIZE = 120;
 /** Below this drag distance (screen px) a press counts as a click. */
 export const CLICK_SLOP_PX = 4;
