@@ -78,8 +78,10 @@ export function listActions(
     if (!inPalette(def)) continue;
     const label = actionLabel(def);
     const twin = rows.get(`${feature}\u0000${label}`);
+    // Alternatives (extraShortcuts) too, as in listShortcuts: the palette shows every key that works.
+    const keys = def.shortcut ? [def.shortcut, ...(def.extraShortcuts ?? [])] : [];
     if (twin) {
-      if (def.shortcut && !twin.shortcuts.includes(def.shortcut)) twin.shortcuts.push(def.shortcut);
+      for (const k of keys) if (!twin.shortcuts.includes(k)) twin.shortcuts.push(k);
       continue;
     }
     const minRole = def.minRole ?? 'editor';
@@ -91,7 +93,7 @@ export function listActions(
       disabledReason = why || 'Not available right now';
     }
     const detail = disabledReason === null ? def.detail?.(ed) : undefined;
-    const row: ActionEntry = { id: def.id, kind: 'command', label, shortcuts: def.shortcut ? [def.shortcut] : [], feature, icon: def.icon, disabledReason };
+    const row: ActionEntry = { id: def.id, kind: 'command', label, shortcuts: keys, feature, icon: def.icon, disabledReason };
     if (detail) row.detail = detail;
     rows.set(`${feature}\u0000${label}`, row);
     out.push(row);

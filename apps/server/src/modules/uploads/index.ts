@@ -17,5 +17,7 @@ export {
   removeUpload,
   restoreUpload,
   purgeRemovedUpload,
+  keepRemovedUploadsOf,
+  keptCopiesRemovedBefore,
   type ModerationUploadState,
 } from './moderation';

@@ -11,9 +11,11 @@
 //   s:<tid>                      `by` is them: anyone may resolve / reopen     the thread is tombstoned
 //                                any thread (shared workflow state, attributed
 //                                and reversible)
-//   m:<tid>:<mid>                `authorId` is them, before and after (a       they wrote it, or the thread
-//                                guest's `authorName` must also be the name   is tombstoned
-//                                they joined with: "Guest · <name>")
+//   m:<tid>:<mid>                `authorId` is them, before and after, and     they wrote it, or the thread
+//                                `authorName` is a name they have had while   is tombstoned
+//                                connected (accounts: their profile name,
+//                                renames included; guests: "Guest · <name>")
+//                                or the one it already had (an edit)
 //   r:<tid>:<mid>:<uid>:<emoji>  <uid> and `userId` are them                   <uid> is them, or the message
 //                                                                              / thread is tombstoned
 //   x:<tid>                      `by` is them and they created the thread, or  never (tombstones are final)
@@ -56,15 +58,17 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
 /**
  * True when every change in `changes` is one `userId` may make as a commenter. `prior(key)` reads
- * the collection as it was before the update; `priorKeys()` lists its keys. `authorName` (guests):
- * the only author name their messages may carry, so a guest can never pose as a member.
+ * the collection as it was before the update; `priorKeys()` lists its keys. `authorNames`: the
+ * names a message of theirs may newly carry (their profile name, renames while connected; a
+ * guest's "Guest · <name>"), so nobody can comment as someone else (KAI-187). An edit may keep the
+ * name the message already had.
  */
 export function commenterMayChangeComments(
   changes: KeyChange[],
   userId: string,
   prior: (key: string) => unknown,
   priorKeys: () => Iterable<string>,
-  authorName?: string,
+  authorNames?: ReadonlySet<string>,
 ): boolean {
   const byKey = new Map(changes.map((c) => [c.key, c]));
   /** Legacy whole-thread values deleted by this update, by thread id. */
@@ -145,7 +149,8 @@ export function commenterMayChangeComments(
         if (!a) return (b as unknown as CommentMessageRecord).authorId === userId || threadTombstoned(tid);
         const m = a as unknown as CommentMessageRecord;
         if (m.kind !== 'message' || m.threadId !== tid || m.id !== mid) return false;
-        if (authorName !== undefined && m.authorId === userId && m.authorName !== authorName) return false;
+        if (authorNames && m.authorId === userId && !authorNames.has(m.authorName) && (b as unknown as CommentMessageRecord | undefined)?.authorName !== m.authorName)
+          return false;
         if (m.authorId === userId) return !b || (b as unknown as CommentMessageRecord).authorId === userId;
         const lm = !b ? legacyMessage(tid, mid) : undefined;
         return !!lm && lm.authorId === m.authorId && lm.text === m.text;

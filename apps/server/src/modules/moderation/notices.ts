@@ -37,6 +37,11 @@ const WHAT: Record<ModerationActionKind, { subject: (t: string | null) => string
     did: (t) => `Freero’s moderators restored your board ${quoted(t)}. Everyone who had access can open it again.`,
     adverse: false,
   },
+  'board.delete': {
+    subject: (t) => `${quoted(t)} was deleted`,
+    did: (t) => `After reviewing your board ${quoted(t)}, which they had removed earlier, Freero’s moderators deleted it for good.`,
+    adverse: true,
+  },
   'upload.remove': {
     subject: () => 'An uploaded file was removed',
     did: (t) => `Freero’s moderators removed a file of yours${t ? ` shown on ${quoted(t)}` : ''}. It no longer loads anywhere it was used.`,
@@ -70,10 +75,11 @@ export const isAdverse = (a: ModerationActionKind): boolean => WHAT[a].adverse;
 /** The notice to the person an action affects. `appealPath`: their signed appeal page (adverse actions). */
 export function sendActionNotice(
   to: string,
-  n: { action: ModerationActionKind; reason: ReportReason; statement: string; boardTitle: string | null; appealPath: string | null },
+  n: { action: ModerationActionKind; reason: ReportReason; statement: string; boardTitle: string | null; appealPath: string | null; extra?: string },
 ): void {
   const what = WHAT[n.action];
   const paragraphs = [what.did(n.boardTitle)];
+  if (n.extra) paragraphs.push(n.extra);
   if (what.adverse) paragraphs.push(`Reason: ${reasonLabel(n.reason)}.`);
   if (n.statement) paragraphs.push(n.statement);
   if (n.appealPath) paragraphs.push('If you think this is a mistake, tell us why and a moderator will review it again.');

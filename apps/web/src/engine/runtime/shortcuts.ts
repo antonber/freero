@@ -146,7 +146,20 @@ export function formatShortcut(s: string | undefined): string {
   return [sc.mod && 'Ctrl', sc.alt && 'Alt', sc.shift && 'Shift', key].filter(Boolean).join('+');
 }
 
-/** True for events whose key would insert a visible character. */
-export function isPrintableKey(e: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey'>): boolean {
-  return e.key.length === 1 && !e.ctrlKey && !e.metaKey && !(e.altKey && !isMac) && e.key !== ' ';
+/**
+ * True for events whose key would insert a visible character. Outside macOS, Windows reports AltGr
+ * as Ctrl+Alt: a Ctrl+Alt press counts when it typed a character its key doesn't carry plainly —
+ * '@' from AltGr+Q (German), '€', '[' from AltGr+8, 'ą' from AltGr+A (Polish) — and not when it
+ * is a Ctrl+Alt shortcut on the key's own letter or digit (Ctrl+Alt+T types nothing, reports 't').
+ */
+export function isPrintableKey(e: Pick<KeyboardEvent, 'key' | 'code' | 'ctrlKey' | 'metaKey' | 'altKey'>): boolean {
+  if (e.key.length !== 1 || e.key === ' ' || e.metaKey) return false;
+  if (!e.ctrlKey) return !(e.altKey && !isMac);
+  return !isMac && e.altKey && !ownCharacter(e);
+}
+
+/** The key's own letter or digit (what it types without AltGr), e.g. 't' on KeyT, '9' on Digit9. */
+function ownCharacter(e: Pick<KeyboardEvent, 'key' | 'code'>): boolean {
+  const m = /^(?:Key([A-Z])|Digit(\d)|Numpad(\d))$/.exec(e.code ?? '');
+  return !!m && e.key.toLowerCase() === (m[1] ?? m[2] ?? m[3]).toLowerCase();
 }

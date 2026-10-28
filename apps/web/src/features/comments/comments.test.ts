@@ -4,6 +4,7 @@ import { createTestBoard, type Editor, type TestBoard } from '@engine';
 import manifest from './feature';
 import { decodeMentions, encodeMentions, mentionQuery } from './lib/mentions';
 import { anchorFor, assembleThreads, isUnread, threadPoint, upgradeLegacy } from './lib/model';
+import { authorName } from './lib/people';
 import { deleteMessage, deleteThread, editMessage, getThreads, replaceInMessages, reply, setResolved, startDraft, submitDraft, toggleReaction } from './lib/state';
 
 // ---------------------------------------------------------------------------
@@ -193,5 +194,16 @@ describe('@mentions', () => {
   it('an email typed after @ is one query (to invite them), while an address in running text opens nothing', () => {
     expect(mentionQuery('hi @kim@example.com', 19)).toEqual({ start: 3, query: 'kim@example.com' });
     expect(mentionQuery('mail kim@example.com', 20)).toBeNull();
+  });
+});
+
+// KAI-187: the stored name is whatever the writing client put there.
+describe('who a comment is shown as', () => {
+  const person = (id: string, name: string) => ({ id, name, color: '#1C7ED6', avatarUrl: null });
+  it('reads as its author’s current name whatever name the record carries, and a guest’s always reads as a guest', () => {
+    expect(authorName({ authorId: 'u1', authorName: 'Jane Doe (CEO)' }, { u1: person('u1', 'Mallory') })).toBe('Mallory');
+    expect(authorName({ authorId: 'guest_x', authorName: 'Ana' }, {})).toBe('Guest · Ana');
+    // Accounts that are gone keep what the purge wrote.
+    expect(authorName({ authorId: 'gone', authorName: 'Deleted user' }, {})).toBe('Deleted user');
   });
 });

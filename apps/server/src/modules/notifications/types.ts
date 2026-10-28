@@ -61,6 +61,7 @@ const MODERATION_TITLE: Record<string, (d: NotificationData) => string> = {
   'board.restore_link': (d) => `Link sharing works again for ${board(d)}`,
   'board.take_down': (d) => `Freero’s moderators removed ${board(d)} for review`,
   'board.restore': (d) => `${board(d)} is available again`,
+  'board.delete': (d) => `Freero’s moderators deleted ${board(d)} for good`,
   'upload.remove': (d) => `Freero’s moderators removed a file of yours${d.boardTitle ? ` shown on ${board(d)}` : ''}`,
   'upload.restore': () => 'A file of yours is available again',
 };
