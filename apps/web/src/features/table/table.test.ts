@@ -88,6 +88,22 @@ describe('cell edits and copies', () => {
   });
 });
 
+describe('table text after switching boards', () => {
+  it("a table's plain text (copy as text, Layers label) reads its own board's cells, not the first board shown", () => {
+    const paste = (ed: Editor, text: string) => {
+      tableDef.importData!(ed, { files: [], text, html: null }, { x: 0, y: 0 });
+      return ed.getElements().find((el) => el.type === 'table') as TableElement;
+    };
+    const first = createTestBoard({ users: ['ann'], features: [bundle] });
+    paste(first.editors('table')[0], 'Old\tboard');
+    first.destroy();
+    board = createTestBoard({ users: ['ann'], features: [bundle] });
+    const [ann] = board.editors('table');
+    const t = paste(ann, 'Name\tCity\nAda\tLondon');
+    expect(tableDef.toPlainText!(t, ann)).toBe('Name\tCity\nAda\tLondon');
+  });
+});
+
 describe('table structure', () => {
   it('dragging a corner handle scales the columns so the grid still fills the table', () => {
     const t = { ...newTable({ x: 0, y: 0 }, 2, 3), id: 't' } as unknown as TableElement;
