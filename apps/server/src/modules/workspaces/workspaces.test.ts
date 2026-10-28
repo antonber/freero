@@ -6,7 +6,7 @@ import { purgeDueAccounts } from '../accounts/index';
 import { createUser, scheduleAccountDeletion } from '../auth/index';
 import { createBoard, getBoardAccess } from '../boards/index';
 import { inviteToWorkspace } from './invites';
-import { createProject, deleteProject } from './projects';
+import { createProject, deleteProject, updateProject } from './projects';
 import { changeRole, createTeamWorkspace, listWorkspaces, removeMember, updateWorkspace } from './service';
 
 beforeAll(() => openTestDb());
@@ -82,6 +82,27 @@ it('"external sharing: nobody" cuts outsiders’ link access, and links never ex
   await updateWorkspace(ws, owner.id, { policies: { externalSharing: 'none' } });
   expect(await role(linked.id, outsider)).toBeNull();
   expect(await role(linked.id, member)).toBe('editor'); // the team itself is unaffected
+});
+
+it('a lowered team access level limits members (a project can set its own) but never the workspace’s admins', async () => {
+  const [owner, admin, member] = await Promise.all([user('Lead'), user('Admin2'), user('Member2')]);
+  const ws = await team(owner, [
+    [admin, 'admin'],
+    [member, 'member'],
+  ]);
+  const workshop = await createProject(ws, owner.id, { name: 'Workshop' });
+  const plain = await createBoard(owner.id, 'Plain', '', 'none', { workspaceId: ws });
+  const inProject = await createBoard(owner.id, 'In project', '', 'none', { workspaceId: ws, projectId: workshop.id });
+
+  await updateWorkspace(ws, owner.id, { policies: { teamAccess: 'viewer' } });
+  expect(await role(plain.id, member)).toBe('viewer');
+  expect(await role(plain.id, admin)).toBe('editor');
+
+  await updateProject(workshop.id, owner.id, { teamAccess: 'commenter' });
+  expect(await role(inProject.id, member)).toBe('commenter');
+  // Back to the workspace's level.
+  await updateProject(workshop.id, owner.id, { teamAccess: null });
+  expect(await role(inProject.id, member)).toBe('viewer');
 });
 
 it('a project with boards in it can’t be deleted (its private boards would open up to the whole team)', async () => {

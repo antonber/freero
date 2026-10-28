@@ -1,5 +1,5 @@
 // Pure workspace rules: roles, what a workspace grants on its boards, and the sharing policies.
-import type { LinkAccess, ProjectAccess, Role, WorkspacePolicies, WorkspaceRole } from '@freero/shared';
+import type { LinkAccess, ProjectAccess, Role, TeamAccess, WorkspacePolicies, WorkspaceRole } from '@freero/shared';
 
 export const WORKSPACE_ROLES: WorkspaceRole[] = ['owner', 'admin', 'member', 'guest'];
 export const INVITABLE_WORKSPACE_ROLES = ['admin', 'member', 'guest'] as const;
@@ -14,15 +14,24 @@ export const isManager = (r: WorkspaceRole | null): boolean => r === 'owner' || 
 /** Everyone but guests: creates boards, sees the boards shared with the whole workspace. */
 export const isFullMember = (r: WorkspaceRole | null): boolean => r !== null && r !== 'guest';
 
-/** What the team gets on its boards (one level for now: team members edit each other's boards). */
-export const TEAM_BOARD_ROLE: Role = 'editor';
+/** What owners/admins get on every board of their workspace (they administer the content). */
+export const MANAGER_BOARD_ROLE: Role = 'editor';
+export const TEAM_ACCESS_VALUES: TeamAccess[] = ['editor', 'commenter', 'viewer'];
+export const isTeamAccess = (v: unknown): v is TeamAccess => (TEAM_ACCESS_VALUES as unknown[]).includes(v);
 
 export const DEFAULT_POLICIES: WorkspacePolicies = {
   externalSharing: 'anyone',
   linkSharing: 'editor',
   guestInvites: 'admins',
   downloads: 'anyone',
+  teamAccess: 'editor',
+  publicLinks: 'anyone',
 };
+
+/** The team access level of a board: its project's own level, else the workspace's. */
+export function teamAccessOf(policies: WorkspacePolicies, project: { teamAccess: TeamAccess | null } | null): TeamAccess {
+  return project?.teamAccess ?? policies.teamAccess;
+}
 
 const LINK_RANK: Record<LinkAccess, number> = { none: 0, viewer: 1, commenter: 2, editor: 3 };
 export const LINK_VALUES = Object.keys(LINK_RANK) as LinkAccess[];
@@ -34,17 +43,22 @@ export function capLink(link: LinkAccess, max: LinkAccess): LinkAccess {
 
 /**
  * What the workspace itself grants `role` on one of its boards (team access), or null.
- * - owners/admins: every board, private projects included (they administer the content);
+ * - owners/admins: edit every board, private projects included (they administer the content);
  * - a private project's boards: only its members;
  * - other boards: every full member; a guest only if added to the board's project.
+ * Everyone but owners/admins gets `level`, the board's team access level (`teamAccessOf`).
  * Direct board memberships and link access come on top of this (members/roles.ts).
  */
-export function teamRole(role: WorkspaceRole | null, project: { access: ProjectAccess; member: boolean } | null): Role | null {
+export function teamRole(
+  role: WorkspaceRole | null,
+  project: { access: ProjectAccess; member: boolean } | null,
+  level: TeamAccess,
+): Role | null {
   if (!role) return null;
-  if (isManager(role)) return TEAM_BOARD_ROLE;
-  if (project?.access === 'private') return project.member ? TEAM_BOARD_ROLE : null;
-  if (role === 'guest') return project?.member ? TEAM_BOARD_ROLE : null;
-  return TEAM_BOARD_ROLE;
+  if (isManager(role)) return MANAGER_BOARD_ROLE;
+  if (project?.access === 'private') return project.member ? level : null;
+  if (role === 'guest') return project?.member ? level : null;
+  return level;
 }
 
 /** The "downloads" policy: may this person export / download / duplicate the workspace's boards? */

@@ -12,6 +12,7 @@ export {
   lockWorkspaceForNewBoard,
   teamWorkspaceIdsFor,
   teamMemberIds,
+  teamMembers,
   handOverTeamWorkspaces,
   isManager,
 } from './service';

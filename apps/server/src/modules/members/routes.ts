@@ -4,7 +4,7 @@ import type { ServerContext } from '../../platform/context';
 import { badRequest, forbidden, handle, HttpError, notFound } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
 import { currentUser, findUserByEmail, getUser, getUsers, normalizeEmail, requireUser } from '../auth/index';
-import { requireBoardAccess, teamAccessUserIds } from '../boards/index';
+import { requireBoardAccess, teamAccessMembers, teamAccessUserIds } from '../boards/index';
 import { commentPeopleOf, refreshBoardAccess } from '../realtime/index';
 import { boardShared } from './events';
 import { acceptInvite, inviteByEmail, listPending, previewInvite, resendInvite } from './invites';
@@ -39,10 +39,10 @@ export default function memberRoutes(_ctx: ServerContext): Router {
       const me = currentUser(req);
       const { ownerId, role: myRole } = await requireBoardAccess(boardId, me.id);
       const emails = atLeast(myRole, 'editor');
-      const [rows, team] = await Promise.all([repo.listByBoard(boardId), teamAccessUserIds(boardId)]);
+      const [rows, team] = await Promise.all([repo.listByBoard(boardId), teamAccessMembers(boardId)]);
       const listed = new Set([ownerId, ...rows.map((m) => m.userId)]);
-      const viaTeam = team.filter((id) => !listed.has(id));
-      const users = await getUsers([...listed, ...viaTeam]);
+      const viaTeam = team.filter((t) => !listed.has(t.userId));
+      const users = await getUsers([...listed, ...viaTeam.map((t) => t.userId)]);
       const members: BoardMember[] = [];
       const owner = users.get(ownerId);
       if (owner) members.push(toMember(owner, 'owner', emails || owner.id === me.id));
@@ -50,10 +50,10 @@ export default function memberRoutes(_ctx: ServerContext): Router {
         const u = users.get(m.userId);
         if (u) members.push(toMember(u, m.role, emails || u.id === me.id));
       }
-      // Team access (the workspace grants editor; see workspaces/roles.ts).
-      for (const id of viaTeam) {
-        const u = users.get(id);
-        if (u) members.push({ ...toMember(u, 'editor', emails || u.id === me.id), team: true });
+      // Team access (the role the workspace grants each of them here; see workspaces/roles.ts).
+      for (const t of viaTeam) {
+        const u = users.get(t.userId);
+        if (u) members.push({ ...toMember(u, t.role, emails || u.id === me.id), team: true });
       }
       res.json({ members });
     }),

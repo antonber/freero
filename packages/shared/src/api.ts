@@ -40,9 +40,10 @@ export interface BoardSummary {
   projectId: string | null;
   /**
    * Team access, when the board is in a team workspace: everyone in it (`private`: only the
-   * members of its private project, plus the workspace's owners/admins) can edit it.
+   * members of its private project) gets `access` on it — the project's team access level, else
+   * the workspace's. The workspace's owners/admins always edit.
    */
-  team: { name: string; private: boolean } | null;
+  team: { name: string; private: boolean; access: TeamAccess } | null;
   /**
    * You were invited to this board itself (a board membership you can leave). False when your
    * access comes only from ownership, your team or the link.
@@ -97,11 +98,13 @@ export interface BoardPermissions {
 // Projects (folders):
 // GET    /api/workspaces/:id/projects          -> { projects: ProjectSummary[] }  (the ones you can see)
 // POST   /api/workspaces/:id/projects  body { name, access? } -> { project }   (members, not guests)
-// PATCH  /api/projects/:id   body { name?, access? } -> { project }   (its creator or workspace owner/admin)
+// PATCH  /api/projects/:id   body { name?, access?, teamAccess?: TeamAccess | null } -> { project }   (its creator or workspace owner/admin)
 // DELETE /api/projects/:id   -> { ok: true }   (same; 409 while it still holds boards)
 // GET    /api/projects/:id/members -> { members: { userId, name, color, avatarUrl }[] }
 // PUT    /api/projects/:id/members/:userId -> { ok: true }   DELETE … -> { ok: true }  (manage: as PATCH)
 export type WorkspaceKind = 'personal' | 'team';
+/** What a team workspace's members get on its boards (owners/admins always edit). */
+export type TeamAccess = 'editor' | 'commenter' | 'viewer';
 export type WorkspaceRole = 'owner' | 'admin' | 'member' | 'guest';
 export type ProjectAccess = 'workspace' | 'private';
 export interface WorkspacePolicies {
@@ -113,6 +116,16 @@ export interface WorkspacePolicies {
   guestInvites: 'admins' | 'members';
   /** Who may export, download or duplicate its boards: anyone with access, workspace members (not guests), or owners/admins. */
   downloads: 'anyone' | 'members' | 'admins';
+  /**
+   * What members (not guests) get on its boards through the team; a project may set its own
+   * level (`ProjectSummary.teamAccess`). Owners/admins always edit.
+   */
+  teamAccess: TeamAccess;
+  /**
+   * Who a board's link lets in: 'anyone' — also visitors without an account, as a named guest
+   * (at most "can comment", one board, a few hours) — or only signed-in people.
+   */
+  publicLinks: 'anyone' | 'signedIn';
 }
 export interface WorkspaceSummary {
   id: string;
@@ -154,6 +167,8 @@ export interface ProjectSummary {
   workspaceId: string;
   name: string;
   access: ProjectAccess;
+  /** The project's own team access level for its boards; null: the workspace's (`policies.teamAccess`). */
+  teamAccess: TeamAccess | null;
   createdBy: string | null;
   /** You may rename it, change its access, manage its members and delete it. */
   canManage: boolean;
