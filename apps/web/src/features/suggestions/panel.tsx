@@ -50,7 +50,10 @@ const Ghost = memo(function Ghost({ editor, s, zoom, controls }: { editor: Edito
   return (
     <div className={`fr-sg-ghost fr-sg-ghost--${s.op}${stale ? ' is-stale' : ''}`}>
       {s.op !== 'delete' && <ElementPreview element={el} />}
-      <div className="fr-sg-ghost__box" style={{ transform: `translate(${el.x}px, ${el.y}px)${el.rotation ? ` rotate(${el.rotation}deg)` : ''}`, width: el.w, height: el.h }} />
+      {/* A line's box is a sliver around it: the line itself is the ghost. */}
+      {el.type !== 'connector' && (
+        <div className="fr-sg-ghost__box" style={{ transform: `translate(${el.x}px, ${el.y}px)${el.rotation ? ` rotate(${el.rotation}deg)` : ''}`, width: el.w, height: el.h }} />
+      )}
       {controls && (
         <div className="fr-sg-anchor" style={{ transform: `translate(${el.x + el.w}px, ${el.y}px) scale(${k})` }}>
           <div className="fr-sg-item" data-fr-interactive="" data-fr-keep-clear="" onPointerDown={stop}>

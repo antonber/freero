@@ -19,9 +19,9 @@
   filter: saturate(0.85);
 }
 
-/* A changed item: the new version over the old one, nearly opaque, so its text reads. */
+/* A changed item: the new version over the old one, opaque, so its text reads (the review list shows was → now). */
 .fr-sg-ghost--update .fr-el {
-  opacity: 0.92;
+  opacity: 1;
 }
 
 .fr-sg-ghost__box {
