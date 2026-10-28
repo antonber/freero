@@ -25,7 +25,7 @@ export const NATIVE_CLIPBOARD_COMMANDS = new Set(['engine.copy', 'engine.cut', '
 export function elementLink(boardPath: string, id: string): string {
   const url = new URL(boardPath, window.location.origin);
   url.search = '';
-  url.searchParams.set('el', id);
+  url.searchParams.set('item', id);
   return url.toString();
 }
 
@@ -109,7 +109,7 @@ export function createEngineCommands(core: EngineCore): CommandDefinition[] {
     {
       id: 'engine.copyLink',
       icon: Link2,
-      label: 'Copy link to object',
+      label: 'Copy link to item',
       minRole: 'viewer',
       menus: ['context'],
       when: (e) => sel(e).length === 1,

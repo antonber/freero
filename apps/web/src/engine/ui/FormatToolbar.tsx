@@ -167,7 +167,7 @@ export function FormatToolbar() {
           active={locked}
           onClick={() => editor.runCommand('engine.lock')}
         />
-        {els.length === 1 && <IconButton icon={Share} label="Copy link to object" size={32} onClick={() => editor.runCommand('engine.copyLink')} />}
+        {els.length === 1 && <IconButton icon={Share} label="Copy link to item" size={32} onClick={() => editor.runCommand('engine.copyLink')} />}
         {!locked && <IconButton icon={Copy} label="Duplicate" shortcut="Mod+D" size={32} onClick={() => editor.duplicate(ids)} />}
         {!locked && <IconButton icon={Trash2} label="Delete" shortcut="Del" size={32} onClick={() => editor.runCommand('engine.delete')} />}
         <IconButton ref={moreRef} icon={Ellipsis} label="More" size={32} active={moreOpen} onClick={() => setMoreOpen((o) => !o)} />

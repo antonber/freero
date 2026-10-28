@@ -231,6 +231,12 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
    * content along that handle (a fixed-width text box goes back to auto width). null = ignore.
    */
   fitToContent?(element: ElementOf<T>, handle: ResizeHandle): ElementPatch<ElementOf<T>> | null;
+  /**
+   * [additive] Double-click with the select tool on an element that has no text to edit there
+   * (no `textPartAt` part, no `textField`): images enter crop mode. Editors only; runs inside the
+   * click's gesture. `point` is in world coordinates; `editor` is scoped to the defining feature.
+   */
+  onDoubleClick?(element: ElementOf<T>, ctx: { editor: Editor; point: Point }): void;
 }
 
 /** [additive] What `ElementDefinition.hitTest` is told. */
@@ -379,6 +385,21 @@ export interface CommandDefinition {
   minRole?: Role;
   when?(editor: Editor): boolean;
   run(editor: Editor): void;
+}
+
+/** [additive] One row of `Editor.getShortcuts()`. */
+export interface ShortcutEntry {
+  /** Tool / command id, or 'engine.key.<name>' for built-in keys. */
+  id: string;
+  label: string;
+  /**
+   * Raw bindings ('mod+shift+z', 'shift+/', 'arrowup'), alternatives in order. 'mod' = ⌘ on
+   * macOS, Ctrl elsewhere: show them with `@ui` `Kbd` / `formatShortcut`, which follow the platform.
+   */
+  shortcuts: string[];
+  kind: 'tool' | 'command' | 'key';
+  /** Contributing feature ('engine' for built-ins). */
+  feature: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -661,7 +682,12 @@ export interface Editor {
    */
   setViewHidden(ids: string[], hidden: boolean): void;
   getViewHidden(): string[];
-
+  /**
+   * [additive] Every keyboard binding the board answers right now, for the current role: tool
+   * keys, command shortcuts and the engine's built-in keys (Esc, arrows, Tab, Space…). Generated
+   * from the registry, so a shortcut reference built on it can't drift from the real bindings.
+   */
+  getShortcuts(): ShortcutEntry[];
 
   // -- events --
   on(event: EditorEvent, cb: () => void): () => void;

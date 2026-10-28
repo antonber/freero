@@ -45,6 +45,7 @@ import { applyFormatToHtml, formatStateOfHtml } from '../text/formatHtml';
 import { EMPTY_FORMAT_STATE, type FormatCommand, type TextFormatState } from '../text/session';
 import { richTextToPlain } from '../text/sanitize';
 import { runFollowers } from './followers';
+import { listShortcuts } from '../runtime/shortcutList';
 
 const EMPTY_OPTIONS = Object.freeze({}) as Record<string, unknown>;
 const CAMERA_ANIM_MS = 320;
@@ -1066,6 +1067,10 @@ export class EditorImpl implements Editor {
     }
     if (reg.def.when && !reg.def.when(ed)) return;
     reg.def.run(ed);
+  }
+
+  getShortcuts() {
+    return listShortcuts(this.core.registry, (r) => this.can(r));
   }
 
   // ------------------------------------------------------------------ settings

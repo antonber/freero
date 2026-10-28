@@ -6,6 +6,16 @@ const PURIFY_TAGS = ['b', 'strong', 'i', 'em', 'u', 's', 'strike', 'del', 'a', '
 const PURIFY_ATTR = ['href', 'style', 'color'];
 const SAFE_HREF = /^(https?:|mailto:|tel:|#|\/)/i;
 
+/**
+ * [additive] The one safe-href rule (links in rich text, item links): http(s), mailto, tel,
+ * in-board `#…` and same-site `/…` paths. Anything else (javascript:, data:, vbscript:…) is refused.
+ */
+export function isSafeHref(href: string): boolean {
+  const h = href.trim();
+  // Browsers drop tabs/newlines inside a scheme ("java\tscript:"); refuse them outright.
+  return !/[\u0000-\u001f]/.test(h) && SAFE_HREF.test(h);
+}
+
 const RENAME: Record<string, string> = { STRONG: 'b', EM: 'i', STRIKE: 's', DEL: 's', DIV: 'p' };
 
 function rename(el: Element, tag: string): Element {
@@ -46,7 +56,7 @@ function normalize(node: Node) {
     if (el.tagName === 'A') {
       const href = el.getAttribute('href') ?? '';
       for (const a of Array.from(el.attributes)) if (a.name !== 'href') el.removeAttribute(a.name);
-      if (!SAFE_HREF.test(href.trim())) el.removeAttribute('href');
+      if (!isSafeHref(href)) el.removeAttribute('href');
     } else if (el.tagName === 'SPAN') {
       const s = el.style;
       const color = s.color;
