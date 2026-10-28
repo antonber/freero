@@ -14,9 +14,11 @@
   "dependencies": {
     "@freero/shared": "*",
     "dompurify": "^3.4.17",
+    "highlight.js": "11.11.1",
     "html-to-image": "^1.11.13",
     "jspdf": "^4.2.1",
     "lib0": "^0.2.119",
+    "lowlight": "3.3.0",
     "lucide-react": "^1.62.0",
     "nanoid": "^5.1.16",
     "pdfjs-dist": "4.10.38",
