@@ -176,6 +176,82 @@ What a rotation does not carry over:
   opened. The job logs how many; those people sign in with a recovery code and turn two-step
   verification on again. Nothing else is lost.
 
+## Moderation
+
+A free service with public links will be abused. Anyone who can open a board — signed in or, once
+anonymous visitors exist, on its public link — can report the board, an item on it, an uploaded
+file it shows, or a comment ("Report board…" in the board menu, "Report…" on the right-click menu,
+the flag on a comment). Operators review reports and act on them.
+
+### Who is an operator
+
+Operators are configured, not stored: `OPERATOR_EMAILS` lists their addresses
+([configuration.md](configuration.md#moderation-abuse-reports-and-operators)), and an account is an
+operator only while its address is listed **and verified**. Adding or removing one is a config
+change and a restart, reviewed like any other deploy. There is no admin CLI and no database flag,
+so nobody can make themselves an operator through the app or a database write.
+
+Also set `ABUSE_CONTACT_EMAIL` (named in every notice and in `/.well-known/security.txt`) and,
+if vulnerability reports go elsewhere, `SECURITY_CONTACT`. In production the server logs at
+startup when either operators or the contact are missing.
+
+### The queue
+
+Signed in as an operator, open **Moderation queue** in the account menu (`/operator`). Each open
+item is a report (reason, the reporter's note, who reported — a signed-in user or a visitor with an
+optional contact address — and what it is about) or an **appeal** against an earlier decision.
+Operators get an email when a board gets its first open report and for every appeal.
+
+- **Preview** opens a read-only snapshot of the board as collaborators see it right now (never
+  anyone's private drafts or sealed ballots), zoomed to the reported item or comment thread. It
+  works for boards that are taken down too. Looking changes nothing and nobody sees you.
+- **History** lists every action on the board and every report and appeal about it.
+- **Dismiss** / **Keep decision** closes the item with no action; **Mark handled** closes it as
+  dealt with. Reporters are emailed the outcome; an appellant whose appeal is not granted hears
+  that the decision stands.
+- The side panel finds an **account** by email (suspend / lift) and an **uploaded file** by its
+  URL (remove / restore / delete the kept copy).
+
+### Actions
+
+Every action asks for a reason, a **statement** for the person affected (required for actions
+against someone: it is the statement of reasons they get by email, and what they can appeal) and
+an optional internal note. Every action is recorded with who, when, why and what was said
+(`moderation_actions`, append-only; `onModerationAction` in `modules/moderation/index.ts` is the
+seam for the audit log). Each can be undone, and undoing is recorded too.
+
+| Action | What happens at once (every instance) | Undo |
+|---|---|---|
+| Turn off link | The board's link access reads "no access": people who only had the link lose it and their sockets close; the owner, invited members and the team keep theirs. The owner can't turn the link back on. | Restore link — the owner's previous setting comes back |
+| Take down | The board is "removed for review" for everyone, owner included: open sockets close (the board shows a banner), REST answers 451 to anyone who could open it and 404 to everyone else, it leaves every list, its link is dead. Its content is kept unchanged and the owner can't delete it meanwhile. | Restore board — back exactly as it was |
+| Remove file | `/uploads/<name>` answers 410 Gone wherever the file is used. The bytes move to a kept copy under a name that is never served; the uploads sweep neither deletes the record nor brings the file back. | Restore file — the same bytes, same URL. **Delete kept copy** removes them for good (e.g. illegal content); the URL keeps answering 410. |
+| Suspend account | Every session ends (board and notification sockets close on every instance), and every way of signing in is refused with "this account has been suspended". The account's boards stay as they are: take them down separately if needed. | Lift suspension |
+
+The person affected gets an email with what happened, the reason, your statement and a **signed
+appeal link** (`/appeal?t=…`, no sign-in needed, so suspended accounts can appeal) — plus a bell
+notification for board and file actions. Restorations are announced the same way. An appeal goes
+into the queue (one open appeal per decision); grant it by undoing the action from its card.
+
+Caches: a removed file's URL answers 410 from the app at once, but a CDN or proxy in front of
+`/uploads/` may still hold a copy for up to its cache lifetime (raster images are cached for a
+day, streamed files up to a year): purge `/uploads/<name>` there too. With a public bucket
+(`S3_PUBLIC_URL`) the kept copy lives in the bucket under an unguessable name until purged.
+
+### Reports, abuse of the report form, and privacy
+
+Reports are rate-limited per address and per account (`RATE_LIMIT_REPORT`, appeals
+`RATE_LIMIT_APPEAL`). A report about a board the sender can't open is refused exactly like one
+about a board that doesn't exist, so reports can't probe for private boards. A repeated report of
+the same thing by the same person (or address) while the first is open adds nothing. Reporter
+addresses are never stored; a keyed hash of the address lets you see one source flooding the
+queue. Reporters stay anonymous to the board's owner.
+
+### `/.well-known/security.txt`
+
+Served by the app (RFC 9116) from `SECURITY_CONTACT` / `ABUSE_CONTACT_EMAIL`, with an `Expires`
+always about six months ahead and `Canonical` from `PUBLIC_URL`. If a proxy serves static files
+in front of the app, make sure `/.well-known/` reaches it.
+
 ## Incident basics
 
 1. **Assess.** Is it everyone (proxy, DB, deploy) or some boards/users? Check `/readyz` on each

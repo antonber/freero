@@ -322,7 +322,7 @@ workflows. For Freero, every row here needs a model provider that the operator o
 | Customer-managed keys | Encrypt an org's data with keys the org controls | Missing | XL | P3 | parity |
 | Data residency | Choose the region where data is stored | Missing | XL | P3 | parity |
 | Compliance certifications | Independent audits (SOC 2, ISO 27001) and the paperwork that goes with them | Missing | XL | P3 | parity |
-| Abuse reporting and moderation | Report and take down harmful public boards | Missing (KAI-142) | M | P2 | 1 |
+| Abuse reporting and moderation | Report and take down harmful public boards | Missing (*in review*, KAI-142: reports, operator queue, link block / take-down / file removal / suspension, appeals) | M | P2 | 1 |
 
 ## 13. Plans and limits (context only, not counted)
 
