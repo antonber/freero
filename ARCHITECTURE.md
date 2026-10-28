@@ -385,10 +385,21 @@ modules/<name>/    auth, boards, members, uploads, realtime …
 `ctx` (`platform/context.ts`) carries `config` and `onShutdown(fn)` (realtime flushes docs there).
 Cross-module imports name the index file explicitly (`'../auth/index'`), which is what [S2] checks.
 Auth is a plain middleware exported by `modules/auth/index.ts` (`requireUser`, `currentUser(req)`),
-not a reserved hook. Server modules today: `auth` (users, sessions), `boards` (boards, stars,
-opens), `members` (board_members, role resolution), `uploads` (uploads; files in object storage or
+not a reserved hook. Server modules today: `auth` (users, sessions, auth_tokens: email
+verification, password reset, email change, session list/revoke, avatars, deletion scheduling),
+`boards` (boards, stars, opens), `members` (board_members, board_invites: pending invites for
+addresses without an account; role resolution), `uploads` (uploads; files in object storage or
 `<data>/uploads`), `realtime` (board_docs; y-websocket protocol + role filter), `unfurl` (link
-previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`).
+previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`), `accounts` (no table:
+the purge after the deletion grace period, orchestrating the owning modules' exports).
+
+Accounts: `requireUser` answers 403 `{ code: 'account_pending_deletion' }` while an account is in
+its deletion grace period (`requireSession` lets restore through), and `userFromCookieHeader` (board
+sockets) treats it as signed out. Emailed links carry 256-bit single-use tokens stored as sha256
+and deleted on use (one `DELETE … RETURNING`, so two concurrent uses can't both win). Proving an
+address (verification link, reset, email change, an invite link mailed to it) fires
+`onEmailVerified`, where members turns that address's pending invites into memberships; an
+unverified account never picks up invites and can't invite or share by link.
 
 ### Database (`platform/db.ts`)
 
@@ -444,6 +455,17 @@ operations). What a module needs to know:
 - **Files** go through `platform/storage.ts` (`storage().put/get/delete`: S3 or local disk), and
   only `modules/uploads` uses it; other modules call `saveUpload`/`deleteUpload`. Board content
   always references `/uploads/<key>`, whatever the backend.
+- **Email** (`platform/mail.ts`): `sendMail({ to, ...renderMail({ subject, title, paragraphs,
+  action, outro }) })` — SMTP with `SMTP_URL`, else the dev outbox (`<data>/outbox/*.json`, which
+  `npm run verify` reads to follow links). `renderMail` escapes everything; links via
+  `appUrl(req, path)`. Never log bodies (they carry tokens). `sendMailLater` when the answer must not
+  depend on (or wait for) the mail.
+- **Instance-wide events** (`platform/pubsub.ts`): `publish(channel, msg)` / `subscribe` reach
+  every instance (Redis pub/sub; in-process without Redis). Best effort: for dropping in-memory
+  state elsewhere (auth's `onSessionEnd` closes a revoked session's sockets on every instance).
+- **Background jobs** (`platform/jobs.ts`): `scheduleExclusiveJob(ctx, { name, lockKey, intervalMs,
+  run })` runs on every instance's timer but one at a time (Postgres advisory lock); jobs must be
+  idempotent. `runExclusive(lockKey, fn)` for a one-off.
 - **Metrics** (`platform/metrics.ts`): `histogram`/`counter`/`gaugeFn` register module metrics
   (`freero_<module>_…`; see `realtime/metrics.ts`). Readiness of a new external dependency:
   `addReadinessCheck(name, fn)` (`platform/health.ts`).
@@ -460,8 +482,11 @@ waits for in-flight saves. Access refreshes are serialized (the last reflects th
 
 Trust boundaries in `realtime`: presence from a socket may only write the awareness client ids
 that socket announced, and its `user` is always replaced by the authenticated user's profile
-(`realtime/awareness.ts`), so nobody can appear as someone else. Logging out
-(`auth.onSessionEnd`) closes every board socket opened with that session (4401). Member emails
+(`realtime/awareness.ts`), so nobody can appear as someone else. Ending a session — logout,
+"sign out" from another device, password reset/change, account deletion — fires
+`auth.onSessionEnd` on every instance, which closes every board socket opened with it (4401). The
+account purge rewrites the deleted user's comment authorship to "Deleted user" through the live
+room (`renameCommentAuthor`), so open boards update and the save queue persists it. Member emails
 (`GET /members`) are only sent to owners/editors.
 
 ## Verification
