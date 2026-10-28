@@ -19,7 +19,7 @@ export {
 } from './service';
 export { lockProjectForBoard } from './projects';
 // Managing a team (its routes use these; so may provisioning later, e.g. SCIM).
-export { createTeamWorkspace, updateWorkspace, removeMember as removeWorkspaceMember } from './service';
+export { createTeamWorkspace, updateWorkspace, transferWorkspace, removeMember as removeWorkspaceMember } from './service';
 export { inviteToWorkspace } from './invites';
 export { mayDownload, mayShareExternally, isFullMember } from './roles';
 // The organization's directory (SSO just-in-time sign-in, SCIM provisioning).
