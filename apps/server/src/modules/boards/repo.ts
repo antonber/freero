@@ -218,3 +218,14 @@ export async function lastOpenedAt(boardId: string, userId: string): Promise<num
   ]);
   return r ? r.opened_at.getTime() : null;
 }
+
+/** Every match of `pattern`'s first group in a board thumbnail, trashed boards included (restricted to `among` when given). */
+export async function matchesInThumbnails(pattern: string, among: readonly string[] | null): Promise<string[]> {
+  const rows = await query<{ name: string }>(
+    `SELECT DISTINCT m[1] AS name
+     FROM (SELECT regexp_matches(thumbnail, $1, 'g') AS m FROM boards WHERE thumbnail IS NOT NULL) found
+     WHERE $2::text[] IS NULL OR m[1] = ANY($2::text[])`,
+    [pattern, among],
+  );
+  return rows.map((r) => r.name);
+}

@@ -1,7 +1,7 @@
 // Public API of modules/boards [S2].
 import type { Role } from '@freero/shared';
 import { closeBoardDoc } from '../realtime/index';
-import { deleteUpload } from '../uploads/index';
+import { deleteUpload, UPLOAD_REF_PATTERN } from '../uploads/index';
 import * as repo from './repo';
 import { requireAccess, roleOn } from './service';
 
@@ -51,4 +51,9 @@ export async function boardIdsOpenedBy(userId: string): Promise<string[]> {
 /** Records that the board's content changed (called by realtime, throttled). */
 export async function touchBoard(boardId: string, at = Date.now()): Promise<void> {
   await repo.touch(boardId, at);
+}
+
+/** Upload names used as board thumbnails (restricted to `among` when given): the uploads sweep keeps them. */
+export function thumbnailUploadReferences(among?: readonly string[]): Promise<string[]> {
+  return repo.matchesInThumbnails(UPLOAD_REF_PATTERN, among ?? null);
 }
