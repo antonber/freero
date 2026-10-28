@@ -54,9 +54,18 @@ export async function sendMail(mail: Mail): Promise<void> {
   log(`mail (dev outbox): "${mail.subject}" to ${mail.to} -> ${file}`);
 }
 
+const inFlight = new Set<Promise<void>>();
+
 /** Fire-and-forget send: failures are logged, never thrown (e.g. answers that must not depend on it). */
 export function sendMailLater(mail: Mail): void {
-  sendMail(mail).catch((e) => logError(`mail: could not send "${mail.subject}"`, e));
+  const p = sendMail(mail).catch((e) => logError(`mail: could not send "${mail.subject}"`, e));
+  inFlight.add(p);
+  void p.finally(() => inFlight.delete(p));
+}
+
+/** Resolves once every sendMailLater started so far has finished (a short-lived process exiting: the admin CLI). */
+export async function mailSettled(): Promise<void> {
+  while (inFlight.size) await Promise.all([...inFlight]);
 }
 
 /**

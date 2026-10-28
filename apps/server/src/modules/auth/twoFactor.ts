@@ -8,10 +8,12 @@ import type { Request } from 'express';
 import { generateSecret, generateURI, verify } from 'otplib';
 import QRCode from 'qrcode';
 import type { TwoFactorSetup } from '@freero/shared';
+import { getConfig } from '../../platform/config';
 import { badRequest, HttpError } from '../../platform/http';
 import { logError } from '../../platform/log';
 import { seal, unseal } from '../../platform/secrets';
 import { sendSecurityNotice } from './notices';
+import { cancelTwoFactorRecovery, undoLinkFor } from './recovery';
 import * as repo from './repo';
 import { confirmPassword, endSessionsOf, getAccount } from './service';
 
@@ -119,8 +121,19 @@ async function checkTotp(secret: string, token: string, afterTimeStep: number | 
 /**
  * Checks a second-factor code of a user with two-factor on and uses it up: a 6-digit authenticator
  * code (each time step once) or a recovery code (each once). Returns which kind worked, or null.
+ * A code that works proves the second factor isn't lost: it cancels a "lost my authenticator"
+ * recovery in progress, and makes a password set through an emailed link the owner's again.
  */
-export async function useSecondFactor(userId: string, input: unknown): Promise<'totp' | 'recovery' | null> {
+export async function useSecondFactor(userId: string, input: unknown, req: Request | null = null): Promise<'totp' | 'recovery' | null> {
+  const used = await checkSecondFactor(userId, input);
+  if (used) {
+    await repo.clearPasswordViaLink(userId);
+    await cancelTwoFactorRecovery(req, userId, 'second_step');
+  }
+  return used;
+}
+
+async function checkSecondFactor(userId: string, input: unknown): Promise<'totp' | 'recovery' | null> {
   const code = codeOf(input).replace(/\s/g, '');
   if (/^\d{6}$/.test(code)) {
     const totp = await repo.findTotp(userId);
@@ -164,9 +177,13 @@ export async function enableTwoFactor(req: Request | null, userId: string, curre
   const step = await checkTotp(opened.secret, code, null);
   if (step === null) throw wrongCode();
   const { codes, hashes } = newRecoveryCodes();
-  if (!(await repo.enableTotp(userId, opened.sealed, step, hashes, Date.now()))) throw new HttpError(409, 'Start the setup again');
+  const enabledAt = Date.now();
+  if (!(await repo.enableTotp(userId, opened.sealed, step, hashes, enabledAt))) throw new HttpError(409, 'Start the setup again');
   await endSessionsOf(userId, currentSessionKey);
-  sendSecurityNotice(req, (await getAccount(userId)).email, { kind: 'two_factor_on' });
+  const account = await getAccount(userId);
+  // If whoever did this only had the password, the owner reading the (verified) address can undo it.
+  const undoUrl = await undoLinkFor(req, account, enabledAt);
+  sendSecurityNotice(req, account.email, { kind: 'two_factor_on', undoUrl, validHours: Math.round(getConfig().twoFactorUndoMs / 3_600_000) });
   return codes;
 }
 
@@ -176,7 +193,7 @@ export async function disableTwoFactor(req: Request | null, userId: string, pass
   if (requiredBy) throw new HttpError(409, `${requiredBy} — it can’t be turned off`);
   const user = await confirmPassword(userId, password, sessionAuthAt);
   if (!(await repo.twoFactorEnabled(userId))) return;
-  if (!(await useSecondFactor(userId, code))) throw wrongCode();
+  if (!(await useSecondFactor(userId, code, req))) throw wrongCode();
   await repo.deleteTwoFactor(userId);
   sendSecurityNotice(req, user.email, { kind: 'two_factor_off' });
 }
@@ -191,7 +208,7 @@ export async function regenerateRecoveryCodes(
 ): Promise<string[]> {
   const user = await confirmPassword(userId, password, sessionAuthAt);
   if (!(await repo.twoFactorEnabled(userId))) throw new HttpError(409, 'Two-step verification is off');
-  if (!(await useSecondFactor(userId, code))) throw wrongCode();
+  if (!(await useSecondFactor(userId, code, req))) throw wrongCode();
   const { codes, hashes } = newRecoveryCodes();
   await repo.replaceRecoveryCodes(userId, hashes);
   sendSecurityNotice(req, user.email, { kind: 'recovery_codes' });

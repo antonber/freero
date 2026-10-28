@@ -18,7 +18,7 @@
 // changes / logouts / deletes made through the other instance, and every edit saved exactly as
 // if one instance had served them (even one whose instance is killed before it saved).
 
-import { execSync, spawn } from 'node:child_process';
+import { execSync, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import net from 'node:net';
@@ -2501,6 +2501,159 @@ async function signInMethodChecks() {
 }
 
 // ---------------------------------------------------------------------------
+// Two-step verification recovery (KAI-99), on its own server with a short recovery delay: someone
+// with the password locks the owner out with their own authenticator, and the owner gets back in
+// through the notice's "this wasn't me" link, a delayed recovery or an operator (the admin CLI) —
+// while the mailbox alone, or the password alone, never removes a second factor the owner holds.
+// ---------------------------------------------------------------------------
+async function twoFactorRecoveryChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-recovery-'));
+  const DELAY_S = 4;
+  const env = {
+    TWO_FACTOR_RECOVERY_DELAY_SECONDS: String(DELAY_S),
+    // Every request here comes from 127.0.0.1 (and with REDIS_URL the counters are shared with the run).
+    RATE_LIMIT_TWO_FACTOR: '200/15m',
+    RATE_LIMIT_PASSWORD: '200/15m',
+    RATE_LIMIT_LOGIN: '500/5m',
+    RATE_LIMIT_TWO_FACTOR_RECOVERY: '100/1h',
+  };
+  let proc = null;
+  const start = async () => (proc = await waitUp(await spawnServer(dataDir, env)));
+  try {
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    const ok = await check('recovery server boots (two-step recovery delay of a few seconds)', start);
+    if (!ok) return;
+    const stamp = Date.now();
+    const verified = async (label) => {
+      const u = new User(label, proc.port);
+      u.email = `${label.toLowerCase()}-${stamp}@recovery.verify.freero.app`;
+      await u.signup();
+      await u.verifyEmail(dataDir);
+      return u;
+    };
+    /** `u` (any session of the account) turns two-step verification on with a new authenticator. */
+    const enrol = async (u, password = 'password-123') => {
+      const setup = await u.req('POST', '/api/auth/two-factor/setup', { password });
+      const enable = await u.req('POST', '/api/auth/two-factor/enable', { code: await totpCode({ secret: setup.json.secret }) });
+      assert(enable.status === 200, `enable: ${enable.text}`);
+      return setup.json.secret;
+    };
+    const nextCode = (secret) => totpCode({ secret, epoch: Math.floor(Date.now() / 1000) + 30 });
+    const login = (b, email, password) => b.fetch('/api/auth/login', { method: 'POST', body: { email, password } });
+    const mails = (to, re) => outbox(dataDir).filter((m) => m.to === to && (re.test(m.subject) || re.test(m.text)));
+    /** Someone else signs in with the owner's password (no second step yet) and locks it with their own authenticator. */
+    const intrude = async (owner) => {
+      const intruder = new User('Intruder', proc.port);
+      intruder.email = owner.email;
+      assert((await intruder.req('POST', '/api/auth/login', { email: owner.email, password: 'password-123' })).status === 200, 'intruder login');
+      await enrol(intruder);
+      return intruder;
+    };
+
+    await check('"this wasn\'t me" in the two-step-on notice: the owner locked out by an intruder\'s authenticator takes the account back from the mail; the intruder is signed out; the link works once', async () => {
+      const O = await verified('Locked');
+      const intruder = await intrude(O);
+      const locked = await login(new Browser(proc.port), O.email, 'password-123');
+      assert(locked.json?.twoFactorRequired === true, `the owner is not locked out: ${locked.text}`);
+      const undo = await mailedToken(dataDir, O.email, '/undo-two-factor');
+      const b = new Browser(proc.port);
+      const back = await b.fetch('/api/auth/two-factor/undo', { method: 'POST', body: { token: undo, password: 'owner-password-2' } });
+      assert(back.status === 200 && back.json.user?.email === O.email && b.jar.has('freero_session'), `undo: ${back.status} ${back.text}`);
+      assert((await intruder.req('GET', '/api/auth/me')).status === 401, "the intruder's session survived");
+      const again = await login(new Browser(proc.port), O.email, 'owner-password-2');
+      assert(again.status === 200 && again.json.user?.id === O.id, `the owner still needs the intruder's code: ${again.text}`);
+      const replay = await new Browser(proc.port).fetch('/api/auth/two-factor/undo', { method: 'POST', body: { token: undo, password: 'intruder-pass-9' } });
+      assert(replay.status === 400, `link reused: ${replay.status}`);
+    });
+
+    await check('lost authenticator: the mailbox alone (a reset link) cannot start a recovery; one started with the password removes two-step verification only after the waiting period, through the link then mailed', async () => {
+      const M = await verified('Mailbox');
+      await enrol(M);
+      const after = Date.now();
+      await new Browser(proc.port).fetch('/api/auth/password/forgot', { method: 'POST', body: { email: M.email } });
+      const m = new Browser(proc.port);
+      const reset = await m.fetch('/api/auth/password/reset', { method: 'POST', body: { token: await mailedToken(dataDir, M.email, '/reset-password', { after }), password: 'mailbox-pass-1' } });
+      assert(reset.json?.twoFactorRequired === true, reset.text);
+      const viaLink = await m.fetch('/api/auth/login/two-factor/recovery', { method: 'POST' });
+      assert(viaLink.status === 403 && viaLink.json.code === 'recovery_needs_password', `reset link: ${viaLink.status} ${viaLink.text}`);
+      await login(m, M.email, 'mailbox-pass-1'); // the password the mailbox chose is no better
+      const viaPassword = await m.fetch('/api/auth/login/two-factor/recovery', { method: 'POST' });
+      assert(viaPassword.status === 403, `password set through the link: ${viaPassword.status} ${viaPassword.text}`);
+
+      const R = await verified('Recover');
+      await enrol(R);
+      const b = new Browser(proc.port);
+      assert((await login(b, R.email, 'password-123')).json?.twoFactorRequired === true, 'second step expected');
+      const started = await b.fetch('/api/auth/login/two-factor/recovery', { method: 'POST' });
+      assert(started.status === 200 && started.json.readyAt > Date.now(), `start: ${started.status} ${started.text}`);
+      await waitFor(() => mails(R.email, /recovery started/i).length === 1, 5000, 'the "recovery started" mail');
+      assert(mails(R.email, /\/recover-two-factor/).length === 0, 'the finishing link was mailed before the waiting period ended');
+      const finish = await mailedToken(dataDir, R.email, '/recover-two-factor', { timeoutMs: DELAY_S * 1000 + 15_000 });
+      assert(Date.now() >= started.json.readyAt, 'the finishing link came early');
+      assert(mails(R.email, /removable soon/).length === 1, 'no reminder before the end');
+      const done = await new Browser(proc.port).fetch('/api/auth/two-factor/recovery/finish', { method: 'POST', body: { token: finish, password: 'recovered-pass-1' } });
+      assert(done.status === 200 && done.json.user?.id === R.id, `finish: ${done.status} ${done.text}`);
+      assert((await R.req('GET', '/api/auth/me')).status === 401, 'the sessions from before survived');
+      const fresh = await login(new Browser(proc.port), R.email, 'recovered-pass-1');
+      assert(fresh.status === 200 && fresh.json.user, `two-step verification is still on: ${fresh.text}`);
+    });
+
+    await check('the authenticator wins: signing in with it cancels a recovery that someone with only the password started, and no finishing link is ever mailed', async () => {
+      const S = await verified('Safe');
+      const secret = await enrol(S);
+      const attacker = new Browser(proc.port);
+      await login(attacker, S.email, 'password-123');
+      assert((await attacker.fetch('/api/auth/login/two-factor/recovery', { method: 'POST' })).status === 200, 'start');
+      const owner = new Browser(proc.port);
+      await login(owner, S.email, 'password-123');
+      const signedIn = await owner.fetch('/api/auth/login/two-factor', { method: 'POST', body: { code: await nextCode(secret) } });
+      assert(signedIn.status === 200, signedIn.text);
+      assert((await owner.fetch('/api/auth/security')).json.twoFactor.recovery === null, 'recovery still in progress');
+      await waitFor(() => mails(S.email, /recovery cancelled/i).length === 1, 5000, 'the "recovery cancelled" mail');
+      await sleep(DELAY_S * 1000 + 2000);
+      assert(mails(S.email, /\/recover-two-factor/).length === 0, 'a finishing link was mailed for a cancelled recovery');
+    });
+
+    await check('operator path: `npm run admin -- two-factor:reset` changes nothing without --yes; with it, the intruder\'s authenticator and the password go, everyone is signed out, an audit line is logged, and the owner gets in through a reset link', async () => {
+      const O = await verified('Operator');
+      const intruder = await intrude(O);
+      const admin = (...args) =>
+        spawnSync(process.execPath, ['--import', 'tsx', 'apps/server/src/admin.ts', ...args], {
+          cwd: ROOT,
+          encoding: 'utf8',
+          env: { ...process.env, ...env, FREERO_DATA_DIR: dataDir, NODE_ENV: 'test', SESSION_SECRET: RUN_SECRET, LOG_LEVEL: 'info' },
+          timeout: 60_000,
+        });
+      // PGlite is one process: the CLI runs while the server is stopped (on Postgres it could run alongside).
+      await stopProc(proc);
+      const dry = admin('two-factor:reset', O.email, '--operator', 'verify', '--reason', 'KAI-99 check');
+      assert(dry.status === 0 && /Nothing changed/.test(dry.stdout) && /two-step\s+on since/.test(dry.stdout), `dry run: ${dry.status} ${dry.stdout} ${dry.stderr}`);
+      const real = admin('two-factor:reset', O.email, '--operator', 'verify', '--reason', 'KAI-99 check', '--yes');
+      assert(real.status === 0 && /Done:/.test(real.stdout), `reset: ${real.status} ${real.stdout} ${real.stderr}`);
+      const auditLine = real.stdout.split('\n').find((l) => l.includes('"audit"'));
+      assert(auditLine && JSON.parse(auditLine).audit.action === 'auth.two_factor.reset_by_operator' && JSON.parse(auditLine).audit.actor.name === 'verify', `audit line: ${auditLine}`);
+      await start();
+      intruder.port = proc.port;
+      assert((await intruder.req('GET', '/api/auth/me')).status === 401, "the intruder's session survived");
+      assert((await login(new Browser(proc.port), O.email, 'password-123')).status === 401, 'the old password still works');
+      assert(mails(O.email, /was reset on your Freero account/).length === 1, 'no notice to the owner');
+      const after = Date.now();
+      await new Browser(proc.port).fetch('/api/auth/password/forgot', { method: 'POST', body: { email: O.email } });
+      const b = new Browser(proc.port);
+      const reset = await b.fetch('/api/auth/password/reset', { method: 'POST', body: { token: await mailedToken(dataDir, O.email, '/reset-password', { after }), password: 'owner-password-3' } });
+      assert(reset.status === 200 && reset.json.user?.id === O.id && b.jar.has('freero_session'), `reset after the operator: ${reset.text}`);
+    });
+  } finally {
+    if (proc) await stopProc(proc);
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // SESSION_SECRET rotation (KAI-87), on its own server restarted with different secrets: an
 // authenticator enrolled under the old secret must keep working through the whole procedure in
 // docs/operations.md, including for someone who never signs in while it runs.
@@ -2629,6 +2782,7 @@ async function uploadSweepChecks() {
 const started = Date.now();
 await run().catch((e) => record('verify harness', false, e?.stack ?? String(e)));
 await signInMethodChecks().catch((e) => record('sign-in methods harness', false, e?.stack ?? String(e)));
+await twoFactorRecoveryChecks().catch((e) => record('two-step recovery harness', false, e?.stack ?? String(e)));
 await secretRotationChecks().catch((e) => record('secret rotation harness', false, e?.stack ?? String(e)));
 await uploadSweepChecks().catch((e) => record('uploads sweep checks harness', false, e?.stack ?? String(e)));
 await accountPurgeChecks().catch((e) => record('account purge harness', false, e?.stack ?? String(e)));

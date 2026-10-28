@@ -16,6 +16,7 @@
     "new:feature": "node scripts/new-feature.mjs",
     "check": "npm run check:dune && npm run typecheck && npm run test",
     "verify": "node scripts/verify.mjs",
+    "admin": "node --import tsx apps/server/src/admin.ts",
     "db:import-sqlite": "tsx scripts/migrate-sqlite-to-pg.mjs"
   },
   "devDependencies": {

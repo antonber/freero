@@ -1,5 +1,6 @@
 // The only writer of `users`, `sessions`, `auth_tokens`, `auth_identities`, `auth_oidc_flows`,
-// `auth_challenges`, `user_totp` and `user_recovery_codes` [S4].
+// `auth_challenges`, `user_totp`, `user_recovery_codes`, `auth_devices` and
+// `auth_two_factor_recoveries` [S4].
 import type { Account } from '@freero/shared';
 import { isUniqueViolation, one, query, tx } from '../../platform/db';
 
@@ -13,11 +14,17 @@ interface UserRow {
   created_at: Date;
   email_verified_at: Date | null;
   deletion_scheduled_for: Date | null;
+  password_via_link_at: Date | null;
 }
 
 export interface UserWithHash extends Account {
   /** null: the account signs in only through a provider (no password set yet). */
   passwordHash: string | null;
+  /**
+   * The password was last set through an emailed link (it proves the mailbox, not knowledge of
+   * the password) and no sign-in has passed the second step since. See setPasswordHash.
+   */
+  passwordViaLink: boolean;
 }
 
 const toUser = (r: UserRow): UserWithHash => ({
@@ -30,6 +37,7 @@ const toUser = (r: UserRow): UserWithHash => ({
   emailVerified: r.email_verified_at !== null,
   deletionScheduledFor: r.deletion_scheduled_for?.getTime() ?? null,
   passwordHash: r.password_hash,
+  passwordViaLink: r.password_via_link_at !== null,
 });
 
 /** Thrown when an email is taken (possibly by a concurrent signup or email change). */
@@ -114,8 +122,18 @@ export async function changeEmail(id: string, email: string, now: number): Promi
   }
 }
 
-export async function setPasswordHash(id: string, hash: string | null): Promise<void> {
-  await query(`UPDATE users SET password_hash = $2 WHERE id = $1`, [id, hash]);
+/**
+ * Sets the password. `viaLink`: it was set from an emailed link (reset, "this wasn't me"), which
+ * proves the mailbox only — such a password can't start a delayed two-step recovery until a
+ * sign-in passes the second step (clearPasswordViaLink).
+ */
+export async function setPasswordHash(id: string, hash: string | null, { viaLink = false }: { viaLink?: boolean } = {}): Promise<void> {
+  await query(`UPDATE users SET password_hash = $2, password_via_link_at = CASE WHEN $3 THEN now() END WHERE id = $1`, [id, hash, viaLink]);
+}
+
+/** Someone who knows the password passed the second step: it is the owner's password again. */
+export async function clearPasswordViaLink(id: string): Promise<void> {
+  await query(`UPDATE users SET password_via_link_at = NULL WHERE id = $1 AND password_via_link_at IS NOT NULL`, [id]);
 }
 
 // ---- deletion ----
@@ -275,7 +293,14 @@ export async function deleteExpiredSessions(now: number): Promise<void> {
 
 // ---- emailed tokens ----
 
-export type TokenPurpose = 'verify_email' | 'change_email' | 'reset_password' | 'revert_email';
+export type TokenPurpose =
+  | 'verify_email'
+  | 'change_email'
+  | 'reset_password'
+  | 'revert_email'
+  | 'two_factor_undo'
+  | 'two_factor_recovery'
+  | 'two_factor_recovery_cancel';
 
 export async function insertToken(t: {
   tokenHash: string;
@@ -491,6 +516,17 @@ export async function attemptChallenge(tokenHash: string, now: number, maxAttemp
   return { userId: r.user_id, method: r.method, link };
 }
 
+/** A live challenge (not expired, attempts left), without counting an attempt. */
+export async function findChallenge(tokenHash: string, now: number): Promise<Challenge | null> {
+  const r = await one<{ user_id: string; method: string; link: PendingLink | string | null }>(
+    `SELECT user_id, method, link FROM auth_challenges WHERE token_hash = $1 AND expires_at > $2`,
+    [tokenHash, new Date(now)],
+  );
+  if (!r) return null;
+  const link = typeof r.link === 'string' ? (JSON.parse(r.link) as PendingLink) : r.link;
+  return { userId: r.user_id, method: r.method, link };
+}
+
 /** Uses up a challenge; false if another request already did. */
 export async function deleteChallenge(tokenHash: string): Promise<boolean> {
   return (await query(`DELETE FROM auth_challenges WHERE token_hash = $1 RETURNING 1`, [tokenHash])).length > 0;
@@ -549,6 +585,8 @@ export async function enableTotp(userId: string, secret: string, timeStep: numbe
     );
     if (rows.length === 0) return false;
     await insertRecoveryCodes(userId, codeHashes);
+    // Turning it on took the password (or a recent sign-in): it is the owner's password now.
+    await query(`UPDATE users SET password_via_link_at = NULL WHERE id = $1`, [userId]);
     return true;
   });
 }
@@ -600,11 +638,18 @@ export async function replaceRecoveryCodes(userId: string, codeHashes: string[])
   await tx(() => insertRecoveryCodes(userId, codeHashes));
 }
 
+/** Turns two-factor off: the authenticator, its recovery codes, a recovery in progress and the links that would undo it. */
 export async function deleteTwoFactor(userId: string): Promise<void> {
-  await tx(async () => {
-    await query(`DELETE FROM user_totp WHERE user_id = $1`, [userId]);
-    await query(`DELETE FROM user_recovery_codes WHERE user_id = $1`, [userId]);
-  });
+  await tx(() => removeTwoFactor(userId));
+}
+
+async function removeTwoFactor(userId: string): Promise<void> {
+  await query(`DELETE FROM user_totp WHERE user_id = $1`, [userId]);
+  await query(`DELETE FROM user_recovery_codes WHERE user_id = $1`, [userId]);
+  await query(`DELETE FROM auth_two_factor_recoveries WHERE user_id = $1`, [userId]);
+  await query(`DELETE FROM auth_tokens WHERE user_id = $1 AND purpose IN ('two_factor_undo', 'two_factor_recovery', 'two_factor_recovery_cancel')`, [
+    userId,
+  ]);
 }
 
 /**
@@ -618,9 +663,207 @@ export async function removeSecuritySetupSince(userId: string, since: number): P
       `DELETE FROM user_totp WHERE user_id = $1 AND (enabled_at IS NULL OR enabled_at >= $2) RETURNING 1`,
       [userId, new Date(since)],
     );
-    if (totp.length) await query(`DELETE FROM user_recovery_codes WHERE user_id = $1`, [userId]);
+    if (totp.length) await removeTwoFactor(userId);
     await query(`DELETE FROM auth_identities WHERE user_id = $1 AND created_at >= $2`, [userId, new Date(since)]);
   });
+}
+
+// ---- taking an account back (KAI-99) ----
+
+/**
+ * What every way of taking an account back does, inside the caller's transaction: sets the
+ * password (null: none, the owner picks one through a reset link), removes two-step verification
+ * (and a recovery in progress) and every provider sign-in, and cancels pending links except
+ * `keepLinks`. The caller ends the sessions (service.endSessionsOf, so live sockets close too).
+ */
+async function takeBack(userId: string, passwordHash: string | null, keepLinks: { purpose: TokenPurpose; email: string }[]): Promise<void> {
+  await setPasswordHash(userId, passwordHash, { viaLink: passwordHash !== null });
+  await removeTwoFactor(userId);
+  await query(`DELETE FROM auth_identities WHERE user_id = $1`, [userId]);
+  await deleteTokensExcept(userId, keepLinks);
+}
+
+/** The previous address's way back after an email change survives taking an account back. */
+async function revertLinks(userId: string): Promise<{ purpose: TokenPurpose; email: string }[]> {
+  const rows = await query<{ email: string }>(`SELECT DISTINCT email FROM auth_tokens WHERE user_id = $1 AND purpose = 'revert_email'`, [userId]);
+  return rows.map((r) => ({ purpose: 'revert_email', email: r.email }));
+}
+
+/**
+ * Cancels the user's pending links except those of `keep` (a purpose, sent to an address).
+ */
+export async function deleteTokensExcept(userId: string, keep: { purpose: TokenPurpose; email: string }[]): Promise<void> {
+  await query(
+    `DELETE FROM auth_tokens t WHERE t.user_id = $1
+       AND NOT EXISTS (SELECT 1 FROM unnest($2::text[], $3::text[]) AS k(purpose, email) WHERE k.purpose = t.purpose AND k.email = t.email)`,
+    [userId, keep.map((k) => k.purpose), keep.map((k) => k.email)],
+  );
+}
+
+export type UndoTwoFactorResult = { result: 'done'; userId: string; email: string } | { result: 'address_changed' } | { result: 'invalid' };
+
+/**
+ * "This wasn't me" from the two-step-on notice (`two_factor_undo` link: `email` = where it went,
+ * created_at = the enabled_at of the enrolment it announced). Takes the account back and uses the
+ * link up if the authenticator on is still that enrolment and the address is still `email`. While
+ * the address differs (it was changed since), the link stays usable: the "restore my address" link
+ * the change sent to the same address comes first. One transaction, link and user rows locked.
+ */
+export async function undoTwoFactorEnrolment(tokenHash: string, passwordHash: string, now: number): Promise<UndoTwoFactorResult> {
+  return tx(async () => {
+    const t = await one<{ user_id: string; email: string; created_at: Date; expires_at: Date }>(
+      `SELECT user_id, email, created_at, expires_at FROM auth_tokens WHERE token_hash = $1 AND purpose = 'two_factor_undo' FOR UPDATE`,
+      [tokenHash],
+    );
+    if (!t || t.expires_at.getTime() <= now) return { result: 'invalid' };
+    const user = await one<{ email: string }>(`SELECT email FROM users WHERE id = $1 FOR UPDATE`, [t.user_id]);
+    const enrolment = await one(`SELECT 1 FROM user_totp WHERE user_id = $1 AND enabled_at = $2`, [t.user_id, t.created_at]);
+    if (!user || !enrolment) {
+      await query(`DELETE FROM auth_tokens WHERE token_hash = $1`, [tokenHash]);
+      return { result: 'invalid' };
+    }
+    if (user.email !== t.email) return { result: 'address_changed' };
+    await query(`DELETE FROM auth_tokens WHERE token_hash = $1`, [tokenHash]);
+    await takeBack(t.user_id, passwordHash, await revertLinks(t.user_id));
+    return { result: 'done', userId: t.user_id, email: t.email };
+  });
+}
+
+/**
+ * Finishes a delayed recovery (the link mailed once it was ready): takes the account back if that
+ * recovery is still on, ready, its link went out, and the address is still `email`.
+ */
+export async function finishTwoFactorRecovery(userId: string, email: string, passwordHash: string, now: number): Promise<boolean> {
+  return tx(async () => {
+    const user = await one<{ email: string }>(`SELECT email FROM users WHERE id = $1 FOR UPDATE`, [userId]);
+    const ready = await one(`SELECT 1 FROM auth_two_factor_recoveries WHERE user_id = $1 AND ready_at <= $2 AND ready_sent_at IS NOT NULL`, [
+      userId,
+      new Date(now),
+    ]);
+    if (!user || !ready || user.email !== email) return false;
+    await takeBack(userId, passwordHash, await revertLinks(userId));
+    return true;
+  });
+}
+
+/** An operator's reset after an out-of-band identity check: no password left; the owner picks one through the address. */
+export async function resetTwoFactorByOperator(userId: string): Promise<boolean> {
+  return tx(async () => {
+    if (!(await one(`SELECT 1 FROM users WHERE id = $1 FOR UPDATE`, [userId]))) return false;
+    await takeBack(userId, null, await revertLinks(userId));
+    return true;
+  });
+}
+
+// ---- delayed two-step verification recovery (KAI-99) ----
+
+export interface RecoveryRecord {
+  userId: string;
+  startedAt: number;
+  readyAt: number;
+  requestedFrom: string;
+}
+
+interface RecoveryRow {
+  user_id: string;
+  started_at: Date;
+  ready_at: Date;
+  requested_from: string;
+}
+
+const toRecovery = (r: RecoveryRow): RecoveryRecord => ({
+  userId: r.user_id,
+  startedAt: r.started_at.getTime(),
+  readyAt: r.ready_at.getTime(),
+  requestedFrom: r.requested_from,
+});
+
+/**
+ * Starts a recovery unless one is in progress. `created`: this call started it; otherwise the one
+ * in progress comes back unchanged. Null when two-step verification is off.
+ */
+export async function startRecovery(
+  userId: string,
+  now: number,
+  readyAt: number,
+  requestedFrom: string,
+): Promise<{ recovery: RecoveryRecord; created: boolean } | null> {
+  const inserted = await one<RecoveryRow>(
+    `INSERT INTO auth_two_factor_recoveries (user_id, started_at, ready_at, requested_from)
+     SELECT $1, $2, $3, $4 WHERE EXISTS (SELECT 1 FROM user_totp WHERE user_id = $1 AND enabled_at IS NOT NULL)
+     ON CONFLICT (user_id) DO NOTHING RETURNING *`,
+    [userId, new Date(now), new Date(readyAt), requestedFrom],
+  );
+  if (inserted) return { recovery: toRecovery(inserted), created: true };
+  const existing = await findRecovery(userId);
+  return existing ? { recovery: existing, created: false } : null;
+}
+
+export async function findRecovery(userId: string): Promise<RecoveryRecord | null> {
+  const r = await one<RecoveryRow>(`SELECT * FROM auth_two_factor_recoveries WHERE user_id = $1`, [userId]);
+  return r ? toRecovery(r) : null;
+}
+
+/** Cancels the recovery in progress and its links; false when there was none. */
+export async function deleteRecovery(userId: string): Promise<boolean> {
+  return tx(async () => {
+    const rows = await query(`DELETE FROM auth_two_factor_recoveries WHERE user_id = $1 RETURNING 1`, [userId]);
+    await query(`DELETE FROM auth_tokens WHERE user_id = $1 AND purpose IN ('two_factor_recovery', 'two_factor_recovery_cancel')`, [userId]);
+    return rows.length > 0;
+  });
+}
+
+/**
+ * Claims recoveries due for their "completes soon" mail (ready within `remindBeforeMs`, not ready
+ * yet, not reminded): marks them reminded and returns them with the account's address.
+ */
+export async function claimRecoveryReminders(now: number, remindBeforeMs: number, limit: number): Promise<(RecoveryRecord & { email: string })[]> {
+  const rows = await query<RecoveryRow & { email: string }>(
+    `UPDATE auth_two_factor_recoveries r SET reminded_at = $1 FROM users u
+     WHERE u.id = r.user_id AND r.user_id IN (
+       SELECT user_id FROM auth_two_factor_recoveries
+       WHERE reminded_at IS NULL AND ready_at > $1 AND ready_at <= $2 ORDER BY ready_at LIMIT $3)
+     RETURNING r.*, u.email`,
+    [new Date(now), new Date(now + remindBeforeMs), limit],
+  );
+  return rows.map((r) => ({ ...toRecovery(r), email: r.email }));
+}
+
+/** Claims recoveries that became ready and whose finishing link has not gone out: marks it sent. */
+export async function claimReadyRecoveries(now: number, limit: number): Promise<(RecoveryRecord & { email: string })[]> {
+  const rows = await query<RecoveryRow & { email: string }>(
+    `UPDATE auth_two_factor_recoveries r SET ready_sent_at = $1 FROM users u
+     WHERE u.id = r.user_id AND r.user_id IN (
+       SELECT user_id FROM auth_two_factor_recoveries WHERE ready_sent_at IS NULL AND ready_at <= $1 ORDER BY ready_at LIMIT $2)
+     RETURNING r.*, u.email`,
+    [new Date(now), limit],
+  );
+  return rows.map((r) => ({ ...toRecovery(r), email: r.email }));
+}
+
+/** What an operator sees about an account's sign-in security (admin CLI). */
+export async function securitySummary(userId: string): Promise<{
+  twoFactorEnabledAt: number | null;
+  recoveryCodesLeft: number;
+  identities: number;
+  pendingRevertEmail: boolean;
+  sessions: number;
+}> {
+  const r = (await one<{ enabled_at: Date | null; codes: number; identities: number; reverts: number; sessions: number }>(
+    `SELECT (SELECT enabled_at FROM user_totp WHERE user_id = $1) AS enabled_at,
+            (SELECT COUNT(*) FROM user_recovery_codes WHERE user_id = $1 AND used_at IS NULL) AS codes,
+            (SELECT COUNT(*) FROM auth_identities WHERE user_id = $1) AS identities,
+            (SELECT COUNT(*) FROM auth_tokens WHERE user_id = $1 AND purpose = 'revert_email' AND expires_at > now()) AS reverts,
+            (SELECT COUNT(*) FROM sessions WHERE user_id = $1 AND expires_at > now()) AS sessions`,
+    [userId],
+  ))!;
+  return {
+    twoFactorEnabledAt: r.enabled_at?.getTime() ?? null,
+    recoveryCodesLeft: Number(r.codes),
+    identities: Number(r.identities),
+    pendingRevertEmail: Number(r.reverts) > 0,
+    sessions: Number(r.sessions),
+  };
 }
 
 // ---- browsers that signed in (new-device notices) ----
