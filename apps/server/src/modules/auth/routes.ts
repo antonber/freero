@@ -13,10 +13,11 @@ import {
   requestEmailChange,
   requestPasswordReset,
   resetPassword,
+  revertEmailChange,
   sendVerification,
   verifyEmail,
 } from './emails';
-import { locateIp } from './geoip';
+import { locateIp, maskIp } from './geoip';
 import { configuredProviders, disconnectIdentity, providerLabel, toLinkedIdentity } from './providers';
 import * as repo from './repo';
 import { completeSignIn, finishTwoFactorSignIn, providerCallback, startProviderSignIn } from './signIn';
@@ -41,15 +42,6 @@ import {
   startSession,
   updateProfile,
 } from './service';
-
-/** "203.0.113.42" -> "203.0.113.x"; IPv6 keeps its first three groups. Never the full address. */
-export function maskIp(ip: string): string {
-  if (ip === '::1' || /^(::ffff:)?127\./.test(ip)) return 'This computer';
-  const v4 = /^(?:::ffff:)?(\d+\.\d+\.\d+)\.\d+$/i.exec(ip);
-  if (v4) return `${v4[1]}.x`;
-  if (ip.includes(':')) return `${ip.split(':').slice(0, 3).join(':')}:…`;
-  return ip ? 'unknown network' : '';
-}
 
 export default function authRoutes(_ctx: ServerContext): Router {
   const r = Router();
@@ -186,7 +178,7 @@ export default function authRoutes(_ctx: ServerContext): Router {
     '/auth/password/reset',
     rateLimit('password'),
     handle(async (req, res) => {
-      const user = await resetPassword(req.body?.token, req.body?.password);
+      const user = await resetPassword(req, req.body?.token, req.body?.password);
       // The reset link proves the address, not the second factor.
       res.json((await completeSignIn(req, res, user.id, 'email_link')) satisfies LoginResponse);
     }),
@@ -198,6 +190,7 @@ export default function authRoutes(_ctx: ServerContext): Router {
     rateLimit('password', 'user'),
     handle(async (req, res) => {
       await changePassword(
+        req,
         currentUser(req).id,
         currentSessionKey(req),
         req.body?.currentPassword,
@@ -222,8 +215,19 @@ export default function authRoutes(_ctx: ServerContext): Router {
   r.post(
     '/auth/email/confirm',
     handle(async (req, res) => {
-      await confirmEmailChange(req.body?.token);
+      await confirmEmailChange(req, req.body?.token);
       res.json({ ok: true });
+    }),
+  );
+
+  // "This wasn't me": the link an email change sent to the previous address.
+  r.post(
+    '/auth/email/revert',
+    rateLimit('password'),
+    handle(async (req, res) => {
+      const user = await revertEmailChange(req.body?.token, req.body?.password);
+      // Like a reset link: it proves the address, not a second factor that is still on.
+      res.json((await completeSignIn(req, res, user.id, 'email_link')) satisfies LoginResponse);
     }),
   );
 
@@ -294,7 +298,7 @@ export default function authRoutes(_ctx: ServerContext): Router {
     '/auth/identities/:id',
     requireUser,
     handle(async (req, res) => {
-      await disconnectIdentity(currentUser(req).id, req.params.id);
+      await disconnectIdentity(req, currentUser(req).id, req.params.id);
       res.json(await security(req));
     }),
   );
@@ -313,7 +317,7 @@ export default function authRoutes(_ctx: ServerContext): Router {
     requireUser,
     rateLimit('twoFactor', 'user'),
     handle(async (req, res) => {
-      res.json({ recoveryCodes: await enableTwoFactor(currentUser(req).id, currentSessionKey(req), req.body?.code) });
+      res.json({ recoveryCodes: await enableTwoFactor(req, currentUser(req).id, currentSessionKey(req), req.body?.code) });
     }),
   );
 
@@ -322,7 +326,7 @@ export default function authRoutes(_ctx: ServerContext): Router {
     requireUser,
     rateLimit('twoFactor', 'user'),
     handle(async (req, res) => {
-      await disableTwoFactor(currentUser(req).id, req.body?.password, req.body?.code, currentSessionAuthAt(req));
+      await disableTwoFactor(req, currentUser(req).id, req.body?.password, req.body?.code, currentSessionAuthAt(req));
       res.json({ ok: true });
     }),
   );
@@ -332,7 +336,9 @@ export default function authRoutes(_ctx: ServerContext): Router {
     requireUser,
     rateLimit('twoFactor', 'user'),
     handle(async (req, res) => {
-      res.json({ recoveryCodes: await regenerateRecoveryCodes(currentUser(req).id, req.body?.password, req.body?.code, currentSessionAuthAt(req)) });
+      res.json({
+        recoveryCodes: await regenerateRecoveryCodes(req, currentUser(req).id, req.body?.password, req.body?.code, currentSessionAuthAt(req)),
+      });
     }),
   );
 

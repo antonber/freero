@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
-import { describeDevice } from './device';
+import { describeDevice } from '@freero/shared';
 
+// describeDevice (@freero/shared) labels the signed-in devices list and the security notices.
 // Browsers impersonate each other in their User-Agent; a wrong label makes people sign out the
 // wrong device.
 it('does not mislabel Edge, iPhone Chrome or iPad Safari as the browsers they imitate', () => {

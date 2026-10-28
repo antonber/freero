@@ -3,8 +3,8 @@
 import type { Request } from 'express';
 import type { Account, User } from '@freero/shared';
 import { getConfig } from '../../platform/config';
-import { appUrl, renderMail, sendMailLater } from '../../platform/mail';
 import { HttpError } from '../../platform/http';
+import { sendSecurityNotice } from './notices';
 import * as repo from './repo';
 import { confirmPassword, endSessionsOf, getAccount, publicUser } from './service';
 
@@ -13,19 +13,7 @@ export async function scheduleAccountDeletion(req: Request | null, userId: strin
   const at = Date.now() + getConfig().accountDeletionGraceMs;
   await repo.scheduleDeletion(userId, at);
   await endSessionsOf(userId);
-  const day = new Date(at).toUTCString().replace(/ \d\d:\d\d:\d\d GMT$/, '');
-  sendMailLater({
-    to: user.email,
-    ...renderMail({
-      subject: 'Your Freero account will be deleted',
-      title: 'Your account is scheduled for deletion',
-      paragraphs: [
-        `Your Freero account and the boards you own will be deleted for good on ${day}.`,
-        'Changed your mind? Log in before then and choose "Restore account".',
-      ],
-      action: { label: 'Log in to restore', url: appUrl(req, '/login') },
-    }),
-  });
+  sendSecurityNotice(req, user.email, { kind: 'deletion_scheduled', at });
   return at;
 }
 

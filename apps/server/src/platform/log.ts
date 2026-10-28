@@ -14,6 +14,7 @@ const REDACT = [
   '*.token',
   '*.secret',
   '*.sessionSecret',
+  '*.sessionSecretsPrevious',
   '*.secretAccessKey',
   'headers.cookie',
   'headers.authorization',
