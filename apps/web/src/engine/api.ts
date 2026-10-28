@@ -170,6 +170,19 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
    */
   textPartAt?(element: ElementOf<T>, local: Point, ctx: { editor: Editor; zoom: number }): string | null;
   /**
+   * [additive] Every existing text part (see `textPartAt`) with its rich text, besides
+   * `textField`: table cells, extra connector labels. Read through `Editor.getTextParts`, which
+   * board-wide tools (find & replace) use, so a new multi-text element is searchable by
+   * defining this. `editor` is scoped to the defining feature.
+   */
+  textParts?(element: ElementOf<T>, editor: Editor): TextPart[];
+  /**
+   * [additive] Writes one part named by `textParts` (what the part's `onCommit` does). `editor`
+   * is scoped to the defining feature, so it may write that feature's own collections. Called
+   * by `Editor.setTextParts`, inside its transaction, with the live element.
+   */
+  writeTextPart?(element: ElementOf<T>, part: string, html: string, editor: Editor): void;
+  /**
    * [additive] Content an element keeps OUTSIDE the elements map, in its feature's collections
    * (table cells). Copy/cut put what this returns into the clipboard payload; duplicate,
    * Alt-drag and paste hand it to `pasteContent` with each NEW copy, inside the transaction that
@@ -231,6 +244,13 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
    * content along that handle (a fixed-width text box goes back to auto width). null = ignore.
    */
   fitToContent?(element: ElementOf<T>, handle: ResizeHandle): ElementPatch<ElementOf<T>> | null;
+}
+
+/** [additive] One text of an element: `part` null = its `textField`, else a text part's name. */
+export interface TextPart {
+  part: string | null;
+  /** RichText. */
+  html: string;
 }
 
 /** [additive] What `ElementDefinition.hitTest` is told. */
@@ -378,7 +398,12 @@ export interface CommandDefinition {
   group?: string;
   minRole?: Role;
   when?(editor: Editor): boolean;
-  run(editor: Editor): void;
+  /**
+   * `args` [additive]: what `editor.runCommand(id, args)` passed (undefined from shortcuts and
+   * menus). How features ask another feature to act on something specific (open this comment
+   * thread) without importing it; validate them, they come from another feature.
+   */
+  run(editor: Editor, args?: Record<string, unknown>): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -552,6 +577,17 @@ export interface Editor {
   startEditing(id: string, opts?: { selectAll?: boolean; initialText?: string; part?: string }): void;
   /** [additive] The part being edited (startEditing's `part`), or null. */
   getEditingPart(): string | null;
+  /**
+   * [additive] Every text of an element as rich text: its `textField` (part null) when set,
+   * then each of its definition's `textParts`. Empty for unknown ids.
+   */
+  getTextParts(id: string): TextPart[];
+  /**
+   * [additive] Rewrites texts of one element in ONE transaction: part null writes `textField`,
+   * any other part goes through the definition's `writeTextPart` with an editor scoped to the
+   * defining feature (so a table's cells are still written by the table feature).
+   */
+  setTextParts(id: string, parts: TextPart[]): void;
   stopEditing(): void;
   /**
    * Rich-text formatting. While editing, applies to the current text selection; otherwise
@@ -608,7 +644,8 @@ export interface Editor {
   setToolOptions(toolId: string, patch: Record<string, unknown>): void;
 
   // -- commands --
-  runCommand(id: string): void;
+  /** Runs a command as its feature (role and `when` checked). `args` [additive] go to its `run`. */
+  runCommand(id: string, args?: Record<string, unknown>): void;
 
   // -- board settings (engine-owned 'settings' map) --
   getSettings(): BoardSettings;

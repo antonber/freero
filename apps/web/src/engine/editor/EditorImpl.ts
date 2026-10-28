@@ -16,6 +16,7 @@ import type {
   NewElement,
   Point,
   Rect,
+  TextPart,
 } from '../api';
 import type { EngineCore } from '../runtime/core';
 import { ROLE_RANK } from '../runtime/core';
@@ -769,6 +770,34 @@ export class EditorImpl implements Editor {
     return this.getEditingId() ? this.core.ui.getState().editingPart : null;
   }
 
+  getTextParts(id: string): TextPart[] {
+    const el = this.getElement(id);
+    const reg = el && this.core.registry.elements.get(el.type);
+    if (!el || !reg) return [];
+    const out: TextPart[] = [];
+    const field = reg.def.textField;
+    if (field) out.push({ part: null, html: String((el as unknown as Record<string, unknown>)[field] ?? '') });
+    if (reg.def.textParts) out.push(...reg.def.textParts(el as never, this.core.scoped(reg.feature)));
+    return out;
+  }
+
+  setTextParts(id: string, parts: TextPart[]): void {
+    const first = this.getElement(id);
+    const reg = first && this.core.registry.elements.get(first.type);
+    if (!parts.length || !reg || !this.guardWrite()) return;
+    const owner = this.core.scoped(reg.feature);
+    this.transact(() => {
+      for (const { part, html } of parts) {
+        // Live element each time: an earlier write in this transaction may have changed it.
+        const el = this.getElement(id);
+        if (!el) return;
+        if (part === null) {
+          if (reg.def.textField) this.update(id, { [reg.def.textField]: html } as ElementPatch);
+        } else reg.def.writeTextPart?.(el as never, part, html, owner);
+      }
+    });
+  }
+
   startEditing(id: string, opts: { selectAll?: boolean; initialText?: string; part?: string } = {}): void {
     const el = this.getElement(id);
     if (!el) return;
@@ -1053,7 +1082,7 @@ export class EditorImpl implements Editor {
   }
 
   // ------------------------------------------------------------------ commands
-  runCommand(id: string): void {
+  runCommand(id: string, args?: Record<string, unknown>): void {
     const reg = this.core.registry.commands.get(id);
     if (!reg) {
       console.warn(`Unknown command '${id}'`);
@@ -1065,7 +1094,7 @@ export class EditorImpl implements Editor {
       return;
     }
     if (reg.def.when && !reg.def.when(ed)) return;
-    reg.def.run(ed);
+    reg.def.run(ed, args);
   }
 
   // ------------------------------------------------------------------ settings

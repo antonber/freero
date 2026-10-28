@@ -229,6 +229,9 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   `buttons` is the pressed-buttons bitmask.
 - `CommandDefinition.icon?` (shown in the context and board menus) and `group?` (commands sharing
   a group fold into one "<group> ▸" submenu, e.g. emoji's "React with ▸" stamps).
+- `editor.runCommand(id, args?)` → `run(editor, args)`: how a feature asks another to act on
+  something specific without importing it (find → `comments.openThread { threadId, quiet }`,
+  `comments.replaceText`). Shortcuts and menus pass no args; validate them in `run`.
 - `Host.notify(message, kind?, { action?: { label, run } })` — features never call `useToast`.
 - Panel slot `'top-center'`: session bars under the top bar (an active vote, "X is presenting").
   The engine stacks them in one centered column (also while presenting), so two bars never
@@ -306,7 +309,10 @@ Canvas productivity (engine primitives; the product UI lives in `features/arrang
   (a sticky's "add to the right" applies to stickies the user picked, not ones Tab reached).
   Escape walks out: editing → group member → whole group → nothing.
 - `replaceInRichText(html, find, replacement, { caseSensitive? }) → { html, count }` (`@engine`):
-  replaces in rich text's text only, keeping tags; an occurrence split by formatting is skipped.
+  replaces in rich text's text only, keeping tags. It matches the text as `richTextToPlain` reads
+  it, so an occurrence split by formatting ("<b>Hel</b>lo") is replaced too: the replacement takes
+  the formatting of the run the occurrence starts in, and inline tags left empty are dropped. An
+  occurrence never spans a line break.
 - Format toolbar: Group / Ungroup buttons for multi-selections; a locked member gets a lock badge
   and the Lock button a dot when only some items are locked.
 
@@ -319,6 +325,12 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
   `element[field]`; `onKeyDown(e, { atStart, atEnd })` sees keys first (Tab / arrows between
   table cells). Switching part ends the previous edit session (one undo step per part).
   `removeWhenEmpty` never applies to parts. Table cells and extra connector labels use it.
+  Board-wide tools reach every text through `Editor.getTextParts(id)` (the `textField` as part
+  null, then the definition's `textParts(el, editor)`) and rewrite them with
+  `Editor.setTextParts(id, parts)`: one transaction, and each part is written by the definition's
+  `writeTextPart(el, part, html, editor)` with the DEFINING feature's editor, so a table's cells
+  are still written only by the table feature. Find & replace uses it; a new multi-text element
+  becomes searchable and replaceable by defining `textParts` + `writeTextPart`.
 - `FeatureManifest.undoable: string[]` — owned collections whose local writes join the undo
   history (same gestures / steps as element writes). For content that belongs to elements
   (`tableCells`); never for social data (comments, votes).

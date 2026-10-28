@@ -54,4 +54,10 @@ describe('replaceInRichText', () => {
     expect(r.html).toBe('<b>&lt;done&gt;</b>: fix the <a href="/todo">&lt;done&gt; link</a> &amp; &lt;done&gt; list');
     expect(replaceInRichText(html, 'todo', 'x', { caseSensitive: true }).count).toBe(1);
   });
+
+  it('replaces a word split by formatting (in the formatting it starts in) but never joins two lines', () => {
+    expect(replaceInRichText('<b>Hel</b>lo world, he<i>llo</i>!', 'hello', 'Hi')).toEqual({ html: '<b>Hi</b> world, Hi!', count: 2 });
+    expect(replaceInRichText('Hel<br>lo', 'hello', 'Hi').count).toBe(0);
+    expect(replaceInRichText('<p>Hel</p><p>lo</p>', 'hello', 'Hi').count).toBe(0);
+  });
 });
