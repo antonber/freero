@@ -124,6 +124,28 @@
   background: color-mix(in srgb, var(--fr-primary-soft) 80%, var(--fr-primary) 8%);
 }
 
+.fr-notif-req.is-unread {
+  background: var(--fr-primary-soft);
+}
+
+.fr-notif-req .fr-notif-item.is-unread {
+  background: transparent;
+}
+
+.fr-notif-req__actions,
+.fr-notif-req__outcome {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 16px 12px 60px;
+}
+
+.fr-notif-req__outcome {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fr-ink-3);
+}
+
 .fr-notif-item__avatar {
   position: relative;
   flex: none;

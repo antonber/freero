@@ -35,7 +35,8 @@ with recovery codes · session management (list/revoke devices) · invite people
 ### 3. Teams & workspaces
 Workspaces (personal + team) · team members and roles (owner/admin/member/guest) · projects
 (folders) · team-wide board access · team dashboard + workspace switcher · request access ·
-transfer ownership · sharing policies (who may share/export/invite guests).
+transfer ownership · sharing policies (who may share/export/invite guests) · team access level
+(view/comment/edit) · anonymous guests on shared links · activity feed (board + workspace).
 
 ### 4. Enterprise
 SSO: SAML 2.0 + OIDC per workspace, verified domains, enforced SSO · SCIM 2.0 provisioning ·

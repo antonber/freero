@@ -25,6 +25,19 @@ export {
   isSuspended,
   suspendedUserIds,
 } from './service';
+// Guests: visitors without an account on one board's shared link (boards decides who may join).
+export {
+  startGuestSession,
+  guestFromCookieHeader,
+  guestKeyFromCookieHeader,
+  getGuests,
+  endGuestSession,
+  requireUserOrGuest,
+  currentActor,
+  actorId,
+  cleanGuestName,
+  type Actor,
+} from './guests';
 // A workspace policy requiring two-step verification registers here (Enterprise).
 export { onTwoFactorRequirement } from './twoFactor';
 // Workspace session policies (KAI-51): where a person's limits come from, the enforcement job,

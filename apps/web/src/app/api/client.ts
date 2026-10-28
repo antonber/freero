@@ -5,6 +5,12 @@ import type {
   WorkspaceSettings,
   WorkspaceUsage,
   AcceptInviteResponse,
+  ActivityResponse,
+  GuestBoardInfo,
+  GuestInfo,
+  GuestJoinResponse,
+  AccessRequestState,
+  BoardAccessRequest,
   AppealInfo,
   ModeratedBoard,
   ModeratedUpload,
@@ -49,6 +55,7 @@ import type {
   WorkspaceInvitePreview,
   WorkspaceMember,
   WorkspacePolicies,
+  TeamAccess,
   WorkspaceRole,
   WorkspaceSummary,
 } from '@freero/shared';
@@ -220,6 +227,28 @@ export const api = {
   boardPeople: (id: string, ids: string[]) =>
     request<{ people: BoardPerson[] }>('GET', `/api/boards/${id}/people?ids=${ids.map(encodeURIComponent).join(',')}`),
 
+  // guests (visitors without an account on a shared link)
+  guestBoardInfo: (id: string) => request<GuestBoardInfo>('GET', `/api/guest/boards/${encodeURIComponent(id)}`),
+  joinAsGuest: (id: string, name: string) => request<GuestJoinResponse>('POST', `/api/guest/boards/${encodeURIComponent(id)}/join`, { name }),
+  guestMe: () => request<{ guest: GuestInfo | null }>('GET', '/api/guest/me'),
+  guestBoard: (id: string) => request<{ board: BoardSummary }>('GET', `/api/guest/boards/${encodeURIComponent(id)}/board`),
+  leaveAsGuest: () => request<{ ok: true }>('POST', '/api/guest/leave'),
+
+  // activity
+  boardActivity: (id: string, before?: number) =>
+    request<ActivityResponse>('GET', `/api/boards/${encodeURIComponent(id)}/activity${before ? `?before=${before}` : ''}`),
+  workspaceActivity: (id: string, before?: number) =>
+    request<ActivityResponse>('GET', `/api/workspaces/${encodeURIComponent(id)}/activity${before ? `?before=${before}` : ''}`),
+
+  // access requests
+  accessRequestState: (id: string) => request<AccessRequestState>('GET', `/api/boards/${encodeURIComponent(id)}/access-request`),
+  requestAccess: (id: string, role: Exclude<Role, 'owner'>, message: string) =>
+    request<AccessRequestState>('POST', `/api/boards/${encodeURIComponent(id)}/access-request`, { role, message }),
+  withdrawAccessRequest: (id: string) => request<AccessRequestState>('DELETE', `/api/boards/${encodeURIComponent(id)}/access-request`),
+  listAccessRequests: (id: string) => request<{ requests: BoardAccessRequest[] }>('GET', `/api/boards/${encodeURIComponent(id)}/access-requests`),
+  decideAccessRequest: (id: string, userId: string, decision: 'approve' | 'deny', role?: Exclude<Role, 'owner'>) =>
+    request<{ ok: true }>('POST', `/api/boards/${encodeURIComponent(id)}/access-requests/${encodeURIComponent(userId)}`, { decision, role }),
+
   // notifications
   listNotifications: (before?: number) =>
     request<NotificationsResponse>('GET', `/api/notifications${before ? `?before=${before}` : ''}`),
@@ -289,9 +318,9 @@ export const api = {
   // projects (folders)
   listProjects: (workspaceId: string) =>
     request<{ projects: ProjectSummary[] }>('GET', `/api/workspaces/${encodeURIComponent(workspaceId)}/projects`),
-  createProject: (workspaceId: string, name: string, access: ProjectAccess) =>
-    request<{ project: ProjectSummary }>('POST', `/api/workspaces/${encodeURIComponent(workspaceId)}/projects`, { name, access }),
-  updateProject: (id: string, body: { name?: string; access?: ProjectAccess }) =>
+  createProject: (workspaceId: string, name: string, access: ProjectAccess, teamAccess: TeamAccess | null = null) =>
+    request<{ project: ProjectSummary }>('POST', `/api/workspaces/${encodeURIComponent(workspaceId)}/projects`, { name, access, teamAccess }),
+  updateProject: (id: string, body: { name?: string; access?: ProjectAccess; teamAccess?: TeamAccess | null }) =>
     request<{ project: ProjectSummary }>('PATCH', `/api/projects/${encodeURIComponent(id)}`, body),
   deleteProject: (id: string) => request<{ ok: true }>('DELETE', `/api/projects/${encodeURIComponent(id)}`),
   listProjectMembers: (id: string) =>

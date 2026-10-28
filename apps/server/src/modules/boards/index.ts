@@ -2,9 +2,9 @@
 import type { Role } from '@freero/shared';
 import { closeBoardDoc } from '../realtime/index';
 import { deleteUpload, UPLOAD_REF_PATTERN } from '../uploads/index';
-import { mayShareExternally, teamMemberIds, workspaceRole } from '../workspaces/index';
+import { mayShareExternally, teamMembers, workspaceRole } from '../workspaces/index';
 import * as repo from './repo';
-import { describeAccess, removedFor, requireAccess, requireDownload } from './service';
+import { describeAccess, listBoards, removedFor, requireAccess, requireDownload } from './service';
 
 export { createBoard, deleteBoardRowsInWorkspace, cleanUpDeletedBoards } from './service';
 // Operators (modules/moderation): take down / restore, block / unblock the link, and who may report.
@@ -53,14 +53,35 @@ export async function requireBoardAccess(
 
 /** People with access to the board through its team workspace (none for a personal workspace's board). */
 export async function teamAccessUserIds(boardId: string): Promise<string[]> {
+  return (await teamAccessMembers(boardId)).map((m) => m.userId);
+}
+
+/** The same, with the role the team gives each of them on this board. */
+export async function teamAccessMembers(boardId: string): Promise<Array<{ userId: string; role: Role }>> {
   const board = await repo.getBoard(boardId);
-  return board ? teamMemberIds(board) : [];
+  return board ? teamMembers(board) : [];
 }
 
 /** 403 unless the user may export / download the board's content (its workspace's "downloads" policy). */
 export async function requireBoardDownload(boardId: string, userId: string): Promise<void> {
   const { access } = await requireAccess(boardId, userId);
   requireDownload(access);
+}
+
+/**
+ * The boards of a workspace the user can open, with their role (in their personal workspace also
+ * boards shared with them from outside, like the dashboard's "all"). 404 unless they are in it.
+ */
+export async function boardsOpenableIn(userId: string, workspaceId: string): Promise<Array<{ id: string; title: string; role: Role }>> {
+  return (await listBoards(userId, 'all', '', { workspaceId })).map((b) => ({ id: b.id, title: b.title, role: b.role }));
+}
+
+/** Where a (live) board is and who owns it, or null if there is no such board. */
+export async function boardPlace(
+  boardId: string,
+): Promise<{ id: string; title: string; ownerId: string; workspaceId: string; projectId: string | null } | null> {
+  const b = await repo.getBoard(boardId);
+  return b ? { id: b.id, title: b.title, ownerId: b.ownerId, workspaceId: b.workspaceId, projectId: b.projectId } : null;
 }
 
 /** The workspace a board (trashed or not) belongs to, or null if there is no such board. */

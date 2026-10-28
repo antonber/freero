@@ -1,0 +1,99 @@
+/* ---- activity panel (dock) ---- */
+.fr-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 12px 16px;
+}
+
+.fr-activity__title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px; /* lines up with the dock's close button */
+  margin: 0 36px 0 0;
+  padding-left: 4px;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.fr-activity__title > button {
+  margin-left: auto;
+}
+
+.fr-activity__error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 6px 6px 10px;
+  border-radius: var(--fr-radius-sm);
+  background: var(--fr-danger-soft);
+  color: var(--fr-danger);
+  font-size: 12px;
+}
+
+.fr-activity__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 28px 12px;
+  color: var(--fr-ink-3);
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.fr-activity__empty p {
+  margin: 0;
+}
+
+.fr-activity__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fr-activity__entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--fr-line);
+}
+
+.fr-activity__entry:last-child {
+  border-bottom: 0;
+}
+
+.fr-activity__main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fr-activity__text {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--fr-ink-2);
+  overflow-wrap: anywhere;
+}
+
+.fr-activity__text strong {
+  color: var(--fr-ink);
+  font-weight: 600;
+}
+
+.fr-activity__time {
+  font-size: 12px;
+  color: var(--fr-ink-3);
+}
+
+.fr-activity__more {
+  display: flex;
+  justify-content: center;
+}

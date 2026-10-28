@@ -44,12 +44,14 @@ import { isShared, publish, subscribe, subscribedInstances, type Subscription } 
 import { getUser, noteSessionActivity } from '../auth/index';
 import { getBoardAccess, touchBoard } from '../boards/index';
 import { sanitizeAwarenessUpdate, withoutClients, type AwarenessIdentity } from './awareness';
+import { elementChanges, ELEMENTS, emitBoardChange, hasBoardChangeListeners } from './changes';
 import { commentPeople, COMMENTS_COLLECTION, emitCommentMessages, hasCommentListeners, messageEvents } from './comments';
 import * as store from './docStore';
 import { decideUpdate } from './filter';
 import * as layerStore from './layerStore';
 import {
   applyLayerOp,
+  EDITORS_LAYER,
   isLayerName,
   isPrivateLayer,
   mayRunLayerOp,
@@ -63,6 +65,7 @@ import {
 import { peerMessages, persistDuration, persistFailures } from './metrics';
 import { boardChannel, CONTROL_CHANNEL, decodeControl, decodePeer, encodeControl, encodePeer, INSTANCE_ID, type ControlMessage, type PeerMessage } from './peers';
 import { restoreInto } from './restore';
+import { applyChange, viewOf, type AppliedChange, type BoardChange, type BoardReader, type BoardView } from './view';
 
 export const MESSAGE_SYNC = 0;
 export const MESSAGE_AWARENESS = 1;
@@ -98,6 +101,8 @@ export interface Admission {
   role: Role;
   sessionKey: string;
   identity: AwarenessIdentity;
+  /** Set for guests: the only author name their comment messages may carry. */
+  authorName?: string;
 }
 export interface Refusal {
   code: number;
@@ -110,6 +115,8 @@ interface Conn {
   /** Session the socket was opened with (auth's opaque key); logging out closes the socket. */
   sessionKey: string;
   role: Role;
+  /** Guests: the author name their comments must carry (commentRules.ts). */
+  authorName: string | undefined;
   identity: { value: AwarenessIdentity; at: number; loading: boolean };
   /** Awareness client ids announced over this socket (removed on close). */
   awarenessIds: Set<number>;
@@ -245,6 +252,10 @@ class Room {
       emitCommentMessages(messageEvents(this.id, comments, event.changes.keys, conn.userId));
     });
 
+    // Element changes made through OUR sockets (changes.ts): the activity feed's trusted source.
+    const elements = this.doc.getMap<unknown>(ELEMENTS);
+    elements.observe((event, tr) => this.reportChanges('shared', elements, event.changes.keys, tr.origin));
+
     this.ready = this.open();
   }
 
@@ -291,8 +302,25 @@ class Room {
       created.unsaved.push(update);
       this.markDirty();
     });
+    // Hidden frames' contents: reported for owners/editors only (changes.ts). Private layers never.
+    if (name === EDITORS_LAYER) {
+      const els = created.doc.getMap<unknown>(ELEMENTS);
+      els.observe((event, tr) => this.reportChanges('editors', els, event.changes.keys, tr.origin));
+    }
     this.layers.set(name, created);
     return created;
+  }
+
+  private reportChanges(
+    layer: 'shared' | 'editors',
+    elements: Y.Map<unknown>,
+    keys: Map<string, { action: 'add' | 'update' | 'delete'; oldValue: unknown }>,
+    origin: unknown,
+  ): void {
+    const conn = origin instanceof WebSocket ? this.conns.get(origin) : undefined;
+    if (!conn || !hasBoardChangeListeners()) return;
+    const { changes, frameTitles } = elementChanges(layer, elements, this.doc.getMap<unknown>(ELEMENTS), keys);
+    emitBoardChange({ boardId: this.id, actorId: conn.userId, actorName: conn.identity.value.name, layer, changes, frameTitles });
   }
 
   /** A layer sync message from a socket: answered only for layers it may read. */
@@ -494,6 +522,7 @@ class Room {
       userId: a.userId,
       sessionKey: a.sessionKey,
       role: a.role,
+      authorName: a.authorName,
       identity: { value: a.identity, at: Date.now(), loading: false },
       awarenessIds: new Set(),
       lastResync: 0,
@@ -579,7 +608,7 @@ class Room {
   }
 
   private onUpdate(conn: Conn, update: Uint8Array, syncType: number): void {
-    if (decideUpdate(conn.role, this.doc, update, conn.userId) === 'apply') {
+    if (decideUpdate(conn.role, this.doc, update, conn.userId, conn.authorName) === 'apply') {
       Y.applyUpdate(this.doc, update, conn.ws);
       // Editing over the socket is activity: a workspace's idle limit must not sign out someone at work.
       if (syncType === syncProtocol.messageYjsUpdate) noteSessionActivity(conn.sessionKey);
@@ -1028,6 +1057,38 @@ export async function restoreBoardDoc(boardId: string, version: Uint8Array, befo
     if (room.destroyed) throw new BoardClosedError(boardId);
     room.restore(version);
     await room.flush();
+  });
+}
+
+const layerDocs = (room: Room): Map<string, Y.Doc> => new Map([...room.layers].map(([name, l]) => [name, l.doc]));
+
+/**
+ * The board as `reader` sees it right now (live, caught up with the other instances): the
+ * shared doc plus the layers that reader may read (view.ts). The caller checked access.
+ */
+export async function readBoardView(boardId: string, reader: BoardReader): Promise<BoardView> {
+  return withLiveRoom(boardId, (room) => viewOf(room.doc, layerDocs(room), reader));
+}
+
+/**
+ * Changes board content on a request, as `actor` (an owner or editor; the caller checked):
+ * `plan` sees the live board as the actor does and returns the change, which is applied right
+ * away — nothing can land in between — as one transaction per doc, published to every instance
+ * and saved before this resolves. Collaborators see one remote change (they cannot undo it with
+ * Ctrl+Z, like any change someone else makes). Returns the plan's result next to what changed.
+ */
+export async function changeBoard<T extends { change: BoardChange }>(
+  boardId: string,
+  actor: BoardReader,
+  plan: (view: BoardView) => T,
+): Promise<T & { applied: AppliedChange }> {
+  return withLiveRoom(boardId, async (room) => {
+    const docs = layerDocs(room);
+    const planned = plan(viewOf(room.doc, docs, actor));
+    if (room.destroyed) throw new BoardClosedError(boardId);
+    const applied = applyChange(room.doc, docs, planned.change, actor, SERVER_ORIGIN);
+    await room.flush();
+    return { ...planned, applied };
   });
 }
 

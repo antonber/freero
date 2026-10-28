@@ -10,7 +10,7 @@ import { ShareDialog } from './ShareDialog';
 
 vi.mock('../api/client', async (importOriginal) => {
   const real = await importOriginal<typeof import('../api/client')>();
-  return { ...real, api: { session: vi.fn(), listMembers: vi.fn(), getBoard: vi.fn(), listInvites: vi.fn(async () => ({ invites: [] })) } };
+  return { ...real, api: { session: vi.fn(), listMembers: vi.fn(), getBoard: vi.fn(), listInvites: vi.fn(async () => ({ invites: [] })), listAccessRequests: vi.fn(async () => ({ requests: [] })) } };
 });
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

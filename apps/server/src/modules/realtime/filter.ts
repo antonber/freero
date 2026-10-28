@@ -29,7 +29,7 @@ const COMMENTS = 'comments';
  * A commenter's update: confined to COMMENTER_WRITABLE, and in `comments` only plain records the
  * connection's user may write (no nested shared types, see commentRules.ts).
  */
-export function commenterMayApply(doc: Y.Doc, update: Uint8Array, userId: string): boolean {
+export function commenterMayApply(doc: Y.Doc, update: Uint8Array, userId: string, authorName?: string): boolean {
   const names = new Set<string | null>();
   const scratch = new Y.Doc();
   const changedKeys = new Set<string>();
@@ -58,7 +58,7 @@ export function commenterMayApply(doc: Y.Doc, update: Uint8Array, userId: string
       if (after instanceof Y.AbstractType) return false;
       changes.push({ key, before: plain(live.get(key)), after });
     }
-    return commenterMayChangeComments(changes, userId, (k) => plain(live.get(k)), () => live.keys());
+    return commenterMayChangeComments(changes, userId, (k) => plain(live.get(k)), () => live.keys(), authorName);
   } catch {
     return false;
   } finally {
@@ -66,13 +66,14 @@ export function commenterMayApply(doc: Y.Doc, update: Uint8Array, userId: string
   }
 }
 
-export function decideUpdate(role: Role, doc: Y.Doc, update: Uint8Array, userId: string): UpdateDecision {
+/** `authorName`: for guests, the only author name their comment messages may carry. */
+export function decideUpdate(role: Role, doc: Y.Doc, update: Uint8Array, userId: string, authorName?: string): UpdateDecision {
   switch (role) {
     case 'owner':
     case 'editor':
       return 'apply';
     case 'commenter':
-      return commenterMayApply(doc, update, userId) ? 'apply' : 'drop';
+      return commenterMayApply(doc, update, userId, authorName) ? 'apply' : 'drop';
     default:
       return 'drop';
   }

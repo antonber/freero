@@ -25,8 +25,12 @@ export type RateLimitName =
   | 'twoFactorRecovery'
   | 'auditExport'
   | 'oidc'
+  | 'accessRequest'
+  | 'guestJoin'
   | 'report'
-  | 'appeal';
+  | 'appeal'
+  | 'outline'
+  | 'structure';
 
 /** `limit` hits per `windowMs`; `null` = not limited. */
 export type RateLimitRule = { limit: number; windowMs: number } | null;
@@ -139,6 +143,8 @@ export interface Config {
   notifyEmailDelayMs: number;
   /** How often each instance looks for notification digests that are due. */
   notifyEmailIntervalMs: number;
+  /** Activity feed: a person's burst of changes on a board ends after this long without one. */
+  activityIdleMs: number;
   rateLimits: Record<RateLimitName, RateLimitRule>;
   /** Configured sign-in providers (each needs its client id AND secret); empty = password only. */
   oidcProviders: OidcProviderConfig[];
@@ -186,6 +192,10 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   twoFactorRecovery: '3/1d', // "lost my authenticator" recoveries started, per IP and per account
   auditExport: '20/1h', // per user: audit log exports (each reads up to 100k events)
   oidc: '60/10m', // "Sign in with …" starts and callbacks per IP
+  accessRequest: '20/1h', // per user: asking for access to boards
+  guestJoin: '20/1h', // per IP: visitors joining a shared board without an account
+  outline: '120/1m', // per user: board outlines (each reads and walks the whole board)
+  structure: '60/10m', // per user: structure laid out and inserted into a board (KAI-167)
   report: '20/1h', // abuse reports per IP and per signed-in user
   appeal: '10/1h', // appeals against moderation actions per IP
 };
@@ -208,6 +218,10 @@ const ENV_NAME: Record<RateLimitName, string> = {
   twoFactorRecovery: 'RATE_LIMIT_TWO_FACTOR_RECOVERY',
   auditExport: 'RATE_LIMIT_AUDIT_EXPORT',
   oidc: 'RATE_LIMIT_OIDC',
+  accessRequest: 'RATE_LIMIT_ACCESS_REQUEST',
+  guestJoin: 'RATE_LIMIT_GUEST_JOIN',
+  outline: 'RATE_LIMIT_OUTLINE',
+  structure: 'RATE_LIMIT_STRUCTURE',
   report: 'RATE_LIMIT_REPORT',
   appeal: 'RATE_LIMIT_APPEAL',
 };
@@ -416,6 +430,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     twoFactorUndoMs: int('TWO_FACTOR_UNDO_HOURS', 72, 1, 14 * 24) * 3_600_000,
     notifyEmailDelayMs: int('NOTIFY_EMAIL_DELAY_SECONDS', 900, 0, 7 * 86_400) * 1000,
     notifyEmailIntervalMs: int('NOTIFY_EMAIL_INTERVAL_SECONDS', 60, 1, 86_400) * 1000,
+    activityIdleMs: int('ACTIVITY_IDLE_SECONDS', 60, 1, 3600) * 1000,
     rateLimits,
     oidcProviders,
     geoipDbPath,

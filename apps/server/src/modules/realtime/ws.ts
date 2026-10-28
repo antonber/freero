@@ -3,7 +3,8 @@ import type { ServerContext } from '../../platform/context';
 import { gaugeFn } from '../../platform/metrics';
 import { checkRateLimit } from '../../platform/rateLimit';
 import type { WsRoute } from '../../platform/ws';
-import { onSessionEnd, sessionKeyFromCookieHeader, trackLiveSessions, userFromCookieHeader } from '../auth/index';
+import { guestDisplayName } from '@freero/shared';
+import { guestFromCookieHeader, guestKeyFromCookieHeader, onSessionEnd, sessionKeyFromCookieHeader, trackLiveSessions, userFromCookieHeader } from '../auth/index';
 import { getBoardAccess } from '../boards/index';
 import { admitSocket, endSessionSockets, flushAllRooms, listenToOtherInstances, liveSessionKeys, loadedRoomCount, pendingPersistCount } from './rooms';
 
@@ -28,11 +29,20 @@ export default function realtimeWs(ctx: ServerContext): WsRoute {
     prefix: PREFIX,
     handle(ws, req) {
       const cookie = req.headers.cookie;
-      const sessionKey = sessionKeyFromCookieHeader(cookie);
+      const accountKey = sessionKeyFromCookieHeader(cookie);
+      // A signed-in browser connects as its account; otherwise a guest session may (its one board).
+      const sessionKey = accountKey ?? guestKeyFromCookieHeader(cookie);
       // Synchronously: admitSocket starts queueing the client's first messages right away.
       void admitSocket(ws, sessionKey, async () => {
-        const user = sessionKey ? await userFromCookieHeader(cookie) : null;
-        if (!user || !sessionKey) return { code: 4401, reason: 'Not logged in' };
+        const account = accountKey ? await userFromCookieHeader(cookie) : null;
+        const guest = account ? null : await guestFromCookieHeader(cookie);
+        const user = account
+          ? { id: account.id, name: account.name, color: account.color, avatarUrl: account.avatarUrl }
+          : guest
+            ? { id: guest.id, name: guestDisplayName(guest.name), color: guest.color, avatarUrl: null }
+            : null;
+        const key = account ? accountKey : guest ? guestKeyFromCookieHeader(cookie) : null;
+        if (!user || !key) return { code: 4401, reason: 'Not logged in' };
         // Per-user connect limit (the per-IP one runs at the upgrade); the client retries with backoff.
         if (!(await checkRateLimit('wsConnect', `user:${user.id}`)).allowed) return { code: 4429, reason: 'Too many connections' };
         let boardId = '';
@@ -48,8 +58,10 @@ export default function realtimeWs(ctx: ServerContext): WsRoute {
           boardId,
           userId: user.id,
           role,
-          sessionKey,
-          identity: { id: user.id, name: user.name, color: user.color, avatarUrl: user.avatarUrl },
+          sessionKey: key,
+          identity: user,
+          // A guest's comments must carry the name others see them by (realtime/commentRules.ts).
+          ...(guest ? { authorName: user.name } : {}),
         };
       });
     },

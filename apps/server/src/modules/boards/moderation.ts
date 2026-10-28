@@ -3,13 +3,11 @@
 // idempotent — false when the board already was in that state — so a retried or doubled request
 // changes nothing twice.
 import type { LinkAccess } from '@freero/shared';
-import { resolveRole } from '../members/index';
 import { closeBoardDoc, refreshBoardAccess } from '../realtime/index';
 import { deleteUpload } from '../uploads/index';
-import { boardAccess } from '../workspaces/index';
 import * as repo from './repo';
 import type { Board } from './repo';
-import { closeKeepingContent, describeAccess } from './service';
+import { closeKeepingContent, describeAccess, guestRoleFor } from './service';
 
 export interface ModerationBoardState {
   id: string;
@@ -41,23 +39,16 @@ export async function boardForModeration(boardId: string): Promise<ModerationBoa
   };
 }
 
-/** Not a user id (ids never hold ':'): someone with no account, no membership, no team. */
-const VISITOR = 'visitor:';
-
-/** What the board's link gives someone outside it — capped by its workspace's policies. */
-async function linkRoleForOutsiders(board: Board) {
-  return resolveRole(board, VISITOR, null, await boardAccess(VISITOR, board));
-}
-
 /**
  * The board, if `userId` (null: a visitor without an account, KAI-43) can open it and so may
  * report it or something on it; null otherwise — unknown, private, trashed and taken-down boards
- * alike, so reports can't be used to probe for boards.
+ * alike, so reports can't be used to probe for boards. A visitor without an account can open
+ * exactly what a guest may join (`guestRoleFor`: the link, the workspace's `publicLinks` policy).
  */
 export async function reportableBoard(boardId: string, userId: string | null): Promise<{ id: string; title: string; ownerId: string } | null> {
   const board = await repo.getBoard(boardId);
   if (!board) return null;
-  const role = userId ? (await describeAccess(board, userId)).role : await linkRoleForOutsiders(board);
+  const role = userId ? (await describeAccess(board, userId)).role : await guestRoleFor(board);
   return role ? { id: board.id, title: board.title, ownerId: board.ownerId } : null;
 }
 

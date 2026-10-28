@@ -346,6 +346,18 @@ export const tableCellKey = (kind: 't' | 'f', tableId: string, rowId: string, co
  */
 export type TableCopyContent = Record<string, { t?: string; f?: string }>;
 
+/** The `tableCells` entries that hold `content` for table `tableId` (what pasting a table writes). */
+export function tableCellEntries(tableId: string, content: TableCopyContent): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [part, cell] of Object.entries(content)) {
+    const [rowId, colId] = part.split(':');
+    if (!rowId || !colId) continue;
+    if (cell.t) out[tableCellKey('t', tableId, rowId, colId)] = cell.t;
+    if (cell.f) out[tableCellKey('f', tableId, rowId, colId)] = cell.f;
+  }
+  return out;
+}
+
 /** A pasted link: a preview card; known video hosts can play inline (after a click). */
 export interface EmbedElement extends BaseElement {
   type: 'embed';

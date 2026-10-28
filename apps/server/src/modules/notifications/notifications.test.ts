@@ -2,8 +2,10 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 import { mentionToken, type User } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { closeTestDb, openTestDb, outboxMails } from '../../platform/testing';
-import { createUser, markEmailVerified } from '../auth/index';
+import { createUser, getAccount, markEmailVerified } from '../auth/index';
 import { createBoard } from '../boards/index';
+import { decideAccessRequest, onAccessDecided, onAccessRequested, requestAccess } from '../members/index';
+import * as service from './service';
 import type { CommentMessageEvent } from '../realtime/index';
 import { createTeamWorkspace, inviteToWorkspace, removeWorkspaceMember } from '../workspaces/index';
 import { emailsIn, listFor, markRead, onCommentMessage, sendDigests, unsubscribe, unsubscribeToken, updatePrefs } from './service';
@@ -136,4 +138,32 @@ it('team access counts for notifications: a team member is told about a mention 
   await removeWorkspaceMember(ws.id, lead.id, teammate.id);
   await onCommentMessage(message(board.id, lead.id, `again ${mentionToken(teammate.id)}`));
   expect(await inbox(teammate)).toHaveLength(2);
+});
+
+it('a guest’s reply on a shared board notifies the thread as a guest; their @mentions page nobody', async () => {
+  const [ann, bob] = await Promise.all([person('Ann'), person('Bob')]);
+  const board = await createBoard(ann.id, 'Open house', '', 'commenter');
+  await onCommentMessage(message(board.id, 'guest_abc', `hi ${mentionToken(bob.id)}`, { participantIds: [ann.id, 'guest_other'] }));
+  expect(await inbox(bob)).toHaveLength(0);
+  const [reply] = await inbox(ann);
+  expect(reply).toMatchObject({ type: 'comment.reply', actor: null });
+  expect(reply.title).toMatch(/^Guest · /);
+});
+
+it('an access request reaches the owner with its message and buttons; a "no" reaches the asker without the board’s title', async () => {
+  onAccessRequested(service.onAccessRequested);
+  onAccessDecided(service.onAccessDecided);
+  const [owner, asker] = await Promise.all([person('Holder'), person('Asker')]);
+  const board = await createBoard(owner.id, 'Acquisition plan', '', 'none');
+  await requestAccess(board.id, await getAccount(asker.id), { role: 'commenter', message: 'I run the data room' });
+
+  const [ask] = await inbox(owner);
+  expect(ask).toMatchObject({ type: 'access.request', body: 'I run the data room', accessRequest: { status: 'pending', role: 'commenter', canDecide: true } });
+  await decideAccessRequest(board.id, await getAccount(owner.id), asker.id, { decision: 'deny' });
+
+  const [answer] = await inbox(asker);
+  expect(answer.type).toBe('access.response');
+  expect(answer.title).not.toContain('Acquisition');
+  expect(answer.link).toBe(`/board/${board.id}`); // the request page
+  expect((await inbox(owner))[0].accessRequest).toMatchObject({ status: 'denied', canDecide: false });
 });

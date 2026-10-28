@@ -45,7 +45,8 @@ export function serverNow(): number {
 
 const SAMPLE_COUNT = 5;
 const SAMPLE_SPACING_MS = 210;
-const SAMPLE_URL = '/api/auth/me';
+// Any cheap endpoint carries a Date header; this one answers 200 for everyone (guests have no account).
+const SAMPLE_URL = '/api/auth/session';
 
 async function sample(): Promise<ClockSample | null> {
   try {
