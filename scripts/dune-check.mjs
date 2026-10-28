@@ -22,6 +22,7 @@ const FEATURE_RESERVED = new Set([
   'panel.tsx',
   'commands.ts',
   'decoration.tsx',
+  'outline.ts',
 ]);
 
 const rel = (p) => path.relative(ROOT, p).split(path.sep).join('/');
@@ -226,6 +227,64 @@ function checkFeatureFolders() {
 }
 
 // ---------------------------------------------------------------------------
+// A feature's outline.ts (how its elements read in the board outline) also runs on the SERVER
+// (modules/outline discovers it), so everything it loads at runtime must be pure: '@freero/shared'
+// and files of its own feature. Types may come from anywhere (`import type` is erased). [W13]
+// ---------------------------------------------------------------------------
+const isTypeOnly = (stmt) =>
+  /^\s*(import|export)\s+type\b/.test(stmt) ||
+  (/^\s*import\s*\{([^}]*)\}\s*from/.test(stmt) &&
+    stmt
+      .match(/\{([^}]*)\}/)[1]
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .every((s) => s.startsWith('type ')));
+
+function checkOutlineFiles() {
+  const dir = path.join(WEB, 'features');
+  if (!fs.existsSync(dir)) return;
+  for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (!ent.isDirectory()) continue;
+    const fdir = path.join(dir, ent.name);
+    const entry = path.join(fdir, 'outline.ts');
+    if (!fs.existsSync(entry)) continue;
+    const seen = new Set();
+    const queue = [entry];
+    while (queue.length) {
+      const file = queue.pop();
+      if (seen.has(file)) continue;
+      seen.add(file);
+      const src = fs.readFileSync(file, 'utf8');
+      const stmts = src.matchAll(
+        /(?:^|\n)[ \t]*((?:import\s+(?:type\s+)?(?:[\w*{}\s,$]+?\s+from\s+)?|export\s+(?:type\s+)?(?:\*(?:\s+as\s+\w+)?|\{[^}]*\})\s+from\s+)['"]([^'"]+)['"])/g,
+      );
+      for (const m of stmts) {
+        const [, stmt, spec] = m;
+        const line = src.slice(0, m.index).split('\n').length + (m[0].startsWith('\n') ? 1 : 0);
+        if (spec.startsWith('.')) {
+          let abs = path.resolve(path.dirname(file), spec);
+          for (const ext of ['', '.ts', '.tsx', '/index.ts']) {
+            if (fs.existsSync(abs + ext) && fs.statSync(abs + ext).isFile()) {
+              abs = abs + ext;
+              break;
+            }
+          }
+          if (!abs.startsWith(fdir + path.sep))
+            report('W13', file, line, `outline.ts (and what it imports) may only load files of features/${ent.name}; '${spec}' is outside it.`, spec);
+          else if (isTypeOnly(stmt)) continue;
+          else if (abs.endsWith('.tsx'))
+            report('W13', file, line, `outline.ts runs on the server: '${spec}' is a .tsx (React) file. Move the pure helper it needs into a .ts file under features/${ent.name}/lib/.`, spec);
+          else queue.push(abs);
+        } else if (spec !== '@freero/shared' && !isTypeOnly(stmt)) {
+          report('W13', file, line, `outline.ts runs on the server, so what it loads must be pure: '${spec}' is only allowed as \`import type\`. Use '@freero/shared' (richTextToPlain, tableCellKey, …) or a pure helper in this feature.`, spec);
+        }
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // CSS class ownership. Vite never unloads CSS on route changes, so after visiting a board the
 // board's stylesheets also apply to the dashboard. A class styled by two sibling owners leaks.
 // ui/ (design system) and engine/ classes may be styled in context by layers above them; app/
@@ -403,6 +462,7 @@ function checkSharedFile(file) {
 // ---------------------------------------------------------------------------
 for (const f of walk(WEB).filter(isCode)) checkWebFile(f);
 checkFeatureFolders();
+checkOutlineFiles();
 checkCssOwnership();
 const schema = serverMigrations();
 checkMigrations(schema);
