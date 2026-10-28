@@ -31,7 +31,13 @@ export interface BoardSummary {
   updatedAt: number;
   /** When the current user last opened it. */
   lastOpenedAt: number | null;
+  /** Trash only (filter=trash): when it was deleted, and when it will be deleted for good. */
+  deletedAt?: number;
+  purgeAt?: number;
 }
+
+/** Days a deleted board stays in its owner's trash (restorable) before it is deleted for good. */
+export const TRASH_RETENTION_DAYS = 30;
 
 export interface BoardMember {
   userId: string;
@@ -56,13 +62,19 @@ export interface AuthResponse { user: User }
 export interface SessionResponse { user: User | null }
 
 // ---- Boards ----
-// GET    /api/boards?filter=all|mine|shared|starred|recent&q=text -> { boards: BoardSummary[] }
+// GET    /api/boards?filter=all|mine|shared|starred|recent|trash&q=text -> { boards: BoardSummary[] }
+//                                    (trash: the caller's own deleted boards, with deletedAt/purgeAt)
 // POST   /api/boards               body CreateBoardRequest -> { board: BoardSummary }
 // GET    /api/boards/:id           -> { board: BoardSummary }   (also records lastOpenedAt;
 //                                     if the user has no membership but linkAccess != 'none',
 //                                     returns the board with role = linkAccess)
 // PATCH  /api/boards/:id           body UpdateBoardRequest -> { board: BoardSummary }  (owner/editor; linkAccess owner only)
-// DELETE /api/boards/:id           -> { ok: true }  (owner only)
+// DELETE /api/boards/:id           -> { ok: true }  (owner only) moves it to the trash: gone from every
+//                                    list and for every member (404, sockets closed 4403) until restored;
+//                                    deleted for good TRASH_RETENTION_DAYS later
+// POST   /api/boards/:id/restore   -> { board: BoardSummary }  (owner only; 404 unless in your trash;
+//                                    403 over the board quota)
+// DELETE /api/boards/:id/permanent -> { ok: true }  (owner only; only boards in the trash)
 // POST   /api/boards/:id/duplicate -> { board: BoardSummary }  (copies the Yjs state)
 // PUT    /api/boards/:id/star      -> { ok: true }
 // DELETE /api/boards/:id/star      -> { ok: true }
