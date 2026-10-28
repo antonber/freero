@@ -105,7 +105,7 @@ export async function checkCredentials(emailIn: unknown, passwordIn: unknown): P
   if (!user || !user.passwordHash || !ok) {
     // Attempts on an existing account are audited (its owner's workspaces see them); guesses at
     // addresses without an account are only rate limited.
-    if (user) await recordAuditQuietly({ action: 'auth.login_failed', accountId: user.id, actorId: null, metadata: { reason: 'password' } });
+    if (user) await recordAuditQuietly({ action: 'auth.login_failed', accountId: user.id, actorId: null, target: { type: 'user', id: user.id, label: user.email }, metadata: { reason: 'password' } });
     throw unauthorized('Incorrect email or password');
   }
   return toAccount(user);
@@ -393,7 +393,7 @@ export async function endSessionsBeyondLimits(people: Array<{ userId: string } &
     if (!keys.length) continue;
     ended += keys.length;
     sessionsEnded(keys);
-    await recordAuditQuietly({ action: 'auth.session_expired', accountId: p.userId, actorId: null, metadata: { sessions: keys.length } });
+    await recordAuditQuietly({ action: 'auth.session_expired', accountId: p.userId, actorId: null, target: { type: 'user', id: p.userId }, metadata: { sessions: keys.length } });
   }
   return ended;
 }
@@ -412,7 +412,7 @@ export async function sessionFromCookieHeader(
   if (reason) {
     await repo.deleteSession(key);
     sessionsEnded([key]);
-    await recordAuditQuietly({ action: 'auth.session_expired', accountId: found.user.id, actorId: null, metadata: { reason } });
+    await recordAuditQuietly({ action: 'auth.session_expired', accountId: found.user.id, actorId: null, target: { type: 'user', id: found.user.id, label: found.user.email }, metadata: { reason } });
     return null;
   }
   touch(key, now);

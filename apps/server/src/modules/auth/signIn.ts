@@ -101,7 +101,7 @@ export async function finishTwoFactorSignIn(req: Request, res: Response, code: u
   // Per account too, so a fresh pending sign-in (a known password) doesn't buy fresh guesses.
   await consumeRateLimit('twoFactor', `user:${challenge.userId}`);
   if (!(await useSecondFactor(challenge.userId, code, req))) {
-    await recordAuditQuietly({ action: 'auth.login_failed', accountId: challenge.userId, actorId: null, metadata: { reason: 'second_factor' } });
+    await recordAuditQuietly({ action: 'auth.login_failed', accountId: challenge.userId, actorId: null, target: { type: 'user', id: challenge.userId }, metadata: { reason: 'second_factor' } });
     throw new HttpError(403, 'That code is not right. Check your authenticator app and try again.');
   }
   // Single use: of two requests racing with right codes, one signs in.
