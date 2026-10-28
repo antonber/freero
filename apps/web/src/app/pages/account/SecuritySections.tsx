@@ -275,6 +275,19 @@ export function TwoFactorSection({
     }
   };
 
+  const cancelRecovery = async () => {
+    setBusy(true);
+    try {
+      await api.cancelTwoFactorRecovery();
+      notify('Recovery cancelled. Two-step verification stays on.', 'success');
+      onChanged();
+    } catch (err) {
+      notify(errorText(err, 'Could not cancel the recovery'), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const openVerify = (purpose: 'disable' | 'regenerate') => {
     setReauth(false);
     if (needsReauth(security)) return setReauth(true);
@@ -327,6 +340,20 @@ export function TwoFactorSection({
         ) : null}
       </div>
       {tf.requiredBy ? <p className="fr-acct__hint">{tf.requiredBy}.</p> : null}
+      {tf.recovery ? (
+        <div className="fr-acct-form">
+          <p className="fr-acct__error" role="alert">
+            Someone started an account recovery that removes two-step verification on{' '}
+            {new Date(tf.recovery.readyAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}. If it wasn’t you, cancel
+            it and change your password.
+          </p>
+          <div className="fr-acct-form__row">
+            <Button variant="danger" loading={busy && step.kind === 'closed'} onClick={cancelRecovery}>
+              Cancel the recovery
+            </Button>
+          </div>
+        </div>
+      ) : null}
       {reauth ? <ReauthPrompt security={security} /> : null}
       <div className="fr-acct-form__row">
         {tf.enabled ? (

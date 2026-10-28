@@ -25,6 +25,7 @@ import type {
   SessionResponse,
   SignInProvider,
   SignupRequest,
+  TwoFactorRecoveryStarted,
   TwoFactorSetup,
   UnfurlResponse,
   UpdateBoardRequest,
@@ -116,6 +117,14 @@ export const api = {
   disableTwoFactor: (code: string, password?: string) => request<{ ok: true }>('POST', '/api/auth/two-factor/disable', { code, password }),
   regenerateRecoveryCodes: (code: string, password?: string) =>
     request<{ recoveryCodes: string[] }>('POST', '/api/auth/two-factor/recovery-codes', { code, password }),
+  /** "Lost access to your authenticator?" — from the pending sign-in (the second-step page). */
+  startTwoFactorRecovery: () => request<TwoFactorRecoveryStarted>('POST', '/api/auth/login/two-factor/recovery'),
+  finishTwoFactorRecovery: (token: string, password: string) =>
+    request<LoginResponse>('POST', '/api/auth/two-factor/recovery/finish', { token, password }),
+  cancelTwoFactorRecoveryByLink: (token: string) => request<{ ok: true }>('POST', '/api/auth/two-factor/recovery/cancel-link', { token }),
+  cancelTwoFactorRecovery: () => request<SecurityInfo>('POST', '/api/auth/two-factor/recovery/cancel'),
+  /** "This wasn't me", from the link in the two-step-on notice. */
+  undoTwoFactor: (token: string, password: string) => request<LoginResponse>('POST', '/api/auth/two-factor/undo', { token, password }),
 
   // sessions
   listSessions: () => request<{ sessions: SessionInfo[] }>('GET', '/api/auth/sessions'),

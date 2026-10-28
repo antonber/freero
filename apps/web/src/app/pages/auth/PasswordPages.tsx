@@ -66,13 +66,50 @@ export function ForgotPasswordPage() {
   );
 }
 
+type LinkMode = 'reset' | 'revert' | 'undo' | 'recover';
+
+const LINK_COPY: Record<LinkMode, { doc: string; title: string; sub: string; submit: string; failed: string }> = {
+  reset: {
+    doc: 'Choose a new password',
+    title: 'Choose a new password',
+    sub: "You'll be signed out on every other device.",
+    submit: 'Save password and log in',
+    failed: 'Could not reset the password. Please try again.',
+  },
+  revert: {
+    doc: 'Restore your email address',
+    title: 'Take your account back',
+    sub: 'Your account moves back to this email address, every device is signed out, and two-step verification or sign-in providers added since the change are removed. Choose a new password to finish.',
+    submit: 'Restore my account and log in',
+    failed: 'Could not restore your address. Please try again.',
+  },
+  undo: {
+    doc: 'Remove two-step verification',
+    title: 'Take your account back',
+    sub: 'The authenticator that was just added and every connected sign-in provider are removed, and every device is signed out. Choose a new password to finish.',
+    submit: 'Remove it and log in',
+    failed: 'Could not take the account back. Please try again.',
+  },
+  recover: {
+    doc: 'Finish account recovery',
+    title: 'Finish recovering your account',
+    sub: 'Two-step verification and every connected sign-in provider are removed, and every device is signed out. Choose a new password to finish, then turn two-step verification on again in settings.',
+    submit: 'Finish and log in',
+    failed: 'Could not finish the recovery. Please try again.',
+  },
+};
+
 /**
+ * Pages of emailed single-use links that end with a new password:
  * /reset-password?token= — sets the new password; every other session of the account ends.
  * /revert-email?token= (mode "revert") — "this wasn't me" from the email-change notice sent to the
  * previous address: the account moves back to it and gets a new password.
+ * /undo-two-factor?token= (mode "undo") — "this wasn't me" from the two-step-on notice.
+ * /recover-two-factor?token= (mode "recover") — finishes a two-step recovery after its waiting period.
  */
-export function ResetPasswordPage({ mode = 'reset' }: { mode?: 'reset' | 'revert' }) {
+export function ResetPasswordPage({ mode = 'reset' }: { mode?: LinkMode }) {
   const revert = mode === 'revert';
+  const copy = LINK_COPY[mode];
   const [params] = useSearchParams();
   const token = params.get('token') ?? '';
   const navigate = useNavigate();
@@ -89,7 +126,14 @@ export function ResetPasswordPage({ mode = 'reset' }: { mode?: 'reset' | 'revert
     setBusy(true);
     setError(null);
     try {
-      const res = revert ? await api.revertEmailChange(token, password) : await api.resetPassword(token, password);
+      const res =
+        mode === 'revert'
+          ? await api.revertEmailChange(token, password)
+          : mode === 'undo'
+            ? await api.undoTwoFactor(token, password)
+            : mode === 'recover'
+              ? await api.finishTwoFactorRecovery(token, password)
+              : await api.resetPassword(token, password);
       if ('user' in res) {
         adopt(res.user);
         navigate('/app', { replace: true });
@@ -98,21 +142,13 @@ export function ResetPasswordPage({ mode = 'reset' }: { mode?: 'reset' | 'revert
         navigate('/login/two-factor', { replace: true });
       }
     } catch (err) {
-      setError(message(err, revert ? 'Could not restore your address. Please try again.' : 'Could not reset the password. Please try again.'));
+      setError(message(err, copy.failed));
       setBusy(false);
     }
   };
 
   return (
-    <AuthShell
-      docTitle={revert ? 'Restore your email address' : 'Choose a new password'}
-      title={revert ? 'Take your account back' : 'Choose a new password'}
-      sub={
-        revert
-          ? 'Your account moves back to this email address, every device is signed out, and two-step verification or sign-in providers added since the change are removed. Choose a new password to finish.'
-          : "You'll be signed out on every other device."
-      }
-    >
+    <AuthShell docTitle={copy.doc} title={copy.title} sub={copy.sub}>
       {!token ? (
         <AuthNotice kind="error">This link is incomplete. Open the link from the email again.</AuthNotice>
       ) : (
@@ -139,7 +175,7 @@ export function ResetPasswordPage({ mode = 'reset' }: { mode?: 'reset' | 'revert
           />
           {error ? <AuthNotice kind="error">{error}</AuthNotice> : null}
           <Button type="submit" variant="primary" size="lg" block loading={busy}>
-            {revert ? 'Restore my account and log in' : 'Save password and log in'}
+            {copy.submit}
           </Button>
         </form>
       )}
@@ -147,6 +183,11 @@ export function ResetPasswordPage({ mode = 'reset' }: { mode?: 'reset' | 'revert
         {revert ? (
           // A reset link would go to the address that replaced this one.
           <>Link expired or already used? Ask whoever runs your Freero for help.</>
+        ) : mode !== 'reset' ? (
+          <>
+            Link expired or already used? Log in, and at the code step choose “Can’t use your app?” → “Lost your recovery codes
+            too?”, or ask whoever runs your Freero for help.
+          </>
         ) : (
           <>
             Link expired? <Link to="/forgot-password">Send a new one</Link>
