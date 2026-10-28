@@ -52,11 +52,33 @@ export async function sendMail(mail: Mail): Promise<void> {
   await fs.promises.writeFile(path.join(staging, name), JSON.stringify({ from: config.mailFrom, ...mail, sentAt: Date.now() }, null, 2));
   await fs.promises.rename(path.join(staging, name), file);
   log(`mail (dev outbox): "${mail.subject}" to ${mail.to} -> ${file}`);
+  for (const listener of [...outboxListeners]) listener(mail);
 }
+
+/** Sends started by sendMailLater and not finished yet (see mailIdle). */
+const pending = new Set<Promise<void>>();
+const outboxListeners = new Set<(mail: Mail) => void>();
 
 /** Fire-and-forget send: failures are logged, never thrown (e.g. answers that must not depend on it). */
 export function sendMailLater(mail: Mail): void {
-  sendMail(mail).catch((e) => logError(`mail: could not send "${mail.subject}"`, e));
+  const p: Promise<void> = sendMail(mail)
+    .catch((e) => logError(`mail: could not send "${mail.subject}"`, e))
+    .finally(() => pending.delete(p));
+  pending.add(p);
+}
+
+/**
+ * Resolves once every sendMailLater started so far is done (sent, or failed and logged). For tests
+ * proving a mail was NOT sent after an action that sends its mail later: no guessing how long.
+ */
+export async function mailIdle(): Promise<void> {
+  while (pending.size) await Promise.all([...pending]);
+}
+
+/** Calls `listener` with each mail written to the dev outbox from now on (tests); returns the unsubscribe. */
+export function onOutboxMail(listener: (mail: Mail) => void): () => void {
+  outboxListeners.add(listener);
+  return () => outboxListeners.delete(listener);
 }
 
 /**
