@@ -1,10 +1,23 @@
 // Public API of modules/boards [S2].
-import type { Role } from '@freero/shared';
+import type { BoardSummary, Role } from '@freero/shared';
 import { closeBoardDoc } from '../realtime/index';
 import { deleteUpload, UPLOAD_REF_PATTERN } from '../uploads/index';
 import { mayShareExternally, teamMembers, workspaceRole } from '../workspaces/index';
 import * as repo from './repo';
-import { describeAccess, listBoards, removedFor, requireAccess, requireDownload } from './service';
+import {
+  cleanDescription,
+  cleanTitle,
+  createBoard,
+  describeAccess,
+  listBoards,
+  moveToTrash,
+  removedFor,
+  requireAccess,
+  requireDownload,
+  summarize,
+  toSummary,
+  type DownloadVia,
+} from './service';
 
 export { createBoard, deleteBoardRowsInWorkspace, cleanUpDeletedBoards } from './service';
 // Created, duplicated, renamed, moved, trashed, restored (the activity feed, KAI-188).
@@ -66,10 +79,13 @@ export async function teamAccessMembers(boardId: string): Promise<Array<{ userId
   return board ? teamMembers(board) : [];
 }
 
-/** 403 unless the user may export / download the board's content (its workspace's "downloads" policy). */
-export async function requireBoardDownload(boardId: string, userId: string): Promise<void> {
-  const { access } = await requireAccess(boardId, userId);
-  requireDownload(access);
+/**
+ * 403 `downloads_restricted` (audited) unless the user may take the board's content out — its
+ * workspace's "downloads" policy. `via` says how (template, outline, api …).
+ */
+export async function requireBoardDownload(boardId: string, userId: string, via: DownloadVia): Promise<void> {
+  const { board, access } = await requireAccess(boardId, userId);
+  await requireDownload(board, userId, access, via);
 }
 
 /**
@@ -195,4 +211,35 @@ export async function boardActivityOf(userId: string): Promise<{ starred: string
 /** Upload names used as board thumbnails (restricted to `among` when given): the uploads sweep keeps them. */
 export function thumbnailUploadReferences(among?: readonly string[]): Promise<string[]> {
   return repo.matchesInThumbnails(UPLOAD_REF_PATTERN, among ?? null);
+}
+
+// ---- for the public API (modules/api): the same rules as the app's own routes ----
+
+/** The boards of one workspace the user can open (`q`: title search), like GET /boards?filter=all. 404 unless they are in it. */
+export function listBoardsIn(userId: string, workspaceId: string, q = '', projectId?: string): Promise<BoardSummary[]> {
+  return listBoards(userId, 'all', q, { workspaceId, projectId });
+}
+
+/** The board as the user sees it (role, workspace, permissions); 404 / 403 / 451 like GET /boards/:id. */
+export async function boardSummaryFor(boardId: string, userId: string): Promise<BoardSummary> {
+  const { board, role, access } = await requireAccess(boardId, userId);
+  return toSummary(board, userId, role, access);
+}
+
+/** A new board for `ownerId` (its quota, workspace and project rules apply), as they see it. */
+export async function createBoardFor(
+  ownerId: string,
+  fields: { title: unknown; description: unknown; workspaceId?: string; projectId?: string | null },
+): Promise<BoardSummary> {
+  const board = await createBoard(ownerId, cleanTitle(fields.title), cleanDescription(fields.description), 'none', {
+    workspaceId: fields.workspaceId,
+    projectId: fields.projectId ?? null,
+  });
+  return summarize(board, ownerId, { starred: false, lastOpenedAt: null });
+}
+
+/** Moves the board to the trash, as DELETE /boards/:id (owner only). */
+export async function trashBoard(boardId: string, userId: string): Promise<void> {
+  const { board } = await requireAccess(boardId, userId, 'owner');
+  await moveToTrash(board, userId);
 }

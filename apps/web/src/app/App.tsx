@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './auth/AuthContext';
 import { RequireAuth } from './auth/RequireAuth';
 import { GuestGate } from './board/GuestGate';
 import { FullPageSpinner } from './components/FullPageSpinner';
+import { AppUpdates } from './pwa/AppUpdates';
 import { LandingPage } from './pages/landing/LandingPage';
 import { AuthPage } from './pages/auth/AuthPage';
 import { DashboardPage } from './pages/dashboard/DashboardPage';
@@ -18,6 +19,7 @@ import { UnsubscribePage } from './pages/unsubscribe/UnsubscribePage';
 import { AdminConsolePage } from './pages/admin/AdminConsolePage';
 import { AppealPage } from './pages/appeal/AppealPage';
 import { OperatorPage } from './pages/operator/OperatorPage';
+import { OAuthConsentPage } from './pages/oauth/OAuthConsentPage';
 
 // Owned by the board engine work; loaded on demand.
 const BoardPage = lazy(() => import('./board/BoardPage'));
@@ -28,6 +30,7 @@ export function App() {
   return (
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <ToastProvider>
+        <AppUpdates />
         <AuthProvider>
           <Routes>
             <Route path="/" element={<Home />} />
@@ -62,6 +65,15 @@ export function App() {
                   <Suspense fallback={<FullPageSpinner label="Opening board" />}>
                     <OperatorPreviewPage />
                   </Suspense>
+                </RequireAuth>
+              }
+            />
+            {/* OAuth apps (and MCP clients) send people here to connect; signed out: log in first, then back. */}
+            <Route
+              path="/oauth/authorize"
+              element={
+                <RequireAuth>
+                  <OAuthConsentPage />
                 </RequireAuth>
               }
             />

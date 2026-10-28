@@ -5,7 +5,7 @@ import { STICKY_COLORS, type StickyColor } from '../elements';
 import { findFreeSpot, unionRects, type Point, type Rect } from '../geometry';
 import { translateDraft } from './kit';
 import { parseMermaid } from './mermaid';
-import { layoutClusters, layoutGraph, layoutMindmap, layoutSequence, layoutStickies, layoutTable, layoutTree, parseIndentedList } from './structures';
+import { layoutClusters, layoutGraph, layoutMindmap, layoutNote, layoutSequence, layoutStickies, layoutTable, layoutTree, parseIndentedList } from './structures';
 import { LayoutError, type LaidOut, type LayoutContext, type OutlineNodeInput, type StructureInput } from './types';
 
 export * from './types';
@@ -14,6 +14,19 @@ export { parseIndentedList } from './structures';
 export { layered, spacedFit } from './layered';
 export { measureText, textWidth } from './measure';
 export { translateDraft } from './kit';
+// Single fully-specified drafts (the public API creates items one by one with them).
+export {
+  sticky as stickyDraft,
+  shape as shapeDraft,
+  textBox as textDraft,
+  frame as frameDraft,
+  connector as connectorDraft,
+  anchorPoint,
+  STICKY_SIZE,
+  INK,
+  type ConnectorEnd,
+  type ConnectorStyle,
+} from './kit';
 
 const isColor = (c: unknown): c is StickyColor => typeof c === 'string' && c in STICKY_COLORS;
 const isDirection = (d: unknown) => d === undefined || d === 'TB' || d === 'BT' || d === 'LR' || d === 'RL';
@@ -65,6 +78,10 @@ export function layoutStructure(input: StructureInput, ctx: LayoutContext): Laid
     case 'table':
       if (!Array.isArray(input.rows) || input.rows.some((r) => !Array.isArray(r))) throw new LayoutError('table needs rows of cells');
       return layoutTable(input.rows, input.header !== false, ctx);
+    case 'note':
+      if (typeof input.text !== 'string' || !input.text.trim()) throw new LayoutError('A note needs its text');
+      if (input.title !== undefined && typeof input.title !== 'string') throw new LayoutError('A note title is text');
+      return layoutNote(input.title, input.text, ctx);
     default:
       throw new LayoutError(`Unknown structure kind ${String((input as { kind?: unknown }).kind)}`);
   }

@@ -1,13 +1,15 @@
 // /admin/:workspaceId — the admin console of a team workspace (owners and admins): overview and
-// usage, members, security, single sign-on, provisioning, data (retention and export) and the
-// audit log. Every action is checked again by the server; this page only hides what the caller's
-// role can't do.
+// usage, members, security, single sign-on, provisioning, AI (when the server offers it), data
+// (retention and export), API & apps and the audit log. Every action is checked again by the
+// server; this page only hides what the caller's role can't do.
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ChartColumn, Hourglass, KeyRound, Lock, ScrollText, UserCog, Users } from 'lucide-react';
+import { ArrowLeft, ChartColumn, Hourglass, KeyRound, Lock, Plug, ScrollText, Sparkles, UserCog, Users } from 'lucide-react';
 import type { WorkspaceSummary } from '@freero/shared';
 import { Logo, Spinner } from '@ui';
 import { api } from '../../api/client';
+import { AdminAi, aiOffered } from './AdminAi';
+import { AdminApi } from './AdminApi';
 import { AdminAudit } from './AdminAudit';
 import { AdminDataExport, AdminProvisioning, AdminSso } from './AdminIdentity';
 import { AdminMembers } from './AdminMembers';
@@ -21,7 +23,9 @@ const TABS = [
   { id: 'security', label: 'Security', icon: Lock },
   { id: 'sso', label: 'Single sign-on', icon: KeyRound },
   { id: 'provisioning', label: 'Provisioning', icon: UserCog },
+  { id: 'ai', label: 'AI', icon: Sparkles },
   { id: 'retention', label: 'Data', icon: Hourglass },
+  { id: 'api', label: 'API & apps', icon: Plug },
   { id: 'audit', label: 'Audit log', icon: ScrollText },
 ] as const;
 type Tab = (typeof TABS)[number]['id'];
@@ -29,8 +33,10 @@ type Tab = (typeof TABS)[number]['id'];
 export function AdminConsolePage() {
   const { workspaceId = '' } = useParams();
   const [params, setParams] = useSearchParams();
-  const tab: Tab = TABS.some((t) => t.id === params.get('tab')) ? (params.get('tab') as Tab) : 'overview';
+  const requested: Tab = TABS.some((t) => t.id === params.get('tab')) ? (params.get('tab') as Tab) : 'overview';
   const [workspace, setWorkspace] = useState<WorkspaceSummary | null | undefined>(undefined);
+  // The AI tab exists only when this server offers AI at all.
+  const [ai, setAi] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -43,10 +49,20 @@ export function AdminConsolePage() {
     };
   }, [workspaceId]);
 
+  const manages = workspace?.kind === 'team' && (workspace.role === 'owner' || workspace.role === 'admin');
+  useEffect(() => {
+    let live = true;
+    if (manages) void aiOffered(workspaceId).then((on) => live && setAi(on));
+    return () => {
+      live = false;
+    };
+  }, [workspaceId, manages]);
+
   useEffect(() => {
     document.title = workspace ? `Admin console · ${workspace.name} · Freero` : 'Admin console · Freero';
   }, [workspace]);
 
+  const tab: Tab = requested === 'ai' && !ai ? 'overview' : requested;
   const manager = (workspace?.role === 'owner' || workspace?.role === 'admin') && workspace.blocked !== 'deactivated';
   const back = `/app?ws=${encodeURIComponent(workspaceId)}`;
 
@@ -74,7 +90,7 @@ export function AdminConsolePage() {
               <span className="fr-admin__ws-name">{workspace.name}</span>
               <span className="fr-admin__muted">Admin console · you’re {workspace.role === 'owner' ? 'an owner' : 'an admin'}</span>
             </div>
-            {TABS.map((t) => (
+            {TABS.filter((t) => t.id !== 'ai' || ai).map((t) => (
               <button
                 key={t.id}
                 type="button"
@@ -93,12 +109,14 @@ export function AdminConsolePage() {
             {tab === 'security' ? <AdminSecurity workspace={workspace} onChanged={setWorkspace} /> : null}
             {tab === 'sso' ? <AdminSso workspace={workspace} /> : null}
             {tab === 'provisioning' ? <AdminProvisioning workspace={workspace} /> : null}
+            {tab === 'ai' ? <AdminAi workspace={workspace} /> : null}
             {tab === 'retention' ? (
               <>
                 <AdminRetention workspace={workspace} />
                 <AdminDataExport workspace={workspace} />
               </>
             ) : null}
+            {tab === 'api' ? <AdminApi workspace={workspace} /> : null}
             {tab === 'audit' ? <AdminAudit workspace={workspace} /> : null}
           </main>
         </div>

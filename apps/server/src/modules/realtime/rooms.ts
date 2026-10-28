@@ -1271,10 +1271,17 @@ export async function changeBoard<T extends { change: BoardChange }>(
   plan: (view: BoardView) => T,
 ): Promise<T & { applied: AppliedChange }> {
   return withLiveRoom(boardId, async (room) => {
+    // Hidden frames' contents go to the editors layer (view.ts): have it, even on a board without one yet.
+    room.layer(EDITORS_LAYER);
     const docs = layerDocs(room);
     const planned = plan(viewOf(room.doc, docs, actor));
     if (room.destroyed) throw new BoardClosedError(boardId);
+    const comments = room.doc.getMap<unknown>(COMMENTS_COLLECTION);
+    const commentKeys = Object.keys(planned.change.collections?.[COMMENTS_COLLECTION] ?? {});
+    const before = new Map(commentKeys.map((k) => [k, { action: comments.has(k) ? ('update' as const) : ('add' as const), oldValue: comments.get(k) }]));
     const applied = applyChange(room.doc, docs, planned.change, actor, SERVER_ORIGIN);
+    // A comment written on a request is the actor's, like one from their socket (mentions, replies).
+    if (before.size && hasCommentListeners()) emitCommentMessages(messageEvents(room.id, comments, before, actor.userId));
     await room.flush();
     return { ...planned, applied };
   });

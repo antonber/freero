@@ -13,6 +13,18 @@ contents) only for owners and editors; the caller's OWN private layer (their dra
 `private`), never anyone else's. Viewers and commenters see a hidden frame as `withheld`, with no
 children. Votes appear only when the vote's results may be shown.
 
+The outline is a machine-readable copy of the board, so the workspace's **downloads** policy applies
+to it (KAI-197): someone that policy doesn't let export the board gets `403 { code:
+'downloads_restricted' }`, and the refusal is recorded in the workspace's audit log
+(`board.download_refused`, `via: outline | api`). The same check covers every read built on it —
+the public API's outline, items and comments (`GET /api/v1/boards/:id/…`), and later MCP and in-app
+AI — in `modules/outline` and `boards.requireBoardDownload`. Inserting structure (a write) is not
+gated by it. Personal boards have no policies.
+
+The same read is in the public API as `GET /api/v1/boards/:id/outline` (bearer token, scope
+`boards:read`; reference: `docs/api/openapi.json`), whose JSON wraps the outline as
+`{ notice, outline }`: `notice` says the text is untrusted board content.
+
 Query parameters:
 
 | name | default | meaning |
@@ -138,6 +150,7 @@ Owners and editors. Body (`InsertStructureRequest`):
 | `mermaid` | `source` | a flowchart (`flowchart`/`graph` TB·TD·BT·LR·RL; node shapes `[] () ([]) [[]] [()] (()) {} {{}} [//] [\\]`; links `-->`, `---`, `-.->`, `==>`, `<-->`, `--o`, `--x`, labels `\|x\|` or `-- x -->`; `&`; subgraphs → frames) or a `sequenceDiagram` (participants / actors, messages `->> -->> -> --> -x -)`, notes); styling directives are skipped |
 | `sequence` | `diagram: { participants, steps }` | same as a Mermaid sequence diagram |
 | `table` | `rows: string[][]`, `header?` | a table, columns and rows sized to their text |
+| `note` | `text`, `title?` | a written note (summaries): a soft rounded card, the title in bold, paragraphs and bullet lines kept (8 000 characters) |
 
 Placement: on the free spot nearest to `near` (just right of that element) or `at`, else the middle
 of the board's content — keeping 48 units clear of every element the caller can see

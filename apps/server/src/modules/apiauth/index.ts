@@ -1,0 +1,20 @@
+// Public API of modules/apiauth [S2]: credentials that act for a person without their session —
+// personal access tokens and OAuth apps — and each team workspace's API policy. Resource servers
+// (modules/api, later the MCP server) authenticate requests here and never touch tokens themselves.
+//
+//   registerProtectedResource('/api/v1', 'Freero REST API')        once, while building routes
+//   const cred = await authenticate(req, '/api/v1')                 401/403 with a WWW-Authenticate challenge
+//   requireScope(req, cred, 'boards:write', '/api/v1')               403 insufficient_scope
+//   await useInWorkspace(cred, workspaceId)                          the team's switch and blocks
+export {
+  authenticate,
+  requireScope,
+  useInWorkspace,
+  sendAuthError,
+  isBearerError,
+  registerProtectedResource,
+  createPersonalToken,
+  type ApiCredential,
+} from './credentials';
+// The person's API data for their data export (modules/privacy).
+export { apiDataOf } from './dataExport';

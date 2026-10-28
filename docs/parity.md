@@ -216,17 +216,17 @@ workflows. For Freero, every row here needs a model provider that the operator o
 
 | Capability | What it does | Freero status | Size | Priority | Phase |
 |---|---|---|---|---|---|
-| Generate ideas | Make a set of stickies from a prompt | Missing (KAI-102) | M | P2 | parity |
-| Cluster and sort | Group stickies by theme or sentiment | Missing (non-AI clustering by colour or tag exists; KAI-102) | M | P2 | parity |
-| Summarise | Turn a selection or a board into a written summary | Missing (KAI-102) | M | P2 | parity |
-| Text to diagram | Make a flowchart, mind map or sequence diagram from a description | Missing (KAI-102) | M | P2 | parity |
+| Generate ideas | Make a set of stickies from a prompt | Done with a configured provider: previewed, inserted as one undo step (KAI-102, docs/ai.md) | M | P2 | parity |
+| Cluster and sort | Group stickies by theme or sentiment | Done: selected notes move into named groups (KAI-102); non-AI clustering by colour or tag exists too | M | P2 | parity |
+| Summarise | Turn a selection or a board into a written summary | Done: a written note beside the selection (KAI-102) | M | P2 | parity |
+| Text to diagram | Make a flowchart, mind map or sequence diagram from a description | Done: via Mermaid / outline → layout, connectors attached (KAI-102) | M | P2 | parity |
 | Image generation | Make an image from a prompt | Missing | M | P3 | parity |
 | Board-aware assistant | A chat assistant that reads the board, answers questions about it and proposes edits | Missing (KAI-103) | L | P3 | parity |
 | AI workflows | Reusable multi-step AI pipelines run on board content | Missing (KAI-103) | XL | P3 | parity |
 | AI slides | Build a presentation from board content automatically | Missing (KAI-103) | L | P3 | parity |
 | Natural-language search | Find content across all boards by describing it | Missing (plain content search first: KAI-141) | L | P3 | parity |
 | Screenshot to prototype | Turn a UI screenshot into an editable mockup | Missing | XL | P3 | parity |
-| AI admin controls | Turn AI on or off for the org, choose the model, use your own key | Missing (KAI-101) | M | P3 | parity |
+| AI admin controls | Turn AI on or off for the org, choose the model, use your own key | Done: operator provider (env) and per-workspace on/off, own provider and sealed key, who may use it, monthly budget, usage, audit (KAI-101) | M | P3 | parity |
 
 ## 8. Import, export and backup
 
@@ -247,9 +247,9 @@ workflows. For Freero, every row here needs a model provider that the operator o
 
 | Capability | What it does | Freero status | Size | Priority | Phase |
 |---|---|---|---|---|---|
-| Public REST API | Read and write boards, items and members from code | Missing (KAI-104) | L | P2 | parity |
+| Public REST API | Read and write boards, items and members from code | Have (`/api/v1`, docs/api/; KAI-104) | L | P2 | parity |
 | Webhooks | Push board and item events to other systems | Missing (KAI-105) | M | P2 | parity |
-| API tokens and OAuth apps | Credentials that let third-party apps act for a user | Missing (KAI-104) | M | P2 | parity |
+| API tokens and OAuth apps | Credentials that let third-party apps act for a user | Have (tokens, OAuth 2.1 + PKCE, dynamic registration; KAI-104) | M | P2 | parity |
 | Embed a live board | Put a viewable or editable board in other sites (iframe, oEmbed) | Missing (KAI-106) | M | P2 | parity |
 | In-board app SDK | Third-party apps that run on the canvas and add items or panels | Missing (API and webhooks first, see §16) | XL | P3 | parity |
 | App marketplace | Browse and install third-party apps | Missing (see §16) | XL | P3 | parity |

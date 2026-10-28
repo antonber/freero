@@ -138,7 +138,7 @@ export function AuthPage({ mode }: { mode: Mode }) {
         <span className="fr-authpage__sticky fr-authpage__sticky--b">ideas welcome</span>
         <span className="fr-authpage__blob" />
       </div>
-      <div className="fr-authcard">
+      <main className="fr-authcard">
         <Link to="/" className="fr-authcard__logo" aria-label="Freero home">
           <Logo size={36} />
         </Link>
@@ -266,7 +266,7 @@ export function AuthPage({ mode }: { mode: Mode }) {
             </>
           )}
         </p>
-      </div>
+      </main>
     </div>
   );
 }

@@ -43,4 +43,32 @@
 
 @media (prefers-reduced-motion: reduce) {
   .fr-anim { animation: none !important; }
+  /* Everywhere: entrances, bursts and glides finish at once (the camera obeys too, engine/camera/motion.ts). */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Windows high contrast / forced colours: box-shadow focus rings and hover tints are dropped by the
+   browser, so focus becomes a system-coloured outline and selected controls get one too. */
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 2px solid Highlight !important;
+    outline-offset: 2px;
+  }
+  [aria-pressed='true'],
+  [aria-selected='true'],
+  [aria-current='true'],
+  [aria-current='page'] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  svg {
+    forced-color-adjust: auto;
+  }
 }

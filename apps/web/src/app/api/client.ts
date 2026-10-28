@@ -1,4 +1,16 @@
 import type {
+  AiActionRequest,
+  AiActionResponse,
+  BoardAiStatus,
+  WorkspaceAiAdmin,
+  WorkspaceAiPatch,
+  AuthorizedApp,
+  CreateTokenRequest,
+  OAuthClientInfo,
+  OAuthConsentInfo,
+  PersonalToken,
+  RegisterClientRequest,
+  WorkspaceApiInfo,
   AdminMember,
   AuditEvent,
   AuditIntegrity,
@@ -343,6 +355,12 @@ export const api = {
   auditExportUrl: (id: string, format: 'csv' | 'json', filter: AuditQuery) =>
     `/api/workspaces/${encodeURIComponent(id)}/audit/export?format=${format}&${auditQuery({ ...filter, before: undefined, limit: undefined })}`,
   auditIntegrity: (id: string) => request<{ integrity: AuditIntegrity }>('GET', `/api/workspaces/${encodeURIComponent(id)}/audit/integrity`),
+  // AI (404 while the server offers no AI at all)
+  boardAi: (boardId: string) => request<{ ai: BoardAiStatus }>('GET', `/api/boards/${encodeURIComponent(boardId)}/ai`),
+  runAi: (boardId: string, body: AiActionRequest) => request<AiActionResponse>('POST', `/api/boards/${encodeURIComponent(boardId)}/ai/actions`, body),
+  workspaceAi: (id: string) => request<WorkspaceAiAdmin>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/ai`),
+  updateWorkspaceAi: (id: string, patch: WorkspaceAiPatch) => request<WorkspaceAiAdmin>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/admin/ai`, patch),
+  testWorkspaceAi: (id: string) => request<{ ok: true; model: string }>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/ai/test`),
   /** Tells the server a board was exported in the browser (audit log; refused when the workspace forbids exports). */
   reportBoardExport: (boardId: string, format: string) =>
     request<{ ok: true }>('POST', `/api/boards/${encodeURIComponent(boardId)}/exported`, { format }),
@@ -432,6 +450,29 @@ export const api = {
     if (!res.ok) throw await failure(res);
     return res.blob();
   },
+
+  // ---- public API credentials (KAI-104): tokens, authorised apps, registered apps, consent ----
+  listApiTokens: () => request<{ tokens: PersonalToken[] }>('GET', '/api/auth/tokens'),
+  createApiToken: (body: CreateTokenRequest) => request<{ token: PersonalToken; secret: string }>('POST', '/api/auth/tokens', body),
+  pauseApiToken: (id: string, paused: boolean) => request<{ token: PersonalToken }>('PATCH', `/api/auth/tokens/${encodeURIComponent(id)}`, { paused }),
+  revokeApiToken: (id: string) => request<{ ok: true }>('DELETE', `/api/auth/tokens/${encodeURIComponent(id)}`),
+  listAuthorizedApps: () => request<{ apps: AuthorizedApp[] }>('GET', '/api/auth/apps'),
+  revokeAuthorizedApp: (clientId: string) => request<{ ok: true }>('DELETE', `/api/auth/apps/${encodeURIComponent(clientId)}`),
+  revokeAllApiAccess: () => request<{ tokens: number; apps: number }>('POST', '/api/auth/api-access/revoke-all'),
+  listOAuthClients: () => request<{ clients: OAuthClientInfo[] }>('GET', '/api/oauth/clients'),
+  registerOAuthClient: (body: RegisterClientRequest) => request<{ client: OAuthClientInfo; clientSecret?: string }>('POST', '/api/oauth/clients', body),
+  deleteOAuthClient: (id: string) => request<{ ok: true }>('DELETE', `/api/oauth/clients/${encodeURIComponent(id)}`),
+  /** The authorization request as the app sent it (the consent page's query string). */
+  oauthConsent: (query: string) => request<{ consent: OAuthConsentInfo } | { redirect: string }>('GET', `/api/oauth/authorize?${query}`),
+  oauthDecide: (params: Record<string, string>, decision: 'allow' | 'deny') =>
+    request<{ redirect: string }>('POST', '/api/oauth/authorize', { ...params, decision }),
+  workspaceApi: (id: string) => request<WorkspaceApiInfo>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/api`),
+  setWorkspaceApi: (id: string, enabled: boolean) => request<WorkspaceApiInfo>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/admin/api`, { enabled }),
+  setWorkspaceCredentialBlocked: (id: string, credentialId: string, blocked: boolean) =>
+    request<WorkspaceApiInfo>(
+      blocked ? 'POST' : 'DELETE',
+      `/api/workspaces/${encodeURIComponent(id)}/admin/api/credentials/${encodeURIComponent(credentialId)}/block`,
+    ),
 };
 
 async function upload(path: string, file: Blob, type: string): Promise<{ url: string }> {

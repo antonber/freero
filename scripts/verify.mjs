@@ -38,6 +38,7 @@ import * as syncProtocol from 'y-protocols/sync';
 import { WebsocketProvider } from 'y-websocket';
 import * as Y from 'yjs';
 import { writeMmdb } from './lib/mmdb-writer.mjs';
+import { startMockModel } from './lib/mock-model.mjs';
 import { startMockOidc } from './lib/mock-oidc.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -4520,6 +4521,182 @@ async function moderationChecks() {
 }
 
 // ---------------------------------------------------------------------------
+// AI (KAI-101, KAI-102): off unless configured; with a provider, the four board actions against a
+// local mock model (scripts/lib/mock-model.mjs, never a paid API), workspace admin controls, the
+// workspace's own key, rate limit, budget and audit.
+// ---------------------------------------------------------------------------
+async function aiChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-ai-'));
+  const model = await startMockModel();
+  let proc = null;
+  const AI_LIMIT = 6;
+  try {
+    const env = {};
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    const boot = async (extra) => {
+      if (proc) await stopProc(proc);
+      proc = await waitUp(await spawnServer(dataDir, { ...env, ...extra }));
+      server = proc;
+    };
+    if (!(await check('ai: server without AI configured boots', () => boot({})))) return;
+    const O = new User('AiOwner', proc.port);
+    const M = new User('AiMember', proc.port);
+    for (const u of [O, M]) {
+      await u.signup();
+      await u.verifyEmail(dataDir);
+    }
+    const personal = (await O.req('POST', '/api/boards', { title: 'AI personal' })).json.board;
+
+    await check('ai: with no AI configured, the AI routes do not exist (404) and nothing reaches a model', async () => {
+      const status = await O.req('GET', `/api/boards/${personal.id}/ai`);
+      const run = await O.req('POST', `/api/boards/${personal.id}/ai/actions`, { task: 'ideas', prompt: 'x' });
+      assert(status.status === 404 && run.status === 404, `${status.status} ${run.status}`);
+      assert(model.requests.length === 0, 'the model was called');
+    });
+
+    const aiEnv = {
+      AI_PROVIDER: 'openai',
+      AI_BASE_URL: `${model.url}/instance/v1`,
+      AI_MODEL: 'mock-instance',
+      AI_API_KEY: 'instance-secret-key',
+      AI_INSTANCE_FOR: 'personal,teams',
+      AI_WORKSPACE_KEYS: 'true',
+      AI_WORKSPACE_PRIVATE_ENDPOINTS: 'true', // the mock listens on 127.0.0.1
+      RATE_LIMIT_AI: `${AI_LIMIT}/1m`,
+    };
+    if (!(await check('ai: server with a provider boots', () => boot(aiEnv)))) return;
+    for (const u of [O, M]) u.port = proc.port;
+    const outlineCount = async (u, boardId) => (await u.req('GET', `/api/boards/${boardId}/outline`)).json.outline.meta.itemCount;
+
+    await check('ai: a preview writes nothing; the same action on the board lands as one attributed change a connected collaborator receives live', async () => {
+      const st = (await O.req('GET', `/api/boards/${personal.id}/ai`)).json.ai;
+      assert(st?.available === true && !JSON.stringify(st).includes('instance-secret-key'), JSON.stringify(st));
+      const preview = await O.req('POST', `/api/boards/${personal.id}/ai/actions`, { task: 'ideas', prompt: 'Icebreakers for a retro' });
+      assert(preview.status === 200 && preview.json.snapshot.elements.filter((e) => e.type === 'sticky').length === 8, `${preview.status} ${preview.text.slice(0, 300)}`);
+      assert((await outlineCount(O, personal.id)) === 0, 'the preview was written');
+      const live = connectDoc(O, personal.id);
+      await live.ready();
+      const written = await O.req('POST', `/api/boards/${personal.id}/ai/actions`, { task: 'ideas', prompt: 'Icebreakers for a retro', target: 'board' });
+      assert(written.status === 201, `${written.status} ${written.text}`);
+      const els = live.doc.getMap('elements');
+      await waitFor(() => written.json.created.every((id) => els.has(id)), 8000, 'the AI stickies on the live socket');
+      assert(written.json.created.every((id) => els.get(id).createdBy === O.id), 'not attributed to the person who asked');
+      const call = model.requests.at(-1);
+      assert(call.path === '/instance/v1/chat/completions' && call.headers.authorization === 'Bearer instance-secret-key', `${call.path} ${call.headers.authorization}`);
+      live.destroy();
+    });
+
+    // A team board with notes (laid out by insert-structure), AI off until an admin turns it on.
+    const team = (await O.req('POST', '/api/workspaces', { name: 'AI team' })).json.workspace;
+    assert((await O.req('POST', `/api/workspaces/${team.id}/members`, { email: M.email, role: 'member' })).status === 201, 'member');
+    const tb = (await O.req('POST', '/api/boards', { title: 'Retro', workspaceId: team.id })).json.board;
+    const notes = ['Slow CI builds', 'Flaky tests', 'Great pairing sessions', 'Fun offsite', 'Deploys take too long', 'Helpful code reviews'];
+    const seeded = await O.req('POST', `/api/boards/${tb.id}/insert-structure`, { structure: { kind: 'stickies', items: notes } });
+    assert(seeded.status === 201, seeded.text);
+    const noteIds = seeded.json.created;
+
+    await check('ai: on a team board AI is off until an admin turns it on; members then use it, and switching it off stops them at once', async () => {
+      const off = (await M.req('GET', `/api/boards/${tb.id}/ai`)).json.ai;
+      assert(off.available === false && /off/.test(off.reason), JSON.stringify(off));
+      assert((await M.req('PATCH', `/api/workspaces/${team.id}/admin/ai`, { enabled: true })).status === 403, 'a member changed the AI settings');
+      const on = await O.req('PATCH', `/api/workspaces/${team.id}/admin/ai`, { enabled: true, source: 'instance' });
+      assert(on.status === 200 && on.json.settings.enabled, on.text);
+      assert((await M.req('GET', `/api/boards/${tb.id}/ai`)).json.ai.available === true, 'member still off');
+      assert((await O.req('PATCH', `/api/workspaces/${team.id}/admin/ai`, { enabled: false })).status === 200, 'off');
+      const refused = await M.req('POST', `/api/boards/${tb.id}/ai/actions`, { task: 'summarize' });
+      assert(refused.status === 403 && refused.json.code === 'ai_unavailable', `${refused.status} ${refused.text}`);
+    });
+
+    await check('ai: a workspace’s own provider gets its own key (never shown again), and clustering moves the selected notes into named groups', async () => {
+      const before = model.requests.length;
+      const own = await O.req('PATCH', `/api/workspaces/${team.id}/admin/ai`, {
+        enabled: true,
+        source: 'workspace',
+        provider: 'anthropic',
+        baseUrl: model.url,
+        model: 'mock-claude',
+        apiKey: 'sk-team-verify',
+      });
+      assert(own.status === 200 && own.json.settings.hasKey && !own.text.includes('sk-team-verify'), own.text);
+      assert(!(await O.req('GET', `/api/workspaces/${team.id}/admin/ai`)).text.includes('sk-team-verify'), 'the key came back');
+      const r = await M.req('POST', `/api/boards/${tb.id}/ai/actions`, { task: 'cluster', ids: noteIds, target: 'board' });
+      assert(r.status === 201 && r.json.moved.length === notes.length, `${r.status} ${r.text.slice(0, 400)}`);
+      const call = model.requests.slice(before).find((x) => x.path === '/v1/messages');
+      assert(call?.headers['x-api-key'] === 'sk-team-verify' && call.body.model === 'mock-claude', JSON.stringify(call?.headers));
+      // Board text reached the model only inside the delimited data block.
+      const userMsg = call.body.messages[0].content;
+      assert(userMsg.indexOf('Flaky tests') > userMsg.indexOf('<board_content>') && !call.body.system.includes('Flaky tests'), 'board text outside the envelope');
+      const outline = (await O.req('GET', `/api/boards/${tb.id}/outline`)).json.outline;
+      const titles = JSON.stringify(outline.items);
+      assert(titles.includes('Tooling and speed') && titles.includes('Team and collaboration'), titles.slice(0, 400));
+    });
+
+    await check('ai: a summary and a diagram land as a note and as shapes joined by attached connectors', async () => {
+      const s = await M.req('POST', `/api/boards/${tb.id}/ai/actions`, { task: 'summarize', target: 'board' });
+      assert(s.status === 201, s.text);
+      const d = await M.req('POST', `/api/boards/${tb.id}/ai/actions`, { task: 'diagram', prompt: 'Support ticket flow', target: 'board' });
+      assert(d.status === 201, d.text);
+      const live = connectDoc(O, tb.id);
+      await live.ready();
+      const els = live.doc.getMap('elements');
+      const note = els.get(s.json.created[0]);
+      assert(note?.type === 'shape' && /Where the board stands/.test(note.text), JSON.stringify(note));
+      const made = d.json.created.map((id) => els.get(id));
+      const shapes = new Set(made.filter((e) => e.type === 'shape').map((e) => e.id));
+      const lines = made.filter((e) => e.type === 'connector');
+      assert(shapes.size === 7 && lines.length === 7, `${shapes.size} shapes, ${lines.length} lines`);
+      assert(lines.every((c) => shapes.has(c.start.elementId) && shapes.has(c.end.elementId)), 'a connector is not attached at both ends');
+      live.destroy();
+    });
+
+    await check('ai: an answer that is not JSON (even after one repair turn) is refused with nothing written', async () => {
+      const before = await outlineCount(O, tb.id);
+      const r = await M.req('POST', `/api/boards/${tb.id}/ai/actions`, { task: 'ideas', prompt: 'MALFORMED please', target: 'board' });
+      assert(r.status === 502 && r.json.code === 'ai_invalid_output', `${r.status} ${r.text}`);
+      assert((await outlineCount(O, tb.id)) === before, 'something was written');
+    });
+
+    await check('ai: every request is in the workspace audit log with task, model and tokens — never the prompt or board text', async () => {
+      const events = (await O.req('GET', `/api/workspaces/${team.id}/audit?action=ai.&limit=50`)).json.events;
+      const requests = events.filter((e) => e.action === 'ai.request');
+      // cluster, summary, diagram and the refused answer (whose tokens were still spent).
+      assert(requests.length >= 4 && requests.every((e) => e.metadata.model && e.metadata.task && e.metadata.inputTokens > 0), JSON.stringify(requests.map((e) => e.metadata)));
+      assert(events.some((e) => e.action === 'ai.settings_changed' && e.metadata.apiKey === 'replaced'), 'key change not audited');
+      const all = JSON.stringify(events);
+      assert(!all.includes('Support ticket flow') && !all.includes('Flaky tests') && !all.includes('sk-team-verify'), 'content or key in the audit log');
+    });
+
+    await check('ai: the workspace usage shows per-person totals, and a budget that is used up refuses the next action (429)', async () => {
+      const usage = (await O.req('GET', `/api/workspaces/${team.id}/admin/ai`)).json.usage;
+      assert(usage.byUser.some((u) => u.userId === M.id && u.requests >= 4), JSON.stringify(usage));
+      assert((await O.req('PATCH', `/api/workspaces/${team.id}/admin/ai`, { monthlyTokenBudget: 1000 })).status === 200, 'budget');
+      const r = await M.req('POST', `/api/boards/${tb.id}/ai/actions`, { task: 'ideas', prompt: 'More' });
+      assert(r.status === 429 && r.json.code === 'ai_budget', `${r.status} ${r.text}`);
+    });
+
+    await check(`ai: the per-user rate limit refuses call ${AI_LIMIT + 1} in its window (429 with Retry-After)`, async () => {
+      const R = new User('AiRate', proc.port);
+      await R.signup();
+      const b = (await R.req('POST', '/api/boards', { title: 'Rate' })).json.board;
+      const statuses = [];
+      for (let i = 0; i <= AI_LIMIT; i++) statuses.push(await R.req('POST', `/api/boards/${b.id}/ai/actions`, { task: 'ideas', prompt: `Round ${i}` }));
+      assert(statuses.slice(0, AI_LIMIT).every((r) => r.status === 200), statuses.map((r) => r.status).join(','));
+      assert(statuses[AI_LIMIT].status === 429 && statuses[AI_LIMIT].headers.get('retry-after'), `call ${AI_LIMIT + 1}: ${statuses[AI_LIMIT].status}`);
+    });
+  } finally {
+    closeAllDocs();
+    if (proc) await stopProc(proc);
+    server = null;
+    await model.close();
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Video, audio and any other file on a board (KAI-128), on its own server: media is stored by what
 // its bytes are and served with byte ranges (seeking); attachments are never served at /uploads/,
 // only downloaded from their board — under the workspace's downloads policy, audited, as an
@@ -4925,6 +5102,198 @@ async function s3Checks() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// The public API (KAI-104), agent safety (KAI-170) and the downloads policy on reads (KAI-197):
+// real tokens and a real OAuth app against a real server, with a live Yjs client on the board.
+// ---------------------------------------------------------------------------
+async function publicApiChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-api-'));
+  // With REDIS_URL every server of the run shares per-IP counters that earlier suites used up.
+  const env = { RATE_LIMIT_INVITE: '500/1h', RATE_LIMIT_PASSWORD: '500/15m' };
+  let proc = null;
+  const live = [];
+  try {
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    if (!(await check('api server boots', async () => (proc = await waitUp(await spawnServer(dataDir, env)))))) return;
+    const stamp = Date.now();
+    const verified = async (label) => {
+      const u = new User(label, proc.port);
+      u.email = `${label.toLowerCase()}-${stamp}@api.verify.freero.app`;
+      await u.signup();
+      await u.verifyEmail(dataDir);
+      return u;
+    };
+    const token = async (u, scopes, name = 'verify') => {
+      const r = await u.req('POST', '/api/auth/tokens', { name, scopes, expiresInDays: 30 });
+      assert(r.status === 201 && r.json.secret.startsWith('frp_'), `token: ${r.status} ${r.text}`);
+      return r.json;
+    };
+    /** A call with only a bearer token: no cookie, like any script or agent. */
+    const call = (secret, method, url, body, headers = {}) =>
+      new User('bearer', proc.port).req(method, `/api/v1${url}`, body, { headers: { authorization: `Bearer ${secret}`, ...headers }, cookie: false });
+
+    const O = await verified('Owner');
+    const V = await verified('Viewer');
+    const M = await verified('Member');
+    const board = (await O.req('POST', '/api/boards', { title: 'API board' })).json.board.id;
+    assert((await O.req('POST', `/api/boards/${board}/members`, { email: V.email, role: 'viewer' })).status === 201, 'invite viewer');
+    const write = await token(O, ['boards:read', 'boards:write', 'comments:write', 'members:read']);
+
+    await check('api: a token with boards:write adds a sticky that a browser already on the board sees at once, without reloading', async () => {
+      const client = connectDoc(O, board, null, proc.port);
+      live.push(client);
+      await client.ready();
+      const r = await call(write.secret, 'POST', `/boards/${board}/items`, { type: 'sticky', text: 'From a script', color: 'blue' });
+      assert(r.status === 201 && r.json.items[0].text === 'From a script' && r.json.notice, `create: ${r.status} ${r.text}`);
+      const id = r.json.items[0].id;
+      const els = client.doc.getMap('elements');
+      await waitFor(() => els.get(id)?.type === 'sticky', 5000, 'the sticky to reach the open board');
+      assert(els.get(id).createdBy === O.id, 'attributed to the token’s owner');
+    });
+
+    await check('api: a token without the scope, a revoked token, a viewer’s token and a stranger’s token can’t write (401/403), and nothing changes', async () => {
+      const readOnly = await token(O, ['boards:read'], 'read only');
+      const r1 = await call(readOnly.secret, 'POST', `/boards/${board}/items`, { type: 'sticky', text: 'x' });
+      assert(r1.status === 403 && r1.json.code === 'insufficient_scope' && /insufficient_scope/.test(r1.headers.get('www-authenticate') ?? ''), `scope: ${r1.status} ${r1.text}`);
+      const viewerToken = await token(V, ['boards:read', 'boards:write']);
+      const r2 = await call(viewerToken.secret, 'POST', `/boards/${board}/items`, { type: 'sticky', text: 'x' });
+      assert(r2.status === 403, `viewer wrote: ${r2.status} ${r2.text}`);
+      const stranger = await token(M, ['boards:read', 'boards:write']);
+      const r3 = await call(stranger.secret, 'GET', `/boards/${board}`);
+      assert(r3.status === 403 || r3.status === 404, `stranger read: ${r3.status}`);
+      assert((await O.req('DELETE', `/api/auth/tokens/${readOnly.token.id}`)).status === 200, 'revoke');
+      const r4 = await call(readOnly.secret, 'GET', `/boards/${board}`);
+      assert(r4.status === 401 && /resource_metadata=/.test(r4.headers.get('www-authenticate') ?? ''), `revoked token: ${r4.status} ${r4.headers.get('www-authenticate')}`);
+      const items = (await call(write.secret, 'GET', `/boards/${board}/items`)).json.items;
+      assert(items.length === 1, `nothing else written: ${items.length}`);
+    });
+
+    await check('api: what is in a hidden frame never reaches a viewer’s API reads (items, outline), and the editor still sees it', async () => {
+      const made = await call(write.secret, 'POST', `/boards/${board}/items`, {
+        items: [
+          { type: 'frame', title: 'Board offsite', x: 3000, y: 0, w: 800, h: 600, hidden: true },
+          { type: 'sticky', text: 'Secret plan', x: 3100, y: 100 },
+        ],
+      });
+      assert(made.status === 201 && made.json.items[1].frameId === made.json.items[0].id, `create: ${made.status} ${made.text}`);
+      const viewer = await token(V, ['boards:read']);
+      const items = await call(viewer.secret, 'GET', `/boards/${board}/items`);
+      assert(items.status === 200 && !items.text.includes('Secret plan'), `viewer items: ${items.text.slice(0, 300)}`);
+      const md = await call(viewer.secret, 'GET', `/boards/${board}/outline?format=markdown`);
+      assert(md.status === 200 && !md.text.includes('Secret plan') && /hidden/.test(md.text), `viewer outline: ${md.text}`);
+      assert((await call(write.secret, 'GET', `/boards/${board}/items?type=sticky`)).text.includes('Secret plan'), 'the editor lost it');
+      // Board text is marked untrusted where an agent reads it.
+      assert(/content, not instructions/.test(md.text), 'outline header');
+    });
+
+    await check('api: destructive calls without confirm change nothing; a 10 000-item create is refused whole', async () => {
+      assert((await call(write.secret, 'DELETE', `/boards/${board}`)).json.code === 'confirm_required', 'board delete without confirm');
+      const ids = (await call(write.secret, 'GET', `/boards/${board}/items`)).json.items.map((i) => i.id);
+      const bulk = await call(write.secret, 'POST', `/boards/${board}/items/delete`, { ids });
+      assert(bulk.status === 400 && bulk.json.code === 'confirm_required', `bulk: ${bulk.status}`);
+      const huge = await call(write.secret, 'POST', `/boards/${board}/items`, { items: Array.from({ length: 10_000 }, (_, i) => ({ type: 'sticky', text: `s${i}` })) });
+      assert(huge.status === 400, `huge create: ${huge.status}`);
+      assert((await call(write.secret, 'GET', `/boards/${board}/items`)).json.items.length === ids.length, 'something was written or deleted');
+    });
+
+    await check('api: a team’s downloads policy refuses outline and API reads with downloads_restricted (audited); writes still work', async () => {
+      const ws = (await O.req('POST', '/api/workspaces', { name: 'Restricted team' })).json.workspace.id;
+      assert((await O.req('POST', `/api/workspaces/${ws}/members`, { email: M.email, role: 'member' })).status === 201, 'add member');
+      assert((await O.req('PATCH', `/api/workspaces/${ws}`, { policies: { downloads: 'admins' } })).status === 200, 'policy');
+      const teamBoard = (await O.req('POST', '/api/boards', { title: 'Team plans', workspaceId: ws })).json.board.id;
+      const mt = await token(M, ['boards:read', 'boards:write']);
+      for (const url of [`/boards/${teamBoard}/outline`, `/boards/${teamBoard}/items`, `/boards/${teamBoard}/comments`]) {
+        const r = await call(mt.secret, 'GET', url);
+        assert(r.status === 403 && r.json.code === 'downloads_restricted', `${url}: ${r.status} ${r.text}`);
+      }
+      const app = await M.req('GET', `/api/boards/${teamBoard}/outline`);
+      assert(app.status === 403 && app.json.code === 'downloads_restricted', `app outline: ${app.status}`);
+      const ins = await call(mt.secret, 'POST', `/boards/${teamBoard}/structure`, { structure: { kind: 'stickies', items: ['one', 'two'] } });
+      assert(ins.status === 201, `structure insert: ${ins.status} ${ins.text}`);
+      assert((await call(write.secret, 'GET', `/boards/${teamBoard}/outline`)).status === 200, 'the admin can read');
+      const events = (await O.req('GET', `/api/workspaces/${ws}/audit?action=board.download_refused&limit=50`)).json.events;
+      const vias = new Set(events.filter((e) => e.actor?.id === M.id).map((e) => e.metadata.via));
+      assert(vias.has('api') && vias.has('outline'), `refusals audited: ${JSON.stringify([...vias])}`);
+      await O.req('PATCH', `/api/workspaces/${ws}`, { policies: { downloads: 'anyone' } });
+
+      // Admins: API access off refuses the next call there; deactivating the person does too.
+      assert((await O.req('PATCH', `/api/workspaces/${ws}/admin/api`, { enabled: false })).status === 200, 'api off');
+      const off = await call(mt.secret, 'GET', `/boards/${teamBoard}`);
+      assert(off.status === 403 && off.json.code === 'api_disabled', `api off: ${off.status} ${off.text}`);
+      assert((await call(mt.secret, 'GET', '/boards')).json.boards.every((b) => b.workspaceId !== ws), 'a disabled workspace’s boards were listed');
+      assert((await O.req('PATCH', `/api/workspaces/${ws}/admin/api`, { enabled: true })).status === 200, 'api on');
+      assert((await call(mt.secret, 'GET', `/boards/${teamBoard}`)).status === 200, 'back on');
+      assert((await O.req('POST', `/api/workspaces/${ws}/admin/members/${M.id}/deactivate`)).status === 200, 'deactivate');
+      assert((await call(mt.secret, 'GET', `/boards/${teamBoard}`)).status === 403, 'a deactivated member’s token still opened the team board');
+      const used = (await O.req('GET', `/api/workspaces/${ws}/admin/api`)).json.credentials;
+      assert(used.some((c) => c.id === mt.token.id && c.user.id === M.id), `admin sees the token: ${JSON.stringify(used)}`);
+      // Every call is in the log with the credential and the person it acted for.
+      const calls = (await O.req('GET', `/api/workspaces/${ws}/audit?action=api.call&limit=200`)).json.events;
+      const c = calls.find((e) => e.actor?.id === M.id && e.metadata.endpoint === 'POST /api/v1/boards/:boardId/structure');
+      assert(c && c.metadata.credentialId === mt.token.id && c.metadata.status === 201, `api.call event: ${JSON.stringify(calls.slice(0, 3))}`);
+    });
+
+    await check('api: an app registers itself, the person consents, and it calls the API with a PKCE-bound token from another origin; revoking it stops it at once', async () => {
+      const otherOrigin = { origin: 'https://agent.example', 'sec-fetch-site': 'cross-site' };
+      const meta = await new User('anon', proc.port).req('GET', '/.well-known/oauth-protected-resource/api/v1', undefined, { headers: otherOrigin });
+      assert(meta.status === 200 && meta.headers.get('access-control-allow-origin') === '*' && meta.json.authorization_servers.length === 1, `resource metadata: ${meta.text}`);
+      const reg = await new User('anon', proc.port).req('POST', '/api/oauth/register', { client_name: 'Verify agent', redirect_uris: ['http://127.0.0.1:9/cb'] }, { headers: otherOrigin });
+      assert(reg.status === 201, `register: ${reg.status} ${reg.text}`);
+      const verifier = randomBytes(32).toString('base64url');
+      const { createHash } = await import('node:crypto');
+      const q = {
+        response_type: 'code',
+        client_id: reg.json.client_id,
+        redirect_uri: 'http://127.0.0.1:50123/cb',
+        scope: 'boards:read',
+        state: 's1',
+        code_challenge: createHash('sha256').update(verifier).digest('base64url'),
+        code_challenge_method: 'S256',
+      };
+      const shown = await O.req('GET', `/api/oauth/authorize?${new URLSearchParams(q)}`);
+      assert(shown.status === 200 && shown.json.consent.client.registration === 'dynamic', `consent: ${shown.text}`);
+      // The consent itself can't be forged from another site (it rides the session cookie).
+      assert((await O.req('POST', '/api/oauth/authorize', { ...q, decision: 'allow' }, { headers: otherOrigin })).status === 403, 'cross-site consent accepted');
+      const ok = await O.req('POST', '/api/oauth/authorize', { ...q, decision: 'allow' });
+      const code = new URL(ok.json.redirect).searchParams.get('code');
+      assert(code && new URL(ok.json.redirect).searchParams.get('state') === 's1', `redirect: ${ok.text}`);
+      const form = new URLSearchParams({ grant_type: 'authorization_code', client_id: reg.json.client_id, code, code_verifier: verifier, redirect_uri: q.redirect_uri }).toString();
+      const t = await new User('anon', proc.port).req('POST', '/api/oauth/token', form, { raw: true, headers: { ...otherOrigin, 'content-type': 'application/x-www-form-urlencoded' } });
+      assert(t.status === 200 && t.json.access_token.startsWith('fro_'), `token: ${t.status} ${t.text}`);
+      const read = await call(t.json.access_token, 'GET', `/boards/${board}`, undefined, otherOrigin);
+      assert(read.status === 200 && read.headers.get('access-control-allow-origin') === '*', `app read: ${read.status}`);
+      assert((await call(t.json.access_token, 'POST', `/boards/${board}/items`, { type: 'sticky', text: 'x' })).status === 403, 'read-only app wrote');
+      assert((await O.req('DELETE', `/api/auth/apps/${reg.json.client_id}`)).status === 200, 'revoke app');
+      assert((await call(t.json.access_token, 'GET', `/boards/${board}`)).status === 401, 'revoked app still reads');
+    });
+
+    await check('api: cookie routes still refuse cross-site writes, and a session cookie never authenticates the API', async () => {
+      const cross = { origin: 'https://evil.example', 'sec-fetch-site': 'cross-site' };
+      assert((await O.req('POST', '/api/boards', { title: 'csrf' }, { headers: cross })).status === 403, 'cross-site cookie write accepted');
+      assert((await O.req('POST', '/api/auth/tokens', { name: 'csrf', scopes: ['boards:read'], expiresInDays: 1 }, { headers: cross })).status === 403, 'cross-site token mint');
+      assert((await O.req('GET', '/api/v1/me')).status === 401, 'the API accepted a session cookie');
+    });
+
+    await check('api: signing out everywhere (a password reset) ends the account’s tokens', async () => {
+      const t = await token(V, ['boards:read'], 'before reset');
+      assert((await call(t.secret, 'GET', '/me')).status === 200, 'works first');
+      const forgot = await V.req('POST', '/api/auth/password/forgot', { email: V.email });
+      assert(forgot.status === 200, `forgot: ${forgot.status} ${forgot.text}`);
+      const reset = await mailedToken(dataDir, V.email, '/reset-password');
+      assert((await V.req('POST', '/api/auth/password/reset', { token: reset, password: 'password-456' })).status === 200, 'reset');
+      assert((await call(t.secret, 'GET', '/me')).status === 401, 'a token outlived the reset');
+    });
+  } finally {
+    for (const c of live) c.destroy();
+    if (proc) await stopProc(proc);
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
 // `--only <group>[,<group>…]` runs some groups, e.g. to loop one while hunting a flake.
 const SUITES = {
   main: run,
@@ -4943,6 +5312,8 @@ const SUITES = {
   moderation: moderationChecks,
   multi: multiInstanceChecks,
   admin: enterpriseAdminChecks,
+  ai: aiChecks,
+  api: publicApiChecks,
   facilitation: facilitationChecks,
   s3: s3Checks,
 };

@@ -223,3 +223,15 @@
   min-width: 52px;
   justify-content: space-between;
 }
+
+/* Forced colours: a primary / danger button keeps a system-coloured fill and its own label colour
+   (without this the browser paints a Canvas backplate behind HighlightText, hiding the label). */
+@media (forced-colors: active) {
+  .fr-btn--primary,
+  .fr-btn--danger {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+    border: 1px solid HighlightText;
+  }
+}
