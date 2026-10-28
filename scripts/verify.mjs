@@ -125,8 +125,11 @@ async function spawnServer(dataDir, env = {}) {
       FREERO_DATA_DIR: dataDir,
       NODE_ENV: 'test',
       FREERO_DOC_IDLE_MS: '1000',
-      // Every check signs up accounts from 127.0.0.1; with REDIS_URL all servers of a run share the counters.
+      // Every check signs up and logs in from 127.0.0.1; with REDIS_URL all servers of a run share the
+      // counters, so one suite's logins (two-step recovery logs in dozens of times) would push the
+      // next suites over the default. The login limit itself is checked by platformChecks (own counters).
       RATE_LIMIT_SIGNUP: '1000/1h',
+      RATE_LIMIT_LOGIN: '1000/5m',
       SESSION_SECRET: RUN_SECRET,
       METRICS_TOKEN: RUN_METRICS_TOKEN,
       ...(db.url ? { DATABASE_URL: db.url } : {}),
@@ -1955,6 +1958,7 @@ async function multiInstanceChecks() {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-multi-'));
   const procs = [];
   let url = null;
+  const OP = new User('MOp'); // an operator (moderation), verified below
   // Rate-limit counters live in the shared Redis, also across the single-instance run above.
   const AUTO_VERSION_MS = 1000; // automatic versions of open boards (KAI-82), instead of 30 min
   // Accounts are purged right away, and only by instance 2 (instance 1's job would run hourly).
@@ -1965,6 +1969,7 @@ async function multiInstanceChecks() {
     ACCOUNT_DELETION_GRACE_DAYS: '0',
     ACCOUNT_PURGE_INTERVAL_SECONDS: i === 0 ? '3600' : '1',
     FREERO_SNAPSHOT_EVERY_MS: String(AUTO_VERSION_MS),
+    OPERATOR_EMAILS: OP.email,
   });
   const docRows = async (boardId) =>
     (await adminQuery(`SELECT count(*)::int AS n FROM board_doc_updates WHERE board_id = '${boardId}'`, url))[0].n;
@@ -2118,6 +2123,41 @@ async function multiInstanceChecks() {
       assert(live.role === 'editor', `team member role ${live.role}`);
       assert((await A.req('DELETE', `/api/workspaces/${team.id}/members/${B.id}`, undefined, { port: two })).status === 200, 'remove');
       await waitFor(() => live.closeCodes.includes(4403), 5000, 'the socket on instance 1 to close');
+      live.destroy();
+    });
+
+    await check('moderation across instances: a board taken down through instance 2 closes its sockets on instance 1 (4451) and neither instance lets anyone back in', async () => {
+      await OP.signup();
+      await OP.verifyEmail(path.join(dataDir, 'i0'));
+      const t = (await A.req('POST', '/api/boards', { title: 'Taken down on two' })).json.board;
+      assert((await A.req('POST', `/api/boards/${t.id}/members`, { email: B.email, role: 'editor' })).status === 201, 'invite');
+      const onOne = connectDoc(B, t.id, undefined, one);
+      const onTwo = connectDoc(A, t.id, undefined, two);
+      await Promise.all([onOne.ready(), onTwo.ready()]);
+      const r = await OP.req('POST', '/api/moderation/actions', { action: 'board.take_down', targetId: t.id, reason: 'spam', statement: 'Spam.' }, { port: two });
+      assert(r.status === 200, r.text);
+      await waitFor(() => onOne.closeCodes.includes(4451), 5000, 'the socket on instance 1 to close with 4451');
+      await waitFor(() => onTwo.closeCodes.includes(4451), 5000, 'the socket on instance 2 to close with 4451');
+      for (const port of [one, two]) {
+        assert((await B.req('GET', `/api/boards/${t.id}`, undefined, { port })).status === 451, `REST on ${port}`);
+        const again = connectDoc(B, t.id, undefined, port);
+        await waitFor(() => again.closeCodes.includes(4451), 5000, `a new socket on ${port} to be refused`);
+        again.destroy();
+      }
+      onOne.destroy();
+      onTwo.destroy();
+    });
+
+    await check('moderation across instances: suspending an account through instance 2 closes its socket on instance 1 at once (4401)', async () => {
+      const V = new User('MSusp');
+      await V.signup();
+      const own = (await V.req('POST', '/api/boards', { title: 'V' })).json.board;
+      const live = connectDoc(V, own.id, undefined, one);
+      await live.ready();
+      const r = await OP.req('POST', '/api/moderation/actions', { action: 'user.suspend', targetId: V.id, reason: 'spam', statement: 'Spam.' }, { port: two });
+      assert(r.status === 200, r.text);
+      await waitFor(() => live.closeCodes.includes(4401), 5000, 'the socket on instance 1 to close with 4401');
+      assert((await V.req('GET', '/api/auth/me', undefined, { port: one })).status === 401, 'still signed in on instance 1');
       live.destroy();
     });
 
@@ -2926,6 +2966,241 @@ async function uploadSweepChecks() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Abuse reports and operator moderation (KAI-142): reports from people who can open a board (and
+// only them), the operator queue, and every action enforced live — a link turned off drops
+// link-only sockets, a taken-down board closes and refuses everyone, a removed file answers 410
+// (also after the uploads sweep ran), a suspended account is locked out at once — plus appeals.
+// ---------------------------------------------------------------------------
+
+/** The newest /appeal?t= link mailed to `to` (the notice an action sends), waiting for it. */
+async function mailedAppealToken(dataDir, to, after = 0) {
+  let token = null;
+  await waitFor(
+    () => {
+      const m = outbox(dataDir)
+        .filter((mail) => mail.to === to && mail.sentAt >= after - 50)
+        .map((mail) => /\/appeal\?t=([A-Za-z0-9_.%-]+)/.exec(mail.text))
+        .filter(Boolean)
+        .at(-1);
+      token = m ? decodeURIComponent(m[1]) : null;
+      return token !== null;
+    },
+    8000,
+    `an appeal link mailed to ${to}`,
+  );
+  return token;
+}
+
+async function moderationChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-moderation-'));
+  const outerDbUrl = db.url;
+  const Op = new User('Operator'); // listed and verified: an operator
+  const Fake = new User('FakeOp'); // listed but never verified: not an operator
+  const O = new User('ModOwner');
+  const M = new User('ModMember'); // invited editor
+  const L = new User('ModLink'); // reaches boards only through their links
+  const S = new User('ModStranger');
+  const REPORT_LIMIT = 8;
+  const env = {
+    OPERATOR_EMAILS: `${Op.email}, ${Fake.email}`,
+    ABUSE_CONTACT_EMAIL: 'abuse@verify.freero.app',
+    RATE_LIMIT_REPORT: `${REPORT_LIMIT}/1h`,
+  };
+  const boot = async () => {
+    server = await spawnServer(dataDir, env);
+    return waitUp(server);
+  };
+  const act = (body) => Op.req('POST', '/api/moderation/actions', { reason: 'spam', statement: 'Checked by verify.', ...body });
+  const fileStatus = async (url) => (await fetch(`http://127.0.0.1:${server.port}${url}`, { redirect: 'manual' })).status;
+  try {
+    if (ADMIN_URL) db.url = await createDatabase();
+    if (!(await check('moderation: server boots with operators configured', boot))) return;
+    for (const u of [Op, Fake, O, M, L, S]) await u.signup();
+    await Op.verifyEmail(dataDir);
+    await O.verifyEmail(dataDir); // sharing by link needs a verified address
+
+    const board = async (title, linkAccess = 'viewer') => {
+      const b = (await O.req('POST', '/api/boards', { title })).json.board;
+      assert((await O.req('PATCH', `/api/boards/${b.id}`, { linkAccess })).status === 200, 'share by link');
+      assert((await O.req('POST', `/api/boards/${b.id}/members`, { email: M.email, role: 'editor' })).status === 201, 'invite member');
+      return b;
+    };
+
+    await check('moderation: /.well-known/security.txt names the abuse contact and an expiry', async () => {
+      const r = await fetch(`http://127.0.0.1:${server.port}/.well-known/security.txt`);
+      const text = await r.text();
+      assert(r.status === 200 && /^Contact: mailto:abuse@verify\.freero\.app$/m.test(text) && /^Expires: \d{4}-/m.test(text), `${r.status} ${text}`);
+    });
+
+    let reported = null;
+    await check('moderation: a report on a private board gets exactly the answer an unknown board gets; anyone who can open a board — signed out too — can report it', async () => {
+      const hidden = (await O.req('POST', '/api/boards', { title: 'Private' })).json.board;
+      reported = await board('Reported');
+      const body = (boardId) => ({ boardId, target: { kind: 'board' }, reason: 'spam', note: 'ads everywhere' });
+      const unknown = await S.req('POST', '/api/reports', body('zzzzzzzzzz'));
+      const priv = await S.req('POST', '/api/reports', body(hidden.id));
+      assert(unknown.status === 404 && priv.status === unknown.status && priv.text === unknown.text, `${unknown.status} ${unknown.text} / ${priv.status} ${priv.text}`);
+      assert((await L.req('POST', '/api/reports', body(reported.id))).status === 202, 'link visitor report');
+      const anon = await L.req('POST', '/api/reports', { ...body(reported.id), target: { kind: 'element', id: 'el1' }, contactEmail: 'someone@example.com' }, { cookie: false });
+      assert(anon.status === 202, `signed-out report -> ${anon.status} ${anon.text}`);
+    });
+
+    await check('moderation: operators only — others (including an unverified account with an operator address) get 404 from the queue; the operator sees the reports with reporter, reason and note', async () => {
+      for (const u of [S, Fake, O]) assert((await u.req('GET', '/api/moderation/queue')).status === 404, `${u.label} reached the queue`);
+      assert((await Fake.req('GET', '/api/moderation/access')).json?.operator === false, 'an unverified address counts as operator');
+      const q = await Op.req('GET', '/api/moderation/queue');
+      assert(q.status === 200, q.text);
+      const mine = q.json.items.filter((i) => i.boardId === reported.id);
+      const byLink = mine.find((i) => i.reporter?.id === L.id);
+      assert(byLink?.reason === 'spam' && byLink.message === 'ads everywhere' && byLink.board?.owner?.id === O.id, JSON.stringify(mine));
+      assert(mine.some((i) => i.reporter === null && i.contactEmail === 'someone@example.com' && i.target.id === 'el1'), 'the signed-out report is missing');
+      const preview = await fetch(`http://127.0.0.1:${server.port}/api/moderation/boards/${reported.id}/preview`, { headers: { cookie: Op.cookie } });
+      assert(preview.status === 200 && preview.headers.get('content-type')?.includes('octet-stream'), `preview -> ${preview.status}`);
+    });
+
+    await check('moderation: turning a board’s link off drops link-only sockets live, members keep editing, the owner can’t turn it back on and is emailed an appeal link', async () => {
+      const b = await board('Phishing', 'editor');
+      const viaLink = connectDoc(L, b.id);
+      const member = connectDoc(M, b.id);
+      const owner = connectDoc(O, b.id);
+      await Promise.all([viaLink.ready(), member.ready(), owner.ready()]);
+      const since = Date.now();
+      const r = await act({ action: 'board.disable_link', targetId: b.id, reason: 'phishing', statement: 'A login form copying a bank.' });
+      assert(r.status === 200, r.text);
+      await waitFor(() => viaLink.closeCodes.includes(4403), 5000, 'the link-only socket to close');
+      els(member).set('after', { id: 'after', type: 'sticky', text: 'member still edits' });
+      await waitFor(() => els(owner).get('after')?.text === 'member still edits', 5000, 'the member edit to reach the owner');
+      const patch = await O.req('PATCH', `/api/boards/${b.id}`, { linkAccess: 'viewer' });
+      assert(patch.status === 403 && patch.json?.code === 'link_blocked', `owner re-enabled the link: ${patch.status} ${patch.text}`);
+      assert((await L.req('GET', `/api/boards/${b.id}`)).status === 403, 'the link still opens the board');
+      const token = await mailedAppealToken(dataDir, O.email, since);
+      const info = await O.req('GET', `/api/appeals/${encodeURIComponent(token)}`, undefined, { cookie: false });
+      assert(info.status === 200 && info.json.appeal.action === 'board.disable_link', info.text);
+      for (const c of [viaLink, member, owner]) c.destroy();
+    });
+
+    let downBoard = null;
+    await check('moderation: a taken-down board closes every socket (4451), refuses to reopen (REST 451 for people who had access, 404 for others), leaves every list, and its public link is dead', async () => {
+      downBoard = await board('Taken down');
+      const owner = connectDoc(O, downBoard.id);
+      const member = connectDoc(M, downBoard.id);
+      const viaLink = connectDoc(L, downBoard.id);
+      await Promise.all([owner.ready(), member.ready(), viaLink.ready()]);
+      els(owner).set('keep', { id: 'keep', type: 'sticky', text: 'kept for review' });
+      await waitFor(() => els(member).get('keep'), 5000, 'the edit to sync');
+      const r = await act({ action: 'board.take_down', targetId: downBoard.id, statement: 'Spam campaign.' });
+      assert(r.status === 200, r.text);
+      for (const c of [owner, member, viaLink]) await waitFor(() => c.closeCodes.includes(4451), 5000, `${c.user.label}'s socket to close with 4451`);
+      for (const u of [O, M, L]) {
+        const g = await u.req('GET', `/api/boards/${downBoard.id}`);
+        assert(g.status === 451 && g.json?.code === 'board_removed', `${u.label} GET -> ${g.status} ${g.text}`);
+        assert((await wsCloseCode(downBoard.id, u.cookie)) === 4451, `${u.label} could reconnect`);
+      }
+      // Anyone signed in holds a link-shared board's link; a PRIVATE board taken down stays unknown to outsiders.
+      const privateDown = (await O.req('POST', '/api/boards', { title: 'Private, taken down' })).json.board;
+      assert((await act({ action: 'board.take_down', targetId: privateDown.id, statement: 'Spam.' })).status === 200, 'take down private');
+      const outsider = await S.req('GET', `/api/boards/${privateDown.id}`);
+      const unknown = await S.req('GET', '/api/boards/zzzzzzzzzz');
+      assert(outsider.status === 404 && outsider.text === unknown.text, `a stranger learns the board exists: ${outsider.status} ${outsider.text}`);
+      assert(!titles(await O.req('GET', '/api/boards')).includes(downBoard.id), 'still in the owner’s list');
+      assert((await O.req('DELETE', `/api/boards/${downBoard.id}`)).status === 451, 'the owner could trash it');
+      for (const c of [owner, member, viaLink]) c.destroy();
+    });
+
+    await check('moderation: restoring the taken-down board brings it back as it was, and the history records both actions with the operator', async () => {
+      assert((await act({ action: 'board.restore', targetId: downBoard.id, statement: '' })).status === 200, 'restore');
+      const back = connectDoc(M, downBoard.id);
+      await back.ready();
+      assert(els(back).get('keep')?.text === 'kept for review', 'content lost while taken down');
+      back.destroy();
+      const h = await Op.req('GET', `/api/moderation/boards/${downBoard.id}`);
+      const kinds = h.json.actions.map((a) => `${a.action}:${a.operator?.id === Op.id}`);
+      assert(kinds.includes('board.take_down:true') && kinds.includes('board.restore:true'), JSON.stringify(kinds));
+    });
+
+    let removed = null;
+    let unused = null; // never placed anywhere: the sweep deletes it, which proves a round ran
+    await check('moderation: a removed upload answers 410 at once (also to its uploader) and its owner is told', async () => {
+      const up = await O.req('POST', '/api/uploads', PNG_1PX, { raw: true, headers: { 'content-type': 'image/png' } });
+      removed = up.json.url;
+      unused = (await O.req('POST', '/api/uploads', PNG_1PX, { raw: true, headers: { 'content-type': 'image/png' } })).json.url;
+      const b = (await O.req('POST', '/api/boards', { title: 'With image' })).json.board;
+      const c = connectDoc(O, b.id);
+      await c.ready();
+      els(c).set('img', { id: 'img', type: 'image', x: 0, y: 0, w: 10, h: 10, src: removed });
+      await sleep(200);
+      c.destroy();
+      assert((await fileStatus(removed)) === 200, 'upload not served');
+      const since = Date.now();
+      const r = await act({ action: 'upload.remove', targetId: removed, reason: 'illegal', statement: 'Unlawful image.', boardId: b.id });
+      assert(r.status === 200, r.text);
+      assert((await fileStatus(removed)) === 410, `removed file -> ${await fileStatus(removed)}`);
+      await mailedAppealToken(dataDir, O.email, since);
+    });
+
+    await check('moderation: a sweep round days later neither resurrects the removed file nor forgets it (still 410); restoring serves the same bytes again', async () => {
+      await stopServer();
+      // Days pass: age every upload so the sweep that runs at startup considers all of them.
+      await withDb(dataDir, (q) =>
+        q(`UPDATE uploads SET created_at = created_at - interval '5 days', last_referenced_at = last_referenced_at - interval '5 days'`),
+      );
+      await boot();
+      await waitFor(async () => (await fileStatus(unused)) === 404, 15_000, 'the startup sweep round to delete the unused upload');
+      assert((await fileStatus(removed)) === 410, `after the sweep -> ${await fileStatus(removed)}`);
+      // Sessions survive the restart (cookies); restore through the operator.
+      const r = await act({ action: 'upload.restore', targetId: removed, statement: '' });
+      assert(r.status === 200, r.text);
+      const res = await fetch(`http://127.0.0.1:${server.port}${removed}`);
+      assert(res.status === 200 && Buffer.compare(Buffer.from(await res.arrayBuffer()), PNG_1PX) === 0, `restored -> ${res.status}`);
+    });
+
+    await check('moderation: suspending an account locks it out live — board and notification sockets close, REST is signed out, sign-in is refused — and its notice’s appeal link works signed out and reaches the queue', async () => {
+      const b = (await M.req('POST', '/api/boards', { title: 'Member board' })).json.board;
+      const live = connectDoc(M, b.id);
+      await live.ready();
+      const bell = notificationsSocket(M, server.port);
+      await waitFor(() => bell.ws.readyState === WebSocket.OPEN, 5000, 'the bell socket to open');
+      const since = Date.now();
+      const r = await act({ action: 'user.suspend', targetId: M.id, reason: 'harassment', statement: 'Repeated abuse in comments.' });
+      assert(r.status === 200, r.text);
+      await waitFor(() => live.closeCodes.includes(4401), 5000, 'the board socket to close');
+      await waitFor(() => bell.closeCode !== null, 5000, 'the bell socket to close');
+      assert((await M.req('GET', '/api/auth/me')).status === 401, 'still signed in');
+      const login = await M.req('POST', '/api/auth/login', { email: M.email, password: 'password-123' });
+      assert(login.status === 403 && login.json?.code === 'account_suspended', `login -> ${login.status} ${login.text}`);
+      const token = await mailedAppealToken(dataDir, M.email, since);
+      const appeal = await M.req('POST', '/api/appeals', { token, message: 'That was not me.' }, { cookie: false });
+      assert(appeal.status === 202, appeal.text);
+      assert((await M.req('POST', '/api/appeals', { token, message: 'Again' }, { cookie: false })).status === 409, 'a second open appeal');
+      const q = await Op.req('GET', '/api/moderation/queue');
+      assert(q.json.items.some((i) => i.kind === 'appeal' && i.reporter?.id === M.id && i.message === 'That was not me.'), 'appeal not in the queue');
+      live.destroy();
+      bell.ws.close();
+
+      assert((await act({ action: 'user.restore', targetId: M.id, statement: '' })).status === 200, 'lift');
+      assert((await M.req('POST', '/api/auth/login', { email: M.email, password: 'password-123' })).status === 200, 'login after the suspension was lifted');
+    });
+
+    await check('moderation: reports are rate-limited per address (429 with Retry-After)', async () => {
+      let last = null;
+      for (let i = 0; i < REPORT_LIMIT + 2 && last?.status !== 429; i++)
+        last = await S.req('POST', '/api/reports', { boardId: reported.id, target: { kind: 'element', id: `flood${i}` }, reason: 'spam' }, { cookie: false });
+      assert(last?.status === 429 && last.headers.get('retry-after'), `no 429: ${last?.status}`);
+    });
+  } finally {
+    closeAllDocs();
+    await stopServer();
+    await dropDatabases();
+    db.url = outerDbUrl;
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
 // `--only <group>[,<group>…]` runs some groups, e.g. to loop one while hunting a flake.
 const SUITES = {
   main: run,
@@ -2936,6 +3211,7 @@ const SUITES = {
   purge: accountPurgeChecks,
   notify: notificationChecks,
   platform: platformChecks,
+  moderation: moderationChecks,
   multi: multiInstanceChecks,
 };
 const onlyArg = process.argv.indexOf('--only');

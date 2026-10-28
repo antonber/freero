@@ -26,9 +26,15 @@ export interface BoardEngineProps {
    * app navigates to such a link while this board is already open. Default: the page URL on load.
    */
   location?: { search: string; key: string };
+  /**
+   * [additive] Show this document state instead of connecting: a read-only snapshot (an
+   * operator's preview of a reported board). Needs `host.syncUrl === ''` and a viewer role;
+   * nothing is synced or kept in localStorage.
+   */
+  initialState?: Uint8Array;
 }
 
-export function BoardEngine({ host, features, topbarAccessory, location }: BoardEngineProps) {
+export function BoardEngine({ host, features, topbarAccessory, location, initialState }: BoardEngineProps) {
   const [core, setCore] = useState<EngineCore | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const hostRef = useRef(host);
@@ -37,7 +43,7 @@ export function BoardEngine({ host, features, topbarAccessory, location }: Board
   useEffect(() => {
     let c: EngineCore;
     try {
-      c = createCore(hostRef.current, features, { persistLocal: !hostRef.current.syncUrl });
+      c = createCore(hostRef.current, features, { persistLocal: !hostRef.current.syncUrl && !initialState, initialState });
     } catch (e) {
       setError(e as Error);
       return;
@@ -49,7 +55,7 @@ export function BoardEngine({ host, features, topbarAccessory, location }: Board
       setCore(null);
       void thumbs.stop().finally(() => c.destroy());
     };
-  }, [host.board.id, host.syncUrl, features]);
+  }, [host.board.id, host.syncUrl, features, initialState]);
 
   const publishedUser = useRef(host.user);
   useEffect(() => {

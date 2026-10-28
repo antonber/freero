@@ -1,5 +1,13 @@
 import type {
   AcceptInviteResponse,
+  AppealInfo,
+  ModeratedBoard,
+  ModeratedUpload,
+  ModeratedUser,
+  ModerationActionRecord,
+  ModerationActionRequest,
+  ModerationItem,
+  ReportRequest,
   AuthResponse,
   BoardMember,
   BoardPerson,
@@ -274,6 +282,28 @@ export const api = {
     request<{ version: BoardVersion }>('PATCH', `/api/boards/${boardId}/versions/${versionId}`, { name }),
   restoreVersion: (boardId: string, versionId: number) =>
     request<{ before: BoardVersion }>('POST', `/api/boards/${boardId}/versions/${versionId}/restore`),
+
+  // reports and moderation (KAI-142)
+  report: (body: ReportRequest) => request<{ ok: true }>('POST', '/api/reports', body),
+  appeal: (token: string) => request<{ appeal: AppealInfo }>('GET', `/api/appeals/${encodeURIComponent(token)}`),
+  submitAppeal: (token: string, message: string) => request<{ ok: true }>('POST', '/api/appeals', { token, message }),
+  moderationAccess: () => request<{ operator: boolean }>('GET', '/api/moderation/access'),
+  moderationQueue: (status: 'open' | 'closed') => request<{ items: ModerationItem[] }>('GET', `/api/moderation/queue?status=${status}`),
+  moderationBoard: (id: string) =>
+    request<{ board: ModeratedBoard; items: ModerationItem[]; actions: ModerationActionRecord[] }>(
+      'GET',
+      `/api/moderation/boards/${encodeURIComponent(id)}`,
+    ),
+  async moderationPreview(id: string): Promise<Uint8Array> {
+    const res = await fetch(`/api/moderation/boards/${encodeURIComponent(id)}/preview`, { credentials: 'same-origin' });
+    if (!res.ok) throw await failure(res);
+    return new Uint8Array(await res.arrayBuffer());
+  },
+  moderationUpload: (name: string) => request<{ upload: ModeratedUpload }>('GET', `/api/moderation/uploads/${encodeURIComponent(name)}`),
+  moderationUser: (email: string) => request<{ user: ModeratedUser }>('GET', `/api/moderation/users?email=${encodeURIComponent(email)}`),
+  moderate: (body: ModerationActionRequest) => request<{ action: ModerationActionRecord }>('POST', '/api/moderation/actions', body),
+  resolveModerationItem: (id: string, outcome: 'actioned' | 'dismissed', note: string) =>
+    request<{ item: ModerationItem }>('POST', `/api/moderation/items/${encodeURIComponent(id)}/resolve`, { outcome, note }),
 
   // link previews
   unfurl:(url: string) => request<UnfurlResponse>('GET', `/api/unfurl?url=${encodeURIComponent(url)}`),

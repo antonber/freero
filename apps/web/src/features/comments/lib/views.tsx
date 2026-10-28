@@ -1,7 +1,7 @@
 // Thread popover content: messages, reactions, edit/delete, reply box, resolve, and the
 // composer for a new thread.
 import { useEffect, useRef, useState } from 'react';
-import { ArrowUp, Check, MoreHorizontal, Pencil, RotateCcw, SmilePlus, Trash2, X } from 'lucide-react';
+import { ArrowUp, Check, Flag, MoreHorizontal, Pencil, RotateCcw, SmilePlus, Trash2, X } from 'lucide-react';
 import type { Editor, HostUser } from '@engine';
 import { Avatar, Button, IconButton, Menu, Popover, Tooltip, formatShortcut } from '@ui';
 import type { CommentMessage, CommentThread } from '@freero/shared';
@@ -162,10 +162,19 @@ function MessageRow(props: {
               {m.editedAt ? ' · edited' : ''}
             </span>
           </Tooltip>
-          {canWrite && !editing && (
+          {(canWrite || !mine) && !editing && (
             <span className="fr-cm-msg__tools">
-              <ReactionPicker onPick={(e) => toggleReaction(editor, thread.id, m.id, e)} />
-              {mine && (
+              {canWrite && <ReactionPicker onPick={(e) => toggleReaction(editor, thread.id, m.id, e)} />}
+              {!mine && (
+                // The report feature's dialog (if it is there): features never import each other.
+                <IconButton
+                  icon={Flag}
+                  label="Report"
+                  size={32}
+                  onClick={() => editor.runCommand('report.open', { target: { kind: 'comment', id: `${thread.id}:${m.id}` } })}
+                />
+              )}
+              {mine && canWrite && (
                 <>
                   <IconButton
                     icon={Pencil}

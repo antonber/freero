@@ -2,7 +2,7 @@
 // item opens its link — the board, or the board with the comment thread open.
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { AtSign, Bell, CheckCheck, MessageSquareReply, Settings, UserPlus, Users } from 'lucide-react';
+import { AtSign, Bell, CheckCheck, MessageSquareReply, Settings, ShieldAlert, UserPlus, Users } from 'lucide-react';
 import type { AppNotification, NotificationType } from '@freero/shared';
 import { Avatar, Button, IconButton, Popover, Spinner } from '@ui';
 import { useAuth } from '../auth/AuthContext';
@@ -21,6 +21,7 @@ const TYPE_ICON: Record<NotificationType, typeof Bell> = {
   'comment.reply': MessageSquareReply,
   'board.invite': UserPlus,
   'workspace.invite': Users,
+  'moderation.action': ShieldAlert,
 };
 
 const badgeText = (n: number) => (n > 99 ? '99+' : String(n));
