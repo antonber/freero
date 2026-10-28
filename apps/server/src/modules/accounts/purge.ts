@@ -1,10 +1,13 @@
 // Hard deletion of accounts whose grace period is over. Every instance schedules it; a Postgres
 // advisory lock lets one run at a time. Each step is idempotent, so a purge interrupted halfway
 // (crash, deploy) is simply finished by the next run:
-//   1. boards the user owns are deleted, trash included (every board has exactly one owner today);
+//   1. team workspaces they solely own get a new owner (or, empty, are deleted with their boards),
+//      and boards they own in team workspaces pass to an owner there (workspaces.handOverTeamWorkspaces);
+//      the boards they still own (their personal workspace's, trash included) are deleted;
 //   2. on boards they could comment on (member or opened), their comments become "Deleted user";
 //   3. their avatar file is deleted;
-//   4. the account row goes; sessions, tokens, memberships, stars, opens, invites and upload rows cascade.
+//   4. the account row goes; sessions, tokens, memberships, stars, opens, invites, upload rows and
+//      the personal workspace cascade.
 // Before step 1 the account is re-checked, so a restore that lands first keeps everything.
 // Other files they uploaded are not deleted here: images they placed on other people's boards stay
 // part of those boards, and files nothing references any more are removed by the uploads sweep.
@@ -15,6 +18,7 @@ import { boardIdsOpenedBy, deleteBoardsOwnedBy } from '../boards/index';
 import { membershipsOf } from '../members/index';
 import { renameCommentAuthor } from '../realtime/index';
 import { deleteUpload } from '../uploads/index';
+import { handOverTeamWorkspaces } from '../workspaces/index';
 
 export const PURGE_LOCK_KEY = 7_202_610_281; // arbitrary, constant across releases
 export const DELETED_USER_NAME = 'Deleted user';
@@ -24,6 +28,7 @@ export const DELETED_USER_COLOR = '#868E96';
 export async function purgeAccount(userId: string, now: number): Promise<boolean> {
   if (!(await isDueForPurge(userId, now))) return false;
   const commentedOn = new Set([...(await membershipsOf(userId)).keys(), ...(await boardIdsOpenedBy(userId))]);
+  await handOverTeamWorkspaces(userId);
   const deletedBoards = await deleteBoardsOwnedBy(userId);
   for (const boardId of commentedOn) {
     try {
