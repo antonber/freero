@@ -50,6 +50,11 @@ export interface BoardSummary {
   member: boolean;
   /** What the current user may do beyond their role, under the workspace's sharing policies. */
   permissions: BoardPermissions;
+  /**
+   * Freero's moderators turned link sharing off for this board (KAI-142): `linkAccess` reads
+   * 'none' and the owner can't turn it back on until they restore it.
+   */
+  linkBlocked?: boolean;
 }
 
 /**
@@ -292,7 +297,8 @@ export type OidcErrorCode =
   | 'no_email' // the provider shared no address
   | 'identity_in_use' // link: that provider account is connected to another Freero account
   | 'provider_linked' // link: this account already has an identity of that provider
-  | 'wrong_account'; // reauth: a different provider account than the one connected
+  | 'wrong_account' // reauth: a different provider account than the one connected
+  | 'suspended'; // login: Freero's moderators suspended that account
 
 /** The signed-in user's own account (other people only ever see `User`). */
 export interface Account extends User {
@@ -324,6 +330,8 @@ export interface SessionInfo {
 }
 
 export const ACCOUNT_PENDING_DELETION = 'account_pending_deletion';
+/** `code` of a refused sign-in (403): Freero's moderators suspended the account. */
+export const ACCOUNT_SUSPENDED = 'account_suspended';
 
 // ---- Boards ----
 // GET    /api/boards?workspace=<id>&project=<id>&filter=all|mine|shared|starred|recent|trash&q=text
@@ -486,7 +494,7 @@ export interface BoardPerson { id: string; name: string; color: string; avatarUr
 //
 // Types are open-ended: a new source (e.g. workspace invites) adds its type here and its entry in
 // the server's modules/notifications/types.ts; the inbox shows `title` / `body` as sent.
-export type NotificationType = 'board.invite' | 'comment.mention' | 'comment.reply' | 'workspace.invite';
+export type NotificationType = 'board.invite' | 'comment.mention' | 'comment.reply' | 'workspace.invite' | 'moderation.action';
 
 export interface AppNotification {
   id: string;
@@ -592,6 +600,152 @@ export interface LayerOp {
   prefix?: string;
   mine?: boolean;
 }
+
+// ---- Reports and moderation (KAI-142) ----
+// Anyone who can open a board — signed in or (with KAI-43) a visitor on its public link — can
+// report the board, one item on it, an uploaded file shown on it, or a comment. Operators
+// (OPERATOR_EMAILS, verified addresses only) review reports in a queue and act through the
+// modules that own the data; every action is recorded and its subject told why, with an appeal link.
+//
+// POST /api/reports  body ReportRequest -> 202 { ok: true }   (session optional; rate-limited per IP
+//      and per user; 404 "Board not found" alike for unknown boards and boards you can't open)
+// GET  /api/appeals/:token -> { appeal: AppealInfo }          (no session: the signed link from the notice)
+// POST /api/appeals  body { token, message } -> 202 { ok: true } (one open appeal per action)
+// Operators only (404 for everyone else):
+// GET  /api/moderation/access -> { operator: boolean }        (any signed-in user)
+// GET  /api/moderation/queue?status=open|closed -> { items: ModerationItem[] }
+// GET  /api/moderation/boards/:id -> { board: ModeratedBoard, items: ModerationItem[], actions: ModerationActionRecord[] }
+// GET  /api/moderation/boards/:id/preview -> the board's shared document (Yjs update, octet-stream)
+// GET  /api/moderation/uploads/:name -> { upload: ModeratedUpload }
+// GET  /api/moderation/users?email= -> { user: ModeratedUser }
+// POST /api/moderation/actions body ModerationActionRequest -> { action: ModerationActionRecord }
+// POST /api/moderation/items/:id/resolve body { outcome, note? } -> { item: ModerationItem }
+// GET  /.well-known/security.txt (RFC 9116, from SECURITY_CONTACT / ABUSE_CONTACT_EMAIL)
+export type ReportReason = 'spam' | 'phishing' | 'malware' | 'harassment' | 'violence' | 'sexual' | 'illegal' | 'copyright' | 'other';
+export const REPORT_REASONS: ReadonlyArray<{ id: ReportReason; label: string }> = [
+  { id: 'spam', label: 'Spam or misleading ads' },
+  { id: 'phishing', label: 'Phishing or a scam' },
+  { id: 'malware', label: 'Malicious files or links' },
+  { id: 'harassment', label: 'Harassment or hate' },
+  { id: 'violence', label: 'Violence or threats' },
+  { id: 'sexual', label: 'Sexual content' },
+  { id: 'illegal', label: 'Other illegal content' },
+  { id: 'copyright', label: 'Copyright or trademark' },
+  { id: 'other', label: 'Something else' },
+];
+/**
+ * What a report is about. `id`: element id ('element'), upload name ('upload', "<id>.<ext>"),
+ * "<threadId>:<messageId>" ('comment'); none for the whole board.
+ */
+export type ReportTargetKind = 'board' | 'element' | 'upload' | 'comment';
+export interface ReportTarget { kind: ReportTargetKind; id?: string }
+export const MAX_REPORT_NOTE = 2000;
+export interface ReportRequest {
+  boardId: string;
+  target: ReportTarget;
+  reason: ReportReason;
+  note?: string;
+  /** Visitors without an account: where to send the outcome (optional). */
+  contactEmail?: string;
+}
+
+/** Operator actions. Each `restore` undoes the matching action; `upload.purge` deletes a removed file's kept copy for good. */
+export type ModerationActionKind =
+  | 'board.disable_link'
+  | 'board.restore_link'
+  | 'board.take_down'
+  | 'board.restore'
+  | 'upload.remove'
+  | 'upload.restore'
+  | 'upload.purge'
+  | 'user.suspend'
+  | 'user.restore';
+export interface ModerationActionRequest {
+  action: ModerationActionKind;
+  /** Board id, upload name or user id, by the action's kind. */
+  targetId: string;
+  reason: ReportReason;
+  /** Shown to the person affected (the statement of reasons in their notice). */
+  statement: string;
+  /** Operators only. */
+  note?: string;
+  /** The queue item this answers (marked actioned). */
+  itemId?: string;
+  /** For upload actions: the board the file was reported on (its owner is told too). */
+  boardId?: string;
+}
+export interface ModerationActionRecord {
+  id: string;
+  action: ModerationActionKind;
+  targetId: string;
+  boardId: string | null;
+  subjectUserId: string | null;
+  operator: { id: string; name: string } | null;
+  reason: ReportReason;
+  statement: string;
+  note: string;
+  createdAt: number;
+}
+export type ModerationItemStatus = 'open' | 'actioned' | 'dismissed';
+export interface ModerationItem {
+  id: string;
+  /** A report about content, or an appeal against an action. */
+  kind: 'report' | 'appeal';
+  status: ModerationItemStatus;
+  boardId: string | null;
+  boardTitle: string;
+  /** What it is about (appeals against a suspension: the account, `user`). */
+  target: { kind: ReportTargetKind | 'user'; id?: string };
+  reason: ReportReason | null;
+  /** The reporter's note, or the appeal's message. */
+  message: string;
+  reporter: { id: string; name: string; email: string } | null;
+  contactEmail: string | null;
+  /** Appeals: the action appealed against. */
+  action: ModerationActionRecord | null;
+  createdAt: number;
+  resolvedAt: number | null;
+  resolutionNote: string;
+  /** Live state of the board right now (null when it no longer exists). */
+  board: ModeratedBoard | null;
+}
+export interface ModeratedBoard {
+  id: string;
+  title: string;
+  owner: ModeratedUser | null;
+  linkAccess: LinkAccess;
+  linkBlocked: boolean;
+  removedAt: number | null;
+  deletedAt: number | null;
+  thumbnail: string | null;
+}
+export interface ModeratedUpload {
+  name: string;
+  url: string;
+  owner: ModeratedUser | null;
+  contentType: string | null;
+  bytes: number | null;
+  removedAt: number | null;
+  /** A copy is kept while removed, so it can be restored (false after `upload.purge`). */
+  restorable: boolean;
+}
+export interface ModeratedUser { id: string; name: string; email: string; suspended: boolean }
+/** What an appeal link shows (no session needed). */
+export interface AppealInfo {
+  action: ModerationActionKind;
+  reason: ReportReason;
+  statement: string;
+  boardTitle: string | null;
+  createdAt: number;
+  /** An appeal against it is already waiting for review. */
+  pending: boolean;
+  /** It was reversed meanwhile. */
+  reversed: boolean;
+}
+/** `code` of a board Freero's moderators took down (HTTP 451 on REST). */
+export const BOARD_REMOVED = 'board_removed';
+/** Close code of board sockets when the board is taken down (on every instance). */
+export const WS_CLOSE_BOARD_REMOVED = 4451;
 
 export const SESSION_COOKIE = 'freero_session';
 export const SERVER_PORT = 4000;
