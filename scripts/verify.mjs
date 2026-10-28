@@ -320,7 +320,9 @@ async function mailedToken(dataDir, to, route, { after = 0, timeoutMs = 8000 } =
   await waitFor(
     () => {
       const m = outbox(dataDir)
-        .filter((mail) => mail.to === to && mail.sentAt > after)
+        // The server and this harness read the clock in different processes; on Windows they can
+        // disagree by a timer tick (~16 ms), so "sent after" allows a little slack (the newest wins).
+        .filter((mail) => mail.to === to && mail.sentAt >= after - 50)
         .map((mail) => re.exec(mail.text))
         .filter(Boolean)
         .at(-1);
