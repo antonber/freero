@@ -6,10 +6,10 @@
 // could carry it into the shared doc) — is undone in the same transaction, like the vote budget
 // (votingRules.ts): the sender is sent the correction and converges.
 import type * as Y from 'yjs';
-import { ENGAGE_RESULTS_COLLECTION } from '@freero/shared';
+import { SERVER_WRITTEN_COLLECTIONS } from '@freero/shared';
 import { changedKeys } from './facilitation';
 
-export const SERVER_COLLECTIONS: readonly string[] = [ENGAGE_RESULTS_COLLECTION];
+export const SERVER_COLLECTIONS: readonly string[] = SERVER_WRITTEN_COLLECTIONS;
 
 /** Creates the guarded maps up front: changedKeys sees only maps that existed before a transaction. */
 export function prepareServerCollections(doc: Y.Doc): void {

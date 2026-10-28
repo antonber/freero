@@ -58,6 +58,8 @@ import {
   type Role,
   type RoleMessage,
   type SessionLimits,
+  ELEMENT_CONTENT_COLLECTIONS,
+  isElementContentCollection,
 } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { logError } from '../../platform/log';
@@ -72,6 +74,7 @@ import * as store from './docStore';
 import { effectiveAccess, guardSession, readFacilitation, revertForbiddenAdds, sameEffective } from './facilitation';
 import { guardVotes } from './votingRules';
 import { guardServerCollections, prepareServerCollections, SERVER_COLLECTIONS } from './serverCollections';
+import { guardContentPlacement, placeElementContent, writeElementContent } from './elementContent';
 import { decideUpdate } from './filter';
 import * as layerStore from './layerStore';
 import {
@@ -331,6 +334,7 @@ class Room {
     // Element changes made through OUR sockets (changes.ts): the activity feed's trusted source.
     const elements = this.doc.getMap<unknown>(ELEMENTS);
     elements.observe((event, tr) => {
+      this.placeServerContentSoon(tr.origin);
       this.reportCards(elements, event.changes.keys, tr.origin);
       this.noteRemoved(event.changes.keys);
       this.reportChanges('shared', elements, event.changes.keys, tr.origin);
@@ -342,6 +346,8 @@ class Room {
     this.doc.getMap<unknown>(VOTING_COLLECTION);
     // Results only the server writes (serverCollections.ts): likewise.
     prepareServerCollections(this.doc);
+    // Element content (elementContent.ts): likewise, for the placement guard.
+    for (const name of Object.keys(ELEMENT_CONTENT_COLLECTIONS)) this.doc.getMap<unknown>(name);
 
     this.ready = this.open();
   }
@@ -370,6 +376,23 @@ class Room {
     // Suggestions decided longer ago than anyone can undo them: gone (published and saved).
     const editors = this.layers.get(EDITORS_LAYER);
     if (editors) pruneDecided(editors.doc, SERVER_ORIGIN);
+    // Element content outside its element's doc (KAI-230; boards from before the rule, a write
+    // that raced a move): moved where the element is, so no socket gets what it may not read.
+    placeElementContent(this.doc, layerDocs(this), SERVER_ORIGIN);
+  }
+
+  private placingServerContent = false;
+  /**
+   * After a change of where elements live made here (not another instance's: that instance does
+   * it), puts what only the server writes back with its element (elementContent.ts).
+   */
+  private placeServerContentSoon(origin: unknown): void {
+    if (origin === LOAD_ORIGIN || origin === REMOTE_ORIGIN || this.placingServerContent) return;
+    this.placingServerContent = true;
+    queueMicrotask(() => {
+      this.placingServerContent = false;
+      if (!this.destroyed) placeElementContent(this.doc, layerDocs(this), SERVER_ORIGIN, SERVER_COLLECTIONS);
+    });
   }
 
   /** The layer stored under `name`, created empty on first use. */
@@ -398,6 +421,7 @@ class Room {
     // Hidden frames' contents: reported for owners/editors only (changes.ts). Private layers never.
     const els = created.doc.getMap<unknown>(ELEMENTS);
     els.observe((event, tr) => {
+      this.placeServerContentSoon(tr.origin);
       this.noteRemoved(event.changes.keys);
       if (name === EDITORS_LAYER) this.reportChanges('editors', els, event.changes.keys, tr.origin);
     });
@@ -868,6 +892,9 @@ class Room {
         fixed = guardVotes(tr, this.doc, this.doc, conn.userId) || fixed;
         fixed = guardServerCollections(tr, this.doc) || fixed;
         if (addTypes) fixed = revertForbiddenAdds(tr, this.doc.getMap<unknown>(ELEMENTS), new Set(addTypes), (id) => this.existsElsewhere(this.doc, id)) > 0 || fixed;
+        // Element content written here for an element in a layer goes to that layer (elementContent.ts).
+        const homes = { editors: this.layers.get(EDITORS_LAYER)?.doc, own: this.layers.get(privateLayerOf(conn.userId))?.doc };
+        fixed = guardContentPlacement(tr, this.doc, homes, SERVER_ORIGIN) > 0 || fixed;
       }, conn.ws);
       if (fixed) send(conn.ws, syncUpdateMessage(Y.encodeStateAsUpdate(this.doc, before)));
       if (syncType === syncProtocol.messageYjsUpdate) noteSessionActivity(conn.sessionKey);
@@ -1479,6 +1506,12 @@ export async function writeServerCollection(boardId: string, collection: string,
   if (!SERVER_COLLECTIONS.includes(collection)) throw new Error(`realtime: '${collection}' is not a server-written collection`);
   await withLiveRoom(boardId, async (room) => {
     if (room.destroyed) throw new BoardClosedError(boardId);
+    if (isElementContentCollection(collection)) {
+      // An activity's results go where the activity is: a hidden frame's to owners/editors only.
+      writeElementContent(room.doc, layerDocs(room), collection, entries, SERVER_ORIGIN);
+      await room.flush();
+      return;
+    }
     const map = room.doc.getMap<unknown>(collection);
     room.doc.transact(() => {
       for (const [k, v] of Object.entries(entries)) {

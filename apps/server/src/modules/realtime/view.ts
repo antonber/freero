@@ -6,10 +6,14 @@
 // and editors (hidden frames' contents), plus the reader's OWN private layer (their drafts,
 // marked as private). Never another user's private layer. Viewers and commenters also never see
 // shared-doc elements under a hidden frame (in flight to the editors layer), like the web client
-// (`isOffBoard`).
+// (`isOffBoard`). Element content (table cells, presenter notes, activity results; @freero/shared
+// ELEMENT_CONTENT_COLLECTIONS) is read from the same docs as the elements it belongs to.
 import { createHash } from 'node:crypto';
 import * as Y from 'yjs';
 import {
+  isElementContentCollection,
+  elementContentOwner,
+  SERVER_WRITTEN_COLLECTIONS,
   pendingSuggestions,
   SUGGESTIONS_COLLECTION,
   Y_ELEMENTS,
@@ -23,6 +27,7 @@ import {
 import { FACILITATION_COLLECTION } from '@freero/shared';
 import { commenterMayChangeComments } from './commentRules';
 import { effectiveAccess, readFacilitation } from './facilitation';
+import { contentOf } from './elementContent';
 import { EDITORS_LAYER, privateLayerOf } from './layers';
 
 export type ViewLayer = 'shared' | 'editors' | 'private';
@@ -46,7 +51,10 @@ export interface BoardActor extends BoardReader {
 export interface BoardView {
   /** Every element the reader can see, with the doc it lives in. */
   elements: Array<{ el: BoardElement; layer: ViewLayer }>;
-  /** A collection of the shared doc (empty when absent). */
+  /**
+   * A collection of the shared doc (empty when absent). Element content (table cells…) also has
+   * the entries of the layers the reader may read, like `elements`.
+   */
   collection(name: string): ReadonlyMap<string, unknown>;
   /** The reader may see hidden frames' contents. */
   seesHidden: boolean;
@@ -110,7 +118,11 @@ export function viewOf(main: Y.Doc, layers: ReadonlyMap<string, Y.Doc>, reader: 
   const collection = (name: string): ReadonlyMap<string, unknown> => {
     let hit = cache.get(name);
     if (!hit) {
-      hit = name !== Y_ELEMENTS && main.share.has(name) ? new Map(main.getMap<unknown>(name).entries()) : new Map();
+      const map = new Map<string, unknown>(name !== Y_ELEMENTS && main.share.has(name) ? main.getMap<unknown>(name).entries() : []);
+      // A layer's entry wins, as for elements: it is where its element lives.
+      if (isElementContentCollection(name))
+        for (const [, doc] of readable(layers, reader)) if (doc?.share.has(name)) for (const [k, v] of doc.getMap<unknown>(name)) map.set(k, v);
+      hit = map;
       cache.set(name, hit);
     }
     return hit;
@@ -199,7 +211,8 @@ function underHiddenFrame(el: BoardElement, byId: ReadonlyMap<string, BoardEleme
  */
 export function applyChange(main: Y.Doc, layers: ReadonlyMap<string, Y.Doc>, change: BoardChange, actor: BoardActor, origin: unknown, now = Date.now()): AppliedChange {
   for (const name of Object.keys(change.collections ?? {}))
-    if (name === Y_ELEMENTS || name === 'settings' || name === FACILITATION_COLLECTION) throw new BoardChangeError(`'${name}' is not a collection`);
+    if (name === Y_ELEMENTS || name === 'settings' || name === FACILITATION_COLLECTION || SERVER_WRITTEN_COLLECTIONS.includes(name))
+      throw new BoardChangeError(`'${name}' is not a collection`);
   // A facilitator's limits hold for requests too (facilitation.ts), not only for sockets: a locked
   // board makes its editors commenters for now.
   const limited = effectiveAccess(actor.role, actor.userId, readFacilitation(main));
@@ -260,6 +273,8 @@ export function applyChange(main: Y.Doc, layers: ReadonlyMap<string, Y.Doc>, cha
     const doc = docOf(where.get(id)!.layer);
     queue(doc, () => elementsOfDoc(doc)!.delete(id));
   }
+  // Where each element ends up: element content written or moved by this change goes there too.
+  const finalLayer = new Map<string, ViewLayer>([...next].map(([id, n]) => [id, n.from ?? 'shared']));
   if (editor) {
     const byId = new Map([...next].map(([id, n]) => [id, n.el]));
     // Only what this change touches is re-placed: its own elements and everything inside a frame it
@@ -270,19 +285,38 @@ export function applyChange(main: Y.Doc, layers: ReadonlyMap<string, Y.Doc>, cha
       // Private drafts stay private; everything else goes where the hidden-frame rule puts it.
       const to: ViewLayer = n.from === 'private' ? 'private' : underHiddenFrame(n.el, byId) ? 'editors' : 'shared';
       if (!n.changed && n.from === to) continue;
+      finalLayer.set(id, to);
       if (n.from && n.from !== to) {
         const old = docOf(n.from);
         queue(old, () => elementsOfDoc(old)!.delete(id));
+        // Its content goes along (a table's cells into / out of a hidden frame), in the same step.
+        const content = old ? contentOf(old, new Set([id])) : [];
+        if (content.length) {
+          const doc = docOf(to);
+          queue(old, () => content.forEach((c) => old!.getMap<unknown>(c.name).delete(c.key)));
+          queue(doc, () => content.forEach((c) => doc!.getMap<unknown>(c.name).set(c.key, c.value)));
+        }
       }
       const doc = docOf(to);
       queue(doc, () => elementsOfDoc(doc)!.set(id, n.el));
     }
   }
   for (const [name, entries] of Object.entries(change.collections ?? {})) {
-    const map = main.getMap<unknown>(name);
-    queue(main, () => {
-      for (const [k, v] of Object.entries(entries)) map.set(k, v);
-    });
+    if (!isElementContentCollection(name)) {
+      const map = main.getMap<unknown>(name);
+      queue(main, () => {
+        for (const [k, v] of Object.entries(entries)) map.set(k, v);
+      });
+      continue;
+    }
+    // Element content goes to its element's doc (a table created in a hidden frame: the editors layer).
+    for (const [k, v] of Object.entries(entries)) {
+      const owner = elementContentOwner(name, k);
+      const layer = (owner && finalLayer.get(owner)) || 'shared';
+      const doc = docOf(layer);
+      queue(doc, () => doc!.getMap<unknown>(name).set(k, v));
+      if (doc !== main && main.share.has(name) && main.getMap<unknown>(name).has(k)) queue(main, () => main.getMap<unknown>(name).delete(k));
+    }
   }
   for (const [doc, writes] of byDoc) doc.transact(() => writes.forEach((w) => w()), origin);
   return { created: (change.create ?? []).map((d) => d.id), updated, removed: [...removed] };

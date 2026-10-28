@@ -112,6 +112,10 @@ export function updateDiagram(editor: Editor, diagramId: string, source: string,
   const coll = editor.collection<DiagramRecord>(DIAGRAMS);
   const record = coll.get(diagramId);
   if (!record) throw new Error('This diagram can no longer be found');
+  // Hidden (or made a draft) since the dialog opened: its new source would be shared text about
+  // withheld content (KAI-230), so it is not written.
+  if (Object.values(record.ids).some((id) => (editor.layerOf(id) ?? 'shared') !== 'shared'))
+    throw new Error('This diagram is in a hidden frame now, so its source can’t be edited');
   const laid = layoutText(record.kind, source);
   const plan = planUpdate({ record, source, laid, current: (id) => editor.getElement(id) ?? undefined, keepMoved: opts.keepMoved });
   editor.transact(() => {

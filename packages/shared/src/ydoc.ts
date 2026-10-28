@@ -1,3 +1,5 @@
+import { tableCellOwner } from './elements';
+
 // Layout of the per-board Yjs document.
 //
 // Single-writer rule: every top-level shared type has exactly one owner.
@@ -10,7 +12,8 @@
 //   'comments' -> features/comments   (CommentRecord per key: t:/s:/m:/r:/x: — see elements.ts)
 //   'tags'     -> features/tags       (Tag by id)
 //   'timer'    -> features/timer      (key 'state' -> TimerState)
-//   'tableCells' -> features/table (cell text/fill per key — see TableElement in elements.ts)
+//   'tableCells' -> features/table (cell text/fill per key — see TableElement in elements.ts;
+//                                     element content: in the table's doc, ELEMENT_CONTENT_COLLECTIONS)
 //   'privateMode' -> features/private-mode (key 'session' -> PrivateModeSession)
 //   'voting'   -> features/voting     (key 'session' -> VotingSession, `${sessionId}:${userId}` -> VoteBallot;
 //                                     while results are hidden the real ballot is in the voter's
@@ -19,7 +22,8 @@
 //                                     SERVER: realtime/facilitation.ts enforces it)
 //   'estimation' -> features/estimation (planning poker; sealed estimates in the PRIVATE layer)
 //   'retro'    -> features/retro      (key 'session' -> the guided retro's phase)
-//   'presenterNotes' -> features/present (frame id -> the presenter's notes for that slide)
+//   'presenterNotes' -> features/present (frame id -> the presenter's notes for that slide; element
+//                                     content: in the frame's doc)
 //   'diagramSources' -> features/from-text (diagram id -> the source a diagram was laid out from
 //                                     and what that layout wrote; board content, so a restored
 //                                     version brings back the source that matches its diagram)
@@ -42,6 +46,41 @@ export const Y_SETTINGS = 'settings';
 
 /** Top-level types a commenter may modify (server-enforced). */
 export const COMMENTER_WRITABLE = ['comments'] as const;
+
+/**
+ * Collections whose entries BELONG to an element (KAI-230): content an element keeps outside the
+ * elements map, keyed so that the owning element's id can be read from the key. An entry lives in
+ * the SAME doc as its element — the shared doc, the `editors` layer (inside a hidden frame) or its
+ * author's private layer — and moves with it, atomically, whenever the element moves (hidden /
+ * shown frame, a sticky dragged in or out, a draft revealed or discarded). Otherwise a table in a
+ * hidden frame or a private draft would still send its cell text to every socket.
+ *
+ * Applied by the engine on every write and move (engine/store, editor/layers.ts), and by the server
+ * on requests (realtime/view.ts applyChange), reveals (layers.ts), a socket's misplaced writes and
+ * when a board loads (realtime/elementContent.ts). Both runtimes need it, so it lives here, like
+ * Y_KEPT_ON_RESTORE. Value: the id of the element a key belongs to (null: no element's).
+ *
+ * Not here on purpose (ARCHITECTURE.md "Board layers", per-collection audit): `diagramSources`
+ * (one record per diagram, many elements: from-text keeps one only while the whole diagram is
+ * shared), and social / session collections (votes, tags, timers; comments on withheld items:
+ * KAI-234).
+ */
+export const ELEMENT_CONTENT_COLLECTIONS: Readonly<Record<string, (key: string) => string | null>> = {
+  tableCells: tableCellOwner,
+  // frame id -> the presenter's notes for that frame
+  presenterNotes: (key) => key || null,
+  // activity id -> its live results (ENGAGE_RESULTS_COLLECTION; written by the server only, which
+  // also moves them: see SERVER_WRITTEN_COLLECTIONS)
+  engageResults: (key) => key || null,
+};
+
+/** The element `key` of `collection` belongs to, or null (not an element-content collection, or no owner). */
+export function elementContentOwner(collection: string, key: string): string | null {
+  const owner = Object.prototype.hasOwnProperty.call(ELEMENT_CONTENT_COLLECTIONS, collection) ? ELEMENT_CONTENT_COLLECTIONS[collection] : null;
+  return owner ? owner(key) : null;
+}
+
+export const isElementContentCollection = (name: string): boolean => Object.prototype.hasOwnProperty.call(ELEMENT_CONTENT_COLLECTIONS, name);
 
 /**
  * Top-level types that restoring an older version (version history) leaves as they are: social
@@ -139,6 +178,13 @@ export interface VotingSession {
  * the shared doc or a layer, is undone in the same transaction (realtime/serverCollections.ts).
  */
 export const ENGAGE_RESULTS_COLLECTION = 'engageResults';
+
+/**
+ * Collections only the SERVER writes (apps/server/src/modules/realtime/serverCollections.ts undoes
+ * any socket's change to them). When one of them is also element content
+ * (ELEMENT_CONTENT_COLLECTIONS), the server — never a client — keeps each entry with its element.
+ */
+export const SERVER_WRITTEN_COLLECTIONS: readonly string[] = [ENGAGE_RESULTS_COLLECTION];
 
 export interface ActivityResults {
   activityId: string;

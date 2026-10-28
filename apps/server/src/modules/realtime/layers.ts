@@ -20,7 +20,8 @@
 // and relays layer updates like the shared doc's, re-checking access per receiving socket. The
 // instance where a change is made (a socket's write, or a reveal) publishes and saves it.
 import * as Y from 'yjs';
-import type { BoardLayer, LayerOp, Role } from '@freero/shared';
+import { isElementContentCollection, Y_ELEMENTS, type BoardLayer, type LayerOp, type Role } from '@freero/shared';
+import { contentOf, type ContentEntry } from './elementContent';
 
 export const EDITORS_LAYER = 'editors';
 export const privateLayerOf = (userId: string) => `u:${userId}`;
@@ -83,11 +84,17 @@ export function parseLayerOp(json: string): LayerOp | null {
  * entries are written to `main` in ONE transaction, then deleted from their layers. Values that are
  * shared types (not plain JSON) are never revealed. Callers pass only the layers that take part
  * (see the header). Returns how many entries were affected.
+ *
+ * Revealing or discarding drafts ('elements') takes their element content along (KAI-230: a private
+ * table's cells, ELEMENT_CONTENT_COLLECTIONS) in the same transactions. Element content is never
+ * revealed on its own: an op naming such a collection does nothing.
  */
 export function applyLayerOp(op: LayerOp, main: Y.Doc, layers: Map<string, Y.Doc>, origin: unknown): number {
+  if (isElementContentCollection(op.collection)) return 0;
   const prefix = op.prefix ?? '';
-  const hits: Array<{ doc: Y.Doc; keys: string[] }> = [];
+  const hits: Array<{ doc: Y.Doc; keys: string[]; content: ContentEntry[] }> = [];
   const reveal: Array<[string, unknown]> = [];
+  const revealContent: ContentEntry[] = [];
   for (const [name, doc] of layers) {
     if (!isPrivateLayer(name) || !doc.share.has(op.collection)) continue;
     const map = doc.getMap<unknown>(op.collection);
@@ -97,19 +104,24 @@ export function applyLayerOp(op: LayerOp, main: Y.Doc, layers: Map<string, Y.Doc
       keys.push(key);
       if (!(value instanceof Y.AbstractType)) reveal.push([key, value]);
     }
-    if (keys.length) hits.push({ doc, keys });
+    if (!keys.length) continue;
+    const content = op.collection === Y_ELEMENTS ? contentOf(doc, new Set(keys)) : [];
+    revealContent.push(...content);
+    hits.push({ doc, keys, content });
   }
   if (!hits.length) return 0;
-  if (op.type === 'reveal' && reveal.length) {
+  if (op.type === 'reveal' && (reveal.length || revealContent.length)) {
     const target = main.getMap<unknown>(op.collection);
     main.transact(() => {
       for (const [key, value] of reveal) target.set(key, value);
+      for (const c of revealContent) main.getMap<unknown>(c.name).set(c.key, c.value);
     }, origin);
   }
-  for (const { doc, keys } of hits) {
+  for (const { doc, keys, content } of hits) {
     const map = doc.getMap<unknown>(op.collection);
     doc.transact(() => {
       for (const key of keys) map.delete(key);
+      for (const c of content) doc.getMap<unknown>(c.name).delete(c.key);
     }, origin);
   }
   return hits.reduce((n, h) => n + h.keys.length, 0);
