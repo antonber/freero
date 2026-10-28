@@ -403,7 +403,6 @@ export interface SsoConnectionInfo {
   breakGlassUserId: string | null;
   /** Role of people who join through their first SSO sign-in. */
   defaultRole: Exclude<WorkspaceRole, 'owner'>;
-  sessionHours: number;
   saml: { entityId: string; ssoUrl: string; certificates: Array<{ subject: string; validTo: string; fingerprint: string }> } | null;
   oidc: { issuer: string; clientId: string; hasClientSecret: boolean } | null;
   /** When a sign-in last went through it (enforcing needs one). */
@@ -413,7 +412,6 @@ export interface SsoConnectionInput {
   protocol: SsoProtocol;
   enabled: boolean;
   defaultRole?: Exclude<WorkspaceRole, 'owner'>;
-  sessionHours?: number;
   /** SAML: the IdP's metadata XML, or its parts. */
   samlMetadataXml?: string;
   samlEntityId?: string;
@@ -439,7 +437,8 @@ export interface SsoDiscovery {
 // authenticated with `Authorization: Bearer <token>`; the token names the workspace.
 // GET    /api/workspaces/:id/scim               -> ScimSettings
 // POST   /api/workspaces/:id/scim/tokens  body { label } -> { token: string (shown once), settings: ScimSettings }
-// DELETE /api/workspaces/:id/scim/tokens/:tokenId -> ScimSettings   (rotation: create a new one, then revoke the old)
+// POST   /api/workspaces/:id/scim/tokens/:tokenId/rotate -> { token, settings }  (a new token replaces it at once)
+// DELETE /api/workspaces/:id/scim/tokens/:tokenId -> ScimSettings   (or overlap: create a new one, then revoke the old)
 // PUT    /api/workspaces/:id/scim/groups/:groupId body { mapping: ScimGroupMapping | null } -> ScimSettings
 export interface ScimTokenInfo {
   id: string;
@@ -977,6 +976,31 @@ export const AUDIT_ACTIONS = {
   'moderation.upload.purge': 'Freero purged a removed file (moderation)',
   'moderation.user.suspend': 'Freero suspended an account (moderation)',
   'moderation.user.restore': 'Freero lifted an account suspension (moderation)',
+  // Single sign-on (modules/sso).
+  'sso.domain_added': 'Added a domain for single sign-on',
+  'sso.domain_verified': 'Verified a domain (DNS)',
+  'sso.domain_removed': 'Removed a domain',
+  'sso.connection_saved': 'Changed the identity provider',
+  'sso.connection_removed': 'Removed the identity provider',
+  'sso.enforced': 'Enforced single sign-on',
+  'sso.unenforced': 'Stopped enforcing single sign-on',
+  'sso.login': 'Signed in with single sign-on',
+  'sso.login_refused': 'Single sign-on refused',
+  'sso.member_provisioned': 'Joined through single sign-on (just in time)',
+  // Provisioning (modules/scim).
+  'scim.token_created': 'Created a provisioning token',
+  'scim.token_rotated': 'Rotated a provisioning token',
+  'scim.token_revoked': 'Revoked a provisioning token',
+  'scim.user_provisioned': 'Directory provisioned someone',
+  'scim.user_deprovisioned': 'Directory deactivated someone',
+  'scim.user_reactivated': 'Directory reactivated someone',
+  'scim.user_deleted': 'Directory deleted someone',
+  'scim.group_mapped': 'Changed what a directory group grants',
+  // Data exports (modules/privacy).
+  'account.export_requested': 'Asked for a copy of their data',
+  'account.export_downloaded': 'Downloaded a copy of their data',
+  'workspace.export_requested': 'Asked for an export of the workspace',
+  'workspace.export_downloaded': 'Downloaded an export of the workspace',
 } as const;
 export type AuditAction = keyof typeof AUDIT_ACTIONS;
 export type AuditValue = string | number | boolean | null | string[];
