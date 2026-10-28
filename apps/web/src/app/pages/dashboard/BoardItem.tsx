@@ -72,10 +72,12 @@ export function boardMenuItems(b: BoardSummary, actions: BoardActions, projects:
         ]
       : []),
     ...(b.permissions.canTransfer ? [{ id: 'transfer', label: 'Transfer ownership…', icon: Crown, onSelect: () => actions.transfer(b) } satisfies MenuItem] : []),
-    { divider: true },
-    b.role === 'owner'
-      ? { id: 'delete', label: 'Delete', icon: Trash, danger: true, onSelect: () => actions.remove(b) }
-      : { id: 'leave', label: 'Leave board', icon: LogOut, danger: true, onSelect: () => actions.leave(b) },
+    // Only a board you were invited to can be left; team or link access ends with the workspace / link.
+    ...(b.role === 'owner'
+      ? [{ divider: true } as const, { id: 'delete', label: 'Delete', icon: Trash, danger: true, onSelect: () => actions.remove(b) }]
+      : b.member
+        ? [{ divider: true } as const, { id: 'leave', label: 'Leave board', icon: LogOut, danger: true, onSelect: () => actions.leave(b) }]
+        : []),
   ];
 }
 

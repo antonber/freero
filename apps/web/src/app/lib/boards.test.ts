@@ -15,6 +15,7 @@ const b = (id: string, p: Partial<BoardSummary>): BoardSummary => ({
   workspaceId: 'w1',
   projectId: null,
   team: null,
+  member: false,
   permissions: { canExport: true, canShareExternally: true, maxLinkAccess: 'editor', canMove: true, canTransfer: true },
   createdAt: 0,
   updatedAt: 0,

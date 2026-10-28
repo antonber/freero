@@ -21,7 +21,7 @@ const MEMBERS = [member('u1', 'Ada', 'owner'), member('u2', 'Bob', 'editor'), me
 const board = (role: Role): BoardSummary => ({
   id: 'b1', title: 'Roadmap', description: '', ownerId: 'u1', ownerName: 'Ada', role, starred: false,
   thumbnail: null, linkAccess: 'viewer', createdAt: 0, updatedAt: 0, lastOpenedAt: null,
-  workspaceId: 'w1', projectId: null, team: null,
+  workspaceId: 'w1', projectId: null, team: null, member: role !== 'owner',
   permissions: { canExport: true, canShareExternally: true, maxLinkAccess: 'editor', canMove: role === 'owner', canTransfer: role === 'owner' },
 });
 

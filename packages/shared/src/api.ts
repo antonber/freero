@@ -43,6 +43,11 @@ export interface BoardSummary {
    * members of its private project, plus the workspace's owners/admins) can edit it.
    */
   team: { name: string; private: boolean } | null;
+  /**
+   * You were invited to this board itself (a board membership you can leave). False when your
+   * access comes only from ownership, your team or the link.
+   */
+  member: boolean;
   /** What the current user may do beyond their role, under the workspace's sharing policies. */
   permissions: BoardPermissions;
 }

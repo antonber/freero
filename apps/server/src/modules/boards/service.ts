@@ -88,9 +88,10 @@ export async function toSummary(
   userId: string,
   role: Role,
   access: BoardWorkspaceAccess,
-  extra?: { starred?: boolean; lastOpenedAt?: number | null; ownerName?: string },
+  extra?: { starred?: boolean; lastOpenedAt?: number | null; ownerName?: string; member?: boolean },
 ): Promise<BoardSummary> {
   const starred = extra?.starred ?? (await repo.isStarred(board.id, userId));
+  const member = extra?.member ?? (await getMemberRole(board.id, userId)) !== null;
   const lastOpenedAt =
     extra && 'lastOpenedAt' in extra ? (extra.lastOpenedAt ?? null) : await repo.lastOpenedAt(board.id, userId);
   const ownerName = extra?.ownerName ?? (await getUser(board.ownerId))?.name ?? 'Unknown';
@@ -110,6 +111,7 @@ export async function toSummary(
     workspaceId: board.workspaceId,
     projectId: board.projectId,
     team: access.team,
+    member,
     permissions: permissionsFor(board, userId, role, access),
     ...(board.deletedAt !== null ? { deletedAt: board.deletedAt, purgeAt: board.deletedAt + TRASH_RETENTION_MS } : {}),
   };
@@ -170,6 +172,7 @@ export async function listBoards(
     out.push(
       await toSummary(board, userId, role, access, {
         starred: stars.has(board.id),
+        member: memberships.has(board.id),
         lastOpenedAt: opens.get(board.id) ?? null,
         ownerName: owners.get(board.ownerId)?.name ?? 'Unknown',
       }),
@@ -319,7 +322,7 @@ async function listTrash(userId: string, workspaceId: string, q: string): Promis
   for (const b of boards) {
     if (needle && !b.title.toLowerCase().includes(needle)) continue;
     // Only owners see (and restore) trashed boards; stars/opens don't matter here.
-    out.push(await toSummary(b, userId, 'owner', accessOf(b), { starred: false, lastOpenedAt: null, ownerName: me?.name ?? 'Unknown' }));
+    out.push(await toSummary(b, userId, 'owner', accessOf(b), { starred: false, lastOpenedAt: null, ownerName: me?.name ?? 'Unknown', member: false }));
   }
   return out;
 }
