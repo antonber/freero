@@ -25,7 +25,8 @@ export { mayDownload, mayShareExternally, isFullMember } from './roles';
 // The organization's directory (SSO just-in-time sign-in, SCIM provisioning).
 export {
   applyDirectoryMembership,
-  removeDirectoryMember,
+  setDirectoryDeactivated,
+  isDeactivatedMember,
   projectOfWorkspace,
   setDirectoryProjectMembership,
   type DirectoryRole,
