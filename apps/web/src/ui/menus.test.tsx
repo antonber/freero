@@ -41,3 +41,23 @@ describe('menus and selects take focus as they open', () => {
     expect(document.activeElement?.hasAttribute('data-fr-item') && document.activeElement.textContent).toBe('Medium');
   });
 });
+
+describe('disabled menu items that explain why', () => {
+  it('stay inert when clicked (they are not native-disabled, so they can show their reason)', () => {
+    const anchor = document.createElement('button');
+    document.body.appendChild(anchor);
+    let renamed = 0;
+    let closed = 0;
+    const items = [
+      { id: 'rename', label: 'Rename', disabled: true, disabledReason: 'Only editors can rename this board', onSelect: () => renamed++ },
+      { id: 'open', label: 'Open', onSelect: () => {} },
+    ];
+    act(() => root.render(<Menu open onClose={() => closed++} anchor={anchor} items={items} />));
+    const rename = [...document.querySelectorAll<HTMLButtonElement>('[data-fr-item]')].find((b) => b.textContent === 'Rename')!;
+    expect(rename.getAttribute('aria-disabled')).toBe('true');
+    act(() => rename.click());
+    expect({ renamed, closed }).toEqual({ renamed: 0, closed: 0 });
+    // The menu opens on the first item that can actually be chosen.
+    expect(document.activeElement?.textContent).toBe('Open');
+  });
+});

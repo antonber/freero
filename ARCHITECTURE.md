@@ -364,7 +364,7 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
 `IconButton` {icon, label, active?, size?: 32|40, shortcut?, tooltipSide?} ·
 `ToolbarButton` {label, shortcut?, wide?, children} (format-toolbar button showing a value — font, size, a color sample; never a native `title`) ·
 `Tooltip` {content, shortcut?, side?, children} · `Popover` {open, onClose, anchor: HTMLElement|DOMRect|null, side?, align?, autoFocus?, escapeToContent?, children} ·
-`Menu` {open, onClose, anchor, items: MenuItem[]} where MenuItem = {id, label, icon?, shortcut?, danger?, disabled?, onSelect, submenu?: MenuItem[]} | {divider: true} | {heading: string} ·
+`Menu` {open, onClose, anchor, items: MenuItem[]} where MenuItem = {id, label, icon?, shortcut?, danger?, disabled?, disabledReason? (tooltip saying why; give one whenever the reason isn't obvious), onSelect, submenu?: MenuItem[]} | {divider: true} | {heading: string} ·
 `Modal` {open, onClose, title, width?, footer?, children} · `Input`, `TextArea`, `Select` {options, value, onChange},
 `Toggle`, `Slider` {min, max, step, value, onChange} · `ColorSwatches` {colors, value, onChange, allowCustom?} ·
 `Divider` {vertical?} · `Avatar` {name, color, src?, size?} · `AvatarStack` {users, max?} · `Kbd` ·
