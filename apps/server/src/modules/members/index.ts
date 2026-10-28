@@ -24,6 +24,7 @@ export async function ownershipTransferred(
   await repo.removeMember(boardId, newOwnerId);
   if (previousOwnerRole) await repo.upsertMember(boardId, previousOwnerId, previousOwnerRole, Date.now());
 }
+export { onBoardShared, type BoardSharedEvent } from './events';
 
 /** The explicit membership role of a user on a board (not counting ownership or link access). */
 export async function getMemberRole(boardId: string, userId: string): Promise<Role | null> {

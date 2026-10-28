@@ -271,6 +271,84 @@
   box-shadow: var(--fr-focus-ring);
 }
 
+/* @mentions: the text box with its member list (above it, in flow: never clipped) */
+.fr-cm-mentionbox {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fr-cm-mentions {
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius);
+  background: var(--fr-surface);
+  box-shadow: var(--fr-shadow-sm);
+}
+
+.fr-cm-mentions__empty {
+  display: flex;
+  justify-content: center;
+  padding: 6px;
+}
+
+.fr-cm-mentions__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: var(--fr-radius-sm);
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.fr-cm-mentions__item.is-active {
+  background: var(--fr-primary-soft);
+}
+
+.fr-cm-mentions__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-cm-mentions__invite {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+.fr-cm-mentions__icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--fr-surface-3);
+  color: var(--fr-ink-2);
+}
+
+.fr-cm-mention {
+  padding: 0 3px;
+  border-radius: 4px;
+  background: var(--fr-primary-soft);
+  color: var(--fr-primary);
+  font-weight: 600;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.fr-cm-mention.is-me {
+  background: var(--fr-primary);
+  color: var(--fr-primary-ink, #fff);
+}
+
 .fr-cm-reply {
   display: flex;
   align-items: flex-end;

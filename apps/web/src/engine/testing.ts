@@ -57,6 +57,8 @@ export function createTestBoard(opts: TestBoardOptions): TestBoard {
       notify: () => undefined,
       serverNow: opts.now ?? (() => Date.now()),
       listMembers: async () => opts.members ?? [user],
+      lookupUsers: async (ids) => (opts.members ?? [user]).filter((m) => ids.includes(m.id)),
+      inviteMember: async () => Promise.reject(new Error('No invites in tests')),
       unfurl: async () => Promise.reject(new Error('No link previews in tests')),
       listTemplates: async () => templates.filter((t) => t.ownerId === user.id).map(({ content: _c, ...info }) => info).reverse(),
       async loadTemplate(id) {

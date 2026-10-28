@@ -1,11 +1,12 @@
 import { Router } from 'express';
-import type { AcceptInviteResponse, BoardMember, InviteResponse, Role, User } from '@freero/shared';
+import type { AcceptInviteResponse, BoardMember, BoardPerson, InviteResponse, Role, User } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { badRequest, forbidden, handle, HttpError, notFound } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
 import { currentUser, findUserByEmail, getUser, getUsers, normalizeEmail, requireUser } from '../auth/index';
 import { requireBoardAccess } from '../boards/index';
-import { refreshBoardAccess } from '../realtime/index';
+import { commentPeopleOf, refreshBoardAccess } from '../realtime/index';
+import { boardShared } from './events';
 import { acceptInvite, inviteByEmail, listPending, previewInvite, resendInvite } from './invites';
 import * as repo from './repo';
 import { atLeast, isMemberRole } from './roles';
@@ -25,6 +26,7 @@ const toMember = (u: User, role: Role, withEmail: boolean): BoardMember => ({
 
 const boardGone = () => notFound('Board not found');
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_PEOPLE = 100;
 
 export default function memberRoutes(_ctx: ServerContext): Router {
   const r = Router();
@@ -89,7 +91,26 @@ export default function memberRoutes(_ctx: ServerContext): Router {
           throw new HttpError(409, `${invitee.name} already has access. Only the board owner can change their role.`);
       }
       await refreshBoardAccess(boardId);
+      await boardShared({ boardId, boardTitle: title, userId: invitee.id, role, byId: me.id });
       res.status(201).json({ member: toMember(invitee, role, true) } satisfies InviteResponse);
+    }),
+  );
+
+  // Profiles for ids a board shows (comment authors, @mentions), including people who left it.
+  r.get(
+    '/boards/:id/people',
+    requireUser,
+    handle(async (req, res) => {
+      const boardId = req.params.id;
+      const { ownerId } = await requireBoardAccess(boardId, currentUser(req).id);
+      const ids = [...new Set(String(req.query.ids ?? '').split(',').filter(Boolean))];
+      if (ids.length > MAX_PEOPLE) throw badRequest(`At most ${MAX_PEOPLE} ids`);
+      const onBoard = new Set([ownerId, ...(await repo.listByBoard(boardId)).map((m) => m.userId)]);
+      // Only people the board already shows somewhere: never a lookup of arbitrary accounts.
+      const inComments = ids.some((id) => !onBoard.has(id)) ? await commentPeopleOf(boardId) : new Set<string>();
+      const users = await getUsers(ids.filter((id) => onBoard.has(id) || inComments.has(id)));
+      const people: BoardPerson[] = [...users.values()].map((u) => ({ id: u.id, name: u.name, color: u.color, avatarUrl: u.avatarUrl }));
+      res.json({ people });
     }),
   );
 

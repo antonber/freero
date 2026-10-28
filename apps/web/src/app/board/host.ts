@@ -7,7 +7,9 @@ import {
   deleteTemplate,
   fetchImage,
   importImage,
+  inviteMember,
   listMembers,
+  lookupUsers,
   listTemplates,
   loadTemplate,
   renameBoard,
@@ -67,6 +69,8 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     notify: deps.notify,
     serverNow,
     listMembers: () => listMembers(board.id),
+    lookupUsers: (ids) => lookupUsers(board.id, ids),
+    inviteMember: (email, role) => inviteMember(board.id, email, role),
     unfurl,
     listTemplates,
     loadTemplate,
@@ -112,6 +116,8 @@ export function createLocalHost(title: string, deps: Omit<HostDeps, 'user' | 'op
     notify: deps.notify,
     serverNow: () => Date.now(),
     listMembers: async () => [user],
+    lookupUsers: async (ids) => (ids.includes(user.id) ? [user] : []),
+    inviteMember: async () => Promise.reject(new Error('Inviting people needs a real board — the local sandbox is offline.')),
     // Offline sandbox: no previews (the embed card shows the plain link).
     unfurl: async () => Promise.reject(new Error('Link previews need a real board.')),
     // Offline sandbox: saved templates live on the server (no account here).

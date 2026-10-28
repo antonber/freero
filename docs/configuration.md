@@ -122,6 +122,13 @@ connect and disconnect providers in Account settings.
 |---|---|---|
 | `GEOIP_DB_PATH` | — | Path to a MaxMind-format database, e.g. GeoLite2-City.mmdb or GeoLite2-Country.mmdb. With it, the signed-in devices list shows "City, Country" (or the country); without it, the masked network (`203.0.113.x`). Lookups are local and in memory: addresses are never sent anywhere. The file is not shipped with Freero (license): download it from MaxMind with a free account (or use another `.mmdb` provider such as DB-IP Lite) and refresh it periodically (MaxMind's `geoipupdate`); the server reads it at startup, so restart after an update. A missing or unreadable file stops the server. Behind a proxy, set `TRUST_PROXY` so the real client address is used. |
 
+## Notifications
+
+| Variable | Default | Description |
+|---|---|---|
+| `NOTIFY_EMAIL_DELAY_SECONDS` | `900` | How long a notification (mention, reply, board shared with you) waits before it is emailed. Everything a person gets meanwhile goes out as one digest; what they read in the app by then is not emailed. Only verified addresses get these emails; each person turns them off per type in `/settings`, or all at once with the unsubscribe link. |
+| `NOTIFY_EMAIL_INTERVAL_SECONDS` | `60` | How often each instance looks for digests that are due. One instance sends at a time (Postgres advisory lock). |
+
 ## Observability
 
 | Variable | Default | Description |

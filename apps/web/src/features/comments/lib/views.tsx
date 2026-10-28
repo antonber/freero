@@ -1,11 +1,14 @@
 // Thread popover content: messages, reactions, edit/delete, reply box, resolve, and the
 // composer for a new thread.
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowUp, Check, MoreHorizontal, Pencil, RotateCcw, SmilePlus, Trash2, X } from 'lucide-react';
-import { usePeers, type Editor } from '@engine';
+import type { Editor, HostUser } from '@engine';
 import { Avatar, Button, IconButton, Menu, Popover, Tooltip, formatShortcut } from '@ui';
 import type { CommentMessage, CommentThread } from '@freero/shared';
+import { MentionText, MessageText } from './composer';
+import { decodeMentions, encodeMentions, type MentionPick } from './mentions';
 import { MESSAGE_REACTIONS, colorFor, relativeTime } from './model';
+import { usePeopleOf } from './people';
 import {
   canDeleteThread,
   deleteMessage,
@@ -28,54 +31,27 @@ export function useNow(editor: Editor, intervalMs = 30_000): number {
   return now;
 }
 
-/** Enter sends (like every chat and comment box); Shift+Enter is a new line. IME composition never sends. */
-const isSend = (e: KeyboardEvent) => e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing;
-
-/** Grows with its content up to a cap. */
-function AutoText(props: {
-  value: string;
-  onChange: (v: string) => void;
-  onSubmit: () => void;
-  placeholder: string;
-  autoFocus?: boolean;
-  label: string;
-  /** Handles Escape here (e.g. cancel an edit) instead of letting it close the popover. */
-  onEscape?: () => void;
-}) {
-  const ref = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(160, el.scrollHeight)}px`;
-  }, [props.value]);
-  // Focused while mounting (the Popover keeps it), caret at the end of any existing text.
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!props.autoFocus || !el) return;
-    el.focus({ preventScroll: true });
-    el.setSelectionRange(el.value.length, el.value.length);
-  }, [props.autoFocus]);
-  return (
-    <textarea
-      ref={ref}
-      className="fr-cm-input"
-      rows={1}
-      value={props.value}
-      placeholder={props.placeholder}
-      aria-label={props.label}
-      onChange={(e) => props.onChange(e.target.value)}
-      onKeyDown={(e) => {
-        if (isSend(e)) {
-          e.preventDefault();
-          props.onSubmit();
-        } else if (e.key === 'Escape' && props.onEscape) {
-          e.preventDefault();
-          props.onEscape();
-        }
-      }}
-    />
-  );
+/** Composer text + the people picked from the @ list (turned into mention tokens on send). */
+function useMentionDraft(initial = '') {
+  const [text, setText] = useState(initial);
+  const [picks, setPicks] = useState<MentionPick[]>([]);
+  return {
+    text,
+    setText,
+    picks,
+    setPicks,
+    /** What to store. */
+    encoded: () => encodeMentions(text, picks),
+    load(stored: string, nameOf: (id: string) => string | undefined) {
+      const d = decodeMentions(stored, nameOf);
+      setText(d.text);
+      setPicks(d.picks);
+    },
+    clear() {
+      setText('');
+      setPicks([]);
+    },
+  };
 }
 
 function SendHint() {
@@ -94,20 +70,30 @@ export function authorColor(m: Pick<CommentMessage, 'authorColor' | 'authorId'>)
 // New thread composer
 // ---------------------------------------------------------------------------
 export function DraftComposer({ editor }: { editor: Editor }) {
-  const [text, setText] = useState('');
-  const send = () => submitDraft(editor, text);
+  const d = useMentionDraft();
+  const send = () => submitDraft(editor, d.encoded());
   return (
     <div className="fr-cm-composer">
       <div className="fr-cm-composer__row">
         <Avatar name={editor.user.name} color={editor.user.color} src={editor.user.avatarUrl} size={28} />
-        <AutoText value={text} onChange={setText} onSubmit={send} placeholder="Add a comment…" label="Comment" autoFocus />
+        <MentionText
+          editor={editor}
+          value={d.text}
+          onChange={d.setText}
+          picks={d.picks}
+          onPicks={d.setPicks}
+          onSubmit={send}
+          placeholder="Add a comment… (@ to mention)"
+          label="Comment"
+          autoFocus
+        />
       </div>
       <div className="fr-cm-composer__foot">
         <SendHint />
         <Button size="sm" variant="ghost" onClick={() => setUi(editor, { draft: null })}>
           Cancel
         </Button>
-        <Button size="sm" variant="primary" disabled={!text.trim()} onClick={send}>
+        <Button size="sm" variant="primary" disabled={!d.text.trim()} onClick={send}>
           Comment
         </Button>
       </div>
@@ -151,21 +137,22 @@ function MessageRow(props: {
   message: CommentMessage;
   canWrite: boolean;
   names: Map<string, string>;
+  people: Record<string, HostUser>;
   now: number;
   editing: boolean;
   onEdit: (on: boolean) => void;
 }) {
-  const { editor, thread, message: m, canWrite, names, now, editing, onEdit } = props;
-  const [draft, setDraft] = useState(m.text);
+  const { editor, thread, message: m, canWrite, names, people, now, editing, onEdit } = props;
+  const draft = useMentionDraft(m.text);
   const mine = m.authorId === editor.user.id;
   const reactions = Object.entries(m.reactions).filter(([, users]) => users.length);
   const save = () => {
-    if (draft.trim()) editMessage(editor, thread.id, m.id, draft);
+    if (draft.text.trim()) editMessage(editor, thread.id, m.id, draft.encoded());
     onEdit(false);
   };
   return (
     <div className={`fr-cm-msg${editing ? ' is-editing' : ''}`}>
-      <Avatar name={m.authorName} color={authorColor(m)} size={28} />
+      <Avatar name={m.authorName} color={authorColor(m)} src={people[m.authorId]?.avatarUrl} size={28} />
       <div className="fr-cm-msg__body">
         <div className="fr-cm-msg__head">
           <span className="fr-cm-msg__name">{m.authorName}</span>
@@ -185,7 +172,7 @@ function MessageRow(props: {
                     label="Edit"
                     size={32}
                     onClick={() => {
-                      setDraft(m.text);
+                      draft.load(m.text, (id) => people[id]?.name);
                       onEdit(true);
                     }}
                   />
@@ -197,19 +184,32 @@ function MessageRow(props: {
         </div>
         {editing ? (
           <div className="fr-cm-edit">
-            <AutoText value={draft} onChange={setDraft} onSubmit={save} onEscape={() => onEdit(false)} placeholder="Edit comment" label="Edit comment" autoFocus />
+            <MentionText
+              editor={editor}
+              value={draft.text}
+              onChange={draft.setText}
+              picks={draft.picks}
+              onPicks={draft.setPicks}
+              onSubmit={save}
+              onEscape={() => onEdit(false)}
+              placeholder="Edit comment"
+              label="Edit comment"
+              autoFocus
+            />
             <div className="fr-cm-composer__foot">
               <SendHint />
               <Button size="sm" variant="ghost" onClick={() => onEdit(false)}>
                 Cancel
               </Button>
-              <Button size="sm" variant="primary" disabled={!draft.trim()} onClick={save}>
+              <Button size="sm" variant="primary" disabled={!draft.text.trim()} onClick={save}>
                 Save
               </Button>
             </div>
           </div>
         ) : (
-          <div className="fr-cm-msg__text">{m.text}</div>
+          <div className="fr-cm-msg__text">
+            <MessageText text={m.text} people={people} meId={editor.user.id} />
+          </div>
         )}
         {reactions.length > 0 && (
           <div className="fr-cm-reactions">
@@ -255,17 +255,17 @@ export function ThreadView({
   editingId: string | null;
   setEditingId: (id: string | null) => void;
 }) {
-  const [text, setText] = useState('');
+  const d = useMentionDraft();
   const [menu, setMenu] = useState(false);
   const moreRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const now = useNow(editor);
-  const peers = usePeers();
+  const people = usePeopleOf(editor, thread.messages);
   const canWrite = editor.can('commenter');
   const canDelete = canDeleteThread(editor, thread);
   const names = new Map<string, string>();
-  for (const p of peers) names.set(p.user.id, p.user.name);
   for (const m of thread.messages) names.set(m.authorId, m.authorName);
+  for (const [id, u] of Object.entries(people)) names.set(id, u.name);
 
   // Keep the newest message in view as replies arrive.
   const count = thread.messages.length;
@@ -275,9 +275,9 @@ export function ThreadView({
   }, [count]);
 
   const send = () => {
-    if (!text.trim()) return;
-    reply(editor, thread.id, text);
-    setText('');
+    if (!d.text.trim()) return;
+    reply(editor, thread.id, d.encoded());
+    d.clear();
   };
 
   return (
@@ -331,6 +331,7 @@ export function ThreadView({
             message={m}
             canWrite={canWrite}
             names={names}
+            people={people}
             now={now}
             editing={editingId === m.id}
             onEdit={(on) => setEditingId(on ? m.id : null)}
@@ -339,8 +340,18 @@ export function ThreadView({
       </div>
       {canWrite && !editingId && (
         <div className="fr-cm-reply">
-          <AutoText value={text} onChange={setText} onSubmit={send} placeholder="Reply…" label="Reply" autoFocus={!quiet} />
-          <IconButton icon={ArrowUp} label="Send reply" shortcut="Enter" size={32} variant="solid" disabled={!text.trim()} onClick={send} />
+          <MentionText
+            editor={editor}
+            value={d.text}
+            onChange={d.setText}
+            picks={d.picks}
+            onPicks={d.setPicks}
+            onSubmit={send}
+            placeholder="Reply… (@ to mention)"
+            label="Reply"
+            autoFocus={!quiet}
+          />
+          <IconButton icon={ArrowUp} label="Send reply" shortcut="Enter" size={32} variant="solid" disabled={!d.text.trim()} onClick={send} />
         </div>
       )}
     </div>

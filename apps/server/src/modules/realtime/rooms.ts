@@ -41,6 +41,7 @@ import { isShared, publish, subscribe, subscribedInstances, type Subscription } 
 import { getUser } from '../auth/index';
 import { getBoardAccess, touchBoard } from '../boards/index';
 import { sanitizeAwarenessUpdate, withoutClients, type AwarenessIdentity } from './awareness';
+import { commentPeople, COMMENTS_COLLECTION, emitCommentMessages, hasCommentListeners, messageEvents } from './comments';
 import * as store from './docStore';
 import { decideUpdate } from './filter';
 import * as layerStore from './layerStore';
@@ -73,9 +74,6 @@ const RESYNC_MIN_INTERVAL_MS = 2000;
 const IDENTITY_TTL_MS = 5000;
 /** Bytes a socket may send before it has joined (auth + doc load); more closes it. */
 const MAX_QUEUED_BYTES = 16 * 1024 * 1024;
-
-/** The comments feature's collection (layout: CommentRecord in @freero/shared). */
-const COMMENTS_COLLECTION = 'comments';
 
 /** Origin of the persisted state applied on load: not a change, so neither broadcast nor saved. */
 const LOAD_ORIGIN = Symbol('load');
@@ -228,6 +226,14 @@ class Room {
         if (origin !== REMOTE_ORIGIN && origin !== 'timeout') this.toPeers({ type: 'awareness', update });
       },
     );
+
+    // Comment messages written through OUR sockets (comments.ts): attributed to the socket's user.
+    const comments = this.doc.getMap<unknown>(COMMENTS_COLLECTION);
+    comments.observe((event, tr) => {
+      const conn = tr.origin instanceof WebSocket ? this.conns.get(tr.origin) : undefined;
+      if (!conn || !hasCommentListeners()) return;
+      emitCommentMessages(messageEvents(this.id, comments, event.changes.keys, conn.userId));
+    });
 
     this.ready = this.open();
   }
@@ -1057,6 +1063,19 @@ export async function renameCommentAuthor(boardId: string, userId: string, name:
   });
   await room.flush();
   if (room.conns.size === 0 && room.pendingJoins === 0 && !room.destroyed) room.scheduleUnload();
+}
+
+/** User ids that appear in the board's comments (authors, @mentions), from the live doc if loaded. */
+export async function commentPeopleOf(boardId: string): Promise<Set<string>> {
+  const state = await snapshotBoardDoc(boardId);
+  if (!state) return new Set();
+  const doc = new Y.Doc();
+  try {
+    Y.applyUpdate(doc, state);
+    return commentPeople(doc.getMap<unknown>(COMMENTS_COLLECTION));
+  } finally {
+    doc.destroy();
+  }
 }
 
 /** Saves every loaded doc (graceful shutdown). */

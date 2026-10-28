@@ -99,3 +99,22 @@ export async function listMembers(id: string): Promise<HostUser[]> {
   const { members } = await api.listMembers(id);
   return members.map((m) => ({ id: m.userId, name: m.name, color: m.color, avatarUrl: m.avatarUrl }));
 }
+
+const LOOKUP_CHUNK = 100; // the server's limit per request
+
+export async function lookupUsers(boardId: string, ids: string[]): Promise<HostUser[]> {
+  const unique = [...new Set(ids)];
+  const out: HostUser[] = [];
+  for (let i = 0; i < unique.length; i += LOOKUP_CHUNK) out.push(...(await api.boardPeople(boardId, unique.slice(i, i + LOOKUP_CHUNK))).people);
+  return out;
+}
+
+export async function inviteMember(boardId: string, email: string, role: 'editor' | 'commenter' | 'viewer'): ReturnType<Host['inviteMember']> {
+  // Someone who already has access keeps their role (an owner's invite would otherwise set it).
+  const { members } = await api.listMembers(boardId);
+  const existing = members.find((m) => m.email?.toLowerCase() === email.trim().toLowerCase());
+  if (existing) return { user: { id: existing.userId, name: existing.name, color: existing.color, avatarUrl: existing.avatarUrl } };
+  const r = await api.invite(boardId, { email, role });
+  if (r.member) return { user: { id: r.member.userId, name: r.member.name, color: r.member.color, avatarUrl: r.member.avatarUrl } };
+  return { pendingEmail: r.invite.email };
+}

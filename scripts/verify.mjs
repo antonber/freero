@@ -1698,6 +1698,154 @@ async function accountPurgeChecks() {
 }
 
 // ---------------------------------------------------------------------------
+// Notifications, on their own server with a 5 s email delay and a 1 s digest interval: sharing a board,
+// an @mention and a reply written through real Yjs sockets become notifications for the right
+// people only (never in someone else's name), reach the open notifications socket live, go out
+// as ONE digest email whose links open the board / thread, and the email's unsubscribe link works.
+// ---------------------------------------------------------------------------
+/** A raw /ws/notifications socket recording every message it gets. */
+function notificationsSocket(user, port) {
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/notifications`, { headers: { cookie: user.cookie } });
+  const s = { ws, messages: [], closeCode: null };
+  ws.on('message', (d) => s.messages.push(JSON.parse(String(d))));
+  ws.on('close', (code) => (s.closeCode = code));
+  ws.on('error', () => {});
+  s.lastUnread = () => s.messages.at(-1)?.unread ?? null;
+  return s;
+}
+
+async function notificationChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-notify-'));
+  let proc = null;
+  const clients = [];
+  const sockets = [];
+  try {
+    const env = { NOTIFY_EMAIL_DELAY_SECONDS: '5', NOTIFY_EMAIL_INTERVAL_SECONDS: '1' };
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    const ok = await check('notifications server boots (email delay 5 s, digest every second)', async () => {
+      proc = await waitUp(await spawnServer(dataDir, env));
+    });
+    if (!ok) return;
+    const port = proc.port;
+    const A = new User('NotifyOwner', port);
+    const B = new User('NotifyMember', port);
+    const C = new User('NotifyBystander', port); // has access, is never mentioned
+    const X = new User('NotifyOutsider', port); // no access to the board
+    for (const u of [A, B, C, X]) await u.signup();
+    for (const u of [A, B, C]) await u.verifyEmail(dataDir);
+    const board = (await A.req('POST', '/api/boards', { title: 'Notify board' })).json.board;
+    const list = async (u) => (await u.req('GET', '/api/notifications')).json;
+
+    await check('sharing a board with an account notifies them in the app, live on their open notifications socket', async () => {
+      const live = notificationsSocket(B, port);
+      sockets.push(live);
+      await waitFor(() => live.lastUnread() === 0, 5000, 'the first unread count on connect');
+      for (const [u, role] of [[B, 'commenter'], [C, 'editor']])
+        assert((await A.req('POST', `/api/boards/${board.id}/members`, { email: u.email, role })).status === 201, `invite ${u.label}`);
+      await waitFor(() => live.lastUnread() === 1, 5000, 'the live unread count to become 1');
+      const [n] = (await list(B)).notifications;
+      assert(n?.type === 'board.invite' && n.link === `/board/${board.id}` && n.actor?.id === A.id, JSON.stringify(n));
+      assert(/comment on/.test(n.title) && n.title.includes('Notify board'), n.title);
+    });
+
+    await check('an @mention written through a board socket notifies only the mentioned member; a message written in someone else’s name notifies nobody', async () => {
+      const a = connectDoc(A, board.id);
+      const b = connectDoc(B, board.id);
+      clients.push(a, b);
+      await Promise.all([a.ready(), b.ready()]);
+      const msg = (id, who, text) => ({ kind: 'message', threadId: 't1', id, authorId: who.id, authorName: who.name, authorColor: '#1C7ED6', text, createdAt: Date.now() });
+      a.doc.transact(() => {
+        a.doc.getMap('comments').set('t:t1', { kind: 'thread', id: 't1', x: 0, y: 0, createdAt: Date.now(), createdBy: A.id });
+        a.doc.getMap('comments').set('m:t1:m1', msg('m1', A, `hey <@${B.id}> and <@${X.id}>, look`));
+      });
+      // A forged client of B's writing as A, mentioning C: the comment rules drop it, and nothing is
+      // notified in A's name. Its own connection: a client whose update was dropped can't get later
+      // updates applied either (they depend on the dropped one), and B's real tab must stay usable.
+      const forged = connectDoc(B, board.id);
+      clients.push(forged);
+      await forged.ready();
+      forged.doc.getMap('comments').set('m:t1:fake', msg('fake', A, `fake <@${C.id}>`));
+      await waitFor(async () => (await list(B)).unread === 2, 5000, 'B to have the mention');
+      const mention = (await list(B)).notifications.find((n) => n.type === 'comment.mention');
+      assert(mention.link === `/board/${board.id}?thread=t1`, mention.link);
+      assert(mention.body === `hey @${B.name} and @${X.name}, look`, mention.body);
+      await sleep(500);
+      assert((await list(C)).notifications.every((n) => n.type === 'board.invite'), 'C was notified by a spoofed message');
+      assert((await list(X)).notifications.length === 0, 'someone without access was notified');
+      assert((await list(A)).notifications.length === 0, 'the author was notified of their own message');
+      assert(!a.doc.getMap('comments').has('m:t1:fake'), 'the forged message reached other clients');
+      forged.destroy();
+      clients.splice(clients.indexOf(forged), 1);
+    });
+
+    await check('a reply notifies the thread’s earlier writers (the author not)', async () => {
+      const b = clients[1];
+      b.doc.getMap('comments').set('m:t1:m2', { kind: 'message', threadId: 't1', id: 'm2', authorId: B.id, authorName: B.name, text: 'on it', createdAt: Date.now() });
+      await waitFor(async () => (await list(A)).notifications.some((n) => n.type === 'comment.reply'), 5000, 'A to get the reply');
+      assert((await list(B)).notifications.every((n) => n.type !== 'comment.reply'), 'B was notified of their own reply');
+    });
+
+    let digest = null;
+    await check('one digest email batches the unread notifications; its links open the board and the thread', async () => {
+      await waitFor(() => (digest = outbox(dataDir).find((m) => m.to === B.email && /notification/i.test(m.subject + m.text))), 15_000, 'the digest to B');
+      await sleep(2500); // a couple more digest runs: nothing is sent twice
+      const toB = outbox(dataDir).filter((m) => m.to === B.email && m.sentAt > 0 && !/confirm|verify/i.test(m.subject));
+      assert(toB.length === 1, `mails to B: ${toB.map((m) => m.subject).join(' | ')}`);
+      assert(digest.subject === '2 new notifications on Freero', digest.subject);
+      const links = [...digest.text.matchAll(/https?:\/\/[^\s]+/g)].map((m) => new URL(m[0]));
+      const thread = links.find((u) => u.searchParams.get('thread') === 't1');
+      assert(thread?.pathname === `/board/${board.id}`, `thread link: ${thread}`);
+      assert(links.some((u) => u.pathname === `/board/${board.id}` && !u.search), 'board link missing');
+      // The deep link's board opens for B.
+      assert((await B.req('GET', `/api/boards/${board.id}`)).status === 200, 'B cannot open the linked board');
+      assert(digest.headers?.['List-Unsubscribe-Post'] === 'List-Unsubscribe=One-Click', JSON.stringify(digest.headers));
+    });
+
+    await check('reading notifications updates the badge live; the email’s unsubscribe link (no session) turns notification emails off; a forged one is refused', async () => {
+      const live = sockets[0];
+      assert((await B.req('POST', '/api/notifications/read', {})).json.unread === 0, 'mark all read');
+      await waitFor(() => live.lastUnread() === 0, 5000, 'the live count to drop to 0');
+      const token = new URL(/https?:\/\/\S+\/unsubscribe\?token=\S+/.exec(digest.text)[0]).searchParams.get('token');
+      const anon = new User('anon', port);
+      assert((await anon.req('POST', `/api/notifications/unsubscribe?token=${encodeURIComponent(token.slice(0, -2) + 'xx')}`)).status === 400, 'forged token accepted');
+      assert((await anon.req('POST', `/api/notifications/unsubscribe?token=${encodeURIComponent(token)}`)).status === 200, 'unsubscribe');
+      assert((await B.req('GET', '/api/notifications/prefs')).json.emailAll === false, 'emails still on');
+      // A new mention still shows in the app, but no email follows.
+      clients[0].doc.getMap('comments').set('m:t1:m3', { kind: 'message', threadId: 't1', id: 'm3', authorId: A.id, authorName: A.name, text: `again <@${B.id}>`, createdAt: Date.now() });
+      await waitFor(() => live.lastUnread() === 1, 5000, 'the new mention live');
+      await sleep(7500); // past the 5 s email delay and a few digest runs
+      assert(outbox(dataDir).filter((m) => m.to === B.email && /notification|mentioned/i.test(m.subject)).length === 1, 'emailed after unsubscribing');
+    });
+
+    await check('board people lookup keeps a comment author’s profile after they leave, and never answers for unrelated accounts', async () => {
+      const Y = new User('NotifyStranger', port);
+      await Y.signup();
+      assert((await A.req('DELETE', `/api/boards/${board.id}/members/${B.id}`)).status === 200, 'remove B');
+      const r = await A.req('GET', `/api/boards/${board.id}/people?ids=${B.id},${Y.id}`);
+      assert(r.status === 200, `people: ${r.status}`);
+      const ids = r.json.people.map((p) => p.id);
+      assert(ids.includes(B.id) && !ids.includes(Y.id), JSON.stringify(r.json));
+      assert((await Y.req('GET', `/api/boards/${board.id}/people?ids=${B.id}`)).status === 403, 'a non-member could look people up');
+    });
+
+    await check('logging out closes that session’s notifications socket', async () => {
+      const live = sockets[0];
+      await B.req('POST', '/api/auth/logout');
+      await waitFor(() => live.closeCode === 4401, 5000, 'the socket to close with 4401');
+    });
+  } finally {
+    for (const s of sockets) s.ws.terminate();
+    for (const c of clients) c.destroy();
+    if (proc) await stopProc(proc);
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Several instances behind a round-robin balancer: two server processes sharing one Postgres and
 // one Redis; every client may land on either (DATABASE_URL + REDIS_URL only).
 // ---------------------------------------------------------------------------
@@ -2091,9 +2239,9 @@ async function signInMethodChecks() {
       GEOIP_DB_PATH: geoDb,
       TRUST_PROXY: 'loopback', // so X-Forwarded-For can stand in for clients on the internet
       RATE_LIMIT_TWO_FACTOR: '200/15m', // every check here comes from 127.0.0.1
-      // With REDIS_URL every server of the run shares the per-IP counters: the main session's resets
-      // must not use up this section's (5/15m by default).
-      RATE_LIMIT_PASSWORD: '100/15m',
+      // Same, and with REDIS_URL every server of the run shares the per-IP counters: the main
+      // session's resets have used up the default 5/15m before the reset check here runs.
+      RATE_LIMIT_PASSWORD: '200/15m',
     };
     if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
     const ok = await check('sign-in server boots with a provider (local test OpenID provider) and a GeoIP database', async () => {
@@ -2198,7 +2346,8 @@ async function signInMethodChecks() {
       assert(ok2.status === 200 && b.jar.has('freero_session'), ok2.text);
 
       const after = Date.now();
-      await new Browser(port).fetch('/api/auth/password/forgot', { method: 'POST', body: { email: P.email } });
+      const forgot = await new Browser(port).fetch('/api/auth/password/forgot', { method: 'POST', body: { email: P.email } });
+      assert(forgot.status === 200, `forgot: ${forgot.status} ${forgot.text}`);
       const token = await mailedToken(dataDir, P.email, '/reset-password', { after });
       const r = new Browser(port);
       const reset = await r.fetch('/api/auth/password/reset', { method: 'POST', body: { token, password: 'password-456' } });
@@ -2326,6 +2475,7 @@ await run().catch((e) => record('verify harness', false, e?.stack ?? String(e)))
 await signInMethodChecks().catch((e) => record('sign-in methods harness', false, e?.stack ?? String(e)));
 await uploadSweepChecks().catch((e) => record('uploads sweep checks harness', false, e?.stack ?? String(e)));
 await accountPurgeChecks().catch((e) => record('account purge harness', false, e?.stack ?? String(e)));
+await notificationChecks().catch((e) => record('notifications harness', false, e?.stack ?? String(e)));
 await platformChecks().catch((e) => record('platform checks harness', false, e?.stack ?? String(e)));
 await multiInstanceChecks().catch((e) => record('multi-instance checks harness', false, e?.stack ?? String(e)));
 const failed = results.filter((r) => !r.ok);
