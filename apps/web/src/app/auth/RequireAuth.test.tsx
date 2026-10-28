@@ -8,10 +8,22 @@ import { api, ApiError } from '../api/client';
 import { AuthProvider } from './AuthContext';
 import { RequireAuth } from './RequireAuth';
 import { AuthPage } from '../pages/auth/AuthPage';
+import { TwoFactorPage } from '../pages/auth/TwoFactorPage';
 
 vi.mock('../api/client', async (importOriginal) => {
   const real = await importOriginal<typeof import('../api/client')>();
-  return { ...real, api: { session: vi.fn(), login: vi.fn(), signup: vi.fn(), logout: vi.fn(), restoreAccount: vi.fn() } };
+  return {
+    ...real,
+    api: {
+      session: vi.fn(),
+      login: vi.fn(),
+      loginTwoFactor: vi.fn(),
+      signup: vi.fn(),
+      logout: vi.fn(),
+      restoreAccount: vi.fn(),
+      providers: vi.fn(async () => ({ providers: [] })),
+    },
+  };
 });
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -33,6 +45,7 @@ function render(path: string) {
           <Probe />
           <Routes>
             <Route path="/login" element={<AuthPage mode="login" />} />
+            <Route path="/login/two-factor" element={<TwoFactorPage />} />
             <Route
               path="/board/:id"
               element={
@@ -62,6 +75,7 @@ beforeEach(() => {
   root = createRoot(host);
   vi.mocked(api.session).mockReset();
   vi.mocked(api.login).mockReset();
+  vi.mocked(api.loginTwoFactor).mockReset();
 });
 
 afterEach(() => {
@@ -87,6 +101,31 @@ describe('auth guard', () => {
     await flush();
 
     expect(api.login).toHaveBeenCalledWith({ email: 'ada@example.com', password: 'secret-pass' });
+    expect(loc()).toBe('/board/b1?dock=templates');
+    expect(host.querySelector('[data-testid="board"]')).not.toBeNull();
+  });
+
+  it('with two-step verification on, a right password leads to the code step, and only the code opens the exact board', async () => {
+    vi.mocked(api.session).mockResolvedValue({ user: null });
+    vi.mocked(api.login).mockResolvedValue({ twoFactorRequired: true });
+    vi.mocked(api.loginTwoFactor).mockResolvedValue({ user: ada });
+    render('/board/b1?dock=templates');
+    await flush();
+    type(host.querySelector<HTMLInputElement>('input[type="email"]')!, 'ada@example.com');
+    type(host.querySelector<HTMLInputElement>('input[type="password"]')!, 'secret-pass');
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
+    });
+    await flush();
+    expect(loc()).toBe('/login/two-factor?next=%2Fboard%2Fb1%3Fdock%3Dtemplates');
+    expect(host.querySelector('[data-testid="board"]')).toBeNull();
+
+    type(host.querySelector<HTMLInputElement>('input[autocomplete="one-time-code"]')!, '123456');
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
+    });
+    await flush();
+    expect(api.loginTwoFactor).toHaveBeenCalledWith('123456');
     expect(loc()).toBe('/board/b1?dock=templates');
     expect(host.querySelector('[data-testid="board"]')).not.toBeNull();
   });

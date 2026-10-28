@@ -84,9 +84,14 @@ export function ResetPasswordPage() {
     setBusy(true);
     setError(null);
     try {
-      const { user } = await api.resetPassword(token, password);
-      adopt(user);
-      navigate('/app', { replace: true });
+      const res = await api.resetPassword(token, password);
+      if ('user' in res) {
+        adopt(res.user);
+        navigate('/app', { replace: true });
+      } else {
+        // Two-factor on: the link proved the address, not the second step.
+        navigate('/login/two-factor', { replace: true });
+      }
     } catch (err) {
       setError(message(err, 'Could not reset the password. Please try again.'));
       setBusy(false);

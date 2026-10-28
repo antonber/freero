@@ -8,7 +8,9 @@ export interface AuthValue {
   user: Account | null;
   /** True until the initial session check finishes. */
   loading: boolean;
-  login(email: string, password: string): Promise<Account>;
+  /** null: the account has two-factor on; finish at /login/two-factor (completeTwoFactor). */
+  login(email: string, password: string): Promise<Account | null>;
+  completeTwoFactor(code: string): Promise<Account>;
   signup(name: string, email: string, password: string): Promise<Account>;
   logout(): Promise<void>;
   /** Re-fetches the session. */
@@ -68,7 +70,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const announce = useCallback(() => channel.current?.postMessage('changed'), []);
 
   const login = useCallback(async (email: string, password: string) => {
-    const { user } = await api.login({ email: email.trim(), password });
+    const res = await api.login({ email: email.trim(), password });
+    if (!('user' in res)) return null;
+    setUser(res.user);
+    announce();
+    return res.user;
+  }, [announce]);
+
+  const completeTwoFactor = useCallback(async (code: string) => {
+    const { user } = await api.loginTwoFactor(code);
     setUser(user);
     announce();
     return user;
@@ -103,8 +113,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [announce]);
 
   const value = useMemo<AuthValue>(
-    () => ({ user, loading, login, signup, logout, refresh, updateProfile, adopt }),
-    [user, loading, login, signup, logout, refresh, updateProfile, adopt],
+    () => ({ user, loading, login, completeTwoFactor, signup, logout, refresh, updateProfile, adopt }),
+    [user, loading, login, completeTwoFactor, signup, logout, refresh, updateProfile, adopt],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
