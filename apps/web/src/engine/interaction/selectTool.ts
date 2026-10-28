@@ -251,7 +251,7 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
       const el = s.snapshot[0];
       const d = def(el);
       const mode = d?.resize ?? 'free';
-      const min = d?.minSize ?? { w: 8, h: 8 };
+      const min = (typeof d?.minSize === 'function' ? d.minSize(el as never) : d?.minSize) ?? { w: 8, h: 8 };
       const keepAspect = mode === 'aspect' || (mode === 'scale' && corner) || (e.shiftKey && mode === 'free');
       const widthOnly = mode === 'width-only' || (mode === 'scale' && !corner);
       const r = resizeBox(s.startBox, s.handle, e.point, s.grab, { keepAspect, minW: min.w, minH: min.h, widthOnly });

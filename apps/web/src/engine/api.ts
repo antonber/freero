@@ -442,7 +442,11 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
   /** Defaults merged under user-provided fields on create (tools usually call this). */
   defaults(): Omit<NewElement<T>, 'x' | 'y'>;
   resize: ResizeMode;
-  minSize?: { w: number; h: number };
+  /**
+   * Smallest size the handles and the exact-size fields allow. [additive] May depend on the
+   * element: a task card drawn as a timeline bar may be as short as a day.
+   */
+  minSize?: { w: number; h: number } | ((element: ElementOf<T>) => { w: number; h: number });
   /** Has editable rich text (double-click / Enter / typing to edit). Engine handles the editor. */
   textField?: keyof ElementOf<T> & string;
   /** Containers own children by setting their `frameId` (frames). Engine moves children with them. */
