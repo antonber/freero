@@ -25,9 +25,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import * as decoding from 'lib0/decoding';
+import { generate as totpCode } from 'otplib';
 import WebSocket from 'ws';
 import { WebsocketProvider } from 'y-websocket';
 import * as Y from 'yjs';
+import { writeMmdb } from './lib/mmdb-writer.mjs';
+import { startMockOidc } from './lib/mock-oidc.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WS_MESSAGE_ROLE = 100;
@@ -685,6 +688,7 @@ async function run() {
       const list = (await Q.req('GET', '/api/auth/sessions')).json.sessions;
       assert(list.length === 3 && list.filter((s) => s.current).length === 1, JSON.stringify(list));
       assert(list.every((s) => !s.network.includes('127.0.0.1')), `full address exposed: ${JSON.stringify(list.map((s) => s.network))}`);
+      assert(list.every((s) => s.location === null), 'a location without a GeoIP database');
       const target = list.find((s) => s.userAgent === ua);
       assert(target && !target.current, 'firefox session not listed');
       assert((await Q.req('DELETE', `/api/auth/sessions/${target.id}`)).status === 200, 'revoke');
@@ -1493,8 +1497,219 @@ async function multiInstanceChecks() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Sign-in methods: a provider (OpenID Connect against a local test provider, the real client
+// library end to end: discovery, PKCE, state, nonce, signed id tokens), two-factor, GeoIP.
+// ---------------------------------------------------------------------------
+
+/** A browser: cookie jar for the app (every cookie, not just the session), manual redirects. */
+class Browser {
+  constructor(port) {
+    this.port = port;
+    this.origin = `http://127.0.0.1:${port}`;
+    this.jar = new Map();
+  }
+  async fetch(url, { method = 'GET', body, headers = {} } = {}) {
+    const abs = new URL(url, this.origin);
+    const own = abs.origin === this.origin;
+    const h = { ...headers };
+    if (own && this.jar.size) h.cookie = [...this.jar].map(([k, v]) => `${k}=${v}`).join('; ');
+    if (body !== undefined) h['content-type'] = 'application/json';
+    const res = await fetch(abs, { method, headers: h, body: body === undefined ? undefined : JSON.stringify(body), redirect: 'manual' });
+    if (own) {
+      for (const c of res.headers.getSetCookie()) {
+        const m = /^([^=]+)=([^;]*)/.exec(c);
+        if (!m) continue;
+        if (!m[2] || /expires=thu, 01 jan 1970/i.test(c)) this.jar.delete(m[1]);
+        else this.jar.set(m[1], m[2]);
+      }
+    }
+    const text = await res.text();
+    let json = null;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      /* not json */
+    }
+    return { status: res.status, location: res.headers.get('location'), json, text, url: abs.href };
+  }
+  /** Follows redirects (app -> provider -> app) until a page of the app; returns its path + query. */
+  async navigate(url) {
+    let next = new URL(url, this.origin).href;
+    for (let i = 0; i < 10; i++) {
+      const r = await this.fetch(next);
+      if (r.status !== 302 && r.status !== 303) throw new CheckError(`${next} -> ${r.status} ${r.text.slice(0, 200)}`);
+      const loc = new URL(r.location, next);
+      if (loc.origin === this.origin && !loc.pathname.startsWith('/api/')) return loc.pathname + loc.search;
+      next = loc.href;
+    }
+    throw new CheckError(`too many redirects from ${url}`);
+  }
+}
+
+async function signInMethodChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-signin-'));
+  const geoDb = path.join(dataDir, 'test-city.mmdb');
+  writeMmdb(geoDb, [
+    { cidr: '203.0.113.0/24', data: { city: { names: { en: 'Lyon' } }, country: { iso_code: 'FR', names: { en: 'France' } } } },
+    { cidr: '198.51.100.0/24', data: { country: { iso_code: 'JP', names: { en: 'Japan' } } } },
+  ]);
+  const idp = await startMockOidc({ clientId: 'freero-verify', clientSecret: 'verify-secret' });
+  let proc = null;
+  try {
+    const env = {
+      OIDC_GOOGLE_CLIENT_ID: 'freero-verify',
+      OIDC_GOOGLE_CLIENT_SECRET: 'verify-secret',
+      OIDC_GOOGLE_ISSUER: idp.issuer,
+      GEOIP_DB_PATH: geoDb,
+      TRUST_PROXY: 'loopback', // so X-Forwarded-For can stand in for clients on the internet
+      RATE_LIMIT_TWO_FACTOR: '200/15m', // every check here comes from 127.0.0.1
+    };
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    const ok = await check('sign-in server boots with a provider (local test OpenID provider) and a GeoIP database', async () => {
+      proc = await waitUp(await spawnServer(dataDir, env));
+      const providers = (await new Browser(proc.port).fetch('/api/auth/providers')).json.providers;
+      assert(providers.length === 1 && providers[0].id === 'google', JSON.stringify(providers));
+    });
+    if (!ok) return;
+    const port = proc.port;
+    const stamp = Date.now();
+    const address = (label) => `${label}-${stamp}@signin.verify.freero.app`;
+    const twoFactorOn = async (u) => {
+      const setup = await u.req('POST', '/api/auth/two-factor/setup', { password: 'password-123' });
+      assert(setup.status === 200 && setup.json.qr.startsWith('data:image/png;base64,') && setup.json.uri.startsWith('otpauth://totp/'), setup.text);
+      const enable = await u.req('POST', '/api/auth/two-factor/enable', { code: await totpCode({ secret: setup.json.secret }) });
+      assert(enable.status === 200 && enable.json.recoveryCodes.length === 10, enable.text);
+      return { secret: setup.json.secret, recoveryCodes: enable.json.recoveryCodes };
+    };
+    // The enrolment code's time step is used up: the next sign-in takes the next step's code.
+    const nextCode = (secret) => totpCode({ secret, epoch: Math.floor(Date.now() / 1000) + 30 });
+
+    let passwordless = null; // { browser, email }
+    await check('a provider sign-in with a verified address creates a passwordless account (authorization code + PKCE end to end); signing in again reaches the same account', async () => {
+      const email = address('olga');
+      const b = new Browser(port);
+      idp.queueSignIn({ email, name: 'Olga Provider' });
+      const landed = await b.navigate('/api/auth/oidc/google/start?next=%2Fboard%2Fabc');
+      assert(landed === '/board/abc', `landed on ${landed}`);
+      const me = await b.fetch('/api/auth/me');
+      assert(me.status === 200 && me.json.user.email === email && me.json.user.emailVerified && me.json.user.name === 'Olga Provider', me.text);
+      const sec = (await b.fetch('/api/auth/security')).json;
+      assert(sec.hasPassword === false && sec.identities.length === 1 && sec.identities[0].providerLabel === 'Google', JSON.stringify(sec));
+      const again = new Browser(port);
+      idp.queueSignIn({ email });
+      assert((await again.navigate('/api/auth/oidc/google/start')) === '/app', 'second sign-in landing');
+      assert((await again.fetch('/api/auth/me')).json.user.id === me.json.user.id, 'a second account was created');
+      const sessions = (await again.fetch('/api/auth/sessions')).json.sessions;
+      assert(sessions.length === 2 && sessions.every((s) => s.method === 'google' && s.methodLabel === 'Google' && !s.twoFactor), JSON.stringify(sessions));
+      passwordless = { browser: b, email };
+    });
+
+    await check("a provider callback is bound to the browser that started it (another browser can't complete it: login CSRF), and works once", async () => {
+      const victim = new Browser(port);
+      const start = await victim.fetch('/api/auth/oidc/google/start');
+      assert(start.status === 302 && start.location.startsWith(idp.issuer), start.text);
+      const authorize = new URL(start.location);
+      assert(authorize.searchParams.get('code_challenge_method') === 'S256' && authorize.searchParams.get('nonce'), 'PKCE / nonce missing');
+      idp.queueSignIn({ email: address('csrf') });
+      const callback = (await victim.fetch(start.location)).location;
+      const attacker = new Browser(port);
+      const forged = await attacker.fetch(callback);
+      assert(forged.status === 302 && forged.location === '/login?error=failed' && !attacker.jar.has('freero_session'), `forged: ${forged.status} ${forged.location}`);
+      const real = await victim.fetch(callback);
+      assert(real.status === 302 && real.location === '/app' && victim.jar.has('freero_session'), `real: ${real.status} ${real.location}`);
+      const replay = await new Browser(port).fetch(callback);
+      assert(replay.location === '/login?error=failed', `replayed callback: ${replay.location}`);
+    });
+
+    let P = null;
+    let pTotp = null;
+    await check("a provider reaches an existing account only if it vouches for the address, and only after that account's second step (connected only then)", async () => {
+      P = new User('SigninP', port);
+      P.email = address('pat');
+      await P.signup();
+      // Verified: an unverified account would be taken over by the provider-verified owner instead.
+      await P.verifyEmail(dataDir);
+      pTotp = await twoFactorOn(P);
+      const unvouched = new Browser(port);
+      idp.queueSignIn({ email: P.email, emailVerified: false });
+      assert((await unvouched.navigate('/api/auth/oidc/google/start')) === '/login?error=email_in_use', 'unverified address matched an account');
+      assert((await unvouched.fetch('/api/auth/me')).status === 401, 'signed in without a vouched address');
+
+      const b = new Browser(port);
+      idp.queueSignIn({ email: P.email });
+      const landed = await b.navigate('/api/auth/oidc/google/start?next=%2Fsettings');
+      assert(landed === '/login/two-factor?next=%2Fsettings', `landed on ${landed}`);
+      assert((await b.fetch('/api/auth/me')).status === 401, 'signed in before the second step');
+      assert((await P.req('GET', '/api/auth/security')).json.identities.length === 0, 'connected before the second step');
+      assert((await b.fetch('/api/auth/login/two-factor', { method: 'POST', body: { code: '000000' } })).status === 403, 'wrong code');
+      const done = await b.fetch('/api/auth/login/two-factor', { method: 'POST', body: { code: pTotp.recoveryCodes[0] } });
+      assert(done.status === 200 && done.json.user.id === P.id, done.text);
+      assert((await P.req('GET', '/api/auth/security')).json.identities.length === 1, 'not connected after the second step');
+      const viaGoogle = (await P.req('GET', '/api/auth/sessions')).json.sessions.find((s) => s.method === 'google');
+      assert(viaGoogle?.twoFactor === true, 'session not marked as two-factor');
+      assert((await P.req('GET', '/api/auth/security')).json.twoFactor.recoveryCodesLeft === 9, 'recovery code not used up');
+    });
+
+    await check('password sign-in with two-factor on: no session before the second step; 5 wrong codes end the attempt; a reset link does not skip it', async () => {
+      const b = new Browser(port);
+      const login = await b.fetch('/api/auth/login', { method: 'POST', body: { email: P.email, password: 'password-123' } });
+      assert(login.status === 200 && login.json.twoFactorRequired === true && !b.jar.has('freero_session'), login.text);
+      for (let i = 0; i < 5; i++) assert((await b.fetch('/api/auth/login/two-factor', { method: 'POST', body: { code: '111111' } })).status === 403, `wrong code ${i}`);
+      const capped = await b.fetch('/api/auth/login/two-factor', { method: 'POST', body: { code: await nextCode(pTotp.secret) } });
+      assert(capped.status === 401 && !b.jar.has('freero_session'), `after 5 wrong codes: ${capped.status}`);
+      await b.fetch('/api/auth/login', { method: 'POST', body: { email: P.email, password: 'password-123' } });
+      const ok2 = await b.fetch('/api/auth/login/two-factor', { method: 'POST', body: { code: await nextCode(pTotp.secret) } });
+      assert(ok2.status === 200 && b.jar.has('freero_session'), ok2.text);
+
+      const after = Date.now();
+      await new Browser(port).fetch('/api/auth/password/forgot', { method: 'POST', body: { email: P.email } });
+      const token = await mailedToken(dataDir, P.email, '/reset-password', { after });
+      const r = new Browser(port);
+      const reset = await r.fetch('/api/auth/password/reset', { method: 'POST', body: { token, password: 'password-456' } });
+      assert(reset.status === 200 && reset.json.twoFactorRequired === true && !r.jar.has('freero_session'), `reset: ${reset.text}`);
+      const rec = await r.fetch('/api/auth/login/two-factor', { method: 'POST', body: { code: pTotp.recoveryCodes[1] } });
+      assert(rec.status === 200 && (await r.fetch('/api/auth/sessions')).json.sessions.find((s) => s.current)?.method === 'email_link', rec.text);
+    });
+
+    await check('a passwordless account keeps a way in: its last provider can not be disconnected until it sets a password', async () => {
+      const { browser: b, email } = passwordless;
+      const sec = (await b.fetch('/api/auth/security')).json;
+      const last = await b.fetch(`/api/auth/identities/${sec.identities[0].id}`, { method: 'DELETE' });
+      assert(last.status === 409, `disconnected the last way in: ${last.status}`);
+      // Signed in moments ago: that stands in for the (missing) current password.
+      assert((await b.fetch('/api/auth/password', { method: 'POST', body: { newPassword: 'first-password-1' } })).status === 200, 'set a password');
+      const gone = await b.fetch(`/api/auth/identities/${sec.identities[0].id}`, { method: 'DELETE' });
+      assert(gone.status === 200 && gone.json.hasPassword && gone.json.identities.length === 0, gone.text);
+      assert((await new Browser(port).fetch('/api/auth/login', { method: 'POST', body: { email, password: 'first-password-1' } })).status === 200, 'password login');
+    });
+
+    await check('sessions show "City, Country" from the GeoIP database; addresses it does not know keep the masked network', async () => {
+      const G = new User('Geo', port);
+      G.email = address('geo');
+      const fwd = (ip) => ({ headers: { 'x-forwarded-for': ip } });
+      const s = await G.req('POST', '/api/auth/signup', { name: 'Geo', email: G.email, password: 'password-123' }, fwd('203.0.113.9'));
+      assert(s.status === 201, s.text);
+      await new User('Geo-jp', port).req('POST', '/api/auth/login', { email: G.email, password: 'password-123' }, fwd('198.51.100.7'));
+      await new User('Geo-home', port).req('POST', '/api/auth/login', { email: G.email, password: 'password-123' });
+      const list = (await G.req('GET', '/api/auth/sessions')).json.sessions;
+      const where = list.map((x) => x.location ?? x.network).sort();
+      assert(JSON.stringify(where) === JSON.stringify(['Japan', 'Lyon, France', 'This computer']), JSON.stringify(list));
+    });
+  } finally {
+    if (proc) await stopProc(proc);
+    await idp.close();
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
 const started = Date.now();
 await run().catch((e) => record('verify harness', false, e?.stack ?? String(e)));
+await signInMethodChecks().catch((e) => record('sign-in methods harness', false, e?.stack ?? String(e)));
 await accountPurgeChecks().catch((e) => record('account purge harness', false, e?.stack ?? String(e)));
 await platformChecks().catch((e) => record('platform checks harness', false, e?.stack ?? String(e)));
 await multiInstanceChecks().catch((e) => record('multi-instance checks harness', false, e?.stack ?? String(e)));

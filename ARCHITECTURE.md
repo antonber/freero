@@ -477,7 +477,9 @@ modules/<name>/    auth, boards, members, uploads, realtime …
 Cross-module imports name the index file explicitly (`'../auth/index'`), which is what [S2] checks.
 Auth is a plain middleware exported by `modules/auth/index.ts` (`requireUser`, `currentUser(req)`),
 not a reserved hook. Server modules today: `auth` (users, sessions, auth_tokens: email
-verification, password reset, email change, session list/revoke, avatars, deletion scheduling),
+verification, password reset, email change, session list/revoke, avatars, deletion scheduling;
+auth_identities + auth_oidc_flows: sign in with a provider; auth_challenges, user_totp,
+user_recovery_codes: two-step verification),
 `boards` (boards, stars, opens; trash), `members` (board_members, board_invites: pending invites
 for addresses without an account; role resolution), `uploads` (uploads; files in object storage or
 `<data>/uploads`), `realtime` (board_docs, board_doc_updates, board_doc_snapshots; y-websocket
@@ -503,6 +505,20 @@ modules' exports).
   Proving an address (verification link, reset, email change, an invite link mailed to it) fires
   `onEmailVerified`, where members turns that address's pending invites into memberships; an
   unverified account never picks up invites and can't invite or share by link.
+- Sign-in methods (`modules/auth`): `oidc.ts` is a generic OpenID Connect relying party
+  (openid-client: authorization code + PKCE, state, nonce, id-token validation) configured by issuer
+  + client id/secret — Google and Microsoft (multi-tenant) today, per-workspace SSO later.
+  `providers.ts` holds the account rules: a provider account (issuer + subject) signs in to the
+  account it is connected to; it is connected automatically only on a provider-VERIFIED email match;
+  accounts without a password always keep a way in. Every sign-in (password, reset link, provider)
+  ends in `signIn.ts` `completeSignIn`, which asks for the second step when the account has
+  two-step verification on (and connects a matched identity only after it), so no path skips it.
+  Passwordless accounts confirm sensitive changes with a recent sign-in (`sessions.auth_at`,
+  re-confirmed through the provider with `intent=reauth`) where others give their password.
+  `onTwoFactorRequirement` (auth index) is the seam for workspace-enforced two-step verification.
+  Session locations come from an operator-provided GeoIP `.mmdb` (`GEOIP_DB_PATH`), read locally.
+  `npm run verify` runs the whole provider flow against `scripts/lib/mock-oidc.mjs` (a local test
+  provider with real signed id tokens) and GeoIP against a generated `.mmdb`.
 - Ending a session (logout, "sign out" from another device, password reset/change, account
   deletion) calls auth's in-process `onSessionEnd`; realtime is its listener and closes that
   session's board sockets on every instance through its `end-session` control message — the one
