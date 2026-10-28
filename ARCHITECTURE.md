@@ -228,8 +228,10 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
 - Typing a character with one EMPTY text item selected starts editing it with that character;
   items that already have text keep single letters as tool shortcuts (Enter / double-click edit).
   Undo/redo shortcuts also work while a non-modal popover has focus.
-- Screen/world UI that must stay visible next to a selection (comment pins) marks its node
-  `data-fr-keep-clear`; the format toolbar steps above it, or flips below the selection.
+- Screen/world UI that must stay visible next to a selection (comment pins, the top quick-connect
+  "+") marks its node `data-fr-keep-clear`; the format toolbar steps above it, or flips below the
+  selection. The toolbar also steps past unselected items it would cover (a mind-map sibling right
+  above), but only to a free spot within 160 px; otherwise it covers them (dense sticky grids).
 - `ToolDefinition.onSelect?(editor)`: act-now tools (upload image, templates) run when picked and
   never become the active tool. `ToolPointerEvent.button` is -1 on every move (drag or hover);
   `buttons` is the pressed-buttons bitmask.
@@ -263,7 +265,9 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
 - `normalize(next, prev?)`: `prev` is the element before this local change (undefined on create),
   so "w changed alone" (a side handle) is told apart from a corner scale or an edit. When web fonts
   finish loading, the engine re-runs `normalize` for the elements THIS client measured and nobody
-  else changed since, writing silently (no undo step) — never for collaborators' elements.
+  else changed since — never for collaborators' elements. The write is no undo step of its own:
+  it joins the last one (`BoardStore.transactDerived`), because Yjs never undoes a key over a
+  newer untracked value, and waits for the next local change while redo steps exist.
 - `arrange(container, { editor, touched }) → [{ id, patch }] | null` (`engine/editor/arrange.ts`):
   containers that lay out their children (kanban columns, frames with a grid layout). After every
   LOCAL change the engine asks each element of that type for the patches that put it back in
@@ -280,6 +284,11 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
 - `hidden(el, editor)`: off the board (collapsed mind-map branches). Not rendered or exported, and
   ignored by hit tests, marquee, selection (dropped from it when they become hidden), snapping,
   `getBounds` and zoom-to-fit.
+- `BaseElement.attachedTo` (`@freero/shared`): an element that rides on another (a reaction stamp
+  on a sticky). `Editor.withChildren` includes riders like a frame's children, so they move (drag,
+  nudge, `moveBy`), duplicate, copy/paste, come to front and are deleted with their item; copies
+  whose item wasn't copied lose the link. The placing feature sets it (and re-attaches in
+  `follow` when the rider is moved on its own).
 - `removeWith(el, editor) → ids`: deleted along with `el` in the same transaction by every local
   `editor.remove` (Delete, cut, context menu, eraser); one undo restores all of them.
 - `onKeyDown(e, { editor, selection })`: keys while this type is selected, asked before the
@@ -298,7 +307,16 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
 - Auto-fit text (`fontSize: 'auto'`) snaps to a small set of sizes (~12% apart), so neighbouring
   stickies with similar text match. `ElementText.padding` may be per side (`{ top, right, bottom,
   left }`): tagged stickies keep their chip band free.
+- `DecorationDefinition.reserve?(el) → { top?, right?, bottom?, left? }`: the band a decoration
+  draws over inside the element's box. The element gets the per-side maximum as
+  `ElementRenderProps.reserved` (also in exports) and lays its text out clear of it — so the
+  decoration's geometry has one owner (tags' chip band) instead of a copied formula.
 - The active tool's Options flyout is kept inside the window by the engine.
+- Text-style format controls are the engine's (`@engine`): `FontFamilyControl`, `FontSizeControl`
+  (numbers, 'auto', labelled presets, custom field), `TextColorControl`, `TextHighlightControl`,
+  `TextMarkButtons` (pick `marks`), `TextAlignControl` (vertical too when given `vAlign`), with
+  `MIXED` / `commonValue`. A text-bearing feature composes them in `format.tsx` and owns only the
+  write (`onChange` → its patch); never copy them into a feature.
 
 Canvas productivity (engine primitives; the product UI lives in `features/arrange`, `find`,
 `layers`, `format-painter`, `select-similar`):
@@ -387,8 +405,9 @@ Reference & items (engine primitives; product UI in `features/shortcuts`, `links
 
 `Button` {variant: 'primary'|'secondary'|'ghost'|'danger', size: 'sm'|'md'|'lg', icon?, loading?} ·
 `IconButton` {icon, label, active?, size?: 32|40, shortcut?, tooltipSide?} ·
+`ToolbarButton` {label, shortcut?, wide?, children} (format-toolbar button showing a value — font, size, a color sample; never a native `title`) ·
 `Tooltip` {content, shortcut?, side?, children} · `Popover` {open, onClose, anchor: HTMLElement|DOMRect|null, side?, align?, autoFocus?, escapeToContent?, children} ·
-`Menu` {open, onClose, anchor, items: MenuItem[]} where MenuItem = {id, label, icon?, shortcut?, danger?, disabled?, onSelect, submenu?: MenuItem[]} | {divider: true} | {heading: string} ·
+`Menu` {open, onClose, anchor, items: MenuItem[]} where MenuItem = {id, label, icon?, shortcut?, danger?, disabled?, disabledReason? (tooltip saying why; give one whenever the reason isn't obvious), onSelect, submenu?: MenuItem[]} | {divider: true} | {heading: string} ·
 `Modal` {open, onClose, title, width?, footer?, children} · `Input`, `TextArea`, `Select` {options, value, onChange},
 `Toggle`, `Slider` {min, max, step, value, onChange} · `ColorSwatches` {colors, value, onChange, allowCustom?} ·
 `Divider` {vertical?} · `Avatar` {name, color, src?, size?} · `AvatarStack` {users, max?} · `Kbd` ·

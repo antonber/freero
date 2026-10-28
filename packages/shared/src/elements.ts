@@ -43,6 +43,12 @@ export interface BaseElement {
    * Untrusted: validate with the web's `isSafeHref` before following it.
    */
   link?: string | null;
+  /**
+   * Id of the element this one rides on (a reaction stamp on a sticky): it moves, duplicates,
+   * copies and is deleted with that element, like a frame's children. Set by the feature that
+   * places it; the engine clears it on copies whose target wasn't copied.
+   */
+  attachedTo?: string | null;
   createdBy: string;
   createdAt: number;
   updatedAt: number;

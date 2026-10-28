@@ -1,6 +1,6 @@
 import type { BoardElement } from '@freero/shared';
 import { defineCommands, type CommandDefinition, type Editor, type NewElement, type Rect } from '@engine';
-import { reactionSize, reactionSlot } from './lib/reactions';
+import { canCarryStamp, reactionSize, reactionSlot } from './lib/reactions';
 import { STAMP_PREFIX, STAMPS, stampIcon } from './lib/stamps';
 
 /** Elements a reaction can be attached to: the selection minus stamps/emoji themselves. */
@@ -8,10 +8,13 @@ function reactable(editor: Editor): BoardElement[] {
   return editor
     .getSelection()
     .map((id) => editor.getElement(id))
-    .filter((el): el is BoardElement => !!el && el.type !== 'emoji' && el.type !== 'connector');
+    .filter((el): el is BoardElement => !!el && canCarryStamp(editor, el));
 }
 
-/** Stamps `emoji` on the top-right corner of every selected element. One command = one undo step. */
+/**
+ * Stamps `emoji` on the top-right corner of every selected element, attached to it (it moves,
+ * duplicates and is deleted with it). One command = one undo step.
+ */
 function react(editor: Editor, emoji: string) {
   const taken: Rect[] = editor
     .getElements()
@@ -23,7 +26,7 @@ function react(editor: Editor, emoji: string) {
     if (!bounds) continue;
     const size = reactionSize(bounds);
     const at = reactionSlot(bounds, size, taken);
-    stamps.push({ type: 'emoji', emoji, x: at.x, y: at.y, w: size, h: size, frameId: el.frameId ?? null });
+    stamps.push({ type: 'emoji', emoji, x: at.x, y: at.y, w: size, h: size, frameId: el.frameId ?? null, attachedTo: el.id });
   }
   editor.createMany(stamps as NewElement[]);
 }

@@ -181,3 +181,45 @@
   color: var(--fr-primary);
   background: var(--fr-primary-soft);
 }
+
+/* ---- ToolbarButton: a format-toolbar button showing a value ---- */
+.fr-tbbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  gap: 2px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fr-ink-2);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.fr-tbbtn:hover:not(:disabled),
+.fr-tbbtn[aria-expanded='true'] {
+  color: var(--fr-ink);
+  background: var(--fr-hover);
+}
+
+.fr-tbbtn:focus-visible {
+  outline: none;
+  box-shadow: var(--fr-focus-ring);
+}
+
+.fr-tbbtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.fr-tbbtn--wide {
+  min-width: 52px;
+  justify-content: space-between;
+}

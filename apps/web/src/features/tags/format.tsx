@@ -3,7 +3,7 @@ import { nanoid } from 'nanoid';
 import { ArrowLeft, Check, Minus, Plus, Search, Settings2, Tag as TagIcon, Trash2 } from 'lucide-react';
 import type { Tag } from '@freero/shared';
 import { defineFormat, useCollection, type Editor } from '@engine';
-import { Button, ColorSwatches, IconButton, Input, Popover } from '@ui';
+import { Button, ColorSwatches, IconButton, Input, Popover, Tooltip } from '@ui';
 import { TAG_COLORS, isTaggable, nextColor, normName, search, stripPatches, tagState, togglePatches, type Taggable } from './lib/tags';
 import './tags.css';
 
@@ -183,21 +183,22 @@ function TagsControl({ editor, els }: { editor: Editor; els: Taggable[] }) {
   const count = new Set(els.flatMap((el) => (el.tags ?? []).filter((t) => known.has(t)))).size;
   return (
     <>
-      <button
-        ref={ref}
-        type="button"
-        className="fr-tags-btn"
-        aria-label="Tags"
-        title="Tags"
-        aria-expanded={open}
-        onClick={() => {
-          setManage(false);
-          setOpen((o) => !o);
-        }}
-      >
-        <TagIcon size={16} />
-        {count > 0 && <span className="fr-tags-btn__count">{count}</span>}
-      </button>
+      <Tooltip content="Tags" side="bottom">
+        <button
+          ref={ref}
+          type="button"
+          className="fr-tags-btn"
+          aria-label="Tags"
+          aria-expanded={open}
+          onClick={() => {
+            setManage(false);
+            setOpen((o) => !o);
+          }}
+        >
+          <TagIcon size={16} />
+          {count > 0 && <span className="fr-tags-btn__count">{count}</span>}
+        </button>
+      </Tooltip>
       <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} width={300} aria-label="Tags">
         {manage ? (
           <Manager editor={editor} tags={tags} onBack={() => setManage(false)} />

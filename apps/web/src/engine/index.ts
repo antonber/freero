@@ -48,6 +48,23 @@ export type { TextFormatState } from './text/session';
 // card titles, mind-map pills). Cached; re-measured by the engine once web fonts load.
 export { measureRichText } from './text/measure';
 export type { MeasureTextOptions, MeasuredText } from './text/measure';
+// [additive] Shared text-style format controls (font, size, color, highlight, marks, alignment)
+// that text-bearing features compose in format.tsx; the feature owns the write (onChange).
+export {
+  MIXED,
+  commonValue,
+  parseFontSize,
+  FONT_FAMILY_OPTIONS,
+  TEXT_COLOR_PALETTE,
+  TEXT_HIGHLIGHT_PALETTE,
+  FontFamilyControl,
+  FontSizeControl,
+  TextColorControl,
+  TextHighlightControl,
+  TextMarkButtons,
+  TextAlignControl,
+} from './ui/TextStyleControls';
+export type { Mixed, FontSizeValue, FontSizeOption, TextMark } from './ui/TextStyleControls';
 // [additive] World point → element-local unrotated coordinates (what hitTest / distanceTo take).
 export { worldToLocal } from './geometry/geometry';
 

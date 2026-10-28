@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { CalendarDays, CircleDashed, NotebookText, UserPlus } from 'lucide-react';
 import type { CardElement } from '@freero/shared';
 import { defineFormat, plainToRichText, richTextToPlain, type Editor } from '@engine';
-import { Avatar, Button, ColorSwatches, IconButton, Menu, Popover, TextArea } from '@ui';
+import { Avatar, Button, ColorSwatches, IconButton, Menu, Popover, TextArea, ToolbarButton } from '@ui';
 import { ACCENTS, ACCENT_NAMES, STATUSES, TOOL_ID, type CardStatus } from './lib/constants';
 import { formatDue, localISODate } from './lib/actions';
 import { useBoardPeople, usePerson } from './lib/people';
@@ -24,9 +24,9 @@ function ColorControl({ editor, cards }: Props) {
   const color = same(cards, 'color');
   return (
     <>
-      <button ref={ref} type="button" className="fr-card-fmt-btn" aria-label="Card color" title="Card color" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <ToolbarButton ref={ref} className="fr-card-fmt-btn" label="Card color" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         <span className="fr-card-fmt-dot" style={{ background: color ?? 'conic-gradient(#5B3FF0, #1FA463, #F5A524, #E5484D, #5B3FF0)' }} />
-      </button>
+      </ToolbarButton>
       <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label="Card color">
         <ColorSwatches
           colors={ACCENTS}
@@ -53,10 +53,10 @@ function StatusControl({ editor, cards }: Props) {
   const label = cards.every((c) => c.status === status) ? (STATUSES.find((s) => s.value === status)?.label ?? 'No status') : 'Mixed';
   return (
     <>
-      <button ref={ref} type="button" className="fr-card-fmt-btn" aria-label="Status" title="Status" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <ToolbarButton ref={ref} className="fr-card-fmt-btn" label="Status" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         <CircleDashed size={16} />
         {label}
-      </button>
+      </ToolbarButton>
       <Menu
         open={open}
         onClose={() => setOpen(false)}
@@ -84,10 +84,10 @@ function DueControl({ editor, cards }: Props) {
   const due = same(cards, 'dueDate') ?? null;
   return (
     <>
-      <button ref={ref} type="button" className="fr-card-fmt-btn" aria-label="Due date" title="Due date" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <ToolbarButton ref={ref} className="fr-card-fmt-btn" label="Due date" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         <CalendarDays size={16} />
         {due ? formatDue(due, new Date(editor.host.serverNow())) : null}
-      </button>
+      </ToolbarButton>
       <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label="Due date">
         <div className="fr-card-pop">
           <div className="fr-card-pop__label">Due date</div>
@@ -127,9 +127,9 @@ function AssigneeControl({ editor, cards }: Props) {
   };
   return (
     <>
-      <button ref={ref} type="button" className="fr-card-fmt-btn" aria-label="Assignee" title="Assignee" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <ToolbarButton ref={ref} className="fr-card-fmt-btn" label="Assignee" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         {assignee ? <AssigneeButtonFace id={assignee} /> : <UserPlus size={16} />}
-      </button>
+      </ToolbarButton>
       <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} width={260} aria-label="Assign to">
         <div className="fr-card-pop">
           <div className="fr-card-pop__label">Assign to</div>

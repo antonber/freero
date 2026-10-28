@@ -209,6 +209,12 @@
   letter-spacing: 0.04em;
 }
 
+/* Kept in the layout (the format toolbar climbs over the top one) but invisible and inert. */
+.fr-cx-ov__plus.is-inert {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 /* On stickies (which have their own "+"): a small drag-to-connect dot further out. */
 .fr-cx-ov__plus--dot {
   width: 10px;

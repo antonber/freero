@@ -101,3 +101,39 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
     </Tooltip>
   );
 });
+
+export interface ToolbarButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {
+  /** Accessible label; also the tooltip text. */
+  label: string;
+  /** Shortcut shown in the tooltip, e.g. "Mod+K". */
+  shortcut?: string;
+  tooltipSide?: Side;
+  /** Text content (a value + chevron): wider, content spread out. */
+  wide?: boolean;
+  /** Visible content: a value, a color sample, an icon. */
+  children: ReactNode;
+}
+
+/**
+ * A format-toolbar button whose face shows a value (font name, "12", a color sample) instead of
+ * a single icon — usually toggling a popover or menu (pass `aria-expanded`). Same tooltip as
+ * IconButton; never a native `title`.
+ */
+export const ToolbarButton = forwardRef<HTMLButtonElement, ToolbarButtonProps>(function ToolbarButton(
+  { label, shortcut, tooltipSide = 'bottom', wide, className, type = 'button', children, ...rest },
+  ref,
+) {
+  return (
+    <Tooltip content={label} shortcut={shortcut} side={tooltipSide}>
+      <button
+        ref={ref}
+        type={type}
+        aria-label={label}
+        className={['fr-tbbtn', wide ? 'fr-tbbtn--wide' : '', className ?? ''].filter(Boolean).join(' ')}
+        {...rest}
+      >
+        {children}
+      </button>
+    </Tooltip>
+  );
+});

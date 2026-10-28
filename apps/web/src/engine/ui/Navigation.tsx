@@ -48,6 +48,7 @@ function ZoomControls() {
             label: 'Zoom to selection',
             shortcut: 'Shift+2',
             disabled: editor.getSelection().length === 0,
+            disabledReason: 'Select something first',
             onSelect: () => editor.runCommand('engine.zoomToSelection'),
           },
           { divider: true },

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
 import { Popover } from './Popover';
 import { handleRovingKey } from './layers';
@@ -55,15 +55,14 @@ export function Select<T extends string | number = string>({
   const opts = options.map(norm);
   const current = opts.find((o) => o.value === value);
 
-  useEffect(() => {
+  // Focus the selected option in the commit that opens the list (as Popover content does), so
+  // nothing scheduled can steal focus back after a fast close.
+  useLayoutEffect(() => {
     if (!open) return;
-    const raf = requestAnimationFrame(() => {
-      const list = listRef.current;
-      const sel = list?.querySelector<HTMLElement>('[aria-selected="true"]:not([disabled])') ?? list?.querySelector<HTMLElement>('[data-fr-item]:not([disabled])');
-      sel?.focus({ preventScroll: true });
-      sel?.scrollIntoView({ block: 'nearest' });
-    });
-    return () => cancelAnimationFrame(raf);
+    const list = listRef.current;
+    const sel = list?.querySelector<HTMLElement>('[aria-selected="true"]:not([disabled])') ?? list?.querySelector<HTMLElement>('[data-fr-item]:not([disabled])');
+    sel?.focus({ preventScroll: true });
+    sel?.scrollIntoView?.({ block: 'nearest' });
   }, [open]);
 
   const onTriggerKey = (e: KeyboardEvent<HTMLButtonElement>) => {
@@ -111,7 +110,7 @@ export function Select<T extends string | number = string>({
           handleRovingKey(e, listRef.current);
         }}
       >
-        <div ref={listRef} id={listId} role="listbox" aria-label={aria['aria-label']}>
+        <div ref={listRef} id={listId} role="listbox" aria-label={aria['aria-label']} data-fr-keyboard-trap="">
           {opts.map((o) => {
             const selected = o.value === value;
             return (

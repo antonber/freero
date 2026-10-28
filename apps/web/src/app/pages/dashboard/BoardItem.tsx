@@ -30,7 +30,7 @@ export function boardMenuItems(b: BoardSummary, actions: BoardActions): MenuItem
   const canEdit = b.role === 'owner' || b.role === 'editor';
   return [
     { id: 'open', label: 'Open', icon: SquareArrowOutUpRight, onSelect: () => actions.open(b) },
-    { id: 'rename', label: 'Rename', icon: Pencil, disabled: !canEdit, onSelect: () => actions.rename(b) },
+    { id: 'rename', label: 'Rename', icon: Pencil, disabled: !canEdit, disabledReason: 'Only editors can rename this board', onSelect: () => actions.rename(b) },
     { id: 'duplicate', label: 'Duplicate', icon: Copy, onSelect: () => actions.duplicate(b) },
     { id: 'star', label: b.starred ? 'Remove from starred' : 'Star', icon: Star, onSelect: () => actions.toggleStar(b) },
     { id: 'share', label: 'Share', icon: Share2, onSelect: () => actions.share(b) },

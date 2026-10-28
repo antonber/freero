@@ -156,7 +156,12 @@ function TargetMarks({ editor, target, highlight }: { editor: Editor; target: Ta
   );
 }
 
-function QuickConnect({ editor, el, root }: { editor: Editor; el: BoardElement; root: HTMLDivElement }) {
+/**
+ * `inert`: mounted but invisible and not interactive (pointer held elsewhere, text editing, a line
+ * being dragged). The top handle stays in the layout then, so the format toolbar — which climbs
+ * over it (keep-clear) — doesn't jump while you click one of its buttons or start typing.
+ */
+function QuickConnect({ editor, el, root, inert }: { editor: Editor; el: BoardElement; root: HTMLDivElement; inert: boolean }) {
   const local = localAnchors(editor);
   const rotates = editor.getDefinition(el.type)?.rotatable !== false;
   const style = () => styleFromOptions(editor.getToolOptions<Partial<ConnectorStyle>>(TOOL_ID));
@@ -195,8 +200,9 @@ function QuickConnect({ editor, el, root }: { editor: Editor; el: BoardElement; 
     });
   };
 
-  // The format toolbar floats above (or below) the selection: a "+" it would cover steps
-  // further out along its side so it stays reachable.
+  // The top handle sits at the same distance as the others and is keep-clear: the format toolbar
+  // climbs over it. The format toolbar may still flip below the selection: a bottom / side "+" it
+  // would cover then steps further out along its side so it stays reachable.
   const bar = useFormatToolbarRect();
 
   return (
@@ -206,7 +212,9 @@ function QuickConnect({ editor, el, root }: { editor: Editor; el: BoardElement; 
         const n = sideNormal(el, side);
         const a = editor.worldToScreen(anchorWorld(el, side, local));
         const covered = (q: Point) => !!bar && q.x > bar.x - 14 && q.x < bar.x + bar.w + 14 && q.y > bar.y - 14 && q.y < bar.y + bar.h + 14;
+        const top = side === 'top';
         const clear = () => {
+          if (top) return;
           for (let i = 0; i < 40 && covered({ x: a.x + n.x * off, y: a.y + n.y * off }); i++) off += 4;
         };
         clear();
@@ -221,8 +229,10 @@ function QuickConnect({ editor, el, root }: { editor: Editor; el: BoardElement; 
             role="button"
             aria-label={`Connect from ${side} (drag), or add a connected copy (click)`}
             title="Drag to connect · Click to add a connected copy"
-            className={`fr-cx-ov__plus${dots ? ' fr-cx-ov__plus--dot' : ''}`}
+            className={`fr-cx-ov__plus${dots ? ' fr-cx-ov__plus--dot' : ''}${inert ? ' is-inert' : ''}`}
             data-fr-interactive=""
+            data-fr-keep-clear={top ? '' : undefined}
+            aria-hidden={inert || undefined}
             style={at({ x: a.x + n.x * off, y: a.y + n.y * off })}
             onPointerDown={onDown(side)}
           >
@@ -326,13 +336,17 @@ function ConnectorOverlay({ editor }: { editor: Editor }) {
 
   const single = selection.length === 1 ? selection[0] : null;
   const idle = toolId === 'select' && canEdit && !editingId && !hidden && single && !single.locked;
-  const quick = idle && !held && !dragging && isConnectable(editor, single) ? single : null;
+  // Shown (and kept mounted, inert, while text is edited or a pointer is held) for one selected,
+  // unlocked, connectable item.
+  const quickable = toolId === 'select' && canEdit && !hidden && single && !single.locked && isConnectable(editor, single);
+  const quick = quickable ? single : null;
+  const quickInert = !!editingId || held || dragging;
   const conn = idle && single.type === 'connector' ? (single as ConnectorElement) : null;
   const marks = snap ?? (toolId === TOOL_ID ? hover : null);
 
   return (
     <div ref={rootRef} className="fr-cx-ov">
-      {root && quick && <QuickConnect editor={editor} el={quick} root={root} />}
+      {root && quick && <QuickConnect editor={editor} el={quick} root={root} inert={quickInert} />}
       {root && conn && <ConnectorHandles editor={editor} c={conn} root={root} />}
       {marks && <TargetMarks editor={editor} target={marks} highlight={!!snap} />}
     </div>

@@ -1,4 +1,4 @@
-import type { FontFamily, ShapeElement, ShapeKind, StrokeStyle } from '@freero/shared';
+import type { ShapeElement, ShapeKind, StrokeStyle } from '@freero/shared';
 
 export const TOOL_ID = 'shape';
 export const LIBRARY_PANEL_ID = 'shape.library';
@@ -40,19 +40,9 @@ export const STROKE_COLORS = [
   '#17162B', '#4B4A63', '#8A89A3', '#CFCDE0', '#FFFFFF',
   '#5B3FF0', '#2F80ED', '#13A8A8', '#1FA463', '#F5A524', '#F07A2E', '#E5484D', '#D64FA8',
 ];
-export const TEXT_COLORS = [
-  '#17162B', '#4B4A63', '#8A89A3', '#FFFFFF', '#5B3FF0', '#2F80ED',
-  '#13A8A8', '#1FA463', '#F5A524', '#F07A2E', '#E5484D', '#D64FA8',
-];
 export const STROKE_WIDTHS = [0, 1, 2, 4, 8, 12];
 export const STROKE_STYLES: StrokeStyle[] = ['solid', 'dashed', 'dotted'];
 
-export const FONT_FAMILIES: Array<{ value: FontFamily; label: string }> = [
-  { value: 'sans', label: 'Sans' },
-  { value: 'serif', label: 'Serif' },
-  { value: 'mono', label: 'Mono' },
-  { value: 'hand', label: 'Handwritten' },
-];
 export const FONT_SIZES: Array<ShapeElement['fontSize']> = ['auto', 10, 12, 14, 18, 24, 32, 48, 64, 96];
 
 export interface ShapeToolOptions {

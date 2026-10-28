@@ -1,13 +1,13 @@
 // World layer: one transformed container; each element is a memoized view that subscribes to
 // its own element. The list itself only re-renders when the set/order of visible ids changes.
-import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 import type { BoardElement } from '@freero/shared';
 import { useCore, ScopeContext } from '../context';
 import { useElement } from '../hooks';
 import { quantizeZoom, viewportRect } from '../camera/camera';
 import { elementAABB, expandRect, rectContainsRect, rectsIntersect } from '../geometry/geometry';
-import type { Rect } from '../api';
+import type { DecorationDefinition, Insets, Rect } from '../api';
 
 export function cameraTransform(cam: { x: number; y: number; zoom: number }): string {
   return `translate(${-cam.x * cam.zoom}px, ${-cam.y * cam.zoom}px) scale(${cam.zoom})`;
@@ -110,6 +110,8 @@ export function ElementFrame(props: { element: BoardElement; selected: boolean; 
   const reg = core.registry.elements.get(el.type);
   const transform = `translate(${el.x}px, ${el.y}px)${el.rotation ? ` rotate(${el.rotation}deg)` : ''}`;
   const decorations = core.registry.decorations.filter((d) => d.def.appliesTo(el));
+  // Recomputed only when the element changes, so memoized element components keep bailing out.
+  const reserved = useMemo(() => reservedInsets(core.registry.decorations.map((d) => d.def), el), [el, core.registry]);
   let content: ReactNode;
   if (!reg) {
     content = <div className="fr-el-unknown">Unsupported item ({el.type})</div>;
@@ -117,7 +119,7 @@ export function ElementFrame(props: { element: BoardElement; selected: boolean; 
     const C = reg.def.Component;
     content = (
       <ScopeContext.Provider value={reg.feature}>
-        <C element={el} selected={props.selected} editing={props.editing} zoom={props.zoom} />
+        <C element={el} selected={props.selected} editing={props.editing} zoom={props.zoom} reserved={reserved} />
       </ScopeContext.Provider>
     );
   }
@@ -136,6 +138,21 @@ export function ElementFrame(props: { element: BoardElement; selected: boolean; 
       ))}
     </div>
   );
+}
+
+/** Per-side maximum of what the decorations applying to `el` reserve; undefined when none does. */
+export function reservedInsets(decorations: readonly DecorationDefinition[], el: BoardElement): Insets | undefined {
+  let out: Insets | undefined;
+  for (const d of decorations) {
+    const r = d.reserve && d.appliesTo(el) ? d.reserve(el) : undefined;
+    if (!r) continue;
+    out ??= { top: 0, right: 0, bottom: 0, left: 0 };
+    out.top = Math.max(out.top, r.top ?? 0);
+    out.right = Math.max(out.right, r.right ?? 0);
+    out.bottom = Math.max(out.bottom, r.bottom ?? 0);
+    out.left = Math.max(out.left, r.left ?? 0);
+  }
+  return out;
 }
 
 /** Applies the camera transform imperatively (no React render per frame). */

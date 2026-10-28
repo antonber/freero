@@ -72,7 +72,9 @@ export class EditorImpl implements Editor {
     userCamera: number;
     /** Local changes waiting for the containers' arrange pass (see editor/arrange.ts). */
     arrange: ArrangeState;
-  } = { collections: new Map(), camAnim: null, camTarget: null, lastPaste: null, lastDenied: 0, editingGesture: false, movingTimer: null, userCamera: 0, arrange: createArrangeState() };
+    /** A font re-measure waits for the next local change (redo steps existed): see renormalizeMeasured(). */
+    remeasurePending: boolean;
+  } = { collections: new Map(), camAnim: null, camTarget: null, lastPaste: null, lastDenied: 0, editingGesture: false, movingTimer: null, userCamera: 0, arrange: createArrangeState(), remeasurePending: false };
 
   /**
    * A local change wrote/removed `ids` (called inside its store transaction): containers with
@@ -275,13 +277,26 @@ export class EditorImpl implements Editor {
 
   /**
    * Web fonts finished loading: re-runs normalize for the elements THIS client measured (and
-   * nobody changed since), so text sized with fallback fonts gets its real frame. Written
-   * silently (no undo step) and only by this client — never for everyone's elements, so clients
-   * with different fonts can't fight over frames.
+   * nobody changed since), so text sized with fallback fonts gets its real frame. Never an undo
+   * step of its own (it joins the last one, see BoardStore.transactDerived, so undo keeps
+   * working for those elements) and only by this client — never for everyone's elements, so
+   * clients with different fonts can't fight over frames.
    */
   renormalizeMeasured(): void {
     const { measured, store } = this.core;
     if (!measured.size || !this.can('editor')) return;
+    if (store.undoManager.redoStack.length) {
+      // Writing now would discard the redo steps: re-measure with the user's next change.
+      if (!this.shared.remeasurePending) {
+        this.shared.remeasurePending = true;
+        const off = store.subscribeLocalChanges(() => {
+          off();
+          this.shared.remeasurePending = false;
+          queueMicrotask(() => this.renormalizeMeasured());
+        });
+      }
+      return;
+    }
     const next: BoardElement[] = [];
     for (const id of [...measured]) {
       const el = store.getElement(id);
@@ -296,7 +311,7 @@ export class EditorImpl implements Editor {
       if (patch && Object.keys(patch).some((k) => patch[k] !== cur[k])) next.push({ ...el, ...patch, id: el.id, type: el.type } as BoardElement);
     }
     if (!next.length) return;
-    store.transactSilently(() => {
+    store.transactDerived(() => {
       for (const el of next) store.setElement(el);
       runFollowers(this.core, next.map((el) => el.id), []);
     });
@@ -403,23 +418,31 @@ export class EditorImpl implements Editor {
     }
   }
 
-  /** Ids plus the (recursive) children of any container among them. */
+  /**
+   * Ids plus, recursively, the children of any container among them and the elements attached
+   * to any of them (`attachedTo`: reaction stamps) — everything that travels with them.
+   */
   withChildren(ids: string[]): string[] {
     const out = new Set(ids);
-    const containers = ids.filter((id) => {
-      const el = this.getElement(id);
-      return el && this.getDefinition(el.type)?.container;
-    });
-    if (!containers.length) return [...out];
-    const queue = [...containers];
     const all = this.getElements();
+    const isContainer = (el: BoardElement | undefined) => !!el && !!this.getDefinition(el.type)?.container;
+    if (!all.some((el) => el.attachedTo) && !ids.some((id) => isContainer(this.getElement(id)))) return [...out];
+    const riders = new Map<string, BoardElement[]>();
+    const add = (key: string, el: BoardElement) => {
+      const list = riders.get(key);
+      if (list) list.push(el);
+      else riders.set(key, [el]);
+    };
+    for (const el of all) {
+      if (el.attachedTo) add(el.attachedTo, el);
+      if (el.frameId && isContainer(this.getElement(el.frameId))) add(el.frameId, el);
+    }
+    const queue = [...out];
     while (queue.length) {
-      const fid = queue.pop()!;
-      for (const el of all) {
-        if (el.frameId === fid && !out.has(el.id)) {
-          out.add(el.id);
-          if (this.getDefinition(el.type)?.container) queue.push(el.id);
-        }
+      for (const el of riders.get(queue.pop()!) ?? []) {
+        if (out.has(el.id)) continue;
+        out.add(el.id);
+        queue.push(el.id);
       }
     }
     return [...out];
