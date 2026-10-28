@@ -2,7 +2,7 @@
 // Mermaid diagram, a table) and the layout says WHERE, so agents and AI never pick coordinates.
 // Pure and deterministic (ids come from the caller's generator), so the server and the web
 // produce the same elements for the same input.
-import type { BoardElement, ShapeKind, StickyColor, TableCopyContent } from '../elements';
+import type { BoardElement, CardStatus, ShapeKind, StickyColor, TableCopyContent } from '../elements';
 
 /** A new element before it is written: the writer stamps stacking, author and times. */
 export type ElementDraft = BoardElement extends infer E
@@ -77,7 +77,29 @@ export type StructureInput =
    * [additive] A written note (a summary): a soft rounded card (a shape) with the title in bold and
    * the text's paragraphs and bullet lines kept.
    */
-  | { kind: 'note'; title?: string; text: string };
+  | { kind: 'note'; title?: string; text: string }
+  /**
+   * [additive] Work items (rows of a CSV, KAI-136) → stickies or task cards in a grid, or on a
+   * kanban with a column per status (`layout: 'kanban'`).
+   */
+  | { kind: 'items'; items: ItemInput[]; layout?: 'grid' | 'kanban'; title?: string };
+
+/** One work item of an `items` structure. Tag ids, assignee ids and colours are the board's own. */
+export interface ItemInput {
+  type: 'sticky' | 'card';
+  text: string;
+  /** Cards only. */
+  description?: string;
+  /** A sticky colour name, or a card's accent (#rrggbb). */
+  color?: string;
+  /** Tag ids of the board's `tags` collection. */
+  tags?: string[];
+  /** Cards only. */
+  status?: CardStatus | null;
+  assigneeId?: string | null;
+  /** YYYY-MM-DD */
+  dueDate?: string | null;
+}
 
 /** What a layout produced, relative to its own top-left (0, 0). */
 export interface LaidOut {

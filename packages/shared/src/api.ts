@@ -6,6 +6,7 @@ import type { BoardElement, TableCopyContent } from './elements';
 import type { Rect } from './geometry';
 import type { StructureInput } from './layout/types';
 import type { BoardOutline } from './outline/types';
+import type { ActivityResults } from './ydoc';
 
 export type Role = 'owner' | 'editor' | 'commenter' | 'viewer';
 export type LinkAccess = 'none' | 'viewer' | 'commenter' | 'editor';
@@ -59,6 +60,14 @@ export interface BoardSummary {
    * 'none' and the owner can't turn it back on until they restore it.
    */
   linkBlocked?: boolean;
+  /**
+   * [additive] Share-link protection (KAI-145), sent to the board's owner only: a password the
+   * link asks for, and when it stops working. `linkAccess` already reads 'none' once it expired;
+   * `storedAccess` is the role the link gives again when the expiry is moved or removed.
+   */
+  linkProtection?: { password: boolean; expiresAt: number | null; expired: boolean; storedAccess: LinkAccess };
+  /** [additive] The board's call (KAI-134): a meeting link its editors set, or a Jitsi room. */
+  call?: BoardCall | null;
 }
 
 /**
@@ -78,7 +87,87 @@ export interface BoardPermissions {
   canTransfer: boolean;
   /** [additive] The board's link also lets in visitors without an account, as guests (workspace policy `publicLinks`). */
   guestLinks?: boolean;
+  /** [additive] This server offers boards a Jitsi room of their own (operator's JITSI_BASE_URL, KAI-134). */
+  jitsiCalls?: boolean;
 }
+
+// ---- Board call (KAI-134) ----
+// No audio/video in Freero: a board has a call link people open in their meeting tool. Either a
+// meeting URL its editors paste (https only), or a room on the operator's Jitsi whose name the
+// server derives from the board id with its secret (nobody can guess another board's room).
+// GET /api/boards/:id/call  -> BoardCallResponse   (anyone who can open the board, guests too)
+// PUT /api/boards/:id/call  body SetBoardCallRequest -> BoardCallResponse   (owners and editors; audited)
+export interface BoardCall {
+  kind: 'link' | 'jitsi';
+  /** https URL to open in a new tab. */
+  url: string;
+}
+export interface BoardCallResponse { call: BoardCall | null; jitsiAvailable: boolean }
+/** `url`: a meeting link; `jitsi: true`: the board's own Jitsi room; neither (or url null): no call. */
+export interface SetBoardCallRequest { url?: string | null; jitsi?: boolean }
+export const MAX_CALL_URL = 2000;
+
+// ---- Live audience activities (KAI-132) ----
+// Answers never enter the board: they go to the server, which validates them against the
+// `activity` element (as the person sees the board), keeps one answer per person (a new one
+// replaces it), and publishes only results into the board's ENGAGE_RESULTS_COLLECTION (@freero/shared
+// ydoc.ts). Anyone who can open the board may answer — viewers too — and guests when the activity
+// allows it. Rate limited (RATE_LIMIT_ENGAGE).
+// GET    /api/boards/:id/activities/:aid                     -> ActivityState
+// PUT    /api/boards/:id/activities/:aid/answer   body { answer: ActivityAnswer } -> ActivityState
+// DELETE /api/boards/:id/activities/:aid/answer   -> ActivityState   (take your answer back)
+// POST   /api/boards/:id/activities/:aid/questions  body { text } -> ActivityState   (Q&A)
+// PUT    /api/boards/:id/activities/:aid/questions/:qid/upvote  body { on: boolean } -> ActivityState
+// PATCH  /api/boards/:id/activities/:aid/questions/:qid  body { answered?, hidden? } -> ActivityState  (editors)
+// POST   /api/boards/:id/activities/:aid/reveal   body { revealed: boolean } -> ActivityState  (editors)
+// DELETE /api/boards/:id/activities/:aid/answers  -> ActivityState   (editors: start over)
+export interface ActivityAnswer {
+  /** Poll: picked option ids (1..maxChoices). */
+  choices?: string[];
+  /** Word cloud: up to ENGAGE_MAX_WORDS words or short phrases. */
+  words?: string[];
+  /** Ranking: every option id, best first. */
+  order?: string[];
+  /** Rating: option id -> 1..scale (statements may be skipped). */
+  ratings?: Record<string, number>;
+}
+export interface ActivityState {
+  /** What everyone sees on the board right now (sealed until revealed). */
+  results: ActivityResults | null;
+  /** Your own answer (only ever sent to you). */
+  mine: ActivityAnswer | null;
+  /** Q&A: the questions you upvoted, and the ones you asked. */
+  myUpvotes: string[];
+  myQuestions: string[];
+  /** Results are withheld from everyone until an editor reveals them. */
+  revealed: boolean;
+  /** You may answer now; else why not ("Answers are closed", "Sign in to answer"). */
+  canAnswer: boolean;
+  reason?: string;
+}
+export const ENGAGE_MAX_WORDS = 3;
+export const ENGAGE_MAX_WORD_LENGTH = 40;
+export const ENGAGE_MAX_CLOUD_WORDS = 60;
+export const ENGAGE_MAX_QUESTION = 280;
+export const ENGAGE_MAX_QUESTIONS_PER_PERSON = 10;
+export const ENGAGE_MAX_OPTIONS = 12;
+
+// ---- Share-link password and expiry (KAI-145) ----
+// The board's owner may protect its link (PATCH /api/boards/:id, owner only):
+//   linkPassword: string (4–128 characters) sets or changes it, null removes it;
+//   linkExpiresAt: epoch ms in the future, or null for no expiry.
+// The link then grants its role only to people who gave the CURRENT password (a new password
+// cancels every earlier unlock), and nothing after its expiry; memberships, team access and
+// ownership are never affected. Connected people whose access came only from the link are
+// disconnected when it is protected, changed or expires.
+// GET  /api/boards/:id  -> 403 { code: LINK_PASSWORD_REQUIRED } when the link would let this person
+//                          in after its password
+// POST /api/boards/:id/link-unlock  body { password } -> { ok: true }   (signed in; slow hash,
+//                          rate limited per IP and per board + person; 403 wrong password)
+// Guests: GuestBoardInfo.passwordRequired; POST /api/guest/boards/:id/join takes { name, password }.
+export const LINK_PASSWORD_REQUIRED = 'link_password_required';
+export const LINK_PASSWORD_MIN = 4;
+export const LINK_PASSWORD_MAX = 128;
 
 // ---- Workspaces ----
 // Every board belongs to a workspace. Each user has a personal workspace (created on first use;
@@ -532,7 +621,16 @@ export interface DataExportInfo {
 // PUT    /api/boards/:id/thumbnail body { dataUrl: string } -> { ok: true } (editor+)
 export interface CreateBoardRequest { title?: string; description?: string; workspaceId?: string; projectId?: string | null }
 /** `projectId`: move it into that project of its workspace (null: the workspace root); `permissions.canMove`. */
-export interface UpdateBoardRequest { title?: string; description?: string; linkAccess?: LinkAccess; projectId?: string | null }
+export interface UpdateBoardRequest {
+  title?: string;
+  description?: string;
+  linkAccess?: LinkAccess;
+  projectId?: string | null;
+  /** [additive] Owner only (KAI-145): set / change the link's password, or null to remove it. */
+  linkPassword?: string | null;
+  /** [additive] Owner only (KAI-145): when the link stops working (epoch ms, future), or null. */
+  linkExpiresAt?: number | null;
+}
 
 // ---- Version history ----
 // Editors and owners only: an older version can hold content someone removed before sharing the
@@ -723,6 +821,8 @@ export interface GuestBoardInfo {
   allowed: boolean;
   role?: 'viewer' | 'commenter';
   title?: string;
+  /** [additive] The link asks for a password (KAI-145): send it with the join. */
+  passwordRequired?: boolean;
 }
 export interface GuestInfo {
   id: string;
@@ -789,7 +889,10 @@ export type NotificationType =
   | 'workspace.invite'
   | 'access.request'
   | 'access.response'
-  | 'moderation.action';
+  | 'moderation.action'
+  | 'card.assigned'
+  | 'card.due_changed'
+  | 'card.due_soon';
 
 export interface AppNotification {
   id: string;
@@ -1295,6 +1398,9 @@ export const AUDIT_ACTIONS = {
   'board.access_approved': 'Let someone into a board (access request)',
   'board.access_declined': 'Declined a request for access to a board',
   'board.guest_joined': 'A visitor without an account joined a board by its link',
+  'board.link_protection_changed': 'Changed a board link’s password or expiry',
+  'board.link_password_refused': 'Gave a wrong password for a board’s link',
+  'board.call_link_changed': 'Changed a board’s call link',
   'version.restored': 'Restored a board version',
   'template.saved': 'Saved a board as a template',
   'audit.exported': 'Exported the audit log',
