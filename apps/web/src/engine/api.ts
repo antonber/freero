@@ -928,7 +928,8 @@ export interface Editor {
    * count. `visual` adds each definition's visualOutset (frame titles…), as exports draw them.
    */
   getBounds(ids?: string[], opts?: { visual?: boolean }): Rect | null;
-  hitTest(point: Point, opts?: { exclude?: string[]; types?: ElementType[] }): BoardElement | null;
+  /** `tolerancePx` [additive]: how far (screen px) off an item still hits it (default 4; fingers get more). */
+  hitTest(point: Point, opts?: { exclude?: string[]; types?: ElementType[]; tolerancePx?: number }): BoardElement | null;
   elementsInRect(rect: Rect, mode?: 'intersect' | 'contain'): BoardElement[];
   getAnchorPoint(id: string, anchor: 'top' | 'right' | 'bottom' | 'left'): Point | null;
 

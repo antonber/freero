@@ -10,6 +10,8 @@ import { ScreenOverlays } from './overlay/Overlays';
 import { Chrome, DialogPanels, ScreenOverlayPanels, WorldOverlayPanels } from './ui/Chrome';
 import { installKeyboard } from './interaction/keyboard';
 import { LiveRegion } from './ui/LiveRegion';
+import { useCompactLayout } from './ui/compact';
+import { useStore } from 'zustand';
 import { createExportRenderer, startThumbnails } from './editor/export';
 import './board.css';
 
@@ -92,6 +94,8 @@ export function BoardEngine({ host, features, topbarAccessory, location, initial
 
 function BoardView({ core, location }: { core: EngineCore; location?: BoardEngineProps['location'] }) {
   useEffect(() => installKeyboard(core), [core]);
+  const compact = useCompactLayout();
+  const phoneEditing = useStore(core.ui, (s) => s.phoneEditing);
   useInitialView(core);
   useUrlCommands(core, location);
   useEffect(() => {
@@ -104,7 +108,7 @@ function BoardView({ core, location }: { core: EngineCore; location?: BoardEngin
   }, [core]);
 
   return (
-    <div className="fr-board">
+    <div className="fr-board" data-fr-layout={compact ? (phoneEditing ? 'phone-edit' : 'phone') : undefined}>
       <Canvas worldOverlay={<WorldOverlayPanels />} screenOverlay={<><ScreenOverlays /><ScreenOverlayPanels /></>} />
       <Chrome />
       <DialogPanels />

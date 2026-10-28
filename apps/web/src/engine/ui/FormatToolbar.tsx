@@ -14,6 +14,7 @@ import { isMac } from '../runtime/shortcuts';
 import { contextCommandItems } from './ContextMenu';
 import { ExactControls } from './ExactControls';
 import { MixedStyleSection, hasMixedStyle } from './MixedStyle';
+import { useCompactLayout } from './compact';
 
 const GAP = 14;
 const TOP_SAFE = 68;
@@ -86,7 +87,10 @@ export function FormatToolbar() {
   const arrangeRef = useRef<HTMLButtonElement>(null);
   const moreRef = useRef<HTMLButtonElement>(null);
 
-  const visible = els.length > 0 && !transforming && !contextMenu && ROLE_RANK[role] >= ROLE_RANK.editor;
+  const compact = useCompactLayout();
+  const phoneEditing = useStore(core.ui, (s) => s.phoneEditing);
+  // Phone, view-and-comment mode: no format toolbar until the editor switches to editing.
+  const visible = els.length > 0 && !transforming && !contextMenu && ROLE_RANK[role] >= ROLE_RANK.editor && (!compact || phoneEditing);
   const sections = visible ? core.registry.formats.filter((f) => f.def.appliesTo(els)) : [];
   // Several item types selected: the style controls they share (KAI-111), before the features'.
   const mixed = visible && hasMixedStyle(editor, els);
@@ -162,7 +166,8 @@ export function FormatToolbar() {
     below = true;
   }
   if (below && top + size.h > viewport.height - 70) top = Math.max(TOP_SAFE, Math.min(tl.y + 8, viewport.height - size.h - 70));
-  const left = Math.min(Math.max(12 + 56, cx - size.w / 2), viewport.width - size.w - 12);
+  // Clear of the left toolbar on wide screens; on a phone the toolbar sits at the bottom.
+  const left = compact ? Math.max(8, Math.min(cx - size.w / 2, viewport.width - size.w - 8)) : Math.min(Math.max(12 + 56, cx - size.w / 2), viewport.width - size.w - 12);
   natural.current = { left, top, below, selTop: tl.y, selBottom: br.y };
   if (clearTop !== null) top = clearTop;
   placed.current = { x: Math.round(left), y: Math.round(top), w: size.w, h: size.h };

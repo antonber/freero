@@ -73,6 +73,8 @@ export interface UiState {
   following: FollowTarget | null;
   /** Elements hidden for this viewer only (Editor.setViewHidden). Replaced, never mutated. */
   viewHidden: ReadonlySet<string>;
+  /** Phone layout: the editor switched from "view and comment" to the full toolbar (ui/compact.ts). */
+  phoneEditing: boolean;
 }
 
 export interface PointerState {
@@ -124,6 +126,7 @@ export function createUiStore(init: { role: Role }): UiStore {
     dialog: null,
     following: null,
     viewHidden: new Set<string>(),
+    phoneEditing: false,
   }));
 
 }

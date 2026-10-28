@@ -12,6 +12,7 @@ import { useSettings } from '../hooks';
 import type { Registered } from '../runtime/registry';
 import type { ToolDefinition } from '../api';
 import { publicCursor } from '../editor/layers';
+import { LONG_PRESS_MS, routePress, TOUCH_HIT_PX, TOUCH_SLOP_PX } from '../interaction/touch';
 import './canvas.css';
 
 const DOUBLE_CLICK_MS = 400;
@@ -76,6 +77,17 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
     let cursorTimer: ReturnType<typeof setTimeout> | null = null;
     const touches = new Map<number, Point>();
     let pinch: { d0: number; mid0: Point; cam: { x: number; y: number; zoom: number } } | null = null;
+    // Pens on the screen (palm rejection) and whether one was used yet ("pen draws, finger pans").
+    const pens = new Set<number>();
+    let penSeen = false;
+    /** A still finger's long press (context menu); cancelled by moving, lifting or a second finger. */
+    let longPress: { timer: ReturnType<typeof setTimeout>; pointerId: number; start: Point } | null = null;
+    /** A one-finger pan that hasn't moved yet: lifting it is a tap. */
+    let tap: { pointerId: number; start: Point } | null = null;
+    const cancelLongPress = () => {
+      if (longPress) clearTimeout(longPress.timer);
+      longPress = null;
+    };
 
     const screenOf = (e: { clientX: number; clientY: number }): Point => {
       const r = el.getBoundingClientRect();
@@ -113,7 +125,7 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
       // Hit-testing is lazy: only computed if the tool reads `target`.
       Object.defineProperty(ev, 'target', {
         enumerable: true,
-        get: () => (hit === undefined ? (hit = editor.hitTest(world)) : hit),
+        get: () => (hit === undefined ? (hit = editor.hitTest(world, e.pointerType === 'touch' ? { tolerancePx: TOUCH_HIT_PX } : {})) : hit),
       });
       return ev;
     };
@@ -143,6 +155,12 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
       if (t.closest('[data-fr-text-editor]') || t.closest('[data-fr-interactive]')) return;
       const screen = screenOf(e);
       const world = editor.screenToWorld(screen);
+      if (e.pointerType === 'pen') {
+        pens.add(e.pointerId);
+        penSeen = true;
+      }
+      // Palm rejection: a hand resting on the screen while the pen is down does nothing at all.
+      if (e.pointerType === 'touch' && pens.size) return;
       if (ui.getState().contextMenu) ui.setState({ contextMenu: null });
       // A plain click on the canvas takes the camera back from whoever you follow.
       if (editor.getFollowing()) editor.follow(null);
@@ -151,11 +169,53 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
 
       if (e.pointerType === 'touch') {
         touches.set(e.pointerId, screen);
-        if (touches.size === 2) {
-          // Second finger: abandon the tool gesture, start pinch-zoom.
+        if (touches.size >= 2) {
+          // Second finger: abandon the tool gesture, pan or long press; start pinch-zoom.
+          cancelLongPress();
+          tap = null;
           if (gesture) core.interaction.cancel?.();
+          if (pan) {
+            pan = null;
+            ui.setState({ transforming: null });
+          }
+          if (touches.size > 2) return;
           const [a, b] = [...touches.values()];
           pinch = { d0: Math.hypot(a.x - b.x, a.y - b.y), mid0: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, cam: editor.getCamera() };
+          return;
+        }
+        // A still finger held down opens the context menu there (what a right-click does).
+        cancelLongPress();
+        longPress = {
+          pointerId: e.pointerId,
+          start: screen,
+          timer: setTimeout(() => {
+            longPress = null;
+            if (touches.size !== 1) return;
+            if (gesture) core.interaction.cancel?.();
+            if (pan) {
+              pan = null;
+              ui.setState({ transforming: null });
+            }
+            tap = null;
+            const hit = editor.hitTest(world, { tolerancePx: TOUCH_HIT_PX });
+            const sel = ui.getState().selection;
+            if (hit && !sel.includes(hit.id)) editor.select(editor.expandGroups([hit.id]));
+            else if (!hit) editor.clearSelection();
+            ui.setState({ contextMenu: { x: e.clientX, y: e.clientY, world } });
+            navigator.vibrate?.(10);
+          }, LONG_PRESS_MS),
+        };
+        const route = routePress({
+          pointerType: e.pointerType,
+          pensDown: pens.size,
+          penSeen,
+          toolId: ui.getState().toolId,
+          onItem: !!t.closest('[data-handle]') || !!editor.hitTest(world, { tolerancePx: TOUCH_HIT_PX }),
+        });
+        if (route === 'pan') {
+          e.preventDefault();
+          tap = { pointerId: e.pointerId, start: screen };
+          startPan(e, screen);
           return;
         }
       }
@@ -208,6 +268,9 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
 
       if (e.pointerType === 'touch' && touches.has(e.pointerId)) {
         touches.set(e.pointerId, screen);
+        const moved = (from: Point) => Math.hypot(screen.x - from.x, screen.y - from.y) > TOUCH_SLOP_PX;
+        if (longPress?.pointerId === e.pointerId && moved(longPress.start)) cancelLongPress();
+        if (tap?.pointerId === e.pointerId && moved(tap.start)) tap = null;
         if (pinch && touches.size >= 2) {
           const [a, b] = [...touches.values()];
           const d = Math.hypot(a.x - b.x, a.y - b.y);
@@ -238,7 +301,10 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
     };
 
     const onPointerUp = (e: PointerEvent) => {
+      pens.delete(e.pointerId);
+      if (longPress?.pointerId === e.pointerId) cancelLongPress();
       if (e.pointerType === 'touch') {
+        if (!touches.has(e.pointerId)) return; // a palm the pen rejected
         touches.delete(e.pointerId);
         if (pinch) {
           if (touches.size < 2) pinch = null;
@@ -248,6 +314,9 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
       if (pan && e.pointerId === pan.pointerId) {
         pan = null;
         ui.setState({ transforming: null });
+        // A finger that didn't move: a tap on empty canvas deselects, like a click there.
+        if (tap?.pointerId === e.pointerId && ui.getState().toolId === 'select') editor.clearSelection();
+        tap = null;
         return;
       }
       if (!gesture || e.pointerId !== gesture.pointerId) return;
@@ -258,6 +327,9 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
     };
 
     const onPointerCancel = (e: PointerEvent) => {
+      pens.delete(e.pointerId);
+      if (longPress?.pointerId === e.pointerId) cancelLongPress();
+      if (tap?.pointerId === e.pointerId) tap = null;
       touches.delete(e.pointerId);
       if (touches.size < 2) pinch = null;
       if (pan && e.pointerId === pan.pointerId) {
@@ -328,6 +400,8 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
       e.preventDefault();
       // The Menu key / Shift+F10 also send a native contextmenu: the keyboard already opened it.
       if (ui.getState().contextMenu?.keyboard) return;
+      // A finger's long press opens the menu itself (LONG_PRESS_MS; iOS sends no contextmenu).
+      if (touches.size) return;
       const screen = screenOf(e);
       ui.setState({ contextMenu: { x: e.clientX, y: e.clientY, world: editor.screenToWorld(screen) } });
     };
@@ -366,6 +440,7 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
     window.addEventListener('keyup', onModifierKey, true);
     return () => {
       if (gesture) core.interaction.cancel?.();
+      cancelLongPress();
       if (cursorTimer) clearTimeout(cursorTimer);
       el.removeEventListener('pointerdown', onPointerDown);
       el.removeEventListener('pointermove', onPointerMove);

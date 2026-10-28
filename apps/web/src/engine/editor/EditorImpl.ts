@@ -340,11 +340,12 @@ export class EditorImpl implements Editor {
   }
 
 
-  hitTest(point: Point, opts: { exclude?: string[]; types?: ElementType[] } = {}): BoardElement | null {
+  hitTest(point: Point, opts: { exclude?: string[]; types?: ElementType[]; tolerancePx?: number } = {}): BoardElement | null {
     const zoom = this.core.ui.getState().camera.zoom;
     return hitTestElements(this.getVisibleElements(), point, (t) => this.getDefinition(t), {
-      ...opts,
-      tolerance: HIT_TOLERANCE_PX / zoom,
+      exclude: opts.exclude,
+      types: opts.types,
+      tolerance: (opts.tolerancePx ?? HIT_TOLERANCE_PX) / zoom,
     });
   }
 

@@ -7,6 +7,8 @@
   user-select: none;
   -webkit-user-select: none;
   overscroll-behavior: none;
+  /* A long press is Freero's context menu, not the system's callout / text magnifier. */
+  -webkit-touch-callout: none;
 }
 
 /* Keyboard focus on the canvas (Tab from the page, F6, Escape from a toolbar): an inset ring, so

@@ -631,6 +631,121 @@ button.fr-title:hover {
   color: var(--fr-ink-3);
 }
 
+/* ---- coarse pointers (tablets, phones): every chrome control is at least 40 px to a finger ---- */
+@media (pointer: coarse) {
+  .fr-format .fr-iconbtn--32,
+  .fr-format .fr-tbbtn,
+  .fr-zoom .fr-iconbtn--32,
+  .fr-dock__close {
+    min-width: 40px;
+    height: 40px;
+  }
+  .fr-format {
+    padding: 4px 6px;
+  }
+  .fr-zoom {
+    height: 48px;
+  }
+  .fr-zoom__pct {
+    height: 40px;
+  }
+  .fr-boardmenu__item {
+    height: 44px;
+  }
+}
+
+/* ---- phone layout (ui/compact.ts): "view and comment" first ---- */
+.fr-board[data-fr-layout^='phone'] .fr-topleft {
+  left: 8px;
+  top: 8px;
+  max-width: calc(100vw - 120px);
+}
+.fr-board[data-fr-layout^='phone'] .fr-topleft__card {
+  height: 44px;
+}
+.fr-board[data-fr-layout^='phone'] .fr-title {
+  max-width: 128px;
+}
+/* Top right: Share and the app's controls stay on the first row; the panels (people, reactions,
+   timer, vote, present) wrap to a second row of their own that scrolls sideways. */
+.fr-board[data-fr-layout^='phone'] .fr-topright {
+  left: 8px;
+  right: 8px;
+  top: 8px;
+  height: auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  row-gap: 8px;
+  pointer-events: none;
+}
+.fr-board[data-fr-layout^='phone'] .fr-topright > * {
+  pointer-events: auto;
+}
+.fr-board[data-fr-layout^='phone'] .fr-topright__panels {
+  order: 2;
+  flex: 1 1 100%;
+  max-width: 100%;
+  height: 48px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.fr-board[data-fr-layout^='phone'] .fr-topright > .fr-btn .fr-btn__label {
+  display: none;
+}
+.fr-board[data-fr-layout^='phone'] .fr-topcenter {
+  top: 124px;
+}
+/* The toolbar becomes a bottom bar, centred; tools scroll sideways when they don't fit. */
+.fr-board[data-fr-layout^='phone'] .fr-toolbar {
+  left: 8px;
+  right: 8px;
+  top: auto;
+  bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  flex-direction: row;
+  justify-content: center;
+}
+.fr-board[data-fr-layout^='phone'] .fr-toolbar__group {
+  flex-direction: row;
+}
+.fr-board[data-fr-layout^='phone'] .fr-toolbar > .fr-toolbar__group:first-child {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.fr-board[data-fr-layout^='phone'] .fr-tool-options {
+  left: 0;
+  right: 0;
+  top: auto !important;
+  bottom: calc(100% + 8px);
+  max-width: 100%;
+  overflow-x: auto;
+}
+.fr-board[data-fr-layout^='phone'] .fr-bottomright {
+  right: 8px;
+  bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+}
+.fr-board[data-fr-layout^='phone'] .fr-bottomleft {
+  display: none;
+}
+.fr-board[data-fr-layout^='phone'] .fr-format {
+  max-width: calc(100vw - 16px);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+/* Side panels (comments, board as list…) open as a bottom sheet over the bottom bar. */
+.fr-board[data-fr-layout^='phone'] .fr-dock {
+  left: 0;
+  right: 0;
+  top: auto;
+  bottom: 0;
+  width: auto;
+  max-width: none;
+  height: min(70vh, calc(100% - 64px));
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  border-radius: var(--fr-radius-lg) var(--fr-radius-lg) 0 0;
+  z-index: 2;
+}
+
 /* ---- forced colours (Windows high contrast): shadows are dropped, so cards get a system border,
    and the pressed tool is outlined (background tints are overridden too). ---- */
 @media (forced-colors: active) {
