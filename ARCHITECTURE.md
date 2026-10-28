@@ -299,7 +299,12 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
   layout and applies them in the same undo step: inside a gesture once, when the outermost gesture
   ends (a drag never re-stacks under the pointer; drop + re-stack = one undo), inside
   `editor.transact` once at its end (never from a half-written state), otherwise right after the
-  write. Remote changes never run it. Must be idempotent — it also runs after unrelated changes.
+  write. Must be idempotent and deterministic (the same board gives the same patches on every
+  client) — it also runs after unrelated changes. Remote changes don't run it, except one case:
+  a client that laid a container out in the last 5 s re-plans it when a remote change settles, and
+  if the merge left it out of layout (two drops into one free slot), the participant with the
+  highest Yjs client id re-lays it out (the others re-check 1.5 s later), joining its last undo
+  step. Bystanders never do, so nobody snaps a collaborator's drag in progress.
 - `fitToContent(el, handle)`: double-clicking a resize handle applies the returned patch (a
   fixed-width text box goes back to auto width).
 - `hitTest(el, local, { tolerance })` — `tolerance` is a few screen px in world units at the live
@@ -318,6 +323,8 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
   `editor.remove` (Delete, cut, context menu, eraser); one undo restores all of them.
 - `onKeyDown(e, { editor, selection })`: keys while this type is selected, asked before the
   engine's own keys and command shortcuts (mind-map Enter = add sibling, Delete = delete branch).
+  Declare what it handles (and keys a type's text parts handle) in `keys: [{ shortcuts, label,
+  minRole? }]` next to it, or the `?` sheet can't show them.
 - `wrapperStyle(el)`: style for the element's world wrapper (highlighter `mix-blend-mode`).
 - `selectionFrame: false`: no engine bounding box / handles / hover outline for that type; the
   feature draws its own (connector endpoint handles). `useFormatToolbarRect()` tells screen UI
@@ -444,7 +451,7 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
 Reference & items (engine primitives; product UI in `features/shortcuts`, `links`, `image`, `icons`):
 - `Editor.getShortcuts() → ShortcutEntry[]` (`engine/runtime/shortcutList.ts`): every binding the
   board answers for the live role — tool keys, command shortcuts (alternatives with the same label
-  fold into one row) and the keys the keyboard router handles itself (`ENGINE_KEYS` in
+  fold into one row), element types' declared `keys` (under their feature) and the keys the keyboard router handles itself (`ENGINE_KEYS` in
   `interaction/keyboard.ts`, kept next to the handlers). The `?` sheet renders it with `@ui` `Kbd`
   (⌘ on Apple platforms, Ctrl elsewhere), so the reference can't drift from the real bindings.
 - `BaseElement.link` (`@freero/shared`): an item link — an external URL or `#<elementId>`.
@@ -555,6 +562,15 @@ period, orchestrating the owning modules' exports).
   comments elsewhere become "Deleted user" (`realtime.renameCommentAuthor`, through the live room),
   then the user row (cascades). Other files they uploaded stay — images on other people's boards
   are part of those boards — and files nothing references are left to the uploads sweep.
+- Uploads sweep (`uploads/sweep.ts`, exclusive job every 6 h): uploads are shared (duplicates,
+  templates, pasted copies, avatars), so nobody deletes an upload when one user of it goes away.
+  Each module that stores `/uploads/<name>` URLs exposes `…UploadReferences(among?)` from its
+  index (realtime: stored doc bases + log + version history, trashed boards included, and the live
+  docs of this instance; templates; avatars; board thumbnails), searching its own tables in SQL
+  with `UPLOAD_REF_PATTERN`. A round adopts stored files without a row (owner NULL), marks what is
+  referenced (`last_referenced_at`), re-checks the candidates right before deleting, and deletes
+  rows + files no round has seen referenced for 24 h — freeing quota. New content that stores
+  upload URLs outside board docs adds its scan to `SCANS` there. `ObjectStorage.list()` exists for it.
 
 ### Database (`platform/db.ts`)
 

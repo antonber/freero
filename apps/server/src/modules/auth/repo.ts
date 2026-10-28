@@ -586,3 +586,14 @@ export async function deleteTwoFactor(userId: string): Promise<void> {
     await query(`DELETE FROM user_recovery_codes WHERE user_id = $1`, [userId]);
   });
 }
+
+/** Every match of `pattern`'s first group in a profile picture URL (restricted to `among` when given). */
+export async function matchesInAvatars(pattern: string, among: readonly string[] | null): Promise<string[]> {
+  const rows = await query<{ name: string }>(
+    `SELECT DISTINCT m[1] AS name
+     FROM (SELECT regexp_matches(avatar_url, $1, 'g') AS m FROM users WHERE avatar_url IS NOT NULL) found
+     WHERE $2::text[] IS NULL OR m[1] = ANY($2::text[])`,
+    [pattern, among],
+  );
+  return rows.map((r) => r.name);
+}

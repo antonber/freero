@@ -1069,6 +1069,15 @@ export function loadedRoomCount(): number {
   return rooms.size;
 }
 
+/** The live state of every doc loaded on this instance, layers included (edits not saved yet too). */
+export function* loadedDocStates(): Generator<Uint8Array> {
+  for (const r of rooms.values()) {
+    if (r.destroyed) continue;
+    yield Y.encodeStateAsUpdate(r.doc);
+    for (const l of r.layers.values()) yield Y.encodeStateAsUpdate(l.doc);
+  }
+}
+
 /** Loaded docs with changes not yet persisted (or a save in flight). */
 export function pendingPersistCount(): number {
   let n = 0;

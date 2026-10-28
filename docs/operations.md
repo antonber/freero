@@ -63,6 +63,10 @@ The database stores only `/uploads/<id>.<ext>` references; the files are in the 
   `mc mirror --overwrite src/freero dst/freero-backup` / `aws s3 sync s3://a s3://b`.
 - Restoring a database dump from time T with today's bucket is safe: files referenced at T are still
   there (or recoverable as versions).
+- The server deletes uploads nothing has referenced for 24 h (boards incl. trash and version
+  history, templates, avatars, thumbnails), every 6 h on one instance; files in the bucket that the
+  database doesn't know are adopted and follow the same rule. After restoring an old dump, restore
+  the non-current versions of files it references within a day, or they show as broken images.
 
 ### Moving local uploads to object storage
 

@@ -157,6 +157,8 @@ export function createCore(
     // Someone else (remote, undo) changed it: their measurement stands, ours is no longer ours.
     store.subscribeForeignKeys((ids) => {
       for (const id of ids) core.measured.delete(id);
+      // A concurrent change may have left a container this client just laid out overlapping.
+      core.editor.afterForeignChange(ids);
     }),
     // Web fonts arrived: text measured with fallback fonts gets its real size (locally, no undo).
     subscribeFontEpoch(() => core.editor.renormalizeMeasured()),

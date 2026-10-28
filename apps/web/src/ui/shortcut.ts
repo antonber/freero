@@ -12,14 +12,14 @@ const MAC: Record<string, string> = {
   mod: '⌘', cmd: '⌘', meta: '⌘', ctrl: '⌃', control: '⌃', alt: '⌥', option: '⌥', shift: '⇧',
   enter: '↩', return: '↩', backspace: '⌫', delete: '⌫', del: '⌦', escape: 'Esc', esc: 'Esc', tab: '⇥',
   arrowup: '↑', arrowdown: '↓', arrowleft: '←', arrowright: '→', up: '↑', down: '↓', left: '←', right: '→',
-  space: 'Space', plus: '+',
+  space: 'Space', plus: '+', pageup: 'Page Up', pagedown: 'Page Down',
 };
 
 const OTHER: Record<string, string> = {
   mod: 'Ctrl', cmd: 'Ctrl', meta: 'Win', ctrl: 'Ctrl', control: 'Ctrl', alt: 'Alt', option: 'Alt', shift: 'Shift',
   enter: 'Enter', return: 'Enter', backspace: 'Backspace', delete: 'Del', del: 'Del', escape: 'Esc', esc: 'Esc', tab: 'Tab',
   arrowup: '↑', arrowdown: '↓', arrowleft: '←', arrowright: '→', up: '↑', down: '↓', left: '←', right: '→',
-  space: 'Space', plus: '+',
+  space: 'Space', plus: '+', pageup: 'Page Up', pagedown: 'Page Down',
 };
 
 /** Splits a shortcut into display keys, e.g. "Mod+Shift+Z" -> ["⌘","⇧","Z"] on macOS. */

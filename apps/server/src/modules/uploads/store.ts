@@ -23,6 +23,20 @@ export const TYPE_BY_EXT: Record<string, string> = Object.fromEntries(
 
 export const FILE_NAME_RE = /^[A-Za-z0-9_-]{6,64}\.(png|jpg|gif|webp|svg|pdf)$/;
 
+/**
+ * How stored content refers to an upload: "/uploads/<name>" anywhere in a string (a relative or
+ * absolute URL, inside JSON or a Yjs update). Group 1 is the storage name. Valid both as a
+ * JavaScript and as a Postgres regular expression, so modules can search their tables in SQL.
+ */
+export const UPLOAD_REF_PATTERN = '/uploads/([A-Za-z0-9_-]{6,64}\\.(?:png|jpg|gif|webp|svg|pdf))';
+
+/** The upload names referenced in `text` (restricted to `among` when given). */
+export function uploadNamesIn(text: string, among?: ReadonlySet<string>): Set<string> {
+  const out = new Set<string>();
+  for (const m of text.matchAll(new RegExp(UPLOAD_REF_PATTERN, 'g'))) if (!among || among.has(m[1])) out.add(m[1]);
+  return out;
+}
+
 export function maxUploadBytes(): number {
   return getConfig().maxUploadBytes;
 }
