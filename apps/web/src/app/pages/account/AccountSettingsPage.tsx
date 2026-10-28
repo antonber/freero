@@ -7,6 +7,7 @@ import { api, ApiError } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
 import { relativeTime } from '../../lib/time';
 import { ExportList } from '../admin/AdminIdentity';
+import { ApiTokensSection, ConnectedAppsSection, DeveloperAppsSection } from './ApiSections';
 import { Section } from './Section';
 import { isReauthRequired, needsReauth, ReauthPrompt, SignInMethodsSection, TwoFactorSection } from './SecuritySections';
 import './account.css';
@@ -51,6 +52,9 @@ export function AccountSettingsPage() {
         <PasswordSection security={security} onChanged={securityChanged} />
         <TwoFactorSection security={security} onChanged={securityChanged} />
         <SessionsSection version={sessionsVersion} />
+        <ConnectedAppsSection />
+        <ApiTokensSection />
+        <DeveloperAppsSection />
         <DataSection />
         <DeleteSection security={security} />
       </main>

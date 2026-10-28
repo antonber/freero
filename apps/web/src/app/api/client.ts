@@ -1,4 +1,11 @@
 import type {
+  AuthorizedApp,
+  CreateTokenRequest,
+  OAuthClientInfo,
+  OAuthConsentInfo,
+  PersonalToken,
+  RegisterClientRequest,
+  WorkspaceApiInfo,
   AdminMember,
   AuditEvent,
   AuditIntegrity,
@@ -435,6 +442,29 @@ export const api = {
     }
     return res.json();
   },
+
+  // ---- public API credentials (KAI-104): tokens, authorised apps, registered apps, consent ----
+  listApiTokens: () => request<{ tokens: PersonalToken[] }>('GET', '/api/auth/tokens'),
+  createApiToken: (body: CreateTokenRequest) => request<{ token: PersonalToken; secret: string }>('POST', '/api/auth/tokens', body),
+  pauseApiToken: (id: string, paused: boolean) => request<{ token: PersonalToken }>('PATCH', `/api/auth/tokens/${encodeURIComponent(id)}`, { paused }),
+  revokeApiToken: (id: string) => request<{ ok: true }>('DELETE', `/api/auth/tokens/${encodeURIComponent(id)}`),
+  listAuthorizedApps: () => request<{ apps: AuthorizedApp[] }>('GET', '/api/auth/apps'),
+  revokeAuthorizedApp: (clientId: string) => request<{ ok: true }>('DELETE', `/api/auth/apps/${encodeURIComponent(clientId)}`),
+  revokeAllApiAccess: () => request<{ tokens: number; apps: number }>('POST', '/api/auth/api-access/revoke-all'),
+  listOAuthClients: () => request<{ clients: OAuthClientInfo[] }>('GET', '/api/oauth/clients'),
+  registerOAuthClient: (body: RegisterClientRequest) => request<{ client: OAuthClientInfo; clientSecret?: string }>('POST', '/api/oauth/clients', body),
+  deleteOAuthClient: (id: string) => request<{ ok: true }>('DELETE', `/api/oauth/clients/${encodeURIComponent(id)}`),
+  /** The authorization request as the app sent it (the consent page's query string). */
+  oauthConsent: (query: string) => request<{ consent: OAuthConsentInfo } | { redirect: string }>('GET', `/api/oauth/authorize?${query}`),
+  oauthDecide: (params: Record<string, string>, decision: 'allow' | 'deny') =>
+    request<{ redirect: string }>('POST', '/api/oauth/authorize', { ...params, decision }),
+  workspaceApi: (id: string) => request<WorkspaceApiInfo>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/api`),
+  setWorkspaceApi: (id: string, enabled: boolean) => request<WorkspaceApiInfo>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/admin/api`, { enabled }),
+  setWorkspaceCredentialBlocked: (id: string, credentialId: string, blocked: boolean) =>
+    request<WorkspaceApiInfo>(
+      blocked ? 'POST' : 'DELETE',
+      `/api/workspaces/${encodeURIComponent(id)}/admin/api/credentials/${encodeURIComponent(credentialId)}/block`,
+    ),
 };
 
 /**

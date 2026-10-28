@@ -1,0 +1,107 @@
+/* The OAuth consent screen (OAuthConsentPage.tsx), inside the auth card. */
+.fr-oauth {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  text-align: left;
+}
+
+.fr-oauth__app {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--fr-surface-2);
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius);
+}
+
+.fr-oauth__app-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  color: var(--fr-accent);
+  background: var(--fr-accent-soft);
+  border-radius: 10px;
+}
+
+.fr-oauth__app-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--fr-ink-3);
+  overflow-wrap: anywhere;
+}
+
+.fr-oauth__app-name strong {
+  font-size: 15px;
+  color: var(--fr-ink);
+}
+
+.fr-oauth__warn {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #8a5300;
+  background: var(--fr-warning-soft);
+  border-radius: var(--fr-radius);
+}
+
+.fr-oauth__warn svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+.fr-oauth__lead {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fr-ink);
+}
+
+.fr-oauth__scopes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fr-oauth__scopes li {
+  display: flex;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--fr-ink-2);
+}
+
+.fr-oauth__scopes svg {
+  flex: none;
+  margin-top: 3px;
+  color: var(--fr-success, #1f9d55);
+}
+
+.fr-oauth__fine {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--fr-ink-3);
+}
+
+.fr-oauth__origin {
+  color: var(--fr-ink-2);
+  overflow-wrap: anywhere;
+}
+
+.fr-oauth__actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 4px;
+}
