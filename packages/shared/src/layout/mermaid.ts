@@ -156,6 +156,12 @@ function splitStatements(source: string): Array<{ text: string; line: number }> 
   return out.filter((s) => s.text);
 }
 
+/** A supported diagram header alone on its line (after comments); prose starting "Graph of …" is not one. */
+const HEADER = /^\s*(?:%%[^\n]*\n\s*)*(?:(?:flowchart|graph)(?:[ \t]+(?:TB|TD|BT|RL|LR))?|sequenceDiagram|mindmap)[ \t]*(?:\r?\n|;|$)/i;
+
+/** Whether `text` is Mermaid source this reader handles (pasted text the app turns into a diagram). */
+export const looksLikeMermaid = (text: string | null | undefined): boolean => !!text && HEADER.test(text);
+
 export function parseMermaid(source: string): MermaidDiagram {
   if (typeof source !== 'string' || !source.trim()) throw new LayoutError('The Mermaid source is empty');
   if (source.length > LAYOUT_LIMITS.source) throw new LayoutError(`Mermaid source is longer than ${LAYOUT_LIMITS.source} characters`);
@@ -236,7 +242,7 @@ function parseFlowchart(stmts: Array<{ text: string; line: number }>) {
   const stack: GraphGroupInput[] = [];
   /** Nodes given a text somewhere (an id only ever linked to may be a subgraph's). */
   const declared = new Set<string>();
-  const touch = (n: { id: string; text?: string; shape?: ShapeKind }) => {
+  const touch = (n: { id: string; text?: string; shape?: ShapeKind }, standalone = false) => {
     if (n.text !== undefined) declared.add(n.id);
     if (groups.some((g) => g.id === n.id)) {
       if (n.text !== undefined) throw new LayoutError(`Mermaid: "${n.id}" is a subgraph and a node`);
@@ -251,8 +257,9 @@ function parseFlowchart(stmts: Array<{ text: string; line: number }>) {
       prev.shape = n.shape ?? prev.shape;
     }
     const g = stack[stack.length - 1];
-    // A node belongs to the subgraph where it first appears (or is re-declared with a shape).
-    if (g && (!prev || n.text !== undefined)) {
+    // A node belongs to the subgraph where it first appears, or where it is named on its own line
+    // or re-declared with a shape (Mermaid: listing an existing node in a subgraph moves it there).
+    if (g && (!prev || n.text !== undefined || standalone)) {
       for (const other of groups) other.nodes = other.nodes.filter((id) => id !== n.id);
       g.nodes.push(n.id);
     }
@@ -285,7 +292,8 @@ function parseFlowchart(stmts: Array<{ text: string; line: number }>) {
       left.push(readNode(c));
       ws(c);
     }
-    left.forEach(touch);
+    const standalone = c.i >= c.s.length;
+    left.forEach((n) => touch(n, standalone));
     while (c.i < c.s.length) {
       const link = readLink(c);
       if (!link) fail(line, `can't read "${c.s.slice(c.i, c.i + 30)}"`);
@@ -296,7 +304,7 @@ function parseFlowchart(stmts: Array<{ text: string; line: number }>) {
         right.push(readNode(c));
         ws(c);
       }
-      right.forEach(touch);
+      right.forEach((n) => touch(n));
       for (const a of left)
         for (const b of right) {
           if (edges.length >= LAYOUT_LIMITS.elements) throw new LayoutError(`At most ${LAYOUT_LIMITS.elements} edges per diagram`);

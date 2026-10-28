@@ -9,7 +9,7 @@ import { layoutClusters, layoutGraph, layoutKanban, layoutMindmap, layoutNote, l
 import { LayoutError, type LaidOut, type LayoutContext, type OutlineNodeInput, type StructureInput } from './types';
 
 export * from './types';
-export { parseMermaid, type MermaidDiagram } from './mermaid';
+export { parseMermaid, looksLikeMermaid, type MermaidDiagram } from './mermaid';
 export { parseIndentedList, parseOrgRows, columnStatus } from './structures';
 export * from './mindtree';
 export { tidyTree, type TidyUnit, type TidyOptions } from './tidy';

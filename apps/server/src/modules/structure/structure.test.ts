@@ -268,3 +268,13 @@ it('reads a Mermaid mind map: nesting by indentation, node brackets, icons and c
   expect(byText.get('Private beta')!.parentId).toBe(byText.get('Product')!.id);
   expect(byText.get('Sales')!.parentId).toBe(byText.get('Launch plan')!.id);
 });
+
+it('moves nodes linked earlier into a Mermaid subgraph that names them on their own lines (links first, groups after)', async () => {
+  const boardId = await boardWith([]);
+  const source = ['flowchart TD', '  A[Request] --> B{Approved?}', '  B -- no --> D[Revise]', '  D --> A', '  subgraph Review', '    B', '    D', '  end'].join('\n');
+  const res = await insert(boardId, { structure: { kind: 'mermaid', source } });
+  const all = (await elementsOf(boardId)).filter((e) => res.created.includes(e.id));
+  const frame = all.find((e) => e.type === 'frame')!;
+  const shape = (t: string) => all.find((e) => e.type === 'shape' && (e as { text: string }).text === t)!;
+  expect([shape('Approved?').frameId, shape('Revise').frameId, shape('Request').frameId ?? null]).toEqual([frame.id, frame.id, null]);
+});
