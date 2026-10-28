@@ -12,6 +12,16 @@
 //   during the final save keeps the room alive instead of loading a stale copy).
 // - Deleting a board waits for in-flight saves, so none lands after the delete.
 // - The log is compacted into the stored base when it grows long and after a room unloads.
+//
+// Across instances (platform/pubsub.ts: Redis when REDIS_URL is set; peers.ts has the messages):
+// several instances may hold the same board, each with its own sockets. Each publishes the changes
+// and presence of ITS sockets on the board's channel and applies the others' (REMOTE_ORIGIN:
+// relayed to its sockets, never re-published, never saved - the instance whose socket made a
+// change saves it). A room subscribes before it loads and then asks the others for anything the
+// database did not have yet (their unsaved changes) and for their sockets' presence; it asks again
+// whenever its subscription comes back after a Redis outage. Before unloading, a room that applied
+// other instances' changes appends whatever the database still lacks (their instance may have died
+// before saving). Access changes, board deletion and logouts are broadcast on a control channel.
 import * as decoding from 'lib0/decoding';
 import * as encoding from 'lib0/encoding';
 import * as awarenessProtocol from 'y-protocols/awareness';
@@ -21,12 +31,14 @@ import { WebSocket } from 'ws';
 import { WS_MESSAGE_ROLE, type Role } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { logError } from '../../platform/log';
+import { isShared, publish, subscribe, type Subscription } from '../../platform/pubsub';
 import { getUser } from '../auth/index';
 import { getBoardAccess, touchBoard } from '../boards/index';
-import { sanitizeAwarenessUpdate, type AwarenessIdentity } from './awareness';
-import { decideUpdate } from './filter';
-import { persistDuration, persistFailures } from './metrics';
+import { sanitizeAwarenessUpdate, withoutClients, type AwarenessIdentity } from './awareness';
 import * as store from './docStore';
+import { decideUpdate } from './filter';
+import { peerMessages, persistDuration, persistFailures } from './metrics';
+import { boardChannel, CONTROL_CHANNEL, decodeControl, decodePeer, encodeControl, encodePeer, INSTANCE_ID, type ControlMessage, type PeerMessage } from './peers';
 
 export const MESSAGE_SYNC = 0;
 export const MESSAGE_AWARENESS = 1;
@@ -44,6 +56,8 @@ const MAX_QUEUED_BYTES = 16 * 1024 * 1024;
 
 /** Origin of the persisted state applied on load: not a change, so neither broadcast nor saved. */
 const LOAD_ORIGIN = Symbol('load');
+/** Origin of changes and presence relayed from other instances. */
+const REMOTE_ORIGIN = Symbol('remote');
 
 /** Who a socket is, decided once at admission. */
 export interface Admission {
@@ -112,6 +126,9 @@ class Room {
   private saving: Promise<void> = Promise.resolve();
   private pendingSaves = 0;
   private refreshing: Promise<void> = Promise.resolve();
+  private subscription: Subscription | null = null;
+  /** Applied changes made on other instances (see unloadRoom). */
+  sawRemote = false;
 
   constructor(readonly id: string) {
     this.awareness = new awarenessProtocol.Awareness(this.doc);
@@ -124,6 +141,11 @@ class Room {
       syncProtocol.writeUpdate(e, update);
       const msg = encoding.toUint8Array(e);
       for (const c of this.conns.values()) if (c.ws !== origin) send(c.ws, msg);
+      if (origin === REMOTE_ORIGIN) {
+        this.sawRemote = true;
+        return;
+      }
+      this.toPeers({ type: 'update', update });
       this.unsaved.push(update);
       this.markDirty();
     });
@@ -133,21 +155,40 @@ class Room {
       ({ added, updated, removed }: { added: number[]; updated: number[]; removed: number[] }, origin: unknown) => {
         const conn = origin instanceof WebSocket ? this.conns.get(origin) : undefined;
         if (conn) {
-          for (const id of added) conn.awarenessIds.add(id);
+          // `updated`, too: a client id seen before (on another instance, or before a reconnect).
+          for (const id of [...added, ...updated]) conn.awarenessIds.add(id);
           for (const id of removed) conn.awarenessIds.delete(id);
         }
         const changed = [...added, ...updated, ...removed];
+        const update = awarenessProtocol.encodeAwarenessUpdate(this.awareness, changed);
         const e = encoding.createEncoder();
         encoding.writeVarUint(e, MESSAGE_AWARENESS);
-        encoding.writeVarUint8Array(e, awarenessProtocol.encodeAwarenessUpdate(this.awareness, changed));
+        encoding.writeVarUint8Array(e, update);
         const msg = encoding.toUint8Array(e);
         // Sent to everyone, including the origin: y-websocket clients rely on the echo of their
         // periodic awareness renewal to know the connection is alive.
         for (const c of this.conns.values()) send(c.ws, msg);
+        // Our sockets' presence (and its removal when they leave). Not other instances' (theirs to
+        // send), nor states that timed out here (every instance times them out on its own).
+        if (origin !== REMOTE_ORIGIN && origin !== 'timeout') this.toPeers({ type: 'awareness', update });
       },
     );
 
-    this.ready = this.load();
+    this.ready = this.open();
+  }
+
+  private async open(): Promise<void> {
+    const sub = subscribe(boardChannel(this.id), {
+      message: (data) => this.onPeerMessage(data),
+      resubscribed: () => this.requestPeerSync(),
+    });
+    this.subscription = sub;
+    if (this.destroyed) sub.close();
+    // Subscribed first, so nothing published from here on is missed; bounded, so a Redis outage
+    // delays opening a board by at most a moment (we ask again once the subscription is up).
+    await sub.ready;
+    await this.load();
+    this.requestPeerSync();
   }
 
   private async load(): Promise<void> {
@@ -155,6 +196,85 @@ class Room {
     if (loaded.state && !this.destroyed) Y.applyUpdate(this.doc, loaded.state, LOAD_ORIGIN);
     this.logRows = loaded.logRows;
     this.logBytes = loaded.logBytes;
+  }
+
+  private toPeers(msg: PeerMessage): void {
+    if (this.destroyed || !isShared()) return;
+    peerMessages.inc({ direction: 'out' });
+    publish(boardChannel(this.id), encodePeer(msg));
+  }
+
+  /** Asks the other instances holding this board for what we lack and for their presence. */
+  private requestPeerSync(): void {
+    this.toPeers({ type: 'sync-request', stateVector: Y.encodeStateVector(this.doc) });
+  }
+
+  private onPeerMessage(data: Uint8Array): void {
+    if (this.destroyed) return;
+    try {
+      const { from, msg } = decodePeer(data);
+      if (from === INSTANCE_ID) return; // our own, echoed back
+      peerMessages.inc({ direction: 'in' });
+      switch (msg.type) {
+        case 'update':
+          Y.applyUpdate(this.doc, msg.update, REMOTE_ORIGIN);
+          break;
+        case 'awareness':
+          this.applyPeerAwareness(msg.update);
+          break;
+        case 'sync-request':
+          // Answer from the loaded doc (a request can arrive while we are still loading).
+          this.ready.then(
+            () => this.answerPeer(from, msg.stateVector),
+            () => {},
+          );
+          break;
+        case 'sync-reply':
+          if (msg.to !== INSTANCE_ID) return;
+          Y.applyUpdate(this.doc, msg.update, REMOTE_ORIGIN);
+          if (msg.awareness) this.applyPeerAwareness(msg.awareness);
+          break;
+      }
+    } catch (err) {
+      logError(`realtime: bad message from another instance on board ${this.id}`, err);
+    }
+  }
+
+  private applyPeerAwareness(update: Uint8Array): void {
+    const ours = withoutClients(update, (id) => {
+      for (const c of this.conns.values()) if (c.awarenessIds.has(id)) return true;
+      return false;
+    });
+    if (ours) awarenessProtocol.applyAwarenessUpdate(this.awareness, ours, REMOTE_ORIGIN);
+  }
+
+  private answerPeer(to: string, stateVector: Uint8Array): void {
+    if (this.destroyed) return;
+    const ids: number[] = [];
+    const states = this.awareness.getStates();
+    for (const c of this.conns.values()) for (const id of c.awarenessIds) if (states.has(id)) ids.push(id);
+    this.toPeers({
+      type: 'sync-reply',
+      to,
+      update: Y.encodeStateAsUpdate(this.doc, stateVector),
+      awareness: ids.length ? awarenessProtocol.encodeAwarenessUpdate(this.awareness, ids) : null,
+    });
+  }
+
+  /**
+   * Appends what this doc holds and the database lacks (changes relayed from instances that may
+   * have died before saving them). False if that could not be checked or saved.
+   */
+  async saveMissing(): Promise<boolean> {
+    try {
+      const missing = await store.missingFromStore(this.id, this.doc);
+      if (missing) await store.appendUpdates(this.id, [missing]);
+      return true;
+    } catch (err) {
+      if (err instanceof store.BoardGoneError) return true;
+      logError(`realtime: could not save other instances' changes to board ${this.id}`, err);
+      return false;
+    }
   }
 
   /** Adds an admitted socket; `queued` are the messages it sent before joining, in order. */
@@ -424,6 +544,7 @@ class Room {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     if (this.unloadTimer) clearTimeout(this.unloadTimer);
     this.destroyed = true;
+    this.subscription?.close();
     this.awareness.destroy();
     this.doc.destroy();
   }
@@ -461,10 +582,11 @@ async function unloadRoom(room: Room): Promise<void> {
   if (!idle()) return;
   await room.flush();
   if (!idle()) return; // someone joined while we were saving: keep it
-  if (room.hasPendingWrites) {
+  if (room.hasPendingWrites || (room.sawRemote && !(await room.saveMissing()))) {
     room.scheduleUnload(); // a save failed or another one is running: try again later
     return;
   }
+  if (!idle()) return; // someone joined while we were checking the database
   rooms.delete(room.id);
   room.destroy();
   // Leave a single compact base behind, so the next load reads one row (not in the room's queue:
@@ -533,16 +655,54 @@ export async function admitSocket(
   }
 }
 
-/** A session ended (logout): its board sockets close with 4401 in every room. */
-export function endSessionSockets(sessionKey: string): void {
+function toAllInstances(msg: ControlMessage): void {
+  if (!isShared()) return;
+  peerMessages.inc({ direction: 'out' });
+  publish(CONTROL_CHANNEL, encodeControl(msg));
+}
+
+function endSessionHere(sessionKey: string): void {
   for (const room of rooms.values()) room.endSession(sessionKey);
   for (const p of admitting) if (p.sessionKey === sessionKey) p.ws.close(4401, 'Signed out');
 }
 
-/** Re-resolves the role of everyone connected to the board; resolves once applied. */
-export async function refreshRoomAccess(boardId: string): Promise<void> {
+/** A session ended (logout): its board sockets close with 4401 in every room, on every instance. */
+export function endSessionSockets(sessionKey: string): void {
+  endSessionHere(sessionKey);
+  toAllInstances({ type: 'end-session', sessionKey });
+}
+
+async function refreshAccessHere(boardId: string): Promise<void> {
   accessEpochs.set(boardId, (accessEpochs.get(boardId) ?? 0) + 1);
   await rooms.get(boardId)?.refreshAccess();
+}
+
+/**
+ * Re-resolves the role of everyone connected to the board; resolves once applied on this
+ * instance (other instances apply it moments later).
+ */
+export async function refreshRoomAccess(boardId: string): Promise<void> {
+  toAllInstances({ type: 'refresh-access', boardId });
+  await refreshAccessHere(boardId);
+}
+
+/** Starts applying other instances' control messages; returns the stop function. */
+export function listenToOtherInstances(): () => void {
+  const sub = subscribe(CONTROL_CHANNEL, {
+    message(data) {
+      try {
+        const { from, msg } = decodeControl(data);
+        if (from === INSTANCE_ID) return;
+        peerMessages.inc({ direction: 'in' });
+        if (msg.type === 'end-session') endSessionHere(msg.sessionKey);
+        else if (msg.type === 'refresh-access') void refreshAccessHere(msg.boardId);
+        else void closeBoardHere(msg.boardId);
+      } catch (err) {
+        logError('realtime: bad control message from another instance', err);
+      }
+    },
+  });
+  return sub.close;
 }
 
 /** Current full state of a board doc (live doc if loaded — waiting for it to load — else the persisted state). */
@@ -569,6 +729,11 @@ export async function initBoardDoc(boardId: string, state: Uint8Array): Promise<
  * any save in flight. The stored state is removed with the board row (ON DELETE CASCADE).
  */
 export async function closeBoardDoc(boardId: string): Promise<void> {
+  toAllInstances({ type: 'close-board', boardId });
+  await closeBoardHere(boardId);
+}
+
+async function closeBoardHere(boardId: string): Promise<void> {
   const room = rooms.get(boardId);
   if (!room) return;
   dropRoom(room, 4403, 'Board deleted');

@@ -468,6 +468,17 @@ nor another instance's compaction running meanwhile is lost. It keeps a full-sta
 every 30 min (`board_doc_snapshots`): the base of version history (`listBoardSnapshots` /
 `loadBoardSnapshot` in `realtime/index.ts`).
 
+Several instances (`platform/pubsub.ts`: Redis pub/sub with `REDIS_URL`, in-process otherwise;
+messages in `realtime/peers.ts`): every instance holding a board publishes its own sockets'
+updates and presence on the board's channel and applies the others' with `REMOTE_ORIGIN` (relayed
+to its sockets, never re-published or saved: the instance whose socket made a change saves it). A
+room subscribes, loads, then asks the other instances for what the database lacks (sync-request /
+sync-reply, also after a Redis reconnect). Presence from another instance never overrides a client
+id owned by a local socket (a client that moved here). A room that applied remote changes appends
+what the database still lacks before it unloads. Access refreshes, board deletion and logouts go to
+all instances on a control channel. `npm run verify` with `DATABASE_URL` + `REDIS_URL` runs two
+instances and checks all of this with clients on each.
+
 Trust boundaries in `realtime`: presence from a socket may only write the awareness client ids
 that socket announced, and its `user` is always replaced by the authenticated user's profile
 (`realtime/awareness.ts`), so nobody can appear as someone else. Logging out
@@ -481,7 +492,8 @@ that socket announced, and its `user` is always replaced by the authenticated us
   data dir, signs up real users, creates a board, connects real Yjs WebSocket clients and checks
   sync, roles, persistence across restart. No fake harness. Runs on PGlite by default; with
   `DATABASE_URL` it runs against that Postgres (fresh database per run, dropped afterwards) and
-  also starts two instances at once on one empty database (migration lock). CI does both.
+  also starts two instances at once on one empty database (migration lock); with `REDIS_URL` too,
+  it runs two instances on one database + Redis with clients on each. CI does all of it.
 - UI: drive the real app in a browser (see `.claude/skills/verify-freero/`).
 
 ### What a test is for

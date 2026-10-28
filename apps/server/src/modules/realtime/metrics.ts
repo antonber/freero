@@ -7,3 +7,9 @@ export const persistDuration = histogram(
 );
 
 export const persistFailures = counter('freero_realtime_persist_failures_total', 'Board document persists that failed (and are retried)');
+
+export const peerMessages = counter(
+  'freero_realtime_peer_messages_total',
+  'Realtime messages exchanged with other app instances through Redis (direction: out|in)',
+  ['direction'] as const,
+);
