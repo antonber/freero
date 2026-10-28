@@ -36,6 +36,8 @@ export interface BoardStoreOptions {
   syncUrl: string;
   /** Persist local-only boards in localStorage (dev sandbox). */
   persistLocal?: boolean;
+  /** Local-only boards: start from this full state (a read-only version preview). */
+  initialState?: Uint8Array;
   captureTimeout?: number;
 }
 
@@ -142,7 +144,8 @@ export class BoardStore {
       this.status = 'local';
       this.synced = true;
       this.awareness = new Awareness(this.doc);
-      if (opts.persistLocal) this.loadLocal();
+      if (opts.initialState) Y.applyUpdate(this.doc, opts.initialState, 'load');
+      else if (opts.persistLocal) this.loadLocal();
     }
   }
 

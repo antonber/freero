@@ -9,6 +9,7 @@
 //   board.sync();                           // both replicas now agree
 import type { Role } from '@freero/shared';
 import type { Editor, ElementsSnapshot, FeatureBundle, FeatureManifest, Host, HostUser, SavedTemplateInfo } from './api';
+import { unavailableVersionHistory } from './api';
 import { createCore, type EngineCore } from './runtime/core';
 import { syncStores } from './store/replicas';
 
@@ -82,6 +83,7 @@ export function createTestBoard(opts: TestBoardOptions): TestBoard {
         if (i < 0) throw new Error('Template not found');
         templates.splice(i, 1);
       },
+      versions: unavailableVersionHistory('No version history in tests'),
     };
     const core = createCore(host, bundles);
     core.ui.setState({ viewport: { width: 1000, height: 800 }, camera: { x: 0, y: 0, zoom: 1 } });

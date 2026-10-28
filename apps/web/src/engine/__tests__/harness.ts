@@ -3,6 +3,7 @@
 // (beginGesture → tool handlers → endGesture).
 import type { Role } from '@freero/shared';
 import type { ElementDefinition, FeatureBundle, Host, Point, ToolPointerEvent } from '../api';
+import { unavailableVersionHistory } from '../api';
 import { createCore, type EngineCore } from '../runtime/core';
 
 const Noop = () => null;
@@ -53,6 +54,7 @@ export function makeHost(role: Role = 'owner'): Host {
     loadTemplate: async () => Promise.reject(new Error('No saved templates in tests')),
     saveTemplate: async () => Promise.reject(new Error('No saved templates in tests')),
     deleteTemplate: async () => undefined,
+    versions: unavailableVersionHistory('No version history in tests'),
     listMembers: async () => [],
     openShareDialog: () => undefined,
     navigate: () => undefined,
