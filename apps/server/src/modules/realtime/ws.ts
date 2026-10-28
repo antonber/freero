@@ -1,3 +1,4 @@
+import { WS_CLOSE_BOARD_REMOVED } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { gaugeFn } from '../../platform/metrics';
 import { checkRateLimit } from '../../platform/rateLimit';
@@ -45,7 +46,8 @@ export default function realtimeWs(ctx: ServerContext): WsRoute {
         } catch {
           /* falls through to 4403 */
         }
-        const { role } = boardId && !boardId.includes('/') ? await getBoardAccess(boardId, user.id) : { role: null };
+        const { role, removed } = boardId && !boardId.includes('/') ? await getBoardAccess(boardId, user.id) : { role: null, removed: false };
+        if (removed) return { code: WS_CLOSE_BOARD_REMOVED, reason: 'Board removed for review' };
         if (!role) return { code: 4403, reason: 'No access to this board' };
         return {
           boardId,

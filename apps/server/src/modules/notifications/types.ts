@@ -24,6 +24,9 @@ export interface NotificationData {
   requestedBoardId?: string;
   /** Who caused it when that is not an account (a guest on a shared link): their display name. */
   actorName?: string;
+  /** Moderation notices: what was done (a ModerationActionKind) and the signed appeal page. */
+  moderationAction?: string;
+  appealPath?: string;
 }
 
 export interface NotificationTypeDef {
@@ -36,6 +39,11 @@ export interface NotificationTypeDef {
   link(boardId: string | null, d: NotificationData): string;
   /** Digest link text. */
   linkLabel: string;
+  /**
+   * Emailed on its own by the module that creates it (not in digests, no email setting): notices
+   * people must get whatever their preferences, like moderation decisions.
+   */
+  direct?: boolean;
 }
 
 const board = (d: NotificationData) => `“${d.boardTitle || 'Untitled board'}”`;
@@ -46,6 +54,16 @@ const threadPath = (id: string | null, d: NotificationData) =>
 const ROLE_PHRASE: Record<string, string> = { editor: 'edit', commenter: 'comment on', viewer: 'view' };
 
 const ASK_PHRASE: Record<string, string> = { editor: 'edit', commenter: 'comment on', viewer: 'view' };
+
+/** Moderation notices by action (modules/moderation). */
+const MODERATION_TITLE: Record<string, (d: NotificationData) => string> = {
+  'board.disable_link': (d) => `Freero’s moderators turned off link sharing for ${board(d)}`,
+  'board.restore_link': (d) => `Link sharing works again for ${board(d)}`,
+  'board.take_down': (d) => `Freero’s moderators removed ${board(d)} for review`,
+  'board.restore': (d) => `${board(d)} is available again`,
+  'upload.remove': (d) => `Freero’s moderators removed a file of yours${d.boardTitle ? ` shown on ${board(d)}` : ''}`,
+  'upload.restore': () => 'A file of yours is available again',
+};
 
 export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> = {
   'access.request': {
@@ -93,6 +111,14 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
       `${actor} added you to the “${d.workspaceName || 'team'}” workspace${d.role && d.role !== 'member' ? ` as ${d.role === 'admin' ? 'an admin' : 'a guest'}` : ''}`,
     link: (_id, d) => (d.workspaceId ? `/app?ws=${encodeURIComponent(d.workspaceId)}` : '/app'),
     linkLabel: 'Open the workspace',
+  },
+  'moderation.action': {
+    label: 'Moderation notices',
+    description: 'Freero’s moderators acted on something of yours.',
+    title: (_actor, d) => MODERATION_TITLE[d.moderationAction ?? '']?.(d) ?? 'A notice from Freero’s moderators',
+    link: (id, d) => d.appealPath ?? boardPath(id),
+    linkLabel: 'Details and appeal',
+    direct: true,
   },
 };
 

@@ -20,6 +20,8 @@ import type {
   ElementType,
   FontFamily,
   PresenceState,
+  ReportReason,
+  ReportTarget,
   Role,
   StrokeStyle,
   TextAlign,
@@ -61,6 +63,11 @@ export interface Host {
      * `shareWithTeam`, `shareTemplate`). Null/absent: personal templates only.
      */
     team?: { name: string } | null;
+    /**
+     * [additive] False for a visitor without an account (a guest on the board's link, KAI-43):
+     * no account services, and the report dialog asks for a contact email. Default true.
+     */
+    signedIn?: boolean;
   };
   /** Full ws URL prefix; engine connects WebsocketProvider(syncUrl, board.id, doc). */
   syncUrl: string;
@@ -168,6 +175,21 @@ export interface Host {
    * this instant (paging). Absent in the offline sandbox.
    */
   activity?: { list(before?: number): Promise<{ entries: ActivityEntry[]; hasMore: boolean }> };
+  /**
+   * [additive] Reports this board, an item on it, an uploaded file it shows or a comment to
+   * Freero's moderators (KAI-142). Anyone who can open the board may. Rejects with a message fit
+   * for a toast (rate limit, offline sandbox, the board is gone).
+   */
+  report(report: ContentReport): Promise<void>;
+}
+
+/** [additive] What `Host.report` sends (wire: @freero/shared `ReportRequest`, without the board id). */
+export interface ContentReport {
+  target: ReportTarget;
+  reason: ReportReason;
+  note: string;
+  /** [additive] Visitors without an account (`board.signedIn === false`): where to send the outcome. */
+  contactEmail?: string;
 }
 
 /**

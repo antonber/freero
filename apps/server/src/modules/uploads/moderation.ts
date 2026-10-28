@@ -1,0 +1,103 @@
+// Files an operator removed (modules/moderation calls these through uploads' index).
+//
+// Removing a file makes its URL answer 410 Gone at once and for good, on every instance (the row
+// is checked on every GET), while the bytes move to a kept copy under a key that is never an upload
+// name — so it is neither served nor adopted by the sweep, and a mistaken removal can be undone
+// (restore) until an operator purges the copy. The row stays as a tombstone: the sweep skips
+// removed rows, and since the name has a row its adoption step can never bring the file back.
+import { newId } from '../../platform/ids';
+import { readAll, storage } from '../../platform/storage';
+import * as repo from './repo';
+import { FILE_NAME_RE, TYPE_BY_EXT } from './store';
+
+export interface ModerationUploadState {
+  name: string;
+  ownerId: string | null;
+  contentType: string | null;
+  bytes: number | null;
+  removedAt: number | null;
+  /** A kept copy exists, so the removal can be undone. */
+  restorable: boolean;
+  /** There is a file (or a record of one) under that name. */
+  exists: boolean;
+}
+
+/** The upload name of a "/uploads/<name>" URL or a bare name; null when it isn't one. */
+export function uploadName(urlOrName: string): string | null {
+  const name = urlOrName.startsWith('/uploads/') ? urlOrName.slice('/uploads/'.length) : urlOrName;
+  return FILE_NAME_RE.test(name) ? name : null;
+}
+
+async function stored(name: string): Promise<boolean> {
+  const obj = await storage().get(name);
+  obj?.body.destroy();
+  return obj !== null;
+}
+
+export async function uploadForModeration(name: string): Promise<ModerationUploadState | null> {
+  if (!FILE_NAME_RE.test(name)) return null;
+  const row = await repo.getUploadRow(name);
+  const exists = row !== null || (await stored(name));
+  return {
+    name,
+    ownerId: row?.ownerId ?? null,
+    contentType: row?.contentType ?? TYPE_BY_EXT[name.split('.').pop()!] ?? null,
+    bytes: row?.bytes ?? null,
+    removedAt: row?.removedAt ?? null,
+    restorable: row?.quarantineKey != null,
+    exists,
+  };
+}
+
+/** Whether an operator removed the file (its URL answers 410). */
+export function isUploadRemoved(name: string): Promise<boolean> {
+  return repo.isRemoved(name);
+}
+
+/**
+ * Removes a file: 410 from now on, bytes kept aside for a possible restore. False when it was
+ * already removed. Works for files without a row (thumbnails) and for names whose file is already
+ * gone (the URL still turns into 410, with nothing to restore).
+ */
+export async function removeUpload(name: string): Promise<boolean> {
+  if (!FILE_NAME_RE.test(name)) return false;
+  const row = await repo.getUploadRow(name);
+  if (row?.removedAt != null) return false;
+  const contentType = row?.contentType ?? TYPE_BY_EXT[name.split('.').pop()!];
+  const obj = await storage().get(name);
+  const bytes = obj ? await readAll(obj) : null;
+  // Never an upload name (FILE_NAME_RE has no '.' before the extension), so never served or adopted.
+  const quarantineKey = bytes ? `removed.${newId(24)}.${name}` : null;
+  if (bytes && quarantineKey) await storage().put(quarantineKey, bytes, contentType);
+  if (!(await repo.markRemoved({ name, bytes: bytes?.byteLength ?? row?.bytes ?? 0, contentType, quarantineKey }, Date.now()))) {
+    if (quarantineKey) await storage().delete(quarantineKey); // removed concurrently: theirs wins
+    return false;
+  }
+  await storage().delete(name);
+  return true;
+}
+
+/** Puts a removed file back under its name. False when it isn't removed or its copy was purged. */
+export async function restoreUpload(name: string): Promise<boolean> {
+  const row = FILE_NAME_RE.test(name) ? await repo.getUploadRow(name) : null;
+  if (!row || row.removedAt === null || !row.quarantineKey) return false;
+  const obj = await storage().get(row.quarantineKey);
+  if (!obj) return false;
+  await storage().put(name, await readAll(obj), row.contentType);
+  if (!(await repo.clearRemoved(name, row.quarantineKey, Date.now()))) {
+    // Changed meanwhile: restored by someone else (keep the file) or purged (don't bring it back).
+    if (await repo.isRemoved(name)) await storage().delete(name);
+    return false;
+  }
+  await storage().delete(row.quarantineKey);
+  return true;
+}
+
+/** Deletes a removed file's kept copy for good (illegal content). The URL keeps answering 410. */
+export async function purgeRemovedUpload(name: string): Promise<boolean> {
+  if (!FILE_NAME_RE.test(name)) return false;
+  const key = await repo.takeQuarantineKey(name);
+  if (!key) return false;
+  await storage().delete(key);
+  return true;
+}

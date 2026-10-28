@@ -4,18 +4,31 @@ import { closeBoardDoc } from '../realtime/index';
 import { deleteUpload, UPLOAD_REF_PATTERN } from '../uploads/index';
 import { mayShareExternally, teamMembers, workspaceRole } from '../workspaces/index';
 import * as repo from './repo';
-import { describeAccess, listBoards, requireAccess, requireDownload } from './service';
+import { describeAccess, listBoards, removedFor, requireAccess, requireDownload } from './service';
 
 export { createBoard, deleteBoardRowsInWorkspace, cleanUpDeletedBoards } from './service';
+// Operators (modules/moderation): take down / restore, block / unblock the link, and who may report.
+export {
+  boardForModeration,
+  reportableBoard,
+  takeDownBoard,
+  restoreTakenDownBoard,
+  blockBoardLink,
+  unblockBoardLink,
+  type ModerationBoardState,
+} from './moderation';
 
-/** The user's effective role on a board (`exists: false` when there is no such board). */
+/**
+ * The user's effective role on a board (`exists: false` when there is no such board, also while
+ * it is trashed or taken down; `removed`: it was taken down and this user could open it otherwise).
+ */
 export async function getBoardAccess(
   boardId: string,
   userId: string,
-): Promise<{ exists: boolean; role: Role | null; ownerId: string | null }> {
+): Promise<{ exists: boolean; role: Role | null; ownerId: string | null; removed: boolean }> {
   const board = await repo.getBoard(boardId);
-  if (!board) return { exists: false, role: null, ownerId: null };
-  return { exists: true, role: (await describeAccess(board, userId)).role, ownerId: board.ownerId };
+  if (!board) return { exists: false, role: null, ownerId: null, removed: await removedFor(boardId, userId) };
+  return { exists: true, role: (await describeAccess(board, userId)).role, ownerId: board.ownerId, removed: false };
 }
 
 /** Throws a 404/403 HttpError unless the user has at least `min` on the board. */

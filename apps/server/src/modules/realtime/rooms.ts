@@ -37,7 +37,7 @@ import * as awarenessProtocol from 'y-protocols/awareness';
 import * as syncProtocol from 'y-protocols/sync';
 import * as Y from 'yjs';
 import { WebSocket } from 'ws';
-import { WS_MESSAGE_LAYER, WS_MESSAGE_LAYER_OP, WS_MESSAGE_ROLE, Y_KEPT_ON_RESTORE, type Role } from '@freero/shared';
+import { WS_CLOSE_BOARD_REMOVED, WS_MESSAGE_LAYER, WS_MESSAGE_LAYER_OP, WS_MESSAGE_ROLE, Y_KEPT_ON_RESTORE, type Role } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { logError } from '../../platform/log';
 import { isShared, publish, subscribe, subscribedInstances, type Subscription } from '../../platform/pubsub';
@@ -997,7 +997,7 @@ export function listenToOtherInstances(): () => void {
         peerMessages.inc({ direction: 'in' });
         if (msg.type === 'end-session') endSessionHere(msg.sessionKey);
         else if (msg.type === 'refresh-access') void refreshAccessHere(msg.boardId);
-        else void closeBoardHere(msg.boardId);
+        else void closeBoardHere(msg.boardId, msg.type === 'remove-board' ? 'removed' : 'deleted');
       } catch (err) {
         logError('realtime: bad control message from another instance', err);
       }
@@ -1094,17 +1094,20 @@ export async function initBoardDoc(boardId: string, state: Uint8Array): Promise<
 /**
  * The board is being deleted: disconnects everyone (4403), drops the in-memory doc and waits for
  * any save in flight. The stored state is removed with the board row (ON DELETE CASCADE).
+ * `why: 'removed'`: an operator took it down — the sockets close with WS_CLOSE_BOARD_REMOVED, so
+ * clients say "removed for review" instead of "no access".
  */
-export async function closeBoardDoc(boardId: string): Promise<void> {
-  toAllInstances({ type: 'close-board', boardId });
-  await closeBoardHere(boardId);
+export async function closeBoardDoc(boardId: string, why: 'deleted' | 'removed' = 'deleted'): Promise<void> {
+  toAllInstances({ type: why === 'removed' ? 'remove-board' : 'close-board', boardId });
+  await closeBoardHere(boardId, why);
 }
 
-async function closeBoardHere(boardId: string): Promise<void> {
+async function closeBoardHere(boardId: string, why: 'deleted' | 'removed'): Promise<void> {
   const room = rooms.get(boardId);
   if (!room) return;
   rooms.delete(boardId);
-  room.closeAll(4403, 'Board deleted');
+  if (why === 'removed') room.closeAll(WS_CLOSE_BOARD_REMOVED, 'Board removed for review');
+  else room.closeAll(4403, 'Board deleted');
   // Save what this instance's sockets changed and nobody saved yet, then drop the doc: a trashed
   // board keeps those edits (each instance saves its own); for a deleted board the save finds no
   // board and is dropped. Queued behind any save in flight, so nothing lands after this returns.

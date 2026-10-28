@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import type { BoardSummary, GuestBoardInfo, GuestJoinResponse, LinkAccess } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
-import { badRequest, forbidden, handle, notFound, unauthorized } from '../../platform/http';
+import { badRequest, forbidden, handle, HttpError, notFound, unauthorized } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
 import { currentUser, endGuestSession, guestFromCookieHeader, requireUser, startGuestSession } from '../auth/index';
 import { isLinkAccess, ROLE_RANK } from '../members/index';
@@ -92,6 +92,7 @@ export default function boardRoutes(_ctx: ServerContext): Router {
       if (body.linkAccess !== undefined) {
         if (role !== 'owner') throw forbidden('Only the board owner can change link sharing');
         if (!isLinkAccess(body.linkAccess)) throw badRequest('linkAccess must be none, viewer, commenter or editor');
+        if (board.linkBlocked) throw new HttpError(403, 'Freero’s moderators turned link sharing off for this board. Use the appeal link in the email we sent you.', 'link_blocked');
         if (body.linkAccess !== 'none' && !user.emailVerified) throw forbidden('Verify your email address before sharing by link');
         if (body.linkAccess !== 'none' && body.linkAccess !== board.linkAccess) {
           // Workspace policies: links reach people outside the workspace, and only up to a maximum role.

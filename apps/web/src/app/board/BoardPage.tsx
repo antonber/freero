@@ -77,11 +77,12 @@ function GuestBoard({ id, guest, onEnded }: { id: string; guest: GuestInfo; onEn
 
   if (state.status === 'error') {
     const ended = state.code === 401 || state.code === 403;
+    const removed = state.code === 451; // taken down by Freero's moderators (KAI-142)
     return (
       <div className="fr-boarderror">
         <div className="fr-boarderror__card">
           <Logo size={36} />
-          <h1>{ended ? 'Your guest visit has ended' : "We couldn't open this board"}</h1>
+          <h1>{removed ? 'This board was removed for review' : ended ? 'Your guest visit has ended' : "We couldn't open this board"}</h1>
           <p>{ended ? 'Guest visits last a few hours, and end when the board stops being shared by link.' : state.message}</p>
           <div className="fr-boarderror__actions">
             <Button variant="primary" size="lg" onClick={onEnded}>
@@ -215,7 +216,12 @@ function BoardError({ boardId, code, message }: { boardId: string; code: number;
     navigate(loginPath(`/board/${boardId}`), { replace: true });
   };
   const copy =
-    code === 403
+    code === 451
+      ? {
+          title: 'This board was removed for review',
+          body: 'Freero’s moderators took it down after a report. If it is your board, we emailed you the reason and how to appeal.',
+        }
+      : code === 403
       ? { title: "You don't have access to this board", body: 'Ask the board owner to invite you, or switch to the account they shared it with.' }
       : code === 404
         ? { title: 'This board does not exist', body: 'It may have been deleted, or the link is mistyped.' }
@@ -240,7 +246,7 @@ function BoardError({ boardId, code, message }: { boardId: string; code: number;
               Switch account
             </Button>
           )}
-          {code !== 403 && code !== 404 && (
+          {code !== 403 && code !== 404 && code !== 451 && (
             <Button size="lg" onClick={() => window.location.reload()}>
               Try again
             </Button>

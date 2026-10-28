@@ -25,7 +25,9 @@ export type RateLimitName =
   | 'twoFactorRecovery'
   | 'oidc'
   | 'accessRequest'
-  | 'guestJoin';
+  | 'guestJoin'
+  | 'report'
+  | 'appeal';
 
 /** `limit` hits per `windowMs`; `null` = not limited. */
 export type RateLimitRule = { limit: number; windowMs: number } | null;
@@ -140,6 +142,15 @@ export interface Config {
   oidcProviders: OidcProviderConfig[];
   /** A MaxMind-format (.mmdb) GeoLite2/GeoIP2 City or Country database for session locations, or null. */
   geoipDbPath: string | null;
+  /**
+   * Operators (moderation queue and actions): lower-cased addresses. An account is an operator
+   * only while its address is listed AND verified.
+   */
+  operatorEmails: string[];
+  /** Where people (and the notices Freero sends) can reach the people handling abuse reports, or null. */
+  abuseContactEmail: string | null;
+  /** RFC 9116 `Contact:` for /.well-known/security.txt (mailto: or https: URL); defaults to the abuse contact. */
+  securityContact: string | null;
 }
 
 export class ConfigError extends Error {
@@ -174,6 +185,8 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   oidc: '60/10m', // "Sign in with …" starts and callbacks per IP
   accessRequest: '20/1h', // per user: asking for access to boards
   guestJoin: '20/1h', // per IP: visitors joining a shared board without an account
+  report: '20/1h', // abuse reports per IP and per signed-in user
+  appeal: '10/1h', // appeals against moderation actions per IP
 };
 
 const ENV_NAME: Record<RateLimitName, string> = {
@@ -195,6 +208,8 @@ const ENV_NAME: Record<RateLimitName, string> = {
   oidc: 'RATE_LIMIT_OIDC',
   accessRequest: 'RATE_LIMIT_ACCESS_REQUEST',
   guestJoin: 'RATE_LIMIT_GUEST_JOIN',
+  report: 'RATE_LIMIT_REPORT',
+  appeal: 'RATE_LIMIT_APPEAL',
 };
 
 /** The built-in providers: env prefix, button label, default issuer, extra verified-email claims. */
@@ -345,6 +360,21 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   const metricsPort = str('METRICS_PORT') === null ? null : int('METRICS_PORT', 0, 1, 65535);
 
+  // Moderation (KAI-142): operators by address; the abuse / security contacts people see.
+  const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const operatorEmails = (str('OPERATOR_EMAILS') ?? '')
+    .split(',')
+    .map((v) => v.trim().toLowerCase())
+    .filter(Boolean);
+  for (const e of operatorEmails) if (!EMAIL.test(e)) problems.push(`OPERATOR_EMAILS: "${e}" is not an email address`);
+  const abuseContactEmail = str('ABUSE_CONTACT_EMAIL');
+  if (abuseContactEmail !== null && !EMAIL.test(abuseContactEmail)) problems.push('ABUSE_CONTACT_EMAIL must be an email address');
+  let securityContact = str('SECURITY_CONTACT');
+  if (securityContact !== null && !/^(mailto:[^\s@]+@[^\s@]+|https:\/\/\S+)$/.test(securityContact)) {
+    problems.push('SECURITY_CONTACT must be a mailto: or https:// URL');
+    securityContact = null;
+  }
+
   const config: Config = {
     port: int('PORT', 4000, 0, 65535),
     publicUrl,
@@ -389,6 +419,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     rateLimits,
     oidcProviders,
     geoipDbPath,
+    operatorEmails,
+    abuseContactEmail,
+    securityContact: securityContact ?? (abuseContactEmail ? `mailto:${abuseContactEmail}` : null),
   };
 
   if (production) {

@@ -16,6 +16,11 @@ export {
   onSessionEnd,
   onEmailVerified,
   markEmailVerified,
+  // Operators (modules/moderation): suspended accounts can't sign in and lose every session.
+  suspendUser,
+  unsuspendUser,
+  isSuspended,
+  suspendedUserIds,
 } from './service';
 // Guests: visitors without an account on one board's shared link (boards decides who may join).
 export {
