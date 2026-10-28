@@ -16,6 +16,14 @@ npm run check          # dune boundaries + typecheck (all workspaces) + vitest
 ```
 npm run verify         # boots the real server on a temp dir, real Yjs WebSocket clients, roles, persistence
 ```
+Realtime / persistence changes: also run it against real Postgres + Redis, which adds the
+multi-instance checks (two servers, clients on each). With Docker (pick free ports, remove after):
+```
+docker run -d --rm --name <you>-pg -e POSTGRES_PASSWORD=freero -p 127.0.0.1:<pgport>:5432 postgres:17-alpine
+docker run -d --rm --name <you>-redis -p 127.0.0.1:<redisport>:6379 redis:7-alpine
+DATABASE_URL=postgres://postgres:freero@127.0.0.1:<pgport>/postgres REDIS_URL=redis://127.0.0.1:<redisport> npm run verify
+docker stop <you>-pg <you>-redis
+```
 
 ## 3. Drive the real UI
 
