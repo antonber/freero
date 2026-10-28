@@ -344,6 +344,11 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
   if the merge left it out of layout (two drops into one free slot), the participant with the
   highest Yjs client id re-lays it out (the others re-check 1.5 s later), joining its last undo
   step. Bystanders never do, so nobody snaps a collaborator's drag in progress.
+  Swimlanes (`features/swimlane`) use the same hook without restacking: items keep their own
+  positions and belong to the lane / phase under their center; `arrange` only grows a band to fit
+  what is in it and shifts the items of later bands by the growth. Lane edits that change the
+  bands (edge drag, add, remove, reorder, rows ⇄ columns) move the items with `moveBy` in the same
+  transaction, so attached connectors follow and one undo takes back both.
 - `fitToContent(el, handle)`: double-clicking a resize handle applies the returned patch (a
   fixed-width text box goes back to auto width).
 - `hitTest(el, local, { tolerance })` — `tolerance` is a few screen px in world units at the live

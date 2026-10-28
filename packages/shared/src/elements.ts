@@ -21,7 +21,8 @@ export type ElementType =
   | 'embed'
   | 'icon'
   | 'kanban'
-  | 'pdf';
+  | 'pdf'
+  | 'swimlane';
 
 export interface BaseElement {
   id: string;
@@ -450,6 +451,32 @@ export interface PdfElement extends BaseElement {
   pageCount: number;
 }
 
+/**
+ * A swimlane diagram (a pool): a title band, lanes — rows, or columns when `vertical` — and
+ * phases across them. It is a container: items dropped in it join it (`frameId`) and keep their
+ * own positions; an item is in the lane (and phase) under its center. Lanes grow to fit what is
+ * in them and carry their items along when a lane is resized, added, removed or reordered.
+ * Older clients that don't know the type show nothing for it but keep its items.
+ */
+export interface SwimlaneElement extends BaseElement {
+  type: 'swimlane';
+  title: RichText;
+  /** Lanes run top to bottom as columns (default: left to right as rows). */
+  vertical?: boolean;
+  lanes: SwimlaneBand[];
+  /** Phases across the lanes, at least one; their headers show when there are two or more. */
+  phases: SwimlaneBand[];
+}
+
+export interface SwimlaneBand {
+  id: string;
+  title: RichText;
+  /** Thickness across the band's direction (a row lane's height), world units. */
+  size: number;
+  /** Header tint. */
+  color: string;
+}
+
 export type BoardElement =
   | StickyElement
   | ShapeElement
@@ -465,7 +492,8 @@ export type BoardElement =
   | EmbedElement
   | IconElement
   | KanbanElement
-  | PdfElement;
+  | PdfElement
+  | SwimlaneElement;
 
 export type ElementOf<T extends ElementType> = Extract<BoardElement, { type: T }>;
 
