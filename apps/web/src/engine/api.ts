@@ -231,6 +231,22 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
    * content along that handle (a fixed-width text box goes back to auto width). null = ignore.
    */
   fitToContent?(element: ElementOf<T>, handle: ResizeHandle): ElementPatch<ElementOf<T>> | null;
+  /**
+   * [additive] Containers that LAY OUT their children (kanban columns, frame grids). After every
+   * LOCAL change — when the outermost gesture ends if one is open (drag, edit session), else
+   * right after the write — the engine asks each element of this type for the patches that put
+   * its children (and itself) back in layout, and applies them in the same undo step. Remote
+   * changes never run it. Must be idempotent (null when already laid out): it also runs after
+   * unrelated changes. `editor` is scoped to the defining feature.
+   */
+  arrange?(element: ElementOf<T>, ctx: ArrangeContext): Array<{ id: string; patch: ElementPatch }> | null;
+}
+
+/** [additive] What `ElementDefinition.arrange` is told. */
+export interface ArrangeContext {
+  editor: Editor;
+  /** Ids written (moved, created, edited) or removed by the local change(s) since the last pass. */
+  touched: ReadonlySet<string>;
 }
 
 /** [additive] What `ElementDefinition.hitTest` is told. */

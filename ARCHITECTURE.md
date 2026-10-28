@@ -249,6 +249,13 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
   so "w changed alone" (a side handle) is told apart from a corner scale or an edit. When web fonts
   finish loading, the engine re-runs `normalize` for the elements THIS client measured and nobody
   else changed since, writing silently (no undo step) — never for collaborators' elements.
+- `arrange(container, { editor, touched }) → [{ id, patch }] | null` (`engine/editor/arrange.ts`):
+  containers that lay out their children (kanban columns, frames with a grid layout). After every
+  LOCAL change the engine asks each element of that type for the patches that put it back in
+  layout and applies them in the same undo step: inside a gesture once, when the outermost gesture
+  ends (a drag never re-stacks under the pointer; drop + re-stack = one undo), inside
+  `editor.transact` once at its end (never from a half-written state), otherwise right after the
+  write. Remote changes never run it. Must be idempotent — it also runs after unrelated changes.
 - `fitToContent(el, handle)`: double-clicking a resize handle applies the returned patch (a
   fixed-width text box goes back to auto width).
 - `hitTest(el, local, { tolerance })` — `tolerance` is a few screen px in world units at the live
