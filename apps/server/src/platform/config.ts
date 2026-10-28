@@ -115,6 +115,8 @@ export interface Config {
   notifyEmailDelayMs: number;
   /** How often each instance looks for notification digests that are due. */
   notifyEmailIntervalMs: number;
+  /** Activity feed: a person's burst of changes on a board ends after this long without one. */
+  activityIdleMs: number;
   rateLimits: Record<RateLimitName, RateLimitRule>;
   /** Configured sign-in providers (each needs its client id AND secret); empty = password only. */
   oidcProviders: OidcProviderConfig[];
@@ -359,6 +361,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     accountPurgeIntervalMs: int('ACCOUNT_PURGE_INTERVAL_SECONDS', 3600, 1, 7 * 86_400) * 1000,
     notifyEmailDelayMs: int('NOTIFY_EMAIL_DELAY_SECONDS', 900, 0, 7 * 86_400) * 1000,
     notifyEmailIntervalMs: int('NOTIFY_EMAIL_INTERVAL_SECONDS', 60, 1, 86_400) * 1000,
+    activityIdleMs: int('ACTIVITY_IDLE_SECONDS', 60, 1, 3600) * 1000,
     rateLimits,
     oidcProviders,
     geoipDbPath,

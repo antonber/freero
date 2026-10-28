@@ -129,6 +129,7 @@ connect and disconnect providers in Account settings.
 |---|---|---|
 | `NOTIFY_EMAIL_DELAY_SECONDS` | `900` | How long a notification (mention, reply, board shared with you) waits before it is emailed. Everything a person gets meanwhile goes out as one digest; what they read in the app by then is not emailed. Only verified addresses get these emails; each person turns them off per type in `/settings`, or all at once with the unsubscribe link. |
 | `NOTIFY_EMAIL_INTERVAL_SECONDS` | `60` | How often each instance looks for digests that are due. One instance sends at a time (Postgres advisory lock). |
+| `ACTIVITY_IDLE_SECONDS` | `60` | Activity feed: a person's changes on a board are gathered into one entry ("added 12 sticky notes") until they pause this long (or for 10 minutes at most). |
 
 ## Observability
 

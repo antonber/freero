@@ -5,9 +5,11 @@ import { createUser, getAccount } from '../auth/index';
 import { createBoard } from '../boards/index';
 import type { BoardChangeEvent, ElementChange } from '../realtime/index';
 import { createProject, createTeamWorkspace, inviteToWorkspace } from '../workspaces/index';
-import { boardActivity, flushBursts, IDLE_MS, recordChanges, recordComment, workspaceActivity } from './service';
+import { getConfig } from '../../platform/config';
+import { boardActivity, flushBursts, recordChanges, recordComment, workspaceActivity } from './service';
 
 beforeAll(() => openTestDb());
+const IDLE_MS = () => getConfig().activityIdleMs;
 afterAll(() => closeTestDb());
 
 let n = 0;
@@ -34,9 +36,9 @@ it('a burst becomes one entry with net counts — what was added and removed aga
   recordChanges(event(board.id, ann, [change('earlier', 'remove')]), t0 + 2000);
   recordChanges(event(board.id, ann, [change('earlier', 'add', 'sticky', 'f1')], 'editors'), t0 + 2000);
   recordComment({ boardId: board.id, authorId: ann.id, threadId: 't', messageId: 'm', text: 'hi', previousText: null, participantIds: [] }, 'Ann', t0 + 3000);
-  await flushBursts(t0 + 2000 + IDLE_MS - 1);
+  await flushBursts(t0 + 2000 + IDLE_MS() - 1);
   expect((await boardActivity(board.id, ann.id)).entries).toEqual([]); // still going
-  await flushBursts(t0 + 3000 + IDLE_MS);
+  await flushBursts(t0 + 3000 + IDLE_MS());
 
   const texts = (await boardActivity(board.id, ann.id)).entries.map((e) => e.text);
   expect(texts).toContain('added 2 sticky notes and removed 1 shape in frame “Ideas”');
@@ -49,7 +51,7 @@ it('a viewer never sees activity inside hidden frames; an editor does', async ()
   const board = await createBoard(owner.id, 'Launch', '', 'viewer');
   const t0 = Date.now();
   recordChanges(event(board.id, owner, [change('secret1', 'add'), change('secret2', 'add')], 'editors'), t0);
-  await flushBursts(t0 + IDLE_MS);
+  await flushBursts(t0 + IDLE_MS());
   expect((await boardActivity(board.id, viewer.id)).entries).toEqual([]);
   expect((await boardActivity(board.id, owner.id)).entries.map((e) => e.text)).toEqual(['added 2 sticky notes in frame “Ideas” (hidden from viewers)']);
 });
@@ -64,7 +66,7 @@ it('the workspace feed lists activity only from boards the reader can open', asy
   const t0 = Date.now();
   recordChanges(event(open.id, lead, [change('a', 'add', 'shape', null)]), t0);
   recordChanges(event(closed.id, lead, [change('b', 'add', 'shape', null)]), t0);
-  await flushBursts(t0 + IDLE_MS);
+  await flushBursts(t0 + IDLE_MS());
 
   const feed = (await workspaceActivity(ws.id, member.id)).entries;
   expect(feed.map((e) => [e.boardTitle, e.actorName, e.text])).toEqual([['Open board', 'Lead', 'added 1 shape']]);

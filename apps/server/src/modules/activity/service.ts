@@ -17,6 +17,7 @@ import {
   type ActivityResponse,
   type Role,
 } from '@freero/shared';
+import { getConfig } from '../../platform/config';
 import { notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { logError } from '../../platform/log';
@@ -27,8 +28,8 @@ import type { BoardChangeEvent, CommentMessageEvent } from '../realtime/index';
 import * as repo from './repo';
 import type { ActivityRow, ActivitySummary } from './repo';
 
-/** A burst ends after this long without a change from that person on that board… */
-export const IDLE_MS = 60_000;
+/** A burst ends after ACTIVITY_IDLE_SECONDS without a change from that person on that board… */
+const idleMs = () => getConfig().activityIdleMs;
 /** …or once it has run this long. */
 export const MAX_BURST_MS = 10 * 60_000;
 export const RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
@@ -144,7 +145,7 @@ export function rowsOf(b: Burst): ActivityRow[] {
 export async function flushBursts(now = Date.now(), all = false): Promise<void> {
   const done: Burst[] = [];
   for (const [key, b] of bursts) {
-    if (all || now - b.lastAt >= IDLE_MS || now - b.startedAt >= MAX_BURST_MS) {
+    if (all || now - b.lastAt >= idleMs() || now - b.startedAt >= MAX_BURST_MS) {
       bursts.delete(key);
       done.push(b);
     }

@@ -36,10 +36,12 @@ type Out = { board: BoardSummary } | { boards: BoardSummary[] } | { ok: true };
 
 export default function boardRoutes(_ctx: ServerContext): Router {
   const r = Router();
-  r.use('/boards', requireUser);
+  // requireUser per route, not `r.use('/boards', …)`: router-level middleware would also run for
+  // other modules' /boards/:id/… routes mounted after this one (guests use some of those).
 
   r.get(
     '/boards',
+    requireUser,
     handle(async (req, res) => {
       const filter = (typeof req.query.filter === 'string' && req.query.filter) || 'all';
       if (!BOARD_FILTERS.includes(filter as BoardFilter)) throw badRequest(`filter must be one of ${BOARD_FILTERS.join(', ')}`);
@@ -52,6 +54,7 @@ export default function boardRoutes(_ctx: ServerContext): Router {
 
   r.post(
     '/boards',
+    requireUser,
     rateLimit('boardCreate', 'user'),
     handle(async (req, res) => {
       const user = currentUser(req);
@@ -67,6 +70,7 @@ export default function boardRoutes(_ctx: ServerContext): Router {
 
   r.get(
     '/boards/:id',
+    requireUser,
     handle(async (req, res) => {
       const user = currentUser(req);
       const { board, role, access } = await requireAccess(req.params.id, user.id);
@@ -77,6 +81,7 @@ export default function boardRoutes(_ctx: ServerContext): Router {
 
   r.patch(
     '/boards/:id',
+    requireUser,
     handle(async (req, res) => {
       const user = currentUser(req);
       const body = (req.body ?? {}) as Record<string, unknown>;
@@ -112,6 +117,7 @@ export default function boardRoutes(_ctx: ServerContext): Router {
 
   r.delete(
     '/boards/:id',
+    requireUser,
     handle(async (req, res) => {
       const { board } = await requireAccess(req.params.id, currentUser(req).id, 'owner');
       await moveToTrash(board);
@@ -121,6 +127,7 @@ export default function boardRoutes(_ctx: ServerContext): Router {
 
   r.post(
     '/boards/:id/restore',
+    requireUser,
     handle(async (req, res) => {
       const user = currentUser(req);
       const board = await restoreFromTrash(req.params.id, user.id);
@@ -130,6 +137,7 @@ export default function boardRoutes(_ctx: ServerContext): Router {
 
   r.delete(
     '/boards/:id/permanent',
+    requireUser,
     handle(async (req, res) => {
       await deleteForever(req.params.id, currentUser(req).id);
       res.json({ ok: true } satisfies Out);
@@ -138,6 +146,7 @@ export default function boardRoutes(_ctx: ServerContext): Router {
 
   r.post(
     '/boards/:id/duplicate',
+    requireUser,
     rateLimit('boardCreate', 'user'),
     handle(async (req, res) => {
       const user = currentUser(req);
@@ -150,6 +159,7 @@ export default function boardRoutes(_ctx: ServerContext): Router {
 
   r.post(
     '/boards/:id/transfer',
+    requireUser,
     handle(async (req, res) => {
       const user = currentUser(req);
       const { board } = await requireAccess(req.params.id, user.id);
@@ -160,6 +170,7 @@ export default function boardRoutes(_ctx: ServerContext): Router {
 
   r.put(
     '/boards/:id/star',
+    requireUser,
     handle(async (req, res) => {
       const user = currentUser(req);
       const { board } = await requireAccess(req.params.id, user.id);
@@ -170,6 +181,7 @@ export default function boardRoutes(_ctx: ServerContext): Router {
 
   r.delete(
     '/boards/:id/star',
+    requireUser,
     handle(async (req, res) => {
       const user = currentUser(req);
       await repo.unstar(req.params.id, user.id); // unstarring works even if access was lost
@@ -179,6 +191,7 @@ export default function boardRoutes(_ctx: ServerContext): Router {
 
   r.put(
     '/boards/:id/thumbnail',
+    requireUser,
     handle(async (req, res) => {
       const { board } = await requireAccess(req.params.id, currentUser(req).id, 'editor');
       const dataUrl = req.body?.dataUrl;

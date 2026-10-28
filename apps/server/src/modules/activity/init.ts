@@ -8,8 +8,6 @@ import { onBoardChange, onCommentMessage } from '../realtime/index';
 import * as service from './service';
 
 const PRUNE_LOCK_KEY = 7_202_610_302; // arbitrary, constant across releases
-/** How often ended bursts are written (each instance writes its own sockets' bursts). */
-const FLUSH_EVERY_MS = 15_000;
 
 /** The activity feed's sources (trusted server events), its burst writer and retention. */
 export default function initActivity(ctx: ServerContext): void {
@@ -26,7 +24,8 @@ export default function initActivity(ctx: ServerContext): void {
     onBoardShared((e) => service.onBoardShared(e)),
     onAccessDecided((e) => service.onAccessDecided(e)),
   ];
-  const timer = setInterval(() => void service.flushBursts(), FLUSH_EVERY_MS);
+  // Ended bursts are written soon after (each instance writes its own sockets' bursts).
+  const timer = setInterval(() => void service.flushBursts(), Math.min(15_000, ctx.config.activityIdleMs / 2));
   timer.unref();
   ctx.onShutdown(async () => {
     clearInterval(timer);
