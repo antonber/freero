@@ -1,21 +1,28 @@
 import { useRef, useState, type ReactNode } from 'react';
-import { ArrowLeftRight, Bold, CornerDownRight, Italic, Slash, Spline } from 'lucide-react';
+import { ArrowLeftRight, Bold, CornerDownRight, Italic, Slash, Spline, Workflow } from 'lucide-react';
 import type { CapStyle, ConnectorElement, ConnectorRouting, StrokeStyle } from '@freero/shared';
 import { defineFormat, richTextToPlain, useTextFormatState, type Editor, type ElementPatch } from '@engine';
-import { ColorSwatches, IconButton, Menu, Popover, SegmentedControl, Tooltip } from '@ui';
+import { ColorSwatches, IconButton, Menu, Popover, SegmentedControl, Tooltip, type MenuItem } from '@ui';
 import { capShape } from './lib/geometry';
 import { patchConnector, TOOL_ID, type ConnectorStyle } from './lib/model';
+import { CAP_GROUPS, PRESET_GROUPS } from './lib/presets';
 
 const COLORS = ['#2B2A44', '#8A89A3', '#5B3FF0', '#2F7CF6', '#12A594', '#2FA84F', '#F2A007', '#F06A2B', '#E5484D', '#D6409F', '#FFFFFF'];
 const WIDTHS = [1, 2, 3, 4, 6, 8, 12];
-const CAPS: Array<{ value: CapStyle; label: string }> = [
-  { value: 'none', label: 'None' },
-  { value: 'arrow', label: 'Arrow' },
-  { value: 'triangle', label: 'Triangle' },
-  { value: 'circle', label: 'Circle' },
-  { value: 'diamond', label: 'Diamond' },
-  { value: 'bar', label: 'Bar' },
-];
+
+/** The line-end menu: plain ends, hollow ends, then crow's-foot cardinalities. */
+function capItems(current: CapStyle, flip: boolean, pick: (cap: CapStyle) => void): MenuItem[] {
+  return CAP_GROUPS.flatMap((g): MenuItem[] => [
+    ...(g.heading ? [{ heading: g.heading }] : []),
+    ...g.caps.map((cap) => ({
+      id: cap.value,
+      label: cap.label,
+      icon: <CapIcon cap={cap.value} flip={flip} />,
+      checked: current === cap.value,
+      onSelect: () => pick(cap.value),
+    })),
+  ]);
+}
 
 /** Writes a style change to every selected connector and remembers it for the next one drawn. */
 function apply(editor: Editor, conns: ConnectorElement[], patch: ElementPatch<ConnectorElement> & Partial<ConnectorStyle>) {
@@ -30,18 +37,53 @@ function apply(editor: Editor, conns: ConnectorElement[], patch: ElementPatch<Co
 
 /** Little preview of a line end, pointing right. */
 function CapIcon({ cap, flip }: { cap: CapStyle; flip?: boolean }) {
-  const shape = capShape(cap, { x: 19, y: 10 }, { x: 1, y: 0 }, 1.6);
+  const sw = 1.6;
+  const tip = { x: 20, y: 10 };
   const pts = (p: { x: number; y: number }[]) => p.map((q) => `${q.x},${q.y}`).join(' ');
-  let mark: ReactNode = null;
-  if (shape?.kind === 'polyline') mark = <polyline points={pts(shape.points)} fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />;
-  else if (shape?.kind === 'polygon') mark = <polygon points={pts(shape.points)} fill="currentColor" />;
-  else if (shape?.kind === 'circle') mark = <circle cx={shape.c.x} cy={shape.c.y} r={shape.r} fill="currentColor" />;
-  else if (shape?.kind === 'line') mark = <line x1={shape.a.x} y1={shape.a.y} x2={shape.b.x} y2={shape.b.y} stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" />;
+  // Hollow marks are knocked out with the menu's own background.
+  const paper = 'var(--fr-surface, #fff)';
+  const marks: ReactNode[] = capShape(cap, tip, { x: 1, y: 0 }, sw).map((shape, i) => {
+    switch (shape.kind) {
+      case 'polyline':
+        return <polyline key={i} points={pts(shape.points)} fill="none" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" />;
+      case 'polygon':
+        return <polygon key={i} points={pts(shape.points)} fill={shape.fill === 'ink' ? 'currentColor' : paper} stroke="currentColor" strokeWidth={shape.fill === 'ink' ? 0 : sw} strokeLinejoin="round" />;
+      case 'circle':
+        return <circle key={i} cx={shape.c.x} cy={shape.c.y} r={shape.r} fill={shape.fill === 'ink' ? 'currentColor' : paper} stroke={shape.fill === 'ink' ? 'none' : 'currentColor'} strokeWidth={sw} />;
+      case 'line':
+        return <line key={i} x1={shape.a.x} y1={shape.a.y} x2={shape.b.x} y2={shape.b.y} stroke="currentColor" strokeWidth={sw} strokeLinecap="round" />;
+    }
+  });
   return (
-    <svg width="22" height="20" viewBox="0 0 22 20" aria-hidden style={flip ? { transform: 'scaleX(-1)' } : undefined}>
-      <line x1="2" y1="10" x2={cap === 'none' || cap === 'bar' || cap === 'arrow' ? 19 : 12} y2="10" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" />
-      {mark}
+    <svg width="24" height="20" viewBox="0 0 24 20" aria-hidden style={flip ? { transform: 'scaleX(-1)' } : undefined}>
+      <line x1="1" y1="10" x2={tip.x} y2="10" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" />
+      {marks}
     </svg>
+  );
+}
+
+/** Diagram line presets (UML calls, BPMN message flows, ER cardinalities): one pick sets the whole style. */
+function PresetButton({ editor, conns }: { editor: Editor; conns: ConnectorElement[] }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLButtonElement>(null);
+  const items: MenuItem[] = PRESET_GROUPS.flatMap((g): MenuItem[] => [
+    { heading: g.heading },
+    ...g.presets.map((p) => ({
+      id: p.id,
+      label: p.label,
+      icon: <CapIcon cap={p.style.endCap ?? 'none'} />,
+      onSelect: () => apply(editor, conns, { ...p.style, ...(p.style.routing ? { waypoints: [] } : {}) }),
+    })),
+  ]);
+  return (
+    <>
+      <Tooltip content="Diagram line types" side="bottom">
+        <button ref={ref} type="button" className="fr-cx-fmt-btn" aria-label="Diagram line types" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          <Workflow size={16} aria-hidden />
+        </button>
+      </Tooltip>
+      <Menu open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" align="center" minWidth={210} items={items} aria-label="Diagram line types" />
+    </>
   );
 }
 
@@ -80,7 +122,7 @@ function ColorControl({ editor, conns }: { editor: Editor; conns: ConnectorEleme
   );
 }
 
-function MenuButton(props: { label: string; children: ReactNode; items: Array<{ id: string; label: ReactNode; icon?: ReactNode; checked: boolean; onSelect(): void }> }) {
+function MenuButton(props: { label: string; children: ReactNode; items: MenuItem[] }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
   return (
@@ -143,13 +185,7 @@ export default defineFormat({
         </MenuButton>
         <MenuButton
           label="Start of line"
-          items={CAPS.map((cap) => ({
-            id: cap.value,
-            label: cap.label,
-            icon: <CapIcon cap={cap.value} flip />,
-            checked: c.startCap === cap.value,
-            onSelect: () => apply(editor, conns, { startCap: cap.value }),
-          }))}
+          items={capItems(c.startCap, true, (startCap) => apply(editor, conns, { startCap }))}
         >
           <CapIcon cap={c.startCap} flip />
         </MenuButton>
@@ -165,16 +201,11 @@ export default defineFormat({
         />
         <MenuButton
           label="End of line"
-          items={CAPS.map((cap) => ({
-            id: cap.value,
-            label: cap.label,
-            icon: <CapIcon cap={cap.value} />,
-            checked: c.endCap === cap.value,
-            onSelect: () => apply(editor, conns, { endCap: cap.value }),
-          }))}
+          items={capItems(c.endCap, false, (endCap) => apply(editor, conns, { endCap }))}
         >
           <CapIcon cap={c.endCap} />
         </MenuButton>
+        <PresetButton editor={editor} conns={conns} />
         {hasLabel && (
           <>
             <IconButton icon={Bold} label="Bold" shortcut="Mod+B" size={32} active={fmt.bold} onClick={() => editor.formatText('bold')} />

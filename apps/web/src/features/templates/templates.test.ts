@@ -24,6 +24,7 @@ const REQUIRED: Record<ElementType, string[]> = {
   icon: ['name', 'nodes', 'color', 'strokeWidth'],
   kanban: ['title', 'columns', 'colW'],
   pdf: ['src', 'name', 'page', 'pageCount'],
+  swimlane: ['title', 'lanes', 'phases'],
 };
 
 let seq = 0;

@@ -1,5 +1,5 @@
 import { memo, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, Gauge, MoreHorizontal, Pencil, Plus, Tag, Trash2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Gauge, MoreHorizontal, Pencil, Plus, SquareKanban as SquareKanbanIcon, Tag, Trash2 } from 'lucide-react';
 import type { CardStatus, KanbanColumn, KanbanElement } from '@freero/shared';
 import {
   defineElement,
@@ -201,6 +201,8 @@ const KanbanView = memo(function KanbanView({ element: k, selected, zoom }: Elem
 
 export default defineElement({
   type: 'kanban',
+  label: { one: 'Kanban board', many: 'Kanban boards' },
+  icon: SquareKanbanIcon,
   // Columns size the board: width from their count and width, height from the tallest stack.
   resize: 'none',
   rotatable: false,

@@ -1,24 +1,11 @@
 // "Select only ▸ Sticky notes (12)": narrow a mixed selection down to one item type.
 import type { BoardElement, ElementType } from '@freero/shared';
+import { elementTypeDescription, type ElementDefinition } from '@engine';
 
-/** How each type reads in "Select only ▸ …", in menu order. */
-export const TYPE_NAMES: ReadonlyArray<[ElementType, string]> = [
-  ['sticky', 'Sticky notes'],
-  ['shape', 'Shapes'],
-  ['text', 'Text'],
-  ['card', 'Cards'],
-  ['connector', 'Connectors'],
-  ['pen', 'Drawings'],
-  ['image', 'Images'],
-  ['frame', 'Frames'],
-  ['mindmap', 'Mind map topics'],
-  ['table', 'Tables'],
-  ['kanban', 'Kanban boards'],
-  ['emoji', 'Stamps'],
-  ['icon', 'Icons'],
-  ['embed', 'Links'],
-  ['pdf', 'PDF pages'],
-];
+/** Every type "Select only" offers, by the name its feature gives it, in menu order. */
+export function narrowableTypes(defs: ReadonlyArray<ElementDefinition<any>>): Array<{ type: ElementType; name: string }> {
+  return defs.map((d) => ({ type: d.type, name: elementTypeDescription(d, d.type).many })).sort((a, b) => a.name.localeCompare(b.name));
+}
 
 /** True when the selection holds more than one type, one of them `type`. */
 export function canNarrow(selection: BoardElement[], type: ElementType): boolean {

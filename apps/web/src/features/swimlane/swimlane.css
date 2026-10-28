@@ -1,0 +1,165 @@
+/* Swimlane pool: a title band, tinted lane headers and bodies, phase headers and separators. */
+.fr-swim {
+  position: absolute;
+  inset: 0;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 0 0 1.5px #4b4a63;
+}
+
+.fr-swim__title {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  border-bottom: 1.5px solid #4b4a63;
+}
+
+.fr-swim__lane {
+  position: absolute;
+  background: color-mix(in srgb, var(--band) 22%, #fff);
+  border-top: 1px solid #8a89a3;
+}
+
+.fr-swim:not(.is-vertical) .fr-swim__lane:first-of-type,
+.fr-swim.is-vertical .fr-swim__lane {
+  border-top: 0;
+}
+
+.fr-swim.is-vertical .fr-swim__lane {
+  border-left: 1px solid #8a89a3;
+}
+
+.fr-swim__phase-line {
+  position: absolute;
+  border: 0 dashed #8a89a3;
+}
+
+.fr-swim__phase-line.is-col {
+  border-left-width: 1.5px;
+}
+
+.fr-swim__phase-line.is-row {
+  border-top-width: 1.5px;
+}
+
+.fr-swim__head {
+  position: absolute;
+  box-sizing: border-box;
+  background: var(--band);
+  border: 0 solid #8a89a3;
+}
+
+.fr-swim__head.is-lanes {
+  border-right-width: 1.5px;
+  border-top-width: 1px;
+}
+
+.fr-swim.is-vertical .fr-swim__head.is-lanes {
+  border-right-width: 0;
+  border-left-width: 1px;
+  border-top-width: 0;
+  border-bottom-width: 1.5px;
+}
+
+.fr-swim__head.is-phases {
+  border-bottom-width: 1.5px;
+  border-left-width: 1px;
+}
+
+.fr-swim.is-vertical .fr-swim__head.is-phases {
+  border-bottom-width: 0;
+  border-left-width: 0;
+  border-top-width: 1px;
+  border-right-width: 1.5px;
+}
+
+.fr-swim__head-text {
+  position: absolute;
+  inset: 0;
+}
+
+.fr-swim__menu {
+  position: absolute;
+  top: 6px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #4b4a63;
+  cursor: pointer;
+}
+
+.fr-swim__menu:hover,
+.fr-swim__menu.is-open {
+  background: rgba(23, 22, 43, 0.08);
+  color: #17162b;
+}
+
+/* Drag a band's far edge to resize it. */
+.fr-swim__edge {
+  position: absolute;
+  z-index: 1;
+}
+
+.fr-swim__edge.is-row {
+  cursor: row-resize;
+}
+
+.fr-swim__edge.is-col {
+  cursor: col-resize;
+}
+
+.fr-swim__edge:hover::after {
+  content: '';
+  position: absolute;
+  background: var(--fr-select);
+}
+
+.fr-swim__edge.is-row:hover::after {
+  left: 0;
+  right: 0;
+  top: 3px;
+  height: 2px;
+}
+
+.fr-swim__edge.is-col:hover::after {
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+}
+
+/* Format toolbar */
+.fr-swim-format {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fr-swim-format__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--fr-radius-sm);
+  background: transparent;
+  color: var(--fr-ink-2);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.fr-swim-format__btn:hover {
+  background: var(--fr-surface-3);
+  color: var(--fr-ink);
+}

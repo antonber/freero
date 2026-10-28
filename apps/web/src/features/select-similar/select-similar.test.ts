@@ -1,6 +1,34 @@
 import { describe, expect, it } from 'vitest';
 import type { BoardElement } from '@freero/shared';
+import { createTestBoard, type ElementDefinition, type FeatureBundle } from '@engine';
 import { similarIds } from './lib/similar';
+import manifest from './feature';
+import commands from './commands';
+
+describe('select only', () => {
+  it('offers a newly added item type under the name its own feature gives it, with no table to update', () => {
+    const def = (type: string, extra: Partial<ElementDefinition> = {}) =>
+      ({ type, Component: () => null, defaults: () => ({ type, w: 10, h: 10 }), resize: 'free', ...extra }) as unknown as ElementDefinition;
+    const items: FeatureBundle = {
+      manifest: { name: 'items', description: 'test items' },
+      elements: [def('sticky', { label: { one: 'Sticky note', many: 'Sticky notes' } }), def('kanban', { label: { one: 'Lane board', many: 'Lane boards' } })],
+      tools: [], formats: [], panels: [], commands: [],
+    };
+    const selectSimilar: FeatureBundle = { manifest, elements: [], tools: [], formats: [], panels: [], commands: [], commandFactories: [commands as never] };
+    const board = createTestBoard({ users: ['ann'], features: [items, selectSimilar] });
+    try {
+      const [ed] = board.editors('select-similar');
+      const ids = [ed.create({ type: 'sticky', x: 0, y: 0 } as never), ed.create({ type: 'kanban', x: 50, y: 0 } as never), ed.create({ type: 'kanban', x: 99, y: 0 } as never)];
+      ed.select(ids);
+      const only = ed.listActions().find((a) => a.id === 'select-similar.only.kanban');
+      expect(only).toMatchObject({ label: 'Select only lane boards', detail: '2', disabledReason: null });
+      ed.runCommand('select-similar.only.kanban');
+      expect(ed.getSelection()).toEqual(ids.slice(1));
+    } finally {
+      board.destroy();
+    }
+  });
+});
 
 const el = (id: string, type: string, extra: Record<string, unknown>) => ({ id, type, ...extra }) as unknown as BoardElement;
 

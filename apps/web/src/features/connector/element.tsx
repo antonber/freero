@@ -1,4 +1,5 @@
-import { memo, useMemo, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { Spline as SplineIcon } from 'lucide-react';
+import { memo, useCallback, useMemo, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import type { BoardElement, ConnectorElement } from '@freero/shared';
 import {
   defineElement,
@@ -8,22 +9,42 @@ import {
   useEditingPart,
   useEditor,
   useElement,
+  useElementsQuery,
   useSettings,
   type Editor,
   type ElementRenderProps,
   type NewElement,
   type Point,
+  type Rect,
 } from '@engine';
 import {
+  aabb,
   capShape,
   capTrim,
   distToPoly,
+  inflate,
   pointAlong,
+  resolveEnds,
   routePath,
   tAlong,
   type CapShape,
 } from './lib/geometry';
-import { connectorGeometry, DEFAULT_STYLE, drawnRoutes, localAnchors, refreshCache } from './lib/model';
+import { avoidsObstacles, connectorGeometry, DEFAULT_STYLE, drawnRoutes, localAnchors, refreshCache } from './lib/model';
+import { isConnectable, liveObstacles, obstacleIndex, obstaclesBetween, sameRects } from './lib/obstacles';
+
+const NO_OBSTACLES: Rect[] = [];
+
+/** Did a changed item land where this line runs (its stored bounds, with routing margin)? */
+function obstacleMovedNear(editor: Editor, c: ConnectorElement, changed: ReadonlySet<string>): boolean {
+  const area = inflate({ x: c.x, y: c.y, w: c.w, h: c.h }, 48);
+  for (const id of changed) {
+    const el = editor.getElement(id);
+    if (!el || !isConnectable(editor, el)) continue;
+    const r = aabb(el);
+    if (r.x < area.x + area.w && area.x < r.x + r.w && r.y < area.y + area.h && area.y < r.y + r.h) return true;
+  }
+  return false;
+}
 import { DEFAULT_LABEL_T, extraPart, hasMainLabel, labelBoxes, moveLabel, parsePart, partAt, writeLabel, type LabelPart } from './lib/labels';
 import './connector.css';
 
@@ -33,19 +54,33 @@ function dashArray(style: ConnectorElement['strokeStyle'], w: number): string | 
   return undefined;
 }
 
-function Cap({ shape, color, width }: { shape: CapShape | null; color: string; width: number }) {
-  if (!shape) return null;
+/** A line end's pieces; `paper` (the board background) fills hollow marks so the line never shows through. */
+function Cap({ parts, color, paper, width }: { parts: CapShape[]; color: string; paper: string; width: number }) {
   const pts = (p: { x: number; y: number }[]) => p.map((q) => `${q.x},${q.y}`).join(' ');
-  switch (shape.kind) {
-    case 'polyline':
-      return <polyline points={pts(shape.points)} fill="none" stroke={color} strokeWidth={width} strokeLinecap="round" strokeLinejoin="round" />;
-    case 'polygon':
-      return <polygon points={pts(shape.points)} fill={color} stroke={color} strokeWidth={width * 0.5} strokeLinejoin="round" />;
-    case 'circle':
-      return <circle cx={shape.c.x} cy={shape.c.y} r={shape.r} fill={color} />;
-    case 'line':
-      return <line x1={shape.a.x} y1={shape.a.y} x2={shape.b.x} y2={shape.b.y} stroke={color} strokeWidth={width} strokeLinecap="round" />;
-  }
+  return (
+    <>
+      {parts.map((shape, i) => {
+        switch (shape.kind) {
+          case 'polyline':
+            return <polyline key={i} points={pts(shape.points)} fill="none" stroke={color} strokeWidth={width} strokeLinecap="round" strokeLinejoin="round" />;
+          case 'polygon':
+            return shape.fill === 'ink' ? (
+              <polygon key={i} points={pts(shape.points)} fill={color} stroke={color} strokeWidth={width * 0.5} strokeLinejoin="round" />
+            ) : (
+              <polygon key={i} points={pts(shape.points)} fill={paper} stroke={color} strokeWidth={width} strokeLinejoin="round" />
+            );
+          case 'circle':
+            return shape.fill === 'ink' ? (
+              <circle key={i} cx={shape.c.x} cy={shape.c.y} r={shape.r} fill={color} />
+            ) : (
+              <circle key={i} cx={shape.c.x} cy={shape.c.y} r={shape.r} fill={paper} stroke={color} strokeWidth={width} />
+            );
+          case 'line':
+            return <line key={i} x1={shape.a.x} y1={shape.a.y} x2={shape.b.x} y2={shape.b.y} stroke={color} strokeWidth={width} strokeLinecap="round" />;
+        }
+      })}
+    </>
+  );
 }
 
 const ConnectorView = memo(function ConnectorView({ element: c, selected, editing }: ElementRenderProps<ConnectorElement>) {
@@ -55,10 +90,19 @@ const ConnectorView = memo(function ConnectorView({ element: c, selected, editin
   const a = useElement(c.start.elementId ?? null);
   const b = useElement(c.end.elementId ?? null);
   const { background } = useSettings();
-  const geo = useMemo(() => {
-    const lookup = (id: string): BoardElement | undefined => (id === a?.id ? a : id === b?.id ? b : editor.getElement(id));
-    return connectorGeometry(c, lookup, localAnchors(editor));
-  }, [c, a, b, editor]);
+  const lookup = useCallback((id: string): BoardElement | undefined => (id === a?.id ? a : id === b?.id ? b : editor.getElement(id)), [a, b, editor]);
+  // Items in the way of an elbow line: it re-routes only when THEIR boxes change, not on every
+  // edit elsewhere on the board.
+  const selectObstacles = useCallback(
+    (all: BoardElement[]): Rect[] => {
+      if (!avoidsObstacles(c)) return NO_OBSTACLES;
+      const { start, end } = resolveEnds(c, lookup, localAnchors(editor));
+      return obstaclesBetween(obstacleIndex(editor, all), start, end);
+    },
+    [c, lookup, editor],
+  );
+  const obstacles = useElementsQuery(selectObstacles, sameRects);
+  const geo = useMemo(() => connectorGeometry(c, lookup, localAnchors(editor), obstacles), [c, lookup, editor, obstacles]);
   drawnRoutes.set(c, geo.route.poly);
 
   const sw = c.strokeWidth;
@@ -88,8 +132,8 @@ const ConnectorView = memo(function ConnectorView({ element: c, selected, editin
             strokeLinecap="round"
             strokeLinejoin="round"
           />
-          <Cap shape={capShape(c.startCap, route.poly[0], route.startTangent, sw)} color={color} width={sw} />
-          <Cap shape={capShape(c.endCap, route.poly[route.poly.length - 1], route.endTangent, sw)} color={color} width={sw} />
+          <Cap parts={capShape(c.startCap, route.poly[0], route.startTangent, sw)} color={color} paper={background} width={sw} />
+          <Cap parts={capShape(c.endCap, route.poly[route.poly.length - 1], route.endTangent, sw)} color={color} paper={background} width={sw} />
         </g>
       </svg>
       {/* Main label: the element's textField (Enter / double-click on it), or a new one being typed. */}
@@ -205,6 +249,8 @@ function Label(props: {
 
 export default defineElement({
   type: 'connector',
+  label: { one: 'Connector', many: 'Connectors' },
+  icon: SplineIcon,
   resize: 'none',
   rotatable: false,
   sharedStyle: (el) => ({ stroke: el.stroke, strokeWidth: el.strokeWidth, strokeStyle: el.strokeStyle }),
@@ -257,10 +303,12 @@ export default defineElement({
   // Engine hook: runs inside every LOCAL change (same undo step / network update). Re-derives
   // the cached endpoints + bounds when an attached element moved, resized, rotated or was
   // deleted (its end then stays where it was, unattached), or when the connector itself changed.
+  // An elbow line also re-routes when an item moved into (or within) its way.
   follow(c, { editor, changed, removed }) {
     const ids = [c.start.elementId, c.end.elementId];
-    if (!changed.has(c.id) && !ids.some((id) => id && (changed.has(id) || removed.has(id)))) return null;
-    return refreshCache(c, (id) => editor.getElement(id), localAnchors(editor), removed);
+    const own = changed.has(c.id) || ids.some((id) => id && (changed.has(id) || removed.has(id)));
+    if (!own && !(avoidsObstacles(c) && obstacleMovedNear(editor, c, changed))) return null;
+    return refreshCache(c, (id) => editor.getElement(id), localAnchors(editor), removed, liveObstacles(editor));
   },
 });
 

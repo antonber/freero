@@ -172,7 +172,17 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   that vanish when an edit ends empty).
 - `Editor.beginGesture()` / `endGesture()` (see "Gestures and undo").
 - `ElementDefinition.anchorPoint` returns element-local (unrotated) coordinates; the engine applies
-  position and rotation.
+  position and rotation. `outlinePoint(el, toward)` (same coordinates) is "attach anywhere": where
+  a line aimed from the center toward a local point meets the drawn outline (shapes project onto
+  their real curve; default the box). A connector end dropped on an outline away from the four
+  dots stores `ConnectorEndpoint.at = { u, v }` (fractions of the box, so it scales with resizes)
+  plus the nearest side as `anchor` (older clients attach there).
+- Elbow connectors without a user bend route around other items (`features/connector/lib/router.ts`:
+  A* over a sparse grid of the obstacles' keep-out edges, deterministic, at most 40 nearest items,
+  only when the simple route would cross one). Obstacles come from a grid index built once per
+  board state; the renderer subscribes with `useElementsQuery(select, isEqual)` (`@engine`), which
+  re-renders a component only when its derived value changes — never re-render every line on every
+  edit elsewhere. `follow` refreshes an elbow line's cache when a connectable item lands on it.
 - `@engine` hooks: `usePointer()` (world pointer for tool `Preview`s), `useTextFormatState()`,
   `useSettings()`, `useCanEdit()`; `plainToRichText()`; types `ElementTextProps`, `TextFormatState`.
 - `useCollection(name)` returns the collection's entries (`Array<[key, value]>`).
@@ -353,6 +363,11 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
   if the merge left it out of layout (two drops into one free slot), the participant with the
   highest Yjs client id re-lays it out (the others re-check 1.5 s later), joining its last undo
   step. Bystanders never do, so nobody snaps a collaborator's drag in progress.
+  Swimlanes (`features/swimlane`) use the same hook without restacking: items keep their own
+  positions and belong to the lane / phase under their center; `arrange` only grows a band to fit
+  what is in it and shifts the items of later bands by the growth. Lane edits that change the
+  bands (edge drag, add, remove, reorder, rows ⇄ columns) move the items with `moveBy` in the same
+  transaction, so attached connectors follow and one undo takes back both.
 - `fitToContent(el, handle)`: double-clicking a resize handle applies the returned patch (a
   fixed-width text box goes back to auto width).
 - `hitTest(el, local, { tolerance })` — `tolerance` is a few screen px in world units at the live
@@ -498,6 +513,12 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
 
 Reference & items (engine primitives; product UI in `features/shortcuts`, `links`, `image`, `icons`,
 `select-similar` — "Select only ▸ <type> (count)" narrows a mixed selection):
+- Item type names have one owner: `ElementDefinition.label: { one, many }` and `icon`, set in each
+  `element.tsx`. Layers, Find and "Select only" read them through `describeElementType(editor,
+  type)` (`@engine`; fallback: the capitalised type and a square), so a new type is named once.
+  `defineCommands(({ elements }) => [...])` (a command factory, run once the registry knows every
+  element definition) builds commands per type from the live registry — "Select only" lists every
+  registered type by its `many` name.
 - `Editor.getShortcuts() → ShortcutEntry[]` (`engine/runtime/shortcutList.ts`): every binding the
   board answers for the live role — tool keys, command shortcuts (alternatives with the same label
   fold into one row), element types' declared `keys` (under their feature) and the keys the keyboard router handles itself (`ENGINE_KEYS` in

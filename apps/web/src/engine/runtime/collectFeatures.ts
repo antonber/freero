@@ -2,6 +2,7 @@
 // The glob itself lives in app/board/features.ts (the only allowed glob [W6]).
 import type {
   CommandDefinition,
+  CommandFactory,
   DecorationDefinition,
   ElementDefinition,
   FeatureBundle,
@@ -21,7 +22,7 @@ export function collectFeatures(modules: Record<string, unknown>): FeatureBundle
     const m = path.replace(/\\/g, '/').match(FILE_RE);
     if (!m) continue;
     const [, name, kind] = m;
-    const entry = byName.get(name) ?? { files: [], elements: [], tools: [], formats: [], panels: [], commands: [], decorations: [] };
+    const entry = byName.get(name) ?? { files: [], elements: [], tools: [], formats: [], panels: [], commands: [], commandFactories: [], decorations: [] };
     byName.set(name, entry);
     entry.files.push(path);
     const value = (mod as { default?: unknown })?.default;
@@ -42,7 +43,9 @@ export function collectFeatures(modules: Record<string, unknown>): FeatureBundle
         entry.panels!.push(...asArray(value as PanelDefinition | PanelDefinition[]));
         break;
       case 'commands':
-        entry.commands!.push(...asArray(value as CommandDefinition[]).flat());
+        // A factory (`defineCommands(ctx => [...])`) runs once the registry knows every element.
+        if (typeof value === 'function') entry.commandFactories!.push(value as CommandFactory);
+        else entry.commands!.push(...asArray(value as CommandDefinition[]).flat());
         break;
       case 'decoration':
         entry.decorations!.push(...asArray(value as DecorationDefinition | DecorationDefinition[]));
@@ -61,6 +64,7 @@ export function collectFeatures(modules: Record<string, unknown>): FeatureBundle
       formats: e.formats!,
       panels: e.panels!,
       commands: e.commands!,
+      commandFactories: e.commandFactories!,
       decorations: e.decorations!,
     });
   }

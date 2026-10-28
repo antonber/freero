@@ -43,6 +43,28 @@ export function useElements(type?: ElementType): BoardElement[] {
   return useSyncExternalStore(subscribe, get);
 }
 
+/**
+ * [additive] A value derived from all elements (in render order) that re-renders the caller only
+ * when `isEqual` says it changed — e.g. the boxes a connector routes around, without redrawing
+ * every connector on every edit elsewhere. `select` runs after every element change: keep it
+ * cheap (memoize per elements array). Pass a new `select` (useCallback deps) when its inputs change.
+ */
+export function useElementsQuery<T>(select: (elements: BoardElement[]) => T, isEqual: (a: T, b: T) => boolean): T {
+  const { store } = useCore();
+  const cache = useRef<{ src: BoardElement[]; select: (elements: BoardElement[]) => T; value: T } | null>(null);
+  const subscribe = useCallback((cb: () => void) => store.subscribeElements(cb), [store]);
+  const get = () => {
+    const src = store.getOrdered();
+    const c = cache.current;
+    if (c && c.src === src && c.select === select) return c.value;
+    const next = select(src);
+    const value = c && isEqual(c.value, next) ? c.value : next;
+    cache.current = { src, select, value };
+    return value;
+  };
+  return useSyncExternalStore(subscribe, get);
+}
+
 /** [additive] Screen rect (viewport px) of the contextual format toolbar, or null while it's hidden. */
 export function useFormatToolbarRect(): Rect | null {
   return useUi((s) => s.formatToolbarRect);

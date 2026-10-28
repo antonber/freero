@@ -1,3 +1,4 @@
+import { Stamp as StampIcon } from 'lucide-react';
 import { memo } from 'react';
 import type { EmojiElement } from '@freero/shared';
 import { defineElement, type ElementRenderProps, type NewElement } from '@engine';
@@ -17,6 +18,8 @@ const EmojiView = memo(function EmojiView({ element }: ElementRenderProps<EmojiE
 
 export default defineElement({
   type: 'emoji',
+  label: { one: 'Stamp', many: 'Stamps' },
+  icon: StampIcon,
   resize: 'aspect',
   minSize: { w: 16, h: 16 },
   connectable: false,
