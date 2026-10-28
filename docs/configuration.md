@@ -74,7 +74,7 @@ uploaded before the switch keep working (copy them over with `mc mirror` / `aws 
 
 | Variable | Default | Description |
 |---|---|---|
-| `SMTP_URL` | — | `smtp://user:pass@host:587` or `smtps://…:465`. Unset: development outbox — every message (verification, password reset, email change, invites, deletion notices) is written as JSON to `<FREERO_DATA_DIR>/outbox/` and logged. |
+| `SMTP_URL` | — | `smtp://user:pass@host:587` or `smtps://…:465`. Unset: development outbox — every message (verification, password reset, email change, invites, security notices) is written as JSON to `<FREERO_DATA_DIR>/outbox/` and logged. |
 | `MAIL_FROM` | `Freero <no-reply@freero.local>` | Sender address. |
 
 Links in emails point at `PUBLIC_URL` (in development: the origin the request came through).
@@ -181,5 +181,13 @@ get an HTTP 429 the client retries with backoff.
   HTTPS). Every POST/PUT/PATCH/DELETE whose `Origin` (or `Referer`) is not this site — or that a
   browser marks `Sec-Fetch-Site: cross-site` — is refused with `403`. WebSocket upgrades get the same
   origin check (against cross-site WebSocket hijacking).
+- **Security notices**: the account's address gets a short mail (no opt-out) when its password is
+  changed, set or reset, its email address changes (to the previous address, with a 7-day "this
+  wasn't me" link when that address was verified), two-step verification is turned on or off,
+  recovery codes are regenerated, a sign-in provider is connected or disconnected, deletion is
+  scheduled, or someone signs in from a browser that hasn't signed in to the account before (it has
+  no matching `freero_device` cookie, a random HttpOnly id kept 400 days). Each says when, from which
+  device and roughly where (GeoIP city/country when configured, else the masked network), never a
+  code or secret.
 - **Uploads**: type allow-list (PNG, JPEG, GIF, WebP, SVG), magic-byte sniffing, random names,
   `nosniff`, and `default-src 'none'; sandbox` CSP on every served file so an SVG can never run script.
