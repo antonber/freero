@@ -9,6 +9,7 @@ import { Canvas } from './canvas/Canvas';
 import { ScreenOverlays } from './overlay/Overlays';
 import { Chrome, DialogPanels, ScreenOverlayPanels, WorldOverlayPanels } from './ui/Chrome';
 import { installKeyboard } from './interaction/keyboard';
+import { LiveRegion } from './ui/LiveRegion';
 import { createExportRenderer, startThumbnails } from './editor/export';
 import './board.css';
 
@@ -107,6 +108,7 @@ function BoardView({ core, location }: { core: EngineCore; location?: BoardEngin
       <Canvas worldOverlay={<WorldOverlayPanels />} screenOverlay={<><ScreenOverlays /><ScreenOverlayPanels /></>} />
       <Chrome />
       <DialogPanels />
+      <LiveRegion />
     </div>
   );
 }

@@ -5,6 +5,7 @@
 import type { Camera, FollowTarget } from '../api';
 import type { EngineCore } from '../runtime/core';
 import { fitRect, lerpCamera, MAX_ZOOM } from './camera';
+import { prefersReducedMotion } from './motion';
 
 type Peer = ReturnType<EngineCore['store']['getPeers']>[number];
 
@@ -44,7 +45,7 @@ export function followStep(core: EngineCore): boolean {
   const size = core.editor.getViewportSize();
   const goal = cameraShowing(client.viewport, size);
   const cur = core.editor.getCamera();
-  if (!close(cur, goal)) core.editor.applyFollowCamera(lerpCamera(cur, goal, STEP, size, linear));
+  if (!close(cur, goal)) core.editor.applyFollowCamera(prefersReducedMotion() ? goal : lerpCamera(cur, goal, STEP, size, linear));
   return true;
 }
 

@@ -124,3 +124,29 @@ describe('zoom steps', () => {
     expect(core.editor.getCamera().zoom).toBe(0.5); // 100% → 75% → 67% → 50%
   });
 });
+
+describe('reduced motion', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('with "reduce motion" set in the OS, camera moves jump to their end instead of gliding', () => {
+    core = makeCore();
+    // Animation frames never run here: a camera that glides would stay where it started.
+    vi.stubGlobal('requestAnimationFrame', () => 1);
+    vi.stubGlobal('cancelAnimationFrame', () => undefined);
+    let reduce = false;
+    vi.stubGlobal('matchMedia', (q: string) => ({ matches: reduce && q.includes('prefers-reduced-motion: reduce') }));
+    const id = core.editor.create({ type: 'sticky', x: 2000, y: 1500 } as never);
+    core.editor.setCamera({ x: 0, y: 0, zoom: 1 });
+    core.editor.zoomToFit([id]);
+    expect(core.editor.getCamera()).toMatchObject({ x: 0, y: 0 }); // gliding: frames pending
+
+    reduce = true;
+    core.editor.zoomToFit([id]);
+    const c = core.editor.getCamera();
+    const center = core.editor.worldToScreen({ x: 2050, y: 1550 });
+    const area = core.editor.getSafeArea();
+    expect(c.x).not.toBe(0);
+    expect(Math.abs(center.x - (area.x + area.w / 2))).toBeLessThan(1);
+    expect(Math.abs(center.y - (area.y + area.h / 2))).toBeLessThan(1);
+  });
+});

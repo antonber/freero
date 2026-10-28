@@ -190,6 +190,7 @@ export function FormatToolbar() {
       className="fr-format"
       style={{ left: Math.round(left), top: Math.round(top) }}
       data-fr-format-toolbar=""
+      data-fr-region="format"
       data-fr-chrome=""
       role="toolbar"
       aria-label="Format"

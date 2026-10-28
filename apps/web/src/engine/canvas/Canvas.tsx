@@ -1,6 +1,6 @@
 // The board viewport: pointer routing (tools, pan, pinch), wheel navigation, drag-and-drop,
 // context menu, and the world/screen layers.
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { useStore } from 'zustand';
 import type { Point, ToolPointerEvent } from '../api';
 import { useCore, ScopeContext } from '../context';
@@ -35,6 +35,7 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
   const viewportRef = useRef<HTMLDivElement>(null);
   const worldRef = useRef<HTMLDivElement>(null);
   const settings = useSettings();
+  const helpId = useId();
   useWorldTransform(worldRef);
 
   const toolId = useStore(core.ui, (s) => s.toolId);
@@ -325,6 +326,8 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
       const t = e.target as HTMLElement;
       if (t.closest('[data-fr-text-editor]')) return;
       e.preventDefault();
+      // The Menu key / Shift+F10 also send a native contextmenu: the keyboard already opened it.
+      if (ui.getState().contextMenu?.keyboard) return;
       const screen = screenOf(e);
       ui.setState({ contextMenu: { x: e.clientX, y: e.clientY, world: editor.screenToWorld(screen) } });
     };
@@ -388,9 +391,20 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
       ref={viewportRef}
       className="fr-viewport"
       tabIndex={0}
-      aria-label="Board canvas"
+      // The canvas takes the keyboard itself (Tab walks items, arrows move them), so screen readers
+      // pass keys through; the live region (ui/LiveRegion) reads what gets selected.
+      role="application"
+      aria-roledescription="whiteboard"
+      aria-label={`Board canvas: ${core.hostRef.current.board.title}`}
+      aria-describedby={helpId}
       style={{ background: settings.background, cursor }}
     >
+      <p id={helpId} className="fr-sr-only">
+        Tab and Shift+Tab move through the items in reading order, a frame’s items right after it; Alt+arrow keys jump to
+        the nearest item in that direction. Enter edits the selected item, arrow keys move it and Alt+Shift+arrow keys
+        resize it. Shift+F10 opens its menu, Alt+F10 the format toolbar, F6 moves between the canvas and the toolbars.
+        With a creation tool picked, Enter places a new item next to the selection. Alt+Shift+L lists the board as text.
+      </p>
       <Grid />
       <div ref={worldRef} className="fr-world">
         <WorldElements />

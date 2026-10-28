@@ -251,3 +251,44 @@
 .fr-ov-outline--member.is-locked {
   border-style: dashed;
 }
+
+/* Forced colours: the selection box and handles keep the system highlight (borders stay, fills go). */
+@media (forced-colors: active) {
+  .fr-ov-selection,
+  .fr-ov-outline--hover,
+  .fr-ov-outline--member,
+  .fr-ov-handle,
+  .fr-ov-rotate {
+    border-color: Highlight;
+    forced-color-adjust: none;
+  }
+  .fr-ov-handle,
+  .fr-ov-rotate {
+    background: Canvas;
+  }
+}
+
+/* Coarse pointers (fingers): bigger handles and a much larger invisible hit area around each. */
+@media (pointer: coarse) {
+  .fr-ov-handle--corner {
+    width: 16px;
+    height: 16px;
+  }
+  .fr-ov-handle--side-v {
+    width: 10px;
+    height: 26px;
+  }
+  .fr-ov-handle--side-h {
+    width: 26px;
+    height: 10px;
+  }
+  .fr-ov-handle::after {
+    inset: -14px;
+  }
+  .fr-ov-rotate {
+    width: 32px;
+    height: 32px;
+    margin-left: -16px;
+    top: calc(100% + 22px);
+  }
+}

@@ -83,7 +83,7 @@ export function Toolbar() {
   );
 
   return (
-    <div className="fr-toolbar" ref={barRef} data-fr-chrome="" data-fr-occludes="">
+    <div className="fr-toolbar" ref={barRef} data-fr-chrome="" data-fr-occludes="" data-fr-region="tools" role="region" aria-label="Tools and history">
       <div className="fr-toolbar__group" role="toolbar" aria-label="Tools" aria-orientation="vertical">
         {main.map(toolButton)}
         {more.length > 0 && (

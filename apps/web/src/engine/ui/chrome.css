@@ -597,7 +597,7 @@ button.fr-title:hover {
 }
 .fr-exact__field:focus-within {
   border-color: var(--fr-primary);
-  box-shadow: 0 0 0 3px var(--fr-focus-ring);
+  box-shadow: var(--fr-focus-ring);
 }
 .fr-exact__field.is-disabled {
   background: var(--fr-surface-2);
@@ -629,4 +629,22 @@ button.fr-title:hover {
   margin: 8px 0 0;
   font-size: 12px;
   color: var(--fr-ink-3);
+}
+
+/* ---- forced colours (Windows high contrast): shadows are dropped, so cards get a system border,
+   and the pressed tool is outlined (background tints are overridden too). ---- */
+@media (forced-colors: active) {
+  .fr-chrome-card,
+  .fr-toolbar__group,
+  .fr-format,
+  .fr-tool-options,
+  .fr-zoom,
+  .fr-dock {
+    border: 1px solid CanvasText;
+  }
+  .fr-iconbtn--active,
+  .fr-moretools__item.is-active {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
 }

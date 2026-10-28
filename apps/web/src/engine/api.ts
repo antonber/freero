@@ -13,11 +13,13 @@ import type { ComponentType, CSSProperties, ReactNode } from 'react';
 import type {
   ActivityEntry,
   BoardElement,
+  BoardOutline,
   BoardLayer,
   BoardVersion,
   BoardSettings,
   ElementOf,
   ElementType,
+  OutlineFeature,
   FontFamily,
   PresenceState,
   ReportReason,
@@ -846,6 +848,8 @@ export interface FeatureBundle {
   commandFactories?: CommandFactory[];
   /** [additive] decoration.tsx */
   decorations?: DecorationDefinition[];
+  /** [additive] outline.ts (how its element types read in the outline; also run by the server). */
+  outline?: OutlineFeature;
 }
 
 // ---------------------------------------------------------------------------
@@ -910,6 +914,14 @@ export interface Editor {
   getElement<T extends BoardElement = BoardElement>(id: string): T | undefined;
   /** All elements sorted by render order (frames first, then by z). */
   getElements(): BoardElement[];
+  /**
+   * [additive] The board's semantic outline as THIS client sees it — the same read model agents
+   * get from `GET /boards/:id/outline` (`@freero/shared` `buildOutline`, features' `outline.ts`):
+   * frames → clusters → items with their text, votes, tags and comments, connectors as edges.
+   * Items hidden for this viewer are left out. `personName` names people the board shows
+   * (comment authors); presence and the user's own name are used first.
+   */
+  getOutline(opts?: { personName?: (userId: string) => string | undefined }): BoardOutline;
   getDefinition(type: ElementType): ElementDefinition<any> | undefined;
   /**
    * Rotated-aware axis-aligned bounds of the given ids (or all elements). Hidden elements never

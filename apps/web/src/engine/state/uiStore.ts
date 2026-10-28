@@ -22,6 +22,8 @@ export interface ContextMenuState {
   y: number;
   /** World point where the menu was opened (used by paste). */
   world: { x: number; y: number };
+  /** Opened from the keyboard (Shift+F10 / Menu key) at the selection, not at a pointer. */
+  keyboard?: boolean;
 }
 
 export interface UiState {
