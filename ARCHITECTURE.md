@@ -710,7 +710,7 @@ recovery delay if the owner ignores three mails and never signs in with F; once 
 has passed, an intruder who planted an authenticator can keep the owner out of (b) — by changing
 the password (the owner's reset-link password can't start one) or by signing in with their
 authenticator (that cancels it) — and that contested case goes to (c); live board tabs of sessions an
-operator ended from the CLI stay connected until they reload (see docs/operations.md).
+operator ended from the CLI stay connected until they reload (docs/operations.md; KAI-146).
 
 New sign-in factors or recovery paths keep this table true: say who can start and finish them in
 P / M / F terms, and add their row.

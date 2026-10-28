@@ -249,7 +249,7 @@ password. The owner then sets a password through that address, signs in and turn
 verification on again.
 
 Open board tabs of the ended sessions stay connected until they reload (the CLI can't reach the
-running instances' sockets). If the intruder may still have a board open, restart the app
+running instances' sockets; KAI-146). If the intruder may still have a board open, restart the app
 instances (a rolling restart is fine) to drop every socket at once.
 
 ## Incident basics
