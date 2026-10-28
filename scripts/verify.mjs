@@ -17,9 +17,13 @@
 // Redis, and clients on different instances must see each other's edits and cursors, access
 // changes / logouts / deletes made through the other instance, and every edit saved exactly as
 // if one instance had served them (even one whose instance is killed before it saved).
+//
+// S3: with S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY (e.g. MinIO or
+// SeaweedFS in Docker), the `s3` group checks the S3 storage backend; without them it is skipped.
 
 import { execSync, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
@@ -207,6 +211,13 @@ for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(130)
 // ---------------------------------------------------------------------------
 const MIGRATION_LOCK_KEY = 7_202_610_270; // must match apps/server/src/platform/db.ts
 const ADMIN_URL = process.env.DATABASE_URL?.trim() || null;
+// S3 (KAI-203): with S3_ENDPOINT, S3_BUCKET and keys set, the `s3` group runs against that endpoint;
+// every other server of the run keeps to the local disk, so the S3_* variables leave process.env.
+const S3_ENV = (() => {
+  const vars = Object.fromEntries(Object.keys(process.env).filter((k) => k.startsWith('S3_')).map((k) => [k, process.env[k]]));
+  for (const k of Object.keys(vars)) delete process.env[k];
+  return vars.S3_ENDPOINT && vars.S3_BUCKET && vars.S3_ACCESS_KEY_ID && vars.S3_SECRET_ACCESS_KEY ? vars : null;
+})();
 const db = { url: null, kind: ADMIN_URL ? 'postgres' : 'pglite', created: [] };
 
 function dbUrl(name) {
@@ -4786,6 +4797,109 @@ async function facilitationChecks() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// The S3 storage backend (KAI-203), on its own server, only when an S3-compatible endpoint is
+// configured (S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY — e.g. MinIO or
+// SeaweedFS in Docker; the bucket is created when missing). Every other group runs on the local
+// disk as before (the S3_* variables are taken out of their servers' environment). Checks what
+// only S3 does: the `uploads/` and `private/` prefixes (a removed file's kept copy never sits where
+// S3_PUBLIC_URL reaches), restore and retention moving and deleting the objects, the redirect to
+// S3_PUBLIC_URL and the Cache-Control stored on the objects (UPLOAD_CACHE_SECONDS).
+// ---------------------------------------------------------------------------
+async function s3Checks() {
+  if (!S3_ENV) {
+    console.log('SKIP  s3: no S3_ENDPOINT / S3_BUCKET / S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY set');
+    return;
+  }
+  const require = createRequire(import.meta.url);
+  const { S3Client, CreateBucketCommand, HeadObjectCommand, ListObjectsV2Command } = require('@aws-sdk/client-s3');
+  const bucket = S3_ENV.S3_BUCKET;
+  const client = new S3Client({
+    region: S3_ENV.S3_REGION || 'us-east-1',
+    endpoint: S3_ENV.S3_ENDPOINT,
+    forcePathStyle: true,
+    credentials: { accessKeyId: S3_ENV.S3_ACCESS_KEY_ID, secretAccessKey: S3_ENV.S3_SECRET_ACCESS_KEY },
+  });
+  const keys = async (prefix) => {
+    const out = await client.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix }));
+    return (out.Contents ?? []).map((o) => o.Key);
+  };
+  const head = async (key) => {
+    try {
+      return await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+    } catch {
+      return null;
+    }
+  };
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-s3-'));
+  const outerDbUrl = db.url;
+  const Op = new User('S3Operator');
+  const O = new User('S3Owner');
+  const publicUrl = S3_ENV.S3_PUBLIC_URL || `${S3_ENV.S3_ENDPOINT.replace(/\/+$/, '')}/${bucket}`;
+  const env = { ...S3_ENV, S3_PUBLIC_URL: publicUrl, OPERATOR_EMAILS: Op.email, UPLOAD_CACHE_SECONDS: '123' };
+  const get = (url) => fetch(`http://127.0.0.1:${server.port}${url}`, { redirect: 'manual' });
+  const act = (body) => Op.req('POST', '/api/moderation/actions', { reason: 'illegal', statement: 'Checked by verify.', ...body });
+  try {
+    try {
+      await client.send(new CreateBucketCommand({ Bucket: bucket }));
+    } catch (e) {
+      if (!/BucketAlready/.test(e?.name ?? '')) throw e;
+    }
+    if (ADMIN_URL) db.url = await createDatabase();
+    if (!(await check('s3: server boots against the S3 endpoint', async () => waitUp((server = await spawnServer(dataDir, env)))))) return;
+    for (const u of [Op, O]) {
+      await u.signup();
+      await u.verifyEmail(dataDir);
+    }
+    let name = null;
+    await check('s3: an upload is stored under uploads/ with max-age=UPLOAD_CACHE_SECONDS, and its URL redirects to S3_PUBLIC_URL with the same max-age', async () => {
+      const up = await O.req('POST', '/api/uploads', PNG_1PX, { raw: true, headers: { 'content-type': 'image/png' } });
+      assert(up.status === 201, `upload -> ${up.status} ${up.text}`);
+      name = up.json.url.slice('/uploads/'.length);
+      const obj = await head(`uploads/${name}`);
+      assert(obj, `no object uploads/${name}`);
+      assert(/max-age=123\b/.test(obj.CacheControl ?? ''), `stored Cache-Control: ${obj.CacheControl}`);
+      const r = await get(`/uploads/${name}`);
+      assert(r.status === 302 && r.headers.get('location') === `${publicUrl}/uploads/${name}`, `redirect -> ${r.status} ${r.headers.get('location')}`);
+      assert(/max-age=123\b/.test(r.headers.get('cache-control') ?? ''), `redirect Cache-Control: ${r.headers.get('cache-control')}`);
+    });
+
+    await check('s3: removing a file moves its kept copy under private/ (never under the public uploads/ prefix) and the URL answers 410; restoring brings it back under uploads/', async () => {
+      assert(name, 'no upload');
+      assert((await act({ action: 'upload.remove', targetId: name })).status === 200, 'remove');
+      assert(!(await head(`uploads/${name}`)), 'the removed file is still under uploads/');
+      const kept = (await keys('private/')).filter((k) => k.endsWith(`.${name}`));
+      assert(kept.length === 1, `kept copies: ${JSON.stringify(kept)}`);
+      assert(!(await keys('uploads/')).some((k) => k.includes(`.${name}`)), 'a kept copy sits under uploads/');
+      const gone = await get(`/uploads/${name}`);
+      assert(gone.status === 410 && !gone.headers.get('location'), `after removal -> ${gone.status} ${gone.headers.get('location')}`);
+      assert((await act({ action: 'upload.restore', targetId: name, reason: 'other' })).status === 200, 'restore');
+      const back = await head(`uploads/${name}`);
+      assert(back && /max-age=123\b/.test(back.CacheControl ?? ''), `restored object: ${back?.CacheControl}`);
+      assert(!(await keys('private/')).some((k) => k.endsWith(`.${name}`)), 'the kept copy outlived the restore');
+      assert((await get(`/uploads/${name}`)).status === 302, 'the restored file does not redirect');
+    });
+
+    await check('s3: retention (MODERATION_KEEP_REMOVED_DAYS=0) deletes the kept copy under private/, the URL stays 410', async () => {
+      assert((await act({ action: 'upload.remove', targetId: name })).status === 200, 'remove again');
+      assert((await keys('private/')).some((k) => k.endsWith(`.${name}`)), 'no kept copy');
+      await stopProc(server);
+      server = await waitUp(await spawnServer(dataDir, { ...env, MODERATION_KEEP_REMOVED_DAYS: '0', MODERATION_RETENTION_INTERVAL_SECONDS: '1' }));
+      await waitFor(async () => !(await keys('private/')).some((k) => k.endsWith(`.${name}`)), 10_000, 'the kept copy to be deleted');
+      assert((await get(`/uploads/${name}`)).status === 410, 'the URL came back');
+    });
+  } finally {
+    await stopServer();
+    await dropDatabases();
+    db.url = outerDbUrl;
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
 // `--only <group>[,<group>…]` runs some groups, e.g. to loop one while hunting a flake.
 const SUITES = {
   main: run,
@@ -4805,6 +4919,7 @@ const SUITES = {
   multi: multiInstanceChecks,
   admin: enterpriseAdminChecks,
   facilitation: facilitationChecks,
+  s3: s3Checks,
 };
 const onlyArg = process.argv.indexOf('--only');
 const only = onlyArg >= 0 ? (process.argv[onlyArg + 1] ?? '').split(',').filter(Boolean) : Object.keys(SUITES);

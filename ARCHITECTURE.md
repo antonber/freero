@@ -1428,7 +1428,10 @@ only to connections that may read them:
   sync, roles, persistence across restart. No fake harness. Runs on PGlite by default; with
   `DATABASE_URL` it runs against that Postgres (fresh database per run, dropped afterwards) and
   also starts two instances at once on one empty database (migration lock); with `REDIS_URL` too,
-  it runs two instances on one database + Redis with clients on each. CI does all of it.
+  it runs two instances on one database + Redis with clients on each. With `S3_ENDPOINT`,
+  `S3_BUCKET` and keys (MinIO, SeaweedFS…), the `s3` group checks the S3 backend (prefixes, kept
+  copies under `private/`, restore, retention, the S3_PUBLIC_URL redirect and stored Cache-Control);
+  all other groups stay on the local disk. CI does all of it.
   `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation` runs some groups (to loop one while hunting a flake).
   Checks wait on the real condition, never a fixed sleep: `waitFor(cond, ms)` polls until a
   deadline; `settled(client, observers)` is a barrier (a presence change the server handles after
