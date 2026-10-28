@@ -22,6 +22,8 @@ const WEEK = 7 * DAY;
  */
 export interface RetentionPolicy {
   tiers: Array<{ from: number; bucketMs: number }>;
+  /** Unnamed snapshots older than this are removed outright (a workspace's version-history retention). */
+  maxAgeMs?: number;
 }
 
 export const DEFAULT_RETENTION: RetentionPolicy = {
@@ -33,8 +35,8 @@ export const DEFAULT_RETENTION: RetentionPolicy = {
 };
 
 /**
- * Which board's policy applies. Today every board gets DEFAULT_RETENTION; workspace retention
- * policies (KAI-51) plug in here, e.g. `(boardId) => policyOfWorkspaceOwning(boardId)`.
+ * Which board's policy applies: DEFAULT_RETENTION, plus the version-history retention of the
+ * board's workspace (KAI-51, wired in init.ts).
  */
 export type RetentionPolicyFor = (boardId: string) => Promise<RetentionPolicy> | RetentionPolicy;
 export const defaultPolicyFor: RetentionPolicyFor = () => DEFAULT_RETENTION;
@@ -54,6 +56,10 @@ export function snapshotsToPrune(snapshots: SnapshotStamp[], now: number, policy
   for (const s of newestFirst) {
     if (s.kind === 'named') continue;
     const age = Math.max(0, now - s.createdAt);
+    if (policy.maxAgeMs !== undefined && age > policy.maxAgeMs) {
+      drop.push(s.id);
+      continue;
+    }
     let tier = 0;
     while (tier + 1 < tiers.length && age >= tiers[tier + 1].from) tier++;
     const key = `${tier}:${Math.floor(s.createdAt / tiers[tier].bucketMs)}`;
@@ -70,17 +76,23 @@ const BOARDS_PER_TRANSACTION = 50;
  * instance holds the lock (this round is skipped).
  */
 export async function pruneSnapshots(
-  opts: { now?: number; policyFor?: RetentionPolicyFor } = {},
+  opts: {
+    now?: number;
+    policyFor?: RetentionPolicyFor;
+    /** The shortest maxAgeMs any board's policy has: boards with a single snapshot older than that are visited too. */
+    shortestMaxAgeMs?: number | null;
+  } = {},
 ): Promise<number | null> {
   const now = opts.now ?? Date.now();
   const policyFor = opts.policyFor ?? defaultPolicyFor;
+  const loneBefore = opts.shortestMaxAgeMs == null ? null : now - opts.shortestMaxAgeMs;
   let removed = 0;
   let after = '';
   for (;;) {
     // Short transactions (a batch of boards each), so PGlite's single connection is never held long.
     const batch = await repo.transaction(async () => {
       if (!(await repo.tryLockSnapshotPrune())) return null;
-      const boards = await repo.boardsWithPrunableSnapshots(after, BOARDS_PER_TRANSACTION);
+      const boards = await repo.boardsWithPrunableSnapshots(after, BOARDS_PER_TRANSACTION, loneBefore);
       let n = 0;
       for (const boardId of boards) {
         const drop = snapshotsToPrune(await repo.snapshotTimeline(boardId), now, await policyFor(boardId));

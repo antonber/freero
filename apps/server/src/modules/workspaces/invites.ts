@@ -10,6 +10,7 @@ import { newId } from '../../platform/ids';
 import { logError } from '../../platform/log';
 import { appUrl, renderMail, sendMail } from '../../platform/mail';
 import { findUserByEmail, getUser, getUsers, markEmailVerified, normalizeEmail } from '../auth/index';
+import { recordAudit } from '../audit/index';
 import { notify } from '../notifications/index';
 import * as repo from './repo';
 import { isInvitableWorkspaceRole, mayInvite, type InvitableWorkspaceRole } from './roles';
@@ -83,6 +84,7 @@ export async function inviteToWorkspace(
     const now = await repo.addMemberIfAbsent(workspaceId, invitee.id, role, Date.now());
     if (now === null) throw notFound('Workspace not found');
     if (now !== role) throw new HttpError(409, `${invitee.name} is already in this workspace (${now}). Change their role instead.`);
+    await recordAudit({ action: 'member.invited', workspaceId, actorId: inviter.id, target: { type: 'user', id: invitee.id, label: email }, metadata: { role, added: true } });
     await refreshWorkspaceBoards(workspaceId); // they may have had some of its boards open
     // In their bell (and email digest, per their settings): an existing account joins without a link.
     await notify({
@@ -108,6 +110,7 @@ export async function inviteToWorkspace(
     expiresAt: at + INVITE_TTL_MS,
   });
   if (!saved) throw notFound('Workspace not found');
+  await recordAudit({ action: 'member.invited', workspaceId, actorId: inviter.id, target: { type: 'email', id: email, label: email }, metadata: { role, added: false } });
   await sendInviteMail(req, email, token, workspace.name, inviter, role);
   return { invite: toInvite(saved, inviter.name) };
 }
@@ -125,7 +128,9 @@ export async function resendInvite(req: Request | null, workspaceId: string, inv
 
 export async function revokeInvite(workspaceId: string, inviteId: string, userId: string): Promise<void> {
   await requireWorkspace(workspaceId, userId, 'admin');
+  const invite = (await repo.listInvites(workspaceId)).find((i) => i.id === inviteId);
   if (!(await repo.deleteInvite(workspaceId, inviteId))) throw notFound('No such pending invite');
+  await recordAudit({ action: 'member.invite_revoked', workspaceId, actorId: userId, target: { type: 'email', id: invite?.email ?? inviteId, label: invite?.email ?? null }, metadata: { role: invite?.role ?? null } });
 }
 
 const deadLink = () => notFound('This invite link is no longer valid. Ask for a new invite.');
@@ -143,6 +148,7 @@ export async function acceptInvite(token: string, user: { id: string; email: str
   const row = token ? await repo.takeInvite(hash(token), Date.now()) : null;
   if (!row) throw deadLink();
   if (!(await repo.grantAtLeast(row.workspaceId, user.id, row.role, Date.now()))) throw deadLink();
+  await recordAudit({ action: 'member.joined', workspaceId: row.workspaceId, actorId: user.id, target: { type: 'user', id: user.id, label: user.email }, metadata: { role: row.role, via: 'invite_link', invitedBy: row.invitedBy } });
   await refreshWorkspaceBoards(row.workspaceId);
   // The link was mailed to that address: following it proves the address.
   if (row.email === user.email) await markEmailVerified(user.id, user.email);
@@ -152,6 +158,8 @@ export async function acceptInvite(token: string, user: { id: string; email: str
 /** The user proved `email`: every live workspace invite sent to it becomes a membership. */
 export async function convertInvitesFor(user: { id: string; email: string }): Promise<void> {
   for (const row of await repo.takeInvitesForEmail(user.email, Date.now())) {
-    if (await repo.grantAtLeast(row.workspaceId, user.id, row.role, Date.now())) await refreshWorkspaceBoards(row.workspaceId);
+    if (!(await repo.grantAtLeast(row.workspaceId, user.id, row.role, Date.now()))) continue;
+    await recordAudit({ action: 'member.joined', workspaceId: row.workspaceId, actorId: user.id, target: { type: 'user', id: user.id, label: user.email }, metadata: { role: row.role, via: 'verified_email', invitedBy: row.invitedBy } });
+    await refreshWorkspaceBoards(row.workspaceId);
   }
 }

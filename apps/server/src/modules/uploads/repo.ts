@@ -37,6 +37,13 @@ export async function bytesUsedBy(ownerId: string): Promise<number> {
   return Number(row?.n ?? 0);
 }
 
+/** Total size of these uploads (names without a row count as 0). */
+export async function bytesOf(names: readonly string[]): Promise<number> {
+  if (!names.length) return 0;
+  const row = await one<{ n: number | string }>(`SELECT COALESCE(SUM(bytes), 0)::bigint AS n FROM uploads WHERE name = ANY($1::text[])`, [names]);
+  return Number(row?.n ?? 0);
+}
+
 // ---- removal by operators (moderation.ts) ----
 
 export interface UploadRow {

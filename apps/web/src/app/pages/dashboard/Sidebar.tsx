@@ -11,6 +11,7 @@ import {
   Plus,
   Settings,
   ShieldAlert,
+  ShieldCheck,
   SlidersHorizontal,
   Star,
   Trash2,
@@ -201,7 +202,7 @@ export function Sidebar(props: SidebarProps) {
         </section>
       ) : null}
 
-      {team && !guest ? (
+      {team && !guest && current?.blocked !== 'deactivated' ? (
         <nav className="fr-sidebar__nav fr-dash-ws__nav" aria-label="Workspace">
           <Tooltip content="Members" side="right" disabled={!compact}>
             <button type="button" className={`fr-nav${view === 'members' ? ' fr-nav--active' : ''}`} aria-current={view === 'members' ? 'page' : undefined} onClick={() => onView('members')}>
@@ -215,6 +216,14 @@ export function Sidebar(props: SidebarProps) {
                 <SlidersHorizontal size={18} aria-hidden />
                 <span className="fr-nav__label">Workspace settings</span>
               </button>
+            </Tooltip>
+          ) : null}
+          {manager ? (
+            <Tooltip content="Admin console" side="right" disabled={!compact}>
+              <Link to={`/admin/${encodeURIComponent(current!.id)}`} className="fr-nav">
+                <ShieldCheck size={18} aria-hidden />
+                <span className="fr-nav__label">Admin console</span>
+              </Link>
             </Tooltip>
           ) : null}
         </nav>
