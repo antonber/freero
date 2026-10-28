@@ -246,6 +246,11 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   is there so workspace-shared templates (KAI-37) need no contract change — offer owner-only
   actions only when it equals `user.id`. The visibility rule is one predicate in
   `modules/templates/repo.ts`.
+- Built-in templates (`features/templates/lib/catalog/`) are pure builders, run only when a template
+  is inserted or its preview scrolls into view. They may carry content kept outside the elements
+  (table cells, in `@freero/shared` `TableCopyContent`, the same format copy/paste and saved
+  templates use); those elements go through `insertElements` so the owner's `pasteContent` writes
+  it, everything else through `createMany` (so `normalize` measures text), in one transaction.
 
 Elements, geometry and text (all optional on `ElementDefinition` unless noted):
 - **Reads inside `editor.transact` see its earlier writes** (`getElements()`, `getElement()`,
