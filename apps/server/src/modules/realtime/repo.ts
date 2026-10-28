@@ -1,4 +1,5 @@
-// The only writer of `board_docs`, `board_doc_updates` and `board_doc_snapshots` [S4].
+// The only writer of `board_docs`, `board_doc_updates`, `board_doc_snapshots`, `board_layers` and
+// `board_layer_updates` [S4].
 // A document = its compacted base (board_docs) + the update log written since (board_doc_updates).
 // Yjs itself lives in docStore.ts; this file only moves bytes.
 import { isForeignKeyViolation, one, query, tx } from '../../platform/db';
@@ -162,6 +163,95 @@ export async function listSnapshots(boardId: string): Promise<SnapshotInfo[]> {
 export async function loadSnapshot(boardId: string, snapshotId: number): Promise<Uint8Array | null> {
   const r = await one<{ state: Uint8Array }>(`SELECT state FROM board_doc_snapshots WHERE board_id = $1 AND id = $2`, [boardId, snapshotId]);
   return r ? toBytes(r.state) : null;
+}
+
+// ---- Board layers (layers.ts): one base + log per (board, layer), stored like the board doc ----
+
+export interface StoredLayer extends StoredDoc {
+  layer: string;
+}
+
+/** Every layer of a board (base + log), in ONE statement for a consistent read. */
+export async function loadLayers(boardId: string, onlyLayer?: string): Promise<StoredLayer[]> {
+  const rows = await query<{ part: number; layer: string; id: number; data: Uint8Array }>(
+    `SELECT 0 AS part, layer, version AS id, state AS data FROM board_layers WHERE board_id = $1 AND ($2::text IS NULL OR layer = $2)
+     UNION ALL
+     SELECT 1 AS part, layer, id, data FROM board_layer_updates WHERE board_id = $1 AND ($2::text IS NULL OR layer = $2)
+     ORDER BY part, id`,
+    [boardId, onlyLayer ?? null],
+  );
+  const byLayer = new Map<string, StoredLayer>();
+  for (const r of rows) {
+    let l = byLayer.get(r.layer);
+    if (!l) byLayer.set(r.layer, (l = { layer: r.layer, base: null, version: 0, updates: [] }));
+    if (r.part === 0) {
+      l.base = toBytes(r.data);
+      l.version = Number(r.id);
+    } else l.updates.push({ id: Number(r.id), data: toBytes(r.data) });
+  }
+  return [...byLayer.values()];
+}
+
+export async function appendLayerUpdate(boardId: string, layer: string, update: Uint8Array, now: number): Promise<void> {
+  await guard(boardId, () =>
+    query(`INSERT INTO board_layer_updates (board_id, layer, data, created_at) VALUES ($1, $2, $3, $4)`, [
+      boardId,
+      layer,
+      toBuffer(update),
+      new Date(now),
+    ]),
+  );
+}
+
+/** The whole content of a layer of a brand-new (or trashed) board: becomes its base. */
+export async function saveInitialLayer(boardId: string, layer: string, state: Uint8Array, now: number): Promise<void> {
+  await guard(boardId, () =>
+    query(
+      `INSERT INTO board_layers (board_id, layer, state, updated_at) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (board_id, layer) DO UPDATE SET state = excluded.state, updated_at = excluded.updated_at,
+         version = board_layers.version + 1`,
+      [boardId, layer, toBuffer(state), new Date(now)],
+    ),
+  );
+}
+
+/**
+ * Like `compact` for a layer. `c.state === null` deletes the layer (it holds nothing, or its owner
+ * lost access): the base row and exactly the folded rows. Rows appended since stay (they recreate
+ * the layer). False when another compaction replaced the base meanwhile.
+ */
+export async function compactLayer(
+  boardId: string,
+  layer: string,
+  c: { fromVersion: number; state: Uint8Array | null; folded: number[] },
+  now: number,
+): Promise<boolean> {
+  return guard(boardId, () =>
+    tx(async (t) => {
+      await t.query(
+        `INSERT INTO board_layers (board_id, layer, state, updated_at) VALUES ($1, $2, $3, $4) ON CONFLICT (board_id, layer) DO NOTHING`,
+        [boardId, layer, EMPTY_UPDATE, new Date(now)],
+      );
+      const row = await t.one<{ version: number }>(`SELECT version FROM board_layers WHERE board_id = $1 AND layer = $2 FOR UPDATE`, [
+        boardId,
+        layer,
+      ]);
+      if (!row || Number(row.version) !== c.fromVersion) return false;
+      if (c.state) {
+        await t.query(`UPDATE board_layers SET state = $3, version = version + 1, updated_at = $4 WHERE board_id = $1 AND layer = $2`, [
+          boardId,
+          layer,
+          toBuffer(c.state),
+          new Date(now),
+        ]);
+      } else {
+        await t.query(`DELETE FROM board_layers WHERE board_id = $1 AND layer = $2`, [boardId, layer]);
+      }
+      if (c.folded.length)
+        await t.query(`DELETE FROM board_layer_updates WHERE board_id = $1 AND id = ANY($2::bigint[])`, [boardId, c.folded]);
+      return true;
+    }),
+  );
 }
 
 /** Keeps `state` as a version of the board (named, or the board just before a restore). */

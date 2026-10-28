@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { EyeOff } from 'lucide-react';
 import type { FrameElement } from '@freero/shared';
 import { defineElement, useCanEdit, useChromeHidden, useEditor, type Editor, type ElementRenderProps, type NewElement } from '@engine';
 import { DEFAULT_FILL, presetById } from './lib/frames';
@@ -94,6 +95,24 @@ function FrameTitle({ frame, zoom, selected }: { frame: FrameElement; zoom: numb
           {frame.title || 'Untitled frame'}
         </span>
       )}
+      {frame.hidden && !editing && (
+        <span className="fr-frame__hidden-tag" title={canEdit ? 'Viewers and commenters see this frame empty; its contents never reach them' : undefined}>
+          <EyeOff size={Math.round(Math.max(px, TITLE_MIN_PX))} strokeWidth={2.25} aria-hidden />
+          {canEdit ? 'Hidden from viewers' : 'Contents hidden'}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** What viewers and commenters see in a hidden frame (its contents never reach them). */
+function HiddenCover({ zoom }: { zoom: number }) {
+  return (
+    <div className="fr-frame__cover">
+      <div className="fr-frame__cover-note" style={{ transform: `scale(${1 / Math.max(zoom, 0.05)})` }}>
+        <EyeOff size={18} aria-hidden />
+        <span>The editors have hidden what's in this frame</span>
+      </div>
     </div>
   );
 }
@@ -101,6 +120,7 @@ function FrameTitle({ frame, zoom, selected }: { frame: FrameElement; zoom: numb
 const FrameView = memo(function FrameView({ element, selected }: ElementRenderProps<FrameElement>) {
   const editor = useEditor();
   const zoom = useLiveZoom(editor);
+  const canEdit = useCanEdit();
   return (
     <>
       <div
@@ -111,6 +131,7 @@ const FrameView = memo(function FrameView({ element, selected }: ElementRenderPr
           boxShadow: `0 0 0 ${1 / zoom}px rgba(23, 22, 43, 0.14), 0 ${2 / zoom}px ${10 / zoom}px rgba(23, 22, 43, 0.05)`,
         }}
       />
+      {element.hidden && !canEdit && <HiddenCover zoom={zoom} />}
       <FrameTitle frame={element} zoom={zoom} selected={selected} />
     </>
   );
@@ -127,6 +148,8 @@ export default defineElement({
     return { type: 'frame', w: p.w, h: p.h, title: 'Frame', fill: DEFAULT_FILL, index: 0, preset: p.id };
   },
   Component: FrameView,
+  // Hidden: its contents live in the editors layer, which the server sends to owners/editors only.
+  hidesContents: (el) => !!el.hidden,
   toPlainText: (el) => el.title,
   // The title floats above the frame at a constant on-screen size (line + 4px gap + padding).
   visualOutset: (el, zoom) => {

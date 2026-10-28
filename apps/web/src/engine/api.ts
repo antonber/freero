@@ -12,6 +12,7 @@
 import type { ComponentType, CSSProperties, ReactNode } from 'react';
 import type {
   BoardElement,
+  BoardLayer,
   BoardVersion,
   BoardSettings,
   ElementOf,
@@ -19,6 +20,9 @@ import type {
   PresenceState,
   Role,
 } from '@freero/shared';
+
+/** [additive] Where an element lives (see Editor.layerOf and ARCHITECTURE.md "Board layers"). */
+export type ElementLayer = 'shared' | BoardLayer;
 
 // ---------------------------------------------------------------------------
 // Geometry
@@ -311,6 +315,13 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
    * Called often: keep it cheap. `editor` is scoped to the defining feature.
    */
   hidden?(element: ElementOf<T>, editor: Editor): boolean;
+  /**
+   * [additive] Containers only: true while this container hides its contents from viewers and
+   * commenters. Its contents then live in the 'editors' layer, which the server never sends to
+   * them (moved there and back by the engine on every owner/editor client); non-editors see
+   * none of it, owners/editors see and edit it as usual.
+   */
+  hidesContents?(element: ElementOf<T>): boolean;
   /**
    * [additive] Ids this element is drawn against (a connector's attached ends). While any of them
    * is hidden for this viewer (`Editor.setViewHidden` — itself or a container it sits in), this
@@ -829,6 +840,38 @@ export interface Editor {
 
   // -- collections --
   collection<T>(name: string): Collection<T>;
+
+  // -- board layers: content the SERVER withholds (ARCHITECTURE.md "Board layers") --
+  /**
+   * [additive] Where an element lives: 'shared' (everyone with access), 'private' (only this
+   * user, until an owner/editor reveals it), 'editors' (inside a hidden frame: owners/editors
+   * only), or null if there is no such element.
+   */
+  layerOf(id: string): ElementLayer | null;
+  /**
+   * [additive] Private mode: NEW elements this user creates that match `rule` go to their
+   * private layer, which the server sends to nobody else. One rule at a time (the private-mode
+   * feature owns it); null turns it off. Existing private elements stay private until revealed.
+   * While a rule is set, this user's cursor is not shown to others where a new sticky would go
+   * private (or over their private items), and presence never names private elements.
+   */
+  setPrivatePlacement(rule: ((el: BoardElement) => boolean) | null): void;
+  /**
+   * [additive] This user's PRIVATE copy of a collection the scope owns (same ownership guard as
+   * `collection`): synced only between this user's own tabs, never readable by anyone else until
+   * an owner/editor reveals it with `revealPrivate`. For sealed ballots and similar.
+   */
+  privateCollection<T>(name: string): Collection<T>;
+  /**
+   * [additive] Owners/editors: asks the server to move EVERY participant's private entries of
+   * `collection` (keys starting with `prefix`) into the shared doc in one transaction, removing
+   * them from the private layers ('elements' reveals private-mode drafts). Works while their
+   * authors are offline. Runs in order with this client's writes; queued while disconnected.
+   * Only people who may still edit the board take part. `mine`: only this user's own entries.
+   */
+  revealPrivate(collection: string, opts?: { prefix?: string; mine?: boolean }): void;
+  /** [additive] Like revealPrivate, but deletes those private entries without revealing them. */
+  discardPrivate(collection: string, opts?: { prefix?: string; mine?: boolean }): void;
 
   // -- presence --
   getPeers(): Array<PresenceState & { clientId: number }>;

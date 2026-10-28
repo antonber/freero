@@ -8,6 +8,7 @@ import type {
   Editor,
   EditorEvent,
   ElementDefinition,
+  ElementLayer,
   ElementPatch,
   ElementsSnapshot,
   FitOptions,
@@ -47,6 +48,7 @@ import { applyFormatToHtml, formatStateOfHtml } from '../text/formatHtml';
 import { EMPTY_FORMAT_STATE, type FormatCommand, type TextFormatState } from '../text/session';
 import { richTextToPlain } from '../text/sanitize';
 import { runFollowers } from './followers';
+import { insideHiddenContainer } from './layers';
 import { listShortcuts } from '../runtime/shortcutList';
 import { createArrangeState, hasArrangers, runArrangers, type ArrangeState } from './arrange';
 
@@ -75,8 +77,14 @@ export class EditorImpl implements Editor {
     arrange: ArrangeState;
     /** A font re-measure waits for the next local change (redo steps existed): see renormalizeMeasured(). */
     remeasurePending: boolean;
-  } = { collections: new Map(), camAnim: null, camTarget: null, lastPaste: null, lastDenied: 0, editingGesture: false, movingTimer: null, userCamera: 0, arrange: createArrangeState(), remeasurePending: false };
+    /** New elements matching this go to the private layer (setPrivatePlacement). */
+    privateRule: ((el: BoardElement) => boolean) | null;
+  } = { collections: new Map(), camAnim: null, camTarget: null, lastPaste: null, lastDenied: 0, editingGesture: false, movingTimer: null, userCamera: 0, arrange: createArrangeState(), remeasurePending: false, privateRule: null };
 
+  /** The private-mode placement rule (read by the engine's layer placement). */
+  getPrivateRule(): ((el: BoardElement) => boolean) | null {
+    return this.shared.privateRule;
+  }
   /**
    * A local change wrote/removed `ids` (called inside its store transaction): containers with
    * `arrange` re-lay out now, in that transaction, or when the open gesture / outermost
@@ -173,10 +181,15 @@ export class EditorImpl implements Editor {
     return this.core.registry.elements.get(type)?.feature ?? 'engine';
   }
 
-  /** True when the element's definition says it isn't on the board right now (ElementDefinition.hidden). */
+  /**
+   * True when the element isn't on the board right now: its definition says so
+   * (ElementDefinition.hidden), or it sits in a container that hides its contents and this user
+   * may not see them (only while the engine moves it out of the shared doc; see editor/layers.ts).
+   */
   isOffBoard(el: BoardElement): boolean {
     const reg = this.core.registry.elements.get(el.type);
-    return !!reg?.def.hidden && !!reg.def.hidden(el, this.core.scoped(reg.feature));
+    if (reg?.def.hidden && reg.def.hidden(el, this.core.scoped(reg.feature))) return true;
+    return this.core.registry.hidesContents && !this.can('editor') && insideHiddenContainer(this.core, el);
   }
 
   /**
@@ -218,7 +231,7 @@ export class EditorImpl implements Editor {
   /** Elements in render order without hidden ones (what hit tests, marquee, bounds, culling see). */
   getVisibleElements(): BoardElement[] {
     const all = this.getElements();
-    if (!this.core.ui.getState().viewHidden.size && ![...this.core.registry.elements.values()].some((r) => r.def.hidden)) return all;
+    if (!this.core.ui.getState().viewHidden.size && !this.core.registry.hidesContents && ![...this.core.registry.elements.values()].some((r) => r.def.hidden)) return all;
     return all.filter((el) => !this.isHidden(el));
   }
 
@@ -1262,6 +1275,45 @@ export class EditorImpl implements Editor {
       this.shared.collections.set(key, c);
     }
     return c as Collection<T>;
+  }
+
+  privateCollection<T>(name: string): Collection<T> {
+    const key = `${this.scope}\u0000private\u0000${name}`;
+    let c = this.shared.collections.get(key);
+    if (!c) {
+      c = createCollection<unknown>(
+        this.core.store,
+        name,
+        this.scope,
+        {
+          ownerOf: (n) => this.core.registry.collectionOwners.get(n),
+          // The server accepts private-layer writes from owners/editors only.
+          canWrite: () => this.guardWrite(),
+        },
+        'private',
+      );
+      this.shared.collections.set(key, c);
+    }
+    return c as Collection<T>;
+  }
+
+  // ------------------------------------------------------------------ board layers
+  layerOf(id: string): ElementLayer | null {
+    return this.core.store.layerOf(id);
+  }
+
+  setPrivatePlacement(rule: ((el: BoardElement) => boolean) | null): void {
+    this.shared.privateRule = rule;
+  }
+
+  revealPrivate(collection: string, opts?: { prefix?: string; mine?: boolean }): void {
+    if (!this.guardWrite()) return;
+    this.core.store.runLayerOp({ type: 'reveal', collection, ...(opts?.prefix !== undefined ? { prefix: opts.prefix } : {}), ...(opts?.mine ? { mine: true } : {}) });
+  }
+
+  discardPrivate(collection: string, opts?: { prefix?: string; mine?: boolean }): void {
+    if (!this.guardWrite()) return;
+    this.core.store.runLayerOp({ type: 'discard', collection, ...(opts?.prefix !== undefined ? { prefix: opts.prefix } : {}), ...(opts?.mine ? { mine: true } : {}) });
   }
 
   // ------------------------------------------------------------------ presence

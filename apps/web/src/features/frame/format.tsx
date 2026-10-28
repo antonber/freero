@@ -1,11 +1,11 @@
 import { useRef, useState } from 'react';
-import { ChevronDown, LayoutGrid, Maximize2, Minus, Plus, Shrink } from 'lucide-react';
+import { ChevronDown, Eye, EyeOff, LayoutGrid, Maximize2, Minus, Plus, Shrink } from 'lucide-react';
 import type { FrameElement } from '@freero/shared';
 import { defineFormat, type Editor } from '@engine';
 import { ColorSwatches, IconButton, Menu, Popover, SegmentedControl, Toggle, Tooltip } from '@ui';
 import { DEFAULT_GRID, GRID_GAPS, MAX_COLS } from './lib/grid';
 import { DEFAULT_FILL, PRESETS, presetById } from './lib/frames';
-import { fitToContent, setPreset, zoomToFrame } from './lib/actions';
+import { fitToContent, setHidden, setPreset, zoomToFrame } from './lib/actions';
 
 const FILLS = ['#FFFFFF', '#F4F3F8', '#FFF8DB', '#FFEDE3', '#FDEBF4', '#EEEAFF', '#E5F1FF', '#E2F7F1', '#2B2A40', '#17162B'];
 const FILL_NAMES: Record<string, string> = {
@@ -164,6 +164,11 @@ export default defineFormat({
         {frames.length === 1 && !frames[0].locked && <GridControl editor={editor} frame={frames[0]} />}
         {frames.length === 1 && (
           <IconButton icon={Maximize2} label="Zoom to frame" size={32} onClick={() => zoomToFrame(editor, frames[0])} />
+        )}
+        {frames.every((f) => f.hidden) ? (
+          <IconButton icon={Eye} label="Show contents to everyone" size={32} active onClick={() => setHidden(editor, frames, false)} />
+        ) : (
+          <IconButton icon={EyeOff} label="Hide contents from viewers and commenters" size={32} onClick={() => setHidden(editor, frames, true)} />
         )}
       </>
     );

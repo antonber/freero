@@ -25,12 +25,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 import * as decoding from 'lib0/decoding';
+import * as encoding from 'lib0/encoding';
 import WebSocket from 'ws';
+import * as syncProtocol from 'y-protocols/sync';
 import { WebsocketProvider } from 'y-websocket';
 import * as Y from 'yjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WS_MESSAGE_ROLE = 100;
+const WS_MESSAGE_LAYER = 101; // board layers (see @freero/shared api.ts)
+const WS_MESSAGE_LAYER_OP = 102;
 const PNG_1PX = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
   'base64',
@@ -348,6 +352,7 @@ function connectDoc(user, boardId, prepare, port = user.port ?? server.port) {
     if (msg.type === 'role') client.role = msg.role;
   };
   provider.on('connection-close', (event) => event && client.closeCodes.push(event.code));
+  provider.messageHandlers[WS_MESSAGE_LAYER] = () => {}; // layer updates: see withLayers()
   provider.awareness.setLocalStateField('user', { id: user.id, name: user.name, color: '#1C7ED6' });
   provider.connect();
   client.ready = () => waitFor(() => provider.synced && client.role !== null, 8000, `${user.label} to sync`);
@@ -359,6 +364,61 @@ function connectDoc(user, boardId, prepare, port = user.port ?? server.port) {
   providers.add(client);
   return client;
 }
+
+/**
+ * Gives a connected client the two board-layer docs ('private', 'editors'), synced over its socket
+ * the way the web app does it (engine/store/BoardStore.ts): it asks for a layer with sync step 1 and
+ * the server answers only if this socket may read it. `layerOp` sends a reveal/discard.
+ */
+function withLayers(client) {
+  const layers = { private: new Y.Doc(), editors: new Y.Doc() };
+  const send = (name, write) => {
+    const ws = client.provider.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const e = encoding.createEncoder();
+    encoding.writeVarUint(e, WS_MESSAGE_LAYER);
+    encoding.writeVarString(e, name);
+    write(e);
+    ws.send(encoding.toUint8Array(e));
+  };
+  client.layerMessages = []; // wire names of every layer message received
+  client.provider.messageHandlers[WS_MESSAGE_LAYER] = (encoder, decoder) => {
+    const name = decoding.readVarString(decoder);
+    client.layerMessages.push(name);
+    const doc = layers[name];
+    if (!doc) return;
+    const reply = encoding.createEncoder();
+    syncProtocol.readSyncMessage(decoder, reply, doc, 'server');
+    if (encoding.length(reply) > 0) {
+      encoding.writeVarUint(encoder, WS_MESSAGE_LAYER);
+      encoding.writeVarString(encoder, name);
+      encoding.writeUint8Array(encoder, encoding.toUint8Array(reply));
+    }
+  };
+  for (const [name, doc] of Object.entries(layers))
+    doc.on('update', (u, origin) => origin !== 'server' && send(name, (e) => syncProtocol.writeUpdate(e, u)));
+  client.layers = layers;
+  client.askLayer = (name) => send(name, (e) => syncProtocol.writeSyncStep1(e, layers[name] ?? new Y.Doc()));
+  client.layerOp = (op) => {
+    const e = encoding.createEncoder();
+    encoding.writeVarUint(e, WS_MESSAGE_LAYER_OP);
+    encoding.writeVarString(e, JSON.stringify(op));
+    client.provider.ws.send(encoding.toUint8Array(e));
+  };
+  return client;
+}
+
+/** A client of `user` with layers, synced and having asked for both layers (`port`: instance). */
+async function layerClient(user, boardId, port = server.port) {
+  const c = withLayers(connectDoc(user, boardId, undefined, port));
+  await c.ready();
+  c.askLayer('private');
+  c.askLayer('editors');
+  return c;
+}
+
+/** Every value anywhere in a client's shared doc, as JSON text (to prove something never arrived). */
+const sharedText = (c) => JSON.stringify(c.doc.toJSON());
 
 function closeAllDocs() {
   for (const c of [...providers]) c.destroy();
@@ -811,18 +871,107 @@ async function run() {
       assert(!a.doc.getMap('comments').has('ct'), 'viewer comment leaked to A');
     });
 
+    const dThread = { kind: 'thread', id: 't1', x: 5, y: 5, elementId: null, createdAt: 1, createdBy: D.id };
+    const dMsg = (id, authorId, text) => ({ kind: 'message', threadId: 't1', id, authorId, authorName: authorId, text, createdAt: 1 });
     await check("commenter D can write 'comments' but not 'elements'", async () => {
-      d.doc.getMap('comments').set('t1', { id: 't1', text: 'nice!', author: D.id });
-      await waitFor(() => a.doc.getMap('comments').get('t1')?.text === 'nice!', 5000, "A to receive D's comment");
+      d.doc.transact(() => {
+        d.doc.getMap('comments').set('t:t1', dThread);
+        d.doc.getMap('comments').set('m:t1:m1', dMsg('m1', D.id, 'nice!'));
+      });
+      await waitFor(() => a.doc.getMap('comments').get('m:t1:m1')?.text === 'nice!', 5000, "A to receive D's comment");
       els(d).set('d1', { id: 'd1', type: 'sticky', text: 'from commenter' });
       d.doc.transact(() => {
-        d.doc.getMap('comments').set('t2', { text: 'mixed' });
+        d.doc.getMap('comments').set('s:t1', { kind: 'status', threadId: 't1', resolved: true, by: D.id, at: 2 });
         els(d).delete('e1');
       });
       await sleep(800);
       assert(!els(a).has('d1'), "commenter's element reached A");
       assert(els(a).has('e1'), "commenter's delete of e1 reached A");
-      assert(!a.doc.getMap('comments').has('t2'), 'mixed comment+element update was accepted');
+      assert(!a.doc.getMap('comments').has('s:t1'), 'mixed comment+element update was accepted');
+    });
+
+    await check("comment authorship: commenter D's raw client cannot rewrite or delete A's message; D's own edits still sync", async () => {
+      a.doc.getMap('comments').set('m:t1:a1', dMsg('a1', A.id, 'reply from A'));
+      await waitFor(() => d.doc.getMap('comments').get('m:t1:a1')?.text === 'reply from A', 5000, "D to receive A's reply");
+      // Each attempt from a fresh raw client: after one dropped update, everything later from the
+      // same client would be dropped anyway (missing dependencies), which proves nothing.
+      const attempts = [
+        ["rewrite A's message", (c) => c.set('m:t1:a1', { ...dMsg('a1', A.id, 'A never wrote this'), editedAt: 3 })],
+        ["post a message as A", (c) => c.set('m:t1:f1', dMsg('f1', A.id, "forged in A's name"))],
+        ["delete A's message", (c) => c.delete('m:t1:a1')],
+      ];
+      for (const [what, fn] of attempts) {
+        const raw = connectDoc(D, board.id);
+        await raw.ready();
+        fn(raw.doc.getMap('comments'));
+        await sleep(600);
+        raw.destroy();
+        const seen = a.doc.getMap('comments');
+        assert(seen.get('m:t1:a1')?.text === 'reply from A' && !seen.has('m:t1:f1'), `D could ${what}: ${JSON.stringify(seen.get('m:t1:a1'))}`);
+      }
+      d.destroy(); // holds the rejected writes; reconnect clean
+      d = connectDoc(D, board.id);
+      await d.ready();
+      d.doc.getMap('comments').set('m:t1:m1', { ...dMsg('m1', D.id, 'nice!'), editedAt: 4 });
+      d.doc.getMap('comments').set('r:t1:a1:' + D.id + ':🎉', { kind: 'reaction', threadId: 't1', messageId: 'a1', userId: D.id, emoji: '🎉' });
+      await waitFor(() => a.doc.getMap('comments').get('m:t1:m1')?.editedAt === 4, 5000, "A to receive D's edit of D's own message");
+      await waitFor(() => a.doc.getMap('comments').has('r:t1:a1:' + D.id + ':🎉'), 5000, "A to receive D's reaction");
+    });
+
+    // ---- board layers: content the server withholds (private drafts, sealed ballots, hidden frames) ----
+    await check("board layers: an editor's private draft syncs to their own other tab and to nobody else (owner, editor, viewer, commenter)", async () => {
+      const b1 = await layerClient(B, board.id);
+      const b2 = await layerClient(B, board.id);
+      const others = await Promise.all([A, C, D].map((u) => layerClient(u, board.id)));
+      b1.layers.private.getMap('elements').set('draft1', { id: 'draft1', type: 'sticky', text: 'SECRET-DRAFT' });
+      await waitFor(() => b2.layers.private.getMap('elements').get('draft1')?.text === 'SECRET-DRAFT', 5000, "B's other tab to get B's draft");
+      await sleep(500);
+      for (const o of others) {
+        const everything = sharedText(o) + JSON.stringify(o.layers.private.toJSON()) + JSON.stringify(o.layers.editors.toJSON());
+        assert(!everything.includes('SECRET-DRAFT'), `${o.user.label} received B's private draft`);
+      }
+      // Asking for "private" always means one's own layer; nobody can name someone else's.
+      for (const o of others) o.askLayer(`u:${B.id}`);
+      await sleep(400);
+      assert(others.every((o) => !o.layerMessages.includes(`u:${B.id}`)), "someone got an answer for B's layer by its storage name");
+      for (const c of [b1, b2, ...others]) c.destroy();
+    });
+
+    await check("board layers: hidden frames' contents (editors layer) sync between owner and editor, never to a viewer or commenter, who also cannot write it", async () => {
+      const a1 = await layerClient(A, board.id);
+      const b1 = await layerClient(B, board.id);
+      const c1 = await layerClient(C, board.id);
+      const d1 = await layerClient(D, board.id);
+      a1.layers.editors.getMap('elements').set('hid1', { id: 'hid1', type: 'sticky', text: 'HIDDEN-CONTENT' });
+      await waitFor(() => b1.layers.editors.getMap('elements').get('hid1')?.text === 'HIDDEN-CONTENT', 5000, 'B to get the hidden content');
+      c1.layers.editors.getMap('elements').set('cv', { id: 'cv', type: 'sticky', text: 'viewer write' });
+      d1.layers.editors.getMap('elements').set('dv', { id: 'dv', type: 'sticky', text: 'commenter write' });
+      await sleep(600);
+      for (const o of [c1, d1]) assert(!JSON.stringify(o.layers.editors.toJSON()).includes('HIDDEN-CONTENT') && !sharedText(o).includes('HIDDEN-CONTENT'), `${o.user.label} received hidden content`);
+      const seen = a1.layers.editors.getMap('elements');
+      assert(!seen.has('cv') && !seen.has('dv'), 'a viewer/commenter wrote the editors layer');
+      for (const c of [a1, b1, c1, d1]) c.destroy();
+    });
+
+    await check('board layers: sealed ballots are revealed into the shared doc only by an owner/editor, while their author is offline', async () => {
+      const b1 = await layerClient(B, board.id);
+      b1.layers.private.getMap('voting').set(`s1:${B.id}`, { sessionId: 's1', userId: B.id, elementIds: ['e1', 'e1'] });
+      b1.layers.private.getMap('voting').set(`s0:${B.id}`, { sessionId: 's0', userId: B.id, elementIds: ['e2'] });
+      await sleep(400);
+      b1.destroy();
+      const c1 = await layerClient(C, board.id); // viewer
+      const d1 = await layerClient(D, board.id); // commenter
+      for (const x of [c1, d1]) x.layerOp({ type: 'reveal', collection: 'voting' });
+      await sleep(600);
+      assert(!c1.doc.getMap('voting').has(`s1:${B.id}`), 'a viewer/commenter revealed sealed ballots');
+      const a1 = await layerClient(A, board.id);
+      a1.layerOp({ type: 'reveal', collection: 'voting', prefix: 's1:' });
+      await waitFor(() => c1.doc.getMap('voting').get(`s1:${B.id}`)?.elementIds?.length === 2, 5000, "the viewer to see B's revealed ballot");
+      assert(!c1.doc.getMap('voting').has(`s0:${B.id}`), "a ballot of another session was revealed");
+      const b2 = await layerClient(B, board.id);
+      await waitFor(() => b2.layers.private.getMap('voting').has(`s0:${B.id}`), 5000, "B's other sealed ballot to still be in B's layer");
+      assert(!b2.layers.private.getMap('voting').has(`s1:${B.id}`), 'the revealed ballot stayed in the private layer');
+      for (const c of [a1, b2, c1, d1]) c.destroy();
     });
 
     await check('role changes apply live (owner promotes C to editor over REST)', async () => {
@@ -922,9 +1071,16 @@ async function run() {
       await a2.ready();
       const m = els(a2);
       assert(m.get('e1')?.text === 'from A' && m.get('e2')?.text === 'from B' && m.get('e3') && m.get('c2') && m.get('e4'), `elements after restart: ${JSON.stringify([...m.keys()])}`);
-      assert(a2.doc.getMap('comments').get('t1')?.text === 'nice!', "D's comment not persisted");
-      assert(!m.has('c1') && !m.has('d1') && !a2.doc.getMap('comments').has('t2') && !a2.doc.getMap('comments').has('ct'), 'rejected writes were persisted');
+      assert(a2.doc.getMap('comments').get('m:t1:m1')?.text === 'nice!', "D's comment not persisted");
+      assert(!m.has('c1') && !m.has('d1') && !a2.doc.getMap('comments').has('s:t1') && !a2.doc.getMap('comments').has('m:t1:f1') && !a2.doc.getMap('comments').has('ct'), 'rejected writes were persisted');
       a2.destroy();
+      const b3 = await layerClient(B, board.id);
+      await waitFor(
+        () => b3.layers.private.getMap('elements').get('draft1')?.text === 'SECRET-DRAFT' && b3.layers.editors.getMap('elements').has('hid1'),
+        5000,
+        "B's private draft and the hidden frame content to come back after the restart",
+      );
+      b3.destroy();
     });
 
     await check('an expired invite link grants nothing (no preview, no access after signing up)', async () => {
@@ -1014,13 +1170,25 @@ async function run() {
       assert(r.status === 201 || r.status === 200, r.text);
       copy = r.json.board;
       assert(copy.title === 'Copy of Verify Roadmap' && copy.role === 'owner' && copy.ownerId === A.id && copy.id !== board.id, JSON.stringify(copy));
-      const cd = connectDoc(A, copy.id);
-      await cd.ready();
-      assert(els(cd).get('e1')?.text === 'from A' && cd.doc.getMap('comments').get('t1')?.text === 'nice!', 'copy has no content');
+      const cd = await layerClient(A, copy.id);
+      assert(els(cd).get('e1')?.text === 'from A' && cd.doc.getMap('comments').get('m:t1:m1')?.text === 'nice!', 'copy has no content');
+      // Hidden frames' contents come along for an owner/editor; nobody's private layer does.
+      await waitFor(() => cd.layers.editors.getMap('elements').has('hid1'), 5000, "the owner's copy to keep the hidden frame content");
       cd.destroy();
       const rb = await B.req('POST', `/api/boards/${board.id}/duplicate`);
       assert(rb.json.board.ownerId === B.id && rb.json.board.role === 'owner', 'B copy owner');
+      const bc = await layerClient(B, rb.json.board.id);
+      await sleep(400);
+      assert(!JSON.stringify(bc.layers.private.toJSON()).includes('SECRET-DRAFT'), "B's private draft was copied into B's duplicate");
+      bc.destroy();
       assert((await C.req('GET', `/api/boards/${copy.id}`)).status === 403, "members don't carry over to copies");
+      // A viewer's copy must not contain what the viewer could never read.
+      const rc = await C.req('POST', `/api/boards/${board.id}/duplicate`);
+      assert(rc.status === 201, rc.text);
+      const cc = await layerClient(C, rc.json.board.id);
+      await sleep(400);
+      assert(!cc.layers.editors.getMap('elements').has('hid1'), "a viewer's duplicate contains the hidden frame content");
+      cc.destroy();
     });
 
     // ---- version history (KAI-49) ----
@@ -1086,13 +1254,15 @@ async function run() {
 
     await check('delete: only owner; moves the board to the trash, removing it and its access for everyone; copy survives', async () => {
       assert((await B.req('DELETE', `/api/boards/${board.id}`)).status === 403, 'editor delete');
-      const live = connectDoc(B, board.id);
-      await live.ready();
+      const live = await layerClient(B, board.id);
       // An edit the server has received but not saved yet (saves are debounced) when the delete lands.
-      const watcher = connectDoc(A, board.id);
-      await watcher.ready();
+      const watcher = await layerClient(A, board.id);
       els(live).set('t1', { id: 't1', type: 'sticky', text: 'just before the delete' });
-      await waitFor(() => els(watcher).get('t1'), 3000, 'the last edit to reach the server');
+      // ...and in a layer: hidden-frame content and a private draft (kept through the trash too).
+      live.layers.editors.getMap('elements').set('t2', { id: 't2', type: 'sticky', text: 'hidden, just before the delete' });
+      live.layers.private.getMap('elements').set('t3', { id: 't3', type: 'sticky', text: 'draft, just before the delete' });
+      await waitFor(() => els(watcher).get('t1') && watcher.layers.editors.getMap('elements').get('t2'), 3000, 'the last edits to reach the server');
+      await sleep(100);
       watcher.destroy();
       assert((await A.req('DELETE', `/api/boards/${board.id}`)).status === 200, 'owner delete');
       await waitFor(() => live.closeCodes.includes(4403), 5000, 'connected editor to be closed with 4403');
@@ -1122,6 +1292,13 @@ async function run() {
       assert(els(back).get('e2')?.text === 'from B', 'restored board lost its content');
       assert(els(back).get('t1')?.text === 'just before the delete', 'the edit made right before the delete was lost');
       back.destroy();
+      const backL = await layerClient(B, board.id);
+      await waitFor(
+        () => backL.layers.editors.getMap('elements').has('t2') && backL.layers.private.getMap('elements').has('t3'),
+        5000,
+        'the layers (hidden content, private draft) to survive the trash',
+      );
+      backL.destroy();
 
       assert((await A.req('DELETE', `/api/boards/${board.id}/permanent`)).status === 404, 'delete forever of a live board');
       assert((await A.req('DELETE', `/api/boards/${board.id}`)).status === 200, 'trash again');
@@ -1379,7 +1556,8 @@ async function multiInstanceChecks() {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-multi-'));
   const procs = [];
   let url = null;
-  const env = () => ({ DATABASE_URL: url, REDIS_URL });
+  // Rate-limit counters live in the shared Redis, also across the single-instance run above.
+  const env = () => ({ DATABASE_URL: url, REDIS_URL, RATE_LIMIT_SIGNUP: '200/1h' });
   const docRows = async (boardId) =>
     (await adminQuery(`SELECT count(*)::int AS n FROM board_doc_updates WHERE board_id = '${boardId}'`, url))[0].n;
   try {
@@ -1533,6 +1711,74 @@ async function multiInstanceChecks() {
       live.destroy();
     });
 
+    // ---- board layers across instances ----
+    const layerRows = async (boardId, layer) =>
+      (
+        await adminQuery(
+          `SELECT (SELECT count(*) FROM board_layers WHERE board_id = '${boardId}' AND layer = '${layer}')
+                + (SELECT count(*) FROM board_layer_updates WHERE board_id = '${boardId}' AND layer = '${layer}') AS n`,
+          url,
+        )
+      )[0].n * 1;
+    const V = new User('MV'); // viewer
+    const R = new User('MR'); // editor, removed later
+    await check('board layers across instances: a private draft reaches only its author (other tab on the other instance); hidden-frame content reaches owner and editor on both, never a viewer', async () => {
+      for (const u of [V, R]) await u.signup();
+      for (const [u, role] of [[V, 'viewer'], [R, 'editor']])
+        assert((await A.req('POST', `/api/boards/${board.id}/members`, { email: u.email, role })).status === 201, 'invite');
+      const b1 = await layerClient(B, board.id, one);
+      const b2 = await layerClient(B, board.id, two);
+      const a2 = await layerClient(A, board.id, two);
+      const v1 = await layerClient(V, board.id, one);
+      const v2 = await layerClient(V, board.id, two);
+      b1.layers.private.getMap('elements').set('mdraft', { id: 'mdraft', type: 'sticky', text: 'MULTI-DRAFT' });
+      a2.layers.editors.getMap('elements').set('mhid', { id: 'mhid', type: 'sticky', text: 'MULTI-HIDDEN' });
+      await waitFor(() => b2.layers.private.getMap('elements').get('mdraft')?.text === 'MULTI-DRAFT', 5000, "B's tab on instance 2 to get B's draft");
+      await waitFor(() => b1.layers.editors.getMap('elements').get('mhid')?.text === 'MULTI-HIDDEN', 5000, 'B on instance 1 to get the hidden content');
+      await sleep(500);
+      for (const o of [a2, v1, v2]) {
+        const all = sharedText(o) + JSON.stringify(o.layers.private.toJSON()) + JSON.stringify(o.layers.editors.toJSON());
+        assert(!all.includes('MULTI-DRAFT'), `${o.user.label} got B's private draft`);
+        if (o.user === V) assert(!all.includes('MULTI-HIDDEN'), 'the viewer got hidden-frame content');
+      }
+      for (const c of [b1, b2, a2, v1, v2]) c.destroy();
+    });
+
+    await check('board layers across instances: opening the board on instance 2 right after a private edit on instance 1 gets it before it is saved', async () => {
+      const fresh = (await A.req('POST', '/api/boards', { title: 'Layer catch-up' })).json.board;
+      const w = await layerClient(A, fresh.id, one);
+      w.layers.private.getMap('elements').set('early', { id: 'early', type: 'sticky', text: 'unsaved draft' });
+      await sleep(100); // reached instance 1; its save waits ~1.5 s (debounce)
+      const r = await layerClient(A, fresh.id, two); // instance 2 loads the board from the database
+      await waitFor(() => r.layers.private.getMap('elements').get('early')?.text === 'unsaved draft', 2000, 'the other tab on instance 2 to get the unsaved draft');
+      assert((await layerRows(fresh.id, `u:${A.id}`)) === 0, 'the draft was already saved, so this proves nothing about fan-out');
+      w.destroy();
+      r.destroy();
+    });
+
+    await check("reveal across instances: the owner reveals through instance 2 while the authors' drafts were made on instance 1 (one author offline, one removed from the board); an edit racing the reveal is never lost", async () => {
+      const b1 = await layerClient(B, board.id, one);
+      const r1 = await layerClient(R, board.id, one);
+      b1.layers.private.getMap('elements').set('rv', { id: 'rv', type: 'sticky', text: 'v1' });
+      b1.layers.private.getMap('elements').set('off', { id: 'off', type: 'sticky', text: 'author offline' });
+      r1.layers.private.getMap('elements').set('rm', { id: 'rm', type: 'sticky', text: 'REMOVED-MEMBER-DRAFT' });
+      await sleep(500);
+      r1.destroy();
+      assert((await A.req('DELETE', `/api/boards/${board.id}/members/${R.id}`)).status === 200, 'remove R');
+      const a2 = await layerClient(A, board.id, two);
+      const v1 = await layerClient(V, board.id, one);
+      // B keeps typing in the draft at the very moment the owner reveals.
+      a2.layerOp({ type: 'reveal', collection: 'elements' });
+      b1.layers.private.getMap('elements').set('rv', { id: 'rv', type: 'sticky', text: 'v2' });
+      await waitFor(() => els(v1).get('off')?.text === 'author offline' && els(v1).has('rv'), 5000, 'the viewer on instance 1 to see the revealed drafts');
+      await sleep(800);
+      const shared = els(v1).get('rv')?.text;
+      const stillPrivate = b1.layers.private.getMap('elements').get('rv')?.text;
+      assert(shared === 'v2' || stillPrivate === 'v2', `the racing edit was lost (shared ${shared}, private ${stillPrivate})`);
+      assert(!sharedText(v1).includes('REMOVED-MEMBER-DRAFT') && !sharedText(a2).includes('REMOVED-MEMBER-DRAFT'), "a removed member's draft was revealed");
+      for (const c of [b1, a2, v1]) c.destroy();
+    });
+
     await check('signing a session out from another device through instance 2 closes its socket on instance 1 (4401)', async () => {
       const Q = new User('MQ');
       await Q.signup();
@@ -1560,6 +1806,12 @@ async function multiInstanceChecks() {
       b.destroy();
       // Saved on the last disconnect; unloaded (and compacted) after FREERO_DOC_IDLE_MS=1000.
       await waitFor(async () => (await docRows(board.id)) === 0, 10_000, 'the update log to be compacted into the base');
+      // Layers too: the removed member's private layer is gone; B's (holding the off-board draft
+      // racing the reveal, if it stayed private) and the editors layer are kept.
+      await waitFor(async () => (await layerRows(board.id, `u:${R.id}`)) === 0, 10_000, "the removed member's private layer to be deleted");
+      const bl = await layerClient(B, board.id, two);
+      await waitFor(() => bl.layers.editors.getMap('elements').get('mhid')?.text === 'MULTI-HIDDEN', 5000, 'the hidden content saved once across instances to reload');
+      bl.destroy();
       const reader = connectDoc(A, board.id, undefined, two);
       await reader.ready();
       assert(all(reader) && els(reader).has('m1') && els(reader).has('m2'), `after reload: ${JSON.stringify([...els(reader).keys()])}`);

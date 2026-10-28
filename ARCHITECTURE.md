@@ -97,6 +97,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | Durable value | Single writer | How others change it |
 |---|---|---|
 | Yjs doc, provider, awareness | `engine/store/` | `Editor` methods |
+| Layer docs (`private`, `editors`; see "Board layers") | `engine/store/` (placement: `engine/editor/layers.ts`); reveal: server `realtime` | `Editor` writes, `privateCollection`, `revealPrivate` |
 | `elements` map | engine (`editor.create/update/remove/transact`) | same |
 | `settings` map (background, grid) | engine | `editor` settings API |
 | feature collection (e.g. `comments`) | the feature whose `feature.ts` `owns` it | `editor.runCommand` of the owner. Writes from a non-owner throw at runtime [W8 checks unique claims] |
@@ -248,6 +249,9 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
 - A socket closed with 4401/4403 (removed, link access revoked, signed out) drops the session to
   read-only (`viewer`) besides showing the banner: writes after that could never reach the server.
 - `Host.user` changes (profile renamed / recolored in any tab) are republished to presence.
+- Board layers (see "Board layers" under Server): `Editor.layerOf(id)`, `setPrivatePlacement(rule)`,
+  `privateCollection(name)` + hook `usePrivateCollection`, `revealPrivate` / `discardPrivate`,
+  `ElementDefinition.hidesContents(el)`. `ExportOptions.sharedOnly` (thumbnails).
 - `Editor.exportElements(ids?)` → `ElementsSnapshot` (what copy puts on the clipboard: elements
   with frame children + `copyContent`) and `Editor.insertElements(snapshot, { at? })` — the ONE
   insertion path for copied content (paste uses it): fresh ids, references remapped, content
@@ -637,13 +641,94 @@ instances and checks all of this with clients on each.
 
 Trust boundaries in `realtime`: presence from a socket may only write the awareness client ids
 that socket announced, and its `user` is always replaced by the authenticated user's profile
-(`realtime/awareness.ts`), so nobody can appear as someone else. Ending a session — logout,
+(`realtime/awareness.ts`), so nobody can appear as someone else. Commenters may write only the
+`comments` map, and in it only what they own (`realtime/commentRules.ts`, checked per key against
+the server's doc): their own messages and reactions, threads they started (and their tombstones),
+deleting a thread/message together with its tombstone. Resolve/reopen (`s:`) is shared workflow
+state anyone who may comment can set (attributed via `by`); anyone may detach a pin whose element
+is gone. Tombstones are final. Owners and editors are trusted with the whole doc. Ending a session — logout,
 "sign out" from another device, password reset/change, account deletion — fires
 `auth.onSessionEnd` where it happened; realtime closes every board socket opened with that session
 (4401), on every instance through the `end-session` control message. The
 account purge rewrites the deleted user's comment authorship to "Deleted user" through the live
 room (`renameCommentAuthor`), so open boards update and the save queue persists it. Member emails
 (`GET /members`) are only sent to owners/editors.
+
+### Board layers — content the server withholds (`realtime/layers.ts`, `engine/store/`)
+
+Some content must not reach everyone who can open a board: the ballots of a vote whose results are
+hidden, private-mode drafts, the contents of a hidden frame. Hiding them in the UI is not enough
+(every client holds the whole doc), and the server cannot filter the shared doc per connection: a
+Y.Doc replicates as a whole, each client's updates are one gap-free sequence, and a receiver that
+misses some structs can never apply anything that client writes later. So **withheld content never
+enters the shared doc**. It lives in server-held **layer docs**, synced over the board's socket
+only to connections that may read them:
+
+| layer (wire / stored) | read by | written by | holds |
+|---|---|---|---|
+| `private` / `u:<userId>` | that user's sockets | that user, while owner/editor | private-mode drafts (`elements`), sealed ballots (`voting`) |
+| `editors` / `editors` | owner/editor sockets | owners/editors | contents of hidden frames (`elements`) |
+
+- Wire format: `WS_MESSAGE_LAYER` envelopes around y-protocols sync messages, `WS_MESSAGE_LAYER_OP`
+  for reveal/discard (`@freero/shared` api.ts). A socket asking for a layer it may not read gets no
+  answer; writes from sockets that may not write are dropped.
+- **Across instances** (`realtime/rooms.ts`, `peers.ts`): every instance holding the board holds a
+  copy of every layer and relays layer updates like the shared doc's (peer `layer-update`; layers
+  ride along in `sync-request` / `sync-reply`, so opening a board, or catching up after a Redis gap,
+  gets other instances' unsaved layer changes too). Access is re-checked per receiving socket at
+  send time, on whichever instance it is connected to (role changes reach every instance on the
+  control channel).
+- **Persistence**: like the doc, a base plus an append-only log per (board, layer)
+  (`board_layers`, `board_layer_updates`, `realtime/layerStore.ts`). The instance where a change is
+  made saves it (a socket's write, or a reveal it ran); saves are idempotent appends, so instances
+  never overwrite each other; a room that relayed others' layer changes saves what the database
+  lacks before unloading. Compaction after unload folds the log, and deletes a layer that holds
+  nothing or a private layer whose owner was removed from the board.
+- **Reveal** happens on the server: an owner/editor sends `{ type: 'reveal', collection, prefix? }`
+  and the instance holding that socket moves those entries out of the private layers into the
+  shared doc in one transaction (so it works while authors are offline or on other instances, and
+  nobody sees half a result). Only the layers of people who may still edit the board take part
+  (someone removed or made a viewer keeps theirs). That access check reads the database, so the
+  revealer's later messages are held until the reveal is applied (it stays in order with them,
+  e.g. a vote ending after its ballots). `mine: true` reveals only the sender's own layer.
+- **Reveal racing an edit**: an author still typing in a draft while it is revealed (from any
+  instance) writes into a private entry the reveal just deleted, so the newer text stays in their
+  private layer. Their client — the only one that can see it — then holds the id in both docs and
+  publishes the newer private copy over the revealed one (`editor/layers.ts`). Private items made
+  after a reveal, with no private mode running, get a "Share them" bar (reveal `mine`).
+- **Presence**: while private mode applies to a user, others don't see their cursor where a new
+  sticky would go private or over their private items, and presence never names private elements
+  in `selection` / `editingId` (`publicCursor` / `publicIds`, `editor/layers.ts`).
+- Client (`BoardStore`): the shared doc plus both layer docs; `elements` of all three read as one
+  board. A local write goes to the element's current layer, or where `editor/layers.ts` places it:
+  private stays private; new elements matching private mode's rule (`Editor.setPrivatePlacement`) go
+  private; anything inside a container whose `ElementDefinition.hidesContents` is true goes to
+  `editors`; else shared. Every owner/editor client re-checks after each change (frame hidden/shown/
+  deleted, concurrent writes) and moves misplaced elements silently; non-editors additionally never
+  render a hidden frame's contents (`isOffBoard`) while a move is in flight.
+- Undo spans docs: each doc has its own Y.UndoManager and `store/undo.ts` records which of them got
+  an item per user action, so one gesture is one step even when it moves a sticky into a hidden
+  frame (shared doc delete + layer doc insert).
+- Losing owner/editor drops the local copy of the `editors` layer (a fresh doc; never synced back
+  as deletions); gaining it asks the server for the layer. Dashboard thumbnails render shared
+  content only; duplicating a board copies the `editors` layer only for an owner/editor and never
+  anyone's private layer; moving a board to the trash keeps every layer exactly as it was (live
+  state, like the doc) and restoring brings them back. Saved templates and exports are made on the
+  client from what that user can see: never another user's private layer, and hidden frames'
+  contents only for owners/editors (who see them).
+- **Version history** (KAI-49) versions and previews the shared doc only: a snapshot or preview
+  never contains private drafts, sealed ballots or the contents of a frame that was hidden at that
+  moment (history is editor-only anyway). Restoring never touches layer docs; `voting` (sealed
+  markers) and `privateMode` are in `Y_KEPT_ON_RESTORE`. Restoring brings back the frames as they
+  were: a frame visible then comes back visible with the content the shared doc had (the editors
+  clients' sweep drops a stale editors-layer copy of the same ids), a frame hidden then comes back
+  hidden with whatever its editors layer holds NOW (hidden contents are not versioned).
+- Features use it through `Editor.privateCollection(name)` / `usePrivateCollection`,
+  `revealPrivate` / `discardPrivate`, `setPrivatePlacement`, `layerOf(id)` and
+  `ElementDefinition.hidesContents`. Trust model: owners/editors are trusted with integrity (they can
+  write the whole doc anyway); the layers guarantee confidentiality from everyone the server does
+  not send them to. What was in the shared doc before it was hidden was already seen; hiding is not
+  retroactive.
 
 ## Verification
 

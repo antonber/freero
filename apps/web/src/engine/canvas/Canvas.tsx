@@ -11,6 +11,7 @@ import { dispatchToolPointer, type ToolPointerHandler } from '../interaction/too
 import { useSettings } from '../hooks';
 import type { Registered } from '../runtime/registry';
 import type { ToolDefinition } from '../api';
+import { publicCursor } from '../editor/layers';
 import './canvas.css';
 
 const DOUBLE_CLICK_MS = 400;
@@ -87,7 +88,7 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
         lastCursorSent = performance.now();
         cursorTimer = null;
         const p = core.pointer.getState();
-        core.store.setPresence({ cursor: p.inside && p.world ? { x: Math.round(p.world.x), y: Math.round(p.world.y) } : null });
+        core.store.setPresence({ cursor: publicCursor(core, p.inside ? p.world : null) });
       };
       if (world === null) return send();
       if (now - lastCursorSent >= CURSOR_THROTTLE_MS) send();

@@ -22,6 +22,18 @@
   gap: 18px;
 }
 
+.fr-vote-hide {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fr-vote-hide small {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--fr-ink-3);
+}
+
 .fr-vote-scope {
   border: 0;
   margin: 0;

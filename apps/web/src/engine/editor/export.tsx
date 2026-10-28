@@ -41,6 +41,7 @@ export function createExportRenderer(core: EngineCore) {
     if (opts.ids) elements = editor.withChildren(opts.ids).map((id) => editor.getElement(id)!).filter((el) => el && !editor.isOffBoard(el));
     else if (opts.rect) elements = editor.elementsInRect(opts.rect, 'intersect');
     else elements = editor.getElements().filter((el) => !editor.isOffBoard(el));
+    if (opts.sharedOnly) elements = elements.filter((el) => core.store.layerOf(el.id) === 'shared');
     elements.sort(compareRenderOrder);
     // Visual bounds: what definitions draw outside their box (frame titles) is part of the picture.
     const content = opts.rect ?? editor.visualBoundsOf(elements) ?? { x: 0, y: 0, w: 320, h: 200 };
@@ -122,12 +123,14 @@ export function startThumbnails(core: EngineCore): { stop(): Promise<void> } {
   const save = async () => {
     timer = null;
     if (!dirty || saving || !core.editor.can('editor') || !core.renderExport) return;
-    if (!core.store.getOrdered().length) return;
+    const shared = core.store.getOrdered().filter((el) => core.store.layerOf(el.id) === 'shared' && !core.editor.isOffBoard(el));
+    if (!shared.length) return;
     dirty = false;
     saving = true;
     lastSave = Date.now();
     try {
-      const b = core.editor.getBounds(undefined, { visual: true });
+      // Everyone's thumbnail: shared content only (never private drafts or hidden frames' contents).
+      const b = core.editor.visualBoundsOf(shared);
       if (!b) return;
       // Frame the content in a 16:10 card.
       let w = b.w + 120;
@@ -135,7 +138,7 @@ export function startThumbnails(core: EngineCore): { stop(): Promise<void> } {
       if (w / h > THUMB_ASPECT) h = w / THUMB_ASPECT;
       else w = h * THUMB_ASPECT;
       const rect = { x: b.x + b.w / 2 - w / 2, y: b.y + b.h / 2 - h / 2, w, h };
-      const url = await core.renderExport({ rect, format: 'jpeg', scale: THUMB_W / w, padding: 0, skipFonts: true });
+      const url = await core.renderExport({ rect, format: 'jpeg', scale: THUMB_W / w, padding: 0, skipFonts: true, sharedOnly: true });
       await core.hostRef.current.saveThumbnail(url);
     } catch (err) {
       dirty = true;

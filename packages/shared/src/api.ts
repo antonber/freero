@@ -265,12 +265,46 @@ export const EMBED_FRAME_ORIGINS = ['https://www.youtube-nocookie.com', 'https:/
 // i.e. the client uses `new WebsocketProvider(wsBase + '/ws/boards', boardId, doc)`.
 // Auth via the same cookie on the upgrade request. The server closes with
 // code 4401 (unauthenticated) or 4403 (no access). Viewers receive updates but
-// their document updates are dropped; commenters may only modify 'comments'.
+// their document updates are dropped; commenters may only modify 'comments', and there only
+// the records they own (server/realtime/commentRules.ts: their messages and reactions, threads
+// they started; anyone may resolve/reopen and detach).
 // Custom message (server -> client) sent right after connect so the client knows
 // its effective role. Encoding (lib0): writeVarUint(WS_MESSAGE_ROLE) then
 // writeVarString(JSON.stringify({ type: 'role', role })). Clients register it via
 // y-websocket's `provider.messageHandlers[WS_MESSAGE_ROLE]`.
 export const WS_MESSAGE_ROLE = 100;
+
+// ---- Board layers (content the server withholds) ----
+// Besides the shared doc, a board has server-held LAYER docs that only some connections may
+// sync (see "Board layers" in ARCHITECTURE.md):
+//   'private'  one per user: only that user's sockets read it, and only while they may edit.
+//              Private-mode drafts and ballots of hidden votes live here until revealed.
+//   'editors'  owners/editors only: contents of hidden frames.
+// They travel over the board's socket (relayed between instances by the server), in an envelope:
+//   writeVarUint(WS_MESSAGE_LAYER), writeVarString(layer), then a y-protocols sync message
+//   (step 1 / step 2 / update) for that layer's doc, in both directions. The server ignores
+//   envelopes for layers the socket may not read and drops writes from sockets that may not
+//   edit.
+export const WS_MESSAGE_LAYER = 101;
+export type BoardLayer = 'private' | 'editors';
+export const BOARD_LAYERS: readonly BoardLayer[] = ['private', 'editors'];
+
+// Client -> server: writeVarUint(WS_MESSAGE_LAYER_OP), writeVarString(JSON.stringify(op)).
+// Owners/editors only. The server applies it in order with the socket's doc updates.
+//   reveal:  moves the entries of `collection` (keys starting with `prefix`) out of EVERY user's
+//            private layer into the shared doc (one transaction), e.g. revealing private-mode
+//            drafts ('elements') or the ballots of a hidden vote ('voting', `${sessionId}:`).
+//   discard: deletes those entries from every user's private layer without revealing them.
+//   `mine: true` limits either to the sender's own private layer (sharing one's leftovers).
+// Only the private layers of people who may still edit the board are revealed; the server holds
+// the sender's later messages until the op is applied, so it stays in order with them.
+export const WS_MESSAGE_LAYER_OP = 102;
+export interface LayerOp {
+  type: 'reveal' | 'discard';
+  collection: string;
+  prefix?: string;
+  mine?: boolean;
+}
 
 export const SESSION_COOKIE = 'freero_session';
 export const SERVER_PORT = 4000;

@@ -42,6 +42,29 @@
   pointer-events: auto;
 }
 
+/* In this user's private layer (board layers): nobody else can see it until it is revealed. */
+.fr-el--private {
+  outline: 1.5px dashed var(--fr-ink-3);
+  outline-offset: 4px;
+}
+
+.fr-el-private-chip {
+  position: absolute;
+  left: -4px;
+  bottom: calc(100% + 8px);
+  transform-origin: bottom left;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px 2px 6px;
+  border-radius: 999px;
+  background: var(--fr-ink);
+  color: var(--fr-surface);
+  font: 600 11px/16px var(--fr-font);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .fr-el [data-fr-interactive] {
   pointer-events: auto;
 }

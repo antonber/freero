@@ -33,6 +33,21 @@ function boundedItems(editor: Editor, filter: (el: BoardElement) => boolean = ()
   return out;
 }
 
+/**
+ * Hides (or shows) frames' contents from viewers and commenters. The engine then moves everything
+ * inside into the editors layer (and back), which the server sends to owners/editors only.
+ */
+export function setHidden(editor: Editor, frames: FrameElement[], hidden: boolean): void {
+  if (!editor.can('editor')) return;
+  editor.transact(() => frames.forEach((f) => editor.update<FrameElement>(f.id, { hidden })));
+  editor.host.notify(
+    hidden
+      ? 'Contents hidden: viewers and commenters now see an empty frame, and the server no longer sends them what is inside.'
+      : 'Contents visible to everyone again.',
+    'info',
+  );
+}
+
 /** Creates a frame (next index, "Frame N") and returns its id. Does not adopt children. */
 export function createFrame(editor: Editor, rect: Rect, preset: FramePreset, opts: { select?: boolean } = {}): string {
   const frames = allFrames(editor);

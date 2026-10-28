@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import { create } from 'zustand';
 import type { BoardElement, VotingSession } from '@freero/shared';
-import { useCollection, useEditor, useElements, useRole, richTextToPlain, type Editor } from '@engine';
+import { useCollection, useEditor, useElements, usePrivateCollection, useRole, richTextToPlain, type Editor } from '@engine';
 import {
   SESSION_KEY,
   ballotKey,
@@ -60,6 +60,7 @@ export function readSession(entries: Array<[string, VotingValue]>): VotingSessio
 export function useVoting(): VotingView {
   const editor = useEditor();
   const entries = useCollection<VotingValue>('voting');
+  const sealedEntries = usePrivateCollection<VotingValue>('voting');
   const elements = useElements();
   const role = useRole();
   const hiddenSessionId = useVotingUi((s) => s.hiddenSessionId);
@@ -78,7 +79,9 @@ export function useVoting(): VotingView {
     if (session) for (const el of elements) (isEligible(session, el) ? eligible : ineligible).push(el);
     const ballots = session ? ballotsOf(entries, session) : [];
     const totals = session ? tally(session, ballots, exists) : new Map<string, number>();
-    const own = session ? countedVotes(entries.find(([k]) => k === ballotKey(session.id, userId))?.[1] as Ballot | undefined, session, exists) : [];
+    // While results are hidden, this user's own ballot is the sealed one (the shared key only says "voted").
+    const ownFrom = session?.active && session.anonymous ? sealedEntries : entries;
+    const own = session ? countedVotes(ownFrom.find(([k]) => k === ballotKey(session.id, userId))?.[1] as Ballot | undefined, session, exists) : [];
     const mine = new Map<string, number>();
     for (const id of own) mine.set(id, (mine.get(id) ?? 0) + 1);
     let totalVotes = 0;
@@ -99,7 +102,7 @@ export function useVoting(): VotingView {
       canManage: !!session && canEdit && (session.startedBy === userId || role === 'owner'),
       exists,
     };
-  }, [entries, elements, role, hiddenSessionId, userId]);
+  }, [entries, sealedEntries, elements, role, hiddenSessionId, userId]);
 }
 
 /** One-line text preview of an element for the results list. */
