@@ -138,6 +138,7 @@ Owners and editors. Body (`InsertStructureRequest`):
 | `mermaid` | `source` | a flowchart (`flowchart`/`graph` TB·TD·BT·LR·RL; node shapes `[] () ([]) [[]] [()] (()) {} {{}} [//] [\\]`; links `-->`, `---`, `-.->`, `==>`, `<-->`, `--o`, `--x`, labels `\|x\|` or `-- x -->`; `&`; subgraphs → frames) or a `sequenceDiagram` (participants / actors, messages `->> -->> -> --> -x -)`, notes); styling directives are skipped |
 | `sequence` | `diagram: { participants, steps }` | same as a Mermaid sequence diagram |
 | `table` | `rows: string[][]`, `header?` | a table, columns and rows sized to their text |
+| `note` | `text`, `title?` | a written note (summaries): a soft rounded card, the title in bold, paragraphs and bullet lines kept (8 000 characters) |
 
 Placement: on the free spot nearest to `near` (just right of that element) or `at`, else the middle
 of the board's content — keeping 48 units clear of every element the caller can see

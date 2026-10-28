@@ -306,6 +306,10 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   with frame children + `copyContent`) and `Editor.insertElements(snapshot, { at? })` — the ONE
   insertion path for copied content (paste uses it): fresh ids, references remapped, content
   restored, one undo step, on a `findFreeSpot` by default. Saved templates go through it.
+- `Host.ai?` (additive, KAI-101): `{ provider, source, run(AiActionRequest) }`, present only when the
+  server said this user may use AI on this board. AI entry points (`features/ai`: the format-toolbar
+  button, the "AI ▸" context/board menu, the dialog) hide without it; never offer AI from `when`
+  alone. Not in the command palette (it lists unavailable commands greyed out).
 - `Host.activity?.list(before?)` (additive): the board's activity feed as the server recorded
   it (see "Activity"); `features/activity` shows it in a dock panel.
 - `SavedTemplateInfo.ownerName` / `canUnshare` (additive): team templates say who shared them;
@@ -656,7 +660,9 @@ moderation_actions: abuse reports, the operator queue, actions and appeals; see 
 `/scim/v2`), `privacy` (data_exports: personal and workspace data exports; see "Enterprise
 identity and data"), `audit` (audit_events, audit_chains: the append-only audit log), `admin` (no
 table: the admin console of team workspaces; see "Audit log, admin console and workspace
-policies"), `activity` (board_activity: the activity feed; see "Activity" below).
+policies"), `activity` (board_activity: the activity feed; see "Activity" below), `ai`
+(ai_workspace_settings, ai_usage: AI board actions with a provider the operator or a workspace
+configures; see "AI" below).
 
 - Notifications are created only from trusted server-side events, never from client claims:
   realtime's `onCommentMessage` (a comment message applied from one of THIS instance's sockets,
@@ -983,6 +989,40 @@ Agents, the API and AI read and write boards semantically, never by coordinates.
   the view and turns it into a `BoardChange`; `sinks.ts` decides where that goes (`board` →
   `changeBoard`, `preview` → returned for `Editor.insertElements`). The suggestions layer (KAI-169)
   is a new sink, not a new planner.
+  Both modules expose these through their `index.ts` (`boardOutline`, `insertStructure`): other modules
+  (AI, the public API) read and write boards through them, with the caller's own access.
+
+### AI (`modules/ai`, `features/ai`; KAI-101, KAI-102; docs/ai.md)
+
+Off unless configured (`AI_PROVIDER` and/or `AI_WORKSPACE_KEYS`; otherwise every AI route is 404 and
+no AI UI shows). One rule decides who may use AI on a board and through which provider
+(`ai/access.ts` `decideAi`): edit access; personal boards use the operator's provider when
+`AI_INSTANCE_FOR` includes `personal`; team boards need their admins to turn it on (the operator's
+provider if offered to teams, or the workspace's own, key sealed with `platform/secrets`), and the
+person must pass the workspace's "who may use AI". The app asks `GET /boards/:id/ai` when it opens a
+board and builds `Host.ai` only when it says yes.
+- **Read** through the outline (`outline/index.ts`, the caller's own view), budgeted
+  (`AI_MAX_INPUT_TOKENS`); a selection is the outline filtered to those items. Reading content is
+  gated by the workspace's downloads policy (KAI-197), refusals audited.
+- **Prompts** are server-side templates per task (`ai/tasks.ts`). Board text (and the person's
+  instruction) go in delimited blocks as ONE JSON string with `<`/`>` escaped (`encodeUntrusted`), and
+  the system prompt says board content is data, never instructions (the KAI-170 boundary).
+- **Providers** (`ai/providers.ts`): plain HTTP, Anthropic Messages (structured output with the
+  task's JSON Schema) and OpenAI-compatible chat completions. Workspace-typed endpoints are untrusted:
+  https only, no redirects, private addresses refused at connect time unless
+  `AI_WORKSPACE_PRIVATE_ENDPOINTS`.
+- **Validate, then write**: each task turns the model's JSON into a `StructureInput` (clamped, ids
+  mapped from numbers the model was shown, Mermaid parsed); one repair turn, then 502 with nothing
+  written. The structure goes through `structure/index.ts` `insertStructure` with `target: 'preview'`
+  (the app's dialog shows it and inserts it with `Editor.insertElements` + `moveBy`, ONE transaction,
+  one undo step) or `'board'` (one attributed server change).
+- **Limits and records**: `RATE_LIMIT_AI` per user, `RATE_LIMIT_AI_WORKSPACE` per workspace, the
+  workspace's monthly token budget and `AI_INSTANCE_MONTHLY_TOKENS_PER_USER` (`ai_usage`, one upsert per
+  call, also for failed calls). Every request that reaches the model, or a policy refusal, is audited
+  as `ai.request` (task, provider, model, tokens, outcome; never the prompt or board text); settings
+  changes as `ai.settings_changed`. Usage is in personal and workspace data exports.
+- `npm run verify --only ai` runs it all against `scripts/lib/mock-model.mjs` (both wire formats,
+  canned answers), never a paid API; the same mock runs standalone for the UI (`--port 4402`).
 ### Audit log, admin console and workspace policies (KAI-48, KAI-47, KAI-51)
 
 **Audit log** (`modules/audit`). Every module records security-relevant changes with
@@ -1015,7 +1055,9 @@ module isn't the natural call and for the operator CLI: modules/audit registers 
 workspace, checked on the server by every route (`requireAdmin` → `workspaces.requireWorkspace(…,
 'admin')`). Members (two-step status, last activity, boards, role, deactivate/reactivate), usage,
 security and retention settings, sharing policies, the audit log (filters, paging, CSV/JSON export
-— streamed, rate limited, recorded before it starts, CSV cells can't become formulas).
+— streamed, rate limited, recorded before it starts, CSV cells can't become formulas). Other modules
+add their own tabs with their own routes under `/workspaces/:id/admin/…`, checked with
+`admin/index.ts` `requireAdmin` (SSO and provisioning; AI, shown only when the server offers AI).
 
 **Workspace settings** (`workspaces` columns; `WorkspaceSettings` in `@freero/shared`), each
 enforced by the module that owns the data, wired from that module's `init.ts`:
