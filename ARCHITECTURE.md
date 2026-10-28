@@ -631,6 +631,11 @@ operations). What a module needs to know:
   `npm run verify` reads to follow links). `renderMail` escapes everything; links via
   `appUrl(req, path)`. Never log bodies (they carry tokens). `sendMailLater` when the answer must not
   depend on (or wait for) the mail.
+- **Secrets** (`platform/secrets.ts`): the only user of `SESSION_SECRET` [S5]. `seal/unseal(purpose,
+  …)` encrypt data at rest (AES-256-GCM, key = HKDF(secret, purpose)); `mac/macMatches(message)`
+  sign values (prefix the message with its purpose). New values always use the current secret;
+  values made with one in `SESSION_SECRET_PREVIOUS` are still accepted (`unseal` says `stale`, so
+  the owner stores it sealed again), which makes the secret rotatable (docs/operations.md).
 - **Background jobs** (`platform/jobs.ts`): `scheduleExclusiveJob(ctx, { name, lockKey, intervalMs,
   run })` runs on every instance's timer but one at a time (Postgres advisory lock); jobs must be
   idempotent. `runExclusive(lockKey, fn)` for a one-off.
