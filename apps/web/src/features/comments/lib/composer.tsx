@@ -99,7 +99,8 @@ export function MentionText(props: MentionTextProps) {
           editor.host.notify(`${r.user.name} can open this board and will be notified of the mention.`, 'success');
         } else {
           insert(`${r.pendingEmail} `);
-          editor.host.notify(`Invite sent to ${r.pendingEmail}. Mention them once they've joined.`, 'success');
+          // The server keeps the comment for them: it becomes a mention once they join (KAI-92).
+          editor.host.notify(`Invite sent to ${r.pendingEmail}. They'll be notified about this comment when they join.`, 'success');
         }
       })
       .catch((err: unknown) => editor.host.notify(err instanceof Error && err.message ? err.message : 'Could not send the invite', 'error'))
