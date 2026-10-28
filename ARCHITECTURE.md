@@ -342,6 +342,25 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
   numbered lines, or short lines that don't read as a wrapped paragraph, or `<li>`s in the HTML —
   and any text while stickies are selected) → text box (0: prose).
 
+Reference & items (engine primitives; product UI in `features/shortcuts`, `links`, `image`, `icons`):
+- `Editor.getShortcuts() → ShortcutEntry[]` (`engine/runtime/shortcutList.ts`): every binding the
+  board answers for the live role — tool keys, command shortcuts (alternatives with the same label
+  fold into one row) and the keys the keyboard router handles itself (`ENGINE_KEYS` in
+  `interaction/keyboard.ts`, kept next to the handlers). The `?` sheet renders it with `@ui` `Kbd`
+  (⌘ on Apple platforms, Ctrl elsewhere), so the reference can't drift from the real bindings.
+- `BaseElement.link` (`@freero/shared`): an item link — an external URL or `#<elementId>`.
+  Untrusted; `isSafeHref(href)` (`@engine`) is the one safe-href rule shared with rich text.
+  "Copy link to item" (`engine.copyLink`) builds `/board/<id>?item=<elementId>`; the board selects
+  and zooms to it on load (`?el=` is still honored).
+- `ElementDefinition.onDoubleClick?(el, { editor, point })`: double-click on an element with no
+  text to edit there (image → crop mode). Editors only, never on locked items.
+- `useIsExporting()`: true inside offscreen exports/thumbnails, so decorations can leave out
+  on-screen affordances (the link badge).
+- `ImageElement.crop` (fractions of the natural picture) is the non-destructive crop; crop mode
+  is the image feature's `dialog` panel. `IconElement` stores its own drawing (whitelisted SVG
+  primitives), so the lucide index (`features/icons/lib/iconIndex.ts`, imported only with
+  `import()`) stays out of the board chunk; keep it that way when touching the icon library.
+
 ## UI kit (`ui/`) — exports from `@ui`
 
 `Button` {variant: 'primary'|'secondary'|'ghost'|'danger', size: 'sm'|'md'|'lg', icon?, loading?} ·

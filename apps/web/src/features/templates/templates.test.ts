@@ -18,6 +18,7 @@ const REQUIRED: Record<ElementType, string[]> = {
   mindmap: ['text', 'parentId', 'rootId', 'color'],
   table: ['rows', 'cols', 'header', 'fontSize'],
   embed: ['url', 'title', 'description', 'siteName', 'image', 'status'],
+  icon: ['name', 'nodes', 'color', 'strokeWidth'],
 };
 
 let seq = 0;

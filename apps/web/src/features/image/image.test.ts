@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import type { Editor } from '@engine';
 import { imageUrlFromPaste } from './lib/files';
 import { INLINE_FALLBACK_MAX_BYTES, storeImage } from './lib/insert';
+import type { ImageElement } from '@freero/shared';
 import { fitGridLayout, fitSize, gridLayout, naturalAspectBox, replacementBox } from './lib/layout';
+import { applyDraft, panPicture, resetCrop, resizeWindow, startDraft, visibleCrop } from './lib/crop';
 
 describe('placing inserted images', () => {
   it('scales big images down to fit 600px keeping their aspect, and never blows small ones up', () => {
@@ -84,5 +86,63 @@ describe('upload fallback', () => {
     const a = await storeImage(failingEditor, small);
     expect('url' in a && a.url.startsWith('data:image/png;base64,')).toBe(true);
     expect(await storeImage(failingEditor, large)).toEqual({ error: 'too-large' });
+  });
+});
+
+describe('cropping', () => {
+  const image = (patch: Partial<ImageElement> = {}): ImageElement =>
+    ({ id: 'i', type: 'image', x: 100, y: 50, w: 400, h: 300, rotation: 0, z: 1, src: 'a.png', naturalW: 800, naturalH: 600, createdBy: 'u', createdAt: 0, updatedAt: 0, ...patch }) as ImageElement;
+
+  /** Where on the board a point of the PICTURE (fractions u, v of the file) is drawn. */
+  const worldOf = (el: ImageElement, u: number, v: number) => {
+    const f = startDraft(el).full;
+    const lx = f.x + u * f.w - el.w / 2;
+    const ly = f.y + v * f.h - el.h / 2;
+    const r = (el.rotation * Math.PI) / 180;
+    return { x: el.x + el.w / 2 + lx * Math.cos(r) - ly * Math.sin(r), y: el.y + el.h / 2 + lx * Math.sin(r) + ly * Math.cos(r) };
+  };
+  const near = (a: { x: number; y: number }, b: { x: number; y: number }) => {
+    expect(a.x).toBeCloseTo(b.x, 6);
+    expect(a.y).toBeCloseTo(b.y, 6);
+  };
+
+  it('cropping a rotated image leaves the kept part exactly where it was, and reset brings the rest back around it', () => {
+    const el = image({ rotation: 30 });
+    const before = worldOf(el, 0.6, 0.7);
+    let d = startDraft(el);
+    d = resizeWindow(d, d.window, 'nw', 120, 60, 10);
+    d = resizeWindow(d, d.window, 'se', -40, -20, 10);
+    const cropped = { ...el, ...applyDraft(el, d) } as ImageElement;
+    expect(cropped.w).toBeCloseTo(240);
+    expect(cropped.h).toBeCloseTo(220);
+    near(worldOf(cropped, 0.6, 0.7), before);
+    const reset = { ...cropped, ...resetCrop(cropped) } as ImageElement;
+    expect(reset.crop).toBeNull();
+    expect(reset.w).toBeCloseTo(400);
+    expect(reset.h).toBeCloseTo(300);
+    near(worldOf(reset, 0.6, 0.7), before);
+  });
+
+  it('the crop window never leaves the picture: not by its handles, not by panning the picture away', () => {
+    const el = image();
+    let d = startDraft(el);
+    d = resizeWindow(d, d.window, 'se', -200, -150, 10); // 200 × 150 window at the top-left
+    const grown = resizeWindow(d, d.window, 'nw', -500, -500, 10);
+    expect(grown.window).toMatchObject({ x: 0, y: 0 });
+    const panned = panPicture(d, d.full, -10_000, 10_000);
+    // The picture moved as far as it can: its right/top edges now meet the window's.
+    expect(panned.full.x + panned.full.w).toBeCloseTo(d.window.x + d.window.w);
+    expect(panned.full.y).toBeCloseTo(d.window.y);
+    const crop = applyDraft(el, panned).crop!;
+    expect(crop.x + crop.w).toBeLessThanOrEqual(1 + 1e-9);
+    expect(crop.y).toBeGreaterThanOrEqual(-1e-9);
+  });
+
+  it('a stretched, uncropped image starts crop mode showing what it showed (centered cover), not a squashed picture', () => {
+    // 800 × 600 picture in a 600 × 300 box shows a 2:1 band from the middle.
+    const c = visibleCrop(image({ w: 600, h: 300 }));
+    expect(c.w).toBeCloseTo(1);
+    expect(c.h).toBeCloseTo(2 / 3);
+    expect(c.y).toBeCloseTo(1 / 6);
   });
 });

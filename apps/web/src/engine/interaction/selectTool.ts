@@ -378,8 +378,10 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
           // Double-click: dive into a group, or edit text.
           if (target.groupId && sel.length > 1 && sel.includes(target.id)) {
             ed().select([target.id]);
-          } else if (canEdit) {
-            editAt(target, e.point);
+          } else if (canEdit && !editAt(target, e.point) && !target.locked) {
+            // [additive] No text there: the type's own double-click (image → crop mode).
+            const reg = core.registry.elements.get(target.type);
+            reg?.def.onDoubleClick?.(target as never, { editor: core.scoped(reg.feature), point: e.point });
           }
           state = { kind: 'idle' };
           return;

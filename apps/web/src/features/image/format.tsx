@@ -1,15 +1,19 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import { ImageUp, Ratio, Type } from 'lucide-react';
+import { Crop, ImageUp, Ratio, Type, Undo2 } from 'lucide-react';
 import type { ImageElement } from '@freero/shared';
 import { defineFormat, type Editor } from '@engine';
 import { Button, IconButton, Popover, TextArea } from '@ui';
 import { naturalSizeOf, pickImageFiles } from './lib/files';
 import { storeImage } from './lib/insert';
 import { naturalAspectBox, replacementBox } from './lib/layout';
+import { resetCrop, shownNaturalSize } from './lib/crop';
+import { CROP_PANEL } from './lib/cropping';
 
-/** Aspect differs from the natural one by more than half a pixel over the box. */
-const offAspect = (el: ImageElement) =>
-  el.naturalW > 0 && el.naturalH > 0 && Math.abs(el.h - (el.w * el.naturalH) / el.naturalW) > 0.5;
+/** Aspect differs from the (cropped) picture's by more than half a pixel over the box. */
+const offAspect = (el: ImageElement) => {
+  const n = shownNaturalSize(el);
+  return n.w > 0 && n.h > 0 && Math.abs(el.h - (el.w * n.h) / n.w) > 0.5;
+};
 
 function ReplaceControl({ editor, image }: { editor: Editor; image: ImageElement }) {
   const [busy, setBusy] = useState(false);
@@ -30,6 +34,7 @@ function ReplaceControl({ editor, image }: { editor: Editor; image: ImageElement
         src: stored.url,
         naturalW: size.w,
         naturalH: size.h,
+        crop: null,
         ...replacementBox(cur, size.w, size.h),
       });
     } finally {
@@ -111,16 +116,41 @@ export default defineFormat({
   Component: ({ editor, selection }) => {
     const images = selection as ImageElement[];
     const skewed = images.filter(offAspect);
+    const cropped = images.filter((el) => !!el.crop);
     return (
       <>
         {images.length === 1 && <ReplaceControl editor={editor} image={images[0]} />}
         {images.length === 1 && <AltControl editor={editor} image={images[0]} />}
+        {images.length === 1 && (
+          <IconButton
+            icon={Crop}
+            label="Crop"
+            size={32}
+            disabled={!images[0].src || !(images[0].naturalW > 0)}
+            onClick={() => editor.openPanel(CROP_PANEL, { id: images[0].id })}
+          />
+        )}
+        {cropped.length > 0 && (
+          <IconButton
+            icon={Undo2}
+            label="Reset crop"
+            size={32}
+            onClick={() => editor.updateMany(cropped.map((el) => ({ id: el.id, patch: resetCrop(el) })))}
+          />
+        )}
         <IconButton
           icon={Ratio}
           label="Reset to natural aspect"
           size={32}
           disabled={!skewed.length}
-          onClick={() => editor.updateMany(skewed.map((el) => ({ id: el.id, patch: naturalAspectBox(el, el.naturalW, el.naturalH) })))}
+          onClick={() =>
+            editor.updateMany(
+              skewed.map((el) => {
+                const n = shownNaturalSize(el);
+                return { id: el.id, patch: naturalAspectBox(el, n.w, n.h) };
+              }),
+            )
+          }
         />
       </>
     );

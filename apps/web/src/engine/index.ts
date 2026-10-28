@@ -34,6 +34,7 @@ export {
   useFollowing,
   useEditingPart,
   useViewHidden,
+  useIsExporting,
 
 } from './hooks';
 
@@ -41,7 +42,7 @@ export {
 export { ElementText } from './text/ElementText';
 export type { ElementTextProps } from './text/ElementText';
 // Sanitizes the RichText HTML subset (see @freero/shared RichText).
-export { sanitizeRichText, richTextToPlain, plainToRichText, replaceInRichText } from './text/sanitize';
+export { sanitizeRichText, richTextToPlain, plainToRichText, replaceInRichText, isSafeHref } from './text/sanitize';
 export type { TextFormatState } from './text/session';
 // [additive] Size of rich text exactly as <ElementText> renders it — for `normalize` (text boxes,
 // card titles, mind-map pills). Cached; re-measured by the engine once web fonts load.
