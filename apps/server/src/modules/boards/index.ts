@@ -22,6 +22,9 @@ import {
 export { createBoard, deleteBoardRowsInWorkspace, cleanUpDeletedBoards } from './service';
 // Files downloaded from a board (modules/uploads): the downloads policy, then the audit log.
 export { authorizeFileDownload } from './service';
+// An export made outside the browser (the public API / MCP export_board): refused like one by the
+// downloads policy, recorded as board.exported.
+export { recordExport as recordBoardExport } from './service';
 // Operators (modules/moderation): take down / restore, block / unblock the link, and who may report.
 export {
   boardForModeration,

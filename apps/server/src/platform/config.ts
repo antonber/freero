@@ -36,6 +36,7 @@ export type RateLimitName =
   | 'outline'
   | 'structure'
   | 'apiCredential'
+  | 'agentWrite'
   | 'oauthToken'
   | 'oauthRegister';
 
@@ -239,7 +240,8 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   guestJoin: '20/1h', // per IP: visitors joining a shared board without an account
   outline: '120/1m', // per user: board outlines (each reads and walks the whole board)
   structure: '60/10m', // per user: structure laid out and inserted into a board (KAI-167)
-  apiCredential: '300/1m', // per API token / authorised app: every /api/v1 call (KAI-104)
+  apiCredential: '300/1m', // per API token / authorised app: every /api/v1 call and MCP request (KAI-104, KAI-107)
+  agentWrite: '60/1m', // per API token / authorised app: changes it makes to boards (KAI-168), apart from the person's own editing
   oauthToken: '60/1m', // per IP: OAuth token and revocation requests
   oauthRegister: '20/1h', // per IP: OAuth apps registering themselves (dynamic client registration)
   report: '20/1h', // abuse reports per IP and per signed-in user
@@ -273,6 +275,7 @@ const ENV_NAME: Record<RateLimitName, string> = {
   outline: 'RATE_LIMIT_OUTLINE',
   structure: 'RATE_LIMIT_STRUCTURE',
   apiCredential: 'RATE_LIMIT_API_CREDENTIAL',
+  agentWrite: 'RATE_LIMIT_AGENT_WRITE',
   oauthToken: 'RATE_LIMIT_OAUTH_TOKEN',
   oauthRegister: 'RATE_LIMIT_OAUTH_REGISTER',
   report: 'RATE_LIMIT_REPORT',

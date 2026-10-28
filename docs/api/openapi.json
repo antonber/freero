@@ -853,6 +853,12 @@
           "locked": { "type": "boolean" },
           "private": { "const": true, "description": "Only you see it (a private-mode draft)" },
           "createdBy": { "type": ["string", "null"] },
+          "createdVia": {
+            "type": "object",
+            "description": "The app or token that created it for createdBy (shown as \"<name> for <person>\"); absent when the person made it themselves",
+            "required": ["kind", "id", "name"],
+            "properties": { "kind": { "enum": ["app", "token"] }, "id": { "type": "string" }, "name": { "type": "string" } }
+          },
           "createdAt": { "type": ["number", "null"] },
           "updatedAt": { "type": ["number", "null"] },
           "data": { "type": "object", "description": "The rest of the element as stored (@freero/shared elements.ts; rich text as sanitised HTML)" }
