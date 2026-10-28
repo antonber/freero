@@ -731,7 +731,24 @@ export const EMBED_FRAME_ORIGINS = ['https://www.youtube-nocookie.com', 'https:/
 // its effective role. Encoding (lib0): writeVarUint(WS_MESSAGE_ROLE) then
 // writeVarString(JSON.stringify({ type: 'role', role })). Clients register it via
 // y-websocket's `provider.messageHandlers[WS_MESSAGE_ROLE]`.
+// The role is the EFFECTIVE one: while a facilitator limits the board (FacilitationSession), the
+// server re-sends it to everyone else with `limits` (a locked board makes them commenters), and
+// again without when the limits end.
 export const WS_MESSAGE_ROLE = 100;
+export interface RoleMessage {
+  type: 'role';
+  role: Role;
+  limits?: SessionLimits;
+}
+/** What a facilitator limits for this connection (enforced by the server, mirrored by the client). */
+export interface SessionLimits {
+  /** Who set them, for the explanation shown to the person limited. */
+  byName: string;
+  /** Board locked: the role was lowered to commenter for the session. */
+  locked: boolean;
+  /** Element types this connection may add (null: any). */
+  addTypes: string[] | null;
+}
 
 // ---- Board layers (content the server withholds) ----
 // Besides the shared doc, a board has server-held LAYER docs that only some connections may

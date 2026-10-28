@@ -10,6 +10,8 @@
 import { createHash } from 'node:crypto';
 import * as Y from 'yjs';
 import { Y_ELEMENTS, type BoardElement, type ElementDraft, type ElementType, type Role } from '@freero/shared';
+import { FACILITATION_COLLECTION } from '@freero/shared';
+import { effectiveAccess, readFacilitation } from './facilitation';
 import { EDITORS_LAYER, privateLayerOf } from './layers';
 
 export type ViewLayer = 'shared' | 'editors' | 'private';
@@ -125,6 +127,12 @@ const KNOWN_TYPES = new Set<ElementType>([
  */
 export function applyChange(main: Y.Doc, layers: ReadonlyMap<string, Y.Doc>, change: BoardChange, actor: BoardReader, origin: unknown, now = Date.now()): AppliedChange {
   if (!canEdit(actor.role)) throw new BoardChangeError('Only owners and editors change board content');
+  // A facilitator's limits hold for requests too (facilitation.ts), not only for sockets.
+  const limited = effectiveAccess(actor.role, actor.userId, readFacilitation(main));
+  if (!canEdit(limited.role)) throw new BoardChangeError(`${limited.limits?.byName ?? 'The facilitator'} has locked the board for now`);
+  const addTypes = limited.limits?.addTypes;
+  if (addTypes && (change.create ?? []).some((d) => !addTypes.includes(d.type)))
+    throw new BoardChangeError(`${limited.limits?.byName ?? 'The facilitator'} limited what can be added right now`);
   const view = viewOf(main, layers, actor);
   const where = new Map(view.elements.map((e) => [e.el.id, e]));
   const docOf: Record<ViewLayer, Y.Doc | undefined> = {
@@ -133,7 +141,7 @@ export function applyChange(main: Y.Doc, layers: ReadonlyMap<string, Y.Doc>, cha
     private: layers.get(privateLayerOf(actor.userId)),
   };
   for (const name of Object.keys(change.collections ?? {}))
-    if (name === Y_ELEMENTS || name === 'settings') throw new BoardChangeError(`'${name}' is not a collection`);
+    if (name === Y_ELEMENTS || name === 'settings' || name === FACILITATION_COLLECTION) throw new BoardChangeError(`'${name}' is not a collection`);
   const ids = new Set<string>();
   for (const d of change.create ?? []) {
     if (!KNOWN_TYPES.has(d.type) || typeof d.id !== 'string' || !d.id) throw new BoardChangeError('Malformed element');

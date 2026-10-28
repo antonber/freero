@@ -296,6 +296,15 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
 - `BoardEngineProps.initialState`: a read-only board from a document state, with no network and
   nothing persisted (the operator's preview of a reported board; host role viewer, `syncUrl` '').
 - `Host.user` changes (profile renamed / recolored in any tab) are republished to presence.
+- Facilitator limits (KAI-129; see "Facilitator controls" under Server): `Editor.getLimits()` /
+  hook `useLimits()` (from the server's role message), `mayAdd(type)`, `listAddableTypes()` (from
+  `ToolDefinition.creates`, default: the element type named like the tool). The engine mirrors the
+  server: a locked board is the commenter role with a toast naming the facilitator; `createMany`,
+  `insertElements` / paste and `setTool` refuse types outside `addTypes`, and the toolbar hides
+  those tools. `FollowTarget.locked` ("follow me"): user camera moves, Esc, canvas clicks and the
+  followed person's brief absence don't end it; only `follow(null, { force: true })` does.
+  `Editor.setCursorsHidden(hidden)` / `useCursorsHidden()`: other people's cursors off for this
+  viewer (local).
 - Board layers (see "Board layers" under Server): `Editor.layerOf(id)`, `setPrivatePlacement(rule)`,
   `privateCollection(name)` + hook `usePrivateCollection`, `revealPrivate` / `discardPrivate`,
   `ElementDefinition.hidesContents(el)`. `ExportOptions.sharedOnly` (thumbnails).
@@ -1168,6 +1177,25 @@ account purge rewrites the deleted user's comment authorship to "Deleted user" t
 room (`renameCommentAuthor`), so open boards update and the save queue persists it. Member emails
 (`GET /members`) are only sent to owners/editors.
 
+**Facilitator controls** (KAI-129, `realtime/facilitation.ts`, next to the comment rules): the
+`facilitation` collection holds at most one `FacilitationSession` (`@freero/shared`), and the
+server reads it. While it runs, every EDITOR socket except the facilitator's is limited (the board
+owner never is): a socket's `role` in `rooms.ts` is its EFFECTIVE role — its access as limited by
+the session — recomputed whenever the session or the access changes and sent to the client in the
+role message with `limits` (`RoleMessage`, `SessionLimits`). A locked board makes participants
+commenters (comments only; no layer writes); `allowedTypes` limits what they may ADD. Forbidden
+adds, and changes of the session by anyone but its facilitator or the owner, are undone INSIDE the
+transaction that applies the update (`changedKeys` reads the values the transaction replaced), so
+nobody else ever receives them and the sender is sent the correction — dropping the update instead
+would leave every later update of that client pending on the server forever. "Adding" = an id in
+none of the room's docs and not removed from one in the last 30 s (a move between the shared doc
+and a layer arrives as two updates in either order). A participant's write that raced the lock is
+dropped and lands when the lock ends (the room asks the newly writable client for what it lacks),
+never during it. Requests go through the same rule (`applyChange` refuses for a limited actor).
+The room ends the session (`SERVER_ORIGIN`) when the facilitator has had no socket here and no
+presence from another instance for `FREERO_FACILITATOR_GRACE_MS` (30 s). Following the facilitator
+and hidden cursors are views each client applies (`features/facilitation`); not enforceable.
+
 ### Board layers — content the server withholds (`realtime/layers.ts`, `engine/store/`)
 
 Some content must not reach everyone who can open a board: the ballots of a vote whose results are
@@ -1253,7 +1281,7 @@ only to connections that may read them:
   `DATABASE_URL` it runs against that Postgres (fresh database per run, dropped afterwards) and
   also starts two instances at once on one empty database (migration lock); with `REDIS_URL` too,
   it runs two instances on one database + Redis with clients on each. CI does all of it.
-  `--only main,signin,secrets,sweep,purge,notify,platform,multi` runs some groups (to loop one while hunting a flake).
+  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation` runs some groups (to loop one while hunting a flake).
   Checks wait on the real condition, never a fixed sleep: `waitFor(cond, ms)` polls until a
   deadline; `settled(client, observers)` is a barrier (a presence change the server handles after
   everything the client sent before, relayed in order) for proving something did NOT arrive;
