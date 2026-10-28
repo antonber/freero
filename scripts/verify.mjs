@@ -1362,7 +1362,8 @@ async function run() {
       assert((await wsCloseCode(tb.id, WX.cookie)) === 4403, 'socket joined');
       const inv = await WO.req('POST', `/api/boards/${tb.id}/members`, { email: WX.email, role: 'commenter' });
       assert(inv.status === 201, inv.text);
-      assert((await WX.req('GET', `/api/boards/${tb.id}`)).json?.board?.role === 'commenter', 'direct invite not honoured');
+      const direct = (await WX.req('GET', `/api/boards/${tb.id}`)).json?.board;
+      assert(direct?.role === 'commenter' && direct.member === true, `direct invite not honoured: ${JSON.stringify(direct)}`);
       const c = connectDoc(WX, tb.id);
       await c.ready();
       assert(c.role === 'commenter', `socket role ${c.role}`);
@@ -1376,7 +1377,9 @@ async function run() {
       assert(m.status === 201 && m.json.member?.role === 'member', m.text);
       assert((await WO.req('POST', `/api/workspaces/${team.id}/members`, { email: WM2.email, role: 'member' })).status === 201, 'WM2');
       assert(titles(await WM.req('GET', `/api/boards?workspace=${team.id}`)).includes(tb.id), 'member does not see the team board');
-      assert((await WM.req('GET', `/api/boards/${tb.id}`)).json?.board?.role === 'editor', 'member is not a team editor');
+      const viaTeam = (await WM.req('GET', `/api/boards/${tb.id}`)).json?.board;
+      // Team access is not a board membership: nothing to "leave" on the board itself (KAI-94).
+      assert(viaTeam?.role === 'editor' && viaTeam.member === false, `member is not a team editor: ${JSON.stringify(viaTeam)}`);
       const g = await WO.req('POST', `/api/workspaces/${team.id}/members`, { email: WN.email, role: 'guest' });
       assert(g.status === 201 && g.json.invite?.email === WN.email.toLowerCase(), g.text);
       await WN.signup();
@@ -1403,9 +1406,12 @@ async function run() {
       const moved = await WO.req('PATCH', `/api/boards/${tb.id}`, { projectId: pid });
       assert(moved.status === 200 && moved.json.board.projectId === pid, moved.text);
       assert((await WM.req('GET', `/api/boards/${tb.id}`)).status === 403, 'member outside the private project opens its board');
+      assert((await WM.req('GET', `/api/boards/${tb.id}/versions`)).status === 403, 'member outside the private project reads its version history');
       assert(!(await WM.req('GET', `/api/workspaces/${team.id}/projects`)).json.projects.some((x) => x.id === pid), 'member lists the private project');
       assert((await WO.req('PUT', `/api/projects/${pid}/members/${WM.id}`)).status === 200, 'add to project');
       assert((await WM.req('GET', `/api/boards/${tb.id}`)).json?.board?.role === 'editor', 'project member can’t open');
+      // Version history is for editors: team access counts like any other editor access.
+      assert((await WM.req('GET', `/api/boards/${tb.id}/versions`)).status === 200, 'team editor can’t read version history');
       assert(titles(await WM.req('GET', `/api/boards?workspace=${team.id}&project=${pid}`)).includes(tb.id), 'project filter');
       assert((await WM.req('PATCH', `/api/boards/${tb.id}`, { projectId: null })).status === 403, 'a non-owner member moved the board');
       assert((await WO.req('DELETE', `/api/projects/${pid}`)).status === 409, 'deleted a project with boards');
@@ -2117,6 +2123,11 @@ async function signInMethodChecks() {
       assert((await again.fetch('/api/auth/me')).json.user.id === me.json.user.id, 'a second account was created');
       const sessions = (await again.fetch('/api/auth/sessions')).json.sessions;
       assert(sessions.length === 2 && sessions.every((s) => s.method === 'google' && s.methodLabel === 'Google' && !s.twoFactor), JSON.stringify(sessions));
+      // An account made by a provider gets its personal workspace like any other (on first use).
+      const ws = (await b.fetch('/api/workspaces')).json?.workspaces ?? [];
+      assert(ws.length === 1 && ws[0].kind === 'personal' && ws[0].role === 'owner', `workspaces ${JSON.stringify(ws)}`);
+      const made = await b.fetch('/api/boards', { method: 'POST', body: { title: 'From Google' } });
+      assert(made.status === 201 && made.json.board.workspaceId === ws[0].id, `board ${made.status} ${made.text}`);
       passwordless = { browser: b, email };
     });
 
