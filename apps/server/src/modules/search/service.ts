@@ -137,6 +137,16 @@ export function readSnippet(marked: string): { snippet: string; highlights: Sear
   return { snippet, highlights };
 }
 
+/** The words of `text` a query's terms match (as prefixes, like the query), as highlight ranges. */
+export function wordsStarting(text: string, terms: string[]): SearchHighlight[] {
+  const out: SearchHighlight[] = [];
+  for (const m of text.matchAll(/[\p{L}\p{N}]+/gu)) {
+    const w = m[0].toLowerCase();
+    if (terms.some((t) => (t.length >= 2 ? w.startsWith(t) : w === t))) out.push({ start: m.index, end: m.index + m[0].length });
+  }
+  return out;
+}
+
 const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
 
 /**
@@ -183,7 +193,8 @@ export async function searchFor(actor: Actor, query: SearchQuery, opts: SearchOp
       ...(m.elementType ? { itemType: m.elementType } : {}),
       ...(m.elementId ? { itemId: m.elementId } : {}),
       ...(m.threadId ? { threadId: m.threadId } : {}),
-      ...readSnippet(m.snippet),
+      // A board's own title reads as it is now, whole (the index may be seconds behind a rename).
+      ...(m.kind === 'board' ? { snippet: summary.title, highlights: wordsStarting(summary.title, terms) } : readSnippet(m.snippet)),
     });
   }
   return { hits, nextCursor: more ? String(offset + limit) : null };

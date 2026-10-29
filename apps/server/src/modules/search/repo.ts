@@ -66,7 +66,7 @@ interface MatchRow {
   snippet: string;
 }
 
-const HEADLINE = 'StartSel=\u0001, StopSel=\u0002, MaxWords=28, MinWords=10, ShortWord=2, MaxFragments=1';
+const HEADLINE = 'StartSel=\u0001, StopSel=\u0002, MaxWords=30, MinWords=12, ShortWord=1, MaxFragments=1';
 
 /**
  * The best matches of `tsquery` (a to_tsquery expression built from plain words) among the rows of
