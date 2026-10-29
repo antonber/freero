@@ -1,5 +1,4 @@
 import { useEffect, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
 import { CircleAlert, CircleCheck } from 'lucide-react';
 import { Logo } from '@ui';
 import './AuthPage.css';
@@ -17,9 +16,9 @@ export function AuthShell({ title, sub, docTitle, children }: { title: string; s
         <span className="fr-authpage__blob" />
       </div>
       <main className="fr-authcard">
-        <Link to="/" className="fr-authcard__logo" aria-label="Freero home">
+        <a href="/" className="fr-authcard__logo" aria-label="Freero home">
           <Logo size={36} />
-        </Link>
+        </a>
         <h1 className="fr-authcard__title">{title}</h1>
         {sub ? <p className="fr-authcard__sub">{sub}</p> : null}
         {children}

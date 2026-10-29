@@ -6,7 +6,6 @@ import { RequireAuth } from './auth/RequireAuth';
 import { GuestGate } from './board/GuestGate';
 import { FullPageSpinner } from './components/FullPageSpinner';
 import { AppUpdates } from './pwa/AppUpdates';
-import { LandingPage } from './pages/landing/LandingPage';
 import { AuthPage } from './pages/auth/AuthPage';
 import { DashboardPage } from './pages/dashboard/DashboardPage';
 import { NotFoundPage } from './pages/NotFoundPage';
@@ -110,12 +109,16 @@ export function App() {
   );
 }
 
+/**
+ * `/` is the server's (modules/site): the marketing site, or your boards when signed in. The app
+ * only gets here without a server in front (Vite in development): signed in → /app, else sign in.
+ */
 function Home() {
   const { user, loading } = useAuth();
   if (loading) return null;
   if (user && !user.deletionScheduledFor) return <Navigate to="/app" replace />;
   if (user) return <RequireAuth>{null}</RequireAuth>;
-  return <LandingPage />;
+  return <Navigate to="/login" replace />;
 }
 
 function BoardRoute() {
