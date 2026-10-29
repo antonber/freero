@@ -329,3 +329,21 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Community listings (#87): the developer's words, as typed. */
+.fr-op-listings__bar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.fr-op-listing__tagline {
+  margin: 0;
+  font-size: 14px;
+  color: var(--fr-ink-2);
+  overflow-wrap: anywhere;
+}
+
+.fr-op-listing__description {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
