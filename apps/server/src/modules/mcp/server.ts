@@ -4,8 +4,8 @@
 // check its scope, then call modules/api with it; every tool call and resource read is one
 // `api.call` audit event ("MCP <tool>").
 import type { Request } from 'express';
-import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { z } from 'zod';
+import { McpServer, ResourceTemplate, type CallToolResult } from '@modelcontextprotocol/server';
 import { API_SCOPES, LayoutError, type ApiScope } from '@freero/shared';
 import { HttpError } from '../../platform/http';
 import { logError } from '../../platform/log';
@@ -64,7 +64,7 @@ export function buildServer(req: Request, cred: ApiCredential): McpServer {
 
   for (const t of TOOLS) {
     if (t.available && !t.available()) continue;
-    server.registerTool(t.name, { title: t.title, description: t.description, inputSchema: t.input, annotations: { title: t.title, ...t.annotations } }, (async (
+    server.registerTool(t.name, { title: t.title, description: t.description, inputSchema: z.object(t.input), annotations: { title: t.title, ...t.annotations } }, (async (
       args: Record<string, unknown>,
     ) => {
       const boardId = typeof args.boardId === 'string' ? args.boardId : undefined;
@@ -111,7 +111,7 @@ export function buildServer(req: Request, cred: ApiCredential): McpServer {
     },
   );
 
-  for (const p of PROMPTS) server.registerPrompt(p.name, { title: p.title, description: p.description, argsSchema: p.args }, p.build as never);
+  for (const p of PROMPTS) server.registerPrompt(p.name, { title: p.title, description: p.description, argsSchema: z.object(p.args) }, p.build as never);
 
   return server;
 }

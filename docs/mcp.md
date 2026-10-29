@@ -12,7 +12,8 @@ https://<your-freero>/mcp
 [Self-hosting](#self-hosting)).
 
 - **Transport:** Streamable HTTP, stateless (`POST /mcp`, JSON responses; no session, no server-sent
-  stream: `GET`/`DELETE` answer 405). Any instance behind a load balancer answers any request.
+  stream: `GET`/`DELETE` answer 405). Any instance behind a load balancer answers any request. Both
+  the 2025 protocol revisions and 2026-07-28 (per-request envelope) are served.
 - **Sign-in:** OAuth 2.1 with Freero's own authorization server (MCP authorization spec): the client
   registers itself, you sign in to Freero and approve it on the consent screen. Scripts can send a
   personal access token instead.

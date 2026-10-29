@@ -1363,10 +1363,14 @@ audit and admin controls are the same code.
 
 ### The MCP server (`modules/mcp`, KAI-107; docs/mcp.md)
 
-- `POST /mcp`, Streamable HTTP with the official SDK (`@modelcontextprotocol/sdk`, pinned), **stateless**:
-  each request builds its own server for its credential (authenticated afresh, no cache) and answers
-  JSON — no session, no stream — so it runs behind round-robin balancing and a revoked token, app or
-  workspace switch refuses the very next request. `GET`/`DELETE` answer 405.
+- `POST /mcp`, Streamable HTTP with the official v2 SDK (`@modelcontextprotocol/server` +
+  `createMcpHandler`, pinned, zod 4 for its schemas), **stateless**: each request builds its own
+  server for its credential (authenticated afresh, no cache) and answers JSON — no session, no
+  stream — so it runs behind round-robin balancing and a revoked token, app or workspace switch
+  refuses the very next request. Both protocol eras are served per request: 2026-07-28 requests
+  carry their own envelope, 2025-era ones get a fresh stateless transport. `GET`/`DELETE` answer
+  405. `npm run verify` drives it with the v1 client SDK (`@modelcontextprotocol/sdk`, root
+  devDependency — what most deployed hosts still speak), the unit tests with the v2 client.
 - Tools (`tools.ts`) are outcome-shaped and call `modules/api`'s operations with the request's
   credential; each checks its scope first (refused as a tool error naming the permission) and is one
   `api.call` audit event (`MCP <tool>`). Board text only ever travels in the untrusted envelope

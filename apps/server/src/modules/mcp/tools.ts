@@ -6,7 +6,7 @@
 // Board text in results only ever travels inside the untrusted envelope (content.ts). Descriptions
 // below are Freero's own words and never include anything read from a board.
 import { z } from 'zod';
-import type { CallToolResult, ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
+import type { CallToolResult, ToolAnnotations } from '@modelcontextprotocol/server';
 import { API_MAX_DELETE_PER_CALL, API_MAX_ITEMS_PER_CALL, LAYOUT_LIMITS, STICKY_COLORS, type ApiScope, type StickyColor, type StructureInput } from '@freero/shared';
 import { appUrl } from '../../platform/mail';
 import {
@@ -45,7 +45,7 @@ export interface McpTool<S extends z.ZodRawShape = z.ZodRawShape> {
   input: S;
   /** Offered only when this is true (a capability the server has right now). */
   available?: () => boolean;
-  run(call: ApiCall, args: z.objectOutputType<S, z.ZodTypeAny>): Promise<CallToolResult>;
+  run(call: ApiCall, args: z.infer<z.ZodObject<S>>): Promise<CallToolResult>;
 }
 
 const tool = <S extends z.ZodRawShape>(t: McpTool<S>): McpTool => t as unknown as McpTool;
@@ -363,7 +363,7 @@ export const TOOLS: McpTool[] = [
     available: () => structureTargets().includes('suggestions'),
     input: {
       boardId,
-      structure: z.record(z.unknown()).describe('A structure: { kind, … } as for insert structure (docs/board-outline.md).'),
+      structure: z.record(z.string(), z.unknown()).describe('A structure: { kind, … } as for insert structure (docs/board-outline.md).'),
       near,
       description: z.string().max(500).optional().describe('One line for the reviewers: what this proposal does and why.'),
     },

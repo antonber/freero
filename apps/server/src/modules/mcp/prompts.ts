@@ -2,7 +2,7 @@
 // They only say what to do with which tools; the board's own text is never part of a prompt (the
 // assistant reads it through get_board_outline, inside the untrusted envelope).
 import { z } from 'zod';
-import type { GetPromptResult } from '@modelcontextprotocol/sdk/types.js';
+import type { GetPromptResult } from '@modelcontextprotocol/server';
 
 export interface McpPrompt {
   name: string;
