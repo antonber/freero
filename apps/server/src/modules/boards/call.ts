@@ -5,7 +5,51 @@
 import { MAX_CALL_URL, type BoardCall } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { badRequest } from '../../platform/http';
-import { mac } from '../../platform/secrets';
+import { mac, seal, unseal } from '../../platform/secrets';
+
+// The pasted meeting link is sealed at rest (KAI-143): links of Zoom, Teams and others often carry
+// the meeting's passcode, so a copy of the database (a dump, a backup) must not hand out every
+// board's meeting. Rows written before were plain text: they still read, and the
+// `boards:seal-call-links` job seals them (and re-seals what a previous SESSION_SECRET sealed).
+const CALL_URL_PURPOSE = 'boards.call-url-v1';
+const SEALED_RE = /^v1\./;
+
+export const sealCallUrl = (url: string | null): string | null => (url === null ? null : seal(CALL_URL_PURPOSE, url));
+
+/** The stored value as a link: unsealed (null when no configured secret opens it), or a legacy plain one. */
+export function openCallUrl(stored: string | null): string | null {
+  if (stored === null) return null;
+  if (!SEALED_RE.test(stored)) return stored;
+  return unseal(CALL_URL_PURPOSE, stored)?.value ?? null;
+}
+
+/** What a stored value should become: sealed (plain), sealed again (a previous secret), or null (fine as it is / unreadable). */
+export function resealedCallUrl(stored: string): string | null {
+  if (!SEALED_RE.test(stored)) return sealCallUrl(stored);
+  const opened = unseal(CALL_URL_PURPOSE, stored);
+  return opened?.stale ? sealCallUrl(opened.value) : null;
+}
+
+/**
+ * Seals every stored call link that is still plain text (written before KAI-143) or sealed under a
+ * previous SESSION_SECRET. Idempotent; `boards:seal-call-links` runs it. `storage` is the repo.
+ */
+export async function sealStoredCallLinks(storage: {
+  storedCallUrls(after: string, limit: number): Promise<Array<{ id: string; stored: string }>>;
+  replaceStoredCallUrl(id: string, was: string, now: string): Promise<boolean>;
+}): Promise<number> {
+  let sealed = 0;
+  let after = '';
+  for (;;) {
+    const rows = await storage.storedCallUrls(after, 500);
+    for (const r of rows) {
+      const next = resealedCallUrl(r.stored);
+      if (next && (await storage.replaceStoredCallUrl(r.id, r.stored, next))) sealed++;
+    }
+    if (rows.length < 500) return sealed;
+    after = rows[rows.length - 1].id;
+  }
+}
 
 export const jitsiAvailable = (): boolean => getConfig().jitsiBaseUrl !== null;
 
