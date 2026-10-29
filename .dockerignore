@@ -11,6 +11,8 @@ data
 *.log
 **/*.tsbuildinfo
 docs
+# …except the OpenAPI reference the server serves (modules/api).
+!docs/api
 scripts
 int-*
 docker-compose.yml
