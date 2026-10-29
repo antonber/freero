@@ -33,6 +33,9 @@ import { setCredentialBlocked, setWorkspaceApiAccess, workspaceApiInfo } from '.
 
 export const mountPath = '/';
 
+/** The issuer this server answers as (the metadata's `issuer`, RFC 9207 `iss`) and the signed-in person. */
+const authorizeContext = (req: Request) => ({ issuer: authorizationServerMetadata(req).issuer, userId: currentUser(req).id });
+
 /** OAuth endpoint errors in the RFC 6749 shape, never cached. */
 function oauthEndpoint(fn: (req: Request) => Promise<{ status?: number; body?: unknown }>) {
   return handle(async (req: Request, res: Response) => {
@@ -97,7 +100,7 @@ export default function apiAuthRoutes(_ctx: ServerContext): Router {
     '/api/oauth/authorize',
     requireUser,
     handle(async (req, res) => {
-      const checked = await checkAuthorizeRequest(req.query as AuthorizeParams);
+      const checked = await checkAuthorizeRequest(req.query as AuthorizeParams, authorizeContext(req));
       if ('fatal' in checked) throw badRequest(checked.fatal);
       res.json('redirect' in checked ? { redirect: checked.redirect } : { consent: consentInfo(checked.ok) });
     }),
@@ -107,7 +110,7 @@ export default function apiAuthRoutes(_ctx: ServerContext): Router {
     requireUser,
     handle(async (req, res) => {
       const body = (req.body ?? {}) as AuthorizeParams & { decision?: unknown; grant?: unknown };
-      const checked = await checkAuthorizeRequest(body);
+      const checked = await checkAuthorizeRequest(body, authorizeContext(req));
       if ('fatal' in checked) throw badRequest(checked.fatal);
       if ('redirect' in checked) return res.json({ redirect: checked.redirect });
       if (body.decision !== 'allow' && body.decision !== 'deny') throw badRequest("decision must be 'allow' or 'deny'");

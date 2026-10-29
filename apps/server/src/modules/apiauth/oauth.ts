@@ -2,7 +2,9 @@
 // asks for (KAI-107 reuses it as is): authorization code only, PKCE S256 required for every client,
 // exact redirect URIs (loopback: any port, RFC 8252), refresh tokens that rotate and revoke the
 // whole consent when one is replayed, audience-bound tokens (RFC 8707 `resource`), dynamic client
-// registration (RFC 7591), metadata (RFC 8414, RFC 9728) and revocation (RFC 7009).
+// registration (RFC 7591), client ID metadata documents (an https URL as client_id, #81:
+// clientMetadata.ts), `iss` on every authorization response (RFC 9207, against mix-up attacks),
+// metadata (RFC 8414, RFC 9728) and revocation (RFC 7009).
 //
 // Apps never see a password: the person signs in to Freero, the consent screen (web app,
 // /oauth/authorize) says which app, what it may do and where it sends them, and only then does
@@ -24,15 +26,19 @@ import { newId } from '../../platform/ids';
 import { appUrl } from '../../platform/mail';
 import { recordAudit, recordAuditQuietly } from '../audit/index';
 import { ACCESS_PREFIX, hashSecret, newSecret, protectedResources, REFRESH_PREFIX } from './credentials';
+import { isMetadataClientId, MetadataError, resolveMetadataClient } from './clientMetadata';
 import * as repo from './repo';
+import { cleanRedirects, redirectMatches } from './redirects';
+
+export { cleanRedirectUri, redirectMatches } from './redirects';
 
 export const CODE_TTL_MS = 10 * 60_000;
 export const ACCESS_TTL_MS = 60 * 60_000;
 export const REFRESH_TTL_MS = 30 * 86_400_000;
 export const MAX_CLIENTS_PER_USER = 20;
-const MAX_REDIRECTS = 10;
 /** The resource an app gets when it names none: the REST API. */
 export const DEFAULT_RESOURCE = '/api/v1';
+const LOOPBACK_REDIRECT_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 /** An OAuth error response (RFC 6749 §5.2): `{ error, error_description }`. */
 export class OAuthError extends Error {
@@ -43,47 +49,6 @@ export class OAuthError extends Error {
   ) {
     super(description);
   }
-}
-
-// ---- redirect URIs ----
-
-const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
-const UNSAFE_SCHEMES = new Set(['javascript:', 'data:', 'file:', 'vbscript:', 'blob:', 'about:', 'ws:', 'wss:', 'ftp:']);
-
-/**
- * A redirect URI an app may register: https anywhere, http only on loopback (native apps, RFC
- * 8252 §7.3), or an app's own scheme (`vscode://…`, `cursor://…`, §7.1) — never a scheme that
- * runs code, and never with a fragment. Null when it is not acceptable.
- */
-export function cleanRedirectUri(raw: unknown): string | null {
-  if (typeof raw !== 'string' || raw.length > 2000) return null;
-  let u: URL;
-  try {
-    u = new URL(raw);
-  } catch {
-    return null;
-  }
-  if (u.hash || raw.includes('#') || u.username || u.password) return null;
-  if (u.protocol === 'https:') return raw;
-  if (u.protocol === 'http:') return LOOPBACK.has(u.hostname) ? raw : null;
-  if (UNSAFE_SCHEMES.has(u.protocol) || !/^[a-z][a-z0-9+.-]*:$/.test(u.protocol)) return null;
-  return raw;
-}
-
-/** Exact match, except that a loopback http URI matches on any port (RFC 8252 §7.3). */
-export function redirectMatches(registered: readonly string[], given: string): boolean {
-  if (registered.includes(given)) return true;
-  let g: URL;
-  try {
-    g = new URL(given);
-  } catch {
-    return false;
-  }
-  if (g.protocol !== 'http:' || !LOOPBACK.has(g.hostname)) return false;
-  return registered.some((r) => {
-    const u = new URL(r);
-    return u.protocol === 'http:' && u.hostname === g.hostname && u.pathname === g.pathname && u.search === g.search;
-  });
 }
 
 // ---- clients ----
@@ -105,15 +70,8 @@ function cleanWebsite(v: unknown): string | null {
   }
 }
 
-function cleanRedirects(v: unknown, err: (m: string) => Error): string[] {
-  if (!Array.isArray(v) || !v.length) throw err('Register at least one redirect URI');
-  if (v.length > MAX_REDIRECTS) throw err(`At most ${MAX_REDIRECTS} redirect URIs`);
-  return v.map((r) => {
-    const clean = cleanRedirectUri(r);
-    if (!clean) throw err(`Redirect URI not allowed: ${String(r).slice(0, 200)} (https, http on localhost, or an app's own scheme; no fragment)`);
-    return clean;
-  });
-}
+/** How a client came to be: registered in settings, by itself (RFC 7591), or by its metadata document (#81). */
+export const registrationOf = (c: repo.ClientRow): 'manual' | 'dynamic' | 'metadata' => (c.ownerId ? 'manual' : c.metadataExpiresAt !== null ? 'metadata' : 'dynamic');
 
 const clientInfo = (c: repo.ClientRow & { users: number }): OAuthClientInfo => ({
   clientId: c.id,
@@ -132,7 +90,7 @@ export async function registerClient(ownerId: string, body: Partial<RegisterClie
   const redirectUris = cleanRedirects(body?.redirectUris, badRequest);
   if ((await repo.countClientsOwnedBy(ownerId)) >= MAX_CLIENTS_PER_USER) throw forbidden(`You can register up to ${MAX_CLIENTS_PER_USER} apps`);
   const secret = body?.confidential ? newSecret('frs_') : null;
-  const client: repo.ClientRow = { id: `frc_${newId(20)}`, name, website, redirectUris, ownerId, secretHash: secret ? hashSecret(secret) : null, createdAt: Date.now() };
+  const client: repo.ClientRow = { id: `frc_${newId(20)}`, name, website, redirectUris, ownerId, secretHash: secret ? hashSecret(secret) : null, createdAt: Date.now(), metadataExpiresAt: null };
   await repo.insertClient(client);
   await recordAuditQuietly({ action: 'api.app_registered', accountId: ownerId, actorId: ownerId, target: { type: 'oauth_app', id: client.id, label: name }, metadata: { confidential: !!secret } });
   return { client: clientInfo({ ...client, users: 0 }), ...(secret ? { clientSecret: secret } : {}) };
@@ -180,6 +138,7 @@ export async function registerDynamicClient(body: unknown): Promise<Record<strin
     ownerId: null,
     secretHash: null,
     createdAt: Date.now(),
+    metadataExpiresAt: null,
   };
   await repo.insertClient(client);
   return {
@@ -208,6 +167,8 @@ export interface AuthorizeParams {
 }
 
 interface ValidRequest {
+  /** This server's issuer identifier: the `iss` of every authorization response (RFC 9207). */
+  issuer: string;
   client: repo.ClientRow;
   redirectUri: string;
   scopes: ApiScope[];
@@ -216,14 +177,20 @@ interface ValidRequest {
   resource: string;
 }
 
-/** Where to send the browser with an error the app should hear about (RFC 6749 §4.1.2.1). */
-function errorRedirect(redirectUri: string, error: string, description: string, state: string | null): string {
+/**
+ * Where the browser goes back to the app: every authorization response, success or error, names
+ * the issuer (RFC 9207 §2), so a client talking to several servers can tell whose answer it got.
+ */
+function authorizationResponse(redirectUri: string, issuer: string, params: Record<string, string | null>): string {
   const u = new URL(redirectUri);
-  u.searchParams.set('error', error);
-  u.searchParams.set('error_description', description);
-  if (state !== null) u.searchParams.set('state', state);
+  for (const [k, v] of Object.entries(params)) if (v !== null) u.searchParams.set(k, v);
+  u.searchParams.set('iss', issuer);
   return u.toString();
 }
+
+/** An error the app should hear about (RFC 6749 §4.1.2.1). */
+const errorRedirect = (redirectUri: string, issuer: string, error: string, description: string, state: string | null) =>
+  authorizationResponse(redirectUri, issuer, { error, error_description: description, state });
 
 /** The resource path an app asks for (absolute URL or path), or null when it isn't one of ours. */
 function resourcePath(v: unknown): string | null {
@@ -239,18 +206,34 @@ function resourcePath(v: unknown): string | null {
   return protectedResources().has(path) ? path : null;
 }
 
+/** Who is asking (the consent screen's signed-in person) and as which issuer this server answers. */
+export interface AuthorizeContext {
+  issuer: string;
+  /** The signed-in person: fetching a client metadata document counts against their rate limit. */
+  userId: string | null;
+}
+
 /**
- * Checks an authorization request. An unknown app or a redirect URI it didn't register is shown to
- * the person, never redirected to (`fatal`); anything else wrong goes back to the app (`redirect`).
+ * Checks an authorization request. An unknown app, a metadata document that can't be used, or a
+ * redirect URI the app didn't register is shown to the person, never redirected to (`fatal`);
+ * anything else wrong goes back to the app (`redirect`).
  */
-export async function checkAuthorizeRequest(p: AuthorizeParams): Promise<{ ok: ValidRequest } | { fatal: string } | { redirect: string }> {
+export async function checkAuthorizeRequest(p: AuthorizeParams, at: AuthorizeContext): Promise<{ ok: ValidRequest } | { fatal: string } | { redirect: string }> {
   const clientId = typeof p.client_id === 'string' ? p.client_id : '';
-  const client = clientId ? await repo.getClient(clientId) : null;
+  let client: repo.ClientRow | null = null;
+  if (clientId && isMetadataClientId(clientId)) {
+    try {
+      client = await resolveMetadataClient(clientId, at.userId);
+    } catch (e) {
+      if (e instanceof MetadataError) return { fatal: e.message };
+      throw e;
+    }
+  } else if (clientId) client = await repo.getClient(clientId);
   if (!client) return { fatal: 'This app isn’t registered with Freero (unknown client_id).' };
   const given = typeof p.redirect_uri === 'string' ? p.redirect_uri : client.redirectUris.length === 1 ? client.redirectUris[0] : '';
   if (!given || !redirectMatches(client.redirectUris, given)) return { fatal: 'The app asked to send you somewhere it didn’t register (redirect_uri).' };
   const state = typeof p.state === 'string' ? p.state.slice(0, 1000) : null;
-  const back = (error: string, description: string) => ({ redirect: errorRedirect(given, error, description, state) });
+  const back = (error: string, description: string) => ({ redirect: errorRedirect(given, at.issuer, error, description, state) });
   if (p.response_type !== 'code') return back('unsupported_response_type', 'Only response_type=code is supported');
   if (typeof p.code_challenge !== 'string' || !/^[A-Za-z0-9._~-]{43,128}$/.test(p.code_challenge))
     return back('invalid_request', 'PKCE is required: send code_challenge (S256)');
@@ -260,7 +243,7 @@ export async function checkAuthorizeRequest(p: AuthorizeParams): Promise<{ ok: V
   const resource = resourcePath(p.resource);
   if (!resource) return back('invalid_target', 'Unknown resource');
   const scopes = asked.length ? [...new Set(asked as ApiScope[])] : (protectedResources().get(resource)?.scopes ?? DEFAULT_OAUTH_SCOPES);
-  return { ok: { client, redirectUri: given, scopes, state, codeChallenge: p.code_challenge, resource } };
+  return { ok: { issuer: at.issuer, client, redirectUri: given, scopes, state, codeChallenge: p.code_challenge, resource } };
 }
 
 const optInScopes = (resource: string): readonly ApiScope[] => protectedResources().get(resource)?.optInScopes ?? [];
@@ -279,8 +262,18 @@ export function grantedScopes(v: Pick<ValidRequest, 'scopes' | 'resource'>, gran
 /** What the consent screen shows. */
 export function consentInfo(v: ValidRequest): OAuthConsentInfo {
   const optIn = optInScopes(v.resource);
+  const registration = registrationOf(v.client);
+  const redirect = new URL(v.redirectUri);
   return {
-    client: { clientId: v.client.id, name: v.client.name, website: v.client.website, registration: v.client.ownerId ? 'manual' : 'dynamic' },
+    client: {
+      clientId: v.client.id,
+      name: v.client.name,
+      website: v.client.website,
+      registration,
+      // The host the metadata document came from: the one thing about the app its document can't fake.
+      ...(registration === 'metadata' ? { host: new URL(v.client.id).host } : {}),
+    },
+    ...(redirect.protocol === 'http:' && LOOPBACK_REDIRECT_HOSTS.has(redirect.hostname) ? { localRedirect: true } : {}),
     scopes: v.scopes.map((id) => ({ id, label: API_SCOPES[id], ...(optIn.includes(id) ? { optional: true } : {}) })),
     redirectOrigin: (() => {
       const u = new URL(v.redirectUri);
@@ -296,7 +289,7 @@ export function consentInfo(v: ValidRequest): OAuthConsentInfo {
  * opt-in scopes they turned on (grantedScopes); the token's `scope` says what the app got.
  */
 export async function decide(userId: string, issuedVia: string, asked: ValidRequest, allow: boolean, grant?: unknown): Promise<string> {
-  if (!allow) return errorRedirect(asked.redirectUri, 'access_denied', 'The person declined', asked.state);
+  if (!allow) return errorRedirect(asked.redirectUri, asked.issuer, 'access_denied', 'The person declined', asked.state);
   const scopes = grantedScopes(asked, grant);
   if (!scopes) throw badRequest('Allow at least one thing, or cancel');
   const v = { ...asked, scopes };
@@ -319,13 +312,10 @@ export async function decide(userId: string, issuedVia: string, asked: ValidRequ
       accountId: userId,
       actorId: userId,
       target: { type: 'oauth_app', id: v.client.id, label: v.client.name },
-      metadata: { scopes: v.scopes, resource: v.resource, registration: v.client.ownerId ? 'manual' : 'dynamic' },
+      metadata: { scopes: v.scopes, resource: v.resource, registration: registrationOf(v.client) },
     });
   });
-  const u = new URL(v.redirectUri);
-  u.searchParams.set('code', code);
-  if (v.state !== null) u.searchParams.set('state', v.state);
-  return u.toString();
+  return authorizationResponse(v.redirectUri, v.issuer, { code, state: v.state });
 }
 
 // ---- the token endpoint ----
@@ -435,7 +425,7 @@ export async function listAuthorizedApps(userId: string): Promise<AuthorizedApp[
     clientId: g.clientId,
     name: g.client.name,
     website: g.client.website,
-    registration: g.client.ownerId ? 'manual' : 'dynamic',
+    registration: registrationOf(g.client),
     scopes: g.scopes.filter(isApiScope),
     authorizedAt: g.createdAt,
     lastUsedAt: g.lastUsedAt,
@@ -468,6 +458,10 @@ export function authorizationServerMetadata(req: Request) {
     code_challenge_methods_supported: ['S256'],
     token_endpoint_auth_methods_supported: ['none', 'client_secret_basic', 'client_secret_post'],
     revocation_endpoint_auth_methods_supported: ['none', 'client_secret_basic', 'client_secret_post'],
+    // RFC 9207: every authorization response carries `iss` (ChatGPT's stable redirect URI needs it).
+    authorization_response_iss_parameter_supported: true,
+    // An https URL as client_id, its metadata fetched from there (#81, clientMetadata.ts).
+    client_id_metadata_document_supported: true,
     service_documentation: `${base}/api/v1/openapi.json`,
   };
 }
