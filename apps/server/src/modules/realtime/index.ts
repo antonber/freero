@@ -22,6 +22,11 @@ export {
   // An app writing through the API or MCP, shown on the board for a moment (KAI-168).
   showAgentPresence,
   type AgentPresence,
+  // Docs (KAI-162): the same rooms, persistence, history and fan-out; the document read and
+  // written on requests (modules/docs, the API) in the editor's own node layout (docContent.ts).
+  readDocContent,
+  appendDocBlocks,
+  initDocContent,
 } from './rooms';
 // Suggestions (KAI-169): proposed changes in the editors layer (BoardView.suggestions reads them).
 // proposeSuggestions is THE seam for anything that wants people to review its change first —
@@ -58,7 +63,7 @@ export { listSnapshots as listBoardSnapshots, loadSnapshot as loadBoardSnapshot,
 export { exportBoardContent, commentsWrittenBy, type BoardContentExport, type CommentThreadExport } from './dataExport';
 // Board content as saved, as every reader sees it (derived indexes read it from the outbox), and
 // the outbox topic raised in the same transaction as every saved change of it.
-export { storedBoardView } from './stored';
+export { storedBoardView, storedDocContent } from './stored';
 export { COMMENTS_COLLECTION };
 export { BOARD_CONTENT_TOPIC } from './repo';
 // The uploads board documents reference (the uploads sweep keeps those files).

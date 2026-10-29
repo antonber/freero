@@ -60,6 +60,8 @@ import {
   type SessionLimits,
   ELEMENT_CONTENT_COLLECTIONS,
   isElementContentCollection,
+  DOC_FRAGMENT,
+  type ObjectKind,
 } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { logError } from '../../platform/log';
@@ -108,6 +110,8 @@ import {
 import { emitSuggestionsProposed } from './suggestionEvents';
 import { applyChange, BoardChangeError, viewOf, type AppliedChange, type BoardActor, type BoardChange, type BoardReader, type BoardView } from './view';
 import { newId } from '../../platform/ids';
+import { docStateFrom, readDocBlocks, writeDocBlocks } from './docContent';
+import type { DocBlock } from '@freero/shared';
 import type { SuggestionAuthor, SuggestionDecision, SuggestionRecord } from '@freero/shared';
 
 export const MESSAGE_SYNC = 0;
@@ -151,6 +155,8 @@ const PEER_CATCH_UP_TIMEOUT_MS = 2000;
 /** Who a socket is, decided once at admission. */
 export interface Admission {
   boardId: string;
+  /** What the socket opened (KAI-162): a board's canvas (default) or a doc's document. */
+  kind?: ObjectKind;
   userId: string;
   role: Role;
   sessionKey: string;
@@ -167,6 +173,8 @@ export interface Refusal {
 
 interface Conn {
   ws: WebSocket;
+  /** A doc's socket (KAI-162) has no layers: docs withhold nothing from their readers. */
+  kind: ObjectKind;
   userId: string;
   /** Session the socket was opened with (auth's opaque key); logging out closes the socket. */
   sessionKey: string;
@@ -348,6 +356,9 @@ class Room {
     prepareServerCollections(this.doc);
     // Element content (elementContent.ts): likewise, for the placement guard.
     for (const name of Object.keys(ELEMENT_CONTENT_COLLECTIONS)) this.doc.getMap<unknown>(name);
+    // A doc's document (KAI-162; @freero/shared docs.ts): typed up front, so nothing ever reads
+    // the fragment as a map (restore, readers) and every room — board or doc — is the same room.
+    this.doc.getXmlFragment(DOC_FRAGMENT);
 
     this.ready = this.open();
   }
@@ -500,6 +511,7 @@ class Room {
 
   /** A layer sync message from a socket: answered only for layers it may read. */
   private onLayerMessage(conn: Conn, decoder: decoding.Decoder): void {
+    if (conn.kind !== 'board') return;
     const wire = decoding.readVarString(decoder);
     const name = readableLayer(wire, conn);
     if (!name) return;
@@ -614,7 +626,7 @@ class Room {
    */
   private onLayerOp(conn: Conn, decoder: decoding.Decoder): void {
     const op = parseLayerOp(decoding.readVarString(decoder));
-    if (!op || !mayRunLayerOp(conn)) return;
+    if (!op || conn.kind !== 'board' || !mayRunLayerOp(conn)) return;
     const names = op.mine ? [privateLayerOf(conn.userId)] : [...this.layers.keys()].filter(isPrivateLayer);
     conn.held = [];
     void Promise.all(names.map(async (n) => ((await getBoardAccess(this.id, privateLayerOwner(n)!)).role)))
@@ -787,6 +799,7 @@ class Room {
     const eff = effectiveAccess(a.role, a.userId, readFacilitation(this.doc));
     const conn: Conn = {
       ws,
+      kind: a.kind ?? 'board',
       userId: a.userId,
       sessionKey: a.sessionKey,
       role: eff.role,
@@ -1579,6 +1592,30 @@ export async function snapshotBoardLayers(boardId: string): Promise<Array<{ laye
     }
   }
   return (await layerStore.loadLayers(boardId)).flatMap((l) => (l.state ? [{ layer: l.layer, state: l.state }] : []));
+}
+
+// ---- docs (KAI-162): the document of a doc's room, read and written on requests ----
+
+/** A doc's content right now (live, caught up with the other instances): its blocks and comment records. */
+export async function readDocContent(docId: string): Promise<{ blocks: DocBlock[]; comments: ReadonlyMap<string, unknown> }> {
+  return withLiveRoom(docId, (room) => ({ blocks: readDocBlocks(room.doc), comments: new Map(room.doc.getMap<unknown>(COMMENTS_COLLECTION).entries()) }));
+}
+
+/**
+ * Appends blocks to a doc as `actor` (an owner or editor; the caller checked): one change,
+ * published to every instance and saved before this resolves, like changeBoard.
+ */
+export async function appendDocBlocks(docId: string, actor: BoardActor, blocks: DocBlock[]): Promise<void> {
+  if (!blocks.length) return;
+  await withLiveRoom(docId, async (room) => {
+    room.doc.transact(() => writeDocBlocks(room.doc, blocks, () => newId(16)), new RequestOrigin(actor));
+    await room.flush();
+  });
+}
+
+/** Stores the first content of a brand-new doc (nobody can have it open yet). */
+export async function initDocContent(docId: string, blocks: DocBlock[]): Promise<void> {
+  if (blocks.length) await store.saveInitialState(docId, docStateFrom(blocks, () => newId(16)));
 }
 
 /** Stores the initial content of a layer of a brand-new (or just trashed) board. */
