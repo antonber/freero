@@ -198,6 +198,7 @@ export interface ApiItem {
   locked: boolean;
   /** Only you see it (a private-mode draft). */
   private?: true;
+  /** Who made it; null when unknown or nobody may know (a note revealed anonymously from private mode). */
   createdBy: string | null;
   /** The app or token that created it for `createdBy` ("<name> for <person>", KAI-168). */
   createdVia?: ActingApp;

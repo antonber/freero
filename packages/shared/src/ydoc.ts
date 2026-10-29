@@ -297,7 +297,26 @@ export interface PrivateModeSession {
   startedAt: number;
   /** Only content added inside this frame goes private (null: the whole board). */
   frameId: string | null;
+  /**
+   * [additive] Anonymous (#44): drafts are revealed without their author. The server stamps a draft
+   * written while this is on (or after an anonymous session ended: a straggler) with
+   * `ANONYMOUS_AUTHOR` as it arrives in the private layer, so switching it off later or ending the
+   * session cannot name its author again; a reveal sent while it is on scrubs every draft it moves.
+   * An ended session is kept with `active: false` for that reason (the next start replaces it).
+   */
+  anonymous?: boolean;
 }
+
+/**
+ * `createdBy` of an item revealed from an anonymous private-mode session (#44): nobody. Written only
+ * by the server (realtime attribution.ts / layers.ts); never an account or guest id (those have no ':'). Read as
+ * "Anonymous" (sticky labels, the outline); the public API returns `createdBy: null`; events and
+ * notifications name no actor.
+ */
+export const ANONYMOUS_AUTHOR = 'anon:private-mode';
+export const isAnonymousAuthor = (createdBy: unknown): boolean => createdBy === ANONYMOUS_AUTHOR;
+/** How an ANONYMOUS_AUTHOR item's author reads. */
+export const ANONYMOUS_NAME = 'Anonymous';
 
 export interface VoteBallot {
   sessionId: string;

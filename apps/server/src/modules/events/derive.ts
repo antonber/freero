@@ -6,7 +6,7 @@
 // layer, nothing under a hidden frame), so a draft becomes `item.created` when it is revealed into
 // the shared doc, and an item hidden in a frame reads as deleted (it left what everyone sees).
 import { createHash } from 'node:crypto';
-import { EVENT_TEXT_MAX, type BoardElement, type CommentEventData, type FreeroEventType, type ItemEventData } from '@freero/shared';
+import { EVENT_TEXT_MAX, isAnonymousAuthor, type BoardElement, type CommentEventData, type FreeroEventType, type ItemEventData } from '@freero/shared';
 
 export interface ItemNow {
   fingerprint: string;
@@ -78,7 +78,8 @@ export function diffBoard(prev: StoredState | null, now: BoardNow): { events: De
     const before = prev.items[id]?.[0];
     if (before === i.fingerprint) continue;
     if (before === undefined) {
-      const actor = i.via ? { kind: 'agent' as const, id: i.createdBy, app: i.via.name } : { kind: 'user' as const, id: i.createdBy };
+      // A draft revealed anonymously from private mode (#44) was created by nobody anyone may know.
+      const actor = isAnonymousAuthor(i.createdBy) ? null : i.via ? { kind: 'agent' as const, id: i.createdBy, app: i.via.name } : { kind: 'user' as const, id: i.createdBy };
       events.push({ type: 'item.created', elementId: id, actor, data: item(id, i) });
     } else events.push({ type: 'item.updated', elementId: id, actor: null, data: item(id, i) });
   }

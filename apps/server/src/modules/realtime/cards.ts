@@ -6,7 +6,8 @@
 //
 // Confidentiality: only the shared doc is observed. A card in someone's private layer (private
 // mode) or inside a hidden frame (the editors layer) is reported when it reaches the shared doc —
-// a reveal moves drafts there, attributed to the draft's author. A card arriving in the shared doc
+// a reveal moves drafts there, attributed to the draft's author (ANONYMOUS_AUTHOR for a draft
+// revealed anonymously, #44: its assignee hears of it from nobody). A card arriving in the shared doc
 // because it left the editors layer (its frame was shown) is not news: it is not reported.
 import type * as Y from 'yjs';
 import { richTextToPlain, type ActingApp } from '@freero/shared';
@@ -15,7 +16,7 @@ import { logError } from '../../platform/log';
 export interface CardAssignmentEvent {
   boardId: string;
   elementId: string;
-  /** Who made the change (the socket's user, the request's actor, a revealed draft's author). */
+  /** Who made the change (the socket's user, the request's actor, a revealed draft's author — ANONYMOUS_AUTHOR: nobody). */
   actorId: string;
   via?: ActingApp;
   /** The card's title as plain text ('' when deleted). */

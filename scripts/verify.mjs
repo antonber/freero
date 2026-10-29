@@ -1218,6 +1218,43 @@ async function run() {
       for (const c of [a1, b2, c1, d1]) c.destroy();
     });
 
+    await check("anonymous private mode (#44): a draft written while it was anonymous is revealed to the others with no trace of its author — even after it was switched off — in the socket's bytes and the outline", async () => {
+      const ANONYMOUS_AUTHOR = 'anon:private-mode'; // @freero/shared
+      const a1 = await layerClient(A, board.id);
+      const pm = a1.doc.getMap('privateMode');
+      pm.set('session', { active: true, startedBy: A.id, startedByName: A.name, startedAt: Date.now(), frameId: null, anonymous: true });
+      const b1 = await layerClient(B, board.id);
+      await waitFor(() => b1.doc.getMap('privateMode').get('session')?.anonymous === true, 5000, 'B to see the anonymous session');
+      b1.layers.private.transact(() => {
+        b1.layers.private.getMap('elements').set('anon1', { id: 'anon1', type: 'sticky', x: 5000, y: 5000, w: 200, h: 200, z: 1, rotation: 0, text: 'ANON-IDEA', color: 'yellow', createdBy: B.id, createdAt: Date.now(), updatedAt: Date.now() });
+        b1.layers.private.getMap('comments').set('t:anonth', { kind: 'thread', id: 'anonth', x: 0, y: 0, elementId: 'anon1', createdAt: Date.now(), createdBy: B.id });
+        b1.layers.private.getMap('comments').set('m:anonth:m1', { kind: 'message', threadId: 'anonth', id: 'm1', authorId: B.id, authorName: B.name, text: 'NOTE-TO-SELF', createdAt: Date.now() });
+      });
+      // The server takes the name off the draft as it arrives (B's own copy is corrected too).
+      await waitFor(() => b1.layers.private.getMap('elements').get('anon1')?.createdBy === ANONYMOUS_AUTHOR, 5000, "the server to stamp B's draft anonymous");
+      // The facilitator switches anonymity off and reveals without asking for it: the draft stays nobody's.
+      const { anonymous: _a, ...named } = pm.get('session');
+      pm.set('session', named);
+      const c1 = await layerClient(C, board.id); // viewer
+      const seen = rawBytes(c1);
+      a1.layerOp({ type: 'reveal', collection: 'elements', prefix: 'anon1' });
+      await waitFor(() => els(c1).get('anon1')?.text === 'ANON-IDEA', 5000, 'the viewer to see the revealed draft');
+      await settled(a1, [c1]);
+      assert(els(c1).get('anon1').createdBy === ANONYMOUS_AUTHOR, `revealed as ${JSON.stringify(els(c1).get('anon1'))}`);
+      for (const secret of [B.id, B.name, 'NOTE-TO-SELF']) assert(!seen(secret), `the viewer's socket received ${secret === B.id ? "B's id" : secret}`);
+      const o = await C.req('GET', `/api/boards/${board.id}/outline?authors=1`);
+      const item = (function find(items) {
+        for (const i of items ?? []) {
+          if (i.id === 'anon1') return i;
+          const k = find(i.children);
+          if (k) return k;
+        }
+      })(o.json?.outline?.items);
+      assert(item?.author === 'Anonymous', `outline item: ${JSON.stringify(item)}`);
+      pm.delete('session');
+      for (const c of [a1, b1, c1]) c.destroy();
+    });
+
     // ---- semantic read model (KAI-166) + layout from structure (KAI-167), over REST ----
     await check("board outline: each role reads the board as it sees it — never another user's draft, hidden content only for owners/editors", async () => {
       const md = async (u) => {
