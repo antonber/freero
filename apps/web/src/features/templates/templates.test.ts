@@ -279,6 +279,7 @@ describe('searching templates', () => {
     expect(filterTemplates(TEMPLATES, 'planning poker', null).map((t) => t.id)).toEqual(['relative-sizing']);
     // Spec templates are found from the index alone, before their content has loaded.
     expect(filterTemplates(TEMPLATES, 'battlecard', null)[0].id).toBe('battlecard');
+    expect(filterTemplates(TEMPLATES, 'experiment plan', null)[0].id, 'the name that starts with the query wins the tie').toBe('experiment-plan');
   });
 });
 
