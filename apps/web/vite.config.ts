@@ -88,6 +88,10 @@ export default defineConfig({
       '/api': { target: server, changeOrigin: false },
       '/uploads': { target: server, changeOrigin: false },
       '/ws': { target: server, ws: true, changeOrigin: false },
+      // The MCP server and its OAuth metadata, so the address the Connect page shows (the server
+      // builds it from this Host) works in development too; the consent screen is the app's.
+      '/mcp': { target: server, changeOrigin: false },
+      '/.well-known': { target: server, changeOrigin: false },
     },
   },
 });

@@ -12,8 +12,8 @@ import './api.css';
 const errorText = (err: unknown, fallback: string) => (err instanceof ApiError && err.status < 500 ? err.message : fallback);
 const SCOPES = Object.keys(API_SCOPES) as ApiScope[];
 /** Reserved scopes grant nothing yet: not offered. */
-const OFFERED = SCOPES.filter((s) => s !== 'boards:suggest');
-const EXPIRY = [
+export const OFFERED = SCOPES.filter((s) => s !== 'boards:suggest');
+export const EXPIRY = [
   { value: '7', label: '7 days' },
   { value: '30', label: '30 days' },
   { value: '90', label: '90 days' },
@@ -21,7 +21,7 @@ const EXPIRY = [
   { value: 'never', label: 'No expiry' },
 ];
 
-function Secret({ label, value, onDone }: { label: string; value: string; onDone: () => void }) {
+export function Secret({ label, value, onDone }: { label: string; value: string; onDone: () => void }) {
   const notify = useToast();
   return (
     <div className="fr-acct-api__secret" role="status">
@@ -45,7 +45,7 @@ function Secret({ label, value, onDone }: { label: string; value: string; onDone
   );
 }
 
-function Scopes({ scopes }: { scopes: string[] }) {
+export function Scopes({ scopes }: { scopes: string[] }) {
   return (
     <span className="fr-acct-api__scopes">
       {scopes.map((s) => (

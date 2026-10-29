@@ -115,6 +115,21 @@ export interface AuthorizedApp {
   scopes: ApiScope[];
   authorizedAt: number;
   lastUsedAt: number | null;
+  /** [additive, #80] What the consent is for (RFC 8707 resource, as a path): '/mcp' (the MCP server) or '/api/v1'. */
+  resource: string;
+}
+
+/**
+ * [#80] What the Connect page fills into each client's setup: this instance's own addresses, as
+ * the server names them (PUBLIC_URL), so a token's audience matches the URL the client was given.
+ */
+export interface McpConnectInfo {
+  /** `<PUBLIC_URL>/mcp`. */
+  mcpUrl: string;
+  /** `<PUBLIC_URL>/api/v1`, for scripts with a personal token. */
+  apiUrl: string;
+  /** False when the operator turned the API and the MCP server off (PUBLIC_API=false). */
+  enabled: boolean;
 }
 
 export interface OAuthClientInfo {
@@ -198,6 +213,7 @@ export interface ApiItem {
   locked: boolean;
   /** Only you see it (a private-mode draft). */
   private?: true;
+  /** Who made it; null when unknown or nobody may know (a note revealed anonymously from private mode). */
   createdBy: string | null;
   /** The app or token that created it for `createdBy` ("<name> for <person>", KAI-168). */
   createdVia?: ActingApp;

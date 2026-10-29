@@ -34,7 +34,7 @@ Query parameters:
 | `limit` | 1000 | items + edges per page (1–5000) when no budget is given |
 | `cursor` | — | `meta.nextCursor` of the previous page |
 | `scope` | — | an item id (a frame, cluster, kanban, mind-map root …): only it and what is under it |
-| `authors` | `0` | `1`: each item's creator (current display name) |
+| `authors` | `0` | `1`: each item's creator (current display name; "Anonymous" for a note revealed from an anonymous private mode) |
 | `comments` | `1` | `0`: leave comment threads out |
 | `include` | — | `suggestions`: also the pending suggestions (KAI-169), as `suggestions` (JSON) or a "Suggestions" section (Markdown): proposed changes that are NOT on the board, each read the way its item would read once accepted (a deletion: the item it deletes), with who proposed it and whether it is stale. Owners and editors only (an empty list for anyone else); never paged, budgeted or counted in `meta` |
 

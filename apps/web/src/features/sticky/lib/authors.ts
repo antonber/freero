@@ -1,7 +1,7 @@
 // Sticky author labels (KAI-112): a board setting, off by default, that shows in a corner of each
 // sticky who wrote it. The setting is the `stickyLabels` collection (key 'authors'), written only
 // by this feature; the names come from the board's people lookup (current names, never stored ones).
-import { actingFor, type BoardElement, type PrivateModeSession } from '@freero/shared';
+import { actingFor, ANONYMOUS_NAME, isAnonymousAuthor, type BoardElement, type PrivateModeSession } from '@freero/shared';
 import type { Editor, ElementLayer, HostUser } from '@engine';
 
 export const COLLECTION = 'stickyLabels';
@@ -31,13 +31,15 @@ export const privateModeRunning = (entries: ReadonlyArray<[string, PrivateModeSe
  * What the label on `el` says, or null for none. Never a name for a private draft (its author is
  * the only one who sees it anyway, and it must not travel into an export or a screenshot), nor
  * while private mode runs; "Deleted user" for an account that no longer exists, never an id;
- * "<app> for <person>" for what an app or agent added.
+ * "<app> for <person>" for what an app or agent added; "Anonymous" for a note revealed anonymously
+ * from private mode (#44: its author is on no client).
  */
 export function authorLabel(
   el: Pick<BoardElement, 'createdBy' | 'createdVia'>,
   ctx: { privateRunning: boolean; layer: ElementLayer | null; people: Record<string, HostUser>; gone: ReadonlySet<string> },
 ): string | null {
   if (ctx.privateRunning || ctx.layer === 'private' || !el.createdBy) return null;
+  if (isAnonymousAuthor(el.createdBy)) return ANONYMOUS_NAME;
   const person = ctx.people[el.createdBy]?.name ?? (ctx.gone.has(el.createdBy) ? DELETED_USER : null);
   if (!person) return null;
   return el.createdVia ? actingFor(el.createdVia, person) : person;

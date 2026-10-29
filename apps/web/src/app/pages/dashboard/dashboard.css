@@ -707,6 +707,13 @@
   color: var(--fr-ink-2);
 }
 
+.fr-empty__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
 /* ---- Responsive ---- */
 @media (max-width: 1000px) {
   .fr-sidebar {

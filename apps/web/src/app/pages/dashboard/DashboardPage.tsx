@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { ArchiveRestore, FileText, Folder, LayoutGrid, LayoutTemplate, List, Plus, RotateCw, Search, ShieldCheck, UserX, X } from 'lucide-react';
+import { ArchiveRestore, Bot, FileText, Folder, LayoutGrid, LayoutTemplate, List, Plus, RotateCw, Search, ShieldCheck, UserX, X } from 'lucide-react';
 import { TRASH_RETENTION_DAYS, type BoardSummary, type ProjectSummary, type WorkspaceBlock } from '@freero/shared';
 import { Button, IconButton, Input, Kbd, Modal, SegmentedControl, Select, Skeleton, Spinner, useToast } from '@ui';
 import { api, ApiError, type BoardFilter } from '../../api/client';
@@ -763,9 +763,17 @@ function EmptyState({
         </Button>
       ) : null}
       {!query && !filtered && !closed && canCreate ? (
-        <Button variant="primary" icon={Plus} loading={creating} onClick={onCreate}>
-          New board
-        </Button>
+        <div className="fr-empty__actions">
+          <Button variant="primary" icon={Plus} loading={creating} onClick={onCreate}>
+            New board
+          </Button>
+          {view === 'home' || view === 'mine' ? (
+            // An agent can start the first board too (#80).
+            <Button icon={Bot} onClick={() => navigate('/settings/connect')}>
+              Connect an AI agent
+            </Button>
+          ) : null}
+        </div>
       ) : null}
     </div>
   );

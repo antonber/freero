@@ -12,12 +12,15 @@ import { Router, type Request, type Response } from 'express';
 import { Readable } from 'node:stream';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { createMcpHandler } from '@modelcontextprotocol/server';
-import { MCP_DEFAULT_SCOPES, MCP_SCOPES } from '@freero/shared';
+import { MCP_DEFAULT_SCOPES, MCP_SCOPES, type McpConnectInfo } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
+import { getConfig } from '../../platform/config';
 import { logError } from '../../platform/log';
+import { appUrl } from '../../platform/mail';
 import { consumeRateLimit } from '../../platform/rateLimit';
 import { allowCrossSiteApi } from '../../platform/security';
 import { authenticate, registerProtectedResource, sendAuthError, type ApiCredential } from '../apiauth/index';
+import { requireUser } from '../auth/index';
 import { buildServer } from './server';
 
 export const mountPath = '/';
@@ -89,6 +92,13 @@ export default function mcpRoutes(_ctx: ServerContext): Router {
         if (!res.headersSent) rpcError(res, 500, 'Internal server error');
       }
     })();
+  });
+
+  // The app's Connect page (#80): the addresses to put into each client, as this server names them
+  // (PUBLIC_URL), so the URL a person pastes is the audience the server binds its tokens to.
+  r.get('/api/mcp/connect', requireUser, (req, res) => {
+    const info: McpConnectInfo = { mcpUrl: appUrl(req, RESOURCE), apiUrl: appUrl(req, '/api/v1'), enabled: getConfig().publicApi };
+    res.json(info);
   });
 
   // Stateless: no server-sent event stream to open (GET) and no session to end (DELETE).

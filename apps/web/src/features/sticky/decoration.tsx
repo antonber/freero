@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import type { BoardElement, PrivateModeSession } from '@freero/shared';
+import { isAnonymousAuthor, type BoardElement, type PrivateModeSession } from '@freero/shared';
 import { defineDecoration, useCollection, useEditor, useGonePeople, usePeople } from '@engine';
 import { COLLECTION, authorLabel, authorLabelsOn, privateModeRunning, type AuthorLabels } from './lib/authors';
 
@@ -9,7 +9,7 @@ const MIN_ZOOM = 0.3;
 const Label = memo(function Label({ element }: { element: BoardElement }) {
   const editor = useEditor();
   const privateRunning = privateModeRunning(useCollection<PrivateModeSession>('privateMode'));
-  const ids = element.createdBy ? [element.createdBy] : [];
+  const ids = element.createdBy && !isAnonymousAuthor(element.createdBy) ? [element.createdBy] : [];
   const people = usePeople(ids);
   const gone = useGonePeople(ids);
   const text = authorLabel(element, { privateRunning, layer: editor.layerOf(element.id), people, gone });

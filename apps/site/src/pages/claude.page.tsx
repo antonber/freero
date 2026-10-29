@@ -9,7 +9,7 @@ export default definePage({
   ogTitle: 'Claude reads, builds and proposes on your boards',
   description:
     'Connect Claude to Freero with one MCP URL. Claude reads your boards, draws diagrams, groups notes and proposes changes your team approves. Open source.',
-  updated: '2026-10-28',
+  updated: '2026-10-29',
   faq: [
     {
       q: 'Do I need a paid Claude plan?',
@@ -48,9 +48,9 @@ export default definePage({
         lead="Connect Claude to Freero with one URL. Claude reads your boards, turns notes into diagrams and themes, and proposes changes that your team reviews and accepts. It works as you, with only the permissions you give it."
         actions={
           <>
-            <ButtonLink href="#setup">Set it up</ButtonLink>
-            <ButtonLink href={APP.signup} variant="secondary">
-              Create a free account
+            <ButtonLink href={`${APP.connect}#claude`}>Connect Claude from Freero</ButtonLink>
+            <ButtonLink href="#setup" variant="secondary">
+              See the steps
             </ButtonLink>
           </>
         }
@@ -94,14 +94,19 @@ export default definePage({
 
       <Section id="setup" tone="tint" title="Set up Freero in Claude" lead="You need a Freero account and about two minutes. The connector URL is the same everywhere:">
         <Code label="Freero MCP server URL">{MCP_URL}</Code>
+        <p className="note">
+          Already signed in? <a href={`${APP.connect}#claude`}>Connect an agent</a> in Freero has these steps with your server’s address filled in, copy
+          buttons, and a list of what is connected. No account yet? <a href={APP.signup}>Create one for free</a>; it takes a minute.
+        </p>
 
         <div className="columns-2">
           <div>
             <h3>Claude on the web and Claude Desktop</h3>
             <Steps>
               <Step title="Add a custom connector">
-                In Claude, open <strong>Settings → Connectors</strong> and choose <strong>Add custom connector</strong>. Name it <em>Freero</em>, paste the URL
-                above and select <strong>Add</strong>.
+                In Claude, open <strong>Customize → Connectors</strong> (Settings → Connectors in some versions), select <strong>+ Add</strong> and{' '}
+                <strong>Add custom connector</strong>. Name it <em>Freero</em>, paste the URL above, then select <strong>Continue</strong> and{' '}
+                <strong>Add</strong>.
               </Step>
               <Step title="Connect and choose what Claude may do">
                 Select <strong>Connect</strong>. Freero’s consent screen opens: sign in, review the permissions (read and suggest are ticked; changing boards
@@ -112,8 +117,8 @@ export default definePage({
               </Step>
             </Steps>
             <p>
-              On Claude Team and Enterprise plans, an owner first adds the connector for the organization (Admin settings → Connectors); each member then
-              connects their own Freero account. Connectors you add on the web are available in Claude Desktop too.
+              On Claude Team and Enterprise plans, an owner first adds the connector for the organization (Organization settings → Connectors → Add →
+              Custom → Web); each member then connects their own Freero account under Customize → Connectors. Connectors you add on the web are available in Claude Desktop too.
             </p>
           </div>
           <div>

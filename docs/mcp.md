@@ -22,22 +22,37 @@ https://<your-freero>/mcp
 
 ## Connect
 
+**In Freero: Settings → AI agents → Connect an agent** (`/settings/connect`; also on the empty
+dashboard and in every board's "…" menu). It shows this server's MCP URL (built from `PUBLIC_URL`,
+`GET /api/mcp/connect`) and, per client, the one click or one paste it takes with that URL filled
+in; makes a personal token for plain HTTP; lists what is connected (apps and tokens, last used,
+revoke), marking each **Connected** once its client has called the server; and offers starter
+prompts. `/settings/connect#<client>` opens one client's tab (`claude`, `chatgpt`, `claude-code`,
+`cursor`, `vscode`, `other`, `http`); the marketing site's /claude, /chatgpt and /agents link there.
+Agents can read `/llms.txt` (and `/llms-full.txt`) for the endpoint, sign-in and tools.
+
+The same steps by hand (formats as each vendor documents them, checked 2026-10-29):
+
 ### Claude (claude.ai, Claude Desktop)
 
-Settings → **Connectors** → **Add custom connector** → name it *Freero*, URL `https://<your-freero>/mcp`
-→ **Add**, then **Connect**. Claude opens Freero's consent screen: sign in, tick what it may do
-(see [Permissions](#permissions)), **Allow**. In a chat, enable Freero in the tools menu.
+**Customize → Connectors** (Settings → Connectors in some versions) → **+ Add** → **Add custom
+connector** → name it *Freero*, URL `https://<your-freero>/mcp` → **Continue**, **Add**, then
+**Connect**. Claude opens Freero's consent screen: sign in, tick what it may do (see
+[Permissions](#permissions)), **Allow**. In a chat, enable Freero in the tools menu. Claude connects
+from Anthropic's servers, so the URL must be public https.
 
-On Team and Enterprise plans an owner adds the connector for the organization first (Admin settings →
-Connectors); members then connect their own Freero account.
+On Team and Enterprise plans an owner adds the connector for the organization first (Organization
+settings → Connectors → Add → Custom → Web); members then select **Connect** under Customize →
+Connectors. ([Anthropic's guide](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp))
 
 ### ChatGPT
 
-Settings → **Apps & Connectors** → **Advanced settings** → turn on **Developer mode**. Then **Create**
-(Apps & Connectors) → name *Freero*, MCP server URL `https://<your-freero>/mcp`, authentication
-**OAuth** → **Create**, and finish the sign-in on Freero's consent screen. In a chat, pick Freero from
-the developer-mode tools. (Workspace admins of Business / Enterprise / Edu may have to allow custom
-connectors first.)
+[Plugins](https://chatgpt.com/plugins) → the plus button → **Add custom MCP server** → name *Freero*;
+under **Connection**, the public endpoint `https://<your-freero>/mcp`; authentication **OAuth** →
+review the risk warning → **Create as a plugin**, and finish the sign-in on Freero's consent screen.
+In a chat, type **@** and pick Freero. OpenAI decides which plans can add custom MCP servers; in a
+workspace an admin may have to allow them first.
+([OpenAI's guide](https://developers.openai.com/apps-sdk/deploy/connect-chatgpt))
 
 ### Claude Code
 
@@ -45,16 +60,23 @@ connectors first.)
 claude mcp add --transport http freero https://<your-freero>/mcp
 ```
 
-Then run `/mcp` in Claude Code and choose **Authenticate**: your browser opens the consent screen.
-For CI or a headless machine, use a personal access token instead of OAuth:
+Then run `/mcp` in Claude Code, pick *freero* and choose **Authenticate**: your browser opens the
+consent screen (`--scope user` adds it to every project). For CI or a headless machine, use a
+personal access token instead of OAuth:
 
 ```sh
 claude mcp add --transport http freero https://<your-freero>/mcp --header "Authorization: Bearer frp_…"
 ```
 
+([Claude Code MCP docs](https://code.claude.com/docs/en/mcp))
+
 ### Cursor
 
-`~/.cursor/mcp.json` (all projects) or `.cursor/mcp.json` (one project):
+One click: `cursor://anysphere.cursor-deeplink/mcp/install?name=freero&config=<base64>`, where
+`<base64>` is the base64 of `{"url":"https://<your-freero>/mcp"}` (the server's entry without its
+name), URL-encoded; the Connect page builds it
+([install links](https://cursor.com/docs/context/mcp/install-links)). By hand, `~/.cursor/mcp.json`
+(all projects) or `.cursor/mcp.json` (one project):
 
 ```json
 {
@@ -64,11 +86,15 @@ claude mcp add --transport http freero https://<your-freero>/mcp --header "Autho
 }
 ```
 
-Cursor shows *Needs login* next to the server: click it to sign in. With a token instead:
+Cursor then asks you to sign in to Freero. With a token instead:
 `"headers": { "Authorization": "Bearer frp_…" }`.
 
-### VS Code (GitHub Copilot) and other clients
+### VS Code (GitHub Copilot)
 
+One click: `vscode:mcp/install?` followed by the URL-encoded JSON
+`{"name":"freero","type":"http","url":"https://<your-freero>/mcp"}` (Insiders: `vscode-insiders:`;
+[installation URL](https://code.visualstudio.com/docs/copilot/guides/mcp-developer-guide)), or
+`code --add-mcp '{"name":"freero","type":"http","url":"https://<your-freero>/mcp"}'`, or
 `.vscode/mcp.json`:
 
 ```json
@@ -79,9 +105,32 @@ Cursor shows *Needs login* next to the server: click it to sign in. With a token
 }
 ```
 
+VS Code opens the browser to sign in the first time.
+
+### Codex, Windsurf and other clients
+
+- **Codex** (CLI, IDE extension, desktop): add to `~/.codex/config.toml`, then run `codex mcp login freero`
+  ([Codex MCP docs](https://learn.chatgpt.com/docs/extend/mcp)):
+  ```toml
+  [mcp_servers.freero]
+  url = "https://<your-freero>/mcp"
+  ```
+- **Windsurf** (Devin Desktop since 2026-06): in Cascade's raw MCP config,
+  `{ "mcpServers": { "freero": { "serverUrl": "https://<your-freero>/mcp" } } }`
+  ([docs](https://docs.devin.ai/desktop/cascade/mcp)).
+- A client that runs only local (stdio) servers: the [mcp-remote](https://github.com/geelen/mcp-remote)
+  bridge, `{ "command": "npx", "args": ["mcp-remote", "https://<your-freero>/mcp"] }`.
+
 Any client that speaks Streamable HTTP and the MCP authorization spec works the same way. To try the
 server from a terminal: `npx @modelcontextprotocol/inspector --cli https://<your-freero>/mcp --transport http
 --method tools/list --header "Authorization: Bearer frp_…"`.
+
+### Any HTTP client
+
+Make a personal access token (Connect page → **Any HTTP client**, or Settings → **API tokens**: the
+scopes and expiry you pick, shown once), then
+`curl -H "Authorization: Bearer frp_…" https://<your-freero>/api/v1/me`. The same token works as a
+bearer token on `/mcp`. Reference: [api/README.md](api/README.md).
 
 ## Permissions
 

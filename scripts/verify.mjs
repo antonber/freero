@@ -1218,6 +1218,43 @@ async function run() {
       for (const c of [a1, b2, c1, d1]) c.destroy();
     });
 
+    await check("anonymous private mode (#44): a draft written while it was anonymous is revealed to the others with no trace of its author — even after it was switched off — in the socket's bytes and the outline", async () => {
+      const ANONYMOUS_AUTHOR = 'anon:private-mode'; // @freero/shared
+      const a1 = await layerClient(A, board.id);
+      const pm = a1.doc.getMap('privateMode');
+      pm.set('session', { active: true, startedBy: A.id, startedByName: A.name, startedAt: Date.now(), frameId: null, anonymous: true });
+      const b1 = await layerClient(B, board.id);
+      await waitFor(() => b1.doc.getMap('privateMode').get('session')?.anonymous === true, 5000, 'B to see the anonymous session');
+      b1.layers.private.transact(() => {
+        b1.layers.private.getMap('elements').set('anon1', { id: 'anon1', type: 'sticky', x: 5000, y: 5000, w: 200, h: 200, z: 1, rotation: 0, text: 'ANON-IDEA', color: 'yellow', createdBy: B.id, createdAt: Date.now(), updatedAt: Date.now() });
+        b1.layers.private.getMap('comments').set('t:anonth', { kind: 'thread', id: 'anonth', x: 0, y: 0, elementId: 'anon1', createdAt: Date.now(), createdBy: B.id });
+        b1.layers.private.getMap('comments').set('m:anonth:m1', { kind: 'message', threadId: 'anonth', id: 'm1', authorId: B.id, authorName: B.name, text: 'NOTE-TO-SELF', createdAt: Date.now() });
+      });
+      // The server takes the name off the draft as it arrives (B's own copy is corrected too).
+      await waitFor(() => b1.layers.private.getMap('elements').get('anon1')?.createdBy === ANONYMOUS_AUTHOR, 5000, "the server to stamp B's draft anonymous");
+      // The facilitator switches anonymity off and reveals without asking for it: the draft stays nobody's.
+      const { anonymous: _a, ...named } = pm.get('session');
+      pm.set('session', named);
+      const c1 = await layerClient(C, board.id); // viewer
+      const seen = rawBytes(c1);
+      a1.layerOp({ type: 'reveal', collection: 'elements', prefix: 'anon1' });
+      await waitFor(() => els(c1).get('anon1')?.text === 'ANON-IDEA', 5000, 'the viewer to see the revealed draft');
+      await settled(a1, [c1]);
+      assert(els(c1).get('anon1').createdBy === ANONYMOUS_AUTHOR, `revealed as ${JSON.stringify(els(c1).get('anon1'))}`);
+      for (const secret of [B.id, B.name, 'NOTE-TO-SELF']) assert(!seen(secret), `the viewer's socket received ${secret === B.id ? "B's id" : secret}`);
+      const o = await C.req('GET', `/api/boards/${board.id}/outline?authors=1`);
+      const item = (function find(items) {
+        for (const i of items ?? []) {
+          if (i.id === 'anon1') return i;
+          const k = find(i.children);
+          if (k) return k;
+        }
+      })(o.json?.outline?.items);
+      assert(item?.author === 'Anonymous', `outline item: ${JSON.stringify(item)}`);
+      pm.delete('session');
+      for (const c of [a1, b1, c1]) c.destroy();
+    });
+
     // ---- semantic read model (KAI-166) + layout from structure (KAI-167), over REST ----
     await check("board outline: each role reads the board as it sees it — never another user's draft, hidden content only for owners/editors", async () => {
       const md = async (u) => {
@@ -5575,6 +5612,35 @@ async function publicApiChecks() {
       assert(els.get(id).createdBy === O.id, 'attributed to the token’s owner');
     });
 
+    await check('connect page (#80): the MCP address it hands out answers like an MCP server, its OAuth metadata names that same address as the token audience, and a token made there shows as used after its first MCP call', async () => {
+      const info = await O.req('GET', '/api/mcp/connect');
+      assert(info.status === 200 && info.json.enabled === true && info.json.mcpUrl.endsWith('/mcp') && info.json.apiUrl.endsWith('/api/v1'), `connect info: ${info.status} ${info.text}`);
+      assert((await new User('nobody', proc.port).req('GET', '/api/mcp/connect', undefined, { cookie: false })).status === 401, 'connect info without a session');
+      const { mcpUrl } = info.json;
+      const rpc = (headers = {}) =>
+        fetch(mcpUrl, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...headers },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'verify', version: '1' } } }),
+        });
+      // What a client does with the pasted URL: no token → 401 naming the metadata → the resource and its authorization server.
+      const anon = await rpc();
+      const challenge = anon.headers.get('www-authenticate') ?? '';
+      const metaUrl = /resource_metadata="([^"]+)"/.exec(challenge)?.[1];
+      assert(anon.status === 401 && metaUrl, `no token: ${anon.status} ${challenge}`);
+      const meta = await (await fetch(metaUrl)).json();
+      assert(meta.resource === mcpUrl, `metadata resource ${meta.resource} is not the address shown (${mcpUrl})`);
+      const as = await (await fetch(`${meta.authorization_servers[0]}/.well-known/oauth-authorization-server`)).json();
+      assert(as.registration_endpoint && as.code_challenge_methods_supported?.includes('S256'), `authorization server: ${JSON.stringify(as).slice(0, 200)}`);
+      const made = await token(O, ['boards:read'], 'Connect page script');
+      const before = (await O.req('GET', '/api/auth/tokens')).json.tokens.find((t) => t.id === made.token.id);
+      assert(before.lastUsedAt === null, 'a new token already counts as used');
+      const init = await rpc({ authorization: `Bearer ${made.secret}` });
+      assert(init.status === 200 && (await init.text()).includes('"serverInfo"'), `initialize with the token: ${init.status}`);
+      const after = (await O.req('GET', '/api/auth/tokens')).json.tokens.find((t) => t.id === made.token.id);
+      assert(after.lastUsedAt !== null, 'the token’s first MCP call didn’t mark it used (the Connect page would never say Connected)');
+    });
+
     await check('api: a token without the scope, a revoked token, a viewer’s token and a stranger’s token can’t write (401/403), and nothing changes', async () => {
       const readOnly = await token(O, ['boards:read'], 'read only');
       const r1 = await call(readOnly.secret, 'POST', `/boards/${board}/items`, { type: 'sticky', text: 'x' });
@@ -7877,6 +7943,12 @@ async function siteChecks() {
       const robots = await (await get(on.port, '/robots.txt')).text();
       assert(robots.includes('Sitemap: https://whiteboard.example.com/sitemap.xml') && robots.includes('Disallow: /board/'), `robots: ${robots}`);
       assert((await get(on.port, '/vs/no-such-competitor')).status === 404, 'a missing comparison is not the site’s 404');
+      // For agents (#80): llms.txt names this instance's own MCP endpoint, as text.
+      const llms = await get(on.port, '/llms.txt');
+      const llmsText = await llms.text();
+      assert(llms.status === 200 && /^text\/plain/.test(llms.headers.get('content-type') ?? ''), `/llms.txt -> ${llms.status} ${llms.headers.get('content-type')}`);
+      assert(llmsText.startsWith('# Freero') && llmsText.includes('https://whiteboard.example.com/mcp') && !llmsText.includes('origin.freero.invalid'), `/llms.txt: ${llmsText.slice(0, 300)}`);
+      assert((await get(on.port, '/llms-full.txt')).status === 200, '/llms-full.txt is not served');
     });
     const off = await waitUp(await spawnServer(path.join(dataDir, 'off'), { FREERO_SITE_DIST: siteDist, SITE: 'false' }));
     procs.push(off);

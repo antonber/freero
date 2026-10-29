@@ -28,6 +28,7 @@ import type {
   ApiScope,
   AuthorizedApp,
   CreateTokenRequest,
+  McpConnectInfo,
   OAuthClientInfo,
   OAuthConsentInfo,
   PersonalToken,
@@ -650,6 +651,8 @@ export const api = {
   listAuthorizedApps: () => request<{ apps: AuthorizedApp[] }>('GET', '/api/auth/apps'),
   revokeAuthorizedApp: (clientId: string) => request<{ ok: true }>('DELETE', `/api/auth/apps/${encodeURIComponent(clientId)}`),
   revokeAllApiAccess: () => request<{ tokens: number; apps: number }>('POST', '/api/auth/api-access/revoke-all'),
+  /** This instance's MCP and REST addresses for the Connect page (#80). */
+  mcpConnectInfo: () => request<McpConnectInfo>('GET', '/api/mcp/connect'),
   listOAuthClients: () => request<{ clients: OAuthClientInfo[] }>('GET', '/api/oauth/clients'),
   registerOAuthClient: (body: RegisterClientRequest) => request<{ client: OAuthClientInfo; clientSecret?: string }>('POST', '/api/oauth/clients', body),
   deleteOAuthClient: (id: string) => request<{ ok: true }>('DELETE', `/api/oauth/clients/${encodeURIComponent(id)}`),

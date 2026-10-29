@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, BadgeCheck, CircleAlert, Download, ImageUp, LogOut, Mail, Monitor, ShieldCheck, Trash2 } from 'lucide-react';
+import { ArrowLeft, BadgeCheck, Bot, CircleAlert, Download, ImageUp, LogOut, Mail, Monitor, ShieldCheck, Trash2 } from 'lucide-react';
 import { describeDevice, type DataExportInfo, type NotificationPrefs, type SecurityInfo, type SessionInfo } from '@freero/shared';
 import { Avatar, Button, ColorSwatches, Input, Logo, Modal, Spinner, Toggle, readableTextColor, useToast } from '@ui';
 import { api, ApiError } from '../../api/client';
@@ -26,6 +26,7 @@ export function AccountSettingsPage() {
   useEffect(() => {
     document.title = 'Account settings · Freero';
   }, []);
+  const navigate = useNavigate();
   const [security, setSecurity] = useState<SecurityInfo | null>(null);
   const [sessionsVersion, setSessionsVersion] = useState(0);
   const loadSecurity = useCallback(() => {
@@ -53,6 +54,17 @@ export function AccountSettingsPage() {
         <PasswordSection security={security} onChanged={securityChanged} />
         <TwoFactorSection security={security} onChanged={securityChanged} />
         <SessionsSection version={sessionsVersion} />
+        <Section
+          id="connect-agent"
+          title="AI agents"
+          description="Connect Claude, ChatGPT, Claude Code, Cursor, VS Code or any MCP client to your boards: one click or one paste, with this server’s address filled in."
+        >
+          <div className="fr-acct-form__row">
+            <Button variant="primary" icon={Bot} onClick={() => navigate('/settings/connect')}>
+              Connect an agent
+            </Button>
+          </div>
+        </Section>
         <ConnectedAppsSection />
         <ApiTokensSection />
         <DeveloperAppsSection />

@@ -7,6 +7,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { buildSite, SITE_PREFIXES } from './build';
 import { defineComparison, type ComparisonDef } from './lib/compare';
 import type { PageDef } from './lib/define';
+import { MCP_PROMPTS, MCP_TOOLS } from './lib/mcp';
 import { DISALLOWED } from './lib/seo';
 import { APP, docsUrl, ORIGIN } from './lib/site';
 
@@ -208,6 +209,35 @@ describe('links people follow', () => {
         checked++;
       }
     expect(checked).toBeGreaterThan(0);
+  });
+});
+
+describe('what agents read (/llms.txt, /agents)', () => {
+  const file = (p: string) => manifest.files.find((f) => f.path === p);
+
+  it('llms.txt and llms-full.txt give an agent this deployment’s own MCP endpoint, its sign-in metadata and the Connect page, never the build placeholder', () => {
+    for (const p of ['/llms.txt', '/llms-full.txt']) {
+      const f = file(p);
+      expect(f, `${p} is not in the manifest`).toBeTruthy();
+      const txt = served(f!.file);
+      expect(/^# Freero\n\n> \S/.test(txt), `${p} is not an llms.txt (H1, then a summary)`).toBe(true);
+      expect(txt.includes(ORIGIN), p).toBe(false);
+      for (const must of [`${HOST}/mcp`, `${HOST}/.well-known/oauth-protected-resource/mcp`, `${HOST}/api/oauth/register`, `${HOST}${APP.connect}`])
+        expect(txt.includes(must), `${p} doesn’t say ${must}`).toBe(true);
+      for (const [name] of MCP_TOOLS) expect(txt.includes(`\`${name}\``), `${p} leaves out ${name}`).toBe(true);
+    }
+  });
+
+  it('the tools and prompts the site lists are exactly the ones the MCP server offers the model: none missing, none made up', () => {
+    // Read from the server's source (the site has no server dependency); a tool only the live
+    // view calls (`visibility: ['app']`) is not offered to the model, so it isn't listed.
+    const src = (f: string) => fs.readFileSync(path.resolve(__dirname, '../../server/src/modules/mcp', f), 'utf8');
+    const blocks = src('tools.ts').split(/\n\s*tool\(\{/).slice(1);
+    const serverTools = blocks.filter((b) => !/visibility: \[\s*'app'\s*\]/.test(b.split(/\n\s*async run\(/)[0])).map((b) => /name: '([a-z_]+)'/.exec(b)?.[1]);
+    const serverPrompts = attr(src('prompts.ts'), /\n\s{4}name: '([a-z_]+)'/g);
+    expect(serverTools.length).toBeGreaterThan(10);
+    expect(MCP_TOOLS.map(([n]) => n).sort(), 'apps/site/src/lib/mcp.ts MCP_TOOLS is out of step with the MCP server’s tools.ts').toEqual([...serverTools].sort());
+    expect(MCP_PROMPTS.map(([n]) => n).sort(), 'apps/site/src/lib/mcp.ts MCP_PROMPTS is out of step with the MCP server’s prompts.ts').toEqual([...serverPrompts].sort());
   });
 });
 

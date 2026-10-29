@@ -78,7 +78,7 @@ import { commentPeople, COMMENTS_COLLECTION, emitCommentMessages, hasCommentList
 import * as store from './docStore';
 import { effectiveAccess, guardSession, readFacilitation, revertForbiddenAdds, sameEffective } from './facilitation';
 import { guardVotes } from './votingRules';
-import { attributionOf, guardAttribution, type Attribution } from './attribution';
+import { attributionOf, creatorOf, guardAttribution, type Attribution } from './attribution';
 import { guardServerCollections, prepareServerCollections, SERVER_COLLECTIONS } from './serverCollections';
 import { guardContentPlacement, placeElementContent, writeElementContent, type MovedEntry } from './elementContent';
 import { decideUpdate } from './filter';
@@ -617,7 +617,9 @@ class Room {
         fixed = guardVotes(tr, doc, this.doc, conn.userId);
         fixed = guardServerCollections(tr, doc) || fixed;
         if (addTypes) fixed = revertForbiddenAdds(tr, doc.getMap<unknown>(ELEMENTS), new Set(addTypes), (id) => this.existsElsewhere(doc, id)) > 0 || fixed;
-        fixed = guardAttribution(tr, doc.getMap<unknown>(ELEMENTS), conn.userId, (id) => this.knownAttribution(doc, id)) > 0 || fixed;
+        // A new draft during an anonymous private mode is nobody's (#44, attribution.ts).
+        const creator = creatorOf(conn.userId, isPrivateLayer(name), this.doc);
+        fixed = guardAttribution(tr, doc.getMap<unknown>(ELEMENTS), creator, (id) => this.knownAttribution(doc, id)) > 0 || fixed;
         if (name === EDITORS_LAYER) {
           const g = guardSuggestionWrites(tr, doc, conn.userId);
           fixed = g.reverted > 0 || fixed;

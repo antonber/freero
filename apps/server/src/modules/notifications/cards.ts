@@ -7,7 +7,7 @@
 // through the assignee picker (Ann, Bob, Ann) notifies Ann once — or nobody, if it ends where it
 // started. Reminders come from card_due_watch (kept from the same events), each re-checked
 // against the card as the assignee sees it on the board right before it is sent.
-import { isGuestId, richTextToPlain } from '@freero/shared';
+import { isAnonymousAuthor, isGuestId, richTextToPlain } from '@freero/shared';
 import { logError } from '../../platform/log';
 import { getBoardAccess, getBoardTitle } from '../boards/index';
 import { readBoardView, type CardAssignmentEvent } from '../realtime/index';
@@ -67,8 +67,9 @@ async function settle(first: CardAssignmentEvent, last: CardAssignmentEvent): Pr
   const newAssignee = assignee !== first.previousAssigneeId;
   const dueChanged = last.dueDate !== first.previousDueDate;
   if (!newAssignee && !dueChanged) return;
-  // A guest can't edit cards (commenter at most); an app acting for someone is that someone.
-  const actorId = isGuestId(last.actorId) || !last.actorId ? null : last.actorId;
+  // A guest can't edit cards (commenter at most); an app acting for someone is that someone; a card
+  // revealed anonymously from private mode (#44) is from nobody.
+  const actorId = isGuestId(last.actorId) || !last.actorId || isAnonymousAuthor(last.actorId) ? null : last.actorId;
   const boardTitle = await getBoardTitle(boardId);
   if (boardTitle === null) return;
   const data = { boardTitle, elementId, cardTitle: last.title, dueDate: last.dueDate };

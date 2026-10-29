@@ -5,6 +5,7 @@ import type { BoardElement, ElementType } from '../elements';
 import { actingFor, mentionsAsNames } from '../elements';
 import { rotatedBounds, unionRects, type Rect } from '../geometry';
 import { richTextToPlain } from '../text';
+import { ANONYMOUS_NAME, isAnonymousAuthor } from '../ydoc';
 import type { OutlineContext, OutlineDescription, OutlineFeature, OutlineKindFn } from './define';
 import { clusterBoxes, readingOrder } from './spatial';
 import type { SuggestionRecord, SuggestionState } from '../suggestions';
@@ -145,7 +146,8 @@ export function buildOutline(source: OutlineSource, features: OutlineFeature[], 
     if (desc.rows?.length) item.rows = desc.rows;
     if (el.link) item.link = el.link;
     if (opts.authors) {
-      const name = source.personName(el.createdBy);
+      // Revealed anonymously from private mode (#44): nobody's, said so rather than left blank.
+      const name = isAnonymousAuthor(el.createdBy) ? ANONYMOUS_NAME : source.personName(el.createdBy);
       // Made by an app for that person (the API, MCP; KAI-168): "Claude for Maria".
       const via = el.createdVia && typeof el.createdVia.name === 'string' ? el.createdVia : null;
       if (name) item.author = via ? actingFor(via, name) : name;

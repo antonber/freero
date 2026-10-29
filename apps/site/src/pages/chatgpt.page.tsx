@@ -8,16 +8,16 @@ export default definePage({
   title: 'Freero for ChatGPT: connect a whiteboard to ChatGPT',
   ogTitle: 'Work on your whiteboard from a ChatGPT chat',
   description:
-    'Connect Freero to ChatGPT in developer mode. ChatGPT reads and searches your boards and proposes notes and diagrams your team approves. Free, open source.',
-  updated: '2026-10-28',
+    'Add Freero to ChatGPT as a custom MCP server. ChatGPT reads and searches your boards and proposes notes and diagrams your team approves. Free, open source.',
+  updated: '2026-10-29',
   faq: [
     {
-      q: 'What do I need to turn on in ChatGPT?',
-      a: 'Developer mode, under Settings → Apps & Connectors → Advanced settings. It lets you add connectors that aren’t in ChatGPT’s directory, such as Freero. OpenAI decides which plans offer developer mode, and in Business, Enterprise and Edu workspaces an admin may have to allow custom connectors first.',
+      q: 'What do I need in ChatGPT?',
+      a: 'A plan that lets you add custom MCP servers, which ChatGPT now calls plugins: you add Freero under Plugins → Add custom MCP server. OpenAI decides which plans include it, and in a Business, Enterprise or Edu workspace an admin may have to allow custom MCP servers first.',
     },
     {
       q: 'Is Freero listed in ChatGPT’s app directory?',
-      a: 'No. You add Freero yourself as a custom connector in developer mode, using its MCP server URL. Freero is an independent open-source project, not affiliated with or endorsed by OpenAI.',
+      a: 'No. You add Freero yourself as a custom MCP server, using its MCP server URL. Freero is an independent open-source project, not affiliated with or endorsed by OpenAI.',
     },
     {
       q: 'Does ChatGPT see everything on my boards?',
@@ -45,12 +45,12 @@ export default definePage({
       <Hero
         kicker="Freero for ChatGPT"
         title="Your whiteboard, one message away in ChatGPT."
-        lead="Add Freero as a connector in ChatGPT’s developer mode. Ask about a board, turn a pasted list into sticky notes, or have ChatGPT sketch a flowchart, and review what it proposes before anything changes."
+        lead="Add Freero to ChatGPT as a custom MCP server. Ask about a board, turn a pasted list into sticky notes, or have ChatGPT sketch a flowchart, and review what it proposes before anything changes."
         actions={
           <>
-            <ButtonLink href="#setup">Connect ChatGPT</ButtonLink>
-            <ButtonLink href={APP.signup} variant="secondary">
-              Create a free account
+            <ButtonLink href={`${APP.connect}#chatgpt`}>Connect ChatGPT from Freero</ButtonLink>
+            <ButtonLink href="#setup" variant="secondary">
+              See the steps
             </ButtonLink>
           </>
         }
@@ -89,23 +89,27 @@ export default definePage({
         </Cards>
       </Section>
 
-      <Section id="setup" tone="tint" title="Connect Freero to ChatGPT" lead="ChatGPT adds custom connectors in developer mode. Here is the whole path, start to finish.">
+      <Section id="setup" tone="tint" title="Connect Freero to ChatGPT" lead="ChatGPT adds custom MCP servers as plugins. Here is the whole path, start to finish.">
         <Code label="MCP server URL to paste into ChatGPT">{MCP_URL}</Code>
+        <p className="note">
+          Signed in to Freero? <a href={`${APP.connect}#chatgpt`}>Connect an agent</a> shows these steps with your server’s address to copy, and tells
+          you when ChatGPT has connected. New to Freero? <a href={APP.signup}>Create a free account</a> first.
+        </p>
         <Steps>
-          <Step title="Turn on developer mode">
-            In ChatGPT on the web, open <strong>Settings → Apps &amp; Connectors → Advanced settings</strong> and switch on <strong>Developer mode</strong>.
-            Your plan has to offer it; in a Business, Enterprise or Edu workspace, an admin may need to allow custom connectors first.
+          <Step title="Add a custom MCP server">
+            In ChatGPT on the web, open <strong>Plugins</strong>, select the plus button, then <strong>Add custom MCP server</strong>. Your plan has to
+            offer it; in a Business, Enterprise or Edu workspace, an admin may need to allow it first.
           </Step>
-          <Step title="Create the Freero connector">
-            Back in <strong>Apps &amp; Connectors</strong>, choose <strong>Create</strong>. Name it <em>Freero</em>, paste the MCP server URL above, set
-            authentication to <strong>OAuth</strong> and select <strong>Create</strong>.
+          <Step title="Create the Freero plugin">
+            Name it <em>Freero</em> and, under <strong>Connection</strong>, paste the MCP server URL above as a public endpoint. Set authentication to{' '}
+            <strong>OAuth</strong>, review the risk warning, then select <strong>Create as a plugin</strong>.
           </Step>
           <Step title="Sign in to Freero and pick permissions">
             ChatGPT sends you to Freero’s consent screen. Sign in and look at what the app asks for: reading and suggesting are ticked, changing boards and
             commenting are off unless you tick them. Select <strong>Allow</strong>.
           </Step>
           <Step title="Use it in a chat">
-            In a new chat, open the tools menu, choose developer mode and pick <em>Freero</em>. Then name a board or paste a board link and ask away.
+            In a new chat, type <strong>@</strong> and pick <em>Freero</em>. Then name a board or paste a board link and ask away.
           </Step>
         </Steps>
         <p className="note">

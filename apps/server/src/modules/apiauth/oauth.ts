@@ -439,6 +439,7 @@ export async function listAuthorizedApps(userId: string): Promise<AuthorizedApp[
     scopes: g.scopes.filter(isApiScope),
     authorizedAt: g.createdAt,
     lastUsedAt: g.lastUsedAt,
+    resource: g.resource,
   }));
 }
 

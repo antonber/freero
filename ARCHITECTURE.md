@@ -643,7 +643,8 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
   `stickyLabels` collection (editors toggle "Show sticky authors" in the board menu). Names come
   from the people lookup (`usePeople`, current names; `useGonePeople` → "Deleted user", never an id;
   "<app> for <person>" for agents). No label while private mode runs nor on a private-layer draft,
-  so a draft's author is never shown, exported or screenshotted before reveal.
+  so a draft's author is never shown, exported or screenshotted before reveal; "Anonymous" on a
+  note revealed from an anonymous private mode (#44: its author is on no client to look up).
 - Images placed by URL (same module, same fetch protections, `remoteImage` rate limit):
   `Host.importImage(url)` (`POST /api/unfurl/image`) copies the image into the user's uploads —
   the image feature does this on paste/drop, so boards reference `/uploads/<key>`, not the third
@@ -860,6 +861,10 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
   `X-Robots-Tag: noindex`; robots.txt also disallows the app, boards, docs, embeds, the API, MCP,
   auth and invite paths. `SITE_ANALYTICS_SRC` adds an operator's analytics script to marketing
   pages only, with its origin in their CSP.
+- **For agents:** `/llms.txt` and `/llms-full.txt` (llmstxt.org, `src/lib/llms.ts`) are built files
+  like robots.txt, origin-substituted when served: what Freero is, the MCP endpoint, OAuth metadata
+  and the tool list. Tools and prompts come from `src/lib/mcp.ts` (also the /agents table); the site
+  tests fail when it drifts from the MCP server's `tools.ts` / `prompts.ts`.
 - **Screenshots** are real: `scripts/site-shots.mjs` drives the built app on a throwaway server
   (accounts, a board, a personal token proposing changes as an agent, a mock Jira) and writes WebP
   files to `apps/site/src/assets/shots/`; `<Shot>` gives them `srcset`, `width` and `height`.
@@ -1499,6 +1504,8 @@ audit and admin controls are the same code.
   (in another of its docs — a move into a hidden frame or private mode — or removed within the last
   hour — an undo), which keeps the attribution it had; an element it CHANGES keeps its `createdBy`,
   `createdVia` and `createdAt`. The sender is sent the correction (like the facilitation guards).
+  A new draft in a private layer while private mode is anonymous gets `ANONYMOUS_AUTHOR` instead
+  (#44, see "Board layers"); no socket can claim that marker.
 - **Reads follow the downloads policy (KAI-197).** The outline, items and comments are a
   machine-readable copy of the board, so boards' `requireDownload` (the one check exports,
   duplicates and templates use) refuses them with 403 `downloads_restricted` and records
@@ -1562,6 +1569,13 @@ audit and admin controls are the same code.
   `app/embed/EmbedBoardPage` + `createEmbedHost` (`Host.syncProtocols`). Framing: platform
   `allowFraming(path, reason)` gives `/embed/` the `frame-ancestors` of `MCP_APP_FRAME_ANCESTORS`;
   every other page stays `'none'`.
+- **Connect page** (#80, `app/pages/connect/`, `/settings/connect`; linked from settings, the empty
+  dashboard and the board menu's `features/connect`): the MCP URL comes from the server
+  (`GET /api/mcp/connect` → `appUrl`, i.e. `PUBLIC_URL`), never from `window.location`, so it is the
+  audience tokens are bound to. Per-client setup is built in `clients.ts` from the vendors'
+  documented formats (sources in its header; the install links are tested by decoding them as the
+  client does). "Connected" = the credential's `lastUsedAt` (apiauth stamps it in `authenticate`);
+  the page polls while open. No new state: apps and tokens are apiauth's.
 - Scopes: `MCP_SCOPES`; read + suggest by default — `registerProtectedResource(…, { optInScopes })`
   makes the consent screen offer `boards:write` / `comments:write` unticked (`OAuthConsentInfo.scopes[].optional`,
   the decision's `grant`). `/mcp` is the `root` resource: the bare `/.well-known/oauth-protected-resource`
@@ -2262,6 +2276,26 @@ only to connections that may read them:
   (someone removed or made a viewer keeps theirs). That access check reads the database, so the
   revealer's later messages are held until the reveal is applied (it stays in order with them,
   e.g. a vote ending after its ballots). `mine: true` reveals only the sender's own layer.
+- **Anonymous private mode** (#44): the facilitator switches the session's `anonymous` on in the
+  private-mode bar (everyone's bar then says notes are revealed without names; another feature can
+  start it so with `private-mode.start` args `{ anonymous: true }`). Two server steps keep it, so no client can map a revealed
+  note to its author — owners and the facilitator included (as for anonymous poll answers):
+  (1) a NEW element arriving in a private layer while the shared doc's `privateMode` session is
+  anonymous — or after an anonymous session ended (kept as `active: false` until the next start),
+  for drafts still on their way — is stamped `createdBy = ANONYMOUS_AUTHOR` in the transaction that
+  applies it (`realtime/attribution.ts`), so switching anonymity off or ending the session can never
+  name it again; (2) a reveal of `elements` with `anonymous: true` (sent while the session is
+  anonymous), and any reveal of an already-stamped draft, writes each draft into the shared doc
+  scrubbed (`layers.ts`: `ANONYMOUS_AUTHOR`, no `createdVia` / `suggestedBy`, `createdAt` /
+  `updatedAt` = the reveal) and DROPS the comment threads pinned to it (only its author could see
+  the draft, so every record in them names the author; rewriting authorship would break the comment
+  rules). The shared doc never holds the author, so versions, exports, backups, the outline and
+  events never can; readers treat the marker as nobody: sticky labels and the outline say
+  "Anonymous", the public API's `createdBy` is null, item events and card notifications have no
+  actor, and the attribution guard keeps it on later edits like any creator. Not hidden: what a
+  note says, where it sits, its colour, and its stacking order (`z`) among the drafts. Boards
+  revealed before #44 keep their authors: nothing then promised anonymity, and a revealed draft is
+  indistinguishable from an element made in the open.
 - **Reveal racing an edit**: an author still typing in a draft while it is revealed (from any
   instance) writes into a private entry the reveal just deleted, so the newer text stays in their
   private layer. Their client — the only one that can see it — then holds the id in both docs and
