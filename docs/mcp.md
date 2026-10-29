@@ -159,8 +159,14 @@ A write tool called without its permission changes nothing and answers with the 
   instructions. Tool names, descriptions, the server's instructions and error messages are Freero's
   own words and never contain board text; boards are not listed as resources by title for the same reason.
 - **Destructive tools need confirmation.** `delete_items` deletes nothing unless called with
-  `confirm: true` (the assistant is told to ask you first). Tools carry MCP annotations
-  (`readOnlyHint`, `destructiveHint`, `idempotentHint`).
+  `confirm: true` (the assistant is told to ask you first). Every tool has a title and explicit
+  `readOnlyHint`, `destructiveHint` and `openWorldHint` (and `idempotentHint`): anything that
+  changes or deletes existing items, replaces a control-room lane or creates issues in a tracker is
+  destructive, so clients ask before it runs (`mcp.test.ts` fails when a tool lacks one).
+- **Browsers can't be turned against it.** `/mcp` answers only on `PUBLIC_URL`'s host (or
+  loopback), so a page that rebinds its own name to the server's address is refused (DNS
+  rebinding), and a browser `Origin` must be https (or http on loopback), never `null`: refused with
+  403 before any token is looked at. Clients without a browser send no `Origin` and are unaffected.
 - **Limits.** 500 items per call; `RATE_LIMIT_API_CREDENTIAL` requests and `RATE_LIMIT_AGENT_WRITE`
   board changes per minute per connection — apart from your own editing, which an agent never slows
   down.
@@ -363,6 +369,8 @@ no third-party code, nothing fetched), so hosts can prefetch and review them.
 
 Status: **ready to file, not filed** (filing needs an organisation account and a public HTTPS
 deployment). Requirements as published by both programmes in 2026-10; re-check the forms when filing.
+Every field of both portals, the reviewer account, the carousel and what only the owner can do:
+[marketing/directory-submissions.md](marketing/directory-submissions.md).
 
 | | ChatGPT (OpenAI app directory) | Claude (Anthropic connectors directory) |
 |---|---|---|
@@ -372,17 +380,16 @@ deployment). Requirements as published by both programmes in 2026-10; re-check t
 | Views | `text/html;profile=mcp-app` resources with a declared CSP ✅ (`openai/widgetCSP` mirrored too); a widget domain (`_meta.ui.domain`) if the reviewers ask for a stable origin — then add it to `MCP_APP_FRAME_ANCESTORS` | MCP Apps resources with CSP ✅; views render under `*.claudemcpcontent.com` (in the default `MCP_APP_FRAME_ANCESTORS`) ✅ |
 | Safety | Destructive actions confirmed (`delete_items` needs `confirm`), least-privilege defaults (read + suggest), untrusted-content envelope ✅ | Same ✅ |
 | Listing | App name, short + long description, Freero logo (`apps/web/public/freero.svg`, own brand), screenshots, 3–5 demo prompts | Name, description, logo, ≥ 3 example prompts, documentation link (this page) |
-| Policies | Privacy policy URL, terms of use, support contact — **to publish** on the hosted service | Same — **to publish** |
+| Policies | `/privacy`, `/terms`, `/acceptable-use`, `/support` are on the site as **drafts for legal review** ("Draft: not in effect" until `SITE_LEGAL_OPERATOR` is set) | Same |
 | Review | Test account with sample boards (no two-step verification), organisation verification in the OpenAI platform — **human step** | Test account, contact for the review — **human step** |
 
 Demo prompts to submit: "Map out our Q1 launch risks on a Freero board and show it to me", "Turn
 these meeting notes into a flowchart on my Sprint board", "Group the stickies on my retro board into
 themes and propose action items", "What did the team decide on the Roadmap board?".
 
-Screenshots: the preview (light / dark) and the live board (inline, full screen, read-only, after
-"Share with team") are produced by driving the views in a local MCP Apps host (the official
-`AppBridge` + MCP client against a real server, see "Verifying" below); replace them with ones taken
-in ChatGPT developer mode and Claude once the hosted service runs this version.
+Screenshots: `scripts/directory-shots.mjs` renders the live view (read from the server) in a
+minimal local MCP Apps host that hands it a real `open_board` result, against a server filled by
+`scripts/seed-reviewer-account.mjs`; the carousel PNGs are in `marketing/directory-assets/`.
 
 **Privacy notes for the submissions.** The views collect nothing: no analytics, no third-party
 code, no cookies (the live board signs in with its own token). What an assistant receives is what
