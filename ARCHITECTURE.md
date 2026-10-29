@@ -123,6 +123,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | Derived indexes (`object_references`, `search_entries`) | their module's outbox consumer | never written directly: change the source; `references:rebuild` / `search:rebuild` repair |
 | A doc's document (Yjs fragment `document-store`, KAI-162) | the doc editor (`engine/docs`, through `engine/store/ObjectDocStore`); on requests, realtime's `docContent.ts` (`appendDocBlocks`, `initDocContent`) | the editor, or `modules/docs` / the public API |
 | The event stream (`events`) | `modules/events` (from outbox topics only) | append to the outbox in your change's transaction (`board.events`, `board.members`, `board.content`); consumers follow `event.recorded` |
+| Community listings (`marketplace_listings`) and their review status | server `modules/marketplace`; decisions are moderation's, applied through `decideListing` | `submitListing` / withdraw (its routes); operators' actions (`modules/moderation`) |
 | API tokens, OAuth apps / consents, a team's API switch, live-view tickets (`api_embed_tokens`) | server `modules/apiauth` | its index: `authenticate`, `requireScope`, `useInWorkspace`, `mintEmbedTicket` / `redeemEmbedTicket` |
 | Tracker connections, links to issues, what both sides last agreed on | server `modules/trackers` | its routes / index (`sendToTracker`, `importIssues`); syncs only through its outbox consumer |
 | `trackers` collection (issue badges) and items' `trackerLink` | server `modules/trackers` (through realtime's `changeBoard`) | — (the web feature only reads them) |
@@ -822,7 +823,7 @@ files; it precaches them plus the shell files). Rules, all in `strategyFor` / `r
 ## Marketing site (`apps/site`, server `modules/site`; KAI-250..253)
 
 The public pages (`/`, `/claude`, `/chatgpt`, `/agents`, `/security`, `/open-source`, `/pricing`,
-`/docs`, `/vs/<slug>`; later `/features/*`, `/use-cases/*`, `/templates/*`) are a separate workspace
+`/docs`, `/integrations/<id>`, `/vs/<slug>`; later `/features/*`, `/use-cases/*`, `/templates/*`) are a separate workspace
 so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs/marketing/seo.md`.
 
 - **Why a custom prerender, not a site generator.** Pages are TSX components rendered once by
@@ -839,6 +840,12 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
   plus the page's own such as SoftwareApplication), the breadcrumbs, the FAQ section, the closing
   call to action, the sitemap entry. Colours come from the app's `ui/tokens.css` (`:root` blocks,
   read at build time), so the brand has one source.
+- **Integrations** (`/integrations`, `/integrations/<id>`, #87) are generated from the catalog in
+  `@freero/shared` `integrations.ts` (see "Apps & agents"): `pages/integrations/entries.page.tsx`
+  default-exports an ARRAY of pages, which the build accepts from any page file whose pages come
+  from data. Each entry brings its own title / description (the length and uniqueness checks apply),
+  a HowTo of its connect steps, a link to its connect step in the app (`/apps/<id>`) and links to
+  its category's other entries. Community listings never appear on the site (below).
 - **Comparisons** (`/vs/<slug>`, `src/lib/compare.tsx` `defineComparison`): every competitor cell
   names its sources, every source its check date; `published: false` pages are `noindex`, out of
   the sitemap and linked from nowhere, and a page can't be published while a competitor claim is
@@ -855,7 +862,7 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
 - **Serving** (`modules/site/routes.ts`, mounted at `/`): `/` → the landing page, or 302 `/app` for
   a signed-in person (`Vary: Cookie`); known pages with `Cache-Control: no-cache` (ETag);
   `/claude/` → 301 `/claude`; a missing page under `/vs/`, `/features/`, `/use-cases/`,
-  `/templates/` → the site's 404; `/_site/*` immutable; anything else falls through to the web
+  `/templates/`, `/integrations/` → the site's 404; `/_site/*` immutable; anything else falls through to the web
   app. `SITE=false` (or no build): `/` → `/app`, nothing marketing, `robots.txt` `Disallow: /`.
   The app's pages are never indexed: `index.html` has `robots noindex` and the SPA fallback sends
   `X-Robots-Tag: noindex`; robots.txt also disallows the app, boards, docs, embeds, the API, MCP,
@@ -973,7 +980,8 @@ marketing site at `/`; see "Marketing site"), `webhooks` (webhook_endpoints, web
 three in "Search, the event stream and webhooks" below — `backup` (no table: `.freero` board
 backups, see below), `share` (no table: the installed app's share target, see "Installable app"), `walkthroughs`
 (walkthroughs, walkthrough_views, walkthrough_comments) and `decisions` (decisions), in "Walkthroughs
-and decision snapshots" below.
+and decision snapshots" below, and `marketplace` (marketplace_listings: community listings of Apps &
+agents; see "Apps & agents" below).
 
 - Board backups (`modules/backup`, KAI-137; format: docs/board-backup.md): owns no state. A download
   is boards' `authorizeBackup` (downloads policy + audit) → realtime's `boardBackupContent` (the
@@ -1159,9 +1167,51 @@ and decision snapshots" below.
 - Suspensions (KAI-180): `user.suspend` with `boards: 'take_down' | 'disable_link'` acts on every
   board the account has in service, each recorded with `parent_id` = the suspension; `user.restore`
   reverses those children not reversed or deleted since (children of the lift). One notice.
+- Community listings (#87, `modules/marketplace`): their status is marketplace's, written only
+  through its `decideListing`; moderation owns the decisions (`listing.approve` / `reject` /
+  `remove` / `restore` / `feature` / `unfeature` are actions like the others: recorded, audited,
+  noticed, a removal appealable), the operator console's Listings view
+  (`GET /api/moderation/listings`) and reports about them (`target.kind: 'listing'`, no board;
+  signed in, live listings only, else 404). marketplace imports nothing from moderation (it mails
+  operators about a new submission itself), so the dependency goes one way.
 - Web: `features/report` (board menu, context menu, `report.open` command for other features —
   comments' flag), `Host.report`; the app's `/operator` queue, `/operator/boards/:id/preview`
   (read-only snapshot through `BoardEngineProps.initialState`) and `/appeal`.
+
+### Apps & agents: the integrations catalog and community listings (#87)
+
+**One catalog, written once.** `@freero/shared` `integrations.ts` lists every integration that
+exists — AI agents and MCP clients (each linking to its Connect tab), issue trackers, chat webhook
+formats, live embeds (one per `EMBED_PROVIDERS` entry), calls, sign-in and directory, automation,
+storage — as pure data: name, category, one-liner, description, status (`built-in`, `settings`,
+`api`, `operator`), the connect step (steps, an in-app deep link, a docs link), what the operator
+must set up, keywords, and the site page's title and description. Third parties are plain-text
+names; the app draws generic category icons. Shared because both the web app and the marketing
+site render it (the site imports `@freero/shared` for nothing else). Every entry must be true of
+the code: `apps/site/src/integrations.test.ts` fails when an in-app link names a route, an admin
+console tab, a settings section or a Connect tab that doesn't exist, when a docs link names a
+missing file or heading, and when the embeds differ from `EMBED_PROVIDERS`. A planned integration
+is added when it ships, never before (the places #88's entries go are marked in the file).
+`/admin/:workspace?tab=…` links are filled in per team the person administers.
+
+**In the app**: `app/pages/apps/` — `/apps` (search, category filters, an empty state that says
+what does connect), `/apps/:id` (an entry and its connect step), `/apps/community/:id`,
+`/apps/submit`; linked from settings, the Connect page and the board menu (`features/connect`).
+
+**Community listings** (`modules/marketplace`, table `marketplace_listings`): integrations people
+built on the API or MCP. A signed-in person with a verified address submits one (name, one-liner,
+description, https website and docs, category, what it is built on, optionally one of THEIR OWN
+registered OAuth apps — apiauth's `ownOAuthApps` — and a contact address for reviewers);
+rate-limited (`RATE_LIMIT_LISTING_SUBMIT`) and capped per person under an advisory lock. It is
+`pending` and answers 404 to everyone but its submitter (operators see it in the console) until an
+operator approves it; it then shows with a Community label to everyone signed in, can be reported
+through the Report flow, and removed (see "Moderation"). Everything in a listing is untrusted text:
+plain text with limits and no control or bidi characters, links https only without credentials,
+rendered as text (never markup) and linked with `rel="noopener noreferrer nofollow ugc"`.
+**Never on the public site, featured or not**: the site is one static build for every deployment,
+while listings are one server's data approved by that server's operator, and developers' words and
+links on indexable pages under Freero's name would invite link spam. Featuring lists a listing
+first in the app.
 
 ### Workspaces (`modules/workspaces`)
 
@@ -2468,7 +2518,7 @@ the board, deletions. A suggestion is not board content until someone who can ed
   `S3_BUCKET` and keys (MinIO, SeaweedFS…), the `s3` group checks the S3 backend (prefixes, kept
   copies under `private/`, restore, retention, the S3_PUBLIC_URL redirect and stored Cache-Control);
   all other groups stay on the local disk. CI does all of it.
-  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation,ai,api,mcp,s3,suite,suggestions,collab,tracker,search,webhooks,docs,portability,walkthroughs,decisions,site` runs some groups (to loop one while hunting a flake).
+  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation,ai,api,mcp,s3,suite,suggestions,collab,tracker,search,webhooks,docs,portability,walkthroughs,decisions,site,apps` runs some groups (to loop one while hunting a flake).
   The `mcp` group drives the MCP server with the official MCP client SDK, OAuth (dynamic
   registration, consent, PKCE) included; with DATABASE_URL + REDIS_URL one client's requests also
   alternate between two instances.

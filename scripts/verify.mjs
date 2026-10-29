@@ -4735,6 +4735,110 @@ async function moderationChecks() {
 }
 
 // ---------------------------------------------------------------------------
+// Apps & agents: community listings (#87). A signed-in developer submits an integration; it is
+// pending — invisible to everyone but them and the operators — until an operator approves it in
+// the moderation console; then everyone signed in sees it (Community), can report it, and an
+// operator can remove it. Every decision lands in the audit log; submissions are rate-limited.
+// ---------------------------------------------------------------------------
+async function appsChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-apps-'));
+  const outerDbUrl = db.url;
+  const Op = new User('AppsOperator');
+  const Dev = new User('AppsDev');
+  const Reader = new User('AppsReader');
+  const SUBMIT_LIMIT = 3;
+  const listing = (extra = {}) => ({
+    name: 'Standup digest',
+    tagline: 'Posts what changed on your boards to the morning standup.',
+    description: 'Reads boards through the MCP server.\n<script>alert(1)</script> stays text.',
+    website: 'https://standup.example.com',
+    category: 'agents',
+    builtOn: ['mcp'],
+    contactEmail: 'dev@standup.example.com',
+    ...extra,
+  });
+  const act = (body) => Op.req('POST', '/api/moderation/actions', { statement: '', ...body });
+  try {
+    if (ADMIN_URL) db.url = await createDatabase();
+    if (
+      !(await check('apps: server boots with an operator configured', async () => {
+        server = await spawnServer(dataDir, { OPERATOR_EMAILS: Op.email, RATE_LIMIT_LISTING_SUBMIT: `${SUBMIT_LIMIT}/1h` });
+        await waitUp(server);
+      }))
+    )
+      return;
+    for (const u of [Op, Dev, Reader]) await u.signup();
+    for (const u of [Op, Dev]) await u.verifyEmail(dataDir);
+    // The developer's team: account events (a decision about their listing) reach its audit log.
+    const team = (await Dev.req('POST', '/api/workspaces', { name: 'Standup Co' })).json.workspace;
+
+    let id = null;
+    await check('apps: a submission is refused with a link that isn’t https, and is pending — invisible to everyone but its submitter and operators', async () => {
+      for (const website of ['http://standup.example.com', 'javascript:alert(1)'])
+        assert((await Dev.req('POST', '/api/marketplace/listings', listing({ website }))).status === 400, `accepted website ${website}`);
+      const r = await Dev.req('POST', '/api/marketplace/listings', listing());
+      assert(r.status === 201 && r.json.listing.status === 'pending', `submit -> ${r.status} ${r.text}`);
+      id = r.json.listing.id;
+      assert(!(await Reader.req('GET', '/api/marketplace/listings')).json.listings.some((l) => l.id === id), 'listed while pending');
+      assert((await Reader.req('GET', `/api/marketplace/listings/${id}`)).status === 404, 'a reader opened the pending listing');
+      assert((await Reader.req('GET', '/api/moderation/listings')).status === 404, 'a reader reached the review list');
+      assert((await Dev.req('GET', '/api/marketplace/listings/mine')).json.listings.some((l) => l.id === id && l.status === 'pending'), 'the submitter can’t see it');
+      const review = (await Op.req('GET', '/api/moderation/listings?status=pending')).json.listings.find((l) => l.id === id);
+      assert(review?.submitter?.id === Dev.id && review.contactEmail === 'dev@standup.example.com', `review list: ${JSON.stringify(review)}`);
+      await waitFor(() => outbox(dataDir).some((m) => m.to === Op.email && /community listing to review/.test(m.subject)), 8000, 'the mail to the operator');
+    });
+
+    await check('apps: an operator approves it in the moderation console; everyone signed in then sees it (never the reviewers’ contact), the developer is told, and the decision is in the audit log', async () => {
+      const since = Date.now();
+      const r = await act({ action: 'listing.approve', targetId: id });
+      assert(r.status === 200, `approve -> ${r.status} ${r.text}`);
+      const live = (await Reader.req('GET', '/api/marketplace/listings')).json.listings.find((l) => l.id === id);
+      assert(live && !('contactEmail' in live) && live.description.includes('<script>'), `live: ${JSON.stringify(live)}`);
+      assert((await Reader.req('GET', `/api/marketplace/listings/${id}`)).status === 200, 'the reader can’t open it');
+      assert((await Reader.req('GET', '/api/marketplace/listings', undefined, { cookie: false })).status === 401, 'listed to someone signed out');
+      await waitFor(() => outbox(dataDir).some((m) => m.to === Dev.email && m.sentAt >= since - 50 && /is live in Apps & agents/.test(m.subject)), 8000, 'the approval mail');
+      await waitFor(
+        async () => ((await Dev.req('GET', `/api/workspaces/${team.id}/audit?limit=200`)).json?.events ?? []).some((e) => e.action === 'moderation.listing.approve'),
+        5000,
+        'moderation.listing.approve in the audit log',
+      );
+    });
+
+    await check('apps: a live listing can be reported through the Report flow, and an operator’s removal hides it again and is audited', async () => {
+      const rep = await Reader.req('POST', '/api/reports', { target: { kind: 'listing', id }, reason: 'phishing', note: 'Asks for passwords' });
+      assert(rep.status === 202, `report -> ${rep.status} ${rep.text}`);
+      const item = (await Op.req('GET', '/api/moderation/queue')).json.items.find((i) => i.target.kind === 'listing' && i.target.id === id);
+      assert(item?.listing?.status === 'approved' && item.reporter?.id === Reader.id, `queue: ${JSON.stringify(item)}`);
+      const r = await act({ action: 'listing.remove', targetId: id, reason: 'phishing', statement: 'It asks for Freero passwords.', itemId: item.id });
+      assert(r.status === 200, `remove -> ${r.status} ${r.text}`);
+      assert((await Reader.req('GET', `/api/marketplace/listings/${id}`)).status === 404, 'still open to readers');
+      const own = (await Dev.req('GET', `/api/marketplace/listings/${id}`)).json.listing;
+      assert(own?.status === 'removed' && own.statusNote === 'It asks for Freero passwords.', `own: ${JSON.stringify(own)}`);
+      await waitFor(
+        async () => ((await Dev.req('GET', `/api/workspaces/${team.id}/audit?limit=200`)).json?.events ?? []).some((e) => e.action === 'moderation.listing.remove'),
+        5000,
+        'moderation.listing.remove in the audit log',
+      );
+    });
+
+    await check('apps: submissions are rate-limited per person (429 with Retry-After)', async () => {
+      let last = null;
+      for (let i = 0; i < SUBMIT_LIMIT + 2 && last?.status !== 429; i++) last = await Dev.req('POST', '/api/marketplace/listings', listing({ name: `Tool ${i}` }));
+      assert(last?.status === 429 && last.headers.get('retry-after'), `no 429: ${last?.status} ${last?.text}`);
+    });
+  } finally {
+    await stopServer();
+    await dropDatabases();
+    db.url = outerDbUrl;
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // AI (KAI-101, KAI-102): off unless configured; with a provider, the four board actions against a
 // local mock model (scripts/lib/mock-model.mjs, never a paid API), workspace admin controls, the
 // workspace's own key, rate limit, budget and audit.
@@ -7943,6 +8047,10 @@ async function siteChecks() {
       const robots = await (await get(on.port, '/robots.txt')).text();
       assert(robots.includes('Sitemap: https://whiteboard.example.com/sitemap.xml') && robots.includes('Disallow: /board/'), `robots: ${robots}`);
       assert((await get(on.port, '/vs/no-such-competitor')).status === 404, 'a missing comparison is not the site’s 404');
+      // Integrations (#87): one page per catalog entry, and the site's 404 for one that isn't.
+      const claude = await get(on.port, '/integrations/claude');
+      assert(claude.status === 200 && (await claude.text()).includes('href="/apps/claude"'), `/integrations/claude -> ${claude.status}`);
+      assert((await get(on.port, '/integrations/no-such-integration')).status === 404, 'a missing integration is not the site’s 404');
       // For agents (#80): llms.txt names this instance's own MCP endpoint, as text.
       const llms = await get(on.port, '/llms.txt');
       const llmsText = await llms.text();
@@ -7988,6 +8096,7 @@ const SUITES = {
   scim: scimChecks,
   privacy: privacyChecks,
   moderation: moderationChecks,
+  apps: appsChecks,
   multi: multiInstanceChecks,
   admin: enterpriseAdminChecks,
   ai: aiChecks,

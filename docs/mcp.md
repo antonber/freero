@@ -29,7 +29,9 @@ in; makes a personal token for plain HTTP; lists what is connected (apps and tok
 revoke), marking each **Connected** once its client has called the server; and offers starter
 prompts. `/settings/connect#<client>` opens one client's tab (`claude`, `chatgpt`, `claude-code`,
 `cursor`, `vscode`, `other`, `http`); the marketing site's /claude, /chatgpt and /agents link there.
-Agents can read `/llms.txt` (and `/llms-full.txt`) for the endpoint, sign-in and tools.
+Agents can read `/llms.txt` (and `/llms-full.txt`) for the endpoint, sign-in and tools. Everything
+else that connects to Freero (trackers, chat, embeds, sign-in, the API) is listed in the app's
+**Apps & agents** page (`/apps`, also in the board menu), each entry with its connect step.
 
 The same steps by hand (formats as each vendor documents them, checked 2026-10-29):
 
