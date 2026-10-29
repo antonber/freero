@@ -5574,6 +5574,35 @@ async function publicApiChecks() {
       assert(els.get(id).createdBy === O.id, 'attributed to the token’s owner');
     });
 
+    await check('connect page (#80): the MCP address it hands out answers like an MCP server, its OAuth metadata names that same address as the token audience, and a token made there shows as used after its first MCP call', async () => {
+      const info = await O.req('GET', '/api/mcp/connect');
+      assert(info.status === 200 && info.json.enabled === true && info.json.mcpUrl.endsWith('/mcp') && info.json.apiUrl.endsWith('/api/v1'), `connect info: ${info.status} ${info.text}`);
+      assert((await new User('nobody', proc.port).req('GET', '/api/mcp/connect', undefined, { cookie: false })).status === 401, 'connect info without a session');
+      const { mcpUrl } = info.json;
+      const rpc = (headers = {}) =>
+        fetch(mcpUrl, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...headers },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'verify', version: '1' } } }),
+        });
+      // What a client does with the pasted URL: no token → 401 naming the metadata → the resource and its authorization server.
+      const anon = await rpc();
+      const challenge = anon.headers.get('www-authenticate') ?? '';
+      const metaUrl = /resource_metadata="([^"]+)"/.exec(challenge)?.[1];
+      assert(anon.status === 401 && metaUrl, `no token: ${anon.status} ${challenge}`);
+      const meta = await (await fetch(metaUrl)).json();
+      assert(meta.resource === mcpUrl, `metadata resource ${meta.resource} is not the address shown (${mcpUrl})`);
+      const as = await (await fetch(`${meta.authorization_servers[0]}/.well-known/oauth-authorization-server`)).json();
+      assert(as.registration_endpoint && as.code_challenge_methods_supported?.includes('S256'), `authorization server: ${JSON.stringify(as).slice(0, 200)}`);
+      const made = await token(O, ['boards:read'], 'Connect page script');
+      const before = (await O.req('GET', '/api/auth/tokens')).json.tokens.find((t) => t.id === made.token.id);
+      assert(before.lastUsedAt === null, 'a new token already counts as used');
+      const init = await rpc({ authorization: `Bearer ${made.secret}` });
+      assert(init.status === 200 && (await init.text()).includes('"serverInfo"'), `initialize with the token: ${init.status}`);
+      const after = (await O.req('GET', '/api/auth/tokens')).json.tokens.find((t) => t.id === made.token.id);
+      assert(after.lastUsedAt !== null, 'the token’s first MCP call didn’t mark it used (the Connect page would never say Connected)');
+    });
+
     await check('api: a token without the scope, a revoked token, a viewer’s token and a stranger’s token can’t write (401/403), and nothing changes', async () => {
       const readOnly = await token(O, ['boards:read'], 'read only');
       const r1 = await call(readOnly.secret, 'POST', `/boards/${board}/items`, { type: 'sticky', text: 'x' });
@@ -7769,6 +7798,12 @@ async function siteChecks() {
       const robots = await (await get(on.port, '/robots.txt')).text();
       assert(robots.includes('Sitemap: https://whiteboard.example.com/sitemap.xml') && robots.includes('Disallow: /board/'), `robots: ${robots}`);
       assert((await get(on.port, '/vs/no-such-competitor')).status === 404, 'a missing comparison is not the site’s 404');
+      // For agents (#80): llms.txt names this instance's own MCP endpoint, as text.
+      const llms = await get(on.port, '/llms.txt');
+      const llmsText = await llms.text();
+      assert(llms.status === 200 && /^text\/plain/.test(llms.headers.get('content-type') ?? ''), `/llms.txt -> ${llms.status} ${llms.headers.get('content-type')}`);
+      assert(llmsText.startsWith('# Freero') && llmsText.includes('https://whiteboard.example.com/mcp') && !llmsText.includes('origin.freero.invalid'), `/llms.txt: ${llmsText.slice(0, 300)}`);
+      assert((await get(on.port, '/llms-full.txt')).status === 200, '/llms-full.txt is not served');
     });
     const off = await waitUp(await spawnServer(path.join(dataDir, 'off'), { FREERO_SITE_DIST: siteDist, SITE: 'false' }));
     procs.push(off);
