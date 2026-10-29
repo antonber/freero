@@ -426,6 +426,19 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   members name the kanban / pool as `frameId`, and the container's own `arrange` settles them on
   insert), icons from `lucide-react` components (`icon(…)`, drawing copied into the element), and
   connector ends at a spot on an element (`{ id, at: { u, v } }`, e.g. a message on a lifeline).
+- **New built-in templates are data, not code** (`features/templates/lib/specs/<area>.ts`, format in
+  `lib/spec/types.ts`). A spec names an archetype (`matrix`, `columns`, `kanban`, `canvas`,
+  `timeline`, `funnel`, `journey`, `tree`, `prompts`, `table`, `clusters`, `hub`, `flow`) and gives
+  its content: section titles, a guiding prompt each, realistic example notes and tones by meaning
+  (never coordinates or hex colours). `lib/spec/archetypes.ts` lays specs out with the `Kit` and
+  returns the same `BuiltTemplate`, so insert, preview, search and the outline treat both kinds
+  alike; hand-coded templates stay for layouts no archetype fits (sequence diagrams, ERDs…). After
+  adding or editing a spec run `npm run templates:index`: it writes `lib/specs/index.ts`, what the
+  picker lists and searches plus one lazy loader per file, so spec content loads per file on first
+  preview or insert (`TemplateDef.load`; insert through `addTemplate`). `validateSpec` (run over
+  every spec by the tests) checks ids, categories, counts, text lengths and filler; the tests also
+  fail while the index is stale or a note spills out of its section. A layout no archetype covers
+  is a new archetype (with its validation limits), not a one-off spec.
 
 Elements, geometry and text (all optional on `ElementDefinition` unless noted):
 - **Reads inside `editor.transact` see its earlier writes** (`getElements()`, `getElement()`,
@@ -948,7 +961,8 @@ resolution), `workspaces` (workspaces, workspace_members,
 workspace_invites, projects, project_members; see "Workspaces" below), `uploads` (uploads; files in object storage or
 `<data>/uploads`), `realtime` (board_docs, board_doc_updates, board_doc_snapshots, board_layers, board_suggestion_authors; y-websocket
 protocol + role filter + update log; version history + snapshot retention), `unfurl` (link
-previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`), `templates` (saved
+previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`, exported for other
+modules that fetch a URL someone else chose — apiauth's client metadata documents), `templates` (saved
 templates; content is opaque engine JSON), `outline` (no table: the semantic board read model,
 `GET /boards/:id/outline`), `structure` (no table: layout from structure,
 `POST /boards/:id/insert-structure`), `accounts` (no table: the purge after the deletion grace
@@ -1514,7 +1528,24 @@ audit and admin controls are the same code.
   single use (deleted on redemption, even a failed one), 10 minutes; access tokens 1 hour; refresh
   tokens rotate, and a replayed one revokes the whole consent; RFC 7591 dynamic client registration
   (public clients only; unused registrations dropped after a week); RFC 8414 / RFC 9728 metadata;
-  RFC 7009 revocation. The consent screen is the web app's `/oauth/authorize` (signed in; says which
+  RFC 7009 revocation; RFC 9207 `iss` on every authorization response, success or error (one
+  `authorizationResponse` builds them all, with the metadata's `issuer`).
+  **Client ID Metadata Documents** (#81, `apiauth/clientMetadata.ts`, MCP authorization 2025-11-25 +
+  draft-ietf-oauth-client-id-metadata-document): an `https://` client_id is the URL of the app's
+  JSON metadata. Only a signed-in person's authorization request fetches it (per-person
+  `RATE_LIMIT_OAUTH_CLIENT_METADATA`, one fetch per URL at a time), through unfurl's `safeFetch`
+  with `protocols: ['https:']` and `followRedirects: false` — the connect-time private-address guard,
+  5 KB, 5 s — after the URL itself passed `checkClientIdUrl` (canonical, path, default port, no
+  query / fragment / userinfo / address literal). A document counts only if it answers 200 JSON
+  whose `client_id` is that URL as a plain string, with `client_name` and redirect URIs the same
+  rules accept as any client's (`redirects.ts`), and no shared secret; public clients only. It is
+  stored as an `oauth_clients` row whose id is the URL (`metadata_expires_at`: Cache-Control
+  max-age within 5 min – 1 day); failures are never stored, and the token endpoint only ever reads
+  the stored row. Its name is the app's claim: the consent screen shows it with the document's
+  host (`OAuthConsentInfo.client.host`, in the title too), its client_uri only on that host, no
+  logo, and a warning for a loopback redirect (`localRedirect`). The loopback-http exception the
+  draft allows for development exists only behind `OAUTH_CLIENT_METADATA_LOOPBACK`, which config
+  refuses in production (`npm run verify`'s `api` group uses it). The consent screen is the web app's `/oauth/authorize` (signed in; says which
   app, whether Freero reviewed it — self-registered ones are marked — what it may do and where it
   sends you), and posts the decision same-site with the session cookie. Settings lists tokens,
   connected apps and the apps you develop, with revoke; "Disconnect all apps and tokens" is the

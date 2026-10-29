@@ -214,7 +214,7 @@ export default definePage({
           <Card title="Real-time together">Live cursors and selections, follow someone, bring everyone to you, reactions, comments with mentions and notifications.</Card>
           <Card title="Present and share">Slides made from frames with layouts and speaker notes, presentation mode, roles per board, share links with a password or expiry.</Card>
           <Card title="Docs and files">Collaborative docs with live boards inside them, Markdown in and out; images, PDFs, video and audio, file cards and link previews.</Card>
-          <Card title="Templates and export">More than 70 original templates. Export to PNG, JPG, SVG or PDF, CSV for notes and cards, version history.</Card>
+          <Card title="Templates and export">180 original templates. Export to PNG, JPG, SVG or PDF, CSV for notes and cards, version history.</Card>
         </Cards>
         <p className="works-with">
           Keyboard and screen-reader support aims at WCAG 2.1 AA, with a “board as list” view; it works on phones and tablets and installs as an app.

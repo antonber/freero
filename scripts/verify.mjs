@@ -5674,7 +5674,10 @@ async function publicApiChecks() {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-api-'));
   // With REDIS_URL every server of the run shares per-IP counters that earlier suites used up.
   // TRACKER_PRIVATE_ENDPOINTS: the mock GitHub of the tracker import check listens on 127.0.0.1.
-  const env = { RATE_LIMIT_INVITE: '500/1h', RATE_LIMIT_PASSWORD: '500/15m', TRACKER_PRIVATE_ENDPOINTS: 'true' };
+  // OAUTH_CLIENT_METADATA_LOOPBACK (tests only, refused in production): the client metadata
+  // documents of the #81 check are served over http from 127.0.0.1; every other address keeps the
+  // production rules (https, public, no redirects).
+  const env = { RATE_LIMIT_INVITE: '500/1h', RATE_LIMIT_PASSWORD: '500/15m', TRACKER_PRIVATE_ENDPOINTS: 'true', OAUTH_CLIENT_METADATA_LOOPBACK: 'true' };
   let proc = null;
   const live = [];
   try {
@@ -5879,6 +5882,80 @@ async function publicApiChecks() {
       assert((await call(t.json.access_token, 'POST', `/boards/${board}/items`, { type: 'sticky', text: 'x' })).status === 403, 'read-only app wrote');
       assert((await O.req('DELETE', `/api/auth/apps/${reg.json.client_id}`)).status === 200, 'revoke app');
       assert((await call(t.json.access_token, 'GET', `/boards/${board}`)).status === 401, 'revoked app still reads');
+    });
+
+    const pkcePair = async () => {
+      const { createHash } = await import('node:crypto');
+      const verifier = randomBytes(32).toString('base64url');
+      return { verifier, challenge: createHash('sha256').update(verifier).digest('base64url') };
+    };
+
+    await check('api (#81): the authorization server promises `iss` on every authorization response and keeps it — a code, a refusal and an error sent back to the app all name the issuer its metadata and the resource metadata name (RFC 9207)', async () => {
+      const as = (await new User('anon', proc.port).req('GET', '/.well-known/oauth-authorization-server', undefined, { cookie: false })).json;
+      const rs = (await new User('anon', proc.port).req('GET', '/.well-known/oauth-protected-resource/api/v1', undefined, { cookie: false })).json;
+      assert(as.authorization_response_iss_parameter_supported === true && as.client_id_metadata_document_supported === true, `metadata: ${JSON.stringify(as)}`);
+      assert(rs.authorization_servers[0] === as.issuer, `resource metadata names ${rs.authorization_servers[0]}, the issuer is ${as.issuer}`);
+      const reg = await new User('anon', proc.port).req('POST', '/api/oauth/register', { client_name: 'Iss check', redirect_uris: ['https://agent.example/cb'] }, { cookie: false });
+      const { challenge } = await pkcePair();
+      const q = { response_type: 'code', client_id: reg.json.client_id, redirect_uri: 'https://agent.example/cb', scope: 'boards:read', state: 'st', code_challenge: challenge, code_challenge_method: 'S256' };
+      const answers = {
+        code: (await O.req('POST', '/api/oauth/authorize', { ...q, decision: 'allow' })).json.redirect,
+        denied: (await O.req('POST', '/api/oauth/authorize', { ...q, decision: 'deny' })).json.redirect,
+        badScope: (await O.req('GET', `/api/oauth/authorize?${new URLSearchParams({ ...q, scope: 'everything' })}`)).json.redirect,
+      };
+      for (const [kind, url] of Object.entries(answers)) {
+        assert(url, `${kind}: no redirect`);
+        const p = new URL(url).searchParams;
+        assert(p.get('iss') === as.issuer && p.get('state') === 'st', `${kind}: ${url} (issuer ${as.issuer})`);
+      }
+      assert(new URL(answers.code).searchParams.get('code') && new URL(answers.denied).searchParams.get('error') === 'access_denied' && new URL(answers.badScope).searchParams.get('error') === 'invalid_scope', JSON.stringify(answers));
+    });
+
+    await check('api (#81): an app whose client_id is the URL of its metadata document connects without registering — the consent names the host it came from, the URL redeems the code — while a document that lies about its client_id, redirects, or is used with a redirect it doesn’t list is refused, and a private address is never fetched', async () => {
+      const http = await import('node:http');
+      const docs = {};
+      const hits = [];
+      const host = http.createServer((req, res) => {
+        hits.push(req.url);
+        if (req.url === '/moved.json') return res.writeHead(302, { location: '/good.json' }).end();
+        const doc = docs[req.url];
+        if (!doc) return res.writeHead(404).end();
+        res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'max-age=600' }).end(JSON.stringify(doc));
+      });
+      await new Promise((r) => host.listen(0, '127.0.0.1', r));
+      const base = `http://127.0.0.1:${host.address().port}`;
+      try {
+        const id = `${base}/good.json`;
+        docs['/good.json'] = { client_id: id, client_name: 'Metadata agent', redirect_uris: ['http://127.0.0.1/callback'], token_endpoint_auth_method: 'none' };
+        docs['/liar.json'] = { ...docs['/good.json'], client_id: 'https://claude.ai/oauth/claude-code-client-metadata' };
+        const { verifier, challenge } = await pkcePair();
+        const q = { response_type: 'code', client_id: id, redirect_uri: 'http://127.0.0.1:50999/callback', scope: 'boards:read', state: 'm1', code_challenge: challenge, code_challenge_method: 'S256' };
+        const shown = await O.req('GET', `/api/oauth/authorize?${new URLSearchParams(q)}`);
+        const c = shown.json?.consent;
+        assert(shown.status === 200 && c.client.registration === 'metadata' && c.client.host === `127.0.0.1:${host.address().port}` && c.client.name === 'Metadata agent' && c.localRedirect === true, `consent: ${shown.status} ${shown.text}`);
+        const ok = await O.req('POST', '/api/oauth/authorize', { ...q, decision: 'allow' });
+        const back = new URL(ok.json.redirect).searchParams;
+        assert(back.get('code') && back.get('iss'), `redirect: ${ok.text}`);
+        const form = new URLSearchParams({ grant_type: 'authorization_code', client_id: id, code: back.get('code'), code_verifier: verifier, redirect_uri: q.redirect_uri }).toString();
+        const t = await new User('anon', proc.port).req('POST', '/api/oauth/token', form, { raw: true, cookie: false, headers: { 'content-type': 'application/x-www-form-urlencoded' } });
+        assert(t.status === 200 && t.json.access_token.startsWith('fro_'), `token: ${t.status} ${t.text}`);
+        assert((await call(t.json.access_token, 'GET', `/boards/${board}`)).status === 200, 'the metadata client’s token can’t read');
+        const apps = (await O.req('GET', '/api/auth/apps')).json.apps;
+        assert(apps.some((a) => a.clientId === id && a.registration === 'metadata'), `connected apps: ${JSON.stringify(apps)}`);
+        assert(hits.filter((h) => h === '/good.json').length === 1, `fetched ${hits.length} times while fresh: ${hits.join(', ')}`);
+
+        const refused = async (clientId, redirectUri, why) => {
+          const r = await O.req('GET', `/api/oauth/authorize?${new URLSearchParams({ ...q, client_id: clientId, redirect_uri: redirectUri })}`);
+          assert(r.status === 400 && !r.json?.redirect && !r.json?.consent && why.test(r.json?.error ?? ''), `${clientId} → ${redirectUri}: ${r.status} ${r.text}`);
+        };
+        await refused(`${base}/liar.json`, 'http://127.0.0.1:50999/callback', /different client_id/);
+        await refused(`${base}/moved.json`, 'http://127.0.0.1:50999/callback', /302/);
+        await refused(id, 'https://attacker.example/callback', /redirect_uri/);
+        await refused('https://10.1.2.3/client.json', 'https://10.1.2.3/cb', /public host/);
+        await refused('https://localhost/client.json', 'https://localhost/cb', /public host/);
+      } finally {
+        host.close();
+      }
     });
 
     await check('api: cookie routes still refuse cross-site writes, and a session cookie never authenticates the API', async () => {

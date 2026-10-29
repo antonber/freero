@@ -4,6 +4,10 @@
 // everything again on the decision; an unknown app or redirect is shown here, never redirected to.
 // Some powers are opt-in (`optional`: the MCP server's direct board writes — read + suggest is the
 // default there): they are off until the person ticks them, and only the ticked ones are granted.
+// An app identified by a client metadata document (#81) names itself, so its name is shown with the
+// host its document came from (which it can't fake) — in the title too — and a loopback redirect
+// gets a warning: any program on this computer could have started the request in its name. Every
+// string from the app is rendered as text (React escapes it), never as markup.
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Check, Plug, ShieldAlert } from 'lucide-react';
@@ -66,8 +70,9 @@ export function OAuthConsentPage() {
   const always = consent.scopes.filter((s) => !s.optional);
   const optional = consent.scopes.filter((s) => s.optional);
   const nothing = always.length === 0 && grant.length === 0;
+  const who = client.host ? `${client.name} (${client.host})` : client.name;
   return (
-    <AuthShell docTitle={`Connect ${client.name}`} title={`${client.name} wants to use your Freero account`} sub={user ? `Signed in as ${user.name} (${user.email})` : undefined}>
+    <AuthShell docTitle={`Connect ${who}`} title={`${who} wants to use your Freero account`} sub={user ? `Signed in as ${user.name} (${user.email})` : undefined}>
       <div className="fr-oauth">
         <div className="fr-oauth__app">
           <span className="fr-oauth__app-icon" aria-hidden>
@@ -75,6 +80,11 @@ export function OAuthConsentPage() {
           </span>
           <span className="fr-oauth__app-name">
             <strong>{client.name}</strong>
+            {client.host ? (
+              <span className="fr-oauth__host" data-testid="oauth-client-host">
+                Published at <strong>{client.host}</strong>
+              </span>
+            ) : null}
             {client.website ? <span>{client.website}</span> : null}
           </span>
         </div>
@@ -82,6 +92,21 @@ export function OAuthConsentPage() {
           <p className="fr-oauth__warn">
             <ShieldAlert size={16} aria-hidden />
             <span>This app registered itself and hasn’t been reviewed by Freero. Only allow apps you trust.</span>
+          </p>
+        ) : null}
+        {client.registration === 'metadata' ? (
+          <p className="fr-oauth__warn">
+            <ShieldAlert size={16} aria-hidden />
+            <span>
+              Freero checked that this app’s details are published at {client.host}, but hasn’t reviewed it. The name is the app’s own claim: only allow it if {client.host} is who
+              you expect.
+            </span>
+          </p>
+        ) : null}
+        {client.registration === 'metadata' && consent.localRedirect ? (
+          <p className="fr-oauth__warn">
+            <ShieldAlert size={16} aria-hidden />
+            <span>It sends you back to a program on this computer. Any program here could ask in this app’s name, so only allow it if you just started connecting it yourself.</span>
           </p>
         ) : null}
         <p className="fr-oauth__lead">It will be able to use the {consent.resource} to:</p>

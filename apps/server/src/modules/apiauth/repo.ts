@@ -215,6 +215,11 @@ export interface ClientRow {
   ownerId: string | null;
   secretHash: string | null;
   createdAt: number;
+  /**
+   * Clients identified by a client metadata document (#81; `id` is its URL): when the cached copy
+   * must be fetched again. Null for every other client.
+   */
+  metadataExpiresAt: number | null;
 }
 interface ClientDbRow {
   id: string;
@@ -224,6 +229,7 @@ interface ClientDbRow {
   owner_id: string | null;
   secret_hash: string | null;
   created_at: Date;
+  metadata_expires_at: Date | null;
 }
 const toClient = (r: ClientDbRow): ClientRow => ({
   id: r.id,
@@ -233,6 +239,7 @@ const toClient = (r: ClientDbRow): ClientRow => ({
   ownerId: r.owner_id,
   secretHash: r.secret_hash,
   createdAt: r.created_at.getTime(),
+  metadataExpiresAt: ms(r.metadata_expires_at),
 });
 
 export async function insertClient(c: ClientRow): Promise<void> {
@@ -245,6 +252,24 @@ export async function insertClient(c: ClientRow): Promise<void> {
     c.secretHash,
     new Date(c.createdAt),
   ]);
+}
+
+/**
+ * Stores what a client metadata document said (#81), keeping when the client was first seen: a
+ * newer fetch replaces the name, website and redirect URIs. Public clients only.
+ */
+export async function upsertMetadataClient(c: { id: string; name: string; website: string | null; redirectUris: string[]; at: number; expiresAt: number }): Promise<ClientRow> {
+  const r = await one<ClientDbRow>(
+    `INSERT INTO oauth_clients (id, name, website, redirect_uris, owner_id, secret_hash, created_at, metadata_expires_at)
+     VALUES ($1, $2, $3, $4, NULL, NULL, $5, $6)
+     ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, website = EXCLUDED.website, redirect_uris = EXCLUDED.redirect_uris,
+       metadata_expires_at = EXCLUDED.metadata_expires_at
+     WHERE oauth_clients.owner_id IS NULL AND oauth_clients.secret_hash IS NULL
+     RETURNING *`,
+    [c.id, c.name, c.website, JSON.stringify(c.redirectUris), new Date(c.at), new Date(c.expiresAt)],
+  );
+  if (!r) throw new Error(`oauth client ${c.id} exists and is not a metadata-document client`);
+  return toClient(r);
 }
 
 export async function getClient(id: string): Promise<ClientRow | null> {
@@ -275,7 +300,10 @@ export async function deleteOwnedClient(userId: string, id: string): Promise<Cli
   });
 }
 
-/** Self-registered apps nobody authorised within `olderThan` (abandoned registrations). */
+/**
+ * Self-registered apps nobody authorised within `olderThan` (abandoned registrations) — and cached
+ * metadata-document clients nobody authorised (fetched again if they come back).
+ */
 export async function deleteUnusedDynamicClients(olderThan: number): Promise<number> {
   const r = await query(
     `DELETE FROM oauth_clients c WHERE c.owner_id IS NULL AND c.created_at < $1
@@ -337,15 +365,15 @@ export async function getGrant(id: string): Promise<GrantRow | null> {
 }
 
 export async function grantsOf(userId: string): Promise<Array<GrantRow & { client: ClientRow }>> {
-  const rows = await query<GrantDbRow & { c_id: string; c_name: string; c_website: string | null; c_redirect_uris: string; c_owner_id: string | null; c_secret_hash: string | null; c_created_at: Date }>(
+  const rows = await query<GrantDbRow & { c_id: string; c_name: string; c_website: string | null; c_redirect_uris: string; c_owner_id: string | null; c_secret_hash: string | null; c_created_at: Date; c_metadata_expires_at: Date | null }>(
     `SELECT g.*, c.id AS c_id, c.name AS c_name, c.website AS c_website, c.redirect_uris AS c_redirect_uris, c.owner_id AS c_owner_id,
-            c.secret_hash AS c_secret_hash, c.created_at AS c_created_at
+            c.secret_hash AS c_secret_hash, c.created_at AS c_created_at, c.metadata_expires_at AS c_metadata_expires_at
      FROM oauth_grants g JOIN oauth_clients c ON c.id = g.client_id WHERE g.user_id = $1 ORDER BY g.created_at DESC`,
     [userId],
   );
   return rows.map((r) => ({
     ...toGrant(r),
-    client: toClient({ id: r.c_id, name: r.c_name, website: r.c_website, redirect_uris: r.c_redirect_uris, owner_id: r.c_owner_id, secret_hash: r.c_secret_hash, created_at: r.c_created_at }),
+    client: toClient({ id: r.c_id, name: r.c_name, website: r.c_website, redirect_uris: r.c_redirect_uris, owner_id: r.c_owner_id, secret_hash: r.c_secret_hash, created_at: r.c_created_at, metadata_expires_at: r.c_metadata_expires_at }),
   }));
 }
 

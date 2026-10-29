@@ -203,6 +203,7 @@ Issue trackers) or by a person for themselves (Settings). How it works and what 
 | Variable | Default | Description |
 |---|---|---|
 | `PUBLIC_API` | `true` | The public REST API (`/api/v1`, reference: [api/openapi.json](api/openapi.json)) and the OAuth endpoints apps use. `false` is the instance-wide kill switch for integrations and agents: every API call and token request is refused at once; tokens and app authorisations are kept, so turning it back on restores them. Workspace admins have their own switch in the admin console ("API & apps"). |
+| `OAUTH_CLIENT_METADATA_LOOPBACK` | `false` | Development and tests only (refused in production): an OAuth client may be identified by a client metadata document served over plain http from this machine (`http://127.0.0.1:<port>/…`, `http://localhost:<port>/…`). Off: metadata documents only over https from public addresses ([mcp.md](mcp.md#how-sign-in-works-for-client-developers)). |
 
 ## Events and webhooks
 
@@ -312,6 +313,7 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `RATE_LIMIT_AGENT_WRITE` | `60/1m` | Changes to boards per API token, or per authorised app and person (the per-agent write limit, KAI-168): creating, changing or deleting items, inserting structure, comments, new boards — through the REST API or MCP. Separate from the person's own editing in the app, which it never slows down. With at most 500 items per call it also bounds how many items an agent writes per minute. |
 | `RATE_LIMIT_OAUTH_TOKEN` | `60/1m` | OAuth token and revocation requests per IP. |
 | `RATE_LIMIT_OAUTH_REGISTER` | `20/1h` | Apps registering themselves (OAuth dynamic client registration) per IP. |
+| `RATE_LIMIT_OAUTH_CLIENT_METADATA` | `30/10m` | OAuth client metadata documents fetched for a person's consent screens (only when no fresh copy is stored). |
 | `RATE_LIMIT_TRACKER_SEND` | `60/10m` | Per user: issues created or imported in a tracker, and tracker connections added or tested (each calls the tracker's API). |
 | `RATE_LIMIT_BACKUP` | `30/1h` | Per user: board backups (`.freero`) downloaded or restored — each reads or writes a whole board and its files (KAI-137). |
 | `RATE_LIMIT_WALKTHROUGH_COMMENT` | `120/10m` | Per person: comments on walkthroughs (each may notify the people it mentions and the walkthrough's author). |

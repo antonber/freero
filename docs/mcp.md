@@ -15,8 +15,9 @@ https://<your-freero>/mcp
   stream: `GET`/`DELETE` answer 405). Any instance behind a load balancer answers any request. Both
   the 2025 protocol revisions and 2026-07-28 (per-request envelope) are served.
 - **Sign-in:** OAuth 2.1 with Freero's own authorization server (MCP authorization spec): the client
-  registers itself, you sign in to Freero and approve it on the consent screen. Scripts can send a
-  personal access token instead.
+  identifies itself by its client metadata document (an https URL as `client_id`) or registers
+  itself, you sign in to Freero and approve it on the consent screen. Scripts can send a personal
+  access token instead.
 - **Default power: read + suggest.** Changing boards directly and commenting are opt-in, ticked by
   you on the consent screen.
 
@@ -287,12 +288,34 @@ board, one lane each (`agent` names it; default the app's name).
 2. Protected-resource metadata (RFC 9728) at that URL, also at the bare
    `/.well-known/oauth-protected-resource`: `resource` `https://<host>/mcp`, `authorization_servers`
    `["https://<host>"]`, `scopes_supported` `boards:read boards:suggest boards:write comments:write`.
-3. Authorization-server metadata (RFC 8414) at `/.well-known/oauth-authorization-server`.
-4. Dynamic client registration (RFC 7591): `POST /api/oauth/register` — public clients only
-   (`token_endpoint_auth_method: none`); the consent screen says the app registered itself.
+3. Authorization-server metadata (RFC 8414) at `/.well-known/oauth-authorization-server`. Its
+   `issuer` is `https://<host>` (exactly the `authorization_servers` entry above), with
+   `client_id_metadata_document_supported: true`, `authorization_response_iss_parameter_supported:
+   true` and `none` among `token_endpoint_auth_methods_supported`.
+4. The client's identity, either way (#81):
+   - **Client ID Metadata Document** (preferred by the MCP spec; what Claude, ChatGPT and Codex use
+     when the metadata says so): the `client_id` is the https URL of a JSON document with at least
+     `client_id` (that same URL, compared as a plain string), `client_name` and `redirect_uris`
+     ([draft-ietf-oauth-client-id-metadata-document](https://datatracker.ietf.org/doc/draft-ietf-oauth-client-id-metadata-document/)).
+     Freero fetches it when a signed-in person opens the consent screen: https only, a canonical URL
+     with a path on the default port (no query, fragment, credentials or address literals), never a
+     private / loopback / link-local address (checked when connecting), no redirects followed, at
+     most 5 KB, a few seconds. It must answer `200` with JSON. A good document is kept as long as its
+     `Cache-Control: max-age` says, within 5 minutes and a day (an hour without one); a refused one
+     is never remembered. Public clients only: `token_endpoint_auth_method` `none` (or a document
+     that also lists `none` in `token_endpoint_auth_methods_supported`, as ChatGPT's does); a
+     shared secret is refused. The token endpoint uses the stored copy and never fetches.
+   - **Dynamic client registration** (RFC 7591): `POST /api/oauth/register` — public clients only
+     (`token_endpoint_auth_method: none`); the consent screen says the app registered itself.
 5. Authorization code + PKCE (S256 required) at `/oauth/authorize` with
    `resource=https://<host>/mcp` (RFC 8707): the token is bound to the MCP server (the REST API
-   refuses it, and the other way round). Loopback redirect URIs match on any port.
+   refuses it, and the other way round). Loopback redirect URIs match on any port (Claude Code's
+   document lists `http://localhost/callback` and `http://127.0.0.1/callback`). Every redirect back
+   to the client — the code, a refusal, an error — carries `iss=https://<host>` (RFC 9207), so
+   ChatGPT's stable redirect URI `https://chatgpt.com/connector_platform_oauth_redirect` works.
+   The consent screen shows a metadata-document app's name next to the host its document came from
+   (the name is the app's claim, the host is not), its `client_uri` only when it is on that host,
+   never its logo, and warns when it sends you back to a program on this computer.
 6. `POST /api/oauth/token`: access token `fro_…` (1 hour) + refresh token `frr_…` (30 days, rotating; a
    replayed refresh token ends the whole consent). The response's `scope` is what the person granted.
 
@@ -370,7 +393,7 @@ deployment). Requirements as published by both programmes in 2026-10; re-check t
 | | ChatGPT (OpenAI app directory) | Claude (Anthropic connectors directory) |
 |---|---|---|
 | Server | Public HTTPS MCP endpoint, Streamable HTTP — `https://<freero>/mcp` ✅ | Same ✅ |
-| Sign-in | OAuth 2.1 with PKCE; dynamic client registration ✅ (RFC 7591/8414/9728/8707) | Same; callback `https://claude.ai/api/mcp/auth_callback` (and `claude.com`) accepted — any https redirect URI is ✅ |
+| Sign-in | OAuth 2.1 with PKCE; client ID metadata documents and dynamic client registration ✅ (RFC 7591/8414/9728/8707); `iss` on every authorization response (RFC 9207) for the stable redirect URI ✅ | Same; callback `https://claude.ai/api/mcp/auth_callback` (and `claude.com`) accepted — any https redirect URI is ✅ |
 | Tool metadata | Clear names / descriptions, accurate `readOnlyHint` / `destructiveHint` / `openWorldHint` on every tool ✅ | Annotations on every tool ✅; names ≤ 64 chars ✅ |
 | Views | `text/html;profile=mcp-app` resources with a declared CSP ✅ (`openai/widgetCSP` mirrored too); a widget domain (`_meta.ui.domain`) if the reviewers ask for a stable origin — then add it to `MCP_APP_FRAME_ANCESTORS` | MCP Apps resources with CSP ✅; views render under `*.claudemcpcontent.com` (in the default `MCP_APP_FRAME_ANCESTORS`) ✅ |
 | Safety | Destructive actions confirmed (`delete_items` needs `confirm`), least-privilege defaults (read + suggest), untrusted-content envelope ✅ | Same ✅ |

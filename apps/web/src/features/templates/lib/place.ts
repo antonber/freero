@@ -59,7 +59,8 @@ export function instantiate(def: TemplateDef, board: BoardSnapshot, newId: () =>
 /**
  * Templates matching a free-text query and an optional category, best matches first: every word
  * must appear somewhere (name, description, keywords, category); templates whose NAME holds the
- * words come before ones that only mention them, then keyword hits, then the catalog order.
+ * words come before ones that only mention them (a name starting with the whole query first), then
+ * keyword hits, then the catalog order.
  */
 export function filterTemplates(
   all: TemplateDef[],
@@ -76,7 +77,10 @@ export function filterTemplates(
     const keywords = t.keywords.join(' ').toLowerCase();
     const hay = [name, t.description, keywords, ...t.categories, ...t.categories.map((c) => categoryLabels[c] ?? '')].join(' ').toLowerCase();
     if (!words.every((w) => hay.includes(w))) return;
-    let score = 0;
+    // The whole query at the start of the name ("experiment plan" → "Experiment plan") beats a
+    // name that merely contains it ("Science experiment planner").
+    const phrase = words.join(' ');
+    let score = name.startsWith(phrase) ? 2 : 0;
     for (const w of words) {
       if (name.split(/[^a-z0-9]+/).some((part) => part.startsWith(w))) score += 4;
       else if (name.includes(w)) score += 3;
