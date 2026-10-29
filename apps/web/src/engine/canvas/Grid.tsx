@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import type { BoardSettings } from '@freero/shared';
 import type { Camera } from '../api';
 import { useCore } from '../context';
+import { documentTheme, shownBackground, subscribeDocumentTheme } from './theme';
 
 const MIN_PX = 14;
 
@@ -34,9 +35,9 @@ export function gridLayers(zoom: number, base = 24, finest = base / 64): GridLay
   return { major, minorAlpha };
 }
 
-export function gridStyle(cam: Camera, settings: BoardSettings): Partial<CSSStyleDeclaration> {
+export function gridStyle(cam: Camera, settings: BoardSettings, theme = documentTheme()): Partial<CSSStyleDeclaration> {
   if (settings.grid === 'none') return { backgroundImage: 'none' };
-  const dark = luminance(settings.background) < 0.45;
+  const dark = luminance(shownBackground(settings.background, theme)) < 0.45;
   const ink = dark ? '255,255,255' : '40,38,70';
   const { major, minorAlpha } = gridLayers(cam.zoom, settings.gridSize, settings.snapToGrid ? settings.gridSize : undefined);
   const minor = major / 4;
@@ -80,9 +81,14 @@ export function Grid() {
       el.style.backgroundPosition = st.backgroundPosition ?? '';
     };
     apply();
-    return core.ui.subscribe((s, p) => {
+    const offTheme = subscribeDocumentTheme(apply);
+    const off = core.ui.subscribe((s, p) => {
       if (s.camera !== p.camera || s.settingsVersion !== p.settingsVersion) apply();
     });
+    return () => {
+      offTheme();
+      off();
+    };
   }, [core]);
   return <div ref={ref} className="fr-grid" aria-hidden />;
 }

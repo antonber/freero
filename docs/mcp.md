@@ -223,7 +223,7 @@ import_from_tracker) somewhere people already have or a new container:
 | `create_doc` | write | A new doc from Markdown (CommonMark with tables, task lists, strikethrough), personal or in a team workspace; its first heading names it unless `title` is given. `![Live board](freero://board/<id>)` on a line of its own embeds that board live. |
 | `append_to_doc` | write | Adds Markdown at the end of a doc you can edit; everyone with it open sees it at once. |
 | `list_templates` | read | Saved templates you can start a board from (yours and your teams'). |
-| `open_board` | read | Shows the board **live** in the conversation where the assistant shows interactive views ([below](#live-boards-in-the-conversation-mcp-apps)): the person pans, zooms, edits (if this connection may change boards), accepts your suggestions, opens it in Freero or shares it. Elsewhere: the board link. |
+| `open_board` | read | Shows the board **live** in the conversation where the assistant shows interactive views ([below](#live-boards-in-the-conversation-mcp-apps)): the person pans, zooms, sees your pending suggestions (if they may review them: owner or editor), edits and accepts or rejects them (if this connection may change boards), opens it in Freero or shares it. Elsewhere: the board link. |
 | `share_board` | read (+ write to turn sharing on) | The live view's **Share with team** button — only the view calls it (`visibility: ["app"]`), never the model: returns the board link and, if needed, turns link sharing on (view / comment; guests without an account as the workspace allows). Turning it on needs `boards:write` and the board's owner; the share dialog's rules and audit event apply. |
 | `post_status` | write | Long-running work in the open ([control room](#agent-control-room)): your plan, status and tasks (`todo` / `doing` / `done` / `blocked`, matched by your `externalId` or else by title — a retry never duplicates, a renamed task keeps its card) on your lane of a control-room board; creates the board without `boardId`. A task that moves into Blocked notifies the person you work for. Returns a `cursor` and the lane's `laneId`. Refused with `agent_paused` while a person has paused you there. |
 | `get_feedback` | read | What people changed in your lane since your `cursor`: cards moved, added or removed, comments on your lane or the board — never your own changes — and `paused` (a person paused you on this board). |
@@ -348,8 +348,10 @@ tool result; every other host shows the text result as before. The server uses t
 | `ui://freero/board-preview.html` | `get_board_outline` | A read-only drawing of the outline the result already carries (frames, clusters, notes in their colours, shapes, cards, mind maps, tables, connectors with labels), with **Open in Freero**. Its resource declares **no domains**: the host lets it reach nothing on the network. Board text goes into it only as `textContent`. |
 | `ui://freero/board-live.html` | `open_board` | The real board, live and multiplayer: it frames Freero's own board page for that one board. Header: access badge (Can edit / Can comment / View only), **Share with team**, **Full screen**, **Open in Freero**; **Reconnect** when the view ended. |
 
-Both views follow the host's theme (light / dark), report their height, and work inline and in full
-screen. They are static, self-contained HTML in `apps/server/src/modules/mcp/views/` (no build step,
+Both views follow the host's theme (light / dark) — the live view's board too (#89: `live.html` passes
+the theme to the board page when it opens it and on every change; the chrome switches, and the board's
+content keeps its own colours, drawn dark through one filter, as the canvas is) — report their height,
+and work inline and in full screen. They are static, self-contained HTML in `apps/server/src/modules/mcp/views/` (no build step,
 no third-party code, nothing fetched), so hosts can prefetch and review them.
 
 ### Security model of the live board
@@ -367,6 +369,12 @@ no third-party code, nothing fetched), so hosts can prefetch and review them.
   tool: it is the person's own role on the board, **capped by what the connection was granted**
   (`boards:write` → editor, `comments:write` → commenter, otherwise view only). So a read + suggest
   connection gets a read-only view, and no one can turn a ticket into more than the connection had.
+  The cap is on what the view WRITES; it reads what the person reads, as the connection's
+  `boards:read` already does over the API (#89): an owner's or editor's view shows pending suggestions
+  (and receives the editors layer), a viewer's never does. Accepting or rejecting one is a write, so it
+  needs `boards:write` here too (as `POST …/suggestions/accept` does); otherwise the view says to
+  decide in Freero. A suggest-only connection can therefore never accept its own proposals, even
+  though its holder could redeem the ticket itself.
   Edits made in the view are the person's own (their name, their undo).
 - **Kill switches reach open views.** Every use re-checks the credential behind it: disconnecting
   the app, revoking or pausing the token, "Disconnect all apps and tokens", account suspension or
@@ -381,7 +389,8 @@ no third-party code, nothing fetched), so hosts can prefetch and review them.
   (`_meta.ui.csp.frameDomains`), no `connectDomains`, no `resourceDomains`. The board inside runs on
   Freero's origin under Freero's own CSP; the host page can't read or script it.
 - **Content rules are the board's.** The socket gets what the person's (capped) role gets: private
-  drafts only their own, hidden frames' contents only for editors, suggestions only for editors.
+  drafts only their own, hidden frames' contents only for editors (a capped view receives them for an
+  editor but draws them as a viewer: hidden), suggestions only for owners and editors.
   Exports, uploads, templates, history and sharing are not offered inside the view ("Open in
   Freero"). The team's downloads policy needs nothing extra here: the view shows the board to the
   person and gives the assistant no copy of it (the outline / export tools stay gated by it).

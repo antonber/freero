@@ -40,6 +40,23 @@
   pointer-events: none;
 }
 
+/* Board content inside the world (Canvas.tsx): positions as if it were the world itself. */
+.fr-world__items {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+}
+
+/* A dark page (theme.ts, #89): board content keeps its own colours (`.fr-paper`) and is drawn
+   through DARK_FILTER — keep it in step with darkFiltered() in theme.ts, which draws the canvas
+   background the same way. Photos, video, pages and live frames are turned back. */
+:root[data-theme='dark'] .fr-viewport :is(.fr-world__items, .fr-el--preview),
+:root[data-theme='dark'] .fr-viewport :is(.fr-world__items, .fr-el--preview) :is(img, video, iframe, canvas) {
+  filter: invert(0.93) hue-rotate(180deg);
+}
+
 /* While the camera moves the layer is promoted (cheap compositing); once it settles the
    browser re-rasterizes text crisply at the new scale. */
 .fr-world.is-moving {

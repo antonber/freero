@@ -65,9 +65,10 @@ const [liveView] = (await mcp.readResource({ uri: 'ui://freero/board-live.html' 
 
 // ---- the local host: a page that frames the view and answers its MCP Apps requests ----
 const HOST_HTML = `<!doctype html><html><head><meta charset="utf-8"><title>MCP Apps host</title>
-<style>html,body{margin:0;background:#ffffff}#frame{display:block;border:0;width:100%}</style></head>
+<style>html,body{margin:0;background:#ffffff}html.dark,html.dark body{background:#262624}#frame{display:block;border:0;width:100%}</style></head>
 <body><iframe id="frame" src="/view.html" title="Freero"></iframe><script>
 const frame = document.getElementById('frame');
+if (window.THEME === 'dark') document.documentElement.classList.add('dark');
 if (window.MODE === 'fullscreen') frame.style.height = '100vh';
 let toolResult = null, ready = false;
 window.setToolResult = (r) => { toolResult = r; if (ready) send(); };
@@ -97,9 +98,10 @@ await new Promise((r) => host.listen(HOST_PORT, '127.0.0.1', r));
 const browser = await chromium.launch();
 const shots = [];
 // The host's full-screen display mode (the view's own "Full screen"), at 1600 × 1000: the board is
-// readable, and the PNG is the view alone.
-async function shoot(name, title, { width = 1600, theme = 'light', mode = 'fullscreen', height = 1000, settle = 2500, prompt }) {
-  const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1, colorScheme: theme });
+// readable, and the PNG is the view alone. The page's own colour scheme is the opposite of the
+// host's theme: the view must follow the host, not the system (#89).
+async function shoot(name, title, { width = 1600, theme = 'light', mode = 'fullscreen', height = 1000, settle = 2500, prompt, proposal = false }) {
+  const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1, colorScheme: theme === 'dark' ? 'light' : 'dark' });
   await page.addInitScript(([t, m]) => Object.assign(window, { THEME: t, MODE: m }), [theme, mode]);
   await page.goto(`http://127.0.0.1:${HOST_PORT}/`);
   const result = await mcp.callTool({ name: 'open_board', arguments: { boardId: boardId(title) } });
@@ -111,20 +113,51 @@ async function shoot(name, title, { width = 1600, theme = 'light', mode = 'fulls
   // What a person does first in a small frame: fit the board to the view.
   await board.getByRole('button', { name: 'Fit to screen' }).click();
   await sleep(settle);
+  await expectLooksRight(board, name, { theme, proposal });
   const file = path.join(OUT, `${name}.png`);
   await page.locator('#frame').screenshot({ path: file });
   await page.close();
-  shots.push({ file: path.relative(process.cwd(), file).replace(/\\/g, '/'), board: title, prompt });
+  shots.push({ file: path.relative(process.cwd(), file).replace(/\\/g, '/'), board: title, theme, prompt });
   console.log(`saved ${file}`);
 }
 
+/** What #89 found wrong in these shots, checked on the real page before each is saved. */
+async function expectLooksRight(board, name, { theme, proposal }) {
+  const problems = await board.locator('.fr-board').evaluate((root, want) => {
+    const out = [];
+    // The board follows the host's theme: canvas and chrome, not only the view's header.
+    const lum = (c) => {
+      const [r, g, b] = (c.match(/\d+(\.\d+)?/g) ?? ['255', '255', '255']).map(Number);
+      return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+    };
+    const canvas = root.querySelector('.fr-viewport');
+    if (!canvas || (lum(getComputedStyle(canvas).backgroundColor) < 0.4) !== (want.theme === 'dark')) out.push(`the canvas is not ${want.theme}`);
+    // A card's text never runs under its footer (the "Done" chip), nor is it cut off.
+    for (const body of root.querySelectorAll('.fr-card__body')) {
+      const content = body.querySelector('.fr-card__content');
+      const footer = body.querySelector('.fr-card__footer');
+      if (content && footer && (content.scrollHeight > content.clientHeight + 1 || content.getBoundingClientRect().bottom > footer.getBoundingClientRect().top + 1))
+        out.push(`a card's text overlaps or is cut: "${content.textContent.slice(0, 40)}"`);
+    }
+    return out;
+  }, { theme });
+  // The pending proposal reaches the person's view (the top bar's count).
+  if (proposal && !(await board.getByRole('button', { name: /suggestions? to review/ }).isVisible())) problems.push('the pending proposal is not in the view');
+  if (problems.length) throw new Error(`${name}: ${problems.join('; ')}`);
+}
+
+// Every view in the host's light AND dark theme (#89).
+const shootBoth = async (name, title, o) => {
+  await shoot(name, title, o);
+  await shoot(`${name}-dark`, title, { ...o, theme: 'dark' });
+};
 try {
-  await shoot('01-retro-themes', 'Sprint 14 retro', { prompt: 'Group the notes on my Sprint 14 retro board into themes and add action items, then show me the board.' });
-  await shoot('02-roadmap-kanban', 'Product roadmap: H1 2027', { prompt: 'Turn our H1 planning notes into a Now / Next / Later roadmap with owners and dates on a Freero board.' });
-  await shoot('03-control-room', 'Agent control room: docs migration', {
+  await shootBoth('01-retro-themes', 'Sprint 14 retro', { proposal: true, prompt: 'Group the notes on my Sprint 14 retro board into themes and add action items, then show me the board.' });
+  await shootBoth('02-roadmap-kanban', 'Product roadmap: H1 2027', { prompt: 'Turn our H1 planning notes into a Now / Next / Later roadmap with owners and dates on a Freero board.' });
+  await shootBoth('03-control-room', 'Agent control room: docs migration', {
     prompt: 'Migrate our help-center articles and keep me posted in a Freero control room so I can steer you.',
   });
-  await shoot('04-signup-flow', 'Signup flow', { prompt: 'Draw our signup flow as a diagram on a Freero board and list the open questions next to it.' });
+  await shootBoth('04-signup-flow', 'Signup flow', { prompt: 'Draw our signup flow as a diagram on a Freero board and list the open questions next to it.' });
   fs.writeFileSync(path.join(OUT, 'carousel.json'), `${JSON.stringify(shots, null, 2)}\n`);
 } finally {
   await browser.close();

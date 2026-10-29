@@ -108,6 +108,11 @@ export class BoardStore {
   status: ConnectionStatus;
   synced = false;
   serverRole: Role | null = null;
+  /**
+   * The role this connection reads the board's layers with, when the server says it differs from
+   * `serverRole` (RoleMessage.readRole: a live view in an AI assistant reads as the person).
+   */
+  serverReadRole: Role | null = null;
   /** A facilitator's limits for this user, from the same role message (null: none). */
   serverLimits: SessionLimits | null = null;
 
@@ -168,6 +173,7 @@ export class BoardStore {
           if (msg && msg.type === 'role') {
             const m = msg as RoleMessage;
             this.serverRole = m.role;
+            this.serverReadRole = m.readRole ?? null;
             this.serverLimits = m.limits && typeof m.limits === 'object' ? m.limits : null;
             this.emit(this.roleListeners);
           }
@@ -209,6 +215,7 @@ export class BoardStore {
           // [QA collab] Access is gone: nothing written from now on can ever reach the server, so
           // the UI drops to read-only instead of offering tools whose writes are silently lost.
           this.serverRole = 'viewer';
+          this.serverReadRole = null;
           this.serverLimits = null;
           this.emit(this.roleListeners);
         }

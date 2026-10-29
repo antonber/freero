@@ -349,6 +349,13 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
 - Board layers (see "Board layers" under Server): `Editor.layerOf(id)`, `setPrivatePlacement(rule)`,
   `privateCollection(name)` + hook `usePrivateCollection`, `revealPrivate` / `discardPrivate`,
   `ElementDefinition.hidesContents(el)`. `ExportOptions.sharedOnly` (thumbnails).
+- Colour theme (#89, `engine/canvas/theme.ts`): a page sets `data-theme="dark"` on `<html>` (only the
+  live board view in an AI assistant does, following the assistant). `ui/tokens.css` switches the
+  chrome; board content never changes colour per viewer: it sits in `.fr-paper` (light tokens; also
+  exports) and is drawn through ONE filter (`invert(0.93) hue-rotate(180deg)`, `canvas.css`, media
+  turned back), and the canvas background through `darkFiltered()` (the same filter in code), so
+  content and canvas agree. Never write a dark variant of an element's CSS. Ink-backed chips with
+  white text use `--fr-inverse` (stays dark), or `var(--fr-surface)` as their text colour.
 - Suggestions (KAI-169; see "Suggestions" under Server): `Editor.getSuggestions()` (pending, with
   `state`) + hook `useSuggestions()`, `acceptSuggestions(ids, { force? })` → `{ accepted, stale }`,
   `rejectSuggestions(ids)`; `<ElementPreview element>` (`@engine`) draws an element as it would look
@@ -2569,6 +2576,9 @@ the board, deletions. A suggestion is not board content until someone who can ed
   ("AI for <person>"). MCP's `propose_changes` is the suggestions sink through `insertStructureFor`
   (offered because `structureTargets()` lists `suggestions`); REST and MCP share
   `api/service.ts` (`listSuggestions`, `proposeChanges`, `decideSuggestions`).
+- **Live views in AI assistants** (#89): the embed socket writes at most what its connection may
+  (`maxRole`) but READS the layers as the person (`Conn.readRole`, `RoleMessage.readRole`): an
+  owner's read + suggest view shows the pending suggestions, without accept / reject (a write).
 - **Reading**: `BoardView.suggestions` (pending, owners/editors only); the outline lists them only
   with `include=suggestions`; `GET /api/v1/boards/:id/suggestions`. UI: `features/suggestions`
   (ghosts drawn with `ElementPreview`, the proposer's badge, accept / reject per item and per group,

@@ -11,7 +11,7 @@ import {
   type NewElement,
 } from '@engine';
 import { Avatar } from '@ui';
-import { CARD_MIN_W, CARD_W, DESC, PAD, TITLE, cardLayout, isBar } from './lib/layout';
+import { CARD_MIN_W, CARD_W, DESC, FOOTER, PAD, TITLE, cardLayout, isBar } from './lib/layout';
 import { DEFAULT_ACCENT, STATUSES } from './lib/constants';
 import { formatDue, isOverdue } from './lib/actions';
 import { usePerson } from './lib/people';
@@ -46,7 +46,7 @@ function TagChips({ ids }: { ids: string[] }) {
 
 const CardView = memo(function CardView({ element, editing, zoom }: ElementRenderProps<CardElement>) {
   const editor = useEditor();
-  const layout = cardLayout(element);
+  const desc = richTextToPlain(element.description ?? '').trim();
   const accent = element.color || DEFAULT_ACCENT;
   const status = STATUSES.find((s) => s.value === element.status);
   // Server clock: a skewed local clock must not flip "overdue" for one viewer.
@@ -99,53 +99,54 @@ const CardView = memo(function CardView({ element, editing, zoom }: ElementRende
 
   return (
     <div className={`fr-card${element.status === 'done' ? ' is-done' : ''}`} style={{ ['--accent' as string]: accent }} onKeyDownCapture={onKeyDownCapture}>
-      <div className="fr-card__title" style={{ top: PAD.top, height: layout.titleLines * TITLE.line }}>
-        <ElementText
-          element={element}
-          field="title"
-          fontSize={TITLE.size}
-          fontFamily="sans"
-          align="left"
-          vAlign="top"
-          color="var(--fr-ink)"
-          padding={0}
-          style={{ fontWeight: TITLE.weight, lineHeight: `${TITLE.line}px` }}
-          placeholder="Card title"
-        />
-      </div>
-      {layout.descLines > 0 && (
-        <div
-          className="fr-card__desc"
-          style={{
-            top: PAD.top + layout.titleLines * TITLE.line + DESC.gap,
-            height: layout.descLines * DESC.line,
-            WebkitLineClamp: layout.descLines,
-          }}
-        >
-          {layout.descText}
+      {/* Laid out by the browser, top to bottom, never from a measurement taken while rendering
+          (#89): one taken before the web font arrived, or a height another client or the server
+          measured, put a title line under the footer's status chip or cut it off. The footer
+          keeps to the bottom; if the card is ever shorter than its text, the text is clipped. */}
+      <div className="fr-card__body" style={{ top: PAD.top, right: PAD.right, bottom: PAD.bottom, left: PAD.left }}>
+        <div className="fr-card__content" style={{ paddingBottom: FOOTER.gap }}>
+          <div className="fr-card__title">
+            <ElementText
+              element={element}
+              field="title"
+              fontSize={TITLE.size}
+              fontFamily="sans"
+              align="left"
+              vAlign="top"
+              color="var(--fr-ink)"
+              padding={0}
+              style={{ fontWeight: TITLE.weight, lineHeight: `${TITLE.line}px` }}
+              placeholder="Card title"
+            />
+          </div>
+          {desc && (
+            <div className="fr-card__desc" style={{ marginTop: DESC.gap, WebkitLineClamp: DESC.maxLines }}>
+              {desc}
+            </div>
+          )}
         </div>
-      )}
-      <div className="fr-card__footer">
-        {status && (
-          <span className={`fr-card__status is-${status.value}`}>
-            {status.value === 'done' && <Check size={11} strokeWidth={3} />}
-            {status.label}
-          </span>
-        )}
-        {element.dueDate && (
-          <span className={`fr-card__due${overdue ? ' is-overdue' : ''}`} title={overdue ? 'Overdue' : 'Due date'}>
-            <CalendarDays size={12} strokeWidth={2.2} />
-            {formatDue(element.dueDate, now)}
-          </span>
-        )}
-        {!!element.tags?.length && <TagChips ids={element.tags} />}
-        <span className="fr-card__spacer" />
-        {element.estimate && (
-          <span className="fr-card__estimate" title="Estimate">
-            {element.estimate}
-          </span>
-        )}
-        {element.assigneeId && <Assignee id={element.assigneeId} />}
+        <div className="fr-card__footer" style={{ height: FOOTER.h }}>
+          {status && (
+            <span className={`fr-card__status is-${status.value}`}>
+              {status.value === 'done' && <Check size={11} strokeWidth={3} />}
+              {status.label}
+            </span>
+          )}
+          {element.dueDate && (
+            <span className={`fr-card__due${overdue ? ' is-overdue' : ''}`} title={overdue ? 'Overdue' : 'Due date'}>
+              <CalendarDays size={12} strokeWidth={2.2} />
+              {formatDue(element.dueDate, now)}
+            </span>
+          )}
+          {!!element.tags?.length && <TagChips ids={element.tags} />}
+          <span className="fr-card__spacer" />
+          {element.estimate && (
+            <span className="fr-card__estimate" title="Estimate">
+              {element.estimate}
+            </span>
+          )}
+          {element.assigneeId && <Assignee id={element.assigneeId} />}
+        </div>
       </div>
     </div>
   );

@@ -17,7 +17,8 @@ const MAX_PIXELS_SIDE = 8192;
 
 function ExportWorld({ elements, rect, background }: { elements: BoardElement[]; rect: Rect; background: string | null }) {
   return (
-    <div data-fr-export="" style={{ position: 'relative', width: rect.w, height: rect.h, overflow: 'hidden', background: background ?? 'transparent' }}>
+    // `fr-paper`: exports show the board's own colours whatever the page's theme (theme.ts).
+    <div data-fr-export="" className="fr-paper" style={{ position: 'relative', width: rect.w, height: rect.h, overflow: 'hidden', background: background ?? 'transparent' }}>
       <div style={{ position: 'absolute', left: 0, top: 0, transform: `translate(${-rect.x}px, ${-rect.y}px)` }}>
         {elements.map((el) => (
           <ElementFrame key={el.id} element={el} selected={false} editing={false} zoom={1} />

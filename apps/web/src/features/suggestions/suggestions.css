@@ -190,6 +190,16 @@
   margin: 0;
 }
 
+.fr-sg-dock__readonly {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--fr-radius-sm);
+  background: var(--fr-surface-2);
+  color: var(--fr-ink-2);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
 .fr-sg-group {
   display: flex;
   flex-direction: column;

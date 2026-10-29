@@ -2,7 +2,8 @@
 // y-websocket protocol, rooms, role filter and layers as /ws/boards (realtime), admitted with the
 // view's token instead of a cookie: the token rides as the second WebSocket subprotocol
 // ([EMBED_WS_PROTOCOL, token]; browsers can't set headers on a WebSocket, and a query string ends up
-// in logs). It opens only the board it was minted for, as the person, at most `maxRole`, inside the
+// in logs). It opens only the board it was minted for, as the person, writing at most `maxRole`
+// (it READS the board's layers as the person: an owner's pending suggestions, #89), inside the
 // team's API switch and blocks; it closes when the token expires, and init.ts closes it when the
 // credential behind it is revoked.
 import type { IncomingMessage } from 'node:http';
@@ -13,7 +14,7 @@ import type { WsRoute } from '../../platform/ws';
 import { authenticateEmbed, useInWorkspace } from '../apiauth/index';
 import { authorNamesOf } from '../auth/index';
 import { boardWorkspaceId, getBoardAccess } from '../boards/index';
-import { admitSocket, capRole } from '../realtime/index';
+import { admitSocket } from '../realtime/index';
 
 const PREFIX = '/ws/embed/boards/';
 
@@ -61,7 +62,9 @@ export default function embedWs(_ctx: ServerContext): WsRoute {
         return {
           boardId,
           userId: user.id,
-          role: capRole(role, session.maxRole),
+          // The person's own role: the room caps what the socket writes at `maxRole`, and reads
+          // the board's layers as the person (#89: an owner's pending suggestions show in the view).
+          role,
           maxRole: session.maxRole,
           sessionKey: session.sessionKey,
           identity: { id: user.id, name: user.name, color: user.color, avatarUrl: user.avatarUrl },

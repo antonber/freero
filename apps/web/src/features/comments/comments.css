@@ -66,7 +66,7 @@
   padding: 0 5px;
   border-radius: 9px;
   background: var(--fr-ink);
-  color: #fff;
+  color: var(--fr-surface);
   font-size: 11px;
   font-weight: 700;
   line-height: 18px;
