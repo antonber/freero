@@ -360,3 +360,40 @@ it('items added into a full frame make it grow to hold them, far enough from wha
     for (const o of inside) expect(overlap(s, o, 64)).toBe(false);
   }
 });
+
+it('meeting notes land as ONE frame that the outline (what agents read) shows as the meeting: a Decisions cluster, action cards with their owner and due date, topic clusters', async () => {
+  const there = sticky('there', 0, 0);
+  const boardId = await boardWith([there]);
+  const source = [
+    '# Launch review',
+    '',
+    'Date: 2026-10-29',
+    '',
+    '## Risks',
+    '- Docs are late',
+    '- Support has no macros yet',
+    '',
+    '## Decisions',
+    '- Launch on Tuesday',
+    '- No press release',
+    '',
+    '## Action items',
+    '- [ ] Ana to write the changelog by Monday',
+    '- Ship the macros (owner: Ben, due 2026-11-03)',
+  ].join('\n');
+  const res = await insert(boardId, { structure: { kind: 'meeting', source } });
+  const view = await readBoardView(boardId, { userId, role: 'owner' });
+  const outline = await outlineOfView({ id: boardId, title: 'Structure' }, view);
+  const frame = outline.items.find((i) => i.kind === 'frame')!;
+  expect(frame.title).toBe('Launch review');
+  expect(res.parts?.[0].titleId).toBe(frame.id);
+  const cluster = (title: string) => (frame.children ?? []).find((c) => c.kind === 'cluster' && c.title === title);
+  expect(cluster('Decisions')?.children?.map((c) => c.text)).toEqual(['Launch on Tuesday', 'No press release']);
+  expect(cluster('Risks')?.children?.map((c) => c.text)).toEqual(['Docs are late', 'Support has no macros yet']);
+  const cards = view.elements.map((e) => e.el).filter((e) => e.type === 'card' && e.frameId === frame.id) as Array<BoardElement & { dueDate: string | null; description: string }>;
+  expect(cards.map((c) => [c.dueDate, c.description])).toEqual([
+    ['2026-11-02', 'Owner: Ana'],
+    ['2026-11-03', 'Owner: Ben'],
+  ]);
+  expect(overlap(view.elements.find((e) => e.el.id === frame.id)!.el, there)).toBe(false);
+});

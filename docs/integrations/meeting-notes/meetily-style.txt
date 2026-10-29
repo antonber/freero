@@ -1,0 +1,19 @@
+Infrastructure weekly - 2026-10-27
+
+Summary:
+We reviewed last week's database incident and the plan for the storage move. The incident was
+caused by a migration that held a lock for longer than expected.
+
+KEY POINTS
+* The failover worked, but took four minutes instead of one
+* Alerts reached the on-call person late because of a routing rule
+* Storage costs grew 18% month over month
+
+DECISIONS
+* Long migrations run only in the Tuesday maintenance window
+* Move cold uploads to the cheaper storage class in November
+
+Action items:
+1. Sam to fix the alert routing rule by tomorrow
+2. Write a runbook for long migrations (owner: Ines)
+3. Estimate the saving from the storage class change, due Nov 10
