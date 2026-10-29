@@ -5569,7 +5569,8 @@ async function s3Checks() {
 async function publicApiChecks() {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-api-'));
   // With REDIS_URL every server of the run shares per-IP counters that earlier suites used up.
-  const env = { RATE_LIMIT_INVITE: '500/1h', RATE_LIMIT_PASSWORD: '500/15m' };
+  // TRACKER_PRIVATE_ENDPOINTS: the mock GitHub of the tracker import check listens on 127.0.0.1.
+  const env = { RATE_LIMIT_INVITE: '500/1h', RATE_LIMIT_PASSWORD: '500/15m', TRACKER_PRIVATE_ENDPOINTS: 'true' };
   let proc = null;
   const live = [];
   try {
@@ -5781,6 +5782,43 @@ async function publicApiChecks() {
       assert((await O.req('POST', '/api/boards', { title: 'csrf' }, { headers: cross })).status === 403, 'cross-site cookie write accepted');
       assert((await O.req('POST', '/api/auth/tokens', { name: 'csrf', scopes: ['boards:read'], expiresInDays: 1 }, { headers: cross })).status === 403, 'cross-site token mint');
       assert((await O.req('GET', '/api/v1/me')).status === 401, 'the API accepted a session cookie');
+    });
+
+    await check('api (#79): POST /trackers/import turns a GitHub query into linked cards in a new kanban — each in the column of its issue’s status — says how to connect a tracker when there is none, and needs boards:write (boards:suggest only proposes)', async () => {
+      const { startMockGithub } = await import('./lib/mock-github.mjs');
+      const gh = await startMockGithub();
+      try {
+        const b = (await O.req('POST', '/api/boards', { title: 'Imported roadmap' })).json.board.id;
+        const none = await call(write.secret, 'POST', `/boards/${b}/trackers/import`, { query: 'repo:acme/web' });
+        assert(none.status === 400 && none.json.code === 'tracker_not_connected' && /Settings → Your issue trackers/.test(none.json.error), `no tracker: ${none.status} ${none.text}`);
+        assert((await O.req('POST', '/api/trackers/connections', { provider: 'github', name: 'GitHub', site: gh.url, token: gh.token, defaults: { project: 'acme/web' } })).status === 201, 'connection');
+        const open = gh.create('acme/web', { title: 'Open work', labels: ['roadmap'] });
+        const shipped = gh.create('acme/web', { title: 'Shipped work', labels: ['roadmap'], state: 'closed' });
+        const body = { query: 'repo:acme/web label:roadmap', placement: { newKanban: 'Roadmap' } };
+        const ro = await token(O, ['boards:read'], 'reader');
+        assert((await call(ro.secret, 'POST', `/boards/${b}/trackers/import`, body)).status === 403, 'a read-only token imported');
+        const r = await call(write.secret, 'POST', `/boards/${b}/trackers/import`, body);
+        assert(r.status === 201 && r.json.target === 'board' && r.json.containerId, `import: ${r.status} ${r.text}`);
+        assert(JSON.stringify(r.json.cards.map((x) => x.key).sort()) === JSON.stringify([`acme/web#${open}`, `acme/web#${shipped}`].sort()), `keys: ${r.text}`);
+        const c = connectDoc(O, b, null, proc.port);
+        live.push(c);
+        await c.ready();
+        const E = c.doc.getMap('elements');
+        await waitFor(() => r.json.cards.every((x) => E.get(x.id)), 5000, 'the imported cards');
+        const k = E.get(r.json.containerId);
+        const columnOf = (el) => Math.floor((el.x + el.w / 2 - k.x - 6) / (k.colW + 12));
+        const card = (key) => E.get(r.json.cards.find((x) => x.key === key).id);
+        assert(k.type === 'kanban' && card(`acme/web#${open}`).frameId === k.id, 'cards not in the new kanban');
+        assert(columnOf(card(`acme/web#${shipped}`)) === k.columns.findIndex((col) => col.status === 'done') && card(`acme/web#${shipped}`).status === 'done', 'the closed issue is not in Done');
+        assert(columnOf(card(`acme/web#${open}`)) === k.columns.findIndex((col) => col.status === 'todo') && card(`acme/web#${open}`).trackerLink, 'the open issue is not a linked card in To do');
+        gh.create('acme/web', { title: 'Next work', labels: ['roadmap'] });
+        const sug = await token(O, ['boards:read', 'boards:suggest'], 'suggester');
+        const p = await call(sug.secret, 'POST', `/boards/${b}/trackers/import`, { ...body, target: 'suggestions' });
+        assert(p.status === 201 && p.json.target === 'suggestions' && p.json.groupId && p.json.cards.length === 1 && p.json.skipped === 2, `propose: ${p.status} ${p.text}`);
+        assert(!E.get(p.json.cards[0].id), 'a proposed card was written to the board');
+      } finally {
+        await gh.close();
+      }
     });
 
     await check('api: signing out everywhere (a password reset) ends the account’s tokens', async () => {
@@ -6152,7 +6190,17 @@ async function mcpChecks() {
   const REDIS_URL = process.env.REDIS_URL?.trim();
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-mcp-'));
   // SESSION_RECHECK_SECONDS: how soon a revoked connection's live board view closes (modules/embed).
-  const env = { ACTIVITY_IDLE_SECONDS: '1', RATE_LIMIT_INVITE: '500/1h', RATE_LIMIT_PASSWORD: '500/15m', SESSION_RECHECK_SECONDS: '1', ...(REDIS_URL && ADMIN_URL ? { REDIS_URL } : {}) };
+  // A local GitHub for import_from_tracker (#79): the tracker group's mock.
+  const { startMockGithub } = await import('./lib/mock-github.mjs');
+  const gh = await startMockGithub();
+  const env = {
+    ACTIVITY_IDLE_SECONDS: '1',
+    RATE_LIMIT_INVITE: '500/1h',
+    RATE_LIMIT_PASSWORD: '500/15m',
+    SESSION_RECHECK_SECONDS: '1',
+    TRACKER_PRIVATE_ENDPOINTS: 'true', // the mock listens on 127.0.0.1
+    ...(REDIS_URL && ADMIN_URL ? { REDIS_URL } : {}),
+  };
   const procs = [];
   const live = [];
   const clients = [];
@@ -6526,6 +6574,65 @@ async function mcpChecks() {
       await waitFor(() => ro.closeCodes.includes(4401), 10_000, 'the revoked connection’s live view to close');
     });
 
+    await check('mcp: add_stickies takes each sticky with its link and hands the ids back in the order sent (a board link works as the boardId); add_cards puts cards into a kanban column by its title', async () => {
+      const agent = await withToken((await token(O, ['boards:read', 'boards:write'], 'Roadmap agent')).secret);
+      const b = (await O.req('POST', '/api/boards', { title: 'Linked roadmap', workspaceId: team })).json.board;
+      const stickies = Array.from({ length: 30 }, (_, i) => ({ text: `Issue ${i + 1}`, link: `https://github.com/acme/web/issues/${i + 1}` }));
+      const r = await agent.callTool({ name: 'add_stickies', arguments: { boardId: `http://127.0.0.1:${proc.port}/board/${b.id}?item=x`, stickies, placement: { newFrame: 'Agents' } } });
+      assert(!r.isError && r.structuredContent.ids.length === 30, `add_stickies: ${text(r)}`);
+      const linkOf = new Map();
+      const c = connectDoc(O, b.id, null, proc.port);
+      live.push(c);
+      await c.ready();
+      const frame = els(c).get(r.structuredContent.containerId);
+      assert(frame?.type === 'frame' && frame.title === 'Agents', `the new frame: ${JSON.stringify(frame)}`);
+      for (const [id, el] of els(c)) linkOf.set(id, [String(el.text).replace(/<[^>]+>/g, ''), el.link, el.frameId]);
+      const got = r.structuredContent.ids.map((id) => linkOf.get(id));
+      assert(JSON.stringify(got) === JSON.stringify(stickies.map((s) => [s.text, s.link, frame.id])), `stickies, links, frame: ${JSON.stringify(got.slice(0, 3))}`);
+      const k = await agent.callTool({ name: 'add_cards', arguments: { boardId: b.id, title: 'Sprint', columns: [{ title: 'To do', cards: [] }, { title: 'Doing', cards: [] }, { title: 'Done', cards: [] }] } });
+      const add = await agent.callTool({ name: 'add_cards', arguments: { boardId: b.id, cards: [{ title: 'Ship it', link: 'https://github.com/acme/web/pull/1' }], placement: { into: k.structuredContent.kanbanId, column: 'Doing' } } });
+      const id = add.structuredContent?.ids?.[0];
+      await waitFor(() => els(c).get(id)?.frameId === k.structuredContent.kanbanId, 5000, 'the card in the kanban');
+      assert(els(c).get(id).status === 'doing' && els(c).get(id).link === 'https://github.com/acme/web/pull/1', `card: ${JSON.stringify(els(c).get(id))}`);
+    });
+
+    await check('mcp (#79): import_from_tracker brings a GitHub query in as linked cards in a new frame, with each card’s issue key; importing again adds nothing; closing an issue on GitHub updates its card through the webhook; a read + suggest connection only proposes', async () => {
+      const conn = await O.req('POST', '/api/trackers/connections', { provider: 'github', name: 'GitHub', site: gh.url, token: gh.token, defaults: { project: 'antonber/freero' } });
+      assert(conn.status === 201, `connection: ${conn.status} ${conn.text}`);
+      const mine = [];
+      for (let i = 1; i <= 6; i++) mine.push(gh.create('antonber/freero', { title: `Agent friction ${i}`, labels: i <= 4 ? ['area: agents', 'enhancement'] : ['area: canvas'] }));
+      gh.create('antonber/freero', { title: 'Old agents issue', labels: ['area: agents'], state: 'closed' });
+      const b = (await O.req('POST', '/api/boards', { title: 'Agents roadmap', workspaceId: team })).json.board;
+      const agent = await withToken((await token(O, ['boards:read', 'boards:write'], 'Import agent')).secret);
+      const query = 'repo:antonber/freero is:open label:"area: agents"';
+      const r = await agent.callTool({ name: 'import_from_tracker', arguments: { boardId: `http://127.0.0.1:${proc.port}/board/${b.id}`, query, placement: { newFrame: 'Agents' } } });
+      assert(!r.isError, `import: ${text(r)}`);
+      const cards = r.structuredContent.cards;
+      assert(JSON.stringify(cards.map((x) => x.key)) === JSON.stringify(mine.slice(0, 4).map((n) => `antonber/freero#${n}`)), `imported: ${text(r)}`);
+      const c = connectDoc(O, b.id, null, proc.port);
+      live.push(c);
+      await c.ready();
+      await waitFor(() => cards.every((x) => els(c).get(x.id)), 5000, 'the cards on the board');
+      const frameId = r.structuredContent.containerId;
+      assert(cards.every((x) => els(c).get(x.id).frameId === frameId && els(c).get(x.id).trackerLink && els(c).get(x.id).createdVia?.name === 'Import agent'), 'cards not linked, framed and attributed');
+      assert(cards.every((x) => c.doc.getMap('trackers').get(els(c).get(x.id).trackerLink)?.key === x.key), 'badges');
+      const again = await agent.callTool({ name: 'import_from_tracker', arguments: { boardId: b.id, query } });
+      assert(!again.isError && again.structuredContent.cards.length === 0 && again.structuredContent.skipped === 4, `re-import: ${text(again)}`);
+      // Done when: closing one of the issues on GitHub updates its card's status, nobody touching the board.
+      const [first] = cards;
+      gh.edit('antonber/freero', mine[0], { state: 'closed' });
+      assert((await gh.webhook(`http://127.0.0.1:${proc.port}/api/trackers/webhooks/${conn.json.connection.id}`, conn.json.webhookSecret, 'antonber/freero', mine[0])) === 202, 'webhook');
+      await waitFor(() => els(c).get(first.id)?.status === 'done', 15_000, 'the closed issue’s card to say done');
+      // Suggestion mode: proposes, writes nothing, links nothing (the closed issue no longer matches is:open).
+      gh.create('antonber/freero', { title: 'Agent friction 7', labels: ['area: agents'] });
+      const before = els(c).size;
+      const suggester = await withToken((await token(O, ['boards:read', 'boards:suggest'], 'Suggesting agent')).secret);
+      const p = await suggester.callTool({ name: 'import_from_tracker', arguments: { boardId: b.id, query } });
+      assert(!p.isError && p.structuredContent.target === 'suggestions' && p.structuredContent.cards.length === 1 && p.structuredContent.skipped === 3, `propose: ${text(p)}`);
+      const listed = (await O.req('GET', `/api/boards/${b.id}/outline?format=markdown&include=suggestions`)).text;
+      assert(listed.includes('by Suggesting agent for') && els(c).size === before, 'the proposal changed the board');
+    });
+
     await check('mcp: revoking the token, or the app, refuses the very next MCP request', async () => {
       const script = await token(O, ['boards:read'], 'Short-lived');
       const sc = await withToken(script.secret);
@@ -6546,6 +6653,7 @@ async function mcpChecks() {
     for (const c of clients) await c.close().catch(() => undefined);
     for (const c of live) c.destroy();
     for (const p of procs) await stopProc(p);
+    await gh.close();
     try {
       fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     } catch {

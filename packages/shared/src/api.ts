@@ -1206,6 +1206,28 @@ export interface InsertStructureRequest {
   target?: 'board' | 'preview' | 'suggestions';
   /** target 'suggestions': what the proposal does, shown to reviewers (at most 500 characters). */
   description?: string;
+  /** [additive] Into something on the board, or into a new frame or kanban, instead of free space. */
+  placement?: StructurePlacement;
+}
+
+/**
+ * [additive] Where new (or moved) items go, by meaning — never coordinates (KAI-167). Give one:
+ *   into      an existing frame, kanban or cluster: its id as the outline shows it (a frame's or a
+ *             kanban's id, `cluster:<id>` or the id of any item in the cluster, or a kanban column's
+ *             `<kanbanId>:<columnId>`). Items go below what is there (a frame or a kanban grows to
+ *             hold them; a cluster takes them in).
+ *   column    with `into` a kanban: the column, by its title or id. Without it each card goes to the
+ *             column of its status, else the first. A card dropped in a column with a status takes it.
+ *   newFrame  a new frame with this title around everything added (on free space).
+ *   newKanban a new kanban with this title and To do / Doing / Done columns, each card in the column
+ *             of its status (sticky notes in To do).
+ * Only sticky notes and cards go into a kanban column.
+ */
+export interface StructurePlacement {
+  into?: string;
+  column?: string;
+  newFrame?: string;
+  newKanban?: string;
 }
 export interface InsertStructureResponse {
   target: 'board' | 'preview' | 'suggestions';
@@ -1215,6 +1237,10 @@ export interface InsertStructureResponse {
   created: string[];
   /** Existing elements moved into the result (clusters of stickies already on the board). */
   moved: string[];
+  /** [additive] Which element is which input item, in input order (`LaidOut.parts`). */
+  parts?: Array<{ titleId?: string; ids: string[] }>;
+  /** [additive] With `placement.newFrame` / `newKanban`: the container made. */
+  containerId?: string;
   /** Where the result landed. */
   bounds: Rect;
   /** 'preview' only: an ElementsSnapshot (elements + content by element id) and the moves. */

@@ -12,6 +12,7 @@ import { LayoutError, type LaidOut, type LayoutContext, type OutlineNodeInput, t
 export * from './types';
 export { parseMermaid, looksLikeMermaid, type MermaidDiagram } from './mermaid';
 export { parseIndentedList, parseOrgRows, columnStatus } from './structures';
+export { cardDraft, cardHeight as itemCardHeight, checkLink } from './items';
 export * from './mindtree';
 export * as timelineLayout from './timeline';
 export { tidyTree, type TidyUnit, type TidyOptions } from './tidy';
@@ -56,8 +57,8 @@ export function layoutStructure(input: StructureInput, ctx: LayoutContext): Laid
       return input.as === 'tree' ? layoutTree(root, 'TB', ctx) : layoutMindmap(root, ctx);
     }
     case 'stickies':
-      if (!Array.isArray(input.items) || !input.items.length || input.items.some((t) => typeof t !== 'string'))
-        throw new LayoutError('stickies needs a non-empty list of texts');
+      if (!Array.isArray(input.items) || !input.items.length || input.items.some((t) => typeof t !== 'string' && (!t || typeof t !== 'object' || typeof t.text !== 'string')))
+        throw new LayoutError('stickies needs a non-empty list of texts (or { text, link?, color? })');
       if (input.color !== undefined && !isColor(input.color)) throw new LayoutError(`Unknown sticky color ${String(input.color)}`);
       return layoutStickies(input.items, input.title, input.color ?? 'yellow', ctx);
     case 'clusters':
@@ -65,8 +66,8 @@ export function layoutStructure(input: StructureInput, ctx: LayoutContext): Laid
       for (const c of input.clusters) {
         if (!c || !Array.isArray(c.items)) throw new LayoutError('Every cluster needs items');
         if (c.color !== undefined && !isColor(c.color)) throw new LayoutError(`Unknown sticky color ${String(c.color)}`);
-        if (c.items.some((i) => typeof i !== 'string' && (typeof i !== 'object' || !i || typeof i.id !== 'string')))
-          throw new LayoutError('A cluster item is a text or { id } of an item on the board');
+        if (c.items.some((i) => typeof i !== 'string' && (typeof i !== 'object' || !i || (typeof (i as { id?: unknown }).id !== 'string' && typeof (i as { text?: unknown }).text !== 'string'))))
+          throw new LayoutError('A cluster item is a text, { text, link?, color? }, or { id } of an item on the board');
       }
       return layoutClusters(input.clusters, ctx);
     case 'graph':
@@ -121,6 +122,7 @@ export function placeLaidOut(laid: LaidOut, p: Placement): LaidOut & { bounds: R
     moves: laid.moves.map((m) => ({ id: m.id, x: m.x + spot.x, y: m.y + spot.y })),
     size: laid.size,
     ...(laid.keys ? { keys: laid.keys } : {}),
+    ...(laid.parts ? { parts: laid.parts } : {}),
     bounds: { x: spot.x, y: spot.y, w: laid.size.w, h: laid.size.h },
   };
 }

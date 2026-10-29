@@ -36,7 +36,10 @@ import {
   type LayoutContext,
   type OutlineNodeInput,
   type SequenceInput,
+  type StickyInput,
 } from './types';
+import { STICKY_COLORS } from '../elements';
+import { cardDraft, checkLink } from './items';
 
 const clip = (s: string) => (s.length > LAYOUT_LIMITS.text ? s.slice(0, LAYOUT_LIMITS.text) : s);
 
@@ -201,26 +204,36 @@ function grid(count: number, cell: { w: number; h: number }, cols = Math.max(1, 
   };
 }
 
-export function layoutStickies(items: string[], title: string | undefined, color: StickyColor, ctx: LayoutContext): LaidOut {
+export function layoutStickies(items: Array<string | StickyInput>, title: string | undefined, color: StickyColor, ctx: LayoutContext): LaidOut {
   if (items.length > LAYOUT_LIMITS.elements) throw new LayoutError(`At most ${LAYOUT_LIMITS.elements} items per structure`);
   return layoutClusters([{ title, color, items }], ctx);
+}
+
+type ClusterItem = string | StickyInput | { id: string };
+const isExisting = (it: ClusterItem): it is { id: string } => typeof it === 'object' && it !== null && typeof (it as { id?: unknown }).id === 'string' && !('text' in it);
+
+/** A new sticky from a cluster item that is not an existing one. */
+function newSticky(it: string | StickyInput, at: { x: number; y: number }, color: StickyColor, ctx: LayoutContext): ElementDraft {
+  const o = typeof it === 'string' ? { text: it } : it;
+  if (!o || typeof o.text !== 'string') throw new LayoutError('A sticky is its text or { text, link?, color? }');
+  if (o.color !== undefined && !(o.color in STICKY_COLORS)) throw new LayoutError(`Unknown sticky color ${String(o.color)}`);
+  const link = checkLink(o.link);
+  const el = sticky(ctx.newId(), at.x, at.y, clip(o.text), o.color ?? color);
+  return link ? ({ ...el, link } as ElementDraft) : el;
 }
 
 /**
  * Affinity clusters: each a titled grid of stickies; clusters sit side by side in rows (shelf
  * packing), so the whole result stays roughly as wide as it is tall.
  */
-export function layoutClusters(
-  clusters: Array<{ title?: string; color?: StickyColor; items: Array<string | { id: string }> }>,
-  ctx: LayoutContext,
-): LaidOut {
+export function layoutClusters(clusters: Array<{ title?: string; color?: StickyColor; items: ClusterItem[] }>, ctx: LayoutContext): LaidOut {
   const total = clusters.reduce((s, c) => s + c.items.length + (c.title ? 1 : 0), 0);
   if (total > LAYOUT_LIMITS.elements) throw new LayoutError(`At most ${LAYOUT_LIMITS.elements} items per structure`);
   const seen = new Set<string>();
   const blocks = clusters.map((c, ci) => {
     const color = c.color ?? CLUSTER_COLORS[ci % CLUSTER_COLORS.length];
     const sizes = c.items.map((it) => {
-      if (typeof it === 'string') return { w: STICKY_SIZE, h: STICKY_SIZE };
+      if (!isExisting(it)) return { w: STICKY_SIZE, h: STICKY_SIZE };
       const ex = ctx.existing?.(it.id);
       if (!ex) throw new LayoutError(`No item ${it.id} on this board`);
       if (seen.has(it.id)) throw new LayoutError(`Item ${it.id} is in two clusters`);
@@ -238,6 +251,7 @@ export function layoutClusters(
   const GAP = 120;
   const elements: ElementDraft[] = [];
   const moves: LaidOut['moves'] = [];
+  const parts: NonNullable<LaidOut['parts']> = [];
   let x = 0;
   let y = 0;
   let rowH = 0;
@@ -247,15 +261,27 @@ export function layoutClusters(
       y += rowH + GAP;
       rowH = 0;
     }
-    if (b.c.title) elements.push(textBox(ctx.newId(), x, y, b.w, clip(b.c.title), { size: 24, bold: true }));
+    const part: { titleId?: string; ids: string[] } = { ids: [] };
+    if (b.c.title) {
+      const t = textBox(ctx.newId(), x, y, b.w, clip(b.c.title), { size: 24, bold: true });
+      elements.push(t);
+      part.titleId = t.id;
+    }
     b.c.items.forEach((it, i) => {
       const p = b.g.at(i);
       const s = b.sizes[i];
       // Centered in its cell, so mixed sizes still line up.
       const at = { x: x + p.x + (b.cell.w - s.w) / 2, y: y + b.titleH + p.y + (b.cell.h - s.h) / 2 };
-      if (typeof it === 'string') elements.push(sticky(ctx.newId(), at.x, at.y, clip(it), b.color));
-      else moves.push({ id: it.id, x: Math.round(at.x), y: Math.round(at.y) });
+      if (isExisting(it)) {
+        moves.push({ id: it.id, x: Math.round(at.x), y: Math.round(at.y) });
+        part.ids.push(it.id);
+      } else {
+        const el = newSticky(it, at, b.color, ctx);
+        elements.push(el);
+        part.ids.push(el.id);
+      }
     });
+    parts.push(part);
     x += b.w + GAP;
     rowH = Math.max(rowH, b.h);
   }
@@ -263,7 +289,7 @@ export function layoutClusters(
     const ex = ctx.existing!(m.id)!;
     return { x: m.x, y: m.y, w: ex.w, h: ex.h };
   });
-  return finish(elements, {}, moves, movedRects);
+  return { ...finish(elements, {}, moves, movedRects), parts };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -640,18 +666,12 @@ export function columnStatus(title: string): CardStatus | null {
   return null;
 }
 
-/** Height a task card settles at for its title (the card feature measures it exactly on insert). */
-function cardHeight(w: number, title: string): number {
-  const t = measureText(title || ' ', { fontSize: 15, maxWidth: Math.max(40, w - 36), bold: true, lineHeight: 20 / 15 });
-  return Math.round(13 + t.h + 10 + 24 + 12);
-}
-
 export function layoutKanban(title: string | undefined, columnsIn: KanbanColumnInput[], ctx: LayoutContext): LaidOut {
   if (!Array.isArray(columnsIn) || !columnsIn.length) throw new LayoutError('A kanban board needs at least one column');
   if (columnsIn.length > 40) throw new LayoutError('At most 40 columns per kanban board');
   for (const c of columnsIn)
-    if (!c || typeof c.title !== 'string' || !Array.isArray(c.items) || c.items.some((i) => typeof i !== 'string'))
-      throw new LayoutError('Every kanban column needs a title and a list of card texts');
+    if (!c || typeof c.title !== 'string' || !Array.isArray(c.items) || c.items.some((i) => typeof i !== 'string' && (!i || typeof i !== 'object' || typeof i.text !== 'string')))
+      throw new LayoutError('Every kanban column needs a title and a list of cards (a text, or { text, … })');
   if (columnsIn.reduce((s, c) => s + c.items.length, 0) + 1 > LAYOUT_LIMITS.elements) throw new LayoutError(`At most ${LAYOUT_LIMITS.elements} items per structure`);
   const K = KANBAN;
   const inner = K.colW - 2 * K.pad;
@@ -661,32 +681,21 @@ export function layoutKanban(title: string | undefined, columnsIn: KanbanColumnI
     return { id: ctx.newId(), title: plainToRichText(clip(c.title.trim())), status, color: status ? STATUS_COLORS[status] : KANBAN_COLUMN_COLORS[i % KANBAN_COLUMN_COLORS.length] };
   });
   const cards: ElementDraft[] = [];
+  const parts: NonNullable<LaidOut['parts']> = [];
   let tallest = 0;
   columnsIn.forEach((c, ci) => {
     const x = K.gap + ci * (K.colW + K.gap) + K.pad;
     let y = K.header + K.colHead + K.pad;
-    for (const text of c.items) {
-      const t = clip(text.trim());
-      const h = cardHeight(inner, t);
-      cards.push({
-        id: ctx.newId(),
-        type: 'card',
-        x,
-        y,
-        w: inner,
-        h,
-        rotation: 0,
-        frameId: id,
-        title: plainToRichText(t),
-        description: '',
-        color: CARD_ACCENT,
-        status: columns[ci].status,
-        assigneeId: null,
-        dueDate: null,
-        tags: [],
-      });
-      y += h + K.itemGap;
+    const part: { ids: string[] } = { ids: [] };
+    for (const item of c.items) {
+      const card = cardDraft(typeof item === 'string' ? { text: item } : item, ctx.newId(), x, y, inner, id);
+      // A card in a column with a status takes it (as dropping it there would); else its own.
+      if (columns[ci].status) (card as { status: CardStatus | null }).status = columns[ci].status;
+      cards.push(card);
+      part.ids.push(card.id);
+      y += card.h + K.itemGap;
     }
+    parts.push(part);
     tallest = Math.max(tallest, c.items.length ? y - K.itemGap - (K.header + K.colHead + K.pad) : 0);
   });
   const board: ElementDraft = {
@@ -701,7 +710,7 @@ export function layoutKanban(title: string | undefined, columnsIn: KanbanColumnI
     columns,
     colW: K.colW,
   };
-  return finish([board, ...cards]);
+  return { ...finish([board, ...cards]), parts };
 }
 
 // ---------------------------------------------------------------------------------------------

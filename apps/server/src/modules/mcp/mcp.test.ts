@@ -133,7 +133,8 @@ it('what an app adds is attributed to it AND the person: the outline reads "<app
   const client = await connect(['boards:read', 'boards:write'], 'Claude');
   const added = (await client.callTool({ name: 'add_stickies', arguments: { boardId, stickies: ['One', 'Two'], title: 'Brainstorm' } })) as CallToolResult;
   expect(added.isError).toBeFalsy();
-  const created = (added.structuredContent as { created: string[] }).created;
+  const out = added.structuredContent as { ids: string[]; titleId: string };
+  const created = [...out.ids, out.titleId];
   const view = await readBoardView(boardId, { userId: ownerId, role: 'owner' });
   const mine = view.elements.filter((e) => created.includes(e.el.id));
   expect(mine.length).toBe(created.length);
@@ -232,4 +233,34 @@ it('a task renamed under its externalId keeps its one card, and moving into Bloc
   expect(notices).toHaveLength(1);
   expect(notices[0]).toMatchObject({ boardId: first.boardId, data: { cardTitle: 'Get prod read access', actorName: 'Migrator', excerpt: 'Who approves this?' } });
   await agent.close();
+});
+
+it('add_stickies hands back each new sticky’s id in the order the agent sent them, each with its own link — so no second call has to guess which is which', async () => {
+  const boardId = await boardWith('Roadmap', []);
+  const client = await connect(['boards:read', 'boards:write']);
+  const stickies = Array.from({ length: 12 }, (_, i) => ({ text: `Issue ${i}`, link: `https://tracker.test/issues/${i}` }));
+  // Given as the board's link, as a person would paste it.
+  const res = (await client.callTool({ name: 'add_stickies', arguments: { boardId: `http://freero.test/board/${boardId}?item=x`, stickies, title: 'Next up' } })) as CallToolResult;
+  expect(res.isError).toBeFalsy();
+  const { ids } = res.structuredContent as { ids: string[] };
+  const byId = new Map((await readBoardView(boardId, { userId: ownerId, role: 'owner' })).elements.map((e) => [e.el.id, e.el as BoardElement & { text: string; link?: string }]));
+  expect(ids.map((id) => [byId.get(id)?.text.replace(/<[^>]+>/g, ''), byId.get(id)?.link])).toEqual(stickies.map((s) => [s.text, s.link]));
+  await client.close();
+});
+
+it('update_items moves a card into a kanban column named by its title — no coordinates: it lands inside that column and takes its status', async () => {
+  const boardId = await boardWith('Sprint', []);
+  const client = await connect(['boards:read', 'boards:write']);
+  const kanban = (await client.callTool({ name: 'add_cards', arguments: { boardId, columns: [{ title: 'To do', cards: [{ title: 'Write docs' }] }, { title: 'Doing', cards: [] }, { title: 'Done', cards: [] }] } })) as CallToolResult;
+  const { kanbanId, columns } = kanban.structuredContent as { kanbanId: string; columns: Array<{ ids: string[] }> };
+  const card = columns[0].ids[0];
+  const moved = (await client.callTool({ name: 'update_items', arguments: { boardId, items: [{ id: card, into: kanbanId, column: 'done' }] } })) as CallToolResult;
+  expect(moved.isError).toBeFalsy();
+  const els = new Map((await readBoardView(boardId, { userId: ownerId, role: 'owner' })).elements.map((e) => [e.el.id, e.el]));
+  const k = els.get(kanbanId) as BoardElement & { colW: number };
+  const c = els.get(card) as BoardElement & { status: string };
+  const column = Math.floor((c.x + c.w / 2 - k.x - 6) / (k.colW + 12));
+  expect({ frameId: c.frameId, column, status: c.status }).toEqual({ frameId: kanbanId, column: 2, status: 'done' });
+  expect(c.y + c.h).toBeLessThanOrEqual(k.y + k.h);
+  await client.close();
 });

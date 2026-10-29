@@ -6,6 +6,7 @@ import {
   MAX_SUGGESTION_DESCRIPTION,
   type InsertStructureRequest,
   type InsertStructureResponse,
+  type StructurePlacement,
   type SuggestionAuthor,
 } from '@freero/shared';
 import { badRequest } from '../../platform/http';
@@ -33,7 +34,20 @@ function parseRequest(body: unknown): InsertStructureRequest {
   if (b.target !== undefined && !Object.hasOwn(SINKS, b.target)) throw badRequest(`target must be ${Object.keys(SINKS).join(', ')}`);
   if (b.description !== undefined && (typeof b.description !== 'string' || b.description.length > MAX_SUGGESTION_DESCRIPTION))
     throw badRequest(`description must be text of at most ${MAX_SUGGESTION_DESCRIPTION} characters`);
-  return { structure: b.structure, near: b.near, at: b.at, target: b.target, description: b.description };
+  return { structure: b.structure, near: b.near, at: b.at, target: b.target, description: b.description, ...(b.placement !== undefined ? { placement: readPlacement(b.placement) } : {}) };
+}
+
+/** `placement` as sent: one of into (with column) / newFrame / newKanban, each a short text. */
+export function readPlacement(v: unknown): StructurePlacement {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) throw badRequest('placement must be { into, column? } or { newFrame } or { newKanban }');
+  const out: StructurePlacement = {};
+  for (const k of ['into', 'column', 'newFrame', 'newKanban'] as const) {
+    const x = (v as Record<string, unknown>)[k];
+    if (x === undefined || x === null) continue;
+    if (typeof x !== 'string' || !x.trim() || x.length > 200) throw badRequest(`placement.${k} must be a short text`);
+    out[k] = x.trim();
+  }
+  return out;
 }
 
 /**
@@ -67,6 +81,8 @@ export async function insertStructure(
     created: placed.elements.map((e) => e.id),
     moved: placed.moves.map((m) => m.id),
     bounds: placed.bounds,
+    ...(placed.parts ? { parts: placed.parts } : {}),
+    ...(placed.containerId ? { containerId: placed.containerId } : {}),
     ...(result.groupId ? { groupId: result.groupId } : {}),
   };
   if (target === 'preview') {

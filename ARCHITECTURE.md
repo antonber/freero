@@ -1376,6 +1376,11 @@ Agents, the API and AI read and write boards semantically, never by coordinates.
   the view and turns it into a `BoardChange`; `sinks.ts` decides where that goes (`board` →
   `changeBoard`, `preview` → returned for `Editor.insertElements`, `suggestions` →
   `proposeSuggestions`: the same plan, proposed instead of written; KAI-169).
+  **Placement by meaning** (`structure/place.ts`, `InsertStructureRequest.placement`): into a frame, a
+  kanban column or a cluster (the outline's `cluster:<id>`, found with the outline's own proximity
+  rule) or a new frame / kanban — the one place that decides where an agent's items go when it names
+  a container; the tracker import (`placeLaid`, `keepStatus`) and `update_items`' `into`
+  (`planMoveInto`) use it too, so no caller computes coordinates.
   Both modules expose these through their `index.ts` (`boardOutline`, `insertStructure`): other modules
   (AI, the public API) read and write boards through them, with the caller's own access.
 
@@ -1889,7 +1894,12 @@ one each in Jira (Cloud v3 / Data Center v2), Linear or GitHub, and stay linked 
   references index adds kind `tracker` from items to it, so its backlinks are its items. Every sync
   that changed something is `tracker.synced` in the audit log (fields each way), failures
   `tracker.sync_failed`; the activity feed shows sends, imports, pushes and failures
-  (`onTrackerActivity`). MCP `sync_to_tracker` is `api/service.ts` `syncToTracker`.
+  (`onTrackerActivity`). MCP `sync_to_tracker` is `api/service.ts` `syncToTracker`; MCP
+  `import_from_tracker` and REST `POST /api/v1/boards/:id/trackers/import` (#79) are
+  `importFromTracker`, which calls trackers' own `importIssues` (the UI's rules; `opts.via` makes
+  the cards the app's, `preflight` runs the agent pause / write budget before the tracker is asked)
+  or, for a suggest-only credential, `importCandidates` + the structure module's suggestions sink
+  (plain cards linking to their issues: nothing is linked until an editor imports them).
 - `npm run verify -- --only tracker` runs it all against `scripts/lib/mock-jira.mjs` (Cloud, DC,
   Atlassian OAuth), `mock-linear.mjs` and `mock-github.mjs`, which implement the subset of each
   public API used, webhooks included.

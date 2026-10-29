@@ -138,27 +138,38 @@ files of their own feature, and type-only imports from anywhere [W13]. `npm run 
 Owners and editors. Body (`InsertStructureRequest`):
 
 ```
-{ structure: StructureInput, near?: elementId, at?: { x, y }, target?: 'board' | 'preview' | 'suggestions', description?: string }
+{ structure: StructureInput, near?: elementId, at?: { x, y }, target?: 'board' | 'preview' | 'suggestions', description?: string,
+  placement?: { into?: id, column?: string } | { newFrame: string } | { newKanban: string } }
 ```
+
+The response's `parts` says which element is which input item, in input order: one part per
+cluster / kanban column (one for a sticky grid or an item list), with its title's element id.
 
 | `structure.kind` | input | result |
 |---|---|---|
 | `outline` | `text` (indented list: `-`, `*`, `1.` or plain indentation), `as?: 'mindmap' \| 'tree'` | a mind map (≥ 4 branches grow on both sides) or a top-down tree of boxes |
 | `mindmap` / `tree` | `root: { text, children? }` (tree: `direction?`) | same, from nested items |
-| `stickies` | `items: string[]`, `title?`, `color?` | a near-square grid of stickies under a title |
-| `clusters` | `clusters: [{ title?, color?, items: Array<string \| { id }> }]` | titled sticky grids side by side; `{ id }` moves a sticky (card, shape …) already on the board into its cluster, with its reaction stamps |
+| `stickies` | `items: Array<string \| { text, link?, color? }>`, `title?`, `color?` | a near-square grid of stickies under a title (each with its link) |
+| `clusters` | `clusters: [{ title?, color?, items: Array<string \| { text, link?, color? } \| { id }> }]` | titled sticky grids side by side; `{ id }` moves a sticky (card, shape …) already on the board into its cluster, with its reaction stamps |
 | `graph` | `nodes: [{ id, text, shape? }]`, `edges: [{ from, to, label?, style?, arrow? }]`, `direction?`, `groups?: [{ id, title, nodes, parent? }]` | shapes joined by attached connectors; groups become frames holding their nodes; an edge may name a group (attaches to its frame) |
 | `mermaid` | `source` | a flowchart (`flowchart`/`graph` TB·TD·BT·LR·RL; node shapes `[] () ([]) [[]] [()] (()) {} {{}} [//] [\\]`; links `-->`, `---`, `-.->`, `==>`, `<-->`, `--o`, `--x`, labels `\|x\|` or `-- x -->`; `&`; subgraphs → frames) or a `sequenceDiagram` (participants / actors, messages `->> -->> -> --> -x -)`, notes), or a `mindmap` (one root, nesting by indentation, node brackets `[] () (()) ))(( )( {{}}`; icons and classes skipped) → a mind map; styling directives are skipped |
 | `sequence` | `diagram: { participants, steps }` | same as a Mermaid sequence diagram |
 | `table` | `rows: string[][]`, `header?` | a table, columns and rows sized to their text |
-| `kanban` | `columns: [{ title, items: string[] }]`, `title?` | a kanban board with a task card per item, stacked in its column; a column titled like "To do", "In progress" or "Done" gives its cards that status |
+| `kanban` | `columns: [{ title, items: Array<string \| { text, description?, status?, dueDate?, link?, color? }> }]`, `title?` | a kanban board with a task card per item, stacked in its column; a column titled like "To do", "In progress" or "Done" gives its cards that status |
 | `orgchart` | `people: [{ name, title?, manager?, id? }]` (`manager` = another person's `id` or name) | a top-down org chart: name / title boxes, each manager centered over their reports, joined by connectors; an unknown manager or a reporting circle is refused |
 | `note` | `text`, `title?` | a written note (summaries): a soft rounded card, the title in bold, paragraphs and bullet lines kept (8 000 characters) |
 
 Placement: on the free spot nearest to `near` (just right of that element) or `at`, else the middle
 of the board's content — keeping 48 units clear of every element the caller can see
 (`findFreeSpot`, the same rule the web uses for inserted templates). Nothing lands on existing
-content or inside a frame.
+content or inside a frame — unless `placement` says where (`modules/structure/place.ts`):
+`into` a frame (inside it, 80 units clear of what is there; the frame grows when full), a kanban
+(`column` by title or id, or `"<kanbanId>:<columnId>"`; stacked at the bottom of the column, a card
+taking a status column's status; the kanban grows; only stickies and cards), or a cluster
+(`cluster:<id>` or any item in it: touching its items, never above its title, clear of other
+clusters, so the outline reads them as part of it); `newFrame` / `newKanban` (To do / Doing / Done)
+around what is added, on free space. The tracker import places its cards with the same rules,
+except that an issue's status is never changed by where it lands.
 
 `target: 'board'` (default) writes it to the live board as **one change**: planned against the live
 doc and applied in the same step (nothing lands in between), one transaction, attributed to the caller

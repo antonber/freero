@@ -2,27 +2,15 @@
 // (@freero/shared layout), place it on free space (never on existing content), and express it as
 // a BoardChange — new elements, moved items, table cells. Pure, so the same plan feeds every sink
 // (sinks.ts): the board itself, a preview, and later the suggestions layer (KAI-169).
-import {
-  layoutStructure,
-  LayoutError,
-  placeLaidOut,
-  rotatedBounds,
-  tableCellEntries,
-  type BoardElement,
-  type InsertStructureRequest,
-  type LaidOut,
-  type Point,
-  type Rect,
-} from '@freero/shared';
+import { layoutStructure, LayoutError, rotatedBounds, tableCellEntries, type BoardElement, type InsertStructureRequest, type Point } from '@freero/shared';
 import type { BoardChange, BoardView } from '../realtime/index';
+import { LOOSE as MOVABLE, placeLaid, type Placed } from './place';
 
-/** Kinds of existing items a structure may move into place (loose items, not containers or lines). */
-const MOVABLE = new Set(['sticky', 'card', 'shape', 'text', 'image', 'emoji', 'icon', 'embed', 'pdf', 'media', 'file']);
 const GAP = 48;
 
 export interface Plan {
   change: BoardChange;
-  placed: LaidOut & { bounds: Rect };
+  placed: Placed;
 }
 
 export function planStructure(req: InsertStructureRequest, view: BoardView, newId: () => string): Plan {
@@ -45,22 +33,26 @@ export function planStructure(req: InsertStructureRequest, view: BoardView, newI
 
   let near: Point | undefined = req.at;
   if (req.near) {
-    const x = byId.get(req.near);
+    // A cluster the outline shows (`cluster:<id>`) is next to its first item.
+    const x = byId.get(req.near.startsWith('cluster:') ? req.near.slice('cluster:'.length) : req.near);
     if (!x) throw new LayoutError(`No item ${req.near} on this board`);
     // Just right of it, vertically centered on it: the nearest free spot from there.
     near = { x: x.x + x.w + GAP + laid.size.w / 2, y: x.y + x.h / 2 };
   }
-  const placed = placeLaidOut(laid, { obstacles, near, gap: GAP });
+  const placed = placeLaid(laid, req.placement, view, { newId, obstacles, travelling, near });
 
   const update: NonNullable<BoardChange['update']> = [];
   for (const m of placed.moves) {
     const el = byId.get(m.id)!;
     const dx = m.x - el.x;
     const dy = m.y - el.y;
-    // Placed on free space, outside every frame: it leaves the frame it was in (the drop rule).
-    update.push({ id: m.id, patch: { x: m.x, y: m.y, frameId: null } });
-    for (const r of riders) if (r.attachedTo === m.id) update.push({ id: r.id, patch: { x: r.x + dx, y: r.y + dy, frameId: null } });
+    // Placed on free space, outside every frame: it leaves the frame it was in (the drop rule) —
+    // or into the frame / kanban the placement named.
+    const frameId = placed.frameOf.get(m.id) ?? null;
+    update.push({ id: m.id, patch: { ...placed.moveExtra.get(m.id), x: m.x, y: m.y, frameId } });
+    for (const r of riders) if (r.attachedTo === m.id) update.push({ id: r.id, patch: { x: r.x + dx, y: r.y + dy, frameId } });
   }
+  update.push(...placed.grow);
   const cells: Record<string, string> = {};
   for (const [tableId, content] of Object.entries(placed.content)) Object.assign(cells, tableCellEntries(tableId, content));
   return {
@@ -71,6 +63,16 @@ export function planStructure(req: InsertStructureRequest, view: BoardView, newI
     },
     placed,
   };
+}
+
+/**
+ * Moves existing items INTO a frame, a kanban column or a cluster (or a new frame), by meaning:
+ * the same placement rules as new items, laid out as a grid of them in the order given. Returns
+ * the change: the items' and their riders' updates, the container that grew (or the new frame).
+ */
+export function planMoveInto(view: BoardView, ids: string[], placement: InsertStructureRequest['placement'], newId: () => string): { create: NonNullable<BoardChange['create']>; update: NonNullable<BoardChange['update']> } {
+  const plan = planStructure({ structure: { kind: 'clusters', clusters: [{ items: ids.map((id) => ({ id })) }] }, ...(placement ? { placement } : {}) }, view, newId);
+  return { create: plan.change.create ?? [], update: plan.change.update ?? [] };
 }
 
 /** A placed draft as a full element (preview snapshots: the app's insertElements restamps these). */

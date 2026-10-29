@@ -19,7 +19,8 @@
     { "name": "members" },
     { "name": "search", "description": "Find what boards say" },
     { "name": "objects", "description": "Object addresses and what links to them" },
-    { "name": "docs", "description": "Docs (KAI-162): collaborative documents next to boards, shared and opened like boards" }
+    { "name": "docs", "description": "Docs (KAI-162): collaborative documents next to boards, shared and opened like boards" },
+    { "name": "trackers", "description": "Issue trackers (#79): a tracker query as linked task cards on a board (docs/trackers.md)" }
   ],
   "paths": {
     "/me": {
@@ -472,7 +473,8 @@
                   "near": { "type": "string" },
                   "at": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } } },
                   "target": { "type": "string", "enum": ["board", "preview", "suggestions"] },
-                  "description": { "type": "string", "maxLength": 500, "description": "target suggestions: what the proposal does, shown to reviewers" }
+                  "description": { "type": "string", "maxLength": 500, "description": "target suggestions: what the proposal does, shown to reviewers" },
+                  "placement": { "$ref": "#/components/schemas/Placement" }
                 }
               }
             }
@@ -692,6 +694,46 @@
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/boards/{boardId}/trackers/import": {
+      "parameters": [{ "$ref": "#/components/parameters/BoardId" }],
+      "post": {
+        "operationId": "importFromTracker",
+        "tags": ["trackers"],
+        "summary": "Import issues from the issue tracker as linked task cards",
+        "description": "The MCP tool `import_from_tracker` over REST (#79), the board’s \"Import issues…\" for a token or app: the issues a tracker query finds become task cards LINKED to them (key, status, assignee; synced both ways — closing the issue updates its card). Owners and editors, through the person’s own or the team’s tracker connection (`connection`: its name or id, needed when there are several). At most 100 issues (`limit`, default 50); issues already linked on this board are skipped. Placed in free space, or where `placement` says — placement never changes an issue’s status (in a kanban a card goes to the column of its status when the named one has another). Attributed to the app for the person. With `target: \"suggestions\"` it needs only boards:suggest and proposes the cards instead (plain cards linking to their issues, not synced) as one suggestion group. 400 `tracker_not_connected` when the person has no tracker connection here; 400 / 502 `tracker_refused` with the tracker’s answer.",
+        "x-freero-scope": "boards:write",
+        "security": [{ "bearer": ["boards:write"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["query"],
+                "properties": {
+                  "query": { "type": "string", "maxLength": 2000, "description": "JQL (Jira), a Linear search, or a GitHub search (repo:owner/name is:open label:bug)" },
+                  "limit": { "type": "integer", "minimum": 1, "maximum": 100 },
+                  "connection": { "type": "string", "description": "The tracker connection’s name or id" },
+                  "placement": { "$ref": "#/components/schemas/Placement" },
+                  "target": { "type": "string", "enum": ["board", "suggestions"] },
+                  "description": { "type": "string", "maxLength": 500, "description": "target suggestions: shown to reviewers" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Nothing new to import", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TrackerImport" } } } },
+          "201": { "description": "Imported (or proposed)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TrackerImport" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "423": { "$ref": "#/components/responses/AgentPaused" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
         }
       }
     },
@@ -1264,7 +1306,17 @@
                 "moved": { "type": "array", "items": { "type": "string" } },
                 "bounds": { "$ref": "#/components/schemas/Rect" },
                 "snapshot": { "type": "object" },
-                "moves": { "type": "array", "items": { "type": "object" } }
+                "moves": { "type": "array", "items": { "type": "object" } },
+                "parts": {
+                  "type": "array",
+                  "description": "Which element is which input item, in input order: one part per cluster / kanban column (one for a sticky grid or an item list) — its title element (if any) and the item ids",
+                  "items": {
+                    "type": "object",
+                    "required": ["ids"],
+                    "properties": { "titleId": { "type": "string" }, "ids": { "type": "array", "items": { "type": "string" } } }
+                  }
+                },
+                "containerId": { "type": "string", "description": "placement newFrame / newKanban: the frame or kanban made" }
               }
             }
           }
@@ -1387,6 +1439,35 @@
           }
         }
       },
+      "Placement": {
+        "type": "object",
+        "description": "Where new (or moved) items go, by meaning — never coordinates. Give one of: `into` an existing frame, kanban, kanban column (`<kanbanId>:<columnId>`) or cluster (`cluster:<id>`, or the id of any item in it), with `column` (a kanban column by title or id; default: each card’s status column, else the first); `newFrame` (a new frame with this title around what is added); `newKanban` (a new kanban with To do / Doing / Done, each card in the column of its status). Items go below what is there; a frame or kanban grows to hold them; a card dropped in a column with a status takes it. Only sticky notes and cards go into a kanban column.",
+        "properties": {
+          "into": { "type": "string", "maxLength": 200 },
+          "column": { "type": "string", "maxLength": 200 },
+          "newFrame": { "type": "string", "maxLength": 200 },
+          "newKanban": { "type": "string", "maxLength": 200 }
+        }
+      },
+      "TrackerImport": {
+        "type": "object",
+        "required": ["target", "cards", "skipped"],
+        "properties": {
+          "target": { "type": "string", "enum": ["board", "suggestions"] },
+          "cards": {
+            "type": "array",
+            "description": "Each new card (proposed, with target suggestions) and its issue, in the tracker’s order",
+            "items": {
+              "type": "object",
+              "required": ["id", "key", "url"],
+              "properties": { "id": { "type": "string" }, "key": { "type": "string" }, "url": { "type": "string" } }
+            }
+          },
+          "skipped": { "type": "integer", "description": "Matching issues already linked on this board (never imported twice)" },
+          "containerId": { "type": "string", "description": "placement newFrame / newKanban: the frame or kanban made" },
+          "groupId": { "type": ["string", "null"], "description": "target suggestions: the suggestion group" }
+        }
+      },
       "Rect": {
         "type": "object",
         "required": ["x", "y", "w", "h"],
@@ -1498,7 +1579,12 @@
           "assigneeId": { "type": ["string", "null"] },
           "hidden": { "type": "boolean" },
           "locked": { "type": "boolean" },
-          "link": { "type": ["string", "null"] }
+          "link": { "type": ["string", "null"] },
+          "into": {
+            "type": "string",
+            "description": "Move the item INTO this frame, kanban (column) or cluster, as `Placement.into`: Freero finds the spot (not with x / y)."
+          },
+          "column": { "type": "string", "description": "With `into` a kanban: the column, by title or id. A card takes the column’s status." }
         }
       },
       "CommentMessage": {

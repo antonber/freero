@@ -6,7 +6,7 @@ import { STICKY_COLORS } from '../elements';
 import { plainToRichText } from '../text';
 import { STICKY_GAP, STICKY_SIZE } from './kit';
 import { measureText } from './measure';
-import { LAYOUT_LIMITS, LayoutError, type ElementDraft, type ItemInput, type LaidOut, type LayoutContext } from './types';
+import { LAYOUT_LIMITS, LayoutError, type CardInput, type ElementDraft, type ItemInput, type LaidOut, type LayoutContext } from './types';
 
 export const ITEM_CARD_W = 300;
 const CARD_ACCENT = '#5B3FF0';
@@ -30,10 +30,45 @@ export function cardHeight(w: number, title: string, desc: string): number {
   return Math.round(13 + Math.max(20, t.h) + (d ? 4 + d * 18 : 0) + 10 + 24 + 12);
 }
 
+/** A link a new item may carry: http(s), mailto:, tel: or `#<item id>` (the app's link rule). */
+export function checkLink(v: unknown): string | null {
+  if (v === undefined || v === null || v === '') return null;
+  if (typeof v !== 'string' || v.length > 2000 || !/^(https?:|mailto:|tel:|#)/i.test(v)) throw new LayoutError('A link must be an http(s), mailto: or tel: URL, or #<item id>');
+  return v;
+}
+
+/** A task card at (x, y), `w` wide, measured for its title and description. */
+export function cardDraft(it: CardInput & { assigneeId?: string | null; tags?: string[] }, id: string, x: number, y: number, w: number, frameId: string | null): ElementDraft & { h: number } {
+  if (it.status !== undefined && it.status !== null && it.status !== 'todo' && it.status !== 'doing' && it.status !== 'done') throw new LayoutError('A card status is todo, doing or done');
+  const desc = clip(typeof it.description === 'string' ? it.description : '');
+  const link = checkLink(it.link);
+  const tags = (it.tags ?? []).filter((t) => typeof t === 'string' && t);
+  return {
+    id,
+    x: Math.round(x),
+    y: Math.round(y),
+    w,
+    h: cardHeight(w, it.text, desc),
+    rotation: 0,
+    ...(frameId ? { frameId } : {}),
+    type: 'card',
+    title: plainToRichText(clip(it.text)),
+    description: desc ? plainToRichText(desc) : '',
+    color: typeof it.color === 'string' && HEX_RE.test(it.color) ? it.color : CARD_ACCENT,
+    status: it.status ?? null,
+    assigneeId: it.assigneeId ?? null,
+    dueDate: it.dueDate && DATE_RE.test(it.dueDate) ? it.dueDate : null,
+    tags,
+    ...(link ? { link } : {}),
+  } as ElementDraft & { h: number };
+}
+
 function draft(it: ItemInput, id: string, x: number, y: number, w: number, frameId: string | null): ElementDraft {
   const tags = (it.tags ?? []).filter((t) => typeof t === 'string' && t);
   if (it.type === 'sticky') {
+    const link = checkLink(it.link);
     return {
+      ...(link ? { link } : {}),
       id,
       x: Math.round(x),
       y: Math.round(y),
@@ -52,24 +87,7 @@ function draft(it: ItemInput, id: string, x: number, y: number, w: number, frame
       ...(tags.length ? { tags } : {}),
     };
   }
-  const desc = clip(it.description ?? '');
-  return {
-    id,
-    x: Math.round(x),
-    y: Math.round(y),
-    w,
-    h: cardHeight(w, it.text, desc),
-    rotation: 0,
-    ...(frameId ? { frameId } : {}),
-    type: 'card',
-    title: plainToRichText(clip(it.text)),
-    description: desc ? plainToRichText(desc) : '',
-    color: typeof it.color === 'string' && HEX_RE.test(it.color) ? it.color : CARD_ACCENT,
-    status: it.status ?? null,
-    assigneeId: it.assigneeId ?? null,
-    dueDate: it.dueDate && DATE_RE.test(it.dueDate) ? it.dueDate : null,
-    tags,
-  };
+  return cardDraft({ ...it, tags }, id, x, y, w, frameId);
 }
 
 const itemW = (it: ItemInput) => (it.type === 'sticky' ? STICKY_SIZE : ITEM_CARD_W);
@@ -87,7 +105,7 @@ function grid(items: ItemInput[], ctx: LayoutContext): LaidOut {
     slice.forEach((it, i) => elements.push(draft(it, ctx.newId(), i * (cellW + STICKY_GAP), y, itemW(it), null)));
     y += h + STICKY_GAP;
   }
-  return { elements, content: {}, moves: [], size: { w: Math.min(items.length, cols) * (cellW + STICKY_GAP) - STICKY_GAP, h: y - STICKY_GAP } };
+  return { elements, content: {}, moves: [], size: { w: Math.min(items.length, cols) * (cellW + STICKY_GAP) - STICKY_GAP, h: y - STICKY_GAP }, parts: [{ ids: elements.map((e) => e.id) }] };
 }
 
 /** A kanban with a column per status (items without one in the first), its items stacked in their column. */
@@ -122,7 +140,7 @@ function kanban(items: ItemInput[], title: string | undefined, ctx: LayoutContex
     colW: K.colW,
     columns: STATUS_COLUMNS.map((c) => ({ id: ctx.newId(), title: plainToRichText(c.title), status: c.status, color: c.color })),
   };
-  return { elements: [board, ...members], content: {}, moves: [], size: { w, h } };
+  return { elements: [board, ...members], content: {}, moves: [], size: { w, h }, parts: [{ ids: members.map((e) => e.id) }] };
 }
 
 export function layoutItems(items: ItemInput[], layout: 'grid' | 'kanban', title: string | undefined, ctx: LayoutContext): LaidOut {

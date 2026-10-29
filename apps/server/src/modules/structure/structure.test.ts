@@ -9,6 +9,7 @@ import {
   tableCellKey,
   type BoardElement,
   type ConnectorElement,
+  type ElementDraft,
   type InsertStructureRequest,
   type Rect,
   type TableElement,
@@ -17,6 +18,8 @@ import { closeTestDb, openTestDb } from '../../platform/testing';
 import { createUser } from '../auth/index';
 import { createBoard } from '../boards/index';
 import { initBoardDoc, readBoardView, type BoardView } from '../realtime/index';
+import { outlineOfView } from '../outline/index';
+import { placeLaid } from './place';
 import { planStructure } from './plan';
 import { insertStructure } from './service';
 
@@ -277,4 +280,83 @@ it('moves nodes linked earlier into a Mermaid subgraph that names them on their 
   const frame = all.find((e) => e.type === 'frame')!;
   const shape = (t: string) => all.find((e) => e.type === 'shape' && (e as { text: string }).text === t)!;
   expect([shape('Approved?').frameId, shape('Revise').frameId, shape('Request').frameId ?? null]).toEqual([frame.id, frame.id, null]);
+});
+
+// ---- placement by meaning: into a kanban column, a cluster, a frame (agents never pick coordinates) ----
+
+type Kanban = BoardElement & { colW: number; columns: Array<{ id: string; title: string; status: string | null }> };
+type Card = BoardElement & { title: string; status: string | null };
+const columnOf = (k: Kanban, el: BoardElement) => Math.floor((el.x + el.w / 2 - k.x - 6) / (k.colW + 12));
+const within = (a: Rect, b: Rect) => a.x >= b.x && a.y >= b.y && a.x + a.w <= b.x + b.w && a.y + a.h <= b.y + b.h;
+
+it('cards added into a kanban column by its title land inside that column below the cards already there, take its status, and the kanban grows to hold them', async () => {
+  const boardId = await boardWith([]);
+  const made = await insert(boardId, { structure: { kind: 'kanban', title: 'Retro', columns: [{ title: 'Went well', items: ['Deploys'] }, { title: 'Done', items: ['Old', 'Older'] }] } });
+  const kanbanId = made.created[0];
+  const before = (await elementsOf(boardId)).find((e) => e.id === kanbanId) as Kanban;
+  const items = Array.from({ length: 6 }, (_, i) => ({ type: 'card' as const, text: `Action ${i}`, status: 'todo' as const }));
+  const res = await insert(boardId, { structure: { kind: 'items', items }, placement: { into: kanbanId, column: 'done' } });
+
+  const all = await elementsOf(boardId);
+  const k = all.find((e) => e.id === kanbanId) as Kanban;
+  const old = all.filter((e) => made.created.includes(e.id) && e.type === 'card') as Card[];
+  const added = res.parts![0].ids.map((id) => all.find((e) => e.id === id)) as Card[];
+  expect(added.map((c) => [c.title, c.frameId, columnOf(k, c), c.status])).toEqual(items.map((it) => [it.text, kanbanId, 1, 'done']));
+  // Below what was in the column, in order, never on anything.
+  const lowestOld = Math.max(...old.filter((c) => columnOf(k, c) === 1).map((c) => c.y + c.h));
+  expect(added[0].y).toBeGreaterThan(lowestOld);
+  for (let i = 1; i < added.length; i++) expect(added[i].y).toBeGreaterThan(added[i - 1].y + added[i - 1].h);
+  expect(k.h).toBeGreaterThan(before.h);
+  for (const c of added) expect(within(c, k)).toBe(true);
+});
+
+it('an imported issue keeps the tracker’s status wherever it is placed: named for a column with another status, it goes to the column of its own', async () => {
+  const boardId = await boardWith([]);
+  const made = await insert(boardId, { structure: { kind: 'kanban', columns: [{ title: 'To do', items: [] }, { title: 'Done', items: [] }] } });
+  const view = await readBoardView(boardId, { userId, role: 'owner' });
+  const laid = {
+    elements: [
+      { id: 'open', type: 'card', x: 0, y: 0, w: 300, h: 100, rotation: 0, title: 'Open issue', description: '', color: '#5B3FF0', status: 'todo', assigneeId: null, dueDate: null, tags: [] },
+      { id: 'closed', type: 'card', x: 320, y: 0, w: 300, h: 100, rotation: 0, title: 'Closed issue', description: '', color: '#5B3FF0', status: 'done', assigneeId: null, dueDate: null, tags: [] },
+    ] as unknown as ElementDraft[],
+    content: {},
+    moves: [],
+    size: { w: 620, h: 100 },
+    parts: [{ ids: ['open', 'closed'] }],
+  };
+  const placed = placeLaid(laid, { into: made.created[0], column: 'To do' }, view, { newId: () => 'x', obstacles: [], travelling: new Set(), keepStatus: true });
+  const k = view.elements.find((e) => e.el.id === made.created[0])!.el as Kanban;
+  const at = (id: string) => placed.elements.find((e) => e.id === id) as unknown as Card;
+  expect([at('open').status, columnOf(k, at('open'))]).toEqual(['todo', 0]);
+  expect([at('closed').status, columnOf(k, at('closed'))]).toEqual(['done', 1]);
+});
+
+it('notes added into a cluster read as part of it under its title — and never join it to the cluster beside it', async () => {
+  // Speed, with Pricing 120 to its right and Bugs 120 below it: no room under it or beside it on the right.
+  const title = (id: string, x: number, y: number) => ({ id, type: 'text', x, y, w: 424, h: 42, rotation: 0, z: ++z, createdBy: 'x', createdAt: 1, updatedAt: 1, text: `<b>${id}</b>`, fontFamily: 'sans', fontSize: 24, textColor: '#000', align: 'left', background: 'transparent', autoWidth: false }) as unknown as BoardElement;
+  const group = (name: string, x: number, y: number) => [title(name, x, y), sticky(`${name}1`, x, y + 58), sticky(`${name}2`, x + 224, y + 58), sticky(`${name}3`, x, y + 282)];
+  const boardId = await boardWith([...group('Speed', 0, 0), ...group('Pricing', 544, 0), ...group('Bugs', 0, 602)]);
+  const added = await insert(boardId, { structure: { kind: 'stickies', items: ['Slow search', 'Slow sync', 'Typing lag', 'Big boards crawl'] }, placement: { into: 'cluster:Speed' } });
+
+  const view = await readBoardView(boardId, { userId, role: 'owner' });
+  const outline = await outlineOfView({ id: boardId, title: 'Structure' }, view);
+  const members = (name: string) => outline.items.find((c) => c.kind === 'cluster' && c.title === name)?.children?.map((c) => c.id).sort();
+  expect(members('Speed')).toEqual(['Speed1', 'Speed2', 'Speed3', ...added.parts![0].ids].sort());
+  expect(members('Pricing')).toEqual(['Pricing1', 'Pricing2', 'Pricing3']);
+  expect(members('Bugs')).toEqual(['Bugs1', 'Bugs2', 'Bugs3']);
+});
+
+it('items added into a full frame make it grow to hold them, far enough from what is there not to read as one cluster with it', async () => {
+  const frame = { id: 'f', type: 'frame', x: 0, y: 0, w: 700, h: 300, rotation: 0, z: 0, createdBy: 'x', createdAt: 1, updatedAt: 1, title: 'Sprint', fill: '#fff', index: 0 } as BoardElement;
+  const inside = [sticky('a', 40, 40, { frameId: 'f' }), sticky('b', 260, 40, { frameId: 'f' }), sticky('c', 480, 40, { frameId: 'f' })];
+  const boardId = await boardWith([frame, ...inside]);
+  const res = await insert(boardId, { structure: { kind: 'stickies', items: ['d', 'e', 'f', 'g'] }, placement: { into: 'f' } });
+  const all = await elementsOf(boardId);
+  const f = all.find((e) => e.id === 'f')!;
+  const added = all.filter((e) => res.created.includes(e.id));
+  for (const s of added) {
+    expect(s.frameId).toBe('f');
+    expect(within(s, f)).toBe(true);
+    for (const o of inside) expect(overlap(s, o, 64)).toBe(false);
+  }
 });

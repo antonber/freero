@@ -29,10 +29,32 @@ export interface OrgPersonInput {
   id?: string;
 }
 
-/** [additive] A kanban column and the cards in it, top to bottom. */
+/** [additive] A kanban column and the cards in it, top to bottom (a text, or a card with its fields). */
 export interface KanbanColumnInput {
   title: string;
-  items: string[];
+  items: Array<string | CardInput>;
+}
+
+/**
+ * [additive] A new sticky note given with more than its text: a link (http(s), mailto:, tel: or
+ * `#<item id>`) and its own colour.
+ */
+export interface StickyInput {
+  text: string;
+  link?: string | null;
+  color?: StickyColor;
+}
+
+/** [additive] A new task card: its title (`text`) and optional fields. */
+export interface CardInput {
+  text: string;
+  description?: string;
+  status?: CardStatus | null;
+  /** YYYY-MM-DD */
+  dueDate?: string | null;
+  link?: string | null;
+  /** Accent, #rrggbb. */
+  color?: string;
 }
 
 export interface GraphNodeInput {
@@ -78,13 +100,13 @@ export type StructureInput =
   | { kind: 'tree'; root: OutlineNodeInput; direction?: Direction }
   /** An indented list (Markdown bullets or plain indentation) → mind map or tree. */
   | { kind: 'outline'; text: string; as?: 'mindmap' | 'tree' }
-  /** A list → a grid of stickies, optionally under a title. */
-  | { kind: 'stickies'; items: string[]; title?: string; color?: StickyColor }
+  /** A list → a grid of stickies, optionally under a title. An item is its text, or a StickyInput (a link, its colour). */
+  | { kind: 'stickies'; items: Array<string | StickyInput>; title?: string; color?: StickyColor }
   /**
-   * Named groups → affinity clusters side by side. An item is new text (a new sticky) or
-   * `{ id }` of a sticky already on the board, which is moved into its cluster.
+   * Named groups → affinity clusters side by side. An item is new text (a new sticky), a
+   * StickyInput, or `{ id }` of a sticky already on the board, which is moved into its cluster.
    */
-  | { kind: 'clusters'; clusters: Array<{ title?: string; color?: StickyColor; items: Array<string | { id: string }> }> }
+  | { kind: 'clusters'; clusters: Array<{ title?: string; color?: StickyColor; items: Array<string | StickyInput | { id: string }> }> }
   /** Nodes and edges → a layered diagram (shapes + attached connectors). */
   | { kind: 'graph'; nodes: GraphNodeInput[]; edges: GraphEdgeInput[]; direction?: Direction; groups?: GraphGroupInput[] }
   /** Mermaid flowchart (subgraphs become frames) or sequence diagram. */
@@ -122,6 +144,8 @@ export interface ItemInput {
   assigneeId?: string | null;
   /** YYYY-MM-DD */
   dueDate?: string | null;
+  /** [additive] http(s), mailto:, tel: or `#<item id>`. */
+  link?: string | null;
 }
 
 /** What a layout produced, relative to its own top-left (0, 0). */
@@ -138,6 +162,13 @@ export interface LaidOut {
    * already made (diagrams as code). Kinds without lasting identity (stickies, tables) leave it out.
    */
   keys?: Record<string, string>;
+  /**
+   * [additive] The elements made for the input's items, in input order, part by part: one part
+   * per cluster / kanban column (one for a sticky grid or an item list) — its title's element id
+   * (if it has one) and, item by item, the new element's id or the id of the existing one moved
+   * there. How a caller tells which new sticky is which of the texts it sent.
+   */
+  parts?: Array<{ titleId?: string; ids: string[] }>;
 }
 
 /** What the layout may ask about the board (existing stickies to move into clusters). */
