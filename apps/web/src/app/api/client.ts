@@ -99,7 +99,8 @@ import type {
   WorkspaceRole,
   WorkspaceSummary,
 } from '@freero/shared';
-import type { BacklinksResponse, ResolveObjectsResponse } from '@freero/shared';
+import type { BacklinksResponse, ResolveObjectsResponse, RestoreBackupResponse } from '@freero/shared';
+import { BACKUP_MEDIA_TYPE } from '@freero/shared';
 
 export class ApiError extends Error {
   constructor(
@@ -536,6 +537,26 @@ export const api = {
   uploadImage: (file: Blob) => upload('/api/uploads', file, file.type || 'application/octet-stream'),
   // any other file: an opaque attachment, only ever downloaded from its board
   uploadAttachment: (file: Blob) => upload('/api/uploads?as=attachment', file, 'application/octet-stream'),
+  /** The board as a `.freero` backup (downloads policy, audited; KAI-137), with the name the server gave it. */
+  async downloadBackup(boardId: string): Promise<{ blob: Blob; name: string }> {
+    const res = await fetch(`/api/boards/${encodeURIComponent(boardId)}/backup`, { credentials: 'same-origin' });
+    if (!res.ok) throw await failure(res);
+    const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? 'board.freero';
+    return { blob: await res.blob(), name };
+  },
+  /** A new board from a `.freero` file, in `workspaceId` (and `projectId`); the server checks the file, the place and the quota. */
+  async restoreBackup(file: Blob, place: { workspaceId: string; projectId: string | null }): Promise<RestoreBackupResponse> {
+    const q = new URLSearchParams({ workspace: place.workspaceId });
+    if (place.projectId) q.set('project', place.projectId);
+    const res = await fetch(`/api/boards/restore-backup?${q}`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': BACKUP_MEDIA_TYPE },
+      body: file,
+    });
+    if (!res.ok) throw await failure(res);
+    return res.json();
+  },
   /** The file of a file card / video / audio item on a board (downloads policy, audited). */
   async downloadBoardFile(boardId: string, elementId: string): Promise<Blob> {
     const res = await fetch(`/api/boards/${encodeURIComponent(boardId)}/files/${encodeURIComponent(elementId)}`, { credentials: 'same-origin' });

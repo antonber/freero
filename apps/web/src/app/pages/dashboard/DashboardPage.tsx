@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Folder, LayoutGrid, LayoutTemplate, List, Plus, RotateCw, Search, ShieldCheck, UserX, X } from 'lucide-react';
+import { ArchiveRestore, Folder, LayoutGrid, LayoutTemplate, List, Plus, RotateCw, Search, ShieldCheck, UserX, X } from 'lucide-react';
 import { TRASH_RETENTION_DAYS, type BoardSummary, type ProjectSummary, type WorkspaceBlock } from '@freero/shared';
 import { Button, IconButton, Input, Kbd, Modal, SegmentedControl, Select, Skeleton, Spinner, useToast } from '@ui';
 import { api, ApiError, type BoardFilter } from '../../api/client';
@@ -10,9 +10,11 @@ import { VerifyEmailBanner } from '../../components/VerifyEmailBanner';
 import { NotificationBell } from '../../notifications/NotificationBell';
 import { filterByOwner, sortBoards, type BoardSort, type OwnerFilter } from '../../lib/boards';
 import { useDebouncedValue, usePersistentState } from '../../lib/hooks';
+import { onLaunchedBackup, takeBackup } from '../../lib/pendingBackup';
 import { BoardItem, type BoardActions } from './BoardItem';
 import { ContentSearch, useContentSearch } from './ContentSearch';
 import { RecentActivity } from './RecentActivity';
+import { RestoreBackupDialog } from './RestoreBackupDialog';
 import { NAV, Sidebar, type BoardView, type View } from './Sidebar';
 import { TrashItem, type TrashActions } from './TrashItem';
 import { CreateWorkspaceDialog, ProjectDialog, TransferBoardDialog } from './WorkspaceDialogs';
@@ -94,6 +96,20 @@ export function DashboardPage() {
   const [newWorkspace, setNewWorkspace] = useState(false);
   const [editingProject, setEditingProject] = useState<ProjectSummary | 'new' | null>(null);
   const [deletingProject, setDeletingProject] = useState<ProjectSummary | null>(null);
+  // Restoring a .freero backup (KAI-137): from the tile, a file dropped on a board, or one the
+  // installed app was opened with (KAI-218).
+  const [restoring, setRestoring] = useState<{ file: File | null } | null>(null);
+  const wantsRestore = params.get('restore') === '1';
+  useEffect(() => {
+    if (!wantsRestore) return;
+    setRestoring({ file: takeBackup() });
+    setParams((p) => {
+      const next = new URLSearchParams(p);
+      next.delete('restore');
+      return next;
+    }, { replace: true });
+  }, [wantsRestore, setParams]);
+  useEffect(() => onLaunchedBackup((file) => setRestoring({ file })), []);
 
   useEffect(() => {
     document.title = workspace ? `${workspaceLabel(workspace)} · Freero` : 'Boards · Freero';
@@ -366,6 +382,15 @@ export function DashboardPage() {
                   <span className="fr-create__sub">Retros, roadmaps, brainstorms</span>
                 </span>
               </button>
+              <button type="button" className="fr-create__tile fr-create__tile--restore" onClick={() => setRestoring({ file: null })} disabled={!!creating}>
+                <span className="fr-create__icon">
+                  <ArchiveRestore size={22} />
+                </span>
+                <span className="fr-create__text">
+                  <span className="fr-create__title">Restore backup</span>
+                  <span className="fr-create__sub">From a .freero file</span>
+                </span>
+              </button>
             </section>
           ) : null}
 
@@ -580,6 +605,21 @@ export function DashboardPage() {
           else patchBoard(b.id, b);
         }}
       />
+      {restoring ? (
+        <RestoreBackupDialog
+          open
+          initialFile={restoring.file}
+          workspaces={ws.workspaces ?? []}
+          workspaceId={workspaceId}
+          projectId={project?.id ?? null}
+          onClose={() => setRestoring(null)}
+          onRestored={(id, note) => {
+            setRestoring(null);
+            notify(note, 'success');
+            navigate(`/board/${id}`);
+          }}
+        />
+      ) : null}
       <CreateWorkspaceDialog
         open={newWorkspace}
         onClose={() => setNewWorkspace(false)}

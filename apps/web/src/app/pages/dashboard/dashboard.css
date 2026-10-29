@@ -236,6 +236,63 @@
   background: var(--fr-accent-soft);
 }
 
+.fr-create__tile--restore .fr-create__icon {
+  color: var(--fr-ink-2);
+  background: var(--fr-surface-3);
+}
+
+/* ---- Restore a backup (KAI-137) ---- */
+.fr-dash-restore {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.fr-dash-restore__file {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  color: var(--fr-ink-2);
+  border: 1.5px dashed var(--fr-line-strong);
+  border-radius: var(--fr-radius);
+  cursor: pointer;
+}
+
+.fr-dash-restore__file:hover,
+.fr-dash-restore__file:focus-within {
+  border-color: var(--fr-primary);
+  color: var(--fr-ink);
+}
+
+.fr-dash-restore__file input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.fr-dash-restore__place {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.fr-dash-restore__place label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--fr-ink-2);
+}
+
+.fr-dash-restore__error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fr-danger);
+}
+
 .fr-create__text {
   display: flex;
   flex-direction: column;

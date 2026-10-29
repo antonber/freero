@@ -25,8 +25,10 @@ import {
   uploadImage,
   versionHistory,
   downloadBoardFile,
+  downloadBackupOf,
   saveAs,
 } from '../hostServices';
+import { holdBackup, RESTORE_PATH } from '../lib/pendingBackup';
 import { serverNow, syncServerClock } from './serverClock';
 
 export interface HostDeps {
@@ -96,6 +98,11 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     uploadFile,
     uploadAttachment,
     downloadFile: downloadBoardFile(board.id),
+    downloadBackup: downloadBackupOf(board.id),
+    openBackup(file) {
+      holdBackup(file);
+      deps.navigate(RESTORE_PATH);
+    },
     async renameBoard(title) {
       await renameBoard(board.id, title);
       deps.onTitleChange(title);

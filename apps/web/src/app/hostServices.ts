@@ -111,6 +111,16 @@ export function downloadBoardFile(boardId: string): NonNullable<Host['downloadFi
   };
 }
 
+/** Host.downloadBackup on a real board: the server builds the .freero file (downloads policy, audit log). */
+export function downloadBackupOf(boardId: string): NonNullable<Host['downloadBackup']> {
+  return async () => {
+    const { blob, name } = await api.downloadBackup(boardId);
+    const url = URL.createObjectURL(blob);
+    saveAs(url, name);
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  };
+}
+
 export async function renameBoard(id: string, title: string): Promise<void> {
   await api.updateBoard(id, { title });
 }
