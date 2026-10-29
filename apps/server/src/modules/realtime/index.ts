@@ -54,6 +54,9 @@ export { onVersionRestored, type VersionRestoredEvent } from './history';
 // Version history (stored snapshots of a board's document): list them, read one's full Yjs state.
 // The REST API for it is this module's routes.ts (history.ts); pruning: retention.ts.
 export { listSnapshots as listBoardSnapshots, loadSnapshot as loadBoardSnapshot, type SnapshotInfo } from './docStore';
+// Board backups (modules/backup, KAI-137): content as JSON (what the exporter may read), and a
+// fresh document state built from such JSON for a restored board.
+export { boardBackupContent, encodeBoardContent, withoutLeftOutFields, type BoardBackupContent, type BoardContentJson } from './backup';
 // Data exports (modules/privacy): board content and the comments a person wrote.
 export { exportBoardContent, commentsWrittenBy, type BoardContentExport, type CommentThreadExport } from './dataExport';
 // Board content as saved, as every reader sees it (derived indexes read it from the outbox), and

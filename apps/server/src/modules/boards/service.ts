@@ -89,6 +89,30 @@ export async function authorizeFileDownload(
 }
 
 /**
+ * Someone downloading a backup of the board (`.freero`, KAI-137; modules/backup builds it): refused
+ * like any export by the workspace's downloads policy (403 `downloads_restricted`, audited). Returns
+ * what the backup may carry — their role decides whether hidden frames' contents are theirs to take
+ * — and how to audit it once it is built (`board.exported`, format `freero`).
+ */
+export async function authorizeBackup(
+  boardId: string,
+  userId: string,
+): Promise<{
+  role: Role;
+  board: { id: string; title: string; description: string; createdAt: number };
+  record(meta: { files: number; missingFiles: number; hiddenContent: boolean; bytes: number }): Promise<void>;
+}> {
+  const { board, role, access } = await requireAccess(boardId, userId);
+  await requireDownload(board, userId, access, 'backup');
+  return {
+    role,
+    board: { id: board.id, title: board.title, description: board.description, createdAt: board.createdAt },
+    record: (meta) =>
+      recordAudit({ action: 'board.exported', workspaceId: board.workspaceId, actorId: userId, target: boardTarget(board), metadata: { format: 'freero', ...meta } }),
+  };
+}
+
+/**
  * The board as its link works for one person (KAI-145): a password-protected link gives nothing to
  * someone who has not given its CURRENT password (`unlockedRev`: the revision they unlocked).
  * Expiry is already applied when the board is read (repo.toBoard).
@@ -188,7 +212,7 @@ export function permissionsFor(board: Board, userId: string, role: Role, access:
 }
 
 /** How someone tried to take a board's content out (recorded with a refusal). */
-export type DownloadVia = 'export' | 'duplicate' | 'template' | 'file' | 'outline' | 'api' | 'ai';
+export type DownloadVia = 'export' | 'duplicate' | 'template' | 'file' | 'outline' | 'api' | 'ai' | 'backup';
 
 /**
  * The one check of the workspace's "downloads" policy, for everything that takes a board's content
@@ -621,6 +645,43 @@ export async function duplicateBoard(source: Board, userId: string, role: Role):
     return copy;
   });
   await boardLifecycle({ boardId: made.id, actorId: userId, action: 'duplicated', from: source.title });
+  return made;
+}
+
+/**
+ * A new board for `userId` made from a backup (KAI-137): the board row and its content in ONE
+ * transaction (a failure leaves no empty board), in the workspace / project they chose — where
+ * they may create boards, under their board quota. `state` / `editors` are document states built
+ * by realtime from the file's content (already remapped to fresh ids and re-uploaded files).
+ */
+export async function restoreBoard(
+  userId: string,
+  fields: { title: string; description: string; place: BoardPlace },
+  content: { state: Uint8Array; editors: Uint8Array | null },
+  source: { boardId: string; title: string; origin: string | null; formatVersion: number; files: number; missingFiles: number },
+): Promise<Board> {
+  const made = await repo.transaction(async () => {
+    const board = await createBoard(userId, cleanTitle(fields.title), cleanDescription(fields.description), 'none', fields.place);
+    await recordAudit({
+      action: 'board.backup_restored',
+      workspaceId: board.workspaceId,
+      actorId: userId,
+      target: boardTarget(board),
+      metadata: {
+        sourceBoard: source.boardId,
+        sourceTitle: source.title,
+        sourceOrigin: source.origin,
+        formatVersion: source.formatVersion,
+        files: source.files,
+        missingFiles: source.missingFiles,
+        hiddenContent: content.editors !== null,
+      },
+    });
+    await initBoardDoc(board.id, content.state);
+    if (content.editors) await initBoardLayer(board.id, 'editors', content.editors);
+    return board;
+  });
+  await boardLifecycle({ boardId: made.id, actorId: userId, action: 'created' });
   return made;
 }
 
