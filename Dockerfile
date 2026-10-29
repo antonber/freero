@@ -40,7 +40,8 @@ COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/
 COPY apps/site/package.json apps/site/
 COPY packages/shared/package.json packages/shared/
-RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund --workspace=@freero/server --include-workspace-root=false
+RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund --workspace=@freero/server --include-workspace-root=false \
+ && mkdir -p apps/server/node_modules
 
 # ---- 4. runtime -------------------------------------------------------------------------------
 FROM ${NODE_IMAGE} AS runtime
@@ -50,6 +51,8 @@ ENV NODE_ENV=production \
     NODE_OPTIONS=--enable-source-maps
 WORKDIR /app
 COPY --from=server-deps /app/node_modules ./node_modules
+# Packages npm couldn't hoist (a version only the server needs, e.g. @modelcontextprotocol/ext-apps).
+COPY --from=server-deps /app/apps/server/node_modules apps/server/node_modules
 COPY package.json tsconfig.base.json ./
 COPY packages/shared packages/shared
 COPY apps/server/package.json apps/server/tsconfig.json apps/server/
