@@ -29,6 +29,7 @@ interface GhIssue {
   updated_at?: string;
   repository_url?: string;
   pull_request?: unknown;
+  milestone?: { title?: string } | null;
 }
 
 const ok = (res: HttpResponse) => res.status >= 200 && res.status < 300;
@@ -87,6 +88,7 @@ function toRemote(repo: string, i: GhIssue): RemoteIssue {
     },
     assigneeName: null,
     updatedAt: i.updated_at ? Date.parse(i.updated_at) || 0 : 0,
+    groups: { team: repo, epic: i.milestone?.title ?? null },
   };
 }
 

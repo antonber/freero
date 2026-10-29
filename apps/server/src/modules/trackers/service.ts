@@ -30,6 +30,7 @@ import {
   type BoardElement,
   type IssueField,
   type IssueValues,
+  type RoadmapGroupBy,
   type SyncBase,
   type TrackerImportResponse,
   type TrackerIssuePreview,
@@ -69,6 +70,8 @@ import {
 } from './board';
 import { noteOutcome, openConnection, requireUsable, usableConnections, webhookSecretOf } from './connections';
 import { emitTrackerActivity } from './events';
+import { dayNumber } from './board';
+import { planRoadmapImport } from './roadmap';
 import { TrackerError } from './http';
 import { providerOf, type RemoteIssue, type TrackerProvider } from './providers/index';
 import * as repo from './repo';
@@ -750,6 +753,14 @@ export async function importIssues(userId: string, boardId: string, body: Record
   const query = typeof body.query === 'string' ? body.query.trim() : '';
   if (!query || query.length > 2000) throw badRequest('query is required (at most 2000 characters)');
   const limit = typeof body.limit === 'number' && Number.isInteger(body.limit) ? Math.max(1, Math.min(MAX_IMPORT, body.limit)) : 50;
+  // Roadmap mode (KAI-160): onto a timeline the person can see and change.
+  const target = roadmapTarget(body.timeline);
+  if (target) {
+    const v0 = await readBoardView(boardId, { userId, role: board.role });
+    const tl = v0.elements.find((e) => e.el.id === target.id)?.el;
+    if (!tl || tl.type !== 'timeline') throw badRequest('That timeline isn’t on this board');
+    if (tl.locked) throw badRequest('That timeline is locked');
+  }
   await consumeRateLimit('trackerSend', userId);
   const provider = providerOf(conn.provider);
   const pc = openConnection(conn);
@@ -808,6 +819,7 @@ export async function importIssues(userId: string, boardId: string, body: Record
     }
   }
   const created: string[] = [];
+  let unscheduled = 0;
   try {
     await writeBoard(boardId, actor, (live) => {
       const tags = new Map([...(live.collection('tags') as ReadonlyMap<string, { name?: string }>)].map(([id, t]) => [provider.label(t?.name ?? '').toLowerCase(), id]));
@@ -822,6 +834,7 @@ export async function importIssues(userId: string, boardId: string, body: Record
         }
         return id;
       };
+      const timeline = target ? live.elements.find((e) => e.el.id === target.id && e.el.type === 'timeline')?.el : undefined;
       const cols = Math.min(5, Math.max(1, Math.ceil(Math.sqrt(inserted.length))));
       const heights = inserted.map((l) => {
         const i = fresh.find((x) => x.id === l.externalId)!;
@@ -865,13 +878,27 @@ export async function importIssues(userId: string, boardId: string, body: Record
           ),
         ]),
       );
-      return {
-        create,
-        collections: {
-          [TRACKER_COLLECTION]: badges,
-          ...(Object.keys(newTags).length ? { tags: newTags } : {}),
-        },
+      const collections = {
+        [TRACKER_COLLECTION]: badges,
+        ...(Object.keys(newTags).length ? { tags: newTags } : {}),
       };
+      if (timeline?.type === 'timeline' && target) {
+        const frames = live.elements.map((e) => e.el).filter((el) => el.type === 'frame');
+        const roadmap = planRoadmapImport(
+          live,
+          timeline,
+          inserted.map((l, n) => ({ id: l.sources[0], issue: fresh.find((x) => x.id === l.externalId)!, draft: create[n] })),
+          {
+            groupBy: target.groupBy,
+            today: dayNumber(Date.now()),
+            newId: () => newId(10),
+            frameIndex: frames.reduce((m, f) => Math.max(m, Number((f as { index?: number }).index) || 0), -1) + 1,
+          },
+        );
+        unscheduled = roadmap.unscheduled;
+        return { create: roadmap.create, update: roadmap.update, collections };
+      }
+      return { create, collections };
     });
   } catch (e) {
     for (const l of inserted) await repo.deleteLink(l.id);
@@ -908,7 +935,18 @@ export async function importIssues(userId: string, boardId: string, body: Record
     issue: null,
     count: inserted.length,
   });
-  return { created, skipped: issues.length - inserted.length };
+  return { created, skipped: issues.length - inserted.length, ...(target ? { unscheduled } : {}) };
+}
+
+const GROUPS = new Set<RoadmapGroupBy>(['none', 'team', 'epic', 'label']);
+
+/** A roadmap import's target from a request body (`timeline: { id, groupBy? }`), or null. */
+function roadmapTarget(v: unknown): { id: string; groupBy: RoadmapGroupBy } | null {
+  if (v === undefined || v === null) return null;
+  const t = v as { id?: unknown; groupBy?: unknown };
+  if (typeof t.id !== 'string' || !t.id || t.id.length > 64) throw badRequest('timeline.id must name a timeline');
+  if (t.groupBy !== undefined && !GROUPS.has(t.groupBy as RoadmapGroupBy)) throw badRequest('timeline.groupBy must be none, team, epic or label');
+  return { id: t.id, groupBy: (t.groupBy as RoadmapGroupBy | undefined) ?? 'none' };
 }
 
 async function requireLinkOnBoard(userId: string, boardId: string, linkId: string) {
