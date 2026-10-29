@@ -146,13 +146,27 @@ async function seedRetro() {
     ],
   });
   await tool('add_comment', { boardId: b.id, itemId: clusters[1].titleId, text: 'Handoffs came up in the last two retros as well — worth a working session?' });
-  // A proposal waiting for review: what an assistant with read + suggest access does.
-  await tool('propose_changes', {
-    boardId: b.id,
-    description: 'A theme that groups the release-process notes',
-    structure: { kind: 'stickies', title: 'Suggested theme: release process', items: ['Docs, support and QA all learn about releases late', 'One release checklist owned by the release captain'] },
-  });
-  console.log(`  + ${b.title}: three clusters and three action cards in a frame, a comment, one proposal waiting for review`);
+  // A proposal waiting for review: what an assistant with read + suggest access does. Made through a
+  // token of its own that stays (#89): revoking a credential withdraws what it proposed (KAI-224),
+  // so one made with the seed's token, revoked at the end, would never be there for reviewers.
+  const proposer = await api('POST', '/api/auth/tokens', { name: 'Demo assistant', scopes: ['boards:read', 'boards:suggest'], expiresInDays: null });
+  if (proposer.status !== 201) throw new Error(`Couldn’t make the demo assistant's token: ${proposer.status} ${proposer.text}`);
+  const assistant = new Client({ name: 'freero-reviewer-seed', version: '1.0.0' });
+  await assistant.connect(new StreamableHTTPClientTransport(new URL(`${BASE}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${proposer.json.secret}` } } }));
+  try {
+    const r = await assistant.callTool({
+      name: 'propose_changes',
+      arguments: {
+        boardId: b.id,
+        description: 'A theme that groups the release-process notes',
+        structure: { kind: 'stickies', title: 'Suggested theme: release process', items: ['Docs, support and QA all learn about releases late', 'One release checklist owned by the release captain'] },
+      },
+    });
+    if (r.isError) throw new Error(`propose_changes: ${(r.content ?? []).map((c) => c.text ?? '').join(' ')}`);
+  } finally {
+    await assistant.close().catch(() => undefined);
+  }
+  console.log(`  + ${b.title}: three clusters and three action cards in a frame, a comment, one proposal waiting for review (by the "Demo assistant" token, kept: revoking it withdraws the proposal)`);
 }
 
 async function seedRoadmap() {
