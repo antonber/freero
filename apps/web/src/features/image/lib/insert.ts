@@ -129,6 +129,25 @@ export async function insertImageFiles(editor: Editor, files: File[], center: Po
   return els.length ? editor.createMany(els as NewElement[], { select: true }) : [];
 }
 
+/**
+ * Images already stored with Freero (`/uploads/<name>`: shared into the installed app, KAI-218)
+ * placed as one grid in a free spot near the view, one undo step. Anything that isn't one of our
+ * own upload URLs, or doesn't load as a picture, is skipped. Returns the new ids.
+ */
+export async function insertStoredImages(editor: Editor, urls: string[]): Promise<string[]> {
+  const own = urls.filter((u) => /^\/uploads\/[A-Za-z0-9_-]{6,64}\.(png|jpg|gif|webp|svg)$/.test(u)).slice(0, MAX_FILES);
+  if (!own.length || !editor.can('editor')) return [];
+  const sized = (await Promise.all(own.map(async (src) => ({ src, size: await naturalSizeOf(src, 8000) })))).filter(
+    (m): m is { src: string; size: { w: number; h: number } } => !!m.size,
+  );
+  if (!sized.length) return [];
+  const rects = intoFreeSpot(editor, fitGridLayout(sized.map((m) => fitSize(m.size.w, m.size.h)), { x: 0, y: 0 }, visibleArea(editor)));
+  return editor.createMany(
+    sized.map((m, i) => ({ type: 'image', src: m.src, naturalW: m.size.w, naturalH: m.size.h, alt: '', ...rects[i] })) as NewElement[],
+    { select: true },
+  );
+}
+
 /** "team-photo_2024.png" → "team photo 2024"; generic names ("image.png", "pasted.png") → "". */
 export function altFromName(name: string): string {
   const base = name.replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' ').trim();

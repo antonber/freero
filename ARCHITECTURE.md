@@ -84,13 +84,17 @@ features/<name>/
                            add to items (votes, tags, comments). Runs on the SERVER and in the
                            browser (Editor.getOutline, "Board as list"), so it is pure:
                            '@freero/shared', files of its own feature, type-only imports [W13]
+  importer.ts    optional  export default defineImporter({ id, importPriority, importData }) (or an
+                           array): pasted / dropped data no single element type owns — a whole file
+                           of another tool (features/import), offered in the same priority order and
+                           with the same contract as ElementDefinition.importData
   *.css, *.test.ts(x)      allowed at the root
   lib/                     any helpers
 ```
 
 Any other file at a feature root fails [W7]. The manifest `name` must equal the folder name.
 The contract for all of these is `apps/web/src/engine/api.ts`. Scaffold with
-`npm run new:feature <name> -- [--element <type>] [--tool] [--format] [--panel <slot>] [--commands] [--decoration] [--outline] [--owns a,b]`
+`npm run new:feature <name> -- [--element <type>] [--tool] [--format] [--panel <slot>] [--commands] [--decoration] [--outline] [--importer] [--owns a,b]`
 (`--element` scaffolds `outline.ts` too: a new element type reads in the outline from day one).
 Something drawn ON another feature's elements that must appear in image exports is a
 `decoration.tsx`, never a `world-overlay` panel (overlays aren't part of exports).
@@ -364,7 +368,8 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   call link (`features/call`: "Join call" in the top bar, who is in the call as presence
   `ext.call`, "Call link…" in the board menu). Changes reach open boards through the `call`
   collection's `rev`, which makes every client re-read `call.get()`; the link itself lives on the
-  server (`boards.call_url` / `call_jitsi`), checked there (https only) and read as https only.
+  server (`boards.call_url` / `call_jitsi`), checked there (https only) and read as https only; the
+  pasted link is sealed at rest (KAI-143: meeting links often carry a passcode).
 - `SavedTemplateInfo.ownerName` / `canUnshare` (additive): team templates say who shared them;
   a workspace admin may `shareTemplate(id, false)` someone else's team template.
 - `Host.listTemplates / loadTemplate / saveTemplate / deleteTemplate` (server module
@@ -379,6 +384,17 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   (their `when`); the server refuses duplicates and template saves from that board itself.
   `Host.reportExport?(format)`: export features call it after each browser download (image, PDF)
   so the workspace's audit log records it (`POST /boards/:id/exported`, refused like the export).
+- Board backups (KAI-137; format: docs/board-backup.md): `Host.downloadBackup?()` — the SERVER
+  builds the `.freero` file (`modules/backup`), so the downloads policy, the reader's layers and
+  the audit log apply there, never in a feature; `features/export`'s "Download board backup" only
+  calls it. `Host.openBackup?(file)` hands a `.freero` (dropped on a board, opened with the
+  installed app) to the app's restore flow: a backup always becomes a NEW board, never content of
+  the open one.
+- Shared into the installed app (KAI-218): `Host.takeShared?()` → `SharedContent` (images as our own
+  `/uploads/` URLs, a link, text), handed over ONCE for the board the person picked on `/share`;
+  `features/share` (`share.receive`, `urlParam: 'shared'`) places it through other features'
+  paths only — `image.insertStored` (our uploads, laid out as a grid) and `importData` for the
+  link / text (link card, sticky, text box).
 - Version history (`features/history`, server `realtime/history.ts` + `routes.ts`):
   `Host.versions` (`list / load / nameCurrent / rename / restore`; `unavailableVersionHistory()`
   for hosts without it) and `<StaticBoardView state>` (`@engine`): a read-only board showing a
@@ -635,6 +651,23 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
   don't read as a wrapped paragraph, or `<li>`s in the HTML — and any text while stickies are
   selected) → text box (0: prose).
 
+Files of other tools (`features/import`, KAI-138): `importer.ts` (priority 60: above Mermaid's 40
+and the catch-all media importer's 12, below images' 100) takes `.drawio` / mxGraph XML (compressed
+pages too) and `.excalidraw` JSON — by name, else by their first bytes — and diagrams pasted from
+either app. Both parsers are pure (`lib/drawio.ts`, `lib/excalidraw.ts`, written from the documented
+formats) and build `@freero/shared` drafts (`shapeDraft`, `connectorDraft`, `frameDraft`, …: the
+same fully specified items the server's structure writes) plus a report of what has no Freero
+counterpart. Shapes map to `ShapeKind`s (unknown ones become rectangles with their label, reported),
+swimlanes / containers / Excalidraw frames to frames holding their children, groups to one
+`groupId` (the outermost), edges / arrows to connectors attached where the file binds them (draw.io
+`exitX/exitY` become `at`), freehand and multi-point lines to pen strokes, images to images (stored
+first; one that can't be is left out and reported). Everything lands in ONE `transact` +
+`createMany` (one undo step) on a free spot near the drop. Untrusted input: files over 30 MB, any
+DOCTYPE / ENTITY (no external entities, no entity expansion), compressed pages that inflate past
+30 MB (streamed `DecompressionStream`, counted) and more than 2000 items are refused before
+anything is added; labels become plain text (HTML labels reduced to their text). A dropped `.freero`
+goes to `Host.openBackup` (importer `backup`). Miro import (the person's own token) is KAI-261.
+
 Structure from text and diagrams as code (`features/from-text`, KAI-196 / KAI-119; layout formats:
 docs/board-outline.md):
 - "Insert from text" lays text out in the BROWSER with `@freero/shared` `layoutStructure`, the
@@ -770,6 +803,12 @@ files; it precaches them plus the shell files). Rules, all in `strategyFor` / `r
 - `app/pwa/AppUpdates.tsx` registers it (production only), offers "Reload" when a new version
   waits (`SKIP_WAITING`), and reloads once on `vite:preloadError`. Offline editing is out of scope;
   anything that must work offline is a new decision, not a new cache rule.
+- File handler (KAI-218): the manifest's `file_handlers` opens `.freero` files with `/app?restore=1`;
+  the dashboard reads the file from `launchQueue` (`app/lib/pendingBackup.ts`) into the restore
+  dialog. Share target: `share_target` POSTs a multipart form to `/api/share-target` (server
+  `modules/share`: the worker never touches `/api`, the CSRF guard applies as usual — the share
+  sheet's request is browser-initiated, a cross-site form is refused); it stores the images as the
+  signed-in person's uploads and 303s to `/share`, where they pick a board (`Host.takeShared`).
 
 ## UI kit (`ui/`) — exports from `@ui`
 
@@ -865,7 +904,21 @@ see "Issue trackers" below), `search` (search_entries, search_sources: the searc
 through the outbox, `GET /search`), `events` (events, event_board_states, event_pending_boards: the
 event stream), `docs` (no table: the doc app — a doc is a boards container of kind 'doc' whose
 document realtime stores; see "Docs and native live embeds"), `webhooks` (webhook_endpoints, webhook_deliveries: workspace webhooks) — the last
-three in "Search, the event stream and webhooks" below.
+three in "Search, the event stream and webhooks" below — `backup` (no table: `.freero` board
+backups, see below) and `share` (no table: the installed app's share target, see "Installable app").
+
+- Board backups (`modules/backup`, KAI-137; format: docs/board-backup.md): owns no state. A download
+  is boards' `authorizeBackup` (downloads policy + audit) → realtime's `boardBackupContent` (the
+  shared doc and, for owners/editors, the editors layer as JSON; never private layers or
+  suggestions; `Y_LEFT_OUT_OF_BACKUPS` collections dropped) → uploads' `readUpload` for the files
+  it references → `format.ts` `buildBackup`. A restore is `readBackup` (size caps before unpacking,
+  sha256 of every entry, version check / upgrades, content shape) → uploads' `restoreUploadFile`
+  per carried file (checked like an upload, the restorer's quota; deleted again if anything later
+  fails) → `remapContent` (fresh item ids wherever they appear as a whole token, upload URLs) →
+  realtime's `encodeBoardContent` (a fresh doc from JSON: a file's CRDT history is never replayed) →
+  boards' `restoreBoard` (row + doc + editors layer in ONE transaction, `board.backup_restored`).
+  A collection whose content means nothing on a new board (a session, server-side state) belongs in
+  `Y_LEFT_OUT_OF_BACKUPS` (`@freero/shared` ydoc.ts).
 
 - Notifications are created only from trusted server-side events, never from client claims:
   realtime's `onCommentMessage` (a comment message applied from one of THIS instance's sockets,
@@ -1878,7 +1931,11 @@ operations). What a module needs to know:
   429 + `Retry-After` comes for free.
 - **Files** go through `platform/storage.ts` (`storage().put/get/delete`: S3 or local disk), and
   only `modules/uploads` uses it; other modules call `saveUpload`/`deleteUpload`. Board content
-  always references `/uploads/<key>`, whatever the backend.
+  always references `/uploads/<key>`, whatever the backend. `S3_SSE` (KAI-143) adds server-side
+  encryption to every write, both areas; startup warns when the bucket has no default encryption.
+  The encryption-at-rest baseline (what is sealed, hashed or left to storage encryption, and why):
+  docs/deployment.md "Encryption at rest", docs/operations.md "Encryption baseline". A new secret
+  stored in a table is sealed (`seal`, its own purpose) or hashed — never plain — and joins that list.
 - **Email** (`platform/mail.ts`): `sendMail({ to, ...renderMail({ subject, title, paragraphs,
   action, outro }) })` — SMTP with `SMTP_URL`, else the dev outbox (`<data>/outbox/*.json`, which
   `npm run verify` reads to follow links). `renderMail` escapes everything; links via
@@ -2223,7 +2280,7 @@ the board, deletions. A suggestion is not board content until someone who can ed
   `S3_BUCKET` and keys (MinIO, SeaweedFS…), the `s3` group checks the S3 backend (prefixes, kept
   copies under `private/`, restore, retention, the S3_PUBLIC_URL redirect and stored Cache-Control);
   all other groups stay on the local disk. CI does all of it.
-  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation,ai,api,mcp,s3,suite,suggestions,collab,tracker,search,webhooks,docs` runs some groups (to loop one while hunting a flake).
+  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation,ai,api,mcp,s3,suite,suggestions,collab,tracker,search,webhooks,docs,portability` runs some groups (to loop one while hunting a flake).
   The `mcp` group drives the MCP server with the official MCP client SDK, OAuth (dynamic
   registration, consent, PKCE) included; with DATABASE_URL + REDIS_URL one client's requests also
   alternate between two instances.

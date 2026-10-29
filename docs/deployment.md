@@ -92,10 +92,40 @@ Terminate TLS at the proxy/load balancer and forward plain HTTP to the app. The 
   cookies and HSTS, and what gives rate limits the real client IP;
 - pass WebSocket upgrades on `/ws/` (nginx: `proxy_http_version 1.1; proxy_set_header Upgrade
   $http_upgrade; proxy_set_header Connection "upgrade"; proxy_read_timeout 3600s;`);
-- not buffer large request bodies below `MAX_UPLOAD_MB` (nginx: `client_max_body_size 16m;`).
+- not buffer large request bodies below `MAX_UPLOAD_MB` (nginx: `client_max_body_size 16m;`), or
+  below `MAX_BACKUP_MB` for `/api/boards/restore-backup` (board backups, default 200 MB) and
+  `/api/share-target` (images shared into the installed app: four uploads' worth).
 
 Never expose the app port directly while `TRUST_PROXY` is set: a client could then forge
 `X-Forwarded-For` and dodge per-IP rate limits.
+
+## Encryption at rest
+
+What Freero stores, where, and how it is encrypted (KAI-143). Short enough to paste into a
+security questionnaire; the operator's steps are in [operations.md](operations.md#encryption-baseline).
+
+| Data | Store | In transit | At rest |
+|---|---|---|---|
+| Accounts, boards (Yjs documents, update log, version history, layers), comments, audit log, everything else in tables | PostgreSQL | TLS between app and database (`DATABASE_URL` with `sslmode=require`) | **Storage encryption of the database**: managed Postgres (RDS, Cloud SQL, Azure, Neon…) encrypts its disks and snapshots with the provider's keys (or yours, in its KMS); self-hosted: an encrypted volume (LUKS / dm-crypt, BitLocker, an encrypted EBS / persistent disk). Freero does not encrypt board content itself — see below |
+| Secrets in the database: two-step verification secrets, workspace AI keys, SSO client secrets, tracker credentials and webhook secrets, webhook URLs, board call links | PostgreSQL | as above | **Also sealed by Freero** (AES-256-GCM, key derived from `SESSION_SECRET` per purpose, rotatable): unreadable in a database copy without the app's secret |
+| Passwords, session / API / OAuth / SCIM tokens, recovery codes, emailed links | PostgreSQL | as above | **Never stored**: only a scrypt hash (passwords) or a sha256 |
+| Uploaded files (images, PDFs, video, attachments), board thumbnails, data-export archives | S3-compatible bucket (`uploads/`, `private/`) or `FREERO_DATA_DIR/uploads` | TLS to the bucket (an `https` `S3_ENDPOINT`; AWS by default) | **Server-side encryption**: `S3_SSE=AES256` (SSE-S3) or `S3_SSE=aws:kms` (+ `S3_SSE_KMS_KEY_ID`) is sent with every write; AWS S3 also encrypts every new object with SSE-S3 by default. MinIO: enable KES/KMS auto-encryption; R2 / B2 / GCS encrypt at rest by default. Local disk: an encrypted volume. Freero logs a warning at startup when the bucket reports no default encryption and `S3_SSE` is unset |
+| Database dumps | `scripts/backup.sh` → `BACKUP_DIR` and optionally `BACKUP_S3_URI` | the aws CLI's TLS | **Encrypted before they leave the machine** with `BACKUP_GPG_RECIPIENT` (GnuPG) or `BACKUP_AGE_RECIPIENT` (age), to a public key whose private half stays offline; the plain dump is deleted right after. The backup bucket should have its own SSE and versioning |
+| Board backups people download (`.freero`) | their own computer | HTTPS | Theirs to keep: a `.freero` holds the board as that person may read it (never others' drafts). Workspaces that must keep content inside turn off downloads (admin console → Sharing), which refuses backups too |
+| Rate-limit counters, realtime fan-out | Redis | `rediss://` for TLS | Nothing durable worth encrypting (counters keyed by HMACs; pub/sub stores nothing) |
+| Logs | stdout → your log pipeline | your pipeline's | Your pipeline's; Freero never logs bodies, cookies, tokens or secrets |
+| Everything in transit to browsers | — | TLS at the proxy (Caddy obtains certificates automatically), HSTS, `Secure` cookies | — |
+
+**Why board content is not sealed by the app.** Encrypting board documents with an application key
+would add little over storage encryption (the key has to sit next to the app that decrypts every
+board on every load) and would break what reads stored content in SQL: the uploads sweep and the
+account purge find files by pattern in stored documents, search and backlinks index board text, and
+operators restore `pg_dump`s. The threat it would address — someone with a copy of the database
+files or a snapshot — is what storage encryption covers. What a database copy must never yield is
+a working credential, so every credential is hashed or sealed (rows above), whatever the disk.
+
+**Customer-managed keys per workspace** are out of scope: an operator can use their own KMS key
+for the bucket (`S3_SSE_KMS_KEY_ID`) and for the database volume, which covers the whole service.
 
 ## Scaling
 
@@ -156,7 +186,8 @@ migrations ahead of a deploy, start one instance of the new version first.
 ## Checklist
 
 - [ ] `NODE_ENV=production`, `PUBLIC_URL` (https), strong `SESSION_SECRET`
-- [ ] `DATABASE_URL` with TLS; backups scheduled and a restore tested
+- [ ] `DATABASE_URL` with TLS; backups scheduled, encrypted (`BACKUP_GPG_RECIPIENT` / `BACKUP_AGE_RECIPIENT`) and a restore tested
+- [ ] Encryption at rest: database storage encrypted; `S3_SSE` set (or the bucket's default encryption on)
 - [ ] `TRUST_PROXY` matches the proxy chain; app port not publicly reachable
 - [ ] `REDIS_URL` and `S3_*` when running more than one instance; bucket versioning on
 - [ ] More than one instance: `REDIS_URL` set (realtime fan-out); any balancing policy

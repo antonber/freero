@@ -162,6 +162,17 @@ export const isElementContentCollection = (name: string): boolean => Object.prot
 export const Y_KEPT_ON_RESTORE = ['comments', 'voting', 'timer', 'privateMode', 'facilitation', 'estimation', 'retro', 'engageResults', 'call', 'trackers'] as const;
 
 /**
+ * Top-level types a board BACKUP (`.freero`, KAI-137) leaves out, and a restore drops if a file
+ * carries them: live sessions (a vote, the timer, private mode, a facilitator's limits, planning
+ * poker, a retro's step), state the server keeps in its own tables (live activity results, the
+ * call link, tracker links), and proposals waiting for review. A restored board is a new board:
+ * none of that belongs to it. Everything else — elements, settings, comments, tags, table cells,
+ * presenter notes, diagram sources — is board content and travels. A new session collection
+ * belongs here (and usually in Y_KEPT_ON_RESTORE).
+ */
+export const Y_LEFT_OUT_OF_BACKUPS = ['voting', 'timer', 'privateMode', 'facilitation', 'estimation', 'retro', 'engageResults', 'call', 'trackers', 'suggestions'] as const;
+
+/**
  * Facilitator controls (KAI-129): the `facilitation` collection, key FACILITATION_KEY. While it is
  * set, every editor but the facilitator is limited (never the board owner), and the SERVER enforces it
  * (apps/server/src/modules/realtime/facilitation.ts): a locked board drops their writes except

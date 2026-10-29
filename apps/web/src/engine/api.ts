@@ -156,6 +156,26 @@ export interface Host {
   downloadFile?(item: { id: string; src: string; name: string }): Promise<void>;
   renameBoard(title: string): Promise<void>;
   /**
+   * [additive, KAI-137] Saves this board as a `.freero` backup file: built by the SERVER from what
+   * this person may read (never others' drafts; hidden frames' contents only for owners/editors),
+   * with the files it shows, refused like any export by the workspace's downloads policy
+   * (`board.canExport`) and audited. Rejects with a showable message. Absent in the offline sandbox
+   * and for visitors without an account.
+   */
+  downloadBackup?(): Promise<void>;
+  /**
+   * [additive, KAI-137] Hands a `.freero` file (dropped on the board, opened with the installed app)
+   * to the app's restore flow: it becomes a NEW board where the person chooses, never content of
+   * this one. Absent where no board can be created (offline sandbox, visitors).
+   */
+  openBackup?(file: File): void;
+  /**
+   * [additive, KAI-218] What someone shared into the installed app (the system share sheet) and
+   * chose to put on THIS board: images already stored with their uploads, a link, text. Handed
+   * over once (null afterwards, after a reload, and on any other board).
+   */
+  takeShared?(): SharedContent | null;
+  /**
    * [additive] Tells the server a board export (image, PDF) was made in the browser, for the
    * workspace's audit log. Fire and forget; export features call it after each download. Absent in
    * the offline sandbox.
@@ -317,6 +337,14 @@ export interface HostDocs {
   exportMarkdown(docId: string): Promise<void>;
   /** Opens the access request page of a doc this person can't open. */
   requestAccess(docId: string): void;
+}
+
+/** [additive, KAI-218] `Host.takeShared`: images as `/uploads/<name>` URLs (stored already), a link, text. */
+export interface SharedContent {
+  images: string[];
+  link: string | null;
+  text: string | null;
+  title: string | null;
 }
 
 /** [additive] `Host.engage` (wire: @freero/shared `ActivityState`, `ActivityAnswer`). */
@@ -1028,6 +1056,21 @@ export interface FeatureBundle {
   decorations?: DecorationDefinition[];
   /** [additive] outline.ts (how its element types read in the outline; also run by the server). */
   outline?: OutlineFeature;
+  /** [additive] importer.ts (pasted / dropped data no single element type owns). */
+  importers?: ImporterDefinition[];
+}
+
+/**
+ * [additive, KAI-138] An importer that is not an element type's (`importer.ts`): a whole file of
+ * another tool (a draw.io diagram, an Excalidraw scene) that becomes many kinds of items, or a
+ * file that becomes no item at all (a Freero backup, handed to the app). Offered paste and drop
+ * data in the SAME priority order as `ElementDefinition.importData`, with the same contract.
+ */
+export interface ImporterDefinition {
+  /** Unique; named after what it imports ('drawio'). */
+  id: string;
+  importPriority: number;
+  importData(editor: Editor, data: ImportData, at: Point): boolean | File[] | Promise<boolean | File[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1458,6 +1501,8 @@ export function defineCommands(d: CommandDefinition[] | CommandFactory): Command
   return d;
 }
 export const defineDecoration = (d: DecorationDefinition): DecorationDefinition => d;
+/** [additive] importer.ts: `export default defineImporter({...})` (or an array). */
+export const defineImporter = (d: ImporterDefinition): ImporterDefinition => d;
 
 /** Children helper type for slot components. */
 export type Slot = { children?: ReactNode };

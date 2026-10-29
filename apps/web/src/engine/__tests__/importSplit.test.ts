@@ -2,7 +2,7 @@
 // the rest flows on, and what lands beside the first group never covers it, even while the first
 // group is still uploading.
 import { expect, it } from 'vitest';
-import type { ElementDefinition, ImportData, Rect } from '../api';
+import type { ElementDefinition, ImportData, ImporterDefinition, Rect } from '../api';
 import { elementAABB } from '../geometry/geometry';
 import { boxDef, bundle, makeCore } from './harness';
 
@@ -63,4 +63,29 @@ it('dropping a photo, a video and a zip together places every file, the later ki
   finishPhotoUpload();
   await Promise.resolve();
   expect(core.editor.getElements()).toHaveLength(3);
+});
+
+it('an importer.ts takes the files it knows before a lower-priority element type that takes any file, and the rest still flows on (KAI-138)', async () => {
+  const took: string[] = [];
+  const anyFile: ElementDefinition<'sticky'> = {
+    ...boxDef,
+    importPriority: 12,
+    importData(_editor, data: ImportData) {
+      took.push(...data.files.map((f) => `card:${f.name}`));
+      return data.files;
+    },
+  };
+  const diagrams: ImporterDefinition = {
+    id: 'diagrams',
+    importPriority: 60,
+    importData(_editor, data: ImportData) {
+      const mine = data.files.filter((f) => f.name.endsWith('.drawio'));
+      took.push(...mine.map((f) => `diagram:${f.name}`));
+      return mine;
+    },
+  };
+  const core = makeCore({ bundles: [bundle('media', { elements: [anyFile as ElementDefinition<any>] }), bundle('import', { importers: [diagrams] })] });
+  const files = [new File(['<mxfile/>'], 'flow.drawio'), new File(['z'], 'brief.zip')];
+  expect(await core.editor.importData({ files, text: null, html: null }, { x: 0, y: 0 })).toBe(true);
+  expect(took).toEqual(['diagram:flow.drawio', 'card:brief.zip']);
 });

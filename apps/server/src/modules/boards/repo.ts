@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { LinkAccess, ObjectKind } from '@freero/shared';
 import { one, query, tx } from '../../platform/db';
 import { appendOutbox } from '../../platform/outbox';
+import { openCallUrl, sealCallUrl } from './call';
 
 export interface Board {
   id: string;
@@ -82,7 +83,7 @@ const toBoard = (r: Row, now = Date.now()): Board => ({
   linkPasswordHash: r.link_password_hash,
   linkPasswordRev: r.link_password_rev,
   linkExpiresAt: r.link_expires_at ? r.link_expires_at.getTime() : null,
-  callUrl: r.call_url,
+  callUrl: openCallUrl(r.call_url),
   callJitsi: r.call_jitsi,
 });
 
@@ -559,7 +560,19 @@ export async function markExpiryApplied(id: string, now: number): Promise<void> 
 
 // ---- call link (KAI-134) ----
 
+/** Stored call links after `after` (by board id), as stored (sealed or legacy plain text). */
+export async function storedCallUrls(after: string, limit: number): Promise<Array<{ id: string; stored: string }>> {
+  return (
+    await query<{ id: string; call_url: string }>(`SELECT id, call_url FROM boards WHERE call_url IS NOT NULL AND id > $1 ORDER BY id LIMIT $2`, [after, limit])
+  ).map((r) => ({ id: r.id, stored: r.call_url }));
+}
+
+/** Replaces a stored call link only if the row still holds what was read (no lost update). */
+export async function replaceStoredCallUrl(id: string, was: string, now: string): Promise<boolean> {
+  return (await one(`UPDATE boards SET call_url = $3 WHERE id = $1 AND call_url = $2 RETURNING id`, [id, was, now])) !== null;
+}
+
 /** Sets the board's call: a meeting link, its Jitsi room, or nothing. False if the board is gone. */
 export async function setCall(id: string, call: { url: string | null; jitsi: boolean }): Promise<boolean> {
-  return (await one(`UPDATE boards SET call_url = $2, call_jitsi = $3 WHERE id = $1 RETURNING id`, [id, call.url, call.jitsi])) !== null;
+  return (await one(`UPDATE boards SET call_url = $2, call_jitsi = $3 WHERE id = $1 RETURNING id`, [id, sealCallUrl(call.url), call.jitsi])) !== null;
 }

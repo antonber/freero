@@ -8,12 +8,13 @@ import type {
   FeatureBundle,
   FeatureManifest,
   FormatDefinition,
+  ImporterDefinition,
   PanelDefinition,
   ToolDefinition,
 } from '../api';
 import type { OutlineFeature } from '@freero/shared';
 
-const FILE_RE = /features\/([^/]+)\/(feature|element|tool|format|panel|commands|decoration|outline)\.tsx?$/;
+const FILE_RE = /features\/([^/]+)\/(feature|element|tool|format|panel|commands|decoration|outline|importer)\.tsx?$/;
 
 const asArray = <T,>(v: T | T[] | undefined | null): T[] => (v == null ? [] : Array.isArray(v) ? v : [v]);
 
@@ -23,7 +24,7 @@ export function collectFeatures(modules: Record<string, unknown>): FeatureBundle
     const m = path.replace(/\\/g, '/').match(FILE_RE);
     if (!m) continue;
     const [, name, kind] = m;
-    const entry = byName.get(name) ?? { files: [], elements: [], tools: [], formats: [], panels: [], commands: [], commandFactories: [], decorations: [] };
+    const entry = byName.get(name) ?? { files: [], elements: [], tools: [], formats: [], panels: [], commands: [], commandFactories: [], decorations: [], importers: [] };
     byName.set(name, entry);
     entry.files.push(path);
     const value = (mod as { default?: unknown })?.default;
@@ -54,6 +55,9 @@ export function collectFeatures(modules: Record<string, unknown>): FeatureBundle
       case 'outline':
         entry.outline = value as OutlineFeature;
         break;
+      case 'importer':
+        entry.importers!.push(...asArray(value as ImporterDefinition | ImporterDefinition[]));
+        break;
     }
   }
   const bundles: FeatureBundle[] = [];
@@ -70,6 +74,7 @@ export function collectFeatures(modules: Record<string, unknown>): FeatureBundle
       commands: e.commands!,
       commandFactories: e.commandFactories!,
       decorations: e.decorations!,
+      importers: e.importers!,
       ...(e.outline ? { outline: e.outline } : {}),
     });
   }

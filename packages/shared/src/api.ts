@@ -643,6 +643,26 @@ export interface DataExportInfo {
 // PUT    /api/boards/:id/thumbnail body { dataUrl: string } -> { ok: true } (editor+)
 export interface CreateBoardRequest { title?: string; description?: string; workspaceId?: string; projectId?: string | null }
 
+/**
+ * [additive, KAI-137] What restoring a `.freero` backup did (`POST /api/boards/restore-backup`, the file as
+ * the body, `?workspace=&project=`): the new board, and what of the file could not be brought back.
+ */
+export interface RestoreBackupResponse {
+  board: BoardSummary;
+  report: {
+    /** The board the file was made from (its title then, and the Freero it came from). */
+    source: { title: string; origin: string | null; exportedAt: string; formatVersion: number };
+    /** Files re-uploaded into the restorer's storage. */
+    files: number;
+    /** Files the board referenced that the backup did not carry (too large, gone when it was made). */
+    missingFiles: number;
+    /** Hidden frames' contents (owners/editors' backups) were restored too. */
+    hiddenContent: boolean;
+  };
+}
+/** [additive, KAI-137] The `.freero` file's media type (served as an attachment; the PWA opens it). */
+export const BACKUP_MEDIA_TYPE = 'application/vnd.freero.board+zip';
+export const BACKUP_EXTENSION = '.freero';
 // Docs (KAI-162; modules/docs). A doc is a container like a board (same sharing, members, link,
 // trash, request access: the /api/boards/:id routes serve it too) whose content is a document.
 // POST   /api/docs                 body CreateDocRequest -> { doc: BoardSummary }  (kind 'doc')
@@ -1524,6 +1544,7 @@ export const AUDIT_ACTIONS = {
   'board.link_sharing_changed': 'Changed link sharing',
   'board.duplicated': 'Duplicated a board',
   'board.exported': 'Exported a board',
+  'board.backup_restored': 'Restored a board from a backup file',
   'board.download_refused': 'Was refused an export, copy or read of a board (downloads policy)',
   'board.file_downloaded': 'Downloaded a file from a board',
   'board.member_invited': 'Shared a board',

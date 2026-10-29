@@ -1026,9 +1026,9 @@ export class EditorImpl implements Editor {
     for (const { def, feature } of this.core.registry.importers) {
       let claim: boolean | File[];
       try {
-        claim = await def.importData!(this.core.scoped(feature), offer, at);
+        claim = await def.importData(this.core.scoped(feature), offer, at);
       } catch (err) {
-        console.error(`importData of '${def.type}' failed`, err);
+        console.error(`importData of '${def.name}' failed`, err);
         continue;
       }
       if (claim === true) return true;

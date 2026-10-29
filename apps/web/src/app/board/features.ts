@@ -4,7 +4,7 @@
 import { collectFeatures } from '@engine';
 
 // outline.ts is pure (@freero/shared only [W13]); the board reads it for its "board as list" view.
-const modules = import.meta.glob('../../features/*/{feature,element,tool,format,panel,commands,decoration,outline}.{ts,tsx}', {
+const modules = import.meta.glob('../../features/*/{feature,element,tool,format,panel,commands,decoration,outline,importer}.{ts,tsx}', {
   eager: true,
 });
 
