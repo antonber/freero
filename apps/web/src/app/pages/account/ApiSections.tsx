@@ -11,6 +11,14 @@ import './api.css';
 
 const errorText = (err: unknown, fallback: string) => (err instanceof ApiError && err.status < 500 ? err.message : fallback);
 const SCOPES = Object.keys(API_SCOPES) as ApiScope[];
+/** An app identified by its client metadata document (#81): the host its client_id URL names. */
+const hostOf = (clientId: string) => {
+  try {
+    return new URL(clientId).host;
+  } catch {
+    return clientId;
+  }
+};
 /** Reserved scopes grant nothing yet: not offered. */
 export const OFFERED = SCOPES.filter((s) => s !== 'boards:suggest');
 export const EXPIRY = [
@@ -230,6 +238,7 @@ export function ConnectedAppsSection() {
                 <span className="fr-acct-session__device">
                   {a.name}
                   {a.registration === 'dynamic' ? <span className="fr-acct-badge fr-acct-badge--warn">Not reviewed by Freero</span> : null}
+                  {a.registration === 'metadata' ? <span className="fr-acct-badge">{hostOf(a.clientId)}</span> : null}
                 </span>
                 <Scopes scopes={a.scopes} />
                 <span className="fr-acct-session__meta">

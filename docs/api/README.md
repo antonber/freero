@@ -23,10 +23,17 @@ uses the authorization code flow with PKCE (S256, required):
 | revoke | `POST /api/oauth/revoke`: `token`, `client_id` |
 | metadata | `/.well-known/oauth-authorization-server`, `/.well-known/oauth-protected-resource/api/v1` |
 
+Every redirect back to the app — with the `code`, or with an `error` — also carries `iss`, the
+`issuer` of the metadata (RFC 9207: check it, so a response from another server can't be passed off
+as Freero's).
+
 The same server signs in MCP clients for Freero's MCP server (`/mcp`, [../mcp.md](../mcp.md)); their
-tokens are bound to it. Apps that can't be registered by hand (MCP clients) register themselves:
+tokens are bound to it. Apps that can't be registered by hand (MCP clients) either use the https URL
+of their client metadata document as `client_id` (Freero fetches it; rules in
+[../mcp.md](../mcp.md#how-sign-in-works-for-client-developers)) or register themselves:
 `POST /api/oauth/register { client_name, redirect_uris }` (public clients only). People see on the
-consent screen that Freero hasn't reviewed such an app.
+consent screen that Freero hasn't reviewed such an app, and for a metadata document the host it came
+from.
 
 ## Scopes
 
