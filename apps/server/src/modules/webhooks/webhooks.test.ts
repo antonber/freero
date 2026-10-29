@@ -18,7 +18,7 @@ import { createUser } from '../auth/index';
 import { createBoard } from '../boards/index';
 import { deriveDueBoards, EVENTS_CONSUMER, eventsConsumer } from '../events/index';
 import { inviteBoardMember } from '../members/index';
-import { initBoardDoc } from '../realtime/index';
+import { changeBoard, initBoardDoc } from '../realtime/index';
 import { createProject, createTeamWorkspace, inviteToWorkspace } from '../workspaces/index';
 import { createEndpoint, deliverDue, listDeliveries, updateEndpoint, webhooksConsumer } from './service';
 
@@ -194,6 +194,46 @@ it('a failing receiver is retried with backoff, a redirect is a failure that is 
     expect((await listDeliveries(ws.id, owner.id, endpoint.id))[0]).toMatchObject({ status: 'delivered', attempts: 4, responseStatus: 200 });
   } finally {
     stop();
+    await r.close();
+  }
+});
+
+it('an endpoint scoped to an agent’s lane gets only what happens in it — its cards, comments on them, a card deleted from it — and only a board the whole team can open may be its scope', async () => {
+  const owner = await user('Lead');
+  const ws = await createTeamWorkspace(owner.id, 'Agents');
+  const b = await createBoard(owner.id, 'Control room', '', 'none', { workspaceId: ws.id });
+  const personal = await createBoard(owner.id, 'Mine', '');
+  const r = await receiver();
+  try {
+    const events = ['item.created', 'item.updated', 'item.deleted', 'comment.created'];
+    await expect(createEndpoint(ws.id, owner.id, { url: r.url, events, scope: `freero://board/${personal.id}` })).rejects.toMatchObject({ status: 400 });
+    // The lane's kanban, as an item's copied link names it.
+    await createEndpoint(ws.id, owner.id, { url: r.url, events, scope: `http://freero.test/board/${b.id}?el=lane` });
+    await flow();
+    const lane = { ...sticky('lane', '', owner.id), type: 'kanban', title: 'Tasks · Builder', columns: [], colW: 260 } as unknown as BoardElement;
+    const card = { ...sticky('c1', '', owner.id), type: 'card', title: 'Fix login', description: '', color: '#5B3FF0', frameId: 'lane' } as unknown as BoardElement;
+    await save(b.id, [lane, card, sticky('other', 'not the lane', owner.id)]);
+    await flow();
+    const actor = { userId: owner.id, role: 'owner' as const, name: 'Lead' };
+    await changeBoard(b.id, actor, () => ({
+      change: {
+        update: [{ id: 'other', patch: { text: 'still not the lane' } }],
+        collections: {
+          comments: {
+            't:th': { kind: 'thread', id: 'th', x: 0, y: 0, elementId: 'c1', createdAt: 2, createdBy: owner.id },
+            'm:th:m1': { kind: 'message', threadId: 'th', id: 'm1', authorId: owner.id, authorName: 'Lead', text: 'Try the staging key', createdAt: 2 },
+            't:th2': { kind: 'thread', id: 'th2', x: 0, y: 0, elementId: 'other', createdAt: 2, createdBy: owner.id },
+            'm:th2:m1': { kind: 'message', threadId: 'th2', id: 'm1', authorId: owner.id, authorName: 'Lead', text: 'elsewhere', createdAt: 2 },
+          },
+        },
+      },
+    }));
+    await flow();
+    await changeBoard(b.id, actor, () => ({ change: { remove: ['c1'] } }));
+    await flow();
+    const got = r.got.map((x) => JSON.parse(x.body) as { type: string; data: { item?: { id: string }; itemId?: string } });
+    expect(got.map((e) => `${e.type} ${e.data.item?.id ?? e.data.itemId}`).sort()).toEqual(['comment.created c1', 'item.created c1', 'item.created lane', 'item.deleted c1']);
+  } finally {
     await r.close();
   }
 });

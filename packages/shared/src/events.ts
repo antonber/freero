@@ -52,14 +52,20 @@ export interface MemberEventData {
   previousRole?: Exclude<Role, 'owner'> | null;
 }
 export interface ItemEventData {
-  /** The item: its element id, type, and up to EVENT_TEXT_MAX characters of its text (untrusted). */
-  item: { id: string; type: string; text?: string };
+  /**
+   * The item: its element id, type, and up to EVENT_TEXT_MAX characters of its text (untrusted).
+   * `containerId` [additive, KAI-249]: the frame or kanban it sits in directly (a card in an agent's
+   * control-room lane: the lane's kanban); item.deleted: the one it was in.
+   */
+  item: { id: string; type: string; text?: string; containerId?: string };
 }
 export interface CommentEventData {
   threadId: string;
   messageId: string;
   /** The item the thread is pinned to, or null (on the board). */
   itemId: string | null;
+  /** [additive, KAI-249] The frame or kanban that item sits in directly, if any. */
+  containerId?: string;
   /** Up to EVENT_TEXT_MAX characters of the message (untrusted; mentions read as @Name). */
   text: string;
 }
@@ -118,6 +124,12 @@ export interface WebhookEndpointInfo {
   createdAt: number;
   createdBy: { id: string; name: string } | null;
   lastDeliveryAt: number | null;
+  /**
+   * [additive, KAI-249] Only events of this board — and with `itemId`, only item and comment events
+   * about that item or what sits directly in it (a frame, a kanban: an agent's control-room lane).
+   * Null: every board the whole team can open. `boardTitle` is null once the board is gone.
+   */
+  scope: { boardId: string; itemId: string | null; boardTitle: string | null } | null;
 }
 
 export type WebhookDeliveryStatus = 'pending' | 'delivered' | 'failed';
@@ -147,6 +159,11 @@ export interface WebhookCreateRequest {
   description?: string;
   events: FreeroEventType[];
   format?: WebhookFormat;
+  /**
+   * [additive, KAI-249] Only events of one board or one item on it: its link (a board URL, an item's
+   * copied link `…/board/<id>?el=<item>`, or `freero://board/<id>[#<item>]`). Omit for every board.
+   */
+  scope?: string | null;
 }
 /** Create and rotate answer with the secret — the only time it is shown. */
 export interface WebhookSecretResponse {
@@ -159,6 +176,8 @@ export interface WebhookUpdateRequest {
   events?: FreeroEventType[];
   format?: WebhookFormat;
   enabled?: boolean;
+  /** A board or item link as in WebhookCreateRequest; null or '' clears it (every board). */
+  scope?: string | null;
 }
 export interface WebhookDeliveriesResponse {
   deliveries: WebhookDeliveryInfo[];

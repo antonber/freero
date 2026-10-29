@@ -59,7 +59,12 @@ interface Draft {
   description: string;
   format: WebhookFormat;
   events: FreeroEventType[];
+  /** A board or item link ('' = every board), KAI-249. */
+  scope: string;
 }
+
+/** An endpoint's scope as an address the form shows and sends back unchanged. */
+const scopeAddress = (s: WebhookEndpointInfo['scope']): string => (s ? `freero://board/${s.boardId}${s.itemId ? `#${s.itemId}` : ''}` : '');
 
 function EndpointForm({ initial, editing, busy, onSubmit, onCancel }: { initial: Draft; editing: boolean; busy: boolean; onSubmit: (d: Draft) => void; onCancel: () => void }) {
   const [d, setD] = useState(initial);
@@ -80,6 +85,14 @@ function EndpointForm({ initial, editing, busy, onSubmit, onCancel }: { initial:
         required={!editing}
       />
       <Input label="Description (optional)" value={d.description} maxLength={200} onChange={(e) => setD({ ...d, description: e.target.value })} />
+      <Input
+        label="Only for (optional)"
+        placeholder="Paste a board link, or an item's copied link"
+        value={d.scope}
+        maxLength={2048}
+        onChange={(e) => setD({ ...d, scope: e.target.value })}
+        hint="Empty: every board the whole team can open. A board: only its events. An item (a frame, or an agent's Tasks kanban): only changes and comments on it and what sits in it."
+      />
       <label className="fr-admin-hooks__field">
         <span className="fr-admin-row__label">Format</span>
         <Select<WebhookFormat> aria-label="Format" value={d.format} onChange={(format) => setD({ ...d, format })} options={FORMATS} />
@@ -215,11 +228,12 @@ export function AdminWebhooks({ workspace }: { workspace: WorkspaceSummary }) {
           description: d.description,
           format: d.format,
           events: d.events,
+          ...(d.scope.trim() !== scopeAddress(form.edit.scope) ? { scope: d.scope.trim() || null } : {}),
         });
         replace(endpoint);
         notify('Webhook saved', 'success');
       } else {
-        const r = await api.createWebhook(workspace.id, { url: d.url.trim(), description: d.description, format: d.format, events: d.events });
+        const r = await api.createWebhook(workspace.id, { url: d.url.trim(), description: d.description, format: d.format, events: d.events, ...(d.scope.trim() ? { scope: d.scope.trim() } : {}) });
         setEndpoints((list) => [...(list ?? []), r.endpoint]);
         setSecret({ value: r.secret, rotated: false });
       }
@@ -300,6 +314,11 @@ export function AdminWebhooks({ workspace }: { workspace: WorkspaceSummary }) {
                 <span className="fr-admin-pill fr-admin-pill--ok">{FORMAT_LABEL[e.format]}</span>
                 {!e.enabled ? <span className="fr-admin-pill fr-admin-pill--off">{e.disabledReason ? 'Turned off' : 'Off'}</span> : null}
                 {e.description ? <div className="fr-admin-hooks__desc">{e.description}</div> : null}
+                {e.scope ? (
+                  <div className="fr-admin-hooks__desc">
+                    Only {e.scope.itemId ? 'one item on ' : ''}“{e.scope.boardTitle ?? 'a board that is gone'}”
+                  </div>
+                ) : null}
               </div>
               <Toggle aria-label={`Send to ${e.url}`} checked={e.enabled} onChange={(on) => void setEnabled(e, on)} />
             </div>
@@ -346,7 +365,7 @@ export function AdminWebhooks({ workspace }: { workspace: WorkspaceSummary }) {
             key={form.edit?.id ?? 'new'}
             editing={!!form.edit}
             busy={busy}
-            initial={form.edit ? { url: '', description: form.edit.description, format: form.edit.format, events: form.edit.events } : { url: '', description: '', format: 'json', events: DEFAULT_EVENTS }}
+            initial={form.edit ? { url: '', description: form.edit.description, format: form.edit.format, events: form.edit.events, scope: scopeAddress(form.edit.scope) } : { url: '', description: '', format: 'json', events: DEFAULT_EVENTS, scope: '' }}
             onSubmit={(d) => void save(d)}
             onCancel={() => setForm(null)}
           />

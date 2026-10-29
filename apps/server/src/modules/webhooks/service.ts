@@ -13,14 +13,18 @@ import {
   guestDisplayName,
   isEventType,
   isGuestId,
+  formatObjectUri,
+  parseObjectUri,
   WEBHOOK_FORMATS,
   WEBHOOK_HEADERS,
   WEBHOOK_MAX_ENDPOINTS,
   WEBHOOK_SECRET_PREFIX,
   webhookSignedPayload,
+  type CommentEventData,
   type EventActor,
   type FreeroEvent,
   type FreeroEventType,
+  type ItemEventData,
   type MemberEventData,
   type WebhookDeliveryInfo,
   type WebhookEndpointInfo,
@@ -56,7 +60,7 @@ export function requireWebhooks(): void {
   if (!getConfig().webhooks.enabled) throw notFound();
 }
 
-const toInfo = (e: repo.EndpointRow, names: Map<string, { name: string }>): WebhookEndpointInfo => ({
+const toInfo = (e: repo.EndpointRow, names: Map<string, { name: string }>, boards: Map<string, { title: string }>): WebhookEndpointInfo => ({
   id: e.id,
   url: e.urlDisplay,
   description: e.description,
@@ -68,10 +72,54 @@ const toInfo = (e: repo.EndpointRow, names: Map<string, { name: string }>): Webh
   createdAt: e.createdAt,
   createdBy: e.createdBy ? { id: e.createdBy, name: names.get(e.createdBy)?.name ?? 'Deleted user' } : null,
   lastDeliveryAt: e.lastDeliveryAt,
+  scope: e.scope ? { ...e.scope, boardTitle: boards.get(e.scope.boardId)?.title ?? null } : null,
 });
 async function infos(rows: repo.EndpointRow[]): Promise<WebhookEndpointInfo[]> {
-  const names = await getUsers(rows.flatMap((r) => (r.createdBy ? [r.createdBy] : [])));
-  return rows.map((r) => toInfo(r, names));
+  const [names, boards] = await Promise.all([
+    getUsers(rows.flatMap((r) => (r.createdBy ? [r.createdBy] : []))),
+    boardsOpenToTheirTeam(rows.flatMap((r) => (r.scope ? [r.scope.boardId] : []))),
+  ]);
+  return rows.map((r) => toInfo(r, names, boards));
+}
+
+/**
+ * A scope from a board or item link (KAI-249): its board must be one of this workspace that the
+ * whole team can open — the only boards whose events leave Freero at all. undefined: not given;
+ * null: none (every board).
+ */
+async function readScope(v: unknown, workspaceId: string): Promise<repo.WebhookScope | null | undefined> {
+  if (v === undefined) return undefined;
+  if (v === null || (typeof v === 'string' && !v.trim())) return null;
+  if (typeof v !== 'string') throw badRequest('scope must be a board or item link');
+  const raw = v.trim();
+  // A copied link names the app's own origin, whichever that is here: the board decides, not the host.
+  const origin = /^https?:\/\/[^/]+/i.exec(raw)?.[0];
+  const ref = parseObjectUri(raw, origin ? [origin] : []);
+  const scope = ref?.type === 'board' ? { boardId: ref.id, itemId: null } : ref?.type === 'element' ? { boardId: ref.boardId, itemId: ref.id } : null;
+  if (!scope) throw badRequest('scope must be a board link, an item’s copied link, or a freero:// address');
+  if ((await boardsOpenToTheirTeam([scope.boardId])).get(scope.boardId)?.workspaceId !== workspaceId)
+    throw badRequest('Pick a board of this workspace that its whole team can open: only those boards send webhooks');
+  return scope;
+}
+
+/** The scope as the audit log names it (an address, never board text), or null. */
+const scopeUri = (s: repo.WebhookScope | null): string | null =>
+  s ? formatObjectUri(s.itemId ? { type: 'element', boardId: s.boardId, id: s.itemId } : { type: 'board', id: s.boardId }) : null;
+
+/** Does an endpoint scoped to a board / an item want this event? Item scopes take only item and comment events. */
+function inScope(scope: repo.WebhookScope | null, e: StoredEvent): boolean {
+  if (!scope) return true;
+  if (e.boardId !== scope.boardId) return false;
+  if (!scope.itemId) return true;
+  if (e.type.startsWith('item.')) {
+    const item = (e.data as Partial<ItemEventData>).item;
+    return item?.id === scope.itemId || item?.containerId === scope.itemId;
+  }
+  if (e.type === 'comment.created') {
+    const c = e.data as Partial<CommentEventData>;
+    return c.itemId === scope.itemId || c.containerId === scope.itemId;
+  }
+  return false;
 }
 const deliveryInfo = (d: repo.DeliveryRow): WebhookDeliveryInfo => ({
   id: d.id,
@@ -128,6 +176,7 @@ export async function createEndpoint(workspaceId: string, userId: string, body: 
   const events = readEvents(body.events);
   const format = readFormat(body.format);
   const description = readDescription(body.description);
+  const scope = (await readScope(body.scope, workspaceId)) ?? null;
   const secret = newSecret();
   const now = Date.now();
   const row: repo.EndpointRow = {
@@ -146,12 +195,13 @@ export async function createEndpoint(workspaceId: string, userId: string, body: 
     createdAt: now,
     updatedAt: now,
     lastDeliveryAt: null,
+    scope,
   };
   await repo.transaction(async () => {
     await repo.lockWorkspaceEndpoints(workspaceId);
     if ((await repo.countEndpoints(workspaceId)) >= WEBHOOK_MAX_ENDPOINTS) throw new HttpError(409, `A workspace can have up to ${WEBHOOK_MAX_ENDPOINTS} webhooks`);
     await repo.insertEndpoint(row);
-    await recordAudit({ action: 'webhook.created', workspaceId, actorId: userId, target: auditTarget(row), metadata: { events, format } });
+    await recordAudit({ action: 'webhook.created', workspaceId, actorId: userId, target: auditTarget(row), metadata: { events, format, scope: scopeUri(scope) } });
   });
   return { endpoint: (await infos([row]))[0], secret };
 }
@@ -179,6 +229,8 @@ export async function updateEndpoint(workspaceId: string, userId: string, id: st
     if (typeof body.enabled !== 'boolean') throw badRequest('enabled must be true or false');
     patch.enabled = body.enabled;
   }
+  const scope = await readScope(body.scope, workspaceId);
+  if (scope !== undefined) patch.scope = scope;
   const after = await repo.transaction(async () => {
     const updated = await repo.updateEndpoint(id, patch, Date.now());
     if (!updated) throw notFound('No such webhook');
@@ -193,6 +245,7 @@ export async function updateEndpoint(workspaceId: string, userId: string, id: st
         ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
         ...(patch.events ? { events: patch.events } : {}),
         ...(patch.format ? { format: patch.format } : {}),
+        ...(patch.scope !== undefined ? { scope: scopeUri(patch.scope) } : {}),
         ...(patch.urlDisplay && patch.urlDisplay !== before.urlDisplay ? { from: before.urlDisplay, to: patch.urlDisplay } : {}),
       },
     });
@@ -272,7 +325,7 @@ export async function fanOut(eventIds: number[], now = Date.now()): Promise<numb
   const events = await eventsByIds(eventIds);
   const endpoints = await repo.enabledEndpointsIn([...new Set(events.map((e) => e.workspaceId))]);
   if (!endpoints.length) return 0;
-  const wanted = events.filter((e) => endpoints.some((p) => p.workspaceId === e.workspaceId && p.events.includes(e.type)));
+  const wanted = events.filter((e) => endpoints.some((p) => p.workspaceId === e.workspaceId && p.events.includes(e.type) && inScope(p.scope, e)));
   if (!wanted.length) return 0;
   // Only boards every full member of the team can open: nothing about the rest leaves Freero.
   const open = await boardsOpenToTheirTeam([...new Set(wanted.map((e) => e.boardId))]);
@@ -298,7 +351,7 @@ export async function fanOut(eventIds: number[], now = Date.now()): Promise<numb
     const link = thread ? `${event.board.url}?thread=${encodeURIComponent(thread)}` : item && e.type !== 'item.deleted' ? `${event.board.url}?el=${encodeURIComponent(item)}` : event.board.url;
     const words = describe(event, who, name((e.data as Partial<MemberEventData>).userId) ?? 'someone');
     for (const p of endpoints) {
-      if (p.workspaceId !== e.workspaceId || !p.events.includes(e.type)) continue;
+      if (p.workspaceId !== e.workspaceId || !p.events.includes(e.type) || !inScope(p.scope, e)) continue;
       const body = p.format === 'json' ? renderBody('json', event, words) : renderBody(p.format, { ...event, board: { ...event.board, url: link } }, words);
       rows.push({ id: newId(16), endpointId: p.id, eventId: e.id, eventType: e.type, body });
     }

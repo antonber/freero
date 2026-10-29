@@ -18,6 +18,12 @@ export interface EndpointRow {
   createdAt: number;
   updatedAt: number;
   lastDeliveryAt: number | null;
+  /** Only events of this board / item on it (KAI-249), or null: every board. */
+  scope: WebhookScope | null;
+}
+export interface WebhookScope {
+  boardId: string;
+  itemId: string | null;
 }
 
 interface ERow {
@@ -36,6 +42,8 @@ interface ERow {
   created_at: Date;
   updated_at: Date;
   last_delivery_at: Date | null;
+  board_id: string | null;
+  item_id: string | null;
 }
 
 const toEndpoint = (r: ERow): EndpointRow => ({
@@ -54,6 +62,7 @@ const toEndpoint = (r: ERow): EndpointRow => ({
   createdAt: r.created_at.getTime(),
   updatedAt: r.updated_at.getTime(),
   lastDeliveryAt: r.last_delivery_at ? r.last_delivery_at.getTime() : null,
+  scope: r.board_id ? { boardId: r.board_id, itemId: r.item_id } : null,
 });
 
 export const transaction = <T>(fn: () => Promise<T>): Promise<T> => tx(() => fn());
@@ -69,9 +78,9 @@ export async function lockWorkspaceEndpoints(workspaceId: string): Promise<void>
 
 export async function insertEndpoint(e: EndpointRow): Promise<void> {
   await query(
-    `INSERT INTO webhook_endpoints (id, workspace_id, url_sealed, url_display, description, events, format, secret_sealed, enabled, created_by, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9, $10, $10)`,
-    [e.id, e.workspaceId, e.urlSealed, e.urlDisplay, e.description, e.events, e.format, e.secretSealed, e.createdBy, new Date(e.createdAt)],
+    `INSERT INTO webhook_endpoints (id, workspace_id, url_sealed, url_display, description, events, format, secret_sealed, enabled, created_by, created_at, updated_at, board_id, item_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9, $10, $10, $11, $12)`,
+    [e.id, e.workspaceId, e.urlSealed, e.urlDisplay, e.description, e.events, e.format, e.secretSealed, e.createdBy, new Date(e.createdAt), e.scope?.boardId ?? null, e.scope?.itemId ?? null],
   );
 }
 
@@ -90,10 +99,13 @@ export async function enabledEndpointsIn(workspaceIds: string[]): Promise<Endpoi
   return (await query<ERow>(`SELECT * FROM webhook_endpoints WHERE workspace_id = ANY($1::text[]) AND enabled`, [workspaceIds])).map(toEndpoint);
 }
 
-/** Changes the given fields. Turning an endpoint on clears why it was off and its failure count. */
+/**
+ * Changes the given fields (`scope`: undefined keeps it, null clears it). Turning an endpoint on
+ * clears why it was off and its failure count.
+ */
 export async function updateEndpoint(
   id: string,
-  patch: { urlSealed?: string; urlDisplay?: string; description?: string; events?: FreeroEventType[]; format?: WebhookFormat; enabled?: boolean; secretSealed?: string },
+  patch: { urlSealed?: string; urlDisplay?: string; description?: string; events?: FreeroEventType[]; format?: WebhookFormat; enabled?: boolean; secretSealed?: string; scope?: WebhookScope | null },
   now: number,
 ): Promise<EndpointRow | null> {
   const r = await one<ERow>(
@@ -103,9 +115,24 @@ export async function updateEndpoint(
        enabled = COALESCE($7, enabled),
        disabled_reason = CASE WHEN $7::boolean IS NOT NULL THEN NULL ELSE disabled_reason END,
        consecutive_failures = CASE WHEN $7::boolean THEN 0 ELSE consecutive_failures END,
+       board_id = CASE WHEN $10::boolean THEN $11::text ELSE board_id END,
+       item_id = CASE WHEN $10::boolean THEN $12::text ELSE item_id END,
        updated_at = $9
      WHERE id = $1 RETURNING *`,
-    [id, patch.urlSealed ?? null, patch.urlDisplay ?? null, patch.description ?? null, patch.events ?? null, patch.format ?? null, patch.enabled ?? null, patch.secretSealed ?? null, new Date(now)],
+    [
+      id,
+      patch.urlSealed ?? null,
+      patch.urlDisplay ?? null,
+      patch.description ?? null,
+      patch.events ?? null,
+      patch.format ?? null,
+      patch.enabled ?? null,
+      patch.secretSealed ?? null,
+      new Date(now),
+      patch.scope !== undefined,
+      patch.scope?.boardId ?? null,
+      patch.scope?.itemId ?? null,
+    ],
   );
   return r ? toEndpoint(r) : null;
 }
