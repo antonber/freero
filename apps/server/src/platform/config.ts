@@ -46,7 +46,8 @@ export type RateLimitName =
   | 'search'
   | 'trackerSend'
   | 'backup'
-  | 'walkthroughComment';
+  | 'walkthroughComment'
+  | 'listingSubmit';
 
 /** Issue-tracker sync (KAI-153; docs/trackers.md). */
 export interface TrackersConfig {
@@ -378,6 +379,7 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   search: '120/1m', // per person (app) or credential (API, MCP): searches of board content (KAI-151)
   backup: '30/1h', // per user: board backups downloaded or restored (each reads or writes a whole board and its files, KAI-137)
   walkthroughComment: '120/10m', // per person: comments on walkthroughs (each may notify people, KAI-133)
+  listingSubmit: '5/1d', // per person: community listings submitted for review (each mails the operators, #87)
 };
 
 const ENV_NAME: Record<RateLimitName, string> = {
@@ -420,6 +422,7 @@ const ENV_NAME: Record<RateLimitName, string> = {
   search: 'RATE_LIMIT_SEARCH',
   backup: 'RATE_LIMIT_BACKUP',
   walkthroughComment: 'RATE_LIMIT_WALKTHROUGH_COMMENT',
+  listingSubmit: 'RATE_LIMIT_LISTING_SUBMIT',
 };
 
 /** The built-in providers: env prefix, button label, default issuer, extra verified-email claims. */
