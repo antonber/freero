@@ -96,6 +96,7 @@ function SiteFooter() {
         ['/pricing', 'Pricing'],
         ['/security', 'Security'],
         ['/open-source', 'Open source'],
+        ['/vs', 'Compare'],
       ],
     },
     {
@@ -172,7 +173,7 @@ function Breadcrumbs({ items }: { items: Crumb[] }) {
   );
 }
 
-export function Document({ page, assets, crumbs, jsonLd }: { page: PageDef; assets: DocumentAssets; crumbs: Crumb[]; jsonLd: Record<string, unknown> }) {
+export function Document({ page, pages, assets, crumbs, jsonLd }: { page: PageDef; pages: PageDef[]; assets: DocumentAssets; crumbs: Crumb[]; jsonLd: Record<string, unknown> }) {
   const url = abs(page.path);
   const indexable = page.index !== false;
   const ogAlt = `${page.ogTitle ?? page.name}: Freero`;
@@ -217,7 +218,7 @@ export function Document({ page, assets, crumbs, jsonLd }: { page: PageDef; asse
         <SiteHeader current={page.path} />
         <main id="main" tabIndex={-1}>
           {crumbs.length > 1 ? <Breadcrumbs items={crumbs} /> : null}
-          <page.body />
+          <page.body pages={pages} />
           {page.faq?.length ? <Faq items={page.faq} /> : null}
           {page.closingCta === false ? null : <ClosingCta />}
         </main>

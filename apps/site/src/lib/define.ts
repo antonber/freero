@@ -34,7 +34,13 @@ export interface PageDef {
   jsonLd?: Array<Record<string, unknown>>;
   /** Ends with the shared "start free" band (default true). */
   closingCta?: boolean;
-  body: () => ReactElement;
+  body: (site: PageContext) => ReactElement;
+}
+
+/** What a page body may know about the rest of the site (to list its siblings without a hand-kept list). */
+export interface PageContext {
+  /** Every page of the build, published or not: filter with `index !== false` before linking. */
+  pages: PageDef[];
 }
 
 export const definePage = (page: PageDef): PageDef => page;

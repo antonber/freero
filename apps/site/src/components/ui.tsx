@@ -166,10 +166,13 @@ export function ClosingCta() {
   );
 }
 
-/** A comparison-style table with a caption (screen readers announce it). */
-export function Table({ caption, head, rows }: { caption: string; head: string[]; rows: ReactNode[][] }) {
+/**
+ * A comparison-style table with a caption (screen readers announce it). `stack` turns each row into
+ * a card on narrow screens, every cell labelled with its column, instead of scrolling sideways.
+ */
+export function Table({ caption, head, rows, stack }: { caption: string; head: string[]; rows: ReactNode[][]; stack?: boolean }) {
   return (
-    <div className="table-wrap" tabIndex={0} role="region" aria-label={caption}>
+    <div className={stack ? 'table-wrap table-wrap--stack' : 'table-wrap'} tabIndex={0} role="region" aria-label={caption}>
       <table>
         <caption>{caption}</caption>
         <thead>
@@ -190,7 +193,9 @@ export function Table({ caption, head, rows }: { caption: string; head: string[]
                     {c}
                   </th>
                 ) : (
-                  <td key={j}>{c}</td>
+                  <td key={j} data-label={stack ? head[j] : undefined}>
+                    {c}
+                  </td>
                 ),
               )}
             </tr>

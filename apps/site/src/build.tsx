@@ -91,7 +91,7 @@ export async function buildSite(outDir = DEFAULT_OUT): Promise<BuildResult> {
     const og = emitAsset(`og/${page.path === '/' ? 'home' : page.path.slice(1).replace(/\//g, '-')}.png`, await ogImage(page.path === '/' ? 'Free and open source' : page.name, page.ogTitle ?? page.name));
     const crumbs = crumbsOf(page, byPath);
     const html = `<!doctype html>${renderToStaticMarkup(
-      <Document page={page} crumbs={crumbs} jsonLd={jsonLdFor(page, crumbs, og)} assets={{ css, ogImage: og, favicon, appleIcon, preloadFonts: [fonts[700]] }} />,
+      <Document page={page} pages={pages} crumbs={crumbs} jsonLd={jsonLdFor(page, crumbs, og)} assets={{ css, ogImage: og, favicon, appleIcon, preloadFonts: [fonts[700]] }} />,
     )}`;
     const file = page.path === '/' ? 'index.html' : page.path === '/404' ? '404.html' : `${page.path.slice(1)}/index.html`;
     write(file, html);
