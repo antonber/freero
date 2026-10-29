@@ -7064,6 +7064,158 @@ async function webhooksChecks() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Portability (KAI-137, KAI-218): a board downloaded as a `.freero` backup and restored as a new
+// board over real HTTP and real sockets — fresh ids, files re-uploaded, hidden content kept hidden,
+// the downloads policy and the audit log; and the installed app's share target.
+// ---------------------------------------------------------------------------
+async function portabilityChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-backup-'));
+  const outerDbUrl = db.url;
+  const O = new User('BackupOwner');
+  const V = new User('BackupViewer');
+  const G = new User('BackupGuest');
+  // Small enough to cross: a 1 MB backup cap.
+  const env = { MAX_BACKUP_MB: '1' };
+  const { unzipSync, zipSync, strFromU8, strToU8 } = await import('fflate');
+  const base = () => `http://127.0.0.1:${server.port}`;
+  const restore = (u, bytes, q = '') => u.req('POST', `/api/boards/restore-backup${q}`, bytes, { raw: true, headers: { 'content-type': 'application/vnd.freero.board+zip' } });
+  try {
+    if (ADMIN_URL) db.url = await createDatabase();
+    if (!(await check('portability: server boots', async () => waitUp((server = await spawnServer(dataDir, env)))))) return;
+    for (const u of [O, V, G]) {
+      await u.signup();
+      await u.verifyEmail(dataDir);
+    }
+    const ws = (await O.req('POST', '/api/workspaces', { name: 'Backup team' })).json.workspace.id;
+    assert((await O.req('POST', `/api/workspaces/${ws}/members`, { email: G.email, role: 'guest' })).status === 201, 'add guest');
+    const board = (await O.req('POST', '/api/boards', { title: 'Launch plan', workspaceId: ws })).json.board.id;
+    assert((await O.req('POST', `/api/boards/${board}/members`, { email: V.email, role: 'viewer' })).status < 300, 'share with viewer');
+    assert((await O.req('POST', `/api/boards/${board}/members`, { email: G.email, role: 'editor' })).status < 300, 'share with guest');
+    const image = (await O.req('POST', '/api/uploads', PNG_1PX, { raw: true, headers: { 'content-type': 'image/png' } })).json.url;
+
+    const el = (id, type, extra) => ({ id, type, x: 0, y: 0, w: 100, h: 100, z: 1, rotation: 0, createdBy: O.id, createdAt: 1, updatedAt: 1, ...extra });
+    const owner = await layerClient(O, board);
+    owner.doc.transact(() => {
+      const e = owner.doc.getMap('elements');
+      e.set('s1-aaaaaaaaaa', el('s1-aaaaaaaaaa', 'sticky', { text: 'See <a href="#s2-bbbbbbbbbb">two</a>' }));
+      e.set('s2-bbbbbbbbbb', el('s2-bbbbbbbbbb', 'sticky', { text: 'Two' }));
+      e.set('c1-cccccccccc', el('c1-cccccccccc', 'connector', { start: { elementId: 's1-aaaaaaaaaa', x: 0, y: 0 }, end: { elementId: 's2-bbbbbbbbbb', x: 0, y: 0 } }));
+      e.set('i1-dddddddddd', el('i1-dddddddddd', 'image', { src: image, naturalW: 1, naturalH: 1 }));
+      e.set('t1-eeeeeeeeee', el('t1-eeeeeeeeee', 'table', { rows: [{ id: 'r1', h: 40 }], cols: [{ id: 'c1', w: 120 }] }));
+      e.set('f1-ffffffffff', el('f1-ffffffffff', 'frame', { title: 'Secret', hidden: true, x: 2000, y: 2000, w: 400, h: 400 }));
+      owner.doc.getMap('tableCells').set('t:t1-eeeeeeeeee:r1:c1', 'Budget');
+      owner.doc.getMap('comments').set('t:th1', { kind: 'thread', id: 'th1', elementId: 's1-aaaaaaaaaa', createdBy: O.id, createdAt: 1 });
+      owner.doc.getMap('comments').set('m:th1:m1', { kind: 'message', id: 'm1', threadId: 'th1', authorId: O.id, authorName: O.name, text: 'Ship it?', createdAt: 2 });
+    });
+    owner.layers.editors.getMap('elements').set('h1-gggggggggg', el('h1-gggggggggg', 'sticky', { text: 'SALARY-BANDS', frameId: 'f1-ffffffffff', x: 2100, y: 2100 }));
+    await settled(owner);
+    owner.destroy(); // the backup is read from what was saved, after the room unloads
+    await waitUnloaded();
+
+    let backup = null;
+    await check('portability: an owner’s .freero download carries the board, its hidden content and its files, and is audited', async () => {
+      const r = await fetch(`${base()}/api/boards/${board}/backup`, { headers: { cookie: O.cookie } });
+      assert(r.status === 200 && r.headers.get('content-type') === 'application/vnd.freero.board+zip', `download -> ${r.status}`);
+      assert(/attachment; filename="launch-plan-\d{4}-\d{2}-\d{2}\.freero"/.test(r.headers.get('content-disposition') ?? ''), r.headers.get('content-disposition'));
+      backup = new Uint8Array(await r.arrayBuffer());
+      const files = unzipSync(backup);
+      const manifest = JSON.parse(strFromU8(files['freero.json']));
+      assert(manifest.format === 'freero.board-backup' && manifest.version === 1 && manifest.files.length === 1, strFromU8(files['freero.json']));
+      assert(Buffer.from(files[manifest.files[0].path]).equals(PNG_1PX), 'the image bytes');
+      assert(strFromU8(files['editors.json']).includes('SALARY-BANDS'), 'hidden content for the owner');
+      const audit = (await O.req('GET', `/api/workspaces/${ws}/audit?limit=200`)).json.events;
+      assert(audit.some((e) => e.action === 'board.exported' && e.metadata?.format === 'freero'), 'not audited');
+    });
+
+    await check('portability: a viewer’s backup never holds a hidden frame’s contents; a guest the downloads policy excludes gets 403', async () => {
+      const r = await fetch(`${base()}/api/boards/${board}/backup`, { headers: { cookie: V.cookie } });
+      const files = unzipSync(new Uint8Array(await r.arrayBuffer()));
+      assert(r.status === 200 && !files['editors.json'] && !strFromU8(files['board.json']).includes('SALARY-BANDS'), 'the viewer got hidden content');
+      assert((await O.req('PATCH', `/api/workspaces/${ws}`, { policies: { downloads: 'members' } })).status === 200, 'policy');
+      const g = await G.req('GET', `/api/boards/${board}/backup`);
+      assert(g.status === 403 && g.json?.code === 'downloads_restricted', `guest -> ${g.status} ${g.text}`);
+      await O.req('PATCH', `/api/workspaces/${ws}`, { policies: { downloads: 'anyone' } });
+    });
+
+    await check('portability: restoring makes a new board in the chosen workspace — every item with a fresh id, links, lines, cells and comments following, the image re-uploaded, hidden content still hidden', async () => {
+      const r = await restore(O, backup, `?workspace=${ws}`);
+      assert(r.status === 201 && r.json.board.workspaceId === ws && r.json.board.title === 'Launch plan', `restore -> ${r.status} ${r.text}`);
+      assert(r.json.report.files === 1 && r.json.report.hiddenContent === true, JSON.stringify(r.json.report));
+      const copy = r.json.board.id;
+      const c = await layerClient(O, copy);
+      await waitFor(() => c.doc.getMap('elements').size === 6 && c.layers.editors.getMap('elements').size === 1, 8000, 'the restored board');
+      const all = [...c.doc.getMap('elements').values()];
+      assert(!all.some((e) => /^[a-z]\d-/.test(e.id)), 'an old id survived');
+      const one = all.find((e) => String(e.text).startsWith('See'));
+      const two = all.find((e) => e.text === 'Two');
+      const line = all.find((e) => e.type === 'connector');
+      const table = all.find((e) => e.type === 'table');
+      const frame = all.find((e) => e.type === 'frame');
+      const img = all.find((e) => e.type === 'image');
+      assert(one.text.includes(`#${two.id}`) && line.start.elementId === one.id && line.end.elementId === two.id, 'links / line ends');
+      assert(c.doc.getMap('tableCells').get(`t:${table.id}:r1:c1`) === 'Budget', 'table cell');
+      assert(c.doc.getMap('comments').get('t:th1').elementId === one.id && c.doc.getMap('comments').get('m:th1:m1').text === 'Ship it?', 'comment');
+      assert(img.src !== image && Buffer.from(await (await fetch(`${base()}${img.src}`)).arrayBuffer()).equals(PNG_1PX), 'image');
+      const hidden = [...c.layers.editors.getMap('elements').values()][0];
+      assert(hidden.text === 'SALARY-BANDS' && hidden.frameId === frame.id && !sharedText(c).includes('SALARY-BANDS'), 'hidden content');
+      c.destroy();
+      const audit = (await O.req('GET', `/api/workspaces/${ws}/audit?limit=200`)).json.events;
+      assert(audit.some((e) => e.action === 'board.backup_restored' && e.metadata?.sourceBoard === board), 'restore not audited');
+    });
+
+    await check('portability: a changed, oversized, foreign or newer-format file is refused and creates no board', async () => {
+      const before = (await O.req('GET', `/api/boards?workspace=${ws}`)).json.boards.length;
+      const files = unzipSync(backup);
+      files['board.json'] = strToU8(strFromU8(files['board.json']).replace('Budget', 'Bribes'));
+      const changed = await restore(O, zipSync(files), `?workspace=${ws}`);
+      assert(changed.status === 400 && /checksum/.test(changed.json?.error), `changed -> ${changed.status} ${changed.text}`);
+      const big = await restore(O, Buffer.alloc(1024 * 1024 + 10, 1), `?workspace=${ws}`);
+      assert(big.status === 413, `oversized -> ${big.status}`);
+      const zip = await restore(O, zipSync({ 'readme.txt': strToU8('hi') }), `?workspace=${ws}`);
+      assert(zip.status === 400 && /not a Freero board backup/.test(zip.json?.error), `foreign -> ${zip.status} ${zip.text}`);
+      const newer = unzipSync(backup);
+      newer['freero.json'] = strToU8(JSON.stringify({ ...JSON.parse(strFromU8(newer['freero.json'])), version: 9, minReaderVersion: 9 }));
+      const n = await restore(O, zipSync(newer), `?workspace=${ws}`);
+      assert(n.status === 400 && /newer version of Freero/.test(n.json?.error), `newer -> ${n.status} ${n.text}`);
+      const guestRestore = await restore(G, backup, `?workspace=${ws}`);
+      assert(guestRestore.status === 403, `a guest restored into the team -> ${guestRestore.status}`);
+      assert((await O.req('GET', `/api/boards?workspace=${ws}`)).json.boards.length === before, 'a board was created');
+    });
+
+    await check('share target: a shared image and link are stored as the person’s upload and handed to /share; signed out goes to sign-in; a cross-site post is refused', async () => {
+      const form = () => {
+        const f = new FormData();
+        f.set('title', 'Look at this');
+        f.set('url', 'https://example.com/post');
+        f.append('images', new Blob([PNG_1PX], { type: 'image/png' }), 'photo.png');
+        f.append('images', new Blob(['<html>'], { type: 'image/png' }), 'fake.png');
+        return f;
+      };
+      const r = await fetch(`${base()}/api/share-target`, { method: 'POST', body: form(), headers: { cookie: O.cookie }, redirect: 'manual' });
+      const to = new URL(r.headers.get('location') ?? '', base());
+      assert(r.status === 303 && to.pathname === '/share', `share -> ${r.status} ${to}`);
+      assert(to.searchParams.get('url') === 'https://example.com/post' && to.searchParams.get('failed') === '1', String(to));
+      const [name] = to.searchParams.getAll('i');
+      assert(Buffer.from(await (await fetch(`${base()}/uploads/${name}`)).arrayBuffer()).equals(PNG_1PX), 'the shared image');
+      const anon = await fetch(`${base()}/api/share-target`, { method: 'POST', body: form(), redirect: 'manual' });
+      assert(anon.status === 303 && anon.headers.get('location').startsWith('/login'), `signed out -> ${anon.status} ${anon.headers.get('location')}`);
+      const cross = await fetch(`${base()}/api/share-target`, { method: 'POST', body: form(), headers: { cookie: O.cookie, origin: 'https://evil.example' }, redirect: 'manual' });
+      assert(cross.status === 403, `cross-site -> ${cross.status}`);
+    });
+  } finally {
+    closeAllDocs();
+    await stopServer();
+    await dropDatabases();
+    db.url = outerDbUrl;
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
 // `--only <group>[,<group>…]` runs some groups, e.g. to loop one while hunting a flake.
 const SUITES = {
   main: run,
@@ -7093,6 +7245,7 @@ const SUITES = {
   collab: collabChecks,
   search: searchChecks,
   webhooks: webhooksChecks,
+  portability: portabilityChecks,
 };
 const onlyArg = process.argv.indexOf('--only');
 const only = onlyArg >= 0 ? (process.argv[onlyArg + 1] ?? '').split(',').filter(Boolean) : Object.keys(SUITES);

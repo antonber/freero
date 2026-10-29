@@ -35,7 +35,9 @@ export async function downloadBackup(boardId: string, userId: string, origin: st
   const editorsLayer = auth.role === 'owner' || auth.role === 'editor';
   const content = await boardBackupContent(boardId, { editorsLayer });
   const jsonText = JSON.stringify(content.doc) + (content.editors ? JSON.stringify(content.editors) : '');
-  const budget = getConfig().maxBackupBytes - jsonText.length - MB;
+  // Files fill what MAX_BACKUP_MB leaves after the content (uncompressed: an upper bound) and room for
+  // the manifest (a line per file), so the file restores on a server with the same limit.
+  const budget = getConfig().maxBackupBytes - jsonText.length - 64 * 1024;
   const files: Array<{ name: string; data: Uint8Array }> = [];
   const missingFiles: Array<{ name: string; reason: string }> = [];
   let used = 0;
