@@ -33,7 +33,7 @@ import { badRequest, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { appUrl } from '../../platform/mail';
 import { consumeRateLimit } from '../../platform/rateLimit';
-import { useInWorkspace, type ApiCredential } from '../apiauth/index';
+import { mintEmbedTicket, useInWorkspace, type ApiCredential } from '../apiauth/index';
 import { recordAuditQuietly } from '../audit/index';
 import {
   boardSummaryFor,
@@ -43,12 +43,14 @@ import {
   recordBoardExport,
   requireBoardAccess,
   requireBoardDownload,
+  shareBoardByLink,
   trashBoard,
 } from '../boards/index';
 import { inviteBoardMember, listBoardMembers, removeBoardMember, setBoardMemberRole } from '../members/index';
 import { boardComments, boardOutline, type OutlineQuery, type OutlineResult } from '../outline/index';
 import {
   BoardChangeError,
+  capRole,
   changeBoard,
   decideSuggestions as decide,
   proposeSuggestions,
@@ -124,6 +126,44 @@ export async function openBoard(call: ApiCall, boardId: string): Promise<BoardSu
   call.audit.workspaceId = board.workspaceId;
   call.audit.target = { type: 'board', id: board.id, label: board.title };
   return board;
+}
+
+/**
+ * A live view of the board for the assistant's host to show (MCP Apps, KAI-171): a single-use
+ * ticket for Freero's /embed page, acting for the person within what this credential may do
+ * (apiauth embed.ts). The page, not the caller, turns it into the board.
+ */
+export async function openLiveView(call: ApiCall, boardId: string) {
+  const board = await openBoard(call, boardId);
+  const { ticket, expiresAt, maxRole } = await mintEmbedTicket(call.cred, board.id);
+  const access = capRole(board.role, maxRole);
+  return {
+    board,
+    access,
+    src: appUrl(call.req, `/embed/board/${encodeURIComponent(board.id)}#ticket=${ticket}`),
+    origin: new URL(appUrl(call.req, '/')).origin,
+    url: boardUrl(call.req, board.id),
+    expiresAt,
+    // "Share with team": the link already lets people in, or this caller may turn it on.
+    canShare: board.linkAccess !== 'none' || (board.role === 'owner' && call.cred.scopes.includes('boards:write')),
+  };
+}
+
+/**
+ * "Share with team" from a live view (KAI-171): the board's link, letting people in as at least
+ * `access` (guests without an account included, as the workspace allows). A link that already
+ * does is returned as it is; turning it on or up needs boards:write and the owner (the share
+ * dialog's rules, its audit event).
+ */
+export async function shareLink(call: ApiCall, boardId: string, access: 'viewer' | 'commenter') {
+  const board = await openBoard(call, boardId);
+  const rank = { none: 0, viewer: 1, commenter: 2, editor: 3 } as const;
+  if (rank[board.linkAccess] < rank[access]) {
+    if (!call.cred.scopes.includes('boards:write'))
+      throw new HttpError(403, 'Sharing the board by link needs the boards:write permission (“change boards directly”)', 'insufficient_scope');
+  }
+  const out = await shareBoardByLink(board.id, call.cred.account, access);
+  return { url: boardUrl(call.req, board.id), linkAccess: out.linkAccess, changed: out.changed };
 }
 
 export function page<T>(all: T[], q: PageQuery, dflt = 50, max = 200): { items: T[]; nextCursor: string | null } {

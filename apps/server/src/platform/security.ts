@@ -105,8 +105,22 @@ export function csrfGuard(config: Config): RequestHandler {
   };
 }
 
+const framablePaths: Array<{ path: RegExp; reason: string }> = [];
+
+/**
+ * Lets other sites frame the app's pages under `path` — only the AI assistants of
+ * `config.appFrameAncestors` (CSP `frame-ancestors`; no X-Frame-Options): the live board view of
+ * MCP Apps (modules/embed), which signs in with its own short-lived token, never the session
+ * cookie, so a frame can't act on anyone's session. Say why in `reason` (read in review).
+ */
+export function allowFraming(path: RegExp, reason: string): void {
+  if (reason.trim().length < 10) throw new Error('allowFraming needs a reason');
+  framablePaths.push({ path, reason });
+}
+const framable = (path: string) => framablePaths.some((p) => p.path.test(path));
+
 /** Content-Security-Policy for the app's own pages and API responses. */
-export function contentSecurityPolicy(config: Config, host: string | undefined, secure: boolean): string {
+export function contentSecurityPolicy(config: Config, host: string | undefined, secure: boolean, opts: { framable?: boolean } = {}): string {
   const ws = host ? (secure ? `wss://${host}` : `ws://${host} wss://${host}`) : '';
   const s3 = config.s3?.publicUrl ? new URL(config.s3.publicUrl).origin : '';
   return [
@@ -129,19 +143,20 @@ export function contentSecurityPolicy(config: Config, host: string | undefined, 
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
-    "frame-ancestors 'none'",
+    `frame-ancestors ${opts.framable && config.appFrameAncestors.length ? config.appFrameAncestors.join(' ') : "'none'"}`,
     ...(secure ? ['upgrade-insecure-requests'] : []),
   ].join('; ');
 }
 
 export function securityHeaders(config: Config): RequestHandler {
   return (req, res, next) => {
-    res.setHeader('Content-Security-Policy', contentSecurityPolicy(config, req.headers.host, req.secure));
+    const frame = req.method === 'GET' && framable(req.path);
+    res.setHeader('Content-Security-Policy', contentSecurityPolicy(config, req.headers.host, req.secure, { framable: frame }));
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('X-Frame-Options', 'DENY');
+    if (!frame) res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
-    res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+    res.setHeader('Cross-Origin-Resource-Policy', frame ? 'cross-origin' : 'same-origin');
     res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
     if (req.secure) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     next();

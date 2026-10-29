@@ -165,6 +165,11 @@ export interface Admission {
   authorName?: string;
   /** Accounts: the names their comment messages may carry (current and previous, KAI-187). */
   authorNames?: string[];
+  /**
+   * The most this socket may do whatever the user's role (a live view in an AI assistant acts
+   * through a connection that may only read, KAI-171): applied on admission and every refresh.
+   */
+  maxRole?: Role;
 }
 export interface Refusal {
   code: number;
@@ -178,8 +183,10 @@ interface Conn {
   sessionKey: string;
   /** EFFECTIVE role: `access` as limited by the facilitation session (see the header). */
   role: Role;
-  /** The role the socket's user has on the board. */
+  /** The role the socket's user has on the board (capped by `maxRole`). */
   access: Role;
+  /** See Admission.maxRole. */
+  maxRole?: Role;
   /** What the facilitation session limits for this socket (null: nothing). */
   limits: SessionLimits | null;
   /** Guests: the author name their comments must carry (commentRules.ts). */
@@ -815,13 +822,15 @@ class Room {
   join(ws: WebSocket, a: Admission, queued: Uint8Array[]): void {
     if (this.unloadTimer) clearTimeout(this.unloadTimer);
     this.unloadTimer = null;
-    const eff = effectiveAccess(a.role, a.userId, readFacilitation(this.doc));
+    const access = capRole(a.role, a.maxRole);
+    const eff = effectiveAccess(access, a.userId, readFacilitation(this.doc));
     const conn: Conn = {
       ws,
       userId: a.userId,
       sessionKey: a.sessionKey,
       role: eff.role,
-      access: a.role,
+      access,
+      maxRole: a.maxRole,
       limits: eff.limits,
       authorName: a.authorName,
       authorNames: new Set(a.authorName !== undefined ? [a.authorName] : [a.identity.name, ...(a.authorNames ?? [])]),
@@ -1023,7 +1032,7 @@ class Room {
     const roles = await Promise.all(conns.map(async (c) => (await getBoardAccess(this.id, c.userId)).role));
     conns.forEach((conn, i) => {
       if (!this.conns.has(conn.ws)) return; // left meanwhile
-      const role = roles[i];
+      const role = roles[i] && capRole(roles[i], conn.maxRole);
       if (!role) {
         conn.ws.close(4403, 'Access revoked');
         this.leave(conn);
@@ -1328,7 +1337,15 @@ export function endSessionSockets(sessionKey: string): void {
   for (const p of admitting) if (p.sessionKey === sessionKey) p.ws.close(4401, 'Signed out');
 }
 
-/** The sessions behind this instance's board sockets, joined or being admitted (auth re-checks them). */
+/** `role`, at most `max` (when given). */
+const ROLE_ORDER: Role[] = ['viewer', 'commenter', 'editor', 'owner'];
+export const capRole = (role: Role, max?: Role): Role => (max && ROLE_ORDER.indexOf(role) > ROLE_ORDER.indexOf(max) ? max : role);
+
+/**
+ * The sessions behind this instance's board sockets, joined or being admitted. Auth re-checks
+ * its own (session and guest keys); a key with a ':' belongs to the module that admitted the
+ * socket with it (`embed:` — a live view in an AI assistant), which re-checks it itself.
+ */
 export function* liveSessionKeys(): Iterable<string> {
   for (const room of rooms.values()) for (const conn of room.conns.values()) yield conn.sessionKey;
   for (const p of admitting) if (p.sessionKey) yield p.sessionKey;

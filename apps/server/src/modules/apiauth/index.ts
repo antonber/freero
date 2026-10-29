@@ -16,5 +16,17 @@ export {
   createPersonalToken,
   type ApiCredential,
 } from './credentials';
+// Live board views inside AI assistants (MCP Apps, KAI-171): a single-use ticket per tool call,
+// redeemed by the view for a short-lived token that opens one board's socket.
+export {
+  mintEmbedTicket,
+  redeemEmbedTicket,
+  authenticateEmbed,
+  authenticateEmbedKey,
+  embedRoleFor,
+  EMBED_SESSION_PREFIX,
+  EMBED_TOKEN_MS,
+  type EmbedSession,
+} from './embed';
 // The person's API data for their data export (modules/privacy).
 export { apiDataOf } from './dataExport';

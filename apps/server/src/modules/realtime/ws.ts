@@ -16,7 +16,7 @@ export default function realtimeWs(ctx: ServerContext): WsRoute {
   ctx.onShutdown(flushAllRooms);
   // Ended sessions close their sockets here, wherever and however they ended (auth, KAI-146).
   const stopWatchingSessions = onSessionEnd(endSessionSockets);
-  const stopTracking = trackLiveSessions(liveSessionKeys);
+  const stopTracking = trackLiveSessions(() => [...liveSessionKeys()].filter((k) => !k.includes(':')));
   // Renames reach open sockets at once (presence, and the names comments may carry: KAI-187).
   const stopWatchingProfiles = onProfileChanged(profileChanged);
   ctx.onShutdown(() => {

@@ -22,6 +22,14 @@ export {
   // An app writing through the API or MCP, shown on the board for a moment (KAI-168).
   showAgentPresence,
   type AgentPresence,
+  // Sockets admitted by another module (a live board view in an AI assistant, modules/embed): the
+  // same admission, rooms and role filter; its session keys carry a ':' and it re-checks them.
+  admitSocket,
+  capRole,
+  endSessionSockets,
+  liveSessionKeys,
+  type Admission,
+  type Refusal,
 } from './rooms';
 // Suggestions (KAI-169): proposed changes in the editors layer (BoardView.suggestions reads them).
 // proposeSuggestions is THE seam for anything that wants people to review its change first —

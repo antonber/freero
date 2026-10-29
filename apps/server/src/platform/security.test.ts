@@ -2,7 +2,7 @@ import type { IncomingMessage } from 'node:http';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from './config';
 import { EMBED_FRAME_ORIGINS } from '@freero/shared';
-import { contentSecurityPolicy, requestOriginKind } from './security';
+import { allowFraming, contentSecurityPolicy, requestOriginKind, securityHeaders } from './security';
 
 const req = (headers: Record<string, string>) => ({ headers }) as unknown as IncomingMessage;
 
@@ -47,5 +47,24 @@ describe('frames the CSP allows (live embeds, KAI-127)', () => {
     for (const bad of ['http://embed.example.com', 'https://embed.example.com/path', '*', 'https://*.example.com', 'https://user:pw@embed.example.com'])
       expect(() => loadConfig({ EMBED_EXTRA_ORIGINS: bad })).toThrow(/EMBED_EXTRA_ORIGINS/);
     expect(() => loadConfig({ EMBED_EXTRA_ORIGINS: 'https://board.example.com', PUBLIC_URL: 'https://board.example.com' })).toThrow(/EMBED_EXTRA_ORIGINS/);
+  });
+});
+
+describe('who may frame Freero (MCP Apps live view, KAI-171)', () => {
+  const headersFor = (path: string, env: NodeJS.ProcessEnv = {}) => {
+    const set: Record<string, string> = {};
+    const res = { setHeader: (k: string, v: string) => (set[k.toLowerCase()] = v) };
+    securityHeaders(loadConfig(env))({ method: 'GET', path, headers: { host: 'app.test' }, secure: true } as never, res as never, () => undefined);
+    const ancestors = set['content-security-policy'].split('; ').find((d) => d.startsWith('frame-ancestors '))!;
+    return { ancestors: ancestors.split(' ').slice(1), xfo: set['x-frame-options'] };
+  };
+  allowFraming(/^\/embed\//, 'the live board view, signed in with its own token (test)');
+
+  it('lets only the assistants frame the live board view, and nobody frame any other page (clickjacking)', () => {
+    const page = headersFor('/board/abc');
+    expect(page).toEqual({ ancestors: ["'none'"], xfo: 'DENY' });
+    const view = headersFor('/embed/board/abc', { MCP_APP_FRAME_ANCESTORS: 'https://claude.ai https://*.claudemcpcontent.com' });
+    expect(view).toEqual({ ancestors: ['https://claude.ai', 'https://*.claudemcpcontent.com'], xfo: undefined });
+    expect(headersFor('/embed/board/abc', { MCP_APP_FRAME_ANCESTORS: 'none' }).ancestors).toEqual(["'none'"]);
   });
 });

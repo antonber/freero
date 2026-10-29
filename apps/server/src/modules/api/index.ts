@@ -32,6 +32,9 @@ export {
   addComment,
   replyToComment,
   syncToTracker,
+  // Live board views in AI assistants (MCP Apps, KAI-171).
+  openLiveView,
+  shareLink,
   type ApiCall,
 } from './service';
 // Search, object addresses and backlinks (KAI-151, KAI-227).
