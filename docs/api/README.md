@@ -59,6 +59,12 @@ open boards drop them at once (KAI-224).
   board's *Import issues…* rules (at most 100, issues already linked here skipped) and a `placement`;
   answers each card's id with its issue key. `target: "suggestions"` needs only `boards:suggest` and
   proposes the cards instead. No connection: `400 tracker_not_connected`, saying where to connect one.
+- Meeting notes (#88): `POST /boards/{boardId}/structure` with
+  `{ "structure": { "kind": "meeting", "source": "<notes or transcript as exported>" } }` puts a
+  Markdown / text summary or WebVTT / SRT captions on the board as one frame: decisions, action
+  cards with owner and due date, points, who spoke (the MCP `import_meeting_notes`;
+  [../integrations/README.md](../integrations/README.md)). Automation recipes (n8n, Make, Zapier)
+  and a Power Automate connector made from this API are in [../integrations/](../integrations/).
 - An agent's control room (`/boards/{boardId}/control-room`, the MCP `post_status` / `get_feedback`):
   a person can pause the agent from its lane on the board; until it is resumed every write of that
   token or app on that board answers `423 agent_paused` ([mcp.md](../mcp.md#agent-control-room)).

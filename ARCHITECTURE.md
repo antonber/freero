@@ -971,7 +971,7 @@ event stream), `docs` (no table: the doc app — a doc is a boards container of 
 document realtime stores; see "Docs and native live embeds"), `site` (no table: serves the built
 marketing site at `/`; see "Marketing site"), `webhooks` (webhook_endpoints, webhook_deliveries: workspace webhooks) — the last
 three in "Search, the event stream and webhooks" below — `backup` (no table: `.freero` board
-backups, see below), `share` (no table: the installed app's share target, see "Installable app"), `walkthroughs`
+backups, see below), `share` (no table: the installed app's share target, see "Installable app"), `slack` (no table: Slack link unfurls for the operator's Slack app, see "Integrations" below), `walkthroughs`
 (walkthroughs, walkthrough_views, walkthrough_comments) and `decisions` (decisions), in "Walkthroughs
 and decision snapshots" below.
 
@@ -1715,7 +1715,7 @@ and feeds) follow that topic with their own cursor. Notifications and the activi
 in-process events for now (live socket attribution, per-instance bursts).
 
 **Webhooks** (`modules/webhooks`, admin console "Webhooks"). A team's owners/admins register endpoints
-with event types and a format (`json` signed with HMAC-SHA256, `slack`, `teams`); the URL and secret
+with event types and a format (`json` signed with HMAC-SHA256, or a chat message: `slack`, `teams`, `discord`, `google-chat`, `mattermost` — `webhooks/format.ts`, one renderer each, escaping board text for that app so it can not ping, link or format; #88); the URL and secret
 are sealed at rest (`platform/secrets`), the secret shown once, the URL shown shortened; changes are
 audited (`webhook.*`). The fan-out consumer queues one delivery per event and endpoint (unique), only
 for boards every full member of the workspace can open through team access (workspaces'
@@ -1729,6 +1729,32 @@ item link): one board's events, or only item and comment events about one item a
 directly in it — events carry `containerId` (the item's `frameId`; `item.deleted` from the stored
 state) for that — e.g. an agent's control-room lane. A scope's board must be one the whole team can
 open, and a scope never widens (no foreign key: a board that is gone just sends nothing).
+
+### Integrations that need no third-party approval (#88; docs/integrations/)
+
+- **Chat formats** are renderers in `webhooks/format.ts` over the same event and the same "whole
+  team can open" rule; a new chat app is a `WEBHOOK_FORMATS` value plus a renderer, never more
+  content than the `json` event. Mattermost has its own renderer (Slack's body isn't safe there:
+  Mattermost ignores `blocks` and pings on a plain `@channel`). Matrix has no standard incoming hook.
+- **Slack link unfurls** (`modules/slack`, no table, off unless `SLACK_SIGNING_SECRET` +
+  `SLACK_BOT_TOKEN`): `POST /api/integrations/slack/events` (cross-site POST: Slack's servers, proven
+  by the v0 signature only — five-minute window, constant-time compare; the URL challenge too).
+  `link_shared` is acknowledged at once and answered with `chat.unfurl`, deduplicated per event id,
+  `RATE_LIMIT_SLACK_UNFURL` per Slack workspace, one log line per outcome. What a preview may say is
+  boards' `publicLinkPreview`: title, description, thumbnail only for a board a visitor WITHOUT an
+  account may open by its link (no password, guests allowed); everything else, including "no such
+  board", is one generic card, so previews never reveal a private board's name or existence. The app
+  manifest is built by `slack/manifest.ts` (`npm run admin -- slack:manifest`; deploy/ ships it).
+- **Meeting notes** are a structure kind, `meeting` (`@freero/shared` `layout/meeting.ts`: a pure
+  reader of Markdown / text / WebVTT / SRT — headings, bullets, check boxes, owner and due phrases,
+  speaker labels, cue times; no AI — and its one-frame layout). So the web (`features/meeting-notes`:
+  board menu, dropped `.vtt` / `.srt`; one transaction, one undo step), REST (`/structure`, no new
+  route) and MCP (`import_meeting_notes`, a thin tool over it; proposed when the credential may only
+  suggest) produce the same frame. Dropped `.md` stays the doc importer's: only the menu reads Markdown
+  as meeting notes.
+- **Power Automate**: `npm run gen:power-automate` (`scripts/lib/swagger2.mjs`) converts
+  `docs/api/openapi.json` to the Swagger 2.0 those connectors require; `api/powerAutomate.test.ts`
+  keeps the checked-in file in step and free of OpenAPI 3 constructs.
 
 ### Walkthroughs and decision snapshots (`modules/walkthroughs`, `modules/decisions`; KAI-133, KAI-161)
 

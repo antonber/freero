@@ -110,6 +110,26 @@ every reader sees (above).
   escaped, so it can't make links or `@channel` pings.
 - `teams` — the same as an Adaptive Card for a Microsoft Teams *Workflows* webhook ("When a Teams
   webhook request is received" → post to a channel), with an "Open board" button.
+- `discord` — a Discord channel webhook (Server settings → Integrations → Webhooks): one embed whose
+  title is the board, linking to the item, with the sentence and the quoted text in its description
+  (Markdown-escaped) and `allowed_mentions: { parse: [] }`, so it can never ping `@everyone`, a role
+  or a person.
+- `google-chat` — a Google Chat space webhook (Apps & integrations → Webhooks): a text message with
+  the board's title as its link. Google Chat's webhook text has no escape for its markup, so angle
+  brackets in board text become look-alike quotes (no link, no `<users/all>` mention can be made);
+  `*`, `_` and `~` in board text may still show as emphasis.
+- `mattermost` — a Mattermost incoming webhook: Markdown `text` with the board's title as its link.
+  Not an alias of `slack`: Mattermost ignores Slack's `blocks` (so only the plain fallback would
+  show) and pings on a plain `@channel` / `@all` / `@here` in text, which Slack's escaping doesn't
+  stop. Here Markdown punctuation is escaped, `<`, `>`, `&` become entities and `@` its full-width
+  twin, so board text can neither format, link nor ping.
+- Matrix is not offered: Matrix has no standard incoming-webhook URL. Posting to a room is the
+  client-server API's `PUT /_matrix/client/v3/rooms/{roomId}/send/m.room.message/{txnId}` with an
+  access token, or a bridge such as a hookshot bot, each set up per homeserver. Use the `json`
+  format with your own bridge, or one of the recipes in [integrations/](integrations/README.md).
+
+A chat format never carries more than the `json` event would (the same rule about which boards send
+anything at all), and the test delivery ("Send test") is a short message in the same format.
 
 ## Endpoints and their security
 
