@@ -23,13 +23,27 @@
   background: var(--accent);
 }
 
-.fr-card__title {
+/* Title, description, then the footer at the bottom (element.tsx says why it is a flow). */
+.fr-card__body {
   position: absolute;
-  left: 22px;
-  right: 14px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.fr-card__content {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.fr-card__title {
+  position: relative;
 }
 
 .fr-card__title .fr-text {
+  position: relative;
+  inset: auto;
   white-space: pre-wrap;
 }
 
@@ -40,9 +54,6 @@
 }
 
 .fr-card__desc {
-  position: absolute;
-  left: 22px;
-  right: 14px;
   overflow: hidden;
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -54,11 +65,8 @@
 }
 
 .fr-card__footer {
-  position: absolute;
-  left: 22px;
-  right: 14px;
-  bottom: 12px;
-  height: 24px;
+  flex: none;
+  margin-top: auto;
   display: flex;
   align-items: center;
   gap: 6px;
