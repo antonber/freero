@@ -21,8 +21,18 @@ export interface User {
   createdAt: number;
 }
 
+/**
+ * What a container is (KAI-162): a board (the canvas) or a doc (a collaborative document). Both
+ * are rows of the same table with the same sharing, membership, link, trash and workspace rules;
+ * only their content differs (`/board/<id>` vs `/doc/<id>`, `/ws/boards` vs `/ws/docs`).
+ */
+export type ObjectKind = 'board' | 'doc';
+export const OBJECT_KINDS: readonly ObjectKind[] = ['board', 'doc'];
+
 export interface BoardSummary {
   id: string;
+  /** [additive] 'doc' for a doc (KAI-162); boards say 'board'. */
+  kind: ObjectKind;
   title: string;
   description: string;
   ownerId: string;
@@ -632,6 +642,28 @@ export interface DataExportInfo {
 // DELETE /api/boards/:id/star      -> { ok: true }
 // PUT    /api/boards/:id/thumbnail body { dataUrl: string } -> { ok: true } (editor+)
 export interface CreateBoardRequest { title?: string; description?: string; workspaceId?: string; projectId?: string | null }
+
+// Docs (KAI-162; modules/docs). A doc is a container like a board (same sharing, members, link,
+// trash, request access: the /api/boards/:id routes serve it too) whose content is a document.
+// POST   /api/docs                 body CreateDocRequest -> { doc: BoardSummary }  (kind 'doc')
+//                                    `fromBoard`: in that board's workspace and project when the
+//                                    person may create there (a doc made on a board), else personal
+// GET    /api/docs/:id/markdown    -> text/markdown, the doc as the reader sees it (downloads policy;
+//                                    recorded as doc.exported)
+// WS     /ws/docs/:id              the doc's Yjs document (y-websocket protocol, like /ws/boards)
+export interface CreateDocRequest {
+  title?: string;
+  /** Initial content (Markdown); at most DOC_MAX_IMPORT_CHARS. */
+  markdown?: string;
+  workspaceId?: string;
+  projectId?: string | null;
+  fromBoard?: string;
+}
+export interface CreateDocResponse {
+  doc: BoardSummary;
+}
+/** Longest Markdown a doc is created from or imports (characters). */
+export const DOC_MAX_IMPORT_CHARS = 1_000_000;
 /** `projectId`: move it into that project of its workspace (null: the workspace root); `permissions.canMove`. */
 export interface UpdateBoardRequest {
   title?: string;
@@ -1462,6 +1494,8 @@ export const AUDIT_ACTIONS = {
   'project.member_added': 'Added someone to a project',
   'project.member_removed': 'Removed someone from a project',
   'board.created': 'Created a board',
+  'doc.created': 'Created a doc',
+  'doc.exported': 'Exported a doc',
   'board.trashed': 'Moved a board to the trash',
   'board.restored': 'Restored a board from the trash',
   'board.deleted': 'Deleted a board forever',
