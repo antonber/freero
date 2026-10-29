@@ -399,6 +399,15 @@ export interface SignInProvider {
   label: string;
 }
 
+/**
+ * GET /api/site/legal (modules/site, public): the service's terms, when they are in effect — the
+ * marketing site's legal pages are served and the operator (SITE_LEGAL_OPERATOR) is set. Null
+ * while they are drafts: sign-up then asks nobody to agree to anything.
+ */
+export interface SiteLegal {
+  legal: { operator: string; termsUrl: string; privacyUrl: string; acceptableUseUrl: string } | null;
+}
+
 export interface LinkedIdentity {
   id: string;
   provider: string;

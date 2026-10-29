@@ -275,6 +275,21 @@ export interface Config {
     dist: string;
     /** An operator's privacy-friendly analytics script (https), added to marketing pages only; null = none. */
     analytics: { src: string; attrs: Record<string, string> } | null;
+    /**
+     * Who runs this service, for the legal pages (/privacy, /terms, /acceptable-use) and /support:
+     * SITE_LEGAL_*. Until `operator` is set those pages say "Draft: not in effect" and are noindex,
+     * and sign-up doesn't ask anyone to agree to them.
+     */
+    legal: {
+      operator: string | null;
+      contactEmail: string | null;
+      address: string | null;
+      jurisdiction: string | null;
+      /** Who hosts the servers and where ("Railway Corp., US West"): the privacy policy's hosting provider. */
+      hosting: string | null;
+      /** A status page people can check when the service is down (https), for /support. */
+      statusUrl: string | null;
+    };
   };
   /**
    * A Jitsi deployment (https://meet.jit.si, or the operator's own) where boards may get a call
@@ -506,6 +521,24 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     else analyticsAttrs[key] = i < 0 ? '' : pair.slice(i + 1).trim();
   }
   const siteAnalytics = analyticsSrc ? { src: analyticsSrc, attrs: analyticsAttrs } : null;
+  // The legal pages' operator and contacts (apps/site legal pages, modules/site): plain text, one line.
+  const legalText = (name: string, max: number) => {
+    const v = str(name);
+    if (v !== null && (v.length > max || /[\r\n\t]/.test(v))) {
+      problems.push(`${name} must be one line of at most ${max} characters`);
+      return null;
+    }
+    return v;
+  };
+  const siteLegal = {
+    operator: legalText('SITE_LEGAL_OPERATOR', 200),
+    contactEmail: legalText('SITE_LEGAL_CONTACT_EMAIL', 320),
+    address: legalText('SITE_LEGAL_ADDRESS', 400),
+    jurisdiction: legalText('SITE_LEGAL_JURISDICTION', 200),
+    hosting: legalText('SITE_LEGAL_HOSTING', 300),
+    statusUrl: url('SITE_STATUS_URL', ['https:']),
+  };
+  if (siteLegal.contactEmail !== null && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(siteLegal.contactEmail)) problems.push('SITE_LEGAL_CONTACT_EMAIL must be an email address');
 
   const sessionSecret = str('SESSION_SECRET');
   if (sessionSecret !== null && sessionSecret.length < 32) problems.push('SESSION_SECRET must be at least 32 characters');
@@ -742,6 +775,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       enabled: bool('SITE', true),
       dist: path.resolve(env.FREERO_SITE_DIST || path.join(REPO_ROOT, 'apps/site/dist')),
       analytics: siteAnalytics,
+      legal: siteLegal,
     },
     jitsiBaseUrl: url('JITSI_BASE_URL', ['https:'])?.replace(/\/+$/, '') ?? null,
     events: {
