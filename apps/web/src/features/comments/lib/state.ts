@@ -262,9 +262,11 @@ export function setResolved(editor: Editor, threadId: string, resolved: boolean)
 export function deleteThread(editor: Editor, threadId: string) {
   const coll = records(editor);
   editor.transact(() => {
-    for (const k of threadKeys(coll.entries(), threadId)) coll.delete(k);
     // Hides replies (or a detach) written concurrently by someone who hadn't seen the delete yet.
+    // Written while the thread record still exists, so it lands where the thread lives (a hidden
+    // frame's thread: the editors layer, KAI-234).
     coll.set(keys.deleted(threadId), { kind: 'deleted', threadId, by: editor.user.id, at: editor.host.serverNow() });
+    for (const k of threadKeys(coll.entries(), threadId)) coll.delete(k);
   });
   if (session(editor).ui.getState().openId === threadId) setUi(editor, { openId: null });
 }
