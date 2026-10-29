@@ -33,7 +33,7 @@ Open http://localhost:5173 and log in with the seeded demo account
 Production:
 
 ```bash
-npm run build && npm start     # serves the built web app from the server on :4000
+npm run build && npm start     # serves the built web app and the marketing site (apps/site) on :4000
 docker compose up --build -d   # or the full stack: proxy, 2 app replicas, Postgres, Redis, MinIO, Mailpit on :8080
 ```
 

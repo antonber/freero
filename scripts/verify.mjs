@@ -7680,8 +7680,60 @@ async function docsChecks() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// The marketing site (apps/site, served by modules/site, KAI-250): the real site build on a real
+// server, a real signed-in session, and an instance with SITE=false.
+// ---------------------------------------------------------------------------
+async function siteChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-site-'));
+  const siteDist = path.join(dataDir, 'site');
+  const procs = [];
+  const get = (port, p, cookie = '') => fetch(`http://127.0.0.1:${port}${p}`, { redirect: 'manual', headers: cookie ? { cookie } : {} });
+  try {
+    if (!(await check('site: the marketing site builds', async () => {
+      // From apps/site, whose tsconfig sets the JSX runtime (as `npm run build -w @freero/site` does).
+      const r = spawnSync(process.execPath, ['--import', 'tsx', 'src/build.tsx', siteDist], { cwd: path.join(ROOT, 'apps/site'), encoding: 'utf8' });
+      assert(r.status === 0, `site build failed: ${r.stderr || r.stdout}`);
+    }))) return;
+    const on = await waitUp(await spawnServer(path.join(dataDir, 'on'), { FREERO_SITE_DIST: siteDist, PUBLIC_URL: 'https://whiteboard.example.com' }));
+    procs.push(on);
+    await check('site: a visitor gets the marketing pages with this instance’s own address; a signed-in person at / lands on their boards', async () => {
+      const home = await get(on.port, '/');
+      const html = await home.text();
+      assert(home.status === 200 && /<h1[ >]/.test(html), `/ signed out -> ${home.status}`);
+      assert(html.includes('<link rel="canonical" href="https://whiteboard.example.com/"/>') && !html.includes('origin.freero.invalid'), 'canonical is not PUBLIC_URL');
+      assert(!/<script(?![^>]*application\/ld\+json)/.test(html), 'the page ships a script');
+      const u = new User('SiteVisitor', on.port);
+      await u.signup();
+      const signedIn = await get(on.port, '/', u.cookie);
+      assert(signedIn.status === 302 && signedIn.headers.get('location') === '/app', `/ signed in -> ${signedIn.status} ${signedIn.headers.get('location')}`);
+      assert((await get(on.port, '/claude', u.cookie)).status === 200, 'a signed-in person can still read /claude');
+      const robots = await (await get(on.port, '/robots.txt')).text();
+      assert(robots.includes('Sitemap: https://whiteboard.example.com/sitemap.xml') && robots.includes('Disallow: /board/'), `robots: ${robots}`);
+      assert((await get(on.port, '/vs/no-such-competitor')).status === 404, 'a missing comparison is not the site’s 404');
+    });
+    const off = await waitUp(await spawnServer(path.join(dataDir, 'off'), { FREERO_SITE_DIST: siteDist, SITE: 'false' }));
+    procs.push(off);
+    await check('site: with SITE=false everyone at / goes to the app, no marketing page is served and crawlers are kept out', async () => {
+      const home = await get(off.port, '/');
+      assert(home.status === 302 && home.headers.get('location') === '/app', `/ -> ${home.status}`);
+      const claude = await get(off.port, '/claude');
+      assert(!(await claude.text()).includes('Freero for Claude'), '/claude was served with SITE=false');
+      assert((await (await get(off.port, '/robots.txt')).text()).includes('Disallow: /\n'), 'robots.txt lets crawlers in');
+    });
+  } finally {
+    for (const p of procs) await stopProc(p);
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
 // `--only <group>[,<group>…]` runs some groups, e.g. to loop one while hunting a flake.
 const SUITES = {
+  site: siteChecks,
   main: run,
   signin: signInMethodChecks,
   recovery: twoFactorRecoveryChecks,

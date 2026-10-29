@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-# Freero: one image that serves the API, WebSockets and the built web app.
+# Freero: one image that serves the API, WebSockets, the built web app and the marketing site.
 #   docker build -t freero .
 #   docker run -p 4000:4000 --env-file .env freero
 # Configuration: docs/configuration.md. Deployment: docs/deployment.md.
@@ -12,6 +12,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/
+COPY apps/site/package.json apps/site/
 COPY packages/shared/package.json packages/shared/
 RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts --no-audit --no-fund
 
@@ -23,12 +24,20 @@ COPY apps/web apps/web
 # Bundle only: types are checked by `npm run check` in CI, not on every image build.
 RUN cd apps/web && npx vite build
 
+# ---- 2b. prerender the marketing site (static HTML, OG images; served by modules/site) ------------
+FROM deps AS site
+COPY tsconfig.base.json ./
+COPY apps/web/src/ui/tokens.css apps/web/src/ui/tokens.css
+COPY apps/site apps/site
+RUN cd apps/site && npx tsx src/build.tsx
+
 # ---- 3. production dependencies of the server only ---------------------------------------------
 FROM ${NODE_IMAGE} AS server-deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/
+COPY apps/site/package.json apps/site/
 COPY packages/shared/package.json packages/shared/
 RUN --mount=type=cache,target=/root/.npm \
     npm ci --omit=dev --ignore-scripts --no-audit --no-fund --workspace=@freero/server --include-workspace-root=false
@@ -46,6 +55,7 @@ COPY packages/shared packages/shared
 COPY apps/server/package.json apps/server/tsconfig.json apps/server/
 COPY apps/server/src apps/server/src
 COPY --from=web /app/apps/web/dist apps/web/dist
+COPY --from=site /app/apps/site/dist apps/site/dist
 # The board outline (modules/outline) reads how each element type reads from the features'
 # pure outline.ts files (and the pure helpers they import), discovered at startup.
 COPY apps/web/src/features apps/web/src/features

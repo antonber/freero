@@ -69,7 +69,12 @@ async function main(): Promise<void> {
     // Vite's /assets are content-hashed: cache forever. Everything else (index.html) revalidates.
     app.use('/assets', express.static(path.join(config.webDist, 'assets'), { index: false, immutable: true, maxAge: '1y' }));
     app.use(express.static(config.webDist, { index: false, maxAge: 0 }));
-    app.get(/^(?!\/(api|uploads|ws)(\/|$)).*/, (_req, res) => res.sendFile(indexHtml));
+    // App pages (boards, share and invite links, sign-in) are never search results: the marketing
+    // site (modules/site) is what search engines index.
+    app.get(/^(?!\/(api|uploads|ws)(\/|$)).*/, (_req, res) => {
+      res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+      res.sendFile(indexHtml);
+    });
     log(`serving web app from ${config.webDist}`);
   }
   app.use(errorHandler());

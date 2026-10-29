@@ -266,6 +266,17 @@ export interface Config {
    */
   publicApi: boolean;
   /**
+   * The marketing site (apps/site, served by modules/site). Off: `/` sends everyone to `/app`, no
+   * marketing page is served and robots.txt keeps crawlers off the whole instance.
+   */
+  site: {
+    enabled: boolean;
+    /** The built site (`npm run build -w @freero/site`), served when it exists. */
+    dist: string;
+    /** An operator's privacy-friendly analytics script (https), added to marketing pages only; null = none. */
+    analytics: { src: string; attrs: Record<string, string> } | null;
+  };
+  /**
    * A Jitsi deployment (https://meet.jit.si, or the operator's own) where boards may get a call
    * room of their own (KAI-134), or null: only meeting links people paste.
    */
@@ -484,6 +495,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   const publicUrlRaw = url('PUBLIC_URL', ['http:', 'https:']);
   const publicUrl = publicUrlRaw ? new URL(publicUrlRaw).origin : null;
+
+  // SITE_ANALYTICS_SRC=https://…/script.js, SITE_ANALYTICS_ATTRS="domain=example.com,…" (data-* attributes).
+  const analyticsSrc = url('SITE_ANALYTICS_SRC', ['https:']);
+  const analyticsAttrs: Record<string, string> = {};
+  for (const pair of (str('SITE_ANALYTICS_ATTRS') ?? '').split(',').filter((p) => p.trim())) {
+    const i = pair.indexOf('=');
+    const key = (i < 0 ? pair : pair.slice(0, i)).trim().toLowerCase();
+    if (!/^[a-z][a-z0-9-]*$/.test(key)) problems.push(`SITE_ANALYTICS_ATTRS: "${key}" is not a valid attribute name (letters, digits, -)`);
+    else analyticsAttrs[key] = i < 0 ? '' : pair.slice(i + 1).trim();
+  }
+  const siteAnalytics = analyticsSrc ? { src: analyticsSrc, attrs: analyticsAttrs } : null;
 
   const sessionSecret = str('SESSION_SECRET');
   if (sessionSecret !== null && sessionSecret.length < 32) problems.push('SESSION_SECRET must be at least 32 characters');
@@ -716,6 +738,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     abuseContactEmail,
     securityContact: securityContact ?? (abuseContactEmail ? `mailto:${abuseContactEmail}` : null),
     publicApi: bool('PUBLIC_API', true),
+    site: {
+      enabled: bool('SITE', true),
+      dist: path.resolve(env.FREERO_SITE_DIST || path.join(REPO_ROOT, 'apps/site/dist')),
+      analytics: siteAnalytics,
+    },
     jitsiBaseUrl: url('JITSI_BASE_URL', ['https:'])?.replace(/\/+$/, '') ?? null,
     events: {
       settleMs: int('EVENTS_SETTLE_SECONDS', 3, 0, 600) * 1000,

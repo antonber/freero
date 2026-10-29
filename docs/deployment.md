@@ -47,7 +47,9 @@ For a real server:
 1. Point a DNS name at the VM.
 2. Replace the secrets in the `x-app-env` block (or put them in `.env` next to the compose file):
    `SESSION_SECRET`, `METRICS_TOKEN`, the Postgres and MinIO passwords, and set
-   `PUBLIC_URL=https://your.domain`.
+   `PUBLIC_URL=https://your.domain`. An internal instance usually sets `SITE=false` too: `/` then
+   opens the app instead of Freero's marketing pages, and search engines are asked to stay away
+   ([configuration.md](configuration.md#marketing-site)).
 3. TLS: in `deploy/Caddyfile` replace `:8080` with your domain (`whiteboard.example.com { … }`)
    and publish ports 80 and 443 instead of 8080. Caddy obtains and renews Let's Encrypt
    certificates automatically. Keep `TRUST_PROXY=1` (exactly one proxy in front of the app).

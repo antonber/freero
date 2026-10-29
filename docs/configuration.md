@@ -225,6 +225,21 @@ The event stream and workspace webhooks: [events.md](events.md).
 |---|---|---|
 | `JITSI_BASE_URL` | — | An https Jitsi deployment (`https://meet.jit.si`, or your own) where a board can get a call room of its own ("Call link…" → Jitsi room). The room name is derived from the board id with `SESSION_SECRET` (`Freero` + 24 hex characters), so nobody can guess another board's room; rotating the secret gives every board a new room. Unset: boards only use meeting links their editors paste (Meet, Zoom, Teams…, https only). Freero carries no audio or video itself. |
 
+## Marketing site
+
+The public pages at `/`, `/claude`, `/chatgpt`, `/agents`, `/security`, `/open-source`, `/pricing`,
+`/docs` and `/vs/*` (built by `npm run build` from `apps/site`; ARCHITECTURE.md, "Marketing site").
+They are static HTML: canonical links, Open Graph tags, structured data and the sitemaps carry
+`PUBLIC_URL`, put in when they are served. A signed-in person who opens `/` goes to their boards
+(`/app`).
+
+| Variable | Default | Description |
+|---|---|---|
+| `SITE` | `true` | Serve the marketing site. `false` (most self-hosted instances): `/` sends everyone to `/app` (sign-in first when signed out), no marketing page is served, and `robots.txt` asks search engines to stay off the whole instance (`Disallow: /`). The app's own pages are `noindex` either way. |
+| `FREERO_SITE_DIST` | `apps/site/dist` | The built site to serve. Without a build there, `/` behaves as with `SITE=false`. |
+| `SITE_ANALYTICS_SRC` | — | Privacy-friendly analytics for the marketing pages only (never the app): an `https` script URL (Plausible, Umami, a self-hosted counter…), added with `defer` at the end of each page's `<head>`. Its origin is added to those pages' CSP `script-src` and `connect-src`. Unset: no analytics, no third-party request at all. |
+| `SITE_ANALYTICS_ATTRS` | — | `data-*` attributes for that script, comma-separated `key=value` (`domain=whiteboard.example.com` → `data-domain="whiteboard.example.com"`; Umami: `website-id=…`). |
+
 ## Live embeds
 
 | Variable | Default | Description |

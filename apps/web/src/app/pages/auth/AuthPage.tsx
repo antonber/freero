@@ -139,9 +139,9 @@ export function AuthPage({ mode }: { mode: Mode }) {
         <span className="fr-authpage__blob" />
       </div>
       <main className="fr-authcard">
-        <Link to="/" className="fr-authcard__logo" aria-label="Freero home">
+        <a href="/" className="fr-authcard__logo" aria-label="Freero home">
           <Logo size={36} />
-        </Link>
+        </a>
         <h1 className="fr-authcard__title">{isLogin ? 'Welcome back' : 'Create your Freero account'}</h1>
         <p className="fr-authcard__sub">
           {toBoard
