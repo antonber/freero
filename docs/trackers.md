@@ -4,7 +4,9 @@ Freero links board items to issues in the tracker a team already uses, and keeps
 select sticky notes, a cluster or cards → **Send to tracker…** → one issue (or one per item) with
 every field kept and a link back to each item; each item then shows the issue's key, status and
 assignee, live. **Import issues…** (board menu) turns a JQL / search query into linked cards.
-Agents do the same through the MCP tool `sync_to_tracker` ([mcp.md](mcp.md)).
+Agents do the same through the MCP tool `sync_to_tracker`, and import with `import_from_tracker` (REST:
+`POST /api/v1/boards/{boardId}/trackers/import`) — the same rules as *Import issues…*, placed into a
+frame, kanban column or cluster if asked, attributed to the app for the person ([mcp.md](mcp.md)).
 
 ## Connecting
 

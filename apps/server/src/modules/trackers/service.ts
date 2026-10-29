@@ -39,7 +39,13 @@ import {
   findFreeSpot,
   rotatedBounds,
   estimateNumber,
+  LayoutError,
+  translateDraft,
+  type ActingApp,
+  type ElementDraft,
+  type LaidOut,
 } from '@freero/shared';
+import { placeLaid, readPlacement } from '../structure/index';
 import { getConfig } from '../../platform/config';
 import { badRequest, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
@@ -747,7 +753,13 @@ export async function sendToTracker(userId: string, boardId: string, body: Recor
  * Issues matching a query become linked task cards in free space, laid out in a grid. Issues
  * already on this board through the same connection are skipped, so importing twice adds nothing.
  */
-export async function importIssues(userId: string, boardId: string, body: Record<string, unknown>, origin: string): Promise<TrackerImportResponse> {
+export async function importIssues(
+  userId: string,
+  boardId: string,
+  body: Record<string, unknown>,
+  origin: string,
+  opts: { via?: ActingApp; preflight?: () => Promise<void> } = {},
+): Promise<TrackerImportResponse> {
   const board = await requireBoardAccess(boardId, userId, 'editor');
   const conn = await requireUsable(body.connectionId, board.workspaceId, userId);
   const query = typeof body.query === 'string' ? body.query.trim() : '';
@@ -755,27 +767,29 @@ export async function importIssues(userId: string, boardId: string, body: Record
   const limit = typeof body.limit === 'number' && Number.isInteger(body.limit) ? Math.max(1, Math.min(MAX_IMPORT, body.limit)) : 50;
   // Roadmap mode (KAI-160): onto a timeline the person can see and change.
   const target = roadmapTarget(body.timeline);
+  // Or into a frame / kanban (column) / cluster, or a new frame or kanban (placement by meaning).
+  const placement = body.placement === undefined || body.placement === null ? null : readPlacement(body.placement);
+  if (placement && target) throw badRequest('Give timeline or placement, not both');
+  if (placement) {
+    // Checked against the board before the tracker is asked (a wrong id costs nothing).
+    const v0 = await readBoardView(boardId, { userId, role: board.role });
+    try {
+      placeLaid(probeLaid(), placement, v0, { newId: () => newId(10), obstacles: [], travelling: new Set(), keepStatus: true });
+    } catch (e) {
+      if (e instanceof LayoutError) throw badRequest(e.message);
+      throw e;
+    }
+  }
+  await opts.preflight?.();
   if (target) {
     const v0 = await readBoardView(boardId, { userId, role: board.role });
     const tl = v0.elements.find((e) => e.el.id === target.id)?.el;
     if (!tl || tl.type !== 'timeline') throw badRequest('That timeline isn’t on this board');
     if (tl.locked) throw badRequest('That timeline is locked');
   }
-  await consumeRateLimit('trackerSend', userId);
   const provider = providerOf(conn.provider);
-  const pc = openConnection(conn);
-  let issues: RemoteIssue[];
-  try {
-    issues = await provider.search(pc, query, limit);
-    await noteOutcome(conn, null);
-  } catch (e) {
-    await noteOutcome(conn, e);
-    if (e instanceof TrackerError) throw new HttpError(e.kind === 'invalid' ? 400 : 502, e.message, 'tracker_refused');
-    throw e;
-  }
-  const already = await repo.linkedIssuesOnBoard(boardId, conn.id);
-  const fresh = issues.filter((i) => !already.has(i.id));
-  if (!fresh.length) return { created: [], skipped: issues.length };
+  const { issues, fresh } = await searchNew(userId, boardId, conn, query, limit);
+  if (!fresh.length) return { created: [], skipped: issues.length, cards: [] };
 
   // People and tags the cards need, resolved before the board is written.
   const assignee = new Map<string, string | null>();
@@ -788,7 +802,8 @@ export async function importIssues(userId: string, boardId: string, body: Record
     userId,
     role: board.role,
     name: user?.name,
-    via: { kind: 'app', id: `tracker:${conn.id}`, name: providerName(conn) },
+    // An agent's import is the agent's ("Claude for Maria"); later syncs are the tracker's.
+    via: opts.via ?? { kind: 'app', id: `tracker:${conn.id}`, name: providerName(conn) },
   };
   const links: StoredLink[] = fresh.map((i) => ({
     id: newId(16),
@@ -820,6 +835,7 @@ export async function importIssues(userId: string, boardId: string, body: Record
   }
   const created: string[] = [];
   let unscheduled = 0;
+  let containerId: string | undefined;
   try {
     await writeBoard(boardId, actor, (live) => {
       const tags = new Map([...(live.collection('tags') as ReadonlyMap<string, { name?: string }>)].map(([id, t]) => [provider.label(t?.name ?? '').toLowerCase(), id]));
@@ -898,6 +914,19 @@ export async function importIssues(userId: string, boardId: string, body: Record
         unscheduled = roadmap.unscheduled;
         return { create: roadmap.create, update: roadmap.update, collections };
       }
+      if (placement) {
+        // The grid from (0, 0), then where the placement says (the structure module's rules).
+        const laid: LaidOut = {
+          elements: create.map((d) => translateDraft(d, -at.x, -at.y)),
+          content: {},
+          moves: [],
+          size: block,
+          parts: [{ ids: create.map((d) => d.id) }],
+        };
+        const placed = placeLaid(laid, placement, live, { newId: () => newId(10), obstacles, travelling: new Set(), keepStatus: true });
+        containerId = placed.containerId;
+        return { create: placed.elements, update: placed.grow, collections };
+      }
       return { create, collections };
     });
   } catch (e) {
@@ -935,7 +964,59 @@ export async function importIssues(userId: string, boardId: string, body: Record
     issue: null,
     count: inserted.length,
   });
-  return { created, skipped: issues.length - inserted.length, ...(target ? { unscheduled } : {}) };
+  return {
+    created,
+    skipped: issues.length - inserted.length,
+    cards: inserted.map((l) => ({ id: l.sources[0], key: l.externalKey, url: l.externalUrl, linkId: l.id })),
+    ...(containerId ? { containerId } : {}),
+    ...(target ? { unscheduled } : {}),
+  };
+}
+
+/** The issues matching `query`, and those of them not on this board yet through this connection. */
+async function searchNew(userId: string, boardId: string, conn: StoredConnection, query: string, limit: number): Promise<{ issues: RemoteIssue[]; fresh: RemoteIssue[] }> {
+  await consumeRateLimit('trackerSend', userId);
+  let issues: RemoteIssue[];
+  try {
+    issues = await providerOf(conn.provider).search(openConnection(conn), query, limit);
+    await noteOutcome(conn, null);
+  } catch (e) {
+    await noteOutcome(conn, e);
+    if (e instanceof TrackerError) throw new HttpError(e.kind === 'invalid' ? 400 : 502, e.message, 'tracker_refused');
+    throw e;
+  }
+  const already = await repo.linkedIssuesOnBoard(boardId, conn.id);
+  return { issues, fresh: issues.filter((i) => !already.has(i.id)) };
+}
+
+/**
+ * What an import would bring, nothing written (an agent that may only suggest proposes these as
+ * cards): the issues matching the query that aren't on this board yet, with the same access,
+ * limit and dedupe rules as the import.
+ */
+export async function importCandidates(userId: string, boardId: string, body: Record<string, unknown>) {
+  const board = await requireBoardAccess(boardId, userId, 'editor');
+  const conn = await requireUsable(body.connectionId, board.workspaceId, userId);
+  const query = typeof body.query === 'string' ? body.query.trim() : '';
+  if (!query || query.length > 2000) throw badRequest('query is required (at most 2000 characters)');
+  const limit = typeof body.limit === 'number' && Number.isInteger(body.limit) ? Math.max(1, Math.min(MAX_IMPORT, body.limit)) : 50;
+  const { issues, fresh } = await searchNew(userId, boardId, conn, query, limit);
+  return {
+    skipped: issues.length - fresh.length,
+    issues: fresh.map((i) => ({ key: i.key, url: i.url, title: i.values.title || i.key, description: i.values.description.slice(0, 5000), status: i.values.status ?? 'todo', dueDate: i.values.dueDate ?? null })),
+  };
+}
+
+/** One card at (0, 0): checks a placement against the board before anything is imported. */
+function probeLaid(): LaidOut {
+  const id = 'probe';
+  return {
+    elements: [{ id, type: 'card', x: 0, y: 0, w: CARD_W, h: 100, rotation: 0, title: '', description: '', color: '#5B3FF0', status: 'todo', assigneeId: null, dueDate: null, tags: [] } as ElementDraft],
+    content: {},
+    moves: [],
+    size: { w: CARD_W, h: 100 },
+    parts: [{ ids: [id] }],
+  };
 }
 
 const GROUPS = new Set<RoadmapGroupBy>(['none', 'team', 'epic', 'label']);

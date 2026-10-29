@@ -9,6 +9,7 @@
 //
 // Field values travel as `IssueValues` and are compared in CANONICAL form (`canonical`), so a
 // tracker that reformats a description or reorders labels is not mistaken for an edit.
+import type { StructurePlacement } from './api';
 
 export const TRACKER_PROVIDERS = {
   jira: 'Jira',
@@ -381,6 +382,13 @@ export interface TrackerImportRequest {
    * frame below the timeline.
    */
   timeline?: { id: string; groupBy?: RoadmapGroupBy };
+  /**
+   * [additive] Where the cards go instead of a grid on free space (not with `timeline`): into an
+   * existing frame, kanban (column) or cluster, or a new frame or kanban (StructurePlacement).
+   * Placement never changes an issue's status: in a kanban a card goes to the column of its status
+   * when the named column has another.
+   */
+  placement?: StructurePlacement;
 }
 
 /** How a roadmap import puts issues into lanes. */
@@ -417,4 +425,8 @@ export interface TrackerImportResponse {
   unscheduled?: number;
   /** Issues already on this board (not imported twice). */
   skipped: number;
+  /** [additive] Each new card with its issue, in the tracker's order. */
+  cards?: Array<{ id: string; key: string; url: string; linkId: string }>;
+  /** [additive] With `placement.newFrame` / `newKanban`: the frame or kanban made. */
+  containerId?: string;
 }
