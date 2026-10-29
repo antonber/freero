@@ -15,14 +15,47 @@ import { createEmbedHost, toastNotify } from '../board/host';
 import { FullPageSpinner } from '../components/FullPageSpinner';
 import '../board/BoardPage.css';
 
+type Theme = 'light' | 'dark';
+const asTheme = (v: unknown): Theme | null => (v === 'light' || v === 'dark' ? v : null);
+
 /** The ticket, read once and removed from the address (a reload can't reuse it, nor a screenshot leak it). */
 let taken: string | null | undefined;
+/** The assistant's theme when the view opened (`#…&theme=dark`, live.html), read with the ticket. */
+let openedIn: Theme | null = null;
 function takeTicket(): string | null {
   if (taken === undefined) {
-    taken = new URLSearchParams(window.location.hash.slice(1)).get('ticket');
+    const hash = new URLSearchParams(window.location.hash.slice(1));
+    taken = hash.get('ticket');
+    openedIn = asTheme(hash.get('theme'));
     if (taken) window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search);
   }
   return taken;
+}
+
+/**
+ * The board follows the assistant's light / dark theme (#89): live.html passes it when it opens this
+ * page and posts `{ freeroEmbed: 'theme', theme }` whenever the assistant switches. Only the frame
+ * around this page is listened to, and a theme is all it can set.
+ */
+function useAssistantTheme(): void {
+  useEffect(() => {
+    const root = document.documentElement;
+    const apply = (t: Theme | null) => {
+      if (t) root.setAttribute('data-theme', t);
+    };
+    takeTicket(); // reads the theme it opened in with the ticket
+    apply(openedIn);
+    const onMessage = (e: MessageEvent) => {
+      if (e.source !== window.parent || window.parent === window) return;
+      const d = e.data as { freeroEmbed?: unknown; theme?: unknown } | null;
+      if (d && d.freeroEmbed === 'theme') apply(asTheme(d.theme));
+    };
+    window.addEventListener('message', onMessage);
+    return () => {
+      window.removeEventListener('message', onMessage);
+      root.removeAttribute('data-theme');
+    };
+  }, []);
 }
 /** One redemption per ticket (React's development double mount must not spend it twice). */
 const redeemed = new Map<string, Promise<EmbedRedeemResponse>>();
@@ -39,6 +72,7 @@ export default function EmbedBoardPage() {
   const location = useLocation();
   const notify = useToast();
   const [state, setState] = useState<State>({ status: 'loading' });
+  useAssistantTheme();
 
   useEffect(() => {
     const ticket = takeTicket();

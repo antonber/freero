@@ -63,6 +63,9 @@
 // header: Open in Freero, Share with team (an app-only tool call the host makes for the person),
 // full screen, and Reconnect when the view expired.
 var live = null;
+// The host's theme (light / dark): the board page follows it too (#89) — in its address when it
+// opens, then a message on every change (to Freero's origin only; a theme is all it carries).
+var theme = null;
 var LABEL = { editor: 'Can edit', commenter: 'Can comment', viewer: 'View only', owner: 'Can edit' };
 
 function $(id) { return document.getElementById(id); }
@@ -88,6 +91,11 @@ function liveOf(result) {
   return m && typeof m.src === 'string' && typeof m.origin === 'string' && m.src.indexOf(m.origin + '/') === 0 ? m : null;
 }
 
+function tellTheme() {
+  var frame = $('stage').querySelector('iframe');
+  if (live && theme && frame && frame.contentWindow) frame.contentWindow.postMessage({ freeroEmbed: 'theme', theme: theme }, live.origin);
+}
+
 function mount(m) {
   live = m;
   var stage = $('stage');
@@ -96,7 +104,8 @@ function mount(m) {
   frame.title = 'Freero board';
   frame.setAttribute('allow', 'clipboard-write');
   frame.setAttribute('referrerpolicy', 'no-referrer');
-  frame.src = m.src;
+  frame.onload = tellTheme;
+  frame.src = theme ? m.src + (m.src.indexOf('#') < 0 ? '#' : '&') + 'theme=' + theme : m.src;
   stage.appendChild(frame);
   $('access').hidden = false;
   $('access').textContent = LABEL[m.access] || 'View only';
@@ -160,10 +169,15 @@ $('shareCopy').onclick = function () {
 var modes = [];
 function applyContext(ctx) {
   freeroApplyTheme(ctx);
+  if ((ctx.theme === 'dark' || ctx.theme === 'light') && ctx.theme !== theme) {
+    theme = ctx.theme;
+    tellTheme();
+  }
   if (ctx.availableDisplayModes) modes = ctx.availableDisplayModes;
+  // A context change carries only what changed (a theme switch says nothing of the display mode).
   if (ctx.displayMode) document.documentElement.setAttribute('data-mode', ctx.displayMode);
   $('full').hidden = modes.indexOf('fullscreen') < 0;
-  $('full').textContent = ctx.displayMode === 'fullscreen' ? 'Exit full screen' : 'Full screen';
+  $('full').textContent = document.documentElement.getAttribute('data-mode') === 'fullscreen' ? 'Exit full screen' : 'Full screen';
 }
 $('full').onclick = function () {
   var next = document.documentElement.getAttribute('data-mode') === 'fullscreen' ? 'inline' : 'fullscreen';
