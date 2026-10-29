@@ -6308,6 +6308,53 @@ async function trackerChecks() {
       assert(bad.status === 400 && /JQL/.test(bad.json.error), `bad JQL: ${bad.status} ${bad.text}`);
     });
 
+    await check('trackers: roadmap mode — a query imported onto a timeline becomes linked bars in a lane per epic at their dates (undated issues in an Unscheduled frame); a bar dragged on the board moves the dates in Jira, and dates changed in Jira move the bar', async () => {
+      const PPD = 14; // week scale: px per day
+      const LABEL = 168;
+      const day = (iso) => Math.round(Date.parse(`${iso}T00:00:00Z`) / 86_400_000);
+      E.set('tl', { ...base, id: 'tl', type: 'timeline', x: 0, y: 4000, w: LABEL + 56 * PPD, h: 56 + 2 * 92, z: 0, title: '<p>Q4 roadmap</p>', start: '2026-11-02', end: '2026-12-27', scale: 'week', lanes: [{ id: 'l0', title: '<p>Planning</p>', color: '#E9E4FF', rows: 2 }] });
+      const epics = { checkout: { key: 'WEB-900', fields: { summary: 'Checkout' } }, search: { key: 'WEB-901', fields: { summary: 'Search' } } };
+      for (let i = 1; i <= 6; i++)
+        cloud.create('WEB', {
+          summary: `Roadmap item ${i}`,
+          labels: ['road'],
+          parent: i <= 3 ? epics.checkout : epics.search,
+          customfield_10015: i < 6 ? `2026-11-${String(3 + i * 2).padStart(2, '0')}` : null,
+          duedate: i < 6 ? `2026-11-${String(8 + i * 2).padStart(2, '0')}` : null,
+          description: { type: 'doc', version: 1, content: [] },
+        });
+      const r = await O.req('POST', `/api/boards/${board.id}/trackers/import`, { connectionId: cloudConn.id, query: 'labels = road', timeline: { id: 'tl', groupBy: 'epic' } });
+      assert(r.status === 201 && r.json.created.length === 6 && r.json.unscheduled === 1, `roadmap import: ${r.status} ${r.text.slice(0, 300)}`);
+      await waitFor(() => r.json.created.every((id) => E.get(id)), 8000, 'the roadmap cards');
+      const tl = E.get('tl');
+      assert(JSON.stringify(tl.lanes.map((l) => plain(l.title))) === '["Checkout","Search"]', `lanes: ${JSON.stringify(tl.lanes.map((l) => plain(l.title)))}`);
+      const laneTop = (i) => tl.y + 56 + tl.lanes.slice(0, i).reduce((s, l) => s + 12 + Math.max(2, l.rows ?? 2) * 40, 0);
+      const cards = r.json.created.map((id) => E.get(id));
+      const keyOf = (card) => records().get(card.trackerLink)?.key;
+      const dated = cards.filter((x) => x.frameId === 'tl');
+      assert(dated.length === 5 && dated.every((x) => x.h === 30 && records().get(x.trackerLink)), `bars: ${JSON.stringify(dated.map((x) => [x.frameId, x.h]))}`);
+      for (const x of dated) {
+        const n = Number(cloud.issue(keyOf(x)).fields.summary.split(' ').pop());
+        const lane = n <= 3 ? 0 : 1;
+        const cy = x.y + x.h / 2;
+        assert(cy > laneTop(lane) && cy < laneTop(lane + 1), `item ${n} is not in its epic's lane (y ${x.y})`);
+        assert(Math.abs(x.x - (tl.x + LABEL + (day(x.startDate) - day(tl.start)) * PPD)) < 1, `item ${n} is not at its start date (x ${x.x}, ${x.startDate})`);
+      }
+      const undated = cards.find((x) => x.frameId !== 'tl');
+      const tray = E.get(undated.frameId);
+      assert(tray?.type === 'frame' && /^Unscheduled/.test(tray.title) && tray.skip === true, `tray: ${JSON.stringify(tray)}`);
+      // On the board: the bar was dragged (the card's dates, as card.setDates writes them) → Jira.
+      const moved = dated[0];
+      E.set(moved.id, { ...E.get(moved.id), startDate: '2026-11-23', dueDate: '2026-11-30' });
+      await waitFor(() => cloud.issue(keyOf(moved)).fields.duedate === '2026-11-30' && cloud.issue(keyOf(moved)).fields.customfield_10015 === '2026-11-23', 10_000, `the new dates in Jira (${JSON.stringify([cloud.issue(keyOf(moved)).fields.customfield_10015, cloud.issue(keyOf(moved)).fields.duedate])})`);
+      // In Jira: another item's dates change → the bar moves on the open board.
+      const other = dated[1];
+      cloud.edit(keyOf(other), { startdate: '2026-12-07', duedate: '2026-12-18' });
+      assert((await cloud.webhook(webhookUrl, secret, keyOf(other))) === 202, 'webhook');
+      const wantX = tl.x + LABEL + (day('2026-12-07') - day(tl.start)) * PPD;
+      await waitFor(() => E.get(other.id).dueDate === '2026-12-18' && Math.abs(E.get(other.id).x - wantX) < 1 && Math.abs(E.get(other.id).w - 12 * PPD) < 1, 10_000, `the bar at its new dates (x ${E.get(other.id).x}, want ${wantX})`);
+    });
+
     await check('trackers: MCP sync_to_tracker sends items as one issue for the agent’s person', async () => {
       const tok = await O.req('POST', '/api/auth/tokens', { name: 'Planner agent', scopes: ['boards:read', 'boards:write'], expiresInDays: 1 });
       assert(tok.status === 201, tok.text);
