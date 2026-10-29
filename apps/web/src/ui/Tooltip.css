@@ -8,7 +8,7 @@
   font-weight: 500;
   line-height: 1.35;
   color: #fff;
-  background: var(--fr-ink);
+  background: var(--fr-inverse);
   border-radius: 8px;
   box-shadow: var(--fr-shadow);
   pointer-events: none;

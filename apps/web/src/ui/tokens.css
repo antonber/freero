@@ -1,6 +1,10 @@
 /* Freero design tokens. All UI must use these variables, not raw colors.
-   Brand: violet primary + mint accent, ink-dark text, soft neutral chrome. */
-:root {
+   Brand: violet primary + mint accent, ink-dark text, soft neutral chrome.
+   `.fr-paper` (#89): board content keeps these light values on a dark page (engine canvas/theme.ts
+   draws it through a filter instead), so what people make looks the same to everyone and in exports. */
+:root,
+.fr-paper {
+  color-scheme: light;
   --fr-primary: #5b3ff0;
   --fr-primary-hover: #4a2fdc;
   --fr-primary-soft: #eeeaff;
@@ -71,7 +75,8 @@ button {
 }
 
 /* ---- Additive tokens (UI kit) ---- */
-:root {
+:root,
+.fr-paper {
   --fr-primary-ink: #ffffff;
   --fr-primary-press: #3f26c4;
   --fr-accent-soft: #dcfbf2;
@@ -80,6 +85,8 @@ button {
   --fr-success-soft: #e3f6ec;
   --fr-warning-soft: #fef3e0;
   --fr-overlay: rgba(23, 22, 43, 0.36);
+  /* Dark surfaces with white text on any page (toasts, tooltips). */
+  --fr-inverse: #17162b;
   --fr-hover: rgba(23, 22, 43, 0.05);
   --fr-press: rgba(23, 22, 43, 0.09);
   /* Keyboard focus (WCAG 2.4.7 / 2.4.11): a solid violet ring with a light gap, visible on white,
@@ -92,10 +99,54 @@ button {
   --fr-z-tooltip: 90;
 }
 
+/* ---- Dark (#89) ----
+   A page that follows a dark surrounding sets data-theme="dark" on <html> (the live board view in an
+   AI assistant follows the assistant's theme). The chrome follows these; board content does not
+   (`.fr-paper` above). */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --fr-primary: #8f7bff;
+  --fr-primary-hover: #a291ff;
+  --fr-primary-soft: #2b2650;
+  --fr-primary-ink: #111022;
+  --fr-primary-press: #7a64f5;
+  --fr-accent-soft: #123d33;
+  --fr-danger: #e5484d;
+  --fr-danger-hover: #f0656a;
+  --fr-danger-soft: #3d1f26;
+  --fr-success: #3ccf86;
+  --fr-success-soft: #153a2a;
+  --fr-warning-soft: #3b2e14;
+
+  --fr-ink: #ecebf5;
+  --fr-ink-2: #c3c1d6;
+  --fr-ink-3: #a3a1bb; /* 4.5:1+ on every dark surface token */
+  --fr-line: #33324a;
+  --fr-line-strong: #46455f;
+  --fr-surface: #1d1c2e;
+  --fr-surface-2: #242338;
+  --fr-surface-3: #2c2b42;
+  --fr-canvas: #15141f;
+  --fr-canvas-dot: #3a3950;
+
+  --fr-select: #8f7bff;
+  --fr-select-fill: rgba(143, 123, 255, 0.14);
+  --fr-focus-color: #a291ff;
+  --fr-overlay: rgba(5, 5, 12, 0.6);
+  --fr-inverse: #3a3856;
+  --fr-hover: rgba(236, 235, 245, 0.07);
+  --fr-press: rgba(236, 235, 245, 0.12);
+  --fr-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --fr-shadow: 0 2px 8px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(236, 235, 245, 0.06);
+  --fr-shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(236, 235, 245, 0.07);
+  --fr-shadow-xl: 0 24px 64px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(236, 235, 245, 0.07);
+}
+
 /* Windows high contrast / forced colours: selection, focus and the brand accent use the system's
    highlight colour, which the user picked to stand out against their own canvas colour. */
 @media (forced-colors: active) {
-  :root {
+  :root,
+  .fr-paper {
     --fr-select: Highlight;
     --fr-focus-color: Highlight;
     --fr-primary: Highlight;

@@ -24,7 +24,7 @@
   font-weight: 500;
   line-height: 1.4;
   color: #fff;
-  background: var(--fr-ink);
+  background: var(--fr-inverse);
   border-radius: 12px;
   box-shadow: var(--fr-shadow-lg);
   pointer-events: auto;
