@@ -66,15 +66,34 @@ const plain = (html: unknown): string | null => {
   return t.trim().slice(0, 2000) || null;
 };
 
-/** The comments `userId` wrote on the board (live state), grouped by thread, deleted ones left out. */
-export async function commentsWrittenBy(boardId: string, userId: string): Promise<CommentThreadExport[]> {
+/**
+ * The comments `userId` wrote on the board (live state), grouped by thread, deleted ones left out:
+ * in the shared doc, the editors layer (threads on items in hidden frames, KAI-234) and their own
+ * private layer. Their messages are theirs wherever they are; what a thread is pinned to is
+ * described only from what they may see now (`seesHidden`: owner/editor reads hidden items).
+ */
+export async function commentsWrittenBy(boardId: string, userId: string, opts: { seesHidden: boolean } = { seesHidden: false }): Promise<CommentThreadExport[]> {
   const state = await snapshotBoardDoc(boardId);
   if (!state) return [];
-  const doc = new Y.Doc();
+  const docs: Array<{ doc: Y.Doc; readable: boolean }> = [];
+  const load = (s: Uint8Array | null, readable: boolean) => {
+    if (!s) return;
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, s);
+    docs.push({ doc, readable });
+  };
   try {
-    Y.applyUpdate(doc, state);
-    const comments = doc.getMap<Record<string, unknown>>(COMMENTS_COLLECTION);
-    const elements = doc.getMap<Record<string, unknown>>('elements');
+    load(state, true);
+    load(await snapshotBoardLayer(boardId, 'editors'), opts.seesHidden);
+    load(await snapshotBoardLayer(boardId, privateLayerOf(userId)), true);
+    // Records of one thread live in one doc: read them all as one collection.
+    const comments = new Map<string, Record<string, unknown>>();
+    const visible = new Map<string, Record<string, unknown>>();
+    for (const { doc, readable } of docs) {
+      for (const [k, v] of doc.getMap<Record<string, unknown>>(COMMENTS_COLLECTION).entries()) comments.set(k, v);
+      if (readable) for (const [k, v] of doc.getMap<Record<string, unknown>>('elements').entries()) visible.set(k, v);
+    }
+    const elements = { get: (id: string) => visible.get(id) };
     const gone = new Set<string>();
     for (const [key, v] of comments.entries()) if (key.startsWith('x:') && v?.kind === 'deleted') gone.add(v.messageId ? `${v.threadId}:${v.messageId}` : String(v.threadId));
     const threads = new Map<string, CommentThreadExport>();
@@ -109,6 +128,6 @@ export async function commentsWrittenBy(boardId: string, userId: string): Promis
     for (const t of threads.values()) t.messages.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     return [...threads.values()];
   } finally {
-    doc.destroy();
+    for (const { doc } of docs) doc.destroy();
   }
 }

@@ -3,7 +3,7 @@ import { CalendarRange, ChartGantt, Diamond, Plus } from 'lucide-react';
 import type { TimelineBarElement, TimelineElement, TimelineScale } from '@freero/shared';
 import { defineFormat, type Editor } from '@engine';
 import { ColorSwatches, IconButton, Popover, SegmentedControl, ToolbarButton } from '@ui';
-import { BAR_COLORS, addBar, addLane, patchBars, setRange, setScale } from './lib/actions';
+import { BAR_COLORS, addBar, addLane, patchBars, setRange, setScale, setView } from './lib/actions';
 import { formatRange, isISODate } from './lib/dates';
 
 const SCALES: Array<{ value: TimelineScale; label: string }> = [
@@ -44,8 +44,18 @@ function DatesControl({ label, start, end, onChange, single }: { label: string; 
 function TimelineControls({ editor, t }: { editor: Editor; t: TimelineElement }) {
   return (
     <div className="fr-timeline-fmt">
+      <SegmentedControl<'dates' | 'horizons'>
+        size="sm"
+        aria-label="View"
+        value={t.view ?? 'dates'}
+        options={[
+          { value: 'dates', label: 'Dates' },
+          { value: 'horizons', label: 'Now · Next · Later' },
+        ]}
+        onChange={(v) => setView(editor, t.id, v)}
+      />
       <SegmentedControl<TimelineScale> size="sm" aria-label="Scale" value={t.scale} options={SCALES} onChange={(v) => setScale(editor, t.id, v)} />
-      <DatesControl label="Date range" start={t.start} end={t.end} onChange={(p) => setRange(editor, t.id, p)} />
+      {t.view !== 'horizons' && <DatesControl label="Date range" start={t.start} end={t.end} onChange={(p) => setRange(editor, t.id, p)} />}
       <button type="button" className="fr-timeline-fmt__btn" onClick={() => addLane(editor, t.id)}>
         <Plus size={16} aria-hidden />
         Lane

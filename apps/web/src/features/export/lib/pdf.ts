@@ -6,6 +6,8 @@ export interface PdfFrame extends Rect {
   id: string;
   title: string;
   index: number;
+  /** A slide skipped in the deck (KAI-126): left out of the export unless picked. */
+  skip?: boolean;
 }
 
 export type PageSize = 'fit' | 'a4';

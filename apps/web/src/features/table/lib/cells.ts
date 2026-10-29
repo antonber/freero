@@ -4,6 +4,7 @@
 // row or column) never re-key existing cells. The collection is `undoable` (feature.ts): cell
 // edits are undone like element edits, in the same steps.
 import { tableCellKey, type TableCopyContent, type TableElement } from '@freero/shared';
+import { displayValue, exportValue, type PeopleLookup } from './columns';
 import { richTextToPlain, type Collection, type Editor } from '@engine';
 
 export const CELLS = 'tableCells';
@@ -62,7 +63,21 @@ export function writeContent(editor: Editor, tableId: string, content: TableCont
   }
 }
 
-/** Plain text of every cell, row by row (CSV export, clipboard text). */
-export function plainGrid(coll: Pick<Collection<string>, 'get'>, el: Pick<TableElement, 'id' | 'rows' | 'cols'>): string[][] {
-  return el.rows.map((r) => el.cols.map((c) => richTextToPlain(cellText(coll, el.id, r.id, c.id)).replace(/\n+$/, '')));
+/**
+ * Every cell as text, row by row: `'read'` as people read it (copy as text, Layers), `'export'`
+ * in the form spreadsheets read back (CSV: numbers and ISO dates as stored, TRUE / FALSE). The
+ * header row is always its text.
+ */
+export function plainGrid(
+  coll: Pick<Collection<string>, 'get'>,
+  el: Pick<TableElement, 'id' | 'rows' | 'cols' | 'header'>,
+  opts: { mode?: 'read' | 'export'; people?: PeopleLookup } = {},
+): string[][] {
+  return el.rows.map((r, i) =>
+    el.cols.map((c) => {
+      const raw = cellText(coll, el.id, r.id, c.id);
+      const col = el.header && i === 0 ? undefined : c;
+      return opts.mode === 'export' ? exportValue(col, raw, opts.people) : displayValue(col, raw, opts.people);
+    }),
+  );
 }

@@ -96,7 +96,7 @@ export function boardFrames(editor: Editor): PdfFrame[] {
   return editor
     .getElements()
     .filter((e): e is FrameElement => e.type === 'frame')
-    .map((f) => ({ id: f.id, title: f.title || 'Untitled frame', index: f.index ?? 0, x: f.x, y: f.y, w: f.w, h: f.h }));
+    .map((f) => ({ id: f.id, title: f.title || 'Untitled frame', index: f.index ?? 0, x: f.x, y: f.y, w: f.w, h: f.h, ...(f.skip ? { skip: true } : {}) }));
 }
 
 /** Render scale for a PDF page: crisp but bounded memory for huge frames. */

@@ -5,9 +5,10 @@ import { createHmac } from 'node:crypto';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { baseOf, mergeField, pullableFields, type BoardElement, type IssueValues, type KanbanElement, type Tag } from '@freero/shared';
+import { baseOf, mergeField, pullableFields, type BoardElement, type ElementDraft, type IssueValues, type KanbanElement, type Tag, type TimelineElement } from '@freero/shared';
 import { planPull } from './board';
 import { trackerRequest, TrackerError } from './http';
+import { planRoadmapImport } from './roadmap';
 import { adfToMarkdown, markdownToAdf, markdownToWiki, wikiToMarkdown } from './markup';
 import { github, managedPart, withManagedPart } from './providers/github';
 import { jira } from './providers/jira';
@@ -117,6 +118,42 @@ it('a status from the tracker moves a kanban card into the column with that stat
   expect(created.map((t) => t.name)).toEqual(['payments']);
   expect(moved.tags).toEqual(['t2', created[0].id]);
   expect(patch.get('note')!.tags).toEqual(['t2', created[0].id]);
+});
+
+it('roadmap import: issues join the timeline lane already named after their epic (no second lane), a due date alone makes a one-day bar, and an issue without dates waits in a skipped Unscheduled frame', () => {
+  const t = {
+    id: 'tl', type: 'timeline', x: 0, y: 0, w: 168 + 56 * 14, h: 56 + 2 * 92, rotation: 0, z: 0, createdBy: 'u', createdAt: 0, updatedAt: 0,
+    title: 'Q4', start: '2026-11-02', end: '2026-12-27', scale: 'week',
+    lanes: [{ id: 'l-search', title: 'Search', color: '#000', rows: 2 }, { id: 'l-pay', title: '<p>Checkout</p>', color: '#000', rows: 2 }],
+  } as unknown as TimelineElement;
+  const bar = { id: 'b0', type: 'timelinebar', x: 168, y: 62, w: 70, h: 30, frameId: 'tl', start: '2026-11-02', end: '2026-11-06', title: 'kickoff', color: '#000' } as unknown as BoardElement;
+  const view = { elements: [t, bar].map((el) => ({ el, layer: 'shared' as const })) };
+  const issue = (id: string, values: Partial<IssueValues>, epic: string) => ({ id, key: id, url: '', values: { title: id, description: '', labels: [], ...values }, assigneeName: null, updatedAt: 0, groups: { epic } });
+  const draft = (id: string) => ({ id, type: 'card', x: 0, y: 0, w: 300, h: 120 }) as unknown as ElementDraft;
+  let n = 0;
+  const plan = planRoadmapImport(
+    view,
+    t,
+    [
+      { id: 'c1', issue: issue('PAY-1', { startDate: '2026-11-09', dueDate: '2026-11-20' }, 'checkout'), draft: draft('c1') },
+      { id: 'c2', issue: issue('PAY-2', { dueDate: '2026-11-25' }, 'Checkout'), draft: draft('c2') },
+      { id: 'c3', issue: issue('PAY-3', {}, 'Checkout'), draft: draft('c3') },
+    ],
+    { groupBy: 'epic', today: 20_400, newId: () => `id${++n}`, frameIndex: 3 },
+  );
+  const made = new Map(plan.create.map((d) => [d.id, d as unknown as Record<string, unknown>]));
+  expect(plan.update.find((u) => u.id === 'tl')?.patch.lanes).toBeUndefined();
+  const laneTop = 56 + 12 + 2 * 40;
+  for (const id of ['c1', 'c2']) {
+    const c = made.get(id)!;
+    expect(c.frameId).toBe('tl');
+    expect(Number(c.y) + 15).toBeGreaterThan(laneTop);
+  }
+  expect(made.get('c1')!.x).toBe(168 + 7 * 14);
+  expect(made.get('c2')).toMatchObject({ startDate: '2026-11-25', dueDate: '2026-11-25', w: 14 });
+  const tray = made.get(made.get('c3')!.frameId as string)!;
+  expect(tray).toMatchObject({ type: 'frame', skip: true, index: 3 });
+  expect(plan.unscheduled).toBe(1);
 });
 
 let server: http.Server;

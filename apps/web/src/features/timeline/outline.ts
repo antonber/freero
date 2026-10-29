@@ -11,7 +11,7 @@ export default defineOutline({
       return {
         title: ctx.plain(t.title),
         standalone: true,
-        fields: { start: t.start, end: t.end, scale: t.scale },
+        fields: { start: t.start, end: t.end, scale: t.scale, view: t.view === 'horizons' ? 'now / next / later' : null },
         sections: t.lanes.map((l) => ({ id: l.id, title: ctx.plain(l.title) })),
         sectionOf: (child) => t.lanes[laneAt(g, child.y + child.h / 2 - t.y)]?.id ?? null,
       };

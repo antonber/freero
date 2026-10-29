@@ -36,6 +36,8 @@ const CATEGORY_LABEL: Record<IssueStatusCategory, string> = {
 
 /** Field names Jira gives story points (team-managed, company-managed, older sites). */
 const ESTIMATE_FIELD_NAMES = ['story point estimate', 'story points', 'story point'];
+/** Jira Cloud's start date is a custom field ("Start date"); found by name like story points. */
+const START_FIELD_NAMES = ['start date', 'start'];
 
 /** Turns a refused call into Freero's words. 404 is left to the caller. */
 function refused(res: HttpResponse, what: string): TrackerError {
@@ -64,17 +66,20 @@ interface JiraIssue {
     labels?: string[];
     duedate?: string | null;
     updated?: string;
+    project?: { key?: string; name?: string };
+    parent?: { key?: string; fields?: { summary?: string } };
   };
 }
 
 const issueFields = (conn: ProviderConnection) =>
-  ['summary', 'description', 'status', 'assignee', 'labels', 'duedate', 'updated', ...(conn.settings.estimateField ? [conn.settings.estimateField] : [])].join(',');
+  ['summary', 'description', 'status', 'assignee', 'labels', 'duedate', 'updated', 'project', 'parent', ...(conn.settings.estimateField ? [conn.settings.estimateField] : []), ...(conn.settings.startDateField ? [conn.settings.startDateField] : [])].join(',');
 
 function toRemote(conn: ProviderConnection, j: JiraIssue): RemoteIssue {
   const f = j.fields ?? {};
   const assignee = f.assignee ?? null;
   const cat = f.status?.statusCategory?.key ? (CATEGORY[f.status.statusCategory.key] ?? null) : null;
   const est = conn.settings.estimateField ? f[conn.settings.estimateField] : null;
+  const start = conn.settings.startDateField ? f[conn.settings.startDateField] : undefined;
   return {
     id: String(j.id),
     key: String(j.key),
@@ -87,11 +92,13 @@ function toRemote(conn: ProviderConnection, j: JiraIssue): RemoteIssue {
       // An assignee whose email Jira hides (Cloud privacy settings) is told apart by id.
       assignee: assignee ? (assignee.emailAddress?.toLowerCase() ?? `~${assignee.accountId ?? assignee.name ?? assignee.key ?? 'someone'}`) : null,
       labels: Array.isArray(f.labels) ? f.labels.filter((l): l is string => typeof l === 'string') : [],
+      ...(conn.settings.startDateField ? { startDate: typeof start === 'string' ? start.slice(0, 10) : null } : {}),
       dueDate: typeof f.duedate === 'string' ? f.duedate.slice(0, 10) : null,
       estimate: typeof est === 'number' ? est : null,
     },
     assigneeName: assignee?.displayName ?? null,
     updatedAt: f.updated ? Date.parse(f.updated) || 0 : 0,
+    groups: { team: f.project?.name ?? f.project?.key ?? null, epic: f.parent?.fields?.summary ?? f.parent?.key ?? null },
   };
 }
 
@@ -120,6 +127,10 @@ async function fieldsFor(conn: ProviderConnection, values: IssueValues, notes: s
   if (values.description !== undefined) f.description = cloud(conn) ? markdownToAdf(values.description) : markdownToWiki(values.description);
   if (values.labels !== undefined) f.labels = [...new Set(values.labels.map(jira.label).filter(Boolean))];
   if (values.dueDate !== undefined) f.duedate = values.dueDate;
+  if (values.startDate !== undefined) {
+    if (conn.settings.startDateField) f[conn.settings.startDateField] = values.startDate;
+    else if (values.startDate !== null) notes.push(`${LABEL} has no start date field Freero can find, so the start date wasn’t sent.`);
+  }
   if (values.estimate !== undefined) {
     if (conn.settings.estimateField) f[conn.settings.estimateField] = values.estimate;
     else if (values.estimate !== null) notes.push(`${LABEL} has no story points field Freero can find, so the estimate wasn’t sent.`);
@@ -210,7 +221,7 @@ const hmacOk = (secret: string, body: Buffer, given: string | undefined): boolea
 
 export const jira: TrackerProvider = {
   kind: 'jira',
-  fields: ['title', 'description', 'status', 'assignee', 'labels', 'dueDate', 'estimate'],
+  fields: ['title', 'description', 'status', 'assignee', 'labels', 'startDate', 'dueDate', 'estimate'],
   queryLanguage: 'JQL',
 
   authHeaders(creds: Credentials) {
@@ -239,8 +250,16 @@ export const jira: TrackerProvider = {
       path: `/rest/api/${v(conn)}/field`,
     });
     let estimateField: string | null = null;
+    let startDateField: string | null = null;
     if (ok(fields) && Array.isArray(fields.json)) {
       const list = fields.json as Array<{ id?: string; name?: string }>;
+      for (const name of START_FIELD_NAMES) {
+        const hit = list.find((f) => f.name?.trim().toLowerCase() === name && f.id);
+        if (hit) {
+          startDateField = hit.id!;
+          break;
+        }
+      }
       for (const name of ESTIMATE_FIELD_NAMES) {
         const hit = list.find((f) => f.name?.trim().toLowerCase() === name && f.id);
         if (hit) {
@@ -251,7 +270,7 @@ export const jira: TrackerProvider = {
     }
     return {
       account: j.emailAddress ?? j.displayName ?? j.name ?? 'Jira user',
-      settings: { estimateField },
+      settings: { estimateField, startDateField },
     };
   },
 
