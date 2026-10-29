@@ -122,6 +122,11 @@ export interface Host {
   };
   /** Full ws URL prefix; engine connects WebsocketProvider(syncUrl, board.id, doc). */
   syncUrl: string;
+  /**
+   * [additive] WebSocket subprotocols the board's socket offers: how a page without the session
+   * cookie signs in (a live view inside an AI assistant sends its short-lived token, KAI-171).
+   */
+  syncProtocols?: string[];
   uploadImage(file: Blob): Promise<{ url: string }>;
   /**
    * [additive] Stores a document (PDF) with the board's uploads, under the same per-account quota

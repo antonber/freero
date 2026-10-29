@@ -25,6 +25,8 @@ import { OAuthConsentPage } from './pages/oauth/OAuthConsentPage';
 const BoardPage = lazy(() => import('./board/BoardPage'));
 // The operator's read-only board preview mounts the board engine too.
 const OperatorPreviewPage = lazy(() => import('./pages/operator/OperatorPreviewPage'));
+// A live board view inside an AI assistant (MCP Apps, KAI-171).
+const EmbedBoardPage = lazy(() => import('./embed/EmbedBoardPage'));
 
 export function App() {
   return (
@@ -102,6 +104,14 @@ export function App() {
               }
             />
             <Route path="/board/:id" element={<BoardRoute />} />
+            <Route
+              path="/embed/board/:id"
+              element={
+                <Suspense fallback={<FullPageSpinner label="Opening board" />}>
+                  <EmbedBoardPage />
+                </Suspense>
+              }
+            />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </AuthProvider>
