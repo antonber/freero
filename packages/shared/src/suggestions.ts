@@ -53,7 +53,15 @@ export interface SuggestionDecision {
   at: number;
   /** Accepted although it was stale. */
   forced?: true;
+  /**
+   * Rejected by Freero because the token or app that proposed it was revoked (KAI-224). `by` is
+   * then WITHDRAWN_BY, which no socket can name, so nobody reopens it.
+   */
+  withdrawn?: true;
 }
+
+/** `SuggestionDecision.by` of a suggestion withdrawn because its credential was revoked (never a user id). */
+export const WITHDRAWN_BY = 'freero';
 
 export interface SuggestionRecord {
   id: string;
@@ -230,10 +238,10 @@ function asAuthor(v: unknown): SuggestionAuthor | null {
 /** A decision value as stored, or null (also for a malformed one). */
 export function asDecision(v: unknown): SuggestionDecision | null {
   if (!isObj(v)) return null;
-  const { status, by, at, forced } = v;
+  const { status, by, at, forced, withdrawn } = v;
   if ((status !== 'accepted' && status !== 'rejected') || !str(by) || typeof at !== 'number' || !Number.isFinite(at)) return null;
-  if (forced !== undefined && forced !== true) return null;
-  return { status, by, at, ...(forced ? { forced: true as const } : {}) };
+  if ((forced !== undefined && forced !== true) || (withdrawn !== undefined && withdrawn !== true)) return null;
+  return { status, by, at, ...(forced ? { forced: true as const } : {}), ...(withdrawn ? { withdrawn: true as const } : {}) };
 }
 
 /**

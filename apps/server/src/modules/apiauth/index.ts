@@ -30,3 +30,6 @@ export {
 } from './embed';
 // The person's API data for their data export (modules/privacy).
 export { apiDataOf } from './dataExport';
+// Credentials revoked for good (KAI-224), announced through the outbox in the revoking transaction:
+// realtime withdraws the pending suggestions they proposed.
+export { CREDENTIAL_REVOKED_TOPIC, type CredentialRevoked } from './repo';
