@@ -1539,7 +1539,8 @@ export class EditorImpl implements Editor {
     const content: Record<string, unknown> = {};
     for (const s of chosen) {
       if (s.op !== 'create' || !s.element || store.getElement(s.element.id)) continue;
-      const { z: _z, createdBy: _c, createdAt: _a, updatedAt: _u, ...el } = withoutDanglingRefs(s.element, exists);
+      // The acceptor creates it; the proposer is `suggestedBy` (`createdVia` is the server's alone, KAI-222).
+      const { z: _z, createdBy: _c, createdVia: _v, createdAt: _a, updatedAt: _u, ...el } = withoutDanglingRefs(s.element, exists);
       created.push({ ...el, suggestedBy: { kind: s.author.kind, name: s.author.name, userId: s.author.userId } } as NewElement);
       if (s.content !== undefined) content[s.element.id] = s.content;
     }

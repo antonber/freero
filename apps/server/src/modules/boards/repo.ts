@@ -1,12 +1,14 @@
 // The only writer of `boards`, `board_stars` and `board_opens` [S4].
 import { randomUUID } from 'node:crypto';
-import type { LinkAccess } from '@freero/shared';
+import type { LinkAccess, ObjectKind } from '@freero/shared';
 import { one, query, tx } from '../../platform/db';
 import { appendOutbox } from '../../platform/outbox';
 import { openCallUrl, sealCallUrl } from './call';
 
 export interface Board {
   id: string;
+  /** What the container holds (KAI-162): the canvas, or a doc. Every access rule is the same. */
+  kind: ObjectKind;
   title: string;
   description: string;
   ownerId: string;
@@ -39,6 +41,7 @@ export interface Board {
 
 interface Row {
   id: string;
+  kind: ObjectKind;
   title: string;
   description: string;
   owner_id: string;
@@ -63,6 +66,7 @@ interface Row {
 // (A link password depends on who asks: boards' service applies it per person.)
 const toBoard = (r: Row, now = Date.now()): Board => ({
   id: r.id,
+  kind: r.kind === 'doc' ? 'doc' : 'board',
   title: r.title,
   description: r.description,
   ownerId: r.owner_id,
@@ -109,6 +113,8 @@ export interface BoardEventRecord {
   from?: string | null;
   to?: string | null;
   copyOf?: string;
+  /** [additive] 'doc' when the container is a doc (KAI-162); absent for boards. */
+  kind?: 'doc';
 }
 /** Records a board event in the CALLER'S transaction (call it next to the change it describes). */
 export async function appendBoardEvent(e: Omit<BoardEventRecord, 'at'>, at = Date.now()): Promise<void> {
@@ -117,9 +123,9 @@ export async function appendBoardEvent(e: Omit<BoardEventRecord, 'at'>, at = Dat
 
 export async function insertBoard(b: Board): Promise<void> {
   await query(
-    `INSERT INTO boards (id, title, description, owner_id, link_access, thumbnail, created_at, updated_at, workspace_id, project_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-    [b.id, b.title, b.description, b.ownerId, b.linkAccess, b.thumbnail, new Date(b.createdAt), new Date(b.updatedAt), b.workspaceId, b.projectId],
+    `INSERT INTO boards (id, title, description, owner_id, link_access, thumbnail, created_at, updated_at, workspace_id, project_id, kind)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+    [b.id, b.title, b.description, b.ownerId, b.linkAccess, b.thumbnail, new Date(b.createdAt), new Date(b.updatedAt), b.workspaceId, b.projectId, b.kind],
   );
 }
 
@@ -163,6 +169,13 @@ export async function getBoardIncludingTrash(id: string): Promise<Board | null> 
 export async function getBoards(ids: string[]): Promise<Board[]> {
   if (ids.length === 0) return [];
   return (await query<Row>(`SELECT * FROM boards WHERE id = ANY($1::text[]) AND ${LIVE}`, [ids])).map((r) => toBoard(r));
+}
+
+/** What each of these containers is (any state; missing ids are absent). One query. */
+export async function kindsOf(ids: string[]): Promise<Map<string, ObjectKind>> {
+  if (!ids.length) return new Map();
+  const rows = await query<{ id: string; kind: ObjectKind }>(`SELECT id, kind FROM boards WHERE id = ANY($1::text[])`, [ids]);
+  return new Map(rows.map((r) => [r.id, r.kind === 'doc' ? 'doc' : 'board']));
 }
 
 /** Every board id (trash included), for operator rebuilds of derived indexes. */

@@ -1,4 +1,4 @@
-import { WS_CLOSE_BOARD_REMOVED } from '@freero/shared';
+import { WS_CLOSE_BOARD_REMOVED, type ObjectKind } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { gaugeFn } from '../../platform/metrics';
 import { checkRateLimit } from '../../platform/rateLimit';
@@ -8,15 +8,21 @@ import { authorNamesOf, guestFromCookieHeader, guestKeyFromCookieHeader, onProfi
 import { getBoardAccess } from '../boards/index';
 import { admitSocket, endSessionSockets, flushAllRooms, listenToOtherInstances, liveSessionKeys, loadedRoomCount, pendingPersistCount, profileChanged } from './rooms';
 
-const PREFIX = '/ws/boards/';
+/**
+ * One socket route per kind of object doc (KAI-162): a board's canvas and a doc's document are
+ * both a Yjs doc in a room of this module, keyed by the container's id, admitted by the same
+ * access rules. A socket of one kind never opens the other kind's doc (a board client would write
+ * its maps into a document, and the other way round).
+ */
+const PREFIXES: Record<ObjectKind, string> = { board: '/ws/boards/', doc: '/ws/docs/' };
 
-/** /ws/boards/:id — y-websocket protocol; auth from the session cookie. */
-export default function realtimeWs(ctx: ServerContext): WsRoute {
+/** /ws/boards/:id and /ws/docs/:id — y-websocket protocol; auth from the session cookie. */
+export default function realtimeWs(ctx: ServerContext): WsRoute[] {
   // Graceful shutdown: every loaded doc is saved before the database closes.
   ctx.onShutdown(flushAllRooms);
   // Ended sessions close their sockets here, wherever and however they ended (auth, KAI-146).
   const stopWatchingSessions = onSessionEnd(endSessionSockets);
-  const stopTracking = trackLiveSessions(liveSessionKeys);
+  const stopTracking = trackLiveSessions(() => [...liveSessionKeys()].filter((k) => !k.includes(':')));
   // Renames reach open sockets at once (presence, and the names comments may carry: KAI-187).
   const stopWatchingProfiles = onProfileChanged(profileChanged);
   ctx.onShutdown(() => {
@@ -28,6 +34,10 @@ export default function realtimeWs(ctx: ServerContext): WsRoute {
   ctx.onShutdown(listenToOtherInstances());
   gaugeFn('freero_realtime_loaded_docs', 'Board documents loaded in memory', loadedRoomCount);
   gaugeFn('freero_realtime_persist_queue', 'Loaded board documents with changes not yet persisted', pendingPersistCount);
+  return (Object.keys(PREFIXES) as ObjectKind[]).map((kind) => objectDocRoute(kind, PREFIXES[kind]));
+}
+
+function objectDocRoute(kind: ObjectKind, PREFIX: string): WsRoute {
   return {
     prefix: PREFIX,
     handle(ws, req) {
@@ -54,11 +64,14 @@ export default function realtimeWs(ctx: ServerContext): WsRoute {
         } catch {
           /* falls through to 4403 */
         }
-        const { role, removed } = boardId && !boardId.includes('/') ? await getBoardAccess(boardId, user.id) : { role: null, removed: false };
-        if (removed) return { code: WS_CLOSE_BOARD_REMOVED, reason: 'Board removed for review' };
-        if (!role) return { code: 4403, reason: 'No access to this board' };
+        const access = boardId && !boardId.includes('/') ? await getBoardAccess(boardId, user.id) : { role: null, removed: false, kind: null };
+        if (access.removed) return { code: WS_CLOSE_BOARD_REMOVED, reason: 'Board removed for review' };
+        // The other kind's id reads like no access: a socket never learns what a container is.
+        const role = access.kind === kind ? access.role : null;
+        if (!role) return { code: 4403, reason: kind === 'doc' ? 'No access to this doc' : 'No access to this board' };
         return {
           boardId,
+          kind,
           userId: user.id,
           role,
           sessionKey: key,

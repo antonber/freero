@@ -118,8 +118,9 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | auth session cookie | server `modules/auth` | — |
 | `_outbox`, `_outbox_cursors` (platform tables) | `platform/outbox.ts` | `appendOutbox` in the change's transaction; consumers through `consumeOutbox` |
 | Derived indexes (`object_references`, `search_entries`) | their module's outbox consumer | never written directly: change the source; `references:rebuild` / `search:rebuild` repair |
+| A doc's document (Yjs fragment `document-store`, KAI-162) | the doc editor (`engine/docs`, through `engine/store/ObjectDocStore`); on requests, realtime's `docContent.ts` (`appendDocBlocks`, `initDocContent`) | the editor, or `modules/docs` / the public API |
 | The event stream (`events`) | `modules/events` (from outbox topics only) | append to the outbox in your change's transaction (`board.events`, `board.members`, `board.content`); consumers follow `event.recorded` |
-| API tokens, OAuth apps / consents, a team's API switch | server `modules/apiauth` | its index: `authenticate`, `requireScope`, `useInWorkspace` |
+| API tokens, OAuth apps / consents, a team's API switch, live-view tickets (`api_embed_tokens`) | server `modules/apiauth` | its index: `authenticate`, `requireScope`, `useInWorkspace`, `mintEmbedTicket` / `redeemEmbedTicket` |
 | Tracker connections, links to issues, what both sides last agreed on | server `modules/trackers` | its routes / index (`sendToTracker`, `importIssues`); syncs only through its outbox consumer |
 | `trackers` collection (issue badges) and items' `trackerLink` | server `modules/trackers` (through realtime's `changeBoard`) | — (the web feature only reads them) |
 
@@ -892,7 +893,7 @@ policies"), `activity` (board_activity: the activity feed; see "Activity" below)
 configures; see "AI" below), `apiauth` (api_tokens,
 oauth_clients, oauth_grants, oauth_codes, api_workspace_settings, api_workspace_credentials:
 credentials that act for a person without their session), `api` (no table: the public REST API
-`/api/v1`; see "Public API and OAuth" below), `mcp` (no table: the remote MCP server `/mcp`; see
+`/api/v1`; see "Public API and OAuth" below), `embed` (no table: live board views inside AI assistants, `/embed`, `/ws/embed`; see "The MCP server"), `mcp` (no table: the remote MCP server `/mcp`; see
 "The MCP server" below), `objects` (no table: the object registry and the one
 permission check, `POST /objects/resolve`), `references` (object_references, reference_sources: the
 references index derived through the outbox, `GET /objects/backlinks`; both in "Suite foundation"
@@ -901,7 +902,8 @@ engage_reveals: live audience activities; see "Live activities" below), `tracker
 (tracker_connections, tracker_links, tracker_link_sources, tracker_oauth_flows: issue-tracker sync;
 see "Issue trackers" below), `search` (search_entries, search_sources: the search index derived
 through the outbox, `GET /search`), `events` (events, event_board_states, event_pending_boards: the
-event stream), `webhooks` (webhook_endpoints, webhook_deliveries: workspace webhooks) — the last
+event stream), `docs` (no table: the doc app — a doc is a boards container of kind 'doc' whose
+document realtime stores; see "Docs and native live embeds"), `webhooks` (webhook_endpoints, webhook_deliveries: workspace webhooks) — the last
 three in "Search, the event stream and webhooks" below — `backup` (no table: `.freero` board
 backups, see below) and `share` (no table: the installed app's share target, see "Installable app").
 
@@ -1421,6 +1423,12 @@ audit and admin controls are the same code.
   `showAgentPresence` shows the app for a few seconds as a server-published presence (its own user
   id, cursor and selection on what it wrote; sockets can't publish `agent`). Each credential has its
   own write budget (`RATE_LIMIT_AGENT_WRITE`), apart from the person's editing.
+  Sockets can't claim attribution either (KAI-222, `realtime/attribution.ts`): inside the
+  transaction that applies a socket's update (shared doc and layers), an element it ADDS gets
+  `createdBy` = the socket's user and no `createdVia`, unless the room already knows the element
+  (in another of its docs — a move into a hidden frame or private mode — or removed within the last
+  hour — an undo), which keeps the attribution it had; an element it CHANGES keeps its `createdBy`,
+  `createdVia` and `createdAt`. The sender is sent the correction (like the facilitation guards).
 - **Reads follow the downloads policy (KAI-197).** The outline, items and comments are a
   machine-readable copy of the board, so boards' `requireDownload` (the one check exports,
   duplicates and templates use) refuses them with 403 `downloads_restricted` and records
@@ -1435,16 +1443,45 @@ audit and admin controls are the same code.
 
 ### The MCP server (`modules/mcp`, KAI-107; docs/mcp.md)
 
-- `POST /mcp`, Streamable HTTP with the official SDK (`@modelcontextprotocol/sdk`, pinned), **stateless**:
-  each request builds its own server for its credential (authenticated afresh, no cache) and answers
-  JSON — no session, no stream — so it runs behind round-robin balancing and a revoked token, app or
-  workspace switch refuses the very next request. `GET`/`DELETE` answer 405.
+- `POST /mcp`, Streamable HTTP with the official v2 SDK (`@modelcontextprotocol/server` +
+  `createMcpHandler`, pinned, zod 4 for its schemas), **stateless**: each request builds its own
+  server for its credential (authenticated afresh, no cache) and answers JSON — no session, no
+  stream — so it runs behind round-robin balancing and a revoked token, app or workspace switch
+  refuses the very next request. Both protocol eras are served per request: 2026-07-28 requests
+  carry their own envelope, 2025-era ones get a fresh stateless transport. `GET`/`DELETE` answer
+  405. `npm run verify` drives it with the v1 client SDK (`@modelcontextprotocol/sdk`, root
+  devDependency — what most deployed hosts still speak), the unit tests with the v2 client.
 - Tools (`tools.ts`) are outcome-shaped and call `modules/api`'s operations with the request's
   credential; each checks its scope first (refused as a tool error naming the permission) and is one
   `api.call` audit event (`MCP <tool>`). Board text only ever travels in the untrusted envelope
   (`content.ts`); names, descriptions, instructions, prompts and errors are Freero's own words.
   `propose_changes` is registered only when `structure.structureTargets()` has the suggestions sink
   (KAI-169).
+- **MCP Apps** (KAI-171, `mcp/apps.ts`, docs/mcp.md "Live boards in the conversation"): tools name a
+  `ui://` view in `_meta.ui` (`registerAppTool` / `registerAppResource` of ext-apps). The views are
+  static HTML in `mcp/views/` (no build, no third-party code; `bridge.js` is the view side of the
+  postMessage protocol). `get_board_outline` → the preview, which draws the outline its result
+  carries (`_meta["freero/outline"]`, enveloped) and declares no domains; `open_board` → the live
+  view, which frames Freero's `/embed/board/:id` (`frameDomains` = Freero's origin only) with a
+  single-use ticket in `_meta["freero/live"]` (not for the model). `share_board` is `visibility:
+  ["app"]`: the view's Share button.
+- **Control room** (KAI-172, `api/controlRoom.ts`, MCP `post_status` / `get_feedback`, prompt
+  `control_room`, template "Agent control room"): an agent's lane is plain board content found by
+  its titles (*Plan · A*, *Status · A*, the *Tasks · A* kanban with To do / Doing / Done / Blocked);
+  tasks match by title (idempotent), moves use the kanban's column geometry (`KANBAN_LAYOUT`) and
+  grow the kanban. Feedback is a diff against the opaque cursor the agent holds (card → column it
+  last saw, comment messages seen), so its own changes are never reported and nothing is stored.
+- **Live views (`modules/embed`, no table).** apiauth mints the ticket (`api_embed_tokens`:
+  per tool call, bound to one board and to the app's grant or the personal token — deleted with
+  them — and to `maxRole` from the connection's scopes); `POST /api/embed/redeem` turns it, once,
+  into a short-lived token; `ws.ts` (`/ws/embed/boards/:id`, token as a WebSocket subprotocol) admits
+  the socket through realtime's `admitSocket` with `Admission.maxRole` (applied on every access
+  refresh too) and the session key `embed:<sha256>`; `init.ts` re-checks those keys every
+  `SESSION_RECHECK_SECONDS` (credential, account, API switch / block) and ends the ones that may no
+  longer stay open. Realtime hands auth only the keys without a ':' (auth's own). The web side is
+  `app/embed/EmbedBoardPage` + `createEmbedHost` (`Host.syncProtocols`). Framing: platform
+  `allowFraming(path, reason)` gives `/embed/` the `frame-ancestors` of `MCP_APP_FRAME_ANCESTORS`;
+  every other page stays `'none'`.
 - Scopes: `MCP_SCOPES`; read + suggest by default — `registerProtectedResource(…, { optInScopes })`
   makes the consent screen offer `boards:write` / `comments:write` unticked (`OAuthConsentInfo.scopes[].optional`,
   the decision's `grant`). `/mcp` is the `root` resource: the bare `/.well-known/oauth-protected-resource`
@@ -1500,7 +1537,8 @@ deactivated: nothing) and `project` (projects' `canSee` / `canManage`). A handle
 batch in a fixed number of queries (`objects.test.ts` asserts 200 refs cost what 10 do). Purpose
 `'discover'` (backlinks, search) leaves out boards reached ONLY through their link that the reader
 never opened — otherwise an index would hand out the ids a link protects; `'open'` (the reader
-holds the address) counts link access, as the board page does. A new object type (a doc) =
+holds the address) counts link access, as the board page does. Docs (KAI-162) are type `doc`,
+answered by boards next to `board` (each type only for its own kind). A new object type =
 a handler in its module + a type in `OBJECT_TYPES`; nothing else changes.
 
 **Object addresses** (`@freero/shared` `objects.ts`, KAI-149): `freero://board/<id>`,
@@ -1591,6 +1629,75 @@ for boards every full member of the workspace can open through team access (work
 own DNS lookup refuses private addresses at connect time, redirects never followed), retries with
 4× backoff, and turns an endpoint off after `WEBHOOK_DISABLE_AFTER_FAILURES` failures in a row
 (audited, its creator emailed); deliveries wait until it is back on. `WEBHOOKS=false` removes it all.
+
+### Docs and native live embeds (KAI-162, KAI-152, KAI-124)
+
+A doc is a collaborative document next to boards (`freero://doc/<id>`, page `/doc/<id>`): a PRD,
+decision record or write-up, with live board frames inside it and live docs on boards.
+
+**One container, two kinds.** A doc is a row of `boards` with `kind = 'doc'` (`boards.kind`,
+`'board' | 'doc'`; `BoardSummary.kind`, `ObjectKind`). Every access rule is a property of the
+CONTAINER — owner, members and invites, team access and private projects, link role, password and
+expiry, guests, request access, trash and retention, transfers, quotas, moderation, workspace
+policies — so a doc is shared, requested, trashed and taken down by the same code as a board, and
+`/api/boards/:id/*` (summary, rename, members, link, versions, access requests) serves it too.
+Considered and rejected: a `docs` table of its own, which would have forked every one of those
+rules (or needed a generic grants table first). The object registry answers `board` and `doc` from
+boards, each only for its own kind, so `freero://board/<doc id>` resolves to nothing.
+`modules/docs` (no table) holds only what a document has: create (from Markdown, next to a board:
+its workspace/project when the person may create there), export as Markdown (downloads policy,
+audited `doc.exported`), append Markdown (the API). Its audit target is `{ type: 'doc' }`;
+`doc.created` replaces `board.created`.
+
+**One Yjs doc per object, the same rooms.** realtime serves `/ws/docs/:id` next to `/ws/boards/:id`
+from the SAME rooms, persistence (base + update log, compaction), version history and retention,
+Redis fan-out and access refreshes — the "board doc" is an object doc keyed by the container id.
+A socket of one kind never opens the other kind (refused like no access). Docs have no layers
+(they withhold nothing from their readers); layer messages on a doc socket are ignored. Layout
+(`@freero/shared` docs.ts): `getXmlFragment('document-store')` in BlockNote's ProseMirror node
+layout through y-prosemirror (the name La Suite Docs and OpenProject use: the document model stays
+compatible), plus the boards' `comments` map — a thread's `elementId` is the BLOCK it is on, so
+commenter rules, @mention notifications (links open `/doc/<id>?thread=`), the purge's rename and
+data exports are unchanged. Every room types the fragment up front, so nothing reads it as a map;
+restoring a version replaces it as one change (comments kept). `realtime/docContent.ts` reads and
+writes the fragment on the server in the editor's own node layout (`readDocBlocks`,
+`writeDocBlocks`); `@freero/shared` `docToMarkdown` / `markdownToDoc` are the one Markdown
+conversion (browser import/export, API, MCP, data exports' `doc.md`).
+
+**Derived indexes.** Every saved change raises `board.content` like a board's; search and
+references branch on the kind (`boards.objectKindsOf`): a doc's rows are its blocks and comments
+(hits open `/doc/<id>?block=<block>`, `SearchHit.objectKind`), its references are link targets,
+live board embeds (`embed`), addresses in text and comments, with the block as the source; sources
+are checked as what they are. The uploads sweep needs nothing: it scans the same stored documents.
+Not yet: doc-specific event types (the stream records a doc's lifecycle and comments as a board's).
+
+**Web.** `engine/store/ObjectDocStore`: another object's Yjs doc on its own socket (the reader's
+access to THAT object), its own undo history (the editor's) — undo on a board never touches a
+doc, and the other way round. `engine/docs`: `DocEditor` (BlockNote core, MPL-2.0, pinned; never
+the XL packages or Tiptap Pro; loaded with `import()` on first use — `npm run check:licenses` fails
+on copyleft, source-available or unknown licences and on those packages by name), `useObjectDoc`,
+`useObjectDocState`, the comment record helpers. The page is `app/pages/doc` (comments panel,
+version history with read-only previews from a local copy, Markdown in/out, share, request access).
+Host addition: `Host.docs` (`syncUrl`, `create`, `exportMarkdown`, `requestAccess`).
+
+**Native live embeds (KAI-152).** The host stores a reference, never a copy, and the target
+renders with its own components from its own doc and connection, permission-checked on the
+target itself:
+- A board (or frame) in a doc: block `boardEmbed` (`props.uri` = `freero://board/<id>[#<frame>]`;
+  the slash menu's "Live board", or a pasted board/frame link). The page resolves it with the
+  reader's access and shows `LiveBoardView` (`@engine`): a separate engine session with its own
+  socket to that board — the server admits it with the reader's role there and sends only what
+  that role may read — drawn with the board's own element definitions, fitted to the frame,
+  read-only and non-interactive (edits happen on the board). No access: a "No access to this
+  board" card with Request access.
+- A doc on a board: element `doc` (`features/doc`, `uri` = the doc's address only). It renders the
+  doc live (`useObjectDoc` with `Host.docs.syncUrl`; editable in place after a double-click when
+  the server says the viewer may edit THE DOC, else read-only; "Open" goes full page). No access:
+  a "No access to this doc" card with Request access. Off-screen items are unmounted and items
+  under 30% zoom are cards, so a board connects only for docs on screen. Markdown files and pasted
+  Markdown with headings become docs next to the board (importer 30); a pasted doc link shows it.
+- Embeds never nest without end: a board shown inside an embed is `Host.board.embedded`, and doc
+  items there are cards.
 
 ### Issue trackers: one issue ↔ many items, kept in step (`modules/trackers`, KAI-153..157; docs/trackers.md)
 
@@ -2173,7 +2280,7 @@ the board, deletions. A suggestion is not board content until someone who can ed
   `S3_BUCKET` and keys (MinIO, SeaweedFS…), the `s3` group checks the S3 backend (prefixes, kept
   copies under `private/`, restore, retention, the S3_PUBLIC_URL redirect and stored Cache-Control);
   all other groups stay on the local disk. CI does all of it.
-  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation,ai,api,mcp,s3,suite,suggestions,collab,tracker,search,webhooks,portability` runs some groups (to loop one while hunting a flake).
+  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation,ai,api,mcp,s3,suite,suggestions,collab,tracker,search,webhooks,docs,portability` runs some groups (to loop one while hunting a flake).
   The `mcp` group drives the MCP server with the official MCP client SDK, OAuth (dynamic
   registration, consent, PKCE) included; with DATABASE_URL + REDIS_URL one client's requests also
   alternate between two instances.

@@ -19,7 +19,7 @@ const user = (id: string, name: string): Account => ({ id, name, email: `${id}@x
 const member = (id: string, name: string, role: Role): BoardMember => ({ userId: id, name, email: `${id}@x.io`, color: '#1C7ED6', avatarUrl: null, role });
 const MEMBERS = [member('u1', 'Ada', 'owner'), member('u2', 'Bob', 'editor'), member('u3', 'Cy', 'viewer')];
 const board = (role: Role): BoardSummary => ({
-  id: 'b1', title: 'Roadmap', description: '', ownerId: 'u1', ownerName: 'Ada', role, starred: false,
+  id: 'b1', kind: 'board', title: 'Roadmap', description: '', ownerId: 'u1', ownerName: 'Ada', role, starred: false,
   thumbnail: null, linkAccess: 'viewer', createdAt: 0, updatedAt: 0, lastOpenedAt: null,
   workspaceId: 'w1', projectId: null, team: null, member: role !== 'owner',
   permissions: { canExport: true, canShareExternally: true, maxLinkAccess: 'editor', canMove: role === 'owner', canTransfer: role === 'owner' },

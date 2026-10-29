@@ -3,7 +3,7 @@
 // live access before showing anything.
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import * as Y from 'yjs';
-import type { Account, BoardElement } from '@freero/shared';
+import { DOC_FRAGMENT, type Account, type BoardElement } from '@freero/shared';
 import { drainOutbox, registerOutboxConsumer } from '../../platform/outbox';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { createUser } from '../auth/index';
@@ -91,6 +91,33 @@ it('someone removed from a board stops finding it on the next query (no re-deriv
   expect(await titles()).toEqual(['Link notes', 'Shared notes']);
   await removeBoardMember(shared.id, owner.id, reader.id);
   expect(await titles()).toEqual(['Link notes']);
+});
+
+it('a doc’s words and the comments on its blocks are found by its readers, opening the doc at that block — and by nobody else', async () => {
+  const [owner, outsider] = await Promise.all([user('Author'), user('Outsider')]);
+  const doc = await createBoard(owner.id, 'Pricing memo', '', 'none', {}, undefined, 'doc');
+  // The editor's node layout (blockGroup > blockContainer > paragraph > text).
+  const y = new Y.Doc();
+  const group = new Y.XmlElement('blockGroup');
+  const container = new Y.XmlElement('blockContainer');
+  container.setAttribute('id', 'p1');
+  const para = new Y.XmlElement('paragraph');
+  const text = new Y.XmlText();
+  text.insert(0, 'We raise prices in spring');
+  para.insert(0, [text]);
+  container.insert(0, [para]);
+  group.insert(0, [container]);
+  y.getXmlFragment(DOC_FRAGMENT).insert(0, [group]);
+  const t = Date.now();
+  y.getMap('comments').set('t:t1', { kind: 'thread', id: 't1', x: 0, y: 0, elementId: 'p1', createdAt: t, createdBy: owner.id });
+  y.getMap('comments').set('m:t1:m1', { kind: 'message', threadId: 't1', id: 'm1', authorId: owner.id, authorName: 'Author', text: 'Spring is early this year', createdAt: t });
+  await initBoardDoc(doc.id, Y.encodeStateAsUpdate(y));
+  await drainOutbox(SEARCH_CONSUMER);
+
+  const hits = await hitsOf(owner.id, 'spring');
+  expect(hits.map((h) => `${h.kind} ${h.path}`).sort()).toEqual([`comment /doc/${doc.id}?thread=t1`, `item /doc/${doc.id}?block=p1`]);
+  expect(hits.every((h) => h.objectKind === 'doc' && h.uri === `freero://doc/${doc.id}`)).toBe(true);
+  expect(await hitsOf(outsider.id, 'spring')).toEqual([]);
 });
 
 it('query syntax in what people type is just words: operators, quotes and backslashes never fail the query or widen it', async () => {

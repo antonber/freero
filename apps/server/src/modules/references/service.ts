@@ -5,10 +5,10 @@ import { getConfig } from '../../platform/config';
 import { badRequest, notFound } from '../../platform/http';
 import { log } from '../../platform/log';
 import { nextDeriveVersion, whileConsumerPaused, type OutboxConsumer } from '../../platform/outbox';
-import { allBoardIds } from '../boards/index';
+import { allBoardIds, objectKindsOf } from '../boards/index';
 import { can, summarizeObjects, type Actor } from '../objects/index';
-import { BOARD_CONTENT_TOPIC, storedBoardView } from '../realtime/index';
-import { extractReferences } from './extract';
+import { BOARD_CONTENT_TOPIC, storedBoardView, storedDocContent } from '../realtime/index';
+import { extractDocReferences, extractReferences } from './extract';
 import * as repo from './repo';
 
 export const REFERENCES_CONSUMER = 'references';
@@ -27,6 +27,11 @@ const contentOrigins = (): string[] => {
  * `version` (an older version never replaces newer rows). Idempotent.
  */
 export async function deriveBoardReferences(boardId: string, version: number): Promise<'replaced' | 'stale' | 'gone'> {
+  if ((await objectKindsOf([boardId])).get(boardId) === 'doc') {
+    // A doc (KAI-162): its blocks are the sources.
+    const content = await storedDocContent(boardId);
+    return repo.replaceReferences(boardId, version, content ? extractDocReferences(content, contentOrigins()) : []);
+  }
   const view = await storedBoardView(boardId);
   const rows = view ? extractReferences(boardId, view, contentOrigins()) : [];
   return repo.replaceReferences(boardId, version, rows);
@@ -81,14 +86,15 @@ export async function backlinksOf(actor: Actor, uri: unknown, origins: readonly 
   if (!target) throw badRequest('uri is not a Freero object address');
   if (!(await can(actor, 'view', target))) throw notFound('Not found');
   const rows = target.type === 'board' ? await repo.referencesToBoard(target.id, MAX_BACKLINK_ROWS) : await repo.referencesTo(formatObjectUri(target), MAX_BACKLINK_ROWS);
-  const boards = await summarizeObjects(
-    actor,
-    [...new Set(rows.map((r) => r.boardId))].map((id): ObjectRef => ({ type: 'board', id })),
-    'discover',
-  );
+  // Sources are boards or docs (KAI-162): each checked and addressed as what it is.
+  const sourceIds = [...new Set(rows.map((r) => r.boardId))];
+  const kinds = await objectKindsOf(sourceIds);
+  const containerRef = (id: string): ObjectRef => ({ type: kinds.get(id) === 'doc' ? 'doc' : 'board', id });
+  const boards = await summarizeObjects(actor, sourceIds.map(containerRef), 'discover');
   const out = new Map<string, Backlink>();
   for (const r of rows) {
-    const board = boards.get(formatObjectUri({ type: 'board', id: r.boardId }));
+    const container = containerRef(r.boardId);
+    const board = boards.get(formatObjectUri(container));
     if (!board) continue;
     const key = `${r.boardId}\n${r.sourceElement}\n${r.target}`;
     const known = out.get(key);
@@ -97,13 +103,15 @@ export async function backlinksOf(actor: Actor, uri: unknown, origins: readonly 
       continue;
     }
     if (out.size >= MAX_BACKLINKS) continue;
-    const source: ObjectRef = r.sourceElement ? { type: 'element', boardId: r.boardId, id: r.sourceElement } : { type: 'board', id: r.boardId };
+    const isDoc = container.type === 'doc';
+    const source: ObjectRef = r.sourceElement && !isDoc ? { type: 'element', boardId: r.boardId, id: r.sourceElement } : container;
     out.set(key, {
       source: {
         uri: formatObjectUri(source),
-        type: source.type as 'board' | 'element',
+        type: source.type as 'board' | 'element' | 'doc',
         title: board.title,
-        path: objectPath(source)!,
+        // A doc opens at the block that points here.
+        path: isDoc && r.sourceElement ? `${objectPath(source)!}?block=${encodeURIComponent(r.sourceElement)}` : objectPath(source)!,
         ...(r.sourceType ? { kind: r.sourceType } : {}),
       },
       board: { id: r.boardId, title: board.title },

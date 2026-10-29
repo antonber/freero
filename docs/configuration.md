@@ -229,6 +229,7 @@ The event stream and workspace webhooks: [events.md](events.md).
 | Variable | Default | Description |
 |---|---|---|
 | `EMBED_EXTRA_ORIGINS` | — | Comma-separated https origins (no path, e.g. `https://embed.example.com`) whose links boards may show as live, sandboxed frames after a click, besides the built-in providers (YouTube, Vimeo, Loom, Figma, Google Docs / Sheets / Slides / Forms, CodePen, CodeSandbox — `EMBED_PROVIDERS` in `packages/shared`). A link on such an origin is framed as given, so list only sites whose every page you are happy to show (an internal wiki's embed host, a maps or dashboard host). Added to the CSP `frame-src`; never this server's own origin. Workspace admins can turn live embeds off for their boards (admin console → Sharing, "Live embeds"). |
+| `MCP_APP_FRAME_ANCESTORS` | Claude, ChatGPT, VS Code | Who may frame the live board view AI assistants show for `open_board` (MCP Apps, [mcp.md](mcp.md#live-boards-in-the-conversation-mcp-apps)): CSP `frame-ancestors` sources for `/embed/…` only — every other page refuses all framing. Space- or comma-separated https origins (`https://*.host` wildcards allowed), `http://localhost` / `http://127.0.0.1` for local testing, or a `*-webview:` scheme. Default `https://claude.ai https://*.claude.ai https://*.claudemcpcontent.com https://chatgpt.com https://*.chatgpt.com https://*.oaiusercontent.com vscode-webview:`. `none`: the live view loads nowhere. |
 
 ## Observability
 

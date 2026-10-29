@@ -25,11 +25,11 @@ import {
 import { badRequest } from '../../platform/http';
 import { log } from '../../platform/log';
 import { nextDeriveVersion, whileConsumerPaused, type OutboxConsumer } from '../../platform/outbox';
-import { allBoardIds, BOARD_EVENTS_TOPIC, boardIdsReachableBy, boardRecords, type BoardEventRecord } from '../boards/index';
+import { allBoardIds, BOARD_EVENTS_TOPIC, boardIdsReachableBy, boardRecords, objectKindsOf, type BoardEventRecord } from '../boards/index';
 import { summarizeObjects, type Actor } from '../objects/index';
 import { outlineOfView } from '../outline/index';
-import { BOARD_CONTENT_TOPIC, COMMENTS_COLLECTION, storedBoardView } from '../realtime/index';
-import { extractSearchRows, type SearchRow } from './extract';
+import { BOARD_CONTENT_TOPIC, COMMENTS_COLLECTION, storedBoardView, storedDocContent } from '../realtime/index';
+import { extractDocRows, extractSearchRows, type SearchRow } from './extract';
 import * as repo from './repo';
 
 export const SEARCH_CONSUMER = 'search';
@@ -39,6 +39,8 @@ const LOCK_KEY = 7_202_611_101; // arbitrary, constant across releases
 export async function searchRowsOf(boardId: string): Promise<SearchRow[]> {
   const [record] = await boardRecords([boardId]);
   if (!record) return [];
+  // A doc (KAI-162): its blocks and the comments on them; a doc withholds nothing from its readers.
+  if (record.kind === 'doc') return extractDocRows(record, await storedDocContent(boardId));
   const view = await storedBoardView(boardId);
   if (!view) return extractSearchRows({ board: record, outline: null, types: new Map(), withheldThreads: new Set() });
   const types = new Map(view.elements.map(({ el }) => [el.id, el.type as string]));
@@ -170,26 +172,34 @@ export async function searchFor(actor: Actor, query: SearchQuery, opts: SearchOp
   const page = matches.slice(0, limit);
 
   const boardIds = [...new Set(page.map((m) => m.boardId))];
-  const summaries = await summarizeObjects(
-    actor,
-    boardIds.map((id): ObjectRef => ({ type: 'board', id })),
-    'discover',
-  );
-  const visible = boardIds.filter((id) => summaries.has(formatObjectUri({ type: 'board', id })));
+  // Boards and docs (KAI-162) share the index; each is checked and addressed as what it is.
+  const kinds = await objectKindsOf(boardIds);
+  const containerRef = (id: string): ObjectRef => ({ type: kinds.get(id) === 'doc' ? 'doc' : 'board', id });
+  const summaries = await summarizeObjects(actor, boardIds.map(containerRef), 'discover');
+  const visible = boardIds.filter((id) => summaries.has(formatObjectUri(containerRef(id))));
   const allowed = opts.allow ? await opts.allow(visible) : new Set(visible);
 
   const hits: SearchHit[] = [];
   for (const m of page) {
-    const summary = summaries.get(formatObjectUri({ type: 'board', id: m.boardId }));
+    const container = containerRef(m.boardId);
+    const summary = summaries.get(formatObjectUri(container));
     if (!summary || !allowed.has(m.boardId)) continue;
-    const ref: ObjectRef = m.elementId ? { type: 'element', boardId: m.boardId, id: m.elementId } : { type: 'board', id: m.boardId };
-    const boardPath = objectPath({ type: 'board', id: m.boardId })!;
-    const path = m.kind === 'comment' && m.threadId ? `${boardPath}?thread=${encodeURIComponent(m.threadId)}` : objectPath(ref)!;
+    const isDoc = container.type === 'doc';
+    // In a doc, an item is a block: the doc's own address, opened at that block.
+    const ref: ObjectRef = m.elementId && !isDoc ? { type: 'element', boardId: m.boardId, id: m.elementId } : container;
+    const boardPath = objectPath(container)!;
+    const path =
+      m.kind === 'comment' && m.threadId
+        ? `${boardPath}?thread=${encodeURIComponent(m.threadId)}`
+        : isDoc && m.elementId
+          ? `${boardPath}?block=${encodeURIComponent(m.elementId)}`
+          : objectPath(ref)!;
     hits.push({
       kind: m.kind,
       uri: formatObjectUri(ref),
       path,
       board: { id: m.boardId, title: summary.title },
+      ...(isDoc ? { objectKind: 'doc' as const } : {}),
       ...(m.elementType ? { itemType: m.elementType } : {}),
       ...(m.elementId ? { itemId: m.elementId } : {}),
       ...(m.threadId ? { threadId: m.threadId } : {}),

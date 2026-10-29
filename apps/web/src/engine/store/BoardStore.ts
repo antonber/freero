@@ -65,6 +65,8 @@ export interface BoardStoreOptions {
   boardId: string;
   /** Empty string = local-only (no network). */
   syncUrl: string;
+  /** WebSocket subprotocols to offer (Host.syncProtocols). */
+  syncProtocols?: string[];
   /** Persist local-only boards in localStorage (dev sandbox). */
   persistLocal?: boolean;
   /** Local-only boards: start from this full state (a read-only version preview). */
@@ -153,7 +155,7 @@ export class BoardStore {
       // Connect on the next task, not in the constructor: a store created and destroyed in the
       // same tick (React StrictMode's dev double mount) then never opens a socket, instead of
       // closing one mid-handshake (a console warning on every board load in dev).
-      const provider = new WebsocketProvider(opts.syncUrl, opts.boardId, this.doc, { connect: false });
+      const provider = new WebsocketProvider(opts.syncUrl, opts.boardId, this.doc, { connect: false, protocols: opts.syncProtocols ?? [] });
       (this as { provider: WebsocketProvider | null }).provider = provider;
       this.connectTimer = setTimeout(() => {
         this.connectTimer = null;

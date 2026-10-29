@@ -293,6 +293,18 @@
   color: var(--fr-danger);
 }
 
+.fr-create__tile--doc .fr-create__icon {
+  color: #9a5b00;
+  background: var(--fr-warning-soft);
+}
+
+/* A doc's card (KAI-162): a page, never a canvas thumbnail. */
+.fr-thumb--doc {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 .fr-create__text {
   display: flex;
   flex-direction: column;

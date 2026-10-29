@@ -68,25 +68,32 @@ export function elementTitle(el: BoardElement): string {
 }
 
 const boardSummary = (board: Board, role: Role): ObjectSummary => ({
-  type: 'board',
+  type: board.kind,
   title: board.title,
-  image: board.thumbnail,
-  path: objectPath({ type: 'board', id: board.id }),
+  image: board.kind === 'board' ? board.thumbnail : null,
+  path: objectPath({ type: board.kind, id: board.id }),
   access: ACTION_OF[role],
 });
 
-export const boardObjects: ObjectTypeHandler = {
-  type: 'board',
+/**
+ * Boards and docs (KAI-162) are the same container with the same access; each type answers only
+ * for its own kind, so `freero://board/<doc id>` resolves to nothing (and the other way round).
+ */
+const containerObjects = (kind: 'board' | 'doc'): ObjectTypeHandler => ({
+  type: kind,
   async lookup(actor, refs, { purpose }) {
-    const roles = await boardRoles(actor, refs.map((r) => r.id), purpose);
+    const roles = await boardRoles(actor, refs.map((r) => (r as { id: string }).id), purpose);
     const out = new Map<string, ObjectLookup>();
     for (const ref of refs) {
-      const found = roles.get(ref.id);
-      if (found) out.set(objectKey(ref), { access: ACTION_OF[found.role], summary: boardSummary(found.board, found.role) });
+      const found = roles.get((ref as { id: string }).id);
+      if (found && found.board.kind === kind) out.set(objectKey(ref), { access: ACTION_OF[found.role], summary: boardSummary(found.board, found.role) });
     }
     return out;
   },
-};
+});
+
+export const boardObjects: ObjectTypeHandler = containerObjects('board');
+export const docObjects: ObjectTypeHandler = containerObjects('doc');
 
 export const elementObjects: ObjectTypeHandler = {
   type: 'element',
@@ -96,7 +103,7 @@ export const elementObjects: ObjectTypeHandler = {
     const out = new Map<string, ObjectLookup>();
     // One view per board, as THIS reader sees it.
     await Promise.all(
-      [...roles].map(async ([boardId, { board, role }]) => {
+      [...roles].filter(([, { board }]) => board.kind === 'board').map(async ([boardId, { board, role }]) => {
         const wanted = items.filter((r) => r.boardId === boardId);
         const view = await readBoardView(boardId, { userId: actor.userId, role });
         const seen = new Map(view.elements.map(({ el }) => [el.id, el]));
@@ -121,8 +128,9 @@ export const elementObjects: ObjectTypeHandler = {
   },
 };
 
-/** Boards and their items join the object registry (init.ts; tests call it too). */
+/** Boards and their items, and docs, join the object registry (init.ts; tests call it too). */
 export function registerBoardObjectTypes(): void {
   registerObjectType(boardObjects);
   registerObjectType(elementObjects);
+  registerObjectType(docObjects);
 }

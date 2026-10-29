@@ -85,6 +85,7 @@ export function createCore(
   const store = new BoardStore({
     boardId: host.board.id,
     syncUrl: host.syncUrl,
+    syncProtocols: host.syncProtocols,
     persistLocal: opts.persistLocal,
     initialState: opts.initialState,
   });

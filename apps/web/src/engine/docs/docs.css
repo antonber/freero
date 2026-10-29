@@ -1,0 +1,72 @@
+/* The doc editor (KAI-162): BlockNote's own classes, themed with Freero's tokens. */
+.fr-doc-editor {
+  --fr-doc-comment-bg: var(--fr-warning-soft);
+  --fr-doc-comment-active-bg: color-mix(in srgb, var(--fr-warning) 22%, var(--fr-surface));
+  --fr-doc-comment-mark: var(--fr-warning);
+  min-height: 120px;
+}
+.fr-doc-editor--loading {
+  min-height: 240px;
+}
+.fr-doc-editor .bn-container {
+  --bn-font-family: var(--fr-font);
+  --bn-colors-editor-text: var(--fr-ink);
+  --bn-colors-editor-background: transparent;
+  --bn-colors-menu-text: var(--fr-ink);
+  --bn-colors-menu-background: var(--fr-surface);
+  --bn-colors-tooltip-text: var(--fr-surface);
+  --bn-colors-tooltip-background: var(--fr-ink);
+  --bn-colors-hovered-background: var(--fr-hover);
+  --bn-colors-selected-background: var(--fr-primary-soft);
+  --bn-colors-border: var(--fr-line);
+  --bn-colors-side-menu: var(--fr-ink-3);
+  --bn-border-radius: var(--fr-radius);
+  --bn-shadow-medium: var(--fr-shadow);
+  --bn-shadow-light: var(--fr-shadow-sm);
+}
+.fr-doc-editor .bn-editor {
+  padding-inline: 54px 24px;
+  font-family: var(--fr-font);
+  background: transparent;
+}
+.fr-doc-editor .bn-inline-content code,
+.fr-doc-editor [data-content-type='codeBlock'] {
+  font-family: var(--fr-font-mono);
+}
+
+/* BlockNote's menus (slash menu, toolbars, link and table menus) in Freero's colours. They may be
+   portalled outside .fr-doc-editor, so these hang off BlockNote's own classes. */
+.bn-container .bn-ak-menu-item[data-active-item],
+.bn-container .bn-ak-select-item[data-active-item] {
+  color: var(--fr-ink);
+  background-color: var(--fr-primary-soft);
+}
+.bn-container .bn-ak-primary,
+.bn-container .bn-ak-tab[aria-selected='true'] {
+  color: var(--fr-primary-ink);
+  background-color: var(--fr-primary);
+}
+.bn-container .bn-ak-button,
+.bn-container .bn-ak-tab {
+  outline-color: var(--fr-focus-color);
+}
+.bn-container .bn-ak-popover:focus-visible,
+.bn-container .bn-ak-popover[data-focus-visible],
+.bn-container .bn-ak-input:focus-visible,
+.bn-container .bn-ak-input[data-focus-visible] {
+  outline-color: var(--fr-focus-color);
+}
+
+/* A live board embed inside a doc: a fixed-height viewport the host fills. */
+.fr-doc-embed {
+  width: 100%;
+  user-select: none;
+}
+.fr-doc-embed__plain {
+  padding: 12px 14px;
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius);
+  color: var(--fr-ink-2);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}

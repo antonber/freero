@@ -6,6 +6,7 @@ import { kanban, retrospective, storyMap } from './agile';
 import { businessModel, competitors, leanCanvas, nowNextLater, okrs } from './canvases';
 import { orgChart, sitemap, swimlane, timeline, venn } from './diagrams';
 import { classBrainstorm, conceptMap, exitTicket, frayerModel, kwl, lessonPlan, revisionTimetable } from './education';
+import { agentControlRoom } from './agents';
 import { adr, bugTriage, cicdPipeline, dataModel, incidentTimeline, postmortem, sequenceDiagram, systemArchitecture } from './engineering';
 import { brainstorm, icebreaker, mindmap } from './ideas';
 import { decisionLog, eightSketches, kickoff, leanCoffee, oneOnOne, workshopAgenda } from './meetings';
@@ -93,6 +94,7 @@ export const TEMPLATES: TemplateDef[] = [
   postmortem,
   adr,
   bugTriage,
+  agentControlRoom,
   // Education
   lessonPlan,
   kwl,

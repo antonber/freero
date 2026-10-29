@@ -21,8 +21,18 @@ export interface User {
   createdAt: number;
 }
 
+/**
+ * What a container is (KAI-162): a board (the canvas) or a doc (a collaborative document). Both
+ * are rows of the same table with the same sharing, membership, link, trash and workspace rules;
+ * only their content differs (`/board/<id>` vs `/doc/<id>`, `/ws/boards` vs `/ws/docs`).
+ */
+export type ObjectKind = 'board' | 'doc';
+export const OBJECT_KINDS: readonly ObjectKind[] = ['board', 'doc'];
+
 export interface BoardSummary {
   id: string;
+  /** [additive] 'doc' for a doc (KAI-162); boards say 'board'. */
+  kind: ObjectKind;
   title: string;
   description: string;
   ownerId: string;
@@ -634,7 +644,7 @@ export interface DataExportInfo {
 export interface CreateBoardRequest { title?: string; description?: string; workspaceId?: string; projectId?: string | null }
 
 /**
- * [additive, KAI-137] What restoring a `.freero` backup did (`POST /api/boards/restore`, the file as
+ * [additive, KAI-137] What restoring a `.freero` backup did (`POST /api/boards/restore-backup`, the file as
  * the body, `?workspace=&project=`): the new board, and what of the file could not be brought back.
  */
 export interface RestoreBackupResponse {
@@ -653,6 +663,27 @@ export interface RestoreBackupResponse {
 /** [additive, KAI-137] The `.freero` file's media type (served as an attachment; the PWA opens it). */
 export const BACKUP_MEDIA_TYPE = 'application/vnd.freero.board+zip';
 export const BACKUP_EXTENSION = '.freero';
+// Docs (KAI-162; modules/docs). A doc is a container like a board (same sharing, members, link,
+// trash, request access: the /api/boards/:id routes serve it too) whose content is a document.
+// POST   /api/docs                 body CreateDocRequest -> { doc: BoardSummary }  (kind 'doc')
+//                                    `fromBoard`: in that board's workspace and project when the
+//                                    person may create there (a doc made on a board), else personal
+// GET    /api/docs/:id/markdown    -> text/markdown, the doc as the reader sees it (downloads policy;
+//                                    recorded as doc.exported)
+// WS     /ws/docs/:id              the doc's Yjs document (y-websocket protocol, like /ws/boards)
+export interface CreateDocRequest {
+  title?: string;
+  /** Initial content (Markdown); at most DOC_MAX_IMPORT_CHARS. */
+  markdown?: string;
+  workspaceId?: string;
+  projectId?: string | null;
+  fromBoard?: string;
+}
+export interface CreateDocResponse {
+  doc: BoardSummary;
+}
+/** Longest Markdown a doc is created from or imports (characters). */
+export const DOC_MAX_IMPORT_CHARS = 1_000_000;
 /** `projectId`: move it into that project of its workspace (null: the workspace root); `permissions.canMove`. */
 export interface UpdateBoardRequest {
   title?: string;
@@ -866,6 +897,25 @@ export interface GuestInfo {
   expiresAt: number;
 }
 export interface GuestJoinResponse { guest: GuestInfo }
+
+// ---- Live board views in AI assistants (MCP Apps, KAI-171) ----
+// The assistant's view frames /embed/board/:id#ticket=<single-use ticket>; the page redeems it:
+// POST /api/embed/redeem { ticket } -> EmbedRedeemResponse (404: expired, used or unknown).
+// The socket is /ws/embed/boards/:id with the token as its second WebSocket subprotocol
+// (`[EMBED_WS_PROTOCOL, token]`): never the session cookie.
+export const EMBED_WS_PROTOCOL = 'freero.embed';
+export interface EmbedRedeemResponse {
+  /** Opens this board's socket until `expiresAt` (then the view asks the assistant again). */
+  token: string;
+  expiresAt: number;
+  /** The person the view acts for. */
+  user: { id: string; name: string; color: string; avatarUrl: string | null };
+  /** As that person sees it; `role` capped by what the assistant's connection may do. */
+  board: BoardSummary;
+  boardUrl: string;
+  /** The app or token the view came from ("Claude"). */
+  app: string;
+}
 
 // ---- Activity ----
 // What people did, one entry per person per burst of work ("Ann added 12 sticky notes in frame
@@ -1483,6 +1533,8 @@ export const AUDIT_ACTIONS = {
   'project.member_added': 'Added someone to a project',
   'project.member_removed': 'Removed someone from a project',
   'board.created': 'Created a board',
+  'doc.created': 'Created a doc',
+  'doc.exported': 'Exported a doc',
   'board.trashed': 'Moved a board to the trash',
   'board.restored': 'Restored a board from the trash',
   'board.deleted': 'Deleted a board forever',
