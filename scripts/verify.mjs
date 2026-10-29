@@ -7969,6 +7969,148 @@ async function siteChecks() {
   }
 }
 
+// Integrations pack (#88): meeting notes through the REST structure operation and the MCP tool, and
+// Slack link unfurls against a stand-in Slack Web API — signed, unsigned and replayed requests.
+async function integrationsChecks() {
+  const { createHmac } = await import('node:crypto');
+  const http = await import('node:http');
+  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+  const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-integrations-'));
+  // The stand-in for slack.com/api: records every chat.unfurl it is sent.
+  const unfurls = [];
+  const slackApi = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      if (req.url === '/api/chat.unfurl') unfurls.push({ auth: req.headers.authorization, body: JSON.parse(body) });
+      res.setHeader('content-type', 'application/json');
+      res.end('{"ok":true}');
+    });
+  });
+  await new Promise((r) => slackApi.listen(0, '127.0.0.1', r));
+  const SECRET = `verify-${randomBytes(8).toString('hex')}`;
+  const HOST = 'freero.verify';
+  const env = {
+    PUBLIC_URL: `https://${HOST}`,
+    SLACK_SIGNING_SECRET: SECRET,
+    SLACK_BOT_TOKEN: 'xoxb-verify',
+    SLACK_API_URL: `http://127.0.0.1:${slackApi.address().port}/api`,
+    RATE_LIMIT_INVITE: '500/1h',
+    RATE_LIMIT_PASSWORD: '500/15m',
+  };
+  let proc = null;
+  const clients = [];
+  try {
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    if (!(await check('integrations server boots', async () => (proc = await waitUp(await spawnServer(dataDir, env)))))) return;
+    const O = new User('Integrator', proc.port);
+    O.email = `integrator-${Date.now()}@integrations.verify.freero.app`;
+    await O.signup();
+    await O.verifyEmail(dataDir);
+    const token = async (scopes, name) => {
+      const r = await O.req('POST', '/api/auth/tokens', { name, scopes, expiresInDays: 1 });
+      assert(r.status === 201, `token: ${r.status} ${r.text}`);
+      return r.json.secret;
+    };
+    const call = (secret, method, url, body) => new User('bearer', proc.port).req(method, `/api/v1${url}`, body, { headers: { authorization: `Bearer ${secret}` }, cookie: false });
+    const mcp = async (secret) => {
+      const c = new Client({ name: 'verify-integrations', version: '1.0.0' });
+      await c.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${proc.port}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${secret}` } } }));
+      clients.push(c);
+      return c;
+    };
+    const sample = (f) => fs.readFileSync(path.join(ROOT, 'docs/integrations/meeting-notes', f), 'utf8');
+    const write = await token(['boards:read', 'boards:write'], 'Notes bot');
+
+    await check('meeting notes (#88): a Granola-style export through POST /api/v1/boards/:id/structure is one frame whose outline has the Decisions cluster and the action cards with owners and due dates', async () => {
+      const board = (await O.req('POST', '/api/boards', { title: 'Notes' })).json.board.id;
+      const r = await call(write, 'POST', `/boards/${board}/structure`, { structure: { kind: 'meeting', source: sample('granola-style.md'), date: '2026-10-29' } });
+      assert(r.status === 201, `structure: ${r.status} ${r.text}`);
+      const o = (await call(write, 'GET', `/boards/${board}/outline?format=json`)).json.outline;
+      const frames = o.items.filter((i) => i.kind === 'frame');
+      assert(frames.length === 1 && frames[0].title === 'Q4 onboarding review', `frames: ${JSON.stringify(frames.map((f) => f.title))}`);
+      const inFrame = frames[0].children ?? [];
+      const decisions = inFrame.find((c) => c.kind === 'cluster' && c.title === 'Decisions');
+      assert(decisions?.children?.length === 3, `decisions: ${JSON.stringify(decisions)}`);
+      const items = (await call(write, 'GET', `/boards/${board}/items`)).json.items;
+      const cards = items.filter((i) => i.type === 'card');
+      const due = cards.map((c) => c.data?.dueDate).filter(Boolean).sort();
+      assert(cards.length === 4 && JSON.stringify(due) === JSON.stringify(['2026-10-30', '2026-11-04', '2026-11-06']), `cards: ${JSON.stringify(cards.map((c) => [c.text, c.data]))}`);
+      assert(cards.every((c) => c.frameId === frames[0].id), 'a card outside the frame');
+    });
+
+    await check('meeting notes (#88): MCP import_meeting_notes lands a WebVTT transcript as a frame with who spoke; a read + suggest connection only proposes it', async () => {
+      const board = (await O.req('POST', '/api/boards', { title: 'Transcripts' })).json.board.id;
+      const suggester = await mcp(await token(['boards:read', 'boards:suggest'], 'Notes reviewer'));
+      const p = await suggester.callTool({ name: 'import_meeting_notes', arguments: { boardId: board, text: sample('design-review.vtt'), title: 'Design review' } });
+      assert(!p.isError && p.structuredContent?.target === 'suggestions', `propose: ${JSON.stringify(p)}`);
+      assert((await call(write, 'GET', `/boards/${board}/items`)).json.items.length === 0, 'proposing changed the board');
+      const writer = await mcp(write);
+      const r = await writer.callTool({ name: 'import_meeting_notes', arguments: { boardId: board, text: sample('design-review.vtt'), title: 'Design review' } });
+      assert(!r.isError && r.structuredContent?.frameId, `import: ${JSON.stringify(r)}`);
+      const items = (await call(write, 'GET', `/boards/${board}/items`)).json.items;
+      const frame = items.find((i) => i.id === r.structuredContent.frameId);
+      const speakers = items.find((i) => i.type === 'shape' && String(i.text).includes('Speakers'));
+      assert(frame?.type === 'frame' && frame.text === 'Design review', `frame: ${JSON.stringify(frame)}`);
+      assert(speakers && /Ana Costa: 2 turns/.test(String(speakers.text).replace(/<[^>]+>/g, '')), `speakers note: ${speakers?.text}`);
+    });
+
+    const sign = (raw, at = Date.now(), secret = SECRET) => {
+      const t = String(Math.floor(at / 1000));
+      return { 'x-slack-request-timestamp': t, 'x-slack-signature': `v0=${createHmac('sha256', secret).update(`v0:${t}:${raw}`).digest('hex')}` };
+    };
+    const slackPost = (body, headers) => fetch(`http://127.0.0.1:${proc.port}/api/integrations/slack/events`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body });
+    let seq = 0;
+    const linkShared = (urls) =>
+      JSON.stringify({ type: 'event_callback', team_id: 'TVERIFY', event_id: `EvV${++seq}`, event: { type: 'link_shared', channel: 'CV', message_ts: `1700000000.${seq}`, links: urls.map((url) => ({ domain: HOST, url })) } });
+
+    await check('slack (#88): a signed link_shared event gets chat.unfurl with a public board’s title and https thumbnail (saved through a real session), and the generic card, no title, for a private one', async () => {
+      const pub = (await O.req('POST', '/api/boards', { title: 'Public launch plan' })).json.board.id;
+      assert((await O.req('PATCH', `/api/boards/${pub}`, { linkAccess: 'viewer', description: 'All of November' })).status === 200, 'share by link');
+      assert((await O.req('PUT', `/api/boards/${pub}/thumbnail`, { dataUrl: `data:image/png;base64,${PNG_1PX.toString('base64')}` })).status === 200, 'thumbnail');
+      const thumb = (await O.req('GET', `/api/boards/${pub}`)).json.board.thumbnail;
+      assert((await fetch(`http://127.0.0.1:${proc.port}${thumb}`)).status === 200, 'the thumbnail needs a session');
+      const priv = (await O.req('POST', '/api/boards', { title: 'Private salaries' })).json.board.id;
+      const urls = [`https://${HOST}/board/${pub}`, `https://${HOST}/board/${priv}`];
+      const raw = linkShared(urls);
+      assert((await slackPost(raw, sign(raw))).status === 200, 'signed event refused');
+      await waitFor(() => unfurls.length === 1, 10_000, 'the chat.unfurl call');
+      const [{ auth, body }] = unfurls;
+      const pubCard = JSON.stringify(body.unfurls[urls[0]]);
+      const privCard = JSON.stringify(body.unfurls[urls[1]]);
+      assert(auth === 'Bearer xoxb-verify' && body.channel === 'CV', `call: ${auth} ${body.channel}`);
+      assert(pubCard.includes('Public launch plan') && pubCard.includes(`https://${HOST}${thumb}`), `public card: ${pubCard}`);
+      assert(!privCard.includes('Private salaries') && privCard.includes('Sign in'), `private card: ${privCard}`);
+      unfurls.length = 0;
+    });
+
+    await check('slack (#88): unsigned, wrongly signed and replayed (6 minutes old) events are refused with 401 and nothing reaches Slack; the URL verification challenge is answered only when signed', async () => {
+      const raw = linkShared([`https://${HOST}/doc/anything`]);
+      const refused = [await slackPost(raw, {}), await slackPost(raw, sign(raw, Date.now(), 'wrong-secret')), await slackPost(raw, sign(raw, Date.now() - 6 * 60_000))];
+      assert(refused.every((r) => r.status === 401), `statuses ${refused.map((r) => r.status)}`);
+      const challenge = JSON.stringify({ type: 'url_verification', challenge: 'verify-challenge' });
+      assert((await slackPost(challenge, {})).status === 401, 'an unsigned challenge was answered');
+      const ok = await slackPost(challenge, sign(challenge));
+      assert((await ok.json()).challenge === 'verify-challenge', 'challenge');
+      // A signed event after them is the barrier: once it reached Slack, the refused ones would have too.
+      const barrier = linkShared([`https://${HOST}/doc/barrier`]);
+      await slackPost(barrier, sign(barrier));
+      await waitFor(() => unfurls.length >= 1, 10_000, 'the barrier unfurl');
+      assert(unfurls.length === 1 && Object.keys(unfurls[0].body.unfurls)[0].endsWith('/doc/barrier'), `Slack got ${JSON.stringify(unfurls.map((u) => Object.keys(u.body.unfurls)))}`);
+    });
+  } finally {
+    for (const c of clients) await c.close().catch(() => {});
+    if (proc) await stopProc(proc);
+    await new Promise((r) => slackApi.close(r));
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
 // `--only <group>[,<group>…]` runs some groups, e.g. to loop one while hunting a flake.
 const SUITES = {
   site: siteChecks,
@@ -8003,6 +8145,7 @@ const SUITES = {
   webhooks: webhooksChecks,
   portability: portabilityChecks,
   docs: docsChecks,
+  integrations: integrationsChecks,
 };
 const onlyArg = process.argv.indexOf('--only');
 const only = onlyArg >= 0 ? (process.argv[onlyArg + 1] ?? '').split(',').filter(Boolean) : Object.keys(SUITES);
