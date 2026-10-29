@@ -1,6 +1,10 @@
 // The template catalog. Browsing all, the panel groups templates by their first category (in
 // CATEGORIES order) and keeps this order inside each group; search results tie-break on it too.
 // Importing this module only defines templates: each one is built when inserted or previewed.
+// The hand-coded templates come first; spec templates (lib/specs/, one data file per area) follow,
+// their content loaded per file on first preview or insert.
+import { specTemplates } from '../spec/catalog';
+import { SPEC_FILES, SPEC_INDEX } from '../specs';
 import type { TemplateDef } from '../types';
 import { kanban, retrospective, storyMap } from './agile';
 import { businessModel, competitors, leanCanvas, nowNextLater, okrs } from './canvases';
@@ -103,4 +107,6 @@ export const TEMPLATES: TemplateDef[] = [
   frayerModel,
   classBrainstorm,
   revisionTimetable,
+  // Spec templates
+  ...specTemplates(SPEC_INDEX, SPEC_FILES),
 ];
