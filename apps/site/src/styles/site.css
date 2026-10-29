@@ -486,6 +486,17 @@ pre {
   padding-left: 1.1em;
   margin: 0 0 0.8em;
 }
+/* How an integration is turned on (built in, connect in settings, …): a small label under its card. */
+.card__body .status-tag {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fr-primary);
+  background: var(--fr-primary-soft);
+  border-radius: 999px;
+}
 .card__mark {
   display: inline-flex;
   align-items: center;

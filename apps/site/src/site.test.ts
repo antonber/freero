@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { INTEGRATIONS } from '@freero/shared';
 import { buildSite, SITE_PREFIXES } from './build';
 import { defineComparison, type ComparisonDef } from './lib/compare';
 import type { PageDef } from './lib/define';
@@ -122,7 +123,7 @@ describe('crawling', () => {
   it('robots.txt keeps crawlers out of the app, boards, invites and the API but never blocks a marketing page', () => {
     const robots = served('robots.txt');
     for (const p of indexable()) expect(blocked(robots, p.path), `${p.path} is blocked`).toBe(false);
-    for (const app of ['/app', '/board/abc', '/doc/abc', '/embed/board/abc', '/api/v1/me', '/mcp', '/login', '/signup', '/invite/tok', '/oauth/authorize', '/settings'])
+    for (const app of ['/app', '/board/abc', '/doc/abc', '/embed/board/abc', '/api/v1/me', '/mcp', '/login', '/signup', '/invite/tok', '/oauth/authorize', '/settings', '/apps', '/apps/claude'])
       expect(blocked(robots, app), `${app} is crawlable`).toBe(true);
     expect(robots).toContain(`Sitemap: ${HOST}/sitemap.xml`);
   });
@@ -160,7 +161,8 @@ describe('pages work without JavaScript', () => {
   });
 
   it('no internal link is broken: each goes to a page, an anchor on it, a built file or an app route', () => {
-    const appPaths = new Set<string>([...Object.values(APP), '/api/v1/openapi.json']);
+    // App routes the site links to: its fixed pages, and each catalog entry's connect step in Apps & agents.
+    const appPaths = new Set<string>([...Object.values(APP), '/api/v1/openapi.json', ...INTEGRATIONS.map((i) => `${APP.apps}/${i.id}`)]);
     for (const [p, doc] of html) {
       for (const href of attr(doc, /<a [^>]*href="([^"]+)"/g)) {
         if (/^(https?:|mailto:)/.test(href) && !href.startsWith(HOST)) continue;
