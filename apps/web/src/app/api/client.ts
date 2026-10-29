@@ -93,6 +93,7 @@ import type {
   SessionInfo,
   SessionResponse,
   SignInProvider,
+  SiteLegal,
   SignupRequest,
   TwoFactorRecoveryStarted,
   TwoFactorSetup,
@@ -222,6 +223,8 @@ export const api = {
 
   // sign-in methods + two-factor
   providers: () => request<{ providers: SignInProvider[] }>('GET', '/api/auth/providers'),
+  /** The service's terms, once they are in effect (null while they are drafts or there are none). */
+  siteLegal: () => request<SiteLegal>('GET', '/api/site/legal'),
   security: () => request<SecurityInfo>('GET', '/api/auth/security'),
   disconnectIdentity: (id: string) => request<SecurityInfo>('DELETE', `/api/auth/identities/${encodeURIComponent(id)}`),
   setupTwoFactor: (password?: string) => request<TwoFactorSetup>('POST', '/api/auth/two-factor/setup', { password }),

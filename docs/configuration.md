@@ -203,6 +203,7 @@ Issue trackers) or by a person for themselves (Settings). How it works and what 
 | Variable | Default | Description |
 |---|---|---|
 | `PUBLIC_API` | `true` | The public REST API (`/api/v1`, reference: [api/openapi.json](api/openapi.json)) and the OAuth endpoints apps use. `false` is the instance-wide kill switch for integrations and agents: every API call and token request is refused at once; tokens and app authorisations are kept, so turning it back on restores them. Workspace admins have their own switch in the admin console ("API & apps"). |
+| `OPENAI_APPS_CHALLENGE` | — | The domain-verification token the ChatGPT app directory's portal shows when you connect the MCP server; served as plain text (exactly the token) at `/.well-known/openai-apps-challenge`. Unset: that path is a 404. |
 | `OAUTH_CLIENT_METADATA_LOOPBACK` | `false` | Development and tests only (refused in production): an OAuth client may be identified by a client metadata document served over plain http from this machine (`http://127.0.0.1:<port>/…`, `http://localhost:<port>/…`). Off: metadata documents only over https from public addresses ([mcp.md](mcp.md#how-sign-in-works-for-client-developers)). |
 
 ## Events and webhooks
@@ -228,7 +229,7 @@ The event stream and workspace webhooks: [events.md](events.md).
 
 ## Marketing site
 
-The public pages at `/`, `/claude`, `/chatgpt`, `/agents`, `/security`, `/open-source`, `/pricing`,
+The public pages at `/`, `/claude`, `/chatgpt`, `/agents`, `/security`, `/open-source`, `/pricing`, `/support`, the legal pages,
 `/docs`, `/integrations` (one page per integration, `/integrations/*`) and `/vs/*` (built by `npm run build` from `apps/site`; ARCHITECTURE.md, "Marketing site").
 They are static HTML: canonical links, Open Graph tags, structured data and the sitemaps carry
 `PUBLIC_URL`, put in when they are served. A signed-in person who opens `/` goes to their boards
@@ -240,6 +241,36 @@ They are static HTML: canonical links, Open Graph tags, structured data and the 
 | `FREERO_SITE_DIST` | `apps/site/dist` | The built site to serve. Without a build there, `/` behaves as with `SITE=false`. |
 | `SITE_ANALYTICS_SRC` | — | Privacy-friendly analytics for the marketing pages only (never the app): an `https` script URL (Plausible, Umami, a self-hosted counter…), added with `defer` at the end of each page's `<head>`. Its origin is added to those pages' CSP `script-src` and `connect-src`. Unset: no analytics, no third-party request at all. |
 | `SITE_ANALYTICS_ATTRS` | — | `data-*` attributes for that script, comma-separated `key=value` (`domain=whiteboard.example.com` → `data-domain="whiteboard.example.com"`; Umami: `website-id=…`). |
+
+### Legal pages and support (`/privacy`, `/terms`, `/acceptable-use`, `/support`)
+
+The privacy policy, terms of service and acceptable use policy are **drafts for legal review**,
+written from what the code does; they describe the hosted service. They are built with tokens for
+the facts below and filled in when served (`modules/site/legal.ts`), together with facts the server
+derives from its own configuration: retention periods (`ACCOUNT_DELETION_GRACE_DAYS`,
+`DATA_EXPORT_TTL_HOURS`, `EVENTS_RETENTION_DAYS`, `MODERATION_KEEP_REMOVED_DAYS`), the email
+provider's host (`SMTP_URL`), the storage (`S3_*`), the AI provider (`AI_PROVIDER`, `AI_BASE_URL`,
+`AI_WORKSPACE_KEYS`), error tracking (`ERROR_REPORTING_DSN`'s host) and analytics
+(`SITE_ANALYTICS_SRC`). Abuse and security contacts come from `ABUSE_CONTACT_EMAIL` and
+`SECURITY_CONTACT`.
+
+**The guard:** until `SITE_LEGAL_OPERATOR` is set, the three legal pages show a "Draft: not in
+effect" banner, carry `noindex` (meta and `X-Robots-Tag`), and the sign-up page asks nobody to
+agree to anything (`GET /api/site/legal` answers `{ "legal": null }`). Set it only once the text has
+been reviewed and adapted by a lawyer. If you run your own Freero with the marketing site on, these
+pages describe the hosted service, not yours: write your own, or leave the operator unset.
+
+| Variable | Default | Description |
+|---|---|---|
+| `SITE_LEGAL_OPERATOR` | — | The legal name of whoever operates the service, e.g. `Kaiten Gaming LLC`. Setting it puts the legal pages in effect (no draft banner, indexable) and adds "By signing up you agree to…" to sign-up. |
+| `SITE_LEGAL_CONTACT_EMAIL` | `ABUSE_CONTACT_EMAIL` | Where people send privacy requests and questions; also the contact on `/support`. |
+| `SITE_LEGAL_ADDRESS` | — | The operator's postal address, one line. |
+| `SITE_LEGAL_JURISDICTION` | — | The law that governs the terms, as it reads in "governed by the laws of …", e.g. `the State of Delaware, USA`. |
+| `SITE_LEGAL_HOSTING` | — | Who hosts the servers and where, as the privacy policy names it, e.g. `Railway Corporation (United States, US West region)`. |
+| `SITE_STATUS_URL` | — | An `https` status page, linked from `/support` ("Service status"). Unset: `/support` says to write to the contact address. |
+
+Unset values show as a visible "[…: not set yet]" placeholder; the server logs which ones are missing
+at startup once the operator is set.
 
 ## Live embeds
 

@@ -408,6 +408,68 @@ pre {
 .prose li {
   margin-bottom: 0.4em;
 }
+/* ---- Legal pages, support ---- */
+.legal-draft {
+  margin: 24px 0 0;
+  padding: 14px 18px;
+  border: 2px solid var(--fr-warning);
+  border-radius: var(--fr-radius);
+  background: var(--fr-warning-soft);
+  color: var(--fr-ink);
+}
+.legal-unset {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--fr-warning-soft);
+  font-weight: 600;
+}
+.legal {
+  max-width: 760px;
+  padding: 32px 0 64px;
+}
+.legal h1 {
+  margin-bottom: 8px;
+}
+.legal__meta {
+  color: var(--fr-ink-3);
+  margin-bottom: 28px;
+}
+.legal h2 {
+  margin-top: 2em;
+  font-size: 1.35rem;
+}
+.legal h3 {
+  margin-top: 1.4em;
+  font-size: 1.05rem;
+}
+.legal ul,
+.legal ol {
+  padding-left: 1.3em;
+}
+.legal li {
+  margin-bottom: 0.45em;
+}
+.legal table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 15px;
+}
+.legal th,
+.legal td {
+  text-align: left;
+  vertical-align: top;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--fr-line);
+}
+.legal__toc {
+  padding: 14px 18px;
+  border-radius: var(--fr-radius);
+  background: var(--fr-surface-2);
+}
+.legal__toc ol {
+  margin: 6px 0 0;
+}
 .cta {
   text-align: center;
 }
@@ -954,7 +1016,7 @@ tbody th code {
 }
 @media (min-width: 860px) {
   .footer__grid {
-    grid-template-columns: 1.6fr repeat(3, minmax(0, 1fr));
+    grid-template-columns: 1.6fr repeat(4, minmax(0, 1fr));
   }
 }
 .footer__brand p {

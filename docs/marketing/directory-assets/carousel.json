@@ -1,0 +1,22 @@
+[
+  {
+    "file": "docs/marketing/directory-assets/01-retro-themes.png",
+    "board": "Sprint 14 retro",
+    "prompt": "Group the notes on my Sprint 14 retro board into themes and add action items, then show me the board."
+  },
+  {
+    "file": "docs/marketing/directory-assets/02-roadmap-kanban.png",
+    "board": "Product roadmap: H1 2027",
+    "prompt": "Turn our H1 planning notes into a Now / Next / Later roadmap with owners and dates on a Freero board."
+  },
+  {
+    "file": "docs/marketing/directory-assets/03-control-room.png",
+    "board": "Agent control room: docs migration",
+    "prompt": "Migrate our help-center articles and keep me posted in a Freero control room so I can steer you."
+  },
+  {
+    "file": "docs/marketing/directory-assets/04-signup-flow.png",
+    "board": "Signup flow",
+    "prompt": "Draw our signup flow as a diagram on a Freero board and list the open questions next to it."
+  }
+]

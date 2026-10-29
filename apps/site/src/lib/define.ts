@@ -29,6 +29,12 @@ export interface PageDef {
   updated: string;
   /** false: `noindex`, left out of the sitemap (drafts, the comparison placeholder, 404). */
   index?: boolean;
+  /**
+   * Legal terms (privacy policy, terms of service): built as a draft — a "Draft: not in effect"
+   * banner and `noindex` — that the server puts in effect only once SITE_LEGAL_OPERATOR is set
+   * (lib/legal.tsx). Fill the operator's facts with `legal(key)` tokens.
+   */
+  legal?: boolean;
   sitemap?: SitemapGroup;
   /** Shown after the body, before the closing call to action, and as FAQPage JSON-LD. */
   faq?: FaqItem[];

@@ -121,7 +121,11 @@ export async function buildSite(outDir = DEFAULT_OUT): Promise<BuildResult> {
 
   write(
     'manifest.json',
-    JSON.stringify({ version: 1, pages: manifestPages, files, notFound: '404.html', prefixes: SITE_PREFIXES, assetsPrefix: ASSETS_PREFIX }, null, 2),
+    JSON.stringify(
+      { version: 1, pages: manifestPages, files, notFound: '404.html', prefixes: SITE_PREFIXES, assetsPrefix: ASSETS_PREFIX, legal: pages.filter((p) => p.legal).map((p) => p.path) },
+      null,
+      2,
+    ),
   );
   return { outDir, pages };
 }

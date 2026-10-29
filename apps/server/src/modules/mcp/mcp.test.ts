@@ -19,6 +19,7 @@ import { changeBoard, initBoardDoc, readBoardView } from '../realtime/index';
 import { SEARCH_CONSUMER, searchConsumer } from '../search/index';
 import { ENVELOPE_TAG } from './content';
 import mcpRoutes, { mountPath } from './routes';
+import { TOOLS } from './tools';
 
 let server: http.Server;
 let url: URL;
@@ -263,4 +264,53 @@ it('update_items moves a card into a kanban column named by its title — no coo
   expect({ frameId: c.frameId, column, status: c.status }).toEqual({ frameId: kanbanId, column: 2, status: 'done' });
   expect(c.y + c.h).toBeLessThanOrEqual(k.y + k.h);
   await client.close();
+});
+
+it('no tool, prompt or resource reaches a directory without a title and explicit read-only / destructive / open-world hints, and none claims to be read-only while destructive', async () => {
+  // Every tool the server defines, including those offered only when a capability is configured
+  // and the live view's own button (share_board).
+  for (const t of TOOLS) {
+    expect(t.title.trim(), t.name).not.toBe('');
+    expect(t.name.length, t.name).toBeLessThanOrEqual(64);
+    for (const hint of ['readOnlyHint', 'destructiveHint', 'openWorldHint'] as const) expect(typeof t.annotations[hint], `${t.name} ${hint}`).toBe('boolean');
+    if (t.annotations.readOnlyHint) expect(t.annotations.destructiveHint, `${t.name} is read-only and destructive`).toBe(false);
+  }
+  // And as a client receives them (what the directory portals sync).
+  const client = await connect(['boards:read', 'boards:suggest', 'boards:write', 'comments:write']);
+  const { tools } = await client.listTools();
+  expect(tools.length).toBeGreaterThan(10);
+  for (const t of tools) {
+    expect(t.title && t.annotations?.title, t.name).toBeTruthy();
+    for (const hint of ['readOnlyHint', 'destructiveHint', 'openWorldHint'] as const) expect(typeof t.annotations?.[hint], `${t.name} ${hint} on the wire`).toBe('boolean');
+  }
+  for (const p of (await client.listPrompts()).prompts) expect(p.title, p.name).toBeTruthy();
+  for (const r of (await client.listResources()).resources) expect(r.title, r.uri).toBeTruthy();
+  for (const r of (await client.listResourceTemplates()).resourceTemplates) expect(r.title, r.uriTemplate).toBeTruthy();
+  await client.close();
+});
+
+it('a page that rebinds its own name to this server, or an opaque (null) origin, is refused before any token is looked at; https pages and non-browser clients get through', async () => {
+  const post = (headers: Record<string, string>) =>
+    new Promise<number>((resolve, reject) => {
+      const r = http.request(
+        { host: '127.0.0.1', port: url.port, path: '/mcp', method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...headers } },
+        (res) => {
+          res.resume();
+          resolve(res.statusCode ?? 0);
+        },
+      );
+      r.on('error', reject);
+      r.end(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping', params: {} }));
+    });
+  const { secret } = await createPersonalToken(ownerId, 'password', { name: 'origin check', scopes: ['boards:read'], expiresInDays: 1 });
+  const auth = { authorization: `Bearer ${secret}` };
+  const local = `127.0.0.1:${url.port}`;
+  // DNS rebinding: the browser sends the attacker's own name as Host (and Origin).
+  expect(await post({ ...auth, host: 'rebind.attacker.test', origin: 'http://rebind.attacker.test' })).toBe(403);
+  expect(await post({ ...auth, host: local, origin: 'null' })).toBe(403);
+  expect(await post({ ...auth, host: local, origin: 'http://192.168.1.20:8080' })).toBe(403);
+  // Refused before authentication: without a token it is still 403, never a 401 that starts a sign-in.
+  expect(await post({ host: 'rebind.attacker.test' })).toBe(403);
+  expect(await post({ ...auth, host: 'freero.test', origin: 'https://inspector.example' })).not.toBe(403);
+  expect(await post({ ...auth, host: local })).not.toBe(403);
 });
