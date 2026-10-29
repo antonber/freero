@@ -25,7 +25,9 @@ import {
   type CommentThreadRecord,
   type ElementDraft,
   type InsertStructureResponse,
+  LayoutError,
   type Role,
+  type StructurePlacement,
   type SavedTemplateSummary,
   type TableCopyContent,
 } from '@freero/shared';
@@ -61,10 +63,10 @@ import {
   type BoardActor,
   type BoardView,
 } from '../realtime/index';
-import { insertStructure, newElementId } from '../structure/index';
+import { insertStructure, newElementId, planMoveInto, readPlacement } from '../structure/index';
 import { getTemplate, listTemplates } from '../templates/index';
 import { ensurePersonalWorkspace, getWorkspaceInfo, workspaceRolesOf } from '../workspaces/index';
-import { boardConnections, sendToTracker } from '../trackers/index';
+import { boardConnections, importCandidates, importIssues, sendToTracker } from '../trackers/index';
 import { commentSpot, patchUpdates, planCreate, planPatch, readItemInputs, toApiItem } from './items';
 import { planProposal, readProposal, suggestionGroups } from './suggestions';
 import { pausedError, pauseOf } from './pause';
@@ -411,14 +413,37 @@ export async function updateItems(call: ApiCall, boardId: string, patches: Array
   await agentWrite(call, { id, role });
   const ids = patches.map((p) => (typeof p.id === 'string' ? p.id : ''));
   if (new Set(ids).size !== ids.length) throw badRequest('Each item may appear once');
+  // Moves by meaning: `into` a frame / kanban (column) / cluster, grouped by where they go.
+  const groups = new Map<string, { placement: StructurePlacement; ids: string[] }>();
+  const fieldsOf = patches.map(({ into, column, ...rest }, i) => {
+    if (into === undefined && column === undefined) return rest;
+    if (rest.x !== undefined || rest.y !== undefined) throw badRequest(`items[${i}]: give into (where it goes) or x / y, not both`);
+    const placement = readPlacement({ into, column });
+    const key = JSON.stringify(placement);
+    groups.set(key, { placement, ids: [...(groups.get(key)?.ids ?? []), String(rest.id)] });
+    return rest;
+  });
   await change(() =>
     changeBoard(id, actorOf(call, role), (view) => {
-      const update = patches.flatMap(({ id: itemId, ...fields }, i) => {
+      const moves = [...groups.values()].flatMap((g) => {
+        try {
+          return planMoveInto(view, g.ids, g.placement, newElementId).update;
+        } catch (e) {
+          if (e instanceof LayoutError) throw badRequest(e.message);
+          throw e;
+        }
+      });
+      const moved = new Map<string, Record<string, unknown>>();
+      for (const m of moves) moved.set(m.id, { ...moved.get(m.id), ...m.patch });
+      const update = fieldsOf.flatMap(({ id: itemId, ...fields }, i) => {
+        if (!Object.keys(fields).length && moved.has(String(itemId))) return [];
         const hit = view.elements.find((e) => e.el.id === itemId);
+        if (!hit && typeof itemId === 'string' && /^(cluster|group):/.test(itemId))
+          throw badRequest(`${itemId} is a group the outline shows, not an item: change its items by their own ids (a cluster’s title is its first id after "cluster:")`);
         if (!hit) throw notFound(patches.length === 1 ? 'No such item on this board' : `items[${i}]: no item ${String(itemId)} on this board`);
         return patchUpdates(hit.el, planPatch(hit.el, fields, view), view);
       });
-      return { change: { update } };
+      return { change: { update: [...update, ...moves] } };
     }),
   );
   const { items, view } = await itemsNow(call, id, role, ids);
@@ -566,7 +591,8 @@ const message = (call: ApiCall, threadId: string, text: string): CommentMessageR
 export async function addComment(call: ApiCall, boardId: string, body: { text?: unknown; itemId?: unknown }) {
   const text = commentText(body.text);
   if (body.itemId !== undefined && body.itemId !== null && (typeof body.itemId !== 'string' || !body.itemId)) throw badRequest('itemId must be an item id');
-  const itemId = typeof body.itemId === 'string' ? body.itemId : undefined;
+  // A cluster the outline shows (`cluster:<id>`): the comment goes on its title (or first item).
+  const itemId = typeof body.itemId === 'string' ? body.itemId.replace(/^cluster:/, '') : undefined;
   const { id, role } = await openBoard(call, boardId);
   await requireBoardAccess(id, call.userId, 'commenter');
   await agentWrite(call, { id, role });
@@ -643,14 +669,68 @@ export async function removeMember(call: ApiCall, boardId: string, memberId: str
  * connection the person may use on this board (named, or the only one), linking them both ways.
  * The same operation as the board's "Send to tracker".
  */
+/**
+ * The tracker connection a call names (by name or id), or the only one the person may use on the
+ * board. Refusals say what to do: name one of these, or connect a tracker first.
+ */
+async function trackerConnection(call: ApiCall, boardId: string, named: unknown) {
+  const conns = await boardConnections(call.userId, boardId);
+  const want = typeof named === 'string' ? named.trim().toLowerCase() : '';
+  const conn = want ? conns.find((c) => c.id === named || c.name.toLowerCase() === want) : conns.length === 1 ? conns[0] : undefined;
+  if (conn) return conn;
+  const names = conns.map((c) => `${c.name} (${c.provider})`).join(', ');
+  if (want && conns.length) throw badRequest(`No tracker connection named “${String(named).slice(0, 80)}” here; this board can use: ${names}`);
+  if (conns.length) throw badRequest(`Name the tracker connection to use (connection): ${names}`);
+  throw new HttpError(
+    400,
+    'No issue tracker is connected for this board. The person can connect their own in Freero (Settings → Your issue trackers), or a team admin can connect the team’s (Admin console → Issue trackers); then try again',
+    'tracker_not_connected',
+  );
+}
+
+/**
+ * Imports a tracker query as LINKED task cards (MCP import_from_tracker, REST
+ * `/boards/:id/trackers/import`): the board's "Import issues…" with its rules — the person's own or
+ * the team's connection, edit access, at most 100 issues, issues already linked on this board
+ * skipped — placed in free space or where `placement` says, attributed to the app for the person.
+ * With `target: 'suggestions'` (a connection that may only suggest) the cards are proposed instead:
+ * plain cards linking to their issues, for people who can edit to accept (nothing is linked).
+ */
+export async function importFromTracker(call: ApiCall, boardId: string, body: Record<string, unknown>) {
+  const { id, role } = await openBoard(call, boardId);
+  await requireBoardAccess(id, call.userId, 'editor');
+  const conn = await trackerConnection(call, id, body.connection);
+  const placement = body.placement === undefined || body.placement === null ? undefined : readPlacement(body.placement);
+  const req = { connectionId: conn.id, query: body.query, limit: body.limit };
+  call.audit.metadata = { connection: conn.id, provider: conn.provider };
+  if (body.target === 'suggestions') {
+    const found = await importCandidates(call.userId, id, req);
+    if (!found.issues.length) return { target: 'suggestions' as const, groupId: null, cards: [], skipped: found.skipped };
+    const description = typeof body.description === 'string' && body.description.trim() ? body.description.trim().slice(0, 500) : `Import ${found.issues.length} issue${found.issues.length === 1 ? '' : 's'} from ${conn.name}`;
+    const out = await insertStructureFor(call, id, {
+      structure: { kind: 'items', items: found.issues.map((i) => ({ type: 'card', text: `${i.key}: ${i.title}`, description: i.description, status: i.status, dueDate: i.dueDate, link: i.url })) },
+      ...(placement ? { placement } : {}),
+      target: 'suggestions',
+      description,
+    });
+    const ids = out.parts?.[0]?.ids ?? [];
+    call.audit.metadata = { ...call.audit.metadata, proposed: ids.length, skipped: found.skipped };
+    return { target: 'suggestions' as const, groupId: out.groupId ?? null, cards: found.issues.map((i, n) => ({ id: ids[n], key: i.key, url: i.url })), skipped: found.skipped };
+  }
+  const out = await importIssues(call.userId, id, { ...req, ...(placement ? { placement } : {}) }, appUrl(call.req, ''), {
+    via: actingApp(call.cred),
+    preflight: () => agentWrite(call, { id, role }),
+  });
+  call.audit.metadata = { ...call.audit.metadata, imported: out.created.length, skipped: out.skipped };
+  if (out.created.length) present(call, id, out.created);
+  return { target: 'board' as const, cards: (out.cards ?? []).map(({ id: cardId, key, url }) => ({ id: cardId, key, url })), skipped: out.skipped, ...(out.containerId ? { containerId: out.containerId } : {}) };
+}
+
 export async function syncToTracker(call: ApiCall, boardId: string, body: { itemIds?: unknown; connection?: unknown; project?: unknown; issueType?: unknown; mode?: unknown }) {
   const { id, role } = await openBoard(call, boardId);
   await requireBoardAccess(id, call.userId, 'editor');
   await agentWrite(call, { id, role });
-  const conns = await boardConnections(call.userId, id);
-  const want = typeof body.connection === 'string' ? body.connection.trim().toLowerCase() : '';
-  const conn = want ? conns.find((c) => c.id === body.connection || c.name.toLowerCase() === want) : conns.length === 1 ? conns[0] : undefined;
-  if (!conn) throw badRequest(conns.length ? `Name the tracker connection to use: ${conns.map((c) => c.name).join(', ')}` : 'No issue tracker is connected for this board');
+  const conn = await trackerConnection(call, id, body.connection);
   const out = await sendToTracker(call.userId, id, { connectionId: conn.id, itemIds: body.itemIds, project: body.project, issueType: body.issueType, mode: body.mode }, appUrl(call.req, ''));
   call.audit.metadata = { issues: out.issues.map((i) => i.key), items: out.issues.reduce((n, i) => n + i.itemIds.length, 0) };
   return out;

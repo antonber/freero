@@ -51,6 +51,14 @@ consent screen that Freero hasn't reviewed such an app.
 - Suggestions a token or app proposed stay its own: revoking it (or the app's access, "Disconnect all
 apps and tokens", signing out everywhere) withdraws the ones still pending on every board, and
 open boards drop them at once (KAI-224).
+- Nothing needs coordinates: `POST /boards/{boardId}/structure` takes a `placement` (into a frame,
+  kanban column or cluster, or a new frame / kanban) and answers `parts` (which new id is which input
+  item, in order); `PATCH` an item with `into` (+ `column`) to move it there.
+- `POST /boards/{boardId}/trackers/import` (the MCP `import_from_tracker`, #79): a tracker query as
+  task cards linked to their issues, through the person's own or the team's connection, with the
+  board's *Import issues…* rules (at most 100, issues already linked here skipped) and a `placement`;
+  answers each card's id with its issue key. `target: "suggestions"` needs only `boards:suggest` and
+  proposes the cards instead. No connection: `400 tracker_not_connected`, saying where to connect one.
 - An agent's control room (`/boards/{boardId}/control-room`, the MCP `post_status` / `get_feedback`):
   a person can pause the agent from its lane on the board; until it is resumed every write of that
   token or app on that board answers `423 agent_paused` ([mcp.md](../mcp.md#agent-control-room)).

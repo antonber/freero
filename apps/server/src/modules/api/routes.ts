@@ -175,6 +175,17 @@ export default function apiRoutes(_ctx: ServerContext): Router {
     return { body: api.withNotice(await getFeedback(call, call.req.params.boardId, str(q.cursor), str(q.agent)?.slice(0, 80))) };
   });
 
+  // ---- issue trackers (#79): a tracker query as linked cards (or, with target 'suggestions', proposed) ----
+  endpoint(
+    'post',
+    '/boards/:boardId/trackers/import',
+    (req) => ((req.body as { target?: unknown } | undefined)?.target === 'suggestions' ? 'boards:suggest' : 'boards:write'),
+    async (call) => {
+      const out = await api.importFromTracker(call, call.req.params.boardId, body(call.req));
+      return { status: out.cards.length ? 201 : 200, body: out };
+    },
+  );
+
   // ---- comments ----
   endpoint('get', '/boards/:boardId/comments', 'boards:read', async (call) => ({ body: await api.listComments(call, call.req.params.boardId) }));
   endpoint('post', '/boards/:boardId/comments', 'comments:write', async (call) => ({ status: 201, body: await api.addComment(call, call.req.params.boardId, body(call.req)) }));

@@ -32,6 +32,7 @@ export {
   addComment,
   replyToComment,
   syncToTracker,
+  importFromTracker,
   // Live board views in AI assistants (MCP Apps, KAI-171).
   openLiveView,
   shareLink,
