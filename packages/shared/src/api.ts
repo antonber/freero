@@ -658,7 +658,8 @@ export interface UpdateBoardRequest {
 //       instance) converges on it. The board as it was just before is kept as a 'before-restore'
 //       version (`before`): restoring that one undoes the restore. Comments, votes and the timer
 //       are not rolled back (Y_KEPT_ON_RESTORE).
-export type BoardVersionKind = 'auto' | 'named' | 'before-restore';
+/** 'decision': a decision snapshot (decisions.ts, KAI-161) — never pruned, named after the decision. */
+export type BoardVersionKind = 'auto' | 'named' | 'before-restore' | 'decision';
 export interface BoardVersion {
   id: number;
   kind: BoardVersionKind;
@@ -904,7 +905,9 @@ export type NotificationType =
   | 'moderation.action'
   | 'card.assigned'
   | 'card.due_changed'
-  | 'card.due_soon';
+  | 'card.due_soon'
+  | 'walkthrough.mention'
+  | 'walkthrough.comment';
 
 export interface AppNotification {
   id: string;
@@ -1484,6 +1487,11 @@ export const AUDIT_ACTIONS = {
   'board.link_password_refused': 'Gave a wrong password for a board’s link',
   'board.call_link_changed': 'Changed a board’s call link',
   'version.restored': 'Restored a board version',
+  'decision.created': 'Froze a board or frame as a decision',
+  'decision.deleted': 'Deleted a decision snapshot',
+  'walkthrough.created': 'Recorded a walkthrough of a board',
+  'walkthrough.deleted': 'Deleted a walkthrough',
+  'walkthrough.transcribed': 'Had a walkthrough transcribed by AI',
   'board.suggestion_accepted': 'Accepted suggested changes on a board',
   'board.suggestion_rejected': 'Rejected suggested changes on a board',
   'board.suggestion_reopened': 'Undid accepting or rejecting suggested changes',
