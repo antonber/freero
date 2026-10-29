@@ -18,10 +18,12 @@ export const MCP_TOOLS: Array<[name: string, needs: 'read' | 'suggest' | 'write'
   ['get_feedback', 'read', 'What people changed in the agent’s control-room lane since its last look: cards moved, added or removed, new comments.'],
   ['propose_changes', 'suggest', 'A structure (notes, clusters, a diagram) proposed as one group of suggestions for editors to accept or reject.'],
   ['create_board', 'write', 'A new board in a personal or team workspace, optionally from a template.'],
-  ['add_stickies', 'write', 'A titled grid of sticky notes.'],
+  ['add_stickies', 'write', 'A titled grid of sticky notes, each with its own link if you like, in free space or into a frame, kanban column or cluster.'],
   ['add_clusters', 'write', 'Titled groups side by side; existing notes can move into them.'],
+  ['add_cards', 'write', 'Task cards with description, status, due date and link, into a kanban column, a frame or a cluster, or a new kanban with its columns.'],
+  ['import_from_tracker', 'write', 'Issues from a Jira, Linear or GitHub query as cards linked to them, kept in sync both ways; proposed instead when the connection may only suggest.'],
   ['add_diagram', 'write', 'A Mermaid flowchart or sequence diagram, a mind map or tree from an outline, or a node-and-edge graph, laid out by Freero.'],
-  ['update_items', 'write', 'Several items changed in one all-or-nothing step: text, fields, colours, frames, locks, links, position and size.'],
+  ['update_items', 'write', 'Several items changed in one all-or-nothing step: text, fields, colours, frames, locks, links, and moves into a frame, kanban column or cluster.'],
   ['delete_items', 'write', 'Deletes items, only with an explicit confirmation.'],
   ['create_doc', 'write', 'A new doc from Markdown, personal or in a team workspace.'],
   ['append_to_doc', 'write', 'Markdown added to the end of a doc; everyone with it open sees it arrive.'],
@@ -33,7 +35,7 @@ export const MCP_TOOLS: Array<[name: string, needs: 'read' | 'suggest' | 'write'
 /** [prompt, what it sets the agent up to do]. */
 export const MCP_PROMPTS: Array<[name: string, summary: string]> = [
   ['control_room', 'Work on a goal in a control room: post the plan and tasks, check what people changed, repeat.'],
-  ['run_retro', 'Group a retro board’s notes into themes, then propose actions.'],
+  ['run_retro', 'Group a retro board’s notes into themes, then add action cards and offer to send them to the tracker.'],
   ['notes_to_diagram', 'Turn notes into a diagram on a board.'],
   ['summarize_board', 'Topics, decisions, open questions and action items, with item ids.'],
 ];
