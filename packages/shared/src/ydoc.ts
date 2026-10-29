@@ -10,7 +10,8 @@ import { TRACKER_COLLECTION } from './trackers';
 //
 // Feature collections currently claimed (keep in sync with features/*/feature.ts;
 // the engine throws at startup if two features claim the same name):
-//   'comments' -> features/comments   (CommentRecord per key: t:/s:/m:/r:/x: — see elements.ts)
+//   'comments' -> features/comments   (CommentRecord per key: t:/s:/m:/r:/x: — see elements.ts;
+//                                     element content: a pinned thread lives in its item's doc)
 //   'tags'     -> features/tags       (Tag by id)
 //   'timer'    -> features/timer      (key 'state' -> TimerState)
 //   'tableCells' -> features/table (cell text/fill per key — see TableElement in elements.ts;
@@ -53,37 +54,97 @@ export const Y_SETTINGS = 'settings';
 export const COMMENTER_WRITABLE = ['comments'] as const;
 
 /**
- * Collections whose entries BELONG to an element (KAI-230): content an element keeps outside the
- * elements map, keyed so that the owning element's id can be read from the key. An entry lives in
- * the SAME doc as its element — the shared doc, the `editors` layer (inside a hidden frame) or its
- * author's private layer — and moves with it, atomically, whenever the element moves (hidden /
- * shown frame, a sticky dragged in or out, a draft revealed or discarded). Otherwise a table in a
- * hidden frame or a private draft would still send its cell text to every socket.
+ * How the entries of an element-content collection find their element (ELEMENT_CONTENT_COLLECTIONS).
+ */
+export interface ElementContentRule {
+  /**
+   * The elements entry `key` (whose value is `value`) belongs to; empty: none (a board-level
+   * thread). `get` reads another entry of the same collection, wherever it lives (a comment message
+   * asks its thread record which item the thread is pinned to). Several (a tracker badge's linked
+   * items): see `homeLayer`.
+   */
+  owners(key: string, value: unknown, get: (key: string) => unknown): readonly string[];
+  /**
+   * The entry whose doc this one keeps to while it has no element on the board (a comment record
+   * follows its thread record: a thread whose item was deleted stays where it was, replies too).
+   */
+  follows?(key: string): string | null;
+}
+
+/** The thread a `comments` key is about (t:/s:/m:/r:/x: records; null for anything else). */
+export function commentThreadOfKey(key: string): string | null {
+  if (key.length < 3 || key[1] !== ':' || !'tsmrx'.includes(key[0])) return null;
+  return key.slice(2).split(':')[0] || null;
+}
+
+const one = (id: string | null): readonly string[] => (id ? [id] : []);
+const byKey = (owner: (key: string) => string | null): ElementContentRule => ({ owners: (key) => one(owner(key)) });
+const pinnedTo = (rec: unknown): readonly string[] => {
+  const id = (rec as { elementId?: unknown } | null | undefined)?.elementId;
+  return typeof id === 'string' && id ? [id] : [];
+};
+
+/**
+ * Where an entry belongs, given the layers its elements live in ('shared', 'editors', or a private
+ * layer under any other name): the most visible one in which EVERY element is visible — 'shared'
+ * when all are shared, 'editors' when none is in a private layer — else the most restrictive, the
+ * private layer of the first element in one (a tracker badge linking a shared sticky and a private
+ * draft is the draft author's). Null for no layers.
+ */
+export function homeLayer(layers: readonly string[]): string | null {
+  if (!layers.length) return null;
+  if (layers.every((l) => l === 'shared')) return 'shared';
+  return layers.find((l) => l !== 'shared' && l !== 'editors') ?? 'editors';
+}
+
+/**
+ * Collections whose entries BELONG to an element (KAI-230, KAI-234): content an element keeps
+ * outside the elements map (or several elements' — a tracker badge: `homeLayer`). An entry lives in the SAME doc as its element — the shared doc, the
+ * `editors` layer (inside a hidden frame) or its author's private layer — and moves with it,
+ * atomically, whenever the element moves (hidden / shown frame, a sticky dragged in or out, a
+ * draft revealed or discarded). Otherwise a table in a hidden frame or a private draft would still
+ * send its cell text (or the discussion about it) to every socket. Entries with no element (a
+ * board-level comment thread) live in the shared doc.
  *
  * Applied by the engine on every write and move (engine/store, editor/layers.ts), and by the server
  * on requests (realtime/view.ts applyChange), reveals (layers.ts), a socket's misplaced writes and
  * when a board loads (realtime/elementContent.ts). Both runtimes need it, so it lives here, like
- * Y_KEPT_ON_RESTORE. Value: the id of the element a key belongs to (null: no element's).
+ * Y_KEPT_ON_RESTORE.
  *
  * Not here on purpose (ARCHITECTURE.md "Board layers", per-collection audit): `diagramSources`
  * (one record per diagram, many elements: from-text keeps one only while the whole diagram is
- * shared), and social / session collections (votes, tags, timers; comments on withheld items:
- * KAI-234).
+ * shared), and social / session collections (votes, tags, timers).
  */
-export const ELEMENT_CONTENT_COLLECTIONS: Readonly<Record<string, (key: string) => string | null>> = {
-  tableCells: tableCellOwner,
+export const ELEMENT_CONTENT_COLLECTIONS: Readonly<Record<string, ElementContentRule>> = {
+  tableCells: byKey(tableCellOwner),
   // frame id -> the presenter's notes for that frame
-  presenterNotes: (key) => key || null,
+  presenterNotes: byKey((key) => key || null),
   // activity id -> its live results (ENGAGE_RESULTS_COLLECTION; written by the server only, which
   // also moves them: see SERVER_WRITTEN_COLLECTIONS)
-  engageResults: (key) => key || null,
+  engageResults: byKey((key) => key || null),
+  // Comment records (CommentRecord in elements.ts): a thread pinned to an item (`t:` record's
+  // `elementId`) lives with the item, every record of it (`s:`/`m:`/`r:`/`x:`) with its thread.
+  // Legacy whole-thread values (no prefix) carry `elementId` themselves.
+  comments: {
+    owners(key, value, get) {
+      const tid = commentThreadOfKey(key);
+      if (!tid || key.startsWith('t:')) return pinnedTo(value ?? get(key));
+      return pinnedTo(get(`t:${tid}`));
+    },
+    follows(key) {
+      const tid = commentThreadOfKey(key);
+      return tid && !key.startsWith('t:') ? `t:${tid}` : null;
+    },
+  },
+  // link id -> the badge of a linked tracker issue (TrackerIssueRecord: key, title, status,
+  // assignee), shown on every linked item (`sources`). Written by the server only, which moves it.
+  [TRACKER_COLLECTION]: {
+    owners(_key, value) {
+      const sources = (value as { sources?: unknown } | null | undefined)?.sources;
+      return Array.isArray(sources) ? sources.filter((s): s is string => typeof s === 'string' && !!s) : [];
+    },
+  },
 };
-
-/** The element `key` of `collection` belongs to, or null (not an element-content collection, or no owner). */
-export function elementContentOwner(collection: string, key: string): string | null {
-  const owner = Object.prototype.hasOwnProperty.call(ELEMENT_CONTENT_COLLECTIONS, collection) ? ELEMENT_CONTENT_COLLECTIONS[collection] : null;
-  return owner ? owner(key) : null;
-}
 
 export const isElementContentCollection = (name: string): boolean => Object.prototype.hasOwnProperty.call(ELEMENT_CONTENT_COLLECTIONS, name);
 

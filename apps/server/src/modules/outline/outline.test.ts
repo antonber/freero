@@ -238,8 +238,10 @@ it("never shows a reader another user's private drafts, a hidden frame's content
     for (const id of ['hid-1', 'hid-table', 'in-flight', 'maria-draft']) expect(text).not.toContain(id);
     expect(byId(o, 'f-secret')).toMatchObject({ hidden: true, withheld: true });
     expect(byId(o, 'f-secret')!.children).toBeUndefined();
-    // The thread stays (its text is shared); its pin on a hidden item does not.
-    expect(o.comments.map((t) => t.id)).toEqual(['th9']);
+    // A thread on a hidden item is withheld with it (KAI-234: saved in the shared doc before the
+    // rule, moved to the editors layer when the board loads).
+    expect(o.comments).toEqual([]);
+    expect(text).not.toContain('Looks good');
     // Ann reads her own drafts (marked private), never anyone else's.
     expect(byId(o, 'ann-draft')).toMatchObject({ private: true });
     expect(o.edges[0]).toMatchObject({ from: 'pub', to: null });
@@ -251,6 +253,7 @@ it("never shows a reader another user's private drafts, a hidden frame's content
   const asEditor = json(await outlineAs(boardId, other, 'editor'));
   expect(asEditor).toContain('SECRET hidden sticky');
   expect(asEditor).toContain('SECRET cell');
+  expect(asEditor).toContain('Looks good');
   expect(asEditor).not.toContain('SECRET draft of Maria');
 });
 

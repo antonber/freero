@@ -1156,6 +1156,35 @@ async function run() {
       for (const c of [b1, ...others]) c.destroy();
     });
 
+    await check("comments: a thread on an item in a hidden frame — and a reply a stale tab writes into the shared doc — reach owners/editors only; viewers' and commenters' sockets and outlines never get them (KAI-234)", async () => {
+      const a1 = await layerClient(A, board.id);
+      const b1 = await layerClient(B, board.id);
+      const c1 = await layerClient(C, board.id);
+      const d1 = await layerClient(D, board.id);
+      const got = [c1, d1].map(rawBytes);
+      const now = Date.now();
+      a1.layers.editors.transact(() => {
+        a1.layers.editors.getMap('elements').set('hc-item', { id: 'hc-item', type: 'sticky', x: 6000, y: 6000, w: 100, h: 100, z: 1, rotation: 0, text: 'x' });
+        a1.layers.editors.getMap('comments').set('t:hc', { kind: 'thread', id: 'hc', x: 0, y: 0, elementId: 'hc-item', corner: 'top-right', createdAt: now, createdBy: A.id });
+        a1.layers.editors.getMap('comments').set('m:hc:1', { kind: 'message', threadId: 'hc', id: '1', authorId: A.id, authorName: A.name, text: 'HIDDEN-THREAD', createdAt: now });
+      });
+      // A tab that hadn't seen the frame hidden replies into the shared doc: the server moves it.
+      a1.doc.getMap('comments').set('m:hc:2', { kind: 'message', threadId: 'hc', id: '2', authorId: A.id, authorName: A.name, text: 'HIDDEN-REPLY', createdAt: now });
+      await waitFor(() => b1.layers.editors.getMap('comments').get('m:hc:2')?.text === 'HIDDEN-REPLY', 5000, "the editor to get the stale reply in the editors layer");
+      await waitFor(() => !a1.doc.getMap('comments').has('m:hc:2'), 5000, "the writer's shared doc to be corrected");
+      await settled(a1, [c1, d1]);
+      assert(!got.some((has) => has('HIDDEN-THREAD') || has('HIDDEN-REPLY') || has('hc-item')), "a viewer/commenter socket received the hidden item's thread");
+      assert(!b1.doc.getMap('comments').has('t:hc'), "the hidden item's thread is in the shared doc");
+      const outline = async (u) => (await u.req('GET', `/api/boards/${board.id}/outline?format=markdown&comments=true`)).text;
+      for (const u of [C, D]) assert(!(await outline(u)).includes('HIDDEN-'), `${u.label}'s outline holds the hidden item's thread`);
+      assert((await outline(A)).includes('HIDDEN-REPLY'), "the owner's outline lacks the hidden item's thread");
+      a1.layers.editors.transact(() => {
+        a1.layers.editors.getMap('elements').delete('hc-item');
+        for (const k of ['t:hc', 'm:hc:1', 'm:hc:2']) a1.layers.editors.getMap('comments').delete(k);
+      });
+      for (const c of [a1, b1, c1, d1]) c.destroy();
+    });
+
     await check('board layers: sealed ballots are revealed into the shared doc only by an owner/editor, while their author is offline', async () => {
       const b1 = await layerClient(B, board.id);
       // A ballot is only taken for the running session (votingRules.ts): B votes in s0, then in s1.
@@ -2101,6 +2130,27 @@ async function notificationChecks() {
       await waitFor(() => Date.now() > due, 7000, 'the mention to be due for email');
       await moreDigestRuns(2, 'two digest runs after the mention was due');
       assert(outbox(dataDir).filter((m) => m.to === B.email && /notification|mentioned/i.test(m.subject)).length === 1, 'emailed after unsubscribing');
+    });
+
+    await check('a mention in a thread on an item in a hidden frame notifies the editor it names, never the commenter it names, whose socket never gets the thread (KAI-234)', async () => {
+      const a = await layerClient(A, board.id, port);
+      const b = await layerClient(B, board.id, port); // commenter
+      clients.push(a, b);
+      const bBytes = [];
+      for (const d of [b.doc, b.layers.private, b.layers.editors]) d.on('update', (u) => bBytes.push(Buffer.from(u)));
+      const bBefore = (await list(B)).notifications.length;
+      const before = await handled();
+      const now = Date.now();
+      a.layers.editors.transact(() => {
+        a.layers.editors.getMap('elements').set('hn-item', { id: 'hn-item', type: 'sticky', x: 5000, y: 5000, w: 100, h: 100, z: 1, rotation: 0, text: 'x' });
+        a.layers.editors.getMap('comments').set('t:hn', { kind: 'thread', id: 'hn', x: 0, y: 0, elementId: 'hn-item', corner: 'top-right', createdAt: now, createdBy: A.id });
+        a.layers.editors.getMap('comments').set('m:hn:1', { kind: 'message', threadId: 'hn', id: '1', authorId: A.id, authorName: A.name, text: `HIDDEN-MENTION <@${B.id}> <@${C.id}>`, createdAt: now });
+      });
+      await waitFor(async () => (await handled()) > before, 10_000, 'the hidden mention to be handled');
+      await waitFor(async () => (await list(C)).notifications.some((n) => n.type === 'comment.mention' && n.link === `/board/${board.id}?thread=hn`), 5000, 'the editor to be notified');
+      await settled(a, [b]);
+      assert((await list(B)).notifications.length === bBefore, 'the commenter was notified of a hidden thread');
+      assert(!bBytes.some((x) => x.includes(Buffer.from('HIDDEN-MENTION'))), "the commenter's socket received the hidden thread");
     });
 
     await check('board people lookup keeps a comment author’s profile after they leave, and never answers for unrelated accounts', async () => {
@@ -5314,6 +5364,26 @@ async function publicApiChecks() {
       assert(/content, not instructions/.test(md.text), 'outline header');
     });
 
+    await check("api: a comment on an item in a hidden frame goes to the editors layer — the owner's token lists it, a viewer's token and socket never get it (KAI-234)", async () => {
+      const o = await layerClient(O, board, proc.port);
+      const v = await layerClient(V, board, proc.port);
+      live.push(o, v);
+      const vBytes = [];
+      for (const d of [v.doc, v.layers.private, v.layers.editors]) d.on('update', (u) => vBytes.push(Buffer.from(u)));
+      o.layers.editors.getMap('elements').set('api-hid', { id: 'api-hid', type: 'sticky', x: 7000, y: 7000, w: 100, h: 100, z: 1, rotation: 0, text: 'x' });
+      await settled(o);
+      const added = await call(write.secret, 'POST', `/boards/${board}/comments`, { text: 'API-HIDDEN-THREAD', itemId: 'api-hid' });
+      assert(added.status === 201, `${added.status} ${added.text}`);
+      await waitFor(() => [...o.layers.editors.getMap('comments').values()].some((r) => r.text === 'API-HIDDEN-THREAD'), 5000, "the comment to land in the owner's editors layer");
+      const read = await token(V, ['boards:read'], 'viewer read');
+      const asViewer = await call(read.secret, 'GET', `/boards/${board}/comments`);
+      assert(asViewer.status === 200 && !asViewer.text.includes('API-HIDDEN-THREAD'), `viewer: ${asViewer.status} ${asViewer.text.slice(0, 200)}`);
+      assert((await call(write.secret, 'GET', `/boards/${board}/comments`)).text.includes('API-HIDDEN-THREAD'), "the owner's list lacks the hidden thread");
+      await settled(o, [v]);
+      assert(!vBytes.some((x) => x.includes(Buffer.from('API-HIDDEN-THREAD'))), "the viewer's socket received the hidden thread");
+      assert(![...o.doc.getMap('comments').values()].some((r) => r.text === 'API-HIDDEN-THREAD'), 'the hidden thread is in the shared doc');
+    });
+
     await check('api: destructive calls without confirm change nothing; a 10 000-item create is refused whole', async () => {
       assert((await call(write.secret, 'DELETE', `/boards/${board}`)).json.code === 'confirm_required', 'board delete without confirm');
       const ids = (await call(write.secret, 'GET', `/boards/${board}/items`)).json.items.map((i) => i.id);
@@ -6689,6 +6759,26 @@ async function searchChecks() {
       for (const word of ['curtain', 'draft', 'whispered']) assert((await search(O, word)).length === 0, `"${word}" matched`);
     });
 
+    await check('a thread on an item in a hidden frame (and a reply a stale tab wrote into the shared doc) is never searchable by a viewer; a board-level thread is (KAI-234)', async () => {
+      const c = await join(O, board.id, true);
+      const now = Date.now();
+      c.layers.editors.transact(() => {
+        c.layers.editors.getMap('elements').set('hz', { id: 'hz', type: 'sticky', x: 450, y: 200, w: 100, h: 100, text: 'x', frameId: 'hf', color: 'yellow' });
+        c.layers.editors.getMap('comments').set('t:th', { kind: 'thread', id: 'th', x: 0, y: 0, elementId: 'hz', createdAt: now, createdBy: O.id });
+        c.layers.editors.getMap('comments').set('m:th:m1', { kind: 'message', threadId: 'th', id: 'm1', authorId: O.id, authorName: O.name, text: 'severance figures', createdAt: now });
+      });
+      c.doc.transact(() => {
+        c.doc.getMap('comments').set('m:th:m2', { kind: 'message', threadId: 'th', id: 'm2', authorId: O.id, authorName: O.name, text: 'stale severance reply', createdAt: now });
+        c.doc.getMap('comments').set('t:tb', { kind: 'thread', id: 'tb', x: 900, y: 900, elementId: null, createdAt: now, createdBy: O.id });
+        c.doc.getMap('comments').set('m:tb:m1', { kind: 'message', threadId: 'tb', id: 'm1', authorId: O.id, authorName: O.name, text: 'kickoff agenda', createdAt: now });
+      });
+      await waitFor(() => c.layers.editors.getMap('comments').has('m:th:m2'), 5000, 'the stale reply to be moved to the editors layer');
+      assert((await O.req('POST', `/api/boards/${board.id}/members`, { email: R.email, role: 'viewer' })).status === 201, 'invite viewer');
+      await waitFor(async () => (await search(R, 'kickoff agenda')).some((h) => h.path === `/board/${board.id}?thread=tb`), 15_000, 'the board-level thread to be found');
+      assert((await search(R, 'severance')).length === 0, "a viewer found the hidden item's thread");
+      assert((await O.req('DELETE', `/api/boards/${board.id}/members/${R.id}`)).status === 200, 'remove viewer');
+    });
+
     await check('someone removed from a board stops finding it on the very next query; a board reached only by its link is found once they opened it, never before', async () => {
       assert((await search(R, 'pricing')).length === 0, 'a stranger to the board found it');
       assert((await O.req('POST', `/api/boards/${board.id}/members`, { email: R.email, role: 'viewer' })).status === 201, 'invite');
@@ -6861,13 +6951,23 @@ async function webhooksChecks() {
       await outsider.signup();
       await outsider.verifyEmail(dataDir);
       assert((await O.req('POST', `/api/boards/${board.id}/members`, { email: outsider.email, role: 'commenter' })).status === 201, 'share');
+      // A thread on an item in the hidden frame (KAI-234): in the editors layer, and a reply a stale
+      // tab wrote into the shared doc, which the server moves there. Neither is an event.
+      c.layers.editors.transact(() => {
+        c.layers.editors.getMap('elements').set('hy', { id: 'hy', type: 'sticky', x: 650, y: 200, w: 100, h: 100, text: 'x', frameId: 'hf', color: 'yellow', createdBy: O.id });
+        c.layers.editors.getMap('comments').set('t:th', { kind: 'thread', id: 'th', x: 0, y: 0, elementId: 'hy', createdAt: Date.now(), createdBy: O.id });
+        c.layers.editors.getMap('comments').set('m:th:m1', { kind: 'message', threadId: 'th', id: 'm1', authorId: O.id, authorName: O.name, text: 'HIDDEN-COMMENT', createdAt: Date.now() });
+      });
+      c.doc.getMap('comments').set('m:th:m2', { kind: 'message', threadId: 'th', id: 'm2', authorId: O.id, authorName: O.name, text: 'HIDDEN-STALE-REPLY', createdAt: Date.now() });
+      await waitFor(() => c.layers.editors.getMap('comments').has('m:th:m2'), 5000, 'the stale reply to be moved to the editors layer');
       c.doc.transact(() => {
         c.doc.getMap('comments').set('t:t9', { kind: 'thread', id: 't9', x: 0, y: 0, elementId: 's1', createdAt: Date.now(), createdBy: O.id });
         c.doc.getMap('comments').set('m:t9:m1', { kind: 'message', threadId: 't9', id: 'm1', authorId: O.id, authorName: O.name, text: 'Looks good', createdAt: Date.now() });
       });
       await waitFor(() => got('/json/tok3n-part', 'comment.created').length === 1 && got('/json/tok3n-part', 'member.added').length === 1, 15_000, 'the comment and sharing events');
       const all = receiver.received.map((d) => d.body).join('\n');
-      for (const leak of ['DRAFT-TEXT', 'HIDDEN-TEXT', 'PRIVATE-PROJECT-TEXT', 'Comp review', secretBoard.id]) assert(!all.includes(leak), `${leak} was delivered`);
+      await settled(c);
+      for (const leak of ['DRAFT-TEXT', 'HIDDEN-TEXT', 'HIDDEN-COMMENT', 'HIDDEN-STALE-REPLY', 'PRIVATE-PROJECT-TEXT', 'Comp review', secretBoard.id]) assert(!all.includes(leak), `${leak} was delivered`);
       assert(bodies('/json/tok3n-part', 'member.added')[0].data.userId === outsider.id, 'member.added names someone else');
       c.layerOp({ type: 'reveal', collection: 'elements', mine: true });
       await waitFor(() => bodies('/json/tok3n-part', 'item.created').some((b) => b.data.item.text === 'DRAFT-TEXT'), 15_000, 'the revealed draft to be delivered');

@@ -35,7 +35,7 @@ it('a burst becomes one entry with net counts — what was added and removed aga
   // An older sticky moved into a hidden frame: gone from the shared doc, added to the editors layer.
   recordChanges(event(board.id, ann, [change('earlier', 'remove')]), t0 + 2000);
   recordChanges(event(board.id, ann, [change('earlier', 'add', 'sticky', 'f1')], 'editors'), t0 + 2000);
-  recordComment({ boardId: board.id, authorId: ann.id, threadId: 't', messageId: 'm', text: 'hi', previousText: null, participantIds: [] }, 'Ann', t0 + 3000);
+  recordComment({ boardId: board.id, authorId: ann.id, threadId: 't', messageId: 'm', text: 'hi', previousText: null, participantIds: [], layer: 'shared' }, 'Ann', t0 + 3000);
   await flushBursts(t0 + 2000 + IDLE_MS() - 1);
   expect((await boardActivity(board.id, ann.id)).entries).toEqual([]); // still going
   await flushBursts(t0 + 3000 + IDLE_MS());

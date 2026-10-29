@@ -1961,12 +1961,25 @@ only to connections that may read them:
   were: a frame visible then comes back visible with the content the shared doc had (the editors
   clients' sweep drops a stale editors-layer copy of the same ids), a frame hidden then comes back
   hidden with whatever its editors layer holds NOW (hidden contents are not versioned).
-- **Element content follows its element** (KAI-230): what an element keeps outside the `elements`
-  map — the collections in `@freero/shared` `ELEMENT_CONTENT_COLLECTIONS`, each with a function
-  from an entry's key to the element it belongs to (`tableCells`, `presenterNotes`,
-  `engageResults`) — lives in the SAME doc as that element, so a table in a hidden frame or a private
-  draft never sends its cell text to a socket that may not read the table. One declaration in
-  `@freero/shared` (like `Y_KEPT_ON_RESTORE`) because both runtimes enforce it:
+- **Element content follows its element** (KAI-230, KAI-234): what an element keeps outside the
+  `elements` map — the collections in `@freero/shared` `ELEMENT_CONTENT_COLLECTIONS` (`tableCells`,
+  `presenterNotes`, `engageResults`, `comments`, `trackers`) — lives in the SAME doc as that
+  element, so a table in a hidden frame or a private draft never sends its cell text, nor the
+  discussion about it, to a socket that may not read the table. One declaration in
+  `@freero/shared` (like `Y_KEPT_ON_RESTORE`) because both runtimes enforce it. Each collection has
+  an `ElementContentRule`:
+  - `owners(key, value, get)`: the elements an entry belongs to, read from its key (a cell), its
+    value (a tracker badge's `sources`) or another entry (`get`: a comment message asks its `t:`
+    thread record, whose `elementId` is the item the thread is pinned to). No owner: a board-level
+    thread, which lives in the shared doc.
+  - several owners (`homeLayer`): the most visible doc in which EVERY owner is visible — shared when
+    all are shared, `editors` when none is in a private layer — else the most restrictive, the
+    private layer of the first owner in one. A badge linking a shared sticky and an item in a hidden
+    frame is for owners/editors only; one that also links a draft is that draft author's.
+  - `follows(key)`: with no owner on the board (its item was deleted), the entry keeps to the doc of
+    another entry: a comment record to its thread record (a hidden item's thread stays hidden after
+    the item is deleted, and so do replies to it). The comments feature writes a thread's tombstone
+    before deleting its records, so the tombstone lands where the thread was.
   - Client (`engine/store`): `editor.collection(name)` of such a collection reads the shared doc and
     both layers as one; a write goes to the owner element's doc. Every element move between docs
     (`BoardStore.writeElement`) carries its entries in the same transaction, so dragging a table into
@@ -1998,7 +2011,8 @@ only to connections that may read them:
 | `presenterNotes` | notes per frame | yes: element content (a frame inside a hidden frame or a draft). A visible frame's notes stay readable by everyone with access, by design (the panel says so) — that includes a hidden frame's OWN notes, since the frame itself is visible |
 | `engageResults` | live activity results | yes: element content, moved by the server |
 | `diagramSources` | a diagram's Mermaid / outline source and the ids it laid out | not element content (one record, many elements): from-text keeps a source only while the WHOLE diagram is shared content, offers editing only then, and refuses to write a source for a diagram that became hidden meanwhile. A diagram hidden after it was shared keeps the source everyone had already seen (hiding is not retroactive) |
-| `comments` | threads pinned to items, messages | NOT yet: a thread on an item in a hidden frame / a draft is in the shared doc (KAI-234). Threads are social records with server readers that only know the shared doc (commenter rules, mention notifications, account purge, references, data export) and their owner is not in the key; moving them is its own change |
+| `comments` | threads pinned to items, messages | yes (KAI-234): every record of a thread pinned to an item lives with the item (owner via the `t:` record). Board-level threads stay shared. Server readers: commenter rules judge a record against the layer it would land in (a commenter can't take over a hidden thread by re-writing it into the shared doc; the room moves their own records there); mention/reply notifications carry the thread's layer (`editors`: only owners/editors are notified, no invite mention; `private`: nobody); the activity feed counts hidden-thread comments in an editors-only row; the account purge renames authors in every doc; the data export includes the person's own messages from every doc but describes a hidden item only if they may see it now; `/boards/:id/people` answers from the comments the asker can read; the references index, search and outline read `BoardView` / the saved shared doc, so hidden threads only for those who see them |
+| `trackers` | issue badges (key, title, status, assignee) per link, `sources` = linked items | yes: element content with several owners (`homeLayer`), written and moved by the server only |
 | `voting`, `estimation` | ballots / picks: element ids and values, sealed ones in private layers | ids only, no content: an item in a hidden frame can be voted on or estimated by editors, and viewers learn its id and count, never its text |
 | `tags` | the board's tag vocabulary (name, colour) | no: board-level, shared by many items; an item's tag ids are on the element and follow it |
 | `timer`, `privateMode`, `facilitation`, `retro`, `call`, `shapeLibraries` | session / board settings | nothing item-specific |
