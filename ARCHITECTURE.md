@@ -118,6 +118,8 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | API tokens, OAuth apps / consents, a team's API switch | server `modules/apiauth` | its index: `authenticate`, `requireScope`, `useInWorkspace` |
 | Tracker connections, links to issues, what both sides last agreed on | server `modules/trackers` | its routes / index (`sendToTracker`, `importIssues`); syncs only through its outbox consumer |
 | `trackers` collection (issue badges) and items' `trackerLink` | server `modules/trackers` (through realtime's `changeBoard`) | — (the web feature only reads them) |
+| `walkthroughs` collection (one summary per recording) | server `modules/walkthroughs` (realtime's `writeServerCollection`) | `Host.walkthroughs` (REST); the web feature only reads it |
+| Decision snapshots (`decisions`) and their content (board versions of kind `decision`) | server `modules/decisions` / `modules/realtime` (`freezeBoard`) | `Host.decisions`; never written again once frozen |
 
 ### Host — the one typed contract between app and engine
 
@@ -354,6 +356,9 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
 - `Host.trackers?` (additive, KAI-154): `{ connections, projects, preview, send, importIssues, sync,
   unlink }`, present only when the server listed a tracker connection this person may use on this
   board (`GET /boards/:id/trackers`). `features/trackers` hides every entry point without it.
+- `Host.walkthroughs?` / `Host.decisions?` (additive, KAI-133 / KAI-161; see "Walkthroughs and
+  decision snapshots"): absent without a server; guests watch and open but don't record or comment.
+  A command's `urlParam` run also gets `args.query` (every URL parameter: a walkthrough's `t`).
 - `Host.activity?.list(before?)` (additive): the board's activity feed as the server recorded
   it (see "Activity"); `features/activity` shows it in a dock panel.
 - `Host.engage?` (additive, KAI-132): answering live activities (`state / answer / withdraw / ask /
@@ -863,7 +868,9 @@ engage_reveals: live audience activities; see "Live activities" below), `tracker
 see "Issue trackers" below), `search` (search_entries, search_sources: the search index derived
 through the outbox, `GET /search`), `events` (events, event_board_states, event_pending_boards: the
 event stream), `webhooks` (webhook_endpoints, webhook_deliveries: workspace webhooks) — the last
-three in "Search, the event stream and webhooks" below.
+three in "Search, the event stream and webhooks" below — `walkthroughs` (walkthroughs,
+walkthrough_views, walkthrough_comments) and `decisions` (decisions), in "Walkthroughs and decision
+snapshots" below.
 
 - Notifications are created only from trusted server-side events, never from client claims:
   realtime's `onCommentMessage` (a comment message applied from one of THIS instance's sockets,
@@ -1452,7 +1459,8 @@ a handler in its module + a type in `OBJECT_TYPES`; nothing else changes.
 
 **Object addresses** (`@freero/shared` `objects.ts`, KAI-149): `freero://board/<id>`,
 `freero://board/<id>#<elementId>`, `freero://template/<id>`, `freero://workspace/<id>`,
-`freero://project/<id>`. `parseObjectUri` also reads the web URLs people copy
+`freero://project/<id>`, `freero://issue/<linkId>`, `freero://walkthrough/<id>` (web:
+`/board/<boardId>?walkthrough=<id>`), `freero://decision/<id>` (web: `/decision/<id>`). `parseObjectUri` also reads the web URLs people copy
 (`<origin>/board/<id>?el=<item>`, for the app's own origins: PUBLIC_URL and the request's) and the
 same-origin paths item links store; `objectRefsInText` finds them in content.
 `POST /api/objects/resolve` (≤ 200 per call; guests too) answers each with a summary (title, type,
@@ -1538,6 +1546,59 @@ for boards every full member of the workspace can open through team access (work
 own DNS lookup refuses private addresses at connect time, redirects never followed), retries with
 4× backoff, and turns an endpoint off after `WEBHOOK_DISABLE_AFTER_FAILURES` failures in a row
 (audited, its creator emailed); deliveries wait until it is back on. `WEBHOOKS=false` removes it all.
+
+### Walkthroughs and decision snapshots (`modules/walkthroughs`, `modules/decisions`; KAI-133, KAI-161)
+
+**Walkthroughs** are not screen videos. `features/walkthrough` records the narrator's voice (and
+camera, optional) with the browser's own `MediaRecorder` and, on the same clock, a TIMELINE of the
+world rectangle their screen showed and where their pointer was (`lib/timeline.ts`:
+`TimelineRecorder` stores a still view once and again just before the next move, so playback holds
+instead of drifting). Playback re-renders the LIVE board: every frame the camera is set from the
+recording's own `currentTime` (`viewAt` + `cameraShowing`, which fits the narrator's rectangle into
+any screen), so view and voice can't drift; the viewer's own pan/zoom (`camera-user`) takes the
+camera back and the bar offers "Back to …'s view"; pause leaves the camera alone, play returns to
+the path. Viewers see the board as THEY may see it now (hidden frames stay hidden). Keyboard: the
+bar is a region (Space/K, ←/→, J/L, Home/End, C captions, F back to the view, Esc) and the scrubber
+a native range. No third-party recording service, no screen capture. Overlay controls carry
+`data-fr-interactive` (else the canvas takes the pointer).
+
+- The recording is an ordinary upload of its author's (`Host.walkthroughs.create` uploads it, then
+  `POST /boards/:id/walkthroughs` takes only the caller's own video/audio upload): quota, size cap,
+  byte sniffing, range requests, moderation removal (410; the player says so and offers "Report").
+  `walkthroughUploadReferences` is in the uploads sweep's `SCANS`: deleting a walkthrough (or its
+  board, or its author's account — a recording is their voice, maybe face: CASCADE) leaves the file
+  to the sweep. Downloading it (`GET …/walkthroughs/:wid/download`) goes through
+  `authorizeFileDownload` (the workspace's downloads policy, `board.file_downloaded` audit);
+  streaming it for playback is viewing.
+- Anyone who may open the board watches (guests too; only accounts are counted, once each, never
+  the author); editors record; commenters comment; the author, editors and owners rename, caption
+  and delete.
+- Comments are pinned to moments and live with the walkthrough (`walkthrough_comments`), not in the
+  board's comment threads. `<@userId>` mentions notify through `notify` (`walkthrough.mention`,
+  checked against board access; the author gets `walkthrough.comment`), linking to
+  `/board/<id>?walkthrough=<wid>&t=<ms>` — `walkthrough.play`'s `urlParam` (it reads `t` from
+  `args.query`).
+- Captions: typed (`PUT …/transcript`), or made by the board's AI provider only (`modules/ai`
+  `transcribeRecording`: `decideAi`, budgets, downloads policy, `AI_TRANSCRIBE_MODEL` on an
+  OpenAI-compatible endpoint; docs/ai.md). Never a browser speech API (it sends audio to the vendor).
+- Open boards learn about changes through the server-written `walkthroughs` collection
+  (`SERVER_WRITTEN_COLLECTIONS`, `Y_KEPT_ON_RESTORE`): a summary per walkthrough (title, length,
+  counts), never the media URL or the timeline. An object: `freero://walkthrough/<id>`, with the
+  board's access.
+
+**Decision snapshots** freeze the board (or one frame) under a name. The content is a board version
+of kind `decision` (realtime `freezeBoard`: the LIVE doc, every instance; never pruned by retention;
+listed in version history with a stamp; renaming it there keeps it a decision; deleting the
+decision demotes it to a named version). A frame decision keeps the whole shared board in its
+version (restoring it from the history must not wipe the rest) and serves only that frame on every
+read (`frameOnlyState`: the frame's items at any depth, their element content, lines whose both
+ends are inside; a hidden frame can't be frozen). Only the SHARED doc is ever versioned, so a
+decision — unlike ordinary versions, which are editors-only — is readable by whoever may open its
+board, including people who join later: it is a deliberate publication of what everyone could see.
+`/decision/:id` renders it read-only with `BoardEngine initialState` (`createDecisionHost`) next to
+"What changed": both sides as everyone sees them, through the outline (`diffOutlines` in
+`@freero/shared`: added, removed, changed text / fields / tags / frame). An object:
+`freero://decision/<id>` (smart links show "Frozen <date>").
 
 ### Issue trackers: one issue ↔ many items, kept in step (`modules/trackers`, KAI-153..157; docs/trackers.md)
 

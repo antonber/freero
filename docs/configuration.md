@@ -180,6 +180,7 @@ What is sent where, and the safety rules: [ai.md](ai.md).
 | `AI_MAX_INPUT_TOKENS` | `12000` | About how much board content one action may send (the outline is cut to it). |
 | `AI_MAX_OUTPUT_TOKENS` | `4096` | `max_tokens` of each model call. |
 | `AI_TIMEOUT_SECONDS` | `90` | Deadline of one model call. |
+| `AI_TRANSCRIBE_MODEL` | — | Speech-to-text model for walkthrough captions (e.g. `whisper-1`), called on the board's own AI endpoint when that endpoint is OpenAI-compatible (`/audio/transcriptions`). Unset, or an Anthropic endpoint: no AI captions (people can still type them). |
 
 ## Issue trackers
 
@@ -292,6 +293,7 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `RATE_LIMIT_OAUTH_TOKEN` | `60/1m` | OAuth token and revocation requests per IP. |
 | `RATE_LIMIT_OAUTH_REGISTER` | `20/1h` | Apps registering themselves (OAuth dynamic client registration) per IP. |
 | `RATE_LIMIT_TRACKER_SEND` | `60/10m` | Per user: issues created or imported in a tracker, and tracker connections added or tested (each calls the tracker's API). |
+| `RATE_LIMIT_WALKTHROUGH_COMMENT` | `120/10m` | Per person: comments on walkthroughs (each may notify the people it mentions and the walkthrough's author). |
 
 Rule format: `<count>/<window>` with the window in `s`, `m`, `h` or `d` and an optional multiplier
 (`10/5m` = 10 per 5 minutes), or `off`. Windows are fixed (they reset `window` after the first hit).
