@@ -39,3 +39,5 @@ export {
 } from './service';
 // Search, object addresses and backlinks (KAI-151, KAI-227).
 export { searchContent, resolveForApi, backlinksForApi } from './objects';
+// A board as an agent's control room (KAI-172): post plan / status / tasks, read people's feedback.
+export { postStatus, getFeedback, PLACEHOLDER_AGENT, type StatusPost, type TaskState, type FeedbackChange } from './controlRoom';

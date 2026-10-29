@@ -96,13 +96,13 @@ export function actingApp(cred: ApiCredential): ActingApp {
 }
 
 /** The writer a change is attributed to: the person, through the app or token. */
-const actorOf = (call: ApiCall, role: Role): BoardActor => ({ userId: call.userId, role, name: call.cred.account.name, via: actingApp(call.cred) });
+export const actorOf = (call: ApiCall, role: Role): BoardActor => ({ userId: call.userId, role, name: call.cred.account.name, via: actingApp(call.cred) });
 
 /**
  * The per-agent write limit (KAI-168): every change an app or token makes counts against ITS
  * budget (`RATE_LIMIT_AGENT_WRITE`), apart from the person's own editing and from other apps.
  */
-const agentWrite = (call: ApiCall) => consumeRateLimit('agentWrite', `cred:${call.cred.credentialId}`);
+export const agentWrite = (call: ApiCall) => consumeRateLimit('agentWrite', `cred:${call.cred.credentialId}`);
 
 export function apiBoard(req: Request, b: BoardSummary): ApiBoard {
   return {
@@ -181,7 +181,7 @@ const requireConfirm = (v: unknown, what: string) => {
 };
 
 /** Bad input to a change, or a board that changed under it: 400, nothing written. */
-async function change<T>(fn: () => Promise<T>): Promise<T> {
+export async function change<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (e) {
@@ -191,7 +191,7 @@ async function change<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /** Shows the app on the board for a moment, its cursor on what it just wrote (KAI-168). */
-function present(call: ApiCall, boardId: string, ids: readonly string[], view?: BoardView) {
+export function present(call: ApiCall, boardId: string, ids: readonly string[], view?: BoardView) {
   const at = view?.elements.find((e) => ids.includes(e.el.id))?.el;
   showAgentPresence(boardId, { via: actingApp(call.cred), user: call.cred.account, selection: ids.slice(0, 50), cursor: at ? { x: at.x + at.w / 2, y: at.y + at.h / 2 } : null });
 }
