@@ -28,6 +28,10 @@ const PERMISSIVE = new Set([
   'Zlib',
   'WTFPL',
   'MPL-2.0',
+  // Fonts only (the Inter files the marketing site self-hosts, @fontsource/inter): the SIL Open Font
+  // License lets anyone bundle, embed and redistribute the font with any software; it only forbids
+  // selling the font by itself and reusing its reserved name for modified versions.
+  'OFL-1.1',
 ]);
 
 /** Packages whose manifest declares no usable licence, checked by hand. */

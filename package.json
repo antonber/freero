@@ -9,7 +9,7 @@
   ],
   "scripts": {
     "dev": "concurrently -k -n server,web -c blue,magenta \"npm run dev -w @freero/server\" \"npm run dev -w @freero/web\"",
-    "build": "npm run build -w @freero/web",
+    "build": "npm run build -w @freero/web && npm run build -w @freero/site",
     "start": "npm run start -w @freero/server",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
