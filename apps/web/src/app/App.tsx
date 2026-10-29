@@ -20,6 +20,7 @@ import { AdminConsolePage } from './pages/admin/AdminConsolePage';
 import { AppealPage } from './pages/appeal/AppealPage';
 import { OperatorPage } from './pages/operator/OperatorPage';
 import { OAuthConsentPage } from './pages/oauth/OAuthConsentPage';
+import { SharePage } from './pages/share/SharePage';
 
 // Owned by the board engine work; loaded on demand.
 const BoardPage = lazy(() => import('./board/BoardPage'));
@@ -90,6 +91,15 @@ export function App() {
               element={
                 <RequireAuth>
                   <DashboardPage />
+                </RequireAuth>
+              }
+            />
+            {/* The installed app's share target (KAI-218): the server stored the images and sent the browser here. */}
+            <Route
+              path="/share"
+              element={
+                <RequireAuth>
+                  <SharePage />
                 </RequireAuth>
               }
             />

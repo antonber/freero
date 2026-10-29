@@ -160,6 +160,12 @@ export interface Host {
    */
   openBackup?(file: File): void;
   /**
+   * [additive, KAI-218] What someone shared into the installed app (the system share sheet) and
+   * chose to put on THIS board: images already stored with their uploads, a link, text. Handed
+   * over once (null afterwards, after a reload, and on any other board).
+   */
+  takeShared?(): SharedContent | null;
+  /**
    * [additive] Tells the server a board export (image, PDF) was made in the browser, for the
    * workspace's audit log. Fire and forget; export features call it after each download. Absent in
    * the offline sandbox.
@@ -303,6 +309,14 @@ export interface Host {
    * caller's view of the activity and rejects with a showable message. Absent in the offline sandbox.
    */
   engage?: HostEngage;
+}
+
+/** [additive, KAI-218] `Host.takeShared`: images as `/uploads/<name>` URLs (stored already), a link, text. */
+export interface SharedContent {
+  images: string[];
+  link: string | null;
+  text: string | null;
+  title: string | null;
 }
 
 /** [additive] `Host.engage` (wire: @freero/shared `ActivityState`, `ActivityAnswer`). */
