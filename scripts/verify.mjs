@@ -8027,6 +8027,31 @@ async function siteChecks() {
       assert(llmsText.startsWith('# Freero') && llmsText.includes('https://whiteboard.example.com/mcp') && !llmsText.includes('origin.freero.invalid'), `/llms.txt: ${llmsText.slice(0, 300)}`);
       assert((await get(on.port, '/llms-full.txt')).status === 200, '/llms-full.txt is not served');
     });
+    await check('site: the built privacy policy, terms and acceptable use policy are visibly drafts nobody is asked to accept until SITE_LEGAL_OPERATOR names the operator; then they are in effect and indexable', async () => {
+      const legalPaths = ['/privacy', '/terms', '/acceptable-use'];
+      for (const p of legalPaths) {
+        const res = await get(on.port, p);
+        const html = await res.text();
+        assert(res.status === 200 && html.includes('Draft: not in effect') && html.includes('<meta name="robots" content="noindex, follow"/>'), `${p} is not a draft: ${res.status}`);
+        assert(res.headers.get('x-robots-tag') === 'noindex' && !html.includes('[[freero-legal:'), `${p}: X-Robots-Tag ${res.headers.get('x-robots-tag')}, unfilled token`);
+      }
+      assert((await (await get(on.port, '/api/site/legal')).json()).legal === null, 'sign-up asks people to agree to draft terms');
+      const support = await (await get(on.port, '/support')).text();
+      assert(!support.includes('Draft: not in effect') && !support.includes('[[freero-legal:'), '/support is a draft or has an unfilled token');
+      const footer = await (await get(on.port, '/')).text();
+      assert(legalPaths.every((p) => footer.includes(`href="${p}"`)) && footer.includes('href="/support"'), 'the footer does not link the legal pages and /support');
+
+      const inForce = await waitUp(await spawnServer(path.join(dataDir, 'legal'), { FREERO_SITE_DIST: siteDist, PUBLIC_URL: 'https://whiteboard.example.com', SITE_LEGAL_OPERATOR: 'Example Operator LLC', SITE_LEGAL_CONTACT_EMAIL: 'legal@whiteboard.example.com' }));
+      procs.push(inForce);
+      for (const p of legalPaths) {
+        const res = await get(inForce.port, p);
+        const html = await res.text();
+        assert(!html.includes('Draft: not in effect') && html.includes('index, follow') && !res.headers.get('x-robots-tag'), `${p} is still a draft with the operator set`);
+        assert(html.includes('Example Operator LLC') && html.includes('mailto:legal@whiteboard.example.com'), `${p} does not name the operator and contact`);
+      }
+      const legal = (await (await get(inForce.port, '/api/site/legal')).json()).legal;
+      assert(legal?.operator === 'Example Operator LLC' && legal.termsUrl === '/terms' && legal.privacyUrl === '/privacy', `/api/site/legal: ${JSON.stringify(legal)}`);
+    });
     const off = await waitUp(await spawnServer(path.join(dataDir, 'off'), { FREERO_SITE_DIST: siteDist, SITE: 'false' }));
     procs.push(off);
     await check('site: with SITE=false everyone at / goes to the app, no marketing page is served and crawlers are kept out', async () => {

@@ -20,6 +20,8 @@ interface Manifest {
   prefixes: string[];
   /** Directory of content-hashed assets, served immutable. */
   assetsPrefix: string;
+  /** Pages built as drafts of legal terms (legal.ts lifts the draft once the operator is set). */
+  legal?: string[];
 }
 
 export interface Site {
@@ -30,6 +32,7 @@ export interface Site {
   prefixes: string[];
   assetsPrefix: string;
   assetsDir: string;
+  legal: Set<string>;
 }
 
 /** Reads a built site, or null when there is none (dev without `npm run build -w @freero/site`). */
@@ -46,6 +49,7 @@ export function loadSite(dist: string): Site | null {
     prefixes: m.prefixes,
     assetsPrefix: m.assetsPrefix,
     assetsDir: path.join(dist, m.assetsPrefix.replace(/^\/+|\/+$/g, '')),
+    legal: new Set(m.legal ?? []),
   };
 }
 

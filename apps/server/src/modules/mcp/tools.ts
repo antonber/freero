@@ -113,7 +113,11 @@ const outlineNode: z.ZodType<OutlineNode> = z.lazy(() =>
   }),
 );
 
-const READ: ToolAnnotations = { readOnlyHint: true, openWorldHint: false };
+// Every tool states all three hints explicitly (the Claude and ChatGPT directories require it):
+// readOnlyHint, destructiveHint (true for anything that overwrites, deletes or sends something it
+// can't take back) and openWorldHint (true only when it reaches outside the person's Freero: an
+// issue tracker, a link anyone may open). mcp.test.ts fails when one is missing.
+const READ: ToolAnnotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 const ADD: ToolAnnotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
 
 /** Facts about written items, in Freero's own words: ids and counts only. */
@@ -392,7 +396,8 @@ export const TOOLS: McpTool[] = [
     description:
       'For long-running work: posts your plan, current status and tasks to your lane on a control-room board, where people watch and steer you. Without boardId it creates the board. Tasks are cards on a To do / Doing / Done / Blocked kanban, matched by your externalId when you give one (rename a task freely: its card follows), else by title (posting the same title again updates that card, never a duplicate); state "blocked" puts a card in Blocked — say why in its note: the person you work for gets it in their inbox. If a person paused you on the board, this and every other write there fails with agent_paused: stop and wait for get_feedback to say paused: false. Pass the cursor you got last time so changes people made since are not lost; call get_feedback with the cursor this returns. Needs permission to change boards.',
     scope: 'boards:write',
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    // Replaces the lane's plan and status notes and moves its task cards: an overwrite, not an addition.
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     input: {
       boardId: boardId.optional().describe('The control-room board. Omit to create one.'),
       title: z.string().max(200).optional().describe('Title of a new control-room board (without boardId).'),
@@ -440,7 +445,7 @@ export const TOOLS: McpTool[] = [
     description:
       'Creates a new board (in your personal workspace unless you name a team workspace), optionally from a saved template (list_templates). Fill it afterwards with add_stickies, add_clusters, add_cards, add_diagram or import_from_tracker, then open_board to show it. Needs permission to change boards.',
     scope: 'boards:write',
-    annotations: { ...ADD, title: 'Create a board' },
+    annotations: ADD,
     input: {
       title: z.string().min(1).max(200).describe('The board title.'),
       description: z.string().max(2000).optional(),
@@ -717,7 +722,8 @@ export const TOOLS: McpTool[] = [
     description:
       'Turns items on a board (sticky notes, cards, shapes, text) into an issue in the team’s issue tracker (Jira, Linear or GitHub) — ONE issue for all of them by default (a cluster of notes becomes one issue listing each note with a link back), or one per item with mode "each". The items and the issue stay linked and in sync both ways. Use item ids from get_board_outline. Needs permission to change boards; the board must have a tracker connected.',
     scope: 'boards:write',
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    // Creates issues in another system, where people are notified: a send Freero can't take back.
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     input: {
       boardId,
       itemIds: z.array(z.string().min(1).max(64)).min(1).max(50).describe('The items to send.'),
@@ -776,7 +782,7 @@ export const TOOLS: McpTool[] = [
     description:
       'Exports a whole board’s content as a file — Markdown (a readable outline) or JSON (every item, connection and comment with ids). Recorded as an export; a team’s downloads policy may not allow it.',
     scope: 'boards:read',
-    annotations: { ...READ, idempotentHint: true },
+    annotations: READ,
     input: {
       boardId,
       format: z.enum(['markdown', 'json']).optional().describe('markdown (default) or json.'),

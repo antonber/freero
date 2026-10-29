@@ -299,6 +299,19 @@
   color: var(--fr-primary-hover);
 }
 
+.fr-authcard__terms {
+  margin: 16px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  text-align: center;
+  color: var(--fr-ink-3);
+}
+
+.fr-authcard__terms a {
+  color: var(--fr-ink-2);
+  text-decoration: underline;
+}
+
 .fr-authcard__switch {
   margin: 22px 0 0;
   font-size: 13.5px;
