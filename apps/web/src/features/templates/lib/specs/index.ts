@@ -3,6 +3,7 @@ import type { SpecFiles } from '../spec/catalog';
 import type { SpecIndexEntry } from '../spec/types';
 
 export const SPEC_FILES: SpecFiles = {
+  'ai': () => import('./ai'),
   'consulting': () => import('./consulting'),
   'design': () => import('./design'),
   'education': () => import('./education'),
@@ -14,6 +15,13 @@ export const SPEC_FILES: SpecFiles = {
 };
 
 export const SPEC_INDEX: SpecIndexEntry[] = [
+  {"id":"prompt-library","name":"Team prompt library","description":"The prompts your team reuses, with the inputs each one needs, when it works best and who keeps it up to date.","categories":["ai","operations"],"keywords":["prompt library","prompts","prompt engineering","llm","chatgpt","ai assistant","reusable prompts","playbook"],"archetype":"table","file":"ai"},
+  {"id":"agent-handoff","name":"Agent handoff map","description":"Who hands what to whom when people and agents share a piece of work, and the check that has to pass at each handoff.","categories":["ai","operations"],"keywords":["agent handoff","ai agent","human in the loop","workflow","automation","review","acceptance criteria","process"],"archetype":"flow","file":"ai"},
+  {"id":"eval-review","name":"Eval review board","description":"Go through test cases for an AI feature: the input, what good looks like, what it actually said and the verdict.","categories":["ai","engineering"],"keywords":["evals","evaluation","llm testing","test cases","quality review","ai quality","regression","rubric"],"archetype":"table","file":"ai"},
+  {"id":"human-agent-workshop","name":"Human + agent workshop","description":"Sort a team’s tasks by how much judgement and how much repetition they involve, to decide what agents do and what people keep.","categories":["ai","meetings","strategy"],"keywords":["ai workshop","automation","human in the loop","agents","task mapping","delegation","ai adoption","workshop"],"archetype":"matrix","file":"ai"},
+  {"id":"ai-use-case-canvas","name":"AI use case canvas","description":"Think an AI idea through before building it: the problem, the people, the data, what good looks like, risks and who stays in the loop.","categories":["ai","product","strategy"],"keywords":["ai use case","ai project","machine learning","llm","feasibility","ai strategy","canvas","proposal"],"archetype":"canvas","file":"ai"},
+  {"id":"agent-task-brief","name":"Agent task brief","description":"Brief an AI agent like a new colleague: the goal, the context, the limits, when it is done, which tools it may use and when to stop and ask.","categories":["ai","planning"],"keywords":["agent brief","task brief","ai agent","instructions","system prompt","delegation","guardrails","escalation"],"archetype":"prompts","file":"ai"},
+  {"id":"ai-risk-review","name":"AI risk review","description":"Check an AI feature against the risks that matter before launch: how likely, how bad, what you do about it and who owns it.","categories":["ai","operations"],"keywords":["ai risk","responsible ai","risk assessment","ai safety","privacy","bias","governance","launch review"],"archetype":"table","file":"ai"},
   {"id":"pestle","name":"PESTLE analysis","description":"Scan the outside world in six lenses: political, economic, social, technological, legal and environmental forces that could affect you.","categories":["consulting","strategy"],"keywords":["pestle","pest","macro environment","external analysis","market scan","trends","strategy"],"archetype":"canvas","file":"consulting"},
   {"id":"five-forces","name":"Five competitive forces","description":"How attractive is a market? Look at rivals, new entrants, substitutes and the bargaining power of buyers and suppliers.","categories":["consulting","strategy"],"keywords":["five forces","industry analysis","competition","market attractiveness","bargaining power","substitutes","barriers to entry"],"archetype":"hub","file":"consulting"},
   {"id":"value-proposition-fit","name":"Value proposition fit","description":"Line up what customers are trying to get done, what gets in their way and what they wish for, against what you offer and how it helps.","categories":["consulting","product","sales"],"keywords":["value proposition","product market fit","customer needs","pains","benefits","offer design","jobs"],"archetype":"canvas","file":"consulting"},
