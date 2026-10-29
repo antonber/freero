@@ -2,7 +2,36 @@
 // (see Host in engine/api.ts). Used from app/board/.
 import type { ResolvedObject, SavedTemplateSummary } from '@freero/shared';
 import type { ElementsSnapshot, Host, HostUser, LinkPreview, SavedTemplateInfo, VersionHistory } from '@engine';
-import { api } from './api/client';
+import { api, wsBase } from './api/client';
+
+/** Host.docs (KAI-162): docs made next to `boardId`, their sockets and Markdown downloads. */
+export function docsFrom(boardId: string | null, navigate: (path: string) => void): NonNullable<Host['docs']> {
+  return {
+    syncUrl: `${wsBase()}/ws/docs`,
+    async create({ title, markdown }) {
+      const { doc } = await api.createDoc({ title, markdown, ...(boardId ? { fromBoard: boardId } : {}) });
+      return { id: doc.id, title: doc.title };
+    },
+    async exportMarkdown(docId) {
+      const md = await api.docMarkdown(docId);
+      saveText(md, `${docFileName(md)}.md`, 'text/markdown;charset=utf-8');
+    },
+    requestAccess: (docId) => navigate(`/doc/${encodeURIComponent(docId)}`),
+  };
+}
+
+/** A file name from a doc's first heading (characters file systems refuse dropped). */
+export function docFileName(markdown: string, fallback = 'doc'): string {
+  const heading = /^#{1,6}\s+(.+)$/m.exec(markdown)?.[1] ?? fallback;
+  return heading.replace(/[\\/:*?"<>|#]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || fallback;
+}
+
+/** Saves text as a file on the person's computer. */
+export function saveText(text: string, name: string, type: string): void {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  saveAs(url, name);
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
 
 const toTemplateInfo = (t: SavedTemplateSummary): SavedTemplateInfo => ({
   id: t.id,

@@ -27,6 +27,8 @@ const BoardPage = lazy(() => import('./board/BoardPage'));
 const OperatorPreviewPage = lazy(() => import('./pages/operator/OperatorPreviewPage'));
 // A live board view inside an AI assistant (MCP Apps, KAI-171).
 const EmbedBoardPage = lazy(() => import('./embed/EmbedBoardPage'));
+// Docs (KAI-162): the page and its editor load on demand.
+const DocPage = lazy(() => import('./pages/doc/DocPage'));
 
 export function App() {
   return (
@@ -110,6 +112,16 @@ export function App() {
                 <Suspense fallback={<FullPageSpinner label="Opening board" />}>
                   <EmbedBoardPage />
                 </Suspense>
+              }
+            />
+            <Route
+              path="/doc/:id"
+              element={
+                <RequireAuth>
+                  <Suspense fallback={<FullPageSpinner label="Opening doc" />}>
+                    <DocPage />
+                  </Suspense>
+                </RequireAuth>
               }
             />
             <Route path="*" element={<NotFoundPage />} />

@@ -58,6 +58,21 @@ export type { DockHeaderProps } from './ui/DockHeader';
 export { StaticBoardView } from './canvas/StaticBoardView';
 export type { StaticBoardViewProps } from './canvas/StaticBoardView';
 
+// [additive, KAI-152] A LIVE board (or frame) inside something else (a doc): its own engine session,
+// doc and socket, admitted with the reader's access to that board. Read-only, non-interactive.
+export { LiveBoardView } from './canvas/LiveBoardView';
+export type { LiveBoardViewProps, LiveBoardStatus } from './canvas/LiveBoardView';
+
+// [additive, KAI-162] Docs: another object's document (its own Yjs doc and socket, never the
+// board's), the collaborative editor (BlockNote core, loaded on first use) and its comments (the
+// boards' comment records, a thread's elementId = the block it is on).
+export { DocEditor } from './docs/DocEditor';
+export type { DocEditorProps, DocHandle } from './docs/DocEditor';
+export { useObjectDoc, useObjectDocState } from './docs/useObjectDoc';
+export type { ObjectDocStore, ObjectDocState, DocPeer } from './docs/useObjectDoc';
+export { docThreads, newThread, reply as replyRecord, setResolved, deleteRecord } from './docs/comments';
+export type { DocThread, DocCommentMessage, CommentAuthor } from './docs/comments';
+
 // Renders an element's rich-text field; switches to the shared editor while editing.
 export { ElementText } from './text/ElementText';
 export type { ElementTextProps } from './text/ElementText';

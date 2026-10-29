@@ -109,3 +109,13 @@
   height: 100%;
   overflow: hidden;
 }
+
+/* [additive, KAI-152] <LiveBoardView>: a live, non-interactive board inside a doc. The host owns
+   clicks (open the board); the canvas never takes the wheel or a drag from the page around it. */
+.fr-live-board {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}

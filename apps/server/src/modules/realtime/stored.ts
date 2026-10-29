@@ -5,6 +5,9 @@
 import * as Y from 'yjs';
 import { loadDoc } from './docStore';
 import { viewOf, type BoardView } from './view';
+import type { DocBlock } from '@freero/shared';
+import { COMMENTS_COLLECTION } from './comments';
+import { readDocBlocks } from './docContent';
 
 /** Null when nothing was ever saved for the board. */
 export async function storedBoardView(boardId: string): Promise<BoardView | null> {
@@ -18,6 +21,19 @@ export async function storedBoardView(boardId: string): Promise<BoardView | null
     const collections = new Map<string, ReadonlyMap<string, unknown>>();
     for (const name of doc.share.keys()) collections.set(name, new Map(view.collection(name)));
     return { ...view, collection: (name) => collections.get(name) ?? new Map() };
+  } finally {
+    doc.destroy();
+  }
+}
+
+/** A doc's content as SAVED (KAI-162): its blocks and comment records; null when nothing was ever saved. */
+export async function storedDocContent(docId: string): Promise<{ blocks: DocBlock[]; comments: ReadonlyMap<string, unknown> } | null> {
+  const stored = await loadDoc(docId);
+  if (!stored.state) return null;
+  const doc = new Y.Doc();
+  try {
+    Y.applyUpdate(doc, stored.state);
+    return { blocks: readDocBlocks(doc), comments: new Map(doc.getMap<unknown>(COMMENTS_COLLECTION).entries()) };
   } finally {
     doc.destroy();
   }

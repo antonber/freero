@@ -72,6 +72,12 @@ export default defineConfig({
       'y-protocols/awareness',
       'lib0/encoding',
       'lib0/decoding',
+      // The doc editor (KAI-162) binds to the same yjs through y-prosemirror: bundled together.
+      'y-prosemirror',
+      '@blocknote/core',
+      '@blocknote/core/yjs',
+      '@blocknote/react',
+      '@blocknote/ariakit',
     ],
   },
   server: {

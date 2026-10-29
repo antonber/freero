@@ -1,4 +1,4 @@
-import { BOARD_REMOVED, DOWNLOADS_RESTRICTED, isGuestId, LINK_PASSWORD_REQUIRED, TRASH_RETENTION_DAYS, type BoardPermissions, type BoardSummary, type LinkAccess, type Role } from '@freero/shared';
+import { BOARD_REMOVED, DOWNLOADS_RESTRICTED, isGuestId, LINK_PASSWORD_REQUIRED, TRASH_RETENTION_DAYS, type BoardPermissions, type BoardSummary, type LinkAccess, type ObjectKind, type Role } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { badRequest, forbidden, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
@@ -45,7 +45,8 @@ export const TRASH_RETENTION_MS = TRASH_RETENTION_DAYS * DAY_MS;
 export const DEFAULT_TITLE = 'Untitled board';
 
 /** A board as an audit event's target (its title as it is now). */
-export const boardTarget = (b: { id: string; title: string }) => ({ type: 'board', id: b.id, label: b.title });
+/** The audit log's target for a container: a board, or a doc (KAI-162). */
+export const boardTarget = (b: { id: string; title: string; kind?: ObjectKind }) => ({ type: b.kind === 'doc' ? 'doc' : 'board', id: b.id, label: b.title });
 
 /**
  * Throws unless `user` (with `role` on the board) may set its link to `linkAccess`: the owner only,
@@ -97,7 +98,7 @@ export async function recordExport(boardId: string, userId: string, format: unkn
   const { board, access } = await requireAccess(boardId, userId);
   await requireDownload(board, userId, access, 'export');
   const f = (EXPORT_FORMATS as readonly unknown[]).includes(format) ? (format as string) : 'other';
-  await recordAudit({ action: 'board.exported', workspaceId: board.workspaceId, actorId: userId, target: boardTarget(board), metadata: { format: f } });
+  await recordAudit({ action: board.kind === 'doc' ? 'doc.exported' : 'board.exported', workspaceId: board.workspaceId, actorId: userId, target: boardTarget(board), metadata: { format: f } });
 }
 
 /**
@@ -262,6 +263,7 @@ export async function toSummary(
   const ownerName = extra?.ownerName ?? (await getUser(board.ownerId))?.name ?? 'Unknown';
   return {
     id: board.id,
+    kind: board.kind,
     title: board.title,
     description: board.description,
     ownerId: board.ownerId,
@@ -395,6 +397,8 @@ export async function createBoard(
   place: BoardPlace = {},
   /** The board it is a copy of (duplicates): carried by its `board.created` event. */
   copyOf?: string,
+  /** What it holds (KAI-162): a board, or a doc (modules/docs). Same quota, same rules. */
+  kind: ObjectKind = 'board',
 ): Promise<Board> {
   const workspaceId = place.workspaceId || (await ensurePersonalWorkspace(ownerId));
   const projectId = place.projectId || null;
@@ -409,6 +413,7 @@ export async function createBoard(
       const now = Date.now();
       const board: Board = {
         id: newId(10),
+        kind,
         title,
         description,
         ownerId,
@@ -429,8 +434,8 @@ export async function createBoard(
         callJitsi: false,
       };
       await repo.insertBoard(board);
-      await recordAudit({ action: 'board.created', workspaceId, actorId: ownerId, target: boardTarget(board), metadata: { projectId } });
-      await repo.appendBoardEvent({ type: 'board.created', boardId: board.id, workspaceId, actorId: ownerId, title, ...(copyOf ? { copyOf } : {}) });
+      await recordAudit({ action: kind === 'doc' ? 'doc.created' : 'board.created', workspaceId, actorId: ownerId, target: boardTarget(board), metadata: { projectId } });
+      await repo.appendBoardEvent({ type: 'board.created', boardId: board.id, workspaceId, actorId: ownerId, title, ...(copyOf ? { copyOf } : {}), ...(kind === 'doc' ? { kind } : {}) });
       return board;
     },
   );
@@ -646,7 +651,7 @@ export async function duplicateBoard(source: Board, userId: string, role: Role):
   // Pending suggestions stay with the board they were proposed for (KAI-169).
   const editors = atLeast(role, 'editor') ? await snapshotBoardLayer(source.id, 'editors', { withoutSuggestions: true }) : null;
   const made = await repo.transaction(async () => {
-    const copy = await createBoard(userId, `Copy of ${source.title}`.slice(0, 200), source.description, 'none', place, source.id);
+    const copy = await createBoard(userId, `Copy of ${source.title}`.slice(0, 200), source.description, 'none', place, source.id, source.kind);
     await recordAudit({
       action: 'board.duplicated',
       workspaceId: source.workspaceId,

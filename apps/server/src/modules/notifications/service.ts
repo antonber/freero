@@ -42,17 +42,17 @@ export async function notify(n: NewNotification): Promise<boolean> {
   if (n.actorId && n.actorId === n.userId) return false;
   if (isGuestId(n.userId)) return false; // guests have no inbox
   if (n.actorId && isGuestId(n.actorId)) throw new Error('notify: a guest is not an account; pass actorId null and data.actorName');
-  if (n.boardId) {
-    const { role } = await getBoardAccess(n.boardId, n.userId);
-    if (!role || (n.editorsOnly && role !== 'owner' && role !== 'editor')) return false;
-  }
+  const access = n.boardId ? await getBoardAccess(n.boardId, n.userId) : null;
+  if (access && (!access.role || (n.editorsOnly && access.role !== 'owner' && access.role !== 'editor'))) return false;
+  // About a doc (KAI-162): its links open the doc page.
+  const data = access?.kind === 'doc' ? { ...n.data, objectKind: 'doc' as const } : n.data;
   const created = await repo.insert({
     id: newId(16),
     userId: n.userId,
     type: n.type,
     actorId: n.actorId,
     boardId: n.boardId,
-    data: n.data,
+    data,
     dedupeKey: n.dedupeKey ?? null,
     createdAt: Date.now(),
   });

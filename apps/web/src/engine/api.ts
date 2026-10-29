@@ -119,6 +119,11 @@ export interface Host {
      * be framed besides the built-in providers. Absent: on, no extra origins.
      */
     embeds?: { enabled: boolean; extraOrigins: string[] };
+    /**
+     * [additive, KAI-152] This board is shown live INSIDE another object (LiveBoardView): items that
+     * would embed other live objects (a doc item) show a card instead, so embeds never nest without end.
+     */
+    embedded?: boolean;
   };
   /** Full ws URL prefix; engine connects WebsocketProvider(syncUrl, board.id, doc). */
   syncUrl: string;
@@ -294,6 +299,24 @@ export interface Host {
    * caller's view of the activity and rejects with a showable message. Absent in the offline sandbox.
    */
   engage?: HostEngage;
+  /**
+   * [additive, KAI-162] Docs from the board: a doc is its own object (`freero://doc/<id>`, page
+   * `/doc/<id>`) with its own access, document and socket. Absent where there are no docs (the
+   * offline sandbox, guests): hide doc entry points.
+   */
+  docs?: HostDocs;
+}
+
+/** [additive] `Host.docs` (KAI-162). Calls reject with a message fit for a toast. */
+export interface HostDocs {
+  /** Socket prefix of docs (`useObjectDoc(id, syncUrl)`): the server checks the reader's access to EACH doc. */
+  syncUrl: string;
+  /** A new doc next to this board (its workspace and project when the person may create there), optionally from Markdown. */
+  create(input: { title?: string; markdown?: string }): Promise<{ id: string; title: string }>;
+  /** Saves the doc as a Markdown file (the downloads policy of its workspace applies; recorded as an export). */
+  exportMarkdown(docId: string): Promise<void>;
+  /** Opens the access request page of a doc this person can't open. */
+  requestAccess(docId: string): void;
 }
 
 /** [additive] `Host.engage` (wire: @freero/shared `ActivityState`, `ActivityAnswer`). */

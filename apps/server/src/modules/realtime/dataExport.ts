@@ -4,7 +4,9 @@
 // (hidden frames' contents) for owners/editors, and their OWN private layer — never anyone else's.
 // Also the comments a person wrote, with the thread and element they belong to.
 import * as Y from 'yjs';
+import { DOC_FRAGMENT, docToMarkdown } from '@freero/shared';
 import { COMMENTS_COLLECTION } from './comments';
+import { readDocBlocks } from './docContent';
 import { privateLayerOf } from './layers';
 import { snapshotBoardDoc, snapshotBoardLayer } from './rooms';
 
@@ -14,6 +16,8 @@ export interface BoardContentExport {
   /** Every top-level collection as JSON (elements, settings, comments, tags, …). */
   json: Record<string, unknown>;
   layers: Array<{ name: 'editors' | 'private'; state: Uint8Array; json: Record<string, unknown> }>;
+  /** A doc's document as Markdown (KAI-162), next to its blocks in `json`. */
+  markdown?: string;
 }
 
 function decode(state: Uint8Array | null): Record<string, unknown> {
@@ -22,7 +26,8 @@ function decode(state: Uint8Array | null): Record<string, unknown> {
   try {
     Y.applyUpdate(doc, state);
     const out: Record<string, unknown> = {};
-    for (const name of [...doc.share.keys()].sort()) out[name] = doc.getMap(name).toJSON();
+    // A doc's document is a tree (its blocks), the rest maps of JSON values.
+    for (const name of [...doc.share.keys()].sort()) out[name] = name === DOC_FRAGMENT ? readDocBlocks(doc) : doc.getMap(name).toJSON();
     return out;
   } finally {
     doc.destroy();
@@ -40,7 +45,9 @@ export async function exportBoardContent(boardId: string, opts: { editorsLayer: 
     const s = await snapshotBoardLayer(boardId, privateLayerOf(opts.privateLayerOf));
     if (s) layers.push({ name: 'private', state: s, json: decode(s) });
   }
-  return { state, json: decode(state), layers };
+  const json = decode(state);
+  const blocks = json[DOC_FRAGMENT];
+  return { state, json, layers, ...(Array.isArray(blocks) && blocks.length ? { markdown: docToMarkdown(blocks) } : {}) };
 }
 
 export interface CommentThreadExport {

@@ -393,8 +393,9 @@ const providers = new Set();
  * `port`: the instance to connect to (default: the main server).
  */
 /**
- * `opts.path` / `opts.protocols`: another socket route and its subprotocols — a live board view in an
- * AI assistant signs in with its token as a subprotocol on /ws/embed/boards (KAI-171), no cookie.
+ * `opts.path` / `opts.protocols`: another socket route and its subprotocols — '/ws/docs' for a doc's
+ * document (KAI-162); a live board view in an AI assistant signs in with its token as a subprotocol on
+ * /ws/embed/boards (KAI-171), no cookie.
  */
 function connectDoc(user, boardId, prepare, port = user.port ?? server.port, opts = {}) {
   const cookie = user.cookie;
@@ -523,9 +524,9 @@ function closeAllDocs() {
 }
 
 /** Opens a raw socket and resolves with the close code the server uses (`port`: default the main server). */
-function wsCloseCode(boardId, cookie, port = server?.port) {
+function wsCloseCode(boardId, cookie, port = server?.port, wsPath = '/ws/boards') {
   return new Promise((resolve) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/boards/${boardId}`, {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}${wsPath}/${boardId}`, {
       headers: cookie ? { cookie } : {},
     });
     const t = setTimeout(() => {
@@ -7144,6 +7145,150 @@ async function webhooksChecks() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Docs (KAI-162, KAI-152, KAI-124): a doc's Yjs document over /ws/docs with real clients — on two
+// instances (one Postgres, one Redis) when DATABASE_URL and REDIS_URL are set, else one.
+// ---------------------------------------------------------------------------
+
+/** Appends a paragraph in the editor's own node layout (blockGroup > blockContainer > paragraph > text). */
+function appendParagraph(doc, id, text) {
+  const root = doc.getXmlFragment('document-store');
+  doc.transact(() => {
+    let group = root.toArray().find((n) => n instanceof Y.XmlElement && n.nodeName === 'blockGroup');
+    if (!group) {
+      group = new Y.XmlElement('blockGroup');
+      root.insert(root.length, [group]);
+    }
+    const container = new Y.XmlElement('blockContainer');
+    container.setAttribute('id', id);
+    const para = new Y.XmlElement('paragraph');
+    const t = new Y.XmlText();
+    t.insert(0, text);
+    para.insert(0, [t]);
+    container.insert(0, [para]);
+    group.insert(group.length, [container]);
+  });
+}
+const docText = (c) => c.doc.getXmlFragment('document-store').toString();
+
+async function docsChecks() {
+  const REDIS_URL = process.env.REDIS_URL?.trim();
+  const multi = !!(ADMIN_URL && REDIS_URL);
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-docs-'));
+  const procs = [];
+  const clients = [];
+  try {
+    const url = ADMIN_URL ? await createDatabase() : null;
+    const env = { RATE_LIMIT_SIGNUP: '200/1h', RATE_LIMIT_INVITE: '500/1h', RATE_LIMIT_SEARCH: '2000/1m', FREERO_SNAPSHOT_EVERY_MS: '1000', ...(url ? { DATABASE_URL: url } : {}), ...(multi ? { REDIS_URL } : {}) };
+    const up = await check(`docs: ${multi ? 'two instances on one database and one Redis' : 'the server boots'}`, async () => {
+      for (let i = 0; i < (multi ? 2 : 1); i++) procs.push(await spawnServer(path.join(dataDir, `i${i}`), env));
+      await Promise.all(procs.map((p) => waitUp(p)));
+    });
+    if (!up) return;
+    const one = procs[0].port;
+    const two = procs[procs.length - 1].port;
+    const people = {};
+    for (const [label, port] of [['Author', one], ['Editor', two], ['Commenter', two], ['Stranger', one]]) {
+      const u = new User(`Doc${label}`, port);
+      await u.signup();
+      // Mail goes to the outbox of the instance that sent it.
+      await u.verifyEmail(path.join(dataDir, port === one ? 'i0' : `i${procs.length - 1}`));
+      people[label] = u;
+    }
+    const { Author: A, Editor: E, Commenter: C, Stranger: S } = people;
+    const join = async (u, id, port = u.port, wsPath = '/ws/docs') => {
+      const c = connectDoc(u, id, undefined, port, { path: wsPath });
+      clients.push(c);
+      await c.ready();
+      return c;
+    };
+    const created = await A.req('POST', '/api/docs', { title: 'Launch memo', markdown: '# Launch memo\n\nWe ship in May.\n' });
+    const doc = created.json?.doc;
+    const board = (await A.req('POST', '/api/boards', { title: 'Launch board' })).json.board;
+
+    await check('a doc made from Markdown is a doc (listed with its kind, opened at /doc/<id>) and its first content is in its Yjs document', async () => {
+      assert(created.status === 201 && doc.kind === 'doc', created.text);
+      const c = await join(A, doc.id);
+      assert(docText(c).includes('We ship in May.'), docText(c));
+      const list = (await A.req('GET', '/api/boards')).json.boards;
+      assert(list.some((b) => b.id === doc.id && b.kind === 'doc'), 'not listed as a doc');
+      c.destroy();
+    });
+
+    await check(`two editors co-edit a doc${multi ? ' from two instances' : ''}: each one's paragraph reaches the other at once, and both are saved`, async () => {
+      for (const [u, role] of [[E, 'editor'], [C, 'commenter']]) assert((await A.req('POST', `/api/boards/${doc.id}/members`, { email: u.email, role })).status === 201, `invite ${u.label}`);
+      const a = await join(A, doc.id, one);
+      const e = await join(E, doc.id, two);
+      appendParagraph(a.doc, 'pa', 'Written by the author');
+      appendParagraph(e.doc, 'pe', 'Written by the editor');
+      await waitFor(() => docText(a).includes('Written by the editor') && docText(e).includes('Written by the author'), 8000, 'each paragraph on the other side');
+      a.destroy();
+      e.destroy();
+      for (const p of procs) await waitUnloaded(p);
+      const md = (await A.req('GET', `/api/docs/${doc.id}/markdown`)).text;
+      assert(md.includes('Written by the author') && md.includes('Written by the editor'), md);
+    });
+
+    await check('the doc socket admits only people with access to THE DOC: a stranger, a board socket on a doc and a doc socket on a board are all refused (4403)', async () => {
+      assert((await wsCloseCode(doc.id, S.cookie, one, '/ws/docs')) === 4403, 'stranger on the doc');
+      assert((await wsCloseCode(doc.id, A.cookie, one, '/ws/boards')) === 4403, 'a board socket on a doc');
+      assert((await wsCloseCode(board.id, A.cookie, one, '/ws/docs')) === 4403, 'a doc socket on a board');
+    });
+
+    await check('a commenter comments on a block (and the @mentioned author is notified with a /doc link) but can never change the text', async () => {
+      const a = await join(A, doc.id, one);
+      const c = await join(C, doc.id, two);
+      const t = Date.now();
+      c.doc.transact(() => {
+        c.doc.getMap('comments').set('t:t1', { kind: 'thread', id: 't1', x: 0, y: 0, elementId: 'pa', createdAt: t, createdBy: C.id });
+        c.doc.getMap('comments').set('m:t1:m1', { kind: 'message', threadId: 't1', id: 'm1', authorId: C.id, authorName: C.name, text: `Is May firm, <@${A.id}>?`, createdAt: t });
+      });
+      appendParagraph(c.doc, 'pc', 'COMMENTER-TEXT');
+      await waitFor(() => a.doc.getMap('comments').has('m:t1:m1'), 8000, 'the comment at the author');
+      await settled(c, [a]);
+      assert(!docText(a).includes('COMMENTER-TEXT'), 'the commenter’s text reached the author');
+      await waitFor(async () => ((await A.req('GET', '/api/notifications')).json.notifications ?? []).some((n) => n.type === 'comment.mention' && n.link === `/doc/${doc.id}?thread=t1`), 10_000, 'the mention notification with a doc link');
+      a.destroy();
+      c.destroy();
+    });
+
+    await check('restoring a version brings the document back for everyone connected, and keeps the comments', async () => {
+      const a = await join(A, doc.id, one);
+      const e = await join(E, doc.id, two);
+      const named = await A.req('POST', `/api/boards/${doc.id}/versions`, { name: 'Before cuts' });
+      assert(named.status === 201, named.text);
+      appendParagraph(e.doc, 'late', 'A LATE PARAGRAPH');
+      await waitFor(() => docText(a).includes('A LATE PARAGRAPH'), 8000, 'the late paragraph');
+      await settled(e, [a]);
+      const r = await A.req('POST', `/api/boards/${doc.id}/versions/${named.json.version.id}/restore`);
+      assert(r.status === 200, r.text);
+      await waitFor(() => !docText(e).includes('A LATE PARAGRAPH') && !docText(a).includes('A LATE PARAGRAPH'), 8000, 'the restore on both clients');
+      assert(docText(e).includes('Written by the author') && e.doc.getMap('comments').has('m:t1:m1'), 'restored too much');
+      a.destroy();
+      e.destroy();
+    });
+
+    await check('a doc’s words are found by its readers (at the block), never by a stranger; a live board embed in it is a backlink of the board', async () => {
+      const app = await A.req('POST', `/api/docs`, { markdown: `# Embeds\n\nPlanning notes\n\n![Live board](freero://board/${board.id})\n` });
+      const hits = async (u, q) => (await u.req('GET', `/api/search?q=${encodeURIComponent(q)}`)).json.hits ?? [];
+      await waitFor(async () => (await hits(E, 'written author')).some((h) => h.path === `/doc/${doc.id}?block=pa`), 15_000, 'the doc paragraph in search');
+      assert((await hits(S, 'written author')).length === 0, 'a stranger found the doc');
+      await waitFor(async () => {
+        const r = await A.req('GET', `/api/objects/backlinks?uri=${encodeURIComponent(`freero://board/${board.id}`)}`);
+        return (r.json?.backlinks ?? []).some((l) => l.source.uri === `freero://doc/${app.json.doc.id}` && l.kinds.includes('embed'));
+      }, 15_000, 'the board embed as a backlink');
+    });
+  } finally {
+    for (const c of clients) c.destroy();
+    for (const p of procs) await stopProc(p);
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
 // `--only <group>[,<group>…]` runs some groups, e.g. to loop one while hunting a flake.
 const SUITES = {
   main: run,
@@ -7173,6 +7318,7 @@ const SUITES = {
   collab: collabChecks,
   search: searchChecks,
   webhooks: webhooksChecks,
+  docs: docsChecks,
 };
 const onlyArg = process.argv.indexOf('--only');
 const only = onlyArg >= 0 ? (process.argv[onlyArg + 1] ?? '').split(',').filter(Boolean) : Object.keys(SUITES);

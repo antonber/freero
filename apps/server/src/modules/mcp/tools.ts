@@ -11,6 +11,10 @@ import { API_MAX_DELETE_PER_CALL, API_MAX_ITEMS_PER_CALL, LAYOUT_LIMITS, STICKY_
 import { appUrl } from '../../platform/mail';
 import {
   addComment,
+  appendToDoc,
+  createDocFor,
+  listDocs,
+  readDocFor,
   backlinksForApi,
   resolveForApi,
   searchContent,
@@ -187,6 +191,74 @@ export const TOOLS: McpTool[] = [
       const { backlinks } = await backlinksForApi(call, a.uri);
       const links = backlinks.map((l) => ({ from: l.source.uri, fromBoard: l.board.id, fromBoardTitle: l.board.title, kinds: l.kinds, to: l.target, url: appUrl(call.req, l.source.path) }));
       return untrustedJson({ backlinks: links }, { returned: links.length });
+    },
+  }),
+
+  // ---- docs (KAI-162): documents next to boards, shared and opened like boards ----
+  tool({
+    name: 'search_docs',
+    title: 'Search docs',
+    description: 'Finds docs (collaborative documents next to boards) you can open, most recently changed first. Search by title with `query`. Returns each doc’s id (for read_doc and append_to_doc), title, link and your role. The `search` tool also finds words inside docs.',
+    scope: 'boards:read',
+    annotations: READ,
+    input: {
+      query: z.string().max(200).optional().describe('Words in the doc title.'),
+      workspaceId: z.string().max(200).optional().describe('Only docs of this workspace (from list_workspaces).'),
+      limit: z.number().int().min(1).max(50).optional().describe('How many docs (default 20).'),
+      cursor: z.string().max(20).optional().describe('nextCursor from a previous call, for the next page.'),
+    },
+    async run(call, a) {
+      const out = await listDocs(call, { q: a.query, workspace: a.workspaceId, limit: a.limit ?? 20, cursor: a.cursor });
+      const docs = out.docs.map((d) => ({ id: d.id, title: d.title, url: d.url, role: d.role, workspaceId: d.workspaceId, updatedAt: new Date(d.updatedAt).toISOString() }));
+      return untrustedJson({ docs }, { nextCursor: out.nextCursor });
+    },
+  }),
+
+  tool({
+    name: 'read_doc',
+    title: 'Read a doc',
+    description:
+      'Reads a doc as Markdown: headings, lists, checklists, tables, code, quotes, images and links. A live board frame embedded in the doc reads as an image of its freero://board address (read that board with get_board_outline).',
+    scope: 'boards:read',
+    annotations: READ,
+    input: { docId: z.string().min(1).max(200).describe('The doc id (from search_docs, or the last part of a doc URL /doc/<id>).') },
+    async run(call, a) {
+      const out = await readDocFor(call, a.docId);
+      return untrustedMarkdown(out.markdown, `Doc ${out.doc.id} (${out.doc.url}), your role: ${out.doc.role}.`);
+    },
+  }),
+
+  tool({
+    name: 'create_doc',
+    title: 'Create a doc',
+    description:
+      'Creates a doc from Markdown (CommonMark with tables, task lists and strikethrough) — a write-up, decision record or plan next to the boards it came from. Without a title its first heading names it. Returns the doc’s id and link.',
+    scope: 'boards:write',
+    annotations: ADD,
+    input: {
+      markdown: z.string().max(1_000_000).describe('The content, as Markdown.'),
+      title: z.string().min(1).max(200).optional().describe('The doc title (default: its first heading).'),
+      workspaceId: z.string().max(200).optional().describe('Create it in this workspace (from list_workspaces); default: your personal one.'),
+    },
+    async run(call, a) {
+      const { doc } = await createDocFor(call, { markdown: a.markdown, title: a.title, workspaceId: a.workspaceId });
+      return plain(`Created doc ${doc.id} (${doc.url}).`, { docId: doc.id, url: doc.url });
+    },
+  }),
+
+  tool({
+    name: 'append_to_doc',
+    title: 'Add to a doc',
+    description: 'Adds Markdown at the end of a doc you can edit (a new section, notes, a table). Everyone with the doc open sees it at once.',
+    scope: 'boards:write',
+    annotations: ADD,
+    input: {
+      docId: z.string().min(1).max(200).describe('The doc id (from search_docs or create_doc).'),
+      markdown: z.string().min(1).max(1_000_000).describe('What to add, as Markdown.'),
+    },
+    async run(call, a) {
+      const out = await appendToDoc(call, a.docId, { markdown: a.markdown });
+      return plain(`Added ${out.blocks} block${out.blocks === 1 ? '' : 's'} to doc ${a.docId}.`, { blocks: out.blocks });
     },
   }),
 

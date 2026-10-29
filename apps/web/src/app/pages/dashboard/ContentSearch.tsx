@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Columns3,
+  FileText,
   Frame,
   GitBranch,
   LayoutDashboard,
@@ -37,7 +38,15 @@ const ITEM: Record<string, { label: string; icon: LucideIcon }> = {
   connector: { label: 'Connector', icon: Workflow },
 };
 const describe = (h: SearchHit): { label: string; icon: LucideIcon } =>
-  h.kind === 'board' ? { label: 'Board name', icon: LayoutDashboard } : h.kind === 'comment' ? { label: 'Comment', icon: MessageSquare } : (ITEM[h.itemType ?? ''] ?? { label: 'Item', icon: Shapes });
+  h.kind === 'board'
+    ? h.objectKind === 'doc'
+      ? { label: 'Doc name', icon: FileText }
+      : { label: 'Board name', icon: LayoutDashboard }
+    : h.kind === 'comment'
+      ? { label: 'Comment', icon: MessageSquare }
+      : h.objectKind === 'doc'
+        ? { label: 'In the doc', icon: FileText }
+        : (ITEM[h.itemType ?? ''] ?? { label: 'Item', icon: Shapes });
 
 /** The snippet with its matched words marked (React escapes the text: board content is untrusted). */
 function Snippet({ hit }: { hit: SearchHit }) {
@@ -121,10 +130,12 @@ export function ContentSearch({ q, search }: { q: string; search: ReturnType<typ
     <div className="fr-dash-search">
       {[...groups].map(([boardId, g]) => {
         const titleHit = g.hits.find((h) => h.kind === 'board');
+        // A doc's hits (KAI-162) open the doc.
+        const isDoc = g.hits.some((h) => h.objectKind === 'doc');
         return (
-        <section key={boardId} className="fr-dash-search__board" aria-label={g.title || 'Untitled board'}>
-          <button type="button" className="fr-dash-search__board-head" onClick={() => navigate(`/board/${encodeURIComponent(boardId)}`)}>
-            <LayoutDashboard size={16} aria-hidden />
+        <section key={boardId} className="fr-dash-search__board" aria-label={g.title || (isDoc ? 'Untitled doc' : 'Untitled board')}>
+          <button type="button" className="fr-dash-search__board-head" onClick={() => navigate(`/${isDoc ? 'doc' : 'board'}/${encodeURIComponent(boardId)}`)}>
+            {isDoc ? <FileText size={16} aria-hidden /> : <LayoutDashboard size={16} aria-hidden />}
             <span className="fr-dash-search__board-title">{titleHit ? <Snippet hit={titleHit} /> : g.title || 'Untitled board'}</span>
             <span className="fr-dash-search__count">
               {g.hits.length} {g.hits.length === 1 ? 'match' : 'matches'}

@@ -29,7 +29,8 @@ export type ElementType =
   | 'activity'
   | 'code'
   | 'timeline'
-  | 'timelinebar';
+  | 'timelinebar'
+  | 'doc';
 
 /**
  * An app (OAuth) or personal token acting for a person: what the board shows as "<name> for
@@ -537,6 +538,18 @@ export interface ObjectLinkElement extends BaseElement {
 }
 
 /**
+ * A doc on the board (KAI-124, KAI-152): the SAME object as the doc's own page (`freero://doc/<id>`),
+ * shown live from its own Yjs document and socket — the board stores only the address, never a
+ * copy. Each viewer's access is checked on the doc itself: someone who can't open it sees a
+ * "No access" card, whatever their role on the board.
+ */
+export interface DocElement extends BaseElement {
+  type: 'doc';
+  /** The doc's address (`freero://doc/<id>`). */
+  uri: string;
+}
+
+/**
  * A vector icon from the icon library. The drawing is stored IN the element (a short list of
  * SVG primitives on a 24×24 grid, stroke-only), so it renders and exports without loading the
  * icon set, and never changes when the library is upgraded.
@@ -793,7 +806,8 @@ export type BoardElement =
   | ActivityElement
   | CodeElement
   | TimelineElement
-  | TimelineBarElement;
+  | TimelineBarElement
+  | DocElement;
 
 export type ElementOf<T extends ElementType> = Extract<BoardElement, { type: T }>;
 

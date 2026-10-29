@@ -60,6 +60,8 @@ import type {
   BoardSummary,
   BoardVersion,
   CreateBoardRequest,
+  CreateDocRequest,
+  CreateDocResponse,
   DataExportInfo,
   ScimGroupMapping,
   ScimSettings,
@@ -245,6 +247,22 @@ export const api = {
   createBoard: (body: CreateBoardRequest = {}) =>
     request<{ board: BoardSummary }>('POST', '/api/boards', body),
   getBoard: (id: string) => request<{ board: BoardSummary }>('GET', `/api/boards/${id}`),
+  // docs (KAI-162): containers like boards — /api/boards/:id serves their summary, sharing, versions
+  createDoc: (body: CreateDocRequest = {}) => request<CreateDocResponse>('POST', '/api/docs', body),
+  /** The doc as Markdown (downloads policy; recorded as an export). */
+  async docMarkdown(id: string): Promise<string> {
+    const res = await fetch(`/api/docs/${encodeURIComponent(id)}/markdown`, { credentials: 'same-origin' });
+    if (!res.ok) {
+      let message = res.statusText;
+      try {
+        message = (await res.json()).error ?? message;
+      } catch {
+        // non-JSON error body
+      }
+      throw new ApiError(res.status, message);
+    }
+    return res.text();
+  },
   updateBoard: (id: string, body: UpdateBoardRequest) =>
     request<{ board: BoardSummary }>('PATCH', `/api/boards/${id}`, body),
   /** Moves the board to its owner's trash (restorable for TRASH_RETENTION_DAYS). */
