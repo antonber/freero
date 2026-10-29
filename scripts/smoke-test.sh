@@ -74,4 +74,10 @@ if [ -n "$TOKEN" ]; then
   echo "smoke: metrics ok"
 fi
 
+# Leave nothing behind on a real deployment: the throwaway account (and with it its board and
+# upload) goes through the normal self-service deletion.
+status="$(req POST /api/auth/account/delete -H 'Content-Type: application/json' --data '{"password":"smoke-password-123"}')"
+[ "$status" = 200 ] || fail "deleting the smoke account -> $status"
+echo "smoke: deleted the smoke account"
+
 echo "smoke: PASS"
