@@ -4,6 +4,7 @@
 // not blocked — and closes the ones that may no longer stay open. A view also closes when its
 // token expires (ws.ts); opening one again goes through the assistant, i.e. a fresh tool call.
 import type { ServerContext } from '../../platform/context';
+import { HttpError } from '../../platform/http';
 import { log, logError } from '../../platform/log';
 import { authenticateEmbedKey, EMBED_SESSION_PREFIX, useInWorkspace } from '../apiauth/index';
 import { boardWorkspaceId } from '../boards/index';
@@ -14,12 +15,17 @@ export async function viewsToClose(): Promise<string[]> {
   const keys = new Set([...liveSessionKeys()].filter((k) => k.startsWith(EMBED_SESSION_PREFIX)));
   const gone: string[] = [];
   for (const key of keys) {
+    // A database hiccup throws out of here (the next round tries again); only a real "no" closes.
+    const session = await authenticateEmbedKey(key);
+    if (!session) {
+      gone.push(key);
+      continue;
+    }
+    const workspaceId = await boardWorkspaceId(session.boardId);
     try {
-      const session = await authenticateEmbedKey(key);
-      if (!session) throw new Error('ended');
-      const workspaceId = await boardWorkspaceId(session.boardId);
       if (workspaceId) await useInWorkspace(session.cred, workspaceId);
-    } catch {
+    } catch (e) {
+      if (!(e instanceof HttpError)) throw e;
       gone.push(key);
     }
   }
