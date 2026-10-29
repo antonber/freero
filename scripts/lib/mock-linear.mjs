@@ -44,7 +44,9 @@ export async function startMockLinear({ port = 0, host = '127.0.0.1', apiKey = '
     state: { name: stateOf(i).name, type: stateOf(i).type },
     assignee: i.assigneeId ? users.find((u) => u.id === i.assigneeId) : null,
     labels: { nodes: i.labelIds.map((id) => ({ name: labels.find((l) => l.id === id).name })) },
-    team: { id: i.teamId, key: teams.find((t) => t.id === i.teamId).key },
+    team: { id: i.teamId, key: teams.find((t) => t.id === i.teamId).key, name: teams.find((t) => t.id === i.teamId).name },
+    project: i.projectName ? { name: i.projectName } : null,
+    parent: null,
     attachments: { nodes: i.attachments },
   });
   const touch = (i) => (i.updatedAt = new Date().toISOString());
@@ -58,6 +60,7 @@ export async function startMockLinear({ port = 0, host = '127.0.0.1', apiKey = '
     if (input.estimate !== undefined) i.estimate = input.estimate;
     if (input.stateId !== undefined) i.stateId = input.stateId;
     if (input.assigneeId !== undefined) i.assigneeId = input.assigneeId;
+    if (input.projectName !== undefined) i.projectName = input.projectName;
     touch(i);
   }
 

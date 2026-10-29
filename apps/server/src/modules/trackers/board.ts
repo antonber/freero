@@ -9,6 +9,7 @@ import {
   measureText,
   plainToRichText,
   richTextToPlain,
+  timelineLayout,
   TRACKER_PROVIDERS,
   type BoardElement,
   type CardElement,
@@ -19,6 +20,7 @@ import {
   type IssueValues,
   type KanbanElement,
   type Tag,
+  type TimelineElement,
   type TrackerIssueRecord,
   type TrackerSource,
 } from '@freero/shared';
@@ -56,6 +58,7 @@ export function sourceOf(el: BoardElement, tags: ReadonlyMap<string, Tag>, email
       card: {
         status: isStatusCategory(c.status) ? c.status : null,
         assignee: c.assigneeId ? emailOf(c.assigneeId) : null,
+        startDate: typeof c.startDate === 'string' && /^\d{4}-\d{2}-\d{2}/.test(c.startDate) ? c.startDate.slice(0, 10) : null,
         dueDate: typeof c.dueDate === 'string' && /^\d{4}-\d{2}-\d{2}/.test(c.dueDate) ? c.dueDate.slice(0, 10) : null,
         estimate: estimateNumber(c.estimate),
       },
@@ -124,6 +127,7 @@ export function unmappedOf(provider: TrackerProvider, sources: TrackerSource[]):
   const has = (f: IssueField) => provider.fields.includes(f);
   if (card) {
     if (card.assignee && !has('assignee')) out.push(`Assignee (${name} issues aren’t assigned from Freero)`);
+    if (card.startDate && !has('startDate')) out.push(`Start date (${name} has no start date Freero can set)`);
     if (card.dueDate && !has('dueDate')) out.push(`Due date (${name} has no due date Freero can set)`);
     if (card.estimate !== null && !has('estimate')) out.push(`Estimate (${name} has no estimate Freero can set)`);
   }
@@ -175,6 +179,8 @@ export function planPull(
     previousLabels: string[];
     userIdOf(email: string): string | null;
     newId(): string;
+    /** Now (ms), for a roadmap's Now / Next / Later columns. */
+    today?: number;
   },
 ): PullPlan {
   const patches = new Map<string, Record<string, unknown>>();
@@ -205,7 +211,15 @@ export function planPull(
       else notes.push(`The ${name} assignee isn’t someone on this board${pull.assignee.startsWith('~') ? '' : ` (${pull.assignee})`}, so the card’s assignee stayed.`);
     }
   }
+  if (pull.startDate !== undefined && ctx.fields.has('startDate')) for (const c of cards) patch(c.id, { startDate: pull.startDate });
   if (pull.dueDate !== undefined && ctx.fields.has('dueDate')) for (const c of cards) patch(c.id, { dueDate: pull.dueDate });
+  // Cards that are bars on a timeline (roadmap mode, KAI-160) move to their new dates in the same
+  // change, laid out by the timeline's own rule: open boards see the bar move.
+  const dated = cards.filter((c) => {
+    const p = patches.get(c.id);
+    return p && ('startDate' in p || 'dueDate' in p);
+  });
+  for (const t of timelinesOf(view, dated)) for (const u of relayTimeline(view, t, patches, ctx.today ?? Date.now())) patch(u.id, u.patch);
   if (pull.estimate !== undefined && ctx.fields.has('estimate'))
     for (const c of cards)
       patch(c.id, {
@@ -244,6 +258,33 @@ export function planPull(
     tags,
     notes,
   };
+}
+
+/** The timelines (KAI-122) these items are bars on. */
+function timelinesOf(view: Pick<BoardView, 'elements'>, items: BoardElement[]): TimelineElement[] {
+  const ids = new Set(items.map((el) => el.frameId).filter((id): id is string => !!id));
+  return view.elements.map((e) => e.el).filter((el): el is TimelineElement => el.type === 'timeline' && ids.has(el.id));
+}
+
+/** Calendar day number of a moment, in UTC (the server has no viewer's time zone). */
+export const dayNumber = (ms: number) => Math.floor(ms / 86_400_000);
+
+/**
+ * The patches that lay timeline `t` out again with `patches` applied to its members (their new
+ * dates): the shared planTimeline, as the timeline feature runs it after a local change.
+ */
+export function relayTimeline(
+  view: Pick<BoardView, 'elements'>,
+  t: TimelineElement,
+  patches: ReadonlyMap<string, Record<string, unknown>>,
+  nowMs: number,
+): Array<{ id: string; patch: Record<string, unknown> }> {
+  const members = view.elements
+    .map((e) => e.el)
+    .filter((el) => el.frameId === t.id && timelineLayout.isMemberType(el))
+    .map((el) => ({ el: { ...el, ...(patches.get(el.id) ?? {}) } as timelineLayout.Member, prev: undefined }));
+  const plan = timelineLayout.planTimeline(t, null, members, [], dayNumber(nowMs));
+  return plan.own ? [{ id: t.id, patch: plan.own as Record<string, unknown> }, ...plan.patches] : plan.patches;
 }
 
 /** The items as they will be once `plan` is applied (to read the board's values after a pull). */
@@ -371,6 +412,7 @@ export function importedCard(
     description: plainToRichText(issue.values.description.slice(0, 5000)),
     color: TAG_COLOR,
     status: issue.values.status ?? 'todo',
+    ...(issue.values.startDate ? { startDate: issue.values.startDate } : {}),
     dueDate: issue.values.dueDate ?? null,
     assigneeId: ctx.assigneeId,
     estimate: issue.values.estimate === null || issue.values.estimate === undefined ? null : String(issue.values.estimate),

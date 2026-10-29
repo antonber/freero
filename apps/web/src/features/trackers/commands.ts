@@ -1,6 +1,6 @@
-import { Download, ExternalLink, RefreshCw, TicketPlus, Unlink } from 'lucide-react';
+import { ChartGantt, Download, ExternalLink, RefreshCw, TicketPlus, Unlink } from 'lucide-react';
 import { defineCommands, type Editor } from '@engine';
-import { IMPORT_DIALOG, linkedIssues, openIssue, SEND_DIALOG, sendable, trackersAvailable } from './lib/links';
+import { IMPORT_DIALOG, linkedIssues, openIssue, selectedTimeline, SEND_DIALOG, sendable, trackersAvailable } from './lib/links';
 
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
 
@@ -37,6 +37,16 @@ export default defineCommands([
     palette: false,
     when: trackersAvailable,
     run: (editor) => editor.openPanel(IMPORT_DIALOG),
+  },
+  {
+    // Roadmap mode (KAI-160): a tracker query onto the selected timeline, as bars in lanes.
+    id: 'trackers.importToTimeline',
+    label: 'Import issues onto this timeline…',
+    icon: ChartGantt,
+    menus: ['context'],
+    palette: false,
+    when: (editor) => trackersAvailable(editor) && !!selectedTimeline(editor),
+    run: (editor) => editor.openPanel(IMPORT_DIALOG, { timelineId: selectedTimeline(editor)?.id }),
   },
   {
     id: 'trackers.open',

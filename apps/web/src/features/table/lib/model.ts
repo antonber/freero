@@ -109,6 +109,8 @@ function scaleTracks<T extends Track>(tracks: T[], key: 'w' | 'h', total: number
  * proportionally; otherwise w / h follow the columns / rows.
  */
 export function layoutTable(el: TableElement, prev?: TableElement): ElementPatch<TableElement> | null {
+  // The board view (KAI-123) has its own size; the grid's tracks are left as they are.
+  if (el.view === 'board') return null;
   let { cols, rows } = el;
   if (prev && el.w !== prev.w && Math.abs(el.w - sumW(cols)) > 0.5) cols = scaleTracks(cols, 'w', el.w, MIN_COL_W);
   if (prev && el.h !== prev.h && Math.abs(el.h - sumH(rows)) > 0.5) rows = scaleTracks(rows, 'h', el.h, MIN_ROW_H);

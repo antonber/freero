@@ -11,10 +11,10 @@ export interface PresentExt {
 
 export type Peer = PresenceState & { clientId: number };
 
-/** Frames in presentation order: by `index`, then creation time, then id. */
+/** Frames in presentation order: by `index`, then creation time, then id. Skipped slides (KAI-126) are left out. */
 export function slides(elements: readonly BoardElement[]): FrameElement[] {
   return elements
-    .filter((el): el is FrameElement => el.type === 'frame')
+    .filter((el): el is FrameElement => el.type === 'frame' && !el.skip)
     .sort((a, b) => a.index - b.index || a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1));
 }
 

@@ -109,3 +109,338 @@
   border-radius: 2px;
   box-shadow: 0 0 0 1px var(--fr-line);
 }
+
+.fr-table-fmt-btn.is-on {
+  color: var(--fr-primary);
+  background: var(--fr-primary-soft);
+}
+
+/* Typed cells (KAI-123). */
+.fr-table__typed {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--fr-font);
+}
+
+.fr-table__typed.is-number {
+  justify-content: flex-end;
+  font-variant-numeric: tabular-nums;
+}
+
+.fr-table__typed.is-checkbox {
+  justify-content: center;
+}
+
+.fr-table__typed.is-invalid {
+  color: #b3292e;
+  font-style: italic;
+}
+
+.fr-table__chip {
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #eceaf3;
+  color: #17162b;
+  font-size: 0.86em;
+  font-weight: 550;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-table__chip.is-unknown {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px #c9c6dc;
+}
+
+.fr-table__avatar {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #e9e4ff;
+  color: #4a2fdc;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.fr-table__person {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fr-table__check {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1.5px solid #a9a6c2;
+  border-radius: 4px;
+  background: #fff;
+  color: #fff;
+  cursor: pointer;
+}
+
+.fr-table__check.is-on {
+  border-color: var(--fr-primary);
+  background: var(--fr-primary);
+}
+
+.fr-table__check:disabled {
+  cursor: default;
+}
+
+.fr-table__check:focus-visible {
+  box-shadow: var(--fr-focus-ring);
+  outline: none;
+}
+
+.fr-table__input {
+  position: absolute;
+  inset: 2px;
+  width: calc(100% - 4px);
+  box-sizing: border-box;
+  border: 0;
+  padding: 0 6px;
+  background: #fff;
+  font: inherit;
+  font-family: var(--fr-font);
+  color: #17162b;
+  outline: none;
+}
+
+.fr-table__input.is-number {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The column menu button on a column's top cell (selected tables only). */
+.fr-table__colmenu {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  height: 22px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 0 1px #d9d6e8;
+  color: #4b4a63;
+  transform: translateY(-50%);
+  cursor: pointer;
+}
+
+.fr-table__colmenu:hover,
+.fr-table__colmenu.is-open {
+  background: #fff;
+  color: var(--fr-primary);
+}
+
+/* A filtered table: the shown rows, then a note where the hidden ones would be. */
+.fr-table.is-filtered {
+  bottom: auto;
+}
+
+.fr-table__filtered {
+  position: absolute;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 2px;
+  color: #686783;
+  font-family: var(--fr-font);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.fr-table__filtered button {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--fr-primary);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Board view: the rows as cards in a column per option. */
+.fr-table.is-board {
+  overflow: hidden;
+  background: #f7f6fb;
+}
+
+.fr-table-board {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  box-sizing: border-box;
+  font-family: var(--fr-font);
+}
+
+.fr-table-board__empty {
+  padding: 16px;
+  color: #686783;
+  font-family: var(--fr-font);
+}
+
+.fr-table-board__lane {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-self: stretch;
+  box-sizing: border-box;
+  padding: 8px;
+  border-radius: 10px;
+  background: #efeef6;
+}
+
+.fr-table-board__lane.is-over {
+  box-shadow: inset 0 0 0 2px var(--fr-select);
+}
+
+.fr-table-board__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 24px;
+  font-size: 13px;
+}
+
+.fr-table-board__count {
+  color: #686783;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.fr-table-board__card {
+  position: relative;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(23, 22, 43, 0.1), 0 0 0 1px rgba(23, 22, 43, 0.05);
+  font-size: 13px;
+}
+
+.fr-table-board__card[data-fr-interactive] {
+  cursor: grab;
+}
+
+.fr-table-board__card.is-dragging {
+  z-index: 5;
+  box-shadow: 0 10px 24px rgba(23, 22, 43, 0.2);
+  cursor: grabbing;
+}
+
+.fr-table-board__title {
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.fr-table-board__field {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+  color: #4b4a63;
+  font-size: 12px;
+}
+
+.fr-table-board__label {
+  color: #686783;
+}
+
+/* Popovers: a select column's options, the filter. */
+.fr-table-options,
+.fr-table-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 220px;
+  padding: 12px;
+}
+
+.fr-table-options__title,
+.fr-table-filter__title {
+  color: var(--fr-ink-3);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.fr-table-options__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fr-table-options__swatch {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(23, 22, 43, 0.12);
+}
+
+.fr-table-options__input,
+.fr-table-filter__input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  box-sizing: border-box;
+  padding: 0 8px;
+  border: 1px solid var(--fr-line-strong);
+  border-radius: var(--fr-radius-sm);
+  background: var(--fr-surface);
+  color: var(--fr-ink);
+  font: inherit;
+  font-size: 13px;
+}
+
+.fr-table-options__remove {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--fr-radius-sm);
+  background: transparent;
+  color: var(--fr-ink-3);
+  cursor: pointer;
+}
+
+.fr-table-options__remove:hover {
+  background: var(--fr-hover);
+  color: var(--fr-danger);
+}
+
+.fr-table-filter__clear {
+  align-self: flex-start;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--fr-primary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}

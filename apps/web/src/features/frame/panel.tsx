@@ -1,57 +1,14 @@
 import { memo, useMemo, useRef, useState } from 'react';
 import { Frame, Pencil, Play, Plus, Trash2 } from 'lucide-react';
-import { STICKY_COLORS, type BoardElement, type FrameElement } from '@freero/shared';
+import type { BoardElement, FrameElement } from '@freero/shared';
 import { DockHeader, definePanel, useCanEdit, useElements, useSelection, type Editor } from '@engine';
 import { Button, IconButton, Input } from '@ui';
 import { DEFAULT_FILL, isFrame, orderFrames, PANEL_ID, reorderPatches, TOOL_ID } from './lib/frames';
 import { renameFrame, zoomToFrame } from './lib/actions';
+import { Thumb } from './lib/Thumb';
+import { DeckPanel, DECK_PANEL_ID } from './lib/DeckPanel';
 
-const THUMB_W = 84;
-const THUMB_H = 56;
 const DRAG_PX = 4;
-
-function childColor(el: BoardElement): string {
-  switch (el.type) {
-    case 'sticky':
-      return STICKY_COLORS[el.color] ?? STICKY_COLORS.yellow;
-    case 'shape':
-      return el.fill !== 'transparent' ? el.fill : el.stroke;
-    case 'text':
-      return '#8A89A3';
-    case 'image':
-      return '#C9C7DC';
-    default: {
-      const c = (el as unknown as Record<string, unknown>).fill ?? (el as unknown as Record<string, unknown>).color;
-      return typeof c === 'string' && c !== 'transparent' ? c : '#B9B7CC';
-    }
-  }
-}
-
-/** A tiny live rendition of the frame: its background plus a block per child. */
-const Thumb = memo(function Thumb({ frame, children }: { frame: FrameElement; children: BoardElement[] }) {
-  const k = Math.min(THUMB_W / frame.w, THUMB_H / frame.h);
-  return (
-    <svg width={Math.max(4, frame.w * k)} height={Math.max(4, frame.h * k)} viewBox={`${frame.x} ${frame.y} ${frame.w} ${frame.h}`} aria-hidden>
-      <rect x={frame.x} y={frame.y} width={frame.w} height={frame.h} fill={frame.fill || DEFAULT_FILL} />
-      {children.map((el) =>
-        el.type === 'text' ? (
-          <rect key={el.id} x={el.x} y={el.y + el.h * 0.3} width={el.w} height={Math.max(el.h * 0.4, 2 / k)} rx={2 / k} fill={childColor(el)} />
-        ) : (
-          <rect
-            key={el.id}
-            x={el.x}
-            y={el.y}
-            width={Math.max(el.w, 2 / k)}
-            height={Math.max(el.h, 2 / k)}
-            rx={el.type === 'shape' && el.shape === 'ellipse' ? Math.min(el.w, el.h) / 2 : 1 / k}
-            fill={childColor(el)}
-            transform={el.rotation ? `rotate(${el.rotation} ${el.x + el.w / 2} ${el.y + el.h / 2})` : undefined}
-          />
-        ),
-      )}
-    </svg>
-  );
-});
 
 function Row(props: {
   editor: Editor;
@@ -85,7 +42,7 @@ function Row(props: {
     >
       <span className="fr-frames__num">{props.position + 1}</span>
       <span className="fr-frames__thumb">
-        <Thumb frame={frame} children={props.children} />
+        <Thumb frame={frame} children={props.children} w={84} h={56} />
       </span>
       {renaming ? (
         <Input
@@ -230,9 +187,18 @@ function FramesPanel({ editor }: { editor: Editor }) {
   );
 }
 
-export default definePanel({
-  id: PANEL_ID,
-  slot: 'dock-right',
-  order: 50,
-  Component: FramesPanel,
-});
+export default [
+  definePanel({
+    id: PANEL_ID,
+    slot: 'dock-right',
+    order: 50,
+    Component: FramesPanel,
+  }),
+  // The slide deck (KAI-126): the same frames in the same order, as slides with notes and layouts.
+  definePanel({
+    id: DECK_PANEL_ID,
+    slot: 'dock-right',
+    order: 51,
+    Component: DeckPanel,
+  }),
+];

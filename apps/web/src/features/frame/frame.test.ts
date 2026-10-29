@@ -4,6 +4,8 @@ import { createTestBoard, type NewElement } from '@engine';
 import { membershipPatches, nextFrameIndex, nextFrameTitle, orderFrames, reorderPatches } from './lib/frames';
 import frameManifest from './feature';
 import frameDef from './element';
+import { duplicateSlide, framesInOrder } from './lib/actions';
+import { layoutItems, SLIDE_LAYOUTS } from './lib/layouts';
 
 const frame = (id: string, index: number, extra: Partial<FrameElement> = {}): FrameElement => ({
   id,
@@ -149,6 +151,31 @@ describe('frame grid layout', () => {
     ed.undo();
     expect(pos(ed, c)).toEqual({ x: 20, y: 140 });
     expect(pos(ed, b)).toEqual({ x: 140, y: 20 });
+    board.destroy();
+  });
+});
+
+describe('slides (KAI-126)', () => {
+  it('every slide layout stays inside its frame on a 16:9 slide, a 4:3 slide and a phone frame, so the texts belong to it', () => {
+    for (const rect of [{ x: 10, y: 20, w: 1280, h: 720 }, { x: -500, y: 0, w: 1024, h: 768 }, { x: 0, y: 0, w: 390, h: 844 }])
+      for (const l of SLIDE_LAYOUTS)
+        for (const item of layoutItems({ ...rect, id: 'f' }, l.id)) {
+          expect(item.frameId).toBe('f');
+          expect(item.x).toBeGreaterThanOrEqual(rect.x);
+          expect(item.y).toBeGreaterThanOrEqual(rect.y);
+          expect(item.x + item.w).toBeLessThanOrEqual(rect.x + rect.w);
+          expect(item.y + item.h).toBeLessThanOrEqual(rect.y + rect.h);
+        }
+  });
+
+  it('a duplicated slide comes right after its original in the deck, with a copy of what is on it', () => {
+    const board = createTestBoard({ users: ['ann'], features: [{ manifest: frameManifest, elements: [frameDef], tools: [], formats: [], panels: [], commands: [] }] });
+    const [ed] = board.editors('frame');
+    const ids = ['A', 'B', 'C'].map((t, i) => ed.create({ type: 'frame', x: i * 2000, y: 0, w: 1280, h: 720, title: t, fill: '#fff', index: i } as NewElement));
+    ed.create({ type: 'sticky', x: 100, y: 100, w: 100, h: 100, text: 'on A', frameId: ids[0] } as NewElement);
+    const copy = duplicateSlide(ed, ids[0])!;
+    expect(framesInOrder(ed).map((f) => f.id)).toEqual([ids[0], copy, ids[1], ids[2]]);
+    expect(ed.getElements().filter((el) => el.frameId === copy && el.type === 'sticky')).toHaveLength(1);
     board.destroy();
   });
 });

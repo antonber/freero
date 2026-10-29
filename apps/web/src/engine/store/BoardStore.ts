@@ -20,6 +20,8 @@ import {
   BOARD_LAYERS,
   ELEMENT_CONTENT_COLLECTIONS,
   SERVER_WRITTEN_COLLECTIONS,
+  homeLayer,
+  type ElementContentRule,
   SUGGESTIONS_COLLECTION,
   WS_CLOSE_BOARD_REMOVED,
   WS_MESSAGE_LAYER,
@@ -574,14 +576,6 @@ export class BoardStore {
     this.layers[layer].elements.delete(id);
   }
 
-  /** Deletes the element content `layer` holds for element `id` (its stale copy's, see editor/layers.ts). */
-  dropLayerContent(id: string, layer: BoardLayer): void {
-    for (const [name, ownerOf] of MOVED_HERE) {
-      const m = this.contentMap(name, layer);
-      for (const k of [...m.keys()]) if (k.includes(id) && ownerOf(k) === id) m.delete(k);
-    }
-  }
-
   subscribeElement(id: string, l: Listener): () => void {
     let set = this.elementListeners.get(id);
     if (!set) this.elementListeners.set(id, (set = new Set()));
@@ -669,8 +663,9 @@ export class BoardStore {
   }
 
   // ---------------------------------------------------------------- element content (KAI-230)
-  // Entries of ELEMENT_CONTENT_COLLECTIONS live where the element they belong to lives. Reads see
-  // the three docs as one collection (like `elements`); writes go to the owner's doc.
+  // Entries of ELEMENT_CONTENT_COLLECTIONS live where the element they belong to lives (comment
+  // records: where their thread's item lives, else where their thread record is). Reads see the
+  // three docs as one collection (like `elements`); writes go to that doc.
 
   isElementContent(name: string): boolean {
     return Object.prototype.hasOwnProperty.call(ELEMENT_CONTENT_COLLECTIONS, name);
@@ -680,23 +675,43 @@ export class BoardStore {
     return layer === 'shared' ? this.doc.getMap<unknown>(name) : this.layers[layer].doc.getMap<unknown>(name);
   }
 
-  /** The doc entry `key` of `name` belongs in: its element's (null: no such element here). */
-  private contentLayerOf(name: string, key: string): ElementLayer | null {
-    const owner = ELEMENT_CONTENT_COLLECTIONS[name]?.(key);
-    return owner ? this.layerOf(owner) : null;
+  /** The doc that holds entry `key` of `name` (the first one, if a copy is briefly in two). */
+  private contentDocOf(name: string, key: string): ElementLayer | null {
+    for (const layer of ALL_DOCS) if (this.contentMap(name, layer).has(key)) return layer;
+    return null;
+  }
+
+  private rawContent(name: string, key: string): unknown {
+    const at = this.contentDocOf(name, key);
+    return at ? this.contentMap(name, at).get(key) : undefined;
+  }
+
+  /** The elements entry `key` of `name` belongs to (`value`: its value, default the stored one). */
+  private contentOwners(name: string, key: string, value?: unknown): readonly string[] {
+    const rule = ELEMENT_CONTENT_COLLECTIONS[name];
+    return rule ? rule.owners(key, value === undefined ? this.rawContent(name, key) : value, (k) => this.rawContent(name, k)) : [];
+  }
+
+  /**
+   * The doc entry `key` of `name` belongs in: its element's (several: `homeLayer`); with no element
+   * on the board, the doc of the entry it follows (a comment record: its thread record's). Null: no
+   * rule says.
+   */
+  private contentHome(name: string, key: string, value?: unknown): ElementLayer | null {
+    const layers = this.contentOwners(name, key, value).map((id) => this.layerOf(id)).filter((l): l is ElementLayer => !!l);
+    const at = homeLayer(layers) as ElementLayer | null;
+    if (at) return at;
+    const follows = ELEMENT_CONTENT_COLLECTIONS[name]?.follows?.(key);
+    return follows ? this.contentDocOf(name, follows) : null;
   }
 
   contentGet<T>(name: string, key: string): T | undefined {
-    const home = this.contentLayerOf(name, key);
+    const home = this.contentHome(name, key);
     if (home) {
       const m = this.contentMap(name, home);
       if (m.has(key)) return m.get(key) as T;
     }
-    for (const layer of ALL_DOCS) {
-      const m = this.contentMap(name, layer);
-      if (m.has(key)) return m.get(key) as T;
-    }
-    return undefined;
+    return this.rawContent(name, key) as T | undefined;
   }
 
   contentEntries<T>(name: string): Array<[string, T]> {
@@ -707,9 +722,12 @@ export class BoardStore {
     return out;
   }
 
-  /** Writes an entry into its element's doc (shared when the element is unknown), dropping copies elsewhere. */
+  /**
+   * Writes an entry into its home doc (else where it already is, else the shared doc), dropping
+   * copies elsewhere.
+   */
   contentSet(name: string, key: string, value: unknown): void {
-    const home = this.contentLayerOf(name, key) ?? 'shared';
+    const home = this.contentHome(name, key, value) ?? this.contentDocOf(name, key) ?? 'shared';
     for (const layer of ALL_DOCS) {
       const m = this.contentMap(name, layer);
       if (layer === home) m.set(key, value);
@@ -738,14 +756,22 @@ export class BoardStore {
     };
   }
 
+  /** Entries of `name` in `layer` that belong to element `id` (read before anything moves). */
+  private contentOfIn(name: string, rule: ElementContentRule, id: string, layer: ElementLayer): Array<[string, unknown]> {
+    const src = this.contentMap(name, layer);
+    const out: Array<[string, unknown]> = [];
+    if (!src.size) return out;
+    const get = (k: string) => (src.has(k) ? src.get(k) : this.rawContent(name, k));
+    for (const [k, v] of src) if (!(v instanceof Y.AbstractType) && rule.owners(k, v, get).includes(id)) out.push([k, v]);
+    return out;
+  }
+
   /** Moves element `id`'s content entries from one doc to another (inside the caller's transaction). */
   private moveContentOf(id: string, from: ElementLayer, to: ElementLayer): void {
-    for (const [name, ownerOf] of MOVED_HERE) {
-      const src = this.contentMap(name, from);
-      if (!src.size) continue;
-      const moving: Array<[string, unknown]> = [];
-      for (const [k, v] of src) if (k.includes(id) && ownerOf(k) === id && !(v instanceof Y.AbstractType)) moving.push([k, v]);
+    for (const [name, rule] of MOVED_HERE) {
+      const moving = this.contentOfIn(name, rule, id, from);
       if (!moving.length) continue;
+      const src = this.contentMap(name, from);
       const dst = this.contentMap(name, to);
       for (const [k, v] of moving) {
         src.delete(k);
@@ -754,24 +780,32 @@ export class BoardStore {
     }
   }
 
+  /** Deletes the element content `layer` holds for element `id` (its stale copy's, see editor/layers.ts). */
+  dropLayerContent(id: string, layer: BoardLayer): void {
+    for (const [name, rule] of MOVED_HERE) {
+      const m = this.contentMap(name, layer);
+      for (const [k] of this.contentOfIn(name, rule, id, layer)) m.delete(k);
+    }
+  }
+
   /**
-   * Content entries that are not in their element's doc (a collaborator's write racing a move, an
-   * undo that took the element back but not its untracked content, a board from before KAI-230).
-   * Entries whose element is unknown here stay where they are.
+   * Content entries that are not in their home doc (a collaborator's write racing a move, an undo
+   * that took the element back but not its untracked content, a board from before the rule).
+   * Entries with no home here (element and followed entry unknown) stay where they are.
    */
   misplacedContent(): ContentMove[] {
     const out: ContentMove[] = [];
-    // With no element in any layer, every known owner is shared: only layer entries can be misplaced.
     const anyInLayers = BOARD_LAYERS.some((l) => this.layers[l].elements.size > 0);
-    for (const [name, ownerOf] of MOVED_HERE) {
+    for (const [name] of MOVED_HERE) {
+      // With nothing in any layer, every home is the shared doc: nothing there can be misplaced.
+      const layersHold = anyInLayers || BOARD_LAYERS.some((l) => this.layers[l].doc.share.has(name) && this.contentMap(name, l).size > 0);
       for (const from of ALL_DOCS) {
-        if (from === 'shared' && !anyInLayers) continue;
+        if (from === 'shared' && !layersHold) continue;
         const doc = from === 'shared' ? this.doc : this.layers[from].doc;
         if (!doc.share.has(name)) continue;
         for (const [k, v] of this.contentMap(name, from)) {
           if (v instanceof Y.AbstractType) continue;
-          const owner = ownerOf(k);
-          const to = owner ? this.layerOf(owner) : null;
+          const to = this.contentHome(name, k, v);
           if (to && to !== from) out.push({ name, key: k, from, to });
         }
       }

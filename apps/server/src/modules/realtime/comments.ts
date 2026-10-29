@@ -4,7 +4,10 @@
 // exactly once across instances and never on a client's say-so.
 //
 // Layout of the `comments` collection: CommentRecord in @freero/shared (`m:<thread>:<message>`
-// holds one message; `t:` the thread; `x:` tombstones).
+// holds one message; `t:` the thread; `x:` tombstones). A thread pinned to an item lives in the
+// item's doc (KAI-234, ELEMENT_CONTENT_COLLECTIONS): the shared doc, the `editors` layer (inside a
+// hidden frame) or its author's private layer; every event says which (`layer`), and only people
+// who can read that doc hear about it.
 import type * as Y from 'yjs';
 import { mentionedUserIds, type ActingApp } from '@freero/shared';
 import { logError } from '../../platform/log';
@@ -25,7 +28,14 @@ export interface CommentMessageEvent {
   participantIds: string[];
   /** The app or token that wrote it for the author, on a request (the API, MCP; KAI-168). */
   via?: ActingApp;
+  /**
+   * Where the thread lives: 'shared' (everyone with access reads it), 'editors' (on an item in a
+   * hidden frame: owners/editors only), 'private' (on the author's private draft: nobody else).
+   */
+  layer: CommentLayer;
 }
+
+export type CommentLayer = 'shared' | 'editors' | 'private';
 
 type Listener = (e: CommentMessageEvent) => void;
 const listeners = new Set<Listener>();
@@ -80,6 +90,7 @@ export function messageEvents(
   comments: Y.Map<unknown>,
   changedKeys: Map<string, { action: 'add' | 'update' | 'delete'; oldValue: unknown }>,
   authorId: string,
+  layer: CommentLayer = 'shared',
   now = Date.now(),
 ): CommentMessageEvent[] {
   const out: CommentMessageEvent[] = [];
@@ -102,6 +113,7 @@ export function messageEvents(
       text: value.text,
       previousText: before,
       participantIds: [...others],
+      layer,
     });
   }
   return out;
