@@ -431,10 +431,49 @@ export interface MindmapElement extends BaseElement {
 export interface TableElement extends BaseElement {
   type: 'table';
   rows: Array<{ id: string; h: number }>;
-  cols: Array<{ id: string; w: number }>;
+  cols: TableColumn[];
   /** First row is a header (bold, tinted). */
   header: boolean;
   fontSize: number;
+  /**
+   * Rows shown (KAI-123): only those matching this condition (the header row always shows). The
+   * others keep their place in `rows` and their cells; they are drawn collapsed.
+   */
+  filter?: TableFilter | null;
+  /** 'board': the same rows drawn as cards in columns by `groupBy` (a select column). Default grid. */
+  view?: 'grid' | 'board';
+  groupBy?: string | null;
+}
+
+/**
+ * A table column (KAI-123). `type` (default text) says what its cells hold. Cells live in
+ * `tableCells` either way: a text column's as RichText; a typed column's as its canonical plain
+ * value, which is also valid RichText (number "12.5", date "2026-10-28", select: the option's
+ * label, person: a user id, checkbox: "true" or no record). Plain readers (outline, find, CSV)
+ * therefore read typed cells unchanged.
+ */
+export interface TableColumn {
+  id: string;
+  w: number;
+  type?: TableColumnType;
+  /** Choices of a select column, in order. */
+  options?: TableSelectOption[];
+}
+
+export type TableColumnType = 'text' | 'number' | 'date' | 'select' | 'person' | 'checkbox';
+
+export interface TableSelectOption {
+  id: string;
+  label: string;
+  color: string;
+}
+
+export type TableFilterOp = 'contains' | 'is' | 'empty' | 'notEmpty' | 'gt' | 'lt' | 'checked' | 'unchecked';
+
+export interface TableFilter {
+  colId: string;
+  op: TableFilterOp;
+  value?: string;
 }
 
 /** Key of a cell's text / fill in the `tableCells` collection. */

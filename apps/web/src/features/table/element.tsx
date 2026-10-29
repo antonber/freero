@@ -1,5 +1,6 @@
 import { Table as TableIcon } from 'lucide-react';
-import { memo, useEffect, useMemo, type PointerEvent as ReactPointerEvent } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, type PointerEvent as ReactPointerEvent } from 'react';
+import { Filter } from 'lucide-react';
 import type { TableElement } from '@freero/shared';
 import {
   defineElement,
@@ -8,13 +9,17 @@ import {
   useCollection,
   useEditingPart,
   useEditor,
+  useIsExporting,
+  usePeople,
   type Editor,
   type ElementRenderProps,
   type NewElement,
 } from '@engine';
 import { CELL_PAD, cellAt, cellPart, FONT_SIZE, HEADER_FILL, layoutTable, parseCellPart, parseDelimited, resizeCol, resizeRow, type Move } from './lib/model';
 import { CELLS, cellText, plainGrid, readContent, writeContent, type TableContent } from './lib/cells';
-import { commitCell, createFromGrid, editCell, moveCell, rememberCell } from './lib/actions';
+import { commitCell, createFromGrid, editCell, moveCell, rememberCell, setFilter, shownRows } from './lib/actions';
+import { typeOf, visibleRows, type PeopleLookup } from './lib/columns';
+import { BoardView, ColumnMenu, TypedEditor, TypedValue } from './lib/views';
 import './table.css';
 
 const KEY_MOVES: Record<string, Move> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
@@ -46,9 +51,10 @@ function startDividerDrag(editor: Editor, el: TableElement, e: ReactPointerEvent
   window.addEventListener('pointercancel', onUp, true);
 }
 
-const TableView = memo(function TableView({ element: el, selected, editing }: ElementRenderProps<TableElement>) {
+const TableView = memo(function TableView({ element: el, selected, editing, zoom }: ElementRenderProps<TableElement>) {
   const editor = useEditor();
   const canEdit = useCanEdit();
+  const exporting = useIsExporting();
   const editingPart = useEditingPart();
   const entries = useCollection<string>(CELLS);
   // This table's cells only (the collection holds every table's).
@@ -58,10 +64,33 @@ const TableView = memo(function TableView({ element: el, selected, editing }: El
     for (const [k, v] of entries) if (k.slice(1, 1 + prefix.length) === prefix) map.set(k, v);
     return map;
   }, [entries, el.id]);
+  const get = useCallback((rowId: string, colId: string) => cells.get(`t:${el.id}:${rowId}:${colId}`) ?? '', [cells, el.id]);
+  // People named in person columns, by their current names.
+  const personIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const c of el.cols) if (typeOf(c) === 'person') for (const r of el.rows) if (get(r.id, c.id)) ids.add(get(r.id, c.id));
+    return [...ids];
+  }, [el.cols, el.rows, get]);
+  const profiles = usePeople(personIds);
+  const people = useMemo<PeopleLookup>(() => ({ name: (id) => profiles[id]?.name }), [profiles]);
   const active = editing ? parseCellPart(editingPart) : null;
   useEffect(() => {
     if (active) rememberCell(el.id, cellPart(active.rowId, active.colId));
   }, [el.id, active?.rowId, active?.colId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const cellRefs = useRef(new Map<string, HTMLDivElement>());
+
+  const writable = canEdit && !el.locked && !exporting;
+  if (el.view === 'board')
+    return (
+      <div className="fr-table is-board">
+        <BoardView editor={editor} table={el} rows={visibleRows(el, get)} get={get} people={people} interactive={selected && writable} zoom={zoom} />
+      </div>
+    );
+
+  // Filtered-out rows are drawn collapsed; the row being edited always shows.
+  const shown = visibleRows(el, get);
+  const rows = active && !shown.some((r) => r.id === active.rowId) ? el.rows.filter((r) => shown.includes(r) || r.id === active.rowId) : shown;
+  const hidden = el.rows.length - rows.length;
 
   const xs: number[] = [];
   let x = 0;
@@ -71,81 +100,126 @@ const TableView = memo(function TableView({ element: el, selected, editing }: El
   }
   const ys: number[] = [];
   let y = 0;
-  for (const r of el.rows) {
+  for (const r of rows) {
     ys.push(y);
     y += r.h;
   }
-  const dividers = selected && canEdit && !el.locked;
+  const gridH = y;
+  const dividers = selected && writable;
+  const finish = (rowId: string, colId: string) => (raw: string, then?: 'stop' | 'next' | 'prev') => {
+    if (raw !== get(rowId, colId)) commitCell(editor, el.id, rowId, colId, raw);
+    const cur = editor.getElement<TableElement>(el.id);
+    if (then === 'next' || then === 'prev') {
+      if (cur && moveCell(editor, cur, rowId, colId, then)) return;
+    }
+    if (then) editor.stopEditing();
+  };
 
   return (
-    <div className="fr-table" style={{ fontSize: el.fontSize }}>
-      {el.rows.map((r, ri) =>
-        el.cols.map((c, ci) => {
-          const header = el.header && ri === 0;
-          const fill = cells.get(`f:${el.id}:${r.id}:${c.id}`) || (header ? HEADER_FILL : '');
-          const part = cellPart(r.id, c.id);
-          const isActive = active?.rowId === r.id && active?.colId === c.id;
-          return (
-            <div
-              key={part}
-              className={`fr-table__cell${header ? ' is-header' : ''}${isActive ? ' is-active' : ''}`}
-              style={{ left: xs[ci], top: ys[ri], width: c.w, height: r.h, background: fill || undefined }}
-            >
-              <ElementText
-                element={el}
-                field="cells"
-                part={part}
-                value={cells.get(`t:${el.id}:${r.id}:${c.id}`) ?? ''}
-                onCommit={(html) => commitCell(editor, el.id, r.id, c.id, html)}
-                onKeyDown={(e, caret) => {
-                  if (e.altKey || e.ctrlKey || e.metaKey) return false;
-                  const cur = editor.getElement<TableElement>(el.id);
-                  if (!cur) return false;
-                  if (e.key === 'Tab') return moveCell(editor, cur, r.id, c.id, e.shiftKey ? 'prev' : 'next') || true;
-                  const move = KEY_MOVES[e.key];
-                  if (!move || e.shiftKey) return false;
-                  const edge = move === 'up' || move === 'left' ? caret.atStart : caret.atEnd;
-                  return edge && moveCell(editor, cur, r.id, c.id, move);
+    <>
+      <div className={`fr-table${hidden ? ' is-filtered' : ''}`} style={{ fontSize: el.fontSize, height: hidden ? gridH : undefined }}>
+        {rows.map((r, ri) =>
+          el.cols.map((c, ci) => {
+            const header = el.header && r === el.rows[0];
+            const typed = !header && typeOf(c) !== 'text';
+            const fill = cells.get(`f:${el.id}:${r.id}:${c.id}`) || (header ? HEADER_FILL : '');
+            const part = cellPart(r.id, c.id);
+            const isActive = active?.rowId === r.id && active?.colId === c.id;
+            const raw = get(r.id, c.id);
+            return (
+              <div
+                key={part}
+                ref={(n) => {
+                  if (n) cellRefs.current.set(part, n);
+                  else cellRefs.current.delete(part);
                 }}
-                fontSize={el.fontSize}
-                align="left"
-                vAlign="middle"
-                color="#17162B"
-                padding={CELL_PAD}
-                placeholder=""
-                className={header ? 'fr-table__text is-header' : 'fr-table__text'}
+                className={`fr-table__cell${header ? ' is-header' : ''}${isActive ? ' is-active' : ''}${typed ? ` is-typed is-${typeOf(c)}` : ''}`}
+                style={{ left: xs[ci], top: ys[ri], width: c.w, height: r.h, background: fill || undefined }}
+              >
+                {typed ? (
+                  isActive && writable ? (
+                    <TypedEditor
+                      editor={editor}
+                      table={el}
+                      col={c}
+                      raw={raw}
+                      anchor={cellRefs.current.get(part) ?? null}
+                      onCommit={finish(r.id, c.id)}
+                      onCancel={() => editor.stopEditing()}
+                    />
+                  ) : (
+                    <TypedValue col={c} raw={raw} people={people} onToggle={writable ? () => commitCell(editor, el.id, r.id, c.id, raw === 'true' ? '' : 'true') : undefined} />
+                  )
+                ) : (
+                  <ElementText
+                    element={el}
+                    field="cells"
+                    part={part}
+                    value={raw}
+                    onCommit={(html) => commitCell(editor, el.id, r.id, c.id, html)}
+                    onKeyDown={(e, caret) => {
+                      if (e.altKey || e.ctrlKey || e.metaKey) return false;
+                      const cur = editor.getElement<TableElement>(el.id);
+                      if (!cur) return false;
+                      if (e.key === 'Tab') return moveCell(editor, cur, r.id, c.id, e.shiftKey ? 'prev' : 'next') || true;
+                      const move = KEY_MOVES[e.key];
+                      if (!move || e.shiftKey) return false;
+                      const edge = move === 'up' || move === 'left' ? caret.atStart : caret.atEnd;
+                      return edge && moveCell(editor, cur, r.id, c.id, move);
+                    }}
+                    fontSize={el.fontSize}
+                    align="left"
+                    vAlign="middle"
+                    color="#17162B"
+                    padding={header && dividers ? { top: CELL_PAD, right: CELL_PAD + 30, bottom: CELL_PAD, left: CELL_PAD } : CELL_PAD}
+                    placeholder=""
+                    className={header ? 'fr-table__text is-header' : 'fr-table__text'}
+                  />
+                )}
+                {dividers && ri === 0 && <ColumnMenu editor={editor} table={el} col={c} />}
+              </div>
+            );
+          }),
+        )}
+        {dividers &&
+          el.cols.map((c, ci) =>
+            ci === el.cols.length - 1 ? null : (
+              <div
+                key={`dc-${c.id}`}
+                className="fr-table__divider fr-table__divider--col"
+                data-fr-interactive=""
+                title="Drag to resize the column"
+                style={{ left: xs[ci] + c.w, height: gridH }}
+                onPointerDown={(e) => startDividerDrag(editor, el, e, 'col', c.id, c.w)}
               />
-            </div>
-          );
-        }),
+            ),
+          )}
+        {dividers &&
+          rows.map((r, ri) =>
+            ri === rows.length - 1 ? null : (
+              <div
+                key={`dr-${r.id}`}
+                className="fr-table__divider fr-table__divider--row"
+                data-fr-interactive=""
+                title="Drag to resize the row"
+                style={{ top: ys[ri] + r.h, width: el.w }}
+                onPointerDown={(e) => startDividerDrag(editor, el, e, 'row', r.id, r.h)}
+              />
+            ),
+          )}
+      </div>
+      {hidden > 0 && !exporting && (
+        <div className="fr-table__filtered" style={{ top: gridH }}>
+          <Filter size={12} aria-hidden />
+          {hidden === 1 ? '1 row hidden by the filter' : `${hidden} rows hidden by the filter`}
+          {writable && (
+            <button type="button" data-fr-interactive="" onPointerDown={(e) => e.stopPropagation()} onClick={() => setFilter(editor, el.id, null)}>
+              Show all
+            </button>
+          )}
+        </div>
       )}
-      {dividers &&
-        el.cols.map((c, ci) =>
-          ci === el.cols.length - 1 ? null : (
-            <div
-              key={`dc-${c.id}`}
-              className="fr-table__divider fr-table__divider--col"
-              data-fr-interactive=""
-              title="Drag to resize the column"
-              style={{ left: xs[ci] + c.w, height: el.h }}
-              onPointerDown={(e) => startDividerDrag(editor, el, e, 'col', c.id, c.w)}
-            />
-          ),
-        )}
-      {dividers &&
-        el.rows.map((r, ri) =>
-          ri === el.rows.length - 1 ? null : (
-            <div
-              key={`dr-${r.id}`}
-              className="fr-table__divider fr-table__divider--row"
-              data-fr-interactive=""
-              title="Drag to resize the row"
-              style={{ top: ys[ri] + r.h, width: el.w }}
-              onPointerDown={(e) => startDividerDrag(editor, el, e, 'row', r.id, r.h)}
-            />
-          ),
-        )}
-    </div>
+    </>
   );
 });
 
@@ -168,8 +242,9 @@ export default defineElement({
   normalize: (el, prev) => layoutTable(el, prev),
 
   // Double-click a cell (or click one of a selected table) to type in it.
-  textPartAt(el, local) {
-    const cell = cellAt(el, local);
+  textPartAt(el, local, { editor }) {
+    if (el.view === 'board') return null;
+    const cell = cellAt({ rows: shownRows(editor, el), cols: el.cols }, local);
     return cell ? cellPart(cell.rowId, cell.colId) : null;
   },
 
@@ -193,22 +268,24 @@ export default defineElement({
   },
 
   toPlainText: (el, editor) =>
-    plainGrid(editor.collection<string>(CELLS), el)
+    plainGrid(editor.collection<string>(CELLS), el, { mode: 'export' })
       .map((r) => r.join('\t'))
       .join('\n'),
 
   // Every non-empty cell is a text part: board-wide find & replace reads and rewrites cells
   // through the engine (Editor.getTextParts / setTextParts), never by touching tableCells.
   textParts: (el, editor) =>
-    el.rows.flatMap((r) =>
+    el.rows.flatMap((r, i) =>
       el.cols.flatMap((c) => {
+        if (typeOf(c) !== 'text' && !(el.header && i === 0)) return [];
         const html = cellText(editor.collection<string>(CELLS), el.id, r.id, c.id);
         return html ? [{ part: cellPart(r.id, c.id), html }] : [];
       }),
     ),
   writeTextPart(el, part, html, editor) {
     const cell = parseCellPart(part);
-    if (cell && el.rows.some((r) => r.id === cell.rowId) && el.cols.some((c) => c.id === cell.colId))
+    const col = el.cols.find((c) => c.id === cell?.colId);
+    if (cell && col && (typeOf(col) === 'text' || (el.header && el.rows[0]?.id === cell.rowId)) && el.rows.some((r) => r.id === cell.rowId))
       commitCell(editor, el.id, cell.rowId, cell.colId, html);
   },
 
