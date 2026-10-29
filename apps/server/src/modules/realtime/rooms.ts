@@ -60,6 +60,8 @@ import {
   type SessionLimits,
   ELEMENT_CONTENT_COLLECTIONS,
   isElementContentCollection,
+  DOC_FRAGMENT,
+  type ObjectKind,
 } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { logError } from '../../platform/log';
@@ -73,6 +75,7 @@ import { commentPeople, COMMENTS_COLLECTION, emitCommentMessages, hasCommentList
 import * as store from './docStore';
 import { effectiveAccess, guardSession, readFacilitation, revertForbiddenAdds, sameEffective } from './facilitation';
 import { guardVotes } from './votingRules';
+import { attributionOf, guardAttribution, type Attribution } from './attribution';
 import { guardServerCollections, prepareServerCollections, SERVER_COLLECTIONS } from './serverCollections';
 import { guardContentPlacement, placeElementContent, writeElementContent, type MovedEntry } from './elementContent';
 import { decideUpdate } from './filter';
@@ -108,6 +111,8 @@ import {
 import { emitSuggestionsProposed } from './suggestionEvents';
 import { applyChange, BoardChangeError, viewOf, type AppliedChange, type BoardActor, type BoardChange, type BoardReader, type BoardView } from './view';
 import { newId } from '../../platform/ids';
+import { docStateFrom, readDocBlocks, writeDocBlocks } from './docContent';
+import type { DocBlock } from '@freero/shared';
 import type { SuggestionAuthor, SuggestionDecision, SuggestionRecord } from '@freero/shared';
 
 export const MESSAGE_SYNC = 0;
@@ -127,6 +132,11 @@ const IDENTITY_TTL_MS = 5000;
 const MAX_QUEUED_BYTES = 16 * 1024 * 1024;
 /** An element removed from one doc this recently is not "added" when it lands in another (a move). */
 const MOVE_WINDOW_MS = 30_000;
+/**
+ * How long the attribution of a removed element is remembered (attribution.ts): an undo that brings
+ * it back within this time keeps its creator; later it reads as the undoer's.
+ */
+const ATTRIBUTION_WINDOW_MS = 60 * 60_000;
 
 /** Origin of the persisted state applied on load: not a change, so neither broadcast nor saved. */
 const LOAD_ORIGIN = Symbol('load');
@@ -151,6 +161,8 @@ const PEER_CATCH_UP_TIMEOUT_MS = 2000;
 /** Who a socket is, decided once at admission. */
 export interface Admission {
   boardId: string;
+  /** What the socket opened (KAI-162): a board's canvas (default) or a doc's document. */
+  kind?: ObjectKind;
   userId: string;
   role: Role;
   sessionKey: string;
@@ -159,6 +171,11 @@ export interface Admission {
   authorName?: string;
   /** Accounts: the names their comment messages may carry (current and previous, KAI-187). */
   authorNames?: string[];
+  /**
+   * The most this socket may do whatever the user's role (a live view in an AI assistant acts
+   * through a connection that may only read, KAI-171): applied on admission and every refresh.
+   */
+  maxRole?: Role;
 }
 export interface Refusal {
   code: number;
@@ -167,13 +184,17 @@ export interface Refusal {
 
 interface Conn {
   ws: WebSocket;
+  /** A doc's socket (KAI-162) has no layers: docs withhold nothing from their readers. */
+  kind: ObjectKind;
   userId: string;
   /** Session the socket was opened with (auth's opaque key); logging out closes the socket. */
   sessionKey: string;
   /** EFFECTIVE role: `access` as limited by the facilitation session (see the header). */
   role: Role;
-  /** The role the socket's user has on the board. */
+  /** The role the socket's user has on the board (capped by `maxRole`). */
   access: Role;
+  /** See Admission.maxRole. */
+  maxRole?: Role;
   /** What the facilitation session limits for this socket (null: nothing). */
   limits: SessionLimits | null;
   /** Guests: the author name their comments must carry (commentRules.ts). */
@@ -276,6 +297,8 @@ class Room {
   private facilitatorTimer: NodeJS.Timeout | null = null;
   /** Element ids removed from one of this room's docs lately, by when (see MOVE_WINDOW_MS). */
   private removedAt = new Map<string, number>();
+  /** Attribution of elements removed lately (attribution.ts), oldest first. */
+  private removedAttribution = new Map<string, { at: number; attribution: Attribution }>();
 
   constructor(readonly id: string) {
     this.awareness = new awarenessProtocol.Awareness(this.doc);
@@ -343,6 +366,9 @@ class Room {
     prepareServerCollections(this.doc);
     // Element content (elementContent.ts): likewise, for the placement guard.
     for (const name of Object.keys(ELEMENT_CONTENT_COLLECTIONS)) this.doc.getMap<unknown>(name);
+    // A doc's document (KAI-162; @freero/shared docs.ts): typed up front, so nothing ever reads
+    // the fragment as a map (restore, readers) and every room — board or doc — is the same room.
+    this.doc.getXmlFragment(DOC_FRAGMENT);
 
     this.ready = this.open();
   }
@@ -557,6 +583,7 @@ class Room {
 
   /** A layer sync message from a socket: answered only for layers it may read. */
   private onLayerMessage(conn: Conn, decoder: decoding.Decoder): void {
+    if (conn.kind !== 'board') return;
     const wire = decoding.readVarString(decoder);
     const name = readableLayer(wire, conn);
     if (!name) return;
@@ -583,6 +610,7 @@ class Room {
         fixed = guardVotes(tr, doc, this.doc, conn.userId);
         fixed = guardServerCollections(tr, doc) || fixed;
         if (addTypes) fixed = revertForbiddenAdds(tr, doc.getMap<unknown>(ELEMENTS), new Set(addTypes), (id) => this.existsElsewhere(doc, id)) > 0 || fixed;
+        fixed = guardAttribution(tr, doc.getMap<unknown>(ELEMENTS), conn.userId, (id) => this.knownAttribution(doc, id)) > 0 || fixed;
         if (name === EDITORS_LAYER) {
           const g = guardSuggestionWrites(tr, doc, conn.userId);
           fixed = g.reverted > 0 || fixed;
@@ -596,11 +624,33 @@ class Room {
 
   // ---------------------------------------------------------------- facilitation (facilitation.ts)
 
-  private noteRemoved(keys: Map<string, { action: string }>): void {
+  private noteRemoved(keys: Map<string, { action: string; oldValue?: unknown }>): void {
     const now = Date.now();
-    for (const [id, { action }] of keys) if (action === 'delete') this.removedAt.set(id, now);
+    for (const [id, { action, oldValue }] of keys) {
+      if (action !== 'delete') continue;
+      this.removedAt.set(id, now);
+      const attribution = attributionOf(oldValue);
+      if (!attribution) continue;
+      this.removedAttribution.delete(id);
+      this.removedAttribution.set(id, { at: now, attribution });
+    }
     if (this.removedAt.size > 2000)
       for (const [id, at] of this.removedAt) if (now - at > MOVE_WINDOW_MS) this.removedAt.delete(id);
+    for (const [id, { at }] of this.removedAttribution) {
+      if (now - at <= ATTRIBUTION_WINDOW_MS && this.removedAttribution.size <= 5000) break;
+      this.removedAttribution.delete(id);
+    }
+  }
+
+  /** The attribution the room holds for element `id` outside `doc`: a copy in another doc, or one removed lately. */
+  private knownAttribution(doc: Y.Doc, id: string): Attribution | undefined {
+    for (const d of [this.doc, ...[...this.layers.values()].map((l) => l.doc)]) {
+      if (d === doc) continue;
+      const v = d.getMap<unknown>(ELEMENTS).get(id);
+      if (v !== undefined) return attributionOf(v);
+    }
+    const removed = this.removedAttribution.get(id);
+    return removed && Date.now() - removed.at <= ATTRIBUTION_WINDOW_MS ? removed.attribution : undefined;
   }
 
   /** Is element `id` in one of this room's docs other than `doc`, or was it removed from one lately? */
@@ -671,7 +721,7 @@ class Room {
    */
   private onLayerOp(conn: Conn, decoder: decoding.Decoder): void {
     const op = parseLayerOp(decoding.readVarString(decoder));
-    if (!op || !mayRunLayerOp(conn)) return;
+    if (!op || conn.kind !== 'board' || !mayRunLayerOp(conn)) return;
     const names = op.mine ? [privateLayerOf(conn.userId)] : [...this.layers.keys()].filter(isPrivateLayer);
     conn.held = [];
     void Promise.all(names.map(async (n) => ((await getBoardAccess(this.id, privateLayerOwner(n)!)).role)))
@@ -841,13 +891,16 @@ class Room {
   join(ws: WebSocket, a: Admission, queued: Uint8Array[]): void {
     if (this.unloadTimer) clearTimeout(this.unloadTimer);
     this.unloadTimer = null;
-    const eff = effectiveAccess(a.role, a.userId, readFacilitation(this.doc));
+    const access = capRole(a.role, a.maxRole);
+    const eff = effectiveAccess(access, a.userId, readFacilitation(this.doc));
     const conn: Conn = {
       ws,
+      kind: a.kind ?? 'board',
       userId: a.userId,
       sessionKey: a.sessionKey,
       role: eff.role,
-      access: a.role,
+      access,
+      maxRole: a.maxRole,
       limits: eff.limits,
       authorName: a.authorName,
       authorNames: new Set(a.authorName !== undefined ? [a.authorName] : [a.identity.name, ...(a.authorNames ?? [])]),
@@ -950,6 +1003,8 @@ class Room {
         fixed = guardVotes(tr, this.doc, this.doc, conn.userId) || fixed;
         fixed = guardServerCollections(tr, this.doc) || fixed;
         if (addTypes) fixed = revertForbiddenAdds(tr, this.doc.getMap<unknown>(ELEMENTS), new Set(addTypes), (id) => this.existsElsewhere(this.doc, id)) > 0 || fixed;
+        // Who made an element is the server's to say (attribution.ts, KAI-222).
+        fixed = guardAttribution(tr, this.doc.getMap<unknown>(ELEMENTS), conn.userId, (id) => this.knownAttribution(this.doc, id)) > 0 || fixed;
         // Element content written here for an element in a layer goes to that layer (elementContent.ts).
         const homes = { editors: this.layers.get(EDITORS_LAYER)?.doc, own: this.layers.get(privateLayerOf(conn.userId))?.doc };
         moved = guardContentPlacement(tr, this.doc, homes, SERVER_ORIGIN);
@@ -1060,7 +1115,7 @@ class Room {
     const roles = await Promise.all(conns.map(async (c) => (await getBoardAccess(this.id, c.userId)).role));
     conns.forEach((conn, i) => {
       if (!this.conns.has(conn.ws)) return; // left meanwhile
-      const role = roles[i];
+      const role = roles[i] && capRole(roles[i], conn.maxRole);
       if (!role) {
         conn.ws.close(4403, 'Access revoked');
         this.leave(conn);
@@ -1365,7 +1420,15 @@ export function endSessionSockets(sessionKey: string): void {
   for (const p of admitting) if (p.sessionKey === sessionKey) p.ws.close(4401, 'Signed out');
 }
 
-/** The sessions behind this instance's board sockets, joined or being admitted (auth re-checks them). */
+/** `role`, at most `max` (when given). */
+const ROLE_ORDER: Role[] = ['viewer', 'commenter', 'editor', 'owner'];
+export const capRole = (role: Role, max?: Role): Role => (max && ROLE_ORDER.indexOf(role) > ROLE_ORDER.indexOf(max) ? max : role);
+
+/**
+ * The sessions behind this instance's board sockets, joined or being admitted. Auth re-checks
+ * its own (session and guest keys); a key with a ':' belongs to the module that admitted the
+ * socket with it (`embed:` — a live view in an AI assistant), which re-checks it itself.
+ */
 export function* liveSessionKeys(): Iterable<string> {
   for (const room of rooms.values()) for (const conn of room.conns.values()) yield conn.sessionKey;
   for (const p of admitting) if (p.sessionKey) yield p.sessionKey;
@@ -1650,6 +1713,30 @@ export async function snapshotBoardLayers(boardId: string): Promise<Array<{ laye
     }
   }
   return (await layerStore.loadLayers(boardId)).flatMap((l) => (l.state ? [{ layer: l.layer, state: l.state }] : []));
+}
+
+// ---- docs (KAI-162): the document of a doc's room, read and written on requests ----
+
+/** A doc's content right now (live, caught up with the other instances): its blocks and comment records. */
+export async function readDocContent(docId: string): Promise<{ blocks: DocBlock[]; comments: ReadonlyMap<string, unknown> }> {
+  return withLiveRoom(docId, (room) => ({ blocks: readDocBlocks(room.doc), comments: new Map(room.doc.getMap<unknown>(COMMENTS_COLLECTION).entries()) }));
+}
+
+/**
+ * Appends blocks to a doc as `actor` (an owner or editor; the caller checked): one change,
+ * published to every instance and saved before this resolves, like changeBoard.
+ */
+export async function appendDocBlocks(docId: string, actor: BoardActor, blocks: DocBlock[]): Promise<void> {
+  if (!blocks.length) return;
+  await withLiveRoom(docId, async (room) => {
+    room.doc.transact(() => writeDocBlocks(room.doc, blocks, () => newId(16)), new RequestOrigin(actor));
+    await room.flush();
+  });
+}
+
+/** Stores the first content of a brand-new doc (nobody can have it open yet). */
+export async function initDocContent(docId: string, blocks: DocBlock[]): Promise<void> {
+  if (blocks.length) await store.saveInitialState(docId, docStateFrom(blocks, () => newId(16)));
 }
 
 /** Stores the initial content of a layer of a brand-new (or just trashed) board. */

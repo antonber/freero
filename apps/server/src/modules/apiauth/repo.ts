@@ -370,7 +370,100 @@ export async function takeCode(codeHash: string): Promise<CodeRow | null> {
 export async function deleteExpired(now: number): Promise<number> {
   const codes = await query(`DELETE FROM oauth_codes WHERE expires_at < $1 RETURNING code_hash`, [new Date(now)]);
   const tokens = await query(`DELETE FROM api_tokens WHERE expires_at < $1 RETURNING id`, [new Date(now)]);
-  return codes.length + tokens.length;
+  const embeds = await query(`DELETE FROM api_embed_tokens WHERE expires_at < $1 RETURNING id`, [new Date(now)]);
+  return codes.length + tokens.length + embeds.length;
+}
+
+// ---- live board views (MCP Apps, KAI-171) ----
+
+export type EmbedRole = 'viewer' | 'commenter' | 'editor';
+
+export interface EmbedRow {
+  id: string;
+  userId: string;
+  boardId: string;
+  maxRole: EmbedRole;
+  credentialId: string;
+  label: string;
+  grantId: string | null;
+  personalTokenId: string | null;
+  issuedVia: string;
+  expiresAt: number;
+  /** The personal token behind it, when it is one: paused / expires (null otherwise). */
+  parentPausedAt: number | null;
+  parentExpiresAt: number | null;
+  /** The app behind it, when it is one. */
+  clientId: string | null;
+}
+interface EmbedDbRow {
+  id: string;
+  user_id: string;
+  board_id: string;
+  max_role: EmbedRole;
+  credential_id: string;
+  label: string;
+  grant_id: string | null;
+  personal_token_id: string | null;
+  issued_via: string;
+  expires_at: Date;
+  parent_paused_at: Date | null;
+  parent_expires_at: Date | null;
+  client_id: string | null;
+}
+const toEmbed = (r: EmbedDbRow): EmbedRow => ({
+  id: r.id,
+  userId: r.user_id,
+  boardId: r.board_id,
+  maxRole: r.max_role,
+  credentialId: r.credential_id,
+  label: r.label,
+  grantId: r.grant_id,
+  personalTokenId: r.personal_token_id,
+  issuedVia: r.issued_via,
+  expiresAt: r.expires_at.getTime(),
+  parentPausedAt: ms(r.parent_paused_at),
+  parentExpiresAt: ms(r.parent_expires_at),
+  clientId: r.client_id,
+});
+const EMBED_SELECT = `SELECT e.*, p.paused_at AS parent_paused_at, p.expires_at AS parent_expires_at, g.client_id
+  FROM api_embed_tokens e LEFT JOIN api_tokens p ON p.id = e.personal_token_id LEFT JOIN oauth_grants g ON g.id = e.grant_id`;
+
+export async function insertEmbedTicket(e: {
+  id: string;
+  userId: string;
+  boardId: string;
+  maxRole: EmbedRole;
+  credentialId: string;
+  label: string;
+  grantId: string | null;
+  personalTokenId: string | null;
+  issuedVia: string;
+  ticketHash: string;
+  ticketExpiresAt: number;
+  expiresAt: number;
+  createdAt: number;
+}): Promise<void> {
+  await query(
+    `INSERT INTO api_embed_tokens (id, user_id, board_id, max_role, credential_id, label, grant_id, personal_token_id, issued_via, ticket_hash, ticket_expires_at, expires_at, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+    [e.id, e.userId, e.boardId, e.maxRole, e.credentialId, e.label, e.grantId, e.personalTokenId, e.issuedVia, e.ticketHash, new Date(e.ticketExpiresAt), new Date(e.expiresAt), new Date(e.createdAt)],
+  );
+}
+
+/** Redeems a ticket once — a second or late redemption finds nothing — turning it into `tokenHash`. */
+export async function redeemEmbedTicket(ticketHash: string, tokenHash: string, now: number): Promise<EmbedRow | null> {
+  const r = await one<{ id: string }>(
+    `UPDATE api_embed_tokens SET ticket_hash = NULL, token_hash = $2 WHERE ticket_hash = $1 AND ticket_expires_at > $3 AND token_hash IS NULL RETURNING id`,
+    [ticketHash, tokenHash, new Date(now)],
+  );
+  if (!r) return null;
+  const row = await one<EmbedDbRow>(`${EMBED_SELECT} WHERE e.id = $1`, [r.id]);
+  return row ? toEmbed(row) : null;
+}
+
+export async function embedByTokenHash(tokenHash: string): Promise<EmbedRow | null> {
+  const r = await one<EmbedDbRow>(`${EMBED_SELECT} WHERE e.token_hash = $1`, [tokenHash]);
+  return r ? toEmbed(r) : null;
 }
 
 // ---- workspaces ----

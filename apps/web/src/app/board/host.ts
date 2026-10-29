@@ -1,5 +1,5 @@
 // Builds the engine's Host — the one typed contract between the app shell and the engine.
-import type { BoardAiStatus, BoardSummary, BoardTrackersResponse, Role } from '@freero/shared';
+import { EMBED_WS_PROTOCOL, type BoardAiStatus, type BoardSummary, type BoardTrackersResponse, type EmbedRedeemResponse, type Role } from '@freero/shared';
 import { unavailableVersionHistory, type Host, type HostEngage, type HostUser } from '@engine';
 import type { ToastApi } from '@ui';
 import { api, wsBase } from '../api/client';
@@ -25,6 +25,7 @@ import {
   uploadImage,
   versionHistory,
   downloadBoardFile,
+  docsFrom,
   saveAs,
 } from '../hostServices';
 import { serverNow, syncServerClock } from './serverClock';
@@ -123,6 +124,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     report: reportOn(board.id),
     engage: engageOf(board.id),
     call: callOf(board.id),
+    docs: docsFrom(board.id, deps.navigate),
     // AI entry points exist only when the server said this user may use AI here.
     ...(deps.ai?.available ? { ai: { provider: deps.ai.provider ?? '', source: deps.ai.source ?? 'instance', run: (body) => api.runAi(board.id, body) } } : {}),
     // Tracker entry points exist only when the server listed a connection this user may use here.
@@ -199,6 +201,54 @@ export function createGuestHost(
   };
 }
 
+/**
+ * A live board view inside an AI assistant (KAI-171, app/embed): the person, on this one board, in a
+ * third-party frame without their session cookie. The socket signs in with the view's short-lived
+ * token (a WebSocket subprotocol); everything else that needs the account (uploads, templates,
+ * history, sharing, exports) points to "Open in Freero", which the view's header offers.
+ */
+export function createEmbedHost(view: EmbedRedeemResponse, deps: { notify: Host['notify'] }): Host {
+  const board = view.board;
+  const inFreero = (what: string) => () => Promise.reject(new Error(`${what}: open the board in Freero.`));
+  const openInFreero = () => deps.notify('Use “Open in Freero” above for the full app.', 'info');
+  return {
+    user: view.user,
+    board: {
+      id: board.id,
+      title: board.title,
+      role: board.role,
+      canExport: false,
+      team: null,
+      call: board.call ?? null,
+      embeds: embedsOf(board.permissions),
+    },
+    syncUrl: `${wsBase()}/ws/embed/boards`,
+    syncProtocols: [EMBED_WS_PROTOCOL, view.token],
+    uploadImage: inFreero('Adding images'),
+    uploadFile: inFreero('Adding files'),
+    uploadAttachment: inFreero('Adding files'),
+    renameBoard: inFreero('Renaming the board'),
+    saveThumbnail: async () => undefined,
+    openShareDialog: () => deps.notify('Use “Share with team” above.', 'info'),
+    navigate: openInFreero,
+    notify: deps.notify,
+    serverNow: () => Date.now(),
+    listMembers: async () => [view.user],
+    lookupUsers: async (ids) => (ids.includes(view.user.id) ? [view.user] : []),
+    inviteMember: inFreero('Inviting people'),
+    unfurl: inFreero('Link previews'),
+    listTemplates: async () => [],
+    loadTemplate: inFreero('Saved templates'),
+    saveTemplate: inFreero('Saving templates'),
+    shareTemplate: inFreero('Sharing templates'),
+    deleteTemplate: inFreero('Saved templates'),
+    versions: unavailableVersionHistory('Version history is in Freero itself.'),
+    importImage: inFreero('Copying images'),
+    fetchImage: inFreero('Copying images'),
+    report: inFreero('Reporting'),
+  };
+}
+
 const readAsDataUrl = (file: Blob) =>
   new Promise<string>((resolve, reject) => {
     const r = new FileReader();
@@ -235,6 +285,42 @@ export function createPreviewHost(board: { id: string; title: string }, deps: Pi
     deleteTemplate: no('Templates'),
     shareTemplate: no('Templates'),
     versions: unavailableVersionHistory('Version history isn’t available in a moderation preview.'),
+    importImage: no('Copying images'),
+    fetchImage: no('Fetching images'),
+    report: no('Reporting'),
+  };
+}
+
+/**
+ * The Host of a live board shown INSIDE a doc (KAI-152, engine LiveBoardView): the boards socket
+ * (the server admits it with the reader's own access to that board), the people and link lookups
+ * of that board, nothing that changes anything — the embed is read-only; edits happen on the board.
+ */
+export function createBoardInDocHost(deps: Pick<HostDeps, 'user' | 'navigate' | 'notify'>): Host {
+  const no = (what: string) => async () => Promise.reject(new Error(`${what}: open the board to change it.`));
+  return {
+    user: deps.user,
+    board: { id: '', title: '', role: 'viewer', canExport: false, team: null },
+    syncUrl: `${wsBase()}/ws/boards`,
+    uploadImage: no('Uploading'),
+    uploadFile: no('Uploading'),
+    renameBoard: no('Renaming'),
+    saveThumbnail: async () => undefined,
+    openShareDialog: () => undefined,
+    navigate: deps.navigate,
+    notify: deps.notify,
+    serverNow,
+    listMembers: async () => [],
+    lookupUsers: async () => [],
+    inviteMember: no('Inviting'),
+    unfurl: no('Link previews'),
+    resolveObjects,
+    listTemplates: async () => [],
+    loadTemplate: no('Templates'),
+    saveTemplate: no('Templates'),
+    deleteTemplate: no('Templates'),
+    shareTemplate: no('Templates'),
+    versions: unavailableVersionHistory('Open the board to see its versions.'),
     importImage: no('Copying images'),
     fetchImage: no('Fetching images'),
     report: no('Reporting'),

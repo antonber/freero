@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Freero live board</title>
+<style>
+  :root {
+    --ink: #17162b; --ink-2: #4b4a63; --ink-3: #686783; --line: #e4e3ee; --surface: #ffffff; --surface-2: #f7f6fb;
+    --primary: #5b3ff0; --primary-ink: #ffffff; --primary-soft: #eeeaff; --accent: #2ee6b8; --danger: #c9353a;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme='light']) { --ink: #ecebf5; --ink-2: #c3c1d6; --ink-3: #a3a1bb; --line: #33324a; --surface: #1d1c2e; --surface-2: #242338; --primary: #8f7bff; --primary-ink: #111022; --primary-soft: #2b2650; --danger: #ff7b80; color-scheme: dark; } }
+  :root[data-theme='dark'] { --ink: #ecebf5; --ink-2: #c3c1d6; --ink-3: #a3a1bb; --line: #33324a; --surface: #1d1c2e; --surface-2: #242338; --primary: #8f7bff; --primary-ink: #111022; --primary-soft: #2b2650; --danger: #ff7b80; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; background: var(--surface); color: var(--ink); font: 13px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+  header { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .title { flex: 1; min-width: 120px; display: flex; align-items: center; gap: 8px; }
+  .title strong { font-size: 14px; }
+  .access { font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--primary-soft); color: var(--primary); }
+  button, select { font: inherit; border-radius: 8px; padding: 5px 11px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; white-space: nowrap; }
+  button.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-ink); font-weight: 600; }
+  button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button[disabled] { opacity: 0.55; cursor: default; }
+  .stage { position: relative; height: 560px; background: var(--surface-2); }
+  :root[data-mode='fullscreen'] .stage { height: calc(100vh - 52px); }
+  iframe { display: block; width: 100%; height: 100%; border: 0; }
+  .note { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--ink-2); text-align: center; padding: 24px; }
+  .share { display: flex; gap: 8px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--line); background: var(--surface-2); flex-wrap: wrap; }
+  .share input { flex: 1; min-width: 180px; font: inherit; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+  .share .msg { color: var(--ink-2); font-size: 12px; width: 100%; }
+  .share .msg.error { color: var(--danger); }
+</style>
+</head>
+<body>
+<header>
+  <div class="title">
+    <svg width="24" height="24" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#5B3FF0"/><path d="M21 46V18h22v6H28v6h12v6H28v10z" fill="#fff"/><circle cx="45" cy="43" r="4" fill="#2EE6B8"/></svg>
+    <strong>Live board</strong><span class="access" id="access" hidden></span>
+  </div>
+  <button id="share" type="button" hidden>Share with team</button>
+  <button id="full" type="button" hidden>Full screen</button>
+  <button id="open" type="button" class="primary" hidden>Open in Freero</button>
+</header>
+<div class="share" id="sharePanel" hidden>
+  <select id="shareAccess" aria-label="People with the link">
+    <option value="commenter">Anyone with the link can comment</option>
+    <option value="viewer">Anyone with the link can view</option>
+  </select>
+  <button id="shareGo" type="button" class="primary">Get link</button>
+  <input id="shareLink" readonly hidden aria-label="Board link" />
+  <button id="shareCopy" type="button" hidden>Copy</button>
+  <div class="msg" id="shareMsg"></div>
+</div>
+<div class="stage" id="stage"><div class="note" id="note">Opening the board…</div></div>
+<script>
+/*FREERO_BRIDGE*/
+// The live board view (KAI-171): frames Freero's own board page for exactly the board and the
+// short-lived, single-use ticket the tool call minted (`_meta["freero/live"]`, never shown to the
+// model). The board runs on Freero's origin with Freero's CSP and signs in with that ticket — never
+// the person's cookie — so the assistant's page can't read or drive it. This view only adds the
+// header: Open in Freero, Share with team (an app-only tool call the host makes for the person),
+// full screen, and Reconnect when the view expired.
+var live = null;
+var LABEL = { editor: 'Can edit', commenter: 'Can comment', viewer: 'View only', owner: 'Can edit' };
+
+function $(id) { return document.getElementById(id); }
+function note(text, action) {
+  var stage = $('stage');
+  var old = stage.querySelector('.note');
+  if (old) old.remove();
+  var n = document.createElement('div');
+  n.className = 'note';
+  n.appendChild(document.createTextNode(text));
+  if (action) {
+    var b = document.createElement('button');
+    b.className = 'primary';
+    b.textContent = action.label;
+    b.onclick = action.run;
+    n.appendChild(b);
+  }
+  stage.appendChild(n);
+}
+
+function liveOf(result) {
+  var m = result && result._meta && result._meta['freero/live'];
+  return m && typeof m.src === 'string' && typeof m.origin === 'string' && m.src.indexOf(m.origin + '/') === 0 ? m : null;
+}
+
+function mount(m) {
+  live = m;
+  var stage = $('stage');
+  stage.textContent = '';
+  var frame = document.createElement('iframe');
+  frame.title = 'Freero board';
+  frame.setAttribute('allow', 'clipboard-write');
+  frame.setAttribute('referrerpolicy', 'no-referrer');
+  frame.src = m.src;
+  stage.appendChild(frame);
+  $('access').hidden = false;
+  $('access').textContent = LABEL[m.access] || 'View only';
+  $('open').hidden = false;
+  $('share').hidden = !m.canShare;
+}
+
+function reconnect() {
+  if (!live) return;
+  note('Opening the board again…');
+  FreeroBridge.request('tools/call', { name: 'open_board', arguments: { boardId: live.boardId } }).then(function (r) {
+    var m = liveOf(r);
+    if (m) mount(m);
+    else note('Freero couldn’t open this board again. Open it in Freero instead.');
+  }, function () { note('The assistant couldn’t reach Freero. Open the board in Freero instead.'); });
+}
+
+// The board page says when its view ended (expired, access revoked): offer to open it again.
+window.addEventListener('message', function (e) {
+  var frame = $('stage').querySelector('iframe');
+  if (!live || !frame || e.source !== frame.contentWindow || e.origin !== live.origin) return;
+  var d = e.data;
+  if (d && d.freeroEmbed === 'ended') note(d.reason === 'access' ? 'You no longer have access to this board here.' : 'This live view has ended.', d.reason === 'access' ? null : { label: 'Reconnect', run: reconnect });
+});
+
+$('open').onclick = function () {
+  if (live) FreeroBridge.openLink(live.boardUrl).catch(function () { window.open(live.boardUrl, '_blank', 'noopener'); });
+};
+$('share').onclick = function () { $('sharePanel').hidden = !$('sharePanel').hidden; };
+$('shareGo').onclick = function () {
+  var msg = $('shareMsg');
+  msg.className = 'msg';
+  msg.textContent = 'Getting the link…';
+  $('shareGo').disabled = true;
+  FreeroBridge.request('tools/call', { name: 'share_board', arguments: { boardId: live.boardId, access: $('shareAccess').value } }).then(function (r) {
+    $('shareGo').disabled = false;
+    var s = r && r.structuredContent;
+    if (!s || r.isError) {
+      msg.className = 'msg error';
+      msg.textContent = (r && r.content && r.content[0] && r.content[0].text) || 'Freero couldn’t share this board.';
+      return;
+    }
+    $('shareLink').hidden = false;
+    $('shareLink').value = s.url;
+    $('shareCopy').hidden = false;
+    msg.textContent = (s.changed ? 'Link sharing is on. ' : 'The link already works. ') + 'People without a Freero account join as guests, as your workspace allows.';
+  }, function (err) {
+    $('shareGo').disabled = false;
+    msg.className = 'msg error';
+    msg.textContent = 'Couldn’t share: ' + err.message;
+  });
+};
+$('shareCopy').onclick = function () {
+  var input = $('shareLink');
+  input.select();
+  var done = function () { $('shareMsg').textContent = 'Copied.'; };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(input.value).then(done, function () { $('shareMsg').textContent = 'Press Ctrl+C (⌘C) to copy the selected link.'; });
+  else $('shareMsg').textContent = 'Press Ctrl+C (⌘C) to copy the selected link.';
+};
+
+var modes = [];
+function applyContext(ctx) {
+  freeroApplyTheme(ctx);
+  if (ctx.availableDisplayModes) modes = ctx.availableDisplayModes;
+  if (ctx.displayMode) document.documentElement.setAttribute('data-mode', ctx.displayMode);
+  $('full').hidden = modes.indexOf('fullscreen') < 0;
+  $('full').textContent = ctx.displayMode === 'fullscreen' ? 'Exit full screen' : 'Full screen';
+}
+$('full').onclick = function () {
+  var next = document.documentElement.getAttribute('data-mode') === 'fullscreen' ? 'inline' : 'fullscreen';
+  FreeroBridge.request('ui/request-display-mode', { mode: next }).then(function (r) { applyContext({ displayMode: (r && r.mode) || next }); }, function () {});
+};
+
+FreeroBridge.on('ui/notifications/tool-result', function (result) {
+  var m = liveOf(result);
+  if (m) mount(m);
+  else note(result && result.isError ? 'Freero couldn’t open this board.' : 'Nothing to show.');
+});
+FreeroBridge.start('Freero live board', applyContext).catch(function () { /* not in a host */ });
+</script>
+</body>
+</html>

@@ -153,4 +153,19 @@ it('what the API answers in a real session has the shapes its reference promises
   expect((await call('DELETE', B, '/boards/{boardId}')).status).toBe(400);
   await call('DELETE', `${B}?confirm=true`, '/boards/{boardId}');
   expect((await call('GET', B, '/boards/{boardId}')).status).toBe(404);
+
+  // Docs (KAI-162): made from Markdown, listed apart from boards, read back, appended to.
+  const doc = (await call('POST', '/docs', '/docs', { markdown: '# Decision\n\n- [x] Ship it\n' })).json.doc;
+  expect(doc.title).toBe('Decision');
+  const D = `/docs/${doc.id}`;
+  const listed = await call('GET', '/docs?q=Decision', '/docs');
+  expect(listed.json.docs.map((d: { id: string }) => d.id)).toEqual([doc.id]);
+  await call('POST', `${D}/append`, '/docs/{docId}/append', { markdown: '| a | b |\n| --- | --- |\n| 1 | 2 |' });
+  const read = await call('GET', D, '/docs/{docId}');
+  expect(read.json.markdown).toContain('- [x] Ship it');
+  expect(read.json.markdown).toContain('| 1 | 2 |');
+  await call('GET', `${D}?format=markdown`, '/docs/{docId}');
+  // A doc is no board for the board operations (and is not listed among boards).
+  expect((await call('GET', `/boards/${doc.id}`, '/boards/{boardId}')).status).toBe(404);
+  expect((await call('GET', '/boards?q=Decision', '/boards')).json.boards).toEqual([]);
 });

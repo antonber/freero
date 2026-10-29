@@ -4,7 +4,7 @@
 // Markdown goes between <untrusted_board_content> tags, and a closing tag written on the board
 // can't end the envelope early (it is escaped). Tool names, descriptions, server instructions and
 // error messages are Freero's own text and never carry board content.
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import type { CallToolResult } from '@modelcontextprotocol/server';
 import { UNTRUSTED_CONTENT_NOTICE } from '@freero/shared';
 
 export const ENVELOPE_TAG = 'untrusted_board_content';

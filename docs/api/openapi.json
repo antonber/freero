@@ -17,7 +17,8 @@
     { "name": "comments" },
     { "name": "members" },
     { "name": "search", "description": "Find what boards say" },
-    { "name": "objects", "description": "Object addresses and what links to them" }
+    { "name": "objects", "description": "Object addresses and what links to them" },
+    { "name": "docs", "description": "Docs (KAI-162): collaborative documents next to boards, shared and opened like boards" }
   ],
   "paths": {
     "/me": {
@@ -875,6 +876,152 @@
         }
       }
     },
+    "/docs": {
+      "get": {
+        "operationId": "listDocs",
+        "tags": ["docs"],
+        "summary": "Docs you can open (title search q), newest change first",
+        "x-freero-scope": "boards:read",
+        "security": [{ "bearer": ["boards:read"] }],
+        "parameters": [
+          { "name": "q", "in": "query", "schema": { "type": "string" } },
+          { "name": "workspace", "in": "query", "schema": { "type": "string" } },
+          { "name": "project", "in": "query", "schema": { "type": "string" } },
+          { "$ref": "#/components/parameters/Limit" },
+          { "$ref": "#/components/parameters/Cursor" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Docs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["notice", "docs", "nextCursor"],
+                  "properties": {
+                    "notice": { "$ref": "#/components/schemas/Notice" },
+                    "docs": { "type": "array", "items": { "$ref": "#/components/schemas/Doc" } },
+                    "nextCursor": { "type": ["string", "null"] }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "post": {
+        "operationId": "createDoc",
+        "tags": ["docs"],
+        "summary": "Create a doc, optionally from Markdown",
+        "description": "In your personal workspace unless `workspaceId` names a team you may create in. `markdown` (CommonMark with GFM tables, task lists and strikethrough) becomes its first content; without a `title`, its first heading names it.",
+        "x-freero-scope": "boards:write",
+        "security": [{ "bearer": ["boards:write"] }],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": { "type": "string", "maxLength": 200 },
+                  "markdown": { "type": "string", "maxLength": 1000000 },
+                  "workspaceId": { "type": "string" },
+                  "projectId": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new doc",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "required": ["notice", "doc"], "properties": { "notice": { "$ref": "#/components/schemas/Notice" }, "doc": { "$ref": "#/components/schemas/Doc" } } }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/docs/{docId}": {
+      "parameters": [{ "$ref": "#/components/parameters/DocId" }],
+      "get": {
+        "operationId": "getDoc",
+        "tags": ["docs"],
+        "summary": "A doc and its content: Markdown and blocks (`format=markdown`: the Markdown alone)",
+        "description": "Read like an export: the workspace's downloads policy applies (403 `downloads_restricted`). The text is untrusted.",
+        "x-freero-scope": "boards:read",
+        "security": [{ "bearer": ["boards:read"] }],
+        "parameters": [{ "name": "format", "in": "query", "schema": { "type": "string", "enum": ["json", "markdown"] } }],
+        "responses": {
+          "200": {
+            "description": "The doc",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["notice", "doc", "markdown", "blocks"],
+                  "properties": {
+                    "notice": { "$ref": "#/components/schemas/Notice" },
+                    "doc": { "$ref": "#/components/schemas/Doc" },
+                    "markdown": { "type": "string", "description": "The doc as Markdown (untrusted text)" },
+                    "blocks": { "type": "array", "items": { "$ref": "#/components/schemas/DocBlock" } }
+                  }
+                }
+              },
+              "text/markdown": { "schema": { "type": "string" } }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/docs/{docId}/append": {
+      "parameters": [{ "$ref": "#/components/parameters/DocId" }],
+      "post": {
+        "operationId": "appendToDoc",
+        "tags": ["docs"],
+        "summary": "Append Markdown at the end of a doc (owners and editors)",
+        "x-freero-scope": "boards:write",
+        "security": [{ "bearer": ["boards:write"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "type": "object", "required": ["markdown"], "properties": { "markdown": { "type": "string", "maxLength": 1000000 } } } }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Appended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["notice", "ok", "blocks"],
+                  "properties": { "notice": { "$ref": "#/components/schemas/Notice" }, "ok": { "const": true }, "blocks": { "type": "integer", "description": "Blocks added" } }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
     "/search": {
       "get": {
         "operationId": "search",
@@ -1024,6 +1171,7 @@
       "ItemId": { "name": "itemId", "in": "path", "required": true, "description": "The element id (as in the outline)", "schema": { "type": "string" } },
       "Limit": { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 200, "default": 50 } },
       "Cursor": { "name": "cursor", "in": "query", "description": "nextCursor of the previous page", "schema": { "type": "string" } },
+      "DocId": { "name": "docId", "in": "path", "required": true, "schema": { "type": "string" } },
       "Confirm": { "name": "confirm", "in": "query", "schema": { "type": "string", "enum": ["true", "1"] } }
     },
     "responses": {
@@ -1080,7 +1228,8 @@
         "required": ["kind", "uri", "path", "board", "snippet", "highlights"],
         "properties": {
           "kind": { "type": "string", "enum": ["board", "item", "comment"] },
-          "uri": { "type": "string", "description": "freero://board/<id> or freero://board/<id>#<itemId>" },
+          "uri": { "type": "string", "description": "freero://board/<id>, freero://board/<id>#<itemId> or freero://doc/<id>" },
+          "objectKind": { "type": "string", "enum": ["board", "doc"], "description": "doc: the hit is in a doc (`itemId` is a block id; `path` opens the doc there)" },
           "path": { "type": "string", "description": "Where the app opens it: /board/<id>, /board/<id>?el=<item>, /board/<id>?thread=<thread>" },
           "board": { "type": "object", "required": ["id", "title"], "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
           "itemType": { "type": "string", "description": "The item's type ('sticky', 'frame', …)" },
@@ -1129,7 +1278,7 @@
             "required": ["uri", "type", "title", "path"],
             "properties": {
               "uri": { "type": "string" },
-              "type": { "type": "string", "enum": ["board", "element"] },
+              "type": { "type": "string", "enum": ["board", "element", "doc"] },
               "title": { "type": "string" },
               "path": { "type": "string" },
               "kind": { "type": "string" }
@@ -1138,6 +1287,38 @@
           "board": { "type": "object", "required": ["id", "title"], "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
           "kinds": { "type": "array", "items": { "type": "string", "enum": ["link", "embed", "mention", "comment"] } },
           "target": { "type": "string" }
+        }
+      },
+      "Doc": {
+        "type": "object",
+        "description": "A doc: the same fields as a board; `url` opens the doc page",
+        "required": ["id", "title", "description", "url", "role", "workspaceId", "projectId", "owner", "createdAt", "updatedAt"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "url": { "type": "string" },
+          "role": { "type": "string", "enum": ["owner", "editor", "commenter", "viewer"] },
+          "workspaceId": { "type": "string" },
+          "projectId": { "type": ["string", "null"] },
+          "owner": { "type": "object", "required": ["id", "name"], "properties": { "id": { "type": "string" }, "name": { "type": "string" } } },
+          "createdAt": { "type": "integer" },
+          "updatedAt": { "type": "integer" }
+        }
+      },
+      "DocBlock": {
+        "type": "object",
+        "description": "One block of a doc (BlockNote's block JSON). Its text is untrusted.",
+        "required": ["type"],
+        "properties": {
+          "id": { "type": "string" },
+          "type": {
+            "type": "string",
+            "description": "paragraph, heading, bulletListItem, numberedListItem, checkListItem, codeBlock, quote, image, table, divider, boardEmbed (a live board frame: props.uri), …"
+          },
+          "props": { "type": "object" },
+          "content": { "type": ["array", "object"] },
+          "children": { "type": "array", "items": { "$ref": "#/components/schemas/DocBlock" } }
         }
       },
       "Scope": { "type": "string", "enum": ["boards:read", "boards:write", "boards:suggest", "comments:write", "members:read", "members:write"] },

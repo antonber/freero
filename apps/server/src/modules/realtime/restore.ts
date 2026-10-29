@@ -6,7 +6,13 @@
 // top-level map except `keep` (social / session data): keys missing from the version are deleted,
 // keys whose value differs are set to the version's value, equal ones are left untouched (so a
 // restore to the current state changes nothing).
+//
+// A doc's document (KAI-162: the XmlFragment DOC_FRAGMENT) is a tree, not a map of values: when it
+// differs from the version's, its children are replaced by copies of the version's (one change;
+// what the version and the live doc share is still rewritten, which keeps the rule simple and the
+// result exact). Comments stay as they are, like on boards (Y_KEPT_ON_RESTORE).
 import * as Y from 'yjs';
+import { DOC_FRAGMENT } from '@freero/shared';
 
 function same(a: unknown, b: unknown): boolean {
   if (a === b) return true;
@@ -37,6 +43,7 @@ export function restoreInto(doc: Y.Doc, version: Uint8Array, keep: readonly stri
     const names = new Set([...doc.share.keys(), ...old.share.keys()]);
     for (const k of keep) names.delete(k);
     doc.transact(() => {
+      if (names.delete(DOC_FRAGMENT)) changed += restoreFragment(doc.getXmlFragment(DOC_FRAGMENT), old.getXmlFragment(DOC_FRAGMENT));
       for (const name of names) {
         const live = doc.getMap<unknown>(name);
         const then = old.getMap<unknown>(name);
@@ -57,4 +64,27 @@ export function restoreInto(doc: Y.Doc, version: Uint8Array, keep: readonly stri
     old.destroy();
   }
   return changed;
+}
+
+/** Makes `live` equal to `then` (copies of its nodes); 0 when they are already equal. */
+function restoreFragment(live: Y.XmlFragment, then: Y.XmlFragment): number {
+  if (live.toString() === then.toString() && sameAttributes(live, then)) return 0;
+  if (live.length) live.delete(0, live.length);
+  const copies = then.toArray().map((n) => n.clone());
+  if (copies.length) live.insert(0, copies as Array<Y.XmlElement | Y.XmlText>);
+  return Math.max(1, copies.length);
+}
+
+/** XmlElement.toString leaves out attribute values that are not strings (a heading's level): compare those too. */
+function sameAttributes(a: Y.XmlFragment | Y.XmlElement, b: Y.XmlFragment | Y.XmlElement): boolean {
+  const ka = a.toArray();
+  const kb = b.toArray();
+  if (ka.length !== kb.length) return false;
+  return ka.every((x, i) => {
+    const y = kb[i];
+    if (x instanceof Y.XmlElement && y instanceof Y.XmlElement)
+      return JSON.stringify(x.getAttributes()) === JSON.stringify(y.getAttributes()) && sameAttributes(x, y);
+    if (x instanceof Y.XmlText && y instanceof Y.XmlText) return JSON.stringify(x.toDelta()) === JSON.stringify(y.toDelta());
+    return false;
+  });
 }

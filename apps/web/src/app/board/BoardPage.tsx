@@ -140,6 +140,8 @@ function ServerBoard({ id }: { id: string }) {
     ])
       .then(([{ board }, { workspaces }, { ai }, { connections }]) => {
         if (cancelled) return;
+        // A doc's id (KAI-162; an activity entry, an old link): its own page.
+        if (board.kind === 'doc') return navigate(`/doc/${encodeURIComponent(id)}${location.search}`, { replace: true });
         const w = workspaces.find((x) => x.id === board.workspaceId && x.kind === 'team' && x.role !== 'guest');
         setState({ status: 'ready', board, team: w ? { id: w.id, name: w.name } : null, ai, trackers: connections });
       })

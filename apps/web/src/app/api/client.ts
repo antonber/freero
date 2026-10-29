@@ -42,6 +42,7 @@ import type {
   ActivityResponse,
   GuestBoardInfo,
   GuestInfo,
+  EmbedRedeemResponse,
   GuestJoinResponse,
   AccessRequestState,
   BoardAccessRequest,
@@ -59,6 +60,8 @@ import type {
   BoardSummary,
   BoardVersion,
   CreateBoardRequest,
+  CreateDocRequest,
+  CreateDocResponse,
   DataExportInfo,
   ScimGroupMapping,
   ScimSettings,
@@ -244,6 +247,22 @@ export const api = {
   createBoard: (body: CreateBoardRequest = {}) =>
     request<{ board: BoardSummary }>('POST', '/api/boards', body),
   getBoard: (id: string) => request<{ board: BoardSummary }>('GET', `/api/boards/${id}`),
+  // docs (KAI-162): containers like boards — /api/boards/:id serves their summary, sharing, versions
+  createDoc: (body: CreateDocRequest = {}) => request<CreateDocResponse>('POST', '/api/docs', body),
+  /** The doc as Markdown (downloads policy; recorded as an export). */
+  async docMarkdown(id: string): Promise<string> {
+    const res = await fetch(`/api/docs/${encodeURIComponent(id)}/markdown`, { credentials: 'same-origin' });
+    if (!res.ok) {
+      let message = res.statusText;
+      try {
+        message = (await res.json()).error ?? message;
+      } catch {
+        // non-JSON error body
+      }
+      throw new ApiError(res.status, message);
+    }
+    return res.text();
+  },
   updateBoard: (id: string, body: UpdateBoardRequest) =>
     request<{ board: BoardSummary }>('PATCH', `/api/boards/${id}`, body),
   /** Moves the board to its owner's trash (restorable for TRASH_RETENTION_DAYS). */
@@ -294,6 +313,8 @@ export const api = {
   guestMe: () => request<{ guest: GuestInfo | null }>('GET', '/api/guest/me'),
   guestBoard: (id: string) => request<{ board: BoardSummary }>('GET', `/api/guest/boards/${encodeURIComponent(id)}/board`),
   leaveAsGuest: () => request<{ ok: true }>('POST', '/api/guest/leave'),
+  // A live board view inside an AI assistant (KAI-171): the tool call's single-use ticket.
+  redeemEmbed: (ticket: string) => request<EmbedRedeemResponse>('POST', '/api/embed/redeem', { ticket }),
 
   // activity
   boardActivity: (id: string, before?: number) =>

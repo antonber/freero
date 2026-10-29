@@ -1,6 +1,10 @@
 // What a board's content points at (pure). Board content is untrusted: anything unreadable is
 // skipped, and one board yields at most MAX_REFERENCES rows.
 import {
+  blockText,
+  docAddresses,
+  walkDocBlocks,
+  type DocBlock,
   boardOf,
   formatObjectUri,
   objectRefsInText,
@@ -87,6 +91,41 @@ export function extractReferences(
     const r = v as { kind?: unknown; threadId?: unknown; text?: unknown };
     if (r?.kind !== 'message' || typeof r.text !== 'string') continue;
     const on = typeof r.threadId === 'string' ? (threadElement.get(r.threadId) ?? '') : '';
+    for (const ref of objectRefsInText(r.text, origins)) add(on, ref, 'comment');
+  }
+  return [...rows.values()];
+}
+
+/**
+ * The references of a doc's content (KAI-162), with its blocks as the sources: link targets
+ * ('link'), live board embeds ('embed'), addresses written in a block's text ('mention') and in
+ * comment messages ('comment', on the block the thread is on).
+ */
+export function extractDocReferences(
+  content: { blocks: DocBlock[]; comments: ReadonlyMap<string, unknown> },
+  origins: readonly string[],
+): ReferenceRow[] {
+  const rows = new Map<string, ReferenceRow>();
+  const types = new Map<string, string>();
+  for (const { block } of walkDocBlocks(content.blocks)) if (typeof block.id === 'string') types.set(block.id, block.type);
+  const add = (sourceElement: string, ref: ObjectRef | null, kind: ReferenceKind) => {
+    if (!ref || rows.size >= MAX_REFERENCES) return;
+    const target = formatObjectUri(ref);
+    rows.set(`${sourceElement}
+${target}
+${kind}`, { sourceElement, sourceType: types.get(sourceElement) ?? null, target, targetBoard: boardOf(ref), kind });
+  };
+  for (const a of docAddresses(content.blocks)) if (a.kind !== 'image') add(a.blockId ?? '', parseObjectUri(a.url, origins), a.kind === 'embed' ? 'embed' : 'link');
+  for (const { block } of walkDocBlocks(content.blocks)) for (const ref of objectRefsInText(blockText(block), origins)) add(typeof block.id === 'string' ? block.id : '', ref, 'mention');
+  const threadBlock = new Map<string, string>();
+  for (const v of content.comments.values()) {
+    const r = v as { kind?: unknown; id?: unknown; elementId?: unknown };
+    if (r?.kind === 'thread' && typeof r.id === 'string') threadBlock.set(r.id, typeof r.elementId === 'string' ? r.elementId : '');
+  }
+  for (const v of content.comments.values()) {
+    const r = v as { kind?: unknown; threadId?: unknown; text?: unknown };
+    if (r?.kind !== 'message' || typeof r.text !== 'string') continue;
+    const on = typeof r.threadId === 'string' ? (threadBlock.get(r.threadId) ?? '') : '';
     for (const ref of objectRefsInText(r.text, origins)) add(on, ref, 'comment');
   }
   return [...rows.values()];

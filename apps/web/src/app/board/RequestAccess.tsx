@@ -19,7 +19,9 @@ const ROLE_OPTIONS: SelectOption<Exclude<Role, 'owner'>>[] = [
 ];
 const POLL_MS = 20_000;
 
-export function RequestAccess({ boardId, onGranted }: { boardId: string; onGranted: () => void }) {
+/** `kind` 'doc': the same page for a doc (KAI-162) — a doc is shared and requested like a board. */
+export function RequestAccess({ boardId, onGranted, kind = 'board' }: { boardId: string; onGranted: () => void; kind?: 'board' | 'doc' }) {
+  const noun = kind === 'doc' ? 'doc' : 'board';
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const [state, setState] = useState<AccessRequestState | null>(null);
@@ -84,7 +86,7 @@ export function RequestAccess({ boardId, onGranted }: { boardId: string; onGrant
 
   const switchAccount = async () => {
     await logout();
-    navigate(loginPath(`/board/${boardId}`), { replace: true });
+    navigate(loginPath(`/${noun}/${boardId}`), { replace: true });
   };
 
   return (
@@ -101,7 +103,7 @@ export function RequestAccess({ boardId, onGranted }: { boardId: string; onGrant
               <Clock size={18} />
             </span>
             <h1>Request sent</h1>
-            <p>The board’s owner has been asked. Keep this page open — you’ll be taken to the board as soon as they let you in.</p>
+            <p>The {noun}’s owner has been asked. Keep this page open — you’ll be taken to the {noun} as soon as they let you in.</p>
             <div className="fr-reqaccess__waiting" role="status">
               <Spinner size={16} /> Waiting for an answer…
             </div>
@@ -117,11 +119,11 @@ export function RequestAccess({ boardId, onGranted }: { boardId: string; onGrant
             <span className="fr-reqaccess__badge" aria-hidden>
               <Lock size={18} />
             </span>
-            <h1>{state.status === 'denied' ? 'Your request was declined' : 'You need access to this board'}</h1>
+            <h1>{state.status === 'denied' ? 'Your request was declined' : `You need access to this ${noun}`}</h1>
             <p>
               {state.canRequest
                 ? 'Ask for access and the board’s owner will get a notification. You can say why you need it.'
-                : (state.reason ?? 'Ask the board owner to invite you, or switch to the account they shared it with.')}
+                : (state.reason ?? `Ask the ${noun} owner to invite you, or switch to the account they shared it with.`)}
             </p>
             {user ? (
               <p className="fr-boarderror__account">

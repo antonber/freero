@@ -291,7 +291,24 @@ export interface Config {
    * Added to the CSP `frame-src`.
    */
   embedExtraOrigins: string[];
+  /**
+   * Who may frame Freero's live board view (/embed/…, KAI-171): the AI assistants that show MCP
+   * Apps, as CSP `frame-ancestors` sources (every ancestor must match: the host's sandbox origin
+   * and its app). Empty: nobody (the live view then can't load anywhere).
+   */
+  appFrameAncestors: string[];
 }
+
+/** The MCP Apps hosts Freero's live board view runs in by default: Claude, ChatGPT, VS Code. */
+export const DEFAULT_APP_FRAME_ANCESTORS = [
+  'https://claude.ai',
+  'https://*.claude.ai',
+  'https://*.claudemcpcontent.com',
+  'https://chatgpt.com',
+  'https://*.chatgpt.com',
+  'https://*.oaiusercontent.com',
+  'vscode-webview:',
+];
 
 export class ConfigError extends Error {
   constructor(readonly problems: string[]) {
@@ -576,6 +593,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     else if (publicUrl && u.origin === publicUrl) problems.push('EMBED_EXTRA_ORIGINS must not contain PUBLIC_URL (Freero never frames itself)');
     else if (!embedExtraOrigins.includes(u.origin)) embedExtraOrigins.push(u.origin);
   }
+  // Live board views in AI assistants (KAI-171): https origins (a leading `*.` wildcard allowed),
+  // http only for local testing (localhost / 127.0.0.1), or a bare scheme such as vscode-webview:.
+  const appFrameAncestors: string[] = [];
+  const ancestorsRaw = str('MCP_APP_FRAME_ANCESTORS');
+  for (const v of ancestorsRaw === null ? DEFAULT_APP_FRAME_ANCESTORS : ancestorsRaw === 'none' ? [] : ancestorsRaw.split(/[\s,]+/).filter(Boolean)) {
+    if (/^[a-z][a-z0-9+.-]*-webview:$/.test(v) || /^https:\/\/(\*\.)?[a-z0-9.-]+(:\d+)?$/i.test(v) || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(v)) {
+      if (!appFrameAncestors.includes(v)) appFrameAncestors.push(v);
+    } else problems.push(`MCP_APP_FRAME_ANCESTORS: "${v}" must be an https origin (https://host or https://*.host), a local http origin, or a *-webview: scheme`);
+  }
   let securityContact = str('SECURITY_CONTACT');
   if (securityContact !== null && !/^(mailto:[^\s@]+@[^\s@]+|https:\/\/\S+)$/.test(securityContact)) {
     problems.push('SECURITY_CONTACT must be a mailto: or https:// URL');
@@ -699,6 +725,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       disableAfterFailures: int('WEBHOOK_DISABLE_AFTER_FAILURES', 15, 1, 1000),
     },
     embedExtraOrigins,
+    appFrameAncestors,
   };
 
   if (production) {
