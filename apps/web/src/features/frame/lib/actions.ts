@@ -11,8 +11,11 @@ import {
   nextFrameTitle,
   orderFrames,
   padRect,
+  presetById,
+  reorderPatches,
   type FramePreset,
 } from './frames';
+import { layoutItems, type SlideLayoutId } from './layouts';
 
 export function allFrames(editor: Editor): FrameElement[] {
   return editor.getElements().filter(isFrame);
@@ -130,6 +133,72 @@ export function renameFrame(editor: Editor, id: string, title: string): void {
   const next = title.trim();
   if (!frame || frame.title === next) return;
   editor.update<FrameElement>(id, { title: next || frame.title });
+}
+
+// ------------------------------------------------------------------ slides (KAI-126)
+
+/** Puts a layout's texts (and image area) into a frame, sized to it: one undo step. */
+export function applyLayout(editor: Editor, frameId: string, layout: SlideLayoutId): string[] {
+  const frame = editor.getElement<FrameElement>(frameId);
+  if (!isFrame(frame) || frame.locked || !editor.can('editor')) return [];
+  let ids: string[] = [];
+  editor.transact(() => {
+    ids = editor.createMany(layoutItems(frame, layout));
+  });
+  return ids;
+}
+
+const SLIDE = presetById('16:9');
+const SLIDE_GAP = 160;
+
+/**
+ * A new 16:9 slide with a layout, right after `after` in the deck (default: at the end), placed to
+ * the right of the slide before it when that spot is free. One undo step; the slide is selected.
+ */
+export function newSlide(editor: Editor, layout: SlideLayoutId | null, after?: string): string | null {
+  if (!editor.can('editor') || !editor.mayAdd('frame')) return null;
+  const order = framesInOrder(editor);
+  const prev = (after ? order.find((f) => f.id === after) : undefined) ?? order[order.length - 1];
+  const size = prev && (prev.preset === '4:3' || prev.preset === '16:9') ? { w: prev.w, h: prev.h } : { w: SLIDE.w, h: SLIDE.h };
+  const near = prev ? { x: prev.x + prev.w + SLIDE_GAP + size.w / 2, y: prev.y + size.h / 2 } : undefined;
+  const spot = editor.findFreeSpot(size, { near, gap: 80 });
+  let id = '';
+  editor.transact(() => {
+    id = createFrame(editor, { ...spot, ...size }, prev?.preset === '4:3' ? '4:3' : '16:9', { select: false });
+    if (!id) return;
+    const n = order.length + 1;
+    editor.update<FrameElement>(id, { title: `Slide ${n}` });
+    if (prev) moveSlide(editor, id, order.indexOf(prev) + 1);
+    if (layout) applyLayout(editor, id, layout);
+  });
+  if (!id) return null;
+  editor.select([id]);
+  return id;
+}
+
+/** Moves a slide to position `slot` of the deck (0 = first): rewrites the indexes that change. */
+export function moveSlide(editor: Editor, id: string, slot: number): void {
+  const patches = reorderPatches(allFrames(editor), id, slot);
+  if (patches.length) editor.transact(() => patches.forEach(({ id: fid, index }) => editor.update<FrameElement>(fid, { index })));
+}
+
+/** Duplicates a slide with its contents (and notes, element content) right after it in the deck. */
+export function duplicateSlide(editor: Editor, id: string): string | null {
+  const order = framesInOrder(editor);
+  const at = order.findIndex((f) => f.id === id);
+  if (at < 0 || !editor.can('editor')) return null;
+  let copy: string | undefined;
+  editor.transact(() => {
+    copy = editor.duplicate([id]).find((cid) => editor.getElement(cid)?.type === 'frame');
+    if (copy) moveSlide(editor, copy, at + 1);
+  });
+  return copy ?? null;
+}
+
+/** Skips (or puts back) slides when presenting and in PDF exports. */
+export function setSkipped(editor: Editor, frames: FrameElement[], skip: boolean): void {
+  if (!editor.can('editor')) return;
+  editor.transact(() => frames.forEach((f) => editor.update<FrameElement>(f.id, { skip })));
 }
 
 /** Selected frames. */

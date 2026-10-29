@@ -55,6 +55,14 @@ describe('who is presenting', () => {
   });
 });
 
+describe('skipped slides (KAI-126)', () => {
+  it('presents the deck without a skipped slide, and moving on from the slide before it lands on the one after', () => {
+    const deck = slides([frame('A', 0), { ...frame('B', 1), skip: true }, frame('C', 2)]);
+    expect(deck.map((f) => f.id)).toEqual(['A', 'C']);
+    expect(deck[currentPosition(deck, 'A', 0) + 1].id).toBe('C');
+  });
+});
+
 describe('laser pointer trails', () => {
   it('a faded trail does not come back when presence re-sends the same points with a cursor move', () => {
     const ext = { pts: [[0, 0, 1], [5, 5, 2]] as Array<[number, number, number]> };

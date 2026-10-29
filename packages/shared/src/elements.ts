@@ -351,6 +351,11 @@ export interface FrameElement extends BaseElement {
   hidden?: boolean;
   /** Auto-layout: the frame keeps its children in a grid (reading order) of `cols` columns. */
   layout?: FrameGridLayout | null;
+  /**
+   * A slide left out of the deck (KAI-126): presenting skips it and PDF exports leave it out by
+   * default. It stays on the board, in its place in the order.
+   */
+  skip?: boolean;
 }
 
 export interface FrameGridLayout {

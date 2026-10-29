@@ -1,7 +1,7 @@
 import { MonitorPlay, NotebookText, X } from 'lucide-react';
 import { defineCommands } from '@engine';
 import { presentStore, startPresenting, stopPresenting } from './lib/session';
-import { NOTES_PANEL_ID } from './lib/notes';
+import { NOTES_PANEL_ID, setNote } from './lib/notes';
 
 export default defineCommands([
   {
@@ -25,6 +25,16 @@ export default defineCommands([
       return sel.length === 0 || (sel.length === 1 && editor.getElement(sel[0])?.type === 'frame');
     },
     run: (editor) => editor.openDock(NOTES_PANEL_ID),
+  },
+  {
+    // The slide deck (features/frame) edits speaker notes through this: present owns the notes.
+    id: 'present.setNote',
+    label: 'Set presenter notes',
+    run(editor, args) {
+      const frameId = typeof args?.frameId === 'string' ? args.frameId : null;
+      const text = typeof args?.text === 'string' ? args.text : null;
+      if (frameId && text !== null) setNote(editor, frameId, text);
+    },
   },
   {
     id: 'present.stop',
