@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { CircleAlert, Eye, EyeOff, KeyRound, Lock, Mail, Sparkles, UserRound } from 'lucide-react';
-import { SSO_REQUIRED, type SsoDiscovery } from '@freero/shared';
+import { SSO_REQUIRED, type SiteLegal, type SsoDiscovery } from '@freero/shared';
 import { Button, IconButton, Input, Logo } from '@ui';
 import { useAuth } from '../../auth/AuthContext';
 import { api, ApiError } from '../../api/client';
@@ -48,6 +48,19 @@ export function AuthPage({ mode }: { mode: Mode }) {
   const [busy, setBusy] = useState(false);
   const [touched, setTouched] = useState(false);
   const firstRef = useRef<HTMLInputElement>(null);
+  // The terms signing up agrees to: only once the operator has put them in effect (never drafts).
+  const [terms, setTerms] = useState<SiteLegal['legal']>(null);
+  useEffect(() => {
+    if (mode !== 'signup') return;
+    let live = true;
+    api.siteLegal().then(
+      (r) => live && setTerms(r.legal),
+      () => live && setTerms(null),
+    );
+    return () => {
+      live = false;
+    };
+  }, [mode]);
   // Single sign-on for the address's domain (looked up by domain only, as the address is typed).
   const [sso, setSso] = useState<SsoDiscovery['sso']>(null);
   const [breakGlass, setBreakGlass] = useState(false);
@@ -253,6 +266,13 @@ export function AuthPage({ mode }: { mode: Mode }) {
               </button>
             ) : null}
           </div>
+        ) : null}
+
+        {!isLogin && terms ? (
+          <p className="fr-authcard__terms" data-testid="signup-terms">
+            By signing up you agree to the <a href={terms.termsUrl}>Terms of service</a> and the <a href={terms.acceptableUseUrl}>Acceptable use policy</a>,
+            and acknowledge the <a href={terms.privacyUrl}>Privacy policy</a>.
+          </p>
         ) : null}
 
         <p className="fr-authcard__switch">
