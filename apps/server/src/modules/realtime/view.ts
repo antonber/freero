@@ -12,7 +12,8 @@ import { createHash } from 'node:crypto';
 import * as Y from 'yjs';
 import {
   isElementContentCollection,
-  elementContentOwner,
+  ELEMENT_CONTENT_COLLECTIONS,
+  homeLayer,
   SERVER_WRITTEN_COLLECTIONS,
   pendingSuggestions,
   SUGGESTIONS_COLLECTION,
@@ -27,7 +28,7 @@ import {
 import { FACILITATION_COLLECTION } from '@freero/shared';
 import { commenterMayChangeComments } from './commentRules';
 import { effectiveAccess, readFacilitation } from './facilitation';
-import { contentOf } from './elementContent';
+import { contentOf, writeElementContent } from './elementContent';
 import { EDITORS_LAYER, privateLayerOf } from './layers';
 
 export type ViewLayer = 'shared' | 'editors' | 'private';
@@ -297,7 +298,7 @@ export function applyChange(main: Y.Doc, layers: ReadonlyMap<string, Y.Doc>, cha
         const old = docOf(n.from);
         queue(old, () => elementsOfDoc(old)!.delete(id));
         // Its content goes along (a table's cells into / out of a hidden frame), in the same step.
-        const content = old ? contentOf(old, new Set([id])) : [];
+        const content = old ? contentOf(old, new Set([id]), [main, ...layers.values()]) : [];
         if (content.length) {
           const doc = docOf(to);
           queue(old, () => content.forEach((c) => old!.getMap<unknown>(c.name).delete(c.key)));
@@ -308,6 +309,7 @@ export function applyChange(main: Y.Doc, layers: ReadonlyMap<string, Y.Doc>, cha
       queue(doc, () => elementsOfDoc(doc)!.set(id, n.el));
     }
   }
+  const serverWrites: Array<[string, Record<string, unknown>]> = [];
   for (const [name, entries] of Object.entries(change.collections ?? {})) {
     if (!isElementContentCollection(name)) {
       const map = main.getMap<unknown>(name);
@@ -318,19 +320,47 @@ export function applyChange(main: Y.Doc, layers: ReadonlyMap<string, Y.Doc>, cha
       });
       continue;
     }
-    // Element content goes to its element's doc (a table created in a hidden frame: the editors layer).
-    for (const [k, v] of Object.entries(entries)) {
-      const owner = elementContentOwner(name, k);
-      const layer = (owner && finalLayer.get(owner)) || 'shared';
-      const doc = docOf(layer);
-      if (v === null && editor) {
-        queue(doc, () => doc!.getMap<unknown>(name).delete(k));
-      } else {
-        queue(doc, () => doc!.getMap<unknown>(name).set(k, v));
+    // What only the server writes (a tracker badge, activity results) goes where its elements are,
+    // after them (they may be created or moved by this same change): see writeElementContent.
+    if (SERVER_WRITTEN_COLLECTIONS.includes(name)) {
+      serverWrites.push([name, entries]);
+      continue;
+    }
+    // Element content goes to its element's doc (a table created in a hidden frame: the editors
+    // layer; a reply to a thread on a hidden item: the thread's doc). Only owners and editors write
+    // layers: a commenter's records stay in the shared doc (they never see a withheld item anyway).
+    const readableDocs = (['shared', 'editors', 'private'] as ViewLayer[]).filter((l) => l === 'shared' || (editor && docOf(l)));
+    const stored = (k: string): { value: unknown; layer: ViewLayer } | undefined => {
+      for (const l of readableDocs) {
+        const d = docOf(l);
+        if (d?.share.has(name) && d.getMap<unknown>(name).has(k)) return { value: d.getMap<unknown>(name).get(k), layer: l };
       }
-      if (doc !== main && main.share.has(name) && main.getMap<unknown>(name).has(k)) queue(main, () => main.getMap<unknown>(name).delete(k));
+      return undefined;
+    };
+    const get = (k: string) => (k in entries ? entries[k] : stored(k)?.value);
+    const rule = ELEMENT_CONTENT_COLLECTIONS[name];
+    const placed = new Map<string, ViewLayer>();
+    const layerOf = (k: string, v: unknown): ViewLayer => {
+      if (!editor) return 'shared';
+      const at = homeLayer(rule.owners(k, v, get).flatMap((id) => finalLayer.get(id) ?? [])) as ViewLayer | null;
+      if (at) return at;
+      const follows = rule.follows?.(k);
+      if (follows && follows !== k) return placed.get(follows) ?? (follows in entries ? layerOf(follows, entries[follows]) : stored(follows)?.layer) ?? 'shared';
+      return stored(k)?.layer ?? 'shared';
+    };
+    for (const [k, v] of Object.entries(entries)) placed.set(k, layerOf(k, v));
+    for (const [k, v] of Object.entries(entries)) {
+      const doc = docOf(placed.get(k)!);
+      // An owner's or editor's `null` removes the entry, wherever it is.
+      if (!(v === null && editor)) queue(doc, () => doc!.getMap<unknown>(name).set(k, v));
+      for (const l of readableDocs) {
+        const other = docOf(l);
+        if (!other || (other === doc && !(v === null && editor))) continue;
+        if (other.share.has(name) && other.getMap<unknown>(name).has(k)) queue(other, () => other.getMap<unknown>(name).delete(k));
+      }
     }
   }
   for (const [doc, writes] of byDoc) doc.transact(() => writes.forEach((w) => w()), origin);
+  for (const [name, entries] of serverWrites) writeElementContent(main, layers, name, entries, origin);
   return { created: (change.create ?? []).map((d) => d.id), updated, removed: [...removed] };
 }

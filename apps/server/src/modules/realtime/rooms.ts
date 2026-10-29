@@ -69,12 +69,12 @@ import { getBoardAccess, touchBoard } from '../boards/index';
 import { sanitizeAwarenessUpdate, withoutClients, type AwarenessIdentity } from './awareness';
 import { cardAssignments, emitCardAssignments, hasCardListeners } from './cards';
 import { elementChanges, ELEMENTS, emitBoardChange, hasBoardChangeListeners } from './changes';
-import { commentPeople, COMMENTS_COLLECTION, emitCommentMessages, hasCommentListeners, messageEvents } from './comments';
+import { commentPeople, COMMENTS_COLLECTION, emitCommentMessages, hasCommentListeners, messageEvents, type CommentLayer, type CommentMessageEvent } from './comments';
 import * as store from './docStore';
 import { effectiveAccess, guardSession, readFacilitation, revertForbiddenAdds, sameEffective } from './facilitation';
 import { guardVotes } from './votingRules';
 import { guardServerCollections, prepareServerCollections, SERVER_COLLECTIONS } from './serverCollections';
-import { guardContentPlacement, placeElementContent, writeElementContent } from './elementContent';
+import { guardContentPlacement, placeElementContent, writeElementContent, type MovedEntry } from './elementContent';
 import { decideUpdate } from './filter';
 import * as layerStore from './layerStore';
 import {
@@ -324,12 +324,7 @@ class Room {
     );
 
     // Comment messages written through OUR sockets (comments.ts): attributed to the socket's user.
-    const comments = this.doc.getMap<unknown>(COMMENTS_COLLECTION);
-    comments.observe((event, tr) => {
-      const conn = tr.origin instanceof WebSocket ? this.conns.get(tr.origin) : undefined;
-      if (!conn || !hasCommentListeners()) return;
-      emitCommentMessages(messageEvents(this.id, comments, event.changes.keys, conn.userId));
-    });
+    this.watchComments(this.doc, 'shared');
 
     // Element changes made through OUR sockets (changes.ts): the activity feed's trusted source.
     const elements = this.doc.getMap<unknown>(ELEMENTS);
@@ -381,6 +376,66 @@ class Room {
     placeElementContent(this.doc, layerDocs(this), SERVER_ORIGIN);
   }
 
+  /** Comment keys deleted from one of this room's docs lately: doc and when (see commentMovedIn). */
+  private commentRemovedAt = new Map<string, { doc: Y.Doc; at: number }>();
+
+  /**
+   * Reports comment messages written into `doc` through OUR sockets (comments.ts), with the layer
+   * the thread lives in. A record arriving because its thread moved between docs (its item hidden,
+   * shown, revealed) is not a new message.
+   */
+  private watchComments(doc: Y.Doc, layer: CommentLayer): void {
+    const comments = doc.getMap<unknown>(COMMENTS_COLLECTION);
+    comments.observe((event, tr) => {
+      const now = Date.now();
+      for (const [key, { action }] of event.changes.keys) if (action === 'delete') this.commentRemovedAt.set(key, { doc, at: now });
+      if (this.commentRemovedAt.size > 5000)
+        for (const [k, r] of this.commentRemovedAt) if (now - r.at > MOVE_WINDOW_MS) this.commentRemovedAt.delete(k);
+      const conn = tr.origin instanceof WebSocket ? this.conns.get(tr.origin) : undefined;
+      if (!conn || !hasCommentListeners()) return;
+      const keys = new Map([...event.changes.keys].filter(([key, c]) => !(c.action === 'add' && this.commentMovedIn(doc, key, now))));
+      emitCommentMessages(messageEvents(this.id, comments, keys, conn.userId, layer));
+    });
+  }
+
+  /** Is comment record `key`, just added to `doc`, one that moved here from another doc of this room? */
+  private commentMovedIn(doc: Y.Doc, key: string, now = Date.now()): boolean {
+    const removed = this.commentRemovedAt.get(key);
+    if (removed && removed.doc !== doc && now - removed.at <= MOVE_WINDOW_MS) return true;
+    for (const d of [this.doc, ...[...this.layers.values()].map((l) => l.doc)])
+      if (d !== doc && d.share.has(COMMENTS_COLLECTION) && d.getMap<unknown>(COMMENTS_COLLECTION).has(key)) return true;
+    return false;
+  }
+
+  /** The layer a doc of this room is, as comment events name it. */
+  commentLayerOf(doc: Y.Doc): CommentLayer {
+    if (doc === this.doc) return 'shared';
+    return this.layers.get(EDITORS_LAYER)?.doc === doc ? 'editors' : 'private';
+  }
+
+  /**
+   * Comment messages `authorId` wrote in `keys` (with what each key held before, in any doc), read
+   * from the doc each now lives in. For writes the room made on someone's behalf (a request, a
+   * socket's record moved to its thread's layer).
+   */
+  commentEvents(keys: Map<string, { action: 'add' | 'update' | 'delete'; oldValue: unknown }>, authorId: string): CommentMessageEvent[] {
+    const byDoc = new Map<Y.Doc, Map<string, { action: 'add' | 'update' | 'delete'; oldValue: unknown }>>();
+    for (const [key, change] of keys) {
+      const doc = [this.doc, ...[...this.layers.values()].map((l) => l.doc)].find((d) => d.share.has(COMMENTS_COLLECTION) && d.getMap<unknown>(COMMENTS_COLLECTION).has(key));
+      if (!doc) continue;
+      byDoc.set(doc, (byDoc.get(doc) ?? new Map()).set(key, change));
+    }
+    return [...byDoc].flatMap(([doc, ks]) => messageEvents(this.id, doc.getMap<unknown>(COMMENTS_COLLECTION), ks, authorId, this.commentLayerOf(doc)));
+  }
+
+  /** Comment messages a socket wrote that the placement guard moved to their thread's layer. */
+  private reportMovedComments(moved: MovedEntry[], authorId: string): void {
+    const keys = new Map(
+      moved.filter((m) => m.name === COMMENTS_COLLECTION).map((m) => [m.key, { action: m.before === undefined ? ('add' as const) : ('update' as const), oldValue: m.before }]),
+    );
+    if (keys.size && hasCommentListeners()) emitCommentMessages(this.commentEvents(keys, authorId));
+  }
+
   private placingServerContent = false;
   /**
    * After a change of where elements live made here (not another instance's: that instance does
@@ -418,6 +473,8 @@ class Room {
       created.unsaved.push(update);
       this.markDirty();
     });
+    // Threads on items in hidden frames / private drafts (KAI-234): reported with their layer.
+    this.watchComments(created.doc, name === EDITORS_LAYER ? 'editors' : 'private');
     // Hidden frames' contents: reported for owners/editors only (changes.ts). Private layers never.
     const els = created.doc.getMap<unknown>(ELEMENTS);
     els.observe((event, tr) => {
@@ -886,6 +943,7 @@ class Room {
       const before = Y.encodeStateVector(this.doc);
       const addTypes = conn.limits?.addTypes;
       let fixed = false;
+      let moved: MovedEntry[] = [];
       this.doc.transact((tr) => {
         Y.applyUpdate(this.doc, update);
         fixed = guardSession(tr, this.doc, { userId: conn.userId, access: conn.access });
@@ -894,14 +952,26 @@ class Room {
         if (addTypes) fixed = revertForbiddenAdds(tr, this.doc.getMap<unknown>(ELEMENTS), new Set(addTypes), (id) => this.existsElsewhere(this.doc, id)) > 0 || fixed;
         // Element content written here for an element in a layer goes to that layer (elementContent.ts).
         const homes = { editors: this.layers.get(EDITORS_LAYER)?.doc, own: this.layers.get(privateLayerOf(conn.userId))?.doc };
-        fixed = guardContentPlacement(tr, this.doc, homes, SERVER_ORIGIN) > 0 || fixed;
+        moved = guardContentPlacement(tr, this.doc, homes, SERVER_ORIGIN);
+        fixed = moved.length > 0 || fixed;
       }, conn.ws);
+      this.reportMovedComments(moved, conn.userId);
       if (fixed) send(conn.ws, syncUpdateMessage(Y.encodeStateAsUpdate(this.doc, before)));
       if (syncType === syncProtocol.messageYjsUpdate) noteSessionActivity(conn.sessionKey);
       return;
     }
-    if (decideUpdate(conn.role, this.doc, update, conn.userId, conn.authorNames) === 'apply') {
-      Y.applyUpdate(this.doc, update, conn.ws);
+    const hidden = this.layers.get(EDITORS_LAYER)?.doc;
+    if (decideUpdate(conn.role, this.doc, update, conn.userId, conn.authorNames, hidden?.share.has(COMMENTS_COLLECTION) ? hidden.getMap<unknown>(COMMENTS_COLLECTION) : undefined) === 'apply') {
+      // A record for a thread that lives in the editors layer (a tab that had not seen it hidden)
+      // goes there (elementContent.ts), never to the other sockets of the shared doc.
+      const before = Y.encodeStateVector(this.doc);
+      let moved: MovedEntry[] = [];
+      this.doc.transact((tr) => {
+        Y.applyUpdate(this.doc, update);
+        moved = guardContentPlacement(tr, this.doc, { editors: this.layers.get(EDITORS_LAYER)?.doc, own: undefined }, SERVER_ORIGIN);
+      }, conn.ws);
+      this.reportMovedComments(moved, conn.userId);
+      if (moved.length) send(conn.ws, syncUpdateMessage(Y.encodeStateAsUpdate(this.doc, before)));
       // Editing over the socket is activity: a workspace's idle limit must not sign out someone at work.
       if (syncType === syncProtocol.messageYjsUpdate) noteSessionActivity(conn.sessionKey);
       return;
@@ -1410,13 +1480,14 @@ export async function changeBoard<T extends { change: BoardChange }>(
     const docs = layerDocs(room);
     const planned = plan(viewOf(room.doc, docs, actor));
     if (room.destroyed) throw new BoardClosedError(boardId);
-    const comments = room.doc.getMap<unknown>(COMMENTS_COLLECTION);
+    // What each comment key held before, in whichever doc (a thread on a hidden item: the editors layer).
+    const prior = (k: string) => [room.doc, ...docs.values()].find((d) => d.share.has(COMMENTS_COLLECTION) && d.getMap<unknown>(COMMENTS_COLLECTION).has(k))?.getMap<unknown>(COMMENTS_COLLECTION).get(k);
     const commentKeys = Object.keys(planned.change.collections?.[COMMENTS_COLLECTION] ?? {});
-    const before = new Map(commentKeys.map((k) => [k, { action: comments.has(k) ? ('update' as const) : ('add' as const), oldValue: comments.get(k) }]));
+    const before = new Map(commentKeys.map((k) => [k, { action: prior(k) === undefined ? ('add' as const) : ('update' as const), oldValue: prior(k) }]));
     const applied = applyChange(room.doc, docs, planned.change, actor, new RequestOrigin(actor));
     // A comment written on a request is the actor's, like one from their socket (mentions, replies).
     if (before.size && hasCommentListeners())
-      emitCommentMessages(messageEvents(room.id, comments, before, actor.userId).map((e) => (actor.via ? { ...e, via: actor.via } : e)));
+      emitCommentMessages(room.commentEvents(before, actor.userId).map((e) => (actor.via ? { ...e, via: actor.via } : e)));
     await room.flush();
     return { ...planned, applied };
   });
@@ -1625,13 +1696,17 @@ async function closeBoardHere(boardId: string, why: 'deleted' | 'removed'): Prom
 export async function renameCommentAuthor(boardId: string, userId: string, name: string, color: string): Promise<void> {
   try {
     await withLiveRoom(boardId, async (room) => {
-      const comments = room.doc.getMap<Record<string, unknown>>(COMMENTS_COLLECTION);
-      room.doc.transact(() => {
-        for (const [key, value] of comments.entries()) {
-          if (!key.startsWith('m:') || value?.authorId !== userId) continue;
-          if (value.authorName !== name || value.authorColor !== color) comments.set(key, { ...value, authorName: name, authorColor: color });
-        }
-      });
+      // Every doc: threads on items in hidden frames / drafts live in layers (KAI-234).
+      for (const doc of [room.doc, ...layerDocs(room).values()]) {
+        if (!doc.share.has(COMMENTS_COLLECTION)) continue;
+        const comments = doc.getMap<Record<string, unknown>>(COMMENTS_COLLECTION);
+        doc.transact(() => {
+          for (const [key, value] of comments.entries()) {
+            if (!key.startsWith('m:') || value?.authorId !== userId) continue;
+            if (value.authorName !== name || value.authorColor !== color) comments.set(key, { ...value, authorName: name, authorColor: color });
+          }
+        }, SERVER_ORIGIN);
+      }
       await room.flush();
     });
   } catch (err) {
@@ -1639,17 +1714,12 @@ export async function renameCommentAuthor(boardId: string, userId: string, name:
   }
 }
 
-/** User ids that appear in the board's comments (authors, @mentions), from the live doc if loaded. */
-export async function commentPeopleOf(boardId: string): Promise<Set<string>> {
-  const state = await snapshotBoardDoc(boardId);
-  if (!state) return new Set();
-  const doc = new Y.Doc();
-  try {
-    Y.applyUpdate(doc, state);
-    return commentPeople(doc.getMap<unknown>(COMMENTS_COLLECTION));
-  } finally {
-    doc.destroy();
-  }
+/**
+ * User ids that appear in the board's comments (authors, @mentions) as `reader` sees them: threads
+ * on items in hidden frames only for owners/editors, on drafts only for their author (KAI-234).
+ */
+export async function commentPeopleOf(boardId: string, reader: BoardReader): Promise<Set<string>> {
+  return withLiveRoom(boardId, (room) => commentPeople(viewOf(room.doc, layerDocs(room), reader).collection(COMMENTS_COLLECTION)));
 }
 
 /** Saves every loaded doc (graceful shutdown). */

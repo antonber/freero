@@ -27,9 +27,12 @@ const COMMENTS = 'comments';
 
 /**
  * A commenter's update: confined to COMMENTER_WRITABLE, and in `comments` only plain records the
- * connection's user may write (no nested shared types, see commentRules.ts).
+ * connection's user may write (no nested shared types, see commentRules.ts). `layered`: the
+ * `comments` records that live in a layer (threads on items in hidden frames, KAI-234). A record
+ * a commenter writes there is moved into that layer (elementContent.ts), so the rules judge it
+ * against what the layer holds, as if it were in the shared doc: authorship holds in layers too.
  */
-export function commenterMayApply(doc: Y.Doc, update: Uint8Array, userId: string, authorNames?: ReadonlySet<string>): boolean {
+export function commenterMayApply(doc: Y.Doc, update: Uint8Array, userId: string, authorNames?: ReadonlySet<string>, layered?: Y.Map<unknown>): boolean {
   const names = new Set<string | null>();
   const scratch = new Y.Doc();
   const changedKeys = new Set<string>();
@@ -52,13 +55,15 @@ export function commenterMayApply(doc: Y.Doc, update: Uint8Array, userId: string
     if (nested) return false;
     const live = doc.getMap<unknown>(COMMENTS);
     const plain = (v: unknown) => (v instanceof Y.AbstractType ? Symbol('shared type') : v);
+    const prior = (k: string) => plain(live.has(k) || !layered ? live.get(k) : layered.get(k));
+    const keys = () => (layered ? new Set([...live.keys(), ...layered.keys()]).values() : live.keys());
     const changes: KeyChange[] = [];
     for (const key of changedKeys) {
       const after = scratchComments.get(key);
       if (after instanceof Y.AbstractType) return false;
-      changes.push({ key, before: plain(live.get(key)), after });
+      changes.push({ key, before: prior(key), after });
     }
-    return commenterMayChangeComments(changes, userId, (k) => plain(live.get(k)), () => live.keys(), authorNames);
+    return commenterMayChangeComments(changes, userId, prior, keys, authorNames);
   } catch {
     return false;
   } finally {
@@ -66,14 +71,14 @@ export function commenterMayApply(doc: Y.Doc, update: Uint8Array, userId: string
   }
 }
 
-/** `authorNames`: the names a commenter's new comment messages may carry (commentRules.ts). */
-export function decideUpdate(role: Role, doc: Y.Doc, update: Uint8Array, userId: string, authorNames?: ReadonlySet<string>): UpdateDecision {
+/** `authorNames`: the names a commenter's new comment messages may carry (commentRules.ts); `layered`: see commenterMayApply. */
+export function decideUpdate(role: Role, doc: Y.Doc, update: Uint8Array, userId: string, authorNames?: ReadonlySet<string>, layered?: Y.Map<unknown>): UpdateDecision {
   switch (role) {
     case 'owner':
     case 'editor':
       return 'apply';
     case 'commenter':
-      return commenterMayApply(doc, update, userId, authorNames) ? 'apply' : 'drop';
+      return commenterMayApply(doc, update, userId, authorNames, layered) ? 'apply' : 'drop';
     default:
       return 'drop';
   }

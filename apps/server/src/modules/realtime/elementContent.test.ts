@@ -7,6 +7,7 @@ import * as Y from 'yjs';
 import { tableCellKey, type BoardElement, type ElementDraft } from '@freero/shared';
 import { guardContentPlacement, placeElementContent, writeElementContent } from './elementContent';
 import { applyLayerOp, EDITORS_LAYER, privateLayerOf } from './layers';
+import { decideUpdate } from './filter';
 import { applyChange, viewOf } from './view';
 
 const owner = { userId: 'owner', role: 'owner' as const };
@@ -80,7 +81,7 @@ it("a cell a socket writes into the shared doc for a hidden table is moved to th
   let moved = 0;
   main.transact((tr) => {
     Y.applyUpdate(main, Y.encodeStateAsUpdate(client));
-    moved = guardContentPlacement(tr, main, { editors, own: undefined }, 'srv');
+    moved = guardContentPlacement(tr, main, { editors, own: undefined }, 'srv').length;
   }, 'socket');
   expect(moved).toBe(1);
   expect(mentions(sent, 'typed meanwhile')).toBe(false);
@@ -109,4 +110,61 @@ it("a live activity's results in a hidden frame are published to owners and edit
   writeElementContent(main, layers, 'engageResults', { a1: { activityId: 'a1', respondents: 3, sealed: false, updatedAt: 1, words: [{ word: 'reorg', count: 3 }] } }, 'srv');
   expect(mentions(sent, 'reorg')).toBe(false);
   expect(editors.getMap('engageResults').has('a1')).toBe(true);
+});
+
+// ---- comment threads (KAI-234): a thread pinned to an item lives with the item ----
+const thread = (id: string, elementId: string | null, createdBy = 'owner') => ({ kind: 'thread', id, x: 0, y: 0, elementId, corner: elementId ? 'top-right' : null, createdAt: 1, createdBy });
+const msg = (threadId: string, id: string, text: string, authorId = 'owner') => ({ kind: 'message', threadId, id, authorId, authorName: authorId, text, createdAt: 1 });
+
+it("a board saved with the discussion of a hidden item in the shared doc is fixed when it loads — thread, messages, reactions, tombstones; board-level threads stay", () => {
+  const { main, editors, layers } = board();
+  main.getMap('elements').set('f', frame('f', true));
+  editors.getMap('elements').set('t1', table('t1', 'f'));
+  const c = main.getMap('comments');
+  c.set('t:h', thread('h', 't1'));
+  c.set('m:h:1', msg('h', '1', 'HIDDEN-DISCUSSION'));
+  c.set('r:h:1:owner:👍', { kind: 'reaction', threadId: 'h', messageId: '1', userId: 'owner', emoji: '👍' });
+  c.set('x:h:2', { kind: 'deleted', threadId: 'h', messageId: '2', by: 'owner', at: 1 });
+  c.set('t:b', thread('b', null));
+  c.set('m:b:1', msg('b', '1', 'welcome'));
+
+  expect(placeElementContent(main, layers, 'srv')).toBe(4);
+  expect([...main.getMap('comments').keys()].sort()).toEqual(['m:b:1', 't:b']);
+  expect(viewOf(main, layers, viewer).collection('comments').has('m:h:1')).toBe(false);
+  expect(viewOf(main, layers, owner).collection('comments').get('m:h:1')).toMatchObject({ text: 'HIDDEN-DISCUSSION' });
+  expect(placeElementContent(main, layers, 'srv')).toBe(0);
+});
+
+it("a commenter can't take over a thread that lives in the editors layer by writing its record into the shared doc", () => {
+  const { main, editors } = board();
+  editors.getMap('elements').set('t1', table('t1', 'f'));
+  editors.getMap('comments').set('t:h', thread('h', 't1', 'owner'));
+  editors.getMap('comments').set('m:h:1', msg('h', '1', 'the original', 'owner'));
+  const attempt = (write: (c: Y.Map<unknown>) => void) => {
+    const client = new Y.Doc();
+    Y.applyUpdate(client, Y.encodeStateAsUpdate(main));
+    const before = Y.encodeStateVector(client);
+    write(client.getMap('comments'));
+    return decideUpdate('commenter', main, Y.encodeStateAsUpdate(client, before), 'cy', new Set(['cy']), editors.getMap('comments'));
+  };
+  // Re-creating the thread record as theirs would make it (and its deletion) theirs.
+  expect(attempt((c) => c.set('t:h', thread('h', 't1', 'cy')))).toBe('drop');
+  // Their own reply is theirs to write; the room then moves it to the thread's layer.
+  expect(attempt((c) => c.set('m:h:2', msg('h', '2', 'mine', 'cy')))).toBe('apply');
+});
+
+it("a tracker badge is published where every item it names can be seen: all shared, everyone; any hidden, editors; any private draft, the draft's author", () => {
+  const { main, editors } = board();
+  const mine = new Y.Doc();
+  const layers = new Map([[EDITORS_LAYER, editors], [privateLayerOf('owner'), mine]]);
+  main.getMap('elements').set('s1', table('s1', null));
+  editors.getMap('elements').set('h1', table('h1', 'f'));
+  mine.getMap('elements').set('p1', table('p1', null));
+  const badge = (title: string, sources: string[]) => ({ provider: 'jira', connection: 'Jira', key: 'HR-7', url: 'https://x.example/HR-7', title, status: null, statusCategory: null, assignee: null, sources, state: 'ok', syncedAt: 1 });
+  const sent = relayed(main);
+  writeElementContent(main, layers, 'trackers', { a: badge('Open roadmap', ['s1']), b: badge('Layoff plan', ['s1', 'h1']), c: badge('My draft', ['s1', 'h1', 'p1']) }, 'srv');
+  expect([...main.getMap('trackers').keys()]).toEqual(['a']);
+  expect([...editors.getMap('trackers').keys()]).toEqual(['b']);
+  expect([...mine.getMap('trackers').keys()]).toEqual(['c']);
+  expect(mentions(sent, 'Layoff plan') || mentions(sent, 'My draft')).toBe(false);
 });
