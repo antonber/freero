@@ -860,6 +860,10 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
   `X-Robots-Tag: noindex`; robots.txt also disallows the app, boards, docs, embeds, the API, MCP,
   auth and invite paths. `SITE_ANALYTICS_SRC` adds an operator's analytics script to marketing
   pages only, with its origin in their CSP.
+- **For agents:** `/llms.txt` and `/llms-full.txt` (llmstxt.org, `src/lib/llms.ts`) are built files
+  like robots.txt, origin-substituted when served: what Freero is, the MCP endpoint, OAuth metadata
+  and the tool list. Tools and prompts come from `src/lib/mcp.ts` (also the /agents table); the site
+  tests fail when it drifts from the MCP server's `tools.ts` / `prompts.ts`.
 - **Screenshots** are real: `scripts/site-shots.mjs` drives the built app on a throwaway server
   (accounts, a board, a personal token proposing changes as an agent, a mock Jira) and writes WebP
   files to `apps/site/src/assets/shots/`; `<Shot>` gives them `srcset`, `width` and `height`.
@@ -1557,6 +1561,13 @@ audit and admin controls are the same code.
   `app/embed/EmbedBoardPage` + `createEmbedHost` (`Host.syncProtocols`). Framing: platform
   `allowFraming(path, reason)` gives `/embed/` the `frame-ancestors` of `MCP_APP_FRAME_ANCESTORS`;
   every other page stays `'none'`.
+- **Connect page** (#80, `app/pages/connect/`, `/settings/connect`; linked from settings, the empty
+  dashboard and the board menu's `features/connect`): the MCP URL comes from the server
+  (`GET /api/mcp/connect` → `appUrl`, i.e. `PUBLIC_URL`), never from `window.location`, so it is the
+  audience tokens are bound to. Per-client setup is built in `clients.ts` from the vendors'
+  documented formats (sources in its header; the install links are tested by decoding them as the
+  client does). "Connected" = the credential's `lastUsedAt` (apiauth stamps it in `authenticate`);
+  the page polls while open. No new state: apps and tokens are apiauth's.
 - Scopes: `MCP_SCOPES`; read + suggest by default — `registerProtectedResource(…, { optInScopes })`
   makes the consent screen offer `boards:write` / `comments:write` unticked (`OAuthConsentInfo.scopes[].optional`,
   the decision's `grant`). `/mcp` is the `root` resource: the bare `/.well-known/oauth-protected-resource`
