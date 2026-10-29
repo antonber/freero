@@ -132,42 +132,62 @@ A write tool called without its permission changes nothing and answers with the 
 
 ## Tools
 
-Item ids come from `get_board_outline` (in `[brackets]` in Markdown, `id` in JSON). Freero places
-everything an agent adds in free space (next to `near` when given): no coordinates.
+Item ids come from `get_board_outline` (in `[brackets]` in Markdown, `id` in JSON) and from what the
+add tools return: each returns the new ids **in the order the items were sent** (per cluster / per
+kanban column). Every `boardId` (and `docId`) also takes the board's link as the person pasted it
+(`https://<your-freero>/board/<id>?item=…`, `freero://board/<id>`). A cluster's outline id
+(`cluster:<id>`) works as `near`, as `add_comment`'s `itemId` (the comment goes on its title) and as
+a placement target.
+
+Freero places everything an agent adds — no coordinates. By default in free space (next to `near`
+when given); with **`placement`** (add_stickies, add_clusters, add_cards, propose_changes,
+import_from_tracker) somewhere people already have or a new container:
+
+| `placement` | Where the items go |
+|---|---|
+| `{ "into": "<frame id>" }` | Inside that frame, clear of what is in it; the frame grows when it is full. |
+| `{ "into": "<kanban id>", "column": "Doing" }` (or `"into": "<kanbanId>:<columnId>"`) | Stacked at the bottom of that column (title or id; without one, each card in the column of its status, else the first); the kanban grows. A card takes a status column's status, as a drop would. Only sticky notes and cards. |
+| `{ "into": "cluster:<id>" }` (or any item in the cluster) | Right next to its items, so the outline reads them as one cluster under its title — never touching a neighbouring cluster. |
+| `{ "newFrame": "Title" }` | A new frame around everything added. |
+| `{ "newKanban": "Title" }` | A new To do / Doing / Done kanban, each card in the column of its status. |
+
+`update_items` moves existing items the same way: `{ "id": …, "into": …, "column"?: … }`.
 
 | Tool | Needs | What it does |
 |---|---|---|
 | `list_workspaces` | read | Your workspaces (personal and teams) and your role in each. |
 | `search_boards` | read | Boards you can open, newest change first; `query` searches titles; `workspaceId`, `limit`, `cursor`. |
-| `search` | read | Words in what your boards say — titles, notes, text, shapes, cards, frame titles, table cells, tags, connector labels, comments — across the boards you can open (`workspaceId` or `boardId` to narrow it): each match with its board id, item id, a snippet and a link. Never private drafts or hidden frames; boards whose downloads policy keeps their content from you are left out. |
+| `search` | read | Words in what your boards say — titles, notes, text, shapes, cards, frame titles, table cells, tags, connector labels, comments — across the boards you can open (`workspaceId` or `boardId` to narrow it): each match with its board id, item id, a snippet and a link. Never private drafts or hidden frames; boards whose downloads policy keeps their content from you are left out. Changes are searchable within seconds (read a board you just changed with `get_board_outline`). |
 | `resolve_links` | read | What Freero links (board / item URLs, `freero://` addresses; up to 200) point at — type, title, board, your access — or `unavailable` (no access and no such object read the same). |
 | `find_backlinks` | read | Items and comments on boards you can open that link to a board or an item. |
 | `search_docs` | read | Docs (collaborative documents next to boards) you can open, newest change first; `query` searches titles. `search` also finds words inside docs. |
 | `read_doc` | read | A doc as Markdown: headings, lists, checklists, tables, code, quotes, images, links; a live board embedded in it reads as an image of its `freero://board/…` address. Refused by a downloads policy. |
-| `create_doc` | write | A new doc from Markdown (CommonMark with tables, task lists, strikethrough), personal or in a team workspace; its first heading names it unless `title` is given. |
+| `create_doc` | write | A new doc from Markdown (CommonMark with tables, task lists, strikethrough), personal or in a team workspace; its first heading names it unless `title` is given. `![Live board](freero://board/<id>)` on a line of its own embeds that board live. |
 | `append_to_doc` | write | Adds Markdown at the end of a doc you can edit; everyone with it open sees it at once. |
 | `list_templates` | read | Saved templates you can start a board from (yours and your teams'). |
 | `open_board` | read | Shows the board **live** in the conversation where the assistant shows interactive views ([below](#live-boards-in-the-conversation-mcp-apps)): the person pans, zooms, edits (if this connection may change boards), accepts your suggestions, opens it in Freero or shares it. Elsewhere: the board link. |
 | `share_board` | read (+ write to turn sharing on) | The live view's **Share with team** button — only the view calls it (`visibility: ["app"]`), never the model: returns the board link and, if needed, turns link sharing on (view / comment; guests without an account as the workspace allows). Turning it on needs `boards:write` and the board's owner; the share dialog's rules and audit event apply. |
 | `post_status` | write | Long-running work in the open ([control room](#agent-control-room)): your plan, status and tasks (`todo` / `doing` / `done` / `blocked`, matched by your `externalId` or else by title — a retry never duplicates, a renamed task keeps its card) on your lane of a control-room board; creates the board without `boardId`. A task that moves into Blocked notifies the person you work for. Returns a `cursor` and the lane's `laneId`. Refused with `agent_paused` while a person has paused you there. |
 | `get_feedback` | read | What people changed in your lane since your `cursor`: cards moved, added or removed, comments on your lane or the board — never your own changes — and `paused` (a person paused you on this board). |
-| `get_board_outline` | read | The board as a semantic outline: frames, clusters, notes, shapes, cards, mind maps, tables, the connector graph, votes, comments, with item ids. `format` `markdown` (default) / `json`; `budget` (≈ tokens, default 8000) keeps frame titles and the shallowest, most recent items; `scope` = an item id to read only inside it; `cursor` pages; `authors`. Format reference: [board-outline.md](board-outline.md). |
+| `get_board_outline` | read | The board as a semantic outline: frames, clusters, notes, shapes, cards, mind maps, tables, the connector graph, votes, comments, with item ids. `format` `markdown` (default) / `json`; `budget` (≈ tokens, default 8000) keeps frame titles and the shallowest, most recent items — when it cuts, the result says how many items were left out and gives a `cursor` to page through all of them (500 at a time); `scope` = an item id to read only inside it (a frame, kanban, `cluster:<id>`); `cursor` pages; `authors`. Format reference: [board-outline.md](board-outline.md). |
 | `create_board` | write | A new board (personal or a team workspace), optionally from a saved template. |
-| `add_stickies` | write | A grid of sticky notes, optional title and color. |
-| `add_clusters` | write | Titled groups side by side; an item is new text or `{ "id": … }` of a note already on the board, which moves into the cluster (affinity mapping). |
+| `add_stickies` | write | A grid of sticky notes, optional title and color; each sticky is its text or `{ text, link?, color? }` (a link to an issue, a doc, a page — in the same call). `placement`. Returns `ids` in the order sent (and `titleId`). |
+| `add_clusters` | write | Titled groups side by side; an item is new text, `{ text, link?, color? }`, or `{ "id": … }` of an item already on the board, which moves into the cluster (affinity mapping). `placement` (into a frame, or `newFrame`). Returns `clusters: [{ titleId, ids }]` in the order sent. |
+| `add_cards` | write | Task cards (`title`, `description`, `status`, `dueDate`, `link`, `color`): `cards` in free space or with `placement` (a kanban column, a frame, a cluster, a new frame / kanban), or `columns` for a new kanban with its cards (a retro's columns, Now / Next / Later). In a status column a card takes its status. Returns the ids in order (`kanbanId` and `columns: [{ column, ids }]` for a new kanban). |
 | `add_diagram` | write | Exactly one of: `mermaid` (flowchart — subgraphs become frames — or sequenceDiagram), `outline` (nested `{ text, children }`, drawn as a mind map or, with `outlineAs: "tree"`, a tree), or `graph` (nodes + edges). Laid out by Freero, connectors attached. |
 | `add_comment` | comment | A comment on the board or on an item (`itemId`), or a reply in a thread (`threadId`). |
-| `update_items` | write | Changes several items in one step, all or nothing: text, card fields, colors, frame title / hidden, lock, link, position / size (a moved frame takes its contents). |
+| `update_items` | write | Changes several items in one step, all or nothing: text, card fields, colors, frame title / hidden, lock, link, and where they are — `into` a frame, kanban column (`column`) or cluster, placed by Freero (or exact `x` / `y` / `w` / `h`; a moved frame takes its contents). |
 | `delete_items` | write | Deletes items (a frame with everything inside). Only with `confirm: true`. |
 | `export_board` | read | The whole board as a file (embedded resource): Markdown or JSON. Recorded as an export (`board.exported`); refused by a downloads policy. |
-| `sync_to_tracker` | write | Sends items (sticky notes, cards, shapes, text) to the board's issue tracker as ONE issue — a cluster becomes one issue listing each note with a link back — or one per item (`mode: "each"`). `connection` names the tracker connection when there are several; `project` defaults to the connection's. The items and the issue stay linked and in sync ([trackers.md](trackers.md)). |
-| `propose_changes` | suggest | Proposes a structure (`{ kind, … }` as for the add tools; optional `description` for reviewers) as ONE group of suggestions that people who can edit the board accept or reject (KAI-169). The board does not change until they do; the badge, the outline (`include=suggestions`) and the activity feed show it as "<app> for <you>". Your role must be owner or editor. |
+| `sync_to_tracker` | write | Sends items (sticky notes, cards, shapes, text) to the board's issue tracker as ONE issue — a cluster becomes one issue listing each note with a link back — or one per item (`mode: "each"`). `connection` names the tracker connection when there are several; `project` defaults to the connection's. The items and the issue stay linked and in sync ([trackers.md](trackers.md)). Without a tracker connection it says how the person connects one (`tracker_not_connected`). |
+| `import_from_tracker` | write (or suggest) | The other way (#79): a tracker query (JQL, a Linear search, a GitHub search such as `repo:owner/name is:open label:"area: agents"`) becomes task cards **linked** to their issues — key, status and assignee on the card, synced both ways (closing the issue updates its card, through the webhook). The board menu's *Import issues…* rules: the person's own or the team's connection (`connection` names it when there are several), edit access, at most 100 issues (`limit`, default 50), issues already linked on this board skipped (importing again adds only new ones). In free space or with `placement`; placement never changes an issue's status (in a kanban a card goes to the column of its status if the named one has another). Attributed to "<app> for <you>". Returns `cards: [{ id, key, url }]` and `skipped`. A connection that may only suggest (or `propose: true`) proposes the cards instead: one suggestion group of plain cards linking to their issues, not synced (accept them, or import with write access to link). REST: `POST /api/v1/boards/{boardId}/trackers/import`. |
+| `propose_changes` | suggest | Proposes a structure (`{ kind, … }` as for the add tools — `stickies`, `clusters`, `kanban`, `items`, `note`, `table`, diagrams — with `placement`; optional `description` for reviewers) as ONE group of suggestions that people who can edit the board accept or reject (KAI-169). The board does not change until they do; the badge, the outline (`include=suggestions`) and the activity feed show it as "<app> for <you>". Your role must be owner or editor. |
 
 **Resources:** `freero://board/{boardId}` — a board's outline (Markdown, ≈ 8000 tokens) in the
 untrusted envelope. `ui://freero/board-preview.html` and `ui://freero/board-live.html` — the MCP Apps
 views (static HTML, no board data in them).
 
-**Prompts:** `control_room` (work on a goal in a control room: post, check feedback, repeat), `run_retro` (group a retro board's notes into themes with `add_clusters`, then actions),
+**Prompts:** `control_room` (work on a goal in a control room: post, check feedback, repeat), `run_retro` (group a retro board's notes into themes with `add_clusters`, then action cards with `add_cards`, offered to the tracker),
 `notes_to_diagram` (your notes → `add_diagram`), `summarize_board` (topics, decisions, open
 questions, action items with ids).
 
