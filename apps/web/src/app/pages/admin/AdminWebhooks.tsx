@@ -284,7 +284,7 @@ export function AdminWebhooks({ workspace }: { workspace: WorkspaceSummary }) {
       <p className="fr-admin__intro">
         Send what happens on this workspace’s boards to other tools: your own service (signed JSON) or a Slack or Microsoft Teams channel. Only
         boards everyone in the workspace can open are ever sent — never personal boards, private projects, private drafts or hidden frames.
-        Failed deliveries are retried for about a day; a webhook that keeps failing is turned off and its creator is emailed.
+        Failed deliveries are retried with growing gaps for a few hours; a webhook that keeps failing is turned off and its creator is emailed.
       </p>
 
       {endpoints.length === 0 ? (
