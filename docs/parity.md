@@ -202,7 +202,7 @@ issue id is in the status note.
 | Capability | What it does | Freero status | Size | Priority | Phase |
 |---|---|---|---|---|---|
 | Template picker | A searchable gallery that inserts an editable layout, also offered when you create a board | Have (grouped by category, ranked search) | — | P0 | — |
-| Template breadth | A large library across agile, strategy, research, UX, diagramming, education and meetings | Have: 74 original templates in 10 categories, at least 5 in each (KAI-100) | M | P1 | parity |
+| Template breadth | A large library across agile, strategy, research, UX, diagramming, education and meetings | Have: 180 original templates in 18 categories (KAI-100); new ones are data (specs rendered by 13 layout archetypes), so the catalog grows without new code | M | P1 | parity |
 | Save as template | Turn a board or selection into your own reusable template | Have | — | P1 | — |
 | Team templates | Templates shared across a team or workspace | Have: shared with the workspace, showing who shared them; workspace admins can unshare (KAI-42, KAI-96) | M | P2 | 3 |
 | Community gallery | Publish templates publicly and browse other people's | Missing | L | P3 | parity |

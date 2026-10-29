@@ -108,7 +108,7 @@ export default defineComparison({
     {
       capability: 'Templates',
       competitor: { verdict: 'yes', sources: ['W10'] },
-      freero: { verdict: 'yes', note: '74 originals', ref: 'README.md' },
+      freero: { verdict: 'yes', note: '180 originals', ref: 'README.md' },
     },
   ],
   competitorStronger: [
