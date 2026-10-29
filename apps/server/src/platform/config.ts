@@ -41,6 +41,7 @@ export type RateLimitName =
   | 'agentWrite'
   | 'oauthToken'
   | 'oauthRegister'
+  | 'oauthClientMetadata'
   | 'linkPassword'
   | 'engage'
   | 'search'
@@ -266,6 +267,13 @@ export interface Config {
    */
   publicApi: boolean;
   /**
+   * Development and tests only (refused in production, #81): an OAuth client may also be identified
+   * by a client metadata document at a plain-http LOOPBACK address (`http://127.0.0.1:<port>/…`), the
+   * loopback exception of draft-ietf-oauth-client-id-metadata-document §8.6. Off: https and public
+   * addresses only.
+   */
+  oauthClientMetadataLoopback: boolean;
+  /**
    * The marketing site (apps/site, served by modules/site). Off: `/` sends everyone to `/app`, no
    * marketing page is served and robots.txt keeps crawlers off the whole instance.
    */
@@ -370,6 +378,7 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   agentWrite: '60/1m', // per API token / authorised app: changes it makes to boards (KAI-168), apart from the person's own editing
   oauthToken: '60/1m', // per IP: OAuth token and revocation requests
   oauthRegister: '20/1h', // per IP: OAuth apps registering themselves (dynamic client registration)
+  oauthClientMetadata: '30/10m', // per user: OAuth client metadata documents fetched for the consent screen (cache misses only, #81)
   trackerSend: '60/10m', // per user: issues created or imported in a tracker (each calls the tracker's API)
   report: '20/1h', // abuse reports per IP and per signed-in user
   appeal: '10/1h', // appeals against moderation actions per IP
@@ -412,6 +421,7 @@ const ENV_NAME: Record<RateLimitName, string> = {
   agentWrite: 'RATE_LIMIT_AGENT_WRITE',
   oauthToken: 'RATE_LIMIT_OAUTH_TOKEN',
   oauthRegister: 'RATE_LIMIT_OAUTH_REGISTER',
+  oauthClientMetadata: 'RATE_LIMIT_OAUTH_CLIENT_METADATA',
   trackerSend: 'RATE_LIMIT_TRACKER_SEND',
   report: 'RATE_LIMIT_REPORT',
   appeal: 'RATE_LIMIT_APPEAL',
@@ -738,6 +748,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     abuseContactEmail,
     securityContact: securityContact ?? (abuseContactEmail ? `mailto:${abuseContactEmail}` : null),
     publicApi: bool('PUBLIC_API', true),
+    oauthClientMetadataLoopback: bool('OAUTH_CLIENT_METADATA_LOOPBACK', false),
     site: {
       enabled: bool('SITE', true),
       dist: path.resolve(env.FREERO_SITE_DIST || path.join(REPO_ROOT, 'apps/site/dist')),
@@ -769,6 +780,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       .filter(([, v]) => v === null)
       .map(([k]) => `${k} is required in production`);
     problems.unshift(...missing);
+    if (config.oauthClientMetadataLoopback) problems.push('OAUTH_CLIENT_METADATA_LOOPBACK is for development and tests only: never set it in production');
   }
   if (problems.length) throw new ConfigError(problems);
   current = config;
