@@ -33,7 +33,7 @@ export default definePage({
       <Hero
         kicker="Open source"
         title="An open-source whiteboard you can run yourself."
-        lead="Freero is MIT licensed, from the canvas to the MCP server. Use the hosted service, or run the same code on your own servers, under your own policies, next to your own Jira."
+        lead="Freero is MIT licensed, from the canvas to the MCP server. Use it here, or run the same code on your own servers, under your own policies, next to your own Jira."
         actions={
           <>
             <ButtonLink href={SOURCE_REPO}>Get the source</ButtonLink>

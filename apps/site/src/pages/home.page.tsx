@@ -16,7 +16,7 @@ export default definePage({
   faq: [
     {
       q: 'Is Freero really free?',
-      a: 'Yes. There is no paid plan, no seat count and no feature behind a paywall: SSO, SCIM, the audit log and the admin console are included. The hosted service has fair-use limits (upload storage, request rates), listed on the pricing page. Freero is MIT licensed, so you can also run it on your own servers.',
+      a: 'Yes. There is no paid plan, no seat count and no feature behind a paywall: SSO, SCIM, the audit log and the admin console are included. A Freero server has fair-use limits by default (upload storage, request rates), listed on the pricing page. Freero is MIT licensed, so you can also run it on your own servers.',
     },
     {
       q: 'What does it mean that agents are teammates on a board?',
@@ -47,7 +47,7 @@ export default definePage({
     <>
       <Hero
         title="The whiteboard for teams of people and AI agents."
-        lead="Brainstorm, plan and diagram with your teammates and the agents you already use. Claude, ChatGPT, Cursor or your own agents join the board as real participants: they read it, propose changes you approve, and keep Jira in sync. Free and open source; use ours or host your own."
+        lead="Brainstorm, plan and diagram with your teammates and the agents you already use. Claude, ChatGPT, Cursor or your own agents join the board as real participants: they read it, propose changes you approve, and keep Jira in sync. Free and open source, and yours to host."
         actions={
           <>
             <ButtonLink href={APP.signup}>Start free</ButtonLink>
@@ -98,7 +98,7 @@ export default definePage({
             While an agent writes, it appears in the board’s presence list with its own cursor and selection, so people see where it is working.
           </Card>
           <Card title="“Claude for Maria”" mark="@" tint="mint">
-            Every item an agent creates carries its name and the name of the person it works for: on the item, in the activity feed and in the board outline.
+            Every item an agent creates carries its name and the name of the person it works for, stamped by the server so nobody can fake it: on the item, in the activity feed and in the board outline.
           </Card>
           <Card title="Suggestions you accept" mark="✓" tint="yellow">
             By default agents propose instead of changing things. Owners and editors see the proposal as ghosts on the board and accept or reject each change, or all of it.
@@ -127,19 +127,23 @@ export default definePage({
         }
       >
         <Cards cols={4}>
-          <Card title="Claude" href="/claude" mark="C" tint="orange">
+          <Card title="Claude" href="/claude">
             Add Freero as a custom connector in Claude, or with one command in Claude Code. Claude reads, builds and proposes on your boards.
           </Card>
-          <Card title="ChatGPT" href="/chatgpt" mark="G" tint="mint">
+          <Card title="ChatGPT" href="/chatgpt">
             Connect Freero in ChatGPT’s developer mode and work on your boards from a chat, with the same permissions and the same review.
           </Card>
-          <Card title="Cursor, VS Code and other clients" href="/agents#mcp" mark="{}" tint="blue">
+          <Card title="Cursor, VS Code and other clients" href="/agents#mcp">
             Any client that speaks MCP over HTTP signs in with OAuth, or uses a personal access token on a server.
           </Card>
-          <Card title="Your own agents" href="/agents" mark="⚙" tint="violet">
+          <Card title="Your own agents" href="/agents">
             The REST API, OAuth apps and signed webhooks let your services read boards, propose changes and react to what people do.
           </Card>
         </Cards>
+        <p className="note">
+          <strong>The board, live in the chat.</strong> Freero supports MCP Apps: in assistants that show interactive views, asking to open a board brings
+          the live board into the conversation, where you can look around, edit if you allowed it, accept suggestions and share it with your team.
+        </p>
         <p className="note">
           <strong>Built-in AI on your own model.</strong> Freero’s AI actions (generate ideas, cluster, summarise, diagram from text) run on the provider you
           choose: Anthropic, OpenAI or any OpenAI-compatible endpoint, including a model you host. You pay your provider directly; Freero adds no AI surcharge.
@@ -209,7 +213,7 @@ export default definePage({
           <Card title="Structured content">Tables with typed columns and a board view, kanban columns, task cards, timelines and Gantt bars, code blocks.</Card>
           <Card title="Real-time together">Live cursors and selections, follow someone, bring everyone to you, reactions, comments with mentions and notifications.</Card>
           <Card title="Present and share">Slides made from frames with layouts and speaker notes, presentation mode, roles per board, share links with a password or expiry.</Card>
-          <Card title="Files and media">Images, PDFs, video and audio that play on the board, file cards, link previews and live embeds of allow-listed tools.</Card>
+          <Card title="Docs and files">Collaborative docs with live boards inside them, Markdown in and out; images, PDFs, video and audio, file cards and link previews.</Card>
           <Card title="Templates and export">More than 70 original templates. Export to PNG, JPG, SVG or PDF, CSV for notes and cards, version history.</Card>
         </Cards>
         <p className="works-with">

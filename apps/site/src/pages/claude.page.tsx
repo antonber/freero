@@ -8,7 +8,7 @@ export default definePage({
   title: 'Freero for Claude: a whiteboard Claude can read and build on',
   ogTitle: 'Claude reads, builds and proposes on your boards',
   description:
-    'Connect Claude to Freero with one MCP URL. Claude reads your boards, draws diagrams, clusters notes and proposes changes your team accepts. Free and open source.',
+    'Connect Claude to Freero with one MCP URL. Claude reads your boards, draws diagrams, groups notes and proposes changes your team approves. Open source.',
   updated: '2026-10-28',
   faq: [
     {
@@ -32,8 +32,8 @@ export default definePage({
       a: 'In Freero, open Settings → Connected apps and disconnect it; the next request Claude makes is refused. You can also remove the connector in Claude, use “Disconnect all apps and tokens” in Freero, or ask a workspace admin to block the app for the whole team.',
     },
     {
-      q: 'Will I see the board inside the chat?',
-      a: 'Not yet. Interactive board previews inside Claude (through the MCP Apps extension) are in progress. Today Claude works with your boards through Freero’s tools and answers in the chat; open the board in Freero to see what changed.',
+      q: 'Can I see the board inside the conversation?',
+      a: 'Yes, where Claude shows interactive views. Freero supports the MCP Apps extension: ask Claude to open a board and the live board appears in the conversation. You can pan, zoom, accept Claude’s suggestions, edit if the connection may change boards, open it in Freero or share it with your team. Elsewhere, Claude gives you the board’s link.',
     },
     {
       q: 'Does it work with a self-hosted Freero?',
@@ -79,6 +79,12 @@ export default definePage({
           </Card>
           <Card title="Keeps the tracker in step" tint="pink" mark="J">
             Ask Claude to send a cluster of notes to Jira, Linear or GitHub as one issue. The notes and the issue stay linked and in sync.
+          </Card>
+          <Card title="Opens the live board in the chat" tint="violet" mark="▣">
+            Where Claude shows interactive views, it can open the real board right in the conversation: live, multiplayer, with a Share with team button.
+          </Card>
+          <Card title="Writes it up in a doc" tint="mint" mark="D">
+            Claude can create a Freero doc from Markdown or add to one, next to the board it came from, and read docs your team wrote.
           </Card>
           <Card title="Shows its work" tint="orange" mark="@">
             Everything Claude adds is labelled with the app’s name and yours, it appears on the board while it writes, and every call is in the audit log.
@@ -170,16 +176,21 @@ export default definePage({
               needs: 'permission to comment',
             },
             {
-              prompt: 'Draw the sequence of our OAuth flow from this code. (in Claude Code)',
-              outcome: 'Claude reads the code in your repo and adds a sequence diagram to the board you name.',
+              prompt: 'Draw the sequence of our OAuth flow from this code on the Architecture board.',
+              outcome: 'In Claude Code, Claude reads the code in your repository and adds a sequence diagram to that board.',
             },
             {
               prompt: 'Export the research board as Markdown so I can paste it into our wiki.',
               outcome: 'The whole board as one Markdown file, unless the workspace’s download policy says otherwise.',
             },
             {
-              prompt: 'What links to the “Launch plan” board?',
-              outcome: 'Every item and comment on boards you can open that links to it.',
+              prompt: 'Open the “Launch plan” board here so we can look at it together.',
+              outcome: 'Where Claude shows interactive views, the live board appears in the conversation; otherwise Claude gives you its link.',
+            },
+            {
+              prompt: 'Write up the retro as a doc: themes, decisions and owners.',
+              outcome: 'A new Freero doc with the write-up, in the same workspace as the board.',
+              needs: 'permission to change boards',
             },
           ]}
         />
@@ -233,7 +244,8 @@ export default definePage({
                 'Propose sticky notes, clusters and diagrams for review',
                 'With permission: create boards, add, change and delete items, comment',
                 'Send items to Jira, Linear or GitHub and keep them linked',
-                'Follow links between boards and find what links to a board',
+                'Open the live board in the conversation, where Claude shows interactive views',
+                'Create docs from Markdown and add to them, with permission',
               ]}
             />
           </div>
@@ -247,9 +259,7 @@ export default definePage({
                 'Change a board with the default permissions; it can only propose',
                 'Delete a whole board, or delete items without confirming',
                 'Upload images or files, or draw freehand ink',
-                <>
-                  Show the live board inside the chat yet <span className="badge">Coming soon</span>
-                </>,
+                'Turn on link sharing by itself: only your click on “Share with team” in the live view does that',
               ]}
             />
           </div>

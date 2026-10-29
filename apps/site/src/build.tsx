@@ -88,7 +88,7 @@ export async function buildSite(outDir = DEFAULT_OUT): Promise<BuildResult> {
 
   const manifestPages: Array<{ path: string; file: string }> = [];
   for (const page of pages) {
-    const og = emitAsset(`og/${page.path === '/' ? 'home' : page.path.slice(1).replace(/\//g, '-')}.png`, await ogImage(page.name === 'Home' ? 'Freero' : page.name, page.ogTitle ?? page.name));
+    const og = emitAsset(`og/${page.path === '/' ? 'home' : page.path.slice(1).replace(/\//g, '-')}.png`, await ogImage(page.path === '/' ? 'Free and open source' : page.name, page.ogTitle ?? page.name));
     const crumbs = crumbsOf(page, byPath);
     const html = `<!doctype html>${renderToStaticMarkup(
       <Document page={page} crumbs={crumbs} jsonLd={jsonLdFor(page, crumbs, og)} assets={{ css, ogImage: og, favicon, appleIcon, preloadFonts: [fonts[700]] }} />,

@@ -118,6 +118,8 @@ export const DISALLOWED = [
   '/app$',
   '/app/',
   '/board/',
+  '/doc/',
+  '/embed/',
   '/api/',
   '/mcp',
   '/oauth/',

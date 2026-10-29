@@ -17,7 +17,7 @@ export default definePage({
     },
     {
       q: 'Where is my data stored?',
-      a: 'On the hosted service, in the database and object storage of the hosted deployment. When you self-host, wherever you run it: your PostgreSQL, your S3-compatible storage, your network.',
+      a: 'In the PostgreSQL database and the file storage of the Freero server you use. When you host Freero yourself, that is wherever you run it: your database, your S3-compatible storage, your network and region.',
     },
     {
       q: 'Can an AI agent read boards I didn’t share with it?',
@@ -102,7 +102,7 @@ export default definePage({
             'Rate limits on sign-in, sign-up, uploads, invitations, AI, the API and more, shared across instances through Redis',
             'An append-only audit log, hash-chained per workspace, with export and an integrity check',
             'Personal and workspace data exports, and account deletion with a grace period (GDPR)',
-            'Abuse reporting and an operator moderation queue for the hosted service',
+            'Abuse reporting and a moderation queue for whoever operates the server',
           ]}
         />
         <p>

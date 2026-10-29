@@ -43,16 +43,16 @@ function Cursor({ x, y, color, label, width }: { x: number; y: number; color: st
 
 export function HeroArt() {
   return (
-    <svg className="hero-art" viewBox="0 0 560 440" role="img" aria-labelledby="hero-art-title hero-art-desc" fontFamily="Inter, system-ui, sans-serif">
+    <svg className="hero-art" viewBox="0 0 620 440" role="img" aria-labelledby="hero-art-title hero-art-desc" fontFamily="Inter, system-ui, sans-serif">
       <title id="hero-art-title">A Freero board shared by a person and an agent</title>
       <desc id="hero-art-desc">
         A frame called Launch retro holds sticky notes. Maria’s cursor is on the board, and so is an agent’s cursor labelled “Claude for Maria”. The agent has
         proposed two new notes, shown as dashed outlines with buttons to accept or reject them.
       </desc>
-      <rect x="0" y="0" width="560" height="440" rx="18" fill="#ffffff" />
-      <rect x="16" y="16" width="528" height="408" rx="12" fill="#f3f2f8" />
+      <rect x="0" y="0" width="620" height="440" rx="18" fill="#ffffff" />
+      <rect x="16" y="16" width="588" height="408" rx="12" fill="#f3f2f8" />
       <g fill="#cdcbdc">
-        {Array.from({ length: 13 }, (_, i) => Array.from({ length: 10 }, (_, j) => <circle key={`${i}-${j}`} cx={36 + i * 40} cy={36 + j * 40} r="1.6" />))}
+        {Array.from({ length: 15 }, (_, i) => Array.from({ length: 10 }, (_, j) => <circle key={`${i}-${j}`} cx={36 + i * 40} cy={36 + j * 40} r="1.6" />))}
       </g>
       <rect x="40" y="56" width="300" height="300" rx="8" fill="#ffffff" stroke="#cfcde0" />
       <text x="40" y="46" fontSize="14" fontWeight="600" fill="#4b4a63">
@@ -93,7 +93,7 @@ export function HeroArt() {
           AI
         </text>
         <text x="92" y="17" fontSize="13" fill="#4b4a63">
-          3 people and agents on this board
+          2 people and an agent on this board
         </text>
       </g>
     </svg>

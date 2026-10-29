@@ -9,13 +9,13 @@ export default definePage({
   title: 'Pricing: Freero is free, with no paid plans',
   ogTitle: 'Free means free',
   description:
-    'Freero costs nothing: every feature, unlimited editors and viewers, SSO and SCIM included. The fair-use limits of the hosted service, listed plainly.',
+    'No paid plans and no licence fees: every feature, any number of editors and viewers, SSO and SCIM included. Default fair-use limits, listed plainly.',
   updated: '2026-10-28',
   jsonLd: [softwareApplication()],
   faq: [
     {
       q: 'What’s the catch?',
-      a: 'There isn’t a paid tier waiting behind the free one. Freero is an open-source project; the hosted service exists so teams can use it without running a server. The limits below keep that service fair for everyone, and anyone who needs more can host Freero themselves.',
+      a: 'There isn’t a paid tier waiting behind the free one. Freero is an open-source project under the MIT licence, with no licence fees. Running a server does cost something: if you host Freero yourself, you pay for your own infrastructure and its upkeep. The default limits below keep a shared server fair for everyone.',
     },
     {
       q: 'Do guests and viewers count as paid seats?',
@@ -69,9 +69,9 @@ export default definePage({
         </div>
       </Section>
 
-      <Section id="limits" tone="tint" title="Fair-use limits of the hosted service" lead="These are the defaults of every Freero server, and the hosted service runs with them. A self-hosted Freero can change all of them.">
+      <Section id="limits" tone="tint" title="Default fair-use limits" lead="Every Freero server starts with these limits. Whoever runs a server can change any of them.">
         <Table
-          caption="Hosted service limits"
+          caption="Default limits of a Freero server"
           head={['What', 'Limit']}
           rows={[
             ['Boards you own', '5,000 per account, across all your workspaces'],

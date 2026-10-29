@@ -289,6 +289,7 @@ pre {
 .crumbs {
   font-size: 14px;
   padding-top: 18px;
+  background: var(--fr-canvas);
 }
 .crumbs ol {
   list-style: none;
@@ -649,6 +650,9 @@ pre {
   padding: 14px 16px;
   overflow-x: auto;
   line-height: 1.5;
+  /* Long commands wrap instead of hiding their end on a phone; copying keeps them whole. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* ---- Prompts ---- */
@@ -806,6 +810,11 @@ tbody th code {
   color: var(--fr-ink);
   margin: 0 0 1.2em;
 }
+.cards + .note,
+.cards + p,
+.table-wrap + .checks {
+  margin-top: 28px;
+}
 .note--soon {
   border-left-color: var(--fr-warning);
   background: var(--fr-warning-soft);
@@ -821,6 +830,20 @@ tbody th code {
   background: var(--fr-warning-soft);
   color: #7a4a00;
   vertical-align: middle;
+}
+
+/* ---- Comparison sources ---- */
+.sources {
+  padding-left: 1.4em;
+  color: var(--fr-ink-2);
+}
+.sources li {
+  margin-bottom: 8px;
+  scroll-margin-top: 90px;
+}
+.footer__note {
+  font-size: 14px;
+  color: var(--fr-ink-3);
 }
 
 /* ---- Footer ---- */
@@ -873,7 +896,6 @@ tbody th code {
   border-top: 1px solid #2a2945;
   font-size: 13px;
   color: #a9a7c2;
-  max-width: 900px;
 }
 
 @media (prefers-reduced-motion: reduce) {

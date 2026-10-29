@@ -50,7 +50,7 @@ function NavLinks({ current }: { current: string }) {
 
 function SiteHeader({ current }: { current: string }) {
   return (
-    <div className="topbar">
+    <header className="topbar">
       <Container>
         <div className="topbar__row">
           <a className="brand" href="/" aria-label="Freero home">
@@ -83,7 +83,7 @@ function SiteHeader({ current }: { current: string }) {
           </details>
         </div>
       </Container>
-    </div>
+    </header>
   );
 }
 

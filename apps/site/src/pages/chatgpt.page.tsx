@@ -8,7 +8,7 @@ export default definePage({
   title: 'Freero for ChatGPT: connect a whiteboard to ChatGPT',
   ogTitle: 'Work on your whiteboard from a ChatGPT chat',
   description:
-    'Connect Freero to ChatGPT in developer mode. ChatGPT reads your boards, searches them, and proposes notes and diagrams your team approves. Free and open source.',
+    'Connect Freero to ChatGPT in developer mode. ChatGPT reads and searches your boards and proposes notes and diagrams your team approves. Free, open source.',
   updated: '2026-10-28',
   faq: [
     {
@@ -32,8 +32,8 @@ export default definePage({
       a: 'Everything it adds is labelled with the app’s name and yours on the board and in the activity feed, it shows up on the board while it writes, and every call is in the audit log with its outcome.',
     },
     {
-      q: 'Will the board show up inside ChatGPT?',
-      a: 'Not yet. An interactive board view inside the chat is in progress. For now ChatGPT works through Freero’s tools and answers in text; open the board in Freero to see the result.',
+      q: 'Can the board show up inside ChatGPT?',
+      a: 'Yes, where ChatGPT shows interactive app views. Freero implements MCP Apps, so asking to open a board shows the real, live board in the conversation, with your access level, Full screen, Open in Freero and Share with team. The view can’t do more than the connection: with the default permissions it is view only.',
     },
     {
       q: 'Can I connect ChatGPT to my own Freero server?',
@@ -76,6 +76,12 @@ export default definePage({
           </Card>
           <Card title="From notes to issues" tint="pink" mark="↗">
             Send cards to Linear, Jira or GitHub, one issue each or one per cluster, and keep them linked to the board.
+          </Card>
+          <Card title="The live board in the chat" tint="violet" mark="▣">
+            Where ChatGPT shows interactive app views, it can bring up the real board in the conversation for you to look at, edit if allowed, and share.
+          </Card>
+          <Card title="Notes into docs" tint="mint" mark="D">
+            ChatGPT can turn a conversation into a Freero doc, append to one, or read the docs your team keeps next to its boards.
           </Card>
           <Card title="On the record" tint="orange" mark="≡">
             Every call is in the audit log, and you can cut the connection off from Freero at any time.
@@ -151,6 +157,15 @@ export default definePage({
               needs: 'permission to comment',
             },
             {
+              prompt: 'Show me the Roadmap board.',
+              outcome: 'Where ChatGPT shows app views, the live board opens in the chat, and Share with team gives you a link to pass on.',
+            },
+            {
+              prompt: 'Append today’s decisions to the “Decision log” doc.',
+              outcome: 'The decisions added at the end of the doc; anyone with it open sees them arrive.',
+              needs: 'permission to change boards',
+            },
+            {
               prompt: 'Group the sprint 14 retro into themes and suggest three actions as cards.',
               outcome: 'Themed clusters and three action cards, proposed together for the team to accept.',
             },
@@ -205,6 +220,8 @@ export default definePage({
                 'Comment and reply, when you allow it',
                 'Create linked issues in Jira, Linear or GitHub',
                 'Export a board as Markdown or JSON',
+                'Open the live board in the chat, where ChatGPT shows app views',
+                'Create and add to docs, when you allow it',
               ]}
             />
           </div>
@@ -217,9 +234,7 @@ export default definePage({
                 'Act beyond your role, whatever you granted',
                 'Delete a board, or delete items without confirming',
                 'Add images or files to a board',
-                <>
-                  Show the board inside the chat yet <span className="badge">Coming soon</span>
-                </>,
+                'Share a board on its own: only your click on “Share with team” in the live view does that',
               ]}
             />
           </div>
