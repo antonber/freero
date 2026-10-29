@@ -117,7 +117,7 @@ issue id is in the status note.
 | Tables | A grid of editable cells on the board; add or remove rows and columns | Have (rich-text cells stored one per key, header row, fills, spreadsheet paste, CSV export) | — | P1 | — |
 | Data tables | Typed columns (status, person, date), several views (table, kanban, timeline, tree), rows linked to board items | Partial: typed columns (text, number, date, select, person, checkbox) with sort, filter and a board view of the same rows; no timeline or tree view, rows aren't linked to board items (KAI-123, follow-ups KAI-245) | XL | P2 | parity |
 | Timeline / Gantt | Bars on a date axis with lanes, for roadmaps and plans | Have: day/week/month/quarter axis, lanes, bars and milestones; dragging edits dates, cards join as bars, connectors are dependencies; tracker issues as a roadmap (KAI-122, KAI-160) | L | P2 | parity |
-| Docs | Long-form rich documents (headings, lists, tables) that live on the board, with Markdown import and export | Missing (KAI-124) | L | P2 | parity |
+| Docs | Long-form rich documents (headings, lists, tables) that live on the board, with Markdown import and export | Have (KAI-124, KAI-162: a doc placed on the board shows live; Markdown in and out) | L | P2 | parity |
 | Code blocks | Monospaced code with syntax highlighting | Have: syntax highlighting, line numbers, language picker, copy; pasted code fences become blocks (KAI-125) | S | P2 | parity |
 | Charts | Bar, line or pie charts from entered data | Missing | M | P3 | parity |
 | Slides | A deck view built from board content, with slide layouts | Have: a slide deck built from frames, with layouts, skip, duplicate and speaker notes; presentation mode and PDF export follow the deck (KAI-126; follow-ups KAI-246) | L | P2 | parity |
@@ -345,9 +345,9 @@ Have. In the re-check after the teams, enterprise and parity batches merged: 47 
 
 | Status | Count |
 |---|---|
-| Have | 159 |
+| Have | 160 |
 | Partial | 15 |
-| Missing | 36 |
+| Missing | 35 |
 | **Total** | **210** |
 
 **By priority and status**
@@ -356,7 +356,7 @@ Have. In the re-check after the teams, enterprise and parity batches merged: 47 
 |---|---|---|---|---|
 | P0 | 31 | 0 | 0 | 31 |
 | P1 | 51 | 0 | 0 | 51 |
-| P2 | 71 | 7 | 5 | 83 |
+| P2 | 72 | 7 | 4 | 83 |
 | P3 | 6 | 8 | 31 | 45 |
 
 <!-- counts generated from the tables above; regenerate when rows change -->
@@ -364,7 +364,7 @@ Have. In the re-check after the teams, enterprise and parity batches merged: 47 
 **Takeaways**
 
 - Every first-session (P0) and weekly-use (P1) expectation is met.
-- The P2 gaps left: docs on the board (KAI-124), smart drawing (KAI-114), async walkthroughs
+- The P2 gaps left: smart drawing (KAI-114), async walkthroughs
   (KAI-133), board backup (KAI-137) and imports from other whiteboards (KAI-138) are missing; data
   tables need more views and row links (KAI-245), the PWA doesn't open files (KAI-218), boards can't
   be embedded in other sites (KAI-106), the audit log doesn't stream to a SIEM (KAI-192), and
@@ -383,7 +383,7 @@ made with `npm run new:feature`, a server module per area, and engine changes on
 cuts across types. Batches A–D are independent and can run in parallel; E and F follow the teams merge.
 
 Status: the teams merge and batches A–F have shipped except KAI-114 (smart drawing), KAI-121
-(custom packs), KAI-124 (docs, in review), KAI-133 (walkthroughs), KAI-143 (encryption at rest),
+(custom packs), KAI-133 (walkthroughs), KAI-143 (encryption at rest),
 KAI-144 (interface languages), KAI-106 (embeds in other sites), KAI-103 (assistant), KAI-137
 (board backup) and KAI-138 (imports). Follow-ups are filed as their own issues (named in the rows).
 
