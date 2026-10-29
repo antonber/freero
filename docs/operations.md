@@ -326,6 +326,7 @@ workspace (modules/workspaces).
 | Board links unlocked with their password (when) | `board_link_unlocks` (boards) | no (an access fact, not content) | deleted | deleted with the boards |
 | What a directory sent about them (SCIM userName, externalId, name, email, active) | `scim_users`, `scim_group_members` (scim) | `memberships.json` → `directoryRecords` | deleted (cascade) | deleted (cascade) |
 | Break-glass role | `sso_connections.break_glass_user_id` (sso) | `memberships.json` → `singleSignOn` | cleared (SET NULL) | deleted (cascade) |
+| Community listings they submitted to Apps & agents (name, description, links, category, the OAuth app named, the contact address for reviewers, review status and the reviewer's note) | `marketplace_listings` (marketplace) | `listings.json` | deleted (cascade) | — |
 | Abuse reports they filed, moderation actions about their content or account (suspension) | `moderation_items`, `moderation_actions` (moderation; reporter address only as an HMAC), `users.suspended_at` (auth) | not yet (follow-up: KAI-191) | person references cleared (SET NULL); the records stay as the operators' trail | items about its boards stay with their recorded target |
 | API tokens (sha256 only, name, scopes, times), apps they authorised (consents, codes, access/refresh tokens), apps they registered; where their credentials were used in team workspaces | `api_tokens`, `oauth_grants`, `oauth_codes`, `oauth_clients`, `api_workspace_credentials` (apiauth) | `api.json` (never a secret or hash) | deleted (cascade); revoked already when deletion is scheduled (signed out everywhere) | usage rows deleted (cascade) |
 | Data exports | `data_exports` + private ZIP files (privacy, uploads) | listed in `activity.json` | rows and files deleted by the export job within `DATA_EXPORT_INTERVAL_SECONDS` | workspace exports' rows and files deleted by the job |
@@ -403,6 +404,19 @@ Operators get an email when a board gets its first open report and for every app
   that the decision stands.
 - The side panel finds an **account** by email (suspend / lift) and an **uploaded file** by its
   URL (remove / restore / delete the kept copy).
+- **Listings** (`/operator?view=listings`, #87): community integrations submitted for the Apps &
+  agents page. A submission is seen by nobody but its submitter and operators until you
+  **Approve** it (it is then live, labelled Community) or **Decline** it (with a statement saying
+  why; the submitter can withdraw it and submit again). Live ones can be **Featured** (listed
+  first in the app) or **Removed** (a statement is required, and the developer can appeal);
+  **Restore** undoes a removal. Each card shows the submitter, their contact address for
+  reviewers, the website and docs links, the OAuth app it names (one the submitter registered:
+  its redirect addresses are listed) and its open reports. Operators are mailed for every new
+  submission. Reports about a live listing arrive in the queue like any report.
+  Submissions need a verified address and are limited per person (`RATE_LIMIT_LISTING_SUBMIT`,
+  and at most 10 waiting or live at once). Every decision is an action like the others below:
+  recorded, audited (`moderation.listing.*`, in the submitter's account log and their teams'),
+  and emailed to the developer.
 
 ### Actions
 

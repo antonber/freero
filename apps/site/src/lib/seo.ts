@@ -140,6 +140,7 @@ export const DISALLOWED = [
   '/unsubscribe',
   '/appeal',
   '/settings',
+  '/apps',
   '/admin/',
   '/operator',
 ];

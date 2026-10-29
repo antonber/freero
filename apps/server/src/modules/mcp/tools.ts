@@ -32,6 +32,7 @@ import {
   searchBoards,
   shareLink,
   syncToTracker,
+  trackerConnections,
   importFromTracker,
   templatesFor,
   updateItems,
@@ -713,6 +714,24 @@ export const TOOLS: McpTool[] = [
     async run(call, a) {
       const { deleted } = await deleteItems(call, a.boardId, [...new Set(a.itemIds)], a.confirm === true, true);
       return plain(`Deleted ${deleted.length} item${deleted.length === 1 ? '' : 's'} (including what was inside them): ${deleted.join(', ')}.`, { deleted });
+    },
+  }),
+
+  tool({
+    name: 'list_tracker_connections',
+    title: 'List issue-tracker connections',
+    description:
+      'Which issue trackers (Jira, Linear, GitHub) the person can use on a board: each connection’s name (the `connection` of sync_to_tracker and import_from_tracker), provider, default project and status. Give `connection` to also list its projects (Jira project keys, Linear team keys, GitHub owner/repo), which sync_to_tracker takes as `project`. An empty list says how the person connects one. Call it before sending or importing when you don’t know the names.',
+    scope: 'boards:read',
+    // Open world: with `connection` it asks the tracker for its projects.
+    annotations: { ...READ, openWorldHint: true },
+    input: {
+      boardId,
+      connection: z.string().max(200).optional().describe('A connection’s name (or id): also list its projects, read from the tracker.'),
+    },
+    async run(call, a) {
+      const out = await trackerConnections(call, a.boardId, a.connection);
+      return untrustedJson(out, { count: out.connections.length });
     },
   }),
 

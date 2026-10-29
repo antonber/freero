@@ -77,7 +77,7 @@ export function ConnectAgentPage() {
         <h1 className="fr-acct__title">Connect an agent</h1>
         <p className="fr-connect-lead">
           Let Claude, ChatGPT, your coding agent or a script work on your boards. It acts as you, with only the permissions you give it: reading and
-          suggesting by default.
+          suggesting by default. Trackers, chat, embeds and everything else that connects are in <Link to="/apps">Apps &amp; agents</Link>.
         </p>
         {failed ? (
           <p className="fr-acct__error">Could not load this server’s address. Reload the page to try again.</p>

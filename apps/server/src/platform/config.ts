@@ -48,7 +48,8 @@ export type RateLimitName =
   | 'trackerSend'
   | 'backup'
   | 'walkthroughComment'
-  | 'slackUnfurl';
+  | 'slackUnfurl'
+  | 'listingSubmit';
 
 /** Issue-tracker sync (KAI-153; docs/trackers.md). */
 export interface TrackersConfig {
@@ -414,6 +415,7 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   backup: '30/1h', // per user: board backups downloaded or restored (each reads or writes a whole board and its files, KAI-137)
   walkthroughComment: '120/10m', // per person: comments on walkthroughs (each may notify people, KAI-133)
   slackUnfurl: '50/1m', // per Slack workspace: link previews Freero posts there (chat.unfurl is Slack's tier 3, about 50 a minute; #88)
+  listingSubmit: '5/1d', // per person: community listings submitted for review (each mails the operators, #87)
 };
 
 const ENV_NAME: Record<RateLimitName, string> = {
@@ -458,6 +460,7 @@ const ENV_NAME: Record<RateLimitName, string> = {
   backup: 'RATE_LIMIT_BACKUP',
   walkthroughComment: 'RATE_LIMIT_WALKTHROUGH_COMMENT',
   slackUnfurl: 'RATE_LIMIT_SLACK_UNFURL',
+  listingSubmit: 'RATE_LIMIT_LISTING_SUBMIT',
 };
 
 /** The built-in providers: env prefix, button label, default issuer, extra verified-email claims. */

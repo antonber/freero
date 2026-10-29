@@ -29,6 +29,7 @@ export const MCP_TOOLS: Array<[name: string, needs: 'read' | 'suggest' | 'write'
   ['create_doc', 'write', 'A new doc from Markdown, personal or in a team workspace.'],
   ['append_to_doc', 'write', 'Markdown added to the end of a doc; everyone with it open sees it arrive.'],
   ['post_status', 'write', 'The agent’s plan, status and tasks (to do, doing, done, blocked) on its lane of a control-room board; retries never duplicate.'],
+  ['list_tracker_connections', 'read', 'The issue trackers the person can use on a board, with each one’s default project, and a connection’s projects or repositories.'],
   ['sync_to_tracker', 'write', 'Sends items to the board’s Jira, Linear or GitHub as one issue or one per item, kept in sync.'],
   ['add_comment', 'comment', 'A comment on the board or an item, or a reply in a thread.'],
 ];

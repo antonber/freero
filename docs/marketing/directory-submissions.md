@@ -126,13 +126,13 @@ person ticks them on the consent screen.
 
 1. **Connection:** `<HOST>/mcp`. One URL for everyone (do not pick "Users connect to different
    URLs": self-hosted Freero servers are added as custom connectors, not through the listing).
-2. **Tools:** synced from the server. 26 tools are offered to the model (`share_board` is
+2. **Tools:** synced from the server. 27 tools are offered to the model (`share_board` is
    app-only, the live view's button). None should be flagged: every tool has a title and all three
    hints. How they read:
 
    | Kind | Tools |
    |---|---|
-   | Read-only (`readOnlyHint: true`) | `list_workspaces`, `search_boards`, `search`, `resolve_links`, `find_backlinks`, `search_docs`, `read_doc`, `list_templates`, `get_board_outline`, `open_board`, `get_feedback`, `export_board` |
+   | Read-only (`readOnlyHint: true`) | `list_workspaces`, `search_boards`, `search`, `resolve_links`, `find_backlinks`, `search_docs`, `read_doc`, `list_templates`, `get_board_outline`, `open_board`, `get_feedback`, `export_board`, `list_tracker_connections` (open world: with `connection` it reads the tracker's projects) |
    | Additive writes (`destructiveHint: false`) | `create_board`, `create_doc`, `append_to_doc`, `add_stickies`, `add_clusters`, `add_cards`, `add_diagram`, `add_comment`, `propose_changes` (suggestions only), `import_from_tracker` (open world: reads the team's tracker) |
    | Destructive (`destructiveHint: true`: Claude always asks) | `update_items` (changes existing items), `delete_items` (also needs `confirm: true`), `post_status` (replaces its lane's plan and status), `sync_to_tracker` (creates issues in Jira / Linear / GitHub: open world) |
 

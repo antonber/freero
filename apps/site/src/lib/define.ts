@@ -1,6 +1,8 @@
 // The contract for a page of the marketing site. A page is a file `src/pages/**/<name>.page.tsx`
 // whose default export is `definePage({...})`; the build discovers it (no list to edit) and owns
 // everything around the body: <head>, Open Graph image, JSON-LD, breadcrumbs, FAQ, sitemap entry.
+// A file whose pages come from data (one per catalog entry, /integrations/<id>) default-exports an
+// array of them instead.
 import type { ReactElement } from 'react';
 
 export interface FaqItem {
@@ -10,7 +12,7 @@ export interface FaqItem {
 }
 
 /** Which sitemap a page is listed in (sitemap.xml is the index of these). */
-export type SitemapGroup = 'pages' | 'features' | 'use-cases' | 'templates' | 'compare';
+export type SitemapGroup = 'pages' | 'features' | 'use-cases' | 'templates' | 'compare' | 'integrations';
 
 export interface PageDef {
   /** URL path: '/', '/claude', '/vs/example'. No trailing slash. */

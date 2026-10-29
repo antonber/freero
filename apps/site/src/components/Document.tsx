@@ -106,6 +106,7 @@ function SiteFooter() {
         ['/claude', 'Freero for Claude'],
         ['/chatgpt', 'Freero for ChatGPT'],
         ['/agents', 'Build with agents'],
+        ['/integrations', 'Integrations'],
         ['/docs', 'Documentation'],
       ],
     },

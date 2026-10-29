@@ -55,6 +55,12 @@ import type {
   ModerationActionRequest,
   ModerationItem,
   ReportRequest,
+  CommunityListing,
+  ListingForReview,
+  ListingReportRequest,
+  ListingStatus,
+  ListingSubmission,
+  OwnListing,
   AuthResponse,
   BoardMember,
   BoardPerson,
@@ -507,6 +513,14 @@ export const api = {
 
   // reports and moderation (KAI-142)
   report: (body: ReportRequest) => request<{ ok: true }>('POST', '/api/reports', body),
+  // community listings of the Apps & agents page (#87)
+  communityListings: () => request<{ listings: CommunityListing[] }>('GET', '/api/marketplace/listings'),
+  myListings: () => request<{ listings: OwnListing[] }>('GET', '/api/marketplace/listings/mine'),
+  communityListing: (id: string) => request<{ listing: CommunityListing | OwnListing }>('GET', `/api/marketplace/listings/${encodeURIComponent(id)}`),
+  submitListing: (body: ListingSubmission) => request<{ listing: OwnListing }>('POST', '/api/marketplace/listings', body),
+  withdrawListing: (id: string) => request<{ ok: true }>('DELETE', `/api/marketplace/listings/${encodeURIComponent(id)}`),
+  reportListing: (body: ListingReportRequest) => request<{ ok: true }>('POST', '/api/reports', body),
+  moderationListings: (status: ListingStatus) => request<{ listings: ListingForReview[] }>('GET', `/api/moderation/listings?status=${status}`),
   appeal: (token: string) => request<{ appeal: AppealInfo }>('GET', `/api/appeals/${encodeURIComponent(token)}`),
   submitAppeal: (token: string, message: string) => request<{ ok: true }>('POST', '/api/appeals', { token, message }),
   moderationAccess: () => request<{ operator: boolean }>('GET', '/api/moderation/access'),

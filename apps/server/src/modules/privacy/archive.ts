@@ -1,6 +1,6 @@
 // Builds the ZIP of a data export from what each owning module exports (this module reads no
 // other module's tables). Layout — personal:
-//   README.txt, account.json, api.json, memberships.json, activity.json, comments.json, notifications.json,
+//   README.txt, account.json, api.json, listings.json, memberships.json, activity.json, comments.json, notifications.json,
 //   templates/<name>-<id>.json, uploads/index.json + uploads/<file>,
 //   boards/<title>-<id>/board.json (record + content + the layers you may read), board.yjs, files/<file>
 //   (a doc, KAI-162: the same folder, plus doc.md — its document as Markdown)
@@ -12,6 +12,7 @@ import { exportAccountData, getUser } from '../auth/index';
 import { decisionsExportOf } from '../decisions/index';
 import { engageExportOf } from '../engage/index';
 import { boardActivityOf, boardIdsInWorkspace, boardIdsOpenedBy, boardIdsOwnedByUser, boardRecords, getBoardAccess, type BoardRecord } from '../boards/index';
+import { listingsExportOf } from '../marketplace/index';
 import { membershipsOf } from '../members/index';
 import { notificationsExportOf } from '../notifications/index';
 import { commentsWrittenBy, exportBoardContent } from '../realtime/index';
@@ -86,6 +87,7 @@ notifications.json  your notifications and email settings
 walkthroughs.json   walkthroughs you recorded (camera path, captions; the recordings are in uploads/),
                     your comments on walkthroughs and which ones you watched
 decisions.json      decision snapshots you made (title, note, board)
+listings.json       community listings you submitted to Apps & agents, with their review status
 templates/          templates you saved (Freero's own JSON; insertable again)
 uploads/            files you uploaded (images, PDFs, video, audio, recordings), with index.json
 boards/             boards you own: board.json (readable JSON of every item, comment and setting,
@@ -115,6 +117,7 @@ export async function buildUserArchive(userId: string, appOrigin: string): Promi
   a.add('README.txt', strToU8(README_USER(account.profile.name, new Date().toISOString())));
   a.addJson('account.json', account);
   a.addJson('api.json', await apiDataOf(userId));
+  a.addJson('listings.json', await listingsExportOf(userId));
 
   const [workspaces, boardRoles, sso, scim] = await Promise.all([exportMembershipsOf(userId), membershipsOf(userId), ssoRolesOf(userId), scimRecordsOf(userId)]);
   const invited = await boardRecords([...boardRoles.keys()]);

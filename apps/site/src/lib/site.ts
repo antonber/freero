@@ -20,6 +20,8 @@ export const APP = {
   boards: '/app',
   /** The Connect page: every MCP client's setup with this instance's address (#80). `#<client>` opens its tab. */
   connect: '/settings/connect',
+  /** Apps & agents (#87): everything that connects; `/apps/<id>` is one entry's connect step. */
+  apps: '/apps',
 } as const;
 
 export const SITE_NAME = 'Freero';

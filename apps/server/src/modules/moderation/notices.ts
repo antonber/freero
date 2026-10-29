@@ -14,7 +14,10 @@ function contactLine(): string | undefined {
   return abuse ? `Questions about this decision: write to ${abuse}.` : undefined;
 }
 
-const WHAT: Record<ModerationActionKind, { subject: (t: string | null) => string; did: (t: string | null) => string; adverse: boolean }> = {
+const listing = (title: string | null) => `“${title || 'your listing'}”`;
+
+/** `reason: false`: the notice doesn't name a report reason (declining a submission isn't about abuse). */
+const WHAT: Record<ModerationActionKind, { subject: (t: string | null) => string; did: (t: string | null) => string; adverse: boolean; reason?: false }> = {
   'board.disable_link': {
     subject: (t) => `Link sharing turned off for ${quoted(t)}`,
     did: (t) =>
@@ -67,6 +70,30 @@ const WHAT: Record<ModerationActionKind, { subject: (t: string | null) => string
     did: () => 'Freero’s moderators lifted the suspension of your account. You can sign in again.',
     adverse: false,
   },
+  // Community listings (#87): the title is the listing's name.
+  'listing.approve': {
+    subject: (t) => `${listing(t)} is live in Apps & agents`,
+    did: (t) => `Freero’s reviewers approved your listing ${listing(t)}. Everyone signed in to Freero now finds it on the Apps & agents page, labelled Community.`,
+    adverse: false,
+  },
+  'listing.reject': {
+    subject: (t) => `${listing(t)} wasn’t approved`,
+    did: (t) => `Freero’s reviewers didn’t approve your listing ${listing(t)}, so it isn’t shown to anyone. You can withdraw it and submit it again once the points below are addressed.`,
+    adverse: true,
+    reason: false,
+  },
+  'listing.remove': {
+    subject: (t) => `${listing(t)} was removed from Apps & agents`,
+    did: (t) => `Freero’s moderators removed your listing ${listing(t)} from the Apps & agents page. Nobody sees it now.`,
+    adverse: true,
+  },
+  'listing.restore': {
+    subject: (t) => `${listing(t)} is live again`,
+    did: (t) => `Freero’s moderators restored your listing ${listing(t)}. It is on the Apps & agents page again.`,
+    adverse: false,
+  },
+  'listing.feature': { subject: (t) => `${listing(t)} is featured`, did: (t) => `Your listing ${listing(t)} is featured on the Apps & agents page.`, adverse: false },
+  'listing.unfeature': { subject: (t) => `${listing(t)} is no longer featured`, did: (t) => `Your listing ${listing(t)} is no longer featured.`, adverse: false },
 };
 
 /** Whether the action works against someone (so it can be appealed). */
@@ -80,7 +107,7 @@ export function sendActionNotice(
   const what = WHAT[n.action];
   const paragraphs = [what.did(n.boardTitle)];
   if (n.extra) paragraphs.push(n.extra);
-  if (what.adverse) paragraphs.push(`Reason: ${reasonLabel(n.reason)}.`);
+  if (what.adverse && what.reason !== false) paragraphs.push(`Reason: ${reasonLabel(n.reason)}.`);
   if (n.statement) paragraphs.push(n.statement);
   if (n.appealPath) paragraphs.push('If you think this is a mistake, tell us why and a moderator will review it again.');
   sendMailLater({
