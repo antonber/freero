@@ -1,0 +1,249 @@
+{
+  "name": "Freero: board comment to Slack",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "3ce168ba-65d5-4067-ba79-f5f6e071b48e",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "19ce5318-159f-4c91-a4cf-4bb3f1096a04",
+      "name": "Freero webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "fc904209-5654-4935-a92a-f27cd7f64179"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Checks the Freero-Signature of a delivery (format json) before anything else runs.\n// Needs Node's crypto module: on n8n Cloud it is available; self-hosted, set\n// NODE_FUNCTION_ALLOW_BUILTIN=crypto (on the task runners if you use them).\nconst crypto = require('crypto');\n\nconst SECRET = 'whsec_REPLACE_ME'; // the endpoint's signing secret, shown once in Freero\nconst MAX_AGE_SECONDS = 300;       // refuse replays older than 5 minutes\n\nconst fail = (reason) => [{ json: { valid: false, reason } }];\n\nconst headers = $input.first().json.headers || {};\nconst fields = {};\nfor (const part of String(headers['freero-signature'] || '').split(',')) {\n  const i = part.indexOf('=');\n  if (i > 0) fields[part.slice(0, i).trim()] = part.slice(i + 1).trim();\n}\nconst t = Number(fields.t);\nif (!Number.isInteger(t) || !/^[0-9a-f]{64}$/.test(fields.v1 || '')) return fail('missing or malformed Freero-Signature');\nif (Math.abs(Date.now() / 1000 - t) > MAX_AGE_SECONDS) return fail('timestamp outside 5 minutes');\n\n// The exact bytes Freero signed: the Webhook node's Raw Body option puts them in binary \"data\".\nconst raw = (await this.helpers.getBinaryDataBuffer(0, 'data')).toString('utf8');\nconst expected = crypto.createHmac('sha256', SECRET).update(t + '.' + raw).digest();\nconst given = Buffer.from(fields.v1, 'hex');\nif (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) return fail('signature does not match');\n\nreturn [{ json: { valid: true, event: JSON.parse(raw) } }];\n"
+      },
+      "id": "a1f0c6de-2b47-4c1e-9d0a-6f3e8b52c7d1",
+      "name": "Verify signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c4a9e1f2-7d36-4b8a-9f5e-1e2b3c4d5a6f",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b8e2d4a7-5c13-4f6b-8a9e-2d7c1f04e3b5",
+      "name": "Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "noData",
+        "options": {
+          "responseCode": 204
+        }
+      },
+      "id": "d5b3f2a8-8e47-4c9b-a06f-2f3c4d5e6a7b",
+      "name": "Accept (204)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "invalid signature",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "e6c4a3b9-9f58-4dac-b17a-3a4d5e6f7a8c",
+      "name": "Reject (401)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "a8e6c5db-b17a-4fce-93c9-5c6f7a8b9cae",
+              "leftValue": "={{ $json.event.type }}",
+              "rightValue": "comment.created",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f7d5b4ca-a069-4ebd-82b8-4b5e6f7a8b9d",
+      "name": "Comment?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Board text was written by people: escape it for Slack mrkdwn so it can't ping\n// <!channel>, mention anyone or make links.\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n\nreturn $input.all().map(({ json: { event } }) => {\n  const board = event.board || {};\n  const target = event.data.itemId ? board.url + '?item=' + encodeURIComponent(event.data.itemId) : board.url;\n  const quote = esc(event.data.text).split('\\n').map((line) => '> ' + line).join('\\n');\n  const who = esc(event.actor ? event.actor.name : 'Someone');\n  return { json: { text: who + ' commented on <' + esc(target) + '|' + esc(board.title) + '>:\\n' + quote } };\n});\n"
+      },
+      "id": "b9f7d6ec-c28b-4adf-a4da-6d7a8b9cadbf",
+      "name": "Slack message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $json.text }) }}",
+        "options": {}
+      },
+      "id": "cae8e7fd-d39c-4be0-b5eb-7e8b9cadbec0",
+      "name": "Post to Slack",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        -120
+      ]
+    }
+  ],
+  "connections": {
+    "Freero webhook": {
+      "main": [
+        [
+          {
+            "node": "Verify signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify signature": {
+      "main": [
+        [
+          {
+            "node": "Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid?": {
+      "main": [
+        [
+          {
+            "node": "Accept (204)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reject (401)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Accept (204)": {
+      "main": [
+        [
+          {
+            "node": "Comment?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Comment?": {
+      "main": [
+        [
+          {
+            "node": "Slack message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Slack message": {
+      "main": [
+        [
+          {
+            "node": "Post to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}

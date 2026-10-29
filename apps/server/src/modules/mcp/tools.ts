@@ -777,6 +777,51 @@ export const TOOLS: McpTool[] = [
   }),
 
   tool({
+    name: 'import_meeting_notes',
+    title: 'Import meeting notes',
+    description:
+      'Puts a meeting on a board as ONE frame, read from the notes or transcript as written (no AI, nothing invented): a Markdown or text summary (Granola, Otter, Fathom, Meetily …) or WebVTT / SRT captions. Decisions become a cluster of sticky notes, action items task cards (with the owner and due date the text names), the other sections’ points sticky notes under their headings, prose a summary note, and for transcripts a note of who spoke, how often and how long. Pass the text unchanged; `date` (YYYY-MM-DD) is the meeting’s if the notes don’t say (it resolves "by Friday"). Placed in free space or with placement. Returns the frame’s id and the ids of the decisions and cards. If you’d rather pick the points yourself, use add_clusters and add_cards instead. With only permission to suggest (or propose: true) the frame is proposed for people to accept. Needs permission to change boards (or to suggest).',
+    scope: ['boards:write', 'boards:suggest'],
+    annotations: ADD,
+    input: {
+      boardId,
+      text: z.string().min(1).max(LAYOUT_LIMITS.meeting).describe('The notes or transcript, exactly as exported.'),
+      format: z.enum(['markdown', 'text', 'vtt', 'srt']).optional().describe('Default: recognised from the text (WEBVTT header, SRT cue times, Markdown headings).'),
+      title: z.string().min(1).max(200).optional().describe('The frame’s title when the notes have none of their own.'),
+      date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('The meeting’s date (YYYY-MM-DD) when the notes don’t say.'),
+      speakers: z.boolean().optional().describe('Transcripts: add the note of who spoke (default true).'),
+      near,
+      placement,
+      propose: z.boolean().optional().describe('true: propose the frame as suggestions even though this connection may change boards.'),
+    },
+    async run(call, a) {
+      const suggest = a.propose === true || !call.cred.scopes.includes('boards:write');
+      if (suggest && !call.cred.scopes.includes('boards:suggest'))
+        throw new ArgumentError('Proposing needs the boards:suggest permission (“propose changes”), which this connection doesn’t have. Leave propose out to import directly.');
+      const structure: StructureInput = { kind: 'meeting', source: a.text, ...(a.format ? { format: a.format } : {}), ...(a.title ? { title: a.title } : {}), ...(a.date ? { date: a.date } : {}), ...(a.speakers === false ? { speakers: false } : {}) };
+      const out = await insertStructureFor(call, a.boardId, {
+        structure,
+        ...(a.near ? { near: a.near } : {}),
+        ...(a.placement ? { placement: a.placement } : {}),
+        target: suggest ? 'suggestions' : 'board',
+        ...(suggest ? { description: 'Meeting notes imported as one frame' } : {}),
+      });
+      // parts: [frame + notes], then each block (Decisions, Action items, the topics) with its title's id.
+      const [frame, ...blocks] = out.parts ?? [];
+      const ids = { frameId: frame?.titleId ?? null, blocks: blocks.map((b) => ({ titleId: b.titleId ?? null, ids: b.ids })) };
+      if (suggest)
+        return plain(
+          `Proposed the meeting as one frame (${out.created.length} items, suggestion group ${out.groupId ?? 'none'}); the board doesn’t change until someone who can edit accepts. Next: open_board so the person can review it.`,
+          { target: 'suggestions', groupId: out.groupId ?? null, ...ids },
+        );
+      return plain(
+        `Imported the meeting as frame ${ids.frameId} with ${out.created.length} items (board ${boardUrl(call.req, a.boardId)}). Blocks in order (Decisions, Action items, then each topic, whichever the notes have): ${ids.blocks.map((b) => `${b.titleId}: ${b.ids.join(', ')}`).join('; ') || 'none'}. ${NEXT_AFTER_ADD}`,
+        { target: 'board', created: out.created, ...ids },
+      );
+    },
+  }),
+
+  tool({
     name: 'export_board',
     title: 'Export a board',
     description:

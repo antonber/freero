@@ -47,7 +47,8 @@ export type RateLimitName =
   | 'search'
   | 'trackerSend'
   | 'backup'
-  | 'walkthroughComment';
+  | 'walkthroughComment'
+  | 'slackUnfurl';
 
 /** Issue-tracker sync (KAI-153; docs/trackers.md). */
 export interface TrackersConfig {
@@ -329,6 +330,11 @@ export interface Config {
     disableAfterFailures: number;
   };
   /**
+   * Slack link unfurls (modules/slack, #88; docs/integrations/slack.md): the operator's Slack app.
+   * Off (null) unless both its signing secret and its bot token are set.
+   */
+  slack: { signingSecret: string; botToken: string; apiUrl: string } | null;
+  /**
    * Further https origins boards may frame as live embeds (KAI-127), besides the built-in providers
    * (`EMBED_PROVIDERS` in @freero/shared): a link on one of them is framed as given, sandboxed.
    * Added to the CSP `frame-src`.
@@ -407,6 +413,7 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   search: '120/1m', // per person (app) or credential (API, MCP): searches of board content (KAI-151)
   backup: '30/1h', // per user: board backups downloaded or restored (each reads or writes a whole board and its files, KAI-137)
   walkthroughComment: '120/10m', // per person: comments on walkthroughs (each may notify people, KAI-133)
+  slackUnfurl: '50/1m', // per Slack workspace: link previews Freero posts there (chat.unfurl is Slack's tier 3, about 50 a minute; #88)
 };
 
 const ENV_NAME: Record<RateLimitName, string> = {
@@ -450,6 +457,7 @@ const ENV_NAME: Record<RateLimitName, string> = {
   search: 'RATE_LIMIT_SEARCH',
   backup: 'RATE_LIMIT_BACKUP',
   walkthroughComment: 'RATE_LIMIT_WALKTHROUGH_COMMENT',
+  slackUnfurl: 'RATE_LIMIT_SLACK_UNFURL',
 };
 
 /** The built-in providers: env prefix, button label, default issuer, extra verified-email claims. */
@@ -713,6 +721,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     jiraAuthUrl: (url('TRACKER_JIRA_AUTH_URL', ['https:', 'http:']) ?? 'https://auth.atlassian.com').replace(/\/+$/, ''),
     jiraApiUrl: (url('TRACKER_JIRA_API_URL', ['https:', 'http:']) ?? 'https://api.atlassian.com').replace(/\/+$/, ''),
   };
+  // Slack link unfurls: both halves of the operator's Slack app, or off. One without the other is a
+  // mistake worth saying out loud rather than a silently missing feature.
+  const slackApp = () => {
+    const signingSecret = str('SLACK_SIGNING_SECRET');
+    const botToken = str('SLACK_BOT_TOKEN');
+    if (!signingSecret !== !botToken) problems.push('SLACK_SIGNING_SECRET and SLACK_BOT_TOKEN go together (Slack link unfurls need both)');
+    if (botToken && !botToken.startsWith('xoxb-')) problems.push('SLACK_BOT_TOKEN must be the app’s bot token (xoxb-…)');
+    const apiUrl = (url('SLACK_API_URL', ['https:', 'http:']) ?? 'https://slack.com/api').replace(/\/+$/, '');
+    return signingSecret && botToken ? { signingSecret, botToken, apiUrl } : null;
+  };
   const ai: AiConfig = {
     instance: aiInstance,
     instanceFor: { personal: aiFor.includes('personal'), teams: aiFor.includes('teams') },
@@ -807,6 +825,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       maxAttempts: int('WEBHOOK_MAX_ATTEMPTS', 7, 1, 20),
       disableAfterFailures: int('WEBHOOK_DISABLE_AFTER_FAILURES', 15, 1, 1000),
     },
+    slack: slackApp(),
     embedExtraOrigins,
     appFrameAncestors,
   };

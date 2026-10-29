@@ -266,6 +266,29 @@ it('update_items moves a card into a kanban column named by its title — no coo
   await client.close();
 });
 
+it('import_meeting_notes from a connection that may only suggest proposes the meeting and leaves the board as it was; with write it lands one frame and names the cards’ ids', async () => {
+  const boardId = await boardWith('Weekly', [sticky('a', 'Keep me', 0)]);
+  const before = await idsOn(boardId);
+  const text = '# Weekly sync\n\n## Decisions\n- Freeze on Friday\n\n## Action items\n- [ ] Sam to send the notes by 2026-11-02\n';
+  const suggester = await connect(['boards:read', 'boards:suggest']);
+  const proposed = (await suggester.callTool({ name: 'import_meeting_notes', arguments: { boardId, text } })) as CallToolResult;
+  expect(proposed.isError).toBeFalsy();
+  expect((proposed.structuredContent as { target: string; groupId: string | null }).target).toBe('suggestions');
+  expect(await idsOn(boardId)).toEqual(before);
+  await suggester.close();
+
+  const writer = await connect(['boards:read', 'boards:write']);
+  const res = (await writer.callTool({ name: 'import_meeting_notes', arguments: { boardId, text } })) as CallToolResult;
+  expect(res.isError).toBeFalsy();
+  const out = res.structuredContent as { frameId: string; blocks: Array<{ titleId: string; ids: string[] }> };
+  const byId = new Map((await readBoardView(boardId, { userId: ownerId, role: 'owner' })).elements.map((e) => [e.el.id, e.el as BoardElement & { title?: string; dueDate?: string }]));
+  expect(byId.get(out.frameId)).toMatchObject({ type: 'frame', title: 'Weekly sync' });
+  const [decisions, actions] = out.blocks;
+  expect(decisions.ids.map((id) => byId.get(id)?.type)).toEqual(['sticky']);
+  expect(actions.ids.map((id) => [byId.get(id)?.type, byId.get(id)?.dueDate, byId.get(id)?.frameId])).toEqual([['card', '2026-11-02', out.frameId]]);
+  await writer.close();
+});
+
 it('no tool, prompt or resource reaches a directory without a title and explicit read-only / destructive / open-world hints, and none claims to be read-only while destructive', async () => {
   // Every tool the server defines, including those offered only when a capability is configured
   // and the live view's own button (share_board).

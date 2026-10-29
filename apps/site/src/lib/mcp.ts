@@ -22,6 +22,7 @@ export const MCP_TOOLS: Array<[name: string, needs: 'read' | 'suggest' | 'write'
   ['add_clusters', 'write', 'Titled groups side by side; existing notes can move into them.'],
   ['add_cards', 'write', 'Task cards with description, status, due date and link, into a kanban column, a frame or a cluster, or a new kanban with its columns.'],
   ['import_from_tracker', 'write', 'Issues from a Jira, Linear or GitHub query as cards linked to them, kept in sync both ways; proposed instead when the connection may only suggest.'],
+  ['import_meeting_notes', 'write', 'Meeting notes or a transcript (Markdown, text, WebVTT, SRT) as one frame: decisions as a cluster, action items as cards with owner and due date, points as notes, who spoke. Read as written, no AI.'],
   ['add_diagram', 'write', 'A Mermaid flowchart or sequence diagram, a mind map or tree from an outline, or a node-and-edge graph, laid out by Freero.'],
   ['update_items', 'write', 'Several items changed in one all-or-nothing step: text, fields, colours, frames, locks, links, and moves into a frame, kanban column or cluster.'],
   ['delete_items', 'write', 'Deletes items, only with an explicit confirmation.'],

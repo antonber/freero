@@ -1,0 +1,186 @@
+{
+  "name": "Freero: GitHub issue to card",
+  "nodes": [
+    {
+      "parameters": {
+        "authentication": "accessToken",
+        "owner": {
+          "__rl": true,
+          "value": "YOUR_GITHUB_OWNER",
+          "mode": "name"
+        },
+        "repository": {
+          "__rl": true,
+          "value": "YOUR_GITHUB_REPO",
+          "mode": "name"
+        },
+        "events": [
+          "issues"
+        ],
+        "options": {}
+      },
+      "id": "de0588d9-2c9a-4818-9ee0-5a77d468249a",
+      "name": "GitHub Trigger",
+      "type": "n8n-nodes-base.githubTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "70174d32-9f4d-4b89-b22f-f01ede5ed1c7"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "0b6da9de-38a1-4ef7-b478-1aaa37b10574",
+              "leftValue": "={{ $json.body.action }}",
+              "rightValue": "opened",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c3d14c9c-fcc8-40de-a6df-e374207344a6",
+      "name": "Opened?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "5c8c5258-1a9a-4871-9f96-58541626da13",
+              "name": "freeroUrl",
+              "value": "https://YOUR_FREERO_HOST",
+              "type": "string"
+            },
+            {
+              "id": "378ed02e-30d2-4b01-88f2-7093a77a6efc",
+              "name": "boardId",
+              "value": "YOUR_BOARD_ID",
+              "type": "string"
+            },
+            {
+              "id": "76e6b0a4-aad6-402a-8e97-ad2031bd022f",
+              "name": "kanbanId",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "371f7842-6f6a-404b-be6a-8e3326b72bda",
+              "name": "column",
+              "value": "To do",
+              "type": "string"
+            },
+            {
+              "id": "2a57b886-1dae-4001-b6ff-e8da16bbe6a0",
+              "name": "cardText",
+              "value": "={{ $json.body.repository.full_name }}#{{ $json.body.issue.number }}: {{ $json.body.issue.title }}",
+              "type": "string"
+            },
+            {
+              "id": "968ba108-c0c1-4b5c-a0be-185331b7d88a",
+              "name": "cardDescription",
+              "value": "={{ $json.body.issue.body || '' }}",
+              "type": "string"
+            },
+            {
+              "id": "4108e833-2ba9-41b8-abed-6c181a5ece0a",
+              "name": "cardLink",
+              "value": "={{ $json.body.issue.html_url }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "608d2e84-c1aa-4128-a291-ea79d15cc3c2",
+      "name": "Card and board",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        440,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.freeroUrl }}/api/v1/boards/{{ $json.boardId }}/structure",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify(Object.assign({ structure: { kind: 'items', items: [{ type: 'card', text: $json.cardText.slice(0, 2000), description: $json.cardDescription.slice(0, 2000), link: $json.cardLink }] } }, $json.kanbanId ? { placement: { into: $json.kanbanId, column: $json.column } } : {})) }}",
+        "options": {}
+      },
+      "id": "7f43bf72-bbaf-48de-aaa0-bb555b525cbd",
+      "name": "Add card to Freero",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        -20
+      ]
+    }
+  ],
+  "connections": {
+    "GitHub Trigger": {
+      "main": [
+        [
+          {
+            "node": "Opened?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Opened?": {
+      "main": [
+        [
+          {
+            "node": "Card and board",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Card and board": {
+      "main": [
+        [
+          {
+            "node": "Add card to Freero",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}
