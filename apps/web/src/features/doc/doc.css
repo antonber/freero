@@ -1,0 +1,128 @@
+/* A doc on the board (KAI-124): a sheet with a title strip and the live document inside. */
+.fr-doc-item {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1px solid var(--fr-line);
+  border-radius: 10px;
+  background: var(--fr-surface);
+  box-shadow: 0 1px 2px rgba(23, 22, 43, 0.06), 0 6px 18px rgba(23, 22, 43, 0.06);
+  color: var(--fr-ink);
+}
+.fr-doc-item.is-denied {
+  background: var(--fr-surface-2);
+}
+
+.fr-doc-item__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  height: 40px;
+  padding: 0 8px 0 14px;
+  border-bottom: 1px solid var(--fr-line);
+  background: var(--fr-surface-2);
+  color: var(--fr-ink-2);
+}
+.fr-doc-item__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fr-ink);
+  font: 600 14px/1.2 var(--fr-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fr-doc-item__icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fr-ink-2);
+  cursor: pointer;
+}
+.fr-doc-item__icon:hover {
+  background: var(--fr-hover);
+  color: var(--fr-ink);
+}
+
+.fr-doc-item__body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 12px 0;
+}
+.fr-doc-item__body.is-editing {
+  overflow: auto;
+  box-shadow: inset 0 0 0 2px var(--fr-primary);
+}
+.fr-doc-item__body .bn-editor {
+  padding-inline: 40px 16px;
+}
+
+.fr-doc-item__card {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  color: var(--fr-ink-3);
+  font: 500 14px var(--fr-font);
+}
+
+.fr-doc-item__denied {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  color: var(--fr-ink-2);
+  text-align: center;
+  font: 14px/1.4 var(--fr-font);
+}
+.fr-doc-item__denied strong {
+  color: var(--fr-ink);
+  font-size: 16px;
+}
+.fr-doc-item__btn {
+  margin-top: 6px;
+  padding: 7px 14px;
+  border: 1px solid var(--fr-line-strong);
+  border-radius: 8px;
+  background: var(--fr-surface);
+  color: var(--fr-ink);
+  font: 600 13px var(--fr-font);
+  cursor: pointer;
+}
+.fr-doc-item__btn:hover {
+  background: var(--fr-hover);
+}
+
+/* A board shown live inside a doc on this board. */
+.fr-doc-item__nested {
+  height: 220px;
+  overflow: hidden;
+  border: 1px solid var(--fr-line);
+  border-radius: 8px;
+  background: var(--fr-canvas);
+}
+.fr-doc-item__nested--blocked {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: auto;
+  padding: 12px;
+  color: var(--fr-ink-2);
+  font-size: 13px;
+}
+
+@media (forced-colors: active) {
+  .fr-doc-item__body.is-editing {
+    outline: 2px solid Highlight;
+  }
+}

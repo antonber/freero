@@ -32,6 +32,7 @@ const REQUIRED: Record<ElementType, string[]> = {
   code: ['code', 'language', 'lineNumbers', 'theme'],
   timeline: ['title', 'start', 'end', 'scale', 'lanes'],
   timelinebar: ['title', 'start', 'end', 'color'],
+  doc: ['uri'],
 };
 
 let seq = 0;
