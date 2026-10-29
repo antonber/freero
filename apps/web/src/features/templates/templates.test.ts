@@ -277,6 +277,8 @@ describe('searching templates', () => {
     expect(retro[0]).toBe('retrospective');
     expect(retro).toEqual(expect.arrayContaining(['retro-start-stop-continue', 'retro-4ls']));
     expect(filterTemplates(TEMPLATES, 'planning poker', null).map((t) => t.id)).toEqual(['relative-sizing']);
+    // Spec templates are found from the index alone, before their content has loaded.
+    expect(filterTemplates(TEMPLATES, 'battlecard', null)[0].id).toBe('battlecard');
   });
 });
 
