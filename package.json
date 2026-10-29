@@ -19,7 +19,8 @@
     "check": "npm run check:dune && npm run check:licenses && npm run typecheck && npm run test",
     "verify": "node scripts/verify.mjs",
     "admin": "node --import tsx apps/server/src/admin.ts",
-    "db:import-sqlite": "tsx scripts/migrate-sqlite-to-pg.mjs"
+    "db:import-sqlite": "tsx scripts/migrate-sqlite-to-pg.mjs",
+    "gen:power-automate": "node scripts/gen-power-automate.mjs"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",

@@ -457,8 +457,8 @@
       "post": {
         "operationId": "insertStructure",
         "tags": ["items"],
-        "summary": "Lay out a structure (outline, mind map, clusters, graph, Mermaid, table …) on free space",
-        "description": "Owners and editors. Request and result: docs/board-outline.md \"Insert structure\". `target: \"preview\"` writes nothing and needs only boards:read. `target: \"suggestions\"` writes nothing to the board either: the result becomes one group of suggestions (`groupId`) for people who can edit to accept or reject, and needs only boards:suggest.",
+        "summary": "Lay out a structure (outline, mind map, clusters, graph, Mermaid, table, meeting notes …) on free space",
+        "description": "Owners and editors. Request and result: docs/board-outline.md \"Insert structure\". `target: \"preview\"` writes nothing and needs only boards:read. `target: \"suggestions\"` writes nothing to the board either: the result becomes one group of suggestions (`groupId`) for people who can edit to accept or reject, and needs only boards:suggest. `structure: { kind: \"meeting\", source }` puts meeting notes or a transcript (Markdown, text, WebVTT, SRT) on the board as one frame (the MCP import_meeting_notes).",
         "x-freero-scope": "boards:write",
         "security": [{ "bearer": ["boards:write"] }],
         "requestBody": {
