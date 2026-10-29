@@ -4,10 +4,10 @@ import { nanoid } from 'nanoid';
 import type { TimelineBarElement, TimelineElement, TimelineLane, TimelineScale } from '@freero/shared';
 import type { Editor, NewElement, Point } from '@engine';
 import { addDays, dayOf, isISODate, isoOf, localDay, mondayOf } from './dates';
-import { BAR_H, DEFAULT_DAYS, LANE_PAD, ROW_H, barSpan, dayAt, gridOf, laneAt, rangeFor } from './layout';
+import { BAR_H, DEFAULT_DAYS, HORIZON_PAD, HORIZON_W, LABEL_W, LANE_COLORS, LANE_PAD, ROW_H, barSpan, dayAt, gridOf, horizonAt, horizonStart, horizonsOf, laneAt, rangeFor } from './layout';
 
-/** Lane header tints, in the order new lanes take them. */
-export const LANE_COLORS = ['#E9E4FF', '#DDF0FF', '#DDF6EA', '#FFF1D6', '#FFE3E0', '#F1F0F5'];
+/** Lane header tints, in the order new lanes take them (shared with roadmap imports on the server). */
+export { LANE_COLORS };
 /** Bar colours (Freero's accents). */
 export const BAR_COLORS = ['#5B3FF0', '#2E9BF0', '#14B8A6', '#1FA463', '#F5A524', '#F97316', '#E5484D', '#E64DA6', '#8A89A3'];
 
@@ -94,11 +94,19 @@ export function addBar(editor: Editor, id: string, opts: { at?: Point; milestone
   const g = gridOf(t);
   const today = dayOf(localDay(editor.host.serverNow()));
   const local = opts.at ? { x: opts.at.x - t.x, y: opts.at.y - t.y } : null;
-  const day = local ? dayAt(g, local.x) : today >= g.startDay && today <= g.endDay ? today : g.startDay;
+  const horizons = t.view === 'horizons';
+  const hz = horizonsOf(t.scale, today);
+  const day = horizons
+    ? horizonStart(hz, local ? horizonAt(local.x) : 0, today)
+    : local
+      ? dayAt(g, local.x)
+      : today >= g.startDay && today <= g.endDay
+        ? today
+        : g.startDay;
   const laneIndex = local ? laneAt(g, local.y) : 0;
   const n = opts.milestone ? 1 : DEFAULT_DAYS[t.scale];
-  const startDay = Math.max(g.startDay, Math.min(day, g.endDay - n + 1));
-  const span = barSpan(g, startDay, startDay + n - 1, !!opts.milestone);
+  const startDay = horizons ? day : Math.max(g.startDay, Math.min(day, g.endDay - n + 1));
+  const span = horizons ? { x: LABEL_W + horizonAt(local?.x ?? LABEL_W) * HORIZON_W + HORIZON_PAD, w: HORIZON_W - HORIZON_PAD * 2 } : barSpan(g, startDay, startDay + n - 1, !!opts.milestone);
   const rowY = local ? local.y - BAR_H / 2 : g.laneTops[laneIndex] + LANE_PAD + (ROW_H - BAR_H) / 2;
   const bar: NewElement<'timelinebar'> = {
     type: 'timelinebar',
@@ -120,4 +128,11 @@ export function addBar(editor: Editor, id: string, opts: { at?: Point; milestone
 
 export function patchBars(editor: Editor, bars: TimelineBarElement[], patch: Partial<TimelineBarElement>): void {
   editor.updateMany(bars.map((b) => ({ id: b.id, patch })));
+}
+
+/** Dates on an axis, or the roadmap's Now / Next / Later columns (KAI-160). One undo step. */
+export function setView(editor: Editor, id: string, view: 'dates' | 'horizons'): void {
+  const t = fresh(editor, id);
+  if (!t || (t.view ?? 'dates') === view) return;
+  editor.update<TimelineElement>(id, { view });
 }

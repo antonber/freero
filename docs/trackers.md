@@ -33,9 +33,23 @@ network needs `TRACKER_PRIVATE_ENDPOINTS=true` ([configuration.md](configuration
 | tags (on notes and cards) | labels | Jira labels can't hold spaces: `checkout flow` ↔ `checkout-flow` |
 | card status / kanban column | status | Jira moves through the workflow's transitions (or the card gets a note when none leads there); GitHub: open / closed |
 | card assignee | assignee | matched by verified email address; nobody when there is no match (with a note) — not on GitHub |
+| card start date (a timeline bar's first day) | start date | Jira's "Start date" field is found by name; not on Linear (issues have none) or GitHub |
 | card due date | due date | not on GitHub |
 | card estimate (a number) | story points / estimate | Jira's story points field is found by name; not on GitHub |
 | each linked item | a remote link (Jira), an attachment (Linear), a line in Freero's section (GitHub) | removed when the item is deleted; the issue stays |
+
+## Roadmap mode (KAI-160)
+
+"Import issues onto this timeline…" (a selected timeline's context menu) runs a query and puts each
+issue on the timeline as a linked task card drawn as a bar from its start to its due date, in a lane
+per epic (Jira: the parent; Linear: the project; GitHub: the milestone), team (Jira: the project;
+Linear: the team; GitHub: the repository) or first label. Lanes are matched by name; an empty
+timeline's starter lanes give way to the groups; the range grows to hold the dates. Issues without
+dates go to an "Unscheduled · <timeline>" frame below (skipped in presentations); drag one onto the
+timeline to give it dates. Moving or resizing a bar writes the card's dates, which sync like any
+field; a date changed in the tracker moves the bar in the same board change (the server lays the
+timeline out with the shared `timelineLayout.planTimeline`). The timeline's "Now · Next · Later"
+view shows the same bars by horizon.
 
 ## Conflicts
 

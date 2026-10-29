@@ -1,11 +1,12 @@
 import { useRef, useState } from 'react';
-import { ChevronDown, Eye, EyeOff, LayoutGrid, Maximize2, Minus, Plus, Shrink } from 'lucide-react';
+import { ChevronDown, Eye, EyeOff, LayoutGrid, LayoutTemplate, Maximize2, Minus, Plus, Presentation, Shrink } from 'lucide-react';
 import type { FrameElement } from '@freero/shared';
 import { defineFormat, type Editor } from '@engine';
 import { ColorSwatches, IconButton, Menu, Popover, SegmentedControl, Toggle, Tooltip } from '@ui';
 import { DEFAULT_GRID, GRID_GAPS, MAX_COLS } from './lib/grid';
 import { DEFAULT_FILL, PRESETS, presetById } from './lib/frames';
-import { fitToContent, setHidden, setPreset, zoomToFrame } from './lib/actions';
+import { applyLayout, fitToContent, setHidden, setPreset, setSkipped, zoomToFrame } from './lib/actions';
+import { SLIDE_LAYOUTS } from './lib/layouts';
 
 const FILLS = ['#FFFFFF', '#F4F3F8', '#FFF8DB', '#FFEDE3', '#FDEBF4', '#EEEAFF', '#E5F1FF', '#E2F7F1', '#2B2A40', '#17162B'];
 const FILL_NAMES: Record<string, string> = {
@@ -140,6 +141,29 @@ function GridControl({ editor, frame }: { editor: Editor; frame: FrameElement })
   );
 }
 
+/** Slide layouts (KAI-126): puts a layout's texts into the selected frame, sized to it. */
+function LayoutControl({ editor, frame }: { editor: Editor; frame: FrameElement }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <Tooltip content="Slide layout" side="bottom">
+        <button ref={ref} type="button" className="fr-frame-layout-btn" aria-label="Slide layout" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+          <LayoutTemplate size={16} aria-hidden />
+        </button>
+      </Tooltip>
+      <Menu
+        open={open}
+        onClose={() => setOpen(false)}
+        anchor={ref.current}
+        side="bottom"
+        aria-label="Slide layout"
+        items={SLIDE_LAYOUTS.map((l) => ({ id: l.id, label: l.label, onSelect: () => applyLayout(editor, frame.id, l.id) }))}
+      />
+    </>
+  );
+}
+
 export default defineFormat({
   id: 'frame.format',
   order: 10,
@@ -165,6 +189,14 @@ export default defineFormat({
         {frames.length === 1 && (
           <IconButton icon={Maximize2} label="Zoom to frame" size={32} onClick={() => zoomToFrame(editor, frames[0])} />
         )}
+        {frames.length === 1 && !frames[0].locked && <LayoutControl editor={editor} frame={frames[0]} />}
+        <IconButton
+          icon={Presentation}
+          label={frames.every((f) => f.skip) ? 'Include in presentation' : 'Skip in presentation'}
+          size={32}
+          active={frames.every((f) => f.skip)}
+          onClick={() => setSkipped(editor, frames, !frames.every((f) => f.skip))}
+        />
         {frames.every((f) => f.hidden) ? (
           <IconButton icon={Eye} label="Show contents to everyone" size={32} active onClick={() => setHidden(editor, frames, false)} />
         ) : (

@@ -2,7 +2,7 @@
 // folder implementing it plus a line in providers/index.ts; the sync, the board, the admin
 // console, webhooks and polling don't change.
 import type { IncomingHttpHeaders } from 'node:http';
-import type { IssueField, IssueValues, TrackerProject, TrackerProviderKind } from '@freero/shared';
+import type { IssueField, IssueGroups, IssueValues, TrackerProject, TrackerProviderKind } from '@freero/shared';
 import type { HttpRequest, HttpResponse } from '../http';
 import type { ConnectionSettings } from '../repo';
 
@@ -50,6 +50,8 @@ export interface RemoteIssue {
   /** Display name of the assignee, for the badge. */
   assigneeName: string | null;
   updatedAt: number;
+  /** Team / epic the issue belongs to (roadmap lanes, KAI-160); not a synced field. */
+  groups?: IssueGroups;
 }
 
 export interface CreateIssueInput {

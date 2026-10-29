@@ -5,6 +5,8 @@ import manifest from './feature';
 import tableDef from './element';
 import { CELLS, cellText, setCellText } from './lib/cells';
 import { insertRow, layoutTable, moveFrom, newTable, parseDelimited, toCsv } from './lib/model';
+import { createFromGrid, moveCell, patchOption, setColumnType, setFilter, sortByColumn } from './lib/actions';
+import { plainGrid } from './lib/cells';
 
 const bundle: FeatureBundle = { manifest, elements: [tableDef], tools: [], formats: [], panels: [], commands: [] };
 
@@ -118,6 +120,70 @@ describe('table structure', () => {
     expect(moveFrom(t, t.rows[0].id, t.cols[1].id, 'next')).toEqual({ rowId: t.rows[1].id, colId: t.cols[0].id });
     expect(moveFrom(t, t.rows[1].id, t.cols[1].id, 'next')).toBe('append');
     expect(moveFrom(t, t.rows[0].id, t.cols[0].id, 'up')).toBeNull();
+  });
+});
+
+describe('typed columns (KAI-123)', () => {
+  const alone = () => {
+    board = createTestBoard({ users: ['ann'], features: [bundle] });
+    return board.editors('table')[0];
+  };
+  const tableOf = (ed: Editor, id: string) => ed.getElement<TableElement>(id)!;
+  const column = (ed: Editor, id: string, c: number) => plainGrid(ed.collection<string>(CELLS), tableOf(ed, id), { mode: 'export' }).map((r) => r[c]);
+
+  it('sorts a number column by value (9 before 10), keeps the header on top and empty cells last', () => {
+    const ann = alone();
+    const id = createFromGrid(ann, [['Item', 'Cost'], ['a', '10'], ['b', ''], ['c', '9'], ['d', '100']], { x: 0, y: 0 });
+    sortByColumn(ann, id, tableOf(ann, id).cols[1].id, 'asc');
+    expect(column(ann, id, 0)).toEqual(['Item', 'c', 'a', 'd', 'b']);
+    sortByColumn(ann, id, tableOf(ann, id).cols[1].id, 'desc');
+    expect(column(ann, id, 0)).toEqual(['Item', 'd', 'a', 'c', 'b']);
+  });
+
+  it('keeps text that is not a number when a column becomes a number column and back', async () => {
+    const ann = alone();
+    const id = createFromGrid(ann, [['Item', 'Note'], ['a', '1,200'], ['b', 'about ten']], { x: 0, y: 0 });
+    const colId = tableOf(ann, id).cols[1].id;
+    await setColumnType(ann, id, colId, 'number');
+    expect(column(ann, id, 1)).toEqual(['Note', '1200', 'about ten']);
+    await setColumnType(ann, id, colId, 'text');
+    expect(column(ann, id, 1)).toEqual(['Note', '1200', 'about ten']);
+  });
+
+  it('a pasted sheet keeps its numbers, dates and yes / no values when exported to CSV again', () => {
+    const ann = alone();
+    const grid = [['Task', 'Points', 'Due', 'Done'], ['Ship', '3', '2026-11-02', 'TRUE'], ['Test', '0.5', '2026-11-09', 'FALSE']];
+    const id = createFromGrid(ann, grid, { x: 0, y: 0 });
+    expect(tableOf(ann, id).cols.map((c) => c.type ?? 'text')).toEqual(['text', 'number', 'date', 'checkbox']);
+    expect(parseDelimited(toCsv(plainGrid(ann.collection<string>(CELLS), tableOf(ann, id), { mode: 'export' })))).toEqual(grid);
+  });
+
+  it('renaming a select option relabels the cells holding it, and one undo takes both back', async () => {
+    const ann = alone();
+    const id = createFromGrid(ann, [['Task', 'Status'], ['a', 'Doing'], ['b', 'Done'], ['c', 'Doing']], { x: 0, y: 0 });
+    const colId = tableOf(ann, id).cols[1].id;
+    await setColumnType(ann, id, colId, 'select');
+    const doing = tableOf(ann, id).cols[1].options!.find((o) => o.label === 'Doing')!;
+    ann.beginGesture();
+    patchOption(ann, id, colId, doing.id, { label: 'In progress' });
+    ann.endGesture();
+    expect(column(ann, id, 1)).toEqual(['Status', 'In progress', 'Done', 'In progress']);
+    ann.undo();
+    expect(column(ann, id, 1)).toEqual(['Status', 'Doing', 'Done', 'Doing']);
+    expect(tableOf(ann, id).cols[1].options!.map((o) => o.label)).toEqual(['Doing', 'Done']);
+  });
+
+  it('Tab skips rows a filter hides, and adding a row from the last shown one keeps the hidden rows', () => {
+    const ann = alone();
+    const id = createFromGrid(ann, [['Task', 'Owner'], ['a', 'x'], ['b', ''], ['c', 'y']], { x: 0, y: 0 });
+    const t = tableOf(ann, id);
+    setFilter(ann, id, { colId: t.cols[1].id, op: 'notEmpty' });
+    moveCell(ann, tableOf(ann, id), t.rows[1].id, t.cols[1].id, 'next');
+    expect(ann.getEditingPart()).toBe(`${t.rows[3].id}:${t.cols[0].id}`);
+    ann.stopEditing();
+    moveCell(ann, tableOf(ann, id), t.rows[3].id, t.cols[1].id, 'next');
+    expect(tableOf(ann, id).rows.slice(0, 4).map((r) => r.id)).toEqual(t.rows.map((r) => r.id));
+    expect(tableOf(ann, id).rows).toHaveLength(5);
   });
 });
 

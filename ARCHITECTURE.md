@@ -587,8 +587,33 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
   change is read back as whole days. Bars outside the range shrink to a stub at that edge, never
   lost. Task cards dropped on a timeline become bars spanning `startDate`..`dueDate`; their dates are
   written only through `card.setDates` (cards keep one writer), and a card laid out shorter than
-  `BAR_MAX_H` draws itself as a one-line bar. Dependencies are ordinary connectors. The suite's
-  roadmap mode (KAI-160) builds on this element.
+  `BAR_MAX_H` draws itself as a one-line bar. Dependencies are ordinary connectors. The layout is
+  `@freero/shared` `timelineLayout` (the feature re-exports it) so the server lays a timeline out by
+  the same rule. `TimelineElement.view: 'horizons'` (KAI-160) draws Now / Next / Later columns
+  (`horizonsOf`: the month — or quarter on month / quarter scales — holding today, the next one,
+  everything after): bars keep their dates and sit in the column their start falls in; moving one
+  to another column moves its dates there, same length.
+- Roadmap mode (KAI-160, `modules/trackers/roadmap.ts`, `features/trackers`): a tracker import with
+  `timeline: { id, groupBy }` makes linked task cards that are that timeline's bars, in a lane per
+  epic / team / label (`roadmapLaneOf`), laid out by `planTimeline` in the import's one change;
+  undated issues go to a skipped "Unscheduled" frame. `startDate` is a synced issue field. A pull
+  that changes a bar's dates (`planPull`) re-lays its timeline in the same change, so open boards
+  see the bar move — no client has to re-lay a remote change. See docs/trackers.md.
+- Typed table columns (KAI-123, `features/table`): `TableColumn.type` (text, number, date, select,
+  person, checkbox; select `options`). Cells stay element content in `tableCells`; a typed cell
+  stores its canonical plain value (number "12.5", ISO date, the option's label, a user id,
+  "true"), which is valid RichText, so the outline, find and CSV read it unchanged; typed cells
+  are not text parts (they have their own editors). Sort reorders `rows` (one undo step, header
+  first, empty cells last); `TableElement.filter` is shared and draws filtered rows collapsed (the
+  element keeps its size; Tab skips them); `view: 'board'` draws the same rows as cards in a
+  column per option of `groupBy`, and dragging a card sets that cell. Pasted / imported sheets
+  infer number, date and checkbox columns; CSV export writes numbers, ISO dates and TRUE / FALSE.
+- Slide deck (KAI-126, `features/frame`): the "Slide deck" dock panel lists frames in `index`
+  order (the order presenting and PDF export use): drag to reorder, New slide with a layout
+  (`lib/layouts.ts`: Freero's own title / title + body / two columns / image + text, sized to the
+  frame from a 1280 × 720 design; also `frame.applyLayout`), duplicate (right after the original),
+  and `FrameElement.skip` — skipped by `present` and unpicked in the PDF export. Speaker notes are
+  present's `presenterNotes`, written only through `present.setNote` (present owns them).
 - Sticky author labels (KAI-112, `features/sticky/decoration.tsx`): a board setting in the
   `stickyLabels` collection (editors toggle "Show sticky authors" in the board menu). Names come
   from the people lookup (`usePeople`, current names; `useGonePeople` → "Deleted user", never an id;

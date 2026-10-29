@@ -155,7 +155,7 @@ function ImageDialog({ editor }: { editor: Editor }) {
 function PdfDialog({ editor }: { editor: Editor }) {
   const close = () => editor.closePanel(EXPORT_DIALOG);
   const frames = useMemo(() => framesInPageOrder(boardFrames(editor)), [editor]);
-  const [chosen, setChosen] = useState<Set<string>>(() => new Set(frames.map((f) => f.id)));
+  const [chosen, setChosen] = useState<Set<string>>(() => new Set(frames.filter((f) => !f.skip).map((f) => f.id)));
   const [pageSize, setPageSize] = useState<PageSize>('fit');
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const abort = useRef<AbortController | null>(null);
@@ -251,7 +251,10 @@ function PdfDialog({ editor }: { editor: Editor }) {
                 <label className="fr-export__frame">
                   <input type="checkbox" checked={chosen.has(f.id)} onChange={() => toggle(f.id)} disabled={busy} />
                   <span className="fr-export__frameNum">{i + 1}</span>
-                  <span className="fr-export__frameTitle">{f.title}</span>
+                  <span className="fr-export__frameTitle">
+                    {f.title}
+                    {f.skip && <span className="fr-export__skipped"> · skipped in the deck</span>}
+                  </span>
                   <span className="fr-export__frameSize">
                     {Math.round(f.w)} × {Math.round(f.h)}
                   </span>

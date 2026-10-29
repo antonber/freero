@@ -13,7 +13,8 @@ const LABEL = TRACKER_PROVIDERS.linear;
 const WEBHOOK_MAX_AGE_MS = 60_000;
 
 const ISSUE = `id identifier url title description updatedAt dueDate estimate
-  state { name type } assignee { name email } labels { nodes { name } } team { id key }`;
+  state { name type } assignee { name email } labels { nodes { name } } team { id key name }
+  project { name } parent { title }`;
 
 const CATEGORY: Record<string, IssueStatusCategory> = {
   triage: 'todo',
@@ -41,7 +42,9 @@ interface LinearIssue {
   state?: { name?: string; type?: string } | null;
   assignee?: { name?: string; email?: string } | null;
   labels?: { nodes?: Array<{ name?: string }> };
-  team?: { id: string; key: string };
+  team?: { id: string; key: string; name?: string };
+  project?: { name?: string } | null;
+  parent?: { title?: string } | null;
 }
 
 async function gql<T>(conn: ProviderConnection, query: string, variables: Record<string, unknown> = {}, what = 'answer'): Promise<T> {
@@ -88,6 +91,8 @@ function toRemote(i: LinearIssue): RemoteIssue {
     },
     assigneeName: i.assignee?.name ?? null,
     updatedAt: i.updatedAt ? Date.parse(i.updatedAt) || 0 : 0,
+    // Linear's projects are what other trackers call epics; a sub-issue's parent otherwise.
+    groups: { team: i.team?.name ?? i.team?.key ?? null, epic: i.project?.name ?? i.parent?.title ?? null },
   };
 }
 

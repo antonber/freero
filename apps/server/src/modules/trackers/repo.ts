@@ -13,6 +13,8 @@ export interface ConnectionSettings {
   account?: string | null;
   /** Jira: the custom field holding story points (discovered by the test). */
   estimateField?: string | null;
+  /** Jira: the custom field holding an issue's start date ("Start date"; discovered by the test). */
+  startDateField?: string | null;
 }
 
 export interface StoredConnection {

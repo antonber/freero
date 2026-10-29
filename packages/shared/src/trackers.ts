@@ -23,7 +23,7 @@ export const TRACKER_COLLECTION = 'trackers';
 /** Where an issue stands, in the board's terms (a card's status / a kanban column). */
 export type IssueStatusCategory = 'todo' | 'doing' | 'done';
 
-export const ISSUE_FIELDS = ['title', 'description', 'status', 'assignee', 'labels', 'dueDate', 'estimate'] as const;
+export const ISSUE_FIELDS = ['title', 'description', 'status', 'assignee', 'labels', 'startDate', 'dueDate', 'estimate'] as const;
 export type IssueField = (typeof ISSUE_FIELDS)[number];
 export const ISSUE_FIELD_LABELS: Record<IssueField, string> = {
   title: 'Title',
@@ -31,6 +31,7 @@ export const ISSUE_FIELD_LABELS: Record<IssueField, string> = {
   status: 'Status',
   assignee: 'Assignee',
   labels: 'Labels',
+  startDate: 'Start date',
   dueDate: 'Due date',
   estimate: 'Estimate',
 };
@@ -48,6 +49,8 @@ export interface IssueValues {
   statusName?: string | null;
   assignee?: string | null;
   labels?: string[];
+  /** When work starts (KAI-160: a roadmap bar's first day), 'YYYY-MM-DD'. */
+  startDate?: string | null;
   dueDate?: string | null;
   estimate?: number | null;
 }
@@ -92,6 +95,7 @@ export interface TrackerSource {
     status: IssueStatusCategory | null;
     /** The assignee's email (resolved by the server), or null. */
     assignee: string | null;
+    startDate?: string | null;
     dueDate: string | null;
     /** A card's estimate when it is a number ("5", "0.5"); sizes like "M" don't map. */
     estimate: number | null;
@@ -144,6 +148,7 @@ export function issueValuesFromBoard(sources: TrackerSource[], ctx: MappingConte
   if (card) {
     out.status = card.status;
     out.assignee = card.assignee;
+    if (card.startDate !== undefined) out.startDate = card.startDate;
     out.dueDate = card.dueDate;
     if (card.estimate !== null) out.estimate = card.estimate;
   }
@@ -163,7 +168,7 @@ export function pullableFields(sources: Array<Pick<TrackerSource, 'type' | 'card
     if (sources[0].card) out.add('description');
   }
   if (sources.some((s) => s.type === 'sticky' || s.type === 'card')) out.add('labels');
-  if (sources.some((s) => s.card)) for (const f of ['status', 'assignee', 'dueDate', 'estimate'] as const) out.add(f);
+  if (sources.some((s) => s.card)) for (const f of ['status', 'assignee', 'startDate', 'dueDate', 'estimate'] as const) out.add(f);
   return out;
 }
 
@@ -191,6 +196,8 @@ export function canonical(field: IssueField, v: IssueValues): string | undefined
       return v.assignee === undefined ? undefined : (v.assignee ?? '').trim().toLowerCase();
     case 'labels':
       return v.labels === undefined ? undefined : [...new Set(v.labels.map((l) => l.trim().toLowerCase()).filter(Boolean))].sort().join('\n');
+    case 'startDate':
+      return v.startDate === undefined ? undefined : (v.startDate ?? '').slice(0, 10);
     case 'dueDate':
       return v.dueDate === undefined ? undefined : (v.dueDate ?? '').slice(0, 10);
     case 'estimate':
@@ -367,11 +374,47 @@ export interface TrackerImportRequest {
   /** JQL (Jira), a search (Linear), a search query (GitHub). */
   query: string;
   limit?: number;
+  /**
+   * Roadmap mode (KAI-160): the issues become bars on this timeline instead of a grid of cards —
+   * still linked task cards, so their dates sync both ways — in a lane per team, epic or label
+   * (lanes are matched by name, missing ones added). Issues without dates go to an "Unscheduled"
+   * frame below the timeline.
+   */
+  timeline?: { id: string; groupBy?: RoadmapGroupBy };
 }
+
+/** How a roadmap import puts issues into lanes. */
+export type RoadmapGroupBy = 'none' | 'team' | 'epic' | 'label';
+
+/** What a tracker says an issue belongs to, for roadmap lanes (not synced fields). */
+export interface IssueGroups {
+  /** Jira: the project; Linear: the team; GitHub: the repository. */
+  team?: string | null;
+  /** Jira: the parent epic; Linear: the project (else the parent issue); GitHub: the milestone. */
+  epic?: string | null;
+}
+
+/** The lane an issue goes to: its team / epic / first label (sorted), or null for "none". */
+export function roadmapLaneOf(groupBy: RoadmapGroupBy, groups: IssueGroups | undefined, labels: readonly string[]): string | null {
+  switch (groupBy) {
+    case 'team':
+      return groups?.team?.trim() || null;
+    case 'epic':
+      return groups?.epic?.trim() || null;
+    case 'label':
+      return [...labels].map((l) => l.trim()).filter(Boolean).sort((a, b) => a.localeCompare(b))[0] ?? null;
+    default:
+      return null;
+  }
+}
+
+export const ROADMAP_NO_GROUP: Record<RoadmapGroupBy, string> = { none: '', team: 'No team', epic: 'No epic', label: 'No label' };
 
 export interface TrackerImportResponse {
   /** Cards created for issues new to this board. */
   created: string[];
+  /** Roadmap imports: how many of them had no dates (in the "Unscheduled" frame). */
+  unscheduled?: number;
   /** Issues already on this board (not imported twice). */
   skipped: number;
 }

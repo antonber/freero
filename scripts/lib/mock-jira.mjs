@@ -30,6 +30,7 @@ const TRANSITIONS = [
   { id: '41', name: 'Reopen', to: 'todo' },
 ];
 const ESTIMATE = 'customfield_10016';
+const START = 'customfield_10015';
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -83,7 +84,8 @@ export async function startMockJira({ port = 0, host = '127.0.0.1', deployment =
     const n = (counters.get(projectKey) ?? 0) + 1;
     counters.set(projectKey, n);
     const id = String(nextId++);
-    const issue = { id, key: `${projectKey}-${n}`, status: 'todo', fields: { summary: '', description: null, labels: [], duedate: null, assignee: null, [ESTIMATE]: null, ...fields }, remotelinks: new Map() };
+    const project = projects.find((p) => p.key === projectKey);
+    const issue = { id, key: `${projectKey}-${n}`, status: 'todo', fields: { summary: '', description: null, labels: [], duedate: null, assignee: null, [ESTIMATE]: null, [START]: null, project: project ? { key: project.key, name: project.name } : undefined, ...fields }, remotelinks: new Map() };
     touch(issue);
     issues.set(id, issue);
     byKey.set(issue.key, issue);
@@ -101,6 +103,7 @@ export async function startMockJira({ port = 0, host = '127.0.0.1', deployment =
     if (changes.labels !== undefined) issue.fields.labels = changes.labels;
     if (changes.estimate !== undefined) issue.fields[ESTIMATE] = changes.estimate;
     if (changes.duedate !== undefined) issue.fields.duedate = changes.duedate;
+    if (changes.startdate !== undefined) issue.fields[START] = changes.startdate;
     if (changes.assigneeEmail !== undefined) {
       const u = users.find((x) => x.emailAddress === changes.assigneeEmail) ?? addUser(changes.assigneeEmail, changes.assigneeEmail.split('@')[0]);
       issue.fields.assignee = changes.assigneeEmail === null ? null : u;
@@ -205,6 +208,7 @@ export async function startMockJira({ port = 0, host = '127.0.0.1', deployment =
       return json(200, [
         { id: 'summary', name: 'Summary' },
         { id: ESTIMATE, name: 'Story point estimate' },
+        { id: START, name: 'Start date' },
       ]);
     if (path === '/rest/api/3/project/search' && deployment === 'cloud') return json(200, { values: projects, isLast: true });
     if (path === '/rest/api/2/project' && deployment !== 'cloud') return json(200, projects);
@@ -220,7 +224,7 @@ export async function startMockJira({ port = 0, host = '127.0.0.1', deployment =
       if (deployment === 'cloud' && f.description && typeof f.description !== 'object') return json(400, { errors: { description: 'Operation value must be an Atlassian Document' } });
       if (deployment !== 'cloud' && f.description && typeof f.description !== 'string') return json(400, { errors: { description: 'Operation value must be a string' } });
       const assignee = f.assignee ? users.find((x) => x.accountId === f.assignee.accountId || x.name === f.assignee.name) : null;
-      const issue = create(project.key, { summary: f.summary, description: f.description ?? null, labels: f.labels ?? [], duedate: f.duedate ?? null, assignee: assignee ?? null, [ESTIMATE]: f[ESTIMATE] ?? null });
+      const issue = create(project.key, { summary: f.summary, description: f.description ?? null, labels: f.labels ?? [], duedate: f.duedate ?? null, assignee: assignee ?? null, [ESTIMATE]: f[ESTIMATE] ?? null, [START]: f[START] ?? null });
       return json(201, { id: issue.id, key: issue.key, self: `${url}${p}/issue/${issue.id}` });
     }
     if ((m = new RegExp(`^${p}/issue/([^/]+)$`).exec(path))) {
