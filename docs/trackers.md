@@ -7,6 +7,9 @@ assignee, live. **Import issues…** (board menu) turns a JQL / search query int
 Agents do the same through the MCP tool `sync_to_tracker`, and import with `import_from_tracker` (REST:
 `POST /api/v1/boards/{boardId}/trackers/import`) — the same rules as *Import issues…*, placed into a
 frame, kanban column or cluster if asked, attributed to the app for the person ([mcp.md](mcp.md)).
+Before either, an agent finds the connections it may use on a board, their default projects and one
+connection's projects or repositories with `list_tracker_connections` (REST:
+`GET /api/v1/boards/{boardId}/trackers`, #83).
 
 ## Connecting
 

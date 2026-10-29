@@ -6737,6 +6737,25 @@ async function mcpChecks() {
       assert(listed.includes('by Suggesting agent for') && els(c).size === before, 'the proposal changed the board');
     });
 
+    await check('mcp (#83): list_tracker_connections shows an agent the team’s and the person’s own connections on a board with their default projects, and one connection’s repositories, so sync_to_tracker needs no failed call to find them', async () => {
+      // The person's own "GitHub" (made above) and now the team's.
+      const teams = await O.req('POST', '/api/trackers/connections', { provider: 'github', name: 'Team GitHub', workspaceId: team, site: gh.url, token: gh.token, defaults: { project: 'freero-bot/sandbox' } });
+      assert(teams.status === 201, `team connection: ${teams.status} ${teams.text}`);
+      const b = (await O.req('POST', '/api/boards', { title: 'Two trackers', workspaceId: team })).json.board;
+      const reader = await withToken((await token(O, ['boards:read'], 'Reading agent')).secret);
+      const r = await reader.callTool({ name: 'list_tracker_connections', arguments: { boardId: b.id } });
+      assert(!r.isError, `list: ${text(r)}`);
+      // Connection and project names are people's words: they come inside the untrusted envelope.
+      const byName = Object.fromEntries(r.structuredContent.untrusted_board_content.connections.map((x) => [x.name, x]));
+      assert(byName.GitHub?.scope === 'personal' && byName.GitHub.defaultProject === 'antonber/freero', `own connection: ${text(r)}`);
+      assert(byName['Team GitHub']?.scope === 'workspace' && byName['Team GitHub'].defaultProject === 'freero-bot/sandbox', `team connection: ${text(r)}`);
+      const p = await reader.callTool({ name: 'list_tracker_connections', arguments: { boardId: b.id, connection: 'GitHub' } });
+      assert(!p.isError && p.structuredContent.untrusted_board_content.projects.some((x) => x.key === 'antonber/freero'), `projects: ${text(p)}`);
+      // The REST twin answers the same.
+      const rest = await fetch(`http://127.0.0.1:${proc.port}/api/v1/boards/${b.id}/trackers`, { headers: { authorization: `Bearer ${(await token(O, ['boards:read'], 'REST reader')).secret}` } });
+      assert(rest.status === 200 && (await rest.json()).connections.length === 2, `REST -> ${rest.status}`);
+    });
+
     await check('mcp: revoking the token, or the app, refuses the very next MCP request', async () => {
       const script = await token(O, ['boards:read'], 'Short-lived');
       const sc = await withToken(script.secret);

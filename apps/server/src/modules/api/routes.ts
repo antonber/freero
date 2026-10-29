@@ -175,6 +175,11 @@ export default function apiRoutes(_ctx: ServerContext): Router {
     return { body: api.withNotice(await getFeedback(call, call.req.params.boardId, str(q.cursor), str(q.agent)?.slice(0, 80))) };
   });
 
+  // ---- issue trackers (#83): which connections (and projects) this person may use on the board ----
+  endpoint('get', '/boards/:boardId/trackers', 'boards:read', async (call) => ({
+    body: await api.trackerConnections(call, call.req.params.boardId, typeof call.req.query.connection === 'string' ? call.req.query.connection : undefined),
+  }));
+
   // ---- issue trackers (#79): a tracker query as linked cards (or, with target 'suggestions', proposed) ----
   endpoint(
     'post',
