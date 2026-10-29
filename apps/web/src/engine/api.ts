@@ -46,6 +46,13 @@ import type {
   TrackerSendRequest,
   TrackerSendResponse,
   VerticalAlign,
+  CreateDecisionRequest,
+  CreateWalkthroughRequest,
+  Decision,
+  Walkthrough,
+  WalkthroughComment,
+  WalkthroughCue,
+  WalkthroughSummary,
 } from '@freero/shared';
 
 /** [additive] Where an element lives (see Editor.layerOf and ARCHITECTURE.md "Board layers"). */
@@ -289,6 +296,49 @@ export interface Host {
    * caller's view of the activity and rejects with a showable message. Absent in the offline sandbox.
    */
   engage?: HostEngage;
+  /**
+   * [additive] Async walkthroughs of this board (KAI-133; wire: @freero/shared walkthroughs.ts):
+   * recordings of someone's voice (and camera) with the path they took over the board. Anyone who
+   * can open the board watches; the server decides who records, comments and changes them, and
+   * rejects with a showable message. Absent where there is no server (offline sandbox, previews).
+   */
+  walkthroughs?: HostWalkthroughs;
+  /**
+   * [additive] Decision snapshots (KAI-161; wire: @freero/shared decisions.ts): freeze the board or
+   * a frame under a name, read-only, with its own address. Editors and owners create and delete;
+   * anyone who can open the board lists and opens them (`/decision/<id>`). Absent without a server.
+   */
+  decisions?: HostDecisions;
+}
+
+/** [additive] `Host.walkthroughs` (wire: @freero/shared walkthroughs.ts). */
+export interface HostWalkthroughs {
+  list(): Promise<WalkthroughSummary[]>;
+  get(id: string): Promise<Walkthrough>;
+  /** Stores the recording (an upload of this user's: quota, size cap) and the walkthrough over it. */
+  create(recording: Blob, request: Omit<CreateWalkthroughRequest, 'mediaUrl'>): Promise<Walkthrough>;
+  rename(id: string, title: string): Promise<Walkthrough>;
+  remove(id: string): Promise<void>;
+  /** "I watched it" (counted once per person; visitors without an account aren't counted). */
+  viewed(id: string): Promise<void>;
+  comments(id: string): Promise<WalkthroughComment[]>;
+  comment(id: string, comment: { atMs: number; text: string }): Promise<WalkthroughComment>;
+  deleteComment(id: string, commentId: string): Promise<void>;
+  /** Captions typed by hand (an empty list removes them). */
+  setCaptions(id: string, cues: WalkthroughCue[]): Promise<Walkthrough>;
+  /** Whether this person may have AI make captions here (the board's AI provider only), and why not. */
+  captionsStatus(): Promise<{ available: boolean; reason?: string }>;
+  /** Captions by the board's AI provider (rejects with the reason when AI isn't available). */
+  transcribe(id: string): Promise<Walkthrough>;
+  /** Saves the recording to this computer, when the board's downloads policy allows (`board.canExport`). */
+  download?(id: string, title: string): Promise<void>;
+}
+
+/** [additive] `Host.decisions` (wire: @freero/shared decisions.ts). */
+export interface HostDecisions {
+  list(): Promise<Decision[]>;
+  create(request: CreateDecisionRequest): Promise<Decision>;
+  remove(id: string): Promise<void>;
 }
 
 /** [additive] `Host.engage` (wire: @freero/shared `ActivityState`, `ActivityAnswer`). */
@@ -896,6 +946,7 @@ export interface CommandDefinition {
    * command with `{ [urlParam]: value }` once the board is synced — on load, and whenever the app
    * navigates to such a link while the board is open (a notification opening a comment thread:
    * `comments.openThread` with `urlParam: 'thread'`). Respects `minRole` like any run.
+   * [additive] `args.query` also carries every parameter of that URL (a walkthrough's `?t=`).
    */
   urlParam?: string;
 }

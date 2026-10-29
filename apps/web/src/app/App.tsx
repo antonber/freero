@@ -25,6 +25,8 @@ import { OAuthConsentPage } from './pages/oauth/OAuthConsentPage';
 const BoardPage = lazy(() => import('./board/BoardPage'));
 // The operator's read-only board preview mounts the board engine too.
 const OperatorPreviewPage = lazy(() => import('./pages/operator/OperatorPreviewPage'));
+// A frozen decision (KAI-161) renders with the board engine too.
+const DecisionPage = lazy(() => import('./pages/decision/DecisionPage'));
 
 export function App() {
   return (
@@ -98,6 +100,16 @@ export function App() {
               element={
                 <RequireAuth>
                   <AdminConsolePage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/decision/:id"
+              element={
+                <RequireAuth>
+                  <Suspense fallback={<FullPageSpinner label="Opening the decision" />}>
+                    <DecisionPage />
+                  </Suspense>
                 </RequireAuth>
               }
             />

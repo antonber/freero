@@ -68,6 +68,53 @@ export function versionHistory(boardId: string): VersionHistory {
   };
 }
 
+/**
+ * Host.walkthroughs on a real board (KAI-133). The recording goes up as an ordinary upload of this
+ * user's (quota, size cap, the server checks its bytes), then the walkthrough is created over it.
+ * `canDownload`: the board's downloads policy lets this person save files (`board.canExport`).
+ */
+export function walkthroughsOf(boardId: string, opts: { canDownload: boolean; signedIn: boolean }): NonNullable<Host['walkthroughs']> {
+  const no = (what: string) => () => Promise.reject(new Error(`${what} needs a free Freero account.`));
+  return {
+    list: async () => (await api.listWalkthroughs(boardId)).walkthroughs,
+    get: async (id) => (await api.getWalkthrough(boardId, id)).walkthrough,
+    create: opts.signedIn
+      ? async (recording, request) => {
+          const { url } = await api.uploadImage(recording);
+          return (await api.createWalkthrough(boardId, { ...request, mediaUrl: url })).walkthrough;
+        }
+      : no('Recording a walkthrough'),
+    rename: async (id, title) => (await api.renameWalkthrough(boardId, id, title)).walkthrough,
+    remove: (id) => api.deleteWalkthrough(boardId, id),
+    viewed: async (id) => void (await api.viewedWalkthrough(boardId, id)),
+    comments: async (id) => (await api.walkthroughComments(boardId, id)).comments,
+    comment: opts.signedIn ? async (id, c) => (await api.commentOnWalkthrough(boardId, id, c)).comment : no('Commenting'),
+    deleteComment: (id, cid) => api.deleteWalkthroughComment(boardId, id, cid),
+    setCaptions: async (id, cues) => (await api.setWalkthroughCaptions(boardId, id, cues)).walkthrough,
+    captionsStatus: () => api.walkthroughCaptionsStatus(boardId),
+    transcribe: async (id) => (await api.transcribeWalkthrough(boardId, id)).walkthrough,
+    ...(opts.canDownload
+      ? {
+          download: async (id: string, title: string) => {
+            const blob = await api.downloadWalkthrough(boardId, id);
+            const url = URL.createObjectURL(blob);
+            saveAs(url, `${title.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'walkthrough'}.webm`);
+            setTimeout(() => URL.revokeObjectURL(url), 60_000);
+          },
+        }
+      : {}),
+  };
+}
+
+/** Host.decisions on a real board (KAI-161). */
+export function decisionsOf(boardId: string): NonNullable<Host['decisions']> {
+  return {
+    list: async () => (await api.listDecisions(boardId)).decisions,
+    create: async (body) => (await api.createDecision(boardId, body)).decision,
+    remove: (id) => api.deleteDecision(id),
+  };
+}
+
 export function uploadImage(file: Blob): Promise<{ url: string }> {
   return api.uploadImage(file);
 }
