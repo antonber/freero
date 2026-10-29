@@ -5,7 +5,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch --clear-screen=false src/main.ts",
+    "dev": "node ../../scripts/without-stdin.mjs tsx watch --clear-screen=false src/main.ts",
     "start": "tsx src/main.ts",
     "typecheck": "tsc --noEmit -p .",
     "test": "vitest run --passWithNoTests"
