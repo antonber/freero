@@ -38,7 +38,10 @@ done
 echo "smoke: ready $(cat "$BODY")"
 
 [ "$(req GET /healthz)" = 200 ] || fail "healthz"
-[ "$(req GET /)" = 200 ] && grep -q '<div id="root">' "$BODY" || fail "the web app is not served at /"
+[ "$(req GET /app)" = 200 ] && grep -q '<div id="root">' "$BODY" || fail "the web app is not served at /app"
+# `/` is the marketing site (modules/site), or a redirect to /app when it is off (SITE=false / no build).
+root="$(req GET /)"
+[ "$root" = 200 ] || [ "$root" = 302 ] || fail "/ -> $root"
 
 email="smoke-$(date +%s)-$$@example.com"
 status="$(req POST /api/auth/signup -H 'Content-Type: application/json' \
