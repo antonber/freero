@@ -63,7 +63,8 @@ function ImportDialog({ editor, props }: PanelProps) {
       description={report ? undefined : 'Shapes, text, connectors, frames, freehand and images from a draw.io (.drawio) or Excalidraw (.excalidraw) file. One undo takes it all back.'}
       width={520}
       footer={
-        <Button variant={report ? 'primary' : 'secondary'} onClick={close}>
+        // Keyed: a new button for the report, so it doesn't fade from Cancel's colours into Done's.
+        <Button key={report ? 'done' : 'cancel'} variant={report ? 'primary' : 'secondary'} onClick={close}>
           {report ? 'Done' : 'Cancel'}
         </Button>
       }

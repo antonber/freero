@@ -20,8 +20,13 @@ export function SharePage() {
 
   useEffect(() => {
     document.title = 'Add to a board · Freero';
-    api.listBoards('recent').then(
-      (r) => setBoards(r.boards.filter((b) => b.role === 'owner' || b.role === 'editor').slice(0, 12)),
+    // Recently opened first, then the rest of what they can edit.
+    Promise.all([api.listBoards('recent'), api.listBoards('all')]).then(
+      ([recent, all]) => {
+        const seen = new Set<string>();
+        const list = [...recent.boards, ...all.boards].filter((b) => (b.role === 'owner' || b.role === 'editor') && !seen.has(b.id) && !!seen.add(b.id));
+        setBoards(list.slice(0, 12));
+      },
       () => setBoards([]),
     );
   }, []);
@@ -77,7 +82,7 @@ export function SharePage() {
             <Button variant="primary" icon={Plus} loading={busy} onClick={() => void createAndOpen()}>
               New board
             </Button>
-            <h2>Or a board you edit recently</h2>
+            <h2>Or a board you can edit</h2>
             {boards === null ? (
               <Spinner size={20} />
             ) : boards.length ? (
