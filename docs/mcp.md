@@ -123,7 +123,9 @@ A write tool called without its permission changes nothing and answers with the 
   no session to outlive them): disconnect the app or pause / revoke the token (Settings); "Disconnect
   all apps and tokens" (Settings); a team admin turns **API & apps** off or blocks one app (admin
   console); the operator sets `PUBLIC_API=false`. Signing out everywhere (password reset, …) revokes
-  everything too.
+  everything too. Disconnecting an app or revoking a token also **withdraws its pending suggestions** on
+  every board (KAI-224), and a person on a board can **pause** an agent there from its control-room
+  lane ([below](#agent-control-room)).
 - **Workspace policies apply**: a team's downloads policy refuses reads of its boards' content
   (`downloads_restricted`, audited) — the outline and `export_board` included; enforced SSO refuses
   connections made without it.
@@ -147,8 +149,8 @@ everything an agent adds in free space (next to `near` when given): no coordinat
 | `list_templates` | read | Saved templates you can start a board from (yours and your teams'). |
 | `open_board` | read | Shows the board **live** in the conversation where the assistant shows interactive views ([below](#live-boards-in-the-conversation-mcp-apps)): the person pans, zooms, edits (if this connection may change boards), accepts your suggestions, opens it in Freero or shares it. Elsewhere: the board link. |
 | `share_board` | read (+ write to turn sharing on) | The live view's **Share with team** button — only the view calls it (`visibility: ["app"]`), never the model: returns the board link and, if needed, turns link sharing on (view / comment; guests without an account as the workspace allows). Turning it on needs `boards:write` and the board's owner; the share dialog's rules and audit event apply. |
-| `post_status` | write | Long-running work in the open ([control room](#agent-control-room)): your plan, status and tasks (`todo` / `doing` / `done` / `blocked`, matched by title — a retry never duplicates) on your lane of a control-room board; creates the board without `boardId`. Returns a `cursor`. |
-| `get_feedback` | read | What people changed in your lane since your `cursor`: cards moved, added or removed, comments on your lane or the board — never your own changes. |
+| `post_status` | write | Long-running work in the open ([control room](#agent-control-room)): your plan, status and tasks (`todo` / `doing` / `done` / `blocked`, matched by your `externalId` or else by title — a retry never duplicates, a renamed task keeps its card) on your lane of a control-room board; creates the board without `boardId`. A task that moves into Blocked notifies the person you work for. Returns a `cursor` and the lane's `laneId`. Refused with `agent_paused` while a person has paused you there. |
+| `get_feedback` | read | What people changed in your lane since your `cursor`: cards moved, added or removed, comments on your lane or the board — never your own changes — and `paused` (a person paused you on this board). |
 | `get_board_outline` | read | The board as a semantic outline: frames, clusters, notes, shapes, cards, mind maps, tables, the connector graph, votes, comments, with item ids. `format` `markdown` (default) / `json`; `budget` (≈ tokens, default 8000) keeps frame titles and the shallowest, most recent items; `scope` = an item id to read only inside it; `cursor` pages; `authors`. Format reference: [board-outline.md](board-outline.md). |
 | `create_board` | write | A new board (personal or a team workspace), optionally from a saved template. |
 | `add_stickies` | write | A grid of sticky notes, optional title and color. |
@@ -177,8 +179,12 @@ a *Tasks · &lt;agent&gt;* kanban with **To do / Doing / Done / Blocked**. Sever
 board, one lane each (`agent` names it; default the app's name).
 
 - **Post** with `post_status` after each step: the plan (replaced), a one-line status (stamped with
-  the time), and tasks by title — a task the lane already has is updated and moved to its column, a
-  new one is added; `blocked` puts it in Blocked with your question in its note. Without `boardId` it
+  the time), and tasks — a task the lane already has is updated and moved to its column, a new one is
+  added. Tasks match by `externalId` (your own id for the task, kept on its card) when you send one,
+  else by title; a task renamed under the same `externalId` keeps its card (a card you gave another
+  id never matches by title). `blocked` puts it in Blocked with your question in its note, and the
+  person the app or token acts for gets it in their inbox (and email digest) — once each time a task
+  moves into Blocked, not on every re-post. Without `boardId` it
   creates the board. The template **Agent control room** (Engineering) builds a lane for a
   placeholder agent; the first agent that posts to that board claims it.
 - **Steer**: people drag cards (back to To do = redo it, out of Blocked = go ahead), add cards and
@@ -186,12 +192,21 @@ board, one lane each (`agent` names it; default the app's name).
   people changed — cards moved / added / removed, new comments — never its own changes (the cursor
   carries what the agent last saw: no clocks, nothing stored on the server). Pass the latest cursor
   to `post_status` too, so a change people made in between is still reported.
+- **Pause**: a person who can edit the board selects the lane's Tasks kanban and presses **Pause
+  agent** (the lane then says "Agent paused by …" to everyone). Until someone presses **Resume
+  agent**, `post_status` to that lane and every other write of that app or token on the board (its
+  lanes are the ones named like it or made by it) fail with `agent_paused` (REST: `423`), before
+  anything changes or counts against its write budget; `get_feedback` keeps working and says
+  `paused: true`. The pause is the person's, kept in the board (restoring a version doesn't lift it);
+  the agent itself can't lift it.
 - **Push instead of poll**: on a team workspace's board, the workspace's webhooks deliver the same
-  changes as they happen (`item.updated`, `item.created`, `comment.created`, [events.md](events.md)),
-  signed — point one at the agent's endpoint and filter by board id.
+  changes as they happen (`item.updated`, `item.created`, `item.deleted`, `comment.created`,
+  [events.md](events.md)), signed — an admin can scope an endpoint to the lane (its `laneId`, or the
+  kanban's copied link), so the agent is pushed only what people do there.
 - What people write reaches the agent as untrusted board content (the envelope), like every read.
-- The REST API has the same building blocks (items, structure, comments, the event stream); the
-  lane conventions above are all there is to it.
+- The REST API has the same operations: `POST /api/v1/boards/{boardId}/control-room` (post, needs
+  `boards:write`) and `GET /api/v1/boards/{boardId}/control-room?cursor=…` (feedback,
+  `boards:read`) — [openapi.json](api/openapi.json).
 
 ## How sign-in works (for client developers)
 

@@ -48,3 +48,9 @@ consent screen that Freero hasn't reviewed such an app.
 - What a token or app creates is labelled "<its name> for <you>" (`createdVia` on items, the activity
   feed, a short-lived presence on the board).
 - Every call is in the audit log, with the token or app that made it.
+- Suggestions a token or app proposed stay its own: revoking it (or the app's access, "Disconnect all
+apps and tokens", signing out everywhere) withdraws the ones still pending on every board, and
+open boards drop them at once (KAI-224).
+- An agent's control room (`/boards/{boardId}/control-room`, the MCP `post_status` / `get_feedback`):
+  a person can pause the agent from its lane on the board; until it is resumed every write of that
+  token or app on that board answers `423 agent_paused` ([mcp.md](../mcp.md#agent-control-room)).

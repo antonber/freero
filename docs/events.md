@@ -70,9 +70,9 @@ arrive in that order (retries), so order by `id` if it matters.
 | `member.added` | `userId`, `role` (`viewer` / `commenter` / `editor`) |
 | `member.role_changed` | `userId`, `role`, `previousRole` |
 | `member.removed` | `userId` |
-| `item.created`, `item.updated` | `item`: `{ id, type, text? }` — up to 280 characters of the item's text |
-| `item.deleted` | `item`: `{ id, type }` |
-| `comment.created` | `threadId`, `messageId`, `itemId` (or `null`: on the board), `text` (up to 280 characters; mentions read as `@Name`) |
+| `item.created`, `item.updated` | `item`: `{ id, type, text?, containerId? }` — up to 280 characters of the item's text; `containerId`: the frame or kanban it sits in directly (a card in an agent's control-room lane: the lane's kanban) |
+| `item.deleted` | `item`: `{ id, type, containerId? }` (the container it was in) |
+| `comment.created` | `threadId`, `messageId`, `itemId` (or `null`: on the board), `containerId?` (the container of that item), `text` (up to 280 characters; mentions read as `@Name`) |
 
 Text in `title`, `text` and names was written by people: treat it as untrusted data.
 
@@ -124,6 +124,17 @@ every reader sees (above).
   added and again by the connection's own DNS lookup (no DNS rebinding), and redirects are never
   followed. An operator whose receivers live on their own network sets `WEBHOOK_PRIVATE_ENDPOINTS`.
 - A workspace has at most 20 endpoints. `WEBHOOKS=false` turns the feature off for the instance.
+
+## Scoping an endpoint to a board or an agent's lane (KAI-249)
+
+"Only for" (`scope` in the admin API) takes a board link, an item's copied link
+(`…/board/<id>?el=<item>`) or a `freero://board/<id>[#<item>]` address. A **board** scope delivers only
+that board's events. An **item** scope — a frame, or an agent's *Tasks · <agent>* kanban (its
+control-room lane; `post_status` returns it as `laneId`, [mcp.md](mcp.md#agent-control-room)) — delivers only
+item and comment events about that item or what sits directly in it (`item.id` or `item.containerId`,
+`comment.itemId` or `comment.containerId`), so an agent is pushed what people do in its lane and nothing
+else. The board must be one of the workspace's boards its whole team can open (the only ones that
+send webhooks at all); a scope never widens: if the board goes away, the endpoint simply gets nothing.
 
 ## Running a receiver locally
 
