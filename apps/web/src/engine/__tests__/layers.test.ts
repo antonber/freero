@@ -196,3 +196,41 @@ describe('element content follows its element (KAI-230)', () => {
     expect(cells().get(cellKey(table))).toBe('typed meanwhile');
   });
 });
+
+describe('comment threads follow the item they are pinned to (KAI-234)', () => {
+  const withComments = () =>
+    makeCore({
+      bundles: [
+        bundle('boxes', { elements: [boxDef as ElementDefinition<any>, hidingFrame as ElementDefinition<any>] }),
+        bundle('comments', { manifest: { name: 'comments', description: 'comments', owns: ['comments'] } }),
+      ],
+    });
+  const comments = () => core.scoped('comments').collection<unknown>('comments');
+  const sharedComments = () => core.store.doc.getMap('comments');
+  const thread = (id: string, elementId: string | null) => ({ kind: 'thread', id, x: 0, y: 0, elementId, corner: elementId ? 'top-right' : null, createdAt: 1, createdBy: 'u1' });
+  const message = (threadId: string, id: string, text: string) => ({ kind: 'message', threadId, id, authorId: 'u1', authorName: 'Tester', text, createdAt: 1 });
+
+  it("a discussion of an item in a hidden frame never touches the shared doc; showing the frame brings it to everyone; a board-level thread stays shared", async () => {
+    core = withComments();
+    const frame = core.editor.create({ type: 'frame', x: 0, y: 0, hidden: true } as never);
+    const item = core.editor.create(sticky(100, 100));
+    const written = new Set<string>();
+    sharedComments().observe((ev) => ev.keysChanged.forEach((k) => written.add(k)));
+    core.editor.transact(() => {
+      comments().set('t:h1', thread('h1', item));
+      comments().set('m:h1:m1', message('h1', 'm1', 'their numbers are off'));
+      comments().set('t:b1', thread('b1', null));
+      comments().set('m:b1:m1', message('b1', 'm1', 'welcome'));
+    });
+    // A reply typed later is routed by its thread record, which names the item.
+    comments().set('m:h1:m2', message('h1', 'm2', 'agreed'));
+    expect([...written].filter((k) => k.includes(':h1'))).toEqual([]);
+    expect(sharedComments().has('m:b1:m1')).toBe(true);
+    expect(comments().get('m:h1:m2')).toMatchObject({ text: 'agreed' });
+
+    core.editor.update(frame, { hidden: false } as never);
+    await settle();
+    for (const k of ['t:h1', 'm:h1:m1', 'm:h1:m2']) expect(sharedComments().has(k)).toBe(true);
+    expect(core.store.layers.editors.doc.getMap('comments').size).toBe(0);
+  });
+});
