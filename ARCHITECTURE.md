@@ -34,8 +34,11 @@ Contributors — human or agent — usually see a narrow slice of the code, so t
 - `apps/web` — Vite 5 + React 18 + TS, react-router 6, zustand 4, yjs + y-websocket 2,
   lucide-react, perfect-freehand, dompurify, html-to-image + jspdf. Dev on 5173, proxies
   `/api`, `/uploads`, `/ws` to :4000.
+- `apps/site` — the public marketing site: TSX pages rendered once at build time with
+  `react-dom/server` into static HTML (no client JavaScript), plus OG images (resvg WASM) and
+  sitemaps; served by the server's `modules/site`. See "Marketing site" below.
 
-Dependencies are pre-installed. Adding one: `npm install <pkg> -w @freero/<web|server>`, and say so.
+Dependencies are pre-installed. Adding one: `npm install <pkg> -w @freero/<web|server|site>`, and say so.
 
 ## Web layers (`apps/web/src`) — enforced by `scripts/dune-check.mjs`
 
@@ -771,6 +774,54 @@ files; it precaches them plus the shell files). Rules, all in `strategyFor` / `r
   waits (`SKIP_WAITING`), and reloads once on `vite:preloadError`. Offline editing is out of scope;
   anything that must work offline is a new decision, not a new cache rule.
 
+## Marketing site (`apps/site`, server `modules/site`; KAI-250..253)
+
+The public pages (`/`, `/claude`, `/chatgpt`, `/agents`, `/security`, `/open-source`, `/pricing`,
+`/docs`, `/vs/<slug>`; later `/features/*`, `/use-cases/*`, `/templates/*`) are a separate workspace
+so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs/marketing/seo.md`.
+
+- **Why a custom prerender, not a site generator.** Pages are TSX components rendered once by
+  `react-dom/server` (`src/build.tsx`): the same React and TypeScript the app uses, so there is no
+  framework to learn or upgrade, and the output is exactly what we write — plain HTML with the CSS
+  inlined, no hydration, no client script. Astro would give the same HTML for some 300 more
+  packages. The only extra dependencies are the Inter font files (`@fontsource/inter`, OFL-1.1,
+  self-hosted) and `@resvg/resvg-wasm` (MPL-2.0, no native code) for the OG images.
+- **Pages are discovered, not listed:** `src/pages/**/<name>.page.tsx`, default export
+  `definePage({ path, title, description, name, updated, faq?, index?, sitemap?, body })`
+  (`src/lib/define.ts`). The build owns everything around the body: `<head>` (title, description,
+  canonical, robots, Open Graph + Twitter card), the per-page OG image (`src/lib/og.ts`, original
+  design drawn as SVG), JSON-LD (Organization, WebSite, WebPage, BreadcrumbList, FAQPage from `faq`,
+  plus the page's own such as SoftwareApplication), the breadcrumbs, the FAQ section, the closing
+  call to action, the sitemap entry. Colours come from the app's `ui/tokens.css` (`:root` blocks,
+  read at build time), so the brand has one source.
+- **Comparisons** (`/vs/<slug>`, `src/lib/compare.tsx` `defineComparison`): every competitor cell
+  names its sources, every source its check date; `published: false` pages are `noindex`, out of
+  the sitemap and linked from nowhere, and a page can't be published while a competitor claim is
+  unverified or unsourced (the build throws). Facts come from `docs/marketing/competitors/` only.
+- **One build, any deployment.** Pages are built with the placeholder origin
+  `https://origin.freero.invalid`; `modules/site` swaps in `PUBLIC_URL` when it serves them (once
+  per origin, cached), so the Docker image is the same everywhere. The build writes
+  `dist/manifest.json` (pages, files such as sitemaps and robots.txt, the 404 page, the URL prefixes
+  the site owns, the hashed-assets directory `/_site`), which is all the server reads.
+- **Serving** (`modules/site/routes.ts`, mounted at `/`): `/` → the landing page, or 302 `/app` for
+  a signed-in person (`Vary: Cookie`); known pages with `Cache-Control: no-cache` (ETag);
+  `/claude/` → 301 `/claude`; a missing page under `/vs/`, `/features/`, `/use-cases/`,
+  `/templates/` → the site's 404; `/_site/*` immutable; anything else falls through to the web
+  app. `SITE=false` (or no build): `/` → `/app`, nothing marketing, `robots.txt` `Disallow: /`.
+  The app's pages are never indexed: `index.html` has `robots noindex` and the SPA fallback sends
+  `X-Robots-Tag: noindex`; robots.txt also disallows the app, boards, docs, embeds, the API, MCP,
+  auth and invite paths. `SITE_ANALYTICS_SRC` adds an operator's analytics script to marketing
+  pages only, with its origin in their CSP.
+- **Screenshots** are real: `scripts/site-shots.mjs` drives the built app on a throwaway server
+  (accounts, a board, a personal token proposing changes as an agent, a mock Jira) and writes WebP
+  files to `apps/site/src/assets/shots/`; `<Shot>` gives them `srcset`, `width` and `height`.
+- **Checks:** `apps/site/src/site.test.ts` builds the site and guards what search engines and
+  visitors rely on (unique titles and descriptions within limits, one h1, canonical / OG URLs,
+  JSON-LD that matches the visible FAQ, sitemaps = indexable pages, robots never blocking a page,
+  no page shadowing an app route, no script or foreign resource, alt text and image sizes, no broken
+  internal link, the comparison publishing rule); `npm run verify -- --only site` runs it on a real
+  server with a real session and with `SITE=false`.
+
 ## UI kit (`ui/`) — exports from `@ui`
 
 `Button` {variant: 'primary'|'secondary'|'ghost'|'danger', size: 'sm'|'md'|'lg', icon?, loading?} ·
@@ -864,7 +915,8 @@ engage_reveals: live audience activities; see "Live activities" below), `tracker
 see "Issue trackers" below), `search` (search_entries, search_sources: the search index derived
 through the outbox, `GET /search`), `events` (events, event_board_states, event_pending_boards: the
 event stream), `docs` (no table: the doc app — a doc is a boards container of kind 'doc' whose
-document realtime stores; see "Docs and native live embeds"), `webhooks` (webhook_endpoints, webhook_deliveries: workspace webhooks) — the last
+document realtime stores; see "Docs and native live embeds"), `site` (no table: serves the built
+marketing site at `/`; see "Marketing site"), `webhooks` (webhook_endpoints, webhook_deliveries: workspace webhooks) — the last
 three in "Search, the event stream and webhooks" below.
 
 - Notifications are created only from trusted server-side events, never from client claims:
@@ -2223,7 +2275,7 @@ the board, deletions. A suggestion is not board content until someone who can ed
   `S3_BUCKET` and keys (MinIO, SeaweedFS…), the `s3` group checks the S3 backend (prefixes, kept
   copies under `private/`, restore, retention, the S3_PUBLIC_URL redirect and stored Cache-Control);
   all other groups stay on the local disk. CI does all of it.
-  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation,ai,api,mcp,s3,suite,suggestions,collab,tracker,search,webhooks,docs` runs some groups (to loop one while hunting a flake).
+  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation,ai,api,mcp,s3,suite,suggestions,collab,tracker,search,webhooks,docs,site` runs some groups (to loop one while hunting a flake).
   The `mcp` group drives the MCP server with the official MCP client SDK, OAuth (dynamic
   registration, consent, PKCE) included; with DATABASE_URL + REDIS_URL one client's requests also
   alternate between two instances.
