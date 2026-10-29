@@ -5,6 +5,7 @@ import { useStore } from 'zustand';
 import type { Point, ToolPointerEvent } from '../api';
 import { useCore, ScopeContext } from '../context';
 import { Grid } from './Grid';
+import { shownBackground, useDocumentTheme } from './theme';
 import { WorldElements, useWorldTransform } from './WorldLayer';
 import { zoomAt } from '../camera/camera';
 import { dispatchToolPointer, type ToolPointerHandler } from '../interaction/toolDispatch';
@@ -36,6 +37,7 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
   const viewportRef = useRef<HTMLDivElement>(null);
   const worldRef = useRef<HTMLDivElement>(null);
   const settings = useSettings();
+  const theme = useDocumentTheme();
   const helpId = useId();
   useWorldTransform(worldRef);
 
@@ -472,7 +474,7 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
       aria-roledescription="whiteboard"
       aria-label={`Board canvas: ${core.hostRef.current.board.title}`}
       aria-describedby={helpId}
-      style={{ background: settings.background, cursor }}
+      style={{ background: shownBackground(settings.background, theme), cursor }}
     >
       <p id={helpId} className="fr-sr-only">
         Tab and Shift+Tab move through the items in reading order, a frame’s items right after it; Alt+arrow keys jump to
@@ -482,12 +484,16 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
       </p>
       <Grid />
       <div ref={worldRef} className="fr-world">
-        <WorldElements />
-        {Preview && !spaceHeld && (
-          <ScopeContext.Provider value={tool!.feature}>
-            <Preview editor={core.scoped(tool!.feature)} />
-          </ScopeContext.Provider>
-        )}
+        {/* Board content (and the tool's ghost of what it would add): drawn in its own colours, through
+            the dark filter on a dark page (theme.ts); the world overlays above are chrome. */}
+        <div className="fr-world__items fr-paper">
+          <WorldElements />
+          {Preview && !spaceHeld && (
+            <ScopeContext.Provider value={tool!.feature}>
+              <Preview editor={core.scoped(tool!.feature)} />
+            </ScopeContext.Provider>
+          )}
+        </div>
         {props.worldOverlay}
       </div>
       {props.screenOverlay}

@@ -128,7 +128,7 @@ export function ElementFrame(props: { element: BoardElement; selected: boolean; 
   }
   return (
     <div
-      className={`fr-el${props.editing ? ' fr-el--editing' : ''}${isPrivate ? ' fr-el--private' : ''}${props.preview ? ' fr-el--preview' : ''}`}
+      className={`fr-el${props.editing ? ' fr-el--editing' : ''}${isPrivate ? ' fr-el--private' : ''}${props.preview ? ' fr-el--preview fr-paper' : ''}`}
       data-id={props.preview ? undefined : el.id}
       data-type={el.type}
       style={{ ...reg?.def.wrapperStyle?.(el as never), width: el.w, height: el.h, transform }}
