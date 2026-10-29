@@ -11,13 +11,15 @@ import { readBoardView } from '../realtime/index';
 import { boardAccessLoader } from '../workspaces/index';
 import * as repo from './repo';
 import type { Board } from './repo';
+import { linkAsSeenBy } from './service';
 
 const ACTION_OF: Record<Role, ObjectAction> = { viewer: 'view', commenter: 'comment', editor: 'edit', owner: 'manage' };
 
 /**
  * The actor's role on each of these live boards (trashed / taken-down ones are absent), in a
  * fixed number of queries whatever the count. 'discover' leaves out boards reached only through
- * their link that the actor never opened (see AccessPurpose).
+ * their link that the actor never opened (see AccessPurpose). A password-protected link counts only
+ * for someone who gave its CURRENT password (KAI-145), as on the board page.
  */
 export async function boardRoles(actor: Actor, boardIds: string[], purpose: AccessPurpose): Promise<Map<string, { board: Board; role: Role }>> {
   const out = new Map<string, { board: Board; role: Role }>();
@@ -29,22 +31,23 @@ export async function boardRoles(actor: Actor, boardIds: string[], purpose: Acce
     if (!joined || !ids.includes(joined)) return out;
     const board = await repo.getBoard(joined);
     if (!board) return out;
-    const access = await boardAccessLoader(actor.userId, [board.workspaceId]);
-    const role = resolveGuestRole(board, access(board));
+    const [access, unlocks] = await Promise.all([boardAccessLoader(actor.userId, [board.workspaceId]), repo.unlocksOf(actor.userId, [board.id])]);
+    const role = resolveGuestRole(linkAsSeenBy(board, unlocks.get(board.id)), access(board));
     if (role) out.set(board.id, { board, role });
     return out;
   }
   const boards = await repo.getBoards(ids);
   if (!boards.length) return out;
-  const [memberships, accessOf, opens] = await Promise.all([
+  const [memberships, accessOf, opens, unlocks] = await Promise.all([
     membershipsOf(actor.userId),
     boardAccessLoader(actor.userId, boards.map((b) => b.workspaceId)),
     purpose === 'discover' ? repo.opensOf(actor.userId) : Promise.resolve(new Map<string, number>()),
+    repo.unlocksOf(actor.userId, boards.map((b) => b.id)),
   ]);
   for (const board of boards) {
     const access = accessOf(board);
     const member = memberships.get(board.id) ?? null;
-    const role = resolveRole(board, actor.userId, member, access);
+    const role = resolveRole(linkAsSeenBy(board, unlocks.get(board.id)), actor.userId, member, access);
     if (!role) continue;
     if (purpose === 'discover' && !opens.has(board.id) && !resolveRole({ ...board, linkAccess: 'none' }, actor.userId, member, access)) continue;
     out.set(board.id, { board, role });
