@@ -2,7 +2,8 @@
 // proposer's badge, accept / reject per item and per group right there, the review list in the
 // dock, and a count in the top bar while any wait. Only owners and editors ever receive
 // suggestions (the server sends the editors layer to nobody else), so nothing here renders for
-// anyone else; the buttons hide while a facilitator's lock makes this user a commenter.
+// anyone else. The buttons hide where this owner / editor can't edit: a live view in an AI
+// assistant whose connection may only read (#89) shows the suggestions to review, without them.
 import { memo, useMemo } from 'react';
 import { AlertTriangle, Check, Lightbulb, Trash2, X } from 'lucide-react';
 import {
@@ -212,7 +213,14 @@ function SuggestionsDock({ editor }: PanelProps) {
         <h2>Suggestions</h2>
       </DockHeader>
       {groups.length ? (
-        groups.map((g) => <Group key={g.id} editor={editor} group={g} canEdit={canEdit} />)
+        <>
+          {/* Someone who may review them, here without edit rights: a live view in an AI assistant
+              whose connection may only read (#89). Deciding is an edit, so it happens in Freero. */}
+          {!canEdit && <p className="fr-sg-dock__readonly">You can review these here, but accepting or rejecting them needs edit access. Open the board in Freero to decide.</p>}
+          {groups.map((g) => (
+            <Group key={g.id} editor={editor} group={g} canEdit={canEdit} />
+          ))}
+        </>
       ) : (
         <div className="fr-sg-dock__empty">
           <Lightbulb size={22} aria-hidden />
