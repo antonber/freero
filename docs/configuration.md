@@ -203,6 +203,7 @@ Issue trackers) or by a person for themselves (Settings). How it works and what 
 | Variable | Default | Description |
 |---|---|---|
 | `PUBLIC_API` | `true` | The public REST API (`/api/v1`, reference: [api/openapi.json](api/openapi.json)) and the OAuth endpoints apps use. `false` is the instance-wide kill switch for integrations and agents: every API call and token request is refused at once; tokens and app authorisations are kept, so turning it back on restores them. Workspace admins have their own switch in the admin console ("API & apps"). |
+| `OPENAI_APPS_CHALLENGE` | — | The domain-verification token the ChatGPT app directory's portal shows when you connect the MCP server; served as plain text (exactly the token) at `/.well-known/openai-apps-challenge`. Unset: that path is a 404. |
 
 ## Events and webhooks
 

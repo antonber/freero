@@ -266,6 +266,11 @@ export interface Config {
    */
   publicApi: boolean;
   /**
+   * The ChatGPT app directory's domain-verification token (OPENAI_APPS_CHALLENGE), served as plain
+   * text at /.well-known/openai-apps-challenge while it is set; null: that path is a 404.
+   */
+  openaiAppsChallenge: string | null;
+  /**
    * The marketing site (apps/site, served by modules/site). Off: `/` sends everyone to `/app`, no
    * marketing page is served and robots.txt keeps crawlers off the whole instance.
    */
@@ -771,6 +776,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     abuseContactEmail,
     securityContact: securityContact ?? (abuseContactEmail ? `mailto:${abuseContactEmail}` : null),
     publicApi: bool('PUBLIC_API', true),
+    openaiAppsChallenge: str('OPENAI_APPS_CHALLENGE'),
     site: {
       enabled: bool('SITE', true),
       dist: path.resolve(env.FREERO_SITE_DIST || path.join(REPO_ROOT, 'apps/site/dist')),

@@ -135,6 +135,15 @@ export default function mcpRoutes({ config }: ServerContext): Router {
     res.json(info);
   });
 
+  // The ChatGPT app directory proves we control this domain by fetching a token it gave the owner:
+  // exactly that text, nothing else (docs/marketing/directory-submissions.md).
+  r.get('/.well-known/openai-apps-challenge', (_req, res) => {
+    const token = config.openaiAppsChallenge;
+    if (!token) return res.status(404).type('text/plain').send('Not found');
+    res.setHeader('Cache-Control', 'no-store');
+    res.type('text/plain').send(token);
+  });
+
   // Stateless: no server-sent event stream to open (GET) and no session to end (DELETE).
   r.all('/mcp', (_req, res) => {
     res.setHeader('Allow', 'POST, OPTIONS');
