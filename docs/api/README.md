@@ -61,6 +61,10 @@ open boards drop them at once (KAI-224).
 - Nothing needs coordinates: `POST /boards/{boardId}/structure` takes a `placement` (into a frame,
   kanban column or cluster, or a new frame / kanban) and answers `parts` (which new id is which input
   item, in order); `PATCH` an item with `into` (+ `column`) to move it there.
+- `GET /boards/{boardId}/trackers` (the MCP `list_tracker_connections`, #83): the tracker connections
+  the person may use on the board (name, provider, team or personal, default project, status) and,
+  with `?connection=`, that connection's projects or repositories — what the import and
+  `sync_to_tracker` take as `connection` and `project`.
 - `POST /boards/{boardId}/trackers/import` (the MCP `import_from_tracker`, #79): a tracker query as
   task cards linked to their issues, through the person's own or the team's connection, with the
   board's *Import issues…* rules (at most 100, issues already linked here skipped) and a `placement`;

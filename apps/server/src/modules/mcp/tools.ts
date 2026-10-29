@@ -723,7 +723,8 @@ export const TOOLS: McpTool[] = [
     description:
       'Which issue trackers (Jira, Linear, GitHub) the person can use on a board: each connection’s name (the `connection` of sync_to_tracker and import_from_tracker), provider, default project and status. Give `connection` to also list its projects (Jira project keys, Linear team keys, GitHub owner/repo), which sync_to_tracker takes as `project`. An empty list says how the person connects one. Call it before sending or importing when you don’t know the names.',
     scope: 'boards:read',
-    annotations: { readOnlyHint: true, openWorldHint: true },
+    // Open world: with `connection` it asks the tracker for its projects.
+    annotations: { ...READ, openWorldHint: true },
     input: {
       boardId,
       connection: z.string().max(200).optional().describe('A connection’s name (or id): also list its projects, read from the tracker.'),
