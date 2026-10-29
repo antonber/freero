@@ -62,7 +62,7 @@ it('several replicas pruning at once delete exactly what one would, and never a 
   expect(await pruneSnapshots({ now: NOW })).toBe(0);
 });
 
-it('a workspace’s version retention removes its unnamed versions past the limit — even a board’s only one — and leaves named ones and other workspaces alone', async () => {
+it('a workspace’s version retention removes its unnamed versions past the limit — even a board’s only one — and leaves named ones, decisions and other workspaces alone', async () => {
   const team = await createTeamWorkspace(userId, 'Short memory');
   await updateWorkspaceSettings(team.id, userId, { versionRetentionDays: 30 });
   const strict = (await createBoard(userId, 'Strict', '', 'none', { workspaceId: team.id })).id;
@@ -76,10 +76,12 @@ it('a workspace’s version retention removes its unnamed versions past the limi
     await repo.insertSnapshot(b, { state, kind: 'auto', name: null, createdBy: null }, now - 2 * DAY);
   }
   await repo.insertSnapshot(lone, { state, kind: 'before-restore', name: null, createdBy: null }, now - 40 * DAY);
+  // A decision (KAI-161) is cited from elsewhere: its content must outlive any retention.
+  await repo.insertSnapshot(strict, { state, kind: 'decision', name: 'Pricing', createdBy: null }, now - 85 * DAY);
 
   await pruneSnapshotsByPolicy(now);
   const ages = async (b: string) => (await repo.snapshotTimeline(b)).map((s) => `${s.kind}:${Math.round((now - s.createdAt) / DAY)}`).sort();
-  expect(await ages(strict)).toEqual(['auto:2', 'named:80']);
+  expect(await ages(strict)).toEqual(['auto:2', 'decision:85', 'named:80']);
   expect(await ages(lone)).toEqual([]);
   expect(await ages(relaxed)).toEqual(['auto:2', 'auto:90', 'named:80']);
 });

@@ -70,6 +70,9 @@ export { listSnapshots as listBoardSnapshots, loadSnapshot as loadBoardSnapshot,
 // Board backups (modules/backup, KAI-137): content as JSON (what the exporter may read), and a
 // fresh document state built from such JSON for a restored board.
 export { boardBackupContent, encodeBoardContent, withoutLeftOutFields, type BoardBackupContent, type BoardContentJson } from './backup';
+// Decision snapshots (KAI-161): freeze the live board as a decision version, read one back, cut a
+// frame out of a frozen state, and read a state as everyone sees it (modules/decisions).
+export { freezeBoard, decisionVersion, releaseDecisionVersion, frameOnlyState, viewOfState, liveSharedState } from './decisions';
 // Data exports (modules/privacy): board content and the comments a person wrote.
 export { exportBoardContent, commentsWrittenBy, type BoardContentExport, type CommentThreadExport } from './dataExport';
 // Board content as saved, as every reader sees it (derived indexes read it from the outbox), and

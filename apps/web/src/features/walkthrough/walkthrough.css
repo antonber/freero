@@ -1,0 +1,552 @@
+/* Walkthroughs (KAI-133): the recording / playback bar, the narrator's bubble and pointer,
+   captions, comments at moments, and the dock list. */
+
+/* ---- the floating bar (recording and playback) ---- */
+.fr-walkthrough-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  min-height: 48px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--fr-surface);
+  color: var(--fr-ink);
+  box-shadow: var(--fr-shadow-lg);
+  pointer-events: auto;
+  font-size: 13px;
+  z-index: var(--fr-z-toolbar);
+}
+
+.fr-walkthrough-bar.is-playing {
+  /* Between the narrator bubble and the zoom controls. */
+  width: min(720px, max(420px, calc(100% - 600px)));
+}
+
+.fr-walkthrough-bar.is-recording {
+  box-shadow:
+    0 0 0 2px var(--fr-danger),
+    var(--fr-shadow-lg);
+}
+
+.fr-walkthrough-bar .fr-btn {
+  border-radius: 999px;
+}
+
+.fr-walkthrough-bar__rec {
+  width: 10px;
+  height: 10px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--fr-danger);
+  box-shadow: 0 0 0 4px var(--fr-danger-soft);
+}
+
+.fr-walkthrough-bar__time {
+  min-width: 40px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: center;
+}
+
+.fr-walkthrough-bar__total {
+  color: var(--fr-ink-3);
+  font-weight: 500;
+}
+
+.fr-walkthrough-bar__hint {
+  color: var(--fr-ink-2);
+  padding: 0 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fr-walkthrough-bar__sep {
+  width: 1px;
+  height: 22px;
+  margin: 0 2px;
+  background: var(--fr-line);
+}
+
+.fr-walkthrough-bar__track {
+  position: relative;
+  flex: 1;
+  min-width: 80px;
+  display: flex;
+  align-items: center;
+}
+
+.fr-walkthrough-bar__range {
+  width: 100%;
+  height: 6px;
+  margin: 0;
+  appearance: none;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--fr-primary) var(--fr-walkthrough-progress, 0%), var(--fr-surface-3) var(--fr-walkthrough-progress, 0%));
+  cursor: pointer;
+}
+
+.fr-walkthrough-bar__range::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--fr-primary);
+  border: 2px solid var(--fr-surface);
+  box-shadow: var(--fr-shadow-sm);
+}
+
+.fr-walkthrough-bar__range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--fr-primary);
+  border: 2px solid var(--fr-surface);
+}
+
+.fr-walkthrough-bar__range:focus-visible {
+  outline: none;
+  box-shadow: var(--fr-focus-ring);
+}
+
+.fr-walkthrough-bar__marker {
+  position: absolute;
+  top: -9px;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  padding: 0;
+  border: 2px solid var(--fr-surface);
+  border-radius: 50%;
+  background: var(--fr-warning);
+  cursor: pointer;
+}
+
+.fr-walkthrough-bar__marker:focus-visible {
+  outline: none;
+  box-shadow: var(--fr-focus-ring);
+}
+
+.fr-walkthrough-bar__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--fr-primary-soft);
+  color: var(--fr-primary);
+  font: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.fr-walkthrough-bar__count,
+.fr-walkthrough-topbar__count {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--fr-primary);
+  color: var(--fr-primary-ink);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+}
+
+.fr-walkthrough-bar__problem {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  padding: 6px 12px;
+  border-radius: var(--fr-radius);
+  background: var(--fr-danger-soft);
+  color: var(--fr-danger);
+  white-space: nowrap;
+}
+
+/* ---- the narrator's bubble ---- */
+.fr-walkthrough-bubble {
+  position: absolute;
+  /* Clear of the left toolbar. */
+  left: 76px;
+  bottom: 16px;
+  display: grid;
+  place-items: center;
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--fr-surface);
+  box-shadow:
+    0 0 0 3px var(--fr-walkthrough-color, var(--fr-primary)),
+    var(--fr-shadow-lg);
+  pointer-events: auto;
+  z-index: var(--fr-z-toolbar);
+}
+
+.fr-walkthrough-bubble.is-recording {
+  box-shadow:
+    0 0 0 3px var(--fr-danger),
+    var(--fr-shadow-lg);
+}
+
+.fr-walkthrough-bubble.is-speaking {
+  animation: fr-walkthrough-speak 1.6s ease-in-out infinite;
+}
+
+@keyframes fr-walkthrough-speak {
+  50% {
+    box-shadow:
+      0 0 0 6px var(--fr-walkthrough-color, var(--fr-primary)),
+      var(--fr-shadow-lg);
+  }
+}
+
+.fr-walkthrough-bubble__video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: var(--fr-ink);
+}
+
+.fr-walkthrough-bubble__video.is-mirrored {
+  transform: scaleX(-1);
+}
+
+/* ---- the narrator's pointer (screen position from the recorded world point) ---- */
+.fr-walkthrough-pointer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.fr-walkthrough-pointer__dot {
+  position: absolute;
+  left: -9px;
+  top: -9px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 3px solid var(--fr-walkthrough-color, var(--fr-primary));
+  background: color-mix(in srgb, var(--fr-walkthrough-color, var(--fr-primary)) 25%, transparent);
+}
+
+.fr-walkthrough-pointer__name {
+  position: absolute;
+  left: 12px;
+  top: 10px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--fr-walkthrough-color, var(--fr-primary));
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* ---- captions ---- */
+.fr-walkthrough-caption {
+  position: absolute;
+  left: 50%;
+  bottom: 80px;
+  transform: translateX(-50%);
+  max-width: min(720px, calc(100% - 320px));
+  padding: 6px 14px;
+  border-radius: var(--fr-radius);
+  background: rgba(16, 15, 30, 0.86);
+  color: #fff;
+  font-size: 17px;
+  line-height: 1.4;
+  text-align: center;
+  pointer-events: none;
+}
+
+@media (forced-colors: active) {
+  .fr-walkthrough-caption {
+    border: 1px solid CanvasText;
+  }
+  .fr-walkthrough-pointer__dot {
+    border-color: Highlight;
+  }
+}
+
+/* ---- comments at moments ---- */
+.fr-walkthrough-comments {
+  position: absolute;
+  right: 16px;
+  bottom: 76px;
+  display: flex;
+  flex-direction: column;
+  width: min(340px, calc(100% - 32px));
+  max-height: min(480px, calc(100% - 160px));
+  border-radius: var(--fr-radius-lg);
+  background: var(--fr-surface);
+  box-shadow: var(--fr-shadow-xl);
+  pointer-events: auto;
+  z-index: var(--fr-z-toolbar);
+}
+
+.fr-walkthrough-comments__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 6px 6px 14px;
+  border-bottom: 1px solid var(--fr-line);
+}
+
+.fr-walkthrough-comments__head h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.fr-walkthrough-comments__list {
+  flex: 1;
+  margin: 0;
+  padding: 6px 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.fr-walkthrough-comments__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px 6px 14px;
+}
+
+.fr-walkthrough-comments__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.fr-walkthrough-comments__body p {
+  margin: 2px 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.fr-walkthrough-comments__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.fr-walkthrough-comments__at {
+  padding: 0 6px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--fr-primary-soft);
+  color: var(--fr-primary);
+  font: inherit;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.fr-walkthrough-comments__empty {
+  padding: 10px 14px;
+  color: var(--fr-ink-3);
+  font-size: 13px;
+}
+
+.fr-walkthrough-comments__composer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--fr-line);
+}
+
+.fr-walkthrough-comments__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.fr-walkthrough-mentions {
+  max-height: 220px;
+  margin: 0;
+  padding: 4px;
+  overflow: auto;
+  list-style: none;
+}
+
+.fr-walkthrough-mentions button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--fr-radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fr-walkthrough-mentions button:hover,
+.fr-walkthrough-mentions button:focus-visible {
+  background: var(--fr-hover);
+}
+
+.fr-walkthrough-mentions__empty {
+  padding: 6px 8px;
+  color: var(--fr-ink-3);
+}
+
+/* ---- dialogs ---- */
+.fr-walkthrough-start,
+.fr-walkthrough-captions {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.fr-walkthrough-start__note {
+  margin: 0;
+  color: var(--fr-ink-2);
+  font-size: 13px;
+}
+
+.fr-walkthrough-start__error {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--fr-radius-sm);
+  background: var(--fr-danger-soft);
+  color: var(--fr-danger);
+  font-size: 13px;
+}
+
+.fr-walkthrough-captions__ai {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--fr-radius);
+  background: var(--fr-surface-2);
+  color: var(--fr-ink-2);
+  font-size: 13px;
+}
+
+/* ---- the dock list ---- */
+.fr-walkthrough-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 12px 16px;
+}
+
+.fr-walkthrough-list__head {
+  padding: 8px 0 0 16px;
+}
+
+.fr-walkthrough-list__title {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.fr-walkthrough-list__empty {
+  margin: 0;
+  color: var(--fr-ink-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.fr-walkthrough-list__items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fr-walkthrough-list__item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: var(--fr-radius);
+}
+
+.fr-walkthrough-list__item:hover {
+  background: var(--fr-hover);
+}
+
+.fr-walkthrough-list__play {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border: 0;
+  border-radius: var(--fr-radius);
+  background: transparent;
+  color: var(--fr-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fr-walkthrough-list__play:focus-visible {
+  outline: none;
+  box-shadow: var(--fr-focus-ring);
+}
+
+.fr-walkthrough-list__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  color: var(--fr-ink);
+}
+
+.fr-walkthrough-list__name {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-walkthrough-list__meta {
+  color: var(--fr-ink-3);
+  font-size: 12px;
+}
+
+@media (max-width: 640px) {
+  .fr-walkthrough-bubble {
+    width: 88px;
+    height: 88px;
+    bottom: 72px;
+  }
+  .fr-walkthrough-caption {
+    max-width: calc(100% - 32px);
+    bottom: 172px;
+  }
+}

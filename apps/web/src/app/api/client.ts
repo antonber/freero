@@ -104,6 +104,17 @@ import type {
 } from '@freero/shared';
 import type { BacklinksResponse, ResolveObjectsResponse, RestoreBackupResponse } from '@freero/shared';
 import { BACKUP_MEDIA_TYPE } from '@freero/shared';
+import type {
+  CreateDecisionRequest,
+  CreateWalkthroughRequest,
+  Decision,
+  DecisionChanges,
+  DecisionResponse,
+  Walkthrough,
+  WalkthroughComment,
+  WalkthroughCue,
+  WalkthroughSummary,
+} from '@freero/shared';
 
 export class ApiError extends Error {
   constructor(
@@ -139,6 +150,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   if (!res.ok) throw await failure(res);
   return res.json() as Promise<T>;
 }
+
+const walkthroughsPath = (boardId: string, id?: string) =>
+  `/api/boards/${encodeURIComponent(boardId)}/walkthroughs${id ? `/${encodeURIComponent(id)}` : ''}`;
 
 const activityPath = (id: string, aid: string) => `/api/boards/${encodeURIComponent(id)}/activities/${encodeURIComponent(aid)}`;
 
@@ -578,6 +592,49 @@ export const api = {
     if (!res.ok) throw await failure(res);
     return res.json();
   },
+  // ---- walkthroughs (KAI-133) ----
+  listWalkthroughs: (boardId: string) => request<{ walkthroughs: WalkthroughSummary[] }>('GET', `${walkthroughsPath(boardId)}`),
+  getWalkthrough: (boardId: string, id: string) => request<{ walkthrough: Walkthrough }>('GET', walkthroughsPath(boardId, id)),
+  createWalkthrough: (boardId: string, body: CreateWalkthroughRequest) => request<{ walkthrough: Walkthrough }>('POST', walkthroughsPath(boardId), body),
+  renameWalkthrough: (boardId: string, id: string, title: string) => request<{ walkthrough: Walkthrough }>('PATCH', walkthroughsPath(boardId, id), { title }),
+  async deleteWalkthrough(boardId: string, id: string): Promise<void> {
+    const res = await fetch(walkthroughsPath(boardId, id), { method: 'DELETE', credentials: 'same-origin' });
+    if (!res.ok) throw await failure(res);
+  },
+  viewedWalkthrough: (boardId: string, id: string) => request<{ views: number }>('POST', `${walkthroughsPath(boardId, id)}/views`),
+  walkthroughComments: (boardId: string, id: string) => request<{ comments: WalkthroughComment[] }>('GET', `${walkthroughsPath(boardId, id)}/comments`),
+  commentOnWalkthrough: (boardId: string, id: string, body: { atMs: number; text: string }) =>
+    request<{ comment: WalkthroughComment }>('POST', `${walkthroughsPath(boardId, id)}/comments`, body),
+  async deleteWalkthroughComment(boardId: string, id: string, commentId: string): Promise<void> {
+    const res = await fetch(`${walkthroughsPath(boardId, id)}/comments/${encodeURIComponent(commentId)}`, { method: 'DELETE', credentials: 'same-origin' });
+    if (!res.ok) throw await failure(res);
+  },
+  setWalkthroughCaptions: (boardId: string, id: string, cues: WalkthroughCue[]) =>
+    request<{ walkthrough: Walkthrough }>('PUT', `${walkthroughsPath(boardId, id)}/transcript`, { cues }),
+  transcribeWalkthrough: (boardId: string, id: string) => request<{ walkthrough: Walkthrough }>('POST', `${walkthroughsPath(boardId, id)}/transcript`),
+  walkthroughCaptionsStatus: (boardId: string) =>
+    request<{ available: boolean; reason?: string }>('GET', `/api/boards/${encodeURIComponent(boardId)}/walkthroughs-captions`),
+  async downloadWalkthrough(boardId: string, id: string): Promise<Blob> {
+    const res = await fetch(`${walkthroughsPath(boardId, id)}/download`, { credentials: 'same-origin' });
+    if (!res.ok) throw await failure(res);
+    return res.blob();
+  },
+
+  // ---- decision snapshots (KAI-161) ----
+  listDecisions: (boardId: string) => request<{ decisions: Decision[] }>('GET', `/api/boards/${encodeURIComponent(boardId)}/decisions`),
+  createDecision: (boardId: string, body: CreateDecisionRequest) => request<{ decision: Decision }>('POST', `/api/boards/${encodeURIComponent(boardId)}/decisions`, body),
+  getDecision: (id: string) => request<DecisionResponse>('GET', `/api/decisions/${encodeURIComponent(id)}`),
+  async decisionState(id: string): Promise<Uint8Array> {
+    const res = await fetch(`/api/decisions/${encodeURIComponent(id)}/state`, { credentials: 'same-origin' });
+    if (!res.ok) throw await failure(res);
+    return new Uint8Array(await res.arrayBuffer());
+  },
+  decisionChanges: (id: string) => request<DecisionChanges>('GET', `/api/decisions/${encodeURIComponent(id)}/changes`),
+  async deleteDecision(id: string): Promise<void> {
+    const res = await fetch(`/api/decisions/${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'same-origin' });
+    if (!res.ok) throw await failure(res);
+  },
+
   /** The file of a file card / video / audio item on a board (downloads policy, audited). */
   async downloadBoardFile(boardId: string, elementId: string): Promise<Blob> {
     const res = await fetch(`/api/boards/${encodeURIComponent(boardId)}/files/${encodeURIComponent(elementId)}`, { credentials: 'same-origin' });

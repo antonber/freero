@@ -1,5 +1,6 @@
 import { tableCellOwner } from './elements';
 import { TRACKER_COLLECTION } from './trackers';
+import { WALKTHROUGHS_COLLECTION } from './walkthroughs';
 
 // Layout of the per-board Yjs document.
 //
@@ -158,8 +159,9 @@ export const isElementContentCollection = (name: string): boolean => Object.prot
  * private again) or end it while drafts are still sealed. Layer docs are never versioned or
  * restored (see "Board layers" in ARCHITECTURE.md). 'trackers' mirrors the server's links to tracker
  * issues (they don't go back in time with the board): an older copy would show stale badges.
+ * 'walkthroughs' mirrors the recordings modules/walkthroughs keeps (KAI-133): they outlive restores.
  */
-export const Y_KEPT_ON_RESTORE = ['comments', 'voting', 'timer', 'privateMode', 'facilitation', 'estimation', 'retro', 'engageResults', 'call', 'trackers'] as const;
+export const Y_KEPT_ON_RESTORE = ['comments', 'voting', 'timer', 'privateMode', 'facilitation', 'estimation', 'retro', 'engageResults', 'call', 'trackers', 'walkthroughs'] as const;
 
 /**
  * Top-level types a board BACKUP (`.freero`, KAI-137) leaves out, and a restore drops if a file
@@ -262,7 +264,7 @@ export const ENGAGE_RESULTS_COLLECTION = 'engageResults';
  * any socket's change to them). When one of them is also element content
  * (ELEMENT_CONTENT_COLLECTIONS), the server — never a client — keeps each entry with its element.
  */
-export const SERVER_WRITTEN_COLLECTIONS: readonly string[] = [ENGAGE_RESULTS_COLLECTION, TRACKER_COLLECTION];
+export const SERVER_WRITTEN_COLLECTIONS: readonly string[] = [ENGAGE_RESULTS_COLLECTION, TRACKER_COLLECTION, WALKTHROUGHS_COLLECTION];
 
 export interface ActivityResults {
   activityId: string;

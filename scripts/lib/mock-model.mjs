@@ -117,6 +117,20 @@ export async function startMockModel({ port = 0, host = '127.0.0.1' } = {}) {
       res.writeHead(status, { 'content-type': 'application/json' });
       res.end(JSON.stringify(value));
     };
+    // Speech to text (OpenAI-compatible, multipart): the model asked for and a canned, timed transcript.
+    if (req.method === 'POST' && req.url.endsWith('/audio/transcriptions')) {
+      const model = /name="model"\r\n\r\n([^\r]*)/.exec(raw)?.[1] ?? '';
+      const last = requests[requests.length - 1];
+      last.transcription = { model, hasFile: /name="file"; filename="/.test(raw), contentType: req.headers['content-type'] ?? '' };
+      if (!req.headers.authorization) return json(401, { error: { message: 'missing key' } });
+      return json(200, {
+        text: 'Welcome to the plan. Here is what we decided.',
+        segments: [
+          { id: 0, start: 0, end: 1.2, text: ' Welcome to the plan.' },
+          { id: 1, start: 1.2, end: 2.5, text: ' Here is what we decided.' },
+        ],
+      });
+    }
     if (req.method !== 'POST' || !body) return json(404, { error: { message: 'not found' } });
     if (req.url.endsWith('/v1/messages')) {
       if (!req.headers['x-api-key']) return json(401, { error: { type: 'authentication_error', message: 'missing x-api-key' } });

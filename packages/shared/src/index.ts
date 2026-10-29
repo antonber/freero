@@ -12,4 +12,6 @@ export * from './objects';
 export * from './search';
 export * from './events';
 export * from './trackers';
+export * from './walkthroughs';
+export * from './decisions';
 export * from './docs';

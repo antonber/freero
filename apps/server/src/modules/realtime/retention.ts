@@ -54,7 +54,7 @@ export function snapshotsToPrune(snapshots: SnapshotStamp[], now: number, policy
   const drop: number[] = [];
   const newestFirst = [...snapshots].sort((a, b) => b.createdAt - a.createdAt || b.id - a.id);
   for (const s of newestFirst) {
-    if (s.kind === 'named') continue;
+    if (s.kind === 'named' || s.kind === 'decision') continue;
     const age = Math.max(0, now - s.createdAt);
     if (policy.maxAgeMs !== undefined && age > policy.maxAgeMs) {
       drop.push(s.id);

@@ -164,7 +164,10 @@ export async function insertSnapshotIfDue(
 // Snapshots: version history (KAI-49) and its retention (KAI-72)
 // ---------------------------------------------------------------------------------------------
 
-export type SnapshotKind = 'auto' | 'named' | 'before-restore';
+/** 'named' and 'decision' (KAI-161) are never pruned. */
+export type SnapshotKind = 'auto' | 'named' | 'before-restore' | 'decision';
+/** Kinds retention never removes. */
+const KEPT_KINDS = `('named', 'decision')`;
 
 export interface SnapshotInfo {
   id: number;
@@ -314,13 +317,31 @@ export async function insertSnapshot(
   return toInfo(r!);
 }
 
-/** Names (or renames) a snapshot, which also exempts it from pruning. Null: not on this board. */
+/**
+ * Names (or renames) a snapshot, which also exempts it from pruning. A decision's version stays a
+ * decision (renaming it in the history renames only the version). Null: not on this board.
+ */
 export async function nameSnapshot(boardId: string, snapshotId: number, name: string): Promise<SnapshotInfo | null> {
   const r = await one<SnapshotRow>(
-    `UPDATE board_doc_snapshots SET kind = 'named', name = $3 WHERE board_id = $1 AND id = $2 RETURNING ${SNAPSHOT_COLUMNS}`,
+    `UPDATE board_doc_snapshots SET kind = CASE WHEN kind = 'decision' THEN kind ELSE 'named' END, name = $3
+     WHERE board_id = $1 AND id = $2 RETURNING ${SNAPSHOT_COLUMNS}`,
     [boardId, snapshotId, name],
   );
   return r ? toInfo(r) : null;
+}
+
+/** A decision's version once the decision is deleted: an ordinary named version (still never pruned). */
+export async function demoteDecisionSnapshot(boardId: string, snapshotId: number): Promise<void> {
+  await query(`UPDATE board_doc_snapshots SET kind = 'named' WHERE board_id = $1 AND id = $2 AND kind = 'decision'`, [boardId, snapshotId]);
+}
+
+/** One snapshot of the board with its state (null: not on this board). */
+export async function snapshotWithState(boardId: string, snapshotId: number): Promise<{ info: SnapshotInfo; state: Uint8Array } | null> {
+  const r = await one<SnapshotRow & { state: Uint8Array }>(
+    `SELECT ${SNAPSHOT_COLUMNS}, state FROM board_doc_snapshots WHERE board_id = $1 AND id = $2`,
+    [boardId, snapshotId],
+  );
+  return r ? { info: toInfo(r), state: toBytes(r.state) } : null;
 }
 
 /** Runs `fn` in one transaction (see platform/db.ts `tx`). */
@@ -343,7 +364,7 @@ export async function tryLockSnapshotPrune(): Promise<boolean> {
  */
 export async function boardsWithPrunableSnapshots(afterBoardId: string, limit: number, loneBefore: number | null = null): Promise<string[]> {
   const rows = await query<{ board_id: string }>(
-    `SELECT board_id FROM board_doc_snapshots WHERE kind <> 'named' AND board_id > $1
+    `SELECT board_id FROM board_doc_snapshots WHERE kind NOT IN ${KEPT_KINDS} AND board_id > $1
      GROUP BY board_id HAVING count(*) > 1 OR min(created_at) < $3 ORDER BY board_id LIMIT $2`,
     [afterBoardId, limit, loneBefore === null ? null : new Date(loneBefore)],
   );
@@ -359,11 +380,11 @@ export async function snapshotTimeline(boardId: string): Promise<Array<{ id: num
   return rows.map((r) => ({ id: Number(r.id), kind: r.kind, createdAt: new Date(r.created_at).getTime() }));
 }
 
-/** Deletes these snapshots of the board, never a named one (named meanwhile); returns how many. */
+/** Deletes these snapshots of the board, never a named one or a decision (named meanwhile); returns how many. */
 export async function deleteSnapshots(boardId: string, ids: number[]): Promise<number> {
   if (!ids.length) return 0;
   const rows = await query<{ id: number }>(
-    `DELETE FROM board_doc_snapshots WHERE board_id = $1 AND id = ANY($2::bigint[]) AND kind <> 'named' RETURNING id`,
+    `DELETE FROM board_doc_snapshots WHERE board_id = $1 AND id = ANY($2::bigint[]) AND kind NOT IN ${KEPT_KINDS} RETURNING id`,
     [boardId, ids],
   );
   return rows.length;
