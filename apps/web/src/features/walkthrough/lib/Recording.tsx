@@ -84,11 +84,11 @@ export function RecordingOverlay(_: PanelProps) {
   return (
     <>
       {recording && rec.camera && rec.stream && (
-        <div className="fr-walkthrough-bubble is-recording" data-fr-occludes="">
+        <div className="fr-walkthrough-bubble is-recording" data-fr-occludes="" data-fr-interactive="">
           <LiveBubble stream={rec.stream} />
         </div>
       )}
-      <div className="fr-walkthrough-bar is-recording" role="region" aria-label="Recording a walkthrough" data-fr-occludes="">
+      <div className="fr-walkthrough-bar is-recording" role="region" aria-label="Recording a walkthrough" data-fr-occludes="" data-fr-interactive="">
         {recording ? (
           <>
             <span className="fr-walkthrough-bar__rec" aria-hidden />

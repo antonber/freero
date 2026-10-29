@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AtSign, Send, Trash2, X } from 'lucide-react';
 import { formatWalkthroughTime, MAX_WALKTHROUGH_COMMENT, mentionedUserIds, mentionsAsNames, mentionToken, type Walkthrough, type WalkthroughComment } from '@freero/shared';
-import { usePeople, useRole, type Editor, type HostUser } from '@engine';
+import { useDock, usePeople, useRole, type Editor, type HostUser } from '@engine';
 import { Avatar, Button, IconButton, Popover, TextArea } from '@ui';
 
 export interface CommentsState {
@@ -57,6 +57,10 @@ export function Comments({
   onClose(): void;
 }) {
   const role = useRole();
+  // Beside the open dock, never under it.
+  useDock();
+  const safe = editor.getSafeArea();
+  const right = Math.max(16, editor.getViewportSize().width - (safe.x + safe.w) + 12);
   const mayComment = role !== 'viewer' && editor.host.board.signedIn !== false;
   const [text, setText] = useState('');
   const [picked, setPicked] = useState<HostUser[]>([]);
@@ -106,12 +110,12 @@ export function Comments({
   };
 
   return (
-    <section className="fr-walkthrough-comments" aria-label="Comments on this walkthrough" data-fr-occludes="">
+    <section className="fr-walkthrough-comments" style={{ right }} aria-label="Comments on this walkthrough" data-fr-interactive="">
       <header className="fr-walkthrough-comments__head">
         <h2>Comments</h2>
         <IconButton icon={X} label="Close comments" onClick={onClose} />
       </header>
-      <ol className="fr-walkthrough-comments__list">
+      <ol className="fr-walkthrough-comments__list" data-fr-scrollable="">
         {state.error && <li className="fr-walkthrough-comments__empty" role="alert">{state.error}</li>}
         {state.list && !state.list.length && <li className="fr-walkthrough-comments__empty">No comments yet. Pause where something needs a word and write it here.</li>}
         {state.list?.map((c) => {

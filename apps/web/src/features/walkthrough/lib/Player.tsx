@@ -3,7 +3,7 @@
 // the voice. The viewer's own pan or zoom takes the camera back (the bar offers "Back to their
 // view"); pausing leaves the camera alone; playing again returns to the recorded path.
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { Captions, CaptionsOff, Download, Flag, LocateFixed, MessageSquareText, Pause, Play, Subtitles, X } from 'lucide-react';
+import { Captions, CaptionsOff, Download, Flag, LocateFixed, MessageSquareText, Pause, PenLine, Play, X } from 'lucide-react';
 import { formatWalkthroughTime, WALKTHROUGHS_COLLECTION, type Walkthrough, type WalkthroughSummary } from '@freero/shared';
 import { useCamera, useCollection, usePeople, type Editor, type PanelProps } from '@engine';
 import { Avatar, IconButton, Spinner } from '@ui';
@@ -19,7 +19,7 @@ export function PlayerOverlay({ editor }: PanelProps) {
   if (p.walkthrough) return <Player key={`${p.walkthrough.id}:${p.session}`} editor={editor} w={p.walkthrough} startAt={p.startAt} />;
   if (!p.loading) return null;
   return (
-    <div className="fr-walkthrough-bar" role="status" data-fr-occludes="">
+    <div className="fr-walkthrough-bar" role="status" data-fr-occludes="" data-fr-interactive="">
       <Spinner size={16} />
       <span className="fr-walkthrough-bar__hint">Opening the walkthrough…</span>
     </div>
@@ -177,7 +177,7 @@ function Player({ editor, w, startAt }: { editor: Editor; w: Walkthrough; startA
         </div>
       )}
 
-      <div className={`fr-walkthrough-bubble${playing ? ' is-speaking' : ''}`} style={{ ['--fr-walkthrough-color' as string]: color }} data-fr-occludes="">
+      <div className={`fr-walkthrough-bubble${playing ? ' is-speaking' : ''}`} style={{ ['--fr-walkthrough-color' as string]: color }} data-fr-occludes="" data-fr-interactive="">
         {w.media === 'video' ? (
           <video
             ref={(el) => void (media.current = el)}
@@ -223,7 +223,7 @@ function Player({ editor, w, startAt }: { editor: Editor; w: Walkthrough; startA
 
       {showComments && <Comments editor={editor} w={w} t={t} state={comments} onSeek={seek} onClose={() => setShowComments(false)} />}
 
-      <div className="fr-walkthrough-bar is-playing" role="region" aria-label={`Walkthrough: ${w.title}`} onKeyDown={onKeyDown} data-fr-occludes="">
+      <div className="fr-walkthrough-bar is-playing" role="region" aria-label={`Walkthrough: ${w.title}`} onKeyDown={onKeyDown} data-fr-occludes="" data-fr-interactive="">
         <IconButton ref={playButton} icon={playing ? Pause : Play} label={playing ? 'Pause (Space)' : 'Play (Space)'} onClick={toggle} disabled={!!problem} />
         <span className="fr-walkthrough-bar__time">{formatWalkthroughTime(t)}</span>
         <div className="fr-walkthrough-bar__track">
@@ -264,8 +264,8 @@ function Player({ editor, w, startAt }: { editor: Editor; w: Walkthrough; startA
         {hasCaptions && (
           <IconButton icon={captionsOn ? Captions : CaptionsOff} label={captionsOn ? 'Hide captions (C)' : 'Show captions (C)'} active={captionsOn} onClick={() => setCaptionsOn((on) => !on)} />
         )}
-        {canManage(editor, w) && <IconButton icon={Subtitles} label={hasCaptions ? 'Edit captions' : 'Add captions'} onClick={() => editor.openPanel(CAPTIONS_ID, { id: w.id })} />}
-        <IconButton icon={MessageSquareText} label={`Comments (${markers.length})`} active={showComments} onClick={() => setShowComments((on) => !on)}>
+        {canManage(editor, w) && <IconButton icon={PenLine} label={hasCaptions ? 'Edit captions' : 'Add captions'} onClick={() => editor.openPanel(CAPTIONS_ID, { id: w.id })} />}
+        <IconButton icon={MessageSquareText} label={`Walkthrough comments (${markers.length})`} active={showComments} onClick={() => setShowComments((on) => !on)}>
           {markers.length > 0 && <span className="fr-walkthrough-bar__count">{markers.length}</span>}
         </IconButton>
         {editor.host.walkthroughs?.download && editor.host.board.canExport !== false && (

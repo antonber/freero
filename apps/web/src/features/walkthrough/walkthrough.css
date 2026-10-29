@@ -24,7 +24,8 @@
 }
 
 .fr-walkthrough-bar.is-playing {
-  width: min(760px, calc(100% - 32px));
+  /* Between the narrator bubble and the zoom controls. */
+  width: min(720px, max(420px, calc(100% - 600px)));
 }
 
 .fr-walkthrough-bar.is-recording {
@@ -180,8 +181,9 @@
 /* ---- the narrator's bubble ---- */
 .fr-walkthrough-bubble {
   position: absolute;
-  left: 16px;
-  bottom: 76px;
+  /* Clear of the left toolbar. */
+  left: 76px;
+  bottom: 16px;
   display: grid;
   place-items: center;
   width: 132px;
