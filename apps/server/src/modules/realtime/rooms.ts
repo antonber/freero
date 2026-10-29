@@ -198,6 +198,16 @@ interface Conn {
   access: Role;
   /** See Admission.maxRole. */
   maxRole?: Role;
+  /** The role the socket's user has on the board, NOT capped by `maxRole`. */
+  ownAccess: Role;
+  /**
+   * The role the socket READS the board's layers with: `ownAccess` as limited by the facilitation
+   * session. Equal to `role` except on a capped socket (#89): a live view in an AI assistant shows
+   * the person what they themselves may read (pending suggestions for an owner / editor — what the
+   * connection's boards:read already returns over the API), while everything it WRITES stays
+   * capped: deciding a suggestion is a write, and needs a connection that may change boards.
+   */
+  readRole: Role;
   /** What the facilitation session limits for this socket (null: nothing). */
   limits: SessionLimits | null;
   /** Guests: the author name their comments must carry (commentRules.ts). */
@@ -235,10 +245,13 @@ function layerMessage(wire: string, write: (e: encoding.Encoder) => void): Uint8
 
 const canEdit = (role: Role | null) => role === 'owner' || role === 'editor';
 
-export function encodeRoleMessage(role: Role, limits?: SessionLimits | null): Uint8Array {
+/** Who reads the board's layers over this socket (see Conn.readRole). */
+const layerReader = (c: Conn) => ({ userId: c.userId, role: c.readRole });
+
+export function encodeRoleMessage(role: Role, limits?: SessionLimits | null, readRole?: Role): Uint8Array {
   const e = encoding.createEncoder();
   encoding.writeVarUint(e, WS_MESSAGE_ROLE);
-  const msg: RoleMessage = limits ? { type: 'role', role, limits } : { type: 'role', role };
+  const msg: RoleMessage = { type: 'role', role, ...(limits ? { limits } : {}), ...(readRole && readRole !== role ? { readRole } : {}) };
   encoding.writeVarString(e, JSON.stringify(msg));
   return encoding.toUint8Array(e);
 }
@@ -495,7 +508,7 @@ class Room {
       if (origin === LOAD_ORIGIN) return;
       // Re-checked per socket at send time: roles change (refreshAccess) while the layer lives.
       for (const c of this.conns.values()) {
-        const wire = c.ws !== origin ? wireNameFor(name, c) : null;
+        const wire = c.ws !== origin ? wireNameFor(name, layerReader(c)) : null;
         if (wire) send(c.ws, layerMessage(wire, (e) => syncProtocol.writeUpdate(e, update)));
       }
       if (origin === REMOTE_ORIGIN) {
@@ -592,7 +605,7 @@ class Room {
   private onLayerMessage(conn: Conn, decoder: decoding.Decoder): void {
     if (conn.kind !== 'board') return;
     const wire = decoding.readVarString(decoder);
-    const name = readableLayer(wire, conn);
+    const name = readableLayer(wire, layerReader(conn));
     if (!name) return;
     const { doc } = this.layer(name);
     const syncType = decoding.readVarUint(decoder);
@@ -682,18 +695,21 @@ class Room {
   /** Recomputes a socket's effective role and limits; tells the client when they changed. */
   private setEffective(conn: Conn, session = readFacilitation(this.doc)): void {
     const next = effectiveAccess(conn.access, conn.userId, session);
-    if (sameEffective(next, { role: conn.role, limits: conn.limits })) return;
+    const nextRead = conn.ownAccess === conn.access ? next.role : effectiveAccess(conn.ownAccess, conn.userId, session).role;
+    if (sameEffective(next, { role: conn.role, limits: conn.limits }) && nextRead === conn.readRole) return;
     const couldWrite = conn.role !== 'viewer';
     const couldEdit = canEdit(conn.role);
+    const couldRead = canEdit(conn.readRole);
     conn.role = next.role;
     conn.limits = next.limits;
-    send(conn.ws, encodeRoleMessage(next.role, next.limits));
+    conn.readRole = nextRead;
+    send(conn.ws, encodeRoleMessage(next.role, next.limits, nextRead));
     // Newly writable: ask the client for anything it has that we do not (writes dropped while the
     // board was locked included: they land now instead of leaving its doc diverged for good).
     if ((!couldWrite && next.role !== 'viewer') || (!couldEdit && canEdit(next.role))) this.sendSyncStep1(conn);
-    if (!couldEdit && canEdit(next.role))
+    if ((!couldEdit && canEdit(next.role)) || (!couldRead && canEdit(nextRead)))
       for (const [name, l] of this.layers) {
-        const wire = wireNameFor(name, conn);
+        const wire = wireNameFor(name, layerReader(conn));
         if (wire) send(conn.ws, layerMessage(wire, (e) => syncProtocol.writeSyncStep1(e, l.doc)));
       }
   }
@@ -901,7 +917,8 @@ class Room {
     if (this.unloadTimer) clearTimeout(this.unloadTimer);
     this.unloadTimer = null;
     const access = capRole(a.role, a.maxRole);
-    const eff = effectiveAccess(access, a.userId, readFacilitation(this.doc));
+    const session = readFacilitation(this.doc);
+    const eff = effectiveAccess(access, a.userId, session);
     const conn: Conn = {
       ws,
       kind: a.kind ?? 'board',
@@ -910,6 +927,8 @@ class Room {
       role: eff.role,
       access,
       maxRole: a.maxRole,
+      ownAccess: a.role,
+      readRole: access === a.role ? eff.role : effectiveAccess(a.role, a.userId, session).role,
       limits: eff.limits,
       authorName: a.authorName,
       authorNames: new Set(a.authorName !== undefined ? [a.authorName] : [a.identity.name, ...(a.authorNames ?? [])]),
@@ -924,7 +943,7 @@ class Room {
     ws.on('close', () => this.leave(conn));
 
     // 1) effective role, 2) sync step 1, 3) current awareness states, then what the client said.
-    send(ws, encodeRoleMessage(conn.role, conn.limits));
+    send(ws, encodeRoleMessage(conn.role, conn.limits, conn.readRole));
     this.sendSyncStep1(conn);
     const states = this.awareness.getStates();
     if (states.size > 0) {
@@ -1124,12 +1143,14 @@ class Room {
     const roles = await Promise.all(conns.map(async (c) => (await getBoardAccess(this.id, c.userId)).role));
     conns.forEach((conn, i) => {
       if (!this.conns.has(conn.ws)) return; // left meanwhile
-      const role = roles[i] && capRole(roles[i], conn.maxRole);
-      if (!role) {
+      const own = roles[i];
+      const role = own && capRole(own, conn.maxRole);
+      if (!own || !role) {
         conn.ws.close(4403, 'Access revoked');
         this.leave(conn);
-      } else if (role !== conn.access) {
+      } else if (role !== conn.access || own !== conn.ownAccess) {
         conn.access = role;
+        conn.ownAccess = own;
         this.setEffective(conn);
       }
     });

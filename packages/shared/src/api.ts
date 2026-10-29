@@ -1129,6 +1129,12 @@ export interface RoleMessage {
   type: 'role';
   role: Role;
   limits?: SessionLimits;
+  /**
+   * [additive, #89] Present when this connection READS the board's layers with another role than it
+   * writes with: a live view in an AI assistant writes at most what its connection may (`role`)
+   * but reads as the person — an owner / editor gets the editors layer (pending suggestions).
+   */
+  readRole?: Role;
 }
 /** What a facilitator limits for this connection (enforced by the server, mirrored by the client). */
 export interface SessionLimits {
