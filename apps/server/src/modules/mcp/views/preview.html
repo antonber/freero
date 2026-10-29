@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Freero board preview</title>
+<style>
+  :root {
+    --ink: #17162b; --ink-2: #4b4a63; --ink-3: #686783; --line: #e4e3ee; --line-strong: #cfcde0;
+    --surface: #ffffff; --surface-2: #f7f6fb; --canvas: #f3f2f8; --dot: #cdcbdc;
+    --primary: #5b3ff0; --primary-ink: #ffffff; --primary-soft: #eeeaff; --accent: #2ee6b8;
+    --edge: #8a88a6; --frame: #ffffff; --shadow: 0 1px 2px rgba(23, 22, 43, 0.12);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme='light']) { --ink: #ecebf5; --ink-2: #c3c1d6; --ink-3: #a3a1bb; --line: #33324a; --line-strong: #46445f; --surface: #1d1c2e; --surface-2: #242338; --canvas: #16152a; --dot: #2e2d45; --primary: #8f7bff; --primary-ink: #111022; --primary-soft: #2b2650; --edge: #7a789a; --frame: #1f1e33; --shadow: 0 1px 2px rgba(0, 0, 0, 0.5); color-scheme: dark; } }
+  :root[data-theme='dark'] { --ink: #ecebf5; --ink-2: #c3c1d6; --ink-3: #a3a1bb; --line: #33324a; --line-strong: #46445f; --surface: #1d1c2e; --surface-2: #242338; --canvas: #16152a; --dot: #2e2d45; --primary: #8f7bff; --primary-ink: #111022; --primary-soft: #2b2650; --edge: #7a789a; --frame: #1f1e33; --shadow: 0 1px 2px rgba(0, 0, 0, 0.5); color-scheme: dark; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; background: var(--surface); color: var(--ink); font: 13px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+  header { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  header svg { flex: none; }
+  .title { flex: 1; min-width: 0; }
+  .title strong { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .title span { color: var(--ink-3); font-size: 12px; }
+  button { font: inherit; cursor: pointer; border-radius: 8px; padding: 6px 12px; border: 1px solid var(--primary); background: var(--primary); color: var(--primary-ink); font-weight: 600; white-space: nowrap; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .board { position: relative; padding: 16px; background-color: var(--canvas); background-image: radial-gradient(var(--dot) 1px, transparent 1px); background-size: 16px 16px; min-height: 160px; max-height: 640px; overflow: auto; }
+  .row { position: relative; display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; }
+  svg.edges { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
+  svg.edges path { fill: none; stroke: var(--edge); stroke-width: 1.5; }
+  svg.edges text { fill: var(--ink-2); font-size: 11px; paint-order: stroke; stroke: var(--canvas); stroke-width: 4px; }
+  .frame { background: var(--frame); border: 1px solid var(--line-strong); border-radius: 10px; padding: 0 10px 10px; min-width: 160px; max-width: 100%; box-shadow: var(--shadow); }
+  .frame > .label { font-weight: 600; padding: 8px 0; color: var(--ink); }
+  .frame.withheld { color: var(--ink-3); font-style: italic; padding: 10px; }
+  .group { border: 1.5px dashed var(--line-strong); border-radius: 10px; padding: 8px; }
+  .group > .label { font-weight: 600; color: var(--ink-2); margin: 0 0 6px; font-size: 12px; }
+  .column { background: var(--surface-2); border-radius: 8px; padding: 8px; min-width: 150px; }
+  .column > .row, .group > .row, .frame > .row { gap: 10px; }
+  .column > .row { flex-direction: column; flex-wrap: nowrap; }
+  .group > .row:has(> .shape), .frame > .row:has(> .shape) { gap: 40px 48px; padding: 6px 4px; }
+  .sticky { width: 120px; min-height: 96px; padding: 10px; border-radius: 3px; color: #17162b; box-shadow: 0 2px 4px rgba(23, 22, 43, 0.18); white-space: pre-wrap; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 7; -webkit-box-orient: vertical; word-break: break-word; }
+  .shape { min-width: 110px; max-width: 220px; min-height: 56px; padding: 10px 12px; border: 2px solid var(--ink-2); border-radius: 8px; background: var(--surface); display: flex; align-items: center; justify-content: center; text-align: center; white-space: pre-wrap; word-break: break-word; }
+  .shape.ellipse, .shape.circle { border-radius: 999px; }
+  .shape.diamond { border-radius: 4px; border-style: double; border-width: 4px; }
+  .card { width: 190px; padding: 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--primary); box-shadow: var(--shadow); }
+  .card .t { font-weight: 600; word-break: break-word; }
+  .card .d { color: var(--ink-2); margin-top: 4px; white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .pill { display: inline-block; margin-top: 6px; padding: 1px 8px; border-radius: 999px; background: var(--primary-soft); color: var(--primary); font-size: 11px; font-weight: 600; }
+  .text { max-width: 320px; white-space: pre-wrap; word-break: break-word; color: var(--ink); }
+  .tree { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
+  .tree ul { margin: 2px 0 2px 6px; padding-left: 14px; border-left: 1.5px solid var(--line-strong); list-style: none; }
+  .tree > ul { border: 0; margin: 0; padding: 0; }
+  .tree li { padding: 2px 0; }
+  .tree li > span { display: inline-block; padding: 1px 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); }
+  table { border-collapse: collapse; background: var(--surface); font-size: 12px; }
+  td, th { border: 1px solid var(--line-strong); padding: 4px 8px; text-align: left; max-width: 180px; word-break: break-word; }
+  th { background: var(--surface-2); }
+  .chip { padding: 6px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); color: var(--ink-2); max-width: 240px; word-break: break-word; }
+  .badges { margin-top: 6px; display: flex; gap: 4px; flex-wrap: wrap; }
+  .badge { font-size: 10px; padding: 0 6px; border-radius: 999px; background: rgba(23, 22, 43, 0.08); color: inherit; }
+  .private { outline: 2px dashed var(--primary); outline-offset: 2px; }
+  footer { padding: 8px 12px; color: var(--ink-3); font-size: 12px; border-top: 1px solid var(--line); }
+  .empty { color: var(--ink-3); padding: 24px; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <svg width="26" height="26" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#5B3FF0"/><path d="M21 46V18h22v6H28v6h12v6H28v10z" fill="#fff"/><circle cx="45" cy="43" r="4" fill="#2EE6B8"/></svg>
+  <div class="title"><strong id="title">Freero board</strong><span id="summary">Waiting for the board…</span></div>
+  <button id="open" type="button" hidden>Open in Freero</button>
+</header>
+<div class="board" id="board"><div class="empty">The board appears here once Freero has read it.</div></div>
+<footer id="foot" hidden></footer>
+<script>
+/*FREERO_BRIDGE*/
+// The read-only board preview (KAI-171): draws the outline the tool result already carries —
+// frames, clusters, notes, shapes, cards, mind maps, tables and connectors. No network at all (the
+// resource declares no domains), and board text only ever goes into the page as textContent.
+var PALETTE = /*FREERO_PALETTE*/ {};
+var STATUS = { todo: 'To do', doing: 'Doing', done: 'Done' };
+
+function el(tag, cls, text) {
+  var n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined && text !== null) n.textContent = String(text);
+  return n;
+}
+
+function badges(item) {
+  var b = el('div', 'badges');
+  if (item.votes) b.appendChild(el('span', 'badge', item.votes + (item.votes === 1 ? ' vote' : ' votes')));
+  if (item.comments && item.comments.length) b.appendChild(el('span', 'badge', item.comments.length + (item.comments.length === 1 ? ' comment' : ' comments')));
+  (item.tags || []).slice(0, 4).forEach(function (t) { b.appendChild(el('span', 'badge', '#' + t)); });
+  return b.childNodes.length ? b : null;
+}
+
+function treeList(items) {
+  var ul = el('ul');
+  items.forEach(function (c) {
+    var li = el('li');
+    li.appendChild(el('span', '', c.text || c.title || ''));
+    if (c.children && c.children.length) li.appendChild(treeList(c.children));
+    ul.appendChild(li);
+  });
+  return ul;
+}
+
+function render(item) {
+  var n;
+  var kids = item.children || [];
+  switch (item.kind) {
+    case 'frame':
+      n = el('div', 'frame' + (item.withheld ? ' withheld' : ''));
+      if (item.withheld) { n.textContent = (item.title ? item.title + ' · ' : '') + 'hidden frame'; break; }
+      n.appendChild(el('div', 'label', item.title || 'Frame'));
+      n.appendChild(rowOf(kids));
+      break;
+    case 'cluster':
+    case 'group':
+      n = el('div', 'group');
+      if (item.title) n.appendChild(el('div', 'label', item.title));
+      n.appendChild(rowOf(kids));
+      break;
+    case 'column':
+      n = el('div', 'column');
+      n.appendChild(el('div', 'label', item.title || ''));
+      n.appendChild(rowOf(kids));
+      break;
+    case 'kanban':
+      n = el('div', 'group');
+      n.appendChild(el('div', 'label', item.title || item.text || 'Board'));
+      n.appendChild(rowOf(kids));
+      break;
+    case 'sticky':
+      n = el('div', 'sticky', item.text || '');
+      n.style.background = PALETTE[item.variant] || PALETTE.yellow || '#FFF3A3';
+      break;
+    case 'shape':
+      n = el('div', 'shape ' + (item.variant || ''), item.text || '');
+      break;
+    case 'card':
+      n = el('div', 'card');
+      n.appendChild(el('div', 't', item.title || item.text || 'Card'));
+      if (item.title && item.text) n.appendChild(el('div', 'd', item.text));
+      var f = item.fields || {};
+      if (f.status) n.appendChild(el('span', 'pill', STATUS[f.status] || f.status));
+      break;
+    case 'text':
+      n = el('div', 'text', item.text || '');
+      break;
+    case 'mindmap':
+      n = el('div', 'tree');
+      n.appendChild(treeList([item]));
+      kids = [];
+      break;
+    case 'table':
+      n = el('table');
+      (item.rows || []).slice(0, 12).forEach(function (r, i) {
+        var tr = el('tr');
+        r.slice(0, 6).forEach(function (c) { tr.appendChild(el(i === 0 && item.fields && item.fields.header ? 'th' : 'td', '', c)); });
+        n.appendChild(tr);
+      });
+      break;
+    default:
+      n = el('div', 'chip', item.text || item.title || item.kind);
+  }
+  n.setAttribute('data-id', item.id);
+  if (item.private) n.classList.add('private');
+  var b = badges(item);
+  if (b && n.tagName !== 'TABLE') n.appendChild(b);
+  return n;
+}
+
+function rowOf(items) {
+  var row = el('div', 'row');
+  items.forEach(function (i) { row.appendChild(render(i)); });
+  return row;
+}
+
+var SVGNS = 'http://www.w3.org/2000/svg';
+function drawEdges(board, edges) {
+  var old = board.querySelector('svg.edges');
+  if (old) old.remove();
+  if (!edges || !edges.length) return;
+  var svg = document.createElementNS(SVGNS, 'svg');
+  svg.setAttribute('class', 'edges');
+  svg.setAttribute('width', board.scrollWidth);
+  svg.setAttribute('height', board.scrollHeight);
+  var defs = document.createElementNS(SVGNS, 'defs');
+  var marker = document.createElementNS(SVGNS, 'marker');
+  marker.setAttribute('id', 'arrow'); marker.setAttribute('viewBox', '0 0 10 10'); marker.setAttribute('refX', '9'); marker.setAttribute('refY', '5');
+  marker.setAttribute('markerWidth', '7'); marker.setAttribute('markerHeight', '7'); marker.setAttribute('orient', 'auto-start-reverse');
+  var tip = document.createElementNS(SVGNS, 'path'); tip.setAttribute('d', 'M0,0 L10,5 L0,10 z'); tip.setAttribute('style', 'fill: var(--edge); stroke: none');
+  marker.appendChild(tip); defs.appendChild(marker); svg.appendChild(defs);
+  var origin = board.getBoundingClientRect();
+  function box(id) {
+    var n = board.querySelector('[data-id="' + CSS.escape(id) + '"]');
+    if (!n) return null;
+    var r = n.getBoundingClientRect();
+    return { x: r.left - origin.left + board.scrollLeft, y: r.top - origin.top + board.scrollTop, w: r.width, h: r.height };
+  }
+  function towards(a, b) {
+    // The point where a line from a's center toward b's center leaves a's box.
+    var cx = a.x + a.w / 2, cy = a.y + a.h / 2, dx = b.x + b.w / 2 - cx, dy = b.y + b.h / 2 - cy;
+    if (!dx && !dy) return { x: cx, y: cy };
+    var s = Math.min(dx ? a.w / 2 / Math.abs(dx) : Infinity, dy ? a.h / 2 / Math.abs(dy) : Infinity);
+    return { x: cx + dx * s, y: cy + dy * s };
+  }
+  edges.forEach(function (e) {
+    if (!e.from || !e.to) return;
+    var a = box(e.from), b = box(e.to);
+    if (!a || !b) return;
+    var p = towards(a, b), q = towards(b, a);
+    // A gentle curve: an edge and its way back (B -> A) bend to opposite sides, so both show.
+    var mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2, len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+    var k = Math.min(28, 10 + len * 0.12);
+    var cx = mx + ((q.y - p.y) / len) * k, cy = my - ((q.x - p.x) / len) * k;
+    var path = document.createElementNS(SVGNS, 'path');
+    path.setAttribute('d', 'M' + p.x + ',' + p.y + ' Q' + cx + ',' + cy + ' ' + q.x + ',' + q.y);
+    if (e.arrow !== 'none' && e.arrow !== 'backward') path.setAttribute('marker-end', 'url(#arrow)');
+    if (e.arrow === 'backward' || e.arrow === 'both') path.setAttribute('marker-start', 'url(#arrow)');
+    svg.appendChild(path);
+    if (e.label) {
+      var t = document.createElementNS(SVGNS, 'text');
+      t.setAttribute('x', (mx + cx) / 2); t.setAttribute('y', (my + cy) / 2 + 4); t.setAttribute('text-anchor', 'middle');
+      t.textContent = e.label;
+      svg.appendChild(t);
+    }
+  });
+  board.appendChild(svg);
+}
+
+var current = null;
+function show(outline) {
+  current = outline;
+  var board = document.getElementById('board');
+  board.textContent = '';
+  document.getElementById('title').textContent = (outline.board && outline.board.title) || 'Freero board';
+  var m = outline.meta || {};
+  document.getElementById('summary').textContent = (m.itemCount || 0) + ' items · ' + (m.edgeCount || 0) + ' connections';
+  var open = document.getElementById('open');
+  if (outline.board && outline.board.url) {
+    open.hidden = false;
+    open.onclick = function () { FreeroBridge.openLink(outline.board.url).catch(function () { window.open(outline.board.url, '_blank', 'noopener'); }); };
+  }
+  if (!outline.items || !outline.items.length) board.appendChild(el('div', 'empty', 'This board is empty.'));
+  else board.appendChild(rowOf(outline.items));
+  var foot = document.getElementById('foot');
+  foot.hidden = !m.truncated;
+  foot.textContent = m.truncated ? 'Showing part of the board (' + (m.omitted || 0) + ' left out). Open it in Freero to see everything.' : '';
+  requestAnimationFrame(function () { drawEdges(board, outline.edges); });
+}
+
+/** The outline in a get_board_outline result: its JSON body, or the copy Freero adds for this view. */
+function outlineOf(result) {
+  if (!result) return null;
+  var meta = result._meta && result._meta['freero/outline'];
+  var data = (meta && meta.untrusted_board_content) || (result.structuredContent && result.structuredContent.untrusted_board_content);
+  return data && Array.isArray(data.items) ? data : null;
+}
+
+FreeroBridge.on('ui/notifications/tool-result', function (result) {
+  var outline = outlineOf(result);
+  if (outline) show(outline);
+  else {
+    var board = document.getElementById('board');
+    board.textContent = '';
+    board.appendChild(el('div', 'empty', result && result.isError ? 'Freero couldn’t read this board.' : 'Nothing to show.'));
+    document.getElementById('summary').textContent = '';
+  }
+});
+window.addEventListener('resize', function () { if (current) drawEdges(document.getElementById('board'), current.edges); });
+FreeroBridge.start('Freero board preview', freeroApplyTheme).catch(function () { /* not in a host: stays empty */ });
+</script>
+</body>
+</html>

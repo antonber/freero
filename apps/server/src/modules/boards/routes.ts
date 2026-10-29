@@ -5,9 +5,7 @@ import { badRequest, forbidden, handle, HttpError, notFound, unauthorized } from
 import { rateLimit } from '../../platform/rateLimit';
 import { recordAuditQuietly } from '../audit/index';
 import { actorId, currentActor, currentUser, endGuestSession, guestFromCookieHeader, requireUser, requireUserOrGuest, startGuestSession } from '../auth/index';
-import { isLinkAccess, ROLE_RANK } from '../members/index';
-import { mayShareExternally } from '../workspaces/index';
-import { refreshBoardAccess } from '../realtime/index';
+import { isLinkAccess } from '../members/index';
 import { deleteUpload, saveUpload } from '../uploads/index';
 import { callOf, cleanCallUrl, jitsiAvailable } from './call';
 import { boardLifecycle } from './events';
@@ -19,11 +17,13 @@ import {
   recordExport,
   type BoardFilter,
   cleanDescription,
+  checkLinkAccessChange,
   cleanTitle,
   createBoard,
   deleteForever,
   duplicateBoard,
   guestRoleFor,
+  linkAccessChanged,
   listBoards,
   moveToProject,
   moveToTrash,
@@ -97,17 +97,8 @@ export default function boardRoutes(_ctx: ServerContext): Router {
       if (body.title !== undefined) patch.title = cleanTitle(body.title);
       if (body.description !== undefined) patch.description = cleanDescription(body.description);
       if (body.linkAccess !== undefined) {
-        if (role !== 'owner') throw forbidden('Only the board owner can change link sharing');
         if (!isLinkAccess(body.linkAccess)) throw badRequest('linkAccess must be none, viewer, commenter or editor');
-        if (board.linkBlocked) throw new HttpError(403, 'Freero’s moderators turned link sharing off for this board. Use the appeal link in the email we sent you.', 'link_blocked');
-        if (body.linkAccess !== 'none' && !user.emailVerified) throw forbidden('Verify your email address before sharing by link');
-        if (body.linkAccess !== 'none' && body.linkAccess !== board.linkAccess) {
-          // Workspace policies: links reach people outside the workspace, and only up to a maximum role.
-          if (access.maxLink === 'none') throw forbidden('This workspace doesn’t allow sharing boards by link');
-          if (ROLE_RANK[body.linkAccess] > ROLE_RANK[access.maxLink as Exclude<LinkAccess, 'none'>])
-            throw forbidden(`This workspace allows links up to “can ${access.maxLink === 'viewer' ? 'view' : 'comment'}”`);
-          if (!mayShareExternally(access.workspaceRole, access.policies)) throw forbidden('This workspace doesn’t let you share its boards outside it');
-        }
+        checkLinkAccessChange(board, role, access, user, body.linkAccess);
         patch.linkAccess = body.linkAccess;
       }
       if (hasLinkProtectionPatch(body) && role !== 'owner') throw forbidden('Only the board owner can protect its link');
@@ -126,16 +117,7 @@ export default function boardRoutes(_ctx: ServerContext): Router {
       if (hasLinkProtectionPatch(body)) await changeLinkProtection(board, user.id, body);
       if (patch.title !== undefined && patch.title !== board.title)
         await boardLifecycle({ boardId: board.id, actorId: user.id, action: 'renamed', from: board.title, to: patch.title });
-      if (patch.linkAccess !== undefined && patch.linkAccess !== board.linkAccess) {
-        await recordAuditQuietly({
-          action: 'board.link_sharing_changed',
-          workspaceId: board.workspaceId,
-          actorId: user.id,
-          target: boardTarget(board),
-          metadata: { from: board.linkAccess, to: patch.linkAccess },
-        });
-        await refreshBoardAccess(board.id);
-      }
+      if (patch.linkAccess !== undefined && patch.linkAccess !== board.linkAccess) await linkAccessChanged(board, user.id, patch.linkAccess);
       const { board: updated, role: newRole, access: newAccess } = await requireAccess(board.id, user.id);
       res.json({ board: await toSummary(updated, user.id, newRole, newAccess) } satisfies Out);
     }),

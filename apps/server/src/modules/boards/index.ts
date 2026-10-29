@@ -32,6 +32,8 @@ export { authorizeFileDownload } from './service';
 // An export made outside the browser (the public API / MCP export_board): refused like one by the
 // downloads policy, recorded as board.exported.
 export { recordExport as recordBoardExport } from './service';
+// An app's "Share with team" (MCP Apps, KAI-171): the share dialog's link rules, same audit.
+export { shareByLink as shareBoardByLink } from './service';
 // Operators (modules/moderation): take down / restore, block / unblock the link, and who may report.
 export {
   boardForModeration,

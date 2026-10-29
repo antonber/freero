@@ -115,7 +115,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | `_outbox`, `_outbox_cursors` (platform tables) | `platform/outbox.ts` | `appendOutbox` in the change's transaction; consumers through `consumeOutbox` |
 | Derived indexes (`object_references`, `search_entries`) | their module's outbox consumer | never written directly: change the source; `references:rebuild` / `search:rebuild` repair |
 | The event stream (`events`) | `modules/events` (from outbox topics only) | append to the outbox in your change's transaction (`board.events`, `board.members`, `board.content`); consumers follow `event.recorded` |
-| API tokens, OAuth apps / consents, a team's API switch | server `modules/apiauth` | its index: `authenticate`, `requireScope`, `useInWorkspace` |
+| API tokens, OAuth apps / consents, a team's API switch, live-view tickets (`api_embed_tokens`) | server `modules/apiauth` | its index: `authenticate`, `requireScope`, `useInWorkspace`, `mintEmbedTicket` / `redeemEmbedTicket` |
 | Tracker connections, links to issues, what both sides last agreed on | server `modules/trackers` | its routes / index (`sendToTracker`, `importIssues`); syncs only through its outbox consumer |
 | `trackers` collection (issue badges) and items' `trackerLink` | server `modules/trackers` (through realtime's `changeBoard`) | — (the web feature only reads them) |
 
@@ -853,7 +853,7 @@ policies"), `activity` (board_activity: the activity feed; see "Activity" below)
 configures; see "AI" below), `apiauth` (api_tokens,
 oauth_clients, oauth_grants, oauth_codes, api_workspace_settings, api_workspace_credentials:
 credentials that act for a person without their session), `api` (no table: the public REST API
-`/api/v1`; see "Public API and OAuth" below), `mcp` (no table: the remote MCP server `/mcp`; see
+`/api/v1`; see "Public API and OAuth" below), `embed` (no table: live board views inside AI assistants, `/embed`, `/ws/embed`; see "The MCP server"), `mcp` (no table: the remote MCP server `/mcp`; see
 "The MCP server" below), `objects` (no table: the object registry and the one
 permission check, `POST /objects/resolve`), `references` (object_references, reference_sources: the
 references index derived through the outbox, `GET /objects/backlinks`; both in "Suite foundation"
@@ -1368,6 +1368,12 @@ audit and admin controls are the same code.
   `showAgentPresence` shows the app for a few seconds as a server-published presence (its own user
   id, cursor and selection on what it wrote; sockets can't publish `agent`). Each credential has its
   own write budget (`RATE_LIMIT_AGENT_WRITE`), apart from the person's editing.
+  Sockets can't claim attribution either (KAI-222, `realtime/attribution.ts`): inside the
+  transaction that applies a socket's update (shared doc and layers), an element it ADDS gets
+  `createdBy` = the socket's user and no `createdVia`, unless the room already knows the element
+  (in another of its docs — a move into a hidden frame or private mode — or removed within the last
+  hour — an undo), which keeps the attribution it had; an element it CHANGES keeps its `createdBy`,
+  `createdVia` and `createdAt`. The sender is sent the correction (like the facilitation guards).
 - **Reads follow the downloads policy (KAI-197).** The outline, items and comments are a
   machine-readable copy of the board, so boards' `requireDownload` (the one check exports,
   duplicates and templates use) refuses them with 403 `downloads_restricted` and records
@@ -1382,16 +1388,45 @@ audit and admin controls are the same code.
 
 ### The MCP server (`modules/mcp`, KAI-107; docs/mcp.md)
 
-- `POST /mcp`, Streamable HTTP with the official SDK (`@modelcontextprotocol/sdk`, pinned), **stateless**:
-  each request builds its own server for its credential (authenticated afresh, no cache) and answers
-  JSON — no session, no stream — so it runs behind round-robin balancing and a revoked token, app or
-  workspace switch refuses the very next request. `GET`/`DELETE` answer 405.
+- `POST /mcp`, Streamable HTTP with the official v2 SDK (`@modelcontextprotocol/server` +
+  `createMcpHandler`, pinned, zod 4 for its schemas), **stateless**: each request builds its own
+  server for its credential (authenticated afresh, no cache) and answers JSON — no session, no
+  stream — so it runs behind round-robin balancing and a revoked token, app or workspace switch
+  refuses the very next request. Both protocol eras are served per request: 2026-07-28 requests
+  carry their own envelope, 2025-era ones get a fresh stateless transport. `GET`/`DELETE` answer
+  405. `npm run verify` drives it with the v1 client SDK (`@modelcontextprotocol/sdk`, root
+  devDependency — what most deployed hosts still speak), the unit tests with the v2 client.
 - Tools (`tools.ts`) are outcome-shaped and call `modules/api`'s operations with the request's
   credential; each checks its scope first (refused as a tool error naming the permission) and is one
   `api.call` audit event (`MCP <tool>`). Board text only ever travels in the untrusted envelope
   (`content.ts`); names, descriptions, instructions, prompts and errors are Freero's own words.
   `propose_changes` is registered only when `structure.structureTargets()` has the suggestions sink
   (KAI-169).
+- **MCP Apps** (KAI-171, `mcp/apps.ts`, docs/mcp.md "Live boards in the conversation"): tools name a
+  `ui://` view in `_meta.ui` (`registerAppTool` / `registerAppResource` of ext-apps). The views are
+  static HTML in `mcp/views/` (no build, no third-party code; `bridge.js` is the view side of the
+  postMessage protocol). `get_board_outline` → the preview, which draws the outline its result
+  carries (`_meta["freero/outline"]`, enveloped) and declares no domains; `open_board` → the live
+  view, which frames Freero's `/embed/board/:id` (`frameDomains` = Freero's origin only) with a
+  single-use ticket in `_meta["freero/live"]` (not for the model). `share_board` is `visibility:
+  ["app"]`: the view's Share button.
+- **Control room** (KAI-172, `api/controlRoom.ts`, MCP `post_status` / `get_feedback`, prompt
+  `control_room`, template "Agent control room"): an agent's lane is plain board content found by
+  its titles (*Plan · A*, *Status · A*, the *Tasks · A* kanban with To do / Doing / Done / Blocked);
+  tasks match by title (idempotent), moves use the kanban's column geometry (`KANBAN_LAYOUT`) and
+  grow the kanban. Feedback is a diff against the opaque cursor the agent holds (card → column it
+  last saw, comment messages seen), so its own changes are never reported and nothing is stored.
+- **Live views (`modules/embed`, no table).** apiauth mints the ticket (`api_embed_tokens`:
+  per tool call, bound to one board and to the app's grant or the personal token — deleted with
+  them — and to `maxRole` from the connection's scopes); `POST /api/embed/redeem` turns it, once,
+  into a short-lived token; `ws.ts` (`/ws/embed/boards/:id`, token as a WebSocket subprotocol) admits
+  the socket through realtime's `admitSocket` with `Admission.maxRole` (applied on every access
+  refresh too) and the session key `embed:<sha256>`; `init.ts` re-checks those keys every
+  `SESSION_RECHECK_SECONDS` (credential, account, API switch / block) and ends the ones that may no
+  longer stay open. Realtime hands auth only the keys without a ':' (auth's own). The web side is
+  `app/embed/EmbedBoardPage` + `createEmbedHost` (`Host.syncProtocols`). Framing: platform
+  `allowFraming(path, reason)` gives `/embed/` the `frame-ancestors` of `MCP_APP_FRAME_ANCESTORS`;
+  every other page stays `'none'`.
 - Scopes: `MCP_SCOPES`; read + suggest by default — `registerProtectedResource(…, { optInScopes })`
   makes the consent screen offer `boards:write` / `comments:write` unticked (`OAuthConsentInfo.scopes[].optional`,
   the decision's `grant`). `/mcp` is the `root` resource: the bare `/.well-known/oauth-protected-resource`

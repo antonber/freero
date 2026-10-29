@@ -1,5 +1,5 @@
 // Builds the engine's Host — the one typed contract between the app shell and the engine.
-import type { BoardAiStatus, BoardSummary, BoardTrackersResponse, Role } from '@freero/shared';
+import { EMBED_WS_PROTOCOL, type BoardAiStatus, type BoardSummary, type BoardTrackersResponse, type EmbedRedeemResponse, type Role } from '@freero/shared';
 import { unavailableVersionHistory, type Host, type HostEngage, type HostUser } from '@engine';
 import type { ToastApi } from '@ui';
 import { api, wsBase } from '../api/client';
@@ -196,6 +196,54 @@ export function createGuestHost(
     // Guests answer live activities when the activity lets visitors in (the server checks).
     engage: engageOf(board.id),
     call: { get: () => api.boardCall(board.id), set: needsAccount('Setting the call link') },
+  };
+}
+
+/**
+ * A live board view inside an AI assistant (KAI-171, app/embed): the person, on this one board, in a
+ * third-party frame without their session cookie. The socket signs in with the view's short-lived
+ * token (a WebSocket subprotocol); everything else that needs the account (uploads, templates,
+ * history, sharing, exports) points to "Open in Freero", which the view's header offers.
+ */
+export function createEmbedHost(view: EmbedRedeemResponse, deps: { notify: Host['notify'] }): Host {
+  const board = view.board;
+  const inFreero = (what: string) => () => Promise.reject(new Error(`${what}: open the board in Freero.`));
+  const openInFreero = () => deps.notify('Use “Open in Freero” above for the full app.', 'info');
+  return {
+    user: view.user,
+    board: {
+      id: board.id,
+      title: board.title,
+      role: board.role,
+      canExport: false,
+      team: null,
+      call: board.call ?? null,
+      embeds: embedsOf(board.permissions),
+    },
+    syncUrl: `${wsBase()}/ws/embed/boards`,
+    syncProtocols: [EMBED_WS_PROTOCOL, view.token],
+    uploadImage: inFreero('Adding images'),
+    uploadFile: inFreero('Adding files'),
+    uploadAttachment: inFreero('Adding files'),
+    renameBoard: inFreero('Renaming the board'),
+    saveThumbnail: async () => undefined,
+    openShareDialog: () => deps.notify('Use “Share with team” above.', 'info'),
+    navigate: openInFreero,
+    notify: deps.notify,
+    serverNow: () => Date.now(),
+    listMembers: async () => [view.user],
+    lookupUsers: async (ids) => (ids.includes(view.user.id) ? [view.user] : []),
+    inviteMember: inFreero('Inviting people'),
+    unfurl: inFreero('Link previews'),
+    listTemplates: async () => [],
+    loadTemplate: inFreero('Saved templates'),
+    saveTemplate: inFreero('Saving templates'),
+    shareTemplate: inFreero('Sharing templates'),
+    deleteTemplate: inFreero('Saved templates'),
+    versions: unavailableVersionHistory('Version history is in Freero itself.'),
+    importImage: inFreero('Copying images'),
+    fetchImage: inFreero('Copying images'),
+    report: inFreero('Reporting'),
   };
 }
 

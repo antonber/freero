@@ -33,7 +33,7 @@ import { badRequest, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { appUrl } from '../../platform/mail';
 import { consumeRateLimit } from '../../platform/rateLimit';
-import { useInWorkspace, type ApiCredential } from '../apiauth/index';
+import { mintEmbedTicket, useInWorkspace, type ApiCredential } from '../apiauth/index';
 import { recordAuditQuietly } from '../audit/index';
 import {
   boardSummaryFor,
@@ -43,12 +43,14 @@ import {
   recordBoardExport,
   requireBoardAccess,
   requireBoardDownload,
+  shareBoardByLink,
   trashBoard,
 } from '../boards/index';
 import { inviteBoardMember, listBoardMembers, removeBoardMember, setBoardMemberRole } from '../members/index';
 import { boardComments, boardOutline, type OutlineQuery, type OutlineResult } from '../outline/index';
 import {
   BoardChangeError,
+  capRole,
   changeBoard,
   decideSuggestions as decide,
   proposeSuggestions,
@@ -94,13 +96,13 @@ export function actingApp(cred: ApiCredential): ActingApp {
 }
 
 /** The writer a change is attributed to: the person, through the app or token. */
-const actorOf = (call: ApiCall, role: Role): BoardActor => ({ userId: call.userId, role, name: call.cred.account.name, via: actingApp(call.cred) });
+export const actorOf = (call: ApiCall, role: Role): BoardActor => ({ userId: call.userId, role, name: call.cred.account.name, via: actingApp(call.cred) });
 
 /**
  * The per-agent write limit (KAI-168): every change an app or token makes counts against ITS
  * budget (`RATE_LIMIT_AGENT_WRITE`), apart from the person's own editing and from other apps.
  */
-const agentWrite = (call: ApiCall) => consumeRateLimit('agentWrite', `cred:${call.cred.credentialId}`);
+export const agentWrite = (call: ApiCall) => consumeRateLimit('agentWrite', `cred:${call.cred.credentialId}`);
 
 export function apiBoard(req: Request, b: BoardSummary): ApiBoard {
   return {
@@ -126,6 +128,44 @@ export async function openBoard(call: ApiCall, boardId: string): Promise<BoardSu
   return board;
 }
 
+/**
+ * A live view of the board for the assistant's host to show (MCP Apps, KAI-171): a single-use
+ * ticket for Freero's /embed page, acting for the person within what this credential may do
+ * (apiauth embed.ts). The page, not the caller, turns it into the board.
+ */
+export async function openLiveView(call: ApiCall, boardId: string) {
+  const board = await openBoard(call, boardId);
+  const { ticket, expiresAt, maxRole } = await mintEmbedTicket(call.cred, board.id);
+  const access = capRole(board.role, maxRole);
+  return {
+    board,
+    access,
+    src: appUrl(call.req, `/embed/board/${encodeURIComponent(board.id)}#ticket=${ticket}`),
+    origin: new URL(appUrl(call.req, '/')).origin,
+    url: boardUrl(call.req, board.id),
+    expiresAt,
+    // "Share with team": the link already lets people in, or this caller may turn it on.
+    canShare: board.linkAccess !== 'none' || (board.role === 'owner' && call.cred.scopes.includes('boards:write')),
+  };
+}
+
+/**
+ * "Share with team" from a live view (KAI-171): the board's link, letting people in as at least
+ * `access` (guests without an account included, as the workspace allows). A link that already
+ * does is returned as it is; turning it on or up needs boards:write and the owner (the share
+ * dialog's rules, its audit event).
+ */
+export async function shareLink(call: ApiCall, boardId: string, access: 'viewer' | 'commenter') {
+  const board = await openBoard(call, boardId);
+  const rank = { none: 0, viewer: 1, commenter: 2, editor: 3 } as const;
+  if (rank[board.linkAccess] < rank[access]) {
+    if (!call.cred.scopes.includes('boards:write'))
+      throw new HttpError(403, 'Sharing the board by link needs the boards:write permission (“change boards directly”)', 'insufficient_scope');
+  }
+  const out = await shareBoardByLink(board.id, call.cred.account, access);
+  return { url: boardUrl(call.req, board.id), linkAccess: out.linkAccess, changed: out.changed };
+}
+
 export function page<T>(all: T[], q: PageQuery, dflt = 50, max = 200): { items: T[]; nextCursor: string | null } {
   const limit = q.limit === undefined ? dflt : Number(q.limit);
   if (!Number.isInteger(limit) || limit < 1 || limit > max) throw badRequest(`limit must be a whole number from 1 to ${max}`);
@@ -141,7 +181,7 @@ const requireConfirm = (v: unknown, what: string) => {
 };
 
 /** Bad input to a change, or a board that changed under it: 400, nothing written. */
-async function change<T>(fn: () => Promise<T>): Promise<T> {
+export async function change<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (e) {
@@ -151,7 +191,7 @@ async function change<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /** Shows the app on the board for a moment, its cursor on what it just wrote (KAI-168). */
-function present(call: ApiCall, boardId: string, ids: readonly string[], view?: BoardView) {
+export function present(call: ApiCall, boardId: string, ids: readonly string[], view?: BoardView) {
   const at = view?.elements.find((e) => ids.includes(e.el.id))?.el;
   showAgentPresence(boardId, { via: actingApp(call.cred), user: call.cred.account, selection: ids.slice(0, 50), cursor: at ? { x: at.x + at.w / 2, y: at.y + at.h / 2 } : null });
 }

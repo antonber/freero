@@ -42,6 +42,7 @@ import type {
   ActivityResponse,
   GuestBoardInfo,
   GuestInfo,
+  EmbedRedeemResponse,
   GuestJoinResponse,
   AccessRequestState,
   BoardAccessRequest,
@@ -294,6 +295,8 @@ export const api = {
   guestMe: () => request<{ guest: GuestInfo | null }>('GET', '/api/guest/me'),
   guestBoard: (id: string) => request<{ board: BoardSummary }>('GET', `/api/guest/boards/${encodeURIComponent(id)}/board`),
   leaveAsGuest: () => request<{ ok: true }>('POST', '/api/guest/leave'),
+  // A live board view inside an AI assistant (KAI-171): the tool call's single-use ticket.
+  redeemEmbed: (ticket: string) => request<EmbedRedeemResponse>('POST', '/api/embed/redeem', { ticket }),
 
   // activity
   boardActivity: (id: string, before?: number) =>

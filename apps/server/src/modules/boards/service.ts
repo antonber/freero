@@ -6,7 +6,7 @@ import { runExclusive } from '../../platform/jobs';
 import { log } from '../../platform/log';
 import { recordAudit, recordAuditQuietly } from '../audit/index';
 import { getGuests, getUser, getUsers } from '../auth/index';
-import { atLeast, getMemberRole, membershipsOf, ownershipTransferred, resolveGuestRole, resolveRole } from '../members/index';
+import { atLeast, getMemberRole, membershipsOf, ownershipTransferred, resolveGuestRole, resolveRole, ROLE_RANK } from '../members/index';
 import {
   closeBoardDoc,
   initBoardDoc,
@@ -46,6 +46,44 @@ export const DEFAULT_TITLE = 'Untitled board';
 
 /** A board as an audit event's target (its title as it is now). */
 export const boardTarget = (b: { id: string; title: string }) => ({ type: 'board', id: b.id, label: b.title });
+
+/**
+ * Throws unless `user` (with `role` on the board) may set its link to `linkAccess`: the owner only,
+ * never while an operator blocks the link, a verified address to turn it on, and within the
+ * workspace's policies (links at all, up to which role, sharing outside the workspace).
+ */
+export function checkLinkAccessChange(board: Board, role: Role, access: BoardWorkspaceAccess, user: { emailVerified: boolean }, linkAccess: LinkAccess): void {
+  if (role !== 'owner') throw forbidden('Only the board owner can change link sharing');
+  if (board.linkBlocked) throw new HttpError(403, 'Freero’s moderators turned link sharing off for this board. Use the appeal link in the email we sent you.', 'link_blocked');
+  if (linkAccess !== 'none' && !user.emailVerified) throw forbidden('Verify your email address before sharing by link');
+  if (linkAccess !== 'none' && linkAccess !== board.linkAccess) {
+    // Workspace policies: links reach people outside the workspace, and only up to a maximum role.
+    if (access.maxLink === 'none') throw forbidden('This workspace doesn’t allow sharing boards by link');
+    if (ROLE_RANK[linkAccess] > ROLE_RANK[access.maxLink as Exclude<LinkAccess, 'none'>])
+      throw forbidden(`This workspace allows links up to “can ${access.maxLink === 'viewer' ? 'view' : 'comment'}”`);
+    if (!mayShareExternally(access.workspaceRole, access.policies)) throw forbidden('This workspace doesn’t let you share its boards outside it');
+  }
+}
+
+/** After a stored link change: audited, and every live socket's access re-resolved. */
+export async function linkAccessChanged(board: Board, actorId: string, to: LinkAccess): Promise<void> {
+  await recordAuditQuietly({ action: 'board.link_sharing_changed', workspaceId: board.workspaceId, actorId, target: boardTarget(board), metadata: { from: board.linkAccess, to } });
+  await refreshBoardAccess(board.id);
+}
+
+/**
+ * Shares the board by its link with at least `linkAccess` (an app's "Share with team", KAI-171):
+ * a link that already lets people in as much or more is kept as it is; otherwise the same rules as
+ * the share dialog apply (owner, verified address, workspace policies, operator blocks).
+ */
+export async function shareByLink(boardId: string, user: { id: string; emailVerified: boolean }, linkAccess: Exclude<LinkAccess, 'none'>): Promise<{ linkAccess: LinkAccess; changed: boolean }> {
+  const { board, role, access } = await requireAccess(boardId, user.id);
+  if (board.linkAccess !== 'none' && ROLE_RANK[board.linkAccess] >= ROLE_RANK[linkAccess]) return { linkAccess: board.linkAccess, changed: false };
+  checkLinkAccessChange(board, role, access, user, linkAccess);
+  await repo.updateBoardFields(board.id, { linkAccess }, Date.now());
+  await linkAccessChanged(board, user.id, linkAccess);
+  return { linkAccess, changed: true };
+}
 
 /** EXPORT_FORMATS a client may report (POST /boards/:id/exported). */
 export const EXPORT_FORMATS = ['png', 'jpg', 'svg', 'pdf', 'csv', 'json', 'markdown', 'other'] as const;

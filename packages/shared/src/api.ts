@@ -846,6 +846,25 @@ export interface GuestInfo {
 }
 export interface GuestJoinResponse { guest: GuestInfo }
 
+// ---- Live board views in AI assistants (MCP Apps, KAI-171) ----
+// The assistant's view frames /embed/board/:id#ticket=<single-use ticket>; the page redeems it:
+// POST /api/embed/redeem { ticket } -> EmbedRedeemResponse (404: expired, used or unknown).
+// The socket is /ws/embed/boards/:id with the token as its second WebSocket subprotocol
+// (`[EMBED_WS_PROTOCOL, token]`): never the session cookie.
+export const EMBED_WS_PROTOCOL = 'freero.embed';
+export interface EmbedRedeemResponse {
+  /** Opens this board's socket until `expiresAt` (then the view asks the assistant again). */
+  token: string;
+  expiresAt: number;
+  /** The person the view acts for. */
+  user: { id: string; name: string; color: string; avatarUrl: string | null };
+  /** As that person sees it; `role` capped by what the assistant's connection may do. */
+  board: BoardSummary;
+  boardUrl: string;
+  /** The app or token the view came from ("Claude"). */
+  app: string;
+}
+
 // ---- Activity ----
 // What people did, one entry per person per burst of work ("Ann added 12 sticky notes in frame
 // “Ideas”"), derived on the server from changes it applied from that person's own socket and from
