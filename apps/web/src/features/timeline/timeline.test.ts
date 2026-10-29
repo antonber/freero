@@ -3,9 +3,9 @@ import type { CardElement, TimelineBarElement, TimelineElement } from '@freero/s
 import { createTestBoard, type Editor, type ElementDefinition, type FeatureBundle, type TestBoard } from '@engine';
 import manifest from './feature';
 import defs from './element';
-import { addLane, removeLane, setRange } from './lib/actions';
+import { addLane, removeLane, setRange, setView } from './lib/actions';
 import { addDays, dayOf } from './lib/dates';
-import { BAR_H, LABEL_W, STUB_W, dayX, gridOf, laneAt } from './lib/layout';
+import { BAR_H, HORIZON_W, LABEL_W, STUB_W, dayX, gridOf, laneAt } from './lib/layout';
 
 // A stand-in for features/card: cards keep one writer, which the timeline asks through
 // `card.setDates` (a feature can't import another, even in tests).
@@ -199,5 +199,22 @@ describe('timeline', () => {
     expect(bar.frameId).toBe(tid);
     expect([bar.start, bar.end]).toEqual(['2026-11-10', '2026-11-12']);
     expect(ed.getElement<TimelineElement>(tid)!.lanes.some((l) => l.id === laneOf(ed, tid, inB))).toBe(true);
+  });
+
+  it('Now / Next / Later: a bar dragged from Now into Next starts on Next’s first day with the same length, and the dates view then shows it there', () => {
+    board = createTestBoard({ users: ['ann'], features: [bundle, cardStandIn], now: () => Date.parse('2026-11-10T12:00:00') });
+    const [ed] = board.editors('timeline');
+    const tid = makeTimeline(ed);
+    const id = makeBar(ed, tid, '2026-11-04', '2026-11-10');
+    setView(ed, tid, 'horizons');
+    const inNow = ed.getElement(id)!;
+    expect(inNow.x).toBeLessThan(LABEL_W + HORIZON_W);
+    drag(ed, id, HORIZON_W);
+    const bar = ed.getElement<TimelineBarElement>(id)!;
+    expect([bar.start, bar.end]).toEqual(['2026-12-01', '2026-12-07']);
+    expect(bar.x).toBeGreaterThanOrEqual(LABEL_W + HORIZON_W);
+    setView(ed, tid, 'dates');
+    const t = ed.getElement<TimelineElement>(tid)!;
+    expect(ed.getElement(id)!.x).toBe(t.x + dayX(gridOf(t), dayOf('2026-12-01')));
   });
 });

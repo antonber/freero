@@ -741,6 +741,12 @@ export interface TimelineElement extends BaseElement {
   end: string;
   scale: TimelineScale;
   lanes: TimelineLane[];
+  /**
+   * 'horizons' (KAI-160): a roadmap's Now / Next / Later columns instead of the date axis. Bars keep
+   * their dates; each sits in the column its start falls in, and moving one to another column
+   * moves its dates there. Default 'dates'.
+   */
+  view?: 'dates' | 'horizons';
 }
 
 export type TimelineScale = 'day' | 'week' | 'month' | 'quarter';

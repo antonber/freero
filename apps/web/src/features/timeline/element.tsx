@@ -18,7 +18,7 @@ import {
 } from '@engine';
 import { Menu, readableTextColor, type MenuItem } from '@ui';
 import { axisTicks, dayOf, formatRange, localDay, weekday } from './lib/dates';
-import { BAR_H, HEAD_H, LABEL_W, ROW_H, barSpan, dayX, gridOf, isMemberType, laneAt, planTimeline, type Grid, type Member, type MemberInput } from './lib/layout';
+import { BAR_H, HEAD_H, HORIZON_LABELS, HORIZON_W, LABEL_W, ROW_H, barSpan, dayX, gridOf, horizonsOf, isMemberType, laneAt, planTimeline, type Grid, type Member, type MemberInput } from './lib/layout';
 import { BAR_COLORS, LANE_COLORS, addBar, addLane, lanePart, moveLane, parseLanePart, patchLane, removeLane, renameLane } from './lib/actions';
 import './timeline.css';
 
@@ -113,6 +113,30 @@ function Axis({ t, g, lod }: { t: TimelineElement; g: Grid; lod: boolean }) {
   );
 }
 
+/** Now / Next / Later (KAI-160): three columns instead of the date axis. */
+function Horizons({ t, g, lod, today }: { t: TimelineElement; g: Grid; lod: boolean; today: number }) {
+  const h = horizonsOf(t.scale, today);
+  return (
+    <>
+      <div className="fr-timeline__head" style={{ left: LABEL_W, width: g.w - LABEL_W, height: HEAD_H }}>
+        {HORIZON_LABELS.map((label, i) => (
+          <div key={label} className={`fr-timeline__horizon${i === 0 ? ' is-now' : ''}`} style={{ left: i * HORIZON_W, width: HORIZON_W }}>
+            {!lod && (
+              <>
+                <strong>{label}</strong>
+                <span>{h.labels[i]}</span>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+      {HORIZON_LABELS.map((label, i) => (
+        <div key={`c${label}`} className={`fr-timeline__col is-horizon${i === 0 ? ' is-now' : ''}`} style={{ left: LABEL_W + i * HORIZON_W, width: HORIZON_W, top: HEAD_H, height: g.h - HEAD_H }} />
+      ))}
+    </>
+  );
+}
+
 const TimelineView = memo(function TimelineView({ element: t, selected, zoom }: ElementRenderProps<TimelineElement>) {
   const editor = useEditor();
   const canEdit = useCanEdit();
@@ -171,8 +195,8 @@ const TimelineView = memo(function TimelineView({ element: t, selected, zoom }: 
           </div>
         </div>
       ))}
-      <Axis t={t} g={g} lod={lod} />
-      {showToday && (
+      {t.view === 'horizons' ? <Horizons t={t} g={g} lod={lod} today={today} /> : <Axis t={t} g={g} lod={lod} />}
+      {showToday && t.view !== 'horizons' && (
         <div className="fr-timeline__today" style={{ left: dayX(g, today) + g.ppd / 2, height: g.h - HEAD_H, top: HEAD_H }} aria-label="Today" />
       )}
       {empty && !lod && !exporting && canEdit && (
@@ -187,7 +211,7 @@ const TimelineView = memo(function TimelineView({ element: t, selected, zoom }: 
 const BarView = memo(function BarView({ element: b, zoom }: ElementRenderProps<TimelineBarElement>) {
   const parent = useElement<TimelineElement>(b.frameId);
   const t = parent?.type === 'timeline' ? parent : null;
-  const clip = t ? barSpan(gridOf(t), dayOf(b.start), dayOf(b.end), !!b.milestone).clipped : null;
+  const clip = t && t.view !== 'horizons' ? barSpan(gridOf(t), dayOf(b.start), dayOf(b.end), !!b.milestone).clipped : null;
   const color = b.color || BAR_COLORS[0];
   const ink = readableTextColor(color);
   const lod = zoom < LOD_ZOOM;
@@ -274,7 +298,7 @@ const timeline = defineElement({
       if (el.frameId === t.id) members.push({ el, prev });
       else if (prev && prev.frameId === t.id) left.push(el);
     }
-    const plan = planTimeline(t, prevT, members, left);
+    const plan = planTimeline(t, prevT, members, left, dayOf(localDay(editor.host.serverNow())));
     for (const d of plan.cardDates) editor.runCommand('card.setDates', d as unknown as Record<string, unknown>);
     const patches = plan.own ? [{ id: t.id, patch: plan.own }, ...plan.patches] : plan.patches;
     return patches.length ? (patches as never) : null;

@@ -13,6 +13,7 @@ export * from './types';
 export { parseMermaid, looksLikeMermaid, type MermaidDiagram } from './mermaid';
 export { parseIndentedList, parseOrgRows, columnStatus } from './structures';
 export * from './mindtree';
+export * as timelineLayout from './timeline';
 export { tidyTree, type TidyUnit, type TidyOptions } from './tidy';
 export { layered, spacedFit } from './layered';
 export { measureText, textWidth } from './measure';
