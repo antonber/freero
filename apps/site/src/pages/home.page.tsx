@@ -24,7 +24,7 @@ export default definePage({
     },
     {
       q: 'Which AI assistants and agents work with Freero?',
-      a: 'Any client that speaks the Model Context Protocol (MCP) over HTTP: Claude (web, desktop and Claude Code), ChatGPT in developer mode, Cursor, VS Code with GitHub Copilot, and agents you build yourself. Scripts and services can use the REST API and webhooks instead.',
+      a: 'Any client that speaks the Model Context Protocol (MCP) over HTTP: Claude (web, desktop and Claude Code), ChatGPT (as a custom MCP server), Cursor, VS Code with GitHub Copilot, and agents you build yourself. Scripts and services can use the REST API and webhooks instead.',
     },
     {
       q: 'Can an agent change my board without me knowing?',
@@ -131,7 +131,7 @@ export default definePage({
             Add Freero as a custom connector in Claude, or with one command in Claude Code. Claude reads, builds and proposes on your boards.
           </Card>
           <Card title="ChatGPT" href="/chatgpt">
-            Connect Freero in ChatGPT’s developer mode and work on your boards from a chat, with the same permissions and the same review.
+            Add Freero to ChatGPT as a custom MCP server and work on your boards from a chat, with the same permissions and the same review.
           </Card>
           <Card title="Cursor, VS Code and other clients" href="/agents#mcp">
             Any client that speaks MCP over HTTP signs in with OAuth, or uses a personal access token on a server.

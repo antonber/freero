@@ -1,0 +1,242 @@
+/* /settings/connect — Connect an agent (ConnectAgentPage.tsx). Page frame and cards: account.css. */
+.fr-connect-lead {
+  margin: -4px 0 4px;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--fr-ink-2);
+}
+
+.fr-connect-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.fr-connect-copy__label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--fr-ink-2);
+}
+
+.fr-connect-copy__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 6px 6px 12px;
+  background: var(--fr-surface-2);
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius);
+}
+
+.fr-connect-copy__row--block {
+  align-items: flex-start;
+}
+
+.fr-connect-copy__value {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 4px 0;
+  font-family: var(--fr-font-mono);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--fr-ink);
+  /* Wrapped, never scrolled: the address at the end of a command stays visible on a phone. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.fr-connect-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--fr-ink);
+  background: var(--fr-warning-soft);
+  border-radius: var(--fr-radius);
+}
+
+.fr-connect-warn svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--fr-warning);
+}
+
+.fr-connect-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fr-connect-tab {
+  padding: 7px 12px;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--fr-ink-2);
+  background: var(--fr-surface);
+  border: 1px solid var(--fr-line-strong);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.fr-connect-tab:hover {
+  color: var(--fr-ink);
+  background: var(--fr-hover);
+}
+
+.fr-connect-tab:focus-visible {
+  outline: none;
+  box-shadow: var(--fr-focus-ring);
+}
+
+.fr-connect-tab[aria-selected='true'] {
+  color: var(--fr-primary-ink);
+  background: var(--fr-primary);
+  border-color: var(--fr-primary);
+}
+
+.fr-connect-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 4px;
+}
+
+.fr-connect-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: fr-connect-step;
+}
+
+.fr-connect-step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding-left: 36px;
+  counter-increment: fr-connect-step;
+}
+
+.fr-connect-step::before {
+  content: counter(fr-connect-step);
+  position: absolute;
+  top: -1px;
+  left: 0;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--fr-primary);
+  background: var(--fr-primary-soft);
+  border-radius: 50%;
+}
+
+.fr-connect-step__text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--fr-ink);
+}
+
+.fr-connect-install {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fr-primary-ink);
+  text-decoration: none;
+  background: var(--fr-primary);
+  border-radius: var(--fr-radius);
+}
+
+.fr-connect-install:hover {
+  background: var(--fr-primary-hover);
+}
+
+.fr-connect-install:focus-visible {
+  outline: none;
+  box-shadow: var(--fr-focus-ring);
+}
+
+.fr-connect-status {
+  display: flex;
+  align-items: center;
+  margin: 2px 0;
+}
+
+.fr-connect-waiting {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--fr-ink-3);
+}
+
+.fr-connect-prompts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fr-connect-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background: var(--fr-surface-2);
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius);
+}
+
+.fr-connect-prompt__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.fr-connect-prompt__head h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.fr-connect-prompt__text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--fr-ink-2);
+}
+
+.fr-connect-prompt__needs {
+  margin: 0;
+  font-size: 12px;
+  color: var(--fr-ink-3);
+}
+
+@media (max-width: 640px) {
+  .fr-connect-prompts {
+    grid-template-columns: 1fr;
+  }
+
+  .fr-connect-step {
+    padding-left: 32px;
+  }
+}

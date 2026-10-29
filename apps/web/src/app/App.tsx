@@ -14,6 +14,7 @@ import { EmailLinkPage } from './pages/auth/EmailLinkPage';
 import { TwoFactorPage } from './pages/auth/TwoFactorPage';
 import { InvitePage } from './pages/invite/InvitePage';
 import { AccountSettingsPage } from './pages/account/AccountSettingsPage';
+import { ConnectAgentPage } from './pages/connect/ConnectAgentPage';
 import { UnsubscribePage } from './pages/unsubscribe/UnsubscribePage';
 import { AdminConsolePage } from './pages/admin/AdminConsolePage';
 import { AppealPage } from './pages/appeal/AppealPage';
@@ -88,6 +89,15 @@ export function App() {
               element={
                 <RequireAuth>
                   <AccountSettingsPage />
+                </RequireAuth>
+              }
+            />
+            {/* Connect an agent (#80): every MCP client's setup with this server's address; the site's /claude, /chatgpt, /agents link here. */}
+            <Route
+              path="/settings/connect"
+              element={
+                <RequireAuth>
+                  <ConnectAgentPage />
                 </RequireAuth>
               }
             />
