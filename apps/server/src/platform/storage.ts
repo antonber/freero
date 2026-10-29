@@ -13,6 +13,7 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import {
   DeleteObjectCommand,
+  GetBucketEncryptionCommand,
   GetObjectCommand,
   HeadBucketCommand,
   HeadObjectCommand,
@@ -23,6 +24,7 @@ import {
 } from '@aws-sdk/client-s3';
 import type { Config, S3Config } from './config';
 import { addReadinessCheck } from './health';
+import { log, logger } from './log';
 
 export interface StoredObject {
   body: Readable;
@@ -173,6 +175,8 @@ export class S3Storage implements ObjectStorage {
         Body: data,
         ContentType: contentType,
         CacheControl: opts.area === 'private' ? 'private, no-store' : (opts.cacheControl ?? 'public, max-age=3600'),
+        // KAI-143: encrypted at rest by the provider, with its keys (AES256) or a KMS key.
+        ...(this.s3.sse ? { ServerSideEncryption: this.s3.sse.mode, ...(this.s3.sse.kmsKeyId ? { SSEKMSKeyId: this.s3.sse.kmsKeyId } : {}) } : {}),
       }),
     );
   }
@@ -238,6 +242,23 @@ export class S3Storage implements ObjectStorage {
   async ping(): Promise<void> {
     await this.client.send(new HeadBucketCommand({ Bucket: this.s3.bucket }));
   }
+
+  /**
+   * Whether objects are encrypted at rest (KAI-143): 'requested' when S3_SSE asks for it on every
+   * write; otherwise what the bucket's default encryption says — 'bucket-default', 'none' (the
+   * bucket answers that it has no default encryption) or 'unknown' (the provider has no such API,
+   * or these credentials may not read it: MinIO without KMS, SeaweedFS, a write-only key).
+   */
+  async encryptionAtRest(): Promise<'requested' | 'bucket-default' | 'none' | 'unknown'> {
+    if (this.s3.sse) return 'requested';
+    try {
+      const out = await this.client.send(new GetBucketEncryptionCommand({ Bucket: this.s3.bucket }));
+      return out.ServerSideEncryptionConfiguration?.Rules?.length ? 'bucket-default' : 'none';
+    } catch (e) {
+      if (e instanceof S3ServiceException && e.name === 'ServerSideEncryptionConfigurationNotFoundError') return 'none';
+      return 'unknown';
+    }
+  }
 }
 
 let instance: ObjectStorage | null = null;
@@ -247,7 +268,15 @@ export function initStorage(config: Config): ObjectStorage {
   instance = config.s3 ? new S3Storage(config.s3, local) : local;
   const s = instance;
   addReadinessCheck('storage', () => s.ping());
+  if (s instanceof S3Storage) void warnUnencrypted(s);
   return s;
+}
+
+/** One line at startup when uploads may be stored unencrypted (docs/deployment.md, Encryption). */
+async function warnUnencrypted(s: S3Storage): Promise<void> {
+  const state = await s.encryptionAtRest().catch(() => 'unknown' as const);
+  if (state === 'none') logger.warn('storage: the bucket has no default encryption and S3_SSE is not set, so uploads are stored unencrypted. Set S3_SSE=AES256 (or aws:kms), or turn on the bucket’s default encryption.');
+  else if (state === 'unknown') log('storage: could not read the bucket’s default encryption; set S3_SSE to ask for encryption on every write (docs/deployment.md)');
 }
 
 export function storage(): ObjectStorage {
