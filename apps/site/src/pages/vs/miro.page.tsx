@@ -119,7 +119,7 @@ export default defineComparison({
     {
       capability: 'App marketplace',
       competitor: { verdict: 'yes', note: '250+ apps and integrations', sources: ['S21'] },
-      freero: { verdict: 'no', ref: 'docs/parity.md' },
+      freero: { verdict: 'partial', note: 'built-in integrations plus reviewed community listings; no in-board apps', ref: 'docs/parity.md' },
     },
     {
       capability: 'Visitors without an account',

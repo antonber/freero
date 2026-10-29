@@ -115,7 +115,7 @@ export default defineComparison({
     {
       capability: 'Plugins and widgets',
       competitor: { verdict: 'yes', note: 'the Figma Community platform runs in FigJam', sources: ['F14'] },
-      freero: { verdict: 'no', note: 'no plugin SDK or marketplace', ref: 'docs/parity.md' },
+      freero: { verdict: 'no', note: 'no plugin SDK; integrations connect from outside (API, webhooks, MCP)', ref: 'docs/parity.md' },
     },
     {
       capability: 'Collaborators without an account',
