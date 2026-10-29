@@ -398,8 +398,105 @@ const CHAT: Integration[] = [
       description: 'Send your team’s Freero board activity to a Microsoft Teams channel as Adaptive Cards through a Workflows webhook, each with an Open board button.',
     },
   },
-  // #88 (integrations pack) adds its chat entries here once they ship: Discord, Google Chat and
-  // Mattermost webhook formats, and Slack link unfurls. Not before: an entry is a promise the code keeps.
+  {
+    id: "discord",
+    name: "Discord",
+    category: 'chat',
+    oneLiner: "Board activity posted to a Discord channel as an embed with a link to the item.",
+    description: [
+      "A team’s owner or admin adds a webhook in the Discord format and picks the events. Each arrives as one embed: the sentence, the quoted text and a link to the item. Board text is escaped and mentions are switched off, so nothing on a board can ping @everyone.",
+      "Webhooks only ever tell a channel about boards the whole team can open: never personal boards or private projects.",
+    ],
+    status: 'settings',
+    connect: {
+      steps: [
+        "In Discord, open the channel’s settings → Integrations → Webhooks, create one and copy its URL.",
+        "In your team’s admin console → Webhooks, add an endpoint with that URL, the Discord format and the events you want.",
+      ],
+      app: { path: '/admin/:workspace?tab=webhooks', label: 'Open Webhooks' },
+      docs: { file: 'docs/events.md', anchor: 'formats', label: 'Webhook formats' },
+    },
+    operatorSetup: 'Webhooks are on unless the server’s operator set WEBHOOKS=false.',
+    keywords: ["discord", "notifications", "channel", "webhook", "community"],
+    seo: {
+      title: "Discord integration: whiteboard activity in Discord",
+      description: "Post what happens on your team’s Freero boards to a Discord channel through a channel webhook: new items, changes and comments, each with a link.",
+    },
+  },
+  {
+    id: "google-chat",
+    name: "Google Chat",
+    category: 'chat',
+    oneLiner: "Board activity posted to a Google Chat space as a text message with a link.",
+    description: [
+      "A team’s owner or admin adds a webhook in the Google Chat format and picks the events. Each arrives as a short text message with a link to the item; angle brackets in board text are neutralised, so it can’t create links or mention everyone.",
+      "Webhooks only ever tell a channel about boards the whole team can open: never personal boards or private projects.",
+    ],
+    status: 'settings',
+    connect: {
+      steps: [
+        "In Google Chat, open the space → Apps & integrations → Webhooks, add one and copy its URL.",
+        "In your team’s admin console → Webhooks, add an endpoint with that URL, the Google Chat format and the events you want.",
+      ],
+      app: { path: '/admin/:workspace?tab=webhooks', label: 'Open Webhooks' },
+      docs: { file: 'docs/events.md', anchor: 'formats', label: 'Webhook formats' },
+    },
+    operatorSetup: 'Webhooks are on unless the server’s operator set WEBHOOKS=false.',
+    keywords: ["google chat", "google workspace", "spaces", "notifications", "webhook"],
+    seo: {
+      title: "Google Chat integration: board updates in a space",
+      description: "Send your team’s Freero board activity to a Google Chat space through an incoming webhook: new items, changes and comments, each with a link.",
+    },
+  },
+  {
+    id: "mattermost",
+    name: "Mattermost",
+    category: 'chat',
+    oneLiner: "Board activity posted to a Mattermost channel, with @channel-style pings neutralised.",
+    description: [
+      "A team’s owner or admin adds a webhook in the Mattermost format and picks the events. Each arrives as a Markdown message with a link; board text is escaped and @ is replaced, so nothing on a board can ping @channel, @all or @here.",
+      "Webhooks only ever tell a channel about boards the whole team can open: never personal boards or private projects.",
+    ],
+    status: 'settings',
+    connect: {
+      steps: [
+        "In Mattermost, go to Integrations → Incoming Webhooks, add one for the channel and copy its URL.",
+        "In your team’s admin console → Webhooks, add an endpoint with that URL, the Mattermost format and the events you want.",
+      ],
+      app: { path: '/admin/:workspace?tab=webhooks', label: 'Open Webhooks' },
+      docs: { file: 'docs/events.md', anchor: 'formats', label: 'Webhook formats' },
+    },
+    operatorSetup: 'Webhooks are on unless the server’s operator set WEBHOOKS=false.',
+    keywords: ["mattermost", "self-hosted chat", "notifications", "incoming webhook", "channel"],
+    seo: {
+      title: "Mattermost integration: board updates in a channel",
+      description: "Post your team’s Freero board activity to a Mattermost channel through an incoming webhook, with escaping that keeps board text from pinging everyone.",
+    },
+  },
+  {
+    id: 'slack-unfurls',
+    name: 'Slack link previews',
+    category: 'chat',
+    oneLiner: "A Freero board link pasted in Slack unfolds into its title and thumbnail, when the board is public.",
+    description: [
+      "The server’s operator creates a Slack app from Freero’s manifest and sets two secrets. After that, a Freero board link pasted in a Slack workspace that installed the app shows a preview.",
+      "Only a board anyone with its link may open (no password, not expired) shows its title, description and thumbnail. Every other link, and a link to a board that doesn’t exist, gets the same generic “Sign in to Freero to view it” card, so a preview never reveals a private board.",
+    ],
+    status: 'operator',
+    connect: {
+      steps: [
+        "Run npm run admin -- slack:manifest on the server and create a Slack app from the manifest it prints.",
+        "Install the app to your Slack workspace, then set SLACK_SIGNING_SECRET and SLACK_BOT_TOKEN on the server and restart it.",
+      ],
+      docs: { file: 'docs/integrations/slack.md', label: 'Slack link previews' },
+    },
+    operatorSetup: "Off by default: needs SLACK_SIGNING_SECRET and SLACK_BOT_TOKEN on the server.",
+    keywords: ['slack', 'unfurl', 'link preview', 'thumbnail', 'chat.unfurl'],
+    seo: {
+      title: 'Slack link previews for whiteboards',
+      description: "Paste a public Freero board link in Slack and see its title and thumbnail; private boards show a generic card that reveals nothing.",
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------------------------
@@ -729,9 +826,110 @@ const AUTOMATION: Integration[] = [
       description: 'Get signed, retried events when your team’s Freero boards change: items, comments, members and board lifecycle, scoped to a board if you like.',
     },
   },
-  // #88 (integrations pack) adds its automation entries here once they ship: the n8n and Make
-  // workflows, the Zapier and Power Automate guides (and Power Automate's custom connector), and
-  // meeting-notes import (Markdown, VTT or plain-text transcripts onto a board).
+  {
+    id: 'meeting-notes',
+    name: 'Meeting notes import',
+    category: 'automation',
+    oneLiner: "Notes or a transcript from your meeting tool become a frame: decisions, action-item cards and notes.",
+    description: [
+      "Paste or upload a Markdown or plain-text summary (the kind Granola, Fathom, Otter or Meetily export) or drop a .vtt or .srt transcript. Freero reads its headings, bullets and check boxes, with no AI involved, and builds one frame: a summary, decisions as a cluster, action items as task cards with owner and due date, and the rest as notes. One undo removes it.",
+      "Agents can do the same over MCP (import_meeting_notes) or the REST API (structure kind meeting).",
+    ],
+    status: 'built-in',
+    connect: {
+      steps: [
+        "Open a board, then the board menu → Import meeting notes…, or drop a .vtt or .srt file on the board.",
+        "Paste or choose the notes, and choose whether to add a speakers note for transcripts.",
+      ],
+      app: { path: '/app', label: 'Open your boards' },
+      docs: { file: 'docs/integrations/README.md', anchor: 'meeting-notes-what-is-read-and-how', label: 'What is read, and how' },
+    },
+    keywords: ['meeting notes', 'transcript', 'vtt', 'srt', 'granola', 'otter', 'fathom', 'action items', 'decisions'],
+    seo: {
+      title: 'Meeting notes to whiteboard: decisions and actions',
+      description: "Turn meeting notes or a transcript into a whiteboard frame with decisions, action-item cards with owners and due dates, and notes, in one step.",
+    },
+  },
+  {
+    id: "n8n",
+    name: "n8n",
+    category: 'automation',
+    oneLiner: "Two importable n8n workflows: new GitHub issue → card, and board comment → Slack.",
+    description: [
+      "Import a workflow into n8n, add a Freero token and, for webhooks, the signing secret. One workflow turns new GitHub issues into cards on a board; the other checks the webhook signature and forwards board comments to Slack.",
+      "This is a recipe on Freero’s public REST API and webhooks, not an app listed in n8n’s own directory.",
+    ],
+    status: 'api',
+    connect: {
+      steps: ["Create a Freero token under Connect an agent → Any HTTP client.", "Import a workflow JSON from the recipe into n8n and fill in the credentials."],
+      docs: { file: "docs/integrations/n8n.md", label: "n8n recipe" },
+    },
+    keywords: ["n8n", "workflow", "automation", "self-hosted", "webhooks"],
+    seo: {
+      title: "n8n and Freero: whiteboard automation workflows",
+      description: "Automate your Freero boards with n8n: importable workflows for GitHub issues to cards and board comments to Slack, on the REST API and signed webhooks.",
+    },
+  },
+  {
+    id: "make",
+    name: "Make",
+    category: 'automation',
+    oneLiner: "A step-by-step Make scenario on Freero’s REST API and signed webhooks.",
+    description: [
+      "Build a Make scenario that reacts to Freero webhooks or adds items to a board through the REST API, following the step-by-step guide.",
+      "This is a recipe on Freero’s public REST API and webhooks, not an app listed in Make’s own directory.",
+    ],
+    status: 'api',
+    connect: {
+      steps: ["Create a Freero token under Connect an agent → Any HTTP client.", "Follow the guide to add the webhook trigger and HTTP modules in Make."],
+      docs: { file: "docs/integrations/make.md", label: "Make recipe" },
+    },
+    keywords: ["make", "integromat", "automation", "scenario", "webhooks"],
+    seo: {
+      title: "Make and Freero: whiteboard automation scenarios",
+      description: "Connect Freero boards to Make scenarios with the REST API and signed webhooks: a step-by-step guide to triggers and actions.",
+    },
+  },
+  {
+    id: "zapier",
+    name: "Zapier",
+    category: 'automation',
+    oneLiner: "Zaps that react to Freero webhooks and add items through the REST API.",
+    description: [
+      "Use Webhooks by Zapier to catch Freero events and the REST API to add notes or cards, following the guide.",
+      "This is a recipe on Freero’s public REST API and webhooks, not an app listed in Zapier’s own directory.",
+    ],
+    status: 'api',
+    connect: {
+      steps: ["Create a Freero token under Connect an agent → Any HTTP client.", "Follow the guide to set up the Webhooks by Zapier trigger and actions."],
+      docs: { file: "docs/integrations/zapier.md", label: "Zapier recipe" },
+    },
+    keywords: ["zapier", "zap", "automation", "webhooks", "no-code"],
+    seo: {
+      title: "Zapier and Freero: automate your whiteboards",
+      description: "Automate Freero with Zapier: catch board events with Webhooks by Zapier and add notes or cards through Freero’s REST API.",
+    },
+  },
+  {
+    id: "power-automate",
+    name: "Power Automate",
+    category: 'automation',
+    oneLiner: "A custom connector for Power Automate and Logic Apps, generated from Freero’s API description.",
+    description: [
+      "Import the generated Swagger 2.0 connector into Power Automate or Logic Apps and every REST operation becomes an action you can use in a flow.",
+      "This is a recipe on Freero’s public REST API and webhooks, not an app listed in Power Automate’s own directory.",
+    ],
+    status: 'api',
+    connect: {
+      steps: ["Create a Freero token under Connect an agent → Any HTTP client.", "Import docs/integrations/power-automate/freero.swagger.json as a custom connector and sign in with the token."],
+      docs: { file: "docs/integrations/power-automate.md", label: "Power Automate recipe" },
+    },
+    keywords: ["power automate", "logic apps", "microsoft", "custom connector", "flow"],
+    seo: {
+      title: "Power Automate connector for Freero whiteboards",
+      description: "Use Freero in Power Automate and Logic Apps with a custom connector generated from its REST API: every operation available as an action.",
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------------------------

@@ -1361,6 +1361,52 @@
         }
       }
     },
+    "/boards/{boardId}/trackers": {
+      "parameters": [
+        {
+          "$ref": "#/parameters/BoardId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "trackers"
+        ],
+        "summary": "The issue-tracker connections the person may use on this board",
+        "description": "The MCP tool `list_tracker_connections` over REST (#83): the team’s and the person’s own connections usable on this board — `name` is what `connection` takes on the import and the MCP `sync_to_tracker`, `defaultProject` what `project` defaults to. With `connection` (its name or id), also that connection’s `projects` (Jira project keys, Linear team keys, GitHub owner/repo), read from the tracker. Only owners and editors use trackers on a board: anyone else gets an empty list and a `note` saying why; with no connection, a `note` saying how to connect one. 400 when `connection` names none of them; 502 `tracker_refused` when the tracker refuses.",
+        "operationId": "listTrackerConnections",
+        "x-freero-scope": "boards:read",
+        "parameters": [
+          {
+            "name": "connection",
+            "in": "query",
+            "required": false,
+            "description": "A connection’s name or id: also list its projects",
+            "type": "string",
+            "maxLength": 200
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The connections (and projects)",
+            "schema": {
+              "$ref": "#/definitions/TrackerConnections"
+            }
+          },
+          "400": {
+            "$ref": "#/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/responses/NotFound"
+          }
+        }
+      }
+    },
     "/boards/{boardId}/trackers/import": {
       "parameters": [
         {
@@ -2723,6 +2769,91 @@
         "newKanban": {
           "type": "string",
           "maxLength": 200
+        }
+      }
+    },
+    "TrackerConnections": {
+      "type": "object",
+      "required": [
+        "connections"
+      ],
+      "properties": {
+        "connections": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "name",
+              "provider",
+              "scope",
+              "site",
+              "defaultProject",
+              "status"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "jira",
+                  "linear",
+                  "github"
+                ]
+              },
+              "scope": {
+                "type": "string",
+                "enum": [
+                  "workspace",
+                  "personal"
+                ],
+                "description": "The team’s connection, or the person’s own"
+              },
+              "site": {
+                "type": "string"
+              },
+              "defaultProject": {
+                "type": "string",
+                "x-nullable": true
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "active",
+                  "error",
+                  "needs_auth"
+                ]
+              }
+            }
+          }
+        },
+        "projects": {
+          "type": "array",
+          "description": "With `connection` only",
+          "items": {
+            "type": "object",
+            "required": [
+              "key",
+              "name"
+            ],
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "note": {
+          "type": "string",
+          "description": "Why the list is empty, and what to do"
         }
       }
     },

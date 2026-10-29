@@ -126,7 +126,7 @@ person ticks them on the consent screen.
 
 1. **Connection:** `<HOST>/mcp`. One URL for everyone (do not pick "Users connect to different
    URLs": self-hosted Freero servers are added as custom connectors, not through the listing).
-2. **Tools:** synced from the server. 27 tools are offered to the model (`share_board` is
+2. **Tools:** synced from the server. 28 tools are offered to the model (`share_board` is
    app-only, the live view's button). None should be flagged: every tool has a title and all three
    hints. How they read:
 
