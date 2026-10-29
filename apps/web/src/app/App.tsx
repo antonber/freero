@@ -25,6 +25,8 @@ import { OAuthConsentPage } from './pages/oauth/OAuthConsentPage';
 const BoardPage = lazy(() => import('./board/BoardPage'));
 // The operator's read-only board preview mounts the board engine too.
 const OperatorPreviewPage = lazy(() => import('./pages/operator/OperatorPreviewPage'));
+// Docs (KAI-162): the page and its editor load on demand.
+const DocPage = lazy(() => import('./pages/doc/DocPage'));
 
 export function App() {
   return (
@@ -102,6 +104,16 @@ export function App() {
               }
             />
             <Route path="/board/:id" element={<BoardRoute />} />
+            <Route
+              path="/doc/:id"
+              element={
+                <RequireAuth>
+                  <Suspense fallback={<FullPageSpinner label="Opening doc" />}>
+                    <DocPage />
+                  </Suspense>
+                </RequireAuth>
+              }
+            />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </AuthProvider>

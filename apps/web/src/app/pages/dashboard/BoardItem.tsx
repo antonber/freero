@@ -5,7 +5,7 @@ import type { BoardSummary, ProjectSummary } from '@freero/shared';
 import { Avatar, IconButton, Menu, type MenuItem } from '@ui';
 import { BoardThumb } from './BoardThumb';
 import { BOARD_DRAG_TYPE } from './Sidebar';
-import { boardTime, type BoardSort } from '../../lib/boards';
+import { boardTime, objectHref, type BoardSort } from '../../lib/boards';
 import { relativeTime } from '../../lib/time';
 import { personColor } from '../../lib/placeholder';
 
@@ -184,7 +184,7 @@ export const BoardItem = memo(function BoardItem({ board: b, layout, sort, userI
   if (layout === 'list') {
     return (
       <div className={`fr-row${menuOpen ? ' fr-row--active' : ''}`} onContextMenu={(e) => { e.preventDefault(); setMenuOpen(true); }} {...drag}>
-        <Link to={`/board/${b.id}`} className="fr-board__link" aria-label={`Open ${title}`} draggable={false} />
+        <Link to={objectHref(b)} className="fr-board__link" aria-label={`Open ${title}`} draggable={false} />
         <div className="fr-row__thumb">
           <BoardThumb board={b} />
         </div>
@@ -206,7 +206,7 @@ export const BoardItem = memo(function BoardItem({ board: b, layout, sort, userI
 
   return (
     <div className={`fr-dash-card${menuOpen ? ' fr-dash-card--active' : ''}`} onContextMenu={(e) => { e.preventDefault(); setMenuOpen(true); }} {...drag}>
-      <Link to={`/board/${b.id}`} className="fr-board__link" aria-label={`Open ${title}`} draggable={false} />
+      <Link to={objectHref(b)} className="fr-board__link" aria-label={`Open ${title}`} draggable={false} />
       <div className="fr-dash-card__thumb">
         <BoardThumb board={b} />
         <div className="fr-dash-card__hover-actions">

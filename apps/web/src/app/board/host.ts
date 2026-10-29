@@ -25,6 +25,7 @@ import {
   uploadImage,
   versionHistory,
   downloadBoardFile,
+  docsFrom,
   saveAs,
 } from '../hostServices';
 import { serverNow, syncServerClock } from './serverClock';
@@ -123,6 +124,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     report: reportOn(board.id),
     engage: engageOf(board.id),
     call: callOf(board.id),
+    docs: docsFrom(board.id, deps.navigate),
     // AI entry points exist only when the server said this user may use AI here.
     ...(deps.ai?.available ? { ai: { provider: deps.ai.provider ?? '', source: deps.ai.source ?? 'instance', run: (body) => api.runAi(board.id, body) } } : {}),
     // Tracker entry points exist only when the server listed a connection this user may use here.
@@ -235,6 +237,42 @@ export function createPreviewHost(board: { id: string; title: string }, deps: Pi
     deleteTemplate: no('Templates'),
     shareTemplate: no('Templates'),
     versions: unavailableVersionHistory('Version history isn’t available in a moderation preview.'),
+    importImage: no('Copying images'),
+    fetchImage: no('Fetching images'),
+    report: no('Reporting'),
+  };
+}
+
+/**
+ * The Host of a live board shown INSIDE a doc (KAI-152, engine LiveBoardView): the boards socket
+ * (the server admits it with the reader's own access to that board), the people and link lookups
+ * of that board, nothing that changes anything — the embed is read-only; edits happen on the board.
+ */
+export function createEmbedHost(deps: Pick<HostDeps, 'user' | 'navigate' | 'notify'>): Host {
+  const no = (what: string) => async () => Promise.reject(new Error(`${what}: open the board to change it.`));
+  return {
+    user: deps.user,
+    board: { id: '', title: '', role: 'viewer', canExport: false, team: null },
+    syncUrl: `${wsBase()}/ws/boards`,
+    uploadImage: no('Uploading'),
+    uploadFile: no('Uploading'),
+    renameBoard: no('Renaming'),
+    saveThumbnail: async () => undefined,
+    openShareDialog: () => undefined,
+    navigate: deps.navigate,
+    notify: deps.notify,
+    serverNow,
+    listMembers: async () => [],
+    lookupUsers: async () => [],
+    inviteMember: no('Inviting'),
+    unfurl: no('Link previews'),
+    resolveObjects,
+    listTemplates: async () => [],
+    loadTemplate: no('Templates'),
+    saveTemplate: no('Templates'),
+    deleteTemplate: no('Templates'),
+    shareTemplate: no('Templates'),
+    versions: unavailableVersionHistory('Open the board to see its versions.'),
     importImage: no('Copying images'),
     fetchImage: no('Fetching images'),
     report: no('Reporting'),
