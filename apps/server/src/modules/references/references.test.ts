@@ -9,6 +9,7 @@ import { closeTestDb, openTestDb } from '../../platform/testing';
 import { createUser } from '../auth/index';
 import { createBoard, recordBoardOpen, registerBoardObjectTypes } from '../boards/index';
 import { changeBoard, initBoardDoc } from '../realtime/index';
+import { createDoc } from '../docs/index';
 import * as repo from './repo';
 import { backlinksOf, deriveBoardReferences, rebuildReferences, REFERENCES_CONSUMER, referencesConsumer } from './service';
 
@@ -150,4 +151,19 @@ it('a rebuild after the index was lost (a restored database) reproduces the rows
   await repo.clearAll();
   await rebuildReferences();
   expect(await Promise.all(sources.map((s) => repo.referencesFrom(s.id)))).toEqual(live);
+});
+
+it('a doc embedding a live frame of a board, or linking to it, is in that board’s backlinks (opening the doc at the block) — only for readers of the doc', async () => {
+  const [owner, boardOnly] = await Promise.all([user('Writer'), user('BoardReader')]);
+  const board = await createBoard(owner.id, 'Workshop', '', 'viewer');
+  await save(board.id, [sticky('f1', 'Ideas')]);
+  const doc = await createDoc(owner.id, { markdown: `# Outcome\n\n![Live board](freero://board/${board.id}#f1)\n\nSee [the board](/board/${board.id}).\n` });
+  await drainOutbox(REFERENCES_CONSUMER);
+
+  const fromDoc = (await backlinksOf({ userId: owner.id }, boardUri(board.id), [])).filter((l) => l.source.type === 'doc');
+  expect(fromDoc.map((l) => l.kinds[0]).sort()).toEqual(['embed', 'link']);
+  expect(fromDoc.every((l) => l.source.uri === `freero://doc/${doc.id}` && l.source.path.startsWith(`/doc/${doc.id}?block=`))).toBe(true);
+  // Someone who may read the board (its link) but not the doc never learns the doc exists.
+  await recordBoardOpen(board.id, boardOnly.id);
+  expect((await backlinksOf({ userId: boardOnly.id }, boardUri(board.id), [])).filter((l) => l.source.type === 'doc')).toEqual([]);
 });

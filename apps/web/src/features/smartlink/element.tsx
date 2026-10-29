@@ -1,5 +1,5 @@
 import { memo, type MouseEvent, type PointerEvent } from 'react';
-import { ArrowUpRight, CirclePlay, Folder, LayoutDashboard, LayoutTemplate, Link2, Lock, Stamp, Ticket, Users } from 'lucide-react';
+import { ArrowUpRight, CirclePlay, FileText, Folder, LayoutDashboard, LayoutTemplate, Link2, Lock, Stamp, Ticket, Users } from 'lucide-react';
 import { parseObjectUri, type ObjectLinkElement, type ObjectRef, type ObjectSummary } from '@freero/shared';
 import { defineElement, describeElementType, useEditor, useIsExporting, type Editor, type ElementRenderProps, type IconComponent, type NewElement } from '@engine';
 import { pastedObject } from './lib/address';
@@ -9,8 +9,8 @@ import './smartlink.css';
 const CHIP_W = 300;
 const CHIP_H = 64;
 
-const TYPE_ICON: Record<string, IconComponent> = { board: LayoutDashboard, template: LayoutTemplate, workspace: Users, project: Folder, issue: Ticket, walkthrough: CirclePlay, decision: Stamp };
-const TYPE_NAME: Record<string, string> = { board: 'Board', element: 'Item', template: 'Template', workspace: 'Workspace', project: 'Project', issue: 'Issue', walkthrough: 'Walkthrough', decision: 'Decision' };
+const TYPE_ICON: Record<string, IconComponent> = { board: LayoutDashboard, template: LayoutTemplate, workspace: Users, project: Folder, doc: FileText, issue: Ticket, walkthrough: CirclePlay, decision: Stamp };
+const TYPE_NAME: Record<string, string> = { board: 'Board', element: 'Item', template: 'Template', workspace: 'Workspace', project: 'Project', issue: 'Issue', doc: 'Doc', walkthrough: 'Walkthrough', decision: 'Decision' };
 
 const stop = (e: MouseEvent | PointerEvent) => e.stopPropagation();
 

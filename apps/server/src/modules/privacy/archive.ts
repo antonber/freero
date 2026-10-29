@@ -3,6 +3,7 @@
 //   README.txt, account.json, api.json, memberships.json, activity.json, comments.json, notifications.json,
 //   templates/<name>-<id>.json, uploads/index.json + uploads/<file>,
 //   boards/<title>-<id>/board.json (record + content + the layers you may read), board.yjs, files/<file>
+//   (a doc, KAI-162: the same folder, plus doc.md — its document as Markdown)
 // workspace: README.txt, workspace.json, templates/…, boards/… (the same board layout).
 import { strToU8, zipSync, type Zippable } from 'fflate';
 import { aiUsageExportOf, aiWorkspaceExportOf } from '../ai/index';
@@ -64,11 +65,12 @@ async function addBoard(a: Archive, b: BoardRecord, appOrigin: string, layers: {
   const dir = `boards/${slug(b.title)}-${b.id}`;
   const content = await exportBoardContent(b.id, layers);
   a.addJson(`${dir}/board.json`, {
-    board: { ...b, url: `${appOrigin}/board/${b.id}` },
+    board: { ...b, url: `${appOrigin}/${b.kind === 'doc' ? 'doc' : 'board'}/${b.id}` },
     content: content.json,
     layers: Object.fromEntries(content.layers.map((l) => [l.name, l.json])),
   });
   if (content.state) a.add(`${dir}/board.yjs`, content.state);
+  if (content.markdown) a.add(`${dir}/doc.md`, strToU8(content.markdown));
   const text = JSON.stringify(content.json) + JSON.stringify(content.layers.map((l) => l.json));
   for (const name of uploadNamesIn(text)) await a.addUpload(`${dir}/files/${name}`, name);
 }
@@ -88,7 +90,8 @@ templates/          templates you saved (Freero's own JSON; insertable again)
 uploads/            files you uploaded (images, PDFs, video, audio, recordings), with index.json
 boards/             boards you own: board.json (readable JSON of every item, comment and setting,
                     plus your private drafts and hidden frames' contents), board.yjs (the board's
-                    complete Yjs document, lossless) and the images the board uses
+                    complete Yjs document, lossless) and the images the board uses; docs the same,
+                    plus doc.md (the document as Markdown)
 files-not-included.json  (only if present) files that could not be included and why
 `;
 
@@ -100,7 +103,8 @@ workspace.json  the workspace, its sharing policies, members (with email address
 templates/      templates shared with the workspace
 boards/         every board in the workspace (trash included): board.json (readable JSON of every
                 item, comment and setting, and hidden frames' contents — never anyone's private
-                drafts), board.yjs (the complete Yjs document) and the images each board uses
+                drafts), board.yjs (the complete Yjs document) and the images each board uses;
+                docs too, with doc.md (the document as Markdown)
 files-not-included.json  (only if present) files that could not be included and why
 `;
 

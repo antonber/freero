@@ -392,7 +392,12 @@ const providers = new Set();
  * `prepare(doc)` runs before connecting (local "offline" content the client brings along).
  * `port`: the instance to connect to (default: the main server).
  */
-function connectDoc(user, boardId, prepare, port = user.port ?? server.port) {
+/**
+ * `opts.path` / `opts.protocols`: another socket route and its subprotocols — '/ws/docs' for a doc's
+ * document (KAI-162); a live board view in an AI assistant signs in with its token as a subprotocol on
+ * /ws/embed/boards (KAI-171), no cookie.
+ */
+function connectDoc(user, boardId, prepare, port = user.port ?? server.port, opts = {}) {
   const cookie = user.cookie;
   class CookieWebSocket extends WebSocket {
     constructor(url, protocols) {
@@ -401,10 +406,11 @@ function connectDoc(user, boardId, prepare, port = user.port ?? server.port) {
   }
   const doc = new Y.Doc();
   prepare?.(doc);
-  const provider = new WebsocketProvider(`ws://127.0.0.1:${port}/ws/boards`, boardId, doc, {
+  const provider = new WebsocketProvider(`ws://127.0.0.1:${port}${opts.path ?? '/ws/boards'}`, boardId, doc, {
     WebSocketPolyfill: CookieWebSocket,
     disableBc: true,
     connect: false,
+    protocols: opts.protocols ?? [],
   });
   const client = { user, doc, provider, role: null, closeCodes: [], echoedBarrier: 0 };
   // Notes the server's echo of this client's own presence (see settled()).
@@ -518,9 +524,9 @@ function closeAllDocs() {
 }
 
 /** Opens a raw socket and resolves with the close code the server uses (`port`: default the main server). */
-function wsCloseCode(boardId, cookie, port = server?.port) {
+function wsCloseCode(boardId, cookie, port = server?.port, wsPath = '/ws/boards') {
   return new Promise((resolve) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/boards/${boardId}`, {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}${wsPath}/${boardId}`, {
       headers: cookie ? { cookie } : {},
     });
     const t = setTimeout(() => {
@@ -6060,7 +6066,8 @@ async function mcpChecks() {
   const { UnauthorizedError } = await import('@modelcontextprotocol/sdk/client/auth.js');
   const REDIS_URL = process.env.REDIS_URL?.trim();
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-mcp-'));
-  const env = { ACTIVITY_IDLE_SECONDS: '1', RATE_LIMIT_INVITE: '500/1h', RATE_LIMIT_PASSWORD: '500/15m', ...(REDIS_URL && ADMIN_URL ? { REDIS_URL } : {}) };
+  // SESSION_RECHECK_SECONDS: how soon a revoked connection's live board view closes (modules/embed).
+  const env = { ACTIVITY_IDLE_SECONDS: '1', RATE_LIMIT_INVITE: '500/1h', RATE_LIMIT_PASSWORD: '500/15m', SESSION_RECHECK_SECONDS: '1', ...(REDIS_URL && ADMIN_URL ? { REDIS_URL } : {}) };
   const procs = [];
   const live = [];
   const clients = [];
@@ -6336,6 +6343,64 @@ async function mcpChecks() {
         assert(n >= 4, `requests did not alternate: ${n}`);
         await waitFor(() => [...browser.provider.awareness.getStates().values()].some((s) => s?.agent?.app === 'Verify Assistant'), 5000, 'the app’s presence across instances');
       });
+
+    await check('mcp apps (KAI-171): the outline and open_board name their views — the preview may reach no network, the live view only frames Freero; open_board’s single-use ticket (never in what the model reads) opens a socket for that board only, capped by the connection: a read-only one can’t write, a write one edits live; revoking the token closes its live view', async () => {
+      const pb = (await O.req('POST', '/api/boards', { title: 'Live view' })).json.board.id;
+      const other = (await O.req('POST', '/api/boards', { title: 'Not this one' })).json.board.id;
+      const readTok = await token(O, ['boards:read'], `view reader ${stamp}`);
+      const reader = await withToken(readTok.secret);
+      const writer = await withToken((await token(O, ['boards:read', 'boards:write'], `view writer ${stamp}`)).secret);
+      const tools = (await reader.listTools()).tools;
+      const ui = (n) => tools.find((t) => t.name === n)?._meta?.ui;
+      assert(ui('get_board_outline')?.resourceUri === 'ui://freero/board-preview.html' && ui('open_board')?.resourceUri === 'ui://freero/board-live.html', `tool views: ${JSON.stringify(tools.map((t) => [t.name, t._meta]))}`);
+      assert(JSON.stringify(ui('share_board')?.visibility) === '["app"]', 'share_board is offered to the model');
+      const [prev] = (await reader.readResource({ uri: 'ui://freero/board-preview.html' })).contents;
+      const [liveView] = (await reader.readResource({ uri: 'ui://freero/board-live.html' })).contents;
+      assert(prev.mimeType === 'text/html;profile=mcp-app' && !prev._meta?.ui?.csp, `preview: ${prev.mimeType} ${JSON.stringify(prev._meta)}`);
+      const csp = liveView._meta?.ui?.csp ?? {};
+      assert(JSON.stringify(csp.frameDomains) === JSON.stringify([`http://127.0.0.1:${proc.port}`]) && !csp.connectDomains?.length && !csp.resourceDomains?.length, `live csp: ${JSON.stringify(csp)}`);
+
+      const open = async (c) => {
+        const r = await c.callTool({ name: 'open_board', arguments: { boardId: pb } });
+        assert(!r.isError && !text(r).includes('frt_') && !JSON.stringify(r.structuredContent).includes('frt_'), `the model sees the ticket: ${JSON.stringify(r)}`);
+        return r._meta['freero/live'];
+      };
+      const redeem = (ticket) =>
+        fetch(`http://127.0.0.1:${proc.port}/api/embed/redeem`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ticket }) });
+      const ticketOf = (m) => new URLSearchParams(new URL(m.src).hash.slice(1)).get('ticket');
+      const readMeta = await open(reader);
+      const first = await redeem(ticketOf(readMeta));
+      const readView = await first.json();
+      assert(first.status === 200 && readView.board.id === pb && readView.board.role === 'viewer' && readView.user.id === O.id, `redeem: ${first.status} ${JSON.stringify(readView.board?.role)}`);
+      assert((await redeem(ticketOf(readMeta))).status === 404, 'a ticket worked twice');
+      const asView = (tok, id = pb) => connectDoc({ label: 'live view', id: O.id, name: O.name }, id, null, proc.port, { path: '/ws/embed/boards', protocols: ['freero.embed', tok] });
+
+      const browser = connectDoc(O, pb, null, proc.port);
+      live.push(browser);
+      await browser.ready();
+      const ro = asView(readView.token);
+      live.push(ro);
+      await ro.ready();
+      assert(ro.role === 'viewer', `read-only view role: ${ro.role}`);
+      els(ro).set('nope', { id: 'nope', type: 'sticky', x: 0, y: 0, w: 100, h: 100, text: 'from a read-only view', createdBy: O.id });
+      await settled(ro, [browser]);
+      assert(!els(browser).has('nope'), 'a read-only view wrote to the board');
+
+      const elsewhere = asView(readView.token, other);
+      live.push(elsewhere);
+      await waitFor(() => elsewhere.closeCodes.includes(4403), 8000, 'the view token to be refused on another board');
+
+      const w = await (await redeem(ticketOf(await open(writer)))).json();
+      const rw = asView(w.token);
+      live.push(rw);
+      await rw.ready();
+      assert(rw.role === 'editor', `write view role: ${rw.role}`);
+      els(rw).set('live1', { id: 'live1', type: 'sticky', x: 0, y: 0, w: 100, h: 100, text: 'dragged in the chat', createdBy: O.id });
+      await waitFor(() => els(browser).get('live1')?.text === 'dragged in the chat', 5000, 'the view’s edit in the Freero tab');
+
+      assert((await O.req('DELETE', `/api/auth/tokens/${readTok.token.id}`)).status === 200, 'revoke');
+      await waitFor(() => ro.closeCodes.includes(4401), 10_000, 'the revoked connection’s live view to close');
+    });
 
     await check('mcp: revoking the token, or the app, refuses the very next MCP request', async () => {
       const script = await token(O, ['boards:read'], 'Short-lived');
@@ -6844,6 +6909,22 @@ async function collabChecks() {
       assert(results(v).get(poll.id)?.respondents === 1 && !results(v).has('forged'), 'a forged result reached the viewer');
     });
 
+    await check('a socket can’t claim who made an item (KAI-222): a sticky added as the owner "through Claude" reads as its sender’s on every client (no client ever sees the claim), and an item’s creator can’t be rewritten', async () => {
+      const claims = [];
+      els(v).observe((ev) => ev.changes.keys.forEach((_, k) => claims.push(els(v).get(k))));
+      const via = { kind: 'oauth', id: 'forged-app', name: 'Claude' };
+      els(e).set('claimed', { id: 'claimed', type: 'sticky', x: 0, y: 600, w: 100, h: 100, rotation: 0, z: 9, text: 'I am the owner', color: 'yellow', createdBy: O.id, createdVia: via, createdAt: 1, updatedAt: 1 });
+      await settled(e, [v]);
+      await waitFor(() => els(e).get('claimed')?.createdBy === E.id && !els(e).get('claimed').createdVia, 5000, 'the sender to converge to its own attribution');
+      const seen = els(v).get('claimed');
+      assert(seen?.createdBy === E.id && !('createdVia' in seen) && seen.text === 'I am the owner', `the viewer got ${JSON.stringify(seen)}`);
+      assert(!claims.some((c) => c?.createdBy === O.id || c?.createdVia), 'the forged claim reached the viewer');
+      els(e).set(poll.id, { ...els(e).get(poll.id), createdBy: O.id, createdVia: via, createdAt: 2 });
+      await settled(e, [v]);
+      await waitFor(() => els(e).get(poll.id)?.createdBy === E.id && !els(e).get(poll.id).createdVia, 5000, 'the rewrite to be undone on the sender');
+      assert(els(v).get(poll.id).createdBy === E.id && els(v).get(poll.id).createdAt === poll.createdAt, JSON.stringify(els(v).get(poll.id)));
+    });
+
     await check('sealed results stay off every client until an editor reveals them; a viewer can’t reveal', async () => {
       els(e).set('poll2', { ...poll, id: 'poll2', results: 'reveal' });
       await waitFor(() => els(v).has('poll2'), 5000, 'the sealed poll');
@@ -7303,6 +7384,150 @@ async function webhooksChecks() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Docs (KAI-162, KAI-152, KAI-124): a doc's Yjs document over /ws/docs with real clients — on two
+// instances (one Postgres, one Redis) when DATABASE_URL and REDIS_URL are set, else one.
+// ---------------------------------------------------------------------------
+
+/** Appends a paragraph in the editor's own node layout (blockGroup > blockContainer > paragraph > text). */
+function appendParagraph(doc, id, text) {
+  const root = doc.getXmlFragment('document-store');
+  doc.transact(() => {
+    let group = root.toArray().find((n) => n instanceof Y.XmlElement && n.nodeName === 'blockGroup');
+    if (!group) {
+      group = new Y.XmlElement('blockGroup');
+      root.insert(root.length, [group]);
+    }
+    const container = new Y.XmlElement('blockContainer');
+    container.setAttribute('id', id);
+    const para = new Y.XmlElement('paragraph');
+    const t = new Y.XmlText();
+    t.insert(0, text);
+    para.insert(0, [t]);
+    container.insert(0, [para]);
+    group.insert(group.length, [container]);
+  });
+}
+const docText = (c) => c.doc.getXmlFragment('document-store').toString();
+
+async function docsChecks() {
+  const REDIS_URL = process.env.REDIS_URL?.trim();
+  const multi = !!(ADMIN_URL && REDIS_URL);
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-docs-'));
+  const procs = [];
+  const clients = [];
+  try {
+    const url = ADMIN_URL ? await createDatabase() : null;
+    const env = { RATE_LIMIT_SIGNUP: '200/1h', RATE_LIMIT_INVITE: '500/1h', RATE_LIMIT_SEARCH: '2000/1m', FREERO_SNAPSHOT_EVERY_MS: '1000', ...(url ? { DATABASE_URL: url } : {}), ...(multi ? { REDIS_URL } : {}) };
+    const up = await check(`docs: ${multi ? 'two instances on one database and one Redis' : 'the server boots'}`, async () => {
+      for (let i = 0; i < (multi ? 2 : 1); i++) procs.push(await spawnServer(path.join(dataDir, `i${i}`), env));
+      await Promise.all(procs.map((p) => waitUp(p)));
+    });
+    if (!up) return;
+    const one = procs[0].port;
+    const two = procs[procs.length - 1].port;
+    const people = {};
+    for (const [label, port] of [['Author', one], ['Editor', two], ['Commenter', two], ['Stranger', one]]) {
+      const u = new User(`Doc${label}`, port);
+      await u.signup();
+      // Mail goes to the outbox of the instance that sent it.
+      await u.verifyEmail(path.join(dataDir, port === one ? 'i0' : `i${procs.length - 1}`));
+      people[label] = u;
+    }
+    const { Author: A, Editor: E, Commenter: C, Stranger: S } = people;
+    const join = async (u, id, port = u.port, wsPath = '/ws/docs') => {
+      const c = connectDoc(u, id, undefined, port, { path: wsPath });
+      clients.push(c);
+      await c.ready();
+      return c;
+    };
+    const created = await A.req('POST', '/api/docs', { title: 'Launch memo', markdown: '# Launch memo\n\nWe ship in May.\n' });
+    const doc = created.json?.doc;
+    const board = (await A.req('POST', '/api/boards', { title: 'Launch board' })).json.board;
+
+    await check('a doc made from Markdown is a doc (listed with its kind, opened at /doc/<id>) and its first content is in its Yjs document', async () => {
+      assert(created.status === 201 && doc.kind === 'doc', created.text);
+      const c = await join(A, doc.id);
+      assert(docText(c).includes('We ship in May.'), docText(c));
+      const list = (await A.req('GET', '/api/boards')).json.boards;
+      assert(list.some((b) => b.id === doc.id && b.kind === 'doc'), 'not listed as a doc');
+      c.destroy();
+    });
+
+    await check(`two editors co-edit a doc${multi ? ' from two instances' : ''}: each one's paragraph reaches the other at once, and both are saved`, async () => {
+      for (const [u, role] of [[E, 'editor'], [C, 'commenter']]) assert((await A.req('POST', `/api/boards/${doc.id}/members`, { email: u.email, role })).status === 201, `invite ${u.label}`);
+      const a = await join(A, doc.id, one);
+      const e = await join(E, doc.id, two);
+      appendParagraph(a.doc, 'pa', 'Written by the author');
+      appendParagraph(e.doc, 'pe', 'Written by the editor');
+      await waitFor(() => docText(a).includes('Written by the editor') && docText(e).includes('Written by the author'), 8000, 'each paragraph on the other side');
+      a.destroy();
+      e.destroy();
+      for (const p of procs) await waitUnloaded(p);
+      const md = (await A.req('GET', `/api/docs/${doc.id}/markdown`)).text;
+      assert(md.includes('Written by the author') && md.includes('Written by the editor'), md);
+    });
+
+    await check('the doc socket admits only people with access to THE DOC: a stranger, a board socket on a doc and a doc socket on a board are all refused (4403)', async () => {
+      assert((await wsCloseCode(doc.id, S.cookie, one, '/ws/docs')) === 4403, 'stranger on the doc');
+      assert((await wsCloseCode(doc.id, A.cookie, one, '/ws/boards')) === 4403, 'a board socket on a doc');
+      assert((await wsCloseCode(board.id, A.cookie, one, '/ws/docs')) === 4403, 'a doc socket on a board');
+    });
+
+    await check('a commenter comments on a block (and the @mentioned author is notified with a /doc link) but can never change the text', async () => {
+      const a = await join(A, doc.id, one);
+      const c = await join(C, doc.id, two);
+      const t = Date.now();
+      c.doc.transact(() => {
+        c.doc.getMap('comments').set('t:t1', { kind: 'thread', id: 't1', x: 0, y: 0, elementId: 'pa', createdAt: t, createdBy: C.id });
+        c.doc.getMap('comments').set('m:t1:m1', { kind: 'message', threadId: 't1', id: 'm1', authorId: C.id, authorName: C.name, text: `Is May firm, <@${A.id}>?`, createdAt: t });
+      });
+      appendParagraph(c.doc, 'pc', 'COMMENTER-TEXT');
+      await waitFor(() => a.doc.getMap('comments').has('m:t1:m1'), 8000, 'the comment at the author');
+      await settled(c, [a]);
+      assert(!docText(a).includes('COMMENTER-TEXT'), 'the commenter’s text reached the author');
+      await waitFor(async () => ((await A.req('GET', '/api/notifications')).json.notifications ?? []).some((n) => n.type === 'comment.mention' && n.link === `/doc/${doc.id}?thread=t1`), 10_000, 'the mention notification with a doc link');
+      a.destroy();
+      c.destroy();
+    });
+
+    await check('restoring a version brings the document back for everyone connected, and keeps the comments', async () => {
+      const a = await join(A, doc.id, one);
+      const e = await join(E, doc.id, two);
+      const named = await A.req('POST', `/api/boards/${doc.id}/versions`, { name: 'Before cuts' });
+      assert(named.status === 201, named.text);
+      appendParagraph(e.doc, 'late', 'A LATE PARAGRAPH');
+      await waitFor(() => docText(a).includes('A LATE PARAGRAPH'), 8000, 'the late paragraph');
+      await settled(e, [a]);
+      const r = await A.req('POST', `/api/boards/${doc.id}/versions/${named.json.version.id}/restore`);
+      assert(r.status === 200, r.text);
+      await waitFor(() => !docText(e).includes('A LATE PARAGRAPH') && !docText(a).includes('A LATE PARAGRAPH'), 8000, 'the restore on both clients');
+      assert(docText(e).includes('Written by the author') && e.doc.getMap('comments').has('m:t1:m1'), 'restored too much');
+      a.destroy();
+      e.destroy();
+    });
+
+    await check('a doc’s words are found by its readers (at the block), never by a stranger; a live board embed in it is a backlink of the board', async () => {
+      const app = await A.req('POST', `/api/docs`, { markdown: `# Embeds\n\nPlanning notes\n\n![Live board](freero://board/${board.id})\n` });
+      const hits = async (u, q) => (await u.req('GET', `/api/search?q=${encodeURIComponent(q)}`)).json.hits ?? [];
+      await waitFor(async () => (await hits(E, 'written author')).some((h) => h.path === `/doc/${doc.id}?block=pa`), 15_000, 'the doc paragraph in search');
+      assert((await hits(S, 'written author')).length === 0, 'a stranger found the doc');
+      await waitFor(async () => {
+        const r = await A.req('GET', `/api/objects/backlinks?uri=${encodeURIComponent(`freero://board/${board.id}`)}`);
+        return (r.json?.backlinks ?? []).some((l) => l.source.uri === `freero://doc/${app.json.doc.id}` && l.kinds.includes('embed'));
+      }, 15_000, 'the board embed as a backlink');
+    });
+  } finally {
+    for (const c of clients) c.destroy();
+    for (const p of procs) await stopProc(p);
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
 // `--only <group>[,<group>…]` runs some groups, e.g. to loop one while hunting a flake.
 const SUITES = {
   main: run,
@@ -7334,6 +7559,7 @@ const SUITES = {
   collab: collabChecks,
   search: searchChecks,
   webhooks: webhooksChecks,
+  docs: docsChecks,
 };
 const onlyArg = process.argv.indexOf('--only');
 const only = onlyArg >= 0 ? (process.argv[onlyArg + 1] ?? '').split(',').filter(Boolean) : Object.keys(SUITES);

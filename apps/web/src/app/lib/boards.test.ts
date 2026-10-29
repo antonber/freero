@@ -4,6 +4,7 @@ import { boardTime, filterByOwner, sortBoards } from './boards';
 
 const b = (id: string, p: Partial<BoardSummary>): BoardSummary => ({
   id,
+  kind: 'board',
   title: id,
   description: '',
   ownerId: 'u1',

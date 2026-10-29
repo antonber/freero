@@ -7,6 +7,8 @@ import type { NotificationType } from '@freero/shared';
 /** What a notification stores (`notifications.data`), worded when it is created. */
 export interface NotificationData {
   boardTitle?: string;
+  /** The container is a doc (KAI-162): links open /doc/<id>. */
+  objectKind?: 'doc';
   threadId?: string;
   messageId?: string;
   /** Comment text, mentions shown as names, shortened. */
@@ -54,13 +56,13 @@ export interface NotificationTypeDef {
   direct?: boolean;
 }
 
-const board = (d: NotificationData) => `“${d.boardTitle || 'Untitled board'}”`;
-const boardPath = (id: string | null) => (id ? `/board/${encodeURIComponent(id)}` : '/app');
+const board = (d: NotificationData) => `“${d.boardTitle || (d.objectKind === 'doc' ? 'Untitled doc' : 'Untitled board')}”`;
+const boardPath = (id: string | null, d?: NotificationData) => (id ? `/${d?.objectKind === 'doc' ? 'doc' : 'board'}/${encodeURIComponent(id)}` : '/app');
 const threadPath = (id: string | null, d: NotificationData) =>
-  d.threadId ? `${boardPath(id)}?thread=${encodeURIComponent(d.threadId)}` : boardPath(id);
+  d.threadId ? `${boardPath(id, d)}?thread=${encodeURIComponent(d.threadId)}` : boardPath(id, d);
 
 const itemPath = (id: string | null, d: NotificationData) =>
-  d.elementId ? `${boardPath(id)}?item=${encodeURIComponent(d.elementId)}` : boardPath(id);
+  d.elementId ? `${boardPath(id, d)}?item=${encodeURIComponent(d.elementId)}` : boardPath(id, d);
 /** Opens the walkthrough at the comment's moment (the walkthrough feature's `?walkthrough=&t=` deep link). */
 const walkthroughPath = (id: string | null, d: NotificationData) =>
   d.walkthroughId ? `${boardPath(id)}?walkthrough=${encodeURIComponent(d.walkthroughId)}${d.atMs !== undefined ? `&t=${Math.max(0, Math.round(d.atMs))}` : ''}` : boardPath(id);
@@ -92,7 +94,7 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
     label: 'Access requests',
     description: 'Someone asks for access to a board you own or administer.',
     title: (actor, d) => `${actor} asked to ${d.role && ASK_PHRASE[d.role] ? ASK_PHRASE[d.role] : 'open'} ${board(d)}`,
-    link: (id) => `${boardPath(id)}?share=requests`,
+    link: (id, d) => `${boardPath(id, d)}?share=requests`,
     linkLabel: 'Review the request',
   },
   'access.response': {
@@ -102,7 +104,7 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
       d.approved
         ? `${actor} gave you access to ${d.role && ROLE_PHRASE[d.role] ? `${ROLE_PHRASE[d.role]} ` : ''}${board(d)}`
         : `${actor} declined your request to open a board`,
-    link: (id, d) => boardPath(id ?? d.requestedBoardId ?? null),
+    link: (id, d) => boardPath(id ?? d.requestedBoardId ?? null, d),
     linkLabel: 'Open the board',
   },
   'comment.mention': {
@@ -123,7 +125,7 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
     label: 'Boards shared with you',
     description: 'Someone invites you to a board.',
     title: (actor, d) => `${actor} invited you to ${d.role && ROLE_PHRASE[d.role] ? `${ROLE_PHRASE[d.role]} ` : ''}${board(d)}`,
-    link: (id) => boardPath(id),
+    link: (id, d) => boardPath(id, d),
     linkLabel: 'Open the board',
   },
   'workspace.invite': {
@@ -174,7 +176,7 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
     label: 'Moderation notices',
     description: 'Freero’s moderators acted on something of yours.',
     title: (_actor, d) => MODERATION_TITLE[d.moderationAction ?? '']?.(d) ?? 'A notice from Freero’s moderators',
-    link: (id, d) => d.appealPath ?? boardPath(id),
+    link: (id, d) => d.appealPath ?? boardPath(id, d),
     linkLabel: 'Details and appeal',
     direct: true,
   },

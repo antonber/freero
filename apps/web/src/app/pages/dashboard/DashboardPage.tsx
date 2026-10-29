@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Folder, LayoutGrid, LayoutTemplate, List, Plus, RotateCw, Search, ShieldCheck, UserX, X } from 'lucide-react';
+import { FileText, Folder, LayoutGrid, LayoutTemplate, List, Plus, RotateCw, Search, ShieldCheck, UserX, X } from 'lucide-react';
 import { TRASH_RETENTION_DAYS, type BoardSummary, type ProjectSummary, type WorkspaceBlock } from '@freero/shared';
 import { Button, IconButton, Input, Kbd, Modal, SegmentedControl, Select, Skeleton, Spinner, useToast } from '@ui';
 import { api, ApiError, type BoardFilter } from '../../api/client';
@@ -8,7 +8,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { ShareDialog } from '../../components/ShareDialog';
 import { VerifyEmailBanner } from '../../components/VerifyEmailBanner';
 import { NotificationBell } from '../../notifications/NotificationBell';
-import { filterByOwner, sortBoards, type BoardSort, type OwnerFilter } from '../../lib/boards';
+import { filterByOwner, objectHref, sortBoards, type BoardSort, type OwnerFilter } from '../../lib/boards';
 import { useDebouncedValue, usePersistentState } from '../../lib/hooks';
 import { BoardItem, type BoardActions } from './BoardItem';
 import { ContentSearch, useContentSearch } from './ContentSearch';
@@ -80,7 +80,7 @@ export function DashboardPage() {
 
   const [boards, setBoards] = useState<BoardSummary[] | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
-  const [creating, setCreating] = useState<'blank' | 'template' | null>(null);
+  const [creating, setCreating] = useState<'blank' | 'template' | 'doc' | null>(null);
   const reqId = useRef(0);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -155,10 +155,16 @@ export function DashboardPage() {
     setBoards((list) => list?.map((b) => (b.id === id ? { ...b, ...patch } : b)) ?? null);
   }, []);
 
-  const create = async (kind: 'blank' | 'template') => {
+  const create = async (kind: 'blank' | 'template' | 'doc') => {
     if (creating || !workspace) return;
     setCreating(kind);
     try {
+      if (kind === 'doc') {
+        // A doc (KAI-162): the same workspace and project rules as a board.
+        const { doc } = await api.createDoc({ title: 'Untitled doc', workspaceId: workspace.id, projectId: project?.id ?? null });
+        navigate(objectHref(doc));
+        return;
+      }
       const { board } = await api.createBoard({ title: UNTITLED, workspaceId: workspace.id, projectId: project?.id ?? null });
       navigate(`/board/${board.id}${kind === 'template' ? '?dock=templates' : ''}`);
     } catch (e) {
@@ -192,7 +198,7 @@ export function DashboardPage() {
   moveRef.current = moveBoard;
   const actions = useMemo<BoardActions>(
     () => ({
-      open: (b) => navigate(`/board/${b.id}`),
+      open: (b) => navigate(objectHref(b)),
       rename: (b) => setRenaming(b),
       share: (b) => setSharing(b),
       remove: (b) => setDeleting(b),
@@ -213,7 +219,7 @@ export function DashboardPage() {
           const { board } = await api.duplicateBoard(b.id);
           setBoards((list) => (list ? [board, ...list] : [board]));
           notify(`Duplicated “${b.title || UNTITLED}”`, 'success', {
-            action: { label: 'Open', onClick: () => navigate(`/board/${board.id}`) },
+            action: { label: 'Open', onClick: () => navigate(objectHref(board)) },
           });
         } catch (e) {
           notify(e instanceof ApiError ? e.message : 'Could not duplicate the board', 'error');
@@ -243,7 +249,7 @@ export function DashboardPage() {
           await api.restoreBoard(b.id);
           setBoards((list) => list?.filter((x) => x.id !== b.id) ?? null);
           notify(`Restored “${b.title || UNTITLED}”`, 'success', {
-            action: { label: 'Open', onClick: () => navigate(`/board/${b.id}`) },
+            action: { label: 'Open', onClick: () => navigate(objectHref(b)) },
           });
         } catch (e) {
           notify(e instanceof ApiError ? e.message : 'Could not restore the board', 'error');
@@ -364,6 +370,13 @@ export function DashboardPage() {
                 <span className="fr-create__text">
                   <span className="fr-create__title">From template</span>
                   <span className="fr-create__sub">Retros, roadmaps, brainstorms</span>
+                </span>
+              </button>
+              <button type="button" className="fr-create__tile fr-create__tile--doc" onClick={() => create('doc')} disabled={!!creating}>
+                <span className="fr-create__icon">{creating === 'doc' ? <Spinner size={22} /> : <FileText size={22} />}</span>
+                <span className="fr-create__text">
+                  <span className="fr-create__title">New doc</span>
+                  <span className="fr-create__sub">Write it up next to your boards</span>
                 </span>
               </button>
             </section>

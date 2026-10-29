@@ -9,7 +9,9 @@
 // bound to this resource (RFC 8707 `resource`). Personal access tokens work as bearer tokens too.
 // Read + suggest is the default; changing boards directly is opt-in on the consent screen.
 import { Router, type Request, type Response } from 'express';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { Readable } from 'node:stream';
+import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
+import { createMcpHandler } from '@modelcontextprotocol/server';
 import { MCP_DEFAULT_SCOPES, MCP_SCOPES } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { logError } from '../../platform/log';
@@ -19,6 +21,16 @@ import { authenticate, registerProtectedResource, sendAuthError, type ApiCredent
 import { buildServer } from './server';
 
 export const mountPath = '/';
+
+/** The request as the SDK's web-standard handler reads it (the body is already parsed: `parsedBody`). */
+function toWebRequest(req: Request): globalThis.Request {
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(req.headers)) {
+    if (value === undefined || name === 'content-length') continue;
+    for (const v of Array.isArray(value) ? value : [value]) headers.append(name, v);
+  }
+  return new globalThis.Request(`${req.protocol}://${req.get('host') ?? 'localhost'}${req.originalUrl}`, { method: req.method, headers });
+}
 export const RESOURCE = '/mcp';
 
 /** A JSON-RPC error outside any request (the transport never saw it). */
@@ -40,6 +52,19 @@ export default function mcpRoutes(_ctx: ServerContext): Router {
     }),
   );
 
+  // One handler for both protocol eras (the SDK's per-request serving): 2026-07-28 requests carry
+  // their own envelope, 2025-era ones are served by a fresh stateless transport — either way a
+  // fresh server per request, built for that request's credential (looked up by its web Request).
+  const pending = new WeakMap<globalThis.Request, { req: Request; cred: ApiCredential }>();
+  const handler = createMcpHandler(
+    (ctx) => {
+      const p = ctx.requestInfo ? pending.get(ctx.requestInfo) : undefined;
+      if (!p) throw new Error('mcp: a request without its credential');
+      return buildServer(p.req, p.cred);
+    },
+    { legacy: 'stateless', responseMode: 'json', onerror: (e) => logError('mcp: request failed', e) },
+  );
+
   r.post('/mcp', (req: Request, res: Response, next) => {
     void (async () => {
       let cred: ApiCredential;
@@ -51,15 +76,14 @@ export default function mcpRoutes(_ctx: ServerContext): Router {
       } catch (e) {
         return sendAuthError(e, res, next);
       }
-      const server = buildServer(req, cred);
-      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
-      res.on('close', () => {
-        void transport.close();
-        void server.close();
-      });
       try {
-        await server.connect(transport);
-        await transport.handleRequest(req, res, req.body);
+        const web = toWebRequest(req);
+        pending.set(web, { req, cred });
+        const answer = await handler.fetch(web, { parsedBody: req.body });
+        res.status(answer.status);
+        answer.headers.forEach((value, name) => res.setHeader(name, value));
+        if (!answer.body) return res.end();
+        Readable.fromWeb(answer.body as unknown as NodeReadableStream).pipe(res);
       } catch (e) {
         logError('mcp: request failed', e);
         if (!res.headersSent) rpcError(res, 500, 'Internal server error');

@@ -22,7 +22,10 @@ export interface SearchHit {
   uri: string;
   /** Where the app opens it: /board/<id>, /board/<id>?el=<item>, /board/<id>?thread=<thread>. */
   path: string;
+  /** The board (or doc) it is in. */
   board: { id: string; title: string };
+  /** [additive] 'doc' when the hit is in a doc (KAI-162): `itemId` is then a block id. */
+  objectKind?: 'board' | 'doc';
   /** The item's element type ('sticky', 'frame', …) for items and pinned comments. */
   itemType?: string;
   /** The item the hit is on (items; comments pinned to an item). */

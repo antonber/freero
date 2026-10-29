@@ -60,7 +60,8 @@ export async function resolveForApi(call: ApiCall, uris: unknown): Promise<{ not
   const boardOf = (o: ResolvedObject): string | null => {
     if (o.status !== 'ok') return null;
     const ref = parseObjectUri(o.uri, origins);
-    return ref?.type === 'board' ? ref.id : ref?.type === 'element' ? ref.boardId : null;
+    // A doc (KAI-162) is a container like a board: its workspace's API switch applies the same way.
+    return ref?.type === 'board' || ref?.type === 'doc' ? ref.id : ref?.type === 'element' ? ref.boardId : null;
   };
   const boards = [...new Set(resolved.map(boardOf).filter((b): b is string => !!b))];
   const [open, withText] = await Promise.all([readable(call, boards, false), readable(call, boards, true)]);
@@ -83,10 +84,10 @@ export async function backlinksForApi(call: ApiCall, uri: unknown): Promise<{ no
   const origins = appOrigins(call.req);
   const ref = typeof uri === 'string' ? parseObjectUri(uri, origins) : null;
   const all = await backlinksOf({ userId: call.userId }, uri, origins);
-  const targetBoard = ref?.type === 'board' ? ref.id : ref?.type === 'element' ? ref.boardId : null;
+  const targetBoard = ref?.type === 'board' || ref?.type === 'doc' ? ref.id : ref?.type === 'element' ? ref.boardId : null;
   if (targetBoard) {
     if (!(await readable(call, [targetBoard], false)).has(targetBoard)) throw notFound('Not found');
-    call.audit.target = { type: 'board', id: targetBoard };
+    call.audit.target = { type: ref?.type === 'doc' ? 'doc' : 'board', id: targetBoard };
   }
   const open = await readable(call, [...new Set(all.map((l) => l.board.id))], false);
   const backlinks = all.filter((l) => open.has(l.board.id));

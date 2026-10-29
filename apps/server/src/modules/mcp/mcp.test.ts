@@ -6,9 +6,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import * as Y from 'yjs';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { Client, StreamableHTTPClientTransport, type CallToolResult } from '@modelcontextprotocol/client';
 import { UNTRUSTED_CONTENT_NOTICE, type ApiScope, type BoardElement } from '@freero/shared';
 import { apiNotFound, createApp, errorHandler } from '../../platform/http';
 import { closeTestDb, openTestDb } from '../../platform/testing';
@@ -16,7 +14,7 @@ import { createPersonalToken } from '../apiauth/index';
 import { createUser } from '../auth/index';
 import { drainOutbox, registerOutboxConsumer } from '../../platform/outbox';
 import { createBoard, registerBoardObjectTypes } from '../boards/index';
-import { initBoardDoc, readBoardView } from '../realtime/index';
+import { changeBoard, initBoardDoc, readBoardView } from '../realtime/index';
 import { SEARCH_CONSUMER, searchConsumer } from '../search/index';
 import { ENVELOPE_TAG } from './content';
 import mcpRoutes, { mountPath } from './routes';
@@ -142,4 +140,47 @@ it('what an app adds is attributed to it AND the person: the outline reads "<app
   const md = textOf(await client.callTool({ name: 'get_board_outline', arguments: { boardId, authors: true } }));
   expect(md).toContain('by Claude for Maria');
   await client.close();
+});
+
+it('a control room reports what PEOPLE did — a card dragged back to To do, a comment on a blocker — once, never the agent’s own moves, and re-posting a task updates its card instead of duplicating it', async () => {
+  const agent = await connect(['boards:read', 'boards:write'], 'Builder');
+  const post = async (args: Record<string, unknown>) => {
+    const r = (await agent.callTool({ name: 'post_status', arguments: args })) as CallToolResult;
+    expect(r.isError, textOf(r)).toBeFalsy();
+    return JSON.parse(textOf(r)) as { boardId: string; cursor: string; untrusted_board_content: { tasks: Array<{ id: string; title: string; column: string }> } };
+  };
+  const feedback = async (boardId: string, cursor: string) =>
+    JSON.parse(textOf(await agent.callTool({ name: 'get_feedback', arguments: { boardId, cursor } }))) as { cursor: string; untrusted_board_content: { changes: Array<Record<string, unknown>> } };
+
+  const first = await post({ title: 'Migration', plan: ['Copy data', 'Switch reads'], status: 'Starting', tasks: [{ title: 'Copy data', state: 'doing' }, { title: 'Get DB access', state: 'blocked', note: 'Who can grant prod read access?' }] });
+  const { boardId } = first;
+  const card = (t: string) => first.untrusted_board_content.tasks.find((x) => x.title === t)!.id;
+  // The agent moves its own card: that is not feedback.
+  const second = await post({ boardId, cursor: first.cursor, tasks: [{ title: 'Copy data', state: 'done' }, { title: 'copy data ', state: 'done' }] });
+  expect(second.untrusted_board_content.tasks.filter((t) => t.title === 'Copy data')).toHaveLength(1);
+  expect((await feedback(boardId, second.cursor)).untrusted_board_content.changes).toEqual([]);
+
+  // A person drags "Copy data" back to To do and answers on the blocker.
+  const view = await readBoardView(boardId, { userId: ownerId, role: 'owner' });
+  const kanban = view.elements.find((e) => e.el.type === 'kanban')!.el;
+  const copy = view.elements.find((e) => e.el.id === card('Copy data'))!.el;
+  await changeBoard(boardId, { userId: ownerId, role: 'owner', name: 'Maria' }, () => ({
+    change: {
+      update: [{ id: copy.id, patch: { x: kanban.x + 22, status: 'todo' } }],
+      collections: {
+        comments: {
+          't:th1': { kind: 'thread', id: 'th1', x: 0, y: 0, elementId: card('Get DB access'), createdAt: 2, createdBy: ownerId },
+          'm:th1:m1': { kind: 'message', threadId: 'th1', id: 'm1', authorId: ownerId, authorName: 'Maria', text: 'Ask Ops, I approved it', createdAt: 2 },
+        },
+      },
+    },
+  }));
+  const fb = await feedback(boardId, second.cursor);
+  expect(fb.untrusted_board_content.changes).toEqual([
+    { kind: 'card_moved', itemId: card('Copy data'), title: 'Copy data', from: 'Done', to: 'To do' },
+    expect.objectContaining({ kind: 'comment', itemId: card('Get DB access'), itemTitle: 'Get DB access', author: 'Maria', text: 'Ask Ops, I approved it' }),
+  ]);
+  // Reported once: the next read from the new cursor is quiet.
+  expect((await feedback(boardId, fb.cursor)).untrusted_board_content.changes).toEqual([]);
+  await agent.close();
 });

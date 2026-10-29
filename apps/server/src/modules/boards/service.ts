@@ -1,4 +1,4 @@
-import { BOARD_REMOVED, DOWNLOADS_RESTRICTED, isGuestId, LINK_PASSWORD_REQUIRED, TRASH_RETENTION_DAYS, type BoardPermissions, type BoardSummary, type LinkAccess, type Role } from '@freero/shared';
+import { BOARD_REMOVED, DOWNLOADS_RESTRICTED, isGuestId, LINK_PASSWORD_REQUIRED, TRASH_RETENTION_DAYS, type BoardPermissions, type BoardSummary, type LinkAccess, type ObjectKind, type Role } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { badRequest, forbidden, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
@@ -6,7 +6,7 @@ import { runExclusive } from '../../platform/jobs';
 import { log } from '../../platform/log';
 import { recordAudit, recordAuditQuietly } from '../audit/index';
 import { getGuests, getUser, getUsers } from '../auth/index';
-import { atLeast, getMemberRole, membershipsOf, ownershipTransferred, resolveGuestRole, resolveRole } from '../members/index';
+import { atLeast, getMemberRole, membershipsOf, ownershipTransferred, resolveGuestRole, resolveRole, ROLE_RANK } from '../members/index';
 import {
   closeBoardDoc,
   initBoardDoc,
@@ -45,7 +45,46 @@ export const TRASH_RETENTION_MS = TRASH_RETENTION_DAYS * DAY_MS;
 export const DEFAULT_TITLE = 'Untitled board';
 
 /** A board as an audit event's target (its title as it is now). */
-export const boardTarget = (b: { id: string; title: string }) => ({ type: 'board', id: b.id, label: b.title });
+/** The audit log's target for a container: a board, or a doc (KAI-162). */
+export const boardTarget = (b: { id: string; title: string; kind?: ObjectKind }) => ({ type: b.kind === 'doc' ? 'doc' : 'board', id: b.id, label: b.title });
+
+/**
+ * Throws unless `user` (with `role` on the board) may set its link to `linkAccess`: the owner only,
+ * never while an operator blocks the link, a verified address to turn it on, and within the
+ * workspace's policies (links at all, up to which role, sharing outside the workspace).
+ */
+export function checkLinkAccessChange(board: Board, role: Role, access: BoardWorkspaceAccess, user: { emailVerified: boolean }, linkAccess: LinkAccess): void {
+  if (role !== 'owner') throw forbidden('Only the board owner can change link sharing');
+  if (board.linkBlocked) throw new HttpError(403, 'Freero’s moderators turned link sharing off for this board. Use the appeal link in the email we sent you.', 'link_blocked');
+  if (linkAccess !== 'none' && !user.emailVerified) throw forbidden('Verify your email address before sharing by link');
+  if (linkAccess !== 'none' && linkAccess !== board.linkAccess) {
+    // Workspace policies: links reach people outside the workspace, and only up to a maximum role.
+    if (access.maxLink === 'none') throw forbidden('This workspace doesn’t allow sharing boards by link');
+    if (ROLE_RANK[linkAccess] > ROLE_RANK[access.maxLink as Exclude<LinkAccess, 'none'>])
+      throw forbidden(`This workspace allows links up to “can ${access.maxLink === 'viewer' ? 'view' : 'comment'}”`);
+    if (!mayShareExternally(access.workspaceRole, access.policies)) throw forbidden('This workspace doesn’t let you share its boards outside it');
+  }
+}
+
+/** After a stored link change: audited, and every live socket's access re-resolved. */
+export async function linkAccessChanged(board: Board, actorId: string, to: LinkAccess): Promise<void> {
+  await recordAuditQuietly({ action: 'board.link_sharing_changed', workspaceId: board.workspaceId, actorId, target: boardTarget(board), metadata: { from: board.linkAccess, to } });
+  await refreshBoardAccess(board.id);
+}
+
+/**
+ * Shares the board by its link with at least `linkAccess` (an app's "Share with team", KAI-171):
+ * a link that already lets people in as much or more is kept as it is; otherwise the same rules as
+ * the share dialog apply (owner, verified address, workspace policies, operator blocks).
+ */
+export async function shareByLink(boardId: string, user: { id: string; emailVerified: boolean }, linkAccess: Exclude<LinkAccess, 'none'>): Promise<{ linkAccess: LinkAccess; changed: boolean }> {
+  const { board, role, access } = await requireAccess(boardId, user.id);
+  if (board.linkAccess !== 'none' && ROLE_RANK[board.linkAccess] >= ROLE_RANK[linkAccess]) return { linkAccess: board.linkAccess, changed: false };
+  checkLinkAccessChange(board, role, access, user, linkAccess);
+  await repo.updateBoardFields(board.id, { linkAccess }, Date.now());
+  await linkAccessChanged(board, user.id, linkAccess);
+  return { linkAccess, changed: true };
+}
 
 /** EXPORT_FORMATS a client may report (POST /boards/:id/exported). */
 export const EXPORT_FORMATS = ['png', 'jpg', 'svg', 'pdf', 'csv', 'json', 'markdown', 'other'] as const;
@@ -59,7 +98,7 @@ export async function recordExport(boardId: string, userId: string, format: unkn
   const { board, access } = await requireAccess(boardId, userId);
   await requireDownload(board, userId, access, 'export');
   const f = (EXPORT_FORMATS as readonly unknown[]).includes(format) ? (format as string) : 'other';
-  await recordAudit({ action: 'board.exported', workspaceId: board.workspaceId, actorId: userId, target: boardTarget(board), metadata: { format: f } });
+  await recordAudit({ action: board.kind === 'doc' ? 'doc.exported' : 'board.exported', workspaceId: board.workspaceId, actorId: userId, target: boardTarget(board), metadata: { format: f } });
 }
 
 /**
@@ -224,6 +263,7 @@ export async function toSummary(
   const ownerName = extra?.ownerName ?? (await getUser(board.ownerId))?.name ?? 'Unknown';
   return {
     id: board.id,
+    kind: board.kind,
     title: board.title,
     description: board.description,
     ownerId: board.ownerId,
@@ -357,6 +397,8 @@ export async function createBoard(
   place: BoardPlace = {},
   /** The board it is a copy of (duplicates): carried by its `board.created` event. */
   copyOf?: string,
+  /** What it holds (KAI-162): a board, or a doc (modules/docs). Same quota, same rules. */
+  kind: ObjectKind = 'board',
 ): Promise<Board> {
   const workspaceId = place.workspaceId || (await ensurePersonalWorkspace(ownerId));
   const projectId = place.projectId || null;
@@ -371,6 +413,7 @@ export async function createBoard(
       const now = Date.now();
       const board: Board = {
         id: newId(10),
+        kind,
         title,
         description,
         ownerId,
@@ -391,8 +434,8 @@ export async function createBoard(
         callJitsi: false,
       };
       await repo.insertBoard(board);
-      await recordAudit({ action: 'board.created', workspaceId, actorId: ownerId, target: boardTarget(board), metadata: { projectId } });
-      await repo.appendBoardEvent({ type: 'board.created', boardId: board.id, workspaceId, actorId: ownerId, title, ...(copyOf ? { copyOf } : {}) });
+      await recordAudit({ action: kind === 'doc' ? 'doc.created' : 'board.created', workspaceId, actorId: ownerId, target: boardTarget(board), metadata: { projectId } });
+      await repo.appendBoardEvent({ type: 'board.created', boardId: board.id, workspaceId, actorId: ownerId, title, ...(copyOf ? { copyOf } : {}), ...(kind === 'doc' ? { kind } : {}) });
       return board;
     },
   );
@@ -608,7 +651,7 @@ export async function duplicateBoard(source: Board, userId: string, role: Role):
   // Pending suggestions stay with the board they were proposed for (KAI-169).
   const editors = atLeast(role, 'editor') ? await snapshotBoardLayer(source.id, 'editors', { withoutSuggestions: true }) : null;
   const made = await repo.transaction(async () => {
-    const copy = await createBoard(userId, `Copy of ${source.title}`.slice(0, 200), source.description, 'none', place, source.id);
+    const copy = await createBoard(userId, `Copy of ${source.title}`.slice(0, 200), source.description, 'none', place, source.id, source.kind);
     await recordAudit({
       action: 'board.duplicated',
       workspaceId: source.workspaceId,

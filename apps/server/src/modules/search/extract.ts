@@ -8,7 +8,7 @@
 // frames' contents are not in the view, and a comment thread pinned to an item that is not in it
 // (inside a hidden frame) is left out too — although its records sit in the shared doc's
 // `comments` collection, which is not filtered per element.
-import type { BoardOutline, OutlineItem, OutlineThread, SearchHitKind } from '@freero/shared';
+import { blockText, walkDocBlocks, type BoardOutline, type CommentMessageRecord, type CommentThreadRecord, type CommentTombstone, type DocBlock, type OutlineItem, type OutlineThread, type SearchHitKind } from '@freero/shared';
 
 export interface SearchRow {
   /** '' for the board itself, the element id for an item, 'c:<thread>:<message>' for a comment. */
@@ -99,5 +99,40 @@ export function extractSearchRows({ board, outline, types, withheldThreads }: Ex
   walk(outline.items);
   for (const e of outline.edges) if (e.label) add({ key: e.id, kind: 'item', elementId: e.id, elementType: types.get(e.id) ?? 'connector', threadId: null, body: clean([e.label]) });
   comments(outline.comments, null);
+  return [...rows.values()];
+}
+
+/**
+ * What a doc says (KAI-162): its title, each block's text (headings, paragraphs, list items, table
+ * cells, image captions — a block is the doc's "item": `elementId` is its id) and its comment
+ * messages, on the block their thread is on. A doc withholds nothing from its readers, so every
+ * reader of it may find all of it. Deleted threads and messages are not indexed.
+ */
+export function extractDocRows(doc: { title: string }, content: { blocks: DocBlock[]; comments: ReadonlyMap<string, unknown> } | null): SearchRow[] {
+  const rows = new Map<string, SearchRow>();
+  const add = (row: SearchRow) => {
+    if (!row.body || rows.size >= MAX_ROWS || rows.has(row.key)) return;
+    rows.set(row.key, row);
+  };
+  add({ key: '', kind: 'board', elementId: null, elementType: null, threadId: null, body: clean([doc.title]) });
+  if (!content) return [...rows.values()];
+  for (const { block } of walkDocBlocks(content.blocks)) {
+    if (typeof block.id !== 'string' || !block.id) continue;
+    add({ key: block.id, kind: 'item', elementId: block.id, elementType: block.type, threadId: null, body: clean([blockText(block)]) });
+  }
+  const threads = new Map<string, string | null>();
+  const deleted = new Set<string>();
+  for (const v of content.comments.values()) {
+    const r = v as Partial<CommentThreadRecord | CommentTombstone> | null;
+    if (r?.kind === 'thread' && typeof r.id === 'string') threads.set(r.id, typeof r.elementId === 'string' && r.elementId ? r.elementId : null);
+    else if (r?.kind === 'deleted' && typeof r.threadId === 'string') deleted.add(r.messageId ? `${r.threadId}:${r.messageId}` : r.threadId);
+  }
+  for (const v of content.comments.values()) {
+    const m = v as Partial<CommentMessageRecord> | null;
+    if (m?.kind !== 'message' || typeof m.threadId !== 'string' || typeof m.id !== 'string' || typeof m.text !== 'string') continue;
+    if (!threads.has(m.threadId) || deleted.has(m.threadId) || deleted.has(`${m.threadId}:${m.id}`)) continue;
+    const blockId = threads.get(m.threadId) ?? null;
+    add({ key: `c:${m.threadId}:${m.id}`, kind: 'comment', elementId: blockId, elementType: null, threadId: m.threadId, body: clean([m.text]) });
+  }
   return [...rows.values()];
 }

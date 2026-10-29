@@ -48,6 +48,10 @@ export interface ApiCredential {
   clientId: string | null;
   scopes: ApiScope[];
   account: Account;
+  /** The app consent behind an OAuth token (null: a personal token). */
+  grantId: string | null;
+  /** How the session that made the credential signed in (sign-in restrictions apply to it). */
+  issuedVia: string;
 }
 
 // ---- personal access tokens (the owner's session) ----
@@ -223,6 +227,8 @@ export async function authenticate(req: Request, resource: string): Promise<ApiC
     clientId: token.clientId,
     scopes: token.scopes.filter(isApiScope),
     account,
+    grantId: token.grantId,
+    issuedVia: token.issuedVia,
   };
 }
 

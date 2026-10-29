@@ -1,6 +1,9 @@
 // Client-side ordering/filtering of the dashboard's board collection.
 import type { BoardSummary } from '@freero/shared';
 
+/** Where a board or a doc (KAI-162) opens. */
+export const objectHref = (b: Pick<BoardSummary, 'id' | 'kind'>): string => `/${b.kind === 'doc' ? 'doc' : 'board'}/${encodeURIComponent(b.id)}`;
+
 export type BoardSort = 'opened' | 'modified' | 'name';
 export type OwnerFilter = 'any' | 'me' | 'others';
 
