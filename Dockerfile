@@ -28,6 +28,8 @@ RUN cd apps/web && npx vite build
 # ---- 2b. prerender the marketing site (static HTML, OG images; served by modules/site) ------------
 FROM deps AS site
 COPY tsconfig.base.json ./
+# The site reads shared data (the integrations catalog, MCP tool list) from @freero/shared.
+COPY packages/shared packages/shared
 COPY apps/web/src/ui/tokens.css apps/web/src/ui/tokens.css
 COPY apps/site apps/site
 RUN cd apps/site && npx tsx src/build.tsx
