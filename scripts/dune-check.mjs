@@ -23,6 +23,7 @@ const FEATURE_RESERVED = new Set([
   'commands.ts',
   'decoration.tsx',
   'outline.ts',
+  'importer.ts',
 ]);
 
 const rel = (p) => path.relative(ROOT, p).split(path.sep).join('/');
