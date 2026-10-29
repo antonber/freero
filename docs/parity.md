@@ -248,13 +248,13 @@ workflows. For Freero, every row here needs a model provider that the operator o
 | Capability | What it does | Freero status | Size | Priority | Phase |
 |---|---|---|---|---|---|
 | Public REST API | Read and write boards, items and members from code | Have (`/api/v1`, docs/api/; KAI-104) | L | P2 | parity |
-| Webhooks | Push board and item events to other systems | Missing (KAI-105) | M | P2 | parity |
+| Webhooks | Push board and item events to other systems | Have (workspace endpoints from the admin console, event filters, HMAC-signed, retries and delivery log; KAI-105, docs/events.md) | — | P2 | parity |
 | API tokens and OAuth apps | Credentials that let third-party apps act for a user | Have (tokens, OAuth 2.1 + PKCE, dynamic registration; KAI-104) | M | P2 | parity |
 | Embed a live board | Put a viewable or editable board in other sites (iframe, oEmbed) | Missing (KAI-106) | M | P2 | parity |
 | In-board app SDK | Third-party apps that run on the canvas and add items or panels | Missing (API and webhooks first, see §16) | XL | P3 | parity |
 | App marketplace | Browse and install third-party apps | Missing (see §16) | XL | P3 | parity |
 | MCP server | Let AI coding and agent tools read and write boards | Missing (KAI-107) | M | P3 | parity |
-| Chat integrations | Board notifications and link previews in Slack or Teams | Missing (channel posts through webhooks: KAI-105) | M | P3 | parity |
+| Chat integrations | Board notifications and link previews in Slack or Teams | Partial: channel posts through webhooks in Slack / Teams format (KAI-105); no link previews inside Slack or Teams | M | P3 | parity |
 | Work-tracker sync | Two-way sync between cards or table rows and Jira, Asana, Azure DevOps, monday.com or Trello items | Missing (see §16) | XL | P3 | parity |
 | Cloud file pickers | Insert files from Google Drive, OneDrive or Dropbox | Missing | M | P3 | parity |
 | Meeting-app integrations | Open a board inside Zoom, Teams or Meet calls | Missing | L | P3 | parity |
@@ -283,7 +283,7 @@ workflows. For Freero, every row here needs a model provider that the operator o
 | Sessions and devices | See and revoke signed-in devices | Have (with approximate location) | — | P2 | — |
 | Account deletion | Delete your account and its data yourself | Have (grace period, then purge) | — | P2 | — |
 | Board dashboard | Grid or list of boards, search, sort, owner filter, stars, recent, shared with me, thumbnails | Have | — | P0 | — |
-| Search inside boards | Find the boards whose content mentions something, from the dashboard | Missing (dashboard search matches titles only; KAI-141) | M | P2 | parity |
+| Search inside boards | Find the boards whose content mentions something, from the dashboard | Have ("Inside boards": titles, items, frames, tables, tags, comments, opening the item; also the API and MCP; KAI-141, KAI-151) | — | P2 | parity |
 | Board lifecycle | Create (blank or from a template), rename, duplicate, delete, leave | Have | — | P0 | — |
 | Trash and restore | Recover deleted boards for a while | Have | — | P1 | — |
 | Board roles | Owner, editor, commenter and viewer per board | Have | — | P0 | — |
