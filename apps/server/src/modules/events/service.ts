@@ -127,7 +127,8 @@ async function boardNow(boardId: string, title: string): Promise<BoardNow> {
     });
   }
   // Comments pinned to an item that is not in the view (inside a hidden frame) are withheld from
-  // some readers of the board: they are no event (their records sit in the shared doc anyway).
+  // some readers of the board: they are no event. (Their records live in the editors layer since
+  // KAI-234; a board saved before that keeps them in the shared doc until it is next loaded.)
   const threads = new Map<string, string | null>();
   const comments = view.collection(COMMENTS_COLLECTION);
   for (const v of comments.values()) {
