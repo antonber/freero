@@ -1,7 +1,8 @@
 // The audit log's record of decisions on suggestions (KAI-169): one event per decision step
 // (an "Accept all" of ten items is one event), in the board's workspace log, wherever it was
-// made — a socket on this instance (rooms.ts, after the guard let it through) or a request
-// (the public API). Never board text: ids, counts and who proposed them.
+// made — a socket on this instance (rooms.ts, after the guard let it through), a request (the
+// public API), or Freero withdrawing an app's suggestions when it was revoked (`via: 'revoked'`, in
+// the name of the person it acted for; KAI-224). Never board text: ids, counts and who proposed them.
 import type { AuditAction, SuggestionDecision, SuggestionRecord } from '@freero/shared';
 import { logError } from '../../platform/log';
 import { recordAuditQuietly } from '../audit/index';
@@ -21,7 +22,7 @@ const ACTION: Record<'accepted' | 'rejected' | 'reopened', AuditAction> = {
 };
 
 /** Records the decisions `actorId` made on `boardId` (`via`: the app's board socket or the API). */
-export async function auditDecisions(boardId: string, actorId: string, steps: readonly DecisionStep[], via: 'board' | 'api'): Promise<void> {
+export async function auditDecisions(boardId: string, actorId: string, steps: readonly DecisionStep[], via: 'board' | 'api' | 'revoked'): Promise<void> {
   if (!steps.length) return;
   try {
     const kinds = new Map<'accepted' | 'rejected' | 'reopened', DecisionStep[]>();

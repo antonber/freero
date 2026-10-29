@@ -18,6 +18,7 @@ import { authenticate, registerProtectedResource, requireScope, sendAuthError, t
 import { parseOutlineQuery } from '../outline/index';
 import { backlinksForApi, resolveForApi, searchContent } from './objects';
 import { appendToDoc, createDocFor, listDocs, readDocFor } from './docs';
+import { getFeedback, postStatus, readStatusPost } from './controlRoom';
 import * as api from './service';
 import OPENAPI from '../../../../../docs/api/openapi.json';
 
@@ -163,6 +164,16 @@ export default function apiRoutes(_ctx: ServerContext): Router {
       const out = await api.decideSuggestions(call, call.req.params.boardId, status, call.req.body);
       return 'stale' in out ? { status: 409, body: out } : { body: out };
     });
+
+  // ---- control rooms (KAI-172, KAI-249): an agent's lane, as the MCP tools post_status / get_feedback ----
+  endpoint('post', '/boards/:boardId/control-room', 'boards:write', async (call) => ({
+    body: api.withNotice(await postStatus(call, { ...readStatusPost(call.req.body), boardId: call.req.params.boardId })),
+  }));
+  endpoint('get', '/boards/:boardId/control-room', 'boards:read', async (call) => {
+    const q = call.req.query;
+    const str = (v: unknown) => (typeof v === 'string' && v ? v : undefined);
+    return { body: api.withNotice(await getFeedback(call, call.req.params.boardId, str(q.cursor), str(q.agent)?.slice(0, 80))) };
+  });
 
   // ---- comments ----
   endpoint('get', '/boards/:boardId/comments', 'boards:read', async (call) => ({ body: await api.listComments(call, call.req.params.boardId) }));

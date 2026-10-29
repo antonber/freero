@@ -6026,6 +6026,25 @@ async function suggestionsChecks() {
       await waitFor(() => e.role === 'editor', 5000, 'the lock to end');
     });
 
+    await check('suggestions: revoking a token withdraws what it proposed from editors’ open boards on every instance, and nobody can reopen them; another token’s suggestions stay (KAI-224)', async () => {
+      const made = await O.req('POST', '/api/auth/tokens', { name: 'Short-lived agent', scopes: ['boards:suggest'], expiresInDays: 30 });
+      assert(made.status === 201, `token: ${made.status} ${made.text}`);
+      const goneIds = (await call(made.json.secret, 'POST', `/boards/${board}/suggestions`, { description: 'From a token about to be revoked', create: [{ type: 'sticky', text: 'Withdrawn idea' }, { type: 'sticky', text: 'Withdrawn too' }] })).json.group.suggestions.map((s) => s.id);
+      const stays = (await call(S, 'POST', `/boards/${board}/suggestions`, { create: [{ type: 'sticky', text: 'Still waiting' }] })).json.group.suggestions[0].id;
+      await waitFor(() => goneIds.every((id) => !!sug(e).get(id)) && !!sug(e).get(stays), 5000, 'the suggestions on the other instance');
+      assert((await O.req('DELETE', `/api/auth/tokens/${made.json.token.id}`)).status === 200, 'revoke');
+      for (const cl of [o, e]) await waitFor(() => goneIds.every((id) => sug(cl).get(id)?.decision?.withdrawn === true), 10_000, `the withdrawal on ${cl === o ? 'the first' : 'the second'} instance`);
+      assert(!sug(e).get(stays).decision, 'another token’s suggestion was withdrawn too');
+      // The person whose token it was can't put them back from a board socket.
+      const was = sug(o).get(goneIds[0]);
+      const { decision: _d, ...reopened } = was;
+      sug(o).set(goneIds[0], reopened);
+      await settled(o, [e]);
+      assert(sug(e).get(goneIds[0]).decision?.withdrawn === true, 'a socket reopened a withdrawn suggestion');
+      const listed = JSON.stringify((await call(W, 'GET', `/boards/${board}/suggestions`)).json);
+      assert(!goneIds.some((id) => listed.includes(id)) && listed.includes(stays), `listed after the revocation: ${listed.slice(0, 300)}`);
+    });
+
     await check('suggestions: restoring a version leaves pending suggestions alone, and they survive a restart', async () => {
       const named = await O.req('POST', `/api/boards/${board}/versions`, { name: 'Before the agent' });
       assert(named.status === 201, `name a version: ${named.status} ${named.text}`);
@@ -6288,6 +6307,45 @@ async function mcpChecks() {
         5000,
         'the proposal in the activity feed',
       );
+    });
+
+    await check('mcp: a control room (KAI-249) — a task renamed under its externalId keeps its card; one moved into Blocked reaches the person’s inbox; pausing the lane from the board refuses the agent’s next post and other writes there with agent_paused until it is resumed', async () => {
+      const agentC = await withToken((await token(O, ['boards:read', 'boards:write'], 'Night shift')).secret);
+      const call = async (name, args) => await agentC.callTool({ name, arguments: args });
+      const posted = async (args) => {
+        const r = await call('post_status', args);
+        assert(!r.isError, `post_status: ${text(r)}`);
+        return JSON.parse(text(r));
+      };
+      const first = await posted({ title: 'Nightly import', status: 'Starting', tasks: [{ title: 'Fetch dumps', externalId: 'job-1', state: 'doing' }] });
+      const crBoard = first.boardId;
+      const cardId = first.untrusted_board_content.tasks[0].id;
+      const renamed = await posted({ boardId: crBoard, cursor: first.cursor, tasks: [{ title: 'Fetch the nightly dumps', externalId: 'job-1', state: 'blocked', note: 'The bucket needs a new key' }] });
+      const tasks = renamed.untrusted_board_content.tasks;
+      assert(tasks.length === 1 && tasks[0].id === cardId && tasks[0].title === 'Fetch the nightly dumps' && tasks[0].column === 'Blocked', `renamed task: ${JSON.stringify(tasks)}`);
+      const inbox = async () => (await O.req('GET', '/api/notifications')).json.notifications.filter((n) => n.type === 'agent.blocked' && n.boardId === crBoard);
+      const notes = await inbox();
+      assert(notes.length === 1 && notes[0].title.includes('Night shift') && notes[0].title.includes('Fetch the nightly dumps') && notes[0].body.includes('new key'), `inbox: ${JSON.stringify(notes)}`);
+      // A person pauses the lane from the board (their browser writes it).
+      const person = await layerClient(O, crBoard, proc.port);
+      live.push(person);
+      const kanbanId = [...els(person).values()].find((el) => el.type === 'kanban').id;
+      person.doc.getMap('agentPauses').set(kanbanId, { by: O.id, byName: O.name, at: Date.now() });
+      await settled(person);
+      const count = await itemCount(crBoard);
+      for (const [name, args] of [
+        ['post_status', { boardId: crBoard, cursor: renamed.cursor, status: 'Carrying on anyway' }],
+        ['add_stickies', { boardId: crBoard, stickies: ['sneaked in'] }],
+      ]) {
+        const r = await call(name, args);
+        assert(r.isError && text(r).includes('agent_paused'), `${name} while paused: ${text(r)}`);
+      }
+      assert((await itemCount(crBoard)) === count, 'a paused agent changed the board');
+      assert(JSON.parse(text(await call('get_feedback', { boardId: crBoard, cursor: renamed.cursor }))).paused === true, 'feedback does not say paused');
+      person.doc.getMap('agentPauses').delete(kanbanId);
+      await settled(person);
+      await posted({ boardId: crBoard, cursor: renamed.cursor, status: 'Resumed', tasks: [{ title: 'Fetch the nightly dumps', externalId: 'job-1', state: 'blocked' }] });
+      assert((await inbox()).length === 1, 'a task that stayed blocked notified again');
     });
 
     await check('mcp: what the app did shows in the activity feed as "<app> for <person>", and every tool call is in the team’s audit log with the app', async () => {

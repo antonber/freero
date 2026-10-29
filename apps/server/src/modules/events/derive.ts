@@ -15,11 +15,15 @@ export interface ItemNow {
   createdBy: string;
   /** The app or token that created it for `createdBy` (KAI-168), when one did. */
   via: { id: string; name: string } | null;
+  /** The frame or kanban it sits in directly (`frameId`), or null (KAI-249: webhooks scoped to one). */
+  container: string | null;
 }
 export interface MessageNow {
   threadId: string;
   messageId: string;
   itemId: string | null;
+  /** The container of the item the thread is pinned to. */
+  container: string | null;
   authorId: string;
   authorName: string;
   text: string;
@@ -31,8 +35,8 @@ export interface BoardNow {
 }
 /** What is stored between two comparisons. */
 export interface StoredState {
-  /** Element id → [fingerprint, element type]. */
-  items: Record<string, [string, string]>;
+  /** Element id → [fingerprint, element type, its container (absent: none, or saved before KAI-249)]. */
+  items: Record<string, [string, string] | [string, string, string]>;
   messages: string[];
 }
 
@@ -62,12 +66,14 @@ export function fingerprintOf(el: BoardElement): string {
  */
 export function diffBoard(prev: StoredState | null, now: BoardNow): { events: DerivedEvent[]; next: StoredState } {
   const next: StoredState = {
-    items: Object.fromEntries([...now.items].map(([id, i]) => [id, [i.fingerprint, i.type]])),
+    items: Object.fromEntries([...now.items].map(([id, i]) => [id, i.container ? [i.fingerprint, i.type, i.container] : [i.fingerprint, i.type]])),
     messages: [...now.messages.keys()],
   };
   if (!prev) return { events: [], next };
   const events: DerivedEvent[] = [];
-  const item = (id: string, i: Pick<ItemNow, 'type' | 'text'>): ItemEventData => ({ item: { id, type: i.type, ...(i.text ? { text: clip(i.text) } : {}) } });
+  const item = (id: string, i: Pick<ItemNow, 'type' | 'text' | 'container'>): ItemEventData => ({
+    item: { id, type: i.type, ...(i.text ? { text: clip(i.text) } : {}), ...(i.container ? { containerId: i.container } : {}) },
+  });
   for (const [id, i] of now.items) {
     const before = prev.items[id]?.[0];
     if (before === i.fingerprint) continue;
@@ -76,7 +82,8 @@ export function diffBoard(prev: StoredState | null, now: BoardNow): { events: De
       events.push({ type: 'item.created', elementId: id, actor, data: item(id, i) });
     } else events.push({ type: 'item.updated', elementId: id, actor: null, data: item(id, i) });
   }
-  for (const [id, [, type]] of Object.entries(prev.items)) if (!now.items.has(id)) events.push({ type: 'item.deleted', elementId: id, actor: null, data: { item: { id, type } } });
+  for (const [id, [, type, container]] of Object.entries(prev.items))
+    if (!now.items.has(id)) events.push({ type: 'item.deleted', elementId: id, actor: null, data: { item: { id, type, ...(container ? { containerId: container } : {}) } } });
   const seen = new Set(prev.messages);
   for (const [key, m] of now.messages) {
     if (seen.has(key)) continue;
@@ -84,7 +91,7 @@ export function diffBoard(prev: StoredState | null, now: BoardNow): { events: De
       type: 'comment.created',
       elementId: m.itemId,
       actor: { kind: 'user', id: m.authorId },
-      data: { threadId: m.threadId, messageId: m.messageId, itemId: m.itemId, text: clip(m.text) },
+      data: { threadId: m.threadId, messageId: m.messageId, itemId: m.itemId, ...(m.container ? { containerId: m.container } : {}), text: clip(m.text) },
     });
   }
   return { events: events.slice(0, MAX_EVENTS_PER_CHANGE), next };

@@ -124,6 +124,7 @@ async function boardNow(boardId: string, title: string): Promise<BoardNow> {
       text: texts.get(el.id) ?? '',
       createdBy: el.createdBy,
       via: via && typeof via.name === 'string' ? { id: via.id, name: via.name } : null,
+      container: typeof el.frameId === 'string' && el.frameId ? el.frameId : null,
     });
   }
   // Comments pinned to an item that is not in the view (inside a hidden frame) are withheld from
@@ -142,7 +143,8 @@ async function boardNow(boardId: string, title: string): Promise<BoardNow> {
     if (!threads.has(m.threadId)) continue;
     const itemId = threads.get(m.threadId) ?? null;
     if (itemId && !items.has(itemId)) continue;
-    messages.set(`${m.threadId}:${m.id}`, { threadId: m.threadId, messageId: m.id, itemId, authorId: String(m.authorId ?? ''), authorName: String(m.authorName ?? ''), text: m.text });
+    const container = itemId ? (items.get(itemId)?.container ?? null) : null;
+    messages.set(`${m.threadId}:${m.id}`, { threadId: m.threadId, messageId: m.id, itemId, container, authorId: String(m.authorId ?? ''), authorName: String(m.authorName ?? ''), text: m.text });
   }
   return { items, messages };
 }

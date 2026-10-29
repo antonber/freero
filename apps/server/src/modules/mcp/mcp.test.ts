@@ -14,6 +14,7 @@ import { createPersonalToken } from '../apiauth/index';
 import { createUser } from '../auth/index';
 import { drainOutbox, registerOutboxConsumer } from '../../platform/outbox';
 import { createBoard, registerBoardObjectTypes } from '../boards/index';
+import { notificationsExportOf } from '../notifications/index';
 import { changeBoard, initBoardDoc, readBoardView } from '../realtime/index';
 import { SEARCH_CONSUMER, searchConsumer } from '../search/index';
 import { ENVELOPE_TAG } from './content';
@@ -182,5 +183,53 @@ it('a control room reports what PEOPLE did — a card dragged back to To do, a c
   ]);
   // Reported once: the next read from the new cursor is quiet.
   expect((await feedback(boardId, fb.cursor)).untrusted_board_content.changes).toEqual([]);
+  await agent.close();
+});
+
+it('a person pausing an agent’s lane stops its next post and every other write of it on that board with agent_paused — not elsewhere — until they resume it', async () => {
+  const agent = await connect(['boards:read', 'boards:write'], 'Runner');
+  const call = async (name: string, args: Record<string, unknown>) => (await agent.callTool({ name, arguments: args })) as CallToolResult;
+  const first = JSON.parse(textOf(await call('post_status', { title: 'Nightly', status: 'Starting', tasks: [{ title: 'Rebuild index', state: 'doing' }] }))) as { boardId: string; cursor: string };
+  const { boardId } = first;
+  const elsewhere = await boardWith('Scratch', []);
+  const kanban = (await readBoardView(boardId, { userId: ownerId, role: 'owner' })).elements.find((e) => e.el.type === 'kanban')!.el;
+  const setPause = (v: unknown) => changeBoard(boardId, { userId: ownerId, role: 'owner', name: 'Maria' }, () => ({ change: { collections: { agentPauses: { [kanban.id]: v } } } }));
+
+  await setPause({ by: ownerId, byName: 'Maria', at: Date.now() });
+  const before = await idsOn(boardId);
+  for (const [name, args] of [
+    ['post_status', { boardId, cursor: first.cursor, status: 'Still going' }],
+    ['add_stickies', { boardId, stickies: ['sneaky'] }],
+  ] as const) {
+    const r = await call(name, args);
+    expect(r.isError, name).toBe(true);
+    expect(textOf(r)).toContain('agent_paused');
+  }
+  expect(await idsOn(boardId)).toEqual(before);
+  expect(JSON.parse(textOf(await call('get_feedback', { boardId, cursor: first.cursor }))).paused).toBe(true);
+  expect((await call('add_stickies', { boardId: elsewhere, stickies: ['fine here'] })).isError).toBeFalsy();
+
+  await setPause(null);
+  expect((await call('post_status', { boardId, cursor: first.cursor, status: 'Resumed' })).isError).toBeFalsy();
+  await agent.close();
+});
+
+it('a task renamed under its externalId keeps its one card, and moving into Blocked reaches the inbox of the person the agent works for once', async () => {
+  const agent = await connect(['boards:read', 'boards:write'], 'Migrator');
+  const post = async (args: Record<string, unknown>) => {
+    const r = (await agent.callTool({ name: 'post_status', arguments: args })) as CallToolResult;
+    expect(r.isError, textOf(r)).toBeFalsy();
+    return JSON.parse(textOf(r)) as { boardId: string; cursor: string; untrusted_board_content: { tasks: Array<{ id: string; title: string; column: string }> } };
+  };
+  const blockedNotices = async () => (await notificationsExportOf(ownerId)).notifications.filter((n) => (n as { type: string }).type === 'agent.blocked');
+  const noticesBefore = (await blockedNotices()).length;
+  const first = await post({ title: 'Move data', tasks: [{ title: 'Get access', externalId: 'T-1', state: 'doing' }] });
+  const again = { boardId: first.boardId, cursor: first.cursor, tasks: [{ title: 'Get prod read access', externalId: 'T-1', state: 'blocked', note: 'Who approves this?' }] };
+  const renamed = await post(again);
+  expect(renamed.untrusted_board_content.tasks).toEqual([{ id: first.untrusted_board_content.tasks[0].id, title: 'Get prod read access', column: 'Blocked', externalId: 'T-1' }]);
+  await post({ ...again, cursor: renamed.cursor }); // still blocked: not news
+  const notices = (await blockedNotices()).slice(0, (await blockedNotices()).length - noticesBefore);
+  expect(notices).toHaveLength(1);
+  expect(notices[0]).toMatchObject({ boardId: first.boardId, data: { cardTitle: 'Get prod read access', actorName: 'Migrator', excerpt: 'Who approves this?' } });
   await agent.close();
 });

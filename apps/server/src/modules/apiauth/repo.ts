@@ -1,6 +1,7 @@
 // The only writer of oauth_clients, oauth_grants, oauth_codes, api_tokens, api_workspace_settings
 // and api_workspace_credentials [S4].
 import { one, query, tx } from '../../platform/db';
+import { appendOutbox } from '../../platform/outbox';
 
 const d = (ms: number | null) => (ms === null ? null : new Date(ms));
 const ms = (v: Date | null) => (v ? v.getTime() : null);
@@ -8,6 +9,24 @@ const ms = (v: Date | null) => (v ? v.getTime() : null);
 export function transaction<T>(fn: () => Promise<T>): Promise<T> {
   return tx(() => fn());
 }
+
+/**
+ * Outbox topic of credentials that stopped acting for someone for good (KAI-224): a personal token
+ * revoked, an app's consent revoked (by the person, or after a replayed refresh token), an app
+ * deleted by its developer, or everything of a person ("Disconnect all", signed out everywhere, an
+ * operator). Appended in the transaction that deletes them; realtime withdraws their pending
+ * suggestions. Pausing a token or blocking it in a workspace is not a revocation (both are undone).
+ */
+export const CREDENTIAL_REVOKED_TOPIC = 'apiauth.credential_revoked';
+/**
+ * Whose suggestions go: the person (null: everyone's) and the credential as a suggestion records it
+ * (`author.credentialId`: a personal token's id, an app's client id; null: every one of the person's).
+ */
+export interface CredentialRevoked {
+  userId: string | null;
+  credentialId: string | null;
+}
+const revoked = (r: CredentialRevoked) => appendOutbox(CREDENTIAL_REVOKED_TOPIC, `${r.userId ?? '*'}:${r.credentialId ?? '*'}`, r);
 
 // ---- tokens ----
 
@@ -129,13 +148,17 @@ export async function setPaused(userId: string, id: string, pausedAt: number | n
 
 /** Deletes a personal token (and where it was seen); false when it isn't the user's. */
 export async function deletePersonalToken(userId: string, id: string): Promise<TokenRow | null> {
-  const r = await one<TokenDbRow>(
-    `DELETE FROM api_tokens t WHERE t.id = $1 AND t.user_id = $2 AND t.kind = 'personal'
-     RETURNING t.*, NULL::text AS client_id, NULL::text AS client_name`,
-    [id, userId],
-  );
-  if (r) await query(`DELETE FROM api_workspace_credentials WHERE credential_id = $1`, [id]);
-  return r ? toToken(r) : null;
+  return tx(async () => {
+    const r = await one<TokenDbRow>(
+      `DELETE FROM api_tokens t WHERE t.id = $1 AND t.user_id = $2 AND t.kind = 'personal'
+       RETURNING t.*, NULL::text AS client_id, NULL::text AS client_name`,
+      [id, userId],
+    );
+    if (!r) return null;
+    await query(`DELETE FROM api_workspace_credentials WHERE credential_id = $1`, [id]);
+    await revoked({ userId, credentialId: id });
+    return toToken(r);
+  });
 }
 
 /** Records use (the caller throttles). */
@@ -172,11 +195,14 @@ export async function deleteTokensOfGrant(grantId: string): Promise<void> {
 
 /** Every personal token and app consent of the user (their tokens go with them). Returns the counts. */
 export async function deleteAllOf(userId: string): Promise<{ tokens: number; apps: number }> {
-  const tokens = await query<{ id: string }>(`DELETE FROM api_tokens WHERE user_id = $1 AND kind = 'personal' RETURNING id`, [userId]);
-  const apps = await query<{ id: string }>(`DELETE FROM oauth_grants WHERE user_id = $1 RETURNING id`, [userId]);
-  await query(`DELETE FROM api_tokens WHERE user_id = $1`, [userId]);
-  if (tokens.length) await query(`DELETE FROM api_workspace_credentials WHERE credential_id = ANY($1::text[])`, [tokens.map((t) => t.id)]);
-  return { tokens: tokens.length, apps: apps.length };
+  return tx(async () => {
+    const tokens = await query<{ id: string }>(`DELETE FROM api_tokens WHERE user_id = $1 AND kind = 'personal' RETURNING id`, [userId]);
+    const apps = await query<{ id: string }>(`DELETE FROM oauth_grants WHERE user_id = $1 RETURNING id`, [userId]);
+    await query(`DELETE FROM api_tokens WHERE user_id = $1`, [userId]);
+    if (tokens.length) await query(`DELETE FROM api_workspace_credentials WHERE credential_id = ANY($1::text[])`, [tokens.map((t) => t.id)]);
+    if (tokens.length || apps.length) await revoked({ userId, credentialId: null });
+    return { tokens: tokens.length, apps: apps.length };
+  });
 }
 
 // ---- OAuth clients ----
@@ -239,9 +265,14 @@ export async function countClientsOwnedBy(userId: string): Promise<number> {
   return Number((await one<{ n: string }>(`SELECT count(*) AS n FROM oauth_clients WHERE owner_id = $1`, [userId]))?.n ?? 0);
 }
 
+/** Deletes an app its developer owns; every person's consent to it goes too (cascade). */
 export async function deleteOwnedClient(userId: string, id: string): Promise<ClientRow | null> {
-  const r = await one<ClientDbRow>(`DELETE FROM oauth_clients WHERE id = $1 AND owner_id = $2 RETURNING *`, [id, userId]);
-  return r ? toClient(r) : null;
+  return tx(async () => {
+    const r = await one<ClientDbRow>(`DELETE FROM oauth_clients WHERE id = $1 AND owner_id = $2 RETURNING *`, [id, userId]);
+    if (!r) return null;
+    await revoked({ userId: null, credentialId: id });
+    return toClient(r);
+  });
 }
 
 /** Self-registered apps nobody authorised within `olderThan` (abandoned registrations). */
@@ -319,12 +350,19 @@ export async function grantsOf(userId: string): Promise<Array<GrantRow & { clien
 }
 
 export async function deleteGrant(userId: string, clientId: string): Promise<GrantRow | null> {
-  const r = await one<GrantDbRow>(`DELETE FROM oauth_grants WHERE user_id = $1 AND client_id = $2 RETURNING *`, [userId, clientId]);
-  return r ? toGrant(r) : null;
+  return tx(async () => {
+    const r = await one<GrantDbRow>(`DELETE FROM oauth_grants WHERE user_id = $1 AND client_id = $2 RETURNING *`, [userId, clientId]);
+    if (!r) return null;
+    await revoked({ userId, credentialId: clientId });
+    return toGrant(r);
+  });
 }
 
 export async function deleteGrantById(id: string): Promise<void> {
-  await query(`DELETE FROM oauth_grants WHERE id = $1`, [id]);
+  await tx(async () => {
+    const r = await one<{ user_id: string; client_id: string }>(`DELETE FROM oauth_grants WHERE id = $1 RETURNING user_id, client_id`, [id]);
+    if (r) await revoked({ userId: r.user_id, credentialId: r.client_id });
+  });
 }
 
 export interface CodeRow {

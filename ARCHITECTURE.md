@@ -111,7 +111,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 |---|---|---|
 | Yjs doc, provider, awareness | `engine/store/` | `Editor` methods |
 | Layer docs (`private`, `editors`; see "Board layers") | `engine/store/` (placement: `engine/editor/layers.ts`); reveal: server `realtime` | `Editor` writes, `privateCollection`, `revealPrivate` |
-| Suggestion records (editors layer `suggestions`; see "Suggestions") | server `realtime` creates them (`proposeSuggestions`); a socket may only set its own `decision` | `Editor.acceptSuggestions` / `rejectSuggestions`, API accept / reject |
+| Suggestion records (editors layer `suggestions`; see "Suggestions") | server `realtime` creates them (`proposeSuggestions`) and withdraws them when their credential is revoked (KAI-224); a socket may only set its own `decision` | `Editor.acceptSuggestions` / `rejectSuggestions`, API accept / reject |
 | `elements` map | engine (`editor.create/update/remove/transact`) | same |
 | `settings` map (background, grid) | engine | `editor` settings API |
 | feature collection (e.g. `comments`) | the feature whose `feature.ts` `owns` it | `editor.runCommand` of the owner. Writes from a non-owner throw at runtime [W8 checks unique claims] |
@@ -930,7 +930,7 @@ authenticator" recoveries; guest_sessions: visitors without an account),
 board_invites: pending invites for addresses without an account; board_access_requests; role
 resolution), `workspaces` (workspaces, workspace_members,
 workspace_invites, projects, project_members; see "Workspaces" below), `uploads` (uploads; files in object storage or
-`<data>/uploads`), `realtime` (board_docs, board_doc_updates, board_doc_snapshots; y-websocket
+`<data>/uploads`), `realtime` (board_docs, board_doc_updates, board_doc_snapshots, board_layers, board_suggestion_authors; y-websocket
 protocol + role filter + update log; version history + snapshot retention), `unfurl` (link
 previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`), `templates` (saved
 templates; content is opaque engine JSON), `outline` (no table: the semantic board read model,
@@ -983,7 +983,9 @@ and decision snapshots" below.
   realtime's `onCommentMessage` (a comment message applied from one of THIS instance's sockets,
   attributed to that socket's authenticated user — a message stored under anyone else's id is
   ignored; each change is reported once across instances), members' `onBoardShared`,
-  `onAccessRequested` / `onAccessDecided` (`access.request`, `access.response`), and realtime's
+  `onAccessRequested` / `onAccessDecided` (`access.request`, `access.response`), api's control room
+  (`agent.blocked`, KAI-249: a task an agent posted moved into Blocked; to the person its credential
+  acts for, the app's name as actor), and realtime's
   `onCardAssignment` (KAI-135, `realtime/cards.ts`: a task card's `assigneeId` / `dueDate` changed in
   the shared doc by a socket, a request or a reveal of a private draft — attributed to the socket's
   user, the request's actor or the draft's author; a card arriving from the editors layer is not
@@ -1526,10 +1528,20 @@ audit and admin controls are the same code.
   ["app"]`: the view's Share button.
 - **Control room** (KAI-172, `api/controlRoom.ts`, MCP `post_status` / `get_feedback`, prompt
   `control_room`, template "Agent control room"): an agent's lane is plain board content found by
-  its titles (*Plan · A*, *Status · A*, the *Tasks · A* kanban with To do / Doing / Done / Blocked);
-  tasks match by title (idempotent), moves use the kanban's column geometry (`KANBAN_LAYOUT`) and
-  grow the kanban. Feedback is a diff against the opaque cursor the agent holds (card → column it
-  last saw, comment messages seen), so its own changes are never reported and nothing is stored.
+  its titles (*Plan · A*, *Status · A*, the *Tasks · A* kanban with To do / Doing / Done / Blocked;
+  the heading rules are `@freero/shared` `controlRoom.ts`, read by the server and the web alike);
+  tasks match by the agent's `externalId` (stored on the card, `CardElement.externalId`: a renamed
+  task keeps its card), else by title (idempotent), moves use the kanban's column geometry
+  (`KANBAN_LAYOUT`) and grow the kanban. Feedback is a diff against the opaque cursor the agent holds
+  (card → column it last saw, comment messages seen), so its own changes are never reported and
+  nothing is stored. KAI-249: a task moving into Blocked is an `agent.blocked` notification for the
+  person the credential acts for (actor: the app's name). **Pausing** is board state a person writes:
+  `features/controlroom` owns `agentPauses` (lane kanban id → who paused; in `Y_KEPT_ON_RESTORE`); the
+  server only reads it — `api/pause.ts`, checked by `agentWrite(call, board)` before every write of
+  the credential on that board (its lanes: named like it or `createdVia` it) and by `postStatus` for
+  the lane it writes — and refuses with 423 `agent_paused` before anything changes. No API writes
+  that collection, so an agent can't resume itself. REST twins: `/api/v1/boards/:id/control-room`.
+  `post_status` returns `laneId`, which a workspace webhook can be scoped to (below).
 - **Live views (`modules/embed`, no table).** apiauth mints the ticket (`api_embed_tokens`:
   per tool call, bound to one board and to the app's grant or the personal token — deleted with
   them — and to `maxRole` from the connection's scopes); `POST /api/embed/redeem` turns it, once,
@@ -1689,6 +1701,11 @@ for boards every full member of the workspace can open through team access (work
 own DNS lookup refuses private addresses at connect time, redirects never followed), retries with
 4× backoff, and turns an endpoint off after `WEBHOOK_DISABLE_AFTER_FAILURES` failures in a row
 (audited, its creator emailed); deliveries wait until it is back on. `WEBHOOKS=false` removes it all.
+An endpoint may be **scoped** (KAI-249, `webhook_endpoints.board_id` / `item_id`, set from a board or
+item link): one board's events, or only item and comment events about one item and what sits
+directly in it — events carry `containerId` (the item's `frameId`; `item.deleted` from the stored
+state) for that — e.g. an agent's control-room lane. A scope's board must be one the whole team can
+open, and a scope never widens (no foreign key: a board that is gone just sends nothing).
 
 ### Walkthroughs and decision snapshots (`modules/walkthroughs`, `modules/decisions`; KAI-133, KAI-161)
 
@@ -2366,6 +2383,16 @@ the board, deletions. A suggestion is not board content until someone who can ed
   a deletion of an item that changed in any way (`elementFingerprint`), or an item (or one a new line
   needs) that is gone. Stale ones are never applied silently: the app asks ("Apply anyway"), the API
   answers 409 `suggestion_stale` unless `force`.
+- **Withdrawn when the credential is revoked** (KAI-224): apiauth appends `CREDENTIAL_REVOKED_TOPIC`
+  to the outbox in the transaction that deletes a token, an app's consent (the person, a replayed
+  refresh token), an app (its developer) or all of a person's (revoke-all, signed out everywhere);
+  realtime's `suggestion-withdrawals` consumer (`realtime/withdrawals.ts`) finds the boards in
+  `board_suggestion_authors` — a hint realtime owns: `proposeSuggestions` notes (board, person,
+  credential) BEFORE writing the records, a room load forgets authors with nothing pending — and
+  `withdrawSuggestionsOn` decides them on the live room as rejected by `WITHDRAWN_BY` with `withdrawn`
+  (no socket names that id, so none reopens them), audited `via: 'revoked'` in the person's name.
+  Keyed by person AND credential: an app's credential id is its client id, shared by everyone who
+  uses it, so revoking Maria's consent never touches Bob's suggestions from the same app.
 - **Audit and activity**: every accept / reject / undo of either is
   `board.suggestion_accepted|rejected|reopened` in the board's workspace log, recorded by the
   instance that applied it (`via: board | api`). A proposal is an activity entry for owners and

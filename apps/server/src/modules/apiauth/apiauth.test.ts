@@ -4,12 +4,15 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { Request } from 'express';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { MCP_SCOPES } from '@freero/shared';
+import { drainOutbox, registerOutboxConsumer } from '../../platform/outbox';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { createUser, endSessionsOf, onSignInRestriction } from '../auth/index';
+import { createBoard } from '../boards/index';
+import { proposeSuggestions, readBoardView, SUGGESTION_WITHDRAWALS_CONSUMER, suggestionWithdrawalsConsumer } from '../realtime/index';
 import { createTeamWorkspace, ensurePersonalWorkspace } from '../workspaces/index';
 import { authenticate, createPersonalToken, registerProtectedResource, revokePersonalToken, setTokenPaused, useInWorkspace } from './credentials';
 import initApiAuth from './init';
-import { checkAuthorizeRequest, cleanRedirectUri, decide, redirectMatches, registerDynamicClient, tokenRequest } from './oauth';
+import { checkAuthorizeRequest, cleanRedirectUri, decide, redirectMatches, registerDynamicClient, revokeApp, tokenRequest } from './oauth';
 import { setCredentialBlocked, setWorkspaceApiAccess } from './workspacePolicy';
 
 const R = '/api/v1';
@@ -33,8 +36,8 @@ const refusal = (secret: string) =>
   );
 const token = (userId: string, via = 'password', scopes = ['boards:read']) => createPersonalToken(userId, via, { name: 'ci', scopes: scopes as never, expiresInDays: 30 });
 
-async function authorizeApp(userId: string, via = 'password') {
-  const reg = (await registerDynamicClient({ client_name: 'Agent', redirect_uris: ['http://127.0.0.1:7777/cb'] })) as { client_id: string };
+async function authorizeApp(userId: string, via = 'password', clientId?: string) {
+  const reg = clientId ? { client_id: clientId } : ((await registerDynamicClient({ client_name: 'Agent', redirect_uris: ['http://127.0.0.1:7777/cb'] })) as { client_id: string });
   const verifier = randomBytes(32).toString('base64url');
   const params = {
     response_type: 'code',
@@ -156,4 +159,33 @@ it('an MCP client asking for everything gets read + suggest unless the person tu
   expect(await refusal(byDefault.access_token)).toEqual({ status: 401, code: 'invalid_token' }); // not for the REST API
   const withWrite = await consent(['boards:write']);
   expect(withWrite.scope.split(' ').sort()).toEqual(['boards:read', 'boards:suggest', 'boards:write']);
+});
+
+it('revoking a token or an app withdraws what it suggested on every board — never another credential’s, nor the same app’s for someone else', async () => {
+  registerOutboxConsumer(suggestionWithdrawalsConsumer);
+  const carol = await createUser({ name: 'Carol', email: 'carol@apiauth.test.freero.app', password: 'password-123' });
+  const dan = await createUser({ name: 'Dan', email: 'dan@apiauth.test.freero.app', password: 'password-123' });
+  const pat = await token(carol.id, 'password', ['boards:suggest']);
+  const app = await authorizeApp(carol.id);
+  await authorizeApp(dan.id, 'password', app.clientId); // the same app, for Dan too
+  const boards = [(await createBoard(carol.id, 'Roadmap', '')).id, (await createBoard(carol.id, 'Retro', '')).id];
+  const suggest = (boardId: string, userId: string, via: { kind: 'app' | 'token'; id: string; name: string }) =>
+    proposeSuggestions(boardId, { userId, role: 'editor', name: 'Someone', via }, { description: via.name }, () => ({
+      change: { create: [{ id: `s${Math.random().toString(36).slice(2, 10)}`, type: 'sticky', x: 0, y: 0, w: 200, h: 200, rotation: 0, text: 'Idea', color: 'yellow' } as never] },
+    }));
+  for (const b of boards) {
+    await suggest(b, carol.id, { kind: 'token', id: pat.token.id, name: 'ci' });
+    await suggest(b, carol.id, { kind: 'app', id: app.clientId, name: 'Agent' });
+    await suggest(b, dan.id, { kind: 'app', id: app.clientId, name: 'Agent' });
+  }
+  const pending = async (b: string) => (await readBoardView(b, { userId: carol.id, role: 'owner' })).suggestions.map((s) => `${s.author.userId === carol.id ? 'carol' : 'dan'}:${s.author.name}`).sort();
+  expect(await pending(boards[1])).toEqual(['carol:Agent', 'carol:ci', 'dan:Agent']);
+
+  await revokePersonalToken(carol.id, pat.token.id);
+  await drainOutbox(SUGGESTION_WITHDRAWALS_CONSUMER);
+  for (const b of boards) expect(await pending(b)).toEqual(['carol:Agent', 'dan:Agent']);
+
+  await revokeApp(carol.id, app.clientId);
+  await drainOutbox(SUGGESTION_WITHDRAWALS_CONSUMER);
+  for (const b of boards) expect(await pending(b)).toEqual(['dan:Agent']);
 });

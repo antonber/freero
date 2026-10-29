@@ -62,8 +62,11 @@ import {
   isElementContentCollection,
   DOC_FRAGMENT,
   type ObjectKind,
+  pendingSuggestions,
+  WITHDRAWN_BY,
 } from '@freero/shared';
 import { getConfig } from '../../platform/config';
+import { keepSuggestionAuthors, noteSuggestionAuthor, type SuggestionAuthorKey } from './repo';
 import { logError } from '../../platform/log';
 import { isShared, publish, subscribe, subscribedInstances, type Subscription } from '../../platform/pubsub';
 import { getUser, noteSessionActivity } from '../auth/index';
@@ -400,6 +403,10 @@ class Room {
     // Element content outside its element's doc (KAI-230; boards from before the rule, a write
     // that raced a move): moved where the element is, so no socket gets what it may not read.
     placeElementContent(this.doc, layerDocs(this), SERVER_ORIGIN);
+    // The hint of whose suggestions wait here (KAI-224) forgets the apps with none pending any
+    // more — before the room is ready, so nothing on this instance proposes (noting its author) first.
+    if (editors)
+      await keepSuggestionAuthors(this.id, pendingAppAuthors(editors.doc)).catch((e) => logError(`realtime: could not update the suggestion authors of board ${this.id}`, e));
   }
 
   /** Comment keys deleted from one of this room's docs lately: doc and when (see commentMovedIn). */
@@ -1579,6 +1586,10 @@ export async function proposeSuggestions<T extends { change: BoardChange; conten
   const author = opts.author ?? (await suggestionAuthorOf(actor));
   const out = await withLiveRoom(boardId, async (room) => {
     requireEditing(room, actor);
+    // Noted before any record exists, so revoking the credential always finds this board (KAI-224).
+    const key = appAuthorKey(author);
+    if (key) await noteSuggestionAuthor(boardId, key);
+    if (room.destroyed) throw new BoardClosedError(boardId);
     const editors = room.layer(EDITORS_LAYER).doc;
     const view = viewOf(room.doc, layerDocs(room), actor);
     const planned = plan(view);
@@ -1629,6 +1640,50 @@ export async function decideSuggestions(
   });
   await auditDecisions(boardId, actor.userId, out.records.map((record) => ({ record, from: undefined, to: out.decision })), 'api');
   return out;
+}
+
+/** The app or token behind a suggestion, as the authors hint keys it (null: a person's or AI's own). */
+function appAuthorKey(a: SuggestionAuthor): SuggestionAuthorKey | null {
+  return a.kind === 'app' && a.credentialId ? { userId: a.userId, credentialId: a.credentialId } : null;
+}
+
+/** Every app or token with suggestions pending in this editors layer. */
+function pendingAppAuthors(editors: Y.Doc): SuggestionAuthorKey[] {
+  const seen = new Map<string, SuggestionAuthorKey>();
+  for (const r of pendingSuggestions(suggestionEntries(editors))) {
+    const k = appAuthorKey(r.author);
+    if (k) seen.set(`${k.userId}\n${k.credentialId}`, k);
+  }
+  return [...seen.values()];
+}
+
+/**
+ * Withdraws, on the live board, the pending suggestions an app or token proposed for a person
+ * (KAI-224: the credential was revoked) — `userId` null: for anyone, `credentialId` null: through
+ * any. They are decided as rejected by Freero (`WITHDRAWN_BY`, `withdrawn`), so every editor's open
+ * board drops them at once, on every instance, and no socket can reopen them; audited like a
+ * rejection. Returns how many it withdrew.
+ */
+export async function withdrawSuggestionsOn(boardId: string, who: { userId: string | null; credentialId: string | null }): Promise<number> {
+  const matches = (k: SuggestionAuthorKey | null) => !!k && (who.userId === null || k.userId === who.userId) && (who.credentialId === null || k.credentialId === who.credentialId);
+  const out = await withLiveRoom(boardId, async (room) => {
+    const editors = room.layers.get(EDITORS_LAYER)?.doc;
+    if (!editors) return { records: [] as SuggestionRecord[], decision: null };
+    const records = pendingSuggestions(suggestionEntries(editors)).filter((r) => matches(appAuthorKey(r.author)));
+    const decision: SuggestionDecision = { status: 'rejected', by: WITHDRAWN_BY, at: Date.now(), withdrawn: true };
+    if (records.length) {
+      writeDecisions(editors, records, decision, SERVER_ORIGIN);
+      await room.flush();
+    }
+    await keepSuggestionAuthors(boardId, pendingAppAuthors(editors));
+    return { records, decision };
+  });
+  const { records, decision } = out;
+  if (!decision) return 0;
+  // In each person's name: their revocation withdrew them.
+  for (const userId of new Set(records.map((r) => r.author.userId)))
+    await auditDecisions(boardId, userId, records.filter((r) => r.author.userId === userId).map((record) => ({ record, from: undefined, to: decision })), 'revoked');
+  return records.length;
 }
 
 /**

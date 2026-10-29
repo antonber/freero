@@ -978,7 +978,8 @@ export type NotificationType =
   | 'card.due_changed'
   | 'card.due_soon'
   | 'walkthrough.mention'
-  | 'walkthrough.comment';
+  | 'walkthrough.comment'
+  | 'agent.blocked';
 
 export interface AppNotification {
   id: string;

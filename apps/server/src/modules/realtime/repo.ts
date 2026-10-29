@@ -1,5 +1,5 @@
-// The only writer of `board_docs`, `board_doc_updates`, `board_doc_snapshots`, `board_layers` and
-// `board_layer_updates` [S4].
+// The only writer of `board_docs`, `board_doc_updates`, `board_doc_snapshots`, `board_layers`,
+// `board_layer_updates` and `board_suggestion_authors` [S4].
 // A document = its compacted base (board_docs) + the update log written since (board_doc_updates).
 // Yjs itself lives in docStore.ts; this file only moves bytes.
 import { isForeignKeyViolation, one, query, tx } from '../../platform/db';
@@ -437,4 +437,41 @@ export async function matchesInStoredDocs(pattern: string, among: readonly strin
     [pattern, among],
   );
   return rows.map((r) => r.name);
+}
+
+// ---- who has pending suggestions where (KAI-224; a hint for withdrawing them) ----
+
+/** One app or token acting for one person, as suggestion records name it (`author`). */
+export interface SuggestionAuthorKey {
+  userId: string;
+  credentialId: string;
+}
+
+/** Notes that `boardId` holds pending suggestions of `author` (idempotent). */
+export async function noteSuggestionAuthor(boardId: string, author: SuggestionAuthorKey): Promise<void> {
+  await query(`INSERT INTO board_suggestion_authors (board_id, user_id, credential_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, [
+    boardId,
+    author.userId,
+    author.credentialId,
+  ]);
+}
+
+/** Boards that may hold pending suggestions of the person (null: anyone's) through the credential (null: any). */
+export async function boardsWithSuggestionsOf(who: { userId: string | null; credentialId: string | null }): Promise<string[]> {
+  const rows = await query<{ board_id: string }>(
+    `SELECT DISTINCT board_id FROM board_suggestion_authors
+     WHERE ($1::text IS NULL OR user_id = $1) AND ($2::text IS NULL OR credential_id = $2)
+     ORDER BY board_id`,
+    [who.userId, who.credentialId],
+  );
+  return rows.map((r) => r.board_id);
+}
+
+/** Forgets every author of `boardId` but those in `pending` (whose suggestions still wait there). */
+export async function keepSuggestionAuthors(boardId: string, pending: readonly SuggestionAuthorKey[]): Promise<void> {
+  await query(
+    `DELETE FROM board_suggestion_authors
+     WHERE board_id = $1 AND (user_id, credential_id) NOT IN (SELECT u, c FROM unnest($2::text[], $3::text[]) AS p(u, c))`,
+    [boardId, pending.map((p) => p.userId), pending.map((p) => p.credentialId)],
+  );
 }

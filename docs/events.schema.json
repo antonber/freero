@@ -45,12 +45,23 @@
     "item.deleted": { "required": ["item"], "properties": { "item": { "$ref": "#/item" } } },
     "comment.created": {
       "required": ["threadId", "messageId", "itemId", "text"],
-      "properties": { "threadId": { "type": "string" }, "messageId": { "type": "string" }, "itemId": { "type": ["string", "null"] }, "text": { "type": "string" } }
+      "properties": {
+        "threadId": { "type": "string" },
+        "messageId": { "type": "string" },
+        "itemId": { "type": ["string", "null"] },
+        "containerId": { "type": "string", "description": "The frame or kanban the thread's item sits in directly, if any" },
+        "text": { "type": "string" }
+      }
     }
   },
   "item": {
     "type": "object",
     "required": ["id", "type"],
-    "properties": { "id": { "type": "string" }, "type": { "type": "string" }, "text": { "type": "string", "description": "Up to 280 characters of the item's text (untrusted)" } }
+    "properties": {
+      "id": { "type": "string" },
+      "type": { "type": "string" },
+      "text": { "type": "string", "description": "Up to 280 characters of the item's text (untrusted)" },
+      "containerId": { "type": "string", "description": "The frame or kanban it sits in directly (a card in an agent's control-room lane: the lane's kanban); item.deleted: the one it was in" }
+    }
   }
 }

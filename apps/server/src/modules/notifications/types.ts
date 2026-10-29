@@ -158,6 +158,15 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
     link: itemPath,
     linkLabel: 'Open the card',
   },
+  // KAI-249: from modules/api's control room. The actor is the app or token (`actorName`), acting
+  // for the recipient; the excerpt is the task's note as the agent wrote it.
+  'agent.blocked': {
+    label: 'Agents that are blocked',
+    description: 'An app or agent working for you marks a task in its control room as blocked.',
+    title: (actor, d) => `${actor} is blocked on ${card(d)} in ${board(d)}`,
+    link: itemPath,
+    linkLabel: 'Open the task',
+  },
   'walkthrough.mention': {
     label: 'Mentions in walkthroughs',
     description: 'Someone @mentions you in a comment on a recorded walkthrough.',

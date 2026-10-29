@@ -146,6 +146,9 @@ it('what the API answers in a real session has the shapes its reference promises
   await call('POST', `${B}/suggestions/accept`, '/boards/{boardId}/suggestions/accept', { groupId, force: true });
   const second = await call('POST', `${B}/structure`, '/boards/{boardId}/structure', { structure: { kind: 'stickies', items: ['c'] }, target: 'suggestions' });
   await call('POST', `${B}/suggestions/reject`, '/boards/{boardId}/suggestions/reject', { groupId: second.json.groupId });
+  // Control room (KAI-172, KAI-249): an agent's lane, as MCP's post_status / get_feedback.
+  const lane = await call('POST', `${B}/control-room`, '/boards/{boardId}/control-room', { status: 'Working', tasks: [{ title: 'Ship', state: 'blocked', note: 'Need a review', externalId: 'J-1' }] });
+  await call('GET', `${B}/control-room?cursor=${encodeURIComponent(lane.json.cursor)}`, '/boards/{boardId}/control-room');
   expect((await call('DELETE', `${B}/items/${frame.id}`, '/boards/{boardId}/items/{itemId}')).status).toBe(400); // takes its contents along
   await call('DELETE', `${B}/items/${frame.id}?confirm=true`, '/boards/{boardId}/items/{itemId}');
   await call('POST', `${B}/items/delete`, '/boards/{boardId}/items/delete', { ids: [card.id, shape.id], confirm: true });

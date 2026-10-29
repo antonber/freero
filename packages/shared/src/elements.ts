@@ -404,6 +404,12 @@ export interface CardElement extends BaseElement {
    * spans these days. Written through `card.setDates` (the timeline asks; cards keep one writer).
    */
   startDate?: string | null;
+  /**
+   * [additive] The id this task has in the agent that posts it to a control room (KAI-249): the
+   * server's post_status matches a task by it before its title, so a renamed task keeps its card.
+   * Written only by the server (modules/api controlRoom.ts); the card feature never shows or edits it.
+   */
+  externalId?: string | null;
 }
 
 export interface EmojiElement extends BaseElement {

@@ -15,3 +15,4 @@ export * from './trackers';
 export * from './walkthroughs';
 export * from './decisions';
 export * from './docs';
+export * from './controlRoom';
