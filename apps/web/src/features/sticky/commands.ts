@@ -1,6 +1,7 @@
-import { SquareArrowRight, SquareStack } from 'lucide-react';
+import { SquareArrowRight, SquareStack, UserRound } from 'lucide-react';
 import { defineCommands } from '@engine';
 import { createNextSticky, selectedSticky } from './lib/actions';
+import { authorLabelsShown, setAuthorLabels } from './lib/authors';
 
 export default defineCommands([
   {
@@ -37,5 +38,14 @@ export default defineCommands([
       const s = selectedSticky(editor);
       if (s) createNextSticky(editor, s, 'right', true);
     },
+  },
+  {
+    // A board setting for everyone on the board (KAI-112); hidden while private mode runs.
+    id: 'sticky.toggleAuthors',
+    icon: UserRound,
+    label: 'Show sticky authors',
+    menus: ['board'],
+    detail: (editor) => (authorLabelsShown(editor) ? 'on' : 'off'),
+    run: (editor) => setAuthorLabels(editor, !authorLabelsShown(editor)),
   },
 ]);

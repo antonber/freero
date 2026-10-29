@@ -38,6 +38,13 @@ import type {
   SuggestionRecord,
   SuggestionState,
   TextAlign,
+  BoardTrackersResponse,
+  TrackerImportRequest,
+  TrackerImportResponse,
+  TrackerIssuePreview,
+  TrackerProject,
+  TrackerSendRequest,
+  TrackerSendResponse,
   VerticalAlign,
 } from '@freero/shared';
 
@@ -106,6 +113,12 @@ export interface Host {
     call?: BoardCall | null;
     /** [additive] The server can give the board a Jitsi room of its own. */
     jitsiCalls?: boolean;
+    /**
+     * [additive] Live embeds (KAI-127): `enabled` false when the board's workspace turned them off
+     * (links stay preview cards); `extraOrigins` are https origins the server's operator allows to
+     * be framed besides the built-in providers. Absent: on, no extra origins.
+     */
+    embeds?: { enabled: boolean; extraOrigins: string[] };
   };
   /** Full ws URL prefix; engine connects WebsocketProvider(syncUrl, board.id, doc). */
   syncUrl: string;
@@ -255,6 +268,13 @@ export interface Host {
    */
   ai?: HostAi;
   /**
+   * [additive] Issue trackers (KAI-153/154), present only when the server listed at least one
+   * tracker connection this person may use on this board (they can edit, and their team or they
+   * themselves connected one). Absent: hide every tracker entry point. Calls reject with a message
+   * fit for a toast (the tracker refused, the item is already linked, rate limit).
+   */
+  trackers?: HostTrackers;
+  /**
    * [additive] The board's call link (KAI-134): anyone on the board reads it, owners and editors
    * set it (`set` rejects with a showable message: not https, no Jitsi on this server, no
    * permission). Absent in the offline sandbox.
@@ -282,6 +302,23 @@ export interface HostEngage {
   moderate(activityId: string, questionId: string, patch: { answered?: boolean; hidden?: boolean }): Promise<ActivityState>;
   reveal(activityId: string, revealed: boolean): Promise<ActivityState>;
   clear(activityId: string): Promise<ActivityState>;
+}
+
+/** [additive] `Host.trackers` (wire: @freero/shared trackers.ts). */
+export interface HostTrackers {
+  connections: BoardTrackersResponse['connections'];
+  /** The connection's projects (Jira), teams (Linear) or repositories (GitHub), and its import query language. */
+  projects(connectionId: string): Promise<{ projects: TrackerProject[]; queryLanguage: string }>;
+  /** Exactly what `send` would create, nothing written. */
+  preview(request: TrackerSendRequest): Promise<TrackerIssuePreview[]>;
+  /** Creates the issue(s) and links the items; the badge arrives on the board from the server. */
+  send(request: TrackerSendRequest): Promise<TrackerSendResponse>;
+  /** Issues matching a query become linked cards (issues already here are skipped). */
+  importIssues(request: TrackerImportRequest): Promise<TrackerImportResponse>;
+  /** Syncs one linked issue now. */
+  sync(linkId: string): Promise<void>;
+  /** Stops syncing: the items lose their badge, the issue stays in the tracker. */
+  unlink(linkId: string): Promise<void>;
 }
 
 /** [additive] `Host.ai` (wire: @freero/shared `AiActionRequest` / `AiActionResponse`). */
@@ -436,7 +473,11 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
   /** Defaults merged under user-provided fields on create (tools usually call this). */
   defaults(): Omit<NewElement<T>, 'x' | 'y'>;
   resize: ResizeMode;
-  minSize?: { w: number; h: number };
+  /**
+   * Smallest size the handles and the exact-size fields allow. [additive] May depend on the
+   * element: a task card drawn as a timeline bar may be as short as a day.
+   */
+  minSize?: { w: number; h: number } | ((element: ElementOf<T>) => { w: number; h: number });
   /** Has editable rich text (double-click / Enter / typing to edit). Engine handles the editor. */
   textField?: keyof ElementOf<T> & string;
   /** Containers own children by setting their `frameId` (frames). Engine moves children with them. */
@@ -595,7 +636,8 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
   /**
    * [additive] Double-click with the select tool on an element that has no text to edit there
    * (no `textPartAt` part, no `textField`): images enter crop mode. Editors only; runs inside the
-   * click's gesture. `point` is in world coordinates; `editor` is scoped to the defining feature.
+   * click's gesture. A container that defines it gets it on its empty area too, instead of the
+   * canvas's "write here" (a timeline adds a bar where it is double-clicked). `point` is in world coordinates; `editor` is scoped to the defining feature.
    */
   onDoubleClick?(element: ElementOf<T>, ctx: { editor: Editor; point: Point }): void;
   /**

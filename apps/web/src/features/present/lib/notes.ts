@@ -1,7 +1,8 @@
 // Presenter notes (KAI-130): the `presenterNotes` collection, frame id -> PresenterNote. The frame
 // feature stays the only writer of frame fields; notes live beside them, are not elements (so never
 // in exports or thumbnails), and show in presentation mode only on the presenter's own screen.
-// They are not secret: everyone who can open the board has the doc (the UI says so).
+// They are not secret: everyone who can see the frame has them (the UI says so). Like the frame, a
+// frame's notes are withheld inside a hidden frame or a private draft (engine: element content).
 import type { Editor } from '@engine';
 
 export const NOTES_COLLECTION = 'presenterNotes';

@@ -5,6 +5,7 @@ import {
   formatObjectUri,
   objectRefsInText,
   parseObjectUri,
+  TRACKER_COLLECTION,
   type BoardElement,
   type ObjectRef,
   type ReferenceKind,
@@ -37,7 +38,8 @@ function stringsIn(v: unknown, out: string[], depth = 0): void {
  * The references of a board's content: item links (`link`: '#<id>' on this board, or another
  * board's address), smart links / link cards whose address is a Freero object ('embed'), object
  * addresses written in an item's text ('mention') and in comment messages ('comment', on the item
- * the thread is pinned to). A link from an item to itself is not a reference.
+ * the thread is pinned to), and items linked to a tracker issue ('tracker'). A link from an item
+ * to itself is not a reference.
  */
 export function extractReferences(
   boardId: string,
@@ -63,6 +65,16 @@ export function extractReferences(
     const text: string[] = [];
     for (const [k, v] of Object.entries(e)) if (!ADDRESS_FIELDS.has(k)) stringsIn(v, text);
     for (const t of text) for (const ref of objectRefsInText(t, origins)) add(el.id, ref, 'mention');
+  }
+
+  // Items linked to a tracker issue (KAI-153): only while the issue's record still lists the item
+  // (a copy of a linked item carries `trackerLink` but isn't linked).
+  const trackers = content.collection(TRACKER_COLLECTION);
+  for (const { el } of content.elements) {
+    const linkId = (el as { trackerLink?: unknown }).trackerLink;
+    if (typeof linkId !== 'string' || !linkId) continue;
+    const rec = trackers.get(linkId) as { sources?: unknown } | undefined;
+    if (Array.isArray(rec?.sources) && rec.sources.includes(el.id)) add(el.id, parseObjectUri(`freero://issue/${linkId}`), 'tracker');
   }
 
   const comments = content.collection(COMMENTS_COLLECTION);

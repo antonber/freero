@@ -149,6 +149,7 @@ everything an agent adds in free space (next to `near` when given): no coordinat
 | `update_items` | write | Changes several items in one step, all or nothing: text, card fields, colors, frame title / hidden, lock, link, position / size (a moved frame takes its contents). |
 | `delete_items` | write | Deletes items (a frame with everything inside). Only with `confirm: true`. |
 | `export_board` | read | The whole board as a file (embedded resource): Markdown or JSON. Recorded as an export (`board.exported`); refused by a downloads policy. |
+| `sync_to_tracker` | write | Sends items (sticky notes, cards, shapes, text) to the board's issue tracker as ONE issue — a cluster becomes one issue listing each note with a link back — or one per item (`mode: "each"`). `connection` names the tracker connection when there are several; `project` defaults to the connection's. The items and the issue stay linked and in sync ([trackers.md](trackers.md)). |
 | `propose_changes` | suggest | Proposes a structure (`{ kind, … }` as for the add tools; optional `description` for reviewers) as ONE group of suggestions that people who can edit the board accept or reject (KAI-169). The board does not change until they do; the badge, the outline (`include=suggestions`) and the activity feed show it as "<app> for <you>". Your role must be owner or editor. |
 
 **Resources:** `freero://board/{boardId}` — a board's outline (Markdown, ≈ 8000 tokens) in the

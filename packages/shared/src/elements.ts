@@ -26,7 +26,10 @@ export type ElementType =
   | 'media'
   | 'file'
   | 'objectlink'
-  | 'activity';
+  | 'activity'
+  | 'code'
+  | 'timeline'
+  | 'timelinebar';
 
 /**
  * An app (OAuth) or personal token acting for a person: what the board shows as "<name> for
@@ -78,6 +81,13 @@ export interface BaseElement {
    * "<name> for <person>". Stamped by the server; absent for things people made themselves.
    */
   createdVia?: ActingApp | null;
+  /**
+   * [additive] The tracker issue this item was sent to or imported from (KAI-153): the id of its
+   * record in the board's `trackers` collection. Written only by the server (modules/trackers);
+   * the badge shows only while that record still lists this item among its sources, so a copy of
+   * a linked item carries no link.
+   */
+  trackerLink?: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -383,6 +393,11 @@ export interface CardElement extends BaseElement {
   tags?: string[];
   /** Agreed estimate (story points, a size): written by planning poker through `card.setEstimate`. */
   estimate?: string | null;
+  /**
+   * [additive] First day of the work (ISO date), with `dueDate` as the last: a card on a timeline
+   * spans these days. Written through `card.setDates` (the timeline asks; cards keep one writer).
+   */
+  startDate?: string | null;
 }
 
 export interface EmojiElement extends BaseElement {
@@ -425,6 +440,12 @@ export interface TableElement extends BaseElement {
 /** Key of a cell's text / fill in the `tableCells` collection. */
 export const tableCellKey = (kind: 't' | 'f', tableId: string, rowId: string, colId: string): string =>
   `${kind}:${tableId}:${rowId}:${colId}`;
+
+/** The table a `tableCells` key belongs to (null: not a cell key). See ELEMENT_CONTENT_COLLECTIONS. */
+export function tableCellOwner(key: string): string | null {
+  const parts = key.split(':');
+  return parts.length === 4 && (parts[0] === 't' || parts[0] === 'f') && parts[1] ? parts[1] : null;
+}
 
 /**
  * What a table carries outside the elements map when it is copied (`ElementsSnapshot.content`
@@ -503,6 +524,23 @@ export interface KanbanElement extends BaseElement {
   /** Width of every column (world units); the element's w follows from it. */
   colW: number;
 }
+
+/**
+ * Kanban geometry (element-local, world units), shared by the kanban feature's layout and the
+ * server, which places a card in the column of the status a tracker reports (modules/trackers).
+ */
+export const KANBAN_LAYOUT = {
+  /** Board title band. */
+  headerH: 52,
+  /** Column header (title, count, menu). */
+  colHeadH: 44,
+  /** Between columns and around them. */
+  gap: 12,
+  /** Inside a column, around its items. */
+  pad: 10,
+  /** Between stacked items. */
+  itemGap: 10,
+} as const;
 
 export interface KanbanColumn {
   id: string;
@@ -630,6 +668,58 @@ export interface SwimlaneBand {
   color: string;
 }
 
+/**
+ * A code block (KAI-125). `code` is PLAIN TEXT — never HTML: the web app tokenises it with a
+ * highlighter into text spans, so whatever it contains (`<script>`, markup) is shown, never run.
+ * Tabs and indentation are kept as typed.
+ */
+export interface CodeElement extends BaseElement {
+  type: 'code';
+  code: string;
+  /** Highlighting grammar id ('typescript', 'python'…); 'auto' guesses, 'plaintext' highlights nothing. */
+  language: string;
+  lineNumbers: boolean;
+  /** Paper the code sits on. */
+  theme: 'light' | 'dark';
+}
+
+/**
+ * A timeline (KAI-122): a date axis from `start` to `end` (ISO dates, both shown) at a `scale`,
+ * with lanes as rows. It is a container: its bars — `timelinebar` items and task cards — are its
+ * children (`frameId`), each its own element (two people moving different bars never collide),
+ * placed by their dates; dragging one changes its dates. Dependencies are ordinary connectors
+ * between bars. A bar belongs to the lane under its center.
+ */
+export interface TimelineElement extends BaseElement {
+  type: 'timeline';
+  title: RichText;
+  start: string;
+  end: string;
+  scale: TimelineScale;
+  lanes: TimelineLane[];
+}
+
+export type TimelineScale = 'day' | 'week' | 'month' | 'quarter';
+
+export interface TimelineLane {
+  id: string;
+  title: RichText;
+  /** Header tint. */
+  color: string;
+  /** Rows of bars the lane is tall enough for (kept by the timeline's layout; at least 2). */
+  rows?: number;
+}
+
+/** A bar (or a milestone: one day, drawn as a diamond) on a timeline, from `start` to `end` inclusive. */
+export interface TimelineBarElement extends BaseElement {
+  type: 'timelinebar';
+  title: RichText;
+  start: string;
+  end: string;
+  color: string;
+  milestone?: boolean;
+}
+
 export type BoardElement =
   | StickyElement
   | ShapeElement
@@ -650,7 +740,10 @@ export type BoardElement =
   | MediaElement
   | FileElement
   | ObjectLinkElement
-  | ActivityElement;
+  | ActivityElement
+  | CodeElement
+  | TimelineElement
+  | TimelineBarElement;
 
 export type ElementOf<T extends ElementType> = Extract<BoardElement, { type: T }>;
 

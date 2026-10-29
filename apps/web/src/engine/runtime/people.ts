@@ -10,6 +10,11 @@ import type { EngineCore } from './core';
 
 export interface PeopleDirectory {
   people: StoreApi<Record<string, HostUser>>;
+  /**
+   * Ids the lookup answered WITHOUT (accounts that no longer exist, or people the board doesn't
+   * show): readers say "Deleted user" for them instead of waiting forever. Grows only.
+   */
+  gone: StoreApi<ReadonlySet<string>>;
   /** Asks for the ids not known yet (batched over one tick; each id asked once). */
   request(ids: Iterable<string>): void;
 }
@@ -21,6 +26,7 @@ export function peopleDirectory(core: EngineCore): PeopleDirectory {
   if (existing) return existing;
   const me = core.hostRef.current.user;
   const people = createStore<Record<string, HostUser>>(() => ({ [me.id]: me }));
+  const gone = createStore<ReadonlySet<string>>(() => new Set());
   const requested = new Set([me.id]);
   const pending = new Set<string>();
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -39,6 +45,7 @@ export function peopleDirectory(core: EngineCore): PeopleDirectory {
 
   const dir: PeopleDirectory = {
     people,
+    gone,
     request(ids) {
       for (const id of ids) if (id && !requested.has(id)) (requested.add(id), pending.add(id));
       if (!pending.size || timer) return;
@@ -47,7 +54,12 @@ export function peopleDirectory(core: EngineCore): PeopleDirectory {
         const batch = [...pending];
         pending.clear();
         core.hostRef.current.lookupUsers(batch).then(
-          (users) => remember(users),
+          (users) => {
+            remember(users);
+            const answered = new Set(users.map((u) => u.id));
+            const missing = batch.filter((id) => !answered.has(id) && !people.getState()[id]);
+            if (missing.length) gone.setState(new Set([...gone.getState(), ...missing]), true);
+          },
           () => batch.forEach((id) => requested.delete(id)), // asked again next time they render
         );
       }, 0);

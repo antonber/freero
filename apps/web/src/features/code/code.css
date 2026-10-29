@@ -1,0 +1,250 @@
+/* Code block: a header strip (language, copy) over monospaced, highlighted lines. Two papers,
+   light and dark, in Freero's own palette. Colours are plain classes, so exports match the board. */
+.fr-code {
+  --code-bg: #fbfbfd;
+  --code-head: #f1f0f7;
+  --code-edge: rgba(23, 22, 43, 0.12);
+  --code-ink: #23213a;
+  --code-dim: #8a89a3;
+  --code-keyword: #5b3ff0;
+  --code-string: #1a7f4b;
+  --code-number: #b8540d;
+  --code-comment: #8a89a3;
+  --code-title: #1f63c6;
+  --code-type: #ae2d68;
+  --code-attr: #0b7a83;
+  --code-meta: #6d6a8a;
+  --code-add-bg: rgba(31, 164, 99, 0.12);
+  --code-del-bg: rgba(229, 72, 77, 0.12);
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--code-bg);
+  color: var(--code-ink);
+  box-shadow:
+    0 0 0 1px var(--code-edge),
+    0 6px 16px -10px rgba(23, 22, 43, 0.35);
+  font-family: var(--fr-font-mono);
+  font-variant-ligatures: none;
+}
+
+.fr-code.is-dark {
+  --code-bg: #1c1b2e;
+  --code-head: #25233b;
+  --code-edge: rgba(255, 255, 255, 0.08);
+  --code-ink: #e9e7f7;
+  --code-dim: #77758f;
+  --code-keyword: #b6a6ff;
+  --code-string: #86dba5;
+  --code-number: #ffb37d;
+  --code-comment: #8b89a6;
+  --code-title: #8cc4ff;
+  --code-type: #ff9cc6;
+  --code-attr: #74dcdc;
+  --code-meta: #a3a1bd;
+  --code-add-bg: rgba(134, 219, 165, 0.14);
+  --code-del-bg: rgba(255, 140, 140, 0.14);
+}
+
+.fr-code__head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px 0 12px;
+  background: var(--code-head);
+  border-bottom: 1px solid var(--code-edge);
+  font-family: var(--fr-font);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.fr-code__dots {
+  display: flex;
+  gap: 5px;
+}
+
+.fr-code__dots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--code-edge);
+}
+
+.fr-code__lang {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--code-dim);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.fr-code__copy {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--code-dim);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.fr-code__copy:hover {
+  background: var(--code-edge);
+  color: var(--code-ink);
+}
+
+.fr-code__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.fr-code__gutter {
+  flex: none;
+  padding-right: 12px;
+  text-align: right;
+  color: var(--code-dim);
+  user-select: none;
+}
+
+.fr-code__text {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  tab-size: 4;
+}
+
+.fr-code__line {
+  white-space: pre;
+  min-height: 1lh;
+}
+
+.fr-code__placeholder {
+  color: var(--code-dim);
+  font-family: var(--fr-font);
+  font-style: italic;
+}
+
+.fr-code__input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: var(--code-ink);
+  caret-color: var(--code-keyword);
+  font: inherit;
+  line-height: inherit;
+  white-space: pre;
+  tab-size: 4;
+  pointer-events: auto;
+}
+
+.fr-code__bars {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fr-code__bars span {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--code-edge);
+}
+
+/* Highlight scopes (highlight.js names), in Freero's palette. */
+.fr-code .hljs-keyword,
+.fr-code .hljs-selector-tag,
+.fr-code .hljs-literal,
+.fr-code .hljs-doctag,
+.fr-code .hljs-section {
+  color: var(--code-keyword);
+}
+
+.fr-code .hljs-string,
+.fr-code .hljs-regexp,
+.fr-code .hljs-template-tag,
+.fr-code .hljs-char {
+  color: var(--code-string);
+}
+
+.fr-code .hljs-number,
+.fr-code .hljs-symbol,
+.fr-code .hljs-bullet {
+  color: var(--code-number);
+}
+
+.fr-code .hljs-comment,
+.fr-code .hljs-quote {
+  color: var(--code-comment);
+  font-style: italic;
+}
+
+.fr-code .hljs-title,
+.fr-code .hljs-name,
+.fr-code .hljs-selector-id,
+.fr-code .hljs-selector-class {
+  color: var(--code-title);
+}
+
+.fr-code .hljs-type,
+.fr-code .hljs-built_in,
+.fr-code .hljs-class {
+  color: var(--code-type);
+}
+
+.fr-code .hljs-attr,
+.fr-code .hljs-attribute,
+.fr-code .hljs-property,
+.fr-code .hljs-variable,
+.fr-code .hljs-template-variable,
+.fr-code .hljs-params {
+  color: var(--code-attr);
+}
+
+.fr-code .hljs-meta,
+.fr-code .hljs-tag,
+.fr-code .hljs-punctuation,
+.fr-code .hljs-subst {
+  color: var(--code-meta);
+}
+
+.fr-code .hljs-addition {
+  background: var(--code-add-bg);
+}
+
+.fr-code .hljs-deletion {
+  background: var(--code-del-bg);
+}
+
+.fr-code .hljs-emphasis {
+  font-style: italic;
+}
+
+.fr-code .hljs-strong {
+  font-weight: 700;
+}
+
+@media (forced-colors: active) {
+  .fr-code {
+    outline: 1px solid CanvasText;
+  }
+}

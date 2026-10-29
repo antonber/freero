@@ -1,3 +1,6 @@
+import { tableCellOwner } from './elements';
+import { TRACKER_COLLECTION } from './trackers';
+
 // Layout of the per-board Yjs document.
 //
 // Single-writer rule: every top-level shared type has exactly one owner.
@@ -10,7 +13,8 @@
 //   'comments' -> features/comments   (CommentRecord per key: t:/s:/m:/r:/x: — see elements.ts)
 //   'tags'     -> features/tags       (Tag by id)
 //   'timer'    -> features/timer      (key 'state' -> TimerState)
-//   'tableCells' -> features/table (cell text/fill per key — see TableElement in elements.ts)
+//   'tableCells' -> features/table (cell text/fill per key — see TableElement in elements.ts;
+//                                     element content: in the table's doc, ELEMENT_CONTENT_COLLECTIONS)
 //   'privateMode' -> features/private-mode (key 'session' -> PrivateModeSession)
 //   'voting'   -> features/voting     (key 'session' -> VotingSession, `${sessionId}:${userId}` -> VoteBallot;
 //                                     while results are hidden the real ballot is in the voter's
@@ -19,10 +23,15 @@
 //                                     SERVER: realtime/facilitation.ts enforces it)
 //   'estimation' -> features/estimation (planning poker; sealed estimates in the PRIVATE layer)
 //   'retro'    -> features/retro      (key 'session' -> the guided retro's phase)
-//   'presenterNotes' -> features/present (frame id -> the presenter's notes for that slide)
+//   'presenterNotes' -> features/present (frame id -> the presenter's notes for that slide; element
+//                                     content: in the frame's doc)
 //   'diagramSources' -> features/from-text (diagram id -> the source a diagram was laid out from
 //                                     and what that layout wrote; board content, so a restored
 //                                     version brings back the source that matches its diagram)
+//   'trackers' -> features/trackers  (link id -> TrackerIssueRecord, see trackers.ts; WRITTEN BY THE
+//                                     SERVER only — modules/trackers through changeBoard; a socket's
+//                                     write is undone (realtime/serverCollections.ts) — the feature
+//                                     reads it for the issue badges)
 //
 // Content some connections must not read (private drafts, sealed ballots, hidden frames'
 // contents) never enters this doc: it lives in server-held LAYER docs with the same layout (an
@@ -44,6 +53,41 @@ export const Y_SETTINGS = 'settings';
 export const COMMENTER_WRITABLE = ['comments'] as const;
 
 /**
+ * Collections whose entries BELONG to an element (KAI-230): content an element keeps outside the
+ * elements map, keyed so that the owning element's id can be read from the key. An entry lives in
+ * the SAME doc as its element — the shared doc, the `editors` layer (inside a hidden frame) or its
+ * author's private layer — and moves with it, atomically, whenever the element moves (hidden /
+ * shown frame, a sticky dragged in or out, a draft revealed or discarded). Otherwise a table in a
+ * hidden frame or a private draft would still send its cell text to every socket.
+ *
+ * Applied by the engine on every write and move (engine/store, editor/layers.ts), and by the server
+ * on requests (realtime/view.ts applyChange), reveals (layers.ts), a socket's misplaced writes and
+ * when a board loads (realtime/elementContent.ts). Both runtimes need it, so it lives here, like
+ * Y_KEPT_ON_RESTORE. Value: the id of the element a key belongs to (null: no element's).
+ *
+ * Not here on purpose (ARCHITECTURE.md "Board layers", per-collection audit): `diagramSources`
+ * (one record per diagram, many elements: from-text keeps one only while the whole diagram is
+ * shared), and social / session collections (votes, tags, timers; comments on withheld items:
+ * KAI-234).
+ */
+export const ELEMENT_CONTENT_COLLECTIONS: Readonly<Record<string, (key: string) => string | null>> = {
+  tableCells: tableCellOwner,
+  // frame id -> the presenter's notes for that frame
+  presenterNotes: (key) => key || null,
+  // activity id -> its live results (ENGAGE_RESULTS_COLLECTION; written by the server only, which
+  // also moves them: see SERVER_WRITTEN_COLLECTIONS)
+  engageResults: (key) => key || null,
+};
+
+/** The element `key` of `collection` belongs to, or null (not an element-content collection, or no owner). */
+export function elementContentOwner(collection: string, key: string): string | null {
+  const owner = Object.prototype.hasOwnProperty.call(ELEMENT_CONTENT_COLLECTIONS, collection) ? ELEMENT_CONTENT_COLLECTIONS[collection] : null;
+  return owner ? owner(key) : null;
+}
+
+export const isElementContentCollection = (name: string): boolean => Object.prototype.hasOwnProperty.call(ELEMENT_CONTENT_COLLECTIONS, name);
+
+/**
  * Top-level types that restoring an older version (version history) leaves as they are: social
  * and session data (the conversation, a vote, the timer), not board content. Everything else —
  * elements, settings and content collections (tags, table cells) — goes back to the version.
@@ -51,9 +95,10 @@ export const COMMENTER_WRITABLE = ['comments'] as const;
  * a sealed vote (rolling them back would desync them from the ballots in the private layers), and
  * 'privateMode' is session state: rolling it back could restart private mode (new content going
  * private again) or end it while drafts are still sealed. Layer docs are never versioned or
- * restored (see "Board layers" in ARCHITECTURE.md).
+ * restored (see "Board layers" in ARCHITECTURE.md). 'trackers' mirrors the server's links to tracker
+ * issues (they don't go back in time with the board): an older copy would show stale badges.
  */
-export const Y_KEPT_ON_RESTORE = ['comments', 'voting', 'timer', 'privateMode', 'facilitation', 'estimation', 'retro', 'engageResults', 'call'] as const;
+export const Y_KEPT_ON_RESTORE = ['comments', 'voting', 'timer', 'privateMode', 'facilitation', 'estimation', 'retro', 'engageResults', 'call', 'trackers'] as const;
 
 /**
  * Facilitator controls (KAI-129): the `facilitation` collection, key FACILITATION_KEY. While it is
@@ -139,6 +184,13 @@ export interface VotingSession {
  * the shared doc or a layer, is undone in the same transaction (realtime/serverCollections.ts).
  */
 export const ENGAGE_RESULTS_COLLECTION = 'engageResults';
+
+/**
+ * Collections only the SERVER writes (apps/server/src/modules/realtime/serverCollections.ts undoes
+ * any socket's change to them). When one of them is also element content
+ * (ELEMENT_CONTENT_COLLECTIONS), the server — never a client — keeps each entry with its element.
+ */
+export const SERVER_WRITTEN_COLLECTIONS: readonly string[] = [ENGAGE_RESULTS_COLLECTION, TRACKER_COLLECTION];
 
 export interface ActivityResults {
   activityId: string;

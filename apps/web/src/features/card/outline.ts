@@ -8,6 +8,7 @@ export default defineOutline({
       text: ctx.plain(el.description),
       fields: {
         status: el.status,
+        start: el.startDate ?? null,
         due: el.dueDate,
         estimate: el.estimate ?? null,
         assignee: el.assigneeId ? (ctx.personName(el.assigneeId) ?? 'someone') : null,

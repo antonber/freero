@@ -116,6 +116,8 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | Derived indexes (`object_references`, `search_entries`) | their module's outbox consumer | never written directly: change the source; `references:rebuild` / `search:rebuild` repair |
 | The event stream (`events`) | `modules/events` (from outbox topics only) | append to the outbox in your change's transaction (`board.events`, `board.members`, `board.content`); consumers follow `event.recorded` |
 | API tokens, OAuth apps / consents, a team's API switch | server `modules/apiauth` | its index: `authenticate`, `requireScope`, `useInWorkspace` |
+| Tracker connections, links to issues, what both sides last agreed on | server `modules/trackers` | its routes / index (`sendToTracker`, `importIssues`); syncs only through its outbox consumer |
+| `trackers` collection (issue badges) and items' `trackerLink` | server `modules/trackers` (through realtime's `changeBoard`) | — (the web feature only reads them) |
 
 ### Host — the one typed contract between app and engine
 
@@ -349,6 +351,9 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   server said this user may use AI on this board. AI entry points (`features/ai`: the format-toolbar
   button, the "AI ▸" context/board menu, the dialog) hide without it; never offer AI from `when`
   alone. Not in the command palette (it lists unavailable commands greyed out).
+- `Host.trackers?` (additive, KAI-154): `{ connections, projects, preview, send, importIssues, sync,
+  unlink }`, present only when the server listed a tracker connection this person may use on this
+  board (`GET /boards/:id/trackers`). `features/trackers` hides every entry point without it.
 - `Host.activity?.list(before?)` (additive): the board's activity feed as the server recorded
   it (see "Activity"); `features/activity` shows it in a dock panel.
 - `Host.engage?` (additive, KAI-132): answering live activities (`state / answer / withdraw / ask /
@@ -554,9 +559,41 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
   CGNAT / multicast addresses at connect time, 1.5 MB / 2 MB caps, 6 s deadlines, per-user rate
   limit — and returns title / description / site name and the preview image as a data: URL. The
   embed feature re-hosts that image with `Host.uploadImage`, so viewers and exports never load
-  third-party URLs. Video players (YouTube / Vimeo / Loom) only on `EMBED_FRAME_ORIGINS`
-  (`@freero/shared`), which the CSP `frame-src` allows; iframes are sandboxed, mounted only after a
-  click, and never exported (exports render a fresh component that shows the card).
+  third-party URLs.
+- Live embeds (KAI-127, `features/embed/lib/providers.ts`): one allow-list, `EMBED_PROVIDERS` in
+  `@freero/shared` (YouTube, Vimeo, Loom, Figma, Google Docs / Sheets / Slides / Forms, CodePen,
+  CodeSandbox — never another whiteboard), each with its frame origins, `sandbox` and `allow`. The
+  board stores only the pasted URL; the iframe src is REBUILT from ids parsed out of it on the
+  provider's own embed host and checked against the provider's origins, so a URL tampered with in
+  the doc frames nothing else. The CSP `frame-src` (`platform/security.ts`) is exactly
+  `EMBED_FRAME_ORIGINS` plus the operator's `EMBED_EXTRA_ORIGINS` (https origins only; links there are
+  framed as given, `OPERATOR_EMBED_SANDBOX`). A frame mounts only after a click ("Open live" / play),
+  for that viewer only; it takes pointer input only while the item is selected (a board-owned strip
+  above it is the grab handle, with full screen / open / close), so the board stays navigable.
+  Workspace policy `liveEmbeds: 'off'` (admin console → Sharing) keeps every link a card
+  (`BoardPermissions.liveEmbeds` → `Host.board.embeds`). Exports and thumbnails render a fresh copy:
+  never live, always the card with its poster.
+- Code blocks (KAI-125, `features/code`, element `code`): `code` is plain text, never HTML. The
+  highlighter (lowlight over highlight.js grammars, pinned, loaded with `import()` on first use)
+  returns a syntax TREE that is turned into lines of text runs and rendered as React text spans
+  with highlight.js scope class names only — no HTML string is ever built from a block, so W11
+  needs no exception. Editing is a plain `<textarea>` in the block (one gesture per sitting);
+  lines never wrap, so the height follows the line count. A pasted Markdown fence (not ```mermaid)
+  becomes a block (importer priority 45). Exports render the same spans and colours.
+- Timelines (KAI-122, `features/timeline`, elements `timeline` + `timelinebar`): a container whose
+  bars are separate elements (`frameId`), so concurrent edits of different bars never collide.
+  Dates are the truth: `arrange` (pure `lib/layout.ts` `planTimeline`) lays each bar at its dates,
+  lane (under its center) and row; right after a LOCAL move / resize (`ArrangeContext.previous`) the
+  change is read back as whole days. Bars outside the range shrink to a stub at that edge, never
+  lost. Task cards dropped on a timeline become bars spanning `startDate`..`dueDate`; their dates are
+  written only through `card.setDates` (cards keep one writer), and a card laid out shorter than
+  `BAR_MAX_H` draws itself as a one-line bar. Dependencies are ordinary connectors. The suite's
+  roadmap mode (KAI-160) builds on this element.
+- Sticky author labels (KAI-112, `features/sticky/decoration.tsx`): a board setting in the
+  `stickyLabels` collection (editors toggle "Show sticky authors" in the board menu). Names come
+  from the people lookup (`usePeople`, current names; `useGonePeople` → "Deleted user", never an id;
+  "<app> for <person>" for agents). No label while private mode runs nor on a private-layer draft,
+  so a draft's author is never shown, exported or screenshotted before reveal.
 - Images placed by URL (same module, same fetch protections, `remoteImage` rate limit):
   `Host.importImage(url)` (`POST /api/unfurl/image`) copies the image into the user's uploads —
   the image feature does this on paste/drop, so boards reference `/uploads/<key>`, not the third
@@ -651,7 +688,11 @@ Reference & items (engine primitives; product UI in `features/shortcuts`, `links
   "Copy link to item" (`engine.copyLink`) builds `/board/<id>?item=<elementId>`; the board selects
   and zooms to it on load (`?el=` is still honored).
 - `ElementDefinition.onDoubleClick?(el, { editor, point })`: double-click on an element with no
-  text to edit there (image → crop mode). Editors only, never on locked items.
+  text to edit there (image → crop mode). Editors only, never on locked items. A container that
+  defines it keeps double-clicks on its empty area instead of the canvas's "write here" (timeline:
+  add a bar).
+- `ElementDefinition.minSize` may be a function of the element (a card drawn as a timeline bar).
+- `useGonePeople(ids)` (`@engine`): the ids the people lookup answered without (deleted accounts).
 - `useIsExporting()`: true inside offscreen exports/thumbnails, so decorations can leave out
   on-screen affordances (the link badge).
 - `ImageElement.crop` (fractions of the natural picture) is the non-destructive crop; crop mode
@@ -792,10 +833,12 @@ credentials that act for a person without their session), `api` (no table: the p
 permission check, `POST /objects/resolve`), `references` (object_references, reference_sources: the
 references index derived through the outbox, `GET /objects/backlinks`; both in "Suite foundation"
 below), `engage` (engage_answers, engage_questions, engage_upvotes,
-engage_reveals: live audience activities; see "Live activities" below), `search` (search_entries,
-search_sources: the search index derived through the outbox, `GET /search`), `events` (events,
-event_board_states, event_pending_boards: the event stream), `webhooks` (webhook_endpoints,
-webhook_deliveries: workspace webhooks) — the last three in "Search, the event stream and webhooks" below.
+engage_reveals: live audience activities; see "Live activities" below), `trackers`
+(tracker_connections, tracker_links, tracker_link_sources, tracker_oauth_flows: issue-tracker sync;
+see "Issue trackers" below), `search` (search_entries, search_sources: the search index derived
+through the outbox, `GET /search`), `events` (events, event_board_states, event_pending_boards: the
+event stream), `webhooks` (webhook_endpoints, webhook_deliveries: workspace webhooks) — the last
+three in "Search, the event stream and webhooks" below.
 
 - Notifications are created only from trusted server-side events, never from client claims:
   realtime's `onCommentMessage` (a comment message applied from one of THIS instance's sockets,
@@ -1006,7 +1049,9 @@ members with roles owner / admin / member / guest (separate from board roles).
 - Policies (team workspaces): `externalSharing` (who may invite people outside / share by link),
   `linkSharing` (max link role), `guestInvites`, `downloads` (who may export, duplicate or save
   as template), `teamAccess` (above), `publicLinks` (whether a link also lets in visitors without
-  an account: see "Guests"). All enforced by the endpoint that does the work;
+  an account: see "Guests"), `liveEmbeds` (links may open as live frames; enforced by every
+  viewer's client, the frames being third-party pages the CSP already confines). All other
+  policies are enforced by the endpoint that does the work;
   `BoardSummary.permissions` only tells the UI.
 - Team templates (KAI-96): owners/admins of the workspace a template is shared with may unshare
   it (`templates.shareTemplate(id, null)`); workspaces' `onMembershipChanged` (after a removal or
@@ -1469,6 +1514,53 @@ own DNS lookup refuses private addresses at connect time, redirects never follow
 4× backoff, and turns an endpoint off after `WEBHOOK_DISABLE_AFTER_FAILURES` failures in a row
 (audited, its creator emailed); deliveries wait until it is back on. `WEBHOOKS=false` removes it all.
 
+### Issue trackers: one issue ↔ many items, kept in step (`modules/trackers`, KAI-153..157; docs/trackers.md)
+
+The stickies-to-tickets hand-off without losing fields: board items become ONE issue (a cluster) or
+one each in Jira (Cloud v3 / Data Center v2), Linear or GitHub, and stay linked both ways.
+
+- **Model.** A *connection* is a team's (its admins manage it, its full members use it) or one
+  person's own; credentials and the webhook secret are sealed (`platform/secrets`), never sent back
+  or logged, and a person's own are erased on `auth.onSignedOutEverywhere`. A *link* is one issue ↔
+  its items (`tracker_link_sources`, ordered; an item is in at most one link), the person whose
+  access writes the tracker's changes (`created_by`; paused while they can't edit), and `base`:
+  each field's canonical value on each side when they last agreed.
+- **Providers** (`providers/*.ts`, one file each behind `TrackerProvider`): auth headers, who-am-I,
+  projects, get / create / update / search issues, `changedSince` (polling), backlinks, how a tag
+  becomes a label, and webhook verification. Plain HTTP (`http.ts`): untrusted addresses (https,
+  no private addresses unless `TRACKER_PRIVATE_ENDPOINTS`, no redirects, size caps), retries with
+  backoff honouring `Retry-After`; a longer wait sets the connection's `cooldown_until`.
+- **The mapping and the merge are pure** (`@freero/shared` `trackers.ts`: `issueValuesFromBoard`,
+  `pullableFields`, `canonical`, `mergeField`). Per field against `base`: one-sided changes flow
+  across; the same field changed differently on both sides in one window keeps the tracker's value
+  and the board's goes into a comment on the item; a field a side can't hold (a cluster's title)
+  is never written back. The server previews with the same code the send uses.
+- **One sync path** (`service.ts` `syncLink`), run only by the `trackers` outbox consumer, so a link
+  never syncs twice at once: read the issue, read the items from the live board as the linking
+  person sees them, merge, write the tracker, write the board through `changeBoard` ("Jira for
+  Maria", one transaction: field patches, the badge record, notes), refresh backlinks, store the new
+  base. Triggers only enqueue `tracker.sync` (`link:<id>`): `board.content` events whose items
+  differ from `base` (read from the SAVED board), verified webhooks (`/api/trackers/webhooks/:id`,
+  `allowCrossSitePost`; a delivery only names the issue — it is read back), the `trackers:poll` job
+  (polling connections every `TRACKER_POLL_SECONDS`, webhook ones as a fallback, retries due).
+  Webhook signatures are checked over the raw JSON body (`platform/http.ts` `rawBody`).
+- **The board side**: the server writes each item's `trackerLink` and one `TrackerIssueRecord` per
+  link in the `trackers` collection (key, status, assignee, sources, state); `features/trackers`
+  draws the badge from it (a copy of a linked item shows none: the record doesn't list it) — live
+  for everyone through Yjs, kept on version restore (`Y_KEPT_ON_RESTORE`). `BoardChange.collections`
+  entries set to `null` delete (owners/editors), so unlinking removes the record. A card whose status
+  comes from the tracker moves to the kanban column with that status (`KANBAN_LAYOUT`, shared with
+  the kanban feature). The board side of a send is ONE server change (nobody ever sees part of a
+  cluster linked); like any change the server makes it is not in anyone's Ctrl+Z — "Unlink" undoes it.
+- **Suite primitives**: an issue is an object, `freero://issue/<linkId>` (its board's access); the
+  references index adds kind `tracker` from items to it, so its backlinks are its items. Every sync
+  that changed something is `tracker.synced` in the audit log (fields each way), failures
+  `tracker.sync_failed`; the activity feed shows sends, imports, pushes and failures
+  (`onTrackerActivity`). MCP `sync_to_tracker` is `api/service.ts` `syncToTracker`.
+- `npm run verify -- --only tracker` runs it all against `scripts/lib/mock-jira.mjs` (Cloud, DC,
+  Atlassian OAuth), `mock-linear.mjs` and `mock-github.mjs`, which implement the subset of each
+  public API used, webhooks included.
+
 ### Audit log, admin console and workspace policies (KAI-48, KAI-47, KAI-51)
 
 **Audit log** (`modules/audit`). Every module records security-relevant changes with
@@ -1783,7 +1875,8 @@ args — `templates.insert`, `private-mode.start/reveal`, `timer.start/stop`, `f
 `voting.start/end`, `arrange.clusterByColor` — so private writing, sealed votes and the
 facilitator's limits keep their own guarantees. The laser pointer (`features/present`) is presence
 only (`ext.present.laser`, receivers fade points from their own arrival time); presenter notes are
-the `presenterNotes` collection (frame id → text), never elements, so never in exports.
+the `presenterNotes` collection (frame id → text), never elements, so never in exports (element
+content: a frame's notes live in the frame's doc, see "Board layers").
 
 **Live activities** (KAI-132, `modules/engage`, `features/engage`): polls, word clouds, rankings,
 rating scales and Q&A. The `activity` element (question, options, settings) is ordinary board
@@ -1811,8 +1904,8 @@ only to connections that may read them:
 
 | layer (wire / stored) | read by | written by | holds |
 |---|---|---|---|
-| `private` / `u:<userId>` | that user's sockets | that user, while owner/editor | private-mode drafts (`elements`), sealed ballots (`voting`), sealed planning-poker picks (`estimation`) |
-| `editors` / `editors` | owner/editor sockets | owners/editors | contents of hidden frames (`elements`); pending suggestions (`suggestions`, created only by the server; see "Suggestions") |
+| `private` / `u:<userId>` | that user's sockets | that user, while owner/editor | private-mode drafts (`elements`, with their element content: see below), sealed ballots (`voting`), sealed planning-poker picks (`estimation`) |
+| `editors` / `editors` | owner/editor sockets | owners/editors | contents of hidden frames (`elements`, with their element content: table cells…); pending suggestions (`suggestions`, created only by the server; see "Suggestions") |
 
 - Wire format: `WS_MESSAGE_LAYER` envelopes around y-protocols sync messages, `WS_MESSAGE_LAYER_OP`
   for reveal/discard (`@freero/shared` api.ts). A socket asking for a layer it may not read gets no
@@ -1868,6 +1961,53 @@ only to connections that may read them:
   were: a frame visible then comes back visible with the content the shared doc had (the editors
   clients' sweep drops a stale editors-layer copy of the same ids), a frame hidden then comes back
   hidden with whatever its editors layer holds NOW (hidden contents are not versioned).
+- **Element content follows its element** (KAI-230): what an element keeps outside the `elements`
+  map — the collections in `@freero/shared` `ELEMENT_CONTENT_COLLECTIONS`, each with a function
+  from an entry's key to the element it belongs to (`tableCells`, `presenterNotes`,
+  `engageResults`) — lives in the SAME doc as that element, so a table in a hidden frame or a private
+  draft never sends its cell text to a socket that may not read the table. One declaration in
+  `@freero/shared` (like `Y_KEPT_ON_RESTORE`) because both runtimes enforce it:
+  - Client (`engine/store`): `editor.collection(name)` of such a collection reads the shared doc and
+    both layers as one; a write goes to the owner element's doc. Every element move between docs
+    (`BoardStore.writeElement`) carries its entries in the same transaction, so dragging a table into
+    or out of a hidden frame is one undo step for the cells too (undoable collections are tracked in
+    the layer docs' undo managers). The owner/editor sweep (`editor/layers.ts`) also places entries
+    left elsewhere (a collaborator typing into a cell while the table was being hidden, untracked
+    content after an undo); a stale editors-layer copy of an element takes its content with it.
+  - Server (`realtime/elementContent.ts`): requests (`applyChange`) write entries into the owner's
+    doc and move them when they move the element; reveal / discard of drafts (`applyLayerOp` on
+    `elements`) carries their entries, and an op naming an element-content collection does nothing
+    (content is never revealed without its element); a socket's write of an entry into the shared doc
+    for an element that lives only in the editors layer (or only in the writer's own private layer)
+    is moved there INSIDE the transaction that applies the update (the shared-doc update other
+    sockets get carries no text, as with the facilitation guards); loading a board places every
+    misplaced entry (idempotent: this migrated boards from before the rule). An element in two docs
+    (a move in flight) or none (deleted) has no home: its entries stay put until it has one.
+  - Collections only the server writes (`SERVER_WRITTEN_COLLECTIONS`, `engageResults`) are moved by
+    the server, never by clients (a socket's change to them is undone): `writeServerCollection` writes
+    each entry into its element's doc, and the room re-places them after every element move it applied.
+  - Readers: `BoardView.collection(name)` merges the layers the reader may read for these collections
+    (the outline, REST/MCP item reads, AI); exports, templates and thumbnails are made on the client
+    from what that user can see; version snapshots and the references index read the shared doc only.
+
+**What else lives outside `elements`, and why it is (not) withheld** (audit, KAI-230):
+
+| Collection | Holds | Withheld with hidden / private items? |
+|---|---|---|
+| `tableCells` | cell text and fill, per table | yes: element content |
+| `presenterNotes` | notes per frame | yes: element content (a frame inside a hidden frame or a draft). A visible frame's notes stay readable by everyone with access, by design (the panel says so) — that includes a hidden frame's OWN notes, since the frame itself is visible |
+| `engageResults` | live activity results | yes: element content, moved by the server |
+| `diagramSources` | a diagram's Mermaid / outline source and the ids it laid out | not element content (one record, many elements): from-text keeps a source only while the WHOLE diagram is shared content, offers editing only then, and refuses to write a source for a diagram that became hidden meanwhile. A diagram hidden after it was shared keeps the source everyone had already seen (hiding is not retroactive) |
+| `comments` | threads pinned to items, messages | NOT yet: a thread on an item in a hidden frame / a draft is in the shared doc (KAI-234). Threads are social records with server readers that only know the shared doc (commenter rules, mention notifications, account purge, references, data export) and their owner is not in the key; moving them is its own change |
+| `voting`, `estimation` | ballots / picks: element ids and values, sealed ones in private layers | ids only, no content: an item in a hidden frame can be voted on or estimated by editors, and viewers learn its id and count, never its text |
+| `tags` | the board's tag vocabulary (name, colour) | no: board-level, shared by many items; an item's tag ids are on the element and follow it |
+| `timer`, `privateMode`, `facilitation`, `retro`, `call`, `shapeLibraries` | session / board settings | nothing item-specific |
+| `suggestions` (editors layer) | proposed changes | already editors-only; accepting writes through the same placement |
+| kanban / swimlane / mind map / `objectlink` | fields of their elements | elements: follow their layer already |
+
+Card notifications (`realtime/cards.ts`) observe the shared doc only, so a card inside a hidden frame
+or a draft notifies nobody (a draft's assignee hears of it when it is revealed), and due-date
+reminders re-check the card in the assignee's own `readBoardView`.
 - Features use it through `Editor.privateCollection(name)` / `usePrivateCollection`,
   `revealPrivate` / `discardPrivate`, `setPrivatePlacement`, `layerOf(id)` and
   `ElementDefinition.hidesContents`. Trust model: owners/editors are trusted with integrity (they can
@@ -1937,7 +2077,7 @@ the board, deletions. A suggestion is not board content until someone who can ed
   `S3_BUCKET` and keys (MinIO, SeaweedFS…), the `s3` group checks the S3 backend (prefixes, kept
   copies under `private/`, restore, retention, the S3_PUBLIC_URL redirect and stored Cache-Control);
   all other groups stay on the local disk. CI does all of it.
-  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation,ai,api,mcp,s3,suite,suggestions,collab,search,webhooks` runs some groups (to loop one while hunting a flake).
+  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation,ai,api,mcp,s3,suite,suggestions,collab,tracker,search,webhooks` runs some groups (to loop one while hunting a flake).
   The `mcp` group drives the MCP server with the official MCP client SDK, OAuth (dynamic
   registration, consent, PKCE) included; with DATABASE_URL + REDIS_URL one client's requests also
   alternate between two instances.

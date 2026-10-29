@@ -23,6 +23,7 @@ import {
   readOutline,
   replyToComment,
   searchBoards,
+  syncToTracker,
   templatesFor,
   updateItems,
   type ApiCall,
@@ -434,6 +435,30 @@ export const TOOLS: McpTool[] = [
     async run(call, a) {
       const { deleted } = await deleteItems(call, a.boardId, [...new Set(a.itemIds)], a.confirm === true, true);
       return plain(`Deleted ${deleted.length} item${deleted.length === 1 ? '' : 's'} (including what was inside them): ${deleted.join(', ')}.`, { deleted });
+    },
+  }),
+
+  tool({
+    name: 'sync_to_tracker',
+    title: 'Send items to an issue tracker',
+    description:
+      'Turns items on a board (sticky notes, cards, shapes, text) into an issue in the team’s issue tracker (Jira, Linear or GitHub) — ONE issue for all of them by default (a cluster of notes becomes one issue listing each note with a link back), or one per item with mode "each". The items and the issue stay linked and in sync both ways. Use item ids from get_board_outline. Needs permission to change boards; the board must have a tracker connected.',
+    scope: 'boards:write',
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    input: {
+      boardId,
+      itemIds: z.array(z.string().min(1).max(64)).min(1).max(50).describe('The items to send.'),
+      connection: z.string().max(200).optional().describe('Which tracker connection (its name), when the board has more than one.'),
+      project: z.string().max(200).optional().describe('Jira project key, Linear team key or GitHub owner/repo. Default: the connection’s default project.'),
+      issueType: z.string().max(100).optional().describe('Jira issue type (default Task).'),
+      mode: z.enum(['one', 'each']).optional().describe('one (default): one issue for all the items; each: one issue per item.'),
+    },
+    async run(call, a) {
+      const out = await syncToTracker(call, a.boardId, a);
+      return plain(
+        `Created ${out.issues.length} issue${out.issues.length === 1 ? '' : 's'}: ${out.issues.map((i) => `${i.key} (${i.itemIds.length} item${i.itemIds.length === 1 ? '' : 's'}) ${i.url}`).join('; ')}. The items show the issue and stay in sync with it.`,
+        { issues: out.issues },
+      );
     },
   }),
 

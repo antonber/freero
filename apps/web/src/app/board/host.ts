@@ -1,5 +1,5 @@
 // Builds the engine's Host — the one typed contract between the app shell and the engine.
-import type { BoardAiStatus, BoardSummary, Role } from '@freero/shared';
+import type { BoardAiStatus, BoardSummary, BoardTrackersResponse, Role } from '@freero/shared';
 import { unavailableVersionHistory, type Host, type HostEngage, type HostUser } from '@engine';
 import type { ToastApi } from '@ui';
 import { api, wsBase } from '../api/client';
@@ -39,6 +39,8 @@ export interface HostDeps {
   team?: { id: string; name: string } | null;
   /** What the server said about AI on this board for this user (null: AI is off on this server). */
   ai?: BoardAiStatus | null;
+  /** Tracker connections this user may use here (empty: no tracker entry points). */
+  trackers?: BoardTrackersResponse['connections'];
 }
 
 /** Live activities (KAI-132): the same REST for accounts and guests (the server decides who may answer). */
@@ -72,6 +74,9 @@ export function toastNotify(toast: ToastApi): Host['notify'] {
   };
 }
 
+/** Live embeds on this board (KAI-127): the workspace's switch and the operator's extra origins. */
+const embedsOf = (p: BoardSummary['permissions']) => ({ enabled: p.liveEmbeds !== false, extraOrigins: p.embedOrigins ?? [] });
+
 export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
   syncServerClock();
   return {
@@ -84,6 +89,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
       team: deps.team ? { name: deps.team.name } : null,
       call: board.call ?? null,
       jitsiCalls: board.permissions.jitsiCalls === true,
+      embeds: embedsOf(board.permissions),
     },
     syncUrl: `${wsBase()}/ws/boards`,
     uploadImage,
@@ -119,6 +125,20 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     call: callOf(board.id),
     // AI entry points exist only when the server said this user may use AI here.
     ...(deps.ai?.available ? { ai: { provider: deps.ai.provider ?? '', source: deps.ai.source ?? 'instance', run: (body) => api.runAi(board.id, body) } } : {}),
+    // Tracker entry points exist only when the server listed a connection this user may use here.
+    ...(deps.trackers?.length
+      ? {
+          trackers: {
+            connections: deps.trackers,
+            projects: (connectionId) => api.trackerProjects(board.id, connectionId),
+            preview: async (body) => (await api.trackerPreview(board.id, body)).issues,
+            send: (body) => api.trackerSend(board.id, body),
+            importIssues: (body) => api.trackerImport(board.id, body),
+            sync: async (linkId) => void (await api.trackerSync(board.id, linkId)),
+            unlink: async (linkId) => void (await api.trackerUnlink(board.id, linkId)),
+          },
+        }
+      : {}),
   };
 }
 
@@ -140,7 +160,7 @@ export function createGuestHost(
     });
   return {
     user: deps.user,
-    board: { id: board.id, title: board.title, role: board.role, canExport: board.permissions.canExport, team: null, signedIn: false, call: board.call ?? null },
+    board: { id: board.id, title: board.title, role: board.role, canExport: board.permissions.canExport, team: null, signedIn: false, call: board.call ?? null, embeds: embedsOf(board.permissions) },
     syncUrl: `${wsBase()}/ws/boards`,
     // Guests may report what they can open (KAI-181), with an optional address for the outcome.
     report: async ({ target, reason, note, contactEmail }) => {

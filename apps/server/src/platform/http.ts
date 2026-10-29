@@ -49,9 +49,15 @@ export function createApp(config: Config = getConfig()): express.Express {
   app.use(healthRoutes());
   app.use(metricsRoute(config));
   app.use(csrfGuard(config));
-  app.use(express.json({ limit: config.bodyLimitBytes }));
+  // The raw bytes are kept beside the parsed body: webhooks are signed over exactly those bytes.
+  app.use(express.json({ limit: config.bodyLimitBytes, verify: (req, _res, buf) => void rawBodies.set(req as express.Request, buf) }));
   return app;
 }
+
+const rawBodies = new WeakMap<express.Request, Buffer>();
+
+/** The bytes of a JSON request body as received (verifying a signed webhook), or null. */
+export const rawBody = (req: express.Request): Buffer | null => rawBodies.get(req) ?? null;
 
 /** JSON 404 for unknown /api routes. */
 export function apiNotFound(): RequestHandler {

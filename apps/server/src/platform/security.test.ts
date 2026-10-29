@@ -1,7 +1,8 @@
 import type { IncomingMessage } from 'node:http';
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from './config';
-import { requestOriginKind } from './security';
+import { EMBED_FRAME_ORIGINS } from '@freero/shared';
+import { contentSecurityPolicy, requestOriginKind } from './security';
 
 const req = (headers: Record<string, string>) => ({ headers }) as unknown as IncomingMessage;
 
@@ -24,5 +25,27 @@ describe('CSRF origin check', () => {
 
   it('lets non-browser clients (no Origin, no Referer) through: they cannot carry a victim’s cookies', () => {
     expect(requestOriginKind(req({ host: 'app.test' }), direct, false)).toBe('unknown');
+  });
+});
+
+describe('frames the CSP allows (live embeds, KAI-127)', () => {
+  const frameSrc = (env: NodeJS.ProcessEnv) =>
+    contentSecurityPolicy(loadConfig(env), 'app.test', true)
+      .split('; ')
+      .find((d) => d.startsWith('frame-src '))!
+      .split(' ')
+      .slice(1);
+
+  it('lets the browser frame only the built-in providers and the operator’s extra origins, so a tampered link can frame nothing else', () => {
+    expect(frameSrc({}).sort()).toEqual([...EMBED_FRAME_ORIGINS].sort());
+    const extended = frameSrc({ EMBED_EXTRA_ORIGINS: 'https://embed.example.com, https://maps.example.org' });
+    expect(extended).toEqual(expect.arrayContaining(['https://embed.example.com', 'https://maps.example.org', ...EMBED_FRAME_ORIGINS]));
+    expect(extended).toHaveLength(EMBED_FRAME_ORIGINS.length + 2);
+  });
+
+  it('refuses operator origins that would widen framing beyond one https site', () => {
+    for (const bad of ['http://embed.example.com', 'https://embed.example.com/path', '*', 'https://*.example.com', 'https://user:pw@embed.example.com'])
+      expect(() => loadConfig({ EMBED_EXTRA_ORIGINS: bad })).toThrow(/EMBED_EXTRA_ORIGINS/);
+    expect(() => loadConfig({ EMBED_EXTRA_ORIGINS: 'https://board.example.com', PUBLIC_URL: 'https://board.example.com' })).toThrow(/EMBED_EXTRA_ORIGINS/);
   });
 });

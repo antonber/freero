@@ -59,6 +59,15 @@ export const POLICY_FIELDS: Array<{
     ],
   },
   {
+    key: 'liveEmbeds',
+    label: 'Live embeds',
+    hint: 'Whether links to videos, design files, docs and code playgrounds can be opened as live frames on the boards (after a click). Off: every link stays a preview card.',
+    options: [
+      { value: 'on', label: 'Allowed' },
+      { value: 'off', label: 'Off' },
+    ],
+  },
+  {
     key: 'downloads',
     label: 'Export, download and copy',
     hint: 'Who may export boards as images or PDF, duplicate them or save them as templates.',
