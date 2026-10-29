@@ -13,3 +13,4 @@ export * from './search';
 export * from './events';
 export * from './trackers';
 export * from './docs';
+export * from './controlRoom';

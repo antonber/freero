@@ -6,8 +6,13 @@
 // access can move, and the "Agent control room" template (web features/templates) builds one for a
 // placeholder agent that the first post claims.
 //
-// Tasks are identified by their title within the lane (a retry with the same title updates the card
-// instead of adding another); a status moves the card to its column like dropping it there would.
+// Tasks are identified by their `externalId` (the agent's own id for it, kept on the card) when the
+// agent sends one, else by their title within the lane: a retry updates the card instead of adding
+// another, and a task renamed under the same externalId keeps its card (KAI-249). A status moves the
+// card to its column like dropping it there would; a task that becomes blocked notifies the person
+// the agent acts for in their inbox.
+//
+// People pause a lane from the board (pause.ts): the agent's writes there are refused until resumed.
 //
 // Feedback is a diff of the lane against the CURSOR the agent holds (opaque, returned by both
 // calls): where each card was, which comment messages it saw. So what the agent did itself is never
@@ -16,6 +21,8 @@
 // they happen (docs/events.md).
 import {
   KANBAN_LAYOUT,
+  laneKey,
+  laneTitle,
   layoutStructure,
   placeLaidOut,
   plainToRichText,
@@ -27,10 +34,13 @@ import {
   type LaidOut,
 } from '@freero/shared';
 import { badRequest, HttpError, notFound } from '../../platform/http';
-import { requireBoardAccess } from '../boards/index';
+import { logError } from '../../platform/log';
+import { getBoardTitle, requireBoardAccess } from '../boards/index';
+import { notify } from '../notifications/index';
 import { changeBoard, COMMENTS_COLLECTION, readBoardView, type BoardView } from '../realtime/index';
 import { newElementId } from '../structure/index';
-import { actorOf, agentWrite, boardUrl, change, createBoard, openBoard, present, type ApiCall } from './service';
+import { pausedError, pausedLanes, pauseOf } from './pause';
+import { actingApp, actorOf, agentWrite, boardUrl, change, createBoard, openBoard, present, type ApiCall } from './service';
 
 export type TaskState = 'todo' | 'doing' | 'done' | 'blocked';
 const COLUMNS: Array<{ title: string; status: CardStatus | null; key: TaskState }> = [
@@ -45,6 +55,9 @@ const TASK_ACCENT = '#5B3FF0';
 export const PLACEHOLDER_AGENT = 'Agent';
 const MAX_TASKS = 100;
 const MAX_TEXT = 2000;
+const MAX_EXTERNAL_ID = 200;
+/** Inbox notices one post may raise (a post blocking many tasks at once is one problem, not fifty). */
+const MAX_BLOCKED_NOTICES = 5;
 
 export interface StatusPost {
   boardId?: string;
@@ -57,7 +70,8 @@ export interface StatusPost {
   cursor?: string;
   status?: string;
   plan?: string[];
-  tasks?: Array<{ title: string; state: TaskState; note?: string }>;
+  /** `externalId`: the agent's own id for the task (matched before the title; renaming keeps the card). */
+  tasks?: Array<{ title: string; state: TaskState; note?: string; externalId?: string }>;
 }
 
 interface Cursor {
@@ -70,8 +84,12 @@ interface Cursor {
   seen: string[];
 }
 
-const norm = (s: string) => s.trim().replace(/\s+/g, ' ').toLowerCase();
+const norm = laneKey;
 const plain = (v: unknown) => (typeof v === 'string' ? richTextToPlain(v) : '').trim();
+const externalIdOf = (c: BoardElement): string | null => {
+  const v = (c as { externalId?: unknown }).externalId;
+  return typeof v === 'string' && v ? v : null;
+};
 const firstLine = (v: unknown) => plain(v).split('\n')[0]?.trim() ?? '';
 
 function encodeCursor(c: Cursor): string {
@@ -97,7 +115,7 @@ interface Lane {
   cards: BoardElement[];
 }
 
-const laneTitle = (what: 'Tasks' | 'Plan' | 'Status', agent: string) => `${what} · ${agent}`;
+// Lane headings: @freero/shared laneTitle ("Tasks · <agent>"), the rule the web's controlroom feature reads too.
 
 function findLane(view: BoardView, agent: string): Lane | null {
   const els = view.elements.map((e) => e.el);
@@ -162,11 +180,50 @@ function slot(k: KanbanElement, col: number, cards: BoardElement[], skip: string
   return { x: left + pad, y: bottom + itemGap };
 }
 
+const TASK_STATES: readonly TaskState[] = ['todo', 'doing', 'done', 'blocked'];
+
+/** A post as the REST API receives it (the MCP tool's schema checks the same limits). */
+export function readStatusPost(body: unknown): Omit<StatusPost, 'boardId' | 'title' | 'workspaceId'> {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw badRequest('Send { status?, plan?, tasks?, cursor?, agent? }');
+  const b = body as Record<string, unknown>;
+  const text = (v: unknown, name: string, max: number, min = 0): string | undefined => {
+    if (v === undefined) return undefined;
+    if (typeof v !== 'string' || v.trim().length < min || v.length > max) throw badRequest(`${name} must be text of at most ${max} characters`);
+    return v;
+  };
+  const list = (v: unknown, name: string, max: number): unknown[] | undefined => {
+    if (v === undefined) return undefined;
+    if (!Array.isArray(v) || v.length > max) throw badRequest(`${name} must be a list of at most ${max}`);
+    return v;
+  };
+  const tasks = list(b.tasks, 'tasks', MAX_TASKS)?.map((t, i) => {
+    const o = (t ?? {}) as Record<string, unknown>;
+    if (!TASK_STATES.includes(o.state as TaskState)) throw badRequest(`tasks[${i}].state must be ${TASK_STATES.join(', ')}`);
+    return {
+      title: text(o.title, `tasks[${i}].title`, 500, 1)!,
+      state: o.state as TaskState,
+      ...(o.note !== undefined ? { note: text(o.note, `tasks[${i}].note`, MAX_TEXT) } : {}),
+      ...(o.externalId !== undefined ? { externalId: text(o.externalId, `tasks[${i}].externalId`, MAX_EXTERNAL_ID, 1) } : {}),
+    };
+  });
+  if (tasks?.some((t) => t.title === undefined)) throw badRequest('Every task needs a title');
+  return {
+    agent: text(b.agent, 'agent', 80, 1),
+    cursor: text(b.cursor, 'cursor', 20_000),
+    status: text(b.status, 'status', MAX_TEXT),
+    plan: list(b.plan, 'plan', 30)?.map((p, i) => text(p, `plan[${i}]`, 500, 1)!),
+    tasks,
+  };
+}
+
 /** Posts the agent's plan, status and tasks to its lane (made on first post; a new board without boardId). */
 export async function postStatus(call: ApiCall, post: StatusPost) {
   const agent = (post.agent?.trim() || call.cred.label).slice(0, 80);
   if ((post.tasks?.length ?? 0) > MAX_TASKS) throw badRequest(`At most ${MAX_TASKS} tasks per post (nothing was changed)`);
   for (const t of post.tasks ?? []) if (!t.title?.trim() || t.title.length > MAX_TEXT || (t.note?.length ?? 0) > MAX_TEXT) throw badRequest('Every task needs a title (at most 2000 characters, notes too); nothing was changed');
+  for (const t of post.tasks ?? [])
+    if (t.externalId !== undefined && (typeof t.externalId !== 'string' || !t.externalId.trim() || t.externalId.length > MAX_EXTERNAL_ID))
+      throw badRequest(`A task's externalId is 1 to ${MAX_EXTERNAL_ID} characters; nothing was changed`);
   let boardId = post.boardId;
   let createdBoard = false;
   if (!boardId) {
@@ -176,21 +233,24 @@ export async function postStatus(call: ApiCall, post: StatusPost) {
   }
   const { id, role } = await openBoard(call, boardId);
   await requireBoardAccess(id, call.userId, 'editor');
-  await agentWrite(call);
+  await agentWrite(call, { id, role });
   const prior = decodeCursor(post.cursor, id);
   const touched = new Map<string, number>();
   let laneIds: string[] = [];
-  const titleKeys = new Map<string, string>();
+  /** Tasks that moved into Blocked with this post (their person hears of it). */
+  const blocked: Array<{ id: string; title: string; note: string }> = [];
 
   await change(() =>
     changeBoard(id, actorOf(call, role), (view) => {
       const create: ElementDraft[] = [];
       const update: Array<{ id: string; patch: Record<string, unknown> }> = [];
+      const paused = new Set(pausedLanes(view).map((p) => p.kanbanId));
       let lane = findLane(view, agent);
       // The template's placeholder lane becomes this agent's on its first post.
       if (!lane && norm(agent) !== norm(PLACEHOLDER_AGENT)) {
         const spare = findLane(view, PLACEHOLDER_AGENT);
         if (spare) {
+          if (paused.has(spare.kanban.id)) throw pausedError();
           lane = spare;
           update.push({ id: spare.kanban.id, patch: { title: plainToRichText(laneTitle('Tasks', agent)) } });
           if (spare.plan) update.push({ id: spare.plan.id, patch: { text: noteText(laneTitle('Plan', agent), planBody(post.plan ?? splitNote(spare.plan))) } });
@@ -207,6 +267,7 @@ export async function postStatus(call: ApiCall, post: StatusPost) {
         cards = [];
         laneIds = placed.elements.map((e) => e.id);
       } else {
+        if (paused.has(lane.kanban.id)) throw pausedError();
         kanban = lane.kanban;
         cards = [...lane.cards];
         laneIds = [lane.kanban.id, ...(lane.plan ? [lane.plan.id] : []), ...(lane.status ? [lane.status.id] : [])];
@@ -216,15 +277,25 @@ export async function postStatus(call: ApiCall, post: StatusPost) {
           update.push({ id: lane.status.id, patch: { text: noteText(head('Status'), statusBody(post.status)), h: noteDraft(head('Status'), statusBody(post.status)).h } });
       }
       const inner = kanban.colW - 2 * KANBAN_LAYOUT.pad;
+      const blockedCol = columnFor(kanban, 'blocked');
+      const created = new Set<string>();
       let bottom = kanban.y + kanban.h;
       for (const t of post.tasks ?? []) {
         const col = columnFor(kanban, t.state);
         const key = norm(t.title);
-        const existing = cards.find((c) => norm(plain((c as { title?: unknown }).title)) === key);
+        const ext = t.externalId?.trim() || null;
+        // Its own id first; else the title — but never a card the agent gave another id.
+        const existing =
+          (ext ? cards.find((c) => externalIdOf(c) === ext) : undefined) ??
+          cards.find((c) => norm(plain((c as { title?: unknown }).title)) === key && (!ext || !externalIdOf(c)));
         const accent = t.state === 'blocked' ? BLOCKED_ACCENT : TASK_ACCENT;
+        if (existing && created.has(existing.id)) continue; // the same task twice in one post
         if (existing) {
           const patch: Record<string, unknown> = {};
           if (t.note !== undefined) patch.description = t.note ? plainToRichText(t.note.slice(0, MAX_TEXT)) : '';
+          if (norm(plain((existing as { title?: unknown }).title)) !== key) patch.title = plainToRichText(t.title.trim()); // renamed under its externalId
+          if (ext && externalIdOf(existing) !== ext) patch.externalId = ext;
+          if (t.state === 'blocked' && blockedCol >= 0 && columnOf(kanban, existing) !== blockedCol) blocked.push({ id: existing.id, title: t.title.trim(), note: t.note ?? '' });
           if (col >= 0 && columnOf(kanban, existing) !== col) {
             const at = slot(kanban, col, cards, existing.id);
             Object.assign(patch, at, { color: accent });
@@ -234,17 +305,16 @@ export async function postStatus(call: ApiCall, post: StatusPost) {
           }
           if (Object.keys(patch).length) update.push({ id: existing.id, patch });
           touched.set(existing.id, col >= 0 ? col : columnOf(kanban, existing));
-          titleKeys.set(key, existing.id);
           bottom = Math.max(bottom, existing.y + existing.h + KANBAN_LAYOUT.pad);
           continue;
         }
-        if (titleKeys.has(key)) continue; // the same title twice in one post
         const at = slot(kanban, Math.max(0, col), cards, '');
-        const draft = { ...cardDraft(t.title.trim(), t.note?.trim() ?? '', t.state, inner), ...at, frameId: kanban.id } as ElementDraft;
+        const draft = { ...cardDraft(t.title.trim(), t.note?.trim() ?? '', t.state, inner), ...at, frameId: kanban.id, ...(ext ? { externalId: ext } : {}) } as ElementDraft;
         create.push(draft);
         cards.push(draft as unknown as BoardElement);
+        created.add(draft.id);
         touched.set(draft.id, Math.max(0, col));
-        titleKeys.set(key, draft.id);
+        if (t.state === 'blocked') blocked.push({ id: draft.id, title: t.title.trim(), note: t.note ?? '' });
         bottom = Math.max(bottom, at.y + (draft as { h: number }).h + KANBAN_LAYOUT.pad);
       }
       // The kanban grows to hold its cards.
@@ -262,6 +332,7 @@ export async function postStatus(call: ApiCall, post: StatusPost) {
   const lane = findLane(view, agent);
   if (!lane) throw new HttpError(500, 'The control room lane did not land on the board');
   present(call, id, [...touched.keys()].length ? [...touched.keys()] : laneIds, view);
+  if (blocked.length) await noticeBlocked(call, id, blocked);
   // The agent's own changes become the new baseline; what people did since `prior` stays to report.
   const cards: Record<string, number> = {};
   for (const c of lane.cards) {
@@ -276,9 +347,33 @@ export async function postStatus(call: ApiCall, post: StatusPost) {
     url: boardUrl(call.req, id),
     createdBoard,
     agent,
-    tasks: lane.cards.map((c) => ({ id: c.id, title: plain((c as { title?: unknown }).title), column: columnTitle(lane.kanban, columnOf(lane.kanban, c)) })),
+    // The lane's kanban: a webhook scoped to it (KAI-249) pushes what people do in the lane.
+    laneId: lane.kanban.id,
+    tasks: lane.cards.map((c) => ({ id: c.id, title: plain((c as { title?: unknown }).title), column: columnTitle(lane.kanban, columnOf(lane.kanban, c)), ...(externalIdOf(c) ? { externalId: externalIdOf(c)! } : {}) })),
     cursor: encodeCursor({ v: 1, board: id, agent, cards, seen }),
   };
+}
+
+/**
+ * Tells the person the agent acts for, in their inbox, that it got blocked: once per task each time
+ * it moves into Blocked (re-posting a blocked task is not news), at most a few per post. The app or
+ * token is the actor ("Claude is blocked on …"); the task's note, the agent's question, the excerpt.
+ */
+async function noticeBlocked(call: ApiCall, boardId: string, tasks: Array<{ id: string; title: string; note: string }>): Promise<void> {
+  try {
+    const boardTitle = (await getBoardTitle(boardId)) ?? '';
+    for (const t of tasks.slice(0, MAX_BLOCKED_NOTICES))
+      await notify({
+        userId: call.userId,
+        type: 'agent.blocked',
+        actorId: null,
+        boardId,
+        data: { boardTitle, elementId: t.id, cardTitle: t.title.slice(0, 200), actorName: call.cred.label, ...(t.note.trim() ? { excerpt: t.note.trim().slice(0, 280) } : {}) },
+      });
+  } catch (err) {
+    // The post itself landed; a lost notice must not make the agent retry it.
+    logError(`api: could not notify about blocked tasks on board ${boardId}`, err);
+  }
 }
 
 /** A note's text below its heading, as lines (the template's sample content). */
@@ -360,6 +455,8 @@ export async function getFeedback(call: ApiCall, boardId: string, cursorIn: stri
     changes,
     // A first call (no cursor) only sets the baseline: from here on, what people do is reported.
     baseline: !prior,
+    // A person paused this lane (KAI-249): writes on the board are refused until they resume it.
+    paused: pausedLanes(view).some((p) => p.kanbanId === k.id) || pauseOf(view, actingApp(call.cred)) !== null,
     cursor: encodeCursor({ v: 1, board: id, agent, cards: now, seen: messages.map((m) => m.id) }),
   };
 }

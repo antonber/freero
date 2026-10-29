@@ -955,7 +955,8 @@ export type NotificationType =
   | 'moderation.action'
   | 'card.assigned'
   | 'card.due_changed'
-  | 'card.due_soon';
+  | 'card.due_soon'
+  | 'agent.blocked';
 
 export interface AppNotification {
   id: string;

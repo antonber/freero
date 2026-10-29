@@ -67,6 +67,7 @@ import { ensurePersonalWorkspace, getWorkspaceInfo, workspaceRolesOf } from '../
 import { boardConnections, sendToTracker } from '../trackers/index';
 import { commentSpot, patchUpdates, planCreate, planPatch, readItemInputs, toApiItem } from './items';
 import { planProposal, readProposal, suggestionGroups } from './suggestions';
+import { pausedError, pauseOf } from './pause';
 
 /** One call of a credential: who, through what, and what its audit event will say. */
 export interface ApiCall {
@@ -99,10 +100,15 @@ export function actingApp(cred: ApiCredential): ActingApp {
 export const actorOf = (call: ApiCall, role: Role): BoardActor => ({ userId: call.userId, role, name: call.cred.account.name, via: actingApp(call.cred) });
 
 /**
- * The per-agent write limit (KAI-168): every change an app or token makes counts against ITS
- * budget (`RATE_LIMIT_AGENT_WRITE`), apart from the person's own editing and from other apps.
+ * Before an app or token writes: on a `board` where a person paused one of its control-room lanes
+ * (KAI-249, pause.ts), refused with `agent_paused`; then the per-agent write limit (KAI-168): every
+ * change it makes counts against ITS budget (`RATE_LIMIT_AGENT_WRITE`), apart from the person's
+ * own editing and from other apps.
  */
-export const agentWrite = (call: ApiCall) => consumeRateLimit('agentWrite', `cred:${call.cred.credentialId}`);
+export async function agentWrite(call: ApiCall, board?: { id: string; role: Role }): Promise<void> {
+  if (board && pauseOf(await readBoardView(board.id, { userId: call.userId, role: board.role }), actingApp(call.cred))) throw pausedError();
+  await consumeRateLimit('agentWrite', `cred:${call.cred.credentialId}`);
+}
 
 export function apiBoard(req: Request, b: BoardSummary): ApiBoard {
   return {
@@ -385,7 +391,7 @@ export async function createItems(call: ApiCall, boardId: string, body: unknown)
   const inputs = readItemInputs(body);
   const { id, role } = await openBoard(call, boardId);
   await requireBoardAccess(id, call.userId, 'editor');
-  await agentWrite(call);
+  await agentWrite(call, { id, role });
   const out = await change(() => changeBoard(id, actorOf(call, role), (view) => planCreate(inputs, view, newElementId)));
   const { items, view } = await itemsNow(call, id, role, out.ids);
   call.audit.metadata = { items: out.ids.length };
@@ -402,7 +408,7 @@ export async function updateItems(call: ApiCall, boardId: string, patches: Array
   if (patches.length > API_MAX_DELETE_PER_CALL) throw badRequest(`At most ${API_MAX_DELETE_PER_CALL} items per call (nothing was changed)`);
   const { id, role } = await openBoard(call, boardId);
   await requireBoardAccess(id, call.userId, 'editor');
-  await agentWrite(call);
+  await agentWrite(call, { id, role });
   const ids = patches.map((p) => (typeof p.id === 'string' ? p.id : ''));
   if (new Set(ids).size !== ids.length) throw badRequest('Each item may appear once');
   await change(() =>
@@ -433,7 +439,7 @@ export async function deleteItems(call: ApiCall, boardId: string, ids: string[],
   const { id, role } = await openBoard(call, boardId);
   await requireBoardAccess(id, userId, 'editor');
   if (bulk) requireConfirm(confirm, 'Deleting several items');
-  await agentWrite(call);
+  await agentWrite(call, { id, role });
   const out = await change(() =>
     changeBoard(id, actorOf(call, role), (view) => {
       const visible = new Set(view.elements.map((e) => e.el.id));
@@ -456,7 +462,7 @@ export async function insertStructureFor(call: ApiCall, boardId: string, body: u
   const { id, role } = await openBoard(call, boardId);
   await consumeRateLimit('structure', `user:${call.userId}`);
   const preview = (body as { target?: unknown } | null)?.target === 'preview';
-  if (!preview) await agentWrite(call);
+  if (!preview) await agentWrite(call, { id, role });
   const result = await insertStructure(id, actorOf(call, role), body);
   call.audit.metadata = { items: result.created.length, moved: result.moved.length, target: result.target };
   if (result.target === 'board') present(call, id, result.created);
@@ -486,7 +492,7 @@ export async function proposeChanges(call: ApiCall, boardId: string, body: unkno
   const proposal = readProposal(body);
   const { id, role } = await openBoard(call, boardId);
   await requireBoardAccess(id, call.userId, 'editor');
-  await agentWrite(call);
+  await agentWrite(call, { id, role });
   const out = await change(() => proposeSuggestions(id, actorOf(call, role), { description: proposal.description }, (view) => ({ change: planProposal(proposal, view) })));
   const groupId = out.records[0].groupId;
   call.audit.metadata = { suggestions: out.records.length, groupId };
@@ -508,7 +514,7 @@ export async function decideSuggestions(call: ApiCall, boardId: string, status: 
   if ((ids === undefined) === (b.groupId === undefined)) throw badRequest('Send { ids: [ … ] } or { groupId }');
   const { id, role } = await openBoard(call, boardId);
   await requireBoardAccess(id, call.userId, 'editor');
-  if (status === 'accepted') await agentWrite(call);
+  if (status === 'accepted') await agentWrite(call, { id, role });
   try {
     const out = await change(() =>
       decide(id, actorOf(call, role), { ids: ids as string[] | undefined, groupId: b.groupId as string | undefined, status, force: confirmed(b.force) }),
@@ -563,7 +569,7 @@ export async function addComment(call: ApiCall, boardId: string, body: { text?: 
   const itemId = typeof body.itemId === 'string' ? body.itemId : undefined;
   const { id, role } = await openBoard(call, boardId);
   await requireBoardAccess(id, call.userId, 'commenter');
-  await agentWrite(call);
+  await agentWrite(call, { id, role });
   const threadId = newId(12);
   const msg = message(call, threadId, text);
   await change(() =>
@@ -591,7 +597,7 @@ export async function replyToComment(call: ApiCall, boardId: string, threadId: s
   const text = commentText(body.text);
   const { id, role } = await openBoard(call, boardId);
   await requireBoardAccess(id, call.userId, 'commenter');
-  await agentWrite(call);
+  await agentWrite(call, { id, role });
   const msg = message(call, threadId, text);
   await change(() =>
     changeBoard(id, actorOf(call, role), (view) => {
@@ -638,9 +644,9 @@ export async function removeMember(call: ApiCall, boardId: string, memberId: str
  * The same operation as the board's "Send to tracker".
  */
 export async function syncToTracker(call: ApiCall, boardId: string, body: { itemIds?: unknown; connection?: unknown; project?: unknown; issueType?: unknown; mode?: unknown }) {
-  const { id } = await openBoard(call, boardId);
+  const { id, role } = await openBoard(call, boardId);
   await requireBoardAccess(id, call.userId, 'editor');
-  await agentWrite(call);
+  await agentWrite(call, { id, role });
   const conns = await boardConnections(call.userId, id);
   const want = typeof body.connection === 'string' ? body.connection.trim().toLowerCase() : '';
   const conn = want ? conns.find((c) => c.id === body.connection || c.name.toLowerCase() === want) : conns.length === 1 ? conns[0] : undefined;

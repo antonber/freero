@@ -33,6 +33,9 @@ import { TRACKER_COLLECTION } from './trackers';
 //                                     SERVER only — modules/trackers through changeBoard; a socket's
 //                                     write is undone (realtime/serverCollections.ts) — the feature
 //                                     reads it for the issue badges)
+//   'agentPauses' -> features/controlroom (lane kanban id -> AgentPauseRecord, see controlRoom.ts;
+//                                     READ BY THE SERVER: a paused agent's API / MCP writes on the
+//                                     board are refused)
 //
 // Content some connections must not read (private drafts, sealed ballots, hidden frames'
 // contents) never enters this doc: it lives in server-held LAYER docs with the same layout (an
@@ -158,8 +161,9 @@ export const isElementContentCollection = (name: string): boolean => Object.prot
  * private again) or end it while drafts are still sealed. Layer docs are never versioned or
  * restored (see "Board layers" in ARCHITECTURE.md). 'trackers' mirrors the server's links to tracker
  * issues (they don't go back in time with the board): an older copy would show stale badges.
+ * 'agentPauses' is a person's "stop" to an agent (KAI-249): an older version must not resume it.
  */
-export const Y_KEPT_ON_RESTORE = ['comments', 'voting', 'timer', 'privateMode', 'facilitation', 'estimation', 'retro', 'engageResults', 'call', 'trackers'] as const;
+export const Y_KEPT_ON_RESTORE = ['comments', 'voting', 'timer', 'privateMode', 'facilitation', 'estimation', 'retro', 'engageResults', 'call', 'trackers', 'agentPauses'] as const;
 
 /**
  * Facilitator controls (KAI-129): the `facilitation` collection, key FACILITATION_KEY. While it is
