@@ -34,7 +34,7 @@ export const toneAt = (tone: Tone | undefined, i: number, cycle: Tone[] = CYCLE)
  * whatever sits below it.
  */
 export function lineCount(text: string, w: number, size: number, bold = false): number {
-  const per = Math.max(1, Math.floor(w / (size * (bold ? 0.58 : 0.5))));
+  const per = Math.max(1, Math.floor(w / (size * (bold ? 0.6 : 0.54))));
   return text.split('\n').reduce((n, line) => {
     let lines = 1;
     let cur = 0;
@@ -72,7 +72,7 @@ export interface BlockStyle {
   note?: number;
   /** The archetype shows the title itself (a chevron, a funnel bar). */
   untitled?: boolean;
-  /** `outline`: white with a dashed border, for loose clusters; `strong`: the hub's center. */
+  /** `outline`: white with a dashed border, for loose clusters; `strong`: outlined in its accent (the hub's center). */
   look?: 'tint' | 'outline' | 'strong';
   /**
    * Height of the title and prompt, when a row of blocks shares one (`blockHead` of the tallest)
@@ -117,7 +117,9 @@ export function drawBlock(k: Kit, x: number, y: number, w: number, h: number, b:
   const panel =
     look === 'outline'
       ? k.shape('roundRect', x, y, w, h, '', { fill: '#FFFFFF', stroke: t.head, strokeWidth: 3, strokeStyle: 'dashed' })
-      : k.panel(x, y, w, h, look === 'strong' ? t.head : t.tint);
+      : look === 'strong'
+        ? k.shape('roundRect', x, y, w, h, '', { fill: t.tint, stroke: t.accent, strokeWidth: 4 })
+        : k.panel(x, y, w, h, t.tint);
   let cy = y + 20;
   if (!style.untitled) {
     let tx = x + INSET;
@@ -126,11 +128,11 @@ export function drawBlock(k: Kit, x: number, y: number, w: number, h: number, b:
       tx += EMOJI + 8;
     }
     const th = textHeight(b.title, x + w - INSET - tx, TITLE, true);
-    k.text(tx, cy + (b.emoji ? Math.max(0, (EMOJI - th) / 2) : 0), x + w - INSET - tx, `<b>${rt(b.title)}</b>`, { size: TITLE, color: look === 'strong' ? INK : t.accent, h: th });
+    k.text(tx, cy + (b.emoji ? Math.max(0, (EMOJI - th) / 2) : 0), x + w - INSET - tx, `<b>${rt(b.title)}</b>`, { size: TITLE, color: t.accent, h: th });
     cy += titleHeight(b, w) + 4;
   }
   const ph = textHeight(b.prompt, w - 2 * INSET, PROMPT);
-  k.text(x + INSET, cy, w - 2 * INSET, rt(b.prompt), { size: PROMPT, color: look === 'strong' ? INK : INK_SOFT, h: ph });
+  k.text(x + INSET, cy, w - 2 * INSET, rt(b.prompt), { size: PROMPT, color: INK_SOFT, h: ph });
   k.stickies(x + INSET, y + Math.max(style.head ?? 0, blockHead(b, w, style)), w - 2 * INSET, b.notes, t.sticky, note);
   return panel;
 }

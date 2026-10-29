@@ -220,7 +220,11 @@ export function tree(k: Kit, s: Spec<TreeLayout>): void {
   const spec: TreeSpec = {
     text: s.root,
     color: VIOLET,
-    children: s.branches.map((b, i) => ({ text: b.text, color: TONES[toneAt(b.tone, i, ['sky', 'mint', 'amber', 'rose', 'coral', 'violet'])].accent, children: (b.children ?? []).map((c) => ({ text: c })) })),
+    children: s.branches.map((b, i) => {
+      const tone = toneAt(b.tone, i, ['sky', 'mint', 'amber', 'rose', 'coral', 'violet']);
+      // A neutral branch reads as quieter, not as heavy black lines.
+      return { text: b.text, color: tone === 'gray' ? INK_SOFT : TONES[tone].accent, children: (b.children ?? []).map((c) => ({ text: c })) };
+    }),
   };
   k.mindTree(PAD, top + Math.max(0, (sideH - treeH) / 2), cols, GAP_X, ROW, spec);
   drawBlock(k, W - PAD - SIDE, top, SIDE, Math.max(treeH, sideH), s.side, toneAt(s.side.tone, 0, ['gray']));
@@ -256,7 +260,7 @@ const rowHeight = (cells: string[], widths: number[], bold: boolean) =>
   Math.max(48, Math.max(...cells.map((c, i) => (c ? lineCount(c, widths[i] - CELL_PAD, 16, bold) : 1))) * 23 + 24);
 
 export function table(k: Kit, s: Spec<TableLayout>): void {
-  const SIDE = 360;
+  const SIDE = 384;
   const widths = s.columns.map((c) => c.w ?? 200);
   const tw = widths.reduce((a, b) => a + b, 0);
   const W = Math.max(MIN_W, PAD + tw + (s.side ? 24 + SIDE : 0) + PAD);
