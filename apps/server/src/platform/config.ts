@@ -44,7 +44,8 @@ export type RateLimitName =
   | 'linkPassword'
   | 'engage'
   | 'search'
-  | 'trackerSend';
+  | 'trackerSend'
+  | 'walkthroughComment';
 
 /** Issue-tracker sync (KAI-153; docs/trackers.md). */
 export interface TrackersConfig {
@@ -87,6 +88,11 @@ export interface AiConfig {
   timeoutMs: number;
   /** Approximate tokens of board content one action may send. */
   maxInputTokens: number;
+  /**
+   * Speech-to-text model for walkthrough captions (KAI-133), called on the board's own AI
+   * endpoint when that is OpenAI-compatible (`/audio/transcriptions`). Null: no AI transcripts.
+   */
+  transcribeModel: string | null;
 }
 
 /** `limit` hits per `windowMs`; `null` = not limited. */
@@ -333,6 +339,7 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   linkPassword: '10/15m', // per IP and per board + person: attempts at a board link's password (KAI-145)
   engage: '120/1m', // per person or guest: answers, questions and upvotes in live activities (KAI-132)
   search: '120/1m', // per person (app) or credential (API, MCP): searches of board content (KAI-151)
+  walkthroughComment: '120/10m', // per person: comments on walkthroughs (each may notify people, KAI-133)
 };
 
 const ENV_NAME: Record<RateLimitName, string> = {
@@ -373,6 +380,7 @@ const ENV_NAME: Record<RateLimitName, string> = {
   linkPassword: 'RATE_LIMIT_LINK_PASSWORD',
   engage: 'RATE_LIMIT_ENGAGE',
   search: 'RATE_LIMIT_SEARCH',
+  walkthroughComment: 'RATE_LIMIT_WALKTHROUGH_COMMENT',
 };
 
 /** The built-in providers: env prefix, button label, default issuer, extra verified-email claims. */
@@ -596,6 +604,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     maxOutputTokens: int('AI_MAX_OUTPUT_TOKENS', 4096, 256, 64_000),
     timeoutMs: int('AI_TIMEOUT_SECONDS', 90, 5, 600) * 1000,
     maxInputTokens: int('AI_MAX_INPUT_TOKENS', 12_000, 1000, 500_000),
+    transcribeModel: str('AI_TRANSCRIBE_MODEL') ?? null,
   };
 
   const config: Config = {

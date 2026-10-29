@@ -18,6 +18,14 @@ export interface BoardFile {
   name: string;
 }
 
+/** An upload's bytes by name (404 / 410 like the routes). The caller decided who may download it. */
+export async function openUploadForDownload(name: string): Promise<{ body: Readable; size: number | null }> {
+  if (await isUploadRemoved(name)) throw new HttpError(410, 'This file was removed by Freero’s moderators');
+  const obj = await storage().get(name);
+  if (!obj) throw notFound('File not found');
+  return { body: obj.body, size: obj.size };
+}
+
 export async function openBoardFile(boardId: string, elementId: string, userId: string, opts: { audit?: boolean } = {}): Promise<BoardFile> {
   // 404 / 403 / 451 like opening the board; 403 when the downloads policy says no.
   const { role, record } = await authorizeFileDownload(boardId, userId);

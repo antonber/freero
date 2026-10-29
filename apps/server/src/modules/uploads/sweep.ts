@@ -25,6 +25,7 @@ import { avatarUploadReferences } from '../auth/index';
 import { thumbnailUploadReferences } from '../boards/index';
 import { boardUploadReferences } from '../realtime/index';
 import { templateUploadReferences } from '../templates/index';
+import { walkthroughUploadReferences } from '../walkthroughs/index';
 import * as repo from './repo';
 import { FILE_NAME_RE, TYPE_BY_EXT } from './store';
 
@@ -41,7 +42,7 @@ export type ReferenceScan = (among?: readonly string[]) => Promise<Iterable<stri
  * Every kind of stored content that can hold an /uploads URL. Content of a new kind that stores
  * upload URLs outside board documents (which are already scanned) adds its module's scan here.
  */
-const SCANS: ReferenceScan[] = [boardUploadReferences, templateUploadReferences, avatarUploadReferences, thumbnailUploadReferences];
+const SCANS: ReferenceScan[] = [boardUploadReferences, templateUploadReferences, avatarUploadReferences, thumbnailUploadReferences, walkthroughUploadReferences];
 
 export async function referencedUploads(among?: readonly string[]): Promise<Set<string>> {
   const found = new Set<string>();

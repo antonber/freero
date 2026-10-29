@@ -231,7 +231,7 @@ async function ask(g: AiGrant, userId: string, plan: TaskPlan, usage: Asked['usa
   }
 }
 
-async function checkBudget(g: AiGrant, userId: string): Promise<void> {
+export async function checkBudget(g: AiGrant, userId: string): Promise<void> {
   const month = monthOf();
   if (g.monthlyTokenBudget !== null && (await repo.workspaceTokens(g.workspaceId, month)) >= g.monthlyTokenBudget)
     throw new HttpError(429, 'This workspace has used its AI budget for this month. Its admins can raise it in the admin console.', 'ai_budget');
