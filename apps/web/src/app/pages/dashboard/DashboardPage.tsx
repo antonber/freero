@@ -377,7 +377,7 @@ export function DashboardPage() {
               </h1>
               <div className="fr-collection__controls">
                 {searching && !trash ? (
-                  <div className="fr-tabs" role="tablist" aria-label="Search in">
+                  <div className="fr-tabs fr-dash-search__in" role="tablist" aria-label="Search in">
                     {(
                       [
                         ['names', 'Board names', visible ? String(visible.length) : null],

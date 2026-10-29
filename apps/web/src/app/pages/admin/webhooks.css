@@ -7,11 +7,11 @@
   gap: 16px;
 }
 
-.fr-admin-hooks__none {
+.fr-admin-card.fr-admin-hooks__none {
   padding: 18px 22px;
 }
 
-.fr-admin-hooks__item {
+.fr-admin-card.fr-admin-hooks__item {
   gap: 10px;
   padding: 16px 22px;
 }

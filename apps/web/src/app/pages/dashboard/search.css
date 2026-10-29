@@ -83,7 +83,7 @@
 
 .fr-dash-search__hit {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   gap: 14px;
   width: 100%;
   padding: 10px 14px;
@@ -107,14 +107,10 @@
   align-items: center;
   gap: 6px;
   width: 116px;
+  height: 20px;
   font-size: 12px;
   font-weight: 550;
   color: var(--fr-ink-3);
-}
-
-.fr-dash-search__kind svg {
-  position: relative;
-  top: 2px;
 }
 
 .fr-dash-search__snippet {
@@ -139,6 +135,13 @@
   display: flex;
   justify-content: center;
   padding: 4px 0 8px;
+}
+
+/* The owner tabs fold away on phones; where to search must not. */
+@media (max-width: 720px) {
+  .fr-tabs.fr-dash-search__in {
+    display: flex;
+  }
 }
 
 @media (max-width: 640px) {

@@ -159,8 +159,8 @@ function DeliveryLog({ workspaceId, endpoint }: { workspaceId: string; endpoint:
           {list.map((d) => (
             <tr key={d.id} data-testid="webhook-delivery">
               <td>
-                <code>{d.eventType}</code>
-                <div className="fr-admin__muted fr-admin-hooks__id">{d.eventId}</div>
+                {d.eventType === 'ping' ? <span>Test</span> : <code>{d.eventType}</code>}
+                {d.eventType === 'ping' ? null : <div className="fr-admin__muted fr-admin-hooks__id">{d.eventId}</div>}
               </td>
               <td>
                 <span className={`fr-admin-pill ${STATUS_PILL[d.status]}`}>{d.status === 'delivered' ? 'Delivered' : d.status === 'failed' ? 'Failed' : 'Retrying'}</span>
