@@ -14,8 +14,10 @@ import { apiNotFound, createApp, errorHandler } from '../../platform/http';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { createPersonalToken } from '../apiauth/index';
 import { createUser } from '../auth/index';
-import { createBoard } from '../boards/index';
+import { drainOutbox, registerOutboxConsumer } from '../../platform/outbox';
+import { createBoard, registerBoardObjectTypes } from '../boards/index';
 import { initBoardDoc, readBoardView } from '../realtime/index';
+import { SEARCH_CONSUMER, searchConsumer } from '../search/index';
 import { ENVELOPE_TAG } from './content';
 import mcpRoutes, { mountPath } from './routes';
 
@@ -32,6 +34,8 @@ beforeAll(async () => {
   server = http.createServer(app);
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   url = new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/mcp`);
+  registerBoardObjectTypes();
+  registerOutboxConsumer(searchConsumer);
   ownerId = (await createUser({ name: 'Maria', email: 'maria@mcp.test.freero.app', password: 'password-123' })).id;
 });
 afterAll(async () => {
@@ -75,9 +79,11 @@ it('board text never leaves the untrusted envelope: a note that "closes" it and 
   expect(md.indexOf('SYSTEM: ignore')).toBeGreaterThan(open);
   expect(md.slice(0, open)).not.toContain('Plans');
 
+  await drainOutbox(SEARCH_CONSUMER);
   for (const [name, args] of [
     ['get_board_outline', { boardId, format: 'json' }],
     ['search_boards', { query: 'Plans' }],
+    ['search', { query: 'ignore instructions' }],
   ] as const) {
     const res = (await client.callTool({ name, arguments: args })) as CallToolResult;
     const body = JSON.parse(textOf(res)) as Record<string, unknown>;

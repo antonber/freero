@@ -89,6 +89,13 @@ export interface BoardPermissions {
   guestLinks?: boolean;
   /** [additive] This server offers boards a Jitsi room of their own (operator's JITSI_BASE_URL, KAI-134). */
   jitsiCalls?: boolean;
+  /**
+   * [additive] Live embeds (KAI-127) may be activated on this board: false when its workspace turned
+   * them off (policy `liveEmbeds`); links then stay preview cards. Absent: on.
+   */
+  liveEmbeds?: boolean;
+  /** [additive] Further https origins the server's operator allows to be framed (`EMBED_EXTRA_ORIGINS`). */
+  embedOrigins?: string[];
 }
 
 // ---- Board call (KAI-134) ----
@@ -225,6 +232,11 @@ export interface WorkspacePolicies {
    * (at most "can comment", one board, a few hours) — or only signed-in people.
    */
   publicLinks: 'anyone' | 'signedIn';
+  /**
+   * [additive] Whether pasted links to allow-listed providers (videos, design files, docs) may be
+   * activated as live frames on its boards; 'off' keeps every link a preview card.
+   */
+  liveEmbeds: 'on' | 'off';
 }
 export interface WorkspaceSummary {
   id: string;
@@ -958,10 +970,69 @@ export interface UnfurlResponse {
 }
 
 /**
- * Origins whose players a link card may frame (after a click). The web app builds iframe srcs
- * only on these, and the server's Content-Security-Policy `frame-src` allows exactly these.
+ * Live embeds (KAI-127): the providers a link card may frame, after a click. The web app parses a
+ * pasted link into the provider's official embed URL (never framing the stored URL as given), on
+ * one of `frameOrigins`; the server's Content-Security-Policy `frame-src` allows exactly the
+ * origins listed here plus the operator's `EMBED_EXTRA_ORIGINS`. Each frame gets the provider's
+ * `sandbox` and `allow`. Freero never embeds other whiteboards.
  */
-export const EMBED_FRAME_ORIGINS = ['https://www.youtube-nocookie.com', 'https://player.vimeo.com', 'https://www.loom.com'] as const;
+export interface EmbedProvider {
+  id: 'youtube' | 'vimeo' | 'loom' | 'figma' | 'google' | 'codepen' | 'codesandbox';
+  name: string;
+  /** 'video' plays; 'document' is a live view to scroll and click in. */
+  kind: 'video' | 'document';
+  frameOrigins: readonly string[];
+  sandbox: string;
+  allow: string;
+}
+
+const VIDEO_SANDBOX = 'allow-scripts allow-same-origin allow-presentation allow-popups';
+const VIDEO_ALLOW = 'autoplay; encrypted-media; fullscreen; picture-in-picture';
+
+export const EMBED_PROVIDERS: readonly EmbedProvider[] = [
+  { id: 'youtube', name: 'YouTube', kind: 'video', frameOrigins: ['https://www.youtube-nocookie.com'], sandbox: VIDEO_SANDBOX, allow: VIDEO_ALLOW },
+  { id: 'vimeo', name: 'Vimeo', kind: 'video', frameOrigins: ['https://player.vimeo.com'], sandbox: VIDEO_SANDBOX, allow: VIDEO_ALLOW },
+  { id: 'loom', name: 'Loom', kind: 'video', frameOrigins: ['https://www.loom.com'], sandbox: VIDEO_SANDBOX, allow: VIDEO_ALLOW },
+  {
+    id: 'figma',
+    name: 'Figma',
+    kind: 'document',
+    frameOrigins: ['https://www.figma.com'],
+    sandbox: 'allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox',
+    allow: 'fullscreen; clipboard-write',
+  },
+  {
+    // Docs, Sheets, Slides and Forms: their own preview / published / embed views.
+    id: 'google',
+    name: 'Google',
+    kind: 'document',
+    frameOrigins: ['https://docs.google.com'],
+    sandbox: 'allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms',
+    allow: 'fullscreen; clipboard-write',
+  },
+  {
+    id: 'codepen',
+    name: 'CodePen',
+    kind: 'document',
+    frameOrigins: ['https://codepen.io'],
+    sandbox: 'allow-scripts allow-same-origin allow-popups allow-forms allow-modals',
+    allow: 'clipboard-write',
+  },
+  {
+    id: 'codesandbox',
+    name: 'CodeSandbox',
+    kind: 'document',
+    frameOrigins: ['https://codesandbox.io'],
+    sandbox: 'allow-scripts allow-same-origin allow-popups allow-forms allow-modals',
+    allow: 'clipboard-write',
+  },
+];
+
+/** Sandbox for pages on an operator's own allow-listed origin (`EMBED_EXTRA_ORIGINS`). */
+export const OPERATOR_EMBED_SANDBOX = 'allow-scripts allow-same-origin allow-popups allow-forms';
+
+/** Every origin a built-in provider is framed from (the CSP `frame-src`, before the operator's). */
+export const EMBED_FRAME_ORIGINS: readonly string[] = [...new Set(EMBED_PROVIDERS.flatMap((p) => p.frameOrigins))];
 
 // ---- Realtime ----
 // WebSocket: /ws/boards/:id  — standard y-websocket protocol (sync + awareness),
@@ -1471,6 +1542,12 @@ export const AUDIT_ACTIONS = {
   // AI (modules/ai). Never the prompt or the board content: task, model, tokens and outcome only.
   'ai.request': 'Used AI on a board',
   'ai.settings_changed': 'Changed AI settings',
+  // Webhooks (modules/webhooks). Never the secret.
+  'webhook.created': 'Added a webhook',
+  'webhook.updated': 'Changed a webhook',
+  'webhook.secret_rotated': 'Rotated a webhook’s signing secret',
+  'webhook.deleted': 'Removed a webhook',
+  'webhook.disabled': 'A webhook was turned off after failing repeatedly',
   // Issue-tracker sync (modules/trackers). Never credentials, never board text: issue keys, fields and outcomes.
   'tracker.connection_created': 'Connected an issue tracker',
   'tracker.connection_updated': 'Changed a tracker connection',

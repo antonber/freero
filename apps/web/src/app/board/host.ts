@@ -74,6 +74,9 @@ export function toastNotify(toast: ToastApi): Host['notify'] {
   };
 }
 
+/** Live embeds on this board (KAI-127): the workspace's switch and the operator's extra origins. */
+const embedsOf = (p: BoardSummary['permissions']) => ({ enabled: p.liveEmbeds !== false, extraOrigins: p.embedOrigins ?? [] });
+
 export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
   syncServerClock();
   return {
@@ -86,6 +89,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
       team: deps.team ? { name: deps.team.name } : null,
       call: board.call ?? null,
       jitsiCalls: board.permissions.jitsiCalls === true,
+      embeds: embedsOf(board.permissions),
     },
     syncUrl: `${wsBase()}/ws/boards`,
     uploadImage,
@@ -156,7 +160,7 @@ export function createGuestHost(
     });
   return {
     user: deps.user,
-    board: { id: board.id, title: board.title, role: board.role, canExport: board.permissions.canExport, team: null, signedIn: false, call: board.call ?? null },
+    board: { id: board.id, title: board.title, role: board.role, canExport: board.permissions.canExport, team: null, signedIn: false, call: board.call ?? null, embeds: embedsOf(board.permissions) },
     syncUrl: `${wsBase()}/ws/boards`,
     // Guests may report what they can open (KAI-181), with an optional address for the outcome.
     report: async ({ target, reason, note, contactEmail }) => {

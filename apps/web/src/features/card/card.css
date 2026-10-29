@@ -298,3 +298,30 @@
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
+
+/* A card laid out as a timeline bar (KAI-122): one line on a tint of its accent. */
+.fr-card--bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px 0 12px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--accent) 16%, #fff);
+}
+
+.fr-card--bar::before {
+  width: 4px;
+}
+
+.fr-card__bar-title {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.fr-card__bar-done {
+  flex: none;
+  color: #1fa463;
+}

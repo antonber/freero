@@ -136,6 +136,9 @@ everything an agent adds in free space (next to `near` when given): no coordinat
 |---|---|---|
 | `list_workspaces` | read | Your workspaces (personal and teams) and your role in each. |
 | `search_boards` | read | Boards you can open, newest change first; `query` searches titles; `workspaceId`, `limit`, `cursor`. |
+| `search` | read | Words in what your boards say — titles, notes, text, shapes, cards, frame titles, table cells, tags, connector labels, comments — across the boards you can open (`workspaceId` or `boardId` to narrow it): each match with its board id, item id, a snippet and a link. Never private drafts or hidden frames; boards whose downloads policy keeps their content from you are left out. |
+| `resolve_links` | read | What Freero links (board / item URLs, `freero://` addresses; up to 200) point at — type, title, board, your access — or `unavailable` (no access and no such object read the same). |
+| `find_backlinks` | read | Items and comments on boards you can open that link to a board or an item. |
 | `list_templates` | read | Saved templates you can start a board from (yours and your teams'). |
 | `get_board_outline` | read | The board as a semantic outline: frames, clusters, notes, shapes, cards, mind maps, tables, the connector graph, votes, comments, with item ids. `format` `markdown` (default) / `json`; `budget` (≈ tokens, default 8000) keeps frame titles and the shallowest, most recent items; `scope` = an item id to read only inside it; `cursor` pages; `authors`. Format reference: [board-outline.md](board-outline.md). |
 | `create_board` | write | A new board (personal or a team workspace), optionally from a saved template. |

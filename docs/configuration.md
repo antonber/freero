@@ -201,11 +201,32 @@ Issue trackers) or by a person for themselves (Settings). How it works and what 
 |---|---|---|
 | `PUBLIC_API` | `true` | The public REST API (`/api/v1`, reference: [api/openapi.json](api/openapi.json)) and the OAuth endpoints apps use. `false` is the instance-wide kill switch for integrations and agents: every API call and token request is refused at once; tokens and app authorisations are kept, so turning it back on restores them. Workspace admins have their own switch in the admin console ("API & apps"). |
 
+## Events and webhooks
+
+The event stream and workspace webhooks: [events.md](events.md).
+
+| Variable | Default | Description |
+|---|---|---|
+| `EVENTS_SETTLE_SECONDS` | `3` | A board's item and comment events are worked out once its saved content has been quiet this long (at the latest a minute after the first change), so a drag or a burst of typing is one event. `0`: at the next save. |
+| `EVENTS_RETENTION_DAYS` | `30` | How long recorded events are kept. |
+| `WEBHOOKS` | `true` | Workspace webhooks. `false` is the instance-wide switch: the admin console's Webhooks tab and its routes are gone (404) and nothing is delivered; endpoints are kept. |
+| `WEBHOOK_PRIVATE_ENDPOINTS` | `false` | Endpoints may be plain `http` and private / loopback addresses (receivers on your own network, local development). Off: `https` only, private addresses refused when an endpoint is added and again when connecting. |
+| `WEBHOOK_TIMEOUT_SECONDS` | `10` | How long one delivery attempt waits for the receiver's answer. |
+| `WEBHOOK_RETRY_BASE_MS` | `10000` | The first retry's delay; each further one is 4× longer, at most 6 hours. |
+| `WEBHOOK_MAX_ATTEMPTS` | `7` | Attempts per delivery before it is marked failed (it stays in the delivery log, and admins can send it again). |
+| `WEBHOOK_DISABLE_AFTER_FAILURES` | `15` | Failed attempts in a row (any delivery) after which an endpoint is turned off, audited and its creator emailed. |
+
 ## Board calls
 
 | Variable | Default | Description |
 |---|---|---|
 | `JITSI_BASE_URL` | — | An https Jitsi deployment (`https://meet.jit.si`, or your own) where a board can get a call room of its own ("Call link…" → Jitsi room). The room name is derived from the board id with `SESSION_SECRET` (`Freero` + 24 hex characters), so nobody can guess another board's room; rotating the secret gives every board a new room. Unset: boards only use meeting links their editors paste (Meet, Zoom, Teams…, https only). Freero carries no audio or video itself. |
+
+## Live embeds
+
+| Variable | Default | Description |
+|---|---|---|
+| `EMBED_EXTRA_ORIGINS` | — | Comma-separated https origins (no path, e.g. `https://embed.example.com`) whose links boards may show as live, sandboxed frames after a click, besides the built-in providers (YouTube, Vimeo, Loom, Figma, Google Docs / Sheets / Slides / Forms, CodePen, CodeSandbox — `EMBED_PROVIDERS` in `packages/shared`). A link on such an origin is framed as given, so list only sites whose every page you are happy to show (an internal wiki's embed host, a maps or dashboard host). Added to the CSP `frame-src`; never this server's own origin. Workspace admins can turn live embeds off for their boards (admin console → Sharing, "Live embeds"). |
 
 ## Observability
 
@@ -265,6 +286,7 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `RATE_LIMIT_APPEAL` | `10/1h` | Appeals against moderation decisions per IP. |
 | `RATE_LIMIT_LINK_PASSWORD` | `10/15m` | Attempts at a board link's password, per IP and, separately, per board and person (or, before a visitor joins as a guest, per board and IP). The password is stored with the account passwords' slow hash. |
 | `RATE_LIMIT_ENGAGE` | `120/1m` | Answers, questions and upvotes in live activities (polls, word clouds, rankings, ratings, Q&A) per person or guest. |
+| `RATE_LIMIT_SEARCH` | `120/1m` | Searches of board content per person (the dashboard's "Inside boards") and, separately, per API token or authorised app (`/api/v1/search`, MCP `search`). |
 | `RATE_LIMIT_API_CREDENTIAL` | `300/1m` | Public API calls and MCP requests per API token, or per authorised app and person (its refreshed tokens share the count). Outline, structure, invite and board-creation calls also count against the person's own limits for those. |
 | `RATE_LIMIT_AGENT_WRITE` | `60/1m` | Changes to boards per API token, or per authorised app and person (the per-agent write limit, KAI-168): creating, changing or deleting items, inserting structure, comments, new boards — through the REST API or MCP. Separate from the person's own editing in the app, which it never slows down. With at most 500 items per call it also bounds how many items an agent writes per minute. |
 | `RATE_LIMIT_OAUTH_TOKEN` | `60/1m` | OAuth token and revocation requests per IP. |

@@ -145,7 +145,7 @@ export async function decideRequest(
   }
   const decided = await repo.transaction(async () => {
     const d = await repo.decideAccessRequest(boardId, requesterId, { status: approve ? 'approved' : 'denied', by: decider.id, role: approve ? role : null }, Date.now());
-    if (d && approve && !(await repo.grantAtLeast(boardId, requesterId, role, Date.now()))) throw notFound('Board not found');
+    if (d && approve && !(await repo.grantAtLeast(boardId, requesterId, role, Date.now(), { actorId: decider.id }))) throw notFound('Board not found');
     return d;
   });
   if (!decided) throw new HttpError(409, 'This request was already handled');

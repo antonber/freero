@@ -182,6 +182,8 @@ export function permissionsFor(board: Board, userId: string, role: Role, access:
     canTransfer: isOwner || admin,
     guestLinks: access.anonymousLinks && !access.outsidersBlocked,
     jitsiCalls: jitsiAvailable(),
+    liveEmbeds: access.policies.liveEmbeds !== 'off',
+    embedOrigins: getConfig().embedExtraOrigins,
   };
 }
 
@@ -353,6 +355,8 @@ export async function createBoard(
   description: string,
   linkAccess: LinkAccess = 'none',
   place: BoardPlace = {},
+  /** The board it is a copy of (duplicates): carried by its `board.created` event. */
+  copyOf?: string,
 ): Promise<Board> {
   const workspaceId = place.workspaceId || (await ensurePersonalWorkspace(ownerId));
   const projectId = place.projectId || null;
@@ -388,6 +392,7 @@ export async function createBoard(
       };
       await repo.insertBoard(board);
       await recordAudit({ action: 'board.created', workspaceId, actorId: ownerId, target: boardTarget(board), metadata: { projectId } });
+      await repo.appendBoardEvent({ type: 'board.created', boardId: board.id, workspaceId, actorId: ownerId, title, ...(copyOf ? { copyOf } : {}) });
       return board;
     },
   );
@@ -405,6 +410,7 @@ export async function moveToProject(board: Board, userId: string, projectId: str
     const project = projectId ? await lockProjectForBoard(projectId, board.workspaceId, userId) : null;
     if (!(await repo.setProject(board.id, projectId))) throw notFound('Board not found');
     await recordAudit({ action: 'board.moved', workspaceId: board.workspaceId, actorId: userId, target: boardTarget(board), metadata: { from: board.projectId, to: projectId } });
+    await repo.appendBoardEvent({ type: 'board.moved', boardId: board.id, workspaceId: board.workspaceId, actorId: userId, title: board.title, to: project?.name ?? null });
     return project?.name ?? null;
   });
   await refreshBoardAccess(board.id);
@@ -483,6 +489,7 @@ export async function moveToTrash(board: Board, actorId: string, now = Date.now(
   const trashed = await repo.transaction(async () => {
     if (!(await repo.trashBoard(board.id, now))) return false; // trashed meanwhile by another request
     await recordAudit({ action: 'board.trashed', workspaceId: board.workspaceId, actorId, target: boardTarget(board) });
+    await repo.appendBoardEvent({ type: 'board.trashed', boardId: board.id, workspaceId: board.workspaceId, actorId, title: board.title });
     return true;
   });
   if (!trashed) return;
@@ -519,6 +526,7 @@ export async function restoreFromTrash(boardId: string, userId: string): Promise
     async () => {
       if (!(await repo.restoreBoard(board.id))) throw notFound('Board not found in your trash');
       await recordAudit({ action: 'board.restored', workspaceId: board.workspaceId, actorId: userId, target: boardTarget(board) });
+      await repo.appendBoardEvent({ type: 'board.restored', boardId: board.id, workspaceId: board.workspaceId, actorId: userId, title: board.title });
     },
   );
   await boardLifecycle({ boardId: board.id, actorId: userId, action: 'restored' });
@@ -600,7 +608,7 @@ export async function duplicateBoard(source: Board, userId: string, role: Role):
   // Pending suggestions stay with the board they were proposed for (KAI-169).
   const editors = atLeast(role, 'editor') ? await snapshotBoardLayer(source.id, 'editors', { withoutSuggestions: true }) : null;
   const made = await repo.transaction(async () => {
-    const copy = await createBoard(userId, `Copy of ${source.title}`.slice(0, 200), source.description, 'none', place);
+    const copy = await createBoard(userId, `Copy of ${source.title}`.slice(0, 200), source.description, 'none', place, source.id);
     await recordAudit({
       action: 'board.duplicated',
       workspaceId: source.workspaceId,

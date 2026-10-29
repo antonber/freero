@@ -16,6 +16,7 @@ import { consumeRateLimit } from '../../platform/rateLimit';
 import { allowCrossSiteApi } from '../../platform/security';
 import { authenticate, registerProtectedResource, requireScope, sendAuthError, type ApiCredential } from '../apiauth/index';
 import { parseOutlineQuery } from '../outline/index';
+import { backlinksForApi, resolveForApi, searchContent } from './objects';
 import * as api from './service';
 import OPENAPI from '../../../../../docs/api/openapi.json';
 
@@ -93,6 +94,11 @@ export default function apiRoutes(_ctx: ServerContext): Router {
   endpoint('post', '/boards', 'boards:write', async (call) => ({ status: 201, body: await api.createBoard(call, body(call.req)) }));
   endpoint('get', '/boards/:boardId', 'boards:read', async (call) => ({ body: await api.getBoard(call, call.req.params.boardId) }));
   endpoint('delete', '/boards/:boardId', 'boards:write', async (call) => ({ body: await api.deleteBoard(call, call.req.params.boardId, call.req.query.confirm) }));
+
+  // ---- search and object addresses (KAI-151, KAI-227): the app's rules, the API's switch and downloads policy ----
+  endpoint('get', '/search', 'boards:read', async (call) => ({ body: await searchContent(call, call.req.query) }));
+  endpoint('post', '/objects/resolve', 'boards:read', async (call) => ({ body: await resolveForApi(call, body(call.req).uris) }));
+  endpoint('get', '/objects/backlinks', 'boards:read', async (call) => ({ body: await backlinksForApi(call, call.req.query.uri) }));
 
   // ---- reading a board ----
   endpoint('get', '/boards/:boardId/outline', 'boards:read', async (call) => {

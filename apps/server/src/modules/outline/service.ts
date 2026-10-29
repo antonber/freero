@@ -146,3 +146,18 @@ export async function boardComments(boardId: string, reader: OutlineReader, url:
   walk(read.outline.items);
   return out;
 }
+
+/**
+ * The outline of a board view that belongs to no particular reader (derived indexes: search, the
+ * event stream). The caller decides what the view holds — realtime's `storedBoardView`, the saved
+ * shared content every reader sees. No access check and no names (mentions read as "@someone"):
+ * whoever serves what was derived re-checks the reader's access then.
+ */
+export async function outlineOfView(board: { id: string; title: string }, view: BoardView): Promise<BoardOutline> {
+  const features = await outlineFeatures();
+  return buildOutline(
+    { board, version: view.version, readerId: '', seesHidden: view.seesHidden, elements: view.elements, collection: view.collection, personName: () => undefined },
+    features,
+    { comments: true },
+  );
+}

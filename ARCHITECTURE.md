@@ -113,7 +113,8 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | Database table | the server module whose `migrations/` create it; only its `repo.ts` writes it, only its migrations alter it [S4] | that module's exported functions |
 | auth session cookie | server `modules/auth` | — |
 | `_outbox`, `_outbox_cursors` (platform tables) | `platform/outbox.ts` | `appendOutbox` in the change's transaction; consumers through `consumeOutbox` |
-| Derived indexes (`object_references`) | their module's outbox consumer | never written directly: change the source; `references:rebuild` repairs |
+| Derived indexes (`object_references`, `search_entries`) | their module's outbox consumer | never written directly: change the source; `references:rebuild` / `search:rebuild` repair |
+| The event stream (`events`) | `modules/events` (from outbox topics only) | append to the outbox in your change's transaction (`board.events`, `board.members`, `board.content`); consumers follow `event.recorded` |
 | API tokens, OAuth apps / consents, a team's API switch | server `modules/apiauth` | its index: `authenticate`, `requireScope`, `useInWorkspace` |
 | Tracker connections, links to issues, what both sides last agreed on | server `modules/trackers` | its routes / index (`sendToTracker`, `importIssues`); syncs only through its outbox consumer |
 | `trackers` collection (issue badges) and items' `trackerLink` | server `modules/trackers` (through realtime's `changeBoard`) | — (the web feature only reads them) |
@@ -558,9 +559,41 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
   CGNAT / multicast addresses at connect time, 1.5 MB / 2 MB caps, 6 s deadlines, per-user rate
   limit — and returns title / description / site name and the preview image as a data: URL. The
   embed feature re-hosts that image with `Host.uploadImage`, so viewers and exports never load
-  third-party URLs. Video players (YouTube / Vimeo / Loom) only on `EMBED_FRAME_ORIGINS`
-  (`@freero/shared`), which the CSP `frame-src` allows; iframes are sandboxed, mounted only after a
-  click, and never exported (exports render a fresh component that shows the card).
+  third-party URLs.
+- Live embeds (KAI-127, `features/embed/lib/providers.ts`): one allow-list, `EMBED_PROVIDERS` in
+  `@freero/shared` (YouTube, Vimeo, Loom, Figma, Google Docs / Sheets / Slides / Forms, CodePen,
+  CodeSandbox — never another whiteboard), each with its frame origins, `sandbox` and `allow`. The
+  board stores only the pasted URL; the iframe src is REBUILT from ids parsed out of it on the
+  provider's own embed host and checked against the provider's origins, so a URL tampered with in
+  the doc frames nothing else. The CSP `frame-src` (`platform/security.ts`) is exactly
+  `EMBED_FRAME_ORIGINS` plus the operator's `EMBED_EXTRA_ORIGINS` (https origins only; links there are
+  framed as given, `OPERATOR_EMBED_SANDBOX`). A frame mounts only after a click ("Open live" / play),
+  for that viewer only; it takes pointer input only while the item is selected (a board-owned strip
+  above it is the grab handle, with full screen / open / close), so the board stays navigable.
+  Workspace policy `liveEmbeds: 'off'` (admin console → Sharing) keeps every link a card
+  (`BoardPermissions.liveEmbeds` → `Host.board.embeds`). Exports and thumbnails render a fresh copy:
+  never live, always the card with its poster.
+- Code blocks (KAI-125, `features/code`, element `code`): `code` is plain text, never HTML. The
+  highlighter (lowlight over highlight.js grammars, pinned, loaded with `import()` on first use)
+  returns a syntax TREE that is turned into lines of text runs and rendered as React text spans
+  with highlight.js scope class names only — no HTML string is ever built from a block, so W11
+  needs no exception. Editing is a plain `<textarea>` in the block (one gesture per sitting);
+  lines never wrap, so the height follows the line count. A pasted Markdown fence (not ```mermaid)
+  becomes a block (importer priority 45). Exports render the same spans and colours.
+- Timelines (KAI-122, `features/timeline`, elements `timeline` + `timelinebar`): a container whose
+  bars are separate elements (`frameId`), so concurrent edits of different bars never collide.
+  Dates are the truth: `arrange` (pure `lib/layout.ts` `planTimeline`) lays each bar at its dates,
+  lane (under its center) and row; right after a LOCAL move / resize (`ArrangeContext.previous`) the
+  change is read back as whole days. Bars outside the range shrink to a stub at that edge, never
+  lost. Task cards dropped on a timeline become bars spanning `startDate`..`dueDate`; their dates are
+  written only through `card.setDates` (cards keep one writer), and a card laid out shorter than
+  `BAR_MAX_H` draws itself as a one-line bar. Dependencies are ordinary connectors. The suite's
+  roadmap mode (KAI-160) builds on this element.
+- Sticky author labels (KAI-112, `features/sticky/decoration.tsx`): a board setting in the
+  `stickyLabels` collection (editors toggle "Show sticky authors" in the board menu). Names come
+  from the people lookup (`usePeople`, current names; `useGonePeople` → "Deleted user", never an id;
+  "<app> for <person>" for agents). No label while private mode runs nor on a private-layer draft,
+  so a draft's author is never shown, exported or screenshotted before reveal.
 - Images placed by URL (same module, same fetch protections, `remoteImage` rate limit):
   `Host.importImage(url)` (`POST /api/unfurl/image`) copies the image into the user's uploads —
   the image feature does this on paste/drop, so boards reference `/uploads/<key>`, not the third
@@ -655,7 +688,11 @@ Reference & items (engine primitives; product UI in `features/shortcuts`, `links
   "Copy link to item" (`engine.copyLink`) builds `/board/<id>?item=<elementId>`; the board selects
   and zooms to it on load (`?el=` is still honored).
 - `ElementDefinition.onDoubleClick?(el, { editor, point })`: double-click on an element with no
-  text to edit there (image → crop mode). Editors only, never on locked items.
+  text to edit there (image → crop mode). Editors only, never on locked items. A container that
+  defines it keeps double-clicks on its empty area instead of the canvas's "write here" (timeline:
+  add a bar).
+- `ElementDefinition.minSize` may be a function of the element (a card drawn as a timeline bar).
+- `useGonePeople(ids)` (`@engine`): the ids the people lookup answered without (deleted accounts).
 - `useIsExporting()`: true inside offscreen exports/thumbnails, so decorations can leave out
   on-screen affordances (the link badge).
 - `ImageElement.crop` (fractions of the natural picture) is the non-destructive crop; crop mode
@@ -798,7 +835,10 @@ references index derived through the outbox, `GET /objects/backlinks`; both in "
 below), `engage` (engage_answers, engage_questions, engage_upvotes,
 engage_reveals: live audience activities; see "Live activities" below), `trackers`
 (tracker_connections, tracker_links, tracker_link_sources, tracker_oauth_flows: issue-tracker sync;
-see "Issue trackers" below).
+see "Issue trackers" below), `search` (search_entries, search_sources: the search index derived
+through the outbox, `GET /search`), `events` (events, event_board_states, event_pending_boards: the
+event stream), `webhooks` (webhook_endpoints, webhook_deliveries: workspace webhooks) — the last
+three in "Search, the event stream and webhooks" below.
 
 - Notifications are created only from trusted server-side events, never from client claims:
   realtime's `onCommentMessage` (a comment message applied from one of THIS instance's sockets,
@@ -1009,7 +1049,9 @@ members with roles owner / admin / member / guest (separate from board roles).
 - Policies (team workspaces): `externalSharing` (who may invite people outside / share by link),
   `linkSharing` (max link role), `guestInvites`, `downloads` (who may export, duplicate or save
   as template), `teamAccess` (above), `publicLinks` (whether a link also lets in visitors without
-  an account: see "Guests"). All enforced by the endpoint that does the work;
+  an account: see "Guests"), `liveEmbeds` (links may open as live frames; enforced by every
+  viewer's client, the frames being third-party pages the CSP already confines). All other
+  policies are enforced by the endpoint that does the work;
   `BoardSummary.permissions` only tells the UI.
 - Team templates (KAI-96): owners/admins of the workspace a template is shared with may unshare
   it (`templates.shareTemplate(id, null)`); workspaces' `onMembershipChanged` (after a removal or
@@ -1345,7 +1387,9 @@ owns):
   in-process events — members' sharing events, `onCommentMessage`, `onBoardChange`, `onSessionEnd` —
   stay: they feed live, best-effort delivery (notifications, activity bursts, socket closes) that
   is either re-derived elsewhere or harmless to miss; moving them means replacing their in-memory
-  state, a change of its own. `workspaces.onMembershipChanged` → templates' unsharing was moved.)
+  state, a change of its own. `workspaces.onMembershipChanged` → templates' unsharing was moved.
+  Board lifecycle and membership changes are ALSO appended to the outbox now — `board.events` and
+  `board.members`, in the change's transaction — for the event stream and search, below.)
 - `consumeOutbox(ctx, { name, topics, lockKey, handle })` from an init.ts. Every instance polls
   (1 s, and right after a local commit that appended: `afterCommit` in `platform/db.ts`); each
   consumer runs on ONE instance at a time (advisory lock). It reads in `(txid, id)` order only up to
@@ -1409,6 +1453,66 @@ on every view (`Host.resolveObjects`, batched per frame, 15 s cache), shows "No 
 and its open button glides to an item on the same board or opens the target. Item links (KAI-54)
 and link cards are indexed as they are. The share dialog's "Linked from" lists the other boards
 pointing at this one that the viewer can open (`app/components/LinkedFrom.tsx`).
+
+### Search, the event stream and webhooks (KAI-151, KAI-141, KAI-150, KAI-105, KAI-227)
+
+**Search** (`modules/search`). An index of what each board SAYS — its title, the text of its items
+(frame titles, table cells, a kanban's columns, a card's fields, tags, connector labels) and its
+comment messages — in `search_entries`, Postgres full-text search with the `simple` configuration
+(no stemming or stop words, so every language works the same, and PGlite has it). Each word of a
+query matches as a prefix and all must match; query syntax people type is only ever words
+(`searchTerms`), so no input can change the query's shape.
+- **Derived through the outbox**, like references: `board.content` (every saved change) and
+  `board.events` (renames) re-derive the board from its SAVED shared content as every reader sees it
+  (`realtime.storedBoardView` → `outline.outlineOfView`, so each element type reads through its
+  feature's `outline.ts` and a new type is searchable the day it has one). Rows replaced per board,
+  versioned; `npm run admin -- search:rebuild [<board>]`.
+- **Layers are skipped, not indexed per audience**: private drafts and hidden frames' contents are not
+  in that view, and a comment thread pinned to an item that isn't (inside a hidden frame) is left out
+  although its records sit in the shared `comments` collection. So the index holds exactly what every
+  reader of a board sees, the only question per reader is "may they see this board?", and a snippet
+  can never come from content they can't see. Indexing per audience (editors searching hidden frames,
+  an author their drafts) would need rows per reader group; not worth it for content hidden on
+  purpose. Hiding isn't retroactive anyway: what was in the shared doc stays findable until the next
+  derivation (seconds).
+- **Reading** (`searchFor`): candidates are the boards the reader could reach (boards'
+  `boardIdsReachableBy`: their workspaces, memberships, boards they opened), the FTS query runs over
+  those, and each page's boards go through `summarizeObjects(…, 'discover')` — the live check, so
+  someone removed from a board finds nothing of it on the very next query, and a board reached only
+  by its link counts once they opened it. Titles in results come from that live summary; snippets
+  (`ts_headline`, highlights as offsets) from the index.
+- **Surfaces**: `GET /api/search` (the dashboard's "Board names / Inside boards" tabs, results grouped
+  by board, each opening `?el=<item>` or `?thread=<thread>`), `GET /api/v1/search` and MCP `search`
+  (both through `api/objects.ts`: boards of workspaces closed to the credential and boards whose
+  downloads policy keeps their content from the person are left out — search results are board
+  text). `RATE_LIMIT_SEARCH`. KAI-227 adds `POST /api/v1/objects/resolve` and
+  `GET /api/v1/objects/backlinks` (MCP `resolve_links`, `find_backlinks`) on the same registry: an
+  item's title (its text) is blanked where the downloads policy applies.
+- **Later**: semantic search adds an embedding column to `search_entries` (pgvector), filled by the
+  same consumer only when an AI provider is configured; `searchFor` is the seam that merges both.
+
+**The event stream** (`modules/events`, docs/events.md, contract `docs/events.schema.json`). One
+ordered record of what happens to boards, fed only through the outbox: `board.events` and
+`board.members` are recorded as they are; `board.content` marks the board pending, and once its saved
+content was quiet for `EVENTS_SETTLE_SECONDS` (at most a minute) the `events:derive` job compares it
+with what it saw last (`event_board_states`: a fingerprint per item, the comment messages) into
+`item.created / updated / deleted` and `comment.created` — recompute, not patch, so a drag is one
+update and a replayed batch changes nothing (`events.source_key` is unique). A board the stream never
+saw is a silent baseline; a new board starts empty (its first items are news). Every recorded event
+appends `event.recorded` to the outbox in the same transaction: consumers (webhooks; later the inbox
+and feeds) follow that topic with their own cursor. Notifications and the activity feed stay on the
+in-process events for now (live socket attribution, per-instance bursts).
+
+**Webhooks** (`modules/webhooks`, admin console "Webhooks"). A team's owners/admins register endpoints
+with event types and a format (`json` signed with HMAC-SHA256, `slack`, `teams`); the URL and secret
+are sealed at rest (`platform/secrets`), the secret shown once, the URL shown shortened; changes are
+audited (`webhook.*`). The fan-out consumer queues one delivery per event and endpoint (unique), only
+for boards every full member of the workspace can open through team access (workspaces'
+`openToWholeTeam`: no personal boards, no private projects — not even ids leave). The
+`webhooks:deliver` job sends due deliveries (SSRF-safe like unfurl and AI endpoints: https only, our
+own DNS lookup refuses private addresses at connect time, redirects never followed), retries with
+4× backoff, and turns an endpoint off after `WEBHOOK_DISABLE_AFTER_FAILURES` failures in a row
+(audited, its creator emailed); deliveries wait until it is back on. `WEBHOOKS=false` removes it all.
 
 ### Issue trackers: one issue ↔ many items, kept in step (`modules/trackers`, KAI-153..157; docs/trackers.md)
 
@@ -1987,7 +2091,7 @@ the board, deletions. A suggestion is not board content until someone who can ed
   `S3_BUCKET` and keys (MinIO, SeaweedFS…), the `s3` group checks the S3 backend (prefixes, kept
   copies under `private/`, restore, retention, the S3_PUBLIC_URL redirect and stored Cache-Control);
   all other groups stay on the local disk. CI does all of it.
-  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation,ai,api,mcp,s3,suite,suggestions,collab,tracker` runs some groups (to loop one while hunting a flake).
+  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation,ai,api,mcp,s3,suite,suggestions,collab,tracker,search,webhooks` runs some groups (to loop one while hunting a flake).
   The `mcp` group drives the MCP server with the official MCP client SDK, OAuth (dynamic
   registration, consent, PKCE) included; with DATABASE_URL + REDIS_URL one client's requests also
   alternate between two instances.

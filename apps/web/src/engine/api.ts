@@ -113,6 +113,12 @@ export interface Host {
     call?: BoardCall | null;
     /** [additive] The server can give the board a Jitsi room of its own. */
     jitsiCalls?: boolean;
+    /**
+     * [additive] Live embeds (KAI-127): `enabled` false when the board's workspace turned them off
+     * (links stay preview cards); `extraOrigins` are https origins the server's operator allows to
+     * be framed besides the built-in providers. Absent: on, no extra origins.
+     */
+    embeds?: { enabled: boolean; extraOrigins: string[] };
   };
   /** Full ws URL prefix; engine connects WebsocketProvider(syncUrl, board.id, doc). */
   syncUrl: string;
@@ -467,7 +473,11 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
   /** Defaults merged under user-provided fields on create (tools usually call this). */
   defaults(): Omit<NewElement<T>, 'x' | 'y'>;
   resize: ResizeMode;
-  minSize?: { w: number; h: number };
+  /**
+   * Smallest size the handles and the exact-size fields allow. [additive] May depend on the
+   * element: a task card drawn as a timeline bar may be as short as a day.
+   */
+  minSize?: { w: number; h: number } | ((element: ElementOf<T>) => { w: number; h: number });
   /** Has editable rich text (double-click / Enter / typing to edit). Engine handles the editor. */
   textField?: keyof ElementOf<T> & string;
   /** Containers own children by setting their `frameId` (frames). Engine moves children with them. */
@@ -626,7 +636,8 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
   /**
    * [additive] Double-click with the select tool on an element that has no text to edit there
    * (no `textPartAt` part, no `textField`): images enter crop mode. Editors only; runs inside the
-   * click's gesture. `point` is in world coordinates; `editor` is scoped to the defining feature.
+   * click's gesture. A container that defines it gets it on its empty area too, instead of the
+   * canvas's "write here" (a timeline adds a bar where it is double-clicked). `point` is in world coordinates; `editor` is scoped to the defining feature.
    */
   onDoubleClick?(element: ElementOf<T>, ctx: { editor: Editor; point: Point }): void;
   /**

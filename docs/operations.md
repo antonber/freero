@@ -48,9 +48,10 @@ backups with point-in-time recovery (7–35 days); pg_dump remains your provider
 3. Point `DATABASE_URL` at the restored database (or rename databases) and start the app. Pending
    migrations newer than the dump are applied automatically at startup.
 4. Check `/readyz`, sign in, open a few boards.
-5. Derived indexes (backlinks) catch up by themselves from the outbox events in the dump; if the
-   dump is older than a week (the outbox keeps a week) or the index looks wrong, rebuild it from
-   the saved boards: `npm run admin -- references:rebuild` (safe while the app runs).
+5. Derived indexes (backlinks, search) catch up by themselves from the outbox events in the dump; if
+   the dump is older than a week (the outbox keeps a week) or an index looks wrong, rebuild them from
+   the saved boards: `npm run admin -- references:rebuild` and `npm run admin -- search:rebuild`
+   (safe while the app runs).
 
 Test a restore regularly (e.g. monthly into a scratch database); an untested backup is a hope.
 
@@ -125,8 +126,11 @@ Suggested alerts:
 - p95 API latency > 1 s for 10 min.
 - `freero_realtime_persist_failures_total` increasing, or `freero_realtime_persist_queue` > 0 for 5 min.
 - `freero_nodejs_eventloop_lag_p99_seconds` > 0.2.
-- `max(freero_outbox_lag_seconds)` > 300 (a consumer stuck: backlinks stale), or
-  `freero_outbox_skipped_total` increasing (then fix the cause and run `references:rebuild`).
+- `max(freero_outbox_lag_seconds)` > 300 (a consumer stuck: backlinks, search, events or webhooks
+  stale), or `freero_outbox_skipped_total` increasing (then fix the cause and run
+  `references:rebuild` / `search:rebuild`).
+- `rate(freero_webhooks_attempts_total{outcome="failed"}[15m])` high: receivers failing (workspaces
+  see it in their delivery logs; endpoints that keep failing turn themselves off).
 - Memory (`freero_process_resident_memory_bytes`) near the container limit.
 - `rate(freero_rate_limited_total{limit="login"}[5m])` spikes (credential stuffing).
 - Postgres: connections near `max_connections`, disk > 80 %, replication lag; backup job age > 26 h.
@@ -239,6 +243,8 @@ workspace (modules/workspaces).
 | Saved templates | `templates` (templates) | `templates/` | deleted (cascade); shared ones go too | shared-with-team link cleared (the owner's template stays) |
 | Notifications and email preferences; pending mentions; task cards assigned to them with a due date (reminders) | `notifications`, `notification_prefs`, `pending_mentions`, `card_due_watch` (notifications) | `notifications.json` (the reminder list is not: it mirrors the boards' cards) | deleted (cascade) | notifications about its boards: deleted with the boards |
 | Answers, questions and upvotes in live activities (anonymous ones too: kept by the server only, never in the board) | `engage_answers`, `engage_questions`, `engage_upvotes` (engage) | `activities.json` | answers and upvotes deleted; questions stay on the boards without a name | deleted with the boards |
+| What boards say, as a search index (board titles, item text, comments — never private drafts or hidden frames) | `search_entries`, `search_sources` (search; derived from the boards) | no (a copy of the boards) | comment rows re-derived on the next save of each board (the author is not stored) | deleted with the boards |
+| Events about boards (who did what, item and comment text up to 280 characters), webhook delivery bodies | `events` (events), `webhook_deliveries` (webhooks) | no | kept until retention (`EVENTS_RETENTION_DAYS`, deliveries 30 days); no foreign keys, like the audit log | events kept until retention; endpoints and deliveries deleted (cascade) |
 | Board links unlocked with their password (when) | `board_link_unlocks` (boards) | no (an access fact, not content) | deleted | deleted with the boards |
 | What a directory sent about them (SCIM userName, externalId, name, email, active) | `scim_users`, `scim_group_members` (scim) | `memberships.json` → `directoryRecords` | deleted (cascade) | deleted (cascade) |
 | Break-glass role | `sso_connections.break_glass_user_id` (sso) | `memberships.json` → `singleSignOn` | cleared (SET NULL) | deleted (cascade) |
@@ -396,6 +402,9 @@ refused, and it is audited on the account. Turning the whole API off is `PUBLIC_
 `npm run admin -- references:rebuild [<board id>]` re-derives the references index (backlinks,
 "Linked from") from saved board content — every board, or one. For repair after a restore or a
 fixed extraction bug; safe while the servers run (their live updates pause meanwhile).
+
+`npm run admin -- search:rebuild [<board id>]` re-derives the search index (dashboard "Inside boards",
+`/api/v1/search`, MCP `search`) the same way.
 
 `npm run admin -- audit:verify <workspace id>` re-checks a workspace's audit log chain (also
 `u:<user id>` for an account's own chain, `freero` for operator actions on unowned content) and

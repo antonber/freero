@@ -1,10 +1,11 @@
 // /admin/:workspaceId — the admin console of a team workspace (owners and admins): overview and
 // usage, members, security, single sign-on, provisioning, AI (when the server offers it), data
-// (retention and export), API & apps, issue trackers and the audit log. Every action is checked again by the
-// server; this page only hides what the caller's role can't do.
+// (retention and export), API & apps, webhooks (when the server offers them), issue trackers and the
+// audit log. Every action is checked again by the server; this page only hides what the caller's role
+// can't do.
 import { useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ChartColumn, Hourglass, KeyRound, Lock, Plug, ScrollText, Sparkles, Ticket, UserCog, Users } from 'lucide-react';
+import { ArrowLeft, ChartColumn, Hourglass, KeyRound, Lock, Plug, ScrollText, Sparkles, Ticket, UserCog, Users, Webhook } from 'lucide-react';
 import type { WorkspaceSummary } from '@freero/shared';
 import { Logo, Spinner } from '@ui';
 import { api } from '../../api/client';
@@ -15,6 +16,7 @@ import { AdminDataExport, AdminProvisioning, AdminSso } from './AdminIdentity';
 import { AdminMembers } from './AdminMembers';
 import { AdminOverview } from './AdminOverview';
 import { AdminRetention, AdminSecurity } from './AdminSettings';
+import { AdminWebhooks, webhooksOffered } from './AdminWebhooks';
 import { AdminTrackers } from './AdminTrackers';
 import './admin.css';
 
@@ -27,6 +29,7 @@ const TABS = [
   { id: 'ai', label: 'AI', icon: Sparkles },
   { id: 'retention', label: 'Data', icon: Hourglass },
   { id: 'api', label: 'API & apps', icon: Plug },
+  { id: 'webhooks', label: 'Webhooks', icon: Webhook },
   { id: 'trackers', label: 'Issue trackers', icon: Ticket },
   { id: 'audit', label: 'Audit log', icon: ScrollText },
 ] as const;
@@ -39,6 +42,8 @@ export function AdminConsolePage() {
   const [workspace, setWorkspace] = useState<WorkspaceSummary | null | undefined>(undefined);
   // The AI tab exists only when this server offers AI at all.
   const [ai, setAi] = useState(false);
+  // And the Webhooks tab only when it offers webhooks.
+  const [hooks, setHooks] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -55,6 +60,7 @@ export function AdminConsolePage() {
   useEffect(() => {
     let live = true;
     if (manages) void aiOffered(workspaceId).then((on) => live && setAi(on));
+    if (manages) void webhooksOffered(workspaceId).then((on) => live && setHooks(on));
     return () => {
       live = false;
     };
@@ -64,7 +70,7 @@ export function AdminConsolePage() {
     document.title = workspace ? `Admin console · ${workspace.name} · Freero` : 'Admin console · Freero';
   }, [workspace]);
 
-  const tab: Tab = requested === 'ai' && !ai ? 'overview' : requested;
+  const tab: Tab = (requested === 'ai' && !ai) || (requested === 'webhooks' && !hooks) ? 'overview' : requested;
   const manager = (workspace?.role === 'owner' || workspace?.role === 'admin') && workspace.blocked !== 'deactivated';
   const back = `/app?ws=${encodeURIComponent(workspaceId)}`;
 
@@ -92,7 +98,7 @@ export function AdminConsolePage() {
               <span className="fr-admin__ws-name">{workspace.name}</span>
               <span className="fr-admin__muted">Admin console · you’re {workspace.role === 'owner' ? 'an owner' : 'an admin'}</span>
             </div>
-            {TABS.filter((t) => t.id !== 'ai' || ai).map((t) => (
+            {TABS.filter((t) => (t.id !== 'ai' || ai) && (t.id !== 'webhooks' || hooks)).map((t) => (
               <button
                 key={t.id}
                 type="button"
@@ -119,6 +125,7 @@ export function AdminConsolePage() {
               </>
             ) : null}
             {tab === 'api' ? <AdminApi workspace={workspace} /> : null}
+            {tab === 'webhooks' ? <AdminWebhooks workspace={workspace} /> : null}
             {tab === 'trackers' ? <AdminTrackers workspace={workspace} /> : null}
             {tab === 'audit' ? <AdminAudit workspace={workspace} /> : null}
           </main>
