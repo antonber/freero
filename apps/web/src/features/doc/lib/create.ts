@@ -29,6 +29,8 @@ export async function createDocFrom(editor: Editor, input: { title?: string; mar
     const doc = await docs.create(input);
     const spot = at ? { x: Math.round(at.x - W / 2), y: Math.round(at.y - H / 2) } : editor.findFreeSpot({ w: W, h: H });
     const id = editor.create<'doc'>({ type: 'doc', uri: `freero://doc/${doc.id}`, x: spot.x, y: spot.y, w: W, h: H }, { select: true });
+    // Placed on a free spot (not where someone pointed): bring it into view.
+    if (id && !at) editor.zoomToFit([id], { animate: true, maxZoom: 1, padding: 80 });
     if (id && !input.markdown) setEditingDoc(id);
     if (input.markdown) editor.host.notify(`Made the doc “${doc.title}” from Markdown`, 'success');
   } catch (err) {

@@ -308,6 +308,21 @@
   flex: 1;
 }
 
+@media (max-width: 600px) {
+  /* Phones: the bar keeps back, title, comments, more and share. */
+  .fr-docpage-wide {
+    display: none !important;
+  }
+  .fr-docpage-top {
+    gap: 2px;
+    padding: 0 6px;
+  }
+  .fr-docpage-title {
+    min-width: 0;
+    flex: 1;
+  }
+}
+
 @media (max-width: 760px) {
   .fr-docpage-panel {
     position: fixed;

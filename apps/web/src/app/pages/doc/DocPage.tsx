@@ -181,7 +181,9 @@ function DocView({ initial }: { initial: BoardSummary }) {
     <div className="fr-docpage">
       <header className="fr-docpage-top">
         <IconButton icon={ArrowLeft} label="Back to dashboard" onClick={() => navigate('/app')} />
-        <Logo size={24} />
+        <span className="fr-docpage-wide">
+          <Logo size={24} />
+        </span>
         <input
           key={doc.title}
           className="fr-docpage-title"
@@ -197,12 +199,12 @@ function DocView({ initial }: { initial: BoardSummary }) {
           {live.status === 'denied' ? 'No access' : live.status === 'removed' ? 'Removed for review' : live.status === 'connected' ? (canEdit ? '' : role === 'commenter' ? 'Can comment' : 'View only') : 'Connecting…'}
         </span>
         <div className="fr-docpage-spacer" />
-        {peers.length > 0 && <AvatarStack users={peers} max={5} size={28} />}
+        {peers.length > 0 && <AvatarStack className="fr-docpage-wide" users={peers} max={5} size={28} />}
         {canComment && <IconButton icon={MessageSquarePlus} label="Comment on this block" onClick={startComment} />}
         <IconButton icon={MessageSquare} label="Comments" active={panel === 'comments'} onClick={() => setPanel((p) => (p === 'comments' ? null : 'comments'))}>
           {openThreads > 0 && <span className="fr-docpage-badge">{openThreads}</span>}
         </IconButton>
-        {canEdit && <IconButton icon={History} label="Version history" active={panel === 'history'} onClick={() => setPanel((p) => (p === 'history' ? null : 'history'))} />}
+        {canEdit && <IconButton className="fr-docpage-wide" icon={History} label="Version history" active={panel === 'history'} onClick={() => setPanel((p) => (p === 'history' ? null : 'history'))} />}
         <IconButton icon={MoreHorizontal} label="More" onClick={(e) => setMenuAnchor(e.currentTarget)} />
         <Menu
           open={!!menuAnchor}
@@ -214,9 +216,11 @@ function DocView({ initial }: { initial: BoardSummary }) {
           ]}
         />
         <input ref={fileRef} type="file" accept=".md,.markdown,text/markdown,text/plain" hidden onChange={(e) => void importMarkdown(e)} />
-        <NotificationBell size={40} />
-        <Button variant="primary" icon={Share2} onClick={() => setShareOpen(true)}>
-          Share
+        <span className="fr-docpage-wide">
+          <NotificationBell size={40} />
+        </span>
+        <Button variant="primary" icon={Share2} onClick={() => setShareOpen(true)} aria-label="Share">
+          <span className="fr-docpage-wide">Share</span>
         </Button>
       </header>
       <div className="fr-docpage-body">

@@ -16,6 +16,7 @@ import {
   useObjectDoc,
   useObjectDocState,
   useSelection,
+  type DocHandle,
   type Editor,
   type ElementRenderProps,
   type LiveBoardStatus,
@@ -74,6 +75,12 @@ function LiveDoc({ el, editor, title }: { el: DocElement; editor: Editor; title:
   const canEditDoc = (state.role === 'owner' || state.role === 'editor') && state.status !== 'denied';
   const editing = editingId === el.id && canEditDoc;
 
+  // Starting to edit puts the cursor in the doc (also once the server confirmed the role).
+  const [handle, setHandle] = useState<DocHandle | null>(null);
+  useEffect(() => {
+    if (editing && handle) requestAnimationFrame(() => handle.focus());
+  }, [editing, handle]);
+
   // Editing ends when the item is no longer selected (a click elsewhere on the board).
   useEffect(() => {
     if (editingId === el.id && !selection.includes(el.id)) setEditingDoc(null);
@@ -99,6 +106,7 @@ function LiveDoc({ el, editor, title }: { el: DocElement; editor: Editor; title:
           doc={store}
           user={{ name: user.name, color: user.color }}
           editable={editing}
+          onReady={setHandle}
           label={title}
           uploadImage={async (file) => (await editor.host.uploadImage(file)).url}
           renderBoardEmbed={(uri) => <NestedBoard uri={uri} />}
