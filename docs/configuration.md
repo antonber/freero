@@ -219,6 +219,16 @@ The event stream and workspace webhooks: [events.md](events.md).
 | `WEBHOOK_MAX_ATTEMPTS` | `7` | Attempts per delivery before it is marked failed (it stays in the delivery log, and admins can send it again). |
 | `WEBHOOK_DISABLE_AFTER_FAILURES` | `15` | Failed attempts in a row (any delivery) after which an endpoint is turned off, audited and its creator emailed. |
 
+## Slack link unfurls
+
+Previews of Freero board links in Slack, through a Slack app you create: [integrations/slack.md](integrations/slack.md). Off unless both are set.
+
+| Variable | Default | Description |
+|---|---|---|
+| `SLACK_SIGNING_SECRET` | — | Your Slack app's signing secret (Basic Information → App Credentials). Every request to `/api/integrations/slack/events` must carry a valid signature from the last five minutes. |
+| `SLACK_BOT_TOKEN` | — | Your Slack app's bot token (`xoxb-…`, OAuth & Permissions), used for `chat.unfurl`. One without the other refuses to start. |
+| `SLACK_API_URL` | `https://slack.com/api` | Slack's Web API (tests point it at a stand-in). |
+
 ## Board calls
 
 | Variable | Default | Description |
@@ -314,6 +324,7 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `RATE_LIMIT_TRACKER_SEND` | `60/10m` | Per user: issues created or imported in a tracker, and tracker connections added or tested (each calls the tracker's API). |
 | `RATE_LIMIT_BACKUP` | `30/1h` | Per user: board backups (`.freero`) downloaded or restored — each reads or writes a whole board and its files (KAI-137). |
 | `RATE_LIMIT_WALKTHROUGH_COMMENT` | `120/10m` | Per person: comments on walkthroughs (each may notify the people it mentions and the walkthrough's author). |
+| `RATE_LIMIT_SLACK_UNFURL` | `50/1m` | Per Slack workspace: link previews Freero posts with `chat.unfurl` (Slack's own limit for it is about 50 a minute); past it, links stay without a preview. |
 
 Rule format: `<count>/<window>` with the window in `s`, `m`, `h` or `d` and an optional multiplier
 (`10/5m` = 10 per 5 minutes), or `off`. Windows are fixed (they reset `window` after the first hit).
