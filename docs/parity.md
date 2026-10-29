@@ -178,7 +178,7 @@ issue id is in the status note.
 | Assignment notifications | Tell people when work is assigned to them or is about to be due | Have: card assigned and due-date notifications, a reminder the day before, also in email digests (KAI-135) | S | P2 | parity |
 | Private mode | Participants add content that others can't see until it's revealed | Have (server-side private layers; whole board or one frame) | — | P1 | — |
 | Attention management | The facilitator keeps everyone in their view and stops people wandering off | Have: the facilitator leads everyone's view with a locked follow (KAI-129) | M | P2 | parity |
-| Async video walkthroughs | Record a narrated tour of the board (camera plus pointer) for others to watch later | Missing (KAI-133) | L | P2 | parity |
+| Async video walkthroughs | Record a narrated tour of the board (camera plus pointer) for others to watch later | Have: voice and optional camera over the live board with the narrator's view and pointer, comments at moments, captions typed or by the board's AI (KAI-133); decision snapshots freeze a board or frame (KAI-161) | L | P2 | parity |
 | Audio and video calls | Talk and see each other inside the board | Partial: a per-board call link (the team's meeting URL or a Jitsi room) with "Join call" and who is in it; no built-in audio or video, by design (KAI-134; see §16) | M | P2 | parity |
 
 ## 5. Facilitation and presentation
@@ -345,9 +345,9 @@ Have. In the re-check after the teams, enterprise and parity batches merged: 47 
 
 | Status | Count |
 |---|---|
-| Have | 163 |
+| Have | 164 |
 | Partial | 15 |
-| Missing | 32 |
+| Missing | 31 |
 | **Total** | **210** |
 
 **By priority and status**
@@ -356,7 +356,7 @@ Have. In the re-check after the teams, enterprise and parity batches merged: 47 
 |---|---|---|---|---|
 | P0 | 31 | 0 | 0 | 31 |
 | P1 | 51 | 0 | 0 | 51 |
-| P2 | 75 | 6 | 2 | 83 |
+| P2 | 76 | 6 | 1 | 83 |
 | P3 | 6 | 9 | 30 | 45 |
 
 <!-- counts generated from the tables above; regenerate when rows change -->
@@ -364,8 +364,7 @@ Have. In the re-check after the teams, enterprise and parity batches merged: 47 
 **Takeaways**
 
 - Every first-session (P0) and weekly-use (P1) expectation is met.
-- The P2 gaps left: smart drawing (KAI-114), async walkthroughs
-  (KAI-133) are missing; imports from other whiteboards cover draw.io and Excalidraw but not Miro (KAI-261); data
+- The P2 gaps left: smart drawing (KAI-114) is missing; imports from other whiteboards cover draw.io and Excalidraw but not Miro (KAI-261); data
   tables need more views and row links (KAI-245), boards can't
   be embedded in other sites (KAI-106), and the audit log doesn't stream to a SIEM (KAI-192).
   Cloud provider icons and calls are
@@ -383,7 +382,7 @@ made with `npm run new:feature`, a server module per area, and engine changes on
 cuts across types. Batches A–D are independent and can run in parallel; E and F follow the teams merge.
 
 Status: the teams merge and batches A–F have shipped except KAI-114 (smart drawing), KAI-121
-(custom packs), KAI-133 (walkthroughs),
+(custom packs),
 KAI-144 (interface languages), KAI-106 (embeds in other sites) and KAI-103 (assistant).
 Follow-ups are filed as their own issues (named in the rows).
 
