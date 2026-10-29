@@ -147,8 +147,8 @@ Each point pairs a Freero file with the Miro-side source.
 8. **SSO, SCIM and audit log without an enterprise contract.** Freero ships per-workspace SAML/OIDC
    SSO, SCIM and a hash-chained audit log (`docs/configuration.md`, `ARCHITECTURE.md`). Miro needs
    Business for SSO and Enterprise (30+ members) for SCIM and audit logs [S3].
-9. **Edit-capable guests without an account, free.** Freero lets visitors join shared boards with a
-   guest name (`ARCHITECTURE.md` "Guests: visitors without an account"). Miro allows anonymous
+9. **Guests without an account, free.** Freero lets visitors join shared boards with a
+   guest name, to view and comment (at most commenter, `docs/parity.md` §11) (`ARCHITECTURE.md` "Guests: visitors without an account"). Miro allows anonymous
    visitors on public boards on Starter and Business [S3]; on Free, visitors are view-only
    (`docs/parity.md` §13).
 10. **Data residency by choice of infrastructure.** Self-hosters put Freero in any region

@@ -31,10 +31,10 @@ re-order the backlog below. Competitor facts come only from `docs/marketing/comp
 | Claude whiteboard | claude whiteboard, claude mcp whiteboard, claude custom connector whiteboard, claude code diagram board | `/claude` | `/agents`, `/security` |
 | ChatGPT whiteboard | chatgpt whiteboard, chatgpt connector whiteboard, chatgpt developer mode mcp, chatgpt mind map board | `/chatgpt` | `/agents`, `/security` |
 | Agent control room | ai agent dashboard board, monitor coding agents, human in the loop board | `/agents#control-room` | `/claude`, `/chatgpt` |
-| Free / open-source / self-hosted Miro alternative | free miro alternative, open source miro alternative, self-hosted miro alternative | `/vs/miro` (to write) | `/open-source`, `/pricing`, `/` |
-| Other "alternative" searches | mural alternative, figjam alternative, lucidspark alternative, excalidraw alternative for teams, tldraw alternative | `/vs/<competitor>` (to write) | `/open-source`, `/` |
-| Microsoft Whiteboard alternative | microsoft whiteboard alternative, microsoft whiteboard app retired | `/vs/microsoft-whiteboard` (to write; the standalone apps retired 2026-10-16, Teams and web continue for work accounts: say exactly that) | `/pricing`, `/` |
-| Jamboard alternative | jamboard alternative, jamboard replacement, jamboard for teachers | `/vs/jamboard` (to write; no Jamboard importer: say so) | `/`, `/pricing` |
+| Free / open-source / self-hosted Miro alternative | free miro alternative, open source miro alternative, self-hosted miro alternative | `/vs/miro` | `/open-source`, `/pricing`, `/` |
+| Other "alternative" searches | mural alternative, figjam alternative, lucidspark alternative, excalidraw alternative for teams, tldraw alternative | `/vs/<competitor>` (`/vs/mural`, `/vs/figjam`, `/vs/excalidraw`, `/vs/confluence-whiteboards` built) | `/open-source`, `/` |
+| Microsoft Whiteboard alternative | microsoft whiteboard alternative, microsoft whiteboard app retired | `/vs/microsoft-whiteboard` (the standalone apps retired 2026-10-16, Teams and web continue for work accounts: say exactly that) | `/pricing`, `/` |
+| Jamboard alternative | jamboard alternative, jamboard replacement, jamboard for teachers | `/vs/jamboard` (no Jamboard importer: said so) | `/`, `/pricing` |
 | Self-hosted / open-source whiteboard | self-hosted whiteboard, open source whiteboard, on-premise whiteboard, docker whiteboard | `/open-source` | `/security`, `/pricing` |
 | Free whiteboard | free online whiteboard, free collaborative whiteboard, whiteboard no signup limits | `/pricing` | `/`, `/open-source` |
 | Online whiteboard for retrospectives | retrospective whiteboard, online retro board, sprint retro template | `/use-cases/retrospectives` (to write) | `/templates/*`, `/` (#workshops) |
