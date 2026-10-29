@@ -68,10 +68,15 @@ export async function startMockGithub({ port = 0, host = '127.0.0.1', token = 'g
         return json(200, view(m[1], i));
       }
       if (u.pathname === '/api/v3/search/issues') {
+        // The qualifiers Freero's checks use: repo:, is:open / is:closed, label:x or label:"x y"; the rest is words in the title.
         const q = u.searchParams.get('q') ?? '';
         const repo = /repo:([\w.-]+\/[\w.-]+)/.exec(q)?.[1];
-        const words = q.replace(/\b(repo|is|label):\S+/g, '').trim().toLowerCase();
-        const items = [...issues].filter(([k, i]) => (!repo || k.startsWith(`${repo}#`)) && (!words || i.title.toLowerCase().includes(words))).map(([k, i]) => view(k.split('#')[0], i));
+        const state = /\bis:(open|closed)\b/.exec(q)?.[1];
+        const labels = [...q.matchAll(/\blabel:(?:"([^"]+)"|(\S+))/g)].map((m) => (m[1] ?? m[2]).toLowerCase());
+        const words = q.replace(/\blabel:(?:"[^"]+"|\S+)/g, '').replace(/\b(repo|is):\S+/g, '').trim().toLowerCase();
+        const items = [...issues]
+          .filter(([k, i]) => (!repo || k.startsWith(`${repo}#`)) && (!state || i.state === state) && labels.every((l) => i.labels.some((x) => x.toLowerCase() === l)) && (!words || i.title.toLowerCase().includes(words)))
+          .map(([k, i]) => view(k.split('#')[0], i));
         return json(200, { total_count: items.length, items });
       }
       return json(404, { message: `no route ${req.method} ${u.pathname}` });
@@ -87,6 +92,16 @@ export async function startMockGithub({ port = 0, host = '127.0.0.1', token = 'g
     token,
     requests,
     issue: (repo, n) => issues.get(`${repo}#${n}`) ?? null,
+    /** An issue people made on GitHub (its number). The repository is added if it isn't there. */
+    create(repo, { title, body = '', labels = [], state = 'open' }) {
+      if (!repos.some((r) => r.full_name === repo)) repos.push({ id: repos.length + 1, full_name: repo });
+      const n = (counters.get(repo) ?? 0) + 1;
+      counters.set(repo, n);
+      const i = { number: n, title, body, state, labels };
+      touch(i);
+      issues.set(`${repo}#${n}`, i);
+      return n;
+    },
     edit(repo, n, changes) {
       const i = issues.get(`${repo}#${n}`);
       Object.assign(i, changes);
