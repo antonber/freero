@@ -1,0 +1,36 @@
+/* A paused agent lane: a tag just above the kanban's top edge, clear of its title, its buttons and the selection outline. */
+.fr-controlroom-tag-wrap {
+  position: absolute;
+  top: -30px;
+  right: 16px;
+  left: 16px;
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+
+.fr-controlroom-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  height: 22px;
+  padding: 0 9px 0 7px;
+  border: 1px solid var(--fr-danger);
+  border-radius: 11px;
+  background: var(--fr-danger-soft);
+  color: var(--fr-danger);
+  font: 650 11px/1 var(--fr-font);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: var(--fr-shadow-sm);
+}
+
+.fr-controlroom-fmt-btn {
+  gap: 6px;
+}
+
+.fr-controlroom-fmt-btn[aria-pressed='true'] {
+  color: var(--fr-danger);
+}
