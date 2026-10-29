@@ -1385,6 +1385,12 @@ audit and admin controls are the same code.
   view, which frames Freero's `/embed/board/:id` (`frameDomains` = Freero's origin only) with a
   single-use ticket in `_meta["freero/live"]` (not for the model). `share_board` is `visibility:
   ["app"]`: the view's Share button.
+- **Control room** (KAI-172, `api/controlRoom.ts`, MCP `post_status` / `get_feedback`, prompt
+  `control_room`, template "Agent control room"): an agent's lane is plain board content found by
+  its titles (*Plan · A*, *Status · A*, the *Tasks · A* kanban with To do / Doing / Done / Blocked);
+  tasks match by title (idempotent), moves use the kanban's column geometry (`KANBAN_LAYOUT`) and
+  grow the kanban. Feedback is a diff against the opaque cursor the agent holds (card → column it
+  last saw, comment messages seen), so its own changes are never reported and nothing is stored.
 - **Live views (`modules/embed`, no table).** apiauth mints the ticket (`api_embed_tokens`:
   per tool call, bound to one board and to the app's grant or the personal token — deleted with
   them — and to `maxRole` from the connection's scopes); `POST /api/embed/redeem` turns it, once,

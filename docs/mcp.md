@@ -143,6 +143,8 @@ everything an agent adds in free space (next to `near` when given): no coordinat
 | `list_templates` | read | Saved templates you can start a board from (yours and your teams'). |
 | `open_board` | read | Shows the board **live** in the conversation where the assistant shows interactive views ([below](#live-boards-in-the-conversation-mcp-apps)): the person pans, zooms, edits (if this connection may change boards), accepts your suggestions, opens it in Freero or shares it. Elsewhere: the board link. |
 | `share_board` | read (+ write to turn sharing on) | The live view's **Share with team** button — only the view calls it (`visibility: ["app"]`), never the model: returns the board link and, if needed, turns link sharing on (view / comment; guests without an account as the workspace allows). Turning it on needs `boards:write` and the board's owner; the share dialog's rules and audit event apply. |
+| `post_status` | write | Long-running work in the open ([control room](#agent-control-room)): your plan, status and tasks (`todo` / `doing` / `done` / `blocked`, matched by title — a retry never duplicates) on your lane of a control-room board; creates the board without `boardId`. Returns a `cursor`. |
+| `get_feedback` | read | What people changed in your lane since your `cursor`: cards moved, added or removed, comments on your lane or the board — never your own changes. |
 | `get_board_outline` | read | The board as a semantic outline: frames, clusters, notes, shapes, cards, mind maps, tables, the connector graph, votes, comments, with item ids. `format` `markdown` (default) / `json`; `budget` (≈ tokens, default 8000) keeps frame titles and the shallowest, most recent items; `scope` = an item id to read only inside it; `cursor` pages; `authors`. Format reference: [board-outline.md](board-outline.md). |
 | `create_board` | write | A new board (personal or a team workspace), optionally from a saved template. |
 | `add_stickies` | write | A grid of sticky notes, optional title and color. |
@@ -159,9 +161,33 @@ everything an agent adds in free space (next to `near` when given): no coordinat
 untrusted envelope. `ui://freero/board-preview.html` and `ui://freero/board-live.html` — the MCP Apps
 views (static HTML, no board data in them).
 
-**Prompts:** `run_retro` (group a retro board's notes into themes with `add_clusters`, then actions),
+**Prompts:** `control_room` (work on a goal in a control room: post, check feedback, repeat), `run_retro` (group a retro board's notes into themes with `add_clusters`, then actions),
 `notes_to_diagram` (your notes → `add_diagram`), `summarize_board` (topics, decisions, open
 questions, action items with ids).
+
+## Agent control room
+
+A long-running agent (a coding agent, a research agent, an automation) works where people can see
+and steer it: its **lane** on a board — a *Plan · &lt;agent&gt;* note, a *Status · &lt;agent&gt;* note and
+a *Tasks · &lt;agent&gt;* kanban with **To do / Doing / Done / Blocked**. Several agents can share a
+board, one lane each (`agent` names it; default the app's name).
+
+- **Post** with `post_status` after each step: the plan (replaced), a one-line status (stamped with
+  the time), and tasks by title — a task the lane already has is updated and moved to its column, a
+  new one is added; `blocked` puts it in Blocked with your question in its note. Without `boardId` it
+  creates the board. The template **Agent control room** (Engineering) builds a lane for a
+  placeholder agent; the first agent that posts to that board claims it.
+- **Steer**: people drag cards (back to To do = redo it, out of Blocked = go ahead), add cards and
+  comment. The agent calls `get_feedback` with its cursor before each step and gets exactly what
+  people changed — cards moved / added / removed, new comments — never its own changes (the cursor
+  carries what the agent last saw: no clocks, nothing stored on the server). Pass the latest cursor
+  to `post_status` too, so a change people made in between is still reported.
+- **Push instead of poll**: on a team workspace's board, the workspace's webhooks deliver the same
+  changes as they happen (`item.updated`, `item.created`, `comment.created`, [events.md](events.md)),
+  signed — point one at the agent's endpoint and filter by board id.
+- What people write reaches the agent as untrusted board content (the envelope), like every read.
+- The REST API has the same building blocks (items, structure, comments, the event stream); the
+  lane conventions above are all there is to it.
 
 ## How sign-in works (for client developers)
 
