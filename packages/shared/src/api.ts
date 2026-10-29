@@ -1359,7 +1359,7 @@ export interface WorkspaceAiAdmin {
 // (OPERATOR_EMAILS, verified addresses only) review reports in a queue and act through the
 // modules that own the data; every action is recorded and its subject told why, with an appeal link.
 //
-// POST /api/reports  body ReportRequest -> 202 { ok: true }   (session optional; rate-limited per IP
+// POST /api/reports  body ReportRequest | ListingReportRequest -> 202 { ok: true }   (session optional; rate-limited per IP
 //      and per user; 404 "Board not found" alike for unknown boards and boards you can't open)
 // GET  /api/appeals/:token -> { appeal: AppealInfo }          (no session: the signed link from the notice)
 // POST /api/appeals  body { token, message } -> 202 { ok: true } (one open appeal per action)
@@ -1372,6 +1372,7 @@ export interface WorkspaceAiAdmin {
 // GET  /api/moderation/users?email= -> { user: ModeratedUser }
 // POST /api/moderation/actions body ModerationActionRequest -> { action: ModerationActionRecord }
 // POST /api/moderation/items/:id/resolve body { outcome, note? } -> { item: ModerationItem }
+// GET  /api/moderation/listings?status=pending|approved|rejected|removed -> { listings: ListingForReview[] } (#87, integrations.ts)
 // GET  /.well-known/security.txt (RFC 9116, from SECURITY_CONTACT / ABUSE_CONTACT_EMAIL)
 export type ReportReason = 'spam' | 'phishing' | 'malware' | 'harassment' | 'violence' | 'sexual' | 'illegal' | 'copyright' | 'other';
 export const REPORT_REASONS: ReadonlyArray<{ id: ReportReason; label: string }> = [
@@ -1400,6 +1401,15 @@ export interface ReportRequest {
   /** Visitors without an account: where to send the outcome (optional). */
   contactEmail?: string;
 }
+/**
+ * A report about a community listing of the Apps & agents page (#87): no board; signed in only (the
+ * listings are). The same queue, reasons and outcome mail as a board report.
+ */
+export interface ListingReportRequest {
+  target: { kind: 'listing'; id: string };
+  reason: ReportReason;
+  note?: string;
+}
 
 /** Operator actions. Each `restore` undoes the matching action; `upload.purge` deletes a removed file's kept copy for good. */
 export type ModerationActionKind =
@@ -1413,7 +1423,14 @@ export type ModerationActionKind =
   | 'upload.restore'
   | 'upload.purge'
   | 'user.suspend'
-  | 'user.restore';
+  | 'user.restore'
+  /** Community listings (#87): a pending submission is approved (live, "Community") or rejected; a live one removed (appealable) or restored; featured lists it first. */
+  | 'listing.approve'
+  | 'listing.reject'
+  | 'listing.remove'
+  | 'listing.restore'
+  | 'listing.feature'
+  | 'listing.unfeature';
 export interface ModerationActionRequest {
   action: ModerationActionKind;
   /** Board id, upload name or user id, by the action's kind. */
@@ -1459,8 +1476,8 @@ export interface ModerationItem {
   status: ModerationItemStatus;
   boardId: string | null;
   boardTitle: string;
-  /** What it is about (appeals against a suspension: the account, `user`). */
-  target: { kind: ReportTargetKind | 'user'; id?: string };
+  /** What it is about (appeals against a suspension: the account, `user`; a community listing: `listing`). */
+  target: { kind: ReportTargetKind | 'user' | 'listing'; id?: string };
   reason: ReportReason | null;
   /** The reporter's note, or the appeal's message. */
   message: string;
@@ -1473,6 +1490,16 @@ export interface ModerationItem {
   resolutionNote: string;
   /** Live state of the board right now (null when it no longer exists). */
   board: ModeratedBoard | null;
+  /** A community listing it is about, as it is now (null when withdrawn or not about one). */
+  listing: ModeratedListing | null;
+}
+export interface ModeratedListing {
+  id: string;
+  name: string;
+  status: 'pending' | 'approved' | 'rejected' | 'removed';
+  featured: boolean;
+  website: string;
+  submitter: ModeratedUser | null;
 }
 export interface ModeratedBoard {
   id: string;
@@ -1628,6 +1655,12 @@ export const AUDIT_ACTIONS = {
   'moderation.upload.download': 'A Freero operator downloaded a file to review it (moderation)',
   'moderation.user.suspend': 'Freero suspended an account (moderation)',
   'moderation.user.restore': 'Freero lifted an account suspension (moderation)',
+  'moderation.listing.approve': 'Freero approved a community listing (moderation)',
+  'moderation.listing.reject': 'Freero declined a community listing (moderation)',
+  'moderation.listing.remove': 'Freero removed a community listing (moderation)',
+  'moderation.listing.restore': 'Freero restored a community listing (moderation)',
+  'moderation.listing.feature': 'Freero featured a community listing (moderation)',
+  'moderation.listing.unfeature': 'Freero stopped featuring a community listing (moderation)',
   // Single sign-on (modules/sso).
   'sso.domain_added': 'Added a domain for single sign-on',
   'sso.domain_verified': 'Verified a domain (DNS)',

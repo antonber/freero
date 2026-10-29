@@ -16,3 +16,4 @@ export * from './walkthroughs';
 export * from './decisions';
 export * from './docs';
 export * from './controlRoom';
+export * from './integrations';
