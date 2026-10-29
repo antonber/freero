@@ -238,9 +238,9 @@ workflows. For Freero, every row here needs a model provider that the operator o
 | Copy as image | Put the selection on the clipboard as a picture | Have | — | P1 | — |
 | CSV export | Text of stickies and cards as rows | Partial: tables export CSV; stickies and cards don't (KAI-136) | S | P2 | parity |
 | CSV / spreadsheet import | Rows become stickies or cards | Partial: spreadsheet paste fills tables, multi-line text becomes stickies; no rows-to-cards import (KAI-136) | S | P2 | parity |
-| Board backup and restore | Download a full-fidelity board file and restore it later or elsewhere | Missing (operators can back up the whole database; KAI-137) | M | P2 | 4 |
-| Diagram import | Bring in Visio, draw.io or Lucid diagrams as editable shapes | Missing (draw.io first: KAI-138) | L | P3 | parity |
-| Import from other whiteboards | Bring boards over from Miro, Mural, Excalidraw and similar tools | Missing (KAI-138) | L | P2 | parity |
+| Board backup and restore | Download a full-fidelity board file and restore it later or elsewhere | Done: a `.freero` file (content, comments, files; layers and the downloads policy respected) restored as a new board on any Freero (KAI-137) | M | P2 | 4 |
+| Diagram import | Bring in Visio, draw.io or Lucid diagrams as editable shapes | Partial: draw.io (KAI-138); Visio and Lucid not yet | L | P3 | parity |
+| Import from other whiteboards | Bring boards over from Miro, Mural, Excalidraw and similar tools | Partial: Excalidraw (KAI-138); Miro through the person's own token is KAI-261 | L | P2 | parity |
 | Print | Print the board or its frames | Partial: through PDF export only | S | P3 | parity |
 
 ## 9. Integrations, developer platform and embeds
@@ -307,7 +307,7 @@ workflows. For Freero, every row here needs a model provider that the operator o
 | Transport and app hardening | TLS, security headers, rate limits, upload quotas | Have (CSP and HSTS, per-route rate limits, upload and board quotas, TLS through the Caddy deploy config) | — | P1 | — |
 | Backups and disaster recovery | Operator backups and restores of the database and files | Have (`scripts/backup.sh`, restore runbook in `docs/operations.md`, bucket versioning for files) | — | P1 | — |
 | Horizontal realtime scale | Many app instances share board updates | Have (Redis fan-out, append-only update log with snapshots) | — | P1 | — |
-| Encryption at rest | Stored data encrypted | Partial: depends on the Postgres and S3 provider; sign-in secrets are sealed by the app (KAI-143) | S | P2 | 1 |
+| Encryption at rest | Stored data encrypted | Done: S3 server-side encryption (`S3_SSE`), encrypted database backups, every stored credential sealed or hashed by the app, a documented baseline for database storage encryption (KAI-143) | S | P2 | 1 |
 | SSO | SAML 2.0 / OIDC per workspace, verified domains, enforced SSO | Missing (KAI-45) | L | P2 | 4 |
 | SCIM provisioning | Create and remove users automatically from the identity provider | Missing (KAI-46) | L | P3 | 4 |
 | Admin console | Manage members, roles, security settings and usage | Have (*in review*, KAI-47: members with two-step status and deactivation, security and retention settings, sharing policies, usage, audit log) | L | P2 | 4 |
