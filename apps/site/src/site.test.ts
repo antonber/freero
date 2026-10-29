@@ -8,7 +8,7 @@ import { buildSite, SITE_PREFIXES } from './build';
 import { defineComparison, type ComparisonDef } from './lib/compare';
 import type { PageDef } from './lib/define';
 import { DISALLOWED } from './lib/seo';
-import { APP, ORIGIN } from './lib/site';
+import { APP, docsUrl, ORIGIN } from './lib/site';
 
 const HOST = 'https://whiteboard.example.com';
 let dist = '';
@@ -175,6 +175,39 @@ describe('pages work without JavaScript', () => {
         if (hash) expect(page.includes(`id="${hash}"`), `${p} links to missing anchor ${href}`).toBe(true);
       }
     }
+  });
+});
+
+describe('links people follow', () => {
+  const hrefsOf = (doc: string) => attr(doc, /<a [^>]*href="([^"]+)"/g);
+  const local = (href: string) => (href.startsWith(HOST) ? href.slice(HOST.length) || '/' : href).split('#')[0];
+
+  it('every indexable page can be reached by following links from the home page, so none is an orphan', () => {
+    const seen = new Set<string>(['/']);
+    const queue = ['/'];
+    while (queue.length) {
+      for (const href of hrefsOf(html.get(queue.shift()!)!)) {
+        const target = local(href);
+        const page = pages.find((p) => p.path === target);
+        if (!page || page.index === false || seen.has(target)) continue;
+        seen.add(target);
+        queue.push(target);
+      }
+    }
+    for (const p of indexable()) expect(seen.has(p.path), `${p.path} is linked from no page reachable from /`).toBe(true);
+  });
+
+  it('a link into the source repository (a comparison’s Freero citation, a guide) names a file that still exists', () => {
+    const prefix = docsUrl('');
+    const repoRoot = path.resolve(__dirname, '../../..');
+    let checked = 0;
+    for (const [p, doc] of html)
+      for (const href of hrefsOf(doc).filter((h) => h.startsWith(prefix))) {
+        const file = href.slice(prefix.length).split('#')[0];
+        expect(fs.existsSync(path.join(repoRoot, file)), `${p} cites ${file}, which isn’t in the repository`).toBe(true);
+        checked++;
+      }
+    expect(checked).toBeGreaterThan(0);
   });
 });
 

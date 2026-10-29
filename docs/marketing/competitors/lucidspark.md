@@ -134,7 +134,7 @@ edition; the FedRAMP "GovSuite" is a separate hosted offering, not self-hosted [
    and staff have said its REST API can't modify existing document contents [S7].
 7. **SSO, SCIM and audit log on every install.** (`docs/configuration.md`, `ARCHITECTURE.md`) vs
    Enterprise / Enterprise Shield at Lucid [S3][S8].
-8. **Edit-capable guests without an account, free.** (`ARCHITECTURE.md` "Guests: visitors without an
+8. **Guests without an account, free** (view and comment; at most commenter, `docs/parity.md` §11). (`ARCHITECTURE.md` "Guests: visitors without an
    account") vs Lucidspark guest collaborator links on Team and Enterprise only [S18].
 
 ## 9. Suggested comparison table

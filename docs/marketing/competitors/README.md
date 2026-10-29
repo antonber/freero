@@ -92,11 +92,11 @@ similar). The ranking below weighs three things:
   - `LICENSE`, `README.md`, `docs/deployment.md`
   - `ARCHITECTURE.md`
 
-  **Don't use `docs/parity.md` statuses.** Several of its rows are stale: it still marks the MCP
-  server, tracker sync, SSO, SCIM, the timeline, guests and media upload as Missing, although all of
-  them have shipped. Only §13 (no plan gates) and the §7 AI gaps are current. `README.md` still says
-  "13 original templates"; the catalog has 73 (`apps/web/src/features/templates/lib/catalog/index.ts`).
-  Both docs should be refreshed before the pages go live.
+  `docs/parity.md` has since been refreshed and is current (checked 2026-10-28 when the first pages
+  were built). Corrections to the sheets: the catalog has **74** templates, not 73 (`README.md` and
+  parity agree); guests without an account can **view and comment, not edit** (parity §11
+  "Anonymous visitors": at most commenter); and Freero's live board inside Claude and ChatGPT
+  (MCP Apps) has shipped (parity §9).
 - **Hosted Freero is unconfirmed.** `docs/mcp.md` mentions "the hosted service", but no sheet claims
   a hosted Freero or a price for one. Until it exists, "free" means no licence fee for software you
   run yourself. Say "no licence fees" or "free and self-hostable", not "costs $0", because

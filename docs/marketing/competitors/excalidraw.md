@@ -121,7 +121,7 @@ From the Excalidraw+ pricing page [3], checked 2026-10-28. Prices are in USD.
   import and wireframe-to-code [3]. Freero's AI is off until an operator configures a model, and its AI
   actions don't include wireframe-to-code (`docs/ai.md`).
 - **MCP presence in chat clients:** an official MCP App that renders diagrams inside Claude and other
-  MCP Apps clients [9][10]. Freero's in-chat live boards are planned, not shipped.
+  MCP Apps clients [9][10]. Freero also shows a live board inside Claude and ChatGPT (MCP Apps, `docs/parity.md` §9); Excalidraw's App is in Anthropic's directory.
 - **Certification:** SOC 2 for Excalidraw+ [3][16]. Freero has none.
 - **Shape libraries:** a large community catalog of shape libraries (libraries.excalidraw.com; no
   total count published) [19].

@@ -841,7 +841,11 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
 - **Comparisons** (`/vs/<slug>`, `src/lib/compare.tsx` `defineComparison`): every competitor cell
   names its sources, every source its check date; `published: false` pages are `noindex`, out of
   the sitemap and linked from nowhere, and a page can't be published while a competitor claim is
-  unverified or unsourced (the build throws). Facts come from `docs/marketing/competitors/` only.
+  unverified or unsourced (the build throws). Facts come from `docs/marketing/competitors/` only;
+  prose sections (a retirement timeline, moving over) cite sources through the same numbering, and
+  the site tests check that every Freero `[docs]` link names a file in the repo. `/vs` lists the
+  published comparisons, found from the build's pages (a page body receives `{ pages }`), and the
+  footer links it.
 - **One build, any deployment.** Pages are built with the placeholder origin
   `https://origin.freero.invalid`; `modules/site` swaps in `PUBLIC_URL` when it serves them (once
   per origin, cached), so the Docker image is the same everywhere. The build writes
