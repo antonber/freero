@@ -1,5 +1,5 @@
 import { memo, type MouseEvent, type PointerEvent } from 'react';
-import { ArrowUpRight, Folder, LayoutDashboard, LayoutTemplate, Link2, Lock, Users } from 'lucide-react';
+import { ArrowUpRight, CirclePlay, Folder, LayoutDashboard, LayoutTemplate, Link2, Lock, Stamp, Ticket, Users } from 'lucide-react';
 import { parseObjectUri, type ObjectLinkElement, type ObjectRef, type ObjectSummary } from '@freero/shared';
 import { defineElement, describeElementType, useEditor, useIsExporting, type Editor, type ElementRenderProps, type IconComponent, type NewElement } from '@engine';
 import { pastedObject } from './lib/address';
@@ -9,8 +9,8 @@ import './smartlink.css';
 const CHIP_W = 300;
 const CHIP_H = 64;
 
-const TYPE_ICON: Record<string, IconComponent> = { board: LayoutDashboard, template: LayoutTemplate, workspace: Users, project: Folder };
-const TYPE_NAME: Record<string, string> = { board: 'Board', element: 'Item', template: 'Template', workspace: 'Workspace', project: 'Project' };
+const TYPE_ICON: Record<string, IconComponent> = { board: LayoutDashboard, template: LayoutTemplate, workspace: Users, project: Folder, issue: Ticket, walkthrough: CirclePlay, decision: Stamp };
+const TYPE_NAME: Record<string, string> = { board: 'Board', element: 'Item', template: 'Template', workspace: 'Workspace', project: 'Project', issue: 'Issue', walkthrough: 'Walkthrough', decision: 'Decision' };
 
 const stop = (e: MouseEvent | PointerEvent) => e.stopPropagation();
 
@@ -61,6 +61,10 @@ const ObjectLinkView = memo(function ObjectLinkView({ element: el }: ElementRend
       Icon = kind.icon;
       title = o.title || kind.one;
       meta = o.board ? `${kind.one} on ${o.board.title}` : kind.one;
+    } else if ((o.type === 'decision' || o.type === 'walkthrough') && o.text) {
+      // "Frozen 28 Oct 2026 · frame “Q3”" / "Walkthrough · 2:13 · 4 views", on its board.
+      title = o.title;
+      meta = o.board ? `${o.text} · ${o.board.title}` : o.text;
     } else {
       title = o.title;
       meta = TYPE_NAME[o.type];

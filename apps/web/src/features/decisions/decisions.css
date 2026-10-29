@@ -1,0 +1,111 @@
+/* Decision snapshots (KAI-161): the freeze dialog and the board's decisions in the dock. */
+.fr-decisions-create {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.fr-decisions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 12px 16px;
+}
+
+.fr-decisions__head {
+  padding: 8px 0 0 16px;
+}
+
+.fr-decisions__title {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.fr-decisions__empty {
+  margin: 0;
+  color: var(--fr-ink-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.fr-decisions__items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fr-decisions__item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: var(--fr-radius);
+}
+
+.fr-decisions__item:hover {
+  background: var(--fr-hover);
+}
+
+.fr-decisions__open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px;
+  border: 0;
+  border-radius: var(--fr-radius);
+  background: transparent;
+  color: var(--fr-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fr-decisions__open:focus-visible {
+  outline: none;
+  box-shadow: var(--fr-focus-ring);
+}
+
+.fr-decisions__text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  color: var(--fr-ink);
+}
+
+.fr-decisions__name {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-decisions__meta {
+  color: var(--fr-ink-3);
+  font-size: 12px;
+}
+
+.fr-decisions__note {
+  display: -webkit-box;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--fr-ink-2);
+  font-size: 12px;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.fr-decisions__go {
+  flex: none;
+  margin-top: 2px;
+  color: var(--fr-ink-3);
+}

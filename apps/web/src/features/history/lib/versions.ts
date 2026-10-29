@@ -106,13 +106,14 @@ export async function restoreVersion(editor: Editor, v: BoardVersion, mode: 'res
 // ---------------------------------------------------------------------------------------------
 
 export function versionTitle(v: BoardVersion): string {
-  if (v.kind === 'named' && v.name) return v.name;
+  if ((v.kind === 'named' || v.kind === 'decision') && v.name) return v.name;
   if (v.kind === 'before-restore') return 'Before a restore';
   return 'Autosaved';
 }
 
 export function versionByline(v: BoardVersion): string | null {
   if (!v.createdBy) return null;
+  if (v.kind === 'decision') return `Decision frozen by ${v.createdBy.name}`;
   return v.kind === 'before-restore' ? `${v.createdBy.name} restored an earlier version` : `Named by ${v.createdBy.name}`;
 }
 
