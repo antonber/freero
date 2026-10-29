@@ -30,6 +30,7 @@ const message = (boardId: string, authorId: string, text: string, more: Partial<
   text,
   previousText: null,
   participantIds: [],
+  layer: 'shared',
   ...more,
 });
 
@@ -55,6 +56,16 @@ it('a mention notifies the mentioned person once with a link to the thread — n
   expect(got[0].title).toContain('Roadmap');
   expect(await inbox(ann)).toHaveLength(0);
   expect(await inbox(outsider)).toHaveLength(0);
+});
+
+it('a thread on an item in a hidden frame notifies only owners and editors; one on a private draft notifies nobody (KAI-234)', async () => {
+  const [ann, bob, cy] = [await person('Ann'), await person('Bob'), await person('Cy')];
+  const board = await createBoard(ann.id, 'Reorg', '', 'commenter'); // Bob and Cy: commenters by the link
+  await onCommentMessage(message(board.id, cy.id, `${mentionToken(ann.id)} ${mentionToken(bob.id)} see the numbers`, { layer: 'editors' }));
+  await onCommentMessage(message(board.id, cy.id, `reply in the hidden thread`, { layer: 'editors', participantIds: [ann.id, bob.id] }));
+  await onCommentMessage(message(board.id, cy.id, `draft note for ${mentionToken(ann.id)}`, { layer: 'private', participantIds: [ann.id] }));
+  expect((await inbox(ann)).map((x) => x.type).sort()).toEqual(['comment.mention', 'comment.reply']);
+  expect(await inbox(bob)).toHaveLength(0);
 });
 
 it('a reply notifies everyone else in the thread; someone it also mentions gets just the mention, and editing a message never re-notifies replies', async () => {
