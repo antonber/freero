@@ -425,6 +425,19 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   members name the kanban / pool as `frameId`, and the container's own `arrange` settles them on
   insert), icons from `lucide-react` components (`icon(…)`, drawing copied into the element), and
   connector ends at a spot on an element (`{ id, at: { u, v } }`, e.g. a message on a lifeline).
+- **New built-in templates are data, not code** (`features/templates/lib/specs/<area>.ts`, format in
+  `lib/spec/types.ts`). A spec names an archetype (`matrix`, `columns`, `kanban`, `canvas`,
+  `timeline`, `funnel`, `journey`, `tree`, `prompts`, `table`, `clusters`, `hub`, `flow`) and gives
+  its content: section titles, a guiding prompt each, realistic example notes and tones by meaning
+  (never coordinates or hex colours). `lib/spec/archetypes.ts` lays specs out with the `Kit` and
+  returns the same `BuiltTemplate`, so insert, preview, search and the outline treat both kinds
+  alike; hand-coded templates stay for layouts no archetype fits (sequence diagrams, ERDs…). After
+  adding or editing a spec run `npm run templates:index`: it writes `lib/specs/index.ts`, what the
+  picker lists and searches plus one lazy loader per file, so spec content loads per file on first
+  preview or insert (`TemplateDef.load`; insert through `addTemplate`). `validateSpec` (run over
+  every spec by the tests) checks ids, categories, counts, text lengths and filler; the tests also
+  fail while the index is stale or a note spills out of its section. A layout no archetype covers
+  is a new archetype (with its validation limits), not a one-off spec.
 
 Elements, geometry and text (all optional on `ElementDefinition` unless noted):
 - **Reads inside `editor.transact` see its earlier writes** (`getElements()`, `getElement()`,

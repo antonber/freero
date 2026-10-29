@@ -10,7 +10,7 @@ export const agentControlRoom: TemplateDef = {
   id: 'agent-control-room',
   name: 'Agent control room',
   description: 'Watch and steer an AI agent: it posts its plan, status and tasks here; you move cards and comment to redirect it.',
-  categories: ['engineering', 'planning'],
+  categories: ['engineering', 'ai', 'planning'],
   keywords: ['agent', 'ai agent', 'control room', 'mcp', 'automation', 'claude', 'chatgpt', 'copilot', 'status', 'blockers', 'oversight'],
   build(newId) {
     const k = new Kit(newId);

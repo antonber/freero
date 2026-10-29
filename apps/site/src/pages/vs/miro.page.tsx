@@ -114,7 +114,7 @@ export default defineComparison({
     {
       capability: 'Templates',
       competitor: { verdict: 'yes', note: '7,000+ in its community library', sources: ['S22'] },
-      freero: { verdict: 'partial', note: '74 originals, no community gallery', ref: 'README.md' },
+      freero: { verdict: 'partial', note: '180 originals, no community gallery', ref: 'README.md' },
     },
     {
       capability: 'App marketplace',

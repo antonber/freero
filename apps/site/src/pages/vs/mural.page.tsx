@@ -108,7 +108,7 @@ export default defineComparison({
     {
       capability: 'Templates',
       competitor: { verdict: 'yes', note: '“hundreds”, plus LUMA methods', sources: ['S14', 'S1'] },
-      freero: { verdict: 'partial', note: '74 originals', ref: 'README.md' },
+      freero: { verdict: 'partial', note: '180 originals', ref: 'README.md' },
     },
     {
       capability: 'Visitors without an account',
