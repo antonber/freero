@@ -14,7 +14,7 @@ diagram and run workshops together.
   "bring everyone to me", emoji reactions, comment threads, owner/editor/commenter/viewer roles,
   share by invite or link.
 - **Facilitation** — voting sessions, a shared timer, presentation mode over frames.
-- **Templates & export** — 13 original templates; export PNG/JPG/SVG, frames to PDF, copy as image.
+- **Templates & export** — 74 original templates in 10 categories; export PNG/JPG/SVG, frames to PDF, copy as image.
 - **Dashboard** — boards grid/list, search, filters, stars, live thumbnails, duplicate, sharing.
 
 ## Run it
