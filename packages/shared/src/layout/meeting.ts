@@ -526,6 +526,7 @@ export function parseMeetingNotes(source: string, opts: MeetingOptions = {}): Me
 // ---- the frame -------------------------------------------------------------------------------
 
 const PAD = 64;
+/** Between blocks: wider than the outline's proximity rule (at most 64), so each block reads as its own cluster. */
 const GAP = 120;
 const CARD_GAP = 12;
 
@@ -598,9 +599,9 @@ export function layoutMeeting(notes: MeetingNotes, opts: { speakers?: boolean },
     return { w: x - GAP + PAD, h };
   };
   const a = put(top, PAD);
-  const b = put(row, PAD + (a.h ? a.h + GAP / 2 : 0));
+  const b = put(row, PAD + (a.h ? a.h + GAP : 0));
   const w = Math.max(a.w, b.w, 480);
-  const h = PAD + (a.h ? a.h + GAP / 2 : 0) + b.h + PAD;
+  const h = PAD + (a.h ? a.h + GAP : 0) + b.h + PAD;
   const box = frame(frameId, { x: 0, y: 0, w, h }, clip(notes.title, 200));
   if (elements.length + 1 > LAYOUT_LIMITS.elements) throw new LayoutError(`At most ${LAYOUT_LIMITS.elements} items per structure`);
   const parts = row.flatMap((r) => r.parts ?? []);

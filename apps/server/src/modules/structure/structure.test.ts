@@ -369,6 +369,8 @@ it('meeting notes land as ONE frame that the outline (what agents read) shows as
     '',
     'Date: 2026-10-29',
     '',
+    'We checked whether the launch can go ahead next week, and what is still missing before it does.',
+    '',
     '## Risks',
     '- Docs are late',
     '- Support has no macros yet',
