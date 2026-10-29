@@ -54,6 +54,9 @@ export { onVersionRestored, type VersionRestoredEvent } from './history';
 // Version history (stored snapshots of a board's document): list them, read one's full Yjs state.
 // The REST API for it is this module's routes.ts (history.ts); pruning: retention.ts.
 export { listSnapshots as listBoardSnapshots, loadSnapshot as loadBoardSnapshot, type SnapshotInfo } from './docStore';
+// Decision snapshots (KAI-161): freeze the live board as a decision version, read one back, cut a
+// frame out of a frozen state, and read a state as everyone sees it (modules/decisions).
+export { freezeBoard, decisionVersion, releaseDecisionVersion, frameOnlyState, viewOfState, liveSharedState } from './decisions';
 // Data exports (modules/privacy): board content and the comments a person wrote.
 export { exportBoardContent, commentsWrittenBy, type BoardContentExport, type CommentThreadExport } from './dataExport';
 // Board content as saved, as every reader sees it (derived indexes read it from the outbox), and
