@@ -73,6 +73,7 @@ import { commentPeople, COMMENTS_COLLECTION, emitCommentMessages, hasCommentList
 import * as store from './docStore';
 import { effectiveAccess, guardSession, readFacilitation, revertForbiddenAdds, sameEffective } from './facilitation';
 import { guardVotes } from './votingRules';
+import { attributionOf, guardAttribution, type Attribution } from './attribution';
 import { guardServerCollections, prepareServerCollections, SERVER_COLLECTIONS } from './serverCollections';
 import { guardContentPlacement, placeElementContent, writeElementContent } from './elementContent';
 import { decideUpdate } from './filter';
@@ -127,6 +128,11 @@ const IDENTITY_TTL_MS = 5000;
 const MAX_QUEUED_BYTES = 16 * 1024 * 1024;
 /** An element removed from one doc this recently is not "added" when it lands in another (a move). */
 const MOVE_WINDOW_MS = 30_000;
+/**
+ * How long the attribution of a removed element is remembered (attribution.ts): an undo that brings
+ * it back within this time keeps its creator; later it reads as the undoer's.
+ */
+const ATTRIBUTION_WINDOW_MS = 60 * 60_000;
 
 /** Origin of the persisted state applied on load: not a change, so neither broadcast nor saved. */
 const LOAD_ORIGIN = Symbol('load');
@@ -276,6 +282,8 @@ class Room {
   private facilitatorTimer: NodeJS.Timeout | null = null;
   /** Element ids removed from one of this room's docs lately, by when (see MOVE_WINDOW_MS). */
   private removedAt = new Map<string, number>();
+  /** Attribution of elements removed lately (attribution.ts), oldest first. */
+  private removedAttribution = new Map<string, { at: number; attribution: Attribution }>();
 
   constructor(readonly id: string) {
     this.awareness = new awarenessProtocol.Awareness(this.doc);
@@ -526,6 +534,7 @@ class Room {
         fixed = guardVotes(tr, doc, this.doc, conn.userId);
         fixed = guardServerCollections(tr, doc) || fixed;
         if (addTypes) fixed = revertForbiddenAdds(tr, doc.getMap<unknown>(ELEMENTS), new Set(addTypes), (id) => this.existsElsewhere(doc, id)) > 0 || fixed;
+        fixed = guardAttribution(tr, doc.getMap<unknown>(ELEMENTS), conn.userId, (id) => this.knownAttribution(doc, id)) > 0 || fixed;
         if (name === EDITORS_LAYER) {
           const g = guardSuggestionWrites(tr, doc, conn.userId);
           fixed = g.reverted > 0 || fixed;
@@ -539,11 +548,33 @@ class Room {
 
   // ---------------------------------------------------------------- facilitation (facilitation.ts)
 
-  private noteRemoved(keys: Map<string, { action: string }>): void {
+  private noteRemoved(keys: Map<string, { action: string; oldValue?: unknown }>): void {
     const now = Date.now();
-    for (const [id, { action }] of keys) if (action === 'delete') this.removedAt.set(id, now);
+    for (const [id, { action, oldValue }] of keys) {
+      if (action !== 'delete') continue;
+      this.removedAt.set(id, now);
+      const attribution = attributionOf(oldValue);
+      if (!attribution) continue;
+      this.removedAttribution.delete(id);
+      this.removedAttribution.set(id, { at: now, attribution });
+    }
     if (this.removedAt.size > 2000)
       for (const [id, at] of this.removedAt) if (now - at > MOVE_WINDOW_MS) this.removedAt.delete(id);
+    for (const [id, { at }] of this.removedAttribution) {
+      if (now - at <= ATTRIBUTION_WINDOW_MS && this.removedAttribution.size <= 5000) break;
+      this.removedAttribution.delete(id);
+    }
+  }
+
+  /** The attribution the room holds for element `id` outside `doc`: a copy in another doc, or one removed lately. */
+  private knownAttribution(doc: Y.Doc, id: string): Attribution | undefined {
+    for (const d of [this.doc, ...[...this.layers.values()].map((l) => l.doc)]) {
+      if (d === doc) continue;
+      const v = d.getMap<unknown>(ELEMENTS).get(id);
+      if (v !== undefined) return attributionOf(v);
+    }
+    const removed = this.removedAttribution.get(id);
+    return removed && Date.now() - removed.at <= ATTRIBUTION_WINDOW_MS ? removed.attribution : undefined;
   }
 
   /** Is element `id` in one of this room's docs other than `doc`, or was it removed from one lately? */
@@ -892,6 +923,8 @@ class Room {
         fixed = guardVotes(tr, this.doc, this.doc, conn.userId) || fixed;
         fixed = guardServerCollections(tr, this.doc) || fixed;
         if (addTypes) fixed = revertForbiddenAdds(tr, this.doc.getMap<unknown>(ELEMENTS), new Set(addTypes), (id) => this.existsElsewhere(this.doc, id)) > 0 || fixed;
+        // Who made an element is the server's to say (attribution.ts, KAI-222).
+        fixed = guardAttribution(tr, this.doc.getMap<unknown>(ELEMENTS), conn.userId, (id) => this.knownAttribution(this.doc, id)) > 0 || fixed;
         // Element content written here for an element in a layer goes to that layer (elementContent.ts).
         const homes = { editors: this.layers.get(EDITORS_LAYER)?.doc, own: this.layers.get(privateLayerOf(conn.userId))?.doc };
         fixed = guardContentPlacement(tr, this.doc, homes, SERVER_ORIGIN) > 0 || fixed;

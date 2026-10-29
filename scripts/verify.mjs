@@ -6488,6 +6488,22 @@ async function collabChecks() {
       assert(results(v).get(poll.id)?.respondents === 1 && !results(v).has('forged'), 'a forged result reached the viewer');
     });
 
+    await check('a socket can’t claim who made an item (KAI-222): a sticky added as the owner "through Claude" reads as its sender’s on every client (no client ever sees the claim), and an item’s creator can’t be rewritten', async () => {
+      const claims = [];
+      els(v).observe((ev) => ev.changes.keys.forEach((_, k) => claims.push(els(v).get(k))));
+      const via = { kind: 'oauth', id: 'forged-app', name: 'Claude' };
+      els(e).set('claimed', { id: 'claimed', type: 'sticky', x: 0, y: 600, w: 100, h: 100, rotation: 0, z: 9, text: 'I am the owner', color: 'yellow', createdBy: O.id, createdVia: via, createdAt: 1, updatedAt: 1 });
+      await settled(e, [v]);
+      await waitFor(() => els(e).get('claimed')?.createdBy === E.id && !els(e).get('claimed').createdVia, 5000, 'the sender to converge to its own attribution');
+      const seen = els(v).get('claimed');
+      assert(seen?.createdBy === E.id && !('createdVia' in seen) && seen.text === 'I am the owner', `the viewer got ${JSON.stringify(seen)}`);
+      assert(!claims.some((c) => c?.createdBy === O.id || c?.createdVia), 'the forged claim reached the viewer');
+      els(e).set(poll.id, { ...els(e).get(poll.id), createdBy: O.id, createdVia: via, createdAt: 2 });
+      await settled(e, [v]);
+      await waitFor(() => els(e).get(poll.id)?.createdBy === E.id && !els(e).get(poll.id).createdVia, 5000, 'the rewrite to be undone on the sender');
+      assert(els(v).get(poll.id).createdBy === E.id && els(v).get(poll.id).createdAt === poll.createdAt, JSON.stringify(els(v).get(poll.id)));
+    });
+
     await check('sealed results stay off every client until an editor reveals them; a viewer can’t reveal', async () => {
       els(e).set('poll2', { ...poll, id: 'poll2', results: 'reveal' });
       await waitFor(() => els(v).has('poll2'), 5000, 'the sealed poll');

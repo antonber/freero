@@ -1343,6 +1343,12 @@ audit and admin controls are the same code.
   `showAgentPresence` shows the app for a few seconds as a server-published presence (its own user
   id, cursor and selection on what it wrote; sockets can't publish `agent`). Each credential has its
   own write budget (`RATE_LIMIT_AGENT_WRITE`), apart from the person's editing.
+  Sockets can't claim attribution either (KAI-222, `realtime/attribution.ts`): inside the
+  transaction that applies a socket's update (shared doc and layers), an element it ADDS gets
+  `createdBy` = the socket's user and no `createdVia`, unless the room already knows the element
+  (in another of its docs — a move into a hidden frame or private mode — or removed within the last
+  hour — an undo), which keeps the attribution it had; an element it CHANGES keeps its `createdBy`,
+  `createdVia` and `createdAt`. The sender is sent the correction (like the facilitation guards).
 - **Reads follow the downloads policy (KAI-197).** The outline, items and comments are a
   machine-readable copy of the board, so boards' `requireDownload` (the one check exports,
   duplicates and templates use) refuses them with 403 `downloads_restricted` and records
