@@ -143,8 +143,9 @@ person ticks them on the consent screen.
 4. **Use cases:** above.
 5. **Company:** Kaiten Gaming LLC; website `<HOST>/`; primary contact for review updates:
    *(not decided — a monitored address at the company)*.
-6. **Authentication:** Required (OAuth). Dynamic client registration: leave the client ID / secret
-   empty (Claude registers itself at `<HOST>/api/oauth/register`; callbacks
+6. **Authentication:** Required (OAuth). Leave the client ID / secret empty: Claude identifies
+   itself with a client ID metadata document, or registers itself at `<HOST>/api/oauth/register`
+   (dynamic client registration); both are served (docs/mcp.md "How sign-in works"; callbacks
    `https://claude.ai/api/mcp/auth_callback` and `https://claude.com/api/mcp/auth_callback` are
    accepted).
 7. **Data handling:** the API is **our own** (first party: the MCP server calls Freero's own
@@ -236,7 +237,8 @@ server. Screenshots are no longer shown in the directory; example prompts are. D
 ```
 
 `mcp.json`: `{ "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json", "mcpServers": { "freero": { "type": "streamable-http", "url": "<HOST>/mcp" } } }`.
-Authentication: OAuth with **dynamic client registration** (`dcr`), discovered from
+Authentication: OAuth, registration method `cimd` (client ID metadata document; falls back to
+`dcr`, which Freero also serves), discovered from
 `<HOST>/.well-known/oauth-protected-resource/mcp`; no client secret anywhere.
 
 **Domain verification:** the portal shows a token; set `OPENAI_APPS_CHALLENGE=<token>` on the
