@@ -19,6 +19,7 @@ import { changeBoard, initBoardDoc, readBoardView } from '../realtime/index';
 import { SEARCH_CONSUMER, searchConsumer } from '../search/index';
 import { ENVELOPE_TAG } from './content';
 import mcpRoutes, { mountPath } from './routes';
+import { TOOLS } from './tools';
 
 let server: http.Server;
 let url: URL;
@@ -263,4 +264,76 @@ it('update_items moves a card into a kanban column named by its title — no coo
   expect({ frameId: c.frameId, column, status: c.status }).toEqual({ frameId: kanbanId, column: 2, status: 'done' });
   expect(c.y + c.h).toBeLessThanOrEqual(k.y + k.h);
   await client.close();
+});
+
+it('import_meeting_notes from a connection that may only suggest proposes the meeting and leaves the board as it was; with write it lands one frame and names the cards’ ids', async () => {
+  const boardId = await boardWith('Weekly', [sticky('a', 'Keep me', 0)]);
+  const before = await idsOn(boardId);
+  const text = '# Weekly sync\n\n## Decisions\n- Freeze on Friday\n\n## Action items\n- [ ] Sam to send the notes by 2026-11-02\n';
+  const suggester = await connect(['boards:read', 'boards:suggest']);
+  const proposed = (await suggester.callTool({ name: 'import_meeting_notes', arguments: { boardId, text } })) as CallToolResult;
+  expect(proposed.isError).toBeFalsy();
+  expect((proposed.structuredContent as { target: string; groupId: string | null }).target).toBe('suggestions');
+  expect(await idsOn(boardId)).toEqual(before);
+  await suggester.close();
+
+  const writer = await connect(['boards:read', 'boards:write']);
+  const res = (await writer.callTool({ name: 'import_meeting_notes', arguments: { boardId, text } })) as CallToolResult;
+  expect(res.isError).toBeFalsy();
+  const out = res.structuredContent as { frameId: string; blocks: Array<{ titleId: string; ids: string[] }> };
+  const byId = new Map((await readBoardView(boardId, { userId: ownerId, role: 'owner' })).elements.map((e) => [e.el.id, e.el as BoardElement & { title?: string; dueDate?: string }]));
+  expect(byId.get(out.frameId)).toMatchObject({ type: 'frame', title: 'Weekly sync' });
+  const [decisions, actions] = out.blocks;
+  expect(decisions.ids.map((id) => byId.get(id)?.type)).toEqual(['sticky']);
+  expect(actions.ids.map((id) => [byId.get(id)?.type, byId.get(id)?.dueDate, byId.get(id)?.frameId])).toEqual([['card', '2026-11-02', out.frameId]]);
+  await writer.close();
+});
+
+it('no tool, prompt or resource reaches a directory without a title and explicit read-only / destructive / open-world hints, and none claims to be read-only while destructive', async () => {
+  // Every tool the server defines, including those offered only when a capability is configured
+  // and the live view's own button (share_board).
+  for (const t of TOOLS) {
+    expect(t.title.trim(), t.name).not.toBe('');
+    expect(t.name.length, t.name).toBeLessThanOrEqual(64);
+    for (const hint of ['readOnlyHint', 'destructiveHint', 'openWorldHint'] as const) expect(typeof t.annotations[hint], `${t.name} ${hint}`).toBe('boolean');
+    if (t.annotations.readOnlyHint) expect(t.annotations.destructiveHint, `${t.name} is read-only and destructive`).toBe(false);
+  }
+  // And as a client receives them (what the directory portals sync).
+  const client = await connect(['boards:read', 'boards:suggest', 'boards:write', 'comments:write']);
+  const { tools } = await client.listTools();
+  expect(tools.length).toBeGreaterThan(10);
+  for (const t of tools) {
+    expect(t.title && t.annotations?.title, t.name).toBeTruthy();
+    for (const hint of ['readOnlyHint', 'destructiveHint', 'openWorldHint'] as const) expect(typeof t.annotations?.[hint], `${t.name} ${hint} on the wire`).toBe('boolean');
+  }
+  for (const p of (await client.listPrompts()).prompts) expect(p.title, p.name).toBeTruthy();
+  for (const r of (await client.listResources()).resources) expect(r.title, r.uri).toBeTruthy();
+  for (const r of (await client.listResourceTemplates()).resourceTemplates) expect(r.title, r.uriTemplate).toBeTruthy();
+  await client.close();
+});
+
+it('a page that rebinds its own name to this server, or an opaque (null) origin, is refused before any token is looked at; https pages and non-browser clients get through', async () => {
+  const post = (headers: Record<string, string>) =>
+    new Promise<number>((resolve, reject) => {
+      const r = http.request(
+        { host: '127.0.0.1', port: url.port, path: '/mcp', method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...headers } },
+        (res) => {
+          res.resume();
+          resolve(res.statusCode ?? 0);
+        },
+      );
+      r.on('error', reject);
+      r.end(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping', params: {} }));
+    });
+  const { secret } = await createPersonalToken(ownerId, 'password', { name: 'origin check', scopes: ['boards:read'], expiresInDays: 1 });
+  const auth = { authorization: `Bearer ${secret}` };
+  const local = `127.0.0.1:${url.port}`;
+  // DNS rebinding: the browser sends the attacker's own name as Host (and Origin).
+  expect(await post({ ...auth, host: 'rebind.attacker.test', origin: 'http://rebind.attacker.test' })).toBe(403);
+  expect(await post({ ...auth, host: local, origin: 'null' })).toBe(403);
+  expect(await post({ ...auth, host: local, origin: 'http://192.168.1.20:8080' })).toBe(403);
+  // Refused before authentication: without a token it is still 403, never a 401 that starts a sign-in.
+  expect(await post({ host: 'rebind.attacker.test' })).toBe(403);
+  expect(await post({ ...auth, host: 'freero.test', origin: 'https://inspector.example' })).not.toBe(403);
+  expect(await post({ ...auth, host: local })).not.toBe(403);
 });

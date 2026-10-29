@@ -1,0 +1,19 @@
+Support sync
+
+Rosa Alvarez  0:00
+Morning everyone. Let's go through the queue first, it grew a lot over the weekend.
+
+Dev Patel  0:12
+Most of it is the export bug. I counted about forty tickets that are really the same problem.
+
+Rosa Alvarez  0:31
+Okay. Decision: we tag all of them with the export label and answer them with one macro.
+
+Kim Sato  0:45
+I can write the macro today. Action item: Kim writes the export macro.
+
+Dev Patel  1:02
+And I'll ask the platform team when the fix ships, so the macro can say a date.
+
+Rosa Alvarez  1:20
+Great, that's it for the queue.

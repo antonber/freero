@@ -457,8 +457,8 @@
       "post": {
         "operationId": "insertStructure",
         "tags": ["items"],
-        "summary": "Lay out a structure (outline, mind map, clusters, graph, Mermaid, table …) on free space",
-        "description": "Owners and editors. Request and result: docs/board-outline.md \"Insert structure\". `target: \"preview\"` writes nothing and needs only boards:read. `target: \"suggestions\"` writes nothing to the board either: the result becomes one group of suggestions (`groupId`) for people who can edit to accept or reject, and needs only boards:suggest.",
+        "summary": "Lay out a structure (outline, mind map, clusters, graph, Mermaid, table, meeting notes …) on free space",
+        "description": "Owners and editors. Request and result: docs/board-outline.md \"Insert structure\". `target: \"preview\"` writes nothing and needs only boards:read. `target: \"suggestions\"` writes nothing to the board either: the result becomes one group of suggestions (`groupId`) for people who can edit to accept or reject, and needs only boards:suggest. `structure: { kind: \"meeting\", source }` puts meeting notes or a transcript (Markdown, text, WebVTT, SRT) on the board as one frame (the MCP import_meeting_notes).",
         "x-freero-scope": "boards:write",
         "security": [{ "bearer": ["boards:write"] }],
         "requestBody": {
@@ -690,6 +690,25 @@
             "description": "The changes and the next cursor",
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LaneFeedback" } } }
           },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/boards/{boardId}/trackers": {
+      "parameters": [{ "$ref": "#/components/parameters/BoardId" }],
+      "get": {
+        "operationId": "listTrackerConnections",
+        "tags": ["trackers"],
+        "summary": "The issue-tracker connections the person may use on this board",
+        "description": "The MCP tool `list_tracker_connections` over REST (#83): the team’s and the person’s own connections usable on this board — `name` is what `connection` takes on the import and the MCP `sync_to_tracker`, `defaultProject` what `project` defaults to. With `connection` (its name or id), also that connection’s `projects` (Jira project keys, Linear team keys, GitHub owner/repo), read from the tracker. Only owners and editors use trackers on a board: anyone else gets an empty list and a `note` saying why; with no connection, a `note` saying how to connect one. 400 when `connection` names none of them; 502 `tracker_refused` when the tracker refuses.",
+        "x-freero-scope": "boards:read",
+        "security": [{ "bearer": ["boards:read"] }],
+        "parameters": [{ "name": "connection", "in": "query", "required": false, "schema": { "type": "string", "maxLength": 200 }, "description": "A connection’s name or id: also list its projects" }],
+        "responses": {
+          "200": { "description": "The connections (and projects)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TrackerConnections" } } } },
           "400": { "$ref": "#/components/responses/BadRequest" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" },
@@ -1447,6 +1466,34 @@
           "column": { "type": "string", "maxLength": 200 },
           "newFrame": { "type": "string", "maxLength": 200 },
           "newKanban": { "type": "string", "maxLength": 200 }
+        }
+      },
+      "TrackerConnections": {
+        "type": "object",
+        "required": ["connections"],
+        "properties": {
+          "connections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "name", "provider", "scope", "site", "defaultProject", "status"],
+              "properties": {
+                "id": { "type": "string" },
+                "name": { "type": "string" },
+                "provider": { "type": "string", "enum": ["jira", "linear", "github"] },
+                "scope": { "type": "string", "enum": ["workspace", "personal"], "description": "The team’s connection, or the person’s own" },
+                "site": { "type": "string" },
+                "defaultProject": { "type": ["string", "null"] },
+                "status": { "type": "string", "enum": ["active", "error", "needs_auth"] }
+              }
+            }
+          },
+          "projects": {
+            "type": "array",
+            "description": "With `connection` only",
+            "items": { "type": "object", "required": ["key", "name"], "properties": { "key": { "type": "string" }, "name": { "type": "string" } } }
+          },
+          "note": { "type": "string", "description": "Why the list is empty, and what to do" }
         }
       },
       "TrackerImport": {

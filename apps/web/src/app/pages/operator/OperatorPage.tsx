@@ -2,11 +2,17 @@
 // and appeals, look at the reported board in a read-only snapshot, and act: turn a board's link
 // off, take a board down, remove an uploaded file, suspend an account, or undo any of these. Every
 // action is recorded on the server and its subject is emailed the statement written here.
+// "Listings" (#87): community submissions for Apps & agents, approved or declined here; live ones
+// can be featured or removed (and a removal appealed), with the same record and audit trail.
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
-import { ArrowLeft, Eye, FileX2, History, Link2Off, RefreshCw, Search, ShieldAlert, ShieldCheck, Trash2, UserX } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, Check, Eye, FileX2, History, Link2Off, RefreshCw, Search, ShieldAlert, ShieldCheck, Star, Trash2, UserX, X } from 'lucide-react';
 import {
+  INTEGRATION_CATEGORIES,
+  LISTING_SURFACES,
   REPORT_REASONS,
+  type ListingForReview,
+  type ListingStatus,
   type ModeratedBoard,
   type ModeratedUpload,
   type ModeratedUser,
@@ -33,9 +39,24 @@ const ACTION_LABEL: Record<ModerationActionKind, string> = {
   'upload.purge': 'Delete kept copy for good',
   'user.suspend': 'Suspend account',
   'user.restore': 'Lift suspension',
+  'listing.approve': 'Approve listing',
+  'listing.reject': 'Decline listing',
+  'listing.remove': 'Remove listing',
+  'listing.restore': 'Restore listing',
+  'listing.feature': 'Feature listing',
+  'listing.unfeature': 'Stop featuring',
 };
-/** Actions against someone: they get the statement and an appeal link. */
-const ADVERSE: ModerationActionKind[] = ['board.disable_link', 'board.take_down', 'board.delete', 'upload.remove', 'upload.purge', 'user.suspend'];
+/** Actions against someone: they get the statement (required) and, where it can be undone, an appeal link. */
+const ADVERSE: ModerationActionKind[] = ['board.disable_link', 'board.take_down', 'board.delete', 'upload.remove', 'upload.purge', 'user.suspend', 'listing.reject', 'listing.remove'];
+/** Reviews of a listing, not findings of abuse: no report reason to pick. */
+const NO_REASON: ModerationActionKind[] = ['listing.approve', 'listing.reject', 'listing.restore', 'listing.feature', 'listing.unfeature'];
+type View = 'open' | 'closed' | 'listings';
+const LISTING_STATUSES: Array<{ value: ListingStatus; label: string }> = [
+  { value: 'pending', label: 'Waiting for review' },
+  { value: 'approved', label: 'Live' },
+  { value: 'rejected', label: 'Declined' },
+  { value: 'removed', label: 'Removed' },
+];
 const reasonLabel = (r: ReportReason | null) => REPORT_REASONS.find((x) => x.id === r)?.label ?? '—';
 const message = (e: unknown) => (e instanceof ApiError ? e.message : 'Something went wrong. Try again.');
 
@@ -50,7 +71,12 @@ interface PendingAction {
 
 export function OperatorPage() {
   const [allowed, setAllowed] = useState<boolean | null>(null);
-  const [status, setStatus] = useState<'open' | 'closed'>('open');
+  const [params, setParams] = useSearchParams();
+  const view: View = params.get('view') === 'listings' ? 'listings' : params.get('view') === 'closed' ? 'closed' : 'open';
+  const setView = (v: View) => setParams(v === 'open' ? {} : { view: v }, { replace: true });
+  const status = view === 'closed' ? 'closed' : 'open';
+  const [listingStatus, setListingStatus] = useState<ListingStatus>('pending');
+  const [listings, setListings] = useState<ListingForReview[] | null>(null);
   const [items, setItems] = useState<ModerationItem[] | null>(null);
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [history, setHistory] = useState<string | null>(null);
@@ -65,6 +91,17 @@ export function OperatorPage() {
   }, []);
 
   const load = useCallback(() => {
+    if (view === 'listings') {
+      setListings(null);
+      api.moderationListings(listingStatus).then(
+        (r) => setListings(r.listings),
+        (e) => {
+          notify(message(e), 'error');
+          setListings([]);
+        },
+      );
+      return;
+    }
     setItems(null);
     api.moderationQueue(status).then(
       (r) => setItems(r.items),
@@ -73,7 +110,7 @@ export function OperatorPage() {
         setItems([]);
       },
     );
-  }, [status, notify]);
+  }, [view, status, listingStatus, notify]);
   useEffect(() => {
     if (allowed) load();
   }, [allowed, load]);
@@ -100,13 +137,14 @@ export function OperatorPage() {
         <h1 className="fr-op__title">
           <ShieldAlert size={18} aria-hidden /> Moderation
         </h1>
-        <SegmentedControl
+        <SegmentedControl<View>
           aria-label="Queue"
-          value={status}
-          onChange={setStatus}
+          value={view}
+          onChange={setView}
           options={[
             { value: 'open', label: 'Open' },
             { value: 'closed', label: 'Closed' },
+            { value: 'listings', label: 'Listings' },
           ]}
         />
         <Button variant="ghost" size="sm" icon={RefreshCw} onClick={load}>
@@ -114,6 +152,20 @@ export function OperatorPage() {
         </Button>
       </header>
       <div className="fr-op__body">
+        {view === 'listings' ? (
+          <main className="fr-op__queue" aria-label="Community listings">
+            <div className="fr-op-listings__bar">
+              <Select<ListingStatus> aria-label="Listings" value={listingStatus} onChange={setListingStatus} options={LISTING_STATUSES} />
+            </div>
+            {listings === null ? (
+              <Spinner size={22} label="Loading listings" />
+            ) : listings.length === 0 ? (
+              <p className="fr-op__empty">{listingStatus === 'pending' ? 'No submission is waiting for review.' : 'None.'}</p>
+            ) : (
+              listings.map((l) => <ListingCard key={l.id} listing={l} onAct={setPending} />)
+            )}
+          </main>
+        ) : (
         <main className="fr-op__queue" aria-label={status === 'open' ? 'Open items' : 'Closed items'}>
           {items === null ? (
             <Spinner size={22} label="Loading the queue" />
@@ -131,6 +183,7 @@ export function OperatorPage() {
             ))
           )}
         </main>
+        )}
         <aside className="fr-op__tools" aria-label="Look up">
           <AccountLookup onAct={setPending} />
           <FileLookup onAct={setPending} />
@@ -142,7 +195,7 @@ export function OperatorPage() {
           onClose={() => setPending(null)}
           onDone={(a) => {
             setPending(null);
-            notify(`${ACTION_LABEL[a.action]}: done. The person affected was emailed.`, 'success');
+            notify(`${ACTION_LABEL[a.action]}: done.${a.action === 'listing.feature' || a.action === 'listing.unfeature' ? '' : ' The person affected was emailed.'}`, 'success');
             load();
           }}
         />
@@ -174,6 +227,7 @@ function targetText(item: ModerationItem): string {
   if (t.kind === 'element') return `Item ${t.id}`;
   if (t.kind === 'upload') return `File ${t.id}`;
   if (t.kind === 'comment') return `Comment ${t.id?.split(':')[1] ?? ''} in thread ${t.id?.split(':')[0] ?? ''}`;
+  if (t.kind === 'listing') return 'A community listing (Apps & agents)';
   return 'Their account';
 }
 
@@ -203,8 +257,9 @@ function ItemCard({
     <article className={`fr-op-card${item.kind === 'appeal' ? ' fr-op-card--appeal' : ''}`}>
       <div className="fr-op-card__head">
         <Chip tone={item.kind === 'appeal' ? 'warn' : 'danger'}>{item.kind === 'appeal' ? 'Appeal' : reasonLabel(item.reason)}</Chip>
-        <h2 className="fr-op-card__board">{item.boardTitle || (item.target.kind === 'user' ? 'Account suspension' : 'Untitled board')}</h2>
+        <h2 className="fr-op-card__board">{item.boardTitle || (item.target.kind === 'user' ? 'Account suspension' : item.target.kind === 'listing' ? 'A withdrawn listing' : 'Untitled board')}</h2>
         {b && <BoardState board={b} />}
+        {item.listing && <ListingChips status={item.listing.status} featured={item.listing.featured} />}
         <span className="fr-op-card__when" title={new Date(item.createdAt).toLocaleString()}>
           {relativeTime(item.createdAt, Date.now())}
         </span>
@@ -306,6 +361,26 @@ function ItemCard({
             Lift suspension
           </Button>
         )}
+        {item.listing &&
+          (item.listing.status === 'removed' ? (
+            <Button size="sm" icon={ShieldCheck} onClick={() => act('listing.restore', item.listing!.id, `the listing “${item.listing!.name}”`)}>
+              Restore listing
+            </Button>
+          ) : item.listing.status === 'approved' ? (
+            <Button size="sm" variant="danger" onClick={() => act('listing.remove', item.listing!.id, `the listing “${item.listing!.name}”`)}>
+              Remove listing
+            </Button>
+          ) : null)}
+        {item.listing?.submitter && !item.listing.submitter.suspended && (
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={UserX}
+            onClick={() => act('user.suspend', item.listing!.submitter!.id, `${item.listing!.submitter!.name} <${item.listing!.submitter!.email}>`)}
+          >
+            Suspend developer
+          </Button>
+        )}
         {b?.owner && !b.owner.suspended && (
           <Button size="sm" variant="ghost" icon={UserX} onClick={() => act('user.suspend', b.owner!.id, `${b.owner!.name} <${b.owner!.email}>`)}>
             Suspend owner
@@ -326,8 +401,112 @@ function ItemCard({
   );
 }
 
+const LISTING_STATUS_CHIP: Record<ListingStatus, { tone: 'danger' | 'warn' | 'muted' | 'ok'; label: string }> = {
+  pending: { tone: 'warn', label: 'Waiting for review' },
+  approved: { tone: 'ok', label: 'Live' },
+  rejected: { tone: 'muted', label: 'Declined' },
+  removed: { tone: 'danger', label: 'Removed' },
+};
+
+function ListingChips({ status, featured }: { status: ListingStatus; featured: boolean }) {
+  return (
+    <span className="fr-op-chips">
+      <Chip tone={LISTING_STATUS_CHIP[status].tone}>{LISTING_STATUS_CHIP[status].label}</Chip>
+      {featured && <Chip tone="ok">Featured</Chip>}
+    </span>
+  );
+}
+
+/** A community listing to review. Everything in it is the developer's: shown as text, links not followed for them. */
+function ListingCard({ listing: l, onAct }: { listing: ListingForReview; onAct: (p: PendingAction) => void }) {
+  const act = (action: ModerationActionKind) => onAct({ action, targetId: l.id, targetLabel: `the listing “${l.name}”`, reason: 'other' });
+  return (
+    <article className="fr-op-card" data-testid="listing-review">
+      <div className="fr-op-card__head">
+        <Chip tone="muted">{INTEGRATION_CATEGORIES.find((c) => c.id === l.category)?.label ?? l.category}</Chip>
+        <h2 className="fr-op-card__board">{l.name}</h2>
+        <ListingChips status={l.status} featured={l.featured} />
+        {l.openReports > 0 && <Chip tone="danger">{l.openReports === 1 ? '1 open report' : `${l.openReports} open reports`}</Chip>}
+        <span className="fr-op-card__when" title={new Date(l.createdAt).toLocaleString()}>
+          {relativeTime(l.createdAt, Date.now())}
+        </span>
+      </div>
+      <p className="fr-op-listing__tagline">{l.tagline}</p>
+      <dl className="fr-op-card__facts">
+        <dt>Submitted by</dt>
+        <dd>{l.submitter ? `${l.submitter.name} <${l.submitter.email}>` : 'A deleted account'}</dd>
+        {l.contactEmail && (
+          <>
+            <dt>Contact</dt>
+            <dd>{l.contactEmail}</dd>
+          </>
+        )}
+        <dt>Website</dt>
+        <dd>
+          <a href={l.website} target="_blank" rel="noopener noreferrer nofollow">
+            {l.website}
+          </a>
+        </dd>
+        {l.docsUrl && (
+          <>
+            <dt>Docs</dt>
+            <dd>
+              <a href={l.docsUrl} target="_blank" rel="noopener noreferrer nofollow">
+                {l.docsUrl}
+              </a>
+            </dd>
+          </>
+        )}
+        <dt>Built on</dt>
+        <dd>{l.builtOn.map((b) => LISTING_SURFACES.find((s) => s.id === b)?.label ?? b).join(', ')}</dd>
+        <dt>OAuth app</dt>
+        <dd>
+          {l.oauthApp
+            ? `${l.oauthApp.name} (${l.oauthApp.clientId})${l.oauthApp.website ? ` · ${l.oauthApp.website}` : ''} · redirects to ${l.oauthApp.redirectUris.join(', ')}`
+            : 'None named'}
+        </dd>
+        {l.statusNote && (
+          <>
+            <dt>Last decision</dt>
+            <dd>{l.statusNote}</dd>
+          </>
+        )}
+      </dl>
+      {l.description && <blockquote className="fr-op-card__message fr-op-listing__description">{l.description}</blockquote>}
+      <div className="fr-op-card__actions">
+        {(l.status === 'pending' || l.status === 'rejected') && (
+          <Button size="sm" variant="primary" icon={Check} onClick={() => act('listing.approve')}>
+            Approve
+          </Button>
+        )}
+        {l.status === 'pending' && (
+          <Button size="sm" icon={X} onClick={() => act('listing.reject')}>
+            Decline
+          </Button>
+        )}
+        {l.status === 'approved' && (
+          <>
+            <Button size="sm" icon={Star} onClick={() => act(l.featured ? 'listing.unfeature' : 'listing.feature')}>
+              {l.featured ? 'Stop featuring' : 'Feature'}
+            </Button>
+            <Button size="sm" variant="danger" onClick={() => act('listing.remove')}>
+              Remove
+            </Button>
+          </>
+        )}
+        {l.status === 'removed' && (
+          <Button size="sm" icon={ShieldCheck} onClick={() => act('listing.restore')}>
+            Restore
+          </Button>
+        )}
+      </div>
+    </article>
+  );
+}
+
 function ActionDialog({ pending, onClose, onDone }: { pending: PendingAction; onClose: () => void; onDone: (a: ModerationActionRecord) => void }) {
   const adverse = ADVERSE.includes(pending.action);
+  const needsReason = !NO_REASON.includes(pending.action);
   const [reason, setReason] = useState<ReportReason>(pending.reason);
   const [statement, setStatement] = useState('');
   const [note, setNote] = useState('');
@@ -373,10 +552,14 @@ function ActionDialog({ pending, onClose, onDone }: { pending: PendingAction; on
       }
     >
       <div className="fr-op-form">
-        <label className="fr-op-form__label" htmlFor="fr-op-reason">
-          Reason
-        </label>
-        <Select<ReportReason> id="fr-op-reason" aria-label="Reason" value={reason} onChange={setReason} options={REPORT_REASONS.map((r) => ({ value: r.id, label: r.label }))} />
+        {needsReason && (
+          <>
+            <label className="fr-op-form__label" htmlFor="fr-op-reason">
+              Reason
+            </label>
+            <Select<ReportReason> id="fr-op-reason" aria-label="Reason" value={reason} onChange={setReason} options={REPORT_REASONS.map((r) => ({ value: r.id, label: r.label }))} />
+          </>
+        )}
         {pending.action === 'user.suspend' && (
           <>
             <label className="fr-op-form__label" htmlFor="fr-op-boards">

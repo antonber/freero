@@ -4,6 +4,7 @@
 import { abs, APP } from '../lib/site';
 import type { PageDef } from '../lib/define';
 import { LOGO_MARK_PATHS } from '../lib/brand';
+import { DraftBanner } from '../lib/legal';
 import { ClosingCta, Container, Faq } from './ui';
 
 export interface DocumentAssets {
@@ -105,6 +106,7 @@ function SiteFooter() {
         ['/claude', 'Freero for Claude'],
         ['/chatgpt', 'Freero for ChatGPT'],
         ['/agents', 'Build with agents'],
+        ['/integrations', 'Integrations'],
         ['/docs', 'Documentation'],
       ],
     },
@@ -113,6 +115,15 @@ function SiteFooter() {
       links: [
         [APP.signup, 'Start free'],
         [APP.login, 'Log in'],
+        ['/support', 'Help and support'],
+      ],
+    },
+    {
+      title: 'Legal',
+      links: [
+        ['/privacy', 'Privacy policy'],
+        ['/terms', 'Terms of service'],
+        ['/acceptable-use', 'Acceptable use'],
       ],
     },
   ];
@@ -175,7 +186,8 @@ function Breadcrumbs({ items }: { items: Crumb[] }) {
 
 export function Document({ page, pages, assets, crumbs, jsonLd }: { page: PageDef; pages: PageDef[]; assets: DocumentAssets; crumbs: Crumb[]; jsonLd: Record<string, unknown> }) {
   const url = abs(page.path);
-  const indexable = page.index !== false;
+  // A legal page is built as a draft; the server makes it indexable once it is in effect.
+  const indexable = page.index !== false && !page.legal;
   const ogAlt = `${page.ogTitle ?? page.name}: Freero`;
   return (
     <html lang="en">
@@ -218,6 +230,11 @@ export function Document({ page, pages, assets, crumbs, jsonLd }: { page: PageDe
         <SiteHeader current={page.path} />
         <main id="main" tabIndex={-1}>
           {crumbs.length > 1 ? <Breadcrumbs items={crumbs} /> : null}
+          {page.legal ? (
+            <Container>
+              <DraftBanner />
+            </Container>
+          ) : null}
           <page.body pages={pages} />
           {page.faq?.length ? <Faq items={page.faq} /> : null}
           {page.closingCta === false ? null : <ClosingCta />}

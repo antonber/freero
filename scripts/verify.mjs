@@ -4735,6 +4735,110 @@ async function moderationChecks() {
 }
 
 // ---------------------------------------------------------------------------
+// Apps & agents: community listings (#87). A signed-in developer submits an integration; it is
+// pending — invisible to everyone but them and the operators — until an operator approves it in
+// the moderation console; then everyone signed in sees it (Community), can report it, and an
+// operator can remove it. Every decision lands in the audit log; submissions are rate-limited.
+// ---------------------------------------------------------------------------
+async function appsChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-apps-'));
+  const outerDbUrl = db.url;
+  const Op = new User('AppsOperator');
+  const Dev = new User('AppsDev');
+  const Reader = new User('AppsReader');
+  const SUBMIT_LIMIT = 3;
+  const listing = (extra = {}) => ({
+    name: 'Standup digest',
+    tagline: 'Posts what changed on your boards to the morning standup.',
+    description: 'Reads boards through the MCP server.\n<script>alert(1)</script> stays text.',
+    website: 'https://standup.example.com',
+    category: 'agents',
+    builtOn: ['mcp'],
+    contactEmail: 'dev@standup.example.com',
+    ...extra,
+  });
+  const act = (body) => Op.req('POST', '/api/moderation/actions', { statement: '', ...body });
+  try {
+    if (ADMIN_URL) db.url = await createDatabase();
+    if (
+      !(await check('apps: server boots with an operator configured', async () => {
+        server = await spawnServer(dataDir, { OPERATOR_EMAILS: Op.email, RATE_LIMIT_LISTING_SUBMIT: `${SUBMIT_LIMIT}/1h` });
+        await waitUp(server);
+      }))
+    )
+      return;
+    for (const u of [Op, Dev, Reader]) await u.signup();
+    for (const u of [Op, Dev]) await u.verifyEmail(dataDir);
+    // The developer's team: account events (a decision about their listing) reach its audit log.
+    const team = (await Dev.req('POST', '/api/workspaces', { name: 'Standup Co' })).json.workspace;
+
+    let id = null;
+    await check('apps: a submission is refused with a link that isn’t https, and is pending — invisible to everyone but its submitter and operators', async () => {
+      for (const website of ['http://standup.example.com', 'javascript:alert(1)'])
+        assert((await Dev.req('POST', '/api/marketplace/listings', listing({ website }))).status === 400, `accepted website ${website}`);
+      const r = await Dev.req('POST', '/api/marketplace/listings', listing());
+      assert(r.status === 201 && r.json.listing.status === 'pending', `submit -> ${r.status} ${r.text}`);
+      id = r.json.listing.id;
+      assert(!(await Reader.req('GET', '/api/marketplace/listings')).json.listings.some((l) => l.id === id), 'listed while pending');
+      assert((await Reader.req('GET', `/api/marketplace/listings/${id}`)).status === 404, 'a reader opened the pending listing');
+      assert((await Reader.req('GET', '/api/moderation/listings')).status === 404, 'a reader reached the review list');
+      assert((await Dev.req('GET', '/api/marketplace/listings/mine')).json.listings.some((l) => l.id === id && l.status === 'pending'), 'the submitter can’t see it');
+      const review = (await Op.req('GET', '/api/moderation/listings?status=pending')).json.listings.find((l) => l.id === id);
+      assert(review?.submitter?.id === Dev.id && review.contactEmail === 'dev@standup.example.com', `review list: ${JSON.stringify(review)}`);
+      await waitFor(() => outbox(dataDir).some((m) => m.to === Op.email && /community listing to review/.test(m.subject)), 8000, 'the mail to the operator');
+    });
+
+    await check('apps: an operator approves it in the moderation console; everyone signed in then sees it (never the reviewers’ contact), the developer is told, and the decision is in the audit log', async () => {
+      const since = Date.now();
+      const r = await act({ action: 'listing.approve', targetId: id });
+      assert(r.status === 200, `approve -> ${r.status} ${r.text}`);
+      const live = (await Reader.req('GET', '/api/marketplace/listings')).json.listings.find((l) => l.id === id);
+      assert(live && !('contactEmail' in live) && live.description.includes('<script>'), `live: ${JSON.stringify(live)}`);
+      assert((await Reader.req('GET', `/api/marketplace/listings/${id}`)).status === 200, 'the reader can’t open it');
+      assert((await Reader.req('GET', '/api/marketplace/listings', undefined, { cookie: false })).status === 401, 'listed to someone signed out');
+      await waitFor(() => outbox(dataDir).some((m) => m.to === Dev.email && m.sentAt >= since - 50 && /is live in Apps & agents/.test(m.subject)), 8000, 'the approval mail');
+      await waitFor(
+        async () => ((await Dev.req('GET', `/api/workspaces/${team.id}/audit?limit=200`)).json?.events ?? []).some((e) => e.action === 'moderation.listing.approve'),
+        5000,
+        'moderation.listing.approve in the audit log',
+      );
+    });
+
+    await check('apps: a live listing can be reported through the Report flow, and an operator’s removal hides it again and is audited', async () => {
+      const rep = await Reader.req('POST', '/api/reports', { target: { kind: 'listing', id }, reason: 'phishing', note: 'Asks for passwords' });
+      assert(rep.status === 202, `report -> ${rep.status} ${rep.text}`);
+      const item = (await Op.req('GET', '/api/moderation/queue')).json.items.find((i) => i.target.kind === 'listing' && i.target.id === id);
+      assert(item?.listing?.status === 'approved' && item.reporter?.id === Reader.id, `queue: ${JSON.stringify(item)}`);
+      const r = await act({ action: 'listing.remove', targetId: id, reason: 'phishing', statement: 'It asks for Freero passwords.', itemId: item.id });
+      assert(r.status === 200, `remove -> ${r.status} ${r.text}`);
+      assert((await Reader.req('GET', `/api/marketplace/listings/${id}`)).status === 404, 'still open to readers');
+      const own = (await Dev.req('GET', `/api/marketplace/listings/${id}`)).json.listing;
+      assert(own?.status === 'removed' && own.statusNote === 'It asks for Freero passwords.', `own: ${JSON.stringify(own)}`);
+      await waitFor(
+        async () => ((await Dev.req('GET', `/api/workspaces/${team.id}/audit?limit=200`)).json?.events ?? []).some((e) => e.action === 'moderation.listing.remove'),
+        5000,
+        'moderation.listing.remove in the audit log',
+      );
+    });
+
+    await check('apps: submissions are rate-limited per person (429 with Retry-After)', async () => {
+      let last = null;
+      for (let i = 0; i < SUBMIT_LIMIT + 2 && last?.status !== 429; i++) last = await Dev.req('POST', '/api/marketplace/listings', listing({ name: `Tool ${i}` }));
+      assert(last?.status === 429 && last.headers.get('retry-after'), `no 429: ${last?.status} ${last?.text}`);
+    });
+  } finally {
+    await stopServer();
+    await dropDatabases();
+    db.url = outerDbUrl;
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // AI (KAI-101, KAI-102): off unless configured; with a provider, the four board actions against a
 // local mock model (scripts/lib/mock-model.mjs, never a paid API), workspace admin controls, the
 // workspace's own key, rate limit, budget and audit.
@@ -6710,6 +6814,25 @@ async function mcpChecks() {
       assert(listed.includes('by Suggesting agent for') && els(c).size === before, 'the proposal changed the board');
     });
 
+    await check('mcp (#83): list_tracker_connections shows an agent the team’s and the person’s own connections on a board with their default projects, and one connection’s repositories, so sync_to_tracker needs no failed call to find them', async () => {
+      // The person's own "GitHub" (made above) and now the team's.
+      const teams = await O.req('POST', '/api/trackers/connections', { provider: 'github', name: 'Team GitHub', workspaceId: team, site: gh.url, token: gh.token, defaults: { project: 'freero-bot/sandbox' } });
+      assert(teams.status === 201, `team connection: ${teams.status} ${teams.text}`);
+      const b = (await O.req('POST', '/api/boards', { title: 'Two trackers', workspaceId: team })).json.board;
+      const reader = await withToken((await token(O, ['boards:read'], 'Reading agent')).secret);
+      const r = await reader.callTool({ name: 'list_tracker_connections', arguments: { boardId: b.id } });
+      assert(!r.isError, `list: ${text(r)}`);
+      // Connection and project names are people's words: they come inside the untrusted envelope.
+      const byName = Object.fromEntries(r.structuredContent.untrusted_board_content.connections.map((x) => [x.name, x]));
+      assert(byName.GitHub?.scope === 'personal' && byName.GitHub.defaultProject === 'antonber/freero', `own connection: ${text(r)}`);
+      assert(byName['Team GitHub']?.scope === 'workspace' && byName['Team GitHub'].defaultProject === 'freero-bot/sandbox', `team connection: ${text(r)}`);
+      const p = await reader.callTool({ name: 'list_tracker_connections', arguments: { boardId: b.id, connection: 'GitHub' } });
+      assert(!p.isError && p.structuredContent.untrusted_board_content.projects.some((x) => x.key === 'antonber/freero'), `projects: ${text(p)}`);
+      // The REST twin answers the same.
+      const rest = await fetch(`http://127.0.0.1:${proc.port}/api/v1/boards/${b.id}/trackers`, { headers: { authorization: `Bearer ${(await token(O, ['boards:read'], 'REST reader')).secret}` } });
+      assert(rest.status === 200 && (await rest.json()).connections.length === 2, `REST -> ${rest.status}`);
+    });
+
     await check('mcp: revoking the token, or the app, refuses the very next MCP request', async () => {
       const script = await token(O, ['boards:read'], 'Short-lived');
       const sc = await withToken(script.secret);
@@ -8020,12 +8143,41 @@ async function siteChecks() {
       const robots = await (await get(on.port, '/robots.txt')).text();
       assert(robots.includes('Sitemap: https://whiteboard.example.com/sitemap.xml') && robots.includes('Disallow: /board/'), `robots: ${robots}`);
       assert((await get(on.port, '/vs/no-such-competitor')).status === 404, 'a missing comparison is not the site’s 404');
+      // Integrations (#87): one page per catalog entry, and the site's 404 for one that isn't.
+      const claude = await get(on.port, '/integrations/claude');
+      assert(claude.status === 200 && (await claude.text()).includes('href="/apps/claude"'), `/integrations/claude -> ${claude.status}`);
+      assert((await get(on.port, '/integrations/no-such-integration')).status === 404, 'a missing integration is not the site’s 404');
       // For agents (#80): llms.txt names this instance's own MCP endpoint, as text.
       const llms = await get(on.port, '/llms.txt');
       const llmsText = await llms.text();
       assert(llms.status === 200 && /^text\/plain/.test(llms.headers.get('content-type') ?? ''), `/llms.txt -> ${llms.status} ${llms.headers.get('content-type')}`);
       assert(llmsText.startsWith('# Freero') && llmsText.includes('https://whiteboard.example.com/mcp') && !llmsText.includes('origin.freero.invalid'), `/llms.txt: ${llmsText.slice(0, 300)}`);
       assert((await get(on.port, '/llms-full.txt')).status === 200, '/llms-full.txt is not served');
+    });
+    await check('site: the built privacy policy, terms and acceptable use policy are visibly drafts nobody is asked to accept until SITE_LEGAL_OPERATOR names the operator; then they are in effect and indexable', async () => {
+      const legalPaths = ['/privacy', '/terms', '/acceptable-use'];
+      for (const p of legalPaths) {
+        const res = await get(on.port, p);
+        const html = await res.text();
+        assert(res.status === 200 && html.includes('Draft: not in effect') && html.includes('<meta name="robots" content="noindex, follow"/>'), `${p} is not a draft: ${res.status}`);
+        assert(res.headers.get('x-robots-tag') === 'noindex' && !html.includes('[[freero-legal:'), `${p}: X-Robots-Tag ${res.headers.get('x-robots-tag')}, unfilled token`);
+      }
+      assert((await (await get(on.port, '/api/site/legal')).json()).legal === null, 'sign-up asks people to agree to draft terms');
+      const support = await (await get(on.port, '/support')).text();
+      assert(!support.includes('Draft: not in effect') && !support.includes('[[freero-legal:'), '/support is a draft or has an unfilled token');
+      const footer = await (await get(on.port, '/')).text();
+      assert(legalPaths.every((p) => footer.includes(`href="${p}"`)) && footer.includes('href="/support"'), 'the footer does not link the legal pages and /support');
+
+      const inForce = await waitUp(await spawnServer(path.join(dataDir, 'legal'), { FREERO_SITE_DIST: siteDist, PUBLIC_URL: 'https://whiteboard.example.com', SITE_LEGAL_OPERATOR: 'Example Operator LLC', SITE_LEGAL_CONTACT_EMAIL: 'legal@whiteboard.example.com' }));
+      procs.push(inForce);
+      for (const p of legalPaths) {
+        const res = await get(inForce.port, p);
+        const html = await res.text();
+        assert(!html.includes('Draft: not in effect') && html.includes('index, follow') && !res.headers.get('x-robots-tag'), `${p} is still a draft with the operator set`);
+        assert(html.includes('Example Operator LLC') && html.includes('mailto:legal@whiteboard.example.com'), `${p} does not name the operator and contact`);
+      }
+      const legal = (await (await get(inForce.port, '/api/site/legal')).json()).legal;
+      assert(legal?.operator === 'Example Operator LLC' && legal.termsUrl === '/terms' && legal.privacyUrl === '/privacy', `/api/site/legal: ${JSON.stringify(legal)}`);
     });
     const off = await waitUp(await spawnServer(path.join(dataDir, 'off'), { FREERO_SITE_DIST: siteDist, SITE: 'false' }));
     procs.push(off);
@@ -8038,6 +8190,148 @@ async function siteChecks() {
     });
   } finally {
     for (const p of procs) await stopProc(p);
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+// Integrations pack (#88): meeting notes through the REST structure operation and the MCP tool, and
+// Slack link unfurls against a stand-in Slack Web API — signed, unsigned and replayed requests.
+async function integrationsChecks() {
+  const { createHmac } = await import('node:crypto');
+  const http = await import('node:http');
+  const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+  const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-integrations-'));
+  // The stand-in for slack.com/api: records every chat.unfurl it is sent.
+  const unfurls = [];
+  const slackApi = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      if (req.url === '/api/chat.unfurl') unfurls.push({ auth: req.headers.authorization, body: JSON.parse(body) });
+      res.setHeader('content-type', 'application/json');
+      res.end('{"ok":true}');
+    });
+  });
+  await new Promise((r) => slackApi.listen(0, '127.0.0.1', r));
+  const SECRET = `verify-${randomBytes(8).toString('hex')}`;
+  const HOST = 'freero.verify';
+  const env = {
+    PUBLIC_URL: `https://${HOST}`,
+    SLACK_SIGNING_SECRET: SECRET,
+    SLACK_BOT_TOKEN: 'xoxb-verify',
+    SLACK_API_URL: `http://127.0.0.1:${slackApi.address().port}/api`,
+    RATE_LIMIT_INVITE: '500/1h',
+    RATE_LIMIT_PASSWORD: '500/15m',
+  };
+  let proc = null;
+  const clients = [];
+  try {
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    if (!(await check('integrations server boots', async () => (proc = await waitUp(await spawnServer(dataDir, env)))))) return;
+    const O = new User('Integrator', proc.port);
+    O.email = `integrator-${Date.now()}@integrations.verify.freero.app`;
+    await O.signup();
+    await O.verifyEmail(dataDir);
+    const token = async (scopes, name) => {
+      const r = await O.req('POST', '/api/auth/tokens', { name, scopes, expiresInDays: 1 });
+      assert(r.status === 201, `token: ${r.status} ${r.text}`);
+      return r.json.secret;
+    };
+    const call = (secret, method, url, body) => new User('bearer', proc.port).req(method, `/api/v1${url}`, body, { headers: { authorization: `Bearer ${secret}` }, cookie: false });
+    const mcp = async (secret) => {
+      const c = new Client({ name: 'verify-integrations', version: '1.0.0' });
+      await c.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${proc.port}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${secret}` } } }));
+      clients.push(c);
+      return c;
+    };
+    const sample = (f) => fs.readFileSync(path.join(ROOT, 'docs/integrations/meeting-notes', f), 'utf8');
+    const write = await token(['boards:read', 'boards:write'], 'Notes bot');
+
+    await check('meeting notes (#88): a Granola-style export through POST /api/v1/boards/:id/structure is one frame whose outline has the Decisions cluster and the action cards with owners and due dates', async () => {
+      const board = (await O.req('POST', '/api/boards', { title: 'Notes' })).json.board.id;
+      const r = await call(write, 'POST', `/boards/${board}/structure`, { structure: { kind: 'meeting', source: sample('granola-style.md'), date: '2026-10-29' } });
+      assert(r.status === 201, `structure: ${r.status} ${r.text}`);
+      const o = (await call(write, 'GET', `/boards/${board}/outline?format=json`)).json.outline;
+      const frames = o.items.filter((i) => i.kind === 'frame');
+      assert(frames.length === 1 && frames[0].title === 'Q4 onboarding review', `frames: ${JSON.stringify(frames.map((f) => f.title))}`);
+      const inFrame = frames[0].children ?? [];
+      const decisions = inFrame.find((c) => c.kind === 'cluster' && c.title === 'Decisions');
+      assert(decisions?.children?.length === 3, `decisions: ${JSON.stringify(decisions)}`);
+      const items = (await call(write, 'GET', `/boards/${board}/items`)).json.items;
+      const cards = items.filter((i) => i.type === 'card');
+      const due = cards.map((c) => c.data?.dueDate).filter(Boolean).sort();
+      assert(cards.length === 4 && JSON.stringify(due) === JSON.stringify(['2026-10-30', '2026-11-04', '2026-11-06']), `cards: ${JSON.stringify(cards.map((c) => [c.text, c.data]))}`);
+      assert(cards.every((c) => c.frameId === frames[0].id), 'a card outside the frame');
+    });
+
+    await check('meeting notes (#88): MCP import_meeting_notes lands a WebVTT transcript as a frame with who spoke; a read + suggest connection only proposes it', async () => {
+      const board = (await O.req('POST', '/api/boards', { title: 'Transcripts' })).json.board.id;
+      const suggester = await mcp(await token(['boards:read', 'boards:suggest'], 'Notes reviewer'));
+      const p = await suggester.callTool({ name: 'import_meeting_notes', arguments: { boardId: board, text: sample('design-review.vtt'), title: 'Design review' } });
+      assert(!p.isError && p.structuredContent?.target === 'suggestions', `propose: ${JSON.stringify(p)}`);
+      assert((await call(write, 'GET', `/boards/${board}/items`)).json.items.length === 0, 'proposing changed the board');
+      const writer = await mcp(write);
+      const r = await writer.callTool({ name: 'import_meeting_notes', arguments: { boardId: board, text: sample('design-review.vtt'), title: 'Design review' } });
+      assert(!r.isError && r.structuredContent?.frameId, `import: ${JSON.stringify(r)}`);
+      const items = (await call(write, 'GET', `/boards/${board}/items`)).json.items;
+      const frame = items.find((i) => i.id === r.structuredContent.frameId);
+      const speakers = items.find((i) => i.type === 'shape' && String(i.text).includes('Speakers'));
+      assert(frame?.type === 'frame' && frame.text === 'Design review', `frame: ${JSON.stringify(frame)}`);
+      assert(speakers && /Ana Costa: 2 turns/.test(String(speakers.text).replace(/<[^>]+>/g, '')), `speakers note: ${speakers?.text}`);
+    });
+
+    const sign = (raw, at = Date.now(), secret = SECRET) => {
+      const t = String(Math.floor(at / 1000));
+      return { 'x-slack-request-timestamp': t, 'x-slack-signature': `v0=${createHmac('sha256', secret).update(`v0:${t}:${raw}`).digest('hex')}` };
+    };
+    const slackPost = (body, headers) => fetch(`http://127.0.0.1:${proc.port}/api/integrations/slack/events`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body });
+    let seq = 0;
+    const linkShared = (urls) =>
+      JSON.stringify({ type: 'event_callback', team_id: 'TVERIFY', event_id: `EvV${++seq}`, event: { type: 'link_shared', channel: 'CV', message_ts: `1700000000.${seq}`, links: urls.map((url) => ({ domain: HOST, url })) } });
+
+    await check('slack (#88): a signed link_shared event gets chat.unfurl with a public board’s title and https thumbnail (saved through a real session), and the generic card, no title, for a private one', async () => {
+      const pub = (await O.req('POST', '/api/boards', { title: 'Public launch plan' })).json.board.id;
+      assert((await O.req('PATCH', `/api/boards/${pub}`, { linkAccess: 'viewer', description: 'All of November' })).status === 200, 'share by link');
+      assert((await O.req('PUT', `/api/boards/${pub}/thumbnail`, { dataUrl: `data:image/png;base64,${PNG_1PX.toString('base64')}` })).status === 200, 'thumbnail');
+      const thumb = (await O.req('GET', `/api/boards/${pub}`)).json.board.thumbnail;
+      assert((await fetch(`http://127.0.0.1:${proc.port}${thumb}`)).status === 200, 'the thumbnail needs a session');
+      const priv = (await O.req('POST', '/api/boards', { title: 'Private salaries' })).json.board.id;
+      const urls = [`https://${HOST}/board/${pub}`, `https://${HOST}/board/${priv}`];
+      const raw = linkShared(urls);
+      assert((await slackPost(raw, sign(raw))).status === 200, 'signed event refused');
+      await waitFor(() => unfurls.length === 1, 10_000, 'the chat.unfurl call');
+      const [{ auth, body }] = unfurls;
+      const pubCard = JSON.stringify(body.unfurls[urls[0]]);
+      const privCard = JSON.stringify(body.unfurls[urls[1]]);
+      assert(auth === 'Bearer xoxb-verify' && body.channel === 'CV', `call: ${auth} ${body.channel}`);
+      assert(pubCard.includes('Public launch plan') && pubCard.includes(`https://${HOST}${thumb}`), `public card: ${pubCard}`);
+      assert(!privCard.includes('Private salaries') && privCard.includes('Sign in'), `private card: ${privCard}`);
+      unfurls.length = 0;
+    });
+
+    await check('slack (#88): unsigned, wrongly signed and replayed (6 minutes old) events are refused with 401 and nothing reaches Slack; the URL verification challenge is answered only when signed', async () => {
+      const raw = linkShared([`https://${HOST}/doc/anything`]);
+      const refused = [await slackPost(raw, {}), await slackPost(raw, sign(raw, Date.now(), 'wrong-secret')), await slackPost(raw, sign(raw, Date.now() - 6 * 60_000))];
+      assert(refused.every((r) => r.status === 401), `statuses ${refused.map((r) => r.status)}`);
+      const challenge = JSON.stringify({ type: 'url_verification', challenge: 'verify-challenge' });
+      assert((await slackPost(challenge, {})).status === 401, 'an unsigned challenge was answered');
+      const ok = await slackPost(challenge, sign(challenge));
+      assert((await ok.json()).challenge === 'verify-challenge', 'challenge');
+      // A signed event after them is the barrier: once it reached Slack, the refused ones would have too.
+      const barrier = linkShared([`https://${HOST}/doc/barrier`]);
+      await slackPost(barrier, sign(barrier));
+      await waitFor(() => unfurls.length >= 1, 10_000, 'the barrier unfurl');
+      assert(unfurls.length === 1 && Object.keys(unfurls[0].body.unfurls)[0].endsWith('/doc/barrier'), `Slack got ${JSON.stringify(unfurls.map((u) => Object.keys(u.body.unfurls)))}`);
+    });
+  } finally {
+    for (const c of clients) await c.close().catch(() => {});
+    if (proc) await stopProc(proc);
+    await new Promise((r) => slackApi.close(r));
     try {
       fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
     } catch {
@@ -8065,6 +8359,7 @@ const SUITES = {
   scim: scimChecks,
   privacy: privacyChecks,
   moderation: moderationChecks,
+  apps: appsChecks,
   multi: multiInstanceChecks,
   admin: enterpriseAdminChecks,
   ai: aiChecks,
@@ -8080,6 +8375,7 @@ const SUITES = {
   webhooks: webhooksChecks,
   portability: portabilityChecks,
   docs: docsChecks,
+  integrations: integrationsChecks,
 };
 const onlyArg = process.argv.indexOf('--only');
 const only = onlyArg >= 0 ? (process.argv[onlyArg + 1] ?? '').split(',').filter(Boolean) : Object.keys(SUITES);

@@ -1,0 +1,15 @@
+1
+00:00:01,000 --> 00:00:05,000
+Omar: Yesterday I finished the search filters.
+
+2
+00:00:05,000 --> 00:00:09,000
+Omar: Today I'm on the empty states.
+
+3
+00:00:09,500 --> 00:00:16,000
+Jess: I'm still blocked on the API key for the staging bucket.
+
+4
+00:00:16,000 --> 00:00:20,000
+Omar: I can send it after this call.

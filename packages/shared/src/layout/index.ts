@@ -6,11 +6,13 @@ import { findFreeSpot, unionRects, type Point, type Rect } from '../geometry';
 import { translateDraft } from './kit';
 import { layoutItems } from './items';
 import { parseMermaid } from './mermaid';
+import { layoutMeeting, parseMeetingNotes } from './meeting';
 import { layoutClusters, layoutGraph, layoutKanban, layoutMindmap, layoutNote, layoutOrgChart, layoutSequence, layoutStickies, layoutTable, layoutTree, parseIndentedList } from './structures';
 import { LayoutError, type LaidOut, type LayoutContext, type OutlineNodeInput, type StructureInput } from './types';
 
 export * from './types';
 export { parseMermaid, looksLikeMermaid, type MermaidDiagram } from './mermaid';
+export { parseMeetingNotes, layoutMeeting, meetingFormatOf, type MeetingNotes, type MeetingFormat, type MeetingAction } from './meeting';
 export { parseIndentedList, parseOrgRows, columnStatus } from './structures';
 export { cardDraft, cardHeight as itemCardHeight, checkLink } from './items';
 export * from './mindtree';
@@ -97,6 +99,9 @@ export function layoutStructure(input: StructureInput, ctx: LayoutContext): Laid
       if (!Array.isArray(input.items)) throw new LayoutError('items needs a list of items');
       if (input.layout !== undefined && input.layout !== 'grid' && input.layout !== 'kanban') throw new LayoutError('layout must be grid or kanban');
       return layoutItems(input.items, input.layout ?? 'grid', input.title, ctx);
+    case 'meeting':
+      if (input.title !== undefined && typeof input.title !== 'string') throw new LayoutError('A meeting title is text');
+      return layoutMeeting(parseMeetingNotes(input.source, { format: input.format, title: input.title, date: input.date }), { speakers: input.speakers !== false }, ctx);
     default:
       throw new LayoutError(`Unknown structure kind ${String((input as { kind?: unknown }).kind)}`);
   }

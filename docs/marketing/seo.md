@@ -60,7 +60,7 @@ Keyword variants a page should use naturally in headings and copy are in its row
    /docs ──► guides in the repository ────────────┘
 ```
 
-- Header: Claude, ChatGPT, For builders, Security, Pricing, Docs (+ Log in, Start free). Footer adds
+- Header: Claude, ChatGPT, For builders, Security, Pricing, Docs (+ Log in, Start free). Footer adds Help and support (`/support`), the legal pages (`/privacy`, `/terms`, `/acceptable-use`: drafts, `noindex` until the operator is set),
   Overview and Open source. Every page ends with the same call to action (Start free, Connect
   Claude, Connect ChatGPT).
 - `/` links down into every cluster from the section that matches it (agents → `/claude`,

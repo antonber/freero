@@ -15,6 +15,8 @@ import { TwoFactorPage } from './pages/auth/TwoFactorPage';
 import { InvitePage } from './pages/invite/InvitePage';
 import { AccountSettingsPage } from './pages/account/AccountSettingsPage';
 import { ConnectAgentPage } from './pages/connect/ConnectAgentPage';
+import { AppsPage, IntegrationPage } from './pages/apps/AppsPage';
+import { CommunityListingPage, SubmitListingPage } from './pages/apps/CommunityPages';
 import { UnsubscribePage } from './pages/unsubscribe/UnsubscribePage';
 import { AdminConsolePage } from './pages/admin/AdminConsolePage';
 import { AppealPage } from './pages/appeal/AppealPage';
@@ -98,6 +100,39 @@ export function App() {
               element={
                 <RequireAuth>
                   <ConnectAgentPage />
+                </RequireAuth>
+              }
+            />
+            {/* Apps & agents (#87): the catalog of everything that connects, each entry's connect step, and community listings. */}
+            <Route
+              path="/apps"
+              element={
+                <RequireAuth>
+                  <AppsPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/apps/submit"
+              element={
+                <RequireAuth>
+                  <SubmitListingPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/apps/community/:id"
+              element={
+                <RequireAuth>
+                  <CommunityListingPage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/apps/:id"
+              element={
+                <RequireAuth>
+                  <IntegrationPage />
                 </RequireAuth>
               }
             />

@@ -30,7 +30,9 @@ in; makes a personal token for plain HTTP; lists what is connected (apps and tok
 revoke), marking each **Connected** once its client has called the server; and offers starter
 prompts. `/settings/connect#<client>` opens one client's tab (`claude`, `chatgpt`, `claude-code`,
 `cursor`, `vscode`, `other`, `http`); the marketing site's /claude, /chatgpt and /agents link there.
-Agents can read `/llms.txt` (and `/llms-full.txt`) for the endpoint, sign-in and tools.
+Agents can read `/llms.txt` (and `/llms-full.txt`) for the endpoint, sign-in and tools. Everything
+else that connects to Freero (trackers, chat, embeds, sign-in, the API) is listed in the app's
+**Apps & agents** page (`/apps`, also in the board menu), each entry with its connect step.
 
 The same steps by hand (formats as each vendor documents them, checked 2026-10-29):
 
@@ -160,8 +162,14 @@ A write tool called without its permission changes nothing and answers with the 
   instructions. Tool names, descriptions, the server's instructions and error messages are Freero's
   own words and never contain board text; boards are not listed as resources by title for the same reason.
 - **Destructive tools need confirmation.** `delete_items` deletes nothing unless called with
-  `confirm: true` (the assistant is told to ask you first). Tools carry MCP annotations
-  (`readOnlyHint`, `destructiveHint`, `idempotentHint`).
+  `confirm: true` (the assistant is told to ask you first). Every tool has a title and explicit
+  `readOnlyHint`, `destructiveHint` and `openWorldHint` (and `idempotentHint`): anything that
+  changes or deletes existing items, replaces a control-room lane or creates issues in a tracker is
+  destructive, so clients ask before it runs (`mcp.test.ts` fails when a tool lacks one).
+- **Browsers can't be turned against it.** `/mcp` answers only on `PUBLIC_URL`'s host (or
+  loopback), so a page that rebinds its own name to the server's address is refused (DNS
+  rebinding), and a browser `Origin` must be https (or http on loopback), never `null`: refused with
+  403 before any token is looked at. Clients without a browser send no `Origin` and are unaffected.
 - **Limits.** 500 items per call; `RATE_LIMIT_API_CREDENTIAL` requests and `RATE_LIMIT_AGENT_WRITE`
   board changes per minute per connection — apart from your own editing, which an agent never slows
   down.
@@ -229,8 +237,10 @@ import_from_tracker) somewhere people already have or a new container:
 | `update_items` | write | Changes several items in one step, all or nothing: text, card fields, colors, frame title / hidden, lock, link, and where they are — `into` a frame, kanban column (`column`) or cluster, placed by Freero (or exact `x` / `y` / `w` / `h`; a moved frame takes its contents). |
 | `delete_items` | write | Deletes items (a frame with everything inside). Only with `confirm: true`. |
 | `export_board` | read | The whole board as a file (embedded resource): Markdown or JSON. Recorded as an export (`board.exported`); refused by a downloads policy. |
+| `list_tracker_connections` | read | The issue-tracker connections the person may use on a board (#83): name (what `sync_to_tracker` and `import_from_tracker` take as `connection`), provider, scope (team or personal), site, default project and status; with `connection`, also its projects (Jira project keys, Linear team keys, GitHub `owner/repo`), read from the tracker. Only owners and editors use trackers on a board: anyone else gets an empty list and why; no connection gets how to connect one. REST: `GET /api/v1/boards/{boardId}/trackers?connection=…`. |
 | `sync_to_tracker` | write | Sends items (sticky notes, cards, shapes, text) to the board's issue tracker as ONE issue — a cluster becomes one issue listing each note with a link back — or one per item (`mode: "each"`). `connection` names the tracker connection when there are several; `project` defaults to the connection's. The items and the issue stay linked and in sync ([trackers.md](trackers.md)). Without a tracker connection it says how the person connects one (`tracker_not_connected`). |
 | `import_from_tracker` | write (or suggest) | The other way (#79): a tracker query (JQL, a Linear search, a GitHub search such as `repo:owner/name is:open label:"area: agents"`) becomes task cards **linked** to their issues — key, status and assignee on the card, synced both ways (closing the issue updates its card, through the webhook). The board menu's *Import issues…* rules: the person's own or the team's connection (`connection` names it when there are several), edit access, at most 100 issues (`limit`, default 50), issues already linked on this board skipped (importing again adds only new ones). In free space or with `placement`; placement never changes an issue's status (in a kanban a card goes to the column of its status if the named one has another). Attributed to "<app> for <you>". Returns `cards: [{ id, key, url }]` and `skipped`. A connection that may only suggest (or `propose: true`) proposes the cards instead: one suggestion group of plain cards linking to their issues, not synced (accept them, or import with write access to link). REST: `POST /api/v1/boards/{boardId}/trackers/import`. |
+| `import_meeting_notes` | write (or suggest) | Meeting notes or a transcript, passed as exported — a Markdown or text summary (Granola, Otter, Fathom, Meetily …) or WebVTT / SRT captions — become ONE frame: decisions as a cluster, action items as task cards (owner in the description, due date from "by Nov 4" / "due Friday"), the other sections' points as notes under their headings, prose as a summary note and, for transcripts, who spoke (turns, talk time; `speakers: false` leaves it out). Read as written, no AI. `format` (default: recognised), `title` (when the notes have none), `date` (the meeting's, YYYY-MM-DD, when the notes don't say), `near` / `placement`. Returns the frame's id and, block by block (Decisions, Action items, each topic), the title's id and the new ids. Proposed instead with only permission to suggest, or `propose: true`. REST: `POST /api/v1/boards/{boardId}/structure` with `{ "structure": { "kind": "meeting", "source": … } }`. To pick the points yourself, use `add_clusters` and `add_cards`. |
 | `propose_changes` | suggest | Proposes a structure (`{ kind, … }` as for the add tools — `stickies`, `clusters`, `kanban`, `items`, `note`, `table`, diagrams — with `placement`; optional `description` for reviewers) as ONE group of suggestions that people who can edit the board accept or reject (KAI-169). The board does not change until they do; the badge, the outline (`include=suggestions`) and the activity feed show it as "<app> for <you>". Your role must be owner or editor. |
 
 **Resources:** `freero://board/{boardId}` — a board's outline (Markdown, ≈ 8000 tokens) in the
@@ -395,6 +405,8 @@ no third-party code, nothing fetched), so hosts can prefetch and review them.
 
 Status: **ready to file, not filed** (filing needs an organisation account and a public HTTPS
 deployment). Requirements as published by both programmes in 2026-10; re-check the forms when filing.
+Every field of both portals, the reviewer account, the carousel and what only the owner can do:
+[marketing/directory-submissions.md](marketing/directory-submissions.md).
 
 | | ChatGPT (OpenAI app directory) | Claude (Anthropic connectors directory) |
 |---|---|---|
@@ -404,17 +416,16 @@ deployment). Requirements as published by both programmes in 2026-10; re-check t
 | Views | `text/html;profile=mcp-app` resources with a declared CSP ✅ (`openai/widgetCSP` mirrored too); a widget domain (`_meta.ui.domain`) if the reviewers ask for a stable origin — then add it to `MCP_APP_FRAME_ANCESTORS` | MCP Apps resources with CSP ✅; views render under `*.claudemcpcontent.com` (in the default `MCP_APP_FRAME_ANCESTORS`) ✅ |
 | Safety | Destructive actions confirmed (`delete_items` needs `confirm`), least-privilege defaults (read + suggest), untrusted-content envelope ✅ | Same ✅ |
 | Listing | App name, short + long description, Freero logo (`apps/web/public/freero.svg`, own brand), screenshots, 3–5 demo prompts | Name, description, logo, ≥ 3 example prompts, documentation link (this page) |
-| Policies | Privacy policy URL, terms of use, support contact — **to publish** on the hosted service | Same — **to publish** |
+| Policies | `/privacy`, `/terms`, `/acceptable-use`, `/support` are on the site as **drafts for legal review** ("Draft: not in effect" until `SITE_LEGAL_OPERATOR` is set) | Same |
 | Review | Test account with sample boards (no two-step verification), organisation verification in the OpenAI platform — **human step** | Test account, contact for the review — **human step** |
 
 Demo prompts to submit: "Map out our Q1 launch risks on a Freero board and show it to me", "Turn
 these meeting notes into a flowchart on my Sprint board", "Group the stickies on my retro board into
 themes and propose action items", "What did the team decide on the Roadmap board?".
 
-Screenshots: the preview (light / dark) and the live board (inline, full screen, read-only, after
-"Share with team") are produced by driving the views in a local MCP Apps host (the official
-`AppBridge` + MCP client against a real server, see "Verifying" below); replace them with ones taken
-in ChatGPT developer mode and Claude once the hosted service runs this version.
+Screenshots: `scripts/directory-shots.mjs` renders the live view (read from the server) in a
+minimal local MCP Apps host that hands it a real `open_board` result, against a server filled by
+`scripts/seed-reviewer-account.mjs`; the carousel PNGs are in `marketing/directory-assets/`.
 
 **Privacy notes for the submissions.** The views collect nothing: no analytics, no third-party
 code, no cookies (the live board signs in with its own token). What an assistant receives is what

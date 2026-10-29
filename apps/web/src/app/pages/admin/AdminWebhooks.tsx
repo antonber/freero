@@ -32,8 +32,11 @@ const FORMATS: SelectOption<WebhookFormat>[] = [
   { value: 'json', label: 'JSON (signed, for your own service)' },
   { value: 'slack', label: 'Slack message (incoming webhook)' },
   { value: 'teams', label: 'Microsoft Teams message (Workflows webhook)' },
+  { value: 'discord', label: 'Discord message (channel webhook)' },
+  { value: 'google-chat', label: 'Google Chat message (space webhook)' },
+  { value: 'mattermost', label: 'Mattermost message (incoming webhook)' },
 ];
-const FORMAT_LABEL: Record<WebhookFormat, string> = { json: 'JSON', slack: 'Slack', teams: 'Teams' };
+const FORMAT_LABEL: Record<WebhookFormat, string> = { json: 'JSON', slack: 'Slack', teams: 'Teams', discord: 'Discord', 'google-chat': 'Google Chat', mattermost: 'Mattermost' };
 const GROUPS: Array<{ label: string; types: FreeroEventType[] }> = [
   { label: 'Items', types: ['item.created', 'item.updated', 'item.deleted'] },
   { label: 'Comments', types: ['comment.created'] },

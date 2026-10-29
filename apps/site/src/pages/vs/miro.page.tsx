@@ -114,12 +114,12 @@ export default defineComparison({
     {
       capability: 'Templates',
       competitor: { verdict: 'yes', note: '7,000+ in its community library', sources: ['S22'] },
-      freero: { verdict: 'partial', note: '74 originals, no community gallery', ref: 'README.md' },
+      freero: { verdict: 'partial', note: '180 originals, no community gallery', ref: 'README.md' },
     },
     {
       capability: 'App marketplace',
       competitor: { verdict: 'yes', note: '250+ apps and integrations', sources: ['S21'] },
-      freero: { verdict: 'no', ref: 'docs/parity.md' },
+      freero: { verdict: 'partial', note: 'built-in integrations plus reviewed community listings; no in-board apps', ref: 'docs/parity.md' },
     },
     {
       capability: 'Visitors without an account',

@@ -1,0 +1,27 @@
+WEBVTT
+
+NOTE Design review, recorded 2026-10-28
+
+1
+00:00:00.000 --> 00:00:06.500
+<v Ana Costa>Thanks for joining. Today we look at the new board sidebar.</v>
+
+2
+00:00:06.500 --> 00:00:12.000
+<v Ana Costa>I'll share the prototype first.</v>
+
+3
+00:00:12.000 --> 00:00:21.000
+<v Ben Ito>The sidebar feels crowded when there are more than ten frames.</v>
+
+4
+00:00:21.000 --> 00:00:30.000
+<v Chloé Martin>We could group frames by section, like chapters.</v>
+
+5
+00:00:30.000 --> 00:00:36.000
+<v Ben Ito>Yes. Decision: we group frames into collapsible sections.</v>
+
+6
+00:00:36.000 --> 00:00:45.500
+<v Ana Costa>Agreed. Action item: Chloé mocks up the collapsed state by Friday.</v>

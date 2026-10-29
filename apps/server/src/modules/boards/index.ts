@@ -11,6 +11,7 @@ import {
   cleanTitle,
   createBoard,
   describeAccess,
+  guestRoleFor,
   listBoards,
   moveToTrash,
   removedFor,
@@ -71,6 +72,20 @@ export async function getBoardAccess(
  */
 export function objectKindsOf(ids: string[]): Promise<Map<string, ObjectKind>> {
   return repo.kindsOf([...new Set(ids)]);
+}
+
+/**
+ * What a board shows to ANYONE who has its link and no account (a chat app's link preview, #88):
+ * its title, description and thumbnail — only when its link lets a visitor without an account
+ * view it (guests allowed by its workspace, no password, not expired, not blocked by an operator,
+ * not trashed or taken down). Null for everything else, the same for "no such board" and "not
+ * public", so a preview never tells whether a private board exists.
+ */
+export async function publicLinkPreview(boardId: string): Promise<{ title: string; description: string; thumbnail: string | null } | null> {
+  const board = await repo.getBoard(boardId);
+  if (!board || board.kind !== 'board' || board.linkPasswordHash !== null) return null;
+  if (!(await guestRoleFor(board))) return null;
+  return { title: board.title, description: board.description, thumbnail: board.thumbnail };
 }
 
 /** Throws a 404/403 HttpError unless the user has at least `min` on the board. */

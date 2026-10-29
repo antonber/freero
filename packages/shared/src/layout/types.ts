@@ -127,7 +127,14 @@ export type StructureInput =
    * [additive] Work items (rows of a CSV, KAI-136) → stickies or task cards in a grid, or on a
    * kanban with a column per status (`layout: 'kanban'`).
    */
-  | { kind: 'items'; items: ItemInput[]; layout?: 'grid' | 'kanban'; title?: string };
+  | { kind: 'items'; items: ItemInput[]; layout?: 'grid' | 'kanban'; title?: string }
+  /**
+   * [additive, #88] Meeting notes or a transcript as written (Markdown, text, WebVTT, SRT) → one
+   * frame: decisions as a cluster, action items as task cards (owner, due date), the other points as
+   * sticky notes, prose as a note, and for transcripts who spoke (`speakers: false` leaves that out).
+   * `date` (YYYY-MM-DD) is the meeting's when the notes don't say; it resolves "by Friday".
+   */
+  | { kind: 'meeting'; source: string; format?: 'markdown' | 'text' | 'vtt' | 'srt'; title?: string; date?: string; speakers?: boolean };
 
 /** One work item of an `items` structure. Tag ids, assignee ids and colours are the board's own. */
 export interface ItemInput {
@@ -193,4 +200,6 @@ export const LAYOUT_LIMITS = {
   cells: 4000,
   /** Characters of a note's text. */
   note: 8000,
+  /** [additive] Characters of meeting notes or a transcript (an hour of captions is ~100 000). */
+  meeting: 1_000_000,
 } as const;

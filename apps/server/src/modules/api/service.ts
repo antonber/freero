@@ -66,7 +66,7 @@ import {
 import { insertStructure, newElementId, planMoveInto, readPlacement } from '../structure/index';
 import { getTemplate, listTemplates } from '../templates/index';
 import { ensurePersonalWorkspace, getWorkspaceInfo, workspaceRolesOf } from '../workspaces/index';
-import { boardConnections, importCandidates, importIssues, sendToTracker } from '../trackers/index';
+import { boardConnections, importCandidates, importIssues, projectsOf, sendToTracker } from '../trackers/index';
 import { commentSpot, patchUpdates, planCreate, planPatch, readItemInputs, toApiItem } from './items';
 import { planProposal, readProposal, suggestionGroups } from './suggestions';
 import { pausedError, pauseOf } from './pause';
@@ -686,6 +686,32 @@ async function trackerConnection(call: ApiCall, boardId: string, named: unknown)
     'No issue tracker is connected for this board. The person can connect their own in Freero (Settings → Your issue trackers), or a team admin can connect the team’s (Admin console → Issue trackers); then try again',
     'tracker_not_connected',
   );
+}
+
+/**
+ * The issue-tracker connections the person may use on this board (#83; MCP
+ * list_tracker_connections, REST `GET /boards/:id/trackers`): the team's and their own, with each
+ * one's provider, default project and status — what sync_to_tracker and import_from_tracker take as
+ * `connection` and `project`. With `connection`, also that connection's projects (Jira projects,
+ * Linear teams, GitHub repositories), read from the tracker. Only owners and editors use trackers on
+ * a board; anyone else gets an empty list and the reason.
+ */
+export async function trackerConnections(call: ApiCall, boardId: string, named?: unknown) {
+  const { id, role } = await openBoard(call, boardId);
+  if (role !== 'owner' && role !== 'editor')
+    return { connections: [], note: 'Only the board’s owners and editors send items to an issue tracker or import issues; this person can’t here.' };
+  const conns = await boardConnections(call.userId, id);
+  const connections = conns.map((c) => ({ id: c.id, name: c.name, provider: c.provider, scope: c.scope, site: c.site, defaultProject: c.defaults.project, status: c.status }));
+  if (!conns.length)
+    return {
+      connections,
+      note: 'No issue tracker is connected for this board. The person can connect their own in Freero (Settings → Your issue trackers), or a team admin the team’s (Admin console → Issue trackers).',
+    };
+  if (named === undefined || named === null || named === '') return { connections };
+  const conn = await trackerConnection(call, id, named);
+  call.audit.metadata = { connection: conn.id, provider: conn.provider };
+  const { projects } = await projectsOf(call.userId, conn.id, id);
+  return { connections, projects: projects.map((p) => ({ key: p.key, name: p.name })) };
 }
 
 /**

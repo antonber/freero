@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, BadgeCheck, Bot, CircleAlert, Download, ImageUp, LogOut, Mail, Monitor, ShieldCheck, Trash2 } from 'lucide-react';
+import { ArrowLeft, BadgeCheck, Bot, CircleAlert, LayoutGrid, Download, ImageUp, LogOut, Mail, Monitor, ShieldCheck, Trash2 } from 'lucide-react';
 import { describeDevice, type DataExportInfo, type NotificationPrefs, type SecurityInfo, type SessionInfo } from '@freero/shared';
 import { Avatar, Button, ColorSwatches, Input, Logo, Modal, Spinner, Toggle, readableTextColor, useToast } from '@ui';
 import { api, ApiError } from '../../api/client';
@@ -33,6 +33,12 @@ export function AccountSettingsPage() {
     api.security().then(setSecurity, () => undefined);
   }, []);
   useEffect(loadSecurity, [loadSecurity]);
+  // Deep links (#trackers, #api-tokens, #sign-in…, e.g. from Apps & agents): the sections render
+  // after the browser looked for the anchor, so scroll to it once they are there.
+  useEffect(() => {
+    const id = window.location.hash.slice(1);
+    if (id && id !== 'notifications') document.getElementById(id)?.scrollIntoView({ block: 'start' });
+  }, []);
   const securityChanged = useCallback(() => {
     loadSecurity();
     setSessionsVersion((v) => v + 1);
@@ -57,11 +63,14 @@ export function AccountSettingsPage() {
         <Section
           id="connect-agent"
           title="AI agents"
-          description="Connect Claude, ChatGPT, Claude Code, Cursor, VS Code or any MCP client to your boards: one click or one paste, with this server’s address filled in."
+          description="Connect Claude, ChatGPT, Claude Code, Cursor, VS Code or any MCP client to your boards: one click or one paste, with this server’s address filled in. Apps & agents lists everything else that connects."
         >
           <div className="fr-acct-form__row">
             <Button variant="primary" icon={Bot} onClick={() => navigate('/settings/connect')}>
               Connect an agent
+            </Button>
+            <Button variant="secondary" icon={LayoutGrid} onClick={() => navigate('/apps')}>
+              Apps &amp; agents
             </Button>
           </div>
         </Section>

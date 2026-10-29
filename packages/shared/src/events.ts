@@ -90,8 +90,12 @@ export interface FreeroEvent {
 
 // ---- Webhooks: a team workspace's admins register endpoints (admin console, "Webhooks") ----
 
-/** `json`: the FreeroEvent; `slack` / `teams`: a ready-made message for an incoming-webhook URL. */
-export const WEBHOOK_FORMATS = ['json', 'slack', 'teams'] as const;
+/**
+ * `json`: the FreeroEvent; the others: a ready-made message for that chat app's incoming-webhook URL
+ * (`teams`: a Teams Workflows webhook; `google-chat`: a Google Chat space webhook). Additive: a new
+ * chat app is a new value here and a renderer in the webhooks module.
+ */
+export const WEBHOOK_FORMATS = ['json', 'slack', 'teams', 'discord', 'google-chat', 'mattermost'] as const;
 export type WebhookFormat = (typeof WEBHOOK_FORMATS)[number];
 
 /**

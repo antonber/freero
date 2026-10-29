@@ -1,0 +1,46 @@
+.fr-meeting-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fr-meeting-notes__file {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px;
+  color: var(--fr-ink-2);
+  border: 1.5px dashed var(--fr-line-strong);
+  border-radius: var(--fr-radius);
+  cursor: pointer;
+}
+
+.fr-meeting-notes__file:hover,
+.fr-meeting-notes__file:focus-within {
+  color: var(--fr-ink);
+  border-color: var(--fr-primary);
+}
+
+.fr-meeting-notes__file--busy {
+  cursor: progress;
+}
+
+.fr-meeting-notes__file input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: inherit;
+}
+
+.fr-meeting-notes__hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fr-ink-3);
+}
+
+.fr-meeting-notes__error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fr-danger);
+}

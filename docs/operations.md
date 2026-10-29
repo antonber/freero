@@ -326,10 +326,16 @@ workspace (modules/workspaces).
 | Board links unlocked with their password (when) | `board_link_unlocks` (boards) | no (an access fact, not content) | deleted | deleted with the boards |
 | What a directory sent about them (SCIM userName, externalId, name, email, active) | `scim_users`, `scim_group_members` (scim) | `memberships.json` → `directoryRecords` | deleted (cascade) | deleted (cascade) |
 | Break-glass role | `sso_connections.break_glass_user_id` (sso) | `memberships.json` → `singleSignOn` | cleared (SET NULL) | deleted (cascade) |
+| Community listings they submitted to Apps & agents (name, description, links, category, the OAuth app named, the contact address for reviewers, review status and the reviewer's note) | `marketplace_listings` (marketplace) | `listings.json` | deleted (cascade) | — |
 | Abuse reports they filed, moderation actions about their content or account (suspension) | `moderation_items`, `moderation_actions` (moderation; reporter address only as an HMAC), `users.suspended_at` (auth) | not yet (follow-up: KAI-191) | person references cleared (SET NULL); the records stay as the operators' trail | items about its boards stay with their recorded target |
 | API tokens (sha256 only, name, scopes, times), apps they authorised (consents, codes, access/refresh tokens), apps they registered; where their credentials were used in team workspaces | `api_tokens`, `oauth_grants`, `oauth_codes`, `oauth_clients`, `api_workspace_credentials` (apiauth) | `api.json` (never a secret or hash) | deleted (cascade); revoked already when deletion is scheduled (signed out everywhere) | usage rows deleted (cascade) |
 | Data exports | `data_exports` + private ZIP files (privacy, uploads) | listed in `activity.json` | rows and files deleted by the export job within `DATA_EXPORT_INTERVAL_SECONDS` | workspace exports' rows and files deleted by the job |
-| Request logs | stdout (pino) → your log pipeline | no | not touched: user ids (never emails, bodies or tokens) — expire them in your log retention | — |
+| Request logs | stdout (pino) → your log pipeline | no | not touched: user ids and IP addresses (never emails, bodies, query strings or tokens) — expire them in your log retention | — |
+| Audit log (sign-ins, sharing, exports, every API / MCP call: actor, IP, target, outcome) | `audit_events`, `audit_chains` (audit) | no (team admins read and export the workspace's log in the admin console) | kept until retention (`DEFAULT_AUDIT_RETENTION_DAYS`, a workspace's `auditRetentionDays`); actor read as "Deleted user"; no foreign keys | the workspace's chain kept until the default retention |
+| Board activity feed (who changed what kind of item, when) | `board_activity` (activity) | no | 90 days | deleted with the boards |
+| Guest sessions (a name, the board, sha256 of the cookie) | `guest_sessions` (auth) | — | — (no account) | expire after `GUEST_SESSION_HOURS` |
+| Error reports (`ERROR_REPORTING_DSN`): the error, request method and path, account id | the Sentry-compatible service you configure | no | outside Freero (that service's retention) | — |
+| Fonts | the web app loads Inter, Caveat, JetBrains Mono and Source Serif from Google Fonts: Google receives visitors' IP addresses and user agents (the marketing site self-hosts its font) | no | — | — |
 | Rate-limit counters | Redis / memory, keys are HMACs | no | expire with their window | — |
 | Mail | SMTP provider / dev outbox | no | outside Freero (provider retention) | — |
 | Backups | your `pg_dump` / bucket copies | no | still contain the data until the backup expires: keep backup retention ≤ 35 days (or the period your privacy notice states) | same |
@@ -398,6 +404,19 @@ Operators get an email when a board gets its first open report and for every app
   that the decision stands.
 - The side panel finds an **account** by email (suspend / lift) and an **uploaded file** by its
   URL (remove / restore / delete the kept copy).
+- **Listings** (`/operator?view=listings`, #87): community integrations submitted for the Apps &
+  agents page. A submission is seen by nobody but its submitter and operators until you
+  **Approve** it (it is then live, labelled Community) or **Decline** it (with a statement saying
+  why; the submitter can withdraw it and submit again). Live ones can be **Featured** (listed
+  first in the app) or **Removed** (a statement is required, and the developer can appeal);
+  **Restore** undoes a removal. Each card shows the submitter, their contact address for
+  reviewers, the website and docs links, the OAuth app it names (one the submitter registered:
+  its redirect addresses are listed) and its open reports. Operators are mailed for every new
+  submission. Reports about a live listing arrive in the queue like any report.
+  Submissions need a verified address and are limited per person (`RATE_LIMIT_LISTING_SUBMIT`,
+  and at most 10 waiting or live at once). Every decision is an action like the others below:
+  recorded, audited (`moderation.listing.*`, in the submitter's account log and their teams'),
+  and emailed to the developer.
 
 ### Actions
 

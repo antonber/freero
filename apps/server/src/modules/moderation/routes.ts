@@ -10,6 +10,7 @@ import {
   boardDetail,
   boardPreview,
   isOperator,
+  listingQueue,
   queue,
   resolve,
   submitAppeal,
@@ -124,6 +125,13 @@ export default function moderationRoutes(_ctx: ServerContext): Router {
       if (file.size !== null) res.setHeader('Content-Length', String(file.size));
       file.body.on('error', () => res.destroy());
       file.body.pipe(res);
+    }),
+  );
+  // Community listings (#87): pending submissions to approve or decline, live ones to remove.
+  ops.get(
+    '/listings',
+    handle(async (req, res) => {
+      res.json({ listings: await listingQueue(req.query.status) });
     }),
   );
   ops.get(

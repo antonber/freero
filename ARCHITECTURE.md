@@ -123,6 +123,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | Derived indexes (`object_references`, `search_entries`) | their module's outbox consumer | never written directly: change the source; `references:rebuild` / `search:rebuild` repair |
 | A doc's document (Yjs fragment `document-store`, KAI-162) | the doc editor (`engine/docs`, through `engine/store/ObjectDocStore`); on requests, realtime's `docContent.ts` (`appendDocBlocks`, `initDocContent`) | the editor, or `modules/docs` / the public API |
 | The event stream (`events`) | `modules/events` (from outbox topics only) | append to the outbox in your change's transaction (`board.events`, `board.members`, `board.content`); consumers follow `event.recorded` |
+| Community listings (`marketplace_listings`) and their review status | server `modules/marketplace`; decisions are moderation's, applied through `decideListing` | `submitListing` / withdraw (its routes); operators' actions (`modules/moderation`) |
 | API tokens, OAuth apps / consents, a team's API switch, live-view tickets (`api_embed_tokens`) | server `modules/apiauth` | its index: `authenticate`, `requireScope`, `useInWorkspace`, `mintEmbedTicket` / `redeemEmbedTicket` |
 | Tracker connections, links to issues, what both sides last agreed on | server `modules/trackers` | its routes / index (`sendToTracker`, `importIssues`); syncs only through its outbox consumer |
 | `trackers` collection (issue badges) and items' `trackerLink` | server `modules/trackers` (through realtime's `changeBoard`) | — (the web feature only reads them) |
@@ -432,6 +433,19 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   members name the kanban / pool as `frameId`, and the container's own `arrange` settles them on
   insert), icons from `lucide-react` components (`icon(…)`, drawing copied into the element), and
   connector ends at a spot on an element (`{ id, at: { u, v } }`, e.g. a message on a lifeline).
+- **New built-in templates are data, not code** (`features/templates/lib/specs/<area>.ts`, format in
+  `lib/spec/types.ts`). A spec names an archetype (`matrix`, `columns`, `kanban`, `canvas`,
+  `timeline`, `funnel`, `journey`, `tree`, `prompts`, `table`, `clusters`, `hub`, `flow`) and gives
+  its content: section titles, a guiding prompt each, realistic example notes and tones by meaning
+  (never coordinates or hex colours). `lib/spec/archetypes.ts` lays specs out with the `Kit` and
+  returns the same `BuiltTemplate`, so insert, preview, search and the outline treat both kinds
+  alike; hand-coded templates stay for layouts no archetype fits (sequence diagrams, ERDs…). After
+  adding or editing a spec run `npm run templates:index`: it writes `lib/specs/index.ts`, what the
+  picker lists and searches plus one lazy loader per file, so spec content loads per file on first
+  preview or insert (`TemplateDef.load`; insert through `addTemplate`). `validateSpec` (run over
+  every spec by the tests) checks ids, categories, counts, text lengths and filler; the tests also
+  fail while the index is stale or a note spills out of its section. A layout no archetype covers
+  is a new archetype (with its validation limits), not a one-off spec.
 
 Elements, geometry and text (all optional on `ElementDefinition` unless noted):
 - **Reads inside `editor.transact` see its earlier writes** (`getElements()`, `getElement()`,
@@ -829,7 +843,7 @@ files; it precaches them plus the shell files). Rules, all in `strategyFor` / `r
 ## Marketing site (`apps/site`, server `modules/site`; KAI-250..253)
 
 The public pages (`/`, `/claude`, `/chatgpt`, `/agents`, `/security`, `/open-source`, `/pricing`,
-`/docs`, `/vs/<slug>`; later `/features/*`, `/use-cases/*`, `/templates/*`) are a separate workspace
+`/docs`, `/support`, `/privacy`, `/terms`, `/acceptable-use`, `/integrations/<id>`, `/vs/<slug>`; later `/features/*`, `/use-cases/*`, `/templates/*`) are a separate workspace
 so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs/marketing/seo.md`.
 
 - **Why a custom prerender, not a site generator.** Pages are TSX components rendered once by
@@ -846,6 +860,12 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
   plus the page's own such as SoftwareApplication), the breadcrumbs, the FAQ section, the closing
   call to action, the sitemap entry. Colours come from the app's `ui/tokens.css` (`:root` blocks,
   read at build time), so the brand has one source.
+- **Integrations** (`/integrations`, `/integrations/<id>`, #87) are generated from the catalog in
+  `@freero/shared` `integrations.ts` (see "Apps & agents"): `pages/integrations/entries.page.tsx`
+  default-exports an ARRAY of pages, which the build accepts from any page file whose pages come
+  from data. Each entry brings its own title / description (the length and uniqueness checks apply),
+  a HowTo of its connect steps, a link to its connect step in the app (`/apps/<id>`) and links to
+  its category's other entries. Community listings never appear on the site (below).
 - **Comparisons** (`/vs/<slug>`, `src/lib/compare.tsx` `defineComparison`): every competitor cell
   names its sources, every source its check date; `published: false` pages are `noindex`, out of
   the sitemap and linked from nowhere, and a page can't be published while a competitor claim is
@@ -862,12 +882,23 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
 - **Serving** (`modules/site/routes.ts`, mounted at `/`): `/` → the landing page, or 302 `/app` for
   a signed-in person (`Vary: Cookie`); known pages with `Cache-Control: no-cache` (ETag);
   `/claude/` → 301 `/claude`; a missing page under `/vs/`, `/features/`, `/use-cases/`,
-  `/templates/` → the site's 404; `/_site/*` immutable; anything else falls through to the web
+  `/templates/`, `/integrations/` → the site's 404; `/_site/*` immutable; anything else falls through to the web
   app. `SITE=false` (or no build): `/` → `/app`, nothing marketing, `robots.txt` `Disallow: /`.
   The app's pages are never indexed: `index.html` has `robots noindex` and the SPA fallback sends
   `X-Robots-Tag: noindex`; robots.txt also disallows the app, boards, docs, embeds, the API, MCP,
   auth and invite paths. `SITE_ANALYTICS_SRC` adds an operator's analytics script to marketing
   pages only, with its origin in their CSP.
+- **Legal pages** (`legal: true`: `/privacy`, `/terms`, `/acceptable-use`; drafts for legal review,
+  written from the code and docs/operations.md's data map) and `/support` put `legal(key)` tokens
+  (`src/lib/legal.tsx`) where a deployment's facts go: the operator, address, governing law and
+  contacts (`SITE_LEGAL_*`, `ABUSE_CONTACT_EMAIL`, `SECURITY_CONTACT`), retention periods and the
+  processors the server is configured with (SMTP host, S3, AI provider, error tracking, analytics).
+  `modules/site/legal.ts` fills them when serving, like the origin. **The guard fails safe**: a
+  legal page is BUILT as a draft (a "Draft: not in effect" banner and `noindex`), and only the
+  server removes both, once `SITE_LEGAL_OPERATOR` is set; until then it also sends
+  `X-Robots-Tag: noindex`, and `GET /api/site/legal` answers `null`, so the app's sign-up asks
+  nobody to agree to a draft. A page about the deployment never hard-codes a value the server
+  knows from its configuration.
 - **For agents:** `/llms.txt` and `/llms-full.txt` (llmstxt.org, `src/lib/llms.ts`) are built files
   like robots.txt, origin-substituted when served: what Freero is, the MCP endpoint, OAuth metadata
   and the tool list. Tools and prompts come from `src/lib/mcp.ts` (also the /agents table); the site
@@ -979,9 +1010,10 @@ event stream), `docs` (no table: the doc app — a doc is a boards container of 
 document realtime stores; see "Docs and native live embeds"), `site` (no table: serves the built
 marketing site at `/`; see "Marketing site"), `webhooks` (webhook_endpoints, webhook_deliveries: workspace webhooks) — the last
 three in "Search, the event stream and webhooks" below — `backup` (no table: `.freero` board
-backups, see below), `share` (no table: the installed app's share target, see "Installable app"), `walkthroughs`
+backups, see below), `share` (no table: the installed app's share target, see "Installable app"), `slack` (no table: Slack link unfurls for the operator's Slack app, see "Integrations" below), `walkthroughs`
 (walkthroughs, walkthrough_views, walkthrough_comments) and `decisions` (decisions), in "Walkthroughs
-and decision snapshots" below.
+and decision snapshots" below, and `marketplace` (marketplace_listings: community listings of Apps &
+agents; see "Apps & agents" below).
 
 - Board backups (`modules/backup`, KAI-137; format: docs/board-backup.md): owns no state. A download
   is boards' `authorizeBackup` (downloads policy + audit) → realtime's `boardBackupContent` (the
@@ -1167,9 +1199,51 @@ and decision snapshots" below.
 - Suspensions (KAI-180): `user.suspend` with `boards: 'take_down' | 'disable_link'` acts on every
   board the account has in service, each recorded with `parent_id` = the suspension; `user.restore`
   reverses those children not reversed or deleted since (children of the lift). One notice.
+- Community listings (#87, `modules/marketplace`): their status is marketplace's, written only
+  through its `decideListing`; moderation owns the decisions (`listing.approve` / `reject` /
+  `remove` / `restore` / `feature` / `unfeature` are actions like the others: recorded, audited,
+  noticed, a removal appealable), the operator console's Listings view
+  (`GET /api/moderation/listings`) and reports about them (`target.kind: 'listing'`, no board;
+  signed in, live listings only, else 404). marketplace imports nothing from moderation (it mails
+  operators about a new submission itself), so the dependency goes one way.
 - Web: `features/report` (board menu, context menu, `report.open` command for other features —
   comments' flag), `Host.report`; the app's `/operator` queue, `/operator/boards/:id/preview`
   (read-only snapshot through `BoardEngineProps.initialState`) and `/appeal`.
+
+### Apps & agents: the integrations catalog and community listings (#87)
+
+**One catalog, written once.** `@freero/shared` `integrations.ts` lists every integration that
+exists — AI agents and MCP clients (each linking to its Connect tab), issue trackers, chat webhook
+formats, live embeds (one per `EMBED_PROVIDERS` entry), calls, sign-in and directory, automation,
+storage — as pure data: name, category, one-liner, description, status (`built-in`, `settings`,
+`api`, `operator`), the connect step (steps, an in-app deep link, a docs link), what the operator
+must set up, keywords, and the site page's title and description. Third parties are plain-text
+names; the app draws generic category icons. Shared because both the web app and the marketing
+site render it (the site imports `@freero/shared` for nothing else). Every entry must be true of
+the code: `apps/site/src/integrations.test.ts` fails when an in-app link names a route, an admin
+console tab, a settings section or a Connect tab that doesn't exist, when a docs link names a
+missing file or heading, and when the embeds differ from `EMBED_PROVIDERS`. A planned integration
+is added when it ships, never before (the places #88's entries go are marked in the file).
+`/admin/:workspace?tab=…` links are filled in per team the person administers.
+
+**In the app**: `app/pages/apps/` — `/apps` (search, category filters, an empty state that says
+what does connect), `/apps/:id` (an entry and its connect step), `/apps/community/:id`,
+`/apps/submit`; linked from settings, the Connect page and the board menu (`features/connect`).
+
+**Community listings** (`modules/marketplace`, table `marketplace_listings`): integrations people
+built on the API or MCP. A signed-in person with a verified address submits one (name, one-liner,
+description, https website and docs, category, what it is built on, optionally one of THEIR OWN
+registered OAuth apps — apiauth's `ownOAuthApps` — and a contact address for reviewers);
+rate-limited (`RATE_LIMIT_LISTING_SUBMIT`) and capped per person under an advisory lock. It is
+`pending` and answers 404 to everyone but its submitter (operators see it in the console) until an
+operator approves it; it then shows with a Community label to everyone signed in, can be reported
+through the Report flow, and removed (see "Moderation"). Everything in a listing is untrusted text:
+plain text with limits and no control or bidi characters, links https only without credentials,
+rendered as text (never markup) and linked with `rel="noopener noreferrer nofollow ugc"`.
+**Never on the public site, featured or not**: the site is one static build for every deployment,
+while listings are one server's data approved by that server's operator, and developers' words and
+links on indexable pages under Freero's name would invite link spam. Featuring lists a listing
+first in the app.
 
 ### Workspaces (`modules/workspaces`)
 
@@ -1740,7 +1814,7 @@ and feeds) follow that topic with their own cursor. Notifications and the activi
 in-process events for now (live socket attribution, per-instance bursts).
 
 **Webhooks** (`modules/webhooks`, admin console "Webhooks"). A team's owners/admins register endpoints
-with event types and a format (`json` signed with HMAC-SHA256, `slack`, `teams`); the URL and secret
+with event types and a format (`json` signed with HMAC-SHA256, or a chat message: `slack`, `teams`, `discord`, `google-chat`, `mattermost` — `webhooks/format.ts`, one renderer each, escaping board text for that app so it can not ping, link or format; #88); the URL and secret
 are sealed at rest (`platform/secrets`), the secret shown once, the URL shown shortened; changes are
 audited (`webhook.*`). The fan-out consumer queues one delivery per event and endpoint (unique), only
 for boards every full member of the workspace can open through team access (workspaces'
@@ -1754,6 +1828,32 @@ item link): one board's events, or only item and comment events about one item a
 directly in it — events carry `containerId` (the item's `frameId`; `item.deleted` from the stored
 state) for that — e.g. an agent's control-room lane. A scope's board must be one the whole team can
 open, and a scope never widens (no foreign key: a board that is gone just sends nothing).
+
+### Integrations that need no third-party approval (#88; docs/integrations/)
+
+- **Chat formats** are renderers in `webhooks/format.ts` over the same event and the same "whole
+  team can open" rule; a new chat app is a `WEBHOOK_FORMATS` value plus a renderer, never more
+  content than the `json` event. Mattermost has its own renderer (Slack's body isn't safe there:
+  Mattermost ignores `blocks` and pings on a plain `@channel`). Matrix has no standard incoming hook.
+- **Slack link unfurls** (`modules/slack`, no table, off unless `SLACK_SIGNING_SECRET` +
+  `SLACK_BOT_TOKEN`): `POST /api/integrations/slack/events` (cross-site POST: Slack's servers, proven
+  by the v0 signature only — five-minute window, constant-time compare; the URL challenge too).
+  `link_shared` is acknowledged at once and answered with `chat.unfurl`, deduplicated per event id,
+  `RATE_LIMIT_SLACK_UNFURL` per Slack workspace, one log line per outcome. What a preview may say is
+  boards' `publicLinkPreview`: title, description, thumbnail only for a board a visitor WITHOUT an
+  account may open by its link (no password, guests allowed); everything else, including "no such
+  board", is one generic card, so previews never reveal a private board's name or existence. The app
+  manifest is built by `slack/manifest.ts` (`npm run admin -- slack:manifest`; deploy/ ships it).
+- **Meeting notes** are a structure kind, `meeting` (`@freero/shared` `layout/meeting.ts`: a pure
+  reader of Markdown / text / WebVTT / SRT — headings, bullets, check boxes, owner and due phrases,
+  speaker labels, cue times; no AI — and its one-frame layout). So the web (`features/meeting-notes`:
+  board menu, dropped `.vtt` / `.srt`; one transaction, one undo step), REST (`/structure`, no new
+  route) and MCP (`import_meeting_notes`, a thin tool over it; proposed when the credential may only
+  suggest) produce the same frame. Dropped `.md` stays the doc importer's: only the menu reads Markdown
+  as meeting notes.
+- **Power Automate**: `npm run gen:power-automate` (`scripts/lib/swagger2.mjs`) converts
+  `docs/api/openapi.json` to the Swagger 2.0 those connectors require; `api/powerAutomate.test.ts`
+  keeps the checked-in file in step and free of OpenAPI 3 constructs.
 
 ### Walkthroughs and decision snapshots (`modules/walkthroughs`, `modules/decisions`; KAI-133, KAI-161)
 
@@ -2496,7 +2596,7 @@ the board, deletions. A suggestion is not board content until someone who can ed
   `S3_BUCKET` and keys (MinIO, SeaweedFS…), the `s3` group checks the S3 backend (prefixes, kept
   copies under `private/`, restore, retention, the S3_PUBLIC_URL redirect and stored Cache-Control);
   all other groups stay on the local disk. CI does all of it.
-  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation,ai,api,mcp,s3,suite,suggestions,collab,tracker,search,webhooks,docs,portability,walkthroughs,decisions,site` runs some groups (to loop one while hunting a flake).
+  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation,ai,api,mcp,s3,suite,suggestions,collab,tracker,search,webhooks,docs,portability,walkthroughs,decisions,site,integrations,apps` runs some groups (to loop one while hunting a flake).
   The `mcp` group drives the MCP server with the official MCP client SDK, OAuth (dynamic
   registration, consent, PKCE) included; with DATABASE_URL + REDIS_URL one client's requests also
   alternate between two instances.

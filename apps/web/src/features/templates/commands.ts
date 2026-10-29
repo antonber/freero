@@ -1,6 +1,6 @@
 import { BookmarkPlus, LayoutTemplate } from 'lucide-react';
 import { defineCommands } from '@engine';
-import { DOCK_ID, insertTemplate } from './lib/insert';
+import { DOCK_ID, addTemplate } from './lib/insert';
 import { TEMPLATES } from './lib/catalog';
 import { SAVE_DIALOG_ID } from './lib/saved';
 
@@ -20,7 +20,8 @@ export default defineCommands([
     label: 'Insert a template',
     run(editor, args) {
       const def = TEMPLATES.find((t) => t.id === args?.id);
-      if (def) insertTemplate(editor, def);
+      if (def)
+        addTemplate(editor, def).catch(() => editor.host.notify(`Could not load “${def.name}”. Check your connection and try again.`, 'error'));
     },
   },
   // Saving copies content into the user's own template library (never writes the board), so

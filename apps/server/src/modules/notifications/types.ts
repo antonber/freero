@@ -87,6 +87,11 @@ const MODERATION_TITLE: Record<string, (d: NotificationData) => string> = {
   'board.delete': (d) => `Freero’s moderators deleted ${board(d)} for good`,
   'upload.remove': (d) => `Freero’s moderators removed a file of yours${d.boardTitle ? ` shown on ${board(d)}` : ''}`,
   'upload.restore': () => 'A file of yours is available again',
+  // Community listings (#87): `boardTitle` carries the listing's name.
+  'listing.approve': (d) => `Your listing “${d.boardTitle ?? ''}” is live in Apps & agents`,
+  'listing.reject': (d) => `Your listing “${d.boardTitle ?? ''}” wasn’t approved`,
+  'listing.remove': (d) => `Freero’s moderators removed your listing “${d.boardTitle ?? ''}”`,
+  'listing.restore': (d) => `Your listing “${d.boardTitle ?? ''}” is live again`,
 };
 
 export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> = {

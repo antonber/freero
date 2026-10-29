@@ -47,7 +47,9 @@ export type RateLimitName =
   | 'search'
   | 'trackerSend'
   | 'backup'
-  | 'walkthroughComment';
+  | 'walkthroughComment'
+  | 'slackUnfurl'
+  | 'listingSubmit';
 
 /** Issue-tracker sync (KAI-153; docs/trackers.md). */
 export interface TrackersConfig {
@@ -267,6 +269,11 @@ export interface Config {
    */
   publicApi: boolean;
   /**
+   * The ChatGPT app directory's domain-verification token (OPENAI_APPS_CHALLENGE), served as plain
+   * text at /.well-known/openai-apps-challenge while it is set; null: that path is a 404.
+   */
+  openaiAppsChallenge: string | null;
+  /**
    * Development and tests only (refused in production, #81): an OAuth client may also be identified
    * by a client metadata document at a plain-http LOOPBACK address (`http://127.0.0.1:<port>/…`), the
    * loopback exception of draft-ietf-oauth-client-id-metadata-document §8.6. Off: https and public
@@ -283,6 +290,21 @@ export interface Config {
     dist: string;
     /** An operator's privacy-friendly analytics script (https), added to marketing pages only; null = none. */
     analytics: { src: string; attrs: Record<string, string> } | null;
+    /**
+     * Who runs this service, for the legal pages (/privacy, /terms, /acceptable-use) and /support:
+     * SITE_LEGAL_*. Until `operator` is set those pages say "Draft: not in effect" and are noindex,
+     * and sign-up doesn't ask anyone to agree to them.
+     */
+    legal: {
+      operator: string | null;
+      contactEmail: string | null;
+      address: string | null;
+      jurisdiction: string | null;
+      /** Who hosts the servers and where ("Railway Corp., US West"): the privacy policy's hosting provider. */
+      hosting: string | null;
+      /** A status page people can check when the service is down (https), for /support. */
+      statusUrl: string | null;
+    };
   };
   /**
    * A Jitsi deployment (https://meet.jit.si, or the operator's own) where boards may get a call
@@ -308,6 +330,11 @@ export interface Config {
     /** Failed attempts in a row after which Freero turns an endpoint off (and tells who made it). */
     disableAfterFailures: number;
   };
+  /**
+   * Slack link unfurls (modules/slack, #88; docs/integrations/slack.md): the operator's Slack app.
+   * Off (null) unless both its signing secret and its bot token are set.
+   */
+  slack: { signingSecret: string; botToken: string; apiUrl: string } | null;
   /**
    * Further https origins boards may frame as live embeds (KAI-127), besides the built-in providers
    * (`EMBED_PROVIDERS` in @freero/shared): a link on one of them is framed as given, sandboxed.
@@ -387,6 +414,8 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   search: '120/1m', // per person (app) or credential (API, MCP): searches of board content (KAI-151)
   backup: '30/1h', // per user: board backups downloaded or restored (each reads or writes a whole board and its files, KAI-137)
   walkthroughComment: '120/10m', // per person: comments on walkthroughs (each may notify people, KAI-133)
+  slackUnfurl: '50/1m', // per Slack workspace: link previews Freero posts there (chat.unfurl is Slack's tier 3, about 50 a minute; #88)
+  listingSubmit: '5/1d', // per person: community listings submitted for review (each mails the operators, #87)
 };
 
 const ENV_NAME: Record<RateLimitName, string> = {
@@ -430,6 +459,8 @@ const ENV_NAME: Record<RateLimitName, string> = {
   search: 'RATE_LIMIT_SEARCH',
   backup: 'RATE_LIMIT_BACKUP',
   walkthroughComment: 'RATE_LIMIT_WALKTHROUGH_COMMENT',
+  slackUnfurl: 'RATE_LIMIT_SLACK_UNFURL',
+  listingSubmit: 'RATE_LIMIT_LISTING_SUBMIT',
 };
 
 /** The built-in providers: env prefix, button label, default issuer, extra verified-email claims. */
@@ -516,6 +547,24 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     else analyticsAttrs[key] = i < 0 ? '' : pair.slice(i + 1).trim();
   }
   const siteAnalytics = analyticsSrc ? { src: analyticsSrc, attrs: analyticsAttrs } : null;
+  // The legal pages' operator and contacts (apps/site legal pages, modules/site): plain text, one line.
+  const legalText = (name: string, max: number) => {
+    const v = str(name);
+    if (v !== null && (v.length > max || /[\r\n\t]/.test(v))) {
+      problems.push(`${name} must be one line of at most ${max} characters`);
+      return null;
+    }
+    return v;
+  };
+  const siteLegal = {
+    operator: legalText('SITE_LEGAL_OPERATOR', 200),
+    contactEmail: legalText('SITE_LEGAL_CONTACT_EMAIL', 320),
+    address: legalText('SITE_LEGAL_ADDRESS', 400),
+    jurisdiction: legalText('SITE_LEGAL_JURISDICTION', 200),
+    hosting: legalText('SITE_LEGAL_HOSTING', 300),
+    statusUrl: url('SITE_STATUS_URL', ['https:']),
+  };
+  if (siteLegal.contactEmail !== null && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(siteLegal.contactEmail)) problems.push('SITE_LEGAL_CONTACT_EMAIL must be an email address');
 
   const sessionSecret = str('SESSION_SECRET');
   if (sessionSecret !== null && sessionSecret.length < 32) problems.push('SESSION_SECRET must be at least 32 characters');
@@ -675,6 +724,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     jiraAuthUrl: (url('TRACKER_JIRA_AUTH_URL', ['https:', 'http:']) ?? 'https://auth.atlassian.com').replace(/\/+$/, ''),
     jiraApiUrl: (url('TRACKER_JIRA_API_URL', ['https:', 'http:']) ?? 'https://api.atlassian.com').replace(/\/+$/, ''),
   };
+  // Slack link unfurls: both halves of the operator's Slack app, or off. One without the other is a
+  // mistake worth saying out loud rather than a silently missing feature.
+  const slackApp = () => {
+    const signingSecret = str('SLACK_SIGNING_SECRET');
+    const botToken = str('SLACK_BOT_TOKEN');
+    if (!signingSecret !== !botToken) problems.push('SLACK_SIGNING_SECRET and SLACK_BOT_TOKEN go together (Slack link unfurls need both)');
+    if (botToken && !botToken.startsWith('xoxb-')) problems.push('SLACK_BOT_TOKEN must be the app’s bot token (xoxb-…)');
+    const apiUrl = (url('SLACK_API_URL', ['https:', 'http:']) ?? 'https://slack.com/api').replace(/\/+$/, '');
+    return signingSecret && botToken ? { signingSecret, botToken, apiUrl } : null;
+  };
   const ai: AiConfig = {
     instance: aiInstance,
     instanceFor: { personal: aiFor.includes('personal'), teams: aiFor.includes('teams') },
@@ -748,11 +807,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     abuseContactEmail,
     securityContact: securityContact ?? (abuseContactEmail ? `mailto:${abuseContactEmail}` : null),
     publicApi: bool('PUBLIC_API', true),
+    openaiAppsChallenge: str('OPENAI_APPS_CHALLENGE'),
     oauthClientMetadataLoopback: bool('OAUTH_CLIENT_METADATA_LOOPBACK', false),
     site: {
       enabled: bool('SITE', true),
       dist: path.resolve(env.FREERO_SITE_DIST || path.join(REPO_ROOT, 'apps/site/dist')),
       analytics: siteAnalytics,
+      legal: siteLegal,
     },
     jitsiBaseUrl: url('JITSI_BASE_URL', ['https:'])?.replace(/\/+$/, '') ?? null,
     events: {
@@ -767,6 +828,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       maxAttempts: int('WEBHOOK_MAX_ATTEMPTS', 7, 1, 20),
       disableAfterFailures: int('WEBHOOK_DISABLE_AFTER_FAILURES', 15, 1, 1000),
     },
+    slack: slackApp(),
     embedExtraOrigins,
     appFrameAncestors,
   };

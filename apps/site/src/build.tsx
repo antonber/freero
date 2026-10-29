@@ -4,7 +4,8 @@
 //
 //   npm run build -w @freero/site        → apps/site/dist
 //
-// Pages are discovered from src/pages/**/*.page.tsx (default export: definePage) — no list to edit.
+// Pages are discovered from src/pages/**/*.page.tsx (default export: definePage, or an array of
+// them for pages made from data) — no list to edit.
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -21,7 +22,7 @@ import { crumbsOf, jsonLdFor, LOGO_PNG_PATH, robotsTxt, sitemaps } from './lib/s
 const require = createRequire(import.meta.url);
 export const DEFAULT_OUT = path.resolve(SRC_DIR, '../dist');
 /** URL prefixes that belong to the site: a missing page under them is the site's 404. */
-export const SITE_PREFIXES = ['/vs/', '/features/', '/use-cases/', '/templates/'];
+export const SITE_PREFIXES = ['/vs/', '/features/', '/use-cases/', '/templates/', '/integrations/'];
 
 function walk(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]));
@@ -33,9 +34,10 @@ export async function discoverPages(): Promise<PageDef[]> {
     .sort();
   const pages: PageDef[] = [];
   for (const f of files) {
-    const mod = (await import(pathToFileURL(f).href)) as { default?: PageDef };
-    if (!mod.default?.path) throw new Error(`${f}: default export must be definePage({...})`);
-    pages.push(mod.default);
+    const mod = (await import(pathToFileURL(f).href)) as { default?: PageDef | PageDef[] };
+    const defs = Array.isArray(mod.default) ? mod.default : [mod.default];
+    if (!defs.length || defs.some((d) => !d?.path)) throw new Error(`${f}: default export must be definePage({...}) or an array of them`);
+    pages.push(...(defs as PageDef[]));
   }
   const seen = new Set<string>();
   for (const p of pages) {
@@ -119,7 +121,11 @@ export async function buildSite(outDir = DEFAULT_OUT): Promise<BuildResult> {
 
   write(
     'manifest.json',
-    JSON.stringify({ version: 1, pages: manifestPages, files, notFound: '404.html', prefixes: SITE_PREFIXES, assetsPrefix: ASSETS_PREFIX }, null, 2),
+    JSON.stringify(
+      { version: 1, pages: manifestPages, files, notFound: '404.html', prefixes: SITE_PREFIXES, assetsPrefix: ASSETS_PREFIX, legal: pages.filter((p) => p.legal).map((p) => p.path) },
+      null,
+      2,
+    ),
   );
   return { outDir, pages };
 }

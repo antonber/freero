@@ -202,7 +202,7 @@ issue id is in the status note.
 | Capability | What it does | Freero status | Size | Priority | Phase |
 |---|---|---|---|---|---|
 | Template picker | A searchable gallery that inserts an editable layout, also offered when you create a board | Have (grouped by category, ranked search) | — | P0 | — |
-| Template breadth | A large library across agile, strategy, research, UX, diagramming, education and meetings | Have: 74 original templates in 10 categories, at least 5 in each (KAI-100) | M | P1 | parity |
+| Template breadth | A large library across agile, strategy, research, UX, diagramming, education and meetings | Have: 180 original templates in 18 categories (KAI-100); new ones are data (specs rendered by 13 layout archetypes), so the catalog grows without new code | M | P1 | parity |
 | Save as template | Turn a board or selection into your own reusable template | Have | — | P1 | — |
 | Team templates | Templates shared across a team or workspace | Have: shared with the workspace, showing who shared them; workspace admins can unshare (KAI-42, KAI-96) | M | P2 | 3 |
 | Community gallery | Publish templates publicly and browse other people's | Missing | L | P3 | parity |
@@ -252,7 +252,7 @@ workflows. For Freero, every row here needs a model provider that the operator o
 | API tokens and OAuth apps | Credentials that let third-party apps act for a user | Have (tokens, OAuth 2.1 + PKCE, dynamic registration; KAI-104) | M | P2 | parity |
 | Embed a live board | Put a viewable or editable board in other sites (iframe, oEmbed) | Partial: a live board inside ChatGPT and Claude through MCP Apps (KAI-171); no iframe or oEmbed for other sites (KAI-106) | M | P2 | parity |
 | In-board app SDK | Third-party apps that run on the canvas and add items or panels | Missing (API and webhooks first, see §16) | XL | P3 | parity |
-| App marketplace | Browse and install third-party apps | Missing (see §16) | XL | P3 | parity |
+| App marketplace | Browse and install third-party apps | Partial: Apps & agents (`/apps`, #87) lists every integration with its connect step, plus community integrations built on the API, webhooks or MCP, shown after an operator's review with a Community label (reportable, removable); none runs inside Freero, so there is nothing to install (no in-board apps, see §16) | XL | P3 | parity |
 | MCP server | Let AI coding and agent tools read and write boards | Have: remote MCP server at `/mcp` with OAuth 2.1, scoped tools, suggestions people accept or reject, and a live board in ChatGPT and Claude (KAI-107, KAI-169, KAI-171; docs/mcp.md) | M | P3 | parity |
 | Chat integrations | Board notifications and link previews in Slack or Teams | Partial: channel posts through webhooks in Slack / Teams format (KAI-105); no link previews inside Slack or Teams | M | P3 | parity |
 | Work-tracker sync | Two-way sync between cards or table rows and Jira, Asana, Azure DevOps, monday.com or Trello items | Partial: two-way sync of stickies and cards with Jira (Cloud and Data Center), Linear and GitHub issues, live badges, issue import and roadmap timelines (KAI-153–KAI-157, KAI-160; docs/trackers.md); no Asana, Azure DevOps (KAI-158), monday.com or Trello, and table rows don't sync | XL | P3 | parity |

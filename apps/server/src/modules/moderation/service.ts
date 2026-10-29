@@ -14,7 +14,10 @@ import {
   REPORT_REASONS,
   type Account,
   type AppealInfo,
+  type ListingForReview,
+  type ListingStatus,
   type ModeratedBoard,
+  type ModeratedListing,
   type ModeratedUpload,
   type ModeratedUser,
   type ModerationActionKind,
@@ -44,6 +47,7 @@ import {
   unblockBoardLink,
   type ModerationBoardState,
 } from '../boards/index';
+import { decideListing, listingForModeration, listingsForReview, moderatedListings, reportableListing, type ListingDecision } from '../marketplace/index';
 import { notify } from '../notifications/index';
 import { snapshotBoardDoc } from '../realtime/index';
 import { keptCopiesRemovedBefore, openUploadForModeration, purgeRemovedUpload, removeUpload, restoreUpload, uploadForModeration, uploadName } from '../uploads/index';
@@ -56,6 +60,7 @@ const MAX_APPEAL = 4000;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ELEMENT_ID_RE = /^[\w-]{1,100}$/;
 const COMMENT_ID_RE = /^[\w-]{1,100}:[\w-]{1,100}$/;
+const LISTING_ID_RE = /^[\w-]{1,64}$/;
 const TARGET_KINDS: ReportTargetKind[] = ['board', 'element', 'upload', 'comment'];
 const ACTIONS: ModerationActionKind[] = [
   'board.disable_link',
@@ -68,13 +73,22 @@ const ACTIONS: ModerationActionKind[] = [
   'upload.purge',
   'user.suspend',
   'user.restore',
+  'listing.approve',
+  'listing.reject',
+  'listing.remove',
+  'listing.restore',
+  'listing.feature',
+  'listing.unfeature',
 ];
+/** Listing decisions that take no report reason: a reason says what abuse something is, and these are reviews (a decline says why in its statement). */
+const NEEDS_NO_REASON: ModerationActionKind[] = ['listing.approve', 'listing.reject', 'listing.restore', 'listing.feature', 'listing.unfeature'];
 /** What undoes an action (an appeal against an action that was undone since is moot). */
 const REVERSAL: Partial<Record<ModerationActionKind, ModerationActionKind>> = {
   'board.disable_link': 'board.restore_link',
   'board.take_down': 'board.restore',
   'upload.remove': 'upload.restore',
   'user.suspend': 'user.restore',
+  'listing.remove': 'listing.restore',
 };
 
 const isReason = (v: unknown): v is ReportReason => REPORT_REASONS.some((r) => r.id === v);
@@ -105,6 +119,7 @@ const boardNotFound = () => notFound('Board not found');
 export async function submitReport(body: Record<string, unknown>, who: { userId: string | null; ip: string }): Promise<void> {
   const boardId = typeof body.boardId === 'string' ? body.boardId : '';
   const t = (body.target ?? { kind: 'board' }) as { kind?: unknown; id?: unknown };
+  if (t.kind === 'listing') return submitListingReport(t.id, body, who.userId);
   const kind = t.kind as ReportTargetKind;
   if (!TARGET_KINDS.includes(kind)) throw badRequest(`target.kind must be one of ${TARGET_KINDS.join(', ')}`);
   let targetId: string | null = null;
@@ -142,6 +157,37 @@ export async function submitReport(body: Record<string, unknown>, who: { userId:
   if (added) {
     log(`moderation: report on board ${board.id} (${kind}${targetId ? ` ${targetId}` : ''}, ${body.reason})`);
     if ((await repo.countOpenForBoard(board.id)) === 1) alertOperators({ kind: 'report', boardTitle: board.title, reason: body.reason });
+  }
+}
+
+/**
+ * A report about a community listing (#87). Listings are shown only to signed-in people, and only
+ * live ones: anything else (pending, someone else's, withdrawn, unknown) gets the same 404.
+ */
+async function submitListingReport(id: unknown, body: Record<string, unknown>, userId: string | null): Promise<void> {
+  if (!isReason(body.reason)) throw badRequest(`reason must be one of ${REPORT_REASONS.map((r) => r.id).join(', ')}`);
+  const note = text(body.note, 'note', MAX_REPORT_NOTE);
+  const listing = userId && typeof id === 'string' && LISTING_ID_RE.test(id) ? await reportableListing(id) : null;
+  if (!listing) throw notFound('Listing not found');
+  const added = await repo.insertItem({
+    id: newId(16),
+    kind: 'report',
+    boardId: null,
+    boardTitle: listing.name,
+    targetKind: 'listing',
+    targetId: listing.id,
+    reason: body.reason,
+    message: note,
+    reporterId: userId,
+    reporterKey: null,
+    contactEmail: null,
+    actionId: null,
+    createdAt: Date.now(),
+    dedupeKey: `report:listing:${listing.id}:u:${userId}`,
+  });
+  if (added) {
+    log(`moderation: report on listing ${listing.id} (${body.reason})`);
+    if ((await repo.countOpenForListing(listing.id)) === 1) alertOperators({ kind: 'report', boardTitle: listing.name, reason: body.reason });
   }
 }
 
@@ -195,6 +241,7 @@ async function presentItems(items: repo.ItemRow[]): Promise<ModerationItem[]> {
     if (b) boards.set(id, b);
   }
   const actions = new Map((await repo.getActions(items.flatMap((i) => (i.actionId ? [i.actionId] : [])))).map((a) => [a.id, a]));
+  const listings: Map<string, ModeratedListing> = await moderatedListings(items.flatMap((i) => (i.targetKind === 'listing' && i.targetId ? [i.targetId] : [])));
   const p = await people([
     ...items.map((i) => i.reporterId),
     ...[...boards.values()].map((b) => b.ownerId),
@@ -220,8 +267,15 @@ async function presentItems(items: repo.ItemRow[]): Promise<ModerationItem[]> {
       resolvedAt: i.resolvedAt,
       resolutionNote: i.resolutionNote,
       board: board ? presentBoard(board, p) : null,
+      listing: i.targetKind === 'listing' && i.targetId ? (listings.get(i.targetId) ?? null) : null,
     };
   });
+}
+
+/** Community listings in one status, for review (#87): pending submissions by default. */
+export async function listingQueue(status: unknown): Promise<ListingForReview[]> {
+  const s: ListingStatus = status === 'approved' || status === 'rejected' || status === 'removed' ? status : 'pending';
+  return listingsForReview(s, repo.openReportsAboutListings);
 }
 
 export async function queue(status: 'open' | 'closed'): Promise<ModerationItem[]> {
@@ -296,6 +350,12 @@ const nothingToDo: Record<ModerationActionKind, string> = {
   'upload.purge': 'This file isn’t removed, or its kept copy was purged already.',
   'user.suspend': 'This account is already suspended.',
   'user.restore': 'This account isn’t suspended.',
+  'listing.approve': 'This listing isn’t waiting for review (it is live already, removed or withdrawn).',
+  'listing.reject': 'Only a listing waiting for review can be declined.',
+  'listing.remove': 'This listing isn’t live.',
+  'listing.restore': 'This listing isn’t removed.',
+  'listing.feature': 'This listing isn’t live, or is featured already.',
+  'listing.unfeature': 'This listing isn’t featured.',
 };
 
 /** Runs the action through the owning module; who it affects and which board it is about. */
@@ -304,7 +364,15 @@ async function execute(
   targetId: string,
   operatorId: string,
   boardHint: string | null,
+  statement: string,
 ): Promise<{ changed: boolean; boardId: string | null; boardTitle: string | null; subjects: string[]; targetId: string }> {
+  if (kind.startsWith('listing.')) {
+    // The listing's state is marketplace's: it applies the decision, this module records it.
+    const l = await listingForModeration(targetId);
+    if (!l) throw notFound('No such listing (its submitter may have withdrawn it)');
+    const changed = await decideListing(l.id, kind.slice('listing.'.length) as ListingDecision, statement);
+    return { changed, boardId: null, boardTitle: l.name, subjects: [l.submitterId], targetId: l.id };
+  }
   if (kind.startsWith('board.')) {
     const b = await boardForModeration(targetId);
     if (!b) throw boardNotFound();
@@ -384,6 +452,7 @@ export async function act(operatorId: string, body: Record<string, unknown>): Pr
   if (!ACTIONS.includes(kind)) throw badRequest(`action must be one of ${ACTIONS.join(', ')}`);
   const targetId = typeof body.targetId === 'string' ? body.targetId.trim() : '';
   if (!targetId) throw badRequest('targetId is required');
+  if (NEEDS_NO_REASON.includes(kind) && body.reason === undefined) body = { ...body, reason: 'other' };
   if (!isReason(body.reason)) throw badRequest(`reason must be one of ${REPORT_REASONS.map((r) => r.id).join(', ')}`);
   const statement = text(body.statement, 'statement', MAX_STATEMENT);
   if (isAdverse(kind) && !statement) throw badRequest('Write the statement the person affected will read');
@@ -394,7 +463,7 @@ export async function act(operatorId: string, body: Record<string, unknown>): Pr
   if (boards !== null && (kind !== 'user.suspend' || (boards !== 'take_down' && boards !== 'disable_link')))
     throw badRequest('boards (take_down or disable_link) only goes with user.suspend');
 
-  const done = await execute(kind, targetId, operatorId, boardHint);
+  const done = await execute(kind, targetId, operatorId, boardHint, statement);
   if (!done.changed) throw new HttpError(409, nothingToDo[kind]);
   const subjectUserId = done.subjects[0] ?? null;
   const record = await record_({
@@ -542,6 +611,7 @@ const appealable = (a: ModerationActionKind) => REVERSAL[a] !== undefined;
 
 async function tellAffected(a: repo.ActionRow, subjects: string[], boardTitle: string | null, extra?: string): Promise<void> {
   if (a.action === 'upload.purge') return; // they were told when it was removed
+  if (a.action === 'listing.feature' || a.action === 'listing.unfeature') return; // a placement, not a decision about them
   const appealPath = appealable(a.action) ? `/appeal?t=${encodeURIComponent(appealToken(a.id))}` : null;
   const users = await getUsers(subjects);
   for (const userId of new Set(subjects)) {
@@ -608,11 +678,12 @@ async function reversed(a: repo.ActionRow): Promise<boolean> {
 export async function appealInfo(token: unknown): Promise<AppealInfo> {
   const a = await appealedAction(token);
   const board = a.boardId ? await boardForModeration(a.boardId) : null;
+  const listing = a.action.startsWith('listing.') ? await listingForModeration(a.targetId) : null;
   return {
     action: a.action,
     reason: a.reason,
     statement: a.statement,
-    boardTitle: board?.title ?? null,
+    boardTitle: board?.title ?? listing?.name ?? null,
     createdAt: a.createdAt,
     pending: await repo.openAppealFor(a.id),
     reversed: await reversed(a),
@@ -626,12 +697,13 @@ export async function submitAppeal(body: Record<string, unknown>): Promise<void>
   if (!message) throw badRequest('Tell us why you think the decision is wrong');
   if (await reversed(a)) throw new HttpError(409, 'This decision was already reversed');
   const board = a.boardId ? await boardForModeration(a.boardId) : null;
-  const targetKind = a.action.startsWith('user.') ? 'user' : a.action.startsWith('upload.') ? 'upload' : 'board';
+  const listing = a.action.startsWith('listing.') ? await listingForModeration(a.targetId) : null;
+  const targetKind = a.action.startsWith('user.') ? 'user' : a.action.startsWith('upload.') ? 'upload' : a.action.startsWith('listing.') ? 'listing' : 'board';
   const added = await repo.insertItem({
     id: newId(16),
     kind: 'appeal',
     boardId: a.boardId,
-    boardTitle: board?.title ?? '',
+    boardTitle: board?.title ?? listing?.name ?? '',
     targetKind,
     targetId: a.targetId,
     reason: a.reason,
@@ -645,5 +717,5 @@ export async function submitAppeal(body: Record<string, unknown>): Promise<void>
   });
   if (!added) throw new HttpError(409, 'An appeal against this decision is already waiting for review');
   log(`moderation: appeal against ${a.action} ${a.targetId}`);
-  alertOperators({ kind: 'appeal', boardTitle: board?.title ?? '', reason: a.reason });
+  alertOperators({ kind: 'appeal', boardTitle: board?.title ?? listing?.name ?? '', reason: a.reason });
 }
