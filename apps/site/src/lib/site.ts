@@ -18,6 +18,8 @@ export const APP = {
   signup: '/signup',
   login: '/login',
   boards: '/app',
+  /** The Connect page: every MCP client's setup with this instance's address (#80). `#<client>` opens its tab. */
+  connect: '/settings/connect',
 } as const;
 
 export const SITE_NAME = 'Freero';

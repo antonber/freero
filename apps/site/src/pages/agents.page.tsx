@@ -1,33 +1,8 @@
 import { ButtonLink, Card, Cards, Checks, Code, Hero, Section, Step, Steps, Table } from '../components/ui';
 import { definePage } from '../lib/define';
-import { abs, docsUrl, MCP_URL } from '../lib/site';
+import { MCP_PROMPTS, MCP_TOOLS } from '../lib/mcp';
+import { abs, APP, docsUrl, MCP_URL } from '../lib/site';
 
-const TOOLS: Array<[string, string, string]> = [
-  ['list_workspaces', 'read', 'Your workspaces (personal and teams) and your role in each.'],
-  ['search_boards', 'read', 'Boards you can open, newest change first, filtered by title or workspace.'],
-  ['search', 'read', 'Words in what your boards say: notes, text, shapes, cards, frames, tables, tags, connector labels, comments. Each hit with board, item, snippet and link.'],
-  ['get_board_outline', 'read', 'The board as a semantic outline (Markdown or JSON) with item ids, a token budget, a scope and paging.'],
-  ['export_board', 'read', 'The whole board as a Markdown or JSON file; follows the workspace’s download policy.'],
-  ['resolve_links', 'read', 'What Freero board and item links point at, and whether you can open them.'],
-  ['find_backlinks', 'read', 'Items and comments that link to a board or an item.'],
-  ['list_templates', 'read', 'Saved templates you can start a board from.'],
-  ['open_board', 'read', 'The live board in the conversation, in hosts that show MCP Apps views; elsewhere its link. The view never has more power than the connection.'],
-  ['search_docs', 'read', 'Docs (collaborative documents next to boards) you can open, by title.'],
-  ['read_doc', 'read', 'A doc as Markdown, with embedded boards as their addresses.'],
-  ['get_feedback', 'read', 'What people changed in the agent’s control-room lane since its last look: cards moved, added or removed, new comments.'],
-  ['propose_changes', 'suggest', 'A structure (notes, clusters, a diagram) proposed as one group of suggestions for editors to accept or reject.'],
-  ['create_board', 'write', 'A new board in a personal or team workspace, optionally from a template.'],
-  ['add_stickies', 'write', 'A titled grid of sticky notes.'],
-  ['add_clusters', 'write', 'Titled groups side by side; existing notes can move into them.'],
-  ['add_diagram', 'write', 'A Mermaid flowchart or sequence diagram, a mind map or tree from an outline, or a node-and-edge graph, laid out by Freero.'],
-  ['update_items', 'write', 'Several items changed in one all-or-nothing step: text, fields, colours, frames, locks, links, position and size.'],
-  ['delete_items', 'write', 'Deletes items, only with an explicit confirmation.'],
-  ['create_doc', 'write', 'A new doc from Markdown, personal or in a team workspace.'],
-  ['append_to_doc', 'write', 'Markdown added to the end of a doc; everyone with it open sees it arrive.'],
-  ['post_status', 'write', 'The agent’s plan, status and tasks (to do, doing, done, blocked) on its lane of a control-room board; retries never duplicate.'],
-  ['sync_to_tracker', 'write', 'Sends items to the board’s Jira, Linear or GitHub as one issue or one per item, kept in sync.'],
-  ['add_comment', 'comment', 'A comment on the board or an item, or a reply in a thread.'],
-];
 
 export default definePage({
   path: '/agents',
@@ -36,7 +11,7 @@ export default definePage({
   ogTitle: 'An MCP whiteboard your agents can build on',
   description:
     'Freero’s remote MCP server, REST API and signed webhooks let your agents read boards, propose changes people approve and react to what the team does.',
-  updated: '2026-10-28',
+  updated: '2026-10-29',
   body: () => (
     <>
       <Hero
@@ -45,7 +20,10 @@ export default definePage({
         lead="Freero is a whiteboard with a public contract for agents: a remote MCP server, a versioned REST API and signed webhooks. Agents act for a person, with that person’s access and nothing more, and people review what they propose."
         actions={
           <>
-            <ButtonLink href="#mcp">MCP server</ButtonLink>
+            <ButtonLink href={APP.connect}>Connect an agent</ButtonLink>
+            <ButtonLink href="#mcp" variant="secondary">
+              MCP server
+            </ButtonLink>
             <ButtonLink href="#api" variant="secondary">
               REST API
             </ButtonLink>
@@ -58,6 +36,11 @@ export default definePage({
 
       <Section id="mcp" title="The MCP server" lead="One endpoint for Claude, ChatGPT, Cursor, VS Code and any client that speaks MCP over Streamable HTTP.">
         <Code label="Endpoint">{MCP_URL}</Code>
+        <p className="note">
+          The quickest way in: <a href={APP.connect}>Connect an agent</a> in Freero gives each client its one-click install link, command or config with
+          this address filled in, makes a personal token when you need one, and shows when the client has connected. Agents can read{' '}
+          <a href="/llms.txt">/llms.txt</a> for the endpoint, sign-in and tools.
+        </p>
         <div className="columns-2">
           <Checks
             kind="yes"
@@ -100,10 +83,16 @@ export default definePage({
   --method tools/list --header "Authorization: Bearer frp_…"`}</Code>
 
         <h3>Tools</h3>
-        <Table caption="Freero MCP tools and the permission each needs" head={['Tool', 'Needs', 'What it does']} rows={TOOLS.map(([t, n, d]) => [<code key={t}>{t}</code>, n, d])} />
+        <Table caption="Freero MCP tools and the permission each needs" head={['Tool', 'Needs', 'What it does']} rows={MCP_TOOLS.map(([t, n, d]) => [<code key={t}>{t}</code>, n, d])} />
         <p>
           <strong>Resource:</strong> <code>freero://board/{'{boardId}'}</code>, a board’s outline in the untrusted-content envelope. <strong>Prompts:</strong>{' '}
-          <code>control_room</code>, <code>run_retro</code>, <code>notes_to_diagram</code>, <code>summarize_board</code>. <strong>Views (MCP Apps):</strong> a
+          {MCP_PROMPTS.map(([name], i) => (
+            <span key={name}>
+              {i ? ', ' : ''}
+              <code>{name}</code>
+            </span>
+          ))}
+          . <strong>Views (MCP Apps):</strong> a
           read-only board preview for outlines and the live board for <code>open_board</code>, both static HTML that fetches nothing itself. Item ids come from the outline. Full reference:{' '}
           <a href={docsUrl('docs/mcp.md')}>MCP server guide</a> and <a href={docsUrl('docs/board-outline.md')}>outline format</a>.
         </p>

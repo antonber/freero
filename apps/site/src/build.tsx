@@ -1,5 +1,5 @@
 // Builds the marketing site into static files: one HTML document per page (rendered once with
-// react-dom/server; no client JavaScript at all), Open Graph images, sitemaps, robots.txt, hashed
+// react-dom/server; no client JavaScript at all), Open Graph images, sitemaps, robots.txt, llms.txt, hashed
 // assets and manifest.json, which the server's modules/site reads.
 //
 //   npm run build -w @freero/site        → apps/site/dist
@@ -14,6 +14,7 @@ import { Document } from './components/Document';
 import { ASSETS_PREFIX, emitAsset, emittedAssets, resetAssets, SRC_DIR } from './lib/assets';
 import { LOGO_SVG } from './lib/brand';
 import type { PageDef } from './lib/define';
+import { llmsFullTxt, llmsTxt } from './lib/llms';
 import { logoPng, ogImage } from './lib/og';
 import { crumbsOf, jsonLdFor, LOGO_PNG_PATH, robotsTxt, sitemaps } from './lib/seo';
 
@@ -105,6 +106,14 @@ export async function buildSite(outDir = DEFAULT_OUT): Promise<BuildResult> {
   }
   write('robots.txt', robotsTxt());
   files.push({ path: '/robots.txt', file: 'robots.txt', type: 'text/plain' });
+  // For agents (llmstxt.org): what Freero is, its MCP endpoint, sign-in and tools.
+  for (const [name, text] of [
+    ['llms.txt', llmsTxt()],
+    ['llms-full.txt', llmsFullTxt()],
+  ] as const) {
+    write(name, text);
+    files.push({ path: `/${name}`, file: name, type: 'text/plain' });
+  }
 
   for (const [name, bytes] of emittedAssets()) write(path.join(ASSETS_PREFIX.slice(1), name), bytes);
 
