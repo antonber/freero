@@ -266,7 +266,7 @@ workflows. For Freero, every row here needs a model provider that the operator o
 | Desktop browsers | Full editing in current Chrome, Edge, Firefox and Safari | Have | — | P0 | — |
 | Tablet and stylus | Touch-friendly editing with pen input | Have: pinch zoom, long-press context menu, bigger handles and controls on touch, palm rejection while a pen is down, "pen draws, finger pans" (KAI-139) | M | P2 | parity |
 | Phone web | Usable view-and-comment experience on a small screen | Have: a view-and-comment phone layout — bottom bar with select, hand and comment, comments as a bottom sheet, the full toolbar behind "Edit board" (KAI-139) | M | P2 | parity |
-| Installable app (PWA) | Install from the browser with an icon, a window and file handling | Partial: installs with its own icons and window, an app-shell service worker and offline page (KAI-140); it doesn't open files yet (KAI-218) | S | P2 | parity |
+| Installable app (PWA) | Install from the browser with an icon, a window and file handling | Have: installs with its own icons and window, an app-shell service worker and offline page (KAI-140); opens `.freero` backups and takes images and links from the system share sheet (KAI-218) | S | P2 | parity |
 | Native mobile apps | iOS and Android apps | Missing | XL | P3 | parity |
 | Native desktop apps | Windows and macOS apps | Missing | M | P3 | parity |
 | Offline work | Edit without a connection and sync later | Partial: Yjs merges edits made during short disconnects; nothing survives a reload while offline (the `/board/local` sandbox is dev-only) | L | P3 | parity |
@@ -345,9 +345,9 @@ Have. In the re-check after the teams, enterprise and parity batches merged: 47 
 
 | Status | Count |
 |---|---|
-| Have | 160 |
+| Have | 163 |
 | Partial | 15 |
-| Missing | 35 |
+| Missing | 32 |
 | **Total** | **210** |
 
 **By priority and status**
@@ -356,8 +356,8 @@ Have. In the re-check after the teams, enterprise and parity batches merged: 47 
 |---|---|---|---|---|
 | P0 | 31 | 0 | 0 | 31 |
 | P1 | 51 | 0 | 0 | 51 |
-| P2 | 72 | 7 | 4 | 83 |
-| P3 | 6 | 8 | 31 | 45 |
+| P2 | 75 | 6 | 2 | 83 |
+| P3 | 6 | 9 | 30 | 45 |
 
 <!-- counts generated from the tables above; regenerate when rows change -->
 
