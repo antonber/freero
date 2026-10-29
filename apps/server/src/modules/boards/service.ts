@@ -182,6 +182,8 @@ export function permissionsFor(board: Board, userId: string, role: Role, access:
     canTransfer: isOwner || admin,
     guestLinks: access.anonymousLinks && !access.outsidersBlocked,
     jitsiCalls: jitsiAvailable(),
+    liveEmbeds: access.policies.liveEmbeds !== 'off',
+    embedOrigins: getConfig().embedExtraOrigins,
   };
 }
 

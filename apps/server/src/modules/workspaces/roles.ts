@@ -26,6 +26,7 @@ export const DEFAULT_POLICIES: WorkspacePolicies = {
   downloads: 'anyone',
   teamAccess: 'editor',
   publicLinks: 'anyone',
+  liveEmbeds: 'on',
 };
 
 /** The team access level of a board: its project's own level, else the workspace's. */

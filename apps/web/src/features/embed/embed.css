@@ -130,37 +130,122 @@
   font-weight: 500;
 }
 
-/* Playing: the player fills the card; a small stop button brings the card back. */
-.fr-embed--playing {
-  background: #000;
-}
-
 .fr-embed__player {
   width: 100%;
   height: 100%;
   border: 0;
 }
 
-/* Above the card (the player's own controls fill it). Live UI only: exports never play. */
-.fr-embed--playing {
-  overflow: visible;
-}
-
-.fr-embed__close {
-  position: absolute;
-  top: -28px;
-  right: 0;
-  padding: 3px 9px;
-  border: 0;
-  border-radius: 999px;
-  background: rgba(23, 22, 43, 0.75);
-  color: #fff;
-  font: 600 11px var(--fr-font);
-  cursor: pointer;
-}
-
 /* No picture: the text sits in the middle of the card. */
 .fr-embed--text .fr-embed__body {
   flex: 1 1 auto;
   justify-content: center;
+}
+
+/* A link that can open live (design file, doc, playground) without a picture: a quiet poster. */
+.fr-embed__media.is-doc {
+  background: linear-gradient(135deg, #f3f1fd, #e9f3fb);
+}
+
+.fr-embed__poster {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #77758c;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.fr-embed__activate {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 16px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(23, 22, 43, 0.78);
+  color: #fff;
+  font: 600 13px var(--fr-font);
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  transition: background 120ms;
+}
+
+.fr-embed__activate:hover {
+  background: var(--fr-primary);
+}
+
+/* Live: a board-owned strip (grab the item here; full screen, open, close) over the frame. */
+.fr-embed--live {
+  background: #fff;
+}
+
+.fr-embed--live.is-video {
+  background: #000;
+}
+
+.fr-embed__strip {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 4px 0 10px;
+  background: #f4f3f9;
+  border-bottom: 1px solid rgba(23, 22, 43, 0.08);
+  color: #55536b;
+  font-size: 12px;
+}
+
+.fr-embed__strip-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  color: #17162b;
+}
+
+.fr-embed__strip-host {
+  flex: none;
+  color: #77758c;
+}
+
+.fr-embed__strip-btn {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #55536b;
+  cursor: pointer;
+}
+
+.fr-embed__strip-btn:hover {
+  background: #e7e5f2;
+  color: var(--fr-primary);
+}
+
+.fr-embed__frame {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.fr-embed__frame .fr-embed__player {
+  position: absolute;
+  inset: 0;
+}
+
+.fr-embed--live:fullscreen {
+  border-radius: 0;
 }

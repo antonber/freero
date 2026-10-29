@@ -20,7 +20,7 @@ function capabilities(editor: Editor, el: BoardElement) {
     h: mode === 'free' || mode === 'aspect',
     rotation: mode !== 'none' && def?.rotatable !== false && def?.selectionFrame !== false,
     aspect: mode === 'aspect',
-    min: def?.minSize ?? { w: MIN, h: MIN },
+    min: (typeof def?.minSize === 'function' ? def.minSize(el) : def?.minSize) ?? { w: MIN, h: MIN },
   };
 }
 

@@ -1667,7 +1667,7 @@ async function run() {
       assert((await WO.req('DELETE', `/api/projects/${pid}`)).status === 200, 'empty project delete');
     });
 
-    await check('sharing policies: link role capped, outside sharing switched off (live outsiders cut), downloads limited — all on the server', async () => {
+    await check('sharing policies: link role capped, outside sharing switched off (live outsiders cut), downloads limited, live embeds off — all on the server', async () => {
       const pol = (policies) => WO.req('PATCH', `/api/workspaces/${team.id}`, { policies });
       assert((await WM.req('PATCH', `/api/workspaces/${team.id}`, { policies: { linkSharing: 'none' } })).status === 403, 'member changed policies');
       assert((await pol({ linkSharing: 'viewer' })).status === 200, 'set link max');
@@ -1686,7 +1686,12 @@ async function run() {
       assert((await WM.req('POST', `/api/boards/${tb.id}/duplicate`)).status === 403, 'member duplicated despite the policy');
       assert((await WM.req('GET', `/api/boards/${tb.id}`)).json.board.permissions.canExport === false, 'UI not told');
       assert((await WO.req('POST', `/api/boards/${tb.id}/duplicate`)).status === 201, 'owner duplicate');
-      assert((await pol({ downloads: 'anyone', linkSharing: 'editor' })).status === 200, 'reset');
+      // Live embeds (KAI-127): the board tells its people when the workspace turned them off.
+      assert((await pol({ liveEmbeds: 'sometimes' })).status === 400, 'an unknown live-embeds value was accepted');
+      assert((await pol({ liveEmbeds: 'off' })).status === 200, 'set live embeds off');
+      assert((await WM.req('GET', `/api/boards/${tb.id}`)).json.board.permissions.liveEmbeds === false, 'the board still offers live embeds');
+      assert((await pol({ downloads: 'anyone', linkSharing: 'editor', liveEmbeds: 'on' })).status === 200, 'reset');
+      assert((await WM.req('GET', `/api/boards/${tb.id}`)).json.board.permissions.liveEmbeds === true, 'live embeds not back on');
       assert((await WO.req('PATCH', `/api/boards/${tb.id}`, { linkAccess: 'none' })).status === 200, 'link off again');
     });
 

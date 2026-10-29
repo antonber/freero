@@ -161,6 +161,7 @@ function cleanPolicies(v: unknown): Partial<WorkspacePolicies> {
   pick('downloads', ['anyone', 'members', 'admins']);
   pick('teamAccess', TEAM_ACCESS_VALUES);
   pick('publicLinks', ['anyone', 'signedIn']);
+  pick('liveEmbeds', ['on', 'off']);
   return out;
 }
 

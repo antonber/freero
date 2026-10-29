@@ -30,6 +30,7 @@ interface WsRow {
   downloads: WorkspacePolicies['downloads'];
   team_access: TeamAccess;
   public_links: 'anyone' | 'signed_in';
+  live_embeds: 'on' | 'off';
   require_two_factor: boolean;
   session_max_hours: number | null;
   session_idle_minutes: number | null;
@@ -52,6 +53,7 @@ const toWorkspace = (r: WsRow): Workspace => ({
     downloads: r.downloads,
     teamAccess: r.team_access,
     publicLinks: r.public_links === 'signed_in' ? 'signedIn' : 'anyone',
+    liveEmbeds: r.live_embeds === 'off' ? 'off' : 'on',
   },
   settings: {
     requireTwoFactor: r.require_two_factor,
@@ -136,7 +138,7 @@ export async function updateWorkspace(id: string, patch: { name?: string; polici
     `UPDATE workspaces SET name = COALESCE($2, name), external_sharing = COALESCE($3, external_sharing),
        link_sharing = COALESCE($4, link_sharing), guest_invites = COALESCE($5, guest_invites),
        downloads = COALESCE($6, downloads), updated_at = $7, team_access = COALESCE($8, team_access),
-       public_links = COALESCE($9, public_links)
+       public_links = COALESCE($9, public_links), live_embeds = COALESCE($10, live_embeds)
      WHERE id = $1`,
     [
       id,
@@ -148,6 +150,7 @@ export async function updateWorkspace(id: string, patch: { name?: string; polici
       new Date(now),
       p.teamAccess ?? null,
       p.publicLinks === undefined ? null : p.publicLinks === 'signedIn' ? 'signed_in' : 'anyone',
+      p.liveEmbeds ?? null,
     ],
   );
 }

@@ -11,7 +11,7 @@ import {
   type NewElement,
 } from '@engine';
 import { Avatar } from '@ui';
-import { CARD_MIN_W, CARD_W, DESC, PAD, TITLE, cardLayout } from './lib/layout';
+import { CARD_MIN_W, CARD_W, DESC, PAD, TITLE, cardLayout, isBar } from './lib/layout';
 import { DEFAULT_ACCENT, STATUSES } from './lib/constants';
 import { formatDue, isOverdue } from './lib/actions';
 import { usePerson } from './lib/people';
@@ -60,6 +60,31 @@ const CardView = memo(function CardView({ element, editing, zoom }: ElementRende
     e.stopPropagation();
     editor.stopEditing();
   };
+
+  if (isBar(element)) {
+    return (
+      <div className={`fr-card fr-card--bar${element.status === 'done' ? ' is-done' : ''}`} style={{ ['--accent' as string]: accent }} onKeyDownCapture={onKeyDownCapture}>
+        <div className="fr-card__bar-title">
+          {zoom >= LOD_ZOOM || editing ? (
+            <ElementText
+              element={element}
+              field="title"
+              fontSize={13}
+              fontFamily="sans"
+              align="left"
+              vAlign="middle"
+              color="var(--fr-ink)"
+              padding={0}
+              style={{ fontWeight: 600, whiteSpace: 'nowrap' }}
+              placeholder="Card title"
+            />
+          ) : null}
+        </div>
+        {status?.value === 'done' && <Check className="fr-card__bar-done" size={12} strokeWidth={3} aria-label="Done" />}
+        {element.assigneeId && element.w >= 72 && zoom >= LOD_ZOOM && <Assignee id={element.assigneeId} />}
+      </div>
+    );
+  }
 
   if (zoom < LOD_ZOOM && !editing) {
     return (
@@ -131,7 +156,8 @@ export default defineElement({
   label: { one: 'Card', many: 'Cards' },
   icon: ListTodoIcon,
   resize: 'width-only',
-  minSize: { w: CARD_MIN_W, h: 60 },
+  // As a timeline bar a card may be one day long.
+  minSize: (el) => (isBar(el) ? { w: 8, h: el.h } : { w: CARD_MIN_W, h: 60 }),
   // The accent bar is the card's colour.
   sharedStyle: (el) => ({ fill: el.color || DEFAULT_ACCENT }),
   applySharedStyle: (_el, { fill }) => (fill && fill !== 'transparent' ? { color: fill } : null),
@@ -152,6 +178,7 @@ export default defineElement({
   toPlainText: (el) => [richTextToPlain(el.title), richTextToPlain(el.description)].filter(Boolean).join('\n'),
   // Height follows the content (title wrap, description preview) at the current width.
   normalize(el) {
+    if (isBar(el)) return null;
     const { h } = cardLayout(el);
     return h !== el.h ? { h } : null;
   },

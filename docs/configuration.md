@@ -207,6 +207,12 @@ Issue trackers) or by a person for themselves (Settings). How it works and what 
 |---|---|---|
 | `JITSI_BASE_URL` | — | An https Jitsi deployment (`https://meet.jit.si`, or your own) where a board can get a call room of its own ("Call link…" → Jitsi room). The room name is derived from the board id with `SESSION_SECRET` (`Freero` + 24 hex characters), so nobody can guess another board's room; rotating the secret gives every board a new room. Unset: boards only use meeting links their editors paste (Meet, Zoom, Teams…, https only). Freero carries no audio or video itself. |
 
+## Live embeds
+
+| Variable | Default | Description |
+|---|---|---|
+| `EMBED_EXTRA_ORIGINS` | — | Comma-separated https origins (no path, e.g. `https://embed.example.com`) whose links boards may show as live, sandboxed frames after a click, besides the built-in providers (YouTube, Vimeo, Loom, Figma, Google Docs / Sheets / Slides / Forms, CodePen, CodeSandbox — `EMBED_PROVIDERS` in `packages/shared`). A link on such an origin is framed as given, so list only sites whose every page you are happy to show (an internal wiki's embed host, a maps or dashboard host). Added to the CSP `frame-src`; never this server's own origin. Workspace admins can turn live embeds off for their boards (admin console → Sharing, "Live embeds"). |
+
 ## Observability
 
 | Variable | Default | Description |

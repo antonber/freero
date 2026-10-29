@@ -161,6 +161,17 @@ export function usePeople(ids: readonly string[]): Record<string, HostUser> {
   return useStore(dir.people);
 }
 
+/**
+ * [additive, KAI-112] Of these ids, those the people lookup answered without (deleted accounts):
+ * show "Deleted user" for them, never the id. Ids still being looked up are not in it.
+ */
+export function useGonePeople(ids: readonly string[]): ReadonlySet<string> {
+  const dir = peopleDirectory(useCore());
+  const key = [...ids].sort().join(',');
+  useEffect(() => dir.request(key ? key.split(',') : []), [dir, key]);
+  return useStore(dir.gone);
+}
+
 export function useRole(): Role {
   return useUi((s) => s.role);
 }

@@ -251,7 +251,7 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
       const el = s.snapshot[0];
       const d = def(el);
       const mode = d?.resize ?? 'free';
-      const min = d?.minSize ?? { w: 8, h: 8 };
+      const min = (typeof d?.minSize === 'function' ? d.minSize(el as never) : d?.minSize) ?? { w: 8, h: 8 };
       const keepAspect = mode === 'aspect' || (mode === 'scale' && corner) || (e.shiftKey && mode === 'free');
       const widthOnly = mode === 'width-only' || (mode === 'scale' && !corner);
       const r = resizeBox(s.startBox, s.handle, e.point, s.grab, { keepAspect, minW: min.w, minH: min.h, widthOnly });
@@ -365,7 +365,8 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
       }
       const target = e.target;
       // Double-click on empty canvas, or on a frame's empty area: "write here" (ToolDefinition.onCanvasDoubleClick).
-      if (core.interaction.clickCount >= 2 && canEdit && (!target || (def(target)?.container && !def(target)?.textField))) {
+      // A container with a double-click of its own (a timeline adds a bar) keeps it.
+      if (core.interaction.clickCount >= 2 && canEdit && (!target || (def(target)?.container && !def(target)?.textField && !def(target)?.onDoubleClick))) {
         const writer = core.registry.tools.find((t) => t.def.onCanvasDoubleClick && ed().can(t.def.minRole ?? 'editor'));
         if (writer) {
           state = { kind: 'idle' };
