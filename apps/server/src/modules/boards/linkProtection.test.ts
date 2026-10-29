@@ -6,12 +6,16 @@ import { LINK_PASSWORD_REQUIRED, type User } from '@freero/shared';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { createUser, markEmailVerified } from '../auth/index';
 import { inviteBoardMember } from '../members/index';
-import { getBoardAccess } from './index';
+import { accessOf } from '../objects/index';
+import { getBoardAccess, recordBoardOpen, registerBoardObjectTypes } from './index';
 import { changeLinkProtection, unlockLink } from './linkProtection';
 import * as repo from './repo';
 import { createBoard, requireAccess } from './service';
 
-beforeAll(() => openTestDb());
+beforeAll(async () => {
+  await openTestDb();
+  registerBoardObjectTypes();
+});
 afterAll(() => closeTestDb());
 
 let n = 0;
@@ -70,4 +74,17 @@ it('an expired link grants nothing to link visitors while members keep their acc
   expect(await roleOf(board.id, visitor.id)).toBeNull();
   expect(await roleOf(board.id, member.id)).toBe('viewer');
   expect(await repo.expiredLinksToApply(Date.now(), 10)).toContain(board.id);
+});
+
+it('a new link password also ends what a past visitor reaches through object addresses and search (the object registry), until they give it', async () => {
+  const [owner, visitor] = [await person('Keeper'), await person('Past')];
+  const board = await createBoard(owner.id, 'Pricing', '', 'viewer');
+  await recordBoardOpen(board.id, visitor.id);
+  const ref = { type: 'board' as const, id: board.id };
+  const reach = async () => [...(await accessOf({ userId: visitor.id }, [ref], 'open')).values(), ...(await accessOf({ userId: visitor.id }, [ref], 'discover')).values()];
+  expect(await reach()).toEqual(['view', 'view']);
+  await changeLinkProtection(await fresh(board.id), owner.id, { linkPassword: 'new secret' });
+  expect(await reach()).toEqual([null, null]);
+  await unlockLink(req('10.2.0.1'), await fresh(board.id), visitor.id, 'new secret');
+  expect(await reach()).toEqual(['view', 'view']);
 });

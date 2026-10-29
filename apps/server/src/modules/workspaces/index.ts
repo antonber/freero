@@ -7,6 +7,7 @@ export {
   ensurePersonalWorkspace,
   boardAccess,
   boardAccessLoader,
+  openToWholeTeam,
   type BoardWorkspaceAccess,
   workspaceRolesOf,
   workspaceRole,

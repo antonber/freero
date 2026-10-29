@@ -105,7 +105,7 @@ export function applyLayerOp(op: LayerOp, main: Y.Doc, layers: Map<string, Y.Doc
       if (!(value instanceof Y.AbstractType)) reveal.push([key, value]);
     }
     if (!keys.length) continue;
-    const content = op.collection === Y_ELEMENTS ? contentOf(doc, new Set(keys)) : [];
+    const content = op.collection === Y_ELEMENTS ? contentOf(doc, new Set(keys), [main]) : [];
     revealContent.push(...content);
     hits.push({ doc, keys, content });
   }

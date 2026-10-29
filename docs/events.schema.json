@@ -1,0 +1,56 @@
+{
+  "$comment": "The Freero event contract (EVENTS_VERSION 1), as webhooks with format `json` deliver it. Documented in docs/events.md. Within version 1 changes are additive only: new types, new optional fields. apps/server/src/modules/webhooks/webhooks.test.ts checks real deliveries against this file, so a field removed from the code (or added as required here without the code) fails CI.",
+  "version": 1,
+  "envelope": {
+    "type": "object",
+    "required": ["id", "type", "version", "createdAt", "workspaceId", "board", "actor", "data"],
+    "properties": {
+      "id": { "type": "string", "description": "evt_<number>: unique, increasing in the order Freero recorded them" },
+      "type": { "type": "string" },
+      "version": { "const": 1 },
+      "createdAt": { "type": "string", "description": "ISO 8601" },
+      "workspaceId": { "type": "string" },
+      "board": {
+        "type": "object",
+        "required": ["id", "title", "url"],
+        "properties": { "id": { "type": "string" }, "title": { "type": "string" }, "url": { "type": "string" } }
+      },
+      "actor": {
+        "type": ["object", "null"],
+        "required": ["kind"],
+        "properties": {
+          "kind": { "enum": ["user", "agent", "system"] },
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "app": { "type": "string", "description": "agent: the app or token acting for the person" }
+        }
+      },
+      "data": { "type": "object" }
+    }
+  },
+  "data": {
+    "board.created": { "required": ["title"], "properties": { "title": { "type": "string" }, "copyOf": { "type": "string" } } },
+    "board.renamed": { "required": ["title", "from", "to"], "properties": { "title": { "type": "string" }, "from": { "type": "string" }, "to": { "type": "string" } } },
+    "board.moved": { "required": ["title", "to"], "properties": { "title": { "type": "string" }, "to": { "type": ["string", "null"] } } },
+    "board.trashed": { "required": ["title"], "properties": { "title": { "type": "string" } } },
+    "board.restored": { "required": ["title"], "properties": { "title": { "type": "string" } } },
+    "member.added": { "required": ["userId", "role"], "properties": { "userId": { "type": "string" }, "role": { "enum": ["viewer", "commenter", "editor"] } } },
+    "member.role_changed": {
+      "required": ["userId", "role", "previousRole"],
+      "properties": { "userId": { "type": "string" }, "role": { "enum": ["viewer", "commenter", "editor"] }, "previousRole": { "enum": ["viewer", "commenter", "editor", null] } }
+    },
+    "member.removed": { "required": ["userId"], "properties": { "userId": { "type": "string" } } },
+    "item.created": { "required": ["item"], "properties": { "item": { "$ref": "#/item" } } },
+    "item.updated": { "required": ["item"], "properties": { "item": { "$ref": "#/item" } } },
+    "item.deleted": { "required": ["item"], "properties": { "item": { "$ref": "#/item" } } },
+    "comment.created": {
+      "required": ["threadId", "messageId", "itemId", "text"],
+      "properties": { "threadId": { "type": "string" }, "messageId": { "type": "string" }, "itemId": { "type": ["string", "null"] }, "text": { "type": "string" } }
+    }
+  },
+  "item": {
+    "type": "object",
+    "required": ["id", "type"],
+    "properties": { "id": { "type": "string" }, "type": { "type": "string" }, "text": { "type": "string", "description": "Up to 280 characters of the item's text (untrusted)" } }
+  }
+}

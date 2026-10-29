@@ -40,6 +40,8 @@ export { requestAccess, decideRequest as decideAccessRequest, requestOutcomes as
 export { invitedEmails } from './invites';
 // Sharing a board (its routes and the public API use the same rules).
 export { listBoardMembers, inviteBoardMember, setBoardMemberRole, removeBoardMember } from './service';
+// Membership changes, appended to the outbox with the change (the event stream, modules/events; KAI-150).
+export { MEMBER_EVENTS_TOPIC, type MemberEventRecord } from './repo';
 
 /** The explicit membership role of a user on a board (not counting ownership or link access). */
 export async function getMemberRole(boardId: string, userId: string): Promise<Role | null> {

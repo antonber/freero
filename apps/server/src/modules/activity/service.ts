@@ -57,8 +57,9 @@ interface Burst {
   lastAt: number;
   shared: Bucket;
   editors: Bucket;
-  comments: number;
-  threads: Set<string>;
+  /** Comment messages on threads everyone reads, and on items in hidden frames (editors only). */
+  sharedComments: { count: number; threads: Set<string> };
+  editorsComments: { count: number; threads: Set<string> };
   frameTitles: Map<string, string>;
 }
 
@@ -69,7 +70,7 @@ function burstFor(boardId: string, actorId: string, actorName: string, via: Acti
   const key = `${boardId}\u0000${actorId}\u0000${via ? `${via.kind}:${via.id}` : ''}`;
   let b = bursts.get(key);
   if (!b) {
-    b = { boardId, actorId, actorName, via, startedAt: now, lastAt: now, shared: bucket(), editors: bucket(), comments: 0, threads: new Set(), frameTitles: new Map() };
+    b = { boardId, actorId, actorName, via, startedAt: now, lastAt: now, shared: bucket(), editors: bucket(), sharedComments: { count: 0, threads: new Set() }, editorsComments: { count: 0, threads: new Set() }, frameTitles: new Map() };
     bursts.set(key, b);
   }
   b.lastAt = now;
@@ -97,12 +98,16 @@ export function recordChanges(e: BoardChangeEvent, now = Date.now()): void {
   }
 }
 
-/** A comment message written through a socket (realtime). Edits of a message are not news. */
+/**
+ * A comment message written through a socket (realtime). Edits of a message are not news. On an
+ * item in a hidden frame: an editors-only row; on a private draft: nothing (KAI-234).
+ */
 export function recordComment(e: CommentMessageEvent, actorName: string, now = Date.now()): void {
-  if (e.previousText !== null) return;
+  if (e.previousText !== null || e.layer === 'private') return;
   const b = burstFor(e.boardId, e.authorId, actorName, e.via ?? null, now);
-  b.comments++;
-  b.threads.add(e.threadId);
+  const c = e.layer === 'editors' ? b.editorsComments : b.sharedComments;
+  c.count++;
+  c.threads.add(e.threadId);
 }
 
 const counts = (m: Map<string, string>): Record<string, number> | undefined => {
@@ -146,7 +151,8 @@ export function rowsOf(b: Burst): ActivityRow[] {
   if (shared) rows.push({ ...base, id: newId(16), kind: 'edit', audience: 'all', summary: { ...shared, ...app } });
   const editors = editSummary(b.editors, b.frameTitles);
   if (editors) rows.push({ ...base, id: newId(16), kind: 'edit', audience: 'editors', summary: { ...editors, ...app } });
-  if (b.comments > 0) rows.push({ ...base, id: newId(16), kind: 'comment', audience: 'all', summary: { comments: b.comments, threads: b.threads.size, ...app } });
+  for (const [c, audience] of [[b.sharedComments, 'all'], [b.editorsComments, 'editors']] as const)
+    if (c.count > 0) rows.push({ ...base, id: newId(16), kind: 'comment', audience, summary: { comments: c.count, threads: c.threads.size, ...app } });
   return rows;
 }
 

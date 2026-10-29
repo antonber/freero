@@ -30,6 +30,8 @@ export interface NewNotification {
   actorId: string | null;
   /** Board it is about: only people with access to it are notified. */
   boardId: string | null;
+  /** About something only owners and editors of that board can see (a hidden frame's content). */
+  editorsOnly?: boolean;
   data: NotificationData;
   /** Each recipient gets at most one notification per key. */
   dedupeKey?: string;
@@ -40,7 +42,10 @@ export async function notify(n: NewNotification): Promise<boolean> {
   if (n.actorId && n.actorId === n.userId) return false;
   if (isGuestId(n.userId)) return false; // guests have no inbox
   if (n.actorId && isGuestId(n.actorId)) throw new Error('notify: a guest is not an account; pass actorId null and data.actorName');
-  if (n.boardId && !(await getBoardAccess(n.boardId, n.userId)).role) return false;
+  if (n.boardId) {
+    const { role } = await getBoardAccess(n.boardId, n.userId);
+    if (!role || (n.editorsOnly && role !== 'owner' && role !== 'editor')) return false;
+  }
   const created = await repo.insert({
     id: newId(16),
     userId: n.userId,
@@ -67,6 +72,11 @@ const shorten = (s: string, max = EXCERPT_MAX) => {
  * One notification per person per message: a mention wins over a reply.
  */
 export async function onCommentMessage(e: CommentMessageEvent): Promise<void> {
+  // A thread on someone's private draft: nobody else can read it (KAI-234).
+  if (e.layer === 'private') return;
+  // On an item in a hidden frame: only people who can see it hear about it, and no invite is
+  // promised a thread they could not open.
+  const editorsOnly = e.layer === 'editors';
   // A guest (no account, on a shared link) can't mention anyone: an anonymous visitor must not be
   // able to page a board's members or reach invited addresses. Their replies still notify.
   const guest = isGuestId(e.authorId);
@@ -76,7 +86,7 @@ export async function onCommentMessage(e: CommentMessageEvent): Promise<void> {
   const replyTo = e.previousText === null ? e.participantIds.filter((id) => !mentioned.includes(id) && !isGuestId(id)) : [];
   // Addresses of people invited to the board who have no account yet: notified once they join.
   const hadEmails = new Set(e.previousText === null ? [] : emailsIn(e.previousText));
-  const invited = guest ? [] : await invitedEmails(e.boardId, emailsIn(e.text).filter((m) => !hadEmails.has(m)));
+  const invited = guest || editorsOnly ? [] : await invitedEmails(e.boardId, emailsIn(e.text).filter((m) => !hadEmails.has(m)));
   if (!newMentions.length && !replyTo.length && !invited.length) return;
   const [boardTitle, names, guests] = await Promise.all([getBoardTitle(e.boardId), getUsers(mentionedUserIds(e.text)), guest ? getGuests([e.authorId]) : null]);
   if (boardTitle === null) return;
@@ -90,9 +100,9 @@ export async function onCommentMessage(e: CommentMessageEvent): Promise<void> {
   const actorId = guest ? null : e.authorId;
   const key = `${e.boardId}:${e.threadId}:${e.messageId}`;
   for (const userId of newMentions)
-    await notify({ userId, type: 'comment.mention', actorId, boardId: e.boardId, data, dedupeKey: `mention:${key}` });
+    await notify({ userId, type: 'comment.mention', actorId, boardId: e.boardId, data, dedupeKey: `mention:${key}`, editorsOnly });
   for (const userId of replyTo)
-    await notify({ userId, type: 'comment.reply', actorId, boardId: e.boardId, data, dedupeKey: `reply:${key}` });
+    await notify({ userId, type: 'comment.reply', actorId, boardId: e.boardId, data, dedupeKey: `reply:${key}`, editorsOnly });
   for (const email of invited)
     await repo.addPendingMention({ id: newId(16), boardId: e.boardId, email, actorId: e.authorId, data, dedupeKey: `mention:${key}`, createdAt: Date.now() });
 }

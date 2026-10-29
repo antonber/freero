@@ -1542,6 +1542,12 @@ export const AUDIT_ACTIONS = {
   // AI (modules/ai). Never the prompt or the board content: task, model, tokens and outcome only.
   'ai.request': 'Used AI on a board',
   'ai.settings_changed': 'Changed AI settings',
+  // Webhooks (modules/webhooks). Never the secret.
+  'webhook.created': 'Added a webhook',
+  'webhook.updated': 'Changed a webhook',
+  'webhook.secret_rotated': 'Rotated a webhook’s signing secret',
+  'webhook.deleted': 'Removed a webhook',
+  'webhook.disabled': 'A webhook was turned off after failing repeatedly',
   // Issue-tracker sync (modules/trackers). Never credentials, never board text: issue keys, fields and outcomes.
   'tracker.connection_created': 'Connected an issue tracker',
   'tracker.connection_updated': 'Changed a tracker connection',

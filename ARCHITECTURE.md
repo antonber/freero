@@ -113,7 +113,8 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | Database table | the server module whose `migrations/` create it; only its `repo.ts` writes it, only its migrations alter it [S4] | that module's exported functions |
 | auth session cookie | server `modules/auth` | — |
 | `_outbox`, `_outbox_cursors` (platform tables) | `platform/outbox.ts` | `appendOutbox` in the change's transaction; consumers through `consumeOutbox` |
-| Derived indexes (`object_references`) | their module's outbox consumer | never written directly: change the source; `references:rebuild` repairs |
+| Derived indexes (`object_references`, `search_entries`) | their module's outbox consumer | never written directly: change the source; `references:rebuild` / `search:rebuild` repair |
+| The event stream (`events`) | `modules/events` (from outbox topics only) | append to the outbox in your change's transaction (`board.events`, `board.members`, `board.content`); consumers follow `event.recorded` |
 | API tokens, OAuth apps / consents, a team's API switch | server `modules/apiauth` | its index: `authenticate`, `requireScope`, `useInWorkspace` |
 | Tracker connections, links to issues, what both sides last agreed on | server `modules/trackers` | its routes / index (`sendToTracker`, `importIssues`); syncs only through its outbox consumer |
 | `trackers` collection (issue badges) and items' `trackerLink` | server `modules/trackers` (through realtime's `changeBoard`) | — (the web feature only reads them) |
@@ -859,7 +860,10 @@ references index derived through the outbox, `GET /objects/backlinks`; both in "
 below), `engage` (engage_answers, engage_questions, engage_upvotes,
 engage_reveals: live audience activities; see "Live activities" below), `trackers`
 (tracker_connections, tracker_links, tracker_link_sources, tracker_oauth_flows: issue-tracker sync;
-see "Issue trackers" below).
+see "Issue trackers" below), `search` (search_entries, search_sources: the search index derived
+through the outbox, `GET /search`), `events` (events, event_board_states, event_pending_boards: the
+event stream), `webhooks` (webhook_endpoints, webhook_deliveries: workspace webhooks) — the last
+three in "Search, the event stream and webhooks" below.
 
 - Notifications are created only from trusted server-side events, never from client claims:
   realtime's `onCommentMessage` (a comment message applied from one of THIS instance's sockets,
@@ -1408,7 +1412,9 @@ owns):
   in-process events — members' sharing events, `onCommentMessage`, `onBoardChange`, `onSessionEnd` —
   stay: they feed live, best-effort delivery (notifications, activity bursts, socket closes) that
   is either re-derived elsewhere or harmless to miss; moving them means replacing their in-memory
-  state, a change of its own. `workspaces.onMembershipChanged` → templates' unsharing was moved.)
+  state, a change of its own. `workspaces.onMembershipChanged` → templates' unsharing was moved.
+  Board lifecycle and membership changes are ALSO appended to the outbox now — `board.events` and
+  `board.members`, in the change's transaction — for the event stream and search, below.)
 - `consumeOutbox(ctx, { name, topics, lockKey, handle })` from an init.ts. Every instance polls
   (1 s, and right after a local commit that appended: `afterCommit` in `platform/db.ts`); each
   consumer runs on ONE instance at a time (advisory lock). It reads in `(txid, id)` order only up to
@@ -1472,6 +1478,66 @@ on every view (`Host.resolveObjects`, batched per frame, 15 s cache), shows "No 
 and its open button glides to an item on the same board or opens the target. Item links (KAI-54)
 and link cards are indexed as they are. The share dialog's "Linked from" lists the other boards
 pointing at this one that the viewer can open (`app/components/LinkedFrom.tsx`).
+
+### Search, the event stream and webhooks (KAI-151, KAI-141, KAI-150, KAI-105, KAI-227)
+
+**Search** (`modules/search`). An index of what each board SAYS — its title, the text of its items
+(frame titles, table cells, a kanban's columns, a card's fields, tags, connector labels) and its
+comment messages — in `search_entries`, Postgres full-text search with the `simple` configuration
+(no stemming or stop words, so every language works the same, and PGlite has it). Each word of a
+query matches as a prefix and all must match; query syntax people type is only ever words
+(`searchTerms`), so no input can change the query's shape.
+- **Derived through the outbox**, like references: `board.content` (every saved change) and
+  `board.events` (renames) re-derive the board from its SAVED shared content as every reader sees it
+  (`realtime.storedBoardView` → `outline.outlineOfView`, so each element type reads through its
+  feature's `outline.ts` and a new type is searchable the day it has one). Rows replaced per board,
+  versioned; `npm run admin -- search:rebuild [<board>]`.
+- **Layers are skipped, not indexed per audience**: private drafts and hidden frames' contents are not
+  in that view, and a comment thread pinned to an item that isn't (inside a hidden frame) is left out
+  although its records sit in the shared `comments` collection. So the index holds exactly what every
+  reader of a board sees, the only question per reader is "may they see this board?", and a snippet
+  can never come from content they can't see. Indexing per audience (editors searching hidden frames,
+  an author their drafts) would need rows per reader group; not worth it for content hidden on
+  purpose. Hiding isn't retroactive anyway: what was in the shared doc stays findable until the next
+  derivation (seconds).
+- **Reading** (`searchFor`): candidates are the boards the reader could reach (boards'
+  `boardIdsReachableBy`: their workspaces, memberships, boards they opened), the FTS query runs over
+  those, and each page's boards go through `summarizeObjects(…, 'discover')` — the live check, so
+  someone removed from a board finds nothing of it on the very next query, and a board reached only
+  by its link counts once they opened it. Titles in results come from that live summary; snippets
+  (`ts_headline`, highlights as offsets) from the index.
+- **Surfaces**: `GET /api/search` (the dashboard's "Board names / Inside boards" tabs, results grouped
+  by board, each opening `?el=<item>` or `?thread=<thread>`), `GET /api/v1/search` and MCP `search`
+  (both through `api/objects.ts`: boards of workspaces closed to the credential and boards whose
+  downloads policy keeps their content from the person are left out — search results are board
+  text). `RATE_LIMIT_SEARCH`. KAI-227 adds `POST /api/v1/objects/resolve` and
+  `GET /api/v1/objects/backlinks` (MCP `resolve_links`, `find_backlinks`) on the same registry: an
+  item's title (its text) is blanked where the downloads policy applies.
+- **Later**: semantic search adds an embedding column to `search_entries` (pgvector), filled by the
+  same consumer only when an AI provider is configured; `searchFor` is the seam that merges both.
+
+**The event stream** (`modules/events`, docs/events.md, contract `docs/events.schema.json`). One
+ordered record of what happens to boards, fed only through the outbox: `board.events` and
+`board.members` are recorded as they are; `board.content` marks the board pending, and once its saved
+content was quiet for `EVENTS_SETTLE_SECONDS` (at most a minute) the `events:derive` job compares it
+with what it saw last (`event_board_states`: a fingerprint per item, the comment messages) into
+`item.created / updated / deleted` and `comment.created` — recompute, not patch, so a drag is one
+update and a replayed batch changes nothing (`events.source_key` is unique). A board the stream never
+saw is a silent baseline; a new board starts empty (its first items are news). Every recorded event
+appends `event.recorded` to the outbox in the same transaction: consumers (webhooks; later the inbox
+and feeds) follow that topic with their own cursor. Notifications and the activity feed stay on the
+in-process events for now (live socket attribution, per-instance bursts).
+
+**Webhooks** (`modules/webhooks`, admin console "Webhooks"). A team's owners/admins register endpoints
+with event types and a format (`json` signed with HMAC-SHA256, `slack`, `teams`); the URL and secret
+are sealed at rest (`platform/secrets`), the secret shown once, the URL shown shortened; changes are
+audited (`webhook.*`). The fan-out consumer queues one delivery per event and endpoint (unique), only
+for boards every full member of the workspace can open through team access (workspaces'
+`openToWholeTeam`: no personal boards, no private projects — not even ids leave). The
+`webhooks:deliver` job sends due deliveries (SSRF-safe like unfurl and AI endpoints: https only, our
+own DNS lookup refuses private addresses at connect time, redirects never followed), retries with
+4× backoff, and turns an endpoint off after `WEBHOOK_DISABLE_AFTER_FAILURES` failures in a row
+(audited, its creator emailed); deliveries wait until it is back on. `WEBHOOKS=false` removes it all.
 
 ### Issue trackers: one issue ↔ many items, kept in step (`modules/trackers`, KAI-153..157; docs/trackers.md)
 
@@ -1920,12 +1986,25 @@ only to connections that may read them:
   were: a frame visible then comes back visible with the content the shared doc had (the editors
   clients' sweep drops a stale editors-layer copy of the same ids), a frame hidden then comes back
   hidden with whatever its editors layer holds NOW (hidden contents are not versioned).
-- **Element content follows its element** (KAI-230): what an element keeps outside the `elements`
-  map — the collections in `@freero/shared` `ELEMENT_CONTENT_COLLECTIONS`, each with a function
-  from an entry's key to the element it belongs to (`tableCells`, `presenterNotes`,
-  `engageResults`) — lives in the SAME doc as that element, so a table in a hidden frame or a private
-  draft never sends its cell text to a socket that may not read the table. One declaration in
-  `@freero/shared` (like `Y_KEPT_ON_RESTORE`) because both runtimes enforce it:
+- **Element content follows its element** (KAI-230, KAI-234): what an element keeps outside the
+  `elements` map — the collections in `@freero/shared` `ELEMENT_CONTENT_COLLECTIONS` (`tableCells`,
+  `presenterNotes`, `engageResults`, `comments`, `trackers`) — lives in the SAME doc as that
+  element, so a table in a hidden frame or a private draft never sends its cell text, nor the
+  discussion about it, to a socket that may not read the table. One declaration in
+  `@freero/shared` (like `Y_KEPT_ON_RESTORE`) because both runtimes enforce it. Each collection has
+  an `ElementContentRule`:
+  - `owners(key, value, get)`: the elements an entry belongs to, read from its key (a cell), its
+    value (a tracker badge's `sources`) or another entry (`get`: a comment message asks its `t:`
+    thread record, whose `elementId` is the item the thread is pinned to). No owner: a board-level
+    thread, which lives in the shared doc.
+  - several owners (`homeLayer`): the most visible doc in which EVERY owner is visible — shared when
+    all are shared, `editors` when none is in a private layer — else the most restrictive, the
+    private layer of the first owner in one. A badge linking a shared sticky and an item in a hidden
+    frame is for owners/editors only; one that also links a draft is that draft author's.
+  - `follows(key)`: with no owner on the board (its item was deleted), the entry keeps to the doc of
+    another entry: a comment record to its thread record (a hidden item's thread stays hidden after
+    the item is deleted, and so do replies to it). The comments feature writes a thread's tombstone
+    before deleting its records, so the tombstone lands where the thread was.
   - Client (`engine/store`): `editor.collection(name)` of such a collection reads the shared doc and
     both layers as one; a write goes to the owner element's doc. Every element move between docs
     (`BoardStore.writeElement`) carries its entries in the same transaction, so dragging a table into
@@ -1957,7 +2036,8 @@ only to connections that may read them:
 | `presenterNotes` | notes per frame | yes: element content (a frame inside a hidden frame or a draft). A visible frame's notes stay readable by everyone with access, by design (the panel says so) — that includes a hidden frame's OWN notes, since the frame itself is visible |
 | `engageResults` | live activity results | yes: element content, moved by the server |
 | `diagramSources` | a diagram's Mermaid / outline source and the ids it laid out | not element content (one record, many elements): from-text keeps a source only while the WHOLE diagram is shared content, offers editing only then, and refuses to write a source for a diagram that became hidden meanwhile. A diagram hidden after it was shared keeps the source everyone had already seen (hiding is not retroactive) |
-| `comments` | threads pinned to items, messages | NOT yet: a thread on an item in a hidden frame / a draft is in the shared doc (KAI-234). Threads are social records with server readers that only know the shared doc (commenter rules, mention notifications, account purge, references, data export) and their owner is not in the key; moving them is its own change |
+| `comments` | threads pinned to items, messages | yes (KAI-234): every record of a thread pinned to an item lives with the item (owner via the `t:` record). Board-level threads stay shared. Server readers: commenter rules judge a record against the layer it would land in (a commenter can't take over a hidden thread by re-writing it into the shared doc; the room moves their own records there); mention/reply notifications carry the thread's layer (`editors`: only owners/editors are notified, no invite mention; `private`: nobody); the activity feed counts hidden-thread comments in an editors-only row; the account purge renames authors in every doc; the data export includes the person's own messages from every doc but describes a hidden item only if they may see it now; `/boards/:id/people` answers from the comments the asker can read; the references index, search and outline read `BoardView` / the saved shared doc, so hidden threads only for those who see them |
+| `trackers` | issue badges (key, title, status, assignee) per link, `sources` = linked items | yes: element content with several owners (`homeLayer`), written and moved by the server only |
 | `voting`, `estimation` | ballots / picks: element ids and values, sealed ones in private layers | ids only, no content: an item in a hidden frame can be voted on or estimated by editors, and viewers learn its id and count, never its text |
 | `tags` | the board's tag vocabulary (name, colour) | no: board-level, shared by many items; an item's tag ids are on the element and follow it |
 | `timer`, `privateMode`, `facilitation`, `retro`, `call`, `shapeLibraries` | session / board settings | nothing item-specific |
@@ -2036,7 +2116,7 @@ the board, deletions. A suggestion is not board content until someone who can ed
   `S3_BUCKET` and keys (MinIO, SeaweedFS…), the `s3` group checks the S3 backend (prefixes, kept
   copies under `private/`, restore, retention, the S3_PUBLIC_URL redirect and stored Cache-Control);
   all other groups stay on the local disk. CI does all of it.
-  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation,ai,api,mcp,s3,suite,suggestions,collab,tracker` runs some groups (to loop one while hunting a flake).
+  `--only main,signin,secrets,sweep,purge,notify,platform,multi,facilitation,ai,api,mcp,s3,suite,suggestions,collab,tracker,search,webhooks` runs some groups (to loop one while hunting a flake).
   The `mcp` group drives the MCP server with the official MCP client SDK, OAuth (dynamic
   registration, consent, PKCE) included; with DATABASE_URL + REDIS_URL one client's requests also
   alternate between two instances.
