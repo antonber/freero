@@ -392,7 +392,11 @@ const providers = new Set();
  * `prepare(doc)` runs before connecting (local "offline" content the client brings along).
  * `port`: the instance to connect to (default: the main server).
  */
-function connectDoc(user, boardId, prepare, port = user.port ?? server.port) {
+/**
+ * `opts.path` / `opts.protocols`: another socket route and its subprotocols — a live board view in an
+ * AI assistant signs in with its token as a subprotocol on /ws/embed/boards (KAI-171), no cookie.
+ */
+function connectDoc(user, boardId, prepare, port = user.port ?? server.port, opts = {}) {
   const cookie = user.cookie;
   class CookieWebSocket extends WebSocket {
     constructor(url, protocols) {
@@ -401,10 +405,11 @@ function connectDoc(user, boardId, prepare, port = user.port ?? server.port) {
   }
   const doc = new Y.Doc();
   prepare?.(doc);
-  const provider = new WebsocketProvider(`ws://127.0.0.1:${port}/ws/boards`, boardId, doc, {
+  const provider = new WebsocketProvider(`ws://127.0.0.1:${port}${opts.path ?? '/ws/boards'}`, boardId, doc, {
     WebSocketPolyfill: CookieWebSocket,
     disableBc: true,
     connect: false,
+    protocols: opts.protocols ?? [],
   });
   const client = { user, doc, provider, role: null, closeCodes: [], echoedBarrier: 0 };
   // Notes the server's echo of this client's own presence (see settled()).
@@ -5751,7 +5756,8 @@ async function mcpChecks() {
   const { UnauthorizedError } = await import('@modelcontextprotocol/sdk/client/auth.js');
   const REDIS_URL = process.env.REDIS_URL?.trim();
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-mcp-'));
-  const env = { ACTIVITY_IDLE_SECONDS: '1', RATE_LIMIT_INVITE: '500/1h', RATE_LIMIT_PASSWORD: '500/15m', ...(REDIS_URL && ADMIN_URL ? { REDIS_URL } : {}) };
+  // SESSION_RECHECK_SECONDS: how soon a revoked connection's live board view closes (modules/embed).
+  const env = { ACTIVITY_IDLE_SECONDS: '1', RATE_LIMIT_INVITE: '500/1h', RATE_LIMIT_PASSWORD: '500/15m', SESSION_RECHECK_SECONDS: '1', ...(REDIS_URL && ADMIN_URL ? { REDIS_URL } : {}) };
   const procs = [];
   const live = [];
   const clients = [];
@@ -6027,6 +6033,64 @@ async function mcpChecks() {
         assert(n >= 4, `requests did not alternate: ${n}`);
         await waitFor(() => [...browser.provider.awareness.getStates().values()].some((s) => s?.agent?.app === 'Verify Assistant'), 5000, 'the app’s presence across instances');
       });
+
+    await check('mcp apps (KAI-171): the outline and open_board name their views — the preview may reach no network, the live view only frames Freero; open_board’s single-use ticket (never in what the model reads) opens a socket for that board only, capped by the connection: a read-only one can’t write, a write one edits live; revoking the token closes its live view', async () => {
+      const pb = (await O.req('POST', '/api/boards', { title: 'Live view' })).json.board.id;
+      const other = (await O.req('POST', '/api/boards', { title: 'Not this one' })).json.board.id;
+      const readTok = await token(O, ['boards:read'], `view reader ${stamp}`);
+      const reader = await withToken(readTok.secret);
+      const writer = await withToken((await token(O, ['boards:read', 'boards:write'], `view writer ${stamp}`)).secret);
+      const tools = (await reader.listTools()).tools;
+      const ui = (n) => tools.find((t) => t.name === n)?._meta?.ui;
+      assert(ui('get_board_outline')?.resourceUri === 'ui://freero/board-preview.html' && ui('open_board')?.resourceUri === 'ui://freero/board-live.html', `tool views: ${JSON.stringify(tools.map((t) => [t.name, t._meta]))}`);
+      assert(JSON.stringify(ui('share_board')?.visibility) === '["app"]', 'share_board is offered to the model');
+      const [prev] = (await reader.readResource({ uri: 'ui://freero/board-preview.html' })).contents;
+      const [liveView] = (await reader.readResource({ uri: 'ui://freero/board-live.html' })).contents;
+      assert(prev.mimeType === 'text/html;profile=mcp-app' && !prev._meta?.ui?.csp, `preview: ${prev.mimeType} ${JSON.stringify(prev._meta)}`);
+      const csp = liveView._meta?.ui?.csp ?? {};
+      assert(JSON.stringify(csp.frameDomains) === JSON.stringify([`http://127.0.0.1:${proc.port}`]) && !csp.connectDomains?.length && !csp.resourceDomains?.length, `live csp: ${JSON.stringify(csp)}`);
+
+      const open = async (c) => {
+        const r = await c.callTool({ name: 'open_board', arguments: { boardId: pb } });
+        assert(!r.isError && !text(r).includes('frt_') && !JSON.stringify(r.structuredContent).includes('frt_'), `the model sees the ticket: ${JSON.stringify(r)}`);
+        return r._meta['freero/live'];
+      };
+      const redeem = (ticket) =>
+        fetch(`http://127.0.0.1:${proc.port}/api/embed/redeem`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ticket }) });
+      const ticketOf = (m) => new URLSearchParams(new URL(m.src).hash.slice(1)).get('ticket');
+      const readMeta = await open(reader);
+      const first = await redeem(ticketOf(readMeta));
+      const readView = await first.json();
+      assert(first.status === 200 && readView.board.id === pb && readView.board.role === 'viewer' && readView.user.id === O.id, `redeem: ${first.status} ${JSON.stringify(readView.board?.role)}`);
+      assert((await redeem(ticketOf(readMeta))).status === 404, 'a ticket worked twice');
+      const asView = (tok, id = pb) => connectDoc({ label: 'live view', id: O.id, name: O.name }, id, null, proc.port, { path: '/ws/embed/boards', protocols: ['freero.embed', tok] });
+
+      const browser = connectDoc(O, pb, null, proc.port);
+      live.push(browser);
+      await browser.ready();
+      const ro = asView(readView.token);
+      live.push(ro);
+      await ro.ready();
+      assert(ro.role === 'viewer', `read-only view role: ${ro.role}`);
+      els(ro).set('nope', { id: 'nope', type: 'sticky', x: 0, y: 0, w: 100, h: 100, text: 'from a read-only view', createdBy: O.id });
+      await settled(ro, [browser]);
+      assert(!els(browser).has('nope'), 'a read-only view wrote to the board');
+
+      const elsewhere = asView(readView.token, other);
+      live.push(elsewhere);
+      await waitFor(() => elsewhere.closeCodes.includes(4403), 8000, 'the view token to be refused on another board');
+
+      const w = await (await redeem(ticketOf(await open(writer)))).json();
+      const rw = asView(w.token);
+      live.push(rw);
+      await rw.ready();
+      assert(rw.role === 'editor', `write view role: ${rw.role}`);
+      els(rw).set('live1', { id: 'live1', type: 'sticky', x: 0, y: 0, w: 100, h: 100, text: 'dragged in the chat', createdBy: O.id });
+      await waitFor(() => els(browser).get('live1')?.text === 'dragged in the chat', 5000, 'the view’s edit in the Freero tab');
+
+      assert((await O.req('DELETE', `/api/auth/tokens/${readTok.token.id}`)).status === 200, 'revoke');
+      await waitFor(() => ro.closeCodes.includes(4401), 10_000, 'the revoked connection’s live view to close');
+    });
 
     await check('mcp: revoking the token, or the app, refuses the very next MCP request', async () => {
       const script = await token(O, ['boards:read'], 'Short-lived');

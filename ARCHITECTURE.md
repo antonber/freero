@@ -115,7 +115,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | `_outbox`, `_outbox_cursors` (platform tables) | `platform/outbox.ts` | `appendOutbox` in the change's transaction; consumers through `consumeOutbox` |
 | Derived indexes (`object_references`, `search_entries`) | their module's outbox consumer | never written directly: change the source; `references:rebuild` / `search:rebuild` repair |
 | The event stream (`events`) | `modules/events` (from outbox topics only) | append to the outbox in your change's transaction (`board.events`, `board.members`, `board.content`); consumers follow `event.recorded` |
-| API tokens, OAuth apps / consents, a team's API switch | server `modules/apiauth` | its index: `authenticate`, `requireScope`, `useInWorkspace` |
+| API tokens, OAuth apps / consents, a team's API switch, live-view tickets (`api_embed_tokens`) | server `modules/apiauth` | its index: `authenticate`, `requireScope`, `useInWorkspace`, `mintEmbedTicket` / `redeemEmbedTicket` |
 | Tracker connections, links to issues, what both sides last agreed on | server `modules/trackers` | its routes / index (`sendToTracker`, `importIssues`); syncs only through its outbox consumer |
 | `trackers` collection (issue badges) and items' `trackerLink` | server `modules/trackers` (through realtime's `changeBoard`) | — (the web feature only reads them) |
 
@@ -828,7 +828,7 @@ policies"), `activity` (board_activity: the activity feed; see "Activity" below)
 configures; see "AI" below), `apiauth` (api_tokens,
 oauth_clients, oauth_grants, oauth_codes, api_workspace_settings, api_workspace_credentials:
 credentials that act for a person without their session), `api` (no table: the public REST API
-`/api/v1`; see "Public API and OAuth" below), `mcp` (no table: the remote MCP server `/mcp`; see
+`/api/v1`; see "Public API and OAuth" below), `embed` (no table: live board views inside AI assistants, `/embed`, `/ws/embed`; see "The MCP server"), `mcp` (no table: the remote MCP server `/mcp`; see
 "The MCP server" below), `objects` (no table: the object registry and the one
 permission check, `POST /objects/resolve`), `references` (object_references, reference_sources: the
 references index derived through the outbox, `GET /objects/backlinks`; both in "Suite foundation"
@@ -1377,6 +1377,25 @@ audit and admin controls are the same code.
   (`content.ts`); names, descriptions, instructions, prompts and errors are Freero's own words.
   `propose_changes` is registered only when `structure.structureTargets()` has the suggestions sink
   (KAI-169).
+- **MCP Apps** (KAI-171, `mcp/apps.ts`, docs/mcp.md "Live boards in the conversation"): tools name a
+  `ui://` view in `_meta.ui` (`registerAppTool` / `registerAppResource` of ext-apps). The views are
+  static HTML in `mcp/views/` (no build, no third-party code; `bridge.js` is the view side of the
+  postMessage protocol). `get_board_outline` → the preview, which draws the outline its result
+  carries (`_meta["freero/outline"]`, enveloped) and declares no domains; `open_board` → the live
+  view, which frames Freero's `/embed/board/:id` (`frameDomains` = Freero's origin only) with a
+  single-use ticket in `_meta["freero/live"]` (not for the model). `share_board` is `visibility:
+  ["app"]`: the view's Share button.
+- **Live views (`modules/embed`, no table).** apiauth mints the ticket (`api_embed_tokens`:
+  per tool call, bound to one board and to the app's grant or the personal token — deleted with
+  them — and to `maxRole` from the connection's scopes); `POST /api/embed/redeem` turns it, once,
+  into a short-lived token; `ws.ts` (`/ws/embed/boards/:id`, token as a WebSocket subprotocol) admits
+  the socket through realtime's `admitSocket` with `Admission.maxRole` (applied on every access
+  refresh too) and the session key `embed:<sha256>`; `init.ts` re-checks those keys every
+  `SESSION_RECHECK_SECONDS` (credential, account, API switch / block) and ends the ones that may no
+  longer stay open. Realtime hands auth only the keys without a ':' (auth's own). The web side is
+  `app/embed/EmbedBoardPage` + `createEmbedHost` (`Host.syncProtocols`). Framing: platform
+  `allowFraming(path, reason)` gives `/embed/` the `frame-ancestors` of `MCP_APP_FRAME_ANCESTORS`;
+  every other page stays `'none'`.
 - Scopes: `MCP_SCOPES`; read + suggest by default — `registerProtectedResource(…, { optInScopes })`
   makes the consent screen offer `boards:write` / `comments:write` unticked (`OAuthConsentInfo.scopes[].optional`,
   the decision's `grant`). `/mcp` is the `root` resource: the bare `/.well-known/oauth-protected-resource`

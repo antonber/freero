@@ -141,6 +141,8 @@ everything an agent adds in free space (next to `near` when given): no coordinat
 | `resolve_links` | read | What Freero links (board / item URLs, `freero://` addresses; up to 200) point at — type, title, board, your access — or `unavailable` (no access and no such object read the same). |
 | `find_backlinks` | read | Items and comments on boards you can open that link to a board or an item. |
 | `list_templates` | read | Saved templates you can start a board from (yours and your teams'). |
+| `open_board` | read | Shows the board **live** in the conversation where the assistant shows interactive views ([below](#live-boards-in-the-conversation-mcp-apps)): the person pans, zooms, edits (if this connection may change boards), accepts your suggestions, opens it in Freero or shares it. Elsewhere: the board link. |
+| `share_board` | read (+ write to turn sharing on) | The live view's **Share with team** button — only the view calls it (`visibility: ["app"]`), never the model: returns the board link and, if needed, turns link sharing on (view / comment; guests without an account as the workspace allows). Turning it on needs `boards:write` and the board's owner; the share dialog's rules and audit event apply. |
 | `get_board_outline` | read | The board as a semantic outline: frames, clusters, notes, shapes, cards, mind maps, tables, the connector graph, votes, comments, with item ids. `format` `markdown` (default) / `json`; `budget` (≈ tokens, default 8000) keeps frame titles and the shallowest, most recent items; `scope` = an item id to read only inside it; `cursor` pages; `authors`. Format reference: [board-outline.md](board-outline.md). |
 | `create_board` | write | A new board (personal or a team workspace), optionally from a saved template. |
 | `add_stickies` | write | A grid of sticky notes, optional title and color. |
@@ -154,7 +156,8 @@ everything an agent adds in free space (next to `near` when given): no coordinat
 | `propose_changes` | suggest | Proposes a structure (`{ kind, … }` as for the add tools; optional `description` for reviewers) as ONE group of suggestions that people who can edit the board accept or reject (KAI-169). The board does not change until they do; the badge, the outline (`include=suggestions`) and the activity feed show it as "<app> for <you>". Your role must be owner or editor. |
 
 **Resources:** `freero://board/{boardId}` — a board's outline (Markdown, ≈ 8000 tokens) in the
-untrusted envelope.
+untrusted envelope. `ui://freero/board-preview.html` and `ui://freero/board-live.html` — the MCP Apps
+views (static HTML, no board data in them).
 
 **Prompts:** `run_retro` (group a retro board's notes into themes with `add_clusters`, then actions),
 `notes_to_diagram` (your notes → `add_diagram`), `summarize_board` (topics, decisions, open
@@ -186,35 +189,101 @@ from it), serve it over HTTPS (ChatGPT and Claude only connect to https URLs), a
 `https://<your-host>/mcp`. `PUBLIC_API=false` turns the REST API and the MCP server off together.
 Limits: `RATE_LIMIT_API_CREDENTIAL`, `RATE_LIMIT_AGENT_WRITE` ([configuration.md](configuration.md)).
 
-## Interactive board previews (MCP Apps) — plan (KAI-171)
+## Live boards in the conversation (MCP Apps)
 
-The MCP Apps extension (`io.modelcontextprotocol/ui`, spec 2026-01-26) lets a tool result render an
-interactive HTML view in the chat. Claude (web and desktop), ChatGPT and VS Code render it; other
-hosts show the text result. What it takes:
+Freero implements the MCP Apps extension (`io.modelcontextprotocol/ui`, spec 2026-01-26): hosts that
+render interactive views — Claude (web, desktop), ChatGPT, VS Code — show a Freero view next to the
+tool result; every other host shows the text result as before. The server uses the v2 SDK
+(`@modelcontextprotocol/server` 2.2.0) and `@modelcontextprotocol/ext-apps` 2.0.3, both pinned.
 
-- A `ui://` resource with MIME type `text/html;profile=mcp-app` (one self-contained HTML document),
-  declared up front so hosts can prefetch and review it; tools point to it with
-  `_meta.ui.resourceUri` (the flat `_meta["ui/resourceUri"]` form is deprecated).
-- The host renders it in a sandboxed iframe under a CSP built from the resource's `_meta.ui.csp`
-  (`connectDomains`, `resourceDomains`, `frameDomains`, `baseUriDomains`; omitted = no network at
-  all) and optional `permissions`; `_meta.ui.prefersBorder`.
-- The view talks to the host over `postMessage` JSON-RPC: `ui/initialize` →
-  `ui/notifications/initialized`, then the host sends `ui/notifications/tool-input` and
-  `…/tool-result`; the view may call server tools back through the host and update the model's context.
-- The extension must be negotiated in the client's capabilities, or hosts silently show text only.
+| View | Shown for | What it is |
+|---|---|---|
+| `ui://freero/board-preview.html` | `get_board_outline` | A read-only drawing of the outline the result already carries (frames, clusters, notes in their colours, shapes, cards, mind maps, tables, connectors with labels), with **Open in Freero**. Its resource declares **no domains**: the host lets it reach nothing on the network. Board text goes into it only as `textContent`. |
+| `ui://freero/board-live.html` | `open_board` | The real board, live and multiplayer: it frames Freero's own board page for that one board. Header: access badge (Can edit / Can comment / View only), **Share with team**, **Full screen**, **Open in Freero**; **Reconnect** when the view ended. |
 
-Status: Freero pins the stable `@modelcontextprotocol/sdk` 1.x, which has no MCP Apps support; the
-official `@modelcontextprotocol/ext-apps` 2.x requires the split v2 SDK packages
-(`@modelcontextprotocol/server` 2.x). So no UI resource ships yet. Next steps (KAI-171):
+Both views follow the host's theme (light / dark), report their height, and work inline and in full
+screen. They are static, self-contained HTML in `apps/server/src/modules/mcp/views/` (no build step,
+no third-party code, nothing fetched), so hosts can prefetch and review them.
 
-1. Move `modules/mcp` to `@modelcontextprotocol/server` 2.x (same tools; `server.ts` and `routes.ts`
-   change) and add `@modelcontextprotocol/ext-apps` (pinned).
-2. A read-only **board preview** view: a small, separately built bundle (`apps/web` entry, no Freero
-   chrome) that draws the outline JSON the tool result already carries (frames, notes, shapes,
-   connectors as boxes and lines), so it needs **no network** (`csp` omitted) and no credentials;
-   board text rendered with `textContent` only. `get_board_outline` and the `add_` tools point to it
-   via `_meta.ui.resourceUri`; text-only hosts keep today's results.
-3. Then the live, editable board of KAI-171: a short-lived, board-scoped token minted per tool call,
-   the realtime socket allowed in `connectDomains` (Freero's origin only), "Open in Freero" / "Share".
+### Security model of the live board
 
-<!-- Sources checked 2026-10: modelcontextprotocol/ext-apps (spec 2026-01-26), npm @modelcontextprotocol/ext-apps 2.0.4 (peer @modelcontextprotocol/server ^2). -->
+- **What the model sees.** `open_board`'s text and `structuredContent` carry the board id, link and
+  access level only. The view's address — Freero's `/embed/board/<id>#ticket=…` — travels in the
+  result's `_meta["freero/live"]`, which hosts hand to the view, not to the model.
+- **A ticket per tool call, then a short-lived token.** The ticket (`frt_…`, 256 random bits, stored
+  as sha256) is single-use and expires after 10 minutes. The page redeems it once
+  (`POST /api/embed/redeem`) for a view token (`fre_…`, 1 hour) that opens **that board's socket
+  only** (`/ws/embed/boards/<id>`, the token as a WebSocket subprotocol, never in a URL or log).
+  Neither the person's session cookie nor the connection's OAuth / personal token ever reaches the
+  view; the page drops the ticket from its address right away.
+- **Audience and power.** The token acts for the person, through the connection that called the
+  tool: it is the person's own role on the board, **capped by what the connection was granted**
+  (`boards:write` → editor, `comments:write` → commenter, otherwise view only). So a read + suggest
+  connection gets a read-only view, and no one can turn a ticket into more than the connection had.
+  Edits made in the view are the person's own (their name, their undo).
+- **Kill switches reach open views.** Every use re-checks the credential behind it: disconnecting
+  the app, revoking or pausing the token, "Disconnect all apps and tokens", account suspension or
+  deletion, enforced SSO, the team turning **API & apps** off or blocking the app. An open view is
+  re-checked every `SESSION_RECHECK_SECONDS` and closed when any of those apply; it also closes when
+  its token expires (the view offers **Reconnect**, which is a fresh `open_board` call through the
+  host — so the same checks run again).
+- **Where it may run.** The page under `/embed/` is the only Freero page that may be framed, and only
+  by the assistants in `MCP_APP_FRAME_ANCESTORS` (CSP `frame-ancestors`; default Claude, ChatGPT and
+  VS Code webviews); every other page keeps `frame-ancestors 'none'` + `X-Frame-Options: DENY`. The
+  view's resource asks the host for exactly one network permission: framing Freero's origin
+  (`_meta.ui.csp.frameDomains`), no `connectDomains`, no `resourceDomains`. The board inside runs on
+  Freero's origin under Freero's own CSP; the host page can't read or script it.
+- **Content rules are the board's.** The socket gets what the person's (capped) role gets: private
+  drafts only their own, hidden frames' contents only for editors, suggestions only for editors.
+  Exports, uploads, templates, history and sharing are not offered inside the view ("Open in
+  Freero"). The team's downloads policy needs nothing extra here: the view shows the board to the
+  person and gives the assistant no copy of it (the outline / export tools stay gated by it).
+- **Share with team** is a button, not a model decision: `share_board` is `visibility: ["app"]`
+  (hosts don't offer it to the model). A link that already lets people in is just returned; turning
+  link sharing on or up needs `boards:write` and the board's owner, inside the workspace's link
+  policies (maximum role, sharing outside the workspace, verified email, operator blocks) — the same
+  rules and `board.link_sharing_changed` audit event as the share dialog.
+- Every call (`MCP open_board`, `MCP share_board`) is in the audit log like any other tool call.
+
+### Directory submission readiness
+
+Status: **ready to file, not filed** (filing needs an organisation account and a public HTTPS
+deployment). Requirements as published by both programmes in 2026-10; re-check the forms when filing.
+
+| | ChatGPT (OpenAI app directory) | Claude (Anthropic connectors directory) |
+|---|---|---|
+| Server | Public HTTPS MCP endpoint, Streamable HTTP — `https://<freero>/mcp` ✅ | Same ✅ |
+| Sign-in | OAuth 2.1 with PKCE; dynamic client registration ✅ (RFC 7591/8414/9728/8707) | Same; callback `https://claude.ai/api/mcp/auth_callback` (and `claude.com`) accepted — any https redirect URI is ✅ |
+| Tool metadata | Clear names / descriptions, accurate `readOnlyHint` / `destructiveHint` / `openWorldHint` on every tool ✅ | Annotations on every tool ✅; names ≤ 64 chars ✅ |
+| Views | `text/html;profile=mcp-app` resources with a declared CSP ✅ (`openai/widgetCSP` mirrored too); a widget domain (`_meta.ui.domain`) if the reviewers ask for a stable origin — then add it to `MCP_APP_FRAME_ANCESTORS` | MCP Apps resources with CSP ✅; views render under `*.claudemcpcontent.com` (in the default `MCP_APP_FRAME_ANCESTORS`) ✅ |
+| Safety | Destructive actions confirmed (`delete_items` needs `confirm`), least-privilege defaults (read + suggest), untrusted-content envelope ✅ | Same ✅ |
+| Listing | App name, short + long description, Freero logo (`apps/web/public/freero.svg`, own brand), screenshots, 3–5 demo prompts | Name, description, logo, ≥ 3 example prompts, documentation link (this page) |
+| Policies | Privacy policy URL, terms of use, support contact — **to publish** on the hosted service | Same — **to publish** |
+| Review | Test account with sample boards (no two-step verification), organisation verification in the OpenAI platform — **human step** | Test account, contact for the review — **human step** |
+
+Demo prompts to submit: "Map out our Q1 launch risks on a Freero board and show it to me", "Turn
+these meeting notes into a flowchart on my Sprint board", "Group the stickies on my retro board into
+themes and propose action items", "What did the team decide on the Roadmap board?".
+
+Screenshots: the preview (light / dark) and the live board (inline, full screen, read-only, after
+"Share with team") are produced by driving the views in a local MCP Apps host (the official
+`AppBridge` + MCP client against a real server, see "Verifying" below); replace them with ones taken
+in ChatGPT developer mode and Claude once the hosted service runs this version.
+
+**Privacy notes for the submissions.** The views collect nothing: no analytics, no third-party
+code, no cookies (the live board signs in with its own token). What an assistant receives is what
+the tools return: board text in the untrusted envelope, ids and links; the live view's board content
+goes to the person's browser only, never to the assistant. Every call is audited for the person or
+their team; people can disconnect the app (Settings → Connected apps), and team admins can turn API
+access off or block the app. Self-hosted operators register their own `https://<host>/mcp` as a
+custom connector instead of the directory listing.
+
+### Verifying
+
+`npm run verify --only mcp` checks the views (`_meta.ui`, MIME type, CSP), the ticket (single use,
+never in what the model reads), the socket (this board only, capped role, live edits) and that
+revoking the token closes an open view. The UI is checked in a local MCP Apps host — a page using
+the official `AppBridge` (`@modelcontextprotocol/ext-apps/app-bridge`) and MCP client against a real
+server, with the view in a sandboxed iframe on another origin under the CSP its resource declares.
+
+<!-- Sources checked 2026-10: modelcontextprotocol/ext-apps (spec 2026-01-26), npm @modelcontextprotocol/ext-apps 2.0.3 and @modelcontextprotocol/server 2.2.0 (MIT; 2.3+ is Apache-2.0). -->
