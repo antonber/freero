@@ -15,7 +15,7 @@ import { createMcpHandler } from '@modelcontextprotocol/server';
 import { MCP_DEFAULT_SCOPES, MCP_SCOPES, type McpConnectInfo } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { getConfig } from '../../platform/config';
-import { logError } from '../../platform/log';
+import { log, logError } from '../../platform/log';
 import { appUrl } from '../../platform/mail';
 import { consumeRateLimit } from '../../platform/rateLimit';
 import { allowCrossSiteApi } from '../../platform/security';
@@ -39,7 +39,39 @@ export const RESOURCE = '/mcp';
 /** A JSON-RPC error outside any request (the transport never saw it). */
 const rpcError = (res: Response, status: number, message: string) => res.status(status).json({ jsonrpc: '2.0', error: { code: -32000, message }, id: null });
 
-export default function mcpRoutes(_ctx: ServerContext): Router {
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+
+/**
+ * DNS-rebinding and opaque-origin defence (MCP transport spec: servers must validate Origin). A
+ * page that rebinds its own name to this server's address reaches it with ITS name in Host, so
+ * with PUBLIC_URL set only that host (or loopback, for local checks) is served. A browser Origin
+ * must be a real origin: https, or http on loopback — never `null` (sandboxed frames, file:
+ * pages) or anything unparseable. Requests without Origin are not from a browser page and pass.
+ * Checked before the token is even looked at. Returns the refusal, or null to go on.
+ */
+function refuseOrigin(req: Request, publicUrl: string | null): string | null {
+  if (publicUrl) {
+    const own = new URL(publicUrl).hostname;
+    const host = req.hostname?.toLowerCase();
+    if (!host || (host !== own && !LOOPBACK.has(host))) return `This MCP server answers at ${publicUrl}${RESOURCE} only`;
+  }
+  const origin = req.headers.origin;
+  if (origin === undefined) return null;
+  let u: URL | null = null;
+  try {
+    u = new URL(origin);
+  } catch {
+    u = null;
+  }
+  if (!u || u.origin !== origin.replace(/\/+$/, '') || !(u.protocol === 'https:' || (u.protocol === 'http:' && LOOPBACK.has(u.hostname))))
+    return 'Requests from this page’s origin are refused: call the MCP server from an https page or from a client without a browser Origin';
+  return null;
+}
+
+export default function mcpRoutes({ config }: ServerContext): Router {
+  // Claude and ChatGPT connect only to https servers with a certificate from a public authority.
+  if (config.production && config.publicUrl?.startsWith('http://') && !LOOPBACK.has(new URL(config.publicUrl).hostname))
+    log(`mcp: PUBLIC_URL is ${config.publicUrl}; AI assistants only connect to an https MCP server, so serve Freero over HTTPS and set PUBLIC_URL to it`);
   registerProtectedResource(RESOURCE, 'Freero MCP server', {
     scopes: MCP_SCOPES,
     optInScopes: MCP_SCOPES.filter((s) => !MCP_DEFAULT_SCOPES.includes(s)),
@@ -70,6 +102,8 @@ export default function mcpRoutes(_ctx: ServerContext): Router {
 
   r.post('/mcp', (req: Request, res: Response, next) => {
     void (async () => {
+      const refused = refuseOrigin(req, config.publicUrl);
+      if (refused) return rpcError(res, 403, refused);
       let cred: ApiCredential;
       try {
         // Every request is authenticated afresh (no cache): a paused or revoked token, a revoked
