@@ -7,6 +7,8 @@ import { handle } from '../../platform/http';
 import { log } from '../../platform/log';
 import { contentSecurityPolicy } from '../../platform/security';
 import { userFromCookieHeader } from '../auth/index';
+import type { SiteLegal } from '@freero/shared';
+import { legalFill, withLegal } from './legal';
 import { cspWithAnalytics, loadSite, ROBOTS_NO_SITE, withAnalytics, withOrigin } from './site';
 
 // Mounted at the root: it serves `/`, the marketing pages, robots.txt and the sitemaps.
@@ -16,6 +18,13 @@ export default function siteRoutes({ config }: ServerContext): Router {
   const r = Router();
   const site = config.site.enabled ? loadSite(config.site.dist) : null;
   if (config.site.enabled) log(site ? `serving the marketing site from ${config.site.dist}` : `no marketing site build at ${config.site.dist}: / goes to the app`);
+  const legal = legalFill(config);
+  if (site && site.legal.size) {
+    const l = config.site.legal;
+    if (!legal.inEffect) log('site: the legal pages are drafts (not in effect, noindex) until SITE_LEGAL_OPERATOR is set');
+    else if (!l.contactEmail || !l.address || !l.jurisdiction)
+      log('site: SITE_LEGAL_OPERATOR is set but SITE_LEGAL_CONTACT_EMAIL, SITE_LEGAL_ADDRESS or SITE_LEGAL_JURISDICTION is not: the legal pages show placeholders for them');
+  }
 
   // Built once per origin: PUBLIC_URL in production (one entry), the request's own host in development.
   const cache = new Map<string, Map<string, string>>();
@@ -30,7 +39,7 @@ export default function siteRoutes({ config }: ServerContext): Router {
     }
     let text = byKey.get(key);
     if (text === undefined) {
-      text = withOrigin(raw, origin);
+      text = withLegal(withOrigin(raw, origin), legal, !!site?.legal.has(key));
       byKey.set(key, text);
     }
     return text;
@@ -40,8 +49,20 @@ export default function siteRoutes({ config }: ServerContext): Router {
     const analytics = config.site.analytics;
     if (analytics) res.setHeader('Content-Security-Policy', cspWithAnalytics(contentSecurityPolicy(config, req.headers.host, req.secure), analytics.src));
     res.setHeader('Cache-Control', 'no-cache');
+    // A draft of terms is never a search result, whatever a cached copy of its markup says.
+    if (site?.legal.has(key) && !legal.inEffect) res.setHeader('X-Robots-Tag', 'noindex');
     res.status(status).type('html').send(withAnalytics(textFor(req, key, raw), analytics));
   };
+
+  // For the app's sign-up page: the terms people agree to, once they are in effect.
+  r.get('/api/site/legal', (_req, res) => {
+    const served = !!site && ['/terms', '/privacy', '/acceptable-use'].every((p) => site.legal.has(p) && site.pages.has(p));
+    const body: SiteLegal = {
+      legal: served && config.site.legal.operator ? { operator: config.site.legal.operator, termsUrl: '/terms', privacyUrl: '/privacy', acceptableUseUrl: '/acceptable-use' } : null,
+    };
+    res.setHeader('Cache-Control', 'no-cache');
+    res.json(body);
+  });
 
   r.get('/robots.txt', (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');

@@ -40,6 +40,15 @@
   color: var(--fr-ink);
 }
 
+.fr-oauth__host {
+  color: var(--fr-ink-2);
+}
+
+.fr-oauth__host strong {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
 .fr-oauth__warn {
   display: flex;
   gap: 8px;

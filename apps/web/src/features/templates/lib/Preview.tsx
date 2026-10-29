@@ -264,13 +264,26 @@ function draw(el: El, byId: Map<string, El>): ReactNode {
 export function LazyTemplatePreview({ def }: { def: TemplateDef }) {
   const ref = useRef<HTMLSpanElement>(null);
   const [seen, setSeen] = useState(() => cache.has(def.id) || typeof IntersectionObserver === 'undefined');
+  // Spec templates load their content (one chunk per file) once their card comes into view.
+  const [ready, setReady] = useState(() => cache.has(def.id) || !def.load);
   useEffect(() => {
     if (seen || !ref.current) return;
     const io = new IntersectionObserver((entries) => entries.some((e) => e.isIntersecting) && setSeen(true), { rootMargin: '240px 0px' });
     io.observe(ref.current);
     return () => io.disconnect();
   }, [seen]);
-  return seen ? <TemplatePreview def={def} /> : <span ref={ref} className="fr-tpl-preview fr-tpl-preview--pending" aria-hidden />;
+  useEffect(() => {
+    if (!seen || ready || !def.load) return;
+    let live = true;
+    def.load().then(
+      () => live && setReady(true),
+      () => {}, // stays a placeholder; adding it retries the load and says if it fails
+    );
+    return () => {
+      live = false;
+    };
+  }, [seen, ready, def]);
+  return seen && ready ? <TemplatePreview def={def} /> : <span ref={ref} className="fr-tpl-preview fr-tpl-preview--pending" aria-hidden />;
 }
 
 export const TemplatePreview = memo(function TemplatePreview({ def }: { def: TemplateDef }) {

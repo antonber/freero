@@ -12,10 +12,12 @@ import { proposeSuggestions, readBoardView, SUGGESTION_WITHDRAWALS_CONSUMER, sug
 import { createTeamWorkspace, ensurePersonalWorkspace } from '../workspaces/index';
 import { authenticate, createPersonalToken, registerProtectedResource, revokePersonalToken, setTokenPaused, useInWorkspace } from './credentials';
 import initApiAuth from './init';
-import { checkAuthorizeRequest, cleanRedirectUri, decide, redirectMatches, registerDynamicClient, revokeApp, tokenRequest } from './oauth';
+import { authorizationServerMetadata, checkAuthorizeRequest, cleanRedirectUri, decide, redirectMatches, registerDynamicClient, revokeApp, tokenRequest } from './oauth';
 import { setCredentialBlocked, setWorkspaceApiAccess } from './workspacePolicy';
 
 const R = '/api/v1';
+/** The consent screen's context: this server's issuer (PUBLIC_URL below), nobody fetching metadata. */
+const AT = { issuer: 'http://freero.test', userId: null };
 let alice: { id: string };
 
 beforeAll(async () => {
@@ -47,7 +49,7 @@ async function authorizeApp(userId: string, via = 'password', clientId?: string)
     code_challenge: createHash('sha256').update(verifier).digest('base64url'),
     code_challenge_method: 'S256',
   };
-  const checked = await checkAuthorizeRequest(params);
+  const checked = await checkAuthorizeRequest(params, AT);
   if (!('ok' in checked)) throw new Error(JSON.stringify(checked));
   const code = new URL(await decide(userId, via, checked.ok, true)).searchParams.get('code')!;
   return { clientId: reg.client_id, code, verifier, redirectUri: params.redirect_uri };
@@ -108,6 +110,31 @@ it('an authorization code works once and only with its PKCE verifier; a replayed
   await expect(exchange({ grant_type: 'refresh_token', client_id: again.clientId, refresh_token: second.refresh_token })).rejects.toMatchObject({ error: 'invalid_grant' });
 });
 
+it('every authorization response — a code, a refusal, a bad request sent back to the app — names this server as the metadata does, so a client can’t be fooled by a mix-up (RFC 9207)', async () => {
+  const meta = authorizationServerMetadata({} as Request);
+  expect(meta.authorization_response_iss_parameter_supported).toBe(true);
+  const at = { issuer: meta.issuer, userId: null };
+  const reg = (await registerDynamicClient({ client_name: 'Agent', redirect_uris: ['https://agent.example/cb'] })) as { client_id: string };
+  const ask = (extra: Record<string, string>) =>
+    checkAuthorizeRequest(
+      { response_type: 'code', client_id: reg.client_id, redirect_uri: 'https://agent.example/cb', state: 'st', code_challenge: 'c'.repeat(43), code_challenge_method: 'S256', ...extra },
+      at,
+    );
+  const asked = await ask({});
+  if (!('ok' in asked)) throw new Error(JSON.stringify(asked));
+  const answers = [
+    await decide(alice.id, 'password', asked.ok, true), // the code
+    await decide(alice.id, 'password', asked.ok, false), // access_denied
+    ...[await ask({ scope: 'everything' }), await ask({ code_challenge_method: 'plain' })].map((r) => ('redirect' in r ? r.redirect : JSON.stringify(r))), // errors sent back to the app
+  ];
+  for (const a of answers) {
+    const q = new URL(a).searchParams;
+    expect(q.get('iss'), a).toBe(meta.issuer);
+    expect(q.get('state'), a).toBe('st');
+  }
+  expect(answers.map((a) => new URL(a).searchParams.get('code') ? 'code' : new URL(a).searchParams.get('error'))).toEqual(['code', 'access_denied', 'invalid_scope', 'invalid_request']);
+});
+
 it('apps can only register redirects that run no script and leave the machine over https; a loopback redirect matches any port', () => {
   for (const bad of ['javascript:alert(1)', 'data:text/html,x', 'http://evil.example/cb', 'https://app.example/cb#frag', 'https://user:pw@app.example/cb'])
     expect(cleanRedirectUri(bad)).toBeNull();
@@ -148,7 +175,7 @@ it('an MCP client asking for everything gets read + suggest unless the person tu
       code_challenge: createHash('sha256').update(verifier).digest('base64url'),
       code_challenge_method: 'S256',
       resource: 'http://freero.test/mcp',
-    });
+    }, AT);
     if (!('ok' in checked)) throw new Error(JSON.stringify(checked));
     const code = new URL(await decide(alice.id, 'password', checked.ok, true, grant)).searchParams.get('code')!;
     return exchange({ grant_type: 'authorization_code', client_id: reg.client_id, code, code_verifier: verifier });

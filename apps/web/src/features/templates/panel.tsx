@@ -3,7 +3,7 @@ import { BookmarkPlus, LayoutTemplate, Plus, Search, Trash2, Users } from 'lucid
 import { DockHeader, definePanel, useCanEdit, useSelection, type Editor, type SavedTemplateInfo } from '@engine';
 import { Button, Input, Spinner, formatShortcut } from '@ui';
 import { TEMPLATES } from './lib/catalog';
-import { DOCK_ID, insertTemplate } from './lib/insert';
+import { DOCK_ID, addTemplate } from './lib/insert';
 import { filterTemplates } from './lib/place';
 import { LazyTemplatePreview } from './lib/Preview';
 import { SaveTemplateDialog } from './lib/SaveDialog';
@@ -158,8 +158,12 @@ function TemplatesPanel({ editor }: { editor: Editor }) {
     [editor],
   );
 
-  const insert = (def: TemplateDef) => {
-    if (insertTemplate(editor, def).length) added(def.name);
+  const insert = async (def: TemplateDef) => {
+    try {
+      if ((await addTemplate(editor, def)).length) added(def.name);
+    } catch {
+      editor.host.notify(`Could not load “${def.name}”. Check your connection and try again.`, 'error');
+    }
   };
 
   const insertSaved = async (t: SavedTemplateInfo) => {
@@ -194,7 +198,7 @@ function TemplatesPanel({ editor }: { editor: Editor }) {
           }
           if (e.key === 'Enter' && shownCount === 1 && canEdit) {
             if (mine.length) void insertSaved(mine[0]);
-            else insert(builtIns[0]);
+            else void insert(builtIns[0]);
           }
         }}
       />
@@ -255,7 +259,7 @@ function TemplatesPanel({ editor }: { editor: Editor }) {
             ) : null}
             <div className="fr-tpl__grid">
               {g.items.map((t) => (
-                <button key={t.id} type="button" className="fr-tpl-card" disabled={!canEdit} title={t.description} onClick={() => insert(t)}>
+                <button key={t.id} type="button" className="fr-tpl-card" disabled={!canEdit} title={t.description} onClick={() => void insert(t)}>
                   <span className="fr-tpl-card__preview">
                     <LazyTemplatePreview def={t} />
                     <span className="fr-tpl-card__add" aria-hidden>

@@ -8,6 +8,16 @@ import type { TemplateDef } from './types';
 
 export const DOCK_ID = 'templates';
 
+/**
+ * Inserts a template, first loading its content when it lives in a chunk of its own (spec
+ * templates). Templates without `load` are inserted before this returns, as `insertTemplate` does.
+ */
+export async function addTemplate(editor: Editor, def: TemplateDef): Promise<string[]> {
+  if (def.load) await def.load();
+  return insertTemplate(editor, def);
+}
+
+/** Inserts a template whose content is at hand (no `load`, or after it resolved). */
 export function insertTemplate(editor: Editor, def: TemplateDef): string[] {
   if (!editor.can('editor')) {
     editor.host.notify('You need edit access to add templates.', 'info');

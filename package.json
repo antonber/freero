@@ -16,6 +16,7 @@
     "check:dune": "node scripts/dune-check.mjs",
     "check:licenses": "node scripts/license-check.mjs",
     "new:feature": "node scripts/new-feature.mjs",
+    "templates:index": "node --import tsx scripts/templates-index.mjs",
     "check": "npm run check:dune && npm run check:licenses && npm run typecheck && npm run test",
     "verify": "node scripts/verify.mjs",
     "admin": "node --import tsx apps/server/src/admin.ts",

@@ -1,11 +1,20 @@
-import { describe, expect, it } from 'vitest';
+import { readdirSync } from 'node:fs';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { tableCellKey, type ElementType, type FrameElement, type TableCopyContent, type TableElement } from '@freero/shared';
 import { createTestBoard, type ElementDefinition, type FeatureBundle, type NewElement } from '@engine';
 import manifest from './feature';
 import { TEMPLATES } from './lib/catalog';
-import { insertTemplate } from './lib/insert';
+import { addTemplate, insertTemplate } from './lib/insert';
 import { boundsOf, filterTemplates, instantiate, type BoardSnapshot } from './lib/place';
 import { insertSavedTemplate, saveAsTemplate } from './lib/saved';
+import { specTemplates } from './lib/spec/catalog';
+import { buildSpec } from './lib/spec/render';
+import type { TemplateSpec } from './lib/spec/types';
+import { validateSpec } from './lib/spec/validate';
+import { SPEC_FILES, SPEC_INDEX } from './lib/specs';
+
+// Spec templates load their content per file (lazily in the app); every test here builds them.
+beforeAll(() => Promise.all(TEMPLATES.map((t) => t.load?.())));
 
 // Every field of each shared element type that the engine does NOT fill in on create.
 const REQUIRED: Record<ElementType, string[]> = {
@@ -268,5 +277,102 @@ describe('searching templates', () => {
     expect(retro[0]).toBe('retrospective');
     expect(retro).toEqual(expect.arrayContaining(['retro-start-stop-continue', 'retro-4ls']));
     expect(filterTemplates(TEMPLATES, 'planning poker', null).map((t) => t.id)).toEqual(['relative-sizing']);
+    // Spec templates are found from the index alone, before their content has loaded.
+    expect(filterTemplates(TEMPLATES, 'battlecard', null)[0].id).toBe('battlecard');
+    expect(filterTemplates(TEMPLATES, 'experiment plan', null)[0].id, 'the name that starts with the query wins the tie').toBe('experiment-plan');
+  });
+});
+
+describe('spec templates', () => {
+  const all: Array<{ file: string; spec: TemplateSpec }> = [];
+  beforeAll(async () => {
+    for (const [file, load] of Object.entries(SPEC_FILES)) for (const spec of (await load()).default) all.push({ file, spec });
+  });
+
+  it('the picker index lists every spec file with its current names and words, so no spec goes missing from search (`npm run templates:index`)', () => {
+    const onDisk = readdirSync(new URL('./lib/specs/', import.meta.url)).filter((f) => f.endsWith('.ts') && f !== 'index.ts').map((f) => f.replace(/\.ts$/, ''));
+    expect(Object.keys(SPEC_FILES).sort()).toEqual(onDisk.sort());
+    const current = all.map(({ file, spec: s }) => ({ id: s.id, name: s.name, description: s.description, categories: s.categories, keywords: s.keywords, archetype: s.archetype, file }));
+    expect(SPEC_INDEX).toEqual(current);
+  });
+
+  it('every spec is complete and readable (guiding prompts, real example notes, known categories and archetype, text that fits) and no two templates share an id', () => {
+    expect(all.flatMap(({ spec }) => validateSpec(spec))).toEqual([]);
+    const ids = TEMPLATES.map((t) => t.id);
+    expect(ids.filter((id, i) => ids.indexOf(id) !== i)).toEqual([]);
+  });
+
+  it('example notes stay inside their sections and sections never overlap, however much content a spec has', () => {
+    const within = (a: NewElement, b: NewElement) => a.x >= b.x && a.y >= b.y && a.x + a.w <= b.x + b.w && a.y + a.h <= b.y + b.h;
+    for (const { spec } of all) {
+      const els = buildSpec(spec, freshId).elements;
+      const panels = els.filter((e) => e.type === 'shape' && (e as NewElement<'shape'>).text === '');
+      for (const note of els.filter((e) => e.type === 'sticky'))
+        expect(panels.some((p) => within(note, p)), `${spec.id}: note "${(note as NewElement<'sticky'>).text}" spills out of its section`).toBe(true);
+      for (let i = 0; i < panels.length; i++)
+        for (let j = i + 1; j < panels.length; j++) {
+          const [a, b] = [panels[i], panels[j]];
+          const w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+          const h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+          expect(w > 1 && h > 1, `${spec.id}: two sections overlap at ${a.x},${a.y}`).toBe(false);
+        }
+    }
+  });
+
+  const spec: TemplateSpec = {
+    id: 'test-columns',
+    name: 'Two columns',
+    description: 'A small spec for testing how spec templates load.',
+    categories: ['brainstorm'],
+    keywords: ['test', 'columns', 'spec'],
+    hint: 'Put each idea in the column it belongs to.',
+    archetype: 'columns',
+    columns: [
+      { title: 'Keep', prompt: 'What should we keep doing?', notes: ['Friday demos'] },
+      { title: 'Change', prompt: 'What should we change?', notes: ['Shorter standups', 'Fewer status emails'] },
+    ],
+  };
+  const entry = { id: spec.id, name: spec.name, description: spec.description, categories: spec.categories, keywords: spec.keywords, archetype: spec.archetype, file: 'f' };
+
+  it('adding a spec template whose file has not loaded fetches it first, then lands whole in one undo step', async () => {
+    let loads = 0;
+    const [def] = specTemplates([entry], { f: async () => (loads++, { default: [spec] }) });
+    const Noop = () => null;
+    const stub = (type: string, extra = {}) => ({ type, Component: Noop, resize: 'free', defaults: () => ({}), ...extra }) as unknown as ElementDefinition;
+    const shapes: FeatureBundle = {
+      manifest: { name: 'shapes', description: '' },
+      elements: [stub('frame', { container: true, rotatable: false }), stub('sticky'), stub('shape'), stub('text')],
+      tools: [],
+      formats: [],
+      panels: [],
+      commands: [],
+    };
+    const board = createTestBoard({ users: ['ann'], features: [manifest, shapes] });
+    try {
+      const [editor] = board.editors('templates');
+      await addTemplate(editor, def);
+      const types = editor.getElements().map((e) => e.type).sort();
+      expect(types).toEqual(buildSpec(spec, freshId).elements.map((e) => e.type).sort());
+      editor.undo();
+      expect(editor.getElements()).toEqual([]);
+      await addTemplate(editor, def);
+      expect(loads, 'the file is fetched once, not on every insert').toBe(1);
+    } finally {
+      board.destroy();
+    }
+  });
+
+  it('a template file that failed to load (offline, a new deploy) loads on the next try instead of failing for good', async () => {
+    let offline = true;
+    const [def] = specTemplates([entry], {
+      f: async () => {
+        if (offline) throw new Error('Failed to fetch dynamically imported module');
+        return { default: [spec] };
+      },
+    });
+    await expect(def.load!()).rejects.toThrow();
+    offline = false;
+    await def.load!();
+    expect(def.build(freshId).elements.length).toBeGreaterThan(0);
   });
 });

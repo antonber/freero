@@ -110,7 +110,7 @@ export default defineComparison({
     {
       capability: 'Templates',
       competitor: { verdict: 'yes', note: '300+', sources: ['F1'] },
-      freero: { verdict: 'partial', note: '74 originals', ref: 'README.md' },
+      freero: { verdict: 'partial', note: '180 originals', ref: 'README.md' },
     },
     {
       capability: 'Plugins and widgets',
