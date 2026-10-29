@@ -9,7 +9,8 @@ export default defineCommands([
     label: 'Start private mode',
     menus: ['board'],
     when: (editor) => !getSession(editor),
-    run: (editor) => start(editor, null),
+    // args { anonymous: true } (e.g. a retro): drafts are revealed without names (#44).
+    run: (editor, args) => start(editor, null, { anonymous: args?.anonymous === true }),
   },
   {
     id: 'private-mode.startInFrame',

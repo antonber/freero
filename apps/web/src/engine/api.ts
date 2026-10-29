@@ -1424,8 +1424,11 @@ export interface Editor {
    * them from the private layers ('elements' reveals private-mode drafts). Works while their
    * authors are offline. Runs in order with this client's writes; queued while disconnected.
    * Only people who may still edit the board take part. `mine`: only this user's own entries.
+   * `anonymous` [additive] ('elements', #44): the server reveals the drafts with no author
+   * (`ANONYMOUS_AUTHOR`) and without the comment threads on them; drafts written while private mode
+   * was anonymous are revealed so anyway.
    */
-  revealPrivate(collection: string, opts?: { prefix?: string; mine?: boolean }): void;
+  revealPrivate(collection: string, opts?: { prefix?: string; mine?: boolean; anonymous?: boolean }): void;
   /** [additive] Like revealPrivate, but deletes those private entries without revealing them. */
   discardPrivate(collection: string, opts?: { prefix?: string; mine?: boolean }): void;
 

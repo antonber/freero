@@ -1162,6 +1162,10 @@ export const BOARD_LAYERS: readonly BoardLayer[] = ['private', 'editors'];
 //            drafts ('elements') or the ballots of a hidden vote ('voting', `${sessionId}:`).
 //   discard: deletes those entries from every user's private layer without revealing them.
 //   `mine: true` limits either to the sender's own private layer (sharing one's leftovers).
+//   `anonymous: true` (reveal of 'elements', #44): the revealed drafts arrive with no author
+//            (ANONYMOUS_AUTHOR, no app, reveal-time timestamps) and without the comment threads
+//            on them (whose records name their writer: the author). Drafts written during an
+//            anonymous session are revealed so whatever the op says.
 // Only the private layers of people who may still edit the board are revealed; the server holds
 // the sender's later messages until the op is applied, so it stays in order with them.
 export const WS_MESSAGE_LAYER_OP = 102;
@@ -1170,6 +1174,7 @@ export interface LayerOp {
   collection: string;
   prefix?: string;
   mine?: boolean;
+  anonymous?: boolean;
 }
 
 // ---- Board outline (KAI-166): GET /api/boards/:id/outline ----
