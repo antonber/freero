@@ -39,12 +39,13 @@ export default function memberRoutes(_ctx: ServerContext): Router {
     requireUserOrGuest,
     handle(async (req, res) => {
       const boardId = req.params.id;
-      const { ownerId } = await requireBoardAccess(boardId, actorId(currentActor(req)));
+      const reader = actorId(currentActor(req));
+      const { ownerId, role } = await requireBoardAccess(boardId, reader);
       const ids = [...new Set(String(req.query.ids ?? '').split(',').filter(Boolean))];
       if (ids.length > MAX_PEOPLE) throw badRequest(`At most ${MAX_PEOPLE} ids`);
       const onBoard = new Set([ownerId, ...(await repo.listByBoard(boardId)).map((m) => m.userId), ...(await teamAccessUserIds(boardId))]);
       // Only people the board already shows somewhere: never a lookup of arbitrary accounts.
-      const inComments = ids.some((id) => !onBoard.has(id)) ? await commentPeopleOf(boardId) : new Set<string>();
+      const inComments = ids.some((id) => !onBoard.has(id)) ? await commentPeopleOf(boardId, { userId: reader, role }) : new Set<string>();
       const shown = ids.filter((id) => onBoard.has(id) || inComments.has(id));
       const [users, guests] = await Promise.all([getUsers(shown), getGuests(shown)]);
       const people: BoardPerson[] = [

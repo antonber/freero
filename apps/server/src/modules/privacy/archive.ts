@@ -9,7 +9,7 @@ import { aiUsageExportOf, aiWorkspaceExportOf } from '../ai/index';
 import { apiDataOf } from '../apiauth/index';
 import { exportAccountData, getUser } from '../auth/index';
 import { engageExportOf } from '../engage/index';
-import { boardActivityOf, boardIdsInWorkspace, boardIdsOpenedBy, boardIdsOwnedByUser, boardRecords, type BoardRecord } from '../boards/index';
+import { boardActivityOf, boardIdsInWorkspace, boardIdsOpenedBy, boardIdsOwnedByUser, boardRecords, getBoardAccess, type BoardRecord } from '../boards/index';
 import { membershipsOf } from '../members/index';
 import { notificationsExportOf } from '../notifications/index';
 import { commentsWrittenBy, exportBoardContent } from '../realtime/index';
@@ -130,7 +130,9 @@ export async function buildUserArchive(userId: string, appOrigin: string): Promi
   for (const id of candidates) {
     const b = records.get(id);
     if (!b) continue;
-    const threads = await commentsWrittenBy(id, userId);
+    // Threads on hidden items: their own messages always, the item itself only if they can see it now.
+    const role = owned.includes(id) ? 'owner' : ((await getBoardAccess(id, userId)).role ?? null);
+    const threads = await commentsWrittenBy(id, userId, { seesHidden: role === 'owner' || role === 'editor' });
     if (threads.length) comments.push({ board: { id, title: b.title, url: `${appOrigin}/board/${id}` }, threads });
   }
   a.addJson('comments.json', comments);
