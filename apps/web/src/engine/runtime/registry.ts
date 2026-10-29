@@ -7,6 +7,7 @@ import type {
   FeatureBundle,
   FeatureManifest,
   FormatDefinition,
+  ImporterDefinition,
   PanelDefinition,
   PanelSlot,
   ToolDefinition,
@@ -29,12 +30,20 @@ export interface Registry {
   panelsById: Map<string, Registered<PanelDefinition>>;
   commands: Map<string, Registered<CommandDefinition>>;
   collectionOwners: Map<string, string>;
-  /** Element definitions with importData, highest priority first. */
-  importers: Registered<ElementDefinition<any>>[];
+  /** Element definitions with importData and importer.ts contributions, highest priority first. */
+  importers: Registered<Importer>[];
   /** decoration.tsx contributions, by order. */
   decorations: Registered<DecorationDefinition>[];
   /** Some element type can hide its contents (ElementDefinition.hidesContents). */
   hidesContents: boolean;
+}
+
+/** One importer, whichever file it came from: an element type's importData or an importer.ts. */
+export interface Importer {
+  /** The element type or importer id (logs). */
+  name: string;
+  importPriority: number;
+  importData: ImporterDefinition['importData'];
 }
 
 export function buildRegistry(
@@ -78,8 +87,12 @@ export function buildRegistry(
       const prev = reg.elements.get(def.type);
       if (prev) throw new Error(`Element type '${def.type}' is defined by both '${prev.feature}' and '${feature}'.`);
       reg.elements.set(def.type, { def, feature });
-      if (def.importData) reg.importers.push({ def, feature });
+      if (def.importData) reg.importers.push({ def: { name: def.type, importPriority: def.importPriority ?? 0, importData: def.importData.bind(def) }, feature });
       if (def.hidesContents) reg.hidesContents = true;
+    }
+    for (const imp of b.importers ?? []) {
+      if (reg.importers.some((r) => r.def.name === imp.id)) throw new Error(`Importer id '${imp.id}' is defined twice.`);
+      reg.importers.push({ def: { name: imp.id, importPriority: imp.importPriority, importData: imp.importData.bind(imp) }, feature });
     }
     for (const t of b.tools) addTool(t, feature);
     for (const f of b.formats) reg.formats.push({ def: f, feature });
@@ -106,6 +119,6 @@ export function buildRegistry(
   reg.formats.sort((a, b) => a.def.order - b.def.order);
   for (const list of reg.panels.values()) list.sort((a, b) => a.def.order - b.def.order);
   reg.decorations.sort((a, b) => (a.def.order ?? 0) - (b.def.order ?? 0));
-  reg.importers.sort((a, b) => (b.def.importPriority ?? 0) - (a.def.importPriority ?? 0));
+  reg.importers.sort((a, b) => b.def.importPriority - a.def.importPriority);
   return reg;
 }

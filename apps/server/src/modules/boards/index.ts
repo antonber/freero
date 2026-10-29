@@ -30,6 +30,9 @@ export { onBoardLifecycle, type BoardLifecycleEvent, type BoardLifecycleAction }
 export { BOARD_EVENTS_TOPIC, type BoardEventRecord } from './repo';
 // Files downloaded from a board (modules/uploads): the downloads policy, then the audit log.
 export { authorizeFileDownload } from './service';
+// Board backups (modules/backup, KAI-137): downloading one (downloads policy, audited) and a new
+// board restored from one (board row + content in one transaction, audited).
+export { authorizeBackup, restoreBoard } from './service';
 // An export made outside the browser (the public API / MCP export_board): refused like one by the
 // downloads policy, recorded as board.exported.
 export { recordExport as recordBoardExport } from './service';

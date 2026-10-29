@@ -25,9 +25,14 @@ import {
   uploadImage,
   versionHistory,
   downloadBoardFile,
+  downloadBackupOf,
   docsFrom,
   saveAs,
+  walkthroughsOf,
+  decisionsOf,
 } from '../hostServices';
+import { holdBackup, RESTORE_PATH } from '../lib/pendingBackup';
+import { takeShare } from '../lib/pendingShare';
 import { serverNow, syncServerClock } from './serverClock';
 
 export interface HostDeps {
@@ -97,6 +102,12 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     uploadFile,
     uploadAttachment,
     downloadFile: downloadBoardFile(board.id),
+    downloadBackup: downloadBackupOf(board.id),
+    openBackup(file) {
+      holdBackup(file);
+      deps.navigate(RESTORE_PATH);
+    },
+    takeShared: () => takeShare(board.id),
     async renameBoard(title) {
       await renameBoard(board.id, title);
       deps.onTitleChange(title);
@@ -124,6 +135,8 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     report: reportOn(board.id),
     engage: engageOf(board.id),
     call: callOf(board.id),
+    walkthroughs: walkthroughsOf(board.id, { canDownload: board.permissions.canExport, signedIn: true }),
+    decisions: decisionsOf(board.id),
     docs: docsFrom(board.id, deps.navigate),
     // AI entry points exist only when the server said this user may use AI here.
     ...(deps.ai?.available ? { ai: { provider: deps.ai.provider ?? '', source: deps.ai.source ?? 'instance', run: (body) => api.runAi(board.id, body) } } : {}),
@@ -198,6 +211,9 @@ export function createGuestHost(
     // Guests answer live activities when the activity lets visitors in (the server checks).
     engage: engageOf(board.id),
     call: { get: () => api.boardCall(board.id), set: needsAccount('Setting the call link') },
+    // Visitors watch walkthroughs and open decisions; recording and commenting need an account.
+    walkthroughs: walkthroughsOf(board.id, { canDownload: board.permissions.canExport, signedIn: false }),
+    decisions: decisionsOf(board.id),
   };
 }
 
@@ -288,6 +304,25 @@ export function createPreviewHost(board: { id: string; title: string }, deps: Pi
     importImage: no('Copying images'),
     fetchImage: no('Fetching images'),
     report: no('Reporting'),
+  };
+}
+
+/**
+ * A decision snapshot (KAI-161, /decision/:id): the frozen board shown read-only (BoardEngine
+ * `initialState`), role viewer, no network — nothing on it can change, and nobody sees you there.
+ * Smart links on it still resolve (for this reader, like everywhere).
+ */
+export function createDecisionHost(decision: { id: string; title: string }, deps: Pick<HostDeps, 'user' | 'navigate' | 'notify'>): Host {
+  const frozen = createPreviewHost({ id: decision.id, title: decision.title }, deps);
+  const no = (what: string) => async () => Promise.reject(new Error(`${what} isn’t possible on a frozen decision.`));
+  return {
+    ...frozen,
+    board: { ...frozen.board, id: `decision-${decision.id}` },
+    uploadImage: no('Uploading'),
+    uploadFile: no('Uploading'),
+    openShareDialog: () => deps.notify('This is a frozen decision: copy its link to share it with people who can open the board.', 'info'),
+    versions: unavailableVersionHistory('A frozen decision has no version history of its own.'),
+    resolveObjects,
   };
 }
 

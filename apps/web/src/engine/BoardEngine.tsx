@@ -162,7 +162,7 @@ function useUrlCommands(core: EngineCore, location?: { search: string; key: stri
     const params = new URLSearchParams(search ?? window.location.search);
     const due = [...core.registry.commands.values()].flatMap(({ def }) => {
       const value = def.urlParam ? params.get(def.urlParam) : null;
-      return def.urlParam && value ? [{ id: def.id, args: { [def.urlParam]: value } }] : [];
+      return def.urlParam && value ? [{ id: def.id, args: { [def.urlParam]: value, query: Object.fromEntries(params) } }] : [];
     });
     if (!due.length) return;
     let done = false;

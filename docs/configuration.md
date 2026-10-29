@@ -62,6 +62,8 @@ Without them, files are stored under `FREERO_DATA_DIR/uploads`.
 | `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | — | Credentials with Get/Put/Delete on the bucket and HeadBucket (readiness). |
 | `S3_FORCE_PATH_STYLE` | `true` with `S3_ENDPOINT`, else `false` | Path-style addressing (MinIO and most non-AWS providers need it). |
 | `S3_PUBLIC_URL` | — | Optional public base URL of the bucket (or a CDN in front of it), e.g. `https://cdn.example.com`. When set, raster images (`/uploads/x.png`) are served by a 302 redirect to `<S3_PUBLIC_URL>/uploads/x.png`; the bucket must then allow public reads of `uploads/*` and answer CORS for your `PUBLIC_URL` (image export reads pixels). SVGs are always streamed through the app so they keep the sandbox CSP. Unset (default): every file is streamed through the app. |
+| `S3_SSE` | — | Server-side encryption asked for on every object Freero writes (KAI-143): `AES256` (SSE-S3, the provider's keys) or `aws:kms` (SSE-KMS). Needs `S3_*`. Unset: whatever the bucket's default encryption does — at startup Freero logs a warning when the bucket says it has none. See docs/deployment.md, "Encryption at rest". |
+| `S3_SSE_KMS_KEY_ID` | — | With `S3_SSE=aws:kms`: the KMS key (id, ARN or alias) to encrypt with; unset uses the account's default `aws/s3` key. The credentials then need `kms:GenerateDataKey` and `kms:Decrypt` on it. |
 
 **Serving model.** Board content always references files as `/uploads/<id>.<ext>`, independent of
 the backend, so switching backends never rewrites boards. By default the app streams each file from
@@ -180,6 +182,7 @@ What is sent where, and the safety rules: [ai.md](ai.md).
 | `AI_MAX_INPUT_TOKENS` | `12000` | About how much board content one action may send (the outline is cut to it). |
 | `AI_MAX_OUTPUT_TOKENS` | `4096` | `max_tokens` of each model call. |
 | `AI_TIMEOUT_SECONDS` | `90` | Deadline of one model call. |
+| `AI_TRANSCRIBE_MODEL` | — | Speech-to-text model for walkthrough captions (e.g. `whisper-1`), called on the board's own AI endpoint when that endpoint is OpenAI-compatible (`/audio/transcriptions`). Unset, or an Anthropic endpoint: no AI captions (people can still type them). |
 
 ## Issue trackers
 
@@ -250,6 +253,7 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `MAX_UPLOAD_MB` | `15` | Max size of one uploaded image or PDF. |
 | `MAX_MEDIA_UPLOAD_MB` | `100` | Max size of one video or audio file (played on the board). Uploads are held in memory while they are checked, so keep it well below the instance's memory. |
 | `MAX_ATTACHMENT_UPLOAD_MB` | `50` | Max size of any other file (a file card on the board, downloaded on click). Same memory note. |
+| `MAX_BACKUP_MB` | `200` | Max size of a board backup (`.freero`, KAI-137): a download carries the board's files up to this much (the rest are listed in the file as missing), and a restore refuses a larger file before reading it. Both are built in memory, so size the container for it; restored files still count toward `UPLOAD_QUOTA_MB`. |
 | `UPLOAD_QUOTA_MB` | `1024` | Total upload storage per account: images, documents, video, audio and other files alike (board thumbnails don't count). Over quota: `413`. |
 | `UPLOAD_CACHE_SECONDS` | `3600` | How long browsers, proxies and a CDN may reuse an uploaded file before revalidating it (a 304 by ETag). Also stored on S3 objects. It bounds how long a file an operator removed keeps showing where it was already loaded. `0`: revalidate every time. |
 | `MAX_BOARDS_PER_USER` | `5000` | Boards one account may own, counted across ALL its workspaces (boards in the trash don't count). Over it, creating/duplicating/restoring/receiving a board by transfer answers `403`. |
@@ -293,6 +297,8 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `RATE_LIMIT_OAUTH_TOKEN` | `60/1m` | OAuth token and revocation requests per IP. |
 | `RATE_LIMIT_OAUTH_REGISTER` | `20/1h` | Apps registering themselves (OAuth dynamic client registration) per IP. |
 | `RATE_LIMIT_TRACKER_SEND` | `60/10m` | Per user: issues created or imported in a tracker, and tracker connections added or tested (each calls the tracker's API). |
+| `RATE_LIMIT_BACKUP` | `30/1h` | Per user: board backups (`.freero`) downloaded or restored — each reads or writes a whole board and its files (KAI-137). |
+| `RATE_LIMIT_WALKTHROUGH_COMMENT` | `120/10m` | Per person: comments on walkthroughs (each may notify the people it mentions and the walkthrough's author). |
 
 Rule format: `<count>/<window>` with the window in `s`, `m`, `h` or `d` and an optional multiplier
 (`10/5m` = 10 per 5 minutes), or `off`. Windows are fixed (they reset `window` after the first hit).

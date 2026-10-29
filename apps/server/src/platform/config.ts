@@ -44,7 +44,9 @@ export type RateLimitName =
   | 'linkPassword'
   | 'engage'
   | 'search'
-  | 'trackerSend';
+  | 'trackerSend'
+  | 'backup'
+  | 'walkthroughComment';
 
 /** Issue-tracker sync (KAI-153; docs/trackers.md). */
 export interface TrackersConfig {
@@ -87,6 +89,11 @@ export interface AiConfig {
   timeoutMs: number;
   /** Approximate tokens of board content one action may send. */
   maxInputTokens: number;
+  /**
+   * Speech-to-text model for walkthrough captions (KAI-133), called on the board's own AI
+   * endpoint when that is OpenAI-compatible (`/audio/transcriptions`). Null: no AI transcripts.
+   */
+  transcribeModel: string | null;
 }
 
 /** `limit` hits per `windowMs`; `null` = not limited. */
@@ -101,6 +108,12 @@ export interface S3Config {
   /** Public base URL of the bucket; when set, raster uploads are served by redirect to it. */
   publicUrl: string | null;
   forcePathStyle: boolean;
+  /**
+   * Server-side encryption asked for on every object written (S3_SSE, KAI-143): SSE-S3 (`AES256`,
+   * the bucket's own keys) or SSE-KMS (`aws:kms`, optionally with S3_SSE_KMS_KEY_ID). Null: whatever
+   * the bucket's default encryption does.
+   */
+  sse: { mode: 'AES256' | 'aws:kms'; kmsKeyId: string | null } | null;
 }
 
 /**
@@ -177,6 +190,8 @@ export interface Config {
   maxMediaUploadBytes: number;
   /** Max size of one other file (a downloadable file card). */
   maxAttachmentUploadBytes: number;
+  /** Max size of a board backup file (`.freero`) made or restored (MAX_BACKUP_MB, KAI-137). */
+  maxBackupBytes: number;
   uploadQuotaBytes: number;
   maxBoardsPerUser: number;
   maxTemplatesPerUser: number;
@@ -350,6 +365,8 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   linkPassword: '10/15m', // per IP and per board + person: attempts at a board link's password (KAI-145)
   engage: '120/1m', // per person or guest: answers, questions and upvotes in live activities (KAI-132)
   search: '120/1m', // per person (app) or credential (API, MCP): searches of board content (KAI-151)
+  backup: '30/1h', // per user: board backups downloaded or restored (each reads or writes a whole board and its files, KAI-137)
+  walkthroughComment: '120/10m', // per person: comments on walkthroughs (each may notify people, KAI-133)
 };
 
 const ENV_NAME: Record<RateLimitName, string> = {
@@ -390,6 +407,8 @@ const ENV_NAME: Record<RateLimitName, string> = {
   linkPassword: 'RATE_LIMIT_LINK_PASSWORD',
   engage: 'RATE_LIMIT_ENGAGE',
   search: 'RATE_LIMIT_SEARCH',
+  backup: 'RATE_LIMIT_BACKUP',
+  walkthroughComment: 'RATE_LIMIT_WALKTHROUGH_COMMENT',
 };
 
 /** The built-in providers: env prefix, button label, default issuer, extra verified-email claims. */
@@ -507,7 +526,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       publicUrl: url('S3_PUBLIC_URL', ['http:', 'https:'])?.replace(/\/+$/, '') ?? null,
       // Custom endpoints (MinIO, R2, most non-AWS providers) want path-style addressing.
       forcePathStyle: bool('S3_FORCE_PATH_STYLE', endpoint !== null),
+      sse: null,
     };
+  }
+  // Server-side encryption of every object written (KAI-143): only meaningful with S3.
+  const sseRaw = str('S3_SSE');
+  const kmsKeyId = str('S3_SSE_KMS_KEY_ID');
+  if (sseRaw !== null || kmsKeyId !== null) {
+    const mode = sseRaw === null ? null : sseRaw.toLowerCase() === 'aes256' ? 'AES256' : sseRaw.toLowerCase() === 'aws:kms' ? 'aws:kms' : undefined;
+    if (mode === undefined) problems.push('S3_SSE must be AES256 or aws:kms');
+    else if (!s3) problems.push('S3_SSE / S3_SSE_KMS_KEY_ID need object storage (S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY)');
+    else if (kmsKeyId !== null && mode !== 'aws:kms') problems.push('S3_SSE_KMS_KEY_ID needs S3_SSE=aws:kms');
+    else if (mode) s3.sse = { mode, kmsKeyId };
   }
 
   const rateLimits = {} as Record<RateLimitName, RateLimitRule>;
@@ -622,6 +652,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     maxOutputTokens: int('AI_MAX_OUTPUT_TOKENS', 4096, 256, 64_000),
     timeoutMs: int('AI_TIMEOUT_SECONDS', 90, 5, 600) * 1000,
     maxInputTokens: int('AI_MAX_INPUT_TOKENS', 12_000, 1000, 500_000),
+    transcribeModel: str('AI_TRANSCRIBE_MODEL') ?? null,
   };
 
   const config: Config = {
@@ -655,6 +686,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     maxUploadBytes: int('MAX_UPLOAD_MB', 15, 1, 1024) * MB,
     maxMediaUploadBytes: int('MAX_MEDIA_UPLOAD_MB', 100, 1, 1024) * MB,
     maxAttachmentUploadBytes: int('MAX_ATTACHMENT_UPLOAD_MB', 50, 1, 1024) * MB,
+    maxBackupBytes: int('MAX_BACKUP_MB', 200, 1, 2048) * MB,
     uploadQuotaBytes: int('UPLOAD_QUOTA_MB', 1024, 1) * MB,
     maxBoardsPerUser: int('MAX_BOARDS_PER_USER', 5000, 1),
     maxTemplatesPerUser: int('MAX_TEMPLATES_PER_USER', 500, 1),

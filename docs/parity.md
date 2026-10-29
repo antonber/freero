@@ -178,7 +178,7 @@ issue id is in the status note.
 | Assignment notifications | Tell people when work is assigned to them or is about to be due | Have: card assigned and due-date notifications, a reminder the day before, also in email digests (KAI-135) | S | P2 | parity |
 | Private mode | Participants add content that others can't see until it's revealed | Have (server-side private layers; whole board or one frame) | — | P1 | — |
 | Attention management | The facilitator keeps everyone in their view and stops people wandering off | Have: the facilitator leads everyone's view with a locked follow (KAI-129) | M | P2 | parity |
-| Async video walkthroughs | Record a narrated tour of the board (camera plus pointer) for others to watch later | Missing (KAI-133) | L | P2 | parity |
+| Async video walkthroughs | Record a narrated tour of the board (camera plus pointer) for others to watch later | Have: voice and optional camera over the live board with the narrator's view and pointer, comments at moments, captions typed or by the board's AI (KAI-133); decision snapshots freeze a board or frame (KAI-161) | L | P2 | parity |
 | Audio and video calls | Talk and see each other inside the board | Partial: a per-board call link (the team's meeting URL or a Jitsi room) with "Join call" and who is in it; no built-in audio or video, by design (KAI-134; see §16) | M | P2 | parity |
 
 ## 5. Facilitation and presentation
@@ -238,9 +238,9 @@ workflows. For Freero, every row here needs a model provider that the operator o
 | Copy as image | Put the selection on the clipboard as a picture | Have | — | P1 | — |
 | CSV export | Text of stickies and cards as rows | Have: stickies and cards as formula-safe CSV, tables too (KAI-136) | S | P2 | parity |
 | CSV / spreadsheet import | Rows become stickies or cards | Have: CSV rows become stickies or cards, as a grid or a kanban by status, in one undo step; spreadsheet paste fills tables (KAI-136) | S | P2 | parity |
-| Board backup and restore | Download a full-fidelity board file and restore it later or elsewhere | Missing (personal and workspace data exports include each board's content, but nothing restores it; operators can back up the whole database; KAI-137) | M | P2 | 4 |
-| Diagram import | Bring in Visio, draw.io or Lucid diagrams as editable shapes | Missing (draw.io first: KAI-138) | L | P3 | parity |
-| Import from other whiteboards | Bring boards over from Miro, Mural, Excalidraw and similar tools | Missing (KAI-138) | L | P2 | parity |
+| Board backup and restore | Download a full-fidelity board file and restore it later or elsewhere | Have: a `.freero` file (content, comments, files; layers and the downloads policy respected) restored as a new board on any Freero (KAI-137) | M | P2 | 4 |
+| Diagram import | Bring in Visio, draw.io or Lucid diagrams as editable shapes | Partial: draw.io (KAI-138); Visio and Lucid not yet | L | P3 | parity |
+| Import from other whiteboards | Bring boards over from Miro, Mural, Excalidraw and similar tools | Partial: Excalidraw (KAI-138); Miro through the person's own token is KAI-261 | L | P2 | parity |
 | Print | Print the board or its frames | Partial: through PDF export only | S | P3 | parity |
 
 ## 9. Integrations, developer platform and embeds
@@ -266,7 +266,7 @@ workflows. For Freero, every row here needs a model provider that the operator o
 | Desktop browsers | Full editing in current Chrome, Edge, Firefox and Safari | Have | — | P0 | — |
 | Tablet and stylus | Touch-friendly editing with pen input | Have: pinch zoom, long-press context menu, bigger handles and controls on touch, palm rejection while a pen is down, "pen draws, finger pans" (KAI-139) | M | P2 | parity |
 | Phone web | Usable view-and-comment experience on a small screen | Have: a view-and-comment phone layout — bottom bar with select, hand and comment, comments as a bottom sheet, the full toolbar behind "Edit board" (KAI-139) | M | P2 | parity |
-| Installable app (PWA) | Install from the browser with an icon, a window and file handling | Partial: installs with its own icons and window, an app-shell service worker and offline page (KAI-140); it doesn't open files yet (KAI-218) | S | P2 | parity |
+| Installable app (PWA) | Install from the browser with an icon, a window and file handling | Have: installs with its own icons and window, an app-shell service worker and offline page (KAI-140); opens `.freero` backups and takes images and links from the system share sheet (KAI-218) | S | P2 | parity |
 | Native mobile apps | iOS and Android apps | Missing | XL | P3 | parity |
 | Native desktop apps | Windows and macOS apps | Missing | M | P3 | parity |
 | Offline work | Edit without a connection and sync later | Partial: Yjs merges edits made during short disconnects; nothing survives a reload while offline (the `/board/local` sandbox is dev-only) | L | P3 | parity |
@@ -307,7 +307,7 @@ workflows. For Freero, every row here needs a model provider that the operator o
 | Transport and app hardening | TLS, security headers, rate limits, upload quotas | Have (CSP and HSTS, per-route rate limits, upload and board quotas, TLS through the Caddy deploy config) | — | P1 | — |
 | Backups and disaster recovery | Operator backups and restores of the database and files | Have (`scripts/backup.sh`, restore runbook in `docs/operations.md`, bucket versioning for files) | — | P1 | — |
 | Horizontal realtime scale | Many app instances share board updates | Have (Redis fan-out, append-only update log with snapshots) | — | P1 | — |
-| Encryption at rest | Stored data encrypted | Partial: depends on the Postgres and S3 provider; sign-in secrets are sealed by the app (KAI-143) | S | P2 | 1 |
+| Encryption at rest | Stored data encrypted | Have: S3 server-side encryption (`S3_SSE`), encrypted database backups, every stored credential sealed or hashed by the app, a documented baseline for database storage encryption (KAI-143) | S | P2 | 1 |
 | SSO | SAML 2.0 / OIDC per workspace, verified domains, enforced SSO | Have: SAML 2.0 and OIDC per workspace, DNS-verified domains, just-in-time membership, Enforce SSO with a break-glass owner (KAI-45) | L | P2 | 4 |
 | SCIM provisioning | Create and remove users automatically from the identity provider | Have: SCIM 2.0 users and groups per workspace, rotatable tokens, groups map to roles or projects, deprovisioning deactivates (KAI-46) | L | P3 | 4 |
 | Admin console | Manage members, roles, security settings and usage | Have: members with two-step status and deactivation, security and retention settings, sharing policies, single sign-on and provisioning, issue trackers, usage, audit log (KAI-47) | L | P2 | 4 |
@@ -345,9 +345,9 @@ Have. In the re-check after the teams, enterprise and parity batches merged: 47 
 
 | Status | Count |
 |---|---|
-| Have | 160 |
+| Have | 164 |
 | Partial | 15 |
-| Missing | 35 |
+| Missing | 31 |
 | **Total** | **210** |
 
 **By priority and status**
@@ -356,19 +356,18 @@ Have. In the re-check after the teams, enterprise and parity batches merged: 47 
 |---|---|---|---|---|
 | P0 | 31 | 0 | 0 | 31 |
 | P1 | 51 | 0 | 0 | 51 |
-| P2 | 72 | 7 | 4 | 83 |
-| P3 | 6 | 8 | 31 | 45 |
+| P2 | 76 | 6 | 1 | 83 |
+| P3 | 6 | 9 | 30 | 45 |
 
 <!-- counts generated from the tables above; regenerate when rows change -->
 
 **Takeaways**
 
 - Every first-session (P0) and weekly-use (P1) expectation is met.
-- The P2 gaps left: smart drawing (KAI-114), async walkthroughs
-  (KAI-133), board backup (KAI-137) and imports from other whiteboards (KAI-138) are missing; data
-  tables need more views and row links (KAI-245), the PWA doesn't open files (KAI-218), boards can't
-  be embedded in other sites (KAI-106), the audit log doesn't stream to a SIEM (KAI-192), and
-  encryption at rest still rests on the providers (KAI-143). Cloud provider icons and calls are
+- The P2 gaps left: smart drawing (KAI-114) is missing; imports from other whiteboards cover draw.io and Excalidraw but not Miro (KAI-261); data
+  tables need more views and row links (KAI-245), boards can't
+  be embedded in other sites (KAI-106), and the audit log doesn't stream to a SIEM (KAI-192).
+  Cloud provider icons and calls are
   Partial by design (§16).
 - What remains at P3 is mostly what §15 leaves unfiled on purpose or §16 replaces with an
   alternative.
@@ -383,9 +382,9 @@ made with `npm run new:feature`, a server module per area, and engine changes on
 cuts across types. Batches A–D are independent and can run in parallel; E and F follow the teams merge.
 
 Status: the teams merge and batches A–F have shipped except KAI-114 (smart drawing), KAI-121
-(custom packs), KAI-133 (walkthroughs), KAI-143 (encryption at rest),
-KAI-144 (interface languages), KAI-106 (embeds in other sites), KAI-103 (assistant), KAI-137
-(board backup) and KAI-138 (imports). Follow-ups are filed as their own issues (named in the rows).
+(custom packs),
+KAI-144 (interface languages), KAI-106 (embeds in other sites) and KAI-103 (assistant).
+Follow-ups are filed as their own issues (named in the rows).
 
 **Batch A: Editing polish (all S–M, engine and small features)**
 - **Issues:** KAI-110 (step forward/back, select only a type, exact size and position), KAI-109

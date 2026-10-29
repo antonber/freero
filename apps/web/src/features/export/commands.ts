@@ -1,4 +1,4 @@
-import { ClipboardCopy, FileDown, ImageDown } from 'lucide-react';
+import { ArchiveRestore, ClipboardCopy, FileDown, ImageDown } from 'lucide-react';
 import { defineCommands, type Editor } from '@engine';
 import { copySelectionAsImage } from './lib/exporters';
 import { EXPORT_DIALOG } from './lib/dialog';
@@ -28,6 +28,24 @@ export default defineCommands([
     when: allowed,
     run(editor) {
       editor.openPanel(EXPORT_DIALOG, { kind: 'pdf' });
+    },
+  },
+  {
+    // A backup of the whole board (KAI-137): built by the server, which applies the same policy.
+    id: 'export.backup',
+    icon: ArchiveRestore,
+    label: 'Download board backup (.freero)',
+    menus: ['board'],
+    minRole: 'viewer',
+    when: (editor) => allowed(editor) && !!editor.host.downloadBackup,
+    run(editor) {
+      const download = editor.host.downloadBackup;
+      if (!download) return;
+      editor.host.notify('Preparing the backup…');
+      download().then(
+        () => editor.host.notify('Backup downloaded. Restore it from the dashboard of any Freero.', 'success'),
+        (e: unknown) => editor.host.notify(e instanceof Error ? e.message : 'Could not make a backup of this board', 'error'),
+      );
     },
   },
   {

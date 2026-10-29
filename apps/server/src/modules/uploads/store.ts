@@ -213,6 +213,21 @@ export async function saveUpload(data: Uint8Array, contentType: string, ownerId?
   return `/uploads/${name}`;
 }
 
+/**
+ * A file brought back from a board backup (KAI-137): stored as a NEW upload of `ownerId` (their
+ * quota applies), checked exactly like an upload of the kind its original name says — an image or
+ * PDF must really be one, video / audio must be a container we play, anything else stays an
+ * attachment — so a backup can't smuggle in content we wouldn't have accepted. Returns its URL.
+ */
+export async function restoreUploadFile(originalName: string, data: Uint8Array, ownerId: string): Promise<string> {
+  const ext = FILE_NAME_RE.test(originalName) ? originalName.split('.').pop()! : null;
+  const type = ext ? TYPE_BY_EXT[ext] : undefined;
+  if (!type) throw badRequest(`The backup carries a file Freero doesn’t store (${originalName.slice(0, 80)})`);
+  if (type === ATTACHMENT_TYPE) return saveUpload(data, type, ownerId, { attachment: true });
+  // Media were stored under the type their bytes said; saveUpload sniffs them again.
+  return saveUpload(data, type, ownerId);
+}
+
 /** Deletes a file previously returned by saveUpload. Unknown/foreign URLs are ignored. */
 export async function deleteUpload(url: string | null | undefined): Promise<void> {
   const name = url?.startsWith('/uploads/') ? url.slice('/uploads/'.length) : null;

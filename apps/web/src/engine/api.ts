@@ -46,6 +46,13 @@ import type {
   TrackerSendRequest,
   TrackerSendResponse,
   VerticalAlign,
+  CreateDecisionRequest,
+  CreateWalkthroughRequest,
+  Decision,
+  Walkthrough,
+  WalkthroughComment,
+  WalkthroughCue,
+  WalkthroughSummary,
 } from '@freero/shared';
 
 /** [additive] Where an element lives (see Editor.layerOf and ARCHITECTURE.md "Board layers"). */
@@ -155,6 +162,26 @@ export interface Host {
    */
   downloadFile?(item: { id: string; src: string; name: string }): Promise<void>;
   renameBoard(title: string): Promise<void>;
+  /**
+   * [additive, KAI-137] Saves this board as a `.freero` backup file: built by the SERVER from what
+   * this person may read (never others' drafts; hidden frames' contents only for owners/editors),
+   * with the files it shows, refused like any export by the workspace's downloads policy
+   * (`board.canExport`) and audited. Rejects with a showable message. Absent in the offline sandbox
+   * and for visitors without an account.
+   */
+  downloadBackup?(): Promise<void>;
+  /**
+   * [additive, KAI-137] Hands a `.freero` file (dropped on the board, opened with the installed app)
+   * to the app's restore flow: it becomes a NEW board where the person chooses, never content of
+   * this one. Absent where no board can be created (offline sandbox, visitors).
+   */
+  openBackup?(file: File): void;
+  /**
+   * [additive, KAI-218] What someone shared into the installed app (the system share sheet) and
+   * chose to put on THIS board: images already stored with their uploads, a link, text. Handed
+   * over once (null afterwards, after a reload, and on any other board).
+   */
+  takeShared?(): SharedContent | null;
   /**
    * [additive] Tells the server a board export (image, PDF) was made in the browser, for the
    * workspace's audit log. Fire and forget; export features call it after each download. Absent in
@@ -300,6 +327,19 @@ export interface Host {
    */
   engage?: HostEngage;
   /**
+   * [additive] Async walkthroughs of this board (KAI-133; wire: @freero/shared walkthroughs.ts):
+   * recordings of someone's voice (and camera) with the path they took over the board. Anyone who
+   * can open the board watches; the server decides who records, comments and changes them, and
+   * rejects with a showable message. Absent where there is no server (offline sandbox, previews).
+   */
+  walkthroughs?: HostWalkthroughs;
+  /**
+   * [additive] Decision snapshots (KAI-161; wire: @freero/shared decisions.ts): freeze the board or
+   * a frame under a name, read-only, with its own address. Editors and owners create and delete;
+   * anyone who can open the board lists and opens them (`/decision/<id>`). Absent without a server.
+   */
+  decisions?: HostDecisions;
+  /**
    * [additive, KAI-162] Docs from the board: a doc is its own object (`freero://doc/<id>`, page
    * `/doc/<id>`) with its own access, document and socket. Absent where there are no docs (the
    * offline sandbox, guests): hide doc entry points.
@@ -317,6 +357,44 @@ export interface HostDocs {
   exportMarkdown(docId: string): Promise<void>;
   /** Opens the access request page of a doc this person can't open. */
   requestAccess(docId: string): void;
+}
+
+/** [additive, KAI-218] `Host.takeShared`: images as `/uploads/<name>` URLs (stored already), a link, text. */
+export interface SharedContent {
+  images: string[];
+  link: string | null;
+  text: string | null;
+  title: string | null;
+}
+
+/** [additive] `Host.walkthroughs` (wire: @freero/shared walkthroughs.ts). */
+export interface HostWalkthroughs {
+  list(): Promise<WalkthroughSummary[]>;
+  get(id: string): Promise<Walkthrough>;
+  /** Stores the recording (an upload of this user's: quota, size cap) and the walkthrough over it. */
+  create(recording: Blob, request: Omit<CreateWalkthroughRequest, 'mediaUrl'>): Promise<Walkthrough>;
+  rename(id: string, title: string): Promise<Walkthrough>;
+  remove(id: string): Promise<void>;
+  /** "I watched it" (counted once per person; visitors without an account aren't counted). */
+  viewed(id: string): Promise<void>;
+  comments(id: string): Promise<WalkthroughComment[]>;
+  comment(id: string, comment: { atMs: number; text: string }): Promise<WalkthroughComment>;
+  deleteComment(id: string, commentId: string): Promise<void>;
+  /** Captions typed by hand (an empty list removes them). */
+  setCaptions(id: string, cues: WalkthroughCue[]): Promise<Walkthrough>;
+  /** Whether this person may have AI make captions here (the board's AI provider only), and why not. */
+  captionsStatus(): Promise<{ available: boolean; reason?: string }>;
+  /** Captions by the board's AI provider (rejects with the reason when AI isn't available). */
+  transcribe(id: string): Promise<Walkthrough>;
+  /** Saves the recording to this computer, when the board's downloads policy allows (`board.canExport`). */
+  download?(id: string, title: string): Promise<void>;
+}
+
+/** [additive] `Host.decisions` (wire: @freero/shared decisions.ts). */
+export interface HostDecisions {
+  list(): Promise<Decision[]>;
+  create(request: CreateDecisionRequest): Promise<Decision>;
+  remove(id: string): Promise<void>;
 }
 
 /** [additive] `Host.engage` (wire: @freero/shared `ActivityState`, `ActivityAnswer`). */
@@ -924,6 +1002,7 @@ export interface CommandDefinition {
    * command with `{ [urlParam]: value }` once the board is synced — on load, and whenever the app
    * navigates to such a link while the board is open (a notification opening a comment thread:
    * `comments.openThread` with `urlParam: 'thread'`). Respects `minRole` like any run.
+   * [additive] `args.query` also carries every parameter of that URL (a walkthrough's `?t=`).
    */
   urlParam?: string;
 }
@@ -1028,6 +1107,21 @@ export interface FeatureBundle {
   decorations?: DecorationDefinition[];
   /** [additive] outline.ts (how its element types read in the outline; also run by the server). */
   outline?: OutlineFeature;
+  /** [additive] importer.ts (pasted / dropped data no single element type owns). */
+  importers?: ImporterDefinition[];
+}
+
+/**
+ * [additive, KAI-138] An importer that is not an element type's (`importer.ts`): a whole file of
+ * another tool (a draw.io diagram, an Excalidraw scene) that becomes many kinds of items, or a
+ * file that becomes no item at all (a Freero backup, handed to the app). Offered paste and drop
+ * data in the SAME priority order as `ElementDefinition.importData`, with the same contract.
+ */
+export interface ImporterDefinition {
+  /** Unique; named after what it imports ('drawio'). */
+  id: string;
+  importPriority: number;
+  importData(editor: Editor, data: ImportData, at: Point): boolean | File[] | Promise<boolean | File[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -1458,6 +1552,8 @@ export function defineCommands(d: CommandDefinition[] | CommandFactory): Command
   return d;
 }
 export const defineDecoration = (d: DecorationDefinition): DecorationDefinition => d;
+/** [additive] importer.ts: `export default defineImporter({...})` (or an array). */
+export const defineImporter = (d: ImporterDefinition): ImporterDefinition => d;
 
 /** Children helper type for slot components. */
 export type Slot = { children?: ReactNode };

@@ -55,6 +55,36 @@ backups with point-in-time recovery (7–35 days); pg_dump remains your provider
 
 Test a restore regularly (e.g. monthly into a scratch database); an untested backup is a hope.
 
+#### Encrypted dumps
+
+With `BACKUP_GPG_RECIPIENT` (or `BACKUP_AGE_RECIPIENT`) set, `scripts/backup.sh` keeps and uploads
+only `freero-<stamp>.dump.gpg` (`.age`): the dump is encrypted to a public key, and the plain file is
+deleted right after it was checked. The script refuses to run (before dumping) when the tool or the
+public key is missing — it never falls back to a plain dump.
+
+```bash
+# once, on the backup host: import the PUBLIC key only
+gpg --import freero-backups.pub.asc
+BACKUP_GPG_RECIPIENT=backups@example.com DATABASE_URL=… scripts/backup.sh
+
+# restore, on a machine that has the PRIVATE key (keep it offline, e.g. a hardware token):
+gpg --decrypt freero-20261027T031500Z.dump.gpg > freero.dump      # age: age -d -i key.txt file.dump.age > freero.dump
+pg_restore --no-owner --no-privileges --dbname=… freero.dump && shred -u freero.dump
+```
+
+A dump encrypted this way can't be restored, or read, without the private key: test the
+decryption as part of the monthly restore test, and keep at least two holders of the key.
+
+### Board backups people make themselves (`.freero`)
+
+Anyone who may export a board ("Download board backup (.freero)" in the board menu) gets a single
+file with its content, comments, table cells and the files it shows, and anyone can restore one as
+a new board on any Freero ("Restore backup" on the dashboard; the installed app opens `.freero`
+files directly). Format, limits and what a restore changes: [board-backup.md](board-backup.md).
+Operators only need `MAX_BACKUP_MB` (size, memory) and `RATE_LIMIT_BACKUP`. Downloads follow the
+workspace's downloads policy and are in its audit log (`board.exported`, format `freero`); restores
+are `board.backup_restored`. They complement, never replace, the database backups above.
+
 ### Uploaded files
 
 The database stores only `/uploads/<id>.<ext>` references; the files are in the bucket.
@@ -152,7 +182,9 @@ report per distinct message per minute. No data is sent when it is unset.
 ## Rotating SESSION_SECRET
 
 `SESSION_SECRET` keys the server's HMACs (rate-limit counter keys, signed links in emails) and
-encrypts every two-step verification (authenticator app) secret at rest. Session
+seals the secrets kept in the database (two-step verification secrets, workspace AI keys, SSO
+client secrets, tracker credentials, webhook URLs and secrets, board call links; see
+"Encryption baseline"). Session
 cookies are random tokens and don't depend on it. Everything derived from it goes through
 `apps/server/src/platform/secrets.ts`, which accepts the current secret and any listed in
 `SESSION_SECRET_PREVIOUS`, and always makes new values with the current one.
@@ -187,6 +219,50 @@ What a rotation does not carry over:
 - **A secret that is no longer listed**: authenticator secrets still sealed under it can't be
   opened. The job logs how many; those people sign in with a recovery code and turn two-step
   verification on again. Nothing else is lost.
+
+## Encryption baseline
+
+The data-store table (what is encrypted where, by whom) is in
+[deployment.md, "Encryption at rest"](deployment.md#encryption-at-rest). The operator's part:
+
+1. **Database storage.** Managed Postgres: confirm storage encryption is on (it is the default on
+   RDS, Cloud SQL, Azure and most others; it can't be turned on for an existing RDS instance —
+   restore a snapshot into an encrypted one). Self-hosted / the compose stack: put the Postgres
+   volume (`FREERO_DATA_DIR` for PGlite) on an encrypted disk — LUKS (`cryptsetup luksFormat`),
+   BitLocker, or the cloud's encrypted block storage — and its snapshots too. Connect with TLS
+   (`DATABASE_URL=…?sslmode=require`).
+2. **Uploads.** Set `S3_SSE=AES256`, or `S3_SSE=aws:kms` with `S3_SSE_KMS_KEY_ID` to use a key you
+   control (grant the app's credentials `kms:GenerateDataKey` and `kms:Decrypt`). Also turn on the
+   bucket's default encryption, so objects written by other tools (`mc mirror`, a restore) are
+   covered. A startup log line warns when the bucket says it has no default encryption and
+   `S3_SSE` is unset. Existing objects keep how they were written: re-encrypt them by copying in
+   place (`aws s3 cp s3://b/uploads/ s3://b/uploads/ --recursive --sse AES256`).
+3. **Backups.** `BACKUP_GPG_RECIPIENT` or `BACKUP_AGE_RECIPIENT` ("Encrypted dumps" above), and
+   SSE + versioning on the backup bucket.
+4. **Keys.**
+   - `SESSION_SECRET` is the app's one key: everything Freero seals or signs is derived from it
+     (HKDF per purpose, `platform/secrets.ts`). Keep it in a secrets manager (not in the image or
+     the repository), give it only to the app, and rotate it as described above —
+     `SESSION_SECRET_PREVIOUS` keeps old values readable while each owner re-seals them (sign-ins
+     for two-step secrets, on use for AI keys / webhooks / tracker credentials, the hourly
+     `boards:seal-call-links` job for call links). **Losing it** loses what it sealed: two-step
+     secrets (people sign in with a recovery code and set it up again), AI keys, SSO client secrets,
+     tracker connections and webhook secrets (admins enter them again), call links (editors paste
+     them again). Board content, accounts and files are not affected.
+   - The backup private key (GPG / age) never goes on the servers; store it offline with at least
+     two holders.
+   - KMS keys (bucket, database volume): the provider's key policies; disabling the key makes the
+     data unreadable, which is also how to crypto-shred a decommissioned deployment.
+
+What is sealed by the app today (audit, KAI-143):
+
+| Column | Protection |
+|---|---|
+| `user_totp.secret` (two-step), `ai_workspace_settings` API key, `sso_connections.oidc_client_secret`, `tracker_connections` credentials + webhook secret, `webhook_endpoints` URL + signing secret, `boards.call_url` | sealed (AES-256-GCM under `SESSION_SECRET`) |
+| `users.password_hash`, board link passwords | scrypt |
+| `sessions`, `guest_sessions`, `auth_tokens`, `auth_challenges`, `auth_devices`, `api_tokens`, `oauth_codes`, OAuth client secrets, `scim_tokens`, `user_recovery_codes`, OIDC / SSO flow `state` | sha256 only |
+| `auth_oidc_flows` / `sso_flows` PKCE verifier and nonce | plain, by decision: single use, deleted within minutes, and useless without the authorization code, which is never stored |
+| Board documents, layers, comments, search index, events, audit log, notifications, emails and names | plain in the database, protected by storage encryption (deployment.md explains why) |
 
 ## Workspace single sign-on and provisioning
 
@@ -240,6 +316,8 @@ workspace (modules/workspaces).
 | Comments they wrote on others' boards | inside those boards' docs (realtime) | `comments.json` (with board, thread and pinned item) | author shown as "Deleted user" (name and colour replaced in every board they could reach) | deleted with the boards |
 | Stars, last-opened times | `board_stars`, `board_opens` (boards) | `activity.json` | deleted (cascade) | deleted with the boards |
 | Files they uploaded (images, PDFs) | object storage + `uploads` (uploads) | `uploads/` (up to 200 MB of files per export; the rest listed in `files-not-included.json`) | row deleted; the file stays while a board, template or avatar elsewhere uses it, then the uploads sweep deletes it (≤ 24 h after the last reference) | files only those boards used: swept within a day |
+| Walkthroughs they recorded (their voice, maybe their face: the recording is an upload; the camera path, title, captions), their comments on walkthroughs, which ones they watched | `walkthroughs`, `walkthrough_comments`, `walkthrough_views` (walkthroughs) | `walkthroughs.json` (recordings under `uploads/`) | their walkthroughs deleted (cascade), so the recordings are swept within a day; their comments stay unattributed ("Deleted user"); views deleted | deleted with the boards |
+| Decision snapshots they made (title, note) | `decisions` (decisions; the content is a board version) | `decisions.json` | kept, maker cleared (SET NULL): a decision is the board's record | deleted with the boards |
 | Saved templates | `templates` (templates) | `templates/` | deleted (cascade); shared ones go too | shared-with-team link cleared (the owner's template stays) |
 | Notifications and email preferences; pending mentions; task cards assigned to them with a due date (reminders) | `notifications`, `notification_prefs`, `pending_mentions`, `card_due_watch` (notifications) | `notifications.json` (the reminder list is not: it mirrors the boards' cards) | deleted (cascade) | notifications about its boards: deleted with the boards |
 | Answers, questions and upvotes in live activities (anonymous ones too: kept by the server only, never in the board) | `engage_answers`, `engage_questions`, `engage_upvotes` (engage) | `activities.json` | answers and upvotes deleted; questions stay on the boards without a name | deleted with the boards |

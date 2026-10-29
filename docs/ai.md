@@ -96,6 +96,21 @@ the server's provider or your own (provider, endpoint, model, key), set who may 
 token budget, test the connection, and see this month's usage per person. Turning AI off applies to
 everyone at once. Every change is in the audit log (`ai.settings_changed`; the key itself never).
 
+## Walkthrough captions (KAI-133)
+
+A recorded walkthrough can get captions from AI: its author (or an editor) presses "Make captions
+with AI" in the captions dialog. That sends **the recording** (voice, and camera if it was on) to the
+**board's own AI provider** — the same decision as every AI action (who may use AI here, budgets,
+the downloads policy) — and to nobody else. It needs:
+
+- an OpenAI-compatible endpoint (the Anthropic Messages API takes no audio), and
+- `AI_TRANSCRIBE_MODEL`, the speech-to-text model that endpoint serves (`whisper-1`, a local whisper
+  server's model…).
+
+Otherwise the dialog says why there are no AI captions, and people type captions themselves. Freero
+never uses a browser's built-in speech recognition (it sends audio to the browser vendor). Each
+transcription is metered (output tokens, estimated) and audited (`ai.request`, task `transcribe`).
+
 ## API
 
 `GET /api/boards/:id/ai`, `POST /api/boards/:id/ai/actions` and the admin routes are described in

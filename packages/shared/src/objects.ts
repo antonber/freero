@@ -9,13 +9,16 @@
 //   freero://project/<projectId>             a project (folder of boards)
 //   freero://issue/<linkId>                  a tracker issue linked to items on a board (KAI-153)
 //   freero://doc/<docId>                     a doc (KAI-162): a collaborative document next to boards
+//   freero://walkthrough/<id>                a recorded walkthrough of a board (KAI-133)
+//   freero://decision/<id>                   a frozen, named copy of a board or frame (KAI-161)
 //
 // The web form of a board or item address is the page URL people already copy
-// (`<origin>/board/<id>`, `?el=<elementId>`; a doc's `<origin>/doc/<id>`); `parseObjectUri` reads both, plus the same-origin
-// paths item links store (`/board/<id>?el=…`). An address says WHAT, never whether anyone may see
-// it: resolving one (`POST /api/objects/resolve`) is permission-checked for the reader every time.
+// (`<origin>/board/<id>`, `?el=<elementId>`; a doc's `<origin>/doc/<id>`; a walkthrough's
+// `?walkthrough=<id>`, a decision's `<origin>/decision/<id>`); `parseObjectUri` reads both, plus the
+// same-origin paths item links store (`/board/<id>?el=…`). An address says WHAT, never whether anyone
+// may see it: resolving one (`POST /api/objects/resolve`) is permission-checked for the reader every time.
 
-export const OBJECT_TYPES = ['board', 'element', 'template', 'workspace', 'project', 'issue', 'doc'] as const;
+export const OBJECT_TYPES = ['board', 'element', 'template', 'workspace', 'project', 'issue', 'doc', 'walkthrough', 'decision'] as const;
 export type ObjectType = (typeof OBJECT_TYPES)[number];
 
 export type ObjectRef =
@@ -28,7 +31,11 @@ export type ObjectRef =
   /** A tracker issue linked to items on one board (modules/trackers): the link's id. */
   | { type: 'issue'; id: string }
   /** A doc (KAI-162): same container, sharing and access rules as a board, a document instead of a canvas. */
-  | { type: 'doc'; id: string };
+  | { type: 'doc'; id: string }
+  /** A recorded walkthrough of one board (modules/walkthroughs): voice, camera path, comments. */
+  | { type: 'walkthrough'; id: string }
+  /** A decision snapshot (modules/decisions): a board or frame frozen under a name. */
+  | { type: 'decision'; id: string };
 
 /** What someone may do with an object, weakest first. `can(view)` holds for anyone who may comment, etc. */
 export const OBJECT_ACTIONS = ['view', 'comment', 'edit', 'manage'] as const;
@@ -36,7 +43,7 @@ export type ObjectAction = (typeof OBJECT_ACTIONS)[number];
 
 export const OBJECT_URI_SCHEME = 'freero:';
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
-const URI_TYPES = new Set<string>(['board', 'template', 'workspace', 'project', 'issue', 'doc']);
+const URI_TYPES = new Set<string>(['board', 'template', 'workspace', 'project', 'issue', 'doc', 'walkthrough', 'decision']);
 
 /** The canonical address of an object. */
 export function formatObjectUri(ref: ObjectRef): string {
@@ -87,12 +94,19 @@ export function parseObjectUri(input: string, origins: readonly string[] = []): 
     const docId = safeDecode(d[1]);
     return docId && ID.test(docId) ? { type: 'doc', id: docId } : null;
   }
+  const decision = /^\/decision\/([^/]+)\/?$/.exec(url.pathname);
+  if (decision) {
+    const id = safeDecode(decision[1]);
+    return id && ID.test(id) ? { type: 'decision', id } : null;
+  }
   const m = /^\/board\/([^/]+)\/?$/.exec(url.pathname);
   if (!m) return null;
   const boardId = safeDecode(m[1]);
   if (!boardId || !ID.test(boardId)) return null;
   const el = url.searchParams.get('el') ?? url.searchParams.get('item');
   if (el) return ID.test(el) ? { type: 'element', boardId, id: el } : null;
+  const walkthrough = url.searchParams.get('walkthrough');
+  if (walkthrough) return ID.test(walkthrough) ? { type: 'walkthrough', id: walkthrough } : null;
   return { type: 'board', id: boardId };
 }
 
@@ -101,6 +115,7 @@ export function objectPath(ref: ObjectRef): string | null {
   if (ref.type === 'board') return `/board/${encodeURIComponent(ref.id)}`;
   if (ref.type === 'element') return `/board/${encodeURIComponent(ref.boardId)}?el=${encodeURIComponent(ref.id)}`;
   if (ref.type === 'doc') return `/doc/${encodeURIComponent(ref.id)}`;
+  if (ref.type === 'decision') return `/decision/${encodeURIComponent(ref.id)}`;
   return null;
 }
 
@@ -118,10 +133,10 @@ function safeDecode(s: string): string {
  * this never throws and caps what it returns.
  */
 export function objectRefsInText(text: string, origins: readonly string[] = [], max = 200): ObjectRef[] {
-  if (!text || (!text.includes('freero://') && !text.includes('/board/') && !text.includes('/doc/'))) return [];
+  if (!text || (!text.includes('freero://') && !text.includes('/board/') && !text.includes('/doc/') && !text.includes('/decision/'))) return [];
   const out = new Map<string, ObjectRef>();
   // URIs, absolute URLs, and same-origin paths that start a token.
-  const re = /freero:\/\/[^\s"'<>()[\]{}]+|https?:\/\/[^\s"'<>()[\]{}]+|(?<![\w/.:])\/(?:board|doc)\/[^\s"'<>()[\]{}]+/gi;
+  const re = /freero:\/\/[^\s"'<>()[\]{}]+|https?:\/\/[^\s"'<>()[\]{}]+|(?<![\w/.:])\/(?:board|doc|decision)\/[^\s"'<>()[\]{}]+/gi;
   for (const m of text.matchAll(re)) {
     const ref = parseObjectUri(m[0].replace(/[.,;:!?]+$/, ''), origins);
     if (ref) out.set(objectKey(ref), ref);

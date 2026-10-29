@@ -20,11 +20,14 @@ import { AdminConsolePage } from './pages/admin/AdminConsolePage';
 import { AppealPage } from './pages/appeal/AppealPage';
 import { OperatorPage } from './pages/operator/OperatorPage';
 import { OAuthConsentPage } from './pages/oauth/OAuthConsentPage';
+import { SharePage } from './pages/share/SharePage';
 
 // Owned by the board engine work; loaded on demand.
 const BoardPage = lazy(() => import('./board/BoardPage'));
 // The operator's read-only board preview mounts the board engine too.
 const OperatorPreviewPage = lazy(() => import('./pages/operator/OperatorPreviewPage'));
+// A frozen decision (KAI-161) renders with the board engine too.
+const DecisionPage = lazy(() => import('./pages/decision/DecisionPage'));
 // A live board view inside an AI assistant (MCP Apps, KAI-171).
 const EmbedBoardPage = lazy(() => import('./embed/EmbedBoardPage'));
 // Docs (KAI-162): the page and its editor load on demand.
@@ -97,11 +100,30 @@ export function App() {
                 </RequireAuth>
               }
             />
+            {/* The installed app's share target (KAI-218): the server stored the images and sent the browser here. */}
+            <Route
+              path="/share"
+              element={
+                <RequireAuth>
+                  <SharePage />
+                </RequireAuth>
+              }
+            />
             <Route
               path="/admin/:workspaceId"
               element={
                 <RequireAuth>
                   <AdminConsolePage />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/decision/:id"
+              element={
+                <RequireAuth>
+                  <Suspense fallback={<FullPageSpinner label="Opening the decision" />}>
+                    <DecisionPage />
+                  </Suspense>
                 </RequireAuth>
               }
             />

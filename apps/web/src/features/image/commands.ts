@@ -2,6 +2,7 @@ import { Crop, Undo2 } from 'lucide-react';
 import type { ImageElement } from '@freero/shared';
 import { defineCommands, type Editor } from '@engine';
 import { resetCrop } from './lib/crop';
+import { insertStoredImages } from './lib/insert';
 import { CROP_PANEL } from './lib/cropping';
 
 const selectedImages = (editor: Editor) =>
@@ -22,6 +23,16 @@ export default defineCommands([
     },
     run(editor) {
       editor.openPanel(CROP_PANEL, { id: selectedImages(editor)[0].id });
+    },
+  },
+  {
+    // Images already in Freero's storage, placed by another feature (share: pictures shared into the
+    // installed app, KAI-218). Args: { urls: string[] } of `/uploads/<name>`; anything else is ignored.
+    id: 'image.insertStored',
+    label: 'Insert stored images',
+    run(editor, args) {
+      const urls = (args as { urls?: unknown } | undefined)?.urls;
+      if (Array.isArray(urls)) void insertStoredImages(editor, urls.filter((u): u is string => typeof u === 'string'));
     },
   },
   {

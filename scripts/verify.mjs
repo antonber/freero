@@ -4881,6 +4881,245 @@ async function aiChecks() {
 }
 
 // ---------------------------------------------------------------------------
+// Async walkthroughs (KAI-133), on their own server: a recording is an ordinary upload of its
+// author's; the walkthrough over it reaches exactly the people who can open the board (live summary
+// on their sockets, the object registry), counts each viewer once, notifies @mentions at a moment,
+// follows the downloads policy, and gets captions from the board's AI provider only when AI is on.
+// ---------------------------------------------------------------------------
+async function walkthroughChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-walkthrough-'));
+  const model = await startMockModel();
+  let proc = null;
+  try {
+    const env = {};
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    const boot = async (extra) => {
+      if (proc) await stopProc(proc);
+      proc = await waitUp(await spawnServer(dataDir, { ...env, ...extra }));
+      server = proc;
+    };
+    if (!(await check('walkthroughs: server boots', () => boot({})))) return;
+    const O = new User('WtOwner', proc.port);
+    const C = new User('WtCommenter', proc.port);
+    const V = new User('WtViewer', proc.port);
+    const S = new User('WtStranger', proc.port);
+    for (const u of [O, C, V, S]) {
+      await u.signup();
+      await u.verifyEmail(dataDir);
+    }
+    const team = (await O.req('POST', '/api/workspaces', { name: 'Walkthrough team' })).json.workspace;
+    const board = (await O.req('POST', '/api/boards', { title: 'Q4 plan', workspaceId: team.id })).json.board.id;
+    for (const [u, role] of [
+      [C, 'commenter'],
+      [V, 'viewer'],
+    ])
+      assert((await O.req('POST', `/api/boards/${board}/members`, { email: u.email, role })).status === 201, `invite ${u.label}`);
+    // A WebM recording as MediaRecorder writes it: EBML header naming the webm doc type.
+    const webm = Buffer.alloc(64 * 1024, 7);
+    Buffer.from([0x1a, 0x45, 0xdf, 0xa3]).copy(webm, 0);
+    webm.write('B\x82\x84webm', 8, 'latin1');
+    const timeline = { v: 1, view: [[0, 0, 0, 1600, 900], [1800, 600, 300, 800, 450]], pointer: [[200, 100, 100], [2500]] };
+    let w = null;
+
+    await check('walkthroughs: a recording uploads as media and becomes a walkthrough; a viewer’s open socket gets its summary live, never the media URL or path; a stranger can’t list, open or resolve it', async () => {
+      const viewerSocket = connectDoc(V, board);
+      await viewerSocket.ready();
+      const up = await O.req('POST', '/api/uploads', webm, { raw: true, headers: { 'content-type': 'audio/webm' } });
+      assert(up.status === 201 && /\.webm$/.test(up.json?.url), `upload -> ${up.status} ${up.text}`);
+      const made = await O.req('POST', `/api/boards/${board}/walkthroughs`, { title: 'Q4 plan, explained', mediaUrl: up.json.url, media: 'audio', durationMs: 3000, timeline });
+      assert(made.status === 201, `create -> ${made.status} ${made.text}`);
+      w = made.json.walkthrough;
+      const summaries = viewerSocket.doc.getMap('walkthroughs');
+      await waitFor(() => summaries.get(w.id)?.title === 'Q4 plan, explained', 8000, 'the summary on the viewer’s socket');
+      const onBoard = summaries.get(w.id);
+      assert(!JSON.stringify(onBoard).includes('/uploads/') && !('timeline' in onBoard), `the board doc carries the media URL or the path: ${JSON.stringify(onBoard)}`);
+      const got = await V.req('GET', `/api/boards/${board}/walkthroughs/${w.id}`);
+      assert(got.status === 200 && isDeepStrictEqual(got.json.walkthrough.timeline, timeline) && got.json.walkthrough.mediaUrl === up.json.url, `viewer get -> ${got.status} ${got.text.slice(0, 200)}`);
+      for (const r of [await S.req('GET', `/api/boards/${board}/walkthroughs`), await S.req('GET', `/api/boards/${board}/walkthroughs/${w.id}`)]) assert([403, 404].includes(r.status), `stranger -> ${r.status}`);
+      const uri = `freero://walkthrough/${w.id}`;
+      const asViewer = (await V.req('POST', '/api/objects/resolve', { uris: [uri] })).json.objects[0];
+      const asStranger = (await S.req('POST', '/api/objects/resolve', { uris: [uri] })).json.objects[0];
+      assert(asViewer.status === 'ok' && asViewer.object.path === `/board/${board}?walkthrough=${w.id}`, JSON.stringify(asViewer));
+      assert(asStranger.status === 'unavailable', JSON.stringify(asStranger));
+      // Only editors record; only the recorder's own upload.
+      assert((await C.req('POST', `/api/boards/${board}/walkthroughs`, { title: 'x', mediaUrl: up.json.url, durationMs: 3000, timeline })).status === 403, 'a commenter recorded');
+      viewerSocket.destroy();
+    });
+
+    await check('walkthroughs: watching counts each person once; a comment at a moment notifies the @mentioned viewer (linking to that moment) and the author, never a stranger it names', async () => {
+      for (let i = 0; i < 2; i++) assert((await V.req('POST', `/api/boards/${board}/walkthroughs/${w.id}/views`)).status === 200, 'view');
+      assert((await O.req('POST', `/api/boards/${board}/walkthroughs/${w.id}/views`)).json.views === 1, 'the author’s own view counted, or a view counted twice');
+      const said = await C.req('POST', `/api/boards/${board}/walkthroughs/${w.id}/comments`, { atMs: 1800, text: `<@${V.id}> <@${S.id}> is this the right order?` });
+      assert(said.status === 201, `comment -> ${said.status} ${said.text}`);
+      const inbox = async (u) => (await u.req('GET', '/api/notifications')).json.notifications;
+      await waitFor(async () => (await inbox(V)).some((n) => n.type === 'walkthrough.mention'), 5000, 'the mention');
+      const mention = (await inbox(V)).find((n) => n.type === 'walkthrough.mention');
+      assert(mention.link === `/board/${board}?walkthrough=${w.id}&t=1800`, `link: ${mention.link}`);
+      assert((await inbox(O)).some((n) => n.type === 'walkthrough.comment'), 'the author heard nothing');
+      assert(!(await inbox(S)).length, 'a stranger was notified');
+      assert((await V.req('POST', `/api/boards/${board}/walkthroughs/${w.id}/comments`, { atMs: 0, text: 'me too' })).status === 403, 'a viewer commented');
+    });
+
+    await check('walkthroughs: downloading the recording follows the workspace’s downloads policy and is audited', async () => {
+      const ok = await V.req('GET', `/api/boards/${board}/walkthroughs/${w.id}/download`);
+      assert(ok.status === 200 && (ok.headers.get('content-disposition') ?? '').startsWith('attachment;'), `download -> ${ok.status}`);
+      assert((await O.req('PATCH', `/api/workspaces/${team.id}`, { policies: { downloads: 'admins' } })).status === 200, 'policy');
+      assert((await V.req('GET', `/api/boards/${board}/walkthroughs/${w.id}/download`)).status === 403, 'downloaded under an admins-only policy');
+      // Playback is viewing, not downloading: the recording still streams (with byte ranges) for them.
+      const stream = await V.req('GET', w.mediaUrl, undefined, { headers: { range: 'bytes=0-15' } });
+      assert(stream.status === 206, `playback under the policy -> ${stream.status}`);
+      const evs = (await O.req('GET', `/api/workspaces/${team.id}/audit?limit=50&action=board.file_downloaded`)).json.events;
+      assert(evs.some((e) => e.actor?.id === V.id && e.metadata.upload === w.mediaUrl.slice('/uploads/'.length)), `audit: ${JSON.stringify(evs)}`);
+      assert((await O.req('PATCH', `/api/workspaces/${team.id}`, { policies: { downloads: 'anyone' } })).status === 200, 'reset');
+    });
+
+    await check('walkthroughs: without AI there is no transcription — refused with the reason and nothing reaches a model; hand-typed captions work', async () => {
+      const status = (await O.req('GET', `/api/boards/${board}/walkthroughs-captions`)).json;
+      assert(status.available === false && status.reason, JSON.stringify(status));
+      const r = await O.req('POST', `/api/boards/${board}/walkthroughs/${w.id}/transcript`);
+      assert(r.status === 404 || r.status === 403, `transcribe without AI -> ${r.status} ${r.text}`);
+      assert(model.requests.length === 0, 'a model was called');
+      const typed = await O.req('PUT', `/api/boards/${board}/walkthroughs/${w.id}/transcript`, { cues: [{ start: 0, end: 1500, text: 'Hello' }] });
+      assert(typed.status === 200 && typed.json.walkthrough.transcriptSource === 'manual', typed.text);
+    });
+
+    const aiEnv = {
+      AI_PROVIDER: 'openai',
+      AI_BASE_URL: `${model.url}/v1`,
+      AI_MODEL: 'mock-chat',
+      AI_API_KEY: 'transcribe-key',
+      AI_INSTANCE_FOR: 'personal,teams',
+      AI_TRANSCRIBE_MODEL: 'mock-whisper',
+    };
+    if (!(await check('walkthroughs: server with an AI provider boots', () => boot(aiEnv)))) return;
+    for (const u of [O, C, V, S]) u.port = proc.port;
+
+    await check('walkthroughs: with AI on for the team, captions come from the board’s own provider (its key, the speech model, the recording) and nowhere else', async () => {
+      assert((await O.req('PATCH', `/api/workspaces/${team.id}/admin/ai`, { enabled: true, source: 'instance' })).status === 200, 'AI on');
+      assert((await O.req('GET', `/api/boards/${board}/walkthroughs-captions`)).json.available === true, 'captions unavailable');
+      const r = await O.req('POST', `/api/boards/${board}/walkthroughs/${w.id}/transcript`);
+      assert(r.status === 200 && r.json.walkthrough.transcriptSource === 'ai', `${r.status} ${r.text}`);
+      assert(isDeepStrictEqual(r.json.walkthrough.transcript.map((c) => c.text), ['Welcome to the plan.', 'Here is what we decided.']), JSON.stringify(r.json.walkthrough.transcript));
+      const calls = model.requests.filter((q) => q.transcription);
+      assert(calls.length === 1 && calls[0].path === '/v1/audio/transcriptions' && calls[0].headers.authorization === 'Bearer transcribe-key', JSON.stringify(calls.map((c) => c.path)));
+      assert(calls[0].transcription.model === 'mock-whisper' && calls[0].transcription.hasFile, JSON.stringify(calls[0].transcription));
+      // A viewer can't spend the team's AI on someone else's walkthrough.
+      assert((await V.req('POST', `/api/boards/${board}/walkthroughs/${w.id}/transcript`)).status === 403, 'a viewer transcribed');
+    });
+
+    await check('walkthroughs: deleting one takes it off every open board and leaves its recording to the uploads sweep', async () => {
+      const live = connectDoc(V, board);
+      await live.ready();
+      assert(live.doc.getMap('walkthroughs').has(w.id), 'not on the board');
+      assert((await C.req('DELETE', `/api/boards/${board}/walkthroughs/${w.id}`)).status === 403, 'a commenter deleted someone’s walkthrough');
+      assert((await O.req('DELETE', `/api/boards/${board}/walkthroughs/${w.id}`)).status === 204, 'delete');
+      await waitFor(() => !live.doc.getMap('walkthroughs').has(w.id), 8000, 'the summary to go');
+      assert((await V.req('GET', `/api/boards/${board}/walkthroughs/${w.id}`)).status === 404, 'still there');
+      live.destroy();
+    });
+  } finally {
+    closeAllDocs();
+    if (proc) await stopProc(proc);
+    server = null;
+    await model.close();
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Decision snapshots (KAI-161): frozen by an editor from the LIVE board (an edit a socket just made
+// included), never changed by later edits, readable by whoever may open the board (and nobody
+// else), a frame decision holding only that frame, and "what changed" naming the edits since.
+// ---------------------------------------------------------------------------
+async function decisionChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-decisions-'));
+  let proc = null;
+  try {
+    const env = {};
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    if (!(await check('decisions: server boots', async () => void (proc = server = await waitUp(await spawnServer(dataDir, env)))))) return;
+    const O = new User('DecOwner', proc.port);
+    const V = new User('DecViewer', proc.port);
+    const S = new User('DecStranger', proc.port);
+    for (const u of [O, V, S]) {
+      await u.signup();
+      await u.verifyEmail(dataDir);
+    }
+    const board = (await O.req('POST', '/api/boards', { title: 'Pricing' })).json.board.id;
+    assert((await O.req('POST', `/api/boards/${board}/members`, { email: V.email, role: 'viewer' })).status === 201, 'invite');
+    const stateIds = (bytes) => {
+      const d = new Y.Doc();
+      Y.applyUpdate(d, new Uint8Array(bytes));
+      return Object.fromEntries([...d.getMap('elements').entries()].map(([k, v]) => [k, v.text ?? '']));
+    };
+    /** A decision's frozen Yjs state as `u` gets it. */
+    const stateOf = async (u, id) => {
+      const r = await fetch(`http://127.0.0.1:${proc.port}/api/decisions/${id}/state`, { headers: { cookie: u.cookie } });
+      return { status: r.status, bytes: await r.arrayBuffer() };
+    };
+    const base = { x: 0, y: 0, w: 120, h: 120, rotation: 0, z: 1, color: 'yellow' };
+    const c = connectDoc(O, board);
+    await c.ready();
+    c.doc.transact(() => {
+      els(c).set('frame', { ...base, id: 'frame', type: 'frame', title: 'Tier A', w: 800, h: 800, fill: '#fff', index: 0 });
+      els(c).set('price', { ...base, id: 'price', type: 'sticky', text: '<p>€10 a seat</p>', frameId: 'frame' });
+      els(c).set('else', { ...base, id: 'else', type: 'sticky', text: '<p>Elsewhere</p>', x: 2000 });
+    });
+    await settled(c);
+    let board1 = null;
+    let frame1 = null;
+
+    await check('decisions: an editor freezes the board as it is live; later edits never change it, a viewer reads it, a stranger can’t, and only editors freeze', async () => {
+      const made = await O.req('POST', `/api/boards/${board}/decisions`, { title: 'Pricing decision', note: 'Agreed with sales' });
+      assert(made.status === 201, `${made.status} ${made.text}`);
+      board1 = made.json.decision;
+      c.doc.transact(() => els(c).set('price', { ...els(c).get('price'), text: '<p>€12 a seat</p>' }));
+      await settled(c);
+      const frozen = await stateOf(V, board1.id);
+      assert(frozen.status === 200, `viewer state -> ${frozen.status}`);
+      const ids = stateIds(frozen.bytes);
+      assert(ids.price === '<p>€10 a seat</p>' && ids.else === '<p>Elsewhere</p>', JSON.stringify(ids));
+      assert([403, 404].includes((await S.req('GET', `/api/decisions/${board1.id}`)).status), 'a stranger opened it');
+      assert((await S.req('POST', '/api/objects/resolve', { uris: [`freero://decision/${board1.id}`] })).json.objects[0].status === 'unavailable', 'resolved for a stranger');
+      assert((await V.req('POST', `/api/boards/${board}/decisions`, { title: 'Mine' })).status === 403, 'a viewer froze the board');
+      const versions = (await O.req('GET', `/api/boards/${board}/versions`)).json.versions;
+      assert(versions.some((v) => v.kind === 'decision' && v.name === 'Pricing decision'), 'not in the version history as a decision');
+    });
+
+    await check('decisions: what changed since names the edit made after it, as everyone sees the board', async () => {
+      const ch = (await V.req('GET', `/api/decisions/${board1.id}/changes`)).json;
+      assert(ch.counts.changed === 1 && ch.changed[0].before === '€10 a seat' && ch.changed[0].text === '€12 a seat', JSON.stringify(ch));
+      assert(ch.counts.added === 0 && ch.counts.removed === 0, JSON.stringify(ch.counts));
+    });
+
+    await check('decisions: a frame decision serves only that frame’s items; its link is citable (web URL and freero:// address resolve to it)', async () => {
+      const made = await O.req('POST', `/api/boards/${board}/decisions`, { title: 'Tier A scope', frameId: 'frame' });
+      assert(made.status === 201, made.text);
+      frame1 = made.json.decision;
+      const { bytes } = await stateOf(V, frame1.id);
+      assert(isDeepStrictEqual(Object.keys(stateIds(bytes)).sort(), ['frame', 'price']), JSON.stringify(stateIds(bytes)));
+      const [byUri, byUrl] = (await V.req('POST', '/api/objects/resolve', { uris: [`freero://decision/${frame1.id}`, `/decision/${frame1.id}`] })).json.objects;
+      assert(byUri.status === 'ok' && byUri.object.path === `/decision/${frame1.id}` && /Tier A/.test(byUri.object.text), JSON.stringify(byUri));
+      assert(byUrl.status === 'ok' && byUrl.object.title === 'Tier A scope', JSON.stringify(byUrl));
+    });
+    c.destroy();
+  } finally {
+    closeAllDocs();
+    if (proc) await stopProc(proc);
+    server = null;
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Video, audio and any other file on a board (KAI-128), on its own server: media is stored by what
 // its bytes are and served with byte ranges (seeking); attachments are never served at /uploads/,
 // only downloaded from their board — under the workspace's downloads policy, audited, as an
@@ -7204,6 +7443,158 @@ async function webhooksChecks() {
 }
 
 // ---------------------------------------------------------------------------
+// Portability (KAI-137, KAI-218): a board downloaded as a `.freero` backup and restored as a new
+// board over real HTTP and real sockets — fresh ids, files re-uploaded, hidden content kept hidden,
+// the downloads policy and the audit log; and the installed app's share target.
+// ---------------------------------------------------------------------------
+async function portabilityChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-backup-'));
+  const outerDbUrl = db.url;
+  const O = new User('BackupOwner');
+  const V = new User('BackupViewer');
+  const G = new User('BackupGuest');
+  // Small enough to cross: a 1 MB backup cap.
+  const env = { MAX_BACKUP_MB: '1' };
+  const { unzipSync, zipSync, strFromU8, strToU8 } = await import('fflate');
+  const base = () => `http://127.0.0.1:${server.port}`;
+  const restore = (u, bytes, q = '') => u.req('POST', `/api/boards/restore-backup${q}`, bytes, { raw: true, headers: { 'content-type': 'application/vnd.freero.board+zip' } });
+  try {
+    if (ADMIN_URL) db.url = await createDatabase();
+    if (!(await check('portability: server boots', async () => waitUp((server = await spawnServer(dataDir, env)))))) return;
+    for (const u of [O, V, G]) {
+      await u.signup();
+      await u.verifyEmail(dataDir);
+    }
+    const ws = (await O.req('POST', '/api/workspaces', { name: 'Backup team' })).json.workspace.id;
+    assert((await O.req('POST', `/api/workspaces/${ws}/members`, { email: G.email, role: 'guest' })).status === 201, 'add guest');
+    const board = (await O.req('POST', '/api/boards', { title: 'Launch plan', workspaceId: ws })).json.board.id;
+    assert((await O.req('POST', `/api/boards/${board}/members`, { email: V.email, role: 'viewer' })).status < 300, 'share with viewer');
+    assert((await O.req('POST', `/api/boards/${board}/members`, { email: G.email, role: 'editor' })).status < 300, 'share with guest');
+    const image = (await O.req('POST', '/api/uploads', PNG_1PX, { raw: true, headers: { 'content-type': 'image/png' } })).json.url;
+
+    const el = (id, type, extra) => ({ id, type, x: 0, y: 0, w: 100, h: 100, z: 1, rotation: 0, createdBy: O.id, createdAt: 1, updatedAt: 1, ...extra });
+    const owner = await layerClient(O, board);
+    owner.doc.transact(() => {
+      const e = owner.doc.getMap('elements');
+      e.set('s1-aaaaaaaaaa', el('s1-aaaaaaaaaa', 'sticky', { text: 'See <a href="#s2-bbbbbbbbbb">two</a>' }));
+      e.set('s2-bbbbbbbbbb', el('s2-bbbbbbbbbb', 'sticky', { text: 'Two' }));
+      e.set('c1-cccccccccc', el('c1-cccccccccc', 'connector', { start: { elementId: 's1-aaaaaaaaaa', x: 0, y: 0 }, end: { elementId: 's2-bbbbbbbbbb', x: 0, y: 0 } }));
+      e.set('i1-dddddddddd', el('i1-dddddddddd', 'image', { src: image, naturalW: 1, naturalH: 1 }));
+      e.set('t1-eeeeeeeeee', el('t1-eeeeeeeeee', 'table', { rows: [{ id: 'r1', h: 40 }], cols: [{ id: 'c1', w: 120 }] }));
+      e.set('f1-ffffffffff', el('f1-ffffffffff', 'frame', { title: 'Secret', hidden: true, x: 2000, y: 2000, w: 400, h: 400 }));
+      owner.doc.getMap('tableCells').set('t:t1-eeeeeeeeee:r1:c1', 'Budget');
+      owner.doc.getMap('comments').set('t:th1', { kind: 'thread', id: 'th1', elementId: 's1-aaaaaaaaaa', createdBy: O.id, createdAt: 1 });
+      owner.doc.getMap('comments').set('m:th1:m1', { kind: 'message', id: 'm1', threadId: 'th1', authorId: O.id, authorName: O.name, text: 'Ship it?', createdAt: 2 });
+    });
+    owner.layers.editors.getMap('elements').set('h1-gggggggggg', el('h1-gggggggggg', 'sticky', { text: 'SALARY-BANDS', frameId: 'f1-ffffffffff', x: 2100, y: 2100 }));
+    await settled(owner);
+    owner.destroy(); // the backup is read from what was saved, after the room unloads
+    await waitUnloaded();
+
+    let backup = null;
+    await check('portability: an owner’s .freero download carries the board, its hidden content and its files, and is audited', async () => {
+      const r = await fetch(`${base()}/api/boards/${board}/backup`, { headers: { cookie: O.cookie } });
+      assert(r.status === 200 && r.headers.get('content-type') === 'application/vnd.freero.board+zip', `download -> ${r.status}`);
+      assert(/attachment; filename="launch-plan-\d{4}-\d{2}-\d{2}\.freero"/.test(r.headers.get('content-disposition') ?? ''), r.headers.get('content-disposition'));
+      backup = new Uint8Array(await r.arrayBuffer());
+      const files = unzipSync(backup);
+      const manifest = JSON.parse(strFromU8(files['freero.json']));
+      assert(manifest.format === 'freero.board-backup' && manifest.version === 1 && manifest.files.length === 1, strFromU8(files['freero.json']));
+      assert(Buffer.from(files[manifest.files[0].path]).equals(PNG_1PX), 'the image bytes');
+      assert(strFromU8(files['editors.json']).includes('SALARY-BANDS'), 'hidden content for the owner');
+      const audit = (await O.req('GET', `/api/workspaces/${ws}/audit?limit=200`)).json.events;
+      assert(audit.some((e) => e.action === 'board.exported' && e.metadata?.format === 'freero'), 'not audited');
+    });
+
+    await check('portability: a viewer’s backup never holds a hidden frame’s contents; a guest the downloads policy excludes gets 403', async () => {
+      const r = await fetch(`${base()}/api/boards/${board}/backup`, { headers: { cookie: V.cookie } });
+      const files = unzipSync(new Uint8Array(await r.arrayBuffer()));
+      assert(r.status === 200 && !files['editors.json'] && !strFromU8(files['board.json']).includes('SALARY-BANDS'), 'the viewer got hidden content');
+      assert((await O.req('PATCH', `/api/workspaces/${ws}`, { policies: { downloads: 'members' } })).status === 200, 'policy');
+      const g = await G.req('GET', `/api/boards/${board}/backup`);
+      assert(g.status === 403 && g.json?.code === 'downloads_restricted', `guest -> ${g.status} ${g.text}`);
+      await O.req('PATCH', `/api/workspaces/${ws}`, { policies: { downloads: 'anyone' } });
+    });
+
+    await check('portability: restoring makes a new board in the chosen workspace — every item with a fresh id, links, lines, cells and comments following, the image re-uploaded, hidden content still hidden', async () => {
+      const r = await restore(O, backup, `?workspace=${ws}`);
+      assert(r.status === 201 && r.json.board.workspaceId === ws && r.json.board.title === 'Launch plan', `restore -> ${r.status} ${r.text}`);
+      assert(r.json.report.files === 1 && r.json.report.hiddenContent === true, JSON.stringify(r.json.report));
+      const copy = r.json.board.id;
+      const c = await layerClient(O, copy);
+      await waitFor(() => c.doc.getMap('elements').size === 6 && c.layers.editors.getMap('elements').size === 1, 8000, 'the restored board');
+      const all = [...c.doc.getMap('elements').values()];
+      assert(!all.some((e) => /^[a-z]\d-/.test(e.id)), 'an old id survived');
+      const one = all.find((e) => String(e.text).startsWith('See'));
+      const two = all.find((e) => e.text === 'Two');
+      const line = all.find((e) => e.type === 'connector');
+      const table = all.find((e) => e.type === 'table');
+      const frame = all.find((e) => e.type === 'frame');
+      const img = all.find((e) => e.type === 'image');
+      assert(one.text.includes(`#${two.id}`) && line.start.elementId === one.id && line.end.elementId === two.id, 'links / line ends');
+      assert(c.doc.getMap('tableCells').get(`t:${table.id}:r1:c1`) === 'Budget', 'table cell');
+      assert(c.doc.getMap('comments').get('t:th1').elementId === one.id && c.doc.getMap('comments').get('m:th1:m1').text === 'Ship it?', 'comment');
+      assert(img.src !== image && Buffer.from(await (await fetch(`${base()}${img.src}`)).arrayBuffer()).equals(PNG_1PX), 'image');
+      const hidden = [...c.layers.editors.getMap('elements').values()][0];
+      assert(hidden.text === 'SALARY-BANDS' && hidden.frameId === frame.id && !sharedText(c).includes('SALARY-BANDS'), 'hidden content');
+      c.destroy();
+      const audit = (await O.req('GET', `/api/workspaces/${ws}/audit?limit=200`)).json.events;
+      assert(audit.some((e) => e.action === 'board.backup_restored' && e.metadata?.sourceBoard === board), 'restore not audited');
+    });
+
+    await check('portability: a changed, oversized, foreign or newer-format file is refused and creates no board', async () => {
+      const before = (await O.req('GET', `/api/boards?workspace=${ws}`)).json.boards.length;
+      const files = unzipSync(backup);
+      files['board.json'] = strToU8(strFromU8(files['board.json']).replace('Budget', 'Bribes'));
+      const changed = await restore(O, zipSync(files), `?workspace=${ws}`);
+      assert(changed.status === 400 && /checksum/.test(changed.json?.error), `changed -> ${changed.status} ${changed.text}`);
+      const big = await restore(O, Buffer.alloc(1024 * 1024 + 10, 1), `?workspace=${ws}`);
+      assert(big.status === 413, `oversized -> ${big.status}`);
+      const zip = await restore(O, zipSync({ 'readme.txt': strToU8('hi') }), `?workspace=${ws}`);
+      assert(zip.status === 400 && /not a Freero board backup/.test(zip.json?.error), `foreign -> ${zip.status} ${zip.text}`);
+      const newer = unzipSync(backup);
+      newer['freero.json'] = strToU8(JSON.stringify({ ...JSON.parse(strFromU8(newer['freero.json'])), version: 9, minReaderVersion: 9 }));
+      const n = await restore(O, zipSync(newer), `?workspace=${ws}`);
+      assert(n.status === 400 && /newer version of Freero/.test(n.json?.error), `newer -> ${n.status} ${n.text}`);
+      const guestRestore = await restore(G, backup, `?workspace=${ws}`);
+      assert(guestRestore.status === 403, `a guest restored into the team -> ${guestRestore.status}`);
+      assert((await O.req('GET', `/api/boards?workspace=${ws}`)).json.boards.length === before, 'a board was created');
+    });
+
+    await check('share target: a shared image and link are stored as the person’s upload and handed to /share; signed out goes to sign-in; a cross-site post is refused', async () => {
+      const form = () => {
+        const f = new FormData();
+        f.set('title', 'Look at this');
+        f.set('url', 'https://example.com/post');
+        f.append('images', new Blob([PNG_1PX], { type: 'image/png' }), 'photo.png');
+        f.append('images', new Blob(['<html>'], { type: 'image/png' }), 'fake.png');
+        return f;
+      };
+      const r = await fetch(`${base()}/api/share-target`, { method: 'POST', body: form(), headers: { cookie: O.cookie }, redirect: 'manual' });
+      const to = new URL(r.headers.get('location') ?? '', base());
+      assert(r.status === 303 && to.pathname === '/share', `share -> ${r.status} ${to}`);
+      assert(to.searchParams.get('url') === 'https://example.com/post' && to.searchParams.get('failed') === '1', String(to));
+      const [name] = to.searchParams.getAll('i');
+      assert(Buffer.from(await (await fetch(`${base()}/uploads/${name}`)).arrayBuffer()).equals(PNG_1PX), 'the shared image');
+      const anon = await fetch(`${base()}/api/share-target`, { method: 'POST', body: form(), redirect: 'manual' });
+      assert(anon.status === 303 && anon.headers.get('location').startsWith('/login'), `signed out -> ${anon.status} ${anon.headers.get('location')}`);
+      const cross = await fetch(`${base()}/api/share-target`, { method: 'POST', body: form(), headers: { cookie: O.cookie, origin: 'https://evil.example' }, redirect: 'manual' });
+      assert(cross.status === 403, `cross-site -> ${cross.status}`);
+    });
+  } finally {
+    closeAllDocs();
+    await stopServer();
+    await dropDatabases();
+    db.url = outerDbUrl;
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Docs (KAI-162, KAI-152, KAI-124): a doc's Yjs document over /ws/docs with real clients — on two
 // instances (one Postgres, one Redis) when DATABASE_URL and REDIS_URL are set, else one.
 // ---------------------------------------------------------------------------
@@ -7355,6 +7746,8 @@ const SUITES = {
   secrets: secretRotationChecks,
   sweep: uploadSweepChecks,
   media: mediaChecks,
+  walkthroughs: walkthroughChecks,
+  decisions: decisionChecks,
   purge: accountPurgeChecks,
   notify: notificationChecks,
   teams: teamsChecks,
@@ -7376,6 +7769,7 @@ const SUITES = {
   collab: collabChecks,
   search: searchChecks,
   webhooks: webhooksChecks,
+  portability: portabilityChecks,
   docs: docsChecks,
 };
 const onlyArg = process.argv.indexOf('--only');

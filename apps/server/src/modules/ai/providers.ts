@@ -96,15 +96,25 @@ export function checkEndpoint(raw: string, rules: EndpointRules): URL {
 
 /** POSTs JSON and reads a JSON reply (no redirects, one deadline, a byte cap). */
 export function postJson(raw: string, headers: Record<string, string>, body: unknown, opts: { timeoutMs: number; rules: EndpointRules }): Promise<{ status: number; json: unknown }> {
+  return postBody(raw, headers, Buffer.from(JSON.stringify(body)), 'application/json', opts);
+}
+
+/** POSTs `payload` as `contentType` and reads a JSON reply, under the same rules as postJson. */
+function postBody(
+  raw: string,
+  headers: Record<string, string>,
+  payload: Buffer,
+  contentType: string,
+  opts: { timeoutMs: number; rules: EndpointRules },
+): Promise<{ status: number; json: unknown }> {
   const url = checkEndpoint(raw, opts.rules);
-  const payload = Buffer.from(JSON.stringify(body));
   return new Promise((resolve, reject) => {
     const mod = url.protocol === 'https:' ? https : http;
     const req = mod.request(
       url,
       {
         method: 'POST',
-        headers: { ...headers, 'content-type': 'application/json', 'content-length': String(payload.length), accept: 'application/json' },
+        headers: { ...headers, 'content-type': contentType, 'content-length': String(payload.length), accept: 'application/json' },
         timeout: opts.timeoutMs,
         ...(opts.rules.blockPrivate ? { lookup: guardedLookup as unknown as net.LookupFunction } : {}),
       },
@@ -205,6 +215,49 @@ async function openai(ep: ProviderEndpoint, call: ModelCall, rules: EndpointRule
     outputTokens: num(r?.usage?.completion_tokens) ?? estimateTokens(text),
     truncated: choice?.finish_reason === 'length',
   };
+}
+
+/** A recording's speech as timed text. */
+export interface Transcription {
+  segments: Array<{ start: number; end: number; text: string }>;
+  /** The whole text (when the endpoint gives no segments, one segment holds it). */
+  text: string;
+}
+
+/**
+ * Speech to text through an OpenAI-compatible endpoint's `/audio/transcriptions` (multipart, the
+ * one wire format such endpoints share: OpenAI, Azure OpenAI v1, whisper servers, vLLM). The
+ * Anthropic Messages API has no speech input: callers check `provider` first.
+ */
+export async function transcribe(
+  ep: ProviderEndpoint,
+  audio: { bytes: Buffer; contentType: string; fileName: string },
+  model: string,
+  opts: { allowPrivate: boolean; timeoutMs: number },
+): Promise<Transcription> {
+  const rules: EndpointRules = ep.untrusted ? { blockPrivate: !opts.allowPrivate, httpsOnly: !opts.allowPrivate } : { blockPrivate: false, httpsOnly: false };
+  const boundary = `freero${Math.random().toString(16).slice(2)}${Date.now().toString(16)}`;
+  const field = (name: string, value: string) => Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`);
+  const payload = Buffer.concat([
+    field('model', model),
+    field('response_format', 'verbose_json'),
+    Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${audio.fileName}"\r\nContent-Type: ${audio.contentType}\r\n\r\n`),
+    audio.bytes,
+    Buffer.from(`\r\n--${boundary}--\r\n`),
+  ]);
+  const headers: Record<string, string> = ep.apiKey ? { authorization: `Bearer ${ep.apiKey}`, 'api-key': ep.apiKey } : {};
+  const { status, json } = await postBody(`${ep.baseUrl.replace(/\/+$/, '')}/audio/transcriptions`, headers, payload, `multipart/form-data; boundary=${boundary}`, {
+    timeoutMs: opts.timeoutMs,
+    rules,
+  });
+  if (status < 200 || status >= 300) throw failed(status, json);
+  const r = json as { text?: unknown; segments?: Array<{ start?: unknown; end?: unknown; text?: unknown }> } | null;
+  const text = typeof r?.text === 'string' ? r.text : '';
+  const segments = (Array.isArray(r?.segments) ? r.segments : [])
+    .map((s) => ({ start: num(s?.start), end: num(s?.end), text: typeof s?.text === 'string' ? s.text.trim() : '' }))
+    .filter((s): s is { start: number; end: number; text: string } => s.start !== null && s.end !== null && !!s.text);
+  if (!text && !segments.length) throw new ProviderError('The AI provider’s transcription came back empty.');
+  return { segments, text };
 }
 
 /** One model call through the endpoint's provider. */

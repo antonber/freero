@@ -33,6 +33,10 @@ export interface NotificationData {
   elementId?: string;
   cardTitle?: string;
   dueDate?: string | null;
+  /** Walkthroughs (KAI-133): the recording, its title, and the moment a comment is pinned to. */
+  walkthroughId?: string;
+  walkthroughTitle?: string;
+  atMs?: number;
 }
 
 export interface NotificationTypeDef {
@@ -59,6 +63,10 @@ const threadPath = (id: string | null, d: NotificationData) =>
 
 const itemPath = (id: string | null, d: NotificationData) =>
   d.elementId ? `${boardPath(id, d)}?item=${encodeURIComponent(d.elementId)}` : boardPath(id, d);
+/** Opens the walkthrough at the comment's moment (the walkthrough feature's `?walkthrough=&t=` deep link). */
+const walkthroughPath = (id: string | null, d: NotificationData) =>
+  d.walkthroughId ? `${boardPath(id)}?walkthrough=${encodeURIComponent(d.walkthroughId)}${d.atMs !== undefined ? `&t=${Math.max(0, Math.round(d.atMs))}` : ''}` : boardPath(id);
+const walkthrough = (d: NotificationData) => `the walkthrough “${d.walkthroughTitle || 'Untitled walkthrough'}”`;
 const card = (d: NotificationData) => `“${d.cardTitle || 'Untitled card'}”`;
 /** "Fri 30 Oct" (due dates are calendar days, read in UTC so every reader agrees). */
 export const dueDay = (date: string): string => {
@@ -158,6 +166,20 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
     title: (actor, d) => `${actor} is blocked on ${card(d)} in ${board(d)}`,
     link: itemPath,
     linkLabel: 'Open the task',
+  },
+  'walkthrough.mention': {
+    label: 'Mentions in walkthroughs',
+    description: 'Someone @mentions you in a comment on a recorded walkthrough.',
+    title: (actor, d) => `${actor} mentioned you on ${walkthrough(d)} in ${board(d)}`,
+    link: walkthroughPath,
+    linkLabel: 'Watch from that moment',
+  },
+  'walkthrough.comment': {
+    label: 'Comments on your walkthroughs',
+    description: 'Someone comments on a walkthrough you recorded.',
+    title: (actor, d) => `${actor} commented on ${walkthrough(d)} in ${board(d)}`,
+    link: walkthroughPath,
+    linkLabel: 'Watch from that moment',
   },
   'moderation.action': {
     label: 'Moderation notices',

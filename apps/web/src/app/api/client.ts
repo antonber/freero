@@ -102,7 +102,19 @@ import type {
   WorkspaceRole,
   WorkspaceSummary,
 } from '@freero/shared';
-import type { BacklinksResponse, ResolveObjectsResponse } from '@freero/shared';
+import type { BacklinksResponse, ResolveObjectsResponse, RestoreBackupResponse } from '@freero/shared';
+import { BACKUP_MEDIA_TYPE } from '@freero/shared';
+import type {
+  CreateDecisionRequest,
+  CreateWalkthroughRequest,
+  Decision,
+  DecisionChanges,
+  DecisionResponse,
+  Walkthrough,
+  WalkthroughComment,
+  WalkthroughCue,
+  WalkthroughSummary,
+} from '@freero/shared';
 
 export class ApiError extends Error {
   constructor(
@@ -138,6 +150,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   if (!res.ok) throw await failure(res);
   return res.json() as Promise<T>;
 }
+
+const walkthroughsPath = (boardId: string, id?: string) =>
+  `/api/boards/${encodeURIComponent(boardId)}/walkthroughs${id ? `/${encodeURIComponent(id)}` : ''}`;
 
 const activityPath = (id: string, aid: string) => `/api/boards/${encodeURIComponent(id)}/activities/${encodeURIComponent(aid)}`;
 
@@ -557,6 +572,69 @@ export const api = {
   uploadImage: (file: Blob) => upload('/api/uploads', file, file.type || 'application/octet-stream'),
   // any other file: an opaque attachment, only ever downloaded from its board
   uploadAttachment: (file: Blob) => upload('/api/uploads?as=attachment', file, 'application/octet-stream'),
+  /** The board as a `.freero` backup (downloads policy, audited; KAI-137), with the name the server gave it. */
+  async downloadBackup(boardId: string): Promise<{ blob: Blob; name: string }> {
+    const res = await fetch(`/api/boards/${encodeURIComponent(boardId)}/backup`, { credentials: 'same-origin' });
+    if (!res.ok) throw await failure(res);
+    const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? 'board.freero';
+    return { blob: await res.blob(), name };
+  },
+  /** A new board from a `.freero` file, in `workspaceId` (and `projectId`); the server checks the file, the place and the quota. */
+  async restoreBackup(file: Blob, place: { workspaceId: string; projectId: string | null }): Promise<RestoreBackupResponse> {
+    const q = new URLSearchParams({ workspace: place.workspaceId });
+    if (place.projectId) q.set('project', place.projectId);
+    const res = await fetch(`/api/boards/restore-backup?${q}`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': BACKUP_MEDIA_TYPE },
+      body: file,
+    });
+    if (!res.ok) throw await failure(res);
+    return res.json();
+  },
+  // ---- walkthroughs (KAI-133) ----
+  listWalkthroughs: (boardId: string) => request<{ walkthroughs: WalkthroughSummary[] }>('GET', `${walkthroughsPath(boardId)}`),
+  getWalkthrough: (boardId: string, id: string) => request<{ walkthrough: Walkthrough }>('GET', walkthroughsPath(boardId, id)),
+  createWalkthrough: (boardId: string, body: CreateWalkthroughRequest) => request<{ walkthrough: Walkthrough }>('POST', walkthroughsPath(boardId), body),
+  renameWalkthrough: (boardId: string, id: string, title: string) => request<{ walkthrough: Walkthrough }>('PATCH', walkthroughsPath(boardId, id), { title }),
+  async deleteWalkthrough(boardId: string, id: string): Promise<void> {
+    const res = await fetch(walkthroughsPath(boardId, id), { method: 'DELETE', credentials: 'same-origin' });
+    if (!res.ok) throw await failure(res);
+  },
+  viewedWalkthrough: (boardId: string, id: string) => request<{ views: number }>('POST', `${walkthroughsPath(boardId, id)}/views`),
+  walkthroughComments: (boardId: string, id: string) => request<{ comments: WalkthroughComment[] }>('GET', `${walkthroughsPath(boardId, id)}/comments`),
+  commentOnWalkthrough: (boardId: string, id: string, body: { atMs: number; text: string }) =>
+    request<{ comment: WalkthroughComment }>('POST', `${walkthroughsPath(boardId, id)}/comments`, body),
+  async deleteWalkthroughComment(boardId: string, id: string, commentId: string): Promise<void> {
+    const res = await fetch(`${walkthroughsPath(boardId, id)}/comments/${encodeURIComponent(commentId)}`, { method: 'DELETE', credentials: 'same-origin' });
+    if (!res.ok) throw await failure(res);
+  },
+  setWalkthroughCaptions: (boardId: string, id: string, cues: WalkthroughCue[]) =>
+    request<{ walkthrough: Walkthrough }>('PUT', `${walkthroughsPath(boardId, id)}/transcript`, { cues }),
+  transcribeWalkthrough: (boardId: string, id: string) => request<{ walkthrough: Walkthrough }>('POST', `${walkthroughsPath(boardId, id)}/transcript`),
+  walkthroughCaptionsStatus: (boardId: string) =>
+    request<{ available: boolean; reason?: string }>('GET', `/api/boards/${encodeURIComponent(boardId)}/walkthroughs-captions`),
+  async downloadWalkthrough(boardId: string, id: string): Promise<Blob> {
+    const res = await fetch(`${walkthroughsPath(boardId, id)}/download`, { credentials: 'same-origin' });
+    if (!res.ok) throw await failure(res);
+    return res.blob();
+  },
+
+  // ---- decision snapshots (KAI-161) ----
+  listDecisions: (boardId: string) => request<{ decisions: Decision[] }>('GET', `/api/boards/${encodeURIComponent(boardId)}/decisions`),
+  createDecision: (boardId: string, body: CreateDecisionRequest) => request<{ decision: Decision }>('POST', `/api/boards/${encodeURIComponent(boardId)}/decisions`, body),
+  getDecision: (id: string) => request<DecisionResponse>('GET', `/api/decisions/${encodeURIComponent(id)}`),
+  async decisionState(id: string): Promise<Uint8Array> {
+    const res = await fetch(`/api/decisions/${encodeURIComponent(id)}/state`, { credentials: 'same-origin' });
+    if (!res.ok) throw await failure(res);
+    return new Uint8Array(await res.arrayBuffer());
+  },
+  decisionChanges: (id: string) => request<DecisionChanges>('GET', `/api/decisions/${encodeURIComponent(id)}/changes`),
+  async deleteDecision(id: string): Promise<void> {
+    const res = await fetch(`/api/decisions/${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'same-origin' });
+    if (!res.ok) throw await failure(res);
+  },
+
   /** The file of a file card / video / audio item on a board (downloads policy, audited). */
   async downloadBoardFile(boardId: string, elementId: string): Promise<Blob> {
     const res = await fetch(`/api/boards/${encodeURIComponent(boardId)}/files/${encodeURIComponent(elementId)}`, { credentials: 'same-origin' });

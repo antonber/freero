@@ -9,6 +9,7 @@ import { strToU8, zipSync, type Zippable } from 'fflate';
 import { aiUsageExportOf, aiWorkspaceExportOf } from '../ai/index';
 import { apiDataOf } from '../apiauth/index';
 import { exportAccountData, getUser } from '../auth/index';
+import { decisionsExportOf } from '../decisions/index';
 import { engageExportOf } from '../engage/index';
 import { boardActivityOf, boardIdsInWorkspace, boardIdsOpenedBy, boardIdsOwnedByUser, boardRecords, getBoardAccess, type BoardRecord } from '../boards/index';
 import { membershipsOf } from '../members/index';
@@ -18,6 +19,7 @@ import { scimExportOf, scimRecordsOf } from '../scim/index';
 import { ssoExportOf, ssoRolesOf } from '../sso/index';
 import { templatesExportOf } from '../templates/index';
 import { readUpload, uploadNamesIn, uploadsOwnedBy } from '../uploads/index';
+import { walkthroughsExportOf } from '../walkthroughs/index';
 import { exportMembershipsOf, exportWorkspaceDirectory, teamWorkspaceIdsFor } from '../workspaces/index';
 import { exportsRequestedBy } from './repo';
 
@@ -81,8 +83,11 @@ memberships.json    workspaces, projects and boards you are a member of; what wo
 activity.json       boards you starred and when you last opened boards; your AI usage (counts only)
 comments.json       every comment you wrote, by board, with the thread and item it is attached to
 notifications.json  your notifications and email settings
+walkthroughs.json   walkthroughs you recorded (camera path, captions; the recordings are in uploads/),
+                    your comments on walkthroughs and which ones you watched
+decisions.json      decision snapshots you made (title, note, board)
 templates/          templates you saved (Freero's own JSON; insertable again)
-uploads/            files you uploaded (images, PDFs), with index.json
+uploads/            files you uploaded (images, PDFs, video, audio, recordings), with index.json
 boards/             boards you own: board.json (readable JSON of every item, comment and setting,
                     plus your private drafts and hidden frames' contents), board.yjs (the board's
                     complete Yjs document, lossless) and the images the board uses; docs the same,
@@ -141,6 +146,8 @@ export async function buildUserArchive(userId: string, appOrigin: string): Promi
   }
   a.addJson('comments.json', comments);
   a.addJson('notifications.json', await notificationsExportOf(userId));
+  a.addJson('walkthroughs.json', await walkthroughsExportOf(userId));
+  a.addJson('decisions.json', await decisionsExportOf(userId));
   // Answers and questions in live activities (KAI-132), anonymous ones included: they are theirs.
   a.addJson('activities.json', await engageExportOf(userId));
 

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Bookmark, History, Pencil, RotateCw } from 'lucide-react';
+import { Bookmark, History, Pencil, RotateCw, Stamp } from 'lucide-react';
 import type { BoardVersion } from '@freero/shared';
 import { DockHeader, definePanel, type Editor, type PanelProps } from '@engine';
 import { Button, IconButton, Spinner } from '@ui';
@@ -43,6 +43,7 @@ function Row({ editor, v, list }: { editor: Editor; v: BoardVersion; list: Board
         <span className="fr-history__label">
           <span className="fr-history__name">
             {v.kind === 'named' && <Bookmark size={13} className="fr-history__mark" aria-hidden />}
+            {v.kind === 'decision' && <Stamp size={13} className="fr-history__mark" aria-label="Decision" />}
             {versionTitle(v)}
           </span>
           {byline && <span className="fr-history__by">{byline}</span>}
@@ -52,7 +53,7 @@ function Row({ editor, v, list }: { editor: Editor; v: BoardVersion; list: Board
         className="fr-history__rename"
         icon={Pencil}
         size={32}
-        label={v.kind === 'named' ? 'Rename version' : 'Name this version'}
+        label={v.kind === 'named' || v.kind === 'decision' ? 'Rename version' : 'Name this version'}
         onClick={() => setRenaming(true)}
       />
     </li>

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Scaffold a Freero feature folder in house style.
 //
-//   npm run new:feature <name> -- [--element <type>] [--tool] [--format] [--panel <slot>] [--commands] [--decoration] [--outline] [--owns a,b]
+//   npm run new:feature <name> -- [--element <type>] [--tool] [--format] [--panel <slot>] [--commands] [--decoration] [--outline] [--importer] [--owns a,b]
 //
 // Examples:
 //   npm run new:feature sticky -- --element sticky --tool --format
@@ -20,7 +20,7 @@ const value = (f) => {
 };
 
 if (!name || !/^[a-z][a-z0-9-]*$/.test(name)) {
-  console.error('Usage: npm run new:feature <kebab-name> -- [--element <type>] [--tool] [--format] [--panel <slot>] [--commands] [--decoration] [--outline] [--owns a,b]');
+  console.error('Usage: npm run new:feature <kebab-name> -- [--element <type>] [--tool] [--format] [--panel <slot>] [--commands] [--decoration] [--outline] [--importer] [--owns a,b]');
   process.exit(1);
 }
 
@@ -161,6 +161,21 @@ export default defineDecoration({
   appliesTo: (element) => false, // TODO: cheap check, e.g. element.type === 'sticky'
   Component: ({ element, zoom }) => {
     return null; // TODO: absolutely positioned inside element.w × element.h
+  },
+});
+`;
+}
+
+if (flag('importer')) {
+  files['importer.ts'] = `import { defineImporter } from '@engine';
+
+// Pasted / dropped data no single element type owns (a whole file of another tool). Same order and
+// contract as ElementDefinition.importData: return true (or the files you took) to claim it.
+export default defineImporter({
+  id: '${name}',
+  importPriority: 50,
+  importData(editor, data, at) {
+    return false; // TODO
   },
 });
 `;

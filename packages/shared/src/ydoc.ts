@@ -1,5 +1,6 @@
 import { tableCellOwner } from './elements';
 import { TRACKER_COLLECTION } from './trackers';
+import { WALKTHROUGHS_COLLECTION } from './walkthroughs';
 
 // Layout of the per-board Yjs document.
 //
@@ -161,9 +162,21 @@ export const isElementContentCollection = (name: string): boolean => Object.prot
  * private again) or end it while drafts are still sealed. Layer docs are never versioned or
  * restored (see "Board layers" in ARCHITECTURE.md). 'trackers' mirrors the server's links to tracker
  * issues (they don't go back in time with the board): an older copy would show stale badges.
+ * 'walkthroughs' mirrors the recordings modules/walkthroughs keeps (KAI-133): they outlive restores.
  * 'agentPauses' is a person's "stop" to an agent (KAI-249): an older version must not resume it.
  */
-export const Y_KEPT_ON_RESTORE = ['comments', 'voting', 'timer', 'privateMode', 'facilitation', 'estimation', 'retro', 'engageResults', 'call', 'trackers', 'agentPauses'] as const;
+export const Y_KEPT_ON_RESTORE = ['comments', 'voting', 'timer', 'privateMode', 'facilitation', 'estimation', 'retro', 'engageResults', 'call', 'trackers', 'walkthroughs', 'agentPauses'] as const;
+
+/**
+ * Top-level types a board BACKUP (`.freero`, KAI-137) leaves out, and a restore drops if a file
+ * carries them: live sessions (a vote, the timer, private mode, a facilitator's limits, planning
+ * poker, a retro's step), state the server keeps in its own tables (live activity results, the
+ * call link, tracker links), proposals waiting for review, and an agent's pause (KAI-249: a
+ * person's stop on THIS board). A restored board is a new board: none of that belongs to it. Everything else — elements, settings, comments, tags, table cells,
+ * presenter notes, diagram sources — is board content and travels. A new session collection
+ * belongs here (and usually in Y_KEPT_ON_RESTORE).
+ */
+export const Y_LEFT_OUT_OF_BACKUPS = ['voting', 'timer', 'privateMode', 'facilitation', 'estimation', 'retro', 'engageResults', 'call', 'trackers', 'suggestions', 'agentPauses'] as const;
 
 /**
  * Facilitator controls (KAI-129): the `facilitation` collection, key FACILITATION_KEY. While it is
@@ -255,7 +268,7 @@ export const ENGAGE_RESULTS_COLLECTION = 'engageResults';
  * any socket's change to them). When one of them is also element content
  * (ELEMENT_CONTENT_COLLECTIONS), the server — never a client — keeps each entry with its element.
  */
-export const SERVER_WRITTEN_COLLECTIONS: readonly string[] = [ENGAGE_RESULTS_COLLECTION, TRACKER_COLLECTION];
+export const SERVER_WRITTEN_COLLECTIONS: readonly string[] = [ENGAGE_RESULTS_COLLECTION, TRACKER_COLLECTION, WALKTHROUGHS_COLLECTION];
 
 export interface ActivityResults {
   activityId: string;
