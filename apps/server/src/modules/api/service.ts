@@ -119,7 +119,8 @@ export function apiBoard(req: Request, b: BoardSummary): ApiBoard {
 
 /** The board as the caller sees it, after the workspace's API policy let the credential in. */
 export async function openBoard(call: ApiCall, boardId: string): Promise<BoardSummary> {
-  const board = await boardSummaryFor(boardId, call.userId);
+  // A doc (KAI-162) is no board for the board operations: 404 here, served by /docs (docs.ts).
+  const board = await boardSummaryFor(boardId, call.userId, 'board');
   await useInWorkspace(call.cred, board.workspaceId);
   call.audit.workspaceId = board.workspaceId;
   call.audit.target = { type: 'board', id: board.id, label: board.title };
@@ -211,7 +212,7 @@ export async function searchBoards(call: ApiCall, q: PageQuery & { q?: unknown; 
     call.audit.workspaceId = only === personal ? null : only;
   }
   const seen = new Map<string, BoardSummary>();
-  for (const ws of workspaceIds) for (const b of await listBoardsIn(userId, ws, text, project)) seen.set(b.id, b);
+  for (const ws of workspaceIds) for (const b of await listBoardsIn(userId, ws, text, project, 'board')) seen.set(b.id, b);
   // Boards of workspaces whose API access is off, or that blocked this credential, are left out.
   const allowed = new Map<string, boolean>();
   const visible: BoardSummary[] = [];

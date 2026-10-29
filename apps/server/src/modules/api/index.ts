@@ -36,3 +36,5 @@ export {
 } from './service';
 // Search, object addresses and backlinks (KAI-151, KAI-227).
 export { searchContent, resolveForApi, backlinksForApi } from './objects';
+// Docs (KAI-162): list, create from Markdown, read as Markdown + blocks, append Markdown.
+export { listDocs, createDocFor, readDocFor, appendToDoc } from './docs';

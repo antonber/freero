@@ -17,6 +17,7 @@ import { allowCrossSiteApi } from '../../platform/security';
 import { authenticate, registerProtectedResource, requireScope, sendAuthError, type ApiCredential } from '../apiauth/index';
 import { parseOutlineQuery } from '../outline/index';
 import { backlinksForApi, resolveForApi, searchContent } from './objects';
+import { appendToDoc, createDocFor, listDocs, readDocFor } from './docs';
 import * as api from './service';
 import OPENAPI from '../../../../../docs/api/openapi.json';
 
@@ -94,6 +95,15 @@ export default function apiRoutes(_ctx: ServerContext): Router {
   endpoint('post', '/boards', 'boards:write', async (call) => ({ status: 201, body: await api.createBoard(call, body(call.req)) }));
   endpoint('get', '/boards/:boardId', 'boards:read', async (call) => ({ body: await api.getBoard(call, call.req.params.boardId) }));
   endpoint('delete', '/boards/:boardId', 'boards:write', async (call) => ({ body: await api.deleteBoard(call, call.req.params.boardId, call.req.query.confirm) }));
+
+  // ---- docs (KAI-162): containers like boards, with a document as content ----
+  endpoint('get', '/docs', 'boards:read', async (call) => ({ body: await listDocs(call, call.req.query) }));
+  endpoint('post', '/docs', 'boards:write', async (call) => ({ status: 201, body: await createDocFor(call, body(call.req)) }));
+  endpoint('get', '/docs/:docId', 'boards:read', async (call) => {
+    const out = await readDocFor(call, call.req.params.docId);
+    return call.req.query.format === 'markdown' ? { markdown: out.markdown } : { body: out };
+  });
+  endpoint('post', '/docs/:docId/append', 'boards:write', async (call) => ({ body: await appendToDoc(call, call.req.params.docId, body(call.req)) }));
 
   // ---- search and object addresses (KAI-151, KAI-227): the app's rules, the API's switch and downloads policy ----
   endpoint('get', '/search', 'boards:read', async (call) => ({ body: await searchContent(call, call.req.query) }));
