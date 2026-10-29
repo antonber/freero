@@ -15,7 +15,9 @@
     { "name": "items" },
     { "name": "suggestions", "description": "Changes proposed for people to accept (KAI-169): propose with boards:suggest, read with boards:read, decide with boards:write" },
     { "name": "comments" },
-    { "name": "members" }
+    { "name": "members" },
+    { "name": "search", "description": "Find what boards say" },
+    { "name": "objects", "description": "Object addresses and what links to them" }
   ],
   "paths": {
     "/me": {
@@ -872,6 +874,123 @@
           "404": { "$ref": "#/components/responses/NotFound" }
         }
       }
+    },
+    "/search": {
+      "get": {
+        "operationId": "search",
+        "tags": ["search"],
+        "summary": "Search what your boards say",
+        "description": "Words in board titles, items (sticky notes, text, shapes, cards, frame titles, table cells, tags, connector labels) and comments, across the boards you can open now — a board reached only through its link counts once you opened it. Indexed from what every reader of a board sees: never private drafts or a hidden frame's contents. Each word matches as a prefix; all words must match. Boards of workspaces that turned API access off or blocked this credential, and boards whose downloads policy keeps their content from you, are left out (so a page can hold fewer hits than `limit`; follow `nextCursor`). Seconds behind the boards; access is checked live.",
+        "x-freero-scope": "boards:read",
+        "security": [{ "bearer": ["boards:read"] }],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "description": "Words to find (letters and digits; everything else separates words)",
+            "schema": { "type": "string", "maxLength": 200 }
+          },
+          { "name": "workspace", "in": "query", "description": "Only boards of this workspace", "schema": { "type": "string" } },
+          { "name": "board", "in": "query", "description": "Only this board", "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 50, "default": 20 } },
+          { "$ref": "#/components/parameters/Cursor" }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matches, best first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["notice", "hits", "nextCursor"],
+                  "properties": {
+                    "notice": { "$ref": "#/components/schemas/Notice" },
+                    "hits": { "type": "array", "items": { "$ref": "#/components/schemas/SearchHit" } },
+                    "nextCursor": { "type": ["string", "null"] }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/objects/resolve": {
+      "post": {
+        "operationId": "resolveObjects",
+        "tags": ["objects"],
+        "summary": "Resolve Freero object addresses",
+        "description": "Up to 200 addresses (freero://…, or the app's board / item URLs) → what you may know about each, in order: a summary, or 'unavailable' (no access, or no such object — the same answer) or 'invalid'. Objects on boards of workspaces closed to this credential read 'unavailable'.",
+        "x-freero-scope": "boards:read",
+        "security": [{ "bearer": ["boards:read"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "type": "object", "required": ["uris"], "properties": { "uris": { "type": "array", "maxItems": 200, "items": { "type": "string" } } } }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "One answer per address",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["notice", "objects"],
+                  "properties": {
+                    "notice": { "$ref": "#/components/schemas/Notice" },
+                    "objects": { "type": "array", "items": { "$ref": "#/components/schemas/ResolvedObject" } }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/objects/backlinks": {
+      "get": {
+        "operationId": "backlinks",
+        "tags": ["objects"],
+        "summary": "What links to an object",
+        "description": "Items and comments on other boards (and the same board) that point at a board or an item — item links, smart links, addresses in text and comments. Only sources you can open now are listed (a board reached only through its link once you opened it). 404 when you can't see the target.",
+        "x-freero-scope": "boards:read",
+        "security": [{ "bearer": ["boards:read"] }],
+        "parameters": [{ "name": "uri", "in": "query", "required": true, "description": "The target address", "schema": { "type": "string" } }],
+        "responses": {
+          "200": {
+            "description": "Backlinks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["notice", "backlinks"],
+                  "properties": {
+                    "notice": { "$ref": "#/components/schemas/Notice" },
+                    "backlinks": { "type": "array", "items": { "$ref": "#/components/schemas/Backlink" } }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
     }
   },
   "components": {
@@ -955,6 +1074,72 @@
       }
     },
     "schemas": {
+      "SearchHit": {
+        "type": "object",
+        "description": "One match: the board itself (its title), an item, or a comment message. Snippets are untrusted board text.",
+        "required": ["kind", "uri", "path", "board", "snippet", "highlights"],
+        "properties": {
+          "kind": { "type": "string", "enum": ["board", "item", "comment"] },
+          "uri": { "type": "string", "description": "freero://board/<id> or freero://board/<id>#<itemId>" },
+          "path": { "type": "string", "description": "Where the app opens it: /board/<id>, /board/<id>?el=<item>, /board/<id>?thread=<thread>" },
+          "board": { "type": "object", "required": ["id", "title"], "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
+          "itemType": { "type": "string", "description": "The item's type ('sticky', 'frame', …)" },
+          "itemId": { "type": "string" },
+          "threadId": { "type": "string" },
+          "snippet": { "type": "string", "description": "Plain text around the match" },
+          "highlights": {
+            "type": "array",
+            "items": { "type": "object", "required": ["start", "end"], "properties": { "start": { "type": "integer" }, "end": { "type": "integer" } } },
+            "description": "UTF-16 offsets [start, end) of the matched words in `snippet`"
+          }
+        }
+      },
+      "ObjectSummary": {
+        "type": "object",
+        "required": ["type", "title", "path", "access"],
+        "properties": {
+          "type": { "type": "string" },
+          "title": { "type": "string", "description": "Untrusted. Empty for an item on a board whose downloads policy keeps its text from you" },
+          "kind": { "type": "string" },
+          "board": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
+          "image": { "type": ["string", "null"] },
+          "path": { "type": "string" },
+          "access": { "type": "string", "enum": ["view", "comment", "edit", "manage"] }
+        }
+      },
+      "ResolvedObject": {
+        "type": "object",
+        "required": ["uri", "status"],
+        "properties": {
+          "uri": { "type": "string" },
+          "status": {
+            "type": "string",
+            "enum": ["ok", "unavailable", "invalid"],
+            "description": "'unavailable' reads the same for an object you can't see and one that doesn't exist"
+          },
+          "object": { "$ref": "#/components/schemas/ObjectSummary" }
+        }
+      },
+      "Backlink": {
+        "type": "object",
+        "required": ["source", "board", "kinds", "target"],
+        "properties": {
+          "source": {
+            "type": "object",
+            "required": ["uri", "type", "title", "path"],
+            "properties": {
+              "uri": { "type": "string" },
+              "type": { "type": "string", "enum": ["board", "element"] },
+              "title": { "type": "string" },
+              "path": { "type": "string" },
+              "kind": { "type": "string" }
+            }
+          },
+          "board": { "type": "object", "required": ["id", "title"], "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
+          "kinds": { "type": "array", "items": { "type": "string", "enum": ["link", "embed", "mention", "comment"] } },
+          "target": { "type": "string" }
+        }
+      },
       "Scope": { "type": "string", "enum": ["boards:read", "boards:write", "boards:suggest", "comments:write", "members:read", "members:write"] },
       "Notice": {
         "type": "string",

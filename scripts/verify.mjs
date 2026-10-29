@@ -6635,6 +6635,288 @@ async function collabChecks() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Search (KAI-151, KAI-141): the index derived through the outbox from what every reader of a
+// board sees, every query re-checked against the reader's live access; the public API's search,
+// resolve and backlinks (KAI-227). With DATABASE_URL also the 10 000-board latency check.
+// ---------------------------------------------------------------------------
+async function searchChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-search-'));
+  let proc = null;
+  const clients = [];
+  try {
+    const env = { RATE_LIMIT_SEARCH: '2000/1m' };
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    if (!(await check('search server boots', async () => (proc = await waitUp(await spawnServer(dataDir, env)))))) return;
+    const users = Object.fromEntries(['Owner', 'Reader', 'Visitor', 'Stranger'].map((l) => [l, new User(`Search${l}`, proc.port)]));
+    for (const u of Object.values(users)) {
+      await u.signup();
+      await u.verifyEmail(dataDir);
+    }
+    const { Owner: O, Reader: R, Visitor: L, Stranger: X } = users;
+    const join = async (u, boardId, layers = false) => {
+      const c = layers ? await layerClient(u, boardId, proc.port) : connectDoc(u, boardId, undefined, proc.port);
+      clients.push(c);
+      await c.ready();
+      return c;
+    };
+    const search = async (u, q, extra = '') => {
+      const r = await u.req('GET', `/api/search?q=${encodeURIComponent(q)}${extra}`);
+      assert(r.status === 200, `search ${q}: ${r.status} ${r.text}`);
+      return r.json.hits;
+    };
+    const board = (await O.req('POST', '/api/boards', { title: 'Launch plan' })).json.board;
+
+    await check('a word typed on a sticky through a real socket is found within a derive cycle, opening the board at that sticky; private drafts, hidden frames and comments pinned inside them never match — not even for the owner', async () => {
+      const c = await join(O, board.id, true);
+      c.doc.transact(() => {
+        els(c).set('s1', { id: 's1', type: 'sticky', x: 0, y: 0, w: 200, h: 200, text: '<p>Run the pricing experiment in May</p>', color: 'yellow' });
+        els(c).set('hf', { id: 'hf', type: 'frame', x: 400, y: 0, w: 400, h: 400, title: 'Board only', hidden: true });
+        els(c).set('in', { id: 'in', type: 'sticky', x: 450, y: 50, w: 100, h: 100, text: 'pricing curtain', frameId: 'hf', color: 'yellow' });
+        c.doc.getMap('comments').set('t:t1', { kind: 'thread', id: 't1', x: 0, y: 0, elementId: 's1', createdAt: Date.now(), createdBy: O.id });
+        c.doc.getMap('comments').set('m:t1:m1', { kind: 'message', threadId: 't1', id: 'm1', authorId: O.id, authorName: O.name, text: 'Budget approved', createdAt: Date.now() });
+        c.doc.getMap('comments').set('t:t2', { kind: 'thread', id: 't2', x: 0, y: 0, elementId: 'in', createdAt: Date.now(), createdBy: O.id });
+        c.doc.getMap('comments').set('m:t2:m1', { kind: 'message', threadId: 't2', id: 'm1', authorId: O.id, authorName: O.name, text: 'whispered numbers', createdAt: Date.now() });
+      });
+      c.layers.private.getMap('elements').set('draft', { id: 'draft', type: 'sticky', x: 0, y: 300, w: 100, h: 100, text: 'pricing draft nobody saw', color: 'yellow' });
+      await settled(c);
+      await waitFor(async () => (await search(O, 'pricing experiment')).some((h) => h.itemId === 's1'), 15_000, 'the sticky to be found');
+      const hits = await search(O, 'pric');
+      assert(JSON.stringify(hits.map((h) => `${h.kind}:${h.itemId ?? ''}`)) === JSON.stringify(['item:s1']), `hits: ${JSON.stringify(hits)}`);
+      assert(hits[0].path === `/board/${board.id}?el=s1` && hits[0].snippet.includes('pricing'), JSON.stringify(hits[0]));
+      const comment = await search(O, 'budget');
+      assert(comment.length === 1 && comment[0].path === `/board/${board.id}?thread=t1`, `comment: ${JSON.stringify(comment)}`);
+      for (const word of ['curtain', 'draft', 'whispered']) assert((await search(O, word)).length === 0, `"${word}" matched`);
+    });
+
+    await check('someone removed from a board stops finding it on the very next query; a board reached only by its link is found once they opened it, never before', async () => {
+      assert((await search(R, 'pricing')).length === 0, 'a stranger to the board found it');
+      assert((await O.req('POST', `/api/boards/${board.id}/members`, { email: R.email, role: 'viewer' })).status === 201, 'invite');
+      assert((await search(R, 'pricing')).length === 1, 'the new viewer finds nothing');
+      assert((await O.req('DELETE', `/api/boards/${board.id}/members/${R.id}`)).status === 200, 'remove');
+      assert((await search(R, 'pricing')).length === 0, 'found after being removed');
+
+      const linked = (await O.req('POST', '/api/boards', { title: 'Retro' })).json.board;
+      assert((await O.req('PATCH', `/api/boards/${linked.id}`, { linkAccess: 'viewer' })).status === 200, 'link');
+      const c = await join(O, linked.id);
+      els(c).set('r1', { id: 'r1', type: 'sticky', x: 0, y: 0, w: 100, h: 100, text: 'quarterly retrospective', color: 'blue' });
+      await settled(c);
+      await waitFor(async () => (await search(O, 'retrospective')).length === 1, 15_000, 'the retro to be indexed');
+      assert((await search(L, 'retrospective')).length === 0, 'a link-only board was found before it was opened');
+      assert((await L.req('GET', `/api/boards/${linked.id}`)).status === 200, 'open by link');
+      assert((await search(L, 'retrospective')).length === 1, 'not found after opening it');
+    });
+
+    await check('renaming a board makes it findable by its new name (a board event through the outbox), and no longer by the old one', async () => {
+      assert((await O.req('PATCH', `/api/boards/${board.id}`, { title: 'Pricing launch' })).status === 200, 'rename');
+      await waitFor(async () => (await search(O, 'pricing launch')).some((h) => h.kind === 'board'), 15_000, 'the new title to be indexed');
+      assert(!(await search(O, 'plan')).some((h) => h.kind === 'board'), 'the old title still matched');
+    });
+
+    await check('the public API searches, resolves and lists backlinks with the person’s access and the notice; a stranger’s token learns nothing', async () => {
+      const token = async (u) => (await u.req('POST', '/api/auth/tokens', { name: 'search', scopes: ['boards:read'], expiresInDays: 1 })).json.secret;
+      const call = (secret, method, url, body) => new User('bearer', proc.port).req(method, `/api/v1${url}`, body, { headers: { authorization: `Bearer ${secret}` }, cookie: false });
+      const mine = await token(O);
+      const theirs = await token(X);
+      const s = await call(mine, 'GET', '/search?q=pricing');
+      assert(s.status === 200 && s.json.notice && s.json.hits.some((h) => h.itemId === 's1'), `api search: ${s.status} ${s.text}`);
+      assert((await call(theirs, 'GET', '/search?q=pricing')).json.hits.length === 0, 'a stranger’s token found the board');
+      const uri = `freero://board/${board.id}#s1`;
+      const mineResolved = (await call(mine, 'POST', '/objects/resolve', { uris: [uri] })).json.objects[0];
+      assert(mineResolved.status === 'ok' && /pricing/.test(mineResolved.object.title), JSON.stringify(mineResolved));
+      const theirsResolved = await call(theirs, 'POST', '/objects/resolve', { uris: [uri] });
+      assert(JSON.stringify(theirsResolved.json.objects) === JSON.stringify([{ uri, status: 'unavailable' }]), theirsResolved.text);
+      const source = (await O.req('POST', '/api/boards', { title: 'Linking board' })).json.board;
+      const c = await join(O, source.id);
+      els(c).set('l', { id: 'l', type: 'sticky', x: 0, y: 0, w: 100, h: 100, text: `see ${uri}`, color: 'yellow' });
+      await settled(c);
+      await waitFor(async () => (await call(mine, 'GET', `/objects/backlinks?uri=${encodeURIComponent(uri)}`)).json?.backlinks?.length === 1, 15_000, 'the backlink to show through the API');
+      assert((await call(theirs, 'GET', `/objects/backlinks?uri=${encodeURIComponent(uri)}`)).status === 404, 'a stranger got backlinks');
+    });
+
+    if (ADMIN_URL)
+      await check('search over 10 000 boards answers in under 300 ms (p95) on Postgres', async () => {
+        const personal = (await O.req('GET', '/api/workspaces')).json.workspaces.find((w) => w.kind === 'personal').id;
+        await adminQuery(
+          `INSERT INTO boards (id, title, description, owner_id, link_access, created_at, updated_at, workspace_id)
+             SELECT 'perf' || g, 'Perf board ' || g, '', '${O.id}', 'none', now(), now(), '${personal}' FROM generate_series(1, 10000) g;
+           INSERT INTO search_entries (board_id, entry_key, kind, element_id, element_type, body, version)
+             SELECT 'perf' || g, 'e' || i, 'item', 'e' || i, 'sticky',
+                    'note ' || md5((g * 31 + i)::text) || ' ' || (CASE WHEN (g + i) % 97 = 0 THEN 'pricing experiment' ELSE 'weekly sync' END) || ' ' || md5(i::text), 1
+             FROM generate_series(1, 10000) g, generate_series(1, 20) i;
+           ANALYZE search_entries;`,
+          env.DATABASE_URL,
+        );
+        const times = [];
+        for (const q of Array.from({ length: 40 }, (_, i) => ['pricing', 'weekly sync', 'pric exp', `note ${i}`][i % 4])) {
+          const t = performance.now();
+          await search(O, q);
+          times.push(performance.now() - t);
+        }
+        times.sort((a, b) => a - b);
+        const p95 = times[Math.floor(times.length * 0.95) - 1];
+        assert(p95 < 300, `p95 ${p95.toFixed(0)} ms (median ${times[20].toFixed(0)} ms)`);
+        console.log(`    search p95 over 10 000 boards / 200 000 entries: ${p95.toFixed(0)} ms`);
+      });
+  } finally {
+    for (const c of clients) c.destroy();
+    if (proc) await stopProc(proc);
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Webhooks (KAI-105) on the event stream (KAI-150), against a local receiver (port 4502 when
+// free): signed deliveries from real socket edits, settled drags, nothing from drafts, hidden
+// frames or private projects, Slack messages, retries and the automatic switch-off.
+// ---------------------------------------------------------------------------
+async function webhooksChecks() {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-webhooks-'));
+  let proc = null;
+  let receiver = null;
+  const clients = [];
+  try {
+    const { startWebhookReceiver, signedWith } = await import('./lib/webhook-receiver.mjs');
+    receiver = await startWebhookReceiver({ port: 4502 }).catch(() => startWebhookReceiver());
+    // The receiver is on this machine: the operator's switch for private endpoints is on here.
+    const env = { WEBHOOK_PRIVATE_ENDPOINTS: 'true', WEBHOOK_RETRY_BASE_MS: '300', WEBHOOK_DISABLE_AFTER_FAILURES: '3', EVENTS_SETTLE_SECONDS: '1', PUBLIC_URL: 'http://freero.verify' };
+    if (ADMIN_URL) env.DATABASE_URL = await createDatabase();
+    if (!(await check('webhooks server boots', async () => (proc = await waitUp(await spawnServer(dataDir, env)))))) return;
+    const O = new User('HookOwner', proc.port);
+    const M = new User('HookMember', proc.port);
+    for (const u of [O, M]) {
+      await u.signup();
+      await u.verifyEmail(dataDir);
+    }
+    const team = (await O.req('POST', '/api/workspaces', { name: 'Hook team' })).json.workspace;
+    assert((await O.req('POST', `/api/workspaces/${team.id}/members`, { email: M.email, role: 'member' })).status === 201, 'member');
+    const board = (await O.req('POST', '/api/boards', { title: 'Team roadmap', workspaceId: team.id })).json.board;
+    const project = (await O.req('POST', `/api/workspaces/${team.id}/projects`, { name: 'Leadership', access: 'private' })).json.project;
+    const secretBoard = (await O.req('POST', '/api/boards', { title: 'Comp review', workspaceId: team.id, projectId: project.id })).json.board;
+    const base = `/api/workspaces/${team.id}/admin/webhooks`;
+    const got = (p, type) => receiver.received.filter((d) => d.path === p && (!type || d.headers['freero-event'] === type));
+    const bodies = (p, type) => got(p, type).map((d) => JSON.parse(d.body));
+    const join = async (u, boardId, layers = false) => {
+      const c = layers ? await layerClient(u, boardId, proc.port) : connectDoc(u, boardId, undefined, proc.port);
+      clients.push(c);
+      await c.ready();
+      return c;
+    };
+    let secret = '';
+    let hookId = '';
+
+    await check('only owners and admins add webhooks; the signing secret is answered once and the URL is shown shortened; adding is audited without either', async () => {
+      assert((await M.req('POST', base, { url: receiver.url('/json'), events: ['item.created'] })).status === 403, 'a member added a webhook');
+      const r = await O.req('POST', base, { url: `${receiver.url('/json')}/tok3n-part`, events: ['item.created', 'item.updated', 'comment.created', 'member.added'], description: 'CI' });
+      assert(r.status === 201 && r.json.secret.startsWith('whsec_'), r.text);
+      secret = r.json.secret;
+      hookId = r.json.endpoint.id;
+      assert(r.json.endpoint.url.endsWith('/json/…') && !r.json.endpoint.url.includes('tok3n'), `shown: ${r.json.endpoint.url}`);
+      const list = await O.req('GET', base);
+      assert(!list.text.includes(secret) && !list.text.includes('tok3n'), 'the list carries the secret or the full URL');
+      const audit = (await O.req('GET', `/api/workspaces/${team.id}/audit?limit=200`)).json.events;
+      assert(audit.some((e) => e.action === 'webhook.created'), 'not audited');
+      assert(!JSON.stringify(audit).includes(secret) && !JSON.stringify(audit).includes('tok3n'), 'the audit log carries the secret or URL');
+      assert((await O.req('POST', base, { url: receiver.url('/slack'), events: ['item.created'], format: 'slack' })).status === 201, 'slack endpoint');
+    });
+
+    await check('a sticky made through a real socket fires exactly one item.created, signed with the endpoint’s secret; dragging it for 2 s fires at most one item.updated', async () => {
+      const c = await join(O, board.id);
+      els(c).set('s1', { id: 's1', type: 'sticky', x: 0, y: 0, w: 200, h: 200, text: '<p>Ship the importer</p>', color: 'yellow', createdBy: O.id });
+      await waitFor(() => got('/json/tok3n-part', 'item.created').length === 1, 15_000, 'the item.created delivery');
+      const [d] = got('/json/tok3n-part', 'item.created');
+      assert(signedWith(secret, d) && !signedWith('whsec_other', d), 'signature does not verify');
+      const e = JSON.parse(d.body);
+      assert(e.data.item.id === 's1' && e.data.item.text === 'Ship the importer' && e.board.title === 'Team roadmap' && e.actor.name === O.name, d.body);
+      const end = Date.now() + 2000;
+      for (let x = 10; Date.now() < end; x += 10) {
+        els(c).set('s1', { ...els(c).get('s1'), x });
+        await new Promise((r) => setTimeout(r, 100)); // a person's drag: one move every 100 ms for 2 s
+      }
+      await waitFor(() => got('/json/tok3n-part', 'item.updated').length >= 1, 15_000, 'the item.updated delivery');
+      // A later, separate change is the barrier: once its event arrived, the drag's are all in.
+      els(c).set('s2', { id: 's2', type: 'sticky', x: 0, y: 400, w: 100, h: 100, text: 'barrier', color: 'blue', createdBy: O.id });
+      await waitFor(() => bodies('/json/tok3n-part', 'item.created').some((b) => b.data.item.id === 's2'), 15_000, 'the barrier event');
+      assert(got('/json/tok3n-part', 'item.updated').length === 1, `the drag fired ${got('/json/tok3n-part', 'item.updated').length} updates`);
+      assert(got('/json/tok3n-part', 'item.created').length === 2, 'a delivery was repeated');
+    });
+
+    await check('nothing from a private draft, a hidden frame or a board in a private project is delivered; the draft arrives once it is revealed; sharing and comments arrive', async () => {
+      const c = await join(O, board.id, true);
+      c.layers.private.getMap('elements').set('d1', { id: 'd1', type: 'sticky', x: 0, y: 600, w: 100, h: 100, text: 'DRAFT-TEXT', color: 'yellow', createdBy: O.id });
+      c.doc.transact(() => {
+        els(c).set('hf', { id: 'hf', type: 'frame', x: 600, y: 0, w: 400, h: 400, title: 'Later', hidden: true, createdBy: O.id });
+        els(c).set('hx', { id: 'hx', type: 'sticky', x: 650, y: 50, w: 100, h: 100, text: 'HIDDEN-TEXT', frameId: 'hf', color: 'yellow', createdBy: O.id });
+      });
+      const s = await join(O, secretBoard.id);
+      els(s).set('p1', { id: 'p1', type: 'sticky', x: 0, y: 0, w: 100, h: 100, text: 'PRIVATE-PROJECT-TEXT', color: 'yellow', createdBy: O.id });
+      await settled(c);
+      await settled(s);
+      assert((await O.req('POST', `/api/boards/${board.id}/members`, { email: 'nobody@verify.freero.app', role: 'viewer' })).status === 201, 'invite by address');
+      const outsider = new User('HookOutsider', proc.port);
+      await outsider.signup();
+      await outsider.verifyEmail(dataDir);
+      assert((await O.req('POST', `/api/boards/${board.id}/members`, { email: outsider.email, role: 'commenter' })).status === 201, 'share');
+      c.doc.transact(() => {
+        c.doc.getMap('comments').set('t:t9', { kind: 'thread', id: 't9', x: 0, y: 0, elementId: 's1', createdAt: Date.now(), createdBy: O.id });
+        c.doc.getMap('comments').set('m:t9:m1', { kind: 'message', threadId: 't9', id: 'm1', authorId: O.id, authorName: O.name, text: 'Looks good', createdAt: Date.now() });
+      });
+      await waitFor(() => got('/json/tok3n-part', 'comment.created').length === 1 && got('/json/tok3n-part', 'member.added').length === 1, 15_000, 'the comment and sharing events');
+      const all = receiver.received.map((d) => d.body).join('\n');
+      for (const leak of ['DRAFT-TEXT', 'HIDDEN-TEXT', 'PRIVATE-PROJECT-TEXT', 'Comp review', secretBoard.id]) assert(!all.includes(leak), `${leak} was delivered`);
+      assert(bodies('/json/tok3n-part', 'member.added')[0].data.userId === outsider.id, 'member.added names someone else');
+      c.layerOp({ type: 'reveal', collection: 'elements', mine: true });
+      await waitFor(() => bodies('/json/tok3n-part', 'item.created').some((b) => b.data.item.text === 'DRAFT-TEXT'), 15_000, 'the revealed draft to be delivered');
+    });
+
+    await check('a Slack endpoint gets a readable message linking to the item', async () => {
+      const [m] = bodies('/slack');
+      assert(m && /added a sticky note to <http:\/\/freero\.verify\/board\/[^|]+\?el=s1\|Team roadmap>/.test(m.blocks[0].text.text) && m.text.includes('Ship the importer'), JSON.stringify(m));
+    });
+
+    await check('a receiver answering 500 is retried with growing gaps; after 3 failures in a row the webhook turns off, its creator is emailed, the log and the audit log say so; turned back on, the waiting delivery arrives', async () => {
+      receiver.answer('/json/tok3n-part', 500);
+      const before = got('/json/tok3n-part').length;
+      const c = await join(O, board.id);
+      els(c).set('s3', { id: 's3', type: 'sticky', x: 0, y: 800, w: 100, h: 100, text: 'retry me', color: 'blue', createdBy: O.id });
+      await waitFor(async () => (await O.req('GET', base)).json.endpoints.find((e) => e.id === hookId)?.enabled === false, 30_000, 'the webhook to turn off');
+      const tries = got('/json/tok3n-part').slice(before);
+      assert(tries.length === 3, `${tries.length} attempts`);
+      assert(tries[2].at - tries[1].at > tries[1].at - tries[0].at, `no backoff: ${tries.map((t) => t.at - tries[0].at).join(', ')} ms`);
+      await waitFor(() => outbox(dataDir).some((m) => m.to === O.email && /webhook was turned off/i.test(m.subject)), 10_000, 'the mail to the webhook’s creator');
+      const log = (await O.req('GET', `${base}/${hookId}/deliveries`)).json.deliveries;
+      assert(log[0].status === 'pending' && log[0].attempts === 3 && log[0].responseStatus === 500, JSON.stringify(log[0]));
+      const audit = (await O.req('GET', `/api/workspaces/${team.id}/audit?limit=200`)).json.events;
+      assert(audit.some((e) => e.action === 'webhook.disabled'), 'not audited');
+      receiver.answer('/json/tok3n-part', 200);
+      assert((await O.req('PATCH', `${base}/${hookId}`, { enabled: true })).json.endpoint.enabled === true, 'turn on');
+      await waitFor(() => got('/json/tok3n-part').length === before + 4, 15_000, 'the waiting delivery after turning it back on');
+    });
+
+    await check('rotating the secret signs the next delivery (a test) with the new one only', async () => {
+      const r = await O.req('POST', `${base}/${hookId}/rotate`);
+      assert(r.status === 200 && r.json.secret !== secret, r.text);
+      assert((await O.req('POST', `${base}/${hookId}/test`)).status === 202, 'test');
+      await waitFor(() => got('/json/tok3n-part', 'ping').length === 1, 10_000, 'the test delivery');
+      const [ping] = got('/json/tok3n-part', 'ping');
+      assert(signedWith(r.json.secret, ping) && !signedWith(secret, ping), 'the test is not signed with the new secret');
+    });
+  } finally {
+    for (const c of clients) c.destroy();
+    if (proc) await stopProc(proc);
+    if (receiver) await receiver.close();
+    try {
+      fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
 // `--only <group>[,<group>…]` runs some groups, e.g. to loop one while hunting a flake.
 const SUITES = {
   main: run,
@@ -6662,6 +6944,8 @@ const SUITES = {
   suite: suiteChecks,
   tracker: trackerChecks,
   collab: collabChecks,
+  search: searchChecks,
+  webhooks: webhooksChecks,
 };
 const onlyArg = process.argv.indexOf('--only');
 const only = onlyArg >= 0 ? (process.argv[onlyArg + 1] ?? '').split(',').filter(Boolean) : Object.keys(SUITES);

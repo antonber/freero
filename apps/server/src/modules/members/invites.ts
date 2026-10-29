@@ -100,7 +100,7 @@ export async function acceptInvite(token: string, user: { id: string; email: str
   const access = await getBoardAccess(row.boardId, user.id);
   if (!access.exists) throw deadLink();
   if (access.ownerId !== user.id) {
-    if (!(await repo.grantAtLeast(row.boardId, user.id, row.role, Date.now()))) throw deadLink();
+    if (!(await repo.grantAtLeast(row.boardId, user.id, row.role, Date.now(), { actorId: row.invitedBy }))) throw deadLink();
     await refreshBoardAccess(row.boardId);
   }
   // The link was mailed to that address: following it proves the address (and converts the
@@ -117,7 +117,7 @@ export async function convertInvitesFor(user: { id: string; email: string }): Pr
   for (const row of await repo.takeInvitesForEmail(user.email, Date.now())) {
     const access = await getBoardAccess(row.boardId, user.id);
     if (!access.exists || access.ownerId === user.id) continue;
-    if (!(await repo.grantAtLeast(row.boardId, user.id, row.role, Date.now()))) continue;
+    if (!(await repo.grantAtLeast(row.boardId, user.id, row.role, Date.now(), { actorId: row.invitedBy }))) continue;
     await refreshBoardAccess(row.boardId);
     await inviteAccepted({ boardId: row.boardId, userId: user.id, email: row.email });
   }
