@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import type { PrivateModeSession } from '@freero/shared';
 import { definePanel, useCanEdit, useCollection, useElements, type Editor } from '@engine';
-import { Button } from '@ui';
-import { COLLECTION, canManage, privateRule, revealAndEnd, shareLeftovers } from './lib/session';
+import { Button, Toggle } from '@ui';
+import { COLLECTION, canManage, privateRule, revealAndEnd, setAnonymous, shareLeftovers } from './lib/session';
 import './private-mode.css';
 
 function useSession(): PrivateModeSession | undefined {
@@ -30,6 +30,8 @@ function PrivateModeBar({ editor }: { editor: Editor }) {
   const frame = session.frameId ? editor.getElement(session.frameId) : undefined;
   const where = frame && 'title' in frame && frame.title ? ` in “${frame.title}”` : frame ? ' in a frame' : '';
   const by = session.startedBy === editor.user.id ? 'you reveal' : `${session.startedByName || 'the facilitator'} reveals`;
+  // Everyone is told before they write whether their notes will carry their name (#44).
+  const title = session.anonymous ? 'Anonymous private mode' : 'Private mode';
 
   return (
     <div className="fr-private-bar" data-fr-interactive="" role="region" aria-label="Private mode">
@@ -37,11 +39,14 @@ function PrivateModeBar({ editor }: { editor: Editor }) {
         <EyeOff size={16} />
       </span>
       <div className="fr-private-bar__text">
-        <strong>Private mode{where}</strong>
+        <strong>
+          {title}
+          {where}
+        </strong>
         <span>
           {canEdit
-            ? `What you add${where ? ' there' : ''} is visible only to you until ${by} it. Others don't see your cursor ${where ? 'there' : 'meanwhile'}.`
-            : "Participants' notes appear here once they are revealed."}
+            ? `What you add${where ? ' there' : ''} is visible only to you until ${by} it${session.anonymous ? ', without your name' : ''}. Others don't see your cursor ${where ? 'there' : 'meanwhile'}.`
+            : `Participants' notes appear here once they are revealed${session.anonymous ? ', without names' : ''}.`}
         </span>
       </div>
       {canEdit && (
@@ -50,9 +55,12 @@ function PrivateModeBar({ editor }: { editor: Editor }) {
         </span>
       )}
       {canManage(editor, session) && (
-        <Button size="sm" variant="primary" icon={Eye} onClick={() => revealAndEnd(editor)}>
-          Reveal all
-        </Button>
+        <>
+          <Toggle size="sm" label="Anonymous" checked={!!session.anonymous} onChange={(on) => setAnonymous(editor, on)} />
+          <Button size="sm" variant="primary" icon={Eye} onClick={() => revealAndEnd(editor)}>
+            Reveal all
+          </Button>
+        </>
       )}
     </div>
   );

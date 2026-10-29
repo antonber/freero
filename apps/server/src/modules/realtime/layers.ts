@@ -16,11 +16,19 @@
 // people who may still edit the board take part (someone removed or made a viewer meanwhile keeps
 // their drafts to themselves; compaction deletes a removed member's layer).
 //
+// An anonymous reveal (#44: the op says so, or the draft was written during an anonymous private
+// mode and already carries ANONYMOUS_AUTHOR, attribution.ts) writes each draft into the shared doc
+// with nothing that names its author: createdBy = ANONYMOUS_AUTHOR, no app or suggestion credit,
+// timestamps of the reveal. The comment threads on such a draft are dropped with it, not revealed:
+// only its author could see the draft, so every record in them names the author. What the shared
+// doc never holds, no socket, version, export, outline or event can carry.
+//
 // Across instances (rooms.ts): every instance holding the board keeps a copy of every layer doc
 // and relays layer updates like the shared doc's, re-checking access per receiving socket. The
 // instance where a change is made (a socket's write, or a reveal) publishes and saves it.
 import * as Y from 'yjs';
-import { isElementContentCollection, Y_ELEMENTS, type BoardLayer, type LayerOp, type Role } from '@freero/shared';
+import { ANONYMOUS_AUTHOR, isAnonymousAuthor, isElementContentCollection, Y_ELEMENTS, type BoardLayer, type LayerOp, type Role } from '@freero/shared';
+import { COMMENTS_COLLECTION } from './comments';
 import { contentOf, type ContentEntry } from './elementContent';
 
 export const EDITORS_LAYER = 'editors';
@@ -71,12 +79,21 @@ export function parseLayerOp(json: string): LayerOp | null {
     return null;
   }
   if (!v || typeof v !== 'object') return null;
-  const { type, collection, prefix, mine } = v as Record<string, unknown>;
+  const { type, collection, prefix, mine, anonymous } = v as Record<string, unknown>;
   if (type !== 'reveal' && type !== 'discard') return null;
   if (typeof collection !== 'string' || !NAME_RE.test(collection)) return null;
   if (prefix !== undefined && (typeof prefix !== 'string' || prefix.length > 200)) return null;
   if (mine !== undefined && typeof mine !== 'boolean') return null;
-  return { type, collection, ...(prefix !== undefined ? { prefix } : {}), ...(mine ? { mine: true } : {}) };
+  if (anonymous !== undefined && typeof anonymous !== 'boolean') return null;
+  return { type, collection, ...(prefix !== undefined ? { prefix } : {}), ...(mine ? { mine: true } : {}), ...(anonymous ? { anonymous: true } : {}) };
+}
+
+const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+
+/** A draft as an anonymous reveal writes it: nothing left that names who wrote it, or when. */
+function anonymized(el: Record<string, unknown>, now: number): Record<string, unknown> {
+  const { createdVia: _via, suggestedBy: _suggested, ...rest } = el;
+  return { ...rest, createdBy: ANONYMOUS_AUTHOR, createdAt: now, updatedAt: now };
 }
 
 /**
@@ -87,11 +104,13 @@ export function parseLayerOp(json: string): LayerOp | null {
  *
  * Revealing or discarding drafts ('elements') takes their element content along (KAI-230: a private
  * table's cells, ELEMENT_CONTENT_COLLECTIONS) in the same transactions. Element content is never
- * revealed on its own: an op naming such a collection does nothing.
+ * revealed on its own: an op naming such a collection does nothing. Anonymous drafts (`op.anonymous`,
+ * or stamped with ANONYMOUS_AUTHOR when written) are revealed scrubbed, their threads dropped (header).
  */
-export function applyLayerOp(op: LayerOp, main: Y.Doc, layers: Map<string, Y.Doc>, origin: unknown): number {
+export function applyLayerOp(op: LayerOp, main: Y.Doc, layers: Map<string, Y.Doc>, origin: unknown, now = Date.now()): number {
   if (isElementContentCollection(op.collection)) return 0;
   const prefix = op.prefix ?? '';
+  const drafts = op.collection === Y_ELEMENTS;
   const hits: Array<{ doc: Y.Doc; keys: string[]; content: ContentEntry[] }> = [];
   const reveal: Array<[string, unknown]> = [];
   const revealContent: ContentEntry[] = [];
@@ -99,14 +118,21 @@ export function applyLayerOp(op: LayerOp, main: Y.Doc, layers: Map<string, Y.Doc
     if (!isPrivateLayer(name) || !doc.share.has(op.collection)) continue;
     const map = doc.getMap<unknown>(op.collection);
     const keys: string[] = [];
+    const anonymous = new Set<string>();
     for (const [key, value] of map) {
       if (!key.startsWith(prefix)) continue;
       keys.push(key);
-      if (!(value instanceof Y.AbstractType)) reveal.push([key, value]);
+      if (value instanceof Y.AbstractType) continue;
+      if (drafts && isObj(value) && (op.anonymous || isAnonymousAuthor(value.createdBy))) {
+        anonymous.add(key);
+        reveal.push([key, anonymized(value, now)]);
+      } else reveal.push([key, value]);
     }
     if (!keys.length) continue;
-    const content = op.collection === Y_ELEMENTS ? contentOf(doc, new Set(keys), [main]) : [];
-    revealContent.push(...content);
+    const content = drafts ? contentOf(doc, new Set(keys), [main]) : [];
+    // Threads on an anonymous draft name its author (see the header): deleted with it, never revealed.
+    const dropped = new Set(contentOf(doc, anonymous, [main]).flatMap((c) => (c.name === COMMENTS_COLLECTION ? [c.key] : [])));
+    revealContent.push(...content.filter((c) => c.name !== COMMENTS_COLLECTION || !dropped.has(c.key)));
     hits.push({ doc, keys, content });
   }
   if (!hits.length) return 0;

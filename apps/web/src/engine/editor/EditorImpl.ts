@@ -1503,9 +1503,15 @@ export class EditorImpl implements Editor {
     this.shared.privateRule = rule;
   }
 
-  revealPrivate(collection: string, opts?: { prefix?: string; mine?: boolean }): void {
+  revealPrivate(collection: string, opts?: { prefix?: string; mine?: boolean; anonymous?: boolean }): void {
     if (!this.guardWrite()) return;
-    this.core.store.runLayerOp({ type: 'reveal', collection, ...(opts?.prefix !== undefined ? { prefix: opts.prefix } : {}), ...(opts?.mine ? { mine: true } : {}) });
+    this.core.store.runLayerOp({
+      type: 'reveal',
+      collection,
+      ...(opts?.prefix !== undefined ? { prefix: opts.prefix } : {}),
+      ...(opts?.mine ? { mine: true } : {}),
+      ...(opts?.anonymous ? { anonymous: true } : {}),
+    });
   }
 
   discardPrivate(collection: string, opts?: { prefix?: string; mine?: boolean }): void {
