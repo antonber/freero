@@ -14,7 +14,8 @@ COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/
 COPY apps/site/package.json apps/site/
 COPY packages/shared/package.json packages/shared/
-RUN --mount=type=cache,target=/root/.npm npm ci --ignore-scripts --no-audit --no-fund
+# No BuildKit cache mounts: hosted builders (Railway) refuse them without their own ids.
+RUN npm ci --ignore-scripts --no-audit --no-fund
 
 # ---- 2. build the SPA -------------------------------------------------------------------------
 FROM deps AS web
@@ -39,8 +40,7 @@ COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/
 COPY apps/site/package.json apps/site/
 COPY packages/shared/package.json packages/shared/
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci --omit=dev --ignore-scripts --no-audit --no-fund --workspace=@freero/server --include-workspace-root=false
+RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund --workspace=@freero/server --include-workspace-root=false
 
 # ---- 4. runtime -------------------------------------------------------------------------------
 FROM ${NODE_IMAGE} AS runtime
@@ -61,13 +61,13 @@ COPY --from=site /app/apps/site/dist apps/site/dist
 COPY apps/web/src/features apps/web/src/features
 # The public API serves its OpenAPI reference (modules/api) from the checked-in file.
 COPY docs/api docs/api
-# /data holds only local fallbacks (PGlite without DATABASE_URL, uploads without S3_*).
+# /data holds only local fallbacks (PGlite without DATABASE_URL, uploads without S3_*); mount a
+# volume there only when using them (no VOLUME line: hosts such as Railway refuse it).
 # npm/yarn/corepack are not needed at runtime: remove them from the runtime filesystem (attack surface).
 RUN mkdir -p /data && chown node:node /data && find apps -name '*.test.ts' -delete \
  && rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /opt/yarn* /usr/local/bin/yarn /usr/local/bin/yarnpkg
 USER node
 EXPOSE 4000
-VOLUME ["/data"]
 HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||4000)+'/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
 # tsx runs the TypeScript sources directly (the server is never bundled: modules are discovered
