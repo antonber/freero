@@ -110,8 +110,11 @@ export interface AuthorizedApp {
   clientId: string;
   name: string;
   website: string | null;
-  /** Registered by its developer in Freero's settings, or by the app itself (dynamic registration). */
-  registration: 'manual' | 'dynamic';
+  /**
+   * Registered by its developer in Freero's settings, by the app itself (dynamic registration), or
+   * [additive, #81] identified by a client metadata document: `clientId` is that document's https URL.
+   */
+  registration: 'manual' | 'dynamic' | 'metadata';
   scopes: ApiScope[];
   authorizedAt: number;
   lastUsedAt: number | null;
@@ -151,7 +154,18 @@ export interface RegisterClientRequest {
 }
 
 export interface OAuthConsentInfo {
-  client: { clientId: string; name: string; website: string | null; registration: 'manual' | 'dynamic' };
+  client: {
+    clientId: string;
+    /** What the app calls itself. For 'dynamic' and 'metadata' apps that is the app's own claim. */
+    name: string;
+    website: string | null;
+    registration: 'manual' | 'dynamic' | 'metadata';
+    /**
+     * [additive, #81] 'metadata' apps: the host their client metadata document was fetched from —
+     * the part of their identity they can't fake. Shown prominently next to the name.
+     */
+    host?: string;
+  };
   /**
    * What the app asks for. `optional`: off unless the person turns it on (a resource's
    * powerful scopes, e.g. writing boards directly through MCP); the decision sends the ones turned
@@ -160,6 +174,11 @@ export interface OAuthConsentInfo {
   scopes: Array<{ id: ApiScope; label: string; optional?: boolean }>;
   /** Where the browser goes afterwards (shown so people can spot a lookalike). */
   redirectOrigin: string;
+  /**
+   * [additive, #81] It goes back to a program on this computer (a loopback http redirect): any local
+   * program could have started the request in the app's name.
+   */
+  localRedirect?: boolean;
   /** What the app will act on: the REST API, the MCP server. */
   resource: string;
 }
