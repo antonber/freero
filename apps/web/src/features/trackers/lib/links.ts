@@ -20,6 +20,12 @@ export function recordOf(
   return record && Array.isArray(record.sources) && record.sources.includes(el.id) ? { id, record } : null;
 }
 
+/** The one selected timeline (roadmap mode, KAI-160: issues imported onto it become its bars). */
+export function selectedTimeline(editor: Editor): BoardElement | null {
+  const sel = selected(editor);
+  return sel.length === 1 && sel[0].type === 'timeline' && !sel[0].locked ? sel[0] : null;
+}
+
 export function selected(editor: Editor): BoardElement[] {
   return editor
     .getSelection()

@@ -4,7 +4,7 @@
 // change attributed to the tracker for this person; the dialogs never write the board themselves.
 import { useEffect, useMemo, useState } from 'react';
 import { Download, TicketPlus } from 'lucide-react';
-import { ISSUE_FIELD_LABELS, TRACKER_PROVIDERS, type IssueValues, type TrackerIssuePreview, type TrackerProject } from '@freero/shared';
+import { ISSUE_FIELD_LABELS, richTextToPlain, TRACKER_PROVIDERS, type IssueValues, type RoadmapGroupBy, type TrackerIssuePreview, type TrackerProject } from '@freero/shared';
 import { definePanel, type Editor, type PanelProps } from '@engine';
 import { Button, Input, Modal, SegmentedControl, Select, TextArea } from '@ui';
 import { IMPORT_DIALOG, openIssue, SEND_DIALOG } from './lib/links';
@@ -280,10 +280,23 @@ const QUERY_HINT: Record<string, string> = {
   github: 'e.g. repo:acme/web is:open label:bug',
 };
 
-function ImportDialog({ editor }: PanelProps) {
+const GROUP_BY: Array<{ value: RoadmapGroupBy; label: string }> = [
+  { value: 'epic', label: 'Epic' },
+  { value: 'team', label: 'Team' },
+  { value: 'label', label: 'Label' },
+  { value: 'none', label: 'One lane' },
+];
+
+function ImportDialog({ editor, props }: PanelProps) {
   const c = useConnection(editor);
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);
+  // Roadmap mode (KAI-160): opened on a timeline, the issues become its bars, in lanes.
+  const timeline = useMemo(() => {
+    const el = typeof props?.timelineId === 'string' ? editor.getElement(props.timelineId) : undefined;
+    return el?.type === 'timeline' ? el : null;
+  }, [editor, props]);
+  const [groupBy, setGroupBy] = useState<RoadmapGroupBy>('epic');
   const close = () => editor.closePanel(IMPORT_DIALOG);
   const run = async () => {
     if (!c.t || !query.trim()) return;
@@ -293,11 +306,13 @@ function ImportDialog({ editor }: PanelProps) {
       const out = await c.t.importIssues({
         connectionId: c.connectionId,
         query: query.trim(),
+        ...(timeline ? { timeline: { id: timeline.id, groupBy } } : {}),
       });
       close();
+      const where = timeline ? ` onto the timeline${out.unscheduled ? ` (${out.unscheduled} without dates in Unscheduled)` : ''}` : ' as cards';
       editor.host.notify(
         out.created.length
-          ? `Imported ${plural(out.created.length, 'issue')} as cards${out.skipped ? ` (${out.skipped} already here)` : ''}`
+          ? `Imported ${plural(out.created.length, 'issue')}${where}${out.skipped ? ` (${out.skipped} already here)` : ''}`
           : out.skipped
             ? `Those ${plural(out.skipped, 'issue')} are already on this board`
             : 'No issues matched',
@@ -308,7 +323,7 @@ function ImportDialog({ editor }: PanelProps) {
         const show = (tries: number) => {
           if (out.created.every((id) => editor.getElement(id)) || tries > 40) {
             editor.select(out.created.filter((id) => editor.getElement(id)));
-            editor.zoomToFit(out.created, { animate: true });
+            editor.zoomToFit(timeline ? [timeline.id, ...out.created] : out.created, { animate: true });
           } else setTimeout(() => show(tries + 1), 50);
         };
         show(0);
@@ -326,7 +341,7 @@ function ImportDialog({ editor }: PanelProps) {
       onClose={close}
       title={
         <span className="fr-trackers-dialog__title">
-          <Download size={18} aria-hidden /> Import issues
+          <Download size={18} aria-hidden /> {timeline ? 'Import issues onto the timeline' : 'Import issues'}
         </span>
       }
       width={520}
@@ -354,7 +369,17 @@ function ImportDialog({ editor }: PanelProps) {
             if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) void run();
           }}
         />
-        <p className="fr-trackers-dialog__fine">Each issue becomes a task card linked to it (up to 50 at a time). Issues already on this board are left out.</p>
+        {timeline && (
+          <div className="fr-trackers-dialog__row">
+            <span className="fr-trackers-dialog__label">Lanes by</span>
+            <SegmentedControl<RoadmapGroupBy> size="sm" aria-label="Lanes by" value={groupBy} options={GROUP_BY} onChange={setGroupBy} />
+          </div>
+        )}
+        <p className="fr-trackers-dialog__fine">
+          {timeline
+            ? `Each issue becomes a bar on “${richTextToPlain(String((timeline as { title?: string }).title ?? '')) || 'the timeline'}” at its start and due dates, linked to it: moving a bar changes the issue’s dates, and dates changed in the tracker move the bar. Issues without dates wait in an “Unscheduled” frame below. Up to 50 at a time.`
+            : 'Each issue becomes a task card linked to it (up to 50 at a time). Issues already on this board are left out.'}
+        </p>
         {c.error && (
           <p className="fr-trackers-dialog__error" role="alert">
             {c.error}
