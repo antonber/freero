@@ -36,9 +36,13 @@ export default defineCommands([
     label: 'Start from a template',
     urlParam: 'template',
     run(editor, args) {
-      const def = TEMPLATES.find((t) => t.id === args?.template);
-      if (!def || editor.getElements().length) return editor.openDock(DOCK_ID);
-      addTemplate(editor, def).catch(() => editor.host.notify(`Could not load “${def.name}”. Check your connection and try again.`, 'error'));
+      loadTemplates()
+        .then(async (all) => {
+          const def = all.find((t) => t.id === args?.template);
+          if (!def || editor.getElements().length) editor.openDock(DOCK_ID);
+          else await addTemplate(editor, def);
+        })
+        .catch(() => editor.host.notify('Could not load the template. Check your connection and try again.', 'error'));
     },
   },
   // Saving copies content into the user's own template library (never writes the board), so
