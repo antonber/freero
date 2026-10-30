@@ -22,6 +22,8 @@ export type LegalKey =
   | 'moderationKeepDays'
   | 'trashDays'
   | 'auditRetentionDays'
+  | 'backupRetentionDays'
+  | 'logRetentionDays'
   // Processors and services as the server is configured (modules/site/legal.ts derives them).
   | 'hosting'
   | 'mailProvider'

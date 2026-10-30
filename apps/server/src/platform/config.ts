@@ -302,6 +302,13 @@ export interface Config {
       jurisdiction: string | null;
       /** Who hosts the servers and where ("Railway Corp., US West"): the privacy policy's hosting provider. */
       hosting: string | null;
+      /**
+       * The longest the hosting keeps database backups and request logs, in days (SITE_LEGAL_BACKUP_DAYS,
+       * SITE_LEGAL_LOG_DAYS): the hosting provider decides them, so the policy states what the operator
+       * set, never a guess. null = not set (the policy shows a placeholder).
+       */
+      backupDays: number | null;
+      logDays: number | null;
       /** A status page people can check when the service is down (https), for /support. */
       statusUrl: string | null;
     };
@@ -562,6 +569,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     address: legalText('SITE_LEGAL_ADDRESS', 400),
     jurisdiction: legalText('SITE_LEGAL_JURISDICTION', 200),
     hosting: legalText('SITE_LEGAL_HOSTING', 300),
+    backupDays: str('SITE_LEGAL_BACKUP_DAYS') === null ? null : int('SITE_LEGAL_BACKUP_DAYS', 0, 1, 3650),
+    logDays: str('SITE_LEGAL_LOG_DAYS') === null ? null : int('SITE_LEGAL_LOG_DAYS', 0, 1, 3650),
     statusUrl: url('SITE_STATUS_URL', ['https:']),
   };
   if (siteLegal.contactEmail !== null && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(siteLegal.contactEmail)) problems.push('SITE_LEGAL_CONTACT_EMAIL must be an email address');

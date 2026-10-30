@@ -277,6 +277,8 @@ pages describe the hosted service, not yours: write your own, or leave the opera
 | `SITE_LEGAL_ADDRESS` | — | The operator's postal address, one line. |
 | `SITE_LEGAL_JURISDICTION` | — | The law that governs the terms, as it reads in "governed by the laws of …", e.g. `the State of Delaware, USA`. |
 | `SITE_LEGAL_HOSTING` | — | Who hosts the servers and where, as the privacy policy names it, e.g. `Railway Corporation (United States, US West region)`. |
+| `SITE_LEGAL_BACKUP_DAYS` | — | The longest a database backup is kept, in days, as the privacy policy states it. Freero doesn't take these backups, your hosting does: set the real number (on Railway, the longest-kept backup schedule, including point-in-time recovery). |
+| `SITE_LEGAL_LOG_DAYS` | — | The longest the hosting keeps request logs, in days, as the privacy policy states it. |
 | `SITE_STATUS_URL` | — | An `https` status page, linked from `/support` ("Service status"). Unset: `/support` says to write to the contact address. |
 
 Unset values show as a visible "[…: not set yet]" placeholder; the server logs which ones are missing

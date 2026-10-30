@@ -42,14 +42,16 @@ the Claude listing slug is permanent.
    decided. A lawyer reviews and adapts `/privacy`, `/terms`, `/acceptable-use`
    (`apps/site/src/pages/*.page.tsx`). Then set on Railway:
    `SITE_LEGAL_OPERATOR=Kaiten Gaming LLC`, `SITE_LEGAL_CONTACT_EMAIL`, `SITE_LEGAL_ADDRESS`,
-   `SITE_LEGAL_JURISDICTION`, `SITE_LEGAL_HOSTING` (e.g. "Railway Corporation (United States, US
+   `SITE_LEGAL_JURISDICTION`, `SITE_LEGAL_BACKUP_DAYS`, `SITE_LEGAL_LOG_DAYS`, `SITE_LEGAL_HOSTING` (e.g. "Railway Corporation (United States, US
    West region)"), `ABUSE_CONTACT_EMAIL`, `SECURITY_CONTACT`, optionally `SITE_STATUS_URL`. Only
    then do the pages lose the draft banner and does sign-up ask people to agree to them.
    Points the lawyer should look at, from writing the draft:
-   - **Backups.** The privacy policy says database backups are kept up to 35 days. The Railway
-     backup schedule set up on 2026-10-29 includes **monthly** backups: shorten it, or change the
-     policy's number.
-   - **Request logs.** The policy says at most 30 days: check the Railway plan's log retention.
+   - **Backups.** The policy states `SITE_LEGAL_BACKUP_DAYS` (a placeholder until set). Production
+     keeps daily backups 6 days and weekly backups 27 days, with point-in-time recovery inside that
+     window; the monthly schedule (89 days) is to be dropped (#90). Set `SITE_LEGAL_BACKUP_DAYS=30`.
+   - **Request logs.** The policy states `SITE_LEGAL_LOG_DAYS`. Railway's docs say logs are viewable
+     7 days on Hobby and 30 on Pro, but Railway staff have said on its forum that logs are stored
+     90 days on every plan. Until Railway confirms in writing, set `SITE_LEGAL_LOG_DAYS=90`.
    - **Google Fonts.** The app (not the marketing site) loads its fonts from Google, which receives
      visitors' IP addresses. It is disclosed; self-hosting the fonts would remove it (and a GDPR
      risk some EU courts have found in it).

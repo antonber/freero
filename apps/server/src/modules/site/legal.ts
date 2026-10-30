@@ -62,6 +62,8 @@ export function legalFill(config: Config): LegalFill {
       moderationKeepDays: days(config.moderationKeepRemovedMs),
       trashDays: String(TRASH_RETENTION_DAYS),
       auditRetentionDays: String(DEFAULT_AUDIT_RETENTION_DAYS),
+      backupRetentionDays: l.backupDays !== null ? String(l.backupDays) : unset('backup retention in days'),
+      logRetentionDays: l.logDays !== null ? String(l.logDays) : unset('log retention in days'),
       // Processors, as this server is configured right now (never a list someone has to keep in step).
       hosting: l.hosting ? escapeHtml(l.hosting) : unset('hosting provider and region'),
       mailProvider: config.smtpUrl ? `the email delivery service at ${code(hostOf(config.smtpUrl) ?? 'SMTP')}` : 'no email delivery service (this server sends no email)',

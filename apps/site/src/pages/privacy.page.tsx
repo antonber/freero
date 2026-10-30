@@ -236,8 +236,8 @@ export default definePage({
           ['Activity feed', '90 days'],
           ['Audit log', <>{L('auditRetentionDays')} days by default (a team workspace can set its own period)</>],
           ['Sign-in sessions and emailed links', 'Until they expire (minutes to 30 days) or you sign out'],
-          ['Request logs', 'As long as our hosting provider keeps logs, at most 30 days'],
-          ['Database backups', 'Up to 35 days, then overwritten'],
+          ['Request logs', <>Up to {L('logRetentionDays')} days, as our hosting provider keeps them</>],
+          ['Database backups', <>Up to {L('backupRetentionDays')} days, then deleted</>],
           [
             'Moderation records',
             <>
@@ -248,8 +248,8 @@ export default definePage({
         ]}
       />
       <p>
-        When your account is deleted, comments you wrote on other people’s boards stay on those boards with the author shown as “Deleted user”. Data still in
-        backups disappears when the backup expires.
+        When your account is deleted, comments you wrote on other people’s boards stay on those boards with the author shown as “Deleted user”. Copies of your data
+        in database backups are not edited out: they are deleted with the backup, at most {L('backupRetentionDays')} days after your data was deleted.
       </p>
 
       <h2 id="rights">7. Your choices and rights</h2>
