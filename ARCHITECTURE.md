@@ -444,6 +444,11 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   picker lists and searches plus one lazy loader per file, so spec content loads per file on first
   preview or insert (`TemplateDef.load`; insert through `addTemplate`). A layout no archetype
   covers is a new archetype (with its validation limits), not a one-off spec.
+- The app reaches the built-in catalog only through `loadTemplates()` (`lib/catalog/load.ts`): the
+  hand-coded builders and the spec index are one chunk, fetched when the picker opens or
+  `templates.insert` runs, so opening a board doesn't grow with the catalog. `TEMPLATES`
+  (`lib/catalog`) stays the synchronous list for tests and build-time readers; importing it
+  statically from the panel or commands would put the whole catalog back into the board chunk.
 - **The template gate** (`features/templates/lib/gate.ts`, run over the whole catalog by the
   templates tests, so by `npm run check`) is what lets the catalog grow without review by eye. Every
   problem reads `<template id>: <what is wrong>`. `validateSpec` checks a spec's content (counts,
