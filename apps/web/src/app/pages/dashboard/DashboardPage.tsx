@@ -111,6 +111,24 @@ export function DashboardPage() {
   }, [wantsRestore, setParams]);
   useEffect(() => onLaunchedBackup((file) => setRestoring({ file })), []);
 
+  // A link to start from a built-in template (the marketing site's "Use this template", after
+  // sign-up): a new board in this workspace, opened with ?template=<id>, which the templates
+  // feature fills. Once per link, even when effects run twice.
+  const templateLink = params.get('template');
+  const startedFromLink = useRef(false);
+  useEffect(() => {
+    if (!templateLink || !workspace || startedFromLink.current) return;
+    startedFromLink.current = true;
+    if (!/^[a-z0-9-]{1,80}$/.test(templateLink)) return void setParams({}, { replace: true });
+    api.createBoard({ title: UNTITLED, workspaceId: workspace.id }).then(
+      ({ board }) => navigate(`/board/${board.id}?template=${templateLink}`, { replace: true }),
+      (e) => {
+        notify(e instanceof ApiError ? e.message : 'Could not create a board', 'error');
+        setParams({}, { replace: true });
+      },
+    );
+  }, [templateLink, workspace, navigate, notify, setParams]);
+
   useEffect(() => {
     document.title = workspace ? `${workspaceLabel(workspace)} · Freero` : 'Boards · Freero';
   }, [workspace]);
