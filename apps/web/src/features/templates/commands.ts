@@ -24,6 +24,20 @@ export default defineCommands([
         addTemplate(editor, def).catch(() => editor.host.notify(`Could not load “${def.name}”. Check your connection and try again.`, 'error'));
     },
   },
+  {
+    // Deep link /board/<id>?template=<template id>: how a new board starts from a template link
+    // (the dashboard's /app?template=…, which the marketing site's "Use this template" opens after
+    // sign-up). An empty board gets the template; a board that already has content (the same link
+    // reloaded after it was added) only opens the panel, so following it twice never adds a copy.
+    id: 'templates.fromLink',
+    label: 'Start from a template',
+    urlParam: 'template',
+    run(editor, args) {
+      const def = TEMPLATES.find((t) => t.id === args?.template);
+      if (!def || editor.getElements().length) return editor.openDock(DOCK_ID);
+      addTemplate(editor, def).catch(() => editor.host.notify(`Could not load “${def.name}”. Check your connection and try again.`, 'error'));
+    },
+  },
   // Saving copies content into the user's own template library (never writes the board), so
   // anyone who can see the board can do it — like copying — unless the board's workspace doesn't
   // let this user copy its content (Host.board.canExport; the server enforces it too).

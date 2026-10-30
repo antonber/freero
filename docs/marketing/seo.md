@@ -30,18 +30,20 @@ re-order the backlog below. Competitor facts come only from `docs/marketing/comp
 | Whiteboard for AI agents / MCP | whiteboard for ai agents, mcp whiteboard, whiteboard mcp server, agent collaboration board | `/agents` | `/`, `/claude`, `/chatgpt`, `/security` |
 | Claude whiteboard | claude whiteboard, claude mcp whiteboard, claude custom connector whiteboard, claude code diagram board | `/claude` | `/agents`, `/security` |
 | ChatGPT whiteboard | chatgpt whiteboard, chatgpt connector whiteboard, chatgpt developer mode mcp, chatgpt mind map board | `/chatgpt` | `/agents`, `/security` |
-| Agent control room | ai agent dashboard board, monitor coding agents, human in the loop board | `/agents#control-room` | `/claude`, `/chatgpt` |
+| Agent control room | ai agent dashboard board, monitor coding agents, human in the loop board | `/use-cases/agent-control-room` | `/agents#control-room`, `/claude`, `/chatgpt` |
 | Free / open-source / self-hosted Miro alternative | free miro alternative, open source miro alternative, self-hosted miro alternative | `/vs/miro` | `/open-source`, `/pricing`, `/` |
 | Other "alternative" searches | mural alternative, figjam alternative, lucidspark alternative, excalidraw alternative for teams, tldraw alternative | `/vs/<competitor>` (`/vs/mural`, `/vs/figjam`, `/vs/excalidraw`, `/vs/confluence-whiteboards` built) | `/open-source`, `/` |
 | Microsoft Whiteboard alternative | microsoft whiteboard alternative, microsoft whiteboard app retired | `/vs/microsoft-whiteboard` (the standalone apps retired 2026-10-16, Teams and web continue for work accounts: say exactly that) | `/pricing`, `/` |
 | Jamboard alternative | jamboard alternative, jamboard replacement, jamboard for teachers | `/vs/jamboard` (no Jamboard importer: said so) | `/`, `/pricing` |
 | Self-hosted / open-source whiteboard | self-hosted whiteboard, open source whiteboard, on-premise whiteboard, docker whiteboard | `/open-source` | `/security`, `/pricing` |
 | Free whiteboard | free online whiteboard, free collaborative whiteboard, whiteboard no signup limits | `/pricing` | `/`, `/open-source` |
-| Online whiteboard for retrospectives | retrospective whiteboard, online retro board, sprint retro template | `/use-cases/retrospectives` (to write) | `/templates/*`, `/` (#workshops) |
-| Planning poker / workshops | planning poker online free, dot voting online, online workshop whiteboard | `/use-cases/workshops` (to write) | `/` (#workshops) |
-| Jira whiteboard | jira whiteboard, sticky notes to jira, jira data center whiteboard, linear whiteboard, github issues whiteboard | `/use-cases/jira` (to write) | `/` (#trackers), `/agents` |
+| Online whiteboard for retrospectives | retrospective whiteboard, online retro board, sprint retro template | `/use-cases/retrospectives` | `/templates/retrospective` and the other retro templates, `/` (#workshops) |
+| Planning poker | planning poker online free, scrum poker, story point estimation online | `/use-cases/planning-poker` | `/use-cases/jira`, `/` (#workshops) |
+| Workshops | dot voting online, online workshop whiteboard, workshop facilitation tool | `/use-cases/workshops` | `/templates/*`, `/` (#workshops) |
+| Jira whiteboard | jira whiteboard, sticky notes to jira, jira data center whiteboard, linear whiteboard, github issues whiteboard | `/use-cases/jira` | `/` (#trackers), `/agents`, `/integrations/jira-cloud`, `/integrations/jira-data-center` |
+| Roadmap from Jira / Linear | jira roadmap whiteboard, linear roadmap, roadmap timeline from issues | `/use-cases/roadmaps` | `/use-cases/jira`, `/` (#trackers) |
 | Secure / enterprise whiteboard | whiteboard sso scim, whiteboard audit log, gdpr whiteboard | `/security` | `/open-source`, `/pricing` |
-| Templates | retrospective template, kanban template, lean canvas template, user story map template | `/templates/<name>` (to write, one per catalog template) | `/use-cases/*` |
+| Templates | retrospective template, kanban template, lean canvas template, user story map template | `/templates/<id>`, one per catalog template, generated from the app's catalog; `/templates` lists them by category | `/use-cases/*` |
 | Docs | whiteboard api, whiteboard webhooks, mcp server docs | `/docs` | `/agents` |
 
 Keyword variants a page should use naturally in headings and copy are in its row; don't stuff them.
@@ -60,7 +62,7 @@ Keyword variants a page should use naturally in headings and copy are in its row
    /docs ──► guides in the repository ────────────┘
 ```
 
-- Header: Claude, ChatGPT, For builders, Security, Pricing, Docs (+ Log in, Start free). Footer adds Help and support (`/support`), the legal pages (`/privacy`, `/terms`, `/acceptable-use`: drafts, `noindex` until the operator is set),
+- Header: Claude, ChatGPT, For builders, Templates, Security, Pricing, Docs (+ Log in, Start free). Footer adds Templates, Use cases, Help and support (`/support`), the legal pages (`/privacy`, `/terms`, `/acceptable-use`: drafts, `noindex` until the operator is set),
   Overview and Open source. Every page ends with the same call to action (Start free, Connect
   Claude, Connect ChatGPT).
 - `/` links down into every cluster from the section that matches it (agents → `/claude`,

@@ -25,6 +25,12 @@ export interface PageDef {
   name: string;
   /** Headline drawn on the page's Open Graph image (defaults to `name`). */
   ogTitle?: string;
+  /**
+   * An Open Graph image shared by many pages, drawn once (pages generated from a large catalog,
+   * such as one per template, share one per category instead of a PNG each). Pages naming the same
+   * `key` get the same image; `kicker` and `title` are drawn on it.
+   */
+  sharedOg?: { key: string; kicker: string; title: string };
   /** Last meaningful content change (sitemap lastmod), YYYY-MM-DD. */
   updated: string;
   /** false: `noindex`, left out of the sitemap (drafts, the comparison placeholder, 404). */

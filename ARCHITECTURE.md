@@ -433,6 +433,9 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   members name the kanban / pool as `frameId`, and the container's own `arrange` settles them on
   insert), icons from `lucide-react` components (`icon(…)`, drawing copied into the element), and
   connector ends at a spot on an element (`{ id, at: { u, v } }`, e.g. a message on a lifeline).
+  A board link with `?template=<id>` (`templates.fromLink`) adds that template to an EMPTY board
+  only, so the marketing site's "Use this template" (through the dashboard's `/app?template=<id>`)
+  can never add a second copy on reload; the marketing site also renders `Preview.tsx` at build time.
 - **New built-in templates are data, not code** (`features/templates/lib/specs/<area>.ts`, format in
   `lib/spec/types.ts`). A spec names an archetype (`matrix`, `columns`, `kanban`, `canvas`,
   `timeline`, `funnel`, `journey`, `tree`, `prompts`, `table`, `clusters`, `hub`, `flow`) and gives
@@ -843,7 +846,7 @@ files; it precaches them plus the shell files). Rules, all in `strategyFor` / `r
 ## Marketing site (`apps/site`, server `modules/site`; KAI-250..253)
 
 The public pages (`/`, `/claude`, `/chatgpt`, `/agents`, `/security`, `/open-source`, `/pricing`,
-`/docs`, `/support`, `/privacy`, `/terms`, `/acceptable-use`, `/integrations/<id>`, `/vs/<slug>`; later `/features/*`, `/use-cases/*`, `/templates/*`) are a separate workspace
+`/docs`, `/support`, `/privacy`, `/terms`, `/acceptable-use`, `/integrations/<id>`, `/vs/<slug>`, `/templates/<id>`, `/use-cases/<slug>`; later `/features/*`) are a separate workspace
 so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs/marketing/seo.md`.
 
 - **Why a custom prerender, not a site generator.** Pages are TSX components rendered once by
@@ -858,14 +861,32 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
   canonical, robots, Open Graph + Twitter card), the per-page OG image (`src/lib/og.ts`, original
   design drawn as SVG), JSON-LD (Organization, WebSite, WebPage, BreadcrumbList, FAQPage from `faq`,
   plus the page's own such as SoftwareApplication), the breadcrumbs, the FAQ section, the closing
-  call to action, the sitemap entry. Colours come from the app's `ui/tokens.css` (`:root` blocks,
-  read at build time), so the brand has one source.
+  call to action, the sitemap entry. Colours come from the app's `ui/tokens.css` (its top-level
+  light `:root` blocks, also when shared as `:root, .fr-paper`, read at build time; the site tests
+  fail when a token the site uses is undefined), so the brand has one source.
 - **Integrations** (`/integrations`, `/integrations/<id>`, #87) are generated from the catalog in
   `@freero/shared` `integrations.ts` (see "Apps & agents"): `pages/integrations/entries.page.tsx`
   default-exports an ARRAY of pages, which the build accepts from any page file whose pages come
   from data. Each entry brings its own title / description (the length and uniqueness checks apply),
   a HowTo of its connect steps, a link to its connect step in the app (`/apps/<id>`) and links to
   its category's other entries. Community listings never appear on the site (below).
+- **Templates** (`/templates`, `/templates/<id>`, #74) are generated from the app's built-in catalog
+  (`features/templates`), read by path at build time like `modules/outline` reads the features'
+  `outline.ts` (`src/lib/templates.tsx`; the site doesn't type-check the web app, so it declares
+  the shapes it reads). Each template is BUILT as on a board, and its page is made from that: the
+  instruction line under its title, the parts it lays out (section titles with their guiding
+  questions, kanban and table columns, a mind map's branches) and its preview, the Templates
+  panel's own `TemplatePreview` written to a hashed static SVG (~6 KB, a few ms each). Template
+  pages share one Open Graph image per category (`PageDef.sharedOg`, drawn once), so the cost per
+  template is its HTML and its SVG: the build scales to thousands. "Use this template" is
+  `/signup?next=/app?template=<id>` — the dashboard creates a board and opens it with
+  `?template=<id>`, and the templates feature's `templates.fromLink` command (`urlParam`) fills an
+  EMPTY board with it (a board with content only opens the panel, so a reload never adds a second
+  copy). A template added to the catalog gets its page, sitemap entry and index card with no site edit.
+- **Use cases** (`/use-cases/<slug>`, #75) are hand-written pages; the templates each uses are
+  listed once in `src/lib/useCases.tsx`, which every template page reads to link back (an id the
+  catalog lacks fails the build). Their screenshots come from `scripts/site-shots.mjs`
+  (`--only poker,roadmap,control-room` retakes some).
 - **Comparisons** (`/vs/<slug>`, `src/lib/compare.tsx` `defineComparison`): every competitor cell
   names its sources, every source its check date; `published: false` pages are `noindex`, out of
   the sitemap and linked from nowhere, and a page can't be published while a competitor claim is

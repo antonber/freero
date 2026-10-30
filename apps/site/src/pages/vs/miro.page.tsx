@@ -4,6 +4,7 @@
 // Freero facts: docs/parity.md and the docs each row links (guests are view-and-comment, not editors,
 // although the sheet says otherwise).
 import { defineComparison } from '../../lib/compare';
+import { SITE_TEMPLATES } from '../../lib/templates';
 
 export default defineComparison({
   slug: 'miro',
@@ -114,7 +115,7 @@ export default defineComparison({
     {
       capability: 'Templates',
       competitor: { verdict: 'yes', note: '7,000+ in its community library', sources: ['S22'] },
-      freero: { verdict: 'partial', note: '180 originals, no community gallery', ref: 'README.md' },
+      freero: { verdict: 'partial', note: `${SITE_TEMPLATES.length} originals, no community gallery`, ref: 'README.md' },
     },
     {
       capability: 'App marketplace',

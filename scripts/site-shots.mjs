@@ -7,7 +7,8 @@
 //   1. Start a throwaway server that serves the built web app, on ports nobody else uses:
 //        npm run build -w @freero/web
 //        PORT=4571 FREERO_DATA_DIR=<scratch>/data TRACKER_PRIVATE_ENDPOINTS=true npx tsx apps/server/src/main.ts
-//   2. node scripts/site-shots.mjs --base http://localhost:4571 --data <scratch>/data [--out <dir>]
+//   2. node scripts/site-shots.mjs --base http://localhost:4571 --data <scratch>/data [--out <dir>] [--only poker,roadmap]
+//      (--only: just these shots; workshop, proposal, review and tracker are taken together)
 //   3. Look at every image before committing it. Stop the server.
 //
 // Names and board text are invented demo content; nothing comes from a real customer.
@@ -24,6 +25,8 @@ const opt = (name, def) => {
 const BASE = opt('base');
 const DATA = opt('data');
 const OUT = path.resolve(opt('out', 'apps/site/src/assets/shots'));
+const ONLY = opt('only')?.split(',');
+const want = (...names) => !ONLY || names.some((n) => ONLY.includes(n));
 if (!BASE || !DATA) {
   console.error('Usage: node scripts/site-shots.mjs --base http://localhost:4571 --data <server data dir> [--out dir]');
   process.exit(1);
@@ -88,6 +91,8 @@ class Person {
 
 /** Every shot is the same 1000×700 part of the 1600×1000 window (10:7), so the strip lines up. */
 const area = (x, y) => ({ x, y, width: 1000, height: 700 });
+/** The same shape, nearly the whole window: for a board too wide for `area` (an agent's lane). */
+const wide = (x, y) => ({ x, y, width: 1400, height: 980 });
 
 /** Pans the canvas (mouse wheel) until `locator` sits at (x, y) on the screen. */
 async function panTo(page, locator, x, y) {
@@ -164,6 +169,12 @@ try {
     await page.waitForSelector('.fr-sticky, [data-type="sticky"], [data-fr-element]', { timeout: 20_000 }).catch(() => {});
     await sleep(800);
   };
+  const openBoard = async (page, id, q = '') => {
+    await page.goto(`${BASE}/board/${id}${q}`, { waitUntil: 'networkidle' });
+    await page.waitForSelector('[data-fr-element]', { timeout: 20_000 }).catch(() => {});
+    await sleep(1200);
+  };
+  if (want('workshop', 'proposal', 'review', 'tracker')) {
   await open(mariaPage);
   await open(leoPage);
   // Leo points at a note; Maria sees his cursor and selection.
@@ -237,6 +248,113 @@ try {
   await mariaPage.mouse.move(1500, 960);
   await sleep(1500);
   await save(mariaPage, 'tracker', area(150, 180));
+  }
+
+  // Planning poker (/use-cases/planning-poker): Maria estimates three story cards with Leo and Ana;
+  // the shot is the revealed round.
+  if (want('poker')) {
+    const ana = new Person('Ana Silva', `ana-${stamp}@shots.freero.test`);
+    await ana.signup();
+    const sprint = (await maria.req('POST', '/api/boards', { title: 'Sprint 19 planning' })).board;
+    for (const p of [leo, ana]) await maria.req('POST', `/api/boards/${sprint.id}/members`, { email: p.email, role: 'editor' });
+    const stories = [
+      { type: 'card', text: 'Export a board as PDF with one page per frame', color: '#5B3FF0' },
+      { type: 'card', text: 'Remember the last zoom level per board', color: '#1FBF96' },
+      { type: 'card', text: 'Invite guests from the share dialog', color: '#F5A524' },
+    ];
+    await maria.req('POST', `/api/boards/${sprint.id}/insert-structure`, { structure: { kind: 'items', items: stories, layout: 'grid', title: 'Ready for estimation' } });
+    const anaPage = await (await ctx(ana)).newPage();
+    for (const page of [mariaPage, leoPage, anaPage]) await openBoard(page, sprint.id);
+    await mariaPage.getByRole('button', { name: 'Board menu' }).click();
+    await mariaPage.getByText('Estimate with planning poker…', { exact: true }).click();
+    await mariaPage.getByRole('button', { name: 'Start estimating' }).click();
+    const pick = async (page, v) => {
+      await page.locator('.fr-est-bar__deck .fr-est-card', { hasText: new RegExp(`^${v}$`) }).first().click({ timeout: 15_000 });
+      await sleep(300);
+    };
+    await pick(mariaPage, '5');
+    await pick(leoPage, '5');
+    await pick(anaPage, '8');
+    await sleep(800);
+    await mariaPage.getByRole('button', { name: 'Reveal' }).click();
+    await mariaPage.mouse.move(1500, 960);
+    await sleep(1500);
+    // The round's bar sits at the top of the window, the item under it.
+    await save(mariaPage, 'poker', area(300, 0));
+    await anaPage.close();
+  }
+
+  // An agent's control room (/use-cases/agent-control-room): a token acting as Claude Code posts
+  // its plan, status and tasks through the REST API's control-room endpoint.
+  if (want('control-room')) {
+    const room = (await maria.req('POST', '/api/boards', { title: 'Data migration' })).board;
+    const { secret } = await maria.req('POST', '/api/auth/tokens', { name: 'Claude Code', scopes: ['boards:read', 'boards:write'], expiresInDays: 1 });
+    await maria.req(
+      'POST',
+      `/api/v1/boards/${room.id}/control-room`,
+      {
+        agent: 'Claude Code',
+        plan: ['Inventory the old billing tables', 'Write the migration and its rollback', 'Run it on a copy of production', 'Hand over for review'],
+        status: 'Migration written; 18 of 22 tables checked on the copy. Waiting on an answer about archived invoices.',
+        tasks: [
+          { title: 'List every table the billing service reads', state: 'done' },
+          { title: 'Map old columns to the new schema', state: 'done' },
+          { title: 'Write the migration and its rollback', state: 'done' },
+          { title: 'Check row counts on the production copy', state: 'doing' },
+          { title: 'Archived invoices: migrate or keep read-only?', state: 'blocked', note: 'Finance still reads them monthly. Should they move to the new tables or stay where they are?' },
+          { title: 'Write the hand-over notes', state: 'todo' },
+        ],
+      },
+      { authorization: `Bearer ${secret}` },
+    );
+    await openBoard(mariaPage, room.id);
+    // The lane (notes and a four-column kanban) is wide: one step out, and most of the window.
+    await mariaPage.getByRole('button', { name: 'Zoom out' }).click();
+    await sleep(400);
+    await mariaPage.mouse.move(1500, 960);
+    await sleep(800);
+    await save(mariaPage, 'control-room', wide(100, 10));
+  }
+
+  // A roadmap (/use-cases/roadmaps): Jira issues imported onto a timeline, a lane per epic.
+  if (want('roadmap')) {
+    const road = (await maria.req('POST', '/api/boards', { title: 'Q4 roadmap' })).board;
+    await openBoard(mariaPage, road.id);
+    await mariaPage.getByRole('button', { name: 'More tools' }).click();
+    await mariaPage.locator('.fr-moretools__item', { hasText: 'Timeline' }).click();
+    await mariaPage.mouse.click(800, 500);
+    await sleep(1200);
+    const outline = await maria.req('GET', `/api/boards/${road.id}/outline?format=json`);
+    const timelineId = JSON.stringify(outline).match(/"id":"([^"]+)","kind":"timeline"/)?.[1];
+    if (!timelineId) throw new Error(`no timeline on the roadmap board: ${JSON.stringify(outline).slice(0, 400)}`);
+    const monday = new Date();
+    monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
+    const at = (days) => new Date(monday.getTime() + days * 86_400_000).toISOString().slice(0, 10);
+    const epics = { checkout: { key: 'WEB-900', fields: { summary: 'New checkout' } }, search: { key: 'WEB-901', fields: { summary: 'Search' } }, mobile: { key: 'WEB-902', fields: { summary: 'Mobile app' } } };
+    const items = [
+      ['Payment step redesign', 'checkout', 0, 12],
+      ['Saved addresses', 'checkout', 10, 24],
+      ['Express checkout', 'checkout', 26, 45],
+      ['Search index rebuild', 'search', 3, 20],
+      ['Typo-tolerant search', 'search', 21, 38],
+      ['Offline mode', 'mobile', 7, 30],
+      ['Push notifications', 'mobile', 31, 50],
+    ];
+    for (const [summary, epic, from, to] of items)
+      jira.create('WEB', { summary, labels: ['roadmap'], parent: epics[epic], customfield_10015: at(from), duedate: at(to), description: { type: 'doc', version: 1, content: [] } });
+    const conn = (
+      await maria.req('POST', '/api/trackers/connections', { provider: 'jira', name: 'Jira roadmap', site: jira.url, deployment: 'cloud', email: jira.email, token: jira.token, defaults: { project: 'WEB' } })
+    ).connection;
+    await maria.req('POST', `/api/boards/${road.id}/trackers/import`, { connectionId: conn.id, query: 'labels = roadmap', timeline: { id: timelineId, groupBy: 'epic' } });
+    await openBoard(mariaPage, road.id);
+    await mariaPage.keyboard.press('Escape');
+    // The timeline is wider than the shot: one step out.
+    await mariaPage.getByRole('button', { name: 'Zoom out' }).click();
+    await sleep(400);
+    await mariaPage.mouse.move(1500, 960);
+    await sleep(1200);
+    await save(mariaPage, 'roadmap', area(300, 150));
+  }
 } finally {
   await browser.close();
   await jira.close?.();
