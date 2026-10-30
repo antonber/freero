@@ -33,8 +33,8 @@ export const toneAt = (tone: Tone | undefined, i: number, cycle: Tone[] = CYCLE)
  * about half an em per character): an estimate that is too short lets measured text grow into
  * whatever sits below it.
  */
-export function lineCount(text: string, w: number, size: number, bold = false): number {
-  const per = Math.max(1, Math.floor(w / (size * (bold ? 0.6 : 0.54))));
+export function lineCount(text: string, w: number, size: number, bold = false, em = bold ? 0.6 : 0.54): number {
+  const per = Math.max(1, Math.floor(w / (size * em)));
   return text.split('\n').reduce((n, line) => {
     let lines = 1;
     let cur = 0;
@@ -54,8 +54,12 @@ export function lineCount(text: string, w: number, size: number, bold = false): 
   }, 0);
 }
 
-/** Height of a text element holding `text` (same line height the Kit's text uses). */
-export const textHeight = (text: string, w: number, size: number, bold = false): number => Math.round(lineCount(text, w, size, bold) * size * 1.4 + 8);
+/**
+ * Height of a text element `w` wide holding `text` (same line height the Kit's text uses). Lines
+ * wrap inside the text box's padding (features/text: 0.3 em a side).
+ */
+export const textHeight = (text: string, w: number, size: number, bold = false): number =>
+  Math.round(lineCount(text, w - 2 * Math.max(2, size * 0.3), size, bold) * size * 1.4 + 8);
 
 const HINT = 16;
 /** First free y below the frame header (title and hint) of a frame `W` wide. */

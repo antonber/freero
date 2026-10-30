@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BookmarkPlus, LayoutTemplate, Plus, Search, Trash2, Users } from 'lucide-react';
 import { DockHeader, definePanel, useCanEdit, useSelection, type Editor, type SavedTemplateInfo } from '@engine';
 import { Button, Input, Spinner, formatShortcut } from '@ui';
-import { TEMPLATES } from './lib/catalog';
+import { loadTemplates } from './lib/catalog/load';
 import { DOCK_ID, addTemplate } from './lib/insert';
 import { filterTemplates } from './lib/place';
 import { LazyTemplatePreview } from './lib/Preview';
@@ -34,6 +34,24 @@ function useSavedTemplates(editor: Editor): SavedTemplateInfo[] | null {
     };
   }, [editor]);
   return saved;
+}
+
+/** The built-in catalog, fetched the first time the picker opens: null while loading, 'failed' when offline. */
+function useBuiltInTemplates(): { list: TemplateDef[] | null | 'failed'; retry(): void } {
+  const [list, setList] = useState<TemplateDef[] | null | 'failed'>(null);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    let live = true;
+    setList(null);
+    loadTemplates().then(
+      (all) => live && setList(all),
+      () => live && setList('failed'),
+    );
+    return () => {
+      live = false;
+    };
+  }, [attempt]);
+  return { list, retry: () => setAttempt((n) => n + 1) };
 }
 
 function SavedCard({ editor, t, canEdit, onInsert }: { editor: Editor; t: SavedTemplateInfo; canEdit: boolean; onInsert(t: SavedTemplateInfo): void }) {
@@ -133,9 +151,11 @@ function TemplatesPanel({ editor }: { editor: Editor }) {
   const canEdit = useCanEdit();
   const hasSelection = useSelection().length > 0;
   const saved = useSavedTemplates(editor);
+  const catalog = useBuiltInTemplates();
+  const all = Array.isArray(catalog.list) ? catalog.list : null;
   const builtIns = useMemo(
-    () => (filter === 'saved' ? [] : filterTemplates(TEMPLATES, query, filter, CATEGORY_LABELS)),
-    [query, filter],
+    () => (filter === 'saved' || !all ? [] : filterTemplates(all, query, filter, CATEGORY_LABELS)),
+    [all, query, filter],
   );
   // Browsing everything: one section per category (each template under its first category).
   // Searching or filtering: one ranked list.
@@ -247,6 +267,19 @@ function TemplatesPanel({ editor }: { editor: Editor }) {
         ) : null
       ) : null}
 
+      {filter !== 'saved' && catalog.list === null ? (
+        <div className="fr-tpl__loading">
+          <Spinner size={18} />
+        </div>
+      ) : filter !== 'saved' && catalog.list === 'failed' ? (
+        <div className="fr-tpl__empty">
+          <p>Couldn’t load Freero’s templates. Check your connection.</p>
+          <button type="button" className="fr-tpl__reset" onClick={catalog.retry}>
+            Try again
+          </button>
+        </div>
+      ) : null}
+
       {groups.map((g) =>
         g.items.length ? (
           <section key={g.id} aria-label={g.label || 'Freero templates'}>
@@ -275,7 +308,7 @@ function TemplatesPanel({ editor }: { editor: Editor }) {
         ) : null,
       )}
 
-      {shownCount === 0 && query ? (
+      {shownCount === 0 && query && (all || filter === 'saved') ? (
         <div className="fr-tpl__empty">
           <p>No templates match “{query}”.</p>
           <button

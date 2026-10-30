@@ -1,7 +1,7 @@
 import { BookmarkPlus, LayoutTemplate } from 'lucide-react';
 import { defineCommands } from '@engine';
 import { DOCK_ID, addTemplate } from './lib/insert';
-import { TEMPLATES } from './lib/catalog';
+import { loadTemplates } from './lib/catalog/load';
 import { SAVE_DIALOG_ID } from './lib/saved';
 
 export default defineCommands([
@@ -19,9 +19,12 @@ export default defineCommands([
     id: 'templates.insert',
     label: 'Insert a template',
     run(editor, args) {
-      const def = TEMPLATES.find((t) => t.id === args?.id);
-      if (def)
-        addTemplate(editor, def).catch(() => editor.host.notify(`Could not load “${def.name}”. Check your connection and try again.`, 'error'));
+      loadTemplates()
+        .then((all) => {
+          const def = all.find((t) => t.id === args?.id);
+          return def ? addTemplate(editor, def) : null;
+        })
+        .catch(() => editor.host.notify('Could not load the template. Check your connection and try again.', 'error'));
     },
   },
   {

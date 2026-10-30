@@ -10,8 +10,11 @@ import { boundsOf, filterTemplates, instantiate, type BoardSnapshot } from './li
 import { insertSavedTemplate, saveAsTemplate } from './lib/saved';
 import { specTemplates } from './lib/spec/catalog';
 import { buildSpec } from './lib/spec/render';
-import type { TemplateSpec } from './lib/spec/types';
+import type { ColumnsLayout, TemplateSpec } from './lib/spec/types';
 import { validateSpec } from './lib/spec/validate';
+import { duplicateProblems, fingerprint, indexEntryOf, indexProblems, layoutProblems, metadataProblems, sectionProblems } from './lib/gate';
+import { Kit } from './lib/kit';
+import type { TemplateCategory } from './lib/types';
 import { SPEC_FILES, SPEC_INDEX } from './lib/specs';
 
 // Spec templates load their content per file (lazily in the app); every test here builds them.
@@ -50,17 +53,6 @@ const freshId = () => `id${++seq}`;
 const SPOT = { x: 300, y: -200 };
 const CONTAINERS: string[] = ['frame', 'kanban', 'swimlane'];
 
-/**
- * The part of an element its text occupies. Sequence diagrams are crossed by design: messages,
- * bars and fragments run over a lifeline's stem, and a fragment's label is its corner tag.
- */
-function textArea(e: NewElement): NewElement {
-  if (e.type !== 'shape') return e;
-  const s = e as NewElement<'shape'>;
-  if (s.shape === 'umlLifeline') return { ...e, h: Math.min(52, e.h * 0.3) };
-  if (s.shape === 'umlFragment') return { ...e, w: Math.min(e.w * 0.35, 88), h: Math.min(e.h * 0.22, 28) };
-  return e;
-}
 const emptyBoard: BoardSnapshot = { place: () => SPOT, maxFrameIndex: -1 };
 
 /** Where an attached connector end sits: a spot given as box fractions, else the side's middle. */
@@ -93,42 +85,8 @@ describe.each(TEMPLATES.map((t) => [t.id, t] as const))('template %s', (_id, def
     }
   });
 
-  it('keeps every element of a frame (or kanban, or swimlane) inside it, so moving it carries the whole template', () => {
-    const els = def.build(freshId).elements;
-    const frames = new Map(els.filter((e) => CONTAINERS.includes(e.type)).map((f) => [f.id!, f]));
-    expect(els.some((e) => e.type === 'frame')).toBe(true);
-    for (const el of els) {
-      if (el.type === 'frame' || !el.frameId) continue;
-      const f = frames.get(el.frameId);
-      expect(f, `${el.type} points at a container outside the template`).toBeDefined();
-      expect(el.x).toBeGreaterThanOrEqual(f!.x);
-      expect(el.y).toBeGreaterThanOrEqual(f!.y);
-      expect(el.x + el.w).toBeLessThanOrEqual(f!.x + f!.w);
-      expect(el.y + el.h).toBeLessThanOrEqual(f!.y + f!.h);
-    }
-  });
-
-  it('never stacks one piece of text on another, so every label, note and cell stays readable', () => {
-    const els = def.build(freshId).elements;
-    // Text-bearing items (and icons); textless shapes are backgrounds (columns, quadrants, circles).
-    const readable = els
-      .filter((e) => {
-        if (e.type === 'shape') return (e as NewElement<'shape'>).text !== '';
-        return ['sticky', 'text', 'card', 'table', 'mindmap', 'emoji', 'icon'].includes(e.type);
-      })
-      .map(textArea);
-    const label = (e: NewElement) => {
-      const r = e as unknown as { text?: string; title?: string };
-      return `${e.type} "${String(r.text ?? r.title ?? '').slice(0, 40)}"`;
-    };
-    for (let i = 0; i < readable.length; i++)
-      for (let j = i + 1; j < readable.length; j++) {
-        const a = readable[i];
-        const b = readable[j];
-        const w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
-        const h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
-        expect(w > 1 && h > 1, `${label(a)} overlaps ${label(b)}`).toBe(false);
-      }
+  it('passes the layout gate: nothing sticks out of its frame, no text lands on other text, and all text fits its box', () => {
+    expect(layoutProblems(def.id, def.build(freshId))).toEqual([]);
   });
 
   it('after insertion, connector, mind-map and table-cell references point at elements of the same insert, at their anchors', () => {
@@ -312,32 +270,23 @@ describe('spec templates', () => {
 
   it('the picker index lists every spec file with its current names and words, so no spec goes missing from search (`npm run templates:index`)', () => {
     const onDisk = readdirSync(new URL('./lib/specs/', import.meta.url)).filter((f) => f.endsWith('.ts') && f !== 'index.ts').map((f) => f.replace(/\.ts$/, ''));
-    expect(Object.keys(SPEC_FILES).sort()).toEqual(onDisk.sort());
-    const current = all.map(({ file, spec: s }) => ({ id: s.id, name: s.name, description: s.description, categories: s.categories, keywords: s.keywords, archetype: s.archetype, file }));
-    expect(SPEC_INDEX).toEqual(current);
+    expect(indexProblems(SPEC_INDEX, Object.keys(SPEC_FILES), all, onDisk)).toEqual([]);
   });
 
-  it('every spec is complete and readable (guiding prompts, real example notes, known categories and archetype, text that fits) and no two templates share an id', () => {
+  it('every spec is complete and readable (metadata for the picker, search and site pages, a how-to, guiding prompts, real example notes, known archetype) and no two templates share an id', () => {
     expect(all.flatMap(({ spec }) => validateSpec(spec))).toEqual([]);
+    expect(TEMPLATES.flatMap((t) => metadataProblems(t))).toEqual([]);
     const ids = TEMPLATES.map((t) => t.id);
     expect(ids.filter((id, i) => ids.indexOf(id) !== i)).toEqual([]);
   });
 
-  it('example notes stay inside their sections and sections never overlap, however much content a spec has', () => {
-    const within = (a: NewElement, b: NewElement) => a.x >= b.x && a.y >= b.y && a.x + a.w <= b.x + b.w && a.y + a.h <= b.y + b.h;
-    for (const { spec } of all) {
-      const els = buildSpec(spec, freshId).elements;
-      const panels = els.filter((e) => e.type === 'shape' && (e as NewElement<'shape'>).text === '');
-      for (const note of els.filter((e) => e.type === 'sticky'))
-        expect(panels.some((p) => within(note, p)), `${spec.id}: note "${(note as NewElement<'sticky'>).text}" spills out of its section`).toBe(true);
-      for (let i = 0; i < panels.length; i++)
-        for (let j = i + 1; j < panels.length; j++) {
-          const [a, b] = [panels[i], panels[j]];
-          const w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
-          const h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
-          expect(w > 1 && h > 1, `${spec.id}: two sections overlap at ${a.x},${a.y}`).toBe(false);
-        }
-    }
+  it('example notes stay inside their sections, sections never overlap and none is left empty, however much content a spec has', () => {
+    expect(all.flatMap(({ spec }) => sectionProblems(spec.id, buildSpec(spec, freshId)))).toEqual([]);
+  });
+
+  it('no two templates are the same template twice (near-identical names, the same layout with the same sections, or a renamed copy)', () => {
+    const specs = new Map(all.map(({ spec }) => [spec.id, spec]));
+    expect(duplicateProblems(TEMPLATES.map((t) => fingerprint(t, t.build(freshId), specs.get(t.id))))).toEqual([]);
   });
 
   const spec: TemplateSpec = {
@@ -395,5 +344,160 @@ describe('spec templates', () => {
     offline = false;
     await def.load!();
     expect(def.build(freshId).elements.length).toBeGreaterThan(0);
+  });
+});
+
+// The quality gate on deliberately broken templates: each check must catch its failure and say
+// which template and what is wrong (the real catalog passes it above).
+describe('the template gate rejects', () => {
+  const base: TemplateSpec = {
+    id: 'release-look-back',
+    name: 'Release look-back',
+    description: 'Look back on a release with the people who shipped it and pick one thing to change.',
+    categories: ['agile'],
+    keywords: ['release', 'review', 'lessons'],
+    hint: 'Write alone for five minutes per column, then read them out and vote on one change.',
+    archetype: 'columns',
+    columns: [
+      { title: 'Went to plan', prompt: 'Which parts of the release went the way we hoped?', notes: ['Feature flags made rollback easy'] },
+      { title: 'Surprised us', prompt: 'What happened that nobody expected?', notes: ['Support queue doubled on day one'] },
+      { title: 'One change', prompt: 'What single change makes the next release calmer?', notes: ['Dry-run the migration a week early'] },
+    ],
+  };
+  const baseColumns = (base as ColumnsLayout).columns;
+  const print = (s: TemplateSpec) => fingerprint(s, buildSpec(s, freshId), s);
+  /** A frame with whatever `draw` adds, as a hand-coded template would build it. */
+  const drawn = (draw: (k: Kit) => void) => {
+    const k = new Kit(freshId);
+    k.frame('Test', 900, 700);
+    draw(k);
+    return k.done();
+  };
+
+  it.each<[string, Partial<TemplateSpec>, string]>([
+    ['a missing description', { description: '' }, 'description is missing'],
+    ['no how-to text', { hint: '' }, 'hint is missing'],
+    ['too few search keywords', { keywords: ['release'] }, 'keywords must have 3–14 entries'],
+    ['an id that is not URL-safe', { id: 'Release look-back!' }, 'must be URL-safe'],
+    ['an unknown category', { categories: ['retros' as TemplateCategory] }, 'unknown category "retros"'],
+    ['a section without example notes', { columns: [...baseColumns.slice(0, 2), { title: 'One change', prompt: 'What single change makes it calmer?', notes: [] }] } as Partial<TemplateSpec>, 'column 3 notes must have 1–8 entries (has 0)'],
+  ])('a spec with %s, naming the template and the field', (_, change, message) => {
+    const spec = { ...base, ...change } as TemplateSpec;
+    const problems = validateSpec(spec);
+    expect(problems.some((p) => p.startsWith(`${spec.id}: `) && p.includes(message)), problems.join('\n')).toBe(true);
+  });
+
+  it('a renamed copy of a template, even in another layout', () => {
+    const copy = { ...base, id: 'shipping-review', name: 'Shipping review', archetype: 'clusters', clusters: baseColumns } as TemplateSpec;
+    expect(duplicateProblems([print(base), print(copy)])).toEqual([expect.stringMatching(/^shipping-review: too close to "release-look-back" \(Release look-back\): \d+% of the same wording/)]);
+  });
+
+  it('the same layout with the same sections under new example notes', () => {
+    const lookalike = {
+      ...base,
+      id: 'project-wrap-up',
+      name: 'Project wrap-up',
+      columns: [
+        { title: 'Went to plan', prompt: 'Name the milestones we hit on time.', notes: ['Vendor contract signed in week two'] },
+        { title: 'Surprised us', prompt: 'Name the risks nobody had on the list.', notes: ['The office move overlapped go-live'] },
+        { title: 'One change', prompt: 'Pick the habit we take into the next project.', notes: ['Weekly risk review with the sponsor'] },
+      ],
+    } as TemplateSpec;
+    expect(duplicateProblems([print(base), print(lookalike)])).toEqual([
+      expect.stringContaining('project-wrap-up: too close to "release-look-back" (Release look-back): same columns layout with 100% of the same section words'),
+    ]);
+  });
+
+  it('a name people could not tell apart from an existing one', () => {
+    const other = {
+      ...base,
+      id: 'look-back-on-a-release',
+      name: 'Look-back on a release',
+      archetype: 'prompts',
+      items: [
+        { prompt: 'Which customer noticed the release first, and how?', notes: ['A reseller emailed within an hour'] },
+        { prompt: 'Which alert fired that should have stayed quiet?', notes: ['Disk usage on the old cluster'] },
+        { prompt: 'Who needs a thank-you note this week?', notes: ['Mira, for the late-night rollback'] },
+      ],
+    } as TemplateSpec;
+    expect(duplicateProblems([print(base), print(other)])).toEqual([
+      expect.stringContaining('look-back-on-a-release: too close to "release-look-back" (Release look-back): the names share 100% of their words'),
+    ]);
+  });
+
+  it('an id that differs from another only in punctuation', () => {
+    const other = {
+      ...base,
+      id: 'release-lookback',
+      name: 'Post-launch alarms',
+      archetype: 'clusters',
+      clusters: [
+        { title: 'Alerts', prompt: 'Which alerts fired after the launch?', notes: ['Queue depth on payments'] },
+        { title: 'Customers', prompt: 'Who wrote in about the launch?', notes: ['Two schools asked about exports'] },
+      ],
+    } as TemplateSpec;
+    expect(duplicateProblems([print(base), print(other)])).toEqual([expect.stringContaining('release-lookback: too close to "release-look-back" (Release look-back): the ids differ only in punctuation')]);
+  });
+
+  it('a note too long to read at the smallest size notes shrink to', () => {
+    const b = drawn((k) => k.sticky(40, 40, 'Everything we learned from the launch, '.repeat(6).trim(), 'yellow'));
+    expect(layoutProblems('t', b)).toEqual([expect.stringMatching(/^t: sticky "Everything we learned.*" doesn't fit its 160×160 note even at 14px/)]);
+  });
+
+  it('a heading in a shape that runs out of the shape', () => {
+    const b = drawn((k) => k.shape('chevron', 40, 40, 200, 60, '<b>Stakeholder interviews and synthesis</b><br>Weeks three to six', { fontSize: 18 }));
+    expect(layoutProblems('t', b)).toEqual([expect.stringMatching(/^t: shape "Stakeholder interviews.*" overflows its chevron/)]);
+  });
+
+  it('a heading whose text wraps down onto the notes under it', () => {
+    const b = drawn((k) => {
+      k.text(40, 40, 200, '<b>Things we would do again next time</b>', { size: 22, h: 32 });
+      k.sticky(40, 84, 'Daily demo', 'yellow');
+    });
+    expect(layoutProblems('t', b)).toEqual([expect.stringMatching(/^t: text "Things we would do again next time" \(its lines need \d+px, it has room for \d+px\) overlaps sticky "Daily demo"/)]);
+  });
+
+  it('a note placed on top of another', () => {
+    const b = drawn((k) => {
+      k.sticky(40, 40, 'First idea', 'yellow');
+      k.sticky(120, 120, 'Second idea', 'yellow');
+    });
+    expect(layoutProblems('t', b)).toEqual(['t: sticky "First idea" overlaps sticky "Second idea"']);
+  });
+
+  it('an item sticking out of its frame', () => {
+    const b = drawn((k) => k.sticky(820, 600, 'Parking lot', 'yellow'));
+    expect(layoutProblems('t', b)).toEqual(['t: sticky "Parking lot" sticks out of its frame at 820,600']);
+  });
+
+  it('a section left without notes, a note outside every section, and sections drawn over each other', () => {
+    const empty = drawn((k) => {
+      k.panel(40, 40, 400, 300, '#EEEEEE');
+      k.text(60, 60, 360, '<b>Ideas</b>', { size: 22, h: 32 });
+    });
+    expect(sectionProblems('t', empty)).toEqual(['t: section text "Ideas" has no example notes']);
+    const stray = drawn((k) => {
+      k.panel(40, 40, 400, 300, '#EEEEEE');
+      k.sticky(60, 100, 'Inside', 'yellow');
+      k.sticky(480, 100, 'Outside', 'yellow');
+    });
+    expect(sectionProblems('t', stray)).toEqual(['t: sticky "Outside" spills out of its section']);
+    const stacked = drawn((k) => {
+      k.panel(40, 40, 400, 300, '#EEEEEE');
+      k.panel(300, 200, 400, 300, '#EEEEEE');
+      k.sticky(60, 60, 'One', 'yellow');
+      k.sticky(520, 320, 'Two', 'yellow');
+    });
+    expect(sectionProblems('t', stacked)).toEqual(['t: two sections overlap at 40,40']);
+  });
+
+  it('an index that was not regenerated after specs changed', () => {
+    const renamed = { ...base, name: 'Release retrospective' } as TemplateSpec;
+    const added = { ...base, id: 'launch-day-review', name: 'Launch day review' } as TemplateSpec;
+    expect(indexProblems([indexEntryOf(base, 'agile')], ['agile'], [{ file: 'agile', spec: renamed }, { file: 'agile', spec: added }], ['agile', 'sales'])).toEqual([
+      'specs/sales.ts: not in the index, so none of its templates can load: run `npm run templates:index`',
+      'release-look-back: the index has an old name: run `npm run templates:index`',
+      'launch-day-review: missing from the index, so the picker and search never show it: run `npm run templates:index`',
+    ]);
   });
 });
