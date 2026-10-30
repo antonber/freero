@@ -24,6 +24,7 @@ const NAV: Array<{ href: string; label: string }> = [
   { href: '/claude', label: 'Claude' },
   { href: '/chatgpt', label: 'ChatGPT' },
   { href: '/agents', label: 'For builders' },
+  { href: '/templates', label: 'Templates' },
   { href: '/security', label: 'Security' },
   { href: '/pricing', label: 'Pricing' },
   { href: '/docs', label: 'Docs' },
@@ -96,6 +97,8 @@ function SiteFooter() {
         ['/', 'Overview'],
         ['/pricing', 'Pricing'],
         ['/security', 'Security'],
+        ['/templates', 'Templates'],
+        ['/use-cases', 'Use cases'],
         ['/open-source', 'Open source'],
         ['/vs', 'Compare'],
       ],
@@ -188,7 +191,7 @@ export function Document({ page, pages, assets, crumbs, jsonLd }: { page: PageDe
   const url = abs(page.path);
   // A legal page is built as a draft; the server makes it indexable once it is in effect.
   const indexable = page.index !== false && !page.legal;
-  const ogAlt = `${page.ogTitle ?? page.name}: Freero`;
+  const ogAlt = `${page.sharedOg?.title ?? page.ogTitle ?? page.name}: Freero`;
   return (
     <html lang="en">
       <head>

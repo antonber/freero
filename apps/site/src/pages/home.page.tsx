@@ -3,6 +3,7 @@ import { ButtonLink, Card, Cards, Hero, Section, Shot } from '../components/ui';
 import { definePage } from '../lib/define';
 import { softwareApplication } from '../lib/seo';
 import { APP, MCP_URL } from '../lib/site';
+import { SITE_TEMPLATES } from '../lib/templates';
 
 export default definePage({
   path: '/',
@@ -203,6 +204,10 @@ export default definePage({
             </li>
           </ul>
         </div>
+        <p>
+          <a href="/use-cases/jira">Jira planning on a whiteboard</a> · <a href="/use-cases/roadmaps">Roadmaps from Jira and Linear</a> ·{' '}
+          <a href="/use-cases/agent-control-room">An agent control room</a>
+        </p>
       </Section>
 
       <Section id="whiteboard" title="The full whiteboard" lead="Everything a team expects from an online whiteboard, built in and free.">
@@ -214,7 +219,8 @@ export default definePage({
           <Card title="Real-time together">Live cursors and selections, follow someone, bring everyone to you, reactions, comments with mentions and notifications.</Card>
           <Card title="Present and share">Slides made from frames with layouts and speaker notes, presentation mode, roles per board, share links with a password or expiry.</Card>
           <Card title="Docs and files">Collaborative docs with live boards inside them, Markdown in and out; images, PDFs, video and audio, file cards and link previews.</Card>
-          <Card title="Templates and export">180 original templates. Export to PNG, JPG, SVG or PDF, CSV for notes and cards, version history.</Card>
+          <Card title="Templates and export" href="/templates">
+            {SITE_TEMPLATES.length} original templates. Export to PNG, JPG, SVG or PDF, CSV for notes and cards, version history.</Card>
         </Cards>
         <p className="works-with">
           Keyboard and screen-reader support aims at WCAG 2.1 AA, with a “board as list” view; it works on phones and tablets and installs as an app.
@@ -229,10 +235,10 @@ export default definePage({
           <Card title="Dot voting" tint="yellow" mark="●">
             A set number of votes per person, hidden until the results are shown, then a ranked list.
           </Card>
-          <Card title="Planning poker" tint="mint" mark="5">
+          <Card title="Planning poker" tint="mint" mark="5" href="/use-cases/planning-poker">
             Estimate cards one by one with Fibonacci, T-shirt or custom decks; picks stay sealed until the reveal and the agreed value lands on the card.
           </Card>
-          <Card title="Guided retros" tint="pink" mark="↻">
+          <Card title="Guided retros" tint="pink" mark="↻" href="/use-cases/retrospectives">
             Write privately under a timer, reveal and group, vote, discuss, and turn the result into action-item cards.
           </Card>
           <Card title="Polls and Q&A" tint="blue" mark="?">
@@ -242,6 +248,9 @@ export default definePage({
             A shared countdown, a laser pointer, presenter notes, and an audience that follows the presenter. Guests can join by link without an account.
           </Card>
         </Cards>
+        <p>
+          <a href="/use-cases/workshops">Running workshops on Freero</a> · <a href="/use-cases">All use cases</a> · <a href="/templates">Templates</a>
+        </p>
       </Section>
 
       <Section id="enterprise" title="Enterprise-grade, and still free" lead="The controls a security review asks for are part of every Freero, not an upsell.">
