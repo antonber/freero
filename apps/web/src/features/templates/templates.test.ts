@@ -1,7 +1,8 @@
 import { readdirSync } from 'node:fs';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { tableCellKey, type ElementType, type FrameElement, type TableCopyContent, type TableElement } from '@freero/shared';
 import { createTestBoard, type ElementDefinition, type FeatureBundle, type NewElement } from '@engine';
+import commands from './commands';
 import manifest from './feature';
 import { TEMPLATES } from './lib/catalog';
 import { addTemplate, insertTemplate } from './lib/insert';
@@ -259,6 +260,26 @@ describe('inserting a template', () => {
       const stickyCopy = editor.getElements().filter((el) => el.type === 'sticky').find((s) => s.frameId === copies[1].id);
       expect(stickyCopy, 'the sticky moved with its frame copy').toBeDefined();
       expect(frames.filter((f) => !top.includes(f.id)).map((f) => f.index).sort()).toEqual([0, 1, 5]); // originals untouched
+    } finally {
+      board.destroy();
+    }
+  });
+
+  it('a template link (?template=<id>) fills a new empty board with that template, and following it again after a reload adds no second copy', async () => {
+    const Noop = () => null;
+    const frameDef = { type: 'frame', Component: Noop, resize: 'free', container: true, rotatable: false, defaults: () => ({}) } as unknown as ElementDefinition<'frame'>;
+    const templates: FeatureBundle = { manifest, elements: [], tools: [], formats: [], panels: [], commands: commands as FeatureBundle['commands'] };
+    const shapes: FeatureBundle = { manifest: { name: 'shapes', description: '' }, elements: [frameDef], tools: [], formats: [], panels: [], commands: [] };
+    const board = createTestBoard({ users: ['ann'], features: [templates, shapes] });
+    try {
+      const [editor] = board.editors('templates');
+      const frameTitles = () => editor.getElements().flatMap((e) => (e.type === 'frame' ? [(e as FrameElement).title] : []));
+      editor.runCommand('templates.fromLink', { template: 'retrospective' });
+      await vi.waitFor(() => expect(frameTitles()).toEqual(['Retrospective']));
+      const count = editor.getElements().length;
+      editor.runCommand('templates.fromLink', { template: 'retrospective' });
+      await new Promise((r) => setTimeout(r, 0));
+      expect(editor.getElements().length).toBe(count);
     } finally {
       board.destroy();
     }

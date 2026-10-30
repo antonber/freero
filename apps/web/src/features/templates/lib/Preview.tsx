@@ -1,5 +1,9 @@
+/* @jsxRuntime automatic */
 // Mini SVG thumbnail drawn from the template's own element data (no image files): the same
-// data that gets inserted, simplified to boxes, pills and text bars.
+// data that gets inserted, simplified to boxes, pills and text bars. The marketing site renders
+// `TemplatePreview` at build time for /templates (apps/site/src/lib/templates.tsx), outside this
+// app's tsconfig: the pragma above keeps the JSX runtime the same there. Keep this file free of
+// browser-only APIs outside effects.
 import { createElement, memo, useEffect, useRef, useState, type ReactNode } from 'react';
 import { STICKY_COLORS, type BoardElement, type StickyColor } from '@freero/shared';
 import type { NewElement } from '@engine';
