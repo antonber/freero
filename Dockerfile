@@ -31,6 +31,8 @@ COPY tsconfig.base.json ./
 # The site reads shared data (the integrations catalog, MCP tool list) from @freero/shared.
 COPY packages/shared packages/shared
 COPY apps/web/src/ui/tokens.css apps/web/src/ui/tokens.css
+# /templates/<id> is built from the app's template catalog: each template built and previewed as on a board.
+COPY apps/web/src/features/templates apps/web/src/features/templates
 COPY apps/site apps/site
 RUN cd apps/site && npx tsx src/build.tsx
 

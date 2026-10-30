@@ -50,7 +50,13 @@ export async function discoverPages(): Promise<PageDef[]> {
 /** Freero's design tokens (the app's ui/tokens.css `:root` blocks) + the site's own CSS + fonts. */
 function buildCss(fonts: Record<number, string>): string {
   const tokens = fs.readFileSync(path.resolve(SRC_DIR, '../../web/src/ui/tokens.css'), 'utf8');
-  const roots = [...tokens.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/(^|\n):root\s*\{[^}]*\}/g)].map((m) => m[0].trim()).join('\n');
+  // The top-level light blocks: `:root { … }`, also when it shares them with another selector
+  // (`:root, .fr-paper { … }`). Not `:root[data-theme='dark']` (the site has no dark theme) nor
+  // anything inside @media.
+  const roots = [...tokens.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/(?:^|\n)((?::root|\.[\w-]+)(?:\s*,\s*(?::root|\.[\w-]+))*)\s*\{([^}]*)\}/g)]
+    .filter((m) => m[1].split(',').some((s) => s.trim() === ':root'))
+    .map((m) => `:root{${m[2].trim()}}`)
+    .join('\n');
   const faces = Object.entries(fonts)
     .map(([w, url]) => `@font-face{font-family:'Inter';font-style:normal;font-weight:${w};font-display:swap;src:url(${url}) format('woff2')}`)
     .join('\n');
@@ -90,8 +96,15 @@ export async function buildSite(outDir = DEFAULT_OUT): Promise<BuildResult> {
   };
 
   const manifestPages: Array<{ path: string; file: string }> = [];
+  const sharedOg = new Map<string, string>();
+  const ogOf = async (page: PageDef): Promise<string> => {
+    const s = page.sharedOg;
+    if (!s) return emitAsset(`og/${page.path === '/' ? 'home' : page.path.slice(1).replace(/\//g, '-')}.png`, await ogImage(page.path === '/' ? 'Free and open source' : page.name, page.ogTitle ?? page.name));
+    if (!sharedOg.has(s.key)) sharedOg.set(s.key, emitAsset(`og/${s.key}.png`, await ogImage(s.kicker, s.title)));
+    return sharedOg.get(s.key)!;
+  };
   for (const page of pages) {
-    const og = emitAsset(`og/${page.path === '/' ? 'home' : page.path.slice(1).replace(/\//g, '-')}.png`, await ogImage(page.path === '/' ? 'Free and open source' : page.name, page.ogTitle ?? page.name));
+    const og = await ogOf(page);
     const crumbs = crumbsOf(page, byPath);
     const html = `<!doctype html>${renderToStaticMarkup(
       <Document page={page} pages={pages} crumbs={crumbs} jsonLd={jsonLdFor(page, crumbs, og)} assets={{ css, ogImage: og, favicon, appleIcon, preloadFonts: [fonts[700]] }} />,

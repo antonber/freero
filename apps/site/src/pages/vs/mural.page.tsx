@@ -3,6 +3,7 @@
 // webhooks either way, which plans get the Linear and GitHub integrations and basic Jira sync,
 // the names of the residency regions, an exact template count, the ACR's contents.
 import { defineComparison } from '../../lib/compare';
+import { SITE_TEMPLATES } from '../../lib/templates';
 
 export default defineComparison({
   slug: 'mural',
@@ -108,7 +109,7 @@ export default defineComparison({
     {
       capability: 'Templates',
       competitor: { verdict: 'yes', note: '“hundreds”, plus LUMA methods', sources: ['S14', 'S1'] },
-      freero: { verdict: 'partial', note: '180 originals', ref: 'README.md' },
+      freero: { verdict: 'partial', note: `${SITE_TEMPLATES.length} originals`, ref: 'README.md' },
     },
     {
       capability: 'Visitors without an account',

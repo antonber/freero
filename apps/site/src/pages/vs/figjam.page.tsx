@@ -4,6 +4,7 @@
 // FigJam (so no API or webhook rows), residency region names, the VPAT, plugin counts and the
 // Config India press.
 import { defineComparison } from '../../lib/compare';
+import { SITE_TEMPLATES } from '../../lib/templates';
 
 export default defineComparison({
   slug: 'figjam',
@@ -110,7 +111,7 @@ export default defineComparison({
     {
       capability: 'Templates',
       competitor: { verdict: 'yes', note: '300+', sources: ['F1'] },
-      freero: { verdict: 'partial', note: '180 originals', ref: 'README.md' },
+      freero: { verdict: 'partial', note: `${SITE_TEMPLATES.length} originals`, ref: 'README.md' },
     },
     {
       capability: 'Plugins and widgets',

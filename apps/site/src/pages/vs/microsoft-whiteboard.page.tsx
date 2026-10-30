@@ -6,6 +6,7 @@
 // Whiteboard-specific ACR and the template count. Absences ("no MCP server") are worded as what
 // Microsoft documents, citing the pages checked.
 import { defineComparison } from '../../lib/compare';
+import { SITE_TEMPLATES } from '../../lib/templates';
 
 export default defineComparison({
   slug: 'microsoft-whiteboard',
@@ -108,7 +109,7 @@ export default defineComparison({
     {
       capability: 'Templates',
       competitor: { verdict: 'yes', sources: ['W10'] },
-      freero: { verdict: 'yes', note: '180 originals', ref: 'README.md' },
+      freero: { verdict: 'yes', note: `${SITE_TEMPLATES.length} originals`, ref: 'README.md' },
     },
   ],
   competitorStronger: [

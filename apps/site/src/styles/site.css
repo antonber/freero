@@ -596,6 +596,101 @@ pre {
   font-weight: 600;
 }
 
+/* ---- Templates (/templates): cards and the hero picture show the template's own preview ---- */
+.tpl-preview {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.tpl-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+}
+.tpl-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--fr-surface);
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius-lg);
+  padding: 14px 16px 16px;
+}
+.section--tint .tpl-card {
+  border-color: transparent;
+  box-shadow: var(--fr-shadow-sm);
+}
+.tpl-card:hover {
+  border-color: var(--fr-primary);
+}
+.tpl-card:has(a:focus-visible) {
+  outline: 3px solid var(--fr-focus-color);
+  outline-offset: 2px;
+}
+.tpl-card__thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 16 / 10;
+  margin-bottom: 12px;
+  padding: 10px;
+  border-radius: var(--fr-radius);
+  background: var(--fr-canvas);
+  overflow: hidden;
+}
+.tpl-card__thumb .tpl-preview {
+  max-height: 100%;
+  width: auto;
+  max-width: 100%;
+}
+.tpl-card__title {
+  font-size: 1.02rem;
+  margin-bottom: 6px;
+}
+.tpl-card__title a {
+  color: var(--fr-ink);
+  text-decoration: none;
+}
+.tpl-card__title a::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.tpl-card__title a:focus-visible {
+  outline: none;
+}
+.tpl-card p {
+  margin: 0;
+  font-size: 15px;
+  color: var(--fr-ink-2);
+}
+.tpl-hero {
+  margin: 0;
+}
+.tpl-hero .tpl-preview {
+  padding: 18px;
+  border-radius: var(--fr-radius-lg);
+  border: 1px solid var(--fr-line);
+  background: var(--fr-surface);
+  box-shadow: var(--fr-shadow-lg);
+}
+.tpl-hero figcaption {
+  font-size: 14px;
+  color: var(--fr-ink-3);
+  margin-top: 10px;
+}
+.tpl-parts {
+  margin: 0;
+  padding-left: 1.1em;
+}
+.tpl-parts li {
+  margin-bottom: 0.35em;
+}
+
 /* ---- Split rows (text + picture) ---- */
 .split {
   display: grid;

@@ -6,6 +6,7 @@
 // Freero-side correction: the sheet calls Freero's in-chat live boards planned; they shipped
 // (docs/parity.md §9, MCP Apps).
 import { defineComparison } from '../../lib/compare';
+import { SITE_TEMPLATES } from '../../lib/templates';
 
 export default defineComparison({
   slug: 'excalidraw',
@@ -118,7 +119,7 @@ export default defineComparison({
     'You want to self-host with live collaboration, accounts, roles and sharing, not just the editor.',
     'You need SSO, SCIM and an audit log on your own servers.',
     'You want AI agents to propose changes that people accept or reject, through an MCP server that runs on your own Freero server.',
-    'You plan work on the board: two-way Jira, Linear and GitHub sync, kanban, timelines, tables and 180 templates.',
+    `You plan work on the board: two-way Jira, Linear and GitHub sync, kanban, timelines, tables and ${SITE_TEMPLATES.length} templates.`,
     'You run workshops with voting, a timer, polls and planning poker.',
   ],
   sections: [

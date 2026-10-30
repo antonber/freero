@@ -4,6 +4,7 @@ import { Checks, Hero, Section } from '../../components/ui';
 import { ComparisonCards } from '../../lib/compare';
 import { definePage } from '../../lib/define';
 import { docsUrl, SOURCE_REPO } from '../../lib/site';
+import { SITE_TEMPLATES } from '../../lib/templates';
 
 export default definePage({
   path: '/vs',
@@ -47,7 +48,7 @@ export default definePage({
             'No security certifications such as SOC 2 or ISO 27001, no customer-managed keys, DLP or eDiscovery, and no choice of hosted data region: organizations that need one host Freero themselves.',
             'No built-in audio or video: a board links to your meeting or a Jitsi room.',
             'Imports cover CSV, draw.io and Excalidraw files, plus images and PDFs placed on a board; there is no importer for Miro, Mural, FigJam, Microsoft Whiteboard, Confluence or Jamboard boards.',
-            'A library of 180 original templates, no plugin SDK (integrations connect from outside, through the API, webhooks and MCP), and an English-only interface.',
+            `A library of ${SITE_TEMPLATES.length} original templates, no plugin SDK (integrations connect from outside, through the API, webhooks and MCP), and an English-only interface.`,
           ]}
         />
         <p>

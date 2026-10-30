@@ -11,6 +11,7 @@ import type { PageDef } from './lib/define';
 import { MCP_PROMPTS, MCP_TOOLS } from './lib/mcp';
 import { DISALLOWED } from './lib/seo';
 import { APP, docsUrl, ORIGIN } from './lib/site';
+import { SITE_TEMPLATES } from './lib/templates';
 
 const HOST = 'https://whiteboard.example.com';
 let dist = '';
@@ -152,6 +153,14 @@ describe('pages work without JavaScript', () => {
     }
   });
 
+  it('every design token the site’s CSS uses is defined, so buttons and sections keep their colours when the app’s tokens.css is reorganised', () => {
+    const css = /<style>([\s\S]*?)<\/style>/.exec(html.get('/')!)![1];
+    const defined = new Set(attr(css, /(--fr-[\w-]+)\s*:/g));
+    const used = new Set(attr(css, /var\((--fr-[\w-]+)/g));
+    expect(used.size).toBeGreaterThan(10);
+    expect([...used].filter((v) => !defined.has(v))).toEqual([]);
+  });
+
   it('every image has alt text and its size, so the layout doesn’t jump', () => {
     for (const [p, doc] of html)
       for (const img of doc.match(/<img [^>]+>/g) ?? []) {
@@ -169,7 +178,8 @@ describe('pages work without JavaScript', () => {
         const local = href.startsWith(HOST) ? href.slice(HOST.length) || '/' : href;
         const [route, hash] = local.split('#');
         const target = route === '' ? p : route;
-        if (appPaths.has(target)) continue;
+        // An app route may carry a query (sign up, then go on: /signup?next=…).
+        if (appPaths.has(target.split('?')[0])) continue;
         const page = html.get(target);
         if (!page) {
           expect(fs.existsSync(path.join(dist, target)), `${p} links to missing ${href}`).toBe(true);
@@ -240,6 +250,41 @@ describe('what agents read (/llms.txt, /agents)', () => {
     expect(serverTools.length).toBeGreaterThan(10);
     expect(MCP_TOOLS.map(([n]) => n).sort(), 'apps/site/src/lib/mcp.ts MCP_TOOLS is out of step with the MCP server’s tools.ts').toEqual([...serverTools].sort());
     expect(MCP_PROMPTS.map(([n]) => n).sort(), 'apps/site/src/lib/mcp.ts MCP_PROMPTS is out of step with the MCP server’s prompts.ts').toEqual([...serverPrompts].sort());
+  });
+});
+
+describe('template pages', () => {
+  it('every template in the app’s catalog gets a page in the templates sitemap and on /templates, with its own preview drawn as an SVG file', () => {
+    const inSitemap = attr(served('sitemap-templates.xml'), /<loc>([^<]+)<\/loc>/g);
+    const index = html.get('/templates')!;
+    expect(SITE_TEMPLATES.length).toBeGreaterThan(50);
+    for (const t of SITE_TEMPLATES) {
+      const p = `/templates/${t.id}`;
+      const doc = html.get(p);
+      expect(doc, `${p} has no page`).toBeTruthy();
+      expect(inSitemap, `${p} is not in sitemap-templates.xml`).toContain(`${HOST}${p}`);
+      expect(index.includes(`href="${p}"`), `/templates doesn’t list ${p}`).toBe(true);
+      const [preview] = attr(doc!, /<img class="tpl-preview" src="([^"]+)"/g);
+      const svg = fs.readFileSync(path.join(dist, preview), 'utf8');
+      expect(svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg"'), `${p}: ${preview} is not a standalone SVG`).toBe(true);
+      expect(text(doc!).includes(t.hint), `${p} doesn’t say how to use the template`).toBe(true);
+    }
+  });
+
+  it('“Use this template” signs up and then opens a new board with that template (the app’s /app?template=<id>)', () => {
+    const appTsx = fs.readFileSync(path.resolve(__dirname, '../../web/src/app/App.tsx'), 'utf8');
+    expect(appTsx).toContain(`path="${APP.boards}"`);
+    // The dashboard turns ?template= into a new board opened with it; the templates feature fills it.
+    expect(fs.readFileSync(path.resolve(__dirname, '../../web/src/app/pages/dashboard/DashboardPage.tsx'), 'utf8')).toContain("params.get('template')");
+    expect(fs.readFileSync(path.resolve(__dirname, '../../web/src/features/templates/commands.ts'), 'utf8')).toContain("urlParam: 'template'");
+    for (const t of SITE_TEMPLATES) {
+      const doc = html.get(`/templates/${t.id}`)!;
+      const use = attr(doc, /<a class="btn btn--primary" href="([^"]+)">Use this template<\/a>/g);
+      expect(use.length, `/templates/${t.id} has no Use this template button`).toBeGreaterThan(0);
+      const url = new URL(use[0], HOST);
+      expect(url.pathname).toBe(APP.signup);
+      expect(url.searchParams.get('next')).toBe(`${APP.boards}?template=${t.id}`);
+    }
   });
 });
 
