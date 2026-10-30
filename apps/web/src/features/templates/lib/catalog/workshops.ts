@@ -11,7 +11,7 @@ export const raci: TemplateDef = {
   name: 'RACI matrix',
   description: 'Who is Responsible, Accountable, Consulted and Informed for each task, in one table.',
   categories: ['meetings', 'planning'],
-  keywords: ['raci', 'responsibility matrix', 'roles', 'responsible accountable consulted informed', 'ownership', 'rasci', 'roles and responsibilities', 'table'],
+  keywords: ['raci', 'responsibility matrix', 'roles', 'accountable consulted informed', 'ownership', 'rasci', 'roles and responsibilities', 'table'],
   build(newId) {
     const k = new Kit(newId);
     const roles = ['Product', 'Design', 'Engineering', 'Marketing', 'Support'];

@@ -442,10 +442,23 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   alike; hand-coded templates stay for layouts no archetype fits (sequence diagrams, ERDs…). After
   adding or editing a spec run `npm run templates:index`: it writes `lib/specs/index.ts`, what the
   picker lists and searches plus one lazy loader per file, so spec content loads per file on first
-  preview or insert (`TemplateDef.load`; insert through `addTemplate`). `validateSpec` (run over
-  every spec by the tests) checks ids, categories, counts, text lengths and filler; the tests also
-  fail while the index is stale or a note spills out of its section. A layout no archetype covers
-  is a new archetype (with its validation limits), not a one-off spec.
+  preview or insert (`TemplateDef.load`; insert through `addTemplate`). A layout no archetype
+  covers is a new archetype (with its validation limits), not a one-off spec.
+- **The template gate** (`features/templates/lib/gate.ts`, run over the whole catalog by the
+  templates tests, so by `npm run check`) is what lets the catalog grow without review by eye. Every
+  problem reads `<template id>: <what is wrong>`. `validateSpec` checks a spec's content (counts,
+  text lengths, filler, a how-to `hint`, no empty section) plus the metadata the picker, search and
+  the site's template pages need (`metadataProblems`, also run on hand-coded templates: name,
+  description, known categories, keywords, a URL-safe id). `layoutProblems` lays the template out
+  and rejects items outside their frame, text on text (a text box counted at the height it grows
+  to for its text) and text that can't be read in its note or shape (notes at the 14px they may
+  shrink to, estimated with Inter's real average widths). `sectionProblems` (specs) keeps notes in
+  their sections, sections apart and none empty. `duplicateProblems` compares word sets (shared
+  words / all words, filler words and plural endings dropped): names ≥ 80% alike, the same
+  archetype with ≥ 60% of the same section words, or ≥ 45% of the same wording anywhere is the same
+  template twice. `indexProblems` names specs the index lacks or lists out of date. A new failure
+  mode found in review becomes a check here, with a test proving it on a deliberately broken
+  template.
 
 Elements, geometry and text (all optional on `ElementDefinition` unless noted):
 - **Reads inside `editor.transact` see its earlier writes** (`getElements()`, `getElement()`,

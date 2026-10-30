@@ -1,20 +1,17 @@
 // What a spec must satisfy before it ships: run over every spec by the tests, and the check an
 // authoring tool (or a reviewer of an AI-drafted spec) runs on a draft. Limits keep text readable
 // at the sizes the archetypes give it; counts keep layouts within what they were designed for.
-import { CATEGORIES } from '../types';
+import { FILLER, metadataProblems } from '../gate';
 import { ARCHETYPES } from './render';
 import type { Section, TemplateSpec, Tone } from './types';
 
 const TONES: Tone[] = ['violet', 'mint', 'coral', 'amber', 'sky', 'rose', 'gray'];
-const CATEGORY_IDS = new Set<string>(CATEGORIES.map((c) => c.id));
-/** Filler that means a spec isn't finished. */
-const FILLER = /lorem|ipsum|placeholder|\btodo\b|xxx|\btext here\b|\bexample \d\b/i;
 
 export function validateSpec(s: TemplateSpec): string[] {
   const out: string[] = [];
   const at = (where: string, problem: string) => out.push(`${s.id}: ${where} ${problem}`);
   const text = (where: string, v: unknown, min: number, max: number) => {
-    if (typeof v !== 'string') return at(where, 'is missing');
+    if (typeof v !== 'string' || !v.trim()) return at(where, 'is missing');
     const t = v.trim();
     if (t.length < min || t.length > max) at(where, `must be ${min}–${max} characters (is ${t.length}: "${t.slice(0, 40)}")`);
     if (FILLER.test(t)) at(where, `reads like filler: "${t.slice(0, 40)}"`);
@@ -38,15 +35,10 @@ export function validateSpec(s: TemplateSpec): string[] {
     notes(where, sec.notes, 1, maxNotes);
   };
 
-  if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(s.id ?? '')) at('id', 'must be kebab-case');
-  text('name', s.name, 3, 40);
-  text('description', s.description, 20, 140);
+  // Name, description, categories, keywords and id: what the picker, search and site pages need.
+  out.push(...metadataProblems(s));
+  // The how-to: how to run the session or use the template, shown under its title.
   text('hint', s.hint, 20, 170);
-  count('categories', s.categories?.length ?? 0, 1, 3);
-  for (const c of s.categories ?? []) if (!CATEGORY_IDS.has(c)) at('categories', `has unknown category "${c}"`);
-  if (new Set(s.categories).size !== s.categories?.length) at('categories', 'repeat');
-  count('keywords', s.keywords?.length ?? 0, 3, 14);
-  for (const kw of s.keywords ?? []) if (kw !== kw.toLowerCase() || !kw.trim() || kw.length > 40) at('keywords', `"${kw}" must be lower case, 1–40 characters`);
   if (!(s.archetype in ARCHETYPES)) {
     at('archetype', `"${s.archetype}" is not one of ${Object.keys(ARCHETYPES).join(', ')}`);
     return out;
@@ -104,6 +96,7 @@ export function validateSpec(s: TemplateSpec): string[] {
         tone(`row ${i + 1}`, r.tone);
         if (r.cells.length !== s.stages.length) at(`row ${i + 1}`, `has ${r.cells.length} cells for ${s.stages.length} stages`);
         r.cells.forEach((c, j) => c === '' || text(`row ${i + 1} cell ${j + 1}`, c, 2, 80));
+        if (!r.cells.some(Boolean)) at(`row ${i + 1}`, 'is empty: give it at least one example note');
       });
       if (!s.rows.some((r) => r.cells.filter(Boolean).length === s.stages.length)) at('rows', 'need at least one row filled for every stage');
       break;
@@ -136,6 +129,7 @@ export function validateSpec(s: TemplateSpec): string[] {
       const tw = s.columns.reduce((a, c) => a + (c.w ?? 200), 0);
       if (tw > 1900) at('columns', `are ${tw}px wide in all (at most 1900)`);
       count('rows', s.rows.length, 1, 12);
+      if (!s.rows.some((r) => r.filter((c) => (typeof c === 'string' ? c : c?.t)).length >= 2)) at('rows', 'need at least one example row with two or more cells filled');
       s.rows.forEach((r, i) => {
         if (r.length > s.columns.length) at(`row ${i + 1}`, `has ${r.length} cells for ${s.columns.length} columns`);
         r.forEach((c, j) => {
