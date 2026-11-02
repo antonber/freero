@@ -3673,6 +3673,16 @@
           "type": "string",
           "x-nullable": true
         },
+        "fields": {
+          "type": "object",
+          "description": "A card on a kanban: values of its kanban's fields (the outline's `schema`), by field name or id. A select takes an option label (or id), a multi-select an array of them, a person a user id, a date YYYY-MM-DD, a number, text or a URL, a checkbox true / false; null clears. Not the column field (move the card with `into` + `column`). The fields apply to the kanban the card is in now. An unknown field or option is refused (400) with the valid ones.",
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "x-nullable": true
+          }
+        },
         "into": {
           "type": "string",
           "description": "Move the item INTO this frame, kanban (column) or cluster, as `Placement.into`: Freero finds the spot (not with x / y)."

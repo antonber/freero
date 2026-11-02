@@ -7,7 +7,11 @@ import {
   APART_GAP,
   API_CREATABLE_TYPES,
   API_MAX_ITEMS_PER_CALL,
+  COLUMN_FIELD_ID,
+  canonicalValue,
+  collectionSchema,
   connectorDraft,
+  optionByLabel,
   findFreeSpot,
   frameDraft,
   isAnonymousAuthor,
@@ -25,7 +29,9 @@ import {
   type ApiCreatableType,
   type ApiItem,
   type BoardElement,
+  type CardElement,
   type ElementDraft,
+  type FieldValues,
   type Rect,
   type ShapeKind,
   type StickyColor,
@@ -251,6 +257,35 @@ function textField(el: BoardElement): { key: string; rich: boolean } | null {
 }
 
 /**
+ * A card's custom field values after `fields` (`{ "<field name or id>": value | null }`), checked
+ * against the schema of the kanban it is in (@freero/shared fields.ts). Select options are named
+ * by label (or id); an unknown field or option is refused with the valid ones, and nothing
+ * changes. The column field is where the card stands: it moves with `into` / `column`.
+ */
+function fieldValues(card: CardElement, raw: unknown, view: BoardView): FieldValues {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw badRequest('fields must be an object of field name → value');
+  const k = card.frameId ? view.elements.find((e) => e.el.id === card.frameId)?.el : undefined;
+  if (k?.type !== 'kanban') throw badRequest('fields: this card is not on a kanban (a card’s fields are its kanban’s)');
+  const schema = collectionSchema(k);
+  const names = schema.map((f) => f.name).join(', ');
+  const values: FieldValues = { ...(card.values ?? {}) };
+  for (const [key, v] of Object.entries(raw as Record<string, unknown>)) {
+    const f = schema.find((x) => x.id === key) ?? schema.find((x) => x.name.trim().toLowerCase() === key.trim().toLowerCase());
+    if (!f) throw badRequest(`fields: the kanban has no field “${key}” (its fields: ${names})`);
+    if (f.id === COLUMN_FIELD_ID) throw badRequest(`fields: “${f.name}” is the column a card is in; move the card with into (the kanban) and column instead`);
+    const byLabel = (s: unknown) => (typeof s === 'string' ? (f.options?.find((o) => o.id === s) ?? optionByLabel(f, s))?.id ?? s : s);
+    const value = canonicalValue(f, f.type === 'select' ? byLabel(v) : f.type === 'multiselect' && Array.isArray(v) ? v.map(byLabel) : v);
+    if (value === undefined) {
+      const choices = f.options?.length ? ` (one of: ${f.options.map((o) => o.label || 'Untitled').join(', ')})` : '';
+      throw badRequest(`fields: “${String(typeof v === 'object' ? JSON.stringify(v) : v)}” is not a valid ${f.type} for “${f.name}”${choices}`);
+    }
+    if (value === null) delete values[f.id];
+    else values[f.id] = value;
+  }
+  return values;
+}
+
+/**
  * A field patch from what the caller sends to change `el`: only fields that type has, validated
  * like a create. Position changes re-apply the frame rule unless `frameId` is given.
  */
@@ -297,6 +332,7 @@ export function planPatch(el: BoardElement, body: unknown, view: BoardView): Rec
     patch.locked = it.locked;
   }
   if (has('link')) patch.link = link(it.link, null) ?? null;
+  if (only('fields', ['card'])) patch.values = fieldValues(el as CardElement, it.fields, view);
   for (const k of ['x', 'y', 'w', 'h', 'rotation'] as const) {
     if (!has(k)) continue;
     if (el.type === 'connector') throw badRequest('A connector follows the items it joins; move those instead');
