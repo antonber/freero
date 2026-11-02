@@ -722,7 +722,7 @@
         "operationId": "importFromTracker",
         "tags": ["trackers"],
         "summary": "Import issues from the issue tracker as linked task cards",
-        "description": "The MCP tool `import_from_tracker` over REST (#79), the board’s \"Import issues…\" for a token or app: the issues a tracker query finds become task cards LINKED to them (key, status, assignee; synced both ways — closing the issue updates its card). Owners and editors, through the person’s own or the team’s tracker connection (`connection`: its name or id, needed when there are several). At most 100 issues (`limit`, default 50); issues already linked on this board are skipped. Placed in free space, or where `placement` says — placement never changes an issue’s status (in a kanban a card goes to the column of its status when the named one has another). Attributed to the app for the person. With `target: \"suggestions\"` it needs only boards:suggest and proposes the cards instead (plain cards linking to their issues, not synced) as one suggestion group. 400 `tracker_not_connected` when the person has no tracker connection here; 400 / 502 `tracker_refused` with the tracker’s answer.",
+        "description": "The MCP tool `import_from_tracker` over REST (#79), the board’s \"Import issues…\" for a token or app: the issues a tracker query finds become task cards LINKED to them (key, status, assignee; synced both ways — closing the issue updates its card). Owners and editors, through the person’s own or the team’s tracker connection (`connection`: its name or id, needed when there are several). At most 100 issues (`limit`, default 50); issues already linked on this board are skipped. Placed in free space, or where `placement` says — placement never changes an issue’s status (in a kanban a card goes to the column of its status when the named one has another). Attributed to the app for the person. With `target: \"suggestions\"` it needs only boards:suggest and proposes the cards instead as one suggestion group (cards linking to their issues); each card an editor accepts is then linked to its issue like an imported one (#82). 400 `tracker_not_connected` when the person has no tracker connection here; 400 / 502 `tracker_refused` with the tracker’s answer.",
         "x-freero-scope": "boards:write",
         "security": [{ "bearer": ["boards:write"] }],
         "requestBody": {
@@ -751,6 +751,45 @@
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "404": { "$ref": "#/components/responses/NotFound" },
+          "423": { "$ref": "#/components/responses/AgentPaused" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/boards/{boardId}/trackers/send": {
+      "parameters": [{ "$ref": "#/components/parameters/BoardId" }],
+      "post": {
+        "operationId": "sendToTracker",
+        "tags": ["trackers"],
+        "summary": "Send board items to the issue tracker as one issue (or one each), linked both ways",
+        "description": "The MCP tool `sync_to_tracker` over REST (#84), the board’s \"Send to tracker\" for a token or app: the items (sticky notes, cards, shapes, text, mind-map nodes; ids from the outline) become ONE issue by default — a cluster of notes becomes one issue listing each with a link back — or one per item with `mode: \"each\"`. The items and the issue stay linked and in sync both ways: each item shows the issue’s key, status and assignee. Owners and editors, through the person’s own or the team’s tracker connection (`connection`: its name or id, needed when there are several — `GET /boards/{boardId}/trackers` lists them and their projects). `project` defaults to the connection’s default project. At most 50 items. 400 `tracker_not_connected` when the person has no tracker connection here; 404 when an item isn’t on the board; 409 `tracker_already_linked` when an item is already linked to an issue; 400 / 502 `tracker_refused` with the tracker’s answer (issues created before it refused are named).",
+        "x-freero-scope": "boards:write",
+        "security": [{ "bearer": ["boards:write"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["itemIds"],
+                "properties": {
+                  "itemIds": { "type": "array", "minItems": 1, "maxItems": 50, "items": { "type": "string", "maxLength": 64 } },
+                  "connection": { "type": "string", "maxLength": 200, "description": "The tracker connection’s name or id" },
+                  "project": { "type": "string", "maxLength": 200, "description": "Jira project key, Linear team key or GitHub owner/repo (default: the connection’s default project)" },
+                  "issueType": { "type": "string", "maxLength": 100, "description": "Jira issue type (default: the connection’s, else Task)" },
+                  "mode": { "type": "string", "enum": ["one", "each"], "description": "one (default): one issue for all the items; each: one issue per item" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "The issues created, each with the items linked to it", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TrackerSend" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": { "$ref": "#/components/responses/Conflict" },
           "423": { "$ref": "#/components/responses/AgentPaused" },
           "429": { "$ref": "#/components/responses/RateLimited" }
         }
@@ -1513,6 +1552,25 @@
           "skipped": { "type": "integer", "description": "Matching issues already linked on this board (never imported twice)" },
           "containerId": { "type": "string", "description": "placement newFrame / newKanban: the frame or kanban made" },
           "groupId": { "type": ["string", "null"], "description": "target suggestions: the suggestion group" }
+        }
+      },
+      "TrackerSend": {
+        "type": "object",
+        "required": ["issues"],
+        "properties": {
+          "issues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["linkId", "key", "url", "itemIds"],
+              "properties": {
+                "linkId": { "type": "string", "description": "The link (object address freero://issue/<linkId>)" },
+                "key": { "type": "string", "description": "The issue key (WEB-12, ENG-4, owner/repo#7)" },
+                "url": { "type": "string" },
+                "itemIds": { "type": "array", "items": { "type": "string" }, "description": "The board items linked to it, in order" }
+              }
+            }
+          }
         }
       },
       "Rect": {
