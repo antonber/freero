@@ -6,6 +6,7 @@ import { fieldsTarget } from './lib/schema';
 import { cleanFilter } from '@freero/shared';
 import { saveViewForEveryone, setDensity, setMyCardDisplay, setMyFilter, setSort, setViewLocked } from './lib/view';
 import { setGroupBy, setSwimlanes } from './lib/group';
+import { createFromRows } from './lib/fromRows';
 
 const selectedKanban = (editor: Editor) => {
   const sel = editor.getSelection();
@@ -48,6 +49,16 @@ export default defineCommands([
     label: 'Move to column',
     run(editor, args) {
       if (typeof args?.id === 'string' && typeof args.column === 'string') moveToColumn(editor, args.id, args.column);
+    },
+  },
+  {
+    // A new kanban from rows another feature hands over (the table's "Convert to kanban", step 3e):
+    // args { rows: KanbanRowsInput (@freero/shared), at?: top-left, id?: the id it should get,
+    // frameId? }. The kanban and its cards are made here, in the caller's transaction.
+    id: 'kanban.createFromRows',
+    label: 'Make a kanban from rows',
+    run(editor, args) {
+      if (args?.rows) createFromRows(editor, args);
     },
   },
   {
