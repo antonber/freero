@@ -23,6 +23,11 @@ export interface PageDef {
   description: string;
   /** Short name in breadcrumbs and in the OG image's kicker. */
   name: string;
+  /**
+   * The page this one sits under in the breadcrumbs when its path doesn't nest under it (a
+   * template's page under its category's page). Default: each parent path that is a page.
+   */
+  parent?: string;
   /** Headline drawn on the page's Open Graph image (defaults to `name`). */
   ogTitle?: string;
   /**
