@@ -864,7 +864,7 @@ files; it precaches them plus the shell files). Rules, all in `strategyFor` / `r
 ## Marketing site (`apps/site`, server `modules/site`; KAI-250..253)
 
 The public pages (`/`, `/claude`, `/chatgpt`, `/agents`, `/security`, `/open-source`, `/pricing`,
-`/docs`, `/support`, `/privacy`, `/terms`, `/acceptable-use`, `/integrations/<id>`, `/vs/<slug>`, `/templates/<id>`, `/use-cases/<slug>`; later `/features/*`) are a separate workspace
+`/docs`, `/support`, `/privacy`, `/terms`, `/acceptable-use`, `/integrations/<id>`, `/vs/<slug>`, `/templates/<id>`, `/templates/category/<slug>`, `/use-cases/<slug>`; later `/features/*`) are a separate workspace
 so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs/marketing/seo.md`.
 
 - **Why a custom prerender, not a site generator.** Pages are TSX components rendered once by
@@ -900,7 +900,15 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
   `/signup?next=/app?template=<id>` — the dashboard creates a board and opens it with
   `?template=<id>`, and the templates feature's `templates.fromLink` command (`urlParam`) fills an
   EMPTY board with it (a board with content only opens the panel, so a reload never adds a second
-  copy). A template added to the catalog gets its page, sitemap entry and index card with no site edit.
+  copy). A template added to the catalog gets its page, sitemap entry and category listings with no
+  site edit. **Categories** (`src/lib/templateCategories.tsx`): `/templates/category/<slug>` lists
+  every template that names the category (those whose FIRST category it is first; that one is the
+  template's breadcrumb parent, `PageDef.parent`, and its related templates come from it). Past 60
+  templates a category continues on `/<slug>/2`, `/3`… (own title, canonical, sitemap entry), and the
+  `/templates` hub shows each category's count and four highlights (use cases' templates first), so
+  neither grows with the catalog. The site adds per category only a stable slug, a title and an
+  intro; a new app category without them, or a template with the reserved id `category`, fails the
+  build.
 - **Use cases** (`/use-cases/<slug>`, #75) are hand-written pages; the templates each uses are
   listed once in `src/lib/useCases.tsx`, which every template page reads to link back (an id the
   catalog lacks fails the build). Their screenshots come from `scripts/site-shots.mjs`

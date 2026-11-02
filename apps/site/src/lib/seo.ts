@@ -7,8 +7,13 @@ const ORG_ID = `${ORIGIN}/#organization`;
 const SITE_ID = `${ORIGIN}/#website`;
 const APP_ID = `${ORIGIN}/#software`;
 
-/** The breadcrumb trail of a page: Home, then each parent path that is a page, then the page. */
+/** The breadcrumb trail of a page: Home, then each parent path that is a page (or its `parent`'s trail), then the page. */
 export function crumbsOf(page: PageDef, byPath: Map<string, PageDef>): Crumb[] {
+  if (page.parent) {
+    const parent = byPath.get(page.parent);
+    if (!parent || parent === page) throw new Error(`${page.path}: its parent ${page.parent} is not another page`);
+    return [...crumbsOf(parent, byPath), { name: page.name, path: page.path }];
+  }
   const out: Crumb[] = [{ name: 'Home', path: '/' }];
   if (page.path === '/') return out;
   const parts = page.path.split('/').filter(Boolean);

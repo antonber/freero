@@ -1,12 +1,13 @@
 // /templates/<id> — one page per template in the app's catalog (lib/templates.tsx reads it): what
 // it is for, how to use it (the board's own instruction and the parts it lays out), its real
-// preview, "Use this template" (sign up, then a new board with it) and related templates and use
-// cases. A template added to the catalog gets its page with no edit here.
+// preview, "Use this template" (sign up, then a new board with it), related templates from its
+// category and use cases. Its breadcrumb runs through its (first) category's page. A template added
+// to the catalog gets its page with no edit here.
 import { ButtonLink, Hero, Prompts, Section, Step, Steps } from '../../components/ui';
 import { definePage, type PageDef } from '../../lib/define';
 import { abs } from '../../lib/site';
+import { categoryPath, siteCategory } from '../../lib/templateCategories';
 import {
-  categoryAnchor,
   clip,
   previewOf,
   relatedTo,
@@ -32,7 +33,7 @@ function titles(): Map<string, string> {
   };
   const out = new Map(SITE_TEMPLATES.map((t) => [t.id, pick(t)]));
   // Two templates with one name (in different categories) say which is which.
-  for (const t of SITE_TEMPLATES) if (SITE_TEMPLATES.some((o) => o.id !== t.id && out.get(o.id) === out.get(t.id))) out.set(t.id, pick(t, t.category.label.toLowerCase()));
+  for (const t of SITE_TEMPLATES) if (SITE_TEMPLATES.some((o) => o.id !== t.id && out.get(o.id) === out.get(t.id))) out.set(t.id, pick(t, siteCategory(t.category).noun));
   return out;
 }
 
@@ -69,29 +70,31 @@ function stepsOf(t: SiteTemplate): Array<{ name: string; text: string }> {
 const pageTitles = titles();
 
 const page = (t: SiteTemplate): PageDef => {
+  const category = siteCategory(t.category);
   const related = relatedTo(t);
   const useCases = useCasesFor(t.id);
   const steps = stepsOf(t);
   return definePage({
     path: templatePath(t.id),
     name: t.name,
+    parent: categoryPath(category),
     title: pageTitles.get(t.id)!,
     description: descriptionOf(t),
     updated: UPDATED,
     sitemap: 'templates',
-    sharedOg: { key: `templates-${t.category.id}`, kicker: 'Free templates', title: `${t.category.label} templates` },
+    sharedOg: { key: `templates-${category.id}`, kicker: 'Free templates', title: category.heading },
     jsonLd: [howTo(t, steps)],
     body: () => (
       <>
         <Hero
-          kicker={`${t.category.label} template`}
+          kicker={category.heading.replace(/s$/, '')}
           title={baseName(t)}
           lead={t.description}
           actions={
             <>
               <ButtonLink href={useTemplateHref(t.id)}>Use this template</ButtonLink>
-              <ButtonLink href={`/templates#${categoryAnchor(t.category.id)}`} variant="secondary">
-                More {t.category.label.toLowerCase()} templates
+              <ButtonLink href={categoryPath(category)} variant="secondary">
+                More {category.noun} templates
               </ButtonLink>
             </>
           }
@@ -110,7 +113,7 @@ const page = (t: SiteTemplate): PageDef => {
                 {t.categories.slice(1).map((c, i) => (
                   <span key={c.id}>
                     {i ? ', ' : ''}
-                    <a href={`/templates#${categoryAnchor(c.id)}`}>{c.label}</a>
+                    <a href={categoryPath(siteCategory(c))}>{c.label}</a>
                   </span>
                 ))}
               </>
@@ -175,10 +178,14 @@ const page = (t: SiteTemplate): PageDef => {
         ) : null}
 
         {related.length ? (
-          <Section id="related" title="Related templates" tone="tint">
+          <Section id="related" title={`Related ${category.noun} templates`} tone="tint">
             <TemplateCards templates={related} />
-            <p>
-              <a href="/templates">All {SITE_TEMPLATES.length} templates</a>
+            <p className="tpl-more">
+              <a href={categoryPath(category)}>
+                All {category.templates.length} {category.noun} templates
+              </a>
+              {' · '}
+              <a href="/templates">All {SITE_TEMPLATES.length} templates by category</a>
             </p>
           </Section>
         ) : null}

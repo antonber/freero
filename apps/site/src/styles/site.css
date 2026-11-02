@@ -690,6 +690,98 @@ pre {
 .tpl-parts li {
   margin-bottom: 0.35em;
 }
+/* The categories as links with their counts (the hub, "more categories" on a category page). */
+.tpl-cats {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 160px), 1fr));
+}
+.tpl-cats a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  height: 100%;
+  min-height: 48px;
+  padding: 8px 12px 8px 14px;
+  font-size: 15px;
+  line-height: 1.25;
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius);
+  background: var(--fr-surface);
+  color: var(--fr-ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+.tpl-cats a:hover {
+  border-color: var(--fr-primary);
+  color: var(--fr-primary);
+}
+.tpl-cats__count {
+  flex: none;
+  min-width: 2.2em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--fr-primary-soft);
+  color: var(--fr-primary);
+  font-size: 13px;
+  text-align: center;
+}
+.tpl-heading-link {
+  color: inherit;
+  text-decoration: none;
+}
+.tpl-heading-link:hover {
+  color: var(--fr-primary);
+}
+.tpl-more {
+  margin-top: 20px;
+  font-weight: 600;
+}
+/* Numbered pages of a category's list. */
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 32px;
+}
+.pager ol {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+}
+.pager a,
+.pager span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: var(--fr-radius);
+  border: 1px solid var(--fr-line);
+  background: var(--fr-surface);
+  color: var(--fr-ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+.pager a:hover {
+  border-color: var(--fr-primary);
+  color: var(--fr-primary);
+}
+.pager [aria-current='page'] {
+  background: var(--fr-primary);
+  border-color: var(--fr-primary);
+  color: var(--fr-primary-ink);
+}
 
 /* ---- Split rows (text + picture) ---- */
 .split {

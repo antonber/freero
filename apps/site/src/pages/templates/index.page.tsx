@@ -1,12 +1,13 @@
-// /templates — every template in the app's catalog, by category (each under its first one, as the
-// board's Templates panel lists them), each card with the template's real preview.
+// /templates — the hub of the template catalog: every category with its count and a few of its
+// templates (with their previews), each leading to the category's own pages, which list all of
+// them (lib/templateCategories.tsx). What the hub shows grows with the number of categories, never
+// with the catalog.
 import { ButtonLink, Hero, Section } from '../../components/ui';
 import { definePage } from '../../lib/define';
 import { APP } from '../../lib/site';
-import { categoryAnchor, SITE_TEMPLATES, TEMPLATE_CATEGORIES, TemplateCards, templatesIn, templatesItemList } from '../../lib/templates';
+import { SITE_TEMPLATES, TemplateCards } from '../../lib/templates';
+import { categoriesItemList, CategoryLinks, categoryPath, SITE_CATEGORIES } from '../../lib/templateCategories';
 import { USE_CASES, useCasePath } from '../../lib/useCases';
-
-const categories = TEMPLATE_CATEGORIES.filter((c) => templatesIn(c.id).length);
 
 export default definePage({
   path: '/templates',
@@ -14,9 +15,9 @@ export default definePage({
   title: 'Free whiteboard templates: retros, kanban, roadmaps and more',
   ogTitle: `${SITE_TEMPLATES.length} free whiteboard templates`,
   description: `${SITE_TEMPLATES.length} free, editable whiteboard templates for retrospectives, planning, strategy, research, diagrams and AI agents. Start a board from any of them.`,
-  updated: '2026-10-30',
+  updated: '2026-11-02',
   sitemap: 'templates',
-  jsonLd: [templatesItemList()],
+  jsonLd: [categoriesItemList()],
   faq: [
     {
       q: 'Are the templates free?',
@@ -45,23 +46,21 @@ export default definePage({
             </ButtonLink>
           </>
         }
-      >
-        <p className="works-with">
-          Jump to:{' '}
-          {categories.map((c, i) => (
-            <span key={c.id}>
-              {i ? ' · ' : ''}
-              <a href={`#${categoryAnchor(c.id)}`}>{c.label}</a>
-            </span>
-          ))}
-        </p>
-      </Hero>
-      {categories.map((c, i) => (
-        <Section key={c.id} id={categoryAnchor(c.id)} title={c.label} tone={i % 2 ? 'tint' : 'plain'}>
-          <TemplateCards templates={templatesIn(c.id)} />
+      />
+      <Section id="categories" title="Browse by category" lead="Every category lists all of its templates. A template can sit in more than one.">
+        <CategoryLinks />
+      </Section>
+      {SITE_CATEGORIES.map((c, i) => (
+        <Section key={c.id} id={`category-${c.id}`} title={<a className="tpl-heading-link" href={categoryPath(c)}>{c.heading}</a>} lead={c.intro} tone={i % 2 ? 'plain' : 'tint'}>
+          <TemplateCards templates={c.highlights} />
+          <p className="tpl-more">
+            <a href={categoryPath(c)}>
+              See all {c.templates.length} {c.noun} templates
+            </a>
+          </p>
         </Section>
       ))}
-      <Section id="use-cases" title="Templates by use case" tone={categories.length % 2 ? 'tint' : 'plain'} narrow>
+      <Section id="use-cases" title="Templates by use case" tone={SITE_CATEGORIES.length % 2 ? 'plain' : 'tint'} narrow>
         <ul className="checks checks--yes">
           {USE_CASES.map((u) => (
             <li key={u.slug}>
