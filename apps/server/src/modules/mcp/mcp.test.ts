@@ -289,7 +289,7 @@ it('import_meeting_notes from a connection that may only suggest proposes the me
   await writer.close();
 });
 
-it('no tool, prompt or resource reaches a directory without a title and explicit read-only / destructive / open-world hints, and none claims to be read-only while destructive', async () => {
+it('no tool, prompt or resource reaches a directory without a title, typed parameters and explicit read-only / destructive / open-world hints, and none claims to be read-only while destructive', async () => {
   // Every tool the server defines, including those offered only when a capability is configured
   // and the live view's own button (share_board).
   for (const t of TOOLS) {
@@ -305,6 +305,10 @@ it('no tool, prompt or resource reaches a directory without a title and explicit
   for (const t of tools) {
     expect(t.title && t.annotations?.title, t.name).toBeTruthy();
     for (const hint of ['readOnlyHint', 'destructiveHint', 'openWorldHint'] as const) expect(typeof t.annotations?.[hint], `${t.name} ${hint} on the wire`).toBe('boolean');
+    // The Claude directory flags a parameter whose schema has no type (a recursive zod schema at the
+    // top level loses it), and holds the submission until it is fixed.
+    for (const [param, schema] of Object.entries((t.inputSchema.properties ?? {}) as Record<string, { type?: unknown; anyOf?: unknown }>))
+      expect(schema.type ?? schema.anyOf, `${t.name}.${param} has a type`).toBeDefined();
   }
   for (const p of (await client.listPrompts()).prompts) expect(p.title, p.name).toBeTruthy();
   for (const r of (await client.listResources()).resources) expect(r.title, r.uri).toBeTruthy();

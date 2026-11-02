@@ -113,6 +113,9 @@ const outlineNode: z.ZodType<OutlineNode> = z.lazy(() =>
     children: z.array(outlineNode).max(500).optional(),
   }),
 );
+// The root is a plain object (not the lazy schema itself) so the tool's JSON Schema gives the
+// parameter a type; the directories flag an untyped parameter.
+const outlineRoot = z.object({ text, children: z.array(outlineNode).max(500).optional() });
 
 // Every tool states all three hints explicitly (the Claude and ChatGPT directories require it):
 // readOnlyHint, destructiveHint (true for anything that overwrites, deletes or sends something it
@@ -572,7 +575,7 @@ export const TOOLS: McpTool[] = [
     input: {
       boardId,
       mermaid: z.string().min(1).max(LAYOUT_LIMITS.source).optional().describe('Mermaid source: `flowchart LR` / `graph TD` … or `sequenceDiagram`.'),
-      outline: outlineNode.optional().describe('The root of a nested outline: { text, children: [ … ] }.'),
+      outline: outlineRoot.optional().describe('The root of a nested outline: { text, children: [ … ] }.'),
       outlineAs: z.enum(['mindmap', 'tree']).optional().describe('How to draw `outline` (default mindmap).'),
       graph: z
         .object({
