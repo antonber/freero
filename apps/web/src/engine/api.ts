@@ -578,6 +578,12 @@ export interface ChildPresentation {
   chips?: FieldChip[];
   /** How much of the element's own text shows: 'compact' leaves secondary text out. */
   density?: 'compact' | 'comfortable';
+  /**
+   * [additive] Drawn faded: this viewer's own filter leaves it out (a kanban's "filter for me").
+   * Only ever personal and only a look: it stays on the board, hit-tested and selectable, and its
+   * size never depends on it.
+   */
+  muted?: boolean;
 }
 
 /** [additive] What `ElementDefinition.normalize` is told besides the element. */

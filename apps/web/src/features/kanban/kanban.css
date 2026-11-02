@@ -350,8 +350,54 @@
 }
 
 /* "+N more": cards beyond a column's limit, folded away below the board. */
-.fr-kanban__more {
+.fr-kanban__folded {
   position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 22px;
+}
+
+.fr-kanban__hidden {
+  margin-left: auto;
+  color: #6b6a80;
+  font: 500 12px/20px var(--fr-font);
+  white-space: nowrap;
+}
+
+/* While filtered or sorted, the header says so (and opens the View panel). */
+.fr-kanban__view-state {
+  display: inline-flex;
+  gap: 6px;
+  margin-right: 8px;
+  min-width: 0;
+}
+
+.fr-kanban__view-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 240px;
+  height: 24px;
+  padding: 0 8px;
+  overflow: hidden;
+  border: 1px solid rgba(23, 22, 43, 0.12);
+  border-radius: 999px;
+  background: #f4f3fa;
+  color: #4b4a63;
+  font: 500 12px/1 var(--fr-font);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.fr-kanban__view-chip:hover {
+  border-color: var(--fr-primary);
+  color: var(--fr-primary);
+}
+
+.fr-kanban__more {
+  flex: 1;
   height: 22px;
   border: 1px dashed rgba(23, 22, 43, 0.2);
   border-radius: 8px;
@@ -592,6 +638,43 @@
 
 .fr-kanban-view__move {
   display: flex;
+}
+
+.fr-kanban-view__lock {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--fr-ink-2);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.fr-kanban-view__rules {
+  gap: 6px;
+}
+
+.fr-kanban-view__rule {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--fr-line, rgba(23, 22, 43, 0.08));
+}
+
+.fr-kanban-view__rule-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.fr-kanban-view__rule-value {
+  display: flex;
+  padding-left: 2px;
+}
+
+.fr-kanban-view__rule-value > * {
+  flex: 1;
 }
 
 @media (forced-colors: active) {

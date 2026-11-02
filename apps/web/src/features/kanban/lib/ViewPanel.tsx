@@ -1,10 +1,11 @@
 // The View panel (dock): how a kanban's board view shows its cards. Which fields show (and their
-// order) and what colours cards are this person's own until an editor presses "Save for
-// everyone"; viewers change them for themselves too. Grouping (columns, swimlanes) and density
-// move or resize the real cards on the shared board, so only editors change them, for everyone. Shows the kanban the selection points at, and
-// keeps showing it when the selection moves elsewhere.
+// order), what colours cards and the filter are this person's own until an editor presses "Save
+// for everyone"; viewers change them for themselves too. Grouping (columns, swimlanes), sorting and
+// density move or resize the real cards on the shared board, so only editors change them, for
+// everyone — and nobody but whoever locked it (and the board's owners) while the view is locked.
+// Shows the kanban the selection points at, and keeps showing it when the selection moves elsewhere.
 import { useEffect, useState } from 'react';
-import { ChevronDown, ChevronUp, SlidersHorizontal } from 'lucide-react';
+import { ChevronDown, ChevronUp, Lock, SlidersHorizontal } from 'lucide-react';
 import {
   SHOWABLE_BUILTINS,
   boardView,
@@ -16,11 +17,12 @@ import {
   type CardDensity,
   type KanbanElement,
 } from '@freero/shared';
-import { DockHeader, richTextToPlain, useCanEdit, useElement, usePersonalView, useSelection, type Editor } from '@engine';
+import { DockHeader, richTextToPlain, useCanEdit, useElement, usePeople, usePersonalView, useSelection, type Editor } from '@engine';
 import { Button, IconButton, SegmentedControl, Select, Toggle } from '@ui';
 import { fieldsTarget, FIELD_TYPE_LABELS } from './schema';
 import { groupableFields, setGroupBy, setSwimlanes } from './group';
-import { resetMyView, saveViewForEveryone, setDensity, setMyCardDisplay } from './view';
+import { resetMyView, saveViewForEveryone, setDensity, setMyCardDisplay, setViewLocked, viewEditable } from './view';
+import { FilterSection, SortSection } from './FilterSort';
 
 const DENSITIES: Array<{ value: CardDensity; label: string }> = [
   { value: 'compact', label: 'Compact' },
@@ -39,6 +41,7 @@ export function ViewPanel({ editor }: { editor: Editor }) {
   const k = found?.type === 'kanban' ? (found as KanbanElement) : null;
   const saved = k ? boardView(k) : null;
   const override = usePersonalView(k?.id, saved?.id ?? '');
+  const locker = usePeople(saved?.locked ? [saved.locked.by] : []);
   if (!k || !saved) {
     return (
       <div className="fr-kanban-fields">
@@ -57,7 +60,10 @@ export function ViewPanel({ editor }: { editor: Editor }) {
   const own = !!overrideBetween(saved, mine);
   const schema = collectionSchema(k);
   const card = mine.card!;
-  const mayShare = canEdit && !k.locked;
+  // Saving for everyone: editors, an unlocked kanban, a view nobody else locked.
+  const mayShare = canEdit && viewEditable(editor, k);
+  const lockedByOther = !!saved.locked && canEdit && !k.locked && !mayShare;
+  const lockedBy = saved.locked ? (saved.locked.by === editor.user.id ? 'you' : (locker[saved.locked.by]?.name ?? 'someone')) : '';
   // Every field a card can show: the ones shown first, in their order, then the rest.
   const all = [...SHOWABLE_BUILTINS.map((f) => ({ id: f.id as string, name: f.name })), ...schema.map((f) => ({ id: f.id, name: f.name }))];
   const shown = card.show.map((id) => all.find((f) => f.id === id)).filter((f): f is { id: string; name: string } => !!f);
@@ -101,6 +107,23 @@ export function ViewPanel({ editor }: { editor: Editor }) {
           <span>{mayShare ? 'Everyone sees this view. Your changes stay yours until you save them.' : 'Changes you make here are yours alone.'}</span>
         )}
       </div>
+      {canEdit && !k.locked && (
+        <div className={`fr-kanban-view__lock${saved.locked ? ' is-locked' : ''}`}>
+          {lockedByOther ? (
+            <>
+              <Lock size={14} aria-hidden />
+              <span>Locked by {lockedBy}: the view stays as saved. You can still change it for yourself.</span>
+            </>
+          ) : (
+            <Toggle
+              size="sm"
+              checked={!!saved.locked}
+              label={saved.locked ? `View locked by ${lockedBy}` : 'Lock this view'}
+              onChange={(on) => setViewLocked(editor, k.id, on)}
+            />
+          )}
+        </div>
+      )}
 
       <section className="fr-kanban-view__section" aria-labelledby="fr-kanban-view-groups">
         <h3 id="fr-kanban-view-groups" className="fr-kanban-view__heading">
@@ -125,9 +148,15 @@ export function ViewPanel({ editor }: { editor: Editor }) {
         <p className="fr-kanban-fields__hint">
           {mayShare
             ? 'Grouping moves the cards on the board, so it changes for everyone. A single select, person or checkbox field can make the columns or the rows.'
-            : 'The board’s editors choose how its cards are grouped.'}
+            : lockedByOther
+              ? 'The view is locked: its grouping stays as saved.'
+              : 'The board’s editors choose how its cards are grouped.'}
         </p>
       </section>
+
+      <FilterSection editor={editor} k={k} schema={schema} mine={mine.filter ?? null} saved={saved.filter ?? null} mayShare={mayShare} />
+
+      <SortSection editor={editor} k={k} schema={schema} sort={saved.sort ?? []} mayShare={mayShare} />
 
       <section className="fr-kanban-view__section" aria-labelledby="fr-kanban-view-cards">
         <h3 id="fr-kanban-view-cards" className="fr-kanban-view__heading">

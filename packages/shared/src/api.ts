@@ -1236,7 +1236,12 @@ export interface InsertStructureRequest {
  *             `<kanbanId>:<columnId>`). Items go below what is there (a frame or a kanban grows to
  *             hold them; a cluster takes them in).
  *   column    with `into` a kanban: the column, by its title or id. Without it each card goes to the
- *             column of its status, else the first. A card dropped in a column with a status takes it.
+ *             column of its value for the field the kanban is grouped by (its `fields`), else of its
+ *             status, else the first. A card dropped in a column with a status takes it.
+ *   row       [additive] with `into` a kanban with swimlanes: the row, by its title or id (also
+ *             `into: "<kanbanId>:<columnId>:<rowId>"`). Without it each card goes to the row of its
+ *             value for the swimlane field, else the first (the "No <field>" row). A card takes its
+ *             row's value.
  *   newFrame  a new frame with this title around everything added (on free space).
  *   newKanban a new kanban with this title and To do / Doing / Done columns, each card in the column
  *             of its status (sticky notes in To do).
@@ -1245,6 +1250,7 @@ export interface InsertStructureRequest {
 export interface StructurePlacement {
   into?: string;
   column?: string;
+  row?: string;
   newFrame?: string;
   newKanban?: string;
 }

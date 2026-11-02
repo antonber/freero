@@ -363,6 +363,34 @@ export const optionByLabel = (f: FieldDef, label: string): FieldOption | undefin
   return l ? f.options?.find((o) => o.label.trim().toLowerCase() === l) : undefined;
 };
 
+/** A field of `schema` named by its id or its name (case-insensitive). */
+export const fieldByRef = (schema: readonly FieldDef[], ref: string): FieldDef | undefined =>
+  schema.find((x) => x.id === ref) ?? schema.find((x) => x.name.trim().toLowerCase() === ref.trim().toLowerCase());
+
+/**
+ * Field values as an agent (the API, MCP) sends them — `{ "<field name or id>": value }`, a select
+ * option by its label or id, null to clear — read against `schema`: each field with its canonical
+ * value (null: clear), or the first problem in words, naming what would have been valid. Nothing
+ * is half-read: one bad entry and none of them are.
+ */
+export function readFieldInputs(schema: readonly FieldDef[], raw: unknown): { values: Array<{ field: FieldDef; value: FieldValue | null }> } | { error: string } {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { error: 'fields must be an object of field name → value' };
+  const names = schema.map((f) => f.name).join(', ');
+  const out: Array<{ field: FieldDef; value: FieldValue | null }> = [];
+  for (const [key, v] of Object.entries(raw as Record<string, unknown>)) {
+    const f = fieldByRef(schema, key);
+    if (!f) return { error: `the kanban has no field “${key}” (its fields: ${names})` };
+    const byLabel = (s: unknown) => (typeof s === 'string' ? ((f.options?.find((o) => o.id === s) ?? optionByLabel(f, s))?.id ?? s) : s);
+    const value = canonicalValue(f, f.type === 'select' ? byLabel(v) : f.type === 'multiselect' && Array.isArray(v) ? v.map(byLabel) : v);
+    if (value === undefined) {
+      const choices = f.options?.length ? ` (one of: ${f.options.map((o) => o.label || 'Untitled').join(', ')})` : '';
+      return { error: `“${String(typeof v === 'object' ? JSON.stringify(v) : v)}” is not a valid ${f.type} for “${f.name}”${choices}` };
+    }
+    out.push({ field: f, value });
+  }
+  return { values: out };
+}
+
 /** A value as words (labels, names, ISO dates); '' for empty. */
 export function valueText(f: Pick<FieldDef, 'type' | 'options'>, v: FieldValue | null, personName?: (id: string) => string | undefined): string {
   if (v === null) return '';

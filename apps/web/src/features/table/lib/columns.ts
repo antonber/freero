@@ -1,8 +1,10 @@
 // Typed columns (KAI-123). Pure: what a column's cells hold, how they read, sort, filter and
 // convert. A typed cell is stored in `tableCells` as its canonical plain value (see TableColumn in
-// @freero/shared), so everything here works on the raw stored string.
+// @freero/shared), so everything here works on the raw stored string. Words are read by
+// @freero/shared fieldText.ts and values filtered and sorted by query.ts — the same rules a
+// kanban's fields, the CSV import and the trackers use; only the table's own storage lives here.
 import { nanoid } from 'nanoid';
-import { plainToRichText, richTextToPlain, type TableColumn, type TableColumnType, type TableElement, type TableFilter, type TableSelectOption } from '@freero/shared';
+import { inferFieldType, matchValue, parseCheckboxText, parseDateText, parseNumberText, plainToRichText, richTextToPlain, sortByValues, timelineLayout, type QueryValue, type TableColumn, type TableColumnType, type TableElement, type TableFilter, type TableSelectOption } from '@freero/shared';
 
 export const COLUMN_TYPES: Array<{ value: TableColumnType; label: string }> = [
   { value: 'text', label: 'Text' },
@@ -18,39 +20,18 @@ export const OPTION_COLORS = ['#E9E4FF', '#DDF0FF', '#DDF6EA', '#FFF1D6', '#FFE3
 
 export const typeOf = (col: Pick<TableColumn, 'type'> | undefined): TableColumnType => col?.type ?? 'text';
 
-const ISO = /^(\d{4})-(\d{2})-(\d{2})$/;
-export const isISODate = (v: string): boolean => ISO.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`));
+const { isISODate } = timelineLayout;
 
 /** A typed number as stored ("1234.5"), from what someone typed or pasted ("1,234.50", " 7 "); null if it isn't one. */
 export function parseNumber(text: string): string | null {
-  const t = text.trim().replace(/[\s,](?=\d{3}\b)/g, '');
-  if (!/^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(t)) return null;
-  const n = Number(t);
-  return Number.isFinite(n) ? String(n) : null;
+  const n = parseNumberText(text);
+  return n === null ? null : String(n);
 }
 
-/** A date as stored (YYYY-MM-DD) from an ISO date or a spreadsheet's day/month/year; null otherwise. */
-export function parseDate(text: string): string | null {
-  const t = text.trim();
-  if (isISODate(t)) return t;
-  const iso = /^(\d{4})-(\d{2})-(\d{2})T/.exec(t);
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
-  // 28/10/2026 or 10/28/2026: only when the day can't be read as a month (no guessing).
-  const m = /^(\d{1,2})[/.](\d{1,2})[/.](\d{4})$/.exec(t);
-  if (!m) return null;
-  const [a, b, y] = [Number(m[1]), Number(m[2]), m[3]];
-  const [d, mo] = a > 12 && b <= 12 ? [a, b] : b > 12 && a <= 12 ? [b, a] : [0, 0];
-  if (!d) return null;
-  const out = `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-  return isISODate(out) ? out : null;
-}
+/** A date as stored (YYYY-MM-DD) from an ISO date or a spreadsheet's day/month/year; null otherwise (and for one that reads both ways: no guessing). */
+export const parseDate = (text: string): string | null => parseDateText(text, { dayFirst: false });
 
-const TRUE_WORDS = new Set(['true', 'yes', 'y', 'x', '✓', '✔', '1', 'done', 'checked']);
-const FALSE_WORDS = new Set(['', 'false', 'no', 'n', '0', '-', 'unchecked']);
-export const parseCheckbox = (text: string): boolean | null => {
-  const t = text.trim().toLowerCase();
-  return TRUE_WORDS.has(t) ? true : FALSE_WORDS.has(t) ? false : null;
-};
+export const parseCheckbox = parseCheckboxText;
 
 export interface PeopleLookup {
   /** A person's name by user id (members of the board). */
@@ -105,25 +86,32 @@ export const optionOf = (col: TableColumn | undefined, raw: string): TableSelect
   return label ? col?.options?.find((o) => o.label.trim().toLowerCase() === label) : undefined;
 };
 
-// ------------------------------------------------------------------ sort
+// ------------------------------------------------------------------ sort and filter
 
-/** Sort key of a cell; null for an empty (or unreadable) one, which sorts last either way. */
-function sortKey(col: TableColumn | undefined, raw: string, people?: PeopleLookup): number | string | null {
-  if (!raw) return null;
+/**
+ * A cell as filters and sorts read it (@freero/shared query.ts: the one implementation the table
+ * and kanbans share). A select cell holds its label, so its value is the label and its rank the
+ * option's place (unknown labels after the options); text a typed column can't read is no value
+ * but not empty either.
+ */
+export function queryValue(col: TableColumn | undefined, raw: string, people?: PeopleLookup): QueryValue {
+  const text = raw ? displayValue(col, raw, people) : '';
+  const empty = !richTextToPlain(raw).trim();
   switch (typeOf(col)) {
     case 'number':
-      return parseNumber(raw) !== null ? Number(raw) : null;
+      return { kind: 'number', value: parseNumber(raw) !== null ? Number(raw) : null, text, empty };
     case 'date':
-      return isISODate(raw) ? raw : null;
+      return { kind: 'date', value: isISODate(raw) ? raw : null, text, empty };
     case 'checkbox':
-      return raw === 'true' ? 1 : null;
+      return { kind: 'checkbox', value: raw === 'true' ? true : null, text };
     case 'select': {
-      // Options sort in their own order (a status column: To do → Doing → Done), unknown labels after.
       const i = col?.options?.findIndex((o) => o === optionOf(col, raw)) ?? -1;
-      return i >= 0 ? i : 1000;
+      return { kind: 'option', value: empty ? null : richTextToPlain(raw).trim(), text, rank: i >= 0 ? i : 1000, empty };
     }
+    case 'person':
+      return { kind: 'person', value: raw || null, text: raw ? text : '', empty };
     default:
-      return displayValue(col, raw, people).toLowerCase() || null;
+      return { kind: 'text', value: text.trim() ? text : null, text, empty };
   }
 }
 
@@ -140,17 +128,8 @@ export function sortedRows<R extends { id: string }>(
   people?: PeopleLookup,
 ): R[] {
   const head = header && rows.length ? [rows[0]] : [];
-  const body = rows.slice(head.length).map((r, i) => ({ r, i, k: sortKey(col, get(r.id), people) }));
-  const sign = dir === 'asc' ? 1 : -1;
-  body.sort((a, b) => {
-    if (a.k === null || b.k === null) return a.k === b.k ? a.i - b.i : a.k === null ? 1 : -1;
-    const c = typeof a.k === 'number' && typeof b.k === 'number' ? a.k - b.k : String(a.k).localeCompare(String(b.k), undefined, { numeric: true });
-    return c ? c * sign : a.i - b.i;
-  });
-  return [...head, ...body.map((x) => x.r)];
+  return [...head, ...sortByValues(rows.slice(head.length), [{ read: (r) => queryValue(col, get(r.id), people), dir }])];
 }
-
-// ------------------------------------------------------------------ filter
 
 export const FILTER_OPS: Record<TableColumnType, Array<{ value: TableFilter['op']; label: string; needsValue: boolean }>> = {
   text: [
@@ -191,35 +170,7 @@ export const FILTER_OPS: Record<TableColumnType, Array<{ value: TableFilter['op'
 
 /** Whether a row's cell in the filtered column passes the filter. */
 export function passes(filter: TableFilter, col: TableColumn | undefined, raw: string, people?: PeopleLookup): boolean {
-  const type = typeOf(col);
-  const empty = type === 'checkbox' ? raw !== 'true' : !richTextToPlain(raw).trim();
-  const want = (filter.value ?? '').trim();
-  switch (filter.op) {
-    case 'empty':
-      return empty;
-    case 'notEmpty':
-      return !empty;
-    case 'checked':
-      return raw === 'true';
-    case 'unchecked':
-      return raw !== 'true';
-    case 'contains':
-      return displayValue(col, raw, people).toLowerCase().includes(want.toLowerCase());
-    case 'is':
-      if (type === 'number') return parseNumber(raw) !== null && parseNumber(want) !== null && Number(raw) === Number(want);
-      if (type === 'person') return raw === want;
-      return displayValue(col, raw, people).trim().toLowerCase() === (type === 'date' && isISODate(want) ? formatDate(want) : want).toLowerCase();
-    case 'gt':
-    case 'lt': {
-      const sign = filter.op === 'gt' ? 1 : -1;
-      if (type === 'number') {
-        if (parseNumber(raw) === null || parseNumber(want) === null) return false;
-        return sign * (Number(raw) - Number(want)) > 0;
-      }
-      if (type === 'date') return isISODate(raw) && isISODate(want) && sign * raw.localeCompare(want) > 0;
-      return false;
-    }
-  }
+  return matchValue(queryValue(col, raw, people), filter.op, (filter.value ?? '').trim());
 }
 
 /**
@@ -319,14 +270,12 @@ function displayRaw(type: TableColumnType, raw: string): string {
 }
 
 /**
- * The type a pasted / imported column reads as: number, date or checkbox when every non-empty
- * value is one (at least two values), else text. Selects and people are never guessed.
+ * The type a pasted / imported column reads as (fieldText.ts `inferFieldType`): number, checkbox or
+ * date when every non-empty value is one (at least two values), else text. Selects, links and
+ * people are never guessed.
  */
 export function inferType(values: string[]): TableColumnType {
-  const vals = values.map((v) => v.trim()).filter(Boolean);
-  if (vals.length < 2) return 'text';
-  if (vals.every((v) => parseNumber(v) !== null)) return 'number';
-  if (vals.every((v) => parseDate(v) !== null)) return 'date';
-  if (vals.every((v) => /^(true|false|yes|no)$/i.test(v))) return 'checkbox';
-  return 'text';
+  if (values.filter((v) => v.trim()).length < 2) return 'text';
+  const t = inferFieldType(values, { choices: false, dayFirst: false });
+  return t === 'number' || t === 'date' || t === 'checkbox' ? t : 'text';
 }

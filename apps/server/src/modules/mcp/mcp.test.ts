@@ -272,7 +272,7 @@ it('update_items sets a card’s kanban fields by name and option label; an opti
   const kanban = (await client.callTool({ name: 'add_cards', arguments: { boardId, columns: [{ title: 'To do', cards: [{ title: 'Write docs' }] }, { title: 'Done', cards: [] }] } })) as CallToolResult;
   const { kanbanId, columns } = kanban.structuredContent as { kanbanId: string; columns: Array<{ ids: string[] }> };
   const card = columns[0].ids[0];
-  // Fields as the Fields panel stores them (agents can't define fields yet).
+  // Fields as the Fields panel stores them.
   const fields = [{ id: 'f_prio', name: 'Priority', type: 'select', options: [{ id: 'o_p0', label: 'P0', color: '#E5484D' }, { id: 'o_p1', label: 'P1', color: '#F5A524' }] }, { id: 'f_pts', name: 'Points', type: 'number' }];
   await changeBoard(boardId, { userId: ownerId, role: 'owner' }, () => ({ change: { update: [{ id: kanbanId, patch: { fields } }] } }));
   const valuesOf = async () => ((await readBoardView(boardId, { userId: ownerId, role: 'owner' })).elements.find((e) => e.el.id === card)!.el as BoardElement & { values?: unknown }).values;

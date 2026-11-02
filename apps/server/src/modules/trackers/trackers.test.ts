@@ -12,9 +12,11 @@ import {
   collectionSchema,
   issueValuesFromBoard,
   kanbanColumnAt,
+  kanbanLaneAt,
   mergeField,
   priorityFieldOf,
   pullableFields,
+  syncedBase,
   type BoardElement,
   type CardElement,
   type ElementDraft,
@@ -22,10 +24,11 @@ import {
   type KanbanElement,
   type Tag,
   type TimelineElement,
+  withKanbanLayout,
 } from '@freero/shared';
 import { planPull, sourceOf } from './board';
 import type { HttpResponse } from './http';
-import { kanbanOf, planKanbanImport } from './kanban';
+import { importIntoKanban, kanbanOf, planKanbanImport } from './kanban';
 import type { ProviderConnection, RemoteIssue } from './providers/types';
 import { trackerRequest, TrackerError } from './http';
 import { planRoadmapImport } from './roadmap';
@@ -53,6 +56,17 @@ it('a change on one side flows to the other; the same field changed differently 
   const cluster = pullableFields([{ type: 'sticky' }, { type: 'sticky' }]);
   expect(cluster.has('title')).toBe(false);
   expect(mergeField('title', base, card('Pay with one click'), { ...tracker, title: 'Renamed in Jira' }, { push: true, pull: cluster.has('title') }).decision).toBe('none');
+});
+
+it('a date changed on the board while a sync was pulling the title from Jira is still sent by the next sync, not taken as agreed', () => {
+  const can = { push: true, pull: true };
+  // The sync read the board, pulled Jira's new title; meanwhile someone dragged the bar to new dates.
+  const read = { ...card('Checkout'), dueDate: '2026-11-10' };
+  const tracker = { ...card('Checkout v2'), dueDate: '2026-11-10' };
+  const afterWrite = { ...card('Checkout v2'), dueDate: '2026-11-30' };
+  const base = syncedBase(read, afterWrite, ['title'], tracker);
+  expect(mergeField('dueDate', base, afterWrite, tracker, can)).toMatchObject({ decision: 'push' });
+  expect(mergeField('title', base, afterWrite, tracker, can).decision).toBe('none');
 });
 
 it('labels a tracker reorders or re-cases are not mistaken for an edit', () => {
@@ -299,6 +313,50 @@ it('a priority level the kanban’s Priority field lacks, pulled from the tracke
   const field = priorityFieldOf(collectionSchema(k2))!;
   expect(field.options!.map((o) => o.label)).toEqual(['High', 'Blocker']);
   expect(cardValue(k2, c2, field)).toBe('blk');
+});
+
+it('on a kanban with swimlanes by Priority, a priority pulled from the tracker moves the card into that row, stacked there in the same change', () => {
+  const fields = [
+    { id: 'stage', name: 'Stage', type: 'select' as const },
+    { id: 'p', name: 'Priority', type: 'select' as const, options: [{ id: 'hi', label: 'High', color: '#000' }, { id: 'lo', label: 'Low', color: '#000' }] },
+  ];
+  const k0 = sprint([{ id: 'todo', title: 'To do', status: 'todo', color: '#000' }], { fields, views: [{ id: 'board', name: 'Board', layout: 'board', groupBy: 'stage', subGroupBy: 'p' }] as never });
+  const a = cardIn(k0, 0, 'a', { values: { p: 'hi' } });
+  const b = cardIn(k0, 0, 'b', { values: { p: 'lo' } });
+  // The board as a client laid it out: rows No Priority / High / Low.
+  const laid = withKanbanLayout([k0, a, b], { update: [{ id: 'kb', patch: {} }] }).update;
+  const at = (el: BoardElement) => ({ ...el, ...laid.find((u) => u.id === el.id)?.patch }) as BoardElement;
+  const [k, ca, cb] = [at(k0) as KanbanElement, at(a) as CardElement, at(b) as CardElement];
+  const rowOf = (kk: KanbanElement, c: BoardElement) => kk.lanes![kanbanLaneAt(kk, c.y + c.h / 2)].id;
+  expect([rowOf(k, ca), rowOf(k, cb)]).toEqual(['hi', 'lo']);
+
+  const plan = planPull(viewOf(k, ca, cb), [ca], { priority: 'Low' }, { fields: new Set(['priority']), provider: jira, previousLabels: [], userIdOf: () => null, newId: () => 'x' });
+  const patched = new Map(plan.update.map((u) => [u.id, u.patch]));
+  const k2 = { ...k, ...patched.get('kb') } as KanbanElement;
+  const a2 = { ...ca, ...patched.get('a') } as CardElement;
+  const b2 = { ...cb, ...patched.get('b') } as CardElement;
+  expect(rowOf(k2, a2)).toBe('lo');
+  // Below the card already in the Low row, not on top of it.
+  expect(a2.y).toBeGreaterThanOrEqual(b2.y + b2.h);
+});
+
+it('issues imported into a kanban with a new status column opening before Done leave the cards already in Done there, still done', () => {
+  const k = sprint([
+    { id: 'todo', title: 'To do', status: 'todo', color: '#000' },
+    { id: 'done', title: 'Done', status: 'done', color: '#000' },
+  ]);
+  const finished = cardIn(k, 1, 'finished');
+  const plan = planKanbanImport(k, [{ id: 'new', values: { status: 'doing', statusName: 'In progress' } }], { newId: () => 'prog', priorities: null });
+  expect(plan.kanban.columns.map((c) => c.id)).toEqual(['todo', 'prog', 'done']);
+  const draft = { ...cardIn(plan.kanban, 1, 'new'), y: 400 } as unknown as ElementDraft;
+  const change = importIntoKanban([k, finished], k, plan, { create: [draft], update: [] });
+  const patched = new Map(change.update.map((u) => [u.id, u.patch]));
+  const k2 = { ...k, ...patched.get('kb') } as KanbanElement;
+  const f2 = { ...finished, ...patched.get('finished') } as CardElement;
+  expect(k2.columns[kanbanColumnAt(k2, f2.x + f2.w / 2)].id).toBe('done');
+  expect(f2.status).toBe('done');
+  const n2 = change.create[0] as unknown as CardElement;
+  expect(k2.columns[kanbanColumnAt(k2, n2.x + n2.w / 2)].id).toBe('prog');
 });
 
 let server: http.Server;

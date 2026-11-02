@@ -1,10 +1,11 @@
 // Kanban edits: every one is a single Editor.transact (one undo step), after which the engine's
 // arrange pass re-stacks the columns.
 import { nanoid } from 'nanoid';
-import { NO_GROUP, collectionSchema, groupFieldId, kanbanLaneAt, type BoardElement, type CardStatus, type KanbanColumn, type KanbanElement } from '@freero/shared';
+import { NO_GROUP, boardView, collectionSchema, groupFieldId, kanbanLaneAt, type BoardElement, type CardStatus, type KanbanColumn, type KanbanElement } from '@freero/shared';
 import type { Editor, ElementPatch, NewElement, Point } from '@engine';
 import { DEFAULT_COL_W, MAX_COL_W, MIN_COL_W, boardWidth, colLeft, colWidth, columnOrder, columnsOfChildren, kanbanWidth, reflowMoves } from './layout';
 import { COLUMN_COLORS, DEFAULT_COLUMNS } from './constants';
+import { viewEditable } from './view';
 
 export function newKanban(at: Point): NewElement<'kanban'> {
   const columns = DEFAULT_COLUMNS.map((c) => ({ ...c, id: nanoid(8) }));
@@ -98,7 +99,8 @@ export function removeColumn(editor: Editor, id: string, colId: string) {
 
 export function patchColumn(editor: Editor, id: string, colId: string, patch: Partial<Omit<KanbanColumn, 'id' | 'collapsed' | 'limit'>>) {
   const k = fresh(editor, id);
-  if (!k) return;
+  // A WIP limit is how the view looks at the column: a locked view keeps it.
+  if (!k || (patch.wip !== undefined && !viewEditable(editor, k))) return;
   // Cards coloured by their column are drawn in its new colour: nothing is written on them.
   editor.update<KanbanElement>(id, { columns: k.columns.map((c) => (c.id === colId ? { ...c, ...patch } : c)) });
 }
@@ -106,7 +108,7 @@ export function patchColumn(editor: Editor, id: string, colId: string, patch: Pa
 /** Folds a column to a narrow strip (title + count) or opens it again; the items stay in it. */
 export function setCollapsed(editor: Editor, id: string, colId: string, collapsed: boolean) {
   const k = fresh(editor, id);
-  if (!k || !k.columns.some((c) => c.id === colId && !!c.collapsed !== collapsed)) return;
+  if (!k || !viewEditable(editor, k) || !k.columns.some((c) => c.id === colId && !!c.collapsed !== collapsed)) return;
   setColumns(editor, id, k.columns.map((c) => (c.id !== colId ? c : collapsed ? { ...c, collapsed: true } : withoutCollapsed(c))));
 }
 
@@ -163,7 +165,7 @@ export function moveToColumn(editor: Editor, itemId: string, colId: string): boo
 /** Shows only the first `limit` items of column `colId` (0: all of them). */
 export function setColumnLimit(editor: Editor, id: string, colId: string, limit: number) {
   const k = fresh(editor, id);
-  if (!k) return;
+  if (!k || !viewEditable(editor, k)) return;
   const n = Math.max(0, Math.floor(limit));
   editor.update<KanbanElement>(id, { columns: k.columns.map((c) => (c.id !== colId ? c : n ? { ...c, limit: n } : withoutLimit(c))) });
 }
@@ -198,7 +200,8 @@ export function canMove(editor: Editor, dir: MoveDir): boolean {
   const idx = s.items.map((el) => cols.get(el.id) ?? 0);
   if (dir === 'left') return idx.some((i) => i > 0);
   if (dir === 'right') return idx.some((i) => i < s.k.columns.length - 1);
-  // Up / down: within one column (and swimlane) only.
+  // Up / down: within one column (and swimlane) only, and not while the view sorts the columns.
+  if (boardView(s.k).sort?.length) return false;
   if (new Set(idx).size !== 1 || new Set(s.items.map((el) => laneOf(s.k, el))).size !== 1) return false;
   const order = columnOrder(s.k, all, idx[0], laneOf(s.k, s.items[0]));
   const ids = new Set(s.items.map((el) => el.id));

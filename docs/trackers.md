@@ -71,6 +71,9 @@ keeps its own rule (the column, unless the issue's status category says otherwis
 assignee and dates stay the card's own tags, assignee and dates (the kanban shows them as fields).
 While a kanban is grouped by another field, Stage and Priority are stored values the same rules
 set, and the card goes to the column of the field it is grouped by.
+Imports and pulls lay the kanban out in the same change, by the board's own rule: a pulled value
+of its swimlane field (Priority, say) moves the card into that row, its filter and sort apply to
+what comes in, and a column an import opens between others carries the cards already there along.
 
 ## Roadmap mode (KAI-160)
 

@@ -2,7 +2,9 @@ import { memo, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent
 import {
   ArrowLeft,
   ArrowRight,
+  ArrowDownUp,
   Check,
+  Filter,
   FoldHorizontal,
   Gauge,
   ListEnd,
@@ -16,7 +18,7 @@ import {
   Trash2,
   UnfoldHorizontal,
 } from 'lucide-react';
-import { NO_GROUP, collectionSchema, groupFieldId, type BoardElement, type CardStatus, type FieldDef, type KanbanColumn, type KanbanElement } from '@freero/shared';
+import { NO_GROUP, boardView, collectionSchema, describeFilter, describeSort, groupFieldId, type BoardElement, type CardStatus, type FieldDef, type KanbanColumn, type KanbanElement } from '@freero/shared';
 import {
   defineElement,
   ElementText,
@@ -47,6 +49,7 @@ import {
   colWidth,
   columnIndexAt,
   columnsOfChildren,
+  filteredOut,
   inCollapsedColumn,
   innerWidth,
   isStackable,
@@ -56,7 +59,7 @@ import {
   planLayout,
 } from './lib/layout';
 import { addColumn, columnPart, moveColumn, moveColumnTo, patchColumn, removeColumn, renameColumn, setCollapsed, setColumnLimit, setColumnWidth } from './lib/actions';
-import { CARD_LIMITS, COLUMN_COLOR_NAMES, COLUMN_PALETTE, STATUS_LABELS, WIP_CHOICES } from './lib/constants';
+import { CARD_LIMITS, COLUMN_COLOR_NAMES, COLUMN_PALETTE, STATUS_LABELS, VIEW_PANEL, WIP_CHOICES } from './lib/constants';
 import { columnsAreOptions, groupTitle, storedKey } from './lib/group';
 import { presentCard, presentationKey } from './lib/view';
 import './kanban.css';
@@ -313,7 +316,10 @@ function ColumnEdge({ editor, k, index, height }: { editor: Editor; k: KanbanEle
   );
 }
 
-/** What the board shows besides its columns: swimlane counts and the "N more" of columns with a card limit. */
+/**
+ * What the board shows besides its columns: swimlane counts, and under each column (cell) the cards
+ * folded away below the board: "+N more" beyond its card limit, and how many the filter hides.
+ */
 function useGroups(k: KanbanElement, all: BoardElement[]) {
   return useMemo(() => {
     const counts = k.columns.map(() => 0);
@@ -321,21 +327,24 @@ function useGroups(k: KanbanElement, all: BoardElement[]) {
     const lanes = laneField(k);
     const laneIds = (k.lanes ?? []).map((l) => l.id);
     const laneCounts = laneIds.map(() => 0);
-    // Per column and lane: items folded away beyond the limit, and where the visible ones end.
-    const more = new Map<string, { n: number; bottom: number; col: number; lane: number }>();
+    // Where a cell's items start (element-local), for a cell whose items are all folded away.
+    const cellTop = (lane: number) =>
+      HEADER_H + COL_HEAD_H + (lanes ? (k.lanes ?? []).slice(0, lane).reduce((sum, l) => sum + l.h, 0) + LANE_HEAD_H : 0) + PAD - ITEM_GAP;
+    // Per column and lane: items folded away beyond the limit, those the filter hides, and where the visible ones end.
+    const more = new Map<string, { n: number; hidden: number; bottom: number; col: number; lane: number }>();
     for (const el of all) {
       if (!isStackable(el, k.id)) continue;
       const col = columnIndexAt(k, el.x + el.w / 2);
       const lane = lanes ? Math.max(0, laneIds.indexOf(storedKey(lanes, el))) : 0;
       if (lanes) laneCounts[lane]++;
-      if (!k.columns[col]?.limit) continue;
       const key = `${col}:${lane}`;
-      const m = more.get(key) ?? { n: 0, bottom: 0, col, lane };
-      if (beyondLimit(k, el)) m.n++;
+      const m = more.get(key) ?? { n: 0, hidden: 0, bottom: k.y + cellTop(lane), col, lane };
+      if (filteredOut(k, el)) m.hidden++;
+      else if (beyondLimit(k, el)) m.n++;
       else m.bottom = Math.max(m.bottom, el.y + el.h);
       more.set(key, m);
     }
-    return { counts, lanes, laneCounts, more: [...more.values()].filter((m) => m.n > 0) };
+    return { counts, lanes, laneCounts, more: [...more.values()].filter((m) => m.n > 0 || m.hidden > 0) };
   }, [k, all]);
 }
 
@@ -360,6 +369,10 @@ const KanbanView = memo(function KanbanView({ element: k, selected, zoom }: Elem
   const all = useElements();
   const { counts, laneCounts, more } = useGroups(k, all);
   const { titles, laneTitles } = useColumnTitles(k);
+  const schema = useMemo(() => collectionSchema(k), [k]);
+  const view = boardView(k);
+  const sortedBy = view.sort?.length ? describeSort(view.sort, schema) : '';
+  const filterWords = view.filter ? describeFilter(view.filter, schema) : '';
   const options = columnsAreOptions(k);
   const slots = useDragPreview(k.id);
   const [colDrag, setColDrag] = useState<ColumnDrag | null>(null);
@@ -397,6 +410,29 @@ const KanbanView = memo(function KanbanView({ element: k, selected, zoom }: Elem
               placeholder="Kanban"
             />
           </div>
+        )}
+        {!lod && (sortedBy || filterWords) && (
+          <span className="fr-kanban__view-state">
+            {filterWords && (
+              <button type="button" className="fr-kanban__view-chip" data-fr-interactive="" title={`Filtered: ${filterWords}`} onPointerDown={stop} onClick={() => editor.openDock(VIEW_PANEL)}>
+                <Filter size={12} aria-hidden />
+                Filtered
+              </button>
+            )}
+            {sortedBy && (
+              <button
+                type="button"
+                className="fr-kanban__view-chip"
+                data-fr-interactive=""
+                title={`Sorted by ${sortedBy}: each column keeps that order (cards still move between columns)`}
+                onPointerDown={stop}
+                onClick={() => editor.openDock(VIEW_PANEL)}
+              >
+                <ArrowDownUp size={12} aria-hidden />
+                Sorted by {sortedBy}
+              </button>
+            )}
+          </span>
         )}
         {controls && options && (
           <button type="button" className="fr-kanban__add" data-fr-interactive="" onPointerDown={stop} onClick={() => addColumn(editor, k.id)}>
@@ -502,19 +538,26 @@ const KanbanView = memo(function KanbanView({ element: k, selected, zoom }: Elem
       {!lod &&
         more.map((m) =>
           k.columns[m.col]?.collapsed ? null : (
-            <button
-              key={`${m.col}:${m.lane}`}
-              type="button"
-              className="fr-kanban__more"
-              data-fr-interactive=""
-              disabled={!canEdit || !!k.locked}
-              title={canEdit && !k.locked ? 'Show every card in this column' : `${m.n} more cards in this column`}
-              style={{ left: colLeft(k, m.col) + PAD, top: m.bottom - k.y + ITEM_GAP / 2, width: innerWidth(k.colW) }}
-              onPointerDown={stop}
-              onClick={() => setColumnLimit(editor, k.id, k.columns[m.col].id, 0)}
-            >
-              +{m.n} more
-            </button>
+            <div key={`${m.col}:${m.lane}`} className="fr-kanban__folded" style={{ left: colLeft(k, m.col) + PAD, top: m.bottom - k.y + ITEM_GAP / 2, width: innerWidth(k.colW) }}>
+              {m.n > 0 && (
+                <button
+                  type="button"
+                  className="fr-kanban__more"
+                  data-fr-interactive=""
+                  disabled={!canEdit || !!k.locked}
+                  title={canEdit && !k.locked ? 'Show every card in this column' : `${m.n} more cards in this column`}
+                  onPointerDown={stop}
+                  onClick={() => setColumnLimit(editor, k.id, k.columns[m.col].id, 0)}
+                >
+                  +{m.n} more
+                </button>
+              )}
+              {m.hidden > 0 && (
+                <span className="fr-kanban__hidden" title={filterWords ? `Hidden by the filter: ${filterWords}` : undefined}>
+                  {m.hidden} hidden by filter
+                </span>
+              )}
+            </div>
           ),
         )}
       {controls && !lod && k.columns.map((col, i) => (col.collapsed ? null : <ColumnEdge key={col.id} editor={editor} k={k} index={i} height={bodyH} />))}
@@ -576,9 +619,9 @@ export default defineElement({
   },
   // While cards are dragged over the board: where they would land, and the others making room.
   dragPreview: (k, { editor, moving }) => planDrop(k, editor.getElements(), moving),
-  // A collapsed column's items, and those beyond a column's card limit, stay in it (and in the
-  // outline), folded away.
-  hidesMember: (k, el) => inCollapsedColumn(k, el) || beyondLimit(k, el),
+  // A collapsed column's items, those beyond a column's card limit and the cards the view's filter
+  // leaves out stay in it (in the outline, in the WIP count), folded away.
+  hidesMember: (k, el) => inCollapsedColumn(k, el) || beyondLimit(k, el) || filteredOut(k, el),
   // Cards show what the board view says: their colour (by column, by a field, or their own) and
   // the fields chosen, drawn by the card itself. Density changes their height (re-normalised).
   presentChild: (k, child, { editor, personal }) => presentCard(k, child, editor, personal),

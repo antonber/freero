@@ -22,6 +22,7 @@ import {
   type TimelineElement,
   type TrackerIssueRecord,
   type TrackerSource,
+  withKanbanLayout,
 } from '@freero/shared';
 import type { BoardView } from '../realtime/index';
 import { cardTrackerFields, kanbanOf, planKanbanPull } from './kanban';
@@ -252,11 +253,14 @@ export function planPull(
       if (next.length !== cur.length || next.some((id, i) => id !== cur[i])) patch(el.id, { tags: next });
     }
   }
-  return {
-    update: [...patches].map(([id, p]) => ({ id, patch: p })),
-    tags,
-    notes,
-  };
+  // Kanbans the pull touched are laid out as open boards would lay them out after the same change:
+  // a card whose grouped or swimlane value changed stacks in its column / row, the view's filter
+  // and sort apply (@freero/shared withKanbanLayout).
+  const update = withKanbanLayout(
+    view.elements.map((e) => e.el),
+    { update: [...patches].map(([id, p]) => ({ id, patch: p })) },
+  ).update;
+  return { update, tags, notes };
 }
 
 /** The timelines (KAI-122) these items are bars on. */

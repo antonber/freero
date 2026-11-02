@@ -3,8 +3,10 @@
 // columns), what it is grouped by and its swimlanes, its columns in order, and in each column the
 // items stacked there (by the same column rule the layout uses). A collapsed column, or one
 // showing only its first cards, still lists all of its items: they are folded away on the board,
-// not gone. Cards read their own values, a swimlane's among them (features/card/outline.ts).
-import { NO_GROUP, boardView, collectionSchema, defineOutline, kanbanColumnAt } from '@freero/shared';
+// not gone. Cards read their own values, a swimlane's among them (features/card/outline.ts). The
+// board's filter and sort read in words (labels, names); cards the filter leaves out are still
+// listed in their column, marked `filtered` (features/card/outline.ts).
+import { NO_GROUP, boardView, collectionSchema, defineOutline, describeFilter, describeSort, kanbanColumnAt } from '@freero/shared';
 
 export default defineOutline({
   kinds: {
@@ -19,7 +21,13 @@ export default defineOutline({
       return {
         title: ctx.plain(k.title),
         standalone: true,
-        fields: { 'grouped by': group?.name ?? null, rows: rows?.name ?? null },
+        fields: {
+          'grouped by': group?.name ?? null,
+          rows: rows?.name ?? null,
+          filter: describeFilter(view.filter, schema, ctx.personName) || null,
+          sort: describeSort(view.sort, schema) || null,
+          'view locked': view.locked ? true : null,
+        },
         schema: schema.map((f) => ({
           id: f.id,
           name: f.name,

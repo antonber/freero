@@ -55,7 +55,7 @@ export interface OutlineReader {
  * Display names for ids the board shows, never for an arbitrary account id someone typed into the
  * board: the owner, members, team access and people in its comments (as GET /boards/:id/people).
  */
-async function namesFor(boardId: string, ownerId: string, view: BoardView, ids: Set<string>): Promise<Map<string, string>> {
+export async function namesFor(boardId: string, ownerId: string, view: BoardView, ids: Set<string>): Promise<Map<string, string>> {
   if (!ids.size) return new Map();
   const shown = new Set([ownerId, ...(await memberIdsOf(boardId)), ...(await teamAccessUserIds(boardId)), ...commentPeopleIn(view)]);
   const users = await getUsers([...ids].filter((id) => shown.has(id)));

@@ -3,7 +3,8 @@ import { defineCommands, type CommandDefinition, type Editor } from '@engine';
 import { addColumn, canMove, moveSelection, moveToColumn, type MoveDir } from './lib/actions';
 import { FIELDS_PANEL, VIEW_PANEL } from './lib/constants';
 import { fieldsTarget } from './lib/schema';
-import { saveViewForEveryone, setDensity, setMyCardDisplay } from './lib/view';
+import { cleanFilter } from '@freero/shared';
+import { saveViewForEveryone, setDensity, setMyCardDisplay, setMyFilter, setSort, setViewLocked } from './lib/view';
 import { setGroupBy, setSwimlanes } from './lib/group';
 
 const selectedKanban = (editor: Editor) => {
@@ -89,6 +90,34 @@ export default defineCommands([
     label: 'Swimlanes by',
     run(editor, args) {
       if (typeof args?.id === 'string' && (typeof args.field === 'string' || args.field === null)) setSwimlanes(editor, args.id, args.field);
+    },
+  },
+  {
+    // This person's own filter on kanban { id, filter } (a ViewFilter, null: none): it fades the
+    // cards it leaves out, for them only, until an editor saves it for everyone. Any role.
+    id: 'kanban.setMyFilter',
+    label: 'Filter cards for me',
+    minRole: 'viewer',
+    run(editor, args) {
+      if (typeof args?.id === 'string') setMyFilter(editor, args.id, cleanFilter(args.filter, { personal: true }));
+    },
+  },
+  {
+    // Sorts every column of kanban { id } by { sort: [{ field, dir }] } ([]: manual order again).
+    // Moves the real cards, so it is saved for everyone (editors). One undo step.
+    id: 'kanban.setSort',
+    label: 'Sort cards by',
+    run(editor, args) {
+      if (typeof args?.id === 'string' && Array.isArray(args.sort)) setSort(editor, args.id, args.sort as never);
+    },
+  },
+  {
+    // Locks or unlocks the saved view of kanban { id, locked }: only whoever locked it and the
+    // board's owners change it then (everyone keeps their own view settings). Editors.
+    id: 'kanban.lockView',
+    label: 'Lock view',
+    run(editor, args) {
+      if (typeof args?.id === 'string' && typeof args.locked === 'boolean') setViewLocked(editor, args.id, args.locked);
     },
   },
   {
