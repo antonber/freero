@@ -1,4 +1,4 @@
-import { BOARD_REMOVED, DOWNLOADS_RESTRICTED, isGuestId, LINK_PASSWORD_REQUIRED, TRASH_RETENTION_DAYS, type BoardPermissions, type BoardSummary, type LinkAccess, type ObjectKind, type Role } from '@freero/shared';
+import { BOARD_REMOVED, DEFAULT_BOARD_TITLE, DOWNLOADS_RESTRICTED, isGuestId, LINK_PASSWORD_REQUIRED, TRASH_RETENTION_DAYS, type BoardPermissions, type BoardSummary, type LinkAccess, type ObjectKind, type Role } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { badRequest, forbidden, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
@@ -42,7 +42,7 @@ export type BoardFilter = 'all' | 'mine' | 'shared' | 'starred' | 'recent' | 'tr
 export const BOARD_FILTERS: BoardFilter[] = ['all', 'mine', 'shared', 'starred', 'recent', 'trash'];
 const DAY_MS = 86_400_000;
 export const TRASH_RETENTION_MS = TRASH_RETENTION_DAYS * DAY_MS;
-export const DEFAULT_TITLE = 'Untitled board';
+export const DEFAULT_TITLE = DEFAULT_BOARD_TITLE;
 
 /** A board as an audit event's target (its title as it is now). */
 /** The audit log's target for a container: a board, or a doc (KAI-162). */

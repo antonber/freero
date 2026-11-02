@@ -1,7 +1,7 @@
 import { readdirSync } from 'node:fs';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { tableCellKey, type ElementType, type FrameElement, type TableCopyContent, type TableElement } from '@freero/shared';
-import { createTestBoard, type ElementDefinition, type FeatureBundle, type NewElement } from '@engine';
+import { DEFAULT_BOARD_TITLE, tableCellKey, type ElementType, type FrameElement, type TableCopyContent, type TableElement } from '@freero/shared';
+import { createTestBoard, type Editor, type ElementDefinition, type FeatureBundle, type NewElement } from '@engine';
 import commands from './commands';
 import manifest from './feature';
 import { TEMPLATES } from './lib/catalog';
@@ -223,24 +223,41 @@ describe('inserting a template', () => {
     }
   });
 
-  it('a template link (?template=<id>) fills a new empty board with that template, and following it again after a reload adds no second copy', async () => {
+  describe('from a template link (?template=<id>)', () => {
     const Noop = () => null;
     const frameDef = { type: 'frame', Component: Noop, resize: 'free', container: true, rotatable: false, defaults: () => ({}) } as unknown as ElementDefinition<'frame'>;
     const templates: FeatureBundle = { manifest, elements: [], tools: [], formats: [], panels: [], commands: commands as FeatureBundle['commands'] };
     const shapes: FeatureBundle = { manifest: { name: 'shapes', description: '' }, elements: [frameDef], tools: [], formats: [], panels: [], commands: [] };
-    const board = createTestBoard({ users: ['ann'], features: [templates, shapes] });
-    try {
-      const [editor] = board.editors('templates');
-      const frameTitles = () => editor.getElements().flatMap((e) => (e.type === 'frame' ? [(e as FrameElement).title] : []));
-      editor.runCommand('templates.fromLink', { template: 'retrospective' });
-      await vi.waitFor(() => expect(frameTitles()).toEqual(['Retrospective']));
-      const count = editor.getElements().length;
-      editor.runCommand('templates.fromLink', { template: 'retrospective' });
-      await new Promise((r) => setTimeout(r, 0));
-      expect(editor.getElements().length).toBe(count);
-    } finally {
-      board.destroy();
-    }
+    const frameTitles = (editor: Editor) => editor.getElements().flatMap((e) => (e.type === 'frame' ? [(e as FrameElement).title] : []));
+
+    it('a new untitled board gets the template and its name, and following the link again after a reload adds no second copy', async () => {
+      const board = createTestBoard({ users: ['ann'], features: [templates, shapes], title: DEFAULT_BOARD_TITLE });
+      try {
+        const [editor] = board.editors('templates');
+        editor.runCommand('templates.fromLink', { template: 'retrospective' });
+        await vi.waitFor(() => expect(editor.host.board.title).toBe('Retrospective'));
+        expect(frameTitles(editor)).toEqual(['Retrospective']);
+        const count = editor.getElements().length;
+        editor.runCommand('templates.fromLink', { template: 'retrospective' });
+        await new Promise((r) => setTimeout(r, 0));
+        expect(editor.getElements().length).toBe(count);
+      } finally {
+        board.destroy();
+      }
+    });
+
+    it('a board the person already named keeps its name when the template lands on it', async () => {
+      const board = createTestBoard({ users: ['ann'], features: [templates, shapes], title: 'Team Rocket sprint 14' });
+      try {
+        const [editor] = board.editors('templates');
+        editor.runCommand('templates.fromLink', { template: 'retrospective' });
+        await vi.waitFor(() => expect(frameTitles(editor)).toEqual(['Retrospective']));
+        await new Promise((r) => setTimeout(r, 0));
+        expect(editor.host.board.title).toBe('Team Rocket sprint 14');
+      } finally {
+        board.destroy();
+      }
+    });
   });
 
   it('numbers new frames after the existing ones so presentation order keeps the old frames first', () => {

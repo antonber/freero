@@ -1,4 +1,5 @@
 import { BookmarkPlus, LayoutTemplate } from 'lucide-react';
+import { DEFAULT_BOARD_TITLE } from '@freero/shared';
 import { defineCommands } from '@engine';
 import { DOCK_ID, addTemplate } from './lib/insert';
 import { loadTemplates } from './lib/catalog/load';
@@ -32,6 +33,7 @@ export default defineCommands([
     // (the dashboard's /app?template=…, which the marketing site's "Use this template" opens after
     // sign-up). An empty board gets the template; a board that already has content (the same link
     // reloaded after it was added) only opens the panel, so following it twice never adds a copy.
+    // A board still untitled takes the template's name; one the person named keeps theirs.
     id: 'templates.fromLink',
     label: 'Start from a template',
     urlParam: 'template',
@@ -39,8 +41,10 @@ export default defineCommands([
       loadTemplates()
         .then(async (all) => {
           const def = all.find((t) => t.id === args?.template);
-          if (!def || editor.getElements().length) editor.openDock(DOCK_ID);
-          else await addTemplate(editor, def);
+          if (!def || editor.getElements().length) return editor.openDock(DOCK_ID);
+          const added = await addTemplate(editor, def);
+          const title = editor.host.board.title.trim();
+          if (added.length && (!title || title === DEFAULT_BOARD_TITLE)) await editor.host.renameBoard(def.name).catch(() => undefined);
         })
         .catch(() => editor.host.notify('Could not load the template. Check your connection and try again.', 'error'));
     },

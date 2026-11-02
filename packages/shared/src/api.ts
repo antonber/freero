@@ -29,6 +29,9 @@ export interface User {
 export type ObjectKind = 'board' | 'doc';
 export const OBJECT_KINDS: readonly ObjectKind[] = ['board', 'doc'];
 
+/** The title of a board nobody has named yet (new boards; a cleared title). */
+export const DEFAULT_BOARD_TITLE = 'Untitled board';
+
 export interface BoardSummary {
   id: string;
   /** [additive] 'doc' for a doc (KAI-162); boards say 'board'. */
