@@ -8,10 +8,14 @@
 // What a card shows is derived when it is drawn, never written onto the card: its accent colour
 // (its own, its column's, or a select field's option colour) and its field chips. Only `density`
 // changes the cards' size (the board's shared layout), so it is never personal; nor is grouping
-// (`groupBy`, `subGroupBy`, step 2c): it decides where the real cards stand on the shared board.
+// (`groupBy`, `subGroupBy`, step 2c) or sorting (step 2d): they decide where the real cards stand
+// on the shared board. A filter is (step 2d): the SAVED filter hides the cards it leaves out from
+// everyone (they make room: shared geometry), a person's own filter only fades the cards it leaves
+// out, for them alone — hiding them would leave holes in the shared stacks.
 //
 // Pure: the web (the kanban's presentation of its cards, the View panel) and the server read
 // views only through here.
+import type { Role } from './api';
 import type { CardElement, KanbanElement } from './elements';
 import { kanbanColumnAt } from './elements';
 import {
@@ -28,6 +32,7 @@ import {
   type FieldType,
   type FieldValue,
 } from './fields';
+import { cleanFilter, cleanSort, sameFilter, type SortRule, type ViewFilter } from './query';
 
 export type CardDensity = 'compact' | 'comfortable';
 
@@ -67,18 +72,35 @@ export interface ViewConfig {
    */
   groupSettings?: Record<string, Record<string, GroupSettings>>;
   card?: CardDisplay;
+  /** Which cards the board shows: the others stay in their column, folded away below it (step 2d). */
+  filter?: ViewFilter | null;
+  /** How each column (cell) orders its cards; empty = manual (the order people stacked them in). */
+  sort?: SortRule[];
+  /**
+   * While sorted: the items' manual order (ids, column by column, top to bottom) from when the
+   * sort began, so clearing the sort puts every card back where people had it. The layout drops it
+   * once it has restored that order.
+   */
+  manualOrder?: string[];
+  /** Locked by an editor: nobody else changes the saved view (their own view settings still work). */
+  locked?: { by: string } | null;
 }
 
-/** What a person may change of a saved view for themselves (density moves cards: never personal). */
+/**
+ * What a person may change of a saved view for themselves: what cards show and what colours them,
+ * and the filter (which only fades cards for them). Density, grouping and sorting move or resize
+ * the real cards: never personal. `filter: null` = no filter for me (while the saved view has one).
+ */
 export interface ViewOverride {
   card?: { show?: string[]; color?: CardColorBy };
+  filter?: ViewFilter | null;
 }
 
 /** The id of a kanban's board view when it has none saved yet. */
 export const BOARD_VIEW_ID = 'board';
 /** What cards show on a kanban without saved views: the footer cards always had. */
 export const DEFAULT_CARD_SHOW: readonly string[] = ['$status', '$due', '$tags', '$estimate', '$assignee'];
-export const VIEW_LIMITS = { views: 20, show: 40, name: 60, id: 64 } as const;
+export const VIEW_LIMITS = { views: 20, show: 40, name: 60, id: 64, manualOrder: 5000 } as const;
 
 /** Built-in fields a card can show (the title always shows; links have their own badge). */
 export const SHOWABLE_BUILTINS = BUILTIN_FIELDS.filter((f) => f.id !== '$title' && f.id !== '$link');
@@ -125,8 +147,19 @@ export function boardView(k: ViewSource): ViewConfig {
     subGroupBy: sub,
     ...(raw.groupSettings && typeof raw.groupSettings === 'object' ? { groupSettings: cleanGroupSettings(raw.groupSettings) } : {}),
     card: cleanCard(raw.card, fallback),
+    ...(cleanFilter(raw.filter) ? { filter: cleanFilter(raw.filter) } : {}),
+    ...(cleanSort(raw.sort).length ? { sort: cleanSort(raw.sort) } : {}),
+    ...(Array.isArray(raw.manualOrder) ? { manualOrder: raw.manualOrder.filter(isId).slice(0, VIEW_LIMITS.manualOrder) } : {}),
+    ...(raw.locked && typeof raw.locked === 'object' && isId((raw.locked as Record<string, unknown>).by) ? { locked: { by: (raw.locked as { by: string }).by } } : {}),
   };
 }
+
+/**
+ * True when `who` may not change kanban view `view` as saved: it is locked by someone else (the
+ * person who locked it and the board's owners may). Their own view settings stay theirs to change.
+ */
+export const viewLockedFor = (view: Pick<ViewConfig, 'locked'>, who: { id: string; role: Role }): boolean =>
+  !!view.locked && view.locked.by !== who.id && who.role !== 'owner';
 
 /** A field the kanban stores that a board can group by (Stage always). */
 function groupableStored(k: ViewSource, id: string): boolean {
@@ -156,19 +189,27 @@ function cleanGroupSettings(raw: object): Record<string, Record<string, GroupSet
 
 /** A personal override as stored (anything else in it is dropped), or null when it changes nothing. */
 export function cleanOverride(raw: unknown): ViewOverride | null {
-  const c = raw && typeof raw === 'object' ? ((raw as Record<string, unknown>).card as Record<string, unknown> | undefined) : undefined;
-  if (!c || typeof c !== 'object') return null;
+  const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null;
+  if (!r) return null;
+  const c = r.card && typeof r.card === 'object' ? (r.card as Record<string, unknown>) : {};
   const show = cleanShow(c.show);
   const color = cleanColor(c.color);
-  if (!show && !color) return null;
-  return { card: { ...(show ? { show } : {}), ...(color ? { color } : {}) } };
+  const out: ViewOverride = {};
+  if (show || color) out.card = { ...(show ? { show } : {}), ...(color ? { color } : {}) };
+  // A person's own filter may say "is me": it only fades cards, for them.
+  if (Object.hasOwn(r, 'filter')) out.filter = cleanFilter(r.filter, { personal: true });
+  return Object.keys(out).length ? out : null;
 }
 
 /** `view` as this person sees it: their personal override on top of the saved view. */
 export function withOverride(view: ViewConfig, override: unknown): ViewConfig {
   const o = cleanOverride(override);
-  if (!o?.card || !view.card) return view;
-  return { ...view, card: { ...view.card, ...o.card } };
+  if (!o) return view;
+  return {
+    ...view,
+    ...(o.card && view.card ? { card: { ...view.card, ...o.card } } : {}),
+    ...(o.filter !== undefined ? { filter: o.filter } : {}),
+  };
 }
 
 /** The override that turns `saved` into `mine`: only the keys that differ (null: none). */
@@ -178,7 +219,9 @@ export function overrideBetween(saved: ViewConfig, mine: ViewConfig): ViewOverri
     if (mine.card.show.join('\n') !== saved.card.show.join('\n')) card.show = [...mine.card.show];
     if (mine.card.color !== saved.card.color) card.color = mine.card.color;
   }
-  return Object.keys(card).length ? { card } : null;
+  const out: ViewOverride = Object.keys(card).length ? { card } : {};
+  if (!sameFilter(mine.filter, saved.filter)) out.filter = mine.filter ?? null;
+  return Object.keys(out).length ? out : null;
 }
 
 /**
