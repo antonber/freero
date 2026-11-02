@@ -253,6 +253,7 @@ They are static HTML: canonical links, Open Graph tags, structured data and the 
 | `FREERO_SITE_DIST` | `apps/site/dist` | The built site to serve. Without a build there, `/` behaves as with `SITE=false`. |
 | `SITE_ANALYTICS_SRC` | — | Privacy-friendly analytics for the marketing pages only (never the app): an `https` script URL (Plausible, Umami, a self-hosted counter…), added with `defer` at the end of each page's `<head>`. Its origin is added to those pages' CSP `script-src` and `connect-src`. Unset: no analytics, no third-party request at all. |
 | `SITE_ANALYTICS_ATTRS` | — | `data-*` attributes for that script, comma-separated `key=value` (`domain=whiteboard.example.com` → `data-domain="whiteboard.example.com"`; Umami: `website-id=…`). |
+| `SITE_INDEXNOW_KEY` | — | An [IndexNow](https://www.indexnow.org/) key (8–128 letters, digits or dashes; generate one with `openssl rand -hex 16`). The server answers `/<key>.txt` with it, which proves to Bing, Yandex, Seznam, Naver and the other IndexNow engines that you control this host; then `node scripts/indexnow.mjs --site <PUBLIC_URL> [--since YYYY-MM-DD]` after a deploy submits the sitemap's pages (or only those changed since a day). Unset: nothing is served. Google doesn't use IndexNow: submit the sitemap in Search Console. |
 
 ### Legal pages and support (`/privacy`, `/terms`, `/acceptable-use`, `/support`)
 

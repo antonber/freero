@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { INTEGRATIONS } from '@freero/shared';
 import { buildSite, SITE_PREFIXES } from './build';
@@ -29,6 +30,8 @@ beforeAll(async () => {
 }, 60_000);
 
 const indexable = () => pages.filter((p) => p.index !== false);
+/** The pages a crawler may index as built: their robots meta says index (a legal draft, a 404 or an unpublished comparison doesn't). */
+const builtIndexable = () => pages.filter((p) => p.path !== '/404' && /<meta name="robots" content="index[,"]/.test(html.get(p.path) ?? ''));
 const attr = (doc: string, re: RegExp) => [...doc.matchAll(re)].map((m) => m[1].replace(/&amp;/g, '&'));
 const jsonLd = (doc: string) => attr(doc, /<script type="application\/ld\+json">([\s\S]*?)<\/script>/g).map((s) => JSON.parse(s) as { '@graph': Array<Record<string, unknown>> });
 const text = (doc: string) => doc.replace(/<[^>]+>/g, ' ').replace(/&#x27;|&#39;/g, '’').replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/\s+/g, ' ');
@@ -98,8 +101,9 @@ describe('crawling', () => {
       .filter((f) => /^\/sitemap-.+\.xml$/.test(f.path))
       .flatMap((f) => attr(served(f.file), /<loc>([^<]+)<\/loc>/g));
 
-  it('the sitemaps list exactly the indexable pages, and the index lists every sitemap', () => {
-    expect(sitemapUrls().sort()).toEqual(indexable().map((p) => `${HOST}${p.path === '/' ? '/' : p.path}`).sort());
+  it('the sitemaps list exactly the pages built indexable, never one that says noindex (a draft of the terms, an unpublished comparison), and the index lists every sitemap', () => {
+    expect(builtIndexable().length).toBeGreaterThan(100);
+    expect(sitemapUrls().sort()).toEqual(builtIndexable().map((p) => `${HOST}${p.path === '/' ? '/' : p.path}`).sort());
     const index = attr(served('sitemap.xml'), /<loc>([^<]+)<\/loc>/g);
     expect(index.sort()).toEqual(manifest.files.filter((f) => /^\/sitemap-.+\.xml$/.test(f.path)).map((f) => `${HOST}${f.path}`).sort());
   });
@@ -222,6 +226,30 @@ describe('links people follow', () => {
         checked++;
       }
     expect(checked).toBeGreaterThan(0);
+  });
+});
+
+describe('IndexNow submissions (scripts/indexnow.mjs)', () => {
+  type IndexNow = {
+    sitemapUrls: (read: (url: string) => Promise<string>, sitemap: string, o?: { since?: string | null }) => Promise<string[]>;
+    indexNowRequests: (site: string, key: string, urls: string[]) => { bodies: Array<{ host: string; key: string; keyLocation: string; urlList: string[] }>; skipped: string[] };
+  };
+  const lib = () => import(pathToFileURL(path.resolve(__dirname, '../../../scripts/lib/indexnow.mjs')).href) as Promise<IndexNow>;
+  /** The built sitemaps as the live server serves them. */
+  const read = async (url: string) => served(url.slice(HOST.length).slice(1));
+
+  it('submits exactly the pages the sitemaps list, all of them on this host with the key file it serves, and --since only those changed since that day', async () => {
+    const { sitemapUrls, indexNowRequests } = await lib();
+    const all = await sitemapUrls(read, `${HOST}/sitemap.xml`);
+    expect(all).toEqual(builtIndexable().map((p) => `${HOST}${p.path === '/' ? '/' : p.path}`).sort());
+    const { bodies, skipped } = indexNowRequests(HOST, 'a1b2c3d4e5f6a7b8', [...all, 'https://elsewhere.example.com/page']);
+    expect(skipped).toEqual(['https://elsewhere.example.com/page']);
+    expect(bodies.flatMap((b) => b.urlList)).toEqual(all);
+    expect(bodies.every((b) => b.host === new URL(HOST).host && b.keyLocation === `${HOST}/a1b2c3d4e5f6a7b8.txt` && b.urlList.length <= 10_000)).toBe(true);
+    const newest = builtIndexable().map((p) => p.updated).sort().at(-1)!;
+    const changed = await sitemapUrls(read, `${HOST}/sitemap.xml`, { since: newest });
+    expect(changed.length).toBeGreaterThan(0);
+    expect(changed).toEqual(builtIndexable().filter((p) => p.updated >= newest).map((p) => `${HOST}${p.path === '/' ? '/' : p.path}`).sort());
   });
 });
 

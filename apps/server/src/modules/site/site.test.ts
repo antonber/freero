@@ -91,10 +91,22 @@ it('a missing page under a site prefix is the site’s own 404, and /claude/ red
   expect([slash.status, slash.headers.get('location')]).toEqual([301, '/claude?ref=x']);
 });
 
-/** The same site build served with other SITE_LEGAL_* settings. */
-async function servedWith(legal: Partial<Config['site']['legal']>, run: (base: string) => Promise<void>) {
+it('the IndexNow key file is served at /<key>.txt only while SITE_INDEXNOW_KEY is set, so search engines accept this host’s submissions and nobody else’s key verifies', async () => {
+  const key = 'a1b2c3d4e5f6a7b8c9d0';
+  expect((await fetch(`${base}/${key}.txt`)).status).toBe(404);
+  await servedWithSite({ indexNowKey: key }, async (b) => {
+    const res = await fetch(`${b}/${key}.txt`);
+    expect([res.status, await res.text()]).toEqual([200, key]);
+    expect(res.headers.get('content-type')).toMatch(/^text\/plain/);
+    expect((await fetch(`${b}/b2c3d4e5f6a7b8c9d0e1.txt`)).status).toBe(404);
+  });
+});
+
+/** The same site build served with other site settings. */
+async function servedWithSite(site: Partial<Config['site']>, run: (base: string) => Promise<void>) {
   const app = createApp(config);
-  app.use(mountPath, siteRoutes({ config: { ...config, site: { ...config.site, legal: { ...config.site.legal, ...legal } } }, onShutdown: () => undefined }));
+  app.use(mountPath, siteRoutes({ config: { ...config, site: { ...config.site, ...site } }, onShutdown: () => undefined }));
+  app.use(errorHandler());
   const s = http.createServer(app);
   await new Promise<void>((r) => s.listen(0, '127.0.0.1', r));
   try {
@@ -102,6 +114,11 @@ async function servedWith(legal: Partial<Config['site']['legal']>, run: (base: s
   } finally {
     await new Promise((r) => s.close(r));
   }
+}
+
+/** The same site build served with other SITE_LEGAL_* settings. */
+async function servedWith(legal: Partial<Config['site']['legal']>, run: (base: string) => Promise<void>) {
+  await servedWithSite({ legal: { ...config.site.legal, ...legal } }, run);
 }
 
 it('until an operator is named, the privacy policy is visibly a draft that search engines may not index and sign-up asks nobody to agree; naming one puts it in effect with this server’s own facts', async () => {

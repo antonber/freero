@@ -1,5 +1,6 @@
 import { ButtonLink, Card, Cards, Checks, Code, Hero, Prompts, Section, Step, Steps, Table } from '../components/ui';
 import { definePage } from '../lib/define';
+import { softwareApplication } from '../lib/seo';
 import { APP, docsUrl, MCP_URL } from '../lib/site';
 
 export default definePage({
@@ -10,6 +11,7 @@ export default definePage({
   description:
     'Add Freero to ChatGPT as a custom MCP server. ChatGPT reads and searches your boards and proposes notes and diagrams your team approves. Free, open source.',
   updated: '2026-10-29',
+  jsonLd: [softwareApplication()],
   faq: [
     {
       q: 'What do I need in ChatGPT?',

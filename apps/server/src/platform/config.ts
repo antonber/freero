@@ -303,6 +303,12 @@ export interface Config {
     /** An operator's privacy-friendly analytics script (https), added to marketing pages only; null = none. */
     analytics: { src: string; attrs: Record<string, string> } | null;
     /**
+     * The IndexNow key (SITE_INDEXNOW_KEY), served at `/<key>.txt` so search engines that use
+     * IndexNow (Bing, Yandex, Seznam, Naver) accept this host's URL submissions
+     * (scripts/indexnow.mjs); null = nothing served.
+     */
+    indexNowKey: string | null;
+    /**
      * Who runs this service, for the legal pages (/privacy, /terms, /acceptable-use) and /support:
      * SITE_LEGAL_*. Until `operator` is set those pages say "Draft: not in effect" and are noindex,
      * and sign-up doesn't ask anyone to agree to them.
@@ -584,6 +590,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     else analyticsAttrs[key] = i < 0 ? '' : pair.slice(i + 1).trim();
   }
   const siteAnalytics = analyticsSrc ? { src: analyticsSrc, attrs: analyticsAttrs } : null;
+  // IndexNow's own rule for a key: 8 to 128 characters of a-z, A-Z, 0-9 and dashes. Anything else
+  // would make every submission fail later, far from the cause.
+  const indexNowKey = str('SITE_INDEXNOW_KEY');
+  if (indexNowKey !== null && !/^[a-zA-Z0-9-]{8,128}$/.test(indexNowKey)) problems.push('SITE_INDEXNOW_KEY must be 8 to 128 characters of letters, digits and dashes');
   // The legal pages' operator and contacts (apps/site legal pages, modules/site): plain text, one line.
   const legalText = (name: string, max: number) => {
     const v = str(name);
@@ -854,6 +864,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       enabled: bool('SITE', true),
       dist: path.resolve(env.FREERO_SITE_DIST || path.join(REPO_ROOT, 'apps/site/dist')),
       analytics: siteAnalytics,
+      indexNowKey,
       legal: siteLegal,
     },
     jitsiBaseUrl: url('JITSI_BASE_URL', ['https:'])?.replace(/\/+$/, '') ?? null,

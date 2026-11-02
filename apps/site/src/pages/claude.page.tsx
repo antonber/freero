@@ -1,5 +1,6 @@
 import { ButtonLink, Card, Cards, Checks, Code, Hero, Prompts, Section, Step, Steps, Table } from '../components/ui';
 import { definePage } from '../lib/define';
+import { softwareApplication } from '../lib/seo';
 import { APP, docsUrl, MCP_URL } from '../lib/site';
 
 export default definePage({
@@ -10,6 +11,7 @@ export default definePage({
   description:
     'Connect Claude to Freero with one MCP URL. Claude reads your boards, draws diagrams, groups notes and proposes changes your team approves. Open source.',
   updated: '2026-10-29',
+  jsonLd: [softwareApplication()],
   faq: [
     {
       q: 'Do I need a paid Claude plan?',

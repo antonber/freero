@@ -1,5 +1,6 @@
 import { ButtonLink, Card, Cards, Checks, Code, Hero, Section, Step, Steps, Table } from '../components/ui';
 import { definePage } from '../lib/define';
+import { softwareApplication } from '../lib/seo';
 import { MCP_PROMPTS, MCP_TOOLS } from '../lib/mcp';
 import { abs, APP, docsUrl, MCP_URL } from '../lib/site';
 
@@ -12,6 +13,7 @@ export default definePage({
   description:
     'Freero’s remote MCP server, REST API and signed webhooks let your agents read boards, propose changes people approve and react to what the team does.',
   updated: '2026-10-29',
+  jsonLd: [softwareApplication()],
   body: () => (
     <>
       <Hero

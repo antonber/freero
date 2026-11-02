@@ -64,6 +64,15 @@ export default function siteRoutes({ config }: ServerContext): Router {
     res.json(body);
   });
 
+  // IndexNow (scripts/indexnow.mjs submits this host's URLs after a deploy): the search engine
+  // fetches /<key>.txt to check the submitter controls the host. Only when SITE_INDEXNOW_KEY is set.
+  const indexNowKey = config.site.indexNowKey;
+  if (indexNowKey)
+    r.get(`/${indexNowKey}.txt`, (_req, res) => {
+      res.setHeader('Cache-Control', 'no-cache');
+      res.type('text/plain').send(indexNowKey);
+    });
+
   r.get('/robots.txt', (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     const robots = site?.files.get('/robots.txt');

@@ -94,7 +94,10 @@ const xmlEscape = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').
 /** sitemap.xml (an index of one sitemap per group that has pages) and each group's sitemap. */
 export function sitemaps(pages: PageDef[]): Array<{ path: string; xml: string }> {
   const groups = new Map<SitemapGroup, PageDef[]>();
-  for (const p of pages.filter((p) => p.index !== false)) {
+  // Legal pages are built as drafts (noindex) that only the server puts in effect, so a deployment
+  // without an operator would list pages it tells crawlers not to index; they are linked from every
+  // page's footer instead.
+  for (const p of pages.filter((p) => p.index !== false && !p.legal)) {
     const g = p.sitemap ?? 'pages';
     groups.set(g, [...(groups.get(g) ?? []), p]);
   }
