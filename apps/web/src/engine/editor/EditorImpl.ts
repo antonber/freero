@@ -7,6 +7,7 @@ import {
   COMMENTER_WRITABLE,
   pendingSuggestions,
   rejectClosure,
+  suggestedElement,
   suggestionState,
   withoutDanglingRefs,
   type BoardElement,
@@ -85,6 +86,8 @@ import {
 
 const EMPTY_OPTIONS = Object.freeze({}) as Record<string, unknown>;
 const CAMERA_ANIM_MS = 320;
+/** Screen room a fit keeps above a pending proposal for its "… suggests N changes" label. */
+const SUGGESTION_LABEL_PX = 44;
 
 export class EditorImpl implements Editor {
   /**
@@ -1292,8 +1295,15 @@ export class EditorImpl implements Editor {
   }
 
   zoomToFit(ids?: string[], opts: FitOptions = {}): void {
-    const b = this.getBounds(ids && ids.length ? ids : undefined, { visual: true });
-    const area = this.fitArea(opts.area);
+    const whole = !(ids && ids.length);
+    const items = this.getBounds(whole ? undefined : ids, { visual: true });
+    // The whole board includes what is proposed for it: pending suggestions' ghosts are drawn
+    // where their items would be, often beside the content (#91).
+    const ghosts = whole ? this.suggestionGhostBounds() : null;
+    const b = ghosts ? rectUnion(items ? [items, ghosts] : [ghosts]) : items;
+    let area = this.fitArea(opts.area);
+    // A proposal's label sits above its topmost ghost (features/suggestions): keep room for it.
+    if (ghosts && b && ghosts.y <= b.y) area = { ...area, y: area.y + SUGGESTION_LABEL_PX, h: Math.max(1, area.h - SUGGESTION_LABEL_PX) };
     if (!b) {
       // Empty board: the origin in the middle of the free area, at 100%.
       const c = rectCenter(area);
@@ -1301,6 +1311,18 @@ export class EditorImpl implements Editor {
       return;
     }
     this.setCamera(fitRectInArea(b, area, opts.padding ?? 80, opts.maxZoom ?? 1), { animate: opts.animate ?? true });
+  }
+
+  /** Union of what pending suggestions show (as they would be once accepted), or null. */
+  private suggestionGhostBounds(): Rect | null {
+    const list = this.getSuggestions();
+    if (!list.length) return null;
+    const get = (id: string) => this.core.store.getElement(id);
+    const els = list.flatMap((s) => {
+      const el = suggestedElement(s, get);
+      return el && !this.isHidden(el) ? [el] : [];
+    });
+    return this.visualBoundsOf(els);
   }
 
   zoomToRect(rect: Rect, opts: FitOptions = {}): void {

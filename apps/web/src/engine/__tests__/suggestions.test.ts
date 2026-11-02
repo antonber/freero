@@ -82,3 +82,19 @@ it('two editors accepting the same new sticky at the same moment end up with one
     expect(e.getSuggestions()).toHaveLength(0);
   }
 });
+
+it('fitting the whole board brings a pending proposal beside the content fully into view, its label too (#91)', () => {
+  core = makeCore({ role: 'owner', bundles: [bundle('boxes', { elements: [boxDef as ElementDefinition<any>] })] });
+  const editor = core.editor;
+  editor.create({ type: 'sticky', x: 0, y: 0, w: 400, h: 400 } as never);
+  // Proposed above and right of the content; the "… suggests" label sits above the ghosts.
+  propose(core, [create('s1', { ...sticky('a', 0, 'Above'), y: -900 }), create('s2', { ...sticky('b', 1400, 'Right'), y: -900 })]);
+  editor.zoomToFit(undefined, { animate: false, area: 'viewport', padding: 12 });
+  const vp = editor.getViewportSize();
+  const topLeft = editor.worldToScreen({ x: 0, y: -900 });
+  const bottomRight = editor.worldToScreen({ x: 1500, y: 400 });
+  expect(topLeft.x).toBeGreaterThanOrEqual(0);
+  expect(topLeft.y).toBeGreaterThanOrEqual(40); // room for the label
+  expect(bottomRight.x).toBeLessThanOrEqual(vp.width);
+  expect(bottomRight.y).toBeLessThanOrEqual(vp.height);
+});
