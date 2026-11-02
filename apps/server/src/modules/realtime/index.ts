@@ -45,6 +45,8 @@ export { reviewSuggestions, SuggestionNotFoundError, SuggestionStaleError, type 
 export { suggestionWithdrawalsConsumer, SUGGESTION_WITHDRAWALS_CONSUMER } from './withdrawals';
 // Proposals made on this instance, attributed to the person and the app acting for them (activity feed).
 export { onSuggestionsProposed, type SuggestionsProposedEvent } from './suggestionEvents';
+// Decisions on suggestions applied on this instance (#82: an accepted proposed import gets linked).
+export { onSuggestionsDecided, type SuggestionsDecidedEvent } from './suggestionEvents';
 // The board as one reader sees it (their role's layers applied) and the one request-time write
 // path for board content (one transaction, published and saved): the outline and structure
 // modules read and write boards through these, never through Yjs.
