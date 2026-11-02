@@ -5,6 +5,8 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import {
   APART_GAP,
+  kanbanBoardWidth,
+  kanbanColumnAt,
   rectsOverlap,
   rotatedBounds,
   tableCellKey,
@@ -12,6 +14,7 @@ import {
   type ConnectorElement,
   type ElementDraft,
   type InsertStructureRequest,
+  type KanbanElement,
   type Rect,
   type TableElement,
 } from '@freero/shared';
@@ -322,6 +325,29 @@ it('cards added into a kanban column by its title land inside that column below 
   for (let i = 1; i < added.length; i++) expect(added[i].y).toBeGreaterThan(added[i - 1].y + added[i - 1].h);
   expect(k.h).toBeGreaterThan(before.h);
   for (const c of added) expect(within(c, k)).toBe(true);
+});
+
+it('on a kanban that colours cards by column, an agent’s cards take their column’s colour; one put into a collapsed column folds into it and the outline still lists it there', async () => {
+  const columns = [
+    { id: 'act', title: 'Active deal', status: null, color: '#2E9BF0' },
+    { id: 'talk', title: 'Talking', status: null, color: '#F5A524', collapsed: true },
+    { id: 'pass', title: 'Pass', status: null, color: '#E5484D' },
+  ];
+  const deals = { ...sticky('deals', 0, 0), type: 'kanban', title: 'Deals', colW: 280, colorCards: true, columns, h: 300 } as unknown as KanbanElement;
+  const boardId = await boardWith([{ ...deals, w: kanbanBoardWidth(deals) } as BoardElement]);
+  const pass = await insert(boardId, { structure: { kind: 'items', items: [{ type: 'card', text: 'Acme' }] }, placement: { into: 'deals', column: 'Pass' } });
+  const talk = await insert(boardId, { structure: { kind: 'items', items: [{ type: 'card', text: 'Globex' }] }, placement: { into: 'deals:talk' } });
+
+  const view = await readBoardView(boardId, { userId, role: 'owner' });
+  const k = view.elements.find((e) => e.el.id === 'deals')!.el as KanbanElement;
+  const card = (id: string) => view.elements.find((e) => e.el.id === id)!.el as BoardElement & { color: string };
+  const [acme, globex] = [card(pass.parts![0].ids[0]), card(talk.parts![0].ids[0])];
+  expect([kanbanColumnAt(k, acme.x + acme.w / 2), acme.color]).toEqual([2, '#E5484D']);
+  expect([kanbanColumnAt(k, globex.x + globex.w / 2), globex.color]).toEqual([1, '#F5A524']);
+  const outline = await outlineOfView({ id: boardId, title: 'Structure' }, view);
+  const talking = outline.items.find((i) => i.id === 'deals')?.children?.find((c) => c.id === 'deals:talk');
+  expect(talking?.fields).toMatchObject({ collapsed: true });
+  expect(talking?.children?.map((c) => c.id)).toEqual([globex.id]);
 });
 
 it('an imported issue keeps the tracker’s status wherever it is placed: named for a column with another status, it goes to the column of its own', async () => {

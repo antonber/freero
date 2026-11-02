@@ -6,6 +6,9 @@ import {
   isStatusCategory,
   issueValuesFromBoard,
   KANBAN_LAYOUT,
+  kanbanColumnAt,
+  kanbanColumnLeft,
+  kanbanColumnWidth,
   measureText,
   plainToRichText,
   richTextToPlain,
@@ -144,23 +147,26 @@ export interface PullPlan {
   notes: string[];
 }
 
-/** Where a card goes in a kanban: the bottom of the first column with that status, or null. */
-function kanbanSpot(view: Pick<BoardView, 'elements'>, card: BoardElement, status: string, moving: Set<string>): { x: number; y: number } | null {
+/**
+ * Where a card goes in a kanban: the bottom of the first column with that status, or null. A
+ * board that colours its cards by column gives it that column's colour too.
+ */
+function kanbanSpot(view: Pick<BoardView, 'elements'>, card: BoardElement, status: string, moving: Set<string>): { x: number; y: number; color?: string } | null {
   if (!card.frameId) return null;
   const k = view.elements.find((e) => e.el.id === card.frameId)?.el as KanbanElement | undefined;
   if (!k || k.type !== 'kanban' || !Array.isArray(k.columns)) return null;
   const col = k.columns.findIndex((c) => c.status === status);
   if (col < 0) return null;
-  const { gap, pad, itemGap, headerH, colHeadH } = KANBAN_LAYOUT;
-  const left = k.x + gap + col * (k.colW + gap);
-  const inCol = (el: BoardElement) => el.frameId === k.id && el.id !== card.id && !moving.has(el.id) && el.x + el.w / 2 >= left && el.x + el.w / 2 < left + k.colW;
-  const now = Math.floor((card.x + card.w / 2 - k.x - gap / 2) / (k.colW + gap));
-  if (now === col) return null;
+  const { itemGap, headerH, colHeadH, pad } = KANBAN_LAYOUT;
+  const left = k.x + kanbanColumnLeft(k, col);
+  const inCol = (el: BoardElement) => el.frameId === k.id && el.id !== card.id && !moving.has(el.id) && kanbanColumnAt(k, el.x + el.w / 2) === col;
+  if (kanbanColumnAt(k, card.x + card.w / 2) === col) return null;
   const bottom = view.elements
     .map((e) => e.el)
     .filter(inCol)
     .reduce((m, el) => Math.max(m, el.y + el.h), k.y + headerH + colHeadH + pad - itemGap);
-  return { x: left + pad, y: bottom + itemGap };
+  const color = k.colorCards ? k.columns[col].color : undefined;
+  return { x: left + kanbanColumnWidth(k, col) / 2 - card.w / 2, y: bottom + itemGap, ...(color ? { color } : {}) };
 }
 
 /**
