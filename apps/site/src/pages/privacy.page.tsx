@@ -25,7 +25,7 @@ export default definePage({
         <>
           <p>
             This policy explains what personal information the Freero service at <a href={abs('/')}>{abs('/')}</a> collects, what it is used for, who
-            else handles it, how long it is kept, and what you can do about it. The service is operated by {L('operator')} (“we”, “us”), {L('address')}.
+            else handles it, how long it is kept, and what you can do about it. The service is operated by {L('operator')} (“we”, “us”){L('atAddress')}.
             Questions and requests: {L('contact')}.
           </p>
           <p>
@@ -317,7 +317,7 @@ export default definePage({
 
       <h2 id="contact">13. Contact</h2>
       <p>
-        {L('operator')}, {L('address')}. Email: {L('contact')}. For help with the service, see <a href="/support">Support</a>.
+        {L('operator')}{L('atAddress')}. Email: {L('contact')}. For help with the service, see <a href="/support">Support</a>.
       </p>
     </LegalArticle>
   ),

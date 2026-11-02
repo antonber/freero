@@ -11,7 +11,7 @@ import { Container } from '../components/ui';
 /** What a token can stand for (each is filled with escaped text or a link). */
 export type LegalKey =
   | 'operator'
-  | 'address'
+  | 'atAddress'
   | 'jurisdiction'
   | 'contact'
   | 'abuseContact'

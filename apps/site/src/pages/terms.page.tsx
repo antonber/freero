@@ -21,7 +21,7 @@ export default definePage({
       updated={UPDATED}
       intro={
         <p>
-          These terms are an agreement between you and {L('operator')} (“we”, “us”), {L('address')}, for using the Freero service at{' '}
+          These terms are an agreement between you and {L('operator')} (“we”, “us”){L('atAddress')}, for using the Freero service at{' '}
           <a href={abs('/')}>{abs('/')}</a>, its apps, its API and its MCP server (together, “the service”). By creating an account or using the service you
           accept them, together with the <a href="/acceptable-use">acceptable use policy</a>. Our <a href="/privacy">privacy policy</a> explains how we handle
           personal information.

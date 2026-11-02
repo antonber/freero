@@ -51,7 +51,9 @@ export function legalFill(config: Config): LegalFill {
     inEffect: l.operator !== null,
     values: {
       operator: l.operator ? escapeHtml(l.operator) : unset('the operator’s legal name'),
-      address: l.address ? escapeHtml(l.address) : unset('postal address'),
+      // ", <address>" after the operator's name. A draft shows the gap; terms in force without an
+      // address leave the clause out rather than print a placeholder.
+      atAddress: l.address ? `, ${escapeHtml(l.address)}` : l.operator ? '' : `, ${unset('postal address')}`,
       jurisdiction: l.jurisdiction ? escapeHtml(l.jurisdiction) : unset('governing law'),
       contact: contact ? mailLink(contact) : unset('contact email'),
       abuseContact: abuse ? mailLink(abuse) : unset('abuse contact email'),

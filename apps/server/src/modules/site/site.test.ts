@@ -23,7 +23,7 @@ fs.writeFileSync(path.join(dist, 'robots.txt'), `User-agent: *\nSitemap: ${ORIGI
 fs.mkdirSync(path.join(dist, 'privacy'));
 fs.writeFileSync(
   path.join(dist, 'privacy/index.html'),
-  `<!doctype html><html><head><title>Privacy</title><meta name="robots" content="noindex, follow"/></head><body><aside class="legal-draft" role="note"><strong>Draft: not in effect.</strong> Under legal review.</aside><h1>Privacy policy</h1><p>Operated by [[freero-legal:operator]]. Write to [[freero-legal:contact]]. Deleted after [[freero-legal:deletionGraceDays]] days.</p></body></html>`,
+  `<!doctype html><html><head><title>Privacy</title><meta name="robots" content="noindex, follow"/></head><body><aside class="legal-draft" role="note"><strong>Draft: not in effect.</strong> Under legal review.</aside><h1>Privacy policy</h1><p>Operated by [[freero-legal:operator]][[freero-legal:atAddress]]. Write to [[freero-legal:contact]]. Deleted after [[freero-legal:deletionGraceDays]] days.</p></body></html>`,
 );
 fs.writeFileSync(
   path.join(dist, 'manifest.json'),
@@ -111,6 +111,7 @@ it('until an operator is named, the privacy policy is visibly a draft that searc
   expect(draftHtml).toContain('<meta name="robots" content="noindex, follow"/>');
   expect(draft.headers.get('x-robots-tag')).toBe('noindex');
   expect(draftHtml).toContain('[the operator’s legal name: not set yet]');
+  expect(draftHtml).toContain('[postal address: not set yet]');
   expect(await (await fetch(`${base}/api/site/legal`)).json()).toEqual({ legal: null });
 
   await servedWith({ operator: 'Kaiten Gaming <LLC>' }, async (live) => {
@@ -119,7 +120,8 @@ it('until an operator is named, the privacy policy is visibly a draft that searc
     expect(html).not.toContain('Draft: not in effect');
     expect(html).toContain('<meta name="robots" content="index, follow, max-image-preview:large"/>');
     expect(res.headers.get('x-robots-tag')).toBeNull();
-    // The operator's facts, escaped as text; the retention this server is configured with.
+    // The operator's facts, escaped as text (no address set: the clause is left out, never a placeholder
+    // on terms in force); the retention this server is configured with.
     expect(html).toContain('Operated by Kaiten Gaming &lt;LLC&gt;.');
     expect(html).toContain('<a href="mailto:privacy@whiteboard.example.com">privacy@whiteboard.example.com</a>');
     expect(html).toContain('Deleted after 21 days.');
