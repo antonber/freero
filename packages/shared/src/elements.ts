@@ -586,11 +586,18 @@ export interface KanbanElement extends BaseElement {
   columns: KanbanColumn[];
   /** Width of every column (world units); the element's w follows from it. */
   colW: number;
+  /**
+   * [additive] Task cards take the colour of the column they are moved into (as their accent).
+   * Absent / false (boards from before): moving a card changes only where it is.
+   */
+  colorCards?: boolean;
 }
 
 /**
  * Kanban geometry (element-local, world units), shared by the kanban feature's layout and the
  * server, which places a card in the column of the status a tracker reports (modules/trackers).
+ * Column positions come from `kanbanColumnLeft` / `kanbanColumnAt`, never from `colW` alone:
+ * a collapsed column is only `collapsedW` wide.
  */
 export const KANBAN_LAYOUT = {
   /** Board title band. */
@@ -603,6 +610,8 @@ export const KANBAN_LAYOUT = {
   pad: 10,
   /** Between stacked items. */
   itemGap: 10,
+  /** Width of a collapsed column (its title runs down it, its items are folded away). */
+  collapsedW: 44,
 } as const;
 
 export interface KanbanColumn {
@@ -614,6 +623,41 @@ export interface KanbanColumn {
   wip?: number;
   /** Header accent color. */
   color: string;
+  /** [additive] Folded to a narrow strip showing its title and count; its items are kept, not shown. */
+  collapsed?: boolean;
+}
+
+type KanbanGeometry = Pick<KanbanElement, 'colW' | 'columns'>;
+
+/** Width of column `i` (a collapsed column is a narrow strip). */
+export function kanbanColumnWidth(k: KanbanGeometry, i: number): number {
+  return k.columns[i]?.collapsed ? KANBAN_LAYOUT.collapsedW : k.colW;
+}
+
+/** Column `i`'s left edge, element-local (i = columns.length: the board's right edge minus the gap). */
+export function kanbanColumnLeft(k: KanbanGeometry, i: number): number {
+  let x = KANBAN_LAYOUT.gap;
+  for (let j = 0; j < i && j < k.columns.length; j++) x += kanbanColumnWidth(k, j) + KANBAN_LAYOUT.gap;
+  return x;
+}
+
+/** The board's width for its columns. */
+export function kanbanBoardWidth(k: KanbanGeometry): number {
+  return kanbanColumnLeft(k, k.columns.length);
+}
+
+/**
+ * The column under world x (clamped: left or right of the board counts as the edge column). Each
+ * column owns half the gap on either side, so a center on a gap goes to the nearer column.
+ */
+export function kanbanColumnAt(k: KanbanGeometry & Pick<KanbanElement, 'x'>, worldX: number): number {
+  const lx = worldX - k.x;
+  let right = KANBAN_LAYOUT.gap / 2;
+  for (let i = 0; i < k.columns.length; i++) {
+    right += kanbanColumnWidth(k, i) + KANBAN_LAYOUT.gap;
+    if (lx < right) return i;
+  }
+  return Math.max(0, k.columns.length - 1);
 }
 
 /** A PDF document: shows one page at a time; the file lives in uploads. */
