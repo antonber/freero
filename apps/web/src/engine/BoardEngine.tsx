@@ -73,7 +73,8 @@ export function BoardEngine({ host, features, topbarAccessory, location, initial
       core.store.setPresence({ user: { id: u.id, name: u.name, color: u.color, avatarUrl: u.avatarUrl } });
   }, [core, host]);
 
-  const appChrome = useMemo(() => ({ topbarAccessory }), [topbarAccessory]);
+  const boardTitle = host.board.title;
+  const appChrome = useMemo(() => ({ topbarAccessory, boardTitle }), [topbarAccessory, boardTitle]);
 
   if (error)
     return (
