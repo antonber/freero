@@ -1,18 +1,26 @@
-// How task cards read in the board outline: title, description and their task fields.
-import { defineOutline } from '@freero/shared';
+// How task cards read in the board outline: title, description and their task fields, and on a
+// kanban the values of its fields, by field name (select labels, names, ISO dates, numbers).
+import { cardValue, collectionSchema, defineOutline, valueText } from '@freero/shared';
 
 export default defineOutline({
   kinds: {
-    card: (el, ctx) => ({
-      title: el.title,
-      text: ctx.plain(el.description),
-      fields: {
+    card: (el, ctx) => {
+      const fields: Record<string, string | number | boolean | null | undefined> = {
         status: el.status,
         start: el.startDate ?? null,
         due: el.dueDate,
         estimate: el.estimate ?? null,
         assignee: el.assigneeId ? (ctx.personName(el.assigneeId) ?? 'someone') : null,
-      },
-    }),
+      };
+      const k = el.frameId ? ctx.element(el.frameId) : undefined;
+      if (k?.type === 'kanban')
+        for (const f of collectionSchema(k)) {
+          const v = cardValue(k, el, f);
+          // A built-in key keeps its meaning (custom fields can't take those names).
+          if (v === null || Object.hasOwn(fields, f.name) || f.name === '__proto__') continue;
+          fields[f.name] = typeof v === 'number' || v === true ? v : valueText(f, v, ctx.personName);
+        }
+      return { title: el.title, text: ctx.plain(el.description), fields };
+    },
   },
 });

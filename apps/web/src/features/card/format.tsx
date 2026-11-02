@@ -7,6 +7,7 @@ import { ACCENTS, ACCENT_NAMES, STATUSES, TOOL_ID, type CardStatus } from './lib
 import { formatDue, localISODate } from './lib/actions';
 import { detailsSession, type DetailsSession } from './lib/details';
 import { useBoardPeople, usePerson } from './lib/people';
+import { CardFields } from './lib/FieldsEditor';
 
 type Props = { editor: Editor; cards: CardElement[] };
 
@@ -228,6 +229,7 @@ function DetailsControl({ editor, cards }: Props) {
       />
       <Popover open={open} onClose={close} anchor={ref.current} side="bottom" offset={10} width={380} aria-label="Card details" className="fr-card-details">
         <div className="fr-card-pop">
+          <CardFields editor={editor} card={card} />
           <div className="fr-card-pop__label">Description</div>
           <TextArea
             autoFocus
