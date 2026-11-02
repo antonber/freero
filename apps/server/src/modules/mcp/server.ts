@@ -36,6 +36,7 @@ const SCOPE_LABEL: Record<ApiScope, string> = {
   'comments:write': 'comment',
   'members:read': 'see members',
   'members:write': 'manage members',
+  'problems:triage': 'triage problem reports',
 };
 
 /**

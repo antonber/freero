@@ -134,10 +134,13 @@ export function toSwagger2(openapi, { host = 'freero.example.com' } = {}) {
   if (openapi.info.license) info.license = openapi.info.license;
   const paths = {};
   for (const [p, item] of Object.entries(openapi.paths)) {
+    // Freero operators' own endpoints (tag "operator": problem triage) are no flow step for anyone else.
+    const methods = METHODS.filter((m) => item[m] && !(item[m].tags ?? []).includes('operator'));
+    if (!methods.length) continue;
     const shared = (item.parameters ?? []).map(parameter2);
     const out = {};
     if (shared.length) out.parameters = shared;
-    for (const m of METHODS) if (item[m]) out[m] = operation2(item[m]);
+    for (const m of methods) out[m] = operation2(item[m]);
     paths[p] = out;
   }
   const c = openapi.components ?? {};

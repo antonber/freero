@@ -5,9 +5,11 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { apiNotFound, createApp, errorHandler } from '../../platform/http';
+import { initStorage } from '../../platform/storage';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { createPersonalToken } from '../apiauth/index';
 import { createUser } from '../auth/index';
+import { attachProblemScreenshot, createProblem } from '../problems/index';
 import SPEC from '../../../../../docs/api/openapi.json';
 import apiRoutes, { ENDPOINTS, mountPath } from './routes';
 
@@ -17,9 +19,11 @@ let server: http.Server;
 let base = '';
 let full = '';
 let readOnly = '';
+const OPERATOR = 'operator@api.test.freero.app';
 
 beforeAll(async () => {
-  const config = await openTestDb({ PUBLIC_URL: 'http://freero.test' });
+  const config = await openTestDb({ PUBLIC_URL: 'http://freero.test', OPERATOR_EMAILS: OPERATOR });
+  initStorage(config);
   const app = createApp(config);
   app.use(mountPath, apiRoutes({ config, onShutdown: () => undefined }));
   app.use('/api', apiNotFound());
@@ -171,4 +175,36 @@ it('what the API answers in a real session has the shapes its reference promises
   // A doc is no board for the board operations (and is not listed among boards).
   expect((await call('GET', `/boards/${doc.id}`, '/boards/{boardId}')).status).toBe(404);
   expect((await call('GET', '/boards?q=Decision', '/boards')).json.boards).toEqual([]);
+});
+
+it('the operators’ problem endpoints exist only for an operator’s problems:triage token — anyone else’s token gets 404, the scope is refused to them — and answer in the documented shapes', async () => {
+  const reporter = await createUser({ name: 'Reporter', email: 'reporter@api.test.freero.app', password: 'password-123' }, { emailVerified: true });
+  const operator = await createUser({ name: 'Operator', email: OPERATOR, password: 'password-123' }, { emailVerified: true });
+  const jpeg = new Uint8Array(1024);
+  jpeg.set([0xff, 0xd8, 0xff, 0xe0]);
+  const diagnostics = { path: '/board/abc', userAgent: 'Test', viewport: { width: 800, height: 600, dpr: 1 }, at: 1, events: [] };
+  const { id } = await createProblem(reporter.id, { note: 'The board froze', contactOk: true, diagnostics });
+  await attachProblemScreenshot(reporter.id, id, jpeg);
+  const P = `/operator/problems/${id}`;
+
+  await expect(createPersonalToken(reporter.id, 'password', { name: 'triage', scopes: ['problems:triage'], expiresInDays: 1 })).rejects.toMatchObject({ status: 403 });
+  const reads = [
+    ['/operator/problems', '/operator/problems'],
+    [P, '/operator/problems/{problemId}'],
+    [`${P}/screenshot`, '/operator/problems/{problemId}/screenshot'],
+  ] as const;
+  for (const [path, specPath] of reads) expect((await call('GET', path, specPath)).status, `${path} with a non-operator's token`).toBe(404);
+  expect((await call('PATCH', P, '/operator/problems/{problemId}', { status: 'wontfix' })).status).toBe(404);
+
+  const triage = (await createPersonalToken(operator.id, 'password', { name: 'morning review', scopes: ['problems:triage'], expiresInDays: 1 })).secret;
+  const listed = await call('GET', '/operator/problems?status=new', '/operator/problems', undefined, triage);
+  expect(listed.json.problems.map((p: { id: string }) => p.id)).toEqual([id]);
+  expect((await call('GET', P, '/operator/problems/{problemId}', undefined, triage)).json.problem.reporter.email).toBe('reporter@api.test.freero.app');
+  expect((await call('GET', `${P}/screenshot`, '/operator/problems/{problemId}/screenshot', undefined, triage)).status).toBe(200);
+  const issueUrl = 'https://github.com/antonber/freero/issues/1';
+  const fixed = await call('PATCH', P, '/operator/problems/{problemId}', { status: 'fixed', issueUrl, operatorNote: 'Fixed in the next release' }, triage);
+  expect(fixed.json.problem).toMatchObject({ status: 'fixed', issueUrl });
+  // The operator's other tokens can't triage.
+  const boardsOnly = (await createPersonalToken(operator.id, 'password', { name: 'boards', scopes: ['boards:read'], expiresInDays: 1 })).secret;
+  expect((await call('GET', '/operator/problems', '/operator/problems', undefined, boardsOnly)).status).toBe(403);
 });

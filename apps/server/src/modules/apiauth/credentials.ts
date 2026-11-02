@@ -9,6 +9,7 @@ import {
   API_DISABLED,
   INSUFFICIENT_SCOPE,
   isApiScope,
+  isOperatorScope,
   MAX_TOKEN_NAME,
   MAX_TOKENS_PER_USER,
   SSO_REQUIRED,
@@ -23,7 +24,7 @@ import { newId } from '../../platform/ids';
 import { appUrl } from '../../platform/mail';
 import { setRequestUser } from '../../platform/requestContext';
 import { recordAudit, recordAuditQuietly } from '../audit/index';
-import { getAccount, isSuspended, signInRestriction } from '../auth/index';
+import { getAccount, isOperator, isSuspended, signInRestriction } from '../auth/index';
 import { getWorkspaceInfo } from '../workspaces/index';
 import * as repo from './repo';
 
@@ -86,6 +87,9 @@ export async function createPersonalToken(userId: string, issuedVia: string, bod
   const name = typeof body?.name === 'string' ? body.name.trim().slice(0, MAX_TOKEN_NAME) : '';
   if (!name) throw badRequest('Give the token a name, so you can tell it apart later');
   const scopes = cleanScopes(body?.scopes);
+  // Operator scopes (problems:triage): only an operator's own token, and only while they are one (authenticate).
+  if (scopes.some(isOperatorScope) && !isOperator(await getAccount(userId)))
+    throw forbidden(`Only Freero’s operators can make a token with ${scopes.filter(isOperatorScope).join(', ')}`);
   const days = body?.expiresInDays;
   if (days !== null && (typeof days !== 'number' || !Number.isInteger(days) || days < 1 || days > 365))
     throw badRequest('expiresInDays must be a whole number from 1 to 365, or null for no expiry');
@@ -225,7 +229,8 @@ export async function authenticate(req: Request, resource: string): Promise<ApiC
     kind: oauth ? 'oauth' : 'personal',
     label: oauth ? (token.clientName ?? 'App') : token.name,
     clientId: token.clientId,
-    scopes: token.scopes.filter(isApiScope),
+    // An operator scope counts only on a personal token, while its account is an operator (OPERATOR_EMAILS, verified).
+    scopes: token.scopes.filter(isApiScope).filter((s) => !isOperatorScope(s) || (!oauth && isOperator(account))),
     account,
     grantId: token.grantId,
     issuedVia: token.issuedVia,
