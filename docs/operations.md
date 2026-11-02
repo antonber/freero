@@ -503,6 +503,19 @@ fixed extraction bug; safe while the servers run (their live updates pause meanw
 `npm run admin -- search:rebuild [<board id>]` re-derives the search index (dashboard "Inside boards",
 `/api/v1/search`, MCP `search`) the same way.
 
+`npm run admin -- cards:restore-notes [--board <id>] [--since YYYY-MM-DD] [--apply] [--wait <s>]`
+gives task cards back the notes that deselecting or dragging a card wiped (2026-10-27 until the fix
+in 5b54a85). It lists every card that has empty notes now but had notes in a board version taken
+since `--since` (default 2026-10-27), with the board, the card's title (never the notes) and the
+version the notes come from. Nothing changes without `--apply`. With `--apply` it asks the
+**running server** to write the newest such notes, exactly as stored, through the outbox
+(`realtime.card_notes_restore`). The server writes them on the live board, so open boards see them
+at once. Each card also grows back to its height, and in a kanban the cards below it move back
+down. The edit shows as "Freero notes repair for <owner>". Cards that have notes again, and
+deleted cards, are never touched. Re-running it is safe. On a tracker-linked card, the next sync
+writes the restored notes back to the issue as well. With PGlite (the server stopped while this
+runs), the restore happens when the server starts again.
+
 `npm run admin -- audit:verify <workspace id>` re-checks a workspace's audit log chain (also
 `u:<user id>` for an account's own chain, `freero` for operator actions on unowned content) and
 exits non-zero when it is not intact. Workspace admins run the same check from the admin console

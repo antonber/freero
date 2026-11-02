@@ -2,7 +2,7 @@
 // retention (KAI-51). Runs shortly after startup and then hourly on EVERY instance; pruneSnapshots
 // takes an advisory lock, so replicas never prune at the same time, and a round that loses the lock
 // or finds nothing is a no-op. Also follows revoked credentials and withdraws their pending
-// suggestions (withdrawals.ts, KAI-224).
+// suggestions (withdrawals.ts, KAI-224), and applies card notes an operator restores (cardNotes.ts).
 import type { ServerContext } from '../../platform/context';
 import { log, logError } from '../../platform/log';
 import { consumeOutbox } from '../../platform/outbox';
@@ -10,6 +10,7 @@ import { boardWorkspaceId } from '../boards/index';
 import { retentionOverrides } from '../workspaces/index';
 import { DEFAULT_RETENTION, pruneSnapshots, type RetentionPolicyFor } from './retention';
 import { suggestionWithdrawalsConsumer } from './withdrawals';
+import { cardNotesConsumer } from './cardNotes';
 
 const PRUNE_INTERVAL_MS = 60 * 60 * 1000;
 /** Not at startup itself: several replicas restarting together would all try at once. */
@@ -29,6 +30,8 @@ export async function pruneSnapshotsByPolicy(now = Date.now()): Promise<number |
 
 export default function initRealtime(ctx: ServerContext): void {
   consumeOutbox(ctx, suggestionWithdrawalsConsumer);
+  // Card notes an operator restores (admin cards:restore-notes): written here, on the live boards.
+  consumeOutbox(ctx, cardNotesConsumer);
   let running: Promise<void> | null = null;
   const run = () => {
     if (running) return; // the previous round is still going
