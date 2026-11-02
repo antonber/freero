@@ -961,10 +961,9 @@ What the next steps need:
 - **Outline**: a kanban reads `filter: Priority is P1 and Points > 3`, `sort: Points (descending)`
   and `view locked: true`; a card the filter leaves out reads `filtered: true` (docs/board-outline.md).
 - **Not done** (later): a REST batch `PATCH …/cards` (update_items covers it), `add_view` and view
-  tabs (3a / 3c), field retyping, the `$status` / `$assignee` group fields, server re-lay after a
-  tracker pull changes a grouped value (2f, trackers), a server-side test of the view lock by a
-  second editor (the client test covers the rule; the server check is one line in
-  `planConfigureView`).
+  tabs (3a / 3c), field retyping, the `$status` / `$assignee` group fields, a server-side test of the
+  view lock by a second editor (the client test covers the rule; the server check is one line in
+  `planConfigureView`). (Server re-lay after a tracker pull: done when 2f joined, below.)
 
 ## Step 2f as built
 
@@ -979,8 +978,8 @@ Fields from the outside world: trackers, templates and CSV.
   select when few short labels repeat — at most 12 distinct and at most 60% of the cells —, a
   multi-select when cells list such labels with `;`, else text; person never guessed),
   `withOptions`, `rankColor` (most pressing first: red → gray), `priorityFieldOf` (the single select
-  called "Priority"). The table's own parse / infer stays in `features/table` until 2d moves it; the
-  rules match.
+  called "Priority"). The table's parse / infer now goes through it too (see "2d, 2e and 2f
+  together" below).
 - **Trackers** (`modules/trackers/kanban.ts`, pure). Status → Stage, one rule for import and pull:
   the option whose label is the tracker's status name, else the first option mapped to its category
   (`status`), else — on import only — a new column named after it, mapped to its category and
@@ -1045,6 +1044,33 @@ Fields from the outside world: trackers, templates and CSV.
   imported back has its columns, fields and types (free text stays text) and every value;
   `npm run verify -- --only tracker` imports into a kanban from the mock Jira and moves a card back
   to Jira by name.
+
+## 2d, 2e and 2f together
+
+2f was built alongside 2d / 2e and merged with them; where they met:
+
+- **One reading of words, one filter and sort.** `fieldText.ts` (2f) reads words as values and
+  guesses a column's type; `query.ts` (2d) filters and sorts values. The free-form table no longer
+  has its own number / date / checkbox parsing or type guess: `features/table/lib/columns.ts` asks
+  `fieldText.ts` (with `dayFirst: false`, since a table keeps "03/04/2026" as typed rather than
+  guess, and `choices: false`, since it never guesses selects or links) and `query.ts` reads numbers
+  through it. The two sets of yes / no words became one (1 / 0, done, - included), and a column's
+  type is now tried as a number before a checkbox, so a column of 1s and 0s stays numbers.
+- **Placement** keeps both: a column a tracker import chose for a card (by status name, 2f's
+  `columnFor`) wins, then a `placement.column` the caller named, then the card's value for the
+  grouped field (2e), then its status; rows (2e) apply on top.
+- **Trackers lay kanbans out** with `withKanbanLayout`: a pull (`planPull`) and an import into a
+  kanban that was there (`trackers/kanban.ts` `importIntoKanban`) re-lay it in the same change, so
+  a pulled Priority moves a card into that swimlane, and the view's filter and sort apply to what
+  comes in. Found while joining them: a status column an import opens *between* others (2f puts "In
+  progress" before Done) shifted the columns after it without moving their cards, so a card in Done
+  then stood in the new column — a re-lay would have written that column's status onto it. The
+  import now carries the cards along with their columns (`reflowMoves`), as the column menu does.
+- **CSV into an existing kanban: still not done.** `define_fields` (2e) is a server operation over
+  a board view; the CSV import runs in the browser, and adding fields to a kanban there is the
+  kanban feature's write (a feature can't write another's element): it needs a kanban command that
+  merges fields by name and type (options by label) and places cards by value into columns and
+  rows, plus the dialog's "into this kanban" mapping. Not small; left for a later step.
 
 ## Sources (concepts only; nothing copied)
 
