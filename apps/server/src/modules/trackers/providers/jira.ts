@@ -7,13 +7,15 @@
 //
 // Differences handled here: description format, search (Cloud: POST /search/jql; DC: POST
 // /search), user search (`query` vs `username`) and assignee ids (accountId vs name). Status
-// changes go through the workflow's transitions — when none leads to the wanted category the
-// sync says so instead of forcing anything. Story points live in a custom field found by name.
+// changes go through the workflow's transitions: to the status of the same name when the board
+// asks for one (a card moved to its "In review" column), else to the wanted category — when none
+// leads there the sync says so instead of forcing anything. Priority is the issue's priority by
+// name; the site's levels (GET /priority) become a kanban's Priority options on import. Story points live in a custom field found by name.
 // Backlinks are remote links with a stable global id per board item. Webhooks are signed with
 // the connection's secret (X-Hub-Signature: sha256=…), as Jira sends them for a webhook with a
 // secret.
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { TRACKER_PROVIDERS, type IssueStatusCategory, type IssueValues, type TrackerProject } from '@freero/shared';
+import { labelKey, TRACKER_PROVIDERS, type IssueStatusCategory, type IssueValues, type TrackerProject } from '@freero/shared';
 import { getConfig } from '../../../platform/config';
 import { trackerMessage, trackerRequest, TrackerError, type HttpResponse } from '../http';
 import { adfToMarkdown, markdownToAdf, markdownToWiki, wikiToMarkdown } from '../markup';
@@ -56,6 +58,7 @@ interface JiraIssue {
     summary?: string;
     description?: unknown;
     status?: { name?: string; statusCategory?: { key?: string } };
+    priority?: { name?: string } | null;
     assignee?: {
       accountId?: string;
       name?: string;
@@ -72,7 +75,7 @@ interface JiraIssue {
 }
 
 const issueFields = (conn: ProviderConnection) =>
-  ['summary', 'description', 'status', 'assignee', 'labels', 'duedate', 'updated', 'project', 'parent', ...(conn.settings.estimateField ? [conn.settings.estimateField] : []), ...(conn.settings.startDateField ? [conn.settings.startDateField] : [])].join(',');
+  ['summary', 'description', 'status', 'priority', 'assignee', 'labels', 'duedate', 'updated', 'project', 'parent', ...(conn.settings.estimateField ? [conn.settings.estimateField] : []), ...(conn.settings.startDateField ? [conn.settings.startDateField] : [])].join(',');
 
 function toRemote(conn: ProviderConnection, j: JiraIssue): RemoteIssue {
   const f = j.fields ?? {};
@@ -89,6 +92,7 @@ function toRemote(conn: ProviderConnection, j: JiraIssue): RemoteIssue {
       description: cloud(conn) ? adfToMarkdown(f.description) : wikiToMarkdown(f.description),
       status: cat,
       statusName: f.status?.name ?? null,
+      priority: typeof f.priority?.name === 'string' ? f.priority.name : null,
       // An assignee whose email Jira hides (Cloud privacy settings) is told apart by id.
       assignee: assignee ? (assignee.emailAddress?.toLowerCase() ?? `~${assignee.accountId ?? assignee.name ?? assignee.key ?? 'someone'}`) : null,
       labels: Array.isArray(f.labels) ? f.labels.filter((l): l is string => typeof l === 'string') : [],
@@ -127,6 +131,8 @@ async function fieldsFor(conn: ProviderConnection, values: IssueValues, notes: s
   if (values.description !== undefined) f.description = cloud(conn) ? markdownToAdf(values.description) : markdownToWiki(values.description);
   if (values.labels !== undefined) f.labels = [...new Set(values.labels.map(jira.label).filter(Boolean))];
   if (values.dueDate !== undefined) f.duedate = values.dueDate;
+  // Jira keeps a priority on every issue (its scheme's default): clearing it on the board leaves Jira's.
+  if (values.priority) f.priority = { name: values.priority };
   if (values.startDate !== undefined) {
     if (conn.settings.startDateField) f[conn.settings.startDateField] = values.startDate;
     else if (values.startDate !== null) notes.push(`${LABEL} has no start date field Freero can find, so the start date wasn’t sent.`);
@@ -157,6 +163,7 @@ const FIELD_NAMES: Record<string, string> = {
   labels: 'labels',
   duedate: 'due date',
   assignee: 'assignee',
+  priority: 'priority',
 };
 
 /** Sends `fields`, and once more without what Jira refuses (a field not on the screen). */
@@ -183,8 +190,16 @@ async function sendFields(
   return res;
 }
 
-async function transition(conn: ProviderConnection, issue: RemoteIssue, want: IssueStatusCategory, notes: string[]): Promise<void> {
-  if (issue.values.status === want) return;
+/**
+ * Moves the issue through its workflow: to the status named `want.name` when a transition leads
+ * there (case and spaces don't count), else to one in `want.category`. A name the workflow has
+ * no transition to (a column only the board has) asks for nothing beyond its category.
+ */
+async function transition(conn: ProviderConnection, issue: RemoteIssue, want: { category?: IssueStatusCategory | null; name?: string | null }, notes: string[]): Promise<void> {
+  const name = want.name?.trim() ? labelKey(want.name) : null;
+  if (name && labelKey(issue.values.statusName ?? '') === name) return;
+  const category = want.category && want.category !== issue.values.status ? want.category : null;
+  if (!name && !category) return;
   const res = await conn.call({
     method: 'GET',
     path: `/rest/api/${v(conn)}/issue/${encodeURIComponent(issue.id)}/transitions`,
@@ -195,11 +210,13 @@ async function transition(conn: ProviderConnection, issue: RemoteIssue, want: Is
     name?: string;
     to?: { name?: string; statusCategory?: { key?: string } };
   }>;
-  const hit = ts.find((t) => t.to?.statusCategory?.key && CATEGORY[t.to.statusCategory.key] === want);
+  const named = name ? ts.find((t) => labelKey(t.to?.name ?? '') === name) : undefined;
+  const hit = named ?? (category ? ts.find((t) => t.to?.statusCategory?.key && CATEGORY[t.to.statusCategory.key] === category) : undefined);
   if (!hit) {
-    notes.push(
-      `The ${LABEL} workflow has no transition from “${issue.values.statusName ?? 'its status'}” to ${CATEGORY_LABEL[want].toLowerCase()} for ${issue.key}, so its status stayed.`,
-    );
+    if (category)
+      notes.push(
+        `The ${LABEL} workflow has no transition from “${issue.values.statusName ?? 'its status'}” to ${CATEGORY_LABEL[category].toLowerCase()} for ${issue.key}, so its status stayed.`,
+      );
     return;
   }
   const done = await conn.call({
@@ -207,7 +224,7 @@ async function transition(conn: ProviderConnection, issue: RemoteIssue, want: Is
     path: `/rest/api/${v(conn)}/issue/${encodeURIComponent(issue.id)}/transitions`,
     body: { transition: { id: hit.id } },
   });
-  if (!ok(done)) throw refused(done, `move ${issue.key} to ${hit.to?.name ?? CATEGORY_LABEL[want]}`);
+  if (!ok(done)) throw refused(done, `move ${issue.key} to ${hit.to?.name ?? (category ? CATEGORY_LABEL[category] : want.name)}`);
 }
 
 const hmacOk = (secret: string, body: Buffer, given: string | undefined): boolean => {
@@ -221,7 +238,7 @@ const hmacOk = (secret: string, body: Buffer, given: string | undefined): boolea
 
 export const jira: TrackerProvider = {
   kind: 'jira',
-  fields: ['title', 'description', 'status', 'assignee', 'labels', 'startDate', 'dueDate', 'estimate'],
+  fields: ['title', 'description', 'status', 'statusName', 'priority', 'assignee', 'labels', 'startDate', 'dueDate', 'estimate'],
   queryLanguage: 'JQL',
 
   authHeaders(creds: Credentials) {
@@ -304,7 +321,7 @@ export const jira: TrackerProvider = {
 
   async createIssue(conn, input: CreateIssueInput) {
     const notes: string[] = [];
-    const { status, ...rest } = input.values;
+    const { status, statusName, ...rest } = input.values;
     const fields = {
       project: { key: input.project },
       issuetype: { name: input.issueType || 'Task' },
@@ -326,8 +343,8 @@ export const jira: TrackerProvider = {
     if (!created?.id) throw new TrackerError(`${LABEL} didn’t say which issue it created.`, 'invalid');
     let issue = await jira.getIssue(conn, String(created.id));
     if (!issue) throw new TrackerError(`${LABEL} created ${created.key ?? 'an issue'} but Freero can’t read it back.`, 'refused');
-    if (status) {
-      await transition(conn, issue, status, notes);
+    if (status || statusName) {
+      await transition(conn, issue, { category: status, name: statusName }, notes);
       issue = (await jira.getIssue(conn, issue.id)) ?? issue;
     }
     return { issue, notes };
@@ -335,7 +352,7 @@ export const jira: TrackerProvider = {
 
   async updateIssue(conn, issue, patch) {
     const notes: string[] = [];
-    const { status, statusName: _ignored, ...rest } = patch;
+    const { status, statusName, ...rest } = patch;
     const fields = await fieldsFor(conn, rest, notes);
     if (Object.keys(fields).length)
       await sendFields(
@@ -350,8 +367,14 @@ export const jira: TrackerProvider = {
         notes,
         `change ${issue.key}`,
       );
-    if (status) await transition(conn, issue, status, notes);
+    if (status || statusName) await transition(conn, issue, { category: status, name: statusName }, notes);
     return notes;
+  },
+
+  async priorities(conn) {
+    const res = await conn.call({ method: 'GET', path: `/rest/api/${v(conn)}/priority` });
+    if (!ok(res) || !Array.isArray(res.json)) return null;
+    return (res.json as Array<{ name?: unknown }>).flatMap((p) => (typeof p.name === 'string' && p.name.trim() ? [p.name.trim()] : []));
   },
 
   async search(conn, query, limit) {

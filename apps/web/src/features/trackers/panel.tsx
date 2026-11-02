@@ -116,7 +116,8 @@ function Description({ text }: { text: string }) {
 function Fields({ values }: { values: IssueValues }) {
   const rows: Array<[string, string]> = [];
   if (values.labels?.length) rows.push([ISSUE_FIELD_LABELS.labels, values.labels.join(', ')]);
-  if (values.status) rows.push([ISSUE_FIELD_LABELS.status, STATUS_LABEL[values.status] ?? values.status]);
+  if (values.status) rows.push([ISSUE_FIELD_LABELS.status, values.statusName ? `${STATUS_LABEL[values.status] ?? values.status} · column “${values.statusName}”` : (STATUS_LABEL[values.status] ?? values.status)]);
+  if (values.priority) rows.push([ISSUE_FIELD_LABELS.priority, values.priority]);
   if (values.assignee) rows.push([ISSUE_FIELD_LABELS.assignee, values.assignee]);
   if (values.dueDate) rows.push([ISSUE_FIELD_LABELS.dueDate, values.dueDate]);
   if (values.estimate !== undefined && values.estimate !== null) rows.push([ISSUE_FIELD_LABELS.estimate, String(values.estimate)]);
