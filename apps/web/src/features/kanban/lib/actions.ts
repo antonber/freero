@@ -28,23 +28,9 @@ function fresh(editor: Editor, id: string): KanbanElement | null {
   return k && k.type === 'kanban' && !k.locked ? k : null;
 }
 
-/** Cards that must take their column's colour when `next` replaces the board (colorCards on). */
-function recolorPatches(next: KanbanElement, all: BoardElement[], only?: ReadonlySet<string>): Array<{ id: string; patch: ElementPatch }> {
-  if (!next.colorCards) return [];
-  const out: Array<{ id: string; patch: ElementPatch }> = [];
-  for (const [elId, idx] of columnsOfChildren(next, all)) {
-    const el = all.find((e) => e.id === elId);
-    const col = next.columns[idx];
-    if (el?.type !== 'card' || (only && !only.has(col.id)) || !col.color || el.color === col.color) continue;
-    out.push({ id: elId, patch: { color: col.color } as ElementPatch });
-  }
-  return out;
-}
-
 /**
  * Replaces the board's column geometry (columns, colW), carrying every item along with its column.
- * Cards of a removed column join `fallbackId` and take its status (the layout pass gives them its
- * colour, as a drop would).
+ * Cards of a removed column join `fallbackId` and take its status, as a drop would.
  */
 function setGeometry(editor: Editor, id: string, next: KanbanColumn[], colW: number, fallbackId: string | null = null) {
   const k = fresh(editor, id);
@@ -113,13 +99,8 @@ export function removeColumn(editor: Editor, id: string, colId: string) {
 export function patchColumn(editor: Editor, id: string, colId: string, patch: Partial<Omit<KanbanColumn, 'id' | 'collapsed'>>) {
   const k = fresh(editor, id);
   if (!k) return;
-  const next = { ...k, columns: k.columns.map((c) => (c.id === colId ? { ...c, ...patch } : c)) };
-  // A new colour reaches the column's cards in the same step (when the board colours its cards).
-  const recolor = patch.color !== undefined ? recolorPatches(next, editor.getElements(), new Set([colId])) : [];
-  editor.transact(() => {
-    editor.update<KanbanElement>(id, { columns: next.columns });
-    if (recolor.length) editor.updateMany(recolor);
-  });
+  // Cards coloured by their column are drawn in its new colour: nothing is written on them.
+  editor.update<KanbanElement>(id, { columns: k.columns.map((c) => (c.id === colId ? { ...c, ...patch } : c)) });
 }
 
 /** Folds a column to a narrow strip (title + count) or opens it again; the items stay in it. */
@@ -137,17 +118,6 @@ export function setColumnWidth(editor: Editor, id: string, colW: number) {
   const w = Math.round(Math.max(MIN_COL_W, Math.min(MAX_COL_W, colW)));
   if (!k || k.colW === w) return;
   setGeometry(editor, id, k.columns, w);
-}
-
-/** Turns "cards take their column's colour" on or off; turning it on colours every card now. */
-export function setColorCards(editor: Editor, id: string, on: boolean) {
-  const k = fresh(editor, id);
-  if (!k || !!k.colorCards === on) return;
-  const recolor = recolorPatches({ ...k, colorCards: on }, editor.getElements());
-  editor.transact(() => {
-    editor.update<KanbanElement>(id, { colorCards: on });
-    if (recolor.length) editor.updateMany(recolor);
-  });
 }
 
 export const columnPart = (colId: string) => `col:${colId}`;

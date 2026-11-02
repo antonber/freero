@@ -3,6 +3,8 @@ import type { CardStatus, KanbanColumn } from '@freero/shared';
 export const TOOL_ID = 'kanban';
 /** The dock panel that edits a kanban's fields (panel.tsx). */
 export const FIELDS_PANEL = 'kanban.fields';
+/** The dock panel that edits a kanban's board view: what cards show, how they are coloured (panel.tsx). */
+export const VIEW_PANEL = 'kanban.view';
 
 /** Header accents for columns (Freero palette). */
 export const COLUMN_COLORS = ['#8A89A3', '#2E9BF0', '#F5A524', '#1FA463', '#8B5CF6', '#E64DA6', '#14B8A6', '#E5484D'];

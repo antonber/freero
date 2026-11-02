@@ -34,7 +34,8 @@ import {
 } from '@freero/shared';
 import { DockHeader, definePanel, richTextToPlain, useCanEdit, useElement, useSelection, type Editor } from '@engine';
 import { Button, ColorSwatches, IconButton, Input, Menu, Popover, Select, type MenuItem } from '@ui';
-import { COLUMN_COLOR_NAMES, COLUMN_PALETTE, FIELDS_PANEL } from './lib/constants';
+import { COLUMN_COLOR_NAMES, COLUMN_PALETTE, FIELDS_PANEL, VIEW_PANEL } from './lib/constants';
+import { ViewPanel } from './lib/ViewPanel';
 import { addField, addOption, fieldsTarget, moveField, moveOption, patchOption, removeField, removeOption, renameField, FIELD_TYPE_LABELS } from './lib/schema';
 
 const TYPE_ICONS: Record<FieldType, LucideIcon> = {
@@ -304,10 +305,20 @@ function FieldsPanel({ editor }: { editor: Editor }) {
   );
 }
 
-export default definePanel({
-  id: FIELDS_PANEL,
-  slot: 'dock-right',
-  order: 60,
-  minRole: 'viewer',
-  Component: FieldsPanel,
-});
+export default [
+  definePanel({
+    id: FIELDS_PANEL,
+    slot: 'dock-right',
+    order: 60,
+    minRole: 'viewer',
+    Component: FieldsPanel,
+  }),
+  // Any role: viewers look at the board their own way too (personal view settings).
+  definePanel({
+    id: VIEW_PANEL,
+    slot: 'dock-right',
+    order: 61,
+    minRole: 'viewer',
+    Component: ViewPanel,
+  }),
+];

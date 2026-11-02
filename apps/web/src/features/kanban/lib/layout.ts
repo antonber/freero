@@ -89,9 +89,9 @@ export interface LayoutPlan {
  * Where everything goes. Each item stacks in the column under its center, in the order of
  * their centers top to bottom. A task card the change moved into a column with a status takes
  * that status; a card whose status was changed where it stood (not moved) goes to the column
- * with that status instead. With `colorCards`, a card moved into a column (either way) also takes
- * the column's colour. Cards the change didn't touch keep their status and colour (remote edits
- * and stale boards are never rewritten by whoever happens to edit next).
+ * with that status instead. Cards the change didn't touch keep their status (remote edits and
+ * stale boards are never rewritten by whoever happens to edit next). Colours are never written:
+ * a card coloured by its column is drawn so (view.ts), and keeps its own colour for when it leaves.
  */
 export function planLayout(
   k: KanbanElement,
@@ -123,7 +123,6 @@ export function planLayout(
         prev.frameId !== k.id ||
         kBefore.columns[columnIndexAt(kBefore, centerX(prev))]?.id !== k.columns[col]?.id;
       const statusChanged = prev !== null && prev.type === 'card' && (prev.status ?? null) !== status;
-      let arrived = movedIn;
       const want: CardStatus | null = k.columns[col]?.status ?? null;
       if (want && status !== want) {
         const statusCol = status ? k.columns.findIndex((c) => c.status === status) : -1;
@@ -131,13 +130,10 @@ export function planLayout(
           // Status changed where the card stood (format toolbar): it moves to that column, last.
           col = statusCol;
           key = Number.POSITIVE_INFINITY;
-          arrived = true;
         } else if (movedIn) {
           own(el.id).status = want;
         }
       }
-      const color = k.columns[col]?.color;
-      if (k.colorCards && arrived && color && el.color !== color) own(el.id).color = color;
     }
     byCol[col].push({ el, key });
   }

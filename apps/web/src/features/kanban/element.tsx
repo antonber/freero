@@ -48,6 +48,7 @@ import {
 } from './lib/layout';
 import { addColumn, columnPart, moveColumn, moveColumnTo, patchColumn, removeColumn, renameColumn, setCollapsed, setColumnWidth } from './lib/actions';
 import { COLUMN_COLOR_NAMES, COLUMN_PALETTE, STATUS_LABELS, WIP_CHOICES } from './lib/constants';
+import { presentCard, presentationKey } from './lib/view';
 import './kanban.css';
 
 /** Below this zoom text is unreadable: draw only the column blocks. */
@@ -468,4 +469,8 @@ export default defineElement({
   dragPreview: (k, { editor, moving }) => planDrop(k, editor.getElements(), moving),
   // A collapsed column's items stay in it (and in the outline), folded away.
   hidesMember: (k, el) => inCollapsedColumn(k, el),
+  // Cards show what the board view says: their colour (by column, by a field, or their own) and
+  // the fields chosen, drawn by the card itself. Density changes their height (re-normalised).
+  presentChild: (k, child, { editor, personal }) => presentCard(k, child, editor, personal),
+  presentationKey,
 });
