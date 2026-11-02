@@ -24,8 +24,9 @@ function BoardTitle() {
   const [title, setTitle] = useState(host.board.title);
   const [editing, setEditing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { boardTitle = host.board.title } = useContext(AppChromeContext);
 
-  useEffect(() => setTitle(host.board.title), [host.board.title]);
+  useEffect(() => setTitle(boardTitle), [boardTitle]);
   useEffect(() => {
     if (editing) inputRef.current?.select();
   }, [editing]);

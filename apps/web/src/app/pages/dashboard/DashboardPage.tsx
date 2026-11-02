@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArchiveRestore, Bot, FileText, Folder, LayoutGrid, LayoutTemplate, List, Plus, RotateCw, Search, ShieldCheck, UserX, X } from 'lucide-react';
-import { TRASH_RETENTION_DAYS, type BoardSummary, type ProjectSummary, type WorkspaceBlock } from '@freero/shared';
+import { DEFAULT_BOARD_TITLE, TRASH_RETENTION_DAYS, type BoardSummary, type ProjectSummary, type WorkspaceBlock } from '@freero/shared';
 import { Button, IconButton, Input, Kbd, Modal, SegmentedControl, Select, Skeleton, Spinner, useToast } from '@ui';
 import { api, ApiError, type BoardFilter } from '../../api/client';
 import { useAuth } from '../../auth/AuthContext';
@@ -57,7 +57,7 @@ const EMPTY: Record<BoardView | 'project', { title: string; body: string }> = {
   project: { title: 'This project is empty', body: 'Create a board here, or drag boards onto the project in the sidebar.' },
 };
 
-const UNTITLED = 'Untitled board';
+const UNTITLED = DEFAULT_BOARD_TITLE;
 
 export function DashboardPage() {
   const { user } = useAuth();

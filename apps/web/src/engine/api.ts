@@ -1340,7 +1340,8 @@ export interface Editor {
   zoomTo(zoom: number, screenCenter?: Point): void;
   /**
    * Fits the elements (default: all) — including their visualOutset — into the safe area
-   * (see FitOptions.area). maxZoom defaults to 1.
+   * (see FitOptions.area). maxZoom defaults to 1. The whole board (no ids) includes the ghosts of
+   * pending suggestions (#91), with room above them for the proposal's label.
    */
   zoomToFit(ids?: string[], opts?: FitOptions): void;
   /** Fits a world rect into the safe area (see FitOptions.area). maxZoom defaults to the engine max. */

@@ -22,6 +22,8 @@ export interface TestBoardOptions {
   role?: Role;
   /** Clock used for Host.serverNow (default Date.now). */
   now?: () => number;
+  /** [additive] The board's title as the replicas open it (default 'Test'); renameBoard changes it. */
+  title?: string;
   /** What Host.listMembers returns (default: the replica's own user). */
   members?: HostUser[];
 }
@@ -48,11 +50,13 @@ export function createTestBoard(opts: TestBoardOptions): TestBoard {
     const user: HostUser = typeof u === 'string' ? { id: u, name: u, color: '#5b3ff0', avatarUrl: null } : u;
     const host: Host = {
       user,
-      board: { id: 'test-board', title: 'Test', role: opts.role ?? 'owner' },
+      board: { id: 'test-board', title: opts.title ?? 'Test', role: opts.role ?? 'owner' },
       syncUrl: '',
       uploadImage: async () => ({ url: '' }),
       uploadFile: async () => ({ url: '' }),
-      renameBoard: async () => undefined,
+      async renameBoard(title) {
+        host.board.title = title;
+      },
       saveThumbnail: async () => undefined,
       openShareDialog: () => undefined,
       navigate: () => undefined,
