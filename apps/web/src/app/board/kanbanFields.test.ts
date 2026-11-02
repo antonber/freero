@@ -348,3 +348,109 @@ describe('grouping and swimlanes', () => {
     expect(column.fields).toMatchObject({ shows: 2 });
   });
 });
+
+describe('filter, sort and a locked view', () => {
+  const k = (ed: Editor, kid: string) => ed.getElement<KanbanElement>(kid)!;
+  const at = (ed: Editor, id: string) => ed.getElement<CardElement>(id)!;
+  const onBoard = (ed: Editor, id: string) => {
+    const c = at(ed, id);
+    return ed.hitTest({ x: c.x + c.w / 2, y: c.y + c.h / 2 }, { types: ['card'] })?.id === id;
+  };
+  /** The column's cards top to bottom. */
+  const stack = (ed: Editor, ids: string[]) => [...ids].sort((p, q) => at(ed, p).y - at(ed, q).y);
+  const P0_ONLY = { op: 'and', rules: [{ field: 'f_prio', op: 'is', value: 'o_p0' }] };
+
+  it('a card the saved filter leaves out folds away below the board: its column closes up and it is neither drawn nor hit, on every client, but it stays in its column for the WIP count and the outline lists it, marked filtered', () => {
+    board = createTestBoard({ users: ['ann', 'bob'], features });
+    const [ann, bob] = board.editors('card');
+    const kid = kanban(ann, [PRIORITY, POINTS]);
+    const ids = ['A', 'B', 'C'].map((t) => card(ann, kid, 0, t));
+    const [top, middle, bottom] = stack(ann, ids);
+    for (const id of [top, bottom]) ann.runCommand('card.setValues', { id, values: { f_prio: 'o_p0' } });
+    const middleY = at(ann, middle).y;
+    board.sync();
+
+    ann.runCommand('kanban.setMyFilter', { id: kid, filter: P0_ONLY });
+    ann.runCommand('kanban.saveViewForEveryone', { id: kid });
+    board.sync();
+    expect(JSON.stringify(bob.getElements())).toBe(JSON.stringify(ann.getElements()));
+    for (const ed of [ann, bob]) {
+      expect([top, middle, bottom].map((id) => onBoard(ed, id))).toEqual([true, false, true]);
+      expect(at(ed, middle).y).toBeGreaterThan(k(ed, kid).y + k(ed, kid).h);
+      expect(columnOf(ed, kid, middle)).toBe('c_todo');
+      expect(at(ed, bottom).y).toBeCloseTo(middleY);
+    }
+    const kanbanLine = find(bob.getOutline().items, kid)!;
+    expect(kanbanLine.fields).toMatchObject({ filter: 'Priority is P0' });
+    const column = find(bob.getOutline().items, `${kid}:c_todo`)!;
+    expect(column.children!.map((c) => c.id).sort()).toEqual([...ids].sort());
+    expect(column.children!.find((c) => c.id === middle)!.fields).toMatchObject({ filtered: true });
+  });
+
+  it('a filter I set for myself only fades the cards it leaves out, for me: nothing moves on anyone’s board and my collaborator sees nothing faded', () => {
+    board = createTestBoard({ users: ['ann', 'bob'], features });
+    const [ann, bob] = board.editors('card');
+    const kid = kanban(ann, [PRIORITY]);
+    const [kept, left] = [card(ann, kid, 0, 'Kept'), card(ann, kid, 0, 'Left out')];
+    ann.runCommand('card.setValues', { id: kept, values: { f_prio: 'o_p0' } });
+    board.sync();
+    const before = JSON.stringify(ann.getElements());
+
+    bob.runCommand('kanban.setMyFilter', { id: kid, filter: P0_ONLY });
+    board.sync();
+    expect(presentation(bob, left)?.muted).toBe(true);
+    expect(presentation(bob, kept)?.muted).toBeFalsy();
+    expect(presentation(ann, left)?.muted).toBeFalsy();
+    for (const ed of [ann, bob]) {
+      expect(JSON.stringify(ed.getElements())).toBe(before);
+      expect(onBoard(ed, left)).toBe(true);
+    }
+  });
+
+  it('sorting by Points orders the column by it for everyone; back to manual order puts every card where people had stacked it', () => {
+    board = createTestBoard({ users: ['ann', 'bob'], features });
+    const [ann, bob] = board.editors('card');
+    const kid = kanban(ann, [POINTS]);
+    const ids = ['A', 'B', 'C'].map((t) => card(ann, kid, 0, t));
+    const manual = stack(ann, ids);
+    // Points against the manual order: 3, 1, 2.
+    manual.forEach((id, i) => ann.runCommand('card.setValues', { id, values: { f_pts: [3, 1, 2][i] } }));
+    const manualYs = manual.map((id) => at(ann, id).y);
+    board.sync();
+
+    ann.runCommand('kanban.setSort', { id: kid, sort: [{ field: 'f_pts', dir: 'asc' }] });
+    board.sync();
+    for (const ed of [ann, bob]) expect(stack(ed, ids)).toEqual([manual[1], manual[2], manual[0]]);
+
+    ann.runCommand('kanban.setSort', { id: kid, sort: [] });
+    board.sync();
+    for (const ed of [ann, bob]) {
+      expect(stack(ed, ids)).toEqual(manual);
+      expect(manual.map((id) => at(ed, id).y)).toEqual(manualYs);
+    }
+  });
+
+  it('a view one editor locked can’t be changed as saved by another — not its grouping, its sort or by saving their own view for everyone — while their own view settings still work', () => {
+    board = createTestBoard({ users: ['ann', 'bob'], features, role: 'editor' });
+    const [ann, bob] = board.editors('card');
+    const kid = kanban(ann, [PRIORITY, POINTS]);
+    const id = card(ann, kid, 0, 'Fix login');
+    ann.runCommand('card.setValues', { id, values: { f_prio: 'o_p1', f_pts: 2 } });
+    ann.runCommand('kanban.lockView', { id: kid, locked: true });
+    board.sync();
+    const saved = JSON.stringify(k(bob, kid));
+
+    bob.runCommand('kanban.groupBy', { id: kid, field: 'f_prio' });
+    bob.runCommand('kanban.setSort', { id: kid, sort: [{ field: 'f_pts', dir: 'desc' }] });
+    bob.runCommand('kanban.setCardDisplay', { id: kid, show: ['f_pts'] });
+    bob.runCommand('kanban.saveViewForEveryone', { id: kid });
+    board.sync();
+    expect(JSON.stringify(k(ann, kid))).toBe(saved);
+    expect(presentation(bob, id)?.chips?.map((c) => c.name)).toEqual(['Points']);
+
+    ann.runCommand('kanban.lockView', { id: kid, locked: false });
+    board.sync();
+    bob.runCommand('kanban.groupBy', { id: kid, field: 'f_prio' });
+    expect(columnOf(bob, kid, id)).toBe('o_p1');
+  });
+});

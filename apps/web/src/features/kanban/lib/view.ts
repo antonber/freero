@@ -4,19 +4,39 @@
 // override, Editor.setPersonalView: any role, never in the doc). Changing which fields show or
 // what colours cards changes only my view until I "Save for everyone"; density changes the cards'
 // size on the shared board, so it is saved directly (editors).
+//
+// Filter and sort (step 2d). The SAVED filter hides the cards it leaves out from everyone: they
+// stay in their column, folded away below the board, so the others close up — every client lays
+// the board out the same. My own filter (any role; mine until an editor saves it) can't do that:
+// hiding a card for me alone would leave a hole in a stack everyone shares, or move cards under
+// other people's cursors. So it FADES the cards it leaves out, for me only, and the board itself
+// doesn't change. Sorting moves the real cards, so it is saved directly (editors); while a sort
+// lasts, the view keeps the manual order, and clearing the sort puts every card back.
+//
+// A locked view (editors lock it) is changed as saved only by whoever locked it and the board's
+// owners; everyone keeps their own view settings.
 import {
   boardView,
   cardAccent,
   cardChips,
+  cardPasses,
+  cleanFilter,
+  cleanSort,
   collectionSchema,
+  manualOrderOf,
   overrideBetween,
+  sameFilter,
   savedViews,
+  viewLockedFor,
   withOverride,
   type BoardElement,
   type CardColorBy,
   type CardDensity,
+  type CardElement,
   type KanbanElement,
+  type SortRule,
   type ViewConfig,
+  type ViewFilter,
 } from '@freero/shared';
 import type { ChildPresentation, Editor } from '@engine';
 
@@ -29,12 +49,25 @@ export function viewOf(editor: Pick<Editor, 'getPersonalView'>, k: KanbanElement
 /** True when this person sees the board view differently from what is saved. */
 export const hasOwnView = (editor: Pick<Editor, 'getPersonalView'>, k: KanbanElement) => !!overrideBetween(boardView(k), viewOf(editor, k, true));
 
-/** How a card on kanban `k` is shown: its accent (derived, never written), chips and density. */
-export function presentCard(k: KanbanElement, child: BoardElement, editor: Pick<Editor, 'getPersonalView'>, personal: boolean): ChildPresentation | null {
+/**
+ * How a card on kanban `k` is shown: its accent (derived, never written), chips and density; faded
+ * when my own filter (not the saved one) leaves it out.
+ */
+export function presentCard(k: KanbanElement, child: BoardElement, editor: Pick<Editor, 'getPersonalView' | 'user'>, personal: boolean): ChildPresentation | null {
   if (child.type !== 'card' || child.frameId !== k.id) return null;
   const view = viewOf(editor, k, personal);
   const schema = collectionSchema(k);
-  return { accent: cardAccent(k, child, view, schema), chips: cardChips(k, child, view, schema), density: view.card?.density ?? 'comfortable' };
+  const mine = personal && !sameFilter(view.filter, boardView(k).filter);
+  const muted = mine && !cardPasses(k, child as CardElement, view.filter, schema, { me: editor.user.id });
+  return { accent: cardAccent(k, child, view, schema), chips: cardChips(k, child, view, schema), density: view.card?.density ?? 'comfortable', ...(muted ? { muted: true } : {}) };
+}
+
+/**
+ * Whether this person may change kanban `k`'s view for everyone: an editor, the kanban unlocked,
+ * the view not locked by someone else.
+ */
+export function viewEditable(editor: Pick<Editor, 'can' | 'user'>, k: KanbanElement): boolean {
+  return editor.can('editor') && !k.locked && !viewLockedFor(boardView(k), { id: editor.user.id, role: editor.can('owner') ? 'owner' : 'editor' });
 }
 
 /** What changes the cards' size (re-normalised when it changes). */
@@ -66,20 +99,61 @@ export function resetMyView(editor: Editor, kid: string) {
 
 const writeView = (editor: Editor, k: KanbanElement, view: ViewConfig) => editor.update<KanbanElement>(k.id, savedViews(k, view));
 
-/** "Save for everyone": my view becomes the saved one (one undo step) and my own changes are cleared. Editors, unlocked kanbans. */
+/**
+ * "Save for everyone": my view becomes the saved one (one undo step) and my own changes are
+ * cleared. Editors, unlocked kanbans, a view not locked by someone else. A filter saying "is me"
+ * can't be saved: on the shared board it would mean someone else for each person.
+ */
 export function saveViewForEveryone(editor: Editor, kid: string): boolean {
   const k = editable(editor, kid);
-  if (!k || k.locked || !editor.can('editor')) return false;
+  if (!k || !viewEditable(editor, k)) return false;
   const mine = viewOf(editor, k, true);
-  writeView(editor, k, mine);
+  writeView(editor, k, { ...mine, filter: cleanFilter(mine.filter) });
   editor.setPersonalView(k.id, mine.id, null);
+  return true;
+}
+
+/** My own filter (null: none, even where the saved view has one): fades the cards it leaves out, for me. Any role. */
+export function setMyFilter(editor: Editor, kid: string, filter: ViewFilter | null) {
+  const k = editable(editor, kid);
+  if (!k) return;
+  const saved = boardView(k);
+  const mine = viewOf(editor, k, true);
+  editor.setPersonalView(k.id, saved.id, overrideBetween(saved, { ...mine, filter: cleanFilter(filter, { personal: true }) }) as Record<string, unknown> | null);
+}
+
+/**
+ * Sorts every column by `sort` (empty: manual order again). Saved for everyone: it moves the real
+ * cards. Starting a sort keeps the manual order in the view; clearing it brings that order back
+ * (the layout restores it). One undo step with the re-stack.
+ */
+export function setSort(editor: Editor, kid: string, sort: SortRule[]): boolean {
+  const k = editable(editor, kid);
+  if (!k || !viewEditable(editor, k)) return false;
+  const saved = boardView(k);
+  const next = cleanSort(sort);
+  if (JSON.stringify(next) === JSON.stringify(saved.sort ?? [])) return false;
+  const manualOrder = saved.sort?.length ? saved.manualOrder : manualOrderOf(k, editor.getElements());
+  const { sort: _s, ...rest } = saved;
+  writeView(editor, k, { ...rest, ...(next.length ? { sort: next } : {}), ...(manualOrder ? { manualOrder } : {}) });
+  return true;
+}
+
+/** Locks (or unlocks) the saved view: only whoever locked it and the board's owners change it then. Editors. */
+export function setViewLocked(editor: Editor, kid: string, locked: boolean): boolean {
+  const k = editable(editor, kid);
+  if (!k || !editor.can('editor') || k.locked) return false;
+  const saved = boardView(k);
+  if (!!saved.locked === locked) return false;
+  if (!locked && !viewEditable(editor, k)) return false;
+  writeView(editor, k, { ...saved, locked: locked ? { by: editor.user.id } : null });
   return true;
 }
 
 /** Card density: changes the cards' size on the shared board, so it is saved for everyone (editors, one undo step with the re-stack). */
 export function setDensity(editor: Editor, kid: string, density: CardDensity) {
   const k = editable(editor, kid);
-  if (!k || k.locked) return;
+  if (!k || !viewEditable(editor, k)) return;
   const saved = boardView(k);
   if (saved.card?.density === density) return;
   writeView(editor, k, { ...saved, card: { ...saved.card!, density } });
