@@ -2,6 +2,7 @@ export * from './elements';
 export * from './fields';
 export * from './views';
 export * from './query';
+export * from './fieldText';
 export * from './ydoc';
 export * from './api';
 export * from './publicApi';

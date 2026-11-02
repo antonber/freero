@@ -10,6 +10,7 @@
 // Field values travel as `IssueValues` and are compared in CANONICAL form (`canonical`), so a
 // tracker that reformats a description or reorders labels is not mistaken for an edit.
 import type { StructurePlacement } from './api';
+import { labelKey } from './fieldText';
 
 export const TRACKER_PROVIDERS = {
   jira: 'Jira',
@@ -24,12 +25,14 @@ export const TRACKER_COLLECTION = 'trackers';
 /** Where an issue stands, in the board's terms (a card's status / a kanban column). */
 export type IssueStatusCategory = 'todo' | 'doing' | 'done';
 
-export const ISSUE_FIELDS = ['title', 'description', 'status', 'assignee', 'labels', 'startDate', 'dueDate', 'estimate'] as const;
+export const ISSUE_FIELDS = ['title', 'description', 'status', 'statusName', 'priority', 'assignee', 'labels', 'startDate', 'dueDate', 'estimate'] as const;
 export type IssueField = (typeof ISSUE_FIELDS)[number];
 export const ISSUE_FIELD_LABELS: Record<IssueField, string> = {
   title: 'Title',
   description: 'Description',
   status: 'Status',
+  statusName: 'Workflow status',
+  priority: 'Priority',
   assignee: 'Assignee',
   labels: 'Labels',
   startDate: 'Start date',
@@ -40,7 +43,10 @@ export const ISSUE_FIELD_LABELS: Record<IssueField, string> = {
 /**
  * One issue's fields. `description` is Markdown-light: paragraphs, `- ` bullets and `[label](url)`
  * links — each provider writes it in its own format (Jira ADF / wiki markup, Markdown). `status` is
- * the category on the board side; the tracker's own status name rides along as `statusName`.
+ * the category on the board side; the tracker's own status name rides along as `statusName` —
+ * on the board side the label of the kanban column (Stage option) a card stands in, so a card
+ * moved to "In review" asks the tracker for its "In review" status (step 2f). `priority`: the
+ * tracker's priority level by name ("High"); on the board, the card's Priority field.
  * `assignee`: an email address (lowercase), or null for nobody.
  */
 export interface IssueValues {
@@ -48,6 +54,8 @@ export interface IssueValues {
   description?: string;
   status?: IssueStatusCategory | null;
   statusName?: string | null;
+  /** The priority level's name, null for none (step 2f). */
+  priority?: string | null;
   assignee?: string | null;
   labels?: string[];
   /** When work starts (KAI-160: a roadmap bar's first day), 'YYYY-MM-DD'. */
@@ -100,6 +108,13 @@ export interface TrackerSource {
     dueDate: string | null;
     /** A card's estimate when it is a number ("5", "0.5"); sizes like "M" don't map. */
     estimate: number | null;
+    /**
+     * A card in a kanban: the label of its Stage option (the column it stands in), and its
+     * Priority field's label (null: none). Left out where there is no such thing (a card outside
+     * a kanban, a kanban without a Priority field), so that side never pushes the field.
+     */
+    statusName?: string | null;
+    priority?: string | null;
   };
 }
 
@@ -152,6 +167,8 @@ export function issueValuesFromBoard(sources: TrackerSource[], ctx: MappingConte
     if (card.startDate !== undefined) out.startDate = card.startDate;
     out.dueDate = card.dueDate;
     if (card.estimate !== null) out.estimate = card.estimate;
+    if (card.statusName !== undefined) out.statusName = card.statusName;
+    if (card.priority !== undefined) out.priority = card.priority;
   }
   return out;
 }
@@ -169,7 +186,7 @@ export function pullableFields(sources: Array<Pick<TrackerSource, 'type' | 'card
     if (sources[0].card) out.add('description');
   }
   if (sources.some((s) => s.type === 'sticky' || s.type === 'card')) out.add('labels');
-  if (sources.some((s) => s.card)) for (const f of ['status', 'assignee', 'startDate', 'dueDate', 'estimate'] as const) out.add(f);
+  if (sources.some((s) => s.card)) for (const f of ['status', 'statusName', 'priority', 'assignee', 'startDate', 'dueDate', 'estimate'] as const) out.add(f);
   return out;
 }
 
@@ -193,6 +210,10 @@ export function canonical(field: IssueField, v: IssueValues): string | undefined
       return v.description === undefined ? undefined : normText(v.description);
     case 'status':
       return v.status === undefined ? undefined : (v.status ?? '');
+    case 'statusName':
+      return v.statusName === undefined ? undefined : labelKey(v.statusName ?? '');
+    case 'priority':
+      return v.priority === undefined ? undefined : labelKey(v.priority ?? '');
     case 'assignee':
       return v.assignee === undefined ? undefined : (v.assignee ?? '').trim().toLowerCase();
     case 'labels':

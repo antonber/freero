@@ -421,8 +421,8 @@ export const bugTriage: TemplateDef = {
         title: 'New',
         color: HEAD.gray,
         items: [
-          { card: 'Export cuts off long boards', desc: 'Reported by 3 teams', color: CORAL },
-          { card: 'Typo on the pricing page', desc: 'Found by support', color: INK_SOFT },
+          { card: 'Export cuts off long boards', desc: 'Reported by 3 teams', color: CORAL, values: { Area: 'Export' } },
+          { card: 'Typo on the pricing page', desc: 'Found by support', color: INK_SOFT, values: { Area: 'Website' } },
         ],
       },
       {
@@ -430,12 +430,12 @@ export const bugTriage: TemplateDef = {
         status: 'todo',
         color: HEAD.amber,
         items: [
-          { card: 'S2 · Comments vanish on refresh', desc: 'Safari 17, slow network', color: AMBER },
-          { card: 'S3 · Zoom jumps on trackpads', desc: 'Windows only', color: SKY },
+          { card: 'Comments vanish on refresh', desc: 'Safari 17, slow network', color: AMBER, values: { Severity: 'S2', Area: 'Comments' } },
+          { card: 'Zoom jumps on trackpads', desc: 'Windows only', color: SKY, values: { Severity: 'S3', Area: 'Canvas' } },
         ],
       },
-      { title: 'Fixing', status: 'doing', wip: 3, color: HEAD.sky, items: [{ card: 'S1 · Login loop for SSO users', desc: 'Hotfix in review', color: CORAL }] },
-      { title: 'Fixed', status: 'done', color: HEAD.mint, items: [{ card: 'S3 · Sticky colors in dark mode', desc: 'Shipped in 4.2.1', color: MINT }] },
+      { title: 'Fixing', status: 'doing', wip: 3, color: HEAD.sky, items: [{ card: 'Login loop for SSO users', desc: 'Hotfix in review', color: CORAL, values: { Severity: 'S1', Area: 'Sign-in' } }] },
+      { title: 'Fixed', status: 'done', color: HEAD.mint, items: [{ card: 'Sticky colors in dark mode', desc: 'Shipped in 4.2.1', color: MINT, values: { Severity: 'S3', Area: 'Canvas' } }] },
     ];
     const kb = kanbanSize(colW, columns);
     const sideW = 520;
@@ -450,8 +450,15 @@ export const bugTriage: TemplateDef = {
     const bodyH = Math.max(kb.h + 40, 64 + 268 + 24);
     const W = 48 + kb.w + 24 + sideW + 48;
     k.frame('Bug triage', W, 160 + bodyH + 48);
-    k.header('Bug triage', 'Triage new bugs daily: confirm, give a severity, then move them along. Cards change status as they move.', W);
-    k.kanban(48, 160, 'Bugs', colW, columns);
+    k.header('Bug triage', 'Triage new bugs daily: confirm, set a Severity and Area, then move them along. Cards are coloured by severity.', W);
+    k.kanban(48, 160, 'Bugs', colW, columns, {
+      fields: [
+        { name: 'Severity', type: 'select', options: ['S1', 'S2', 'S3', 'S4'], ranked: true },
+        { name: 'Area', type: 'select', options: ['Canvas', 'Comments', 'Export', 'Sign-in', 'Website'] },
+      ],
+      show: ['Severity', 'Area', 'Assignee'],
+      colorBy: 'Severity',
+    });
     const sx = 48 + kb.w + 24;
     const y = k.section(sx, 160, sideW, bodyH, 'Severity guide', TINT.gray);
     k.table(sx + 24, y, [80, 248, 144], guideRows);

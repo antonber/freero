@@ -77,6 +77,14 @@ export interface PlaceContext {
   near?: Point;
   /** Cards keep their status (tracker imports): a column with another status doesn't change it. */
   keepStatus?: boolean;
+  /**
+   * The column a new card goes to (a column id or title) when the caller has decided it — a
+   * tracker import puts an issue in the column named after its status (trackers/kanban.ts); it
+   * wins over the card's status. Undefined for a card: the usual rule.
+   */
+  columnFor?: (id: string) => string | undefined;
+  /** The columns a `newKanban` gets (default To do / Doing / Done), with the status each sets. */
+  newKanbanColumns?: Array<{ title: string; status: CardStatus | null }>;
 }
 
 interface Wrapped {
@@ -120,11 +128,11 @@ function inNewFrame(laid: LaidOut, title: string, ctx: PlaceContext): Wrapped {
 }
 
 function inNewKanban(laid: LaidOut, title: string, view: BoardView, ctx: PlaceContext): Wrapped {
-  const k = layoutStructure(
-    { kind: 'kanban', title: title.slice(0, 200) || 'Kanban', columns: [{ title: 'To do', items: [] }, { title: 'Doing', items: [] }, { title: 'Done', items: [] }] },
-    { newId: ctx.newId },
-  ).elements[0] as ElementDraft & KanbanElement;
-  const stacked = stack({ ...k, x: 0, y: 0 } as KanbanElement, unitsOf(laid, view), undefined, [], { keepStatus: true });
+  const given = ctx.newKanbanColumns?.length ? ctx.newKanbanColumns : null;
+  const titles = given?.map((c) => c.title) ?? ['To do', 'Doing', 'Done'];
+  const laidK = layoutStructure({ kind: 'kanban', title: title.slice(0, 200) || 'Kanban', columns: titles.map((t) => ({ title: t, items: [] })) }, { newId: ctx.newId }).elements[0] as ElementDraft & KanbanElement;
+  const k = given ? ({ ...laidK, columns: laidK.columns.map((c, i) => ({ ...c, status: given[i].status })) } as typeof laidK) : laidK;
+  const stacked = stack({ ...k, x: 0, y: 0 } as KanbanElement, unitsOf(laid, view), undefined, [], { keepStatus: true, columnFor: ctx.columnFor });
   const frameOf = new Map<string, string | null>();
   const moveExtra = new Map<string, Fields>();
   const moves: LaidOut['moves'] = [];
@@ -231,7 +239,7 @@ function rowIndex(k: KanbanElement, lanes: NonNullable<ReturnType<typeof lanesOf
   return i;
 }
 
-function stack(k: KanbanElement, units: Unit[], column: string | undefined, present: BoardElement[], opts: { keepStatus?: boolean; row?: string }): Stacked {
+function stack(k: KanbanElement, units: Unit[], column: string | undefined, present: BoardElement[], opts: Pick<PlaceContext, 'keepStatus' | 'columnFor'> & { row?: string }): Stacked {
   const { pad, itemGap, headerH, colHeadH } = KANBAN_LAYOUT;
   const named = column === undefined ? -1 : columnIndex(k, column);
   const byStatus = (s: CardStatus | null) => (s ? k.columns.findIndex((c) => c.status === s) : -1);
@@ -243,11 +251,15 @@ function stack(k: KanbanElement, units: Unit[], column: string | undefined, pres
   const inner = k.colW - 2 * pad;
   const placed: Stacked['placed'] = [];
   for (const u of units) {
+    // A column the caller chose for this card (a tracker issue's status name), else the one named,
+    // else its value for the grouped field, else its status's, else the first.
+    const chosen = u.draft ? opts.columnFor?.(u.id) : undefined;
     const byValue = u.groupKey !== undefined ? k.columns.findIndex((c) => c.id === u.groupKey) : -1;
-    if (u.groupKey !== undefined && byValue < 0 && named < 0) throw new LayoutError(`No column for that value of “${collectionSchema(k).find((f) => f.id === groupFieldId(k))?.name ?? 'the column field'}”; its columns: ${k.columns.map((c) => plain(c.title) || c.id).join(', ')}`);
-    let ci = named >= 0 ? named : byValue >= 0 ? byValue : Math.max(0, byStatus(u.status));
+    if (chosen === undefined && u.groupKey !== undefined && byValue < 0 && named < 0)
+      throw new LayoutError(`No column for that value of “${collectionSchema(k).find((f) => f.id === groupFieldId(k))?.name ?? 'the column field'}”; its columns: ${k.columns.map((c) => plain(c.title) || c.id).join(', ')}`);
+    let ci = chosen !== undefined ? columnIndex(k, chosen) : named >= 0 ? named : byValue >= 0 ? byValue : Math.max(0, byStatus(u.status));
     // An imported issue's status is the tracker's: where it lands never changes it.
-    if (opts.keepStatus && u.status && k.columns[ci].status && k.columns[ci].status !== u.status && byStatus(u.status) >= 0) ci = byStatus(u.status);
+    if (chosen === undefined && opts.keepStatus && u.status && k.columns[ci].status && k.columns[ci].status !== u.status && byStatus(u.status) >= 0) ci = byStatus(u.status);
     const c = k.columns[ci];
     const src = (u.draft ?? u.el) as unknown as { title?: unknown; description?: unknown };
     const w = u.type === 'sticky' ? Math.min(STICKY_SIZE, inner) : inner;

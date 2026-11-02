@@ -107,3 +107,29 @@
   font-size: 13px;
   color: var(--fr-danger);
 }
+
+.fr-csv__kanban {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius-sm);
+}
+
+.fr-csv__kanban > .fr-csv__map {
+  max-width: 260px;
+}
+
+.fr-csv__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 8px 14px;
+}
+
+.fr-csv__fields-title {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--fr-ink-3);
+}

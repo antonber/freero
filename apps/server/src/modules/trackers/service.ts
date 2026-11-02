@@ -43,6 +43,7 @@ import {
   translateDraft,
   type ActingApp,
   type ElementDraft,
+  type KanbanElement,
   type LaidOut,
 } from '@freero/shared';
 import { placeLaid, readPlacement } from '../structure/index';
@@ -88,6 +89,7 @@ import { noteOutcome, openConnection, requireUsable, usableConnections, webhookS
 import { emitTrackerActivity } from './events';
 import { dayNumber } from './board';
 import { planRoadmapImport } from './roadmap';
+import { kanbanOf, planKanbanImport, statusColumns } from './kanban';
 import { TrackerError } from './http';
 import { providerOf, type RemoteIssue, type TrackerProvider } from './providers/index';
 import * as repo from './repo';
@@ -138,7 +140,7 @@ async function readItems(view: Pick<BoardView, 'elements' | 'collection'>, ids: 
   const missing = ids.filter((id) => !byId.has(id));
   const emails = await emailsOf(assigneesIn(items));
   const tags = tagsWith(view, {});
-  const sources = items.map((el) => sourceOf(el, tags, (id) => emails.get(id) ?? null));
+  const sources = items.map((el) => sourceOf(el, tags, (id) => emails.get(id) ?? null, (c) => kanbanOf(view, c)));
   return {
     items,
     missing,
@@ -378,9 +380,12 @@ export async function syncLink(linkId: string): Promise<SyncOutcome | null> {
       const emails = new Map(read.emails);
       for (const [e, id] of userIdOf) emails.set(id, e);
       const tags = tagsWith(live, plan.tags);
+      // The board as this change leaves it (a kanban that gained a priority level reads it).
+      const patched = new Map(plan.update.map((u) => [u.id, u.patch]));
+      const liveAfter = { elements: live.elements.map((e) => (patched.has(e.el.id) ? { el: { ...e.el, ...patched.get(e.el.id) } as BoardElement } : e)) };
       boardAfter = boardValues(
         provider,
-        after.map((el) => sourceOf(el, tags, (id) => emails.get(id) ?? null)),
+        after.map((el) => sourceOf(el, tags, (id) => emails.get(id) ?? null, (c) => kanbanOf(liveAfter, c))),
         { heading: clusterHeading(live, after), itemUrl: url },
       );
       const prev = live.collection(TRACKER_COLLECTION).get(link.id) as TrackerIssueRecord | undefined;
@@ -813,6 +818,8 @@ export async function importIssues(
     const a = i.values.assignee;
     if (a && !a.startsWith('~') && !assignee.has(a)) assignee.set(a, await boardUserByEmail(boardId, a));
   }
+  // A kanban's Priority options are the tracker's levels (asked only when an issue has a priority).
+  const priorities = placement && fresh.some((i) => i.values.priority) && provider.priorities ? await provider.priorities(openConnection(conn)).catch(() => null) : null;
   const user = await getUser(userId);
   const actor: BoardActor = {
     userId,
@@ -939,9 +946,47 @@ export async function importIssues(
           size: block,
           parts: [{ ids: create.map((d) => d.id) }],
         };
-        const placed = placeLaid(laid, placement, live, { newId: () => newId(10), obstacles, travelling: new Set(), keepStatus: true });
+        // Into a kanban: each issue's status picks its column by name and its priority the
+        // kanban's Priority field (kanban.ts), adding the columns / field it lacks.
+        const imported = inserted.map((l) => ({ id: l.sources[0], values: fresh.find((x) => x.id === l.externalId)!.values }));
+        const target = kanbanTargetOf(live, placement);
+        const ids = () => newId(10);
+        let view: BoardView = live;
+        let plan: ReturnType<typeof planKanbanImport> | null = null;
+        let columnFor: ((id: string) => string | undefined) | undefined;
+        let newKanbanColumns: ReturnType<typeof statusColumns> | undefined;
+        if (target === 'new') {
+          newKanbanColumns = statusColumns(imported);
+          const titleOf = new Map(imported.map((i) => [i.id, i.values.statusName?.trim() || undefined]));
+          columnFor = (id) => titleOf.get(id);
+        } else if (target) {
+          const p = planKanbanImport(target.k, imported, { newId: ids, priorities });
+          plan = p;
+          view = { ...live, elements: live.elements.map((e) => (e.el.id === target.k.id ? { ...e, el: p.kanban } : e)) };
+          // A column the request names keeps the usual rule (the column, unless the status says otherwise).
+          if (target.column === undefined) columnFor = (id) => p.columnOf.get(id);
+        }
+        const placed = placeLaid(laid, placement, view, { newId: ids, obstacles, travelling: new Set(), keepStatus: true, columnFor, newKanbanColumns });
         containerId = placed.containerId;
-        return { create: placed.elements, update: placed.grow, collections };
+        let elements = placed.elements;
+        if (target === 'new' && containerId) {
+          const k = elements.find((d) => d.id === containerId) as unknown as KanbanElement;
+          const p = planKanbanImport(k, imported, { newId: ids, priorities });
+          plan = p;
+          elements = elements.map((d) => (d.id === containerId ? ({ ...d, ...p.patch } as ElementDraft) : d));
+        }
+        if (plan) {
+          const values = plan.values;
+          elements = elements.map((d) => (values.has(d.id) ? ({ ...d, values: values.get(d.id) } as ElementDraft) : d));
+        }
+        // One patch per element: the kanban's new columns / fields and how it grew.
+        const update = [...placed.grow];
+        if (plan?.patch && target && target !== 'new') {
+          const i = update.findIndex((u) => u.id === target.k.id);
+          if (i >= 0) update[i] = { id: target.k.id, patch: { ...plan.patch, ...update[i].patch } };
+          else update.push({ id: target.k.id, patch: plan.patch as Record<string, unknown> });
+        }
+        return { create: elements, update, collections };
       }
       return { create, collections };
     });
@@ -1155,6 +1200,20 @@ async function linkAcceptedProposals(boardId: string): Promise<string[]> {
       metadata: { provider: conn.provider, connection: conn.id, imported: n, skipped: 0, via: 'suggestion' },
     });
   return out;
+}
+
+/** The kanban a placement puts cards into (as the structure module reads it), 'new' for `newKanban`, else null. */
+function kanbanTargetOf(view: BoardView, p: NonNullable<ReturnType<typeof readPlacement>>): { k: KanbanElement; column?: string } | 'new' | null {
+  if (p.newKanban !== undefined && p.newKanban !== null) return 'new';
+  if (p.into === undefined || p.into === null) return null;
+  const into = String(p.into);
+  const byId = (id: string) => view.elements.find((e) => e.el.id === id)?.el;
+  const ref = /^([^:]+):(.+)$/.exec(into);
+  const asColumn = !into.startsWith('cluster:') && ref && byId(ref[1])?.type === 'kanban';
+  const el = asColumn ? byId(ref![1]) : byId(into);
+  if (el?.type !== 'kanban') return null;
+  const column = p.column !== undefined && p.column !== null ? String(p.column) : asColumn ? ref![2] : undefined;
+  return { k: el as KanbanElement, ...(column !== undefined ? { column } : {}) };
 }
 
 /** One card at (0, 0): checks a placement against the board before anything is imported. */

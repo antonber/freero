@@ -26,6 +26,12 @@ export function selectedTimeline(editor: Editor): BoardElement | null {
   return sel.length === 1 && sel[0].type === 'timeline' && !sel[0].locked ? sel[0] : null;
 }
 
+/** The one kanban selected (unlocked): an import goes into it, by status and with its fields. */
+export function selectedKanban(editor: Editor): BoardElement | null {
+  const sel = selected(editor);
+  return sel.length === 1 && sel[0].type === 'kanban' && !sel[0].locked ? sel[0] : null;
+}
+
 export function selected(editor: Editor): BoardElement[] {
   return editor
     .getSelection()

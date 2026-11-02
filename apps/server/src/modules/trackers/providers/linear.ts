@@ -1,10 +1,11 @@
 // Linear, through its public GraphQL API (https://api.linear.app/graphql) with a personal API key
 // (sent as is) or an OAuth access token (Bearer). Teams are the "projects" issues are created in;
-// workflow state types map to the board's statuses; labels are the team's (made when missing);
+// workflow state types map to the board's statuses (a state of the same name as the card's column
+// wins: "In review" → "In review"); priority is Linear's fixed scale by name; labels are the team's (made when missing);
 // backlinks are issue attachments (one per board item, found again by their URL). Webhooks carry
 // `Linear-Signature` (HMAC-SHA256 of the body) and a `webhookTimestamp` that must be recent.
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { TRACKER_PROVIDERS, type IssueStatusCategory, type IssueValues } from '@freero/shared';
+import { labelKey, TRACKER_PROVIDERS, type IssueStatusCategory, type IssueValues } from '@freero/shared';
 import { trackerMessage, TrackerError, type HttpResponse } from '../http';
 import type { Backlink, Credentials, ProviderConnection, RemoteIssue, TrackerProvider } from './types';
 
@@ -12,7 +13,7 @@ const LABEL = TRACKER_PROVIDERS.linear;
 /** A webhook older than this is refused (replays). */
 const WEBHOOK_MAX_AGE_MS = 60_000;
 
-const ISSUE = `id identifier url title description updatedAt dueDate estimate
+const ISSUE = `id identifier url title description updatedAt dueDate estimate priority priorityLabel
   state { name type } assignee { name email } labels { nodes { name } } team { id key name }
   project { name } parent { title }`;
 
@@ -24,6 +25,14 @@ const CATEGORY: Record<string, IssueStatusCategory> = {
   completed: 'done',
   canceled: 'done',
 };
+/** Linear's priority scale (0 is "No priority"), most pressing first. */
+const PRIORITIES: Array<[string, number]> = [
+  ['Urgent', 1],
+  ['High', 2],
+  ['Medium', 3],
+  ['Low', 4],
+];
+const PRIORITY_NAMES = new Map<number, string>(PRIORITIES.map(([n, v]) => [v, n]));
 const STATE_TYPES: Record<IssueStatusCategory, string[]> = {
   todo: ['unstarted', 'backlog'],
   doing: ['started'],
@@ -39,6 +48,8 @@ interface LinearIssue {
   updatedAt?: string;
   dueDate?: string | null;
   estimate?: number | null;
+  priority?: number | null;
+  priorityLabel?: string | null;
   state?: { name?: string; type?: string } | null;
   assignee?: { name?: string; email?: string } | null;
   labels?: { nodes?: Array<{ name?: string }> };
@@ -84,6 +95,7 @@ function toRemote(i: LinearIssue): RemoteIssue {
       description: i.description ?? '',
       status: i.state?.type ? (CATEGORY[i.state.type] ?? null) : null,
       statusName: i.state?.name ?? null,
+      priority: typeof i.priority === 'number' && i.priority > 0 ? (PRIORITY_NAMES.get(i.priority) ?? i.priorityLabel ?? null) : null,
       assignee: i.assignee ? (i.assignee.email?.toLowerCase() ?? `~${i.assignee.name ?? 'someone'}`) : null,
       labels: (i.labels?.nodes ?? []).map((l) => l.name ?? '').filter(Boolean),
       dueDate: i.dueDate ? i.dueDate.slice(0, 10) : null,
@@ -150,6 +162,17 @@ async function stateId(conn: ProviderConnection, team: string, want: IssueStatus
   return nodes[0]?.id ?? null;
 }
 
+/** The team's workflow state with this name (case-insensitive), or null. */
+async function stateByName(conn: ProviderConnection, team: string, name: string): Promise<string | null> {
+  const d = await gql<{ workflowStates: { nodes: Array<{ id: string; name?: string }> } }>(
+    conn,
+    `query($team: ID!, $name: String!) { workflowStates(filter: { team: { id: { eq: $team } }, name: { eqIgnoreCase: $name } }) { nodes { id name } } }`,
+    { team, name },
+    'read the workflow',
+  );
+  return d.workflowStates.nodes.find((n) => labelKey(n.name ?? '') === labelKey(name))?.id ?? null;
+}
+
 /** The `input` of issueCreate / issueUpdate for the values present. */
 async function inputFor(conn: ProviderConnection, team: string, values: IssueValues, notes: string[]): Promise<Record<string, unknown>> {
   const input: Record<string, unknown> = {};
@@ -158,7 +181,17 @@ async function inputFor(conn: ProviderConnection, team: string, values: IssueVal
   if (values.labels !== undefined) input.labelIds = await labelIds(conn, team, [...new Set(values.labels.map(linear.label).filter(Boolean))]);
   if (values.dueDate !== undefined) input.dueDate = values.dueDate;
   if (values.estimate !== undefined) input.estimate = values.estimate === null ? null : Math.round(values.estimate);
-  if (values.status) {
+  if (values.priority !== undefined) {
+    const n = values.priority === null ? 0 : PRIORITIES.find(([name]) => labelKey(name) === labelKey(values.priority!))?.[1];
+    if (n !== undefined) input.priority = n;
+    else notes.push(`${LABEL} has no priority “${values.priority}”, so the priority stayed.`);
+  }
+  // A state named like the card's column first (a board-only column asks only for its category).
+  if (values.statusName) {
+    const id = await stateByName(conn, team, values.statusName);
+    if (id) input.stateId = id;
+  }
+  if (values.status && !input.stateId) {
     const id = await stateId(conn, team, values.status);
     if (id) input.stateId = id;
     else notes.push(`The ${LABEL} team has no ${values.status === 'doing' ? 'started' : values.status === 'done' ? 'completed' : 'unstarted'} state, so the status stayed.`);
@@ -188,7 +221,7 @@ const hmacOk = (secret: string, body: Buffer, given: string | undefined): boolea
 
 export const linear: TrackerProvider = {
   kind: 'linear',
-  fields: ['title', 'description', 'status', 'assignee', 'labels', 'dueDate', 'estimate'],
+  fields: ['title', 'description', 'status', 'statusName', 'priority', 'assignee', 'labels', 'dueDate', 'estimate'],
   queryLanguage: 'Search',
 
   authHeaders(creds: Credentials) {
@@ -246,6 +279,10 @@ export const linear: TrackerProvider = {
     if (Object.keys(input).length)
       await gql(conn, `mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success } }`, { id: issue.id, input }, `change ${issue.key}`);
     return notes;
+  },
+
+  async priorities() {
+    return PRIORITIES.map(([name]) => name);
   },
 
   async search(conn, query, limit) {

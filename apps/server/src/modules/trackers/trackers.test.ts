@@ -5,8 +5,28 @@ import { createHmac } from 'node:crypto';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { baseOf, mergeField, pullableFields, type BoardElement, type ElementDraft, type IssueValues, type KanbanElement, type Tag, type TimelineElement } from '@freero/shared';
-import { planPull } from './board';
+import {
+  baseOf,
+  boardView,
+  cardValue,
+  collectionSchema,
+  issueValuesFromBoard,
+  kanbanColumnAt,
+  mergeField,
+  priorityFieldOf,
+  pullableFields,
+  type BoardElement,
+  type CardElement,
+  type ElementDraft,
+  type IssueValues,
+  type KanbanElement,
+  type Tag,
+  type TimelineElement,
+} from '@freero/shared';
+import { planPull, sourceOf } from './board';
+import type { HttpResponse } from './http';
+import { kanbanOf, planKanbanImport } from './kanban';
+import type { ProviderConnection, RemoteIssue } from './providers/types';
 import { trackerRequest, TrackerError } from './http';
 import { planRoadmapImport } from './roadmap';
 import { adfToMarkdown, markdownToAdf, markdownToWiki, wikiToMarkdown } from './markup';
@@ -154,6 +174,131 @@ it('roadmap import: issues join the timeline lane already named after their epic
   const tray = made.get(made.get('c3')!.frameId as string)!;
   expect(tray).toMatchObject({ type: 'frame', skip: true, index: 3 });
   expect(plan.unscheduled).toBe(1);
+});
+
+// ---- kanban fields (step 2f) ----
+
+const el = (e: Partial<BoardElement> & Record<string, unknown>) => ({ rotation: 0, z: 1, createdBy: 'u', createdAt: 0, updatedAt: 0, ...e }) as BoardElement;
+const sprint = (columns: KanbanElement['columns'], extra: Partial<KanbanElement> = {}) =>
+  el({ id: 'kb', type: 'kanban', x: 0, y: 0, w: 12 + columns.length * 292, h: 600, colW: 280, title: 'Sprint', columns, ...extra }) as KanbanElement;
+/** A card standing in column `i` of `k`. */
+const cardIn = (k: KanbanElement, i: number, id: string, extra: Record<string, unknown> = {}) =>
+  el({ id, type: 'card', x: k.x + 22 + i * 292, y: 106, w: 260, h: 100, frameId: k.id, title: id, description: '', status: k.columns[i].status ?? null, ...extra }) as CardElement;
+const viewOf = (...els: BoardElement[]) => ({ elements: els.map((e) => ({ el: e, layer: 'shared' as const })), collection: () => new Map() as ReadonlyMap<string, unknown> });
+
+it('an issue moved to “In review” in the tracker lands in the board’s In review column, not the first column of its category', () => {
+  const k = sprint([
+    { id: 'todo', title: 'To do', status: 'todo', color: '#000' },
+    { id: 'doing', title: 'Doing', status: 'doing', color: '#000' },
+    { id: 'review', title: 'In  Review', status: 'doing', color: '#000' },
+    { id: 'done', title: 'Done', status: 'done', color: '#000' },
+  ]);
+  const c = cardIn(k, 0, 'c1');
+  const plan = planPull(viewOf(k, c), [c], { status: 'doing', statusName: 'In review' }, { fields: pullableFields([{ type: 'card', card: {} as never }]), provider: jira, previousLabels: [], userIdOf: () => null, newId: () => 'x' });
+  const moved = { ...c, ...plan.update.find((u) => u.id === 'c1')!.patch } as CardElement;
+  expect(k.columns[kanbanColumnAt(k, moved.x + moved.w / 2)].id).toBe('review');
+  expect(moved.status).toBe('doing');
+});
+
+it('issues imported into a kanban land in the column named after their status (by category when none is, a column of its own when no column has the category), with a Priority field made once from the tracker’s levels', () => {
+  const k = sprint([
+    { id: 'todo', title: 'To do', status: 'todo', color: '#000' },
+    { id: 'review', title: 'In review', status: null, color: '#000' },
+    { id: 'done', title: 'Done', status: 'done', color: '#000' },
+  ]);
+  let n = 0;
+  const ids = () => `n${++n}`;
+  const levels = ['Highest', 'High', 'Medium', 'Low', 'Lowest'];
+  const first = planKanbanImport(
+    k,
+    [
+      { id: 'a', values: { status: 'doing', statusName: 'IN REVIEW', priority: 'High' } },
+      { id: 'b', values: { status: 'todo', statusName: 'Selected for development', priority: null } },
+      { id: 'c', values: { status: 'doing', statusName: 'In progress', priority: 'Highest' } },
+    ],
+    { newId: ids, priorities: levels },
+  );
+  const titles = first.kanban.columns.map((c) => c.title.replace(/<[^>]+>/g, ''));
+  // No column has the "doing" category: In progress gets its own, before Done (where work flows).
+  expect(titles).toEqual(['To do', 'In review', 'In progress', 'Done']);
+  const progress = first.kanban.columns[2];
+  expect(progress.status).toBe('doing');
+  expect([first.columnOf.get('a'), first.columnOf.get('b'), first.columnOf.get('c')]).toEqual(['review', 'todo', progress.id]);
+  const prio = priorityFieldOf(collectionSchema(first.kanban))!;
+  expect(prio.options!.map((o) => o.label)).toEqual(levels);
+  expect(first.values.get('a')).toEqual({ [prio.id]: prio.options![1].id });
+  expect(first.values.has('b')).toBe(false);
+  // The cards show it.
+  expect(boardView(first.kanban).card!.show[0]).toBe(prio.id);
+  // A second import uses the same field and columns: nothing new.
+  const second = planKanbanImport(first.kanban, [{ id: 'd', values: { status: 'doing', statusName: 'in progress', priority: 'low' } }], { newId: ids, priorities: levels });
+  expect(second.patch).toBeNull();
+  expect(second.columnOf.get('d')).toBe(progress.id);
+  expect(second.values.get('d')).toEqual({ [prio.id]: prio.options![3].id });
+});
+
+it('a card moved to the In review column and given another Priority goes to Jira as that status by name and that priority, not as the first “in progress” transition', async () => {
+  const k = sprint(
+    [
+      { id: 'doing', title: 'Doing', status: 'doing', color: '#000' },
+      { id: 'review', title: 'In review', status: 'doing', color: '#000' },
+    ],
+    {
+      fields: [
+        { id: 'stage', name: 'Stage', type: 'select' },
+        { id: 'p', name: 'priority', type: 'select', options: [{ id: 'hi', label: 'High', color: '#000' }, { id: 'lo', label: 'Low', color: '#000' }] },
+      ],
+    },
+  );
+  const view = viewOf(k);
+  const read = (c: CardElement) => issueValuesFromBoard([sourceOf(c, new Map(), () => null, (x) => kanbanOf(view, x))], { itemUrl: (id) => id });
+  const before = read(cardIn(k, 0, 'c', { values: { p: 'lo' } }));
+  const after = read(cardIn(k, 1, 'c', { values: { p: 'hi' } }));
+  const tracker: IssueValues = { status: 'doing', statusName: 'In Progress', priority: 'Low' };
+  const base = baseOf(before, tracker);
+  const can = { push: true, pull: true };
+  expect((['status', 'statusName', 'priority'] as const).map((f) => mergeField(f, base, after, tracker, can).decision)).toEqual(['none', 'push', 'push']);
+
+  // What Jira is asked for (a stand-in connection: no tracker is called).
+  const calls: Array<{ method: string; path: string; body?: unknown }> = [];
+  const reply = (json: unknown, status = 200): HttpResponse => ({ status, headers: {}, json, text: '' });
+  const conn = {
+    deployment: 'cloud',
+    settings: {},
+    site: 'https://acme.example',
+    async call(req: { method: string; path: string; body?: unknown }) {
+      calls.push(req);
+      if (req.path.endsWith('/transitions') && req.method === 'GET')
+        return reply({
+          transitions: [
+            { id: '21', to: { name: 'In Progress', statusCategory: { key: 'indeterminate' } } },
+            { id: '31', to: { name: 'In Review', statusCategory: { key: 'indeterminate' } } },
+          ],
+        });
+      return reply({}, 204);
+    },
+  } as unknown as ProviderConnection;
+  const issue = { id: '100', key: 'WEB-1', url: '', values: { title: 'x', description: '', labels: [], ...tracker }, assigneeName: null, updatedAt: 0 } as RemoteIssue;
+  await jira.updateIssue(conn, issue, { statusName: after.statusName, priority: after.priority });
+  expect(calls.find((c) => c.method === 'PUT')?.body).toEqual({ fields: { priority: { name: 'High' } } });
+  expect(calls.find((c) => c.method === 'POST' && c.path.endsWith('/transitions'))?.body).toEqual({ transition: { id: '31' } });
+});
+
+it('a priority level the kanban’s Priority field lacks, pulled from the tracker, is added to the field and set on the card', () => {
+  const k = sprint([{ id: 'todo', title: 'To do', status: 'todo', color: '#000' }], {
+    fields: [
+      { id: 'stage', name: 'Stage', type: 'select' },
+      { id: 'p', name: 'Priority', type: 'select', options: [{ id: 'hi', label: 'High', color: '#000' }] },
+    ],
+  });
+  const c = cardIn(k, 0, 'c', { values: { p: 'hi' } });
+  const plan = planPull(viewOf(k, c), [c], { priority: 'Blocker' }, { fields: new Set(['priority']), provider: jira, previousLabels: [], userIdOf: () => null, newId: () => 'blk' });
+  const patched = new Map(plan.update.map((u) => [u.id, u.patch]));
+  const k2 = { ...k, ...patched.get('kb') } as KanbanElement;
+  const c2 = { ...c, ...patched.get('c') } as CardElement;
+  const field = priorityFieldOf(collectionSchema(k2))!;
+  expect(field.options!.map((o) => o.label)).toEqual(['High', 'Blocker']);
+  expect(cardValue(k2, c2, field)).toBe('blk');
 });
 
 let server: http.Server;

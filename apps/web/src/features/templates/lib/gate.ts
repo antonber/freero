@@ -10,11 +10,13 @@
 // - sectionProblems: spec layouts only: notes inside their section, sections apart, none empty.
 // - duplicateProblems: two templates a person couldn't tell apart (near-identical names), the same
 //   layout with near-identical section titles, or near-identical content under another name.
+// - fieldProblems: template kanbans with typed fields: names, limits, and card values their
+//   fields can hold.
 // - indexProblems: the picker's index (`npm run templates:index`) out of step with the specs.
 //
 // Similarity is deliberately simple and explainable: the overlap of two word sets (Jaccard:
 // shared words / all words), after lower-casing, dropping filler words and plural/-ing endings.
-import type { TableCopyContent } from '@freero/shared';
+import { COLUMN_FIELD_ID, boardView, canonicalValue, collectionSchema, colorableFields, fieldNameProblem, groupFieldId, isBuiltinFieldId, type CardElement, type KanbanElement, type TableCopyContent } from '@freero/shared';
 import type { NewElement } from '@engine';
 import { lineCount } from './spec/blocks';
 import type { SpecIndexEntry, TemplateSpec } from './spec/types';
@@ -205,6 +207,60 @@ export function sectionProblems(id: string, built: BuiltTemplate): string[] {
       const title = els.find((e) => e.type === 'text' && inside(e, p));
       out.push(`${id}: section ${title ? label(title) : `at ${Math.round(p.x)},${Math.round(p.y)}`} has no example notes`);
     }
+  return out;
+}
+
+// ── Kanban fields ────────────────────────────────────────────────────────────────────────────
+/** At most this many typed fields (besides Stage) and options per field in a template: more is a database, not a starting point. */
+export const TEMPLATE_FIELD_LIMITS = { fields: 12, options: 20 } as const;
+
+/**
+ * Template kanbans with typed fields (step 2f): unique, usable field names, few enough fields and
+ * options, cards showing and coloured by fields the kanban has, and every card value one its
+ * field can hold — an option it has, a readable date or number — on a field that is stored (a
+ * card's Stage is the column it stands in, never a value). A value the template gave a field the
+ * kanban lacks reads "?<name>" (the Kit keeps it so it is reported here).
+ */
+export function fieldProblems(id: string, built: BuiltTemplate): string[] {
+  const out: string[] = [];
+  const kanbans = new Map(built.elements.filter((e) => e.type === 'kanban').map((e) => [e.id!, e as unknown as KanbanElement]));
+  for (const k of kanbans.values()) {
+    if (!Array.isArray(k.fields)) continue;
+    const name = `kanban "${plain(String(k.title ?? '')).slice(0, 40)}"`;
+    const schema = collectionSchema(k);
+    const custom = schema.filter((f) => f.id !== COLUMN_FIELD_ID);
+    if (custom.length > TEMPLATE_FIELD_LIMITS.fields) out.push(`${id}: ${name} has ${custom.length} fields (at most ${TEMPLATE_FIELD_LIMITS.fields})`);
+    if (schema.length !== (k.fields as unknown[]).length) out.push(`${id}: ${name} has a field the board can't read (a bad id or type)`);
+    for (const f of custom) {
+      const problem = fieldNameProblem(schema, f.name, f.id);
+      if (problem) out.push(`${id}: ${name} field "${f.name}": ${problem}`);
+      if ((f.options?.length ?? 0) > TEMPLATE_FIELD_LIMITS.options) out.push(`${id}: ${name} field "${f.name}" has ${f.options!.length} options (at most ${TEMPLATE_FIELD_LIMITS.options})`);
+      if ((f.type === 'select' || f.type === 'multiselect') && !f.options?.length) out.push(`${id}: ${name} field "${f.name}" has no options`);
+    }
+    const view = boardView(k);
+    const known = (ref: string) => isBuiltinFieldId(ref) || schema.some((f) => f.id === ref);
+    for (const ref of view.card?.show ?? []) if (!known(ref)) out.push(`${id}: ${name} shows "${ref.replace(/^\?/, '')}" on its cards, a field it doesn't have`);
+    const color = view.card?.color;
+    if (color && color !== 'own' && color !== 'group' && !colorableFields(schema).some((f) => f.id === color)) out.push(`${id}: ${name} colours cards by "${color.replace(/^\?/, '')}", which is not one of its select fields`);
+  }
+  for (const e of built.elements) {
+    if (e.type !== 'card') continue;
+    const values = (e as unknown as CardElement).values;
+    if (!values || !Object.keys(values).length) continue;
+    const card = label(e);
+    const k = e.frameId ? kanbans.get(e.frameId) : undefined;
+    if (!k || !Array.isArray(k.fields)) {
+      out.push(`${id}: ${card} has field values but no kanban with fields holds it`);
+      continue;
+    }
+    const schema = collectionSchema(k);
+    for (const [key, raw] of Object.entries(values)) {
+      const f = schema.find((x) => x.id === key);
+      if (!f) out.push(`${id}: ${card} has a value for "${key.replace(/^\?/, '')}", a field its kanban doesn't have`);
+      else if (f.id === groupFieldId(k)) out.push(`${id}: ${card} gives ${f.name} a value; it is the column the card stands in`);
+      else if (canonicalValue(f, raw) === undefined) out.push(`${id}: ${card} has ${JSON.stringify(raw)} for ${f.name}, which a ${f.type} field can't hold${f.options ? ` (options: ${f.options.map((o) => o.label).join(', ')})` : ''}`);
+    }
+  }
   return out;
 }
 

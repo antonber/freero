@@ -1,17 +1,30 @@
 // Importing a CSV / TSV as stickies or task cards (KAI-136): pick a file (or paste), check the
-// columns, then the rows land in a grid or on a kanban by status — one undo step.
+// columns, then the rows land in a grid or on a kanban — one undo step. On a kanban the columns
+// come from one CSV column (Stage), and every other column becomes a typed field (step 2f).
 import { useEffect, useMemo, useState } from 'react';
 import { Upload } from 'lucide-react';
-import { LAYOUT_LIMITS } from '@freero/shared';
+import { LAYOUT_LIMITS, type FieldType } from '@freero/shared';
 import { definePanel, type PanelProps } from '@engine';
 import { Button, Modal, SegmentedControl, Select, TextArea, Toggle } from '@ui';
 import { CSV_IMPORT_DIALOG } from './lib/actions';
-import { placeRows } from './lib/board';
-import { FIELDS, guessMapping, parseDelimited, rowsToItems, sniffDelimiter, type Field, type Mapping } from './lib/csv';
+import { placeRows, placeRowsOnKanban } from './lib/board';
+import { FIELDS, fieldColumns, guessColumnsFrom, guessMapping, parseDelimited, rowsToItems, sniffDelimiter, type Field, type FieldChoice, type Mapping } from './lib/csv';
 import './csv.css';
 
 const MAX_ROWS = LAYOUT_LIMITS.elements - 1;
 const NONE = -1;
+
+const TYPE_OPTIONS: Array<{ value: FieldChoice; label: string }> = [
+  { value: 'select', label: 'Single select' },
+  { value: 'multiselect', label: 'Multi-select' },
+  { value: 'text', label: 'Text' },
+  { value: 'number', label: 'Number' },
+  { value: 'date', label: 'Date' },
+  { value: 'url', label: 'Link' },
+  { value: 'checkbox', label: 'Checkbox' },
+  { value: 'person', label: 'Person (members by name)' },
+  { value: 'skip', label: 'Leave out' },
+];
 
 function ImportDialog({ editor }: PanelProps) {
   const close = () => editor.closePanel(CSV_IMPORT_DIALOG);
@@ -21,6 +34,8 @@ function ImportDialog({ editor }: PanelProps) {
   const [as, setAs] = useState<'sticky' | 'card'>('card');
   const [layout, setLayout] = useState<'grid' | 'kanban'>('grid');
   const [mapping, setMapping] = useState<Mapping>({});
+  const [columnsFrom, setColumnsFrom] = useState<number>(NONE);
+  const [types, setTypes] = useState<Record<number, FieldChoice>>({});
   const [people, setPeople] = useState<Map<string, string>>(new Map());
   const [error, setError] = useState<string | null>(null);
 
@@ -30,7 +45,11 @@ function ImportDialog({ editor }: PanelProps) {
   const width = Math.max(0, ...rows.slice(0, 50).map((r) => r.length));
 
   // A new file (or the header switch) re-guesses which column is which.
-  useEffect(() => setMapping(guessMapping(header)), [text, hasHeader]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    setMapping(guessMapping(header));
+    setColumnsFrom(guessColumnsFrom(hasHeader ? header : []) ?? NONE);
+    setTypes({});
+  }, [text, hasHeader]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     editor.host.listMembers().then(
@@ -40,6 +59,12 @@ function ImportDialog({ editor }: PanelProps) {
   }, [editor]);
 
   const items = useMemo(() => rowsToItems(body.slice(0, MAX_ROWS), { as, mapping, people }), [body, as, mapping, people]);
+  // On a kanban of cards with a column for its columns: every other CSV column is a field.
+  const typed = layout === 'kanban' && as === 'card' && columnsFrom !== NONE;
+  const fields = useMemo(
+    () => (typed ? fieldColumns(header.slice(0, width), body.slice(0, MAX_ROWS), mapping, columnsFrom).map((f) => ({ ...f, type: types[f.column] ?? f.type })) : []),
+    [typed, header, width, body, mapping, columnsFrom, types],
+  );
 
   const readFile = async (file: File | undefined) => {
     if (!file) return;
@@ -52,7 +77,10 @@ function ImportDialog({ editor }: PanelProps) {
   const run = () => {
     if (!items.length) return setError('No rows with text to import');
     try {
-      const ids = placeRows(editor, items, layout, fileName?.replace(/\.[^.]+$/, '') ?? 'Imported');
+      const title = fileName?.replace(/\.[^.]+$/, '') ?? 'Imported';
+      const ids = typed
+        ? placeRowsOnKanban(editor, items, { columnsFrom, fields, stageName: header[columnsFrom], personId: (name) => people.get(name.trim().toLowerCase()) }, title)
+        : placeRows(editor, items, layout, title);
       editor.select(ids);
       editor.zoomToFit(ids);
       editor.host.notify(`Imported ${items.length} ${as === 'card' ? 'cards' : 'stickies'}${body.length > MAX_ROWS ? ` (first ${MAX_ROWS} rows)` : ''}`, 'success');
@@ -63,13 +91,13 @@ function ImportDialog({ editor }: PanelProps) {
   };
 
   const columnOptions = [{ value: NONE, label: '—' }, ...header.slice(0, width).map((h, i) => ({ value: i, label: h || `Column ${i + 1}` }))];
-  const fields = FIELDS.filter((f) => as === 'card' || ['text', 'tags', 'color', 'type', 'status'].includes(f.field));
+  const builtins = FIELDS.filter((f) => as === 'card' || ['text', 'tags', 'color', 'type', 'status'].includes(f.field));
   return (
     <Modal
       open
       onClose={close}
       title="Import from CSV"
-      description="Each row becomes a sticky or a task card. Tags, status, assignee and due date come from their columns."
+      description="Each row becomes a sticky or a task card. Tags, status, assignee and due date come from their columns; on a kanban, the other columns become fields."
       width={620}
       footer={
         <>
@@ -115,7 +143,7 @@ function ImportDialog({ editor }: PanelProps) {
                 aria-label="Layout"
                 options={[
                   { value: 'grid', label: 'Grid' },
-                  { value: 'kanban', label: 'Kanban by status' },
+                  { value: 'kanban', label: 'Kanban' },
                 ]}
                 value={layout}
                 onChange={setLayout}
@@ -123,7 +151,7 @@ function ImportDialog({ editor }: PanelProps) {
               <Toggle size="sm" label="First row is a header" checked={hasHeader} onChange={setHasHeader} />
             </div>
             <div className="fr-csv__mapping" role="group" aria-label="Columns">
-              {fields.map((f) => (
+              {builtins.map((f) => (
                 <label key={f.field} className="fr-csv__map">
                   <span>{f.label}</span>
                   <Select<number>
@@ -136,6 +164,37 @@ function ImportDialog({ editor }: PanelProps) {
                 </label>
               ))}
             </div>
+            {layout === 'kanban' && as === 'card' ? (
+              <div className="fr-csv__kanban" role="group" aria-label="Kanban">
+                <label className="fr-csv__map">
+                  <span>Columns from</span>
+                  <Select<number>
+                    aria-label="Column the kanban's columns come from"
+                    size="sm"
+                    options={[{ value: NONE, label: 'Status (To do, Doing, Done)' }, ...columnOptions.slice(1)]}
+                    value={columnsFrom}
+                    onChange={setColumnsFrom}
+                  />
+                </label>
+                {fields.length ? (
+                  <div className="fr-csv__fields" role="group" aria-label="Fields">
+                    <span className="fr-csv__fields-title">Other columns become fields</span>
+                    {fields.map((f) => (
+                      <label key={f.column} className="fr-csv__map" title={f.note}>
+                        <span>{f.name}</span>
+                        <Select<FieldChoice>
+                          aria-label={`Field type for ${f.name}`}
+                          size="sm"
+                          options={TYPE_OPTIONS}
+                          value={f.type}
+                          onChange={(v) => setTypes((t) => ({ ...t, [f.column]: v as FieldType | 'skip' }))}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             <p className="fr-csv__hint">
               {body.length} {body.length === 1 ? 'row' : 'rows'}
               {body.length > MAX_ROWS ? ` (the first ${MAX_ROWS} are imported)` : ''} · {items.length} with text
