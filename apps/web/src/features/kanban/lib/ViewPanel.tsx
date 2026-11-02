@@ -147,7 +147,8 @@ export function ViewPanel({ editor }: { editor: Editor }) {
           <Select<CardColorBy>
             size="sm"
             aria-label="Colour cards by"
-            value={colorChoices.some((c) => c.value === card.color) ? card.color : 'own'}
+            // Coloured by the field the board is now grouped by = coloured by column.
+            value={card.color === groupBy ? 'group' : colorChoices.some((c) => c.value === card.color) ? card.color : 'own'}
             options={colorChoices}
             onChange={(color) => setMyCardDisplay(editor, k.id, { color })}
           />
