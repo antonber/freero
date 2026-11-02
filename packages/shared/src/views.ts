@@ -1,0 +1,213 @@
+// Views of a kanban (docs/design/kanban-fields-and-views.md, step 2b): how its cards are shown.
+// A kanban's SAVED views are `KanbanElement.views` (written by editors through the kanban
+// feature; synced, undoable, copied with the kanban). On top of a saved view each person may keep
+// a PERSONAL override (`ViewOverride`): kept outside the board doc (the engine's personal view
+// state, persisted per person behind the Host), so it never reaches anyone else, and viewers can
+// keep one too. "Save for everyone" writes the override into `views` and clears it.
+//
+// What a card shows is derived when it is drawn, never written onto the card: its accent colour
+// (its own, its column's, or a select field's option colour) and its field chips. Only `density`
+// changes the cards' size (the board's shared layout), so it is never personal.
+//
+// Pure: the web (the kanban's presentation of its cards, the View panel) and the server read
+// views only through here.
+import type { CardElement, KanbanElement } from './elements';
+import { kanbanColumnAt } from './elements';
+import { BUILTIN_FIELDS, COLUMN_FIELD_ID, STATUS_OPTIONS, builtinValue, cardValue, isBuiltinFieldId, type FieldDef, type FieldValue } from './fields';
+
+export type CardDensity = 'compact' | 'comfortable';
+
+/**
+ * Where a card's accent colour comes from: 'own' its stored colour, 'group' the colour of the
+ * column it is in (the group option's), or a select field's id: that field's option colour
+ * (cards without a value keep their own).
+ */
+export type CardColorBy = 'own' | 'group' | (string & {});
+
+export interface CardDisplay {
+  /** Fields shown on cards, in order: custom field ids or built-in ids ($status, $due…). */
+  show: string[];
+  density: CardDensity;
+  color: CardColorBy;
+}
+
+export interface ViewConfig {
+  id: string;
+  name: string;
+  layout: 'board';
+  card?: CardDisplay;
+}
+
+/** What a person may change of a saved view for themselves (density moves cards: never personal). */
+export interface ViewOverride {
+  card?: { show?: string[]; color?: CardColorBy };
+}
+
+/** The id of a kanban's board view when it has none saved yet. */
+export const BOARD_VIEW_ID = 'board';
+/** What cards show on a kanban without saved views: the footer cards always had. */
+export const DEFAULT_CARD_SHOW: readonly string[] = ['$status', '$due', '$tags', '$estimate', '$assignee'];
+export const VIEW_LIMITS = { views: 20, show: 40, name: 60, id: 64 } as const;
+
+/** Built-in fields a card can show (the title always shows; links have their own badge). */
+export const SHOWABLE_BUILTINS = BUILTIN_FIELDS.filter((f) => f.id !== '$title' && f.id !== '$link');
+
+const isId = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= VIEW_LIMITS.id && v !== '__proto__';
+
+function cleanShow(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  return [...new Set(raw.filter(isId))].slice(0, VIEW_LIMITS.show);
+}
+
+const cleanColor = (raw: unknown): CardColorBy | undefined => (isId(raw) ? raw : undefined);
+
+function cleanCard(raw: unknown, fallback: CardDisplay): CardDisplay {
+  const c = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  return {
+    show: cleanShow(c.show) ?? [...fallback.show],
+    density: c.density === 'compact' || c.density === 'comfortable' ? c.density : fallback.density,
+    color: cleanColor(c.color) ?? fallback.color,
+  };
+}
+
+type ViewSource = Pick<KanbanElement, 'views' | 'activeView' | 'colorCards'>;
+
+/** The display a kanban without saved views has: cards as they always were, coloured by column on boards that did. */
+const defaultCard = (k: ViewSource): CardDisplay => ({ show: [...DEFAULT_CARD_SHOW], density: 'comfortable', color: k.colorCards ? 'group' : 'own' });
+
+/**
+ * The kanban's board view as saved (what everyone starts from): the active view when it is a
+ * board view, else the first one, else the view a kanban from before views has. Read-time and
+ * deterministic, malformed entries read as the defaults; nothing has to be written to migrate.
+ */
+export function boardView(k: ViewSource): ViewConfig {
+  const stored = Array.isArray(k.views) ? (k.views as unknown[]).filter((v): v is Record<string, unknown> => !!v && typeof v === 'object' && (v as Record<string, unknown>).layout === 'board') : [];
+  const raw = stored.find((v) => v.id === k.activeView) ?? stored[0];
+  const fallback = defaultCard(k);
+  if (!raw) return { id: BOARD_VIEW_ID, name: 'Board', layout: 'board', card: fallback };
+  return {
+    id: isId(raw.id) ? raw.id : BOARD_VIEW_ID,
+    name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim().slice(0, VIEW_LIMITS.name) : 'Board',
+    layout: 'board',
+    card: cleanCard(raw.card, fallback),
+  };
+}
+
+/** A personal override as stored (anything else in it is dropped), or null when it changes nothing. */
+export function cleanOverride(raw: unknown): ViewOverride | null {
+  const c = raw && typeof raw === 'object' ? ((raw as Record<string, unknown>).card as Record<string, unknown> | undefined) : undefined;
+  if (!c || typeof c !== 'object') return null;
+  const show = cleanShow(c.show);
+  const color = cleanColor(c.color);
+  if (!show && !color) return null;
+  return { card: { ...(show ? { show } : {}), ...(color ? { color } : {}) } };
+}
+
+/** `view` as this person sees it: their personal override on top of the saved view. */
+export function withOverride(view: ViewConfig, override: unknown): ViewConfig {
+  const o = cleanOverride(override);
+  if (!o?.card || !view.card) return view;
+  return { ...view, card: { ...view.card, ...o.card } };
+}
+
+/** The override that turns `saved` into `mine`: only the keys that differ (null: none). */
+export function overrideBetween(saved: ViewConfig, mine: ViewConfig): ViewOverride | null {
+  const card: NonNullable<ViewOverride['card']> = {};
+  if (mine.card && saved.card) {
+    if (mine.card.show.join('\n') !== saved.card.show.join('\n')) card.show = [...mine.card.show];
+    if (mine.card.color !== saved.card.color) card.color = mine.card.color;
+  }
+  return Object.keys(card).length ? { card } : null;
+}
+
+/**
+ * `KanbanElement.views` with `view` saved in place of the board view of the same id (or added),
+ * and the `colorCards` an older client reads: on exactly when cards are coloured by column.
+ */
+export function savedViews(k: ViewSource, view: ViewConfig): Pick<KanbanElement, 'views' | 'activeView' | 'colorCards'> {
+  const stored = Array.isArray(k.views) ? k.views.filter((v) => v && typeof v === 'object') : [];
+  const i = stored.findIndex((v) => v.id === view.id);
+  const views = i >= 0 ? stored.map((v, j) => (j === i ? view : v)) : [...stored, view].slice(-VIEW_LIMITS.views);
+  return { views, activeView: k.activeView && views.some((v) => v.id === k.activeView) ? k.activeView : view.id, colorCards: view.card?.color === 'group' };
+}
+
+// ------------------------------------------------------------------ what a card shows
+
+/** One field shown on a card (only fields with a value are). */
+export type FieldChip = { field: string; name: string } & (
+  | { kind: 'options'; options: Array<{ id: string; label: string; color: string }> }
+  | { kind: 'person'; userId: string }
+  | { kind: 'date'; date: string }
+  | { kind: 'text'; text: string }
+  | { kind: 'check' }
+  | { kind: 'tags'; ids: string[] }
+);
+
+const isoDay = (ms: number) => {
+  const d = new Date(ms);
+  return Number.isFinite(d.getTime()) ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : null;
+};
+
+/** The field (custom or built-in) `id` names on kanban `schema`, as something chips can be made of. */
+function fieldOf(schema: readonly FieldDef[], id: string): (Pick<FieldDef, 'id' | 'name' | 'type' | 'options'> & { builtin?: true }) | null {
+  if (isBuiltinFieldId(id)) {
+    const b = BUILTIN_FIELDS.find((f) => f.id === id)!;
+    return { id: b.id, name: b.name, type: b.type === 'timestamp' ? 'date' : b.type, options: id === '$status' ? STATUS_OPTIONS : undefined, builtin: true };
+  }
+  return schema.find((f) => f.id === id) ?? null;
+}
+
+function chip(f: NonNullable<ReturnType<typeof fieldOf>>, v: FieldValue | null): FieldChip | null {
+  if (v === null || v === undefined) return null;
+  const base = { field: f.id, name: f.name };
+  if (f.id === '$tags') return Array.isArray(v) && v.length ? { ...base, kind: 'tags', ids: v } : null;
+  if (f.id === '$created' || f.id === '$updated') {
+    const day = typeof v === 'number' ? isoDay(v) : null;
+    return day ? { ...base, kind: 'date', date: day } : null;
+  }
+  switch (f.type) {
+    case 'select':
+    case 'multiselect': {
+      const ids = Array.isArray(v) ? v : typeof v === 'string' ? [v] : [];
+      const options = ids.map((id) => f.options?.find((o) => o.id === id)).filter((o): o is NonNullable<typeof o> => !!o);
+      return options.length ? { ...base, kind: 'options', options: options.map((o) => ({ id: o.id, label: o.label || 'Untitled', color: o.color })) } : null;
+    }
+    case 'person':
+      return typeof v === 'string' ? { ...base, kind: 'person', userId: v } : null;
+    case 'date':
+      return typeof v === 'string' ? { ...base, kind: 'date', date: v } : null;
+    case 'checkbox':
+      return v === true ? { ...base, kind: 'check' } : null;
+    default:
+      return { ...base, kind: 'text', text: String(v) };
+  }
+}
+
+/** The chips card `card` of kanban `k` shows in `view`, in its order (fields without a value are left out). */
+export function cardChips(k: KanbanElement, card: CardElement, view: ViewConfig, schema: readonly FieldDef[]): FieldChip[] {
+  const out: FieldChip[] = [];
+  for (const id of view.card?.show ?? []) {
+    const f = fieldOf(schema, id);
+    if (!f) continue;
+    const v = f.builtin ? builtinValue(card, id as Parameters<typeof builtinValue>[1]) : cardValue(k, card, f as FieldDef);
+    const c = chip(f, v);
+    if (c) out.push(c);
+  }
+  return out;
+}
+
+/** The accent card `card` is drawn with in `view` of kanban `k`; null = its own colour. */
+export function cardAccent(k: KanbanElement, card: CardElement, view: ViewConfig, schema: readonly FieldDef[]): string | null {
+  const by = view.card?.color ?? 'own';
+  if (by === 'own') return null;
+  if (by === 'group') return k.columns.length ? (k.columns[kanbanColumnAt(k, card.x + card.w / 2)]?.color ?? null) : null;
+  const f = by === COLUMN_FIELD_ID || !isBuiltinFieldId(by) ? schema.find((x) => x.id === by) : by === '$status' ? { id: '$status', name: 'Status', type: 'select' as const, options: STATUS_OPTIONS } : undefined;
+  if (!f || f.type !== 'select') return null;
+  const v = f.id === '$status' ? (card.status ?? null) : cardValue(k, card, f as FieldDef);
+  return (typeof v === 'string' && f.options?.find((o) => o.id === v)?.color) || null;
+}
+
+/** Fields a view can colour cards by: select fields (the column field's colour is "group"). */
+export function colorableFields(schema: readonly FieldDef[]): FieldDef[] {
+  return schema.filter((f) => f.type === 'select' && f.id !== COLUMN_FIELD_ID);
+}

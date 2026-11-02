@@ -7,6 +7,7 @@
 // around the box center.
 
 import type { FieldDef, FieldValues } from './fields';
+import type { ViewConfig } from './views';
 
 export type ElementType =
   | 'sticky'
@@ -596,8 +597,10 @@ export interface KanbanElement extends BaseElement {
   /** Width of every column (world units); the element's w follows from it. */
   colW: number;
   /**
-   * [additive] Task cards take the colour of the column they are moved into (as their accent).
-   * Absent / false (boards from before): moving a card changes only where it is.
+   * [additive] Task cards are shown in their column's colour. Since views (views.ts) the colour is
+   * derived when cards are drawn (`boardView(k).card.color`, 'group'), never written; the kanban
+   * keeps this flag equal to "coloured by column" for older clients, which write the column's
+   * colour onto cards moved into it. Absent / false (boards from before): cards keep their own.
    */
   colorCards?: boolean;
   /**
@@ -607,6 +610,15 @@ export interface KanbanElement extends BaseElement {
    * only its name and place). Written only by the kanban feature.
    */
   fields?: FieldDef[];
+  /**
+   * [additive] The collection's saved views (views.ts): what everyone starts from. Read them
+   * through `boardView`, never directly: a kanban without views has one, synthesised (grouped by
+   * the column field, cards as before). Each person's unsaved changes are a personal override
+   * kept outside the doc (Editor.setPersonalView). Written only by the kanban feature.
+   */
+  views?: ViewConfig[];
+  /** [additive] The view the element shows (its id in `views`). */
+  activeView?: string;
 }
 
 /**
