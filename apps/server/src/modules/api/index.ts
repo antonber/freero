@@ -25,6 +25,11 @@ export {
   updateItems,
   deleteItems,
   insertStructureFor,
+  // Kanbans: fields, the saved view, cards as rows (step 2e).
+  getKanban,
+  defineFields,
+  configureView,
+  queryCards,
   listSuggestions,
   proposeChanges,
   decideSuggestions,

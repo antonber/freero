@@ -131,6 +131,30 @@ export default function apiRoutes(_ctx: ServerContext): Router {
   endpoint('get', '/boards/:boardId/items', 'boards:read', async (call) => ({ body: await api.listItems(call, call.req.params.boardId, call.req.query) }));
   endpoint('get', '/boards/:boardId/items/:itemId', 'boards:read', async (call) => ({ body: await api.getItem(call, call.req.params.boardId, call.req.params.itemId) }));
 
+  // ---- kanbans: fields, the saved view, cards as rows (step 2e) ----
+  endpoint('get', '/boards/:boardId/kanbans/:kanbanId', 'boards:read', async (call) => ({ body: await api.getKanban(call, call.req.params.boardId, call.req.params.kanbanId) }));
+  endpoint('patch', '/boards/:boardId/kanbans/:kanbanId/fields', 'boards:write', async (call) => ({
+    body: await api.defineFields(call, call.req.params.boardId, call.req.params.kanbanId, call.req.body),
+  }));
+  endpoint('patch', '/boards/:boardId/kanbans/:kanbanId/view', 'boards:write', async (call) => ({
+    body: await api.configureView(call, call.req.params.boardId, call.req.params.kanbanId, call.req.body),
+  }));
+  endpoint('get', '/boards/:boardId/kanbans/:kanbanId/cards', 'boards:read', async (call) => {
+    const q = call.req.query;
+    // filter: JSON; sort: "Points:desc,Title"; fields: "Priority,Points".
+    let filter: unknown;
+    if (typeof q.filter === 'string' && q.filter) {
+      try {
+        filter = JSON.parse(q.filter);
+      } catch {
+        throw badRequest('filter must be JSON: { "match": "all", "rules": [ { "field": "Priority", "op": "is", "value": "P1" } ] }');
+      }
+    }
+    const sort = typeof q.sort === 'string' && q.sort ? q.sort.split(',').map((s) => ({ field: s.split(':')[0].trim(), dir: s.split(':')[1]?.trim() === 'desc' ? 'desc' : 'asc' })) : undefined;
+    const fields = typeof q.fields === 'string' && q.fields ? q.fields.split(',').map((s) => s.trim()) : undefined;
+    return { body: await api.queryCards(call, call.req.params.boardId, call.req.params.kanbanId, { filter, sort, fields, useView: q.useView, limit: q.limit, cursor: q.cursor }) };
+  });
+
   // ---- changing items (owners and editors: the realtime write path) ----
   endpoint('post', '/boards/:boardId/items', 'boards:write', async (call) => ({ status: 201, body: await api.createItems(call, call.req.params.boardId, call.req.body) }));
   endpoint('patch', '/boards/:boardId/items/:itemId', 'boards:write', async (call) => {

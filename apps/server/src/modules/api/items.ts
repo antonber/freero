@@ -7,12 +7,18 @@ import {
   APART_GAP,
   API_CREATABLE_TYPES,
   API_MAX_ITEMS_PER_CALL,
-  canonicalValue,
+  NO_GROUP,
   groupFieldId,
+  groupKeyOf,
   collectionSchema,
   connectorDraft,
-  optionByLabel,
   findFreeSpot,
+  isStackable,
+  kanbanBoardWidth,
+  kanbanColumnAt,
+  kanbanColumnLeft,
+  kanbanColumnWidth,
+  readFieldInputs,
   frameDraft,
   isAnonymousAuthor,
   measureText,
@@ -32,6 +38,7 @@ import {
   type CardElement,
   type ElementDraft,
   type FieldValues,
+  type KanbanElement,
   type Rect,
   type ShapeKind,
   type StickyColor,
@@ -256,34 +263,55 @@ function textField(el: BoardElement): { key: string; rich: boolean } | null {
   }
 }
 
+const GROUP_COLORS = ['#8A89A3', '#2E9BF0', '#F5A524', '#1FA463', '#8B5CF6', '#E64DA6', '#14B8A6', '#E5484D'];
+
 /**
- * A card's custom field values after `fields` (`{ "<field name or id>": value | null }`), checked
- * against the schema of the kanban it is in (@freero/shared fields.ts). Select options are named
- * by label (or id); an unknown field or option is refused with the valid ones, and nothing
- * changes. The field the kanban is grouped by is the column the card stands in: it moves with
- * `into` / `column`.
+ * A card's field values after `fields` (`{ "<field name or id>": value | null }`), checked against
+ * the schema of the kanban it is in (@freero/shared fields.ts). Select options are named by label
+ * (or id); an unknown field or option is refused with the valid ones, and nothing changes. The
+ * field the kanban is grouped by is the column the card stands in, so a value for it MOVES the card
+ * to that column (to its bottom; in its own swimlane), as choosing it in card details does — a
+ * person without a column yet gets one. The layout (withKanbanLayout) then stacks it there and sets
+ * the column's status, as for a drop.
  */
-function fieldValues(card: CardElement, raw: unknown, view: BoardView): FieldValues {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw badRequest('fields must be an object of field name → value');
+function fieldValues(card: CardElement, raw: unknown, view: BoardView): { values: FieldValues; move?: { x: number; y?: number }; kanban?: { id: string; patch: Record<string, unknown> } } {
   const k = card.frameId ? view.elements.find((e) => e.el.id === card.frameId)?.el : undefined;
   if (k?.type !== 'kanban') throw badRequest('fields: this card is not on a kanban (a card’s fields are its kanban’s)');
   const schema = collectionSchema(k);
-  const names = schema.map((f) => f.name).join(', ');
+  const read = readFieldInputs(schema, raw);
+  if ('error' in read) throw badRequest(`fields: ${read.error}`);
   const values: FieldValues = { ...(card.values ?? {}) };
-  for (const [key, v] of Object.entries(raw as Record<string, unknown>)) {
-    const f = schema.find((x) => x.id === key) ?? schema.find((x) => x.name.trim().toLowerCase() === key.trim().toLowerCase());
-    if (!f) throw badRequest(`fields: the kanban has no field “${key}” (its fields: ${names})`);
-    if (f.id === groupFieldId(k)) throw badRequest(`fields: “${f.name}” is the column a card is in; move the card with into (the kanban) and column instead`);
-    const byLabel = (s: unknown) => (typeof s === 'string' ? (f.options?.find((o) => o.id === s) ?? optionByLabel(f, s))?.id ?? s : s);
-    const value = canonicalValue(f, f.type === 'select' ? byLabel(v) : f.type === 'multiselect' && Array.isArray(v) ? v.map(byLabel) : v);
-    if (value === undefined) {
-      const choices = f.options?.length ? ` (one of: ${f.options.map((o) => o.label || 'Untitled').join(', ')})` : '';
-      throw badRequest(`fields: “${String(typeof v === 'object' ? JSON.stringify(v) : v)}” is not a valid ${f.type} for “${f.name}”${choices}`);
+  let move: { x: number; y?: number } | undefined;
+  let kanban: { id: string; patch: Record<string, unknown> } | undefined;
+  for (const { field: f, value } of read.values) {
+    if (f.id !== groupFieldId(k)) {
+      if (value === null) delete values[f.id];
+      else values[f.id] = value;
+      continue;
     }
-    if (value === null) delete values[f.id];
-    else values[f.id] = value;
+    const key = groupKeyOf(f, value);
+    let columns = k.columns;
+    let to = columns.findIndex((c) => c.id === key);
+    if (to < 0) {
+      if (f.type !== 'person' || key === NO_GROUP) throw badRequest(`fields: “${f.name}” has no column for that value`);
+      columns = [...columns, { id: key, title: '', status: null, color: GROUP_COLORS[columns.length % GROUP_COLORS.length] }];
+      to = columns.length - 1;
+      kanban = { id: k.id, patch: { columns, w: kanbanBoardWidth({ ...k, columns }) } };
+    }
+    const next = { ...k, columns } as KanbanElement;
+    if (k.columns.length && k.columns[kanbanColumnAt(k, card.x + card.w / 2)]?.id === key) continue;
+    const x = k.x + kanbanColumnLeft(next, to) + kanbanColumnWidth(next, to) / 2 - card.w / 2;
+    if (k.lanes?.length) move = { x };
+    else {
+      // Below what is in that column: the layout stacks it last there.
+      const below = view.elements
+        .map((e) => e.el)
+        .filter((el) => isStackable(el, k.id) && el.id !== card.id && kanbanColumnAt(next, el.x + el.w / 2) === to)
+        .reduce((y, el) => Math.max(y, el.y + el.h), k.y);
+      move = { x, y: below + 1 };
+    }
   }
-  return values;
+  return { values, ...(move ? { move } : {}), ...(kanban ? { kanban } : {}) };
 }
 
 /**
@@ -333,7 +361,13 @@ export function planPatch(el: BoardElement, body: unknown, view: BoardView): Rec
     patch.locked = it.locked;
   }
   if (has('link')) patch.link = link(it.link, null) ?? null;
-  if (only('fields', ['card'])) patch.values = fieldValues(el as CardElement, it.fields, view);
+  if (only('fields', ['card'])) {
+    if (has('x') || has('y')) throw badRequest('give fields or x / y, not both: a card on a kanban stands where its fields say');
+    const fv = fieldValues(el as CardElement, it.fields, view);
+    patch.values = fv.values;
+    if (fv.move) Object.assign(patch, fv.move);
+    if (fv.kanban) patch.__kanban = fv.kanban;
+  }
   for (const k of ['x', 'y', 'w', 'h', 'rotation'] as const) {
     if (!has(k)) continue;
     if (el.type === 'connector') throw badRequest('A connector follows the items it joins; move those instead');
@@ -361,8 +395,9 @@ export function planPatch(el: BoardElement, body: unknown, view: BoardView): Rec
 
 /** The updates a patch makes: the item itself, and — for a moved frame — everything inside it (any depth). */
 export function patchUpdates(el: BoardElement, patch: Record<string, unknown>, view: BoardView): NonNullable<BoardChange['update']> {
-  const { __moveChildren, ...own } = patch as Record<string, unknown> & { __moveChildren?: { dx: number; dy: number } };
-  const out: NonNullable<BoardChange['update']> = [{ id: el.id, patch: own }];
+  const { __moveChildren, __kanban, ...own } = patch as Record<string, unknown> & { __moveChildren?: { dx: number; dy: number }; __kanban?: { id: string; patch: Record<string, unknown> } };
+  // A new column for the person a card was given (the kanban changes first).
+  const out: NonNullable<BoardChange['update']> = [...(__kanban ? [__kanban] : []), { id: el.id, patch: own }];
   if (!__moveChildren) return out;
   const inside = new Set([el.id]);
   for (let grew = true; grew; ) {

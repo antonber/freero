@@ -30,6 +30,7 @@ import {
   type StructurePlacement,
   type SavedTemplateSummary,
   type TableCopyContent,
+  withKanbanLayout,
 } from '@freero/shared';
 import { badRequest, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
@@ -49,7 +50,7 @@ import {
   trashBoard,
 } from '../boards/index';
 import { inviteBoardMember, listBoardMembers, removeBoardMember, setBoardMemberRole } from '../members/index';
-import { boardComments, boardOutline, type OutlineQuery, type OutlineResult } from '../outline/index';
+import { boardComments, boardOutline, boardPeopleNames, type OutlineQuery, type OutlineResult } from '../outline/index';
 import {
   BoardChangeError,
   capRole,
@@ -61,6 +62,7 @@ import {
   SuggestionNotFoundError,
   SuggestionStaleError,
   type BoardActor,
+  type BoardChange,
   type BoardView,
 } from '../realtime/index';
 import { insertStructure, newElementId, planMoveInto, readPlacement } from '../structure/index';
@@ -69,6 +71,7 @@ import { ensurePersonalWorkspace, getWorkspaceInfo, workspaceRolesOf } from '../
 import { boardConnections, importCandidates, importIssues, noteProposedImport, projectsOf, sendToTracker } from '../trackers/index';
 import { commentSpot, patchUpdates, planCreate, planPatch, readItemInputs, toApiItem } from './items';
 import { planProposal, readProposal, suggestionGroups } from './suggestions';
+import { kanbanIn, kanbanSummary, peopleOn, planConfigureView, planDefineFields, queryCardRows, type CardQuery } from './kanbans';
 import { pausedError, pauseOf } from './pause';
 
 /** One call of a credential: who, through what, and what its audit event will say. */
@@ -443,7 +446,9 @@ export async function updateItems(call: ApiCall, boardId: string, patches: Array
         if (!hit) throw notFound(patches.length === 1 ? 'No such item on this board' : `items[${i}]: no item ${String(itemId)} on this board`);
         return patchUpdates(hit.el, planPatch(hit.el, fields, view), view);
       });
-      return { change: { update: [...update, ...moves] } };
+      // A card whose grouped or swimlane value changed moves to its column / row, as open boards
+      // would lay it out after the same change made there.
+      return { change: withKanbanLayout(view.elements.map((e) => e.el), { update: [...update, ...moves] }) };
     }),
   );
   const { items, view } = await itemsNow(call, id, role, ids);
@@ -452,6 +457,55 @@ export async function updateItems(call: ApiCall, boardId: string, patches: Array
   if (!items.length) throw notFound('No such item on this board');
   present(call, id, ids, view);
   return withNotice({ items });
+}
+
+// ---- kanbans (step 2e): fields, the saved board view, cards as rows ----
+
+/** Names of the people kanban `kanbanId` names (assignees, person fields and columns), as the outline shows them. */
+async function kanbanNames(board: BoardSummary, view: BoardView, kanbanId: string) {
+  const names = await boardPeopleNames(board.id, board.ownerId, view, new Set(peopleOn(view, kanbanId)));
+  return (id: string) => names.get(id);
+}
+
+/** A kanban's fields (options by label), columns, swimlanes and saved view. A read of the board: the downloads policy applies. */
+export async function getKanban(call: ApiCall, boardId: string, kanbanId: string) {
+  const board = await openBoard(call, boardId);
+  await requireBoardDownload(board.id, call.userId, 'api');
+  const view = await readBoardView(board.id, { userId: call.userId, role: board.role });
+  const k = kanbanIn(view, kanbanId);
+  return withNotice({ kanban: kanbanSummary(k, await kanbanNames(board, view, k.id)) });
+}
+
+/** Writes a kanban change planned by `plan` (define_fields, configure_view) and answers with the kanban as it is now. */
+async function changeKanban(call: ApiCall, boardId: string, kanbanId: string, plan: (view: BoardView, role: Role) => BoardChange) {
+  const board = await openBoard(call, boardId);
+  const { id, role } = board;
+  await requireBoardAccess(id, call.userId, 'editor');
+  await agentWrite(call, { id, role });
+  await change(() => changeBoard(id, actorOf(call, role), (view) => ({ change: plan(view, role) })));
+  const view = await readBoardView(id, { userId: call.userId, role });
+  const k = kanbanIn(view, kanbanId);
+  call.audit.metadata = { itemId: k.id };
+  present(call, id, [k.id], view);
+  return withNotice({ kanban: kanbanSummary(k, await kanbanNames(board, view, k.id)) });
+}
+
+/** define_fields: adds, renames, reorders and deletes a kanban's fields and options (kanbans.ts planDefineFields). */
+export const defineFields = (call: ApiCall, boardId: string, kanbanId: string, body: unknown) =>
+  changeKanban(call, boardId, kanbanId, (view) => planDefineFields(view, kanbanId, body, newElementId));
+
+/** configure_view: the kanban's saved board view, for everyone (kanbans.ts planConfigureView). */
+export const configureView = (call: ApiCall, boardId: string, kanbanId: string, body: unknown) =>
+  changeKanban(call, boardId, kanbanId, (view, role) => planConfigureView(view, kanbanId, body, { id: call.userId, role }));
+
+/** query_cards: a kanban's cards as rows, filtered and sorted by the board's own rules. A read: the downloads policy applies. */
+export async function queryCards(call: ApiCall, boardId: string, kanbanId: string, q: CardQuery) {
+  const board = await openBoard(call, boardId);
+  await requireBoardDownload(board.id, call.userId, 'api');
+  const view = await readBoardView(board.id, { userId: call.userId, role: board.role });
+  const out = queryCardRows(view, kanbanId, q, await kanbanNames(board, view, kanbanId), call.userId);
+  call.audit.metadata = { returned: out.cards.length };
+  return withNotice(out);
 }
 
 /**
