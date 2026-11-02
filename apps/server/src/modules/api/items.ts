@@ -7,8 +7,8 @@ import {
   APART_GAP,
   API_CREATABLE_TYPES,
   API_MAX_ITEMS_PER_CALL,
-  COLUMN_FIELD_ID,
   canonicalValue,
+  groupFieldId,
   collectionSchema,
   connectorDraft,
   optionByLabel,
@@ -260,7 +260,8 @@ function textField(el: BoardElement): { key: string; rich: boolean } | null {
  * A card's custom field values after `fields` (`{ "<field name or id>": value | null }`), checked
  * against the schema of the kanban it is in (@freero/shared fields.ts). Select options are named
  * by label (or id); an unknown field or option is refused with the valid ones, and nothing
- * changes. The column field is where the card stands: it moves with `into` / `column`.
+ * changes. The field the kanban is grouped by is the column the card stands in: it moves with
+ * `into` / `column`.
  */
 function fieldValues(card: CardElement, raw: unknown, view: BoardView): FieldValues {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw badRequest('fields must be an object of field name → value');
@@ -272,7 +273,7 @@ function fieldValues(card: CardElement, raw: unknown, view: BoardView): FieldVal
   for (const [key, v] of Object.entries(raw as Record<string, unknown>)) {
     const f = schema.find((x) => x.id === key) ?? schema.find((x) => x.name.trim().toLowerCase() === key.trim().toLowerCase());
     if (!f) throw badRequest(`fields: the kanban has no field “${key}” (its fields: ${names})`);
-    if (f.id === COLUMN_FIELD_ID) throw badRequest(`fields: “${f.name}” is the column a card is in; move the card with into (the kanban) and column instead`);
+    if (f.id === groupFieldId(k)) throw badRequest(`fields: “${f.name}” is the column a card is in; move the card with into (the kanban) and column instead`);
     const byLabel = (s: unknown) => (typeof s === 'string' ? (f.options?.find((o) => o.id === s) ?? optionByLabel(f, s))?.id ?? s : s);
     const value = canonicalValue(f, f.type === 'select' ? byLabel(v) : f.type === 'multiselect' && Array.isArray(v) ? v.map(byLabel) : v);
     if (value === undefined) {
