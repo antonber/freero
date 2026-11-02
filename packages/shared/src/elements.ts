@@ -6,6 +6,8 @@
 // top-left of the unrotated bounding box; rotation is in degrees, clockwise,
 // around the box center.
 
+import type { FieldDef, FieldValues } from './fields';
+
 export type ElementType =
   | 'sticky'
   | 'shape'
@@ -410,6 +412,13 @@ export interface CardElement extends BaseElement {
    * Written only by the server (modules/api controlRoom.ts); the card feature never shows or edits it.
    */
   externalId?: string | null;
+  /**
+   * [additive] Values of the custom fields of the kanban the card is in (fields.ts), keyed by
+   * field id, in their canonical form. Written only by the card feature (`card.setValues`).
+   * Values of fields the kanban no longer has stay here, dormant, and read as nothing; they come
+   * back with the field (undo) or when the card returns to that kanban.
+   */
+  values?: FieldValues;
 }
 
 export interface EmojiElement extends BaseElement {
@@ -591,6 +600,13 @@ export interface KanbanElement extends BaseElement {
    * Absent / false (boards from before): moving a card changes only where it is.
    */
   colorCards?: boolean;
+  /**
+   * [additive] The collection's schema (fields.ts), in display order. Read it through
+   * `collectionSchema`, never directly: a kanban without it (from before fields) has one field,
+   * the column field "Stage", whose options are `columns` (always: that field's entry here keeps
+   * only its name and place). Written only by the kanban feature.
+   */
+  fields?: FieldDef[];
 }
 
 /**

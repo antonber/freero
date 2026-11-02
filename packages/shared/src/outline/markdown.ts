@@ -21,11 +21,16 @@ export function estimateTokens(s: string): number {
   return Math.ceil(bytes / 4);
 }
 
+/** "Priority (select: P0 | P1)", "Points (number)". */
+const fieldLine = (f: NonNullable<OutlineItem['schema']>[number]) =>
+  `${oneLine(f.name)} (${f.type}${f.options?.length ? `: ${f.options.map((o) => oneLine(o.label) || 'Untitled').join(' | ')}` : ''})`;
+
 function facts(item: OutlineItem, authors: boolean): string {
   const out: string[] = [];
   if (item.votes) out.push(`${item.votes} vote${item.votes === 1 ? '' : 's'}`);
   if (item.tags?.length) out.push(item.tags.map((t) => `#${oneLine(t).replace(/\s+/g, '_')}`).join(' '));
-  for (const [k, v] of Object.entries(item.fields ?? {})) out.push(`${k}: ${typeof v === 'string' ? oneLine(v) : String(v)}`);
+  for (const [k, v] of Object.entries(item.fields ?? {})) out.push(`${oneLine(k)}: ${typeof v === 'string' ? oneLine(v) : String(v)}`);
+  if (item.schema?.length) out.push(`fields: ${item.schema.map(fieldLine).join(', ')}`);
   if (item.link) out.push(`link: ${oneLine(item.link)}`);
   if (authors && item.author) out.push(`by ${oneLine(item.author)}`);
   if (item.private) out.push('private (only you see it)');

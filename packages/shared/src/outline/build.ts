@@ -144,6 +144,7 @@ export function buildOutline(source: OutlineSource, features: OutlineFeature[], 
     const fields = cleanFields(desc.fields);
     if (fields) item.fields = fields;
     if (desc.rows?.length) item.rows = desc.rows;
+    if (desc.schema?.length) item.schema = desc.schema;
     if (el.link) item.link = el.link;
     if (opts.authors) {
       // Revealed anonymously from private mode (#44): nobody's, said so rather than left blank.
