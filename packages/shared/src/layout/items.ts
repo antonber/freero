@@ -148,5 +148,16 @@ export function layoutItems(items: ItemInput[], layout: 'grid' | 'kanban', title
   if (items.length + 1 > LAYOUT_LIMITS.elements) throw new LayoutError(`At most ${LAYOUT_LIMITS.elements - 1} items at once`);
   for (const it of items)
     if (!it || (it.type !== 'sticky' && it.type !== 'card') || typeof it.text !== 'string') throw new LayoutError('Each item is a sticky or a card with text');
-  return layout === 'kanban' ? kanban(items, title, ctx) : grid(items, ctx);
+  if (layout === 'kanban') {
+    if (items.some((it) => it.fields && Object.keys(it.fields).length)) throw new LayoutError('A new kanban has no fields yet: add the cards, then define_fields');
+    return kanban(items, title, ctx);
+  }
+  const laid = grid(items, ctx);
+  // Fields are read where the cards land (a kanban's schema): kept by element id until then.
+  const ids = laid.parts?.[0]?.ids ?? [];
+  const fieldsOf: Record<string, Record<string, unknown>> = {};
+  items.forEach((it, i) => {
+    if (it.fields && typeof it.fields === 'object' && Object.keys(it.fields).length && ids[i]) fieldsOf[ids[i]] = it.fields;
+  });
+  return Object.keys(fieldsOf).length ? { ...laid, fieldsOf } : laid;
 }

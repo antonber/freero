@@ -153,6 +153,12 @@ export interface ItemInput {
   dueDate?: string | null;
   /** [additive] http(s), mailto:, tel: or `#<item id>`. */
   link?: string | null;
+  /**
+   * [additive] Cards placed into a kanban: its fields, `{ "<field name or id>": value }` (a select
+   * option by label). Read against the kanban's schema where the card lands (fields.ts
+   * `readFieldInputs`); anywhere else they are refused.
+   */
+  fields?: Record<string, unknown>;
 }
 
 /** What a layout produced, relative to its own top-left (0, 0). */
@@ -176,6 +182,8 @@ export interface LaidOut {
    * there. How a caller tells which new sticky is which of the texts it sent.
    */
   parts?: Array<{ titleId?: string; ids: string[] }>;
+  /** [additive] New cards' kanban fields as sent (ItemInput.fields), by element id: read where they land. */
+  fieldsOf?: Record<string, Record<string, unknown>>;
 }
 
 /** What the layout may ask about the board (existing stickies to move into clusters). */
