@@ -1,5 +1,5 @@
-// The only writer of `tracker_connections`, `tracker_links`, `tracker_link_sources` and
-// `tracker_oauth_flows` [S4].
+// The only writer of `tracker_connections`, `tracker_links`, `tracker_link_sources`,
+// `tracker_proposals` and `tracker_oauth_flows` [S4].
 import type { SyncBase, TrackerProviderKind } from '@freero/shared';
 import { isUniqueViolation, one, query, tx } from '../../platform/db';
 
@@ -423,6 +423,95 @@ export async function claimRetries(now = Date.now(), limit = 200): Promise<strin
       [new Date(now), limit],
     )
   ).map((r) => r.id);
+}
+
+// ---- proposed imports (#82) ----
+
+export interface StoredProposal {
+  boardId: string;
+  itemId: string;
+  groupId: string;
+  connectionId: string;
+  externalId: string;
+  externalKey: string;
+  externalUrl: string;
+  proposedBy: string;
+  appOrigin: string;
+  decidedBy: string | null;
+}
+
+/** The issues a suggestion group's proposed cards stand for (a card proposed twice keeps its first). */
+export async function insertProposals(rows: Array<Omit<StoredProposal, 'decidedBy'>>, at = Date.now()): Promise<void> {
+  for (const p of rows)
+    await query(
+      `INSERT INTO tracker_proposals (board_id, item_id, group_id, connection_id, external_id, external_key, external_url, proposed_by, app_origin, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT (board_id, item_id) DO NOTHING`,
+      [p.boardId, p.itemId, p.groupId, p.connectionId, p.externalId, p.externalKey, p.externalUrl, p.proposedBy, p.appOrigin, new Date(at)],
+    );
+}
+
+/**
+ * Records a suggestion decision on proposed cards (`decision` null: undone, pending again — and
+ * not linked any more: an undone accept takes the card off the board). Returns how many rows it
+ * changed. Matched by board, group AND item, so only the proposal's own records decide it.
+ */
+export async function decideProposals(boardId: string, decided: Array<{ groupId: string; itemId: string }>, decision: 'accepted' | 'rejected' | null, by: string, at = Date.now()): Promise<number> {
+  let n = 0;
+  for (const d of decided) {
+    const r = await query<{ item_id: string }>(
+      `UPDATE tracker_proposals SET decision = $4, decided_by = $5, decided_at = $6, linked_at = NULL
+        WHERE board_id = $1 AND group_id = $2 AND item_id = $3 RETURNING item_id`,
+      [boardId, d.groupId, d.itemId, decision, decision ? by : null, decision ? new Date(at) : null],
+    );
+    n += r.length;
+  }
+  return n;
+}
+
+/** Accepted proposed cards of a board not linked yet. */
+export async function proposalsToLink(boardId: string): Promise<StoredProposal[]> {
+  const rows = await query<{
+    board_id: string;
+    item_id: string;
+    group_id: string;
+    connection_id: string;
+    external_id: string;
+    external_key: string;
+    external_url: string;
+    proposed_by: string;
+    app_origin: string;
+    decided_by: string | null;
+  }>(`SELECT * FROM tracker_proposals WHERE board_id = $1 AND decision = 'accepted' AND linked_at IS NULL ORDER BY created_at, item_id`, [boardId]);
+  return rows.map((r) => ({
+    boardId: r.board_id,
+    itemId: r.item_id,
+    groupId: r.group_id,
+    connectionId: r.connection_id,
+    externalId: r.external_id,
+    externalKey: r.external_key,
+    externalUrl: r.external_url,
+    proposedBy: r.proposed_by,
+    appOrigin: r.app_origin,
+    decidedBy: r.decided_by,
+  }));
+}
+
+export async function boardHasProposalsToLink(boardId: string): Promise<boolean> {
+  return !!(await one(`SELECT 1 FROM tracker_proposals WHERE board_id = $1 AND decision = 'accepted' AND linked_at IS NULL LIMIT 1`, [boardId]));
+}
+
+export async function markProposalLinked(boardId: string, itemId: string, at = Date.now()): Promise<void> {
+  await query(`UPDATE tracker_proposals SET linked_at = $3 WHERE board_id = $1 AND item_id = $2`, [boardId, itemId, new Date(at)]);
+}
+
+/** A proposed card that can't be linked (its issue or item is linked otherwise, access is gone): it stays a plain card. */
+export async function dropProposal(boardId: string, itemId: string): Promise<void> {
+  await query(`DELETE FROM tracker_proposals WHERE board_id = $1 AND item_id = $2`, [boardId, itemId]);
+}
+
+/** Forgets proposals decided before `before` (their suggestions are pruned; nothing can undo them). */
+export async function pruneProposals(before: number): Promise<number> {
+  return (await query<{ item_id: string }>(`DELETE FROM tracker_proposals WHERE decided_at IS NOT NULL AND decided_at < $1 RETURNING item_id`, [new Date(before)])).length;
 }
 
 // ---- OAuth flows ----
