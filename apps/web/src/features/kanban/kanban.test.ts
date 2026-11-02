@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { CardElement, KanbanElement } from '@freero/shared';
-import { createTestBoard, type Editor, type FeatureBundle, type NewElement, type TestBoard } from '@engine';
+import { COLUMN_FIELD_ID, cardValue, collectionSchema, storedFields, type CardElement, type KanbanElement } from '@freero/shared';
+import { createTestBoard, richTextToPlain, type Editor, type FeatureBundle, type NewElement, type TestBoard } from '@engine';
 import manifest from './feature';
 import kanbanDef from './element';
 import commands from './commands';
 import outline from './outline';
 import { moveColumnTo, newKanban, removeColumn, setCollapsed, setColorCards, setColumnWidth } from './lib/actions';
 import { COL_HEAD_H, GAP, HEADER_H, PAD, colLeft, planDrop } from './lib/layout';
+import { addField, addOption, removeField, removeOption, renameField } from './lib/schema';
 
 const bundle: FeatureBundle = { manifest, elements: [kanbanDef], tools: [], formats: [], panels: [], commands, outline };
 
@@ -216,6 +217,79 @@ describe('kanban columns', () => {
       expect(ed.getElement<CardElement>(ids[1])!.color).toBe('#E64DA6');
     }
     expect(ann.getElement<CardElement>(ids[0])!.x).toBeCloseTo(k().x + colLeft(k(), 1) + PAD);
+  });
+});
+
+describe('kanban fields', () => {
+  const schemaOf = (ed: Editor, kid: string) => collectionSchema(ed.getElement<KanbanElement>(kid)!);
+
+  it('two clients migrating the same old kanban at once never make a second Stage field: both read the columns as one select keyed by column id, and still agree after editing fields concurrently', () => {
+    const [ann, bob] = setup(['ann', 'bob']);
+    const kid = ann.create(newKanban({ x: 0, y: 0 }));
+    board!.sync();
+    const columns = ann.getElement<KanbanElement>(kid)!.columns;
+    expect(schemaOf(ann, kid)).toEqual(schemaOf(bob, kid));
+    expect(schemaOf(ann, kid)).toEqual([
+      { id: COLUMN_FIELD_ID, name: 'Stage', type: 'select', options: columns.map((c) => ({ id: c.id, label: richTextToPlain(c.title), color: c.color, status: c.status })) },
+    ]);
+    // Both persist the migrated schema at the same moment, each with an edit of their own.
+    addField(ann, kid, 'select');
+    renameField(bob, kid, COLUMN_FIELD_ID, 'Phase');
+    board!.sync();
+    const [a, b] = [schemaOf(ann, kid), schemaOf(bob, kid)];
+    expect(a).toEqual(b);
+    expect(a.filter((f) => f.id === COLUMN_FIELD_ID)).toHaveLength(1);
+    expect(a.find((f) => f.id === COLUMN_FIELD_ID)!.options!.map((o) => o.id)).toEqual(columns.map((c) => c.id));
+    // Reading what was stored gives the same schema back (nothing to migrate twice).
+    const k = ann.getElement<KanbanElement>(kid)!;
+    expect(collectionSchema({ ...k, fields: storedFields(a) })).toEqual(a);
+  });
+
+  it('a column added or renamed by a client that knows nothing of fields becomes a Stage option everywhere, and the kanban keeps its other fields', () => {
+    const [ann, old] = setup(['ann', 'old']);
+    const kid = ann.create(newKanban({ x: 0, y: 0 }));
+    const prio = addField(ann, kid, 'select')!;
+    board!.sync();
+    // An older tab (or server code) edits columns only, as kanbans always did.
+    const k = old.getElement<KanbanElement>(kid)!;
+    old.update<KanbanElement>(kid, { columns: [{ ...k.columns[0], title: 'Backlog' }, ...k.columns.slice(1), { id: 'review', title: 'Review', status: null, color: '#E64DA6' }] });
+    board!.sync();
+    const schema = schemaOf(ann, kid);
+    expect(schema.map((f) => f.id)).toEqual([COLUMN_FIELD_ID, prio]);
+    expect(schema[0].options!.map((o) => [o.id, o.label])).toEqual([
+      [k.columns[0].id, 'Backlog'],
+      [k.columns[1].id, 'In progress'],
+      [k.columns[2].id, 'Done'],
+      ['review', 'Review'],
+    ]);
+  });
+
+  it('deleting a field leaves its values on the cards, dormant and reading as nothing; undo brings the field and every value back (and a deleted option reads as empty)', () => {
+    const [ed] = setup();
+    const { kid, ids } = kanbanWithCards(ed, ['todo', 'todo']);
+    const prio = addField(ed, kid, 'select')!;
+    const p1 = addOption(ed, kid, prio)!;
+    const points = addField(ed, kid, 'number')!;
+    // Values as the card feature stores them (card.setValues).
+    for (const id of ids) ed.update<CardElement>(id, { values: { [prio]: p1, [points]: 3 } });
+    const read = (id: string) => {
+      const k = ed.getElement<KanbanElement>(kid)!;
+      return Object.fromEntries(collectionSchema(k).filter((f) => f.id !== COLUMN_FIELD_ID).map((f) => [f.id, cardValue(k, ed.getElement<CardElement>(id)!, f)]));
+    };
+    expect(read(ids[0])).toEqual({ [prio]: p1, [points]: 3 });
+
+    removeField(ed, kid, points);
+    expect(read(ids[0])).toEqual({ [prio]: p1 });
+    expect(ed.getElement<CardElement>(ids[0])!.values).toEqual({ [prio]: p1, [points]: 3 }); // no mass write
+    removeOption(ed, kid, prio, p1);
+    expect(read(ids[1])).toEqual({ [prio]: null });
+
+    ed.undo();
+    ed.undo();
+    for (const id of ids) expect(read(id)).toEqual({ [prio]: p1, [points]: 3 });
+    // The column field makes the columns: it can't be deleted.
+    removeField(ed, kid, COLUMN_FIELD_ID);
+    expect(schemaOf(ed, kid).some((f) => f.id === COLUMN_FIELD_ID)).toBe(true);
   });
 });
 

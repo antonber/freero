@@ -1,6 +1,8 @@
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Columns3 } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Columns3, ListChecks } from 'lucide-react';
 import { defineCommands, type CommandDefinition, type Editor } from '@engine';
-import { addColumn, canMove, moveSelection, type MoveDir } from './lib/actions';
+import { addColumn, canMove, moveSelection, moveToColumn, type MoveDir } from './lib/actions';
+import { FIELDS_PANEL } from './lib/constants';
+import { fieldsTarget } from './lib/schema';
 
 const selectedKanban = (editor: Editor) => {
   const sel = editor.getSelection();
@@ -34,6 +36,25 @@ export default defineCommands([
       const k = selectedKanban(editor);
       if (k) addColumn(editor, k.id);
     },
+  },
+  {
+    // The card feature sets a card's column field ("Stage") through this: on the board the column
+    // a card stands in IS that value, and only the kanban knows where its columns are. Args
+    // { id, column } (a column id of the kanban the item is in).
+    id: 'kanban.moveToColumn',
+    label: 'Move to column',
+    run(editor, args) {
+      if (typeof args?.id === 'string' && typeof args.column === 'string') moveToColumn(editor, args.id, args.column);
+    },
+  },
+  {
+    id: 'kanban.editFields',
+    label: 'Edit fields…',
+    icon: ListChecks,
+    menus: ['context'],
+    minRole: 'viewer',
+    when: (editor) => !!fieldsTarget(editor),
+    run: (editor) => editor.openDock(FIELDS_PANEL),
   },
   move('left', 'Move to previous column', ArrowLeft, 'arrowleft'),
   move('right', 'Move to next column', ArrowRight, 'arrowright'),

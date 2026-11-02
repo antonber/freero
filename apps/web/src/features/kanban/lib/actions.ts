@@ -158,6 +158,24 @@ export function renameColumn(editor: Editor, id: string, colId: string) {
   editor.startEditing(id, { part: columnPart(colId), selectAll: true });
 }
 
+/**
+ * Puts an item of the kanban at the bottom of column `colId`: its value for the column field
+ * (card details, `card.setValues`). The layout pass then stacks it there and, as for a drop, sets
+ * the column's status and colour. One undo step with the caller's transaction.
+ */
+export function moveToColumn(editor: Editor, itemId: string, colId: string): boolean {
+  const el = editor.getElement(itemId);
+  const k = el?.frameId ? fresh(editor, el.frameId) : null;
+  const to = k ? k.columns.findIndex((c) => c.id === colId) : -1;
+  if (!el || !k || to < 0 || el.locked) return false;
+  const all = editor.getElements();
+  if (columnsOfChildren(k, all).get(el.id) === to) return false;
+  const below = columnOrder(k, all, to).reduce((y, o) => Math.max(y, o.y + o.h), k.y);
+  const cx = k.x + colLeft(k, to) + colWidth(k, to) / 2;
+  editor.moveBy([{ id: el.id, dx: cx - (el.x + el.w / 2), dy: below + 1 + el.h / 2 - (el.y + el.h / 2) }]);
+  return true;
+}
+
 // ---- moving items with the keyboard ----
 
 export type MoveDir = 'left' | 'right' | 'up' | 'down';
