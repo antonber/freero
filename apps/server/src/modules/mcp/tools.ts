@@ -103,19 +103,17 @@ const placement = z
   .optional()
   .describe('Where the items go instead of free space: give one of into (+ column), newFrame or newKanban.');
 
+// A mind map / tree outline, spelled out to a fixed depth rather than as a recursive schema: the
+// directories read each tool's JSON Schema without following $ref, and flag a parameter whose nested
+// schema they can't type. Eight levels is far deeper than a readable mind map.
 interface OutlineNode {
   text: string;
   children?: OutlineNode[];
 }
-const outlineNode: z.ZodType<OutlineNode> = z.lazy(() =>
-  z.object({
-    text,
-    children: z.array(outlineNode).max(500).optional(),
-  }),
-);
-// The root is a plain object (not the lazy schema itself) so the tool's JSON Schema gives the
-// parameter a type; the directories flag an untyped parameter.
-const outlineRoot = z.object({ text, children: z.array(outlineNode).max(500).optional() });
+const OUTLINE_DEPTH = 8;
+const outlineLevel = (depth: number): z.ZodTypeAny =>
+  depth >= OUTLINE_DEPTH ? z.object({ text }) : z.object({ text, children: z.array(outlineLevel(depth + 1)).max(500).optional() });
+const outlineRoot = outlineLevel(1) as z.ZodType<OutlineNode>;
 
 // Every tool states all three hints explicitly (the Claude and ChatGPT directories require it):
 // readOnlyHint, destructiveHint (true for anything that overwrites, deletes or sends something it

@@ -309,6 +309,8 @@ it('no tool, prompt or resource reaches a directory without a title, typed param
     // top level loses it), and holds the submission until it is fixed.
     for (const [param, schema] of Object.entries((t.inputSchema.properties ?? {}) as Record<string, { type?: unknown; anyOf?: unknown }>))
       expect(schema.type ?? schema.anyOf, `${t.name}.${param} has a type`).toBeDefined();
+    // ...and nothing in it hides behind a $ref they don't follow.
+    expect(JSON.stringify(t.inputSchema), `${t.name} schema uses $ref`).not.toContain('"$ref"');
   }
   for (const p of (await client.listPrompts()).prompts) expect(p.title, p.name).toBeTruthy();
   for (const r of (await client.listResources()).resources) expect(r.title, r.uri).toBeTruthy();
