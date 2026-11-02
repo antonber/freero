@@ -7,7 +7,21 @@
 // below are Freero's own words and never include anything read from a board.
 import { z } from 'zod';
 import type { CallToolResult, ToolAnnotations } from '@modelcontextprotocol/server';
-import { API_MAX_DELETE_PER_CALL, API_MAX_ITEMS_PER_CALL, LAYOUT_LIMITS, STICKY_COLORS, UNTRUSTED_CONTENT_NOTICE, type ApiScope, type StickyColor, type StructureInput, type StructurePlacement } from '@freero/shared';
+import {
+  API_MAX_DELETE_PER_CALL,
+  API_MAX_ITEMS_PER_CALL,
+  FIELD_TYPES,
+  FILTER_OPS,
+  LAYOUT_LIMITS,
+  STICKY_COLORS,
+  UNTRUSTED_CONTENT_NOTICE,
+  type ApiScope,
+  type FieldType,
+  type FilterOp,
+  type StickyColor,
+  type StructureInput,
+  type StructurePlacement,
+} from '@freero/shared';
 import { appUrl } from '../../platform/mail';
 import {
   addComment,
@@ -16,6 +30,9 @@ import {
   listDocs,
   readDocFor,
   backlinksForApi,
+  configureView,
+  defineFields,
+  queryCards,
   resolveForApi,
   searchContent,
   boardUrl,
@@ -89,13 +106,20 @@ const cardItem = z
     dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('YYYY-MM-DD'),
     link,
     color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe('Accent, #RRGGBB.'),
+    fields: z
+      .record(z.string().max(100), z.union([z.string().max(2000), z.number(), z.boolean(), z.array(z.string().max(200)).max(200), z.null()]))
+      .optional()
+      .describe(
+        'With placement into a kanban: the card’s values of the kanban’s fields (listed with it in get_board_outline), by field name → value: an option label, labels for a multi-select, a user id, YYYY-MM-DD, a number, text, a URL, true / false. A value of the field the kanban is grouped by picks the card’s column; of the swimlane field, its row.',
+      ),
   })
   .strict();
 /** Where new items go, by meaning (StructurePlacement); never coordinates. */
 const placement = z
   .object({
     into: z.string().min(1).max(200).optional().describe('An existing frame, kanban, kanban column (<kanbanId>:<columnId>) or cluster (cluster:<id>, or any item in it), by its id from the outline: the items go inside it (it grows to hold them).'),
-    column: z.string().min(1).max(200).optional().describe('With into a kanban: the column, by title (e.g. "Doing") or id. Default: each card’s status column, else the first.'),
+    column: z.string().min(1).max(200).optional().describe('With into a kanban: the column, by title (e.g. "Doing") or id. Default: the column of each card’s value for the field the kanban is grouped by, else its status column, else the first.'),
+    row: z.string().min(1).max(200).optional().describe('With into a kanban with swimlanes: the row, by title (e.g. "API", "No Team") or id. Default: the row of each card’s value for the swimlane field, else the first.'),
     newFrame: z.string().min(1).max(200).optional().describe('Put everything in a NEW frame with this title.'),
     newKanban: z.string().min(1).max(200).optional().describe('Put the cards in a NEW kanban with this title (To do / Doing / Done; each card in the column of its status).'),
   })
@@ -140,7 +164,31 @@ async function addStructure(call: ApiCall, board: string, structure: StructureIn
 }
 
 const placedWhere = (where: StructurePlacement | undefined, containerId?: string) =>
-  where?.into ? ` into ${where.into}${where.column ? ` (column ${where.column})` : ''}` : containerId ? ` in the new ${where?.newKanban !== undefined ? 'kanban' : 'frame'} ${containerId}` : '';
+  where?.into
+    ? ` into ${where.into}${where.column ? ` (column ${where.column})` : ''}${where.row ? ` (row ${where.row})` : ''}`
+    : containerId
+      ? ` in the new ${where?.newKanban !== undefined ? 'kanban' : 'frame'} ${containerId}`
+      : '';
+
+const kanbanId = z.string().min(1).max(200).describe('The kanban’s item id (from get_board_outline).');
+
+// A kanban view's filter, spelled out to one level (no nesting, no recursive schema: see outlineLevel).
+const filterRule = z
+  .object({
+    field: z.string().min(1).max(100).describe('A field by name: the kanban’s own (Priority …) or a card’s (Title, Status, Assignee, Due date, Start date, Estimate, Tags, Created, Updated).'),
+    op: z.enum(FILTER_OPS as unknown as [FilterOp, ...FilterOp[]]).describe('is / isNot, anyOf / noneOf (several values), contains / notContains (text), gt / lt (numbers; dates: after / before), empty / notEmpty, checked / unchecked, isMe (people; query_cards only).'),
+    value: z.union([z.string().max(200), z.number(), z.boolean(), z.array(z.string().max(200)).max(50)]).optional().describe('An option label, a user id, a number, YYYY-MM-DD or words; a list for anyOf / noneOf.'),
+  })
+  .strict();
+const filter = z
+  .object({
+    match: z.enum(['all', 'any']).optional().describe('Cards must match all rules (default) or any.'),
+    rules: z.array(filterRule).max(20),
+  })
+  .strict();
+const sortRules = z
+  .array(z.object({ field: z.string().min(1).max(100).describe('A field by name.'), dir: z.enum(['asc', 'desc']).optional() }).strict())
+  .max(3);
 
 export const TOOLS: McpTool[] = [
   tool({
@@ -543,7 +591,16 @@ export const TOOLS: McpTool[] = [
     },
     async run(call, a) {
       if ((a.cards === undefined) === (a.columns === undefined)) throw new ArgumentError('Give cards (to add cards) or columns (for a new kanban), not both.');
-      const asCard = (c: z.infer<typeof cardItem>) => ({ text: c.title, ...(c.description ? { description: c.description } : {}), ...(c.status ? { status: c.status } : {}), ...(c.dueDate ? { dueDate: c.dueDate } : {}), ...(c.link ? { link: c.link } : {}), ...(c.color ? { color: c.color } : {}) });
+      if (a.columns?.some((col) => col.cards.some((c) => c.fields && Object.keys(c.fields).length))) throw new ArgumentError('A new kanban has no fields yet: add it, then define_fields, then set the cards’ fields with update_items.');
+      const asCard = (c: z.infer<typeof cardItem>) => ({
+        text: c.title,
+        ...(c.description ? { description: c.description } : {}),
+        ...(c.status ? { status: c.status } : {}),
+        ...(c.dueDate ? { dueDate: c.dueDate } : {}),
+        ...(c.link ? { link: c.link } : {}),
+        ...(c.color ? { color: c.color } : {}),
+        ...(c.fields && Object.keys(c.fields).length ? { fields: c.fields } : {}),
+      });
       const structure: StructureInput = a.columns
         ? { kind: 'kanban', ...(a.title ? { title: a.title } : {}), columns: a.columns.map((col) => ({ title: col.title, items: col.cards.map(asCard) })) }
         : { kind: 'items', items: a.cards!.map((c) => ({ type: 'card' as const, ...asCard(c) })) };
@@ -560,6 +617,117 @@ export const TOOLS: McpTool[] = [
         ...(out.containerId ? { containerId: out.containerId } : {}),
         board: out.url,
       });
+    },
+  }),
+
+  tool({
+    name: 'define_fields',
+    title: 'Define a kanban’s fields',
+    description:
+      'Adds, renames, reorders and deletes the fields of a kanban (Priority, Points, Owner, Team …) and their options, in one step (all or nothing). Name a field by id or by name; a name that isn’t there yet makes a new field (give its type). Options work the same way (by id or label). The options of the field the kanban is grouped by are its columns: adding, renaming or deleting one does that to the column (a deleted column’s cards move to the one beside it). Deleting a field keeps its values on the cards, unused. Returns the kanban’s fields, columns and view. Set cards’ values with update_items or add_cards fields. Needs permission to change boards.',
+    scope: 'boards:write',
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    input: {
+      boardId,
+      kanbanId,
+      fields: z
+        .array(
+          z
+            .object({
+              id: z.string().min(1).max(64).optional().describe('The field to change, by id (then `name` renames it).'),
+              name: z.string().min(1).max(60).optional().describe('The field’s name (a new field, or the one to change when no id is given).'),
+              type: z.enum(FIELD_TYPES as unknown as [FieldType, ...FieldType[]]).optional().describe('A new field’s type.'),
+              delete: z.boolean().optional().describe('true: delete the field.'),
+              options: z
+                .array(
+                  z
+                    .object({
+                      id: z.string().min(1).max(64).optional(),
+                      label: z.string().min(1).max(100).optional().describe('The option’s label (new, or the one to change when no id is given; with id: its new label).'),
+                      color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe('#RRGGBB'),
+                      status: z.enum(['todo', 'doing', 'done']).nullable().optional().describe('The column field only: the status a card in this column takes.'),
+                      delete: z.boolean().optional(),
+                    })
+                    .strict(),
+                )
+                .max(200)
+                .optional()
+                .describe('Options of a select / multi-select field to add, change or delete.'),
+              optionOrder: z.array(z.string().max(100)).max(200).optional().describe('Options in their new order (labels or ids); the rest follow.'),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(50),
+      order: z.array(z.string().max(100)).max(50).optional().describe('Fields in their new order (names or ids); the rest follow.'),
+    },
+    async run(call, a) {
+      const { kanban } = await defineFields(call, a.boardId, a.kanbanId, { fields: a.fields, ...(a.order ? { order: a.order } : {}) });
+      return untrustedJson(kanban, { summary: `Kanban ${a.kanbanId} now has ${kanban.fields.length} field${kanban.fields.length === 1 ? '' : 's'} and ${kanban.columns.length} column${kanban.columns.length === 1 ? '' : 's'}.` });
+    },
+  }),
+
+  tool({
+    name: 'configure_view',
+    title: 'Configure a kanban’s view',
+    description:
+      'Changes how a kanban shows its cards, for everyone: the field its columns are (groupBy: a single select, person or checkbox field — the cards move to their columns), swimlanes (subGroupBy, null for none), which fields cards show and what colours them, card density, a filter (cards it leaves out fold away below the board, still counted), a sort within each column (sort: [] puts every card back in the order people had them), per-column WIP limits, card limits and collapsing, and the view lock (locked: only whoever locked it and the board’s owners change the view then). Returns the kanban’s fields, columns and view. Needs permission to change boards.',
+    scope: 'boards:write',
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    input: {
+      boardId,
+      kanbanId,
+      groupBy: z.string().min(1).max(100).optional().describe('The field the columns are, by name (e.g. "Stage", "Priority", "Owner").'),
+      subGroupBy: z.string().min(1).max(100).nullable().optional().describe('Swimlanes by this field (name); null: none.'),
+      show: z.array(z.string().max(100)).max(40).optional().describe('Fields cards show, in order (names: the kanban’s and Status, Due date, Tags, Estimate, Assignee …).'),
+      color: z.string().max(100).optional().describe('What colours cards: own, column, status, or a select field’s name.'),
+      density: z.enum(['compact', 'comfortable']).optional(),
+      filter: filter.nullable().optional().describe('Which cards the board shows (null: all).'),
+      sort: sortRules.optional().describe('How each column orders its cards ([]: manual order, as people had them).'),
+      columns: z
+        .array(
+          z
+            .object({
+              column: z.string().min(1).max(200).describe('The column, by title or id.'),
+              wip: z.number().int().min(0).max(10_000).nullable().optional().describe('Work-in-progress limit (0 / null: none).'),
+              limit: z.number().int().min(0).max(10_000).nullable().optional().describe('Show only the first N cards (0 / null: all).'),
+              collapsed: z.boolean().optional(),
+            })
+            .strict(),
+        )
+        .max(200)
+        .optional(),
+      locked: z.boolean().optional().describe('Lock (true) or unlock the view.'),
+    },
+    async run(call, a) {
+      const { boardId: b, kanbanId: k, ...settings } = a;
+      const { kanban } = await configureView(call, b, k, settings);
+      return untrustedJson(kanban, { summary: `Kanban ${k}: view saved for everyone.` });
+    },
+  }),
+
+  tool({
+    name: 'query_cards',
+    title: 'Query a kanban’s cards',
+    description:
+      'Reads the cards of a kanban as rows — id, title, column, swimlane row and their field values by name — filtered and sorted by the same rules the board uses, a page at a time (limit up to 500, then nextCursor). The way to read a big kanban without the whole outline. useView: true applies the kanban’s saved filter and sort first (the cards its board shows, in its order). Rows carry filtered: true for cards the saved filter leaves out.',
+    scope: 'boards:read',
+    annotations: READ,
+    input: {
+      boardId,
+      kanbanId,
+      filter: filter.optional().describe('Only cards that match (isMe: cards of the person you act for).'),
+      sort: sortRules.optional().describe('Order of the rows (default: the board’s, column by column, top to bottom).'),
+      fields: z.array(z.string().max(100)).max(60).optional().describe('Only these fields in each row (names); default all.'),
+      useView: z.boolean().optional(),
+      limit: z.number().int().min(1).max(500).optional().describe('Rows per page (default 100).'),
+      cursor: z.string().max(20).optional().describe('nextCursor of the previous page.'),
+    },
+    async run(call, a) {
+      const { boardId: b, kanbanId: k, ...q } = a;
+      const out = await queryCards(call, b, k, q);
+      const { notice: _n, ...rows } = out;
+      return untrustedJson(rows, { summary: `Kanban ${k}: ${rows.total} matching card${rows.total === 1 ? '' : 's'}, ${rows.cards.length} returned${rows.nextCursor ? `; next page: cursor ${rows.nextCursor}` : ''}.`, ...(rows.nextCursor ? { nextCursor: rows.nextCursor } : {}) });
     },
   }),
 
@@ -685,7 +853,7 @@ export const TOOLS: McpTool[] = [
                 .record(z.string().max(100), z.union([z.string().max(2000), z.number(), z.boolean(), z.array(z.string().max(200)).max(200), z.null()]))
                 .optional()
                 .describe(
-                  'A card on a kanban: its kanban’s fields (listed with the kanban in get_board_outline), by field name → value: a select’s option label, a multi-select’s labels, a person’s user id, YYYY-MM-DD, a number, text, a URL, true / false; null clears. Not the column field (move the card with into + column).',
+                  'A card on a kanban: its kanban’s fields (listed with the kanban in get_board_outline), by field name → value: a select’s option label, a multi-select’s labels, a person’s user id, YYYY-MM-DD, a number, text, a URL, true / false; null clears. A value of the field the kanban is grouped by moves the card to that column; of the swimlane field, to that row.',
                 ),
               x: z.number().optional(),
               y: z.number().optional(),
