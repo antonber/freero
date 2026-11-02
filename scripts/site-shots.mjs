@@ -8,7 +8,7 @@
 //        npm run build -w @freero/web
 //        PORT=4571 FREERO_DATA_DIR=<scratch>/data TRACKER_PRIVATE_ENDPOINTS=true npx tsx apps/server/src/main.ts
 //   2. node scripts/site-shots.mjs --base http://localhost:4571 --data <scratch>/data [--out <dir>] [--only poker,roadmap]
-//      (--only: just these shots; workshop, proposal, review and tracker are taken together)
+//      (--only: just these shots, e.g. kanban,mindmap,flowchart; workshop, proposal, review and tracker are taken together)
 //   3. Look at every image before committing it. Stop the server.
 //
 // Names and board text are invented demo content; nothing comes from a real customer.
@@ -315,6 +315,73 @@ try {
     await sleep(800);
     await save(mariaPage, 'control-room', wide(100, 10));
   }
+
+  // The feature pages (/features/kanban-board, /features/mind-map, /features/flowchart-maker): each
+  // laid out from structure through the same insert the board's "Insert from text…" uses, opened
+  // fitted to the window. `crop` is the part of the window that holds the content.
+  const structureShot = async (name, title, structure, crop) => {
+    const b = (await maria.req('POST', '/api/boards', { title })).board;
+    await maria.req('POST', `/api/boards/${b.id}/insert-structure`, { structure });
+    await openBoard(mariaPage, b.id);
+    await mariaPage.keyboard.press('Escape');
+    await mariaPage.mouse.move(1590, 990);
+    await sleep(800);
+    await save(mariaPage, name, crop);
+  };
+  if (want('kanban'))
+    await structureShot(
+      'kanban',
+      'Website relaunch',
+      {
+        kind: 'kanban',
+        title: 'Website relaunch',
+        columns: [
+          { title: 'To do', items: [{ text: 'Write the pricing page copy', dueDate: '2026-11-20' }, { text: 'Pick screenshots for the tour' }, { text: 'Redirect the old blog URLs' }] },
+          { title: 'In progress', items: [{ text: 'New navigation and footer', color: '#5B3FF0' }, { text: 'Accessibility pass on forms', dueDate: '2026-11-14' }] },
+          { title: 'Done', items: [{ text: 'Audit the current pages' }, { text: 'Agree on the page list' }, { text: 'Choose the font pairing' }] },
+        ],
+      },
+      area(326, 155),
+    );
+  if (want('mindmap'))
+    await structureShot(
+      'mindmap',
+      'Team offsite',
+      {
+        kind: 'mindmap',
+        root: {
+          text: 'Team offsite',
+          children: [
+            { text: 'Sessions', children: [{ text: 'Year in review' }, { text: 'Roadmap workshop' }, { text: 'Retro' }] },
+            { text: 'Venue', children: [{ text: 'Near a train station' }, { text: 'Room for 25' }] },
+            { text: 'Travel', children: [{ text: 'Book by 15 November' }, { text: 'Shared calendar' }] },
+            { text: 'Evening', children: [{ text: 'Dinner' }, { text: 'Board games' }] },
+          ],
+        },
+      },
+      area(330, 141),
+    );
+  if (want('flowchart'))
+    await structureShot(
+      'flowchart',
+      'Support triage',
+      {
+        kind: 'mermaid',
+        source: [
+          'flowchart TD',
+          '  A([New ticket]) --> B{Is it a bug?}',
+          '  B -- Yes --> C[Reproduce it]',
+          '  B -- No --> D[Answer from the help centre]',
+          '  C --> E{Reproduced?}',
+          '  E -- Yes --> F[File an issue with the steps]',
+          '  E -- No --> G[Ask the customer for details]',
+          '  D --> H([Close the ticket])',
+          '  F --> H',
+          '  G --> H',
+        ].join('\n'),
+      },
+      { x: 280, y: 120, width: 1100, height: 770 },
+    );
 
   // A roadmap (/use-cases/roadmaps): Jira issues imported onto a timeline, a lane per epic.
   if (want('roadmap')) {
