@@ -226,7 +226,8 @@ pre {
   border-top: 1px solid var(--fr-line);
   margin-top: 6px;
 }
-@media (min-width: 960px) {
+/* The full header needs about 1040px for its eight links; narrower screens get the menu. */
+@media (min-width: 1080px) {
   .nav--wide {
     display: block;
   }

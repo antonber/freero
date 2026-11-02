@@ -1,5 +1,6 @@
 import { ButtonLink, Card, Cards, Checks, Code, Hero, Section, Step, Steps } from '../components/ui';
 import { definePage } from '../lib/define';
+import { softwareApplication } from '../lib/seo';
 import { docsUrl, SOURCE_REPO } from '../lib/site';
 
 export default definePage({
@@ -10,6 +11,7 @@ export default definePage({
   description:
     'Freero is an MIT-licensed collaborative whiteboard. Run it with Docker on your own servers, with the MCP server, Jira sync, SSO and SCIM included.',
   updated: '2026-10-28',
+  jsonLd: [softwareApplication()],
   faq: [
     {
       q: 'Is there an enterprise edition or a licence key?',

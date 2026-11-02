@@ -21,6 +21,7 @@ export interface Crumb {
 }
 
 const NAV: Array<{ href: string; label: string }> = [
+  { href: '/features', label: 'Features' },
   { href: '/claude', label: 'Claude' },
   { href: '/chatgpt', label: 'ChatGPT' },
   { href: '/agents', label: 'For builders' },
@@ -95,6 +96,7 @@ function SiteFooter() {
       title: 'Product',
       links: [
         ['/', 'Overview'],
+        ['/features', 'Features'],
         ['/pricing', 'Pricing'],
         ['/security', 'Security'],
         ['/templates', 'Templates'],

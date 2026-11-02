@@ -8,11 +8,11 @@ import { SITE_TEMPLATES } from '../lib/templates';
 export default definePage({
   path: '/',
   name: 'Home',
-  title: 'Freero: the whiteboard for teams of people and AI agents',
+  title: 'Freero: free, open-source AI whiteboard for teams',
   ogTitle: 'The whiteboard for teams of people and AI agents',
   description:
-    'A free, open-source online whiteboard where your team and your AI agents work together. Connect Claude or ChatGPT over MCP. Sync Jira, Linear and GitHub.',
-  updated: '2026-10-28',
+    'A free, open-source online whiteboard where your team and your AI agents work together. Connect Claude or ChatGPT over MCP; sync Jira, Linear and GitHub.',
+  updated: '2026-11-02',
   jsonLd: [softwareApplication()],
   faq: [
     {
@@ -213,17 +213,17 @@ export default definePage({
       <Section id="whiteboard" title="The full whiteboard" lead="Everything a team expects from an online whiteboard, built in and free.">
         <Cards cols={4}>
           <Card title="Infinite canvas">Pan and zoom, frames, snapping and alignment guides, minimap, groups, locks, copy and paste between boards.</Card>
-          <Card title="Notes, shapes and ink">Sticky notes, text, shape sets for flowcharts, UML, BPMN, ERD, networks and wireframes, an icon library, pen and highlighter.</Card>
-          <Card title="Diagrams">Attached, labelled connectors, mind maps, swimlanes, auto-layout and org charts, and diagrams from Mermaid text.</Card>
-          <Card title="Structured content">Tables with typed columns and a board view, kanban columns, task cards, timelines and Gantt bars, code blocks.</Card>
-          <Card title="Real-time together">Live cursors and selections, follow someone, bring everyone to you, reactions, comments with mentions and notifications.</Card>
+          <Card title="Notes, shapes and ink" href="/use-cases/brainstorming">Sticky notes, text, shape sets for flowcharts, UML, BPMN, ERD, networks and wireframes, an icon library, pen and highlighter.</Card>
+          <Card title="Diagrams" href="/features/flowchart-maker">Attached, labelled connectors, <a href="/features/mind-map">mind maps</a>, swimlanes, auto-layout and org charts, and diagrams from Mermaid text.</Card>
+          <Card title="Structured content" href="/features/kanban-board">Tables with typed columns and a board view, kanban columns, task cards, timelines and Gantt bars, code blocks.</Card>
+          <Card title="Real-time together" href="/features/online-whiteboard">Live cursors and selections, follow someone, bring everyone to you, reactions, comments with mentions and notifications.</Card>
           <Card title="Present and share">Slides made from frames with layouts and speaker notes, presentation mode, roles per board, share links with a password or expiry.</Card>
           <Card title="Docs and files">Collaborative docs with live boards inside them, Markdown in and out; images, PDFs, video and audio, file cards and link previews.</Card>
           <Card title="Templates and export" href="/templates">
             {SITE_TEMPLATES.length} original templates. Export to PNG, JPG, SVG or PDF, CSV for notes and cards, version history.</Card>
         </Cards>
         <p className="works-with">
-          Keyboard and screen-reader support aims at WCAG 2.1 AA, with a “board as list” view; it works on phones and tablets and installs as an app.
+          <a href="/features">All features</a> · Keyboard and screen-reader support aims at WCAG 2.1 AA, with a “board as list” view; it works on phones and tablets and installs as an app.
         </p>
       </Section>
 
