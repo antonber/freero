@@ -4,6 +4,7 @@
 // and how an item reads back. Pure over a board view, so `changeBoard` plans with it against the
 // live board in one step.
 import {
+  APART_GAP,
   API_CREATABLE_TYPES,
   API_MAX_ITEMS_PER_CALL,
   connectorDraft,
@@ -41,7 +42,9 @@ const CAPS = ['none', 'arrow', 'triangle', 'circle', 'diamond', 'bar'] as const;
 const HEX = /^#[0-9a-fA-F]{6}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_TEXT = 10_000;
-const GAP = 48;
+// Clear of what is on the board by more than the outline's cluster gap, as the MCP tools place
+// (#85): an item added next to someone's cluster must not read as part of it.
+const GAP = APART_GAP;
 const DEFAULT_SIZE: Record<ApiCreatableType, { w: number; h: number }> = {
   sticky: { w: STICKY_SIZE, h: STICKY_SIZE },
   shape: { w: 160, h: 100 },
