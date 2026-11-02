@@ -1,7 +1,7 @@
 # Kanban phases 2 and 3: fields, group-by and views of the same data
 
-Status: **steps 2a, 2b and 2c built** (schema foundation, card display, group by and swimlanes;
-see "Step 2a as built", "Step 2b as built" and "Step 2c as built" below); 2d–3e proposed. The
+Status: **steps 2a–2e built** (schema foundation, card display, group by and swimlanes, filter and
+sort, agents and API; see the "as built" sections below); 2f–3e proposed. The
 owner's decisions on the open questions are under "Decisions". Phase 1 (card colour follows column,
 smoother drag, keyboard moves, column reorder / collapse / resize) has landed.
 
@@ -853,6 +853,117 @@ What the next steps need:
 - **Not done** (later steps): `$status` / `$assignee` as group fields, row collapse and Alt+Shift
   row moves, "show all people" columns, server re-lay after an API value change (2e), placement into
   a swimlane cell (2e).
+
+## Step 2d as built
+
+- **One filter and sort** (`@freero/shared` `query.ts`): a value is read into a `QueryValue` (its
+  kind — text, number, date, option, options, person, checkbox —, the typed value, its words, an
+  option's rank) and `matchValue` / `compareValues` / `sortByValues` work on that. The free-form
+  table's typed filter and sort (`features/table/lib/columns.ts`) now read their cells as
+  QueryValues and go through it (same results as before: labels for selects, unreadable typed text
+  is no value but not empty, empty cells last both ways); kanbans read cards with `cardQueryValue`
+  (built-in and custom fields); the server's `query_cards` and `configure_view` use the same.
+  Ops: `is`, `isNot`, `anyOf`, `noneOf`, `contains`, `notContains`, `gt` / `lt` (dates: after /
+  before), `empty`, `notEmpty`, `checked`, `unchecked`, `isMe`.
+- **A sorted or filtered board is shared geometry, so sorting and filtering never depend on what
+  one client knows**: text compares in one fixed collation (`'en'`, numeric), a timestamp reads as
+  its UTC day, a person sorts by user id (names aren't known everywhere and change), and a saved
+  filter can't say `isMe` (it would mean someone else on each client; `cleanFilter` drops it, the
+  API refuses it). `withinDays` (design) is left out for the same reason: "today" differs by clock
+  and time zone.
+- **Filter shape** (deviation): one level, `{ op: 'and' | 'or', rules: [{ field, op, value }] }`, no
+  nested groups. A fixed-depth shape keeps the MCP schema free of recursion and `$ref`; nesting can
+  be added later as a second fixed level.
+- **The saved filter** (`ViewConfig.filter`, saved for everyone like the rest of the view) hides the
+  cards it leaves out: the layout (`planKanban`) stacks only the cards that pass and puts the others
+  in their column below the board, after any beyond the card limit; the existing engine hook
+  `hidesMember` folds them away (`filteredOut`, evaluated per card, so a card whose value changed
+  remotely hides at once even before a local re-lay). They stay in their column, so WIP counts them
+  and the outline lists them, marked `filtered: true`. Under the column (each swimlane cell) the
+  board says "N hidden by filter"; the kanban's header shows "Filtered" (and "Sorted by …"), which
+  opens the View panel.
+- **"Filter for me" fades, it doesn't hide** (as section 5 proposed, now built): a person's own
+  filter is part of their personal override (`ViewOverride.filter`, decision 2: theirs until an
+  editor presses "Save for everyone", any role, kept through `Host.personalViews`). Hiding a card
+  for one person would leave a hole in a stack everyone shares, or move cards under other people's
+  cursors; so the card is drawn faded (`ChildPresentation.muted`, a new engine field: a look only,
+  never sizes, hit-testing or the doc) and stays where it is, selectable. Nothing in the board doc
+  changes, for anyone (tested: both clients' elements are byte-identical before and after). The
+  personal filter replaces the saved one *for fading*: cards the saved filter hides stay hidden (the
+  panel says so); saving makes it the saved filter, which then hides for everyone.
+- **Sort** (`ViewConfig.sort`, up to three fields, each a tie-breaker): saved for everyone by
+  editors, not personal (deviation from decision 2, as grouping in 2c: it moves the real cards).
+  Each column (each cell) orders its cards by it, manual order breaking ties; dragging within a
+  sorted column snaps back (keyboard ↑ / ↓ is off), moving between columns still works.
+  **Manual order survives**: starting a sort keeps the items' manual order in the view
+  (`manualOrder`, ids column by column, at most 5,000); clearing it lets the layout put every card
+  back in that order (cards added while sorted go after, in their sorted order), after which the
+  layout drops `manualOrder` itself — one undo step with the clear. Tested: positions come back
+  exactly.
+- **View lock** (`ViewConfig.locked = { by }`): an editor locks the saved view; then only whoever
+  locked it and the board's owners change it (grouping, swimlanes, sort, density, WIP / collapse /
+  card limits, "Save for everyone"); everyone keeps their own view settings (fields shown, colour,
+  their filter). Distinct from locking the kanban element, which still locks schema and view. The
+  lock is enforced by every client and by `configure_view`; like the rest of the doc it is not a
+  security boundary against a modified client.
+- **View panel**: Filter (rules: field, rule, value; all / any), Sort (fields, ascending /
+  descending, "Back to manual order"), "Lock this view" / "Locked by Ann". Commands
+  `kanban.setMyFilter`, `kanban.setSort`, `kanban.lockView`.
+- **Rollout**: a 2c client ignores the view's filter and sort: its local re-lay stacks every card by
+  position (unparking filtered ones); new clients still hide them by value (`hidesMember`), so for a
+  moment there are holes until a new client lays the board out again. Accepted for the short window
+  old clients are live.
+
+## Step 2e as built
+
+- **The layout moved into `@freero/shared`** (`layout/kanban.ts`: `planKanban`, `planGroupBy`,
+  `reflowMoves`, `isStackable`, `storedKey`, `groupKeys`, `laneField`, `filteredOut`,
+  `beyondLimit`, `manualOrderOf`), as 2a planned for the first server writer that needs it. The
+  kanban feature's `arrange` and `setGroupBy` are thin wrappers. `withKanbanLayout(before, change)`
+  lays out every kanban a server change touches as the feature's `arrange` would after the same
+  change made locally, and merges the layout's patches into the change: a card whose grouped or
+  swimlane value changed moves to its column / row, a placed card takes its row's value and its
+  column's status, a card the filter now leaves out folds away, sorted columns stay sorted. Used by
+  `update_items`, structure placement (`add_cards`, moves `into` a kanban) and the new kanban
+  operations. Kanbans the change itself creates are laid out by whoever made them.
+- **`update_items` `fields` for the grouped field** (2a refused it): a value of the field the board
+  is grouped by moves the card to that column (positional, like card details' `kanban.moveToColumn`;
+  a person without a column gets one), then the layout stacks it there with the column's status.
+- **`add_cards` with `fields`** (card items carry them as `ItemInput.fields`, kept on the laid-out
+  structure as `fieldsOf` until placement reads them against the kanban's schema with the shared
+  `readFieldInputs`; refused anywhere but into a kanban, and for a new kanban, which has no fields
+  yet). A value of the grouped field picks the card's column, of the swimlane field its row.
+  `placement.row` (by title or id; also `into: "<kanbanId>:<columnId>:<rowId>"`) names a swimlane
+  cell; without it a card goes to the row of its value, else the first ("No <field>").
+- **`define_fields`** (MCP; REST `PATCH /boards/{b}/kanbans/{k}/fields`): add / rename / reorder /
+  delete fields and options in one change, by id or by name / label. The grouped field's options are
+  `columns`: adding, renaming, recolouring, reordering one edits the column, deleting moves its cards
+  to the column beside it (`reflowMoves`, then the layout sets their status). The column field
+  ("Stage"), the grouped field and the swimlane field can't be deleted. **Not built**: changing a
+  field's type (the design's "retype with conversion") is refused — add a new field instead.
+- **`configure_view`** (MCP; REST `PATCH /boards/{b}/kanbans/{k}/view`): groupBy (`planGroupBy`,
+  the same transaction the View panel makes), subGroupBy, show, colour, density, filter, sort,
+  per-column wip / limit / collapsed, locked. What an agent sets is the **saved** view (an API
+  caller has no personal view; it acts like an editor pressing "Save for everyone"). Refused while
+  the kanban is locked or the view is locked by someone other than the caller (board owners may).
+  Deviation: one board view per kanban, so `PATCH …/view` instead of the design's
+  `/views/{viewId}` CRUD (tabs are 3a).
+- **`query_cards`** (MCP; REST `GET /boards/{b}/kanbans/{k}/cards`, `filter` as JSON, `sort` as
+  `Points:desc,Title`): rows `{ id, title, column, row?, filtered?, fields: { name: value } }` —
+  labels, people by name (only people the board shows, as the outline), ISO dates —, filtered and
+  sorted by the shared rules, default order the board's own, `limit` ≤ 500 and `cursor`,
+  `useView: true` applies the saved filter and sort first, `isMe` = the person the agent acts for.
+  A read of the board: the downloads policy applies. `GET /boards/{b}/kanbans/{k}` returns the
+  kanban's fields, columns, rows and saved view (also what the two write tools answer).
+- **MCP schemas** are fixed-depth (the filter is one level), every parameter typed, no `$ref`
+  (mcp.test.ts guards it for all tools).
+- **Outline**: a kanban reads `filter: Priority is P1 and Points > 3`, `sort: Points (descending)`
+  and `view locked: true`; a card the filter leaves out reads `filtered: true` (docs/board-outline.md).
+- **Not done** (later): a REST batch `PATCH …/cards` (update_items covers it), `add_view` and view
+  tabs (3a / 3c), field retyping, the `$status` / `$assignee` group fields, server re-lay after a
+  tracker pull changes a grouped value (2f, trackers), a server-side test of the view lock by a
+  second editor (the client test covers the rule; the server check is one line in
+  `planConfigureView`).
 
 ## Sources (concepts only; nothing copied)
 

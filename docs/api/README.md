@@ -84,7 +84,16 @@ apps and tokens", signing out everywhere) withdraws the ones still pending on ev
 open boards drop them at once (KAI-224).
 - Nothing needs coordinates: `POST /boards/{boardId}/structure` takes a `placement` (into a frame,
   kanban column or cluster, or a new frame / kanban) and answers `parts` (which new id is which input
-  item, in order); `PATCH` an item with `into` (+ `column`) to move it there.
+  item, in order); `PATCH` an item with `into` (+ `column`, `row`) to move it there.
+- Kanbans (the MCP `define_fields`, `configure_view`, `query_cards`): `GET /boards/{boardId}/kanbans/{kanbanId}`
+  reads a kanban's fields, columns, swimlane rows and saved view; `PATCH …/kanbans/{kanbanId}/fields`
+  adds, renames, reorders and deletes fields and options (by name / label or id, all or nothing);
+  `PATCH …/kanbans/{kanbanId}/view` sets grouping, swimlanes, what cards show, a filter, a sort,
+  column limits and the view lock, for everyone; `GET …/kanbans/{kanbanId}/cards` reads its cards as
+  rows (`filter` as JSON, `sort=Points:desc,Title`, `fields`, `useView`, `limit` ≤ 500, `cursor`), by
+  the rules the board itself uses. A card's `fields` (on `PATCH` an item, or new cards placed into a
+  kanban) by name; a value of the field the kanban is grouped by moves the card to that column, of
+  its swimlane field to that row, and the kanban is laid out again in the same change.
 - `GET /boards/{boardId}/trackers` (the MCP `list_tracker_connections`, #83): the tracker connections
   the person may use on the board (name, provider, team or personal, default project, status) and,
   with `?connection=`, that connection's projects or repositories — what the import and

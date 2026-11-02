@@ -76,8 +76,13 @@ OutlineField { id, name, type, options?: Array<{ id, label, status? }> }   // Ou
   Each card on a kanban carries its values in `fields`, keyed by field **name**: select labels
   (multi-select labels joined by ", "), people by name, dates `YYYY-MM-DD`, numbers, text, URLs,
   checkboxes `true`. Empty values are left out, and so are values of deleted fields or options.
-  Set them with `update_items` (`fields: { "Priority": "P1" }`; the grouped field by moving the card
-  with `into` + `column`). A swimlane's value is an ordinary field value on the card.
+  Set them with `update_items` (`fields: { "Priority": "P1" }`; a value of the grouped field moves
+  the card to that column). A swimlane's value is an ordinary field value on the card.
+- Kanban filter and sort: a kanban whose view filters reads `filter: Priority is P1 and Points > 3`
+  (fields and options by name; `or` when any rule may match), one sorted within its columns
+  `sort: Points (descending), Title`, and a locked view `view locked: true`. Cards the filter leaves
+  out are folded away on the board but still listed in their column, with `filtered: true`. Read or
+  change them with `query_cards` / `configure_view` (docs/mcp.md).
 - Clusters: items close together (gap ≤ ~30 % of the larger item's short side, 16–64 units), or
   joined by a connector, in the same frame (or outside frames). A text box right above the rest is
   the cluster's title. Containers, tables and mind maps are never clustered.
@@ -103,9 +108,10 @@ Freero board outline v1 · board b_8Fq2 · 14 items, 3 connections · version 6h
   - [s1] sticky yellow: Deploys are faster · 3 votes · #infra
     - comment [th1] Ann: Agreed, @Maria did great
   - [s2] sticky yellow: Pairing helped
-- [k1] kanban: Sprint · grouped by: Stage · fields: Stage (select: To do | Doing | Done), Priority (select: P0 | P1), Points (number)
+- [k1] kanban: Sprint · grouped by: Stage · filter: Priority is P1 · sort: Points (descending) · fields: Stage (select: To do | Doing | Done), Priority (select: P0 | P1), Points (number)
   - column "Doing" [k1:doing] · status: doing
     - [c1] card: Fix login · status: doing · due: 2026-11-02 · assignee: Ann · Stage: Doing · Priority: P1 · Points: 3
+    - [c2] card: Tidy logs · status: doing · filtered: true · Stage: Doing · Priority: P0
 
 ## Frame "Board offsite" [f2] · hidden: contents not visible to you
 
@@ -154,7 +160,7 @@ Owners and editors. Body (`InsertStructureRequest`):
 
 ```
 { structure: StructureInput, near?: elementId, at?: { x, y }, target?: 'board' | 'preview' | 'suggestions', description?: string,
-  placement?: { into?: id, column?: string } | { newFrame: string } | { newKanban: string } }
+  placement?: { into?: id, column?: string, row?: string } | { newFrame: string } | { newKanban: string } }
 ```
 
 The response's `parts` says which element is which input item, in input order: one part per
@@ -173,7 +179,7 @@ cluster / kanban column (one for a sticky grid or an item list), with its title'
 | `kanban` | `columns: [{ title, items: Array<string \| { text, description?, status?, dueDate?, link?, color? }> }]`, `title?` | a kanban board with a task card per item, stacked in its column; a column titled like "To do", "In progress" or "Done" gives its cards that status |
 | `orgchart` | `people: [{ name, title?, manager?, id? }]` (`manager` = another person's `id` or name) | a top-down org chart: name / title boxes, each manager centered over their reports, joined by connectors; an unknown manager or a reporting circle is refused |
 | `note` | `text`, `title?` | a written note (summaries): a soft rounded card, the title in bold, paragraphs and bullet lines kept (8 000 characters) |
-| `items` | `items: [{ type: 'sticky' \| 'card', text, description?, color?, tags?, status?, assigneeId?, dueDate?, link? }]`, `layout?: 'grid' \| 'kanban'`, `title?` | work items (a CSV import's rows) as stickies or task cards in a grid, or on a kanban with a column per status |
+| `items` | `items: [{ type: 'sticky' \| 'card', text, description?, color?, tags?, status?, assigneeId?, dueDate?, link?, fields? }]` (`fields`: a card's values of the kanban it is placed into, by field name), `layout?: 'grid' \| 'kanban'`, `title?` | work items (a CSV import's rows) as stickies or task cards in a grid, or on a kanban with a column per status |
 | `meeting` | `source` (the notes or transcript as exported, up to 1 000 000 characters), `format?: 'markdown' \| 'text' \| 'vtt' \| 'srt'` (default: recognised), `title?` (when the notes have none), `date?` (YYYY-MM-DD, the meeting's when the notes don't say), `speakers?` (default true) | ONE frame titled like the meeting: a *Summary* note (date, attendees, prose), a *Speakers* note for transcripts (turns, talk time), a *Decisions* cluster, *Action items* as task cards (owner in the description, due date), each other section's points as a cluster under its heading. Read as written, no AI ([integrations/README.md](integrations/README.md)). `parts`: the frame (its `titleId`, the notes' ids), then Decisions, Action items and each section, whichever there are |
 
 Placement: on the free spot nearest to `near` (just right of that element) or `at`, else the middle
@@ -183,8 +189,11 @@ so what is added comes back from the next outline as its own item or cluster, ne
 neighbour's; "near X" puts it that far from X. Nothing lands on existing
 content or inside a frame — unless `placement` says where (`modules/structure/place.ts`):
 `into` a frame (inside it, 80 units clear of what is there; the frame grows when full), a kanban
-(`column` by title or id, or `"<kanbanId>:<columnId>"`; stacked at the bottom of the column, a card
-taking a status column's status; the kanban grows; only stickies and cards), or a cluster
+(`column` by title or id, or `"<kanbanId>:<columnId>"`, else the column of a card's value for the
+grouped field, else of its status; `row` on a kanban with swimlanes, or `"<kanbanId>:<columnId>:<rowId>"`,
+else the row of its value for the swimlane field; laid out as the board lays it out after a drop —
+its sort, filter and card limits — a card taking a status column's status and its row's value; the
+kanban grows; only stickies and cards), or a cluster
 (`cluster:<id>` or any item in it: touching its items, never above its title, clear of other
 clusters, so the outline reads them as part of it); `newFrame` / `newKanban` (To do / Doing / Done)
 around what is added, on free space. The tracker import places its cards with the same rules,
