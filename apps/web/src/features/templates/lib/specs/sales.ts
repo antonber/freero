@@ -79,12 +79,34 @@ const specs: TemplateSpec[] = [
     hint: 'Every card needs a next step with a date. A deal with no next step is not in the pipeline, it is in the hope column.',
     board: 'Open deals this week',
     archetype: 'kanban',
+    typed: {
+      fields: [
+        { name: 'Deal size', type: 'select', options: ['Over €50k', '€10k–50k', 'Under €10k'], ranked: true },
+        { name: 'Next step', type: 'text' },
+      ],
+      show: ['Deal size', 'Next step', 'Due date', 'Assignee'],
+    },
     columns: [
-      { title: 'Qualified', tone: 'gray', cards: [{ title: 'Northwind Foods · €24k', note: 'Next: discovery call Tue' }, { title: 'Harbor Dental · €9k', note: 'Next: send case study' }] },
-      { title: 'Discovery', tone: 'sky', cards: [{ title: 'Bright Path Schools · €40k', note: 'Next: meet IT lead Thu' }] },
-      { title: 'Proposal', tone: 'amber', wip: 5, cards: [{ title: 'Kestrel Logistics · €65k', note: 'Next: pricing review with CFO' }, { title: 'Alder & Co · €12k', note: 'Next: legal redlines back' }] },
-      { title: 'Negotiation', tone: 'violet', cards: [{ title: 'Summit Clinics · €30k', note: 'Next: final call 14 May' }] },
-      { title: 'Won', tone: 'mint', status: 'done', cards: [{ title: 'Oakline Studio · €8k', note: 'Kick-off booked' }] },
+      {
+        title: 'Qualified',
+        tone: 'gray',
+        cards: [
+          { title: 'Northwind Foods · €24k', values: { 'Deal size': '€10k–50k', 'Next step': 'Discovery call Tue' } },
+          { title: 'Harbor Dental · €9k', values: { 'Deal size': 'Under €10k', 'Next step': 'Send case study' } },
+        ],
+      },
+      { title: 'Discovery', tone: 'sky', cards: [{ title: 'Bright Path Schools · €40k', values: { 'Deal size': '€10k–50k', 'Next step': 'Meet IT lead Thu' } }] },
+      {
+        title: 'Proposal',
+        tone: 'amber',
+        wip: 5,
+        cards: [
+          { title: 'Kestrel Logistics · €65k', values: { 'Deal size': 'Over €50k', 'Next step': 'Pricing review with CFO' } },
+          { title: 'Alder & Co · €12k', values: { 'Deal size': '€10k–50k', 'Next step': 'Legal redlines back' } },
+        ],
+      },
+      { title: 'Negotiation', tone: 'violet', cards: [{ title: 'Summit Clinics · €30k', values: { 'Deal size': '€10k–50k', 'Next step': 'Final call 14 May' } }] },
+      { title: 'Won', tone: 'mint', status: 'done', cards: [{ title: 'Oakline Studio · €8k', note: 'Kick-off booked', values: { 'Deal size': 'Under €10k' } }] },
     ],
     side: { title: 'Review questions', prompt: 'Ask these for every deal that moved, stalled or is due to close this month.', notes: ['What changed since last week?', 'Who is the person who can say no?', 'What would make this slip?'] },
   },

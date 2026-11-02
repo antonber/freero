@@ -233,11 +233,28 @@ export const sprintBoard: TemplateDef = {
     const k = new Kit(newId);
     const colW = 260;
     const columns: KanbanColumnSpec[] = [
-      { title: 'Backlog', color: HEAD.gray, items: [{ card: 'Keyboard shortcuts help', color: INK_SOFT }, { card: 'Faster image upload', color: INK_SOFT }] },
-      { title: 'To do', status: 'todo', color: HEAD.sky, items: [{ card: 'Invite dialog', desc: '3 points', color: SKY }, { card: 'Guest role in API', desc: '5 points', color: SKY }] },
-      { title: 'In progress', status: 'doing', wip: 3, color: HEAD.amber, items: [{ card: 'Comment-only mode', desc: '5 points', color: AMBER }, { card: 'Invite emails', desc: '2 points', color: AMBER }] },
-      { title: 'In review', wip: 2, color: HEAD.violet, items: [{ card: 'Access settings page', desc: '3 points', color: VIOLET }] },
-      { title: 'Done', status: 'done', color: HEAD.mint, items: [{ card: 'Guest flow design', desc: '3 points', color: MINT }] },
+      { title: 'Backlog', color: HEAD.gray, items: [{ card: 'Keyboard shortcuts help', color: INK_SOFT, values: { Priority: 'Low' } }, { card: 'Faster image upload', color: INK_SOFT, values: { Priority: 'Medium', Area: 'Web' } }] },
+      {
+        title: 'To do',
+        status: 'todo',
+        color: HEAD.sky,
+        items: [
+          { card: 'Invite dialog', color: SKY, values: { Priority: 'High', Points: 3, Area: 'Web' } },
+          { card: 'Guest role in API', color: SKY, values: { Priority: 'High', Points: 5, Area: 'API' } },
+        ],
+      },
+      {
+        title: 'In progress',
+        status: 'doing',
+        wip: 3,
+        color: HEAD.amber,
+        items: [
+          { card: 'Comment-only mode', color: AMBER, values: { Priority: 'High', Points: 5, Area: 'Web' } },
+          { card: 'Invite emails', color: AMBER, values: { Priority: 'Medium', Points: 2, Area: 'API' } },
+        ],
+      },
+      { title: 'In review', wip: 2, color: HEAD.violet, items: [{ card: 'Access settings page', color: VIOLET, values: { Priority: 'Medium', Points: 3, Area: 'Web' } }] },
+      { title: 'Done', status: 'done', color: HEAD.mint, items: [{ card: 'Guest flow design', color: MINT, values: { Priority: 'High', Points: 3, Area: 'Design' } }] },
     ];
     const kb = kanbanSize(colW, columns);
     const W = 48 + kb.w + 48;
@@ -252,7 +269,14 @@ export const sprintBoard: TemplateDef = {
       { h: 44, cells: ['Dates', ''] },
       { h: 44, cells: ['Capacity', '26 points'] },
     ], { header: false, fills: { 0: TINT.gray } });
-    k.kanban(48, kbY, 'Sprint 18', colW, columns);
+    k.kanban(48, kbY, 'Sprint 18', colW, columns, {
+      fields: [
+        { name: 'Priority', type: 'select', options: ['High', 'Medium', 'Low'], ranked: true },
+        { name: 'Points', type: 'number' },
+        { name: 'Area', type: 'select', options: ['Web', 'API', 'Design'] },
+      ],
+      show: ['Priority', 'Area', 'Due date', 'Points', 'Assignee'],
+    });
     return k.done();
   },
 };

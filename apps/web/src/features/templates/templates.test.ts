@@ -10,9 +10,9 @@ import { boundsOf, filterTemplates, instantiate, type BoardSnapshot } from './li
 import { insertSavedTemplate, saveAsTemplate } from './lib/saved';
 import { specTemplates } from './lib/spec/catalog';
 import { buildSpec } from './lib/spec/render';
-import type { ColumnsLayout, TemplateSpec } from './lib/spec/types';
+import type { ColumnsLayout, KanbanLayout, TemplateSpec } from './lib/spec/types';
 import { validateSpec } from './lib/spec/validate';
-import { duplicateProblems, fingerprint, indexEntryOf, indexProblems, layoutProblems, metadataProblems, sectionProblems } from './lib/gate';
+import { duplicateProblems, fieldProblems, fingerprint, indexEntryOf, indexProblems, layoutProblems, metadataProblems, sectionProblems } from './lib/gate';
 import { Kit } from './lib/kit';
 import type { TemplateCategory } from './lib/types';
 import { SPEC_FILES, SPEC_INDEX } from './lib/specs';
@@ -87,6 +87,10 @@ describe.each(TEMPLATES.map((t) => [t.id, t] as const))('template %s', (_id, def
 
   it('passes the layout gate: nothing sticks out of its frame, no text lands on other text, and all text fits its box', () => {
     expect(layoutProblems(def.id, def.build(freshId))).toEqual([]);
+  });
+
+  it('its kanbans’ field values are ones their fields can hold, so a board made from it shows every one of them', () => {
+    expect(fieldProblems(def.id, def.build(freshId))).toEqual([]);
   });
 
   it('after insertion, connector, mind-map and table-cell references point at elements of the same insert, at their anchors', () => {
@@ -506,6 +510,32 @@ describe('the template gate rejects', () => {
       k.sticky(520, 320, 'Two', 'yellow');
     });
     expect(sectionProblems('t', stacked)).toEqual(['t: two sections overlap at 40,40']);
+  });
+
+  it('kanban card values their kanban can’t read: an option its field lacks, a date it can’t read, a field it doesn’t have, and a shown field it doesn’t have', () => {
+    const bugs = {
+      ...base,
+      id: 'bug-queue',
+      name: 'Bug queue',
+      archetype: 'kanban',
+      typed: {
+        fields: [
+          { name: 'Severity', type: 'select', options: ['S1', 'S2'] },
+          { name: 'Found on', type: 'date' },
+        ],
+        show: ['Severity', 'Owner'],
+      },
+      columns: [
+        { title: 'New', cards: [{ title: 'Export cuts off', values: { Severity: 'S5', 'Found on': 'last week', Area: 'Export' } }] },
+        { title: 'Fixed', status: 'done', cards: [{ title: 'Typo on pricing', values: { Severity: 'S2', 'Found on': '2026-10-30' } }] },
+      ],
+    } as TemplateSpec & KanbanLayout;
+    expect(fieldProblems(bugs.id, buildSpec(bugs, freshId))).toEqual([
+      `bug-queue: kanban "Bug queue" shows "Owner" on its cards, a field it doesn't have`,
+      `bug-queue: card "Export cuts off" has "S5" for Severity, which a select field can't hold (options: S1, S2)`,
+      `bug-queue: card "Export cuts off" has "last week" for Found on, which a date field can't hold`,
+      `bug-queue: card "Export cuts off" has a value for "Area", a field its kanban doesn't have`,
+    ]);
   });
 
   it('an index that was not regenerated after specs changed', () => {

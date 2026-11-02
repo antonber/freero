@@ -3,10 +3,13 @@
 // feature's defaults are). Coordinates are relative to the template origin; insertion
 // translates them later (see place.ts).
 import type { LucideIcon } from 'lucide-react';
+import { BUILTIN_FIELDS, COLUMN_FIELD_ID, COLUMN_FIELD_NAME, OPTION_COLORS, labelKey, optionByLabel, rankColor } from '@freero/shared';
 import type {
   Anchor,
   CapStyle,
   CardStatus,
+  FieldDef,
+  FieldType,
   IconNode,
   ConnectorRouting,
   FontFamily,
@@ -60,10 +63,34 @@ const KANBAN = { header: 52, colHead: 44, gap: 12, pad: 10, itemGap: 10, minBody
 /** Swimlane geometry (row pools): title band, lane header column, phase header row. */
 const POOL = { title: 44, laneHead: 150, phaseHead: 36 };
 
-/** A kanban item: a task card, or a sticky note (square unless `h` is given). */
+/** A value a template card gives a field, by the field's name: an option's label (labels for a multi-select), a number, an ISO date, text, a link, or true. */
+export type TemplateValue = string | number | boolean | string[];
+
+/** A kanban item: a task card (with field values by field name), or a sticky note (square unless `h` is given). */
 export type KanbanItem =
-  | { card: string; desc?: string; color: string; due?: string }
+  | { card: string; desc?: string; color: string; due?: string; values?: Record<string, TemplateValue> }
   | { sticky: string; color: StickyColor; h?: number };
+
+/**
+ * A typed field a template kanban's cards carry (docs/design/kanban-fields-and-views.md, step 2f).
+ * Options are labels; `ranked` colours them most pressing first (priority, severity), else in turn.
+ */
+export interface TemplateField {
+  name: string;
+  type: FieldType;
+  options?: string[];
+  ranked?: boolean;
+}
+
+/**
+ * A template kanban's fields: what they are, what cards show (field names, or the card's own
+ * "Assignee", "Due date", "Status", "Tags", "Estimate"), and the select field cards are coloured by.
+ */
+export interface KanbanFields {
+  fields: TemplateField[];
+  show?: string[];
+  colorBy?: string;
+}
 
 export interface KanbanColumnSpec {
   title: string;
@@ -506,11 +533,12 @@ export class Kit {
    * A kanban board with its items stacked the way the board stacks them (cards take the
    * column's width). Returns its id and height (the tallest column decides it).
    */
-  kanban(x: number, y: number, title: string, colW: number, columns: KanbanColumnSpec[]): { id: string; w: number; h: number } {
+  kanban(x: number, y: number, title: string, colW: number, columns: KanbanColumnSpec[], typed?: KanbanFields): { id: string; w: number; h: number } {
     const K = KANBAN;
     const inner = colW - 2 * K.pad;
     const heights = itemHeights(colW, columns);
     const { w, h } = kanbanSize(colW, columns);
+    const fields = typed ? this.fieldDefs(typed.fields) : null;
     const id = this.push<NewElement<'kanban'>>({
       type: 'kanban',
       x,
@@ -520,6 +548,7 @@ export class Kit {
       title: rt(title),
       colW,
       columns: columns.map((c) => ({ id: this.newId(), title: rt(c.title), status: c.status ?? null, color: c.color, ...(c.wip ? { wip: c.wip } : {}) })),
+      ...(typed && fields ? this.kanbanSchema(typed, fields) : {}),
       ...this.inFrame(),
     });
     this.within(id, () =>
@@ -528,8 +557,10 @@ export class Kit {
         let iy = y + K.header + K.colHead + K.pad;
         c.items.forEach((it, ii) => {
           const ih = heights[ci][ii];
-          if ('card' in it) this.card(ix, iy, inner, ih, it.card, it.desc ?? '', it.color, c.status ?? null, it.due ?? null);
-          else this.sticky(ix + (inner - ih) / 2, iy, it.sticky, it.color, ih);
+          if ('card' in it) {
+            const card = this.card(ix, iy, inner, ih, it.card, it.desc ?? '', it.color, c.status ?? null, it.due ?? null);
+            if (it.values) this.setValues(card, fields ?? [], it.values);
+          } else this.sticky(ix + (inner - ih) / 2, iy, it.sticky, it.color, ih);
           iy += ih + K.itemGap;
         });
       }),
@@ -551,6 +582,48 @@ export class Kit {
     const band = (b: BandSpec) => ({ id: this.newId(), title: rt(b.title), size: b.size, color: b.color });
     const id = this.push<NewElement<'swimlane'>>({ type: 'swimlane', x, y, w, h, title: rt(title), lanes: lanes.map(band), phases: phases.map(band), ...this.inFrame() });
     return { id, lane: (i) => ({ y: laneTop[i], h: lanes[i].size }), phase: (j) => ({ x: phaseLeft[j], w: phases[j].size }), w, h };
+  }
+
+  /** A kanban's stored fields: Stage (its options are the columns) and the template's own, with ids. */
+  private fieldDefs(fields: TemplateField[]): FieldDef[] {
+    return [
+      { id: COLUMN_FIELD_ID, name: COLUMN_FIELD_NAME, type: 'select' },
+      ...fields.map((f) => {
+        const labels = f.options ?? [];
+        const options = f.type === 'select' || f.type === 'multiselect' ? labels.map((label, i) => ({ id: this.newId(), label, color: f.ranked ? rankColor(i, labels.length) : OPTION_COLORS[(i + 1) % OPTION_COLORS.length] })) : undefined;
+        return { id: this.newId(), name: f.name, type: f.type, ...(options ? { options } : {}) };
+      }),
+    ];
+  }
+
+  /** The kanban's `fields` and its board view: what cards show and what colours them. */
+  private kanbanSchema(typed: KanbanFields, fields: FieldDef[]): Pick<NewElement<'kanban'>, 'fields' | 'views' | 'activeView'> {
+    // A name the kanban has no field for is kept as "?name": the template gate names it.
+    const ref = (name: string) => BUILTIN_FIELDS.find((b) => labelKey(b.name) === labelKey(name))?.id ?? fields.find((f) => labelKey(f.name) === labelKey(name))?.id ?? `?${name}`;
+    const show = (typed.show ?? typed.fields.map((f) => f.name)).map(ref);
+    return {
+      fields,
+      views: [{ id: 'board', name: 'Board', layout: 'board', card: { show, density: 'comfortable', color: typed.colorBy ? ref(typed.colorBy) : 'own' } }],
+      activeView: 'board',
+    };
+  }
+
+  /**
+   * A card's values from a template's (by field name): option labels become option ids. Values the
+   * kanban can't hold stay as written (a field it lacks under "?name", a label as itself), so the
+   * template gate reports them instead of the card silently losing them.
+   */
+  private setValues(cardId: string, fields: FieldDef[], values: Record<string, TemplateValue>): void {
+    const out: Record<string, unknown> = {};
+    for (const [name, v] of Object.entries(values)) {
+      const f = fields.find((x) => labelKey(x.name) === labelKey(name));
+      if (!f) out[`?${name}`] = v;
+      else if (f.type === 'select' && typeof v === 'string') out[f.id] = optionByLabel(f, v)?.id ?? v;
+      else if (f.type === 'multiselect' && Array.isArray(v)) out[f.id] = v.map((l) => optionByLabel(f, l)?.id ?? l);
+      else if (v !== false) out[f.id] = v;
+    }
+    const el = this.els.find((e) => e.id === cardId) as NewElement<'card'> | undefined;
+    if (el) (el as { values?: unknown }).values = out;
   }
 
   /** The finished template. */

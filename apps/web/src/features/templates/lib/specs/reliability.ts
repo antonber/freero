@@ -70,12 +70,26 @@ const specs: TemplateSpec[] = [
     keywords: ['postmortem actions', 'incident follow-up', 'corrective actions', 'action items', 'incident review', 'reliability', 'sre'],
     hint: 'Every card names the incident it came from. Review the board weekly; anything older than a month gets a new date or an explicit decision to drop it.',
     archetype: 'kanban',
+    typed: {
+      fields: [
+        { name: 'Incident', type: 'text' },
+        { name: 'Kind', type: 'select', options: ['Prevent', 'Detect', 'Recover'] },
+      ],
+      show: ['Incident', 'Kind', 'Due date', 'Assignee'],
+    },
     columns: [
-      { title: 'Agreed', tone: 'gray', cards: [{ title: 'Add timeout to the search client', note: 'From INC-212 · Lars' }, { title: 'Alert on queue age, not length', note: 'From INC-215' }] },
-      { title: 'Scheduled', tone: 'sky', cards: [{ title: 'Second DNS provider', note: 'Sprint 31 · Noor' }] },
-      { title: 'In progress', tone: 'amber', wip: 3, cards: [{ title: 'Rollback button in deploy tool', note: 'From INC-208 · Ade' }] },
-      { title: 'Overdue', tone: 'coral', cards: [{ title: 'Rotate shared admin password', note: 'Was due 1 May' }] },
-      { title: 'Done', tone: 'mint', status: 'done', cards: [{ title: 'Runbook for certificate renewal' }] },
+      {
+        title: 'Agreed',
+        tone: 'gray',
+        cards: [
+          { title: 'Add timeout to the search client', values: { Incident: 'INC-212', Kind: 'Prevent' } },
+          { title: 'Alert on queue age, not length', values: { Incident: 'INC-215', Kind: 'Detect' } },
+        ],
+      },
+      { title: 'Scheduled', tone: 'sky', cards: [{ title: 'Second DNS provider', note: 'Sprint 31', values: { Incident: 'INC-203', Kind: 'Prevent' } }] },
+      { title: 'In progress', tone: 'amber', wip: 3, cards: [{ title: 'Rollback button in deploy tool', values: { Incident: 'INC-208', Kind: 'Recover' } }] },
+      { title: 'Overdue', tone: 'coral', cards: [{ title: 'Rotate shared admin password', note: 'Was due 1 May', values: { Incident: 'INC-199', Kind: 'Prevent' } }] },
+      { title: 'Done', tone: 'mint', status: 'done', cards: [{ title: 'Runbook for certificate renewal', values: { Kind: 'Recover' } }] },
     ],
     side: { title: 'Rules', prompt: 'How actions stay honest.', notes: ['One owner and a date per card', 'Dropping needs the incident lead to agree'] },
   },

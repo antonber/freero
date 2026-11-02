@@ -2,6 +2,7 @@
 // questions, example notes, colours by meaning); an archetype (archetypes/) says how that is laid
 // out with the Kit. Specs are pure data: no code, no coordinates, no hex colours.
 import type { CardStatus } from '@freero/shared';
+import type { KanbanFields, TemplateValue } from '../kit';
 import type { TemplateCategory } from '../types';
 
 /**
@@ -63,9 +64,21 @@ export interface KanbanLayout {
   archetype: 'kanban';
   /** The board's own title (default: the template name). */
   board?: string;
-  columns: Array<{ title: string; tone?: Tone; status?: CardStatus; wip?: number; cards: Array<{ title: string; note?: string }> }>;
+  columns: Array<{
+    title: string;
+    tone?: Tone;
+    status?: CardStatus;
+    wip?: number;
+    /** `values`: the card's field values by field name; `due`: its own due date (YYYY-MM-DD). */
+    cards: Array<{ title: string; note?: string; due?: string; values?: Record<string, TemplateValue> }>;
+  }>;
   /** Guidance beside the board. */
   side?: Section;
+  /**
+   * Typed fields the cards carry (Priority, Points, Severity…), what cards show and what colours
+   * them; the columns are the board's Stage. Leave it out for plain cards.
+   */
+  typed?: KanbanFields;
 }
 
 export interface CanvasLayout {
