@@ -16,6 +16,7 @@ import {
   mergeField,
   priorityFieldOf,
   pullableFields,
+  syncedBase,
   type BoardElement,
   type CardElement,
   type ElementDraft,
@@ -55,6 +56,17 @@ it('a change on one side flows to the other; the same field changed differently 
   const cluster = pullableFields([{ type: 'sticky' }, { type: 'sticky' }]);
   expect(cluster.has('title')).toBe(false);
   expect(mergeField('title', base, card('Pay with one click'), { ...tracker, title: 'Renamed in Jira' }, { push: true, pull: cluster.has('title') }).decision).toBe('none');
+});
+
+it('a date changed on the board while a sync was pulling the title from Jira is still sent by the next sync, not taken as agreed', () => {
+  const can = { push: true, pull: true };
+  // The sync read the board, pulled Jira's new title; meanwhile someone dragged the bar to new dates.
+  const read = { ...card('Checkout'), dueDate: '2026-11-10' };
+  const tracker = { ...card('Checkout v2'), dueDate: '2026-11-10' };
+  const afterWrite = { ...card('Checkout v2'), dueDate: '2026-11-30' };
+  const base = syncedBase(read, afterWrite, ['title'], tracker);
+  expect(mergeField('dueDate', base, afterWrite, tracker, can)).toMatchObject({ decision: 'push' });
+  expect(mergeField('title', base, afterWrite, tracker, can).decision).toBe('none');
 });
 
 it('labels a tracker reorders or re-cases are not mistaken for an edit', () => {

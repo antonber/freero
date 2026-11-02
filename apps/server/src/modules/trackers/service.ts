@@ -20,6 +20,7 @@
 import type { Request } from 'express';
 import {
   baseOf,
+  syncedBase,
   canonical,
   ISSUE_FIELD_LABELS,
   ISSUE_FIELDS,
@@ -401,7 +402,9 @@ export async function syncLink(linkId: string): Promise<SyncOutcome | null> {
       return { update, collections };
     });
 
-    const base: SyncBase = baseOf(boardAfter, finalIssue.values);
+    // Fields this sync didn't pull are agreed as it read them: a change made on the board while it
+    // ran (a bar dragged right after an import) is still sent by the next sync, never swallowed.
+    const base: SyncBase = syncedBase(board, boardAfter, pulled, finalIssue.values);
     await repo.markSynced(link.id, base, present);
     await noteOutcome(conn, null);
 

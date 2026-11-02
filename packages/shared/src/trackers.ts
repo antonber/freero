@@ -286,6 +286,19 @@ export function baseOf(board: IssueValues, tracker: IssueValues): SyncBase {
   return out;
 }
 
+/**
+ * What both sides agree on after a sync that merged the board's values as it READ them (`read`)
+ * and wrote the `pulled` fields from the tracker onto the board (`after`: the board as that write
+ * left it): a pulled field as written, every other field as read. A board change that landed while
+ * the sync was talking to the tracker is no part of the base, so the next sync still sees it and
+ * sends it (taking the board as it was after the write would agree to a change nobody sent).
+ */
+export function syncedBase(read: IssueValues, after: IssueValues, pulled: readonly IssueField[], tracker: IssueValues): SyncBase {
+  const board: Record<string, unknown> = { ...read };
+  for (const f of pulled) board[f] = (after as Record<string, unknown>)[f];
+  return baseOf(board as IssueValues, tracker);
+}
+
 /** Status category from a board card's status (CardStatus) — the same three values. */
 export const isStatusCategory = (v: unknown): v is IssueStatusCategory => v === 'todo' || v === 'doing' || v === 'done';
 
