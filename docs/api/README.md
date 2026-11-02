@@ -69,7 +69,12 @@ open boards drop them at once (KAI-224).
   task cards linked to their issues, through the person's own or the team's connection, with the
   board's *Import issues…* rules (at most 100, issues already linked here skipped) and a `placement`;
   answers each card's id with its issue key. `target: "suggestions"` needs only `boards:suggest` and
-  proposes the cards instead. No connection: `400 tracker_not_connected`, saying where to connect one.
+  proposes the cards instead; each one an editor accepts is then linked to its issue (#82). No
+  connection: `400 tracker_not_connected`, saying where to connect one.
+- `POST /boards/{boardId}/trackers/send` (the MCP `sync_to_tracker`, #84): items as ONE issue (or one
+  per item with `mode: "each"`) through the named `connection` and `project`, linked both ways — each
+  item then shows the issue's key, status and assignee. Answers each issue's key, url and items;
+  `409 tracker_already_linked` when an item is linked already.
 - Meeting notes (#88): `POST /boards/{boardId}/structure` with
   `{ "structure": { "kind": "meeting", "source": "<notes or transcript as exported>" } }` puts a
   Markdown / text summary or WebVTT / SRT captions on the board as one frame: decisions, action

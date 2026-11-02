@@ -1042,7 +1042,7 @@ permission check, `POST /objects/resolve`), `references` (object_references, ref
 references index derived through the outbox, `GET /objects/backlinks`; both in "Suite foundation"
 below), `engage` (engage_answers, engage_questions, engage_upvotes,
 engage_reveals: live audience activities; see "Live activities" below), `trackers`
-(tracker_connections, tracker_links, tracker_link_sources, tracker_oauth_flows: issue-tracker sync;
+(tracker_connections, tracker_links, tracker_link_sources, tracker_proposals, tracker_oauth_flows: issue-tracker sync;
 see "Issue trackers" below), `search` (search_entries, search_sources: the search index derived
 through the outbox, `GET /search`), `events` (events, event_board_states, event_pending_boards: the
 event stream), `docs` (no table: the doc app — a doc is a boards container of kind 'doc' whose
@@ -2058,12 +2058,24 @@ one each in Jira (Cloud v3 / Data Center v2), Linear or GitHub, and stay linked 
   references index adds kind `tracker` from items to it, so its backlinks are its items. Every sync
   that changed something is `tracker.synced` in the audit log (fields each way), failures
   `tracker.sync_failed`; the activity feed shows sends, imports, pushes and failures
-  (`onTrackerActivity`). MCP `sync_to_tracker` is `api/service.ts` `syncToTracker`; MCP
+  (`onTrackerActivity`). MCP `sync_to_tracker` and REST `POST /api/v1/boards/:id/trackers/send`
+  (#84) are `api/service.ts` `syncToTracker`; MCP
   `import_from_tracker` and REST `POST /api/v1/boards/:id/trackers/import` (#79) are
   `importFromTracker`, which calls trackers' own `importIssues` (the UI's rules; `opts.via` makes
   the cards the app's, `preflight` runs the agent pause / write budget before the tracker is asked)
-  or, for a suggest-only credential, `importCandidates` + the structure module's suggestions sink
-  (plain cards linking to their issues: nothing is linked until an editor imports them).
+  or, for a suggest-only credential, `importCandidates` + the structure module's suggestions sink.
+- **Proposed imports (#82).** `noteProposedImport` records, in `tracker_proposals` (trackers' own
+  table), which issue each proposed card stands for (board, card id = the id it gets when accepted,
+  suggestion group, connection, proposer). Realtime reports every decision it applies
+  (`onSuggestionsDecided`: a socket's after `guardSuggestionWrites`, the API's, a withdrawal); an
+  accepted `create` of that group and id marks the row and enqueues `proposals:<boardId>` on
+  `tracker.sync`. The consumer (`linkAcceptedProposals`) links each accepted card on the board as
+  its proposer sees it through the proposer's access, with a base of the card's values on BOTH
+  sides — so the link's first `syncLink` pulls the issue's values onto the card (title, labels,
+  assignee) and pushes nothing — then writes the badge and backlink like any sync. A card not on
+  the board yet is retried on the next `board.content`; a reject, an issue imported meanwhile or a
+  proposer who lost access leaves a plain card; an undone accept clears the row (the link goes
+  when its card does). Sockets never write a link: they can only decide the server's records.
 - `npm run verify -- --only tracker` runs it all against `scripts/lib/mock-jira.mjs` (Cloud, DC,
   Atlassian OAuth), `mock-linear.mjs` and `mock-github.mjs`, which implement the subset of each
   public API used, webhooks included.
