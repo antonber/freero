@@ -46,6 +46,18 @@ export const USE_CASES: UseCase[] = [
     templates: ['roadmap', 'now-next-later', 'release-plan', 'gantt-chart', 'quarter-planning', 'okr-tree'],
   },
   {
+    slug: 'brainstorming',
+    name: 'Brainstorming',
+    summary: 'Ideas on sticky notes, written privately against a timer, clustered and dot-voted down to the few worth trying.',
+    templates: ['brainstorm', 'brainwriting-rounds', 'round-robin-ideas', 'affinity-map', 'how-might-we', 'reverse-brainstorm', 'scamper', 'idea-sorting-wall'],
+  },
+  {
+    slug: 'user-story-mapping',
+    name: 'User story mapping',
+    summary: 'A story map of activities, user tasks and release slices, estimated and sent to Jira, Linear or GitHub.',
+    templates: ['story-map', 'story-splitting', 'backlog-refinement', 'release-plan', 'customer-journey', 'persona'],
+  },
+  {
     slug: 'agent-control-room',
     name: 'Agent control room',
     summary: 'A board where AI agents post their plan, status and tasks, and people steer them.',
