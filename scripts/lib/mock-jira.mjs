@@ -29,6 +29,8 @@ const TRANSITIONS = [
   { id: '31', name: 'Finish', to: 'done' },
   { id: '41', name: 'Reopen', to: 'todo' },
 ];
+/** The site's priority scheme, most pressing first (GET /priority). */
+const PRIORITIES = ['Highest', 'High', 'Medium', 'Low', 'Lowest'];
 const ESTIMATE = 'customfield_10016';
 const START = 'customfield_10015';
 
@@ -100,6 +102,7 @@ export async function startMockJira({ port = 0, host = '127.0.0.1', deployment =
     if (changes.description !== undefined)
       issue.fields.description = deployment === 'cloud' ? { type: 'doc', version: 1, content: [{ type: 'paragraph', content: [{ type: 'text', text: changes.description }] }] } : changes.description;
     if (changes.status !== undefined) issue.status = changes.status;
+    if (changes.priority !== undefined) issue.fields.priority = changes.priority ? { name: changes.priority } : null;
     if (changes.labels !== undefined) issue.fields.labels = changes.labels;
     if (changes.estimate !== undefined) issue.fields[ESTIMATE] = changes.estimate;
     if (changes.duedate !== undefined) issue.fields.duedate = changes.duedate;
@@ -203,6 +206,7 @@ export async function startMockJira({ port = 0, host = '127.0.0.1', deployment =
     }
     const p = `/rest/api/${v}`;
     let m;
+    if (path === `${p}/priority`) return json(200, PRIORITIES.map((name, i) => ({ id: String(i + 1), name })));
     if (path === `${p}/myself`) return json(200, { accountId: 'acc-bot', name: 'freero-bot', emailAddress: email, displayName: 'Freero bot' });
     if (path === `${p}/field`)
       return json(200, [
@@ -224,7 +228,8 @@ export async function startMockJira({ port = 0, host = '127.0.0.1', deployment =
       if (deployment === 'cloud' && f.description && typeof f.description !== 'object') return json(400, { errors: { description: 'Operation value must be an Atlassian Document' } });
       if (deployment !== 'cloud' && f.description && typeof f.description !== 'string') return json(400, { errors: { description: 'Operation value must be a string' } });
       const assignee = f.assignee ? users.find((x) => x.accountId === f.assignee.accountId || x.name === f.assignee.name) : null;
-      const issue = create(project.key, { summary: f.summary, description: f.description ?? null, labels: f.labels ?? [], duedate: f.duedate ?? null, assignee: assignee ?? null, [ESTIMATE]: f[ESTIMATE] ?? null, [START]: f[START] ?? null });
+      if (f.priority && !PRIORITIES.includes(f.priority.name)) return json(400, { errorMessages: [], errors: { priority: 'Specify a valid priority' } });
+      const issue = create(project.key, { summary: f.summary, description: f.description ?? null, labels: f.labels ?? [], duedate: f.duedate ?? null, assignee: assignee ?? null, priority: f.priority ?? { name: 'Medium' }, [ESTIMATE]: f[ESTIMATE] ?? null, [START]: f[START] ?? null });
       return json(201, { id: issue.id, key: issue.key, self: `${url}${p}/issue/${issue.id}` });
     }
     if ((m = new RegExp(`^${p}/issue/([^/]+)$`).exec(path))) {

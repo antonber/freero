@@ -7267,6 +7267,37 @@ async function trackerChecks() {
       assert(bad.status === 400 && /JQL/.test(bad.json.error), `bad JQL: ${bad.status} ${bad.text}`);
     });
 
+    await check('trackers (kanban fields): issues imported into a kanban land in the column named after their Jira status and get a Priority field with Jira’s levels; a card moved to the In review column with a higher Priority sends both to Jira by name', async () => {
+      const cols = [
+        { id: 'kf_todo', title: '<p>To do</p>', status: 'todo', color: '#8A89A3' },
+        { id: 'kf_doing', title: '<p>Doing</p>', status: 'doing', color: '#2E9BF0' },
+        { id: 'kf_review', title: '<p>In review</p>', status: 'doing', color: '#8B5CF6' },
+        { id: 'kf_done', title: '<p>Done</p>', status: 'done', color: '#1FA463' },
+      ];
+      E.set('kf', { ...base, id: 'kf', type: 'kanban', x: 0, y: 9000, w: 12 + 4 * 292, h: 400, z: 0, title: '<p>Sprint</p>', colW: 280, columns: cols });
+      const inReview = cloud.create('WEB', { summary: 'Field import: in review', labels: ['fieldsk'], priority: { name: 'High' }, description: { type: 'doc', version: 1, content: [] } });
+      cloud.edit(inReview.key, { status: 'review' });
+      const started = cloud.create('WEB', { summary: 'Field import: started', labels: ['fieldsk'], priority: { name: 'Low' }, description: { type: 'doc', version: 1, content: [] } });
+      cloud.edit(started.key, { status: 'doing' });
+      const r = await O.req('POST', `/api/boards/${board.id}/trackers/import`, { connectionId: cloudConn.id, query: 'labels = fieldsk', placement: { into: 'kf' } });
+      assert(r.status === 201 && r.json.cards.length === 2, `import into a kanban: ${r.status} ${r.text.slice(0, 300)}`);
+      await waitFor(() => r.json.cards.every((x) => E.get(x.id)) && Array.isArray(E.get('kf').fields), 8000, 'the imported cards and the Priority field');
+      const k = E.get('kf');
+      const columnOf = (el) => k.columns[Math.min(k.columns.length - 1, Math.floor((el.x + el.w / 2 - k.x - 6) / (k.colW + 12)))].id;
+      const cardOf = (key) => E.get(r.json.cards.find((x) => x.key === key).id);
+      assert(columnOf(cardOf(inReview.key)) === 'kf_review', `the In Review issue is in ${columnOf(cardOf(inReview.key))}, not In review`);
+      assert(columnOf(cardOf(started.key)) === 'kf_doing', `the In Progress issue is in ${columnOf(cardOf(started.key))}, not Doing`);
+      const prio = k.fields.find((f) => f.name === 'Priority');
+      assert(prio && JSON.stringify(prio.options.map((o) => o.label)) === JSON.stringify(['Highest', 'High', 'Medium', 'Low', 'Lowest']), `Priority options: ${JSON.stringify(prio)}`);
+      const label = (card) => prio.options.find((o) => o.id === card.values?.[prio.id])?.label;
+      assert(label(cardOf(inReview.key)) === 'High' && label(cardOf(started.key)) === 'Low', 'the cards’ priorities');
+      // Moved on the board: into In review, priority raised.
+      await waitFor(() => cloud.issue(started.key).remotelinks.length === 1, 10_000, 'the imported issue’s first sync');
+      const c = cardOf(started.key);
+      E.set(c.id, { ...c, x: k.x + 12 + 2 * 292 + 140 - c.w / 2, values: { ...c.values, [prio.id]: prio.options.find((o) => o.label === 'Highest').id } });
+      await waitFor(() => cloud.issue(started.key).statusName === 'In Review' && cloud.issue(started.key).fields.priority?.name === 'Highest', 15_000, 'In Review and Highest in Jira');
+    });
+
     await check('trackers: roadmap mode — a query imported onto a timeline becomes linked bars in a lane per epic at their dates (undated issues in an Unscheduled frame); a bar dragged on the board moves the dates in Jira, and dates changed in Jira move the bar', async () => {
       const PPD = 14; // week scale: px per day
       const LABEL = 168;
