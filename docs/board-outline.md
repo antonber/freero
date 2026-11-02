@@ -162,8 +162,10 @@ cluster / kanban column (one for a sticky grid or an item list), with its title'
 | `meeting` | `source` (the notes or transcript as exported, up to 1 000 000 characters), `format?: 'markdown' \| 'text' \| 'vtt' \| 'srt'` (default: recognised), `title?` (when the notes have none), `date?` (YYYY-MM-DD, the meeting's when the notes don't say), `speakers?` (default true) | ONE frame titled like the meeting: a *Summary* note (date, attendees, prose), a *Speakers* note for transcripts (turns, talk time), a *Decisions* cluster, *Action items* as task cards (owner in the description, due date), each other section's points as a cluster under its heading. Read as written, no AI ([integrations/README.md](integrations/README.md)). `parts`: the frame (its `titleId`, the notes' ids), then Decisions, Action items and each section, whichever there are |
 
 Placement: on the free spot nearest to `near` (just right of that element) or `at`, else the middle
-of the board's content — keeping 48 units clear of every element the caller can see
-(`findFreeSpot`, the same rule the web uses for inserted templates). Nothing lands on existing
+of the board's content — keeping 80 units clear of every element the caller can see
+(`findFreeSpot`; `APART_GAP`, more than the widest gap the outline still reads as one cluster, 64),
+so what is added comes back from the next outline as its own item or cluster, never as part of a
+neighbour's; "near X" puts it that far from X. Nothing lands on existing
 content or inside a frame — unless `placement` says where (`modules/structure/place.ts`):
 `into` a frame (inside it, 80 units clear of what is there; the frame grows when full), a kanban
 (`column` by title or id, or `"<kanbanId>:<columnId>"`; stacked at the bottom of the column, a card

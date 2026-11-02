@@ -21,10 +21,20 @@ export function readingOrder<T>(list: readonly T[], boundsOf: (t: T) => Rect | n
   return [...out, ...placed.filter((p) => !p.b).map((p) => p.t)];
 }
 
+/** The widest gap `linkGap` ever allows (world units). */
+const MAX_LINK_GAP = 64;
+
+/**
+ * Clear space that keeps placed content apart from its neighbours in the outline's reading: more
+ * than any `linkGap`, so what free-space placement adds (agents, insert structure, AI) reads as its
+ * own item or cluster, never as part of someone else's.
+ */
+export const APART_GAP = MAX_LINK_GAP + 16;
+
 /** Two boxes belong together when the gap between them is at most this (world units). */
 export function linkGap(a: Rect, b: Rect): number {
   const size = Math.max(Math.min(a.w, a.h), Math.min(b.w, b.h));
-  return Math.max(16, Math.min(64, size * 0.3));
+  return Math.max(16, Math.min(MAX_LINK_GAP, size * 0.3));
 }
 
 const gapBetween = (a: Rect, b: Rect) =>

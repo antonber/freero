@@ -3,6 +3,7 @@
 // lands on existing content.
 import { STICKY_COLORS, type StickyColor } from '../elements';
 import { findFreeSpot, unionRects, type Point, type Rect } from '../geometry';
+import { APART_GAP } from '../outline/spatial';
 import { translateDraft } from './kit';
 import { layoutItems } from './items';
 import { parseMermaid } from './mermaid';
@@ -112,7 +113,7 @@ export interface Placement {
   obstacles: Rect[];
   /** Where the result's center should be, as near as free space allows. Default: the middle of the board's content. */
   near?: Point;
-  /** Clear space kept around it (world units). Default 48. */
+  /** Clear space kept around it (world units). Default APART_GAP: it reads as its own item / cluster. */
   gap?: number;
 }
 
@@ -120,7 +121,7 @@ export interface Placement {
 export function placeLaidOut(laid: LaidOut, p: Placement): LaidOut & { bounds: Rect } {
   const content = unionRects(p.obstacles);
   const near = p.near ?? (content ? { x: content.x + content.w / 2, y: content.y + content.h / 2 } : { x: 0, y: 0 });
-  const spot = findFreeSpot(p.obstacles, laid.size, near, p.gap ?? 48);
+  const spot = findFreeSpot(p.obstacles, laid.size, near, p.gap ?? APART_GAP);
   return {
     elements: laid.elements.map((el) => translateDraft(el, spot.x, spot.y)),
     content: laid.content,

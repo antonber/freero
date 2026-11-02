@@ -9,6 +9,7 @@
 //            instead); the kanban grows to hold them
 //   cluster  right below (or beside) its members, close enough to read as one cluster
 import {
+  APART_GAP,
   clusterBoxes,
   findFreeSpot,
   frameDraft,
@@ -38,9 +39,6 @@ export const LOOSE: ReadonlySet<string> = new Set(['sticky', 'card', 'shape', 't
 export const LOOSE_TYPES = LOOSE;
 const PAD = 40;
 const JOIN = 24;
-const GAP = 48;
-/** More than the widest gap the outline still reads as "together" (linkGap: at most 64). */
-const APART = 80;
 
 type Fields = Record<string, unknown>;
 
@@ -90,7 +88,7 @@ export function placeLaid(laid: LaidOut, placement: StructurePlacement | undefin
 }
 
 function free(w: Wrapped, ctx: PlaceContext): Placed {
-  const placed = placeLaidOut(w.laid, { obstacles: ctx.obstacles, near: ctx.near, gap: GAP });
+  const placed = placeLaidOut(w.laid, { obstacles: ctx.obstacles, near: ctx.near, gap: APART_GAP });
   return { ...placed, frameOf: w.frameOf, moveExtra: w.moveExtra, grow: [], ...(w.containerId ? { containerId: w.containerId } : {}) };
 }
 
@@ -271,11 +269,11 @@ function intoFrame(laid: LaidOut, f: BoardElement, view: BoardView, ctx: PlaceCo
   let at: Point = { x: room.x, y: room.y };
   if (rects.length) {
     // Far enough from what is there that it doesn't read as part of a cluster there.
-    const spot = findFreeSpot(rects, size, { x: f.x + f.w / 2, y: f.y + f.h / 2 }, APART, room);
+    const spot = findFreeSpot(rects, size, { x: f.x + f.w / 2, y: f.y + f.h / 2 }, APART_GAP, room);
     const fits = spot.x >= room.x && spot.y >= room.y && spot.x + size.w <= room.x + room.w && spot.y + size.h <= room.y + room.h;
     // No room left: below what is there, and the frame grows.
     const content = unionRects(rects)!;
-    at = fits ? spot : { x: room.x, y: content.y + content.h + APART };
+    at = fits ? spot : { x: room.x, y: content.y + content.h + APART_GAP };
   }
   const t = translated(laid, Math.round(at.x), Math.round(at.y), f.id);
   const bounds = { x: Math.round(at.x), y: Math.round(at.y), w: size.w, h: size.h };
@@ -304,7 +302,7 @@ function intoCluster(laid: LaidOut, seed: BoardElement, view: BoardView, ctx: Pl
     .map((el) => rotatedBounds(el));
   const size = laid.size;
   // Close to the cluster (it takes them in), far from everything else (no other cluster does).
-  const clear = (r: Rect) => !siblings.some((o) => r.x < o.x + o.w + APART && o.x < r.x + r.w + APART && r.y < o.y + o.h + APART && o.y < r.y + r.h + APART);
+  const clear = (r: Rect) => !siblings.some((o) => r.x < o.x + o.w + APART_GAP && o.x < r.x + r.w + APART_GAP && r.y < o.y + o.h + APART_GAP && o.y < r.y + r.h + APART_GAP);
   // Touching a member (single linkage), never above the title: under the lowest member, or beside
   // the outermost one, level with the top of the items under the title.
   const titleTop = Math.min(...members.filter((m) => m.type !== 'text').map((m) => m.y));

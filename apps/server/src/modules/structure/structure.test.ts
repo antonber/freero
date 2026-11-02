@@ -4,6 +4,7 @@
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import {
+  APART_GAP,
   rectsOverlap,
   rotatedBounds,
   tableCellKey,
@@ -69,7 +70,7 @@ it('lays a 12-node / 15-edge graph out with no overlapping shapes, every connect
   // The edges join the nodes they were asked to (by text).
   const text = new Map(shapes.map((s) => [s.id, (s as { text: string }).text.replace(/<br>/g, ' ')]));
   expect(lines.map((c) => `${text.get(c.start.elementId!)!.split(' ')[1]}>${text.get(c.end.elementId!)!.split(' ')[1]}`).sort()).toEqual(pairs.map(([a, b]) => `${a}>${b}`).sort());
-  for (const e of existing) expect(overlap(res.bounds, e, 47)).toBe(false);
+  for (const e of existing) expect(overlap(res.bounds, e, APART_GAP - 1)).toBe(false);
   // Attributed to the caller.
   expect(new Set(created.map((e) => e.createdBy))).toEqual(new Set([userId]));
 });
@@ -88,9 +89,22 @@ it('places a structure "near X" beside X on free space and never on top of anyth
     for (const e of els) expect(overlap(plan.placed.bounds, rotatedBounds(e))).toBe(false);
     for (const d of plan.change.create!) for (const e of els) expect(overlap(d, rotatedBounds(e))).toBe(false);
     // Adjacent when the space right next to X is free.
-    const right = { x: x.x + x.w + 48, y: x.y + x.h / 2 - plan.placed.size.h / 2, ...plan.placed.size };
-    if (!els.some((e) => overlap(right, rotatedBounds(e), 48))) expect(plan.placed.bounds).toMatchObject({ x: Math.round(right.x), y: Math.round(right.y) });
+    const right = { x: x.x + x.w + APART_GAP, y: x.y + x.h / 2 - plan.placed.size.h / 2, ...plan.placed.size };
+    if (!els.some((e) => overlap(right, rotatedBounds(e), APART_GAP))) expect(plan.placed.bounds).toMatchObject({ x: Math.round(right.x), y: Math.round(right.y) });
   }
+});
+
+it("stickies an agent adds beside someone's cluster come back from the outline as their own cluster, never folded into it", async () => {
+  // A 2 × 2 cluster of 200-unit stickies, 24 apart: the outline links boxes this size up to 60 apart.
+  const theirs = [sticky('t1', 0, 0), sticky('t2', 224, 0), sticky('t3', 0, 224), sticky('t4', 224, 224)];
+  const boardId = await boardWith(theirs);
+  const res = await insert(boardId, { structure: { kind: 'stickies', items: ['Ours 1', 'Ours 2', 'Ours 3', 'Ours 4'] }, near: 't2' });
+
+  const outline = await outlineOfView({ id: boardId, title: 'Structure' }, await readBoardView(boardId, { userId, role: 'owner' }));
+  const holding = (id: string) => outline.items.find((i) => i.id === id || i.children?.some((c) => c.id === id));
+  const members = (id: string) => (holding(id)?.children ?? []).map((c) => c.id).sort();
+  expect(members('t1')).toEqual(['t1', 't2', 't3', 't4']);
+  expect(members(res.created[0])).toEqual([...res.created].sort());
 });
 
 it('turns a Mermaid flowchart with subgraphs into frames that hold their nodes', async () => {
@@ -164,7 +178,7 @@ it('writes a table with its cells, beside the item it was placed near', async ()
   const res = await insert(boardId, { structure: { kind: 'table', rows: [['Name', 'Owner'], ['Login', 'Ann'], ['Search']] }, near: 'there' });
   const view = await readBoardView(boardId, { userId, role: 'owner' });
   const table = view.elements.find((e) => e.el.id === res.created[0])!.el as TableElement;
-  expect(table.x).toBe(200 + 48);
+  expect(table.x).toBe(200 + APART_GAP);
   const cells = view.collection('tableCells');
   const grid = table.rows.map((r) => table.cols.map((c) => cells.get(tableCellKey('t', table.id, r.id, c.id)) ?? ''));
   expect(grid).toEqual([['Name', 'Owner'], ['Login', 'Ann'], ['Search', '']]);

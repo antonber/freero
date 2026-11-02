@@ -2,11 +2,9 @@
 // (@freero/shared layout), place it on free space (never on existing content), and express it as
 // a BoardChange — new elements, moved items, table cells. Pure, so the same plan feeds every sink
 // (sinks.ts): the board itself, a preview, and later the suggestions layer (KAI-169).
-import { layoutStructure, LayoutError, rotatedBounds, tableCellEntries, type BoardElement, type InsertStructureRequest, type Point } from '@freero/shared';
+import { APART_GAP, layoutStructure, LayoutError, rotatedBounds, tableCellEntries, type BoardElement, type InsertStructureRequest, type Point } from '@freero/shared';
 import type { BoardChange, BoardView } from '../realtime/index';
 import { LOOSE as MOVABLE, placeLaid, type Placed } from './place';
-
-const GAP = 48;
 
 export interface Plan {
   change: BoardChange;
@@ -36,8 +34,9 @@ export function planStructure(req: InsertStructureRequest, view: BoardView, newI
     // A cluster the outline shows (`cluster:<id>`) is next to its first item.
     const x = byId.get(req.near.startsWith('cluster:') ? req.near.slice('cluster:'.length) : req.near);
     if (!x) throw new LayoutError(`No item ${req.near} on this board`);
-    // Just right of it, vertically centered on it: the nearest free spot from there.
-    near = { x: x.x + x.w + GAP + laid.size.w / 2, y: x.y + x.h / 2 };
+    // Just right of it (as far as free-space placement keeps clear), vertically centered on it: the
+    // nearest free spot from there.
+    near = { x: x.x + x.w + APART_GAP + laid.size.w / 2, y: x.y + x.h / 2 };
   }
   const placed = placeLaid(laid, req.placement, view, { newId, obstacles, travelling, near });
 
