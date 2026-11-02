@@ -150,6 +150,11 @@ export interface Config {
   port: number;
   /** External origin users reach the app at (https://freero.example.com), or null in dev. */
   publicUrl: string | null;
+  /**
+   * Origins this instance was served at before PUBLIC_URL (PREVIOUS_PUBLIC_URLS): page loads there
+   * are sent on to PUBLIC_URL, and links to them in saved content still read as Freero's own.
+   */
+  previousPublicUrls: string[];
   /** Root of the repository (used to locate apps/web/dist). */
   repoRoot: string;
   /** Directory holding local data (dev database, local uploads, dev outbox). */
@@ -544,6 +549,22 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const publicUrlRaw = url('PUBLIC_URL', ['http:', 'https:']);
   const publicUrl = publicUrlRaw ? new URL(publicUrlRaw).origin : null;
 
+  // PREVIOUS_PUBLIC_URLS: where this instance used to answer (a domain move), origins only.
+  const previousPublicUrls: string[] = [];
+  for (const v of (str('PREVIOUS_PUBLIC_URLS') ?? '').split(',').map((x) => x.trim()).filter(Boolean)) {
+    let u: URL | null = null;
+    try {
+      u = new URL(v);
+    } catch {
+      u = null;
+    }
+    if (!u || !['http:', 'https:'].includes(u.protocol) || u.origin !== v.replace(/\/+$/, '') || u.username || u.password)
+      problems.push(`PREVIOUS_PUBLIC_URLS: "${v}" must be an origin such as https://old.example.com (no path)`);
+    else if (!publicUrl) problems.push('PREVIOUS_PUBLIC_URLS needs PUBLIC_URL: the address they move to');
+    else if (u.origin === publicUrl) problems.push('PREVIOUS_PUBLIC_URLS must not contain PUBLIC_URL (it would redirect to itself)');
+    else if (!previousPublicUrls.includes(u.origin)) previousPublicUrls.push(u.origin);
+  }
+
   // SITE_ANALYTICS_SRC=https://…/script.js, SITE_ANALYTICS_ATTRS="domain=example.com,…" (data-* attributes).
   const analyticsSrc = url('SITE_ANALYTICS_SRC', ['https:']);
   const analyticsAttrs: Record<string, string> = {};
@@ -758,6 +779,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const config: Config = {
     port: int('PORT', 4000, 0, 65535),
     publicUrl,
+    previousPublicUrls,
     repoRoot: REPO_ROOT,
     dataDir,
     pgliteDir: memory ? 'memory' : path.join(dataDir, 'pg'),

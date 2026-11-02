@@ -16,10 +16,14 @@ const LOCK_KEY = 7_202_611_031; // arbitrary, constant across releases
 const MAX_BACKLINK_ROWS = 2000;
 const MAX_BACKLINKS = 200;
 
-/** Freero's own web origins as stored content writes them (PUBLIC_URL); paths and freero:// always count. */
+/**
+ * Freero's own web origins as stored content writes them: PUBLIC_URL, and the addresses it moved
+ * from (PREVIOUS_PUBLIC_URLS), since content saved before a domain move keeps its old links. Paths
+ * and freero:// always count.
+ */
 const contentOrigins = (): string[] => {
-  const pub = getConfig().publicUrl;
-  return pub ? [pub] : [];
+  const { publicUrl: pub, previousPublicUrls } = getConfig();
+  return pub ? [pub, ...previousPublicUrls] : [];
 };
 
 /**

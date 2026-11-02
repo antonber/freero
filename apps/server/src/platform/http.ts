@@ -48,10 +48,25 @@ export function createApp(config: Config = getConfig()): express.Express {
   app.use(securityHeaders(config));
   app.use(healthRoutes());
   app.use(metricsRoute(config));
+  app.use(previousHostRedirect(config));
   app.use(csrfGuard(config));
   // The raw bytes are kept beside the parsed body: webhooks are signed over exactly those bytes.
   app.use(express.json({ limit: config.bodyLimitBytes, verify: (req, _res, buf) => void rawBodies.set(req as express.Request, buf) }));
   return app;
+}
+
+/**
+ * After a domain move (PREVIOUS_PUBLIC_URLS), a page or file opened at an old address is sent on to
+ * the same path and query at PUBLIC_URL. GET and HEAD only: a tracker webhook or token client still
+ * posting to the old address keeps working until it is repointed (webhooks don't follow
+ * redirects), and MCP there answers with where it moved (modules/mcp).
+ */
+export function previousHostRedirect(config: Config): RequestHandler {
+  const old = new Set(config.previousPublicUrls.map((o) => new URL(o).hostname));
+  return (req, res, next) => {
+    if (!config.publicUrl || !old.has(req.hostname?.toLowerCase()) || (req.method !== 'GET' && req.method !== 'HEAD')) return next();
+    res.redirect(301, config.publicUrl + req.originalUrl);
+  };
 }
 
 const rawBodies = new WeakMap<express.Request, Buffer>();
