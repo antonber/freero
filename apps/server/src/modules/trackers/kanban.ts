@@ -44,6 +44,9 @@ import {
   type IssueValues,
   type KanbanColumn,
   type KanbanElement,
+  reflowMoves,
+  withKanbanLayout,
+  type ElementDraft,
 } from '@freero/shared';
 
 type Elements = { elements: Array<{ el: BoardElement }> };
@@ -302,4 +305,32 @@ export function planKanbanImport(k: KanbanElement, issues: ImportedIssue[], ctx:
     if (col) columnOf.set(i.id, col.id);
   }
   return { kanban, patch: kanbanPatch(k, kanban), columnOf, values };
+}
+
+/**
+ * The change an import into kanban `k` (already on the board, `before`) makes: the placed cards
+ * (`placed`), the kanban's new columns and fields (`plan`), the cards already there moved along
+ * with their columns when a status column opens between others (a card in Done stays in Done when
+ * "In progress" opens before it — moved by position alone it would land in the new column and take
+ * its status), and the kanban laid out as open boards would lay it out after the same drop
+ * (@freero/shared withKanbanLayout: swimlanes, filter, sort, card limits).
+ */
+export function importIntoKanban(
+  before: readonly BoardElement[],
+  k: KanbanElement,
+  plan: KanbanImport | null,
+  placed: { create: ElementDraft[]; update: Array<{ id: string; patch: Record<string, unknown> }> },
+): { create: ElementDraft[]; update: Array<{ id: string; patch: Record<string, unknown> }> } {
+  const update = [...placed.update];
+  if (plan?.patch) {
+    const i = update.findIndex((u) => u.id === k.id);
+    if (i >= 0) update[i] = { id: k.id, patch: { ...plan.patch, ...update[i].patch } };
+    else update.push({ id: k.id, patch: plan.patch as Record<string, unknown> });
+    if (plan.patch.columns)
+      for (const m of reflowMoves(k, { colW: k.colW, columns: plan.kanban.columns }, before, null)) {
+        const el = before.find((e) => e.id === m.id)!;
+        update.push({ id: m.id, patch: { x: el.x + m.dx } });
+      }
+  }
+  return withKanbanLayout(before, { create: placed.create as Array<ElementDraft & Record<string, unknown>>, update }) as { create: ElementDraft[]; update: typeof update };
 }

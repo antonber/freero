@@ -89,7 +89,7 @@ import { noteOutcome, openConnection, requireUsable, usableConnections, webhookS
 import { emitTrackerActivity } from './events';
 import { dayNumber } from './board';
 import { planRoadmapImport } from './roadmap';
-import { kanbanOf, planKanbanImport, statusColumns } from './kanban';
+import { importIntoKanban, kanbanOf, planKanbanImport, statusColumns } from './kanban';
 import { TrackerError } from './http';
 import { providerOf, type RemoteIssue, type TrackerProvider } from './providers/index';
 import * as repo from './repo';
@@ -979,14 +979,10 @@ export async function importIssues(
           const values = plan.values;
           elements = elements.map((d) => (values.has(d.id) ? ({ ...d, values: values.get(d.id) } as ElementDraft) : d));
         }
-        // One patch per element: the kanban's new columns / fields and how it grew.
-        const update = [...placed.grow];
-        if (plan?.patch && target && target !== 'new') {
-          const i = update.findIndex((u) => u.id === target.k.id);
-          if (i >= 0) update[i] = { id: target.k.id, patch: { ...plan.patch, ...update[i].patch } };
-          else update.push({ id: target.k.id, patch: plan.patch as Record<string, unknown> });
-        }
-        return { create: elements, update, collections };
+        // Into a kanban that was there: its new columns / fields, the cards already there kept in
+        // their columns, and the kanban laid out as open boards would after this drop (kanban.ts).
+        if (target && target !== 'new') return { ...importIntoKanban(live.elements.map((e) => e.el), target.k, plan, { create: elements, update: [...placed.grow] }), collections };
+        return { create: elements, update: [...placed.grow], collections };
       }
       return { create, collections };
     });
