@@ -15,6 +15,7 @@ import { CARD_MIN_W, CARD_W, DESC, FOOTER, PAD, TITLE, cardLayout, isBar } from 
 import { DEFAULT_ACCENT, STATUSES } from './lib/constants';
 import { formatDue, isOverdue } from './lib/actions';
 import { usePerson } from './lib/people';
+import { Chips } from './lib/Chips';
 import './card.css';
 
 /** Below this zoom the text is unreadable: draw placeholder bars instead. */
@@ -44,10 +45,12 @@ function TagChips({ ids }: { ids: string[] }) {
   );
 }
 
-const CardView = memo(function CardView({ element, editing, zoom }: ElementRenderProps<CardElement>) {
+const CardView = memo(function CardView({ element, editing, zoom, presentation }: ElementRenderProps<CardElement>) {
   const editor = useEditor();
-  const desc = richTextToPlain(element.description ?? '').trim();
-  const accent = element.color || DEFAULT_ACCENT;
+  // In a kanban the board view decides: colour (by column, a field, or the card's own), density, fields.
+  const compact = presentation?.density === 'compact';
+  const desc = compact ? '' : richTextToPlain(element.description ?? '').trim();
+  const accent = presentation?.accent || element.color || DEFAULT_ACCENT;
   const status = STATUSES.find((s) => s.value === element.status);
   // Server clock: a skewed local clock must not flip "overdue" for one viewer.
   const now = new Date(editor.host.serverNow());
@@ -126,26 +129,38 @@ const CardView = memo(function CardView({ element, editing, zoom }: ElementRende
           )}
         </div>
         <div className="fr-card__footer" style={{ height: FOOTER.h }}>
-          {status && (
-            <span className={`fr-card__status is-${status.value}`}>
-              {status.value === 'done' && <Check size={11} strokeWidth={3} />}
-              {status.label}
-            </span>
+          {presentation?.chips ? (
+            <Chips
+              chips={presentation.chips}
+              card={element}
+              now={now}
+              renderPerson={(id, key) => <Assignee key={key} id={id} />}
+              renderTags={(ids, key) => <TagChips key={key} ids={ids} />}
+            />
+          ) : (
+            <>
+              {status && (
+                <span className={`fr-card__status is-${status.value}`}>
+                  {status.value === 'done' && <Check size={11} strokeWidth={3} />}
+                  {status.label}
+                </span>
+              )}
+              {element.dueDate && (
+                <span className={`fr-card__due${overdue ? ' is-overdue' : ''}`} title={overdue ? 'Overdue' : 'Due date'}>
+                  <CalendarDays size={12} strokeWidth={2.2} />
+                  {formatDue(element.dueDate, now)}
+                </span>
+              )}
+              {!!element.tags?.length && <TagChips ids={element.tags} />}
+              <span className="fr-card__spacer" />
+              {element.estimate && (
+                <span className="fr-card__estimate" title="Estimate">
+                  {element.estimate}
+                </span>
+              )}
+              {element.assigneeId && <Assignee id={element.assigneeId} />}
+            </>
           )}
-          {element.dueDate && (
-            <span className={`fr-card__due${overdue ? ' is-overdue' : ''}`} title={overdue ? 'Overdue' : 'Due date'}>
-              <CalendarDays size={12} strokeWidth={2.2} />
-              {formatDue(element.dueDate, now)}
-            </span>
-          )}
-          {!!element.tags?.length && <TagChips ids={element.tags} />}
-          <span className="fr-card__spacer" />
-          {element.estimate && (
-            <span className="fr-card__estimate" title="Estimate">
-              {element.estimate}
-            </span>
-          )}
-          {element.assigneeId && <Assignee id={element.assigneeId} />}
         </div>
       </div>
     </div>
@@ -177,10 +192,11 @@ export default defineElement({
   }),
   Component: CardView,
   toPlainText: (el) => [richTextToPlain(el.title), richTextToPlain(el.description)].filter(Boolean).join('\n'),
-  // Height follows the content (title wrap, description preview) at the current width.
-  normalize(el) {
+  // Height follows the content (title wrap, description preview) at the current width, and the
+  // density its container's saved view gives it (compact: no description).
+  normalize(el, _prev, ctx) {
     if (isBar(el)) return null;
-    const { h } = cardLayout(el);
+    const { h } = cardLayout(el, { compact: ctx?.presentation?.density === 'compact' });
     return h !== el.h ? { h } : null;
   },
 });

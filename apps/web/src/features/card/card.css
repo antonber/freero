@@ -458,3 +458,31 @@
   flex: none;
   color: #1fa463;
 }
+
+/* A field value a kanban's view shows on the card (lib/Chips.tsx). */
+.fr-card__chip {
+  display: inline-flex;
+  flex-shrink: 1;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  min-width: 0;
+  max-width: 110px;
+  padding: 0 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--chip) 18%, #fff);
+  color: color-mix(in srgb, var(--chip) 72%, #17162b);
+}
+
+.fr-card__chip--plain {
+  background: var(--fr-surface-3);
+  color: var(--fr-ink-2);
+}
+
+@media (forced-colors: active) {
+  .fr-card__chip {
+    border: 1px solid CanvasText;
+  }
+}

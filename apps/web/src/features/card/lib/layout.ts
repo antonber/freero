@@ -30,10 +30,14 @@ export interface CardLayout {
   h: number;
 }
 
-export function cardLayout(el: Pick<CardElement, 'w' | 'title' | 'description'>): CardLayout {
+/**
+ * `compact` (a container's view says so, e.g. a kanban's card density): title and the footer
+ * only, the description preview left out.
+ */
+export function cardLayout(el: Pick<CardElement, 'w' | 'title' | 'description'>, opts: { compact?: boolean } = {}): CardLayout {
   const inner = Math.max(40, el.w - PAD.left - PAD.right);
   const titleLines = lineCount(el.title ?? '', TITLE, inner);
-  const descText = richTextToPlain(el.description ?? '').trim();
+  const descText = opts.compact ? '' : richTextToPlain(el.description ?? '').trim();
   const descLines = descText ? Math.min(DESC.maxLines, lineCount(plainToRichText(descText), DESC, inner)) : 0;
   const h =
     PAD.top +
