@@ -65,15 +65,19 @@ OutlineField { id, name, type, options?: Array<{ id, label, status? }> }   // Ou
   mind-map nodes nest under their parent; a reaction stamp nests under the item it sits on. A table
   carries `rows` (plain text, the first row is the header when `fields.header`).
 - Kanban fields: a kanban carries `schema`, its fields in order (`type` is `select`, `multiselect`,
-  `person`, `date`, `number`, `text`, `url` or `checkbox`; selects list their `options`). The first
-  is usually the column field (id `stage`, named "Stage" unless renamed): its options are the
-  columns, so its option ids are the column ids of the `<kanbanId>:<columnId>` sections, and a
-  card's value for it is the column it is in. Kanbans from before fields read as that one field.
+  `person`, `date`, `number`, `text`, `url` or `checkbox`; selects list their `options`). Its
+  `fields` say what its columns are (`grouped by`: the column field, id `stage`, named "Stage"
+  unless renamed — or another single select, person or checkbox field the board view groups by)
+  and, with swimlanes, what its rows are (`rows`). The columns are the grouped field's values: a
+  select's option ids are the column ids of the `<kanbanId>:<columnId>` sections (`~none` is the
+  "No <field>" column), a person column's id is the user id, a checkbox's are `true` / `false`;
+  a card's value for that field is the column it is in. A column showing only its first cards
+  reads `shows: N` and still lists all of them. Kanbans from before fields read as that one field.
   Each card on a kanban carries its values in `fields`, keyed by field **name**: select labels
   (multi-select labels joined by ", "), people by name, dates `YYYY-MM-DD`, numbers, text, URLs,
   checkboxes `true`. Empty values are left out, and so are values of deleted fields or options.
-  Set them with `update_items` (`fields: { "Priority": "P1" }`; the column field by moving the card
-  with `into` + `column`).
+  Set them with `update_items` (`fields: { "Priority": "P1" }`; the grouped field by moving the card
+  with `into` + `column`). A swimlane's value is an ordinary field value on the card.
 - Clusters: items close together (gap ≤ ~30 % of the larger item's short side, 16–64 units), or
   joined by a connector, in the same frame (or outside frames). A text box right above the rest is
   the cluster's title. Containers, tables and mind maps are never clustered.
@@ -99,7 +103,7 @@ Freero board outline v1 · board b_8Fq2 · 14 items, 3 connections · version 6h
   - [s1] sticky yellow: Deploys are faster · 3 votes · #infra
     - comment [th1] Ann: Agreed, @Maria did great
   - [s2] sticky yellow: Pairing helped
-- [k1] kanban: Sprint · fields: Stage (select: To do | Doing | Done), Priority (select: P0 | P1), Points (number)
+- [k1] kanban: Sprint · grouped by: Stage · fields: Stage (select: To do | Doing | Done), Priority (select: P0 | P1), Points (number)
   - column "Doing" [k1:doing] · status: doing
     - [c1] card: Fix login · status: doing · due: 2026-11-02 · assignee: Ann · Stage: Doing · Priority: P1 · Points: 3
 

@@ -1,7 +1,7 @@
 # Kanban phases 2 and 3: fields, group-by and views of the same data
 
-Status: **steps 2a and 2b built** (schema foundation, card display; see "Step 2a as built" and
-"Step 2b as built" below); 2c–3e proposed. The
+Status: **steps 2a, 2b and 2c built** (schema foundation, card display, group by and swimlanes;
+see "Step 2a as built", "Step 2b as built" and "Step 2c as built" below); 2d–3e proposed. The
 owner's decisions on the open questions are under "Decisions". Phase 1 (card colour follows column,
 smoother drag, keyboard moves, column reorder / collapse / resize) has landed.
 
@@ -803,6 +803,56 @@ What the next steps need:
   menu; any role): "Only you see these changes · Save for everyone · Reset", density (editors),
   colour by, fields on cards (toggle and reorder). Commands `kanban.setCardDisplay` and
   `kanban.saveViewForEveryone` do the same for other features and tests.
+
+## Step 2c as built
+
+- **The group field** (`fields.ts` `groupFieldId`): the board view's `groupBy` when it names a
+  stored single select, person or checkbox field, else the column field "Stage". The invariant 2a
+  set up generalises: the group field's options are `columns` (a select's option id = column id;
+  person columns are user ids, checkbox columns `true` / `false`, and select / person groupings
+  have a "No <field>" column, id `~none`, first), and a card's value for it is the column it
+  stands in (`cardValue`); every other field is stored on the card — Stage too while the board is
+  grouped by something else (its options then live in its `fields` entry, `status` mapping kept).
+- **Regrouping** (`lib/group.ts` `setGroupBy`, View panel "Group by", `kanban.groupBy`) is one
+  transaction and one undo step, as the 2a report described: the old group field's values are
+  written onto the cards from their positions, its options go back into its `fields` entry, the new
+  field's options become `columns` (its stored values are dropped: the column says it now), each
+  card moves to its value's column, and the old field's column settings (WIP, collapsed, card
+  limit) are kept in the view's `groupSettings` and restored when the board is grouped by it
+  again. A regroup is no drop: the layout writes no status then. Person columns: one per person
+  who has cards; giving a card to someone without a column adds theirs (`kanban.moveToColumn`).
+  Columns that are a select's options are added, renamed and deleted as options; people, checkbox
+  values and "No <field>" only change their look and limits.
+- **"A value changed in place moves the card"**: for the grouped field it is `card.setValues` →
+  `kanban.moveToColumn` (positional, as Stage in 2a), for a swimlane field the layout moves a card
+  whose stored row value changed where it stood to the bottom of that row.
+- **Swimlanes** (`subGroupBy`, View panel "Swimlanes", `kanban.setSwimlanes`): rows by a second
+  groupable field. Unlike the columns, a row value is **stored** on the card (older clients restack
+  columns without rows; a positional row value would be rewritten by them, a stored one survives
+  and the next new client lays the rows out again). A card the change moved (a drop, a new card)
+  takes the row under its center and the layout writes that row's value in the same step (with the
+  column's status, as for any drop): one write sets both. The rows' heights are cached on the
+  element (`lanes`, like `h`) so a drop, the render and `kanbanLaneAt` agree. Keyboard ↑ / ↓ move
+  within the cell.
+- **Card limit per column** (`KanbanColumn.limit`, column menu "Cards shown"): the first N items of
+  the column (in each row) show; the rest stay in it, stacked below the board, and are folded away
+  with the existing engine hook `hidesMember` — no new `hidesChild` was needed. "+N more" under the
+  column shows them all (editors). WIP counts every card. No default limit (deviation from "50 by
+  default": existing boards would suddenly hide cards).
+- **Not personal** (deviation from decision 2 for grouping): `groupBy` / `subGroupBy` decide where
+  the real cards stand on the shared canvas, so they are saved for everyone by editors; per-person
+  regrouping needs a projection (focus mode, 3a).
+- **Outline**: a kanban reads `grouped by: <field> · rows: <field>`; person columns by name; a
+  limited column `shows: N`; cards carry the stored Stage and row values by name. `update_items`
+  refuses `fields` for the grouped field (move with `into` + `column`).
+- **Rollout**: clients from before 2a keep stacking by `columns` (now the grouped field's values);
+  their drops are right by construction, they only miss the rows. A 2a client opened while a kanban
+  is grouped by another field reads Stage as the columns and, if it edits the Fields panel, drops
+  Stage's stored option list (cards keep their Stage values, which read as empty until the options
+  are added again): an accepted risk for the short window 2a clients are live, noted here.
+- **Not done** (later steps): `$status` / `$assignee` as group fields, row collapse and Alt+Shift
+  row moves, "show all people" columns, server re-lay after an API value change (2e), placement into
+  a swimlane cell (2e).
 
 ## Sources (concepts only; nothing copied)
 
