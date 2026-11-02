@@ -105,6 +105,9 @@ export { describeElementType, elementTypeDescription } from './editor/typeLabel'
 export type { ElementTypeDescription } from './editor/typeLabel';
 // [additive] World point → element-local unrotated coordinates (what hitTest / distanceTo take).
 export { worldToLocal } from './geometry/geometry';
+// [additive] The web-font CSS a node uses, inlined for html-to-image (`fontEmbedCSS`), as board
+// exports build it: the app's "Report a problem" screenshot of the visible page uses it too.
+export { fontEmbedCss } from './editor/fontEmbed';
 
 // [additive] Test support: several real engine replicas of one board that sync on demand
 // (prove concurrent writes converge). Tests only.

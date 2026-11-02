@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
-import { CircleHelp, Search } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import { CircleHelp, Keyboard, MessageSquareWarning, Search } from 'lucide-react';
 import { definePanel, useRole, type Editor, type PanelProps } from '@engine';
-import { IconButton, Input, Kbd, Modal } from '@ui';
+import { IconButton, Input, Kbd, Menu, Modal } from '@ui';
 import { SHEET_PANEL, buildSheet } from './lib/sheet';
 import { PALETTE_PANEL } from './lib/palette';
 import { Palette } from './lib/PaletteDialog';
@@ -54,16 +54,40 @@ function Sheet({ editor }: PanelProps) {
   );
 }
 
+/**
+ * The board's help button: the shortcut sheet, and — for people with an account — "Report a
+ * problem…" (features/problem-report's command; the dialog is the app's). Without that, one click
+ * opens the sheet as before.
+ */
 function HelpButton({ editor }: { editor: Editor }) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  const canReport = !!editor.host.reportProblem;
   return (
-    <IconButton
-      icon={CircleHelp}
-      label="Keyboard shortcuts"
-      shortcut="?"
-      size={32}
-      tooltipSide="top"
-      onClick={() => editor.openPanel(SHEET_PANEL)}
-    />
+    <>
+      <IconButton
+        ref={ref}
+        icon={CircleHelp}
+        label={canReport ? 'Help' : 'Keyboard shortcuts'}
+        shortcut={canReport ? undefined : '?'}
+        size={32}
+        tooltipSide="top"
+        aria-haspopup={canReport ? 'menu' : undefined}
+        onClick={() => (canReport ? setOpen((o) => !o) : editor.openPanel(SHEET_PANEL))}
+      />
+      <Menu
+        open={open}
+        onClose={() => setOpen(false)}
+        anchor={ref.current}
+        side="top"
+        align="end"
+        aria-label="Help"
+        items={[
+          { id: 'shortcuts', label: 'Keyboard shortcuts', icon: Keyboard, shortcut: '?', onSelect: () => editor.openPanel(SHEET_PANEL) },
+          { id: 'problem', label: 'Report a problem…', icon: MessageSquareWarning, shortcut: 'mod+alt+p', onSelect: () => editor.runCommand('problem-report.open') },
+        ]}
+      />
+    </>
   );
 }
 
