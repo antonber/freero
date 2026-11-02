@@ -1,9 +1,9 @@
 import { afterEach, expect, it } from 'vitest';
-import type { CardElement, StickyElement, Tag } from '@freero/shared';
+import { cardValue, collectionSchema, valueText, type CardElement, type FieldDef, type KanbanElement, type StickyElement, type Tag } from '@freero/shared';
 import { createTestBoard, plainToRichText, richTextToPlain, type FeatureBundle, type NewElement, type TestBoard } from '@engine';
 import manifest from './feature';
-import { placeRows, toRows, itemsToExport } from './lib/board';
-import { csvCell, exportRows, guessMapping, parseDelimited, rowsToItems, toCsv } from './lib/csv';
+import { placeRows, placeRowsOnKanban, toRows, itemsToExport } from './lib/board';
+import { csvCell, exportRows, fieldColumns, guessColumnsFrom, guessMapping, parseDelimited, rowsToItems, toCsv } from './lib/csv';
 
 // The board's `tags` collection belongs to the tags feature: a manifest claiming it is all a test needs.
 const features: FeatureBundle['manifest'][] = [manifest, { name: 'tags', description: 'tags', owns: ['tags'] }];
@@ -82,4 +82,48 @@ it('200 rows become 200 cards on a kanban by status, assignees matched by name, 
 
   ed.undo();
   expect(ed.getElements()).toHaveLength(0);
+});
+
+it('a kanban exported to CSV and imported back as a kanban has the same columns, its fields with their types (free text stays text), and every card’s values', () => {
+  const source = createTestBoard({ users: ['ann'], features });
+  const [ed] = source.editors('csv');
+  const prio: FieldDef = { id: 'f_p', name: 'Priority', type: 'select', options: [{ id: 'hi', label: 'High', color: '#E5484D' }, { id: 'lo', label: 'Low', color: '#8A89A3' }] };
+  const fields: FieldDef[] = [{ id: 'stage', name: 'Stage', type: 'select' }, prio, { id: 'f_pts', name: 'Points', type: 'number' }, { id: 'f_ok', name: 'Signed off', type: 'checkbox' }, { id: 'f_n', name: 'Notes', type: 'text' }];
+  const columns = [
+    { id: 'c1', title: 'Backlog', status: 'todo' as const, color: '#8A89A3' },
+    { id: 'c2', title: 'In review', status: 'doing' as const, color: '#2E9BF0' },
+  ];
+  const k = ed.create({ type: 'kanban', x: 0, y: 0, w: 600, h: 400, title: 'Sprint', colW: 280, columns, fields } as never);
+  const card = (col: number, title: string, values: Record<string, unknown>, y: number) =>
+    ed.create({ type: 'card', x: 22 + col * 292, y, w: 260, h: 90, frameId: k, title: plainToRichText(title), description: '', color: '#5B3FF0', status: columns[col].status, values } as never);
+  card(0, 'Invite dialog', { f_p: 'hi', f_pts: 3, f_n: 'Needs copy from design' }, 120);
+  card(0, 'Guest role', { f_p: 'lo', f_pts: 5, f_n: 'Blocked on the API review' }, 220);
+  card(1, 'Access page', { f_p: 'hi', f_ok: true, f_n: 'Ready to ship on Monday' }, 120);
+  const csv = toCsv(exportRows(toRows(ed, itemsToExport(ed), new Map())));
+  source.destroy();
+
+  const [header, ...body] = parseDelimited(csv, ',');
+  const mapping = guessMapping(header);
+  const rows = rowsToItems(body, { as: 'card', mapping, people: new Map() });
+  const columnsFrom = guessColumnsFrom(header)!;
+  const found = fieldColumns(header, body, mapping, columnsFrom);
+  expect(found.map((f) => [f.name, f.type])).toEqual([
+    ['Priority', 'select'],
+    ['Points', 'number'],
+    ['Signed off', 'checkbox'],
+    ['Notes', 'text'],
+  ]);
+  const [into] = (board = createTestBoard({ users: ['bob'], features })).editors('csv');
+  const [kid] = placeRowsOnKanban(into, rows, { columnsFrom, fields: found, stageName: header[columnsFrom] }, 'Sprint');
+  const made = into.getElement<KanbanElement>(kid)!;
+  expect(made.columns.map((c) => richTextToPlain(c.title))).toEqual(['Backlog', 'In review']);
+  const schema = collectionSchema(made);
+  const byName = (n: string) => schema.find((f) => f.name === n)!;
+  const read = (title: string) => {
+    const c = into.getElements().find((e): e is CardElement => e.type === 'card' && richTextToPlain(e.title) === title)!;
+    return ['Stage', 'Priority', 'Points', 'Signed off', 'Notes'].map((n) => valueText(byName(n), cardValue(made, c, byName(n))));
+  };
+  expect(read('Invite dialog')).toEqual(['Backlog', 'High', '3', '', 'Needs copy from design']);
+  expect(read('Guest role')).toEqual(['Backlog', 'Low', '5', '', 'Blocked on the API review']);
+  expect(read('Access page')).toEqual(['In review', 'High', '', 'Yes', 'Ready to ship on Monday']);
 });
