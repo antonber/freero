@@ -174,7 +174,9 @@ export function placeRowsOnKanban(editor: Editor, rows: ImportedRow[], spec: Kan
     return out;
   });
   const [kanban, ...cards] = laid.elements;
-  const shown = [...used.map((u) => u.def.id), '$assignee', '$due', '$tags'];
+  // Cards show the short fields (long text and links stay in card details), at most four.
+  const SHORT = new Set(['select', 'multiselect', 'number', 'date', 'checkbox', 'person']);
+  const shown = [...used.filter((u) => SHORT.has(u.def.type)).slice(0, 4).map((u) => u.def.id), '$assignee', '$due', '$tags'];
   const elements = [
     { ...kanban, fields: storedFields(schema), views: [{ id: 'board', name: 'Board', layout: 'board', card: { show: shown, density: 'comfortable', color: 'own' } }], activeView: 'board' },
     ...cards.map((d, i) => {
