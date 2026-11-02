@@ -257,6 +257,14 @@ export function useCursorsHidden(): boolean {
   return useUi((s) => s.cursorsHidden);
 }
 
+/**
+ * [additive] Where the items being dragged would land in container `id` if dropped now (world
+ * rects; ElementDefinition.dragPreview), or null when nothing is being dragged into it.
+ */
+export function useDragPreview(id: string): Rect[] | null {
+  return useUi((s) => (s.dragPreview?.containerId === id && s.dragPreview.slots.length ? s.dragPreview.slots : null));
+}
+
 /** [additive] Ids hidden for this viewer only (Editor.setViewHidden); re-renders when they change. */
 export function useViewHidden(): ReadonlySet<string> {
   return useUi((s) => s.viewHidden);

@@ -74,6 +74,18 @@
   pointer-events: auto;
 }
 
+/* Items making room for a drag into their container (ElementDefinition.dragPreview) slide there.
+   Only while the drag lasts: the drop writes the same spots and drops the class in one frame. */
+.fr-el--sliding {
+  transition: transform 160ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fr-el--sliding {
+    transition: none;
+  }
+}
+
 /* In this user's private layer (board layers): nobody else can see it until it is revealed. */
 .fr-el--private {
   outline: 1.5px dashed var(--fr-ink-3);

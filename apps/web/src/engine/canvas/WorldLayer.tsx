@@ -66,7 +66,8 @@ function useVisibleIds(): string[] {
     compute(true);
     const offStore = store.subscribeElements(schedule);
     const offUi = ui.subscribe((s, p) => {
-      if (s.selection !== p.selection || s.editingId !== p.editingId || s.viewHidden !== p.viewHidden) compute(true);
+      // `dragging`: items folded into a container stay drawn while dragged, and fold when dropped.
+      if (s.selection !== p.selection || s.editingId !== p.editingId || s.viewHidden !== p.viewHidden || s.dragging !== p.dragging) compute(true);
 
       else if (s.camera !== p.camera || s.viewport !== p.viewport) compute(false);
     });
@@ -96,8 +97,12 @@ const ElementView = memo(function ElementView({ id }: { id: string }) {
   const selected = useStore(core.ui, (s) => s.selection.includes(id));
   const editing = useStore(core.ui, (s) => s.editingId === id);
   const zoom = useStore(core.ui, (s) => quantizeZoom(s.camera.zoom));
+  // [additive] While items are dragged over its container: where it is drawn to make room, and
+  // whether it slides there (ElementDefinition.dragPreview). Display only, never written.
+  const shownAt = useStore(core.ui, (s) => s.dragPreview?.moves.get(id) ?? null);
+  const sliding = useStore(core.ui, (s) => !!s.dragPreview?.members.has(id));
   if (!el) return null;
-  return <ElementFrame element={el} selected={selected} editing={editing} zoom={zoom} />;
+  return <ElementFrame element={el} selected={selected} editing={editing} zoom={zoom} shownAt={shownAt} sliding={sliding} />;
 });
 
 /**
@@ -105,11 +110,22 @@ const ElementView = memo(function ElementView({ id }: { id: string }) {
  * any decorations (decoration.tsx of other features) inside the same wrapper, so they move,
  * rotate and export with it.
  */
-export function ElementFrame(props: { element: BoardElement; selected: boolean; editing: boolean; zoom: number; preview?: boolean }) {
+export function ElementFrame(props: {
+  element: BoardElement;
+  selected: boolean;
+  editing: boolean;
+  zoom: number;
+  preview?: boolean;
+  /** Drawn here instead of at its own position (making room for a drag), see ElementView. */
+  shownAt?: { x: number; y: number } | null;
+  /** Slides (animated) between its own position and `shownAt`. */
+  sliding?: boolean;
+}) {
   const core = useCore();
   const { element: el } = props;
   const reg = core.registry.elements.get(el.type);
-  const transform = `translate(${el.x}px, ${el.y}px)${el.rotation ? ` rotate(${el.rotation}deg)` : ''}`;
+  const at = props.shownAt ?? el;
+  const transform = `translate(${at.x}px, ${at.y}px)${el.rotation ? ` rotate(${el.rotation}deg)` : ''}`;
   const decorations = core.registry.decorations.filter((d) => d.def.appliesTo(el));
   // In this user's private layer (private mode): nobody else can see it until it is revealed.
   const isPrivate = useContext(RenderModeContext) !== 'export' && core.store.layerOf(el.id) === 'private';
@@ -128,7 +144,7 @@ export function ElementFrame(props: { element: BoardElement; selected: boolean; 
   }
   return (
     <div
-      className={`fr-el${props.editing ? ' fr-el--editing' : ''}${isPrivate ? ' fr-el--private' : ''}${props.preview ? ' fr-el--preview fr-paper' : ''}`}
+      className={`fr-el${props.editing ? ' fr-el--editing' : ''}${isPrivate ? ' fr-el--private' : ''}${props.preview ? ' fr-el--preview fr-paper' : ''}${props.sliding ? ' fr-el--sliding' : ''}`}
       data-id={props.preview ? undefined : el.id}
       data-type={el.type}
       style={{ ...reg?.def.wrapperStyle?.(el as never), width: el.w, height: el.h, transform }}

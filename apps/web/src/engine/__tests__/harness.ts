@@ -104,7 +104,7 @@ export function drag(
   core: EngineCore,
   from: Point,
   to: Point,
-  opts: { shift?: boolean; alt?: boolean; meta?: boolean; handle?: string; steps?: number; tool?: string } = {},
+  opts: { shift?: boolean; alt?: boolean; meta?: boolean; handle?: string; steps?: number; tool?: string; during?: () => void } = {},
 ) {
   const tool = core.registry.toolsById.get(opts.tool ?? 'select')!;
   core.interaction.handle = opts.handle ?? null;
@@ -116,6 +116,7 @@ export function drag(
     const p = { x: from.x + ((to.x - from.x) * i) / steps, y: from.y + ((to.y - from.y) * i) / steps };
     dispatchToolPointer(core, tool, 'onPointerMove', toolEvent(core, p, opts));
   }
+  opts.during?.(); // still holding the pointer at `to`
   dispatchToolPointer(core, tool, 'onPointerUp', toolEvent(core, to, opts));
   core.editor.endGesture();
   core.interaction.handle = null;

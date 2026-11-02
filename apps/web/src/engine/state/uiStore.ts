@@ -63,6 +63,10 @@ export interface UiState {
   hint: { text: string; x: number; y: number } | null;
   /** Container highlighted as the drop target while dragging. */
   dropTargetId: string | null;
+  /** [additive] Items the select tool is dragging right now (never folded away mid-drag), or null. */
+  dragging: ReadonlySet<string> | null;
+  /** [additive] What dropping now would do in the drop target (ElementDefinition.dragPreview). */
+  dragPreview: DragPreviewState | null;
   /** Where the format toolbar is on screen (viewport px), null while hidden (useFormatToolbarRect). */
   formatToolbarRect: Rect | null;
   /** Board chrome hidden (presentation mode). */
@@ -79,6 +83,16 @@ export interface UiState {
   viewHidden: ReadonlySet<string>;
   /** Phone layout: the editor switched from "view and comment" to the full toolbar (ui/compact.ts). */
   phoneEditing: boolean;
+}
+
+export interface DragPreviewState {
+  containerId: string;
+  /** Display positions of the container's other children (they make room). */
+  moves: ReadonlyMap<string, { x: number; y: number }>;
+  /** The container's children that are not being dragged (they slide, animated). */
+  members: ReadonlySet<string>;
+  /** Where the dragged items would land (world). */
+  slots: Rect[];
 }
 
 export interface PointerState {
@@ -125,6 +139,8 @@ export function createUiStore(init: { role: Role }): UiStore {
     cameraMoving: false,
     hint: null,
     dropTargetId: null,
+    dragging: null,
+    dragPreview: null,
     formatToolbarRect: null,
     chromeHidden: false,
     dialog: null,

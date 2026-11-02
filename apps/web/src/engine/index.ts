@@ -37,6 +37,7 @@ export {
   useCursorsHidden,
   useEditingPart,
   useViewHidden,
+  useDragPreview,
   usePrivateCollection,
   useIsExporting,
   useElementsQuery,
