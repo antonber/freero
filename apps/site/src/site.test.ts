@@ -11,6 +11,7 @@ import type { PageDef } from './lib/define';
 import { MCP_PROMPTS, MCP_TOOLS } from './lib/mcp';
 import { DISALLOWED } from './lib/seo';
 import { APP, docsUrl, ORIGIN } from './lib/site';
+import { CATEGORY_PAGE_SIZE, categoryPath, SITE_CATEGORIES, type SiteCategory } from './lib/templateCategories';
 import { SITE_TEMPLATES } from './lib/templates';
 
 const HOST = 'https://whiteboard.example.com';
@@ -254,21 +255,48 @@ describe('what agents read (/llms.txt, /agents)', () => {
 });
 
 describe('template pages', () => {
-  it('every template in the app’s catalog gets a page in the templates sitemap and on /templates, with its own preview drawn as an SVG file', () => {
+  /** A category's listing: its page and the numbered pages reached from it by its page links. */
+  const listingOf = (c: SiteCategory) => {
+    const first = categoryPath(c);
+    const seen = new Set([first]);
+    const queue = [first];
+    while (queue.length)
+      for (const href of attr(html.get(queue.shift()!) ?? '', /<a [^>]*href="([^"]+)"/g))
+        if (/^\/\d+$/.test(href.slice(first.length)) && href.startsWith(first) && !seen.has(href)) {
+          seen.add(href);
+          queue.push(href);
+        }
+    return [...seen].map((p) => html.get(p) ?? '');
+  };
+
+  it('every template in the app’s catalog gets a page in the templates sitemap, is listed by each of its categories, sits under its category in the breadcrumbs and has its own preview drawn as an SVG file', () => {
     const inSitemap = attr(served('sitemap-templates.xml'), /<loc>([^<]+)<\/loc>/g);
-    const index = html.get('/templates')!;
     expect(SITE_TEMPLATES.length).toBeGreaterThan(50);
+    const listed = new Map(SITE_CATEGORIES.map((c) => [c.id, listingOf(c).join('\n')]));
     for (const t of SITE_TEMPLATES) {
       const p = `/templates/${t.id}`;
       const doc = html.get(p);
       expect(doc, `${p} has no page`).toBeTruthy();
       expect(inSitemap, `${p} is not in sitemap-templates.xml`).toContain(`${HOST}${p}`);
-      expect(index.includes(`href="${p}"`), `/templates doesn’t list ${p}`).toBe(true);
+      for (const c of t.categories) expect(listed.get(c.id)?.includes(`href="${p}"`), `${p} is missing from the ${c.label} pages`).toBe(true);
+      const crumbs = jsonLd(doc!)
+        .flatMap((d) => d['@graph'])
+        .find((n) => n['@type'] === 'BreadcrumbList') as { itemListElement: Array<{ item: string }> };
+      const home = SITE_CATEGORIES.find((c) => c.id === t.category.id)!;
+      expect(crumbs.itemListElement.map((i) => i.item.slice(HOST.length) || '/'), p).toEqual(['/', '/templates', categoryPath(home), p]);
       const [preview] = attr(doc!, /<img class="tpl-preview" src="([^"]+)"/g);
       const svg = fs.readFileSync(path.join(dist, preview), 'utf8');
       expect(svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg"'), `${p}: ${preview} is not a standalone SVG`).toBe(true);
       expect(text(doc!).includes(t.hint), `${p} doesn’t say how to use the template`).toBe(true);
     }
+  });
+
+  it('listing pages stay light as the catalog grows: the hub shows a few previews per category, and a long category continues on numbered pages', () => {
+    const hubImages = html.get('/templates')!.match(/<img /g)?.length ?? 0;
+    expect(hubImages).toBeLessThanOrEqual(SITE_CATEGORIES.length * 6);
+    expect(SITE_CATEGORIES.some((c) => listingOf(c).length > 1), 'no category is long enough to have a second page').toBe(true);
+    for (const c of SITE_CATEGORIES)
+      for (const doc of listingOf(c)) expect(doc.match(/<li class="tpl-card">/g)?.length ?? 0, categoryPath(c)).toBeLessThanOrEqual(CATEGORY_PAGE_SIZE);
   });
 
   it('“Use this template” signs up and then opens a new board with that template (the app’s /app?template=<id>)', () => {

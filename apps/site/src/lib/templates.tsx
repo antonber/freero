@@ -1,7 +1,7 @@
 // The site's view of the app's built-in template catalog (apps/web/src/features/templates: the same
 // list the board's Templates panel shows). /templates and one page per template are generated from
-// it at build time, so a template added there gets its page, preview, sitemap entry and index card
-// with no edit here.
+// it at build time, so a template added there gets its page, preview, sitemap entry and a card on
+// its categories' pages (lib/templateCategories.tsx) with no edit here.
 //
 // Each template is BUILT here exactly as the board builds it on insert, and its page is made from
 // that: the instruction line under its title, the parts it lays out (section titles and their
@@ -18,7 +18,7 @@ import { createElement, type ComponentType } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { richTextToPlain } from '@freero/shared';
 import { emitAsset, SRC_DIR } from './assets';
-import { abs, APP } from './site';
+import { APP } from './site';
 
 const LIB = path.resolve(SRC_DIR, '../../web/src/features/templates/lib');
 
@@ -181,6 +181,14 @@ export const SITE_TEMPLATES: SiteTemplate[] = TEMPLATES.map((def) => {
 
 const byId = new Map(SITE_TEMPLATES.map((t) => [t.id, t]));
 
+/**
+ * Path segments under /templates/ the site's own pages use: a template with such an id would sit
+ * where its listing pages are (/templates/category/<slug>), so the build refuses it.
+ */
+const RESERVED_TEMPLATE_IDS = ['category'];
+for (const id of RESERVED_TEMPLATE_IDS)
+  if (byId.has(id)) throw new Error(`template id "${id}" is reserved for the site's /templates/${id}/ pages: rename the template (apps/web/src/features/templates)`);
+
 /** A template by id; throws for an id the catalog doesn't have (a use case naming a removed one). */
 export function templateById(id: string): SiteTemplate {
   const t = byId.get(id);
@@ -189,9 +197,6 @@ export function templateById(id: string): SiteTemplate {
 }
 
 export const templatePath = (id: string) => `/templates/${id}`;
-export const categoryAnchor = (id: string) => `category-${id}`;
-/** Templates the index lists under a category: those whose FIRST category it is, as the panel does. */
-export const templatesIn = (categoryId: string) => SITE_TEMPLATES.filter((t) => t.category.id === categoryId);
 
 /**
  * "Use this template": sign up (or straight through when signed in), then a new board with this
@@ -205,17 +210,19 @@ export function previewOf(t: SiteTemplate): { src: string; width: number; height
   return { src: emitAsset(`templates/${t.id}.svg`, t.svg.bytes), width: t.svg.width, height: t.svg.height };
 }
 
-/** Other templates to suggest on a template's page: its first category first, then shared words. */
+/**
+ * Other templates to suggest on a template's page: from its own category (the one its breadcrumb
+ * names), closest first by the categories and keywords they share.
+ */
 export function relatedTo(t: SiteTemplate, max = 6): SiteTemplate[] {
   const words = new Set(t.keywords);
   const cats = new Set(t.categories.map((c) => c.id));
-  return SITE_TEMPLATES.filter((o) => o.id !== t.id)
+  return SITE_TEMPLATES.filter((o) => o.id !== t.id && o.categories.some((c) => c.id === t.category.id))
     .map((o, i) => ({
       o,
       i,
-      score: (o.category.id === t.category.id ? 4 : 0) + o.categories.filter((c) => cats.has(c.id)).length + o.keywords.filter((k) => words.has(k)).length * 2,
+      score: (o.category.id === t.category.id ? 2 : 0) + o.categories.filter((c) => cats.has(c.id)).length + o.keywords.filter((k) => words.has(k)).length * 2,
     }))
-    .filter((x) => x.score > 0)
     .sort((a, b) => b.score - a.score || a.i - b.i)
     .slice(0, max)
     .map((x) => x.o);
@@ -252,15 +259,4 @@ export function TemplateCards({ templates }: { templates: readonly SiteTemplate[
       ))}
     </ul>
   );
-}
-
-/** schema.org ItemList of the catalog (the index page). */
-export function templatesItemList(): Record<string, unknown> {
-  return {
-    '@type': 'ItemList',
-    '@id': `${abs('/templates')}#list`,
-    name: 'Freero whiteboard templates',
-    numberOfItems: SITE_TEMPLATES.length,
-    itemListElement: SITE_TEMPLATES.map((t, n) => ({ '@type': 'ListItem', position: n + 1, name: t.name, url: abs(templatePath(t.id)) })),
-  };
 }
