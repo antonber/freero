@@ -1,6 +1,7 @@
 # Kanban phases 2 and 3: fields, group-by and views of the same data
 
-Status: **step 2a built** (schema foundation, see "Step 2a as built" below); 2b–3e proposed. The
+Status: **steps 2a and 2b built** (schema foundation, card display; see "Step 2a as built" and
+"Step 2b as built" below); 2c–3e proposed. The
 owner's decisions on the open questions are under "Decisions". Phase 1 (card colour follows column,
 smoother drag, keyboard moves, column reorder / collapse / resize) has landed.
 
@@ -767,6 +768,41 @@ What the next steps need:
 - **Phase 3**: views tabs with personal overrides (decision 2: per-user store behind `Host`),
   projections, focus mode; linked views on the same board (3c) and across boards with
   Synced / Copy on paste (3d, decision 3); "Convert to kanban" (3e, decision 4).
+
+## Step 2b as built
+
+- **Engine** (`engine/api.ts`): `ElementDefinition.presentChild(container, child, { editor,
+  personal })` → `ChildPresentation` (`accent`, `chips: FieldChip[]`, `density`), handed to the
+  child's component as `ElementRenderProps.presentation` and, computed with `personal: false`, to
+  its `normalize` (`NormalizeContext`); `presentationKey(container)` re-normalises the children in
+  the same transaction when it changes (one undo step with the re-stack). Personal view state:
+  `Editor.getPersonalView` / `setPersonalView` + `usePersonalView`, kept through
+  `Host.personalViews` (server module `personalviews`, table `personal_views`: per user, board,
+  item and view; any role that can open the board; 4 KB per entry, 200 per board; in the data
+  export), else in this browser (sandbox, guests, embeds).
+- **`@freero/shared` `views.ts`**: `ViewConfig` (`id`, `name`, `layout: 'board'`, `card: { show,
+  density, color }`), `boardView(k)` (read-time: a kanban without `views` has one, with the footer
+  cards always had — status, due, tags, estimate, assignee — comfortable density, and colour by
+  column exactly when `colorCards` is on), `ViewOverride` / `cleanOverride` / `withOverride` /
+  `overrideBetween`, `savedViews` (writes the view and keeps `colorCards` = "coloured by column"
+  for older clients), `cardChips`, `cardAccent`.
+- **Card colour is derived** (`card.color`: `'group'` = the column's colour, `'own'`, `$status`, or
+  a select field's option colour). Moves never write colour any more; the colours phase 1 wrote are
+  simply the cards' own colours now. Phase 1's toolbar toggle became "Colour by" in the View panel;
+  `colorCards` stays meaningful as the mirror older clients read (they keep writing the column
+  colour on move, which is harmless: new clients draw the derived colour).
+- **Personal vs saved (decision 2)**: which fields cards show (and their order) and what colours
+  them are personal until "Save for everyone" (editors, unlocked kanbans; one undo step; the
+  override is cleared). **Deviation:** density is not personal. It changes card heights, which are
+  the shared board's geometry (every client stacks by them), so it is saved directly, editors only.
+- **Density** (deviation from "compact = one line of up to three chips, comfortable = one row per
+  field"): both densities have one line of chips (the card's footer, clipped when it overflows);
+  comfortable also shows the description preview, compact doesn't. That keeps card height
+  independent of which fields show, so `show` can be personal without moving anything.
+- **View panel** (dock `kanban.view`: the toolbar's "View" button, "View settings…" in the context
+  menu; any role): "Only you see these changes · Save for everyone · Reset", density (editors),
+  colour by, fields on cards (toggle and reorder). Commands `kanban.setCardDisplay` and
+  `kanban.saveViewForEveryone` do the same for other features and tests.
 
 ## Sources (concepts only; nothing copied)
 
