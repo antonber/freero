@@ -11,11 +11,10 @@ Everything each portal asks for, filled in where we can. Requirements as publish
   uploaded to platform.openai.com → Plugins),
   [guidelines](https://developers.openai.com/apps-sdk/app-submission-guidelines).
 
-`<HOST>` below is the hosted service's public origin. Today that is
-`https://freero-production.up.railway.app`; it becomes the custom domain once one is bought. Several
-fields (the listing URLs, the MCP URL, the domain verification) are tied to it, so **file only after
-the domain is final**: ChatGPT can't change a connected server's URL without contacting support, and
-the Claude listing slug is permanent.
+`<HOST>` below is the hosted service's public origin: `https://freero.app` (since 2026-11-02; the
+old Railway address and `www.freero.app` redirect to it). Several fields (the listing URLs, the MCP
+URL, the domain verification) are tied to it, and ChatGPT can't change a connected server's URL
+without contacting support while the Claude listing slug is permanent, so it must not change again.
 
 ## Status
 
@@ -34,9 +33,10 @@ the Claude listing slug is permanent.
 
 ## What only the owner can do
 
-1. **Buy the domain**, point it at Railway, set `PUBLIC_URL` to it, and check `<HOST>/mcp` answers
-   over HTTPS. Then verify a sending domain with Resend and set `MAIL_FROM` to it (today mail comes
-   from `onboarding@resend.dev`, which reviewers and users may see as spam).
+1. ~~Buy the domain~~ (done: `freero.app`, `PUBLIC_URL` set, `<HOST>/mcp` answers over HTTPS).
+   Still open: verify `freero.app` as a sending domain with Resend and set `MAIL_FROM` to it (today
+   mail comes from `onboarding@resend.dev`, which reviewers and users may see as spam), and set up
+   the `support@` / `security@` / `privacy@` forwards the legal pages will name.
 2. **Decide the legal operator and get the legal pages reviewed.** The operator is Kaiten Gaming
    LLC; the business address, governing law, contact addresses and hosting description are not
    decided. A lawyer reviews and adapts `/privacy`, `/terms`, `/acceptable-use`
