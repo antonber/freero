@@ -40,6 +40,30 @@ from.
 `boards:read`, `boards:write`, `boards:suggest` (reserved), `comments:write`, `members:read`,
 `members:write`. A call can do what your role on the board allows AND the scope allows.
 
+`problems:triage` is for Freero's operators only (OPERATOR_EMAILS, verified): a personal access
+token of an operator account may carry it (the server refuses it to anyone else and to OAuth apps),
+and it works only while the account is an operator. See below.
+
+## Problem reports (operators)
+
+What people sent with “Report a problem” (bugs, broken things, confusion — not abuse), for the
+operators' own triage, e.g. an automated morning review. Any credential that isn't an operator's
+gets `404` here, like a path that doesn't exist.
+
+| | |
+|---|---|
+| list | `GET /api/v1/operator/problems?status=new` (newest first; `status` one of new, triaged, fixed, wontfix, duplicate; `limit` ≤ 100; next page with `before=<nextBefore>`) |
+| one | `GET /api/v1/operator/problems/{id}` — note, `contactOk`, reporter (name, email), diagnostics (path, board and role, release, browser, viewport, recent errors), status, operator note, `issueUrl` |
+| screenshot | `GET /api/v1/operator/problems/{id}/screenshot` — the image (`hasScreenshot` says whether there is one); never cached, every read audited |
+| triage | `PATCH /api/v1/operator/problems/{id}` `{ status?, operatorNote?, issueUrl? }` — `fixed` notifies the reporter once |
+
+```
+curl -H "Authorization: Bearer frp_…" "https://<your-freero>/api/v1/operator/problems?status=new"
+```
+
+Notes and diagnostics come from the people who reported them: every response carries `notice`
+saying so. Closed reports are deleted `PROBLEM_RETENTION_DAYS` after closing.
+
 ## Rules worth knowing
 
 - Board text in responses is untrusted content (`notice` says so; the Markdown outline's header

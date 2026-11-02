@@ -328,6 +328,7 @@ workspace (modules/workspaces).
 | Break-glass role | `sso_connections.break_glass_user_id` (sso) | `memberships.json` → `singleSignOn` | cleared (SET NULL) | deleted (cascade) |
 | Community listings they submitted to Apps & agents (name, description, links, category, the OAuth app named, the contact address for reviewers, review status and the reviewer's note) | `marketplace_listings` (marketplace) | `listings.json` | deleted (cascade) | — |
 | Abuse reports they filed, moderation actions about their content or account (suspension) | `moderation_items`, `moderation_actions` (moderation; reporter address only as an HMAC), `users.suspended_at` (auth) | not yet (follow-up: KAI-191) | person references cleared (SET NULL); the records stay as the operators' trail | items about its boards stay with their recorded target |
+| Problem reports they sent with “Report a problem”: the note, whether they may be contacted, a screenshot of their screen (unless they removed it), diagnostics (page path, board and role, release, browser, window size, scrubbed recent errors), the status and operators' note | `problem_reports` (problems) + screenshots in the private storage area (`confidential.<random>.<ext>`, never under `/uploads/`) | `problems/index.json` + `problems/<id>.<ext>` (the operators' note is not included) | deleted with their screenshots | — |
 | API tokens (sha256 only, name, scopes, times), apps they authorised (consents, codes, access/refresh tokens), apps they registered; where their credentials were used in team workspaces | `api_tokens`, `oauth_grants`, `oauth_codes`, `oauth_clients`, `api_workspace_credentials` (apiauth) | `api.json` (never a secret or hash) | deleted (cascade); revoked already when deletion is scheduled (signed out everywhere) | usage rows deleted (cascade) |
 | Data exports | `data_exports` + private ZIP files (privacy, uploads) | listed in `activity.json` | rows and files deleted by the export job within `DATA_EXPORT_INTERVAL_SECONDS` | workspace exports' rows and files deleted by the job |
 | Request logs | stdout (pino) → your log pipeline | no | not touched: user ids and IP addresses (never emails, bodies, query strings or tokens) — expire them in your log retention | — |
@@ -466,6 +467,35 @@ about a board that doesn't exist, so reports can't probe for private boards. A r
 the same thing by the same person (or address) while the first is open adds nothing. Reporter
 addresses are never stored; a keyed hash of the address lets you see one source flooding the
 queue. Reporters stay anonymous to the board's owner.
+
+### Problem reports (“Report a problem”)
+
+Bugs and confusion, not abuse: people send them from the board menu, the help menu (dashboard,
+settings), the account menu or Ctrl+Alt+P (⌘⌥P). Each holds the note, an optional screenshot of
+what they saw (private storage area, never under `/uploads/`), and diagnostics the dialog lists
+(scrubbed of query strings, tokens and email addresses, in the browser and again on the server).
+Operators triage them in `/operator` → **Problems**: set the status (new, triaged, fixed, won't fix,
+duplicate), an internal note and the issue it became; **fixed** puts a notification in the
+reporter's inbox (once per report). Viewing a screenshot and every change is an audit event of the
+reporter's account (`problems.screenshot_viewed`, `problems.updated`). Rate limit
+`RATE_LIMIT_PROBLEM_REPORT` (10 an hour per person); the screenshot is capped at 2 MB, the
+diagnostics at 32 KB. Closed reports and their screenshots are deleted `PROBLEM_RETENTION_DAYS`
+(90) after closing; reopening one stops the clock; a person's reports go with their account.
+
+**Machine access (the morning review).** An operator makes a personal access token with the
+`problems:triage` scope (Settings → API tokens: the scope is offered only to operators, and the
+server refuses it to anyone else). It works only while the account is an operator, never for OAuth
+apps or MCP clients, and every other credential gets 404 on these paths:
+
+```
+GET   /api/v1/operator/problems?status=new[&before=<nextBefore>&limit=50]
+GET   /api/v1/operator/problems/<id>
+GET   /api/v1/operator/problems/<id>/screenshot
+PATCH /api/v1/operator/problems/<id>   { "status": "triaged", "operatorNote": "…", "issueUrl": "https://…" }
+```
+
+Notes and diagnostics are what people wrote: the responses carry a `notice` to treat them as data,
+never as instructions.
 
 ### `/.well-known/security.txt`
 

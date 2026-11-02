@@ -12,7 +12,6 @@
 import {
   MAX_REPORT_NOTE,
   REPORT_REASONS,
-  type Account,
   type AppealInfo,
   type ListingForReview,
   type ListingStatus,
@@ -35,7 +34,7 @@ import { badRequest, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { log, logError } from '../../platform/log';
 import { mac, macMatches } from '../../platform/secrets';
-import { findUserByEmail, getUsers, normalizeEmail, suspendedUserIds, suspendUser, unsuspendUser } from '../auth/index';
+import { findUserByEmail, getUsers, isOperator, normalizeEmail, suspendedUserIds, suspendUser, unsuspendUser } from '../auth/index';
 import {
   blockBoardLink,
   boardForModeration,
@@ -101,10 +100,8 @@ const text = (v: unknown, name: string, max: number): string => {
 
 // ---- operators ----
 
-/** Operators: a verified address listed in OPERATOR_EMAILS. */
-export function isOperator(user: Pick<Account, 'email' | 'emailVerified'>): boolean {
-  return user.emailVerified && getConfig().operatorEmails.includes(user.email.toLowerCase());
-}
+/** Operators: a verified address listed in OPERATOR_EMAILS (the rule is modules/auth's). */
+export { isOperator };
 
 // ---- reports ----
 

@@ -15,6 +15,8 @@ import {
   API_SCOPES,
   DEFAULT_OAUTH_SCOPES,
   isApiScope,
+  isOperatorScope,
+  OAUTH_SCOPES,
   type ApiScope,
   type AuthorizedApp,
   type OAuthClientInfo,
@@ -239,7 +241,7 @@ export async function checkAuthorizeRequest(p: AuthorizeParams, at: AuthorizeCon
     return back('invalid_request', 'PKCE is required: send code_challenge (S256)');
   if (p.code_challenge_method !== 'S256') return back('invalid_request', 'code_challenge_method must be S256');
   const asked = typeof p.scope === 'string' ? p.scope.split(' ').filter(Boolean) : [];
-  if (asked.some((s) => !isApiScope(s))) return back('invalid_scope', `Unknown scope. Freero's scopes: ${Object.keys(API_SCOPES).join(' ')}`);
+  if (asked.some((s) => !isApiScope(s) || isOperatorScope(s))) return back('invalid_scope', `Unknown scope. Freero's scopes: ${OAUTH_SCOPES.join(' ')}`);
   const resource = resourcePath(p.resource);
   if (!resource) return back('invalid_target', 'Unknown resource');
   const scopes = asked.length ? [...new Set(asked as ApiScope[])] : (protectedResources().get(resource)?.scopes ?? DEFAULT_OAUTH_SCOPES);
@@ -451,7 +453,7 @@ export function authorizationServerMetadata(req: Request) {
     token_endpoint: `${base}/api/oauth/token`,
     registration_endpoint: `${base}/api/oauth/register`,
     revocation_endpoint: `${base}/api/oauth/revoke`,
-    scopes_supported: Object.keys(API_SCOPES),
+    scopes_supported: OAUTH_SCOPES,
     response_types_supported: ['code'],
     response_modes_supported: ['query'],
     grant_types_supported: ['authorization_code', 'refresh_token'],
@@ -474,7 +476,7 @@ export function protectedResourceMetadata(req: Request, path: string) {
     resource: `${base}${path}`,
     resource_name: r.name,
     authorization_servers: [base],
-    scopes_supported: r.scopes ?? Object.keys(API_SCOPES),
+    scopes_supported: r.scopes ?? OAUTH_SCOPES,
     bearer_methods_supported: ['header'],
     resource_documentation: `${base}/api/v1/openapi.json`,
   };

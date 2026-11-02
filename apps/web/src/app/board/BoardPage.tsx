@@ -1,7 +1,7 @@
 // Route /board/:id — loads the board, builds the Host and mounts the engine.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { guestDisplayName, LINK_PASSWORD_REQUIRED, type BoardAiStatus, type BoardSummary, type BoardTrackersResponse, type GuestInfo } from '@freero/shared';
+import { guestDisplayName, LINK_PASSWORD_REQUIRED, type BoardAiStatus, type BoardSummary, type BoardTrackersResponse, type GuestInfo, type Role } from '@freero/shared';
 import { BoardEngine, type Host } from '@engine';
 import { Button, Logo, useToast } from '@ui';
 import { api, ApiError } from '../api/client';
@@ -10,6 +10,7 @@ import { loginPath } from '../lib/nav';
 import { ShareDialog } from '../components/ShareDialog';
 import { FullPageSpinner } from '../components/FullPageSpinner';
 import { NotificationBell } from '../notifications/NotificationBell';
+import { useProblemReport, useShowingBoard } from '../problems/ProblemReport';
 import { features } from './features';
 import { createGuestHost, createLocalHost, createServerHost, toastNotify } from './host';
 import { LinkPassword } from './LinkPassword';
@@ -174,6 +175,10 @@ function ServerBoard({ id }: { id: string }) {
   const openShare = useCallback(() => setShareOpen(true), []);
   const go = useCallback((path: string) => navigate(path), [navigate]);
   const toast = useMemo(() => toastNotify(notify), [notify]);
+  // Report a problem (app/problems): the board and the person's role go with it; the shortcut is the board command's here.
+  const problems = useProblemReport();
+  useShowingBoard(board ? { id: board.id, role: board.role } : null);
+  const reportProblem = useMemo(() => (board ? (c: { role: Role }) => problems.open({ id: board.id, role: c.role }) : undefined), [board?.id, problems]);
 
   const host = useMemo<Host | null>(() => {
     if (!board || !user) return null;
@@ -186,9 +191,10 @@ function ServerBoard({ id }: { id: string }) {
       team,
       ai,
       trackers,
+      reportProblem,
     });
     // Rebuild only for identity-relevant changes; title/role updates flow through a new host object.
-  }, [board, team, ai, trackers, user, go, toast, openShare, setTitle]);
+  }, [board, team, ai, trackers, user, go, toast, openShare, setTitle, reportProblem]);
 
   if (state.status === 'error' && state.reason === LINK_PASSWORD_REQUIRED) return <LinkPassword unlock={(pw) => api.unlockBoardLink(id, pw)} onUnlocked={retry} />;
   if (state.status === 'error' && state.code === 403) return <RequestAccess boardId={id} onGranted={retry} />;

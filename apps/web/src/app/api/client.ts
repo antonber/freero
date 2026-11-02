@@ -1,4 +1,10 @@
 import type {
+  CreateProblemRequest,
+  OwnProblemReport,
+  ProblemListResponse,
+  ProblemReportDetail,
+  ProblemStatus,
+  UpdateProblemRequest,
   SearchResponse,
   WebhookCreateRequest,
   WebhookDeliveriesResponse,
@@ -542,6 +548,30 @@ export const api = {
   moderate: (body: ModerationActionRequest) => request<{ action: ModerationActionRecord }>('POST', '/api/moderation/actions', body),
   resolveModerationItem: (id: string, outcome: 'actioned' | 'dismissed', note: string) =>
     request<{ item: ModerationItem }>('POST', `/api/moderation/items/${encodeURIComponent(id)}/resolve`, { outcome, note }),
+
+  // Report a problem: the person's own reports; operators read and triage them (404 for anyone else)
+  createProblem: (body: CreateProblemRequest) => request<{ problem: OwnProblemReport }>('POST', '/api/problems', body),
+  async attachProblemScreenshot(id: string, image: Blob): Promise<OwnProblemReport> {
+    const res = await fetch(`/api/problems/${encodeURIComponent(id)}/screenshot`, {
+      method: 'PUT',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': image.type || 'image/jpeg' },
+      body: image,
+    });
+    if (!res.ok) throw await failure(res);
+    return ((await res.json()) as { problem: OwnProblemReport }).problem;
+  },
+  myProblems: () => request<{ problems: OwnProblemReport[] }>('GET', '/api/problems'),
+  operatorProblems: (q: { status?: ProblemStatus | null; before?: string | null }) => {
+    const p = new URLSearchParams();
+    if (q.status) p.set('status', q.status);
+    if (q.before) p.set('before', q.before);
+    const qs = p.toString();
+    return request<ProblemListResponse>('GET', `/api/operator/problems${qs ? `?${qs}` : ''}`);
+  },
+  updateProblem: (id: string, body: UpdateProblemRequest) => request<{ problem: ProblemReportDetail }>('PATCH', `/api/operator/problems/${encodeURIComponent(id)}`, body),
+  /** The report's screenshot, for operators (an <img> src: same origin, the session cookie). */
+  problemScreenshotUrl: (id: string) => `/api/operator/problems/${encodeURIComponent(id)}/screenshot`,
 
   // object addresses (KAI-149): permission-checked summaries, and what links here
   resolveObjects: (uris: string[]) => request<ResolveObjectsResponse>('POST', '/api/objects/resolve', { uris }),

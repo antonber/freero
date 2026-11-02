@@ -90,7 +90,7 @@ function swagger2Problems(doc: Json): string[] {
   return out;
 }
 
-it('the Power Automate connector is what npm run gen:power-automate makes from today’s openapi.json, valid Swagger 2.0 under 1 MB with every operation', async () => {
+it('the Power Automate connector is what npm run gen:power-automate makes from today’s openapi.json, valid Swagger 2.0 under 1 MB with every operation but the operators’ own', async () => {
   const { toSwagger2 } = (await import(pathToFileURL(path.join(ROOT, 'scripts/lib/swagger2.mjs')).href)) as { toSwagger2: (o: Json, opts: { host: string }) => Json };
   const openapi = JSON.parse(read('docs/api/openapi.json'));
   const text = read('docs/integrations/power-automate/freero.swagger.json');
@@ -100,7 +100,11 @@ it('the Power Automate connector is what npm run gen:power-automate makes from t
   expect(Buffer.byteLength(text)).toBeLessThan(1024 * 1024);
   const operations = (doc: Json) =>
     Object.entries(doc.paths as Json)
-      .flatMap(([p, item]) => Object.entries(item as Json).filter(([m]) => m !== 'parameters').map(([m, op]) => `${m} ${p} ${(op as Json).operationId}`))
+      .flatMap(([p, item]) =>
+        Object.entries(item as Json)
+          .filter(([m, op]) => m !== 'parameters' && !((op as Json).tags as string[] | undefined)?.includes('operator'))
+          .map(([m, op]) => `${m} ${p} ${(op as Json).operationId}`),
+      )
       .sort();
   expect(operations(shipped)).toEqual(operations(openapi));
 });

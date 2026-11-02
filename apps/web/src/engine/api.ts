@@ -189,6 +189,13 @@ export interface Host {
    */
   reportExport?(format: string): void;
   saveThumbnail(dataUrl: string): Promise<void>;
+  /**
+   * [additive] Opens the app's "Report a problem" dialog (bugs, broken things — not abuse, see
+   * `report`): it takes a screenshot of what the person sees, then asks for a note. `role`: their
+   * live role on this board, sent with the report. Absent for visitors without an account and in
+   * the offline sandbox.
+   */
+  reportProblem?(context: { role: Role }): void;
   openShareDialog(): void;
   navigate(path: string): void;
   /**

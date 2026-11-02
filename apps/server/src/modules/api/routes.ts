@@ -9,13 +9,15 @@
 // audit event (who, which token or app, what, the outcome). Board text in responses is marked
 // untrusted (`notice`).
 import { Router, type Request, type Response } from 'express';
-import type { ApiScope } from '@freero/shared';
+import { PROBLEM_REPORT_NOTICE, type ApiScope } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { badRequest, HttpError } from '../../platform/http';
 import { consumeRateLimit } from '../../platform/rateLimit';
 import { allowCrossSiteApi } from '../../platform/security';
 import { authenticate, registerProtectedResource, requireScope, sendAuthError, type ApiCredential } from '../apiauth/index';
+import { isOperator } from '../auth/index';
 import { parseOutlineQuery } from '../outline/index';
+import { listProblems, problemDetail, problemScreenshot, sendProblemScreenshot, updateProblem } from '../problems/index';
 import { backlinksForApi, resolveForApi, searchContent } from './objects';
 import { appendToDoc, createDocFor, listDocs, readDocFor } from './docs';
 import { getFeedback, postStatus, readStatusPost } from './controlRoom';
@@ -32,6 +34,8 @@ interface Result {
   /** Sent as text/markdown instead of JSON. */
   markdown?: string;
   headers?: Record<string, string>;
+  /** Writes the response itself (a file); headers above still apply. */
+  send?: (res: Response) => void;
 }
 
 /** Every endpoint, with the scope it needs (null: any credential). The OpenAPI test reads this. */
@@ -53,13 +57,15 @@ export default function apiRoutes(_ctx: ServerContext): Router {
   // The reference, public like the docs it is.
   r.get('/openapi.json', (_req, res) => res.json(OPENAPI));
 
-  const endpoint = (method: Method, path: string, scope: ApiScope | ((req: Request) => ApiScope) | null, fn: (call: api.ApiCall) => Promise<Result>) => {
+  /** `operator`: only for Freero's operators (OPERATOR_EMAILS, verified); for anyone else the path doesn't exist (404). */
+  const endpoint = (method: Method, path: string, scope: ApiScope | ((req: Request) => ApiScope) | null, fn: (call: api.ApiCall) => Promise<Result>, opts: { operator?: boolean } = {}) => {
     ENDPOINTS.push({ method, path, scope: typeof scope === 'function' ? scope({ body: {}, query: {} } as Request) : scope });
     r[method](path, (req: Request, res: Response, next) => {
       void (async () => {
         let cred: ApiCredential;
         try {
           cred = await authenticate(req, RESOURCE);
+          if (opts.operator && !isOperator(cred.account)) return next(); // on to the API's 404, as for any unknown path
           await consumeRateLimit('apiCredential', `cred:${cred.credentialId}`);
           const need = typeof scope === 'function' ? scope(req) : scope;
           if (need) requireScope(req, cred, need, RESOURCE);
@@ -73,7 +79,8 @@ export default function apiRoutes(_ctx: ServerContext): Router {
           status = out.status ?? 200;
           for (const [k, v] of Object.entries(out.headers ?? {})) res.setHeader(k, v);
           res.setHeader('Cache-Control', 'private, no-cache');
-          if (status === 304) res.status(304).end();
+          if (out.send) out.send(res.status(status));
+          else if (status === 304) res.status(304).end();
           else if (out.markdown !== undefined) res.status(status).type('text/markdown; charset=utf-8').send(out.markdown);
           else res.status(status).json(out.body);
         } catch (e) {
@@ -212,6 +219,29 @@ export default function apiRoutes(_ctx: ServerContext): Router {
     body: await api.setMemberRole(call, call.req.params.boardId, call.req.params.userId, body(call.req).role),
   }));
   endpoint('delete', '/boards/:boardId/members/:userId', 'members:write', async (call) => ({ body: await api.removeMember(call, call.req.params.boardId, call.req.params.userId) }));
+
+  // ---- problem reports, for Freero's operators (modules/problems): a personal token with
+  // problems:triage of an operator account; anyone else gets the 404 of a path that doesn't exist ----
+  const triage = { operator: true };
+  endpoint('get', '/operator/problems', 'problems:triage', async (call) => ({ body: { notice: PROBLEM_REPORT_NOTICE, ...(await listProblems(call.req.query)) } }), triage);
+  endpoint('get', '/operator/problems/:problemId', 'problems:triage', async (call) => ({ body: { notice: PROBLEM_REPORT_NOTICE, problem: await problemDetail(call.req.params.problemId) } }), triage);
+  endpoint(
+    'get',
+    '/operator/problems/:problemId/screenshot',
+    'problems:triage',
+    async (call) => {
+      const file = await problemScreenshot(call.userId, call.req.params.problemId, 'api');
+      return { send: (res) => sendProblemScreenshot(res, file) };
+    },
+    triage,
+  );
+  endpoint(
+    'patch',
+    '/operator/problems/:problemId',
+    'problems:triage',
+    async (call) => ({ body: { notice: PROBLEM_REPORT_NOTICE, problem: await updateProblem(call.userId, call.req.params.problemId, body(call.req), 'api') } }),
+    triage,
+  );
 
   return r;
 }

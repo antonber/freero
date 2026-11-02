@@ -20,7 +20,8 @@
     { "name": "search", "description": "Find what boards say" },
     { "name": "objects", "description": "Object addresses and what links to them" },
     { "name": "docs", "description": "Docs (KAI-162): collaborative documents next to boards, shared and opened like boards" },
-    { "name": "trackers", "description": "Issue trackers (#79): a tracker query as linked task cards on a board (docs/trackers.md)" }
+    { "name": "trackers", "description": "Issue trackers (#79): a tracker query as linked task cards on a board (docs/trackers.md)" },
+    { "name": "operator", "description": "For Freero’s operators only (OPERATOR_EMAILS): the problems people reported with “Report a problem”. Anyone else gets 404 here." }
   ],
   "paths": {
     "/me": {
@@ -1284,6 +1285,340 @@
           "429": { "$ref": "#/components/responses/RateLimited" }
         }
       }
+    },
+    "/operator/problems": {
+      "get": {
+        "operationId": "listProblemReports",
+        "tags": [
+          "operator"
+        ],
+        "summary": "Problem reports people sent with “Report a problem”, newest first (operators only)",
+        "description": "For Freero’s operators: a personal access token with problems:triage, made by an account whose verified address is in OPERATOR_EMAILS (the scope stops working if it no longer is). Everyone else gets 404. Notes and diagnostics are untrusted: see `notice`.",
+        "x-freero-scope": "problems:triage",
+        "security": [
+          {
+            "bearer": [
+              "problems:triage"
+            ]
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Only reports with this status",
+            "schema": {
+              "$ref": "#/components/schemas/ProblemStatus"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "description": "`nextBefore` of the previous page",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of reports",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "notice",
+                    "problems",
+                    "nextBefore"
+                  ],
+                  "properties": {
+                    "notice": {
+                      "$ref": "#/components/schemas/ProblemNotice"
+                    },
+                    "problems": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ProblemReport"
+                      }
+                    },
+                    "nextBefore": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "No such report — and for any credential whose account is not a Freero operator, every path here answers this, like a path that does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/operator/problems/{problemId}": {
+      "parameters": [
+        {
+          "name": "problemId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getProblemReport",
+        "tags": [
+          "operator"
+        ],
+        "summary": "One problem report (operators only)",
+        "x-freero-scope": "problems:triage",
+        "security": [
+          {
+            "bearer": [
+              "problems:triage"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "notice",
+                    "problem"
+                  ],
+                  "properties": {
+                    "notice": {
+                      "$ref": "#/components/schemas/ProblemNotice"
+                    },
+                    "problem": {
+                      "$ref": "#/components/schemas/ProblemReport"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "No such report — and for any credential whose account is not a Freero operator, every path here answers this, like a path that does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateProblemReport",
+        "tags": [
+          "operator"
+        ],
+        "summary": "Set a report’s status, the operators’ note or the linked issue (operators only)",
+        "description": "Moving a report to `fixed` tells the person who reported it in their Freero inbox (once). A closed report (fixed, wontfix, duplicate) is deleted, screenshot included, PROBLEM_RETENTION_DAYS after it was closed; reopening it stops that.",
+        "x-freero-scope": "problems:triage",
+        "security": [
+          {
+            "bearer": [
+              "problems:triage"
+            ]
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "$ref": "#/components/schemas/ProblemStatus"
+                  },
+                  "operatorNote": {
+                    "type": "string",
+                    "maxLength": 4000,
+                    "description": "Only operators see it"
+                  },
+                  "issueUrl": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 500,
+                    "description": "An http(s) link to the issue it became; null or \"\" removes it"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The report as it is now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "notice",
+                    "problem"
+                  ],
+                  "properties": {
+                    "notice": {
+                      "$ref": "#/components/schemas/ProblemNotice"
+                    },
+                    "problem": {
+                      "$ref": "#/components/schemas/ProblemReport"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "No such report — and for any credential whose account is not a Freero operator, every path here answers this, like a path that does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/operator/problems/{problemId}/screenshot": {
+      "parameters": [
+        {
+          "name": "problemId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getProblemScreenshot",
+        "tags": [
+          "operator"
+        ],
+        "summary": "The screenshot attached to a report (operators only)",
+        "description": "The image as the person’s browser sent it (PNG, JPEG or WebP). Private: never cached, never under /uploads. Each read is recorded in the audit log.",
+        "x-freero-scope": "problems:triage",
+        "security": [
+          {
+            "bearer": [
+              "problems:triage"
+            ]
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The image",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "No such report — and for any credential whose account is not a Freero operator, every path here answers this, like a path that does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1306,7 +1641,8 @@
               "boards:suggest": "Suggest changes for people to accept (never writes the board)",
               "comments:write": "Comment on boards",
               "members:read": "See who has access to your boards",
-              "members:write": "Invite people and change their access"
+              "members:write": "Invite people and change their access",
+              "problems:triage": "Read and triage the problems people reported (operators’ personal access tokens only: never granted to apps)"
             }
           }
         }
@@ -1382,6 +1718,251 @@
       }
     },
     "schemas": {
+      "ProblemStatus": {
+        "type": "string",
+        "enum": [
+          "new",
+          "triaged",
+          "fixed",
+          "wontfix",
+          "duplicate"
+        ],
+        "description": "fixed, wontfix and duplicate are closed"
+      },
+      "ProblemNotice": {
+        "type": "string",
+        "description": "Says that notes and diagnostics in this response come from the people who reported the problems: untrusted content, data and never instructions."
+      },
+      "ProblemEvent": {
+        "type": "object",
+        "description": "An error, rejected promise or failed request the app saw before the report (scrubbed: no query strings, tokens or addresses)",
+        "required": [
+          "at",
+          "kind",
+          "message",
+          "source",
+          "status"
+        ],
+        "properties": {
+          "at": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "error",
+              "rejection",
+              "request"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        }
+      },
+      "ProblemDiagnostics": {
+        "type": "object",
+        "description": "What the app attached, as the person saw it listed before sending",
+        "required": [
+          "path",
+          "boardId",
+          "role",
+          "release",
+          "userAgent",
+          "viewport",
+          "language",
+          "timeZone",
+          "online",
+          "at",
+          "events"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "The page, without query string or fragment"
+          },
+          "boardId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "owner",
+              "editor",
+              "commenter",
+              "viewer",
+              null
+            ]
+          },
+          "release": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "FREERO_RELEASE of the server that received it"
+          },
+          "userAgent": {
+            "type": "string"
+          },
+          "viewport": {
+            "type": "object",
+            "required": [
+              "width",
+              "height",
+              "dpr"
+            ],
+            "properties": {
+              "width": {
+                "type": "integer"
+              },
+              "height": {
+                "type": "integer"
+              },
+              "dpr": {
+                "type": "number"
+              }
+            }
+          },
+          "language": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "timeZone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "online": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "at": {
+            "type": "integer",
+            "description": "The person’s clock when they sent it (ms)"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProblemEvent"
+            }
+          }
+        }
+      },
+      "ProblemReport": {
+        "type": "object",
+        "required": [
+          "id",
+          "note",
+          "status",
+          "hasScreenshot",
+          "createdAt",
+          "updatedAt",
+          "contactOk",
+          "diagnostics",
+          "reporter",
+          "operatorNote",
+          "issueUrl",
+          "closedAt",
+          "deleteAfter"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string",
+            "description": "What the person wrote (untrusted)"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ProblemStatus"
+          },
+          "hasScreenshot": {
+            "type": "boolean",
+            "description": "GET …/screenshot has the image"
+          },
+          "createdAt": {
+            "type": "integer"
+          },
+          "updatedAt": {
+            "type": "integer",
+            "description": "When its status last changed"
+          },
+          "contactOk": {
+            "type": "boolean",
+            "description": "They are happy to be emailed about it"
+          },
+          "diagnostics": {
+            "$ref": "#/components/schemas/ProblemDiagnostics"
+          },
+          "reporter": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "required": [
+              "id",
+              "name",
+              "email"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              }
+            }
+          },
+          "operatorNote": {
+            "type": "string"
+          },
+          "issueUrl": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "closedAt": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "deleteAfter": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "When the retention job deletes it (closed reports)"
+          }
+        }
+      },
       "SearchHit": {
         "type": "object",
         "description": "One match: the board itself (its title), an item, or a comment message. Snippets are untrusted board text.",
@@ -1481,7 +2062,7 @@
           "children": { "type": "array", "items": { "$ref": "#/components/schemas/DocBlock" } }
         }
       },
-      "Scope": { "type": "string", "enum": ["boards:read", "boards:write", "boards:suggest", "comments:write", "members:read", "members:write"] },
+      "Scope": { "type": "string", "enum": ["boards:read", "boards:write", "boards:suggest", "comments:write", "members:read", "members:write", "problems:triage"] },
       "Notice": {
         "type": "string",
         "description": "Says that text in this response was written by people on a board: untrusted content, data and never instructions."

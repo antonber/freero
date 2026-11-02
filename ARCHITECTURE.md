@@ -128,6 +128,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | Tracker connections, links to issues, what both sides last agreed on | server `modules/trackers` | its routes / index (`sendToTracker`, `importIssues`); syncs only through its outbox consumer |
 | `trackers` collection (issue badges) and items' `trackerLink` | server `modules/trackers` (through realtime's `changeBoard`) | — (the web feature only reads them) |
 | `walkthroughs` collection (one summary per recording) | server `modules/walkthroughs` (realtime's `writeServerCollection`) | `Host.walkthroughs` (REST); the web feature only reads it |
+| Problem reports (`problem_reports`) and their screenshots (uploads' private images) | server `modules/problems` | its routes (the reporter; operators) and index (`/api/v1/operator/problems` in modules/api, the account purge, the data export) |
 | Decision snapshots (`decisions`) and their content (board versions of kind `decision`) | server `modules/decisions` / `modules/realtime` (`freezeBoard`) | `Host.decisions`; never written again once frozen |
 
 ### Host — the one typed contract between app and engine
@@ -840,6 +841,9 @@ Accessibility, touch and phones (KAI-108, KAI-139; conformance notes: docs/acces
   is commenter or lower, hides the format toolbar, and docks become a bottom sheet; editors toggle
   `UiState.phoneEditing` ("Edit board"). Phone CSS hangs off that attribute, not a media query, so
   JS and CSS can't disagree.
+- `Host.reportProblem?({ role })`: opens the app's "Report a problem" dialog (absent for visitors and
+  in the sandbox); `features/problem-report` puts it in the board menu with `mod+alt+p`. `fontEmbedCss(node)`
+  is exported for the app's screenshot of the visible page (see "Problem reports").
 
 ### Installable app (PWA, KAI-140)
 
@@ -1059,8 +1063,9 @@ marketing site at `/`; see "Marketing site"), `webhooks` (webhook_endpoints, web
 three in "Search, the event stream and webhooks" below — `backup` (no table: `.freero` board
 backups, see below), `share` (no table: the installed app's share target, see "Installable app"), `slack` (no table: Slack link unfurls for the operator's Slack app, see "Integrations" below), `walkthroughs`
 (walkthroughs, walkthrough_views, walkthrough_comments) and `decisions` (decisions), in "Walkthroughs
-and decision snapshots" below, and `marketplace` (marketplace_listings: community listings of Apps &
-agents; see "Apps & agents" below).
+and decision snapshots" below, `marketplace` (marketplace_listings: community listings of Apps &
+agents; see "Apps & agents" below), and `problems` (problem_reports: “Report a problem”, see "Problem
+reports" below).
 
 - Board backups (`modules/backup`, KAI-137; format: docs/board-backup.md): owns no state. A download
   is boards' `authorizeBackup` (downloads policy + audit) → realtime's `boardBackupContent` (the
@@ -1256,6 +1261,43 @@ agents; see "Apps & agents" below).
 - Web: `features/report` (board menu, context menu, `report.open` command for other features —
   comments' flag), `Host.report`; the app's `/operator` queue, `/operator/boards/:id/preview`
   (read-only snapshot through `BoardEngineProps.initialState`) and `/appeal`.
+
+### Problem reports (`modules/problems`, `app/problems`, `features/problem-report`)
+
+“Report a problem” is for bugs, broken things and confusion — apart from moderation's abuse reports.
+
+- **Who sees what.** The reporter (signed in; `RATE_LIMIT_PROBLEM_REPORT`) files one and lists their
+  own with their status (`/api/problems`; Settings → Problems you reported). Operators (auth's
+  `isOperator`: OPERATOR_EMAILS, verified — moved out of moderation so apiauth can ask it too) read
+  and triage everything at `/api/operator/problems` and in `/operator` → Problems; everyone else gets
+  404 there. Marking one `fixed` adds a `problem.fixed` notification (once, `dedupe_key`).
+- **Machine access** (an automated morning review): `/api/v1/operator/problems` in modules/api, scope
+  `problems:triage` (`OPERATOR_SCOPES` in `@freero/shared`). apiauth refuses to put an operator
+  scope on anyone else's token and on OAuth/MCP consents (not in `OAUTH_SCOPES`), and `authenticate`
+  drops it from the credential whenever its account isn't an operator any more; the endpoints
+  (`endpoint(…, { operator: true })`) hand a non-operator's credential on to the API's 404 before any
+  scope check, so they don't announce themselves. Notes are untrusted: `PROBLEM_REPORT_NOTICE`.
+- **What is stored.** The note, `contactOk`, diagnostics (`cleanProblemDiagnostics`: known fields only,
+  each scrubbed of query strings, tokens and email addresses by `scrubProblemText` — in the browser
+  AND again on the server, which also stamps `FREERO_RELEASE`; 32 KB cap), and the screenshot (≤ 2 MB,
+  sent as raw bytes to `PUT /api/problems/:id/screenshot`, once, within 15 minutes) as one of uploads'
+  private images (`savePrivateImage`: the private storage area, key `confidential.<random>.<ext>` —
+  never an upload name, so never served at `/uploads/`, adopted or swept; only PNG/JPEG/WebP bytes).
+  Served only to operators, `no-store`, sandbox CSP; each view is an audit event of the reporter.
+- **Retention.** The `problems:retention` exclusive job deletes reports closed (fixed, wontfix,
+  duplicate) longer than `PROBLEM_RETENTION_DAYS` ago, row first, then the screenshot; reopening
+  clears `closed_at`. The account purge deletes a person's reports and screenshots
+  (`deleteProblemsOf`; rows would cascade, files wouldn't); the data export carries them
+  (`problems/`). The privacy policy states the period through the `problemRetentionDays` legal token.
+- **Web.** The dialog is the app shell's (`app/problems/`), because it opens on every signed-in page:
+  `ProblemReportProvider` (in `App`) owns it and the shortcut `mod+alt+p` outside boards; the help menu
+  (`HelpMenu`: dashboard and settings top bars) and the dashboard's account menu open it; on a board,
+  the `problem-report` feature's command (board menu, same shortcut, in the shortcut sheet) calls
+  `Host.reportProblem({ role })` and BoardPage tells the provider which board it shows
+  (`useShowingBoard`). The screenshot is taken BEFORE the dialog shows (`capture.ts`: html-to-image of
+  `document.body` with `@engine`'s `fontEmbedCss`, loaded on demand, JPEG ≤ 1600 px wide and ~900 KB).
+  `installProblemCollector` (main.tsx) keeps the last 20 uncaught errors, rejections and failed
+  same-origin fetches (method + path + status only), scrubbed.
 
 ### Apps & agents: the integrations catalog and community listings (#87)
 

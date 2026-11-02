@@ -2,7 +2,7 @@
 // token or app is shown once; the server keeps only its hash.
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { AppWindow, Copy, KeyRound, Pause, Play, Plug, Trash2 } from 'lucide-react';
-import { API_SCOPES, type ApiScope, type AuthorizedApp, type OAuthClientInfo, type PersonalToken } from '@freero/shared';
+import { API_SCOPES, isOperatorScope, OPERATOR_SCOPES, type ApiScope, type AuthorizedApp, type OAuthClientInfo, type PersonalToken } from '@freero/shared';
 import { Button, Input, Select, Spinner, TextArea, Toggle, useToast } from '@ui';
 import { api, ApiError } from '../../api/client';
 import { relativeTime } from '../../lib/time';
@@ -19,8 +19,8 @@ const hostOf = (clientId: string) => {
     return clientId;
   }
 };
-/** Reserved scopes grant nothing yet: not offered. */
-export const OFFERED = SCOPES.filter((s) => s !== 'boards:suggest');
+/** Reserved scopes grant nothing yet: not offered. Operator scopes only to operators (below). */
+export const OFFERED = SCOPES.filter((s) => s !== 'boards:suggest' && !isOperatorScope(s));
 export const EXPIRY = [
   { value: '7', label: '7 days' },
   { value: '30', label: '30 days' },
@@ -78,6 +78,11 @@ export function ApiTokensSection() {
     api.listApiTokens().then(({ tokens }) => setTokens(tokens), () => setError('Could not load your tokens'));
   }, []);
   useEffect(load, [load]);
+  // Freero's operators (OPERATOR_EMAILS) may also make a token that triages problem reports.
+  const [offered, setOffered] = useState<readonly ApiScope[]>(OFFERED);
+  useEffect(() => {
+    api.moderationAccess().then((r) => r.operator && setOffered([...OFFERED, ...OPERATOR_SCOPES]), () => undefined);
+  }, []);
 
   const create = async (e: FormEvent) => {
     e.preventDefault();
@@ -169,7 +174,7 @@ export function ApiTokensSection() {
         </div>
         <fieldset className="fr-acct-api__perms">
           <legend className="fr-acct-api__label">Permissions</legend>
-          {OFFERED.map((s) => (
+          {offered.map((s) => (
             <label key={s} className="fr-acct-api__perm">
               <input
                 type="checkbox"

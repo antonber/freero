@@ -7,7 +7,7 @@ import { definePage } from '../lib/define';
 import { L, LegalArticle } from '../lib/legal';
 import { abs } from '../lib/site';
 
-const UPDATED = '2026-10-29';
+const UPDATED = '2026-11-02';
 
 export default definePage({
   path: '/privacy',
@@ -102,6 +102,13 @@ export default definePage({
         address you send it from: only a keyed hash of it, to see when one source floods the queue. If you write to us, we keep the correspondence.
       </p>
       <p>
+        If you use <strong>Report a problem</strong> (for something broken or confusing), we keep what you send: your note, whether we may contact you about
+        it, and, unless you remove it before sending, a screenshot of the Freero window as you saw it, which can show board content and names. The report also
+        carries diagnostics the dialog lists before you send it: the page you were on (without its query string), the board and your role there, the app
+        version, your browser and operating system, the window size, the time, and the last errors and failed requests the app noticed (with tokens, email
+        addresses and query strings removed). Only Freero’s operators can see reports, and you can see the status of your own in Account settings.
+      </p>
+      <p>
         <strong>What we don’t do:</strong> we don’t sell personal information, show advertising, track you across other sites, or use your boards, docs or
         files to train AI models. {L('analytics')}
       </p>
@@ -117,6 +124,7 @@ export default definePage({
           ['Moderation', 'Reviewing reports, removing content, suspending accounts, handling appeals', 'Legitimate interests (a safe service); legal obligations'],
           ['Emails about your account and boards', 'Verification, security notices, invitations, mentions and digests (you choose which digests you get)', 'Performing our contract; legitimate interests'],
           ['Operating and fixing the service', 'Logs, error reports and aggregate metrics (request counts and timings, never content)', 'Legitimate interests'],
+          ['Problems you report', 'Reading your note, screenshot and diagnostics to find and fix what went wrong, and telling you when it is fixed', 'Legitimate interests (a working service); your choice to send the report'],
           ['Legal requirements', 'Answering lawful requests, keeping records the law requires', 'Legal obligation'],
         ]}
       />
@@ -244,6 +252,10 @@ export default definePage({
               Kept as the record of what was decided and why. A removed file’s kept copy is deleted after {L('moderationKeepDays')} days unless a report or appeal
               about it is still open.
             </>,
+          ],
+          [
+            'Problems you report (note, screenshot, diagnostics)',
+            <>Until we close the report (fixed, won’t fix or a duplicate), then {L('problemRetentionDays')} days, after which the report and its screenshot are deleted; and always with your account</>,
           ],
         ]}
       />

@@ -4529,6 +4529,54 @@ async function moderationChecks() {
       assert(preview.status === 200 && preview.headers.get('content-type')?.includes('octet-stream'), `preview -> ${preview.status}`);
     });
 
+    await check('problem reports: a person sends a note, scrubbed diagnostics and a screenshot; an operator’s problems:triage token reads them (others: 404), the screenshot is never under /uploads, and marking it fixed tells the reporter', async () => {
+      const leak = 'frp_VerifyLeakVerifyLeakVerifyLeak1234567890';
+      const diagnostics = {
+        path: '/board/abc?token=secret-in-query',
+        boardId: 'abc',
+        role: 'editor',
+        userAgent: 'Mozilla/5.0 verify',
+        viewport: { width: 1280, height: 720, dpr: 2 },
+        at: Date.now(),
+        events: [{ at: Date.now(), kind: 'request', message: `PATCH /api/boards/abc?x=1 → 500 for ${M.email} with Bearer ${leak}`, source: null, status: 500 }],
+      };
+      const made = await M.req('POST', '/api/problems', { note: 'Cards jump back after I drop them', contactOk: true, diagnostics });
+      assert(made.status === 201, `create -> ${made.status} ${made.text}`);
+      const id = made.json.problem.id;
+      const shot = await M.req('PUT', `/api/problems/${id}/screenshot`, PNG_1PX, { raw: true, headers: { 'content-type': 'image/png' } });
+      assert(shot.status === 200 && shot.json.problem.hasScreenshot, `screenshot -> ${shot.status} ${shot.text}`);
+      const mine = await M.req('GET', '/api/problems');
+      assert(mine.json?.problems?.[0]?.id === id && mine.json.problems[0].status === 'new', `own list: ${mine.text}`);
+
+      // Only an operator's token may carry problems:triage; with it, the morning review reads and triages.
+      assert((await Fake.req('POST', '/api/auth/tokens', { name: 'triage', scopes: ['problems:triage'], expiresInDays: 1 })).status === 403, 'an unverified operator address got the scope');
+      const token = (await Op.req('POST', '/api/auth/tokens', { name: 'morning review', scopes: ['problems:triage'], expiresInDays: 1 })).json?.secret;
+      assert(token?.startsWith('frp_'), 'operator token');
+      const other = (await S.req('POST', '/api/auth/tokens', { name: 'mine', scopes: ['boards:read'], expiresInDays: 1 })).json.secret;
+      const v1 = (path, secret, init = {}) =>
+        fetch(`http://127.0.0.1:${server.port}/api/v1${path}`, { ...init, headers: { authorization: `Bearer ${secret}`, ...(init.body ? { 'content-type': 'application/json' } : {}) } });
+      for (const path of ['/operator/problems', `/operator/problems/${id}`, `/operator/problems/${id}/screenshot`]) {
+        assert((await v1(path, other)).status === 404, `${path} answered a non-operator's token`);
+        assert((await S.req('GET', `/api${path}`)).status === 404, `${path} answered a non-operator's session`);
+      }
+      const listed = await (await v1('/operator/problems?status=new', token)).json();
+      const report = listed.problems.find((p) => p.id === id);
+      assert(report?.reporter?.email === M.email && report.contactOk && report.diagnostics.boardId === 'abc' && listed.notice, JSON.stringify(listed).slice(0, 400));
+      const stored = JSON.stringify(report.diagnostics);
+      assert(![leak, M.email, 'secret-in-query', '?x=1'].some((s) => stored.includes(s)), `diagnostics kept a secret: ${stored}`);
+      const img = await v1(`/operator/problems/${id}/screenshot`, token);
+      assert(img.status === 200 && img.headers.get('content-type') === 'image/png' && Buffer.from(await img.arrayBuffer()).equals(PNG_1PX), `screenshot via token -> ${img.status}`);
+      // On disk the file sits next to uploads, under a name /uploads never serves.
+      const files = fs.readdirSync(path.join(dataDir, 'uploads')).filter((f) => f.startsWith('confidential.'));
+      assert(files.length >= 1, 'the screenshot file is missing');
+      for (const f of files) assert((await fileStatus(`/uploads/${f}`)) === 404, `/uploads/${f} is served`);
+
+      const patched = await v1(`/operator/problems/${id}`, token, { method: 'PATCH', body: JSON.stringify({ status: 'fixed', issueUrl: 'https://github.com/antonber/freero/issues/1' }) });
+      assert(patched.status === 200 && (await patched.json()).problem.status === 'fixed', `patch -> ${patched.status}`);
+      await waitFor(async () => (await M.req('GET', '/api/notifications')).json?.notifications?.some((n) => n.type === 'problem.fixed'), 5000, 'the fixed notification');
+      assert((await M.req('GET', '/api/problems')).json.problems[0].status === 'fixed', 'the reporter sees it fixed');
+    });
+
     await check('moderation: turning a board’s link off drops link-only sockets live, members keep editing, the owner can’t turn it back on and is emailed an appeal link', async () => {
       const b = await board('Phishing', 'editor');
       const viaLink = connectDoc(L, b.id);

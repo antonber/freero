@@ -47,6 +47,8 @@ export interface HostDeps {
   ai?: BoardAiStatus | null;
   /** Tracker connections this user may use here (empty: no tracker entry points). */
   trackers?: BoardTrackersResponse['connections'];
+  /** Opens "Report a problem" (app/problems) for this board. */
+  reportProblem?: Host['reportProblem'];
 }
 
 /** Live activities (KAI-132): the same REST for accounts and guests (the server decides who may answer). */
@@ -115,6 +117,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     saveThumbnail: (dataUrl) => saveThumbnail(board.id, dataUrl),
     reportExport: (format) => reportExport(board.id, format),
     openShareDialog: deps.openShareDialog,
+    ...(deps.reportProblem ? { reportProblem: deps.reportProblem } : {}),
     navigate: deps.navigate,
     notify: deps.notify,
     serverNow,

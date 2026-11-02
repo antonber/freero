@@ -8,6 +8,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { ShareDialog } from '../../components/ShareDialog';
 import { VerifyEmailBanner } from '../../components/VerifyEmailBanner';
 import { NotificationBell } from '../../notifications/NotificationBell';
+import { HelpMenu } from '../../problems/HelpMenu';
 import { filterByOwner, objectHref, sortBoards, type BoardSort, type OwnerFilter } from '../../lib/boards';
 import { useDebouncedValue, usePersistentState } from '../../lib/hooks';
 import { onLaunchedBackup, takeBackup } from '../../lib/pendingBackup';
@@ -356,6 +357,7 @@ export function DashboardPage() {
             }
           />
           <div className="fr-dash__actions">
+            <HelpMenu className="fr-dash__help" />
             <NotificationBell />
             {!mayCreate ? null : (
               <Button variant="primary" icon={Plus} loading={creating === 'blank'} onClick={() => create('blank')}>

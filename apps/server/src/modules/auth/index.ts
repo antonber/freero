@@ -71,6 +71,8 @@ export { endSessionsOf } from './service';
 // account is signed out everywhere (they end with it).
 export { currentSessionMethod, onSignedOutEverywhere } from './service';
 export { exportAccountData, type AccountDataExport } from './dataExport';
+// Operators (OPERATOR_EMAILS, verified): moderation, problem reports, the problems:triage scope.
+export { isOperator } from './operators';
 
 /** Ids of the accounts whose address is at `domain` (exactly). */
 export function userIdsAtDomain(domain: string): Promise<string[]> {

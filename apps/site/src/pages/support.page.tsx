@@ -5,7 +5,7 @@ import { definePage } from '../lib/define';
 import { L, LegalArticle } from '../lib/legal';
 import { abs, APP, docsUrl } from '../lib/site';
 
-const UPDATED = '2026-10-29';
+const UPDATED = '2026-11-02';
 
 export default definePage({
   path: '/support',
@@ -35,7 +35,13 @@ export default definePage({
           <a href="/docs">Documentation</a>: connecting assistants, the API and webhooks, issue trackers, and running Freero yourself.
         </li>
         <li>
-          Email {L('contact')}. Say what you were doing, what you expected and what happened, and include the board’s link if it is about a board (we only
+          Something broken or confusing? In the app, choose <strong>Report a problem…</strong> in the board menu or the help menu (Ctrl+Alt+P,
+          or ⌘⌥P on a Mac). Say what went wrong and what you expected: it sends a screenshot of
+          what you see (you can remove it first) and the details listed in the dialog, only to Freero’s operators. You can follow its status in Account
+          settings, and you hear from us when it is fixed. See the <a href="/privacy#collect">privacy policy</a> for what a report holds and how long we keep it.
+        </li>
+        <li>
+          Or email {L('contact')}. Say what you were doing, what you expected and what happened, and include the board’s link if it is about a board (we only
           open a board you send us if you ask us to).
         </li>
       </ul>

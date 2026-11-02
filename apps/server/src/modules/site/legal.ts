@@ -62,6 +62,7 @@ export function legalFill(config: Config): LegalFill {
       exportExpiry: hoursOrDays(config.dataExportTtlMs),
       eventsRetentionDays: String(config.events.retentionDays),
       moderationKeepDays: days(config.moderationKeepRemovedMs),
+      problemRetentionDays: days(config.problemRetentionMs),
       trashDays: String(TRASH_RETENTION_DAYS),
       auditRetentionDays: String(DEFAULT_AUDIT_RETENTION_DAYS),
       backupRetentionDays: l.backupDays !== null ? String(l.backupDays) : unset('backup retention in days'),

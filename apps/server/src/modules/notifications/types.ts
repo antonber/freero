@@ -186,6 +186,15 @@ export const NOTIFICATION_TYPES: Record<NotificationType, NotificationTypeDef> =
     link: walkthroughPath,
     linkLabel: 'Watch from that moment',
   },
+  // modules/problems: an operator marked a problem the person reported as fixed. The excerpt is
+  // the start of their own note, so they recognise which one.
+  'problem.fixed': {
+    label: 'Problems you reported',
+    description: 'A problem you reported with “Report a problem” is fixed.',
+    title: () => 'A problem you reported is fixed',
+    link: () => '/settings#problems',
+    linkLabel: 'See your reports',
+  },
   'moderation.action': {
     label: 'Moderation notices',
     description: 'Freero’s moderators acted on something of yours.',
