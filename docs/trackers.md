@@ -47,11 +47,30 @@ network needs `TRACKER_PRIVATE_ENDPOINTS=true` ([configuration.md](configuration
 | a card's description / a note's text + a link back / a bullet per note with its link back | description | ADF on Jira Cloud, wiki markup on Data Center, Markdown on Linear and GitHub (only Freero's own section of a GitHub issue body, between markers) |
 | tags (on notes and cards) | labels | Jira labels can't hold spaces: `checkout flow` ↔ `checkout-flow` |
 | card status / kanban column | status | Jira moves through the workflow's transitions (or the card gets a note when none leads there); GitHub: open / closed |
+| a kanban card's column (its Stage) | the status of that name | Jira / Linear: a card moved to "In review" asks for the "In review" status (case and spaces don't count) before falling back to the column's status category; a column the tracker has no status for sends only its category. From the tracker: the card moves to the column named after the status, else the first column of its category |
+| a kanban card's Priority (a single select called "Priority") | priority | Jira: by name (the site's priority scheme); Linear: Urgent / High / Medium / Low. A level the field lacks is added to it. Not on GitHub |
 | card assignee | assignee | matched by verified email address; nobody when there is no match (with a note) — not on GitHub |
 | card start date (a timeline bar's first day) | start date | Jira's "Start date" field is found by name; not on Linear (issues have none) or GitHub |
 | card due date | due date | not on GitHub |
 | card estimate (a number) | story points / estimate | Jira's story points field is found by name; not on GitHub |
 | each linked item | a remote link (Jira), an attachment (Linear), a line in Freero's section (GitHub) | removed when the item is deleted; the issue stays |
+
+## Importing into a kanban
+
+Imported into a kanban (*Import issues into this kanban…* in a selected kanban's context menu, or
+`placement.into` a kanban for agents and the API),
+each issue goes to the column named after its status, else the first column of its status's
+category ("Sets card status"), else a new column named after it (placed with its category, before
+Done for work in progress) — so a board with "In review" gets its In Review issues there, and a
+board with only "Ideas / Maybe / Yes" columns gets the tracker's statuses as columns. Into a NEW
+kanban (`placement.newKanban`) the columns are the statuses the issues have, in category order.
+Issues with a priority give the kanban a **Priority** field when it has none (a single select whose
+options are the tracker's levels, most pressing first, shown on the cards); a kanban that has one
+gets each card's level, adding a level it lacks. A column the import names (`placement.column`)
+keeps its own rule (the column, unless the issue's status category says otherwise). Labels,
+assignee and dates stay the card's own tags, assignee and dates (the kanban shows them as fields).
+While a kanban is grouped by another field, Stage and Priority are stored values the same rules
+set, and the card goes to the column of the field it is grouped by.
 
 ## Roadmap mode (KAI-160)
 
