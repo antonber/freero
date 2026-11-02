@@ -991,7 +991,8 @@ export type NotificationType =
   | 'card.due_soon'
   | 'walkthrough.mention'
   | 'walkthrough.comment'
-  | 'agent.blocked';
+  | 'agent.blocked'
+  | 'problem.fixed';
 
 export interface AppNotification {
   id: string;
@@ -1671,6 +1672,8 @@ export const AUDIT_ACTIONS = {
   'moderation.upload.restore': 'Freero restored a file (moderation)',
   'moderation.upload.purge': 'Freero purged a removed file (moderation)',
   'moderation.upload.download': 'A Freero operator downloaded a file to review it (moderation)',
+  'problems.screenshot_viewed': 'A Freero operator looked at the screenshot of a problem you reported',
+  'problems.updated': 'A Freero operator updated a problem you reported',
   'moderation.user.suspend': 'Freero suspended an account (moderation)',
   'moderation.user.restore': 'Freero lifted an account suspension (moderation)',
   'moderation.listing.approve': 'Freero approved a community listing (moderation)',

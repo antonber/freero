@@ -1,6 +1,7 @@
 // Builds the ZIP of a data export from what each owning module exports (this module reads no
 // other module's tables). Layout — personal:
 //   README.txt, account.json, api.json, listings.json, memberships.json, activity.json, comments.json, notifications.json,
+//   problems/index.json + problems/<id>.<ext> (screenshots),
 //   templates/<name>-<id>.json, uploads/index.json + uploads/<file>,
 //   boards/<title>-<id>/board.json (record + content + the layers you may read), board.yjs, files/<file>
 //   (a doc, KAI-162: the same folder, plus doc.md — its document as Markdown)
@@ -15,6 +16,7 @@ import { boardActivityOf, boardIdsInWorkspace, boardIdsOpenedBy, boardIdsOwnedBy
 import { listingsExportOf } from '../marketplace/index';
 import { membershipsOf } from '../members/index';
 import { notificationsExportOf } from '../notifications/index';
+import { problemsExportOf } from '../problems/index';
 import { commentsWrittenBy, exportBoardContent } from '../realtime/index';
 import { scimExportOf, scimRecordsOf } from '../scim/index';
 import { ssoExportOf, ssoRolesOf } from '../sso/index';
@@ -41,8 +43,12 @@ class Archive {
     this.add(path, json(v));
   }
   /** An upload's bytes, within the size budget. */
-  async addUpload(path: string, name: string): Promise<boolean> {
-    const bytes = await readUpload(name);
+  addUpload(path: string, name: string): Promise<boolean> {
+    return this.addFile(path, () => readUpload(name));
+  }
+  /** A file's bytes (null: no longer stored), within the size budget. */
+  async addFile(path: string, read: () => Promise<Uint8Array | null>): Promise<boolean> {
+    const bytes = await read();
     if (!bytes) {
       this.skipped.push({ path, reason: 'the file is no longer stored' });
       return false;
@@ -88,6 +94,8 @@ walkthroughs.json   walkthroughs you recorded (camera path, captions; the record
                     your comments on walkthroughs and which ones you watched
 decisions.json      decision snapshots you made (title, note, board)
 listings.json       community listings you submitted to Apps & agents, with their review status
+problems/           problems you reported with "Report a problem": index.json (your note, the
+                    diagnostics sent with it, its status) and the screenshots you attached
 templates/          templates you saved (Freero's own JSON; insertable again)
 uploads/            files you uploaded (images, PDFs, video, audio, recordings), with index.json
 boards/             boards you own: board.json (readable JSON of every item, comment and setting,
@@ -153,6 +161,10 @@ export async function buildUserArchive(userId: string, appOrigin: string): Promi
   a.addJson('decisions.json', await decisionsExportOf(userId));
   // Answers and questions in live activities (KAI-132), anonymous ones included: they are theirs.
   a.addJson('activities.json', await engageExportOf(userId));
+  // "Report a problem": what they sent (note, diagnostics) and its screenshot.
+  const problems = await problemsExportOf(userId);
+  a.addJson('problems/index.json', problems.map((p) => p.report));
+  for (const p of problems) if (p.screenshot) await a.addFile(`problems/${p.screenshot.name}`, p.screenshot.read);
 
   for (const t of await templatesExportOf({ ownerId: userId })) a.addJson(`templates/${slug(t.name)}-${t.id}.json`, t);
 

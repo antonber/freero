@@ -49,7 +49,8 @@ export type RateLimitName =
   | 'backup'
   | 'walkthroughComment'
   | 'slackUnfurl'
-  | 'listingSubmit';
+  | 'listingSubmit'
+  | 'problemReport';
 
 /** Issue-tracker sync (KAI-153; docs/trackers.md). */
 export interface TrackersConfig {
@@ -260,6 +261,12 @@ export interface Config {
   /** How often the kept-copy retention runs (one instance at a time). */
   moderationRetentionIntervalMs: number;
   /**
+   * How long a problem report ("Report a problem": note, screenshot, diagnostics) is kept after an
+   * operator closed it (fixed, won't fix, duplicate); then the report and its screenshot are deleted.
+   * Reopening it stops the clock. 0: at the next run. The same job runs every moderationRetentionIntervalMs.
+   */
+  problemRetentionMs: number;
+  /**
    * How long browsers and caches may reuse an uploaded file without asking again (KAI-177): what
    * bounds how long a file an operator removed keeps showing where it was already loaded.
    */
@@ -428,6 +435,7 @@ const RATE_LIMIT_DEFAULTS: Record<RateLimitName, string> = {
   walkthroughComment: '120/10m', // per person: comments on walkthroughs (each may notify people, KAI-133)
   slackUnfurl: '50/1m', // per Slack workspace: link previews Freero posts there (chat.unfurl is Slack's tier 3, about 50 a minute; #88)
   listingSubmit: '5/1d', // per person: community listings submitted for review (each mails the operators, #87)
+  problemReport: '10/1h', // per person: problem reports sent with "Report a problem" (each may carry a screenshot)
 };
 
 const ENV_NAME: Record<RateLimitName, string> = {
@@ -473,6 +481,7 @@ const ENV_NAME: Record<RateLimitName, string> = {
   walkthroughComment: 'RATE_LIMIT_WALKTHROUGH_COMMENT',
   slackUnfurl: 'RATE_LIMIT_SLACK_UNFURL',
   listingSubmit: 'RATE_LIMIT_LISTING_SUBMIT',
+  problemReport: 'RATE_LIMIT_PROBLEM_REPORT',
 };
 
 /** The built-in providers: env prefix, button label, default issuer, extra verified-email claims. */
@@ -834,6 +843,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     operatorEmails,
     moderationKeepRemovedMs: int('MODERATION_KEEP_REMOVED_DAYS', 30, 0, 3650) * 86_400_000,
     moderationRetentionIntervalMs: int('MODERATION_RETENTION_INTERVAL_SECONDS', 3600, 1, 86_400) * 1000,
+    problemRetentionMs: int('PROBLEM_RETENTION_DAYS', 90, 0, 3650) * 86_400_000,
     uploadCacheSeconds: int('UPLOAD_CACHE_SECONDS', 3600, 0, 31_536_000),
     abuseContactEmail,
     securityContact: securityContact ?? (abuseContactEmail ? `mailto:${abuseContactEmail}` : null),
