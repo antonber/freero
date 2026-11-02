@@ -1,12 +1,14 @@
 // A card's field values: the schema of the kanban it is in (if any) and the one write path for
-// them (`card.setValues`). The card feature never lays cards out: a new value for the kanban's
-// column field ("Stage") is a move to that column, which it asks the kanban to make.
+// them (`card.setValues`). The card feature never lays cards out: a new value for the field the
+// kanban is grouped by ("Stage", or another select, a person or a checkbox) is a move to that
+// column, which it asks the kanban to make.
 import {
-  COLUMN_FIELD_ID,
   builtinPatch,
   canonicalValue,
   cardValue,
   collectionSchema,
+  groupFieldId,
+  groupKeyOf,
   isBuiltinFieldId,
   type CardElement,
   type FieldDef,
@@ -38,8 +40,10 @@ export function setValues(editor: Editor, id: string, values: Record<string, unk
     const f = coll?.schema.find((x) => x.id === fid);
     const v = f ? canonicalValue(f, raw) : undefined;
     if (!f || v === undefined) continue;
-    if (f.id === COLUMN_FIELD_ID) {
-      if (typeof v === 'string' && cardValue(coll!.kanban, card, f) !== v) column = v;
+    if (f.id === groupFieldId(coll!.kanban)) {
+      // The column it stands in IS this value: a move ("No <field>" for none).
+      const cur = cardValue(coll!.kanban, card, f);
+      if (JSON.stringify(cur) !== JSON.stringify(v)) column = groupKeyOf(f, v);
       continue;
     }
     if (v === null) {
