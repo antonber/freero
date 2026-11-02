@@ -18,6 +18,10 @@ without contacting support while the Claude listing slug is permanent, so it mus
 
 ## Status
 
+**Claude connectors directory: submitted 2026-11-02** (listing "Freero", slug `freero`, MCP URL
+`https://freero.app/mcp`), awaiting review. **ChatGPT app directory: not submitted** (needs
+developer mode in a workspace that allows it, and OpenAI organization verification).
+
 | | Ready | Missing |
 |---|---|---|
 | MCP server | Remote, HTTPS, Streamable HTTP (`<HOST>/mcp`), OAuth 2.1 + PKCE + dynamic client registration; every tool has a `title` and explicit `readOnlyHint` / `destructiveHint` / `openWorldHint` (`mcp.test.ts` fails otherwise); Host / Origin validation; destructive deletes need `confirm: true` | — |
