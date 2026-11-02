@@ -297,6 +297,12 @@ function ImportDialog({ editor, props }: PanelProps) {
     const el = typeof props?.timelineId === 'string' ? editor.getElement(props.timelineId) : undefined;
     return el?.type === 'timeline' ? el : null;
   }, [editor, props]);
+  // Opened on a kanban: the issues go into it, each in the column named after its status.
+  const kanban = useMemo(() => {
+    const el = typeof props?.kanbanId === 'string' ? editor.getElement(props.kanbanId) : undefined;
+    return el?.type === 'kanban' ? el : null;
+  }, [editor, props]);
+  const kanbanTitle = kanban ? richTextToPlain(String((kanban as { title?: string }).title ?? '')) || 'the kanban' : '';
   const [groupBy, setGroupBy] = useState<RoadmapGroupBy>('epic');
   const close = () => editor.closePanel(IMPORT_DIALOG);
   const run = async () => {
@@ -308,9 +314,10 @@ function ImportDialog({ editor, props }: PanelProps) {
         connectionId: c.connectionId,
         query: query.trim(),
         ...(timeline ? { timeline: { id: timeline.id, groupBy } } : {}),
+        ...(kanban ? { placement: { into: kanban.id } } : {}),
       });
       close();
-      const where = timeline ? ` onto the timeline${out.unscheduled ? ` (${out.unscheduled} without dates in Unscheduled)` : ''}` : ' as cards';
+      const where = timeline ? ` onto the timeline${out.unscheduled ? ` (${out.unscheduled} without dates in Unscheduled)` : ''}` : kanban ? ` into “${kanbanTitle}”` : ' as cards';
       editor.host.notify(
         out.created.length
           ? `Imported ${plural(out.created.length, 'issue')}${where}${out.skipped ? ` (${out.skipped} already here)` : ''}`
@@ -342,7 +349,7 @@ function ImportDialog({ editor, props }: PanelProps) {
       onClose={close}
       title={
         <span className="fr-trackers-dialog__title">
-          <Download size={18} aria-hidden /> {timeline ? 'Import issues onto the timeline' : 'Import issues'}
+          <Download size={18} aria-hidden /> {timeline ? 'Import issues onto the timeline' : kanban ? 'Import issues into the kanban' : 'Import issues'}
         </span>
       }
       width={520}
@@ -379,7 +386,9 @@ function ImportDialog({ editor, props }: PanelProps) {
         <p className="fr-trackers-dialog__fine">
           {timeline
             ? `Each issue becomes a bar on “${richTextToPlain(String((timeline as { title?: string }).title ?? '')) || 'the timeline'}” at its start and due dates, linked to it: moving a bar changes the issue’s dates, and dates changed in the tracker move the bar. Issues without dates wait in an “Unscheduled” frame below. Up to 50 at a time.`
-            : 'Each issue becomes a task card linked to it (up to 50 at a time). Issues already on this board are left out.'}
+            : kanban
+              ? `Each issue becomes a card in “${kanbanTitle}”, linked to it: in the column named after its status (else one of its kind, else a new column), with its priority in a Priority field. Moving a card or changing its priority updates the issue. Up to 50 at a time.`
+              : 'Each issue becomes a task card linked to it (up to 50 at a time). Issues already on this board are left out.'}
         </p>
         {c.error && (
           <p className="fr-trackers-dialog__error" role="alert">

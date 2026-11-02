@@ -1,6 +1,6 @@
-import { ChartGantt, Download, ExternalLink, RefreshCw, TicketPlus, Unlink } from 'lucide-react';
+import { ChartGantt, Download, ExternalLink, KanbanSquare, RefreshCw, TicketPlus, Unlink } from 'lucide-react';
 import { defineCommands, type Editor } from '@engine';
-import { IMPORT_DIALOG, linkedIssues, openIssue, selectedTimeline, SEND_DIALOG, sendable, trackersAvailable } from './lib/links';
+import { IMPORT_DIALOG, linkedIssues, openIssue, selectedKanban, selectedTimeline, SEND_DIALOG, sendable, trackersAvailable } from './lib/links';
 
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? '' : 's'}`;
 
@@ -47,6 +47,16 @@ export default defineCommands([
     palette: false,
     when: (editor) => trackersAvailable(editor) && !!selectedTimeline(editor),
     run: (editor) => editor.openPanel(IMPORT_DIALOG, { timelineId: selectedTimeline(editor)?.id }),
+  },
+  {
+    // Into the selected kanban: each issue in the column named after its status, with its priority.
+    id: 'trackers.importToKanban',
+    label: 'Import issues into this kanban…',
+    icon: KanbanSquare,
+    menus: ['context'],
+    palette: false,
+    when: (editor) => trackersAvailable(editor) && !!selectedKanban(editor),
+    run: (editor) => editor.openPanel(IMPORT_DIALOG, { kanbanId: selectedKanban(editor)?.id }),
   },
   {
     id: 'trackers.open',
