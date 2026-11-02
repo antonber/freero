@@ -1,12 +1,15 @@
 // Kanban fields where the features meet (docs/design/kanban-fields-and-views.md): the card
 // feature writes values (`card.setValues`, card details), the kanban feature owns the schema and
 // lays cards out. Real features, as the app loads them; real replicas of one board.
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   COLUMN_FIELD_ID,
   KANBAN_LAYOUT,
+  NO_GROUP,
   kanbanColumnAt,
   kanbanColumnLeft,
+  kanbanLaneAt,
+  kanbanLanesTop,
   renderOutlineMarkdown,
   type CardElement,
   type FieldDef,
@@ -21,6 +24,7 @@ let board: TestBoard | null = null;
 afterEach(() => {
   board?.destroy();
   board = null;
+  vi.useRealTimers();
 });
 
 const COLUMNS: KanbanColumn[] = [
@@ -175,5 +179,172 @@ describe('kanban fields', () => {
     // Nothing was written to migrate it.
     expect(ed.getElement<KanbanElement>(kid)!.fields).toBeUndefined();
     expect(ed.getElement<CardElement>(id)!.values).toBeUndefined();
+  });
+});
+
+describe('grouping and swimlanes', () => {
+  const TEAM: FieldDef = {
+    id: 'f_team',
+    name: 'Team',
+    type: 'select',
+    options: [
+      { id: 't_web', label: 'Web', color: '#2E9BF0' },
+      { id: 't_api', label: 'API', color: '#1FA463' },
+    ],
+  };
+  const OWNER: FieldDef = { id: 'f_owner', name: 'Owner', type: 'person' };
+  const k = (ed: Editor, kid: string) => ed.getElement<KanbanElement>(kid)!;
+  const values = (ed: Editor, id: string) => ed.getElement<CardElement>(id)!.values ?? {};
+  const laneOf = (ed: Editor, kid: string, id: string) => {
+    const c = ed.getElement<CardElement>(id)!;
+    return k(ed, kid).lanes![kanbanLaneAt(k(ed, kid), c.y + c.h / 2)].id;
+  };
+  /** A pointer drag of `id` so its center lands on `to`: one gesture, like the select tool's. */
+  function drag(ed: Editor, id: string, to: { x: number; y: number }) {
+    const el = ed.getElement(id)!;
+    ed.beginGesture();
+    ed.moveBy([{ id, dx: to.x - (el.x + el.w / 2), dy: to.y - (el.y + el.h / 2) }]);
+    ed.endGesture();
+  }
+
+  it('grouping by Priority moves each card to its priority’s column ("No Priority" without one) and writes its Stage from where it stood, in one undo step; grouping back by Stage brings the Stage columns, their WIP limit and every card back', () => {
+    board = createTestBoard({ users: ['ann'], features });
+    const [ed] = board.editors('card');
+    const kid = kanban(ed, [PRIORITY, POINTS]);
+    ed.update<KanbanElement>(kid, { columns: COLUMNS.map((c) => (c.id === 'c_doing' ? { ...c, wip: 3 } : c)) });
+    const [a, b, c] = [card(ed, kid, 0, 'A'), card(ed, kid, 1, 'B'), card(ed, kid, 2, 'C')];
+    ed.runCommand('card.setValues', { id: a, values: { f_prio: 'o_p0' } });
+    ed.runCommand('card.setValues', { id: b, values: { f_prio: 'o_p1' } });
+
+    ed.runCommand('kanban.groupBy', { id: kid, field: 'f_prio' });
+    expect(k(ed, kid).columns.map((col) => col.id)).toEqual([NO_GROUP, 'o_p0', 'o_p1']);
+    expect([a, b, c].map((id) => columnOf(ed, kid, id))).toEqual(['o_p0', 'o_p1', NO_GROUP]);
+    expect([a, b, c].map((id) => values(ed, id))).toEqual([{ stage: 'c_todo' }, { stage: 'c_doing' }, { stage: 'c_done' }]);
+    // Regrouping is no drop: nobody's status changes.
+    expect([a, b, c].map((id) => ed.getElement<CardElement>(id)!.status)).toEqual(['todo', 'doing', 'done']);
+    expect(find(ed.getOutline().items, kid)!.fields).toMatchObject({ 'grouped by': 'Priority' });
+    expect(find(ed.getOutline().items, a)!.fields).toMatchObject({ Stage: 'To do', Priority: 'P0' });
+
+    ed.undo();
+    expect(k(ed, kid).columns.map((col) => col.id)).toEqual(COLUMNS.map((col) => col.id));
+    expect([a, b, c].map((id) => columnOf(ed, kid, id))).toEqual(['c_todo', 'c_doing', 'c_done']);
+    expect(values(ed, a)).toEqual({ f_prio: 'o_p0' });
+
+    // Grouped by Priority, C gets one by being dragged into P1; back by Stage, it is in Done again.
+    ed.runCommand('kanban.groupBy', { id: kid, field: 'f_prio' });
+    const p1 = k(ed, kid).columns.findIndex((col) => col.id === 'o_p1');
+    drag(ed, c, { x: k(ed, kid).x + kanbanColumnLeft(k(ed, kid), p1) + 140, y: k(ed, kid).y + 140 });
+    ed.runCommand('card.setValues', { id: c, values: { $status: 'todo' } }); // reopened meanwhile
+    ed.runCommand('kanban.groupBy', { id: kid, field: COLUMN_FIELD_ID });
+    expect(k(ed, kid).columns.map((col) => [col.id, col.wip ?? 0])).toEqual([['c_todo', 0], ['c_doing', 3], ['c_done', 0]]);
+    expect([a, b, c].map((id) => columnOf(ed, kid, id))).toEqual(['c_todo', 'c_doing', 'c_done']);
+    expect([a, b, c].map((id) => values(ed, id).f_prio)).toEqual(['o_p0', 'o_p1', 'o_p1']);
+    expect(ed.getElement<CardElement>(c)!.status).toBe('todo'); // back in Done by its Stage, its status left alone
+  });
+
+  it('on a board grouped by Priority, setting a card’s Priority in its details moves it to that column, and clearing it to "No Priority"', () => {
+    board = createTestBoard({ users: ['ann'], features });
+    const [ed] = board.editors('card');
+    const kid = kanban(ed, [PRIORITY]);
+    const id = card(ed, kid, 0, 'A');
+    ed.runCommand('kanban.groupBy', { id: kid, field: 'f_prio' });
+    expect(columnOf(ed, kid, id)).toBe(NO_GROUP);
+    ed.runCommand('card.setValues', { id, values: { f_prio: 'o_p1' } });
+    expect(columnOf(ed, kid, id)).toBe('o_p1');
+    expect(values(ed, id).f_prio).toBeUndefined(); // the column is the value: nothing stored
+    ed.runCommand('card.setValues', { id, values: { f_prio: null } });
+    expect(columnOf(ed, kid, id)).toBe(NO_GROUP);
+  });
+
+  it('grouped by a person field, every owner with cards has a column; giving a card to someone without one adds theirs', () => {
+    board = createTestBoard({ users: ['ann'], features });
+    const [ed] = board.editors('card');
+    const kid = kanban(ed, [OWNER]);
+    const [a, b] = [card(ed, kid, 0, 'A'), card(ed, kid, 1, 'B')];
+    ed.runCommand('card.setValues', { id: a, values: { f_owner: 'u_ann' } });
+    ed.runCommand('kanban.groupBy', { id: kid, field: 'f_owner' });
+    expect(k(ed, kid).columns.map((col) => col.id)).toEqual([NO_GROUP, 'u_ann']);
+    expect([a, b].map((id) => columnOf(ed, kid, id))).toEqual(['u_ann', NO_GROUP]);
+    ed.runCommand('card.setValues', { id: b, values: { f_owner: 'u_bob' } });
+    expect(k(ed, kid).columns.map((col) => col.id)).toEqual([NO_GROUP, 'u_ann', 'u_bob']);
+    expect(columnOf(ed, kid, b)).toBe('u_bob');
+    ed.undo(); // one step: the column and the move
+    expect(k(ed, kid).columns.map((col) => col.id)).toEqual([NO_GROUP, 'u_ann']);
+    expect(columnOf(ed, kid, b)).toBe(NO_GROUP);
+  });
+
+  it('with swimlanes by Team, a card dropped into the Doing × API cell takes both (Stage by its column, Team written, its status too) in one undo step; a Team changed in its details moves it to that row', () => {
+    board = createTestBoard({ users: ['ann'], features });
+    const [ed] = board.editors('card');
+    const kid = kanban(ed, [PRIORITY, TEAM]);
+    const [a, b] = [card(ed, kid, 0, 'A'), card(ed, kid, 0, 'B')];
+    ed.runCommand('card.setValues', { id: a, values: { f_team: 't_web' } });
+    ed.runCommand('kanban.setSwimlanes', { id: kid, field: 'f_team' });
+    expect(k(ed, kid).lanes!.map((l) => l.id)).toEqual([NO_GROUP, 't_web', 't_api']);
+    expect([a, b].map((id) => laneOf(ed, kid, id))).toEqual(['t_web', NO_GROUP]);
+    expect(find(ed.getOutline().items, kid)!.fields).toMatchObject({ rows: 'Team' });
+
+    const lanes = k(ed, kid).lanes!;
+    const apiTop = kanbanLanesTop(k(ed, kid)) + lanes[0].h + lanes[1].h;
+    drag(ed, b, { x: k(ed, kid).x + kanbanColumnLeft(k(ed, kid), 1) + 140, y: apiTop + KANBAN_LAYOUT.laneHeadH + 40 });
+    expect(columnOf(ed, kid, b)).toBe('c_doing');
+    expect(laneOf(ed, kid, b)).toBe('t_api');
+    expect(ed.getElement<CardElement>(b)).toMatchObject({ status: 'doing', values: { f_team: 't_api' } });
+    ed.undo();
+    expect(columnOf(ed, kid, b)).toBe('c_todo');
+    expect(laneOf(ed, kid, b)).toBe(NO_GROUP);
+    expect(ed.getElement<CardElement>(b)!.status).toBe('todo');
+    expect(values(ed, b).f_team).toBeUndefined();
+
+    ed.runCommand('card.setValues', { id: a, values: { f_team: 't_api' } });
+    expect(laneOf(ed, kid, a)).toBe('t_api');
+    expect(columnOf(ed, kid, a)).toBe('c_todo');
+  });
+
+  it('one person regrouping by Priority while another drops a card into Done: both boards end up the same, every card in one column, none on top of another', () => {
+    vi.useFakeTimers();
+    board = createTestBoard({ users: ['ann', 'bob'], features });
+    const [ann, bob] = board.editors('card');
+    const kid = kanban(ann, [PRIORITY]);
+    const ids = [card(ann, kid, 0, 'A'), card(ann, kid, 0, 'B'), card(ann, kid, 1, 'C')];
+    ann.runCommand('card.setValues', { id: ids[0], values: { f_prio: 'o_p0' } });
+    board.sync();
+    vi.advanceTimersByTime(60_000);
+
+    ann.runCommand('kanban.groupBy', { id: kid, field: 'f_prio' });
+    drag(bob, ids[1], { x: k(bob, kid).x + kanbanColumnLeft(k(bob, kid), 2) + 140, y: k(bob, kid).y + 140 });
+    board.sync();
+    vi.advanceTimersByTime(2000);
+    board.sync();
+    vi.advanceTimersByTime(2000);
+    board.sync();
+    expect(JSON.stringify(ann.getElements())).toBe(JSON.stringify(bob.getElements()));
+    const cards = ids.map((id) => ann.getElement<CardElement>(id)!);
+    for (const c of cards) expect(k(ann, kid).columns.map((col) => col.id)).toContain(columnOf(ann, kid, c.id));
+    for (const a of cards)
+      for (const b of cards)
+        if (a.id < b.id && columnOf(ann, kid, a.id) === columnOf(ann, kid, b.id)) expect(a.y + a.h <= b.y || b.y + b.h <= a.y).toBe(true);
+  });
+
+  it('a column showing its first 2 cards folds the others away below the board: not drawn or hit, still in the column for the outline and the WIP count', () => {
+    board = createTestBoard({ users: ['ann'], features });
+    const [ed] = board.editors('card');
+    const kid = kanban(ed);
+    const ids = ['A', 'B', 'C', 'D'].map((t) => card(ed, kid, 0, t));
+    const tall = k(ed, kid).h;
+    ed.update<KanbanElement>(kid, { columns: COLUMNS.map((c) => (c.id === 'c_todo' ? { ...c, limit: 2 } : c)) });
+    expect(k(ed, kid).h).toBeLessThan(tall);
+    const onBoard = (id: string) => {
+      const c = ed.getElement<CardElement>(id)!;
+      return ed.hitTest({ x: c.x + c.w / 2, y: c.y + c.h / 2 }, { types: ['card'] })?.id === id;
+    };
+    expect(ids.filter(onBoard)).toHaveLength(2);
+    for (const id of ids.filter((x) => !onBoard(x))) {
+      expect(ed.getElement<CardElement>(id)!.y).toBeGreaterThan(k(ed, kid).y + k(ed, kid).h);
+      expect(columnOf(ed, kid, id)).toBe('c_todo');
+    }
+    const column = find(ed.getOutline().items, `${kid}:c_todo`)!;
+    expect(column.children!.map((c) => c.id).sort()).toEqual([...ids].sort());
+    expect(column.fields).toMatchObject({ shows: 2 });
   });
 });
