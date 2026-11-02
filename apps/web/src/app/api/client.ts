@@ -25,6 +25,7 @@ import type {
   ActivityAnswer,
   ActivityState,
   BoardCallResponse,
+  PersonalViewsResponse,
   SetBoardCallRequest,
   AiActionRequest,
   AiActionResponse,
@@ -330,6 +331,9 @@ export const api = {
   // the board's call link (KAI-134)
   boardCall: (id: string) => request<BoardCallResponse>('GET', `/api/boards/${encodeURIComponent(id)}/call`),
   setBoardCall: (id: string, body: SetBoardCallRequest) => request<BoardCallResponse>('PUT', `/api/boards/${encodeURIComponent(id)}/call`, body),
+  personalViews: (id: string) => request<PersonalViewsResponse>('GET', `/api/boards/${encodeURIComponent(id)}/personal-views`),
+  savePersonalView: (id: string, body: { itemId: string; viewId: string; settings: Record<string, unknown> | null }) =>
+    request<{ ok: true }>('PUT', `/api/boards/${encodeURIComponent(id)}/personal-views`, body),
   // live activities (KAI-132)
   activity: (id: string, aid: string) => request<ActivityState>('GET', activityPath(id, aid)),
   answerActivity: (id: string, aid: string, answer: ActivityAnswer) => request<ActivityState>('PUT', `${activityPath(id, aid)}/answer`, { answer }),
