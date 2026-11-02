@@ -52,7 +52,8 @@ BoardOutline { outlineVersion: 1, board { id, title, url }, version,
                notes: string[]        // board-level facts ("Vote "Top ideas" · ended · …")
                meta { itemCount, edgeCount, returned, truncated, omitted, nextCursor?, versionChanged? } }
 OutlineItem { id, kind, variant?, title?, text?, fields?, tags?, votes?, author?, link?,
-              private?, hidden?, withheld?, rows?, comments?, children?, omitted?, context? }
+              private?, hidden?, withheld?, rows?, schema?, comments?, children?, omitted?, context? }
+OutlineField { id, name, type, options?: Array<{ id, label, status? }> }   // OutlineItem.schema
 ```
 
 - `id` is the element id (address edits to it). Made-up nodes have ids no element can have:
@@ -63,6 +64,16 @@ OutlineItem { id, kind, variant?, title?, text?, fields?, tags?, votes?, author?
 - Nesting: frames hold their items (clusters inside); kanbans hold columns which hold their cards, top to bottom (a collapsed column reads `collapsed: true` and still lists its cards: they are folded away on the board, not gone);
   mind-map nodes nest under their parent; a reaction stamp nests under the item it sits on. A table
   carries `rows` (plain text, the first row is the header when `fields.header`).
+- Kanban fields: a kanban carries `schema`, its fields in order (`type` is `select`, `multiselect`,
+  `person`, `date`, `number`, `text`, `url` or `checkbox`; selects list their `options`). The first
+  is usually the column field (id `stage`, named "Stage" unless renamed): its options are the
+  columns, so its option ids are the column ids of the `<kanbanId>:<columnId>` sections, and a
+  card's value for it is the column it is in. Kanbans from before fields read as that one field.
+  Each card on a kanban carries its values in `fields`, keyed by field **name**: select labels
+  (multi-select labels joined by ", "), people by name, dates `YYYY-MM-DD`, numbers, text, URLs,
+  checkboxes `true`. Empty values are left out, and so are values of deleted fields or options.
+  Set them with `update_items` (`fields: { "Priority": "P1" }`; the column field by moving the card
+  with `into` + `column`).
 - Clusters: items close together (gap ≤ ~30 % of the larger item's short side, 16–64 units), or
   joined by a connector, in the same frame (or outside frames). A text box right above the rest is
   the cluster's title. Containers, tables and mind maps are never clustered.
@@ -88,9 +99,9 @@ Freero board outline v1 · board b_8Fq2 · 14 items, 3 connections · version 6h
   - [s1] sticky yellow: Deploys are faster · 3 votes · #infra
     - comment [th1] Ann: Agreed, @Maria did great
   - [s2] sticky yellow: Pairing helped
-- [k1] kanban: Sprint
+- [k1] kanban: Sprint · fields: Stage (select: To do | Doing | Done), Priority (select: P0 | P1), Points (number)
   - column "Doing" [k1:doing] · status: doing
-    - [c1] card: Fix login · status: doing · due: 2026-11-02 · assignee: Ann
+    - [c1] card: Fix login · status: doing · due: 2026-11-02 · assignee: Ann · Stage: Doing · Priority: P1 · Points: 3
 
 ## Frame "Board offsite" [f2] · hidden: contents not visible to you
 

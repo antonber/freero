@@ -43,12 +43,27 @@ export interface OutlineItem {
   withheld?: true;
   /** A table's cells as plain text, row by row (the first row is the header when `fields.header`). */
   rows?: string[][];
+  /**
+   * [additive] A collection's fields (a kanban's), in order. Its cards carry their values in
+   * `fields`, keyed by field name.
+   */
+  schema?: OutlineField[];
   comments?: OutlineThread[];
   children?: OutlineItem[];
   /** Items under this one left out of this response (budget or page); counted once each. */
   omitted?: number;
   /** Repeated from an earlier page so this page's items keep their place in the tree. */
   context?: true;
+}
+
+/** [additive] One field of a collection (a kanban), as `OutlineItem.schema` lists it. */
+export interface OutlineField {
+  id: string;
+  name: string;
+  /** select, multiselect, person, date, number, text, url or checkbox. */
+  type: string;
+  /** select / multiselect: the values it can take, in order (a kanban's column field: its columns). */
+  options?: Array<{ id: string; label: string; status?: string }>;
 }
 
 export interface OutlineEdge {

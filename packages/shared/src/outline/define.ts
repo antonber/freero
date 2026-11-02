@@ -7,7 +7,7 @@
 // its own feature, and types (type-only imports) from anywhere, never runtime code from the
 // engine, the ui kit or other packages [W13].
 import type { BoardElement, ElementOf, ElementType } from '../elements';
-import type { OutlineThread } from './types';
+import type { OutlineField, OutlineThread } from './types';
 
 /** What a feature's outline functions can read: the board as ONE reader sees it. */
 export interface OutlineContext {
@@ -35,6 +35,8 @@ export interface OutlineDescription {
   text?: string;
   fields?: Record<string, string | number | boolean | null | undefined>;
   rows?: string[][];
+  /** [additive] A collection's fields (a kanban's). */
+  schema?: OutlineField[];
   /** Its contents are hidden from viewers and commenters (a hidden frame). */
   hidden?: boolean;
   /** Nests the item under another item (a mind-map node under its parent). */

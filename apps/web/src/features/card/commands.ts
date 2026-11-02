@@ -1,6 +1,7 @@
 import { ListTodo } from 'lucide-react';
 import { defineCommands } from '@engine';
 import { convertStickiesToCards, selectedStickies } from './lib/actions';
+import { setValues } from './lib/values';
 
 export default defineCommands([
   {
@@ -37,6 +38,19 @@ export default defineCommands([
       const d = patch.dueDate !== undefined ? patch.dueDate : el.dueDate;
       if (s && d && s > d) return;
       if (Object.keys(patch).length) editor.update(id!, patch as never);
+    },
+  },
+  {
+    // Field values (docs/design/kanban-fields-and-views.md): card details, and later table cells
+    // and other views, write a card's fields through this. Args { id, values: { [fieldId]: value } }
+    // — the kanban's own field ids, or built-in ids ($status, $assignee, $due, …); null clears.
+    // Values that don't fit their field are ignored. One undo step.
+    id: 'card.setValues',
+    label: 'Set field values',
+    run(editor, args) {
+      const id = typeof args?.id === 'string' ? args.id : null;
+      const values = args?.values && typeof args.values === 'object' ? (args.values as Record<string, unknown>) : null;
+      if (id && values) setValues(editor, id, values);
     },
   },
   {

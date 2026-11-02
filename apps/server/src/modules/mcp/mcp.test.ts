@@ -266,6 +266,31 @@ it('update_items moves a card into a kanban column named by its title — no coo
   await client.close();
 });
 
+it('update_items sets a card’s kanban fields by name and option label; an option the field lacks is refused naming the valid ones, and nothing changes', async () => {
+  const boardId = await boardWith('Sprint', []);
+  const client = await connect(['boards:read', 'boards:write']);
+  const kanban = (await client.callTool({ name: 'add_cards', arguments: { boardId, columns: [{ title: 'To do', cards: [{ title: 'Write docs' }] }, { title: 'Done', cards: [] }] } })) as CallToolResult;
+  const { kanbanId, columns } = kanban.structuredContent as { kanbanId: string; columns: Array<{ ids: string[] }> };
+  const card = columns[0].ids[0];
+  // Fields as the Fields panel stores them (agents can't define fields yet).
+  const fields = [{ id: 'f_prio', name: 'Priority', type: 'select', options: [{ id: 'o_p0', label: 'P0', color: '#E5484D' }, { id: 'o_p1', label: 'P1', color: '#F5A524' }] }, { id: 'f_pts', name: 'Points', type: 'number' }];
+  await changeBoard(boardId, { userId: ownerId, role: 'owner' }, () => ({ change: { update: [{ id: kanbanId, patch: { fields } }] } }));
+  const valuesOf = async () => ((await readBoardView(boardId, { userId: ownerId, role: 'owner' })).elements.find((e) => e.el.id === card)!.el as BoardElement & { values?: unknown }).values;
+
+  const ok = (await client.callTool({ name: 'update_items', arguments: { boardId, items: [{ id: card, fields: { priority: 'p1', Points: 5 } }] } })) as CallToolResult;
+  expect(ok.isError, textOf(ok)).toBeFalsy();
+  expect(await valuesOf()).toEqual({ f_prio: 'o_p1', f_pts: 5 });
+
+  const bad = (await client.callTool({ name: 'update_items', arguments: { boardId, items: [{ id: card, fields: { Points: null, Priority: 'Urgent' } }] } })) as CallToolResult;
+  expect(bad.isError).toBe(true);
+  expect(textOf(bad)).toContain('one of: P0, P1');
+  expect(await valuesOf()).toEqual({ f_prio: 'o_p1', f_pts: 5 });
+  // The outline reads them back by name.
+  const md = textOf(await client.callTool({ name: 'get_board_outline', arguments: { boardId } }));
+  expect(md).toContain('Priority: P1 · Points: 5');
+  await client.close();
+});
+
 it('import_meeting_notes from a connection that may only suggest proposes the meeting and leaves the board as it was; with write it lands one frame and names the cards’ ids', async () => {
   const boardId = await boardWith('Weekly', [sticky('a', 'Keep me', 0)]);
   const before = await idsOn(boardId);

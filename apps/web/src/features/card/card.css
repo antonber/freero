@@ -293,6 +293,131 @@
   min-height: 140px;
 }
 
+/* Card details: the kanban's fields */
+.fr-card-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 4px;
+}
+
+.fr-card-fields__grid {
+  display: grid;
+  grid-template-columns: minmax(80px, 34%) minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.fr-card-fields__name {
+  overflow: hidden;
+  color: var(--fr-ink-2);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-card-fields__value {
+  min-width: 0;
+}
+
+.fr-card-fields__box {
+  box-sizing: border-box;
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--fr-line-strong);
+  border-radius: var(--fr-radius-sm);
+  background: var(--fr-surface);
+  color: var(--fr-ink);
+  font: 13px var(--fr-font);
+}
+
+.fr-card-fields__box:focus-visible {
+  outline: none;
+  border-color: var(--fr-primary);
+  box-shadow: 0 0 0 3px var(--fr-primary-soft);
+}
+
+.fr-card-fields__check {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--fr-primary);
+}
+
+.fr-card-fields__url {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fr-card-fields__open {
+  display: inline-flex;
+  flex: none;
+  padding: 6px;
+  border-radius: var(--fr-radius-sm);
+  color: var(--fr-ink-2);
+}
+
+.fr-card-fields__open:hover {
+  background: var(--fr-hover);
+}
+
+.fr-card-fields__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-card-fields__dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--opt);
+}
+
+.fr-card-fields__none {
+  color: var(--fr-ink-3);
+}
+
+.fr-card-fields__multi {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.fr-card-fields__toggle {
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--fr-line);
+  border-radius: 13px;
+  background: var(--fr-surface);
+  color: var(--fr-ink-2);
+  font: 12px var(--fr-font);
+  cursor: pointer;
+}
+
+.fr-card-fields__toggle[aria-pressed='true'] {
+  border-color: color-mix(in srgb, var(--fr-primary) 45%, transparent);
+  background: var(--fr-primary-soft);
+  color: var(--fr-ink);
+}
+
+@media (forced-colors: active) {
+  .fr-card-fields__dot {
+    border: 1px solid CanvasText;
+    forced-color-adjust: none;
+  }
+  .fr-card-fields__toggle[aria-pressed='true'] {
+    outline: 2px solid Highlight;
+  }
+}
+
 .fr-card__estimate {
   display: inline-flex;
   align-items: center;

@@ -1,8 +1,8 @@
 # Kanban phases 2 and 3: fields, group-by and views of the same data
 
-Status: **proposal, not built**. Owner decisions are needed on the questions at the end before step
-2a starts. Phase 1 (card colour follows column, smoother drag, keyboard moves, column reorder /
-collapse / resize) is in progress in `features/kanban` and is assumed to have landed first.
+Status: **step 2a built** (schema foundation, see "Step 2a as built" below); 2b–3e proposed. The
+owner's decisions on the open questions are under "Decisions". Phase 1 (card colour follows column,
+smoother drag, keyboard moves, column reorder / collapse / resize) has landed.
 
 ## What we want
 
@@ -659,17 +659,114 @@ are independent, and 2e / 2f depend only on 2a (2e's view tool grows as 2c / 2d 
    tracker). Name matching is predictable and visible. The explicit per-connection map (#43) is the
    way out.
 
-## Open questions for the owner
+## Decisions (owner, 2026-11-02)
 
-1. **Dragging a card out of a kanban**: leaves the collection (proposed: today's behaviour,
-   membership = containment), or stays a member wherever it goes on the board (Notion-like, needs a
-   `collectionId` and "elsewhere" placeholders in columns)?
-2. **The active view tab**: shared for everyone (proposed: one canvas, one picture; personal
-   re-slicing in focus mode), or remembered per person?
-3. **Cross-board views (3d)**: needed in this round, or are views on the same board plus focus mode
-   enough for now?
-4. **Tables**: keep the `table` element as a free-form sheet with "Convert to kanban" (proposed), or
-   plan to replace its typed columns and board view with collections so there is one database model?
+1. **Dragging a card out of a kanban leaves the collection** (dropping in joins, dragging out
+   leaves), as today: membership is containment (`frameId`), no `collectionId` on cards.
+2. **View changes are personal until saved.** Changing a view's layout, filter, sort or grouping
+   applies only to the person who made it, until they press **"Save for everyone"** (editors only).
+   Viewers can always look their own way without changing it for others. This replaces section 3's
+   "the active tab is shared": `views` / `activeView` on the element become the *saved* view
+   everyone starts from, and each person's unsaved changes are a personal override on top
+   (storage below).
+3. **Cross-board views are in this round.** Pasting a kanban onto another board offers
+   **"Synced"** (a linked view of the same collection; permissions are the home board's: someone
+   with only view access there can't edit records or change its saved view) or **"Copy"** (an
+   independent kanban with its own cards). Step 3d is no longer conditional.
+4. **The table element stays a separate free-form sheet**, with "Convert to kanban" (3e). Table,
+   Timeline and Calendar are layouts of a kanban's own cards (3a / 3b).
+
+What these need from the data model, and what 2a does about it:
+
+- **Collection identity** is the kanban element id; across boards a collection is addressed as
+  `freero://board/<boardId>/item/<kanbanId>` (the object address the suite already resolves).
+  There is deliberately no separate `collectionId`: duplicate, paste and templates give copies new
+  element ids, so a "Copy" is independent by construction, while a stored `collectionId` would be
+  copied verbatim and make two kanbans claim one collection. A synced view (3c / 3d) stores
+  `{ boardId, kanbanId }` and never its own copy of the schema or the cards.
+- **Saved vs personal view settings.** Saved: `KanbanElement.views[]` (+ `activeView`), written by
+  editors through the kanban feature like any element change (synced, undoable, travels with copy /
+  paste). Personal: a `Partial<ViewConfig>` per person per view, keyed by
+  `(boardId, kanbanId, viewId)`. It can't live in the board doc (viewers never write the doc, and it
+  must not reach other people), so it is per-user state outside the doc: a small per-user store
+  behind a `Host` method (server-side, follows the person across devices), with the engine's local
+  view state as the offline / guest fallback. "Save for everyone" writes the override into
+  `views[]` and clears it. Nothing in 2a writes views (see below), so nothing has to migrate.
+- **Synced views and permissions** (3d): the linked view reads and writes through the home board's
+  access (server projection endpoint, writes through `modules/api`), so the home board's role
+  decides, per person, whether records and the saved view are editable.
+
+## Step 2a as built
+
+What shipped, and where it differs from the proposal above (with why):
+
+- **`@freero/shared` `fields.ts`**: `FieldType`, `FieldDef`, `FieldOption`, `FieldValue`,
+  `collectionSchema` (the read-time migration), `storedFields`, `canonicalValue` / `readValue`
+  (validation, canonical encodings as in section 2), `cardValue`, `valueText`, `optionByLabel`,
+  `fieldNameProblem`, the built-in fields (`BUILTIN_FIELDS`, `builtinValue`, `builtinPatch`) and
+  limits. `KanbanElement.fields?` and `CardElement.values?` are additive.
+- **The column field's options are the `columns`, never copied into `fields`** (deviation: the
+  proposal kept options in `fields` and `columns` as a cache). The column field (id `stage`,
+  default name "Stage") keeps only its name and place in `fields`; its options are read from
+  `columns` (column id = option id; title as plain text, colour and status). Why: old tabs, PWAs
+  and server code (structure placement, trackers, control room) edit `columns`, and with two copies
+  every such edit would silently diverge from the field on new clients. With one copy, an old
+  client's added or renamed column *is* a new or renamed Stage option, and migrating needs no write
+  at all: a kanban without `fields` reads as `[Stage]`, deterministically on every client and the
+  server. In 2c the invariant generalises to "the field the board is grouped by keeps its options
+  in `columns`": switching `groupBy` moves the old group field's options into its `fields` entry
+  and the new one's out into `columns`, in one write.
+- **A card's column-field value is the column under it, never stored in `values`** (deviation: the
+  proposal wrote `values.stage` on drop and read it before position). On a hosting board the
+  position is written by every client, old ones included, so it is the only value that can't be
+  stale; and a move changes it in one write. Setting it (card details, `card.setValues`) asks the
+  kanban to move the card (`kanban.moveToColumn`), and the layout pass then sets the column's
+  status and colour as for a drop. In 2c, regrouping away from Stage writes `values.stage` from
+  positions in the same transaction, after which Stage is an ordinary stored select.
+- **`card.setValues`** (card feature) writes custom values and built-in fields by their fixed ids
+  in one undo step; values that don't fit their field are ignored. Deleting a field or an option
+  writes no card: values stay dormant and read as empty (undo brings them back).
+- **Fields panel** (`features/kanban/panel.tsx`, a dock opened from the kanban's toolbar "Fields"
+  button or its context menu "Edit fields…"): add (any of the eight types), rename (unique,
+  case-insensitive, not a built-in name), reorder and delete fields; add, rename, recolour (the
+  Freero column palette), reorder and delete options. The column field's options are edited as
+  columns, including "Sets status"; it can be renamed but not deleted. Read-only for viewers and
+  on locked kanbans.
+- **Card details** ("Open details") show the kanban's fields in schema order with a labelled
+  control per type; each change is one `card.setValues`.
+- **Outline**: kanbans carry `schema`, cards carry their values by field name (docs/board-outline.md).
+- **`update_items` takes `fields`** for custom fields (by name or id, select options by label;
+  unknown fields / options refused with the valid ones). This is the part of 2e that was trivial
+  because it is a card patch; `define_fields`, `configure_view`, `query_cards`, `add_cards` with
+  fields and server re-lay of value changes are still 2e.
+- **Built-in fields**: `$estimate` is typed `text`, not `number` (planning poker stores "XL", "?");
+  `$created` / `$updated` are read-only `timestamp`s. `$tags`' options are the board's tag
+  vocabulary.
+- **Not in 2a, moved later**: `views` / `activeView` are not written yet (nothing reads them; WIP,
+  collapse and width stay on `columns` until 2c introduces views and reads them into `groups`).
+  Card colour stays phase 1's write-on-move (`colorCards`): the Stage option colour *is* the column
+  colour, so the two already agree; colour-by becomes derived in 2b with `presentChild`, as the
+  plan table says. Moving `planLayout` into `@freero/shared` (`planKanban`) waits for the first
+  server writer that needs it (2e's re-lay after a value change); moving the table's typed logic
+  (`features/table/lib/columns.ts`) into `fields.ts` waits for 2d, where filter / sort / compare
+  are first shared.
+
+What the next steps need:
+
+- **2b**: engine `presentChild` / `presentationKey` and card chips; `views[]` with `card.show`,
+  density and colour-by (derived; phase 1's written colours become the cards' own colour).
+- **2c**: `groupBy` (moving options between `columns` and `fields`, writing `values` of the old
+  group field from positions), person / checkbox groups, swimlanes, per-group settings in
+  `views[].groups` (read from `columns` on first write), `limit` + engine `hidesChild`, and the
+  "value changed where it stood moves the card" rule for stored group fields in `planLayout`.
+- **2d**: filter / sort / compare in `fields.ts` (with the table's logic moved there), "filter for
+  me" from personal view state.
+- **2e**: `define_fields`, `configure_view`, `query_cards`, `fields` on `add_cards`, `update_items`
+  setting the column field by value (server `planKanban` re-lay), REST endpoints, docs.
+- **2f**: trackers by option, templates with fields, CSV with fields.
+- **Phase 3**: views tabs with personal overrides (decision 2: per-user store behind `Host`),
+  projections, focus mode; linked views on the same board (3c) and across boards with
+  Synced / Copy on paste (3d, decision 3); "Convert to kanban" (3e, decision 4).
 
 ## Sources (concepts only; nothing copied)
 

@@ -660,7 +660,7 @@ export const TOOLS: McpTool[] = [
     name: 'update_items',
     title: 'Change items',
     description:
-      'Changes items on a board in one step (all or nothing): their text, a card’s title/description/status/due date, colors, a frame’s title or hidden state, locking, links, or where they are. To move items give `into` — a frame, a kanban column ("move this card to Done": into the kanban’s id, column "Done") or a cluster — and Freero finds the spot, no coordinates needed (x / y / w / h set them exactly; moving a frame takes its contents along). Use item ids from get_board_outline or what the add tools returned. Needs permission to change boards.',
+      'Changes items on a board in one step (all or nothing): their text, a card’s title/description/status/due date and its kanban fields (Priority, Points …), colors, a frame’s title or hidden state, locking, links, or where they are. To move items give `into` — a frame, a kanban column ("move this card to Done": into the kanban’s id, column "Done") or a cluster — and Freero finds the spot, no coordinates needed (x / y / w / h set them exactly; moving a frame takes its contents along). Use item ids from get_board_outline or what the add tools returned. Needs permission to change boards.',
     scope: 'boards:write',
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     input: {
@@ -681,6 +681,12 @@ export const TOOLS: McpTool[] = [
               hidden: z.boolean().optional(),
               locked: z.boolean().optional(),
               link: z.string().max(2000).nullable().optional(),
+              fields: z
+                .record(z.string().max(100), z.union([z.string().max(2000), z.number(), z.boolean(), z.array(z.string().max(200)).max(200), z.null()]))
+                .optional()
+                .describe(
+                  'A card on a kanban: its kanban’s fields (listed with the kanban in get_board_outline), by field name → value: a select’s option label, a multi-select’s labels, a person’s user id, YYYY-MM-DD, a number, text, a URL, true / false; null clears. Not the column field (move the card with into + column).',
+                ),
               x: z.number().optional(),
               y: z.number().optional(),
               w: z.number().optional(),

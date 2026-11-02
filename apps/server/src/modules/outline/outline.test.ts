@@ -197,6 +197,40 @@ it('reads a workshop board as frames → clusters → items, with its mind map, 
   expect(byId(after, 's4')!.text).toBe('Slow code reviews');
 });
 
+it("lists a kanban's fields and each card's values by field name (labels, names, numbers); a deleted field's values stop showing", async () => {
+  const columns = [
+    { id: 'c_todo', title: 'To do', status: 'todo', color: '#888' },
+    { id: 'c_done', title: 'Done', status: 'done', color: '#888' },
+  ];
+  const fields = [
+    { id: 'stage', name: 'Phase', type: 'select' },
+    { id: 'f_prio', name: 'Priority', type: 'select', options: [{ id: 'o_p0', label: 'P0', color: '#E5484D' }, { id: 'o_p1', label: 'P1', color: '#F5A524' }] },
+    { id: 'f_owner', name: 'Owner', type: 'person' },
+    { id: 'f_pts', name: 'Points', type: 'number' },
+    { id: 'f_ok', name: 'Signed off', type: 'checkbox' },
+  ];
+  // c2 still holds a value of a field deleted since ("Risk"): dormant, never shown.
+  const boardId = await boardWith([
+    el('kanban', 'k', 0, 0, 600, 400, { title: 'Sprint', colW: 280, columns, fields }),
+    el('card', 'c1', 312, 120, 260, 90, { title: 'Fix login', description: '', color: '#888', status: 'done', frameId: 'k', values: { f_prio: 'o_p1', f_owner: other.id, f_pts: 3, f_ok: true } }),
+    el('card', 'c2', 22, 120, 260, 90, { title: 'Docs', description: '', color: '#888', status: 'todo', frameId: 'k', values: { f_risk: 'o_high', f_prio: 'o_deleted' } }),
+  ]);
+  const o = await outlineAs(boardId, owner, 'owner');
+  expect(byId(o, 'k')!.schema).toEqual([
+    { id: 'stage', name: 'Phase', type: 'select', options: [{ id: 'c_todo', label: 'To do', status: 'todo' }, { id: 'c_done', label: 'Done', status: 'done' }] },
+    { id: 'f_prio', name: 'Priority', type: 'select', options: [{ id: 'o_p0', label: 'P0' }, { id: 'o_p1', label: 'P1' }] },
+    { id: 'f_owner', name: 'Owner', type: 'person' },
+    { id: 'f_pts', name: 'Points', type: 'number' },
+    { id: 'f_ok', name: 'Signed off', type: 'checkbox' },
+  ]);
+  expect(byId(o, 'c1')!.fields).toEqual({ status: 'done', Phase: 'Done', Priority: 'P1', Owner: 'Ann', Points: 3, 'Signed off': true });
+  // Only its column: the deleted field and the deleted option read as nothing.
+  expect(byId(o, 'c2')!.fields).toEqual({ status: 'todo', Phase: 'To do' });
+  const md = renderOutlineMarkdown(o);
+  expect(md).toContain('fields: Phase (select: To do | Done), Priority (select: P0 | P1), Owner (person), Points (number), Signed off (checkbox)');
+  expect(md).toContain('[c1] card: Fix login · status: done · Phase: Done · Priority: P1 · Owner: Ann · Points: 3 · Signed off: true');
+});
+
 it("never shows a reader another user's private drafts, a hidden frame's contents or sealed votes", async () => {
   const boardId = await boardWith(
     [
