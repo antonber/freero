@@ -20,6 +20,7 @@ import {
 } from '@freero/shared';
 import type {
   Camera,
+  ChildPresentation,
   Collection,
   Editor,
   EditorEvent,
@@ -69,6 +70,7 @@ import { applyFormatToHtml, formatStateOfHtml } from '../text/formatHtml';
 import { EMPTY_FORMAT_STATE, type FormatCommand, type TextFormatState } from '../text/session';
 import { richTextToPlain } from '../text/sanitize';
 import { runFollowers } from './followers';
+import { personalViews } from '../runtime/personalViews';
 import { insideHiddenContainer } from './layers';
 import { listActions, listShortcuts } from '../runtime/shortcutList';
 import { planStackStep } from '../geometry/order';
@@ -410,6 +412,28 @@ export class EditorImpl implements Editor {
     return [...this.core.ui.getState().viewHidden];
   }
 
+  getPersonalView(itemId: string, viewId: string): Record<string, unknown> | null {
+    return personalViews(this.core).get(itemId, viewId);
+  }
+
+  // Any role: it never touches the board doc.
+  setPersonalView(itemId: string, viewId: string, settings: Record<string, unknown> | null): void {
+    personalViews(this.core).set(itemId, viewId, settings);
+  }
+
+  /**
+   * [additive] How `el`'s container wants it shown (ElementDefinition.presentChild), read from the
+   * live store (inside a transaction: as written so far). `personal`: with this viewer's own view
+   * settings; normalize never gets those (sizes are shared).
+   */
+  presentationOf(el: BoardElement, personal: boolean): ChildPresentation | null {
+    if (!el.frameId || !this.core.registry.presents) return null;
+    const box = this.core.store.getElement(el.frameId);
+    const reg = box && this.core.registry.elements.get(box.type);
+    if (!reg?.def.presentChild) return null;
+    return reg.def.presentChild(box as never, el, { editor: this.core.scoped(reg.feature), personal });
+  }
+
   getBounds(ids?: string[], opts: { visual?: boolean } = {}): Rect | null {
     const els = ids
       ? ids.map((id) => this.getElement(id)).filter((e): e is BoardElement => !!e && !this.isHidden(e))
@@ -459,8 +483,37 @@ export class EditorImpl implements Editor {
     if (!def?.normalize) return el;
     // Measured with the fonts available now; re-measured once web fonts load (see fonts.ts).
     this.core.measured.add(el.id);
-    const patch = def.normalize(el as never, prev as never);
+    const patch = def.normalize(el as never, prev as never, { presentation: this.presentationOf(el, false) });
     return patch ? ({ ...el, ...patch } as T) : el;
+  }
+
+  /**
+   * [additive] Containers among `written` whose `presentationKey` the write changed: their
+   * children are normalized again (a kanban's card density changed their height), inside the
+   * caller's transaction, so the resize shares its undo step and the container's arrange lays
+   * them out. Returns the ids rewritten.
+   */
+  private renormalizeChildren(written: BoardElement[], before: Map<string, BoardElement>): string[] {
+    if (!this.core.registry.presents) return [];
+    const store = this.core.store;
+    const changed = new Set<string>();
+    for (const el of written) {
+      const def = this.getDefinition(el.type);
+      const prev = before.get(el.id);
+      if (!def?.presentationKey || !prev || def.presentationKey(prev as never) === def.presentationKey(el as never)) continue;
+      changed.add(el.id);
+    }
+    if (!changed.size) return [];
+    const out: string[] = [];
+    for (const child of this.getElements()) {
+      if (!child.frameId || !changed.has(child.frameId)) continue;
+      const next = this.normalized(child, child);
+      if (next === child) continue;
+      this.touched([child.id]);
+      store.setElement(next);
+      out.push(child.id);
+    }
+    return out;
   }
 
   /**
@@ -494,7 +547,7 @@ export class EditorImpl implements Editor {
         continue;
       }
       // prev = el: nothing changed but the measurement.
-      const patch = def.normalize(el as never, el as never) as Record<string, unknown> | null;
+      const patch = def.normalize(el as never, el as never, { presentation: this.presentationOf(el, false) }) as Record<string, unknown> | null;
       const cur = el as unknown as Record<string, unknown>;
       if (patch && Object.keys(patch).some((k) => patch[k] !== cur[k])) next.push({ ...el, ...patch, id: el.id, type: el.type } as BoardElement);
     }
@@ -575,8 +628,14 @@ export class EditorImpl implements Editor {
     if (!next.length) return;
     store.transact(() => {
       this.touched(next.map((el) => el.id));
-      for (const el of next) store.setElement(el);
-      runFollowers(this.core, next.map((el) => el.id), []);
+      const before = new Map<string, BoardElement>();
+      for (const el of next) {
+        const cur = store.getElement(el.id);
+        if (cur) before.set(el.id, cur);
+        store.setElement(el);
+      }
+      const resized = this.renormalizeChildren(next, before);
+      runFollowers(this.core, [...next.map((el) => el.id), ...resized], []);
       this.settle();
     });
   }
@@ -611,7 +670,8 @@ export class EditorImpl implements Editor {
       const el = store.getElement(id);
       if (!el || isContainer(el) || isContainer(el.frameId ? store.getElement(el.frameId) : undefined)) continue;
       const frame = this.containerAt(rectCenter(elementAABB(el)));
-      if ((frame?.id ?? null) !== (el.frameId ?? null)) store.setElement({ ...el, frameId: frame?.id ?? null });
+      // Normalized again: a container may present its members differently (a kanban's card density).
+      if ((frame?.id ?? null) !== (el.frameId ?? null)) store.setElement(this.normalized({ ...el, frameId: frame?.id ?? null }, el));
     }
   }
 

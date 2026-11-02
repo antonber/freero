@@ -26,6 +26,7 @@ import type {
   BoardSettings,
   ElementOf,
   ElementType,
+  FieldChip,
   OutlineFeature,
   FontFamily,
   PresenceState,
@@ -90,6 +91,13 @@ export interface Camera { x: number; y: number; zoom: number } // world point at
 // ---------------------------------------------------------------------------
 export interface HostUser { id: string; name: string; color: string; avatarUrl: string | null }
 
+/** [additive] A person's own view settings on one board (see `Host.personalViews`). */
+export interface HostPersonalViews {
+  list(): Promise<Array<{ itemId: string; viewId: string; settings: Record<string, unknown> }>>;
+  /** null clears them (back to the saved view). */
+  save(itemId: string, viewId: string, settings: Record<string, unknown> | null): Promise<void>;
+}
+
 export interface Host {
   user: HostUser;
   board: {
@@ -134,6 +142,13 @@ export interface Host {
   };
   /** Full ws URL prefix; engine connects WebsocketProvider(syncUrl, board.id, doc). */
   syncUrl: string;
+  /**
+   * [additive] Where this person's own view settings for this board are kept (personal overrides
+   * of a collection's saved views, `Editor.setPersonalView`): per person, on the server, so they
+   * follow them to other devices. Absent (offline sandbox, guests, embeds): the engine keeps them
+   * in this browser only. Settings are opaque JSON to the host.
+   */
+  personalViews?: HostPersonalViews;
   /**
    * [additive] WebSocket subprotocols the board's socket offers: how a page without the session
    * cookie signs in (a live view inside an AI assistant sends its short-lived token, KAI-171).
@@ -544,6 +559,31 @@ export interface ElementRenderProps<T extends BoardElement = BoardElement> {
    * the tag chips). Undefined when no decoration reserves anything.
    */
   reserved?: Insets;
+  /**
+   * [additive] How the container this element sits in wants it shown
+   * (`ElementDefinition.presentChild` of the container): an accent colour, field chips, density.
+   * Null/undefined outside such a container. Derived when drawn, never written onto the element.
+   */
+  presentation?: ChildPresentation | null;
+}
+
+/**
+ * [additive] What a container tells a child about how to show it (a kanban's view settings for its
+ * cards): drawn by the CHILD's own component, so the container never draws or imports the child.
+ */
+export interface ChildPresentation {
+  /** Accent colour to draw instead of the element's own (its own stays stored). */
+  accent?: string | null;
+  /** Fields to show, in order (only those with a value). */
+  chips?: FieldChip[];
+  /** How much of the element's own text shows: 'compact' leaves secondary text out. */
+  density?: 'compact' | 'comfortable';
+}
+
+/** [additive] What `ElementDefinition.normalize` is told besides the element. */
+export interface NormalizeContext {
+  /** The container's SAVED presentation of this element (never a personal override): sizes are shared. */
+  presentation: ChildPresentation | null;
 }
 
 /** Distances from each edge of a box, in world units. */
@@ -630,7 +670,7 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
    * Measure text with `measureRichText` (what ElementText renders). The engine re-runs it for the
    * elements this client measured once web fonts finish loading (no undo entry).
    */
-  normalize?(element: ElementOf<T>, prev?: ElementOf<T>): ElementPatch<ElementOf<T>> | null;
+  normalize?(element: ElementOf<T>, prev?: ElementOf<T>, ctx?: NormalizeContext): ElementPatch<ElementOf<T>> | null;
   /**
    * Paste / drag-and-drop import. The engine offers clipboard or dropped data to every
    * definition with importData, highest importPriority first, until one returns true.
@@ -781,6 +821,22 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
    * hand). Called often: keep it cheap.
    */
   hidesMember?(element: ElementOf<T>, member: BoardElement): boolean;
+  /**
+   * [additive] Containers only: how `child` should be shown while it sits in this container (a
+   * kanban's view: accent colour, field chips, density). Handed to the child's component as
+   * `ElementRenderProps.presentation` and, computed with `personal: false`, to its `normalize`.
+   * With `personal: true` include this viewer's own view settings (`Editor.getPersonalView`);
+   * sizes must never depend on those. Called while rendering: keep it cheap and pure.
+   * `editor` is scoped to the defining feature.
+   */
+  presentChild?(element: ElementOf<T>, child: BoardElement, ctx: { editor: Editor; personal: boolean }): ChildPresentation | null;
+  /**
+   * [additive] Containers with `presentChild`: a key of everything in the container that changes
+   * its children's SIZE (a kanban's card density). When a local write changes it, the engine
+   * re-runs the children's `normalize` in the same transaction (one undo step), and the
+   * container's `arrange` then lays the resized children out.
+   */
+  presentationKey?(element: ElementOf<T>): string;
   /**
    * [additive] The look this type shares with other types, for editing a mixed selection (a
    * sticky, two shapes and a text box at once): return the CURRENT value of every `SharedStyle`
@@ -1535,6 +1591,16 @@ export interface Editor {
    */
   setViewHidden(ids: string[], hidden: boolean): void;
   getViewHidden(): string[];
+  /**
+   * [additive] This person's own settings for view `viewId` of item `itemId` (a kanban's board
+   * view): a personal override on top of what the item saves for everyone. Any role, never in the
+   * board doc, never seen by anyone else; kept through `Host.personalViews` (else in this browser).
+   * Opaque to the engine: the feature that owns the item validates what it reads. Hook:
+   * usePersonalView(itemId, viewId).
+   */
+  getPersonalView(itemId: string, viewId: string): Record<string, unknown> | null;
+  /** [additive] Replaces (null: clears) this person's settings for that view. See getPersonalView. */
+  setPersonalView(itemId: string, viewId: string, settings: Record<string, unknown> | null): void;
   /**
    * [additive] Every keyboard binding the board answers right now, for the current role: tool
    * keys, command shortcuts and the engine's built-in keys (Esc, arrows, Tab, Space…). Generated

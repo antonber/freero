@@ -5,6 +5,7 @@ import { useStore } from 'zustand';
 import type { BoardElement, BoardSettings, ElementType, PresenceState, Role, SessionLimits } from '@freero/shared';
 import type { Camera, Collection, Editor, FollowTarget, HostUser, Point, Rect, Suggestion } from './api';
 import { peopleDirectory } from './runtime/people';
+import { personalViews } from './runtime/personalViews';
 import { RenderModeContext, ScopeContext, useCore } from './context';
 import type { UiState } from './state/uiStore';
 import { toolGhostAt } from './interaction/toolDispatch';
@@ -263,6 +264,15 @@ export function useCursorsHidden(): boolean {
  */
 export function useDragPreview(id: string): Rect[] | null {
   return useUi((s) => (s.dragPreview?.containerId === id && s.dragPreview.slots.length ? s.dragPreview.slots : null));
+}
+
+/**
+ * [additive] This person's own settings for view `viewId` of item `itemId` (Editor.getPersonalView);
+ * re-renders when they change.
+ */
+export function usePersonalView(itemId: string | null | undefined, viewId: string): Record<string, unknown> | null {
+  const dir = personalViews(useCore());
+  return useStore(dir.state, (s) => (itemId ? (s[itemId]?.[viewId] ?? null) : null));
 }
 
 /** [additive] Ids hidden for this viewer only (Editor.setViewHidden); re-renders when they change. */
