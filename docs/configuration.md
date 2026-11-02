@@ -160,6 +160,7 @@ redirect URI and SCIM base URL that workspaces give their identity provider are 
 | Variable | Default | Description |
 |---|---|---|
 | `OPERATOR_EMAILS` | — | Comma-separated addresses of Freero's operators: they get the moderation queue at `/operator` and its API (everyone else gets 404 there). An account is an operator only while its address is listed AND verified, so someone who signs up with an operator's address gets nothing. Changing the list takes a restart (it is reviewed and deployed like any other configuration). Empty: reports are still collected, nobody can review them (logged at startup in production). See [operations.md](operations.md#moderation). |
+| `PROBLEM_RETENTION_DAYS` | `90` | How long a problem report (“Report a problem”: the note, the screenshot, the diagnostics) is kept after an operator closed it (fixed, won't fix or duplicate). Then the retention job (every `MODERATION_RETENTION_INTERVAL_SECONDS`) deletes the report and its screenshot. Reopening a report stops the clock; open reports are kept until closed; a person's reports are deleted with their account. Shown in the privacy policy. `0`: at the next run. See [operations.md](operations.md#problem-reports-report-a-problem). |
 | `MODERATION_KEEP_REMOVED_DAYS` | `30` | How long the kept copy of a file an operator removed stays restorable. After that the retention job deletes it for good (recorded as an automatic "delete kept copy" action); never while a report or appeal about the file is open. The file's URL keeps answering 410 either way. `0`: at the next run. |
 | `MODERATION_RETENTION_INTERVAL_SECONDS` | `3600` | How often that retention runs (one instance at a time). |
 | `ABUSE_CONTACT_EMAIL` | — | Where people reach whoever handles abuse: named in every moderation notice ("questions about this decision") and in `/.well-known/security.txt`. |
@@ -259,7 +260,7 @@ The privacy policy, terms of service and acceptable use policy are **drafts for 
 written from what the code does; they describe the hosted service. They are built with tokens for
 the facts below and filled in when served (`modules/site/legal.ts`), together with facts the server
 derives from its own configuration: retention periods (`ACCOUNT_DELETION_GRACE_DAYS`,
-`DATA_EXPORT_TTL_HOURS`, `EVENTS_RETENTION_DAYS`, `MODERATION_KEEP_REMOVED_DAYS`), the email
+`DATA_EXPORT_TTL_HOURS`, `EVENTS_RETENTION_DAYS`, `MODERATION_KEEP_REMOVED_DAYS`, `PROBLEM_RETENTION_DAYS`), the email
 provider's host (`SMTP_URL`), the storage (`S3_*`), the AI provider (`AI_PROVIDER`, `AI_BASE_URL`,
 `AI_WORKSPACE_KEYS`), error tracking (`ERROR_REPORTING_DSN`'s host) and analytics
 (`SITE_ANALYTICS_SRC`). Abuse and security contacts come from `ABUSE_CONTACT_EMAIL` and
@@ -349,6 +350,7 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `RATE_LIMIT_AI_WORKSPACE` | `300/1h` | AI actions per workspace, all its people together. |
 | `RATE_LIMIT_REPORT` | `20/1h` | Abuse reports per IP and, separately, per signed-in user. |
 | `RATE_LIMIT_APPEAL` | `10/1h` | Appeals against moderation decisions per IP. |
+| `RATE_LIMIT_PROBLEM_REPORT` | `10/1h` | Problem reports (“Report a problem”) per signed-in person. |
 | `RATE_LIMIT_LISTING_SUBMIT` | `5/1d` | Community listings submitted to Apps & agents for review, per person (each mails the operators; at most 10 waiting or live per person at once). |
 | `RATE_LIMIT_LINK_PASSWORD` | `10/15m` | Attempts at a board link's password, per IP and, separately, per board and person (or, before a visitor joins as a guest, per board and IP). The password is stored with the account passwords' slow hash. |
 | `RATE_LIMIT_ENGAGE` | `120/1m` | Answers, questions and upvotes in live activities (polls, word clouds, rankings, ratings, Q&A) per person or guest. |
