@@ -22,6 +22,7 @@ import {
   type FieldOption,
   type FieldValue,
 } from './fields';
+import { parseNumberText } from './fieldText';
 import { isISODate } from './layout/timeline';
 
 /** How a filter rule compares (which ones a field takes: `opsFor`). gt / lt on a date: after / before. */
@@ -62,14 +63,10 @@ export const VALUELESS_OPS: ReadonlySet<FilterOp> = new Set(['empty', 'notEmpty'
 
 const lower = (s: string) => s.trim().toLowerCase();
 
-/** A number from what someone typed ("1,234.5", " 7 ") or sent; null if it isn't one. */
+/** A number from what someone typed ("1,234.5", " 7 ": fieldText.ts) or sent; null if it isn't one. */
 export function readNumber(v: unknown): number | null {
   if (typeof v === 'number') return Number.isFinite(v) ? v : null;
-  if (typeof v !== 'string') return null;
-  const t = v.trim().replace(/[\s,](?=\d{3}\b)/g, '');
-  if (!/^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(t)) return null;
-  const n = Number(t);
-  return Number.isFinite(n) ? n : null;
+  return typeof v === 'string' ? parseNumberText(v) : null;
 }
 
 /** Whether `q` holds the single value `want` (an id, a label, a number, an ISO date, words). */

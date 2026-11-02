@@ -150,9 +150,9 @@ describe('typed columns (KAI-123)', () => {
     expect(column(ann, id, 1)).toEqual(['Note', '1200', 'about ten']);
   });
 
-  it('a pasted sheet keeps its numbers, dates and yes / no values when exported to CSV again', () => {
+  it('a pasted sheet keeps its numbers (1 and 0 too, not ticks), dates and yes / no values when exported to CSV again', () => {
     const ann = alone();
-    const grid = [['Task', 'Points', 'Due', 'Done'], ['Ship', '3', '2026-11-02', 'TRUE'], ['Test', '0.5', '2026-11-09', 'FALSE']];
+    const grid = [['Task', 'Points', 'Due', 'Done'], ['Ship', '1', '2026-11-02', 'TRUE'], ['Test', '0', '2026-11-09', 'FALSE']];
     const id = createFromGrid(ann, grid, { x: 0, y: 0 });
     expect(tableOf(ann, id).cols.map((c) => c.type ?? 'text')).toEqual(['text', 'number', 'date', 'checkbox']);
     expect(parseDelimited(toCsv(plainGrid(ann.collection<string>(CELLS), tableOf(ann, id), { mode: 'export' })))).toEqual(grid);

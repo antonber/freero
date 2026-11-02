@@ -1,8 +1,10 @@
 // Kanban fields from the outside world (docs/design/kanban-fields-and-views.md, step 2f): a
 // spreadsheet's or a tracker's words read as a field's values, values written back out as words
 // (CSV), what type a column of words is, and the options a set of labels needs. Pure: the CSV
-// import / export, the templates and the tracker sync all read and write field text through here,
-// so "High" means the same option everywhere and a date reads the same way in each of them.
+// import / export, the templates, the tracker sync and the free-form table (its typed cells, what a
+// pasted sheet's columns are) all read words through here, so "High" means the same option
+// everywhere and a number or a date reads the same way in each of them. (Filtering and sorting the
+// values read is query.ts.)
 import { canonicalValue, optionByLabel, type FieldDef, type FieldOption, type FieldType, type FieldValue } from './fields';
 import { isISODate } from './layout/timeline';
 
@@ -33,8 +35,10 @@ const pad = (n: number) => String(n).padStart(2, '0');
 /**
  * YYYY-MM-DD from what a spreadsheet or a tracker writes: an ISO date (or date-time), or
  * day/month/year — read day-first unless the first number can only be a month (12/31/2026).
+ * `dayFirst: false`: a date that reads both ways (03/04/2026) is no date (the table keeps what was
+ * typed rather than guess).
  */
-export function parseDateText(text: string): string | null {
+export function parseDateText(text: string, opts: { dayFirst?: boolean } = {}): string | null {
   const s = text.trim();
   if (!s) return null;
   const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:$|[T ])/.exec(s);
@@ -43,6 +47,7 @@ export function parseDateText(text: string): string | null {
   const dmy = /^(\d{1,2})[./](\d{1,2})[./](\d{4})$/.exec(s);
   if (dmy) {
     const [a, b, y] = [Number(dmy[1]), Number(dmy[2]), dmy[3]];
+    if (opts.dayFirst === false && a <= 12 && b <= 12) return null;
     const [d, m] = a > 12 ? [a, b] : b > 12 ? [b, a] : [a, b];
     out = `${y}-${pad(m)}-${pad(d)}`;
   }
@@ -57,10 +62,10 @@ export function parseNumberText(text: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-const TRUE_WORDS = new Set(['true', 'yes', 'y', 'x', '✓', '✔', 'checked']);
-const FALSE_WORDS = new Set(['false', 'no', 'n', 'unchecked']);
+const TRUE_WORDS = new Set(['true', 'yes', 'y', 'x', '✓', '✔', 'checked', '1', 'done']);
+const FALSE_WORDS = new Set(['false', 'no', 'n', 'unchecked', '0', '-']);
 
-/** A checkbox from TRUE / FALSE, yes / no, x, ✓; null when the words are something else. */
+/** A checkbox from TRUE / FALSE, yes / no, 1 / 0, x, ✓; null when the words are something else. */
 export function parseCheckboxText(text: string): boolean | null {
   const t = text.trim().toLowerCase();
   return TRUE_WORDS.has(t) ? true : FALSE_WORDS.has(t) || t === '' ? false : null;
@@ -76,17 +81,19 @@ export const splitLabels = (text: string): string[] =>
     .filter(Boolean);
 
 /**
- * The field type a column of words reads as, from every non-empty cell: checkbox (yes / no, TRUE /
- * FALSE), number, date, link, single select when few distinct short labels repeat (Priority, Team),
- * multi-select when cells list such labels ("ux; mobile"), else text. Person columns are never
- * guessed: names only become people where they are matched to members on purpose.
+ * The field type a column of words reads as, from every non-empty cell: number, checkbox (yes /
+ * no, TRUE / FALSE), date, link, single select when few distinct short labels repeat (Priority,
+ * Team), multi-select when cells list such labels ("ux; mobile"), else text. Person columns are
+ * never guessed: names only become people where they are matched to members on purpose. The table
+ * asks with `choices: false` (it never guesses selects or links) and `dayFirst: false`.
  */
-export function inferFieldType(values: readonly string[]): FieldType {
+export function inferFieldType(values: readonly string[], opts: { choices?: boolean; dayFirst?: boolean } = {}): FieldType {
   const vals = values.map((v) => v.trim()).filter(Boolean);
   if (!vals.length) return 'text';
-  if (vals.every((v) => parseCheckboxText(v) !== null) && vals.some((v) => TRUE_WORDS.has(v.toLowerCase()))) return 'checkbox';
   if (vals.every((v) => parseNumberText(v) !== null)) return 'number';
-  if (vals.every((v) => parseDateText(v) !== null)) return 'date';
+  if (vals.every((v) => parseCheckboxText(v) !== null) && vals.some((v) => TRUE_WORDS.has(v.toLowerCase()))) return 'checkbox';
+  if (vals.every((v) => parseDateText(v, opts) !== null)) return 'date';
+  if (opts.choices === false) return 'text';
   if (vals.every(isUrlText)) return 'url';
   const short = (l: string) => l.length <= 40 && l.split(/\s+/).length <= 5;
   const few = (labels: string[]) => {

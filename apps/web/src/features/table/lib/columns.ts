@@ -1,8 +1,10 @@
 // Typed columns (KAI-123). Pure: what a column's cells hold, how they read, sort, filter and
 // convert. A typed cell is stored in `tableCells` as its canonical plain value (see TableColumn in
-// @freero/shared), so everything here works on the raw stored string.
+// @freero/shared), so everything here works on the raw stored string. Words are read by
+// @freero/shared fieldText.ts and values filtered and sorted by query.ts — the same rules a
+// kanban's fields, the CSV import and the trackers use; only the table's own storage lives here.
 import { nanoid } from 'nanoid';
-import { matchValue, plainToRichText, richTextToPlain, sortByValues, type QueryValue, type TableColumn, type TableColumnType, type TableElement, type TableFilter, type TableSelectOption } from '@freero/shared';
+import { inferFieldType, matchValue, parseCheckboxText, parseDateText, parseNumberText, plainToRichText, richTextToPlain, sortByValues, timelineLayout, type QueryValue, type TableColumn, type TableColumnType, type TableElement, type TableFilter, type TableSelectOption } from '@freero/shared';
 
 export const COLUMN_TYPES: Array<{ value: TableColumnType; label: string }> = [
   { value: 'text', label: 'Text' },
@@ -18,39 +20,18 @@ export const OPTION_COLORS = ['#E9E4FF', '#DDF0FF', '#DDF6EA', '#FFF1D6', '#FFE3
 
 export const typeOf = (col: Pick<TableColumn, 'type'> | undefined): TableColumnType => col?.type ?? 'text';
 
-const ISO = /^(\d{4})-(\d{2})-(\d{2})$/;
-export const isISODate = (v: string): boolean => ISO.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`));
+const { isISODate } = timelineLayout;
 
 /** A typed number as stored ("1234.5"), from what someone typed or pasted ("1,234.50", " 7 "); null if it isn't one. */
 export function parseNumber(text: string): string | null {
-  const t = text.trim().replace(/[\s,](?=\d{3}\b)/g, '');
-  if (!/^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(t)) return null;
-  const n = Number(t);
-  return Number.isFinite(n) ? String(n) : null;
+  const n = parseNumberText(text);
+  return n === null ? null : String(n);
 }
 
-/** A date as stored (YYYY-MM-DD) from an ISO date or a spreadsheet's day/month/year; null otherwise. */
-export function parseDate(text: string): string | null {
-  const t = text.trim();
-  if (isISODate(t)) return t;
-  const iso = /^(\d{4})-(\d{2})-(\d{2})T/.exec(t);
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
-  // 28/10/2026 or 10/28/2026: only when the day can't be read as a month (no guessing).
-  const m = /^(\d{1,2})[/.](\d{1,2})[/.](\d{4})$/.exec(t);
-  if (!m) return null;
-  const [a, b, y] = [Number(m[1]), Number(m[2]), m[3]];
-  const [d, mo] = a > 12 && b <= 12 ? [a, b] : b > 12 && a <= 12 ? [b, a] : [0, 0];
-  if (!d) return null;
-  const out = `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-  return isISODate(out) ? out : null;
-}
+/** A date as stored (YYYY-MM-DD) from an ISO date or a spreadsheet's day/month/year; null otherwise (and for one that reads both ways: no guessing). */
+export const parseDate = (text: string): string | null => parseDateText(text, { dayFirst: false });
 
-const TRUE_WORDS = new Set(['true', 'yes', 'y', 'x', '✓', '✔', '1', 'done', 'checked']);
-const FALSE_WORDS = new Set(['', 'false', 'no', 'n', '0', '-', 'unchecked']);
-export const parseCheckbox = (text: string): boolean | null => {
-  const t = text.trim().toLowerCase();
-  return TRUE_WORDS.has(t) ? true : FALSE_WORDS.has(t) ? false : null;
-};
+export const parseCheckbox = parseCheckboxText;
 
 export interface PeopleLookup {
   /** A person's name by user id (members of the board). */
@@ -289,14 +270,12 @@ function displayRaw(type: TableColumnType, raw: string): string {
 }
 
 /**
- * The type a pasted / imported column reads as: number, date or checkbox when every non-empty
- * value is one (at least two values), else text. Selects and people are never guessed.
+ * The type a pasted / imported column reads as (fieldText.ts `inferFieldType`): number, checkbox or
+ * date when every non-empty value is one (at least two values), else text. Selects, links and
+ * people are never guessed.
  */
 export function inferType(values: string[]): TableColumnType {
-  const vals = values.map((v) => v.trim()).filter(Boolean);
-  if (vals.length < 2) return 'text';
-  if (vals.every((v) => parseNumber(v) !== null)) return 'number';
-  if (vals.every((v) => parseDate(v) !== null)) return 'date';
-  if (vals.every((v) => /^(true|false|yes|no)$/i.test(v))) return 'checkbox';
-  return 'text';
+  if (values.filter((v) => v.trim()).length < 2) return 'text';
+  const t = inferFieldType(values, { choices: false, dayFirst: false });
+  return t === 'number' || t === 'date' || t === 'checkbox' ? t : 'text';
 }
