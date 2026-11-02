@@ -4,6 +4,7 @@ import { defineFormat, useDock, type Editor } from '@engine';
 import { SegmentedControl } from '@ui';
 import { addColumn, setColumnWidth } from './lib/actions';
 import { COLUMN_WIDTHS, FIELDS_PANEL, VIEW_PANEL } from './lib/constants';
+import { columnsAreOptions } from './lib/group';
 
 function DockButton({ editor, panel, icon: Icon, label }: { editor: Editor; panel: string; icon: LucideIcon; label: string }) {
   const open = useDock() === panel;
@@ -25,10 +26,12 @@ export default defineFormat({
     if (k.locked) return null;
     return (
       <div className="fr-kanban-format">
-        <button type="button" className="fr-kanban-format__btn" onClick={() => addColumn(editor, k.id)}>
-          <Plus size={16} aria-hidden />
-          Add column
-        </button>
+        {columnsAreOptions(k) && (
+          <button type="button" className="fr-kanban-format__btn" onClick={() => addColumn(editor, k.id)}>
+            <Plus size={16} aria-hidden />
+            Add column
+          </button>
+        )}
         <SegmentedControl
           size="sm"
           aria-label="Column width"

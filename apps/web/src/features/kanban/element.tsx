@@ -5,6 +5,7 @@ import {
   Check,
   FoldHorizontal,
   Gauge,
+  ListEnd,
   GripVertical,
   MoreHorizontal,
   Palette,
@@ -15,7 +16,7 @@ import {
   Trash2,
   UnfoldHorizontal,
 } from 'lucide-react';
-import type { CardStatus, KanbanColumn, KanbanElement } from '@freero/shared';
+import { NO_GROUP, collectionSchema, groupFieldId, type BoardElement, type CardStatus, type FieldDef, type KanbanColumn, type KanbanElement } from '@freero/shared';
 import {
   defineElement,
   ElementText,
@@ -25,6 +26,7 @@ import {
   useDragPreview,
   useEditor,
   useElements,
+  usePeople,
   type Editor,
   type ElementRenderProps,
   type NewElement,
@@ -35,19 +37,27 @@ import {
   DEFAULT_COL_W,
   GAP,
   HEADER_H,
+  ITEM_GAP,
+  LANE_HEAD_H,
   MIN_COL_W,
+  PAD,
+  beyondLimit,
   boardWidth,
   colLeft,
   colWidth,
   columnIndexAt,
   columnsOfChildren,
   inCollapsedColumn,
+  innerWidth,
+  isStackable,
   kanbanWidth,
+  laneField,
   planDrop,
   planLayout,
 } from './lib/layout';
-import { addColumn, columnPart, moveColumn, moveColumnTo, patchColumn, removeColumn, renameColumn, setCollapsed, setColumnWidth } from './lib/actions';
-import { COLUMN_COLOR_NAMES, COLUMN_PALETTE, STATUS_LABELS, WIP_CHOICES } from './lib/constants';
+import { addColumn, columnPart, moveColumn, moveColumnTo, patchColumn, removeColumn, renameColumn, setCollapsed, setColumnLimit, setColumnWidth } from './lib/actions';
+import { CARD_LIMITS, COLUMN_COLOR_NAMES, COLUMN_PALETTE, STATUS_LABELS, WIP_CHOICES } from './lib/constants';
+import { columnsAreOptions, groupTitle, storedKey } from './lib/group';
 import { presentCard, presentationKey } from './lib/view';
 import './kanban.css';
 
@@ -58,12 +68,15 @@ const DRAG_PX = 4;
 
 const stop = (e: { stopPropagation(): void }) => e.stopPropagation();
 
-function ColumnMenu({ editor, k, col, index }: { editor: Editor; k: KanbanElement; col: KanbanColumn; index: number }) {
+function ColumnMenu({ editor, k, col, index, title, options }: { editor: Editor; k: KanbanElement; col: KanbanColumn; index: number; title: string; options: boolean }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
   const statuses = Object.keys(STATUS_LABELS) as CardStatus[];
+  // Columns that are a select field's options are renamed, added and deleted like options; people,
+  // checkbox values and "No <field>" are what the cards say, so only their look and limits change.
+  const isOption = options && col.id !== NO_GROUP;
   const items: MenuItem[] = [
-    { id: 'rename', label: 'Rename', icon: Pencil, onSelect: () => renameColumn(editor, k.id, col.id) },
+    ...(isOption ? [{ id: 'rename', label: 'Rename', icon: Pencil, onSelect: () => renameColumn(editor, k.id, col.id) }] : []),
     {
       id: 'status',
       label: 'Sets card status',
@@ -112,6 +125,21 @@ function ColumnMenu({ editor, k, col, index }: { editor: Editor; k: KanbanElemen
       ],
     },
     {
+      id: 'limit',
+      label: 'Cards shown',
+      icon: ListEnd,
+      onSelect: () => undefined,
+      submenu: [
+        { id: 'limit-0', label: 'All', checked: !col.limit, onSelect: () => setColumnLimit(editor, k.id, col.id, 0) },
+        ...CARD_LIMITS.map((n) => ({
+          id: `limit-${n}`,
+          label: `First ${n}`,
+          checked: col.limit === n,
+          onSelect: () => setColumnLimit(editor, k.id, col.id, n),
+        })),
+      ],
+    },
+    {
       id: 'collapse',
       label: col.collapsed ? 'Expand column' : 'Collapse column',
       icon: col.collapsed ? UnfoldHorizontal : FoldHorizontal,
@@ -120,16 +148,20 @@ function ColumnMenu({ editor, k, col, index }: { editor: Editor; k: KanbanElemen
     { divider: true },
     { id: 'left', label: 'Move left', icon: ArrowLeft, disabled: index === 0, onSelect: () => moveColumn(editor, k.id, col.id, -1) },
     { id: 'right', label: 'Move right', icon: ArrowRight, disabled: index === k.columns.length - 1, onSelect: () => moveColumn(editor, k.id, col.id, 1) },
-    { id: 'add', label: 'Add column after', icon: Plus, onSelect: () => addColumn(editor, k.id, index) },
-    { divider: true },
-    {
-      id: 'delete',
-      label: 'Delete column',
-      icon: Trash2,
-      danger: true,
-      disabled: k.columns.length < 2,
-      onSelect: () => removeColumn(editor, k.id, col.id),
-    },
+    ...(options ? [{ id: 'add', label: 'Add column after', icon: Plus, onSelect: () => addColumn(editor, k.id, index) }] : []),
+    ...(isOption
+      ? [
+          { divider: true as const },
+          {
+            id: 'delete',
+            label: 'Delete column',
+            icon: Trash2,
+            danger: true,
+            disabled: k.columns.filter((c) => c.id !== NO_GROUP).length < 2,
+            onSelect: () => removeColumn(editor, k.id, col.id),
+          },
+        ]
+      : []),
   ];
   return (
     <>
@@ -138,7 +170,7 @@ function ColumnMenu({ editor, k, col, index }: { editor: Editor; k: KanbanElemen
         type="button"
         className={`fr-kanban__col-menu${open ? ' is-open' : ''}`}
         data-fr-interactive=""
-        aria-label={`Column options: ${richTextToPlain(col.title) || 'Untitled'}`}
+        aria-label={`Column options: ${title}`}
         aria-haspopup="menu"
         aria-expanded={open}
         onPointerDown={stop}
@@ -281,15 +313,54 @@ function ColumnEdge({ editor, k, index, height }: { editor: Editor; k: KanbanEle
   );
 }
 
+/** What the board shows besides its columns: swimlane counts and the "N more" of columns with a card limit. */
+function useGroups(k: KanbanElement, all: BoardElement[]) {
+  return useMemo(() => {
+    const counts = k.columns.map(() => 0);
+    for (const idx of columnsOfChildren(k, all).values()) counts[idx]++;
+    const lanes = laneField(k);
+    const laneIds = (k.lanes ?? []).map((l) => l.id);
+    const laneCounts = laneIds.map(() => 0);
+    // Per column and lane: items folded away beyond the limit, and where the visible ones end.
+    const more = new Map<string, { n: number; bottom: number; col: number; lane: number }>();
+    for (const el of all) {
+      if (!isStackable(el, k.id)) continue;
+      const col = columnIndexAt(k, el.x + el.w / 2);
+      const lane = lanes ? Math.max(0, laneIds.indexOf(storedKey(lanes, el))) : 0;
+      if (lanes) laneCounts[lane]++;
+      if (!k.columns[col]?.limit) continue;
+      const key = `${col}:${lane}`;
+      const m = more.get(key) ?? { n: 0, bottom: 0, col, lane };
+      if (beyondLimit(k, el)) m.n++;
+      else m.bottom = Math.max(m.bottom, el.y + el.h);
+      more.set(key, m);
+    }
+    return { counts, lanes, laneCounts, more: [...more.values()].filter((m) => m.n > 0) };
+  }, [k, all]);
+}
+
+/** Column titles: a select's options as written; people by their current name; the rest as the field says. */
+function useColumnTitles(k: KanbanElement): { group: FieldDef | undefined; titles: string[]; laneTitles: string[] } {
+  const schema = useMemo(() => collectionSchema(k), [k]);
+  const group = schema.find((f) => f.id === groupFieldId(k));
+  const lanes = laneField(k);
+  const ids = [...(group?.type === 'person' ? k.columns.map((c) => c.id) : []), ...(lanes?.type === 'person' ? (k.lanes ?? []).map((l) => l.id) : [])].filter((id) => id !== NO_GROUP);
+  const people = usePeople(ids);
+  const name = (id: string) => people[id]?.name;
+  return {
+    group,
+    titles: k.columns.map((c) => (group && group.type !== 'select' ? groupTitle(group, c.id, name) : richTextToPlain(c.title) || 'Untitled')),
+    laneTitles: lanes ? (k.lanes ?? []).map((l) => groupTitle(lanes, l.id, name)) : [],
+  };
+}
+
 const KanbanView = memo(function KanbanView({ element: k, selected, zoom }: ElementRenderProps<KanbanElement>) {
   const editor = useEditor();
   const canEdit = useCanEdit();
   const all = useElements();
-  const counts = useMemo(() => {
-    const out = k.columns.map(() => 0);
-    for (const idx of columnsOfChildren(k, all).values()) out[idx]++;
-    return out;
-  }, [k, all]);
+  const { counts, laneCounts, more } = useGroups(k, all);
+  const { titles, laneTitles } = useColumnTitles(k);
+  const options = columnsAreOptions(k);
   const slots = useDragPreview(k.id);
   const [colDrag, setColDrag] = useState<ColumnDrag | null>(null);
   const controls = selected && canEdit && !k.locked;
@@ -327,7 +398,7 @@ const KanbanView = memo(function KanbanView({ element: k, selected, zoom }: Elem
             />
           </div>
         )}
-        {controls && (
+        {controls && options && (
           <button type="button" className="fr-kanban__add" data-fr-interactive="" onPointerDown={stop} onClick={() => addColumn(editor, k.id)}>
             <Plus size={14} aria-hidden />
             Column
@@ -336,7 +407,9 @@ const KanbanView = memo(function KanbanView({ element: k, selected, zoom }: Elem
       </div>
       {k.columns.map((col, i) => {
         const over = !!col.wip && counts[i] > col.wip;
-        const title = richTextToPlain(col.title) || 'Untitled';
+        const title = titles[i];
+        // Only a select's options are renamed in place; people and checkbox values say what the cards say.
+        const renamable = options && col.id !== NO_GROUP;
         const cls = `fr-kanban__col${over ? ' is-over' : ''}${col.collapsed ? ' is-collapsed' : ''}${targets.has(i) ? ' is-target' : ''}${i === dragIdx ? ' is-moving' : ''}`;
         const box = { left: colLeft(k, i), top: HEADER_H, width: colWidth(k, i), height: bodyH, ['--col' as string]: col.color };
         if (col.collapsed)
@@ -373,21 +446,27 @@ const KanbanView = memo(function KanbanView({ element: k, selected, zoom }: Elem
                   {controls && <ColumnGrip editor={editor} k={k} index={i} onDrag={setColDrag} />}
                   {controls && roomy && <ColumnColor editor={editor} k={k} col={col} />}
                   <div className="fr-kanban__col-title">
-                    <ElementText
-                      element={k}
-                      field="columns"
-                      part={columnPart(col.id)}
-                      value={col.title}
-                      onCommit={(html) => patchColumn(editor, k.id, col.id, { title: sanitizeRichText(html) })}
-                      fontSize={14}
-                      fontFamily="sans"
-                      align="left"
-                      vAlign="middle"
-                      color="var(--fr-ink)"
-                      padding={{ top: 0, right: 4, bottom: 0, left: controls ? 4 : 12 }}
-                      style={{ fontWeight: 600 }}
-                      placeholder="Column"
-                    />
+                    {renamable ? (
+                      <ElementText
+                        element={k}
+                        field="columns"
+                        part={columnPart(col.id)}
+                        value={col.title}
+                        onCommit={(html) => patchColumn(editor, k.id, col.id, { title: sanitizeRichText(html) })}
+                        fontSize={14}
+                        fontFamily="sans"
+                        align="left"
+                        vAlign="middle"
+                        color="var(--fr-ink)"
+                        padding={{ top: 0, right: 4, bottom: 0, left: controls ? 4 : 12 }}
+                        style={{ fontWeight: 600 }}
+                        placeholder="Column"
+                      />
+                    ) : (
+                      <span className={`fr-kanban__col-label${col.id === NO_GROUP ? ' is-none' : ''}`} style={{ paddingLeft: controls ? 4 : 12 }}>
+                        {title}
+                      </span>
+                    )}
                   </div>
                   <span
                     className="fr-kanban__count"
@@ -401,13 +480,43 @@ const KanbanView = memo(function KanbanView({ element: k, selected, zoom }: Elem
                       <Check size={11} strokeWidth={3} aria-hidden />
                     </span>
                   )}
-                  {controls && <ColumnMenu editor={editor} k={k} col={col} index={i} />}
+                  {controls && <ColumnMenu editor={editor} k={k} col={col} index={i} title={title} options={options} />}
                 </>
               )}
             </div>
           </div>
         );
       })}
+      {!lod &&
+        (k.lanes ?? []).map((lane, i) => {
+          const top = HEADER_H + COL_HEAD_H + (k.lanes ?? []).slice(0, i).reduce((sum, l) => sum + l.h, 0);
+          return (
+            <div key={lane.id} className={`fr-kanban__lane${lane.id === NO_GROUP ? ' is-none' : ''}`} style={{ top, left: GAP / 2, width: k.w - GAP, height: LANE_HEAD_H }}>
+              <span className="fr-kanban__lane-title">{laneTitles[i]}</span>
+              <span className="fr-kanban__count" title={`${laneCounts[i] ?? 0} items`}>
+                {laneCounts[i] ?? 0}
+              </span>
+            </div>
+          );
+        })}
+      {!lod &&
+        more.map((m) =>
+          k.columns[m.col]?.collapsed ? null : (
+            <button
+              key={`${m.col}:${m.lane}`}
+              type="button"
+              className="fr-kanban__more"
+              data-fr-interactive=""
+              disabled={!canEdit || !!k.locked}
+              title={canEdit && !k.locked ? 'Show every card in this column' : `${m.n} more cards in this column`}
+              style={{ left: colLeft(k, m.col) + PAD, top: m.bottom - k.y + ITEM_GAP / 2, width: innerWidth(k.colW) }}
+              onPointerDown={stop}
+              onClick={() => setColumnLimit(editor, k.id, k.columns[m.col].id, 0)}
+            >
+              +{m.n} more
+            </button>
+          ),
+        )}
       {controls && !lod && k.columns.map((col, i) => (col.collapsed ? null : <ColumnEdge key={col.id} editor={editor} k={k} index={i} height={bodyH} />))}
       {slots?.map((s, n) =>
         k.columns[columnIndexAt(k, s.x + s.w / 2)]?.collapsed ? null : (
@@ -454,11 +563,11 @@ export default defineElement({
     const w = k.columns.length ? boardWidth(k) : kanbanWidth(0, k.colW);
     return w !== k.w ? { w } : null;
   },
-  // Double-click a column (header or body) to rename it; the board's header edits its title.
+  // Double-click a column (header or body) to rename it (a select's option); the board's header edits its title.
   textPartAt(k, local) {
     if (local.y < HEADER_H || !k.columns.length) return null;
     const col = k.columns[columnIndexAt({ ...k, x: 0 }, local.x)];
-    return col.collapsed ? null : columnPart(col.id);
+    return col.collapsed || col.id === NO_GROUP || !columnsAreOptions(k) ? null : columnPart(col.id);
   },
   // Keeps every item stacked in its column and cards' status (and colour) in step with the column they're in.
   arrange(k, { editor, previous }) {
@@ -467,8 +576,9 @@ export default defineElement({
   },
   // While cards are dragged over the board: where they would land, and the others making room.
   dragPreview: (k, { editor, moving }) => planDrop(k, editor.getElements(), moving),
-  // A collapsed column's items stay in it (and in the outline), folded away.
-  hidesMember: (k, el) => inCollapsedColumn(k, el),
+  // A collapsed column's items, and those beyond a column's card limit, stay in it (and in the
+  // outline), folded away.
+  hidesMember: (k, el) => inCollapsedColumn(k, el) || beyondLimit(k, el),
   // Cards show what the board view says: their colour (by column, by a field, or their own) and
   // the fields chosen, drawn by the card itself. Density changes their height (re-normalised).
   presentChild: (k, child, { editor, personal }) => presentCard(k, child, editor, personal),

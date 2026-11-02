@@ -37,6 +37,9 @@ export const STATUS_LABELS: Record<CardStatus, string> = { todo: 'To do', doing:
 
 export const WIP_CHOICES = [1, 2, 3, 4, 5, 6, 8, 10];
 
+/** "Cards shown" in a column: the first N (the rest are folded away, "N more"). */
+export const CARD_LIMITS = [3, 5, 10, 20, 50];
+
 export const COLUMN_WIDTHS = [
   { id: 's', label: 'S', w: 220 },
   { id: 'm', label: 'M', w: 280 },

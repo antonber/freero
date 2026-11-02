@@ -1,7 +1,7 @@
 // The View panel (dock): how a kanban's board view shows its cards. Which fields show (and their
 // order) and what colours cards are this person's own until an editor presses "Save for
-// everyone"; viewers change them for themselves too. Density changes card sizes on the shared
-// board, so only editors change it, for everyone. Shows the kanban the selection points at, and
+// everyone"; viewers change them for themselves too. Grouping (columns, swimlanes) and density
+// move or resize the real cards on the shared board, so only editors change them, for everyone. Shows the kanban the selection points at, and
 // keeps showing it when the selection moves elsewhere.
 import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronUp, SlidersHorizontal } from 'lucide-react';
@@ -18,7 +18,8 @@ import {
 } from '@freero/shared';
 import { DockHeader, richTextToPlain, useCanEdit, useElement, usePersonalView, useSelection, type Editor } from '@engine';
 import { Button, IconButton, SegmentedControl, Select, Toggle } from '@ui';
-import { fieldsTarget } from './schema';
+import { fieldsTarget, FIELD_TYPE_LABELS } from './schema';
+import { groupableFields, setGroupBy, setSwimlanes } from './group';
 import { resetMyView, saveViewForEveryone, setDensity, setMyCardDisplay } from './view';
 
 const DENSITIES: Array<{ value: CardDensity; label: string }> = [
@@ -62,13 +63,18 @@ export function ViewPanel({ editor }: { editor: Editor }) {
   const shown = card.show.map((id) => all.find((f) => f.id === id)).filter((f): f is { id: string; name: string } => !!f);
   const rest = all.filter((f) => !card.show.includes(f.id));
   const setShow = (show: string[]) => setMyCardDisplay(editor, k.id, { show });
-  const groupName = schema[0]?.name ?? 'Stage';
+  const groupBy = saved.groupBy ?? 'stage';
+  const groupName = schema.find((f) => f.id === groupBy)?.name ?? 'Stage';
   const colorChoices: Array<{ value: CardColorBy; label: string }> = [
     { value: 'group', label: `Column (${groupName})` },
     { value: 'own', label: 'Card’s own colour' },
     { value: '$status', label: 'Status' },
-    ...colorableFields(schema).map((f) => ({ value: f.id, label: f.name })),
+    ...colorableFields(schema, groupBy).map((f) => ({ value: f.id, label: f.name })),
   ];
+  const groupable = groupableFields(k);
+  const groupChoices = groupable.map((f) => ({ value: f.id, label: `${f.name} (${FIELD_TYPE_LABELS[f.type].toLowerCase()})` }));
+  const NONE = '';
+  const laneChoices = [{ value: NONE, label: 'None' }, ...groupChoices.filter((c) => c.value !== groupBy)];
 
   return (
     <div className="fr-kanban-fields fr-kanban-view">
@@ -95,6 +101,33 @@ export function ViewPanel({ editor }: { editor: Editor }) {
           <span>{mayShare ? 'Everyone sees this view. Your changes stay yours until you save them.' : 'Changes you make here are yours alone.'}</span>
         )}
       </div>
+
+      <section className="fr-kanban-view__section" aria-labelledby="fr-kanban-view-groups">
+        <h3 id="fr-kanban-view-groups" className="fr-kanban-view__heading">
+          Columns
+        </h3>
+        <label className="fr-kanban-view__row">
+          <span>Group by</span>
+          {mayShare ? (
+            <Select size="sm" aria-label="Group cards by" value={groupBy} options={groupChoices} onChange={(id) => setGroupBy(editor, k.id, id)} />
+          ) : (
+            <span className="fr-kanban-view__value">{groupName}</span>
+          )}
+        </label>
+        <label className="fr-kanban-view__row">
+          <span>Swimlanes</span>
+          {mayShare ? (
+            <Select size="sm" aria-label="Swimlanes by" value={saved.subGroupBy ?? NONE} options={laneChoices} onChange={(id) => setSwimlanes(editor, k.id, id || null)} />
+          ) : (
+            <span className="fr-kanban-view__value">{schema.find((f) => f.id === saved.subGroupBy)?.name ?? 'None'}</span>
+          )}
+        </label>
+        <p className="fr-kanban-fields__hint">
+          {mayShare
+            ? 'Grouping moves the cards on the board, so it changes for everyone. A single select, person or checkbox field can make the columns or the rows.'
+            : 'The board’s editors choose how its cards are grouped.'}
+        </p>
+      </section>
 
       <section className="fr-kanban-view__section" aria-labelledby="fr-kanban-view-cards">
         <h3 id="fr-kanban-view-cards" className="fr-kanban-view__heading">
