@@ -19,6 +19,23 @@ import './canvas.css';
 const DOUBLE_CLICK_MS = 400;
 const DOUBLE_CLICK_PX = 6;
 const CURSOR_THROTTLE_MS = 50;
+/** Auto-scroll: how close (px) to the edge of the free area a drag starts panning, and how fast. */
+const EDGE_PX = 40;
+const EDGE_SPEED = 16;
+
+/**
+ * [additive] Screen px per frame to pan while dragging at `p` near the edges of `area` (0 inside):
+ * faster the closer to (or the further past) the edge.
+ */
+function edgeScrollVelocity(p: Point, area: { x: number; y: number; w: number; h: number }): Point {
+  const axis = (pos: number, lo: number, hi: number) => {
+    if (hi - lo < 4 * EDGE_PX) return 0; // a tiny view: no room for an edge zone
+    if (pos < lo + EDGE_PX) return -EDGE_SPEED * Math.min(1.5, (lo + EDGE_PX - pos) / EDGE_PX);
+    if (pos > hi - EDGE_PX) return EDGE_SPEED * Math.min(1.5, (pos - (hi - EDGE_PX)) / EDGE_PX);
+    return 0;
+  };
+  return { x: axis(p.x, area.x, area.x + area.w), y: axis(p.y, area.y, area.y + area.h) };
+}
 
 interface Gesture {
   pointerId: number;
@@ -135,7 +152,35 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
     const dispatch = (tool: Registered<ToolDefinition>, kind: ToolPointerHandler, e: PointerEvent, screen: Point, world: Point) =>
       dispatchToolPointer(core, tool, kind, toolEvent(e, screen, world, tool.feature));
 
+    // ---- auto-scroll: dragging items or a marquee near the edge of the free area pans the view,
+    // and the tool hears the pointer move (the item stays under it as the board scrolls by).
+    let edge: { e: PointerEvent; screen: Point; area: { x: number; y: number; w: number; h: number }; raf: number | null } | null = null;
+    const stopEdge = () => {
+      if (edge?.raf != null) cancelAnimationFrame(edge.raf);
+      edge = null;
+    };
+    const edgeTick = () => {
+      if (!edge || !gesture) return stopEdge();
+      edge.raf = null;
+      const kind = ui.getState().transforming;
+      const v = kind === 'translate' || kind === 'marquee' ? edgeScrollVelocity(edge.screen, edge.area) : { x: 0, y: 0 };
+      if (!v.x && !v.y) return;
+      const cam = editor.getCamera();
+      userCamera({ x: cam.x + v.x / cam.zoom, y: cam.y + v.y / cam.zoom, zoom: cam.zoom });
+      dispatch(gesture.tool, 'onPointerMove', edge.e, edge.screen, editor.screenToWorld(edge.screen));
+      edge.raf = requestAnimationFrame(edgeTick);
+    };
+    const followEdge = (e: PointerEvent, screen: Point) => {
+      const kind = ui.getState().transforming;
+      if (kind !== 'translate' && kind !== 'marquee') return stopEdge();
+      edge ??= { e, screen, area: editor.getSafeArea(), raf: null };
+      edge.e = e;
+      edge.screen = screen;
+      if (edge.raf == null) edge.raf = requestAnimationFrame(edgeTick);
+    };
+
     const endGesture = () => {
+      stopEdge();
       gesture = null;
       core.interaction.cancel = null;
       core.interaction.handle = null;
@@ -295,6 +340,7 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
       if (gesture) {
         if (e.pointerId !== gesture.pointerId) return;
         dispatch(gesture.tool, 'onPointerMove', e, screen, world);
+        if (e.pointerType !== 'touch') followEdge(e, screen);
         return;
       }
       if (e.buttons !== 0 || ui.getState().spaceHeld) return;
@@ -442,6 +488,7 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
     window.addEventListener('keyup', onModifierKey, true);
     return () => {
       if (gesture) core.interaction.cancel?.();
+      stopEdge();
       cancelLongPress();
       if (cursorTimer) clearTimeout(cursorTimer);
       el.removeEventListener('pointerdown', onPointerDown);

@@ -21,6 +21,9 @@
 // they happen (docs/events.md).
 import {
   KANBAN_LAYOUT,
+  kanbanColumnAt,
+  kanbanColumnLeft,
+  kanbanColumnWidth,
   laneKey,
   laneTitle,
   layoutStructure,
@@ -127,9 +130,7 @@ function findLane(view: BoardView, agent: string): Lane | null {
 
 /** The column a card's center is over (the kanban's own rule). */
 function columnOf(k: KanbanElement, el: BoardElement): number {
-  const { gap } = KANBAN_LAYOUT;
-  const i = Math.floor((el.x + el.w / 2 - k.x - gap / 2) / (k.colW + gap));
-  return Math.max(0, Math.min(k.columns.length - 1, i));
+  return kanbanColumnAt(k, el.x + el.w / 2);
 }
 const columnTitle = (k: KanbanElement, i: number) => plain(k.columns[i]?.title) || `column ${i + 1}`;
 
@@ -174,8 +175,9 @@ function newLane(agent: string, post: StatusPost): LaidOut & { kanbanId: string 
 
 /** Where a card goes at the bottom of column `col`, among `cards` (which the kanban grows to hold). */
 function slot(k: KanbanElement, col: number, cards: BoardElement[], skip: string): { x: number; y: number } {
-  const { gap, pad, itemGap, headerH, colHeadH } = KANBAN_LAYOUT;
-  const left = k.x + gap + col * (k.colW + gap);
+  const { pad, itemGap, headerH, colHeadH } = KANBAN_LAYOUT;
+  // A collapsed column is a narrow strip: the card is centered on it (folded away there).
+  const left = k.x + kanbanColumnLeft(k, col) + kanbanColumnWidth(k, col) / 2 - k.colW / 2;
   const bottom = cards.filter((c) => c.id !== skip && columnOf(k, c) === col).reduce((m, c) => Math.max(m, c.y + c.h), k.y + headerH + colHeadH + pad - itemGap);
   return { x: left + pad, y: bottom + itemGap };
 }

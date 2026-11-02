@@ -304,7 +304,7 @@ export class EditorImpl implements Editor {
         readerId: host.user.id,
         seesHidden: this.can('editor'),
         elements: this.getElements()
-          .filter((el) => !this.isHidden(el))
+          .filter((el) => !this.isHidden(el, { folded: false }))
           .map((el) => ({ el, layer: this.layerOf(el.id) ?? 'shared' })),
         collection: (name) => new Map(this.collection(name).entries()),
         personName: (id) => known.get(id) ?? opts.personName?.(id),
@@ -327,18 +327,30 @@ export class EditorImpl implements Editor {
    * (ElementDefinition.hidden), or it sits in a container that hides its contents and this user
    * may not see them (only while the engine moves it out of the shared doc; see editor/layers.ts).
    */
-  isOffBoard(el: BoardElement): boolean {
+  isOffBoard(el: BoardElement, opts: { folded?: boolean } = {}): boolean {
     const reg = this.core.registry.elements.get(el.type);
     if (reg?.def.hidden && reg.def.hidden(el, this.core.scoped(reg.feature))) return true;
+    if (opts.folded !== false && this.isFolded(el)) return true;
     return this.core.registry.hidesContents && !this.can('editor') && insideHiddenContainer(this.core, el);
+  }
+
+  /** [additive] Folded away inside its container (ElementDefinition.hidesMember), unless being dragged. */
+  isFolded(el: BoardElement): boolean {
+    if (!el.frameId || !this.core.registry.foldsMembers) return false;
+    const box = this.core.store.getElement(el.frameId);
+    const reg = box && this.core.registry.elements.get(box.type);
+    if (!reg?.def.hidesMember || this.core.ui.getState().dragging?.has(el.id)) return false;
+    return reg.def.hidesMember(box as never, el);
   }
 
   /**
    * Not shown to this viewer: off the board (isOffBoard), or hidden for this viewer only
    * (setViewHidden) — itself, a container it sits in, or what it is drawn against (hiddenWith).
+   * `folded: false` keeps items folded away in their container (they are still on the board: the
+   * outline lists them).
    */
-  isHidden(el: BoardElement): boolean {
-    return this.viewFiltered(el, this.core.ui.getState().viewHidden) || this.isOffBoard(el);
+  isHidden(el: BoardElement, opts: { folded?: boolean } = {}): boolean {
+    return this.viewFiltered(el, this.core.ui.getState().viewHidden) || this.isOffBoard(el, opts);
   }
 
   /** In the view filter: itself or a container, or (one level) an element it is drawn against. */
@@ -372,7 +384,7 @@ export class EditorImpl implements Editor {
   /** Elements in render order without hidden ones (what hit tests, marquee, bounds, culling see). */
   getVisibleElements(): BoardElement[] {
     const all = this.getElements();
-    if (!this.core.ui.getState().viewHidden.size && !this.core.registry.hidesContents && ![...this.core.registry.elements.values()].some((r) => r.def.hidden)) return all;
+    if (!this.core.ui.getState().viewHidden.size && !this.core.registry.hidesContents && !this.core.registry.foldsMembers && ![...this.core.registry.elements.values()].some((r) => r.def.hidden)) return all;
     return all.filter((el) => !this.isHidden(el));
   }
 

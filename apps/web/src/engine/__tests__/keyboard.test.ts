@@ -2,8 +2,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { EngineCore } from '../runtime/core';
 import { installKeyboard } from '../interaction/keyboard';
-import { boxDef, bundle, makeCore } from './harness';
-import type { ElementDefinition } from '../api';
+import { boxDef, bundle, frameDef, makeCore } from './harness';
+import type { CommandDefinition, ElementDefinition } from '../api';
 
 let core: EngineCore;
 let uninstall: (() => void) | null = null;
@@ -310,5 +310,28 @@ describe('bring to front / send to back where brackets need AltGr', () => {
     field.remove();
     expect(ev.defaultPrevented).toBe(false);
     expect(onTop(a, b)).toBe(false);
+  });
+});
+
+describe('arrow keys a feature claims', () => {
+  it('a command bound to an arrow key runs instead of the nudge while it applies (a kanban card changes column); elsewhere the arrow still nudges', () => {
+    // "Next column" for boxes standing at x = 100: they jump 100 to the right.
+    const nextColumn: CommandDefinition = {
+      id: 'boxes.nextColumn',
+      label: 'Move to next column',
+      shortcut: 'arrowright',
+      when: (ed) => ed.getSelection().length === 1 && ed.getElement(ed.getSelection()[0])?.x === 100,
+      run: (ed) => ed.update(ed.getSelection()[0], { x: 200 }),
+    };
+    core = makeCore({ bundles: [bundle('boxes', { elements: [boxDef as ElementDefinition<any>, frameDef as ElementDefinition<any>], commands: [nextColumn] })] });
+    uninstall = installKeyboard(core);
+    const inColumn = box(100, 0);
+    const loose = box(500, 0);
+    core.editor.select([inColumn]);
+    press('ArrowRight');
+    expect(core.editor.getElement(inColumn)).toMatchObject({ x: 200, y: 0 });
+    core.editor.select([loose]);
+    press('ArrowRight');
+    expect(core.editor.getElement(loose)).toMatchObject({ x: 501, y: 0 });
   });
 });

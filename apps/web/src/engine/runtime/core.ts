@@ -141,16 +141,25 @@ export function createCore(
   // ---- restore per-user tool options (e.g. last sticky color)
   ui.setState({ toolOptions: loadToolOptions(), connection: store.status, synced: store.synced });
 
+  // Deleted or now hidden (collapsed mind-map branch, folded into a collapsed column): drop from the selection.
+  const pruneSelection = () => {
+    const { selection } = ui.getState();
+    const gone = (id: string) => {
+      const el = store.getElement(id);
+      return !el || core.editor.isHidden(el);
+    };
+    if (selection.length && selection.some(gone)) ui.setState({ selection: selection.filter((id) => !gone(id)) });
+  };
+
   // ---- store → ui/events
   disposers.push(
+    // Items dragged over a folding part of a container stay in hand until dropped (EditorImpl.isFolded).
+    ui.subscribe((s, p) => {
+      if (p.dragging && !s.dragging) pruneSelection();
+    }),
     store.subscribeElements(() => {
-      const { selection, editingId, hoverId } = ui.getState();
-      // Deleted or now hidden (collapsed mind-map branch): drop from the selection.
-      const gone = (id: string) => {
-        const el = store.getElement(id);
-        return !el || core.editor.isHidden(el);
-      };
-      if (selection.length && selection.some(gone)) ui.setState({ selection: selection.filter((id) => !gone(id)) });
+      const { editingId, hoverId } = ui.getState();
+      pruneSelection();
       if (editingId && !store.getElement(editingId)) core.editor.stopEditing();
       if (hoverId && !store.getElement(hoverId)) ui.setState({ hoverId: null });
       core.emitter.emit('elements');

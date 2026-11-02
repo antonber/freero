@@ -527,6 +527,9 @@ export function installKeyboard(core: EngineCore): () => void {
       return;
     }
 
+    // [additive] A feature command bound to an arrow key (a kanban card's "next column") goes before
+    // the engine's nudge / jump / resize while its `when` holds; otherwise the arrows work as usual.
+    if (key.startsWith('arrow') && tryCommands(e, (sc) => parseShortcut(sc).key.startsWith('arrow'))) return;
     if (keyResize(e) || jump(e) || nudge(e)) return;
 
     // Typing on a single selected EMPTY text element (a fresh "+" copy, a new sticky) fills it.

@@ -1,11 +1,11 @@
-import { Plus } from 'lucide-react';
+import { Palette, Plus } from 'lucide-react';
 import type { KanbanElement } from '@freero/shared';
 import { defineFormat } from '@engine';
-import { SegmentedControl } from '@ui';
-import { addColumn, setColumnWidth } from './lib/actions';
+import { IconButton, SegmentedControl } from '@ui';
+import { addColumn, setColorCards, setColumnWidth } from './lib/actions';
 import { COLUMN_WIDTHS } from './lib/constants';
 
-/** One selected kanban: add a column, pick the column width. */
+/** One selected kanban: add a column, pick the column width, cards coloured by column. */
 export default defineFormat({
   id: 'kanban.format',
   order: 50,
@@ -28,6 +28,13 @@ export default defineFormat({
             const w = COLUMN_WIDTHS.find((c) => c.id === id)?.w;
             if (w) setColumnWidth(editor, k.id, w);
           }}
+        />
+        <IconButton
+          icon={Palette}
+          size={32}
+          label="Colour cards by column"
+          active={!!k.colorCards}
+          onClick={() => setColorCards(editor, k.id, !k.colorCards)}
         />
       </div>
     );

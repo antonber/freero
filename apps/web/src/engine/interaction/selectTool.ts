@@ -3,6 +3,7 @@
 import type { BoardElement } from '@freero/shared';
 import type { Point, Rect, ToolDefinition, ToolPointerEvent } from '../api';
 import type { EngineCore } from '../runtime/core';
+import type { DragPreviewState } from '../state/uiStore';
 import {
   boundsOf,
   distance,
@@ -133,7 +134,31 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
       bounds,
       others: snapCandidates(new Set(snapshot.map((e) => e.id))),
     };
-    ui.setState({ transforming: 'translate', hoverId: null });
+    ui.setState({ transforming: 'translate', hoverId: null, dragging: new Set(snapshot.map((e) => e.id)) });
+  }
+
+  /**
+   * [additive] What dropping now would do in `container` (ElementDefinition.dragPreview), keeping
+   * the previous position objects where nothing moved, so only the items that slide re-render.
+   */
+  function previewFor(container: BoardElement | null, moved: ReadonlySet<string>): DragPreviewState | null {
+    const reg = container ? core.registry.elements.get(container.type) : undefined;
+    if (!container || !reg?.def.dragPreview) return null;
+    const moving = [...moved]
+      .map((id) => ed().getElement(id))
+      .filter((el): el is BoardElement => !!el && !(el.frameId && moved.has(el.frameId)));
+    const p = reg.def.dragPreview(container as never, { editor: core.scoped(reg.feature), moving });
+    if (!p) return null;
+    const prev = ui.getState().dragPreview;
+    const same = prev?.containerId === container.id ? prev : null;
+    const moves = new Map<string, Point>();
+    for (const m of p.moves) {
+      const old = same?.moves.get(m.id);
+      moves.set(m.id, old && old.x === m.x && old.y === m.y ? old : { x: m.x, y: m.y });
+    }
+    const members =
+      same?.members ?? new Set(ed().getElements().filter((el) => el.frameId === container.id && !moved.has(el.id)).map((el) => el.id));
+    return { containerId: container.id, moves, members, slots: p.slots };
   }
 
   /** After a move: elements dropped into a container join it; dragged out, they leave. */
@@ -216,9 +241,15 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
     let dy = e.point.y - s.start.y;
     let guides: ReturnType<typeof snapMove>['guides'] = [];
     let gaps: ReturnType<typeof snapMove>['gaps'] = [];
-    if (!e.altKey) {
-      const moved = { ...s.bounds, x: s.bounds.x + dx, y: s.bounds.y + dy };
-      const snap = snapMove(moved, s.others, SNAP_PX / zoom(), { grid: gridStep(e) });
+    const moved = new Set(s.snapshot.map((x) => x.id));
+    const anyContainer = s.snapshot.some((el) => def(el)?.container);
+    const drop = anyContainer ? null : ed().containerAt(e.point, moved);
+    // Over a container that lays its items out (a kanban), the layout decides where they go:
+    // no snapping to edges there (the drop indicator shows the spot instead).
+    const laysOut = !!drop && !!def(drop)?.dragPreview;
+    if (!e.altKey && !laysOut) {
+      const box = { ...s.bounds, x: s.bounds.x + dx, y: s.bounds.y + dy };
+      const snap = snapMove(box, s.others, SNAP_PX / zoom(), { grid: gridStep(e) });
       dx += snap.dx;
       dy += snap.dy;
       guides = snap.guides;
@@ -239,10 +270,10 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
         return { id: el.id, patch };
       }),
     );
-    const moved = new Set(s.snapshot.map((x) => x.id));
-    const anyContainer = s.snapshot.some((el) => def(el)?.container);
-    const drop = anyContainer ? null : ed().containerAt(e.point, moved);
-    ui.setState({ guides, gaps, dropTargetId: drop?.id ?? null });
+    // Leaving the container: what made room slides back (the members stay animated until the drop).
+    const last = ui.getState().dragPreview;
+    const preview = previewFor(drop, moved) ?? (last && (last.moves.size || last.slots.length) ? { ...last, moves: new Map(), slots: [] } : last);
+    ui.setState({ guides, gaps, dropTargetId: drop?.id ?? null, dragPreview: preview });
   }
 
   function applyResize(s: Extract<State, { kind: 'resize' }>, e: ToolPointerEvent) {
@@ -338,8 +369,7 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
 
   function finish() {
     state = { kind: 'idle' };
-    ui.setState({ transforming: null, guides: [], gaps: [], marquee: null, hint: null, dropTargetId: null });
-
+    ui.setState({ transforming: null, guides: [], gaps: [], marquee: null, hint: null, dropTargetId: null, dragging: null, dragPreview: null });
   }
 
   return {

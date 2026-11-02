@@ -207,6 +207,9 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   `useSettings()`, `useCanEdit()`; `plainToRichText()`; types `ElementTextProps`, `TextFormatState`.
 - `useCollection(name)` returns the collection's entries (`Array<[key, value]>`).
 - `CommandDefinition.minRole` defaults to `'editor'`; engine view-safe commands set `'viewer'`.
+- A command bound to a plain arrow key goes before the engine's nudge / Alt+arrow jump / resize
+  while its `when` holds (a kanban card's arrows move it between and within columns, where a nudge
+  would only be laid back); when no such command applies the arrows work as usual.
 - `CommandDefinition.extraShortcuts?: string[]`: further bindings for the same command (listed in
   the shortcut reference; menus show `shortcut`). Punctuation shortcuts match the typed character,
   and outside text editing AltGr + that character (Windows reports AltGr as Ctrl+Alt) also answers
@@ -494,11 +497,28 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
   if the merge left it out of layout (two drops into one free slot), the participant with the
   highest Yjs client id re-lays it out (the others re-check 1.5 s later), joining its last undo
   step. Bystanders never do, so nobody snaps a collaborator's drag in progress.
+  Kanbans (`features/kanban`): the column under an item's center is its column, by
+  `@freero/shared` `kanbanColumnAt` / `kanbanColumnLeft` (never `colW` alone: a collapsed column is
+  a `collapsedW` strip), the one rule the layout, the outline and the server's placement
+  (`modules/structure`, trackers, control room) share. A card the change moved into a column takes
+  its status and, on boards with `colorCards` (new boards; older ones keep their colours until the
+  format toolbar turns it on), its colour as accent; cards the change didn't touch never do. A
+  collapsed column keeps its items stacked on its strip, folded away (`hidesMember`).
   Swimlanes (`features/swimlane`) use the same hook without restacking: items keep their own
   positions and belong to the lane / phase under their center; `arrange` only grows a band to fit
   what is in it and shifts the items of later bands by the growth. Lane edits that change the
   bands (edge drag, add, remove, reorder, rows ⇄ columns) move the items with `moveBy` in the same
   transaction, so attached connectors follow and one undo takes back both.
+- `dragPreview(container, { editor, moving })` (containers that lay out): while items are dragged
+  over the container, the display positions of its other children (drawn there, sliding, never
+  written: `ui.dragPreview`, `.fr-el--sliding`) and the slots the moving items would take, which
+  the container draws with `useDragPreview(id)`. The drop's membership change + `arrange` must land
+  on the same spots (the kanban plans both with one function). Dragging items or a marquee near
+  the edge of the safe area auto-scrolls the view; the tool hears the moves.
+- `hidesMember(container, member)`: a member folded away inside its container (a collapsed kanban
+  column) is off the board like `hidden` elements, but the outline (`getOutline`) still lists it.
+  Items being dragged (`ui.dragging`) never fold, so a card carried over a collapsed column stays
+  in hand; it folds (and leaves the selection) on the drop.
 - `fitToContent(el, handle)`: double-clicking a resize handle applies the returned patch (a
   fixed-width text box goes back to auto width).
 - `hitTest(el, local, { tolerance })` — `tolerance` is a few screen px in world units at the live

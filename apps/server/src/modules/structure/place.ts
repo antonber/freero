@@ -15,6 +15,9 @@ import {
   frameDraft,
   itemCardHeight,
   KANBAN_LAYOUT,
+  kanbanColumnAt,
+  kanbanColumnLeft,
+  kanbanColumnWidth,
   layoutStructure,
   LayoutError,
   placeLaidOut,
@@ -187,12 +190,11 @@ function columnIndex(k: KanbanElement, column: string): number {
 
 /** The column an element's center is over (the kanban's own rule). */
 function columnOf(k: KanbanElement, el: { x: number; w: number }): number {
-  const { gap } = KANBAN_LAYOUT;
-  return Math.max(0, Math.min(k.columns.length - 1, Math.floor((el.x + el.w / 2 - k.x - gap / 2) / (k.colW + gap))));
+  return kanbanColumnAt(k, el.x + el.w / 2);
 }
 
 function stack(k: KanbanElement, units: Unit[], column: string | undefined, present: BoardElement[], opts: { keepStatus?: boolean }): Stacked {
-  const { gap, pad, itemGap, headerH, colHeadH } = KANBAN_LAYOUT;
+  const { pad, itemGap, headerH, colHeadH } = KANBAN_LAYOUT;
   const named = column === undefined ? -1 : columnIndex(k, column);
   const byStatus = (s: CardStatus | null) => (s ? k.columns.findIndex((c) => c.status === s) : -1);
   const top = k.y + headerH + colHeadH + pad - itemGap;
@@ -207,14 +209,18 @@ function stack(k: KanbanElement, units: Unit[], column: string | undefined, pres
     const src = (u.draft ?? u.el) as unknown as { title?: unknown; description?: unknown };
     const w = u.type === 'sticky' ? Math.min(STICKY_SIZE, inner) : inner;
     const h = u.type === 'sticky' ? w : itemCardHeight(w, plain(src.title), plain(src.description));
-    const x = Math.round(k.x + gap + ci * (k.colW + gap) + pad + (inner - w) / 2);
+    // Centered in its column (a collapsed column is a narrow strip: its items fold away there).
+    const x = Math.round(k.x + kanbanColumnLeft(k, ci) + kanbanColumnWidth(k, ci) / 2 - w / 2);
     const y = Math.round(bottoms[ci] + itemGap);
     bottoms[ci] = y + h;
     const patch: Fields = { x, y, w, h, frameId: k.id };
     if (u.type === 'card' && c.status && !opts.keepStatus) patch.status = c.status;
+    // A board that colours its cards by column gives a card placed in a column that colour.
+    if (u.type === 'card' && k.colorCards && c.color) patch.color = c.color;
     placed.push({ id: u.id, x, y, patch, ...(u.draft ? { draft: { ...u.draft, ...patch } as ElementDraft } : {}) });
   }
-  const need = Math.max(...bottoms) - k.y + pad + gap;
+  // Folded (collapsed) columns don't size the board.
+  const need = Math.max(top, ...bottoms.filter((_, i) => !k.columns[i].collapsed)) - k.y + pad + KANBAN_LAYOUT.gap;
   return { placed, h: Math.max(k.h, Math.ceil(need)) };
 }
 

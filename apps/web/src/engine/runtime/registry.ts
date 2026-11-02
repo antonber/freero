@@ -36,6 +36,8 @@ export interface Registry {
   decorations: Registered<DecorationDefinition>[];
   /** Some element type can hide its contents (ElementDefinition.hidesContents). */
   hidesContents: boolean;
+  /** [additive] Some container type folds members away (ElementDefinition.hidesMember). */
+  foldsMembers: boolean;
 }
 
 /** One importer, whichever file it came from: an element type's importData or an importer.ts. */
@@ -63,6 +65,7 @@ export function buildRegistry(
     importers: [],
     decorations: [],
     hidesContents: false,
+    foldsMembers: false,
   };
 
   const addTool = (def: ToolDefinition, feature: string) => {
@@ -89,6 +92,7 @@ export function buildRegistry(
       reg.elements.set(def.type, { def, feature });
       if (def.importData) reg.importers.push({ def: { name: def.type, importPriority: def.importPriority ?? 0, importData: def.importData.bind(def) }, feature });
       if (def.hidesContents) reg.hidesContents = true;
+      if (def.hidesMember) reg.foldsMembers = true;
     }
     for (const imp of b.importers ?? []) {
       if (reg.importers.some((r) => r.def.name === imp.id)) throw new Error(`Importer id '${imp.id}' is defined twice.`);

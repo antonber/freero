@@ -763,6 +763,25 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
    */
   arrange?(element: ElementOf<T>, ctx: ArrangeContext): Array<{ id: string; patch: ElementPatch }> | null;
   /**
+   * [additive] Containers that lay out their children: while items are dragged over this
+   * container (it is the drop target), where a drop would put things — drawn, never written.
+   * `moving` are the dragged items where the pointer has them now. Return the display positions
+   * of the other children that would move (they slide there while the drag lasts, making room)
+   * and the slots the moving items would take, which the container draws itself
+   * (`useDragPreview`). The drop is the usual membership change + `arrange`, which should land on
+   * the same spots. Called on every pointer move of the drag: keep it cheap. `editor` is scoped
+   * to the defining feature.
+   */
+  dragPreview?(element: ElementOf<T>, ctx: { editor: Editor; moving: BoardElement[] }): DragPreview | null;
+  /**
+   * [additive] Containers only: true while `member` (one of its children) is folded away inside
+   * it (a collapsed kanban column). Folded members are off the board like `hidden` elements (not
+   * drawn, hit-tested, selectable, in bounds) but still part of it: the outline lists them. Never
+   * asked for items being dragged right now (dragging a card over a collapsed column keeps it in
+   * hand). Called often: keep it cheap.
+   */
+  hidesMember?(element: ElementOf<T>, member: BoardElement): boolean;
+  /**
    * [additive] The look this type shares with other types, for editing a mixed selection (a
    * sticky, two shapes and a text box at once): return the CURRENT value of every `SharedStyle`
    * key the type has; leave out what it doesn't (a text box has no fill). The engine's
@@ -778,6 +797,14 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
    * that knows its fields.
    */
   applySharedStyle?(element: ElementOf<T>, style: SharedStyle): ElementPatch<ElementOf<T>> | null;
+}
+
+/** [additive] What a drop would do, drawn while dragging (see `ElementDefinition.dragPreview`). */
+export interface DragPreview {
+  /** Other elements drawn at these world positions while the drag lasts (they make room). */
+  moves: Array<{ id: string; x: number; y: number }>;
+  /** World boxes the dragged items would land in (the drop indicator the container draws). */
+  slots: Rect[];
 }
 
 /** [additive] Style keys several element types share (see `ElementDefinition.sharedStyle`). */

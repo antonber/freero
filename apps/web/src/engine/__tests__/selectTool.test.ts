@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { EngineCore } from '../runtime/core';
-import { click, drag, makeCore } from './harness';
+import type { ElementDefinition } from '../api';
+import { boxDef, bundle, click, drag, frameDef, makeCore } from './harness';
 
 let core: EngineCore;
 afterEach(() => core?.destroy());
@@ -116,5 +117,21 @@ describe('select tool', () => {
     core.editor.select([a, b]);
     click(core, { x: 250, y: 50 }, { shift: true });
     expect(core.editor.getSelection()).toEqual([a]);
+  });
+
+  it('an item dragged over the part of a container that folds its items away stays in hand, and folds away once dropped there', () => {
+    // A container whose right half folds its members away (a collapsed kanban column).
+    const folding: ElementDefinition<'frame'> = { ...frameDef, hidesMember: (f, m) => m.x + m.w / 2 > f.x + f.w / 2 };
+    core = makeCore({ bundles: [bundle('boxes', { elements: [boxDef as ElementDefinition<any>, folding as ElementDefinition<any>] })] });
+    const frame = core.editor.create({ type: 'frame', x: 0, y: 0, w: 400, h: 300 } as never);
+    const id = box(20, 20, { frameId: frame });
+    let midDrag: { selected: string[]; hit: string | undefined } | null = null;
+    drag(core, { x: 70, y: 70 }, { x: 320, y: 70 }, {
+      during: () => (midDrag = { selected: core.editor.getSelection(), hit: core.editor.hitTest({ x: 320, y: 70 }, { types: ['sticky'] })?.id }),
+    });
+    expect(midDrag).toEqual({ selected: [id], hit: id });
+    expect(core.editor.getElement(id)).toMatchObject({ x: 270, frameId: frame });
+    expect(core.editor.getSelection()).toEqual([]);
+    expect(core.editor.hitTest({ x: 320, y: 70 }, { types: ['sticky'] })).toBeNull();
   });
 });
