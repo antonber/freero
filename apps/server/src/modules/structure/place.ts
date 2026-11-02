@@ -10,7 +10,16 @@
 //   cluster  right below (or beside) its members, close enough to read as one cluster
 import {
   APART_GAP,
+  boardView,
   clusterBoxes,
+  collectionSchema,
+  groupFieldId,
+  groupKeyOf,
+  groupKeyValue,
+  groupTitle,
+  kanbanLanesTop,
+  readFieldInputs,
+  storedKey,
   findFreeSpot,
   frameDraft,
   itemCardHeight,
@@ -29,6 +38,8 @@ import {
   type BoardElement,
   type CardStatus,
   type ElementDraft,
+  type FieldDef,
+  type FieldValues,
   type KanbanElement,
   type LaidOut,
   type Point,
@@ -84,7 +95,10 @@ export function placeLaid(laid: LaidOut, placement: StructurePlacement | undefin
   const given = [p.into, p.newFrame, p.newKanban].filter((v) => v !== undefined && v !== null).length;
   if (given > 1) throw new LayoutError('Give one of placement.into, placement.newFrame or placement.newKanban');
   if (p.column !== undefined && p.into === undefined) throw new LayoutError('placement.column goes with placement.into (a kanban)');
-  if (p.into !== undefined) return placeInto(laid, String(p.into), p.column === undefined ? undefined : String(p.column), view, ctx);
+  if (p.row !== undefined && p.into === undefined) throw new LayoutError('placement.row goes with placement.into (a kanban with swimlanes)');
+  if (laid.fieldsOf && Object.keys(laid.fieldsOf).length && p.into === undefined)
+    throw new LayoutError('Card fields belong to a kanban: give placement.into a kanban (its fields are listed with it in the outline)');
+  if (p.into !== undefined) return placeInto(laid, String(p.into), p.column === undefined ? undefined : String(p.column), p.row === undefined ? undefined : String(p.row), view, ctx);
   if (p.newFrame !== undefined) return free(inNewFrame(laid, String(p.newFrame), ctx), ctx);
   if (p.newKanban !== undefined) return free(inNewKanban(laid, String(p.newKanban), view, ctx), ctx);
   return free({ laid, frameOf: new Map(), moveExtra: new Map() }, ctx);
@@ -128,20 +142,25 @@ function inNewKanban(laid: LaidOut, title: string, view: BoardView, ctx: PlaceCo
 
 // ---- into what is there ----
 
-function placeInto(laid: LaidOut, into: string, column: string | undefined, view: BoardView, ctx: PlaceContext): Placed {
+function placeInto(laid: LaidOut, into: string, column: string | undefined, row: string | undefined, view: BoardView, ctx: PlaceContext): Placed {
   const byId = new Map(view.elements.map((e) => [e.el.id, e.el]));
   let target: BoardElement | undefined;
   let col = column;
-  const colRef = /^([^:]+):(.+)$/.exec(into);
+  let lane = row;
+  // `<kanbanId>:<columnId>` (a column), `<kanbanId>:<columnId>:<rowId>` (a swimlane cell).
+  const colRef = /^([^:]+):([^:]+)(?::(.+))?$/.exec(into);
   if (into.startsWith('cluster:')) target = byId.get(into.slice('cluster:'.length));
   else if (colRef && byId.get(colRef[1])?.type === 'kanban') {
     target = byId.get(colRef[1]);
     col = col ?? colRef[2];
+    lane = lane ?? colRef[3];
   } else target = byId.get(into);
   if (!target) throw new LayoutError(`No item ${into} on this board (use an id from the outline: a frame, a kanban, a kanban column or a cluster)`);
   if (target.locked && (target.type === 'frame' || target.type === 'kanban')) throw new LayoutError(`That ${target.type} is locked`);
   if (col !== undefined && target.type !== 'kanban') throw new LayoutError(`placement.column is for a kanban; that item is a ${target.type}`);
-  if (target.type === 'kanban') return intoKanban(laid, target as KanbanElement, col, view, ctx);
+  if (lane !== undefined && target.type !== 'kanban') throw new LayoutError(`placement.row is for a kanban; that item is a ${target.type}`);
+  if (laid.fieldsOf && Object.keys(laid.fieldsOf).length && target.type !== 'kanban') throw new LayoutError(`Card fields belong to a kanban; that item is a ${target.type}`);
+  if (target.type === 'kanban') return intoKanban(laid, target as KanbanElement, col, lane, view, ctx);
   if (target.type === 'frame') return intoFrame(laid, target, view, ctx);
   if (!LOOSE.has(target.type)) throw new LayoutError(`Items go into a frame, a kanban or a cluster; that item is a ${target.type}`);
   if (laid.parts?.some((pt) => pt.titleId)) throw new LayoutError('That cluster has its title already: leave the title out');
@@ -154,6 +173,10 @@ interface Unit {
   draft?: ElementDraft;
   el?: BoardElement;
   status: CardStatus | null;
+  /** A new card's fields, read against the kanban it goes into (stored values, without the column field's). */
+  values?: FieldValues;
+  /** Its value for the field the kanban is grouped by, as a column id. */
+  groupKey?: string;
 }
 
 /** What goes into a kanban: the new top-level stickies and cards and the moved items, in input order. */
@@ -193,16 +216,36 @@ function columnOf(k: KanbanElement, el: { x: number; w: number }): number {
   return kanbanColumnAt(k, el.x + el.w / 2);
 }
 
-function stack(k: KanbanElement, units: Unit[], column: string | undefined, present: BoardElement[], opts: { keepStatus?: boolean }): Stacked {
+/** The swimlane field of `k` and its rows (as laid out now), when it has swimlanes. */
+function lanesOf(k: KanbanElement): { field: FieldDef; rows: NonNullable<KanbanElement['lanes']> } | null {
+  const id = boardView(k).subGroupBy;
+  const field = id ? collectionSchema(k).find((f) => f.id === id) : undefined;
+  return field && k.lanes?.length ? { field, rows: k.lanes } : null;
+}
+
+/** A swimlane row of `k` named by its id or its title ("No Team", an option's label). */
+function rowIndex(k: KanbanElement, lanes: NonNullable<ReturnType<typeof lanesOf>>, row: string): number {
+  const want = norm(row);
+  const i = lanes.rows.findIndex((r) => r.id === row || norm(groupTitle(lanes.field, r.id)) === want);
+  if (i < 0) throw new LayoutError(`No row "${row.slice(0, 80)}" in that kanban; its rows: ${lanes.rows.map((r) => groupTitle(lanes.field, r.id)).join(', ')}`);
+  return i;
+}
+
+function stack(k: KanbanElement, units: Unit[], column: string | undefined, present: BoardElement[], opts: { keepStatus?: boolean; row?: string }): Stacked {
   const { pad, itemGap, headerH, colHeadH } = KANBAN_LAYOUT;
   const named = column === undefined ? -1 : columnIndex(k, column);
   const byStatus = (s: CardStatus | null) => (s ? k.columns.findIndex((c) => c.status === s) : -1);
+  const lanes = lanesOf(k);
+  if (opts.row !== undefined && !lanes) throw new LayoutError('That kanban has no swimlanes: leave placement.row out');
+  const namedRow = lanes && opts.row !== undefined ? rowIndex(k, lanes, opts.row) : -1;
   const top = k.y + headerH + colHeadH + pad - itemGap;
   const bottoms = k.columns.map((_, i) => present.filter((el) => columnOf(k, el) === i).reduce((m, el) => Math.max(m, el.y + el.h), top));
   const inner = k.colW - 2 * pad;
   const placed: Stacked['placed'] = [];
   for (const u of units) {
-    let ci = named >= 0 ? named : Math.max(0, byStatus(u.status));
+    const byValue = u.groupKey !== undefined ? k.columns.findIndex((c) => c.id === u.groupKey) : -1;
+    if (u.groupKey !== undefined && byValue < 0 && named < 0) throw new LayoutError(`No column for that value of “${collectionSchema(k).find((f) => f.id === groupFieldId(k))?.name ?? 'the column field'}”; its columns: ${k.columns.map((c) => plain(c.title) || c.id).join(', ')}`);
+    let ci = named >= 0 ? named : byValue >= 0 ? byValue : Math.max(0, byStatus(u.status));
     // An imported issue's status is the tracker's: where it lands never changes it.
     if (opts.keepStatus && u.status && k.columns[ci].status && k.columns[ci].status !== u.status && byStatus(u.status) >= 0) ci = byStatus(u.status);
     const c = k.columns[ci];
@@ -211,9 +254,24 @@ function stack(k: KanbanElement, units: Unit[], column: string | undefined, pres
     const h = u.type === 'sticky' ? w : itemCardHeight(w, plain(src.title), plain(src.description));
     // Centered in its column (a collapsed column is a narrow strip: its items fold away there).
     const x = Math.round(k.x + kanbanColumnLeft(k, ci) + kanbanColumnWidth(k, ci) / 2 - w / 2);
-    const y = Math.round(bottoms[ci] + itemGap);
+    let y = Math.round(bottoms[ci] + itemGap);
     bottoms[ci] = y + h;
     const patch: Fields = { x, y, w, h, frameId: k.id };
+    const values: FieldValues = { ...(u.values ?? {}) };
+    if (lanes) {
+      // In its row: the one named, else the row of its value, else the first ("No <field>").
+      const own = u.draft ? lanes.rows.findIndex((r) => r.id === groupKeyOf(lanes.field, (u.values ?? {})[lanes.field.id] ?? null)) : -1;
+      const ri = namedRow >= 0 ? namedRow : own >= 0 ? own : u.el ? Math.max(0, lanes.rows.findIndex((r) => r.id === storedKey(lanes.field, u.el!))) : 0;
+      // Centered just inside the row's bottom edge: below what is in that cell, and the layout
+      // (withKanbanLayout) stacks it there and writes the row's value.
+      const rowBottom = kanbanLanesTop(k) + lanes.rows.slice(0, ri + 1).reduce((sum, r) => sum + r.h, 0);
+      y = Math.round(rowBottom - 2 - h / 2);
+      patch.y = y;
+      const v = groupKeyValue(lanes.field, lanes.rows[ri].id);
+      if (v === null) delete values[lanes.field.id];
+      else values[lanes.field.id] = v;
+    }
+    if (u.draft && (Object.keys(values).length || u.values)) patch.values = values;
     if (u.type === 'card' && c.status && !opts.keepStatus) patch.status = c.status;
     // A board that colours its cards by column gives a card placed in a column that colour.
     if (u.type === 'card' && k.colorCards && c.color) patch.color = c.color;
@@ -224,10 +282,31 @@ function stack(k: KanbanElement, units: Unit[], column: string | undefined, pres
   return { placed, h: Math.max(k.h, Math.ceil(need)) };
 }
 
-function intoKanban(laid: LaidOut, k: KanbanElement, column: string | undefined, view: BoardView, ctx: PlaceContext): Placed {
-  const units = unitsOf(laid, view);
+/** New cards' fields read against kanban `k`'s schema: stored values, and the column field's value as a column. */
+function withFields(k: KanbanElement, units: Unit[], fieldsOf: LaidOut['fieldsOf']): Unit[] {
+  if (!fieldsOf || !Object.keys(fieldsOf).length) return units;
+  const schema = collectionSchema(k);
+  const group = groupFieldId(k);
+  return units.map((u) => {
+    const raw = fieldsOf[u.id];
+    if (!raw) return u;
+    if (u.type !== 'card') throw new LayoutError('Only cards have fields');
+    const read = readFieldInputs(schema, raw);
+    if ('error' in read) throw new LayoutError(`fields: ${read.error}`);
+    const values: FieldValues = {};
+    let groupKey: string | undefined;
+    for (const { field, value } of read.values) {
+      if (field.id === group) groupKey = groupKeyOf(field, value);
+      else if (value !== null) values[field.id] = value;
+    }
+    return { ...u, values, ...(groupKey !== undefined ? { groupKey } : {}) };
+  });
+}
+
+function intoKanban(laid: LaidOut, k: KanbanElement, column: string | undefined, row: string | undefined, view: BoardView, ctx: PlaceContext): Placed {
+  const units = withFields(k, unitsOf(laid, view), laid.fieldsOf);
   const present = view.elements.map((e) => e.el).filter((el) => el.frameId === k.id && !ctx.travelling.has(el.id) && el.type !== 'connector');
-  const s = stack(k, units, column, present, ctx);
+  const s = stack(k, units, column, present, { ...ctx, row });
   const elements = s.placed.flatMap((p) => (p.draft ? [p.draft] : []));
   const moved = s.placed.filter((p) => !p.draft);
   const moves = moved.map((p) => ({ id: p.id, x: p.x, y: p.y }));

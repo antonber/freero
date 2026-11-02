@@ -39,9 +39,9 @@ function parseRequest(body: unknown): InsertStructureRequest {
 
 /** `placement` as sent: one of into (with column) / newFrame / newKanban, each a short text. */
 export function readPlacement(v: unknown): StructurePlacement {
-  if (!v || typeof v !== 'object' || Array.isArray(v)) throw badRequest('placement must be { into, column? } or { newFrame } or { newKanban }');
+  if (!v || typeof v !== 'object' || Array.isArray(v)) throw badRequest('placement must be { into, column?, row? } or { newFrame } or { newKanban }');
   const out: StructurePlacement = {};
-  for (const k of ['into', 'column', 'newFrame', 'newKanban'] as const) {
+  for (const k of ['into', 'column', 'row', 'newFrame', 'newKanban'] as const) {
     const x = (v as Record<string, unknown>)[k];
     if (x === undefined || x === null) continue;
     if (typeof x !== 'string' || !x.trim() || x.length > 200) throw badRequest(`placement.${k} must be a short text`);
