@@ -8259,6 +8259,31 @@ async function siteChecks() {
       assert(llmsText.startsWith('# Freero') && llmsText.includes('https://whiteboard.example.com/mcp') && !llmsText.includes('origin.freero.invalid'), `/llms.txt: ${llmsText.slice(0, 300)}`);
       assert((await get(on.port, '/llms-full.txt')).status === 200, '/llms-full.txt is not served');
     });
+    await check('site: every URL the sitemaps submit answers 200 on a real server, with no redirect, no noindex (header or meta) and its own canonical, so search engines never get a broken, moved or hidden page', async () => {
+      const locs = (xml) => [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1].replace(/&amp;/g, '&'));
+      const index = await get(on.port, '/sitemap.xml');
+      assert(index.status === 200, `/sitemap.xml -> ${index.status}`);
+      const urls = [];
+      for (const sm of locs(await index.text())) {
+        const res = await get(on.port, new URL(sm).pathname);
+        assert(res.status === 200, `${sm} -> ${res.status}`);
+        urls.push(...locs(await res.text()));
+      }
+      assert(urls.length > 100, `only ${urls.length} URLs in the sitemaps`);
+      for (let i = 0; i < urls.length; i += 16)
+        await Promise.all(
+          urls.slice(i, i + 16).map(async (u) => {
+            assert(u.startsWith('https://whiteboard.example.com/'), `${u} is not on PUBLIC_URL`);
+            const res = await get(on.port, new URL(u).pathname);
+            const html = await res.text();
+            assert(res.status === 200, `${u} -> ${res.status} ${res.headers.get('location') ?? ''}`);
+            assert(!/noindex/i.test(res.headers.get('x-robots-tag') ?? '') && !/<meta name="robots" content="[^"]*noindex/.test(html), `${u} is in the sitemap but noindex`);
+            assert(html.includes(`<link rel="canonical" href="${u}"/>`), `${u} has another canonical`);
+          }),
+        );
+      // IndexNow: no key file unless the operator set one.
+      assert((await (await get(on.port, '/a1b2c3d4e5f6a7b8.txt')).text()).trim() !== 'a1b2c3d4e5f6a7b8', 'an IndexNow key file is served with no SITE_INDEXNOW_KEY');
+    });
     await check('site: the built privacy policy, terms and acceptable use policy are visibly drafts nobody is asked to accept until SITE_LEGAL_OPERATOR names the operator; then they are in effect and indexable', async () => {
       const legalPaths = ['/privacy', '/terms', '/acceptable-use'];
       for (const p of legalPaths) {
