@@ -60,7 +60,7 @@ OutlineItem { id, kind, variant?, title?, text?, fields?, tags?, votes?, author?
   first item), `group:<groupId>` (an explicit group), `<kanbanId>:<columnId>` (a kanban column).
 - `kind` is the element type (`sticky`, `shape`, `card`, `mindmap`, `table`, `frame`, …) or
   `cluster` / `group` / `column`. `variant` refines it (a shape's outline, a sticky's colour).
-- Nesting: frames hold their items (clusters inside); kanbans hold columns which hold their cards;
+- Nesting: frames hold their items (clusters inside); kanbans hold columns which hold their cards, top to bottom (a collapsed column reads `collapsed: true` and still lists its cards: they are folded away on the board, not gone);
   mind-map nodes nest under their parent; a reaction stamp nests under the item it sits on. A table
   carries `rows` (plain text, the first row is the header when `fields.header`).
 - Clusters: items close together (gap ≤ ~30 % of the larger item's short side, 16–64 units), or

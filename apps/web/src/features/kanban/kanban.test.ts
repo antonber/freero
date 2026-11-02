@@ -3,10 +3,12 @@ import type { CardElement, KanbanElement } from '@freero/shared';
 import { createTestBoard, type Editor, type FeatureBundle, type NewElement, type TestBoard } from '@engine';
 import manifest from './feature';
 import kanbanDef from './element';
-import { moveColumn, newKanban, removeColumn } from './lib/actions';
-import { COL_HEAD_H, GAP, HEADER_H, PAD, colLeft } from './lib/layout';
+import commands from './commands';
+import outline from './outline';
+import { moveColumnTo, newKanban, removeColumn, setCollapsed, setColorCards, setColumnWidth } from './lib/actions';
+import { COL_HEAD_H, GAP, HEADER_H, PAD, colLeft, planDrop } from './lib/layout';
 
-const bundle: FeatureBundle = { manifest, elements: [kanbanDef], tools: [], formats: [], panels: [], commands: [] };
+const bundle: FeatureBundle = { manifest, elements: [kanbanDef], tools: [], formats: [], panels: [], commands, outline };
 
 let board: TestBoard | null = null;
 afterEach(() => {
@@ -33,7 +35,7 @@ const card = (x: number, y: number, status: CardElement['status'] = 'todo'): New
 });
 
 /** World center of column `i`'s first slot, i.e. where to drop something into that column. */
-const dropPoint = (k: KanbanElement, i: number) => ({ x: k.x + colLeft(k.colW, i) + k.colW / 2, y: k.y + HEADER_H + COL_HEAD_H + 40 });
+const dropPoint = (k: KanbanElement, i: number) => ({ x: k.x + colLeft(k, i) + k.colW / 2, y: k.y + HEADER_H + COL_HEAD_H + 40 });
 
 /** A pointer drag of `id` so its center lands on `to`: one gesture, like the select tool's. */
 function drag(ed: Editor, id: string, to: { x: number; y: number }, during?: () => void) {
@@ -44,6 +46,9 @@ function drag(ed: Editor, id: string, to: { x: number; y: number }, during?: () 
   ed.endGesture();
 }
 
+/** Ids top to bottom (cards created on one spot stack in an order of their own). */
+const stacked = (ed: Editor, ids: string[]) => [...ids].sort((x, y) => ed.getElement(x)!.y - ed.getElement(y)!.y);
+
 function kanbanWithCards(ed: Editor, statuses: Array<CardElement['status']>) {
   const kid = ed.create(newKanban({ x: 0, y: 0 }));
   const k = () => ed.getElement<KanbanElement>(kid)!;
@@ -53,22 +58,37 @@ function kanbanWithCards(ed: Editor, statuses: Array<CardElement['status']>) {
 }
 
 describe('kanban columns', () => {
-  it('a card dropped into Done becomes done and stacks under the column header; one undo takes back both', () => {
+  it('a card dropped into Done becomes done, takes Done’s colour and stacks under the column header; one undo takes back all of it', () => {
     const [ed] = setup();
     const { k, ids } = kanbanWithCards(ed, ['todo']);
     const [id] = ids;
     const before = ed.getElement<CardElement>(id)!;
+    expect(before.color).toBe(k().columns[0].color); // created in To do: took its colour
     drag(ed, id, dropPoint(k(), 2), () => {
       // Mid-drag nothing snaps under the pointer and the status is untouched.
       expect(ed.getElement<CardElement>(id)!.status).toBe('todo');
     });
     const after = ed.getElement<CardElement>(id)!;
-    expect(after.status).toBe('done');
-    expect(after.frameId).toBe(k().id);
-    expect(after.x).toBeCloseTo(k().x + colLeft(k().colW, 2) + PAD);
+    expect(after).toMatchObject({ status: 'done', color: k().columns[2].color, frameId: k().id });
+    expect(after.x).toBeCloseTo(k().x + colLeft(k(), 2) + PAD);
     expect(after.y).toBeCloseTo(k().y + HEADER_H + COL_HEAD_H + PAD);
     ed.undo();
-    expect(ed.getElement<CardElement>(id)).toMatchObject({ x: before.x, y: before.y, status: 'todo' });
+    expect(ed.getElement<CardElement>(id)).toMatchObject({ x: before.x, y: before.y, status: 'todo', color: before.color });
+  });
+
+  it('a kanban from before card colouring moves cards without recolouring them, until colouring is turned on (one undo turns it off again)', () => {
+    const [ed] = setup();
+    const { colorCards: _on, ...old } = newKanban({ x: 0, y: 0 });
+    const kid = ed.create(old);
+    const k = () => ed.getElement<KanbanElement>(kid)!;
+    const id = ed.create(card(dropPoint(k(), 0).x - 100, dropPoint(k(), 0).y - 40));
+    drag(ed, id, dropPoint(k(), 1));
+    expect(ed.getElement<CardElement>(id)).toMatchObject({ status: 'doing', color: '#5B3FF0' });
+    setColorCards(ed, kid, true);
+    expect(ed.getElement<CardElement>(id)!.color).toBe(k().columns[1].color);
+    ed.undo();
+    expect(k().colorCards).toBeFalsy();
+    expect(ed.getElement<CardElement>(id)!.color).toBe('#5B3FF0');
   });
 
   it('drops between two cards slot in between them, and the column it left closes the gap', () => {
@@ -85,13 +105,35 @@ describe('kanban columns', () => {
     expect(ed.getElement<CardElement>(a.id)!.status).toBe('doing');
   });
 
-  it('a card whose status is changed where it stands moves to the column of that status', () => {
+  it('while a card is dragged within its column, the drop indicator is exactly where the drop puts it, and the card it passes makes room', () => {
+    const [ed] = setup();
+    const { k, ids } = kanbanWithCards(ed, ['todo', 'todo', 'todo']);
+    const [a, b, c] = stacked(ed, ids);
+    const first = ed.getElement<CardElement>(a)!;
+    let preview: ReturnType<typeof planDrop> = null;
+    // Drag c (the last) up between a and b: its center just below a's.
+    drag(ed, c, { x: dropPoint(k(), 0).x, y: first.y + first.h / 2 + 1 }, () => {
+      preview = planDrop(k(), ed.getElements(), [ed.getElement(c)!]);
+    });
+    const p = preview!;
+    const landed = ed.getElement<CardElement>(c)!;
+    expect(p.slots).toHaveLength(1);
+    expect(p.slots[0].x).toBeCloseTo(landed.x);
+    expect(p.slots[0].y).toBeCloseTo(landed.y);
+    expect(p.slots[0].w).toBeCloseTo(landed.w);
+    const madeRoom = p.moves.find((m) => m.id === b)!;
+    expect(madeRoom.y).toBeCloseTo(ed.getElement(b)!.y);
+    expect(ed.getElement(b)!.y).toBeGreaterThan(landed.y);
+    expect(p.moves.some((m) => m.id === a)).toBe(false); // a stays where it is
+  });
+
+  it('a card whose status is changed where it stands moves to the column of that status and takes its colour', () => {
     const [ed] = setup();
     const { k, ids } = kanbanWithCards(ed, ['todo']);
     ed.update<CardElement>(ids[0], { status: 'done' });
     const el = ed.getElement<CardElement>(ids[0])!;
-    expect(el.status).toBe('done');
-    expect(el.x).toBeCloseTo(k().x + colLeft(k().colW, 2) + PAD);
+    expect(el).toMatchObject({ status: 'done', color: k().columns[2].color });
+    expect(el.x).toBeCloseTo(k().x + colLeft(k(), 2) + PAD);
   });
 
   it('a card dragged off the board keeps its status', () => {
@@ -102,14 +144,50 @@ describe('kanban columns', () => {
     expect(ed.getElement<CardElement>(ids[0])).toMatchObject({ status: 'doing', frameId: null });
   });
 
-  it('reordering columns carries their cards along without changing anyone’s status', () => {
+  it('moving a column past a collapsed one carries its cards to its new place, keeping their status and colour', () => {
     const [ed] = setup();
     const { kid, k, ids } = kanbanWithCards(ed, ['todo']);
-    drag(ed, ids[0], dropPoint(k(), 2)); // done
-    const doneCol = k().columns[2].id;
-    moveColumn(ed, kid, doneCol, -1);
-    expect(k().columns[1].id).toBe(doneCol);
-    expect(ed.getElement<CardElement>(ids[0])).toMatchObject({ status: 'done', x: k().x + colLeft(k().colW, 1) + PAD });
+    const todo = k().columns[0];
+    setCollapsed(ed, kid, k().columns[1].id, true);
+    moveColumnTo(ed, kid, todo.id, 2);
+    expect(k().columns[2].id).toBe(todo.id);
+    const el = ed.getElement<CardElement>(ids[0])!;
+    expect(el).toMatchObject({ status: 'todo', color: todo.color });
+    expect(el.x).toBeCloseTo(k().x + colLeft(k(), 2) + PAD);
+  });
+
+  it('collapsing a column folds its cards away without losing them: the outline still lists them, expanding brings them back', () => {
+    const [ed] = setup();
+    const { kid, k, ids } = kanbanWithCards(ed, ['todo', 'todo']);
+    const wide = k().w;
+    const colId = k().columns[0].id;
+    setCollapsed(ed, kid, colId, true);
+    expect(k().w).toBeLessThan(wide);
+    const folded = ed.getElement<CardElement>(ids[0])!;
+    expect(ed.hitTest({ x: folded.x + folded.w / 2, y: folded.y + folded.h / 2 }, { types: ['card'] })).toBeNull();
+    const kanbanItem = ed.getOutline().items.find((i) => i.id === kid);
+    const column = kanbanItem?.children?.find((c) => c.id === `${kid}:${colId}`);
+    expect(column?.fields).toMatchObject({ collapsed: true });
+    expect(column?.children?.map((c) => c.id)).toEqual(stacked(ed, ids));
+    setCollapsed(ed, kid, colId, false);
+    expect(k().w).toBeCloseTo(wide);
+    const back = ed.getElement<CardElement>(ids[0])!;
+    expect(back.x).toBeCloseTo(k().x + colLeft(k(), 0) + PAD);
+    expect(ed.hitTest({ x: back.x + back.w / 2, y: back.y + back.h / 2 }, { types: ['card'] })?.id).toBe(ids[0]);
+  });
+
+  it('dragging a column edge wider is one undo step, and the cards re-stack at the new width', () => {
+    const [ed] = setup();
+    const { kid, k, ids } = kanbanWithCards(ed, ['todo']);
+    const before = ed.getElement<CardElement>(ids[0])!;
+    ed.beginGesture();
+    for (const w of [300, 330, 360]) setColumnWidth(ed, kid, w);
+    ed.endGesture();
+    expect(k().colW).toBe(360);
+    expect(ed.getElement<CardElement>(ids[0])!.w).toBeCloseTo(360 - 2 * PAD);
+    ed.undo();
+    expect(k().colW).toBe(280);
+    expect(ed.getElement<CardElement>(ids[0])).toMatchObject({ x: before.x, w: before.w });
   });
 
   it('deleting a column hands its cards to the neighbour column, with that column’s status', () => {
@@ -119,21 +197,49 @@ describe('kanban columns', () => {
     removeColumn(ed, kid, k().columns[2].id);
     expect(k().columns).toHaveLength(2);
     expect(k().w).toBeCloseTo(GAP + 2 * (k().colW + GAP));
-    expect(ed.getElement<CardElement>(ids[0])).toMatchObject({ status: 'doing', x: k().x + colLeft(k().colW, 1) + PAD });
+    expect(ed.getElement<CardElement>(ids[0])).toMatchObject({ status: 'doing', x: k().x + colLeft(k(), 1) + PAD });
   });
 
-  it('a collaborator’s edits never make my client rewrite card statuses it did not touch', () => {
+  it('a collaborator’s edits never make my client rewrite the status or colour of cards it did not touch', () => {
     const [ann, bob] = setup(['ann', 'bob']);
-    const { k, ids } = kanbanWithCards(ann, ['todo']);
+    const { k, ids } = kanbanWithCards(ann, ['todo', 'todo']);
     board!.sync();
-    // Bob sets the status in place (his client moves it to Done) …
+    // Bob sets one status in place (his client moves it to Doing) and gives the other his own colour …
     bob.update<CardElement>(ids[0], { status: 'doing' });
+    bob.update<CardElement>(ids[1], { color: '#E64DA6' });
     board!.sync();
-    // … then Ann edits something unrelated: her client leaves Bob's card alone.
+    // … then Ann edits something unrelated: her client leaves Bob's cards alone.
     ann.update<KanbanElement>(k().id, { title: 'Sprint 12' });
     board!.sync();
-    for (const ed of [ann, bob]) expect(ed.getElement<CardElement>(ids[0])!.status).toBe('doing');
-    expect(ann.getElement<CardElement>(ids[0])!.x).toBeCloseTo(k().x + colLeft(k().colW, 1) + PAD);
+    for (const ed of [ann, bob]) {
+      expect(ed.getElement<CardElement>(ids[0])).toMatchObject({ status: 'doing', color: k().columns[1].color });
+      expect(ed.getElement<CardElement>(ids[1])!.color).toBe('#E64DA6');
+    }
+    expect(ann.getElement<CardElement>(ids[0])!.x).toBeCloseTo(k().x + colLeft(k(), 1) + PAD);
+  });
+});
+
+describe('moving cards with the keyboard', () => {
+  it('→ moves the selected card into the next column (its status and colour follow) and ↑ / ↓ swap it with its neighbour; one undo per press', () => {
+    const [ed] = setup();
+    const { k, ids } = kanbanWithCards(ed, ['todo', 'todo']);
+    const [a, b] = ids;
+    ed.select([b]);
+    ed.runCommand('kanban.moveRight');
+    const moved = ed.getElement<CardElement>(b)!;
+    expect(moved).toMatchObject({ status: 'doing', color: k().columns[1].color });
+    expect(moved.x).toBeCloseTo(k().x + colLeft(k(), 1) + PAD);
+    expect(moved.y).toBeCloseTo(k().y + HEADER_H + COL_HEAD_H + PAD);
+    ed.undo();
+    expect(ed.getElement<CardElement>(b)).toMatchObject({ status: 'todo', color: k().columns[0].color });
+    // Back in To do below a: ↑ puts it on top, ↓ back under a.
+    const order = () => [a, b].sort((x, y) => ed.getElement(x)!.y - ed.getElement(y)!.y);
+    ed.runCommand('kanban.moveUp');
+    expect(order()).toEqual([b, a]);
+    ed.runCommand('kanban.moveDown');
+    expect(order()).toEqual([a, b]);
+    ed.undo();
+    expect(order()).toEqual([b, a]);
   });
 });
 
