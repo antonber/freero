@@ -195,12 +195,12 @@ export const feedbackBoard: TemplateDef = {
         status: 'todo',
         color: HEAD.amber,
         items: [
-          { card: 'Lock elements', desc: 'Asked by 14 teams · design', color: AMBER },
-          { card: 'Slide export', desc: 'Asked by 6 teams', color: AMBER },
+          { card: 'Lock elements', color: AMBER, values: { 'Teams asking': 14, Area: 'Canvas' } },
+          { card: 'Slide export', color: AMBER, values: { 'Teams asking': 6, Area: 'Export' } },
         ],
       },
-      { title: 'Planned', status: 'doing', color: HEAD.sky, items: [{ card: 'Comment notifications', desc: 'Q3 · asked by 22 teams', color: SKY }] },
-      { title: 'Shipped', status: 'done', color: HEAD.mint, items: [{ card: 'Dark mode', desc: 'Tell the 31 teams who asked', color: MINT }] },
+      { title: 'Planned', status: 'doing', color: HEAD.sky, items: [{ card: 'Comment notifications', desc: 'Planned for Q3', color: SKY, values: { 'Teams asking': 22, Area: 'Notifications' } }] },
+      { title: 'Shipped', status: 'done', color: HEAD.mint, items: [{ card: 'Dark mode', desc: 'Tell everyone who asked', color: MINT, values: { 'Teams asking': 31, Area: 'Appearance' } }] },
     ];
     const kb = kanbanSize(colW, columns);
     const sideW = 400;
@@ -208,7 +208,13 @@ export const feedbackBoard: TemplateDef = {
     const W = 48 + kb.w + 24 + sideW + 48;
     k.frame('Customer feedback', W, 160 + bodyH + 48);
     k.header('Customer feedback board', 'Paste requests into the Inbox as quotes. Merge duplicates into one card and count who asked.', W);
-    k.kanban(48, 160, 'Feedback', colW, columns);
+    k.kanban(48, 160, 'Feedback', colW, columns, {
+      fields: [
+        { name: 'Teams asking', type: 'number' },
+        { name: 'Area', type: 'select', options: ['Canvas', 'Export', 'Notifications', 'Appearance'] },
+      ],
+      show: ['Area', 'Teams asking'],
+    });
     const sx = 48 + kb.w + 24;
     const y = k.section(sx, 160, sideW, bodyH, 'Triage rules', TINT.violet, { accent: VIOLET });
     k.text(

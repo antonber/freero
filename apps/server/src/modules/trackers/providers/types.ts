@@ -92,6 +92,11 @@ export interface TrackerProvider {
   createIssue(conn: ProviderConnection, input: CreateIssueInput): Promise<{ issue: RemoteIssue; notes: string[] }>;
   /** Writes these fields (only the ones present); returns notes for what couldn't be written. */
   updateIssue(conn: ProviderConnection, issue: RemoteIssue, patch: IssueValues): Promise<string[]>;
+  /**
+   * The tracker's priority levels by name, most pressing first (Jira: the site's; Linear: its fixed
+   * scale), for a kanban's Priority options; null / absent when it can't say (or has none: GitHub).
+   */
+  priorities?(conn: ProviderConnection): Promise<string[] | null>;
   /** Issues matching a query in the tracker's own language (JQL, a search, a GitHub query). */
   search(conn: ProviderConnection, query: string, limit: number): Promise<RemoteIssue[]>;
   /** Which of these issues changed at or after `since` (polling). */

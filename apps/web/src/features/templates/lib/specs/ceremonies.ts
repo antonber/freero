@@ -10,11 +10,18 @@ const specs: TemplateSpec[] = [
     keywords: ['backlog refinement', 'grooming', 'backlog', 'user stories', 'ready', 'sprint prep', 'estimation'],
     hint: 'Work right to left: finish nearly-ready items first. Anything stuck in “Too big” for two sessions gets split or dropped.',
     archetype: 'kanban',
+    typed: {
+      fields: [
+        { name: 'Points', type: 'number' },
+        { name: 'Criteria agreed', type: 'checkbox' },
+      ],
+      show: ['Points', 'Criteria agreed'],
+    },
     columns: [
       { title: 'Raw ideas', tone: 'gray', cards: [{ title: 'Remind clients about unpaid invoices' }, { title: 'Bulk archive old projects' }] },
       { title: 'Needs detail', tone: 'amber', cards: [{ title: 'Export timesheets', note: 'Which format do clients want?' }] },
-      { title: 'Too big', tone: 'coral', cards: [{ title: 'Client portal', note: 'Split by what clients do first' }] },
-      { title: 'Ready', tone: 'mint', cards: [{ title: 'Filter invoices by status', note: '3 points, criteria agreed' }, { title: 'Show tax on the summary', note: '2 points' }] },
+      { title: 'Too big', tone: 'coral', cards: [{ title: 'Client portal', note: 'Split by what clients do first', values: { Points: 20 } }] },
+      { title: 'Ready', tone: 'mint', cards: [{ title: 'Filter invoices by status', values: { Points: 3, 'Criteria agreed': true } }, { title: 'Show tax on the summary', values: { Points: 2, 'Criteria agreed': true } }] },
     ],
     side: { title: 'Ready means', prompt: 'The team’s bar before an item can be planned.', notes: ['Clear who it’s for and why', 'Acceptance criteria written', 'Small enough for a few days'] },
   },

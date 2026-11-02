@@ -1,6 +1,8 @@
 // CSV of stickies and task cards (KAI-136): RFC 4180 reading and writing, the columns Freero
-// exports, and turning imported rows into work items. Pure: no editor, no DOM.
-import type { CardStatus, ItemInput } from '@freero/shared';
+// exports, and turning imported rows into work items. A kanban's cards bring their fields (step
+// 2f): exported as one column per field, and an import onto a new kanban makes its columns from
+// one CSV column (Stage) and a typed field from each other one. Pure: no editor, no DOM.
+import { fieldNameProblem, inferFieldType, parseDateText, type CardStatus, type FieldType, type ItemInput } from '@freero/shared';
 
 /** Splits CSV/TSV text into rows of cells (quotes, doubled quotes, newlines inside quotes, CRLF). */
 export function parseDelimited(text: string, delimiter: string): string[][] {
@@ -72,16 +74,27 @@ export interface ItemRow {
   assignee: string;
   due: string;
   frame: string;
+  /** A kanban card's field values as text, by field name (its Stage too). */
+  fields?: Record<string, string>;
 }
 
 export const EXPORT_HEADER = ['Type', 'Text', 'Description', 'Color', 'Tags', 'Status', 'Assignee', 'Due date', 'Frame'];
 /** Tags inside one cell. */
 export const TAG_SEPARATOR = '; ';
 
-export const exportRows = (items: ItemRow[]): string[][] => [
-  EXPORT_HEADER,
-  ...items.map((r) => [r.type, r.text, r.description, r.color, r.tags.join(TAG_SEPARATOR), r.status, r.assignee, r.due, r.frame]),
-];
+/**
+ * The CSV: Freero's columns, then one per kanban field the cards have (by name, in the order they
+ * first come; a name Freero's own columns use gets " (field)").
+ */
+export function exportRows(items: ItemRow[]): string[][] {
+  const names: string[] = [];
+  for (const r of items) for (const n of Object.keys(r.fields ?? {})) if (!names.includes(n)) names.push(n);
+  const own = new Set(EXPORT_HEADER.map((h) => h.toLowerCase()));
+  return [
+    [...EXPORT_HEADER, ...names.map((n) => (own.has(n.toLowerCase()) ? `${n} (field)` : n))],
+    ...items.map((r) => [r.type, r.text, r.description, r.color, r.tags.join(TAG_SEPARATOR), r.status, r.assignee, r.due, r.frame, ...names.map((n) => r.fields?.[n] ?? '')]),
+  ];
+}
 
 /** The fields an imported column can fill. */
 export type Field = 'text' | 'description' | 'tags' | 'status' | 'assignee' | 'due' | 'color' | 'type';
@@ -124,24 +137,7 @@ export function parseStatus(v: string): CardStatus | null {
 }
 
 /** YYYY-MM-DD from an ISO date or a date a spreadsheet writes (31/12/2026 is read day-first, 12/31/2026 month-first). */
-export function parseDue(v: string): string | null {
-  const s = v.trim();
-  if (!s) return null;
-  const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(s);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const ok = (y: number, m: number, d: number) => m >= 1 && m <= 12 && d >= 1 && d <= 31 && y >= 1900 && y <= 9999;
-  if (iso) {
-    const [y, m, d] = [Number(iso[1]), Number(iso[2]), Number(iso[3])];
-    return ok(y, m, d) ? `${y}-${pad(m)}-${pad(d)}` : null;
-  }
-  const dmy = /^(\d{1,2})[./](\d{1,2})[./](\d{4})$/.exec(s);
-  if (dmy) {
-    const [a, b, y] = [Number(dmy[1]), Number(dmy[2]), Number(dmy[3])];
-    const [d, m] = a > 12 ? [a, b] : b > 12 ? [b, a] : [a, b];
-    return ok(y, m, d) ? `${y}-${pad(m)}-${pad(d)}` : null;
-  }
-  return null;
-}
+export const parseDue = (v: string): string | null => parseDateText(v);
 
 export interface ImportOptions {
   /** What a row becomes unless its "Sticky or card" column says otherwise. */
@@ -155,6 +151,8 @@ export interface ImportOptions {
 export interface ImportedRow {
   item: ItemInput;
   tagNames: string[];
+  /** The row's cells as read (a kanban import's Stage and field columns). */
+  cells: string[];
 }
 
 /** Rows (header excluded) → items. Rows without text are skipped. */
@@ -184,7 +182,61 @@ export function rowsToItems(rows: string[][], o: ImportOptions): ImportedRow[] {
           }
         : { status: parseStatus(cell(r, 'status')) }),
     };
-    out.push({ item, tagNames });
+    out.push({ item, tagNames, cells: r.map(unguard) });
   }
+  return out;
+}
+
+// ---- onto a kanban, with fields ----
+
+/** Headers a kanban's columns are read from, most likely first. */
+const COLUMN_HEADERS = ['stage', 'column', 'phase', 'list', 'lane', 'status', 'state'];
+
+/** The CSV column the kanban's columns come from: one headed Stage, Column, Phase…, Status; else none. */
+export function guessColumnsFrom(header: string[]): number | undefined {
+  const norm = header.map((h) => h.trim().toLowerCase());
+  for (const name of COLUMN_HEADERS) {
+    const i = norm.indexOf(name);
+    if (i >= 0) return i;
+  }
+  return undefined;
+}
+
+/** What a CSV column becomes on the kanban: a typed field, or nothing ('skip'). */
+export type FieldChoice = FieldType | 'skip';
+
+export interface FieldColumn {
+  column: number;
+  name: string;
+  type: FieldChoice;
+  /** Why it is skipped by default (a name a card's own field has, an empty column…). */
+  note?: string;
+}
+
+/** Columns Freero's own export writes that are not fields (where the card was, what it is). */
+const NOT_FIELDS = new Set(['frame', 'color', 'colour', 'type']);
+
+/**
+ * The CSV columns that become the new kanban's fields, in file order, each with the type its
+ * cells read as (`inferFieldType`): every column not already mapped to a card's own field and not
+ * the one the columns come from. Columns named like a card's own field, repeated names and empty
+ * columns are offered but skipped.
+ */
+export function fieldColumns(header: string[], body: string[][], mapping: Mapping, columnsFrom: number | undefined): FieldColumn[] {
+  const mapped = new Set(Object.values(mapping));
+  const out: FieldColumn[] = [];
+  const taken: Array<{ id: string; name: string; type: FieldType }> = [];
+  header.forEach((h, i) => {
+    if (mapped.has(i) || i === columnsFrom) return;
+    const name = h.trim().slice(0, 60) || `Column ${i + 1}`;
+    if (NOT_FIELDS.has(name.toLowerCase())) return;
+    const values = body.map((r) => unguard(r[i] ?? '').trim()).filter(Boolean);
+    const problem = fieldNameProblem(taken, name);
+    if (problem) return out.push({ column: i, name, type: 'skip', note: problem });
+    if (!values.length) return out.push({ column: i, name, type: 'skip', note: 'No values' });
+    const type = inferFieldType(values);
+    taken.push({ id: String(i), name, type });
+    out.push({ column: i, name, type });
+  });
   return out;
 }

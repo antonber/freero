@@ -228,12 +228,28 @@ const specs: TemplateSpec[] = [
     keywords: ['support triage', 'ticket board', 'help desk', 'escalations', 'support queue', 'tier 2', 'bug reports'],
     hint: 'Only tickets that need more than one reply go here. Review the board at stand-up, oldest first, and move each card on or say why it is stuck.',
     archetype: 'kanban',
+    typed: {
+      fields: [
+        { name: 'Priority', type: 'select', options: ['Urgent', 'High', 'Normal', 'Low'], ranked: true },
+        { name: 'Customer', type: 'text' },
+        { name: 'Users affected', type: 'number' },
+      ],
+      show: ['Priority', 'Customer', 'Users affected', 'Assignee'],
+      colorBy: 'Priority',
+    },
     columns: [
-      { title: 'New', tone: 'gray', cards: [{ title: 'Calendar sync stopped for Larkin & Co', note: 'Since Monday, 14 users' }, { title: 'Wrong currency on quotes' }] },
-      { title: 'Investigating', tone: 'amber', wip: 3, cards: [{ title: 'Reports time out over 50k rows', note: 'Owner: Priya' }] },
-      { title: 'Waiting on customer', tone: 'sky', cards: [{ title: 'Login fails on old tablets', note: 'Asked for browser version, 2 days' }] },
-      { title: 'With engineering', tone: 'coral', cards: [{ title: 'Duplicate invoices on retry', note: 'Bug 4512, fix in next release' }] },
-      { title: 'Solved this week', tone: 'mint', status: 'done', cards: [{ title: 'Import mapping lost on save' }, { title: 'Email footer missing logo' }] },
+      {
+        title: 'New',
+        tone: 'gray',
+        cards: [
+          { title: 'Calendar sync stopped', note: 'Since Monday', values: { Priority: 'Urgent', Customer: 'Larkin & Co', 'Users affected': 14 } },
+          { title: 'Wrong currency on quotes', values: { Priority: 'Normal' } },
+        ],
+      },
+      { title: 'Investigating', tone: 'amber', wip: 3, cards: [{ title: 'Reports time out over 50k rows', values: { Priority: 'High', Customer: 'Fenwick Retail' } }] },
+      { title: 'Waiting on customer', tone: 'sky', cards: [{ title: 'Login fails on old tablets', note: 'Asked for browser version, 2 days', values: { Priority: 'Normal' } }] },
+      { title: 'With engineering', tone: 'coral', cards: [{ title: 'Duplicate invoices on retry', note: 'Bug 4512, fix in next release', values: { Priority: 'High', 'Users affected': 3 } }] },
+      { title: 'Solved this week', tone: 'mint', status: 'done', cards: [{ title: 'Import mapping lost on save', values: { Priority: 'High' } }, { title: 'Email footer missing logo', values: { Priority: 'Low' } }] },
     ],
     side: { title: 'Board rules', prompt: 'How we keep the queue moving.', notes: ['Customer waiting 5 days: send a nudge', 'Every card has one owner'] },
   },

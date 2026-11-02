@@ -1,7 +1,8 @@
 # Kanban phases 2 and 3: fields, group-by and views of the same data
 
-Status: **steps 2a, 2b and 2c built** (schema foundation, card display, group by and swimlanes;
-see "Step 2a as built", "Step 2b as built" and "Step 2c as built" below); 2d–3e proposed. The
+Status: **steps 2a, 2b, 2c and 2f built** (schema foundation, card display, group by and
+swimlanes, fields from trackers / templates / CSV; see "Step 2a as built" … "Step 2f as built"
+below); 2d, 2e and phase 3 proposed. The
 owner's decisions on the open questions are under "Decisions". Phase 1 (card colour follows column,
 smoother drag, keyboard moves, column reorder / collapse / resize) has landed.
 
@@ -853,6 +854,86 @@ What the next steps need:
 - **Not done** (later steps): `$status` / `$assignee` as group fields, row collapse and Alt+Shift
   row moves, "show all people" columns, server re-lay after an API value change (2e), placement into
   a swimlane cell (2e).
+
+## Step 2f as built
+
+Fields from the outside world: trackers, templates and CSV.
+
+- **`@freero/shared` `fieldText.ts`** (new file, so 2d's move of the table's typed logic into
+  `fields.ts` doesn't collide with it): words → values (`fieldValueFromText`: select / multi-select
+  by label, case and spaces ignored; dates ISO or day/month/year, day-first unless the first number
+  can only be a month; numbers with thousands separators; TRUE / FALSE, yes / no, x, ✓; people only
+  through a caller's member lookup), values → words for CSV (`fieldValueToText`: labels, `; ` for
+  several, names, ISO dates, TRUE / FALSE), `inferFieldType` (checkbox, number, date, link, a single
+  select when few short labels repeat — at most 12 distinct and at most 60% of the cells —, a
+  multi-select when cells list such labels with `;`, else text; person never guessed),
+  `withOptions`, `rankColor` (most pressing first: red → gray), `priorityFieldOf` (the single select
+  called "Priority"). The table's own parse / infer stays in `features/table` until 2d moves it; the
+  rules match.
+- **Trackers** (`modules/trackers/kanban.ts`, pure). Status → Stage, one rule for import and pull:
+  the option whose label is the tracker's status name, else the first option mapped to its category
+  (`status`), else — on import only — a new column named after it, mapped to its category and
+  placed with it (before Done for work in progress). That is 2c's "a value without a column gets its
+  column" (as a person without one does); a pull never adds columns. While the board is grouped by
+  another field Stage is stored and the same rule sets it (no option: no value), and the card goes
+  to the column of the grouped field (Priority, or "No …"). A new kanban (`placement.newKanban`)
+  gets the issues' statuses as columns, in category order. Priority: `IssueValues.priority` (Jira
+  `fields.priority.name`; Linear's 1–4 scale by name; GitHub has none) ↔ the kanban's Priority
+  field by label; an import into a kanban without one makes it, with the tracker's levels as options
+  (`TrackerProvider.priorities`: Jira `GET /priority`, Linear's fixed scale; else the levels the
+  issues have) and shows it first on the cards; a level the field lacks is added on import and on
+  pull. **Sync back**: `ISSUE_FIELDS` gains `statusName` (the label of the card's column) and
+  `priority`; they merge like every other field (`mergeField`, against the base), so moving a card
+  from "Doing" to "In review" — same category — is a push of the status by name: Jira transitions to
+  the status of that name, Linear sets the team's state of that name, each falling back to the
+  category; a column the tracker has no status for sends only its category, silently (no note on
+  every move between board-only columns). Links made before 2f have no base for the new fields, so
+  they start syncing them after their next sync. `placeLaid` (structure) takes `columnFor` and
+  `newKanbanColumns` for this; a `placement.column` the request names keeps the old rule.
+- **Deviation: labels, assignee and due date are the card's own fields**, not new custom fields.
+  They already sync both ways as `$tags` (a multi-select over the board's tags), `$assignee` (a
+  person field, matched to members by verified email) and `$due`; a second "Labels" / "Owner" /
+  "Due" field would hold the same data twice, and two-way sync would then have two board values for
+  one tracker field. The kanban shows them through `card.show`. A per-connection field map for other
+  custom fields (#43) is still later.
+- **UI**: "Import issues into this kanban…" (a selected kanban's context menu) imports with
+  `placement.into`; the send preview lists the column a card will ask for and its priority. MCP and
+  REST already take `placement.into` / `newKanban`, so `import_from_tracker` gets all of this with
+  no schema change (2e owns the tool schemas).
+- **Templates**: the Kit's `kanban(…, typed)` and the spec archetype's `typed: { fields, show,
+  colorBy }` (fields by name and type, options as labels, `ranked` for priority-like colours; cards'
+  `values` by field name, `due`) write `fields`, a board view (`card.show`, colour-by) and each
+  card's `values` (option ids). The template gate's `fieldProblems` checks, on every built template,
+  hand-coded or spec: field names (unique, not a built-in's), at most 12 fields and 20 options, no
+  empty select, cards showing / coloured by fields the kanban has, and every value one its field can
+  hold on a stored field (never the column field: a card's Stage is its column). Seven templates use
+  real fields now instead of text conventions: Sprint board (Priority, Points, Area), Bug triage
+  (Severity — cards coloured by it —, Area), Customer feedback (Teams asking, Area), Support triage
+  (Priority, Customer, Users affected), Sales pipeline review (Deal size, Next step), Postmortem
+  action tracker (Incident, Kind) and Backlog refinement (Points, Criteria agreed). Owners and due
+  dates are the cards' own assignee and due date (shown on the cards); a template can't name people.
+  There is no kanban "content calendar" in the catalog (it is a journey layout), so none was changed.
+- **CSV**: export adds a column per field of the kanban each card is in (Stage too; by field name,
+  `" (field)"` when the name is one of Freero's own columns), values as `fieldValueToText` writes
+  them. Import "Kanban" with a "Columns from" column (guessed from Stage / Column / Phase / List /
+  Lane / Status / State headers) makes a NEW kanban: a column per distinct value (in the order they
+  come; rows without one in "No stage"), the Stage field named after that header, and every other
+  column not mapped to a card's own field a field of its inferred type (changeable per column in the
+  dialog, or left out), selects with their distinct labels as options; cards get their values, in
+  one undo step. Without a "Columns from" column it is the old kanban by status. **Not done**:
+  importing a CSV into an *existing* kanban (it would add fields to a kanban another feature owns:
+  it needs a kanban command that merges fields and places cards by value, and is a natural part of
+  2e's `define_fields` / server re-lay).
+- **Tests** (each fails without its change): a tracker's "In review" lands in the In review
+  column, not the first of its category; an import lands by name / category / a new column and
+  makes Priority once from the tracker's levels; a card moved to In review with another priority
+  merges as a push of both and Jira gets the named transition and priority; a pulled level the field
+  lacks is added and set; every template's values fit its fields; the gate names a bad option, an
+  unreadable date, a missing field and a shown field the kanban lacks; a board made from Bug triage
+  shows Severity / Area chips and colours by severity (real features); a kanban exported to CSV and
+  imported back has its columns, fields and types (free text stays text) and every value;
+  `npm run verify -- --only tracker` imports into a kanban from the mock Jira and moves a card back
+  to Jira by name.
 
 ## Sources (concepts only; nothing copied)
 

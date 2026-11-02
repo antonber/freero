@@ -99,7 +99,7 @@ export function kanban(k: Kit, s: Spec<KanbanLayout>): void {
   const colW = 280;
   const cols: KanbanColumnSpec[] = s.columns.map((c, i) => {
     const t = TONES[toneAt(c.tone, i, ['gray', 'sky', 'amber', 'violet', 'mint'])];
-    return { title: c.title, status: c.status ?? null, wip: c.wip, color: t.head, items: c.cards.map((card) => ({ card: card.title, desc: card.note, color: t.accent })) };
+    return { title: c.title, status: c.status ?? null, wip: c.wip, color: t.head, items: c.cards.map((card) => ({ card: card.title, desc: card.note, color: t.accent, ...(card.due ? { due: card.due } : {}), ...(card.values ? { values: card.values } : {}) })) };
   });
   const kb = kanbanSize(colW, cols);
   const W = Math.max(MIN_W, PAD + kb.w + PAD);
@@ -109,7 +109,7 @@ export function kanban(k: Kit, s: Spec<KanbanLayout>): void {
   const boardY = top + (s.side ? stripH + 24 : 0);
   open(k, s, W, boardY + kb.h + PAD);
   if (s.side) drawBlock(k, PAD, top, kb.w, stripH, s.side, toneAt(s.side.tone, 0, ['gray']), { note: STRIP_NOTE });
-  k.kanban(PAD, boardY, s.board ?? s.name, colW, cols);
+  k.kanban(PAD, boardY, s.board ?? s.name, colW, cols, s.typed);
 }
 
 // ── Canvas of titled sections ────────────────────────────────────────────────────────────────

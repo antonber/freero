@@ -5,10 +5,6 @@ import {
   estimateNumber,
   isStatusCategory,
   issueValuesFromBoard,
-  KANBAN_LAYOUT,
-  kanbanColumnAt,
-  kanbanColumnLeft,
-  kanbanColumnWidth,
   measureText,
   plainToRichText,
   richTextToPlain,
@@ -28,6 +24,7 @@ import {
   type TrackerSource,
 } from '@freero/shared';
 import type { BoardView } from '../realtime/index';
+import { cardTrackerFields, kanbanOf, planKanbanPull } from './kanban';
 import type { RemoteIssue, TrackerProvider } from './providers/index';
 import type { StoredConnection } from './repo';
 
@@ -46,12 +43,16 @@ function textOf(el: BoardElement): string {
   return typeof e.text === 'string' ? richTextToPlain(e.text) : '';
 }
 
-/** One item as a TrackerSource. `emailOf`: a person's (verified) email by user id. */
-export function sourceOf(el: BoardElement, tags: ReadonlyMap<string, Tag>, emailOf: (userId: string) => string | null): TrackerSource {
+/**
+ * One item as a TrackerSource. `emailOf`: a person's (verified) email by user id; `kanbanOf`: the
+ * kanban a card stands in (its Stage and Priority are then the issue's status name and priority).
+ */
+export function sourceOf(el: BoardElement, tags: ReadonlyMap<string, Tag>, emailOf: (userId: string) => string | null, kanbanOf?: (el: BoardElement) => KanbanElement | null): TrackerSource {
   const e = el as unknown as Record<string, unknown>;
   const tagNames = Array.isArray(e.tags) ? (e.tags as unknown[]).flatMap((id) => (typeof id === 'string' && tags.get(id)?.name ? [tags.get(id)!.name] : [])) : [];
   if (el.type === 'card') {
     const c = el as CardElement;
+    const k = kanbanOf?.(el);
     return {
       id: el.id,
       type: el.type,
@@ -64,6 +65,7 @@ export function sourceOf(el: BoardElement, tags: ReadonlyMap<string, Tag>, email
         startDate: typeof c.startDate === 'string' && /^\d{4}-\d{2}-\d{2}/.test(c.startDate) ? c.startDate.slice(0, 10) : null,
         dueDate: typeof c.dueDate === 'string' && /^\d{4}-\d{2}-\d{2}/.test(c.dueDate) ? c.dueDate.slice(0, 10) : null,
         estimate: estimateNumber(c.estimate),
+        ...(k ? cardTrackerFields(k, c) : {}),
       },
     };
   }
@@ -148,28 +150,6 @@ export interface PullPlan {
 }
 
 /**
- * Where a card goes in a kanban: the bottom of the first column with that status, or null. A
- * board that colours its cards by column gives it that column's colour too.
- */
-function kanbanSpot(view: Pick<BoardView, 'elements'>, card: BoardElement, status: string, moving: Set<string>): { x: number; y: number; color?: string } | null {
-  if (!card.frameId) return null;
-  const k = view.elements.find((e) => e.el.id === card.frameId)?.el as KanbanElement | undefined;
-  if (!k || k.type !== 'kanban' || !Array.isArray(k.columns)) return null;
-  const col = k.columns.findIndex((c) => c.status === status);
-  if (col < 0) return null;
-  const { itemGap, headerH, colHeadH, pad } = KANBAN_LAYOUT;
-  const left = k.x + kanbanColumnLeft(k, col);
-  const inCol = (el: BoardElement) => el.frameId === k.id && el.id !== card.id && !moving.has(el.id) && kanbanColumnAt(k, el.x + el.w / 2) === col;
-  if (kanbanColumnAt(k, card.x + card.w / 2) === col) return null;
-  const bottom = view.elements
-    .map((e) => e.el)
-    .filter(inCol)
-    .reduce((m, el) => Math.max(m, el.y + el.h), k.y + headerH + colHeadH + pad - itemGap);
-  const color = k.colorCards ? k.columns[col].color : undefined;
-  return { x: left + kanbanColumnWidth(k, col) / 2 - card.w / 2, y: bottom + itemGap, ...(color ? { color } : {}) };
-}
-
-/**
  * The patches that write `pull` (the tracker's values) onto the link's items, as `fields` allows:
  * a card's or a single item's title and description, every card's task fields (a card in a kanban
  * moves to the column of its new status), and labels as tag changes on every tagged item.
@@ -201,12 +181,25 @@ export function planPull(
     else patch(single.id, { text: plainToRichText(pull.title) });
   }
   if (pull.description !== undefined && ctx.fields.has('description') && single?.type === 'card') patch(single.id, { description: plainToRichText(pull.description) });
-  if (pull.status !== undefined && ctx.fields.has('status') && pull.status) {
+  if (pull.status !== undefined && ctx.fields.has('status') && pull.status) for (const c of cards) patch(c.id, { status: pull.status });
+  // Cards in a kanban: to the column of their new status (by name, else category) and their new
+  // Priority (kanban.ts), in this same change.
+  const kanbanPart: Pick<IssueValues, 'status' | 'statusName' | 'priority'> = {
+    ...(pull.status && ctx.fields.has('status') ? { status: pull.status } : {}),
+    ...(pull.statusName !== undefined && ctx.fields.has('statusName') ? { statusName: pull.statusName } : {}),
+    ...(pull.priority !== undefined && ctx.fields.has('priority') ? { priority: pull.priority } : {}),
+  };
+  if (Object.keys(kanbanPart).length) {
     const moving = new Set(cards.map((c) => c.id));
+    const byKanban = new Map<string, { k: KanbanElement; cards: CardElement[] }>();
     for (const c of cards) {
-      patch(c.id, { status: pull.status });
-      const spot = kanbanSpot(view, c, pull.status, moving);
-      if (spot) patch(c.id, spot);
+      const k = kanbanOf(view, c);
+      if (k) byKanban.set(k.id, { k, cards: [...(byKanban.get(k.id)?.cards ?? []), c as CardElement] });
+    }
+    for (const { k, cards: inK } of byKanban.values()) {
+      const plan = planKanbanPull(view, k, inK, kanbanPart, { newId: ctx.newId, moving });
+      for (const [id, p] of plan.cards) patch(id, p);
+      if (plan.kanban) patch(k.id, plan.kanban);
     }
   }
   if (pull.assignee !== undefined && ctx.fields.has('assignee')) {
