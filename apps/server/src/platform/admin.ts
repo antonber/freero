@@ -28,7 +28,7 @@ export interface AdminCommand {
 export class AdminUsageError extends Error {}
 
 /** Flags that never take a value (so `--yes someone@example.com` keeps the address positional). */
-const SWITCHES = new Set(['yes', 'help']);
+const SWITCHES = new Set(['yes', 'help', 'apply']);
 
 /** Splits argv into the command, its positional words and its `--flags`. */
 export function parseAdminArgv(argv: string[]): { command: string | null; positional: string[]; flags: Record<string, string | true> } {
