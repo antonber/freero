@@ -864,7 +864,7 @@ files; it precaches them plus the shell files). Rules, all in `strategyFor` / `r
 ## Marketing site (`apps/site`, server `modules/site`; KAI-250..253)
 
 The public pages (`/`, `/claude`, `/chatgpt`, `/agents`, `/security`, `/open-source`, `/pricing`,
-`/docs`, `/support`, `/privacy`, `/terms`, `/acceptable-use`, `/integrations/<id>`, `/vs/<slug>`, `/templates/<id>`, `/templates/category/<slug>`, `/use-cases/<slug>`; later `/features/*`) are a separate workspace
+`/docs`, `/support`, `/privacy`, `/terms`, `/acceptable-use`, `/integrations/<id>`, `/vs/<slug>`, `/templates/<id>`, `/templates/category/<slug>`, `/use-cases/<slug>`, `/features/<slug>`) are a separate workspace
 so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs/marketing/seo.md`.
 
 - **Why a custom prerender, not a site generator.** Pages are TSX components rendered once by
@@ -909,6 +909,9 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
   neither grows with the catalog. The site adds per category only a stable slug, a title and an
   intro; a new app category without them, or a template with the reserved id `category`, fails the
   build.
+- **Features** (`/features`, `/features/<slug>`) are hand-written pages for one search intent each
+  (online whiteboard, kanban board, mind map, flowcharts), listed once in `src/lib/features.tsx`, which
+  gives the hub and each page's sibling links and template cards.
 - **Use cases** (`/use-cases/<slug>`, #75) are hand-written pages; the templates each uses are
   listed once in `src/lib/useCases.tsx`, which every template page reads to link back (an id the
   catalog lacks fails the build). Their screenshots come from `scripts/site-shots.mjs`
@@ -934,7 +937,8 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
   The app's pages are never indexed: `index.html` has `robots noindex` and the SPA fallback sends
   `X-Robots-Tag: noindex`; robots.txt also disallows the app, boards, docs, embeds, the API, MCP,
   auth and invite paths. `SITE_ANALYTICS_SRC` adds an operator's analytics script to marketing
-  pages only, with its origin in their CSP.
+  pages only, with its origin in their CSP. `SITE_INDEXNOW_KEY` serves `/<key>.txt` for IndexNow;
+  `scripts/indexnow.mjs` submits the live sitemaps' URLs (or those changed since a day) after a deploy.
 - **Legal pages** (`legal: true`: `/privacy`, `/terms`, `/acceptable-use`; drafts for legal review,
   written from the code and docs/operations.md's data map) and `/support` put `legal(key)` tokens
   (`src/lib/legal.tsx`) where a deployment's facts go: the operator, address, governing law and
@@ -955,10 +959,12 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
   files to `apps/site/src/assets/shots/`; `<Shot>` gives them `srcset`, `width` and `height`.
 - **Checks:** `apps/site/src/site.test.ts` builds the site and guards what search engines and
   visitors rely on (unique titles and descriptions within limits, one h1, canonical / OG URLs,
-  JSON-LD that matches the visible FAQ, sitemaps = indexable pages, robots never blocking a page,
+  JSON-LD that matches the visible FAQ, sitemaps = the pages built indexable (legal drafts are
+  left out), the IndexNow URL list = the sitemaps, robots never blocking a page,
   no page shadowing an app route, no script or foreign resource, alt text and image sizes, no broken
   internal link, the comparison publishing rule); `npm run verify -- --only site` runs it on a real
-  server with a real session and with `SITE=false`.
+  server with a real session and with `SITE=false`, and fetches every sitemap URL (200, no
+  redirect, no noindex, its own canonical).
 
 ## UI kit (`ui/`) — exports from `@ui`
 
