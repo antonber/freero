@@ -486,3 +486,15 @@
     border: 1px solid CanvasText;
   }
 }
+
+/* Faded for this viewer only: their own kanban filter leaves the card out (it stays on the board). */
+.fr-card.is-muted {
+  opacity: 0.32;
+  filter: saturate(0.4);
+  transition: opacity 120ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fr-card.is-muted {
+    transition: none;
+  }
+}

@@ -66,7 +66,7 @@ const CardView = memo(function CardView({ element, editing, zoom, presentation }
 
   if (isBar(element)) {
     return (
-      <div className={`fr-card fr-card--bar${element.status === 'done' ? ' is-done' : ''}`} style={{ ['--accent' as string]: accent }} onKeyDownCapture={onKeyDownCapture}>
+      <div className={`fr-card fr-card--bar${element.status === 'done' ? ' is-done' : ''}${presentation?.muted ? ' is-muted' : ''}`} style={{ ['--accent' as string]: accent }} onKeyDownCapture={onKeyDownCapture}>
         <div className="fr-card__bar-title">
           {zoom >= LOD_ZOOM || editing ? (
             <ElementText
@@ -101,7 +101,7 @@ const CardView = memo(function CardView({ element, editing, zoom, presentation }
   }
 
   return (
-    <div className={`fr-card${element.status === 'done' ? ' is-done' : ''}`} style={{ ['--accent' as string]: accent }} onKeyDownCapture={onKeyDownCapture}>
+    <div className={`fr-card${element.status === 'done' ? ' is-done' : ''}${presentation?.muted ? ' is-muted' : ''}`} style={{ ['--accent' as string]: accent }} onKeyDownCapture={onKeyDownCapture}>
       {/* Laid out by the browser, top to bottom, never from a measurement taken while rendering
           (#89): one taken before the web font arrived, or a height another client or the server
           measured, put a title line under the footer's status chip or cut it off. The footer
