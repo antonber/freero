@@ -3,7 +3,7 @@
 // (one undo step); text, number and link boxes write when they lose focus or on Enter.
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import { ExternalLink } from 'lucide-react';
-import { COLUMN_FIELD_ID, cardValue, type CardElement, type FieldDef, type FieldOption, type FieldValue, type KanbanElement } from '@freero/shared';
+import { COLUMN_FIELD_ID, cardValue, groupFieldId, type CardElement, type FieldDef, type FieldOption, type FieldValue, type KanbanElement } from '@freero/shared';
 import { isSafeHref, type Editor } from '@engine';
 import { Select } from '@ui';
 import { cardCollection, setValues } from './values';
@@ -92,8 +92,8 @@ function FieldControl({ editor, card, kanban, field }: { editor: Editor; card: C
           disabled={disabled}
           value={str}
           options={[
-            // The column field always has a value: the column the card is in.
-            ...(field.id === COLUMN_FIELD_ID ? [] : [{ value: '', label: <span className="fr-card-fields__none">None</span> }]),
+            // Grouped by the column field, a card always has a value: the column it is in.
+            ...(field.id === COLUMN_FIELD_ID && groupFieldId(kanban) === COLUMN_FIELD_ID ? [] : [{ value: '', label: <span className="fr-card-fields__none">None</span> }]),
             ...(field.options ?? []).map((o) => ({ value: o.id, label: <Chip option={o} /> })),
           ]}
           onChange={(v) => set(v || null)}

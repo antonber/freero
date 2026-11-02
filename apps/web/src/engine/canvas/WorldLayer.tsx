@@ -8,7 +8,8 @@ import { useCore, RenderModeContext, ScopeContext } from '../context';
 import { useElement } from '../hooks';
 import { quantizeZoom, viewportRect } from '../camera/camera';
 import { elementAABB, expandRect, rectContainsRect, rectsIntersect } from '../geometry/geometry';
-import type { DecorationDefinition, Insets, Rect } from '../api';
+import type { ChildPresentation, DecorationDefinition, Insets, Rect } from '../api';
+import { personalViews } from '../runtime/personalViews';
 
 export function cameraTransform(cam: { x: number; y: number; zoom: number }): string {
   return `translate(${-cam.x * cam.zoom}px, ${-cam.y * cam.zoom}px) scale(${cam.zoom})`;
@@ -131,6 +132,7 @@ export function ElementFrame(props: {
   const isPrivate = useContext(RenderModeContext) !== 'export' && core.store.layerOf(el.id) === 'private';
   // Recomputed only when the element changes, so memoized element components keep bailing out.
   const reserved = useMemo(() => reservedInsets(core.registry.decorations.map((d) => d.def), el), [el, core.registry]);
+  const presentation = usePresentation(el);
   let content: ReactNode;
   if (!reg) {
     content = <div className="fr-el-unknown">Unsupported item ({el.type})</div>;
@@ -138,7 +140,7 @@ export function ElementFrame(props: {
     const C = reg.def.Component;
     content = (
       <ScopeContext.Provider value={reg.feature}>
-        <C element={el} selected={props.selected} editing={props.editing} zoom={props.zoom} reserved={reserved} />
+        <C element={el} selected={props.selected} editing={props.editing} zoom={props.zoom} reserved={reserved} presentation={presentation} />
       </ScopeContext.Provider>
     );
   }
@@ -179,6 +181,29 @@ export function ElementPreview({ element }: { element: BoardElement }) {
       <ElementFrame element={element} selected={false} editing={false} zoom={zoom} preview />
     </RenderModeContext.Provider>
   );
+}
+
+/**
+ * [additive] How the element's container wants it shown (ElementDefinition.presentChild), with this
+ * viewer's own view settings. Re-computed when the element, its container or those settings
+ * change, and kept as the same object while it reads the same, so memoized element components
+ * keep bailing out when the container changes something else (its height after a drop).
+ */
+function usePresentation(el: BoardElement): ChildPresentation | null {
+  const core = useCore();
+  const presents = core.registry.presents && !!el.frameId;
+  const container = useElement(presents ? el.frameId : null);
+  const mine = useStore(personalViews(core).state, (s) => (presents && el.frameId ? s[el.frameId] : undefined));
+  const last = useRef<{ key: string; value: ChildPresentation | null }>({ key: '', value: null });
+  return useMemo(() => {
+    const reg = container && core.registry.elements.get(container.type);
+    const value = reg?.def.presentChild ? reg.def.presentChild(container as never, el, { editor: core.scoped(reg.feature), personal: true }) : null;
+    const key = value ? JSON.stringify(value) : '';
+    if (key !== last.current.key) last.current = { key, value };
+    return last.current.value;
+    // `mine` is read through the editor inside presentChild.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [core, container, el, mine]);
 }
 
 /** Per-side maximum of what the decorations applying to `el` reserve; undefined when none does. */

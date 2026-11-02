@@ -5,9 +5,10 @@ import manifest from './feature';
 import kanbanDef from './element';
 import commands from './commands';
 import outline from './outline';
-import { moveColumnTo, newKanban, removeColumn, setCollapsed, setColorCards, setColumnWidth } from './lib/actions';
+import { moveColumnTo, newKanban, removeColumn, setCollapsed, setColumnWidth } from './lib/actions';
 import { COL_HEAD_H, GAP, HEADER_H, PAD, colLeft, planDrop } from './lib/layout';
 import { addField, addOption, removeField, removeOption, renameField } from './lib/schema';
+import { presentCard, saveViewForEveryone, setMyCardDisplay } from './lib/view';
 
 const bundle: FeatureBundle = { manifest, elements: [kanbanDef], tools: [], formats: [], panels: [], commands, outline };
 
@@ -47,6 +48,13 @@ function drag(ed: Editor, id: string, to: { x: number; y: number }, during?: () 
   ed.endGesture();
 }
 
+/** The colour card `id` is drawn with: its kanban's view decides (by column, by a field, or its own). */
+const shownColor = (ed: Editor, id: string) => {
+  const c = ed.getElement<CardElement>(id)!;
+  const k = c.frameId ? ed.getElement<KanbanElement>(c.frameId) : undefined;
+  return (k && presentCard(k, c, ed, true)?.accent) || c.color;
+};
+
 /** Ids top to bottom (cards created on one spot stack in an order of their own). */
 const stacked = (ed: Editor, ids: string[]) => [...ids].sort((x, y) => ed.getElement(x)!.y - ed.getElement(y)!.y);
 
@@ -59,37 +67,55 @@ function kanbanWithCards(ed: Editor, statuses: Array<CardElement['status']>) {
 }
 
 describe('kanban columns', () => {
-  it('a card dropped into Done becomes done, takes Done’s colour and stacks under the column header; one undo takes back all of it', () => {
+  it('a card dropped into Done becomes done, shows Done’s colour and stacks under the column header; one undo takes back all of it', () => {
     const [ed] = setup();
     const { k, ids } = kanbanWithCards(ed, ['todo']);
     const [id] = ids;
     const before = ed.getElement<CardElement>(id)!;
-    expect(before.color).toBe(k().columns[0].color); // created in To do: took its colour
+    expect(shownColor(ed, id)).toBe(k().columns[0].color); // created in To do: shown in its colour
     drag(ed, id, dropPoint(k(), 2), () => {
       // Mid-drag nothing snaps under the pointer and the status is untouched.
       expect(ed.getElement<CardElement>(id)!.status).toBe('todo');
     });
     const after = ed.getElement<CardElement>(id)!;
-    expect(after).toMatchObject({ status: 'done', color: k().columns[2].color, frameId: k().id });
+    expect(after).toMatchObject({ status: 'done', frameId: k().id });
+    expect(shownColor(ed, id)).toBe(k().columns[2].color);
     expect(after.x).toBeCloseTo(k().x + colLeft(k(), 2) + PAD);
     expect(after.y).toBeCloseTo(k().y + HEADER_H + COL_HEAD_H + PAD);
     ed.undo();
-    expect(ed.getElement<CardElement>(id)).toMatchObject({ x: before.x, y: before.y, status: 'todo', color: before.color });
+    expect(ed.getElement<CardElement>(id)).toMatchObject({ x: before.x, y: before.y, status: 'todo' });
   });
 
-  it('a kanban from before card colouring moves cards without recolouring them, until colouring is turned on (one undo turns it off again)', () => {
+  it('a card shown in its column’s colour keeps its own colour: nothing is written on it, and dragged off the board it is its own colour again', () => {
+    const [ed] = setup();
+    const { k, ids } = kanbanWithCards(ed, ['todo']);
+    const [id] = ids;
+    drag(ed, id, dropPoint(k(), 1));
+    expect(shownColor(ed, id)).toBe(k().columns[1].color);
+    expect(ed.getElement<CardElement>(id)!.color).toBe('#5B3FF0');
+    drag(ed, id, { x: k().x + k().w + 400, y: k().y });
+    expect(ed.getElement<CardElement>(id)!.frameId ?? null).toBeNull();
+    expect(shownColor(ed, id)).toBe('#5B3FF0');
+  });
+
+  it('a kanban from before card colouring shows cards in their own colour until colouring by column is saved for everyone, which older clients read as colorCards; one undo takes it back', () => {
     const [ed] = setup();
     const { colorCards: _on, ...old } = newKanban({ x: 0, y: 0 });
     const kid = ed.create(old);
     const k = () => ed.getElement<KanbanElement>(kid)!;
     const id = ed.create(card(dropPoint(k(), 0).x - 100, dropPoint(k(), 0).y - 40));
     drag(ed, id, dropPoint(k(), 1));
-    expect(ed.getElement<CardElement>(id)).toMatchObject({ status: 'doing', color: '#5B3FF0' });
-    setColorCards(ed, kid, true);
-    expect(ed.getElement<CardElement>(id)!.color).toBe(k().columns[1].color);
+    expect(ed.getElement<CardElement>(id)!.status).toBe('doing');
+    expect(shownColor(ed, id)).toBe('#5B3FF0');
+    setMyCardDisplay(ed, kid, { color: 'group' });
+    expect(shownColor(ed, id)).toBe(k().columns[1].color);
+    expect(k().colorCards).toBeFalsy(); // only mine so far
+    saveViewForEveryone(ed, kid);
+    expect(k().colorCards).toBe(true);
+    expect(presentCard(k(), ed.getElement(id)!, ed, false)?.accent).toBe(k().columns[1].color);
     ed.undo();
     expect(k().colorCards).toBeFalsy();
-    expect(ed.getElement<CardElement>(id)!.color).toBe('#5B3FF0');
+    expect(shownColor(ed, id)).toBe('#5B3FF0');
   });
 
   it('drops between two cards slot in between them, and the column it left closes the gap', () => {
@@ -128,12 +154,12 @@ describe('kanban columns', () => {
     expect(p.moves.some((m) => m.id === a)).toBe(false); // a stays where it is
   });
 
-  it('a card whose status is changed where it stands moves to the column of that status and takes its colour', () => {
+  it('a card whose status is changed where it stands moves to the column of that status', () => {
     const [ed] = setup();
     const { k, ids } = kanbanWithCards(ed, ['todo']);
     ed.update<CardElement>(ids[0], { status: 'done' });
     const el = ed.getElement<CardElement>(ids[0])!;
-    expect(el).toMatchObject({ status: 'done', color: k().columns[2].color });
+    expect(el.status).toBe('done');
     expect(el.x).toBeCloseTo(k().x + colLeft(k(), 2) + PAD);
   });
 
@@ -153,7 +179,8 @@ describe('kanban columns', () => {
     moveColumnTo(ed, kid, todo.id, 2);
     expect(k().columns[2].id).toBe(todo.id);
     const el = ed.getElement<CardElement>(ids[0])!;
-    expect(el).toMatchObject({ status: 'todo', color: todo.color });
+    expect(el.status).toBe('todo');
+    expect(shownColor(ed, ids[0])).toBe(todo.color);
     expect(el.x).toBeCloseTo(k().x + colLeft(k(), 2) + PAD);
   });
 
@@ -213,7 +240,7 @@ describe('kanban columns', () => {
     ann.update<KanbanElement>(k().id, { title: 'Sprint 12' });
     board!.sync();
     for (const ed of [ann, bob]) {
-      expect(ed.getElement<CardElement>(ids[0])).toMatchObject({ status: 'doing', color: k().columns[1].color });
+      expect(ed.getElement<CardElement>(ids[0])).toMatchObject({ status: 'doing', color: '#5B3FF0' });
       expect(ed.getElement<CardElement>(ids[1])!.color).toBe('#E64DA6');
     }
     expect(ann.getElement<CardElement>(ids[0])!.x).toBeCloseTo(k().x + colLeft(k(), 1) + PAD);
@@ -301,11 +328,12 @@ describe('moving cards with the keyboard', () => {
     ed.select([b]);
     ed.runCommand('kanban.moveRight');
     const moved = ed.getElement<CardElement>(b)!;
-    expect(moved).toMatchObject({ status: 'doing', color: k().columns[1].color });
+    expect(moved.status).toBe('doing');
+    expect(shownColor(ed, b)).toBe(k().columns[1].color);
     expect(moved.x).toBeCloseTo(k().x + colLeft(k(), 1) + PAD);
     expect(moved.y).toBeCloseTo(k().y + HEADER_H + COL_HEAD_H + PAD);
     ed.undo();
-    expect(ed.getElement<CardElement>(b)).toMatchObject({ status: 'todo', color: k().columns[0].color });
+    expect(ed.getElement<CardElement>(b)!.status).toBe('todo');
     // Back in To do below a: ↑ puts it on top, ↓ back under a.
     const order = () => [a, b].sort((x, y) => ed.getElement(x)!.y - ed.getElement(y)!.y);
     ed.runCommand('kanban.moveUp');

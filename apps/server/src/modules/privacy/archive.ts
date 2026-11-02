@@ -16,6 +16,7 @@ import { boardActivityOf, boardIdsInWorkspace, boardIdsOpenedBy, boardIdsOwnedBy
 import { listingsExportOf } from '../marketplace/index';
 import { membershipsOf } from '../members/index';
 import { notificationsExportOf } from '../notifications/index';
+import { personalViewsExportOf } from '../personalviews/index';
 import { problemsExportOf } from '../problems/index';
 import { commentsWrittenBy, exportBoardContent } from '../realtime/index';
 import { scimExportOf, scimRecordsOf } from '../scim/index';
@@ -157,6 +158,7 @@ export async function buildUserArchive(userId: string, appOrigin: string): Promi
   }
   a.addJson('comments.json', comments);
   a.addJson('notifications.json', await notificationsExportOf(userId));
+  a.addJson('personal-views.json', await personalViewsExportOf(userId));
   a.addJson('walkthroughs.json', await walkthroughsExportOf(userId));
   a.addJson('decisions.json', await decisionsExportOf(userId));
   // Answers and questions in live activities (KAI-132), anonymous ones included: they are theirs.

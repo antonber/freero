@@ -1826,3 +1826,17 @@ export interface WorkspaceUsage {
   contentBytes: number;
   fileBytes: number;
 }
+
+/**
+ * A person's own settings for one view of one board item (a kanban's board view): their personal
+ * override of what the item saves for everyone. `settings` is opaque to the server.
+ * GET /api/boards/:id/personal-views; PUT the same path with `{ itemId, viewId, settings | null }`.
+ */
+export interface PersonalViewEntry {
+  itemId: string;
+  viewId: string;
+  settings: Record<string, unknown>;
+}
+export interface PersonalViewsResponse {
+  views: PersonalViewEntry[];
+}

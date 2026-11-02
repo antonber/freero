@@ -3,6 +3,8 @@ import type { CardStatus, KanbanColumn } from '@freero/shared';
 export const TOOL_ID = 'kanban';
 /** The dock panel that edits a kanban's fields (panel.tsx). */
 export const FIELDS_PANEL = 'kanban.fields';
+/** The dock panel that edits a kanban's board view: what cards show, how they are coloured (panel.tsx). */
+export const VIEW_PANEL = 'kanban.view';
 
 /** Header accents for columns (Freero palette). */
 export const COLUMN_COLORS = ['#8A89A3', '#2E9BF0', '#F5A524', '#1FA463', '#8B5CF6', '#E64DA6', '#14B8A6', '#E5484D'];
@@ -34,6 +36,9 @@ export const DEFAULT_COLUMNS: Array<Omit<KanbanColumn, 'id'>> = [
 export const STATUS_LABELS: Record<CardStatus, string> = { todo: 'To do', doing: 'In progress', done: 'Done' };
 
 export const WIP_CHOICES = [1, 2, 3, 4, 5, 6, 8, 10];
+
+/** "Cards shown" in a column: the first N (the rest are folded away, "N more"). */
+export const CARD_LIMITS = [3, 5, 10, 20, 50];
 
 export const COLUMN_WIDTHS = [
   { id: 's', label: 'S', w: 220 },

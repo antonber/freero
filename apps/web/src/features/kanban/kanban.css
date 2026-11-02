@@ -307,6 +307,68 @@
   color: var(--fr-primary);
 }
 
+/* A column whose title is what its cards say (a person, a checkbox value, "No <field>"). */
+.fr-kanban__col-label {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  overflow: hidden;
+  color: var(--fr-ink);
+  font: 600 14px/1.2 var(--fr-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-kanban__col-label.is-none {
+  color: #6b6a85;
+  font-style: italic;
+}
+
+/* Swimlane header band across the columns (layout: lib/layout.ts planLayout). */
+.fr-kanban__lane {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border-top: 1px solid rgba(23, 22, 43, 0.12);
+  background: rgba(247, 246, 251, 0.92);
+  pointer-events: none;
+}
+
+.fr-kanban__lane-title {
+  overflow: hidden;
+  color: var(--fr-ink);
+  font: 650 13px/1 var(--fr-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-kanban__lane.is-none .fr-kanban__lane-title {
+  color: #6b6a85;
+  font-style: italic;
+}
+
+/* "+N more": cards beyond a column's limit, folded away below the board. */
+.fr-kanban__more {
+  position: absolute;
+  height: 22px;
+  border: 1px dashed rgba(23, 22, 43, 0.2);
+  border-radius: 8px;
+  background: transparent;
+  color: #4b4a63;
+  font: 600 12px/20px var(--fr-font);
+  cursor: pointer;
+}
+
+.fr-kanban__more:hover:not(:disabled) {
+  background: #f1f0f8;
+}
+
+.fr-kanban__more:disabled {
+  cursor: default;
+}
+
 /* Fields panel (dock) */
 .fr-kanban-fields {
   display: flex;
@@ -461,5 +523,79 @@
   .fr-kanban-fields__swatch {
     border: 1px solid CanvasText;
     forced-color-adjust: none;
+  }
+}
+
+/* View panel (dock) */
+.fr-kanban-view__whose {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--fr-radius);
+  background: var(--fr-surface-2);
+  color: var(--fr-ink-2);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.fr-kanban-view__whose.is-own {
+  background: var(--fr-primary-soft);
+  color: var(--fr-ink);
+}
+
+.fr-kanban-view__whose-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.fr-kanban-view__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fr-kanban-view__heading {
+  margin: 4px 0 0;
+  color: var(--fr-ink-3);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.fr-kanban-view__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.fr-kanban-view__value {
+  color: var(--fr-ink-2);
+}
+
+.fr-kanban-view__fields {
+  gap: 2px;
+}
+
+.fr-kanban-view__field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 34px;
+  font-size: 13px;
+}
+
+.fr-kanban-view__move {
+  display: flex;
+}
+
+@media (forced-colors: active) {
+  .fr-kanban-view__whose.is-own {
+    outline: 1px solid CanvasText;
   }
 }

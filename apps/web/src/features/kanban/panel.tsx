@@ -24,6 +24,7 @@ import {
 import {
   COLUMN_FIELD_ID,
   FIELD_TYPES,
+  groupFieldId,
   STATUS_OPTIONS,
   collectionSchema,
   type CardStatus,
@@ -34,7 +35,8 @@ import {
 } from '@freero/shared';
 import { DockHeader, definePanel, richTextToPlain, useCanEdit, useElement, useSelection, type Editor } from '@engine';
 import { Button, ColorSwatches, IconButton, Input, Menu, Popover, Select, type MenuItem } from '@ui';
-import { COLUMN_COLOR_NAMES, COLUMN_PALETTE, FIELDS_PANEL } from './lib/constants';
+import { COLUMN_COLOR_NAMES, COLUMN_PALETTE, FIELDS_PANEL, VIEW_PANEL } from './lib/constants';
+import { ViewPanel } from './lib/ViewPanel';
 import { addField, addOption, fieldsTarget, moveField, moveOption, patchOption, removeField, removeOption, renameField, FIELD_TYPE_LABELS } from './lib/schema';
 
 const TYPE_ICONS: Record<FieldType, LucideIcon> = {
@@ -142,7 +144,7 @@ const STATUS_CHOICES: Array<{ value: CardStatus | ''; label: string }> = [
 function Options({ editor, k, field, canEdit }: { editor: Editor; k: KanbanElement; field: FieldDef; canEdit: boolean }) {
   const [fresh, setFresh] = useState<string | null>(null);
   const options = field.options ?? [];
-  const isColumn = field.id === COLUMN_FIELD_ID;
+  const isColumn = field.id === groupFieldId(k);
   const noun = isColumn ? 'column' : 'option';
   return (
     <div className="fr-kanban-fields__options">
@@ -206,7 +208,8 @@ function Options({ editor, k, field, canEdit }: { editor: Editor; k: KanbanEleme
 function FieldRow(props: { editor: Editor; k: KanbanElement; field: FieldDef; index: number; count: number; canEdit: boolean; autoFocus: boolean }) {
   const { editor, k, field, index, count, canEdit } = props;
   const TypeIcon = TYPE_ICONS[field.type];
-  const isColumn = field.id === COLUMN_FIELD_ID;
+  const isColumn = field.id === groupFieldId(k);
+  const undeletable = isColumn || field.id === COLUMN_FIELD_ID;
   return (
     <li className="fr-kanban-fields__field">
       <div className="fr-kanban-fields__row">
@@ -214,7 +217,7 @@ function FieldRow(props: { editor: Editor; k: KanbanElement; field: FieldDef; in
           <TypeIcon size={16} aria-hidden />
         </span>
         <CommitInput value={field.name} label="Field name" disabled={!canEdit} autoFocus={props.autoFocus} onCommit={(name) => renameField(editor, k.id, field.id, name)} />
-        <span className="fr-kanban-fields__type-name">{isColumn ? 'Columns' : FIELD_TYPE_LABELS[field.type]}</span>
+        <span className="fr-kanban-fields__type-name">{isColumn ? `${FIELD_TYPE_LABELS[field.type]} · columns` : FIELD_TYPE_LABELS[field.type]}</span>
         {canEdit && (
           <RowMenu
             label={`Field options: ${field.name}`}
@@ -227,15 +230,19 @@ function FieldRow(props: { editor: Editor; k: KanbanElement; field: FieldDef; in
                 label: 'Delete field',
                 icon: Trash2,
                 danger: true,
-                disabled: isColumn,
-                disabledReason: isColumn ? 'This field makes the columns' : undefined,
+                disabled: undeletable,
+                disabledReason: isColumn ? 'This field makes the columns' : undeletable ? 'Stage can be renamed, not deleted' : undefined,
                 onSelect: () => removeField(editor, k.id, field.id),
               },
             ]}
           />
         )}
       </div>
-      {isColumn && <p className="fr-kanban-fields__hint">Its options are the board’s columns: a card’s value is the column it is in.</p>}
+      {isColumn && (
+        <p className="fr-kanban-fields__hint">
+          {field.type === 'select' ? 'Its options are the board’s columns: a card’s value is the column it is in.' : 'The board is grouped by it: a card’s value is the column it is in.'}
+        </p>
+      )}
       {field.options && <Options editor={editor} k={k} field={field} canEdit={canEdit} />}
     </li>
   );
@@ -304,10 +311,20 @@ function FieldsPanel({ editor }: { editor: Editor }) {
   );
 }
 
-export default definePanel({
-  id: FIELDS_PANEL,
-  slot: 'dock-right',
-  order: 60,
-  minRole: 'viewer',
-  Component: FieldsPanel,
-});
+export default [
+  definePanel({
+    id: FIELDS_PANEL,
+    slot: 'dock-right',
+    order: 60,
+    minRole: 'viewer',
+    Component: FieldsPanel,
+  }),
+  // Any role: viewers look at the board their own way too (personal view settings).
+  definePanel({
+    id: VIEW_PANEL,
+    slot: 'dock-right',
+    order: 61,
+    minRole: 'viewer',
+    Component: ViewPanel,
+  }),
+];

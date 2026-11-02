@@ -231,6 +231,40 @@ it("lists a kanban's fields and each card's values by field name (labels, names,
   expect(md).toContain('[c1] card: Fix login · status: done · Phase: Done · Priority: P1 · Owner: Ann · Points: 3 · Signed off: true');
 });
 
+it('a kanban grouped by Priority with swimlanes by Owner reads as its Priority columns ("No Priority" first), names the grouping and the rows, and keeps each card’s stored Stage and owner', async () => {
+  // As the kanban feature stores a board regrouped by Priority: Priority's options are the
+  // columns, Stage's options are back in its field entry and every card stores its Stage.
+  const columns = [
+    { id: '~none', title: 'No Priority', status: null, color: '#8A89A3' },
+    { id: 'o_p0', title: 'P0', status: null, color: '#E5484D' },
+    { id: 'o_p1', title: 'P1', status: null, color: '#F5A524' },
+  ];
+  const fields = [
+    { id: 'stage', name: 'Stage', type: 'select', options: [{ id: 'c_todo', label: 'To do', color: '#888', status: 'todo' }, { id: 'c_done', label: 'Done', color: '#888', status: 'done' }] },
+    { id: 'f_prio', name: 'Priority', type: 'select' },
+    { id: 'f_owner', name: 'Owner', type: 'person' },
+  ];
+  const views = [{ id: 'board', name: 'Board', layout: 'board', groupBy: 'f_prio', subGroupBy: 'f_owner' }];
+  const boardId = await boardWith([
+    el('kanban', 'k', 0, 0, 900, 500, { title: 'Sprint', colW: 280, columns, fields, views, lanes: [{ id: '~none', h: 120 }, { id: other.id, h: 120 }] }),
+    // Column 2 (P0) by position; its Priority is where it stands, never a stored value.
+    el('card', 'c1', 312, 160, 260, 90, { title: 'Fix login', description: '', color: '#888', status: 'done', frameId: 'k', values: { stage: 'c_done', f_owner: other.id, f_prio: 'o_p1' } }),
+    el('card', 'c2', 22, 40, 260, 90, { title: 'Docs', description: '', color: '#888', status: 'todo', frameId: 'k', values: { stage: 'c_todo' } }),
+  ]);
+  const o = await outlineAs(boardId, owner, 'owner');
+  const k = byId(o, 'k')!;
+  expect(k.fields).toEqual({ 'grouped by': 'Priority', rows: 'Owner' });
+  expect(k.children!.map((c) => [c.id, c.title, c.children?.map((x) => x.id) ?? []])).toEqual([
+    ['k:~none', 'No Priority', ['c2']],
+    ['k:o_p0', 'P0', ['c1']],
+    ['k:o_p1', 'P1', []],
+  ]);
+  expect(k.schema!.find((f) => f.id === 'stage')!.options!.map((x) => x.label)).toEqual(['To do', 'Done']);
+  expect(byId(o, 'c1')!.fields).toEqual({ status: 'done', Stage: 'Done', Priority: 'P0', Owner: 'Ann' });
+  expect(byId(o, 'c2')!.fields).toEqual({ status: 'todo', Stage: 'To do' });
+  expect(renderOutlineMarkdown(o)).toContain('[k] kanban: Sprint · grouped by: Priority · rows: Owner · fields: Stage (select: To do | Done), Priority (select: P0 | P1), Owner (person)');
+});
+
 it("never shows a reader another user's private drafts, a hidden frame's contents or sealed votes", async () => {
   const boardId = await boardWith(
     [

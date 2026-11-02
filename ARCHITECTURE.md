@@ -128,7 +128,9 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | Tracker connections, links to issues, what both sides last agreed on | server `modules/trackers` | its routes / index (`sendToTracker`, `importIssues`); syncs only through its outbox consumer |
 | `trackers` collection (issue badges) and items' `trackerLink` | server `modules/trackers` (through realtime's `changeBoard`) | — (the web feature only reads them) |
 | `walkthroughs` collection (one summary per recording) | server `modules/walkthroughs` (realtime's `writeServerCollection`) | `Host.walkthroughs` (REST); the web feature only reads it |
-| A kanban's fields (`KanbanElement.fields`; the column field's options are its `columns`) and a card's values (`CardElement.values`, keyed by field id) — read only through `@freero/shared` `fields.ts` (`collectionSchema`, `cardValue`) | `features/kanban` (schema: Fields panel); `features/card` (values: `card.setValues`, which asks `kanban.moveToColumn` for the column field — a card's value for it is the column it stands in); server `modules/api` (`update_items` `fields`) | `runCommand('card.setValues', { id, values })`. See docs/design/kanban-fields-and-views.md |
+| A kanban's fields (`KanbanElement.fields`; the group field's options are its `columns`) and a card's values (`CardElement.values`, keyed by field id) — read only through `@freero/shared` `fields.ts` (`collectionSchema`, `cardValue`) | `features/kanban` (schema: Fields panel); `features/card` (values: `card.setValues`, which asks `kanban.moveToColumn` for the field the board is grouped by — a card's value for it is the column it stands in); server `modules/api` (`update_items` `fields`) | `runCommand('card.setValues', { id, values })`. See docs/design/kanban-fields-and-views.md |
+| A kanban's saved views (`KanbanElement.views` / `activeView`: what cards show, density, colour-by, `groupBy`, `subGroupBy`, other fields' column settings) and swimlane geometry (`lanes`) — read only through `@freero/shared` `views.ts` (`boardView`) and `fields.ts` (`groupFieldId`) | `features/kanban` (View panel: "Save for everyone", density, group by, swimlanes); it keeps `colorCards` equal to "coloured by column" for older clients. Regrouping writes the old group field's values onto the cards from their positions in the same transaction, and a drop into another swimlane writes that row's value (the layout's one write to card values) | `runCommand('kanban.setCardDisplay' / 'kanban.saveViewForEveryone' / 'kanban.groupBy' / 'kanban.setSwimlanes')` |
+| A person's own view settings (personal overrides of a saved view, per board / item / view) | the engine's personal view state (`Editor.setPersonalView`, any role, never in the doc), kept through `Host.personalViews` → server `modules/personalviews` (`personal_views`); in this browser without it | the owning feature validates what it reads (`views.ts` `cleanOverride`) |
 | Problem reports (`problem_reports`) and their screenshots (uploads' private images) | server `modules/problems` | its routes (the reporter; operators) and index (`/api/v1/operator/problems` in modules/api, the account purge, the data export) |
 | Decision snapshots (`decisions`) and their content (board versions of kind `decision`) | server `modules/decisions` / `modules/realtime` (`freezeBoard`) | `Host.decisions`; never written again once frozen |
 
@@ -500,7 +502,8 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
   step. Bystanders never do, so nobody snaps a collaborator's drag in progress.
   Kanbans (`features/kanban`): the column under an item's center is its column, by
   `@freero/shared` `kanbanColumnAt` / `kanbanColumnLeft` (never `colW` alone: a collapsed column is
-  a `collapsedW` strip), the one rule the layout, the outline and the server's placement
+  a `collapsedW` strip; swimlanes: `kanbanLaneAt` over the `lanes` the layout caches), the one rule
+  the layout, the outline and the server's placement
   (`modules/structure`, trackers, control room) share. A card the change moved into a column takes
   its status and, on boards with `colorCards` (new boards; older ones keep their colours until the
   format toolbar turns it on), its colour as accent; cards the change didn't touch never do. A
@@ -516,8 +519,23 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
   the container draws with `useDragPreview(id)`. The drop's membership change + `arrange` must land
   on the same spots (the kanban plans both with one function). Dragging items or a marquee near
   the edge of the safe area auto-scrolls the view; the tool hears the moves.
+- `presentChild(container, child, { editor, personal })` (containers): how a child is shown while it
+  sits there — `ChildPresentation` (accent colour, `FieldChip`s, density), handed to the child's
+  component as `ElementRenderProps.presentation` (the engine keeps it the same object while it reads
+  the same) and, with `personal: false`, to its `normalize` as `NormalizeContext.presentation`
+  (sizes never follow a personal setting). `presentationKey(container)`: what changes the children's
+  size; when a local write changes it the engine normalizes the children again in the same
+  transaction (one undo step) and `arrange` re-stacks them. A kanban's cards: colour by column / a
+  select field / their own (derived, never written), the fields its board view shows, density.
+- Personal view settings: `Editor.getPersonalView(itemId, viewId)` / `setPersonalView(…, settings |
+  null)` + hook `usePersonalView` — this person's override of a view an item saves for everyone
+  (docs/design/kanban-fields-and-views.md, decision 2). Any role, never in the board doc, never seen
+  by anyone else; kept through `Host.personalViews` (`list` / `save`, server `modules/personalviews`,
+  so they follow the person to other devices), else in this browser (sandbox, guests, embeds), at
+  most 4 KB each. Opaque to the engine and the server: the owning feature validates what it reads.
 - `hidesMember(container, member)`: a member folded away inside its container (a collapsed kanban
-  column) is off the board like `hidden` elements, but the outline (`getOutline`) still lists it.
+  column; cards beyond a column's card `limit`, which the layout stacks below the board) is off the
+  board like `hidden` elements, but the outline (`getOutline`) still lists it.
   Items being dragged (`ui.dragging`) never fold, so a card carried over a collapsed column stays
   in hand; it folds (and leaves the selection) on the drop.
 - `fitToContent(el, handle)`: double-clicking a resize handle applies the returned patch (a
@@ -1091,7 +1109,8 @@ three in "Search, the event stream and webhooks" below — `backup` (no table: `
 backups, see below), `share` (no table: the installed app's share target, see "Installable app"), `slack` (no table: Slack link unfurls for the operator's Slack app, see "Integrations" below), `walkthroughs`
 (walkthroughs, walkthrough_views, walkthrough_comments) and `decisions` (decisions), in "Walkthroughs
 and decision snapshots" below, `marketplace` (marketplace_listings: community listings of Apps &
-agents; see "Apps & agents" below), and `problems` (problem_reports: “Report a problem”, see "Problem
+agents; see "Apps & agents" below), `personalviews` (personal_views: a person's own view settings on a
+board, `GET` / `PUT /boards/:id/personal-views`; see "Engine contract additions"), and `problems` (problem_reports: “Report a problem”, see "Problem
 reports" below).
 
 - Board backups (`modules/backup`, KAI-137; format: docs/board-backup.md): owns no state. A download

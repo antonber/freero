@@ -1,8 +1,10 @@
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Columns3, ListChecks } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Columns3, ListChecks, SlidersHorizontal } from 'lucide-react';
 import { defineCommands, type CommandDefinition, type Editor } from '@engine';
 import { addColumn, canMove, moveSelection, moveToColumn, type MoveDir } from './lib/actions';
-import { FIELDS_PANEL } from './lib/constants';
+import { FIELDS_PANEL, VIEW_PANEL } from './lib/constants';
 import { fieldsTarget } from './lib/schema';
+import { saveViewForEveryone, setDensity, setMyCardDisplay } from './lib/view';
+import { setGroupBy, setSwimlanes } from './lib/group';
 
 const selectedKanban = (editor: Editor) => {
   const sel = editor.getSelection();
@@ -55,6 +57,56 @@ export default defineCommands([
     minRole: 'viewer',
     when: (editor) => !!fieldsTarget(editor),
     run: (editor) => editor.openDock(FIELDS_PANEL),
+  },
+  {
+    // What a kanban's cards show (lib/view.ts). Args { id (the kanban), show?: field ids,
+    // color?: 'own' | 'group' | field id } change this person's own view (any role); density?:
+    // 'compact' | 'comfortable' changes card sizes, so it is saved for everyone (editors).
+    id: 'kanban.setCardDisplay',
+    label: 'Change what cards show',
+    minRole: 'viewer',
+    run(editor, args) {
+      const id = typeof args?.id === 'string' ? args.id : null;
+      if (!id) return;
+      const show = Array.isArray(args?.show) && args.show.every((x) => typeof x === 'string') ? (args.show as string[]) : undefined;
+      const color = typeof args?.color === 'string' ? args.color : undefined;
+      if (show || color) setMyCardDisplay(editor, id, { ...(show ? { show } : {}), ...(color ? { color } : {}) });
+      if ((args?.density === 'compact' || args?.density === 'comfortable') && editor.can('editor')) setDensity(editor, id, args.density);
+    },
+  },
+  {
+    // Columns by another field (lib/group.ts): args { id (the kanban), field (a single select,
+    // person or checkbox field id; 'stage' is the column field) }. Moves the cards; one undo step.
+    id: 'kanban.groupBy',
+    label: 'Group cards by',
+    run(editor, args) {
+      if (typeof args?.id === 'string' && typeof args.field === 'string') setGroupBy(editor, args.id, args.field);
+    },
+  },
+  {
+    // Swimlanes: args { id, field } (null: none). One undo step with the re-stack.
+    id: 'kanban.setSwimlanes',
+    label: 'Swimlanes by',
+    run(editor, args) {
+      if (typeof args?.id === 'string' && (typeof args.field === 'string' || args.field === null)) setSwimlanes(editor, args.id, args.field);
+    },
+  },
+  {
+    // "Save for everyone": this person's own view of kanban { id } becomes its saved view.
+    id: 'kanban.saveViewForEveryone',
+    label: 'Save view for everyone',
+    run(editor, args) {
+      if (typeof args?.id === 'string') saveViewForEveryone(editor, args.id);
+    },
+  },
+  {
+    id: 'kanban.viewSettings',
+    label: 'View settings…',
+    icon: SlidersHorizontal,
+    menus: ['context'],
+    minRole: 'viewer',
+    when: (editor) => !!fieldsTarget(editor),
+    run: (editor) => editor.openDock(VIEW_PANEL),
   },
   move('left', 'Move to previous column', ArrowLeft, 'arrowleft'),
   move('right', 'Move to next column', ArrowRight, 'arrowright'),

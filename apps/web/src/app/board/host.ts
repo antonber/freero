@@ -70,6 +70,14 @@ export function callOf(boardId: string): NonNullable<Host['call']> {
   return { get: () => api.boardCall(boardId), set: (req) => api.setBoardCall(boardId, req) };
 }
 
+/** A signed-in person's own view settings on this board (kept on the server, so they follow them). */
+export function personalViewsOf(boardId: string): NonNullable<Host['personalViews']> {
+  return {
+    list: async () => (await api.personalViews(boardId)).views,
+    save: async (itemId, viewId, settings) => void (await api.savePersonalView(boardId, { itemId, viewId, settings })),
+  };
+}
+
 /** Toasts with an action button stay up long enough to read and act on. */
 const ACTION_TOAST_MS = 12000;
 
@@ -100,6 +108,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
       embeds: embedsOf(board.permissions),
     },
     syncUrl: `${wsBase()}/ws/boards`,
+    personalViews: personalViewsOf(board.id),
     uploadImage,
     uploadFile,
     uploadAttachment,

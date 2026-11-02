@@ -1,7 +1,7 @@
 // Kanban edits: every one is a single Editor.transact (one undo step), after which the engine's
 // arrange pass re-stacks the columns.
 import { nanoid } from 'nanoid';
-import type { BoardElement, CardStatus, KanbanColumn, KanbanElement } from '@freero/shared';
+import { NO_GROUP, collectionSchema, groupFieldId, kanbanLaneAt, type BoardElement, type CardStatus, type KanbanColumn, type KanbanElement } from '@freero/shared';
 import type { Editor, ElementPatch, NewElement, Point } from '@engine';
 import { DEFAULT_COL_W, MAX_COL_W, MIN_COL_W, boardWidth, colLeft, colWidth, columnOrder, columnsOfChildren, kanbanWidth, reflowMoves } from './layout';
 import { COLUMN_COLORS, DEFAULT_COLUMNS } from './constants';
@@ -28,23 +28,9 @@ function fresh(editor: Editor, id: string): KanbanElement | null {
   return k && k.type === 'kanban' && !k.locked ? k : null;
 }
 
-/** Cards that must take their column's colour when `next` replaces the board (colorCards on). */
-function recolorPatches(next: KanbanElement, all: BoardElement[], only?: ReadonlySet<string>): Array<{ id: string; patch: ElementPatch }> {
-  if (!next.colorCards) return [];
-  const out: Array<{ id: string; patch: ElementPatch }> = [];
-  for (const [elId, idx] of columnsOfChildren(next, all)) {
-    const el = all.find((e) => e.id === elId);
-    const col = next.columns[idx];
-    if (el?.type !== 'card' || (only && !only.has(col.id)) || !col.color || el.color === col.color) continue;
-    out.push({ id: elId, patch: { color: col.color } as ElementPatch });
-  }
-  return out;
-}
-
 /**
  * Replaces the board's column geometry (columns, colW), carrying every item along with its column.
- * Cards of a removed column join `fallbackId` and take its status (the layout pass gives them its
- * colour, as a drop would).
+ * Cards of a removed column join `fallbackId` and take its status, as a drop would.
  */
 function setGeometry(editor: Editor, id: string, next: KanbanColumn[], colW: number, fallbackId: string | null = null) {
   const k = fresh(editor, id);
@@ -110,16 +96,11 @@ export function removeColumn(editor: Editor, id: string, colId: string) {
   setColumns(editor, id, k.columns.filter((c) => c.id !== colId), fallback);
 }
 
-export function patchColumn(editor: Editor, id: string, colId: string, patch: Partial<Omit<KanbanColumn, 'id' | 'collapsed'>>) {
+export function patchColumn(editor: Editor, id: string, colId: string, patch: Partial<Omit<KanbanColumn, 'id' | 'collapsed' | 'limit'>>) {
   const k = fresh(editor, id);
   if (!k) return;
-  const next = { ...k, columns: k.columns.map((c) => (c.id === colId ? { ...c, ...patch } : c)) };
-  // A new colour reaches the column's cards in the same step (when the board colours its cards).
-  const recolor = patch.color !== undefined ? recolorPatches(next, editor.getElements(), new Set([colId])) : [];
-  editor.transact(() => {
-    editor.update<KanbanElement>(id, { columns: next.columns });
-    if (recolor.length) editor.updateMany(recolor);
-  });
+  // Cards coloured by their column are drawn in its new colour: nothing is written on them.
+  editor.update<KanbanElement>(id, { columns: k.columns.map((c) => (c.id === colId ? { ...c, ...patch } : c)) });
 }
 
 /** Folds a column to a narrow strip (title + count) or opens it again; the items stay in it. */
@@ -139,17 +120,6 @@ export function setColumnWidth(editor: Editor, id: string, colW: number) {
   setGeometry(editor, id, k.columns, w);
 }
 
-/** Turns "cards take their column's colour" on or off; turning it on colours every card now. */
-export function setColorCards(editor: Editor, id: string, on: boolean) {
-  const k = fresh(editor, id);
-  if (!k || !!k.colorCards === on) return;
-  const recolor = recolorPatches({ ...k, colorCards: on }, editor.getElements());
-  editor.transact(() => {
-    editor.update<KanbanElement>(id, { colorCards: on });
-    if (recolor.length) editor.updateMany(recolor);
-  });
-}
-
 export const columnPart = (colId: string) => `col:${colId}`;
 export const partColumn = (part: string | null) => (part?.startsWith('col:') ? part.slice(4) : null);
 
@@ -159,26 +129,53 @@ export function renameColumn(editor: Editor, id: string, colId: string) {
 }
 
 /**
- * Puts an item of the kanban at the bottom of column `colId`: its value for the column field
+ * Puts an item of the kanban at the bottom of column `colId`: its value for the group field
  * (card details, `card.setValues`). The layout pass then stacks it there and, as for a drop, sets
- * the column's status and colour. One undo step with the caller's transaction.
+ * the column's status. A person without a column yet (a board grouped by a person field) gets one
+ * at the end. With swimlanes the item stays in its row. One undo step with the caller's transaction.
  */
 export function moveToColumn(editor: Editor, itemId: string, colId: string): boolean {
   const el = editor.getElement(itemId);
-  const k = el?.frameId ? fresh(editor, el.frameId) : null;
-  const to = k ? k.columns.findIndex((c) => c.id === colId) : -1;
-  if (!el || !k || to < 0 || el.locked) return false;
+  let k = el?.frameId ? fresh(editor, el.frameId) : null;
+  if (!el || !k || el.locked) return false;
+  let to = k.columns.findIndex((c) => c.id === colId);
+  if (to < 0) {
+    const group = collectionSchema(k).find((f) => f.id === groupFieldId(k!));
+    if (group?.type !== 'person' || !colId || colId === NO_GROUP) return false;
+    setColumns(editor, k.id, [...k.columns, { id: colId, title: '', status: null, color: COLUMN_COLORS[k.columns.length % COLUMN_COLORS.length] }]);
+    k = fresh(editor, k.id)!;
+    to = k.columns.findIndex((c) => c.id === colId);
+    if (to < 0) return false;
+  }
   const all = editor.getElements();
   if (columnsOfChildren(k, all).get(el.id) === to) return false;
-  const below = columnOrder(k, all, to).reduce((y, o) => Math.max(y, o.y + o.h), k.y);
   const cx = k.x + colLeft(k, to) + colWidth(k, to) / 2;
+  if (k.lanes?.length) {
+    // Across, in its own row (the row under it is its row value); the layout stacks it there.
+    editor.moveBy([{ id: el.id, dx: cx - (el.x + el.w / 2), dy: 0 }]);
+    return true;
+  }
+  const below = columnOrder(k, all, to).reduce((y, o) => Math.max(y, o.y + o.h), k.y);
   editor.moveBy([{ id: el.id, dx: cx - (el.x + el.w / 2), dy: below + 1 + el.h / 2 - (el.y + el.h / 2) }]);
   return true;
 }
 
+/** Shows only the first `limit` items of column `colId` (0: all of them). */
+export function setColumnLimit(editor: Editor, id: string, colId: string, limit: number) {
+  const k = fresh(editor, id);
+  if (!k) return;
+  const n = Math.max(0, Math.floor(limit));
+  editor.update<KanbanElement>(id, { columns: k.columns.map((c) => (c.id !== colId ? c : n ? { ...c, limit: n } : withoutLimit(c))) });
+}
+
+const withoutLimit = ({ limit: _l, ...c }: KanbanColumn): KanbanColumn => c;
+
 // ---- moving items with the keyboard ----
 
 export type MoveDir = 'left' | 'right' | 'up' | 'down';
+
+/** The swimlane an item stands in (-1 without swimlanes). */
+const laneOf = (k: KanbanElement, el: BoardElement) => kanbanLaneAt(k, el.y + el.h / 2);
 
 /** The kanban the selection sits in, when all of it is stacked items of one unlocked board. */
 export function selectionKanban(editor: Editor): { k: KanbanElement; items: BoardElement[] } | null {
@@ -201,9 +198,9 @@ export function canMove(editor: Editor, dir: MoveDir): boolean {
   const idx = s.items.map((el) => cols.get(el.id) ?? 0);
   if (dir === 'left') return idx.some((i) => i > 0);
   if (dir === 'right') return idx.some((i) => i < s.k.columns.length - 1);
-  // Up / down: within one column only.
-  if (new Set(idx).size !== 1) return false;
-  const order = columnOrder(s.k, all, idx[0]);
+  // Up / down: within one column (and swimlane) only.
+  if (new Set(idx).size !== 1 || new Set(s.items.map((el) => laneOf(s.k, el))).size !== 1) return false;
+  const order = columnOrder(s.k, all, idx[0], laneOf(s.k, s.items[0]));
   const ids = new Set(s.items.map((el) => el.id));
   const at = order.map((el) => ids.has(el.id));
   return dir === 'up' ? at.indexOf(true) > 0 : at.lastIndexOf(true) < order.length - 1;
@@ -230,7 +227,7 @@ export function moveSelection(editor: Editor, dir: MoveDir): boolean {
       if (j !== i) moves.push({ id: el.id, dx: mid(j) - (el.x + el.w / 2), dy: 0 });
     }
   } else {
-    const order = columnOrder(k, all, cols.get(items[0].id) ?? 0);
+    const order = columnOrder(k, all, cols.get(items[0].id) ?? 0, laneOf(k, items[0]));
     const ids = new Set(items.map((el) => el.id));
     const first = order.findIndex((el) => ids.has(el.id));
     const last = order.length - 1 - [...order].reverse().findIndex((el) => ids.has(el.id));

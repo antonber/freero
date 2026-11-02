@@ -46,12 +46,24 @@ export function createTestBoard(opts: TestBoardOptions): TestBoard {
   // Saved templates live "on the server": shared by the replicas, each user sees their own.
   const templates: Array<SavedTemplateInfo & { content: ElementsSnapshot }> = [];
   let templateSeq = 0;
+  // Personal view settings live "on the server" too: per user, so a user's replicas share them.
+  const personal = new Map<string, Map<string, { itemId: string; viewId: string; settings: Record<string, unknown> }>>();
   const cores: EngineCore[] = opts.users.map((u) => {
     const user: HostUser = typeof u === 'string' ? { id: u, name: u, color: '#5b3ff0', avatarUrl: null } : u;
     const host: Host = {
       user,
       board: { id: 'test-board', title: opts.title ?? 'Test', role: opts.role ?? 'owner' },
       syncUrl: '',
+      personalViews: {
+        list: async () =>
+          [...(personal.get(user.id) ?? new Map<string, { itemId: string; viewId: string; settings: Record<string, unknown> }>()).values()].map((v) => structuredClone(v)),
+        async save(itemId, viewId, settings) {
+          const mine = personal.get(user.id) ?? new Map();
+          personal.set(user.id, mine);
+          if (settings) mine.set(`${itemId}/${viewId}`, { itemId, viewId, settings: structuredClone(settings) });
+          else mine.delete(`${itemId}/${viewId}`);
+        },
+      },
       uploadImage: async () => ({ url: '' }),
       uploadFile: async () => ({ url: '' }),
       async renameBoard(title) {

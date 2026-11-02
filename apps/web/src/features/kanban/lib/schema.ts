@@ -1,13 +1,16 @@
 // Editing a kanban's fields (the Fields panel). Each edit is one write of the kanban (one undo
-// step). The column field's options are the columns, so its option edits are column edits
-// (lib/actions.ts): adding one adds a column, deleting one hands its cards to the neighbour.
+// step). The group field's options (the column field "Stage", or whichever single select the board
+// is grouped by) are the columns, so its option edits are column edits (lib/actions.ts): adding
+// one adds a column, deleting one hands its cards to the neighbour.
 // Values on cards are never rewritten here: a deleted field's or option's values stay on the
 // cards and read as nothing (undo brings them back).
 import { nanoid } from 'nanoid';
 import {
   COLUMN_FIELD_ID,
   FIELD_LIMITS,
+  NO_GROUP,
   collectionSchema,
+  groupFieldId,
   fieldNameProblem,
   plainToRichText,
   storedFields,
@@ -48,7 +51,16 @@ function editable(editor: Editor, id: string): KanbanElement | null {
   return k && k.type === 'kanban' && !k.locked ? k : null;
 }
 
-const write = (editor: Editor, id: string, schema: FieldDef[]) => editor.update<KanbanElement>(id, { fields: storedFields(schema) });
+const write = (editor: Editor, id: string, schema: FieldDef[]) => {
+  const k = editor.getElement<KanbanElement>(id);
+  if (k) editor.update<KanbanElement>(id, { fields: storedFields(schema, groupFieldId(k)) });
+};
+
+/** True when field `fieldId`'s options are kanban `kid`'s columns (the field it is grouped by). */
+const isGroup = (editor: Editor, kid: string, fieldId: string) => {
+  const k = editor.getElement<KanbanElement>(kid);
+  return !!k && groupFieldId(k) === fieldId;
+};
 
 /** `base`, or "base 2", "base 3"… whichever no field of `schema` has yet. */
 function freeName(schema: FieldDef[], base: string): string {
@@ -95,10 +107,10 @@ export function moveField(editor: Editor, kid: string, fieldId: string, dir: -1 
   write(editor, kid, next);
 }
 
-/** Deletes a field (not the column field: it makes the columns). Its values stay on the cards, dormant. */
+/** Deletes a field (not the column field "Stage", nor the field the columns are). Its values stay on the cards, dormant. */
 export function removeField(editor: Editor, kid: string, fieldId: string) {
   const k = editable(editor, kid);
-  if (!k || fieldId === COLUMN_FIELD_ID) return;
+  if (!k || fieldId === COLUMN_FIELD_ID || fieldId === groupFieldId(k)) return;
   const schema = collectionSchema(k);
   if (!schema.some((f) => f.id === fieldId)) return;
   write(editor, kid, schema.filter((f) => f.id !== fieldId));
@@ -116,7 +128,7 @@ function patchField(editor: Editor, kid: string, fieldId: string, fn: (options: 
 
 /** Adds an option (the column field: a column); returns its id. */
 export function addOption(editor: Editor, kid: string, fieldId: string): string | null {
-  if (fieldId === COLUMN_FIELD_ID) return addColumn(editor, kid);
+  if (isGroup(editor, kid, fieldId)) return addColumn(editor, kid);
   let id: string | null = null;
   patchField(editor, kid, fieldId, (options) => {
     if (options.length >= FIELD_LIMITS.options) return null;
@@ -128,7 +140,7 @@ export function addOption(editor: Editor, kid: string, fieldId: string): string 
 
 /** Renames, recolours or (column field only) re-maps an option's card status. */
 export function patchOption(editor: Editor, kid: string, fieldId: string, optionId: string, patch: { label?: string; color?: string; status?: CardStatus | null }) {
-  if (fieldId === COLUMN_FIELD_ID) {
+  if (isGroup(editor, kid, fieldId)) {
     patchColumn(editor, kid, optionId, {
       ...(patch.label !== undefined ? { title: plainToRichText(patch.label.slice(0, FIELD_LIMITS.label)) } : {}),
       ...(patch.color !== undefined ? { color: patch.color } : {}),
@@ -146,10 +158,11 @@ export function patchOption(editor: Editor, kid: string, fieldId: string, option
 
 /** Moves an option one place up / left (-1) or down / right (+1). */
 export function moveOption(editor: Editor, kid: string, fieldId: string, optionId: string, dir: -1 | 1) {
-  if (fieldId === COLUMN_FIELD_ID) {
+  if (isGroup(editor, kid, fieldId)) {
     const k = editable(editor, kid);
     const i = k ? k.columns.findIndex((c) => c.id === optionId) : -1;
-    if (i >= 0) moveColumnTo(editor, kid, optionId, i + dir);
+    // The "No <field>" column stays first.
+    if (i >= 0 && k!.columns[i + dir] && k!.columns[i + dir].id !== NO_GROUP) moveColumnTo(editor, kid, optionId, i + dir);
     return;
   }
   patchField(editor, kid, fieldId, (options) => {
@@ -173,6 +186,6 @@ export function fieldsTarget(editor: Pick<Editor, 'getSelection' | 'getElement'>
 
 /** Deletes an option. A column's cards join the neighbouring column; elsewhere values read as empty. */
 export function removeOption(editor: Editor, kid: string, fieldId: string, optionId: string) {
-  if (fieldId === COLUMN_FIELD_ID) return removeColumn(editor, kid, optionId);
+  if (isGroup(editor, kid, fieldId)) return removeColumn(editor, kid, optionId);
   patchField(editor, kid, fieldId, (options) => (options.some((o) => o.id === optionId) ? options.filter((o) => o.id !== optionId) : null));
 }
