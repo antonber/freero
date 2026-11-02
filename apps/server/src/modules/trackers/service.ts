@@ -56,7 +56,17 @@ import { consumeRateLimit } from '../../platform/rateLimit';
 import { recordAudit } from '../audit/index';
 import { findUserByEmail, getAccount, getUser, getUsers } from '../auth/index';
 import { getBoardAccess, requireBoardAccess } from '../boards/index';
-import { BOARD_CONTENT_TOPIC, BoardChangeError, changeBoard, readBoardView, storedBoardView, type BoardActor, type BoardChange, type BoardView } from '../realtime/index';
+import {
+  BOARD_CONTENT_TOPIC,
+  BoardChangeError,
+  changeBoard,
+  readBoardView,
+  storedBoardView,
+  type BoardActor,
+  type BoardChange,
+  type BoardView,
+  type SuggestionsDecidedEvent,
+} from '../realtime/index';
 import {
   applied,
   badgeOf,
@@ -450,10 +460,15 @@ export const trackersConsumer: OutboxConsumer = {
   wakeDelayMs: 500,
   async handle(events) {
     const toSync = new Set<string>();
+    // Boards with accepted proposed cards to link (#82): queued by the decision, or retried when a
+    // saved change brings a card that wasn't on the board yet.
+    const toLink = new Set<string>();
     for (const e of events) {
       if (e.key.startsWith('link:')) toSync.add(e.key.slice('link:'.length));
+      else if (e.key.startsWith('proposals:')) toLink.add(e.key.slice('proposals:'.length));
       else if (e.topic === BOARD_CONTENT_TOPIC && e.key.startsWith('board:')) {
         const boardId = e.key.slice('board:'.length);
+        if (await repo.boardHasProposalsToLink(boardId)) toLink.add(boardId);
         if (!(await repo.boardHasLinks(boardId))) continue;
         const view = await storedBoardView(boardId);
         for (const link of await repo.linksOfBoard(boardId)) {
@@ -462,6 +477,7 @@ export const trackersConsumer: OutboxConsumer = {
         }
       }
     }
+    for (const boardId of toLink) for (const id of await linkAcceptedProposals(boardId)) toSync.add(id);
     for (const id of toSync) await syncLink(id);
   },
 };
@@ -1003,8 +1019,142 @@ export async function importCandidates(userId: string, boardId: string, body: Re
   const { issues, fresh } = await searchNew(userId, boardId, conn, query, limit);
   return {
     skipped: issues.length - fresh.length,
-    issues: fresh.map((i) => ({ key: i.key, url: i.url, title: i.values.title || i.key, description: i.values.description.slice(0, 5000), status: i.values.status ?? 'todo', dueDate: i.values.dueDate ?? null })),
+    issues: fresh.map((i) => ({ id: i.id, key: i.key, url: i.url, title: i.values.title || i.key, description: i.values.description.slice(0, 5000), status: i.values.status ?? 'todo', dueDate: i.values.dueDate ?? null })),
   };
+}
+
+// ---- proposed imports (#82): accepted proposed cards become linked cards ----
+
+/**
+ * Notes which issue each card of a proposed import stands for: `importCandidates` found them and
+ * the suggestions sink proposed them as the group `groupId` (cards under the ids they get when
+ * accepted). Accepting one later links it (`proposalsDecided`, `linkAcceptedProposals`).
+ */
+export async function noteProposedImport(
+  userId: string,
+  boardId: string,
+  p: { connectionId: string; groupId: string; origin: string; cards: Array<{ itemId: string; issueId: string; key: string; url: string }> },
+): Promise<void> {
+  const board = await requireBoardAccess(boardId, userId, 'editor');
+  const conn = await requireUsable(p.connectionId, board.workspaceId, userId);
+  await repo.insertProposals(
+    p.cards.map((c) => ({
+      boardId,
+      itemId: c.itemId,
+      groupId: p.groupId,
+      connectionId: conn.id,
+      externalId: c.issueId,
+      externalKey: c.key,
+      externalUrl: c.url,
+      proposedBy: userId,
+      appOrigin: p.origin,
+    })),
+  );
+}
+
+/**
+ * Realtime's report of decisions applied (a socket's accept, the API's, an undo): the decisions on
+ * proposed cards are recorded, and accepted ones queued to be linked — by the outbox consumer, so
+ * a link is made once even when two instances report at once. Only the server's own proposal
+ * records reach here (sockets can only decide them), and a card is matched by group and id.
+ */
+export async function proposalsDecided(e: SuggestionsDecidedEvent): Promise<void> {
+  const creates = e.decisions.filter((d) => d.op === 'create' && d.itemId);
+  if (!creates.length) return;
+  await repo.transaction(async () => {
+    let accepted = 0;
+    for (const status of ['accepted', 'rejected', 'reopened'] as const) {
+      const list = creates.filter((d) => d.status === status).map((d) => ({ groupId: d.groupId, itemId: d.itemId! }));
+      if (!list.length) continue;
+      const n = await repo.decideProposals(e.boardId, list, status === 'reopened' ? null : status, e.actorId);
+      if (status === 'accepted') accepted += n;
+    }
+    if (accepted) await appendOutbox(TRACKER_SYNC_TOPIC, `proposals:${e.boardId}`);
+  });
+}
+
+/**
+ * Links the accepted proposed cards of a board to their issues (only the outbox consumer runs it).
+ * Each card on the board as its proposer sees it becomes a link like an imported card's, through
+ * the proposer's access to the connection ("GitHub for Maria" writes the tracker's changes). The
+ * agreement it starts from is the card as accepted on BOTH sides, so the link's first sync brings
+ * the issue's own values onto the card (its title without the key, labels as tags, assignee) and
+ * pushes nothing; it also writes the badge and the issue's link back. A card not on the board yet
+ * waits for the next saved change; one whose issue or item is linked otherwise, or whose proposer
+ * can no longer edit the board or use the connection, stays a plain card. Returns the links to sync.
+ */
+async function linkAcceptedProposals(boardId: string): Promise<string[]> {
+  const out: string[] = [];
+  const imported = new Map<string, { conn: StoredConnection; workspaceId: string; actorId: string; n: number }>();
+  for (const p of await repo.proposalsToLink(boardId)) {
+    const conn = await repo.getConnection(p.connectionId);
+    let board: Awaited<ReturnType<typeof requireBoardAccess>>;
+    try {
+      if (!conn) throw notFound('The connection is gone');
+      board = await requireBoardAccess(boardId, p.proposedBy, 'editor');
+      await requireUsable(conn.id, board.workspaceId, p.proposedBy);
+    } catch (e) {
+      if (!(e instanceof HttpError)) throw e;
+      await repo.dropProposal(boardId, p.itemId);
+      continue;
+    }
+    const view = await readBoardView(boardId, { userId: p.proposedBy, role: board.role });
+    const read = await readItems(view, [p.itemId]);
+    if (!read.items.length) continue; // accepted, not on the board (yet): the next saved change retries
+    const already = (await repo.linkedItems(boardId, [p.itemId])).get(p.itemId);
+    if (already) {
+      // Accepted again after an undo, before its old link noticed the card had gone: that link holds.
+      const link = await repo.getLink(already);
+      if (link?.connectionId === conn.id && link.externalId === p.externalId) {
+        await repo.markProposalLinked(boardId, p.itemId);
+        out.push(link.id);
+      } else await repo.dropProposal(boardId, p.itemId);
+      continue;
+    }
+    const provider = providerOf(conn.provider);
+    const values = boardValues(provider, read.sources, { heading: null, itemUrl: (id) => itemUrl(p.appOrigin, boardId, id) });
+    const link: StoredLink = {
+      id: newId(16),
+      connectionId: conn.id,
+      boardId,
+      externalId: p.externalId,
+      externalKey: p.externalKey,
+      externalUrl: p.externalUrl,
+      createdBy: p.proposedBy,
+      appOrigin: p.appOrigin,
+      base: baseOf(values, values),
+      backlinks: [],
+      state: 'ok',
+      lastError: null,
+      attempts: 0,
+      retryAt: null,
+      syncedAt: null,
+      createdAt: Date.now(),
+      sources: [p.itemId],
+    };
+    try {
+      await repo.insertLink(link);
+    } catch (e) {
+      // The issue was imported here meanwhile (or the card linked otherwise): it stays a plain card.
+      if (!(e instanceof repo.IssueAlreadyLinkedError || e instanceof repo.ItemAlreadyLinkedError)) throw e;
+      await repo.dropProposal(boardId, p.itemId);
+      continue;
+    }
+    await repo.markProposalLinked(boardId, p.itemId);
+    out.push(link.id);
+    const k = `${conn.id}\n${p.decidedBy ?? p.proposedBy}`;
+    const seen = imported.get(k) ?? { conn, workspaceId: board.workspaceId, actorId: p.decidedBy ?? p.proposedBy, n: 0 };
+    seen.n++;
+    imported.set(k, seen);
+  }
+  for (const { conn, workspaceId, actorId, n } of imported.values())
+    await recordAudit({
+      action: 'tracker.issues_imported',
+      workspaceId,
+      actorId,
+      metadata: { provider: conn.provider, connection: conn.id, imported: n, skipped: 0, via: 'suggestion' },
+    });
+  return out;
 }
 
 /** One card at (0, 0): checks a placement against the board before anything is imported. */

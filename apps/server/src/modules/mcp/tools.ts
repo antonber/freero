@@ -764,7 +764,7 @@ export const TOOLS: McpTool[] = [
     name: 'import_from_tracker',
     title: 'Import issues from an issue tracker',
     description:
-      'Brings issues from the issue tracker (Jira, Linear or GitHub) onto a board as task cards LINKED to them — each card shows its issue’s key, status and assignee and stays in sync both ways (closing the issue updates the card). Give a query in the tracker’s own language (JQL, a Linear search, a GitHub search such as `repo:owner/name is:open label:bug`); at most 100 issues (default 50); issues already linked on this board are skipped, so importing again adds only new ones. Placed in free space, or with placement into a frame, kanban column or cluster that is there, or a new frame or kanban (placement never changes an issue’s status). Uses the person’s own or their team’s tracker connection (`connection` names it when there are several). Returns each card’s id with its issue key, to arrange with update_items or comment on. With only permission to suggest, it proposes the cards for people to accept instead (proposed cards link to their issues but are not synced). Needs permission to change boards (or to suggest).',
+      'Brings issues from the issue tracker (Jira, Linear or GitHub) onto a board as task cards LINKED to them — each card shows its issue’s key, status and assignee and stays in sync both ways (closing the issue updates the card). Give a query in the tracker’s own language (JQL, a Linear search, a GitHub search such as `repo:owner/name is:open label:bug`); at most 100 issues (default 50); issues already linked on this board are skipped, so importing again adds only new ones. Placed in free space, or with placement into a frame, kanban column or cluster that is there, or a new frame or kanban (placement never changes an issue’s status). Uses the person’s own or their team’s tracker connection (`connection` names it when there are several). Returns each card’s id with its issue key, to arrange with update_items or comment on. With only permission to suggest, it proposes the cards for people to accept instead; each card someone accepts is then linked to its issue and synced like an imported one. Needs permission to change boards (or to suggest).',
     scope: ['boards:write', 'boards:suggest'],
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     input: {
@@ -785,7 +785,7 @@ export const TOOLS: McpTool[] = [
       if (!out.cards.length) return plain(`No new issues to ${suggest ? 'propose' : 'import'}.${skipped || ' The query matched nothing.'}`, { cards: [], skipped: out.skipped });
       if (out.target === 'suggestions')
         return plain(
-          `Proposed ${out.cards.length} card${out.cards.length === 1 ? '' : 's'} for review (suggestion group ${out.groupId}); the board doesn’t change until someone who can edit accepts them. Proposed cards link to their issues but are not synced. Card ids by issue: ${list}.${skipped} Next: open_board so the person can review them.`,
+          `Proposed ${out.cards.length} card${out.cards.length === 1 ? '' : 's'} for review (suggestion group ${out.groupId}); the board doesn’t change until someone who can edit accepts them, and each card they accept is then linked to its issue and kept in sync. Card ids by issue: ${list}.${skipped} Next: open_board so the person can review them.`,
           { target: 'suggestions', groupId: out.groupId, cards: out.cards, skipped: out.skipped },
         );
       return plain(

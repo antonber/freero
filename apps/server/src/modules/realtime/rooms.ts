@@ -111,7 +111,7 @@ import {
   writeDecisions,
   writeProposal,
 } from './suggestions';
-import { emitSuggestionsProposed } from './suggestionEvents';
+import { emitSuggestionsDecided, emitSuggestionsProposed } from './suggestionEvents';
 import { applyChange, BoardChangeError, viewOf, type AppliedChange, type BoardActor, type BoardChange, type BoardReader, type BoardView } from './view';
 import { newId } from '../../platform/ids';
 import { docStateFrom, readDocBlocks, writeDocBlocks } from './docContent';
@@ -640,7 +640,10 @@ class Room {
         }
       }, conn.ws);
       if (fixed) send(conn.ws, layerMessage(wire, (e) => syncProtocol.writeUpdate(e, Y.encodeStateAsUpdate(doc, before))));
-      if (decided.length) void auditDecisions(this.id, conn.userId, decided, 'board');
+      if (decided.length) {
+        void auditDecisions(this.id, conn.userId, decided, 'board');
+        emitSuggestionsDecided(this.id, conn.userId, decided);
+      }
     }
   }
 
@@ -1661,7 +1664,9 @@ export async function decideSuggestions(
     await room.flush();
     return { records: plan.records, decision: plan.decision, applied };
   });
-  await auditDecisions(boardId, actor.userId, out.records.map((record) => ({ record, from: undefined, to: out.decision })), 'api');
+  const steps = out.records.map((record) => ({ record, from: undefined, to: out.decision }));
+  await auditDecisions(boardId, actor.userId, steps, 'api');
+  emitSuggestionsDecided(boardId, actor.userId, steps);
   return out;
 }
 
@@ -1704,8 +1709,11 @@ export async function withdrawSuggestionsOn(boardId: string, who: { userId: stri
   const { records, decision } = out;
   if (!decision) return 0;
   // In each person's name: their revocation withdrew them.
-  for (const userId of new Set(records.map((r) => r.author.userId)))
-    await auditDecisions(boardId, userId, records.filter((r) => r.author.userId === userId).map((record) => ({ record, from: undefined, to: decision })), 'revoked');
+  for (const userId of new Set(records.map((r) => r.author.userId))) {
+    const steps = records.filter((r) => r.author.userId === userId).map((record) => ({ record, from: undefined, to: decision }));
+    await auditDecisions(boardId, userId, steps, 'revoked');
+    emitSuggestionsDecided(boardId, userId, steps);
+  }
   return records.length;
 }
 

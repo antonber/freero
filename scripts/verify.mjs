@@ -6002,6 +6002,43 @@ async function publicApiChecks() {
       }
     });
 
+    await check('api (#84): POST /trackers/send turns three stickies into ONE GitHub issue through the named connection and repo; every sticky then shows its key; boards:read can’t send, and sending them again is refused', async () => {
+      const { startMockGithub } = await import('./lib/mock-github.mjs');
+      const gh = await startMockGithub();
+      try {
+        const b = (await O.req('POST', '/api/boards', { title: 'Bug bash' })).json.board.id;
+        // Two GitHub connections: the call names the one to use and the repo, nothing is guessed.
+        for (const [name, project] of [['GitHub (web)', 'acme/web'], ['GitHub (ops)', 'acme/ops']])
+          assert((await O.req('POST', '/api/trackers/connections', { provider: 'github', name, site: gh.url, token: gh.token, defaults: { project } })).status === 201, `connection ${name}`);
+        gh.create('acme/ops', { title: 'Ops backlog' }); // acme/ops exists on this GitHub
+        const made = await call(write.secret, 'POST', `/boards/${b}/items`, {
+          items: ['Checkout button hidden on mobile', 'Coupon field resets', 'Too many steps to pay'].map((text, i) => ({ type: 'sticky', text, x: i * 220, y: 0 })),
+        });
+        assert(made.status === 201 && made.json.items.length === 3, `stickies: ${made.status} ${made.text}`);
+        const itemIds = made.json.items.map((x) => x.id);
+        const body = { itemIds, connection: 'GitHub (ops)', project: 'acme/ops' };
+        const ro = await token(O, ['boards:read'], 'reader');
+        assert((await call(ro.secret, 'POST', `/boards/${b}/trackers/send`, body)).status === 403, 'a read-only token sent items');
+        const r = await call(write.secret, 'POST', `/boards/${b}/trackers/send`, body);
+        assert(r.status === 201 && r.json.issues.length === 1, `send: ${r.status} ${r.text}`);
+        const [issue] = r.json.issues;
+        assert(/^acme\/ops#\d+$/.test(issue.key) && JSON.stringify(issue.itemIds) === JSON.stringify(itemIds), `the issue: ${r.text}`);
+        const n = Number(issue.key.split('#')[1]);
+        assert(gh.issue('acme/ops', n) && itemIds.every((id) => gh.issue('acme/ops', n).body.includes(`item=${id}`)), 'the GitHub issue doesn’t list the stickies');
+        const c = connectDoc(O, b, null, proc.port);
+        live.push(c);
+        await c.ready();
+        const E = c.doc.getMap('elements');
+        const badge = () => c.doc.getMap('trackers').get(issue.linkId);
+        await waitFor(() => itemIds.every((id) => E.get(id)?.trackerLink === issue.linkId) && badge()?.key === issue.key, 5000, 'the stickies to show the issue key');
+        assert(JSON.stringify(badge().sources) === JSON.stringify(itemIds), `badge sources: ${JSON.stringify(badge())}`);
+        const again = await call(write.secret, 'POST', `/boards/${b}/trackers/send`, body);
+        assert(again.status === 409 && again.json.code === 'tracker_already_linked', `send again: ${again.status} ${again.text}`);
+      } finally {
+        await gh.close();
+      }
+    });
+
     await check('api: signing out everywhere (a password reset) ends the account’s tokens', async () => {
       const t = await token(V, ['boards:read'], 'before reset');
       assert((await call(t.secret, 'GET', '/me')).status === 200, 'works first');
@@ -6814,6 +6851,59 @@ async function mcpChecks() {
       assert(listed.includes('by Suggesting agent for') && els(c).size === before, 'the proposal changed the board');
     });
 
+    await check('mcp (#82): a read + suggest agent proposes `repo:acme/roadmap is:open`; the cards an editor accepts in the app get linked to their issues (badge, the issue’s link back, its title), closing one on GitHub updates its card, the rejected one stays unlinked, and a later import with write access skips the accepted issues', async () => {
+      // The proposer's own connection: the editor who accepts can't use it, the link still can.
+      const conn = await O.req('POST', '/api/trackers/connections', { provider: 'github', name: 'GitHub (proposals)', site: gh.url, token: gh.token, defaults: { project: 'acme/roadmap' } });
+      assert(conn.status === 201, `connection: ${conn.status} ${conn.text}`);
+      try {
+        const nums = [1, 2, 3].map((i) => gh.create('acme/roadmap', { title: `Roadmap item ${i}`, labels: ['roadmap'] }));
+        const E = await verified('Acceptor');
+        const b = (await O.req('POST', '/api/boards', { title: 'Proposed roadmap' })).json.board.id;
+        assert((await O.req('POST', `/api/boards/${b}/members`, { email: E.email, role: 'editor' })).status === 201, 'invite editor');
+        const suggester = await withToken((await token(O, ['boards:read', 'boards:suggest'], 'Roadmap agent')).secret);
+        const p = await suggester.callTool({ name: 'import_from_tracker', arguments: { boardId: b, query: 'repo:acme/roadmap is:open', connection: 'GitHub (proposals)' } });
+        assert(!p.isError && p.structuredContent.target === 'suggestions' && p.structuredContent.cards.length === 3, `propose: ${text(p)}`);
+        const cards = p.structuredContent.cards;
+        // The editor's browser: the proposed cards arrive in the editors layer; accept two, reject one
+        // (what the web app's Editor.acceptSuggestions / rejectSuggestions send).
+        const e = await layerClient(E, b, proc.port);
+        live.push(e);
+        const sug = () => e.layers.editors.getMap('suggestions');
+        await waitFor(() => cards.every((x) => [...sug().values()].some((r) => r.element?.id === x.id)), 5000, 'the proposed cards in the editor’s layer');
+        const recordOf = (id) => [...sug().values()].find((r) => r.element?.id === id);
+        const [a1, a2, rejected] = cards;
+        const pick = [a1, a2].map((x) => recordOf(x.id));
+        e.doc.transact(() => pick.forEach((r) => els(e).set(r.element.id, { ...r.element, createdBy: E.id, suggestedBy: { kind: r.author.kind, name: r.author.name, userId: r.author.userId } })));
+        e.layers.editors.transact(() => {
+          for (const r of pick) sug().set(r.id, { ...r, decision: { status: 'accepted', by: E.id, at: Date.now() } });
+          const r = recordOf(rejected.id);
+          sug().set(r.id, { ...r, decision: { status: 'rejected', by: E.id, at: Date.now() } });
+        });
+        const badge = (id) => e.doc.getMap('trackers').get(els(e).get(id)?.trackerLink);
+        const issueOf = (x) => gh.issue('acme/roadmap', Number(x.key.split('#')[1]));
+        // Linked like an imported card: the badge lists it, the issue links back to it, and the first
+        // sync brings the issue's own title (without the key the proposal showed).
+        await waitFor(
+          () => [a1, a2].every((x) => badge(x.id)?.key === x.key && badge(x.id).sources.includes(x.id) && issueOf(x).body.includes(`item=${x.id}`) && els(e).get(x.id).title?.includes(issueOf(x).title) && !els(e).get(x.id).title.includes('#')),
+          15_000,
+          'the accepted cards to be linked to their issues',
+        );
+        assert(JSON.stringify(nums.slice(0, 2).map((n) => `acme/roadmap#${n}`)) === JSON.stringify([a1.key, a2.key]), `cards in issue order: ${text(p)}`);
+        // Done when: closing one of those issues on GitHub updates its card, nobody touching the board.
+        gh.edit('acme/roadmap', nums[0], { state: 'closed' });
+        assert((await gh.webhook(`http://127.0.0.1:${proc.port}/api/trackers/webhooks/${conn.json.connection.id}`, conn.json.webhookSecret, 'acme/roadmap', nums[0])) === 202, 'webhook');
+        await waitFor(() => els(e).get(a1.id)?.status === 'done', 15_000, 'the closed issue’s accepted card to say done');
+        assert(!els(e).get(rejected.id), 'the rejected card is on the board');
+        // Importing with write access now knows the accepted issues: only the rejected one comes in.
+        const writer = await withToken((await token(O, ['boards:read', 'boards:write'], 'Roadmap importer')).secret);
+        const again = await writer.callTool({ name: 'import_from_tracker', arguments: { boardId: b, query: 'repo:acme/roadmap', connection: 'GitHub (proposals)' } });
+        assert(!again.isError && again.structuredContent.skipped === 2 && JSON.stringify(again.structuredContent.cards.map((x) => x.key)) === JSON.stringify([rejected.key]), `import after accepting: ${text(again)}`);
+      } finally {
+        // The next check counts the owner's connections.
+        await O.req('DELETE', `/api/trackers/connections/${conn.json.connection.id}`);
+      }
+    });
+
     await check('mcp (#83): list_tracker_connections shows an agent the team’s and the person’s own connections on a board with their default projects, and one connection’s repositories, so sync_to_tracker needs no failed call to find them', async () => {
       // The person's own "GitHub" (made above) and now the team's.
       const teams = await O.req('POST', '/api/trackers/connections', { provider: 'github', name: 'Team GitHub', workspaceId: team, site: gh.url, token: gh.token, defaults: { project: 'freero-bot/sandbox' } });
@@ -6831,6 +6921,21 @@ async function mcpChecks() {
       // The REST twin answers the same.
       const rest = await fetch(`http://127.0.0.1:${proc.port}/api/v1/boards/${b.id}/trackers`, { headers: { authorization: `Bearer ${(await token(O, ['boards:read'], 'REST reader')).secret}` } });
       assert(rest.status === 200 && (await rest.json()).connections.length === 2, `REST -> ${rest.status}`);
+      // Done when: with what it read, an agent sends to the TEAM's connection and a repo it listed —
+      // its first sync_to_tracker call, no failed one to learn the names.
+      const teamConn = Object.values(byName).find((x) => x.scope === 'workspace');
+      const repos = await reader.callTool({ name: 'list_tracker_connections', arguments: { boardId: b.id, connection: teamConn.name } });
+      const repo = repos.structuredContent.untrusted_board_content.projects.find((x) => x.key === 'antonber/freero')?.key;
+      assert(repo, `the team connection’s repositories: ${text(repos)}`);
+      const writer = await withToken((await token(O, ['boards:read', 'boards:write'], 'Sending agent')).secret);
+      const added = await writer.callTool({ name: 'add_stickies', arguments: { boardId: b.id, stickies: [{ text: 'Flaky upload on Safari' }] } });
+      const [sticky] = added.structuredContent.ids;
+      const sent = await writer.callTool({ name: 'sync_to_tracker', arguments: { boardId: b.id, itemIds: [sticky], connection: teamConn.name, project: repo } });
+      assert(!sent.isError && sent.structuredContent.issues[0].key.startsWith('antonber/freero#'), `send: ${text(sent)}`);
+      const c = connectDoc(O, b.id, null, proc.port);
+      live.push(c);
+      await c.ready();
+      await waitFor(() => c.doc.getMap('trackers').get(els(c).get(sticky)?.trackerLink)?.connection === 'Team GitHub', 5000, 'the sticky linked through the team’s connection');
     });
 
     await check('mcp: revoking the token, or the app, refuses the very next MCP request', async () => {

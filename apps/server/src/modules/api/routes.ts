@@ -191,6 +191,12 @@ export default function apiRoutes(_ctx: ServerContext): Router {
     },
   );
 
+  // ---- issue trackers (#84): items sent as one issue (or one each), linked both ways — MCP sync_to_tracker ----
+  endpoint('post', '/boards/:boardId/trackers/send', 'boards:write', async (call) => ({
+    status: 201,
+    body: await api.syncToTracker(call, call.req.params.boardId, body(call.req)),
+  }));
+
   // ---- comments ----
   endpoint('get', '/boards/:boardId/comments', 'boards:read', async (call) => ({ body: await api.listComments(call, call.req.params.boardId) }));
   endpoint('post', '/boards/:boardId/comments', 'comments:write', async (call) => ({ status: 201, body: await api.addComment(call, call.req.params.boardId, body(call.req)) }));

@@ -66,7 +66,7 @@ import {
 import { insertStructure, newElementId, planMoveInto, readPlacement } from '../structure/index';
 import { getTemplate, listTemplates } from '../templates/index';
 import { ensurePersonalWorkspace, getWorkspaceInfo, workspaceRolesOf } from '../workspaces/index';
-import { boardConnections, importCandidates, importIssues, projectsOf, sendToTracker } from '../trackers/index';
+import { boardConnections, importCandidates, importIssues, noteProposedImport, projectsOf, sendToTracker } from '../trackers/index';
 import { commentSpot, patchUpdates, planCreate, planPatch, readItemInputs, toApiItem } from './items';
 import { planProposal, readProposal, suggestionGroups } from './suggestions';
 import { pausedError, pauseOf } from './pause';
@@ -719,8 +719,9 @@ export async function trackerConnections(call: ApiCall, boardId: string, named?:
  * `/boards/:id/trackers/import`): the board's "Import issues…" with its rules — the person's own or
  * the team's connection, edit access, at most 100 issues, issues already linked on this board
  * skipped — placed in free space or where `placement` says, attributed to the app for the person.
- * With `target: 'suggestions'` (a connection that may only suggest) the cards are proposed instead:
- * plain cards linking to their issues, for people who can edit to accept (nothing is linked).
+ * With `target: 'suggestions'` (a connection that may only suggest) the cards are proposed instead,
+ * for people who can edit to accept: nothing is linked until then; an accepted card is linked to
+ * its issue by the trackers module (#82: the badge, two-way sync, the issue's link back).
  */
 export async function importFromTracker(call: ApiCall, boardId: string, body: Record<string, unknown>) {
   const { id, role } = await openBoard(call, boardId);
@@ -740,6 +741,14 @@ export async function importFromTracker(call: ApiCall, boardId: string, body: Re
       description,
     });
     const ids = out.parts?.[0]?.ids ?? [];
+    // Which issue each proposed card stands for: accepting a card links it (#82).
+    if (out.groupId && ids.length === found.issues.length)
+      await noteProposedImport(call.userId, id, {
+        connectionId: conn.id,
+        groupId: out.groupId,
+        origin: appUrl(call.req, ''),
+        cards: found.issues.map((i, n) => ({ itemId: ids[n], issueId: i.id, key: i.key, url: i.url })),
+      });
     call.audit.metadata = { ...call.audit.metadata, proposed: ids.length, skipped: found.skipped };
     return { target: 'suggestions' as const, groupId: out.groupId ?? null, cards: found.issues.map((i, n) => ({ id: ids[n], key: i.key, url: i.url })), skipped: found.skipped };
   }

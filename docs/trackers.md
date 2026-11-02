@@ -4,12 +4,22 @@ Freero links board items to issues in the tracker a team already uses, and keeps
 select sticky notes, a cluster or cards → **Send to tracker…** → one issue (or one per item) with
 every field kept and a link back to each item; each item then shows the issue's key, status and
 assignee, live. **Import issues…** (board menu) turns a JQL / search query into linked cards.
-Agents do the same through the MCP tool `sync_to_tracker`, and import with `import_from_tracker` (REST:
+Agents do the same through the MCP tool `sync_to_tracker` (REST:
+`POST /api/v1/boards/{boardId}/trackers/send`, #84), and import with `import_from_tracker` (REST:
 `POST /api/v1/boards/{boardId}/trackers/import`) — the same rules as *Import issues…*, placed into a
 frame, kanban column or cluster if asked, attributed to the app for the person ([mcp.md](mcp.md)).
 Before either, an agent finds the connections it may use on a board, their default projects and one
 connection's projects or repositories with `list_tracker_connections` (REST:
 `GET /api/v1/boards/{boardId}/trackers`, #83).
+
+An agent that may only suggest (read + suggest, the MCP default) proposes the issues as cards
+instead, for people who can edit to review. Each proposed card an editor accepts is then linked to
+its issue exactly as an imported card is (#82): the badge, two-way sync and the issue's link back,
+through the connection of the person the agent acted for (while they can still edit the board and
+use it). The first sync brings the issue's own values onto the card (its title, labels as tags,
+assignee); a rejected card is never linked, and an issue someone imported meanwhile leaves the
+accepted card plain. The link is made by the server from its own record of what was proposed, so
+nobody can link an item to an issue by editing the board.
 
 ## Connecting
 
