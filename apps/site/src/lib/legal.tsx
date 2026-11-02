@@ -20,6 +20,7 @@ export type LegalKey =
   | 'exportExpiry'
   | 'eventsRetentionDays'
   | 'moderationKeepDays'
+  | 'problemRetentionDays'
   | 'trashDays'
   | 'auditRetentionDays'
   | 'backupRetentionDays'
