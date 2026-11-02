@@ -7,13 +7,27 @@
 //
 // What a card shows is derived when it is drawn, never written onto the card: its accent colour
 // (its own, its column's, or a select field's option colour) and its field chips. Only `density`
-// changes the cards' size (the board's shared layout), so it is never personal.
+// changes the cards' size (the board's shared layout), so it is never personal; nor is grouping
+// (`groupBy`, `subGroupBy`, step 2c): it decides where the real cards stand on the shared board.
 //
 // Pure: the web (the kanban's presentation of its cards, the View panel) and the server read
 // views only through here.
 import type { CardElement, KanbanElement } from './elements';
 import { kanbanColumnAt } from './elements';
-import { BUILTIN_FIELDS, COLUMN_FIELD_ID, STATUS_OPTIONS, builtinValue, cardValue, isBuiltinFieldId, type FieldDef, type FieldValue } from './fields';
+import {
+  BUILTIN_FIELDS,
+  COLUMN_FIELD_ID,
+  GROUPABLE_TYPES,
+  STATUS_OPTIONS,
+  builtinValue,
+  cardValue,
+  groupFieldId,
+  isBuiltinFieldId,
+  storedBoardView,
+  type FieldDef,
+  type FieldType,
+  type FieldValue,
+} from './fields';
 
 export type CardDensity = 'compact' | 'comfortable';
 
@@ -31,10 +45,27 @@ export interface CardDisplay {
   color: CardColorBy;
 }
 
+/** Settings of one group (a column) that belong to how a view looks at it, not to the option. */
+export interface GroupSettings {
+  wip?: number;
+  collapsed?: boolean;
+  limit?: number;
+}
+
 export interface ViewConfig {
   id: string;
   name: string;
   layout: 'board';
+  /** The field the columns are (fields.ts `groupFieldId` reads it): the column field "Stage" when absent. */
+  groupBy?: string | null;
+  /** Swimlanes: rows by a second groupable field (a card's value for it is stored; a drop sets it). */
+  subGroupBy?: string | null;
+  /**
+   * Column settings (WIP limit, collapsed, card limit) of the fields the board is NOT grouped by
+   * now, kept for when it is again: field id → group key → settings. The current group field's
+   * live on `columns`, where older clients read them.
+   */
+  groupSettings?: Record<string, Record<string, GroupSettings>>;
   card?: CardDisplay;
 }
 
@@ -70,7 +101,7 @@ function cleanCard(raw: unknown, fallback: CardDisplay): CardDisplay {
   };
 }
 
-type ViewSource = Pick<KanbanElement, 'views' | 'activeView' | 'colorCards'>;
+type ViewSource = Pick<KanbanElement, 'views' | 'activeView' | 'colorCards'> & { fields?: unknown };
 
 /** The display a kanban without saved views has: cards as they always were, coloured by column on boards that did. */
 const defaultCard = (k: ViewSource): CardDisplay => ({ show: [...DEFAULT_CARD_SHOW], density: 'comfortable', color: k.colorCards ? 'group' : 'own' });
@@ -81,16 +112,46 @@ const defaultCard = (k: ViewSource): CardDisplay => ({ show: [...DEFAULT_CARD_SH
  * deterministic, malformed entries read as the defaults; nothing has to be written to migrate.
  */
 export function boardView(k: ViewSource): ViewConfig {
-  const stored = Array.isArray(k.views) ? (k.views as unknown[]).filter((v): v is Record<string, unknown> => !!v && typeof v === 'object' && (v as Record<string, unknown>).layout === 'board') : [];
-  const raw = stored.find((v) => v.id === k.activeView) ?? stored[0];
+  const raw = storedBoardView(k);
   const fallback = defaultCard(k);
-  if (!raw) return { id: BOARD_VIEW_ID, name: 'Board', layout: 'board', card: fallback };
+  if (!raw) return { id: BOARD_VIEW_ID, name: 'Board', layout: 'board', groupBy: COLUMN_FIELD_ID, subGroupBy: null, card: fallback };
+  const groupBy = groupFieldId(k);
+  const sub = typeof raw.subGroupBy === 'string' && raw.subGroupBy !== groupBy && groupableStored(k, raw.subGroupBy) ? raw.subGroupBy : null;
   return {
     id: isId(raw.id) ? raw.id : BOARD_VIEW_ID,
     name: typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim().slice(0, VIEW_LIMITS.name) : 'Board',
     layout: 'board',
+    groupBy,
+    subGroupBy: sub,
+    ...(raw.groupSettings && typeof raw.groupSettings === 'object' ? { groupSettings: cleanGroupSettings(raw.groupSettings) } : {}),
     card: cleanCard(raw.card, fallback),
   };
+}
+
+/** A field the kanban stores that a board can group by (Stage always). */
+function groupableStored(k: ViewSource, id: string): boolean {
+  if (id === COLUMN_FIELD_ID) return true;
+  const fields = (k as { fields?: unknown }).fields;
+  const f = Array.isArray(fields) ? (fields as Array<Record<string, unknown>>).find((x) => x && x.id === id) : undefined;
+  return !!f && GROUPABLE_TYPES.includes(f.type as FieldType);
+}
+
+const count = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) && v > 0 && v <= 10_000 ? v : undefined);
+
+function cleanGroupSettings(raw: object): Record<string, Record<string, GroupSettings>> {
+  const out: Record<string, Record<string, GroupSettings>> = {};
+  for (const [fid, groups] of Object.entries(raw).slice(0, 60)) {
+    if (!isId(fid) || !groups || typeof groups !== 'object') continue;
+    const g: Record<string, GroupSettings> = {};
+    for (const [key, v] of Object.entries(groups as object).slice(0, 250)) {
+      if (!isId(key) || !v || typeof v !== 'object') continue;
+      const { wip, collapsed, limit } = v as Record<string, unknown>;
+      const s: GroupSettings = { ...(count(wip) ? { wip: count(wip) } : {}), ...(collapsed === true ? { collapsed: true } : {}), ...(count(limit) ? { limit: count(limit) } : {}) };
+      if (Object.keys(s).length) g[key] = s;
+    }
+    if (Object.keys(g).length) out[fid] = g;
+  }
+  return out;
 }
 
 /** A personal override as stored (anything else in it is dropped), or null when it changes nothing. */
@@ -201,13 +262,13 @@ export function cardAccent(k: KanbanElement, card: CardElement, view: ViewConfig
   const by = view.card?.color ?? 'own';
   if (by === 'own') return null;
   if (by === 'group') return k.columns.length ? (k.columns[kanbanColumnAt(k, card.x + card.w / 2)]?.color ?? null) : null;
-  const f = by === COLUMN_FIELD_ID || !isBuiltinFieldId(by) ? schema.find((x) => x.id === by) : by === '$status' ? { id: '$status', name: 'Status', type: 'select' as const, options: STATUS_OPTIONS } : undefined;
+  const f = !isBuiltinFieldId(by) ? schema.find((x) => x.id === by) : by === '$status' ? { id: '$status', name: 'Status', type: 'select' as const, options: STATUS_OPTIONS } : undefined;
   if (!f || f.type !== 'select') return null;
   const v = f.id === '$status' ? (card.status ?? null) : cardValue(k, card, f as FieldDef);
   return (typeof v === 'string' && f.options?.find((o) => o.id === v)?.color) || null;
 }
 
-/** Fields a view can colour cards by: select fields (the column field's colour is "group"). */
-export function colorableFields(schema: readonly FieldDef[]): FieldDef[] {
-  return schema.filter((f) => f.type === 'select' && f.id !== COLUMN_FIELD_ID);
+/** Fields a view can colour cards by: select fields other than the group field (its colour is "group"). */
+export function colorableFields(schema: readonly FieldDef[], groupId: string = COLUMN_FIELD_ID): FieldDef[] {
+  return schema.filter((f) => f.type === 'select' && f.id !== groupId);
 }

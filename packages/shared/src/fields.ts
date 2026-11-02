@@ -3,13 +3,16 @@
 // and each card it holds carries its values keyed by field id (`CardElement.values`). Pure: the
 // web (card details, the Fields panel, the outline) and the server read fields only through here.
 //
-// The column field ("Stage"). Every kanban has one select field whose options ARE its columns:
-// `columns[i].id` is the option id, the column's title, colour and status are the option's label,
-// colour and status. Its entry in `fields` holds only its name and place, never options, so an
-// older client (or server code) that edits `columns` keeps the field in step by construction, and a
-// kanban from before fields reads as `[Stage]` with nothing to migrate or write. A card's value for
-// it is the column under its center: on the board the position IS the value (one write moves the
-// card and changes its stage; nobody ever sees a card in one column with another column's value).
+// The group field. A kanban's columns are the values of the field it is grouped by
+// (`groupFieldId`: the column field "Stage" unless its board view groups by another single select,
+// a person or a checkbox field, step 2c). For a select group field `columns[i].id` is the option id,
+// the column's title, colour and status are the option's label, colour and status; its entry in
+// `fields` holds only its name and place, never options, so an older client (or server code) that
+// edits `columns` keeps the field in step by construction, and a kanban from before fields reads as
+// `[Stage]` with nothing to migrate or write. A card's value for the group field is the column
+// under its center: on the board the position IS the value (one write moves the card and changes
+// its value; nobody ever sees a card in one column with another column's value). Every other
+// field's values are stored on the cards, Stage's too while the board is grouped by something else.
 //
 // Values that don't fit their field any more (an option deleted, a field's type changed) read as
 // empty; values of deleted fields stay on the cards, dormant, so undoing the delete brings them
@@ -56,6 +59,10 @@ export const FIELD_LIMITS = { fields: 50, name: 60, options: 200, label: 100, te
 /** The id and default name of every kanban's column field. */
 export const COLUMN_FIELD_ID = 'stage';
 export const COLUMN_FIELD_NAME = 'Stage';
+/** The key of the "No <field>" group: the column (or swimlane) of cards without a value. */
+export const NO_GROUP = '~none';
+/** Field types a board can be grouped by (a card stands in one column): single select, person, checkbox. */
+export const GROUPABLE_TYPES: readonly FieldType[] = ['select', 'person', 'checkbox'];
 
 // ------------------------------------------------------------------ built-in card fields
 
@@ -172,10 +179,34 @@ export function builtinPatch(id: BuiltinFieldId, raw: unknown): Partial<CardElem
 
 // ------------------------------------------------------------------ the schema
 
-type SchemaSource = Pick<KanbanElement, 'columns'> & { fields?: unknown };
+type SchemaSource = Pick<KanbanElement, 'columns'> & { fields?: unknown; views?: unknown; activeView?: string };
+
+/** The board view as stored (raw, unchecked): the active view when it is a board view, else the first one. views.ts reads it too. */
+export function storedBoardView(k: { views?: unknown; activeView?: string }): Record<string, unknown> | null {
+  const stored = Array.isArray(k.views) ? (k.views as unknown[]).filter((v): v is Record<string, unknown> => !!v && typeof v === 'object' && (v as Record<string, unknown>).layout === 'board') : [];
+  return stored.find((v) => v.id === k.activeView) ?? stored[0] ?? null;
+}
+
+/** True for a field a board can be grouped by. */
+export const isGroupable = (f: Pick<FieldDef, 'id' | 'type'>) => f.id === COLUMN_FIELD_ID || GROUPABLE_TYPES.includes(f.type);
+
+/**
+ * The field the kanban is grouped by (its options / values are the columns): the board view's
+ * `groupBy` when that names a stored groupable field, else the column field "Stage".
+ */
+export function groupFieldId(k: { fields?: unknown; views?: unknown; activeView?: string }): string {
+  const by = storedBoardView(k)?.groupBy;
+  if (typeof by !== 'string' || by === COLUMN_FIELD_ID || !Array.isArray(k.fields)) return COLUMN_FIELD_ID;
+  const entry = (k.fields as unknown[]).find((f) => !!f && typeof f === 'object' && (f as Record<string, unknown>).id === by) as Record<string, unknown> | undefined;
+  return entry && typeof entry.type === 'string' && GROUPABLE_TYPES.includes(entry.type as FieldType) ? by : COLUMN_FIELD_ID;
+}
 
 const HEX = /^#[0-9a-f]{6}$/i;
 const isStatus = (s: unknown): s is CardStatus => s === 'todo' || s === 'doing' || s === 'done';
+
+/** The columns as a select field's options (ids kept, title as plain text, colour, status); the "No value" column is no option. */
+const columnOptions = (k: SchemaSource): FieldOption[] =>
+  (k.columns ?? []).filter((c) => c.id !== NO_GROUP).map((c: KanbanColumn) => ({ id: c.id, label: richTextToPlain(c.title ?? '').trim(), color: c.color, status: c.status ?? null }));
 
 /** A kanban's column field: its columns as options (ids kept, title as plain text, colour, status). */
 export function columnField(k: SchemaSource, name?: string): FieldDef {
@@ -183,7 +214,7 @@ export function columnField(k: SchemaSource, name?: string): FieldDef {
     id: COLUMN_FIELD_ID,
     name: name?.trim() ? name.trim().slice(0, FIELD_LIMITS.name) : COLUMN_FIELD_NAME,
     type: 'select',
-    options: (k.columns ?? []).map((c: KanbanColumn) => ({ id: c.id, label: richTextToPlain(c.title ?? '').trim(), color: c.color, status: c.status ?? null })),
+    options: columnOptions(k),
   };
 }
 
@@ -196,7 +227,9 @@ function cleanOptions(raw: unknown): FieldOption[] {
     const { id, label, color } = o as Record<string, unknown>;
     if (typeof id !== 'string' || !id || id.length > 64 || seen.has(id)) continue;
     seen.add(id);
-    out.push({ id, label: typeof label === 'string' ? label.slice(0, FIELD_LIMITS.label) : '', color: typeof color === 'string' && HEX.test(color) ? color : '#8A89A3' });
+    const { status } = o as Record<string, unknown>;
+    // `status`: kept on the options of a field that was a board's group field (Stage's "sets status").
+    out.push({ id, label: typeof label === 'string' ? label.slice(0, FIELD_LIMITS.label) : '', color: typeof color === 'string' && HEX.test(color) ? color : '#8A89A3', ...(isStatus(status) ? { status } : {}) });
     if (out.length >= FIELD_LIMITS.options) break;
   }
   return out;
@@ -210,6 +243,7 @@ function cleanOptions(raw: unknown): FieldOption[] {
  */
 export function collectionSchema(k: SchemaSource): FieldDef[] {
   const stored = Array.isArray(k.fields) ? (k.fields as unknown[]) : [];
+  const group = groupFieldId(k);
   const out: FieldDef[] = [];
   const ids = new Set<string>();
   let column: FieldDef | null = null;
@@ -219,23 +253,31 @@ export function collectionSchema(k: SchemaSource): FieldDef[] {
     if (typeof id !== 'string' || !id || id.length > 64 || id.startsWith('$') || id === '__proto__' || ids.has(id)) continue;
     ids.add(id);
     if (id === COLUMN_FIELD_ID) {
-      column = columnField(k, typeof name === 'string' ? name : undefined);
+      // Stage: its options are the columns while the board is grouped by it, else stored here.
+      column = group === COLUMN_FIELD_ID ? columnField(k, typeof name === 'string' ? name : undefined) : { ...columnField(k, typeof name === 'string' ? name : undefined), options: cleanOptions(options) };
       out.push(column);
       continue;
     }
     if (typeof type !== 'string' || !(FIELD_TYPES as readonly string[]).includes(type)) continue;
     const f: FieldDef = { id, name: (typeof name === 'string' ? name.trim() : '').slice(0, FIELD_LIMITS.name) || 'Untitled', type: type as FieldType };
-    if (f.type === 'select' || f.type === 'multiselect') f.options = cleanOptions(options);
+    if (f.type === 'select' || f.type === 'multiselect') f.options = id === group ? columnOptions(k) : cleanOptions(options);
     out.push(f);
     if (out.length > FIELD_LIMITS.fields) break;
   }
-  if (!column) out.unshift(columnField(k));
+  if (!column && group === COLUMN_FIELD_ID) out.unshift(columnField(k));
   return out;
 }
 
-/** What `KanbanElement.fields` stores for `schema`: the column field without its options (they are the columns). */
-export function storedFields(schema: readonly FieldDef[]): FieldDef[] {
-  return schema.map((f) => (f.id === COLUMN_FIELD_ID ? { id: f.id, name: f.name, type: 'select' } : { ...f, ...(f.options ? { options: f.options.map((o) => ({ id: o.id, label: o.label, color: o.color })) } : {}) }));
+/**
+ * What `KanbanElement.fields` stores for `schema`: the group field (`groupId`, the column field
+ * unless the board is grouped by another) without its options: they are the columns.
+ */
+export function storedFields(schema: readonly FieldDef[], groupId: string = COLUMN_FIELD_ID): FieldDef[] {
+  return schema.map((f) =>
+    f.id === groupId
+      ? { id: f.id, name: f.name, type: f.type }
+      : { ...f, ...(f.options ? { options: f.options.map((o) => ({ id: o.id, label: o.label, color: o.color, ...(o.status ? { status: o.status } : {}) })) } : {}) },
+  );
 }
 
 // ------------------------------------------------------------------ values
@@ -296,9 +338,22 @@ export const readValue = (f: FieldDef, raw: unknown): FieldValue | null => canon
 /** True for a card `k` holds (its records): the cards whose `frameId` is the kanban. */
 export const isMember = (k: Pick<KanbanElement, 'id'>, el: BoardElement): el is CardElement => el.type === 'card' && el.frameId === k.id;
 
-/** Card `card`'s value for field `f` of kanban `k`: the column field's is the column under it. */
+/** The group key a value of group field `f` stands in: an option id, a user id, 'true' / 'false', or NO_GROUP. */
+export function groupKeyOf(f: Pick<FieldDef, 'type'>, v: FieldValue | null): string {
+  if (f.type === 'checkbox') return v === true ? 'true' : 'false';
+  return typeof v === 'string' && v ? v : NO_GROUP;
+}
+
+/** The value group key `key` (a column id) means for group field `f`; null for "No value". */
+export function groupKeyValue(f: FieldDef, key: string): FieldValue | null {
+  if (key === NO_GROUP) return null;
+  if (f.type === 'checkbox') return key === 'true' ? true : null;
+  return readValue(f, key);
+}
+
+/** Card `card`'s value for field `f` of kanban `k`: the group field's is the column under it. */
 export function cardValue(k: KanbanElement, card: CardElement, f: FieldDef): FieldValue | null {
-  if (f.id === COLUMN_FIELD_ID) return isMember(k, card) && k.columns.length ? k.columns[kanbanColumnAt(k, card.x + card.w / 2)].id : null;
+  if (f.id === groupFieldId(k)) return isMember(k, card) && k.columns.length ? groupKeyValue(f, k.columns[kanbanColumnAt(k, card.x + card.w / 2)].id) : null;
   return readValue(f, card.values?.[f.id]);
 }
 

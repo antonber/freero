@@ -606,8 +606,9 @@ export interface KanbanElement extends BaseElement {
   /**
    * [additive] The collection's schema (fields.ts), in display order. Read it through
    * `collectionSchema`, never directly: a kanban without it (from before fields) has one field,
-   * the column field "Stage", whose options are `columns` (always: that field's entry here keeps
-   * only its name and place). Written only by the kanban feature.
+   * the column field "Stage". The field the board is GROUPED BY (`groupFieldId`: "Stage" unless
+   * the board view says otherwise) has its options in `columns`, never here (its entry keeps only
+   * its name and place). Written only by the kanban feature.
    */
   fields?: FieldDef[];
   /**
@@ -619,6 +620,18 @@ export interface KanbanElement extends BaseElement {
   views?: ViewConfig[];
   /** [additive] The view the element shows (its id in `views`). */
   activeView?: string;
+  /**
+   * [additive] Swimlanes (the board view's `subGroupBy`), top to bottom: each row's key (an option
+   * id, a user id, 'true' / 'false', or `NO_GROUP`) and its laid-out height, header band included.
+   * A cache the layout writes (like `h`), so a drop and every reader find the same rows. Null /
+   * absent: no swimlanes.
+   */
+  lanes?: KanbanLane[] | null;
+}
+
+export interface KanbanLane {
+  id: string;
+  h: number;
 }
 
 /**
@@ -640,6 +653,8 @@ export const KANBAN_LAYOUT = {
   itemGap: 10,
   /** Width of a collapsed column (its title runs down it, its items are folded away). */
   collapsedW: 44,
+  /** A swimlane's header band (its title, across the board). */
+  laneHeadH: 30,
 } as const;
 
 export interface KanbanColumn {
@@ -653,6 +668,11 @@ export interface KanbanColumn {
   color: string;
   /** [additive] Folded to a narrow strip showing its title and count; its items are kept, not shown. */
   collapsed?: boolean;
+  /**
+   * [additive] Shows only the first `limit` items (in each swimlane); the rest stay in the column,
+   * folded away below the board ("N more"). 0 / absent = all.
+   */
+  limit?: number;
 }
 
 type KanbanGeometry = Pick<KanbanElement, 'colW' | 'columns'>;
@@ -672,6 +692,21 @@ export function kanbanColumnLeft(k: KanbanGeometry, i: number): number {
 /** The board's width for its columns. */
 export function kanbanBoardWidth(k: KanbanGeometry): number {
   return kanbanColumnLeft(k, k.columns.length);
+}
+
+/** Top of the swimlanes (world y): under the board's header and the column headers. */
+export const kanbanLanesTop = (k: Pick<KanbanElement, 'y'>) => k.y + KANBAN_LAYOUT.headerH + KANBAN_LAYOUT.colHeadH;
+
+/** The swimlane under world y (its index in `lanes`, clamped to the first / last), or -1 without lanes. */
+export function kanbanLaneAt(k: Pick<KanbanElement, 'y' | 'lanes'>, worldY: number): number {
+  const lanes = k.lanes ?? [];
+  if (!lanes.length) return -1;
+  let bottom = kanbanLanesTop(k);
+  for (let i = 0; i < lanes.length; i++) {
+    bottom += lanes[i].h;
+    if (worldY < bottom) return i;
+  }
+  return lanes.length - 1;
 }
 
 /**
