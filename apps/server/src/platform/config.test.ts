@@ -28,6 +28,8 @@ describe('configuration', () => {
     // A provider with half its credentials would silently hide its button.
     expect(problemsOf({ OIDC_GOOGLE_CLIENT_ID: 'id-only' })).toHaveLength(1);
     expect(problemsOf({ GEOIP_DB_PATH: '/nonexistent/GeoLite2-City.mmdb' })).toHaveLength(1);
+    // IndexNow refuses a key outside its alphabet: every submission would fail, long after boot.
+    expect(problemsOf({ SITE_INDEXNOW_KEY: 'key with spaces' })).toHaveLength(1);
   });
 
   it('refuses a plain-http sign-in provider in production (a test provider must never reach it)', () => {
