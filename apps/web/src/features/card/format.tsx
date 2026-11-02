@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { CalendarDays, CircleDashed, NotebookText, UserPlus } from 'lucide-react';
 import type { CardElement } from '@freero/shared';
-import { defineFormat, plainToRichText, richTextToPlain, type Editor } from '@engine';
+import { defineFormat, type Editor } from '@engine';
 import { Avatar, Button, ColorSwatches, IconButton, Menu, Popover, TextArea, ToolbarButton } from '@ui';
 import { ACCENTS, ACCENT_NAMES, STATUSES, TOOL_ID, type CardStatus } from './lib/constants';
 import { formatDue, localISODate } from './lib/actions';
+import { detailsSession, type DetailsSession } from './lib/details';
 import { useBoardPeople, usePerson } from './lib/people';
 
 type Props = { editor: Editor; cards: CardElement[] };
@@ -169,7 +170,10 @@ function AssigneeControl({ editor, cards }: Props) {
   );
 }
 
-/** "Open details": edit the description. Typing in one sitting is one undo step. */
+/**
+ * "Open details": edit the description. Typing in one sitting is one undo step. Writes go through
+ * a session (lib/details.ts), so only an editor that was opened ever writes, and only its card.
+ */
 function DetailsControl({ editor, cards }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
@@ -177,15 +181,17 @@ function DetailsControl({ editor, cards }: Props) {
   const [text, setText] = useState('');
   const gesture = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const session = useRef<DetailsSession | null>(null);
+  session.current ??= detailsSession(editor);
 
-  const flush = (value: string) => {
+  const flush = () => {
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
-    const html = plainToRichText(value.replace(/\s+$/, ''));
-    if (editor.getElement<CardElement>(card.id)?.description !== html) editor.update<CardElement>(card.id, { description: html });
+    session.current!.flush();
   };
+  /** The text area lost focus: write, and end the undo step (the editor stays open). */
   const end = () => {
-    flush(text);
+    flush();
     if (gesture.current) {
       gesture.current = false;
       editor.endGesture();
@@ -193,12 +199,17 @@ function DetailsControl({ editor, cards }: Props) {
   };
   const close = () => {
     end();
+    session.current!.close();
     setOpen(false);
   };
-  // Never leave a gesture open if the toolbar unmounts (selection changed) mid-edit.
-  const endRef = useRef(end);
-  endRef.current = end;
-  useEffect(() => () => endRef.current(), []);
+  // The toolbar unmounts (selection changed): finish an open edit, never leave a gesture open.
+  const closeRef = useRef(close);
+  closeRef.current = close;
+  useEffect(() => () => closeRef.current(), []);
+  // Another card selected while the editor is open: finish this card's edit, don't carry it over.
+  useEffect(() => {
+    if (open && session.current!.cardId !== card.id) close();
+  });
 
   return (
     <>
@@ -211,7 +222,7 @@ function DetailsControl({ editor, cards }: Props) {
         disabled={cards.length !== 1}
         onClick={() => {
           if (open) return close();
-          setText(richTextToPlain(card.description));
+          setText(session.current!.open(card.id));
           setOpen(true);
         }}
       />
@@ -233,8 +244,9 @@ function DetailsControl({ editor, cards }: Props) {
             onChange={(e) => {
               const v = e.target.value;
               setText(v);
+              session.current!.type(v);
               if (timer.current) clearTimeout(timer.current);
-              timer.current = setTimeout(() => flush(v), 250);
+              timer.current = setTimeout(flush, 250);
             }}
           />
         </div>
