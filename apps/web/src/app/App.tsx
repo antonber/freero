@@ -23,6 +23,7 @@ import { AppealPage } from './pages/appeal/AppealPage';
 import { OperatorPage } from './pages/operator/OperatorPage';
 import { OAuthConsentPage } from './pages/oauth/OAuthConsentPage';
 import { SharePage } from './pages/share/SharePage';
+import { ProblemReportProvider } from './problems/ProblemReport';
 
 // Owned by the board engine work; loaded on demand.
 const BoardPage = lazy(() => import('./board/BoardPage'));
@@ -41,6 +42,8 @@ export function App() {
       <ToastProvider>
         <AppUpdates />
         <AuthProvider>
+          {/* "Report a problem": its dialog and shortcut, for every signed-in page. */}
+          <ProblemReportProvider>
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<AuthPage mode="login" />} />
@@ -192,6 +195,7 @@ export function App() {
             />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
+          </ProblemReportProvider>
         </AuthProvider>
       </ToastProvider>
     </BrowserRouter>

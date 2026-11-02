@@ -8,6 +8,7 @@ import {
   FolderLock,
   House,
   LogOut,
+  MessageSquareWarning,
   Plus,
   Settings,
   ShieldAlert,
@@ -25,6 +26,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { useMediaQuery } from '../../lib/hooks';
 import { personColor } from '../../lib/placeholder';
 import { workspaceLabel } from './useWorkspaces';
+import { PROBLEM_SHORTCUT, useProblemReport } from '../../problems/ProblemReport';
 
 export type BoardView = 'home' | 'recent' | 'starred' | 'shared' | 'mine' | 'trash';
 /** Board collections, a project's boards, or a team's members / settings page. */
@@ -78,6 +80,7 @@ const ROLE_WORD: Record<WorkspaceSummary['role'], string> = { owner: 'Owner', ad
 export function Sidebar(props: SidebarProps) {
   const { view, onView, workspaces, current, projects, projectId } = props;
   const { user, logout } = useAuth();
+  const problems = useProblemReport();
   const navigate = useNavigate();
   const accountRef = useRef<HTMLButtonElement>(null);
   const switcherRef = useRef<HTMLButtonElement>(null);
@@ -259,6 +262,7 @@ export function Sidebar(props: SidebarProps) {
         items={[
           { heading: user.email },
           { id: 'settings', label: 'Account settings', icon: Settings, onSelect: () => navigate('/settings') },
+          { id: 'problem', label: 'Report a problem…', icon: MessageSquareWarning, shortcut: PROBLEM_SHORTCUT, onSelect: () => problems.open() },
           ...(operator ? [{ id: 'moderation', label: 'Moderation queue', icon: ShieldAlert, onSelect: () => navigate('/operator') }] : []),
           { divider: true },
           {

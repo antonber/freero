@@ -775,6 +775,11 @@
   .fr-tabs {
     display: none;
   }
+
+  /* No room next to the search on a phone: "Report a problem…" is in the account menu there. */
+  .fr-dash__help {
+    display: none;
+  }
 }
 
 /* ---- Trash ---- */

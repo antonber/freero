@@ -4,6 +4,7 @@
 // action is recorded on the server and its subject is emailed the statement written here.
 // "Listings" (#87): community submissions for Apps & agents, approved or declined here; live ones
 // can be featured or removed (and a removal appealed), with the same record and audit trail.
+// "Problems": what people sent with "Report a problem" (bugs, not abuse; ProblemsView).
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Check, Eye, FileX2, History, Link2Off, RefreshCw, Search, ShieldAlert, ShieldCheck, Star, Trash2, UserX, X } from 'lucide-react';
@@ -26,6 +27,7 @@ import { Button, Input, Logo, Modal, SegmentedControl, Select, Spinner, TextArea
 import { api, ApiError } from '../../api/client';
 import { relativeTime } from '../../lib/time';
 import { NotFoundPage } from '../NotFoundPage';
+import { ProblemsView } from './ProblemsView';
 import './operator.css';
 
 const ACTION_LABEL: Record<ModerationActionKind, string> = {
@@ -50,7 +52,7 @@ const ACTION_LABEL: Record<ModerationActionKind, string> = {
 const ADVERSE: ModerationActionKind[] = ['board.disable_link', 'board.take_down', 'board.delete', 'upload.remove', 'upload.purge', 'user.suspend', 'listing.reject', 'listing.remove'];
 /** Reviews of a listing, not findings of abuse: no report reason to pick. */
 const NO_REASON: ModerationActionKind[] = ['listing.approve', 'listing.reject', 'listing.restore', 'listing.feature', 'listing.unfeature'];
-type View = 'open' | 'closed' | 'listings';
+type View = 'open' | 'closed' | 'listings' | 'problems';
 const LISTING_STATUSES: Array<{ value: ListingStatus; label: string }> = [
   { value: 'pending', label: 'Waiting for review' },
   { value: 'approved', label: 'Live' },
@@ -72,7 +74,9 @@ interface PendingAction {
 export function OperatorPage() {
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [params, setParams] = useSearchParams();
-  const view: View = params.get('view') === 'listings' ? 'listings' : params.get('view') === 'closed' ? 'closed' : 'open';
+  const asked = params.get('view');
+  const view: View = asked === 'listings' || asked === 'closed' || asked === 'problems' ? asked : 'open';
+  const [problemsVersion, setProblemsVersion] = useState(0);
   const setView = (v: View) => setParams(v === 'open' ? {} : { view: v }, { replace: true });
   const status = view === 'closed' ? 'closed' : 'open';
   const [listingStatus, setListingStatus] = useState<ListingStatus>('pending');
@@ -91,6 +95,7 @@ export function OperatorPage() {
   }, []);
 
   const load = useCallback(() => {
+    if (view === 'problems') return setProblemsVersion((v) => v + 1);
     if (view === 'listings') {
       setListings(null);
       api.moderationListings(listingStatus).then(
@@ -145,12 +150,18 @@ export function OperatorPage() {
             { value: 'open', label: 'Open' },
             { value: 'closed', label: 'Closed' },
             { value: 'listings', label: 'Listings' },
+            { value: 'problems', label: 'Problems' },
           ]}
         />
         <Button variant="ghost" size="sm" icon={RefreshCw} onClick={load}>
           Refresh
         </Button>
       </header>
+      {view === 'problems' ? (
+        <div className="fr-op__body fr-op__body--single">
+          <ProblemsView version={problemsVersion} />
+        </div>
+      ) : (
       <div className="fr-op__body">
         {view === 'listings' ? (
           <main className="fr-op__queue" aria-label="Community listings">
@@ -189,6 +200,7 @@ export function OperatorPage() {
           <FileLookup onAct={setPending} />
         </aside>
       </div>
+      )}
       {pending && (
         <ActionDialog
           pending={pending}

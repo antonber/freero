@@ -10,6 +10,8 @@ import { ExportList } from '../admin/AdminIdentity';
 import { TrackerConnections } from '../../components/TrackerConnections';
 import { ApiTokensSection, ConnectedAppsSection, DeveloperAppsSection } from './ApiSections';
 import { Section } from './Section';
+import { HelpMenu } from '../../problems/HelpMenu';
+import { MyProblems } from '../../problems/MyProblems';
 import { isReauthRequired, needsReauth, ReauthPrompt, SignInMethodsSection, TwoFactorSection } from './SecuritySections';
 import './account.css';
 
@@ -50,6 +52,7 @@ export function AccountSettingsPage() {
           <ArrowLeft size={16} aria-hidden /> Back to boards
         </Link>
         <Logo size={26} withWordmark />
+        <HelpMenu size={32} />
       </header>
       <main className="fr-acct__main">
         <h1 className="fr-acct__title">Account settings</h1>
@@ -83,6 +86,13 @@ export function AccountSettingsPage() {
           description="Your own Jira, Linear or GitHub connections, to send board items as issues on any board you can edit. Your team’s connections are set up in its admin console."
         >
           <TrackerConnections workspaceId={null} />
+        </Section>
+        <Section
+          id="problems"
+          title="Problems you reported"
+          description="What you sent with “Report a problem” and where it stands. Only Freero’s operators read reports; you get a notification when one is fixed."
+        >
+          <MyProblems />
         </Section>
         <DataSection />
         <DeleteSection security={security} />
