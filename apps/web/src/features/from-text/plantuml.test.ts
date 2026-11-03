@@ -49,6 +49,7 @@ it('a pasted PlantUML class diagram lands as class boxes with their members, lin
   const box = (name: string) => els.find((e): e is ShapeElement => e.type === 'shape' && richTextToPlain(e.text).split('\n')[0].endsWith(name))!;
   const line = (a: ShapeElement, b: ShapeElement) => els.find((e): e is ConnectorElement => e.type === 'connector' && e.start.elementId === a.id && e.end.elementId === b.id)!;
   const [product, book, shippable, order, item] = ['Product', 'Book', 'Shippable', 'Order', 'LineItem'].map(box);
+  expect([product.shape, product.compartments]).toEqual(['umlClass', true]);
   expect(richTextToPlain(product.text).split('\n')).toEqual(['Product', '-id : UUID', '+price() : Money']);
   expect(richTextToPlain(shippable.text).split('\n')[0]).toBe('«interface» Shippable');
   expect(line(book, product).endCap).toBe('triangleOpen'); // extends: generalisation

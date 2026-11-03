@@ -6,27 +6,18 @@
 // with their own sizes, looks and UML line ends (the class / ER / state model of uml.ts) — so a
 // PlantUML diagram lands as the same shapes a Mermaid one does. Styling (skinparam, colours,
 // themes, titles, legends) is skipped; anything else unknown is an error naming the line.
-import type { CapStyle, ShapeKind, TextAlign, VerticalAlign } from '../elements';
-import { escapeHtml, plainToRichText, richTextToPlain } from '../text';
+import type { CapStyle, ShapeKind } from '../elements';
+import { escapeHtml } from '../text';
 import { INK } from './kit';
 import { measureText } from './measure';
-import { layoutGraph, layoutSequence } from './structures';
-import type { Direction, ElementDraft, GraphEdgeInput, GraphGroupInput, GraphNodeInput, LaidOut, LayoutContext, SequenceInput } from './types';
+import { layoutDiagram, layoutSequence, type DiagramEdge, type DiagramNode } from './structures';
+import { noteNode, TABLE_FONT, tableSize } from './uml';
+import type { Direction, GraphGroupInput, LaidOut, LayoutContext, SequenceInput } from './types';
 import { LAYOUT_LIMITS, LayoutError } from './types';
 
-/** A node drawn as more than a text in a box: its own size, and fields laid over the shape's. */
-export interface PlantNode extends GraphNodeInput {
-  size?: { w: number; h: number };
-  look?: { text?: string; fill?: string; stroke?: string; fontSize?: number; align?: TextAlign; vAlign?: VerticalAlign; compartments?: boolean };
-}
-
-/** An edge with UML line ends and labels at its ends (multiplicities). */
-export interface PlantEdge extends GraphEdgeInput {
-  startCap?: CapStyle;
-  endCap?: CapStyle;
-  startLabel?: string;
-  endLabel?: string;
-}
+/** Nodes and edges of the diagram model the layouts share with Mermaid's class / ER / state diagrams. */
+export type PlantNode = DiagramNode;
+export type PlantEdge = DiagramEdge;
 
 export type PlantUmlDiagram =
   | { kind: 'sequence'; diagram: SequenceInput }
@@ -212,17 +203,7 @@ function edgeOf(l: Link, from: string, to: string): PlantEdge {
 
 // ------------------------------------------------------------------------------- boxes
 
-/** Class boxes as tables: 14px text at line height 1.7 in 10px of padding (the shape feature's table metrics). */
-const TABLE_FONT = 14;
-function tableSize(lines: Array<{ text: string; bold?: boolean }>, extra = 0): { w: number; h: number } {
-  const widest = Math.max(...lines.map((l) => measureText(l.text || ' ', { fontSize: TABLE_FONT, maxWidth: 100_000, bold: l.bold }).w));
-  return { w: Math.round(Math.min(560, Math.max(160, widest + 2 * 10 + 2 + 16))), h: Math.round(2 * 10 + 2 + lines.length * TABLE_FONT * 1.7 + 6 + extra) };
-}
-
-function noteNode(id: string, text: string): PlantNode {
-  const m = measureText(text || ' ', { fontSize: 14, maxWidth: 240, lineHeight: 1.4 });
-  return { id, text: clip(text), shape: 'umlNote', size: { w: Math.round(Math.max(140, m.w + 48)), h: Math.round(Math.max(60, m.h + 32)) }, look: { fill: '#FFF6D6', fontSize: 14 } };
-}
+// Class boxes (`tableSize`) and notes (`noteNode`) are measured as Mermaid's are (uml.ts).
 
 /** `note left of X : text`, `note "text" as N`, or the head of a multi-line note (body up to `end note`). */
 const NOTE_RE = /^[hr]?note\s+(?:(left|right|top|bottom|over)(?:\s+of)?\s+([^:]+?)|"([^"]*)"\s+as\s+(\S+)|as\s+(\S+)|(left|right|top|bottom))\s*(?::\s*(.*))?$/i;
@@ -1048,53 +1029,9 @@ export function parsePlantUml(source: string): PlantUmlDiagram {
 
 /**
  * Lays a PlantUML diagram out from (0, 0): a sequence with `layoutSequence`, everything else with
- * the layered graph layout, then each node's look (its rich text, fill; small marks kept small)
- * and each line's UML ends and multiplicities laid over what it drew. A class with compartments
- * is drawn as a table (name, divider, members) by clients that have no compartments.
+ * `layoutDiagram` (the layered layout whose nodes carry their size and look, edges their UML ends
+ * and end labels) — the function Mermaid's class, ER and state diagrams use.
  */
 export function layoutPlantUml(d: PlantUmlDiagram, ctx: LayoutContext): LaidOut {
-  if (d.kind === 'sequence') return layoutSequence(d.diagram, ctx);
-  const asTable = (n: PlantNode): PlantNode =>
-    n.shape === 'umlClass' && n.look?.compartments ? { ...n, shape: 'erdEntity', text: richTextToPlain(n.look.text ?? n.text) } : n;
-  const nodes = d.nodes.map(asTable);
-  const laid = layoutGraph(nodes, d.edges, d.direction, d.groups, ctx);
-  const byId = new Map(nodes.map((n) => [n.id, n]));
-  const edgeKey = new Map<string, PlantEdge>();
-  const pairs = new Map<string, number>();
-  for (const e of d.edges) {
-    const pair = `${e.from}>${e.to}`;
-    const k = (pairs.get(pair) ?? 0) + 1;
-    pairs.set(pair, k);
-    edgeKey.set(`e:${pair}#${k}`, e);
-  }
-  const elements = laid.elements.map((el): ElementDraft => {
-    const key = laid.keys?.[el.id];
-    if (!key) return el;
-    if (el.type === 'shape' && key.startsWith('n:')) {
-      const n = byId.get(key.slice(2));
-      if (!n) return el;
-      const { compartments: _drop, ...look } = n.look ?? {};
-      const out = { ...el, ...look } as ElementDraft;
-      // Marks (a start dot, a fork bar) keep their own small size, centred where the layout put them.
-      if (n.size && n.size.w <= el.w && n.size.h <= el.h)
-        Object.assign(out, { x: el.x + Math.round((el.w - n.size.w) / 2), y: el.y + Math.round((el.h - n.size.h) / 2), w: n.size.w, h: n.size.h });
-      return out;
-    }
-    if (el.type === 'connector' && key.startsWith('e:')) {
-      const e = edgeKey.get(key);
-      if (!e) return el;
-      const ends = [
-        { t: 0.12, text: e.startLabel },
-        { t: 0.88, text: e.endLabel },
-      ].filter((l): l is { t: number; text: string } => !!l.text?.trim());
-      return {
-        ...el,
-        ...(e.startCap ? { startCap: e.startCap } : {}),
-        ...(e.endCap ? { endCap: e.endCap } : {}),
-        ...(ends.length ? { labels: ends.map((l) => ({ id: ctx.newId(), t: l.t, text: plainToRichText(l.text) })) } : {}),
-      };
-    }
-    return el;
-  });
-  return { ...laid, elements };
+  return d.kind === 'sequence' ? layoutSequence(d.diagram, ctx) : layoutDiagram(d.nodes, d.edges, d.direction, d.groups, ctx);
 }
