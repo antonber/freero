@@ -2,7 +2,7 @@ import { Shapes as ShapesIcon } from 'lucide-react';
 import { memo, useMemo } from 'react';
 import { looksLikeMermaid, type ShapeElement } from '@freero/shared';
 import { defineElement, ElementText, richTextToPlain, type ElementRenderProps, type NewElement } from '@engine';
-import { anchorOnOutline, ENTITY_FONT, ENTITY_LINE, ENTITY_PAD, entityDivider, hitShape, insetPaths, outlineToward, textBox } from './lib/geometry';
+import { anchorOnOutline, classDividers, ENTITY_FONT, ENTITY_LINE, ENTITY_PAD, entityDivider, hitShape, insetPaths, outlineToward, textBox } from './lib/geometry';
 import { DEFAULT_SIZE } from './lib/constants';
 import { shapeDefaults } from './lib/actions';
 import { decodeDrag, insertShape } from './lib/insert';
@@ -20,15 +20,22 @@ function dashArray(style: ShapeElement['strokeStyle'], sw: number): string | und
 const ShapeView = memo(function ShapeView({ element, zoom }: ElementRenderProps<ShapeElement>) {
   const { shape, w, h, fill, fillOpacity, stroke, strokeStyle } = element;
   const sw = Math.max(0, element.strokeWidth);
-  const paths = useMemo(() => insetPaths(shape, w, h, sw), [shape, w, h, sw]);
-  const tb = useMemo(() => textBox(shape, w, h), [shape, w, h]);
+  // A class with compartments is a table like an entity: its whole box holds the text.
+  const classTable = shape === 'umlClass' && !!element.compartments;
+  const paths = useMemo(() => insetPaths(classTable ? 'rect' : shape, w, h, sw), [classTable, shape, w, h, sw]);
+  const tb = useMemo(() => (classTable ? { x: 0, y: 0, w, h } : textBox(shape, w, h)), [classTable, shape, w, h]);
   // ElementText sizes 'auto' text from the element box: hand it the text area instead.
   const textEl = useMemo(() => ({ ...element, w: tb.w, h: tb.h }), [element, tb]);
-  const entity = shape === 'erdEntity';
+  const entity = shape === 'erdEntity' || classTable;
   const pad = entity ? ENTITY_PAD + sw / 2 : Math.max(4, Math.min(tb.w, tb.h) * 0.07) + sw / 2;
   const transparent = fill === 'transparent';
-  // An entity is a table: title line, a divider, then one attribute per line.
-  const divider = entity ? entityDivider(element.fontSize, sw) : 0;
+  // An entity is a table: title line, a divider, then one attribute per line. A class adds a
+  // divider above its operations.
+  const plain = classTable ? richTextToPlain(element.text) : '';
+  const dividers = useMemo(
+    () => (classTable ? classDividers(plain, element.fontSize, sw) : entity ? [entityDivider(element.fontSize, sw)] : []),
+    [classTable, entity, plain, element.fontSize, sw],
+  );
   return (
     <div className="fr-shape">
       <svg className="fr-shape__svg" width={w} height={h} aria-hidden>
@@ -45,7 +52,8 @@ const ShapeView = memo(function ShapeView({ element, zoom }: ElementRenderProps<
         {paths.dashed && sw > 0 && (
           <path d={paths.dashed} fill="none" stroke={stroke} strokeWidth={sw} strokeDasharray={`${Math.max(6, sw * 3)} ${Math.max(5, sw * 2.5)}`} />
         )}
-        {entity && sw > 0 && divider < h - sw && <path d={`M${sw / 2} ${divider}H${w - sw / 2}`} stroke={stroke} strokeWidth={sw} />}
+        {sw > 0 &&
+          dividers.filter((y) => y < h - sw).map((y, i) => <path key={i} d={`M${sw / 2} ${y}H${w - sw / 2}`} stroke={stroke} strokeWidth={sw} />)}
         {paths.details && sw > 0 && (
           <path
             d={paths.details}
