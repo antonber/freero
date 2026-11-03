@@ -113,10 +113,13 @@ export interface EventFilter {
   beforeId?: string;
 }
 
-/** A workspace's events, newest first. */
+/**
+ * A workspace's log, newest first: its chain 'w:<id>' (for an organisation, #108, the events of
+ * all its workspaces; each row keeps the workspace it happened in).
+ */
 export async function listEvents(f: EventFilter, limit: number): Promise<StoredEvent[]> {
-  const where = ['workspace_id = $1'];
-  const params: unknown[] = [f.workspaceId];
+  const where = ['chain = $1'];
+  const params: unknown[] = [`w:${f.workspaceId}`];
   const add = (sql: (p: string) => string, v: unknown) => {
     params.push(v);
     where.push(sql(`$${params.length}`));

@@ -51,6 +51,18 @@ export function setAccountScope(fn: AccountScope): void {
   accountScope = fn;
 }
 
+type OrganisationScope = (workspaceIds: string[]) => Promise<Map<string, string>>;
+let organisationScope: OrganisationScope = async () => new Map();
+
+/**
+ * Which organisation each workspace belongs to (#108; set once by audit/wiring.ts from
+ * modules/workspaces): an event in an attached workspace also goes to the organisation's log.
+ * Asked inside the event's transaction, so attaching / detaching and its record agree.
+ */
+export function setOrganisationScope(fn: OrganisationScope): void {
+  organisationScope = fn;
+}
+
 const MAX_LABEL = 300;
 const clip = (s: string | null | undefined, n = MAX_LABEL) => (s == null ? null : s.slice(0, n));
 
@@ -77,6 +89,18 @@ export async function recordAudit(input: AuditInput): Promise<void> {
     if (input.fanOut !== false) for (const id of await accountScope(input.accountId)) workspaceIds.add(id);
   }
   for (const id of workspaceIds) chains.push({ chain: workspaceChain(id), workspaceId: id });
+  // #108: the organisation of each of those workspaces gets the event too — once, however many of
+  // its workspaces saw it — keeping the workspace it happened in (null: an account's own event).
+  if (workspaceIds.size) {
+    const orgs = await organisationScope([...workspaceIds]);
+    const added = new Set(workspaceIds);
+    for (const org of new Set(orgs.values())) {
+      if (added.has(org)) continue;
+      added.add(org);
+      const source = input.workspaceId && orgs.get(input.workspaceId) === org ? input.workspaceId : null;
+      chains.push({ chain: workspaceChain(org), workspaceId: source });
+    }
+  }
   // Neither a workspace nor an account (an operator acting on a file nobody owns): Freero's own log.
   if (!chains.length) chains.push({ chain: SYSTEM_CHAIN, workspaceId: null });
   const base = {
