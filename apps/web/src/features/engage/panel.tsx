@@ -9,6 +9,7 @@ import { ActivityForm, Button, IconButton, Input, Modal, SegmentedControl, Selec
 import { ANSWER_DIALOG, KINDS, LINK_DIALOG, SETTINGS_DIALOG, STAGE_DIALOG, activityInfo, kindLabel, starter, usesOptions } from './lib/activity';
 import { LinkDialog } from './lib/LinkDialog';
 import { Stage } from './lib/Stage';
+import { QuizEditor } from './lib/QuizEditor';
 import './engage.css';
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : 'Something went wrong');
@@ -24,7 +25,7 @@ function activityActions(engage: HostEngage, id: string, canRun: boolean): Activ
   };
 }
 
-function useActivityState(editor: Editor, id: string): [ActivityState | null, (s: ActivityState) => void, string | null] {
+function useActivityState(editor: Editor, id: string, version = ''): [ActivityState | null, (s: ActivityState) => void, string | null] {
   const [state, setState] = useState<ActivityState | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -40,7 +41,7 @@ function useActivityState(editor: Editor, id: string): [ActivityState | null, (s
     return () => {
       cancelled = true;
     };
-  }, [editor, id]);
+  }, [editor, id, version]);
   return [state, setState, error];
 }
 
@@ -49,7 +50,8 @@ function AnswerDialog({ editor, props }: PanelProps) {
   const a = useElement(id) as ActivityElement | undefined;
   const canEdit = useCanEdit();
   const close = () => editor.closePanel(ANSWER_DIALOG);
-  const [state, setState, loadError] = useActivityState(editor, id);
+  // A quiz moving on, or answers opening / closing, changes what this person may do: ask again.
+  const [state, setState, loadError] = useActivityState(editor, id, `${a?.quiz?.step}:${a?.quiz?.openedAt}:${a?.quiz?.showAnswer}:${a?.closed}:${a?.guests}`);
   if (!a || a.type !== 'activity') {
     return (
       <Modal open onClose={close} title="Activity">
@@ -78,7 +80,41 @@ function switchKind(a: ActivityElement, kind: ActivityKind): Partial<ActivityEle
     kind,
     ...(untouched ? { question: plainToRichText(next.question) } : {}),
     ...(usesOptions(kind) && a.options.length < 2 ? { options: next.options } : {}),
+    // What the new kind needs and the activity doesn't have yet (axes, quiz questions).
+    ...Object.fromEntries(Object.entries(next.extra).filter(([k]) => a[k as keyof ActivityElement] === undefined || k === 'results' || k === 'anonymous')),
   };
+}
+
+/** A 2×2 matrix's axes (#147): what each end of the across and up axes means. */
+function AxesFields({ a, set }: { a: ActivityElement; set: (patch: Partial<ActivityElement>) => void }) {
+  const ax = a.axes ?? { x: ['Low', 'High'], y: ['Low', 'High'] };
+  const field = (axis: 'x' | 'y', end: 0 | 1, label: string) => (
+    <Input
+      aria-label={label}
+      placeholder={label}
+      value={ax[axis][end]}
+      maxLength={40}
+      onChange={(e) => {
+        const pair: [string, string] = [...ax[axis]];
+        pair[end] = e.target.value;
+        set({ axes: { ...ax, [axis]: pair } });
+      }}
+    />
+  );
+  return (
+    <>
+      <span className="fr-engage-form__label">Across (left → right)</span>
+      <div className="fr-engage-form__row">
+        {field('x', 0, 'Left end')}
+        {field('x', 1, 'Right end')}
+      </div>
+      <span className="fr-engage-form__label">Up (bottom → top)</span>
+      <div className="fr-engage-form__row">
+        {field('y', 0, 'Bottom end')}
+        {field('y', 1, 'Top end')}
+      </div>
+    </>
+  );
 }
 
 function SettingsDialog({ editor, props }: PanelProps) {
@@ -95,7 +131,9 @@ function SettingsDialog({ editor, props }: PanelProps) {
         <Select<ActivityKind> aria-label="Kind" options={KINDS.map((k) => ({ value: k.value, label: k.label, description: k.hint }))} value={a.kind} onChange={(kind) => set(switchKind(a, kind))} />
         {usesOptions(a.kind) ? (
           <>
-            <span className="fr-engage-form__label">{a.kind === 'poll' ? 'Choices' : a.kind === 'ranking' ? 'Items to rank' : 'Statements to rate'}</span>
+            <span className="fr-engage-form__label">
+              {a.kind === 'poll' ? 'Choices' : a.kind === 'ranking' ? 'Items to rank' : a.kind === 'matrix' ? 'Items to place' : 'Statements to rate'}
+            </span>
             {a.options.map((o, i) => (
               <div key={o.id} className="fr-engage-form__row">
                 <Input
@@ -118,6 +156,8 @@ function SettingsDialog({ editor, props }: PanelProps) {
             </Button>
           </>
         ) : null}
+        {a.kind === 'matrix' ? <AxesFields a={a} set={set} /> : null}
+        {a.kind === 'quiz' ? <QuizEditor editor={editor} a={a} /> : null}
         {a.kind === 'poll' ? (
           <Toggle label="People may pick several" checked={(a.maxChoices ?? 1) > 1} onChange={(on) => set({ maxChoices: on ? Math.max(2, a.options.length) : 1 })} />
         ) : null}
@@ -133,7 +173,11 @@ function SettingsDialog({ editor, props }: PanelProps) {
           />
         ) : null}
         <Toggle label="Anonymous (names are never shown with answers)" checked={a.anonymous} onChange={(anonymous) => set({ anonymous })} />
-        <Toggle label="Hide results until I reveal them" checked={a.results === 'reveal'} onChange={(on) => set({ results: on ? 'reveal' : 'live' })} />
+        <Toggle
+          label={a.kind === 'quiz' ? 'Hide the leaderboard until I reveal it' : 'Hide results until I reveal them'}
+          checked={a.results === 'reveal'}
+          onChange={(on) => set({ results: on ? 'reveal' : 'live' })}
+        />
         <Toggle label="Visitors without an account can answer" checked={a.guests} onChange={(guests) => set({ guests })} />
         <Toggle label="Answers are closed" checked={!!a.closed} onChange={(closed) => set({ closed })} />
       </div>

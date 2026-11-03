@@ -369,6 +369,8 @@ export const api = {
     request<ActivityState>('PATCH', `${activityPath(id, aid)}/questions/${encodeURIComponent(qid)}`, patch),
   revealActivity: (id: string, aid: string, revealed: boolean) => request<ActivityState>('POST', `${activityPath(id, aid)}/reveal`, { revealed }),
   clearActivity: (id: string, aid: string) => request<ActivityState>('DELETE', `${activityPath(id, aid)}/answers`),
+  setActivityKey: (id: string, aid: string, key: Record<string, string[]>) => request<ActivityState>('PUT', `${activityPath(id, aid)}/key`, { key }),
+  runQuiz: (id: string, aid: string, run: { step: number } | { showAnswer: true }) => request<ActivityState>('POST', `${activityPath(id, aid)}/quiz`, run),
   guestMe: () => request<{ guest: GuestInfo | null }>('GET', '/api/guest/me'),
   guestBoard: (id: string) => request<{ board: BoardSummary }>('GET', `/api/guest/boards/${encodeURIComponent(id)}/board`),
   leaveAsGuest: () => request<{ ok: true }>('POST', '/api/guest/leave'),

@@ -903,7 +903,7 @@ export interface FileElement extends BaseElement {
 }
 
 /** Live audience activities (KAI-132). */
-export type ActivityKind = 'poll' | 'wordcloud' | 'ranking' | 'rating' | 'qna';
+export type ActivityKind = 'poll' | 'wordcloud' | 'ranking' | 'rating' | 'qna' | 'matrix' | 'quiz';
 export interface ActivityOption {
   id: string;
   text: string;
@@ -939,6 +939,36 @@ export interface ActivityElement extends BaseElement {
   color: string;
   /** [additive, #40] Draw the QR code of the phone answer link on the activity (exports keep it). */
   qr?: boolean;
+  /** [additive, #147] 2×2 matrix: the axes' names, low end then high end (`options` are the items people place). */
+  axes?: { x: [string, string]; y: [string, string] };
+  /**
+   * [additive, #147] Quiz: its questions. Which options are right is NOT here (everyone holds the
+   * board): the server keeps the answer key (PUT …/key) and publishes it per question once shown.
+   */
+  questions?: QuizQuestion[];
+  /** [additive, #147] Quiz: where the facilitator is. Absent / step -1: not started. */
+  quiz?: QuizStep;
+}
+
+/** [#147] One quiz question. */
+export interface QuizQuestion {
+  id: string;
+  text: string;
+  options: ActivityOption[];
+  /** Seconds to answer once the question opens (server clock); absent / 0: no limit. */
+  seconds?: number;
+  /** More than one answer is right (people may pick several); set with the answer key. */
+  multi?: boolean;
+}
+
+/** [#147] The running quiz, written by its facilitator (an editor). */
+export interface QuizStep {
+  /** The question open now (index into `questions`), -1 before the first. */
+  step: number;
+  /** When it opened (server clock, ms): time limits and answer times count from here. */
+  openedAt: number;
+  /** Answers to this question are closed and its right answer and counts are shown. */
+  showAnswer: boolean;
 }
 
 /**

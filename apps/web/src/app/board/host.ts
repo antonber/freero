@@ -86,6 +86,8 @@ export function engageOf(boardId: string): HostEngage {
     moderate: (aid, qid, patch) => api.moderateQuestion(boardId, aid, qid, patch),
     reveal: (aid, revealed) => api.revealActivity(boardId, aid, revealed),
     clear: (aid) => api.clearActivity(boardId, aid),
+    setKey: (aid, key) => api.setActivityKey(boardId, aid, key),
+    runQuiz: (aid, run) => api.runQuiz(boardId, aid, run),
   };
 }
 

@@ -6,6 +6,7 @@ import { ArrowDown, ArrowUp, Check, EyeOff, ThumbsUp } from 'lucide-react';
 import { ENGAGE_MAX_QUESTION, ENGAGE_MAX_WORDS, type ActivityAnswer, type ActivityInfo, type ActivityState } from '@freero/shared';
 import { Button, IconButton } from './Button';
 import { Input } from './fields';
+import { MatrixForm, QuizForm } from './ActivityKinds';
 import './ActivityForm.css';
 
 /** What answering does (resolve with the new state, reject with a showable message). */
@@ -257,14 +258,16 @@ export function ActivityForm(props: ActivityFormProps) {
   return (
     <div className="fr-actform" data-testid="engage-answer" style={a.color ? { ['--fr-accent' as string]: a.color } : undefined}>
       <p className="fr-actform__question">{a.question || 'Untitled activity'}</p>
-      {!state.canAnswer && a.kind !== 'qna' ? <p className="fr-actform__hint">{state.reason}</p> : null}
+      {!state.canAnswer && a.kind !== 'qna' && a.kind !== 'quiz' ? <p className="fr-actform__hint">{state.reason}</p> : null}
       {a.kind === 'qna' ? <QnaForm {...props} a={a} /> : null}
-      {state.canAnswer && a.kind !== 'qna' ? (
+      {a.kind === 'quiz' ? <QuizForm a={a} state={state} onSubmit={submit} busy={busy} /> : null}
+      {state.canAnswer && a.kind !== 'qna' && a.kind !== 'quiz' ? (
         <div key={formKey} className="fr-actform">
           {a.kind === 'poll' ? <PollForm {...form} /> : null}
           {a.kind === 'wordcloud' ? <WordsForm {...form} /> : null}
           {a.kind === 'ranking' ? <RankForm {...form} /> : null}
           {a.kind === 'rating' ? <RateForm {...form} /> : null}
+          {a.kind === 'matrix' ? <MatrixForm {...form} /> : null}
         </div>
       ) : null}
       {error ? (
@@ -272,19 +275,27 @@ export function ActivityForm(props: ActivityFormProps) {
           {error}
         </p>
       ) : null}
-      {sent ? (
+      {sent && a.kind !== 'quiz' ? (
         <p className="fr-actform__hint" role="status">
           Thanks — your answer is in. You can change it any time.
         </p>
       ) : null}
-      {state.mine && state.canAnswer && a.kind !== 'qna' ? (
+      {state.mine && state.canAnswer && a.kind !== 'qna' && a.kind !== 'quiz' ? (
         <Button variant="ghost" size="sm" onClick={withdraw}>
           Take my answer back
         </Button>
       ) : null}
       <p className="fr-actform__hint">
-        {a.kind === 'qna' ? '' : a.anonymous ? 'Anonymous: nobody sees who answered what.' : 'Open: your name may be shown with your answer.'}
-        {a.results === 'reveal' && !state.revealed ? ' Results show once the host reveals them.' : ''}
+        {a.kind === 'qna'
+          ? ''
+          : a.kind === 'quiz'
+            ? a.anonymous
+              ? 'Anonymous: the leaderboard shows no names.'
+              : 'Your name is on the leaderboard.'
+            : a.anonymous
+              ? 'Anonymous: nobody sees who answered what.'
+              : 'Open: your name may be shown with your answer.'}
+        {a.results === 'reveal' && !state.revealed ? (a.kind === 'quiz' ? ' The host reveals the leaderboard at the end.' : ' Results show once the host reveals them.') : ''}
       </p>
     </div>
   );

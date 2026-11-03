@@ -1231,7 +1231,7 @@ credentials that act for a person without their session), `api` (no table: the p
 permission check, `POST /objects/resolve`), `references` (object_references, reference_sources: the
 references index derived through the outbox, `GET /objects/backlinks`; both in "Suite foundation"
 below), `engage` (engage_answers, engage_questions, engage_upvotes,
-engage_reveals: live audience activities; see "Live activities" below), `trackers`
+engage_reveals, engage_keys: live audience activities; see "Live activities" below), `trackers`
 (tracker_connections, tracker_links, tracker_link_sources, tracker_proposals, tracker_oauth_flows: issue-tracker sync;
 see "Issue trackers" below), `search` (search_entries, search_sources: the search index derived
 through the outbox, `GET /search`), `events` (events, event_board_states, event_pending_boards: the
@@ -2848,6 +2848,17 @@ the activity's `GET` returns the activity itself (`ActivityState.activity`, ques
 so that page needs no Yjs or canvas, and a visitor joins as a guest inline. Its QR code is encoded
 by the pinned `qrcode` package and drawn as one SVG path (the link dialog, optionally on the
 element so exports keep it, and the full-screen presenter view of one activity).
+A **2×2 matrix** (#147) takes each person's placement of the items (0..1 on two named axes) and
+publishes each item's average place and spread. A **quiz** keeps its answer key on the server
+(`engage_keys`, `PUT …/key`, editors; the element holds only questions and answers, since every
+participant's client holds the board) and is run by the server: `POST …/quiz` (editors) writes
+the element's `quiz` step with the SERVER's clock (`openedAt`), so time limits and answer times are
+fair whatever the clients' clocks; answers to the open question only, before its limit (plus
+`ENGAGE_QUIZ_GRACE_MS`) and before its answer is shown, can't be withdrawn, and score more when
+faster. The board gets per question how many answered, and the right options and counts only once
+shown; the leaderboard (names unless anonymous) only once revealed. Each person's own score comes
+with their `ActivityState`. Copies of a board carry a quiz's questions, not its key. Results of any
+kind download as CSV from the format toolbar (what the board shows, formula-guarded).
 
 **Participants** (parity rank 1, `realtime/participation.ts`, `@freero/shared` `participation.ts`):
 commenters and guests take part in a facilitator's sessions without edit access, like Engage lets

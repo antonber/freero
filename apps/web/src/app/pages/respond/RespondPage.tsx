@@ -20,8 +20,9 @@ type View =
   | { kind: 'sign-in' }
   | { kind: 'gone'; message: string };
 
-/** Results and "answers closed" change while you look: re-read now and then (no socket here). */
+/** Results and "answers closed" change while you look: re-read now and then (no socket here); a quiz moves faster. */
 const REFRESH_MS = 8000;
+const QUIZ_REFRESH_MS = 2000;
 
 export function RespondPage() {
   const { boardId = '', activityId = '' } = useParams();
@@ -55,6 +56,7 @@ export function RespondPage() {
 
   // While answering: pick up new results, questions, and "answers closed" from time to time.
   const ready = view.kind === 'ready';
+  const quiz = view.kind === 'ready' && view.state.activity?.kind === 'quiz';
   useEffect(() => {
     if (!ready) return;
     const t = setInterval(() => {
@@ -63,9 +65,9 @@ export function RespondPage() {
         (state) => setView((v) => (v.kind === 'ready' ? { kind: 'ready', state } : v)),
         () => undefined,
       );
-    }, REFRESH_MS);
+    }, quiz ? QUIZ_REFRESH_MS : REFRESH_MS);
     return () => clearInterval(t);
-  }, [ready, boardId, activityId]);
+  }, [ready, quiz, boardId, activityId]);
 
   const retry = () => void load().then(setView);
   const actions: ActivityActions = {

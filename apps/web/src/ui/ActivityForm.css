@@ -147,3 +147,147 @@
 [data-fr-layout^='phone'] .fr-actform__choice {
   min-height: 48px;
 }
+
+/* 2×2 matrix (#147): pick an item, tap where it goes; placed items can be dragged. */
+.fr-actform__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fr-actform__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 4px 10px;
+  border: 1.5px solid var(--fr-line, #dddce6);
+  border-radius: 999px;
+  background: var(--fr-surface, #fff);
+  color: var(--fr-ink);
+  font: 500 14px var(--fr-font);
+  cursor: pointer;
+}
+
+.fr-actform__chip[aria-pressed='true'] {
+  border-color: var(--dot);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dot) 25%, transparent);
+}
+
+.fr-actform__chipdot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--dot);
+}
+
+.fr-actform__matrix {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.fr-actform__axis {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fr-ink-3);
+}
+
+.fr-actform__plane {
+  position: relative;
+  width: min(100%, 340px);
+  aspect-ratio: 1;
+  border-radius: 10px;
+  touch-action: none;
+  cursor: crosshair;
+  background:
+    linear-gradient(to right, transparent calc(50% - 0.5px), rgba(23, 22, 43, 0.16) calc(50% - 0.5px), rgba(23, 22, 43, 0.16) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
+    linear-gradient(to bottom, transparent calc(50% - 0.5px), rgba(23, 22, 43, 0.16) calc(50% - 0.5px), rgba(23, 22, 43, 0.16) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
+    var(--fr-surface-2, #f7f6fb);
+  box-shadow: inset 0 0 0 1px rgba(23, 22, 43, 0.08);
+}
+
+.fr-actform__pin {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  transform: translate(-50%, -50%);
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: var(--dot);
+  box-shadow: 0 1px 4px rgba(23, 22, 43, 0.35);
+  cursor: grab;
+}
+
+.fr-actform__pin span {
+  position: absolute;
+  left: 14px;
+  top: -4px;
+  white-space: nowrap;
+  font: 600 12px var(--fr-font);
+  color: var(--fr-ink);
+  pointer-events: none;
+}
+
+/* Quiz (#147). */
+.fr-actform__quizhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fr-ink-2);
+}
+
+.fr-actform__timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--fr-surface-2, #f2f1f7);
+  font-variant-numeric: tabular-nums;
+}
+
+.fr-actform__timer.is-low {
+  background: #fde4e4;
+  color: #b4232a;
+}
+
+.fr-actform__choice.is-right {
+  border-color: #1fa463;
+  background: #e9f8ef;
+}
+
+.fr-actform__choice:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+
+.fr-actform__tag {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 700;
+  color: #137a43;
+}
+
+.fr-actform__verdict {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-weight: 650;
+  color: #b4232a;
+}
+
+.fr-actform__verdict.is-right {
+  color: #137a43;
+}
+
+.fr-actform__score {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+}

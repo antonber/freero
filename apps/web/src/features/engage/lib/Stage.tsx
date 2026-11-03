@@ -36,7 +36,7 @@ export function Stage({ editor, props }: PanelProps) {
         </div>
         <h1 className="fr-engage-stage__question">{richTextToPlain(a.question).trim() || 'Untitled activity'}</h1>
         <div className="fr-engage-stage__results">
-          <Body a={a} r={results} />
+          <Body a={a} r={results} now={() => editor.host.serverNow()} />
         </div>
       </div>
       {!a.closed ? (

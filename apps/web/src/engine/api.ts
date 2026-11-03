@@ -484,6 +484,10 @@ export interface HostEngage {
   moderate(activityId: string, questionId: string, patch: { answered?: boolean; hidden?: boolean }): Promise<ActivityState>;
   reveal(activityId: string, revealed: boolean): Promise<ActivityState>;
   clear(activityId: string): Promise<ActivityState>;
+  /** [additive, #147] Owners and editors: a quiz's right answers (question id -> option ids), kept on the server. */
+  setKey?(activityId: string, key: Record<string, string[]>): Promise<ActivityState>;
+  /** [additive, #147] Owners and editors: open a quiz question (`step`, -1 = back to the start) or show the open one's answer. */
+  runQuiz?(activityId: string, run: { step: number } | { showAnswer: true }): Promise<ActivityState>;
 }
 
 /** [additive] `Host.trackers` (wire: @freero/shared trackers.ts). */

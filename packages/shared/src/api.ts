@@ -202,6 +202,8 @@ export const MAX_CALL_URL = 2000;
 // PATCH  /api/boards/:id/activities/:aid/questions/:qid  body { answered?, hidden? } -> ActivityState  (editors)
 // POST   /api/boards/:id/activities/:aid/reveal   body { revealed: boolean } -> ActivityState  (editors)
 // DELETE /api/boards/:id/activities/:aid/answers  -> ActivityState   (editors: start over)
+// PUT    /api/boards/:id/activities/:aid/key      body { key: Record<questionId, optionId[]> } -> ActivityState
+//        (editors, #147: a quiz's right answers, kept on the server, never in the board)
 export interface ActivityAnswer {
   /** Poll: picked option ids (1..maxChoices). */
   choices?: string[];
@@ -211,6 +213,13 @@ export interface ActivityAnswer {
   order?: string[];
   /** Rating: option id -> 1..scale (statements may be skipped). */
   ratings?: Record<string, number>;
+  /** [#147] 2×2 matrix: item id -> where it was placed, 0..1 from the low to the high end of each axis. */
+  positions?: Record<string, { x: number; y: number }>;
+  /**
+   * [#147] Quiz: question id -> the options picked. Send only the open question's; the server keeps
+   * the earlier ones and stamps `ms` (time taken, server clock).
+   */
+  quiz?: Record<string, { choices: string[]; ms?: number }>;
 }
 export interface ActivityState {
   /** What everyone sees on the board right now (sealed until revealed). */
@@ -232,10 +241,19 @@ export interface ActivityState {
   activity?: ActivityInfo;
   /** [additive, #40] You run activities on this board (owner / editor): moderation, reveal. */
   canRun?: boolean;
+  /** [additive, #147] The server's clock when it answered (quiz countdowns). */
+  now?: number;
+  /** [additive, #147] Quiz: your score so far (only ever sent to you). */
+  myScore?: number;
+  /** [additive, #147] Quiz: the answer key — question id -> right option ids. Only for those who run it. */
+  key?: Record<string, string[]>;
 }
 
 /** [#40] What answering an activity needs to know of it, without the board. */
-export type ActivityInfo = Pick<ActivityElement, 'id' | 'kind' | 'options' | 'maxChoices' | 'scale' | 'anonymous' | 'results' | 'guests' | 'closed' | 'color'> & {
+export type ActivityInfo = Pick<
+  ActivityElement,
+  'id' | 'kind' | 'options' | 'maxChoices' | 'scale' | 'anonymous' | 'results' | 'guests' | 'closed' | 'color' | 'axes' | 'questions' | 'quiz'
+> & {
   /** The question, plain text. */
   question: string;
 };
@@ -245,6 +263,13 @@ export const ENGAGE_MAX_CLOUD_WORDS = 60;
 export const ENGAGE_MAX_QUESTION = 280;
 export const ENGAGE_MAX_QUESTIONS_PER_PERSON = 10;
 export const ENGAGE_MAX_OPTIONS = 12;
+/** [#147] Questions in one quiz, and the most a question's time limit may be (seconds). */
+export const ENGAGE_MAX_QUIZ_QUESTIONS = 30;
+export const ENGAGE_MAX_QUIZ_SECONDS = 600;
+/** [#147] An answer may arrive this late (ms) after a quiz question's time ran out (network). */
+export const ENGAGE_QUIZ_GRACE_MS = 1500;
+/** [#147] Points for a right answer: the full amount without a time limit; with one, half plus half again as fast as you were. */
+export const ENGAGE_QUIZ_POINTS = 1000;
 
 // ---- Share-link password and expiry (KAI-145) ----
 // The board's owner may protect its link (PATCH /api/boards/:id, owner only):

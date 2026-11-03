@@ -34,7 +34,7 @@ const ActivityView = memo(function ActivityView({ element }: ElementRenderProps<
         <ElementText element={element} field="question" fontSize={22} fontFamily="sans" align="left" vAlign="top" color="var(--fr-ink)" padding={0} placeholder="Ask something" style={{ fontWeight: 650, lineHeight: 1.25 }} />
       </div>
       <div className="fr-engage__body">
-        <Body a={element} r={results} />
+        <Body a={element} r={results} now={() => editor.host.serverNow()} />
         {element.qr ? (
           <figure className="fr-engage__qr">
             <QrCode text={answerLink(editor.boardId, element.id, !!editor.host.engage)} label="QR code of the answer link" />
@@ -82,5 +82,8 @@ export default defineElement({
     color: ACCENTS[0],
   }),
   Component: ActivityView,
-  toPlainText: (el) => [richTextToPlain(el.question), ...el.options.map((o) => o.text)].filter(Boolean).join('\n'),
+  toPlainText: (el) =>
+    [richTextToPlain(el.question), ...el.options.map((o) => o.text), ...(el.questions ?? []).flatMap((q) => [q.text, ...q.options.map((o) => o.text)])]
+      .filter(Boolean)
+      .join('\n'),
 });

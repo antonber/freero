@@ -74,6 +74,143 @@
   min-width: 0;
 }
 
+/* 2×2 matrix results (#147): items at their average place, spread as a soft halo. */
+.fr-engage__matrix {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+}
+
+.fr-engage__axis {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fr-ink-3);
+  text-align: center;
+}
+
+.fr-engage__plane {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 120px;
+  container-type: size;
+  border-radius: 8px;
+  background:
+    linear-gradient(to right, transparent calc(50% - 0.5px), rgba(23, 22, 43, 0.14) calc(50% - 0.5px), rgba(23, 22, 43, 0.14) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
+    linear-gradient(to bottom, transparent calc(50% - 0.5px), rgba(23, 22, 43, 0.14) calc(50% - 0.5px), rgba(23, 22, 43, 0.14) calc(50% + 0.5px), transparent calc(50% + 0.5px)),
+    var(--fr-surface-2, #f7f6fb);
+}
+
+.fr-engage__planehint {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  color: var(--fr-ink-3);
+}
+
+.fr-engage__dot {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+.fr-engage__halo {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--dot) 16%, transparent);
+}
+
+.fr-engage__pin {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  transform: translate(-50%, -50%);
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: var(--dot);
+  box-shadow: 0 1px 3px rgba(23, 22, 43, 0.3);
+}
+
+.fr-engage__dotlabel {
+  position: absolute;
+  left: 9px;
+  top: -8px;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--fr-ink);
+}
+
+.fr-engage__dotlabel small {
+  font-weight: 500;
+  color: var(--fr-ink-3);
+}
+
+/* Quiz (#147): the open question, its timer, the right answer once shown; the leaderboard. */
+.fr-engage__quiz {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fr-engage__quizhead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--fr-ink-2);
+}
+
+.fr-engage__timer {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--fr-surface-2, #f2f1f7);
+  font-variant-numeric: tabular-nums;
+}
+
+.fr-engage__timer.is-low {
+  background: #fde4e4;
+  color: #b4232a;
+}
+
+.fr-engage__quizq {
+  font-size: 16px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.fr-engage__bars li.is-right .fr-engage__label {
+  font-weight: 700;
+  color: #137a43;
+}
+
+.fr-engage__leaders {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fr-engage__leaders li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.fr-engage__leaders .fr-engage__label {
+  flex: 1;
+}
+
 /* The answer link's QR code on the activity (#40). */
 .fr-engage__qr {
   flex: 0 0 auto;
@@ -294,6 +431,48 @@
 
 .fr-engage-form__row > :first-child {
   flex: 1;
+}
+
+/* Quiz set-up (#147). */
+.fr-engage-quizedit {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fr-engage-quizedit__note,
+.fr-engage-quizedit__warn {
+  margin: 0;
+  font-size: 13px;
+  color: var(--fr-ink-3);
+}
+
+.fr-engage-quizedit__warn {
+  color: #b4232a;
+}
+
+.fr-engage-quizedit__q {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--fr-line);
+  border-radius: 10px;
+}
+
+.fr-engage-quizedit__answer {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.fr-engage-quizedit__q legend {
+  padding: 0 4px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--fr-ink-2);
 }
 
 /* "Answer on a phone" dialog (#40). */

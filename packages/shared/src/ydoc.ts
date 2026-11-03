@@ -348,6 +348,20 @@ export interface ActivityResults {
   rating?: Array<{ optionId: string; avg: number; count: number; dist: number[] }>;
   /** Most upvoted first; hidden questions left out. `by`: the asker's name unless asked anonymously. */
   questions?: Array<{ id: string; text: string; by?: string; votes: number; answered: boolean; at: number }>;
+  /** [#147] 2×2 matrix, per item in the element's order: how many placed it, the average place (0..1) and the spread (standard deviation) on each axis. */
+  matrix?: Array<{ optionId: string; count: number; x: number; y: number; sx: number; sy: number }>;
+  /**
+   * [#147] Quiz: for the open question, how many answered; once its answer is shown, the right
+   * options and how many picked each. `leaderboard` (best first, top 10) only once revealed; names
+   * only when the quiz isn't anonymous.
+   */
+  quiz?: {
+    questionId: string | null;
+    answered: number;
+    correct?: string[];
+    counts?: Array<{ optionId: string; count: number }>;
+    leaderboard?: Array<{ name: string; score: number; right: number }>;
+  };
 }
 
 /** Private mode: while active, what participants add stays in their private layer until revealed. */
