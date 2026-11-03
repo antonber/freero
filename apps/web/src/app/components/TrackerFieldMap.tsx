@@ -29,7 +29,9 @@ export function TrackerFieldMap({ connection, onSaved }: { connection: TrackerCo
   const [types, setTypes] = useState<Array<{ project: string; type: string }>>(Object.entries(initial.issueTypes).map(([project, type]) => ({ project, type })));
   const [map, setMap] = useState<FieldMapEntry[]>(initial.fields);
   const [busy, setBusy] = useState(false);
-  const custom = connection.provider === 'jira' || connection.provider === 'azure';
+  // Custom fields: every tracker with its own (#43, #120, #121); story points, start date and issue types: Jira and Azure DevOps.
+  const custom = connection.provider !== 'linear' && connection.provider !== 'github';
+  const typed = connection.provider === 'jira' || connection.provider === 'azure';
 
   useEffect(() => {
     if (!custom) return setFields([]);
@@ -56,7 +58,7 @@ export function TrackerFieldMap({ connection, onSaved }: { connection: TrackerCo
     try {
       const out = await api.updateTrackerConnection(connection.id, {
         fieldMap: {
-          ...(custom ? { estimateField: estimate || null, startDateField: start || null } : {}),
+          ...(typed ? { estimateField: estimate || null, startDateField: start || null } : {}),
           issueTypes: Object.fromEntries(types.filter((t) => t.project.trim() && t.type.trim()).map((t) => [t.project.trim(), t.type.trim()])),
           ...(custom ? { fields: map.filter((m) => m.tracker && m.board.trim()) } : {}),
         },
@@ -73,7 +75,7 @@ export function TrackerFieldMap({ connection, onSaved }: { connection: TrackerCo
   if (!fields) return <Spinner />;
   return (
     <div className="fr-trackerconn__map" aria-label={`Field map of ${connection.name}`}>
-      {custom && (
+      {typed && (
         <div className="fr-trackerconn__grid">
           <label>
             <span>Story points (a card’s estimate)</span>
@@ -85,19 +87,21 @@ export function TrackerFieldMap({ connection, onSaved }: { connection: TrackerCo
           </label>
         </div>
       )}
-      <div className="fr-trackerconn__maprows">
-        <span className="fr-trackerconn__maphead">Issue type per project (else {connection.defaults.issueType ?? 'Task'})</span>
-        {types.map((t, i) => (
-          <div key={i} className="fr-trackerconn__maprow">
-            <Input aria-label="Project key" placeholder="Project key" value={t.project} onChange={(e) => setTypes(types.map((x, j) => (j === i ? { ...x, project: e.target.value } : x)))} />
-            <Input aria-label="Issue type" placeholder="Story" value={t.type} onChange={(e) => setTypes(types.map((x, j) => (j === i ? { ...x, type: e.target.value } : x)))} />
-            <Button size="sm" variant="ghost" icon={Trash2} aria-label="Remove" onClick={() => setTypes(types.filter((_, j) => j !== i))} />
-          </div>
-        ))}
-        <Button size="sm" variant="ghost" icon={Plus} onClick={() => setTypes([...types, { project: '', type: '' }])}>
-          Add a project
-        </Button>
-      </div>
+      {typed && (
+        <div className="fr-trackerconn__maprows">
+          <span className="fr-trackerconn__maphead">Issue type per project (else {connection.defaults.issueType ?? 'Task'})</span>
+          {types.map((t, i) => (
+            <div key={i} className="fr-trackerconn__maprow">
+              <Input aria-label="Project key" placeholder="Project key" value={t.project} onChange={(e) => setTypes(types.map((x, j) => (j === i ? { ...x, project: e.target.value } : x)))} />
+              <Input aria-label="Issue type" placeholder="Story" value={t.type} onChange={(e) => setTypes(types.map((x, j) => (j === i ? { ...x, type: e.target.value } : x)))} />
+              <Button size="sm" variant="ghost" icon={Trash2} aria-label="Remove" onClick={() => setTypes(types.filter((_, j) => j !== i))} />
+            </div>
+          ))}
+          <Button size="sm" variant="ghost" icon={Plus} onClick={() => setTypes([...types, { project: '', type: '' }])}>
+            Add a project
+          </Button>
+        </div>
+      )}
       {custom && (
         <div className="fr-trackerconn__maprows">
           <span className="fr-trackerconn__maphead">Custom fields ↔ kanban fields (by the kanban field’s name)</span>

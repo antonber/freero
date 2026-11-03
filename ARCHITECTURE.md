@@ -113,7 +113,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | Layer docs (`private`, `editors`; see "Board layers") | `engine/store/` (placement: `engine/editor/layers.ts`); reveal: server `realtime` | `Editor` writes, `privateCollection`, `revealPrivate` |
 | Suggestion records (editors layer `suggestions`; see "Suggestions") | server `realtime` creates them (`proposeSuggestions`) and withdraws them when their credential is revoked (KAI-224); a socket may only set its own `decision` | `Editor.acceptSuggestions` / `rejectSuggestions`, API accept / reject |
 | `elements` map | engine (`editor.create/update/remove/transact`) | same |
-| `settings` map (background, grid) | engine | `editor` settings API |
+| `settings` map (background, grid, line jumps) | engine; a new board's first state (`NEW_BOARD_SETTINGS`) is stored by server `modules/boards` `createBoard` through realtime `initNewBoardDoc` | `editor` settings API |
 | feature collection (e.g. `comments`) | the feature whose `feature.ts` `owns` it | `editor.runCommand` of the owner. Writes from a non-owner throw at runtime [W8 checks unique claims] |
 | camera, selection, active tool, dock | engine | `editor.setCamera/select/setTool/openDock` |
 | presence ext | each feature writes `ext[<its name>]` only | — |
@@ -135,6 +135,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | A linked view (`KanbanViewElement`, type `kanbanview`, step 3c: a kanban's cards as a table, list, calendar or timeline elsewhere on its board — `sourceId` and one projection view, ids only, never a copy of the cards or their labels) — read only through `@freero/shared` `linkedViews.ts` (`linkedView`, `linkedSource`) | `features/kanban` (the second element of its `element.tsx`; "Add linked view ▸" in a kanban's context menu and tab menu, the View panel: name, layout, lock, "Save for everyone"); server `modules/api` `add_view` (placed beside the kanban, `linkedViewSpot`) and `configure_view` with the linked view's id | `runCommand('kanban.addLinkedView' / 'kanban.setMyLinkedView' / 'kanban.saveLinkedView' / 'kanban.configureLinkedView')`. Its edits write the real cards through `card.setValues`, as a tab's do. Copying keeps `sourceId` (with the kanban copied along, the engine's id remap points the copy at the kanban's copy); pasted onto another board without its kanban it is left out (`pasteContent`; step 3d makes it a cross-board view) |
 | A person's own view settings (personal overrides of a saved view, per board / item / view; a kanban also keeps the tab I look at under `_tab`, a table, list, calendar or timeline tab's own settings under its id, and focus mode's arrangement under `_focus`; a linked view its own settings under `_view`) | the engine's personal view state (`Editor.setPersonalView`, any role, never in the doc), kept through `Host.personalViews` → server `modules/personalviews` (`personal_views`); in this browser without it | the owning feature validates what it reads (`views.ts` `cleanOverride`) |
 | An item's protected lock (`BaseElement.lockProtected`, with `locked`) | the board owner and co-owners (`@freero/shared` `mayProtect(role, coOwner)`; #122: the server takes `coOwner` from boards' `resolveCoOwner` — a socket's `Admission.coOwner`, re-resolved on every access refresh and honoured only on an uncapped socket, and `BoardActor.coOwner`, which changeBoard / proposeSuggestions resolve themselves — never from a client; never a facilitator, since any editor can start a session), through `engine.protectLock` (Mod+Alt+Shift+L, context menu) and `engine.lock`; anyone else's socket change to a protected item (move, edit, unlock, unprotect, delete) or protecting one is undone by server `realtime/protectedLock.ts` in the transaction that applies it, in the shared doc and the layers (a move into or out of a hidden frame's layer keeps it); requests (API, MCP) are refused in `realtime/view.ts` `applyChange` | `Editor.mayProtect()`; the format toolbar shows a disabled shield to others. Clients that don't know the field see an ordinary lock, and their unlock is undone |
+| A diagram (#117, #118; `DiagramElement`, type `diagram`: title, layout, layers, `laidOut`, its box) and its members' layout — positions, `diagramPinned`, `diagramLayer` on join, layer locks (`locked` + `layerLocked`), stacking, lines between members joining it — read through `@freero/shared` `layout/diagram.ts` (`diagramLayers`, `memberLayerId`, `hiddenByLayer`, `diagramSignature`) | `features/diagram`: its element's `arrange` (`planDiagram`, the one writer of members' positions: it reflows only when `laidOut`, the structure's signature, changes; a member moved by hand is pinned) and its commands (layout, Lay out again, unpin, layers); server `modules/structure` / `modules/api` through `withDiagramLayout` in the same change; `layoutStructure` wraps graph-like structures in one (`wrapInDiagram`) | `runCommand('diagram.setLayout' / 'diagram.relayout' / 'diagram.unpin' / 'diagram.wrap' / 'diagram.focus')`. Features that write member positions of a diagram (from-text's source edits) leave them to it. Focus is engine UI state (`Editor.setFocus`); the layer a person adds to is a personal view (`_layer`). See docs/design/diagrams.md |
 | A person's app theme (System / Light / Dark: `users.color_theme`, `Account.theme`) and the page's `<html data-theme>` | server `modules/auth` (`PATCH /api/auth/me` `{ theme }`); in the browser `app/lib/theme.ts` is the only writer of `data-theme` (it also keeps the choice in localStorage for the first paint and for people without an account). A page that must follow its surroundings (the live view in an AI assistant) uses `setThemeOverride` while mounted; `public/theme-boot.js` sets the stored theme before the first paint. Chrome follows `ui/tokens.css`. Board content keeps its authored colours: only the live canvas is painted differently, at paint time and never in the doc (`engine/canvas/theme.ts`): a light background and light frame fills shown dark, the DEFAULT inks (`canvasInk`) light where they lie on the canvas — free text, lines, pen, icons, unfilled shapes, frame titles, mind-map branches — through CSS variables set on the live viewport only, so exports and thumbnails never change | `ThemeSwitch` / `useChooseTheme` (`app/components`): account settings → Appearance, the dashboard's account menu; on a board `Host.colorTheme` (`features/appearance`: board menu → Theme, and the command palette) |
 | Problem reports (`problem_reports`) and their screenshots (uploads' private images) | server `modules/problems` | its routes (the reporter; operators) and index (`/api/v1/operator/problems` in modules/api, the account purge, the data export) |
 | An organisation (#108: a `workspaces` row of kind 'organisation'), its directory, policy and security floors, and which team workspaces belong to it (`workspaces.organisation_id`) | server `modules/workspaces` (`organisations.ts`; `repo.ts` applies the floors on every read) | `/api/organisations…`; under the organisation's id `PATCH /workspaces/:id` (floors), `…/admin/settings`, member routes; attach / detach only through `attachWorkspace` / `detachWorkspace`. See "Organisations" |
@@ -219,6 +220,21 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   board state; the renderer subscribes with `useElementsQuery(select, isEqual)` (`@engine`), which
   re-renders a component only when its derived value changes — never re-render every line on every
   edit elsewhere. `follow` refreshes an elbow line's cache when a connectable item lands on it.
+- Line jumps (#115; board setting `BoardSettings.lineJumps`, the board menu's "Line jumps" toggle
+  and palette command, written by the engine like the grid): where two connectors cross, the one
+  drawn on top (z, then id: every client agrees) hops over the other. The hops are part of the
+  connector's own SVG path (`lib/jumps.ts` `lineJumps` → `routePath`), so the canvas, the selection
+  halo and every export draw them. No hop where lines share an end or meet near one, run along each
+  other or cross at a grazing angle, or too near a bend; crossings close together share one hop;
+  curved lines never hop (lines on top of them do). Each line finds the lines beneath it with
+  `useElementsQuery` over one grid index of the board's lines per editor (`lib/beneath.ts`),
+  updated in place from the lines that changed, and reuses its last answer while no changed line
+  came near it; routes are computed once per element object. Only lines in view (the culled
+  canvas renders no others) and only at zooms where a hop is at least 2 px. `npm run
+  bench:line-jumps` measures a 500-connector board. New boards start with it on: the server's
+  `createBoard` stores `NEW_BOARD_SETTINGS` (`@freero/shared`) for every board that is no copy
+  (realtime `initNewBoardDoc`); boards from before keep their look (absent = off), copies their
+  source's.
 - `@engine` hooks: `usePointer()` (world pointer for tool `Preview`s), `useTextFormatState()`,
   `useSettings()`, `useCanEdit()`; `plainToRichText()`; types `ElementTextProps`, `TextFormatState`.
 - `useCollection(name)` returns the collection's entries (`Array<[key, value]>`).
@@ -403,6 +419,11 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   server said this user may use AI on this board. AI entry points (`features/ai`: the format-toolbar
   button, the "AI ▸" context/board menu, the dialog) hide without it; never offer AI from `when`
   alone. Not in the command palette (it lists unavailable commands greyed out).
+  `Host.aiUnavailable?` (additive, #148): the server's reason when it offers AI on this instance but
+  not to this person on this board (workspace AI off, not allowed, no edit access). Actions added
+  since (a report on an activity, "Summarise" after a meeting import, catch-up, mind-map Expand,
+  walkthrough chapters) show greyed out or say this reason instead of running; with neither
+  `ai` nor `aiUnavailable` (no AI on this server) they don't show at all.
 - `Host.trackers?` (additive, KAI-154): `{ connections, projects, preview, send, importIssues, sync,
   unlink, sprints?, issueTypes? }` (the last two additive, #119 / #43), present only when the server
   listed a tracker connection this person may use on this board (`GET /boards/:id/trackers`).
@@ -578,7 +599,13 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
   answer may read `editor.getPersonalView`, and the engine asks again on EditorEvent
   `'personal-views'`, pruning the selection) is off the board like `hidden` elements, but the outline (`getOutline`) still lists it.
   Items being dragged (`ui.dragging`) never fold, so a card carried over a collapsed column stays
-  in hand; it folds (and leaves the selection) on the drop.
+  in hand; it folds (and leaves the selection) on the drop. [#118] An item inside a container that
+  is itself folded away folds too (a frame in a diagram's hidden layer takes its contents along).
+- [#117] Focus: `Editor.setFocus(id | null)` / `getFocus()` / hook `useFocus()`. Local view state (any
+  role, never synced): everything outside the focused item and what it contains is drawn faded
+  (`.fr-el--unfocused`) and is out of reach — not hit-tested, marquee'd, lasso'd, selected or
+  Tab-walked (`EditorImpl.getInteractiveElements`). Esc, once nothing is selected, ends it; so does
+  deleting the item. Exports are unaffected. A diagram's focus mode is built on it.
 - `fitToContent(el, handle)`: double-clicking a resize handle applies the returned patch (a
   fixed-width text box goes back to auto width).
 - `hitTest(el, local, { tolerance })` — `tolerance` is a few screen px in world units at the live
@@ -811,14 +838,53 @@ DOCTYPE / ENTITY (no external entities, no entity expansion), compressed pages t
 anything is added; labels become plain text (HTML labels reduced to their text). A dropped `.freero`
 goes to `Host.openBackup` (importer `backup`). Miro import (the person's own token) is KAI-261.
 
+Visio (`.vsdx` / `.vsdm`, also Lucidchart's and draw.io's Visio exports; #116), same importer, same
+one-transaction placement: `lib/vsdx.ts` reads the package from the published VSDX format
+(relationships → document style sheets → pages → masters → media; no Microsoft code or stencil) and
+resolves every value the way Visio inherits it (the shape's own cell, then its master shape's, then
+its line / fill / text style sheet chain; geometry and connection points inherited from a master are
+scaled to the instance's size). A master Freero has a counterpart for (basic, flowchart, UML, BPMN,
+ERD, network: the `MASTERS` table, by universal name) becomes that `ShapeKind`; a shape without one
+is recognised from its geometry (rectangle, rounded rectangle, ellipse, diamond, triangle, hexagon,
+parallelogram, trapezoid); otherwise it becomes a labelled rectangle, or — without text — its outline
+as pen strokes, both reported. 1-D shapes become connectors glued where the page's `Connects` glue
+them (`PinX` → `anchor: 'auto'`, a connection point → `at`); groups one `groupId`, unless their master
+is a known kind (a UML class, an entity: one shape with all the group's text); containers and
+swimlanes (`User.msvStructureType`) frames holding what is drawn inside them; embedded PNG / JPEG /
+GIF / WebP pictures images; EMF, OLE objects, background pages and linked pictures are left out and
+reported. Every page becomes a frame, pages side by side. Untrusted input: `lib/zip.ts` reads the
+zip directory first (≤ 2000 entries, no encryption, no ZIP64), then unpacks only the parts it needs
+through `DecompressionStream`, counting the REAL output bytes against per-entry and total caps (the
+sizes a zip declares are never trusted), with a 20 s deadline checked as it goes; XML with a DOCTYPE
+is refused, external relationships are never followed, legacy binary `.vsd` gets "save as .vsdx".
+Tests build their packages with `lib/vsdxFixture.ts` (hand-written parts; no third-party samples)
+and fuzz them. Dropped PlantUML files (`.puml`, `.plantuml`, `.pu`, `.iuml`, `.wsd`) and Mermaid files (`.mmd`, `.mermaid`) are handed to
+`from-text.insert`.
+
 Structure from text and diagrams as code (`features/from-text`, KAI-196 / KAI-119; layout formats:
 docs/board-outline.md):
 - "Insert from text" lays text out in the BROWSER with `@freero/shared` `layoutStructure`, the
   function the server's insert-structure runs (no round trip; works offline, live preview), puts it
   on `findFreeSpot` near the view with `createMany` (tables, whose cells live outside the elements,
   through `insertElements`), one transaction = one undo step, then fits it into view.
+- PlantUML (#38; `@freero/shared` layout/plantuml.ts, structure kind `plantuml`): an in-house reader
+  of the documented syntax for sequence, class, activity, state, use case and component diagrams
+  (pasted `@startuml` text, the dialog's PlantUML kind, a dropped `.puml`). It produces the same
+  diagram model as the Mermaid reader — a `SequenceInput`, or nodes / edges / groups whose nodes may
+  carry their own size and look (class boxes with compartments) and whose edges carry UML ends and
+  multiplicities — so both land as the same shapes: `layoutPlantUml` is `layoutDiagram` (classes
+  are `umlClass` shapes with `compartments`). Kept as an editable diagram source like Mermaid. Never
+  fetches anything: `!include` and the preprocessor are refused; styling is skipped; unknown lines
+  are errors naming the line.
 - Mind maps from structure are laid out by `layoutMindTree` (`@freero/shared` layout/mindtree.ts),
   the function `features/mindmap` runs for tidy up / follow / drag: one function, not a copy.
+  A root's `direction: 'down'` (#134) makes a top-down map: children below, sibling columns
+  ordered left to right (`indexMindNodes` sorts them by x; `mindSideIn` says 'down'); switching to
+  or from it re-encodes sibling order on the new axis first. Clients from before it read 'down'
+  as 'left' and would re-lay such a map out to the left when they edit it.
+  "Make a mind map" turns selected stickies into a map around the one picked (removed and
+  inserted in one transaction); "Expand with AI" asks `modules/ai` (`task: 'expand'`, text only)
+  and adds the picked children with `insertOutline` (one undo step).
   Org charts and Auto-layout ▸ Tree / Org chart use `tidyTree`; flowcharts and Auto-layout ▸
   Top-down / Left to right use `layered` (`features/arrange/lib/autoLayout.ts`: selected items and
   the connectors joining them, moved with `moveBy` in one gesture; locked items stay put).
@@ -835,6 +901,16 @@ docs/board-outline.md):
   a diagram don't carry its source; outline items without a Mermaid id are matched by their path
   of texts, so a renamed topic is a new topic; concurrent source edits of one diagram are LWW per
   diagram (the second update re-lays from its own source).
+- Mermaid class, ER and state diagrams (#38, `@freero/shared` layout/uml.ts, read in-house like
+  the rest) become the shape library's own shapes through `layoutDiagram` (the layered graph
+  layout with nodes that carry their size and look, edges their line ends and end labels): a
+  class is a `umlClass` with `compartments` (its text is the whole class — name, attributes,
+  operations — and the shape feature draws the dividers: under the name, above the first line with
+  a "("), an entity an `erdEntity` table (keys first), relations connectors with UML ends
+  (`triangleOpen`, `diamond`, `diamondOpen`, dashed for `..`) or the crow's-foot end each side
+  names, multiplicities as labels near their ends; namespaces and composite states are frames;
+  start / end states, choices and forks are small marks; notes are `umlNote`s on a dashed line.
+  Front matter (`---` … `---`) is skipped.
 
 Reference & items (engine primitives; product UI in `features/shortcuts`, `links`, `image`, `icons`,
 `select-similar` — "Select only ▸ <type> (count)" narrows a mixed selection):
@@ -1081,14 +1157,16 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
   `X-Robots-Tag: noindex`, and `GET /api/site/legal` answers `null`, so the app's sign-up asks
   nobody to agree to a draft. A page about the deployment never hard-codes a value the server
   knows from its configuration.
-- **The trust pack** (#109: `/security`, `/subprocessors`, `/dpa`, plus `SECURITY.md`) is written
-  from the code and the production deployment as the repository and the public service show it.
-  Until the operator approves it, each page is `underReview: true` (`PageDef`): the build shows
-  "Draft — under review", makes it `noindex` and leaves it out of the sitemap (still linked from
-  the footer), and the manifest's `underReview` list keeps the server from lifting that `noindex`
-  (and adds `X-Robots-Tag`) even once the legal pages are in effect; no setting removes either.
-  `<ToConfirm />` marks every statement the repository can't confirm. Approving = removing the
-  flag and the marks (after fixing any statement that turned out wrong).
+- **The trust pack** (#109: `/security`, `/subprocessors`, `/dpa`, plus `SECURITY.md` and
+  docs/security-questionnaire.md) is written from the code and the production deployment; what the
+  repository can't show is the operator's word (approved 2026-11-03) or the providers' own
+  documentation, never a guess. A page the operator hasn't approved yet is `underReview: true`
+  (`PageDef`): the build shows "Draft — under review", makes it `noindex` and leaves it out of the
+  sitemap (still linked from the footer), and the manifest's `underReview` list keeps the server
+  from lifting that `noindex` (and adds `X-Robots-Tag`) even once the legal pages are in effect; no
+  setting removes either. `<ToConfirm />` marks each statement in such a draft the repository can't
+  confirm. Approving = removing the flag and the marks (after fixing any statement that turned out
+  wrong); none of the trust pages carries either today.
 - **For agents:** `/llms.txt` and `/llms-full.txt` (llmstxt.org, `src/lib/llms.ts`) are built files
   like robots.txt, origin-substituted when served: what Freero is, the MCP endpoint, OAuth metadata
   and the tool list. Tools and prompts come from `src/lib/mcp.ts` (also the /agents table); the site
@@ -1236,7 +1314,7 @@ permission check, `POST /objects/resolve`), `references` (object_references, ref
 references index derived through the outbox, `GET /objects/backlinks`; both in "Suite foundation"
 below), `engage` (engage_answers, engage_questions, engage_upvotes,
 engage_reveals: live audience activities; see "Live activities" below), `trackers`
-(tracker_connections, tracker_links, tracker_link_sources, tracker_proposals, tracker_oauth_flows: issue-tracker sync;
+(tracker_connections, tracker_links, tracker_link_sources, tracker_proposals, tracker_oauth_flows, tracker_webhooks: issue-tracker sync;
 see "Issue trackers" below), `search` (search_entries, search_sources: the search index derived
 through the outbox, `GET /search`), `events` (events, event_board_states, event_pending_boards: the
 event stream), `docs` (no table: the doc app — a doc is a boards container of kind 'doc' whose
@@ -1244,8 +1322,10 @@ document realtime stores; see "Docs and native live embeds"), `site` (no table: 
 marketing site at `/`; see "Marketing site"), `analytics` (no table: Google Analytics' settings
 endpoint, runtime and frame; see "Analytics"), `webhooks` (webhook_endpoints, webhook_deliveries: workspace webhooks) — the last
 three in "Search, the event stream and webhooks" below — `backup` (no table: `.freero` board
-backups, see below), `share` (no table: the installed app's share target, see "Installable app"), `slack` (no table: Slack link unfurls for the operator's Slack app, see "Integrations" below), `walkthroughs`
-(walkthroughs, walkthrough_views, walkthrough_comments) and `decisions` (decisions), in "Walkthroughs
+backups, see below), `share` (no table: the installed app's share target, see "Installable app"), `slack` (no table: Slack link unfurls for the operator's Slack app, see "Integrations" below), `teams` (no table: the
+Microsoft Teams app — its package, its pages framed by Teams, the bot's link previews — and the
+Microsoft 365 Copilot agent package, see "Microsoft Teams and Microsoft 365 Copilot" below), `walkthroughs`
+(walkthroughs, walkthrough_views, walkthrough_comments, walkthrough_reactions) and `decisions` (decisions), in "Walkthroughs
 and decision snapshots" below, `marketplace` (marketplace_listings: community listings of Apps &
 agents; see "Apps & agents" below), `personalviews` (personal_views: a person's own view settings on a
 board, `GET` / `PUT /boards/:id/personal-views`; see "Engine contract additions"), and `problems` (problem_reports: “Report a problem”, see "Problem
@@ -1960,6 +2040,26 @@ board and builds `Host.ai` only when it says yes.
   written. The structure goes through `structure/index.ts` `insertStructure` with `target: 'preview'`
   (the app's dialog shows it and inserts it with `Editor.insertElements` + `moveBy`, ONE transaction,
   one undo step) or `'board'` (one attributed server change).
+- **On results people already have** (#148): `cluster` with `by: 'sentiment'` sorts into the fixed
+  `AI_SENTIMENTS` groups only (another title gets the repair turn); `report` reads a live activity's
+  results through `engage/index.ts` `revealedResults` — what everyone on the board sees, never
+  answers or names, and a sealed activity only once revealed (409 `engage_sealed`, before any
+  call); `summarize` with `into: <frameId>` places the note inside that frame (the meeting-notes
+  import's toast offers it as "Summarise", running `ai.summarizeFrame` with the layout's own
+  "Summary" note as `fill`): the app writes the summary into that note (`fillNote`: it keeps what
+  the note said, grows, and moves what is below it down with the frame), or — without one — grows
+  the frame and inserts the preview; either way one undo step.
+- **Catch-up** (#126): `catchup` with `since: 'visit' | 7 | 14 | 30` reads ONLY the change set —
+  `activity/index.ts` `catchUpChanges(boardId, userId, { since })`, the same rows and view rules as
+  "changes since your last visit" (others' attributed bursts, the reader's view, never a private
+  draft) — as numbered lines the model cites; points map back to item and frame ids
+  (`AiActionResponse.catchUp`), unknown numbers are dropped. Always `target: 'preview'`: the reader
+  alone sees it (the AI feature's "Catch me up" dialog, also from the activity bar's "Summarise");
+  "Insert on board" applies the preview. No change in that time, or no earlier visit: refused
+  before any call.
+- **Text-only answers** (#134): `expand` reads one mind-map topic, its path and its children from
+  the reader's view (no private draft but the topic itself) and returns `children` (3–7, repeats of
+  what is there dropped, fewer gets the repair turn); nothing is laid out or placed on the server.
 - **Limits and records**: `RATE_LIMIT_AI` per user, `RATE_LIMIT_AI_WORKSPACE` per workspace, the
   workspace's monthly token budget and `AI_INSTANCE_MONTHLY_TOKENS_PER_USER` (`ai_usage`, one upsert per
   call, also for failed calls). Every request that reaches the model is audited
@@ -2326,6 +2426,43 @@ open, and a scope never widens (no foreign key: a board that is gone just sends 
   `docs/api/openapi.json` to the Swagger 2.0 those connectors require; `api/powerAutomate.test.ts`
   keeps the checked-in file in step and free of OpenAPI 3 constructs.
 
+### Microsoft Teams and Microsoft 365 Copilot (`modules/teams`, `app/teams`; #112, #113, #114; docs/integrations/teams.md)
+
+Off unless the operator sets the ids (`config.teams`: `TEAMS_APP_ID`, `TEAMS_BOT_ID`;
+`config.copilot`: `COPILOT_APP_ID` + `COPILOT_OAUTH_REFERENCE_ID`). No table, no new state: every
+piece reuses an owner that already exists.
+
+- **Packages are generated, never checked in**: `manifest.ts` (Teams app, manifest 1.19: a
+  configurable tab for channels, chats and meeting side panel / stage, the RSC permissions share to
+  stage needs, and with the bot a link `messageHandler` for the instance's host) and `copilot.ts`
+  (a declarative agent 1.6 whose action is an API plugin 2.4 with a `RemoteMCPServer` runtime at
+  `/mcp`, OAuth through the plugin vault). The plugin lists its tools from mcp's
+  `mcpToolDescriptions` (mcp's index: the `tools/list` descriptions, JSON Schema from the tools' zod
+  input), so the package can't drift from the server; write tools carry a confirmation. Icons are
+  rasterised from Freero's mark in `icons.ts` (no image dependency). Served per instance
+  (`/api/integrations/{teams/app-package,copilot/agent-package}`, `?version=`), by the CLI
+  (`teams:package`, `copilot:package`) and linked from the operator console.
+- **The tab is the public embed.** `app/teams/TeamsTabPage` renders `PublicEmbed`
+  (`app/embed/PublicEmbedPage`, which the plain embed also renders) with Teams' context and theme
+  (`teamsSdk.ts`, the only importer of `@microsoft/teams-js`): same `boardEmbedding` gate, same
+  board-bound member token, same visitor rule. The server frames `/teams/config` and `/teams/b/:id`
+  with `platform/security.ts` `frameFromOrigins(…, TEAMS_FRAME_ANCESTORS, reason)` — Microsoft's
+  documented Teams / Microsoft 365 hosts, never `*` — the latter only while `boardEmbedding` allows
+  it. `FrameGuard` lets those two paths render framed. Because no other site can frame it, the
+  Teams tab starts editing without the plain embed's visibility check (`editDirectly`).
+- **Sign-in without Teams SSO**: `teamsSignInWindow` (Teams' `authentication.authenticate`) opens
+  `/embed/connect/:id?teams=1` or `/teams/choose` (board picker; `allowOpener`) — first-party pages
+  with the session — which return their result (`TeamsSignInResult`, `TeamsChooseResult`) only
+  through `authentication.notifySuccess`, i.e. only to Teams' validated origins, never by
+  `postMessage` to an opener. Teams' desktop/mobile apps sign in in that window (`?client=`).
+- **Bot** (`bot.ts`, `botAuth.ts`): `POST /api/integrations/teams/messages` (`allowCrossSitePost`)
+  validates the Bot Connector's JWT itself (node:crypto over the JWKS from the OpenID metadata:
+  RS256, issuer, audience = `TEAMS_BOT_ID`, exp/nbf ± 5 min, `serviceurl` = the activity's,
+  `msteams` endorsement → 403; keys cached a day, an unknown `kid` refetches at most every five
+  minutes) and answers `composeExtension/queryLink` / `anonymousQueryLink` in the response with an
+  Adaptive Card from boards' `publicLinkPreview` (Slack's rule), untrusted text in `TextRun`s only.
+  Per-tenant `RATE_LIMIT_TEAMS_UNFURL`. Nothing calls the Bot Connector, so there is no bot secret.
+
 ### Walkthroughs and decision snapshots (`modules/walkthroughs`, `modules/decisions`; KAI-133, KAI-161)
 
 **Walkthroughs** are not screen videos. `features/walkthrough` records the narrator's voice (and
@@ -2360,6 +2497,16 @@ a native range. No third-party recording service, no screen capture. Overlay con
 - Captions: typed (`PUT …/transcript`), or made by the board's AI provider only (`modules/ai`
   `transcribeRecording`: `decideAi`, budgets, downloads policy, `AI_TRANSCRIBE_MODEL` on an
   OpenAI-compatible endpoint; docs/ai.md). Never a browser speech API (it sends audio to the vendor).
+- Summary and chapters (#127): written by the author or an editor (`PUT …/chapters`: moments
+  within the recording, one chapter per moment, in time order), or drafted from the captions by the
+  board's AI provider (`POST …/chapters/draft` → `modules/ai` `draftWalkthroughChapters`: the
+  same decision, downloads policy, rate limits, budgets and audit as every AI action; captions go
+  to the model as untrusted data). A draft is saved nowhere: the dialog fills it in to edit, then
+  saves. Viewers jump from the chapters list or the ticks on the track.
+- Reactions (#127): an emoji (`WALKTHROUGH_REACTIONS`) at a moment (`walkthrough_reactions`,
+  commenters and up with an account; deleted with the reactor's account). Marks on the track group
+  a burst into one mark with counts (`reactionMarks`); who reacted isn't shown, only `mine`. The
+  author is notified (`walkthrough.reaction`) once per person per walkthrough.
 - Open boards learn about changes through the server-written `walkthroughs` collection
   (`SERVER_WRITTEN_COLLECTIONS`, `Y_KEPT_ON_RESTORE`): a summary per walkthrough (title, length,
   counts), never the media URL or the timeline. An object: `freero://walkthrough/<id>`, with the
@@ -2392,7 +2539,8 @@ board, including people who join later: it is a deliberate publication of what e
   serves the built app page for `GET /embed/b/:id` and, only when `boardEmbedding` allows it,
   rewrites that one response with `frameFromAnySite` (`frame-ancestors *`, no XFO, CORP
   cross-origin). In development Vite serves the page and sets no framing headers. The web app's
-  `FrameGuard` renders nothing but `/embed/b/` and `/embed/board/` when framed, so in-app
+  `FrameGuard` renders nothing but `/embed/b/`, `/embed/board/` and the Teams tab pages (`/teams/b/`,
+  `/teams/config`, framed by Teams only) when framed, so in-app
   navigation inside an embed can never put the signed-in app under another site's UI.
 - **Visitors** open `/ws/embed/b/:id` with subprotocol `[PUBLIC_EMBED_WS_PROTOCOL]`: no cookie, no
   token, no row. Admitted as 'viewer' under an id no account or guest has (`guest_embed…`, so any
@@ -2499,8 +2647,8 @@ target itself:
 ### Issue trackers: one issue ↔ many items, kept in step (`modules/trackers`, KAI-153..157; docs/trackers.md)
 
 The stickies-to-tickets hand-off without losing fields: board items become ONE issue (a cluster) or
-one each in Jira (Cloud v3 / Data Center v2), Linear, GitHub or Azure DevOps Boards (Services /
-Server, #6), and stay linked both ways.
+one each in Jira (Cloud v3 / Data Center v2), Linear, GitHub, Azure DevOps Boards (Services /
+Server, #6), Asana (#120) or monday.com (#121), and stay linked both ways.
 
 - **Model.** A *connection* is a team's (its admins manage it, its full members use it) or one
   person's own; credentials and the webhook secret are sealed (`platform/secrets`), never sent back
@@ -2515,9 +2663,11 @@ Server, #6), and stay linked both ways.
   backoff honouring `Retry-After`; a longer wait sets the connection's `cooldown_until`. Optional
   capabilities: `sprints` (#119: what the kanban field is called, a project's sprints), `scoped`
   (a project's sprint / epic without a query), `listFields` (custom fields for the field map, #43),
-  `issueTypes`, `parents`. `RemoteIssue.version` is the revision read (Azure DevOps): a write
+  `issueTypes`, `parents`, `webhooks` (#120, #121: Freero registers its own, below). `RemoteIssue.version` is the revision read (Azure DevOps): a write
   against an older one throws `TrackerError('conflict')`, and `syncLink` runs its pass again from
-  fresh reads (at most twice) instead of overwriting.
+  fresh reads (at most twice) instead of overwriting. Trackers without revisions (Asana,
+  monday.com) write only the fields a sync changes (a PUT of those fields, a column write of those
+  columns), so another field changed meanwhile is never written over.
 - **Field map (#43)**: a connection's `settings` hold the picked estimate / start date fields,
   issue type per project and `fieldMap` (tracker field id ↔ kanban field NAME and kind). Mapped
   fields are `custom:<id>` IssueFields, merged like every other; a kanban without a field of that
@@ -2539,6 +2689,15 @@ Server, #6), and stay linked both ways.
   `allowCrossSitePost`; a delivery only names the issue — it is read back), the `trackers:poll` job
   (polling connections every `TRACKER_POLL_SECONDS`, webhook ones as a fallback, retries due).
   Webhook signatures are checked over the raw JSON body (`platform/http.ts` `rawBody`).
+- **Webhooks Freero registers itself** (`hooks.ts`, `tracker_webhooks`; Asana, monday.com, where
+  nobody can paste an address): one per connection and project, registered after a send or import
+  into it (failures retried by `trackers:poll`; removed with the connection or a switch to polling,
+  registered again for a new secret). The address names the registration (`h`) and carries `k`, an
+  HMAC of `h` with the connection's webhook secret, checked before the provider sees a delivery. A
+  handshake (`WebhookResult.handshake`: Asana's `X-Hook-Secret` echoed and kept sealed —
+  `keepHookSecret` only for a pending row without one, so only once —, monday.com's challenge
+  echoed) is answered only while that row is pending, i.e. while Freero waits on `register`; Asana
+  deliveries are then verified with that secret (`X-Hook-Signature`).
 - **The board side**: the server writes each item's `trackerLink` and one `TrackerIssueRecord` per
   link in the `trackers` collection (key, status, assignee, sources, state); `features/trackers`
   draws the badge from it (a copy of a linked item shows none: the record doesn't list it) — live
@@ -2576,8 +2735,11 @@ Server, #6), and stay linked both ways.
   `trackersWorkspaceExportOf` (a team's connections) feed `privacy/archive.ts`; never credentials.
 - `npm run verify -- --only tracker` runs it all against `scripts/lib/mock-jira.mjs` (Cloud, DC,
   Atlassian OAuth, agile sprints), `mock-linear.mjs` (cycles), `mock-github.mjs` and
-  `mock-azure.mjs` (Services and Server, revision-checked JSON Patch, service hooks), which
-  implement the subset of each public API used, webhooks included.
+  `mock-azure.mjs` (Services and Server, revision-checked JSON Patch, service hooks),
+  `mock-asana.mjs` (sections, tags, custom fields, external attachments, OAuth, webhooks with the
+  handshake and signatures) and `mock-monday.mjs` (GraphQL: columns, groups, updates, subitems,
+  webhooks with the challenge, complexity), which implement the subset of each public API used,
+  webhooks included.
 
 ### Audit log, admin console and workspace policies (KAI-48, KAI-47, KAI-51)
 

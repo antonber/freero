@@ -55,7 +55,7 @@ export type ConnectionStatus = 'local' | 'connecting' | 'connected' | 'disconnec
 /** Decides the layer an element is written to, given where it is now (null = new). */
 export type Placement = (el: BoardElement, current: ElementLayer | null) => ElementLayer;
 
-export const DEFAULT_SETTINGS: BoardSettings = { background: '#F3F2F8', grid: 'dots', gridSize: 24, snapToGrid: false };
+export const DEFAULT_SETTINGS: BoardSettings = { background: '#F3F2F8', grid: 'dots', gridSize: 24, snapToGrid: false, lineJumps: false };
 
 /** A stored grid size another client wrote: a sane positive number, else the default. */
 function validGridSize(v: unknown): number | null {
@@ -680,6 +680,7 @@ export class BoardStore {
       grid: (this.settings.get('grid') as BoardSettings['grid']) ?? DEFAULT_SETTINGS.grid,
       gridSize: validGridSize(this.settings.get('gridSize')) ?? DEFAULT_SETTINGS.gridSize,
       snapToGrid: this.settings.get('snapToGrid') === true,
+      lineJumps: this.settings.get('lineJumps') === true,
     };
   }
 

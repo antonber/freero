@@ -34,6 +34,8 @@ function block(text, tag) {
 
 const TOOLING = /build|test|deploy|ci\b|slow|flaky|pipeline|bug|tool/i;
 const PEOPLE = /pair|review|offsite|team|fun|mentor|help|people|retro/i;
+const GOOD = /love|great|nice|good|thank|happy|enjoy|fun|win/i;
+const BAD = /slow|flaky|bad|hate|broken|bug|late|hard|pain|annoy/i;
 
 /** A plausible answer for the task the system prompt names. */
 export function answer(system, user) {
@@ -63,6 +65,19 @@ export function answer(system, user) {
       .map((l) => /^(\d+)\.\s*(.*)$/.exec(l.trim()))
       .filter(Boolean)
       .map((m) => ({ n: Number(m[1]), text: m[2] }));
+    if (/by the feeling they express/.test(system)) {
+      const good = notes.filter((x) => GOOD.test(x.text) && !BAD.test(x.text)).map((x) => x.n);
+      const bad = notes.filter((x) => BAD.test(x.text) && !GOOD.test(x.text)).map((x) => x.n);
+      const mixed = notes.filter((x) => GOOD.test(x.text) && BAD.test(x.text)).map((x) => x.n);
+      const neutral = notes.filter((x) => ![...good, ...bad, ...mixed].includes(x.n)).map((x) => x.n);
+      const clusters = [
+        { title: 'Positive', notes: good },
+        { title: 'Neutral', notes: neutral },
+        { title: 'Mixed', notes: mixed },
+        { title: 'Negative', notes: bad },
+      ].filter((c) => c.notes.length);
+      return JSON.stringify({ clusters });
+    }
     const tooling = notes.filter((x) => TOOLING.test(x.text)).map((x) => x.n);
     const people = notes.filter((x) => !TOOLING.test(x.text) && PEOPLE.test(x.text)).map((x) => x.n);
     const rest = notes.filter((x) => !tooling.includes(x.n) && !people.includes(x.n)).map((x) => x.n);
@@ -83,6 +98,50 @@ export function answer(system, user) {
       title: 'Where the board stands',
       summary: `The board holds ${items.length} notes. The team is most concerned with speed of delivery and wants to keep the habits that help them work together.`,
       points: items.slice(0, 5).map((t) => `Raised: ${t}`),
+    });
+  }
+  if (/Task: suggest \d+ to \d+ new children for one topic of a mind map/.test(system)) {
+    const topic = (/Topic to expand: (.*)/.exec(String(content))?.[1] ?? 'it').slice(0, 30);
+    const items = /questions worth asking/.test(system)
+      ? [`Who is ${topic} for?`, `What does ${topic} cost?`, `When is ${topic} done?`, `What could go wrong with ${topic}?`]
+      : /sub-topics/.test(system)
+        ? [`${topic}: goals`, `${topic}: people`, `${topic}: timeline`, `${topic}: budget`]
+        : [`Try a pilot for ${topic}`, `Ask users about ${topic}`, `Pair ${topic} with a launch event`, `Measure ${topic} weekly`, `Share ${topic} early`];
+    return JSON.stringify({ items });
+  }
+  if (/captions of a recorded walkthrough/.test(system)) {
+    const cues = String(content)
+      .split('\n')
+      .map((l) => /^\[(\d+)s\] (.*)$/.exec(l))
+      .filter(Boolean)
+      .map((m) => ({ start: Number(m[1]), text: m[2] }));
+    const picked = cues.filter((_, i) => i % 2 === 0).slice(0, 6);
+    return JSON.stringify({
+      summary: `A walkthrough in ${cues.length} parts, starting with “${(cues[0]?.text ?? 'an introduction').slice(0, 50)}”.`,
+      chapters: (picked.length >= 2 ? picked : [{ start: 0, text: 'Introduction' }, { start: 1, text: 'The rest' }]).map((c, i) => ({ start: i ? c.start : 0, title: c.text.split(' ').slice(0, 5).join(' ') })),
+    });
+  }
+  if (/Task: catch the person up/.test(system)) {
+    const items = String(content)
+      .split('\n')
+      .map((l) => /^(\d+)\. (\w+)(?: in F(\d+))?.*?, by ([^:]+): (.*)$/.exec(l))
+      .filter(Boolean)
+      .map((m) => ({ n: Number(m[1]), frame: m[3] ? Number(m[3]) : null, by: m[4], text: m[5] }));
+    return JSON.stringify({
+      title: 'While you were away',
+      summary: `${[...new Set(items.map((i) => i.by))].join(' and ') || 'Others'} made ${items.length} change${items.length === 1 ? '' : 's'}.`,
+      points: items.slice(0, 4).map((i) => ({ text: `${i.by} worked on “${i.text.slice(0, 40)}”.`, items: [i.n], frames: i.frame ? [i.frame] : [] })),
+    });
+  }
+  if (/Task: write a short report of a live audience activity/.test(system)) {
+    const lines = String(content).split('\n');
+    const top = lines.filter((l) => /^- /.test(l)).slice(0, 3).map((l) => l.slice(2));
+    return JSON.stringify({
+      title: 'What the room said',
+      summary: `${(lines.find((l) => l.startsWith('Respondents:')) ?? 'Respondents: some').replace('Respondents:', '').trim()} people answered; a clear favourite emerged.`,
+      themes: ['A clear favourite', 'A few strong outliers'],
+      notable: top,
+      next: ['Share the results with the team', 'Plan the follow-up around the favourite'],
     });
   }
   if (/sequence diagram/.test(system) && /Task: draw a sequence/.test(system))

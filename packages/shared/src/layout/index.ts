@@ -5,14 +5,18 @@ import { STICKY_COLORS, type StickyColor } from '../elements';
 import { findFreeSpot, unionRects, type Point, type Rect } from '../geometry';
 import { APART_GAP } from '../outline/spatial';
 import { translateDraft } from './kit';
+import { layoutPlantUml, parsePlantUml } from './plantuml';
 import { layoutItems } from './items';
 import { parseMermaid } from './mermaid';
 import { layoutMeeting, parseMeetingNotes } from './meeting';
-import { layoutClusters, layoutGraph, layoutKanban, layoutMindmap, layoutNote, layoutOrgChart, layoutSequence, layoutStickies, layoutTable, layoutTree, parseIndentedList } from './structures';
+import { layoutClusters, layoutDiagram, layoutGraph, layoutKanban, layoutMindmap, layoutNote, layoutOrgChart, layoutSequence, layoutStickies, layoutTable, layoutTree, parseIndentedList } from './structures';
+import { flowLayout, wrapInDiagram, type DiagramWrap } from './diagram';
 import { LayoutError, type LaidOut, type LayoutContext, type OutlineNodeInput, type StructureInput } from './types';
 
 export * from './types';
+export * from './diagram';
 export { parseMermaid, looksLikeMermaid, type MermaidDiagram } from './mermaid';
+export type { UmlDiagram } from './uml';
 export { parseMeetingNotes, layoutMeeting, meetingFormatOf, type MeetingNotes, type MeetingFormat, type MeetingAction } from './meeting';
 export { parseIndentedList, parseOrgRows, columnStatus } from './structures';
 export { cardDraft, cardHeight as itemCardHeight, checkLink } from './items';
@@ -24,6 +28,7 @@ export { tidyTree, type TidyUnit, type TidyOptions } from './tidy';
 export { layered, spacedFit } from './layered';
 export { measureText, textWidth } from './measure';
 export { translateDraft } from './kit';
+export { parsePlantUml, looksLikePlantUml, type PlantUmlDiagram } from './plantuml';
 // Single fully-specified drafts (the public API creates items one by one with them).
 export {
   sticky as stickyDraft,
@@ -47,8 +52,49 @@ function outlineRoot(text: string): OutlineNodeInput {
   return roots.length === 1 ? roots[0] : { text: 'Outline', children: roots };
 }
 
-/** Lays `input` out from (0, 0). Throws a LayoutError (a message fit for the caller) on bad input. */
+/**
+ * Lays `input` out from (0, 0). Throws a LayoutError (a message fit for the caller) on bad input.
+ * Graph-like structures (flowcharts, class / ER / state diagrams, trees, org charts, sequence
+ * diagrams) come inside a diagram container (#117), which keeps them laid out live; mind maps,
+ * stickies, tables and the rest come as they are.
+ */
 export function layoutStructure(input: StructureInput, ctx: LayoutContext): LaidOut {
+  const laid = layoutLoose(input, ctx);
+  const wrap = diagramWrapOf(input);
+  return wrap ? wrapInDiagram(laid, wrap, ctx) : laid;
+}
+
+/** The diagram a structure comes in (null: none). */
+function diagramWrapOf(input: StructureInput): DiagramWrap | null {
+  switch (input.kind) {
+    case 'graph':
+      return { layout: flowLayout(input.direction), title: 'Diagram' };
+    case 'tree':
+      return { layout: flowLayout(input.direction), title: 'Tree' };
+    case 'outline':
+      return input.as === 'tree' ? { layout: 'down', title: 'Tree' } : null;
+    case 'orgchart':
+      return { layout: 'orgchart', title: 'Org chart' };
+    case 'sequence':
+      return { layout: 'manual', title: 'Sequence diagram' };
+    case 'mermaid': {
+      const d = parseMermaid(input.source);
+      if (d.kind === 'mindmap') return null;
+      if (d.kind === 'sequence') return { layout: 'manual', title: 'Sequence diagram' };
+      const title = d.kind === 'class' ? 'Class diagram' : d.kind === 'er' ? 'ER diagram' : d.kind === 'state' ? 'State diagram' : 'Flowchart';
+      return { layout: flowLayout(d.direction), title };
+    }
+    case 'plantuml': {
+      const d = parsePlantUml(input.source);
+      if (d.kind === 'sequence') return { layout: 'manual', title: 'Sequence diagram' };
+      return { layout: flowLayout(d.direction), title: 'Diagram' };
+    }
+    default:
+      return null;
+  }
+}
+
+function layoutLoose(input: StructureInput, ctx: LayoutContext): LaidOut {
   if (!input || typeof input !== 'object') throw new LayoutError('Missing structure');
   switch (input.kind) {
     case 'mindmap':
@@ -82,10 +128,13 @@ export function layoutStructure(input: StructureInput, ctx: LayoutContext): Laid
     case 'mermaid': {
       const d = parseMermaid(input.source);
       if (d.kind === 'mindmap') return layoutMindmap(d.root, ctx);
+      if (d.kind === 'class' || d.kind === 'er' || d.kind === 'state') return layoutDiagram(d.nodes, d.edges, d.direction, d.groups, ctx);
       return d.kind === 'sequence' ? layoutSequence(d.diagram, ctx) : layoutGraph(d.nodes, d.edges, d.direction, d.groups, ctx);
     }
     case 'sequence':
       return layoutSequence(input.diagram, ctx);
+    case 'plantuml':
+      return layoutPlantUml(parsePlantUml(input.source), ctx);
     case 'table':
       if (!Array.isArray(input.rows) || input.rows.some((r) => !Array.isArray(r))) throw new LayoutError('table needs rows of cells');
       return layoutTable(input.rows, input.header !== false, ctx);

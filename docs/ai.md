@@ -11,12 +11,18 @@ What it can do today (KAI-102), from the AI button in the selection toolbar, the
 |---|---|---|
 | Generate ideas | your prompt (and the selection, if any, as background) | a titled grid of stickies |
 | Cluster by theme | the selected notes (stickies, cards) | named groups: the notes move into them, each group gets a title |
+| Cluster by sentiment | the selected notes | Positive, Neutral, Mixed and Negative groups (only those) |
 | Summarise | the selection, or the whole board | a written note beside it |
-| Diagram from text | your prompt (and the selection, if any) | a flowchart, sequence diagram or mind map with attached connectors |
+| Summarise a meeting | an imported meeting's frame ("Summarise" on the import's message) | the summary written into the import's "Summary" note (kept: its date and who came), which grows to fit |
+| Catch me up | what other people added, changed and removed (and how many comments) since your last visit or in the last 7, 14 or 30 days — the change set only, as you may see the board now; never private drafts | nothing: a summary shown to you alone, each point linking to the items and frames it is about; "Insert on board" adds it as a note |
+| Expand a mind-map topic | the topic, the path from the centre to it, and what is under it already | nothing until you choose: 3 to 7 ideas, questions or sub-topics to tick, added under the topic in one undo step |
+| Walkthrough summary and chapters | a walkthrough's captions (its author or an editor asks) | nothing until saved: a draft summary and chapter list to edit, then save |
+| Write a report | a live activity's results as everyone on the board sees them: counts, words, questions — never who answered; a sealed activity only after it is revealed | a note beside the activity with themes, notable answers and next steps |
+| Diagram from text | your prompt (and the selection, if any) | a flowchart, sequence, class (UML), entity-relationship or state diagram, a mind map, an org chart or a kanban board, with attached connectors |
 
 Every action is **previewed first**: nothing touches the board until the person clicks Insert, and
 the result then lands as one step they can undo. The model never places anything: it returns
-structure (a list, groups, Mermaid, an outline), which Freero's own layout places on free space.
+structure (a list, groups, Mermaid, an outline, people and their managers, columns of cards), which Freero's own layout places on free space.
 
 ## What happens to your data
 

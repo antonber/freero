@@ -97,6 +97,11 @@ OutlineField { id, name, type, options?: Array<{ id, label, status? }> }   // Ou
   or in a hidden frame or someone's draft) reads `source: [k1] (not on the board: deleted, or not
   visible to you)`: the view never tells which. Add one with `add_view`, change it with
   `configure_view` (`kanbanId`: the linked view's id).
+- Diagrams (#117, #118): `[d1] diagram: Checkout · layout: Top to bottom` holds its steps and the
+  lines between them (a subgraph's frame with what is in it). With two or more layers it reads
+  `layers: 3` and lists its members under one `<diagramId>:<layerId>` section per layer, top of the
+  stack first, `hidden: true` / `locked: true` on those layers: a hidden layer's items are folded
+  away on the board, not gone. Add steps to it with `add_diagram` `into`.
 - Clusters: items close together (gap ≤ ~30 % of the larger item's short side, 16–64 units), or
   joined by a connector, in the same frame (or outside frames). A text box right above the rest is
   the cluster's title. Containers, tables and mind maps are never clustered.
@@ -187,9 +192,10 @@ cluster / kanban column (one for a sticky grid or an item list), with its title'
 | `stickies` | `items: Array<string \| { text, link?, color? }>`, `title?`, `color?` | a near-square grid of stickies under a title (each with its link) |
 | `clusters` | `clusters: [{ title?, color?, items: Array<string \| { text, link?, color? } \| { id }> }]` | titled sticky grids side by side; `{ id }` moves a sticky (card, shape …) already on the board into its cluster, with its reaction stamps |
 | `graph` | `nodes: [{ id, text, shape? }]`, `edges: [{ from, to, label?, style?, arrow? }]`, `direction?`, `groups?: [{ id, title, nodes, parent? }]` | shapes joined by attached connectors; groups become frames holding their nodes; an edge may name a group (attaches to its frame) |
-| `mermaid` | `source` | a flowchart (`flowchart`/`graph` TB·TD·BT·LR·RL; node shapes `[] () ([]) [[]] [()] (()) {} {{}} [//] [\\]`; links `-->`, `---`, `-.->`, `==>`, `<-->`, `--o`, `--x`, labels `\|x\|` or `-- x -->`; `&`; subgraphs → frames) or a `sequenceDiagram` (participants / actors, messages `->> -->> -> --> -x -)`, notes), or a `mindmap` (one root, nesting by indentation, node brackets `[] () (()) ))(( )( {{}}`; icons and classes skipped) → a mind map; styling directives are skipped |
+| `mermaid` | `source` | a flowchart (`flowchart`/`graph` TB·TD·BT·LR·RL; node shapes `[] () ([]) [[]] [()] (()) {} {{}} [//] [\\]`; links `-->`, `---`, `-.->`, `==>`, `<-->`, `--o`, `--x`, labels `\|x\|` or `-- x -->`; `&`; subgraphs → frames) or a `sequenceDiagram` (participants / actors, messages `->> -->> -> --> -x -)`, notes), or a `mindmap` (one root, nesting by indentation, node brackets `[] () (()) ))(( )( {{}}`; icons and classes skipped) → a mind map, or a `classDiagram` (classes with members — `class A { … }` or `A : member` —, `<<annotations>>`, generics `~T~`, relations `<\|-- *-- o-- --> -- ..> ..\|> ..` with `"multiplicities"` and `: labels`, `namespace` → frames, `note for A "…"`) → UML class boxes with compartments, or an `erDiagram` (`A \|\|--o{ B : label`, every crow's-foot end, `--` / `..`, `ENTITY { type name PK "comment" }`, aliases `p[Person]`) → entity tables, or a `stateDiagram-v2` (`[*]`, `-->` with `: labels`, `state "…" as X`, `X : description`, composite `state X { … }` → frames, `<<choice>>`, `<<fork>>` / `<<join>>`, notes) → states; front matter and styling directives are skipped |
 | `sequence` | `diagram: { participants, steps }` | same as a Mermaid sequence diagram |
 | `table` | `rows: string[][]`, `header?` | a table, columns and rows sized to their text |
+| `plantuml` | `source` (`@startuml` … `@enduml`, or just the lines) | a sequence diagram (`participant`/`actor`/`database`… `as`, messages `-> --> ->> ->x <-`, notes; fragments, activations and dividers skipped), a class diagram (`class`/`abstract`/`interface`/`enum` with bodies, `extends`/`implements`, relations `<\|-- *-- o-- --> ..> ..\|>` with multiplicities and labels, packages → frames, notes), an activity (`start`/`stop`, `:action;`, `if`/`elseif`/`else`, `switch`, `while`, `repeat … repeat while`, `fork`/`split`, partitions and swimlanes → frames, notes, the old `(*) -->` arrows), a state diagram (`[*]`, transitions, composite states → frames, `<<choice>>`/`<<fork>>`/`<<join>>`, descriptions, notes), or a use case / component diagram (actors, `(use cases)`, `[components]`, `interface`, `node`, `database`, `cloud` …; `package`/`node`/`rectangle` blocks → frames). Styling (`skinparam`, themes, colours, titles, legends) is skipped; `!include` and the rest of the preprocessor are refused; anything else unknown is an error naming the line |
 | `kanban` | `columns: [{ title, items: Array<string \| { text, description?, status?, dueDate?, link?, color? }> }]`, `title?` | a kanban board with a task card per item, stacked in its column; a column titled like "To do", "In progress" or "Done" gives its cards that status |
 | `orgchart` | `people: [{ name, title?, manager?, id? }]` (`manager` = another person's `id` or name) | a top-down org chart: name / title boxes, each manager centered over their reports, joined by connectors; an unknown manager or a reporting circle is refused |
 | `note` | `text`, `title?` | a written note (summaries): a soft rounded card, the title in bold, paragraphs and bullet lines kept (8 000 characters) |
@@ -211,7 +217,17 @@ kanban grows; only stickies and cards), or a cluster
 (`cluster:<id>` or any item in it: touching its items, never above its title, clear of other
 clusters, so the outline reads them as part of it); `newFrame` / `newKanban` (To do / Doing / Done)
 around what is added, on free space. The tracker import places its cards with the same rules,
-except that an issue's status is never changed by where it lands.
+except that an issue's status is never changed by where it lands. `into` a diagram (#117): the
+new steps and their lines join it (a structure that comes in its own diagram gives up that
+container) below what it holds, and the diagram's live layout places them in the same change
+(`withDiagramLayout`; a manual diagram keeps them there and grows).
+
+Diagram containers (#117): `graph`, `tree`, `orgchart`, an outline drawn `as: 'tree'`, `sequence`,
+`plantuml` and every Mermaid kind but `mindmap` come inside ONE `diagram` item (created first, so its
+id is `created[0]`): flowcharts and class / ER / state / activity diagrams laid out by their
+direction (`down` / `right` / `up` / `left`), trees by theirs, org charts as `orgchart`, sequence
+diagrams `manual`. Its members are its children (`frameId`); it keeps the drawing it arrives with
+until its structure changes (docs/design/diagrams.md).
 
 `target: 'board'` (default) writes it to the live board as **one change**: planned against the live
 doc and applied in the same step (nothing lands in between), one transaction, attributed to the caller

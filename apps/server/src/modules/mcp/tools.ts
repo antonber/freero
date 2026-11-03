@@ -822,14 +822,32 @@ export const TOOLS: McpTool[] = [
     name: 'add_diagram',
     title: 'Add a diagram',
     description:
-      'Draws a diagram on a board, laid out by Freero: shapes joined by attached connectors, without overlaps. Give exactly one of: `mermaid` (a flowchart — subgraphs become frames — or a sequenceDiagram), `outline` (nested items, drawn as a mind map or a tree), or `graph` (nodes and edges). Needs permission to change boards.',
+      'Draws a diagram on a board, laid out by Freero: shapes joined by attached connectors, without overlaps. Give exactly one of: `mermaid` (a flowchart — subgraphs become frames —, a sequenceDiagram, a classDiagram — UML classes with their attributes and operations, inheritance, composition, multiplicities —, an erDiagram — entity tables with keys and crow’s-foot ends — or a stateDiagram-v2), `outline` (nested items, drawn as a mind map or a tree), `orgchart` (people and who they report to), or `graph` (nodes and edges). Flowcharts, class, ER, state and sequence diagrams, trees, org charts and graphs come as one diagram item (its id is the first returned) that keeps itself laid out when steps are added; give `into` a diagram’s id from the outline to add steps to that diagram instead. For a kanban use add_cards with columns. Needs permission to change boards.',
     scope: 'boards:write',
     annotations: ADD,
     input: {
       boardId,
-      mermaid: z.string().min(1).max(LAYOUT_LIMITS.source).optional().describe('Mermaid source: `flowchart LR` / `graph TD` … or `sequenceDiagram`.'),
+      mermaid: z
+        .string()
+        .min(1)
+        .max(LAYOUT_LIMITS.source)
+        .optional()
+        .describe('Mermaid source: `flowchart LR` / `graph TD` …, `sequenceDiagram`, `classDiagram`, `erDiagram`, `stateDiagram-v2` or `mindmap`.'),
       outline: outlineRoot.optional().describe('The root of a nested outline: { text, children: [ … ] }.'),
       outlineAs: z.enum(['mindmap', 'tree']).optional().describe('How to draw `outline` (default mindmap).'),
+      orgchart: z
+        .array(
+          z.object({
+            name: z.string().min(1).max(200),
+            title: z.string().max(200).optional(),
+            manager: z.string().max(200).nullable().optional().describe('The name (or id) of the person they report to; none for the top of the chart.'),
+            id: z.string().min(1).max(100).optional().describe('Only needed when two people share a name: then managers name this id.'),
+          }),
+        )
+        .min(1)
+        .max(1000)
+        .optional()
+        .describe('People for an org chart: a top-down tree of name / title boxes.'),
       graph: z
         .object({
           nodes: z.array(z.object({ id: z.string().min(1).max(100), text: z.string().max(LAYOUT_LIMITS.text) })).min(1).max(1000),
@@ -840,19 +858,22 @@ export const TOOLS: McpTool[] = [
         })
         .optional(),
       near,
+      into: z.string().min(1).max(200).optional().describe('A diagram on the board (its id from the outline) to draw into: the new steps join it and its layout makes room for them.'),
     },
     async run(call, a) {
-      const given = [a.mermaid, a.outline, a.graph].filter((v) => v !== undefined).length;
-      if (given !== 1) throw new ArgumentError('Give exactly one of mermaid, outline or graph.');
+      const given = [a.mermaid, a.outline, a.orgchart, a.graph].filter((v) => v !== undefined).length;
+      if (given !== 1) throw new ArgumentError('Give exactly one of mermaid, outline, orgchart or graph.');
       const structure: StructureInput = a.mermaid
         ? { kind: 'mermaid', source: a.mermaid }
-        : a.outline
+        : a.orgchart
+          ? { kind: 'orgchart', people: a.orgchart }
+          : a.outline
           ? a.outlineAs === 'tree'
             ? { kind: 'tree', root: a.outline }
             : { kind: 'mindmap', root: a.outline }
           : { kind: 'graph', nodes: a.graph!.nodes, edges: a.graph!.edges, ...(a.graph!.direction ? { direction: a.graph!.direction } : {}) };
-      const out = await addStructure(call, a.boardId, structure, a.near);
-      return written('Added a diagram', out.url, out.created);
+      const out = await addStructure(call, a.boardId, structure, a.near, a.into ? { into: a.into } : undefined);
+      return written(a.into ? `Added to diagram ${a.into}` : 'Added a diagram', out.url, out.created);
     },
   }),
 
@@ -884,7 +905,7 @@ export const TOOLS: McpTool[] = [
     name: 'propose_changes',
     title: 'Propose changes',
     description:
-      'Proposes content for a board as suggestions that people with edit access accept or reject — the board itself does not change until they do. Takes the same structures as the add_ tools: { "kind": "stickies" | "clusters" | "kanban" | "items" | "note" | "table" | "mermaid" | "mindmap" | "tree" | "graph", … } (docs/board-outline.md), and the same placement. Use it when this connection may only suggest, or when the person should review first; then open_board so they can.',
+      'Proposes content for a board as suggestions that people with edit access accept or reject — the board itself does not change until they do. Takes the same structures as the add_ tools: { "kind": "stickies" | "clusters" | "kanban" | "items" | "note" | "table" | "mermaid" | "mindmap" | "tree" | "orgchart" | "graph", … } (docs/board-outline.md), and the same placement. Use it when this connection may only suggest, or when the person should review first; then open_board so they can.',
     scope: 'boards:suggest',
     annotations: ADD,
     // The suggestions layer (KAI-169) is a structure sink; offered once the server has it.
@@ -984,7 +1005,7 @@ export const TOOLS: McpTool[] = [
     name: 'list_tracker_connections',
     title: 'List issue-tracker connections',
     description:
-      'Which issue trackers (Jira, Linear, GitHub, Azure DevOps) the person can use on a board: each connection’s name (the `connection` of sync_to_tracker and import_from_tracker), provider, default project and status. Give `connection` to also list its projects (Jira project keys, Linear team keys, GitHub owner/repo), which sync_to_tracker takes as `project`. An empty list says how the person connects one. Call it before sending or importing when you don’t know the names.',
+      'Which issue trackers (Jira, Linear, GitHub, Azure DevOps, Asana, monday.com) the person can use on a board: each connection’s name (the `connection` of sync_to_tracker and import_from_tracker), provider, default project and status. Give `connection` to also list its projects (Jira project keys, Linear team keys, GitHub owner/repo), which sync_to_tracker takes as `project`. An empty list says how the person connects one. Call it before sending or importing when you don’t know the names.',
     scope: 'boards:read',
     // Open world: with `connection` it asks the tracker for its projects.
     annotations: { ...READ, openWorldHint: true },
@@ -1002,7 +1023,7 @@ export const TOOLS: McpTool[] = [
     name: 'sync_to_tracker',
     title: 'Send items to an issue tracker',
     description:
-      'Turns items on a board (sticky notes, cards, shapes, text) into an issue in the team’s issue tracker (Jira, Linear, GitHub or Azure DevOps) — ONE issue for all of them by default (a cluster of notes becomes one issue listing each note with a link back), or one per item with mode "each". The items and the issue stay linked and in sync both ways. Use item ids from get_board_outline. Needs permission to change boards; the board must have a tracker connected.',
+      'Turns items on a board (sticky notes, cards, shapes, text) into an issue in the team’s issue tracker (Jira, Linear, GitHub, Azure DevOps, Asana or monday.com) — ONE issue for all of them by default (a cluster of notes becomes one issue listing each note with a link back), or one per item with mode "each". The items and the issue stay linked and in sync both ways. Use item ids from get_board_outline. Needs permission to change boards; the board must have a tracker connected.',
     scope: 'boards:write',
     // Creates issues in another system, where people are notified: a send Freero can't take back.
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
@@ -1010,7 +1031,7 @@ export const TOOLS: McpTool[] = [
       boardId,
       itemIds: z.array(z.string().min(1).max(64)).min(1).max(50).describe('The items to send.'),
       connection: z.string().max(200).optional().describe('Which tracker connection (its name), when the board has more than one.'),
-      project: z.string().max(200).optional().describe('Jira project key, Linear team key, GitHub owner/repo or Azure DevOps project. Default: the connection’s default project.'),
+      project: z.string().max(200).optional().describe('Jira project key, Linear team key, GitHub owner/repo, Azure DevOps project, Asana project id or monday.com board id. Default: the connection’s default project.'),
       issueType: z.string().max(100).optional().describe('Jira issue type / Azure DevOps work item type (default: the connection’s for the project, else Task).'),
       mode: z
         .enum(['one', 'each', 'clusters'])
@@ -1031,20 +1052,20 @@ export const TOOLS: McpTool[] = [
     name: 'import_from_tracker',
     title: 'Import issues from an issue tracker',
     description:
-      'Brings issues from the issue tracker (Jira, Linear, GitHub or Azure DevOps) onto a board as task cards LINKED to them — each card shows its issue’s key, status and assignee and stays in sync both ways (closing the issue updates the card). Give a query in the tracker’s own language (JQL, a Linear search, a GitHub search such as `repo:owner/name is:open label:bug`, WIQL for Azure DevOps), or `scope` for a project’s current (or a chosen) sprint / Linear cycle / Azure DevOps iteration or an epic’s issues without one — into a kanban, a sprint import gives it a Sprint field with the project’s sprints; at most 100 issues (default 50); issues already linked on this board are skipped, so importing again adds only new ones. Placed in free space, or with placement into a frame, kanban column or cluster that is there, or a new frame or kanban (placement never changes an issue’s status). Uses the person’s own or their team’s tracker connection (`connection` names it when there are several). Returns each card’s id with its issue key, to arrange with update_items or comment on. With only permission to suggest, it proposes the cards for people to accept instead; each card someone accepts is then linked to its issue and synced like an imported one. Needs permission to change boards (or to suggest).',
+      'Brings issues from the issue tracker (Jira, Linear, GitHub, Azure DevOps, Asana or monday.com) onto a board as task cards LINKED to them — each card shows its issue’s key, status and assignee and stays in sync both ways (closing the issue updates the card). Give a query in the tracker’s own language (JQL, a Linear search, a GitHub search such as `repo:owner/name is:open label:bug`, WIQL for Azure DevOps, a filter for Asana such as `project:Launch section:"In progress"` and for monday.com such as `board:Roadmap status:Done`), or `scope` for a project’s current (or a chosen) sprint / Linear cycle / Azure DevOps iteration, an epic’s issues, or a whole Asana project or monday.com board, without one — into a kanban, a sprint import gives it a Sprint field with the project’s sprints; at most 100 issues (default 50); issues already linked on this board are skipped, so importing again adds only new ones. Placed in free space, or with placement into a frame, kanban column or cluster that is there, or a new frame or kanban (placement never changes an issue’s status). Uses the person’s own or their team’s tracker connection (`connection` names it when there are several). Returns each card’s id with its issue key, to arrange with update_items or comment on. With only permission to suggest, it proposes the cards for people to accept instead; each card someone accepts is then linked to its issue and synced like an imported one. Needs permission to change boards (or to suggest).',
     scope: ['boards:write', 'boards:suggest'],
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     input: {
       boardId,
-      query: z.string().min(1).max(2000).optional().describe('The tracker search: JQL (Jira), a Linear search, a GitHub search (e.g. repo:owner/name is:open label:"area: agents") or WIQL (Azure DevOps). Not with scope.'),
+      query: z.string().min(1).max(2000).optional().describe('The tracker search: JQL (Jira), a Linear search, a GitHub search (e.g. repo:owner/name is:open label:"area: agents") WIQL (Azure DevOps), or a filter (Asana: project:Launch section:"In progress" assignee:me; monday.com: board:Roadmap group:"This week" status:Done). Not with scope.'),
       scope: z
         .object({
-          project: z.string().min(1).max(200).describe('Jira project key, Linear team key or Azure DevOps project.'),
+          project: z.string().min(1).max(200).describe('Jira project key, Linear team key, Azure DevOps project, Asana project or monday.com board (id or name).'),
           sprint: z.string().max(64).optional().describe('"current" for the active sprint / cycle / iteration, or a sprint id.'),
-          epic: z.string().max(100).optional().describe('The key of the epic / parent issue whose issues to bring.'),
+          epic: z.string().max(2000).optional().describe('The key of the epic / parent issue whose issues to bring (Asana: the parent task’s id or link; monday.com: the parent item’s id).'),
         })
         .optional()
-        .describe('Instead of a query: a project’s sprint and / or an epic’s issues (#119).'),
+        .describe('Instead of a query: a project’s sprint and / or an epic’s issues (#119), or with neither the whole project (an Asana project, a monday.com board).'),
       limit: z.number().int().min(1).max(100).optional().describe('At most this many issues (default 50).'),
       connection: z.string().max(200).optional().describe('Which tracker connection (its name), when the person can use more than one.'),
       placement,
@@ -1054,7 +1075,7 @@ export const TOOLS: McpTool[] = [
       const suggest = a.propose === true || !call.cred.scopes.includes('boards:write');
       if (suggest && !call.cred.scopes.includes('boards:suggest'))
         throw new ArgumentError('Proposing needs the boards:suggest permission (“propose changes”), which this connection doesn’t have. Leave propose out to import directly.');
-      if (!a.query === !a.scope) throw new ArgumentError('Give query (the tracker’s search) or scope (a project’s sprint or an epic), one of them.');
+      if (!a.query === !a.scope) throw new ArgumentError('Give query (the tracker’s search) or scope (a project’s sprint, an epic, or a whole project), one of them.');
       const out = await importFromTracker(call, a.boardId, { query: a.query, ...(a.scope ? { scope: a.scope } : {}), limit: a.limit, connection: a.connection, ...(a.placement ? { placement: a.placement } : {}), ...(suggest ? { target: 'suggestions' } : {}) });
       const list = out.cards.map((c) => `${c.key} → ${c.id}`).join(', ');
       const skipped = out.skipped ? ` ${out.skipped} matching issue${out.skipped === 1 ? ' is' : 's are'} already on this board (skipped).` : '';

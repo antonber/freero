@@ -92,6 +92,13 @@
   }
 }
 
+/* Outside the item this viewer focuses on (Editor.setFocus): faded, and out of reach. */
+.fr-el--unfocused {
+  opacity: 0.16;
+  filter: grayscale(0.7);
+  transition: opacity 160ms ease;
+}
+
 /* In this user's private layer (board layers): nobody else can see it until it is revealed. */
 .fr-el--private {
   outline: 1.5px dashed var(--fr-ink-3);

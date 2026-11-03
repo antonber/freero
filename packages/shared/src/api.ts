@@ -1333,6 +1333,33 @@ export interface PublicEmbedMember {
 export type EmbedConnectMessage =
   | { freeroEmbedConnect: 'token'; boardId: string; token: string; expiresAt: number }
   | { freeroEmbedConnect: 'no-access'; boardId: string };
+
+// ---- Microsoft Teams and Microsoft 365 Copilot (#112, #113, #114; docs/integrations/teams.md) ----
+// The Teams app's pages run the public embed inside Teams: /teams/config (the tab's configuration:
+// pick a board), /teams/b/:id (tab, meeting side panel and stage), both framed by Teams only. Teams
+// opens Freero's own pages in its sign-in window (authentication.authenticate): /embed/connect/:id
+// with ?teams=1 (sign in for one board) and /teams/choose (sign in and pick one of your boards);
+// they hand their result back through the Teams JavaScript library (authentication.notifySuccess),
+// which talks only to Teams' own origins, as one of these JSON strings.
+// GET /api/integrations/microsoft -> MicrosoftIntegrationsInfo (what this instance offers)
+export type TeamsSignInResult =
+  | { kind: 'token'; boardId: string; token: string; expiresAt: number }
+  | { kind: 'no-access'; boardId: string };
+export interface TeamsChooseResult {
+  boardId: string;
+  /** The board's title, for the tab's name (the person who picked it can see it). */
+  title: string;
+  /** A token for the board's embeds, so the tab opens signed in for the person who added it. */
+  token: string | null;
+  expiresAt: number | null;
+}
+export interface MicrosoftIntegrationsInfo {
+  /** The Teams app (TEAMS_APP_ID): its package, and whether links get previews (TEAMS_BOT_ID). */
+  teams: { packageUrl: string; linkPreviews: boolean } | null;
+  /** The Copilot agent (COPILOT_APP_ID + COPILOT_OAUTH_REFERENCE_ID): its package. */
+  copilot: { packageUrl: string } | null;
+}
+
 export interface OEmbedResponse {
   version: '1.0';
   type: 'rich';
@@ -1412,6 +1439,8 @@ export interface CatchUpItem {
   /** A changed item: its text before, when it differs. */
   before?: string;
   frame?: string;
+  /** [additive, #126] The frame it is in now (items still on the board), for going there. */
+  frameId?: string;
   /** Who changed it (names, last one first). */
   by: string[];
   at: number;
@@ -1459,6 +1488,7 @@ export type NotificationType =
   | 'card.due_soon'
   | 'walkthrough.mention'
   | 'walkthrough.comment'
+  | 'walkthrough.reaction'
   | 'agent.blocked'
   | 'problem.fixed';
 
@@ -1779,8 +1809,42 @@ export const AI_PROVIDER_LABELS: Record<AiProviderKind, string> = {
 };
 /** Who in a team workspace may use AI on its boards (besides needing edit access to the board). */
 export type AiAccess = 'everyone' | 'members' | 'admins';
-export type AiTask = 'ideas' | 'cluster' | 'summarize' | 'diagram';
-export type AiDiagramKind = 'flowchart' | 'sequence' | 'mindmap';
+/**
+ * `report` [additive, #148]: a written report of a live activity's results (`ids`: the activity),
+ * read from results everyone can already see (a sealed activity only once it is revealed).
+ */
+export type AiTask = 'ideas' | 'cluster' | 'summarize' | 'diagram' | 'report' | 'catchup' | 'expand';
+/**
+ * [additive, #134] `expand`: 3 to 7 new children for one mind-map topic (`ids`: that topic) — ideas,
+ * questions or sub-topics — read from the topic, the path to it and what is under it already.
+ * Nothing is placed: `AiActionResponse.children` is the text, which the app previews and adds
+ * under the topic itself (one undo step).
+ */
+export type AiExpandKind = 'ideas' | 'questions' | 'subtopics';
+export const AI_EXPAND = { min: 3, max: 7 } as const;
+/**
+ * [additive, #126] `catchup`: what OTHER people changed since the reader's last visit ('visit') or
+ * in the last 7, 14 or 30 days — read from the change set only ("changes since your last visit",
+ * as the reader may see the board now), shown to the reader alone (`AiActionResponse.catchUp`);
+ * the note in the preview is inserted only if they choose to.
+ */
+export type AiCatchUpSince = 'visit' | 7 | 14 | 30;
+export const AI_CATCH_UP_SINCE: readonly AiCatchUpSince[] = ['visit', 7, 14, 30];
+/** What a catch-up says, each point citing the items (and frames) it is about. */
+export interface AiCatchUp {
+  /** From when (ms). */
+  since: number;
+  counts: CatchUpSummary['counts'];
+  points: Array<{ text: string; ids: string[] }>;
+  /** The cited items and frames, by id: `removed` ones can't be opened any more. */
+  items: Record<string, { kind: string; text: string; frameId?: string; removed?: boolean }>;
+}
+/** [additive, #38] class, er, state (Mermaid), orgchart and kanban. */
+export type AiDiagramKind = 'flowchart' | 'sequence' | 'mindmap' | 'class' | 'er' | 'state' | 'orgchart' | 'kanban';
+/** [additive, #148] How `cluster` sorts: named themes (default), or sentiment groups (AI_SENTIMENTS). */
+export type AiClusterBy = 'theme' | 'sentiment';
+/** The groups a sentiment clustering uses, in this order (empty ones are left out). */
+export const AI_SENTIMENTS = ['Positive', 'Neutral', 'Mixed', 'Negative'] as const;
 /** Limits on one action (requests over them are refused; model output over them is clamped). */
 export const AI_LIMITS = {
   /** Characters of the person's own instruction. */
@@ -1812,6 +1876,17 @@ export interface AiActionRequest {
   ids?: string[];
   /** diagram: what to draw (default flowchart). */
   diagram?: AiDiagramKind;
+  /** [additive, #148] cluster: by theme (default) or by sentiment. */
+  by?: AiClusterBy;
+  /** [additive, #126] catchup: since the last visit (default) or the last 7, 14 or 30 days. */
+  since?: AiCatchUpSince;
+  /** [additive, #134] expand: what to add under the topic (default ideas). */
+  expand?: AiExpandKind;
+  /**
+   * [additive, #148] summarize: put the result into this frame (free space inside it, else below
+   * what is there: the app grows the frame when it inserts the preview) instead of beside it.
+   */
+  into?: string;
   /**
    * 'preview' (default): laid out and placed, not written. 'board': written now as one change.
    * 'suggestions' (KAI-169): proposed for people who can edit to accept ("AI for <Person>"). A
@@ -1827,6 +1902,10 @@ export interface AiActionResponse extends InsertStructureResponse {
   /** What the model made, in words (the dialog shows it next to the picture). */
   summary: string;
   usage: { inputTokens: number; outputTokens: number };
+  /** [additive, #126] catchup: the summary with its citations (the snapshot is the note to insert). */
+  catchUp?: AiCatchUp;
+  /** [additive, #134] expand: the new children's text, in order (nothing was placed: `created` is empty). */
+  children?: string[];
 }
 
 export interface WorkspaceAiSettings {

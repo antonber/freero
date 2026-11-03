@@ -18,6 +18,8 @@ export const TRACKER_PROVIDERS = {
   linear: 'Linear',
   github: 'GitHub',
   azure: 'Azure DevOps',
+  asana: 'Asana',
+  monday: 'monday.com',
 } as const;
 export type TrackerProviderKind = keyof typeof TRACKER_PROVIDERS;
 
@@ -497,6 +499,10 @@ export function estimateNumber(v: unknown): number | null {
 // GET    /api/trackers/connections/:id/fields         -> { fields: TrackerFieldInfo[] } (managers: the field map's picker, #43)
 // GET    /api/trackers/oauth/:provider/start?workspace=<id>|personal=1  -> 302 to the tracker's consent page
 // POST   /api/trackers/webhooks/:connectionId         (the tracker; signed with the connection's secret)
+// POST   /api/trackers/webhooks/:connectionId?h=&k=   (Asana, monday.com: a webhook Freero registered itself;
+//                                                      `k` binds the address to the connection's secret, and
+//                                                      the handshake — Asana's X-Hook-Secret, monday's
+//                                                      challenge — is answered only while Freero registers it)
 
 export interface TrackerConnectionInfo {
   id: string;
@@ -602,13 +608,18 @@ export interface TrackerSendResponse {
 
 export interface TrackerImportRequest {
   connectionId: string;
-  /** JQL (Jira), a search (Linear), a search query (GitHub), WIQL (Azure DevOps). Not with `scope`. */
+  /**
+   * JQL (Jira), a search (Linear), a search query (GitHub), WIQL (Azure DevOps), a filter (Asana:
+   * `project:<name> section:"Doing" assignee:me done:no words`; monday.com: `board:<name> group:"…"
+   * status:"…" assignee:me words`). Not with `scope`.
+   */
   query?: string;
   /**
    * [additive] Instead of a query (#119, #43): a project's issues in a sprint (`'current'`: the
    * active one; else a sprint id from `…/sprints`) and / or under an epic (its key). Into a kanban,
    * the kanban gets a Sprint field (Cycle on Linear, Iteration on Azure DevOps) with the project's
-   * sprints as options, closed ones kept but not offered.
+   * sprints as options, closed ones kept but not offered. [additive, #120/#121] Neither sprint nor
+   * epic: the whole project (an Asana project, a monday.com board) up to `limit`.
    */
   scope?: { project: string; sprint?: string | null; epic?: string | null };
 

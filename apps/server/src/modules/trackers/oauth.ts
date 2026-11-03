@@ -1,16 +1,16 @@
-// Connecting a tracker with OAuth 2.0 (Jira Cloud 3LO) through an app the operator registered
-// (TRACKER_JIRA_CLIENT_ID / _SECRET). The consent starts from Freero (signed in; for a team, its
+// Connecting a tracker with OAuth 2.0 (Jira Cloud 3LO, Asana, monday.com) through an app the
+// operator registered (TRACKER_JIRA_CLIENT_ID / _SECRET, TRACKER_ASANA_…, TRACKER_MONDAY_…). The consent starts from Freero (signed in; for a team, its
 // owner/admin) and comes back to the callback, which only the browser that started it can finish:
 // the state is single use, 10 minutes, stored as a hash, and bound to an HttpOnly cookie set at
 // the start (like single sign-on). The tokens are sealed at once; nothing about them reaches the page.
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Request, Response } from 'express';
-import type { TrackerProviderKind } from '@freero/shared';
+import { TRACKER_PROVIDERS, type TrackerProviderKind } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { HttpError, notFound, parseCookies } from '../../platform/http';
 import { appUrl } from '../../platform/mail';
 import { requireAdmin } from '../admin/index';
-import { createOAuthConnection, sha256 } from './connections';
+import { createOAuthConnection, oauthAppOf, sha256 } from './connections';
 import { TrackerError } from './http';
 import { oauthProviderOf } from './providers/index';
 import * as repo from './repo';
@@ -20,13 +20,13 @@ const COOKIE_PATH = '/api/trackers/oauth';
 const FLOW_TTL_MS = 10 * 60_000;
 
 function appFor(provider: TrackerProviderKind) {
-  const app = provider === 'jira' ? getConfig().trackers.jiraOAuth : null;
+  const app = oauthAppOf(provider);
   const oauth = oauthProviderOf(provider);
   if (!app || !oauth) throw notFound('This server has no OAuth app for that tracker');
   return { app, oauth };
 }
 
-export const oauthOffered = (provider: TrackerProviderKind) => provider === 'jira' && !!getConfig().trackers.jiraOAuth;
+export const oauthOffered = (provider: TrackerProviderKind) => !!oauthAppOf(provider) && !!oauthProviderOf(provider);
 
 const callbackUrl = (req: Request, provider: TrackerProviderKind) => appUrl(req, `/api/trackers/oauth/${provider}/callback`);
 
@@ -37,7 +37,7 @@ export async function startOAuth(req: Request, res: Response, userId: string, pr
   const { app, oauth } = appFor(provider);
   const workspaceId = typeof req.query.workspace === 'string' && req.query.workspace ? req.query.workspace : null;
   if (workspaceId) await requireAdmin(workspaceId, userId, { scope: 'security' });
-  const name = typeof req.query.name === 'string' && req.query.name.trim() ? req.query.name.trim().slice(0, 80) : 'Jira';
+  const name = typeof req.query.name === 'string' && req.query.name.trim() ? req.query.name.trim().slice(0, 80) : TRACKER_PROVIDERS[provider];
   const state = randomBytes(32).toString('base64url');
   const browser = randomBytes(32).toString('base64url');
   await repo.insertFlow(sha256(state), { provider, userId, workspaceId, browserHash: sha256(browser), name }, Date.now() + FLOW_TTL_MS);
@@ -79,7 +79,7 @@ export async function finishOAuth(req: Request, res: Response, userId: string, p
       redirectUri: callbackUrl(req, provider),
       code,
     });
-    if (!sites.length) return fail('That Atlassian account reaches no Jira site.');
+    if (!sites.length) return fail(`That account reaches no ${TRACKER_PROVIDERS[provider]} site.`);
     // One connection per site the consent reaches (usually one).
     for (const s of sites)
       await createOAuthConnection(userId, {

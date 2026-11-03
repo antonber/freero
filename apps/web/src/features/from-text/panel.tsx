@@ -6,7 +6,7 @@ import { TextCursorInput } from 'lucide-react';
 import { LayoutError, type LaidOut } from '@freero/shared';
 import { definePanel, type PanelProps, type Point } from '@engine';
 import { Button, ElementsPreview, Modal, Select, TextArea, Toggle } from '@ui';
-import { DIAGRAMS, DIALOG_ID, insertLaid, layoutText, previewElements, updateDiagram } from './lib/insert';
+import { DIAGRAMS, DIALOG_ID, containerOf, insertLaid, layoutText, previewElements, updateDiagram } from './lib/insert';
 import { detectKind, KINDS, kindLabel, type TextKind } from './lib/parse';
 import type { DiagramRecord } from './lib/reconcile';
 import './from-text.css';
@@ -80,7 +80,7 @@ function FromTextDialog({ editor, props }: PanelProps) {
       }
       footer={
         <>
-          {record && <Toggle checked={keepMoved} onChange={setKeepMoved} label="Keep items I moved" className="fr-from-text__keep" />}
+          {record && !containerOf(editor, record) && <Toggle checked={keepMoved} onChange={setKeepMoved} label="Keep items I moved" className="fr-from-text__keep" />}
           <Button variant="ghost" onClick={close}>
             Cancel
           </Button>

@@ -5,6 +5,7 @@ import type { BoardView } from './view';
 export {
   snapshotBoardDoc,
   initBoardDoc,
+  initNewBoardDoc,
   snapshotBoardLayer,
   snapshotBoardLayers,
   initBoardLayer,

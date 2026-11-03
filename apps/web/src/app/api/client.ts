@@ -76,6 +76,7 @@ import type {
   BoardOutlineResponse,
   PublicEmbedInfo,
   PublicEmbedMember,
+  MicrosoftIntegrationsInfo,
   PublicEmbedToken,
   GuestJoinResponse,
   AccessRequestState,
@@ -156,7 +157,9 @@ import type {
   DecisionChanges,
   DecisionResponse,
   Walkthrough,
+  WalkthroughChaptersInput,
   WalkthroughComment,
+  WalkthroughReaction,
   WalkthroughCue,
   WalkthroughSummary,
 } from '@freero/shared';
@@ -396,6 +399,8 @@ export const api = {
   publicEmbed: (id: string) => request<PublicEmbedInfo>('GET', `/api/embed/b/${encodeURIComponent(id)}`),
   publicEmbedToken: (id: string, readonly: boolean) => request<PublicEmbedToken>('POST', `/api/embed/b/${encodeURIComponent(id)}/token`, { readonly }),
   publicEmbedMember: (id: string, token: string) => request<PublicEmbedMember>('POST', `/api/embed/b/${encodeURIComponent(id)}/me`, { token }),
+  /** The Microsoft Teams app and Copilot agent this instance offers (#112, #114). */
+  microsoftIntegrations: () => request<MicrosoftIntegrationsInfo>('GET', '/api/integrations/microsoft'),
 
   // activity
   boardActivity: (id: string, before?: number) =>
@@ -590,7 +595,7 @@ export const api = {
   trackerUnlink: (boardId: string, linkId: string) => request<{ ok: true }>('DELETE', `/api/boards/${encodeURIComponent(boardId)}/trackers/links/${encodeURIComponent(linkId)}`),
   /** A team's connections (its admins) or, without `workspaceId`, the person's own. */
   trackerConnections: (workspaceId: string | null) =>
-    request<{ connections: TrackerConnectionInfo[]; oauth: { jira: boolean } }>('GET', `/api/trackers/connections${workspaceId ? `?workspace=${encodeURIComponent(workspaceId)}` : ''}`),
+    request<{ connections: TrackerConnectionInfo[]; oauth: { jira: boolean; asana?: boolean; monday?: boolean } }>('GET', `/api/trackers/connections${workspaceId ? `?workspace=${encodeURIComponent(workspaceId)}` : ''}`),
   createTrackerConnection: (body: TrackerConnectionInput) => request<{ connection: TrackerConnectionInfo; webhookSecret: string }>('POST', '/api/trackers/connections', body),
   updateTrackerConnection: (id: string, body: Partial<TrackerConnectionInput>) => request<{ connection: TrackerConnectionInfo }>('PATCH', `/api/trackers/connections/${encodeURIComponent(id)}`, body),
   testTrackerConnection: (id: string) => request<{ ok: true; account: string | null; connection: TrackerConnectionInfo }>('POST', `/api/trackers/connections/${encodeURIComponent(id)}/test`),
@@ -812,6 +817,16 @@ export const api = {
   transcribeWalkthrough: (boardId: string, id: string) => request<{ walkthrough: Walkthrough }>('POST', `${walkthroughsPath(boardId, id)}/transcript`),
   walkthroughCaptionsStatus: (boardId: string) =>
     request<{ available: boolean; reason?: string }>('GET', `/api/boards/${encodeURIComponent(boardId)}/walkthroughs-captions`),
+  setWalkthroughChapters: (boardId: string, id: string, body: WalkthroughChaptersInput) =>
+    request<{ walkthrough: Walkthrough }>('PUT', `${walkthroughsPath(boardId, id)}/chapters`, body),
+  draftWalkthroughChapters: (boardId: string, id: string) => request<WalkthroughChaptersInput>('POST', `${walkthroughsPath(boardId, id)}/chapters/draft`),
+  walkthroughReactions: (boardId: string, id: string) => request<{ reactions: WalkthroughReaction[] }>('GET', `${walkthroughsPath(boardId, id)}/reactions`),
+  reactToWalkthrough: (boardId: string, id: string, body: { atMs: number; emoji: string }) =>
+    request<{ reaction: WalkthroughReaction }>('POST', `${walkthroughsPath(boardId, id)}/reactions`, body),
+  async deleteWalkthroughReaction(boardId: string, id: string, reactionId: string): Promise<void> {
+    const res = await fetch(`${walkthroughsPath(boardId, id)}/reactions/${encodeURIComponent(reactionId)}`, { method: 'DELETE', credentials: 'same-origin' });
+    if (!res.ok) throw await failure(res);
+  },
   async downloadWalkthrough(boardId: string, id: string): Promise<Blob> {
     const res = await fetch(`${walkthroughsPath(boardId, id)}/download`, { credentials: 'same-origin' });
     if (!res.ok) throw await failure(res);

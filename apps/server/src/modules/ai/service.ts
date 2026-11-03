@@ -4,20 +4,23 @@
 // that reaches the model is recorded in the audit log — task, model,
 // tokens and outcome, never the prompt or board content.
 import {
+  AI_CATCH_UP_SINCE,
   AI_LIMITS,
   MAX_SUGGESTION_DESCRIPTION,
   renderOutlineMarkdown,
   estimateTokens,
+  richTextToPlain,
   rotatedBounds,
   unionRects,
   type AiActionRequest,
   type AiActionResponse,
+  type AiCatchUp,
   type AiDiagramKind,
   type AuditValue,
   type BoardOutline,
+  type MindmapElement,
   type OutlineItem,
   type Point,
-  type StructureInput,
   type SuggestionAuthor,
 } from '@freero/shared';
 import { getConfig } from '../../platform/config';
@@ -27,13 +30,31 @@ import { consumeRateLimit } from '../../platform/rateLimit';
 import { recordAudit } from '../audit/index';
 import { getUser } from '../auth/index';
 import { requireBoardDownload } from '../boards/index';
+import { catchUpChanges } from '../activity/index';
+import { revealedResults } from '../engage/index';
 import { boardOutline } from '../outline/index';
 import { readBoardView } from '../realtime/index';
 import { insertStructure } from '../structure/index';
 import { decideAi, type AiGrant } from './access';
 import { callModel, ProviderError } from './providers';
 import * as repo from './repo';
-import { clusterTask, diagramTask, ideasTask, InvalidOutput, parseReply, summarizeTask, TASKS, type ClusterItem, type TaskPlan } from './tasks';
+import {
+  clusterTask,
+  diagramTask,
+  ideasTask,
+  InvalidOutput,
+  parseReply,
+  reportTask,
+  resultsText,
+  summarizeTask,
+  TASKS,
+  type ClusterItem,
+  catchUpTask,
+  expandTask,
+  type Accepted,
+  type MindTopic,
+  type TaskPlan,
+} from './tasks';
 
 /** What an AI action proposes, as its suggestions' description (reviewers read it). */
 const TASK_DESCRIPTIONS: Record<AiActionRequest['task'], string> = {
@@ -41,14 +62,19 @@ const TASK_DESCRIPTIONS: Record<AiActionRequest['task'], string> = {
   cluster: 'Sorted into themes',
   summarize: 'Summary',
   diagram: 'Diagram',
+  report: 'Report',
+  catchup: 'Catch-up',
+  expand: 'Expanded topic',
 };
+
+const DAY = 86_400_000;
 
 /** Calendar month (UTC) usage is counted in. */
 export const monthOf = (at = Date.now()) => new Date(at).toISOString().slice(0, 7);
 
 /** Kinds clustering sorts into groups (notes; titles and other text boxes stay where they are). */
 const CLUSTERABLE = new Set(['sticky', 'card']);
-const DIAGRAMS: AiDiagramKind[] = ['flowchart', 'sequence', 'mindmap'];
+const DIAGRAMS: AiDiagramKind[] = ['flowchart', 'sequence', 'mindmap', 'class', 'er', 'state', 'orgchart', 'kanban'];
 
 function parseActionRequest(body: unknown): AiActionRequest {
   const b = (body ?? {}) as Partial<AiActionRequest>;
@@ -59,6 +85,9 @@ function parseActionRequest(body: unknown): AiActionRequest {
   if (b.ids !== undefined && (!Array.isArray(b.ids) || b.ids.length > AI_LIMITS.ids || b.ids.some((id) => typeof id !== 'string' || !id || id.length > 200)))
     throw badRequest(`ids must be a list of at most ${AI_LIMITS.ids} element ids`);
   if (b.diagram !== undefined && !DIAGRAMS.includes(b.diagram)) throw badRequest(`diagram must be one of ${DIAGRAMS.join(', ')}`);
+  if (b.by !== undefined && b.by !== 'theme' && b.by !== 'sentiment') throw badRequest('by must be theme or sentiment');
+  if (b.since !== undefined && !AI_CATCH_UP_SINCE.includes(b.since)) throw badRequest(`since must be one of ${AI_CATCH_UP_SINCE.join(', ')}`);
+  if (b.into !== undefined && (typeof b.into !== 'string' || !b.into || b.into.length > 200)) throw badRequest('into must be a frame id');
   if (b.target !== undefined && b.target !== 'board' && b.target !== 'preview' && b.target !== 'suggestions')
     throw badRequest('target must be board, preview or suggestions');
   if (b.near !== undefined && (typeof b.near !== 'string' || !b.near || b.near.length > 200)) throw badRequest('near must be an element id');
@@ -66,12 +95,27 @@ function parseActionRequest(body: unknown): AiActionRequest {
   const prompt = b.prompt?.trim() ?? '';
   if ((b.task === 'ideas' || b.task === 'diagram') && !prompt && !b.ids?.length) throw badRequest('Say what the ideas or the diagram should be about');
   if (b.task === 'cluster' && (b.ids?.length ?? 0) < 2) throw badRequest('Select at least two notes to cluster');
-  return { task: b.task!, prompt, ids: b.ids ? [...new Set(b.ids)] : undefined, diagram: b.diagram, target: b.target ?? 'preview', near: b.near, at: b.at };
+  if (b.task === 'report' && b.ids?.length !== 1) throw badRequest('Select the one activity to report on');
+  if (b.task === 'expand' && b.ids?.length !== 1) throw badRequest('Select the one mind-map topic to expand');
+  if (b.expand !== undefined && b.expand !== 'ideas' && b.expand !== 'questions' && b.expand !== 'subtopics') throw badRequest('expand must be ideas, questions or subtopics');
+  return {
+    task: b.task!,
+    prompt,
+    ids: b.ids ? [...new Set(b.ids)] : undefined,
+    diagram: b.diagram,
+    by: b.by,
+    into: b.into,
+    since: b.task === 'catchup' ? (b.since ?? 'visit') : undefined,
+    expand: b.task === 'expand' ? (b.expand ?? 'ideas') : undefined,
+    target: b.target ?? 'preview',
+    near: b.near,
+    at: b.at,
+  };
 }
 
 // ---- audit ----
 
-async function auditAi(g: AiGrant, userId: string, metadata: Record<string, AuditValue>): Promise<void> {
+export async function auditAi(g: AiGrant, userId: string, metadata: Record<string, AuditValue>): Promise<void> {
   // A team board's request goes to the workspace's log. A personal board's to the person's own
   // log only: never fanned out to their teams (it names a personal board).
   await recordAudit({
@@ -168,6 +212,26 @@ async function clusterItems(
   return { items, center: b ? { x: b.x + b.w / 2, y: b.y + b.h / 2 } : null, othersOwn };
 }
 
+/**
+ * A mind-map topic as the reader sees the board (never anyone's private draft around it): the path
+ * from the map's centre to it and the text of its children.
+ */
+async function mindTopic(boardId: string, userId: string, role: AiGrant['role'], id: string): Promise<MindTopic> {
+  const view = await readBoardView(boardId, { userId, role });
+  const nodes = new Map(view.elements.filter((e) => e.el.type === 'mindmap' && (e.layer !== 'private' || e.el.id === id)).map((e) => [e.el.id, e.el as MindmapElement]));
+  const node = nodes.get(id);
+  if (!node) throw badRequest('That isn’t a mind-map topic on this board');
+  const text = (n: MindmapElement) => richTextToPlain(n.text).trim() || '(no text)';
+  const path: string[] = [];
+  const seen = new Set<string>();
+  for (let cur: MindmapElement | undefined = node; cur && !seen.has(cur.id); cur = cur.parentId ? nodes.get(cur.parentId) : undefined) {
+    seen.add(cur.id);
+    path.unshift(text(cur));
+  }
+  const children = [...nodes.values()].filter((n) => n.parentId === id && n.id !== id).map(text);
+  return { path: path.slice(-12), children };
+}
+
 /** The selected element furthest right: results about a selection land just right of it. */
 async function rightmostOf(boardId: string, userId: string, role: AiGrant['role'], ids: string[]): Promise<string | undefined> {
   const wanted = new Set(ids);
@@ -182,9 +246,7 @@ async function rightmostOf(boardId: string, userId: string, role: AiGrant['role'
 
 // ---- asking the model ----
 
-interface Asked {
-  structure: StructureInput;
-  summary: string;
+export interface Asked extends Accepted {
   usage: { inputTokens: number; outputTokens: number };
 }
 
@@ -192,7 +254,7 @@ interface Asked {
  * Asks once; an answer that fails validation gets ONE repair turn naming what was wrong. Every
  * call is metered, also when it fails.
  */
-async function ask(g: AiGrant, userId: string, plan: TaskPlan, usage: Asked['usage']): Promise<Asked> {
+export async function ask(g: AiGrant, userId: string, plan: TaskPlan, usage: Asked['usage']): Promise<Asked> {
   const c = getConfig().ai;
   let calls = 0;
   const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [{ role: 'user', content: plan.user }];
@@ -255,7 +317,7 @@ export async function runAiAction(boardId: string, userId: string, body: unknown
   // "downloads" policy applies (KAI-197), as for exports and machine reads — the one shared check,
   // 403 downloads_restricted, audited as board.download_refused (via 'ai'). Ideas from a prompt
   // alone read nothing.
-  if (req.task === 'cluster' || req.task === 'summarize' || ids) await requireBoardDownload(boardId, userId, 'ai');
+  if (req.task === 'cluster' || req.task === 'summarize' || req.task === 'report' || req.task === 'catchup' || ids) await requireBoardDownload(boardId, userId, 'ai');
 
   let plan: TaskPlan;
   let near = req.near;
@@ -264,6 +326,7 @@ export async function runAiAction(boardId: string, userId: string, body: unknown
   // is never written (or previewed for writing) by one person's AI action: it is proposed, and
   // the people who can edit the board accept or reject it (suggestions, KAI-169).
   let target = req.target ?? 'preview';
+  let catchUpFrom: Pick<AiCatchUp, 'since' | 'counts'> | null = null;
   switch (req.task) {
     case 'ideas':
       plan = ideasTask(prompt, ids ? await readContent(boardId, userId, ids) : null);
@@ -272,7 +335,7 @@ export async function runAiAction(boardId: string, userId: string, body: unknown
       const { items, center, othersOwn } = await clusterItems(boardId, userId, g.role, ids!);
       if (items.length < 2) throw badRequest('Select at least two unlocked notes with text to cluster');
       if (othersOwn) target = 'suggestions';
-      plan = clusterTask(prompt, items);
+      plan = clusterTask(prompt, items, req.by);
       // The groups form where the notes are (free space nearest to them).
       if (!near && center) at = center;
       break;
@@ -281,7 +344,34 @@ export async function runAiAction(boardId: string, userId: string, body: unknown
       const content = await readContent(boardId, userId, ids);
       if (!content.trim()) throw badRequest('There is nothing to summarise here');
       plan = summarizeTask(prompt, content, ids ? 'selection' : 'board');
-      if (ids && !near) near = await rightmostOf(boardId, userId, g.role, ids);
+      if (ids && !near && !req.into) near = await rightmostOf(boardId, userId, g.role, ids);
+      break;
+    }
+    case 'catchup': {
+      // The change set only, as the reader may see the board now; private to them: a preview they
+      // may insert, never written for them.
+      target = 'preview';
+      const from = req.since === 'visit' ? undefined : Date.now() - (req.since as number) * DAY;
+      const changes = await catchUpChanges(boardId, userId, { since: from });
+      if (changes.since === null) throw badRequest('There’s no earlier visit of yours to compare with yet: pick a number of days instead.');
+      const c = changes.counts;
+      if (!c.added && !c.changed && !c.removed && !c.comments)
+        throw new HttpError(422, req.since === 'visit' ? 'Nobody else changed the board since your last visit.' : `Nobody else changed the board in the last ${req.since} days.`, 'ai_nothing');
+      catchUpFrom = { since: changes.since, counts: c };
+      plan = catchUpTask(prompt, changes, req.since === 'visit' ? 'since their last visit' : `in the last ${req.since} days`);
+      break;
+    }
+    case 'report': {
+      // Results everyone on the board sees (a sealed activity only once revealed), never answers.
+      const { activity, results } = await revealedResults(boardId, ids![0], userId);
+      if (!results.respondents) throw badRequest('Nobody has answered yet, so there is nothing to report');
+      plan = reportTask(prompt, resultsText(activity, results));
+      if (!near) near = activity.id;
+      break;
+    }
+    case 'expand': {
+      target = 'preview';
+      plan = expandTask(req.expand ?? 'ideas', prompt, await mindTopic(boardId, userId, g.role, ids![0]));
       break;
     }
     case 'diagram':
@@ -290,7 +380,7 @@ export async function runAiAction(boardId: string, userId: string, body: unknown
       break;
   }
 
-  const meta = { task: req.task, target, items: ids?.length ?? 0 };
+  const meta = { task: req.task, target, items: ids?.length ?? 0, ...(req.task === 'cluster' && req.by ? { by: req.by } : {}) };
   // Tokens the calls used, also when they fail (the audit and the meter count them either way).
   const usage = { inputTokens: 0, outputTokens: 0 };
   let asked: Asked;
@@ -305,16 +395,29 @@ export async function runAiAction(boardId: string, userId: string, body: unknown
     throw e;
   }
   const tokens = { ...usage };
+  if (!asked.structure) {
+    // Text only (expand): the app places it itself.
+    await auditAi(g, userId, { ...meta, ...tokens, outcome: 'ok', created: 0, moved: 0 });
+    return { target: 'preview', created: [], moved: [], bounds: { x: 0, y: 0, w: 0, h: 0 }, task: req.task, summary: asked.summary, usage: asked.usage, children: asked.children ?? [] };
+  }
+  const structure = asked.structure;
   let placed;
   try {
     // Proposed by the AI for this person: the badge reads "AI for <Person>".
     const description = `${TASK_DESCRIPTIONS[req.task]}${prompt ? `: ${prompt}` : ''}`.slice(0, MAX_SUGGESTION_DESCRIPTION);
     const author: SuggestionAuthor = { kind: 'ai', name: 'AI', userId, userName: (await getUser(userId))?.name ?? '' };
-    placed = await insertStructure(boardId, userId, { structure: asked.structure, near, at, target, description }, { author });
+    const placement = req.task === 'summarize' && req.into ? { placement: { into: req.into } } : {};
+    placed = await insertStructure(boardId, userId, { structure, near, at, target, description, ...placement }, { author });
   } catch (e) {
     await auditAi(g, userId, { ...meta, ...tokens, outcome: 'not_placed' });
     throw e;
   }
   await auditAi(g, userId, { ...meta, ...tokens, outcome: 'ok', created: placed.created.length, moved: placed.moved.length });
-  return { ...placed, task: req.task, summary: asked.summary, usage: asked.usage };
+  return {
+    ...placed,
+    task: req.task,
+    summary: asked.summary,
+    usage: asked.usage,
+    ...(catchUpFrom && asked.catchUp ? { catchUp: { ...catchUpFrom, ...asked.catchUp } } : {}),
+  };
 }

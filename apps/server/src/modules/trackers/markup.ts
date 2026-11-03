@@ -4,6 +4,8 @@
 //   Jira Cloud (REST v3): Atlassian Document Format (ADF)
 //   Jira Data Center (REST v2): wiki markup
 //   Linear, GitHub: Markdown as is
+//   Azure DevOps, monday.com updates: HTML from a fixed template
+//   Asana: its rich text (`html_notes`: <body>, text with newlines, <ul><li>, <a href>; no <p>)
 
 type Inline = { text: string; href?: string };
 
@@ -188,4 +190,22 @@ export function htmlToMarkdown(html: unknown): string {
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+// ---- Asana rich text (#120) ----
+//
+// `html_notes` is XML-like: a <body> root, line breaks as newlines in the text, <ul><li> lists and
+// <a href> links (no <p>, no <br>). Written from the same escaped template; read back with the
+// newlines kept as line breaks.
+
+export function markdownToAsanaHtml(md: string): string {
+  const body = blocks(md)
+    .map((b) => (b.kind === 'p' ? b.lines.map(htmlInline).join('\n') : `<ul>${b.items.map((i) => `<li>${htmlInline(i)}</li>`).join('')}</ul>`))
+    .join('\n\n');
+  return `<body>${body}</body>`;
+}
+
+export function asanaHtmlToMarkdown(html: unknown): string {
+  if (typeof html !== 'string' || !html) return '';
+  return htmlToMarkdown(html.replace(/\r?\n/g, '<br>'));
 }

@@ -1,7 +1,7 @@
 import { Code2, TextCursorInput, Workflow } from 'lucide-react';
 import { LayoutError } from '@freero/shared';
 import { defineCommands, type Point } from '@engine';
-import { DIALOG_ID, insertLaid, layoutText, selectedDiagram, updateDiagram } from './lib/insert';
+import { DIALOG_ID, containerOf, insertLaid, layoutText, selectedDiagram, updateDiagram } from './lib/insert';
 import { KINDS, type TextKind } from './lib/parse';
 
 const isKind = (v: unknown): v is TextKind => KINDS.some((k) => k.value === v);
@@ -30,13 +30,17 @@ export default defineCommands([
     },
   },
   {
-    // The diagram laid out again from its source, every item back in place (styles kept).
+    // The diagram laid out again from its source, every item back in place (styles kept). A diagram
+    // container lays itself out ("Lay out again", features/diagram).
     id: 'from-text.relayout',
     label: 'Re-lay out diagram',
     icon: Workflow,
     menus: ['context'],
-    when: (editor) => !!selectedDiagram(editor),
-    disabledReason: 'Select a diagram inserted from text',
+    when: (editor) => {
+      const d = selectedDiagram(editor);
+      return !!d && !containerOf(editor, d.record);
+    },
+    disabledReason: 'Select a diagram inserted from text (a diagram container: Lay out again)',
     run(editor) {
       const d = selectedDiagram(editor);
       if (!d) return;

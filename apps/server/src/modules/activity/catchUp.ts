@@ -91,10 +91,10 @@ interface Read {
   cut?: boolean;
 }
 
-async function readSince(boardId: string, userId: string): Promise<Read> {
+async function readSince(boardId: string, userId: string, from?: number): Promise<Read> {
   const { role } = await getBoardAccess(boardId, userId);
   if (!role) throw notFound('Board not found');
-  const since = await repo.seenAt(boardId, userId);
+  const since = from ?? (await repo.seenAt(boardId, userId));
   if (since === null) return { since, rows: [], role };
   const rows = await repo.since([boardId], canSeeHidden(role) ? [boardId] : [], since, ['edit', 'comment'], MAX_ROWS);
   return { since, rows: rows.filter((r) => fromOthers(r, userId)), role, cut: rows.length === MAX_ROWS };
@@ -124,16 +124,21 @@ export async function catchUpSummary(boardId: string, userId: string): Promise<C
   return summarize(read, netChanges(read.rows));
 }
 
-/** What exactly changed since then, as the reader may see the board now. */
-export async function catchUpChanges(boardId: string, userId: string): Promise<CatchUpChanges> {
-  const read = await readSince(boardId, userId);
+/**
+ * What exactly changed since then, as the reader may see the board now. `since` [#126]: from this
+ * moment instead of the last visit (the AI catch-up's "last 7 days").
+ */
+export async function catchUpChanges(boardId: string, userId: string, opts: { since?: number } = {}): Promise<CatchUpChanges> {
+  const read = await readSince(boardId, userId, opts.since);
   const net = netChanges(read.rows);
   const summary = await summarize(read, net);
   const out: CatchUpChanges = { ...summary, added: [], changed: [], removed: [], truncated: net.truncated || !!read.cut };
   if (net.items.size === 0 || read.since === null) return out;
   const meta = { id: boardId, title: (await getBoardTitle(boardId)) ?? '' };
   const view = await readBoardView(boardId, { userId, role: read.role });
-  const onBoard = new Map(view.elements.map((e) => [e.el.id, e.el.type]));
+  // Never a private draft (the reader's own included): what others changed is on the shared board.
+  const onBoard = new Map(view.elements.filter((e) => e.layer !== 'private').map((e) => [e.el.id, e.el.type]));
+  const frameOf = new Map(view.elements.filter((e) => e.el.frameId).map((e) => [e.el.id, e.el.frameId!]));
   const now = flattenOutline(await outlineOfView(meta, view));
   // Removed items (and changed ones' text before) as they read at the last version kept before the visit.
   const then = [...net.items.values()].some((i) => i.op !== 'added') ? await versionBefore(boardId, read.since, meta) : new Map<string, OutlineEntry>();
@@ -151,7 +156,8 @@ export async function catchUpChanges(boardId: string, userId: string): Promise<C
     if (!type) continue; // gone since, or not something this reader may see now
     const cur = now.get(id);
     const old = then.get(id);
-    const item: CatchUpItem = { id, kind: cur?.kind ?? type, text: cur?.text ?? '', ...(cur?.frame ? { frame: cur.frame } : {}), by, at };
+    const frameId = frameOf.get(id);
+    const item: CatchUpItem = { id, kind: cur?.kind ?? type, text: cur?.text ?? '', ...(cur?.frame ? { frame: cur.frame } : {}), ...(frameId ? { frameId } : {}), by, at };
     if (it.op === 'changed' && old && cur && old.text !== cur.text) item.before = old.text;
     push(it.op === 'added' ? out.added : out.changed, item, out);
   }

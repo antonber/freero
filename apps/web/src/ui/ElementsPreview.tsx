@@ -41,6 +41,15 @@ function draw(el: BoardElement, byId: Map<string, BoardElement>) {
           </text>
         </g>
       );
+    case 'diagram':
+      // A diagram's frame: a title band over the steps it holds (drawn after it).
+      return (
+        <g key={el.id}>
+          <rect x={x} y={y} width={w} height={h} rx={12} fill="var(--fr-surface-2)" stroke="var(--fr-line-strong)" strokeWidth={1.5} />
+          <line x1={x} x2={x + w} y1={y + 44} y2={y + 44} stroke="var(--fr-line-strong)" strokeDasharray="4 4" />
+          <Box x={x + 14} y={y} w={w - 28} h={44} value={text(el)} size={16} align="left" bold />
+        </g>
+      );
     case 'sticky': {
       const color = (el as { color?: string }).color ?? 'yellow';
       return (

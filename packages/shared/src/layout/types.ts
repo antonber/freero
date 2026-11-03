@@ -114,6 +114,11 @@ export type StructureInput =
   | { kind: 'graph'; nodes: GraphNodeInput[]; edges: GraphEdgeInput[]; direction?: Direction; groups?: GraphGroupInput[] }
   /** Mermaid flowchart (subgraphs become frames) or sequence diagram. */
   | { kind: 'mermaid'; source: string }
+  /**
+   * [additive, #38] PlantUML (`@startuml` … `@enduml`): sequence, class, activity, state, use case
+   * and component diagrams (plantuml.ts).
+   */
+  | { kind: 'plantuml'; source: string }
   | { kind: 'sequence'; diagram: SequenceInput }
   /** Rows of cells → a table (first row the header unless `header: false`). */
   | { kind: 'table'; rows: string[][]; header?: boolean }

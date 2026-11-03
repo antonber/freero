@@ -106,7 +106,8 @@ export default definePage({
         it, and, unless you remove it before sending, a screenshot of the Freero window as you saw it, which can show board content and names. The report also
         carries diagnostics the dialog lists before you send it: the page you were on (without its query string), the board and your role there, the app
         version, your browser and operating system, the window size, the time, and the last errors and failed requests the app noticed (with tokens, email
-        addresses and query strings removed). Only Freero’s operators can see reports, and you can see the status of your own in Account settings.
+        addresses and query strings removed). Only Freero’s operators can see reports, helped by an AI assistant that sorts them (see Service providers
+        below), and you can see the status of your own in Account settings.
       </p>
       <p>
         <strong>What we don’t do:</strong> we don’t sell personal information, show advertising, track you across other sites, or use your boards, docs or
@@ -176,6 +177,12 @@ export default definePage({
           ['AI model provider', L('aiProvider'), 'Prompts and board content of AI actions you run'],
           ['Error tracking', L('errorReporting'), 'Error details, request method and path, account id'],
           ['Analytics', L('analyticsProvider'), L('analyticsData')],
+          [
+            'Sorting problem reports',
+            'Anthropic, PBC (Claude Code), under Anthropic’s commercial terms, which don’t let it train its models on the content',
+            'The note, screenshot and diagnostics of a problem report',
+          ],
+          ['Mail you send us', 'Porkbun (forwarding) and Google LLC (Gmail, our mailbox)', 'Your address, name and message, and any attachment'],
         ]}
       />
       <h3>Services you choose to connect</h3>

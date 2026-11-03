@@ -34,7 +34,8 @@ export type ElementType =
   | 'timeline'
   | 'timelinebar'
   | 'doc'
-  | 'kanbanview';
+  | 'kanbanview'
+  | 'diagram';
 
 /**
  * An app (OAuth) or personal token acting for a person: what the board shows as "<name> for
@@ -99,6 +100,19 @@ export interface BaseElement {
    * a linked item carries no link.
    */
   trackerLink?: string | null;
+  /**
+   * [additive] A member of a diagram (#117) that a person moved by hand: the diagram's live layout
+   * keeps it where it was put. Written only by the diagram's layout (features/diagram, @freero/shared
+   * layout/diagram.ts); meaningless outside a diagram.
+   */
+  diagramPinned?: true | null;
+  /**
+   * [additive] The layer (#118) of a diagram member: an id in its diagram's `layers` (absent or
+   * unknown: the diagram's default layer). Written only by the diagram feature.
+   */
+  diagramLayer?: string | null;
+  /** [additive] Its `locked` was set by its diagram layer's lock, and is cleared with it. */
+  layerLocked?: true | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -330,6 +344,13 @@ export interface ShapeElement extends BaseElement, TextStyle {
   strokeWidth: number;
   strokeStyle: StrokeStyle;
   text: RichText;
+  /**
+   * [additive] A `umlClass` whose text is the whole class: its name on the first line, then its
+   * attributes, then its operations (the lines with a "("), drawn as compartments with a divider
+   * under the name and one above the operations. Absent: the name alone in the top compartment
+   * (clients that don't know this draw it that way).
+   */
+  compartments?: boolean;
 }
 
 export interface TextElement extends BaseElement {
@@ -518,8 +539,8 @@ export interface MindmapElement extends BaseElement {
   text: RichText;
   parentId: string | null;
   rootId: string;
-  /** Root-only: which side children grow to. */
-  direction?: 'right' | 'left' | 'both';
+  /** Root-only: which side children grow to ('down': below the topic, a top-down map, #134). */
+  direction?: 'right' | 'left' | 'both' | 'down';
   color: string;
   collapsed?: boolean;
 }
@@ -1001,6 +1022,40 @@ export interface TimelineBarElement extends BaseElement {
   milestone?: boolean;
 }
 
+/**
+ * How a diagram (#117) keeps its members laid out: a layered flow down / right / up / left, a
+ * tidy tree (left to right) or an org chart (a top-down tree), or `manual` (nothing moves).
+ */
+export type DiagramLayout = 'down' | 'right' | 'up' | 'left' | 'tree' | 'orgchart' | 'manual';
+export const DIAGRAM_LAYOUTS: readonly DiagramLayout[] = ['down', 'right', 'up', 'left', 'tree', 'orgchart', 'manual'];
+
+/** A named layer inside a diagram (#118). `hidden`: folded away for everyone; `locked`: its items are locked. */
+export interface DiagramLayer {
+  id: string;
+  name: string;
+  hidden?: true | null;
+  locked?: true | null;
+}
+
+/**
+ * A diagram (#117; docs/design/diagrams.md): a container whose members — the items whose `frameId`
+ * is the diagram, its shapes, frames (subgraphs) and the connectors between them — it keeps laid out
+ * live. It reflows when its structure (`laidOut`, the signature of what it last laid out) changes and
+ * leaves items people moved (`diagramPinned`) where they put them. Read it through
+ * `@freero/shared` `layout/diagram.ts` (`diagramLayers`, `planDiagram`), never directly. Written only
+ * by the diagram feature (and the server through `withDiagramLayout`). Older clients draw an
+ * "unsupported" box under ordinary shapes and connectors.
+ */
+export interface DiagramElement extends BaseElement {
+  type: 'diagram';
+  title: RichText;
+  layout: DiagramLayout;
+  /** Bottom to top. Absent: one layer (`DEFAULT_LAYER`). */
+  layers?: DiagramLayer[] | null;
+  /** Signature of the structure last laid out (`diagramSignature`); absent: adopt what is there. */
+  laidOut?: string | null;
+}
+
 export type BoardElement =
   | StickyElement
   | ShapeElement
@@ -1026,7 +1081,8 @@ export type BoardElement =
   | TimelineElement
   | TimelineBarElement
   | DocElement
-  | KanbanViewElement;
+  | KanbanViewElement
+  | DiagramElement;
 
 export type ElementOf<T extends ElementType> = Extract<BoardElement, { type: T }>;
 

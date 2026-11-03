@@ -105,8 +105,11 @@ export const ElementView = memo(function ElementView({ id }: { id: string }) {
   // whether it slides there (ElementDefinition.dragPreview). Display only, never written.
   const shownAt = useStore(core.ui, (s) => s.dragPreview?.moves.get(id) ?? null);
   const sliding = useStore(core.ui, (s) => !!s.dragPreview?.members.has(id));
+  // [additive, #117] Outside the item this viewer focuses on (Editor.setFocus): faded and inert.
+  const focusId = useStore(core.ui, (s) => s.focusId);
+  const unfocused = useMemo(() => !!focusId && !!el && !core.editor.inFocus(el), [core, focusId, el]);
   if (!el) return null;
-  return <ElementFrame element={el} selected={selected} editing={editing} zoom={zoom} shownAt={shownAt} sliding={sliding} />;
+  return <ElementFrame element={el} selected={selected} editing={editing} zoom={zoom} shownAt={shownAt} sliding={sliding} unfocused={unfocused} />;
 });
 
 /**
@@ -124,6 +127,8 @@ export function ElementFrame(props: {
   shownAt?: { x: number; y: number } | null;
   /** Slides (animated) between its own position and `shownAt`. */
   sliding?: boolean;
+  /** [additive] Outside this viewer's focus (Editor.setFocus): drawn faded. */
+  unfocused?: boolean;
 }) {
   const core = useCore();
   const { element: el } = props;
@@ -149,7 +154,7 @@ export function ElementFrame(props: {
   }
   return (
     <div
-      className={`fr-el${props.editing ? ' fr-el--editing' : ''}${isPrivate ? ' fr-el--private' : ''}${props.preview ? ' fr-el--preview fr-paper' : ''}${props.sliding ? ' fr-el--sliding' : ''}`}
+      className={`fr-el${props.editing ? ' fr-el--editing' : ''}${isPrivate ? ' fr-el--private' : ''}${props.preview ? ' fr-el--preview fr-paper' : ''}${props.sliding ? ' fr-el--sliding' : ''}${props.unfocused ? ' fr-el--unfocused' : ''}`}
       data-id={props.preview ? undefined : el.id}
       data-type={el.type}
       style={{ ...reg?.def.wrapperStyle?.(el as never), width: el.w, height: el.h, transform }}

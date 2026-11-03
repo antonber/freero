@@ -72,15 +72,21 @@ describe('diagrams as code', () => {
     }
   });
 
-  it('"Re-lay out" puts items moved by hand back in the layout, but keeps their styling', () => {
+  it('"Re-lay out" of a diagram drawn before diagram containers puts items moved by hand back in the layout, keeps their styling, and brings it into a container', () => {
     const { b, ed } = board();
     try {
       insertFlow(ed);
       const [id, record] = onlyDiagram(ed);
+      // As boards from before #117 have it: loose shapes and lines, no container.
+      const container = record.ids.diagram;
+      ed.updateMany(ed.getElements().filter((el) => el.frameId === container).map((el) => ({ id: el.id, patch: { frameId: null } })));
+      ed.remove([container]);
       const save = shapeNamed(ed, 'Save')!;
       ed.update<ShapeElement>(save.id, { x: save.x + 500, fill: '#C2EFB0' });
       updateDiagram(ed, id, record.source, { keepMoved: false });
-      expect(shapeNamed(ed, 'Save')).toMatchObject({ id: save.id, x: save.x, y: save.y, fill: '#C2EFB0' });
+      const now = shapeNamed(ed, 'Save')!;
+      expect(now).toMatchObject({ id: save.id, x: save.x, y: save.y, fill: '#C2EFB0' });
+      expect(ed.getElement(now.frameId!)?.type).toBe('diagram');
     } finally {
       b.destroy();
     }

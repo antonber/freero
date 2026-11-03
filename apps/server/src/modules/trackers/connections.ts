@@ -97,8 +97,14 @@ const sealCredentials = (creds: Credentials) => seal(CREDENTIALS_PURPOSE, JSON.s
  * hand too, which may not be stored yet (a connection is tested before it is saved) — and a pair
  * someone else stored meanwhile (another instance's refresh) is used instead of refreshing again.
  */
+/** The OAuth app the operator registered for a tracker (Jira Cloud, Asana, monday.com), or null. */
+export function oauthAppOf(provider: TrackerProviderKind): { clientId: string; clientSecret: string } | null {
+  const t = getConfig().trackers;
+  return provider === 'jira' ? t.jiraOAuth : provider === 'asana' ? t.asanaOAuth : provider === 'monday' ? t.mondayOAuth : null;
+}
+
 async function refreshed(c: StoredConnection, creds: Extract<Credentials, { kind: 'oauth' }>, force: boolean): Promise<Credentials> {
-  const app = getConfig().trackers.jiraOAuth;
+  const app = oauthAppOf(c.provider);
   const oauth = oauthProviderOf(c.provider);
   if (!app || !oauth || !creds.refreshToken) throw new TrackerError(`${c.name}’s authorization expired: connect it again.`, 'auth', 401);
   const stored = await repo.getConnection(c.id);
@@ -180,12 +186,17 @@ export function apiBaseOf(provider: TrackerProviderKind, site: string): string {
   // Azure DevOps: the organization's (or Server collection's) address is where its API lives.
   if (provider === 'github') return s === 'https://github.com' ? 'https://api.github.com' : `${s}/api/v3`;
   if (provider === 'linear') return s === 'https://linear.app' ? 'https://api.linear.app' : s;
+  // Asana's API lives under its app; monday.com's at one address for every account.
+  if (provider === 'asana') return `${s}/api/1.0`;
+  if (provider === 'monday') return /^https:\/\/([a-z0-9-]+\.)?monday\.com$/i.test(s) ? getConfig().trackers.mondayApiUrl : s;
   return s;
 }
 
 const defaultSite: Partial<Record<TrackerProviderKind, string>> = {
   github: 'https://github.com',
   linear: 'https://linear.app',
+  asana: 'https://app.asana.com',
+  monday: 'https://monday.com',
 };
 
 export function info(c: StoredConnection, links: number, req: Request | null, manager: boolean): TrackerConnectionInfo {
@@ -441,8 +452,9 @@ export async function createOAuthConnection(
     auth: 'oauth',
     credentialsSealed: sealCredentials(p.credentials),
     webhookSecretSealed: seal(WEBHOOK_PURPOSE, newWebhookSecret()),
-    // OAuth apps can't use a site admin's secret-signed webhooks: changes come by polling.
-    inbound: 'polling',
+    // OAuth apps can't use a site admin's secret-signed webhooks: changes come by polling — unless
+    // Freero registers its webhooks itself (Asana, monday.com).
+    inbound: providerOf(p.provider).webhooks ? 'webhook' : 'polling',
     settings: {},
     status: 'active',
     lastError: null,
@@ -566,8 +578,11 @@ export async function deleteConnectionRecord(
 ): Promise<{
   connection: StoredConnection;
   links: Array<{ boardId: string; linkId: string; createdBy: string }>;
+  /** Webhooks Freero had registered in the tracker (the caller stops them there). */
+  hooks: repo.StoredHook[];
 }> {
   const c = await requireManaged(id, userId);
+  const hooks = await repo.hooksOfConnection(c.id);
   const links = await repo.transaction(async () => {
     const l = await repo.deleteConnection(c.id);
     await recordAudit({
@@ -577,7 +592,7 @@ export async function deleteConnectionRecord(
     });
     return l;
   });
-  return { connection: c, links };
+  return { connection: c, links, hooks };
 }
 
 /** sha256, hex: OAuth state and the browser binding are stored only as hashes. */

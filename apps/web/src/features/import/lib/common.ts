@@ -10,7 +10,7 @@ export const MAX_UNPACKED_BYTES = 30 * 1024 * 1024;
 /** Items one import may create (the same cap as text-built structure). */
 export const MAX_ITEMS = 2000;
 
-export type SourceTool = 'draw.io' | 'Excalidraw';
+export type SourceTool = 'draw.io' | 'Excalidraw' | 'Visio';
 
 export interface ImportReport {
   source: SourceTool;

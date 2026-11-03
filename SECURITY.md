@@ -1,8 +1,5 @@
 # Security policy
 
-**Draft — under review.** This policy is a draft pending review and the operator's approval; the
-response times below are targets, not yet commitments.
-
 Freero is open-source software, and the hosted service at https://freero.app runs it (operated by
 Kaiten Gaming LLC). This policy covers both. How the software and the hosted service protect data:
 the [security overview](https://freero.app/security).

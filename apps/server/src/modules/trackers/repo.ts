@@ -1,5 +1,5 @@
 // The only writer of `tracker_connections`, `tracker_links`, `tracker_link_sources`,
-// `tracker_proposals` and `tracker_oauth_flows` [S4].
+// `tracker_proposals`, `tracker_oauth_flows` and `tracker_webhooks` [S4].
 import type { FieldMapEntry, SyncBase, TrackerProviderKind } from '@freero/shared';
 import { isUniqueViolation, one, query, tx } from '../../platform/db';
 
@@ -25,6 +25,12 @@ export interface ConnectionSettings {
   issueTypes?: Record<string, string>;
   /** Tracker fields paired with kanban fields (#43). */
   fieldMap?: FieldMapEntry[];
+  /** The tracker's id for the account Freero acts as (monday.com: whose updates Freero may edit). */
+  accountId?: string | null;
+  /** Asana: the workspace searches, tags and custom fields come from (the account's first, from the test). */
+  workspace?: string | null;
+  /** monday.com: the account's address ("https://acme.monday.com"), for item links. */
+  accountUrl?: string | null;
 }
 
 export interface StoredConnection {
@@ -575,4 +581,95 @@ export async function takeFlow(stateHash: string): Promise<OAuthFlow | null> {
         name: r.name,
       }
     : null;
+}
+
+// ---- webhooks Freero registers itself (Asana, monday.com) ----
+
+export interface StoredHook {
+  id: string;
+  connectionId: string;
+  project: string;
+  externalId: string | null;
+  secretSealed: string | null;
+  state: 'pending' | 'active' | 'failed';
+  lastError: string | null;
+  appOrigin: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+interface HookRow {
+  id: string;
+  connection_id: string;
+  project: string;
+  external_id: string | null;
+  secret_sealed: string | null;
+  state: StoredHook['state'];
+  last_error: string | null;
+  app_origin: string;
+  created_at: Date;
+  updated_at: Date;
+}
+
+const toHook = (r: HookRow): StoredHook => ({
+  id: r.id,
+  connectionId: r.connection_id,
+  project: r.project,
+  externalId: r.external_id,
+  secretSealed: r.secret_sealed,
+  state: r.state,
+  lastError: r.last_error,
+  appOrigin: r.app_origin,
+  createdAt: ms(r.created_at)!,
+  updatedAt: ms(r.updated_at)!,
+});
+
+export async function getHook(id: string): Promise<StoredHook | null> {
+  const r = await one<HookRow>(`SELECT * FROM tracker_webhooks WHERE id = $1`, [id]);
+  return r ? toHook(r) : null;
+}
+
+export async function hooksOfConnection(connectionId: string): Promise<StoredHook[]> {
+  return (await query<HookRow>(`SELECT * FROM tracker_webhooks WHERE connection_id = $1 ORDER BY created_at`, [connectionId])).map(toHook);
+}
+
+/**
+ * Starts registering a project's webhook under a new id, unless one is active or another
+ * registration is under way (pending, younger than `staleBefore`): true when this call may register.
+ */
+export async function claimHook(connectionId: string, project: string, id: string, appOrigin: string, staleBefore: number, at = Date.now()): Promise<boolean> {
+  const r = await query(
+    `INSERT INTO tracker_webhooks (id, connection_id, project, state, app_origin, created_at, updated_at) VALUES ($1, $2, $3, 'pending', $4, $5, $5)
+     ON CONFLICT (connection_id, project) DO UPDATE SET id = EXCLUDED.id, state = 'pending', external_id = NULL, secret_sealed = NULL, last_error = NULL,
+       app_origin = EXCLUDED.app_origin, updated_at = EXCLUDED.updated_at
+     WHERE tracker_webhooks.state = 'failed' OR (tracker_webhooks.state = 'pending' AND tracker_webhooks.updated_at < $6)
+     RETURNING id`,
+    [id, connectionId, project, appOrigin, new Date(at), new Date(staleBefore)],
+  );
+  return r.length > 0;
+}
+
+/** Keeps the secret a handshake issued: only for a pending registration that has none yet. */
+export async function keepHookSecret(id: string, sealed: string, notBefore: number): Promise<boolean> {
+  const r = await query(`UPDATE tracker_webhooks SET secret_sealed = $2 WHERE id = $1 AND state = 'pending' AND secret_sealed IS NULL AND updated_at >= $3 RETURNING id`, [id, sealed, new Date(notBefore)]);
+  return r.length > 0;
+}
+
+export async function activateHook(id: string, externalId: string, at = Date.now()): Promise<void> {
+  await query(`UPDATE tracker_webhooks SET state = 'active', external_id = $2, last_error = NULL, updated_at = $3 WHERE id = $1`, [id, externalId, new Date(at)]);
+}
+
+export async function failHook(id: string, error: string, externalId: string | null = null, at = Date.now()): Promise<void> {
+  await query(`UPDATE tracker_webhooks SET state = 'failed', external_id = $3, secret_sealed = NULL, last_error = $2, updated_at = $4 WHERE id = $1`, [id, error.slice(0, 500), externalId, new Date(at)]);
+}
+
+/** Failed registrations of webhook connections last tried before `before` (the poll job retries them). */
+export async function hooksToRetry(before: number, limit = 50): Promise<StoredHook[]> {
+  return (
+    await query<HookRow>(
+      `SELECT h.* FROM tracker_webhooks h JOIN tracker_connections c ON c.id = h.connection_id
+       WHERE h.state = 'failed' AND h.updated_at < $1 AND c.inbound = 'webhook' AND c.status = 'active' ORDER BY h.updated_at LIMIT $2`,
+      [new Date(before), limit],
+    )
+  ).map(toHook);
 }

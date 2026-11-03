@@ -129,6 +129,11 @@ export function walkthroughsOf(boardId: string, opts: { canDownload: boolean; si
     setCaptions: async (id, cues) => (await api.setWalkthroughCaptions(boardId, id, cues)).walkthrough,
     captionsStatus: () => api.walkthroughCaptionsStatus(boardId),
     transcribe: async (id) => (await api.transcribeWalkthrough(boardId, id)).walkthrough,
+    setChapters: async (id, body) => (await api.setWalkthroughChapters(boardId, id, body)).walkthrough,
+    draftChapters: (id) => api.draftWalkthroughChapters(boardId, id),
+    reactions: async (id) => (await api.walkthroughReactions(boardId, id)).reactions,
+    react: opts.signedIn ? async (id, r) => (await api.reactToWalkthrough(boardId, id, r)).reaction : no('Reacting'),
+    unreact: (id, rid) => api.deleteWalkthroughReaction(boardId, id, rid),
     ...(opts.canDownload
       ? {
           download: async (id: string, title: string) => {

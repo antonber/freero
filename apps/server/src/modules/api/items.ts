@@ -262,6 +262,7 @@ function textField(el: BoardElement): { key: string; rich: boolean } | null {
     case 'mindmap':
       return { key: 'text', rich: true };
     case 'card':
+    case 'diagram':
       return { key: 'title', rich: true };
     case 'frame':
       return { key: 'title', rich: false };
