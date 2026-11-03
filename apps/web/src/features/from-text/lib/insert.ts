@@ -105,8 +105,21 @@ export function selectedDiagram(editor: Editor): { diagramId: string; record: Di
 }
 
 /**
+ * The diagram container (#117) a diagram inserted from text came in, when it is still there: it lays
+ * its own members out live, so source edits never write their positions.
+ */
+export function containerOf(editor: Editor, record: DiagramRecord): string | null {
+  const id = record.ids.diagram;
+  return id && editor.getElement(id)?.type === 'diagram' ? id : null;
+}
+
+/** Fields that place an item: the container's layout writes them for its members. */
+const PLACEMENT = new Set(['x', 'y', 'w', 'h', 'start', 'end', 'waypoints']);
+
+/**
  * Re-lays a diagram from edited source onto the elements it already has (see reconcile.ts), as
- * one undo step. Returns what changed.
+ * one undo step. Returns what changed. In a diagram container, its members keep the places its live
+ * layout gave them (new steps are laid out by it); only what they say and look like changes.
  */
 export function updateDiagram(editor: Editor, diagramId: string, source: string, opts: { keepMoved?: boolean } = {}): { created: number; updated: number; removed: number } {
   const coll = editor.collection<DiagramRecord>(DIAGRAMS);
@@ -118,9 +131,19 @@ export function updateDiagram(editor: Editor, diagramId: string, source: string,
     throw new Error('This diagram is in a hidden frame now, so its source can’t be edited');
   const laid = layoutText(record.kind, source);
   const plan = planUpdate({ record, source, laid, current: (id) => editor.getElement(id) ?? undefined, keepMoved: opts.keepMoved });
+  const container = containerOf(editor, record);
+  const update = container
+    ? plan.update
+        .map((u) => {
+          const el = editor.getElement(u.id);
+          if (u.id !== container && el?.frameId !== container) return u;
+          return { id: u.id, patch: Object.fromEntries(Object.entries(u.patch).filter(([k]) => !PLACEMENT.has(k))) };
+        })
+        .filter((u) => Object.keys(u.patch).length)
+    : plan.update;
   editor.transact(() => {
     if (plan.create.length) editor.createMany(plan.create as unknown as NewElement[]);
-    if (plan.update.length) editor.updateMany(plan.update as Array<{ id: string; patch: ElementPatch }>);
+    if (update.length) editor.updateMany(update as Array<{ id: string; patch: ElementPatch }>);
     // Removed last: a topic that moved to another parent must not be taken along with its old one.
     if (plan.remove.length) editor.remove(plan.remove);
     coll.set(diagramId, plan.record);
@@ -128,5 +151,5 @@ export function updateDiagram(editor: Editor, diagramId: string, source: string,
   });
   const ids = Object.values(plan.record.ids).filter((id) => editor.getElement(id));
   if (ids.length) editor.select(ids.filter((id) => (editor.getElement(id) as ElementDraft | undefined)?.type !== 'connector'));
-  return { created: plan.create.length, updated: plan.update.length, removed: plan.remove.length };
+  return { created: plan.create.length, updated: update.length, removed: plan.remove.length };
 }
