@@ -180,6 +180,17 @@ export interface Admission {
    * through a connection that may only read, KAI-171): applied on admission and every refresh.
    */
   maxRole?: Role;
+  /**
+   * How this socket's role is resolved again on every access refresh (default: the user's role on
+   * the board, `getBoardAccess`). A board embedded on another site (#2) re-checks there that
+   * embedding is still allowed; null closes the socket like lost access.
+   */
+  resolveRole?: () => Promise<Role | null>;
+  /**
+   * An anonymous visitor of a board embedded on another site (#2): it publishes no presence (a
+   * public page's readers never crowd the board's people) and has no private layer.
+   */
+  visitor?: boolean;
 }
 export interface Refusal {
   code: number;
@@ -224,6 +235,9 @@ interface Conn {
   lastResync: number;
   /** While a layer op of this socket is being applied: its later messages, held in order. */
   held: Uint8Array[] | null;
+  /** See Admission.resolveRole / Admission.visitor. */
+  resolveRole?: () => Promise<Role | null>;
+  visitor: boolean;
 }
 
 /** One layer doc of a room (see "Board layers" above). */
@@ -606,6 +620,7 @@ class Room {
   private onLayerMessage(conn: Conn, decoder: decoding.Decoder): void {
     if (conn.kind !== 'board') return;
     const wire = decoding.readVarString(decoder);
+    if (conn.visitor && wire === 'private') return;
     const name = readableLayer(wire, layerReader(conn));
     if (!name) return;
     const { doc } = this.layer(name);
@@ -940,6 +955,8 @@ class Room {
       awarenessIds: new Set(),
       lastResync: 0,
       held: null,
+      resolveRole: a.resolveRole,
+      visitor: a.visitor === true,
     };
     this.conns.set(ws, conn);
 
@@ -987,6 +1004,7 @@ class Room {
           break;
         }
         case MESSAGE_AWARENESS: {
+          if (conn.visitor) break;
           const update = sanitizeAwarenessUpdate(decoding.readVarUint8Array(decoder), {
             user: this.identityOf(conn),
             ownedElsewhere: (id) => {
@@ -1145,7 +1163,7 @@ class Room {
 
   private async doRefreshAccess(): Promise<void> {
     const conns = [...this.conns.values()];
-    const roles = await Promise.all(conns.map(async (c) => (await getBoardAccess(this.id, c.userId)).role));
+    const roles = await Promise.all(conns.map(async (c) => (c.resolveRole ? await c.resolveRole() : (await getBoardAccess(this.id, c.userId)).role)));
     conns.forEach((conn, i) => {
       if (!this.conns.has(conn.ws)) return; // left meanwhile
       const own = roles[i];

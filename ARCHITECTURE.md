@@ -125,6 +125,8 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | The event stream (`events`) | `modules/events` (from outbox topics only) | append to the outbox in your change's transaction (`board.events`, `board.members`, `board.content`); consumers follow `event.recorded` |
 | Community listings (`marketplace_listings`) and their review status | server `modules/marketplace`; decisions are moderation's, applied through `decideListing` | `submitListing` / withdraw (its routes); operators' actions (`modules/moderation`) |
 | API tokens, OAuth apps / consents, a team's API switch, live-view tickets (`api_embed_tokens`) | server `modules/apiauth` | its index: `authenticate`, `requireScope`, `useInWorkspace`, `mintEmbedTicket` / `redeemEmbedTicket` |
+| A board's "allow embedding on other sites" (`boards.embeddable`) and the workspace's `boardEmbeds` policy | server `modules/boards` (the share dialog's PATCH `embeddable`, `setBoardEmbeddable`: owner only) and `modules/workspaces` (policies) | boards' `boardEmbedding(id)` is the one read of "may other sites frame it now, and what may a visitor do" |
+| Embed member tokens (`embed_member_tokens`: a board embedded on another site signed in for one person and session) | server `modules/embed` | `POST /api/embed/b/:id/token` from the first-party popup; read by its socket route |
 | Tracker connections, links to issues, what both sides last agreed on | server `modules/trackers` | its routes / index (`sendToTracker`, `importIssues`); syncs only through its outbox consumer |
 | `trackers` collection (issue badges) and items' `trackerLink` | server `modules/trackers` (through realtime's `changeBoard`) | — (the web feature only reads them) |
 | `walkthroughs` collection (one summary per recording) | server `modules/walkthroughs` (realtime's `writeServerCollection`) | `Host.walkthroughs` (REST); the web feature only reads it |
@@ -1130,7 +1132,7 @@ policies"), `activity` (board_activity, board_seen: the activity feed and "chang
 configures; see "AI" below), `apiauth` (api_tokens,
 oauth_clients, oauth_grants, oauth_codes, api_workspace_settings, api_workspace_credentials:
 credentials that act for a person without their session), `api` (no table: the public REST API
-`/api/v1`; see "Public API and OAuth" below), `embed` (no table: live board views inside AI assistants, `/embed`, `/ws/embed`; see "The MCP server"), `mcp` (no table: the remote MCP server `/mcp`; see
+`/api/v1`; see "Public API and OAuth" below), `embed` (embed_member_tokens: live board views inside AI assistants, `/embed/board`, `/ws/embed/boards`, see "The MCP server"; boards embedded on other sites, `/embed/b`, `/ws/embed/b`, oEmbed, see "Boards embedded on other sites"), `mcp` (no table: the remote MCP server `/mcp`; see
 "The MCP server" below), `objects` (no table: the object registry and the one
 permission check, `POST /objects/resolve`), `references` (object_references, reference_sources: the
 references index derived through the outbox, `GET /objects/backlinks`; both in "Suite foundation"
@@ -1466,7 +1468,9 @@ members with roles owner / admin / member / guest (separate from board roles).
   `linkSharing` (max link role), `guestInvites`, `downloads` (who may export, duplicate or save
   as template), `teamAccess` (above), `publicLinks` (whether a link also lets in visitors without
   an account: see "Guests"), `liveEmbeds` (links may open as live frames; enforced by every
-  viewer's client, the frames being third-party pages the CSP already confines). All other
+  viewer's client, the frames being third-party pages the CSP already confines), `boardEmbeds`
+  (its boards may be embedded on other sites, #2; enforced by boards' `boardEmbedding`, which the
+  embed page's framing header, its sockets and oEmbed all ask). All other
   policies are enforced by the endpoint that does the work;
   `BoardSummary.permissions` only tells the UI.
 - Team templates (KAI-96): owners/admins of the workspace a template is shared with may unshare
@@ -1865,8 +1869,8 @@ audit and admin controls are the same code.
   `SESSION_RECHECK_SECONDS` (credential, account, API switch / block) and ends the ones that may no
   longer stay open. Realtime hands auth only the keys without a ':' (auth's own). The web side is
   `app/embed/EmbedBoardPage` + `createEmbedHost` (`Host.syncProtocols`). Framing: platform
-  `allowFraming(path, reason)` gives `/embed/` the `frame-ancestors` of `MCP_APP_FRAME_ANCESTORS`;
-  every other page stays `'none'`.
+  `allowFraming(path, reason)` gives `/embed/board/` the `frame-ancestors` of
+  `MCP_APP_FRAME_ANCESTORS`; every other page stays `'none'` (but a board's own embed page, below).
 - **Connect page** (#80, `app/pages/connect/`, `/settings/connect`; linked from settings, the empty
   dashboard and the board menu's `features/connect`): the MCP URL comes from the server
   (`GET /api/mcp/connect` → `appUrl`, i.e. `PUBLIC_URL`), never from `window.location`, so it is the
@@ -2106,6 +2110,54 @@ board, including people who join later: it is a deliberate publication of what e
 "What changed": both sides as everyone sees them, through the outline (`diffOutlines` in
 `@freero/shared`: added, removed, changed text / fields / tags / frame). An object:
 `freero://decision/<id>` (smart links show "Frozen <date>").
+
+### Boards embedded on other sites (#2, `modules/embed` public.ts; docs/integrations/embedding.md)
+
+- **One read decides.** boards' `boardEmbedding(id)`: the board exists in service, is a board (not
+  a doc), its owner allows embedding (`boards.embeddable`, off by default, owner only like the link,
+  audited `board.embedding_changed`) and its workspace's `boardEmbeds` policy is on. Null otherwise —
+  one answer for "no such board" and "off". It also says what a VISITOR (no account) may do:
+  'viewer' exactly when the link would let a guest in (`resolveGuestRole`, no link password), else
+  null. Everything else about access is the usual `getBoardAccess`: an embed never widens sharing.
+- **Framing** (`platform/security.ts`): the global middleware keeps `frame-ancestors 'none'` +
+  `X-Frame-Options: DENY` everywhere. embed's router (mounted at '/', its API routes spell `/api`)
+  serves the built app page for `GET /embed/b/:id` and, only when `boardEmbedding` allows it,
+  rewrites that one response with `frameFromAnySite` (`frame-ancestors *`, no XFO, CORP
+  cross-origin). In development Vite serves the page and sets no framing headers. The web app's
+  `FrameGuard` renders nothing but `/embed/b/` and `/embed/board/` when framed, so in-app
+  navigation inside an embed can never put the signed-in app under another site's UI.
+- **Visitors** open `/ws/embed/b/:id` with subprotocol `[PUBLIC_EMBED_WS_PROTOCOL]`: no cookie, no
+  token, no row. Admitted as 'viewer' under an id no account or guest has (`guest_embed…`, so any
+  role lookup of it answers null), `Admission.visitor` (realtime drops its presence and serves it no
+  private layer) and `Admission.resolveRole` = `boardEmbedding(id).visitor`, which every access
+  refresh runs instead of `getBoardAccess`: turning embedding off, the policy off, or the link
+  closing disconnects visitors at once, everywhere; an unrelated refresh keeps them. At most
+  `EMBED_MAX_VISITORS_PER_BOARD` per board per instance (counted in ws.ts; beyond: close
+  `WS_CLOSE_EMBED_FULL`, the page shows a card, #60).
+- **Members** sign in through the popup `/embed/connect/:id` (first-party, so their session is
+  there; `allowOpener` gives that path `Cross-Origin-Opener-Policy: unsafe-none` so it keeps
+  `window.opener`; never framable). It never navigates (that would sever the opener): signing in
+  happens in a new tab (`/login?next=/embed/signed-in`), which wakes it through the app's auth
+  BroadcastChannel. On "Continue" it mints `POST /api/embed/b/:id/token` (session + CSRF guard:
+  only our own page) — `frm_…`, sha256 in `embed_member_tokens`, bound to the board, the person and
+  the SESSION (auth's key), `max_role` viewer for `readonly=1`, 7 days at most — and posts it to
+  `window.opener` with targetOrigin = Freero's origin (only a Freero frame receives it). The socket
+  (`[PUBLIC_EMBED_WS_PROTOCOL, token]`) is admitted with that session's key, so signing out, session
+  policies and `recheckLiveSessions` close it like any board socket (auth's `userFromSessionKey`
+  checks the session on every use), and `resolveRole` re-checks embedding plus the person's own role.
+  The frame keeps the token in its (per-site partitioned) localStorage.
+- **Clickjacking.** Even for someone who may edit, the frame first connects with the extra
+  subprotocol `PUBLIC_EMBED_VIEW_ONLY` (the server caps it at viewer); *Edit* in the frame
+  reconnects without it, after IntersectionObserver v2 says the frame is visible (not covered,
+  transparent or transformed) where the browser supports it. The popup names the embedding site
+  (`ancestorOrigins` / referrer, display only) and the role the embed will have.
+- **oEmbed** (`oembed.ts`): `GET /api/oembed?url=` (board or embed URL of THIS server only, `?item=`
+  → `frame`) → `rich`, `html` from `@freero/shared` `boardEmbedCode` (the same builder as the share
+  dialog's "Copy embed code"; everything escaped). Only embeddable boards answer; only public ones
+  with their title. `GET /board/:id` of a public embeddable board is served with
+  `oembedDiscoveryTag` in its `<head>` (production build only), for unfurlers that read HTML.
+- **Engine additions**: `?frame=<id>` (zoom to an item without selecting it), `Host.onConnectionEnded`
+  (the server closed the socket for good, with its code: the embed page swaps to a card).
 
 ### Docs and native live embeds (KAI-162, KAI-152, KAI-124)
 

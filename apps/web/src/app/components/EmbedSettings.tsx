@@ -1,0 +1,106 @@
+// "Embed on other sites" in the share dialog (#2; docs/integrations/embedding.md): the owner turns
+// embedding on (the server refuses it where the workspace's policy is off), then anyone with the
+// dialog copies the iframe code or the embed link — read-only or not, starting at a frame. What
+// an embed shows always follows the sharing above it: it never lets more people in.
+import { useEffect, useMemo, useState } from 'react';
+import { Code2, Copy } from 'lucide-react';
+import { boardEmbedCode, boardEmbedUrl, type BoardSummary, type OutlineItem } from '@freero/shared';
+import { Button, Select, Toggle, useToast, type SelectOption } from '@ui';
+import { api, ApiError } from '../api/client';
+import { copyText } from '../lib/hooks';
+
+/** The board's frames (nested ones too), for "Start at". */
+function framesOf(items: OutlineItem[], out: Array<{ id: string; title: string }> = []): Array<{ id: string; title: string }> {
+  for (const it of items) {
+    if (it.kind === 'frame') out.push({ id: it.id, title: it.title?.trim() || 'Untitled frame' });
+    if (it.children) framesOf(it.children, out);
+  }
+  return out;
+}
+
+export function EmbedSettings({ board, onChange }: { board: BoardSummary; onChange: (b: BoardSummary) => void }) {
+  const notify = useToast();
+  const isOwner = board.role === 'owner';
+  const on = board.embeddable === true;
+  const allowed = board.permissions.boardEmbeds !== false;
+  const [busy, setBusy] = useState(false);
+  const [readonly, setReadonly] = useState(false);
+  const [frame, setFrame] = useState('');
+  const [frames, setFrames] = useState<Array<{ id: string; title: string }>>([]);
+
+  useEffect(() => {
+    if (!on) return;
+    let cancelled = false;
+    api.boardOutline(board.id).then(
+      ({ outline }) => !cancelled && setFrames(framesOf(outline.items)),
+      () => undefined, // no outline (the workspace's downloads policy): the whole board only
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [on, board.id]);
+
+  const toggle = async (next: boolean) => {
+    setBusy(true);
+    try {
+      const { board: updated } = await api.updateBoard(board.id, { embeddable: next });
+      onChange(updated);
+    } catch (e) {
+      notify(e instanceof ApiError ? e.message : 'Could not change embedding', 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const opts = { readonly, frame: frame || null };
+  const url = boardEmbedUrl(window.location.origin, board.id, opts);
+  const code = boardEmbedCode(url, board.title);
+  const frameOptions = useMemo<SelectOption<string>[]>(() => [{ value: '', label: 'Whole board' }, ...frames.map((f) => ({ value: f.id, label: f.title }))], [frames]);
+  const copy = async (text: string, what: string) => {
+    const ok = await copyText(text);
+    notify(ok ? `${what} copied` : 'Could not copy', ok ? 'success' : 'error');
+  };
+  // What the embed shows follows the sharing above: say who that is.
+  const who =
+    board.linkAccess === 'none'
+      ? 'Only people with access, after signing in'
+      : board.permissions.guestLinks && !board.linkProtection?.password
+        ? 'Anyone can view it; people who sign in get their access'
+        : 'People sign in to see it, as the link allows';
+
+  return (
+    <section className="fr-share__embed" aria-label="Embed on other sites">
+      <div className="fr-share__link">
+        <span className={`fr-share__link-icon${on ? ' fr-share__link-icon--open' : ''}`}>
+          <Code2 size={17} aria-hidden />
+        </span>
+        <div className="fr-share__who">
+          <span className="fr-share__name">Embed on other sites</span>
+          <span className="fr-share__email-text">{!allowed && !on ? 'Turned off in this workspace' : on ? who : 'Show the live board in wikis, docs and websites'}</span>
+        </div>
+        {isOwner ? (
+          <Toggle aria-label="Allow embedding on other sites" checked={on} disabled={busy || (!allowed && !on)} onChange={(v) => void toggle(v)} />
+        ) : (
+          <span className="fr-share__role">{on ? 'On' : 'Off'}</span>
+        )}
+      </div>
+      {on ? (
+        <div className="fr-share__embed-options">
+          <div className="fr-share__embed-row">
+            <Toggle size="sm" checked={readonly} onChange={setReadonly} label="View only" />
+            {frameOptions.length > 1 ? <Select<string> aria-label="Start at" size="sm" options={frameOptions} value={frame} onChange={setFrame} width={200} /> : null}
+          </div>
+          <textarea className="fr-share__embed-code" readOnly value={code} aria-label="Embed code" rows={3} onFocus={(e) => e.currentTarget.select()} />
+          <div className="fr-share__embed-row">
+            <Button size="sm" variant="primary" icon={Copy} onClick={() => void copy(code, 'Embed code')}>
+              Copy embed code
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => void copy(url, 'Embed link')}>
+              Copy embed link
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}

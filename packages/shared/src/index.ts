@@ -25,3 +25,4 @@ export * from './docs';
 export * from './controlRoom';
 export * from './integrations';
 export * from './problems';
+export * from './embedCode';

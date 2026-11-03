@@ -156,6 +156,13 @@ export interface Host {
    * cookie signs in (a live view inside an AI assistant sends its short-lived token, KAI-171).
    */
   syncProtocols?: string[];
+  /**
+   * [additive] The server closed the board's socket for good, with its close code: access gone
+   * (4401 / 4403), the board removed, or too many visitors on a board embedded on another site
+   * (WS_CLOSE_EMBED_FULL, #60). The board shows its own banner either way; a host that can offer
+   * more (an embed: sign in again, open in Freero) does it here. Called once per board load.
+   */
+  onConnectionEnded?(end: { code: number; reason: string }): void;
   uploadImage(file: Blob): Promise<{ url: string }>;
   /**
    * [additive] Stores a document (PDF) with the board's uploads, under the same per-account quota

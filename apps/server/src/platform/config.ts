@@ -217,6 +217,11 @@ export interface Config {
    */
   sessionRecheckMs: number;
   /**
+   * The most visitors without an account one instance lets watch one board through embeds on
+   * other sites at a time (#60); later ones get a card with a link instead of the live board.
+   */
+  embedMaxVisitors: number;
+  /**
    * How long a "lost my authenticator" recovery waits before two-step verification can be removed
    * (the owner is mailed at the start and before the end, and can cancel). At least a day in production.
    */
@@ -836,6 +841,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     accountDeletionGraceMs: int('ACCOUNT_DELETION_GRACE_DAYS', 14, 0, 365) * 86_400_000,
     accountPurgeIntervalMs: int('ACCOUNT_PURGE_INTERVAL_SECONDS', 3600, 1, 7 * 86_400) * 1000,
     sessionRecheckMs: int('SESSION_RECHECK_SECONDS', 60, 1, 3600) * 1000,
+    embedMaxVisitors: int('EMBED_MAX_VISITORS_PER_BOARD', 200, 0, 100_000),
     // Shorter than a day only outside production (tests); see docs/configuration.md.
     twoFactorRecoveryDelayMs: int('TWO_FACTOR_RECOVERY_DELAY_SECONDS', 7 * 86_400, production ? 86_400 : 1, 90 * 86_400) * 1000,
     twoFactorUndoMs: int('TWO_FACTOR_UNDO_HOURS', 72, 1, 14 * 24) * 3_600_000,

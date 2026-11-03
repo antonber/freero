@@ -23,6 +23,10 @@ export {
   normalizeEmail,
   userFromCookieHeader,
   sessionKeyFromCookieHeader,
+  // A board embedded on another site (#2, modules/embed) acts for the session that signed it in:
+  // its key, and the account behind a key (checked like a cookie), so it ends with that session.
+  currentSessionKey,
+  userFromSessionKey,
   // Live connections (board sockets, notification bells): closed when their session ends, also
   // when it ended in another process or silently (KAI-146).
   onSessionEnd,

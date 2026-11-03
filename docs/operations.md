@@ -260,7 +260,7 @@ What is sealed by the app today (audit, KAI-143):
 |---|---|
 | `user_totp.secret` (two-step), `ai_workspace_settings` API key, `sso_connections.oidc_client_secret`, `tracker_connections` credentials + webhook secret, `webhook_endpoints` URL + signing secret, `boards.call_url` | sealed (AES-256-GCM under `SESSION_SECRET`) |
 | `users.password_hash`, board link passwords | scrypt |
-| `sessions`, `guest_sessions`, `auth_tokens`, `auth_challenges`, `auth_devices`, `api_tokens`, `oauth_codes`, OAuth client secrets, `scim_tokens`, `user_recovery_codes`, OIDC / SSO flow `state` | sha256 only |
+| `sessions`, `guest_sessions`, `auth_tokens`, `auth_challenges`, `auth_devices`, `api_tokens`, `embed_member_tokens`, `oauth_codes`, OAuth client secrets, `scim_tokens`, `user_recovery_codes`, OIDC / SSO flow `state` | sha256 only |
 | `auth_oidc_flows` / `sso_flows` PKCE verifier and nonce | plain, by decision: single use, deleted within minutes, and useless without the authorization code, which is never stored |
 | Board documents, layers, comments, search index, events, audit log, notifications, emails and names | plain in the database, protected by storage encryption (deployment.md explains why) |
 
@@ -335,6 +335,7 @@ workspace (modules/workspaces).
 | Audit log (sign-ins, sharing, exports, every API / MCP call: actor, IP, target, outcome) | `audit_events`, `audit_chains` (audit) | no (team admins read and export the workspace's log in the admin console) | kept until retention (`DEFAULT_AUDIT_RETENTION_DAYS`, a workspace's `auditRetentionDays`); actor read as "Deleted user"; no foreign keys | the workspace's chain kept until the default retention |
 | Board activity feed (who changed what kind of item, when) | `board_activity` (activity) | no | 90 days | deleted with the boards |
 | Guest sessions (a name, the board, sha256 of the cookie) | `guest_sessions` (auth) | — | — (no account) | expire after `GUEST_SESSION_HOURS` |
+| Boards they signed in to from an embed on another site (the board, which session, sha256 of the token; #2) | `embed_member_tokens` (embed) | no (a sign-in fact, like a session) | useless once their sessions are deleted; rows purged within an hour of expiry (7 days at most) | — |
 | Error reports (`ERROR_REPORTING_DSN`): the error, request method and path, account id | the Sentry-compatible service you configure | no | outside Freero (that service's retention) | — |
 | Fonts | the web app loads Inter, Caveat, JetBrains Mono and Source Serif from Google Fonts: Google receives visitors' IP addresses and user agents (the marketing site self-hosts its font) | no | — | — |
 | Rate-limit counters | Redis / memory, keys are HMACs | no | expire with their window | — |

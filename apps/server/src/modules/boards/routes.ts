@@ -17,8 +17,10 @@ import {
   recordExport,
   type BoardFilter,
   cleanDescription,
+  checkEmbeddingChange,
   checkLinkAccessChange,
   cleanTitle,
+  embeddingChanged,
   createBoard,
   deleteForever,
   duplicateBoard,
@@ -93,13 +95,18 @@ export default function boardRoutes(_ctx: ServerContext): Router {
       const user = currentUser(req);
       const body = (req.body ?? {}) as Record<string, unknown>;
       const { board, role, access } = await requireAccess(req.params.id, user.id);
-      const patch: { title?: string; description?: string; linkAccess?: typeof board.linkAccess } = {};
+      const patch: { title?: string; description?: string; linkAccess?: typeof board.linkAccess; embeddable?: boolean } = {};
       if (body.title !== undefined) patch.title = cleanTitle(body.title);
       if (body.description !== undefined) patch.description = cleanDescription(body.description);
       if (body.linkAccess !== undefined) {
         if (!isLinkAccess(body.linkAccess)) throw badRequest('linkAccess must be none, viewer, commenter or editor');
         checkLinkAccessChange(board, role, access, user, body.linkAccess);
         patch.linkAccess = body.linkAccess;
+      }
+      if (body.embeddable !== undefined) {
+        if (typeof body.embeddable !== 'boolean') throw badRequest('embeddable must be true or false');
+        checkEmbeddingChange(board, role, access, body.embeddable);
+        patch.embeddable = body.embeddable;
       }
       if (hasLinkProtectionPatch(body) && role !== 'owner') throw forbidden('Only the board owner can protect its link');
       if ((patch.title !== undefined || patch.description !== undefined) && role !== 'owner' && role !== 'editor')
@@ -118,6 +125,7 @@ export default function boardRoutes(_ctx: ServerContext): Router {
       if (patch.title !== undefined && patch.title !== board.title)
         await boardLifecycle({ boardId: board.id, actorId: user.id, action: 'renamed', from: board.title, to: patch.title });
       if (patch.linkAccess !== undefined && patch.linkAccess !== board.linkAccess) await linkAccessChanged(board, user.id, patch.linkAccess);
+      if (patch.embeddable !== undefined && patch.embeddable !== board.embeddable) await embeddingChanged(board, user.id, patch.embeddable);
       const { board: updated, role: newRole, access: newAccess } = await requireAccess(board.id, user.id);
       res.json({ board: await toSummary(updated, user.id, newRole, newAccess) } satisfies Out);
     }),

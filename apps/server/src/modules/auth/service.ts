@@ -560,7 +560,20 @@ export async function sessionFromCookieHeader(
   cookieHeader: string | undefined,
 ): Promise<{ user: Account; key: string; sessionId: string; authAt: number; method: string } | null> {
   const key = sessionKeyFromCookieHeader(cookieHeader);
-  if (!key) return null;
+  return key ? sessionFromKey(key) : null;
+}
+
+/**
+ * The account of the session with this key (sha256 of its cookie), checked like a cookie is —
+ * session policies, the account awaiting deletion is signed out — or null. For a credential that
+ * acts for a session without carrying its cookie (a board embedded on another site, #2).
+ */
+export async function userFromSessionKey(key: string): Promise<User | null> {
+  const s = await sessionFromKey(key);
+  return s && s.user.deletionScheduledFor === null ? publicUser(s.user) : null;
+}
+
+async function sessionFromKey(key: string): Promise<{ user: Account; key: string; sessionId: string; authAt: number; method: string } | null> {
   const now = Date.now();
   const found = await repo.findSessionUser(key, now);
   if (!found) return null;
