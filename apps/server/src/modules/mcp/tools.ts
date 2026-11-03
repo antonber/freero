@@ -793,14 +793,32 @@ export const TOOLS: McpTool[] = [
     name: 'add_diagram',
     title: 'Add a diagram',
     description:
-      'Draws a diagram on a board, laid out by Freero: shapes joined by attached connectors, without overlaps. Give exactly one of: `mermaid` (a flowchart — subgraphs become frames — or a sequenceDiagram), `outline` (nested items, drawn as a mind map or a tree), or `graph` (nodes and edges). Needs permission to change boards.',
+      'Draws a diagram on a board, laid out by Freero: shapes joined by attached connectors, without overlaps. Give exactly one of: `mermaid` (a flowchart — subgraphs become frames —, a sequenceDiagram, a classDiagram — UML classes with their attributes and operations, inheritance, composition, multiplicities —, an erDiagram — entity tables with keys and crow’s-foot ends — or a stateDiagram-v2), `outline` (nested items, drawn as a mind map or a tree), `orgchart` (people and who they report to), or `graph` (nodes and edges). For a kanban use add_cards with columns. Needs permission to change boards.',
     scope: 'boards:write',
     annotations: ADD,
     input: {
       boardId,
-      mermaid: z.string().min(1).max(LAYOUT_LIMITS.source).optional().describe('Mermaid source: `flowchart LR` / `graph TD` … or `sequenceDiagram`.'),
+      mermaid: z
+        .string()
+        .min(1)
+        .max(LAYOUT_LIMITS.source)
+        .optional()
+        .describe('Mermaid source: `flowchart LR` / `graph TD` …, `sequenceDiagram`, `classDiagram`, `erDiagram`, `stateDiagram-v2` or `mindmap`.'),
       outline: outlineRoot.optional().describe('The root of a nested outline: { text, children: [ … ] }.'),
       outlineAs: z.enum(['mindmap', 'tree']).optional().describe('How to draw `outline` (default mindmap).'),
+      orgchart: z
+        .array(
+          z.object({
+            name: z.string().min(1).max(200),
+            title: z.string().max(200).optional(),
+            manager: z.string().max(200).nullable().optional().describe('The name (or id) of the person they report to; none for the top of the chart.'),
+            id: z.string().min(1).max(100).optional().describe('Only needed when two people share a name: then managers name this id.'),
+          }),
+        )
+        .min(1)
+        .max(1000)
+        .optional()
+        .describe('People for an org chart: a top-down tree of name / title boxes.'),
       graph: z
         .object({
           nodes: z.array(z.object({ id: z.string().min(1).max(100), text: z.string().max(LAYOUT_LIMITS.text) })).min(1).max(1000),
@@ -813,11 +831,13 @@ export const TOOLS: McpTool[] = [
       near,
     },
     async run(call, a) {
-      const given = [a.mermaid, a.outline, a.graph].filter((v) => v !== undefined).length;
-      if (given !== 1) throw new ArgumentError('Give exactly one of mermaid, outline or graph.');
+      const given = [a.mermaid, a.outline, a.orgchart, a.graph].filter((v) => v !== undefined).length;
+      if (given !== 1) throw new ArgumentError('Give exactly one of mermaid, outline, orgchart or graph.');
       const structure: StructureInput = a.mermaid
         ? { kind: 'mermaid', source: a.mermaid }
-        : a.outline
+        : a.orgchart
+          ? { kind: 'orgchart', people: a.orgchart }
+          : a.outline
           ? a.outlineAs === 'tree'
             ? { kind: 'tree', root: a.outline }
             : { kind: 'mindmap', root: a.outline }
@@ -855,7 +875,7 @@ export const TOOLS: McpTool[] = [
     name: 'propose_changes',
     title: 'Propose changes',
     description:
-      'Proposes content for a board as suggestions that people with edit access accept or reject — the board itself does not change until they do. Takes the same structures as the add_ tools: { "kind": "stickies" | "clusters" | "kanban" | "items" | "note" | "table" | "mermaid" | "mindmap" | "tree" | "graph", … } (docs/board-outline.md), and the same placement. Use it when this connection may only suggest, or when the person should review first; then open_board so they can.',
+      'Proposes content for a board as suggestions that people with edit access accept or reject — the board itself does not change until they do. Takes the same structures as the add_ tools: { "kind": "stickies" | "clusters" | "kanban" | "items" | "note" | "table" | "mermaid" | "mindmap" | "tree" | "orgchart" | "graph", … } (docs/board-outline.md), and the same placement. Use it when this connection may only suggest, or when the person should review first; then open_board so they can.',
     scope: 'boards:suggest',
     annotations: ADD,
     // The suggestions layer (KAI-169) is a structure sink; offered once the server has it.
