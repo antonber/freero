@@ -6,15 +6,19 @@ import type { Editor, NewElement, Point } from '@engine';
 import { boundsOf, ImportError, MAX_FILE_BYTES, type ImportReport, type ImportResult } from './common';
 import { looksLikeDrawio, parseDrawio } from './drawio';
 import { looksLikeExcalidraw, parseExcalidraw } from './excalidraw';
+import { isVsdxName, parseVsdx } from './vsdx';
 import { nanoid } from 'nanoid';
 
 export const IMPORT_DIALOG = 'import.dialog';
 
+/** Text formats (a file, or pasted); `.vsdx` is a zip package, read from its bytes. */
 export type ImportKind = 'drawio' | 'excalidraw';
+export type FileKind = ImportKind | 'vsdx';
 
-/** Which importer a file is for, by its name, else by its first bytes; null: neither. */
-export function kindOfFile(name: string, head: string): ImportKind | null {
+/** Which importer a file is for, by its name, else by its first bytes; null: none. */
+export function kindOfFile(name: string, head: string): FileKind | null {
   const n = name.toLowerCase();
+  if (isVsdxName(n) || n.endsWith('.vsd')) return 'vsdx';
   if (n.endsWith('.drawio') || n.endsWith('.dio')) return 'drawio';
   if (n.endsWith('.excalidraw')) return 'excalidraw';
   if ((n.endsWith('.xml') || n.endsWith('.txt') || !n.includes('.')) && looksLikeDrawio(head)) return 'drawio';
@@ -101,9 +105,10 @@ export async function placeImport(editor: Editor, result: ImportResult, at?: Poi
 /** Reads, recognises, parses and places a file; throws ImportError (a message for the person). */
 export async function importFile(editor: Editor, file: File, at?: Point): Promise<ImportReport> {
   if (file.size > MAX_FILE_BYTES) throw new ImportError(`That file is over ${MAX_FILE_BYTES / 1024 / 1024} MB.`);
+  if (kindOfFile(file.name, '') === 'vsdx') return placeImport(editor, await parseVsdx(new Uint8Array(await file.arrayBuffer()), nanoid), at);
   const text = await file.text();
   const kind = kindOfFile(file.name, text.slice(0, 2000));
-  if (!kind) throw new ImportError('Freero imports draw.io (.drawio) and Excalidraw (.excalidraw) files.');
+  if (!kind || kind === 'vsdx') throw new ImportError('Freero imports draw.io (.drawio), Excalidraw (.excalidraw) and Visio (.vsdx) files.');
   return placeImport(editor, await parseImport(kind, text), at);
 }
 

@@ -9,7 +9,11 @@
 //   covered (where the browser can tell): a page framing the board can't trick a signed-in
 //   person's clicks into edits they don't see. Until then the socket only reads.
 // Nothing here navigates the frame: links open Freero in a new tab.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+//
+// `PublicEmbed` is the same board for other hosts that frame it: the Microsoft Teams tab
+// (app/teams/TeamsTabPage) signs in through Teams' own sign-in window instead of a popup, and —
+// framed by Teams only (the server allows no other ancestor there) — starts editing at once.
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
 import { ExternalLink, LogIn, Pencil, Eye } from 'lucide-react';
 import { WS_CLOSE_EMBED_FULL, type EmbedConnectMessage, type PublicEmbedInfo, type Role } from '@freero/shared';
@@ -23,10 +27,13 @@ import { forgetEmbedToken, readEmbedToken, saveEmbedToken } from './embedToken';
 import { frameIsUncovered } from './visibility';
 import '../board/BoardPage.css';
 import './PublicEmbedPage.css';
-import { embedTheme, setThemeOverride } from '../lib/theme';
+import { embedTheme, setThemeOverride, type ColorTheme } from '../lib/theme';
 
 type Card = 'off' | 'signin' | 'no-access' | 'full' | 'popup-blocked' | 'error';
 type State = { status: 'loading' } | { status: 'card'; card: Card; info?: PublicEmbedInfo } | { status: 'live'; view: PublicEmbedView };
+
+/** How a sign-in for one board ended: a token for it, no access, the window couldn't open, or nothing (closed). */
+export type EmbedSignIn = { token: string; expiresAt: number } | 'no-access' | 'blocked' | null;
 
 const VISITOR = { id: 'visitor', name: 'Visitor', color: '#8a8f98', avatarUrl: null };
 const canWrite = (role: Role) => role !== 'viewer';
@@ -35,15 +42,35 @@ export default function PublicEmbedPage() {
   const { id = '' } = useParams();
   const location = useLocation();
   const readonly = new URLSearchParams(location.search).get('readonly') === '1';
+  return <PublicEmbed id={id} readonly={readonly} signIn={popupSignIn} theme={embedTheme() ?? 'light'} />;
+}
+
+export interface PublicEmbedProps {
+  id: string;
+  readonly: boolean;
+  /** Signs the person in for this board (a first-party window) and gets a token for it. */
+  signIn: (boardId: string, readonly: boolean) => Promise<EmbedSignIn>;
+  /** The host page's look, not this browser's choice. */
+  theme: ColorTheme;
+  /**
+   * Start editing as soon as the board opens, without the "is the frame covered" check: only for a
+   * page the server lets nobody but a trusted host frame (Microsoft Teams).
+   */
+  editDirectly?: boolean;
+  /** More controls for the top bar, shown while the board is live (Teams: Share to stage). */
+  extra?: ReactNode;
+}
+
+export function PublicEmbed({ id, readonly, signIn: signInWith, theme, editDirectly = false, extra }: PublicEmbedProps) {
+  const location = useLocation();
   const notify = useToast();
   const toast = useMemo(() => toastNotify(notify), [notify]);
   const [state, setState] = useState<State>({ status: 'loading' });
   const [info, setInfo] = useState<PublicEmbedInfo | null>(null);
-  // The embedding page's look, not this browser's choice: light unless it asks ?theme=dark.
   useEffect(() => {
-    setThemeOverride(embedTheme() ?? 'light');
+    setThemeOverride(theme);
     return () => setThemeOverride(null);
-  }, []);
+  }, [theme]);
   const [editing, setEditing] = useState(false);
   const boardUrl = info?.status === 'on' ? info.boardUrl : `${window.location.origin}/board/${encodeURIComponent(id)}`;
   const openInFreero = useCallback(() => void window.open(boardUrl, '_blank', 'noopener'), [boardUrl]);
@@ -54,7 +81,7 @@ export default function PublicEmbedPage() {
       try {
         const m = await api.publicEmbedMember(id, token);
         const role = readonly ? 'viewer' : m.board.role;
-        setEditing(false);
+        setEditing(editDirectly && canWrite(role));
         setState({ status: 'live', view: { board: { ...m.board, role }, user: m.user, token, viewOnly: true, boardUrl: m.boardUrl } });
         return true;
       } catch (e) {
@@ -62,7 +89,7 @@ export default function PublicEmbedPage() {
         return false;
       }
     },
-    [id, readonly],
+    [id, readonly, editDirectly],
   );
 
   const showAsVisitor = useCallback((i: Extract<PublicEmbedInfo, { status: 'on' }>) => {
@@ -87,32 +114,14 @@ export default function PublicEmbedPage() {
 
   useEffect(() => void start(), [start]);
 
-  // Sign in: Freero's own page in a popup (first-party, so the person's session is there), which
-  // posts this frame a token for this board. Only a window of Freero's own origin is listened to.
-  const popup = useRef<Window | null>(null);
-  const signIn = useCallback(() => {
-    const q = new URLSearchParams();
-    if (readonly) q.set('readonly', '1');
-    const host = embedderHost();
-    if (host) q.set('site', host);
-    const w = window.open(`/embed/connect/${encodeURIComponent(id)}${q.size ? `?${q}` : ''}`, 'freero-embed-connect', 'popup,width=480,height=680');
-    if (!w) return setState({ status: 'card', card: 'popup-blocked', info: info ?? undefined });
-    popup.current = w;
-    w.focus();
-  }, [id, readonly, info]);
-  useEffect(() => {
-    const onMessage = (e: MessageEvent) => {
-      if (e.origin !== window.location.origin || !popup.current || e.source !== popup.current) return;
-      const d = e.data as EmbedConnectMessage | null;
-      if (!d || typeof d !== 'object' || !('freeroEmbedConnect' in d) || d.boardId !== id) return;
-      popup.current = null;
-      if (d.freeroEmbedConnect === 'no-access') return setState({ status: 'card', card: 'no-access', info: info ?? undefined });
-      saveEmbedToken(id, d.token, d.expiresAt);
-      void showAsMember(d.token).then((ok) => ok || setState({ status: 'card', card: 'error' }));
-    };
-    window.addEventListener('message', onMessage);
-    return () => window.removeEventListener('message', onMessage);
-  }, [id, info, showAsMember]);
+  const signIn = useCallback(async () => {
+    const out = await signInWith(id, readonly);
+    if (out === null) return;
+    if (out === 'blocked') return setState({ status: 'card', card: 'popup-blocked', info: info ?? undefined });
+    if (out === 'no-access') return setState({ status: 'card', card: 'no-access', info: info ?? undefined });
+    saveEmbedToken(id, out.token, out.expiresAt);
+    if (!(await showAsMember(out.token))) setState({ status: 'card', card: 'error' });
+  }, [id, readonly, info, signInWith, showAsMember]);
 
   const view = state.status === 'live' ? state.view : null;
   const onConnectionEnded = useCallback(
@@ -126,12 +135,12 @@ export default function PublicEmbedPage() {
   );
 
   const startEditing = useCallback(async () => {
-    if (!(await frameIsUncovered(document.documentElement))) {
+    if (!editDirectly && !(await frameIsUncovered(document.documentElement))) {
       toast('Part of this board is covered on this page, so editing stays off here. Open it in Freero to edit.', 'error');
       return;
     }
     setEditing(true);
-  }, [toast]);
+  }, [toast, editDirectly]);
 
   const host = useMemo<Host | null>(() => {
     if (!view) return null;
@@ -139,14 +148,15 @@ export default function PublicEmbedPage() {
   }, [view, editing, toast, onConnectionEnded]);
 
   if (state.status === 'loading') return <FullPageSpinner label="Opening board" />;
-  if (state.status === 'card') return <EmbedCard card={state.card} onSignIn={signIn} onOpen={openInFreero} onRetry={() => void start()} />;
+  if (state.status === 'card') return <EmbedCard card={state.card} onSignIn={() => void signIn()} onOpen={openInFreero} onRetry={() => void start()} />;
   if (!host || !view) return <FullPageSpinner label="Opening board" />;
 
   const mayEdit = !readonly && canWrite(view.board.role);
   const accessory = (
     <div className="fr-embedbar">
+      {extra}
       {view.token === null ? (
-        <Button size="sm" variant="ghost" icon={LogIn} onClick={signIn}>
+        <Button size="sm" variant="ghost" icon={LogIn} onClick={() => void signIn()}>
           Sign in
         </Button>
       ) : mayEdit ? (
@@ -167,6 +177,37 @@ export default function PublicEmbedPage() {
   );
   // A new socket when editing starts or stops (the server caps a read-only socket itself).
   return <BoardEngine key={`${view.token ?? 'visitor'}:${editing}`} host={host} features={features} topbarAccessory={accessory} location={location} />;
+}
+
+/**
+ * Sign in on a site embedding the board: Freero's own page in a popup (first-party, so the
+ * person's session is there), which posts this frame a token for this board. Only a window of
+ * Freero's own origin — the popup this call opened — is listened to.
+ */
+export function popupSignIn(id: string, readonly: boolean): Promise<EmbedSignIn> {
+  const q = new URLSearchParams();
+  if (readonly) q.set('readonly', '1');
+  const host = embedderHost();
+  if (host) q.set('site', host);
+  const w = window.open(`/embed/connect/${encodeURIComponent(id)}${q.size ? `?${q}` : ''}`, 'freero-embed-connect', 'popup,width=480,height=680');
+  if (!w) return Promise.resolve('blocked');
+  w.focus();
+  return new Promise((resolve) => {
+    const done = (out: EmbedSignIn) => {
+      window.removeEventListener('message', onMessage);
+      window.clearInterval(watch);
+      resolve(out);
+    };
+    const onMessage = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin || e.source !== w) return;
+      const d = e.data as EmbedConnectMessage | null;
+      if (!d || typeof d !== 'object' || !('freeroEmbedConnect' in d) || d.boardId !== id) return;
+      done(d.freeroEmbedConnect === 'no-access' ? 'no-access' : { token: d.token, expiresAt: d.expiresAt });
+    };
+    // Closed without an answer: nothing changes here (Sign in again opens a new one).
+    const watch = window.setInterval(() => w.closed && done(null), 500);
+    window.addEventListener('message', onMessage);
+  });
 }
 
 /** The site framing this page, for the popup to name ("… on notion.so"); null when the browser doesn't say. */

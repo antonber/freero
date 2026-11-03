@@ -4,6 +4,8 @@
 //   Jira Cloud (REST v3): Atlassian Document Format (ADF)
 //   Jira Data Center (REST v2): wiki markup
 //   Linear, GitHub: Markdown as is
+//   Azure DevOps, monday.com updates: HTML from a fixed template
+//   Asana: its rich text (`html_notes`: <body>, text with newlines, <ul><li>, <a href>; no <p>)
 
 type Inline = { text: string; href?: string };
 
@@ -139,4 +141,71 @@ export function wikiToMarkdown(wiki: unknown): string {
         .replace(/\\([[\]{}|*_+^~?#-])/g, '$1'),
     )
     .join('\n');
+}
+
+// ---- HTML (Azure DevOps) ----
+//
+// Written from a fixed template (#6): <p> paragraphs with <br> between lines, <ul><li> bullets and
+// <a href> for http(s) links only; every piece of board text is escaped. Read back by keeping only
+// the text, the links and the block breaks of whatever HTML the work item holds.
+
+const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+const htmlInline = (line: string) => inlines(line).map((i) => (i.href ? `<a href="${escapeHtml(i.href)}">${escapeHtml(i.text)}</a>` : escapeHtml(i.text))).join('');
+
+export function markdownToHtml(md: string): string {
+  return blocks(md)
+    .map((b) => (b.kind === 'p' ? `<p>${b.lines.map(htmlInline).join('<br>')}</p>` : `<ul>${b.items.map((i) => `<li>${htmlInline(i)}</li>`).join('')}</ul>`))
+    .join('');
+}
+
+const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+const decodeHtml = (s: string) =>
+  s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e: string) => {
+    const named = ENTITIES[e.toLowerCase()];
+    if (named !== undefined) return named;
+    const code = e[0] === '#' ? (e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10)) : NaN;
+    return Number.isFinite(code) && code > 0 && code < 0x110000 ? String.fromCodePoint(code) : m;
+  });
+
+export function htmlToMarkdown(html: unknown): string {
+  if (typeof html !== 'string' || !html) return '';
+  const out = html
+    .replace(/\r\n?/g, '\n')
+    .replace(/\n/g, ' ')
+    .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, '')
+    .replace(/<a\b[^>]*?href\s*=\s*(?:"([^"]*)"|'([^']*)')[^>]*>([\s\S]*?)<\/a>/gi, (_m, d: string | undefined, s: string | undefined, text: string) => {
+      const href = decodeHtml(d ?? s ?? '');
+      const label = decodeHtml(text.replace(/<[^>]+>/g, '')).trim();
+      return /^https?:\/\//i.test(href) && label ? `[${label}](${href})` : label;
+    })
+    .replace(/<li\b[^>]*>/gi, '\n- ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/li>/gi, '')
+    .replace(/<(ul|ol)\b[^>]*>/gi, '\n\n')
+    .replace(/<\/(p|div|h[1-6]|ul|ol|blockquote|pre|tr)>/gi, '\n\n')
+    .replace(/<[^>]+>/g, '');
+  return decodeHtml(out)
+    .split('\n')
+    .map((l) => l.replace(/[ \t]+/g, ' ').trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+// ---- Asana rich text (#120) ----
+//
+// `html_notes` is XML-like: a <body> root, line breaks as newlines in the text, <ul><li> lists and
+// <a href> links (no <p>, no <br>). Written from the same escaped template; read back with the
+// newlines kept as line breaks.
+
+export function markdownToAsanaHtml(md: string): string {
+  const body = blocks(md)
+    .map((b) => (b.kind === 'p' ? b.lines.map(htmlInline).join('\n') : `<ul>${b.items.map((i) => `<li>${htmlInline(i)}</li>`).join('')}</ul>`))
+    .join('\n\n');
+  return `<body>${body}</body>`;
+}
+
+export function asanaHtmlToMarkdown(html: unknown): string {
+  if (typeof html !== 'string' || !html) return '';
+  return htmlToMarkdown(html.replace(/\r?\n/g, '<br>'));
 }

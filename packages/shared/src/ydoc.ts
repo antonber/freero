@@ -239,7 +239,15 @@ export interface BoardSettings {
   gridSize: number;
   /** Moves and resizes snap to the grid (Ctrl/⌘ while dragging inverts it). */
   snapToGrid: boolean;
+  /**
+   * [additive, #115] Where two connectors cross, the one on top hops over the other. Absent = off
+   * (boards from before it keep their look); new boards start with NEW_BOARD_SETTINGS.
+   */
+  lineJumps: boolean;
 }
+
+/** Settings a brand-new board starts with (written by the server when it creates the board, never on copies). */
+export const NEW_BOARD_SETTINGS: Partial<BoardSettings> = { lineJumps: true };
 
 /** Grid sizes offered in the board menu. */
 export const GRID_SIZES = [8, 16, 24, 32, 48] as const;

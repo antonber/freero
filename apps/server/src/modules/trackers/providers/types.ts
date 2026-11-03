@@ -2,7 +2,7 @@
 // folder implementing it plus a line in providers/index.ts; the sync, the board, the admin
 // console, webhooks and polling don't change.
 import type { IncomingHttpHeaders } from 'node:http';
-import type { IssueField, IssueGroups, IssueValues, TrackerProject, TrackerProviderKind } from '@freero/shared';
+import type { IssueField, IssueGroups, IssueValues, TrackerFieldInfo, TrackerProject, TrackerProviderKind, TrackerSprint } from '@freero/shared';
 import type { HttpRequest, HttpResponse } from '../http';
 import type { ConnectionSettings } from '../repo';
 
@@ -52,12 +52,30 @@ export interface RemoteIssue {
   updatedAt: number;
   /** Team / epic the issue belongs to (roadmap lanes, KAI-160); not a synced field. */
   groups?: IssueGroups;
+  /** The project (Jira key, Linear team key, Azure DevOps project) it is in, when the tracker says. */
+  project?: string | null;
+  /**
+   * The issue's revision as read (Azure DevOps `rev`): a write names it, and the tracker refuses
+   * the write when someone changed the issue since (TrackerError 'conflict').
+   */
+  version?: string | null;
 }
 
 export interface CreateIssueInput {
   project: string;
   issueType: string | null;
   values: IssueValues;
+  /** The parent issue's key (an epic, a parent issue, a parent work item), #43. */
+  parent?: string | null;
+}
+
+/** Which issues of a project an import takes, without a query (#119, #43). */
+export interface IssueScope {
+  project: string;
+  /** A sprint id (from `sprints.list`), or null for any. ('current' is resolved before.) */
+  sprint?: string | null;
+  /** The parent / epic's key, or null for any. */
+  epic?: string | null;
 }
 
 export interface Backlink {
@@ -73,6 +91,23 @@ export interface WebhookDelivery {
   /** The connection's webhook secret. */
   secret: string;
   now: number;
+  /**
+   * A webhook Freero registered itself (`TrackerProvider.webhooks`: Asana, monday.com), its address
+   * already checked (it names the registration and carries a key made with the connection's
+   * secret): whether Freero is registering it right now — the only time a handshake is answered —
+   * and the secret the tracker issued in its handshake (Asana), once it has.
+   */
+  hook?: { pending: boolean; secret: string | null };
+}
+
+export interface WebhookResult {
+  /** The issues it is about (ids or keys); each is read back, never taken from the body. */
+  issues: string[];
+  /**
+   * A handshake, answered with this instead of 202 and nothing queued: Asana's X-Hook-Secret echoed
+   * (`keep`: the secret its deliveries will be signed with), monday.com's challenge echoed.
+   */
+  handshake?: { headers?: Record<string, string>; body?: unknown; keep?: string };
 }
 
 export interface TrackerProvider {
@@ -99,6 +134,23 @@ export interface TrackerProvider {
   priorities?(conn: ProviderConnection): Promise<string[] | null>;
   /** Issues matching a query in the tracker's own language (JQL, a search, a GitHub query). */
   search(conn: ProviderConnection, query: string, limit: number): Promise<RemoteIssue[]>;
+  /** A project's issues in a sprint and / or under an epic, without a query (#119, #43). */
+  scoped?(conn: ProviderConnection, scope: IssueScope, limit: number): Promise<RemoteIssue[]>;
+  /**
+   * Sprints (#119): what the kanban field is called ("Sprint", "Cycle", "Iteration") and a
+   * project's sprints, oldest first. Absent: the tracker has none Freero syncs (GitHub).
+   */
+  sprints?: { fieldName: string; list(conn: ProviderConnection, project: string): Promise<TrackerSprint[]> };
+  /** The tracker's fields for the field map (#43); absent: it has no custom fields Freero maps. */
+  listFields?(conn: ProviderConnection): Promise<TrackerFieldInfo[]>;
+  /** The issue types a project can create (#43), for the send dialog. */
+  issueTypes?(conn: ProviderConnection, project: string): Promise<string[]>;
+  /**
+   * Issues under a parent (#43): `CreateIssueInput.parent` is honoured, and a parent made for a
+   * cluster of clusters is of this type (Jira "Epic"; null where the tracker has no types).
+   */
+  parents?: { issueType: string | null };
+
   /** Which of these issues changed at or after `since` (polling). */
   changedSince(conn: ProviderConnection, issues: Array<{ id: string; key: string }>, since: number): Promise<string[]>;
   /** Makes the issue's links back to the board exactly `links` (adds, updates, removes `removed`). */
@@ -106,7 +158,18 @@ export interface TrackerProvider {
   /** How a board tag becomes one of this tracker's labels (Jira labels can't hold spaces). */
   label(tag: string): string;
   /** The issues a webhook delivery is about (ids or keys), or null when its signature doesn't verify. */
-  webhook(d: WebhookDelivery): { issues: string[] } | null;
+  webhook(d: WebhookDelivery): WebhookResult | null;
+  /**
+   * Webhooks Freero registers itself, one per project it sends to or imports from (Asana, monday.com:
+   * people can't paste an address there). `register` may be called back by the tracker to shake
+   * hands before it answers; `signed`: deliveries are signed with a secret that handshake issued,
+   * so a registration without one is no use.
+   */
+  webhooks?: {
+    signed: boolean;
+    register(conn: ProviderConnection, project: string, address: string): Promise<{ id: string }>;
+    unregister(conn: ProviderConnection, id: string): Promise<void>;
+  };
 }
 
 /** OAuth 2.0 (authorization code) for providers that offer it to Freero's operator. */

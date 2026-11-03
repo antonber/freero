@@ -4,11 +4,12 @@
 // shown once, when made); remove it — sync stops, board items stay as they are. Tokens are sent
 // once and never come back from the server.
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Copy, KeyRound, Plug, RefreshCw, Trash2 } from 'lucide-react';
+import { Copy, KeyRound, ListTree, Plug, RefreshCw, Trash2 } from 'lucide-react';
 import { TRACKER_PROVIDERS, type TrackerConnectionInfo, type TrackerConnectionInput, type TrackerProviderKind } from '@freero/shared';
 import { Button, Input, Select, Spinner, useToast } from '@ui';
 import { api, ApiError } from '../api/client';
 import { relativeTime } from '../lib/time';
+import { TrackerFieldMap } from './TrackerFieldMap';
 import './TrackerConnections.css';
 
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError && e.status < 500 ? e.message : e instanceof ApiError ? e.message || fallback : fallback);
@@ -19,8 +20,14 @@ const SITE_PLACEHOLDER: Record<TrackerProviderKind, string> = {
   jira: 'https://your-team.atlassian.net',
   linear: 'https://linear.app',
   github: 'https://github.com (or your GitHub Enterprise address)',
+  azure: 'https://dev.azure.com/your-organization',
+  asana: 'https://app.asana.com',
+  monday: 'https://monday.com',
 };
-const TOKEN_LABEL: Record<TrackerProviderKind, string> = { jira: 'API token', linear: 'API key', github: 'Personal access token' };
+const TOKEN_LABEL: Record<TrackerProviderKind, string> = { jira: 'API token', linear: 'API key', github: 'Personal access token', azure: 'Personal access token (Work Items: read & write)', asana: 'Personal access token', monday: 'API token' };
+/** Trackers where Freero registers its webhooks itself (nothing to paste there). */
+const SELF_HOOKED: ReadonlySet<TrackerProviderKind> = new Set(['asana', 'monday']);
+type OAuthOffered = Partial<Record<TrackerProviderKind, boolean>>;
 
 function Secret({ value, onDone }: { value: string; onDone: () => void }) {
   const notify = useToast();
@@ -42,7 +49,7 @@ function Secret({ value, onDone }: { value: string; onDone: () => void }) {
   );
 }
 
-function AddConnection({ workspaceId, oauthJira, onAdded }: { workspaceId: string | null; oauthJira: boolean; onAdded: (c: TrackerConnectionInfo, secret: string) => void }) {
+function AddConnection({ workspaceId, oauth, onAdded }: { workspaceId: string | null; oauth: OAuthOffered; onAdded: (c: TrackerConnectionInfo, secret: string) => void }) {
   const notify = useToast();
   const [provider, setProvider] = useState<TrackerProviderKind>('jira');
   const [deployment, setDeployment] = useState<'cloud' | 'datacenter'>('cloud');
@@ -66,7 +73,7 @@ function AddConnection({ workspaceId, oauthJira, onAdded }: { workspaceId: strin
       token,
       inbound,
       ...(workspaceId ? { workspaceId } : {}),
-      ...(provider === 'jira' ? { deployment } : {}),
+      ...(provider === 'jira' || provider === 'azure' ? { deployment } : {}),
       ...(provider === 'jira' && deployment === 'cloud' ? { email: email.trim() } : {}),
       ...(project.trim() ? { defaults: { project: project.trim() } } : {}),
     };
@@ -82,7 +89,8 @@ function AddConnection({ workspaceId, oauthJira, onAdded }: { workspaceId: strin
     }
   };
 
-  const oauthUrl = `/api/trackers/oauth/jira/start?${new URLSearchParams({ ...(workspaceId ? { workspace: workspaceId } : {}), name: name.trim() || 'Jira' })}`;
+  const oauthUrl = `/api/trackers/oauth/${provider}/start?${new URLSearchParams({ ...(workspaceId ? { workspace: workspaceId } : {}), name: name.trim() || TRACKER_PROVIDERS[provider] })}`;
+  const oauthOffered = provider === 'jira' ? deployment === 'cloud' && !!oauth.jira : !!oauth[provider];
   return (
     <form className="fr-trackerconn__form" onSubmit={submit} aria-label="Connect a tracker">
       <div className="fr-trackerconn__grid">
@@ -90,6 +98,21 @@ function AddConnection({ workspaceId, oauthJira, onAdded }: { workspaceId: strin
           <span>Tracker</span>
           <Select aria-label="Tracker" options={PROVIDER_OPTIONS} value={provider} onChange={setProvider} width="100%" />
         </label>
+        {provider === 'azure' && (
+          <label>
+            <span>Azure DevOps</span>
+            <Select
+              aria-label="Azure DevOps deployment"
+              options={[
+                { value: 'cloud', label: 'Services', description: 'dev.azure.com' },
+                { value: 'datacenter', label: 'Server', description: 'Your own address (2020 or later)' },
+              ]}
+              value={deployment}
+              onChange={setDeployment}
+              width="100%"
+            />
+          </label>
+        )}
         {provider === 'jira' && (
           <label>
             <span>Jira</span>
@@ -106,7 +129,7 @@ function AddConnection({ workspaceId, oauthJira, onAdded }: { workspaceId: strin
           </label>
         )}
         <Input label="Name" value={name} placeholder={TRACKER_PROVIDERS[provider]} maxLength={80} onChange={(e) => setName(e.target.value)} />
-        <Input label="Address" value={site} placeholder={SITE_PLACEHOLDER[provider]} onChange={(e) => setSite(e.target.value)} required={provider === 'jira'} />
+        <Input label="Address" value={site} placeholder={SITE_PLACEHOLDER[provider]} onChange={(e) => setSite(e.target.value)} required={provider === 'jira' || provider === 'azure'} />
         {provider === 'jira' && deployment === 'cloud' && (
           <Input label="Account email" type="email" value={email} autoComplete="off" onChange={(e) => setEmail(e.target.value)} required />
         )}
@@ -118,13 +141,29 @@ function AddConnection({ workspaceId, oauthJira, onAdded }: { workspaceId: strin
           onChange={(e) => setToken(e.target.value)}
           required
         />
-        <Input label={provider === 'github' ? 'Default repository (owner/name)' : provider === 'linear' ? 'Default team key' : 'Default project key'} value={project} onChange={(e) => setProject(e.target.value)} />
+        <Input
+          label={
+            provider === 'github'
+              ? 'Default repository (owner/name)'
+              : provider === 'linear'
+                ? 'Default team key'
+                : provider === 'azure'
+                  ? 'Default project'
+                  : provider === 'asana'
+                    ? 'Default project (its id or name)'
+                    : provider === 'monday'
+                      ? 'Default board (its id or name)'
+                      : 'Default project key'
+          }
+          value={project}
+          onChange={(e) => setProject(e.target.value)}
+        />
         <label>
           <span>Changes from the tracker</span>
           <Select
             aria-label="Changes from the tracker"
             options={[
-              { value: 'webhook', label: 'Webhooks', description: 'Instant; the tracker must reach this server' },
+              { value: 'webhook', label: 'Webhooks', description: SELF_HOOKED.has(provider) ? 'Instant; Freero registers them itself' : 'Instant; the tracker must reach this server' },
               { value: 'polling', label: 'Polling', description: 'Every minute; for trackers that can’t reach Freero' },
             ]}
             value={inbound}
@@ -142,9 +181,9 @@ function AddConnection({ workspaceId, oauthJira, onAdded }: { workspaceId: strin
         <Button type="submit" variant="primary" icon={Plug} loading={busy}>
           Connect
         </Button>
-        {provider === 'jira' && deployment === 'cloud' && oauthJira && (
+        {oauthOffered && (
           <Button type="button" icon={KeyRound} onClick={() => window.location.assign(oauthUrl)}>
-            Connect with Atlassian instead
+            {provider === 'jira' ? 'Connect with Atlassian instead' : `Connect with ${TRACKER_PROVIDERS[provider]} instead`}
           </Button>
         )}
       </div>
@@ -158,15 +197,16 @@ function AddConnection({ workspaceId, oauthJira, onAdded }: { workspaceId: strin
 export function TrackerConnections({ workspaceId }: { workspaceId: string | null }) {
   const notify = useToast();
   const [list, setList] = useState<TrackerConnectionInfo[] | null>(null);
-  const [oauthJira, setOauthJira] = useState(false);
+  const [oauth, setOauth] = useState<OAuthOffered>({});
   const [secret, setSecret] = useState<{ id: string; value: string } | null>(null);
   const [adding, setAdding] = useState(false);
+  const [mapping, setMapping] = useState<string | null>(null);
 
   const load = useCallback(() => {
     api.trackerConnections(workspaceId).then(
       (r) => {
         setList(r.connections);
-        setOauthJira(r.oauth.jira);
+        setOauth(r.oauth);
       },
       (e) => notify(errorText(e, 'Could not load tracker connections'), 'error'),
     );
@@ -223,7 +263,7 @@ export function TrackerConnections({ workspaceId }: { workspaceId: string | null
               </div>
               <div className="fr-trackerconn__meta">
                 {TRACKER_PROVIDERS[c.provider]}
-                {c.deployment ? ` ${c.deployment === 'cloud' ? 'Cloud' : 'Data Center'}` : ''} · {c.site} · {c.auth === 'oauth' ? 'OAuth' : 'token'}
+                {c.deployment ? ` ${c.provider === 'azure' ? (c.deployment === 'cloud' ? 'Services' : 'Server') : c.deployment === 'cloud' ? 'Cloud' : 'Data Center'}` : ''} · {c.site} · {c.auth === 'oauth' ? 'OAuth' : 'token'}
                 {c.account ? ` · as ${c.account}` : ''} · {c.links} linked issue{c.links === 1 ? '' : 's'} · added {relativeTime(c.createdAt)}
               </div>
               {c.lastError && <div className="fr-trackerconn__error">{c.lastError}</div>}
@@ -232,28 +272,57 @@ export function TrackerConnections({ workspaceId }: { workspaceId: string | null
               <Button size="sm" icon={RefreshCw} onClick={() => void test(c)}>
                 Test
               </Button>
+              {c.fieldMap && c.provider !== 'linear' && c.provider !== 'github' && (
+                <Button size="sm" variant="ghost" icon={ListTree} aria-expanded={mapping === c.id} onClick={() => setMapping(mapping === c.id ? null : c.id)}>
+                  Field map
+                </Button>
+              )}
               <Button size="sm" variant="ghost" icon={Trash2} onClick={() => void remove(c)} aria-label={`Remove ${c.name}`}>
                 Remove
               </Button>
             </div>
           </div>
-          <div className="fr-trackerconn__webhook">
-            <span>{c.inbound === 'webhook' ? 'Webhook address' : 'Polling every minute · webhook address (optional)'}</span>
-            <code>{c.webhookUrl}</code>
-            <Button size="sm" variant="ghost" onClick={() => void rotate(c)}>
-              New secret
-            </Button>
-          </div>
+          {SELF_HOOKED.has(c.provider) ? (
+            <p className="fr-trackerconn__fine">
+              {c.inbound === 'webhook'
+                ? `Freero registers its own webhooks in ${TRACKER_PROVIDERS[c.provider]} for each ${c.provider === 'monday' ? 'board' : 'project'} you send to or import from, and polls as a fallback.`
+                : `Polling every minute: nothing is registered in ${TRACKER_PROVIDERS[c.provider]}.`}
+            </p>
+          ) : (
+            <div className="fr-trackerconn__webhook">
+              <span>{c.inbound === 'webhook' ? 'Webhook address' : 'Polling every minute · webhook address (optional)'}</span>
+              <code>{c.webhookUrl}</code>
+              <Button size="sm" variant="ghost" onClick={() => void rotate(c)}>
+                New secret
+              </Button>
+            </div>
+          )}
+          {c.provider === 'azure' && (
+            <p className="fr-trackerconn__fine">
+              In Azure DevOps: Project settings → Service hooks → Web Hooks, event “Work item updated”, this address, basic authentication with any user name and the webhook secret as the password.
+            </p>
+          )}
           {secret?.id === c.id && <Secret value={secret.value} onDone={() => setSecret(null)} />}
+          {mapping === c.id && (
+            <TrackerFieldMap
+              connection={c}
+              onSaved={(next) => {
+                setList((l) => l?.map((x) => (x.id === next.id ? next : x)) ?? null);
+                setMapping(null);
+              }}
+            />
+          )}
+
         </div>
       ))}
       {adding ? (
         <AddConnection
           workspaceId={workspaceId}
-          oauthJira={oauthJira}
+          oauth={oauth}
           onAdded={(c, s) => {
             setList((l) => [...(l ?? []), c]);
-            setSecret({ id: c.id, value: s });
+            // Nothing to paste where Freero registers its webhooks itself.
+            if (!SELF_HOOKED.has(c.provider)) setSecret({ id: c.id, value: s });
             setAdding(false);
           }}
         />

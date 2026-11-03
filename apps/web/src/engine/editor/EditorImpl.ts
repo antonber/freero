@@ -389,11 +389,54 @@ export class EditorImpl implements Editor {
 
   /** [additive] Folded away inside its container (ElementDefinition.hidesMember), unless being dragged. */
   isFolded(el: BoardElement): boolean {
-    if (!el.frameId || !this.core.registry.foldsMembers) return false;
-    const box = this.core.store.getElement(el.frameId);
-    const reg = box && this.core.registry.elements.get(box.type);
-    if (!reg?.def.hidesMember || this.core.ui.getState().dragging?.has(el.id)) return false;
-    return reg.def.hidesMember(box as never, el, { editor: this.core.scoped(reg.feature) });
+    if (!el.frameId || !this.core.registry.foldsMembers || this.core.ui.getState().dragging?.has(el.id)) return false;
+    // Folded by its container, or inside a container that is itself folded away (a frame in a
+    // diagram's hidden layer takes what is in it along).
+    let child: BoardElement = el;
+    for (let depth = 0; depth < 16 && child.frameId; depth++) {
+      const box = this.core.store.getElement(child.frameId);
+      if (!box) return false;
+      const reg = this.core.registry.elements.get(box.type);
+      if (reg?.def.hidesMember?.(box as never, child, { editor: this.core.scoped(reg.feature) })) return true;
+      child = box;
+    }
+    return false;
+  }
+
+  setFocus(id: string | null): void {
+    const next = id && this.core.store.getElement(id) ? id : null;
+    if (this.core.ui.getState().focusId === next) return;
+    this.core.ui.setState({ focusId: next, hoverId: null });
+    // What is outside the focus can't stay selected (Delete would act on it unseen).
+    const sel = this.getSelection();
+    const kept = sel.filter((x) => {
+      const el = this.getElement(x);
+      return !!el && this.inFocus(el);
+    });
+    if (kept.length !== sel.length) this.core.ui.setState({ selection: kept });
+  }
+
+  getFocus(): string | null {
+    const id = this.core.ui.getState().focusId;
+    return id && this.core.store.getElement(id) ? id : null;
+  }
+
+  /** [additive] Inside the focused item (it, or something it contains); true while nothing is focused. */
+  inFocus(el: BoardElement): boolean {
+    const focus = this.getFocus();
+    if (!focus) return true;
+    let cur: BoardElement | undefined = el;
+    for (let depth = 0; cur && depth < 16; depth++) {
+      if (cur.id === focus) return true;
+      cur = cur.frameId ? this.core.store.getElement(cur.frameId) : undefined;
+    }
+    return false;
+  }
+
+  /** [additive] What pointers and keys reach: the visible elements, without those outside the focus. */
+  getInteractiveElements(): BoardElement[] {
+    const visible = this.getVisibleElements();
+    return this.getFocus() ? visible.filter((el) => this.inFocus(el)) : visible;
   }
 
   /**
@@ -501,7 +544,7 @@ export class EditorImpl implements Editor {
 
   hitTest(point: Point, opts: { exclude?: string[]; types?: ElementType[]; tolerancePx?: number } = {}): BoardElement | null {
     const zoom = this.core.ui.getState().camera.zoom;
-    return hitTestElements(this.getVisibleElements(), point, (t) => this.getDefinition(t), {
+    return hitTestElements(this.getInteractiveElements(), point, (t) => this.getDefinition(t), {
       exclude: opts.exclude,
       types: opts.types,
       tolerance: (opts.tolerancePx ?? HIT_TOLERANCE_PX) / zoom,
@@ -509,11 +552,11 @@ export class EditorImpl implements Editor {
   }
 
   elementsInRect(rect: Rect, mode: 'intersect' | 'contain' = 'intersect'): BoardElement[] {
-    return elementsInRect(this.getVisibleElements(), rect, mode);
+    return elementsInRect(this.getInteractiveElements(), rect, mode);
   }
 
   elementsInLasso(points: Point[], mode: LassoMode = 'inside'): BoardElement[] {
-    const open = this.getVisibleElements().filter((el) => !el.locked);
+    const open = this.getInteractiveElements().filter((el) => !el.locked);
     return elementsInLasso(open, points, mode, (t) => this.getDefinition(t));
   }
 
@@ -1224,7 +1267,7 @@ export class EditorImpl implements Editor {
     const store = this.core.store;
     const valid = ids.filter((id) => {
       const el = store.getElement(id);
-      return !!el && !this.isHidden(el);
+      return !!el && !this.isHidden(el) && this.inFocus(el);
     });
     const cur = this.getSelection();
     let next: string[];

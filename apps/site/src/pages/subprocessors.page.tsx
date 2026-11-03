@@ -1,12 +1,12 @@
-// DRAFT FOR LEGAL REVIEW, and under review until the operator approves it (`underReview: true`). Written
-// from the server's configuration and the production deployment as far as the repository and the
-// public service show it (2026-11-03); anything they don't show is marked <ToConfirm />. Providers the
-// server is configured with are `L(...)` tokens (modules/site/legal.ts), so turning on AI or error
-// tracking changes this list without anyone editing it.
+// Written from the server's configuration and the production deployment, with the operator's own
+// facts (mail forwarding, the triage assistant, the notice commitments) as the operator approved
+// them on 2026-11-03 (#109). Providers the server is configured with are `L(...)` tokens
+// (modules/site/legal.ts), so turning on AI or error tracking, or changing the bucket or the email
+// service, changes this list without anyone editing it.
 import type { ReactNode } from 'react';
 import { Table } from '../components/ui';
 import { definePage } from '../lib/define';
-import { L, LegalArticle, ToConfirm } from '../lib/legal';
+import { L, LegalArticle } from '../lib/legal';
 import { abs, docsUrl } from '../lib/site';
 
 const UPDATED = '2026-11-03';
@@ -27,7 +27,6 @@ export default definePage({
   title: 'Subprocessors · Freero',
   description: 'The companies that process personal data for the hosted Freero service: what each does, which data it handles, where, and how you hear of changes.',
   updated: UPDATED,
-  underReview: true,
   legal: true,
   closingCta: false,
   body: () => (
@@ -71,22 +70,12 @@ export default definePage({
             'Everything the service stores: accounts, boards, docs, comments, files’ index, the audit log, and request logs (IP address, account id, path)',
           ],
           [
-            <Provider name={L('storageProvider')} where={<ToConfirm />} />,
-            <>
-              Stores uploaded files, board thumbnails, data-export archives and problem-report screenshots. The company that stores the files:{' '}
-              <ToConfirm />
-            </>,
+            <Provider name={L('storageProvider')} where="The region named" />,
+            'Stores uploaded files, board thumbnails, data-export archives and problem-report screenshots, encrypted at rest by the provider.',
             'Files people upload (which can contain anything, including voice and video in walkthrough recordings), screenshots attached to problem reports',
           ],
           [
-            <Provider
-              name={L('mailProvider')}
-              where={
-                <>
-                  United States <ToConfirm />
-                </>
-              }
-            />,
+            <Provider name={L('mailProvider')} where="United States" />,
             'Delivers the service’s email: sign-in links, security notices, invitations, mentions and digests.',
             'Recipients’ email addresses and names, and the message: a board’s title, who invited or mentioned you, an excerpt of a comment (up to 280 characters), links',
           ],
@@ -106,29 +95,20 @@ export default definePage({
           ],
           [
             <Provider
-              name={
-                <>
-                  Porkbun (email forwarding), and the operator’s mailbox provider <ToConfirm />
-                </>
-              }
-              where={<ToConfirm />}
+              name="Porkbun (email forwarding) and Google LLC (Gmail, the operator’s mailbox)"
+              where="Porkbun in the United States; Google in the United States and the other countries where it keeps data"
             />,
-            'Receives mail sent to the service’s contact addresses (support, security, privacy) and forwards it to the operator’s mailbox.',
+            'Porkbun receives mail sent to the service’s contact addresses (support, security, privacy) and forwards it to the operator’s Gmail mailbox, where it is kept.',
             'Whatever you write to us: your address, name and message, and any attachment',
           ],
           [
-            <Provider
-              name={
-                <>
-                  An AI assistant the operator uses to sort problem reports <ToConfirm />
-                </>
-              }
-              where={<ToConfirm />}
-            />,
+            <Provider name="Anthropic, PBC (Claude Code, the AI assistant the operator uses to sort problem reports)" where="Where Anthropic runs its models" />,
             <>
-              Reads new <strong>Report a problem</strong> submissions through the operator API to sort them and draft fixes. Issues it files in the public
-              source repository carry no reporter data, board content or screenshots. Which provider, and its terms on retention and training:{' '}
-              <ToConfirm />
+              Once a day on weekdays, a scheduled Claude Code task reads new <strong>Report a problem</strong> submissions through the operator API, with a
+              token that reaches nothing but problem reports, to sort them and draft fixes. Issues it files in the public source repository carry no reporter
+              data, board content or screenshots. It runs under{' '}
+              <a href="https://www.anthropic.com/legal/commercial-terms">Anthropic’s commercial terms</a>, under which Anthropic may not train its models on
+              the content it processes for us.
             </>,
             'The note, screenshot and diagnostics of a problem report',
           ],
@@ -170,10 +150,10 @@ export default definePage({
       <ul>
         <li>
           Before a new subprocessor starts processing personal data for the service, we add it here and change the date at the top, at least 30 days ahead
-          except in an emergency (for example replacing a provider that failed) <ToConfirm />.
+          except in an emergency (for example replacing a provider that failed).
         </li>
         <li>
-          Owners of team workspaces are emailed about additions <ToConfirm />. Organizations under the <a href="/dpa">data processing addendum</a> may object
+          Owners of team workspaces are emailed about additions. Organizations under the <a href="/dpa">data processing addendum</a> may object
           as it describes.
         </li>
         <li>

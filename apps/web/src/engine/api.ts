@@ -49,6 +49,7 @@ import type {
   TrackerProject,
   TrackerSendRequest,
   TrackerSendResponse,
+  TrackerSprint,
   VerticalAlign,
   CreateDecisionRequest,
   CreateWalkthroughRequest,
@@ -520,6 +521,10 @@ export interface HostTrackers {
   send(request: TrackerSendRequest): Promise<TrackerSendResponse>;
   /** Issues matching a query become linked cards (issues already here are skipped). */
   importIssues(request: TrackerImportRequest): Promise<TrackerImportResponse>;
+  /** [additive] A project's sprints / cycles / iterations (#119); `fieldName` null: the tracker has none. */
+  sprints?(connectionId: string, project: string): Promise<{ sprints: TrackerSprint[]; fieldName: string | null }>;
+  /** [additive] The issue types a project can create (#43), and the connection's preferred one. */
+  issueTypes?(connectionId: string, project: string): Promise<{ issueTypes: string[]; preferred: string | null }>;
   /** Syncs one linked issue now. */
   sync(linkId: string): Promise<void>;
   /** Stops syncing: the items lose their badge, the issue stays in the tracker. */
@@ -1764,6 +1769,16 @@ export interface Editor {
    * (`ElementDefinition.hiddenWith`). False for unknown ids.
    */
   isViewHidden(id: string): boolean;
+  /**
+   * [additive, #117] Focus on one item for this viewer (a diagram's focus mode): everything outside
+   * it — and outside what it contains — is drawn faded and is inert: not hit-tested, selectable,
+   * marquee'd, lasso'd or Tab-walked. Local view state: never synced, any role, exports unaffected.
+   * Esc (once nothing is selected) or `setFocus(null)` ends it; deleting the item ends it too.
+   * Hook: useFocus().
+   */
+  setFocus(id: string | null): void;
+  /** [additive] The focused item's id (null: none, or it was deleted). */
+  getFocus(): string | null;
 
   // -- events --
   on(event: EditorEvent, cb: () => void): () => void;

@@ -31,7 +31,7 @@ const TEXT_RESERVED = new Set(['b', 'i', 'u', 'z', 'y', 'c', 'v', 'x', 'a', 'k',
  * and not listed here is a key nobody can discover.
  */
 export const ENGINE_KEYS: Array<{ name: string; label: string; shortcuts: string[]; minRole: 'viewer' | 'editor' }> = [
-  { name: 'escape', label: 'Deselect, stop editing or cancel', shortcuts: ['escape'], minRole: 'viewer' },
+  { name: 'escape', label: 'Deselect, stop editing, cancel or leave focus', shortcuts: ['escape'], minRole: 'viewer' },
   { name: 'delete', label: 'Delete', shortcuts: ['backspace'], minRole: 'editor' },
   { name: 'nudge', label: 'Nudge selection', shortcuts: ['arrowup', 'arrowdown', 'arrowleft', 'arrowright'], minRole: 'editor' },
   { name: 'nudgeFar', label: 'Nudge selection by 10', shortcuts: ['shift+arrowup', 'shift+arrowdown', 'shift+arrowleft', 'shift+arrowright'], minRole: 'editor' },
@@ -156,7 +156,7 @@ export function installKeyboard(core: EngineCore): () => void {
     (target === document.body || target === core.dom.viewport || target === null);
 
   /** What keyboard walking reaches: every visible item but lines (they're read with their ends). */
-  const walkable = () => editor.getVisibleElements().filter((el) => el.type !== 'connector');
+  const walkable = () => editor.getInteractiveElements().filter((el) => el.type !== 'connector');
 
   /** Selects `id` (with its group) by keyboard and brings it into view at the same zoom. */
   const selectAndReveal = (id: string) => {
@@ -530,6 +530,8 @@ export function installKeyboard(core: EngineCore): () => void {
       const whole = editor.expandGroups(s.selection);
       if (whole.length > s.selection.length) return editor.select(whole);
       if (s.selection.length) return editor.clearSelection();
+      // Then out of focus mode (Editor.setFocus).
+      if (s.focusId) return editor.setFocus(null);
       return;
     }
 

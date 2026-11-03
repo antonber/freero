@@ -5,6 +5,8 @@
 // "Listings" (#87): community submissions for Apps & agents, approved or declined here; live ones
 // can be featured or removed (and a removal appealed), with the same record and audit trail.
 // "Problems": what people sent with "Report a problem" (bugs, not abuse; ProblemsView).
+// "Microsoft 365 apps" (#112, #114): this instance's Teams app and Copilot agent packages, to upload
+// in Teams (docs/integrations/teams.md).
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Check, Eye, FileX2, History, Link2Off, RefreshCw, Search, ShieldAlert, ShieldCheck, Star, Trash2, UserX, X } from 'lucide-react';
@@ -13,6 +15,7 @@ import {
   LISTING_SURFACES,
   REPORT_REASONS,
   type ListingForReview,
+  type MicrosoftIntegrationsInfo,
   type ListingStatus,
   type ModeratedBoard,
   type ModeratedUpload,
@@ -198,6 +201,7 @@ export function OperatorPage() {
         <aside className="fr-op__tools" aria-label="Look up">
           <AccountLookup onAct={setPending} />
           <FileLookup onAct={setPending} />
+          <MicrosoftPackages />
         </aside>
       </div>
       )}
@@ -696,6 +700,38 @@ function AccountLookup({ onAct }: { onAct: (p: PendingAction) => void }) {
           >
             {user.suspended ? 'Lift suspension' : 'Suspend'}
           </Button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** The Teams app and Copilot agent packages this instance offers (set up with environment variables). */
+function MicrosoftPackages() {
+  const [info, setInfo] = useState<MicrosoftIntegrationsInfo | null>(null);
+  useEffect(() => void api.microsoftIntegrations().then(setInfo, () => setInfo({ teams: null, copilot: null })), []);
+  return (
+    <section className="fr-op-tool">
+      <h2>Microsoft 365 apps</h2>
+      {!info ? (
+        <Spinner size={18} label="Loading" />
+      ) : (
+        <div className="fr-op-tool__result">
+          {info.teams ? (
+            <a className="fr-op-card__file" href={info.teams.packageUrl} download>
+              Teams app package{info.teams.linkPreviews ? ' (with link previews)' : ''}
+            </a>
+          ) : (
+            <span>Teams app: off (set TEAMS_APP_ID)</span>
+          )}
+          {info.copilot ? (
+            <a className="fr-op-card__file" href={info.copilot.packageUrl} download>
+              Copilot agent package
+            </a>
+          ) : (
+            <span>Copilot agent: off (set COPILOT_APP_ID and COPILOT_OAUTH_REFERENCE_ID)</span>
+          )}
+          <span>Upload them in the Teams admin center: see docs/integrations/teams.md.</span>
         </div>
       )}
     </section>

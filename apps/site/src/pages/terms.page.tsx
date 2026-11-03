@@ -174,7 +174,8 @@ export default definePage({
 
       <h2 id="general">14. General</h2>
       <p>
-        These terms, the acceptable use policy and the privacy policy are the whole agreement between you and us about the service. If a part is found
+        These terms, the acceptable use policy, the privacy policy and, for an organization that has signed it, the data processing addendum are the whole
+        agreement between you and us about the service. If a part is found
         unenforceable, the rest stays in effect. If we don’t enforce a right, we haven’t given it up. You may not transfer this agreement without our consent;
         we may transfer it to a successor operating the service, and will tell you. If you use the service for an organization, our{' '}
         <a href="/dpa">data processing addendum</a> can be added to these terms for the personal data we process for it; our{' '}

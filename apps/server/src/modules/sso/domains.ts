@@ -7,7 +7,7 @@ import { randomBytes } from 'node:crypto';
 import { badRequest, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { recordAudit } from '../audit/index';
-import { domainHasToken } from './dns';
+import { domainHasToken, setTxtLookupForTests, txtName, txtValue } from './dns';
 import * as repo from './repo';
 
 const DOMAIN_RE = /^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$/;
@@ -69,6 +69,21 @@ export async function removeDomain(workspaceId: string, actorId: string, domainI
     if (!(await repo.deleteDomain(workspaceId, domainId))) throw notFound('Domain not found');
     await recordAudit({ action: 'sso.domain_removed', workspaceId, actorId, target: domainTarget(d.id, d.domain), metadata: { wasVerified: d.verifiedAt !== null } });
   });
+}
+
+/**
+ * Tests of other modules that need a domain the workspace (or organisation) verified — provisioning
+ * accepts only its addresses: claims and verifies it through the real path with an answering DNS.
+ */
+export async function verifyDomainForTests(workspaceId: string, actorId: string, domain: string): Promise<void> {
+  await addDomain(workspaceId, actorId, domain);
+  const claim = (await repo.listDomains(workspaceId)).find((d) => d.domain === domain)!;
+  setTxtLookupForTests(async (name) => (name === txtName(domain) ? [txtValue(claim.token)] : []));
+  try {
+    await verifyDomain(workspaceId, claim.id, actorId);
+  } finally {
+    setTxtLookupForTests(null);
+  }
 }
 
 /** The workspace's verified domains. */

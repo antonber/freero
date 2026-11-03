@@ -21,6 +21,7 @@ import { AppsPage, IntegrationPage } from './pages/apps/AppsPage';
 import { CommunityListingPage, SubmitListingPage } from './pages/apps/CommunityPages';
 import { UnsubscribePage } from './pages/unsubscribe/UnsubscribePage';
 import { AdminConsolePage } from './pages/admin/AdminConsolePage';
+import { OrgConsolePage } from './pages/admin/OrgConsolePage';
 import { AppealPage } from './pages/appeal/AppealPage';
 import { OperatorPage } from './pages/operator/OperatorPage';
 import { OAuthConsentPage } from './pages/oauth/OAuthConsentPage';
@@ -39,6 +40,10 @@ const EmbedBoardPage = lazy(() => import('./embed/EmbedBoardPage'));
 const PublicEmbedPage = lazy(() => import('./embed/PublicEmbedPage'));
 const EmbedConnectPage = lazy(() => import('./embed/EmbedConnectPage'));
 const EmbedSignedInPage = lazy(() => import('./embed/EmbedSignedInPage'));
+// The Microsoft Teams app (#112): the tab (a board's embed inside Teams), its configuration page and the board chooser.
+const TeamsTabPage = lazy(() => import('./teams/TeamsTabPage'));
+const TeamsConfigPage = lazy(() => import('./teams/TeamsConfigPage'));
+const TeamsChoosePage = lazy(() => import('./teams/TeamsChoosePage'));
 // Docs (KAI-162): the page and its editor load on demand.
 const DocPage = lazy(() => import('./pages/doc/DocPage'));
 // The phone answer page of a live activity (#40): no board engine, just the activity's REST.
@@ -176,6 +181,14 @@ export function App() {
               }
             />
             <Route
+              path="/org/:organisationId"
+              element={
+                <RequireAuth>
+                  <OrgConsolePage />
+                </RequireAuth>
+              }
+            />
+            <Route
               path="/decision/:id"
               element={
                 <RequireAuth>
@@ -234,6 +247,30 @@ export function App() {
               element={
                 <Suspense fallback={<FullPageSpinner label="Signing in" />}>
                   <EmbedSignedInPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/teams/b/:id"
+              element={
+                <Suspense fallback={<FullPageSpinner label="Opening board" />}>
+                  <TeamsTabPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/teams/config"
+              element={
+                <Suspense fallback={<FullPageSpinner label="Connecting to Teams" />}>
+                  <TeamsConfigPage />
+                </Suspense>
+              }
+            />
+            <Route
+              path="/teams/choose"
+              element={
+                <Suspense fallback={<FullPageSpinner label="Connecting to Teams" />}>
+                  <TeamsChoosePage />
                 </Suspense>
               }
             />

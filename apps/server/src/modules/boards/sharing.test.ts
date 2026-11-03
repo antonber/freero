@@ -11,7 +11,7 @@ import { closeTestDb, openTestDb } from '../../platform/testing';
 import { listAuditEvents } from '../audit/index';
 import { completeSignIn, createUser, getAccount } from '../auth/index';
 import { inviteBoardMember, removeBoardMember, setBoardMemberRole } from '../members/index';
-import { createProject, createTeamWorkspace, inviteToWorkspace, updateWorkspace } from '../workspaces/index';
+import { attachWorkspace, createOrganisation, createProject, createTeamWorkspace, inviteToWorkspace, updateWorkspace } from '../workspaces/index';
 import { createBoard, getBoardAccess, linksOutOfPolicy, requireBoardDownload, shareBoardByLink } from './index';
 import boardRoutes from './routes';
 
@@ -178,6 +178,25 @@ it('moving a board to another workspace keeps it whole, ends the old team’s ac
   expect(await call(outsider, 'POST', `/boards/${board.id}/exported`, { format: 'png' })).toMatchObject({ status: 403, json: { code: DOWNLOADS_RESTRICTED } });
   for (const ws of [from.id, to.id])
     expect(await listAuditEvents({ workspaceId: ws, actions: ['board.moved_workspace'], targetId: board.id }, 10)).toHaveLength(1);
+});
+
+it('a board moved into a workspace of an organisation obeys the organisation’s floors, though the workspace itself allows more (#108)', async () => {
+  const owner = await person('OrgMover');
+  const from = await createTeamWorkspace(owner.id, 'Loose team');
+  const to = await createTeamWorkspace(owner.id, 'Group team'); // its own policies: links may edit, embedding on
+  const org = await createOrganisation(owner.id, 'Group');
+  await attachWorkspace(org.id, to.id, owner.id);
+  await updateWorkspace(org.id, owner.id, { policies: { linkSharing: 'viewer', boardEmbeds: 'off' } });
+  const board = await createBoard(owner.id, 'Pricing', '', 'editor', { workspaceId: from.id });
+  await call(owner, 'PATCH', `/boards/${board.id}`, { embeddable: true });
+
+  const moved = await call(owner, 'POST', `/boards/${board.id}/move`, { workspaceId: to.id });
+  expect(moved.status).toBe(200);
+  const out = moved.json as unknown as MoveBoardResponse;
+  expect(out.board).toMatchObject({ workspaceId: to.id, linkAccess: 'viewer', embeddable: false });
+  expect(out.adjusted.map((a) => a.kind).sort()).toEqual(['embedding_off', 'link_lowered']);
+  // …and an organisation is never a place a board can be moved to.
+  expect((await call(owner, 'POST', `/boards/${board.id}/move`, { workspaceId: org.id })).status).toBe(404);
 });
 
 it('a duplicate goes to the workspace and project chosen for it, never into one where its maker may not create boards', async () => {

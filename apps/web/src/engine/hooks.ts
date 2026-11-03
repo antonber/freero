@@ -319,6 +319,14 @@ export function usePhoneLayout(): 'phone' | 'phone-edit' | null {
   return compact ? (editing ? 'phone-edit' : 'phone') : null;
 }
 
+/** [additive, #117] The item this viewer focuses on (Editor.setFocus), or null; re-renders when it changes. */
+export function useFocus(): string | null {
+  const core = useCore();
+  const id = useUi((s) => s.focusId);
+  useElement(id);
+  return id && core.store.getElement(id) ? id : null;
+}
+
 /** [additive] Ids hidden for this viewer only (Editor.setViewHidden); re-renders when they change. */
 export function useViewHidden(): ReadonlySet<string> {
   return useUi((s) => s.viewHidden);

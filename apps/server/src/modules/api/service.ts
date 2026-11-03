@@ -32,6 +32,7 @@ import {
   type StructurePlacement,
   type SavedTemplateSummary,
   type TableCopyContent,
+  withDiagramLayout,
   withKanbanLayout,
 } from '@freero/shared';
 import { badRequest, HttpError, notFound } from '../../platform/http';
@@ -449,9 +450,10 @@ export async function updateItems(call: ApiCall, boardId: string, patches: Array
         if (!hit) throw notFound(patches.length === 1 ? 'No such item on this board' : `items[${i}]: no item ${String(itemId)} on this board`);
         return patchUpdates(hit.el, planPatch(hit.el, fields, view), view);
       });
-      // A card whose grouped or swimlane value changed moves to its column / row, as open boards
-      // would lay it out after the same change made there.
-      return { change: withKanbanLayout(view.elements.map((e) => e.el), { update: [...update, ...moves] }) };
+      // A card whose grouped or swimlane value changed moves to its column / row, and a diagram whose
+      // steps changed reflows (#117), as open boards would lay it out after the same change there.
+      const before = view.elements.map((e) => e.el);
+      return { change: withDiagramLayout(before, withKanbanLayout(before, { update: [...update, ...moves] })) };
     }),
   );
   const { items, view } = await itemsNow(call, id, role, ids);
@@ -573,7 +575,8 @@ export async function deleteItems(call: ApiCall, boardId: string, ids: string[],
       // Deleting what takes other items along (a frame's contents) is a bulk delete: confirm it.
       const along = view.elements.filter((e) => !ids.includes(e.el.id) && ((e.el.frameId && ids.includes(e.el.frameId)) || (e.el.attachedTo && ids.includes(e.el.attachedTo))));
       if (along.length && !bulk) requireConfirm(confirm, `This also deletes ${along.length} item${along.length === 1 ? '' : 's'} inside it, which`);
-      return { change: { remove: ids } };
+      // A diagram that loses steps reflows around the gap (#117).
+      return { change: withDiagramLayout(view.elements.map((e) => e.el), { remove: ids }) };
     }),
   );
   call.audit.metadata = { items: out.applied.removed.length };
@@ -826,7 +829,7 @@ export async function importFromTracker(call: ApiCall, boardId: string, body: Re
   await requireBoardAccess(id, call.userId, 'editor');
   const conn = await trackerConnection(call, id, body.connection);
   const placement = body.placement === undefined || body.placement === null ? undefined : readPlacement(body.placement);
-  const req = { connectionId: conn.id, query: body.query, limit: body.limit };
+  const req = { connectionId: conn.id, query: body.query, limit: body.limit, ...(body.scope !== undefined && body.scope !== null ? { scope: body.scope } : {}) };
   call.audit.metadata = { connection: conn.id, provider: conn.provider };
   if (body.target === 'suggestions') {
     const found = await importCandidates(call.userId, id, req);
@@ -859,12 +862,12 @@ export async function importFromTracker(call: ApiCall, boardId: string, body: Re
   return { target: 'board' as const, cards: (out.cards ?? []).map(({ id: cardId, key, url }) => ({ id: cardId, key, url })), skipped: out.skipped, ...(out.containerId ? { containerId: out.containerId } : {}) };
 }
 
-export async function syncToTracker(call: ApiCall, boardId: string, body: { itemIds?: unknown; connection?: unknown; project?: unknown; issueType?: unknown; mode?: unknown }) {
+export async function syncToTracker(call: ApiCall, boardId: string, body: { itemIds?: unknown; connection?: unknown; project?: unknown; issueType?: unknown; mode?: unknown; parent?: unknown }) {
   const { id, role } = await openBoard(call, boardId);
   await requireBoardAccess(id, call.userId, 'editor');
   await agentWrite(call, { id, role });
   const conn = await trackerConnection(call, id, body.connection);
-  const out = await sendToTracker(call.userId, id, { connectionId: conn.id, itemIds: body.itemIds, project: body.project, issueType: body.issueType, mode: body.mode }, appUrl(call.req, ''));
+  const out = await sendToTracker(call.userId, id, { connectionId: conn.id, itemIds: body.itemIds, project: body.project, issueType: body.issueType, mode: body.mode, parent: body.parent }, appUrl(call.req, ''));
   call.audit.metadata = { issues: out.issues.map((i) => i.key), items: out.issues.reduce((n, i) => n + i.itemIds.length, 0) };
   return out;
 }

@@ -1,10 +1,9 @@
-// DRAFT FOR LEGAL REVIEW, and under review until the operator approves it (`underReview: true`). Written
-// for this service from what it does (the security overview, the subprocessor list, the privacy
-// policy's data map) by someone who is not a lawyer; it is not legal advice and copies no other
-// company's agreement. The parties' facts are `L(...)` tokens (modules/site/legal.ts); commitments
-// the operator still has to make are marked <ToConfirm />.
+// Written for this service from what it does (the security overview, the subprocessor list, the
+// privacy policy's data map); it copies no other company's agreement. The operator approved its
+// commitments (notice periods, breach notice, export window, audits, the SCC choices) on 2026-11-03
+// (#109). The parties' facts are `L(...)` tokens (modules/site/legal.ts).
 import { definePage } from '../lib/define';
-import { L, LegalArticle, ToConfirm } from '../lib/legal';
+import { L, LegalArticle } from '../lib/legal';
 import { abs } from '../lib/site';
 
 const UPDATED = '2026-11-03';
@@ -15,7 +14,6 @@ export default definePage({
   title: 'Data processing addendum (DPA) · Freero',
   description: 'The data processing addendum for organizations using the hosted Freero service: GDPR and UK GDPR Article 28 terms with the standard contractual clauses.',
   updated: UPDATED,
-  underReview: true,
   legal: true,
   closingCta: false,
   body: () => (
@@ -31,7 +29,7 @@ export default definePage({
           </p>
           <p>
             <strong>How to sign it:</strong> fill in your organization’s details in the signature block at the end, sign, and send it to {L('contact')}. It
-            takes effect when we countersign and send it back <ToConfirm />. To keep a copy, print this page or save it as a PDF from your browser.
+            takes effect when we countersign and send it back. To keep a copy, print this page or save it as a PDF from your browser.
           </p>
         </>
       }
@@ -116,8 +114,8 @@ export default definePage({
       <h2 id="personnel">4. Our people</h2>
       <p>
         Only people who need access to provide, support or secure the service may access Customer Personal Data, and only as far as they need it. Each of them
-        is bound by confidentiality <ToConfirm />. Today the service is run by a very small team; who has administrative access is listed in our records and
-        available to you on request <ToConfirm />.
+        is bound by confidentiality. Today the service is run by a very small team; who has administrative access is listed in our records and
+        available to you on request.
       </p>
 
       <h2 id="security">5. Security</h2>
@@ -135,7 +133,7 @@ export default definePage({
         </li>
         <li>
           We tell you about any intended addition or replacement at least 30 days before it starts processing Customer Personal Data, by updating that page and
-          emailing the owners of your team workspaces <ToConfirm />. In an emergency (to keep the service running or secure) the notice may be shorter, and we
+          emailing the owners of your team workspaces. In an emergency (to keep the service running or secure) the notice may be shorter, and we
           explain why.
         </li>
         <li>
@@ -158,7 +156,7 @@ export default definePage({
 
       <h2 id="incidents">8. Personal data breaches</h2>
       <p>
-        We notify you without undue delay, and in any case within 72 hours <ToConfirm />, after becoming aware of a Personal Data Breach. We send the notice to
+        We notify you without undue delay, and in any case within 72 hours, after becoming aware of a Personal Data Breach. We send the notice to
         the owners of the affected team workspaces and to any security contact you give us. It describes, as far as we know them at the time: the nature of
         the breach, the categories and approximate number of data subjects and records concerned, the likely consequences, the measures taken or proposed,
         and a contact for more information. We add what we learn later, take reasonable steps to contain the breach and limit its effects, and help you meet
@@ -179,7 +177,7 @@ export default definePage({
           workspaces. Deleting a workspace takes effect at once.
         </li>
         <li>
-          When the Agreement ends, you have 30 days to export Customer Personal Data <ToConfirm />. After that, or sooner on your written request, we delete it
+          When the Agreement ends, you have 30 days to export Customer Personal Data. After that, or sooner on your written request, we delete it
           from the live service. Copies in database backups are deleted when those backups expire, at most {L('backupRetentionDays')} days later, and are not
           used meanwhile except to restore the service.
         </li>
@@ -198,13 +196,13 @@ export default definePage({
       <p>
         If that information is not enough, or a supervisory authority requires it, you may audit our compliance with this DPA, yourself or through an
         independent auditor bound by confidentiality, no more than once a year, with at least 30 days’ written notice, during business hours and without
-        disturbing the service or other customers’ data <ToConfirm />. You bear the cost of your audit. Audits of our Subprocessors are carried out by means
+        disturbing the service or other customers’ data. You bear the cost of your audit. Audits of our Subprocessors are carried out by means
         of their own published reports and certifications.
       </p>
 
       <h2 id="transfers">12. International transfers</h2>
       <p>
-        We are established in the United States <ToConfirm />, and the service is hosted there ({L('hosting')}). Where Customer Personal Data is transferred to us from the EEA,
+        We are established in the United States, and the service is hosted there ({L('hosting')}). Where Customer Personal Data is transferred to us from the EEA,
         Switzerland or the UK and no adequacy decision covers the transfer, the following apply and are incorporated into this DPA by reference:
       </p>
       <ul>
@@ -213,8 +211,8 @@ export default definePage({
           (processor to processor) where you are a processor. For those modules: clause 7 (docking clause) applies; under clause 9, option 2 (general written
           authorisation) applies, with the notice period in section 6 of this DPA; the optional wording in clause 11 does not apply; under clause 13, the
           competent supervisory authority is that of the EU Member State where you are established or, if you are not established in the EU, where your
-          representative is, or as Annex I says; under clause 17, option 1, the SCCs are governed by the law of Ireland <ToConfirm />; under clause 18, disputes
-          go to the courts of Ireland <ToConfirm />. Annexes I, II and III of this DPA are the SCCs’ Annexes I, II and III.
+          representative is, or as Annex I says; under clause 17, option 1, the SCCs are governed by the law of Ireland; under clause 18, disputes
+          go to the courts of Ireland. Annexes I, II and III of this DPA are the SCCs’ Annexes I, II and III.
         </li>
         <li>
           <strong>UK:</strong> the SCCs as amended by the UK Addendum. Its Table 1 is completed by Annex I, Table 2 by the choices above, Table 3 by Annexes I to
@@ -227,7 +225,7 @@ export default definePage({
         </li>
       </ul>
       <p>
-        We are not certified under the EU-U.S. Data Privacy Framework <ToConfirm />. If the transfer mechanism above is invalidated or replaced, we work with you
+        We are not certified under the EU-U.S. Data Privacy Framework. If the transfer mechanism above is invalidated or replaced, we work with you
         to put an alternative lawful mechanism in place. If we receive a request from a public authority for Customer Personal Data, we review it for
         legality, tell you unless the law forbids it, and disclose only the minimum the request lawfully requires.
       </p>
@@ -311,7 +309,7 @@ export default definePage({
       <h3>C. Competent supervisory authority</h3>
       <p>
         As clause 13 of the SCCs and section 12 of this DPA say; if the Customer has no establishment or representative in the EU, the authority named by the
-        Customer in the signature block <ToConfirm />. For the UK, the Information Commissioner’s Office; for Switzerland, the Federal Data Protection and
+        Customer in the signature block. For the UK, the Information Commissioner’s Office; for Switzerland, the Federal Data Protection and
         Information Commissioner.
       </p>
 
@@ -321,18 +319,19 @@ export default definePage({
       </p>
       <ul>
         <li>
-          <strong>Encryption in transit:</strong> HTTPS only, with HSTS; secure, HttpOnly session cookies; TLS to the email service; encrypted connections
-          to the database and the object storage <ToConfirm />.
+          <strong>Encryption in transit:</strong> HTTPS only, with HSTS; secure, HttpOnly session cookies; TLS to the email service; connections to the
+          database over the hosting provider’s private network, encrypted with WireGuard, and to the object storage over HTTPS.
         </li>
         <li>
           <strong>Encryption at rest:</strong> passwords stored as scrypt hashes and tokens as SHA-256 hashes; secrets such as two-step verification keys,
-          single sign-on client secrets, AI keys and integration credentials sealed with AES-256-GCM under a rotatable key; storage encryption of the
-          database and files by the hosting provider <ToConfirm />.
+          single sign-on client secrets, AI keys and integration credentials sealed with AES-256-GCM under a rotatable key; the database, its backups and
+          files encrypted at rest (AES-256) by the hosting provider.
         </li>
         <li>
           <strong>Access control:</strong> every request and live connection is checked on the server against the person’s role on the board and the
           workspace’s policies; workspaces can require two-step verification, enforce single sign-on, provision and deprovision through SCIM, and limit
-          session length and idle time; administrative access to the production systems is limited to the operator’s staff who need it <ToConfirm />.
+          session length and idle time; administrative access to the production systems is limited to the operator’s staff who need it,
+          on accounts that require two-step verification.
         </li>
         <li>
           <strong>Separation of customers:</strong> one shared database with every read and write checked against the requester’s access; content the server
@@ -344,7 +343,7 @@ export default definePage({
         </li>
         <li>
           <strong>Availability and recovery:</strong> automated database backups kept up to {L('backupRetentionDays')} days, health-checked rolling deploys,
-          restart on failure; restore tests <ToConfirm />.
+          restart on failure; a restore from backup tested at least once a quarter.
         </li>
         <li>
           <strong>Secure development:</strong> automated type checks, architecture checks and tests on every change, a container smoke test before deploys,

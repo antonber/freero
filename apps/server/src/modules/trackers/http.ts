@@ -20,7 +20,11 @@ const DEFAULT_TIMEOUT_MS = 20_000;
 const RETRY_BUDGET_MS = 8_000;
 const MAX_ATTEMPTS = 4;
 
-export type TrackerErrorKind = 'auth' | 'rate' | 'unavailable' | 'not_found' | 'refused' | 'invalid';
+/**
+ * `conflict`: the issue changed in the tracker after Freero read it (Azure DevOps refuses a write
+ * against an older revision); the sync reads it again and merges once more instead of overwriting.
+ */
+export type TrackerErrorKind = 'auth' | 'rate' | 'unavailable' | 'not_found' | 'refused' | 'invalid' | 'conflict';
 
 /** A tracker call failed. `message` is Freero's own words (safe to show and to store). */
 export class TrackerError extends Error {
@@ -84,6 +88,18 @@ export function checkTrackerUrl(raw: string, rules: HttpRules): URL {
   return url;
 }
 
+/** A multipart/form-data body of plain text fields (Asana takes an external attachment only so). */
+export class FormFields {
+  constructor(readonly fields: Record<string, string>) {}
+}
+
+function multipart(f: FormFields): { boundary: string; payload: Buffer } {
+  const boundary = `freero-${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+  const CRLF = "\r\n";
+  const parts = Object.entries(f.fields).map(([k, v]) => `--${boundary}${CRLF}content-disposition: form-data; name="${k.replace(/[^\w.-]/g, '')}"${CRLF}${CRLF}${v.replace(/\r?\n/g, ' ')}${CRLF}`);
+  return { boundary, payload: Buffer.from(`${parts.join('')}--${boundary}--${CRLF}`) };
+}
+
 function once(req: HttpRequest, rules: HttpRules): Promise<HttpResponse> {
   const url = checkTrackerUrl(req.url, rules);
   let payload: Buffer | null = null;
@@ -92,13 +108,19 @@ function once(req: HttpRequest, rules: HttpRules): Promise<HttpResponse> {
     'user-agent': 'Freero-Tracker-Sync',
     ...req.headers,
   };
-  if (req.body instanceof URLSearchParams) {
+  if (req.body instanceof FormFields) {
+    const m = multipart(req.body);
+    payload = m.payload;
+    headers['content-type'] = `multipart/form-data; boundary=${m.boundary}`;
+  } else if (req.body instanceof URLSearchParams) {
     payload = Buffer.from(req.body.toString());
     headers['content-type'] = 'application/x-www-form-urlencoded';
   } else if (req.body !== undefined) {
     payload = Buffer.from(JSON.stringify(req.body));
-    headers['content-type'] = 'application/json';
+    // A JSON body in another media type stays so (Azure DevOps: application/json-patch+json).
+    if (!/json/i.test(headers['content-type'] ?? '')) headers['content-type'] = 'application/json';
   }
+
   if (payload) headers['content-length'] = String(payload.length);
   const timeoutMs = req.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   return new Promise((resolve, reject) => {

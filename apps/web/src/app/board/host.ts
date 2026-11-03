@@ -207,6 +207,8 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
             preview: async (body) => (await api.trackerPreview(board.id, body)).issues,
             send: (body) => api.trackerSend(board.id, body),
             importIssues: (body) => api.trackerImport(board.id, body),
+            sprints: (connectionId, project) => api.trackerSprints(board.id, connectionId, project),
+            issueTypes: (connectionId, project) => api.trackerIssueTypes(board.id, connectionId, project),
             sync: async (linkId) => void (await api.trackerSync(board.id, linkId)),
             unlink: async (linkId) => void (await api.trackerUnlink(board.id, linkId)),
           },

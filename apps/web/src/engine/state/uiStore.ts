@@ -87,6 +87,8 @@ export interface UiState {
   cursorsHidden: boolean;
   /** Elements hidden for this viewer only (Editor.setViewHidden). Replaced, never mutated. */
   viewHidden: ReadonlySet<string>;
+  /** [additive, #117] The item this viewer focuses on (Editor.setFocus): everything else is faded and inert. */
+  focusId: string | null;
   /** Phone layout: the editor switched from "view and comment" to the full toolbar (ui/compact.ts). */
   phoneEditing: boolean;
 }
@@ -157,6 +159,7 @@ export function createUiStore(init: { role: Role }): UiStore {
     draftVersion: 0,
     cursorsHidden: false,
     viewHidden: new Set<string>(),
+    focusId: null,
     phoneEditing: false,
   }));
 

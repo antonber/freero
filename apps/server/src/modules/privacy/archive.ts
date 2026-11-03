@@ -22,6 +22,7 @@ import { commentsWrittenBy, exportBoardContent } from '../realtime/index';
 import { scimExportOf, scimRecordsOf } from '../scim/index';
 import { ssoExportOf, ssoRolesOf } from '../sso/index';
 import { templatesExportOf } from '../templates/index';
+import { trackersExportOf, trackersWorkspaceExportOf } from '../trackers/index';
 import { readUpload, uploadNamesIn, uploadsOwnedBy } from '../uploads/index';
 import { walkthroughsExportOf } from '../walkthroughs/index';
 import { exportMembershipsOf, exportWorkspaceDirectory, teamWorkspaceIdsFor } from '../workspaces/index';
@@ -94,6 +95,8 @@ notifications.json  your notifications and email settings
 walkthroughs.json   walkthroughs you recorded (camera path, captions; the recordings are in uploads/),
                     your comments on walkthroughs and which ones you watched
 decisions.json      decision snapshots you made (title, note, board)
+trackers.json       your own issue-tracker connections (tracker, name, address, account, field map;
+                    never tokens or secrets) and the issues you linked to board items
 listings.json       community listings you submitted to Apps & agents, with their review status
 problems/           problems you reported with "Report a problem": index.json (your note, the
                     diagnostics sent with it, its status) and the screenshots you attached
@@ -110,7 +113,8 @@ const README_WORKSPACE = (name: string, at: string) => `Freero export of the wor
 
 workspace.json  the workspace, its sharing policies, members (with email addresses), invitations,
                 projects, single sign-on settings (no secrets), provisioned directory data and
-                AI settings (no key) with AI usage per person and month
+                AI settings (no key) with AI usage per person and month, and the issue-tracker
+                connections (tracker, name, address, account, field map; never tokens or secrets)
 templates/      templates shared with the workspace
 boards/         every board in the workspace (trash included): board.json (readable JSON of every
                 item, comment and setting, and hidden frames' contents — never anyone's private
@@ -161,6 +165,7 @@ export async function buildUserArchive(userId: string, appOrigin: string): Promi
   a.addJson('personal-views.json', await personalViewsExportOf(userId));
   a.addJson('walkthroughs.json', await walkthroughsExportOf(userId));
   a.addJson('decisions.json', await decisionsExportOf(userId));
+  a.addJson('trackers.json', await trackersExportOf(userId));
   // Answers and questions in live activities (KAI-132), anonymous ones included: they are theirs.
   a.addJson('activities.json', await engageExportOf(userId));
   // "Report a problem": what they sent (note, diagnostics) and its screenshot.
@@ -188,6 +193,7 @@ export async function buildWorkspaceArchive(workspaceId: string, appOrigin: stri
     singleSignOn: await ssoExportOf(workspaceId),
     provisioning: await scimExportOf(workspaceId),
     ai: await aiWorkspaceExportOf(workspaceId),
+    trackers: await trackersWorkspaceExportOf(workspaceId),
   });
   for (const t of await templatesExportOf({ workspaceId })) a.addJson(`templates/${slug(t.name)}-${t.id}.json`, t);
   for (const b of await boardRecords(await boardIdsInWorkspace(workspaceId))) await addBoard(a, b, appOrigin, { editorsLayer: true, privateLayerOf: null });

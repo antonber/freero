@@ -1,7 +1,7 @@
 // Members of the workspace for its admins: search, role, two-step status, last activity, boards,
 // deactivate / reactivate. Owners change anyone; admins only members and guests (the server
 // decides; the controls follow the same rule).
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { ShieldAlert, ShieldCheck, UserCheck, UserX } from 'lucide-react';
 import type { AdminMember, WorkspaceRole, WorkspaceSummary } from '@freero/shared';
 import { Avatar, Button, Input, Modal, Select, Spinner, useToast } from '@ui';
@@ -26,6 +26,12 @@ export function AdminMembers({ workspace }: { workspace: WorkspaceSummary }) {
   const [confirm, setConfirm] = useState<AdminMember | null>(null);
   const [busy, setBusy] = useState(false);
   const owner = workspace.role === 'owner';
+  // An organisation's directory (#108): owners, admins and members; deactivating someone closes
+  // all of its workspaces to them; people are added by email (an existing account).
+  const org = workspace.kind === 'organisation';
+  const roleOptions = org ? ROLE_OPTIONS.filter((o) => o.value !== 'guest') : ROLE_OPTIONS;
+  const [email, setEmail] = useState('');
+  const [addRole, setAddRole] = useState<'admin' | 'member'>('member');
 
   const load = useCallback(() => {
     api.adminMembers(workspace.id).then(
@@ -67,17 +73,51 @@ export function AdminMembers({ workspace }: { workspace: WorkspaceSummary }) {
     }
   };
 
+  const add = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const { member } = await api.addOrganisationMember(workspace.id, email.trim(), addRole);
+      notify(`${member.name} is in ${workspace.name}`, 'success');
+      setEmail('');
+      load();
+    } catch (err) {
+      notify(errorText(err, 'Could not add them'), 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (!members) return <Spinner />;
   return (
     <section aria-labelledby="admin-members-title">
       <div className="fr-admin__head">
         <h1 id="admin-members-title" className="fr-admin__title">
-          Members
+          {org ? 'People' : 'Members'}
         </h1>
         <span className="fr-admin__muted">
-          {members.length} {members.length === 1 ? 'person' : 'people'} · invite people from the workspace’s Members page
+          {members.length} {members.length === 1 ? 'person' : 'people'} ·{' '}
+          {org ? 'its owners and admins, and everyone its single sign-on, provisioning or domain control brought in' : 'invite people from the workspace’s Members page'}
         </span>
       </div>
+      {org ? (
+        <form className="fr-admin-org__add" onSubmit={add}>
+          <Input aria-label="Email of someone with a Freero account" placeholder="name@company.com" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <Select<'admin' | 'member'>
+            aria-label="Their role in the organisation"
+            options={[
+              { value: 'member', label: 'Member' },
+              { value: 'admin', label: 'Admin', disabled: !owner },
+            ]}
+            value={addRole}
+            onChange={setAddRole}
+            width={130}
+          />
+          <Button type="submit" loading={busy} disabled={!email.trim()}>
+            Add
+          </Button>
+        </form>
+      ) : null}
       <Input aria-label="Search members" placeholder="Search by name or email" value={q} onChange={(e) => setQ(e.target.value)} className="fr-admin__search" />
       <div className="fr-admin-table-wrap">
         <table className="fr-admin-table">
@@ -87,7 +127,7 @@ export function AdminMembers({ workspace }: { workspace: WorkspaceSummary }) {
               <th scope="col">Role</th>
               <th scope="col">Two-step</th>
               <th scope="col">Last active</th>
-              <th scope="col">Boards</th>
+              {org ? null : <th scope="col">Boards</th>}
               <th scope="col">
                 <span className="fr-admin__sr">Actions</span>
               </th>
@@ -114,7 +154,7 @@ export function AdminMembers({ workspace }: { workspace: WorkspaceSummary }) {
                     <Select<WorkspaceRole>
                       aria-label={`Role of ${m.name}`}
                       size="sm"
-                      options={ROLE_OPTIONS.map((o) => ({ ...o, disabled: !owner && (o.value === 'owner' || o.value === 'admin') }))}
+                      options={roleOptions.map((o) => ({ ...o, disabled: !owner && (o.value === 'owner' || o.value === 'admin') }))}
                       value={m.role}
                       onChange={(r) => void setRole(m, r)}
                       width={110}
@@ -135,7 +175,7 @@ export function AdminMembers({ workspace }: { workspace: WorkspaceSummary }) {
                   )}
                 </td>
                 <td className="fr-admin__muted">{m.lastActiveAt ? relativeTime(m.lastActiveAt) : 'Signed out'}</td>
-                <td>{m.boards}</td>
+                {org ? null : <td>{m.boards}</td>}
                 <td className="fr-admin-table__actions">
                   {manageable(m) ? (
                     m.deactivated ? (
@@ -153,7 +193,7 @@ export function AdminMembers({ workspace }: { workspace: WorkspaceSummary }) {
             ))}
             {shown.length === 0 ? (
               <tr>
-                <td colSpan={6} className="fr-admin__muted">
+                <td colSpan={org ? 5 : 6} className="fr-admin__muted">
                   Nobody matches “{q}”.
                 </td>
               </tr>
@@ -177,8 +217,9 @@ export function AdminMembers({ workspace }: { workspace: WorkspaceSummary }) {
         }
       >
         <p className="fr-admin__modal-text">
-          They keep their role and the boards they own, but can’t open anything in {workspace.name} — boards that are open now close at
-          once. You can reactivate them any time.
+          {org
+            ? `They keep their roles and boards, but can’t open anything in any of ${workspace.name}’s workspaces — boards that are open now close at once. You can reactivate them any time.`
+            : `They keep their role and the boards they own, but can’t open anything in ${workspace.name} — boards that are open now close at once. You can reactivate them any time.`}
         </p>
       </Modal>
     </section>

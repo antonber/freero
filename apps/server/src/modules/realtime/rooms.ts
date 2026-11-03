@@ -65,6 +65,8 @@ import {
   type ObjectKind,
   pendingSuggestions,
   WITHDRAWN_BY,
+  NEW_BOARD_SETTINGS,
+  Y_SETTINGS,
   mayProtect,
 } from '@freero/shared';
 import { guardProtectedLocks } from './protectedLock';
@@ -1972,6 +1974,23 @@ export async function initBoardLayer(boardId: string, layer: string, state: Uint
 /** Stores the initial content of a brand-new board (e.g. a duplicate). */
 export async function initBoardDoc(boardId: string, state: Uint8Array): Promise<void> {
   await store.saveInitialState(boardId, state);
+}
+
+/**
+ * Stores what a brand-new board that is no copy starts with: today's default settings
+ * (NEW_BOARD_SETTINGS: line jumps on). Boards from before a default keep their own look.
+ */
+export async function initNewBoardDoc(boardId: string): Promise<void> {
+  const doc = new Y.Doc();
+  try {
+    doc.transact(() => {
+      const settings = doc.getMap<unknown>(Y_SETTINGS);
+      for (const [k, v] of Object.entries(NEW_BOARD_SETTINGS)) settings.set(k, v);
+    });
+    await store.saveInitialState(boardId, Y.encodeStateAsUpdate(doc));
+  } finally {
+    doc.destroy();
+  }
 }
 
 /**

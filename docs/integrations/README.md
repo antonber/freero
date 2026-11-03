@@ -13,6 +13,8 @@ server ([../mcp.md](../mcp.md)). Nothing here needs a marketplace listing or any
 | **Mattermost messages** | The same, as Markdown; never pings | format `mattermost` (its own format, not an alias of `slack`) |
 | **Live board embeds** | A board live in Notion, Confluence, a wiki, a blog or any web page (iframe); pasting a board link into oEmbed-aware tools embeds it; never shows more than the board's sharing | Share dialog → *Embed on other sites*, [embedding.md](embedding.md) |
 | **Slack link unfurls** | A board link posted in Slack shows a preview (title and picture only for public boards) | Operator: a Slack app from a manifest, [slack.md](slack.md) |
+| **Microsoft Teams app** | A board as a Teams tab and in meetings (side panel, shared to the stage); board links previewed in messages | Operator: `TEAMS_APP_ID` (+ an Azure Bot for previews), package uploaded in Teams, [teams.md](teams.md) |
+| **Microsoft 365 Copilot** | Copilot puts stickies, diagrams and task tables on boards through Freero's MCP server | Operator: an OAuth app + `COPILOT_*`, package uploaded in Microsoft 365, [teams.md](teams.md#microsoft-365-copilot) |
 | **Meeting notes import** | A summary or transcript (Granola-, Otter-, Fathom-, Meetily-style Markdown or text; WebVTT, SRT) becomes one frame: decisions, action items with owner and due date, points, who spoke | Board menu → *Import meeting notes…*, drop a `.vtt` / `.srt`, REST structure `kind: "meeting"`, MCP `import_meeting_notes`; [samples](meeting-notes/) |
 | **n8n** | Importable workflows: GitHub issue → card, board comment → Slack | [n8n.md](n8n.md) |
 | **Make** | The same two scenarios, step by step | [make.md](make.md) |

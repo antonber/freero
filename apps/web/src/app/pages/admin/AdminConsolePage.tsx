@@ -3,7 +3,7 @@
 // (retention and export), API & apps, webhooks (when the server offers them), issue trackers and the
 // audit log. Every action is checked again by the server; this page only hides what the caller's role
 // can't do.
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ChartColumn, Hourglass, KeyRound, Lock, Plug, ScrollText, Sparkles, Ticket, UserCog, Users, Webhook } from 'lucide-react';
 import type { WorkspaceSummary } from '@freero/shared';
@@ -14,6 +14,7 @@ import { AdminApi } from './AdminApi';
 import { AdminAudit } from './AdminAudit';
 import { AdminDataExport, AdminProvisioning, AdminSso } from './AdminIdentity';
 import { AdminMembers } from './AdminMembers';
+import { WorkspaceOrganisation } from './AdminOrganisation';
 import { AdminOverview } from './AdminOverview';
 import { AdminRetention, AdminSecurity } from './AdminSettings';
 import { AdminSiem, siemOffered } from './AdminSiem';
@@ -48,16 +49,14 @@ export function AdminConsolePage() {
   // And audit streaming only when it offers that.
   const [siem, setSiem] = useState(false);
 
-  useEffect(() => {
-    let live = true;
+  // Reloaded after it joins an organisation: its policies and settings may have tightened.
+  const reload = useCallback(() => {
     api
       .listWorkspaces()
-      .then(({ workspaces }) => live && setWorkspace(workspaces.find((w) => w.id === workspaceId) ?? null))
-      .catch(() => live && setWorkspace(null));
-    return () => {
-      live = false;
-    };
+      .then(({ workspaces }) => setWorkspace(workspaces.find((w) => w.id === workspaceId) ?? null))
+      .catch(() => setWorkspace(null));
   }, [workspaceId]);
+  useEffect(reload, [reload]);
 
   const manages = workspace?.kind === 'team' && (workspace.role === 'owner' || workspace.role === 'admin');
   useEffect(() => {
@@ -116,9 +115,14 @@ export function AdminConsolePage() {
             ))}
           </nav>
           <main className="fr-admin__main">
-            {tab === 'overview' ? <AdminOverview workspace={workspace} onOpen={(t) => setParams({ tab: t })} /> : null}
+            {tab === 'overview' ? (
+              <>
+                <AdminOverview workspace={workspace} onOpen={(t) => setParams({ tab: t })} />
+                <WorkspaceOrganisation key={workspace.organisation?.id ?? 'none'} workspace={workspace} onChanged={reload} />
+              </>
+            ) : null}
+            {tab === 'security' ? <AdminSecurity key={workspace.organisation?.id ?? 'none'} workspace={workspace} onChanged={setWorkspace} /> : null}
             {tab === 'members' ? <AdminMembers workspace={workspace} /> : null}
-            {tab === 'security' ? <AdminSecurity workspace={workspace} onChanged={setWorkspace} /> : null}
             {tab === 'sso' ? <AdminSso workspace={workspace} /> : null}
             {tab === 'provisioning' ? <AdminProvisioning workspace={workspace} /> : null}
             {tab === 'ai' ? <AdminAi workspace={workspace} /> : null}
