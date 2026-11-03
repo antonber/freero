@@ -34,6 +34,11 @@ export interface FieldOption {
   color: string;
   /** Only on the column field: the card status a card in this column takes (the column's `status`). */
   status?: CardStatus | null;
+  /**
+   * [additive] Kept but not offered (a tracker's closed sprint, #119): cards that hold it show it,
+   * nobody picks it. Absent on every other option.
+   */
+  readOnly?: true;
 }
 
 export interface FieldDef {
@@ -206,7 +211,7 @@ const isStatus = (s: unknown): s is CardStatus => s === 'todo' || s === 'doing' 
 
 /** The columns as a select field's options (ids kept, title as plain text, colour, status); the "No value" column is no option. */
 const columnOptions = (k: SchemaSource): FieldOption[] =>
-  (k.columns ?? []).filter((c) => c.id !== NO_GROUP).map((c: KanbanColumn) => ({ id: c.id, label: richTextToPlain(c.title ?? '').trim(), color: c.color, status: c.status ?? null }));
+  (k.columns ?? []).filter((c) => c.id !== NO_GROUP).map((c: KanbanColumn) => ({ id: c.id, label: richTextToPlain(c.title ?? '').trim(), color: c.color, status: c.status ?? null, ...(c.readOnly ? { readOnly: true as const } : {}) }));
 
 /** A kanban's column field: its columns as options (ids kept, title as plain text, colour, status). */
 export function columnField(k: SchemaSource, name?: string): FieldDef {
@@ -227,9 +232,15 @@ function cleanOptions(raw: unknown): FieldOption[] {
     const { id, label, color } = o as Record<string, unknown>;
     if (typeof id !== 'string' || !id || id.length > 64 || seen.has(id)) continue;
     seen.add(id);
-    const { status } = o as Record<string, unknown>;
+    const { status, readOnly } = o as Record<string, unknown>;
     // `status`: kept on the options of a field that was a board's group field (Stage's "sets status").
-    out.push({ id, label: typeof label === 'string' ? label.slice(0, FIELD_LIMITS.label) : '', color: typeof color === 'string' && HEX.test(color) ? color : '#8A89A3', ...(isStatus(status) ? { status } : {}) });
+    out.push({
+      id,
+      label: typeof label === 'string' ? label.slice(0, FIELD_LIMITS.label) : '',
+      color: typeof color === 'string' && HEX.test(color) ? color : '#8A89A3',
+      ...(isStatus(status) ? { status } : {}),
+      ...(readOnly === true ? { readOnly: true as const } : {}),
+    });
     if (out.length >= FIELD_LIMITS.options) break;
   }
   return out;
@@ -276,7 +287,7 @@ export function storedFields(schema: readonly FieldDef[], groupId: string = COLU
   return schema.map((f) =>
     f.id === groupId
       ? { id: f.id, name: f.name, type: f.type }
-      : { ...f, ...(f.options ? { options: f.options.map((o) => ({ id: o.id, label: o.label, color: o.color, ...(o.status ? { status: o.status } : {}) })) } : {}) },
+      : { ...f, ...(f.options ? { options: f.options.map((o) => ({ id: o.id, label: o.label, color: o.color, ...(o.status ? { status: o.status } : {}), ...(o.readOnly ? { readOnly: true as const } : {}) })) } : {}) },
   );
 }
 
