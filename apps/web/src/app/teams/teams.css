@@ -1,0 +1,133 @@
+/* The Teams app's own pages (app/teams): the tab's configuration page and the board chooser. */
+.fr-teams-config,
+.fr-teams-choose {
+  min-height: 100%;
+  box-sizing: border-box;
+  padding: 24px;
+  background: var(--fr-surface);
+  color: var(--fr-ink);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.fr-teams-config__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.fr-teams-config__head h1 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.3;
+}
+
+.fr-teams-config__lead {
+  margin: 0 0 8px;
+  color: var(--fr-ink-2);
+  line-height: 1.5;
+}
+
+.fr-teams-config > .fr-btn {
+  align-self: flex-start;
+}
+
+.fr-teams-config__or {
+  color: var(--fr-ink-3);
+  font-size: 13px;
+}
+
+.fr-teams-config__status {
+  min-height: 24px;
+}
+
+.fr-teams-ok,
+.fr-teams-warn {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.fr-teams-ok {
+  color: var(--fr-success);
+}
+
+.fr-teams-warn {
+  color: var(--fr-ink-2);
+}
+
+.fr-teams-choose__filters {
+  display: flex;
+  gap: 8px;
+}
+
+.fr-teams-choose__filters > :last-child {
+  flex: 1;
+}
+
+.fr-teams-choose__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius);
+  max-height: 380px;
+  overflow: auto;
+}
+
+.fr-teams-choose__list li + li {
+  border-top: 1px solid var(--fr-line);
+}
+
+.fr-teams-choose__empty {
+  padding: 16px;
+  color: var(--fr-ink-3);
+}
+
+.fr-teams-choose__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fr-teams-choose__item:hover {
+  background: var(--fr-surface-2);
+}
+
+.fr-teams-choose__item.is-picked {
+  background: var(--fr-primary-soft);
+}
+
+.fr-teams-choose__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.fr-teams-choose__meta {
+  color: var(--fr-ink-3);
+  font-size: 13px;
+}
+
+.fr-teams-choose__foot {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fr-teams-choose__foot .fr-boarderror__actions {
+  justify-content: flex-end;
+}

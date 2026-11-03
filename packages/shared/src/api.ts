@@ -1244,6 +1244,33 @@ export interface PublicEmbedMember {
 export type EmbedConnectMessage =
   | { freeroEmbedConnect: 'token'; boardId: string; token: string; expiresAt: number }
   | { freeroEmbedConnect: 'no-access'; boardId: string };
+
+// ---- Microsoft Teams and Microsoft 365 Copilot (#112, #113, #114; docs/integrations/teams.md) ----
+// The Teams app's pages run the public embed inside Teams: /teams/config (the tab's configuration:
+// pick a board), /teams/b/:id (tab, meeting side panel and stage), both framed by Teams only. Teams
+// opens Freero's own pages in its sign-in window (authentication.authenticate): /embed/connect/:id
+// with ?teams=1 (sign in for one board) and /teams/choose (sign in and pick one of your boards);
+// they hand their result back through the Teams JavaScript library (authentication.notifySuccess),
+// which talks only to Teams' own origins, as one of these JSON strings.
+// GET /api/integrations/microsoft -> MicrosoftIntegrationsInfo (what this instance offers)
+export type TeamsSignInResult =
+  | { kind: 'token'; boardId: string; token: string; expiresAt: number }
+  | { kind: 'no-access'; boardId: string };
+export interface TeamsChooseResult {
+  boardId: string;
+  /** The board's title, for the tab's name (the person who picked it can see it). */
+  title: string;
+  /** A token for the board's embeds, so the tab opens signed in for the person who added it. */
+  token: string | null;
+  expiresAt: number | null;
+}
+export interface MicrosoftIntegrationsInfo {
+  /** The Teams app (TEAMS_APP_ID): its package, and whether links get previews (TEAMS_BOT_ID). */
+  teams: { packageUrl: string; linkPreviews: boolean } | null;
+  /** The Copilot agent (COPILOT_APP_ID + COPILOT_OAUTH_REFERENCE_ID): its package. */
+  copilot: { packageUrl: string } | null;
+}
+
 export interface OEmbedResponse {
   version: '1.0';
   type: 'rich';

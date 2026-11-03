@@ -82,10 +82,11 @@ const WITH_ID: Record<string, string> = {
 };
 
 /**
- * Where analytics never runs: the live board view inside an AI assistant (MCP Apps), the
- * operators' console and the OAuth consent screen.
+ * Where analytics never runs: the live board view inside an AI assistant (MCP Apps), boards
+ * embedded on other sites and in Microsoft Teams (and their sign-in pages), the operators' console
+ * and the OAuth consent screen.
  */
-const NEVER = /^\/(embed|operator|oauth)(\/|$)/;
+const NEVER = /^\/(embed|teams|operator|oauth)(\/|$)/;
 
 /**
  * How an app address is reported, or null where analytics never runs. Unknown routes are one

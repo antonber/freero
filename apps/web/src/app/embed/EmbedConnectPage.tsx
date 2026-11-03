@@ -8,9 +8,15 @@
 // (/login?next=/embed/signed-in), which tells this window through the app's session channel.
 // The server keeps window.opener for this path only (Cross-Origin-Opener-Policy unsafe-none) and
 // never lets it be framed.
+//
+// With ?teams=1 it is the Microsoft Teams tab's sign-in (app/teams): Teams opened it in its own
+// sign-in window (authentication.authenticate), and the token goes back through the Teams
+// JavaScript library (authentication.notifySuccess) — which talks to Teams' own origins only —
+// never by postMessage to an opener. Teams' desktop and mobile apps run that window apart from any
+// browser, so there (?client= other than web) signing in happens in this window itself.
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
-import { EMBED_NO_ACCESS, type BoardSummary, type EmbedConnectMessage, type Role } from '@freero/shared';
+import { EMBED_NO_ACCESS, type BoardSummary, type EmbedConnectMessage, type Role, type TeamsSignInResult } from '@freero/shared';
 import { Button, Logo, Spinner } from '@ui';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
@@ -20,13 +26,26 @@ import '../board/BoardPage.css';
 
 const ROLE_TEXT: Record<Role, string> = { owner: 'edit (you own it)', editor: 'edit', commenter: 'view and comment', viewer: 'view' };
 
-const tell = (msg: EmbedConnectMessage) => window.opener?.postMessage(msg, window.location.origin);
+const tellOpener = (msg: EmbedConnectMessage) => window.opener?.postMessage(msg, window.location.origin);
+
+/** In Teams' sign-in window: whether Teams answered (null while asking). */
+function useTeamsWindow(enabled: boolean): boolean | null {
+  const [ok, setOk] = useState<boolean | null>(enabled ? null : false);
+  useEffect(() => {
+    if (!enabled) return;
+    void import('../teams/teamsSdk').then(({ connectTeams }) => connectTeams()).then((t) => setOk(t !== null));
+  }, [enabled]);
+  return ok;
+}
 
 export default function EmbedConnectPage() {
   const { id = '' } = useParams();
   const params = new URLSearchParams(window.location.search);
   const readonly = params.get('readonly') === '1';
-  const site = params.get('site')?.slice(0, 120) || 'this page';
+  const teams = params.get('teams') === '1';
+  const signInHere = teams && params.get('client') !== 'web';
+  const site = teams ? 'Microsoft Teams' : params.get('site')?.slice(0, 120) || 'this page';
+  const teamsReady = useTeamsWindow(teams);
   const { user, loading, refresh } = useAuth();
   const [board, setBoard] = useState<BoardSummary | null>(null);
   const [noAccess, setNoAccess] = useState(false);
@@ -34,7 +53,17 @@ export default function EmbedConnectPage() {
   const [busy, setBusy] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const granted = useCallback(() => setAttempt((n) => n + 1), []);
-  const opened = typeof window.opener === 'object' && window.opener !== null;
+  const opened = teams ? teamsReady === true : typeof window.opener === 'object' && window.opener !== null;
+  const tell = useCallback(
+    (msg: EmbedConnectMessage) => {
+      if (!teams) return tellOpener(msg);
+      // Teams: only the token goes back; without access the person stays here to ask for it.
+      if (msg.freeroEmbedConnect !== 'token') return;
+      const result: TeamsSignInResult = { kind: 'token', boardId: msg.boardId, token: msg.token, expiresAt: msg.expiresAt };
+      void import('../teams/teamsSdk').then(({ finishTeamsSignIn }) => finishTeamsSignIn(JSON.stringify(result)));
+    },
+    [teams],
+  );
 
   // Signed in in another tab (password or provider): pick the session up when this window gets focus back.
   useEffect(() => {
@@ -61,7 +90,7 @@ export default function EmbedConnectPage() {
     return () => {
       cancelled = true;
     };
-  }, [id, userId, attempt]);
+  }, [id, userId, attempt, tell]);
 
   const allow = useCallback(async () => {
     setBusy(true);
@@ -69,15 +98,16 @@ export default function EmbedConnectPage() {
     try {
       const { token, expiresAt } = await api.publicEmbedToken(id, readonly);
       tell({ freeroEmbedConnect: 'token', boardId: id, token, expiresAt });
-      window.close();
+      if (!teams) window.close(); // Teams closes its own window
     } catch (e) {
       if (e instanceof ApiError && e.code === EMBED_NO_ACCESS) setNoAccess(true);
       else setError(e instanceof ApiError ? e.message : 'Could not reach Freero.');
     } finally {
       setBusy(false);
     }
-  }, [id, readonly]);
+  }, [id, readonly, tell, teams]);
 
+  if (teams && teamsReady === null) return <Card title="Signing in"><Spinner size={22} label="Connecting to Teams" /></Card>;
   if (!opened)
     return (
       <Card title="Open this from the embedded board">
@@ -88,12 +118,12 @@ export default function EmbedConnectPage() {
   if (!user)
     return (
       <Card title="Sign in to Freero">
-        <p>Sign in to see this board on {site}. A new tab opens; come back here when you’re signed in.</p>
+        <p>Sign in to see this board on {site}.{signInHere ? '' : ' A new tab opens; come back here when you’re signed in.'}</p>
         <div className="fr-boarderror__actions">
-          <Button variant="primary" onClick={() => window.open(loginPath('/embed/signed-in'), '_blank')}>
+          <Button variant="primary" onClick={() => signInFromWindow('login', signInHere)}>
             Sign in
           </Button>
-          <Button onClick={() => window.open(loginPath('/embed/signed-in', 'signup'), '_blank')}>Create an account</Button>
+          <Button onClick={() => signInFromWindow('signup', signInHere)}>Create an account</Button>
         </div>
       </Card>
     );
@@ -109,7 +139,7 @@ export default function EmbedConnectPage() {
   return (
     <Card title={`Show “${board.title || 'Untitled board'}” on ${site}?`}>
       <p>
-        You’ll see it there as {user.name} and can {ROLE_TEXT[role]}.{role !== 'viewer' ? ' Changes start only after you click Edit on the board there.' : ''} Signing out of
+        You’ll see it there as {user.name} and can {ROLE_TEXT[role]}.{role !== 'viewer' && !teams ? ' Changes start only after you click Edit on the board there.' : ''} Signing out of
         Freero ends it.
       </p>
       <div className="fr-boarderror__actions">
@@ -120,6 +150,16 @@ export default function EmbedConnectPage() {
       </div>
     </Card>
   );
+}
+
+/**
+ * Signing in from a sign-in window: in a new tab, which wakes this window when it's done (it keeps
+ * its opener), or — `here`, in Teams' apps, which run the window apart from any browser — in this
+ * window itself, coming back to this page afterwards.
+ */
+export function signInFromWindow(page: 'login' | 'signup', here: boolean): void {
+  if (here) window.location.assign(loginPath(window.location.pathname + window.location.search, page));
+  else window.open(loginPath('/embed/signed-in', page), '_blank');
 }
 
 function Card({ title, children }: { title: string; children: ReactNode }) {

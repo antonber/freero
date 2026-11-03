@@ -259,6 +259,31 @@ const AGENTS: Integration[] = [
       description: 'Freero is a remote MCP server with OAuth sign-in: any MCP client can find, read and add to your boards with only the permissions you grant.',
     },
   },
+  {
+    id: 'microsoft-365-copilot',
+    name: 'Microsoft 365 Copilot',
+    category: 'agents',
+    oneLiner: 'Ask Copilot for stickies, a flowchart or a task table and get it on a Freero board, with the link.',
+    description: [
+      'A Copilot agent whose one action is Freero’s MCP server: in Copilot Chat, ask for a brainstorm, a process diagram, a kanban or a table of tasks and it lands on the board you name (or a new one), live, with a link back. It reads boards you can open, too.',
+      'Copilot signs in with your Freero account on Freero’s consent screen, like any agent: reading and proposing changes by default, changing boards and commenting only if you allow them. It asks you before each change, and never deletes or shares.',
+    ],
+    status: 'operator',
+    connect: {
+      steps: [
+        'The server’s operator registers Copilot as an OAuth app in Freero and in the Teams Developer Portal, sets COPILOT_APP_ID and COPILOT_OAUTH_REFERENCE_ID, and uploads the agent package from the operator console.',
+        'In Copilot Chat, pick Freero under Agents, sign in to Freero and choose what it may do.',
+        'Ask it to add to a board: give the board’s link or its name.',
+      ],
+      docs: { file: 'docs/integrations/teams.md', anchor: 'microsoft-365-copilot', label: 'Microsoft 365 Copilot setup' },
+    },
+    operatorSetup: 'Off by default: needs COPILOT_APP_ID and COPILOT_OAUTH_REFERENCE_ID on the server, and a Microsoft 365 Copilot licence for each person.',
+    keywords: ['copilot', 'microsoft 365', 'm365', 'declarative agent', 'agent', 'mcp', 'office'],
+    seo: {
+      title: 'Microsoft 365 Copilot agent for Freero whiteboards',
+      description: 'Ask Microsoft 365 Copilot for stickies, flowcharts or task tables and get them on a Freero board, with your permissions and a link back.',
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------------------------
@@ -495,6 +520,31 @@ const CHAT: Integration[] = [
     seo: {
       title: 'Slack link previews for whiteboards',
       description: "Paste a public Freero board link in Slack and see its title and thumbnail; private boards show a generic card that reveals nothing.",
+    },
+  },
+  {
+    id: 'microsoft-teams-app',
+    name: 'Microsoft Teams app',
+    category: 'chat',
+    oneLiner: 'A live board as a Teams tab and in meetings, shared to the stage; link previews in messages.',
+    description: [
+      'Add a board to a channel, a chat or a meeting as a tab. It opens live in the tab and the meeting side panel, and organisers can share it to the meeting stage so everyone works on the same board.',
+      'Each person sees it as Freero shares it with them: people it is shared with sign in once to edit or comment; others see it read-only only when anyone with its link may view it. With the operator’s bot, Freero links pasted in messages show a preview, with a title only for public boards.',
+    ],
+    status: 'operator',
+    connect: {
+      steps: [
+        'The server’s operator sets TEAMS_APP_ID (and TEAMS_BOT_ID for link previews) and downloads the app package from the operator console.',
+        'A Teams admin uploads the package in the Teams admin center (or you upload it as a custom app).',
+        'In a channel, chat or meeting, add a tab, pick Freero and choose a board. Its owner must allow embedding.',
+      ],
+      docs: { file: 'docs/integrations/teams.md', anchor: 'the-teams-app-tab-and-meetings', label: 'Teams app setup' },
+    },
+    operatorSetup: 'Off by default: needs TEAMS_APP_ID on the server (TEAMS_BOT_ID and an Azure Bot for link previews).',
+    keywords: ['teams', 'microsoft', 'tab', 'meeting', 'share to stage', 'side panel', 'link preview', 'unfurl', 'bot'],
+    seo: {
+      title: 'Microsoft Teams app: Freero boards in tabs and meetings',
+      description: 'Put a live Freero board in a Teams channel, chat or meeting, share it to the meeting stage, and preview board links in messages.',
     },
   },
 ];
