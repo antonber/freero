@@ -1470,7 +1470,9 @@ members with roles owner / admin / member / guest (separate from board roles).
   an account: see "Guests"), `liveEmbeds` (links may open as live frames; enforced by every
   viewer's client, the frames being third-party pages the CSP already confines), `boardEmbeds`
   (its boards may be embedded on other sites, #2; enforced by boards' `boardEmbedding`, which the
-  embed page's framing header, its sockets and oEmbed all ask). All other
+  embed page's framing header, its sockets and oEmbed all ask), `linkPassword` / `linkMaxDays`
+  (#39: what a board's link needs before it is turned on or changed; see "Co-owners, board
+  sharing settings and moving boards"). All other
   policies are enforced by the endpoint that does the work;
   `BoardSummary.permissions` only tells the UI.
 - Team templates (KAI-96): owners/admins of the workspace a template is shared with may unshare
@@ -1577,7 +1579,7 @@ approval lets the requester in at once.
 
 ### Share-link password and expiry (`boards/linkProtection.ts`, KAI-145)
 
-- The owner may give a board's link a password (scrypt, auth's `hashPassword`) and an expiry. The
+- The owner (or a co-owner, #122) may give a board's link a password (scrypt, auth's `hashPassword`) and an expiry. The
   expiry is applied where a board is read (`repo.toBoard`: `linkAccess` reads 'none' from then on,
   for everyone, like an operator's block); a job (`boards:link-expiry`, every 10 s, one instance)
   re-checks the live sockets of links that just expired, so link-only visitors are disconnected.
@@ -1590,6 +1592,65 @@ approval lets the requester in at once.
   the link would let that person in after the password; `POST /boards/:id/link-unlock` (and the
   guest join / `/guest/boards/:id/unlock`) check it, rate limited per IP and per board + person,
   refusals audited (`board.link_password_refused`), changes audited (`board.link_protection_changed`).
+- A link-only visitor disconnected because the link just got a password (socket closed 4403) is
+  offered the password form in place: the board page (accounts and guests) re-asks for the board
+  through `Host.onConnectionEnded` and shows `LinkPassword` when the answer is
+  `link_password_required` (#39).
+
+### Co-owners, board sharing settings and moving boards (#122, #123, #39, #124)
+
+- **Co-owners** (`board_members.co_owner`, written only by members' repo; `role` stays 'editor'):
+  an editor membership that also manages the board's sharing. `members/roles.ts` `resolveCoOwner`
+  decides whether it counts (not while the workspace blocks the person, not for someone outside a
+  workspace with `externalSharing: 'none'` — exactly when `resolveRole` ignores the membership);
+  `managesSharing(role, coOwner)` (owner or co-owner) is the ONE check for members' roles,
+  removing people, revoking any invite, deciding access requests, the link and its password /
+  expiry, embedding (#2) and the board's sharing settings. Ownership itself — trash, delete,
+  transfer, moving to another workspace — stays `role === 'owner'` (`requireAccess(…, 'owner')`),
+  which a co-owner never is, and the owner holds no membership row, so nobody can change or remove
+  the owner's access. On the wire a co-owner reads `role: 'editor'` plus `coOwner: true`
+  (`BoardSummary`, `BoardMember`, the public API's Board / Doc / Member, MCP `search_boards`), and
+  the socket's role message says 'editor': a client — or a server instance, mid-deploy — that
+  doesn't know co-owners treats them as the editors they also are, never as owners. Setting it:
+  `PATCH /boards/:id/members/:userId { role: 'coowner' }` (any other role ends it), audited as
+  `board.member_role_changed` with the roles as PATCH takes them; member events carry
+  `coOwner` / `previousCoOwner`. Inside the board a co-owner is an editor (hidden frames, layers,
+  facilitation): only sharing differs, so realtime needs nothing new.
+- **A board's own sharing settings** (#123; `boards.editors_can_share`, `boards.viewers_can_export`,
+  boards' repo; `PATCH /boards/:id { sharing }`, owners and co-owners, `board.sharing_settings_changed`).
+  "Editors can share" off: members' `requireMayInvite` refuses an editor's invite / resend with 403
+  `board_sharing_restricted` (the share dialog says why). "Viewers and commenters can copy and
+  export" off: boards' `requireDownload` — the one check behind exports, duplicates, templates,
+  backups, file downloads, the outline, the public API, MCP and AI — refuses viewers, commenters and
+  guests, like the workspace's downloads policy does (audited `board.download_refused`, `by:
+  'board'`); `BoardSummary.permissions.canExport` / `canCopy` tell the UI, and the engine puts
+  nothing on the clipboard when `Host.board.canCopy` is false. Both are ANDed with the workspace's
+  policies: a board can be stricter than its workspace, never looser. Nothing prevents a screenshot;
+  the dialog says so.
+- **Link policy** (#39; `workspaces.link_password`, `workspaces.link_max_days`): boards'
+  `checkLinkPolicy` checks the link as the whole PATCH leaves it (link access, password, expiry
+  validated together BEFORE anything is stored, protection written first), and `shareByLink` (an
+  app's "Share with team") the same way. Turning a link on (or back on) or changing its role needs
+  everything the policy asks; a link that stays as it is may be made safer step by step but never
+  weaker. Links that were on before the policy keep working; `GET /workspaces/:id/admin/link-compliance`
+  (boards' `linksOutOfPolicy`) lists them in the admin console. The policy change itself is
+  `workspace.policies_changed`.
+- **Moving a board to another workspace** (#124; `POST /boards/:id/move`, boards' `moveToWorkspace`):
+  its owner, a full member of the target (or it is their personal workspace), and the SOURCE's
+  downloads policy must let them take the content out (`via: 'move'`). One row update keeps the
+  id, content, comments, files, versions, memberships and pending invites; access is resolved from
+  the target from the next request on (old team access ends; the target's two-step requirement,
+  downloads, external sharing and guest policies apply). What the target forbids is turned off in
+  the same transaction — a link above its `linkSharing` is lowered, a link the owner couldn't share
+  there or without the password / expiry it requires is turned off, embedding off where
+  `boardEmbeds` is off — and returned as `adjusted`. Audited as `board.moved_workspace` in BOTH
+  workspaces, a `board.moved` event in each (`toWorkspace` / `fromWorkspace`), live sockets
+  re-resolved on every instance. Other modules keep their per-workspace state right through boards'
+  `onBoardMovedWorkspace` (after commit): trackers pause issues linked through the old team's
+  connections (`pauseLinksOutside`; `syncLink` refuses a team connection of another workspace than
+  the board's anyway). Team templates are copies with their own workspace and are not touched.
+  Duplicating takes `{ workspaceId, projectId }` (where the person may create boards, createBoard's
+  checks); the dashboard's Duplicate and "Move to another workspace" dialogs pick both.
 
 ### Activity (`modules/activity`, `realtime/changes.ts`, KAI-44)
 
