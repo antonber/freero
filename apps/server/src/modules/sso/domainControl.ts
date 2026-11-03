@@ -110,7 +110,7 @@ export async function startCaptures(workspaceId: string, actorId: string, body: 
     sendMailLater({
       to: a.email,
       ...renderMail({
-        subject: `Your Freero account is joining ${ws?.name ?? 'your organization'}’s workspace`,
+        subject: `Your Freero account is joining ${ws?.name ?? 'your organization'}${ws?.kind === 'organisation' ? ' on Freero' : '’s workspace'}`,
         title: `${ws?.name ?? 'Your organization'} manages ${domainOf(a.email)} accounts`,
         paragraphs: [
           `${ws?.name ?? 'Your organization'} verified that it owns ${domainOf(a.email)}, the domain of your Freero account ${a.email}. On ${date}, your account becomes a member of ${joins(ws)}.`,
@@ -198,13 +198,13 @@ export async function captureVerifiedAddress(user: { id: string; email: string }
   sendMailLater({
     to: user.email,
     ...renderMail({
-      subject: `You’re now in ${ws.name}’s Freero workspace`,
+      subject: ws.kind === 'organisation' ? `You’re now in ${ws.name} on Freero` : `You’re now in ${ws.name}’s Freero workspace`,
       title: `${ws.name} manages ${domainOf(user.email)} accounts`,
       paragraphs: [
         `${ws.name} verified that it owns ${domainOf(user.email)}, so your Freero account ${user.email} is now a member of ${joins(ws)}.`,
         'Your own boards stay yours: nothing moves into the workspace unless you move it.',
       ],
-      action: { label: 'Open the workspace', url: appUrl(null, `/app?ws=${encodeURIComponent(ws.id)}`) },
+      action: ws.kind === 'organisation' ? { label: 'Open Freero', url: appUrl(null, '/app') } : { label: 'Open the workspace', url: appUrl(null, `/app?ws=${encodeURIComponent(ws.id)}`) },
     }),
   });
 }
