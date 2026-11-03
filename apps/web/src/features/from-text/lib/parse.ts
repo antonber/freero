@@ -1,8 +1,8 @@
 // What people paste into "Insert from text", read as a structure (pure, unit-tested). The layout
 // itself is @freero/shared's `layoutStructure`, the one the server runs for insert-structure.
-import { LayoutError, looksLikeMermaid, parseIndentedList, parseOrgRows, type OutlineNodeInput, type StructureInput } from '@freero/shared';
+import { LayoutError, looksLikeMermaid, looksLikePlantUml, parseIndentedList, parseOrgRows, type OutlineNodeInput, type StructureInput } from '@freero/shared';
 
-export type TextKind = 'mindmap' | 'tree' | 'orgchart' | 'mermaid' | 'kanban' | 'stickies' | 'table';
+export type TextKind = 'mindmap' | 'tree' | 'orgchart' | 'mermaid' | 'plantuml' | 'kanban' | 'stickies' | 'table';
 
 export const KINDS: Array<{ value: TextKind; label: string; noun: string; hint: string; placeholder: string }> = [
   {
@@ -18,6 +18,13 @@ export const KINDS: Array<{ value: TextKind; label: string; noun: string; hint: 
     label: 'Mermaid',
     hint: 'A flowchart, a sequence, class, ER or state diagram, or a mind map in Mermaid syntax. Edit the source later to update the diagram.',
     placeholder: 'flowchart TD\n  A[Request] --> B{Approved?}\n  B -- yes --> C([Ship it])\n  B -- no --> D[Revise]\n  D --> A',
+  },
+  {
+    value: 'plantuml',
+    noun: 'Diagram',
+    label: 'PlantUML',
+    hint: 'A sequence, class, activity, state, use case or component diagram between @startuml and @enduml. Edit the source later to update the diagram.',
+    placeholder: '@startuml\nactor Customer\nparticipant Shop\nCustomer -> Shop : Place order\nShop --> Customer : Confirmation\n@enduml',
   },
   {
     value: 'tree',
@@ -94,6 +101,7 @@ export function parseRows(text: string): string[][] | null {
 export function detectKind(text: string): TextKind | null {
   if (!text.trim()) return null;
   if (isMermaid(text)) return 'mermaid';
+  if (looksLikePlantUml(text)) return 'plantuml';
   const ls = lines(text);
   const t = ls.map((l) => l.trim());
   if (t.length >= 2 && t.every((l) => l.startsWith('|'))) return 'table';
@@ -114,6 +122,8 @@ export function toStructure(kind: TextKind, text: string): StructureInput {
       return { kind: 'outline', text, as: 'tree' };
     case 'mermaid':
       return { kind: 'mermaid', source: text };
+    case 'plantuml':
+      return { kind: 'plantuml', source: text };
     case 'orgchart':
       return { kind: 'orgchart', people: parseOrgRows(text) };
     case 'kanban': {
@@ -137,4 +147,4 @@ export function toStructure(kind: TextKind, text: string): StructureInput {
 }
 
 /** Kinds whose inserted diagram keeps its source, so it can be edited and laid out again. */
-export const EDITABLE: ReadonlySet<TextKind> = new Set(['mermaid', 'tree', 'orgchart', 'mindmap']);
+export const EDITABLE: ReadonlySet<TextKind> = new Set(['mermaid', 'plantuml', 'tree', 'orgchart', 'mindmap']);

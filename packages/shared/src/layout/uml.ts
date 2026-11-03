@@ -50,12 +50,12 @@ const directionOf = (d: string): Direction => {
  * padding (features/shape ENTITY_FONT / ENTITY_LINE / ENTITY_PAD), the dividers between lines.
  * Boxes are sized here to hold every line unwrapped.
  */
-const TABLE_FONT = 14;
+export const TABLE_FONT = 14;
 const TABLE_LINE = TABLE_FONT * 1.7;
 const TABLE_PAD = 10;
 const STROKE = 2;
 
-function tableSize(lines: Array<{ text: string; bold?: boolean }>, extra = 0): { w: number; h: number } {
+export function tableSize(lines: Array<{ text: string; bold?: boolean }>, extra = 0): { w: number; h: number } {
   const widest = Math.max(...lines.map((l) => measureText(l.text || ' ', { fontSize: TABLE_FONT, maxWidth: 100_000, bold: l.bold }).w));
   return {
     w: Math.round(Math.min(560, Math.max(160, widest + 2 * TABLE_PAD + STROKE + 16))),
@@ -254,7 +254,7 @@ export function parseClassDiagram(stmts: Statement[]): UmlDiagram {
   return { kind: 'class', direction, nodes, edges, groups: groups.filter((g) => g.nodes.length) };
 }
 
-function noteNode(id: string, text: string): DiagramNode {
+export function noteNode(id: string, text: string): DiagramNode {
   const m = measureText(text || ' ', { fontSize: 14, maxWidth: 240, lineHeight: 1.4 });
   return {
     id,
