@@ -10,7 +10,8 @@ import { HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import { log, logError } from '../../platform/log';
 import { appUrl, renderMail, sendMail } from '../../platform/mail';
-import { getUser } from '../auth/index';
+import { formatWhen } from '../../platform/time';
+import { getUser, timeZonesOf } from '../auth/index';
 import { deletePrivateFile, openPrivateFile, savePrivateFile } from '../uploads/index';
 import { getWorkspaceInfo, workspaceRole } from '../workspaces/index';
 import { buildUserArchive, buildWorkspaceArchive } from './archive';
@@ -115,7 +116,7 @@ async function build(req: Request | null, e: repo.ExportRecord): Promise<void> {
       subject: ws ? `Your export of ${ws.name} is ready` : 'Your Freero data export is ready',
       title: `Your export of ${what} is ready`,
       paragraphs: [
-        `The ZIP file you asked for is ready to download until ${new Date(expiresAt).toUTCString()}. After that it is deleted.`,
+        `The ZIP file you asked for is ready to download until ${formatWhen(expiresAt, (await timeZonesOf([user.id])).get(user.id))}. After that it is deleted.`,
         'Only you can download it, signed in to Freero as yourself.',
       ],
       // The page lists it with its Download button (signing in first if needed).

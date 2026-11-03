@@ -59,10 +59,14 @@ export async function sendMail(mail: Mail): Promise<void> {
 const pending = new Set<Promise<void>>();
 const outboxListeners = new Set<(mail: Mail) => void>();
 
-/** Fire-and-forget send: failures are logged, never thrown (e.g. answers that must not depend on it). */
-export function sendMailLater(mail: Mail): void {
-  const p: Promise<void> = sendMail(mail)
-    .catch((e) => logError(`mail: could not send "${mail.subject}"`, e))
+/**
+ * Fire-and-forget send: failures are logged, never thrown (e.g. answers that must not depend on it).
+ * The mail may still be in the making (a promise: worded after a lookup, like the reader's time zone).
+ */
+export function sendMailLater(mail: Mail | Promise<Mail>): void {
+  const p: Promise<void> = Promise.resolve(mail)
+    .then((m) => sendMail(m).catch((e) => logError(`mail: could not send "${m.subject}"`, e)))
+    .catch((e) => logError('mail: could not write a mail', e))
     .finally(() => pending.delete(p));
   pending.add(p);
 }
