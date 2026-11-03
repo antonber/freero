@@ -1,6 +1,6 @@
 // Protected locks (BaseElement.lockProtected), enforced here next to the facilitation guards. An
-// ordinary lock is a courtesy every editor can lift; a protected one only the board owner and the
-// person running the facilitation session may (`mayOverrideProtection`). Anyone else's socket
+// ordinary lock is a courtesy every editor can lift; a protected one only the board owner may
+// (`mayProtect`; not a facilitator: any editor can start a session). Anyone else's socket
 // change is undone in the same transaction that applies it — compensation, not dropping, as in
 // facilitation.ts: nobody else ever receives it, the sender is sent the correction and converges.
 //

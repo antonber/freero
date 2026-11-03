@@ -3,10 +3,10 @@
 import { Fragment, useLayoutEffect, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 import { Copy, Ellipsis, Group, Layers, Lock, LockOpen, Share, ShieldCheck, Trash2, Ungroup } from 'lucide-react';
-import { FACILITATION_COLLECTION, isProtectedLock } from '@freero/shared';
+import { isProtectedLock } from '@freero/shared';
 import { IconButton, Menu, type MenuItem } from '@ui';
 import { ScopeContext, useCore } from '../context';
-import { useCamera, useCollection, useRole, useSelectedElements } from '../hooks';
+import { useCamera, useRole, useSelectedElements } from '../hooks';
 import { screenToWorld, worldToScreen } from '../camera/camera';
 import { boundsOf, elementAABB } from '../geometry/geometry';
 import type { Camera, Editor, Rect } from '../api';
@@ -74,8 +74,6 @@ export function FormatToolbar() {
   const els = useSelectedElements();
   const cam = useCamera();
   const role = useRole();
-  // Re-render when a facilitation session starts or ends (who may lift a protected lock).
-  useCollection(FACILITATION_COLLECTION);
   const transforming = useStore(core.ui, (s) => s.transforming);
   const contextMenu = useStore(core.ui, (s) => s.contextMenu);
   const viewport = useStore(core.ui, (s) => s.viewport);
@@ -180,8 +178,8 @@ export function FormatToolbar() {
   placed.current = { x: Math.round(left), y: Math.round(top), w: size.w, h: size.h };
   const locked = els.every((e) => e.locked);
   const someLocked = !locked && els.some((e) => e.locked);
-  // A protected lock (BaseElement.lockProtected) only the owner or the facilitator lifts.
-  const held = locked && els.some(isProtectedLock) && !editor.mayOverrideProtection();
+  // A protected lock (BaseElement.lockProtected) only the owner lifts.
+  const held = locked && els.some(isProtectedLock) && !editor.mayProtect();
   const ids = els.map((e) => e.id);
   const canRun = (id: string) => {
     const reg = core.registry.commands.get(id);

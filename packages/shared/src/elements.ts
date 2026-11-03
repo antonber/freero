@@ -61,10 +61,9 @@ export interface BaseElement {
   z: number;
   locked?: boolean;
   /**
-   * [additive] With `locked`: a protected lock. Only the board owner and the person running the
-   * board's facilitation session (`mayOverrideProtection`) may change, unlock, unprotect or delete
-   * the item; the server undoes anyone else's change. A client that doesn't know the field sees an
-   * ordinary lock.
+   * [additive] With `locked`: a protected lock. Only the board owner (`mayProtect`) may change,
+   * unlock, unprotect or delete the item; the server undoes anyone else's change. A client that
+   * doesn't know the field sees an ordinary lock.
    */
   lockProtected?: boolean;
   /** Id of the frame that contains this element, if any. */

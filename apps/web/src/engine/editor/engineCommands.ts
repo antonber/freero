@@ -27,7 +27,7 @@ import type { EngineCore } from '../runtime/core';
 import { nextZoomStep } from '../camera/camera';
 import { BACKGROUNDS, GRID_SIZES, GRID_STYLES } from './boardSettings';
 
-const PROTECTED_NOTE = 'Only the board owner or the facilitator can unlock a protected item.';
+const PROTECTED_NOTE = 'Only the board owner can unlock a protected item.';
 
 /** Commands whose shortcut is display-only: the keyboard path is the native copy/cut/paste event. */
 export const NATIVE_CLIPBOARD_COMMANDS = new Set(['engine.copy', 'engine.cut', 'engine.paste']);
@@ -144,16 +144,15 @@ export function createEngineCommands(core: EngineCore): CommandDefinition[] {
       run: (e) => {
         const els = selected(e);
         const lock = !els.every((el) => el.locked);
-        // A protected lock is lifted only by the owner or the facilitator (the server enforces it).
-        const held = !lock && !e.mayOverrideProtection() ? els.filter(isProtectedLock) : [];
+        // A protected lock is lifted only by the owner (the server enforces it).
+        const held = !lock && !e.mayProtect() ? els.filter(isProtectedLock) : [];
         if (held.length) e.host.notify(held.length === els.length ? PROTECTED_NOTE : `${PROTECTED_NOTE} The others are unlocked.`, 'info');
         const open = els.filter((el) => !held.includes(el));
         if (open.length) e.updateMany(open.map((el) => ({ id: el.id, patch: lock ? { locked: true } : { locked: false, lockProtected: false } })));
       },
     },
     {
-      // Like a lock, but only the board owner (or whoever runs the facilitation session) can lift
-      // it: a template's frame, a facilitator's agenda. Mod+Alt+Shift+L — Mod+Shift+P, used for this
+      // Like a lock, but only the board owner can lift it: a template's frame, a workshop agenda. Mod+Alt+Shift+L — Mod+Shift+P, used for this
       // elsewhere, opens a private window in Firefox and can't be taken there.
       id: 'engine.protectLock',
       icon: ShieldCheck,
@@ -161,8 +160,8 @@ export function createEngineCommands(core: EngineCore): CommandDefinition[] {
       shortcut: 'mod+alt+shift+l',
       menus: ['context'],
       detail: (e) => (selected(e).length && selected(e).every(isProtectedLock) ? 'on' : undefined),
-      when: (e) => hasSel(e) && e.mayOverrideProtection(),
-      disabledReason: 'Only the board owner or the facilitator can do this',
+      when: (e) => hasSel(e) && e.mayProtect(),
+      disabledReason: 'Only the board owner can do this',
       run: (e) => {
         const els = selected(e);
         const protect = !els.every(isProtectedLock);

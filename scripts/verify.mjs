@@ -5591,7 +5591,7 @@ async function facilitationChecks() {
       for (const c of [pl, ol]) c.destroy();
     });
 
-    await check('protected lock: an editor’s raw socket can’t unlock, move, unprotect or delete the owner’s protected sticky, nor protect its own (nobody receives it, the editor converges); the facilitator can while facilitating, not after', async () => {
+    await check('protected lock: an editor’s raw socket can’t unlock, move, unprotect or delete the owner’s protected sticky, nor protect its own (nobody receives it, the editor converges); a facilitator can’t either (any editor can start a session); the owner can', async () => {
       fac(f).delete('session');
       await waitFor(() => p.role === 'editor' && !p.limits && f.role === 'editor', 5000, 'no session');
       const note = (patch) => ({ id: 'prot', type: 'sticky', x: 0, y: 0, w: 200, h: 200, color: 'navy', text: 'Agenda', locked: true, lockProtected: true, ...patch });
@@ -5609,16 +5609,14 @@ async function facilitationChecks() {
       assert(!els(o).get('mine').lockProtected && !els(p).get('mine')?.lockProtected, 'an editor protected an item');
       assert(seenAtOwner.every((s) => !s.includes('999') && s !== 'null'), `the owner received a forbidden change: ${seenAtOwner.join(' ')}`);
       fac(f).set('session', session({}));
-      await waitFor(() => fac(o).get('session')?.by === F.id, 5000, 'the facilitation session');
+      await waitFor(() => fac(o).get('session')?.by === F.id && els(f).get('prot')?.lockProtected === true, 5000, 'the facilitation session');
       els(f).set('prot', note({ x: 40, locked: false, lockProtected: false }));
-      await waitFor(() => els(o).get('prot')?.locked === false && els(o).get('prot')?.x === 40, 5000, 'the facilitator to unlock it');
-      els(o).set('prot', note());
-      fac(f).delete('session');
-      await waitFor(() => !fac(o).has('session') && els(f).get('prot')?.lockProtected === true, 5000, 'the session to end');
-      els(f).set('prot', note({ locked: false, lockProtected: false }));
       await settled(f, [o]);
-      await waitFor(() => els(f).get('prot')?.lockProtected === true, 5000, 'the former facilitator to converge');
-      assert(els(o).get('prot')?.locked === true, 'the former facilitator unlocked it');
+      await waitFor(() => els(f).get('prot')?.x === 0 && els(f).get('prot')?.lockProtected === true, 5000, 'the facilitator to converge');
+      assert(seenAtOwner.every((s) => !s.includes('"x":40')), 'the owner received the facilitator’s unlock');
+      fac(f).delete('session');
+      els(o).set('prot', note({ x: 40, locked: false, lockProtected: false }));
+      await waitFor(() => els(p).get('prot')?.locked === false && els(p).get('prot')?.x === 40, 5000, 'the owner to unlock it for everyone');
     });
 
     await check('the session ends when the facilitator has been gone for the grace period, lifting every limit', async () => {

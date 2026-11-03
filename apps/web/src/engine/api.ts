@@ -1294,11 +1294,11 @@ export interface Editor {
   getRole(): Role;
   can(minRole: Role): boolean;
   /**
-   * [additive] May this user change protected items (`BaseElement.lockProtected`), protect or
-   * unprotect? The board owner, and the person running the facilitation session. The server
-   * enforces it (realtime/protectedLock.ts); the engine mirrors it in the lock commands and chrome.
+   * [additive] May this user protect items (`BaseElement.lockProtected`), unprotect them or change
+   * a protected one? The board owner only (`@freero/shared` `mayProtect`). The server enforces it
+   * (realtime/protectedLock.ts); the engine mirrors it in the lock commands and chrome.
    */
-  mayOverrideProtection(): boolean;
+  mayProtect(): boolean;
   /**
    * [additive] What a facilitator limits for this user right now (from the server's role message;
    * null: nothing). The server enforces it; the engine mirrors it: a locked board is commenting

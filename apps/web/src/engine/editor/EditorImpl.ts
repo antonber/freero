@@ -5,9 +5,7 @@ import {
   acceptClosure,
   buildOutline,
   COMMENTER_WRITABLE,
-  FACILITATION_COLLECTION,
-  FACILITATION_KEY,
-  mayOverrideProtection,
+  mayProtect,
   pendingSuggestions,
   rejectClosure,
   suggestedElement,
@@ -17,7 +15,6 @@ import {
   type BoardOutline,
   type BoardSettings,
   type ElementType,
-  type FacilitationSession,
   type Role,
   type SessionLimits,
   type SuggestionDecision,
@@ -222,9 +219,8 @@ export class EditorImpl implements Editor {
     return this.core.store.serverRole ?? this.core.hostRef.current.board.role;
   }
 
-  mayOverrideProtection(): boolean {
-    const session = this.collection<FacilitationSession>(FACILITATION_COLLECTION).get(FACILITATION_KEY);
-    return mayOverrideProtection(this.getRole(), this.host.user.id, session ?? null);
+  mayProtect(): boolean {
+    return mayProtect(this.getRole());
   }
 
   can(minRole: Role): boolean {

@@ -208,12 +208,12 @@ export interface FacilitationSession {
 export const isProtectedLock = (el: { locked?: boolean; lockProtected?: boolean } | null | undefined): boolean => !!el?.locked && !!el.lockProtected;
 
 /**
- * May this person change protected items, protect or unprotect? The board owner always; anyone
- * else only while they run the board's facilitation session. `access` is their own role on the
- * board (not the one a facilitation lock leaves them).
+ * May someone with this role on the board protect items, unprotect them, or change a protected
+ * one? The board owner only, never a facilitator (any editor can start a facilitation session).
+ * The one place to widen it (co-owners, #122).
  */
-export function mayOverrideProtection(access: string, userId: string, session: Pick<FacilitationSession, 'by'> | null | undefined): boolean {
-  return access === 'owner' || (!!session && session.by === userId && (access === 'editor' || access === 'owner'));
+export function mayProtect(role: string): boolean {
+  return role === 'owner';
 }
 
 export interface BoardSettings {

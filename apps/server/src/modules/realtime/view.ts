@@ -25,7 +25,7 @@ import {
   type Role,
   type SuggestionRecord,
 } from '@freero/shared';
-import { FACILITATION_COLLECTION, isProtectedLock, mayOverrideProtection } from '@freero/shared';
+import { FACILITATION_COLLECTION, isProtectedLock, mayProtect } from '@freero/shared';
 import { commenterMayChangeComments } from './commentRules';
 import { effectiveAccess, readFacilitation } from './facilitation';
 import { contentOf, writeElementContent } from './elementContent';
@@ -251,9 +251,9 @@ export function applyChange(main: Y.Doc, layers: ReadonlyMap<string, Y.Doc>, cha
   }
   for (const id of change.remove ?? []) if (!where.has(id)) throw new BoardChangeError(`No element ${id} on this board`);
   const removed = withDependents(change.remove ?? [], view.elements.map((e) => e.el));
-  // Protected locks (protectedLock.ts): only the owner and the facilitator change, delete, protect
-  // or unprotect those items — removing a frame removes its children, so a frame holding one too.
-  if (!mayOverrideProtection(actor.role, actor.userId, readFacilitation(main))) {
+  // Protected locks (protectedLock.ts): only the owner changes, deletes, protects or unprotects
+  // those items. Removing a frame removes its children, so a frame holding one too.
+  if (!mayProtect(actor.role)) {
     const held = [...removed, ...(change.update ?? []).map((u) => u.id)].find((id) => isProtectedLock(where.get(id)?.el));
     if (held) throw new BoardChangeError(`Item ${held} has a protected lock: only the board owner can change it`);
     const protects = (v: object) => 'lockProtected' in v;

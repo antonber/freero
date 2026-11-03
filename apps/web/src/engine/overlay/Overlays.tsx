@@ -10,7 +10,7 @@ import type { Camera } from '../api';
 import { ALL_HANDLES, CORNER_HANDLES, type Handle } from '../geometry/transform';
 import { Lock, RotateCw, ShieldCheck } from 'lucide-react';
 
-/** The lock badge: a shield on a protected lock (only the owner or the facilitator lifts it). */
+/** The lock badge: a shield on a protected lock (only the owner lifts it). */
 function LockBadge({ el }: { el: BoardElement }) {
   const guarded = isProtectedLock(el);
   return (
