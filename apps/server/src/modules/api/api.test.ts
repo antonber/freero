@@ -8,7 +8,9 @@ import { apiNotFound, createApp, errorHandler } from '../../platform/http';
 import { initStorage } from '../../platform/storage';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { createPersonalToken } from '../apiauth/index';
+import type { ApiScope } from '@freero/shared';
 import { createUser } from '../auth/index';
+import { applyDirectoryMembership, createTeamWorkspace } from '../workspaces/index';
 import { attachProblemScreenshot, createProblem } from '../problems/index';
 import SPEC from '../../../../../docs/api/openapi.json';
 import apiRoutes, { ENDPOINTS, mountPath } from './routes';
@@ -207,4 +209,23 @@ it('the operators’ problem endpoints exist only for an operator’s problems:t
   // The operator's other tokens can't triage.
   const boardsOnly = (await createPersonalToken(operator.id, 'password', { name: 'boards', scopes: ['boards:read'], expiresInDays: 1 })).secret;
   expect((await call('GET', '/operator/problems', '/operator/problems', undefined, boardsOnly)).status).toBe(403);
+});
+
+it('a workspace’s audit log over the API pages in order by its cursor, and only for its owners and admins with an audit:read token', async () => {
+  const admin = await createUser({ name: 'Audit admin', email: 'audit-admin@api.test.freero.app', password: 'password-123' }, { emailVerified: true });
+  const member = await createUser({ name: 'Audit member', email: 'audit-member@api.test.freero.app', password: 'password-123' }, { emailVerified: true });
+  const ws = await createTeamWorkspace(admin.id, 'Audited');
+  await applyDirectoryMembership(ws.id, member.id, 'member', { overwrite: false });
+  const token = async (userId: string, scopes: ApiScope[]) => (await createPersonalToken(userId, 'password', { name: scopes.join(' '), scopes, expiresInDays: 1 })).secret;
+  const reader = await token(admin.id, ['audit:read']);
+  const A = `/workspaces/${ws.id}/audit`;
+  await call('GET', A, '/workspaces/{workspaceId}/audit', undefined, reader); // itself recorded (api.call): two events now
+  const first = await call('GET', `${A}?limit=1`, '/workspaces/{workspaceId}/audit', undefined, reader);
+  expect(first.json.more).toBe(true);
+  const next = await call('GET', `${A}?after=${first.json.cursor}&limit=500`, '/workspaces/{workspaceId}/audit', undefined, reader);
+  expect(next.json.events[0].seq).toBe(first.json.events[0].seq + 1);
+  expect(next.json.events[0].prevHash).toBe(first.json.events[0].hash);
+  // A member with the scope, and an admin without it, get nothing.
+  expect((await call('GET', A, '/workspaces/{workspaceId}/audit', undefined, await token(member.id, ['audit:read']))).status).toBe(403);
+  expect((await call('GET', A, '/workspaces/{workspaceId}/audit', undefined, await token(admin.id, ['boards:read']))).status).toBe(403);
 });
