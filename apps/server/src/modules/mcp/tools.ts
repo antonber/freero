@@ -671,15 +671,24 @@ export const TOOLS: McpTool[] = [
     name: 'configure_view',
     title: 'Configure a kanban’s view',
     description:
-      'Changes how a kanban shows its cards, for everyone: the field its columns are (groupBy: a single select, person or checkbox field — the cards move to their columns), swimlanes (subGroupBy, null for none), which fields cards show and what colours them, card density, a filter (cards it leaves out fold away below the board, still counted), a sort within each column (sort: [] puts every card back in the order people had them), per-column WIP limits, card limits and collapsing, and the view lock (locked: only whoever locked it and the board’s owners change the view then). Returns the kanban’s fields, columns and view. Needs permission to change boards.',
+      'Changes how a kanban shows its cards, for everyone. A kanban has tabs (views in the outline): the Board, where the cards stand, and tables of the same cards. On the Board tab (the default): the field its columns are (groupBy: a single select, person or checkbox field — the cards move to their columns), swimlanes (subGroupBy, null for none), which fields cards show and what colours them, card density, a filter (cards it leaves out fold away below the board, still counted), a sort within each column (sort: [] puts every card back in the order people had them), per-column WIP limits, card limits and collapsing, and the view lock (locked: only whoever locked it and the board’s owners change the view then). On a table tab (view: its name or id; addView makes one): show is its columns after the title, filter which cards are rows, sort their order, locked — the cards on the board don’t move. Any tab: name renames it, active: true makes it the tab everyone starts on, remove: true deletes a table tab. Returns the kanban’s fields, columns, view and tabs (views, with their ids). Needs permission to change boards.',
     scope: 'boards:write',
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     input: {
       boardId,
       kanbanId,
+      view: z.string().min(1).max(100).optional().describe('The tab to change, by name or id (default: the Board tab).'),
+      addView: z
+        .object({ name: z.string().min(1).max(60).describe('The new tab’s name (unique on the kanban).'), layout: z.enum(['table']).optional().describe('table (the default): the cards as rows.') })
+        .strict()
+        .optional()
+        .describe('Adds a tab; the other settings of this call apply to it.'),
+      name: z.string().min(1).max(60).optional().describe('Renames the tab.'),
+      active: z.literal(true).optional().describe('true: everyone starts on this tab.'),
+      remove: z.literal(true).optional().describe('true: deletes this table tab (the Board tab stays).'),
       groupBy: z.string().min(1).max(100).optional().describe('The field the columns are, by name (e.g. "Stage", "Priority", "Owner").'),
       subGroupBy: z.string().min(1).max(100).nullable().optional().describe('Swimlanes by this field (name); null: none.'),
-      show: z.array(z.string().max(100)).max(40).optional().describe('Fields cards show, in order (names: the kanban’s and Status, Due date, Tags, Estimate, Assignee …).'),
+      show: z.array(z.string().max(100)).max(40).optional().describe('Fields cards show, in order (names: the kanban’s and Status, Due date, Tags, Estimate, Assignee …); on a table tab, its columns after the title.'),
       color: z.string().max(100).optional().describe('What colours cards: own, column, status, or a select field’s name.'),
       density: z.enum(['compact', 'comfortable']).optional(),
       filter: filter.nullable().optional().describe('Which cards the board shows (null: all).'),
@@ -702,7 +711,8 @@ export const TOOLS: McpTool[] = [
     async run(call, a) {
       const { boardId: b, kanbanId: k, ...settings } = a;
       const { kanban } = await configureView(call, b, k, settings);
-      return untrustedJson(kanban, { summary: `Kanban ${k}: view saved for everyone.` });
+      const tab = settings.addView ? kanban.views.find((v) => v.name === settings.addView!.name) : undefined;
+      return untrustedJson(kanban, { summary: tab ? `Kanban ${k}: tab “${tab.name}” [${tab.id}] added for everyone.` : `Kanban ${k}: view saved for everyone.` });
     },
   }),
 
@@ -710,7 +720,7 @@ export const TOOLS: McpTool[] = [
     name: 'query_cards',
     title: 'Query a kanban’s cards',
     description:
-      'Reads the cards of a kanban as rows — id, title, column, swimlane row and their field values by name — filtered and sorted by the same rules the board uses, a page at a time (limit up to 500, then nextCursor). The way to read a big kanban without the whole outline. useView: true applies the kanban’s saved filter and sort first (the cards its board shows, in its order). Rows carry filtered: true for cards the saved filter leaves out.',
+      'Reads the cards of a kanban as rows — id, title, column, swimlane row and their field values by name — filtered and sorted by the same rules the board uses, a page at a time (limit up to 500, then nextCursor). The way to read a big kanban without the whole outline. useView: true applies the kanban’s saved filter and sort first (the cards its board shows, in its order); view: a tab’s name or id applies that tab’s filter and sort instead (a table tab’s rows, in its order). Rows carry filtered: true for cards the Board’s saved filter leaves out.',
     scope: 'boards:read',
     annotations: READ,
     input: {
@@ -720,6 +730,7 @@ export const TOOLS: McpTool[] = [
       sort: sortRules.optional().describe('Order of the rows (default: the board’s, column by column, top to bottom).'),
       fields: z.array(z.string().max(100)).max(60).optional().describe('Only these fields in each row (names); default all.'),
       useView: z.boolean().optional(),
+      view: z.string().min(1).max(100).optional().describe('A tab (name or id) whose saved filter and sort apply first.'),
       limit: z.number().int().min(1).max(500).optional().describe('Rows per page (default 100).'),
       cursor: z.string().max(20).optional().describe('nextCursor of the previous page.'),
     },

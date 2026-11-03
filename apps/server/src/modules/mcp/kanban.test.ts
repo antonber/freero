@@ -157,6 +157,37 @@ it('a saved filter set by configure_view folds the cards it leaves out away belo
   expect(shown.cards.map((r) => r.title)).toEqual(['C', 'A']);
 });
 
+it('an agent adds a table tab sorted by Points and filtered to P0: no card on the board moves, the outline lists the tabs, query_cards with that view reads its rows in its order, and the Board tab can’t be deleted', async () => {
+  const { boardId, kanbanId, ids } = await sprint(['A', 'B', 'C']);
+  const [a, b, c] = ids;
+  await call('update_items', {
+    boardId,
+    items: [
+      { id: a, fields: { Priority: 'P0', Points: 2 } },
+      { id: b, fields: { Priority: 'P1', Points: 5 } },
+      { id: c, fields: { Priority: 'P0', Points: 8 } },
+    ],
+  });
+  const before = [...(await elements(boardId)).values()].filter((el) => el.type === 'card').map((el) => [el.id, el.x, el.y]);
+  const out = (await call('configure_view', { boardId, kanbanId, addView: { name: 'Hot list' }, filter: { rules: [{ field: 'Priority', op: 'is', value: 'P0' }] }, sort: [{ field: 'Points', dir: 'desc' }], show: ['Points', 'Priority'] }))
+    .untrusted_board_content as { views: Array<{ id: string; name: string; layout: string; active?: boolean; show?: string[] }> };
+  const tab = out.views.find((v) => v.name === 'Hot list')!;
+  expect(tab).toMatchObject({ layout: 'table', show: ['Points', 'Priority'] });
+  expect(out.views.find((v) => v.active)?.layout).toBe('board');
+  expect([...(await elements(boardId)).values()].filter((el) => el.type === 'card').map((el) => [el.id, el.x, el.y])).toEqual(before);
+
+  await call('configure_view', { boardId, kanbanId, view: 'hot list', active: true });
+  const md = textOf(await client.callTool({ name: 'get_board_outline', arguments: { boardId } }));
+  expect(md).toContain('views: Board, Hot list* (table)');
+  const rows = (await call('query_cards', { boardId, kanbanId, view: tab.id })).untrusted_board_content as { cards: Array<{ title: string }> };
+  expect(rows.cards.map((r) => r.title)).toEqual(['C', 'A']);
+  // What moves the real cards belongs to the Board tab.
+  expect(await refused('configure_view', { boardId, kanbanId, view: 'Hot list', groupBy: 'Priority' })).toContain('Board tab');
+  expect(await refused('configure_view', { boardId, kanbanId, view: 'Board', remove: true })).toContain('can’t be deleted');
+  await call('configure_view', { boardId, kanbanId, view: 'Hot list', remove: true });
+  expect(textOf(await client.callTool({ name: 'get_board_outline', arguments: { boardId } }))).not.toContain('Hot list');
+});
+
 it('define_fields deleting the Doing column hands its cards to To do with To do’s status; the column field itself and the field the board is grouped by can’t be deleted', async () => {
   const { boardId, kanbanId, ids } = await sprint(['Fix login']);
   const [card] = ids;
