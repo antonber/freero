@@ -1790,14 +1790,35 @@
             "required": true,
             "schema": {
               "type": "object",
-              "required": [
-                "query"
-              ],
               "properties": {
                 "query": {
                   "type": "string",
                   "maxLength": 2000,
-                  "description": "JQL (Jira), a Linear search, or a GitHub search (repo:owner/name is:open label:bug)"
+                  "description": "JQL (Jira), a Linear search, a GitHub search (repo:owner/name is:open label:bug) or WIQL (Azure DevOps). Give query or scope."
+                },
+                "scope": {
+                  "type": "object",
+                  "description": "Instead of a query (#119, #43): a project's sprint (Linear cycle, Azure DevOps iteration) and / or an epic's issues. Into a kanban, a sprint import gives it a Sprint field with the project's sprints (closed ones read-only).",
+                  "required": [
+                    "project"
+                  ],
+                  "properties": {
+                    "project": {
+                      "type": "string",
+                      "maxLength": 200,
+                      "description": "Jira project key, Linear team key or Azure DevOps project"
+                    },
+                    "sprint": {
+                      "type": "string",
+                      "maxLength": 64,
+                      "description": "\"current\" for the active sprint, or a sprint id"
+                    },
+                    "epic": {
+                      "type": "string",
+                      "maxLength": 100,
+                      "description": "The epic's / parent issue's key"
+                    }
+                  }
                 },
                 "limit": {
                   "type": "integer",
@@ -1914,9 +1935,15 @@
                   "type": "string",
                   "enum": [
                     "one",
-                    "each"
+                    "each",
+                    "clusters"
                   ],
-                  "description": "one (default): one issue for all the items; each: one issue per item"
+                  "description": "one (default): one issue for all the items; each: one issue per item; clusters: a new epic (parent) with one issue under it per cluster of the items (#43; not GitHub)"
+                },
+                "parent": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "description": "An existing epic / parent issue's key the new issues go under (not GitHub)"
                 }
               }
             }

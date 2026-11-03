@@ -21,6 +21,7 @@ import type { Request } from 'express';
 import {
   baseOf,
   syncedBase,
+  trackerAgreed,
   canonical,
   customField,
   fieldsIn,
@@ -327,6 +328,7 @@ async function syncLinkOnce(linkId: string, first: boolean): Promise<SyncOutcome
 
     let issue = await provider.getIssue(pc, link.externalId);
     if (!issue) throw new TrackerError(`${link.externalKey} no longer exists in ${providerName(conn)} (or this connection can’t see it).`, 'not_found', 404);
+    const merged = issue;
 
     // Items deleted from the board leave the link (and the issue's links back); the issue stays.
     if (read.missing.length) await repo.removeSources(link.id, read.missing);
@@ -462,7 +464,9 @@ async function syncLinkOnce(linkId: string, first: boolean): Promise<SyncOutcome
 
     // Fields this sync didn't pull are agreed as it read them: a change made on the board while it
     // ran (a bar dragged right after an import) is still sent by the next sync, never swallowed.
-    const base: SyncBase = syncedBase(board, boardAfter, pulled, finalIssue.values, link.base);
+    // …and the tracker's fields this sync didn't write are agreed as it merged them: a change made
+    // in the tracker between Freero's write and its read-back is pulled by the next sync.
+    const base: SyncBase = syncedBase(board, boardAfter, pulled, trackerAgreed(merged.values, finalIssue.values, [...pushed, ...pulled]), link.base);
     await repo.markSynced(link.id, base, present);
     await noteOutcome(conn, null);
 
@@ -643,15 +647,16 @@ async function sendContext(userId: string, boardId: string, body: Record<string,
   const parent =
     mode === 'clusters'
       ? {
-          title: clusterHeading(view, read.items) ?? 'Untitled',
+          // The frame's title or the heading above them, else what the first cluster is called.
+          title: (clusterHeading(view, read.items, { frame: true }) ?? clusterHeading(view, groups[0], { frame: false }) ?? read.sources.find((x) => x.id === groups[0][0].id)?.title) || 'Untitled',
           description: [
             `From ${groups.length} cluster${groups.length === 1 ? '' : 's'} on a Freero board:`,
             '',
-            ...groups.map((g) => `- ${(clusterHeading(view, g) ?? read.sources.find((s) => s.id === g[0].id)?.title) || 'Untitled'} ([open](${itemUrl(origin, boardId, g[0].id)}))`),
+            ...groups.map((g) => `- ${(clusterHeading(view, g, { frame: false }) ?? read.sources.find((s) => s.id === g[0].id)?.title) || 'Untitled'} ([open](${itemUrl(origin, boardId, g[0].id)}))`),
           ].join('\n'),
         }
       : null;
-  return { board, conn, view, read, groups, parent, parentKey };
+  return { board, conn, view, read, groups, parent, parentKey, clusters: mode === 'clusters' };
 }
 
 /** Items close together, as the board outline groups them (each a cluster; reading order kept). */
@@ -660,9 +665,9 @@ function clustersOf(items: BoardElement[]): BoardElement[][] {
   return groups.map((g) => [...g].sort((a, b) => a - b).map((i) => items[i])).sort((a, b) => items.indexOf(a[0]) - items.indexOf(b[0]));
 }
 
-function groupValues(provider: TrackerProvider, view: BoardView, read: Awaited<ReturnType<typeof readItems>>, group: BoardElement[], origin: string, boardId: string) {
+function groupValues(provider: TrackerProvider, view: BoardView, read: Awaited<ReturnType<typeof readItems>>, group: BoardElement[], origin: string, boardId: string, clusters = false) {
   const sources = group.map((el) => read.sources.find((s) => s.id === el.id)!);
-  const heading = group.length > 1 ? clusterHeading(view, group) : null;
+  const heading = group.length > 1 ? clusterHeading(view, group, { frame: !clusters }) : null;
   return {
     sources,
     values: boardValues(provider, sources, {
@@ -674,10 +679,11 @@ function groupValues(provider: TrackerProvider, view: BoardView, read: Awaited<R
 
 /** Exactly what Send would create, nothing written anywhere. */
 export async function previewSend(userId: string, boardId: string, body: Record<string, unknown>, origin: string): Promise<TrackerIssuePreview[]> {
-  const { conn, view, read, groups, parent } = await sendContext(userId, boardId, body, origin);
+  const ctx = await sendContext(userId, boardId, body, origin);
+  const { conn, view, read, groups, parent } = ctx;
   const provider = providerOf(conn.provider);
   const out = groups.map((group) => {
-    const { sources, values } = groupValues(provider, view, read, group, origin, boardId);
+    const { sources, values } = groupValues(provider, view, read, group, origin, boardId, ctx.clusters);
     const unmapped = unmappedOf(provider, sources);
     for (const el of group) {
       const est = (el as { estimate?: unknown }).estimate;
@@ -735,7 +741,7 @@ export async function sendToTracker(userId: string, boardId: string, body: Recor
   }
   for (const group of failure ? [] : groups) {
     try {
-      const { values } = groupValues(provider, view, read, group, origin, boardId);
+      const { values } = groupValues(provider, view, read, group, origin, boardId, ctx.clusters);
       const { issue, notes } = await provider.createIssue(pc, {
         project,
         issueType,

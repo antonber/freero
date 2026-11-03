@@ -100,10 +100,16 @@ const HEADING_REACH = 120;
  * What a cluster of items is called: the title of the frame they all share, else a heading — a
  * text box just above them that overlaps them sideways (how "Cluster" and people lay groups out).
  */
-export function clusterHeading(view: Pick<BoardView, 'elements'>, items: BoardElement[]): string | null {
+export function clusterHeading(view: Pick<BoardView, 'elements'>, items: BoardElement[], opts: { frame?: boolean } = {}): string | null {
   if (items.length < 2) return null;
   const f = items[0].frameId;
-  if (f && items.every((el) => el.frameId === f)) {
+  // One cluster among others in a frame (#43: a frame of clusters, each its own issue) is called by
+  // its own heading, not the frame's: `frame: false`, or by default when other items in the frame
+  // are linked to other issues.
+  const ids0 = new Set(items.map((el) => el.id));
+  const own = items[0].trackerLink;
+  const useFrame = opts.frame ?? !view.elements.some((e) => e.el.frameId === f && !ids0.has(e.el.id) && e.el.trackerLink && e.el.trackerLink !== own);
+  if (f && useFrame && items.every((el) => el.frameId === f)) {
     const frame = view.elements.find((e) => e.el.id === f)?.el as (BoardElement & { title?: unknown }) | undefined;
     if (frame?.type === 'frame' && typeof frame.title === 'string' && frame.title.trim()) return frame.title.trim();
   }

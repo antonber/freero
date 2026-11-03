@@ -454,6 +454,18 @@ export function syncedBase(read: IssueValues, after: IssueValues, pulled: readon
 }
 
 
+/**
+ * The tracker's side of what a sync agreed on: the issue as the sync MERGED it (`merged`, read
+ * before writing), with the fields it wrote either way (`written`: pushed and pulled) as the
+ * tracker holds them after (`after`, read back). A change someone made in the tracker between the
+ * write and the read-back is no part of it, so the next sync still brings it to the board.
+ */
+export function trackerAgreed(merged: IssueValues, after: IssueValues, written: readonly IssueField[]): IssueValues {
+  let out = merged;
+  for (const f of written) out = withIssueField(out, f, issueFieldValue(after, f));
+  return out;
+}
+
 /** Status category from a board card's status (CardStatus) — the same three values. */
 export const isStatusCategory = (v: unknown): v is IssueStatusCategory => v === 'todo' || v === 'doing' || v === 'done';
 
