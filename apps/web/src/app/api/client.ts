@@ -82,6 +82,7 @@ import type {
   DataExportInfo,
   ScimGroupMapping,
   ScimSettings,
+  DomainControlSettings,
   SsoConnectionInput,
   SsoDiscovery,
   SsoSettings,
@@ -425,6 +426,13 @@ export const api = {
   removeSsoConnection: (id: string) => request<SsoSettings>('DELETE', `/api/workspaces/${encodeURIComponent(id)}/sso/connection`),
   enforceSso: (id: string, enforced: boolean, breakGlassUserId: string | null) =>
     request<SsoSettings & { sessionsEnded: number }>('POST', `/api/workspaces/${encodeURIComponent(id)}/sso/enforce`, { enforced, breakGlassUserId }),
+  domainControl: (id: string) => request<DomainControlSettings>('GET', `/api/workspaces/${encodeURIComponent(id)}/sso/domain-control`),
+  setDomainControl: (id: string, body: { captureSignups?: boolean; blockWorkspaces?: boolean }) =>
+    request<DomainControlSettings>('PUT', `/api/workspaces/${encodeURIComponent(id)}/sso/domain-control`, body),
+  captureDomainAccounts: (id: string, userIds: string[], graceDays: number) =>
+    request<DomainControlSettings & { started: number }>('POST', `/api/workspaces/${encodeURIComponent(id)}/sso/domain-control/captures`, { userIds, graceDays }),
+  cancelDomainCapture: (id: string, userId: string) =>
+    request<DomainControlSettings>('DELETE', `/api/workspaces/${encodeURIComponent(id)}/sso/domain-control/captures/${encodeURIComponent(userId)}`),
   discoverSso: (email: string, next: string) =>
     request<SsoDiscovery>('GET', `/api/sso/discover?email=${encodeURIComponent(email)}&next=${encodeURIComponent(next)}`),
   scimSettings: (id: string) => request<ScimSettings>('GET', `/api/workspaces/${encodeURIComponent(id)}/scim`),
