@@ -13,6 +13,8 @@ import type { ComponentType, CSSProperties, ReactNode } from 'react';
 import type {
   ActivityAnswer,
   ActivityEntry,
+  CatchUpChanges,
+  CatchUpSummary,
   ActivityState,
   BoardCall,
   BoardCallResponse,
@@ -311,8 +313,16 @@ export interface Host {
    * people did, one entry per person per burst of work, as the SERVER saw it — never content of
    * hidden frames for viewers/commenters, never private drafts. `before`: entries that ended before
    * this instant (paging). Absent in the offline sandbox.
+   *
+   * `catchUp` / `catchUpChanges` [additive]: "changes since your last visit" (wire: @freero/shared
+   * `CatchUpSummary` / `CatchUpChanges`) — what OTHER people changed since this person last had
+   * the board open, as the server recorded it. Absent for guests (no account to remember a visit).
    */
-  activity?: { list(before?: number): Promise<{ entries: ActivityEntry[]; hasMore: boolean }> };
+  activity?: {
+    list(before?: number): Promise<{ entries: ActivityEntry[]; hasMore: boolean }>;
+    catchUp?(): Promise<CatchUpSummary>;
+    catchUpChanges?(): Promise<CatchUpChanges>;
+  };
   /**
    * [additive] Reports this board, an item on it, an uploaded file it shows or a comment to
    * Freero's moderators (KAI-142). Anyone who can open the board may. Rejects with a message fit

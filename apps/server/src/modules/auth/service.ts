@@ -8,6 +8,7 @@ import { logError } from '../../platform/log';
 import { publish, subscribe } from '../../platform/pubsub';
 import { clientIp } from '../../platform/rateLimit';
 import { setRequestUser } from '../../platform/requestContext';
+import { canonicalTimeZone } from '../../platform/time';
 import { recordAuditQuietly, type AuditInput } from '../audit/index';
 import { randomCursorColor } from './colors';
 import { maskIp } from './geoip';
@@ -35,7 +36,7 @@ export function publicUser(u: User): User {
 }
 
 export function toAccount(u: Account): Account {
-  return { ...publicUser(u), emailVerified: u.emailVerified, deletionScheduledFor: u.deletionScheduledFor };
+  return { ...publicUser(u), emailVerified: u.emailVerified, deletionScheduledFor: u.deletionScheduledFor, timeZone: u.timeZone ?? null };
 }
 
 export function normalizeEmail(email: unknown): string {
@@ -85,6 +86,7 @@ export async function insertAccount(
     createdAt: Date.now(),
     emailVerified: input.emailVerified,
     deletionScheduledFor: null,
+    timeZone: null,
     passwordHash: input.passwordHash,
     passwordViaLink: false,
   };
@@ -132,7 +134,7 @@ export async function confirmPassword(userId: string, password: unknown, session
 }
 
 export async function updateProfile(userId: string, body: Record<string, unknown>): Promise<Account> {
-  const patch: { name?: string; color?: string; avatarUrl?: string | null } = {};
+  const patch: { name?: string; color?: string; avatarUrl?: string | null; timeZone?: string } = {};
   if (body.name !== undefined) {
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     if (!name || name.length > 80) throw badRequest('Name must be 1-80 characters');
@@ -148,6 +150,11 @@ export async function updateProfile(userId: string, body: Record<string, unknown
     if (v !== null && (typeof v !== 'string' || v.length > 2048 || !/^(\/uploads\/|https?:\/\/)/.test(v)))
       throw badRequest('avatarUrl must be an /uploads URL, an http(s) URL or null');
     patch.avatarUrl = v as string | null;
+  }
+  if (body.timeZone !== undefined) {
+    const zone = typeof body.timeZone === 'string' ? canonicalTimeZone(body.timeZone) : null;
+    if (!zone) throw badRequest('timeZone must be an IANA time zone like Europe/Berlin');
+    patch.timeZone = zone;
   }
   await repo.updateUserProfile(userId, patch);
   // Open boards take the new profile before we answer: a comment under the new name is accepted.

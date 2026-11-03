@@ -3,7 +3,7 @@
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import type { ElementDraft, User } from '@freero/shared';
 import { closeTestDb, openTestDb } from '../../platform/testing';
-import { createUser, markEmailVerified } from '../auth/index';
+import { createUser, markEmailVerified, updateProfile } from '../auth/index';
 import { createBoard } from '../boards/index';
 import { changeBoard, type CardAssignmentEvent } from '../realtime/index';
 import { flushCardNotifications, onCardAssignment, sendDueReminders } from './cards';
@@ -70,4 +70,28 @@ it('a card due tomorrow reminds its assignee once — and not once it was reassi
   expect(reminders).toHaveLength(1);
   expect(reminders[0].link).toBe(`/board/${board.id}?item=due1`);
   expect((await inbox(bob)).filter((x) => x.type === 'card.due_soon')).toHaveLength(0);
+});
+
+it('“due tomorrow” means tomorrow where the assignee is — not a day early in Los Angeles, not a day late in Auckland', async () => {
+  const [lead, kiwi, angeleno] = [await person('Lead'), await person('Kiwi'), await person('Angeleno')];
+  await updateProfile(kiwi.id, { timeZone: 'Pacific/Auckland' }); // UTC+13 in November
+  await updateProfile(angeleno.id, { timeZone: 'America/Los_Angeles' }); // UTC-8
+  const board = await createBoard(lead.id, 'Tour', '', 'editor');
+  const card = (id: string, assigneeId: string, dueDate: string) =>
+    ({ id, x: 0, y: 0, w: 300, h: 90, rotation: 0, type: 'card', title: 'Book flights', description: '', color: '#5B3FF0', status: 'todo', assigneeId, dueDate, tags: [] }) as unknown as ElementDraft;
+  const { applied } = await changeBoard(board.id, { userId: lead.id, role: 'owner' }, () => ({
+    change: { create: [card('kiwi', kiwi.id, '2026-11-12'), card('la', angeleno.id, '2026-11-11')] },
+  }));
+  const [k, a] = applied.created;
+  onCardAssignment(change({ boardId: board.id, elementId: k, actorId: lead.id, assigneeId: kiwi.id, dueDate: '2026-11-12' }));
+  onCardAssignment(change({ boardId: board.id, elementId: a, actorId: lead.id, assigneeId: angeleno.id, dueDate: '2026-11-11' }));
+  await flushCardNotifications();
+  const reminded = async (u: User) => (await inbox(u)).some((x) => x.type === 'card.due_soon');
+
+  // 02:00 UTC on 10 Nov: still 9 Nov in Los Angeles (its 11 Nov is two days off), 10 Nov in Auckland.
+  await sendDueReminders(Date.UTC(2026, 10, 10, 2));
+  expect([await reminded(kiwi), await reminded(angeleno)]).toEqual([false, false]);
+  // 12:00 UTC on 10 Nov: 11 Nov in Auckland (12 Nov is tomorrow there) and 10 Nov in Los Angeles.
+  await sendDueReminders(Date.UTC(2026, 10, 10, 12));
+  expect([await reminded(kiwi), await reminded(angeleno)]).toEqual([true, true]);
 });

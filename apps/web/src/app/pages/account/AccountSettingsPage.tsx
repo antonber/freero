@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, BadgeCheck, Bot, CircleAlert, LayoutGrid, Download, ImageUp, LogOut, Mail, Monitor, ShieldCheck, Trash2 } from 'lucide-react';
-import { describeDevice, type DataExportInfo, type NotificationPrefs, type SecurityInfo, type SessionInfo } from '@freero/shared';
-import { Avatar, Button, ColorSwatches, Input, Logo, Modal, Spinner, Toggle, readableTextColor, useToast } from '@ui';
+import { describeDevice, type BoardChangesFrequency, type DataExportInfo, type NotificationPrefs, type SecurityInfo, type SessionInfo } from '@freero/shared';
+import { Avatar, Button, ColorSwatches, Input, Logo, Modal, SegmentedControl, Spinner, Toggle, readableTextColor, useToast } from '@ui';
 import { api, ApiError } from '../../api/client';
-import { useAuth } from '../../auth/AuthContext';
+import { browserTimeZone, useAuth } from '../../auth/AuthContext';
 import { relativeTime } from '../../lib/time';
 import { ExportList } from '../admin/AdminIdentity';
 import { TrackerConnections } from '../../components/TrackerConnections';
@@ -195,9 +195,73 @@ function ProfileSection() {
           </Button>
         </div>
       </form>
+      <TimeZoneField />
     </Section>
   );
 }
+
+/** Every IANA zone this browser knows (falls back to the current ones). */
+function timeZones(current: string[]): string[] {
+  let all: string[] = [];
+  try {
+    all = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.('timeZone') ?? [];
+  } catch {
+    all = [];
+  }
+  return [...new Set([...all, ...current.filter(Boolean), 'UTC'])].sort();
+}
+
+/** The account's time zone: due-date reminders and dates in emails follow it. Saved on change. */
+function TimeZoneField() {
+  const { user, updateProfile } = useAuth();
+  const notify = useToast();
+  const [saving, setSaving] = useState(false);
+  if (!user) return null;
+  const detected = browserTimeZone();
+  const value = user.timeZone ?? detected ?? 'UTC';
+  const save = async (zone: string) => {
+    setSaving(true);
+    try {
+      await updateProfile({ timeZone: zone });
+      notify('Time zone updated', 'success');
+    } catch (err) {
+      notify(errorText(err, 'Could not save your time zone'), 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <div className="fr-field fr-acct-tz">
+      <label className="fr-field__label" htmlFor="fr-acct-tz">
+        Time zone
+      </label>
+      <select id="fr-acct-tz" className="fr-acct-tz__select" value={value} disabled={saving} onChange={(e) => void save(e.target.value)}>
+        {timeZones([value, detected ?? '']).map((z) => (
+          <option key={z} value={z}>
+            {z.replace(/_/g, ' ')}
+          </option>
+        ))}
+      </select>
+      <span className="fr-acct__hint">
+        Due-date reminders and the dates in Freero’s emails follow it.
+        {detected && detected !== value ? ` This browser is set to ${detected.replace(/_/g, ' ')}.` : ''}
+      </span>
+      {detected && detected !== value && (
+        <div>
+          <Button size="sm" variant="ghost" onClick={() => void save(detected)}>
+            Use {detected.replace(/_/g, ' ')}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const DIGEST_OPTIONS: Array<{ value: BoardChangesFrequency; label: string }> = [
+  { value: 'off', label: 'Off' },
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekly', label: 'Weekly' },
+];
 
 /** Which notifications are also emailed (as a digest); the in-app inbox always shows them. */
 function NotificationsSection() {
@@ -257,6 +321,21 @@ function NotificationsSection() {
               checked={prefs.emailAll}
               onChange={(on) => save({ emailAll: on }, { ...prefs, emailAll: on })}
             />
+            <div className={`fr-acct-prefs__digest${prefs.emailAll ? '' : ' is-off'}`}>
+              <span className="fr-acct-prefs__type">
+                <span className="fr-acct-prefs__label">Changes on your boards</span>
+                <span className="fr-acct__hint">
+                  A summary of what others changed on boards you own or starred, in the morning in your time zone (weekly: on Mondays).
+                </span>
+              </span>
+              <SegmentedControl<BoardChangesFrequency>
+                size="sm"
+                value={prefs.boardChanges}
+                onChange={(v) => save({ boardChanges: v }, { ...prefs, boardChanges: v })}
+                options={DIGEST_OPTIONS}
+                aria-label="Email a summary of changes on your boards"
+              />
+            </div>
             <ul className="fr-acct-prefs__types" aria-label="Email me about">
               {prefs.types.map((t) => (
                 <li key={t.type} className={prefs.emailAll ? undefined : 'is-off'}>

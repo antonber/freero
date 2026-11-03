@@ -10,6 +10,8 @@ import { AuthNotice, AuthShell } from '../auth/AuthShell';
 export function UnsubscribePage() {
   const [params] = useSearchParams();
   const token = params.get('token') ?? '';
+  // The "changes on your boards" email has its own link: it stops only that email.
+  const list = params.get('list') ?? undefined;
   const { user } = useAuth();
   const [state, setState] = useState<{ status: 'working' } | { status: 'done'; email: string } | { status: 'failed'; message: string }>(
     token ? { status: 'working' } : { status: 'failed', message: 'This link is incomplete. Open the link from the email again.' },
@@ -19,14 +21,14 @@ export function UnsubscribePage() {
     if (!token) return;
     let live = true;
     // Idempotent on the server, so a re-run effect (StrictMode) is harmless.
-    api.unsubscribe(token).then(
+    api.unsubscribe(token, list).then(
       (r) => live && setState({ status: 'done', email: r.email }),
       (err) => live && setState({ status: 'failed', message: err instanceof ApiError ? err.message : 'Could not reach Freero. Try again.' }),
     );
     return () => {
       live = false;
     };
-  }, [token]);
+  }, [token, list]);
 
   if (state.status === 'working')
     return (
@@ -38,7 +40,9 @@ export function UnsubscribePage() {
     <AuthShell docTitle="Unsubscribe" title={state.status === 'done' ? 'You’re unsubscribed' : 'That link didn’t work'}>
       {state.status === 'done' ? (
         <AuthNotice kind="success">
-          {state.email} won’t get notification emails any more. You’ll still see mentions and replies in Freero.
+          {list === 'board-changes'
+            ? `${state.email} won’t get the “changes on your boards” summary any more. Other emails are unchanged.`
+            : `${state.email} won’t get notification emails any more. You’ll still see mentions and replies in Freero.`}
         </AuthNotice>
       ) : (
         <AuthNotice kind="error">{state.message}</AuthNotice>

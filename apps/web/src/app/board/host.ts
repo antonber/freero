@@ -141,7 +141,11 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     shareTemplate: shareTemplateWith(deps.team?.id ?? null),
     deleteTemplate,
     versions: versionHistory(board.id),
-    activity: { list: (before) => api.boardActivity(board.id, before) },
+    activity: {
+      list: (before) => api.boardActivity(board.id, before),
+      catchUp: () => api.boardCatchUp(board.id),
+      catchUpChanges: () => api.boardCatchUpChanges(board.id),
+    },
     importImage,
     fetchImage,
     report: reportOn(board.id),

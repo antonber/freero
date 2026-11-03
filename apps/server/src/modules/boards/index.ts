@@ -134,6 +134,21 @@ export async function boardsOpenableIn(userId: string, workspaceId: string): Pro
   return (await listBoards(userId, 'all', '', { workspaceId })).map((b) => ({ id: b.id, title: b.title, role: b.role }));
 }
 
+/**
+ * Boards (not docs) the user owns or starred and can open now, with their title and role: the
+ * "changes on your boards" email (modules/notifications). Trashed and taken-down ones are left out.
+ */
+export async function boardsOwnedOrStarredBy(userId: string): Promise<Array<{ id: string; title: string; role: Role }>> {
+  const ids = new Set([...(await repo.boardIdsOwnedBy(userId)), ...(await repo.starredBoardIds(userId))]);
+  const out: Array<{ id: string; title: string; role: Role }> = [];
+  for (const board of await repo.getBoards([...ids])) {
+    if (board.kind !== 'board') continue;
+    const { role } = await describeAccess(board, userId);
+    if (role) out.push({ id: board.id, title: board.title, role });
+  }
+  return out;
+}
+
 /** Where a (live) board is and who owns it, or null if there is no such board. */
 export async function boardPlace(
   boardId: string,

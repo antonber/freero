@@ -112,6 +112,7 @@ import {
   writeProposal,
 } from './suggestions';
 import { emitSuggestionsDecided, emitSuggestionsProposed } from './suggestionEvents';
+import { emitBoardLeft } from './visits';
 import { applyChange, BoardChangeError, viewOf, type AppliedChange, type BoardActor, type BoardChange, type BoardReader, type BoardView } from './view';
 import { newId } from '../../platform/ids';
 import { docStateFrom, readDocBlocks, writeDocBlocks } from './docContent';
@@ -1114,6 +1115,7 @@ class Room {
 
   leave(conn: Conn): void {
     if (!this.conns.delete(conn.ws)) return;
+    if (conn.kind === 'board') emitBoardLeft({ boardId: this.id, userId: conn.userId, at: Date.now() });
     if (conn.awarenessIds.size > 0)
       awarenessProtocol.removeAwarenessStates(this.awareness, [...conn.awarenessIds], null);
     this.checkFacilitator();

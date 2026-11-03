@@ -9,6 +9,8 @@ import {
   updateUserProfile,
   userIdsAtDomain as repoUserIdsAtDomain,
 } from './repo';
+// People's time zones (IANA; absent: not known yet — read as UTC): reminders and email dates.
+export { timeZonesOf } from './repo';
 
 export {
   requireUser,
@@ -26,6 +28,8 @@ export {
   onSessionEnd,
   trackLiveSessions,
   onProfileChanged,
+  // A person's own profile change (name, colour, photo, time zone), validated as PATCH /auth/me.
+  updateProfile,
   onEmailVerified,
   markEmailVerified,
   // Operators (modules/moderation): suspended accounts can't sign in and lose every session.

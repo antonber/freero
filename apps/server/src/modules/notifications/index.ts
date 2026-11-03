@@ -4,7 +4,9 @@ export { notify, type NewNotification } from './service';
 import * as repo from './repo';
 
 /** For a person's data export: every notification they have (newest first) and their email settings. */
-export async function notificationsExportOf(userId: string): Promise<{ notifications: unknown[]; emailSettings: Record<string, boolean> }> {
+export async function notificationsExportOf(
+  userId: string,
+): Promise<{ notifications: unknown[]; emailSettings: Record<string, boolean>; boardChangesEmail: string }> {
   const rows = await repo.list(userId, 100_000, null);
   return {
     notifications: rows.map((n) => ({
@@ -16,6 +18,7 @@ export async function notificationsExportOf(userId: string): Promise<{ notificat
       readAt: n.readAt === null ? null : new Date(n.readAt).toISOString(),
     })),
     emailSettings: Object.fromEntries(await repo.prefs(userId)),
+    boardChangesEmail: (await repo.boardChangeDigestOf(userId))?.frequency ?? 'off',
   };
 }
 export type { NotificationData } from './types';

@@ -2,7 +2,7 @@
 // an authenticated socket, boards shared through the members API), listed in the app's inbox,
 // delivered live to open tabs (live.ts) and emailed as batched digests.
 import { mac, macMatches } from '../../platform/secrets';
-import type { AppNotification, NotificationPrefs, NotificationsResponse, NotificationType } from '@freero/shared';
+import type { AppNotification, BoardChangesFrequency, NotificationPrefs, NotificationsResponse, NotificationType } from '@freero/shared';
 import { guestDisplayName, isGuestId, mentionedUserIds, mentionsAsNames } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { newId } from '../../platform/ids';
@@ -19,6 +19,7 @@ import {
   type InviteAcceptedEvent,
 } from '../members/index';
 import type { CommentMessageEvent } from '../realtime/index';
+import { setBoardChangesFrequency } from './boardChanges';
 import * as live from './live';
 import * as repo from './repo';
 import { isNotificationType, NOTIFICATION_TYPES, type NotificationData } from './types';
@@ -210,6 +211,8 @@ export async function markRead(userId: string, ids: string[] | null): Promise<nu
 // ---- email preferences ----
 
 const ALL = '*';
+/** The unsubscribe list of the "changes on your boards" email (boardChanges.ts). */
+export const BOARD_CHANGES_LIST = 'board-changes';
 
 export async function prefsFor(userId: string): Promise<NotificationPrefs> {
   const p = await repo.prefs(userId);
@@ -221,11 +224,16 @@ export async function prefsFor(userId: string): Promise<NotificationPrefs> {
       description: NOTIFICATION_TYPES[type].description,
       email: p.get(type) ?? true,
     })),
+    boardChanges: (await repo.boardChangeDigestOf(userId))?.frequency ?? 'off',
   };
 }
 
-export async function updatePrefs(userId: string, patch: { emailAll?: boolean; email?: Partial<Record<NotificationType, boolean>> }): Promise<NotificationPrefs> {
+export async function updatePrefs(
+  userId: string,
+  patch: { emailAll?: boolean; email?: Partial<Record<NotificationType, boolean>>; boardChanges?: BoardChangesFrequency },
+): Promise<NotificationPrefs> {
   if (typeof patch.emailAll === 'boolean') await repo.setPref(userId, ALL, patch.emailAll);
+  if (patch.boardChanges) await setBoardChangesFrequency(userId, patch.boardChanges);
   for (const [type, on] of Object.entries(patch.email ?? {})) if (isNotificationType(type) && typeof on === 'boolean') await repo.setPref(userId, type, on);
   return prefsFor(userId);
 }
@@ -234,14 +242,17 @@ export async function updatePrefs(userId: string, patch: { emailAll?: boolean; e
 
 // Signed through platform/secrets (same digest as before, so links already sent keep working;
 // links signed under SESSION_SECRET_PREVIOUS keep working through a rotation).
-const message = (userId: string) => `notifications.unsubscribe:${userId}`;
+// A token for one list (the "changes on your boards" email) is signed over its name too, so it
+// can't be used for another list, and an all-emails token can't be bent into a list one.
+const message = (userId: string, list?: string) => `notifications.unsubscribe:${userId}${list ? `:${list}` : ''}`;
 
-export function unsubscribeToken(userId: string): string {
-  return `${Buffer.from(userId).toString('base64url')}.${mac(message(userId)).toString('base64url')}`;
+/** The signed unsubscribe link token: every notification email, or only `list`. */
+export function unsubscribeToken(userId: string, list?: string): string {
+  return `${Buffer.from(userId).toString('base64url')}.${mac(message(userId, list)).toString('base64url')}`;
 }
 
-/** The user the token was made for, or null when it is not one of ours. */
-export function verifyUnsubscribeToken(token: string): string | null {
+/** The user the token was made for (for `list`, when given), or null when it is not one of ours. */
+export function verifyUnsubscribeToken(token: string, list?: string): string | null {
   const [id, sig] = token.split('.');
   if (!id || !sig) return null;
   const given = Buffer.from(sig, 'base64url');
@@ -250,12 +261,16 @@ export function verifyUnsubscribeToken(token: string): string | null {
   if (given.toString('base64url') !== sig) return null;
   const userId = Buffer.from(id, 'base64url').toString();
   if (Buffer.from(userId).toString('base64url') !== id) return null;
-  return macMatches(message(userId), given) ? userId : null;
+  return macMatches(message(userId, list), given) ? userId : null;
 }
 
-/** Turns all notification emails off for the token's user; returns their address (null: bad token). */
-export async function unsubscribe(token: string): Promise<string | null> {
-  const userId = verifyUnsubscribeToken(token);
+/**
+ * Turns all notification emails off for the token's user, or with `list` 'board-changes' only
+ * the "changes on your boards" email; returns their address (null: bad token).
+ */
+export async function unsubscribe(token: string, list?: string): Promise<string | null> {
+  if (list !== undefined && list !== BOARD_CHANGES_LIST) return null;
+  const userId = verifyUnsubscribeToken(token, list);
   if (!userId) return null;
   let email: string;
   try {
@@ -263,7 +278,8 @@ export async function unsubscribe(token: string): Promise<string | null> {
   } catch {
     return null; // account gone
   }
-  await repo.setPref(userId, ALL, false);
+  if (list === BOARD_CHANGES_LIST) await repo.setBoardChangeDigest(userId, null, Date.now());
+  else await repo.setPref(userId, ALL, false);
   return email;
 }
 

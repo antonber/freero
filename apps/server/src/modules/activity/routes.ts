@@ -1,8 +1,9 @@
 import { Router } from 'express';
-import type { ActivityResponse } from '@freero/shared';
+import type { ActivityResponse, CatchUpChanges, CatchUpSummary } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { handle } from '../../platform/http';
 import { actorId, currentActor, currentUser, requireUser, requireUserOrGuest } from '../auth/index';
+import { catchUpChanges, catchUpSummary } from './catchUp';
 import { boardActivity, workspaceActivity } from './service';
 
 const page = (q: Record<string, unknown>) => {
@@ -20,6 +21,23 @@ export default function activityRoutes(_ctx: ServerContext): Router {
     requireUserOrGuest,
     handle(async (req, res) => {
       res.json((await boardActivity(req.params.id, actorId(currentActor(req)), page(req.query))) satisfies ActivityResponse);
+    }),
+  );
+
+  // Changes since your last visit: accounts only (guests have no marker).
+  r.get(
+    '/boards/:id/catch-up',
+    requireUser,
+    handle(async (req, res) => {
+      res.json((await catchUpSummary(req.params.id, currentUser(req).id)) satisfies CatchUpSummary);
+    }),
+  );
+
+  r.get(
+    '/boards/:id/catch-up/changes',
+    requireUser,
+    handle(async (req, res) => {
+      res.json((await catchUpChanges(req.params.id, currentUser(req).id)) satisfies CatchUpChanges);
     }),
   );
 

@@ -1,6 +1,7 @@
-import { Activity } from 'lucide-react';
+import { Activity, History } from 'lucide-react';
 import { defineCommands } from '@engine';
 import { PANEL_ID } from './lib/ids';
+import { showChanges } from './lib/catchUp';
 
 export default defineCommands([
   {
@@ -13,5 +14,16 @@ export default defineCommands([
     minRole: 'viewer',
     when: (editor) => !!editor.host.activity,
     run: (editor) => editor.openDock(editor.getDock() === PANEL_ID ? null : PANEL_ID),
+  },
+  {
+    // "See what changed" in the "changes on your boards" email opens /board/<id>?changes=1.
+    id: 'activity.showChanges',
+    label: 'Recent changes',
+    icon: History,
+    menus: ['board'],
+    minRole: 'viewer',
+    urlParam: 'changes',
+    when: (editor) => !!editor.host.activity?.catchUpChanges,
+    run: (editor) => void showChanges(editor),
   },
 ]);

@@ -48,6 +48,9 @@ import type {
   WorkspaceUsage,
   AcceptInviteResponse,
   ActivityResponse,
+  BoardChangesFrequency,
+  CatchUpChanges,
+  CatchUpSummary,
   GuestBoardInfo,
   GuestInfo,
   EmbedRedeemResponse,
@@ -199,7 +202,7 @@ export const api = {
   loginTwoFactor: (code: string) => request<AuthResponse>('POST', '/api/auth/login/two-factor', { code }),
   signup: (body: SignupRequest) => request<AuthResponse>('POST', '/api/auth/signup', body),
   logout: () => request<{ ok: true }>('POST', '/api/auth/logout'),
-  updateMe: (body: Partial<Pick<User, 'name' | 'color' | 'avatarUrl'>>) =>
+  updateMe: (body: Partial<Pick<User, 'name' | 'color' | 'avatarUrl'>> & { timeZone?: string }) =>
     request<AuthResponse>('PATCH', '/api/auth/me', body),
   async uploadAvatar(file: Blob): Promise<AuthResponse> {
     const res = await fetch('/api/auth/me/avatar', {
@@ -354,6 +357,8 @@ export const api = {
   // activity
   boardActivity: (id: string, before?: number) =>
     request<ActivityResponse>('GET', `/api/boards/${encodeURIComponent(id)}/activity${before ? `?before=${before}` : ''}`),
+  boardCatchUp: (id: string) => request<CatchUpSummary>('GET', `/api/boards/${encodeURIComponent(id)}/catch-up`),
+  boardCatchUpChanges: (id: string) => request<CatchUpChanges>('GET', `/api/boards/${encodeURIComponent(id)}/catch-up/changes`),
   workspaceActivity: (id: string, before?: number) =>
     request<ActivityResponse>('GET', `/api/workspaces/${encodeURIComponent(id)}/activity${before ? `?before=${before}` : ''}`),
 
@@ -371,10 +376,14 @@ export const api = {
     request<NotificationsResponse>('GET', `/api/notifications${before ? `?before=${before}` : ''}`),
   markNotificationsRead: (ids?: string[]) => request<{ unread: number }>('POST', '/api/notifications/read', ids ? { ids } : {}),
   notificationPrefs: () => request<NotificationPrefs>('GET', '/api/notifications/prefs'),
-  setNotificationPrefs: (body: { emailAll?: boolean; email?: Partial<Record<NotificationType, boolean>> }) =>
+  setNotificationPrefs: (body: { emailAll?: boolean; email?: Partial<Record<NotificationType, boolean>>; boardChanges?: BoardChangesFrequency }) =>
     request<NotificationPrefs>('PUT', '/api/notifications/prefs', body),
-  unsubscribe: (token: string) =>
-    request<{ ok: true; email: string }>('POST', `/api/notifications/unsubscribe?token=${encodeURIComponent(token)}`),
+  /** `list` 'board-changes': only the "changes on your boards" email (its own link). */
+  unsubscribe: (token: string, list?: string) =>
+    request<{ ok: true; email: string; list: string }>(
+      'POST',
+      `/api/notifications/unsubscribe?token=${encodeURIComponent(token)}${list ? `&list=${encodeURIComponent(list)}` : ''}`,
+    ),
 
   // saved templates
   listTemplates: () => request<{ templates: SavedTemplateSummary[] }>('GET', '/api/templates'),
