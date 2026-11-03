@@ -4,14 +4,15 @@
 // nothing here depends on the source board, which may be deleted meanwhile.
 import type { SaveTemplateRequest, SavedTemplate, SavedTemplateSummary, TemplateContent } from '@freero/shared';
 import { getConfig } from '../../platform/config';
-import { badRequest, forbidden, notFound } from '../../platform/http';
+import { badRequest, forbidden, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
 import type { OutboxConsumer } from '../../platform/outbox';
 import { recordAudit } from '../audit/index';
 import { getUsers } from '../auth/index';
 import { boardWorkspaceId, getBoardTitle, requireBoardDownload } from '../boards/index';
 import { deleteUpload, saveUpload } from '../uploads/index';
-import { isManager, teamWorkspaceIdsFor, WORKSPACE_MEMBERSHIP_TOPIC, workspaceRole, workspaceRolesOf } from '../workspaces/index';
+import { getWorkspaceInfo, isManager, requireWorkspace, teamWorkspaceIdsFor, templatePublishingOf, WORKSPACE_MEMBERSHIP_TOPIC, workspaceRole, workspaceRolesOf } from '../workspaces/index';
+import { audienceOf } from './audience';
 import * as repo from './repo';
 import type { StoredSummary, StoredTemplate } from './repo';
 
@@ -64,24 +65,53 @@ function thumbnailBytes(v: unknown): { bytes: Buffer; type: string } | null {
   return { bytes, type: m[1] };
 }
 
-type ForReader = Pick<SavedTemplateSummary, 'ownerName' | 'canUnshare'>;
+type ForReader = Pick<SavedTemplateSummary, 'ownerName' | 'canUnshare' | 'organisationName' | 'canManage'>;
 
-/** Adds who shared each template and whether `userId` may unshare it. */
+/**
+ * Is `userId` an owner or content admin (#151) of the workspace or organisation `placeId` — who
+ * locks, retires and withdraws what is shared or published there (#155)?
+ */
+async function administers(placeId: string, userId: string): Promise<boolean> {
+  try {
+    await requireWorkspace(placeId, userId, 'admin', { organisation: true, scope: 'content' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Where a template is shared or published, for its admins: the organisation first (#155). */
+const placeOf = (t: StoredSummary): string | null => t.organisationId ?? t.workspaceId;
+
+/** Adds who shared each template, its company's name, and what `userId` may do with it. */
 async function forReader<T extends StoredSummary>(list: T[], userId: string): Promise<Array<T & ForReader>> {
-  const [owners, roles] = await Promise.all([getUsers(list.map((t) => t.ownerId)), workspaceRolesOf(userId)]);
-  return list.map((t) => ({
-    ...t,
-    ownerName: owners.get(t.ownerId)?.name ?? 'Someone',
-    canUnshare: t.workspaceId !== null && (t.ownerId === userId || isManager(roles.get(t.workspaceId) ?? null)),
-  }));
+  const places = [...new Set(list.flatMap((t) => [t.organisationId, t.workspaceId].filter((x): x is string => !!x)))];
+  const orgIds = [...new Set(list.flatMap((t) => (t.organisationId ? [t.organisationId] : [])))];
+  const [owners, roles, admin, orgNames] = await Promise.all([
+    getUsers(list.map((t) => t.ownerId)),
+    workspaceRolesOf(userId),
+    Promise.all(places.map(async (p) => [p, await administers(p, userId)] as const)).then((e) => new Map(e)),
+    Promise.all(orgIds.map(async (o) => [o, (await getWorkspaceInfo(o))?.name ?? null] as const)).then((e) => new Map(e)),
+  ]);
+  return list.map((t) => {
+    const place = placeOf(t);
+    return {
+      ...t,
+      ownerName: owners.get(t.ownerId)?.name ?? 'Someone',
+      // A locked template stays where admins put it: its owner can't take it back (#155).
+      canUnshare: t.workspaceId !== null && ((t.ownerId === userId && !t.locked) || isManager(roles.get(t.workspaceId) ?? null)),
+      organisationName: t.organisationId ? (orgNames.get(t.organisationId) ?? null) : null,
+      canManage: place !== null && (admin.get(place) ?? false),
+    };
+  });
 }
 
 export async function listTemplates(userId: string): Promise<SavedTemplateSummary[]> {
-  return forReader(await repo.listVisibleTo(userId, await teamWorkspaceIdsFor(userId)), userId);
+  return forReader(await repo.listVisibleTo(userId, await audienceOf(userId)), userId);
 }
 
 export async function getTemplate(id: string, userId: string): Promise<SavedTemplate> {
-  const t = await repo.getVisible(id, userId, await teamWorkspaceIdsFor(userId));
+  const t = await repo.getVisible(id, userId, await audienceOf(userId));
   if (!t) throw notFound('Template not found');
   return (await forReader([t], userId))[0];
 }
@@ -116,6 +146,9 @@ export async function saveTemplate(userId: string, body: Partial<SaveTemplateReq
     content,
     createdAt: now,
     updatedAt: now,
+    organisationId: null,
+    locked: false,
+    retiredAt: null,
   };
   try {
     await repo.transaction(async () => {
@@ -142,12 +175,75 @@ export async function saveTemplate(userId: string, body: Partial<SaveTemplateReq
   return (await forReader([summary], userId))[0];
 }
 
-/** null (personal), or a team workspace the user is a full member of. */
+const publishingRefusal = (where: string) => new HttpError(403, `In ${where} only owners and content admins share templates`, 'template_publishing');
+
+/**
+ * null (personal), or a team workspace the user is a full member of — and (#155) whose
+ * `templatePublishing` lets them share with it (admins only: its owners and content admins).
+ */
 async function shareTarget(userId: string, v: unknown): Promise<string | null> {
   if (v === undefined || v === null) return null;
   if (typeof v !== 'string' || !(await teamWorkspaceIdsFor(userId)).includes(v))
     throw forbidden('You can share templates only with a team workspace you are a member of');
+  if ((await templatePublishingOf(v)) === 'admins' && !(await administers(v, userId))) throw publishingRefusal((await getWorkspaceInfo(v))?.name ?? 'this workspace');
   return v;
+}
+
+/**
+ * Publishes the owner's template to an organisation one of their workspaces belongs to (#155), as
+ * the organisation's `templatePublishing` allows, or takes it back (null) — not while an admin
+ * locked it. The organisation's content admins may also withdraw it. Audited in the organisation's log.
+ */
+export async function publishTemplate(id: string, userId: string, organisationId: unknown): Promise<SavedTemplateSummary> {
+  const t = await repo.getSummary(id);
+  if (!t || (t.ownerId !== userId && !(t.organisationId && (await administers(t.organisationId, userId))))) throw notFound('Template not found');
+  const now = Date.now();
+  if (organisationId === null) {
+    if (!t.organisationId) return (await forReader([t], userId))[0];
+    const was = t.organisationId;
+    const out = (await administers(was, userId)) ? await repo.unpublishFrom(id, was, now) : await repo.setOrganisation(id, userId, null, now);
+    if (!out) throw new HttpError(409, 'An admin locked this template: only admins can withdraw it', 'template_locked');
+    await recordAudit({ action: 'template.unpublished', workspaceId: was, actorId: userId, target: templateTarget(t), metadata: { owner: t.ownerId } });
+    return (await forReader([out], userId))[0];
+  }
+  if (typeof organisationId !== 'string' || t.ownerId !== userId) throw badRequest('organisationId must be an organisation id, or null');
+  if (!(await audienceOf(userId)).organisationIds.includes(organisationId)) throw forbidden('You can publish only to the organisation of a workspace you are a member of');
+  if ((await templatePublishingOf(organisationId)) === 'admins' && !(await administers(organisationId, userId)))
+    throw publishingRefusal((await getWorkspaceInfo(organisationId))?.name ?? 'this organisation');
+  const out = await repo.setOrganisation(id, userId, organisationId, now);
+  if (!out) throw new HttpError(409, 'An admin locked this template: only admins can move it', 'template_locked');
+  if (t.organisationId !== organisationId)
+    await recordAudit({ action: 'template.published', workspaceId: organisationId, actorId: userId, target: templateTarget(t), metadata: { owner: t.ownerId } });
+  return (await forReader([out], userId))[0];
+}
+
+const templateTarget = (t: { id: string; name: string }) => ({ type: 'template', id: t.id, label: t.name });
+
+/**
+ * Locks (everyone uses it, only admins change or remove it) or retires (out of every picker, kept)
+ * a template shared with a workspace or published to an organisation: that place's owners and
+ * content admins (#155). Audited in its log.
+ */
+export async function setTemplateAdminState(id: string, userId: string, patch: { locked?: unknown; retired?: unknown }): Promise<SavedTemplateSummary> {
+  const t = await repo.getSummary(id);
+  const place = t ? placeOf(t) : null;
+  if (!t || !place || !(await administers(place, userId))) throw notFound('Template not found');
+  if (patch.locked !== undefined && typeof patch.locked !== 'boolean') throw badRequest('locked must be true or false');
+  if (patch.retired !== undefined && typeof patch.retired !== 'boolean') throw badRequest('retired must be true or false');
+  const now = Date.now();
+  const out = await repo.setAdminState(id, { locked: patch.locked as boolean | undefined, ...(patch.retired === undefined ? {} : { retiredAt: patch.retired ? now : null }) }, now);
+  if (!out) throw notFound('Template not found');
+  if (patch.locked !== undefined && patch.locked !== t.locked)
+    await recordAudit({ action: patch.locked ? 'template.locked' : 'template.unlocked', workspaceId: place, actorId: userId, target: templateTarget(t), metadata: { owner: t.ownerId } });
+  if (patch.retired !== undefined && patch.retired !== (t.retiredAt !== null))
+    await recordAudit({ action: patch.retired ? 'template.retired' : 'template.unretired', workspaceId: place, actorId: userId, target: templateTarget(t), metadata: { owner: t.ownerId } });
+  return (await forReader([out], userId))[0];
+}
+
+/** What is shared with a workspace or published to an organisation, retired ones included, for its content admins. */
+export async function placeTemplates(placeId: string, userId: string): Promise<SavedTemplateSummary[]> {
+  if (!(await administers(placeId, userId))) throw forbidden('Only owners and content admins can manage its templates');
+  return forReader(await repo.sharedWithPlace(placeId), userId);
 }
 
 /**
@@ -191,9 +287,13 @@ export const unshareOnLeaveConsumer: OutboxConsumer = {
   },
 };
 
-/** Deletes one of the user's own templates (someone else's answers 404, like a missing one). */
+/** Deletes one of the user's own templates (someone else's answers 404, like a missing one; #155: not while locked). */
 export async function deleteTemplate(id: string, userId: string): Promise<void> {
   const thumbnail = await repo.deleteOwned(id, userId);
-  if (thumbnail === undefined) throw notFound('Template not found');
+  if (thumbnail === undefined) {
+    const t = await repo.getSummary(id);
+    if (t && t.ownerId === userId && t.locked) throw new HttpError(409, 'An admin locked this template: only admins can remove it', 'template_locked');
+    throw notFound('Template not found');
+  }
   await deleteUpload(thumbnail);
 }

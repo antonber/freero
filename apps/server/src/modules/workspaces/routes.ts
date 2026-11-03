@@ -3,6 +3,7 @@ import type { ServerContext } from '../../platform/context';
 import { handle } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
 import { currentUser, requireUser } from '../auth/index';
+import { createGroup, deleteGroup, listGroupMembers, listGroups, renameGroup, setGroupMember } from './groups';
 import { acceptInvite, inviteToWorkspace, listInvites, previewInvite, resendInvite, revokeInvite } from './invites';
 import {
   addOrganisationMember,
@@ -16,6 +17,8 @@ import {
 } from './organisations';
 import {
   addProjectMember,
+  listProjectGroups,
+  setProjectGroup,
   createProject,
   deleteProject,
   listProjectMembers,
@@ -176,7 +179,7 @@ export default function workspaceRoutes(_ctx: ServerContext): Router {
     '/workspaces/:id/members/:userId',
     requireUser,
     handle(async (req, res) => {
-      res.json({ member: await changeRole(req.params.id, currentUser(req).id, req.params.userId, req.body?.role) });
+      res.json({ member: await changeRole(req.params.id, currentUser(req).id, req.params.userId, req.body?.role, req.body?.adminScopes) });
     }),
   );
 
@@ -283,6 +286,73 @@ export default function workspaceRoutes(_ctx: ServerContext): Router {
       res.json({ ok: true });
     }),
   );
+
+  // ---- user groups (#63) ----
+  r.get(
+    '/workspaces/:id/groups',
+    requireUser,
+    handle(async (req, res) => {
+      res.json(await listGroups(req.params.id, currentUser(req).id));
+    }),
+  );
+  r.post(
+    '/workspaces/:id/groups',
+    requireUser,
+    handle(async (req, res) => {
+      res.status(201).json({ group: await createGroup(req.params.id, currentUser(req).id, req.body ?? {}) });
+    }),
+  );
+  r.patch(
+    '/groups/:id',
+    requireUser,
+    handle(async (req, res) => {
+      res.json({ group: await renameGroup(req.params.id, currentUser(req).id, req.body ?? {}) });
+    }),
+  );
+  r.delete(
+    '/groups/:id',
+    requireUser,
+    handle(async (req, res) => {
+      await deleteGroup(req.params.id, currentUser(req).id);
+      res.json({ ok: true });
+    }),
+  );
+  r.get(
+    '/groups/:id/members',
+    requireUser,
+    handle(async (req, res) => {
+      res.json({ members: await listGroupMembers(req.params.id, currentUser(req).id) });
+    }),
+  );
+  for (const [verb, member] of [
+    ['put', true],
+    ['delete', false],
+  ] as const)
+    r[verb](
+      '/groups/:id/members/:userId',
+      requireUser,
+      handle(async (req, res) => {
+        res.json({ group: await setGroupMember(req.params.id, currentUser(req).id, req.params.userId, member) });
+      }),
+    );
+  r.get(
+    '/projects/:id/groups',
+    requireUser,
+    handle(async (req, res) => {
+      res.json({ groups: await listProjectGroups(req.params.id, currentUser(req).id) });
+    }),
+  );
+  for (const [verb, shared] of [
+    ['put', true],
+    ['delete', false],
+  ] as const)
+    r[verb](
+      '/projects/:id/groups/:groupId',
+      requireUser,
+      handle(async (req, res) => {
+        res.json({ groups: await setProjectGroup(req.params.id, currentUser(req).id, req.params.groupId, shared) });
+      }),
+    );
 
   return r;
 }

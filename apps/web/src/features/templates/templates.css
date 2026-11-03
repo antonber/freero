@@ -386,6 +386,11 @@
   right: 6px;
 }
 
+/* #155: publish to the company sits left of the team share button. */
+.fr-tpl-saved__publish {
+  right: 70px;
+}
+
 .fr-tpl-card__by {
   overflow: hidden;
   font-size: 11px;

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
+  Archive,
   Building2,
   ChevronsUpDown,
   Clock,
@@ -34,7 +35,7 @@ import { personColor } from '../../lib/placeholder';
 import { workspaceLabel } from './useWorkspaces';
 import { PROBLEM_SHORTCUT, useProblemReport } from '../../problems/ProblemReport';
 
-export type BoardView = 'home' | 'recent' | 'starred' | 'shared' | 'mine' | 'trash';
+export type BoardView = 'home' | 'recent' | 'starred' | 'shared' | 'mine' | 'trash' | 'archived';
 /** Board collections, a project's boards, or a team's members / settings page. */
 export type View = BoardView | 'project' | 'members' | 'settings';
 
@@ -44,6 +45,7 @@ export const NAV: { id: BoardView; label: string; icon: typeof House }[] = [
   { id: 'starred', label: 'Starred', icon: Star },
   { id: 'shared', label: 'Shared with me', icon: Users },
   { id: 'mine', label: 'My boards', icon: Folder },
+  { id: 'archived', label: 'Archived', icon: Archive },
   { id: 'trash', label: 'Trash', icon: Trash2 },
 ];
 

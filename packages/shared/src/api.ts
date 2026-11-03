@@ -60,6 +60,11 @@ export interface BoardSummary {
   /** Trash only (filter=trash): when it was deleted, and when it will be deleted for good. */
   deletedAt?: number;
   purgeAt?: number;
+  /**
+   * [additive, #153] When it was archived: kept, read-only for everyone (its owner included: `role`
+   * reads at most 'viewer') and out of the default lists until someone unarchives it. Absent: live.
+   */
+  archivedAt?: number;
   /** The workspace the board belongs to, and its project (folder) there, if any. */
   workspaceId: string;
   projectId: string | null;
@@ -139,6 +144,8 @@ export interface BoardPermissions {
   canMove: boolean;
   /** Hand the board to someone else (its owner, or the workspace's owners/admins). */
   canTransfer: boolean;
+  /** [additive, #153] Archive or unarchive it: its owner, or the workspace's content admins. Absent: no. */
+  canArchive?: boolean;
   /** [additive] The board's link also lets in visitors without an account, as guests (workspace policy `publicLinks`). */
   guestLinks?: boolean;
   /** [additive] This server offers boards a Jitsi room of their own (operator's JITSI_BASE_URL, KAI-134). */
@@ -328,7 +335,8 @@ export const LINK_PASSWORD_MAX = 128;
 // GET    /api/workspaces/:id/members                -> { members: WorkspaceMember[], invites: WorkspaceInvite[] } (not guests)
 // POST   /api/workspaces/:id/members  body { email, role } -> { member } | { invite }  (verified email;
 //        owner/admin any non-owner role; members only guests, and only if guestInvites = 'members')
-// PATCH  /api/workspaces/:id/members/:userId body { role } -> { member }  (owner: any; admin: member/guest)
+// PATCH  /api/workspaces/:id/members/:userId body { role, adminScopes?: AdminScope[] | null } -> { member }
+//        (owner: any; a members admin: member/guest. `adminScopes` only by an owner, only for an admin)
 // DELETE /api/workspaces/:id/members/:userId -> { ok: true }  (owner/admin, or yourself to leave). Cuts
 //        live access at once; boards they owned there pass to whoever removed them.
 // POST   /api/workspaces/:id/invites/:inviteId/resend -> { invite }   DELETE … -> { ok: true }
@@ -350,6 +358,18 @@ export type WorkspaceKind = 'personal' | 'team' | 'organisation';
 /** What a team workspace's members get on its boards (owners/admins always edit). */
 export type TeamAccess = 'editor' | 'commenter' | 'viewer';
 export type WorkspaceRole = 'owner' | 'admin' | 'member' | 'guest';
+/**
+ * [additive, #151] What an admin administers: `members` (people, invites, roles, deactivation,
+ * groups), `content` (sharing policies, every board: inventory, trash, archive, retention, templates,
+ * projects — and editing every board, as admins always did) and `security` (sign-in and session
+ * settings, single sign-on, provisioning, IP allowlist, integrations, exports and the audit log).
+ * Owners have all three; an admin with no scopes set (every admin from before #151) has all three.
+ * An admin without `content` counts as a member wherever board content is concerned.
+ */
+export type AdminScope = 'members' | 'content' | 'security';
+export const ADMIN_SCOPES: readonly AdminScope[] = ['members', 'content', 'security'];
+/** Error code: an admin without the scope a route needs (403). */
+export const ADMIN_SCOPE_REQUIRED = 'admin_scope_required';
 export type ProjectAccess = 'workspace' | 'private';
 export interface WorkspacePolicies {
   /** Who may give people outside the workspace access to its boards ('none': nobody, and such access stops working). */
@@ -390,6 +410,11 @@ export interface WorkspacePolicies {
    * or changing it needs an expiry no later than that many days ahead. null: no limit.
    */
   linkMaxDays: number | null;
+  /**
+   * [additive, #155] Who may share templates with the workspace — on an organisation, who may
+   * publish company templates (and a floor for its workspaces): any member, or owners and content admins.
+   */
+  templatePublishing: 'members' | 'admins';
 }
 /** The longest a workspace may let board links live without changing them (#39 `linkMaxDays`). */
 export const LINK_MAX_DAYS_LIMIT = 365;
@@ -409,6 +434,8 @@ export interface WorkspaceSummary {
    * `policies` above are already the effective values (never looser than these).
    */
   organisation?: WorkspaceOrganisation | null;
+  /** [additive, #151] What you administer here (empty unless owner/admin; owners: all three). */
+  adminScopes?: AdminScope[];
 }
 
 // ---- Organisations (#108; docs/design/organisations.md) ----
@@ -433,7 +460,8 @@ export interface WorkspaceSummary {
 // and /audit… (its merged log).
 /** The policy keys an organisation sets floors for (teamAccess is a team's own). */
 export type OrganisationPolicyKey = Exclude<keyof WorkspacePolicies, 'teamAccess'>;
-export type OrganisationSecurityKey = 'requireTwoFactor' | 'sessionMaxHours' | 'sessionIdleMinutes';
+/** The settings an organisation sets floors for: sign-in and sessions, and (#154) the inactive-board rule. */
+export type OrganisationSecurityKey = 'requireTwoFactor' | 'sessionMaxHours' | 'sessionIdleMinutes' | 'inactiveBoardAction' | 'inactiveBoardDays' | 'ipAllowlist';
 /**
  * Each policy an organisation sets a floor for, its values from the loosest to the strictest (the
  * server enforces floors with it; the admin console disables what a floor rules out). A new policy
@@ -448,6 +476,7 @@ export const POLICY_STRICTNESS: { [K in OrderedPolicyKey]: ReadonlyArray<Workspa
   liveEmbeds: ['on', 'off'],
   boardEmbeds: ['on', 'off'],
   linkPassword: ['optional', 'required'],
+  templatePublishing: ['members', 'admins'],
 };
 /** The floored policies whose values are an ordered choice (all but the numeric `linkMaxDays`). */
 export type OrderedPolicyKey = Exclude<OrganisationPolicyKey, 'linkMaxDays'>;
@@ -502,7 +531,46 @@ export interface WorkspaceMember {
   avatarUrl: string | null;
   role: WorkspaceRole;
   joinedAt: number;
+  /** [additive, #151] An admin's scopes (null: all three; absent for everyone else). */
+  adminScopes?: AdminScope[] | null;
 }
+// ---- User groups (#63) ----
+// A group belongs to one team workspace and holds members of it. Members admins (and owners) make
+// and fill groups; anyone who may share a board or manage a project picks a group like a person.
+// Access follows the group: joining or leaving it changes what someone opens at once, live sockets
+// included. Directory (SCIM) groups are listed beside them, read-only (Provisioning manages those).
+// GET    /api/workspaces/:id/groups -> { groups: WorkspaceGroup[], directory: DirectoryGroup[] }  (members, not guests)
+// POST   /api/workspaces/:id/groups  body { name } -> { group }                 (members admins)
+// PATCH  /api/groups/:id  body { name } -> { group }; DELETE /api/groups/:id -> { ok: true }   (members admins)
+// GET    /api/groups/:id/members -> { members: WorkspaceMember[] }              (members, not guests)
+// PUT    /api/groups/:id/members/:userId -> { group }; DELETE … -> { group }    (members admins; a member of the workspace)
+// GET    /api/boards/:id/groups -> { groups: BoardGroupGrant[] }                (anyone with access)
+// PUT    /api/boards/:id/groups/:groupId  body { role } -> { groups }           (who may invite people to it;
+//        a group of the board's own workspace; one with guests in it only by who the workspace's
+//        guest-invite policy lets invite guests)
+// DELETE /api/boards/:id/groups/:groupId -> { groups }                         (owners and co-owners)
+// GET    /api/projects/:id/groups -> { groups: WorkspaceGroup[] }; PUT / DELETE /api/projects/:id/groups/:groupId (who manages the project)
+export interface WorkspaceGroup {
+  id: string;
+  workspaceId: string;
+  name: string;
+  memberCount: number;
+  /** Members who are the workspace's guests (sharing with such a group is inviting guests). */
+  guestCount: number;
+  createdAt: number;
+}
+export interface DirectoryGroup {
+  id: string;
+  name: string;
+  memberCount: number;
+}
+export interface BoardGroupGrant {
+  groupId: string;
+  name: string;
+  role: 'editor' | 'commenter' | 'viewer';
+  memberCount: number;
+}
+
 export interface WorkspaceInvite {
   id: string;
   email: string;
@@ -913,7 +981,7 @@ export interface DataExportInfo {
 }
 
 // ---- Boards ----
-// GET    /api/boards?workspace=<id>&project=<id>&filter=all|mine|shared|starred|recent|trash&q=text
+// GET    /api/boards?workspace=<id>&project=<id>&filter=all|mine|shared|starred|recent|trash|archived&q=text
 //                                 -> { boards: BoardSummary[] }
 //        `workspace` = the current workspace (default: your personal one; 404 unless you're in it).
 //        all/mine/trash: boards of that workspace you can open (trash: your own deleted ones);
@@ -944,6 +1012,10 @@ export interface DataExportInfo {
 // POST   /api/boards/:id/restore   -> { board: BoardSummary }  (owner only; 404 unless in your trash;
 //                                    403 over the board quota)
 // DELETE /api/boards/:id/permanent -> { ok: true }  (owner only; only boards in the trash)
+// POST   /api/boards/:id/archive | /unarchive -> { board: BoardSummary }  [additive, #153] (its owner,
+//                                    or a content admin of its workspace): an archived board is
+//                                    read-only for everyone, listed only with filter=archived, never
+//                                    moved to the trash by a retention rule; live sockets are re-checked
 // POST   /api/boards/:id/duplicate body DuplicateBoardRequest? -> { board: BoardSummary }  (copies the Yjs
 //                                    state; [additive, #124] into `workspaceId` / `projectId` when given —
 //                                    where you may create boards — else the source's when you may, else personal)
@@ -1071,7 +1143,15 @@ export const MAX_VERSION_NAME = 80;
 //                            with a team workspace you're a member of, or make it personal again.
 //                            Owners/admins of the workspace it is shared with may unshare it: null)
 // A template stops being shared with a workspace when its owner leaves it or becomes a guest there.
-// DELETE /api/templates/:id  -> { ok: true }  (its owner only)
+// DELETE /api/templates/:id  -> { ok: true }  (its owner only; not while an admin locked it)
+// PATCH  /api/templates/:id  body { organisationId: string | null } -> { template }  [additive, #155]
+//        (its owner publishes it to an organisation of one of their workspaces — as the
+//        organisation's `templatePublishing` allows — or takes it back, unless locked; the
+//        organisation's content admins may also withdraw it)
+// POST   /api/templates/:id/lock   body { locked }  -> { template }  (owners / content admins of where it is shared or published)
+// POST   /api/templates/:id/retire body { retired } -> { template }  (same)
+// GET    /api/workspaces/:id/admin/templates -> { templates: SavedTemplateSummary[] }  (content admins of a
+//        workspace or organisation: what is shared with or published to it, retired ones included)
 export interface SavedTemplateSummary {
   id: string;
   name: string;
@@ -1088,6 +1168,15 @@ export interface SavedTemplateSummary {
   elementCount: number;
   createdAt: number;
   updatedAt: number;
+  /** [additive, #155] The organisation it is published to (a company template), with its name. */
+  organisationId?: string | null;
+  organisationName?: string | null;
+  /** [additive, #155] Locked by admins: everyone may use it, only admins change or remove it. */
+  locked?: boolean;
+  /** [additive, #155] Retired by admins: out of every picker (admins and its owner still see it). */
+  retiredAt?: number | null;
+  /** [additive, #155] You may lock and retire it: an owner / content admin of where it is shared or published. */
+  canManage?: boolean;
 }
 /**
  * Board content as the web engine exports it (elements with their ids as on the source board,
@@ -2152,6 +2241,16 @@ export const AUDIT_ACTIONS = {
   'member.invite_revoked': 'Revoked an invite',
   'member.joined': 'Joined the workspace',
   'member.role_changed': 'Changed a member’s role',
+  'member.admin_scopes_changed': 'Changed what an admin administers',
+  'group.created': 'Created a group',
+  'group.renamed': 'Renamed a group',
+  'group.deleted': 'Deleted a group',
+  'group.member_added': 'Added someone to a group',
+  'group.member_removed': 'Removed someone from a group',
+  'board.group_shared': 'Shared a board with a group',
+  'board.group_unshared': 'Stopped sharing a board with a group',
+  'project.group_added': 'Shared a project with a group',
+  'project.group_removed': 'Stopped sharing a project with a group',
   'member.removed': 'Removed a member',
   'member.left': 'Left the workspace',
   'member.deactivated': 'Deactivated a member',
@@ -2166,6 +2265,9 @@ export const AUDIT_ACTIONS = {
   'doc.exported': 'Exported a doc',
   'board.trashed': 'Moved a board to the trash',
   'board.restored': 'Restored a board from the trash',
+  'board.archived': 'Archived a board',
+  'board.unarchived': 'Unarchived a board',
+  'board.retention_notice': 'Warned a board’s owner that a retention rule applies soon',
   'board.deleted': 'Deleted a board forever',
   'board.purged': 'Board purged after trash retention',
   'board.transferred': 'Transferred board ownership',
@@ -2199,6 +2301,12 @@ export const AUDIT_ACTIONS = {
   'board.suggestion_rejected': 'Rejected suggested changes on a board',
   'board.suggestion_reopened': 'Undid accepting or rejecting suggested changes',
   'template.saved': 'Saved a board as a template',
+  'template.published': 'Published a company template',
+  'template.unpublished': 'Withdrew a company template',
+  'template.locked': 'Locked a template',
+  'template.unlocked': 'Unlocked a template',
+  'template.retired': 'Retired a template',
+  'template.unretired': 'Brought back a retired template',
   'audit.exported': 'Exported the audit log',
   // The public API (KAI-104) and agent safety (KAI-170): credentials, apps and every API call.
   'api.token_created': 'Created an API token',
@@ -2212,6 +2320,8 @@ export const AUDIT_ACTIONS = {
   'api.access_changed': 'Turned API access for the workspace on or off',
   'api.credential_blocked': 'Blocked an API token or app in the workspace',
   'api.credential_unblocked': 'Unblocked an API token or app in the workspace',
+  'api.credential_ip_exempted': 'Let an API token or app reach the workspace from any network',
+  'api.credential_ip_unexempted': 'Put an API token or app back under the IP allowlist',
   'api.call': 'API call',
   // Freero's operators acting on reports (modules/moderation).
   'moderation.board.disable_link': 'Freero turned off a board’s link (moderation)',
@@ -2390,15 +2500,32 @@ export interface SiemSinkInfo {
 }
 
 // ---- Admin console (KAI-47) and workspace policies (KAI-51) ----
-// Owners and admins of a TEAM workspace; every route re-checks the workspace role on the server.
+// Owners and admins of a TEAM workspace; every route re-checks the workspace role on the server,
+// and (#151) the admin scope it needs: members (deactivate), content (link compliance, the
+// trash/retention settings), security (the security settings, the audit log); usage, the member
+// list and reading the settings need none. 403 `admin_scope_required` otherwise.
 // GET   /api/workspaces/:id/admin/usage                 -> { usage: WorkspaceUsage }
+// GET   /api/workspaces/:id/admin/usage/history?days=90 -> { days: UsageDay[] }  (#65; any admin; one
+//       point per day the daily rollup ran, oldest first)
+// GET   /api/workspaces/:id/admin/usage/history.csv?days=90 -> the same as CSV
 // GET   /api/workspaces/:id/admin/members?q=           -> { members: AdminMember[] }
 // POST  /api/workspaces/:id/admin/members/:userId/deactivate  -> { member: AdminMember }
 // POST  /api/workspaces/:id/admin/members/:userId/reactivate  -> { member: AdminMember }
 //       A deactivated member keeps their role and boards but opens nothing in the workspace (not
 //       even boards they own) until reactivated; live connections are cut at once.
+// GET   /api/workspaces/:id/admin/boards?filter=link,public,guests,outside,inactive,archived&inactiveDays=&q=
+//       &sort=activity|title|owner|size|created|members&dir=asc|desc&offset=&limit=
+//                                                        -> AdminBoardsResponse  (content; #152; every
+//       board of the workspace, archived ones included; filters combine with AND)
+// POST  /api/workspaces/:id/admin/boards/:boardId/link-off          -> { ok: true }  (content; audited)
+// POST  /api/workspaces/:id/admin/boards/:boardId/remove-outsiders  -> { removed: number } (content;
+//       ends the board memberships of people outside the workspace; each audited)
+// POST  /api/workspaces/:id/admin/boards/:boardId/transfer  body { userId } -> { ok: true } (content; audited)
+// GET   /api/workspaces/:id/admin/trash                  -> { boards: AdminTrashedBoard[] }  (content; #153)
+// POST  /api/workspaces/:id/admin/trash/:boardId/restore -> { ok: true }  (content; audited, the owner's quota)
 // GET   /api/workspaces/:id/admin/settings              -> { settings: WorkspaceSettings }
-// PATCH /api/workspaces/:id/admin/settings  body Partial<WorkspaceSettings> -> { settings }
+// PATCH /api/workspaces/:id/admin/settings  body Partial<WorkspaceSettings> & { confirmExcludesMe?: true } -> { settings }
+//       (GET also answers `yourIp`: the address the server sees, for the IP allowlist, #156)
 // GET   /api/workspaces/:id/audit?action=&actor=&target=&from=&to=&before=&limit=
 //                                                       -> { events: AuditEvent[], next: string | null }
 //       `action`: an action or a prefix ending in '.' ('auth.'); `before`: the `next` of the
@@ -2432,17 +2559,45 @@ export interface WorkspaceSettings {
   versionRetentionDays: number | null;
   /** Days audit events are kept. */
   auditRetentionDays: number;
+  /**
+   * [#154] What happens to a board nobody opened or changed for `inactiveBoardDays`: nothing,
+   * archived (#153), or moved to the trash. Owners are emailed RETENTION_NOTICE_DAYS before, and
+   * any activity (an edit, someone opening it, unarchiving) resets the clock. Archived boards are
+   * never moved to the trash by it, nor are boards under a legal hold. An organisation's rule is a
+   * floor for its workspaces: the stricter action (trash over archive) and the shorter period win.
+   */
+  inactiveBoardAction: InactiveBoardAction;
+  /** [#154] Days without activity before the rule applies (null: no rule). */
+  inactiveBoardDays: number | null;
+  /**
+   * [#156] The networks (IPv4 / IPv6 CIDR ranges, or single addresses) the workspace's boards open
+   * from — REST, sockets and the API, as the client address reads behind the trusted proxy. Empty:
+   * anywhere. An organisation's list applies to its workspaces as well (an address must be in both).
+   * The admin console stays reachable from anywhere, so an owner can always fix a wrong list; SSO,
+   * SCIM and sign-in are not limited by it. API tokens and apps can be exempted per workspace.
+   */
+  ipAllowlist: string[];
 }
+/** Error code (409): the IP allowlist being saved leaves out the address you are using; send `confirmExcludesMe: true` to save it anyway. */
+export const IP_ALLOWLIST_EXCLUDES_YOU = 'ip_allowlist_excludes_you';
+/** Error code (403): this network isn't on the workspace's IP allowlist (#156). */
+export const IP_NOT_ALLOWED = 'ip_not_allowed';
+export type InactiveBoardAction = 'none' | 'archive' | 'trash';
+/** Loosest to strictest (#154; an organisation's floor). */
+export const INACTIVE_BOARD_ACTIONS: readonly InactiveBoardAction[] = ['none', 'archive', 'trash'];
+/** Owners hear this many days before a retention rule archives or trashes their board (#154). */
+export const RETENTION_NOTICE_DAYS = 14;
 export const WORKSPACE_SETTING_LIMITS = {
   sessionMaxHours: { min: 1, max: 24 * 90 },
   sessionIdleMinutes: { min: 15, max: 60 * 24 * 30 },
   trashRetentionDays: { min: 1, max: 365 },
   versionRetentionDays: { min: 7, max: 3650 },
   auditRetentionDays: { min: 30, max: 3650 },
+  inactiveBoardDays: { min: 30, max: 3650 },
 } as const;
 export const DEFAULT_AUDIT_RETENTION_DAYS = 365;
 /** Why the workspace's boards are closed to you right now (see WorkspaceSummary.blocked). */
-export type WorkspaceBlock = 'deactivated' | 'two_factor_required';
+export type WorkspaceBlock = 'deactivated' | 'two_factor_required' | 'ip_not_allowed';
 export interface AdminMember extends WorkspaceMember {
   deactivated: boolean;
   twoFactor: boolean;
@@ -2451,9 +2606,78 @@ export interface AdminMember extends WorkspaceMember {
   /** Boards they own in this workspace (trash excluded). */
   boards: number;
 }
+/**
+ * A board of the workspace as its content admins see it in the inventory (#152): metadata only —
+ * opening the board still needs access to it.
+ */
+export interface AdminBoardRow {
+  boardId: string;
+  kind: ObjectKind;
+  title: string;
+  ownerId: string;
+  ownerName: string;
+  projectId: string | null;
+  projectName: string | null;
+  /** What its link gives anyone who has it (expired or blocked: 'none'). */
+  linkAccess: LinkAccess;
+  /** The link also lets in visitors without an account (the workspace allows it and it has no password). */
+  publicLink: boolean;
+  linkPassword: boolean;
+  /** Direct memberships: everyone invited, of them the workspace's guests, and people outside the workspace. */
+  members: number;
+  guests: number;
+  outsiders: number;
+  /** Stored content (document, history, layers). */
+  bytes: number;
+  createdAt: number;
+  /** The latest edit, rename or open. */
+  lastActivityAt: number;
+  archivedAt: number | null;
+}
+export type AdminBoardFilter = 'link' | 'public' | 'guests' | 'outside' | 'inactive' | 'archived';
+export type AdminBoardSort = 'activity' | 'title' | 'owner' | 'size' | 'created' | 'members';
+export interface AdminBoardsResponse {
+  boards: AdminBoardRow[];
+  /** How many match the filters (pages: `offset` + `limit`). */
+  total: number;
+}
+
+/** A board in a workspace's trash as its content admins see it (#153): metadata only, never content. */
+export interface AdminTrashedBoard {
+  boardId: string;
+  kind: ObjectKind;
+  title: string;
+  ownerId: string;
+  ownerName: string;
+  /** Who moved it to the trash (null: before #153, or a retention rule). */
+  deletedBy: { id: string; name: string } | null;
+  deletedAt: number;
+  purgeAt: number;
+}
+/**
+ * One day of a workspace's usage (#65), as the daily rollup recorded it: counts only, never who —
+ * API / MCP calls by app come from the audit log, which already records them.
+ */
+export interface UsageDay {
+  /** UTC date, YYYY-MM-DD. */
+  day: string;
+  activeUsers7d: number;
+  activeUsers30d: number;
+  boardsCreated: number;
+  docsCreated: number;
+  members: number;
+  guests: number;
+  /** App or token name -> calls that day. */
+  apiCalls: Record<string, number>;
+}
+export const USAGE_HISTORY_MAX_DAYS = 400;
+
 export interface WorkspaceUsage {
+  /** Live boards (archived ones not included). */
   boards: number;
   trashedBoards: number;
+  /** [additive, #153] Archived boards (kept, read-only). */
+  archivedBoards?: number;
   projects: number;
   members: Record<WorkspaceRole, number>;
   deactivated: number;

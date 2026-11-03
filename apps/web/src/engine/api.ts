@@ -147,7 +147,11 @@ export interface Host {
      * templates saved from this board may be shared with that team (`saveTemplate`'s
      * `shareWithTeam`, `shareTemplate`). Null/absent: personal templates only.
      */
-    team?: { name: string } | null;
+    team?: {
+      name: string;
+      /** [additive, #155] The organisation the team belongs to: templates may be published there (`publishTemplate`). */
+      company?: string | null;
+    } | null;
     /**
      * [additive] False for a visitor without an account (a guest on the board's link, KAI-43):
      * no account services, and the report dialog asks for a contact email. Default true.
@@ -350,6 +354,12 @@ export interface Host {
    * is no team to share with (offline sandbox, personal board).
    */
   shareTemplate(id: string, shared: boolean): Promise<SavedTemplateInfo>;
+  /**
+   * [additive, #155] Publishes one of the user's own templates to `board.team.company` (every
+   * workspace of the company sees it), or withdraws it. Rejects when the company lets only admins
+   * publish, or an admin locked it. Absent: no company here.
+   */
+  publishTemplate?(id: string, published: boolean): Promise<SavedTemplateInfo>;
   /** [additive] Deletes one of the user's own saved templates. */
   deleteTemplate(id: string): Promise<void>;
   /**
@@ -610,6 +620,10 @@ export interface SavedTemplateInfo {
    * or an owner/admin of the workspace it is shared with.
    */
   canUnshare?: boolean;
+  /** [additive, #155] Published to this company (its name): every workspace of it sees the template. */
+  company?: string | null;
+  /** [additive, #155] Locked by admins: anyone may use it, only admins change or remove it. */
+  locked?: boolean;
   elementCount: number;
   createdAt: number;
 }

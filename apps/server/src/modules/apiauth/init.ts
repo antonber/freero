@@ -3,6 +3,7 @@
 // tokens and abandoned self-registered apps are cleared hourly (one instance at a time).
 import type { ServerContext } from '../../platform/context';
 import { scheduleExclusiveJob } from '../../platform/jobs';
+import { setIpExemptionReader } from '../workspaces/index';
 import * as repo from './repo';
 import { connectRevocation } from './wiring';
 
@@ -11,6 +12,8 @@ const ABANDONED_CLIENT_MS = 7 * 86_400_000;
 
 export default function initApiAuth(ctx: ServerContext): void {
   ctx.onShutdown(connectRevocation());
+  // #156: board access through a token or app honours the workspaces' exemptions for it.
+  setIpExemptionReader(repo.ipExemptIn); // the same reader as index's ipExemptionsOf
   scheduleExclusiveJob(ctx, {
     name: 'apiauth:cleanup',
     lockKey: CLEANUP_LOCK_KEY,

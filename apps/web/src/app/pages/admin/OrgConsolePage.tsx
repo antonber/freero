@@ -4,8 +4,8 @@
 // workspace admin console's, pointed at the organisation's id; the server checks every action.
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Building2, KeyRound, Lock, ScrollText, UserCog, Users } from 'lucide-react';
-import type { OrganisationSummary, WorkspaceSummary } from '@freero/shared';
+import { ArrowLeft, Building2, KeyRound, LayoutTemplate, Lock, ScrollText, UserCog, Users } from 'lucide-react';
+import type { AdminScope, OrganisationSummary, WorkspaceSummary } from '@freero/shared';
 import { Logo, Spinner } from '@ui';
 import { api } from '../../api/client';
 import { AdminAudit } from './AdminAudit';
@@ -14,15 +14,19 @@ import { AdminMembers } from './AdminMembers';
 import { OrgWorkspaces } from './AdminOrganisation';
 import { AdminRetention, AdminSecurity } from './AdminSettings';
 import { AdminSiem, siemOffered } from './AdminSiem';
+import { AdminTemplates } from './AdminTemplates';
+import { scopesOf } from './AdminConsolePage';
 import './admin.css';
 
+// `scopes` (#151): the admin scopes that use the tab; none: every admin.
 const TABS = [
-  { id: 'workspaces', label: 'Workspaces', icon: Building2 },
-  { id: 'people', label: 'People', icon: Users },
-  { id: 'policies', label: 'Policies', icon: Lock },
-  { id: 'sso', label: 'Single sign-on', icon: KeyRound },
-  { id: 'provisioning', label: 'Provisioning', icon: UserCog },
-  { id: 'audit', label: 'Audit log', icon: ScrollText },
+  { id: 'workspaces', label: 'Workspaces', icon: Building2, scopes: [] },
+  { id: 'people', label: 'People', icon: Users, scopes: ['members'] },
+  { id: 'policies', label: 'Policies', icon: Lock, scopes: ['security', 'content'] },
+  { id: 'templates', label: 'Templates', icon: LayoutTemplate, scopes: ['content'] },
+  { id: 'sso', label: 'Single sign-on', icon: KeyRound, scopes: ['security'] },
+  { id: 'provisioning', label: 'Provisioning', icon: UserCog, scopes: ['security'] },
+  { id: 'audit', label: 'Audit log', icon: ScrollText, scopes: ['security'] },
 ] as const;
 type Tab = (typeof TABS)[number]['id'];
 
@@ -31,8 +35,10 @@ export function OrgConsolePage() {
   const [params, setParams] = useSearchParams();
   // The identity tabs link to `?tab=security` (their session policy): the Policies tab here.
   const asked = params.get('tab') === 'security' ? 'policies' : params.get('tab');
-  const tab: Tab = TABS.some((t) => t.id === asked) ? (asked as Tab) : 'workspaces';
   const [org, setOrg] = useState<OrganisationSummary | null | undefined>(undefined);
+  const mine = org ? scopesOf(org) : [];
+  const shown = TABS.filter((t) => t.scopes.length === 0 || t.scopes.some((s) => (mine as readonly AdminScope[]).includes(s)));
+  const tab: Tab = shown.some((t) => t.id === asked) ? (asked as Tab) : 'workspaces';
   const [names, setNames] = useState<Map<string, string>>(new Map());
   const [siem, setSiem] = useState(false);
 
@@ -48,7 +54,7 @@ export function OrgConsolePage() {
   useEffect(() => {
     let live = true;
     if (!manager) return;
-    void siemOffered(organisationId).then((on) => live && setSiem(on));
+    if (org && scopesOf(org).includes('security')) void siemOffered(organisationId).then((on) => live && setSiem(on));
     api.organisationWorkspaces(organisationId).then(
       ({ workspaces }) => live && setNames(new Map(workspaces.map((w) => [w.id, w.name]))),
       () => undefined,
@@ -89,7 +95,7 @@ export function OrgConsolePage() {
               <span className="fr-admin__ws-name">{org.name}</span>
               <span className="fr-admin__muted">Organisation · you’re {org.role === 'owner' ? 'an owner' : 'an admin'}</span>
             </div>
-            {TABS.map((t) => (
+            {shown.map((t) => (
               <button
                 key={t.id}
                 type="button"
@@ -106,6 +112,7 @@ export function OrgConsolePage() {
             {tab === 'workspaces' ? <OrgWorkspaces organisation={org} onChanged={reload} /> : null}
             {tab === 'people' ? <AdminMembers workspace={asWorkspace} /> : null}
             {tab === 'policies' ? <AdminSecurity workspace={asWorkspace} onChanged={reload} /> : null}
+            {tab === 'templates' ? <AdminTemplates workspace={asWorkspace} /> : null}
             {tab === 'sso' ? <AdminSso workspace={asWorkspace} /> : null}
             {tab === 'provisioning' ? <AdminProvisioning workspace={asWorkspace} /> : null}
             {tab === 'audit' ? (

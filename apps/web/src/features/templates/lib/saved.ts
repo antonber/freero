@@ -79,6 +79,13 @@ export async function setTemplateShared(editor: Editor, id: string, shared: bool
   savedTemplatesChanged();
 }
 
+/** #155: publishes one of the user's templates to the board's company, or withdraws it. */
+export async function setTemplatePublished(editor: Editor, id: string, published: boolean): Promise<void> {
+  if (!editor.host.publishTemplate) throw new Error('This board’s team isn’t part of a company.');
+  await editor.host.publishTemplate(id, published);
+  savedTemplatesChanged();
+}
+
 export async function deleteSavedTemplate(editor: Editor, id: string): Promise<void> {
   await editor.host.deleteTemplate(id);
   savedTemplatesChanged();

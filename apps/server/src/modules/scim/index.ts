@@ -2,6 +2,11 @@
 // /scim/v2 and its admin API are this module's routes.ts).
 import * as repo from './repo';
 
+/** The workspace's directory groups as the groups page shows them, read-only (#63). */
+export async function directoryGroupsOf(workspaceId: string): Promise<Array<{ id: string; name: string; memberCount: number }>> {
+  return repo.directoryGroupSummaries(workspaceId);
+}
+
 /** For a person's data export: what each workspace's directory sent about them. */
 export async function scimRecordsOf(userId: string): Promise<unknown[]> {
   return (await repo.usersOf(userId)).map((u) => ({

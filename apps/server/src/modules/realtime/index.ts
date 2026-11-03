@@ -91,4 +91,4 @@ export { storedBoardView, storedDocContent } from './stored';
 export { COMMENTS_COLLECTION };
 export { BOARD_CONTENT_TOPIC } from './repo';
 // The uploads board documents reference (the uploads sweep keeps those files).
-export { boardUploadReferences, storedBoardContent } from './uploadRefs';
+export { boardUploadReferences, storedBoardContent, storedBoardSizes } from './uploadRefs';

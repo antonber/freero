@@ -28,6 +28,7 @@ import {
   saveThumbnail,
   reportExport,
   shareTemplateWith,
+  publishTemplateTo,
   unfurl,
   resolveObjects,
   uploadAttachment,
@@ -56,7 +57,7 @@ export interface HostDeps {
   openShareDialog(): void;
   onTitleChange(title: string): void;
   /** The board's team workspace, when the user is a full member of it (templates can be shared there). */
-  team?: { id: string; name: string } | null;
+  team?: { id: string; name: string; company?: { id: string; name: string } | null } | null;
   /** What the server said about AI on this board for this user (null: AI is off on this server). */
   ai?: BoardAiStatus | null;
   /** Tracker connections this user may use here (empty: no tracker entry points). */
@@ -140,7 +141,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
       canExport: board.permissions.canExport,
       canCopy: board.permissions.canCopy !== false,
       coOwner: board.coOwner === true,
-      team: deps.team ? { name: deps.team.name } : null,
+      team: deps.team ? { name: deps.team.name, company: deps.team.company?.name ?? null } : null,
       call: board.call ?? null,
       jitsiCalls: board.permissions.jitsiCalls === true,
       embeds: embedsOf(board.permissions),
@@ -180,6 +181,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     loadTemplate,
     saveTemplate: saveTemplateFrom(board.id, deps.team?.id ?? null),
     shareTemplate: shareTemplateWith(deps.team?.id ?? null),
+    ...(deps.team?.company ? { publishTemplate: publishTemplateTo(deps.team.company.id) } : {}),
     deleteTemplate,
     versions: versionHistory(board.id),
     activity: {

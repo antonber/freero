@@ -36,7 +36,7 @@ const backTo = (workspaceId: string | null) => (workspaceId ? `/admin/${encodeUR
 export async function startOAuth(req: Request, res: Response, userId: string, provider: TrackerProviderKind): Promise<void> {
   const { app, oauth } = appFor(provider);
   const workspaceId = typeof req.query.workspace === 'string' && req.query.workspace ? req.query.workspace : null;
-  if (workspaceId) await requireAdmin(workspaceId, userId);
+  if (workspaceId) await requireAdmin(workspaceId, userId, { scope: 'security' });
   const name = typeof req.query.name === 'string' && req.query.name.trim() ? req.query.name.trim().slice(0, 80) : TRACKER_PROVIDERS[provider];
   const state = randomBytes(32).toString('base64url');
   const browser = randomBytes(32).toString('base64url');
@@ -71,7 +71,7 @@ export async function finishOAuth(req: Request, res: Response, userId: string, p
     throw new HttpError(400, 'This authorization didn’t start in this browser, or it expired. Start again from Freero.');
   const fail = (message: string) => res.redirect(302, `${backTo(flow.workspaceId)}&tracker_error=${encodeURIComponent(message)}`);
   if (!code) return fail(typeof req.query.error_description === 'string' ? req.query.error_description.slice(0, 200) : 'The authorization was cancelled.');
-  if (flow.workspaceId) await requireAdmin(flow.workspaceId, userId);
+  if (flow.workspaceId) await requireAdmin(flow.workspaceId, userId, { scope: 'security' });
   try {
     const { credentials, sites } = await oauth.redeem({
       clientId: app.clientId,

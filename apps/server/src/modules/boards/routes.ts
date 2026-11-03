@@ -36,6 +36,7 @@ import {
   requireAccess,
   requireDownload,
   restoreFromTrash,
+  setBoardArchived,
   summarize,
   toSummary,
   transferBoard,
@@ -224,6 +225,21 @@ export default function boardRoutes(_ctx: ServerContext): Router {
       res.json({ board: await summarize(board, user.id) } satisfies Out);
     }),
   );
+
+  // #153: archive / unarchive (its owner or a content admin of its workspace).
+  for (const [verb, archived] of [
+    ['archive', true],
+    ['unarchive', false],
+  ] as const)
+    r.post(
+      `/boards/:id/${verb}`,
+      requireUser,
+      handle(async (req, res) => {
+        const user = currentUser(req);
+        const board = await setBoardArchived(req.params.id, user.id, archived);
+        res.json({ board: await summarize(board, user.id) } satisfies Out);
+      }),
+    );
 
   r.delete(
     '/boards/:id/permanent',

@@ -16,7 +16,7 @@ export async function workspaceAuditFor(
   q: { after?: unknown; limit?: unknown },
 ): Promise<{ events: AuditEvent[]; cursor: string; more: boolean; headSeq: number }> {
   // An organisation's merged log too (#108).
-  const { name } = await requireAdmin(workspaceId, call.userId, { organisation: true });
+  const { name } = await requireAdmin(workspaceId, call.userId, { organisation: true, scope: 'security' });
   await useInWorkspace(call.cred, workspaceId);
   call.audit.workspaceId = workspaceId;
   call.audit.target = { type: 'workspace', id: workspaceId, label: name };

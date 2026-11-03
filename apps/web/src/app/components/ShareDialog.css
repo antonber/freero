@@ -340,3 +340,11 @@
   resize: none;
   word-break: break-all;
 }
+
+/* #63: sharing with a group of the workspace. */
+.fr-share__groups-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 6px 0 14px;
+}

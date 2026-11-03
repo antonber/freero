@@ -48,7 +48,11 @@ export function AdminOverview({ workspace, onOpen }: { workspace: WorkspaceSumma
         Overview
       </h1>
       <div className="fr-admin-stats">
-        <Stat label="Boards" value={usage.boards} note={usage.trashedBoards ? `${usage.trashedBoards} in the trash` : 'Trash is empty'} />
+        <Stat
+          label="Boards"
+          value={usage.boards}
+          note={[usage.archivedBoards ? `${usage.archivedBoards} archived` : null, usage.trashedBoards ? `${usage.trashedBoards} in the trash` : 'Trash is empty'].filter(Boolean).join(' · ')}
+        />
         <Stat label="People" value={people} note={`${usage.members.owner + usage.members.admin} owners & admins · ${usage.members.guest} ${usage.members.guest === 1 ? 'guest' : 'guests'}`} />
         <Stat label="Active, last 7 days" value={usage.activeUsers7d} note={`${usage.activeUsers30d} in the last 30 days`} />
         <Stat label="Storage" value={formatBytes(usage.contentBytes + usage.fileBytes)} note={`${formatBytes(usage.fileBytes)} in files, ${formatBytes(usage.contentBytes)} board content`} />

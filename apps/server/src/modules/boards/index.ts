@@ -4,7 +4,7 @@ import { notFound } from '../../platform/http';
 import { closeBoardDoc } from '../realtime/index';
 import { deleteUpload, UPLOAD_REF_PATTERN } from '../uploads/index';
 import { managesSharing, membershipsOf } from '../members/index';
-import { boardAccessLoader, getWorkspaceInfo, mayDownload, mayShareExternally, openToWholeTeam, teamMembers, workspaceRole, workspaceRolesOf } from '../workspaces/index';
+import { boardAccessLoader, getWorkspaceInfo, mayDownload, mayInviteToWorkspace, mayShareExternally, openToWholeTeam, teamMembers, workspaceRole, workspaceRolesOf } from '../workspaces/index';
 import * as repo from './repo';
 import {
   boardLetsCopy,
@@ -28,6 +28,12 @@ import {
 } from './service';
 
 export { createBoard, deleteBoardRowsInWorkspace, cleanUpDeletedBoards } from './service';
+// Legal holds (#157) keep boards from retention rules (#154).
+export { onBoardRetentionHold, type BoardHoldCheck } from './retention';
+// The admin inventory (#152; modules/admin checks the scope).
+export { inventoryBoards, turnOffLinkForWorkspace, transferForWorkspace, workspaceBoard } from './service';
+// The workspace's trash for its content admins (#153; modules/admin checks the scope).
+export { workspaceTrash, restoreForWorkspace } from './service';
 // The object registry (modules/objects): boards and items, checked like the board page checks them.
 export { registerBoardObjectTypes, boardRoles, elementTitle } from './objects';
 // Created, duplicated, renamed, moved, trashed, restored (the activity feed, KAI-188).
@@ -144,6 +150,8 @@ export async function requireBoardAccess(
   coOwner: boolean;
   manages: boolean;
   editorsCanShare: boolean;
+  /** #63: the workspace's guest-invite policy lets them invite guests (sharing with a group that has guests). */
+  mayInviteGuests: boolean;
 }> {
   const { board, role, access, coOwner } = await requireAccess(boardId, userId, min);
   return {
@@ -157,6 +165,7 @@ export async function requireBoardAccess(
     coOwner,
     manages: managesSharing(role, coOwner),
     editorsCanShare: board.editorsCanShare,
+    mayInviteGuests: access.team !== null && mayInviteToWorkspace(access.workspaceRole, 'guest', access.policies),
   };
 }
 
@@ -333,8 +342,13 @@ export function boardIdsInWorkspace(workspaceId: string): Promise<string[]> {
 }
 
 /** Board usage of a workspace for its admin console (trash counted apart; owners of live boards). */
-export function workspaceBoardStats(workspaceId: string): ReturnType<typeof repo.workspaceStats> {
-  return repo.workspaceStats(workspaceId, Date.now());
+export function workspaceBoardStats(workspaceId: string, now = Date.now()): ReturnType<typeof repo.workspaceStats> {
+  return repo.workspaceStats(workspaceId, now);
+}
+
+/** Boards and docs created in a workspace in [from, to) (#65: usage trends). */
+export function boardsCreatedIn(workspaceId: string, from: number, to: number): Promise<{ boards: number; docs: number }> {
+  return repo.createdIn(workspaceId, from, to);
 }
 
 export function boardIdsInProject(projectId: string): Promise<string[]> {

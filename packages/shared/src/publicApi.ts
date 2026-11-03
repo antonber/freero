@@ -215,6 +215,8 @@ export interface WorkspaceApiCredential {
   lastUsedAt: number;
   /** Blocked here by an admin (it still works elsewhere). */
   blocked: boolean;
+  /** [additive, #156] Exempt here from the workspace's IP allowlist (an integration on a server elsewhere). */
+  ipExempt?: boolean;
 }
 
 // ---- /api/v1 payloads (docs/api/openapi.json is the reference) ----

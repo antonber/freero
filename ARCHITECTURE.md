@@ -1303,9 +1303,9 @@ sso_domain_policies, sso_domain_captures: domain control),
 `/scim/v2`), `privacy` (data_exports: personal and workspace data exports; see "Enterprise
 identity and data"), `audit` (audit_events, audit_chains, audit_anchors: the append-only audit log
 and signed checkpoints of its heads), `siem` (siem_sinks: the audit log streamed to workspaces'
-SIEMs; see "Audit log, admin console and workspace policies"), `admin` (no
-table: the admin console of team workspaces; see "Audit log, admin console and workspace
-policies"), `activity` (board_activity, board_seen: the activity feed and "changes since your last visit"; see "Activity" below), `ai`
+SIEMs; see "Audit log, admin console and workspace policies"), `admin` (the
+admin console of team workspaces; see "Audit log, admin console and workspace
+policies"; its one table, since #65, `workspace_usage_daily`, the daily usage rollup), `activity` (board_activity, board_seen: the activity feed and "changes since your last visit"; see "Activity" below), `ai`
 (ai_workspace_settings, ai_usage: AI board actions with a provider the operator or a workspace
 configures; see "AI" below), `apiauth` (api_tokens,
 oauth_clients, oauth_grants, oauth_codes, api_workspace_settings, api_workspace_credentials:
@@ -1399,7 +1399,18 @@ reports" below).
   gone (sockets refused and closed after the live doc state is stored). Owners restore or delete
   forever; `boards/init.ts` purges after the workspace's trash retention (`TRASH_RETENTION_DAYS`
   unless the workspace sets `trashRetentionDays`) hourly on every instance as a `platform/jobs`
-  exclusive job, so replicas never purge at once.
+  exclusive job, so replicas never purge at once. `boards.deleted_by` (#153) remembers who trashed
+  it; a workspace's content admins list its whole trash (`GET /workspaces/:id/admin/trash`,
+  metadata only, boards' `workspaceTrash`) and restore any board of it for its owner
+  (`restoreForWorkspace`: that workspace's trash only, the owner's quota, audited `board.restored`
+  with `by: 'admin'`).
+- Archive (#153; `boards.archived_at` / `archived_by`, boards' repo `setArchived`): `POST
+  /boards/:id/archive | unarchive` by its owner (by identity) or an owner / content admin of its
+  workspace (`mayArchive`), audited `board.archived` / `board.unarchived`, live sockets re-resolved.
+  Archived, `members/roles.ts` `resolveRole` caps EVERY role at 'viewer' — the owner's too, so no
+  owner-only action (trash, transfer, move, sharing) works until it is unarchived — and guests at
+  viewer; lists show it only with `filter=archived`; usage counts it apart (`archivedBoards`); no
+  retention rule trashes it (#154).
 - Periodic jobs: `scheduleExclusiveJob(ctx, { name, lockKey, intervalMs, run })` from an init.ts
   (trash purge, account purge). One instance runs a job at a time (a Postgres session advisory
   lock held for the whole run); jobs must be idempotent, since a run can be cut short anywhere.
@@ -1646,6 +1657,21 @@ members with roles owner / admin / member / guest (separate from board roles).
   transfers) re-resolves the live sockets of the affected boards on every instance through
   realtime's `refreshBoardAccess`. Removing someone also ends their direct board memberships in
   that workspace and hands boards they owned there to the remover.
+- **User groups** (#63; `workspaces/groups.ts`, tables `workspace_groups`, `workspace_group_members`,
+  `project_groups`; members' `board_group_grants`): members admins make groups of the workspace's
+  members (leaving the workspace leaves its groups, in `repo.removeMember`); directory (SCIM) groups
+  are listed beside them read-only (scim registers `setDirectoryGroupReader` from its init). A board
+  is shared with a group at a role (`PUT /boards/:id/groups/:groupId`: whoever may invite people;
+  a group with guests in it only by who the workspace's `guestInvites` lets invite guests —
+  `requireBoardAccess().mayInviteGuests`; stopping: owners and co-owners); a project too (its
+  managers; `projectIdsOf` / `projectPeopleIds` count the group's members as the project's). Members'
+  `getMembership` / `membershipsOf` return the HIGHEST of the direct membership and the person's
+  groups' grants — only grants of groups of the board's own workspace, to people still in it — so
+  `resolveRole` (blocked, outside sharing), lists, search and socket admission need nothing new.
+  Every change to a group's membership, a grant or a project's groups re-resolves the boards it
+  reaches on every instance (`refreshBoardAccess`): leaving a group closes a board shared only with
+  it on the next request and on the open socket (4403). Audited: `group.*`, `board.group_shared` /
+  `board.group_unshared`, `project.group_added` / `project.group_removed`.
 - Invites by email reuse the board-invite mechanics (`workspace_invites`, sha256 tokens, link
   `/workspace-invite/<token>`, conversion on `auth.onEmailVerified`).
 - Policies (team workspaces): `externalSharing` (who may invite people outside / share by link),
@@ -1663,6 +1689,19 @@ members with roles owner / admin / member / guest (separate from board roles).
   it (`templates.shareTemplate(id, null)`); workspaces' `onMembershipChanged` (after a removal or
   role change) makes everything someone shared with a workspace personal again when they leave it
   or become a guest there (`templates/init.ts`).
+- Company templates (#155; `templates.organisation_id`, `locked`, `retired_at`): its owner
+  publishes a template to the organisation of one of their workspaces (`PATCH /templates/:id
+  { organisationId }`); it then reaches the full members of every attached workspace (the one
+  visibility rule, repo `VISIBLE_TO_USER`, with templates' `audienceOf`: team workspaces + their
+  organisations), labelled with the organisation's name. Who may share with a workspace / publish
+  to an organisation is the policy `templatePublishing` (members / admins: owners and content
+  admins; an organisation's is a floor for its workspaces, like every policy). Owners and content
+  admins of where it is shared or published lock it (its owner can no longer delete, unshare or
+  withdraw it — the repo's writes refuse a locked row), retire it (out of every picker but its
+  owner's) or withdraw it; `GET /workspaces/:id/admin/templates` lists them. Audited in that
+  place's log: `template.published` / `unpublished` / `locked` / `unlocked` / `retired` / `unretired`.
+  In the board's picker (`features/templates`) `Host.publishTemplate` exists when the board's team
+  belongs to an organisation (`board.team.company`).
 - Ownership: `POST /boards/:id/transfer` (team: to a non-guest member; personal: to a board
   member, moving the board to their personal workspace) and `POST /workspaces/:id/transfer`, each
   one transaction; the previous owner becomes editor / admin. Account purge first calls
@@ -2759,6 +2798,46 @@ security and retention settings, sharing policies, the audit log (filters, pagin
 add their own tabs with their own routes under `/workspaces/:id/admin/…`, checked with
 `admin/index.ts` `requireAdmin` (SSO and provisioning; AI, shown only when the server offers AI).
 
+**Usage trends** (#65; admin's own table `workspace_usage_daily`, `admin/usage.ts`): the
+`admin:usage-rollup` job (hourly, one instance) upserts each team workspace's row for the UTC day —
+active people over 7 / 30 days (board opens), boards and docs created that day, members and guests,
+and API / MCP calls by app counted from the audit log's `api.call` events (`auditCountsBy`) —
+nothing per person. One row per (workspace, day): a second run replaces the day, never adds to it.
+Rows go with their workspace (cascade) and after `USAGE_HISTORY_MAX_DAYS`. `GET
+…/admin/usage/history` (JSON) and `…/history.csv` (cells formula-safe), any admin; the Overview
+charts 90 days as small multiples with a table view.
+
+**Board inventory** (#152; content admins; admin's `boardInventory`): `GET /workspaces/:id/admin/boards`
+composes boards' `inventoryBoards` (live boards, archived included, with the last activity and whether
+the link lets visitors in, as `resolveGuestRole` decides), members' `memberIdsOfBoards` (guests and
+people outside counted against the workspace's members), realtime's `storedBoardSizes` and the
+project names; filters (link, public, guests, outside, inactive N days, archived) combine with AND,
+sorted and paged in memory. Metadata only — opening a board still needs access. Fixes, each in
+the owning module, scoped to that workspace's boards (404 otherwise) and audited: boards'
+`turnOffLinkForWorkspace` (`board.link_sharing_changed`, `by: 'admin'`), members'
+`removeOutsideMembers` (`board.member_removed`, `reason: 'outside_workspace'`), boards'
+`transferForWorkspace` (transferBoard's rules: a non-guest member, the receiver's quota).
+
+**Admin roles** (#151; `workspace_members.admin_scopes`, workspaces' repo): an admin administers
+`members` (people, invites, roles, deactivation, groups), `content` (sharing policies, the board
+inventory, trash, archive, retention, templates, projects) and/or `security` (sign-in and session
+settings, SSO, provisioning, the IP allowlist, AI / API / webhooks / trackers, exports, the audit log
+and its streams). NULL = all three, so every admin from before keeps meaning everything; owners
+always have all three; a role change away from admin clears the scopes. Only an owner sets them
+(`PATCH /workspaces/:id/members/:userId { role: 'admin', adminScopes }`, audited
+`member.admin_scopes_changed`) — an admin can't widen anyone's, their own included. Every admin
+route names the scope it needs: `requireWorkspace(…, 'admin', { scope })` / `requireWorkspaceRole` /
+admin's `requireAdmin(…, { scope })` answer 403 `admin_scope_required` otherwise; settings are
+checked key by key (`SETTING_SCOPE`: a mixed change is refused whole). Usage, the member list and
+reading settings need none. **An admin without `content` counts as a member wherever board content
+is concerned** (no editing every board, no private projects, no moving or transferring others'
+boards, no deciding access requests): `repo.rolesOf` / `getContentRole` / exported `workspaceRole`
+read the content role (`roles.ts` `contentRole`, SQL twin `CONTENT_ROLE`), so board access, lists,
+search, the public API, projects, templates and `teamMembers` / `boardGatekeepers` agree. The same
+column and checks serve an organisation's admins (org security admins: SSO, provisioning, floors of
+sign-in; content admins: the sharing floors; members admins: its directory). The console hides tabs
+and cards the caller's scopes can't use (`WorkspaceSummary.adminScopes`).
+
 **Workspace settings** (`workspaces` columns; `WorkspaceSettings` in `@freero/shared`), each
 enforced by the module that owns the data, wired from that module's `init.ts`:
 - Deactivated members (`workspace_members.deactivated_at`) and the two-step requirement close the
@@ -2767,6 +2846,22 @@ enforced by the module that owns the data, wired from that module's `init.ts`:
   everyone who opens the workspace's boards (members, guests, invited outsiders) and is registered
   with auth's `onTwoFactorRequirement`, so members can't turn two-step off; whoever turns the
   requirement on needs it on themselves. `WorkspaceSummary.blocked` tells the dashboard why.
+- IP allowlist (#156; `workspaces.ip_allowlist`, canonical CIDR ranges, `workspaces/ipAllowlist.ts`;
+  security admins): a third reason in the one `blocked` rule — `blockOf` answers `ip_not_allowed`
+  when the request's client address (platform's request context, TRUST_PROXY applied) is outside
+  the workspace's own list or its organisation's (`ipListsOf`: both apply, never merged, so neither
+  widens the other). So REST, lists, search and socket admission follow it; platform/ws.ts gives
+  every upgrade a request context with its address, the room keeps it on the connection
+  (`Admission.ip`) and resolves every access refresh as from it, so a list change closes open
+  sockets from elsewhere (refreshWorkspaceBoards). Where no address is known (jobs, digests) nothing
+  is blocked. The admin console (`requireWorkspace`), sign-in, SSO and SCIM never ask it, so an owner
+  can always fix a wrong list — the break-glass path. Saving a list that leaves out the caller's own
+  address needs `confirmExcludesMe` (409 `ip_allowlist_excludes_you`); `GET …/admin/settings` says
+  `yourIp`. Requests through an API token or app follow the same rule on every board they resolve
+  (REST, MCP, lists, search — all through `boardAccessLoader`) and in apiauth's `useInWorkspace`,
+  except in a workspace whose security admins exempted that credential
+  (`api_workspace_credentials.ip_exempt`, audited `api.credential_ip_exempted`; the request context
+  carries `apiCredentialId`, apiauth registers `setIpExemptionReader` from its init).
 - Session lifetime / idle timeout: **a session belongs to a person, not a workspace**, so the
   strictest limits of the team workspaces someone is a member of (not as a guest) apply to all of
   their sessions (`workspaces.sessionLimitsFor`, given to auth with `setSessionLimits`). Auth checks
@@ -2775,6 +2870,23 @@ enforced by the module that owns the data, wired from that module's `init.ts`:
   their sockets. Edits over a board socket count as activity (`auth.noteSessionActivity`).
 - Trash retention: boards' purge job; version-history retention: realtime's prune job (above);
   audit retention: the audit job. All idempotent, one instance at a time.
+- Inactive boards (#154; `inactiveBoardAction` none / archive / trash + `inactiveBoardDays`, content
+  admins): boards' `boards:retention` job (hourly, `boards/retention.ts`) takes each workspace's
+  rule as it applies (workspaces' `inactiveBoardRules`: its own raised to its organisation's floor —
+  the stricter action, the shorter period, combined key by key like every floor; a workspace asking
+  for less gets 403 `organisation_policy`). Last activity = the latest of an edit / rename
+  (`boards.updated_at`, realtime touches it on save), anyone opening it (`board_opens`) and
+  (un)archiving. A board idle for `days − RETENTION_NOTICE_DAYS` gets a notice (one email per owner,
+  `boards.retention_notice_at`, audited `board.retention_notice`); the rule applies only once the
+  board is idle for `days` AND a notice newer than its last activity is at least
+  `RETENTION_NOTICE_DAYS` old — activity makes the notice stale, so the clock restarts. Each board is
+  re-checked in the one UPDATE that archives / trashes it (`applyInactiveRule`: that workspace,
+  still inactive, still noticed), so the job is idempotent and never races an open. Audited
+  `board.archived` / `board.trashed` with no actor and `reason: 'retention'`. Never touched:
+  archived boards (archiving is how a board is kept), taken-down boards, boards a hold check names
+  (`boards.onBoardRetentionHold`, the seam for legal holds, #157; a failing check holds them all)
+  and every board of a workspace with a deletion hold (`workspaceHoldOn`). Board events with no
+  actor reach the event stream as `actor: { kind: 'system' }`.
 
 ### Two-step verification recovery (KAI-99, `modules/auth/recovery.ts`)
 

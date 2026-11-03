@@ -1,6 +1,6 @@
 // The choices the admin console offers for a team workspace's policies and settings. The server
 // validates every value (WORKSPACE_SETTING_LIMITS); these are just the sensible steps.
-import type { LinkAccess, WorkspacePolicies, WorkspaceSettings } from '@freero/shared';
+import type { InactiveBoardAction, LinkAccess, WorkspacePolicies, WorkspaceSettings } from '@freero/shared';
 import type { SelectOption } from '@ui';
 
 /** The policies that are a choice among words (`linkMaxDays`, a number of days, has its own field). */
@@ -80,6 +80,15 @@ export const POLICY_FIELDS: Array<{
     ],
   },
   {
+    key: 'templatePublishing',
+    label: 'Who shares templates',
+    hint: 'Who may share a template with the whole team — in an organisation, who may publish company templates every workspace sees. Admins can lock and retire them (Templates).',
+    options: [
+      { value: 'members', label: 'Any member' },
+      { value: 'admins', label: 'Owners and content admins' },
+    ],
+  },
+  {
     key: 'boardEmbeds',
     label: 'Embedding boards on other sites',
     hint: 'Whether board owners can embed their boards live in wikis, docs and websites. An embed never shows more than the board’s sharing allows. Off: no board shows on any other site, and embeds already placed stop working.',
@@ -110,7 +119,7 @@ export const LINK_MAX_DAYS_FIELD = {
   ] satisfies SelectOption<string>[],
 };
 
-type NumberSetting = Exclude<keyof WorkspaceSettings, 'requireTwoFactor'>;
+type NumberSetting = Exclude<keyof WorkspaceSettings, 'requireTwoFactor' | 'inactiveBoardAction' | 'ipAllowlist'>;
 
 /** Select values are strings; '' stands for null (no limit). */
 export const SETTING_FIELDS: Record<NumberSetting, { label: string; hint: string; options: SelectOption<string>[] }> = {
@@ -151,6 +160,14 @@ export const SETTING_FIELDS: Record<NumberSetting, { label: string; hint: string
       ...[30, 90, 180, 365, 730].map((d) => ({ value: String(d), label: `${d} days` })),
     ],
   },
+  inactiveBoardDays: {
+    label: 'After',
+    hint: 'Days nobody opened or changed a board. Owners are emailed two weeks before, and any activity starts the clock again.',
+    options: [
+      { value: '', label: 'Choose a period' },
+      ...[90, 180, 365, 730, 1095].map((d) => ({ value: String(d), label: d % 365 === 0 ? (d === 365 ? '1 year' : `${d / 365} years`) : `${d} days` })),
+    ],
+  },
   auditRetentionDays: {
     label: 'Keep audit events for',
     hint: 'Older events are removed from the workspace’s audit log. Export the log first if you need to keep it longer.',
@@ -159,4 +176,11 @@ export const SETTING_FIELDS: Record<NumberSetting, { label: string; hint: string
 };
 
 export const settingValue = (v: number | null) => (v === null ? '' : String(v));
+
+/** #154: what happens to boards nobody uses (loosest to strictest, as the organisation's floor orders them). */
+export const INACTIVE_ACTION_OPTIONS: SelectOption<InactiveBoardAction>[] = [
+  { value: 'none', label: 'Nothing' },
+  { value: 'archive', label: 'Archive them (read-only, kept)' },
+  { value: 'trash', label: 'Move them to the trash' },
+];
 export const parseSetting = (v: string) => (v === '' ? null : Number(v));
