@@ -1,4 +1,4 @@
-// "Import draw.io or Excalidraw file…" (KAI-138): pick a file, and afterwards the report of what
+// "Import a diagram file…" (KAI-138, #116): pick a file, and afterwards the report of what
 // could not be mapped. Dropping a file on the board does the same without the dialog; its toast
 // opens the report here ("Details").
 import { useState } from 'react';
@@ -60,7 +60,7 @@ function ImportDialog({ editor, props }: PanelProps) {
       open
       onClose={close}
       title={report ? `Imported from ${report.source}` : 'Import a diagram'}
-      description={report ? undefined : 'Shapes, text, connectors, frames, freehand and images from a draw.io (.drawio) or Excalidraw (.excalidraw) file. One undo takes it all back.'}
+      description={report ? undefined : 'Shapes, text, connectors, frames, freehand and images from a draw.io (.drawio), Excalidraw (.excalidraw) or Visio (.vsdx, also Lucidchart’s Visio export) file. One undo takes it all back.'}
       width={520}
       footer={
         // Keyed: a new button for the report, so it doesn't fade from Cancel's colours into Done's.
@@ -75,10 +75,10 @@ function ImportDialog({ editor, props }: PanelProps) {
         <div className="fr-import">
           <label className={`fr-import__file${busy ? ' fr-import__file--busy' : ''}`}>
             <FileInput size={18} aria-hidden />
-            <span>{busy ? 'Importing…' : 'Choose a .drawio or .excalidraw file'}</span>
-            <input type="file" disabled={busy} accept=".drawio,.dio,.xml,.excalidraw,.json" onChange={(e) => void pick(e.target.files?.[0])} />
+            <span>{busy ? 'Importing…' : 'Choose a .drawio, .excalidraw or .vsdx file'}</span>
+            <input type="file" disabled={busy} accept=".drawio,.dio,.xml,.excalidraw,.json,.vsdx,.vsdm" onChange={(e) => void pick(e.target.files?.[0])} />
           </label>
-          <p className="fr-import__hint">You can also drop the file on the board, or paste a diagram copied from either app.</p>
+          <p className="fr-import__hint">You can also drop the file on the board, or paste a diagram copied from draw.io or Excalidraw.</p>
           {error ? (
             <p className="fr-import__error" role="alert">
               {error}
