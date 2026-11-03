@@ -17,20 +17,35 @@ import {
   OPS_BY_KIND,
   SHOWABLE_BUILTINS,
   VIEW_LIMITS,
+  PROJECTION_GROUP_BUILTINS,
+  PROJECTION_LAYOUTS,
+  TIMELINE_SCALES,
+  barSpanOf,
   boardView,
-  cleanTableView,
+  calendarDateField,
+  cardDate,
+  cleanProjection,
+  dateFields,
+  isProjectionLayout,
+  listColumns,
+  listGroupField,
+  projectionGroupFields,
+  projectionView,
   savedTabId,
   tabByRef,
   tabNameProblem,
   tableColumns,
-  tableView,
+  timelineFields,
+  timelineLayout,
   viewTabs,
   withSavedTab,
   withTabRenamed,
-  withTableSaved,
-  withTableTab,
+  withProjectionSaved,
+  withProjectionTab,
   withoutTab,
-  type TableViewConfig,
+  type ProjectionLayout,
+  type ProjectionView,
+  type TimelineScale,
   type ViewTab,
   cardPasses,
   cardQueryValue,
@@ -447,26 +462,28 @@ export function planConfigureView(view: BoardView, kid: string, body: unknown, w
     if (b.view !== undefined) throw badRequest('Give view (a tab to change) or addView (a new tab), not both');
     const a = b.addView as Input | null;
     const name = a && typeof a.name === 'string' ? a.name.trim() : '';
-    if (!a || typeof a !== 'object' || (a.layout !== undefined && a.layout !== 'table')) throw badRequest('addView is { name, layout: "table" } (more layouts come later)');
+    if (!a || typeof a !== 'object' || (a.layout !== undefined && !isProjectionLayout(a.layout)))
+      throw badRequest(`addView is { name, layout } (layout: ${PROJECTION_LAYOUTS.join(', ')}; default table)`);
     const problem = tabNameProblem(k0, name);
     if (problem) throw badRequest(`addView.name: ${problem}`);
-    const t: TableViewConfig = { id: `t${newId().replace(/[^A-Za-z0-9]/g, '').slice(0, 10) || 'tab'}`, name, layout: 'table' };
-    const patch = withTableTab(k0, t);
+    const layout: ProjectionLayout = isProjectionLayout(a.layout) ? a.layout : 'table';
+    const t = { id: `t${newId().replace(/[^A-Za-z0-9]/g, '').slice(0, 10) || 'tab'}`, name, layout } as ProjectionView;
+    const patch = withProjectionTab(k0, t);
     if (!patch) throw badRequest(`A kanban has at most ${VIEW_LIMITS.views} tabs`);
     w.patch(kid, patch);
-    tab = { id: t.id, name: t.name, layout: 'table' };
+    tab = { id: t.id, name: t.name, layout };
     created = true;
   } else if (b.view !== undefined) {
     const t = typeof b.view === 'string' ? tabByRef(k0, b.view) : undefined;
     if (!t) throw badRequest(`view: no tab “${String(b.view)}” (tabs: ${viewTabs(k0).map((x) => x.name).join(', ')})`);
     tab = t;
   }
-  const lockOf = () => (tab.layout === 'board' ? boardView(w.k) : tableView(w.k, tab.id)!);
+  const lockOf = () => (tab.layout === 'board' ? boardView(w.k) : projectionView(w.k, tab.id)!);
   if (!created && viewLockedFor(lockOf(), who)) throw badRequest('This kanban’s view is locked by someone else: only they or the board’s owners can change it');
   // What any tab takes: its name, whether everyone starts on it, deleting it (tables only).
   if (b.remove !== undefined) {
     if (b.remove !== true) throw badRequest('remove must be true (delete the tab)');
-    if (tab.layout === 'board') throw badRequest('The Board tab can’t be deleted (it holds the cards); delete a table tab');
+    if (tab.layout === 'board') throw badRequest('The Board tab can’t be deleted (it holds the cards); delete another tab');
     const others = Object.keys(b).filter((key) => key !== 'remove' && key !== 'view');
     if (others.length) throw badRequest(`remove deletes the tab: send ${others.join(', ')} without it`);
     w.patch(kid, withoutTab(w.k, tab.id)!);
@@ -482,8 +499,8 @@ export function planConfigureView(view: BoardView, kid: string, body: unknown, w
     if (b.active !== true) throw badRequest('active must be true (the tab everyone starts on); make another tab active instead');
     w.patch(kid, withSavedTab(w.k, tab.id)!);
   }
-  if (tab.layout === 'table') {
-    configureTable(w, tab.id, b, who, schema);
+  if (tab.layout !== 'board') {
+    configureProjection(w, tab.id, b, who, schema);
     return w.change();
   }
 
@@ -592,34 +609,71 @@ export function planConfigureView(view: BoardView, kid: string, body: unknown, w
   return w.change();
 }
 
+/** What each projection layout takes from configure_view (besides name, active and remove). */
+const PROJECTION_KEYS: Record<ProjectionLayout, readonly string[]> = {
+  table: ['show', 'filter', 'sort', 'locked'],
+  list: ['show', 'groupBy', 'filter', 'sort', 'locked'],
+  calendar: ['date', 'filter', 'sort', 'locked'],
+  timeline: ['start', 'end', 'scale', 'subGroupBy', 'filter', 'sort', 'locked'],
+};
+const BOARD_KEYS = ['groupBy', 'subGroupBy', 'color', 'density', 'columns'];
+
 /**
- * configure_view on a table tab (step 3a): its columns (`show`: fields by name, in order), filter
- * (which cards are rows; the board is untouched), sort and lock. What moves or sizes the real
- * cards (grouping, swimlanes, colour, density, column limits) belongs to the Board tab.
+ * configure_view on a tab other than the board (steps 3a, 3b): what that layout has — a table's or
+ * a list's fields (`show`: by name, in order), a list's grouping (`groupBy`, null: none), the date
+ * field a calendar places cards on (`date`), a timeline's `start` / `end` date fields, `scale` and
+ * swimlanes (`subGroupBy`, null: none) —, and any tab's filter (which cards it shows; the board is
+ * untouched), sort and lock. What moves or sizes the real cards belongs to the Board tab.
  */
-function configureTable(w: Working, id: string, b: Input, who: { id: string; role: Role }, schema: () => FieldDef[]) {
-  for (const key of ['groupBy', 'subGroupBy', 'color', 'density', 'columns'])
-    if (b[key] !== undefined) throw badRequest(`${key} belongs to the Board tab; a table tab takes show (its columns), filter, sort, locked, name, active or remove`);
-  const saved = () => tableView(w.k, id)!;
-  const save = (next: TableViewConfig) => w.patch(w.kid, withTableSaved(w.k, cleanTableView(next)!));
+function configureProjection(w: Working, id: string, b: Input, who: { id: string; role: Role }, schema: () => FieldDef[]) {
+  const layout = projectionView(w.k, id)!.layout;
+  const takes = PROJECTION_KEYS[layout];
+  const also = [...takes, 'name', 'active', 'remove'].join(', ');
+  for (const key of [...BOARD_KEYS, 'date', 'start', 'end', 'scale']) {
+    if (b[key] === undefined || takes.includes(key)) continue;
+    throw badRequest(BOARD_KEYS.includes(key) ? `${key} belongs to the Board tab; a ${layout} tab takes ${also}` : `${key} isn’t a setting of a ${layout} tab; it takes ${also}`);
+  }
+  const saved = () => projectionView(w.k, id)!;
+  const save = (next: ProjectionView) => w.patch(w.kid, withProjectionSaved(w.k, cleanProjection(next)!));
+  const dateField = (ref: unknown, what: string) => {
+    const all = dateFields(schema());
+    const f = typeof ref === 'string' ? (all.find((x) => x.id === ref) ?? all.find((x) => norm(x.name) === norm(ref))) : undefined;
+    if (!f) throw badRequest(`${what}: “${String(ref)}” isn’t a date field (date fields: ${all.map((x) => x.name).join(', ')})`);
+    return f.id;
+  };
+  const groupField = (ref: unknown, what: string) => {
+    const all = projectionGroupFields(schema());
+    const f = typeof ref === 'string' ? (all.find((x) => x.id === ref) ?? all.find((x) => norm(x.name) === norm(ref))) : undefined;
+    if (!f) throw badRequest(`${what}: “${String(ref)}” isn’t a field to group by (single select, person or checkbox, Status, Assignee: ${all.map((x) => x.name).join(', ')})`);
+    return f.id;
+  };
   if (b.show !== undefined) {
-    if (!Array.isArray(b.show)) throw badRequest('show must be a list of field names (the table’s columns, after the title)');
+    if (!Array.isArray(b.show)) throw badRequest(`show must be a list of field names (the ${layout === 'table' ? 'table’s columns' : 'fields on each row'}, after the title)`);
     const columns = [
       ...new Set(
         b.show.map((ref, i) => {
           const f = typeof ref === 'string' ? (SHOWABLE_BUILTINS.find((x) => x.id === ref || norm(x.name) === norm(ref)) ?? fieldByRef(schema(), ref)) : undefined;
-          if (!f) throw badRequest(`show[${i}]: no field “${String(ref)}” a table can show`);
+          if (!f) throw badRequest(`show[${i}]: no field “${String(ref)}” a ${layout} can show`);
           return f.id;
         }),
       ),
     ];
-    save({ ...saved(), columns });
+    save({ ...saved(), columns } as ProjectionView);
   }
+  if (b.groupBy !== undefined) save({ ...saved(), groupBy: b.groupBy === null ? null : groupField(b.groupBy, 'groupBy') } as ProjectionView);
+  if (b.date !== undefined) save({ ...saved(), date: dateField(b.date, 'date') } as ProjectionView);
+  if (b.start !== undefined) save({ ...saved(), start: dateField(b.start, 'start') } as ProjectionView);
+  if (b.end !== undefined) save({ ...saved(), end: dateField(b.end, 'end') } as ProjectionView);
+  if (b.scale !== undefined) {
+    if (!TIMELINE_SCALES.includes(b.scale as TimelineScale)) throw badRequest(`scale must be ${TIMELINE_SCALES.join(', ')}`);
+    save({ ...saved(), scale: b.scale as TimelineScale } as ProjectionView);
+  }
+  if (b.subGroupBy !== undefined) save({ ...saved(), lanesBy: b.subGroupBy === null ? null : groupField(b.subGroupBy, 'subGroupBy') } as ProjectionView);
   if (b.filter !== undefined) save({ ...saved(), filter: readFilter(b.filter, schema()) });
   if (b.sort !== undefined) {
     const { sort: _s, ...rest } = saved();
     const sort = readSort(b.sort, schema());
-    save({ ...rest, ...(sort.length ? { sort } : {}) });
+    save({ ...rest, ...(sort.length ? { sort } : {}) } as ProjectionView);
   }
   if (b.locked !== undefined) {
     if (typeof b.locked !== 'boolean') throw badRequest('locked must be true or false');
@@ -627,24 +681,37 @@ function configureTable(w: Working, id: string, b: Input, who: { id: string; rol
   }
 }
 
-/** A tab as agents read it: its name, layout, whether everyone starts on it, and a table's own settings. */
+/** A tab as agents read it: its name, layout, whether everyone starts on it, and the settings of a tab other than the board. */
 function apiTab(k: KanbanElement, t: ViewTab, schema: readonly FieldDef[], names: Names) {
-  const fieldName = (id: string) => queryFields(schema).find((f) => f.id === id)?.name ?? id;
-  const table = t.layout === 'table' ? tableView(k, t.id) : null;
+  const fieldName = (id: string) => [...queryFields(schema), ...PROJECTION_GROUP_BUILTINS].find((f) => f.id === id)?.name ?? id;
+  const v = t.layout === 'board' ? null : projectionView(k, t.id);
+  const settings = (): Record<string, unknown> => {
+    if (!v) return {};
+    const common = {
+      filter: v.filter ? { match: v.filter.op === 'or' ? 'any' : 'all', rules: v.filter.rules.map((r) => apiRule(r, schema)) } : null,
+      filterText: describeFilter(v.filter, schema, names) || null,
+      sort: (v.sort ?? []).map((s) => ({ field: fieldName(s.field), dir: s.dir })),
+      locked: !!v.locked,
+    };
+    switch (v.layout) {
+      case 'table':
+        return { show: tableColumns(v, schema).map(fieldName), ...common };
+      case 'list':
+        return { show: listColumns(k, v, schema).map(fieldName), groupBy: listGroupField(k, v, schema)?.name ?? null, ...common };
+      case 'calendar':
+        return { date: fieldName(calendarDateField(v, schema)), ...common };
+      case 'timeline': {
+        const tl = timelineFields(v, schema);
+        return { start: fieldName(tl.start), end: fieldName(tl.end), scale: tl.scale, subGroupBy: tl.lanes?.name ?? null, ...common };
+      }
+    }
+  };
   return {
     id: t.id,
     name: t.name,
     layout: t.layout,
     ...(t.id === savedTabId(k) ? { active: true } : {}),
-    ...(table
-      ? {
-          show: tableColumns(table, schema).map(fieldName),
-          filter: table.filter ? { match: table.filter.op === 'or' ? 'any' : 'all', rules: table.filter.rules.map((r) => apiRule(r, schema)) } : null,
-          filterText: describeFilter(table.filter, schema, names) || null,
-          sort: (table.sort ?? []).map((s) => ({ field: fieldName(s.field), dir: s.dir })),
-          locked: !!table.locked,
-        }
-      : {}),
+    ...settings(),
   };
 }
 
@@ -678,10 +745,10 @@ export function queryCardRows(view: BoardView, kid: string, q: CardQuery, names:
   const filter = readFilter(q.filter, schema, { me });
   const tab = q.view === undefined || q.view === '' ? null : typeof q.view === 'string' ? tabByRef(k, q.view) : undefined;
   if (tab === undefined) throw badRequest(`view: no tab “${String(q.view)}” (tabs: ${viewTabs(k).map((t) => t.name).join(', ')})`);
-  const table = tab?.layout === 'table' ? tableView(k, tab.id) : null;
+  const projection = tab && tab.layout !== 'board' ? projectionView(k, tab.id) : null;
   const useView = q.useView === true || q.useView === 'true' || !!tab;
-  // The view applied first: a table tab's filter and sort, else the board's.
-  const applied = table ?? saved;
+  // The view applied first: a tab's filter and sort (a table's, list's, calendar's or timeline's), else the board's.
+  const applied = projection ?? saved;
   const sort = q.sort !== undefined ? readSort(q.sort, schema) : useView ? (applied.sort ?? []) : [];
   const limit = q.limit === undefined ? 100 : Number(q.limit);
   if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw badRequest('limit must be a whole number from 1 to 500');
@@ -695,6 +762,19 @@ export function queryCardRows(view: BoardView, kid: string, q: CardQuery, names:
   if (useView && applied.filter) rows = rows.filter((c) => cardPasses(k, c, applied.filter, schema));
   if (filter) rows = rows.filter((c) => cardPasses(k, c, filter, schema, { me }));
   if (sort.length) rows = sortCards(k, rows, sort, schema);
+  // A calendar's or timeline's cards, unsorted, read in date order (its date / a bar's start; the undated last), as it shows them.
+  else if (projection && (projection.layout === 'calendar' || projection.layout === 'timeline')) {
+    const at = (c: CardElement): number => {
+      if (projection.layout === 'calendar') {
+        const d = cardDate(k, c, calendarDateField(projection, schema), schema);
+        return d ? timelineLayout.dayOf(d) : Number.MAX_SAFE_INTEGER;
+      }
+      const tl = timelineFields(projection, schema);
+      return barSpanOf(k, c, tl.start, tl.end, schema)?.start ?? Number.MAX_SAFE_INTEGER;
+    };
+    const day = new Map(rows.map((c) => [c.id, at(c)]));
+    rows = [...rows].sort((a, b) => day.get(a.id)! - day.get(b.id)!);
+  }
 
   const group = schema.find((f) => f.id === groupFieldId(k));
   const lanes = saved.subGroupBy ? schema.find((f) => f.id === saved.subGroupBy) : undefined;

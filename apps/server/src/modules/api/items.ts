@@ -342,6 +342,17 @@ export function planPatch(el: BoardElement, body: unknown, view: BoardView): Rec
     if (d && !DATE.test(d)) throw badRequest('dueDate must be YYYY-MM-DD');
     patch.dueDate = d ?? null;
   }
+  // The start of a card's bar on a timeline (step 3b), never after its due date.
+  if (only('startDate', ['card'])) {
+    const d = it.startDate === null ? null : str(it.startDate, 'startDate', null, 10);
+    if (d && !DATE.test(d)) throw badRequest('startDate must be YYYY-MM-DD');
+    patch.startDate = d ?? null;
+  }
+  if (el.type === 'card') {
+    const start = patch.startDate !== undefined ? patch.startDate : el.startDate;
+    const due = patch.dueDate !== undefined ? patch.dueDate : el.dueDate;
+    if (typeof start === 'string' && typeof due === 'string' && start > due) throw badRequest(`startDate (${start}) can’t be after dueDate (${due})`);
+  }
   if (only('assigneeId', ['card'])) patch.assigneeId = it.assigneeId === null ? null : str(it.assigneeId, 'assigneeId', null, 64);
   if (has('color')) {
     if (el.type === 'sticky') patch.color = oneOf(it.color, 'color', Object.keys(STICKY_COLORS) as StickyColor[], null);

@@ -83,9 +83,11 @@ OutlineField { id, name, type, options?: Array<{ id, label, status? }> }   // Ou
   `sort: Points (descending), Title`, and a locked view `view locked: true`. Cards the filter leaves
   out are folded away on the board but still listed in their column, with `filtered: true`. Read or
   change them with `query_cards` / `configure_view` (docs/mcp.md).
-- Kanban tabs: a kanban with more than its board reads `views: Board, Hot list* (table)` — its tabs
-  in order, `*` on the one everyone starts on, a table tab's layout in brackets. Every tab shows the
-  same cards (the board is where they stand; a table draws them as rows), so cards are listed once,
+- Kanban tabs: a kanban with more than its board reads `views: Board, Hot list* (table), Triage
+  (list by Priority), Launches (calendar by Due date), Plan (timeline from Start date to Due date in
+  lanes by Team)` — its tabs in order, `*` on the one everyone starts on, each other tab's layout in
+  brackets with what places its cards. Every tab shows the same cards (the board is where they
+  stand; a table, list, calendar or timeline draws them its own way), so cards are listed once,
   in their columns, whatever tab is active. Configure a tab with `configure_view` (`view: "Hot list"`)
   and read its rows with `query_cards` (`view`).
 - Clusters: items close together (gap ≤ ~30 % of the larger item's short side, 16–64 units), or

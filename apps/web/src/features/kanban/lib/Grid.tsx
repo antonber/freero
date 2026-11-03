@@ -46,6 +46,11 @@ export interface GridProps {
   api?: MutableRefObject<GridApi | null>;
   /** Shown instead of rows when there are none. */
   empty?: ReactNode;
+  /**
+   * Alt+↑ / Alt+↓ on a card's row moves it to the previous / next group (a grouped list): the
+   * caller writes the card's new value; the active cell follows the card to its new row.
+   */
+  onMoveGroup?: (card: CardElement, dir: 1 | -1) => void;
 }
 
 /** Rows drawn beyond the visible ones, above and below (keyboard moves land on drawn rows). */
@@ -210,6 +215,8 @@ export function Grid(props: GridProps) {
   const [editing, setEditing] = useState<Cell | null>(null);
   // Focus follows a keyboard move once the row it lands on is drawn.
   const wantFocus = useRef(false);
+  // A card moved to another group by keys: the active cell goes where its row is now.
+  const follow = useRef<string | null>(null);
   const people = useKanbanPeople(editor);
   const names = useMemo(() => new Map(people.map((p) => [p.id, p.name])), [people]);
   const personName = useMemo(() => (id: string) => names.get(id), [names]);
@@ -270,6 +277,15 @@ export function Grid(props: GridProps) {
   };
 
   useEffect(() => {
+    const id = follow.current;
+    if (!id) return;
+    const i = entries.findIndex((e) => isCard(e) && e.card.id === id);
+    if (i < 0) return;
+    follow.current = null;
+    if (i !== at.row) moveTo({ row: i, col: at.col });
+  }, [entries]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
     if (!wantFocus.current || editing) return;
     const el = cells.current.get(`${at.row}:${at.col}`);
     if (el) {
@@ -322,6 +338,14 @@ export function Grid(props: GridProps) {
       }
       return r;
     };
+    const entry = entries[at.row];
+    if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && props.onMoveGroup && isCard(entry) && canEdit && !entry.card.locked) {
+      e.preventDefault();
+      e.stopPropagation();
+      follow.current = entry.card.id;
+      props.onMoveGroup(entry.card, e.key === 'ArrowDown' ? 1 : -1);
+      return;
+    }
     let next: Cell | null = null;
     switch (e.key) {
       case 'ArrowDown':

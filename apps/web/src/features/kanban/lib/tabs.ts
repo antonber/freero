@@ -1,28 +1,32 @@
-// A kanban's view tabs (step 3a; the model is @freero/shared tabs.ts): the board, and tables of
-// the same cards. Which tab I look at is mine (personal view state, any role) until I "Save for
-// everyone" (views.ts `saveViewForEveryone`); while it is a table, the kanban folds its cards away
-// for me alone and draws them as rows instead (`hidesMember`). Adding, renaming and deleting tabs
-// changes the saved tabs everyone sees: editors, on an unlocked kanban, and nobody but whoever
-// locked a tab (and the board's owners) touches a locked one.
+// A kanban's view tabs (steps 3a, 3b; the model is @freero/shared tabs.ts): the board, and tables,
+// lists, calendars and timelines of the same cards. Which tab I look at is mine (personal view
+// state, any role) until I "Save for everyone" (views.ts `saveViewForEveryone`); while it is not
+// the board, the kanban folds its cards away for me alone and draws them its own way instead
+// (`hidesMember`). Adding, renaming and deleting tabs changes the saved tabs everyone sees:
+// editors, on an unlocked kanban, and nobody but whoever locked a tab (and the board's owners)
+// touches a locked one.
 import { nanoid } from 'nanoid';
 import {
+  LAYOUT_NAMES,
   MY_TAB_KEY,
   boardView,
-  cleanTableOverride,
+  cleanProjectionOverride,
   freeTabName,
+  projectionOverrideBetween,
+  projectionView,
   savedTabId,
   shownTabId,
   tabNameProblem,
-  tableOverrideBetween,
-  tableView,
   viewLockedFor,
   viewTabs,
+  withProjectionOverride,
+  withProjectionTab,
   withTabRenamed,
-  withTableOverride,
-  withTableTab,
   withoutTab,
   type KanbanElement,
-  type TableViewConfig,
+  type ProjectionLayout,
+  type ProjectionOverride,
+  type ProjectionView,
   type ViewTab,
 } from '@freero/shared';
 import type { Editor } from '@engine';
@@ -42,8 +46,8 @@ export function myTab(editor: Reader, k: KanbanElement): ViewTab {
   return viewTabs(k).find((t) => t.id === id)!;
 }
 
-/** True while I look at a table tab of `k`: its cards are folded away for me, drawn as rows. */
-export const showsTable = (editor: Reader, k: KanbanElement): boolean => myTab(editor, k).layout === 'table';
+/** True while I look at a tab other than the board (a table, list, calendar, timeline): its cards are folded away for me, drawn by the tab. */
+export const showsProjection = (editor: Reader, k: KanbanElement): boolean => myTab(editor, k).layout !== 'board';
 
 /** Looks at tab `tabId` of kanban `kid`, for me only (any role). Back on the saved tab I follow it again. */
 export function switchTab(editor: Editor, kid: string, tabId: string): boolean {
@@ -59,21 +63,24 @@ const who = (editor: Pick<Editor, 'can' | 'user'>) => ({ id: editor.user.id, rol
 export function tabsEditable(editor: Pick<Editor, 'can' | 'user'>, k: KanbanElement, tab?: ViewTab): boolean {
   if (!editor.can('editor') || k.locked) return false;
   if (!tab) return true;
-  const saved = tab.layout === 'board' ? boardView(k) : tableView(k, tab.id);
+  const saved = tab.layout === 'board' ? boardView(k) : projectionView(k, tab.id);
   return !!saved && !viewLockedFor(saved, who(editor));
 }
 
-/** Adds a table tab (saved for everyone; one undo step) and shows it to me. Returns its id. */
-export function addTableTab(editor: Editor, kid: string, name?: string): string | null {
+/** Adds a `layout` tab (saved for everyone; one undo step) and shows it to me. Returns its id. */
+export function addTab(editor: Editor, kid: string, layout: ProjectionLayout, name?: string): string | null {
   const k = kanbanOf(editor, kid);
   if (!k || !tabsEditable(editor, k)) return null;
-  const tab: TableViewConfig = { id: `t${nanoid(8)}`, name: name?.trim() && !tabNameProblem(k, name) ? name.trim() : freeTabName(k), layout: 'table' };
-  const patch = withTableTab(k, tab);
+  const tab = { id: `t${nanoid(8)}`, name: name?.trim() && !tabNameProblem(k, name) ? name.trim() : freeTabName(k, LAYOUT_NAMES[layout]), layout } as ProjectionView;
+  const patch = withProjectionTab(k, tab);
   if (!patch) return null;
   editor.update<KanbanElement>(k.id, patch);
   switchTab(editor, k.id, tab.id);
   return tab.id;
 }
+
+/** Adds a table tab (3a's command). */
+export const addTableTab = (editor: Editor, kid: string, name?: string) => addTab(editor, kid, 'table', name);
 
 /** Renames tab `id` for everyone; returns why it can't be (a taken or empty name), or null. */
 export function renameTab(editor: Editor, kid: string, id: string, name: string): string | null {
@@ -88,11 +95,11 @@ export function renameTab(editor: Editor, kid: string, id: string, name: string)
   return null;
 }
 
-/** Deletes table tab `id` for everyone (the board tab stays); whoever looked at it is back on the saved tab. */
+/** Deletes tab `id` for everyone (the board tab stays); whoever looked at it is back on the saved tab. */
 export function deleteTab(editor: Editor, kid: string, id: string): boolean {
   const k = kanbanOf(editor, kid);
   const tab = k && viewTabs(k).find((t) => t.id === id);
-  if (!k || !tab || tab.layout !== 'table' || !tabsEditable(editor, k, tab)) return false;
+  if (!k || !tab || tab.layout === 'board' || !tabsEditable(editor, k, tab)) return false;
   const patch = withoutTab(k, id);
   if (!patch) return false;
   editor.update<KanbanElement>(k.id, patch);
@@ -100,20 +107,25 @@ export function deleteTab(editor: Editor, kid: string, id: string): boolean {
   return true;
 }
 
-// ------------------------------------------------------------------ my own changes to a table tab
+// ------------------------------------------------------------------ my own changes to a tab
 
-/** Table tab `id` as I see it (my changes on top of the saved tab); null when there is no such tab. */
-export function myTableView(editor: Reader, k: KanbanElement, id: string): TableViewConfig | null {
-  const saved = tableView(k, id);
-  return saved ? withTableOverride(saved, editor.getPersonalView(k.id, id)) : null;
+/** Tab `id` as I see it (my changes on top of the saved tab); null when there is no such tab or it is the board. */
+export function myView(editor: Reader, k: KanbanElement, id: string): ProjectionView | null {
+  const saved = projectionView(k, id);
+  return saved ? withProjectionOverride(saved, editor.getPersonalView(k.id, id)) : null;
 }
 
-/** Changes table tab `id`'s columns, filter or sort for me only (any role), until I save it for everyone. */
-export function setMyTable(editor: Editor, kid: string, id: string, patch: Partial<Pick<TableViewConfig, 'columns' | 'filter' | 'sort'>>): void {
+/**
+ * Changes tab `id`'s settings (a table's columns, a list's grouping, a calendar's date field, a
+ * timeline's dates, scale and swimlanes; any tab's filter and sort) for me only (any role), until
+ * I save it for everyone. Settings its layout doesn't have are ignored.
+ */
+export function setMyView(editor: Editor, kid: string, id: string, patch: ProjectionOverride | Record<string, unknown>): void {
   const k = kanbanOf(editor, kid);
-  const saved = k && tableView(k, id);
+  const saved = k && projectionView(k, id);
   if (!k || !saved) return;
-  const mine = myTableView(editor, k, id)!;
-  const next = cleanTableOverride(tableOverrideBetween(saved, { ...mine, ...patch }));
+  const mine = myView(editor, k, id)!;
+  const clean = cleanProjectionOverride(saved.layout, patch) ?? {};
+  const next = cleanProjectionOverride(saved.layout, projectionOverrideBetween(saved, { ...mine, ...clean } as ProjectionView));
   editor.setPersonalView(k.id, id, next as Record<string, unknown> | null);
 }

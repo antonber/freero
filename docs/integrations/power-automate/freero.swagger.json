@@ -743,7 +743,7 @@
           {
             "name": "view",
             "in": "query",
-            "description": "A tab (name or id) whose saved filter and sort apply first: a table tab’s rows in its order",
+            "description": "A tab (name or id) whose saved filter and sort apply first: a table’s or list’s rows in its order; a calendar’s or timeline’s cards in date order unless it is sorted (no date last)",
             "type": "string"
           },
           {
@@ -3631,7 +3631,7 @@
         },
         "views": {
           "type": "array",
-          "description": "Its tabs, in order: the Board (where the cards stand) and tables of the same cards. `active`: the tab everyone starts on.",
+          "description": "Its tabs, in order: the Board (where the cards stand) and tables, lists, calendars and timelines of the same cards. `active`: the tab everyone starts on. Layouts may be added later: skip a tab whose layout you don’t know.",
           "items": {
             "type": "object",
             "required": [
@@ -3650,7 +3650,10 @@
                 "type": "string",
                 "enum": [
                   "board",
-                  "table"
+                  "table",
+                  "list",
+                  "calendar",
+                  "timeline"
                 ]
               },
               "active": {
@@ -3661,7 +3664,39 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "A table’s columns after the title, by field name"
+                "description": "A table’s columns, or a list’s fields on each row, after the title, by field name"
+              },
+              "groupBy": {
+                "type": "string",
+                "description": "A list’s groups (field name; null: none)",
+                "x-nullable": true
+              },
+              "date": {
+                "type": "string",
+                "description": "A calendar’s date field (name)"
+              },
+              "start": {
+                "type": "string",
+                "description": "A timeline’s start date field (name)"
+              },
+              "end": {
+                "type": "string",
+                "description": "A timeline’s end date field (name)"
+              },
+              "scale": {
+                "type": "string",
+                "enum": [
+                  "day",
+                  "week",
+                  "month",
+                  "quarter"
+                ],
+                "description": "A timeline’s scale"
+              },
+              "subGroupBy": {
+                "type": "string",
+                "description": "A timeline’s swimlanes (field name; null: none)",
+                "x-nullable": true
               },
               "filter": {
                 "allOf": [
@@ -3776,7 +3811,7 @@
     },
     "KanbanViewInput": {
       "type": "object",
-      "description": "Only what you send changes. The saved view: everyone sees it (an API caller has no personal view). `view` / `addView` pick the tab (default the Board); a table tab takes show (its columns), filter, sort and locked; grouping, swimlanes, colour, density and columns belong to the Board tab.",
+      "description": "Only what you send changes. The saved view: everyone sees it (an API caller has no personal view). `view` / `addView` pick the tab (default the Board). Tabs other than the Board never move a card; any of them takes filter, sort and locked. A table takes show (its columns); a list show (fields on each row) and groupBy (its groups, null: none); a calendar date (the date field cards sit on); a timeline start, end (date fields), scale and subGroupBy (swimlanes, null: none). On the Board, groupBy and subGroupBy move the cards; colour, density and columns belong to the Board tab.",
       "properties": {
         "view": {
           "type": "string",
@@ -3787,7 +3822,7 @@
           "required": [
             "name"
           ],
-          "description": "Adds a table tab; the rest of the call configures it",
+          "description": "Adds a tab of this layout (default table); the rest of the call configures it",
           "properties": {
             "name": {
               "type": "string",
@@ -3796,7 +3831,10 @@
             "layout": {
               "type": "string",
               "enum": [
-                "table"
+                "table",
+                "list",
+                "calendar",
+                "timeline"
               ]
             }
           }
@@ -3818,16 +3856,39 @@
           "enum": [
             true
           ],
-          "description": "true: deletes this table tab (the Board tab stays)"
+          "description": "true: deletes this tab (the Board tab stays)"
         },
         "groupBy": {
           "type": "string",
-          "description": "A single select, person or checkbox field by name: the cards move to their columns"
+          "description": "Board: a single select, person or checkbox field by name (the cards move to their columns). List: the field its rows are grouped by, Status and Assignee too; null: none",
+          "x-nullable": true
         },
         "subGroupBy": {
           "type": "string",
-          "description": "Swimlanes by this field; null: none",
+          "description": "Board or timeline: swimlanes by this field; null: none",
           "x-nullable": true
+        },
+        "date": {
+          "type": "string",
+          "description": "Calendar: the date field cards sit on (Due date, Start date or a date field, by name)"
+        },
+        "start": {
+          "type": "string",
+          "description": "Timeline: the date field bars start at (default Start date)"
+        },
+        "end": {
+          "type": "string",
+          "description": "Timeline: the date field bars end at (default Due date)"
+        },
+        "scale": {
+          "type": "string",
+          "enum": [
+            "day",
+            "week",
+            "month",
+            "quarter"
+          ],
+          "description": "Timeline: the axis’s step"
         },
         "show": {
           "type": "array",
@@ -4541,6 +4602,11 @@
         },
         "dueDate": {
           "type": "string",
+          "x-nullable": true
+        },
+        "startDate": {
+          "type": "string",
+          "description": "A card’s start date (YYYY-MM-DD; where its bar starts on a timeline), never after its due date",
           "x-nullable": true
         },
         "assigneeId": {

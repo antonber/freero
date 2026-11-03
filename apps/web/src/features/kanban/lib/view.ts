@@ -39,13 +39,13 @@ import {
   type ViewFilter,
   MY_TAB_KEY,
   savedTabId,
-  tableOverrideBetween,
-  tableView,
+  projectionOverrideBetween,
+  projectionView,
   withSavedTab,
-  withTableSaved,
+  withProjectionSaved,
 } from '@freero/shared';
 import type { ChildPresentation, Editor } from '@engine';
-import { myTab, myTabId, myTableView } from './tabs';
+import { myTab, myTabId, myView } from './tabs';
 
 /** The kanban's board view, with this person's own changes when `personal`. */
 export function viewOf(editor: Pick<Editor, 'getPersonalView'>, k: KanbanElement, personal: boolean): ViewConfig {
@@ -58,8 +58,8 @@ export function hasOwnView(editor: Pick<Editor, 'getPersonalView'>, k: KanbanEle
   const tab = myTab(editor, k);
   if (tab.id !== savedTabId(k)) return true;
   if (tab.layout === 'board') return !!overrideBetween(boardView(k), viewOf(editor, k, true));
-  const saved = tableView(k, tab.id);
-  return !!saved && !!tableOverrideBetween(saved, myTableView(editor, k, tab.id)!);
+  const saved = projectionView(k, tab.id);
+  return !!saved && !!projectionOverrideBetween(saved, myView(editor, k, tab.id)!);
 }
 
 /**
@@ -137,11 +137,11 @@ export function saveViewForEveryone(editor: Editor, kid: string): boolean {
       moveTab(editor.getElement<KanbanElement>(k.id)!);
     });
   } else {
-    const saved = tableView(k, tab.id);
+    const saved = projectionView(k, tab.id);
     if (!saved || viewLockedFor(saved, { id: editor.user.id, role: editor.can('owner') ? 'owner' : 'editor' })) return false;
-    const mine = myTableView(editor, k, tab.id)!;
+    const mine = myView(editor, k, tab.id)!;
     editor.transact(() => {
-      if (tableOverrideBetween(saved, mine)) editor.update<KanbanElement>(k.id, withTableSaved(k, { ...mine, filter: cleanFilter(mine.filter) }));
+      if (projectionOverrideBetween(saved, mine)) editor.update<KanbanElement>(k.id, withProjectionSaved(k, { ...mine, filter: cleanFilter(mine.filter) }));
       moveTab(editor.getElement<KanbanElement>(k.id)!);
     });
   }

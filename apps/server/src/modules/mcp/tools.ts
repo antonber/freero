@@ -671,7 +671,7 @@ export const TOOLS: McpTool[] = [
     name: 'configure_view',
     title: 'Configure a kanban’s view',
     description:
-      'Changes how a kanban shows its cards, for everyone. A kanban has tabs (views in the outline): the Board, where the cards stand, and tables of the same cards. On the Board tab (the default): the field its columns are (groupBy: a single select, person or checkbox field — the cards move to their columns), swimlanes (subGroupBy, null for none), which fields cards show and what colours them, card density, a filter (cards it leaves out fold away below the board, still counted), a sort within each column (sort: [] puts every card back in the order people had them), per-column WIP limits, card limits and collapsing, and the view lock (locked: only whoever locked it and the board’s owners change the view then). On a table tab (view: its name or id; addView makes one): show is its columns after the title, filter which cards are rows, sort their order, locked — the cards on the board don’t move. Any tab: name renames it, active: true makes it the tab everyone starts on, remove: true deletes a table tab. Returns the kanban’s fields, columns, view and tabs (views, with their ids). Needs permission to change boards.',
+      'Changes how a kanban shows its cards, for everyone. A kanban has tabs (views in the outline): the Board, where the cards stand, and tables, lists, calendars and timelines of the same cards. On the Board tab (the default): the field its columns are (groupBy: a single select, person or checkbox field — the cards move to their columns), swimlanes (subGroupBy, null for none), which fields cards show and what colours them, card density, a filter (cards it leaves out fold away below the board, still counted), a sort within each column (sort: [] puts every card back in the order people had them), per-column WIP limits, card limits and collapsing, and the view lock (locked: only whoever locked it and the board’s owners change the view then). Other tabs (view: its name or id; addView makes one, layout table, list, calendar or timeline) never move a card on the board; any of them takes filter (which cards it shows), sort and locked. A table: show is its columns after the title. A list: show is the fields on each row, groupBy its groups (any single select, person or checkbox, Status or Assignee; null: none). A calendar: date is the date field cards sit on (Due date by default, Start date or a date field). A timeline: start and end are the date fields bars run between (Start date and Due date by default), scale day, week, month or quarter, subGroupBy its swimlanes (null: none). Any tab: name renames it, active: true makes it the tab everyone starts on, remove: true deletes it (not the Board). Returns the kanban’s fields, columns, view and tabs (views, with their ids and settings). Needs permission to change boards.',
     scope: 'boards:write',
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     input: {
@@ -679,15 +679,25 @@ export const TOOLS: McpTool[] = [
       kanbanId,
       view: z.string().min(1).max(100).optional().describe('The tab to change, by name or id (default: the Board tab).'),
       addView: z
-        .object({ name: z.string().min(1).max(60).describe('The new tab’s name (unique on the kanban).'), layout: z.enum(['table']).optional().describe('table (the default): the cards as rows.') })
+        .object({
+          name: z.string().min(1).max(60).describe('The new tab’s name (unique on the kanban).'),
+          layout: z
+            .enum(['table', 'list', 'calendar', 'timeline'])
+            .optional()
+            .describe('table (the default): the cards as rows; list: a line per card, grouped; calendar: cards on the days of a date field; timeline: bars between two date fields.'),
+        })
         .strict()
         .optional()
         .describe('Adds a tab; the other settings of this call apply to it.'),
       name: z.string().min(1).max(60).optional().describe('Renames the tab.'),
       active: z.literal(true).optional().describe('true: everyone starts on this tab.'),
-      remove: z.literal(true).optional().describe('true: deletes this table tab (the Board tab stays).'),
-      groupBy: z.string().min(1).max(100).optional().describe('The field the columns are, by name (e.g. "Stage", "Priority", "Owner").'),
-      subGroupBy: z.string().min(1).max(100).nullable().optional().describe('Swimlanes by this field (name); null: none.'),
+      remove: z.literal(true).optional().describe('true: deletes this tab (the Board tab stays).'),
+      groupBy: z.string().min(1).max(100).nullable().optional().describe('Board: the field the columns are, by name (e.g. "Stage", "Priority", "Owner"). List: the field its rows are grouped by (null: no groups).'),
+      subGroupBy: z.string().min(1).max(100).nullable().optional().describe('Board or timeline: swimlanes by this field (name); null: none.'),
+      date: z.string().min(1).max(100).optional().describe('Calendar: the date field cards sit on (Due date, Start date or a date field, by name).'),
+      start: z.string().min(1).max(100).optional().describe('Timeline: the date field bars start at (default Start date).'),
+      end: z.string().min(1).max(100).optional().describe('Timeline: the date field bars end at (default Due date).'),
+      scale: z.enum(['day', 'week', 'month', 'quarter']).optional().describe('Timeline: how much time a step of its axis is.'),
       show: z.array(z.string().max(100)).max(40).optional().describe('Fields cards show, in order (names: the kanban’s and Status, Due date, Tags, Estimate, Assignee …); on a table tab, its columns after the title.'),
       color: z.string().max(100).optional().describe('What colours cards: own, column, status, or a select field’s name.'),
       density: z.enum(['compact', 'comfortable']).optional(),
@@ -720,7 +730,7 @@ export const TOOLS: McpTool[] = [
     name: 'query_cards',
     title: 'Query a kanban’s cards',
     description:
-      'Reads the cards of a kanban as rows — id, title, column, swimlane row and their field values by name — filtered and sorted by the same rules the board uses, a page at a time (limit up to 500, then nextCursor). The way to read a big kanban without the whole outline. useView: true applies the kanban’s saved filter and sort first (the cards its board shows, in its order); view: a tab’s name or id applies that tab’s filter and sort instead (a table tab’s rows, in its order). Rows carry filtered: true for cards the Board’s saved filter leaves out.',
+      'Reads the cards of a kanban as rows — id, title, column, swimlane row and their field values by name — filtered and sorted by the same rules the board uses, a page at a time (limit up to 500, then nextCursor). The way to read a big kanban without the whole outline. useView: true applies the kanban’s saved filter and sort first (the cards its board shows, in its order); view: a tab’s name or id applies that tab’s filter and sort instead (a table’s or list’s rows in its order; a calendar’s or timeline’s cards in date order unless it is sorted, the ones without dates last). Rows carry filtered: true for cards the Board’s saved filter leaves out.',
     scope: 'boards:read',
     annotations: READ,
     input: {
@@ -854,6 +864,7 @@ export const TOOLS: McpTool[] = [
               description: z.string().max(10_000).optional(),
               status: z.enum(['todo', 'doing', 'done']).optional(),
               dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+              startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional().describe('A card’s start (where its bar starts on a timeline); not after its due date.'),
               color: z.string().max(20).optional().describe('A sticky color name, or #RRGGBB for cards and text.'),
               fill: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
               stroke: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
