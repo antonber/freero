@@ -1,6 +1,7 @@
 import type {
   Account,
   AdminScope,
+  AdminTrashedBoard,
   OrganisationSummary,
   OrganisationWorkspace,
   OrganisationWorkspaceMember,
@@ -194,7 +195,7 @@ const walkthroughsPath = (boardId: string, id?: string) =>
 
 const activityPath = (id: string, aid: string) => `/api/boards/${encodeURIComponent(id)}/activities/${encodeURIComponent(aid)}`;
 
-export type BoardFilter = 'all' | 'mine' | 'shared' | 'starred' | 'recent' | 'trash';
+export type BoardFilter = 'all' | 'mine' | 'shared' | 'starred' | 'recent' | 'trash' | 'archived';
 
 /** Audit log filters (see GET /api/workspaces/:id/audit). */
 export interface AuditQuery {
@@ -328,6 +329,9 @@ export const api = {
   deleteBoard: (id: string) => request<{ ok: true }>('DELETE', `/api/boards/${id}`),
   restoreBoard: (id: string) => request<{ board: BoardSummary }>('POST', `/api/boards/${id}/restore`),
   deleteBoardForever: (id: string) => request<{ ok: true }>('DELETE', `/api/boards/${id}/permanent`),
+  /** #153: archive (read-only for everyone, out of the default lists) or unarchive. */
+  setBoardArchived: (id: string, archived: boolean) =>
+    request<{ board: BoardSummary }>('POST', `/api/boards/${encodeURIComponent(id)}/${archived ? 'archive' : 'unarchive'}`),
   /** A copy, where you chose (#124) or else where the server places it (its workspace when you may, else personal). */
   duplicateBoard: (id: string, to?: DuplicateBoardRequest) =>
     request<{ board: BoardSummary }>('POST', `/api/boards/${id}/duplicate`, to ?? {}),
@@ -508,6 +512,10 @@ export const api = {
   adminUsage: (id: string) => request<{ usage: WorkspaceUsage }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/usage`),
   /** Boards whose link is on but doesn't meet the workspace's link policy (#39). */
   linkCompliance: (id: string) => request<{ boards: LinkComplianceIssue[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/link-compliance`),
+  /** #153: the workspace's trash for its content admins, and restoring from it. */
+  adminTrash: (id: string) => request<{ boards: AdminTrashedBoard[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/trash`),
+  adminRestoreBoard: (id: string, boardId: string) =>
+    request<{ ok: true }>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/trash/${encodeURIComponent(boardId)}/restore`),
   adminMembers: (id: string, q = '') =>
     request<{ members: AdminMember[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/members${q ? `?q=${encodeURIComponent(q)}` : ''}`),
   setMemberDeactivated: (id: string, userId: string, deactivated: boolean) =>

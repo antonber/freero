@@ -1,13 +1,13 @@
 // Admin console routes (contract: @freero/shared api.ts "Admin console"). Every route checks on the
 // server that the caller is an owner or admin of that team workspace (requireAdmin).
 import { Router, type Request } from 'express';
-import type { AdminMember, AuditEvent, AuditIntegrity, LinkComplianceIssue, WorkspaceSettings, WorkspaceUsage } from '@freero/shared';
+import type { AdminMember, AdminTrashedBoard, AuditEvent, AuditIntegrity, LinkComplianceIssue, WorkspaceSettings, WorkspaceUsage } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { badRequest, handle, notFound } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
 import { recordAudit, verifyWorkspaceAudit } from '../audit/index';
 import { currentUser, getUsers, requireUser } from '../auth/index';
-import { linksOutOfPolicy } from '../boards/index';
+import { linksOutOfPolicy, restoreForWorkspace, workspaceTrash } from '../boards/index';
 import { getWorkspaceSettings, setMemberDeactivated, updateWorkspaceSettings } from '../workspaces/index';
 import { adminMembers, auditBatches, auditFilter, auditPage, CSV_COLUMNS, csvRow, requireAdmin, workspaceUsage } from './service';
 
@@ -59,6 +59,26 @@ export default function adminRoutes(_ctx: ServerContext): Router {
           }),
         ),
       });
+    }),
+  );
+
+  // #153: everyone's trash, for the workspace's content admins (metadata only), and restoring from it.
+  r.get(
+    `${base}/admin/trash`,
+    requireUser,
+    handle(async (req, res) => {
+      await requireAdmin(req.params.id, currentUser(req).id, { scope: 'content' });
+      res.json({ boards: (await workspaceTrash(req.params.id)) satisfies AdminTrashedBoard[] });
+    }),
+  );
+  r.post(
+    `${base}/admin/trash/:boardId/restore`,
+    requireUser,
+    handle(async (req, res) => {
+      const me = currentUser(req).id;
+      await requireAdmin(req.params.id, me, { scope: 'content' });
+      await restoreForWorkspace(req.params.id, req.params.boardId, me);
+      res.json({ ok: true });
     }),
   );
 

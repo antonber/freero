@@ -224,6 +224,7 @@ function ServerBoard({ id }: { id: string }) {
   return (
     <>
       <BoardEngine host={host} features={features} topbarAccessory={bell} location={location} />
+      {board.archivedAt ? <ArchivedNotice board={board} onUnarchived={retry} /> : null}
       <ShareDialog
         boardId={board.id}
         open={shareOpen}
@@ -238,6 +239,32 @@ function ServerBoard({ id }: { id: string }) {
         onLeft={() => navigate('/app')}
       />
     </>
+  );
+}
+
+/** #153: an archived board is read-only for everyone; its owner or a content admin can bring it back. */
+function ArchivedNotice({ board, onUnarchived }: { board: BoardSummary; onUnarchived: () => void }) {
+  const notify = useToast();
+  const [busy, setBusy] = useState(false);
+  const unarchive = async () => {
+    setBusy(true);
+    try {
+      await api.setBoardArchived(board.id, false);
+      onUnarchived();
+    } catch (e) {
+      notify(e instanceof ApiError ? e.message : 'Could not unarchive it', 'error');
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="fr-boardpage-archived" role="status">
+      <span>Archived — this board is read-only for everyone.</span>
+      {board.permissions.canArchive ? (
+        <Button size="sm" loading={busy} onClick={() => void unarchive()}>
+          Unarchive
+        </Button>
+      ) : null}
+    </div>
   );
 }
 

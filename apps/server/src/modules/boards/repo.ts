@@ -43,6 +43,11 @@ export interface Board {
   editorsCanShare: boolean;
   /** #123: viewers and commenters may copy, duplicate, export and download it. */
   viewersCanExport: boolean;
+  /** #153: who moved it to the trash (null: before #153, or nobody — a retention rule). */
+  deletedBy: string | null;
+  /** #153: archived (read-only for everyone, out of the default lists) since, and by whom (null: a retention rule). */
+  archivedAt: number | null;
+  archivedBy: string | null;
 }
 
 interface Row {
@@ -68,6 +73,9 @@ interface Row {
   embeddable: boolean | null;
   editors_can_share: boolean | null;
   viewers_can_export: boolean | null;
+  deleted_by: string | null;
+  archived_at: Date | null;
+  archived_by: string | null;
 }
 
 // Link access is resolved here, once: everything that reads a board (roles, lists, sockets,
@@ -97,6 +105,9 @@ const toBoard = (r: Row, now = Date.now()): Board => ({
   embeddable: r.embeddable === true,
   editorsCanShare: r.editors_can_share !== false,
   viewersCanExport: r.viewers_can_export !== false,
+  deletedBy: r.deleted_by ?? null,
+  archivedAt: r.archived_at ? r.archived_at.getTime() : null,
+  archivedBy: r.archived_by ?? null,
 });
 
 /** A board in service: not in the trash, not taken down by an operator. */
@@ -266,11 +277,13 @@ export async function idsInWorkspace(workspaceId: string): Promise<string[]> {
 export async function workspaceStats(
   workspaceId: string,
   now: number,
-): Promise<{ live: number; trashed: number; ownedBy: Map<string, number>; active7d: number; active30d: number }> {
+): Promise<{ live: number; trashed: number; archived: number; ownedBy: Map<string, number>; active7d: number; active30d: number }> {
   const DAY = 86_400_000;
   const [counts, owners, active] = await Promise.all([
-    one<{ live: number; trashed: number }>(
-      `SELECT count(*) FILTER (WHERE deleted_at IS NULL)::int AS live, count(*) FILTER (WHERE deleted_at IS NOT NULL)::int AS trashed
+    one<{ live: number; trashed: number; archived: number }>(
+      `SELECT count(*) FILTER (WHERE deleted_at IS NULL AND archived_at IS NULL)::int AS live,
+         count(*) FILTER (WHERE deleted_at IS NOT NULL)::int AS trashed,
+         count(*) FILTER (WHERE deleted_at IS NULL AND archived_at IS NOT NULL)::int AS archived
        FROM boards WHERE workspace_id = $1`,
       [workspaceId],
     ),
@@ -287,6 +300,7 @@ export async function workspaceStats(
   return {
     live: counts?.live ?? 0,
     trashed: counts?.trashed ?? 0,
+    archived: counts?.archived ?? 0,
     ownedBy: new Map(owners.map((o) => [o.owner_id, o.n])),
     active7d: active?.d7 ?? 0,
     active30d: active?.d30 ?? 0,
@@ -329,14 +343,35 @@ export async function setProject(id: string, projectId: string | null): Promise<
   return (await one(`UPDATE boards SET project_id = $2 WHERE id = $1 AND deleted_at IS NULL RETURNING id`, [id, projectId])) !== null;
 }
 
-/** Moves a live board to the trash; false if it was not live (already trashed or gone). */
-export async function trashBoard(id: string, now: number): Promise<boolean> {
-  return (await one(`UPDATE boards SET deleted_at = $2 WHERE id = $1 AND deleted_at IS NULL RETURNING id`, [id, new Date(now)])) !== null;
+/** Moves a live board to the trash (`by`: who; null: a retention rule); false if it was not live (already trashed or gone). */
+export async function trashBoard(id: string, now: number, by: string | null = null): Promise<boolean> {
+  return (await one(`UPDATE boards SET deleted_at = $2, deleted_by = $3 WHERE id = $1 AND deleted_at IS NULL RETURNING id`, [id, new Date(now), by])) !== null;
 }
 
 /** Takes a board out of the trash; false if it was not in the trash. */
 export async function restoreBoard(id: string): Promise<boolean> {
-  return (await one(`UPDATE boards SET deleted_at = NULL WHERE id = $1 AND deleted_at IS NOT NULL RETURNING id`, [id])) !== null;
+  return (await one(`UPDATE boards SET deleted_at = NULL, deleted_by = NULL WHERE id = $1 AND deleted_at IS NOT NULL RETURNING id`, [id])) !== null;
+}
+
+/**
+ * Archives (`at`, `by`: who; null: a retention rule) or unarchives (null) a LIVE board, in one
+ * statement; false when that changed nothing (already so, trashed, taken down, gone).
+ */
+export async function setArchived(id: string, at: number | null, by: string | null): Promise<boolean> {
+  return (
+    (await one(
+      `UPDATE boards SET archived_at = $2, archived_by = CASE WHEN $2::timestamptz IS NULL THEN NULL ELSE $3 END
+       WHERE id = $1 AND ${LIVE} AND (archived_at IS NULL) = ($2::timestamptz IS NOT NULL) RETURNING id`,
+      [id, at === null ? null : new Date(at), by],
+    )) !== null
+  );
+}
+
+/** Every board in a workspace's trash (its content admins, #153), most recently deleted first; taken-down ones stay with the operators. */
+export async function trashedInWorkspace(workspaceId: string): Promise<Board[]> {
+  return (
+    await query<Row>(`SELECT * FROM boards WHERE workspace_id = $1 AND deleted_at IS NOT NULL AND removed_at IS NULL ORDER BY deleted_at DESC, id`, [workspaceId])
+  ).map((r) => toBoard(r));
 }
 
 /** Every board the user owns, trashed ones included, except taken-down ones (account purge). */

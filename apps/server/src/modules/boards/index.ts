@@ -28,6 +28,8 @@ import {
 } from './service';
 
 export { createBoard, deleteBoardRowsInWorkspace, cleanUpDeletedBoards } from './service';
+// The workspace's trash for its content admins (#153; modules/admin checks the scope).
+export { workspaceTrash, restoreForWorkspace } from './service';
 // The object registry (modules/objects): boards and items, checked like the board page checks them.
 export { registerBoardObjectTypes, boardRoles, elementTitle } from './objects';
 // Created, duplicated, renamed, moved, trashed, restored (the activity feed, KAI-188).

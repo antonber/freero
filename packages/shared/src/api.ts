@@ -60,6 +60,11 @@ export interface BoardSummary {
   /** Trash only (filter=trash): when it was deleted, and when it will be deleted for good. */
   deletedAt?: number;
   purgeAt?: number;
+  /**
+   * [additive, #153] When it was archived: kept, read-only for everyone (its owner included: `role`
+   * reads at most 'viewer') and out of the default lists until someone unarchives it. Absent: live.
+   */
+  archivedAt?: number;
   /** The workspace the board belongs to, and its project (folder) there, if any. */
   workspaceId: string;
   projectId: string | null;
@@ -139,6 +144,8 @@ export interface BoardPermissions {
   canMove: boolean;
   /** Hand the board to someone else (its owner, or the workspace's owners/admins). */
   canTransfer: boolean;
+  /** [additive, #153] Archive or unarchive it: its owner, or the workspace's content admins. Absent: no. */
+  canArchive?: boolean;
   /** [additive] The board's link also lets in visitors without an account, as guests (workspace policy `publicLinks`). */
   guestLinks?: boolean;
   /** [additive] This server offers boards a Jitsi room of their own (operator's JITSI_BASE_URL, KAI-134). */
@@ -869,7 +876,7 @@ export interface DataExportInfo {
 }
 
 // ---- Boards ----
-// GET    /api/boards?workspace=<id>&project=<id>&filter=all|mine|shared|starred|recent|trash&q=text
+// GET    /api/boards?workspace=<id>&project=<id>&filter=all|mine|shared|starred|recent|trash|archived&q=text
 //                                 -> { boards: BoardSummary[] }
 //        `workspace` = the current workspace (default: your personal one; 404 unless you're in it).
 //        all/mine/trash: boards of that workspace you can open (trash: your own deleted ones);
@@ -900,6 +907,10 @@ export interface DataExportInfo {
 // POST   /api/boards/:id/restore   -> { board: BoardSummary }  (owner only; 404 unless in your trash;
 //                                    403 over the board quota)
 // DELETE /api/boards/:id/permanent -> { ok: true }  (owner only; only boards in the trash)
+// POST   /api/boards/:id/archive | /unarchive -> { board: BoardSummary }  [additive, #153] (its owner,
+//                                    or a content admin of its workspace): an archived board is
+//                                    read-only for everyone, listed only with filter=archived, never
+//                                    moved to the trash by a retention rule; live sockets are re-checked
 // POST   /api/boards/:id/duplicate body DuplicateBoardRequest? -> { board: BoardSummary }  (copies the Yjs
 //                                    state; [additive, #124] into `workspaceId` / `projectId` when given —
 //                                    where you may create boards — else the source's when you may, else personal)
@@ -2044,6 +2055,8 @@ export const AUDIT_ACTIONS = {
   'doc.exported': 'Exported a doc',
   'board.trashed': 'Moved a board to the trash',
   'board.restored': 'Restored a board from the trash',
+  'board.archived': 'Archived a board',
+  'board.unarchived': 'Unarchived a board',
   'board.deleted': 'Deleted a board forever',
   'board.purged': 'Board purged after trash retention',
   'board.transferred': 'Transferred board ownership',
@@ -2278,6 +2291,8 @@ export interface SiemSinkInfo {
 // POST  /api/workspaces/:id/admin/members/:userId/reactivate  -> { member: AdminMember }
 //       A deactivated member keeps their role and boards but opens nothing in the workspace (not
 //       even boards they own) until reactivated; live connections are cut at once.
+// GET   /api/workspaces/:id/admin/trash                  -> { boards: AdminTrashedBoard[] }  (content; #153)
+// POST  /api/workspaces/:id/admin/trash/:boardId/restore -> { ok: true }  (content; audited, the owner's quota)
 // GET   /api/workspaces/:id/admin/settings              -> { settings: WorkspaceSettings }
 // PATCH /api/workspaces/:id/admin/settings  body Partial<WorkspaceSettings> -> { settings }
 // GET   /api/workspaces/:id/audit?action=&actor=&target=&from=&to=&before=&limit=
@@ -2332,9 +2347,24 @@ export interface AdminMember extends WorkspaceMember {
   /** Boards they own in this workspace (trash excluded). */
   boards: number;
 }
+/** A board in a workspace's trash as its content admins see it (#153): metadata only, never content. */
+export interface AdminTrashedBoard {
+  boardId: string;
+  kind: ObjectKind;
+  title: string;
+  ownerId: string;
+  ownerName: string;
+  /** Who moved it to the trash (null: before #153, or a retention rule). */
+  deletedBy: { id: string; name: string } | null;
+  deletedAt: number;
+  purgeAt: number;
+}
 export interface WorkspaceUsage {
+  /** Live boards (archived ones not included). */
   boards: number;
   trashedBoards: number;
+  /** [additive, #153] Archived boards (kept, read-only). */
+  archivedBoards?: number;
   projects: number;
   members: Record<WorkspaceRole, number>;
   deactivated: number;

@@ -1315,7 +1315,18 @@ reports" below).
   gone (sockets refused and closed after the live doc state is stored). Owners restore or delete
   forever; `boards/init.ts` purges after the workspace's trash retention (`TRASH_RETENTION_DAYS`
   unless the workspace sets `trashRetentionDays`) hourly on every instance as a `platform/jobs`
-  exclusive job, so replicas never purge at once.
+  exclusive job, so replicas never purge at once. `boards.deleted_by` (#153) remembers who trashed
+  it; a workspace's content admins list its whole trash (`GET /workspaces/:id/admin/trash`,
+  metadata only, boards' `workspaceTrash`) and restore any board of it for its owner
+  (`restoreForWorkspace`: that workspace's trash only, the owner's quota, audited `board.restored`
+  with `by: 'admin'`).
+- Archive (#153; `boards.archived_at` / `archived_by`, boards' repo `setArchived`): `POST
+  /boards/:id/archive | unarchive` by its owner (by identity) or an owner / content admin of its
+  workspace (`mayArchive`), audited `board.archived` / `board.unarchived`, live sockets re-resolved.
+  Archived, `members/roles.ts` `resolveRole` caps EVERY role at 'viewer' — the owner's too, so no
+  owner-only action (trash, transfer, move, sharing) works until it is unarchived — and guests at
+  viewer; lists show it only with `filter=archived`; usage counts it apart (`archivedBoards`); no
+  retention rule trashes it (#154).
 - Periodic jobs: `scheduleExclusiveJob(ctx, { name, lockKey, intervalMs, run })` from an init.ts
   (trash purge, account purge). One instance runs a job at a time (a Postgres session advisory
   lock held for the whole run); jobs must be idempotent, since a run can be cut short anywhere.

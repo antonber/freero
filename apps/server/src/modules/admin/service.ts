@@ -76,6 +76,7 @@ export async function workspaceUsage(workspaceId: string): Promise<WorkspaceUsag
   return {
     boards: stats.live,
     trashedBoards: stats.trashed,
+    archivedBoards: stats.archived,
     projects: facts.projects,
     members,
     deactivated: facts.members.filter((m) => m.deactivated).length,
