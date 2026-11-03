@@ -5,7 +5,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest';
 import * as Y from 'yjs';
-import { plainToRichText, type Account, type BoardElement } from '@freero/shared';
+import { plainToRichText, type Account, type ActivityElement, type BoardElement } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { listAuditEvents } from '../audit/index';
@@ -16,6 +16,7 @@ import { createTeamWorkspace, inviteToWorkspace, updateWorkspace } from '../work
 import * as repo from './repo';
 import { monthOf, runAiAction } from './service';
 import { getAiAdmin, updateAiSettings } from './settings';
+import { resultsText } from './tasks';
 
 // ---- the stub provider ----
 
@@ -268,4 +269,59 @@ it('a workspace endpoint on a private or loopback address is refused unless the 
   const ws = await team(owner);
   for (const baseUrl of ['http://127.0.0.1:11434/v1', 'https://169.254.169.254/v1', 'https://localhost/v1', 'http://example.com/v1'])
     await expect(updateAiSettings(ws, owner.id, { source: 'workspace', provider: 'openai', baseUrl, model: 'm' })).rejects.toMatchObject({ status: 400 });
+});
+
+// ---- AI on results you already have (#148) ----
+
+it('sorting by sentiment accepts only the four sentiment groups: an invented group gets one repair turn, and notes the model skipped land in Neutral', async () => {
+  const owner = await user('Mood');
+  const mine = { createdBy: owner.id };
+  const boardId = await boardWith(owner.id, [
+    sticky('a', 0, 0, 'Loved the demo', mine),
+    sticky('b', 220, 0, 'Builds are too slow', mine),
+    sticky('c', 440, 0, 'Standup is at 9', mine),
+  ]);
+  replies = [
+    JSON.stringify({ clusters: [{ title: 'Happy', notes: [1] }, { title: 'Negative', notes: [2] }] }),
+    JSON.stringify({ clusters: [{ title: 'positive', notes: [1] }, { title: 'Negative', notes: [2] }] }),
+  ];
+
+  const res = await runAiAction(boardId, owner.id, { task: 'cluster', by: 'sentiment', ids: ['a', 'b', 'c'], target: 'board' });
+
+  expect(seen).toHaveLength(2);
+  expect(seen[1].body.messages.at(-1)!.content).toContain('"Happy" is not one of the groups');
+  const els = new Map((await elementsOf(boardId, owner.id)).map((e) => [e.id, e]));
+  const titles = res.created.map((id) => els.get(id)).filter((e) => e?.type === 'text').map((e) => (e as { text: string }).text.replace(/<[^>]+>/g, ''));
+  expect(titles.sort()).toEqual(['Negative', 'Neutral', 'Positive']);
+  expect([...res.moved].sort()).toEqual(['a', 'b', 'c']);
+});
+
+it('a report on an activity whose results are still sealed is refused before the provider is called', async () => {
+  const owner = await user('Sealed');
+  const activity = {
+    ...{ id: 'act', type: 'activity', x: 0, y: 0, w: 520, h: 400, rotation: 0, z: 1, createdBy: owner.id, createdAt: 1, updatedAt: 1 },
+    ...{ kind: 'poll', question: 'Lunch?', options: [{ id: 'a', text: 'Pizza' }], maxChoices: 1, anonymous: false, results: 'reveal', guests: false, color: '#5B3FF0' },
+  } as unknown as BoardElement;
+  const boardId = await boardWith(owner.id, [activity]);
+
+  await expect(runAiAction(boardId, owner.id, { task: 'report', ids: ['act'] })).rejects.toMatchObject({ status: 409, code: 'engage_sealed' });
+  expect(seen).toHaveLength(0);
+});
+
+it('what a report sends the model holds the counts and questions, never who answered or asked', () => {
+  const activity = { kind: 'poll', question: '<p>Lunch?</p>', options: [{ id: 'a', text: 'Pizza' }, { id: 'b', text: 'Salad' }] } as unknown as ActivityElement;
+  const text = resultsText(activity, {
+    activityId: 'act',
+    respondents: 3,
+    sealed: false,
+    updatedAt: 1,
+    poll: [
+      { optionId: 'a', count: 2, names: ['Annabel', 'Bartholomew'] },
+      { optionId: 'b', count: 1, names: ['Cornelius'] },
+    ],
+    questions: [{ id: 'q', text: 'Is it vegan?', by: 'Dorothea', votes: 4, answered: false, at: 1 }],
+  });
+  expect(text).toContain('Pizza: 2');
+  expect(text).toContain('Is it vegan? (4 upvotes)');
+  for (const name of ['Annabel', 'Bartholomew', 'Cornelius', 'Dorothea']) expect(text).not.toContain(name);
 });

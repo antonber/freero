@@ -2,6 +2,8 @@
 // upvotes live in this module's tables; the board only ever gets results (realtime's
 // server-written collection). Answers of a deleted board go with it (ON DELETE CASCADE).
 import * as repo from './repo';
+// An activity's results as everyone sees them, for an AI report (modules/ai, #148).
+export { revealedResults } from './service';
 
 /** For a person's data export: the answers they gave and the questions they asked. */
 export async function engageExportOf(personId: string): Promise<{ answers: unknown[]; questions: unknown[] }> {

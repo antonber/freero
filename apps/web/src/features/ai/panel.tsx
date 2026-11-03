@@ -3,7 +3,7 @@
 // preview and inserts it.
 import { useMemo, useState } from 'react';
 import { FileText, Lightbulb, Shapes, Sparkles, Workflow } from 'lucide-react';
-import { AI_LIMITS, type AiActionResponse, type AiDiagramKind, type AiTask, type BoardElement } from '@freero/shared';
+import { AI_LIMITS, type AiActionResponse, type AiClusterBy, type AiDiagramKind, type AiTask, type BoardElement } from '@freero/shared';
 import { definePanel, type PanelProps } from '@engine';
 import { Button, ElementsPreview, Modal, SegmentedControl, TextArea } from '@ui';
 import { AI_DIALOG, applyPreview, clusterable, suggestedTask } from './lib/actions';
@@ -22,16 +22,25 @@ const DIAGRAMS: Array<{ value: AiDiagramKind; label: string }> = [
   { value: 'mindmap', label: 'Mind map' },
 ];
 
-const isTask = (v: unknown): v is AiTask => TASKS.some((t) => t.value === v);
+const CLUSTER_BY: Array<{ value: AiClusterBy; label: string }> = [
+  { value: 'theme', label: 'By theme' },
+  { value: 'sentiment', label: 'By sentiment' },
+];
+
+const isTask = (v: unknown): v is AiTask => v === 'report' || TASKS.some((t) => t.value === v);
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
-function hint(task: AiTask, selected: number, sortable: number): string {
+function hint(task: AiTask, selected: number, sortable: number, into: boolean, by: AiClusterBy): string {
   switch (task) {
+    case 'report':
+      return 'A note beside the activity with themes, notable answers and suggested next steps, from the results everyone can see.';
     case 'ideas':
       return selected ? `Sticky notes about your prompt, with the ${plural(selected, 'selected item')} as background.` : 'Sticky notes about your prompt, next to what you’re looking at.';
     case 'cluster':
-      return sortable >= 2 ? `Sorts the ${plural(sortable, 'selected note')} into named groups.` : 'Select two or more notes to sort them into groups.';
+      if (sortable < 2) return 'Select two or more notes to sort them into groups.';
+      return by === 'sentiment' ? `Sorts the ${plural(sortable, 'selected note')} into positive, neutral, mixed and negative.` : `Sorts the ${plural(sortable, 'selected note')} into named groups.`;
     case 'summarize':
+      if (into) return 'A written summary of the meeting, added inside its frame.';
       return selected ? `A written summary of the ${plural(selected, 'selected item')}, placed beside them.` : 'A written summary of the whole board.';
     case 'diagram':
       return selected ? `A diagram built from the ${plural(selected, 'selected item')} (and your prompt).` : 'A diagram of what you describe.';
@@ -39,6 +48,7 @@ function hint(task: AiTask, selected: number, sortable: number): string {
 }
 
 const PLACEHOLDER: Record<AiTask, string> = {
+  report: 'Optional: what to focus on, e.g. what to do next quarter',
   ideas: 'e.g. Icebreakers for a remote team retro',
   cluster: 'Optional: how to group them, e.g. by customer pain',
   summarize: 'Optional: what to focus on, e.g. decisions and owners',
@@ -52,6 +62,11 @@ function AiDialog({ editor, props }: PanelProps) {
   const sortable = clusterable(selection).length;
   const [task, setTask] = useState<AiTask>(isTask(props?.task) ? props.task : suggestedTask(selection));
   const [diagram, setDiagram] = useState<AiDiagramKind>('flowchart');
+  const [by, setBy] = useState<AiClusterBy>(props?.by === 'sentiment' ? 'sentiment' : 'theme');
+  // A summary into a frame (a meeting's, #148) and a report on an activity are asked for from their
+  // own entry points: the dialog then does just that one thing.
+  const into = typeof props?.into === 'string' ? props.into : undefined;
+  const fixed = task === 'report' || !!into;
   const [prompt, setPrompt] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,9 +84,12 @@ function AiDialog({ editor, props }: PanelProps) {
     try {
       const res = await ai.run({
         task,
-        prompt: prompt.trim(),
+        // Sentiment groups are fixed: there is no instruction to give.
+        prompt: task === 'cluster' && by === 'sentiment' ? '' : prompt.trim(),
         ...(selection.length ? { ids: (task === 'cluster' ? clusterable(selection) : selection).map((el) => el.id) } : {}),
         ...(task === 'diagram' ? { diagram } : {}),
+        ...(task === 'cluster' ? { by } : {}),
+        ...(into ? { into } : {}),
         target: 'preview',
         at: editor.getViewportCenter(),
       });
@@ -93,7 +111,7 @@ function AiDialog({ editor, props }: PanelProps) {
 
   const insert = () => {
     if (!result) return;
-    applyPreview(editor, result);
+    applyPreview(editor, result, { into });
     close();
     editor.host.notify('Added by AI. Undo takes it back.', 'success');
   };
@@ -155,9 +173,11 @@ function AiDialog({ editor, props }: PanelProps) {
         </div>
       ) : (
         <div className="fr-ai__form">
-          <SegmentedControl<AiTask> aria-label="What should AI do?" options={TASKS} value={task} onChange={(t) => setTask(t)} className="fr-ai__tasks" />
-          <p className="fr-ai__hint">{hint(task, selection.length, sortable)}</p>
+          {!fixed && <SegmentedControl<AiTask> aria-label="What should AI do?" options={TASKS} value={task} onChange={(t) => setTask(t)} className="fr-ai__tasks" />}
+          <p className="fr-ai__hint">{hint(task, selection.length, sortable, !!into, by)}</p>
+          {task === 'cluster' && <SegmentedControl<AiClusterBy> aria-label="How to group" size="sm" options={CLUSTER_BY} value={by} onChange={setBy} />}
           {task === 'diagram' && <SegmentedControl<AiDiagramKind> aria-label="Kind of diagram" size="sm" options={DIAGRAMS} value={diagram} onChange={setDiagram} />}
+          {!(task === 'cluster' && by === 'sentiment') && (
           <TextArea
             label={needsPrompt ? 'Prompt' : 'Prompt (optional)'}
             value={prompt}
@@ -169,13 +189,14 @@ function AiDialog({ editor, props }: PanelProps) {
               if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) void run();
             }}
           />
+          )}
           {error && (
             <p className="fr-ai__error" role="alert">
               {error}
             </p>
           )}
           <p className="fr-ai__fine">
-            {task === 'ideas' && !selection.length ? 'Your prompt is' : 'Your prompt and the board content it reads are'} sent to {ai.provider}, set up by{' '}
+            {task === 'ideas' && !selection.length ? 'Your prompt is' : task === 'report' ? 'Your prompt and the activity’s results (never who answered) are' : 'Your prompt and the board content it reads are'} sent to {ai.provider}, set up by{' '}
             {ai.source === 'workspace' ? 'your workspace’s admins' : 'this Freero server’s operator'}. Board text is passed as data, never as instructions.
           </p>
         </div>

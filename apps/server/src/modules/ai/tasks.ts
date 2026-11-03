@@ -12,10 +12,15 @@
 // StructureInput (no coordinates, no markup); modules/structure lays it out and places it.
 import {
   AI_LIMITS,
+  AI_SENTIMENTS,
   LAYOUT_LIMITS,
+  richTextToPlain,
   LayoutError,
   parseIndentedList,
   parseMermaid,
+  type ActivityElement,
+  type ActivityResults,
+  type AiClusterBy,
   type AiDiagramKind,
   type AiTask,
   type StructureInput,
@@ -119,15 +124,22 @@ export interface ClusterItem {
   text: string;
 }
 
-export function clusterTask(prompt: string, items: ClusterItem[]): TaskPlan {
+const SENTIMENT_RULES = `Task: sort the numbered notes in the board content by the feeling they express, into these groups only: ${AI_SENTIMENTS.map((t) => `"${t}"`).join(', ')}. "Mixed" is for a note that is both positive and negative; "Neutral" for one that is neither (a fact, a question). Every note goes into exactly one group, referred to by its number; leave out groups no note belongs to. Use exactly these group titles.`;
+
+export function clusterTask(prompt: string, items: ClusterItem[], by: AiClusterBy = 'theme'): TaskPlan {
   const listed = items.map((it, i) => `${i + 1}. ${oneLine(it.text) || '(no text)'}`).join('\n');
+  const sentiment = by === 'sentiment';
   return {
     system: `${PREAMBLE}
 
-Task: sort the numbered notes in the board content into themed groups, like an affinity map. Make between 2 and 8 groups (never more than ${AI_LIMITS.clusters}). Every note goes into exactly one group, referred to by its number. Name each group in 1 to 4 words.${prompt ? ' The instruction says how to group them.' : ''}
+${
+  sentiment
+    ? SENTIMENT_RULES
+    : `Task: sort the numbered notes in the board content into themed groups, like an affinity map. Make between 2 and 8 groups (never more than ${AI_LIMITS.clusters}). Every note goes into exactly one group, referred to by its number. Name each group in 1 to 4 words.`
+}${prompt ? ' The instruction says how to group them.' : ''}
 
 Schema: {"clusters": [{"title": string, "notes": [integer, …]}, …]}`,
-    user: `${instructionBlock(prompt || 'Group these notes by theme.')}\n\n${contentBlock(listed)}`,
+    user: `${instructionBlock(prompt || (sentiment ? 'Group these notes by sentiment.' : 'Group these notes by theme.'))}\n\n${contentBlock(listed)}`,
     schema: schemaObject(
       {
         clusters: {
@@ -155,7 +167,18 @@ Schema: {"clusters": [{"title": string, "notes": [integer, …]}, …]}`,
           members.push({ id: items[k - 1].id });
         }
         if (!members.length) continue;
-        const title = str(c.title, 60);
+        let title = str(c.title, 60);
+        if (sentiment) {
+          // Only the fixed sentiment groups, named exactly; one group per sentiment.
+          const known = AI_SENTIMENTS.find((t) => t.toLowerCase() === title.toLowerCase());
+          if (!known) throw new InvalidOutput(`"${title}" is not one of the groups ${AI_SENTIMENTS.join(', ')}.`);
+          title = known;
+          const same = clusters.find((x) => x.title === known);
+          if (same) {
+            same.items.push(...members);
+            continue;
+          }
+        }
         if (clusters.length >= AI_LIMITS.clusters) {
           clusters[clusters.length - 1].items.push(...members);
           continue;
@@ -164,7 +187,15 @@ Schema: {"clusters": [{"title": string, "notes": [integer, …]}, …]}`,
       }
       if (!clusters.length) throw new InvalidOutput('No group named any of the numbered notes.');
       const rest = items.filter((_, i) => !used.has(i + 1)).map((it) => ({ id: it.id }));
-      if (rest.length) clusters.push({ title: 'Other', items: rest });
+      if (sentiment) {
+        // Notes the model left out are neither one nor the other; the groups keep their fixed order.
+        if (rest.length) {
+          const neutral = clusters.find((x) => x.title === 'Neutral');
+          if (neutral) neutral.items.push(...rest);
+          else clusters.push({ title: 'Neutral', items: rest });
+        }
+        clusters.sort((x, y) => AI_SENTIMENTS.indexOf(x.title as never) - AI_SENTIMENTS.indexOf(y.title as never));
+      } else if (rest.length) clusters.push({ title: 'Other', items: rest });
       return {
         structure: { kind: 'clusters', clusters },
         summary: clusters.map((c) => `${c.title ?? 'Untitled'} (${c.items.length})`).join(' · '),
@@ -191,6 +222,53 @@ Schema: {"title": string, "summary": string, "points": [string, …]}`,
       const points = (Array.isArray(o.points) ? o.points : []).map((p) => str(p, 300)).filter(Boolean).slice(0, 10);
       const title = str(o.title, 100) || 'Summary';
       const text = points.length ? `${summary}\n\n${points.map((p) => `• ${p}`).join('\n')}` : summary;
+      return { structure: { kind: 'note', title, text }, summary: `${title}: ${summary}` };
+    },
+  };
+}
+
+// ---- report (live-activity results, #148) ----
+
+/** The results as plain lines: what everyone on the board sees, never who answered what. */
+export function resultsText(activity: ActivityElement, r: ActivityResults): string {
+  const option = new Map(activity.options.map((o) => [o.id, oneLine(o.text)]));
+  const lines = [`Activity: ${activity.kind}`, `Question: ${oneLine(richTextToPlain(activity.question)) || '(none)'}`, `Respondents: ${r.respondents}`];
+  if (r.poll) for (const p of r.poll) lines.push(`- ${option.get(p.optionId) ?? '(choice)'}: ${p.count}`);
+  if (r.words) lines.push(...r.words.slice(0, 100).map((w) => `- ${w.word}: ${w.count}`));
+  if (r.ranking) r.ranking.forEach((x, i) => lines.push(`${i + 1}. ${option.get(x.optionId) ?? '(item)'} (average place ${x.avgRank.toFixed(1)})`));
+  if (r.rating) for (const x of r.rating) lines.push(`- ${option.get(x.optionId) ?? '(statement)'}: average ${x.avg.toFixed(1)} of ${activity.scale ?? 5} from ${x.count} ratings`);
+  if (r.questions) for (const q of r.questions.slice(0, 200)) lines.push(`- ${oneLine(q.text)} (${q.votes} upvotes${q.answered ? ', answered' : ''})`);
+  return lines.join('\n');
+}
+
+export function reportTask(prompt: string, results: string): TaskPlan {
+  return {
+    system: `${PREAMBLE}
+
+Task: write a short report of a live audience activity's results (a poll, word cloud, ranking, rating or Q&A) for the people who ran it. Give a title of at most 8 words, a summary of 1 to 3 sentences, up to 5 themes, up to 5 notable answers (quote or name them from the results) and 2 to 5 suggested next steps. Say only what the results support.${prompt ? ' The instruction says what to focus on.' : ''}
+
+Schema: {"title": string, "summary": string, "themes": [string, …], "notable": [string, …], "next": [string, …]}`,
+    user: `${instructionBlock(prompt || 'Write a report of these results.')}\n\n${contentBlock(results)}`,
+    schema: schemaObject(
+      {
+        title: { type: 'string' },
+        summary: { type: 'string' },
+        themes: { type: 'array', items: { type: 'string' } },
+        notable: { type: 'array', items: { type: 'string' } },
+        next: { type: 'array', items: { type: 'string' } },
+      },
+      ['title', 'summary', 'themes', 'notable', 'next'],
+    ),
+    accept(json) {
+      const o = obj(json);
+      const summary = typeof o.summary === 'string' ? clip(o.summary.trim(), 1500) : '';
+      if (!summary) throw new InvalidOutput('"summary" was empty.');
+      const list = (v: unknown) => (Array.isArray(v) ? v : []).map((p) => str(p, 300)).filter(Boolean).slice(0, 5);
+      const [themes, notable, next] = [list(o.themes), list(o.notable), list(o.next)];
+      if (!next.length) throw new InvalidOutput('"next" needs at least one suggested next step.');
+      const section = (head: string, items: string[]) => (items.length ? `\n\n${head}\n${items.map((p) => `• ${p}`).join('\n')}` : '');
+      const title = str(o.title, 100) || 'Report';
+      const text = `${summary}${section('Themes', themes)}${section('Notable answers', notable)}${section('Next steps', next)}`;
       return { structure: { kind: 'note', title, text }, summary: `${title}: ${summary}` };
     },
   };
@@ -252,4 +330,4 @@ ${DIAGRAM_RULES[kind]}`,
 }
 
 /** The tasks a request may name. */
-export const TASKS: readonly AiTask[] = ['ideas', 'cluster', 'summarize', 'diagram'];
+export const TASKS: readonly AiTask[] = ['ideas', 'cluster', 'summarize', 'diagram', 'report'];

@@ -108,6 +108,22 @@ async function stateFor(c: Ctx): Promise<ActivityState> {
   return { results, mine, myUpvotes: my.upvotes, myQuestions: my.questions, revealed, canAnswer: !why, ...(why ? { reason: why } : {}) };
 }
 
+/**
+ * For an AI report (#148, modules/ai): the activity and its results as everyone on the board sees
+ * them — never answers or who gave them, and nothing of a sealed activity until it is revealed
+ * (409 `engage_sealed`). 404 when the person can't see the activity.
+ */
+export async function revealedResults(boardId: string, activityId: string, userId: string): Promise<{ activity: ActivityElement; results: ActivityResults }> {
+  const { role } = await requireBoardAccess(boardId, userId);
+  const view = await readBoardView(boardId, { userId, role });
+  const hit = view.elements.find((e) => e.el.id === activityId && e.el.type === 'activity' && e.layer !== 'private');
+  if (!hit) throw notFound('This activity is no longer on the board');
+  const c: Ctx = { boardId, personId: userId, name: '', guest: false, role, activity: hit.el as ActivityElement };
+  const { results, revealed } = await resultsOf(c);
+  if (!revealed || results.sealed) throw new HttpError(409, 'Reveal the results first: a report reads only results everyone can see.', 'engage_sealed');
+  return { activity: c.activity, results };
+}
+
 export async function activityState(boardId: string, activityId: string, actor: Actor): Promise<ActivityState> {
   return stateFor(await load(boardId, activityId, actor));
 }

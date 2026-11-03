@@ -11,6 +11,19 @@ const CLUSTERABLE = new Set(['sticky', 'card']);
 /** AI entry points show only when the server offered AI here and this person can edit. */
 export const aiAvailable = (editor: Editor): boolean => !!editor.host.ai && (editor.getRole() === 'owner' || editor.getRole() === 'editor');
 
+/**
+ * Actions that explain themselves when AI is off for this person here (the server offers AI on this
+ * instance, but not to them on this board): they show, and running them says why instead.
+ */
+export const aiOfferedHere = (editor: Editor): boolean => aiAvailable(editor) || !!editor.host.aiUnavailable;
+
+/** Tells the person why AI can't run here; true when it can. */
+export function aiOrExplain(editor: Editor): boolean {
+  if (aiAvailable(editor)) return true;
+  editor.host.notify(editor.host.aiUnavailable ?? 'AI actions add to the board, so they need edit access.', 'info');
+  return false;
+}
+
 export const clusterable = (els: BoardElement[]) => els.filter((el) => CLUSTERABLE.has(el.type) && !el.locked);
 
 export function selectedElements(editor: Editor): BoardElement[] {
@@ -43,11 +56,20 @@ const boxOf = (els: Array<{ x: number; y: number; w: number; h: number }>) => {
  * `insertElements` (fresh ids, one undo step) and the existing notes it sorted moved like a drag —
  * in ONE transaction, so a single Ctrl+Z takes all of it back. Returns the new top-level ids.
  */
-export function applyPreview(editor: Editor, res: AiActionResponse): string[] {
+export function applyPreview(editor: Editor, res: AiActionResponse, opts: { into?: string } = {}): string[] {
   const snapshot = res.snapshot ?? { elements: [], content: {} };
   let created: string[] = [];
   editor.transact(() => {
     const b = boxOf(snapshot.elements);
+    // Into a frame (a meeting's summary): the server placed it inside, or below what is there; the
+    // frame grows first to hold it, so the drop rule makes it a member — all in this one step.
+    const frame = opts.into ? editor.getElement(opts.into) : undefined;
+    if (b && frame?.type === 'frame' && !frame.locked) {
+      const pad = 32;
+      const right = Math.max(frame.x + frame.w, b.x + b.w + pad);
+      const bottom = Math.max(frame.y + frame.h, b.y + b.h + pad);
+      if (right > frame.x + frame.w || bottom > frame.y + frame.h) editor.update(frame.id, { w: right - frame.x, h: bottom - frame.y });
+    }
     if (b) created = editor.insertElements(snapshot, { at: { x: b.x + b.w / 2, y: b.y + b.h / 2 } });
     const moves = (res.moves ?? [])
       .map((m) => {

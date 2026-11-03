@@ -1593,8 +1593,16 @@ export const AI_PROVIDER_LABELS: Record<AiProviderKind, string> = {
 };
 /** Who in a team workspace may use AI on its boards (besides needing edit access to the board). */
 export type AiAccess = 'everyone' | 'members' | 'admins';
-export type AiTask = 'ideas' | 'cluster' | 'summarize' | 'diagram';
+/**
+ * `report` [additive, #148]: a written report of a live activity's results (`ids`: the activity),
+ * read from results everyone can already see (a sealed activity only once it is revealed).
+ */
+export type AiTask = 'ideas' | 'cluster' | 'summarize' | 'diagram' | 'report';
 export type AiDiagramKind = 'flowchart' | 'sequence' | 'mindmap';
+/** [additive, #148] How `cluster` sorts: named themes (default), or sentiment groups (AI_SENTIMENTS). */
+export type AiClusterBy = 'theme' | 'sentiment';
+/** The groups a sentiment clustering uses, in this order (empty ones are left out). */
+export const AI_SENTIMENTS = ['Positive', 'Neutral', 'Mixed', 'Negative'] as const;
 /** Limits on one action (requests over them are refused; model output over them is clamped). */
 export const AI_LIMITS = {
   /** Characters of the person's own instruction. */
@@ -1626,6 +1634,13 @@ export interface AiActionRequest {
   ids?: string[];
   /** diagram: what to draw (default flowchart). */
   diagram?: AiDiagramKind;
+  /** [additive, #148] cluster: by theme (default) or by sentiment. */
+  by?: AiClusterBy;
+  /**
+   * [additive, #148] summarize: put the result into this frame (free space inside it, else below
+   * what is there: the app grows the frame when it inserts the preview) instead of beside it.
+   */
+  into?: string;
   /**
    * 'preview' (default): laid out and placed, not written. 'board': written now as one change.
    * 'suggestions' (KAI-169): proposed for people who can edit to accept ("AI for <Person>"). A

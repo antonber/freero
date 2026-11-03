@@ -5,7 +5,7 @@ import { NotebookPen } from 'lucide-react';
 import { LayoutError } from '@freero/shared';
 import { definePanel, type PanelProps, type Point } from '@engine';
 import { Button, Modal, TextArea, Toggle } from '@ui';
-import { ACCEPT, DIALOG, importMeetingFile, layoutMeetingNotes, placeMeeting, summary } from './lib/insert';
+import { ACCEPT, announce, DIALOG, importMeetingFile, layoutMeetingNotes, placeMeeting } from './lib/insert';
 import './meeting-notes.css';
 
 const isPoint = (v: unknown): v is Point => !!v && typeof (v as Point).x === 'number' && typeof (v as Point).y === 'number';
@@ -22,7 +22,7 @@ function MeetingNotesDialog({ editor, props }: PanelProps) {
     setBusy(true);
     setError(null);
     try {
-      editor.host.notify(summary(await work()), 'success');
+      announce(editor, await work());
       close();
     } catch (e) {
       setError(e instanceof LayoutError ? e.message : 'Could not import these notes');

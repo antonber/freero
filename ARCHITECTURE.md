@@ -402,6 +402,11 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   server said this user may use AI on this board. AI entry points (`features/ai`: the format-toolbar
   button, the "AI ▸" context/board menu, the dialog) hide without it; never offer AI from `when`
   alone. Not in the command palette (it lists unavailable commands greyed out).
+  `Host.aiUnavailable?` (additive, #148): the server's reason when it offers AI on this instance but
+  not to this person on this board (workspace AI off, not allowed, no edit access). Actions added
+  since (a report on an activity, "Summarise" after a meeting import, catch-up, mind-map Expand,
+  walkthrough chapters) show greyed out or say this reason instead of running; with neither
+  `ai` nor `aiUnavailable` (no AI on this server) they don't show at all.
 - `Host.trackers?` (additive, KAI-154): `{ connections, projects, preview, send, importIssues, sync,
   unlink }`, present only when the server listed a tracker connection this person may use on this
   board (`GET /boards/:id/trackers`). `features/trackers` hides every entry point without it.
@@ -1874,6 +1879,13 @@ board and builds `Host.ai` only when it says yes.
   written. The structure goes through `structure/index.ts` `insertStructure` with `target: 'preview'`
   (the app's dialog shows it and inserts it with `Editor.insertElements` + `moveBy`, ONE transaction,
   one undo step) or `'board'` (one attributed server change).
+- **On results people already have** (#148): `cluster` with `by: 'sentiment'` sorts into the fixed
+  `AI_SENTIMENTS` groups only (another title gets the repair turn); `report` reads a live activity's
+  results through `engage/index.ts` `revealedResults` — what everyone on the board sees, never
+  answers or names, and a sealed activity only once revealed (409 `engage_sealed`, before any
+  call); `summarize` with `into: <frameId>` places the note inside that frame (the meeting-notes
+  import's toast offers it as "Summarise", running `ai.summarizeFrame`), and the app grows the frame
+  before inserting the preview, in the same undo step.
 - **Limits and records**: `RATE_LIMIT_AI` per user, `RATE_LIMIT_AI_WORKSPACE` per workspace, the
   workspace's monthly token budget and `AI_INSTANCE_MONTHLY_TOKENS_PER_USER` (`ai_usage`, one upsert per
   call, also for failed calls). Every request that reaches the model is audited

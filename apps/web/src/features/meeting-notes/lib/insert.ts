@@ -91,6 +91,16 @@ export function summary(r: MeetingReport): string {
   return `Imported “${r.title}”${parts.length ? `: ${parts.join(', ')}` : ''}`;
 }
 
+/**
+ * The import's toast. Where the server offers AI, it carries "Summarise" (#148): the AI feature's
+ * `ai.summarizeFrame` puts a summary note into this frame (previewed, one undo step), or says why
+ * AI can't run here.
+ */
+export function announce(editor: Editor, r: MeetingReport): void {
+  const ai = !!editor.host.ai || !!editor.host.aiUnavailable;
+  editor.host.notify(summary(r), 'success', ai ? { action: { label: 'Summarise', run: () => editor.runCommand('ai.summarizeFrame', { frameId: r.frameId }) } } : undefined);
+}
+
 /** Reads a file and places it; throws LayoutError (a message for the person). */
 export async function importMeetingFile(editor: Editor, file: File, opts: { speakers?: boolean } = {}, at?: Point): Promise<MeetingReport> {
   if (file.size > MAX_FILE_BYTES) throw new LayoutError(`That file is over ${MAX_FILE_BYTES / 1024 / 1024} MB.`);

@@ -381,6 +381,13 @@ export interface Host {
    */
   ai?: HostAi;
   /**
+   * [additive] Why AI can't be used here by this person, in words fit for the UI ("AI is off for
+   * this workspace…", "…need edit access"): set when the server offers AI on this instance but not
+   * to them on this board, so an AI action can show greyed out with the reason. Absent when `ai`
+   * is set, and when AI doesn't exist on this server at all (then no AI entry point shows).
+   */
+  aiUnavailable?: string;
+  /**
    * [additive] Issue trackers (KAI-153/154), present only when the server listed at least one
    * tracker connection this person may use on this board (they can edit, and their team or they
    * themselves connected one). Absent: hide every tracker entry point. Calls reject with a message
