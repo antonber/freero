@@ -10,7 +10,7 @@ import { useSlides } from './useSlides';
 import { moveSlide, newSlide, zoomToFrame } from './actions';
 import type { SlideLayoutId } from './layouts';
 import { layoutMenu, slideMenu } from './slideMenu';
-import { editSlide } from './slideEditor';
+import { editSlide, slideEditStore } from './slideEditor';
 import { SlideThumb } from './Thumb';
 
 export const DECK_PANEL_ID = 'frame.deck';
@@ -156,6 +156,7 @@ export function DeckPanel({ editor }: { editor: Editor }) {
       }
       const fresh = editor.getElement<FrameElement>(frame.id);
       if (!fresh) return;
+      if (slideEditStore(editor).getState().frameId) return editSlide(editor, fresh.id);
       editor.select([fresh.id]);
       zoomToFrame(editor, fresh);
     };

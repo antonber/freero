@@ -13,6 +13,7 @@ import type { SlideLayoutId } from './layouts';
 import { layoutMenu, slideMenu } from './slideMenu';
 import { SlideThumb } from './Thumb';
 import { useSlides } from './useSlides';
+import { editSlide, slideEditStore } from './slideEditor';
 
 export const FILMSTRIP_ID = 'frame.filmstrip';
 const THUMB_W = 148;
@@ -143,6 +144,8 @@ export function Filmstrip({ editor, onOpen, extraMenu }: { editor: Editor; onOpe
       if (dragging) return moveSlide(editor, frame.id, to);
       const fresh = editor.getElement<FrameElement>(frame.id);
       if (!fresh) return;
+      // While a slide is open on its own, picking another opens that one instead.
+      if (slideEditStore(editor).getState().frameId) return editSlide(editor, fresh.id);
       editor.select([fresh.id]);
       zoomToFrame(editor, fresh);
     };

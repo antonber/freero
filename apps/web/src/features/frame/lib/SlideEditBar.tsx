@@ -13,12 +13,20 @@ export function SlideEditBar({ editor }: PanelProps) {
   useEffect(() => focusChanged(editor, focus), [editor, focus]);
   useEffect(() => () => forgetSlide(editor), [editor]);
 
-  // Page Up / Page Down step through the deck while a slide is open (not while typing).
+  // Page Up / Page Down step through the deck while a slide is open (not while typing). Esc from
+  // the board's chrome (the filmstrip that opened the slide) goes back too: the canvas's own Esc
+  // handling only sees keys pressed on the canvas.
   useEffect(() => {
     if (!frameId) return;
     const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (e.key === 'Escape' && target?.closest?.('[data-fr-chrome]') && !target.closest('[role="menu"], [role="dialog"], input, textarea')) {
+        e.preventDefault();
+        e.stopPropagation();
+        return leaveSlide(editor);
+      }
       if (e.key !== 'PageUp' && e.key !== 'PageDown') return;
-      if (editor.getEditingId() || (e.target as HTMLElement | null)?.closest?.('input, textarea, [contenteditable="true"]')) return;
+      if (editor.getEditingId() || target?.closest?.('input, textarea, [contenteditable="true"]')) return;
       e.preventDefault();
       e.stopPropagation();
       stepSlide(editor, e.key === 'PageDown' ? 1 : -1);
@@ -34,7 +42,7 @@ export function SlideEditBar({ editor }: PanelProps) {
   const frame = order[at];
   if (!frame) return null;
   return (
-    <div className="fr-slide-editbar" role="toolbar" aria-label="Slide editor">
+    <div className="fr-slide-editbar" data-fr-chrome="" role="toolbar" aria-label="Slide editor">
       <IconButton icon={ChevronLeft} label="Previous slide" shortcut="PageUp" size={32} disabled={at <= 0} onClick={() => stepSlide(editor, -1)} />
       <span className="fr-slide-editbar__where">
         <span className="fr-slide-editbar__pos">
