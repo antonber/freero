@@ -1721,6 +1721,7 @@ export class EditorImpl implements Editor {
     padding?: number;
     skipFonts?: boolean;
     onMissingImages?: (count: number) => void;
+    onProgress?: (done: number, total: number) => void;
   }): Promise<string> {
     if (!this.core.renderExport) return Promise.reject(new Error('Board renderer is not mounted.'));
     return this.core.renderExport(opts);
