@@ -243,6 +243,7 @@ function cleanPolicies(v: unknown): Partial<WorkspacePolicies> {
   pick('liveEmbeds', ['on', 'off']);
   pick('boardEmbeds', ['on', 'off']);
   pick('linkPassword', ['optional', 'required']);
+  pick('templatePublishing', ['members', 'admins']);
   if (p.linkMaxDays !== undefined) {
     const d = p.linkMaxDays;
     if (d !== null && (typeof d !== 'number' || !Number.isInteger(d) || d < 1 || d > LINK_MAX_DAYS_LIMIT))
@@ -303,6 +304,7 @@ const POLICY_LABELS: Record<(typeof FLOOR_POLICY_KEYS)[number], string> = {
   boardEmbeds: 'Embedding boards on other sites',
   linkPassword: 'Password on board links',
   linkMaxDays: 'Board links expire within',
+  templatePublishing: 'Who shares templates',
 };
 const SETTING_LABELS: Record<(typeof FLOOR_SETTING_KEYS)[number], string> = {
   requireTwoFactor: 'Require two-step verification',
@@ -936,6 +938,12 @@ export async function inactiveBoardRules(): Promise<Array<{ workspaceId: string;
     if (action !== 'none' && days !== null) out.push({ workspaceId: w.id, name: w.name, action, days });
   }
   return out;
+}
+
+/** Who may share templates with a team workspace (its effective policy) or publish to an organisation (its own), #155. */
+export async function templatePublishingOf(workspaceId: string): Promise<'members' | 'admins'> {
+  const w = await repo.getWorkspace(workspaceId);
+  return (w?.kind === 'organisation' ? w.ownPolicies : w?.policies)?.templatePublishing ?? 'members';
 }
 
 /** Why a workspace's data must be kept as it is (a legal hold, KAI-51 / #157), or null. */

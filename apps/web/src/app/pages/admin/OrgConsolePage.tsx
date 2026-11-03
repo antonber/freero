@@ -4,7 +4,7 @@
 // workspace admin console's, pointed at the organisation's id; the server checks every action.
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Building2, KeyRound, Lock, ScrollText, UserCog, Users } from 'lucide-react';
+import { ArrowLeft, Building2, KeyRound, LayoutTemplate, Lock, ScrollText, UserCog, Users } from 'lucide-react';
 import type { AdminScope, OrganisationSummary, WorkspaceSummary } from '@freero/shared';
 import { Logo, Spinner } from '@ui';
 import { api } from '../../api/client';
@@ -14,6 +14,7 @@ import { AdminMembers } from './AdminMembers';
 import { OrgWorkspaces } from './AdminOrganisation';
 import { AdminRetention, AdminSecurity } from './AdminSettings';
 import { AdminSiem, siemOffered } from './AdminSiem';
+import { AdminTemplates } from './AdminTemplates';
 import { scopesOf } from './AdminConsolePage';
 import './admin.css';
 
@@ -22,6 +23,7 @@ const TABS = [
   { id: 'workspaces', label: 'Workspaces', icon: Building2, scopes: [] },
   { id: 'people', label: 'People', icon: Users, scopes: ['members'] },
   { id: 'policies', label: 'Policies', icon: Lock, scopes: ['security', 'content'] },
+  { id: 'templates', label: 'Templates', icon: LayoutTemplate, scopes: ['content'] },
   { id: 'sso', label: 'Single sign-on', icon: KeyRound, scopes: ['security'] },
   { id: 'provisioning', label: 'Provisioning', icon: UserCog, scopes: ['security'] },
   { id: 'audit', label: 'Audit log', icon: ScrollText, scopes: ['security'] },
@@ -110,6 +112,7 @@ export function OrgConsolePage() {
             {tab === 'workspaces' ? <OrgWorkspaces organisation={org} onChanged={reload} /> : null}
             {tab === 'people' ? <AdminMembers workspace={asWorkspace} /> : null}
             {tab === 'policies' ? <AdminSecurity workspace={asWorkspace} onChanged={reload} /> : null}
+            {tab === 'templates' ? <AdminTemplates workspace={asWorkspace} /> : null}
             {tab === 'sso' ? <AdminSso workspace={asWorkspace} /> : null}
             {tab === 'provisioning' ? <AdminProvisioning workspace={asWorkspace} /> : null}
             {tab === 'audit' ? (

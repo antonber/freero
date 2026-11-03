@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BookmarkPlus, LayoutTemplate, Plus, Search, Trash2, Users } from 'lucide-react';
+import { BookmarkPlus, Building2, LayoutTemplate, Lock, Plus, Search, Trash2, Users } from 'lucide-react';
 import { DockHeader, definePanel, useCanEdit, useSelection, type Editor, type SavedTemplateInfo } from '@engine';
 import { Button, Input, Spinner, formatShortcut } from '@ui';
 import { loadTemplates } from './lib/catalog/load';
@@ -7,7 +7,7 @@ import { DOCK_ID, addTemplate } from './lib/insert';
 import { filterTemplates } from './lib/place';
 import { LazyTemplatePreview } from './lib/Preview';
 import { SaveTemplateDialog } from './lib/SaveDialog';
-import { SAVE_DIALOG_ID, deleteSavedTemplate, filterSaved, insertSavedTemplate, onSavedTemplatesChanged, setTemplateShared } from './lib/saved';
+import { SAVE_DIALOG_ID, deleteSavedTemplate, filterSaved, insertSavedTemplate, onSavedTemplatesChanged, setTemplatePublished, setTemplateShared } from './lib/saved';
 import { CATEGORIES, type TemplateCategory, type TemplateDef } from './lib/types';
 import './templates.css';
 
@@ -70,6 +70,15 @@ function SavedCard({ editor, t, canEdit, onInsert }: { editor: Editor; t: SavedT
       editor.host.notify(err instanceof Error && err.message ? err.message : 'Could not change sharing.', 'error');
     }
   };
+  const company = team?.company ?? null;
+  const publish = async (published: boolean) => {
+    try {
+      await setTemplatePublished(editor, t.id, published);
+      editor.host.notify(published ? `Published “${t.name}” to ${company}: every team there can use it.` : `“${t.name}” is no longer a ${company} template.`, 'success');
+    } catch (err) {
+      editor.host.notify(err instanceof Error && err.message ? err.message : 'Could not change it.', 'error');
+    }
+  };
   const remove = async () => {
     try {
       await deleteSavedTemplate(editor, t.id);
@@ -96,10 +105,25 @@ function SavedCard({ editor, t, canEdit, onInsert }: { editor: Editor; t: SavedT
         <span className="fr-tpl-card__desc">{t.description || `${t.elementCount} ${t.elementCount === 1 ? 'item' : 'items'}`}</span>
         {t.shared && !mine && t.ownerName ? <span className="fr-tpl-card__by">Shared by {t.ownerName}</span> : null}
       </button>
-      {t.shared ? (
+      {t.company ? (
+        <span className="fr-tpl-saved__team" title={t.locked ? `${t.company} template, locked by its admins` : `${t.company} template`}>
+          {t.locked ? <Lock size={12} aria-hidden /> : <Building2 size={12} aria-hidden />} {t.company}
+        </span>
+      ) : t.shared ? (
         <span className="fr-tpl-saved__team" title={mine ? 'Shared with your team' : 'Shared by your team'}>
           <Users size={12} aria-hidden /> Team
         </span>
+      ) : null}
+      {mine && company && editor.host.publishTemplate && !t.locked ? (
+        <button
+          type="button"
+          className="fr-tpl-saved__share fr-tpl-saved__publish"
+          aria-label={t.company ? `Withdraw ${t.name} from ${company}` : `Publish ${t.name} to ${company}`}
+          title={t.company ? `Withdraw from ${company}` : `Publish to ${company}`}
+          onClick={() => void publish(!t.company)}
+        >
+          <Building2 size={14} />
+        </button>
       ) : null}
       {mine && team ? (
         <button
@@ -123,7 +147,7 @@ function SavedCard({ editor, t, canEdit, onInsert }: { editor: Editor; t: SavedT
           <Users size={14} />
         </button>
       ) : null}
-      {mine ? (
+      {mine && !t.locked ? (
         <button type="button" className="fr-tpl-saved__delete" aria-label={`Delete template ${t.name}`} title="Delete template" onClick={() => setConfirming(true)}>
           <Trash2 size={14} />
         </button>

@@ -80,6 +80,15 @@ export const POLICY_FIELDS: Array<{
     ],
   },
   {
+    key: 'templatePublishing',
+    label: 'Who shares templates',
+    hint: 'Who may share a template with the whole team — in an organisation, who may publish company templates every workspace sees. Admins can lock and retire them (Templates).',
+    options: [
+      { value: 'members', label: 'Any member' },
+      { value: 'admins', label: 'Owners and content admins' },
+    ],
+  },
+  {
     key: 'boardEmbeds',
     label: 'Embedding boards on other sites',
     hint: 'Whether board owners can embed their boards live in wikis, docs and websites. An embed never shows more than the board’s sharing allows. Off: no board shows on any other site, and embeds already placed stop working.',

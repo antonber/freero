@@ -19,7 +19,7 @@ import { LinkPassword } from './LinkPassword';
 import { RequestAccess } from './RequestAccess';
 import './BoardPage.css';
 
-type Team = { id: string; name: string } | null;
+type Team = { id: string; name: string; company?: { id: string; name: string } | null } | null;
 type LoadState =
   | { status: 'loading' }
   | { status: 'ready'; board: BoardSummary; team?: Team; ai?: BoardAiStatus | null; trackers?: BoardTrackersResponse['connections'] }
@@ -156,7 +156,7 @@ function ServerBoard({ id }: { id: string }) {
         // A doc's id (KAI-162; an activity entry, an old link): its own page.
         if (board.kind === 'doc') return navigate(`/doc/${encodeURIComponent(id)}${location.search}`, { replace: true });
         const w = workspaces.find((x) => x.id === board.workspaceId && x.kind === 'team' && x.role !== 'guest');
-        setState({ status: 'ready', board, team: w ? { id: w.id, name: w.name } : null, ai, trackers: connections });
+        setState({ status: 'ready', board, team: w ? { id: w.id, name: w.name, company: w.organisation ? { id: w.organisation.id, name: w.organisation.name } : null } : null, ai, trackers: connections });
       })
       .catch((err) => {
         if (cancelled) return;

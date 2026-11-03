@@ -431,6 +431,13 @@ export const api = {
   listTemplates: () => request<{ templates: SavedTemplateSummary[] }>('GET', '/api/templates'),
   getTemplate: (id: string) => request<{ template: SavedTemplate }>('GET', `/api/templates/${encodeURIComponent(id)}`),
   saveTemplate: (body: SaveTemplateRequest) => request<{ template: SavedTemplateSummary }>('POST', '/api/templates', body),
+  /** #155: publish one of your templates to an organisation (null: withdraw it). */
+  publishTemplate: (id: string, organisationId: string | null) =>
+    request<{ template: SavedTemplateSummary }>('PATCH', `/api/templates/${encodeURIComponent(id)}`, { organisationId }),
+  /** #155: owners and content admins of where it is shared or published. */
+  setTemplateLocked: (id: string, locked: boolean) => request<{ template: SavedTemplateSummary }>('POST', `/api/templates/${encodeURIComponent(id)}/lock`, { locked }),
+  setTemplateRetired: (id: string, retired: boolean) => request<{ template: SavedTemplateSummary }>('POST', `/api/templates/${encodeURIComponent(id)}/retire`, { retired }),
+  placeTemplates: (workspaceId: string) => request<{ templates: SavedTemplateSummary[] }>('GET', `/api/workspaces/${encodeURIComponent(workspaceId)}/admin/templates`),
   deleteTemplate: (id: string) => request<{ ok: true }>('DELETE', `/api/templates/${encodeURIComponent(id)}`),
   /** Shares one of your templates with a team workspace (null: personal again). */
   shareTemplate: (id: string, workspaceId: string | null) =>

@@ -63,6 +63,7 @@ export const DEFAULT_POLICIES: WorkspacePolicies = {
   boardEmbeds: 'on',
   linkPassword: 'optional',
   linkMaxDays: null,
+  templatePublishing: 'members',
 };
 
 /** The team access level of a board: its project's own level, else the workspace's. */

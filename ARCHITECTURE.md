@@ -1605,6 +1605,19 @@ members with roles owner / admin / member / guest (separate from board roles).
   it (`templates.shareTemplate(id, null)`); workspaces' `onMembershipChanged` (after a removal or
   role change) makes everything someone shared with a workspace personal again when they leave it
   or become a guest there (`templates/init.ts`).
+- Company templates (#155; `templates.organisation_id`, `locked`, `retired_at`): its owner
+  publishes a template to the organisation of one of their workspaces (`PATCH /templates/:id
+  { organisationId }`); it then reaches the full members of every attached workspace (the one
+  visibility rule, repo `VISIBLE_TO_USER`, with templates' `audienceOf`: team workspaces + their
+  organisations), labelled with the organisation's name. Who may share with a workspace / publish
+  to an organisation is the policy `templatePublishing` (members / admins: owners and content
+  admins; an organisation's is a floor for its workspaces, like every policy). Owners and content
+  admins of where it is shared or published lock it (its owner can no longer delete, unshare or
+  withdraw it — the repo's writes refuse a locked row), retire it (out of every picker but its
+  owner's) or withdraw it; `GET /workspaces/:id/admin/templates` lists them. Audited in that
+  place's log: `template.published` / `unpublished` / `locked` / `unlocked` / `retired` / `unretired`.
+  In the board's picker (`features/templates`) `Host.publishTemplate` exists when the board's team
+  belongs to an organisation (`board.team.company`).
 - Ownership: `POST /boards/:id/transfer` (team: to a non-guest member; personal: to a board
   member, moving the board to their personal workspace) and `POST /workspaces/:id/transfer`, each
   one transaction; the previous owner becomes editor / admin. Account purge first calls

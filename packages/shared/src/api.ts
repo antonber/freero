@@ -349,6 +349,11 @@ export interface WorkspacePolicies {
    * or changing it needs an expiry no later than that many days ahead. null: no limit.
    */
   linkMaxDays: number | null;
+  /**
+   * [additive, #155] Who may share templates with the workspace — on an organisation, who may
+   * publish company templates (and a floor for its workspaces): any member, or owners and content admins.
+   */
+  templatePublishing: 'members' | 'admins';
 }
 /** The longest a workspace may let board links live without changing them (#39 `linkMaxDays`). */
 export const LINK_MAX_DAYS_LIMIT = 365;
@@ -410,6 +415,7 @@ export const POLICY_STRICTNESS: { [K in OrderedPolicyKey]: ReadonlyArray<Workspa
   liveEmbeds: ['on', 'off'],
   boardEmbeds: ['on', 'off'],
   linkPassword: ['optional', 'required'],
+  templatePublishing: ['members', 'admins'],
 };
 /** The floored policies whose values are an ordered choice (all but the numeric `linkMaxDays`). */
 export type OrderedPolicyKey = Exclude<OrganisationPolicyKey, 'linkMaxDays'>;
@@ -1076,7 +1082,15 @@ export const MAX_VERSION_NAME = 80;
 //                            with a team workspace you're a member of, or make it personal again.
 //                            Owners/admins of the workspace it is shared with may unshare it: null)
 // A template stops being shared with a workspace when its owner leaves it or becomes a guest there.
-// DELETE /api/templates/:id  -> { ok: true }  (its owner only)
+// DELETE /api/templates/:id  -> { ok: true }  (its owner only; not while an admin locked it)
+// PATCH  /api/templates/:id  body { organisationId: string | null } -> { template }  [additive, #155]
+//        (its owner publishes it to an organisation of one of their workspaces — as the
+//        organisation's `templatePublishing` allows — or takes it back, unless locked; the
+//        organisation's content admins may also withdraw it)
+// POST   /api/templates/:id/lock   body { locked }  -> { template }  (owners / content admins of where it is shared or published)
+// POST   /api/templates/:id/retire body { retired } -> { template }  (same)
+// GET    /api/workspaces/:id/admin/templates -> { templates: SavedTemplateSummary[] }  (content admins of a
+//        workspace or organisation: what is shared with or published to it, retired ones included)
 export interface SavedTemplateSummary {
   id: string;
   name: string;
@@ -1093,6 +1107,15 @@ export interface SavedTemplateSummary {
   elementCount: number;
   createdAt: number;
   updatedAt: number;
+  /** [additive, #155] The organisation it is published to (a company template), with its name. */
+  organisationId?: string | null;
+  organisationName?: string | null;
+  /** [additive, #155] Locked by admins: everyone may use it, only admins change or remove it. */
+  locked?: boolean;
+  /** [additive, #155] Retired by admins: out of every picker (admins and its owner still see it). */
+  retiredAt?: number | null;
+  /** [additive, #155] You may lock and retire it: an owner / content admin of where it is shared or published. */
+  canManage?: boolean;
 }
 /**
  * Board content as the web engine exports it (elements with their ids as on the source board,
@@ -2138,6 +2161,12 @@ export const AUDIT_ACTIONS = {
   'board.suggestion_rejected': 'Rejected suggested changes on a board',
   'board.suggestion_reopened': 'Undid accepting or rejecting suggested changes',
   'template.saved': 'Saved a board as a template',
+  'template.published': 'Published a company template',
+  'template.unpublished': 'Withdrew a company template',
+  'template.locked': 'Locked a template',
+  'template.unlocked': 'Unlocked a template',
+  'template.retired': 'Retired a template',
+  'template.unretired': 'Brought back a retired template',
   'audit.exported': 'Exported the audit log',
   // The public API (KAI-104) and agent safety (KAI-170): credentials, apps and every API call.
   'api.token_created': 'Created an API token',

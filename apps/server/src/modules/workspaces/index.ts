@@ -84,3 +84,5 @@ export {
 export { sessionLimitsFor, allSessionLimits, twoFactorRequirementOf, retentionOverrides, auditScopeOf } from './service';
 // Retention of inactive boards (#154, boards' job): each workspace's rule as it applies, and holds.
 export { inactiveBoardRules, workspaceHoldOn } from './service';
+// Company templates (#155): who may share or publish templates.
+export { templatePublishingOf } from './service';
