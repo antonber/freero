@@ -461,3 +461,123 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+
+/* ---- start dialog: per-item cap and timer rows ---- */
+.fr-vote-row-opt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+}
+
+.fr-vote-row-opt__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--fr-ink);
+}
+
+.fr-vote-row-opt__n {
+  width: 72px;
+}
+
+/* ---- session bar: anonymous tag and countdown ---- */
+.fr-vote-bar__tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--fr-primary-soft);
+  color: var(--fr-primary);
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: 1px;
+}
+
+.fr-vote-bar__clock {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: var(--fr-radius-sm);
+  background: var(--fr-surface-2);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fr-ink);
+}
+
+.fr-vote-bar__clock.is-low {
+  color: var(--fr-danger);
+}
+
+/* ---- results dock: past votes ---- */
+.fr-vote-results__back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: none;
+  padding: 2px 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--fr-primary);
+  cursor: pointer;
+}
+
+.fr-vote-history {
+  border-top: 1px solid var(--fr-line);
+  padding-top: 12px;
+}
+
+.fr-vote-history h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fr-ink-2);
+}
+
+.fr-vote-history ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fr-vote-history__row {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius-sm);
+  background: var(--fr-surface);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fr-vote-history__row:hover {
+  background: var(--fr-hover);
+}
+
+.fr-vote-history__title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fr-ink);
+}
+
+.fr-vote-history__meta {
+  font-size: 12px;
+  color: var(--fr-ink-3);
+}
