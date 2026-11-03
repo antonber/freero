@@ -529,7 +529,7 @@ export const api = {
   trackerUnlink: (boardId: string, linkId: string) => request<{ ok: true }>('DELETE', `/api/boards/${encodeURIComponent(boardId)}/trackers/links/${encodeURIComponent(linkId)}`),
   /** A team's connections (its admins) or, without `workspaceId`, the person's own. */
   trackerConnections: (workspaceId: string | null) =>
-    request<{ connections: TrackerConnectionInfo[]; oauth: { jira: boolean } }>('GET', `/api/trackers/connections${workspaceId ? `?workspace=${encodeURIComponent(workspaceId)}` : ''}`),
+    request<{ connections: TrackerConnectionInfo[]; oauth: { jira: boolean; asana?: boolean; monday?: boolean } }>('GET', `/api/trackers/connections${workspaceId ? `?workspace=${encodeURIComponent(workspaceId)}` : ''}`),
   createTrackerConnection: (body: TrackerConnectionInput) => request<{ connection: TrackerConnectionInfo; webhookSecret: string }>('POST', '/api/trackers/connections', body),
   updateTrackerConnection: (id: string, body: Partial<TrackerConnectionInput>) => request<{ connection: TrackerConnectionInfo }>('PATCH', `/api/trackers/connections/${encodeURIComponent(id)}`, body),
   testTrackerConnection: (id: string) => request<{ ok: true; account: string | null; connection: TrackerConnectionInfo }>('POST', `/api/trackers/connections/${encodeURIComponent(id)}/test`),
