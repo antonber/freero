@@ -76,8 +76,9 @@
 
 .fr-walkthrough-bar__track {
   position: relative;
-  flex: 1;
-  min-width: 80px;
+  /* Room for chapter ticks and reaction marks (#127). */
+  flex: 1 0 140px;
+  min-width: 140px;
   display: flex;
   align-items: center;
 }
@@ -170,14 +171,6 @@
   border-color: var(--fr-primary);
 }
 
-.fr-walkthrough-bar__chapter-name {
-  max-width: 160px;
-  overflow: hidden;
-  color: var(--fr-ink-2);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 .fr-walkthrough-bar__chapter:focus-visible,
 .fr-walkthrough-bar__reaction:focus-visible,
@@ -358,6 +351,10 @@
 
 .fr-walkthrough-reactions__pick:hover {
   background: var(--fr-hover);
+}
+
+.fr-walkthrough-chapters .fr-walkthrough-comments__head h2 {
+  margin-right: auto;
 }
 
 .fr-walkthrough-chapters__summary {

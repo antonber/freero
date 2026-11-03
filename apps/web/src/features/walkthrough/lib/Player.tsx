@@ -3,7 +3,7 @@
 // the voice. The viewer's own pan or zoom takes the camera back (the bar offers "Back to their
 // view"); pausing leaves the camera alone; playing again returns to the recorded path.
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { BookOpenText, Captions, CaptionsOff, Download, Flag, ListOrdered, LocateFixed, MessageSquareText, Pause, PenLine, Play, X } from 'lucide-react';
+import { Captions, CaptionsOff, Download, Flag, ListOrdered, LocateFixed, MessageSquareText, Pause, PenLine, Play, X } from 'lucide-react';
 import { formatWalkthroughTime, WALKTHROUGHS_COLLECTION, type Walkthrough, type WalkthroughSummary } from '@freero/shared';
 import { useCamera, useCollection, usePeople, type Editor, type PanelProps } from '@engine';
 import { Avatar, IconButton, Spinner } from '@ui';
@@ -229,16 +229,20 @@ function Player({ editor, w, startAt }: { editor: Editor; w: Walkthrough; startA
       )}
 
       {showComments && <Comments editor={editor} w={w} t={t} state={comments} onSeek={seek} onClose={() => setShowComments(false)} />}
-      {showChapters && !showComments && <ChaptersList editor={editor} w={w} t={t} onSeek={seek} onClose={() => setShowChapters(false)} />}
+      {showChapters && !showComments && (
+        <ChaptersList
+          editor={editor}
+          w={w}
+          t={t}
+          onSeek={seek}
+          onClose={() => setShowChapters(false)}
+          onEdit={canManage(editor, w) && editor.host.walkthroughs?.setChapters ? () => editor.openPanel(CHAPTERS_ID, { id: w.id }) : undefined}
+        />
+      )}
 
       <div className="fr-walkthrough-bar is-playing" role="region" aria-label={`Walkthrough: ${w.title}`} onKeyDown={onKeyDown} data-fr-occludes="" data-fr-interactive="">
         <IconButton ref={playButton} icon={playing ? Pause : Play} label={playing ? 'Pause (Space)' : 'Play (Space)'} onClick={toggle} disabled={!!problem} />
         <span className="fr-walkthrough-bar__time">{formatWalkthroughTime(t)}</span>
-        {chapter && (
-          <span className="fr-walkthrough-bar__chapter-name" title={chapter.title}>
-            {chapter.title}
-          </span>
-        )}
         <div className="fr-walkthrough-bar__track">
           {chapters.map((c) =>
             c.atMs > 0 ? (
@@ -305,11 +309,16 @@ function Player({ editor, w, startAt }: { editor: Editor; w: Walkthrough; startA
           <IconButton icon={captionsOn ? Captions : CaptionsOff} label={captionsOn ? 'Hide captions (C)' : 'Show captions (C)'} active={captionsOn} onClick={() => setCaptionsOn((on) => !on)} />
         )}
         {canManage(editor, w) && <IconButton icon={PenLine} label={hasCaptions ? 'Edit captions' : 'Add captions'} onClick={() => editor.openPanel(CAPTIONS_ID, { id: w.id })} />}
-        {(chapters.length > 0 || !!w.summary) && (
-          <IconButton icon={ListOrdered} label={`Chapters (${chapters.length})`} active={showChapters && !showComments} onClick={() => (setShowComments(false), setShowChapters((on) => !on || showComments))} />
-        )}
-        {canManage(editor, w) && editor.host.walkthroughs?.setChapters && (
-          <IconButton icon={BookOpenText} label={chapters.length ? 'Edit summary and chapters' : 'Add summary and chapters'} onClick={() => editor.openPanel(CHAPTERS_ID, { id: w.id })} />
+        {(chapters.length > 0 || !!w.summary || (canManage(editor, w) && !!editor.host.walkthroughs?.setChapters)) && (
+          <IconButton
+            icon={ListOrdered}
+            label={chapter ? `Chapters: ${chapter.title}` : `Chapters (${chapters.length})`}
+            active={showChapters && !showComments}
+            onClick={() => {
+              setShowComments(false);
+              setShowChapters((on) => !on || showComments);
+            }}
+          />
         )}
         <ReactButton editor={editor} id={w.id} t={t} state={reactions} />
         <IconButton icon={MessageSquareText} label={`Walkthrough comments (${markers.length})`} active={showComments} onClick={() => setShowComments((on) => !on)}>

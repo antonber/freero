@@ -3,7 +3,7 @@
 // the board's AI makes from the captions, edited before it is saved. Without AI, or without
 // captions, chapters are still written by hand.
 import { useEffect, useState } from 'react';
-import { Sparkles, X } from 'lucide-react';
+import { PenLine, Sparkles, X } from 'lucide-react';
 import { formatWalkthroughTime, MAX_WALKTHROUGH_SUMMARY, type Walkthrough, type WalkthroughChapter } from '@freero/shared';
 import { useDock, type Editor, type PanelProps } from '@engine';
 import { Button, IconButton, Modal, Spinner, TextArea } from '@ui';
@@ -15,7 +15,7 @@ const message = (e: unknown) => (e instanceof Error && e.message ? e.message : '
 const asLines = (chapters: WalkthroughChapter[] | undefined) => (chapters ?? []).map((c) => `${formatWalkthroughTime(c.atMs)} ${c.title}`).join('\n');
 
 /** The list viewers jump from (beside the open dock, like the comments). */
-export function ChaptersList({ editor, w, t, onSeek, onClose }: { editor: Editor; w: Walkthrough; t: number; onSeek(ms: number): void; onClose(): void }) {
+export function ChaptersList({ editor, w, t, onSeek, onClose, onEdit }: { editor: Editor; w: Walkthrough; t: number; onSeek(ms: number): void; onClose(): void; onEdit?: () => void }) {
   useDock();
   const safe = editor.getSafeArea();
   const right = Math.max(16, editor.getViewportSize().width - (safe.x + safe.w) + 12);
@@ -24,11 +24,12 @@ export function ChaptersList({ editor, w, t, onSeek, onClose }: { editor: Editor
     <section className="fr-walkthrough-comments fr-walkthrough-chapters" style={{ right }} aria-label="Chapters of this walkthrough" data-fr-interactive="">
       <header className="fr-walkthrough-comments__head">
         <h2>Chapters</h2>
+        {onEdit && <IconButton icon={PenLine} label={w.chapters?.length || w.summary ? 'Edit summary and chapters' : 'Add summary and chapters'} onClick={onEdit} />}
         <IconButton icon={X} label="Close chapters" onClick={onClose} />
       </header>
       {w.summary && <p className="fr-walkthrough-chapters__summary">{w.summary}</p>}
       <ol className="fr-walkthrough-comments__list" data-fr-scrollable="">
-        {!w.chapters?.length && <li className="fr-walkthrough-comments__empty">No chapters yet.</li>}
+        {!w.chapters?.length && <li className="fr-walkthrough-comments__empty">{onEdit ? 'No chapters yet. Add them with the pencil, by hand or with AI from the captions.' : 'No chapters yet.'}</li>}
         {w.chapters?.map((c) => (
           <li key={c.atMs}>
             <button type="button" className={`fr-walkthrough-chapters__item${current?.atMs === c.atMs ? ' is-current' : ''}`} onClick={() => onSeek(c.atMs)} aria-current={current?.atMs === c.atMs || undefined}>
