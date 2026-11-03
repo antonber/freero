@@ -1,16 +1,19 @@
 // A Mermaid reader for the subset that maps onto board elements: flowcharts (node shapes, edge
-// chains with labels and styles, `&`, subgraphs) and sequence diagrams (participants, messages,
-// notes). Written in-house: Mermaid's own parser drags in its renderer. Styling directives are
+// chains with labels and styles, `&`, subgraphs), sequence diagrams (participants, messages,
+// notes), mind maps, and class / ER / state diagrams (uml.ts). Written in-house: Mermaid's own parser drags in its renderer. Styling directives are
 // skipped; anything else unknown is an error naming the line, so nothing is silently dropped.
 import type { ShapeKind } from '../elements';
 import type { Direction, GraphEdgeInput, GraphGroupInput, GraphNodeInput, OutlineNodeInput, SequenceInput } from './types';
 import { LAYOUT_LIMITS, LayoutError } from './types';
+import { parseClassDiagram, parseErDiagram, parseStateDiagram, type UmlDiagram } from './uml';
 
 export type MermaidDiagram =
   | { kind: 'graph'; direction: Direction; nodes: GraphNodeInput[]; edges: GraphEdgeInput[]; groups: GraphGroupInput[] }
   | { kind: 'sequence'; diagram: SequenceInput }
   /** [additive] `mindmap`: one root, nesting by indentation. */
-  | { kind: 'mindmap'; root: OutlineNodeInput };
+  | { kind: 'mindmap'; root: OutlineNodeInput }
+  /** [additive, #38] `classDiagram`, `erDiagram`, `stateDiagram-v2`: UML / ERD shapes and line ends. */
+  | UmlDiagram;
 
 const IGNORED = /^(style|classDef|class|click|linkStyle|accTitle|accDescr|direction)\b/;
 
@@ -157,7 +160,7 @@ function splitStatements(source: string): Array<{ text: string; line: number }> 
 }
 
 /** A supported diagram header alone on its line (after comments); prose starting "Graph of …" is not one. */
-const HEADER = /^\s*(?:%%[^\n]*\n\s*)*(?:(?:flowchart|graph)(?:[ \t]+(?:TB|TD|BT|RL|LR))?|sequenceDiagram|mindmap)[ \t]*(?:\r?\n|;|$)/i;
+const HEADER = /^\s*(?:---\r?\n[\s\S]*?\r?\n---[ \t]*\r?\n\s*)?(?:%%[^\n]*\n\s*)*(?:(?:flowchart|graph)(?:[ \t]+(?:TB|TD|BT|RL|LR))?|sequenceDiagram|mindmap|classDiagram(?:-v2)?|erDiagram|stateDiagram(?:-v2)?)[ \t]*(?:\r?\n|;|$)/i;
 
 /** Whether `text` is Mermaid source this reader handles (pasted text the app turns into a diagram). */
 export const looksLikeMermaid = (text: string | null | undefined): boolean => !!text && HEADER.test(text);
@@ -165,14 +168,20 @@ export const looksLikeMermaid = (text: string | null | undefined): boolean => !!
 export function parseMermaid(source: string): MermaidDiagram {
   if (typeof source !== 'string' || !source.trim()) throw new LayoutError('The Mermaid source is empty');
   if (source.length > LAYOUT_LIMITS.source) throw new LayoutError(`Mermaid source is longer than ${LAYOUT_LIMITS.source} characters`);
+  // Front matter (`---` … `---`: a title, a config) says nothing about the elements.
+  const front = /^\s*---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(?=\r?\n|$)/.exec(source);
+  if (front) source = front[0].replace(/[^\r\n]/g, ' ') + source.slice(front[0].length);
   const stmts = splitStatements(source).filter((s) => !/^---/.test(s.text));
   const head = stmts.shift();
   if (!head) throw new LayoutError('The Mermaid source is empty');
   if (/^sequenceDiagram\b/.test(head.text)) return { kind: 'sequence', diagram: parseSequence(stmts) };
   // Mind maps nest by indentation, so they are read from the raw lines.
   if (/^mindmap\s*$/.test(head.text)) return { kind: 'mindmap', root: parseMindmap(source, head.line) };
+  if (/^classDiagram(?:-v2)?$/.test(head.text)) return parseClassDiagram(stmts);
+  if (/^erDiagram$/.test(head.text)) return parseErDiagram(stmts);
+  if (/^stateDiagram(?:-v2)?$/.test(head.text)) return parseStateDiagram(stmts);
   const m = /^(?:flowchart|graph)\b\s*(TB|TD|BT|RL|LR)?\s*(.*)$/i.exec(head.text);
-  if (!m) return fail(head.line, `only flowcharts ("flowchart TD"), sequence diagrams and mind maps are supported, not "${head.text.slice(0, 40)}"`);
+  if (!m) return fail(head.line, `only flowcharts ("flowchart TD"), sequence, class, ER and state diagrams and mind maps are supported, not "${head.text.slice(0, 40)}"`);
   const dir = (m[1] ?? 'TB').toUpperCase();
   const direction: Direction = dir === 'TD' ? 'TB' : (dir as Direction);
   if (m[2]) stmts.unshift({ text: m[2], line: head.line });

@@ -247,6 +247,13 @@ export interface ShapeElement extends BaseElement, TextStyle {
   strokeWidth: number;
   strokeStyle: StrokeStyle;
   text: RichText;
+  /**
+   * [additive] A `umlClass` whose text is the whole class: its name on the first line, then its
+   * attributes, then its operations (the lines with a "("), drawn as compartments with a divider
+   * under the name and one above the operations. Absent: the name alone in the top compartment
+   * (clients that don't know this draw it that way).
+   */
+  compartments?: boolean;
 }
 
 export interface TextElement extends BaseElement {

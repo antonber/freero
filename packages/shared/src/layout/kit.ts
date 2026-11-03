@@ -1,6 +1,6 @@
 // Fully specified element drafts (every required field of the shared element types is set, so
 // what the server writes renders exactly like what the tools create). Freero's own palette.
-import type { Anchor, ShapeKind, StickyColor } from '../elements';
+import type { Anchor, CapStyle, ShapeKind, StickyColor } from '../elements';
 import type { Point, Rect } from '../geometry';
 import { plainToRichText } from '../text';
 import { measureText } from './measure';
@@ -101,8 +101,8 @@ export interface ConnectorStyle {
   stroke?: string;
   strokeWidth?: number;
   strokeStyle?: 'solid' | 'dashed' | 'dotted';
-  startCap?: 'none' | 'arrow' | 'triangle' | 'circle' | 'diamond' | 'bar';
-  endCap?: 'none' | 'arrow' | 'triangle' | 'circle' | 'diamond' | 'bar';
+  startCap?: CapStyle;
+  endCap?: CapStyle;
   waypoints?: Point[];
 }
 

@@ -13,9 +13,11 @@ import {
   type BoardElement,
   type ConnectorElement,
   type ElementDraft,
+  type FrameElement,
   type InsertStructureRequest,
   type KanbanElement,
   type Rect,
+  type ShapeElement,
   type TableElement,
 } from '@freero/shared';
 import { closeTestDb, openTestDb } from '../../platform/testing';
@@ -171,6 +173,9 @@ it('refuses malformed structure with a clear error and writes nothing', async ()
     [{ kind: 'orgchart', people: [{ name: 'Ann' }, { name: 'Bo', manager: 'Ghost' }] }, /manager "Ghost" isn't in the list/],
     [{ kind: 'orgchart', people: [{ name: 'Ann', manager: 'Bo' }, { name: 'Bo', manager: 'Ann' }] }, /in a circle/],
     [{ kind: 'mermaid', source: 'mindmap\n  Root\n  Second root' }, /line 3: a mind map has one root/],
+    [{ kind: 'mermaid', source: 'classDiagram\n  class Order {\n    +total()' }, /line 2: class "Order" has no closing "}"/],
+    [{ kind: 'mermaid', source: 'erDiagram\n  ORDER {\n    number\n  }' }, /line 3: can't read the attribute "number"/],
+    [{ kind: 'mermaid', source: 'stateDiagram-v2\n  [*] --> A\n  A -> B' }, /line 3: can't read "A -> B"/],
   ];
   for (const [structure, message] of cases) await expect(insert(boardId, { structure })).rejects.toMatchObject({ status: 400, message: expect.stringMatching(message) });
   expect((await elementsOf(boardId)).map((e) => e.id)).toEqual(['only']);
@@ -438,4 +443,142 @@ it('meeting notes land as ONE frame that the outline (what agents read) shows as
     ['2026-11-03', 'Owner: Ben'],
   ]);
   expect(overlap(view.elements.find((e) => e.el.id === frame.id)!.el, there)).toBe(false);
+});
+
+// ---- Mermaid class, ER and state diagrams (#38): the shape library's UML / ERD shapes and line ends.
+
+const drawn = async (source: string) => {
+  const boardId = await boardWith([]);
+  const res = await insert(boardId, { structure: { kind: 'mermaid', source } });
+  const all = (await elementsOf(boardId)).filter((e) => res.created.includes(e.id));
+  const plain = (html: string) => html.replace(/<br>/g, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+  const shapes = all.filter((e): e is ShapeElement => e.type === 'shape');
+  const named = (first: string) => shapes.find((s) => plain(s.text).split('\n')[0] === first)!;
+  const lines = all.filter((e): e is ConnectorElement => e.type === 'connector');
+  const between = (a: BoardElement, b: BoardElement) => lines.find((l) => l.start.elementId === a.id && l.end.elementId === b.id)!;
+  return { all, shapes, named, lines, between, plain, frames: all.filter((e): e is FrameElement => e.type === 'frame') };
+};
+
+it('reads a Mermaid class diagram: classes with their members in compartments, relations with their UML ends and multiplicities, a namespace as a frame, notes', async () => {
+  const d = await drawn(
+    [
+      '---',
+      'title: Shop',
+      '---',
+      'classDiagram',
+      '  direction LR',
+      '  namespace Billing {',
+      '    class Invoice {',
+      '      +String number',
+      '      -List~Line~ lines',
+      '      +total() Money',
+      '      +issue()$',
+      '    }',
+      '    class Payment',
+      '  }',
+      '  class Shape',
+      '  <<interface>> Shape',
+      '  Shape : +area() double',
+      '  Shape <|.. Circle',
+      '  Customer "1" --> "0..*" Invoice : receives',
+      '  Invoice *-- Line',
+      '  Cart o-- Line',
+      '  Invoice ..> Payment : settled by',
+      '  Animal <|-- Duck',
+      '  note for Duck "can swim"',
+    ].join('\n'),
+  );
+  const invoice = d.named('Invoice');
+  expect(invoice).toMatchObject({ shape: 'umlClass', compartments: true, align: 'left', vAlign: 'top' });
+  expect(d.plain(invoice.text).split('\n')).toEqual(['Invoice', '+String number', '-List<Line> lines', '+total() : Money', '+issue()']);
+  expect(invoice.text).toContain('<u>+issue()</u>'); // static
+  expect(d.named('«interface» Shape').shape).toBe('umlClass');
+  // Ends: the hollow triangle on the parent / interface, diamonds on the whole, dashed when dotted.
+  expect(d.between(d.named('«interface» Shape'), d.named('Circle'))).toMatchObject({ startCap: 'triangleOpen', endCap: 'none', strokeStyle: 'dashed' });
+  expect(d.between(d.named('Animal'), d.named('Duck'))).toMatchObject({ startCap: 'triangleOpen', strokeStyle: 'solid' });
+  expect(d.between(invoice, d.named('Line'))).toMatchObject({ startCap: 'diamond', endCap: 'none' });
+  expect(d.between(d.named('Cart'), d.named('Line'))).toMatchObject({ startCap: 'diamondOpen' });
+  expect(d.between(invoice, d.named('Payment'))).toMatchObject({ endCap: 'arrow', strokeStyle: 'dashed', label: 'settled by' });
+  const receives = d.between(d.named('Customer'), invoice);
+  expect(receives.label).toBe('receives');
+  expect(receives.labels!.map((l) => [l.t < 0.5 ? 'start' : 'end', l.text])).toEqual([['start', '1'], ['end', '0..*']]);
+  // The namespace is a frame holding its classes; the note is joined to its class by a dashed line.
+  expect(d.frames.map((f) => f.title)).toEqual(['Billing']);
+  expect([invoice.frameId, d.named('Payment').frameId, d.named('Customer').frameId ?? null]).toEqual([d.frames[0].id, d.frames[0].id, null]);
+  const note = d.shapes.find((s) => s.shape === 'umlNote')!;
+  expect(d.between(note, d.named('Duck'))).toMatchObject({ strokeStyle: 'dashed', endCap: 'none' });
+  // Every member line fits: a class is at least as wide as its longest line needs.
+  expect(invoice.w).toBeGreaterThan(d.named('Payment').w - 1);
+});
+
+it("reads a Mermaid ER diagram: entities as tables with their keys, relationships with the crow's-foot end each side names, dashed when non-identifying", async () => {
+  const d = await drawn(
+    [
+      'erDiagram',
+      '  CUSTOMER ||--o{ ORDER : places',
+      '  ORDER ||--|{ LINE-ITEM : contains',
+      '  CUSTOMER }|..|{ DELIVERY-ADDRESS : uses',
+      '  p[Person]',
+      '  p |o--|| PASSPORT : holds',
+      '  CUSTOMER {',
+      '    string id PK',
+      '    string email UK "login"',
+      '  }',
+      '  ORDER {',
+      '    int number PK',
+      '    string customerId FK',
+      '  }',
+    ].join('\n'),
+  );
+  const customer = d.named('CUSTOMER');
+  expect(customer).toMatchObject({ shape: 'erdEntity', align: 'left', vAlign: 'top' });
+  expect(d.plain(customer.text).split('\n')).toEqual(['CUSTOMER', 'PK  id: string', 'UK  email: string — login']);
+  expect(d.between(customer, d.named('ORDER'))).toMatchObject({ startCap: 'one', endCap: 'zeroOrMany', strokeStyle: 'solid', label: 'places' });
+  expect(d.between(d.named('ORDER'), d.named('LINE-ITEM'))).toMatchObject({ startCap: 'one', endCap: 'oneOrMany' });
+  expect(d.between(customer, d.named('DELIVERY-ADDRESS'))).toMatchObject({ startCap: 'oneOrMany', endCap: 'oneOrMany', strokeStyle: 'dashed' });
+  expect(d.between(d.named('Person'), d.named('PASSPORT'))).toMatchObject({ startCap: 'zeroOrOne', endCap: 'one' });
+  expect(d.lines.every((l) => l.start.elementId && l.end.elementId)).toBe(true);
+});
+
+it('reads a Mermaid state diagram: start and end markers per scope, states with descriptions, a composite state as a frame, choice and fork, labelled transitions, notes', async () => {
+  const d = await drawn(
+    [
+      'stateDiagram-v2',
+      '  [*] --> Idle',
+      '  state "Waiting for payment" as Waiting',
+      '  Waiting : times out after 15 min',
+      '  Idle --> Waiting : checkout',
+      '  state paid <<choice>>',
+      '  Waiting --> paid',
+      '  paid --> Shipping : paid',
+      '  paid --> Idle : declined',
+      '  state Shipping {',
+      '    [*] --> Packing',
+      '    Packing --> Sent',
+      '    Sent --> [*]',
+      '  }',
+      '  state split <<fork>>',
+      '  Shipping --> split',
+      '  split --> Invoiced',
+      '  split --> Notified',
+      '  Notified --> [*]',
+      '  note right of Idle : nothing in the cart',
+    ].join('\n'),
+  );
+  const starts = d.shapes.filter((s) => s.shape === 'ellipse' && !d.plain(s.text));
+  const ends = d.shapes.filter((s) => s.shape === 'bpmnEnd');
+  expect(starts).toHaveLength(2); // the diagram's and the composite state's own
+  expect(ends).toHaveLength(2);
+  const shipping = d.frames.find((f) => f.title === 'Shipping')!;
+  expect(d.named('Packing').frameId).toBe(shipping.id);
+  expect(starts.filter((s) => s.frameId === shipping.id)).toHaveLength(1);
+  expect(d.plain(d.named('Waiting for payment').text)).toBe('Waiting for payment\ntimes out after 15 min');
+  expect(d.named('Idle').shape).toBe('roundRect');
+  const choice = d.shapes.find((s) => s.shape === 'diamond')!;
+  expect(d.between(choice, d.named('Idle'))).toMatchObject({ label: 'declined', endCap: 'arrow' });
+  // A transition to the composite state attaches to its frame; the fork is a bar.
+  expect(d.between(choice, shipping as unknown as BoardElement).label).toBe('paid');
+  const fork = d.lines.find((l) => l.start.elementId === shipping.id)!;
+  expect(d.all.find((e) => e.id === fork.end.elementId)).toMatchObject({ shape: 'rect', h: 10 });
+  expect(d.between(d.shapes.find((s) => s.shape === 'umlNote')!, d.named('Idle'))).toMatchObject({ strokeStyle: 'dashed' });
 });

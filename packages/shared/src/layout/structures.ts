@@ -1,5 +1,5 @@
 // One layout per kind of structure. Each returns elements relative to its own top-left (0, 0).
-import type { Anchor, CardStatus, ShapeKind, StickyColor, TableCopyContent } from '../elements';
+import type { Anchor, CapStyle, CardStatus, ShapeElement, ShapeKind, StickyColor, TableCopyContent } from '../elements';
 import { unionRects, type Rect } from '../geometry';
 import { plainToRichText } from '../text';
 import {
@@ -313,9 +313,34 @@ function anchorsBetween(a: Rect, b: Rect, vertical: boolean): [Side, Side] {
   return b.y >= a.y + a.h / 2 ? ['bottom', 'top'] : ['top', 'bottom'];
 }
 
-export function layoutGraph(
-  nodes: GraphNodeInput[],
-  edges: GraphEdgeInput[],
+/**
+ * A graph node drawn as more than a text in a box (Mermaid class, ER and state diagrams): its own
+ * size, and fields laid over the shape's (rich text, fill, alignment, compartments).
+ */
+export interface DiagramNode extends GraphNodeInput {
+  size?: { w: number; h: number };
+  look?: Partial<Pick<ShapeElement, 'text' | 'fill' | 'stroke' | 'strokeWidth' | 'strokeStyle' | 'fontSize' | 'align' | 'vAlign' | 'compartments'>>;
+}
+
+/** A graph edge with UML / ER line ends and labels at its ends (multiplicities). */
+export interface DiagramEdge extends GraphEdgeInput {
+  startCap?: CapStyle;
+  endCap?: CapStyle;
+  startLabel?: string;
+  endLabel?: string;
+}
+
+/** Where a multiplicity label sits along its line (by length from its end). */
+const END_LABEL_T = 0.12;
+
+export function layoutGraph(nodes: GraphNodeInput[], edges: GraphEdgeInput[], direction: Direction, groups: GraphGroupInput[], ctx: LayoutContext): LaidOut {
+  return layoutDiagram(nodes, edges, direction, groups, ctx);
+}
+
+/** `layoutGraph` for nodes and edges that may carry their own size, look and line ends. */
+export function layoutDiagram(
+  nodes: DiagramNode[],
+  edges: DiagramEdge[],
   direction: Direction,
   groups: GraphGroupInput[],
   ctx: LayoutContext,
@@ -323,7 +348,7 @@ export function layoutGraph(
   if (!nodes.length) throw new LayoutError('The diagram has no nodes');
   if (nodes.length + edges.length + groups.length > LAYOUT_LIMITS.elements)
     throw new LayoutError(`At most ${LAYOUT_LIMITS.elements} nodes, edges and groups per structure`);
-  const byId = new Map<string, GraphNodeInput>();
+  const byId = new Map<string, DiagramNode>();
   for (const n of nodes) {
     if (typeof n.id !== 'string' || !n.id) throw new LayoutError('Every node needs an id');
     if (byId.has(n.id)) throw new LayoutError(`Node ${n.id} is listed twice`);
@@ -357,7 +382,7 @@ export function layoutGraph(
   const tb = direction === 'TB' || direction === 'BT';
   const elementId = new Map<string, string>();
   for (const n of nodes) elementId.set(n.id, ctx.newId());
-  const size = new Map(nodes.map((n) => [n.id, shapeSize(clip(n.text ?? ''), n.shape ?? 'rect')]));
+  const size = new Map(nodes.map((n) => [n.id, n.size ?? shapeSize(clip(n.text ?? ''), n.shape ?? 'rect')]));
 
   // Lay out each group's contents as a block, innermost first; a block is one node outside it.
   const PAD = 40;
@@ -452,7 +477,8 @@ export function layoutGraph(
     const r = mirror({ ...p, ...size.get(n.id)! });
     rects.set(n.id, r);
     const g = groupOf.get(n.id);
-    elements.push(shape(elementId.get(n.id)!, n.shape ?? 'rect', r, clip(n.text ?? ''), {}, g ? frameIds.get(g) : null));
+    const drawn = shape(elementId.get(n.id)!, n.shape ?? 'rect', r, clip(n.text ?? ''), {}, g ? frameIds.get(g) : null);
+    elements.push(n.look ? ({ ...drawn, ...n.look } as ElementDraft) : drawn);
   }
   const keys = new Map<string, string>();
   for (const n of nodes) keys.set(elementId.get(n.id)!, `n:${n.id}`);
@@ -467,20 +493,25 @@ export function layoutGraph(
     pairCount.set(pair, k);
     const id = ctx.newId();
     keys.set(id, `e:${pair}#${k}`);
-    elements.push(
-      connector(
-        id,
-        { id: elementId.get(e.from)!, anchor: sa, rect: a },
-        { id: elementId.get(e.to)!, anchor: sb, rect: b },
-        {
-          label: e.label ? clip(e.label) : undefined,
-          strokeStyle: e.style === 'dashed' ? 'dashed' : 'solid',
-          strokeWidth: e.style === 'thick' ? 4 : 2,
-          endCap: e.arrow === 'none' ? 'none' : 'arrow',
-          startCap: e.arrow === 'both' ? 'arrow' : 'none',
-        },
-      ),
+    const line = connector(
+      id,
+      { id: elementId.get(e.from)!, anchor: sa, rect: a },
+      { id: elementId.get(e.to)!, anchor: sb, rect: b },
+      {
+        label: e.label ? clip(e.label) : undefined,
+        strokeStyle: e.style === 'dashed' ? 'dashed' : 'solid',
+        strokeWidth: e.style === 'thick' ? 4 : 2,
+        endCap: e.endCap ?? (e.arrow === 'none' ? 'none' : 'arrow'),
+        startCap: e.startCap ?? (e.arrow === 'both' ? 'arrow' : 'none'),
+      },
     );
+    // Multiplicities sit near the end they describe (labels along the line, by length).
+    const ends = [
+      { t: END_LABEL_T, text: e.startLabel },
+      { t: 1 - END_LABEL_T, text: e.endLabel },
+    ].filter((l): l is { t: number; text: string } => !!l.text?.trim());
+    if (ends.length && line.type === 'connector') line.labels = ends.map((l) => ({ id: ctx.newId(), t: l.t, text: plainToRichText(clip(l.text)) }));
+    elements.push(line);
   }
   return withKeys(finish(elements), keys);
 }
