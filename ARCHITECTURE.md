@@ -2494,6 +2494,10 @@ board, including people who join later: it is a deliberate publication of what e
   dialog's "Copy embed code"; everything escaped). Only embeddable boards answer; only public ones
   with their title. `GET /board/:id` of a public embeddable board is served with
   `oembedDiscoveryTag` in its `<head>` (production build only), for unfurlers that read HTML.
+- **API / MCP** (`GET` / `PATCH /api/v1/boards/:id/embed`, MCP `embed_board`): reads the summary's
+  `embeddable` / `permissions.boardEmbeds` / `manageSharing` and `boardEmbedding`'s visitor, builds the
+  code with `boardEmbedCode`, and changes it only through `boards.setBoardEmbeddable` (the share
+  dialog's rule and audit event); a change needs `boards:write` even from the read-scoped MCP tool.
 - **Engine additions**: `?frame=<id>` (zoom to an item without selecting it), `Host.onConnectionEnded`
   (the server closed the socket for good, with its code: the embed page swaps to a card).
 

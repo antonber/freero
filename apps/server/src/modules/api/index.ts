@@ -23,6 +23,9 @@ export {
   copyBoard,
   groupItems,
   ungroupItems,
+  // Embedding on other sites (#2).
+  getBoardEmbed,
+  setBoardEmbed,
   readOutline,
   exportBoard,
   listItems,

@@ -350,6 +350,80 @@
         }
       }
     },
+    "/boards/{boardId}/embed": {
+      "parameters": [{ "$ref": "#/components/parameters/BoardId" }],
+      "get": {
+        "operationId": "getBoardEmbed",
+        "tags": ["boards"],
+        "summary": "Embedding on other sites: the setting and the embed code",
+        "description": "What the share dialog’s “Embed on other sites” shows (#2): whether it is on, whether the workspace’s `boardEmbeds` policy allows it, whether you may change it, what a visitor without an account may do in the embed, and — while it is on — the embed URL and iframe code. An embed never lets more people in than the board’s sharing does.",
+        "x-freero-scope": "boards:read",
+        "security": [{ "bearer": ["boards:read"] }],
+        "parameters": [
+          { "name": "readonly", "in": "query", "description": "The embed code keeps everyone read-only", "schema": { "type": "boolean" } },
+          { "name": "frameId", "in": "query", "description": "The embed starts at this frame", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "The setting",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["notice", "embed"],
+                  "properties": { "notice": { "$ref": "#/components/schemas/Notice" }, "embed": { "$ref": "#/components/schemas/BoardEmbed" } }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "patch": {
+        "operationId": "setBoardEmbed",
+        "tags": ["boards"],
+        "summary": "Turn embedding on other sites on or off (owner and co-owners)",
+        "description": "As the share dialog’s switch: the board’s owner or a co-owner; turning it on also needs the workspace’s `boardEmbeds` policy (403 otherwise). Audited (`board.embedding_changed`); turning it off closes open embeds at once.",
+        "x-freero-scope": "boards:write",
+        "security": [{ "bearer": ["boards:write"] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["embeddable"],
+                "properties": {
+                  "embeddable": { "type": "boolean" },
+                  "readonly": { "type": "boolean", "description": "For the embed code answered" },
+                  "frameId": { "type": "string", "description": "For the embed code answered" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The setting as it is now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["notice", "embed"],
+                  "properties": { "notice": { "$ref": "#/components/schemas/Notice" }, "embed": { "$ref": "#/components/schemas/BoardEmbed" } }
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
     "/boards/{boardId}/outline": {
       "parameters": [{ "$ref": "#/components/parameters/BoardId" }],
       "get": {
@@ -2879,6 +2953,22 @@
           "owner": { "type": "object", "required": ["id", "name"], "properties": { "id": { "type": "string" }, "name": { "type": "string" } } },
           "createdAt": { "type": "integer" },
           "updatedAt": { "type": "integer" }
+        }
+      },
+      "BoardEmbed": {
+        "type": "object",
+        "required": ["embeddable", "allowed", "canChange", "visitor", "url", "code"],
+        "properties": {
+          "embeddable": { "type": "boolean" },
+          "allowed": { "type": "boolean", "description": "The workspace’s policy lets this board be embedded" },
+          "canChange": { "type": "boolean", "description": "You may turn it on or off (owner or co-owner)" },
+          "visitor": {
+            "type": ["string", "null"],
+            "enum": ["viewer", null],
+            "description": "`viewer`: anyone sees the embed without signing in (the link lets guests in, no password); null: people sign in"
+          },
+          "url": { "type": ["string", "null"], "description": "The embed URL (null while off)" },
+          "code": { "type": ["string", "null"], "description": "The iframe to paste (null while off)" }
         }
       },
       "Item": {

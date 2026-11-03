@@ -46,7 +46,9 @@ import {
   createBoard,
   createItems,
   deleteItems,
+  getBoardEmbed,
   groupItems,
+  setBoardEmbed,
   ungroupItems,
   updateBoard,
   exportBoard,
@@ -1041,6 +1043,27 @@ export const TOOLS: McpTool[] = [
     async run(call, a) {
       const { board } = await copyBoard(call, a.boardId, { title: a.title, workspaceId: a.workspaceId, projectId: a.projectId });
       return plain(`Copied board ${a.boardId} to board ${board.id} (${board.url}).`, { boardId: board.id, url: board.url });
+    },
+  }),
+
+  tool({
+    name: 'embed_board',
+    title: 'Embed a board on other sites',
+    description:
+      'The board’s “Embed on other sites” setting (#2): whether it is on, whether its workspace allows it, who can see an embed without signing in, and the iframe code and link to paste into a wiki, doc or website (`readonly`: viewers stay read-only; `frameId`: start at that frame). `enable` turns it on or off — only when the person asked: an embed shows the live board on any site, to whoever its sharing lets in. Turning it on or off needs permission to change boards and the board’s owner or a co-owner.',
+    scope: 'boards:read',
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    input: {
+      boardId,
+      enable: z.boolean().optional().describe('true: turn embedding on; false: off. Omit to only read the setting and the code.'),
+      readonly: z.boolean().optional().describe('The embed stays read-only for everyone (default false).'),
+      frameId: z.string().min(1).max(200).optional().describe('Start the embed at this frame (its id from the outline).'),
+    },
+    async run(call, a) {
+      const opts = { readonly: a.readonly === true, frameId: a.frameId };
+      const { embed } = a.enable === undefined ? await getBoardEmbed(call, a.boardId, opts) : await setBoardEmbed(call, a.boardId, { embeddable: a.enable, ...opts });
+      const state = embed.embeddable ? `on (${embed.visitor === 'viewer' ? 'anyone can view it without signing in' : 'people sign in to see it'})` : embed.allowed ? 'off' : 'off, and its workspace doesn’t allow it';
+      return plain(`Embedding on other sites is ${state} for board ${a.boardId}.${embed.code ? ` Embed code: ${embed.code}` : embed.canChange ? ' Call again with enable: true to turn it on, if the person wants that.' : ''}`, { ...embed });
     },
   }),
 

@@ -233,6 +233,23 @@ export interface ApiBoard {
   createdAt: number;
   updatedAt: number;
 }
+/**
+ * [additive] A board's embedding on other sites (#2) as the API shows and sets it
+ * (`GET` / `PATCH /boards/{id}/embed`): whether it is on, whether its workspace allows it, who an
+ * embed lets in without signing in, and the embed URL / iframe code (`readonly`, `frameId` options).
+ */
+export interface ApiBoardEmbed {
+  embeddable: boolean;
+  /** The workspace's `boardEmbeds` policy lets this board be embedded. */
+  allowed: boolean;
+  /** You may turn it on or off (the owner or a co-owner). */
+  canChange: boolean;
+  /** What a visitor without an account may do in the embed: 'viewer', or null (they sign in). */
+  visitor: 'viewer' | null;
+  /** The embed URL and iframe code (null while embedding is off). */
+  url: string | null;
+  code: string | null;
+}
 /** An item (board element) as an API caller sees it. */
 export interface ApiItem {
   id: string;

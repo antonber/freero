@@ -139,6 +139,10 @@ open boards drop them at once (KAI-224).
   editors); `POST /boards/{boardId}/copy` copies it with its content (`workspaceId`, `projectId`,
   `title`; refused like an export where its content may not be taken out). `POST /boards/{boardId}/groups`
   `{ ids }` groups items, `DELETE /boards/{boardId}/groups/{groupId}` ungroups them.
+- Embedding on other sites (#2): `GET /boards/{boardId}/embed` reads the setting and, while it is
+  on, the embed URL and iframe code (`readonly`, `frameId`); `PATCH /boards/{boardId}/embed`
+  `{ "embeddable": true | false }` changes it (owner or co-owner, `boards:write`; the workspace's
+  `boardEmbeds` policy must allow turning it on).
 - Images and embeds by URL (#170): `POST /boards/{boardId}/items` with `{ "type": "image", "url": … }`
   or `{ "type": "embed", "url": … }` (≤ 20 per call). The server fetches the URL itself — through the
   same SSRF-safe fetcher as link previews: http(s) on default ports only, every hop's address

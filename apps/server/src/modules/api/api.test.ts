@@ -163,6 +163,12 @@ it('what the API answers in a real session has the shapes its reference promises
   expect((await call('DELETE', `${B}/groups/group:${group.id}`, '/boards/{boardId}/groups/{groupId}')).json.ungrouped.sort()).toEqual([card.id, shape.id].sort());
   expect((await call('PATCH', B, '/boards/{boardId}', { title: 'Renamed' }, readOnly)).status).toBe(403);
   expect((await call('PATCH', B, '/boards/{boardId}', { title: 'Renamed', description: 'Q3' })).json.board).toMatchObject({ title: 'Renamed', description: 'Q3' });
+  // Embedding on other sites (#2): turning it on is a write; the code comes back once it is on.
+  expect((await call('PATCH', `${B}/embed`, '/boards/{boardId}/embed', { embeddable: true }, readOnly)).status).toBe(403);
+  expect((await call('GET', `${B}/embed`, '/boards/{boardId}/embed', undefined, readOnly)).json.embed).toMatchObject({ embeddable: false, code: null });
+  const embed = (await call('PATCH', `${B}/embed`, '/boards/{boardId}/embed', { embeddable: true, readonly: true })).json.embed;
+  expect(embed.url).toBe(`http://freero.test/embed/b/${board.id}?readonly=1`);
+  expect(embed.code).toContain(embed.url.replace('&', '&amp;'));
   const copy = (await call('POST', `${B}/copy`, '/boards/{boardId}/copy', { title: 'Renamed, again' })).json.board;
   expect(copy.title).toBe('Renamed, again');
   const cards = async (b: string) => (await call('GET', `/boards/${b}/items?type=card`, '/boards/{boardId}/items')).json.items.map((i: { text: string }) => i.text).sort();

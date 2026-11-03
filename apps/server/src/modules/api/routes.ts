@@ -107,6 +107,9 @@ export default function apiRoutes(_ctx: ServerContext): Router {
   endpoint('get', '/boards/:boardId', 'boards:read', async (call) => ({ body: await api.getBoard(call, call.req.params.boardId) }));
   // Rename / describe, and copy (#170).
   endpoint('patch', '/boards/:boardId', 'boards:write', async (call) => ({ body: await api.updateBoard(call, call.req.params.boardId, body(call.req)) }));
+  // Embedding on other sites (#2): read the setting and the embed code, turn it on or off (owners and co-owners).
+  endpoint('get', '/boards/:boardId/embed', 'boards:read', async (call) => ({ body: await api.getBoardEmbed(call, call.req.params.boardId, call.req.query) }));
+  endpoint('patch', '/boards/:boardId/embed', 'boards:write', async (call) => ({ body: await api.setBoardEmbed(call, call.req.params.boardId, body(call.req)) }));
   endpoint('post', '/boards/:boardId/copy', 'boards:write', async (call) => ({ status: 201, body: await api.copyBoard(call, call.req.params.boardId, body(call.req)) }));
   endpoint('delete', '/boards/:boardId', 'boards:write', async (call) => ({ body: await api.deleteBoard(call, call.req.params.boardId, call.req.query.confirm) }));
 

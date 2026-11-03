@@ -59,6 +59,17 @@ embedding on). It is separate from *Live embeds*, which is about videos and desi
 **inside** boards. Turning embedding on or off is recorded in the audit log
 (`board.embedding_changed`).
 
+## From the API and MCP
+
+Scripts and agents read and change the same setting (the same rules: the owner or a co-owner, the
+workspace's policy, the same audit event):
+
+- `GET /api/v1/boards/{boardId}/embed[?readonly=true&frameId=…]` (`boards:read`): whether it is on,
+  whether the workspace allows it, whether you may change it, what a visitor without an account may
+  do (`visitor`), and — while on — the embed `url` and iframe `code`.
+- `PATCH /api/v1/boards/{boardId}/embed` `{ "embeddable": true }` (`boards:write`) turns it on or off.
+- MCP: `embed_board` (`enable` to change it — only when the person asked —, `readonly`, `frameId`).
+
 ## oEmbed
 
 Freero is an oEmbed provider (`type: "rich"`):

@@ -18,6 +18,9 @@ import {
   UNTRUSTED_CONTENT_NOTICE,
   type ActingApp,
   type ApiBoard,
+  type ApiBoardEmbed,
+  boardEmbedCode,
+  boardEmbedUrl,
   embedProviderForUrl,
   type ApiCommentThread,
   type ApiItem,
@@ -43,10 +46,12 @@ import { consumeRateLimit } from '../../platform/rateLimit';
 import { mintEmbedTicket, useInWorkspace, type ApiCredential } from '../apiauth/index';
 import { recordAuditQuietly } from '../audit/index';
 import {
+  boardEmbedding,
   boardSummaryFor,
   boardWorkspaceId,
   createBoardFor,
   duplicateBoardFor,
+  setBoardEmbeddable,
   updateBoardDetails,
   listBoardsIn,
   recordBoardExport,
@@ -363,6 +368,42 @@ export async function copyBoard(call: ApiCall, boardId: string, body: Record<str
   const out = body.title !== undefined ? await boardSummaryFor(copy.id, call.userId, 'board') : copy;
   call.audit.metadata = { copy: copy.id, copyWorkspace: copy.workspaceId };
   return withNotice({ board: apiBoard(call.req, out) });
+}
+
+/** A board's embedding on other sites as the caller sees it (#2): on or off, allowed, the embed URL and iframe code. */
+async function embedInfo(call: ApiCall, board: BoardSummary, opts: { readonly?: unknown; frameId?: unknown } = {}): Promise<ApiBoardEmbed> {
+  const on = board.embeddable === true;
+  const visitor = on ? ((await boardEmbedding(board.id))?.visitor ?? null) : null;
+  const frame = typeof opts.frameId === 'string' && opts.frameId ? opts.frameId.slice(0, 200) : null;
+  const url = on ? boardEmbedUrl(new URL(appUrl(call.req, '/')).origin, board.id, { readonly: confirmed(opts.readonly), frame }) : null;
+  return {
+    embeddable: on,
+    allowed: board.permissions.boardEmbeds !== false,
+    canChange: board.permissions.manageSharing ?? board.role === 'owner',
+    visitor,
+    url,
+    code: url ? boardEmbedCode(url, board.title) : null,
+  };
+}
+
+export async function getBoardEmbed(call: ApiCall, boardId: string, q: { readonly?: unknown; frameId?: unknown }) {
+  const board = await openBoard(call, boardId);
+  return withNotice({ embed: await embedInfo(call, board, q) });
+}
+
+/**
+ * Turns embedding on other sites on or off (#2): the owner or a co-owner, as in the share dialog;
+ * turning it on also needs the workspace's `boardEmbeds` policy. Audited (`board.embedding_changed`).
+ */
+export async function setBoardEmbed(call: ApiCall, boardId: string, body: Record<string, unknown>) {
+  const board = await openBoard(call, boardId);
+  // MCP's embed_board reads with boards:read; changing the setting is a write.
+  if (!call.cred.scopes.includes('boards:write'))
+    throw new HttpError(403, 'Turning embedding on or off needs the boards:write permission (“change boards directly”)', 'insufficient_scope');
+  if (typeof body.embeddable !== 'boolean') throw badRequest('embeddable must be true or false');
+  await setBoardEmbeddable(board.id, call.userId, body.embeddable);
+  call.audit.metadata = { embeddable: body.embeddable };
+  return withNotice({ embed: await embedInfo(call, await boardSummaryFor(board.id, call.userId, 'board'), body) });
 }
 
 export async function deleteBoard(call: ApiCall, boardId: string, confirm: unknown) {
