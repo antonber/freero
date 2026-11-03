@@ -5,6 +5,7 @@ import { STICKY_COLORS, type StickyColor } from '../elements';
 import { findFreeSpot, unionRects, type Point, type Rect } from '../geometry';
 import { APART_GAP } from '../outline/spatial';
 import { translateDraft } from './kit';
+import { layoutPlantUml, parsePlantUml } from './plantuml';
 import { layoutItems } from './items';
 import { parseMermaid } from './mermaid';
 import { layoutMeeting, parseMeetingNotes } from './meeting';
@@ -24,6 +25,7 @@ export { tidyTree, type TidyUnit, type TidyOptions } from './tidy';
 export { layered, spacedFit } from './layered';
 export { measureText, textWidth } from './measure';
 export { translateDraft } from './kit';
+export { parsePlantUml, looksLikePlantUml, type PlantUmlDiagram } from './plantuml';
 // Single fully-specified drafts (the public API creates items one by one with them).
 export {
   sticky as stickyDraft,
@@ -86,6 +88,8 @@ export function layoutStructure(input: StructureInput, ctx: LayoutContext): Laid
     }
     case 'sequence':
       return layoutSequence(input.diagram, ctx);
+    case 'plantuml':
+      return layoutPlantUml(parsePlantUml(input.source), ctx);
     case 'table':
       if (!Array.isArray(input.rows) || input.rows.some((r) => !Array.isArray(r))) throw new LayoutError('table needs rows of cells');
       return layoutTable(input.rows, input.header !== false, ctx);
