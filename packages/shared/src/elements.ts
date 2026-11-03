@@ -7,7 +7,7 @@
 // around the box center.
 
 import type { FieldDef, FieldValues } from './fields';
-import type { ViewConfig } from './views';
+import type { SavedView } from './tabs';
 
 export type ElementType =
   | 'sticky'
@@ -613,12 +613,13 @@ export interface KanbanElement extends BaseElement {
   fields?: FieldDef[];
   /**
    * [additive] The collection's saved views (views.ts): what everyone starts from. Read them
-   * through `boardView`, never directly: a kanban without views has one, synthesised (grouped by
-   * the column field, cards as before). Each person's unsaved changes are a personal override
-   * kept outside the doc (Editor.setPersonalView). Written only by the kanban feature.
+   * through `boardView` (the board view) and `viewTabs` / `tableView` (tabs.ts, step 3a), never
+   * directly: a kanban without views has one, synthesised (grouped by the column field, cards as
+   * before). Each person's unsaved changes are a personal override kept outside the doc
+   * (Editor.setPersonalView). Written only by the kanban feature (and the server's configure_view).
    */
-  views?: ViewConfig[];
-  /** [additive] The view the element shows (its id in `views`). */
+  views?: SavedView[];
+  /** [additive] The tab everyone starts on (its id in `views`; tabs.ts `savedTabId`). */
   activeView?: string;
   /**
    * [additive] Swimlanes (the board view's `subGroupBy`), top to bottom: each row's key (an option
