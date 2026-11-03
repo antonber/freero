@@ -137,6 +137,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | An item's protected lock (`BaseElement.lockProtected`, with `locked`) | the board owner only (`@freero/shared` `mayProtect(role)`, the one place co-owners join; never a facilitator, since any editor can start a session), through `engine.protectLock` (Mod+Alt+Shift+L, context menu) and `engine.lock`; anyone else's socket change to a protected item (move, edit, unlock, unprotect, delete) or protecting one is undone by server `realtime/protectedLock.ts` in the transaction that applies it, in the shared doc and the layers (a move into or out of a hidden frame's layer keeps it); requests (API, MCP) are refused in `realtime/view.ts` `applyChange` | `Editor.mayProtect()`; the format toolbar shows a disabled shield to others. Clients that don't know the field see an ordinary lock, and their unlock is undone |
 | A person's app theme (System / Light / Dark: `users.color_theme`, `Account.theme`) and the page's `<html data-theme>` | server `modules/auth` (`PATCH /api/auth/me` `{ theme }`); in the browser `app/lib/theme.ts` is the only writer of `data-theme` (it also keeps the choice in localStorage for the first paint and for people without an account). A page that must follow its surroundings (the live view in an AI assistant) uses `setThemeOverride` while mounted; `public/theme-boot.js` sets the stored theme before the first paint. Chrome follows `ui/tokens.css`. Board content keeps its authored colours: only the live canvas is painted differently, at paint time and never in the doc (`engine/canvas/theme.ts`): a light background and light frame fills shown dark, the DEFAULT inks (`canvasInk`) light where they lie on the canvas — free text, lines, pen, icons, unfilled shapes, frame titles, mind-map branches — through CSS variables set on the live viewport only, so exports and thumbnails never change | `ThemeSwitch` / `useChooseTheme` (`app/components`): account settings → Appearance, the dashboard's account menu; on a board `Host.colorTheme` (`features/appearance`: board menu → Theme, and the command palette) |
 | Problem reports (`problem_reports`) and their screenshots (uploads' private images) | server `modules/problems` | its routes (the reporter; operators) and index (`/api/v1/operator/problems` in modules/api, the account purge, the data export) |
+| An organisation (#108: a `workspaces` row of kind 'organisation'), its directory, policy and security floors, and which team workspaces belong to it (`workspaces.organisation_id`) | server `modules/workspaces` (`organisations.ts`; `repo.ts` applies the floors on every read) | `/api/organisations…`; under the organisation's id `PATCH /workspaces/:id` (floors), `…/admin/settings`, member routes; attach / detach only through `attachWorkspace` / `detachWorkspace`. See "Organisations" |
 | Decision snapshots (`decisions`) and their content (board versions of kind `decision`) | server `modules/decisions` / `modules/realtime` (`freezeBoard`) | `Host.decisions`; never written again once frozen |
 | When someone last had a board open (`board_seen`, "changes since your last visit") | server `modules/activity`, only from realtime's `onBoardLeft` (an account's board socket on that instance closed) | — (never a client's word; `GET /boards/:id/catch-up` reads it) |
 | A person's time zone (`users.time_zone`, IANA) | server `modules/auth` (`updateProfile`: `PATCH /auth/me` `timeZone`, validated by `platform/time.ts` `canonicalTimeZone`) | the app sets it once from the browser when it is unknown; the profile's Time zone field |
@@ -1168,7 +1169,8 @@ authenticator" recoveries; guest_sessions: visitors without an account),
 `boards` (boards, stars, opens; trash; the guest join routes), `members` (board_members,
 board_invites: pending invites for addresses without an account; board_access_requests; role
 resolution), `workspaces` (workspaces, workspace_members,
-workspace_invites, projects, project_members; see "Workspaces" below), `uploads` (uploads; files in object storage or
+workspace_invites, projects, project_members; organisations are directory-only `workspaces` rows; see
+"Workspaces" and "Organisations" below), `uploads` (uploads; files in object storage or
 `<data>/uploads`), `realtime` (board_docs, board_doc_updates, board_doc_snapshots, board_layers, board_suggestion_authors; y-websocket
 protocol + role filter + update log; version history + snapshot retention), `unfurl` (link
 previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`, exported for other
@@ -1546,6 +1548,48 @@ members with roles owner / admin / member / guest (separate from board roles).
   `handOverTeamWorkspaces` (sole-owned teams pass to the longest-standing admin, else member,
   else guest; an otherwise empty team is deleted with its boards; their team boards pass to an
   owner there).
+
+### Organisations above team workspaces (`workspaces/organisations.ts`, #108; docs/design/organisations.md)
+
+One organisation over many team workspaces: single sign-on, verified domains, domain control,
+provisioning, baseline policies, the audit log and its SIEM streams are set once on it.
+
+- **Model**: an organisation is a directory-only row of `workspaces` (`kind = 'organisation'`), so
+  everything keyed by a workspace id — `sso_*`, `scim_*`, `siem_sinks`, the audit chain `w:<id>`,
+  member deactivation — serves it unchanged. Its `workspace_members` are its owners, admins and
+  directory (people its SSO, SCIM or domain control brought in). A team workspace belongs to at most
+  one (`workspaces.organisation_id`; the database allows it only on team rows).
+- **Containment** (fails closed): `requireWorkspace` / `requireWorkspaceRole` / admin's `requireAdmin`
+  answer 404 for an organisation unless the caller passes `{ organisation: true }` — only SSO,
+  provisioning, SIEM, the audit log and the console's members and settings do. `workspacesOf` /
+  `rolesOf` never return organisations (lists, search, board access, the public API), and
+  `lockWorkspaceForNewBoard` refuses one, so it never holds boards or projects. **An org role gives
+  no board content**; board access is resolved from the board's own workspace only.
+- **Floors**: the organisation's policy columns (all but `teamAccess`) and `requireTwoFactor` /
+  session limits are the least its workspaces get. `repo.ts` reads every workspace joined with its
+  organisation and `roles.ts` `strictestPolicies` / `strictestSettings` raise it (order: `@freero/shared`
+  `POLICY_STRICTNESS`), so `Workspace.policies` / `.settings` are always EFFECTIVE values and every
+  enforcement point sees them; `ownPolicies` / `ownSettings` are what the workspace stored. A
+  workspace asking for something looser gets 403 `organisation_policy`; session limits and the
+  two-step requirement are combined in SQL with `LEAST` (person-wide, as before). A new
+  organisation starts with the loosest value of every key (no floor).
+- **Attach / detach**: attaching needs an OWNER of the workspace who is an owner/admin of the
+  organisation (re-checked under both rows' locks); detaching needs an owner/admin of the
+  organisation (a team owner alone can't escape the floors). Both audited in both logs, board access
+  re-resolved everywhere (`refreshWorkspaceBoards` of an organisation covers its workspaces).
+- **Deactivation** in the organisation (an admin, or its SCIM deprovisioning) closes every attached
+  workspace: `blockOf` checks the board's workspace and its organisation.
+- **SCIM** groups of an organisation may map to `{ kind: 'workspace', workspaceId, role }`:
+  `setDirectoryWorkspaceMembership` grants at least that role there, and withdraws it
+  (`removeMemberByDirectory`) when the person leaves the group; owners are never touched.
+- **Audit**: `recordAudit` adds the organisation's chain for every attached workspace's event
+  (`setOrganisationScope`, once per organisation, inside the event's transaction); rows keep the
+  workspace it happened in, and logs are read by chain. Each chain verifies on its own.
+- **Console**: `/org/:id` (web `pages/admin/OrgConsolePage.tsx`): workspaces (members, owners,
+  attach, detach, delete), people, policies, SSO, provisioning, merged audit log + streams; a
+  workspace's admin Overview creates or joins one.
+- **Account purge**: `handOverOrganisation` passes a sole-owned organisation on; one nobody else is
+  in has its workspaces detached and is dissolved.
 
 ### Enterprise identity and data (`modules/sso`, `modules/scim`, `modules/privacy`)
 
@@ -2390,7 +2434,9 @@ change and its record commit together. IP and user agent come from the request c
 events (`accountId`: sign-ins, failed sign-ins on an existing account, sessions, password, email,
 two-step, providers, deletion) go to the account's chain `u:<id>` AND to every team workspace the
 person is a member of (not a guest: a guest's account is their own). Workspace events go to
-`w:<id>`. Actions and their wording are `AUDIT_ACTIONS` in `@freero/shared`; a new kind of event
+`w:<id>`; a workspace attached to an organisation's events also go to the organisation's chain
+(#108, once each, same transaction), keeping `workspace_id` = where it happened, so a log is read
+by its chain (`audit_events_chain_id`). Actions and their wording are `AUDIT_ACTIONS` in `@freero/shared`; a new kind of event
 adds itself there. `platform/audit.ts` (`audit(…)`) is the seam for account events raised where the
 module isn't the natural call and for the operator CLI: modules/audit registers its sink from
 `init.ts` AND `admin.ts`, so operator two-step resets and moderation actions land in the same log

@@ -74,7 +74,8 @@ The API names it as what it is: `GET/POST /api/organisations`, `OrganisationSumm
 | Durable value | Single writer | How others change it |
 |---|---|---|
 | The organisation row, its directory (`workspace_members` of it), its policy and security floors | `modules/workspaces` (`organisations.ts`, `repo.ts`) | `/api/organisations…`; `PATCH /workspaces/:orgId` (name, policy floors), `PATCH /workspaces/:orgId/admin/settings` (security floors) |
-| A workspace's organisation (`workspaces.organisation_id`, `organisation_attached_at`) | `modules/workspaces` (`attachWorkspace` / `detachWorkspace`) | `POST /organisations/:id/workspaces`, `DELETE /organisations/:id/workspaces/:workspaceId` |
+| A workspace's organisation (`workspaces.organisation_id`, `organisation_attached_at`) | `modules/workspaces` (`attachWorkspace` / `detachWorkspace`; the account purge's `handOverOrganisation`) | `POST /organisations/:id/workspaces`, `DELETE /organisations/:id/workspaces/:workspaceId` |
+| Memberships an organisation's SCIM groups grant in its workspaces | `modules/workspaces` (`setDirectoryWorkspaceMembership`, `removeMemberByDirectory`) | `modules/scim` `syncPerson` |
 | The organisation's SSO, domains, domain control | `modules/sso` (unchanged tables, keyed by the organisation id) | its routes, opted in for organisations |
 | The organisation's provisioning, incl. groups mapped to a workspace | `modules/scim` (`scim_groups.mapping_workspace_id`, new) | `PUT /workspaces/:orgId/scim/groups/:groupId` |
 | The organisation's audit chain `w:<orgId>` | `modules/audit` (fan-out from every attached workspace's events) | `recordAudit` as today |
@@ -127,12 +128,14 @@ organisation and used by all its workspaces:
 - An SSO newcomer joins the organisation's directory (the connection's default role there; owners
   and admins only by an owner); team membership is given by workspace admins or by SCIM groups.
 - SCIM on the organisation provisions accounts at its verified domains into its directory. A group
-  maps to a role in the organisation (as today), to a project of an attached workspace, or — new —
-  to **membership of an attached workspace with a role** (`{ kind: 'workspace', workspaceId, role }`):
-  members of the group become members there (highest mapped role wins; owners are never changed);
-  leaving every group that maps a workspace removes them from it, their boards there passing to an
-  owner as with any removal. Deprovisioning deactivates them in the directory, so in every attached
-  workspace.
+  maps to a role in the organisation (admin or member, as a workspace's groups map a role) or — new
+  — to **membership of an attached workspace with a role** (`{ kind: 'workspace', workspaceId, role }`):
+  members of the group get at least that role there (highest mapped role wins; never lowered;
+  owners are never changed); leaving the group, or the group's mapping moving away, removes them
+  unless another of their groups still grants the workspace, their boards there passing to an
+  owner as with any removal. (Project mappings stay a workspace's own SCIM feature.)
+  Deprovisioning deactivates them in the directory, so in every attached workspace at once,
+  without removing anyone.
 - A workspace that set up its own SSO / domains / SCIM before attaching keeps them, unchanged
   (its IdP is configured with that workspace's own SAML entity ID and ACS URL; moving them would
   break the IdP's configuration and lock people out). Its admins can retire them once the
@@ -150,9 +153,13 @@ The organisation's SIEM streams read its chain like a workspace's.
 
 ## Attaching and detaching
 
-- **Create**: any verified account may create an organisation (it becomes its owner), subject to
-  domain control's "Block other team workspaces" like a team workspace, and to
+- **Create**: any account may create an organisation (it becomes its owner), subject to domain
+  control's "Block other team workspaces" like a team workspace, and to
   `MAX_ORGANISATIONS_PER_USER` (3).
+- **People**: owners add an existing account as admin, admins add members
+  (`POST /organisations/:id/members`, like a workspace adds an existing account); roles change and
+  people leave through the workspace member routes under the organisation's id. Deactivating
+  someone there is organisation-wide.
 - **Attach** (`POST /api/organisations/:id/workspaces { workspaceId }`): the caller must be an
   OWNER of the team workspace AND an owner or admin of the organisation, both checked under the two
   rows' locks in one transaction. A workspace already in another organisation is refused (detach
@@ -173,8 +180,9 @@ The organisation's SIEM streams read its chain like a workspace's.
 ## Migration
 
 Additive, no backfill. One migration in `modules/workspaces` widens the `kind` check, adds
-`organisation_id` (FK to `workspaces`, `ON DELETE SET NULL`, indexed) and `organisation_attached_at`,
-and a check that only team rows have an organisation. `modules/scim` adds
+`organisation_id` (FK to `workspaces` with no delete action — an organisation is deleted only once
+nothing is attached — indexed) and `organisation_attached_at`, and checks that only team rows have an
+organisation and that both columns are set together. `modules/scim` adds
 `scim_groups.mapping_workspace_id` and the `workspace` mapping kind. `modules/audit` adds an index
 `(chain, id DESC)`: logs are now read by chain, which for every existing row is the same set as
 reading by `workspace_id` (each `w:<id>` row carries `workspace_id = <id>`). Existing workspaces,

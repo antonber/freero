@@ -319,7 +319,7 @@ workspace (modules/workspaces).
 | Signed-in devices: user agent, IP, sign-in method, times | `sessions`, `auth_devices` (sha256 of a device cookie) (auth) | `account.json` (IP masked) | deleted (cascade) | — |
 | Connected sign-in providers / SSO identities (issuer, subject, email) | `auth_identities` (auth) | `account.json` | deleted (cascade) | SSO identities of that workspace stay on the account (inert: the workspace's IdP is gone) |
 | Emailed single-use tokens, pending sign-ins, OIDC/SSO flows | `auth_tokens`, `auth_challenges`, `auth_oidc_flows`, `sso_flows` | no (transient, minutes to days) | deleted (cascade) / expire | `sso_flows` deleted (cascade) |
-| Workspaces, roles, project memberships, invitations sent/received | `workspaces`, `workspace_members`, `project_members`, `workspace_invites` (workspaces) | `memberships.json` | personal workspace deleted; sole-owned teams handed over (or deleted when empty) | deleted (cascade) |
+| Workspaces, organisations (#108), roles, project memberships, invitations sent/received | `workspaces`, `workspace_members`, `project_members`, `workspace_invites` (workspaces) | `memberships.json` | personal workspace deleted; sole-owned teams and organisations handed over (or deleted / dissolved when empty) | deleted (cascade) |
 | Board memberships and invitations | `board_members`, `board_invites` (members) | `memberships.json` | deleted (cascade) | deleted with the boards |
 | Boards they own: content, comments, version history, layers (incl. their private drafts) | `boards`, `board_docs`, `board_doc_updates`, `board_doc_snapshots`, `board_layers`, `board_layer_updates` (boards, realtime) | `boards/<title>-<id>/board.json` + `board.yjs` + images (docs, KAI-162: the same, plus `doc.md`) | deleted (team boards: handed to a team owner first) | deleted (trash included) |
 | Comments they wrote on others' boards | inside those boards' docs (realtime) | `comments.json` (with board, thread and pinned item) | author shown as "Deleted user" (name and colour replaced in every board they could reach) | deleted with the boards |
@@ -558,7 +558,7 @@ deleted cards, are never touched. Re-running it is safe. On a tracker-linked car
 writes the restored notes back to the issue as well. With PGlite (the server stopped while this
 runs), the restore happens when the server starts again.
 
-`npm run admin -- audit:verify <workspace id>` re-checks a workspace's audit log chain (also
+`npm run admin -- audit:verify <workspace id>` re-checks a workspace's (or an organisation's: its merged chain, #108) audit log chain (also
 `u:<user id>` for an account's own chain, `freero` for operator actions on unowned content) and
 exits non-zero when it is not intact. Workspace admins run the same check from the admin console
 (Audit log → Integrity) and can export the log as CSV or JSON; each export carries every event's
