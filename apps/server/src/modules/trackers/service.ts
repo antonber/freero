@@ -98,6 +98,7 @@ import {
   unmappedOf,
 } from './board';
 import { noteOutcome, openConnection, requireUsable, usableConnections, webhookSecretOf } from './connections';
+import { ensureWebhooks, hookOfAddress, keepHandshakeSecret, retryWebhooks } from './hooks';
 import { emitTrackerActivity } from './events';
 import { dayNumber } from './board';
 import { planRoadmapImport } from './roadmap';
@@ -570,6 +571,8 @@ export const trackersConsumer: OutboxConsumer = {
 export async function pollOnce(now = Date.now()): Promise<number> {
   const cfg = getConfig().trackers;
   const queued = new Set(await repo.claimRetries(now));
+  // Webhooks Freero registers itself (Asana, monday.com) that failed a while ago are tried again.
+  await retryWebhooks(now).catch((e) => logError('trackers: registering webhooks again failed', e));
   for (const conn of await repo.connectionsWithLinks()) {
     if (conn.status === 'needs_auth' || !conn.credentialsSealed) continue;
     if (conn.cooldownUntil && conn.cooldownUntil > now) continue;
@@ -603,21 +606,35 @@ export async function pollOnce(now = Date.now()): Promise<number> {
 /**
  * A delivery from the tracker: verified with the connection's secret, then only the issues it
  * names are queued for a sync (which reads them back itself). 401 for a bad signature, so a
- * misconfigured secret shows up in the tracker's delivery log.
+ * misconfigured secret shows up in the tracker's delivery log. For a webhook Freero registered
+ * itself (Asana, monday.com) the address must be one Freero made (hooks.ts), and a handshake is
+ * answered — never queued — only while Freero is registering it.
  */
-export async function receiveWebhook(connectionId: string, req: Request): Promise<{ queued: number }> {
+export async function receiveWebhook(
+  connectionId: string,
+  req: Request,
+): Promise<{ queued: number; reply?: undefined } | { reply: { headers?: Record<string, string>; body?: unknown } }> {
   const conn = await repo.getConnection(connectionId);
   if (!conn) throw notFound('No such tracker connection');
   const secret = webhookSecretOf(conn);
   const body = rawBody(req);
-  if (!secret || !body) throw new HttpError(401, 'The webhook could not be verified');
-  const delivery = providerOf(conn.provider).webhook({
+  const provider = providerOf(conn.provider);
+  const refused = () => new HttpError(401, 'The webhook could not be verified');
+  if (!secret) throw refused();
+  const hook = provider.webhooks ? await hookOfAddress(conn, secret, req.query as Record<string, unknown>) : null;
+  if (provider.webhooks && !hook) throw refused();
+  const delivery = provider.webhook({
     headers: req.headers,
-    rawBody: body,
+    rawBody: body ?? Buffer.alloc(0),
     secret,
     now: Date.now(),
+    ...(hook ? { hook: { pending: hook.pending, secret: hook.secret } } : {}),
   });
-  if (!delivery) throw new HttpError(401, 'The webhook could not be verified');
+  if (!delivery) throw refused();
+  if (delivery.handshake) {
+    if (delivery.handshake.keep !== undefined && (!hook || !(await keepHandshakeSecret(hook.row, delivery.handshake.keep)))) throw refused();
+    return { reply: { headers: delivery.handshake.headers, body: delivery.handshake.body } };
+  }
   const links = await repo.linksToIssues(conn.id, delivery.issues);
   await enqueueSync(links.map((l) => l.id));
   return { queued: links.length };
@@ -871,6 +888,7 @@ export async function sendToTracker(userId: string, boardId: string, body: Recor
     const keys = [...(madeParent ? [madeParent.key] : []), ...made.map((m) => m.link.externalKey)];
     throw new HttpError(failure instanceof TrackerError && failure.kind === 'invalid' ? 400 : 502, keys.length ? `Created ${keys.join(', ')}; then: ${what}` : what, 'tracker_refused');
   }
+  if (made.length) void ensureWebhooks(conn, [project, ...made.map((m) => m.issue.project)], origin);
   return {
     issues: made.map((m) => ({
       linkId: m.link.id,
@@ -1129,6 +1147,8 @@ export async function importIssues(
   }
   // The issues' links back to their cards are added by a sync each (they may take a while).
   await enqueueSync(inserted.map((l) => l.id));
+  // A tracker that takes Freero's own webhooks (Asana, monday.com) is told about these projects.
+  void ensureWebhooks(conn, fresh.map((i) => i.project), origin);
   await recordAudit({
     action: 'tracker.issues_imported',
     workspaceId: board.workspaceId,
@@ -1158,7 +1178,7 @@ export async function importIssues(
 
 type ImportWhat = { query: string; scope?: undefined } | { query?: undefined; scope: { project: string; sprint: string | null; epic: string | null } };
 
-/** What an import takes: a query in the tracker's language, or a project's sprint / epic (#119, #43). */
+/** What an import takes: a query in the tracker's language, or a project — its sprint / epic (#119, #43), or all of it (#120, #121). */
 function importQuery(body: Record<string, unknown>): ImportWhat {
   if (body.scope !== undefined && body.scope !== null) {
     if (body.query !== undefined && body.query !== null && body.query !== '') throw badRequest('Give query or scope, not both');
@@ -1170,8 +1190,8 @@ function importQuery(body: Record<string, unknown>): ImportWhat {
       return v.trim();
     };
     const sprint = opt(s.sprint, 'scope.sprint', 64);
-    const epic = opt(s.epic, 'scope.epic', 100);
-    if (!sprint && !epic) throw badRequest('scope needs a sprint or an epic');
+    const epic = opt(s.epic, 'scope.epic', 2000);
+    // Neither: the whole project (an Asana project, a monday.com board), up to the import's limit.
     return { scope: { project: s.project.trim(), sprint, epic } };
   }
   const query = typeof body.query === 'string' ? body.query.trim() : '';
