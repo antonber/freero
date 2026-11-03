@@ -18,6 +18,7 @@ import {
   Scissors,
   SendToBack,
   ShieldCheck,
+  Spline,
   Trash2,
   Ungroup,
 } from 'lucide-react';
@@ -240,6 +241,14 @@ function settingsCommands(): CommandDefinition[] {
       palette: true,
       detail: (e) => (e.getSettings().snapToGrid ? 'on' : 'off'),
       run: (e) => e.updateSettings({ snapToGrid: !e.getSettings().snapToGrid }),
+    },
+    {
+      id: 'engine.settings.lineJumps',
+      icon: Spline,
+      label: 'Line jumps',
+      palette: true,
+      detail: (e) => (e.getSettings().lineJumps ? 'on' : 'off'),
+      run: (e) => e.updateSettings({ lineJumps: !e.getSettings().lineJumps }),
     },
     ...GRID_STYLES.map(
       (g): CommandDefinition => ({

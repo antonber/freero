@@ -1594,7 +1594,8 @@ export const AI_PROVIDER_LABELS: Record<AiProviderKind, string> = {
 /** Who in a team workspace may use AI on its boards (besides needing edit access to the board). */
 export type AiAccess = 'everyone' | 'members' | 'admins';
 export type AiTask = 'ideas' | 'cluster' | 'summarize' | 'diagram';
-export type AiDiagramKind = 'flowchart' | 'sequence' | 'mindmap';
+/** [additive, #38] class, er, state (Mermaid), orgchart and kanban. */
+export type AiDiagramKind = 'flowchart' | 'sequence' | 'mindmap' | 'class' | 'er' | 'state' | 'orgchart' | 'kanban';
 /** Limits on one action (requests over them are refused; model output over them is clamped). */
 export const AI_LIMITS = {
   /** Characters of the person's own instruction. */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import type { ShapeKind } from '@freero/shared';
-import { anchorOnOutline, detailPolylines, distanceToOutline, dragRect, hitShape, labelBeside, outlinePolygons, outlineToward, textBox } from './lib/geometry';
+import { layoutStructure, richTextToPlain, type ShapeElement, type ShapeKind } from '@freero/shared';
+import { anchorOnOutline, classDividers, detailPolylines, ENTITY_LINE, ENTITY_PAD, distanceToOutline, dragRect, hitShape, labelBeside, outlinePolygons, outlineToward, textBox } from './lib/geometry';
 import { LIBRARY_KINDS } from './lib/library';
 
 const W = 200;
@@ -38,6 +38,23 @@ describe('wireframe kit', () => {
     // The checkbox mark stays a square beside a longer label.
     const mark = (w: number) => outlinePolygons('wfCheckbox', w, 24)[0];
     expect(mark(400)).toEqual(mark(180));
+  });
+});
+
+describe('UML classes from Mermaid', () => {
+  it('a class box holds every member line, with its dividers under the name and above the first operation (an empty compartment still shows)', () => {
+    const source = ['classDiagram', '  class BankAccount {', '    +String owner', '    +BigDecimal balance', '    +deposit(amount) bool', '    +withdraw(amount)', '  }', '  class Marker'].join('\n');
+    let n = 0;
+    const classes = layoutStructure({ kind: 'mermaid', source }, { newId: () => `id${n++}` }).elements as ShapeElement[];
+    const line = 14 * ENTITY_LINE;
+    const [account, marker] = classes.map((c) => ({ c, plain: richTextToPlain(c.text), div: classDividers(richTextToPlain(c.text), c.fontSize, c.strokeWidth) }));
+    expect(account.plain.split('\n')).toEqual(['BankAccount', '+String owner', '+BigDecimal balance', '+deposit(amount) : bool', '+withdraw(amount)']);
+    expect(account.div[1] - account.div[0]).toBeCloseTo(2 * line, 3);
+    // All five lines fit inside the border and the bottom padding.
+    expect(account.c.h).toBeGreaterThanOrEqual(ENTITY_PAD * 2 + account.c.strokeWidth + 5 * line);
+    // No members: an empty attribute compartment between the dividers, an empty one below.
+    expect(marker.div[1] - marker.div[0]).toBeCloseTo(line, 3);
+    expect(marker.c.h - marker.div[1]).toBeGreaterThan(10);
   });
 });
 

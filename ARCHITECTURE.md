@@ -113,7 +113,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | Layer docs (`private`, `editors`; see "Board layers") | `engine/store/` (placement: `engine/editor/layers.ts`); reveal: server `realtime` | `Editor` writes, `privateCollection`, `revealPrivate` |
 | Suggestion records (editors layer `suggestions`; see "Suggestions") | server `realtime` creates them (`proposeSuggestions`) and withdraws them when their credential is revoked (KAI-224); a socket may only set its own `decision` | `Editor.acceptSuggestions` / `rejectSuggestions`, API accept / reject |
 | `elements` map | engine (`editor.create/update/remove/transact`) | same |
-| `settings` map (background, grid) | engine | `editor` settings API |
+| `settings` map (background, grid, line jumps) | engine; a new board's first state (`NEW_BOARD_SETTINGS`) is stored by server `modules/boards` `createBoard` through realtime `initNewBoardDoc` | `editor` settings API |
 | feature collection (e.g. `comments`) | the feature whose `feature.ts` `owns` it | `editor.runCommand` of the owner. Writes from a non-owner throw at runtime [W8 checks unique claims] |
 | camera, selection, active tool, dock | engine | `editor.setCamera/select/setTool/openDock` |
 | presence ext | each feature writes `ext[<its name>]` only | — |
@@ -218,6 +218,21 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   board state; the renderer subscribes with `useElementsQuery(select, isEqual)` (`@engine`), which
   re-renders a component only when its derived value changes — never re-render every line on every
   edit elsewhere. `follow` refreshes an elbow line's cache when a connectable item lands on it.
+- Line jumps (#115; board setting `BoardSettings.lineJumps`, the board menu's "Line jumps" toggle
+  and palette command, written by the engine like the grid): where two connectors cross, the one
+  drawn on top (z, then id: every client agrees) hops over the other. The hops are part of the
+  connector's own SVG path (`lib/jumps.ts` `lineJumps` → `routePath`), so the canvas, the selection
+  halo and every export draw them. No hop where lines share an end or meet near one, run along each
+  other or cross at a grazing angle, or too near a bend; crossings close together share one hop;
+  curved lines never hop (lines on top of them do). Each line finds the lines beneath it with
+  `useElementsQuery` over one grid index of the board's lines per editor (`lib/beneath.ts`),
+  updated in place from the lines that changed, and reuses its last answer while no changed line
+  came near it; routes are computed once per element object. Only lines in view (the culled
+  canvas renders no others) and only at zooms where a hop is at least 2 px. `npm run
+  bench:line-jumps` measures a 500-connector board. New boards start with it on: the server's
+  `createBoard` stores `NEW_BOARD_SETTINGS` (`@freero/shared`) for every board that is no copy
+  (realtime `initNewBoardDoc`); boards from before keep their look (absent = off), copies their
+  source's.
 - `@engine` hooks: `usePointer()` (world pointer for tool `Preview`s), `useTextFormatState()`,
   `useSettings()`, `useCanEdit()`; `plainToRichText()`; types `ElementTextProps`, `TextFormatState`.
 - `useCollection(name)` returns the collection's entries (`Array<[key, value]>`).
@@ -834,6 +849,16 @@ docs/board-outline.md):
   a diagram don't carry its source; outline items without a Mermaid id are matched by their path
   of texts, so a renamed topic is a new topic; concurrent source edits of one diagram are LWW per
   diagram (the second update re-lays from its own source).
+- Mermaid class, ER and state diagrams (#38, `@freero/shared` layout/uml.ts, read in-house like
+  the rest) become the shape library's own shapes through `layoutDiagram` (the layered graph
+  layout with nodes that carry their size and look, edges their line ends and end labels): a
+  class is a `umlClass` with `compartments` (its text is the whole class — name, attributes,
+  operations — and the shape feature draws the dividers: under the name, above the first line with
+  a "("), an entity an `erdEntity` table (keys first), relations connectors with UML ends
+  (`triangleOpen`, `diamond`, `diamondOpen`, dashed for `..`) or the crow's-foot end each side
+  names, multiplicities as labels near their ends; namespaces and composite states are frames;
+  start / end states, choices and forks are small marks; notes are `umlNote`s on a dashed line.
+  Front matter (`---` … `---`) is skipped. PlantUML is not read.
 
 Reference & items (engine primitives; product UI in `features/shortcuts`, `links`, `image`, `icons`,
 `select-similar` — "Select only ▸ <type> (count)" narrows a mixed selection):

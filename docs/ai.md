@@ -12,11 +12,11 @@ What it can do today (KAI-102), from the AI button in the selection toolbar, the
 | Generate ideas | your prompt (and the selection, if any, as background) | a titled grid of stickies |
 | Cluster by theme | the selected notes (stickies, cards) | named groups: the notes move into them, each group gets a title |
 | Summarise | the selection, or the whole board | a written note beside it |
-| Diagram from text | your prompt (and the selection, if any) | a flowchart, sequence diagram or mind map with attached connectors |
+| Diagram from text | your prompt (and the selection, if any) | a flowchart, sequence, class (UML), entity-relationship or state diagram, a mind map, an org chart or a kanban board, with attached connectors |
 
 Every action is **previewed first**: nothing touches the board until the person clicks Insert, and
 the result then lands as one step they can undo. The model never places anything: it returns
-structure (a list, groups, Mermaid, an outline), which Freero's own layout places on free space.
+structure (a list, groups, Mermaid, an outline, people and their managers, columns of cards), which Freero's own layout places on free space.
 
 ## What happens to your data
 

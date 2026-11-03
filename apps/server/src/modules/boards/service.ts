@@ -38,6 +38,7 @@ import {
 import {
   closeBoardDoc,
   initBoardDoc,
+  initNewBoardDoc,
   initBoardLayer,
   refreshBoardAccess,
   snapshotBoardDoc,
@@ -660,6 +661,9 @@ export async function createBoard(
         viewersCanExport: true,
       };
       await repo.insertBoard(board);
+      // A new board starts with today's defaults (line jumps on); a copy is its source's content
+      // (the caller stores it next), and boards from before a default keep their own look.
+      if (kind === 'board' && !copyOf) await initNewBoardDoc(board.id);
       await recordAudit({ action: kind === 'doc' ? 'doc.created' : 'board.created', workspaceId, actorId: ownerId, target: boardTarget(board), metadata: { projectId } });
       await repo.appendBoardEvent({ type: 'board.created', boardId: board.id, workspaceId, actorId: ownerId, title, ...(copyOf ? { copyOf } : {}), ...(kind === 'doc' ? { kind } : {}) });
       return board;

@@ -6793,6 +6793,30 @@ async function mcpChecks() {
       await waitFor(() => !agentState(), 12_000, 'the app to leave presence once it stopped writing');
     });
 
+    await check('mcp: add_diagram draws an org chart from people and their managers, and an ER diagram from Mermaid, one call each (#38)', async () => {
+      assert(agent, 'no agent');
+      const browser = connectDoc(O, board, null, proc.port);
+      live.push(browser);
+      await browser.ready();
+      const els = browser.doc.getMap('elements');
+      const org = await agent.callTool({
+        name: 'add_diagram',
+        arguments: { boardId: board, orgchart: [{ name: 'Mia', title: 'CEO' }, { name: 'Ravi', title: 'CTO', manager: 'Mia' }, { name: 'Lea', title: 'Engineer', manager: 'Ravi' }] },
+      });
+      assert(!org.isError, `orgchart: ${text(org)}`);
+      await waitFor(() => org.structuredContent.created.every((id) => els.has(id)), 5000, 'the org chart to reach the open board');
+      const orgEls = org.structuredContent.created.map((id) => els.get(id));
+      const box = (name) => orgEls.find((e) => e.type === 'shape' && String(e.text).includes(name));
+      const reportsTo = (a, b) => orgEls.some((e) => e.type === 'connector' && e.start.elementId === box(b).id && e.end.elementId === box(a).id);
+      assert(reportsTo('Ravi', 'Mia') && reportsTo('Lea', 'Ravi') && box('Mia').y < box('Ravi').y, 'the chart’s reporting lines');
+      const er = await agent.callTool({ name: 'add_diagram', arguments: { boardId: board, mermaid: 'erDiagram\n  CUSTOMER ||--o{ ORDER : places\n  ORDER {\n    int id PK\n  }' } });
+      assert(!er.isError, `erDiagram: ${text(er)}`);
+      await waitFor(() => er.structuredContent.created.every((id) => els.has(id)), 5000, 'the ER diagram to reach the open board');
+      const erEls = er.structuredContent.created.map((id) => els.get(id));
+      const rel = erEls.find((e) => e.type === 'connector');
+      assert(erEls.filter((e) => e.shape === 'erdEntity').length === 2 && rel.startCap === 'one' && rel.endCap === 'zeroOrMany', `ER: ${JSON.stringify(rel)}`);
+    });
+
     await check('mcp: the default read + suggest connection and a commenter’s write token can’t add to the board; delete_items without confirm deletes nothing', async () => {
       const count = await itemCount(board);
       const suggest = await withToken((await token(O, ['boards:read', 'boards:suggest'], 'Suggester')).secret);
