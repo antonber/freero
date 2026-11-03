@@ -35,6 +35,7 @@ import {
   type ImportResult,
 } from './common';
 import { ZipPackage } from './zip';
+import { base64, kids, OpcPackage, relAttr as relId, sniffImage } from './opc';
 
 /** Board units per inch. */
 const IN = 96;
@@ -77,12 +78,6 @@ interface Sheet {
   foreign: { rel: string | null; type: string; compression: string } | null;
   children: Sheet[];
 }
-
-const kids = (el: Element, local: string) => [...el.children].filter((c) => c.localName === local);
-const relId = (el: Element) => {
-  for (const a of [...el.attributes]) if (a.localName === 'id' && (a.prefix === 'r' || a.namespaceURI?.includes('relationships'))) return a.value;
-  return null;
-};
 
 function readCells(el: Element): Map<string, CellV> {
   const out = new Map<string, CellV>();
@@ -132,69 +127,6 @@ class Budget {
   tick() {
     if (++this.n % 64 === 0) this.zip.checkTime();
     if (this.n > MAX_ITEMS * 4) throw new ImportError(`This drawing has more than ${MAX_ITEMS} items; Freero imports up to ${MAX_ITEMS} at a time.`);
-  }
-}
-
-// ------------------------------------------------------------------------------------ package
-
-interface Rel {
-  type: string;
-  target: string;
-  external: boolean;
-}
-
-function parseXml(text: string): Document {
-  // No DTDs at all: nothing to resolve (external entities) and nothing to expand (billion laughs).
-  if (/<!DOCTYPE|<!ENTITY/i.test(text)) throw new ImportError('This Visio file declares a DOCTYPE, which Freero doesn’t accept.');
-  const doc = new DOMParser().parseFromString(text, 'application/xml');
-  if (doc.getElementsByTagName('parsererror').length) throw new ImportError('This Visio file is damaged (a part of it is malformed XML).');
-  return doc;
-}
-
-const dirOf = (path: string) => path.slice(0, path.lastIndexOf('/') + 1);
-
-/** `target` of a relationship of `from`, as a package path (`..` resolved; never outside the package). */
-function resolve(from: string, target: string): string {
-  const parts = (target.startsWith('/') ? target.slice(1) : dirOf(from) + target).split('/');
-  const out: string[] = [];
-  for (const p of parts) {
-    if (p === '..') out.pop();
-    else if (p && p !== '.') out.push(p);
-  }
-  return out.join('/');
-}
-
-class Package {
-  private readonly relCache = new Map<string, Map<string, Rel>>();
-  constructor(
-    readonly zip: ZipPackage,
-    readonly budget: Budget,
-  ) {}
-
-  async xml(path: string): Promise<Document | null> {
-    const t = await this.zip.text(path);
-    return t === null ? null : parseXml(t);
-  }
-
-  /** The relationships of the part at `path` (its `_rels/<name>.rels`), by id. */
-  async rels(path: string): Promise<Map<string, Rel>> {
-    const known = this.relCache.get(path);
-    if (known) return known;
-    const out = new Map<string, Rel>();
-    const doc = await this.xml(`${dirOf(path)}_rels/${path.slice(path.lastIndexOf('/') + 1)}.rels`);
-    for (const r of doc ? [...doc.getElementsByTagName('*')].filter((e) => e.localName === 'Relationship') : []) {
-      const id = r.getAttribute('Id');
-      const target = r.getAttribute('Target');
-      if (!id || !target) continue;
-      const external = r.getAttribute('TargetMode') === 'External';
-      out.set(id, { type: r.getAttribute('Type') ?? '', target: external ? target : resolve(path, target), external });
-    }
-    this.relCache.set(path, out);
-    return out;
-  }
-
-  async relOfType(path: string, suffix: string): Promise<Rel | undefined> {
-    return [...(await this.rels(path)).values()].find((r) => !r.external && r.type.endsWith(suffix));
   }
 }
 
@@ -318,7 +250,7 @@ export async function parseVsdx(bytes: Uint8Array, newId: () => string, opts: { 
     deadline: Date.now() + (opts.timeLimitMs ?? VSDX_LIMITS.timeMs),
   });
   const budget = new Budget(zip);
-  const pkg = new Package(zip, budget);
+  const pkg = new OpcPackage(zip, 'Visio file');
   const docPath = (await pkg.relOfType('_rels/.rels', '/document'))?.target ?? (zip.has('visio/document.xml') ? 'visio/document.xml' : null);
   const docXml = docPath ? await pkg.xml(docPath) : null;
   if (!docPath || !docXml || docXml.documentElement.localName !== 'VisioDocument') throw new ImportError('This isn’t a Visio drawing (.vsdx).');
@@ -1024,21 +956,4 @@ function ellipticalArc(a: Pt, ctrl: Pt, b: Pt, angle: number, ratio: number): Pt
     return { x: p.x * Math.cos(angle) - y * Math.sin(angle), y: p.x * Math.sin(angle) + y * Math.cos(angle) };
   };
   return arcThrough(to(a), to(ctrl), to(b)).map(back);
-}
-
-// ------------------------------------------------------------------------------------ pictures
-
-/** A picture's type by its first bytes (only those the board shows). */
-function sniffImage(b: Uint8Array): string | null {
-  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'image/png';
-  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
-  if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return 'image/gif';
-  if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45) return 'image/webp';
-  return null;
-}
-
-function base64(b: Uint8Array): string {
-  let s = '';
-  for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000));
-  return btoa(s);
 }

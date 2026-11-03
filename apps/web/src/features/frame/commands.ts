@@ -1,7 +1,8 @@
-import { EyeOff, Frame, GalleryVertical, Maximize2, Presentation } from 'lucide-react';
+import { EyeOff, Frame, GalleryVertical, Maximize2, Presentation, SquarePen } from 'lucide-react';
 import { defineCommands } from '@engine';
 import { applyLayout, frameSelection, newSlide, selectedFrames, setSkipped, zoomToFrame } from './lib/actions';
-import { DECK_PANEL_ID } from './lib/DeckPanel';
+import { FILMSTRIP_ID } from './lib/Filmstrip';
+import { editSlide } from './lib/slideEditor';
 import { SLIDE_LAYOUTS, type SlideLayoutId } from './lib/layouts';
 import { PANEL_ID } from './lib/frames';
 
@@ -30,6 +31,18 @@ export default defineCommands([
     },
   },
   {
+    // One slide on its own (#135): at 100%, the rest of the board out of the way, Esc to go back.
+    id: 'frame.editSlide',
+    icon: SquarePen,
+    label: 'Edit slide',
+    menus: ['context'],
+    when: (editor) => selectedFrames(editor).length === 1,
+    run(editor) {
+      const [f] = selectedFrames(editor);
+      if (f) editSlide(editor, f.id);
+    },
+  },
+  {
     id: 'frame.openPanel',
     icon: GalleryVertical,
     label: 'Frames panel',
@@ -40,13 +53,15 @@ export default defineCommands([
     },
   },
   {
+    // The filmstrip under the canvas (#52); its notes button opens the side deck with speaker notes.
     id: 'frame.openDeck',
     icon: Presentation,
     label: 'Slide deck',
     menus: ['board'],
     minRole: 'viewer',
+    detail: (editor) => (editor.getBottomDock() === FILMSTRIP_ID ? '(on)' : ''),
     run(editor) {
-      editor.openDock(editor.getDock() === DECK_PANEL_ID ? null : DECK_PANEL_ID);
+      editor.openBottomDock(editor.getBottomDock() === FILMSTRIP_ID ? null : FILMSTRIP_ID);
     },
   },
   {

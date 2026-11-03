@@ -169,6 +169,11 @@ engine and features use `editor.host`. Features never import the REST client or 
   The dock has a fixed header strip with its close button; a panel puts its own header (title,
   filters) there by wrapping it in `<DockHeader>` (`@engine`), and its content scrolls below the
   strip, never under the button. Panels never reserve room for the close button themselves.
+- `dock-bottom` panels [#52] render in a strip across the bottom (the slide filmstrip), opened with
+  `editor.openBottomDock(id)` (or `openDock(id)` with its id); one at a time, beside an open right
+  dock, hidden with the chrome. The strip is marked occluding, so `getSafeArea` (fits, placement)
+  leaves it out, and the toolbar, the bottom corners' controls and the right dock end above it.
+  The panel draws its own close button.
 - `dialog` panels mount only while opened with `editor.openPanel(id, props?)` (one at a time,
   also while the chrome is hidden); the component gets `props` and closes with
   `editor.closePanel(id)`. Commands that open feature UI (export, start voting) use this — never a
@@ -608,6 +613,13 @@ Elements, geometry and text (all optional on `ElementDefinition` unless noted):
   (`.fr-el--unfocused`) and is out of reach — not hit-tested, marquee'd, lasso'd, selected or
   Tab-walked (`EditorImpl.getInteractiveElements`). Esc, once nothing is selected, ends it; so does
   deleting the item. Exports are unaffected. A diagram's focus mode is built on it.
+  [#135] `setFocus(id, { hideOutside, contentsOnly })`: what is outside isn't drawn at all
+  (`.fr-el--outside`), and the focused item itself is out of reach too (`EditorImpl.inReach`), so
+  only what it contains can be picked, selected or deleted — the slide editor's page.
+- [#52] `PanelSlot` `'dock-bottom'`, `Editor.openBottomDock(id | null)` / `getBottomDock()`, hook
+  `useBottomDock()` (see "Board chrome"). `BaseElement.layoutRole` (`@freero/shared`): the slot of a
+  slide layout an item fills (written by `features/frame` layouts; read by `features/image`, which
+  puts a single dropped / pasted picture in place of an `image` slot's placeholder at its size).
 - `fitToContent(el, handle)`: double-clicking a resize handle applies the returned patch (a
   fixed-width text box goes back to auto width).
 - `hitTest(el, local, { tolerance })` — `tolerance` is a few screen px in world units at the live
@@ -802,6 +814,21 @@ Content (engine primitives; product UI in `features/table`, `embed`, `connector`
   frame from a 1280 × 720 design; also `frame.applyLayout`), duplicate (right after the original),
   and `FrameElement.skip` — skipped by `present` and unpicked in the PDF export. Speaker notes are
   present's `presenterNotes`, written only through `present.setNote` (present owns them).
+  #52: "Slide deck" opens the filmstrip, a `dock-bottom` panel (`lib/Filmstrip.tsx`: the same deck
+  sideways, drag to reorder, New slide, a slide's options; its notes button opens the side deck).
+  Thumbnails in the filmstrip, the deck and the Frames panel are the slides' real pictures
+  (`lib/thumbnails.ts`: `renderToDataUrl` over the frame's rect, cached per slide by a signature of
+  the frame and what is on it, drawn again a moment after the last change, one render at a time;
+  the block sketch until then). Layouts add Big number and Quote; every part carries `layoutRole`,
+  and applying a layout to a slide that has one replaces it (`relayoutPlan`): parts still showing
+  their placeholder go, text people wrote moves into the new layout's matching slot (kept as an
+  ordinary text when there is none), a picture in the image slot moves into the new image slot.
+  #135: "Edit slide" (double-click a slide in the filmstrip or deck, a slide's menu, a frame's
+  context menu) opens one slide on its own (`lib/slideEditor.ts`): the frame at 100% (smaller only
+  when the window can't show that much), `setFocus(frame, { hideOutside, contentsOnly })`, a
+  top-center bar with previous / next (Page Up / Down) and Done; Esc (or the slide deleted) ends the
+  focus and the bar puts the camera back where it was. Local view state only: nothing is written
+  to the board.
 - Sticky author labels (KAI-112, `features/sticky/decoration.tsx`): a board setting in the
   `stickyLabels` collection (editors toggle "Show sticky authors" in the board menu). Names come
   from the people lookup (`usePeople`, current names; `useGonePeople` → "Deleted user", never an id;
@@ -860,7 +887,28 @@ through `DecompressionStream`, counting the REAL output bytes against per-entry 
 sizes a zip declares are never trusted), with a 20 s deadline checked as it goes; XML with a DOCTYPE
 is refused, external relationships are never followed, legacy binary `.vsd` gets "save as .vsdx".
 Tests build their packages with `lib/vsdxFixture.ts` (hand-written parts; no third-party samples)
-and fuzz them. Dropped PlantUML files (`.puml`, `.plantuml`, `.pu`, `.iuml`, `.wsd`) and Mermaid files (`.mmd`, `.mermaid`) are handed to
+and fuzz them. The package plumbing both Office formats share (relationships, part paths, the
+DOCTYPE refusal, picture sniffing) is `lib/opc.ts`.
+
+PowerPoint (`.pptx`, also `.pptm` / `.ppsx` / `.potx`; #136), same importer and dialog: `lib/pptx.ts`
+reads the deck from the published Office Open XML format (presentation → slides in `sldIdLst`
+order → layout → master → theme; no Microsoft code or template) and makes one frame per slide,
+side by side, in the deck's order, after the board's own frames in the deck (`placeImport` numbers
+imported frames after the highest `index`); hidden slides get `skip`. Text boxes and placeholders
+become text (paragraphs, bullets, bold / italic / underline / strike, run colours, size, alignment,
+the theme's heading / body face as serif / sans / mono; a placeholder without its own place or style
+takes its layout's, then its master's), preset shapes Freero shapes (theme style references
+resolved to colours), lines connectors glued where the slide glues them, pictures images (cropped
+like on the slide; one picture used on many slides is stored once), tables tables (cells through
+`insertElements`, so the table feature writes them), groups one `groupId`, the slide background the
+frame's fill (a picture background an image under everything), and the layout's and master's own
+artwork is drawn on each slide unless `showMasterSp="0"`. Speaker notes go to `present.setNote`
+in the same transaction. Charts, SmartArt, other graphic objects and videos without a poster are
+placed as a labelled box of their size, embedded objects as their picture when they keep one; ink
+and linked pictures are left out — all listed in the report. Untrusted input as for Visio (the same
+zip limits, ≤ 300 slides, no DOCTYPE, external relationships never followed, legacy `.ppt` gets
+"save as .pptx"); tests build decks with `lib/pptxFixture.ts` (hand-written parts) and fuzz them.
+Dropped PlantUML files (`.puml`, `.plantuml`, `.pu`, `.iuml`, `.wsd`) and Mermaid files (`.mmd`, `.mermaid`) are handed to
 `from-text.insert`.
 
 Structure from text and diagrams as code (`features/from-text`, KAI-196 / KAI-119; layout formats:

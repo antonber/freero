@@ -36,6 +36,8 @@ export interface UiState {
   /** [additive] Part of `editingId` being edited (table cell, extra connector label), or null. */
   editingPart: string | null;
   dock: string | null;
+  /** [additive, #52] The open 'dock-bottom' panel (the slide filmstrip), or null. */
+  bottomDock: string | null;
   toolOptions: Record<string, Record<string, unknown>>;
   hoverId: string | null;
   marquee: Rect | null;
@@ -89,6 +91,9 @@ export interface UiState {
   viewHidden: ReadonlySet<string>;
   /** [additive, #117] The item this viewer focuses on (Editor.setFocus): everything else is faded and inert. */
   focusId: string | null;
+  /** [additive, #135] How the focus (focusId) shows and what it lets people reach (Editor.setFocus opts). */
+  focusHide: boolean;
+  focusContentsOnly: boolean;
   /** Phone layout: the editor switched from "view and comment" to the full toolbar (ui/compact.ts). */
   phoneEditing: boolean;
 }
@@ -128,6 +133,7 @@ export function createUiStore(init: { role: Role }): UiStore {
     editRequest: null,
     editingPart: null,
     dock: null,
+    bottomDock: null,
     toolOptions: {},
     hoverId: null,
     marquee: null,
@@ -160,6 +166,8 @@ export function createUiStore(init: { role: Role }): UiStore {
     cursorsHidden: false,
     viewHidden: new Set<string>(),
     focusId: null,
+    focusHide: false,
+    focusContentsOnly: false,
     phoneEditing: false,
   }));
 

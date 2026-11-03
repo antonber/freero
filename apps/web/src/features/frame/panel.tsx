@@ -1,12 +1,16 @@
-import { memo, useMemo, useRef, useState } from 'react';
-import { Frame, Pencil, Play, Plus, Trash2 } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { Frame, Pencil, Play, Plus, SquarePen, Trash2 } from 'lucide-react';
 import type { BoardElement, FrameElement } from '@freero/shared';
-import { DockHeader, definePanel, useCanEdit, useElements, useSelection, type Editor } from '@engine';
+import { DockHeader, definePanel, useCanEdit, useSelection, type Editor } from '@engine';
 import { Button, IconButton, Input } from '@ui';
-import { DEFAULT_FILL, isFrame, orderFrames, PANEL_ID, reorderPatches, TOOL_ID } from './lib/frames';
+import { PANEL_ID, reorderPatches, TOOL_ID } from './lib/frames';
+import { useSlides } from './lib/useSlides';
 import { renameFrame, zoomToFrame } from './lib/actions';
-import { Thumb } from './lib/Thumb';
+import { SlideThumb } from './lib/Thumb';
 import { DeckPanel, DECK_PANEL_ID } from './lib/DeckPanel';
+import { Filmstrip, FILMSTRIP_ID } from './lib/Filmstrip';
+import { SlideEditBar } from './lib/SlideEditBar';
+import { editSlide } from './lib/slideEditor';
 
 const DRAG_PX = 4;
 
@@ -42,7 +46,7 @@ function Row(props: {
     >
       <span className="fr-frames__num">{props.position + 1}</span>
       <span className="fr-frames__thumb">
-        <Thumb frame={frame} children={props.children} w={84} h={56} />
+        <SlideThumb editor={editor} frame={frame} children={props.children} w={84} h={56} />
       </span>
       {renaming ? (
         <Input
@@ -74,23 +78,12 @@ function Row(props: {
 }
 
 function FramesPanel({ editor }: { editor: Editor }) {
-  const all = useElements();
   const selection = useSelection();
   const canEdit = useCanEdit();
   const listRef = useRef<HTMLUListElement>(null);
   const [drag, setDrag] = useState<{ id: string; to: number } | null>(null);
 
-  const { frames, childrenOf } = useMemo(() => {
-    const fs = orderFrames(all.filter(isFrame));
-    const map = new Map<string, BoardElement[]>();
-    for (const el of all) {
-      if (!el.frameId || el.type === 'frame') continue;
-      const list = map.get(el.frameId) ?? [];
-      list.push(el);
-      map.set(el.frameId, list);
-    }
-    return { frames: fs, childrenOf: map };
-  }, [all]);
+  const { frames, childrenOf } = useSlides();
 
   /** Insertion position (0..n) for a pointer at clientY, from the rows' midpoints. */
   const dropIndex = (clientY: number) => {
@@ -200,5 +193,26 @@ export default [
     slot: 'dock-right',
     order: 51,
     Component: DeckPanel,
+  }),
+  // The filmstrip (#52): the deck as a strip under the canvas.
+  definePanel({
+    id: FILMSTRIP_ID,
+    slot: 'dock-bottom',
+    order: 50,
+    Component: ({ editor }) => (
+      <Filmstrip
+        editor={editor}
+        onOpen={(f) => editSlide(editor, f.id)}
+        extraMenu={(f) => [{ id: 'edit', label: 'Edit slide', icon: SquarePen, onSelect: () => editSlide(editor, f.id) }]}
+      />
+    ),
+  }),
+  // Editing one slide on its own (#135): its bar, and the watcher that ends it with the focus.
+  definePanel({
+    id: 'frame.slideEditBar',
+    slot: 'top-center',
+    order: 20,
+    minRole: 'viewer',
+    Component: SlideEditBar,
   }),
 ];

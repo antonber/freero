@@ -1157,6 +1157,9 @@ export type PanelSlot =
   | 'bottom-left'      // e.g. frames list toggle
   | 'bottom-right'     // next to zoom controls (minimap toggle, comments toggle)
   | 'dock-right'       // side panel content (comments list, frames, templates)
+  | 'dock-bottom'      // [additive, #52] a strip under the canvas (the slide filmstrip): one at a
+                       // time, opened with editor.openDock(id) / openBottomDock(id); stays beside an
+                       // open right dock, hidden while the chrome is; the safe area leaves it out
   | 'screen-overlay'   // full-viewport screen-space layer (cursors, reaction bursts, timers)
   | 'top-center'       // [additive] session bars under the top bar (voting, "X is presenting"):
                        // stacked in a column so several never overlap; stays while presenting
@@ -1752,9 +1755,15 @@ export interface Editor {
   }): Promise<string>;
 
   // -- UI state --
-  /** Open/close the right dock with a panel id (or null to close). */
+  /**
+   * Open/close the right dock with a panel id (or null to close). [additive, #52] A 'dock-bottom'
+   * panel's id opens it in the bottom strip instead (`openBottomDock`); null closes the right dock only.
+   */
   openDock(panelId: string | null): void;
   getDock(): string | null;
+  /** [additive, #52] Open/close the bottom strip ('dock-bottom' panels; null closes it). Local UI state. Hook: useBottomDock(). */
+  openBottomDock(panelId: string | null): void;
+  getBottomDock(): string | null;
   /**
    * [additive] Opens a panel from anywhere (a command, a button): a 'dialog' panel mounts with
    * `props` (one dialog at a time, also while the chrome is hidden); a 'dock-right' panel opens the
@@ -1811,8 +1820,11 @@ export interface Editor {
    * marquee'd, lasso'd or Tab-walked. Local view state: never synced, any role, exports unaffected.
    * Esc (once nothing is selected) or `setFocus(null)` ends it; deleting the item ends it too.
    * Hook: useFocus().
+   * [additive, #135] `hideOutside`: what is outside isn't drawn at all (a slide edited on its own);
+   * `contentsOnly`: the item itself is out of reach too — only what it contains can be picked,
+   * selected (select all) or deleted, so it works as the page being edited.
    */
-  setFocus(id: string | null): void;
+  setFocus(id: string | null, opts?: { hideOutside?: boolean; contentsOnly?: boolean }): void;
   /** [additive] The focused item's id (null: none, or it was deleted). */
   getFocus(): string | null;
 

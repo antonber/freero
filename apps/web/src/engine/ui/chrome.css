@@ -397,6 +397,46 @@ button.fr-title:hover {
   margin: 0 4px;
 }
 
+/* ---- bottom strip ('dock-bottom' panels, #52) ---- */
+/* Across the bottom; the bottom corners' controls, the toolbar and the right dock end above it
+   while it is open. */
+.fr-chrome {
+  --fr-bottomdock-h: 136px;
+}
+.fr-bottomdock {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  height: var(--fr-bottomdock-h);
+  display: flex;
+  overflow: hidden;
+  border-radius: var(--fr-radius-lg);
+  box-shadow: var(--fr-shadow-lg);
+  animation: fr-bottomdock-in 180ms var(--fr-ease);
+}
+.fr-chrome--bottomdock .fr-bottomright,
+.fr-chrome--bottomdock .fr-bottomleft {
+  bottom: calc(var(--fr-bottomdock-h) + 20px);
+}
+.fr-chrome--bottomdock .fr-toolbar {
+  bottom: calc(var(--fr-bottomdock-h) + 20px);
+}
+.fr-chrome--bottomdock .fr-dock {
+  bottom: calc(var(--fr-bottomdock-h) + 20px);
+}
+@keyframes fr-bottomdock-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fr-bottomdock {
+    animation: none;
+  }
+}
+
 /* ---- dock ---- */
 .fr-dock {
   position: absolute;
@@ -736,6 +776,18 @@ button.fr-title:hover {
   overflow-x: auto;
   scrollbar-width: none;
 }
+/* The bottom strip sits over the bottom bar (the toolbar keeps its place). */
+.fr-board[data-fr-layout^='phone'] .fr-bottomdock {
+  left: 8px;
+  right: 8px;
+  bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+}
+.fr-board[data-fr-layout^='phone'] .fr-chrome--bottomdock .fr-toolbar {
+  bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+}
+.fr-board[data-fr-layout^='phone'] .fr-chrome--bottomdock .fr-bottomright {
+  bottom: calc(var(--fr-bottomdock-h) + 72px + env(safe-area-inset-bottom, 0px));
+}
 /* Side panels (comments, board as list…) open as a bottom sheet over the bottom bar. */
 .fr-board[data-fr-layout^='phone'] .fr-dock {
   left: 0;
@@ -758,7 +810,8 @@ button.fr-title:hover {
   .fr-format,
   .fr-tool-options,
   .fr-zoom,
-  .fr-dock {
+  .fr-dock,
+  .fr-bottomdock {
     border: 1px solid CanvasText;
   }
   .fr-iconbtn--active,
