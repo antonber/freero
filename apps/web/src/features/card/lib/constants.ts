@@ -48,7 +48,22 @@ export const STICKY_ACCENT: Record<StickyColor, string> = {
   charcoal: '#2A2938',
 };
 
-export type CardStatus = NonNullable<CardElement['status']>;
+/** Papers of a flip card's back (#142): light, so the ink text reads on all of them. */
+export const BACK_COLORS = ['#FFF1B8', '#FFE1D2', '#FFD9EC', '#E6DEFF', '#D7ECFF', '#D2F4E6', '#E9F7C8', '#F1F1F5'];
+export const BACK_COLOR_NAMES: Record<string, string> = {
+  '#FFF1B8': 'Butter',
+  '#FFE1D2': 'Peach',
+  '#FFD9EC': 'Blush',
+  '#E6DEFF': 'Lilac',
+  '#D7ECFF': 'Sky',
+  '#D2F4E6': 'Mint',
+  '#E9F7C8': 'Pistachio',
+  '#F1F1F5': 'Cloud',
+};
+/** The text part a flip card's back is edited as (ElementDefinition.textPartAt). */
+export const BACK_PART = 'back';
+
+export type CardStatus =NonNullable<CardElement['status']>;
 export const STATUSES: Array<{ value: CardStatus; label: string }> = [
   { value: 'todo', label: 'To do' },
   { value: 'doing', label: 'Doing' },

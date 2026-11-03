@@ -1,10 +1,15 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Bot, Crosshair, Eye, EyeOff, Megaphone, SmilePlus } from 'lucide-react';
-import { definePanel, useCamera, useFollowing, usePeers, usePointer, type Editor } from '@engine';
-import { Avatar, Button, IconButton, Popover, Tooltip } from '@ui';
+import { ArrowLeft, Bot, Crosshair, Eye, EyeOff, Megaphone, Plus, SmilePlus } from 'lucide-react';
+import type { FacilitationSession } from '@freero/shared';
+import { definePanel, useCamera, useCollection, useFollowing, usePeers, usePointer, type Editor } from '@engine';
+import { Avatar, Button, EmojiPicker, IconButton, Popover, Tooltip } from '@ui';
 import {
   REACTIONS,
+  TALLY_WINDOW_MS,
+  countReaction,
   newSignals,
+  newTally,
+  tallyCounts,
   peopleOnBoard,
   primaryClient,
   readExt,
@@ -269,33 +274,86 @@ function PointerMemory({ target }: { target: { current: { x: number; y: number }
 
 function ReactionsPanel({ editor }: { editor: Editor }) {
   const [open, setOpen] = useState(false);
+  const [more, setMore] = useState(false);
   const [denied, setDenied] = useState(0);
+  const recent = usePresenceUi(editor, (s) => s.recent);
   const ref = useRef<HTMLButtonElement>(null);
   // Your pointer is on the toolbar while you click, so bursts start where it last was on the canvas.
   const lastCursor = useRef<{ x: number; y: number } | null>(null);
+  const react = (emoji: string) => {
+    const ok = sendReaction(editor, emoji, lastCursor.current);
+    if (!ok) setDenied((d) => d + 1);
+  };
+  const close = () => {
+    setOpen(false);
+    setMore(false);
+  };
   return (
     <>
       <PointerMemory target={lastCursor} />
-      <IconButton ref={ref} icon={SmilePlus} label="React" size={32} active={open} onClick={() => setOpen((o) => !o)} />
-      <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" align="end" aria-label="Send a reaction">
-        <div className={`fr-presence-reactions${denied ? ' is-denied' : ''}`} key={denied}>
-          {REACTIONS.map((emoji) => (
-            <button
-              key={emoji}
-              type="button"
-              className="fr-presence-reactions__btn"
-              aria-label={`React ${emoji}`}
-              onClick={() => {
-                const ok = sendReaction(editor, emoji, lastCursor.current);
-                if (!ok) setDenied((d) => d + 1);
-              }}
-            >
-              {emoji}
-            </button>
-          ))}
-        </div>
+      <IconButton ref={ref} icon={SmilePlus} label="React" size={32} active={open} onClick={() => (open ? close() : setOpen(true))} />
+      <Popover open={open} onClose={close} anchor={ref.current} side="bottom" align="end" aria-label="Send a reaction">
+        {more ? (
+          <div className={`fr-presence-reactions-more${denied ? ' is-denied' : ''}`} key={denied}>
+            <Button size="sm" variant="ghost" icon={ArrowLeft} onClick={() => setMore(false)}>
+              Back
+            </Button>
+            <EmojiPicker onPick={react} recent={recent} autoFocus />
+          </div>
+        ) : (
+          <div className={`fr-presence-reactions${denied ? ' is-denied' : ''}`} key={denied}>
+            {[...REACTIONS, ...recent.slice(0, 2)].map((emoji) => (
+              <button key={emoji} type="button" className="fr-presence-reactions__btn" aria-label={`React ${emoji}`} onClick={() => react(emoji)}>
+                {emoji}
+              </button>
+            ))}
+            <IconButton icon={Plus} label="More emoji" size={32} onClick={() => setMore(true)} />
+          </div>
+        )}
       </Popover>
     </>
+  );
+}
+
+/**
+ * Reaction counts for whoever runs the session (#144): the presenter while presenting
+ * (`presence.countReactions`), the facilitator while their facilitation session runs. The last
+ * TALLY_WINDOW_MS only; cleared when the session ends. Nothing is written to the board.
+ */
+function useCounting(editor: Editor): boolean {
+  const presenting = usePresenceUi(editor, (s) => s.presenting);
+  const session = new Map(useCollection<FacilitationSession>('facilitation')).get('session');
+  return presenting || session?.by === editor.user.id;
+}
+
+function ReactionCounts({ editor }: { editor: Editor }) {
+  const counting = useCounting(editor);
+  const presenting = usePresenceUi(editor, (s) => s.presenting);
+  const tally = usePresenceUi(editor, (s) => s.tally);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!counting) {
+      presenceStore(editor).setState({ tally: newTally() });
+      return;
+    }
+    const t = setInterval(() => setNow(Date.now()), 10_000);
+    return () => clearInterval(t);
+  }, [editor, counting]);
+  if (!counting) return null;
+  const counts = tallyCounts(tally, Math.max(now, tally.events.at(-1)?.at ?? 0));
+  return (
+    <div className={`fr-presence-tally${presenting ? ' is-presenting' : ''}`} data-fr-interactive="" role="status" aria-label={`Reactions in the last ${TALLY_WINDOW_MS / 60_000} minutes`}>
+      <span className="fr-presence-tally__title">Reactions · {TALLY_WINDOW_MS / 60_000} min</span>
+      {counts.length ? (
+        counts.slice(0, 8).map((c) => (
+          <span key={c.emoji} className="fr-presence-tally__item">
+            <span aria-hidden>{c.emoji}</span> {c.count}
+          </span>
+        ))
+      ) : (
+        <span className="fr-presence-tally__none">None yet</span>
+      )}
+    </div>
   );
 }
 
@@ -407,6 +465,7 @@ function Bursts({ editor }: { editor: Editor }) {
 
 function SignalWatcher({ editor }: { editor: Editor }) {
   const peers = usePeers();
+  const counting = useCounting(editor);
   const seenReactions = useRef(new Map<number, string | null>());
   const seenSummons = useRef(new Map<number, string | null>());
   // Receivers throttle too, so a client that ignores the sender-side limit can't flood screens.
@@ -416,6 +475,11 @@ function SignalWatcher({ editor }: { editor: Editor }) {
       const { ok, bucket } = takeToken(buckets.current.get(peer.clientId) ?? { tokens: 3, at: Date.now() }, Date.now());
       buckets.current.set(peer.clientId, bucket);
       if (!ok) continue;
+      const store = presenceStore(editor);
+      if (counting && peer.user?.id && peer.user.id !== editor.user.id) {
+        const tally = store.getState().tally;
+        if (countReaction(tally, peer.user.id, signal.emoji, Date.now())) store.setState({ tally: { ...tally } });
+      }
       const o = burstOrigin(editor, signal.at ?? peer.cursor);
       showBurst(editor, { emoji: signal.emoji, x: o.x, y: o.y, name: peer.user.name, color: peer.user.color });
     }
@@ -434,7 +498,7 @@ function SignalWatcher({ editor }: { editor: Editor }) {
         },
       });
     }
-  }, [editor, peers]);
+  }, [editor, peers, counting]);
   return null;
 }
 
@@ -446,6 +510,7 @@ function PresenceOverlay({ editor }: { editor: Editor }) {
       <FollowIndicator editor={editor} />
       <Bursts editor={editor} />
       <SignalWatcher editor={editor} />
+      <ReactionCounts editor={editor} />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { newSignals, peopleOnBoard, takeToken, type Peer, type PresenceExt } from './lib/model';
+import { countReaction, isReactionEmoji, newSignals, newTally, peopleOnBoard, tallyCounts, takeToken, TALLY_WINDOW_MS, type Peer, type PresenceExt } from './lib/model';
 
 const me = { id: 'u-me', name: 'Mia', color: '#111111', avatarUrl: null };
 const peer = (clientId: number, userId: string, name: string, ext?: PresenceExt): Peer => ({
@@ -37,7 +37,9 @@ describe('reaction bursts and summons', () => {
     expect(newSignals(seen, [peer(1, 'u-a', 'A', r('r2'))], pick)).toHaveLength(1);
   });
 
-  it('ignores reaction payloads with emoji outside the picker (untrusted peers)', () => {
+  it('takes any single emoji from a peer (skin tones, flags, families) but no text, markup or several emoji', () => {
+    for (const ok of ['🦄', '👍🏽', '🇵🇪', '👩‍👩‍👧', '❤️', '1️⃣']) expect(isReactionEmoji(ok), ok).toBe(true);
+    for (const bad of ['<img src=x>', 'lol', '🎉🎉', '7', '', '🎉 hi']) expect(isReactionEmoji(bad), bad).toBe(false);
     const seen = new Map<number, string | null>();
     newSignals(seen, [peer(1, 'u-a', 'A')], pick);
     const bogus = peer(1, 'u-a', 'A', { reaction: { id: 'x', emoji: '<img src=x>' as never, at: null } });
@@ -56,5 +58,24 @@ describe('reaction throttle', () => {
     }
     expect(sent.filter(Boolean)).toHaveLength(3);
     expect(takeToken(bucket, 450 + 1600).ok).toBe(true);
+  });
+});
+
+describe('reaction counts for the presenter', () => {
+  it('one person flooding reactions from several tabs is counted at the burst rate, not once per message', () => {
+    const t = newTally();
+    for (let i = 0; i < 40; i++) countReaction(t, 'u-spam', '🎉', i * 20);
+    countReaction(t, 'u-ann', '👍', 900);
+    expect(tallyCounts(t, 1000)).toEqual([
+      { emoji: '🎉', count: 3 },
+      { emoji: '👍', count: 1 },
+    ]);
+  });
+
+  it('forgets reactions older than the window', () => {
+    const t = newTally();
+    countReaction(t, 'u-ann', '👍', 0);
+    countReaction(t, 'u-bob', '👏', TALLY_WINDOW_MS - 1000);
+    expect(tallyCounts(t, TALLY_WINDOW_MS + 1)).toEqual([{ emoji: '👏', count: 1 }]);
   });
 });

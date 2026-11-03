@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { CalendarDays, CircleDashed, NotebookText, UserPlus } from 'lucide-react';
+import { CalendarDays, CircleDashed, NotebookText, Repeat2, SquareStack, UserPlus } from 'lucide-react';
 import type { CardElement } from '@freero/shared';
 import { defineFormat, type Editor } from '@engine';
 import { Avatar, Button, ColorSwatches, IconButton, Menu, Popover, TextArea, ToolbarButton } from '@ui';
-import { ACCENTS, ACCENT_NAMES, STATUSES, TOOL_ID, type CardStatus } from './lib/constants';
+import { ACCENTS, ACCENT_NAMES, BACK_COLORS, BACK_COLOR_NAMES, STATUSES, TOOL_ID, type CardStatus } from './lib/constants';
 import { formatDue, localISODate } from './lib/actions';
 import { detailsSession, type DetailsSession } from './lib/details';
 import { useBoardPeople, usePerson } from './lib/people';
@@ -257,6 +257,50 @@ function DetailsControl({ editor, cards }: Props) {
   );
 }
 
+/** Flip cards (#142): give cards a back, turn them for everyone, colour the back. */
+function FlipControl({ editor, cards }: Props) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLButtonElement>(null);
+  const twoSided = cards.every((c) => !!c.back);
+  const flipped = cards.every((c) => !!c.flipped);
+  const backColor = twoSided && cards.every((c) => c.back!.color === cards[0].back!.color) ? cards[0].back!.color : null;
+  const toggleTwoSided = () =>
+    editor.updateMany(
+      cards.map((c) => ({
+        id: c.id,
+        patch: (twoSided ? { back: null, flipped: false } : { back: c.back ?? { title: '', color: BACK_COLORS[0] } }) as Partial<CardElement>,
+      })),
+    );
+  return (
+    <>
+      <ToolbarButton className="fr-card-fmt-btn" label={twoSided ? 'Make one-sided' : 'Two-sided (add a back)'} aria-pressed={twoSided} onClick={toggleTwoSided}>
+        <SquareStack size={16} />
+        Two-sided
+      </ToolbarButton>
+      {twoSided ? (
+        <>
+          <IconButton icon={Repeat2} label={flipped ? 'Show the front' : 'Flip to the back'} active={flipped} onClick={() => patchAll(editor, cards, { flipped: !flipped })} />
+          <ToolbarButton ref={ref} className="fr-card-fmt-btn" label="Back color" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+            <span className="fr-card-fmt-dot" style={{ background: backColor ?? 'conic-gradient(#FFF1B8, #D2F4E6, #D7ECFF, #FFD9EC, #FFF1B8)' }} />
+          </ToolbarButton>
+          <Popover open={open} onClose={() => setOpen(false)} anchor={ref.current} side="bottom" offset={10} aria-label="Back color">
+            <ColorSwatches
+              colors={BACK_COLORS}
+              names={BACK_COLOR_NAMES}
+              value={backColor}
+              columns={4}
+              size={26}
+              allowCustom
+              onChange={(color) => editor.updateMany(cards.map((c) => ({ id: c.id, patch: { back: { title: c.back?.title ?? '', color } } as Partial<CardElement> })))}
+              aria-label="Back color"
+            />
+          </Popover>
+        </>
+      ) : null}
+    </>
+  );
+}
+
 export default defineFormat({
   id: 'card.format',
   order: 10,
@@ -270,6 +314,7 @@ export default defineFormat({
         <DueControl editor={editor} cards={cards} />
         <AssigneeControl editor={editor} cards={cards} />
         <DetailsControl editor={editor} cards={cards} />
+        <FlipControl editor={editor} cards={cards} />
       </>
     );
   },

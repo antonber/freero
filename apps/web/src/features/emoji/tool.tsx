@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Search, Stamp } from 'lucide-react';
 import { defineTool, useToolGhost, useCamera, useToolOptions, type Editor } from '@engine';
-import { Input } from '@ui';
 import { DEFAULT_CHOICE, MAX_RECENT, PLACE_SIZE, TOOL_ID, type EmojiToolOptions } from './lib/constants';
-import { EMOJI_CATEGORIES, searchEmojis } from './lib/emojis';
+import { EMOJI_CATEGORIES, Input, searchEmojis } from '@ui';
 import { Glyph } from './lib/Glyph';
 import { STAMP_PREFIX, STAMPS, StampArt } from './lib/stamps';
 import { stampTargetAt } from './lib/reactions';

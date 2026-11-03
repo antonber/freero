@@ -793,6 +793,20 @@ class Room {
       }
   }
 
+  /**
+   * Who is on the board now, by user id -> name: sockets on this instance and presence from other
+   * instances (presence names are the server's own, awareness.ts replaces what clients send).
+   */
+  peopleHere(): Map<string, string> {
+    const out = new Map<string, string>();
+    for (const state of this.awareness.getStates().values()) {
+      const u = (state as { user?: { id?: unknown; name?: unknown } } | null)?.user;
+      if (typeof u?.id === 'string') out.set(u.id, typeof u.name === 'string' ? u.name : '');
+    }
+    for (const c of this.conns.values()) if (!out.has(c.userId)) out.set(c.userId, '');
+    return out;
+  }
+
   /** Is the session's facilitator here (a socket on this instance, or presence from another)? */
   private facilitatorPresent(by: string): boolean {
     for (const c of this.conns.values()) if (c.userId === by) return true;
@@ -1859,6 +1873,29 @@ export async function writeServerCollection(boardId: string, collection: string,
       }
     }, SERVER_ORIGIN);
     await room.flush();
+  });
+}
+
+/**
+ * Reads and replaces one entry of a server-written collection of the SHARED doc in one step, with
+ * who is on the board now (#146: the presentation session, checked against its presenter). `update`
+ * returns the new value, null to delete it, or undefined to leave it; it may throw to refuse.
+ */
+export async function updateServerEntry<T>(
+  boardId: string,
+  collection: string,
+  key: string,
+  update: (current: T | undefined, peopleHere: ReadonlyMap<string, string>) => T | null | undefined,
+): Promise<T | null | undefined> {
+  if (!SERVER_COLLECTIONS.includes(collection) || isElementContentCollection(collection)) throw new Error(`realtime: '${collection}' is not a board-level server-written collection`);
+  return withLiveRoom(boardId, async (room) => {
+    if (room.destroyed) throw new BoardClosedError(boardId);
+    const map = room.doc.getMap<T>(collection);
+    const next = update(map.get(key), room.peopleHere());
+    if (next === undefined) return undefined;
+    room.doc.transact(() => (next === null ? map.delete(key) : map.set(key, next)), SERVER_ORIGIN);
+    await room.flush();
+    return next;
   });
 }
 

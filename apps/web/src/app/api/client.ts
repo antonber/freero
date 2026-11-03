@@ -38,6 +38,9 @@ import type {
   TrackerFieldInfo,
   ActivityAnswer,
   ActivityState,
+  IcebreakerResult,
+  PresentationRequest,
+  PresentationSession,
   BoardCallResponse,
   PersonalViewsResponse,
   SetBoardCallRequest,
@@ -388,6 +391,13 @@ export const api = {
     request<ActivityState>('PATCH', `${activityPath(id, aid)}/questions/${encodeURIComponent(qid)}`, patch),
   revealActivity: (id: string, aid: string, revealed: boolean) => request<ActivityState>('POST', `${activityPath(id, aid)}/reveal`, { revealed }),
   clearActivity: (id: string, aid: string) => request<ActivityState>('DELETE', `${activityPath(id, aid)}/answers`),
+  presentation: (id: string, body: PresentationRequest) =>
+    request<{ session: PresentationSession | null }>('POST', `/api/boards/${encodeURIComponent(id)}/presentation`, body).then((r) => r.session),
+  rollIcebreaker: (id: string, elementId: string) =>
+    request<{ result: IcebreakerResult }>('POST', `/api/boards/${encodeURIComponent(id)}/icebreakers/${encodeURIComponent(elementId)}/roll`).then((r) => r.result),
+  setActivityKey: (id: string, aid: string, key: Record<string, string[]>) => request<ActivityState>('PUT', `${activityPath(id, aid)}/key`, { key }),
+  copyActivityKey: (id: string, aid: string, from: { boardId: string; activityId: string }) => request<ActivityState>('PUT', `${activityPath(id, aid)}/key/copy`, from),
+  runQuiz: (id: string, aid: string, run: { step: number } | { showAnswer: true }) => request<ActivityState>('POST', `${activityPath(id, aid)}/quiz`, run),
   guestMe: () => request<{ guest: GuestInfo | null }>('GET', '/api/guest/me'),
   guestBoard: (id: string) => request<{ board: BoardSummary }>('GET', `/api/guest/boards/${encodeURIComponent(id)}/board`),
   leaveAsGuest: () => request<{ ok: true }>('POST', '/api/guest/leave'),
