@@ -719,6 +719,8 @@ const linkedView = defineElement({
   minSize: LINKED_VIEW_MIN,
   defaults: (): Omit<NewElement<'kanbanview'>, 'x' | 'y'> => ({ type: 'kanbanview', ...LINKED_VIEW_SIZES.table, sourceId: '', view: newLinkedView('table') }),
   Component: LinkedViewElement,
+  // Its box's paper colour (a thumbnail draws a far-away view as a box of it).
+  swatch: () => '#f4f3f9',
   toPlainText: (lv) => linkedView_(lv).name,
   // Which board it was copied from, so a paste can tell a copy on the same board from one onto another.
   copyContent: (_lv, editor) => ({ board: editor.boardId }),
