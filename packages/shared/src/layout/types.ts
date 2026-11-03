@@ -2,7 +2,7 @@
 // Mermaid diagram, a table) and the layout says WHERE, so agents and AI never pick coordinates.
 // Pure and deterministic (ids come from the caller's generator), so the server and the web
 // produce the same elements for the same input.
-import type { BoardElement, CardStatus, ShapeKind, StickyColor, TableCopyContent } from '../elements';
+import type { BoardElement, CardStatus, ShapeKind, StickyColor, TableCopyContent, StickyShape, StickySize } from '../elements';
 
 /** A new element before it is written: the writer stamps stacking, author and times. */
 export type ElementDraft = BoardElement extends infer E
@@ -43,6 +43,9 @@ export interface StickyInput {
   text: string;
   link?: string | null;
   color?: StickyColor;
+  /** [additive] Square (default) or rectangle, and S / M (default) / L (`stickyDims`). */
+  shape?: StickyShape;
+  size?: StickySize;
 }
 
 /** [additive] A new task card: its title (`text`) and optional fields. */
@@ -101,7 +104,7 @@ export type StructureInput =
   /** An indented list (Markdown bullets or plain indentation) → mind map or tree. */
   | { kind: 'outline'; text: string; as?: 'mindmap' | 'tree' }
   /** A list → a grid of stickies, optionally under a title. An item is its text, or a StickyInput (a link, its colour). */
-  | { kind: 'stickies'; items: Array<string | StickyInput>; title?: string; color?: StickyColor }
+  | { kind: 'stickies'; items: Array<string | StickyInput>; title?: string; color?: StickyColor; shape?: StickyShape; size?: StickySize }
   /**
    * Named groups → affinity clusters side by side. An item is new text (a new sticky), a
    * StickyInput, or `{ id }` of a sticky already on the board, which is moved into its cluster.

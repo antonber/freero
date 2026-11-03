@@ -1,24 +1,11 @@
-import { STICKY_COLORS, type StickyColor, type StickyElement } from '@freero/shared';
+import { STICKY_COLORS, STICKY_SIDES, STICKY_SIZES, stickyDims, type StickyColor, type StickyElement, type StickyShape, type StickySize } from '@freero/shared';
 
 /** The side of a medium square sticky (the size stickies always had). */
 export const STICKY_SIZE = 200;
 
-/**
- * Shapes and sizes: stored as nothing but `w` / `h`, so every client (and every old board) draws
- * them. A rectangle is half again as wide as it is tall; S / M / L scale the side.
- */
-export type StickyShape = 'square' | 'rect';
-export type StickySize = 's' | 'm' | 'l';
-export const STICKY_SIDES: Record<StickySize, number> = { s: 140, m: STICKY_SIZE, l: 280 };
-export const STICKY_SHAPES: StickyShape[] = ['square', 'rect'];
-export const STICKY_SIZE_ORDER: StickySize[] = ['s', 'm', 'l'];
-const RECT_RATIO = 1.5;
-
-/** Width and height of a sticky of `shape` and `size`. */
-export function stickyDims(shape: StickyShape, size: StickySize): { w: number; h: number } {
-  const side = STICKY_SIDES[size];
-  return { w: shape === 'rect' ? Math.round(side * RECT_RATIO) : side, h: side };
-}
+// Shapes and sizes: @freero/shared (the API and MCP make the same ones).
+export { STICKY_SIDES, stickyDims, type StickyShape, type StickySize };
+const STICKY_SIZE_ORDER = STICKY_SIZES;
 
 /** The preset a sticky's box is (null `size` when it was resized freely). */
 export function stickyPreset(box: { w: number; h: number }): { shape: StickyShape; size: StickySize | null } {

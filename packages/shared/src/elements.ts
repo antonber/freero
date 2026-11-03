@@ -175,6 +175,22 @@ export const STICKY_COLORS = {
 // (dark) text colour, so an old tab still shows a readable note.
 export type StickyColor = keyof typeof STICKY_COLORS;
 
+/**
+ * Sticky shapes and sizes: stored as nothing but `w` / `h`, so every client draws them. A rectangle
+ * is half again as wide as it is tall; S / M / L scale the side (M is the classic 200).
+ */
+export type StickyShape = 'square' | 'rect';
+export type StickySize = 's' | 'm' | 'l';
+export const STICKY_SHAPES: readonly StickyShape[] = ['square', 'rect'];
+export const STICKY_SIZES: readonly StickySize[] = ['s', 'm', 'l'];
+export const STICKY_SIDES: Record<StickySize, number> = { s: 140, m: 200, l: 280 };
+
+/** Width and height of a sticky of `shape` and `size` (default: a medium square). */
+export function stickyDims(shape: StickyShape = 'square', size: StickySize = 'm'): { w: number; h: number } {
+  const side = STICKY_SIDES[size] ?? STICKY_SIDES.m;
+  return { w: shape === 'rect' ? Math.round(side * 1.5) : side, h: side };
+}
+
 /** The ink sticky text is drawn in on light papers (`StickyElement.textColor` as stored). */
 export const STICKY_INK = '#17162B';
 /** The ink on dark papers. */

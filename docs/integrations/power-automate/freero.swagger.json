@@ -4744,7 +4744,16 @@
         },
         "shape": {
           "type": "string",
-          "description": "rect, roundRect, ellipse, triangle, diamond, parallelogram, trapezoid, pentagon, hexagon, octagon, star, cross, arrowRight, arrowLeft, chevron, speech, cloud, cylinder, document, terminator, predefinedProcess"
+          "description": "shape: rect, roundRect, ellipse, triangle, diamond, parallelogram, trapezoid, pentagon, hexagon, octagon, star, cross, arrowRight, arrowLeft, chevron, speech, cloud, cylinder, document, terminator, predefinedProcess; sticky: square or rect (a rectangle half again as wide as it is tall; w and h are then ignored)"
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l"
+          ],
+          "description": "sticky: small, medium (default) or large (140, 200 or 280 tall); w and h are then ignored"
         },
         "fill": {
           "type": "string"
@@ -4845,7 +4854,17 @@
           "type": "string"
         },
         "shape": {
-          "type": "string"
+          "type": "string",
+          "description": "shape: its kind; sticky: square or rect (keeps its center)"
+        },
+        "size": {
+          "type": "string",
+          "enum": [
+            "s",
+            "m",
+            "l"
+          ],
+          "description": "sticky: small, medium or large (keeps its center)"
         },
         "status": {
           "type": "string",

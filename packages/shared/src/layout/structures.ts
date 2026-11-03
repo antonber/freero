@@ -1,5 +1,5 @@
 // One layout per kind of structure. Each returns elements relative to its own top-left (0, 0).
-import type { Anchor, CardStatus, ShapeKind, StickyColor, TableCopyContent } from '../elements';
+import { STICKY_SHAPES, STICKY_SIZES, stickyDims, type Anchor, type CardStatus, type ShapeKind, type StickyColor, type StickyShape, type StickySize, type TableCopyContent } from '../elements';
 import { unionRects, type Rect } from '../geometry';
 import { plainToRichText } from '../text';
 import {
@@ -204,9 +204,23 @@ function grid(count: number, cell: { w: number; h: number }, cols = Math.max(1, 
   };
 }
 
-export function layoutStickies(items: Array<string | StickyInput>, title: string | undefined, color: StickyColor, ctx: LayoutContext): LaidOut {
+export function layoutStickies(
+  items: Array<string | StickyInput>,
+  title: string | undefined,
+  color: StickyColor,
+  ctx: LayoutContext,
+  box: { shape?: StickyShape; size?: StickySize } = {},
+): LaidOut {
   if (items.length > LAYOUT_LIMITS.elements) throw new LayoutError(`At most ${LAYOUT_LIMITS.elements} items per structure`);
-  return layoutClusters([{ title, color, items }], ctx);
+  // The structure's shape and size are every sticky's unless one says otherwise.
+  const all = box.shape || box.size ? items.map((it) => ({ ...box, ...(typeof it === 'string' ? { text: it } : it) })) : items;
+  return layoutClusters([{ title, color, items: all }], ctx);
+}
+
+function checkBox(o: { shape?: unknown; size?: unknown }): { w: number; h: number } {
+  if (o.shape !== undefined && !STICKY_SHAPES.includes(o.shape as StickyShape)) throw new LayoutError(`A sticky's shape is square or rect, not ${String(o.shape)}`);
+  if (o.size !== undefined && !STICKY_SIZES.includes(o.size as StickySize)) throw new LayoutError(`A sticky's size is s, m or l, not ${String(o.size)}`);
+  return stickyDims(o.shape as StickyShape | undefined, o.size as StickySize | undefined);
 }
 
 type ClusterItem = string | StickyInput | { id: string };
@@ -218,7 +232,7 @@ function newSticky(it: string | StickyInput, at: { x: number; y: number }, color
   if (!o || typeof o.text !== 'string') throw new LayoutError('A sticky is its text or { text, link?, color? }');
   if (o.color !== undefined && !(o.color in STICKY_COLORS)) throw new LayoutError(`Unknown sticky color ${String(o.color)}`);
   const link = checkLink(o.link);
-  const el = sticky(ctx.newId(), at.x, at.y, clip(o.text), o.color ?? color);
+  const el = sticky(ctx.newId(), at.x, at.y, clip(o.text), o.color ?? color, checkBox(o));
   return link ? ({ ...el, link } as ElementDraft) : el;
 }
 
@@ -233,7 +247,7 @@ export function layoutClusters(clusters: Array<{ title?: string; color?: StickyC
   const blocks = clusters.map((c, ci) => {
     const color = c.color ?? CLUSTER_COLORS[ci % CLUSTER_COLORS.length];
     const sizes = c.items.map((it) => {
-      if (!isExisting(it)) return { w: STICKY_SIZE, h: STICKY_SIZE };
+      if (!isExisting(it)) return typeof it === 'string' ? { w: STICKY_SIZE, h: STICKY_SIZE } : checkBox(it);
       const ex = ctx.existing?.(it.id);
       if (!ex) throw new LayoutError(`No item ${it.id} on this board`);
       if (seen.has(it.id)) throw new LayoutError(`Item ${it.id} is in two clusters`);
