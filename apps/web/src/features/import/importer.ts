@@ -28,18 +28,19 @@ export default [
     },
   }),
   defineImporter({
-    // PlantUML source files: laid out by from-text, which keeps the source for later edits.
-    id: 'plantuml',
+    // Diagram-as-code files (PlantUML, Mermaid): laid out by from-text, which keeps the source for later edits.
+    id: 'diagram-source',
     importPriority: 60,
     async importData(editor, data, at) {
-      const files = data.files.filter((f) => /\.(puml|plantuml|pu|iuml|wsd)$/i.test(f.name));
+      const kindOf = (name: string) => (/\.(puml|plantuml|pu|iuml|wsd)$/i.test(name) ? 'plantuml' : /\.(mmd|mermaid)$/i.test(name) ? 'mermaid' : null);
+      const files = data.files.filter((f) => kindOf(f.name));
       if (!files.length || !editor.can('editor')) return false;
       for (const f of files) {
         if (f.size > 1024 * 1024) {
           editor.host.notify(`${f.name} is larger than Freero reads as a diagram.`, 'error');
           continue;
         }
-        editor.runCommand('from-text.insert', { kind: 'plantuml', text: await f.text(), ...(data.alongside ? {} : { at }) });
+        editor.runCommand('from-text.insert', { kind: kindOf(f.name), text: await f.text(), ...(data.alongside ? {} : { at }) });
       }
       return files;
     },
