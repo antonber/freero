@@ -8,6 +8,7 @@ import { api, ApiError, type AuditQuery } from '../../api/client';
 
 const CATEGORIES: SelectOption<string>[] = [
   { value: '', label: 'All events' },
+  { value: 'organisation.', label: 'Organisation' },
   { value: 'auth.,account.', label: 'Sign-ins and accounts' },
   { value: 'member.,workspace.transferred,workspace.owner_inherited', label: 'Members and roles' },
   { value: 'workspace.policies_changed,workspace.settings_changed,board.link_sharing_changed,board.embedding_changed', label: 'Policies and sharing' },
@@ -48,7 +49,11 @@ function detailText(e: AuditEvent): string {
   return [...moves, ...parts].join(' · ');
 }
 
-export function AdminAudit({ workspace }: { workspace: WorkspaceSummary }) {
+/**
+ * `workspaceNames` (an organisation's merged log, #108): each event says which of its workspaces it
+ * happened in.
+ */
+export function AdminAudit({ workspace, workspaceNames }: { workspace: WorkspaceSummary; workspaceNames?: Map<string, string> }) {
   const notify = useToast();
   const [category, setCategory] = useState('');
   const [actor, setActor] = useState('');
@@ -121,8 +126,9 @@ export function AdminAudit({ workspace }: { workspace: WorkspaceSummary }) {
         </div>
       </div>
       <p className="fr-admin__muted fr-admin__intro">
-        Sign-ins, member and role changes, sharing and policy changes, exports, deletions and restores in {workspace.name}, kept for the
-        retention you set. Events can’t be edited or removed; each is linked to the one before it, so tampering shows when you check.
+        Sign-ins, member and role changes, sharing and policy changes, exports, deletions and restores in {workspace.name}
+        {workspaceNames ? ' and every one of its workspaces (each also keeps its own log)' : ''}, kept for the retention you set. Events can’t be edited or
+        removed; each is linked to the one before it, so tampering shows when you check.
       </p>
 
       <div className="fr-admin-filters">
@@ -148,6 +154,7 @@ export function AdminAudit({ workspace }: { workspace: WorkspaceSummary }) {
             <thead>
               <tr>
                 <th scope="col">When</th>
+                {workspaceNames ? <th scope="col">Where</th> : null}
                 <th scope="col">Who</th>
                 <th scope="col">What</th>
                 <th scope="col">Details</th>
@@ -160,6 +167,11 @@ export function AdminAudit({ workspace }: { workspace: WorkspaceSummary }) {
                   <td className="fr-admin__nowrap" title={new Date(e.at).toISOString()}>
                     {new Date(e.at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
                   </td>
+                  {workspaceNames ? (
+                    <td className="fr-admin__muted">
+                      {!e.workspaceId ? 'Account' : e.workspaceId === workspace.id ? 'Organisation' : (workspaceNames.get(e.workspaceId) ?? 'A former workspace')}
+                    </td>
+                  ) : null}
                   <td>
                     <div className="fr-admin-person__name">{actorText(e)}</div>
                     {e.actor?.email ? <div className="fr-admin__muted">{e.actor.email}</div> : null}

@@ -1,5 +1,17 @@
 // Pure workspace rules: roles, what a workspace grants on its boards, and the sharing policies.
-import type { LinkAccess, ProjectAccess, Role, TeamAccess, WorkspacePolicies, WorkspaceRole } from '@freero/shared';
+import { looserPolicy, POLICY_STRICTNESS } from '@freero/shared';
+import type {
+  LinkAccess,
+  OrderedPolicyKey,
+  OrganisationPolicyKey,
+  OrganisationSecurityKey,
+  ProjectAccess,
+  Role,
+  TeamAccess,
+  WorkspacePolicies,
+  WorkspaceRole,
+  WorkspaceSettings,
+} from '@freero/shared';
 
 export const WORKSPACE_ROLES: WorkspaceRole[] = ['owner', 'admin', 'member', 'guest'];
 export const INVITABLE_WORKSPACE_ROLES = ['admin', 'member', 'guest'] as const;
@@ -104,4 +116,46 @@ export function mayChangeRole(actor: WorkspaceRole | null, from: WorkspaceRole, 
 export function mayRemove(actor: WorkspaceRole | null, target: WorkspaceRole): boolean {
   if (actor === 'owner') return true;
   return actor === 'admin' && (target === 'member' || target === 'guest');
+}
+
+// ---- organisation floors (#108) ----
+
+// The order of every floored policy, loosest to strictest, is POLICY_STRICTNESS in @freero/shared.
+export { looserPolicy };
+// Plus the numeric link lifetime limit (the shorter wins; null: no limit).
+const ORDERED_KEYS = Object.keys(POLICY_STRICTNESS) as OrderedPolicyKey[];
+export const FLOOR_POLICY_KEYS: OrganisationPolicyKey[] = [...ORDERED_KEYS, 'linkMaxDays'];
+export const FLOOR_SETTING_KEYS: OrganisationSecurityKey[] = ['requireTwoFactor', 'sessionMaxHours', 'sessionIdleMinutes'];
+export type PolicyFloor = Pick<WorkspacePolicies, OrganisationPolicyKey>;
+export type SettingsFloor = Pick<WorkspaceSettings, OrganisationSecurityKey>;
+
+/** What a new organisation starts with: the loosest value of every key, i.e. no floor at all. */
+export const NO_FLOOR_POLICIES = { ...Object.fromEntries(ORDERED_KEYS.map((k) => [k, POLICY_STRICTNESS[k][0]])), linkMaxDays: null } as PolicyFloor;
+
+/** A workspace's own policies raised to its organisation's floors, key by key (the effective policies). */
+export function strictestPolicies(own: WorkspacePolicies, floor: PolicyFloor | null): WorkspacePolicies {
+  if (!floor) return own;
+  const out: Record<string, unknown> = { ...own };
+  for (const k of FLOOR_POLICY_KEYS) if (looserPolicy(k, own[k], floor[k])) out[k] = floor[k];
+  return out as unknown as WorkspacePolicies;
+}
+
+/** The shorter of two optional limits (null: no limit). */
+const shorter = (a: number | null, b: number | null): number | null => (a === null ? b : b === null ? a : Math.min(a, b));
+
+/** A workspace's own security settings raised to its organisation's floors (retention stays the workspace's own). */
+export function strictestSettings(own: WorkspaceSettings, floor: SettingsFloor | null): WorkspaceSettings {
+  if (!floor) return own;
+  return {
+    ...own,
+    requireTwoFactor: own.requireTwoFactor || floor.requireTwoFactor,
+    sessionMaxHours: shorter(own.sessionMaxHours, floor.sessionMaxHours),
+    sessionIdleMinutes: shorter(own.sessionIdleMinutes, floor.sessionIdleMinutes),
+  };
+}
+
+/** Is a requested security setting looser than the organisation's floor? */
+export function looserSetting<K extends OrganisationSecurityKey>(k: K, value: WorkspaceSettings[K], floor: WorkspaceSettings[K]): boolean {
+  if (k === 'requireTwoFactor') return floor === true && value !== true;
+  return floor !== null && (value === null || (value as number) > (floor as number));
 }

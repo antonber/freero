@@ -1,6 +1,6 @@
 // What modules/workspaces holds, for data exports (modules/privacy): a person's memberships, and a
 // whole team workspace's directory (members, invitations, projects) for its admins.
-import type { WorkspacePolicies, WorkspaceRole } from '@freero/shared';
+import type { WorkspaceKind, WorkspacePolicies, WorkspaceRole } from '@freero/shared';
 import { getUsers } from '../auth/index';
 import * as repo from './repo';
 
@@ -9,14 +9,14 @@ const iso = (ms: number) => new Date(ms).toISOString();
 export interface MembershipExport {
   workspaceId: string;
   workspace: string;
-  kind: 'personal' | 'team';
+  kind: WorkspaceKind;
   role: WorkspaceRole;
   projects: Array<{ id: string; name: string }>;
 }
 
-/** Every workspace the person is in, their role and the projects they were added to. */
+/** Every workspace (and organisation directory, #108) the person is in, their role and the projects they were added to. */
 export async function exportMembershipsOf(userId: string): Promise<MembershipExport[]> {
-  const rows = await repo.workspacesOf(userId);
+  const rows = [...(await repo.workspacesOf(userId)), ...(await repo.organisationsOf(userId))];
   const ids = rows.map((r) => r.workspace.id);
   const [projects, mine] = await Promise.all([repo.projectsIn(ids), repo.projectIdsOf(userId, ids)]);
   return rows.map((r) => ({
@@ -29,7 +29,7 @@ export async function exportMembershipsOf(userId: string): Promise<MembershipExp
 }
 
 export interface WorkspaceDirectoryExport {
-  workspace: { id: string; name: string; kind: 'personal' | 'team'; policies: WorkspacePolicies; createdAt: string };
+  workspace: { id: string; name: string; kind: WorkspaceKind; policies: WorkspacePolicies; createdAt: string };
   members: Array<{ userId: string; name: string; email: string; role: WorkspaceRole; joinedAt: string }>;
   invitations: Array<{ email: string; role: string; invitedBy: string; createdAt: string; expiresAt: string }>;
   projects: Array<{ id: string; name: string; access: string; createdAt: string; memberIds: string[] }>;

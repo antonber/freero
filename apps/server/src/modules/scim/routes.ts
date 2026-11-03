@@ -10,9 +10,10 @@ import { scimRouter } from './protocol';
 // Mounted at the root: the admin API lives under /api, the SCIM service under /scim/v2.
 export const mountPath = '/';
 
+/** Owners/admins of a team workspace, or of an organisation (#108: for all its workspaces). */
 async function manager(req: Request) {
-  const ws = await requireWorkspaceRole(req.params.id, currentUser(req).id, 'admin');
-  if (ws.kind !== 'team') throw badRequest('Provisioning is set up for a team workspace');
+  const ws = await requireWorkspaceRole(req.params.id, currentUser(req).id, 'admin', { organisation: true });
+  if (ws.kind === 'personal') throw badRequest('Provisioning is set up for a team workspace');
   return ws;
 }
 

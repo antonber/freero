@@ -7,6 +7,9 @@
 // `webhook(url, secret, key, { age })` posts a delivery signed with Linear-Signature (an `age`
 // makes it look old: a replay).
 //
+// Cycles (#119): team ENG has cycle 1 (completed), 2 (current) and 3 (upcoming);
+// `edit(key, { cycle: number | null })` moves an issue between them.
+//
 //   node scripts/lib/mock-linear.mjs --port 4483
 
 import { createHmac, randomUUID } from 'node:crypto';
@@ -26,6 +29,13 @@ export async function startMockLinear({ port = 0, host = '127.0.0.1', apiKey = '
     ])
       states.push({ id: randomUUID(), teamId: t.id, name, type, position });
   const labels = [];
+  const day = (offset) => new Date(Date.now() + offset * 86_400_000).toISOString();
+  const cycles = teams.flatMap((t) => [
+    { id: randomUUID(), teamId: t.id, number: 1, name: null, startsAt: day(-28), endsAt: day(-14), completedAt: day(-14) },
+    { id: randomUUID(), teamId: t.id, number: 2, name: null, startsAt: day(-7), endsAt: day(7), completedAt: null },
+    { id: randomUUID(), teamId: t.id, number: 3, name: 'Polish', startsAt: day(7), endsAt: day(21), completedAt: null },
+  ]);
+  const cycleView = (c) => (c ? { id: c.id, number: c.number, name: c.name, startsAt: c.startsAt, endsAt: c.endsAt, completedAt: c.completedAt } : null);
   const users = [];
   const issues = [];
   const counters = new Map();
@@ -46,7 +56,8 @@ export async function startMockLinear({ port = 0, host = '127.0.0.1', apiKey = '
     labels: { nodes: i.labelIds.map((id) => ({ name: labels.find((l) => l.id === id).name })) },
     team: { id: i.teamId, key: teams.find((t) => t.id === i.teamId).key, name: teams.find((t) => t.id === i.teamId).name },
     project: i.projectName ? { name: i.projectName } : null,
-    parent: null,
+    parent: i.parentId ? { title: issues.find((p) => p.id === i.parentId)?.title ?? '' } : null,
+    cycle: cycleView(cycles.find((c) => c.id === i.cycleId)),
     attachments: { nodes: i.attachments },
   });
   const touch = (i) => (i.updatedAt = new Date().toISOString());
@@ -61,6 +72,8 @@ export async function startMockLinear({ port = 0, host = '127.0.0.1', apiKey = '
     if (input.stateId !== undefined) i.stateId = input.stateId;
     if (input.assigneeId !== undefined) i.assigneeId = input.assigneeId;
     if (input.projectName !== undefined) i.projectName = input.projectName;
+    if (input.cycleId !== undefined) i.cycleId = input.cycleId;
+    if (input.parentId !== undefined) i.parentId = input.parentId;
     touch(i);
   }
 
@@ -105,6 +118,15 @@ export async function startMockLinear({ port = 0, host = '127.0.0.1', apiKey = '
     if (/workflowStates\(/.test(query)) return { data: { workflowStates: { nodes: states.filter((s) => s.teamId === v.team && (v.types ?? []).includes(s.type)) } } };
     if (/users\(filter/.test(query)) return { data: { users: { nodes: users.filter((u) => u.email === v.email) } } };
     if (/searchIssues\(/.test(query)) return { data: { searchIssues: { nodes: issues.filter((i) => i.title.toLowerCase().includes(String(v.term).toLowerCase())).slice(0, v.first ?? 50).map(view) } } };
+    if (/team\(id/.test(query)) {
+      const t = teams.find((x) => x.id === v.id);
+      return t ? { data: { team: { cycles: { nodes: cycles.filter((c) => c.teamId === t.id).map(cycleView) } } } } : { errors: [{ message: 'Entity not found: Team' }] };
+    }
+    if (/issues\(filter: \$filter/.test(query)) {
+      const f = v.filter ?? {};
+      const hit = issues.filter((i) => (!f.team || i.teamId === f.team.id.eq) && (!f.cycle || i.cycleId === f.cycle.id.eq) && (!f.parent || i.parentId === f.parent.id.eq));
+      return { data: { issues: { nodes: hit.slice(0, v.first ?? 50).map(view) } } };
+    }
     if (/issues\(filter/.test(query))
       return { data: { issues: { nodes: issues.filter((i) => (v.ids ?? []).includes(i.id) && Date.parse(i.updatedAt) >= Date.parse(v.since)).map((i) => ({ id: i.id })) } } };
     if (/issue\(id/.test(query)) {
@@ -145,6 +167,16 @@ export async function startMockLinear({ port = 0, host = '127.0.0.1', apiKey = '
     apiKey,
     requests,
     addUser: (email, name) => users.push({ id: randomUUID(), email, name }),
+    /** An issue made in Linear (not through Freero). */
+    create(teamKey, input = {}) {
+      const team = teams.find((t) => t.key === teamKey);
+      const n = (counters.get(team.key) ?? 0) + 1;
+      counters.set(team.key, n);
+      const i = { id: randomUUID(), identifier: `${team.key}-${n}`, title: '', description: '', labelIds: [], dueDate: null, estimate: null, assigneeId: null, teamId: team.id, stateId: states.find((s) => s.teamId === team.id && s.type === 'unstarted').id, attachments: [] };
+      apply(i, input);
+      issues.push(i);
+      return view(i);
+    },
     issueByKey: (key) => {
       const i = find(key);
       return i ? { ...view(i), labels: i.labelIds.map((id) => labels.find((l) => l.id === id).name), attachments: i.attachments } : null;
@@ -153,6 +185,8 @@ export async function startMockLinear({ port = 0, host = '127.0.0.1', apiKey = '
       const i = find(key);
       if (changes.title !== undefined) i.title = changes.title;
       if (changes.stateType !== undefined) i.stateId = states.find((s) => s.teamId === i.teamId && s.type === changes.stateType).id;
+      if (changes.cycle !== undefined) i.cycleId = changes.cycle === null ? null : cycles.find((c) => c.teamId === i.teamId && c.number === changes.cycle).id;
+
       touch(i);
     },
     /** A delivery about `key`, signed like Linear signs them; `age` back-dates its timestamp. */

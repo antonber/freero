@@ -201,6 +201,9 @@ Issue trackers) or by a person for themselves (Settings). How it works and what 
 | `TRACKER_FALLBACK_POLL_SECONDS` | `900` | How often connections with webhooks poll anyway, to catch a delivery that never arrived. |
 | `TRACKER_JIRA_CLIENT_ID` / `TRACKER_JIRA_CLIENT_SECRET` | — | An OAuth 2.0 (3LO) app you registered at developer.atlassian.com (callback `<PUBLIC_URL>/api/trackers/oauth/jira/callback`; scopes `read:jira-work write:jira-work read:jira-user offline_access`). Set: "Connect with Atlassian" is offered next to API tokens. Both or neither. |
 | `TRACKER_JIRA_AUTH_URL` / `TRACKER_JIRA_API_URL` | `https://auth.atlassian.com` / `https://api.atlassian.com` | Atlassian's authorization server and API gateway. Only changed to test against a mock. |
+| `TRACKER_ASANA_CLIENT_ID` / `TRACKER_ASANA_CLIENT_SECRET` | — | An Asana OAuth app you registered in the Asana developer console (redirect URL `<PUBLIC_URL>/api/trackers/oauth/asana/callback`; full permissions, or the `default` scope). Set: "Connect with Asana" is offered next to personal access tokens. Both or neither. |
+| `TRACKER_MONDAY_CLIENT_ID` / `TRACKER_MONDAY_CLIENT_SECRET` | — | A monday.com app with OAuth you registered in the monday.com Developer Center (redirect URL `<PUBLIC_URL>/api/trackers/oauth/monday/callback`; scopes `boards:read boards:write users:read updates:read updates:write webhooks:write me:read`). Set: "Connect with monday.com" is offered next to API tokens. Both or neither. |
+| `TRACKER_ASANA_URL` / `TRACKER_MONDAY_AUTH_URL` / `TRACKER_MONDAY_API_URL` | `https://app.asana.com` / `https://auth.monday.com` / `https://api.monday.com` | Asana's app (its OAuth endpoints and `/api/1.0`), monday.com's authorization server and API. Only changed to test against a mock. |
 
 ## Public API and OAuth apps
 
@@ -247,6 +250,20 @@ Previews of Freero board links in Slack, through a Slack app you create: [integr
 | `SLACK_BOT_TOKEN` | — | Your Slack app's bot token (`xoxb-…`, OAuth & Permissions), used for `chat.unfurl`. One without the other refuses to start. |
 | `SLACK_API_URL` | `https://slack.com/api` | Slack's Web API (tests point it at a stand-in). |
 
+## Microsoft Teams and Microsoft 365 Copilot
+
+A Teams app (a board as a tab and in meetings, link previews with a bot) and a Copilot agent, packaged
+for your instance: [integrations/teams.md](integrations/teams.md). Each is off unless its ids are set;
+`PUBLIC_URL` must be https.
+
+| Variable | Default | Description |
+|---|---|---|
+| `TEAMS_APP_ID` | — | The GUID of your Teams app. Turns on the app package (`/api/integrations/teams/app-package`, `npm run admin -- teams:package`) and lets Teams — only Teams — frame `/teams/config` and `/teams/b/<board>` (the latter while the board allows embedding). |
+| `TEAMS_BOT_ID` | — | Your Azure Bot's Microsoft App ID (needs `TEAMS_APP_ID`): link previews at `/api/integrations/teams/messages`, every request checked against the Bot Connector's signed JWT. No secret is needed. |
+| `TEAMS_BOT_OPENID_METADATA_URL` | `https://login.botframework.com/v1/.well-known/openidconfiguration` | The Bot Connector's OpenID metadata (tests point it at a stand-in). |
+| `COPILOT_APP_ID` | — | The GUID of your Copilot agent app. With the next one, turns on the agent package (`/api/integrations/copilot/agent-package`, `npm run admin -- copilot:package`). |
+| `COPILOT_OAUTH_REFERENCE_ID` | — | The OAuth client registration ID from the Teams Developer Portal, for Freero's OAuth app registered for Copilot. One without the other refuses to start. |
+
 ## Board calls
 
 | Variable | Default | Description |
@@ -270,7 +287,7 @@ They are static HTML: canonical links, Open Graph tags, structured data and the 
 | `GA_MEASUREMENT_ID` | — | Google Analytics 4 for the marketing pages and the app: a GA4 web stream's measurement id (`G-…`; a `UA-…` id is refused at startup). Visitors get a consent banner (Accept and Decline side by side; Global Privacy Control or Do Not Track count as Decline) and Google's script loads only after Accept, with Consent Mode v2 (ad storage, ad user data and ad personalisation always denied, Google signals off, cookies at most 13 months). The app reports pages by route with ids removed (`/board/<id>` → `/board`) and generic titles, from a hidden same-origin frame (`/analytics-frame`), never from the page that shows boards; it never runs in the live board view for assistants (`/embed/*`), the operators' console or the OAuth consent screen. Events: `sign_up` and `login` (method only), `board_created`, `template_used` (the public template id). "Cookie settings" in the site's footer and the app's Help menu change the choice. The pages' CSP adds `https://www.googletagmanager.com` to `script-src`, Google's collection hosts to `connect-src` and `'self'` to `frame-src`. The privacy policy describes it (and the cookies) when it is set. Unset: no Google script, banner, frame or CSP change anywhere. In GA's stream settings you may leave enhanced measurement on: in the app it only sees the empty analytics frame. |
 | `SITE_INDEXNOW_KEY` | — | An [IndexNow](https://www.indexnow.org/) key (8–128 letters, digits or dashes; generate one with `openssl rand -hex 16`). The server answers `/<key>.txt` with it, which proves to Bing, Yandex, Seznam, Naver and the other IndexNow engines that you control this host; then `node scripts/indexnow.mjs --site <PUBLIC_URL> [--since YYYY-MM-DD]` after a deploy submits the sitemap's pages (or only those changed since a day). Unset: nothing is served. Google doesn't use IndexNow: submit the sitemap in Search Console. |
 
-### Legal pages and support (`/privacy`, `/terms`, `/acceptable-use`, `/support`)
+### Legal pages and support (`/privacy`, `/terms`, `/acceptable-use`, `/support`, `/security`, `/subprocessors`, `/dpa`)
 
 The privacy policy, terms of service and acceptable use policy are **drafts for legal review**,
 written from what the code does; they describe the hosted service. They are built with tokens for
@@ -288,6 +305,13 @@ agree to anything (`GET /api/site/legal` answers `{ "legal": null }`). Set it on
 been reviewed and adapted by a lawyer. If you run your own Freero with the marketing site on, these
 pages describe the hosted service, not yours: write your own, or leave the operator unset.
 
+The subprocessor list and the data processing addendum (`/subprocessors`, `/dpa`) are legal pages
+under the same guard. A page marked `underReview: true` (`apps/site/src/lib/define.ts`) also
+carries a "Draft — under review" line and stays `noindex` and out of the sitemap, which no setting
+changes: that ends, with every "to confirm by the operator" mark, when the operator has approved
+the text and removes the flag and its `<ToConfirm />` marks (`apps/site/src/lib/legal.tsx`). The
+hosted service's `/security`, `/subprocessors` and `/dpa` were approved on 2026-11-03.
+
 | Variable | Default | Description |
 |---|---|---|
 | `SITE_LEGAL_OPERATOR` | — | The legal name of whoever operates the service, e.g. `Kaiten Gaming LLC`. Setting it puts the legal pages in effect (no draft banner, indexable) and adds "By signing up you agree to…" to sign-up. |
@@ -295,6 +319,8 @@ pages describe the hosted service, not yours: write your own, or leave the opera
 | `SITE_LEGAL_ADDRESS` | — | The operator's postal address, one line. |
 | `SITE_LEGAL_JURISDICTION` | — | The law that governs the terms, as it reads in "governed by the laws of …", e.g. `the State of Delaware, USA`. |
 | `SITE_LEGAL_HOSTING` | — | Who hosts the servers and where, as the privacy policy names it, e.g. `Railway Corporation (United States, US West region)`. |
+| `SITE_LEGAL_STORAGE` | — | Who stores uploaded files and where, as the privacy policy and `/subprocessors` name it, e.g. `Example Storage Inc. (United States)` (the hosted service: `Railway Corporation (Railway Storage Buckets, run on Tigris Data's servers; United States, US West, California)`). Shown before the bucket's host, which the server always adds itself (`S3_ENDPOINT`). Unset: only the host. |
+| `SITE_LEGAL_MAIL` | — | Who delivers email and where, e.g. `Example Mail Inc. (United States)`. Shown before the SMTP server's host (`SMTP_URL`). Unset: only the host. |
 | `SITE_LEGAL_BACKUP_DAYS` | — | The longest a database backup is kept, in days, as the privacy policy states it. Freero doesn't take these backups, your hosting does: set the real number (on Railway, the longest-kept backup schedule, including point-in-time recovery). |
 | `SITE_LEGAL_LOG_DAYS` | — | The longest the hosting keeps request logs, in days, as the privacy policy states it. |
 | `SITE_STATUS_URL` | — | An `https` status page, linked from `/support` ("Service status"). Unset: `/support` says to write to the contact address. |
@@ -381,6 +407,7 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `RATE_LIMIT_BACKUP` | `30/1h` | Per user: board backups (`.freero`) downloaded or restored — each reads or writes a whole board and its files (KAI-137). |
 | `RATE_LIMIT_WALKTHROUGH_COMMENT` | `120/10m` | Per person: comments on walkthroughs (each may notify the people it mentions and the walkthrough's author). |
 | `RATE_LIMIT_SLACK_UNFURL` | `50/1m` | Per Slack workspace: link previews Freero posts with `chat.unfurl` (Slack's own limit for it is about 50 a minute); past it, links stay without a preview. |
+| `RATE_LIMIT_TEAMS_UNFURL` | `120/1m` | Per Microsoft 365 tenant: link previews Freero answers in Teams (each reads a board; Teams caches one for 30 minutes); past it, links get no card. |
 
 Rule format: `<count>/<window>` with the window in `s`, `m`, `h` or `d` and an optional multiplier
 (`10/5m` = 10 per 5 minutes), or `off`. Windows are fixed (they reset `window` after the first hit).
@@ -390,8 +417,8 @@ get an HTTP 429 the client retries with backoff.
 
 ## Security behaviour (not configurable)
 
-- **Headers** on every response: a Content-Security-Policy (scripts only from the app's origin; styles
-  and fonts from Google Fonts; images from the app, `data:`, `blob:` and `https:` for linked images;
+- **Headers** on every response: a Content-Security-Policy (scripts only from the app's origin, plus
+  Google's tag script where `GA_MEASUREMENT_ID` is set; styles and fonts only from the app; images from the app, `data:`, `blob:` and `https:` for linked images;
   connections to the app, its WebSocket origin and `https:` for "paste an image URL";
   `frame-ancestors 'none'`), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
   `Referrer-Policy: strict-origin-when-cross-origin`, `Cross-Origin-Opener-Policy`,

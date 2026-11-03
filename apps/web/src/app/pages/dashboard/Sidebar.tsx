@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
+  Building2,
   ChevronsUpDown,
   Clock,
   Ellipsis,
@@ -234,6 +235,14 @@ export function Sidebar(props: SidebarProps) {
               <Link to={`/admin/${encodeURIComponent(current!.id)}`} className="fr-nav">
                 <ShieldCheck size={18} aria-hidden />
                 <span className="fr-nav__label">Admin console</span>
+              </Link>
+            </Tooltip>
+          ) : null}
+          {current?.organisation && (current.organisation.yourRole === 'owner' || current.organisation.yourRole === 'admin') ? (
+            <Tooltip content={current.organisation.name} side="right" disabled={!compact}>
+              <Link to={`/org/${encodeURIComponent(current.organisation.id)}`} className="fr-nav">
+                <Building2 size={18} aria-hidden />
+                <span className="fr-nav__label">Organisation</span>
               </Link>
             </Tooltip>
           ) : null}

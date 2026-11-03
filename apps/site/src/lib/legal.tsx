@@ -12,6 +12,7 @@ import { Container } from '../components/ui';
 export type LegalKey =
   | 'operator'
   | 'atAddress'
+  | 'postalAddress'
   | 'jurisdiction'
   | 'contact'
   | 'abuseContact'
@@ -80,4 +81,22 @@ export function DraftBanner() {
       the service.
     </aside>
   );
+}
+
+/**
+ * Shown on a page with `underReview: true` (lib/define.ts) until the operator approves it. Unlike the
+ * banner above, the server never removes it, whatever SITE_LEGAL_OPERATOR says.
+ */
+export function UnderReview() {
+  return (
+    <p className="legal-review" role="note">
+      <strong>Draft — under review.</strong> This page is a draft pending legal review and the operator’s approval. It may change, and statements marked{' '}
+      <ToConfirm /> have not been confirmed yet.
+    </p>
+  );
+}
+
+/** A statement the operator has yet to confirm (removed, with the statement fixed if need be, on approval). */
+export function ToConfirm() {
+  return <mark className="legal-confirm">to confirm by the operator</mark>;
 }

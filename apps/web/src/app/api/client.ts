@@ -1,5 +1,8 @@
 import type {
   Account,
+  OrganisationSummary,
+  OrganisationWorkspace,
+  OrganisationWorkspaceMember,
   CreateProblemRequest,
   OwnProblemReport,
   ProblemListResponse,
@@ -23,6 +26,8 @@ import type {
   TrackerProject,
   TrackerSendRequest,
   TrackerSendResponse,
+  TrackerSprint,
+  TrackerFieldInfo,
   ActivityAnswer,
   ActivityState,
   BoardCallResponse,
@@ -63,6 +68,7 @@ import type {
   BoardOutlineResponse,
   PublicEmbedInfo,
   PublicEmbedMember,
+  MicrosoftIntegrationsInfo,
   PublicEmbedToken,
   GuestJoinResponse,
   AccessRequestState,
@@ -380,6 +386,8 @@ export const api = {
   publicEmbed: (id: string) => request<PublicEmbedInfo>('GET', `/api/embed/b/${encodeURIComponent(id)}`),
   publicEmbedToken: (id: string, readonly: boolean) => request<PublicEmbedToken>('POST', `/api/embed/b/${encodeURIComponent(id)}/token`, { readonly }),
   publicEmbedMember: (id: string, token: string) => request<PublicEmbedMember>('POST', `/api/embed/b/${encodeURIComponent(id)}/me`, { token }),
+  /** The Microsoft Teams app and Copilot agent this instance offers (#112, #114). */
+  microsoftIntegrations: () => request<MicrosoftIntegrationsInfo>('GET', '/api/integrations/microsoft'),
 
   // activity
   boardActivity: (id: string, before?: number) =>
@@ -441,6 +449,20 @@ export const api = {
     request<{ invite: WorkspaceInvite }>('POST', `/api/workspaces/${encodeURIComponent(id)}/invites/${encodeURIComponent(inviteId)}/resend`),
   revokeWorkspaceInvite: (id: string, inviteId: string) =>
     request<{ ok: true }>('DELETE', `/api/workspaces/${encodeURIComponent(id)}/invites/${encodeURIComponent(inviteId)}`),
+  // organisations above team workspaces (#108); under its own id an organisation also answers the
+  // identity, settings, members and audit calls of a workspace below
+  listOrganisations: () => request<{ organisations: OrganisationSummary[] }>('GET', '/api/organisations'),
+  createOrganisation: (name: string) => request<{ organisation: OrganisationSummary }>('POST', '/api/organisations', { name }),
+  deleteOrganisation: (id: string, confirm: string) => request<{ ok: true }>('DELETE', `/api/organisations/${encodeURIComponent(id)}`, { confirm }),
+  organisationWorkspaces: (id: string) => request<{ workspaces: OrganisationWorkspace[] }>('GET', `/api/organisations/${encodeURIComponent(id)}/workspaces`),
+  attachToOrganisation: (id: string, workspaceId: string) =>
+    request<{ workspace: OrganisationWorkspace }>('POST', `/api/organisations/${encodeURIComponent(id)}/workspaces`, { workspaceId }),
+  detachFromOrganisation: (id: string, workspaceId: string) =>
+    request<{ ok: true }>('DELETE', `/api/organisations/${encodeURIComponent(id)}/workspaces/${encodeURIComponent(workspaceId)}`),
+  organisationWorkspaceMembers: (id: string, workspaceId: string) =>
+    request<{ members: OrganisationWorkspaceMember[] }>('GET', `/api/organisations/${encodeURIComponent(id)}/workspaces/${encodeURIComponent(workspaceId)}/members`),
+  addOrganisationMember: (id: string, email: string, role: 'admin' | 'member') =>
+    request<{ member: WorkspaceMember }>('POST', `/api/organisations/${encodeURIComponent(id)}/members`, { email, role }),
   // single sign-on, provisioning, data exports (team workspaces: owners/admins)
   ssoSettings: (id: string) => request<SsoSettings>('GET', `/api/workspaces/${encodeURIComponent(id)}/sso`),
   addSsoDomain: (id: string, domain: string) => request<SsoSettings>('POST', `/api/workspaces/${encodeURIComponent(id)}/sso/domains`, { domain }),
@@ -509,6 +531,17 @@ export const api = {
   boardTrackers: (boardId: string) => request<BoardTrackersResponse>('GET', `/api/boards/${encodeURIComponent(boardId)}/trackers`),
   trackerProjects: (boardId: string, connectionId: string) =>
     request<{ projects: TrackerProject[]; queryLanguage: string }>('GET', `/api/boards/${encodeURIComponent(boardId)}/trackers/connections/${encodeURIComponent(connectionId)}/projects`),
+  trackerSprints: (boardId: string, connectionId: string, project: string) =>
+    request<{ sprints: TrackerSprint[]; fieldName: string | null }>(
+      'GET',
+      `/api/boards/${encodeURIComponent(boardId)}/trackers/connections/${encodeURIComponent(connectionId)}/sprints?project=${encodeURIComponent(project)}`,
+    ),
+  trackerIssueTypes: (boardId: string, connectionId: string, project: string) =>
+    request<{ issueTypes: string[]; preferred: string | null }>(
+      'GET',
+      `/api/boards/${encodeURIComponent(boardId)}/trackers/connections/${encodeURIComponent(connectionId)}/issue-types?project=${encodeURIComponent(project)}`,
+    ),
+  trackerFields: (id: string) => request<{ fields: TrackerFieldInfo[] }>('GET', `/api/trackers/connections/${encodeURIComponent(id)}/fields`),
   trackerPreview: (boardId: string, body: TrackerSendRequest) => request<{ issues: TrackerIssuePreview[] }>('POST', `/api/boards/${encodeURIComponent(boardId)}/trackers/preview`, body),
   trackerSend: (boardId: string, body: TrackerSendRequest) => request<TrackerSendResponse>('POST', `/api/boards/${encodeURIComponent(boardId)}/trackers/send`, body),
   trackerImport: (boardId: string, body: TrackerImportRequest) => request<TrackerImportResponse>('POST', `/api/boards/${encodeURIComponent(boardId)}/trackers/import`, body),
@@ -516,7 +549,7 @@ export const api = {
   trackerUnlink: (boardId: string, linkId: string) => request<{ ok: true }>('DELETE', `/api/boards/${encodeURIComponent(boardId)}/trackers/links/${encodeURIComponent(linkId)}`),
   /** A team's connections (its admins) or, without `workspaceId`, the person's own. */
   trackerConnections: (workspaceId: string | null) =>
-    request<{ connections: TrackerConnectionInfo[]; oauth: { jira: boolean } }>('GET', `/api/trackers/connections${workspaceId ? `?workspace=${encodeURIComponent(workspaceId)}` : ''}`),
+    request<{ connections: TrackerConnectionInfo[]; oauth: { jira: boolean; asana?: boolean; monday?: boolean } }>('GET', `/api/trackers/connections${workspaceId ? `?workspace=${encodeURIComponent(workspaceId)}` : ''}`),
   createTrackerConnection: (body: TrackerConnectionInput) => request<{ connection: TrackerConnectionInfo; webhookSecret: string }>('POST', '/api/trackers/connections', body),
   updateTrackerConnection: (id: string, body: Partial<TrackerConnectionInput>) => request<{ connection: TrackerConnectionInfo }>('PATCH', `/api/trackers/connections/${encodeURIComponent(id)}`, body),
   testTrackerConnection: (id: string) => request<{ ok: true; account: string | null; connection: TrackerConnectionInfo }>('POST', `/api/trackers/connections/${encodeURIComponent(id)}/test`),

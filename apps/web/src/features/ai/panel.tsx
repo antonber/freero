@@ -5,7 +5,7 @@ import { useMemo, useState } from 'react';
 import { FileText, Lightbulb, Shapes, Sparkles, Workflow } from 'lucide-react';
 import { AI_LIMITS, type AiActionResponse, type AiDiagramKind, type AiTask, type BoardElement } from '@freero/shared';
 import { definePanel, type PanelProps } from '@engine';
-import { Button, ElementsPreview, Modal, SegmentedControl, TextArea } from '@ui';
+import { Button, ElementsPreview, Modal, SegmentedControl, Select, TextArea } from '@ui';
 import { AI_DIALOG, applyPreview, clusterable, suggestedTask } from './lib/actions';
 import './ai.css';
 
@@ -18,8 +18,13 @@ const TASKS: Array<{ value: AiTask; label: string; icon: typeof Lightbulb }> = [
 
 const DIAGRAMS: Array<{ value: AiDiagramKind; label: string }> = [
   { value: 'flowchart', label: 'Flowchart' },
-  { value: 'sequence', label: 'Sequence' },
+  { value: 'sequence', label: 'Sequence diagram' },
   { value: 'mindmap', label: 'Mind map' },
+  { value: 'class', label: 'Class diagram (UML)' },
+  { value: 'er', label: 'Entity-relationship diagram' },
+  { value: 'state', label: 'State diagram' },
+  { value: 'orgchart', label: 'Org chart' },
+  { value: 'kanban', label: 'Kanban board' },
 ];
 
 const isTask = (v: unknown): v is AiTask => TASKS.some((t) => t.value === v);
@@ -157,7 +162,7 @@ function AiDialog({ editor, props }: PanelProps) {
         <div className="fr-ai__form">
           <SegmentedControl<AiTask> aria-label="What should AI do?" options={TASKS} value={task} onChange={(t) => setTask(t)} className="fr-ai__tasks" />
           <p className="fr-ai__hint">{hint(task, selection.length, sortable)}</p>
-          {task === 'diagram' && <SegmentedControl<AiDiagramKind> aria-label="Kind of diagram" size="sm" options={DIAGRAMS} value={diagram} onChange={setDiagram} />}
+          {task === 'diagram' && <Select<AiDiagramKind> aria-label="Kind of diagram" size="sm" options={DIAGRAMS} value={diagram} onChange={setDiagram} />}
           <TextArea
             label={needsPrompt ? 'Prompt' : 'Prompt (optional)'}
             value={prompt}

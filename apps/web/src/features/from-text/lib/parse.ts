@@ -16,7 +16,7 @@ export const KINDS: Array<{ value: TextKind; label: string; noun: string; hint: 
     value: 'mermaid',
     noun: 'Diagram',
     label: 'Mermaid',
-    hint: 'A flowchart, sequence diagram or mind map in Mermaid syntax. Edit the source later to update the diagram.',
+    hint: 'A flowchart, a sequence, class, ER or state diagram, or a mind map in Mermaid syntax. Edit the source later to update the diagram.',
     placeholder: 'flowchart TD\n  A[Request] --> B{Approved?}\n  B -- yes --> C([Ship it])\n  B -- no --> D[Revise]\n  D --> A',
   },
   {

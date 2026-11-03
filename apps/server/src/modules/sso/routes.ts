@@ -18,10 +18,10 @@ import { oidcCallback, samlAcs, samlFinish, startSso } from './signIn';
 // anyone's cookies.
 allowCrossSitePost(/^\/api\/sso\/[^/]+\/saml\/acs$/, 'SAML HTTP-POST binding: the IdP page posts the signed response cross-site');
 
-/** Owners/admins of a TEAM workspace manage its single sign-on. */
+/** Owners/admins of a TEAM workspace, or of an organisation (#108: for all its workspaces), manage its single sign-on. */
 async function manager(req: Request) {
-  const ws = await requireWorkspaceRole(req.params.id, currentUser(req).id, 'admin');
-  if (ws.kind !== 'team') throw badRequest('Single sign-on is set up for a team workspace');
+  const ws = await requireWorkspaceRole(req.params.id, currentUser(req).id, 'admin', { organisation: true });
+  if (ws.kind === 'personal') throw badRequest('Single sign-on is set up for a team workspace');
   return ws;
 }
 

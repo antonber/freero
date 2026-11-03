@@ -113,7 +113,7 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | Layer docs (`private`, `editors`; see "Board layers") | `engine/store/` (placement: `engine/editor/layers.ts`); reveal: server `realtime` | `Editor` writes, `privateCollection`, `revealPrivate` |
 | Suggestion records (editors layer `suggestions`; see "Suggestions") | server `realtime` creates them (`proposeSuggestions`) and withdraws them when their credential is revoked (KAI-224); a socket may only set its own `decision` | `Editor.acceptSuggestions` / `rejectSuggestions`, API accept / reject |
 | `elements` map | engine (`editor.create/update/remove/transact`) | same |
-| `settings` map (background, grid) | engine | `editor` settings API |
+| `settings` map (background, grid, line jumps) | engine; a new board's first state (`NEW_BOARD_SETTINGS`) is stored by server `modules/boards` `createBoard` through realtime `initNewBoardDoc` | `editor` settings API |
 | feature collection (e.g. `comments`) | the feature whose `feature.ts` `owns` it | `editor.runCommand` of the owner. Writes from a non-owner throw at runtime [W8 checks unique claims] |
 | camera, selection, active tool, dock | engine | `editor.setCamera/select/setTool/openDock` |
 | presence ext | each feature writes `ext[<its name>]` only | — |
@@ -130,13 +130,14 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | Tracker connections, links to issues, what both sides last agreed on | server `modules/trackers` | its routes / index (`sendToTracker`, `importIssues`); syncs only through its outbox consumer |
 | `trackers` collection (issue badges) and items' `trackerLink` | server `modules/trackers` (through realtime's `changeBoard`) | — (the web feature only reads them) |
 | `walkthroughs` collection (one summary per recording) | server `modules/walkthroughs` (realtime's `writeServerCollection`) | `Host.walkthroughs` (REST); the web feature only reads it |
-| A kanban's fields (`KanbanElement.fields`; the group field's options are its `columns`) and a card's values (`CardElement.values`, keyed by field id) — read only through `@freero/shared` `fields.ts` (`collectionSchema`, `cardValue`) | `features/kanban` (schema: Fields panel); `features/card` (values: `card.setValues`, which asks `kanban.moveToColumn` for the field the board is grouped by — a card's value for it is the column it stands in); server `modules/api` (`update_items` / `add_cards` `fields`, `define_fields`) and `modules/trackers` (an import into a kanban adds the status columns and the Priority field it needs and sets cards' Stage / Priority; pulls set them, adding a priority level; `trackers/kanban.ts`). New kanbans may be created WITH fields and values by templates (the Kit), the CSV import and the kanban feature's `kanban.createFromRows` (rows another feature hands over: the table's "Convert to kanban", laid out by `@freero/shared` `layoutKanbanRows`); words ↔ values go through `@freero/shared` `fieldText.ts`. Every server change to a kanban (API, MCP, tracker import and pull) is laid out with `@freero/shared` `withKanbanLayout` in the same change | `runCommand('card.setValues', { id, values })`. See docs/design/kanban-fields-and-views.md |
+| A kanban's fields (`KanbanElement.fields`; the group field's options are its `columns`) and a card's values (`CardElement.values`, keyed by field id) — read only through `@freero/shared` `fields.ts` (`collectionSchema`, `cardValue`) | `features/kanban` (schema: Fields panel); `features/card` (values: `card.setValues`, which asks `kanban.moveToColumn` for the field the board is grouped by — a card's value for it is the column it stands in); server `modules/api` (`update_items` / `add_cards` `fields`, `define_fields`) and `modules/trackers` (an import into a kanban adds the status columns and the Priority, Sprint (#119) and field-map (#43) fields it needs and sets cards' Stage / Priority / Sprint / mapped values; pulls set them, adding a priority level or sprint and marking closed sprints `readOnly`; `trackers/kanban.ts`). New kanbans may be created WITH fields and values by templates (the Kit), the CSV import and the kanban feature's `kanban.createFromRows` (rows another feature hands over: the table's "Convert to kanban", laid out by `@freero/shared` `layoutKanbanRows`); words ↔ values go through `@freero/shared` `fieldText.ts`. Every server change to a kanban (API, MCP, tracker import and pull) is laid out with `@freero/shared` `withKanbanLayout` in the same change | `runCommand('card.setValues', { id, values })`. See docs/design/kanban-fields-and-views.md |
 | A kanban's saved views (`KanbanElement.views` / `activeView`: what cards show, density, colour-by, `groupBy`, `subGroupBy`, other fields' column settings, `filter`, `sort` and the manual order kept while sorted, the view `locked`; since 3a also its table tabs — columns, filter, sort, lock — and the tab everyone starts on; since 3b list, calendar and timeline tabs — a list's fields and grouping, a calendar's date field, a timeline's start / end fields, scale and swimlanes) and swimlane geometry (`lanes`) — read only through `@freero/shared` `views.ts` (`boardView`), `tabs.ts` (`viewTabs`, `projectionView`, `savedTabId`; entries of layouts a client doesn't know are kept when it writes, and so is an `activeView` naming one) and `projections.ts` (where a calendar or timeline places a card, what moving it writes) and `fields.ts` (`groupFieldId`); filters and sorts are evaluated only by `@freero/shared` `query.ts` (the free-form table's typed filter / sort too); the layout itself is `@freero/shared` `layout/kanban.ts` `planKanban` | `features/kanban` (View panel: "Save for everyone", density, group by, swimlanes, sort, lock); it keeps `colorCards` equal to "coloured by column" for older clients. Regrouping writes the old group field's values onto the cards from their positions in the same transaction, a drop into another swimlane writes that row's value (the layout's one write to card values), and the layout drops `manualOrder` once a cleared sort is undone. Server: `modules/api` `configure_view` (the saved view or a tab — `view`, `addView`, `name`, `active`, `remove` —, refused while locked by someone else) | `runCommand('kanban.setCardDisplay' / 'kanban.saveViewForEveryone' / 'kanban.groupBy' / 'kanban.setSwimlanes' / 'kanban.setMyFilter' / 'kanban.setSort' / 'kanban.lockView' / 'kanban.addTab' / 'kanban.addTableTab' / 'kanban.renameTab' / 'kanban.deleteTab')` |
 | A linked view (`KanbanViewElement`, type `kanbanview`, step 3c: a kanban's cards as a table, list, calendar or timeline elsewhere on its board — `sourceId` and one projection view, ids only, never a copy of the cards or their labels) — read only through `@freero/shared` `linkedViews.ts` (`linkedView`, `linkedSource`) | `features/kanban` (the second element of its `element.tsx`; "Add linked view ▸" in a kanban's context menu and tab menu, the View panel: name, layout, lock, "Save for everyone"); server `modules/api` `add_view` (placed beside the kanban, `linkedViewSpot`) and `configure_view` with the linked view's id | `runCommand('kanban.addLinkedView' / 'kanban.setMyLinkedView' / 'kanban.saveLinkedView' / 'kanban.configureLinkedView')`. Its edits write the real cards through `card.setValues`, as a tab's do. Copying keeps `sourceId` (with the kanban copied along, the engine's id remap points the copy at the kanban's copy); pasted onto another board without its kanban it is left out (`pasteContent`; step 3d makes it a cross-board view) |
 | A person's own view settings (personal overrides of a saved view, per board / item / view; a kanban also keeps the tab I look at under `_tab`, a table, list, calendar or timeline tab's own settings under its id, and focus mode's arrangement under `_focus`; a linked view its own settings under `_view`) | the engine's personal view state (`Editor.setPersonalView`, any role, never in the doc), kept through `Host.personalViews` → server `modules/personalviews` (`personal_views`); in this browser without it | the owning feature validates what it reads (`views.ts` `cleanOverride`) |
 | An item's protected lock (`BaseElement.lockProtected`, with `locked`) | the board owner and co-owners (`@freero/shared` `mayProtect(role, coOwner)`; #122: the server takes `coOwner` from boards' `resolveCoOwner` — a socket's `Admission.coOwner`, re-resolved on every access refresh and honoured only on an uncapped socket, and `BoardActor.coOwner`, which changeBoard / proposeSuggestions resolve themselves — never from a client; never a facilitator, since any editor can start a session), through `engine.protectLock` (Mod+Alt+Shift+L, context menu) and `engine.lock`; anyone else's socket change to a protected item (move, edit, unlock, unprotect, delete) or protecting one is undone by server `realtime/protectedLock.ts` in the transaction that applies it, in the shared doc and the layers (a move into or out of a hidden frame's layer keeps it); requests (API, MCP) are refused in `realtime/view.ts` `applyChange` | `Editor.mayProtect()`; the format toolbar shows a disabled shield to others. Clients that don't know the field see an ordinary lock, and their unlock is undone |
 | A person's app theme (System / Light / Dark: `users.color_theme`, `Account.theme`) and the page's `<html data-theme>` | server `modules/auth` (`PATCH /api/auth/me` `{ theme }`); in the browser `app/lib/theme.ts` is the only writer of `data-theme` (it also keeps the choice in localStorage for the first paint and for people without an account). A page that must follow its surroundings (the live view in an AI assistant) uses `setThemeOverride` while mounted; `public/theme-boot.js` sets the stored theme before the first paint. Chrome follows `ui/tokens.css`. Board content keeps its authored colours: only the live canvas is painted differently, at paint time and never in the doc (`engine/canvas/theme.ts`): a light background and light frame fills shown dark, the DEFAULT inks (`canvasInk`) light where they lie on the canvas — free text, lines, pen, icons, unfilled shapes, frame titles, mind-map branches — through CSS variables set on the live viewport only, so exports and thumbnails never change | `ThemeSwitch` / `useChooseTheme` (`app/components`): account settings → Appearance, the dashboard's account menu; on a board `Host.colorTheme` (`features/appearance`: board menu → Theme, and the command palette) |
 | Problem reports (`problem_reports`) and their screenshots (uploads' private images) | server `modules/problems` | its routes (the reporter; operators) and index (`/api/v1/operator/problems` in modules/api, the account purge, the data export) |
+| An organisation (#108: a `workspaces` row of kind 'organisation'), its directory, policy and security floors, and which team workspaces belong to it (`workspaces.organisation_id`) | server `modules/workspaces` (`organisations.ts`; `repo.ts` applies the floors on every read) | `/api/organisations…`; under the organisation's id `PATCH /workspaces/:id` (floors), `…/admin/settings`, member routes; attach / detach only through `attachWorkspace` / `detachWorkspace`. See "Organisations" |
 | Decision snapshots (`decisions`) and their content (board versions of kind `decision`) | server `modules/decisions` / `modules/realtime` (`freezeBoard`) | `Host.decisions`; never written again once frozen |
 | When someone last had a board open (`board_seen`, "changes since your last visit") | server `modules/activity`, only from realtime's `onBoardLeft` (an account's board socket on that instance closed) | — (never a client's word; `GET /boards/:id/catch-up` reads it) |
 | A person's time zone (`users.time_zone`, IANA) | server `modules/auth` (`updateProfile`: `PATCH /auth/me` `timeZone`, validated by `platform/time.ts` `canonicalTimeZone`) | the app sets it once from the browser when it is unknown; the profile's Time zone field |
@@ -218,6 +219,21 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   board state; the renderer subscribes with `useElementsQuery(select, isEqual)` (`@engine`), which
   re-renders a component only when its derived value changes — never re-render every line on every
   edit elsewhere. `follow` refreshes an elbow line's cache when a connectable item lands on it.
+- Line jumps (#115; board setting `BoardSettings.lineJumps`, the board menu's "Line jumps" toggle
+  and palette command, written by the engine like the grid): where two connectors cross, the one
+  drawn on top (z, then id: every client agrees) hops over the other. The hops are part of the
+  connector's own SVG path (`lib/jumps.ts` `lineJumps` → `routePath`), so the canvas, the selection
+  halo and every export draw them. No hop where lines share an end or meet near one, run along each
+  other or cross at a grazing angle, or too near a bend; crossings close together share one hop;
+  curved lines never hop (lines on top of them do). Each line finds the lines beneath it with
+  `useElementsQuery` over one grid index of the board's lines per editor (`lib/beneath.ts`),
+  updated in place from the lines that changed, and reuses its last answer while no changed line
+  came near it; routes are computed once per element object. Only lines in view (the culled
+  canvas renders no others) and only at zooms where a hop is at least 2 px. `npm run
+  bench:line-jumps` measures a 500-connector board. New boards start with it on: the server's
+  `createBoard` stores `NEW_BOARD_SETTINGS` (`@freero/shared`) for every board that is no copy
+  (realtime `initNewBoardDoc`); boards from before keep their look (absent = off), copies their
+  source's.
 - `@engine` hooks: `usePointer()` (world pointer for tool `Preview`s), `useTextFormatState()`,
   `useSettings()`, `useCanEdit()`; `plainToRichText()`; types `ElementTextProps`, `TextFormatState`.
 - `useCollection(name)` returns the collection's entries (`Array<[key, value]>`).
@@ -403,8 +419,10 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   button, the "AI ▸" context/board menu, the dialog) hide without it; never offer AI from `when`
   alone. Not in the command palette (it lists unavailable commands greyed out).
 - `Host.trackers?` (additive, KAI-154): `{ connections, projects, preview, send, importIssues, sync,
-  unlink }`, present only when the server listed a tracker connection this person may use on this
-  board (`GET /boards/:id/trackers`). `features/trackers` hides every entry point without it.
+  unlink, sprints?, issueTypes? }` (the last two additive, #119 / #43), present only when the server
+  listed a tracker connection this person may use on this board (`GET /boards/:id/trackers`).
+  `features/trackers` hides every entry point without it.
+
 - `Host.walkthroughs?` / `Host.decisions?` (additive, KAI-133 / KAI-161; see "Walkthroughs and
   decision snapshots"): absent without a server; guests watch and open but don't record or comment.
   A command's `urlParam` run also gets `args.query` (every URL parameter: a walkthrough's `t`).
@@ -865,6 +883,16 @@ docs/board-outline.md):
   a diagram don't carry its source; outline items without a Mermaid id are matched by their path
   of texts, so a renamed topic is a new topic; concurrent source edits of one diagram are LWW per
   diagram (the second update re-lays from its own source).
+- Mermaid class, ER and state diagrams (#38, `@freero/shared` layout/uml.ts, read in-house like
+  the rest) become the shape library's own shapes through `layoutDiagram` (the layered graph
+  layout with nodes that carry their size and look, edges their line ends and end labels): a
+  class is a `umlClass` with `compartments` (its text is the whole class — name, attributes,
+  operations — and the shape feature draws the dividers: under the name, above the first line with
+  a "("), an entity an `erdEntity` table (keys first), relations connectors with UML ends
+  (`triangleOpen`, `diamond`, `diamondOpen`, dashed for `..`) or the crow's-foot end each side
+  names, multiplicities as labels near their ends; namespaces and composite states are frames;
+  start / end states, choices and forks are small marks; notes are `umlNote`s on a dashed line.
+  Front matter (`---` … `---`) is skipped. PlantUML is not read.
 
 Reference & items (engine primitives; product UI in `features/shortcuts`, `links`, `image`, `icons`,
 `select-similar` — "Select only ▸ <type> (count)" narrows a mixed selection):
@@ -1024,7 +1052,7 @@ files; it precaches them plus the shell files). Rules, all in `strategyFor` / `r
 ## Marketing site (`apps/site`, server `modules/site`; KAI-250..253)
 
 The public pages (`/`, `/claude`, `/chatgpt`, `/agents`, `/security`, `/open-source`, `/pricing`,
-`/docs`, `/support`, `/privacy`, `/terms`, `/acceptable-use`, `/integrations/<id>`, `/vs/<slug>`, `/templates/<id>`, `/templates/category/<slug>`, `/use-cases/<slug>`, `/features/<slug>`) are a separate workspace
+`/docs`, `/support`, `/privacy`, `/terms`, `/acceptable-use`, `/subprocessors`, `/dpa`, `/integrations/<id>`, `/vs/<slug>`, `/templates/<id>`, `/templates/category/<slug>`, `/use-cases/<slug>`, `/features/<slug>`) are a separate workspace
 so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs/marketing/seo.md`.
 
 - **Why a custom prerender, not a site generator.** Pages are TSX components rendered once by
@@ -1100,7 +1128,7 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
   pages only, with its origin in their CSP; `GA_MEASUREMENT_ID` adds the Google Analytics runtime
   (see "Analytics" below). The build itself never contains a script: both are added when served. `SITE_INDEXNOW_KEY` serves `/<key>.txt` for IndexNow;
   `scripts/indexnow.mjs` submits the live sitemaps' URLs (or those changed since a day) after a deploy.
-- **Legal pages** (`legal: true`: `/privacy`, `/terms`, `/acceptable-use`; drafts for legal review,
+- **Legal pages** (`legal: true`: `/privacy`, `/terms`, `/acceptable-use`, `/subprocessors`, `/dpa`; drafts for legal review,
   written from the code and docs/operations.md's data map) and `/support` put `legal(key)` tokens
   (`src/lib/legal.tsx`) where a deployment's facts go: the operator, address, governing law and
   contacts (`SITE_LEGAL_*`, `ABUSE_CONTACT_EMAIL`, `SECURITY_CONTACT`), retention periods and the
@@ -1111,6 +1139,16 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
   `X-Robots-Tag: noindex`, and `GET /api/site/legal` answers `null`, so the app's sign-up asks
   nobody to agree to a draft. A page about the deployment never hard-codes a value the server
   knows from its configuration.
+- **The trust pack** (#109: `/security`, `/subprocessors`, `/dpa`, plus `SECURITY.md` and
+  docs/security-questionnaire.md) is written from the code and the production deployment; what the
+  repository can't show is the operator's word (approved 2026-11-03) or the providers' own
+  documentation, never a guess. A page the operator hasn't approved yet is `underReview: true`
+  (`PageDef`): the build shows "Draft — under review", makes it `noindex` and leaves it out of the
+  sitemap (still linked from the footer), and the manifest's `underReview` list keeps the server
+  from lifting that `noindex` (and adds `X-Robots-Tag`) even once the legal pages are in effect; no
+  setting removes either. `<ToConfirm />` marks each statement in such a draft the repository can't
+  confirm. Approving = removing the flag and the marks (after fixing any statement that turned out
+  wrong); none of the trust pages carries either today.
 - **For agents:** `/llms.txt` and `/llms-full.txt` (llmstxt.org, `src/lib/llms.ts`) are built files
   like robots.txt, origin-substituted when served: what Freero is, the MCP endpoint, OAuth metadata
   and the tool list. Tools and prompts come from `src/lib/mcp.ts` (also the /agents table); the site
@@ -1226,7 +1264,8 @@ authenticator" recoveries; guest_sessions: visitors without an account),
 `boards` (boards, stars, opens; trash; the guest join routes), `members` (board_members,
 board_invites: pending invites for addresses without an account; board_access_requests; role
 resolution), `workspaces` (workspaces, workspace_members,
-workspace_invites, projects, project_members; see "Workspaces" below), `uploads` (uploads; files in object storage or
+workspace_invites, projects, project_members; organisations are directory-only `workspaces` rows; see
+"Workspaces" and "Organisations" below), `uploads` (uploads; files in object storage or
 `<data>/uploads`), `realtime` (board_docs, board_doc_updates, board_doc_snapshots, board_layers, board_suggestion_authors; y-websocket
 protocol + role filter + update log; version history + snapshot retention), `unfurl` (link
 previews for pasted URLs; no table; SSRF-safe fetch in `unfurl/fetch.ts`, exported for other
@@ -1257,7 +1296,7 @@ permission check, `POST /objects/resolve`), `references` (object_references, ref
 references index derived through the outbox, `GET /objects/backlinks`; both in "Suite foundation"
 below), `engage` (engage_answers, engage_questions, engage_upvotes,
 engage_reveals: live audience activities; see "Live activities" below), `trackers`
-(tracker_connections, tracker_links, tracker_link_sources, tracker_proposals, tracker_oauth_flows: issue-tracker sync;
+(tracker_connections, tracker_links, tracker_link_sources, tracker_proposals, tracker_oauth_flows, tracker_webhooks: issue-tracker sync;
 see "Issue trackers" below), `search` (search_entries, search_sources: the search index derived
 through the outbox, `GET /search`), `events` (events, event_board_states, event_pending_boards: the
 event stream), `docs` (no table: the doc app — a doc is a boards container of kind 'doc' whose
@@ -1265,7 +1304,9 @@ document realtime stores; see "Docs and native live embeds"), `site` (no table: 
 marketing site at `/`; see "Marketing site"), `analytics` (no table: Google Analytics' settings
 endpoint, runtime and frame; see "Analytics"), `webhooks` (webhook_endpoints, webhook_deliveries: workspace webhooks) — the last
 three in "Search, the event stream and webhooks" below — `backup` (no table: `.freero` board
-backups, see below), `share` (no table: the installed app's share target, see "Installable app"), `slack` (no table: Slack link unfurls for the operator's Slack app, see "Integrations" below), `walkthroughs`
+backups, see below), `share` (no table: the installed app's share target, see "Installable app"), `slack` (no table: Slack link unfurls for the operator's Slack app, see "Integrations" below), `teams` (no table: the
+Microsoft Teams app — its package, its pages framed by Teams, the bot's link previews — and the
+Microsoft 365 Copilot agent package, see "Microsoft Teams and Microsoft 365 Copilot" below), `walkthroughs`
 (walkthroughs, walkthrough_views, walkthrough_comments) and `decisions` (decisions), in "Walkthroughs
 and decision snapshots" below, `marketplace` (marketplace_listings: community listings of Apps &
 agents; see "Apps & agents" below), `personalviews` (personal_views: a person's own view settings on a
@@ -1606,6 +1647,49 @@ members with roles owner / admin / member / guest (separate from board roles).
   `handOverTeamWorkspaces` (sole-owned teams pass to the longest-standing admin, else member,
   else guest; an otherwise empty team is deleted with its boards; their team boards pass to an
   owner there).
+
+### Organisations above team workspaces (`workspaces/organisations.ts`, #108; docs/design/organisations.md)
+
+One organisation over many team workspaces: single sign-on, verified domains, domain control,
+provisioning, baseline policies, the audit log and its SIEM streams are set once on it.
+
+- **Model**: an organisation is a directory-only row of `workspaces` (`kind = 'organisation'`), so
+  everything keyed by a workspace id — `sso_*`, `scim_*`, `siem_sinks`, the audit chain `w:<id>`,
+  member deactivation — serves it unchanged. Its `workspace_members` are its owners, admins and
+  directory (people its SSO, SCIM or domain control brought in). A team workspace belongs to at most
+  one (`workspaces.organisation_id`; the database allows it only on team rows).
+- **Containment** (fails closed): `requireWorkspace` / `requireWorkspaceRole` / admin's `requireAdmin`
+  answer 404 for an organisation unless the caller passes `{ organisation: true }` — only SSO,
+  provisioning, SIEM, the audit log and the console's members and settings do. `workspacesOf` /
+  `rolesOf` never return organisations (lists, search, board access, the public API), and
+  `lockWorkspaceForNewBoard` refuses one, so it never holds boards or projects. **An org role gives
+  no board content**; board access is resolved from the board's own workspace only.
+- **Floors**: the organisation's policy columns (all but `teamAccess`; the link policy too: a required
+  password beats optional, the shorter `linkMaxDays` wins) and `requireTwoFactor` /
+  session limits are the least its workspaces get. `repo.ts` reads every workspace joined with its
+  organisation and `roles.ts` `strictestPolicies` / `strictestSettings` raise it (order: `@freero/shared`
+  `POLICY_STRICTNESS`), so `Workspace.policies` / `.settings` are always EFFECTIVE values and every
+  enforcement point sees them; `ownPolicies` / `ownSettings` are what the workspace stored. A
+  workspace asking for something looser gets 403 `organisation_policy`; session limits and the
+  two-step requirement are combined in SQL with `LEAST` (person-wide, as before). A new
+  organisation starts with the loosest value of every key (no floor).
+- **Attach / detach**: attaching needs an OWNER of the workspace who is an owner/admin of the
+  organisation (re-checked under both rows' locks); detaching needs an owner/admin of the
+  organisation (a team owner alone can't escape the floors). Both audited in both logs, board access
+  re-resolved everywhere (`refreshWorkspaceBoards` of an organisation covers its workspaces).
+- **Deactivation** in the organisation (an admin, or its SCIM deprovisioning) closes every attached
+  workspace: `blockOf` checks the board's workspace and its organisation.
+- **SCIM** groups of an organisation may map to `{ kind: 'workspace', workspaceId, role }`:
+  `setDirectoryWorkspaceMembership` grants at least that role there, and withdraws it
+  (`removeMemberByDirectory`) when the person leaves the group; owners are never touched.
+- **Audit**: `recordAudit` adds the organisation's chain for every attached workspace's event
+  (`setOrganisationScope`, once per organisation, inside the event's transaction); rows keep the
+  workspace it happened in, and logs are read by chain. Each chain verifies on its own.
+- **Console**: `/org/:id` (web `pages/admin/OrgConsolePage.tsx`): workspaces (members, owners,
+  attach, detach, delete), people, policies, SSO, provisioning, merged audit log + streams; a
+  workspace's admin Overview creates or joins one.
+- **Account purge**: `handOverOrganisation` passes a sole-owned organisation on; one nobody else is
+  in has its workspaces detached and is dissolved.
 
 ### Enterprise identity and data (`modules/sso`, `modules/scim`, `modules/privacy`)
 
@@ -2265,6 +2349,43 @@ open, and a scope never widens (no foreign key: a board that is gone just sends 
   `docs/api/openapi.json` to the Swagger 2.0 those connectors require; `api/powerAutomate.test.ts`
   keeps the checked-in file in step and free of OpenAPI 3 constructs.
 
+### Microsoft Teams and Microsoft 365 Copilot (`modules/teams`, `app/teams`; #112, #113, #114; docs/integrations/teams.md)
+
+Off unless the operator sets the ids (`config.teams`: `TEAMS_APP_ID`, `TEAMS_BOT_ID`;
+`config.copilot`: `COPILOT_APP_ID` + `COPILOT_OAUTH_REFERENCE_ID`). No table, no new state: every
+piece reuses an owner that already exists.
+
+- **Packages are generated, never checked in**: `manifest.ts` (Teams app, manifest 1.19: a
+  configurable tab for channels, chats and meeting side panel / stage, the RSC permissions share to
+  stage needs, and with the bot a link `messageHandler` for the instance's host) and `copilot.ts`
+  (a declarative agent 1.6 whose action is an API plugin 2.4 with a `RemoteMCPServer` runtime at
+  `/mcp`, OAuth through the plugin vault). The plugin lists its tools from mcp's
+  `mcpToolDescriptions` (mcp's index: the `tools/list` descriptions, JSON Schema from the tools' zod
+  input), so the package can't drift from the server; write tools carry a confirmation. Icons are
+  rasterised from Freero's mark in `icons.ts` (no image dependency). Served per instance
+  (`/api/integrations/{teams/app-package,copilot/agent-package}`, `?version=`), by the CLI
+  (`teams:package`, `copilot:package`) and linked from the operator console.
+- **The tab is the public embed.** `app/teams/TeamsTabPage` renders `PublicEmbed`
+  (`app/embed/PublicEmbedPage`, which the plain embed also renders) with Teams' context and theme
+  (`teamsSdk.ts`, the only importer of `@microsoft/teams-js`): same `boardEmbedding` gate, same
+  board-bound member token, same visitor rule. The server frames `/teams/config` and `/teams/b/:id`
+  with `platform/security.ts` `frameFromOrigins(…, TEAMS_FRAME_ANCESTORS, reason)` — Microsoft's
+  documented Teams / Microsoft 365 hosts, never `*` — the latter only while `boardEmbedding` allows
+  it. `FrameGuard` lets those two paths render framed. Because no other site can frame it, the
+  Teams tab starts editing without the plain embed's visibility check (`editDirectly`).
+- **Sign-in without Teams SSO**: `teamsSignInWindow` (Teams' `authentication.authenticate`) opens
+  `/embed/connect/:id?teams=1` or `/teams/choose` (board picker; `allowOpener`) — first-party pages
+  with the session — which return their result (`TeamsSignInResult`, `TeamsChooseResult`) only
+  through `authentication.notifySuccess`, i.e. only to Teams' validated origins, never by
+  `postMessage` to an opener. Teams' desktop/mobile apps sign in in that window (`?client=`).
+- **Bot** (`bot.ts`, `botAuth.ts`): `POST /api/integrations/teams/messages` (`allowCrossSitePost`)
+  validates the Bot Connector's JWT itself (node:crypto over the JWKS from the OpenID metadata:
+  RS256, issuer, audience = `TEAMS_BOT_ID`, exp/nbf ± 5 min, `serviceurl` = the activity's,
+  `msteams` endorsement → 403; keys cached a day, an unknown `kid` refetches at most every five
+  minutes) and answers `composeExtension/queryLink` / `anonymousQueryLink` in the response with an
+  Adaptive Card from boards' `publicLinkPreview` (Slack's rule), untrusted text in `TextRun`s only.
+  Per-tenant `RATE_LIMIT_TEAMS_UNFURL`. Nothing calls the Bot Connector, so there is no bot secret.
+
 ### Walkthroughs and decision snapshots (`modules/walkthroughs`, `modules/decisions`; KAI-133, KAI-161)
 
 **Walkthroughs** are not screen videos. `features/walkthrough` records the narrator's voice (and
@@ -2331,7 +2452,8 @@ board, including people who join later: it is a deliberate publication of what e
   serves the built app page for `GET /embed/b/:id` and, only when `boardEmbedding` allows it,
   rewrites that one response with `frameFromAnySite` (`frame-ancestors *`, no XFO, CORP
   cross-origin). In development Vite serves the page and sets no framing headers. The web app's
-  `FrameGuard` renders nothing but `/embed/b/` and `/embed/board/` when framed, so in-app
+  `FrameGuard` renders nothing but `/embed/b/`, `/embed/board/` and the Teams tab pages (`/teams/b/`,
+  `/teams/config`, framed by Teams only) when framed, so in-app
   navigation inside an embed can never put the signed-in app under another site's UI.
 - **Visitors** open `/ws/embed/b/:id` with subprotocol `[PUBLIC_EMBED_WS_PROTOCOL]`: no cookie, no
   token, no row. Admitted as 'viewer' under an id no account or guest has (`guest_embed…`, so any
@@ -2438,7 +2560,8 @@ target itself:
 ### Issue trackers: one issue ↔ many items, kept in step (`modules/trackers`, KAI-153..157; docs/trackers.md)
 
 The stickies-to-tickets hand-off without losing fields: board items become ONE issue (a cluster) or
-one each in Jira (Cloud v3 / Data Center v2), Linear or GitHub, and stay linked both ways.
+one each in Jira (Cloud v3 / Data Center v2), Linear, GitHub, Azure DevOps Boards (Services /
+Server, #6), Asana (#120) or monday.com (#121), and stay linked both ways.
 
 - **Model.** A *connection* is a team's (its admins manage it, its full members use it) or one
   person's own; credentials and the webhook secret are sealed (`platform/secrets`), never sent back
@@ -2450,12 +2573,26 @@ one each in Jira (Cloud v3 / Data Center v2), Linear or GitHub, and stay linked 
   projects, get / create / update / search issues, `changedSince` (polling), backlinks, how a tag
   becomes a label, and webhook verification. Plain HTTP (`http.ts`): untrusted addresses (https,
   no private addresses unless `TRACKER_PRIVATE_ENDPOINTS`, no redirects, size caps), retries with
-  backoff honouring `Retry-After`; a longer wait sets the connection's `cooldown_until`.
+  backoff honouring `Retry-After`; a longer wait sets the connection's `cooldown_until`. Optional
+  capabilities: `sprints` (#119: what the kanban field is called, a project's sprints), `scoped`
+  (a project's sprint / epic without a query), `listFields` (custom fields for the field map, #43),
+  `issueTypes`, `parents`, `webhooks` (#120, #121: Freero registers its own, below). `RemoteIssue.version` is the revision read (Azure DevOps): a write
+  against an older one throws `TrackerError('conflict')`, and `syncLink` runs its pass again from
+  fresh reads (at most twice) instead of overwriting. Trackers without revisions (Asana,
+  monday.com) write only the fields a sync changes (a PUT of those fields, a column write of those
+  columns), so another field changed meanwhile is never written over.
+- **Field map (#43)**: a connection's `settings` hold the picked estimate / start date fields,
+  issue type per project and `fieldMap` (tracker field id ↔ kanban field NAME and kind). Mapped
+  fields are `custom:<id>` IssueFields, merged like every other; a kanban without a field of that
+  name holds no value (nothing is pushed or cleared), and a pull it can't hold keeps the previous
+  agreement (`syncedBase(…, previous)`), so the value arrives once the field is back.
 - **The mapping and the merge are pure** (`@freero/shared` `trackers.ts`: `issueValuesFromBoard`,
-  `pullableFields`, `canonical`, `mergeField`). Per field against `base`: one-sided changes flow
+  `pullableFields`, `canonical`, `mergeField`, `syncedBase`, `trackerAgreed`). Per field against `base`: one-sided changes flow
   across; the same field changed differently on both sides in one window keeps the tracker's value
   and the board's goes into a comment on the item; a field a side can't hold (a cluster's title)
-  is never written back. The server previews with the same code the send uses.
+  is never written back. The server previews with the same code the send uses. What a sync stores
+  as agreed is what it merged (`syncedBase` for the board, `trackerAgreed` for the tracker) plus
+  the fields it wrote: a change on either side while it ran reaches the other side next time.
 - **One sync path** (`service.ts` `syncLink`), run only by the `trackers` outbox consumer, so a link
   never syncs twice at once: read the issue, read the items from the live board as the linking
   person sees them, merge, write the tracker, write the board through `changeBoard` ("Jira for
@@ -2465,13 +2602,25 @@ one each in Jira (Cloud v3 / Data Center v2), Linear or GitHub, and stay linked 
   `allowCrossSitePost`; a delivery only names the issue — it is read back), the `trackers:poll` job
   (polling connections every `TRACKER_POLL_SECONDS`, webhook ones as a fallback, retries due).
   Webhook signatures are checked over the raw JSON body (`platform/http.ts` `rawBody`).
+- **Webhooks Freero registers itself** (`hooks.ts`, `tracker_webhooks`; Asana, monday.com, where
+  nobody can paste an address): one per connection and project, registered after a send or import
+  into it (failures retried by `trackers:poll`; removed with the connection or a switch to polling,
+  registered again for a new secret). The address names the registration (`h`) and carries `k`, an
+  HMAC of `h` with the connection's webhook secret, checked before the provider sees a delivery. A
+  handshake (`WebhookResult.handshake`: Asana's `X-Hook-Secret` echoed and kept sealed —
+  `keepHookSecret` only for a pending row without one, so only once —, monday.com's challenge
+  echoed) is answered only while that row is pending, i.e. while Freero waits on `register`; Asana
+  deliveries are then verified with that secret (`X-Hook-Signature`).
 - **The board side**: the server writes each item's `trackerLink` and one `TrackerIssueRecord` per
   link in the `trackers` collection (key, status, assignee, sources, state); `features/trackers`
   draws the badge from it (a copy of a linked item shows none: the record doesn't list it) — live
   for everyone through Yjs, kept on version restore (`Y_KEPT_ON_RESTORE`). `BoardChange.collections`
   entries set to `null` delete (owners/editors), so unlinking removes the record. A card whose status
   comes from the tracker moves to the kanban column with that status (`KANBAN_LAYOUT`, shared with
-  the kanban feature). The board side of a send is ONE server change (nobody ever sees part of a
+  the kanban feature). A kanban's Sprint field (#119: "Sprint" / "Cycle" / "Iteration") is written
+  like Priority (`trackers/kanban.ts`): made by an import, its options the project's sprints with
+  closed ones `readOnly` (`FieldOption.readOnly`, `KanbanColumn.readOnly`: kept, never offered by
+  `features/card` and `features/kanban`'s pickers). The board side of a send is ONE server change (nobody ever sees part of a
   cluster linked); like any change the server makes it is not in anyone's Ctrl+Z — "Unlink" undoes it.
 - **Suite primitives**: an issue is an object, `freero://issue/<linkId>` (its board's access); the
   references index adds kind `tracker` from items to it, so its backlinks are its items. Every sync
@@ -2495,9 +2644,15 @@ one each in Jira (Cloud v3 / Data Center v2), Linear or GitHub, and stay linked 
   the board yet is retried on the next `board.content`; a reject, an issue imported meanwhile or a
   proposer who lost access leaves a plain card; an undone accept clears the row (the link goes
   when its card does). Sockets never write a link: they can only decide the server's records.
+- **Data exports**: `trackersExportOf` (a person's own connections and the links they made) and
+  `trackersWorkspaceExportOf` (a team's connections) feed `privacy/archive.ts`; never credentials.
 - `npm run verify -- --only tracker` runs it all against `scripts/lib/mock-jira.mjs` (Cloud, DC,
-  Atlassian OAuth), `mock-linear.mjs` and `mock-github.mjs`, which implement the subset of each
-  public API used, webhooks included.
+  Atlassian OAuth, agile sprints), `mock-linear.mjs` (cycles), `mock-github.mjs` and
+  `mock-azure.mjs` (Services and Server, revision-checked JSON Patch, service hooks),
+  `mock-asana.mjs` (sections, tags, custom fields, external attachments, OAuth, webhooks with the
+  handshake and signatures) and `mock-monday.mjs` (GraphQL: columns, groups, updates, subitems,
+  webhooks with the challenge, complexity), which implement the subset of each public API used,
+  webhooks included.
 
 ### Audit log, admin console and workspace policies (KAI-48, KAI-47, KAI-51)
 
@@ -2509,7 +2664,9 @@ change and its record commit together. IP and user agent come from the request c
 events (`accountId`: sign-ins, failed sign-ins on an existing account, sessions, password, email,
 two-step, providers, deletion) go to the account's chain `u:<id>` AND to every team workspace the
 person is a member of (not a guest: a guest's account is their own). Workspace events go to
-`w:<id>`. Actions and their wording are `AUDIT_ACTIONS` in `@freero/shared`; a new kind of event
+`w:<id>`; a workspace attached to an organisation's events also go to the organisation's chain
+(#108, once each, same transaction), keeping `workspace_id` = where it happened, so a log is read
+by its chain (`audit_events_chain_id`). Actions and their wording are `AUDIT_ACTIONS` in `@freero/shared`; a new kind of event
 adds itself there. `platform/audit.ts` (`audit(…)`) is the seam for account events raised where the
 module isn't the natural call and for the operator CLI: modules/audit registers its sink from
 `init.ts` AND `admin.ts`, so operator two-step resets and moderation actions land in the same log

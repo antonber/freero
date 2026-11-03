@@ -12,6 +12,8 @@ import { getWorkspaceSettings, setMemberDeactivated, updateWorkspaceSettings } f
 import { adminMembers, auditBatches, auditFilter, auditPage, CSV_COLUMNS, csvRow, requireAdmin, workspaceUsage } from './service';
 
 const MAX_PAGE = 200;
+/** Members (with organisation-wide deactivation), settings and the audit log also serve an organisation (#108). */
+const ORG = { organisation: true };
 
 const pageSize = (req: Request) => {
   const n = Number(req.query.limit ?? 50);
@@ -61,7 +63,7 @@ export default function adminRoutes(_ctx: ServerContext): Router {
     `${base}/admin/members`,
     requireUser,
     handle(async (req, res) => {
-      await requireAdmin(req.params.id, currentUser(req).id);
+      await requireAdmin(req.params.id, currentUser(req).id, ORG);
       const q = typeof req.query.q === 'string' ? req.query.q.slice(0, 200) : '';
       res.json({ members: (await adminMembers(req.params.id, q)) satisfies AdminMember[] });
     }),
@@ -76,7 +78,7 @@ export default function adminRoutes(_ctx: ServerContext): Router {
       requireUser,
       handle(async (req, res) => {
         const me = currentUser(req).id;
-        await requireAdmin(req.params.id, me);
+        await requireAdmin(req.params.id, me, ORG);
         await setMemberDeactivated(req.params.id, me, req.params.userId, deactivated);
         const member = (await adminMembers(req.params.id)).find((m) => m.userId === req.params.userId);
         if (!member) throw notFound('That person is not a member of this workspace');
@@ -109,7 +111,7 @@ export default function adminRoutes(_ctx: ServerContext): Router {
     `${base}/audit`,
     requireUser,
     handle(async (req, res) => {
-      await requireAdmin(req.params.id, currentUser(req).id);
+      await requireAdmin(req.params.id, currentUser(req).id, ORG);
       const page: { events: AuditEvent[]; next: string | null } = await auditPage(auditFilter(req.params.id, req.query), pageSize(req));
       res.json(page);
     }),
@@ -119,7 +121,7 @@ export default function adminRoutes(_ctx: ServerContext): Router {
     `${base}/audit/integrity`,
     requireUser,
     handle(async (req, res) => {
-      await requireAdmin(req.params.id, currentUser(req).id);
+      await requireAdmin(req.params.id, currentUser(req).id, ORG);
       res.json({ integrity: (await verifyWorkspaceAudit(req.params.id)) satisfies AuditIntegrity });
     }),
   );
@@ -130,7 +132,7 @@ export default function adminRoutes(_ctx: ServerContext): Router {
     requireUser,
     rateLimit('auditExport', 'user'),
     handle(async (req, res) => {
-      const { name } = await requireAdmin(req.params.id, currentUser(req).id);
+      const { name } = await requireAdmin(req.params.id, currentUser(req).id, ORG);
       const format = req.query.format === 'json' ? 'json' : req.query.format === 'csv' || req.query.format === undefined ? 'csv' : null;
       if (!format) throw badRequest('format must be csv or json');
       const filter = auditFilter(req.params.id, req.query);

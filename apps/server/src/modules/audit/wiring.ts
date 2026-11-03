@@ -3,15 +3,18 @@
 import { DEFAULT_AUDIT_RETENTION_DAYS } from '@freero/shared';
 import { onAuditEvent } from '../../platform/audit';
 import { boardWorkspaceId } from '../boards/index';
-import { auditScopeOf, retentionOverrides } from '../workspaces/index';
-import { pruneAudit, recordPlatformAudit, setAccountScope } from './service';
+import { auditScopeOf, organisationsOfWorkspaces, retentionOverrides } from '../workspaces/index';
+import { pruneAudit, recordPlatformAudit, setAccountScope, setOrganisationScope } from './service';
 
 /**
- * An account's own events also reach its team workspaces; platform audit events land in the log
+ * An account's own events also reach its team workspaces, and every attached workspace's events its
+ * organisation's log; platform audit events land in the log
  * (one about a board — an operator taking it down — also in that board's workspace log).
  */
 export function connectAudit(): () => void {
   setAccountScope(auditScopeOf);
+  // An attached workspace's events also reach its organisation's log (#108).
+  setOrganisationScope(organisationsOfWorkspaces);
   return onAuditEvent(async (e) => {
     const boardId = e.detail?.boardId;
     const workspaceId = typeof boardId === 'string' && boardId ? await boardWorkspaceId(boardId) : null;

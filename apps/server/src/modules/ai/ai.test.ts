@@ -5,7 +5,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest';
 import * as Y from 'yjs';
-import { plainToRichText, type Account, type BoardElement } from '@freero/shared';
+import { plainToRichText, type Account, type BoardElement, type ConnectorElement } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { listAuditEvents } from '../audit/index';
@@ -130,6 +130,24 @@ it('an answer that is not valid JSON twice (after one repair turn) writes nothin
   expect(seen[1].body.messages.at(-1)!.content).toContain('not valid JSON');
   expect((await elementsOf(boardId, owner.id)).map((e) => e.id)).toEqual(['s1']);
   expect(await repo.instanceTokensOf(owner.id, monthOf())).toBe(before + 2 * 150);
+});
+
+it('an org chart whose managers go round in a circle gets one repair turn naming the problem; the fixed chart lands as boxes joined manager to report (#38)', async () => {
+  const owner = await user('Org');
+  const boardId = await boardWith(owner.id, []);
+  replies = [
+    JSON.stringify({ people: [{ name: 'Ana', title: 'CEO', manager: 'Ben' }, { name: 'Ben', title: 'CTO', manager: 'Ana' }] }),
+    JSON.stringify({ people: [{ name: 'Ana', title: 'CEO', manager: '' }, { name: 'Ben', title: 'CTO', manager: 'Ana' }, { name: 'Cy', title: 'Engineer', manager: 'Ben' }] }),
+  ];
+
+  const res = await runAiAction(boardId, owner.id, { task: 'diagram', diagram: 'orgchart', prompt: 'Our leadership team', target: 'board' });
+
+  expect(seen).toHaveLength(2);
+  expect(seen[1].body.messages.at(-1)!.content).toMatch(/circle/);
+  const created = (await elementsOf(boardId, owner.id)).filter((e) => res.created.includes(e.id));
+  const box = (name: string) => created.find((e) => e.type === 'shape' && (e as { text: string }).text.includes(name))!;
+  const joins = created.filter((e): e is ConnectorElement => e.type === 'connector').map((c) => [c.start.elementId, c.end.elementId]);
+  expect(joins).toEqual(expect.arrayContaining([[box('Ana').id, box('Ben').id], [box('Ben').id, box('Cy').id]]));
 });
 
 it('10 000 ideas from the model become at most 30 stickies, laid out by Freero on free space', async () => {

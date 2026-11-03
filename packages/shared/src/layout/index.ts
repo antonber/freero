@@ -9,11 +9,12 @@ import { layoutPlantUml, parsePlantUml } from './plantuml';
 import { layoutItems } from './items';
 import { parseMermaid } from './mermaid';
 import { layoutMeeting, parseMeetingNotes } from './meeting';
-import { layoutClusters, layoutGraph, layoutKanban, layoutMindmap, layoutNote, layoutOrgChart, layoutSequence, layoutStickies, layoutTable, layoutTree, parseIndentedList } from './structures';
+import { layoutClusters, layoutDiagram, layoutGraph, layoutKanban, layoutMindmap, layoutNote, layoutOrgChart, layoutSequence, layoutStickies, layoutTable, layoutTree, parseIndentedList } from './structures';
 import { LayoutError, type LaidOut, type LayoutContext, type OutlineNodeInput, type StructureInput } from './types';
 
 export * from './types';
 export { parseMermaid, looksLikeMermaid, type MermaidDiagram } from './mermaid';
+export type { UmlDiagram } from './uml';
 export { parseMeetingNotes, layoutMeeting, meetingFormatOf, type MeetingNotes, type MeetingFormat, type MeetingAction } from './meeting';
 export { parseIndentedList, parseOrgRows, columnStatus } from './structures';
 export { cardDraft, cardHeight as itemCardHeight, checkLink } from './items';
@@ -84,6 +85,7 @@ export function layoutStructure(input: StructureInput, ctx: LayoutContext): Laid
     case 'mermaid': {
       const d = parseMermaid(input.source);
       if (d.kind === 'mindmap') return layoutMindmap(d.root, ctx);
+      if (d.kind === 'class' || d.kind === 'er' || d.kind === 'state') return layoutDiagram(d.nodes, d.edges, d.direction, d.groups, ctx);
       return d.kind === 'sequence' ? layoutSequence(d.diagram, ctx) : layoutGraph(d.nodes, d.edges, d.direction, d.groups, ctx);
     }
     case 'sequence':

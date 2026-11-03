@@ -517,6 +517,7 @@ function choiceItems(editor: Editor, k: KanbanElement, card: CardElement, col: G
   }
   return [
     ...(required ? [] : [{ id: '~none', label: 'None', checked: value === null, onSelect: () => set(null) }]),
-    ...options.map((o) => ({ id: o.id, label: label(o), checked: value === o.id, onSelect: () => set(o.id) })),
+    // A read-only option (a tracker's closed sprint) stays on the cards that hold it; nobody picks it.
+    ...options.filter((o) => !o.readOnly || value === o.id).map((o) => ({ id: o.id, label: label(o), checked: value === o.id, onSelect: () => set(o.id) })),
   ];
 }
