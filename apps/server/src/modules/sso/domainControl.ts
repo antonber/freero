@@ -30,6 +30,9 @@ const MAX_ACCOUNTS = 2000;
 
 const userTarget = (id: string, email: string) => ({ type: 'user', id, label: email });
 
+/** What a captured account becomes part of: a team workspace, or an organisation's directory (#108). */
+const joins = (ws: { kind: string } | null) => (ws?.kind === 'organisation' ? 'its organisation on Freero' : 'its team workspace');
+
 async function joinRole(workspaceId: string): Promise<'admin' | 'member' | 'guest'> {
   return (await repo.getConnection(workspaceId))?.defaultRole ?? 'member';
 }
@@ -110,7 +113,7 @@ export async function startCaptures(workspaceId: string, actorId: string, body: 
         subject: `Your Freero account is joining ${ws?.name ?? 'your organization'}’s workspace`,
         title: `${ws?.name ?? 'Your organization'} manages ${domainOf(a.email)} accounts`,
         paragraphs: [
-          `${ws?.name ?? 'Your organization'} verified that it owns ${domainOf(a.email)}, the domain of your Freero account ${a.email}. On ${date}, your account becomes a member of its team workspace.`,
+          `${ws?.name ?? 'Your organization'} verified that it owns ${domainOf(a.email)}, the domain of your Freero account ${a.email}. On ${date}, your account becomes a member of ${joins(ws)}.`,
           'Your own boards stay yours: nothing moves into the workspace unless you move it.',
           `If this isn’t a work account, change your account’s email address before ${date} and it won’t join.`,
         ],
@@ -180,7 +183,7 @@ export async function captureVerifiedAddress(user: { id: string; email: string }
   const owner = await repo.domainOwner(domainOf(user.email));
   if (!owner?.captureSignups) return;
   const ws = await getWorkspaceInfo(owner.workspaceId);
-  if (!ws || ws.kind !== 'team') return;
+  if (!ws || ws.kind === 'personal') return;
   if ((await workspaceRole(ws.id, user.id)) !== null) return;
   let added = false;
   await applyDirectoryMembership(ws.id, user.id, await joinRole(ws.id), {
@@ -198,7 +201,7 @@ export async function captureVerifiedAddress(user: { id: string; email: string }
       subject: `You’re now in ${ws.name}’s Freero workspace`,
       title: `${ws.name} manages ${domainOf(user.email)} accounts`,
       paragraphs: [
-        `${ws.name} verified that it owns ${domainOf(user.email)}, so your Freero account ${user.email} is now a member of its team workspace.`,
+        `${ws.name} verified that it owns ${domainOf(user.email)}, so your Freero account ${user.email} is now a member of ${joins(ws)}.`,
         'Your own boards stay yours: nothing moves into the workspace unless you move it.',
       ],
       action: { label: 'Open the workspace', url: appUrl(null, `/app?ws=${encodeURIComponent(ws.id)}`) },

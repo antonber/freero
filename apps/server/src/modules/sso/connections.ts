@@ -6,7 +6,7 @@ import { appUrl } from '../../platform/mail';
 import { seal } from '../../platform/secrets';
 import { recordAudit } from '../audit/index';
 import { endSessionsOf, userIdsAtDomain } from '../auth/index';
-import { workspaceRole } from '../workspaces/index';
+import { getWorkspaceInfo, workspaceRole } from '../workspaces/index';
 import { txtName, txtValue } from './dns';
 import { verifiedDomainsOf } from './domains';
 import * as repo from './repo';
@@ -74,6 +74,9 @@ export async function saveConnection(workspaceId: string, actorId: string, body:
   const prev = await repo.getConnection(workspaceId);
   const defaultRole = body.defaultRole ?? prev?.defaultRole ?? 'member';
   if (!(DIRECTORY_ROLES as readonly string[]).includes(defaultRole)) throw badRequest('defaultRole must be admin, member or guest');
+  // An organisation's directory has owners, admins and members; team membership comes from its workspaces (#108).
+  if (defaultRole === 'guest' && (await getWorkspaceInfo(workspaceId))?.kind === 'organisation')
+    throw badRequest('People who sign in through an organisation join its directory as members or admins');
   const enabled = body.enabled === true;
   // Omitted (enable/disable, default role): unchanged. Only SAML has IdP-initiated sign-in.
   if (body.idpInitiated !== undefined && typeof body.idpInitiated !== 'boolean') throw badRequest('idpInitiated must be true or false');
