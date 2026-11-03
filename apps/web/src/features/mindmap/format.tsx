@@ -80,7 +80,9 @@ export default defineFormat({
             icon={Sparkles}
             label={editor.host.ai ? 'Expand with AI' : `Expand with AI: ${editor.host.aiUnavailable}`}
             size={32}
-            disabled={!editor.host.ai}
+            // Not `disabled`: the tooltip (and a click) must still say why.
+            aria-disabled={!editor.host.ai || undefined}
+            className={editor.host.ai ? undefined : 'fr-mm-ai-off'}
             onClick={() => expandWithAi(editor, single.id)}
           />
         )}

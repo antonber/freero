@@ -169,6 +169,11 @@
   font-size: 13px;
 }
 
+/* Expand with AI where AI is off for this person: dimmed, still hoverable for its reason. */
+.fr-mm-ai-off {
+  opacity: 0.45;
+}
+
 /* Format toolbar */
 .fr-mm-swatch-btn {
   display: grid;
