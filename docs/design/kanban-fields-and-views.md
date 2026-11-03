@@ -1010,7 +1010,10 @@ Fields from the outside world: trackers, templates and CSV.
   person field, matched to members by verified email) and `$due`; a second "Labels" / "Owner" /
   "Due" field would hold the same data twice, and two-way sync would then have two board values for
   one tracker field. The kanban shows them through `card.show`. A per-connection field map for other
-  custom fields (#43) is still later.
+  custom fields (#43) is still later. *(Since built: the connection's field map pairs tracker
+  fields with kanban fields by name and kind — `custom:<id>` IssueFields, merged like the others —
+  and a "Sprint" / "Cycle" / "Iteration" single select carries the tracker's sprints like Priority,
+  closed ones as `readOnly` options (#119, #43; docs/trackers.md).)*
 - **UI**: "Import issues into this kanban…" (a selected kanban's context menu) imports with
   `placement.into`; the send preview lists the column a card will ask for and its priority. MCP and
   REST already take `placement.into` / `newKanban`, so `import_from_tracker` gets all of this with

@@ -4,11 +4,12 @@
 // shown once, when made); remove it — sync stops, board items stay as they are. Tokens are sent
 // once and never come back from the server.
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Copy, KeyRound, Plug, RefreshCw, Trash2 } from 'lucide-react';
+import { Copy, KeyRound, ListTree, Plug, RefreshCw, Trash2 } from 'lucide-react';
 import { TRACKER_PROVIDERS, type TrackerConnectionInfo, type TrackerConnectionInput, type TrackerProviderKind } from '@freero/shared';
 import { Button, Input, Select, Spinner, useToast } from '@ui';
 import { api, ApiError } from '../api/client';
 import { relativeTime } from '../lib/time';
+import { TrackerFieldMap } from './TrackerFieldMap';
 import './TrackerConnections.css';
 
 const errorText = (e: unknown, fallback: string) => (e instanceof ApiError && e.status < 500 ? e.message : e instanceof ApiError ? e.message || fallback : fallback);
@@ -19,8 +20,9 @@ const SITE_PLACEHOLDER: Record<TrackerProviderKind, string> = {
   jira: 'https://your-team.atlassian.net',
   linear: 'https://linear.app',
   github: 'https://github.com (or your GitHub Enterprise address)',
+  azure: 'https://dev.azure.com/your-organization',
 };
-const TOKEN_LABEL: Record<TrackerProviderKind, string> = { jira: 'API token', linear: 'API key', github: 'Personal access token' };
+const TOKEN_LABEL: Record<TrackerProviderKind, string> = { jira: 'API token', linear: 'API key', github: 'Personal access token', azure: 'Personal access token (Work Items: read & write)' };
 
 function Secret({ value, onDone }: { value: string; onDone: () => void }) {
   const notify = useToast();
@@ -66,7 +68,7 @@ function AddConnection({ workspaceId, oauthJira, onAdded }: { workspaceId: strin
       token,
       inbound,
       ...(workspaceId ? { workspaceId } : {}),
-      ...(provider === 'jira' ? { deployment } : {}),
+      ...(provider === 'jira' || provider === 'azure' ? { deployment } : {}),
       ...(provider === 'jira' && deployment === 'cloud' ? { email: email.trim() } : {}),
       ...(project.trim() ? { defaults: { project: project.trim() } } : {}),
     };
@@ -90,6 +92,21 @@ function AddConnection({ workspaceId, oauthJira, onAdded }: { workspaceId: strin
           <span>Tracker</span>
           <Select aria-label="Tracker" options={PROVIDER_OPTIONS} value={provider} onChange={setProvider} width="100%" />
         </label>
+        {provider === 'azure' && (
+          <label>
+            <span>Azure DevOps</span>
+            <Select
+              aria-label="Azure DevOps deployment"
+              options={[
+                { value: 'cloud', label: 'Services', description: 'dev.azure.com' },
+                { value: 'datacenter', label: 'Server', description: 'Your own address (2020 or later)' },
+              ]}
+              value={deployment}
+              onChange={setDeployment}
+              width="100%"
+            />
+          </label>
+        )}
         {provider === 'jira' && (
           <label>
             <span>Jira</span>
@@ -106,7 +123,7 @@ function AddConnection({ workspaceId, oauthJira, onAdded }: { workspaceId: strin
           </label>
         )}
         <Input label="Name" value={name} placeholder={TRACKER_PROVIDERS[provider]} maxLength={80} onChange={(e) => setName(e.target.value)} />
-        <Input label="Address" value={site} placeholder={SITE_PLACEHOLDER[provider]} onChange={(e) => setSite(e.target.value)} required={provider === 'jira'} />
+        <Input label="Address" value={site} placeholder={SITE_PLACEHOLDER[provider]} onChange={(e) => setSite(e.target.value)} required={provider === 'jira' || provider === 'azure'} />
         {provider === 'jira' && deployment === 'cloud' && (
           <Input label="Account email" type="email" value={email} autoComplete="off" onChange={(e) => setEmail(e.target.value)} required />
         )}
@@ -118,7 +135,11 @@ function AddConnection({ workspaceId, oauthJira, onAdded }: { workspaceId: strin
           onChange={(e) => setToken(e.target.value)}
           required
         />
-        <Input label={provider === 'github' ? 'Default repository (owner/name)' : provider === 'linear' ? 'Default team key' : 'Default project key'} value={project} onChange={(e) => setProject(e.target.value)} />
+        <Input
+          label={provider === 'github' ? 'Default repository (owner/name)' : provider === 'linear' ? 'Default team key' : provider === 'azure' ? 'Default project' : 'Default project key'}
+          value={project}
+          onChange={(e) => setProject(e.target.value)}
+        />
         <label>
           <span>Changes from the tracker</span>
           <Select
@@ -161,6 +182,7 @@ export function TrackerConnections({ workspaceId }: { workspaceId: string | null
   const [oauthJira, setOauthJira] = useState(false);
   const [secret, setSecret] = useState<{ id: string; value: string } | null>(null);
   const [adding, setAdding] = useState(false);
+  const [mapping, setMapping] = useState<string | null>(null);
 
   const load = useCallback(() => {
     api.trackerConnections(workspaceId).then(
@@ -223,7 +245,7 @@ export function TrackerConnections({ workspaceId }: { workspaceId: string | null
               </div>
               <div className="fr-trackerconn__meta">
                 {TRACKER_PROVIDERS[c.provider]}
-                {c.deployment ? ` ${c.deployment === 'cloud' ? 'Cloud' : 'Data Center'}` : ''} · {c.site} · {c.auth === 'oauth' ? 'OAuth' : 'token'}
+                {c.deployment ? ` ${c.provider === 'azure' ? (c.deployment === 'cloud' ? 'Services' : 'Server') : c.deployment === 'cloud' ? 'Cloud' : 'Data Center'}` : ''} · {c.site} · {c.auth === 'oauth' ? 'OAuth' : 'token'}
                 {c.account ? ` · as ${c.account}` : ''} · {c.links} linked issue{c.links === 1 ? '' : 's'} · added {relativeTime(c.createdAt)}
               </div>
               {c.lastError && <div className="fr-trackerconn__error">{c.lastError}</div>}
@@ -232,6 +254,11 @@ export function TrackerConnections({ workspaceId }: { workspaceId: string | null
               <Button size="sm" icon={RefreshCw} onClick={() => void test(c)}>
                 Test
               </Button>
+              {c.fieldMap && (
+                <Button size="sm" variant="ghost" icon={ListTree} aria-expanded={mapping === c.id} onClick={() => setMapping(mapping === c.id ? null : c.id)}>
+                  Field map
+                </Button>
+              )}
               <Button size="sm" variant="ghost" icon={Trash2} onClick={() => void remove(c)} aria-label={`Remove ${c.name}`}>
                 Remove
               </Button>
@@ -244,7 +271,22 @@ export function TrackerConnections({ workspaceId }: { workspaceId: string | null
               New secret
             </Button>
           </div>
+          {c.provider === 'azure' && (
+            <p className="fr-trackerconn__fine">
+              In Azure DevOps: Project settings → Service hooks → Web Hooks, event “Work item updated”, this address, basic authentication with any user name and the webhook secret as the password.
+            </p>
+          )}
           {secret?.id === c.id && <Secret value={secret.value} onDone={() => setSecret(null)} />}
+          {mapping === c.id && (
+            <TrackerFieldMap
+              connection={c}
+              onSaved={(next) => {
+                setList((l) => l?.map((x) => (x.id === next.id ? next : x)) ?? null);
+                setMapping(null);
+              }}
+            />
+          )}
+
         </div>
       ))}
       {adding ? (

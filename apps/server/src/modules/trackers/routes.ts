@@ -9,14 +9,15 @@ import { appUrl } from '../../platform/mail';
 import { rateLimit } from '../../platform/rateLimit';
 import { allowCrossSitePost } from '../../platform/security';
 import { currentUser, requireUser } from '../auth/index';
-import { createConnection, deleteConnectionRecord, listManaged, requireManaged, rotateWebhookSecret, testConnection, info, updateConnection } from './connections';
+import { createConnection, deleteConnectionRecord, listManaged, requireManaged, rotateWebhookSecret, testConnection, info, trackerFieldsOf, updateConnection } from './connections';
 import { finishOAuth, oauthOffered, startOAuth } from './oauth';
 import * as repo from './repo';
-import { boardConnections, importIssues, markDisconnected, previewSend, projectsOf, receiveWebhook, requestSync, resyncConnection, sendToTracker, unlink } from './service';
+import { boardConnections, importIssues, issueTypesOf, markDisconnected, previewSend, projectsOf, receiveWebhook, requestSync, resyncConnection, sendToTracker, sprintsOf, unlink } from './service';
 
 // Trackers post webhooks from their own servers: no browser, no cookie — the signature over the
-// body with the connection's secret is the only credential (service.receiveWebhook).
-allowCrossSitePost(/^\/api\/trackers\/webhooks\/[^/]+$/, 'tracker webhooks are posted by the tracker’s servers and verified by their HMAC signature');
+// body with the connection's secret is the only credential (service.receiveWebhook); Azure DevOps,
+// which can't sign, sends the secret as its basic auth password.
+allowCrossSitePost(/^\/api\/trackers\/webhooks\/[^/]+$/, 'tracker webhooks are posted by the tracker’s servers and verified by their HMAC signature (or the secret, for Azure DevOps service hooks)');
 
 const origin = (req: Parameters<typeof appUrl>[0]) => appUrl(req, '');
 const providerParam = (p: string): TrackerProviderKind => (p === 'jira' || p === 'linear' || p === 'github' ? p : 'jira');
@@ -41,6 +42,20 @@ export default function trackerRoutes(_ctx: ServerContext): Router {
     requireUser,
     handle(async (req, res) => {
       res.json(await projectsOf(currentUser(req).id, req.params.conn, req.params.id));
+    }),
+  );
+  r.get(
+    '/boards/:id/trackers/connections/:conn/sprints',
+    requireUser,
+    handle(async (req, res) => {
+      res.json(await sprintsOf(currentUser(req).id, req.params.conn, req.params.id, req.query.project));
+    }),
+  );
+  r.get(
+    '/boards/:id/trackers/connections/:conn/issue-types',
+    requireUser,
+    handle(async (req, res) => {
+      res.json(await issueTypesOf(currentUser(req).id, req.params.conn, req.params.id, req.query.project));
     }),
   );
   r.post(
@@ -128,8 +143,18 @@ export default function trackerRoutes(_ctx: ServerContext): Router {
       });
     }),
   );
+  r.get(
+    '/trackers/connections/:id/fields',
+    requireUser,
+    rateLimit('trackerSend', 'user'),
+    handle(async (req, res) => {
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.json({ fields: await trackerFieldsOf(req.params.id, currentUser(req).id) });
+    }),
+  );
   r.post(
     '/trackers/connections/:id/webhook-secret',
+
     requireUser,
     handle(async (req, res) => {
       res.setHeader('Cache-Control', 'no-store');

@@ -1,6 +1,6 @@
 // The only writer of `tracker_connections`, `tracker_links`, `tracker_link_sources`,
 // `tracker_proposals` and `tracker_oauth_flows` [S4].
-import type { SyncBase, TrackerProviderKind } from '@freero/shared';
+import type { FieldMapEntry, SyncBase, TrackerProviderKind } from '@freero/shared';
 import { isUniqueViolation, one, query, tx } from '../../platform/db';
 
 /** Runs fn in one transaction (a change, its audit record and its outbox event commit together). */
@@ -15,6 +15,16 @@ export interface ConnectionSettings {
   estimateField?: string | null;
   /** Jira: the custom field holding an issue's start date ("Start date"; discovered by the test). */
   startDateField?: string | null;
+  /** Jira: the custom field holding an issue's sprints (discovered by the test, #119). */
+  sprintField?: string | null;
+  /** Jira Data Center: the "Epic Link" field (an issue's epic; Cloud uses `parent`). */
+  epicLinkField?: string | null;
+  /** The estimate / start date fields were picked by a manager (#43): a test no longer rediscovers them. */
+  fieldsPicked?: boolean;
+  /** Issue (work item) type by project key, before `issueType` (#43). */
+  issueTypes?: Record<string, string>;
+  /** Tracker fields paired with kanban fields (#43). */
+  fieldMap?: FieldMapEntry[];
 }
 
 export interface StoredConnection {
@@ -345,6 +355,16 @@ export async function linksByIds(ids: string[]): Promise<Array<StoredLink & { pr
     [ids],
   );
   return rows.map((r) => ({ ...toLink(r), provider: r.provider }));
+}
+
+/** The links a person made (their data export), with each one's connection and tracker. */
+export async function linksMadeBy(userId: string): Promise<Array<StoredLink & { provider: TrackerProviderKind; connectionName: string }>> {
+  const rows = await query<LinkRow & { provider: TrackerProviderKind; connection_name: string }>(
+    `SELECT l.*, c.provider, c.name AS connection_name, (SELECT array_agg(s.element_id ORDER BY s.position) FROM tracker_link_sources s WHERE s.link_id = l.id) AS sources
+       FROM tracker_links l JOIN tracker_connections c ON c.id = l.connection_id WHERE l.created_by = $1 ORDER BY l.created_at`,
+    [userId],
+  );
+  return rows.map((r) => ({ ...toLink(r), provider: r.provider, connectionName: r.connection_name }));
 }
 
 export async function linksOfBoard(boardId: string): Promise<StoredLink[]> {

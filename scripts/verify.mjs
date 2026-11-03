@@ -7171,12 +7171,14 @@ async function mcpChecks() {
 }
 
 // Issue-tracker sync (KAI-153/154/155/156/157) against local mock trackers (scripts/lib/mock-*.mjs):
-// Jira Cloud (API token and OAuth 3LO), Jira Data Center (PAT, polling), Linear and GitHub. Real
-// server, real Yjs clients, real webhooks signed like the trackers sign them — no real tracker.
+// Jira Cloud (API token and OAuth 3LO), Jira Data Center (PAT, polling), Linear, GitHub and Azure
+// DevOps Services and Server (#6). Real server, real Yjs clients, real webhooks signed like the
+// trackers sign them — no real tracker.
 async function trackerChecks() {
   const { startMockJira, plainOf } = await import('./lib/mock-jira.mjs');
   const { startMockLinear } = await import('./lib/mock-linear.mjs');
   const { startMockGithub } = await import('./lib/mock-github.mjs');
+  const { startMockAzure } = await import('./lib/mock-azure.mjs');
   const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
   const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'freero-verify-trackers-'));
@@ -7186,7 +7188,9 @@ async function trackerChecks() {
   const atlassian = await startMockJira({ deployment: 'cloud', tokenTtlSeconds: 30 });
   const lin = await startMockLinear();
   const gh = await startMockGithub();
-  const mocks = [cloud, dc, atlassian, lin, gh];
+  const az = await startMockAzure();
+  const azServer = await startMockAzure({ deployment: 'server', organization: 'tfs/DefaultCollection', token: 'server-pat' });
+  const mocks = [cloud, dc, atlassian, lin, gh, az, azServer];
   let proc = null;
   const live = [];
   const mcpClients = [];
@@ -7544,6 +7548,210 @@ async function trackerChecks() {
       assert(atlassian.requests.filter((r) => r.path === '/oauth/token' && r.body.includes('refresh_token')).length >= 1, 'the expiring access token was never refreshed');
     });
 
+    // ---- sprints (#119), the field map and parents (#43) ----
+
+    /** The column a card stands in on kanban `k`, and a kanban field by name. */
+    const fieldOf = (kid, name) => (E.get(kid).fields ?? []).find((f) => f.name === name);
+    const optionLabel = (kid, name, card) => {
+      const f = fieldOf(kid, name);
+      return f?.options?.find((o) => o.id === card?.values?.[f.id])?.label ?? null;
+    };
+    const setOption = (kid, name, cardId, label) => {
+      const f = fieldOf(kid, name);
+      const o = f.options.find((x) => x.label === label);
+      const card = E.get(cardId);
+      E.set(cardId, { ...card, values: { ...card.values, [f.id]: o ? o.id : undefined } });
+    };
+
+    await check('trackers (sprints, #119): the current WEB sprint imported into a kanban without JQL gets a Sprint field with the project’s sprints; a card moved to the next sprint moves the Jira issue, a sprint moved in Jira moves the card, a closed sprint turns read-only and Jira refuses it', async () => {
+      const a = cloud.create('WEB', { summary: 'Sprint: checkout form', description: { type: 'doc', version: 1, content: [] } });
+      const b = cloud.create('WEB', { summary: 'Sprint: receipts', description: { type: 'doc', version: 1, content: [] } });
+      const later = cloud.create('WEB', { summary: 'Sprint: later', description: { type: 'doc', version: 1, content: [] } });
+      cloud.edit(a.key, { sprint: 2 });
+      cloud.edit(b.key, { sprint: 2 });
+      cloud.edit(later.key, { sprint: 3 });
+      const listed = await M.req('GET', `/api/boards/${board.id}/trackers/connections/${cloudConn.id}/sprints?project=WEB`);
+      assert(listed.status === 200 && listed.json.fieldName === 'Sprint' && listed.json.sprints.map((s) => s.state).join() === 'closed,active,future', `sprints: ${listed.status} ${listed.text}`);
+      E.set('ks', { ...base, id: 'ks', type: 'kanban', x: 0, y: 14000, w: 12 + 3 * 292, h: 400, z: 0, title: '<p>Sprint planning</p>', colW: 280, columns: [
+        { id: 'ks_todo', title: '<p>To do</p>', status: 'todo', color: '#8A89A3' },
+        { id: 'ks_doing', title: '<p>In progress</p>', status: 'doing', color: '#2E9BF0' },
+        { id: 'ks_done', title: '<p>Done</p>', status: 'done', color: '#1FA463' },
+      ] });
+      const r = await O.req('POST', `/api/boards/${board.id}/trackers/import`, { connectionId: cloudConn.id, scope: { project: 'WEB', sprint: 'current' }, placement: { into: 'ks' } });
+      assert(r.status === 201 && r.json.cards.map((x) => x.key).sort().join() === [a.key, b.key].sort().join(), `import the current sprint: ${r.status} ${r.text.slice(0, 300)}`);
+      await waitFor(() => r.json.cards.every((x) => E.get(x.id)) && fieldOf('ks', 'Sprint'), 8000, 'the cards and the Sprint field');
+      const sf = fieldOf('ks', 'Sprint');
+      assert(sf.options.map((o) => o.label).join() === 'WEB Sprint 2,WEB Sprint 3' && !sf.options.some((o) => o.readOnly), `Sprint options: ${JSON.stringify(sf.options)}`);
+      const cardOf = (key) => r.json.cards.find((x) => x.key === key).id;
+      assert(optionLabel('ks', 'Sprint', E.get(cardOf(a.key))) === 'WEB Sprint 2', 'the card’s sprint');
+      await waitFor(() => cloud.issue(a.key).remotelinks.length === 1 && cloud.issue(b.key).remotelinks.length === 1, 10_000, 'the imported issues’ first syncs');
+      // Planning on the board: A goes to the next sprint.
+      setOption('ks', 'Sprint', cardOf(a.key), 'WEB Sprint 3');
+      await waitFor(() => cloud.issue(a.key).sprint === 'WEB Sprint 3', 15_000, `${a.key} in WEB Sprint 3 in Jira`);
+      assert(cloud.requests.some((q) => q.method === 'POST' && q.path === '/rest/agile/1.0/sprint/3/issue'), 'not moved through the agile API');
+      // Planning in Jira: B goes to the next sprint too.
+      cloud.edit(b.key, { sprint: 3 });
+      assert((await cloud.webhook(webhookUrl, secret, b.key)) === 202, 'webhook');
+      await waitFor(() => optionLabel('ks', 'Sprint', E.get(cardOf(b.key))) === 'WEB Sprint 3', 10_000, 'the card’s sprint from Jira');
+      // Sprint 3 ends; Jira carries A over into Sprint 2: the card follows, Sprint 3 turns read-only.
+      cloud.closeSprint(3);
+      cloud.edit(a.key, { sprint: 2 });
+      assert((await cloud.webhook(webhookUrl, secret, a.key)) === 202, 'webhook');
+      await waitFor(() => optionLabel('ks', 'Sprint', E.get(cardOf(a.key))) === 'WEB Sprint 2' && fieldOf('ks', 'Sprint').options.find((o) => o.label === 'WEB Sprint 3')?.readOnly, 10_000, 'Sprint 2 on the card and Sprint 3 read-only');
+      assert(optionLabel('ks', 'Sprint', E.get(cardOf(b.key))) === 'WEB Sprint 3', 'a card in the closed sprint lost it');
+      // Something writes the closed sprint anyway (an old client): Jira is never asked, the board says why.
+      setOption('ks', 'Sprint', cardOf(a.key), 'WEB Sprint 3');
+      await waitFor(() => comments().some((t) => /WEB Sprint 3.*closed/.test(t)), 10_000, 'a note that the sprint is closed');
+      assert(cloud.issue(a.key).sprint === 'WEB Sprint 2', 'Jira moved the issue into a closed sprint');
+    });
+
+    await check('trackers (field map, #43): a Jira custom field mapped to a kanban field syncs both ways; renaming the kanban field sends nothing and clears nothing, and the change Jira made meanwhile reaches the card once the map names it again', async () => {
+      const fields = await O.req('GET', `/api/trackers/connections/${cloudConn.id}/fields`);
+      const team = fields.json?.fields?.find((f) => f.id === 'customfield_10050');
+      assert(fields.status === 200 && team?.type === 'select' && fields.json.fields.find((f) => f.id === 'customfield_10020')?.type === null, `fields: ${fields.status} ${fields.text.slice(0, 300)}`);
+      assert((await M.req('GET', `/api/trackers/connections/${cloudConn.id}/fields`)).status === 404, 'a member read the field list');
+      const entry = { tracker: team.id, trackerName: team.name, board: 'Team', type: 'select' };
+      const bad = await O.req('PATCH', `/api/trackers/connections/${cloudConn.id}`, { fieldMap: { fields: [entry, { ...entry, tracker: 'customfield_1' }] } });
+      assert(bad.status === 400, `a kanban field mapped twice was kept: ${bad.status}`);
+      const saved = await O.req('PATCH', `/api/trackers/connections/${cloudConn.id}`, { fieldMap: { fields: [entry], issueTypes: { WEB: 'Story' } } });
+      assert(saved.status === 200 && saved.json.connection.fieldMap.fields[0].board === 'Team' && saved.json.connection.fieldMap.issueTypes.WEB === 'Story', `save: ${saved.status} ${saved.text}`);
+      const t1 = cloud.create('WEB', { summary: 'Team: web issue', labels: ['teamsk'], description: { type: 'doc', version: 1, content: [] } });
+      cloud.edit(t1.key, { team: 'Web' });
+      const r = await O.req('POST', `/api/boards/${board.id}/trackers/import`, { connectionId: cloudConn.id, query: 'labels = teamsk', placement: { into: 'ks' } });
+      assert(r.status === 201 && r.json.cards.length === 1, `import: ${r.status} ${r.text.slice(0, 300)}`);
+      const id = r.json.cards[0].id;
+      await waitFor(() => E.get(id) && optionLabel('ks', 'Team', E.get(id)) === 'Web', 8000, 'a Team field with the card’s team');
+      await waitFor(() => cloud.issue(t1.key).remotelinks.length === 1, 10_000, 'the first sync');
+      // Board → Jira: the card moves to Mobile (an option the board adds).
+      const tf = fieldOf('ks', 'Team');
+      const k0 = E.get('ks');
+      E.set('ks', { ...k0, fields: k0.fields.map((f) => (f.id === tf.id ? { ...f, options: [...f.options, { id: 'opt_mobile', label: 'Mobile', color: '#2E9BF0' }] } : f)) });
+      setOption('ks', 'Team', id, 'Mobile');
+      await waitFor(() => cloud.issue(t1.key).team === 'Mobile', 15_000, 'Mobile in Jira');
+      // The kanban field is renamed: Jira keeps its value, nothing clears it.
+      const k1 = E.get('ks');
+      E.set('ks', { ...k1, fields: k1.fields.map((f) => (f.id === tf.id ? { ...f, name: 'Squad' } : f)) });
+      await settled(c);
+      assert((await O.req('POST', `/api/boards/${board.id}/trackers/links/${r.json.cards[0].linkId}/sync`)).status === 200, 'sync now');
+      cloud.edit(t1.key, { team: 'Platform' });
+      assert((await cloud.webhook(webhookUrl, secret, t1.key)) === 202, 'webhook');
+      const puts = () => cloud.requests.filter((q) => q.method === 'PUT' && q.body.includes('customfield_10050'));
+      await new Promise((res) => setTimeout(res, 3000));
+      assert(!puts().some((q) => /"customfield_10050":null/.test(q.body)), 'Jira’s Team was cleared');
+      assert(cloud.issue(t1.key).team === 'Platform' && optionLabel('ks', 'Squad', E.get(id)) === 'Mobile', `while unmapped: Jira ${cloud.issue(t1.key).team}, card ${optionLabel('ks', 'Squad', E.get(id))}`);
+      // The map follows the rename: Platform reaches the card.
+      assert((await O.req('PATCH', `/api/trackers/connections/${cloudConn.id}`, { fieldMap: { fields: [{ ...entry, board: 'Squad' }] } })).status === 200, 'remap');
+      await waitFor(() => optionLabel('ks', 'Squad', E.get(id)) === 'Platform', 15_000, 'Platform on the card');
+      assert(cloud.issue(t1.key).team === 'Platform', 'the board’s old value was sent back');
+    });
+
+    await check('trackers (parents, #43): two clusters of stickies sent “one per cluster” become a new Jira epic with one Story under it per cluster, each linked to its stickies', async () => {
+      E.set('pc', { ...base, id: 'pc', type: 'frame', x: 3000, y: 14000, w: 1400, h: 400, z: 0, title: 'Onboarding revamp' });
+      const texts = [['Welcome tour', 'Empty states'], ['Invite flow', 'Team templates']];
+      const ids = [];
+      texts.forEach((group, g) =>
+        group.forEach((t, i) => {
+          const id = `pc${g}${i}`;
+          ids.push(id);
+          E.set(id, { ...base, id, type: 'sticky', x: 3020 + g * 700 + i * 210, y: 14060, w: 200, h: 200, frameId: 'pc', color: 'yellow', text: `<p>${t}</p>`, tags: [] });
+        }),
+      );
+      const preview = await O.req('POST', `/api/boards/${board.id}/trackers/preview`, { connectionId: cloudConn.id, project: 'WEB', itemIds: ids, mode: 'clusters' });
+      assert(preview.status === 200 && preview.json.issues.length === 3 && preview.json.issues[0].values.title === 'Onboarding revamp', `preview: ${preview.status} ${preview.text.slice(0, 300)}`);
+      const sent = await O.req('POST', `/api/boards/${board.id}/trackers/send`, { connectionId: cloudConn.id, project: 'WEB', itemIds: ids, mode: 'clusters' });
+      assert(sent.status === 201 && sent.json.parent && sent.json.issues.length === 2, `send: ${sent.status} ${sent.text.slice(0, 300)}`);
+      const epic = cloud.issue(sent.json.parent.key);
+      assert(epic.fields.issuetype.name === 'Epic' && epic.fields.summary === 'Onboarding revamp', `epic: ${JSON.stringify(epic.fields)}`);
+      for (const i of sent.json.issues) {
+        const child = cloud.issue(i.key);
+        assert(child.fields.parent?.key === sent.json.parent.key && child.fields.issuetype.name === 'Story' && child.remotelinks.length === 2, `child ${i.key}: ${JSON.stringify(child.fields)}`);
+      }
+      assert(JSON.stringify(sent.json.issues.map((i) => i.itemIds.sort())) === JSON.stringify([['pc00', 'pc01'], ['pc10', 'pc11']]), `clusters: ${JSON.stringify(sent.json.issues)}`);
+      const gh0 = await O.req('POST', `/api/boards/${board.id}/trackers/preview`, { connectionId: cloudConn.id, project: 'WEB', itemIds: ids, mode: 'clusters', parent: 'not a key' });
+      assert(gh0.status === 400, `a parent that isn’t a key: ${gh0.status}`);
+    });
+
+    await check('trackers (Linear cycles, #119): the current cycle imported into a new kanban gets a Cycle field; a cycle moved in Linear moves the card', async () => {
+      const made = await O.req('POST', '/api/trackers/connections', { provider: 'linear', name: 'Linear cycles', workspaceId: team.id, site: lin.url, token: lin.apiKey, defaults: { project: 'ENG' } });
+      assert(made.status === 201, `linear connection: ${made.status} ${made.text}`);
+      const lc = made.json.connection;
+      const key = lin.create('ENG', { title: 'Cycle work' }).identifier;
+      lin.edit(key, { cycle: 2 });
+      const r = await O.req('POST', `/api/boards/${board.id}/trackers/import`, { connectionId: lc.id, scope: { project: 'ENG', sprint: 'current' }, placement: { newKanban: 'ENG cycle' } });
+      assert(r.status === 201 && r.json.containerId, `import the current cycle: ${r.status} ${r.text.slice(0, 300)}`);
+      await waitFor(() => E.get(r.json.containerId) && fieldOf(r.json.containerId, 'Cycle'), 8000, 'a Cycle field');
+      const cardId = r.json.cards.find((x) => x.key === key)?.id;
+      assert(cardId && optionLabel(r.json.containerId, 'Cycle', E.get(cardId)) === 'Cycle 2', `the card’s cycle: ${JSON.stringify(fieldOf(r.json.containerId, 'Cycle'))}`);
+      lin.edit(key, { cycle: 3 });
+      assert((await lin.webhook(`http://127.0.0.1:${proc.port}/api/trackers/webhooks/${lc.id}`, made.json.webhookSecret, key)) === 202, 'webhook');
+      await waitFor(() => optionLabel(r.json.containerId, 'Cycle', E.get(cardId)) === 'Polish', 10_000, 'the next cycle on the card');
+    });
+
+    await check('trackers (Azure DevOps, #6): a PAT connection is tested; two stickies become one work item with a Hyperlink back to each; a card’s state round-trips with Azure DevOps through a service hook; a forged hook is refused', async () => {
+      const body = { provider: 'azure', name: 'Azure Boards', workspaceId: team.id, site: az.site, deployment: 'cloud', token: az.token, defaults: { project: az.project } };
+      const wrong = await O.req('POST', '/api/trackers/connections', { ...body, token: 'nope' });
+      assert(wrong.status === 400 && /refused the credentials/.test(wrong.json?.error ?? ''), `wrong PAT: ${wrong.status} ${wrong.text}`);
+      const made = await O.req('POST', '/api/trackers/connections', body);
+      assert(made.status === 201 && made.json.connection.account === 'bot@azure.test' && !made.text.includes(az.token), `azure connection: ${made.status} ${made.text}`);
+      const ac = made.json.connection;
+      const hookUrl = `http://127.0.0.1:${proc.port}/api/trackers/webhooks/${ac.id}`;
+      E.set('az1', { ...base, id: 'az1', type: 'sticky', x: 0, y: 16000, w: 200, h: 200, color: 'yellow', text: '<p>Export to <b>CSV</b> & PDF</p>', tags: ['t-ux'] });
+      E.set('az2', { ...base, id: 'az2', type: 'sticky', x: 220, y: 16000, w: 200, h: 200, color: 'yellow', text: '<p>Scheduled reports</p>', tags: [] });
+      const sent = await O.req('POST', `/api/boards/${board.id}/trackers/send`, { connectionId: ac.id, project: az.project, itemIds: ['az1', 'az2'] });
+      assert(sent.status === 201 && /^#\d+$/.test(sent.json.issues[0].key), `azure send: ${sent.status} ${sent.text}`);
+      const w = az.item(sent.json.issues[0].key);
+      const links = w.relations.filter((r) => r.rel === 'Hyperlink');
+      assert(links.length === 2 && links.some((l) => l.url.includes('item=az1')) && w.fields['System.Tags'] === 'ux', `work item: ${JSON.stringify(w)}`);
+      assert(w.fields['System.Description'].includes('Export to CSV &amp; PDF') && !/<b>/.test(w.fields['System.Description']), `description: ${w.fields['System.Description']}`);
+      await waitFor(() => E.get('az1').trackerLink && records().get(E.get('az1').trackerLink)?.key === sent.json.issues[0].key, 5000, 'the badge');
+      // A card: done on the board → Closed in Azure DevOps; Active there → doing here.
+      E.set('az3', { ...base, id: 'az3', type: 'card', x: 500, y: 16000, w: 260, h: 120, title: '<p>Audit log export</p>', description: '', color: '#5B3FF0', status: 'todo', tags: [], assigneeId: null, dueDate: null });
+      const card = await O.req('POST', `/api/boards/${board.id}/trackers/send`, { connectionId: ac.id, project: az.project, itemIds: ['az3'] });
+      const key = card.json.issues[0].key;
+      assert(az.item(key).state === 'New', `new work item state: ${az.item(key).state}`);
+      E.set('az3', { ...E.get('az3'), status: 'done' });
+      await waitFor(() => az.item(key).state === 'Closed', 15_000, 'Closed in Azure DevOps');
+      az.edit(key.slice(1), { state: 'Active' });
+      assert((await az.webhook(hookUrl, 'not-the-secret', key.slice(1))) === 401, 'a hook with another secret was accepted');
+      assert((await az.webhook(hookUrl, made.json.webhookSecret, key.slice(1))) === 202, 'service hook refused');
+      await waitFor(() => E.get('az3').status === 'doing', 10_000, 'Active on the card');
+      // The revision race: someone renames the work item between Freero's read and its write.
+      az.editBeforeNextPatch(key.slice(1), { title: 'Audit log export (renamed in Azure)' });
+      E.set('az3', { ...E.get('az3'), title: '<p>Audit log export, renamed on the board</p>' });
+      await waitFor(() => plain(E.get('az3').title) === 'Audit log export (renamed in Azure)', 15_000, 'the Azure title on the card');
+      assert(az.item(key).title === 'Audit log export (renamed in Azure)', `the board overwrote Azure’s change: ${az.item(key).title}`);
+      await waitFor(() => comments().some((t) => /Title of #\d+ changed here and in Azure DevOps/.test(t) && t.includes('renamed on the board')), 5000, 'a note keeping the board’s title');
+      assert(records().get(E.get('az3').trackerLink)?.state === 'ok', `the badge after the race: ${JSON.stringify(records().get(E.get('az3').trackerLink))}`);
+    });
+
+    await check('trackers (Azure DevOps, #6): the current iteration imported into a kanban gets an Iteration field; a card moved to the next iteration moves the work item', async () => {
+      const ac = (await O.req('GET', `/api/trackers/connections?workspace=${team.id}`)).json.connections.find((x) => x.provider === 'azure');
+      const w1 = az.create('Task', { 'System.Title': 'Iteration: paging', 'System.IterationPath': `${az.project}\\Sprint 2` });
+      E.set('ka', { ...base, id: 'ka', type: 'kanban', x: 0, y: 17000, w: 12 + 3 * 292, h: 400, z: 0, title: '<p>Iteration</p>', colW: 280, columns: [
+        { id: 'ka_todo', title: '<p>New</p>', status: 'todo', color: '#8A89A3' },
+        { id: 'ka_doing', title: '<p>Active</p>', status: 'doing', color: '#2E9BF0' },
+        { id: 'ka_done', title: '<p>Closed</p>', status: 'done', color: '#1FA463' },
+      ] });
+      const r = await O.req('POST', `/api/boards/${board.id}/trackers/import`, { connectionId: ac.id, scope: { project: az.project, sprint: 'current' }, placement: { into: 'ka' } });
+      assert(r.status === 201 && r.json.cards.length === 1 && r.json.cards[0].key === `#${w1.id}`, `import the current iteration: ${r.status} ${r.text.slice(0, 300)}`);
+      await waitFor(() => E.get(r.json.cards[0].id) && fieldOf('ka', 'Iteration'), 8000, 'an Iteration field');
+      assert(optionLabel('ka', 'Iteration', E.get(r.json.cards[0].id)) === 'Sprint 2', 'the card’s iteration');
+      await waitFor(() => az.item(w1.id).relations.length === 1, 10_000, 'the first sync');
+      setOption('ka', 'Iteration', r.json.cards[0].id, 'Sprint 3');
+      await waitFor(() => az.item(w1.id).iteration === `${az.project}\\Sprint 3`, 15_000, 'the work item in Sprint 3');
+    });
+
+    await check('trackers (Azure DevOps Server, #6): a Server collection with a PAT and no service hooks syncs by polling (API 6.0)', async () => {
+      const made = await O.req('POST', '/api/trackers/connections', { provider: 'azure', name: 'Azure DevOps Server', workspaceId: team.id, site: azServer.site, deployment: 'datacenter', inbound: 'polling', token: azServer.token, defaults: { project: azServer.project } });
+      assert(made.status === 201 && made.json.connection.deployment === 'datacenter', `server connection: ${made.status} ${made.text}`);
+      E.set('azs', { ...base, id: 'azs', type: 'card', x: 1000, y: 16000, w: 260, h: 120, title: '<p>On-prem backup</p>', description: '', color: '#5B3FF0', status: 'todo', tags: [], assigneeId: null, dueDate: null });
+      const sent = await O.req('POST', `/api/boards/${board.id}/trackers/send`, { connectionId: made.json.connection.id, project: azServer.project, itemIds: ['azs'] });
+      assert(sent.status === 201, `server send: ${sent.status} ${sent.text}`);
+      azServer.edit(sent.json.issues[0].key.slice(1), { state: 'Closed' });
+      await waitFor(() => E.get('azs').status === 'done', 20_000, 'the card done by polling');
+      assert(azServer.requests.every((q) => !q.query || q.query.includes('api-version=6.0')), 'a call to the Server used another API version');
+    });
+
     await check('trackers: Linear — a cluster becomes one issue with an attachment per sticky, and a signed webhook moves the card', async () => {
       const made = await O.req('POST', '/api/trackers/connections', { provider: 'linear', name: 'Linear', workspaceId: team.id, site: lin.url, token: lin.apiKey, defaults: { project: 'ENG' } });
       assert(made.status === 201, `linear connection: ${made.status} ${made.text}`);
@@ -7583,7 +7791,8 @@ async function trackerChecks() {
       const actions = new Set(events.map((e) => e.action));
       for (const a of ['tracker.connection_created', 'tracker.issue_created', 'tracker.synced', 'tracker.issues_imported']) assert(actions.has(a), `audit lacks ${a}`);
       const all = JSON.stringify(events) + proc.log.join('');
-      for (const s of [cloud.token, dc.token, secret, lin.apiKey, gh.token]) assert(!all.includes(s), 'a credential is in the audit log or the server log');
+      for (const s of [cloud.token, dc.token, secret, lin.apiKey, gh.token, az.token, azServer.token]) assert(!all.includes(s), 'a credential is in the audit log or the server log');
+
       const failures = proc.log
         .join('')
         .split('\n')

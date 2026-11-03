@@ -13,6 +13,11 @@
 // (an import into a kanban without one makes it, with the tracker's levels as options, and shows
 // it on the cards). Labels, assignee and dates are the card's own fields ($tags, $assignee, $due),
 // mapped as before.
+// Sprint → the kanban's single select "Sprint" (or "Cycle", "Iteration"; #119), the same way as
+// Priority: by label, a sprint the field lacks is added, a closed sprint is a read-only option
+// (cards keep it, nobody picks it). An import by sprint makes the field with the project's sprints.
+// Mapped fields (#43) → the kanban field the connection's field map names, by name and of a kind
+// that holds the value; an import makes it when the kanban has none.
 import {
   COLUMN_FIELD_ID,
   KANBAN_LAYOUT,
@@ -28,22 +33,30 @@ import {
   kanbanColumnLeft,
   kanbanColumnWidth,
   labelKey,
+  mappedKanbanField,
   plainToRichText,
   priorityFieldOf,
   rankColor,
+  readValue,
   savedViews,
+  sprintFieldOf,
   storedFields,
   withOptions,
+  groupKeyOf,
   type BoardElement,
   type CardElement,
   type CardStatus,
+  type CustomValue,
   type FieldDef,
+  type FieldMapEntry,
   type FieldOption,
+  type FieldValue,
   type FieldValues,
   type IssueStatusCategory,
   type IssueValues,
   type KanbanColumn,
   type KanbanElement,
+  type TrackerSprint,
   reflowMoves,
   withKanbanLayout,
   type ElementDraft,
@@ -64,18 +77,66 @@ export function kanbanOf(view: Elements, el: Pick<BoardElement, 'frameId'>): Kan
 
 const optionLabel = (f: FieldDef, id: unknown) => (typeof id === 'string' ? (f.options?.find((o) => o.id === id)?.label ?? null) : null);
 
+export interface CardFieldsContext {
+  /** The connection's field map (#43). */
+  map?: readonly FieldMapEntry[];
+  /** A person's verified email by user id (person fields). */
+  emailOf?(userId: string): string | null;
+}
+
+/** A kanban field's value in a tracker's terms: labels for options, an email for a person. */
+function trackerValueOf(f: FieldDef, v: FieldValue | null, emailOf?: (id: string) => string | null): CustomValue {
+  if (v === null || v === undefined) return f.type === 'multiselect' ? [] : null;
+  switch (f.type) {
+    case 'select':
+      return optionLabel(f, v);
+    case 'multiselect':
+      return Array.isArray(v) ? v.flatMap((id) => (optionLabel(f, id) ? [optionLabel(f, id)!] : [])) : [];
+    case 'person':
+      // Someone without a verified address can't be named to the tracker: '~' is never sent.
+      return typeof v === 'string' ? (emailOf?.(v) ?? `~${v}`) : null;
+    case 'number':
+      return typeof v === 'number' ? v : null;
+    default:
+      return typeof v === 'string' ? v : null;
+  }
+}
+
 /**
  * What a card's kanban fields say to a tracker: its Stage option's label (the column it stands
- * in), and its Priority's label when the kanban has a Priority field (left out otherwise, so the
- * board never pushes a priority it doesn't hold).
+ * in), its Priority's and Sprint's labels when the kanban has those fields, and the fields the
+ * connection's map names (#43) — each left out when the kanban has no such field, so the board
+ * never pushes (or clears) a value it doesn't hold.
  */
-export function cardTrackerFields(k: KanbanElement, card: CardElement): { statusName: string | null; priority?: string | null } {
+export function cardTrackerFields(
+  k: KanbanElement,
+  card: CardElement,
+  ctx: CardFieldsContext = {},
+): { statusName: string | null; priority?: string | null; sprint?: string | null; custom?: Record<string, CustomValue> } {
   const schema = collectionSchema(k);
   const stage = schema.find((f) => f.id === COLUMN_FIELD_ID);
-  const out: { statusName: string | null; priority?: string | null } = { statusName: stage ? optionLabel(stage, cardValue(k, card, stage)) : null };
+  const out: { statusName: string | null; priority?: string | null; sprint?: string | null; custom?: Record<string, CustomValue> } = {
+    statusName: stage ? optionLabel(stage, cardValue(k, card, stage)) : null,
+  };
   const pf = priorityFieldOf(schema);
   if (pf) out.priority = optionLabel(pf, cardValue(k, card, pf));
+  const sf = sprintFieldOf(schema);
+  if (sf) out.sprint = optionLabel(sf, cardValue(k, card, sf));
+  for (const m of ctx.map ?? []) {
+    const f = mappedKanbanField(schema, m);
+    if (!f) continue;
+    (out.custom ??= {})[m.tracker] = trackerValueOf(f, cardValue(k, card, f), ctx.emailOf);
+  }
   return out;
+}
+
+/** The user ids a card's person fields hold (their emails are what trackers match). */
+export function personValues(k: KanbanElement, card: CardElement): string[] {
+  return collectionSchema(k).flatMap((f) => {
+    if (f.type !== 'person') return [];
+    const v = cardValue(k, card, f);
+    return typeof v === 'string' ? [v] : [];
+  });
 }
 
 /** The Stage option for a tracker status: by name, else the first one mapped to its category. */
@@ -129,6 +190,50 @@ export interface KanbanPull {
   kanban: Partial<KanbanElement> | null;
 }
 
+/** The tracker's sprints as a field's options: a closed sprint read-only (#119). */
+function withSprintOptions(options: readonly FieldOption[], labels: readonly string[], sprints: readonly TrackerSprint[] | null, newId: () => string): FieldOption[] {
+  const closed = new Set((sprints ?? []).filter((s) => s.state === 'closed').map((s) => labelKey(s.name)));
+  const known = new Set((sprints ?? []).map((s) => labelKey(s.name)));
+  return withOptions(options, labels, newId).map((o) => {
+    // Only what the tracker says changes an option: one it no longer lists stays as it was.
+    if (!known.has(labelKey(o.label))) return o;
+    const ro = closed.has(labelKey(o.label));
+    if (ro === !!o.readOnly) return o;
+    const { readOnly: _r, ...rest } = o;
+    return ro ? { ...rest, readOnly: true as const } : rest;
+  });
+}
+
+/** A tracker value as kanban field `f` stores it (labels → option ids; adding options goes through `ensure`). */
+function storedValueOf(f: FieldDef, v: CustomValue | undefined, userIdOf: (email: string) => string | null): FieldValue | null | undefined {
+  if (v === undefined) return undefined;
+  if (v === null || (Array.isArray(v) && !v.length)) return null;
+  switch (f.type) {
+    case 'select': {
+      const label = String(Array.isArray(v) ? v[0] : v);
+      return f.options?.find((o) => labelKey(o.label) === labelKey(label))?.id;
+    }
+    case 'multiselect': {
+      const want = new Set((Array.isArray(v) ? v : [v]).map((l) => labelKey(String(l))));
+      const ids = (f.options ?? []).filter((o) => want.has(labelKey(o.label))).map((o) => o.id);
+      return ids.length ? ids : null;
+    }
+    case 'person': {
+      const email = String(v);
+      if (email.startsWith('~')) return undefined;
+      return userIdOf(email.toLowerCase()) ?? undefined;
+    }
+    default: {
+      const r = readValue(f, typeof v === 'number' ? v : String(v));
+      return r === null ? undefined : r;
+    }
+  }
+}
+
+/** The option labels a tracker value needs on a select / multi-select field. */
+const labelsOf = (f: Pick<FieldDef, 'type'>, v: CustomValue | undefined): string[] =>
+  v === undefined || v === null || (f.type !== 'select' && f.type !== 'multiselect') ? [] : (Array.isArray(v) ? v : [v]).map(String).filter((l) => l.trim());
+
 /**
  * The writes that put a tracker's status and / or priority (`pull`, only the fields that changed
  * there) onto `cards` of kanban `k`: a card moves to the column of its new Stage when Stage is
@@ -136,7 +241,20 @@ export interface KanbanPull {
  * way. A pull never adds a column for an unknown status (the import does); it does add a priority
  * level the field doesn't have yet, since the tracker's levels are the field's.
  */
-export function planKanbanPull(view: Elements, k: KanbanElement, cards: CardElement[], pull: Pick<IssueValues, 'status' | 'statusName' | 'priority'>, ctx: { newId(): string; moving: ReadonlySet<string> }): KanbanPull {
+export function planKanbanPull(
+  view: Elements,
+  k: KanbanElement,
+  cards: CardElement[],
+  pull: Pick<IssueValues, 'status' | 'statusName' | 'priority' | 'sprint' | 'custom'>,
+  ctx: {
+    newId(): string;
+    moving: ReadonlySet<string>;
+    /** The tracker's sprints (to mark closed ones read-only), when known. */
+    sprints?: readonly TrackerSprint[] | null;
+    map?: readonly FieldMapEntry[];
+    userIdOf?(email: string): string | null;
+  },
+): KanbanPull {
   const out: KanbanPull = { cards: new Map(), kanban: null };
   let kanban = k;
   const schema = collectionSchema(k);
@@ -186,7 +304,50 @@ export function planKanbanPull(view: Elements, k: KanbanElement, cards: CardElem
     }
     for (const c of cards) setValue(c, field, optionId);
   }
+
+  // Sprint (#119) and mapped fields (#43): options the field lacks are added, then the value set.
+  const setFrom = (f0: FieldDef, v: CustomValue | undefined, options?: (opts: readonly FieldOption[], labels: string[]) => FieldOption[]) => {
+    if (v === undefined) return;
+    let f = collectionSchema(kanban).find((x) => x.id === f0.id) ?? f0;
+    const labels = labelsOf(f, v);
+    if (f.type === 'select' || f.type === 'multiselect') {
+      const before = f.options ?? [];
+      const next = options ? options(before, labels) : withOptions(before, labels, ctx.newId);
+      if (JSON.stringify(next) !== JSON.stringify(before)) {
+        f = { ...f, options: next };
+        const added = next.filter((o) => !before.some((b) => b.id === o.id));
+        if (f.id === group && added.length) for (const o of added) kanban = addOption(kanban, collectionSchema(kanban), f, o);
+        else kanban = { ...kanban, fields: storedFields(collectionSchema(kanban).map((x) => (x.id === f.id ? f : x)), group) };
+        // Read-only flags of the group field's options live on its columns.
+        if (f.id === group) kanban = { ...kanban, columns: kanban.columns.map((c) => ({ ...c, ...flagOf(next, c.id) })) };
+        out.kanban = kanbanPatch(k, kanban);
+      }
+    }
+    const stored = storedValueOf(f, v, ctx.userIdOf ?? (() => null));
+    if (stored === undefined) return;
+    for (const c of cards) {
+      if (f.type === 'select' || f.id === group) setValue(c, f, typeof stored === 'string' ? stored : null);
+      else {
+        const values = { ...((out.cards.get(c.id)?.values as FieldValues | undefined) ?? c.values ?? {}) };
+        if (JSON.stringify(values[f.id] ?? null) === JSON.stringify(stored)) continue;
+        if (stored === null) delete values[f.id];
+        else values[f.id] = stored;
+        patch(c.id, { values });
+      }
+    }
+  };
+  const sf = sprintFieldOf(schema);
+  if (sf && pull.sprint !== undefined) setFrom(sf, pull.sprint, (opts, labels) => withSprintOptions(opts, labels, ctx.sprints ?? null, ctx.newId));
+  for (const m of ctx.map ?? []) {
+    const f = mappedKanbanField(schema, m);
+    if (f && pull.custom && m.tracker in pull.custom) setFrom(f, pull.custom[m.tracker]);
+  }
   return out;
+}
+
+/** A column's read-only flag from its option (only sprint fields set one). */
+function flagOf(options: readonly FieldOption[], id: string): { readOnly?: true } {
+  return options.find((o) => o.id === id)?.readOnly ? { readOnly: true } : {};
 }
 
 /** `k` with option `o` added to field `f` (a column when `f` is what the board is grouped by). */
@@ -207,7 +368,7 @@ function kanbanPatch(k: KanbanElement, next: KanbanElement): Partial<KanbanEleme
 export interface ImportedIssue {
   /** The card's id. */
   id: string;
-  values: Pick<IssueValues, 'status' | 'statusName' | 'priority'>;
+  values: Pick<IssueValues, 'status' | 'statusName' | 'priority' | 'sprint' | 'custom'>;
 }
 
 export interface KanbanImport {
@@ -238,7 +399,20 @@ export function statusColumns(issues: ImportedIssue[]): Array<{ title: string; s
  * the levels the issues have) when an issue has a priority and the kanban has none; it is shown
  * on the cards. A kanban the issues need nothing new from is left as it is.
  */
-export function planKanbanImport(k: KanbanElement, issues: ImportedIssue[], ctx: { newId(): string; priorities: string[] | null }): KanbanImport {
+export function planKanbanImport(
+  k: KanbanElement,
+  issues: ImportedIssue[],
+  ctx: {
+    newId(): string;
+    priorities: string[] | null;
+    /** The project's sprints (an import by sprint, #119): the Sprint field's options, closed ones read-only. */
+    sprints?: readonly TrackerSprint[] | null;
+    /** What a new sprint field is called ("Sprint", "Cycle", "Iteration"). */
+    sprintFieldName?: string;
+    map?: readonly FieldMapEntry[];
+    userIdOf?(email: string): string | null;
+  },
+): KanbanImport {
   let kanban = k;
   let schema = collectionSchema(k);
   const group = groupFieldId(k);
@@ -298,9 +472,68 @@ export function planKanbanImport(k: KanbanElement, issues: ImportedIssue[], ctx:
       if (o && pf.id !== group) set(i.id, pf.id, o.id);
     }
 
+  // Sprint (#119) and mapped fields (#43): the field the kanban has (options it lacks added), or
+  // a new one shown on the cards when an issue has a value (an import by sprint always makes it).
+  const groupValue = new Map<string, string>();
+  const show: string[] = [];
+  const ensure = (name: string, type: FieldDef['type'], existing: FieldDef | undefined, labels: string[], sprints: readonly TrackerSprint[] | null): FieldDef | undefined => {
+    let f = existing;
+    if (!f) {
+      if (fieldNameProblem(schema, name)) return undefined;
+      f = { id: ctx.newId(), name, type, ...(type === 'select' || type === 'multiselect' ? { options: [] } : {}) };
+      schema = [...schema, f];
+      show.push(f.id);
+    }
+    if (f.type === 'select' || f.type === 'multiselect') {
+      const before = f.options ?? [];
+      const next = sprints ? withSprintOptions(before, labels, sprints, ctx.newId) : withOptions(before, labels, ctx.newId);
+      if (JSON.stringify(next) !== JSON.stringify(before) || show.includes(f.id)) {
+        const g = { ...f, options: next };
+        if (g.id === group) {
+          for (const o of next.filter((o) => !before.some((b) => b.id === o.id))) kanban = addOption(kanban, schema, g, o);
+          kanban = { ...kanban, columns: kanban.columns.map((c) => ({ ...c, ...flagOf(next, c.id) })) };
+        }
+        schema = schema.map((x) => (x.id === g.id ? g : x));
+        f = g;
+      }
+    }
+    kanban = { ...kanban, fields: storedFields(schema, group) };
+    schema = collectionSchema(kanban);
+    return schema.find((x) => x.id === f!.id);
+  };
+  const assign = (f: FieldDef, i: ImportedIssue, v: CustomValue | undefined) => {
+    const stored = storedValueOf(f, v, ctx.userIdOf ?? (() => null));
+    if (stored === undefined || stored === null) return;
+    if (f.id === group) groupValue.set(i.id, groupKeyOf(f, stored));
+    else values.set(i.id, { ...(values.get(i.id) ?? {}), [f.id]: stored });
+  };
+  const sprintLabels = [
+    ...(ctx.sprints ?? []).filter((s) => s.state !== 'closed').map((s) => s.name),
+    ...issues.map((i) => i.values.sprint?.trim()).filter((s): s is string => !!s),
+  ];
+  const sprintField = sprintFieldOf(schema);
+  if (sprintLabels.length || (sprintField && ctx.sprints)) {
+    const sf = ensure(ctx.sprintFieldName ?? 'Sprint', 'select', sprintField, sprintLabels, ctx.sprints ?? null);
+    if (sf) for (const i of issues) assign(sf, i, i.values.sprint ?? undefined);
+  }
+  for (const m of ctx.map ?? []) {
+    const have = mappedKanbanField(schema, m);
+    const vals = issues.map((i) => i.values.custom?.[m.tracker]).filter((v) => v !== undefined && v !== null && !(Array.isArray(v) && !v.length));
+    if (!have && !vals.length) continue;
+    // A field of that name but another kind: left alone (the map names what it can't hold).
+    if (!have && schema.some((x) => labelKey(x.name) === labelKey(m.board))) continue;
+    const f = ensure(m.board, m.type, have, vals.flatMap((v) => labelsOf({ type: m.type }, v as CustomValue)), null);
+    if (f) for (const i of issues) assign(f, i, i.values.custom?.[m.tracker]);
+  }
+  if (show.length) {
+    const view = boardView(kanban);
+    kanban = { ...kanban, ...savedViews(kanban, { ...view, card: { ...view.card!, show: [...view.card!.show, ...show.filter((s) => !view.card!.show.includes(s))] } }) };
+  }
+
   // The column: the value of the field the board is grouped by.
   for (const i of issues) {
-    const key = group === COLUMN_FIELD_ID ? stageOf.get(i.id) : pf && group === pf.id ? (priorityOf.get(i.id) ?? NO_GROUP) : NO_GROUP;
+    const key = group === COLUMN_FIELD_ID ? stageOf.get(i.id) : pf && group === pf.id ? (priorityOf.get(i.id) ?? NO_GROUP) : (groupValue.get(i.id) ?? NO_GROUP);
+
     const col = kanban.columns.find((c) => c.id === key) ?? kanban.columns.find((c) => c.id === NO_GROUP || c.id === 'false') ?? kanban.columns[0];
     if (col) columnOf.set(i.id, col.id);
   }

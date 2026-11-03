@@ -21,14 +21,23 @@ import type { Request } from 'express';
 import {
   baseOf,
   syncedBase,
+  trackerAgreed,
   canonical,
+  customField,
+  fieldsIn,
+  issueFieldLabel,
+  issueFieldValue,
+  withIssueField,
   ISSUE_FIELD_LABELS,
   ISSUE_FIELDS,
   mergeField,
+  type FieldMapEntry,
+  type TrackerSprint,
   pullableFields,
   TRACKER_COLLECTION,
   TRACKER_PROVIDERS,
   type BoardElement,
+  type CardElement,
   type IssueField,
   type IssueValues,
   type RoadmapGroupBy,
@@ -39,6 +48,8 @@ import {
   type TrackerSendResponse,
   findFreeSpot,
   rotatedBounds,
+  clusterBoxes,
+
   estimateNumber,
   LayoutError,
   translateDraft,
@@ -90,7 +101,7 @@ import { noteOutcome, openConnection, requireUsable, usableConnections, webhookS
 import { emitTrackerActivity } from './events';
 import { dayNumber } from './board';
 import { planRoadmapImport } from './roadmap';
-import { importIntoKanban, kanbanOf, planKanbanImport, statusColumns } from './kanban';
+import { importIntoKanban, kanbanOf, personValues, planKanbanImport, statusColumns } from './kanban';
 import { TrackerError } from './http';
 import { providerOf, type RemoteIssue, type TrackerProvider } from './providers/index';
 import * as repo from './repo';
@@ -131,17 +142,26 @@ async function boardUserByEmail(boardId: string, email: string): Promise<string 
   return access.role ? u.id : null;
 }
 
-const assigneesIn = (els: BoardElement[]) =>
-  els.flatMap((el) => (el.type === 'card' && typeof (el as { assigneeId?: unknown }).assigneeId === 'string' ? [(el as { assigneeId: string }).assigneeId] : []));
+/** People a set of items names: card assignees and the person fields of their kanbans. */
+const peopleIn = (view: Pick<BoardView, 'elements'>, els: BoardElement[]) =>
+  els.flatMap((el) => {
+    if (el.type !== 'card') return [];
+    const a = (el as { assigneeId?: unknown }).assigneeId;
+    const k = kanbanOf(view, el);
+    return [...(typeof a === 'string' ? [a] : []), ...(k ? personValues(k, el as CardElement) : [])];
+  });
+
+/** The field map a connection syncs with (#43): only where the tracker has custom fields. */
+export const fieldMapOf = (conn: Pick<StoredConnection, 'provider' | 'settings'>): FieldMapEntry[] => (providerOf(conn.provider).listFields ? (conn.settings.fieldMap ?? []) : []);
 
 /** The link's items as the mapping reads them, from a board view. */
-async function readItems(view: Pick<BoardView, 'elements' | 'collection'>, ids: string[]) {
+async function readItems(view: Pick<BoardView, 'elements' | 'collection'>, ids: string[], map: readonly FieldMapEntry[] = []) {
   const byId = new Map(view.elements.map((e) => [e.el.id, e.el]));
   const items = ids.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : []));
   const missing = ids.filter((id) => !byId.has(id));
-  const emails = await emailsOf(assigneesIn(items));
+  const emails = await emailsOf(peopleIn(view, items));
   const tags = tagsWith(view, {});
-  const sources = items.map((el) => sourceOf(el, tags, (id) => emails.get(id) ?? null, (c) => kanbanOf(view, c)));
+  const sources = items.map((el) => sourceOf(el, tags, (id) => emails.get(id) ?? null, (c) => kanbanOf(view, c), map));
   return {
     items,
     missing,
@@ -171,6 +191,13 @@ async function actorFor(link: Pick<StoredLink, 'boardId' | 'createdBy'>, conn: S
 }
 
 // ---- sync ----
+
+/** The sprints of an issue's project (#119), or null when the tracker has none or can't say. */
+async function sprintsFor(provider: TrackerProvider, pc: ReturnType<typeof openConnection>, issue: Pick<RemoteIssue, 'project'>): Promise<TrackerSprint[] | null> {
+  if (!provider.sprints || !issue.project) return null;
+  return provider.sprints.list(pc, issue.project).catch(() => null);
+}
+
 
 const RETRY_BASE_MS = 30_000;
 const RETRY_MAX_MS = 6 * 3_600_000;
@@ -258,6 +285,25 @@ export interface SyncOutcome {
  * both sides fresh every time, so running it twice changes nothing the second time.
  */
 export async function syncLink(linkId: string): Promise<SyncOutcome | null> {
+  // An issue changed in the tracker between Freero's read and its write (a revision conflict):
+  // read both sides again and merge once more, never overwrite (#6).
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await syncLinkOnce(linkId, attempt === 0);
+    } catch (e) {
+      if (!(e instanceof RevisionConflict) || attempt >= 2) throw e instanceof RevisionConflict ? e.cause : e;
+    }
+  }
+}
+
+/** Thrown out of one sync pass to start another (the cause is reported if passes run out). */
+class RevisionConflict extends Error {
+  constructor(readonly cause: unknown) {
+    super('revision conflict');
+  }
+}
+
+async function syncLinkOnce(linkId: string, first: boolean): Promise<SyncOutcome | null> {
   const link = await repo.getLink(linkId);
   if (!link) return null;
   const conn = await repo.getConnection(link.connectionId);
@@ -281,11 +327,13 @@ export async function syncLink(linkId: string): Promise<SyncOutcome | null> {
   const provider = providerOf(conn.provider);
   const pc = openConnection(conn);
   try {
+    const map = fieldMapOf(conn);
     const view = await readBoardView(link.boardId, who.actor);
-    const read = await readItems(view, link.sources);
+    const read = await readItems(view, link.sources, map);
 
     let issue = await provider.getIssue(pc, link.externalId);
     if (!issue) throw new TrackerError(`${link.externalKey} no longer exists in ${providerName(conn)} (or this connection can’t see it).`, 'not_found', 404);
+    const merged = issue;
 
     // Items deleted from the board leave the link (and the issue's links back); the issue stays.
     if (read.missing.length) await repo.removeSources(link.id, read.missing);
@@ -310,8 +358,9 @@ export async function syncLink(linkId: string): Promise<SyncOutcome | null> {
       heading: read.heading,
       itemUrl: url,
     });
-    const pullable = pullableFields(read.sources);
-    const merges = ISSUE_FIELDS.filter((f) => provider.fields.includes(f)).map((f) =>
+    const pullable = pullableFields(read.sources, map);
+    const synced: IssueField[] = [...ISSUE_FIELDS.filter((f) => provider.fields.includes(f)), ...map.map((m) => customField(m.tracker))];
+    const merges = synced.map((f) =>
       mergeField(f, link.base, board, issue!.values, {
         push: true,
         pull: pullable.has(f),
@@ -325,16 +374,21 @@ export async function syncLink(linkId: string): Promise<SyncOutcome | null> {
     for (const f of conflicts) {
       const lost = canonical(f, board) ?? '';
       notes.push(
-        `${ISSUE_FIELD_LABELS[f]} of ${issue.key} changed here and in ${providerName(conn)} since the last sync. ${providerName(conn)}’s value was kept${
+        `${issueFieldLabel(f, map)} of ${issue.key} changed here and in ${providerName(conn)} since the last sync. ${providerName(conn)}’s value was kept${
           f === 'description' || !lost ? '' : `; the board had “${lost.replace(/\n/g, ', ').slice(0, 200)}”`
         }.`,
       );
     }
 
     if (pushed.length) {
-      const patch: IssueValues = {};
-      for (const f of pushed) (patch as Record<string, unknown>)[f] = board[f];
-      notes.push(...(await provider.updateIssue(pc, issue, patch)));
+      let patch: IssueValues = {};
+      for (const f of pushed) patch = withIssueField(patch, f, issueFieldValue(board, f));
+      try {
+        notes.push(...(await provider.updateIssue(pc, issue, patch)));
+      } catch (e) {
+        if (e instanceof TrackerError && e.kind === 'conflict') throw new RevisionConflict(e);
+        throw e;
+      }
       issue = (await provider.getIssue(pc, link.externalId)) ?? issue;
     }
 
@@ -355,13 +409,17 @@ export async function syncLink(linkId: string): Promise<SyncOutcome | null> {
       );
 
     // The tracker's side onto the board, plus the badge and notes, in one change.
-    const pull: IssueValues = {};
-    for (const f of pulled) (pull as Record<string, unknown>)[f] = issue.values[f];
+    let pull: IssueValues = {};
+    for (const f of pulled) pull = withIssueField(pull, f, issueFieldValue(issue.values, f));
     const userIdOf = new Map<string, string>();
-    if (typeof pull.assignee === 'string' && !pull.assignee.startsWith('~')) {
-      const id = await boardUserByEmail(link.boardId, pull.assignee);
-      if (id) userIdOf.set(pull.assignee, id);
-    }
+    const personEmails = [pull.assignee, ...map.filter((m) => m.type === 'person').map((m) => pull.custom?.[m.tracker])];
+    for (const e of personEmails)
+      if (typeof e === 'string' && !e.startsWith('~') && !userIdOf.has(e)) {
+        const id = await boardUserByEmail(link.boardId, e);
+        if (id) userIdOf.set(e, id);
+      }
+    // A sprint pulled onto a kanban: the project's sprints tell which are closed (read-only there).
+    const sprints = pull.sprint !== undefined ? await sprintsFor(provider, pc, issue) : null;
     const sources = present;
     let boardAfter: IssueValues = board;
     const finalIssue = issue;
@@ -380,6 +438,8 @@ export async function syncLink(linkId: string): Promise<SyncOutcome | null> {
         previousLabels: (link.base.tracker.labels ?? '').split('\n').filter(Boolean),
         userIdOf: (e) => userIdOf.get(e) ?? null,
         newId: () => newId(10),
+        sprints,
+        map,
       });
       notes.push(...plan.notes);
       const after = applied(liveItems, plan);
@@ -391,7 +451,7 @@ export async function syncLink(linkId: string): Promise<SyncOutcome | null> {
       const liveAfter = { elements: live.elements.map((e) => (patched.has(e.el.id) ? { el: { ...e.el, ...patched.get(e.el.id) } as BoardElement } : e)) };
       boardAfter = boardValues(
         provider,
-        after.map((el) => sourceOf(el, tags, (id) => emails.get(id) ?? null, (c) => kanbanOf(liveAfter, c))),
+        after.map((el) => sourceOf(el, tags, (id) => emails.get(id) ?? null, (c) => kanbanOf(liveAfter, c), map)),
         { heading: clusterHeading(live, after), itemUrl: url },
       );
       const prev = live.collection(TRACKER_COLLECTION).get(link.id) as TrackerIssueRecord | undefined;
@@ -409,7 +469,9 @@ export async function syncLink(linkId: string): Promise<SyncOutcome | null> {
 
     // Fields this sync didn't pull are agreed as it read them: a change made on the board while it
     // ran (a bar dragged right after an import) is still sent by the next sync, never swallowed.
-    const base: SyncBase = syncedBase(board, boardAfter, pulled, finalIssue.values);
+    // …and the tracker's fields this sync didn't write are agreed as it merged them: a change made
+    // in the tracker between Freero's write and its read-back is pulled by the next sync.
+    const base: SyncBase = syncedBase(board, boardAfter, pulled, trackerAgreed(merged.values, finalIssue.values, [...pushed, ...pulled]), link.base);
     await repo.markSynced(link.id, base, present);
     await noteOutcome(conn, null);
 
@@ -434,11 +496,17 @@ export async function syncLink(linkId: string): Promise<SyncOutcome | null> {
           action: 'tracker_synced',
           provider: conn.provider,
           issue: link.externalKey,
-          fields: pushed.map((f) => ISSUE_FIELD_LABELS[f].toLowerCase()),
+          fields: pushed.map((f) => issueFieldLabel(f, map).toLowerCase()),
         });
     }
     return { pushed, pulled, conflicts, notes };
   } catch (e) {
+    if (e instanceof RevisionConflict && first) throw e;
+    if (e instanceof RevisionConflict) {
+      // Passes ran out: report it like any failure (the retry tries again later).
+      await failLink(link, conn, e.cause, who);
+      return null;
+    }
     await failLink(link, conn, e, who);
     if (!(e instanceof TrackerError)) throw e;
     return null;
@@ -451,14 +519,15 @@ export async function syncLink(linkId: string): Promise<SyncOutcome | null> {
  */
 async function boardSideChanged(link: StoredLink, conn: StoredConnection, view: BoardView | null): Promise<boolean> {
   if (!view) return false;
-  const read = await readItems(view, link.sources);
+  const read = await readItems(view, link.sources, fieldMapOf(conn));
   if (read.missing.length) return true;
   const provider = providerOf(conn.provider);
   const board = boardValues(provider, read.sources, {
     heading: read.heading,
     itemUrl: (id) => itemUrl(link.appOrigin, link.boardId, id),
   });
-  return ISSUE_FIELDS.some((f) => {
+  return fieldsIn(board).some((f) => {
+
     const now = canonical(f, board);
     return now !== undefined && link.base.board[f] !== undefined && now !== link.base.board[f];
   });
@@ -564,23 +633,46 @@ function itemIdsOf(v: unknown): string[] {
   return ids;
 }
 
-async function sendContext(userId: string, boardId: string, body: Record<string, unknown>) {
+async function sendContext(userId: string, boardId: string, body: Record<string, unknown>, origin: string) {
   const board = await requireBoardAccess(boardId, userId, 'editor');
   const conn = await requireUsable(body.connectionId, board.workspaceId, userId);
   const ids = itemIdsOf(body.itemIds);
   const view = await readBoardView(boardId, { userId, role: board.role });
-  const read = await readItems(view, ids);
+  const read = await readItems(view, ids, fieldMapOf(conn));
   if (read.missing.length) throw notFound(read.missing.length === 1 ? 'That item isn’t on this board any more' : 'Some of those items aren’t on this board any more');
   const odd = read.items.find((el) => !SENDABLE_TYPES.has(el.type));
   if (odd) throw badRequest(`A ${odd.type} can’t become part of an issue: send sticky notes, cards, shapes or text`);
-  const mode = body.mode === 'each' ? 'each' : 'one';
-  const groups = mode === 'each' ? read.items.map((el) => [el]) : [read.items];
-  return { board, conn, view, read, groups };
+  const mode = body.mode === 'each' ? 'each' : body.mode === 'clusters' ? 'clusters' : 'one';
+  const provider = providerOf(conn.provider);
+  const parentKey = typeof body.parent === 'string' && body.parent.trim() ? body.parent.trim() : null;
+  if (parentKey && (parentKey.length > 100 || /[\s"']/.test(parentKey))) throw badRequest('parent must be an issue key');
+  if ((mode === 'clusters' || parentKey) && !provider.parents) throw badRequest(`${providerName(conn)} issues can’t be put under a parent from Freero`);
+  // A frame of clusters (#43): one child issue per cluster, under one parent made for them all.
+  const groups = mode === 'each' ? read.items.map((el) => [el]) : mode === 'clusters' ? clustersOf(read.items) : [read.items];
+  const parent =
+    mode === 'clusters'
+      ? {
+          // The frame's title or the heading above them, else what the first cluster is called.
+          title: (clusterHeading(view, read.items, { frame: true }) ?? clusterHeading(view, groups[0], { frame: false }) ?? read.sources.find((x) => x.id === groups[0][0].id)?.title) || 'Untitled',
+          description: [
+            `From ${groups.length} cluster${groups.length === 1 ? '' : 's'} on a Freero board:`,
+            '',
+            ...groups.map((g) => `- ${(clusterHeading(view, g, { frame: false }) ?? read.sources.find((s) => s.id === g[0].id)?.title) || 'Untitled'} ([open](${itemUrl(origin, boardId, g[0].id)}))`),
+          ].join('\n'),
+        }
+      : null;
+  return { board, conn, view, read, groups, parent, parentKey, clusters: mode === 'clusters' };
 }
 
-function groupValues(provider: TrackerProvider, view: BoardView, read: Awaited<ReturnType<typeof readItems>>, group: BoardElement[], origin: string, boardId: string) {
+/** Items close together, as the board outline groups them (each a cluster; reading order kept). */
+function clustersOf(items: BoardElement[]): BoardElement[][] {
+  const groups = clusterBoxes(items.map((el) => rotatedBounds(el)));
+  return groups.map((g) => [...g].sort((a, b) => a - b).map((i) => items[i])).sort((a, b) => items.indexOf(a[0]) - items.indexOf(b[0]));
+}
+
+function groupValues(provider: TrackerProvider, view: BoardView, read: Awaited<ReturnType<typeof readItems>>, group: BoardElement[], origin: string, boardId: string, clusters = false) {
   const sources = group.map((el) => read.sources.find((s) => s.id === el.id)!);
-  const heading = group.length > 1 ? clusterHeading(view, group) : null;
+  const heading = group.length > 1 ? clusterHeading(view, group, { frame: !clusters }) : null;
   return {
     sources,
     values: boardValues(provider, sources, {
@@ -592,10 +684,11 @@ function groupValues(provider: TrackerProvider, view: BoardView, read: Awaited<R
 
 /** Exactly what Send would create, nothing written anywhere. */
 export async function previewSend(userId: string, boardId: string, body: Record<string, unknown>, origin: string): Promise<TrackerIssuePreview[]> {
-  const { conn, view, read, groups } = await sendContext(userId, boardId, body);
+  const ctx = await sendContext(userId, boardId, body, origin);
+  const { conn, view, read, groups, parent } = ctx;
   const provider = providerOf(conn.provider);
-  return groups.map((group) => {
-    const { sources, values } = groupValues(provider, view, read, group, origin, boardId);
+  const out = groups.map((group) => {
+    const { sources, values } = groupValues(provider, view, read, group, origin, boardId, ctx.clusters);
     const unmapped = unmappedOf(provider, sources);
     for (const el of group) {
       const est = (el as { estimate?: unknown }).estimate;
@@ -603,6 +696,8 @@ export async function previewSend(userId: string, boardId: string, body: Record<
     }
     return { itemIds: group.map((el) => el.id), values, unmapped };
   });
+  // The parent first (it links to no item: its children do).
+  return parent ? [{ itemIds: [], values: parent, unmapped: [] }, ...out] : out;
 }
 
 /**
@@ -611,8 +706,8 @@ export async function previewSend(userId: string, boardId: string, body: Record<
  * for the person; nothing on the board changes when the tracker refuses.
  */
 export async function sendToTracker(userId: string, boardId: string, body: Record<string, unknown>, origin: string): Promise<TrackerSendResponse> {
-  const ctx = await sendContext(userId, boardId, body);
-  const { conn, view, read, groups, board } = ctx;
+  const ctx = await sendContext(userId, boardId, body, origin);
+  const { conn, view, read, groups, board, parent } = ctx;
   const linked = await repo.linkedItems(
     boardId,
     read.items.map((el) => el.id),
@@ -620,7 +715,7 @@ export async function sendToTracker(userId: string, boardId: string, body: Recor
   if (linked.size) throw new HttpError(409, `${linked.size === 1 ? 'That item is' : `${linked.size} of those items are`} already linked to an issue`, 'tracker_already_linked');
   const project = typeof body.project === 'string' && body.project.trim() ? body.project.trim().slice(0, 200) : (conn.settings.project ?? null);
   if (!project) throw badRequest('project is required');
-  const issueType = typeof body.issueType === 'string' && body.issueType.trim() ? body.issueType.trim().slice(0, 100) : (conn.settings.issueType ?? null);
+  const issueType = typeof body.issueType === 'string' && body.issueType.trim() ? body.issueType.trim().slice(0, 100) : (conn.settings.issueTypes?.[project] ?? conn.settings.issueType ?? null);
   await consumeRateLimit('trackerSend', userId);
   const provider = providerOf(conn.provider);
   const pc = openConnection(conn);
@@ -639,13 +734,24 @@ export async function sendToTracker(userId: string, boardId: string, body: Recor
     group: BoardElement[];
   }> = [];
   let failure: unknown = null;
-  for (const group of groups) {
+  let parentKey = ctx.parentKey;
+  let madeParent: RemoteIssue | null = null;
+  if (parent) {
     try {
-      const { values } = groupValues(provider, view, read, group, origin, boardId);
+      madeParent = (await provider.createIssue(pc, { project, issueType: provider.parents?.issueType ?? null, values: parent })).issue;
+      parentKey = madeParent.key;
+    } catch (e) {
+      failure = e;
+    }
+  }
+  for (const group of failure ? [] : groups) {
+    try {
+      const { values } = groupValues(provider, view, read, group, origin, boardId, ctx.clusters);
       const { issue, notes } = await provider.createIssue(pc, {
         project,
         issueType,
         values,
+        parent: parentKey,
       });
       const url = (id: string) => itemUrl(origin, boardId, id);
       await provider
@@ -762,11 +868,8 @@ export async function sendToTracker(userId: string, boardId: string, body: Recor
     const what = failure instanceof TrackerError ? failure.message : 'Something went wrong while creating the issue.';
     if (!(failure instanceof TrackerError)) logError('trackers: sending items failed', failure);
     if (failure instanceof repo.ItemAlreadyLinkedError) throw new HttpError(409, 'Those items were linked meanwhile', 'tracker_already_linked');
-    throw new HttpError(
-      failure instanceof TrackerError && failure.kind === 'invalid' ? 400 : 502,
-      made.length ? `Created ${made.map((m) => m.link.externalKey).join(', ')}; then: ${what}` : what,
-      'tracker_refused',
-    );
+    const keys = [...(madeParent ? [madeParent.key] : []), ...made.map((m) => m.link.externalKey)];
+    throw new HttpError(failure instanceof TrackerError && failure.kind === 'invalid' ? 400 : 502, keys.length ? `Created ${keys.join(', ')}; then: ${what}` : what, 'tracker_refused');
   }
   return {
     issues: made.map((m) => ({
@@ -775,6 +878,7 @@ export async function sendToTracker(userId: string, boardId: string, body: Recor
       url: m.link.externalUrl,
       itemIds: m.link.sources,
     })),
+    ...(madeParent ? { parent: { key: madeParent.key, url: madeParent.url } } : {}),
   };
 }
 
@@ -791,8 +895,7 @@ export async function importIssues(
 ): Promise<TrackerImportResponse> {
   const board = await requireBoardAccess(boardId, userId, 'editor');
   const conn = await requireUsable(body.connectionId, board.workspaceId, userId);
-  const query = typeof body.query === 'string' ? body.query.trim() : '';
-  if (!query || query.length > 2000) throw badRequest('query is required (at most 2000 characters)');
+  const what = importQuery(body);
   const limit = typeof body.limit === 'number' && Number.isInteger(body.limit) ? Math.max(1, Math.min(MAX_IMPORT, body.limit)) : 50;
   // Roadmap mode (KAI-160): onto a timeline the person can see and change.
   const target = roadmapTarget(body.timeline);
@@ -817,17 +920,32 @@ export async function importIssues(
     if (tl.locked) throw badRequest('That timeline is locked');
   }
   const provider = providerOf(conn.provider);
-  const { issues, fresh } = await searchNew(userId, boardId, conn, query, limit);
+  const map = fieldMapOf(conn);
+  const { issues, fresh, sprints: scopeSprints } = await searchNew(userId, boardId, conn, what, limit);
   if (!fresh.length) return { created: [], skipped: issues.length, cards: [] };
 
   // People and tags the cards need, resolved before the board is written.
   const assignee = new Map<string, string | null>();
   for (const i of fresh) {
-    const a = i.values.assignee;
-    if (a && !a.startsWith('~') && !assignee.has(a)) assignee.set(a, await boardUserByEmail(boardId, a));
+    const people = [i.values.assignee, ...map.filter((m) => m.type === 'person').map((m) => i.values.custom?.[m.tracker])];
+    for (const a of people) if (typeof a === 'string' && a && !a.startsWith('~') && !assignee.has(a)) assignee.set(a, await boardUserByEmail(boardId, a));
   }
   // A kanban's Priority options are the tracker's levels (asked only when an issue has a priority).
   const priorities = placement && fresh.some((i) => i.values.priority) && provider.priorities ? await provider.priorities(openConnection(conn)).catch(() => null) : null;
+  // Its Sprint options are the project's sprints (#119): known from an import by sprint, else asked
+  // when an issue has one.
+  const sprintProject = what.scope?.project ?? fresh.find((i) => i.values.sprint)?.project ?? null;
+  const sprints =
+    placement && provider.sprints && (what.scope?.sprint || fresh.some((i) => i.values.sprint))
+      ? (scopeSprints ?? (sprintProject ? await provider.sprints.list(openConnection(conn), sprintProject).catch(() => null) : null))
+      : null;
+  const kanbanCtx = {
+    priorities,
+    sprints,
+    sprintFieldName: provider.sprints?.fieldName,
+    map,
+    userIdOf: (e: string) => assignee.get(e) ?? null,
+  };
   const user = await getUser(userId);
   const actor: BoardActor = {
     userId,
@@ -968,7 +1086,7 @@ export async function importIssues(
           const titleOf = new Map(imported.map((i) => [i.id, i.values.statusName?.trim() || undefined]));
           columnFor = (id) => titleOf.get(id);
         } else if (target) {
-          const p = planKanbanImport(target.k, imported, { newId: ids, priorities });
+          const p = planKanbanImport(target.k, imported, { newId: ids, ...kanbanCtx });
           plan = p;
           view = { ...live, elements: live.elements.map((e) => (e.el.id === target.k.id ? { ...e, el: p.kanban } : e)) };
           // A column the request names keeps the usual rule (the column, unless the status says otherwise).
@@ -979,7 +1097,7 @@ export async function importIssues(
         let elements = placed.elements;
         if (target === 'new' && containerId) {
           const k = elements.find((d) => d.id === containerId) as unknown as KanbanElement;
-          const p = planKanbanImport(k, imported, { newId: ids, priorities });
+          const p = planKanbanImport(k, imported, { newId: ids, ...kanbanCtx });
           plan = p;
           elements = elements.map((d) => (d.id === containerId ? ({ ...d, ...p.patch } as ElementDraft) : d));
         }
@@ -1002,7 +1120,7 @@ export async function importIssues(
   const view = await readBoardView(boardId, { userId, role: board.role });
   for (const l of inserted) {
     const i = fresh.find((x) => x.id === l.externalId)!;
-    const read = await readItems(view, l.sources);
+    const read = await readItems(view, l.sources, map);
     const values = boardValues(provider, read.sources, {
       heading: null,
       itemUrl: (id) => itemUrl(origin, boardId, id),
@@ -1038,12 +1156,63 @@ export async function importIssues(
   };
 }
 
-/** The issues matching `query`, and those of them not on this board yet through this connection. */
-async function searchNew(userId: string, boardId: string, conn: StoredConnection, query: string, limit: number): Promise<{ issues: RemoteIssue[]; fresh: RemoteIssue[] }> {
+type ImportWhat = { query: string; scope?: undefined } | { query?: undefined; scope: { project: string; sprint: string | null; epic: string | null } };
+
+/** What an import takes: a query in the tracker's language, or a project's sprint / epic (#119, #43). */
+function importQuery(body: Record<string, unknown>): ImportWhat {
+  if (body.scope !== undefined && body.scope !== null) {
+    if (body.query !== undefined && body.query !== null && body.query !== '') throw badRequest('Give query or scope, not both');
+    const s = body.scope as Record<string, unknown>;
+    if (typeof s !== 'object' || typeof s.project !== 'string' || !s.project.trim() || s.project.length > 200) throw badRequest('scope.project must name a project');
+    const opt = (v: unknown, what: string, max: number) => {
+      if (v === undefined || v === null || v === '') return null;
+      if (typeof v !== 'string' || v.length > max) throw badRequest(`${what} must be text (at most ${max} characters)`);
+      return v.trim();
+    };
+    const sprint = opt(s.sprint, 'scope.sprint', 64);
+    const epic = opt(s.epic, 'scope.epic', 100);
+    if (!sprint && !epic) throw badRequest('scope needs a sprint or an epic');
+    return { scope: { project: s.project.trim(), sprint, epic } };
+  }
+  const query = typeof body.query === 'string' ? body.query.trim() : '';
+  if (!query || query.length > 2000) throw badRequest('query is required (at most 2000 characters)');
+  return { query };
+}
+
+/**
+ * The issues an import asks for (a query, or a project's sprint / epic: 'current' is the active
+ * sprint), and those of them not on this board yet through this connection; with a sprint, the
+ * project's sprints too (the kanban's Sprint options).
+ */
+async function searchNew(
+  userId: string,
+  boardId: string,
+  conn: StoredConnection,
+  what: ImportWhat,
+  limit: number,
+): Promise<{ issues: RemoteIssue[]; fresh: RemoteIssue[]; sprints: TrackerSprint[] | null }> {
   await consumeRateLimit('trackerSend', userId);
+  const provider = providerOf(conn.provider);
+  const name = providerName(conn);
   let issues: RemoteIssue[];
+  let sprints: TrackerSprint[] | null = null;
   try {
-    issues = await providerOf(conn.provider).search(openConnection(conn), query, limit);
+    const pc = openConnection(conn);
+    if (what.scope) {
+      const scope = { ...what.scope };
+      if (!provider.scoped) throw new TrackerError(`${name} issues are imported with a query.`, 'invalid', 400);
+      if (scope.sprint) {
+        if (!provider.sprints) throw new TrackerError(`${name} has no sprints Freero can import.`, 'invalid', 400);
+        sprints = await provider.sprints.list(pc, scope.project);
+        const fieldName = provider.sprints.fieldName.toLowerCase();
+        if (scope.sprint === 'current') {
+          const active = sprints.find((s) => s.state === 'active');
+          if (!active) throw new TrackerError(`No ${fieldName} is active in ${scope.project}.`, 'invalid', 400);
+          scope.sprint = active.id;
+        } else if (!sprints.some((s) => s.id === scope.sprint)) throw new TrackerError(`${scope.project} has no such ${fieldName}.`, 'invalid', 400);
+      }
+      issues = await provider.scoped(pc, scope, limit);
+    } else issues = await provider.search(pc, what.query, limit);
     await noteOutcome(conn, null);
   } catch (e) {
     await noteOutcome(conn, e);
@@ -1051,7 +1220,7 @@ async function searchNew(userId: string, boardId: string, conn: StoredConnection
     throw e;
   }
   const already = await repo.linkedIssuesOnBoard(boardId, conn.id);
-  return { issues, fresh: issues.filter((i) => !already.has(i.id)) };
+  return { issues, fresh: issues.filter((i) => !already.has(i.id)), sprints };
 }
 
 /**
@@ -1062,10 +1231,9 @@ async function searchNew(userId: string, boardId: string, conn: StoredConnection
 export async function importCandidates(userId: string, boardId: string, body: Record<string, unknown>) {
   const board = await requireBoardAccess(boardId, userId, 'editor');
   const conn = await requireUsable(body.connectionId, board.workspaceId, userId);
-  const query = typeof body.query === 'string' ? body.query.trim() : '';
-  if (!query || query.length > 2000) throw badRequest('query is required (at most 2000 characters)');
+  const what = importQuery(body);
   const limit = typeof body.limit === 'number' && Number.isInteger(body.limit) ? Math.max(1, Math.min(MAX_IMPORT, body.limit)) : 50;
-  const { issues, fresh } = await searchNew(userId, boardId, conn, query, limit);
+  const { issues, fresh } = await searchNew(userId, boardId, conn, what, limit);
   return {
     skipped: issues.length - fresh.length,
     issues: fresh.map((i) => ({ id: i.id, key: i.key, url: i.url, title: i.values.title || i.key, description: i.values.description.slice(0, 5000), status: i.values.status ?? 'todo', dueDate: i.values.dueDate ?? null })),
@@ -1161,7 +1329,8 @@ async function linkAcceptedProposals(boardId: string): Promise<string[]> {
       continue;
     }
     const provider = providerOf(conn.provider);
-    const values = boardValues(provider, read.sources, { heading: null, itemUrl: (id) => itemUrl(p.appOrigin, boardId, id) });
+    const values = boardValues(provider, (await readItems(view, [p.itemId], fieldMapOf(conn))).sources, { heading: null, itemUrl: (id) => itemUrl(p.appOrigin, boardId, id) });
+
     const link: StoredLink = {
       id: newId(16),
       connectionId: conn.id,
@@ -1393,6 +1562,45 @@ export async function projectsOf(userId: string, connectionId: string, boardId: 
     if (e instanceof TrackerError) throw new HttpError(502, e.message, 'tracker_refused');
     throw e;
   }
+}
+
+/** Runs a read of the tracker for a board menu, in Freero's words when the tracker refuses. */
+async function askTracker<T>(conn: StoredConnection, fn: () => Promise<T>): Promise<T> {
+  try {
+    const out = await fn();
+    await noteOutcome(conn, null);
+    return out;
+  } catch (e) {
+    await noteOutcome(conn, e);
+    if (e instanceof TrackerError) throw new HttpError(e.kind === 'invalid' ? 400 : 502, e.message, 'tracker_refused');
+    throw e;
+  }
+}
+
+const projectParam = (v: unknown): string => {
+  if (typeof v !== 'string' || !v.trim() || v.length > 200) throw badRequest('project is required');
+  return v.trim();
+};
+
+/** A project's sprints / cycles / iterations (#119), for the import dialog's picker. */
+export async function sprintsOf(userId: string, connectionId: string, boardId: string, project: unknown): Promise<{ sprints: TrackerSprint[]; fieldName: string | null }> {
+  const board = await requireBoardAccess(boardId, userId, 'editor');
+  const conn = await requireUsable(connectionId, board.workspaceId, userId);
+  const provider = providerOf(conn.provider);
+  if (!provider.sprints) return { sprints: [], fieldName: null };
+  const key = projectParam(project);
+  return { sprints: await askTracker(conn, () => provider.sprints!.list(openConnection(conn), key)), fieldName: provider.sprints.fieldName };
+}
+
+/** The issue types a project can create (#43), for the send dialog's picker. */
+export async function issueTypesOf(userId: string, connectionId: string, boardId: string, project: unknown): Promise<{ issueTypes: string[]; preferred: string | null }> {
+  const board = await requireBoardAccess(boardId, userId, 'editor');
+  const conn = await requireUsable(connectionId, board.workspaceId, userId);
+  const provider = providerOf(conn.provider);
+  const key = projectParam(project);
+  const preferred = conn.settings.issueTypes?.[key] ?? conn.settings.issueType ?? null;
+  if (!provider.issueTypes) return { issueTypes: [], preferred };
+  return { issueTypes: await askTracker(conn, () => provider.issueTypes!(openConnection(conn), key)), preferred };
 }
 
 /** Every link of a connection is queued again (its credentials were fixed). */

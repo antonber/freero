@@ -12,7 +12,18 @@
 // secret is shown once, when made), logs never include them, errors are Freero's own words.
 import { createHash, randomBytes } from 'node:crypto';
 import type { Request } from 'express';
-import { TRACKER_PROVIDERS, type TrackerConnectionInfo, type TrackerConnectionInput, type TrackerProviderKind } from '@freero/shared';
+import {
+  MAPPED_FIELD_TYPES,
+  TRACKER_PROVIDERS,
+  labelKey,
+  type FieldMapEntry,
+  type MappedFieldType,
+  type TrackerConnectionInfo,
+  type TrackerConnectionInput,
+  type TrackerFieldInfo,
+  type TrackerFieldMapSettings,
+  type TrackerProviderKind,
+} from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { badRequest, HttpError, notFound } from '../../platform/http';
 import { newId } from '../../platform/ids';
@@ -166,6 +177,7 @@ const str = (v: unknown, what: string, max: number): string => {
 /** Where a provider's API lives for a site people typed. */
 export function apiBaseOf(provider: TrackerProviderKind, site: string): string {
   const s = site.replace(/\/+$/, '');
+  // Azure DevOps: the organization's (or Server collection's) address is where its API lives.
   if (provider === 'github') return s === 'https://github.com' ? 'https://api.github.com' : `${s}/api/v3`;
   if (provider === 'linear') return s === 'https://linear.app' ? 'https://api.linear.app' : s;
   return s;
@@ -197,6 +209,7 @@ export function info(c: StoredConnection, links: number, req: Request | null, ma
     ...(manager
       ? {
           webhookUrl: appUrl(req, `/api/trackers/webhooks/${encodeURIComponent(c.id)}`),
+          fieldMap: fieldMapSettingsOf(c),
         }
       : {}),
     links,
@@ -204,12 +217,87 @@ export function info(c: StoredConnection, links: number, req: Request | null, ma
   };
 }
 
+/** The field map part of a connection's settings, as managers see it (#43). */
+export function fieldMapSettingsOf(c: Pick<StoredConnection, 'settings'>): TrackerFieldMapSettings {
+  return {
+    estimateField: c.settings.estimateField ?? null,
+    startDateField: c.settings.startDateField ?? null,
+    issueTypes: c.settings.issueTypes ?? {},
+    fields: c.settings.fieldMap ?? [],
+  };
+}
+
+/** What a test found, without overriding fields a manager picked (#43). */
+const foundSettings = (c: StoredConnection, found: Partial<repo.ConnectionSettings> = {}) => {
+  if (!c.settings.fieldsPicked) return found;
+  const { estimateField: _e, startDateField: _s, ...rest } = found;
+  return rest;
+};
+
+const FIELD_ID = /^[A-Za-z0-9_.:-]{1,120}$/;
+
+/** A PATCHed field map, checked (names, ids, kinds; one kanban field per tracker field and back). */
+function fieldMapPatch(c: StoredConnection, v: unknown): Partial<repo.ConnectionSettings> {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) throw badRequest('fieldMap must be an object');
+  const b = v as Record<string, unknown>;
+  const out: Partial<repo.ConnectionSettings> = {};
+  const fieldId = (x: unknown, what: string) => {
+    if (x === null || x === '') return null;
+    if (typeof x !== 'string' || !FIELD_ID.test(x)) throw badRequest(`${what} must be a tracker field id`);
+    return x;
+  };
+  if (b.estimateField !== undefined) out.estimateField = fieldId(b.estimateField, 'fieldMap.estimateField');
+  if (b.startDateField !== undefined) out.startDateField = fieldId(b.startDateField, 'fieldMap.startDateField');
+  if (out.estimateField !== undefined || out.startDateField !== undefined) out.fieldsPicked = true;
+  if (b.issueTypes !== undefined) {
+    if (!b.issueTypes || typeof b.issueTypes !== 'object' || Array.isArray(b.issueTypes)) throw badRequest('fieldMap.issueTypes must map project keys to issue types');
+    const entries = Object.entries(b.issueTypes as Record<string, unknown>);
+    if (entries.length > 200) throw badRequest('At most 200 projects in fieldMap.issueTypes');
+    out.issueTypes = Object.fromEntries(entries.filter(([, t]) => t !== null && t !== '').map(([p, t]) => [str(p, 'a project key', 200), str(t, `the issue type of ${p}`, 100)]));
+  }
+  if (b.fields !== undefined) {
+    if (!providerOf(c.provider).listFields) throw badRequest(`${TRACKER_PROVIDERS[c.provider]} has no custom fields Freero maps`);
+    if (!Array.isArray(b.fields) || b.fields.length > 50) throw badRequest('fieldMap.fields must list at most 50 fields');
+    const seenTracker = new Set<string>();
+    const seenBoard = new Set<string>();
+    out.fieldMap = b.fields.map((raw, i): FieldMapEntry => {
+      const e = (raw ?? {}) as Record<string, unknown>;
+      const tracker = fieldId(e.tracker, `fieldMap.fields[${i}].tracker`);
+      if (!tracker) throw badRequest(`fieldMap.fields[${i}].tracker is required`);
+      const board = str(e.board, `fieldMap.fields[${i}].board (the kanban field’s name)`, 60);
+      if (!MAPPED_FIELD_TYPES.includes(e.type as MappedFieldType)) throw badRequest(`fieldMap.fields[${i}].type must be ${MAPPED_FIELD_TYPES.join(', ')}`);
+      if (seenTracker.has(tracker)) throw badRequest(`${tracker} is mapped twice`);
+      if (seenBoard.has(labelKey(board))) throw badRequest(`“${board}” is mapped twice`);
+      seenTracker.add(tracker);
+      seenBoard.add(labelKey(board));
+      const trackerName = typeof e.trackerName === 'string' && e.trackerName.trim() ? e.trackerName.trim().slice(0, 120) : tracker;
+      return { tracker, trackerName, board, type: e.type as MappedFieldType };
+    });
+  }
+  return out;
+}
+
+/** The tracker's fields, for the field map's picker (managers, #43). */
+export async function trackerFieldsOf(id: string, userId: string): Promise<TrackerFieldInfo[]> {
+  const c = await requireManaged(id, userId);
+  const provider = providerOf(c.provider);
+  if (!provider.listFields) return [];
+  try {
+    const out = await provider.listFields(openConnection(c));
+    await noteOutcome(c, null);
+    return out;
+  } catch (e) {
+    await noteOutcome(c, e);
+    throw e instanceof TrackerError ? new HttpError(502, e.message, 'tracker_refused') : e;
+  }
+}
+
 /** Asks the tracker who the credentials are; remembers the account and what it found. */
 export async function testConnection(c: StoredConnection): Promise<StoredConnection> {
   try {
     const me = await providerOf(c.provider).whoAmI(openConnection(c));
     const updated = await repo.updateConnection(c.id, {
-      settings: { ...c.settings, ...me.settings, account: me.account },
+      settings: { ...c.settings, ...foundSettings(c, me.settings), account: me.account },
       status: 'active',
       lastError: null,
     });
@@ -257,7 +345,19 @@ export async function createConnection(userId: string, body: unknown, req: Reque
   } catch (e) {
     throw badRequest(e instanceof TrackerError ? e.message : 'site must be the tracker’s address');
   }
-  const deployment = provider === 'jira' ? (b.deployment === 'datacenter' ? 'datacenter' : 'cloud') : null;
+  // Azure DevOps Services is cloud; an address of its own is a Server (TFS) collection.
+  const deployment =
+    provider === 'jira'
+      ? b.deployment === 'datacenter'
+        ? 'datacenter'
+        : 'cloud'
+      : provider === 'azure'
+        ? b.deployment === 'datacenter' || (b.deployment === undefined && !/^https:\/\/(dev\.azure\.com|[^/]+\.visualstudio\.com)(\/|$)/i.test(site))
+          ? 'datacenter'
+          : 'cloud'
+        : null;
+  if (provider === 'azure' && deployment === 'cloud' && !/^https:\/\/(dev\.azure\.com\/[^/]+|[^/]+\.visualstudio\.com)$/i.test(site) && !rules().allowPrivate)
+    throw badRequest('site must be the organization’s address: https://dev.azure.com/<organization>');
   const token = str(b.token, 'token', 4000);
   const email = provider === 'jira' && deployment === 'cloud' ? str(b.email, 'email (the Jira account the API token belongs to)', 254) : undefined;
   const inbound = b.inbound === 'polling' ? 'polling' : 'webhook';
@@ -296,6 +396,7 @@ export async function createConnection(userId: string, body: unknown, req: Reque
       ...me.settings,
       account: me.account,
     };
+
   } catch (e) {
     if (e instanceof TrackerError) throw new HttpError(400, e.message, 'tracker_refused');
     throw e;
@@ -390,6 +491,10 @@ export async function updateConnection(id: string, userId: string, body: unknown
       ...Object.fromEntries(Object.entries(d).filter(([, v]) => v !== undefined)),
     };
     changed.push('defaults');
+  }
+  if (b.fieldMap !== undefined) {
+    patch.settings = { ...(patch.settings ?? c.settings), ...fieldMapPatch(c, b.fieldMap) };
+    changed.push('field map');
   }
   if (b.token !== undefined) {
     if (c.auth !== 'token') throw badRequest('This connection signs in with OAuth: connect it again instead');
