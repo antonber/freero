@@ -4,3 +4,5 @@
 export { aiUsageExportOf, aiWorkspaceExportOf } from './settings';
 // Walkthrough captions (KAI-133): speech to text through the board's own AI provider, never another.
 export { transcribeRecording, transcriptionUnavailable } from './transcribe';
+// Walkthrough summary and chapters (#127): a draft from the captions, through the board's AI provider.
+export { draftWalkthroughChapters } from './walkthrough';

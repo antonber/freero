@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
-import { Activity, ChevronLeft, ChevronRight, History, List, LocateFixed, RotateCw, X } from 'lucide-react';
+import { Activity, ChevronLeft, ChevronRight, History, List, LocateFixed, RotateCw, Sparkles, X } from 'lucide-react';
 import type { ActivityEntry, CatchUpItem } from '@freero/shared';
 import { definePanel, describeElementType, useCamera, useEditor, useElement, type Editor, type PanelProps } from '@engine';
-import { Avatar, AvatarStack, Button, IconButton, Spinner } from '@ui';
+import { Avatar, AvatarStack, Button, IconButton, Spinner, Tooltip } from '@ui';
 import { PANEL_ID } from './lib/ids';
 import { ago, useActivity } from './lib/feed';
 import {
@@ -217,6 +217,22 @@ function CatchUpBar({ editor }: PanelProps) {
       <Button size="sm" variant="primary" loading={loadingChanges} onClick={() => void showChanges(editor)}>
         See recent changes
       </Button>
+      {/* #126: the AI feature's written catch-up of the same changes (greyed out with why when AI is off here). */}
+      {(editor.host.ai || editor.host.aiUnavailable) && (
+        <Tooltip content={editor.host.aiUnavailable ?? 'A short written summary of these changes, just for you'} side="bottom">
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={Sparkles}
+            // Not `disabled`: hovering and clicking still say why (the command explains).
+            aria-disabled={!editor.host.ai || undefined}
+            className={editor.host.ai ? undefined : 'fr-activity-bar__ai-off'}
+            onClick={() => editor.runCommand('ai.catchUp', { since: 'visit' })}
+          >
+            Summarise
+          </Button>
+        </Tooltip>
+      )}
       <IconButton icon={X} size={32} label="Dismiss" onClick={() => dismiss(editor)} />
     </div>
   );

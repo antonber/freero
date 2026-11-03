@@ -5,17 +5,20 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest';
 import * as Y from 'yjs';
-import { plainToRichText, type Account, type BoardElement, type ConnectorElement } from '@freero/shared';
+import { plainToRichText, type Account, type ActivityElement, type BoardElement, type ConnectorElement } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { closeTestDb, openTestDb } from '../../platform/testing';
 import { listAuditEvents } from '../audit/index';
 import { createUser } from '../auth/index';
 import { createBoard } from '../boards/index';
-import { readBoardView, initBoardDoc } from '../realtime/index';
+import { flushActivityBursts, recordBoardChanges } from '../activity/index';
+import { readBoardView, initBoardDoc, initBoardLayer } from '../realtime/index';
 import { createTeamWorkspace, inviteToWorkspace, updateWorkspace } from '../workspaces/index';
 import * as repo from './repo';
 import { monthOf, runAiAction } from './service';
 import { getAiAdmin, updateAiSettings } from './settings';
+import { resultsText } from './tasks';
+import { draftWalkthroughChapters } from './walkthrough';
 
 // ---- the stub provider ----
 
@@ -286,4 +289,163 @@ it('a workspace endpoint on a private or loopback address is refused unless the 
   const ws = await team(owner);
   for (const baseUrl of ['http://127.0.0.1:11434/v1', 'https://169.254.169.254/v1', 'https://localhost/v1', 'http://example.com/v1'])
     await expect(updateAiSettings(ws, owner.id, { source: 'workspace', provider: 'openai', baseUrl, model: 'm' })).rejects.toMatchObject({ status: 400 });
+});
+
+// ---- catch-up (#126) ----
+
+/** A board where Bob changed things a week ago: one public sticky, and one his feed row names that is only his private draft. */
+async function boardBobChanged(ann: Account, bob: Account) {
+  const ws = await team(ann, [[bob, 'member']]);
+  const boardId = await boardWith(ann.id, [sticky('pub', 0, 0, 'Caterer booked for Friday', { createdBy: bob.id }), sticky('old', 300, 0, 'Ann’s own note')], ws);
+  const layer = new Y.Doc();
+  layer.getMap('elements').set('draft', sticky('draft', 600, 0, 'SECRET salary numbers', { createdBy: bob.id }));
+  await initBoardLayer(boardId, `u:${bob.id}`, Y.encodeStateAsUpdate(layer));
+  await updateAiSettings(ws, ann.id, { enabled: true, source: 'instance' });
+  const t = Date.now() - 2 * 86_400_000;
+  const change = (id: string) => ({ id, op: 'add' as const, type: 'sticky', frameId: null });
+  recordBoardChanges({ boardId, actorId: bob.id, actorName: bob.name, layer: 'shared', changes: [change('pub'), change('draft')], frameTitles: {} }, t);
+  await flushActivityBursts(t + getConfig().activityIdleMs + 1);
+  return boardId;
+}
+
+it('a catch-up shows the model only what changed that the reader may see — never another person’s private draft — and its points open the items they cite', async () => {
+  const [ann, bob] = await Promise.all([user('Ann'), user('Bob')]);
+  const boardId = await boardBobChanged(ann, bob);
+  replies = [JSON.stringify({ title: 'Catering sorted', summary: 'Bob booked the caterer.', points: [{ text: 'The caterer is booked for Friday.', items: [1, 7], frames: [3] }] })];
+
+  const res = await runAiAction(boardId, ann.id, { task: 'catchup', since: 7, target: 'board' });
+
+  const sent = JSON.stringify(seen[0].body.messages);
+  expect(sent).toContain('Caterer booked for Friday');
+  expect(sent).not.toContain('SECRET');
+  expect(sent).not.toContain('Ann’s own note'); // the change set only, not the rest of the board
+  // Shown to her alone: a preview to insert if she wants, whatever was asked.
+  expect(res.target).toBe('preview');
+  expect((await elementsOf(boardId, ann.id)).map((e) => e.id).sort()).toEqual(['old', 'pub']);
+  // Numbers the model wasn't shown cite nothing.
+  expect(res.catchUp?.points).toEqual([{ text: 'The caterer is booked for Friday.', ids: ['pub'] }]);
+  expect(res.catchUp?.items.pub).toMatchObject({ kind: 'sticky', text: 'Caterer booked for Friday' });
+});
+
+it('a catch-up with no earlier visit to compare with, or with nothing others changed in that time, answers without calling the model', async () => {
+  const [ann, bob] = await Promise.all([user('Quiet'), user('Away')]);
+  const boardId = await boardBobChanged(ann, bob);
+
+  await expect(runAiAction(boardId, ann.id, { task: 'catchup', since: 'visit' })).rejects.toMatchObject({ status: 400 });
+  await expect(runAiAction(boardId, bob.id, { task: 'catchup', since: 7 })).rejects.toMatchObject({ status: 422, code: 'ai_nothing' });
+  expect(seen).toHaveLength(0);
+});
+
+// ---- expanding a mind-map topic (#134) ----
+
+it('expanding a topic reads the path to it and what is under it — never someone’s private draft hanging from it — and children it already has don’t count towards the 3 it must add', async () => {
+  const [ann, bob] = await Promise.all([user('Mapper'), user('Drafter')]);
+  const ws = await team(ann, [[bob, 'member']]);
+  const node = (id: string, parentId: string | null, text: string) =>
+    ({ id, type: 'mindmap', x: 0, y: 0, w: 120, h: 40, rotation: 0, z: ++z, createdBy: ann.id, createdAt: 1, updatedAt: 1, text, parentId, rootId: 'root', color: '#5B3FF0' }) as unknown as BoardElement;
+  const boardId = await boardWith(ann.id, [node('root', null, 'Launch plan'), node('mkt', 'root', 'Marketing'), node('blog', 'mkt', 'Blog post')], ws);
+  const layer = new Y.Doc();
+  layer.getMap('elements').set('secret', node('secret', 'mkt', 'SECRET budget cut'));
+  await initBoardLayer(boardId, `u:${bob.id}`, Y.encodeStateAsUpdate(layer));
+  await updateAiSettings(ws, ann.id, { enabled: true, source: 'instance' });
+  replies = [JSON.stringify({ items: ['Blog post', 'Webinar', 'Newsletter'] }), JSON.stringify({ items: ['Blog post', 'Webinar', 'Newsletter', 'Launch video', 'Press kit', 'Podcast', 'Meetup', 'Ads'] })];
+
+  const res = await runAiAction(boardId, ann.id, { task: 'expand', expand: 'ideas', ids: ['mkt'], target: 'board' });
+
+  const user0 = seen[0].body.messages.find((m) => m.role === 'user')!.content;
+  const sent = JSON.parse(user0.slice(user0.indexOf('<board_content>') + '<board_content>'.length, user0.indexOf('</board_content>')).trim()) as string;
+  expect(sent).toContain('Launch plan > Marketing');
+  expect(sent).toContain('Blog post');
+  expect(sent).not.toContain('SECRET');
+  // "Blog post" is there already: two new ones are too few, so the model was asked again.
+  expect(seen).toHaveLength(2);
+  expect(res.children).toEqual(['Webinar', 'Newsletter', 'Launch video', 'Press kit', 'Podcast', 'Meetup', 'Ads']);
+  // Nothing was placed: the app adds them under the topic itself.
+  expect(res.created).toEqual([]);
+  expect((await elementsOf(boardId, ann.id)).map((e) => e.id).sort()).toEqual(['blog', 'mkt', 'root']);
+});
+
+// ---- walkthrough summary and chapters (#127) ----
+
+it('a chapters draft is never asked of the provider while the workspace has AI off or its budget used up; once allowed, chapters past the end of the recording are dropped', async () => {
+  const owner = await user('Narrator');
+  const ws = await team(owner);
+  const boardId = await boardWith(owner.id, [], ws);
+  const cues = [
+    { start: 0, end: 4000, text: 'Welcome to the roadmap' },
+    { start: 4000, end: 9000, text: 'Next, what we shipped' },
+  ];
+  await expect(draftWalkthroughChapters(boardId, owner.id, cues, 10_000)).rejects.toMatchObject({ status: 403, code: 'ai_unavailable' });
+  await updateAiSettings(ws, owner.id, { enabled: true, source: 'instance', monthlyTokenBudget: 1000 });
+  await repo.addUsage({ workspaceId: ws, userId: owner.id, month: monthOf(), source: 'instance', inputTokens: 1000, outputTokens: 0 });
+  await expect(draftWalkthroughChapters(boardId, owner.id, cues, 10_000)).rejects.toMatchObject({ status: 429, code: 'ai_budget' });
+  expect(seen).toHaveLength(0);
+
+  await updateAiSettings(ws, owner.id, { monthlyTokenBudget: null });
+  replies = [JSON.stringify({ summary: 'A tour of the roadmap.', chapters: [{ start: 3, title: 'Welcome' }, { start: 4, title: 'Shipped' }, { start: 60, title: 'Made up' }] })];
+  const draft = await draftWalkthroughChapters(boardId, owner.id, cues, 10_000);
+
+  expect(seen[0].body.messages.find((m) => m.role === 'user')!.content).toContain('Next, what we shipped');
+  expect(draft).toEqual({
+    summary: 'A tour of the roadmap.',
+    chapters: [
+      { atMs: 0, title: 'Welcome' },
+      { atMs: 4000, title: 'Shipped' },
+    ],
+  });
+});
+
+// ---- AI on results you already have (#148) ----
+
+it('sorting by sentiment accepts only the four sentiment groups: an invented group gets one repair turn, and notes the model skipped land in Neutral', async () => {
+  const owner = await user('Mood');
+  const mine = { createdBy: owner.id };
+  const boardId = await boardWith(owner.id, [
+    sticky('a', 0, 0, 'Loved the demo', mine),
+    sticky('b', 220, 0, 'Builds are too slow', mine),
+    sticky('c', 440, 0, 'Standup is at 9', mine),
+  ]);
+  replies = [
+    JSON.stringify({ clusters: [{ title: 'Happy', notes: [1] }, { title: 'Negative', notes: [2] }] }),
+    JSON.stringify({ clusters: [{ title: 'positive', notes: [1] }, { title: 'Negative', notes: [2] }] }),
+  ];
+
+  const res = await runAiAction(boardId, owner.id, { task: 'cluster', by: 'sentiment', ids: ['a', 'b', 'c'], target: 'board' });
+
+  expect(seen).toHaveLength(2);
+  expect(seen[1].body.messages.at(-1)!.content).toContain('"Happy" is not one of the groups');
+  const els = new Map((await elementsOf(boardId, owner.id)).map((e) => [e.id, e]));
+  const titles = res.created.map((id) => els.get(id)).filter((e) => e?.type === 'text').map((e) => (e as { text: string }).text.replace(/<[^>]+>/g, ''));
+  expect(titles.sort()).toEqual(['Negative', 'Neutral', 'Positive']);
+  expect([...res.moved].sort()).toEqual(['a', 'b', 'c']);
+});
+
+it('a report on an activity whose results are still sealed is refused before the provider is called', async () => {
+  const owner = await user('Sealed');
+  const activity = {
+    ...{ id: 'act', type: 'activity', x: 0, y: 0, w: 520, h: 400, rotation: 0, z: 1, createdBy: owner.id, createdAt: 1, updatedAt: 1 },
+    ...{ kind: 'poll', question: 'Lunch?', options: [{ id: 'a', text: 'Pizza' }], maxChoices: 1, anonymous: false, results: 'reveal', guests: false, color: '#5B3FF0' },
+  } as unknown as BoardElement;
+  const boardId = await boardWith(owner.id, [activity]);
+
+  await expect(runAiAction(boardId, owner.id, { task: 'report', ids: ['act'] })).rejects.toMatchObject({ status: 409, code: 'engage_sealed' });
+  expect(seen).toHaveLength(0);
+});
+
+it('what a report sends the model holds the counts and questions, never who answered or asked', () => {
+  const activity = { kind: 'poll', question: '<p>Lunch?</p>', options: [{ id: 'a', text: 'Pizza' }, { id: 'b', text: 'Salad' }] } as unknown as ActivityElement;
+  const text = resultsText(activity, {
+    activityId: 'act',
+    respondents: 3,
+    sealed: false,
+    updatedAt: 1,
+    poll: [
+      { optionId: 'a', count: 2, names: ['Annabel', 'Bartholomew'] },
+      { optionId: 'b', count: 1, names: ['Cornelius'] },
+    ],
+    questions: [{ id: 'q', text: 'Is it vegan?', by: 'Dorothea', votes: 4, answered: false, at: 1 }],
+  });
+  expect(text).toContain('Pizza: 2');
+  expect(text).toContain('Is it vegan? (4 upvotes)');
+  for (const name of ['Annabel', 'Bartholomew', 'Cornelius', 'Dorothea']) expect(text).not.toContain(name);
 });

@@ -185,6 +185,8 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     docs: docsFrom(board.id, deps.navigate),
     // AI entry points exist only when the server said this user may use AI here.
     ...(deps.ai?.available ? { ai: { provider: deps.ai.provider ?? '', source: deps.ai.source ?? 'instance', run: (body) => api.runAi(board.id, body) } } : {}),
+    // AI exists on this server but not for this person here: actions may show greyed out with why.
+    ...(deps.ai && !deps.ai.available ? { aiUnavailable: deps.ai.reason ?? 'AI isn’t available on this board.' } : {}),
     // Tracker entry points exist only when the server listed a connection this user may use here.
     ...(deps.trackers?.length
       ? {

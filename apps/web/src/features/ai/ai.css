@@ -45,6 +45,51 @@
   line-height: 1.45;
 }
 
+/* Catch me up (#126): points with the items they cite. */
+.fr-ai-catchup__points {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 1.45;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.fr-ai-catchup__cites {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.fr-ai-catchup__cite {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--fr-line);
+  border-radius: 999px;
+  background: var(--fr-surface);
+  color: var(--fr-ink-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.fr-ai-catchup__cite:hover {
+  border-color: var(--fr-primary);
+  color: var(--fr-primary);
+}
+
+.fr-ai-catchup__cite.is-removed {
+  cursor: default;
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
 .fr-ai__summary {
   margin: 0;
   color: var(--fr-ink);

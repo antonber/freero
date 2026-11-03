@@ -22,6 +22,13 @@
 // POST   /api/boards/:id/walkthroughs/:wid/transcript     -> { walkthrough }  (transcribed by the board's AI provider, only when AI is on)
 // GET    /api/boards/:id/walkthroughs/:wid/download       -> the recording as an attachment (downloads policy, audited)
 // GET    /api/boards/:id/walkthroughs-captions            -> { available: boolean, reason?: string }  (AI captions for this person here?)
+// [#127] Summary and chapters, and emoji reactions at moments:
+// PUT    /api/boards/:id/walkthroughs/:wid/chapters       body WalkthroughChaptersInput -> { walkthrough }  (its author, owners, editors)
+// POST   /api/boards/:id/walkthroughs/:wid/chapters/draft -> WalkthroughChaptersInput  (a draft from the captions by the board's AI
+//        provider, saved nowhere: the author edits it and saves it with PUT; 403 ai_unavailable / 409 no captions)
+// GET    /api/boards/:id/walkthroughs/:wid/reactions      -> { reactions: WalkthroughReaction[] }
+// POST   /api/boards/:id/walkthroughs/:wid/reactions      body { atMs, emoji } -> { reaction }  (commenters and up, with an account)
+// DELETE /api/boards/:id/walkthroughs/:wid/reactions/:rid -> 204  (its author, owners, editors)
 
 /** Server-written board collection: walkthrough id -> WalkthroughSummary. */
 export const WALKTHROUGHS_COLLECTION = 'walkthroughs';
@@ -34,6 +41,13 @@ export const MAX_TIMELINE_SAMPLES = 24_000;
 export const MAX_WALKTHROUGH_COMMENT = 2000;
 export const MAX_TRANSCRIPT_CUES = 2000;
 export const MAX_CUE_TEXT = 500;
+export const MAX_WALKTHROUGH_CHAPTERS = 50;
+export const MAX_CHAPTER_TITLE = 80;
+export const MAX_WALKTHROUGH_SUMMARY = 2000;
+/** The reactions a viewer can leave at a moment (#127). */
+export const WALKTHROUGH_REACTIONS = ['👍', '❤️', '😂', '🎉', '🤔', '👀'] as const;
+/** Most reactions one person leaves on one walkthrough. */
+export const MAX_REACTIONS_PER_PERSON = 100;
 
 /**
  * Where the narrator looked and pointed, by milliseconds since the recording started.
@@ -68,6 +82,30 @@ export interface WalkthroughSummary {
   comments: number;
   /** Captions exist. */
   captions: boolean;
+  /** [additive, #127] Emoji reactions at moments (open boards re-read them when it changes). */
+  reactions?: number;
+}
+
+/** [additive, #127] A chapter: where it starts and what it is called. */
+export interface WalkthroughChapter {
+  atMs: number;
+  title: string;
+}
+
+/** [additive, #127] What the author saves (and what an AI draft proposes). */
+export interface WalkthroughChaptersInput {
+  /** A few sentences on what the walkthrough covers ('' removes it). */
+  summary: string;
+  /** In time order; an empty list removes them. */
+  chapters: WalkthroughChapter[];
+}
+
+/** [additive, #127] An emoji at a moment. Who left it isn't shown (only whether it is yours). */
+export interface WalkthroughReaction {
+  id: string;
+  atMs: number;
+  emoji: string;
+  mine: boolean;
 }
 
 export interface Walkthrough extends WalkthroughSummary {
@@ -81,6 +119,9 @@ export interface Walkthrough extends WalkthroughSummary {
   transcript: WalkthroughCue[] | null;
   /** How the transcript was made. */
   transcriptSource: 'ai' | 'manual' | null;
+  /** [additive, #127] What it covers, and its chapters (empty: none yet). */
+  summary?: string | null;
+  chapters?: WalkthroughChapter[];
   /** The reader has watched it before. */
   viewed: boolean;
 }
