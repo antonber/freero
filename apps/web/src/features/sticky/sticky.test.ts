@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { STICKY_COLORS, STICKY_INK, stickyInk, type StickyColor, type StickyElement } from '@freero/shared';
-import { createTestBoard, type FeatureBundle } from '@engine';
+import { STICKY_COLORS, STICKY_INK, stickyInk, type StickyColor, type StickyElement, type StickyPadElement } from '@freero/shared';
+import { startPeel } from './lib/pad';
+import { createTestBoard, type Editor, type ElementDefinition, type FeatureBundle } from '@engine';
 import manifest from './feature';
-import stickyDef from './element';
+import elementDefs from './element';
 import commands from './commands';
+
+const stickyDef = elementDefs[0] as ElementDefinition<'sticky'>;
 import { DELETED_USER, authorLabel, authorLabelsShown } from './lib/authors';
 import { gridPositions, nextFreeSlot } from './lib/layout';
 import { listItems } from './lib/paste';
@@ -146,6 +149,55 @@ describe('sticky papers and their ink', () => {
     const navy = { ...stickyDef.defaults(), color: 'navy' as StickyColor };
     expect(navy.textColor).toBe(STICKY_INK);
     expect(ratio(STICKY_COLORS.yellow, navy.textColor)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+describe('sticky pad', () => {
+  const padBoard = () =>
+    createTestBoard({
+      users: ['ann', 'bob'],
+      roles: ['owner', 'commenter'],
+      participants: [1],
+      features: [{ manifest, elements: elementDefs, tools: [], formats: [], panels: [], commands: [] }],
+    });
+  const peelAndDrag = (editor: Editor, pad: StickyPadElement) => {
+    const drag = startPeel(editor, pad, { x: 100, y: 120 })!;
+    drag.move({ x: 400, y: 300 });
+    drag.move({ x: 600, y: 320 });
+    return drag.end(true);
+  };
+
+  it('dragging from a pad peels one sticky of its colour that keeps the grab point under the pointer, and one undo takes it back while the pad stays', () => {
+    const board = padBoard();
+    try {
+      const [ann] = board.editors('sticky');
+      const padId = ann.create<'stickypad'>({ type: 'stickypad', x: 0, y: 0, w: 208, h: 208, rotation: 0, color: 'pink' } as never);
+      const id = peelAndDrag(ann, ann.getElement<StickyPadElement>(padId)!);
+      const peeled = ann.getElement<StickyElement>(id)!;
+      expect([peeled.type, peeled.color, peeled.x, peeled.y]).toEqual(['sticky', 'pink', 500, 200]);
+      ann.undo();
+      expect(ann.getElement(id)).toBeUndefined();
+      expect(ann.getElement(padId)).toBeDefined();
+    } finally {
+      board.destroy();
+    }
+  });
+
+  it('a commenter taking part peels a private draft off the pad during private mode, which nobody else sees', () => {
+    const board = padBoard();
+    try {
+      const [ann, bob] = board.editors('sticky');
+      const padId = ann.create<'stickypad'>({ type: 'stickypad', x: 0, y: 0, w: 208, h: 208, rotation: 0, color: 'pink' } as never);
+      board.sync();
+      bob.setPrivatePlacement(() => true, { types: ['sticky'] });
+      const id = peelAndDrag(bob, bob.getElement<StickyPadElement>(padId)!);
+      board.sync();
+      expect(bob.layerOf(id)).toBe('private');
+      expect(bob.getElement<StickyElement>(id)?.x).toBe(500);
+      expect(ann.getElement(id)).toBeUndefined();
+    } finally {
+      board.destroy();
+    }
   });
 });
 

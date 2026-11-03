@@ -60,6 +60,8 @@ import type {
   WalkthroughReaction,
   WalkthroughCue,
   WalkthroughSummary,
+  IcebreakerResult,
+  PresentationSession,
 } from '@freero/shared';
 
 /** [additive] Where an element lives (see Editor.layerOf and ARCHITECTURE.md "Board layers"). */
@@ -413,6 +415,23 @@ export interface Host {
    */
   engage?: HostEngage;
   /**
+   * [additive, #150] Icebreakers: asks the SERVER to spin a wheel, roll dice or shuffle speakers;
+   * the result reaches every client through the `icebreakerResults` collection (the call resolves
+   * with it too). Rejects with a showable message (not allowed now, nothing to spin). Absent offline.
+   */
+  icebreakers?: { roll(elementId: string): Promise<IcebreakerResult> };
+  /**
+   * [additive, #146] Who presents this board, kept by the SERVER (`presentation` collection): start
+   * (refused while someone else on the board presents, unless you facilitate or own it), hand off
+   * to someone on the board (the presenter, the facilitator or the owner), end. Rejects with a
+   * showable message. Absent offline: presenting stays local.
+   */
+  presentation?: {
+    start(frameId: string | null): Promise<PresentationSession | null>;
+    handoff(to: string, frameId: string | null): Promise<PresentationSession | null>;
+    end(): Promise<PresentationSession | null>;
+  };
+  /**
    * [additive] Async walkthroughs of this board (KAI-133; wire: @freero/shared walkthroughs.ts):
    * recordings of someone's voice (and camera) with the path they took over the board. Anyone who
    * can open the board watches; the server decides who records, comments and changes them, and
@@ -502,6 +521,15 @@ export interface HostEngage {
   moderate(activityId: string, questionId: string, patch: { answered?: boolean; hidden?: boolean }): Promise<ActivityState>;
   reveal(activityId: string, revealed: boolean): Promise<ActivityState>;
   clear(activityId: string): Promise<ActivityState>;
+  /** [additive, #147] Owners and editors: a quiz's right answers (question id -> option ids), kept on the server. */
+  setKey?(activityId: string, key: Record<string, string[]>): Promise<ActivityState>;
+  /** [additive, #147] Owners and editors: open a quiz question (`step`, -1 = back to the start) or show the open one's answer. */
+  runQuiz?(activityId: string, run: { step: number } | { showAnswer: true }): Promise<ActivityState>;
+  /**
+   * [additive, #147] Owners and editors: a copied quiz takes the answer key of the quiz it was copied
+   * from (read on the server), when they may edit the board it came from.
+   */
+  copyKey?(activityId: string, from: { boardId: string; activityId: string }): Promise<ActivityState>;
 }
 
 /** [additive] `Host.trackers` (wire: @freero/shared trackers.ts). */

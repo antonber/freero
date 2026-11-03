@@ -14,7 +14,9 @@ export default defineOutline({
         for (const k of r.ranking ?? []) rows.push([text(k.optionId), `${k.points} points`]);
         for (const g of r.rating ?? []) rows.push([text(g.optionId), g.count ? `${g.avg} of ${el.scale ?? 5}` : '']);
         for (const q of r.questions ?? []) rows.push([q.text, `${q.votes} upvotes${q.answered ? ', answered' : ''}`]);
+        for (const m of r.matrix ?? []) if (m.count) rows.push([text(m.optionId), `across ${m.x}, up ${m.y} (spread ${m.sx}, ${m.sy})`]);
       }
+      for (const x of r?.quiz?.leaderboard ?? []) rows.push([x.name, `${x.score} points, ${x.right} right`]);
       return {
         variant: el.kind,
         title: ctx.plain(el.question),

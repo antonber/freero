@@ -46,6 +46,8 @@ const TeamsConfigPage = lazy(() => import('./teams/TeamsConfigPage'));
 const TeamsChoosePage = lazy(() => import('./teams/TeamsChoosePage'));
 // Docs (KAI-162): the page and its editor load on demand.
 const DocPage = lazy(() => import('./pages/doc/DocPage'));
+// The phone answer page of a live activity (#40): no board engine, just the activity's REST.
+const RespondPage = lazy(() => import('./pages/respond/RespondPage').then((m) => ({ default: m.RespondPage })));
 
 export function App() {
   return (
@@ -197,6 +199,15 @@ export function App() {
               }
             />
             <Route path="/board/:id" element={<BoardRoute />} />
+            {/* Answering a live activity on a phone, without the board (#40). */}
+            <Route
+              path="/respond/:boardId/:activityId"
+              element={
+                <Suspense fallback={<FullPageSpinner label="Opening the activity" />}>
+                  <RespondPage />
+                </Suspense>
+              }
+            />
             <Route
               path="/embed/board/:id"
               element={

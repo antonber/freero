@@ -76,7 +76,12 @@ export interface ItemRow {
   frame: string;
   /** A kanban card's field values as text, by field name (its Stage too). */
   fields?: Record<string, string>;
+  /** [#142] A two-sided card's back text (undefined: one-sided). */
+  back?: string;
 }
+
+/** The column a flip card's back goes in (only when some exported card has one). */
+export const BACK_HEADER = 'Back';
 
 export const EXPORT_HEADER = ['Type', 'Text', 'Description', 'Color', 'Tags', 'Status', 'Assignee', 'Due date', 'Frame'];
 /** Tags inside one cell. */
@@ -89,10 +94,25 @@ export const TAG_SEPARATOR = '; ';
 export function exportRows(items: ItemRow[]): string[][] {
   const names: string[] = [];
   for (const r of items) for (const n of Object.keys(r.fields ?? {})) if (!names.includes(n)) names.push(n);
-  const own = new Set(EXPORT_HEADER.map((h) => h.toLowerCase()));
+  // Flip cards (#142) export both sides: the front is Text, the back its own column.
+  const backs = items.some((r) => r.back !== undefined);
+  const header = backs ? [...EXPORT_HEADER, BACK_HEADER] : EXPORT_HEADER;
+  const own = new Set(header.map((h) => h.toLowerCase()));
   return [
-    [...EXPORT_HEADER, ...names.map((n) => (own.has(n.toLowerCase()) ? `${n} (field)` : n))],
-    ...items.map((r) => [r.type, r.text, r.description, r.color, r.tags.join(TAG_SEPARATOR), r.status, r.assignee, r.due, r.frame, ...names.map((n) => r.fields?.[n] ?? '')]),
+    [...header, ...names.map((n) => (own.has(n.toLowerCase()) ? `${n} (field)` : n))],
+    ...items.map((r) => [
+      r.type,
+      r.text,
+      r.description,
+      r.color,
+      r.tags.join(TAG_SEPARATOR),
+      r.status,
+      r.assignee,
+      r.due,
+      r.frame,
+      ...(backs ? [r.back ?? ''] : []),
+      ...names.map((n) => r.fields?.[n] ?? ''),
+    ]),
   ];
 }
 

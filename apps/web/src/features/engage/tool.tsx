@@ -3,7 +3,7 @@ import { nanoid } from 'nanoid';
 import type { ActivityKind } from '@freero/shared';
 import { defineTool, plainToRichText, useToolGhost, useToolOptions } from '@engine';
 import { SegmentedControl } from '@ui';
-import { ACCENTS, ACTIVITY_H, ACTIVITY_W, KINDS, TOOL_ID, starter } from './lib/activity';
+import { ACTIVITY_H, ACTIVITY_W, KINDS, TOOL_ID, kindAccent, starter } from './lib/activity';
 
 interface Options {
   kind?: ActivityKind;
@@ -22,7 +22,7 @@ export default defineTool({
   onPointerDown({ editor, point, button }) {
     if (button !== 0) return;
     const kind = editor.getToolOptions<Options>(TOOL_ID).kind ?? 'poll';
-    const { question, options } = starter(kind, () => nanoid(8));
+    const { question, options, extra } = starter(kind, () => nanoid(8));
     const id = editor.create<'activity'>(
       {
         type: 'activity',
@@ -39,7 +39,8 @@ export default defineTool({
         results: 'live',
         guests: true,
         closed: false,
-        color: ACCENTS[KINDS.findIndex((k) => k.value === kind) % ACCENTS.length],
+        color: kindAccent(kind),
+        ...extra,
       },
       { select: true },
     );

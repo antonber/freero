@@ -144,6 +144,8 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | A person's time zone (`users.time_zone`, IANA) | server `modules/auth` (`updateProfile`: `PATCH /auth/me` `timeZone`, validated by `platform/time.ts` `canonicalTimeZone`) | the app sets it once from the browser when it is unknown; the profile's Time zone field |
 | "Changes on your boards" subscriptions (`board_change_digests`: frequency, the window, when the next is due) | server `modules/notifications` (`boardChanges.ts`) | `PUT /notifications/prefs` `boardChanges`; its signed unsubscribe link (`list=board-changes`) |
 | The participation switch (`facilitation` key `participation`: may commenters and guests take part; absent = yes) | `features/facilitation` (board menu "Commenters and guests take part…"); the server allows the owner, the facilitator while one facilitates, any editor otherwise (`realtime/facilitation.ts` `mayChangeParticipation`) and reads it (`realtime/participation.ts`) | `runCommand('facilitation.toggleParticipation', { open? })` |
+| Who presents a board (`presentation` key `session`, #146) | server `modules/presentations` (realtime `updateServerEntry`: start, hand off, end; a socket's write is undone) | `Host.presentation` (`features/present`) |
+| Icebreaker results (`icebreakerResults`, #150) and a quiz's answer key (`engage_keys`, #147) | server `modules/icebreakers` (`writeServerCollection`) and `modules/engage` | `Host.icebreakers.roll`; `Host.engage.setKey` / `runQuiz` |
 | A vote's history (`voting` keys `h:<sessionId>` → `VotingHistoryEntry`: totals only, never ballots) | `features/voting` (archived when the next vote starts or results are cleared; at most `VOTING_HISTORY_MAX`); editors only (`votingRules.ts`) | the results panel's "Past votes" |
 
 ### Host — the one typed contract between app and engine
@@ -1313,7 +1315,9 @@ credentials that act for a person without their session), `api` (no table: the p
 permission check, `POST /objects/resolve`), `references` (object_references, reference_sources: the
 references index derived through the outbox, `GET /objects/backlinks`; both in "Suite foundation"
 below), `engage` (engage_answers, engage_questions, engage_upvotes,
-engage_reveals: live audience activities; see "Live activities" below), `trackers`
+engage_reveals, engage_keys: live audience activities; see "Live activities" below), `icebreakers`
+(no tables: server-made wheel spins, dice rolls and speaker shuffles, #150), `presentations`
+(no tables: who presents a board, its handoffs, #146), `trackers`
 (tracker_connections, tracker_links, tracker_link_sources, tracker_proposals, tracker_oauth_flows, tracker_webhooks: issue-tracker sync;
 see "Issue trackers" below), `search` (search_entries, search_sources: the search index derived
 through the outbox, `GET /search`), `events` (events, event_board_states, event_pending_boards: the
@@ -3072,7 +3076,51 @@ in the same transaction (`realtime/serverCollections.ts`, like the vote budget).
 answer can never be mapped to a person by any client, and a sealed activity (`results: 'reveal'`)
 publishes only how many answered until an editor reveals it. Names appear only on a poll answered
 while it was not anonymous (kept per answer as given). `engageResults` and `call` are in
-`Y_KEPT_ON_RESTORE`. The answer form is a dialog that `?activity=<id>` opens (phones: the answer link).
+`Y_KEPT_ON_RESTORE`. The answer form (`@ui` `ActivityForm`) is a dialog on the board (`?activity=<id>`
+opens it) and the board-free phone page `/respond/<board>/<activity>` (#40, `app/pages/respond`):
+the activity's `GET` returns the activity itself (`ActivityState.activity`, question as plain text)
+so that page needs no Yjs or canvas, and a visitor joins as a guest inline. Its QR code is encoded
+by the pinned `qrcode` package and drawn as one SVG path (the link dialog, optionally on the
+element so exports keep it, and the full-screen presenter view of one activity).
+A **2×2 matrix** (#147) takes each person's placement of the items (0..1 on two named axes) and
+publishes each item's average place and spread. A **quiz** keeps its answer key on the server
+(`engage_keys`, `PUT …/key`, editors; the element holds only questions and answers, since every
+participant's client holds the board) and is run by the server: `POST …/quiz` (editors) writes
+the element's `quiz` step with the SERVER's clock (`openedAt`), so time limits and answer times are
+fair whatever the clients' clocks; answers to the open question only, before its limit (plus
+`ENGAGE_QUIZ_GRACE_MS`) and before its answer is shown, can't be withdrawn, and score more when
+faster. The board gets per question how many answered, and the right options and counts only once
+shown; the leaderboard (names unless anonymous) only once revealed. Each person's own score comes
+with their `ActivityState`. Copies keep the key without it ever reaching a client: a duplicated board gets its
+quizzes' keys copied on the server (boards' `duplicated` lifecycle event, `sourceId` /
+`sourceRole`) when the copier may edit the original; a pasted, Alt-dragged or template-inserted quiz
+carries only a reference (`copyContent`: source board and activity) and asks `PUT …/key/copy`,
+which copies the key only for an editor of the target who may also edit the source board. So a
+template shared with a team gives its quizzes' keys only to teammates who can edit the board the
+template was made from; everyone else gets the questions without right answers (and is told). Results of any
+kind download as CSV from the format toolbar (what the board shows, formula-guarded).
+
+**Icebreakers** (#150, `modules/icebreakers`, `features/icebreakers`): a wheel of names, dice and a
+random speaking order are `icebreaker` elements holding only their set-up. Every spin, roll and
+shuffle is made by the SERVER (`POST /boards/:id/icebreakers/:elementId/roll`, `crypto.randomInt`)
+and published in the server-written `icebreakerResults` collection (element content, kept on
+restore, left out of backups) with its start on the server's clock and its length; every client
+animates the same frames from that start (`Host.serverNow`) and lands at the same moment (reduced
+motion and exports: the result at once; screen readers: a live caption). Owners and editors spin;
+while a facilitation session runs only its facilitator and the owner (`rollRefusal`); commenters,
+guests and viewers watch. The module owns no tables.
+
+**Who presents** (#146, `modules/presentations`, `features/present`): the slides still follow the
+presenter's presence, but WHO presents is the server-written `presentation` collection (key
+`session`: presenter, since when, the slide it was handed over on, who handed it). `POST
+/boards/:id/presentation` starts (refused while someone else on the board presents, unless the
+caller facilitates or owns the board; a presenter who left no longer holds it), hands off (the
+presenter, the facilitator or the owner, to someone on the board now: realtime's
+`updateServerEntry` reads and writes the entry in one step with who is here, by the server's own
+presence names) and ends. The new presenter's client starts presenting on that slide; the old
+one's stops; whoever followed the old presenter follows the new one. Presenter notes can open in a
+window of their own (a React portal into a popup, so it follows the slide; it closes with the
+presentation).
 
 **Participants** (parity rank 1, `realtime/participation.ts`, `@freero/shared` `participation.ts`):
 commenters and guests take part in a facilitator's sessions without edit access, like Engage lets
