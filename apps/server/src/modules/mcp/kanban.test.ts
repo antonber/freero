@@ -188,6 +188,35 @@ it('an agent adds a table tab sorted by Points and filtered to P0: no card on th
   expect(textOf(await client.callTool({ name: 'get_board_outline', arguments: { boardId } }))).not.toContain('Hot list');
 });
 
+it('an agent adds a calendar on a date field of the kanban and a timeline in swimlanes by Team: no card moves, the outline says what places their cards, query_cards with the calendar reads its cards in date order (undated last), and a field that isn’t a date is refused with the date fields named', async () => {
+  const { boardId, kanbanId, ids } = await sprint(['A', 'B', 'C']);
+  const [a, b, c] = ids;
+  await call('define_fields', { boardId, kanbanId, fields: [{ name: 'Launch', type: 'date' }] });
+  await call('update_items', {
+    boardId,
+    items: [
+      { id: a, dueDate: '2026-11-20', fields: { Launch: '2026-12-09', Team: 'Web' } },
+      { id: b, startDate: '2026-11-01', dueDate: '2026-11-03', fields: { Team: 'API' } },
+      { id: c, fields: { Launch: '2026-12-01' } },
+    ],
+  });
+  const before = [...(await elements(boardId)).values()].filter((el) => el.type === 'card').map((el) => [el.id, el.x, el.y]);
+  const cal = (await call('configure_view', { boardId, kanbanId, addView: { name: 'Launches', layout: 'calendar' }, date: 'launch' })).untrusted_board_content as { views: Array<Record<string, unknown>> };
+  expect(cal.views.find((v) => v.name === 'Launches')).toMatchObject({ layout: 'calendar', date: 'Launch' });
+  const tl = (await call('configure_view', { boardId, kanbanId, addView: { name: 'Plan', layout: 'timeline' }, subGroupBy: 'Team', scale: 'day' })).untrusted_board_content as { views: Array<Record<string, unknown>> };
+  expect(tl.views.find((v) => v.name === 'Plan')).toMatchObject({ layout: 'timeline', start: 'Start date', end: 'Due date', scale: 'day', subGroupBy: 'Team' });
+  expect([...(await elements(boardId)).values()].filter((el) => el.type === 'card').map((el) => [el.id, el.x, el.y])).toEqual(before);
+
+  const plan = (await call('query_cards', { boardId, kanbanId, view: 'Plan' })).untrusted_board_content as { cards: Array<{ title: string; fields: Record<string, unknown> }> };
+  expect(plan.cards.map((r) => [r.title, r.fields['Start date'] ?? null])).toEqual([['B', '2026-11-01'], ['A', null], ['C', null]]);
+  const md = textOf(await client.callTool({ name: 'get_board_outline', arguments: { boardId } }));
+  expect(md).toContain('views: Board*, Launches (calendar by Launch), Plan (timeline from Start date to Due date in lanes by Team)');
+  const rows = (await call('query_cards', { boardId, kanbanId, view: 'Launches' })).untrusted_board_content as { cards: Array<{ title: string }> };
+  expect(rows.cards.map((r) => r.title)).toEqual(['C', 'A', 'B']);
+  expect(await refused('configure_view', { boardId, kanbanId, view: 'Launches', date: 'Points' })).toContain('date fields: Due date, Start date, Launch');
+  expect(await refused('configure_view', { boardId, kanbanId, view: 'Launches', scale: 'week' })).toContain('isn’t a setting of a calendar tab');
+});
+
 it('define_fields deleting the Doing column hands its cards to To do with To do’s status; the column field itself and the field the board is grouped by can’t be deleted', async () => {
   const { boardId, kanbanId, ids } = await sprint(['Fix login']);
   const [card] = ids;
