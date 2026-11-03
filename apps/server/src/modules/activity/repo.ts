@@ -28,6 +28,7 @@ export interface ActivitySummary {
     | 'duplicated'
     | 'renamed'
     | 'moved'
+    | 'moved_workspace'
     | 'trashed'
     | 'restored'
     | 'version_restored'

@@ -291,6 +291,8 @@ function boardWording(s: ActivitySummary): string {
       return `renamed the board to “${s.to ?? ''}”${s.from ? ` (was “${s.from}”)` : ''}`;
     case 'moved':
       return s.to ? `moved the board to project “${s.to}”` : 'moved the board out of its project';
+    case 'moved_workspace':
+      return `moved the board to the workspace “${s.to ?? ''}”`;
     case 'trashed':
       return 'moved the board to the trash';
     case 'restored':

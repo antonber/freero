@@ -209,7 +209,7 @@ export const TOOLS: McpTool[] = [
     name: 'search_boards',
     title: 'Search boards',
     description:
-      'Finds boards you can open, most recently changed first. Search by title with `query`, or list recent boards without it. Returns each board’s id (for the other tools), title, link and your role.',
+      'Finds boards you can open, most recently changed first. Search by title with `query`, or list recent boards without it. Returns each board’s id (for the other tools), title, link and your role (`coOwner: true`: you co-own it, an editor who also manages its sharing).',
     scope: 'boards:read',
     annotations: READ,
     input: {
@@ -220,7 +220,15 @@ export const TOOLS: McpTool[] = [
     },
     async run(call, a) {
       const out = await searchBoards(call, { q: a.query, workspace: a.workspaceId, limit: a.limit ?? 20, cursor: a.cursor });
-      const boards = out.boards.map((b) => ({ id: b.id, title: b.title, url: b.url, role: b.role, workspaceId: b.workspaceId, updatedAt: new Date(b.updatedAt).toISOString() }));
+      const boards = out.boards.map((b) => ({
+        id: b.id,
+        title: b.title,
+        url: b.url,
+        role: b.role,
+        ...(b.coOwner ? { coOwner: true } : {}),
+        workspaceId: b.workspaceId,
+        updatedAt: new Date(b.updatedAt).toISOString(),
+      }));
       return untrustedJson({ boards }, { nextCursor: out.nextCursor });
     },
   }),
