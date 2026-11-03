@@ -527,3 +527,74 @@ td > .fr-admin-pill:first-child {
 .fr-admin-ai__usage {
   margin-bottom: 16px;
 }
+
+/* Organisations (AdminOrganisation.tsx, OrgConsolePage.tsx; #108) */
+.fr-admin-org .fr-admin-card__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fr-admin-org__text {
+  margin: 6px 0 14px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--fr-ink-2);
+  max-width: 640px;
+}
+
+.fr-admin-org__text a {
+  color: var(--fr-primary);
+  font-weight: 600;
+}
+
+.fr-admin-org__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.fr-admin-org__row--last {
+  margin-top: 4px;
+}
+
+.fr-admin-org__add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  max-width: 560px;
+}
+
+.fr-admin-org__add > :first-child {
+  flex: 1 1 220px;
+}
+
+.fr-admin-org__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.fr-admin-org__you {
+  margin-left: 21px;
+}
+
+.fr-admin-org__people {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 2px 0 4px 21px;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
