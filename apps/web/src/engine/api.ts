@@ -12,6 +12,7 @@
 import type { ComponentType, CSSProperties, ReactNode } from 'react';
 import type {
   ActivityAnswer,
+  AnalyticsEvent,
   ActivityEntry,
   CatchUpChanges,
   CatchUpSummary,
@@ -71,6 +72,11 @@ export interface Suggestion extends SuggestionRecord {
 // ---------------------------------------------------------------------------
 export interface Point { x: number; y: number }
 export interface Rect { x: number; y: number; w: number; h: number }
+/**
+ * [additive, #111] What a lasso selects: items wholly inside the loop, or every item it encloses
+ * or crosses (the marquee's rule).
+ */
+export type LassoMode = 'inside' | 'touch';
 
 /** What paste / drag-and-drop offers to element importers (`ElementDefinition.importData`). */
 export interface ImportData {
@@ -100,6 +106,14 @@ export interface HostPersonalViews {
   save(itemId: string, viewId: string, settings: Record<string, unknown> | null): Promise<void>;
 }
 
+/** [additive] Light, dark, or whatever the device uses. */
+export type ColorThemeChoice = 'system' | 'light' | 'dark';
+/** [additive] See Host.colorTheme. */
+export interface HostColorTheme {
+  get(): ColorThemeChoice;
+  set(theme: ColorThemeChoice): void;
+}
+
 export interface Host {
   user: HostUser;
   board: {
@@ -112,6 +126,17 @@ export interface Host {
      * Default true.
      */
     canExport?: boolean;
+    /**
+     * [additive, #123] False when the board doesn't let this person copy its content to the
+     * clipboard (viewers and commenters, when its owner turned "copy and export" off). Copy then
+     * puts nothing on the clipboard and says why. Default true.
+     */
+    canCopy?: boolean;
+    /**
+     * [additive, #122] This person co-owns the board (role 'editor' that also manages it): they may
+     * protect items like the owner (`Editor.mayProtect`). A hint for the UI; the server decides.
+     */
+    coOwner?: boolean;
     /**
      * [additive] The team workspace the board belongs to, when the user is a full member of it:
      * templates saved from this board may be shared with that team (`saveTemplate`'s
@@ -220,6 +245,11 @@ export interface Host {
    * the offline sandbox.
    */
   reportProblem?(context: { role: Role }): void;
+  /**
+   * [additive] The person's app theme (the app keeps it with their account): read it, change it.
+   * Absent where the page follows something else (the live view in an AI assistant).
+   */
+  colorTheme?: HostColorTheme;
   openShareDialog(): void;
   navigate(path: string): void;
   /**
@@ -227,6 +257,13 @@ export interface Host {
    * with an action stay up longer.
    */
   notify(message: string, kind?: 'info' | 'success' | 'error', opts?: NotifyOptions): void;
+  /**
+   * [additive] Counts a product event for the service's analytics (Google Analytics, only where the
+   * server has it on and the person accepted; ARCHITECTURE.md "Analytics"). The events and the
+   * values they may carry are a closed list (`AnalyticsEvent`, @freero/shared): never a title,
+   * content, name or id. Absent (offline sandbox, embeds, tests): nothing is counted.
+   */
+  track?(event: AnalyticsEvent): void;
   /**
    * Current time on the SERVER's clock (ms). Use it for anything shared that is time-based
    * (timers, deadlines) so clients with skewed clocks agree. Falls back to the local clock
@@ -672,6 +709,12 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
    * Other features can ask it too (the eraser asks the pen's definition).
    */
   distanceTo?(element: ElementOf<T>, local: Point): number;
+  /**
+   * [additive, #111] Points (element-local, unrotated) that stand for what is drawn, for a lasso
+   * selection: with "inside" it counts as inside when most of them are (a pen stroke's ink), not
+   * only when its whole box is. Default: the box.
+   */
+  lassoPoints?(element: ElementOf<T>): Point[];
   /** Point on the outline for an anchor; default = bbox edge midpoints. */
   anchorPoint?(element: ElementOf<T>, anchor: 'top' | 'right' | 'bottom' | 'left'): Point;
   /**
@@ -1311,6 +1354,13 @@ export interface Editor {
   getRole(): Role;
   can(minRole: Role): boolean;
   /**
+   * [additive] May this user protect items (`BaseElement.lockProtected`), unprotect them or change
+   * a protected one? The board owner and co-owners (`@freero/shared` `mayProtect`, #122:
+   * `Host.board.coOwner`). The server enforces it with the co-owner it resolves itself
+   * (realtime/protectedLock.ts); the engine mirrors it in the lock commands and chrome.
+   */
+  mayProtect(): boolean;
+  /**
    * [additive] What a facilitator limits for this user right now (from the server's role message;
    * null: nothing). The server enforces it; the engine mirrors it: a locked board is commenting
    * only (`getRole()` is then 'commenter'), and tools / paste / inserts that would add other types
@@ -1330,7 +1380,8 @@ export interface Editor {
   isParticipant(): boolean;
   /**
    * [additive] May this user change these elements: an editor any, a participant only their own
-   * drafts (in their private layer). Element writes check it and toast otherwise.
+   * drafts (in their private layer); nobody but the owner a protected one (`mayProtect`). Element
+   * writes check it and toast otherwise.
    */
   mayEdit(ids: readonly string[]): boolean;
   /**
@@ -1362,6 +1413,14 @@ export interface Editor {
   /** `tolerancePx` [additive]: how far (screen px) off an item still hits it (default 4; fingers get more). */
   hitTest(point: Point, opts?: { exclude?: string[]; types?: ElementType[]; tolerancePx?: number }): BoardElement | null;
   elementsInRect(rect: Rect, mode?: 'intersect' | 'contain'): BoardElement[];
+  /**
+   * [additive, #111] What a freeform loop (world points, closed by joining the last to the first)
+   * selects, in render order, hidden ones never: 'inside' = items within it (one with
+   * `lassoPoints` when most of those are), 'touch' = items it encloses or crosses (the marquee's
+   * rule: a rectangular loop takes what a marquee over it would). Containers (frames) count only
+   * when fully inside. Locked items are left out.
+   */
+  elementsInLasso(points: Point[], mode?: LassoMode): BoardElement[];
   getAnchorPoint(id: string, anchor: 'top' | 'right' | 'bottom' | 'left'): Point | null;
 
   // -- elements (writes; no-ops with a toast for read-only roles) --
@@ -1393,6 +1452,12 @@ export interface Editor {
    * ends that level (the outer gesture owns the writes).
    */
   cancelGesture(): void;
+  /**
+   * [additive, #3] Runs `fn` once the open gesture's undo step has closed (right away when no
+   * gesture is open), so its writes are an undo step of their own: a pen stroke that smart drawing
+   * turns into a shape undoes back to the ink first. Dropped when the gesture is cancelled.
+   */
+  afterGesture(fn: () => void): void;
   bringToFront(ids: string[]): void;
   sendToBack(ids: string[]): void;
   /**

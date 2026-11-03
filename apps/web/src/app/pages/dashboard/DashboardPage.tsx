@@ -15,6 +15,7 @@ import { onLaunchedBackup, takeBackup } from '../../lib/pendingBackup';
 import { BoardItem, type BoardActions } from './BoardItem';
 import { ContentSearch, useContentSearch } from './ContentSearch';
 import { RecentActivity } from './RecentActivity';
+import { BoardPlaceDialog } from './BoardPlaceDialog';
 import { RestoreBackupDialog } from './RestoreBackupDialog';
 import { NAV, Sidebar, type BoardView, type View } from './Sidebar';
 import { TrashItem, type TrashActions } from './TrashItem';
@@ -94,6 +95,8 @@ export function DashboardPage() {
   const [purging, setPurging] = useState<BoardSummary | null>(null);
   const [sharing, setSharing] = useState<BoardSummary | null>(null);
   const [transferring, setTransferring] = useState<BoardSummary | null>(null);
+  // Duplicating into, or moving to, a workspace and project of your choice (#124).
+  const [placing, setPlacing] = useState<{ mode: 'duplicate' | 'move'; board: BoardSummary } | null>(null);
   const [newWorkspace, setNewWorkspace] = useState(false);
   const [editingProject, setEditingProject] = useState<ProjectSummary | 'new' | null>(null);
   const [deletingProject, setDeletingProject] = useState<ProjectSummary | null>(null);
@@ -249,17 +252,8 @@ export function DashboardPage() {
           notify(e instanceof ApiError ? e.message : 'Could not save the description', 'error');
         }
       },
-      duplicate: async (b) => {
-        try {
-          const { board } = await api.duplicateBoard(b.id);
-          setBoards((list) => (list ? [board, ...list] : [board]));
-          notify(`Duplicated “${b.title || UNTITLED}”`, 'success', {
-            action: { label: 'Open', onClick: () => navigate(objectHref(board)) },
-          });
-        } catch (e) {
-          notify(e instanceof ApiError ? e.message : 'Could not duplicate the board', 'error');
-        }
-      },
+      duplicate: (b) => setPlacing({ mode: 'duplicate', board: b }),
+      moveToWorkspace: (b) => setPlacing({ mode: 'move', board: b }),
       toggleStar: async (b) => {
         const starred = !b.starred;
         // In the Starred view, unstarring removes the card.
@@ -638,6 +632,21 @@ export function DashboardPage() {
           else patchBoard(b.id, b);
         }}
       />
+      {placing ? (
+        <BoardPlaceDialog
+          mode={placing.mode}
+          board={placing.board}
+          workspaces={ws.workspaces ?? []}
+          onClose={() => setPlacing(null)}
+          onDone={(b, note) => {
+            const mode = placing.mode;
+            setPlacing(null);
+            if (mode === 'move') setBoards((list) => list?.filter((x) => x.id !== b.id) ?? null);
+            else if (b.workspaceId === workspaceId && (!projectId || b.projectId === projectId)) setBoards((list) => (list ? [b, ...list] : [b]));
+            notify(note, 'success', { action: { label: 'Open', onClick: () => navigate(objectHref(b)) } });
+          }}
+        />
+      ) : null}
       {restoring ? (
         <RestoreBackupDialog
           open

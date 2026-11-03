@@ -1,6 +1,21 @@
-import { STICKY_COLORS, type StickyColor, type StickyElement } from '@freero/shared';
+import { STICKY_COLORS, STICKY_SIDES, STICKY_SIZES, stickyDims, type StickyColor, type StickyElement, type StickyShape, type StickySize } from '@freero/shared';
 
+/** The side of a medium square sticky (the size stickies always had). */
 export const STICKY_SIZE = 200;
+
+// Shapes and sizes: @freero/shared (the API and MCP make the same ones).
+export { STICKY_SIDES, stickyDims, type StickyShape, type StickySize };
+const STICKY_SIZE_ORDER = STICKY_SIZES;
+
+/** The preset a sticky's box is (null `size` when it was resized freely). */
+export function stickyPreset(box: { w: number; h: number }): { shape: StickyShape; size: StickySize | null } {
+  const shape: StickyShape = box.w / Math.max(1, box.h) > 1.2 ? 'rect' : 'square';
+  const size = STICKY_SIZE_ORDER.find((s) => {
+    const d = stickyDims(shape, s);
+    return Math.abs(d.w - box.w) <= 1 && Math.abs(d.h - box.h) <= 1;
+  });
+  return { shape, size: size ?? null };
+}
 /** Gap between a sticky and the next one created with Tab / Mod+Enter. */
 export const STICKY_GAP = 24;
 export const DEFAULT_COLOR: StickyColor = 'yellow';
@@ -42,4 +57,11 @@ export const FONT_SIZES: Array<{ id: string; label: string; value: StickyElement
 
 export interface StickyToolOptions {
   color?: StickyColor;
+  shape?: StickyShape;
+  size?: StickySize;
+}
+
+/** The box new stickies get: the shape and size picked last (a medium square at first). */
+export function toolDims(opts: StickyToolOptions): { w: number; h: number } {
+  return stickyDims(opts.shape ?? 'square', opts.size ?? 'm');
 }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Globe, Link2, Lock, LogOut, Mail, RotateCw, Users, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import type { BoardAccessRequest, BoardMember, BoardSummary, LinkAccess, PendingInvite, Role } from '@freero/shared';
+import type { BoardAccessRequest, BoardMember, BoardMemberRole, BoardSummary, LinkAccess, PendingInvite, Role } from '@freero/shared';
 import { Avatar, Button, IconButton, Input, Modal, Select, Spinner, useToast, type SelectOption } from '@ui';
 import { api, ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
@@ -9,6 +9,7 @@ import { copyText } from '../lib/hooks';
 import { EmbedSettings } from './EmbedSettings';
 import { LinkedFrom } from './LinkedFrom';
 import { LinkProtection } from './LinkProtection';
+import { SharingSettings } from './SharingSettings';
 import './ShareDialog.css';
 
 type InviteRole = Exclude<Role, 'owner'>;
@@ -18,6 +19,15 @@ const ROLE_OPTIONS: SelectOption<InviteRole>[] = [
   { value: 'commenter', label: 'Can comment', description: 'View and leave comments' },
   { value: 'viewer', label: 'Can view', description: 'Look around, no changes' },
 ];
+
+/** What a member can be made (#122): a co-owner too — an editor who also manages sharing. */
+const MEMBER_ROLE_OPTIONS: SelectOption<BoardMemberRole>[] = [
+  { value: 'coowner', label: 'Co-owner', description: 'Edit, and manage sharing like the owner' },
+  ...ROLE_OPTIONS,
+];
+
+/** A member's role as the pickers show it (a co-owner's `role` reads 'editor'). */
+const memberRole = (m: BoardMember): BoardMemberRole | 'owner' => (m.coOwner && m.role === 'editor' ? 'coowner' : m.role);
 
 const LINK_OPTIONS: SelectOption<LinkAccess>[] = [
   { value: 'none', label: 'No access' },
@@ -37,9 +47,15 @@ export function linkOptions(board: Pick<BoardSummary, 'permissions' | 'linkAcces
   }));
 }
 
-const ROLE_LABEL: Record<Role, string> = { owner: 'Owner', editor: 'Can edit', commenter: 'Can comment', viewer: 'Can view' };
+const ROLE_LABEL: Record<Role | 'coowner', string> = { owner: 'Owner', coowner: 'Co-owner', editor: 'Can edit', commenter: 'Can comment', viewer: 'Can view' };
 
 const DAY = 24 * 60 * 60 * 1000;
+
+/** What the workspace's link policy (#39) asks of this board's link, in a sentence. */
+export function linkPolicyText(p: NonNullable<BoardSummary['permissions']['linkPolicy']>): string {
+  const parts = [p.passwordRequired ? 'a password' : null, p.maxDays !== null ? `an expiry within ${p.maxDays === 1 ? '1 day' : `${p.maxDays} days`}` : null].filter(Boolean);
+  return `This workspace requires board links to have ${parts.join(' and ')}. Set ${parts.length > 1 ? 'them' : 'it'} below, then turn the link on.`;
+}
 
 /** "Invited by Ada · expires in 13 days" / "Link expired — resend it". */
 export function inviteStatus(inv: Pick<PendingInvite, 'expiresAt' | 'invitedByName'>, now = Date.now()): string {
@@ -122,7 +138,11 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
 
   const myRole: Role | undefined = board?.role;
   const isOwner = myRole === 'owner';
-  const canInvite = myRole === 'owner' || myRole === 'editor';
+  // The owner and co-owners (#122) manage sharing; a server that predates them sends neither field.
+  const manages = board?.permissions.manageSharing ?? isOwner;
+  const canInvite = board?.permissions.invite ?? (myRole === 'owner' || myRole === 'editor');
+  const editorKeptOut = !canInvite && myRole === 'editor' && board?.sharing?.editorsCanShare === false;
+  const linkPolicy = board?.permissions.linkPolicy;
   const verified = user?.emailVerified !== false;
   // People with team access are the "Everyone in <team>" row below, not one row each (and have no
   // board membership to leave).
@@ -162,11 +182,13 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
     }
   };
 
-  const changeRole = async (m: BoardMember, role: InviteRole) => {
+  const changeRole = async (m: BoardMember, role: BoardMemberRole) => {
     const prev = members;
-    setMembers((list) => list?.map((x) => (x.userId === m.userId ? { ...x, role } : x)) ?? null);
+    const shown = { role: role === 'coowner' ? ('editor' as const) : role, coOwner: role === 'coowner' };
+    setMembers((list) => list?.map((x) => (x.userId === m.userId ? { ...x, ...shown } : x)) ?? null);
     try {
       await api.setMemberRole(boardId, m.userId, role);
+      if (role === 'coowner') notify(`${m.name} is now a co-owner: they can manage sharing, but not delete or transfer the board`, 'success');
     } catch (err) {
       setMembers(prev);
       notify(err instanceof ApiError ? err.message : 'Could not change the role', 'error');
@@ -322,8 +344,10 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
                   Invite
                 </Button>
               </form>
+            ) : editorKeptOut ? (
+              <p className="fr-share__note">The board’s owner lets only owners and co-owners invite people to this board.</p>
             ) : (
-              <p className="fr-share__note">Only the owner and editors can invite people.</p>
+              <p className="fr-share__note">Only the owner, co-owners and editors can invite people.</p>
             )}
             {canInvite && !board.permissions.canShareExternally ? (
               <p className="fr-share__note">This workspace’s policy: only people in the workspace can be invited.</p>
@@ -377,20 +401,20 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
                         {m.email ? <span className="fr-share__email-text">{m.email}</span> : null}
                       </div>
                       <div className="fr-share__member-actions">
-                        {isOwner && m.role !== 'owner' ? (
+                        {manages && m.role !== 'owner' ? (
                           <>
-                            <Select<InviteRole>
+                            <Select<BoardMemberRole>
                               aria-label={`Role for ${m.name}`}
                               size="sm"
                               variant="ghost"
-                              options={ROLE_OPTIONS}
-                              value={m.role as InviteRole}
+                              options={MEMBER_ROLE_OPTIONS}
+                              value={memberRole(m) as BoardMemberRole}
                               onChange={(r) => changeRole(m, r)}
                             />
                             <IconButton size={32} icon={X} label={`Remove ${m.name}`} tooltipSide="top" onClick={() => remove(m)} />
                           </>
                         ) : (
-                          <span className="fr-share__role">{ROLE_LABEL[m.role]}</span>
+                          <span className="fr-share__role">{ROLE_LABEL[memberRole(m)]}</span>
                         )}
                       </div>
                     </li>
@@ -398,7 +422,7 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
                 })}
                 {invites.map((inv) => {
                   const expired = inv.expiresAt <= Date.now();
-                  const mayRevoke = isOwner || inv.invitedById === user?.id;
+                  const mayRevoke = manages || inv.invitedById === user?.id;
                   return (
                     <li key={inv.id} className="fr-share__member fr-share__member--pending" data-testid="share-invite">
                       <span className="fr-share__pending-icon" aria-hidden>
@@ -454,13 +478,16 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
                         : 'Must be signed in to Freero'}
                 </span>
               </div>
-              {isOwner && !board.linkBlocked ? (
+              {manages && !board.linkBlocked ? (
                 <Select<LinkAccess> aria-label="Link access" size="sm" options={linkOptions(board)} value={linkAccess} onChange={changeLinkAccess} width={136} />
               ) : (
                 <span className="fr-share__role">{LINK_OPTIONS.find((o) => o.value === linkAccess)?.label}</span>
               )}
             </section>
-            {isOwner && !board.linkBlocked && board.linkProtection && (linkAccess !== 'none' || board.linkProtection.storedAccess !== 'none') ? (
+            {manages && linkPolicy ? (
+              <p className="fr-share__note">{linkPolicyText(linkPolicy)}</p>
+            ) : null}
+            {manages && !board.linkBlocked && board.linkProtection && (linkAccess !== 'none' || board.linkProtection.storedAccess !== 'none' || !!linkPolicy) ? (
               <LinkProtection
                 board={board}
                 onChange={(updated) => {
@@ -472,6 +499,16 @@ export function ShareDialog({ boardId, open, onClose, board: givenBoard, onBoard
 
             {board.kind !== 'doc' ? (
               <EmbedSettings
+                board={board}
+                onChange={(updated) => {
+                  setBoard(updated);
+                  onBoardChange?.(updated);
+                }}
+              />
+            ) : null}
+
+            {board.sharing ? (
+              <SharingSettings
                 board={board}
                 onChange={(updated) => {
                   setBoard(updated);

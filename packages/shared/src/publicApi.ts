@@ -25,6 +25,7 @@ export const API_SCOPES = {
   'comments:write': 'Comment on boards you can comment on',
   'members:read': 'See who has access to your boards',
   'members:write': 'Invite people to boards, change their access and remove them',
+  'audit:read': 'Read the audit log of team workspaces you administer',
   'problems:triage': 'Read the problems people reported (notes, screenshots, diagnostics) and set their status — Freero operators only',
 } as const;
 export type ApiScope = keyof typeof API_SCOPES;
@@ -224,6 +225,8 @@ export interface ApiBoard {
   description: string;
   url: string;
   role: string;
+  /** [additive, #122] You co-own it: `role` reads 'editor', and you also manage its sharing. */
+  coOwner?: boolean;
   workspaceId: string;
   projectId: string | null;
   owner: { id: string; name: string };

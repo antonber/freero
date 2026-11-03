@@ -28,6 +28,7 @@ import {
   undoTwoFactor,
 } from './recovery';
 import { assertSignInAllowed } from './restrictions';
+import { assertSignupAllowed } from './signups';
 import { completeSignIn, finishTwoFactorSignIn, pendingSignIn, providerCallback, startProviderSignIn } from './signIn';
 import { beginTwoFactorSetup, disableTwoFactor, enableTwoFactor, regenerateRecoveryCodes, twoFactorRequiredBy } from './twoFactor';
 import {
@@ -62,6 +63,8 @@ export default function authRoutes(_ctx: ServerContext): Router {
       // An organization that enforces single sign-on for the address makes its accounts itself.
       const email = normalizeEmail(req.body?.email);
       if (email) await assertSignInAllowed({ email, userId: null, method: 'password' });
+      // An invite-only server (SIGNUPS=invite-only) makes accounts only for addresses it expects.
+      if (email) await assertSignupAllowed(email);
       const user = await createUser(req.body ?? {});
       await startSession(req, res, user.id);
       // The account works without it; a mail outage must not fail the signup.

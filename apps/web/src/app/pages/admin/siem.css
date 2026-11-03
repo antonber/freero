@@ -1,0 +1,77 @@
+/* Audit streams to a SIEM, on the admin console's Audit log tab (AdminSiem.tsx). */
+.fr-admin-siem__form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.fr-admin-siem__pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.fr-admin-siem__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.fr-admin-siem__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fr-admin-siem__sink {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--fr-surface-2);
+  border: 1px solid var(--fr-line);
+  border-radius: var(--fr-radius);
+}
+
+.fr-admin-siem__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.fr-admin-siem__head code {
+  font-family: var(--fr-font-mono);
+  font-size: 12px;
+}
+
+.fr-admin-siem__spacer {
+  flex: 1;
+}
+
+.fr-admin-siem__modal-text {
+  margin: 0 0 12px;
+}
+
+.fr-admin-siem__secret {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fr-admin-siem__secret code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  padding: 6px 8px;
+  border-radius: var(--fr-radius-sm);
+  background: var(--fr-surface-3);
+  font-family: var(--fr-font-mono);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

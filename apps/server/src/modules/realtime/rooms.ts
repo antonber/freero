@@ -67,7 +67,9 @@ import {
   WITHDRAWN_BY,
   NEW_BOARD_SETTINGS,
   Y_SETTINGS,
+  mayProtect,
 } from '@freero/shared';
+import { guardProtectedLocks } from './protectedLock';
 import { getConfig } from '../../platform/config';
 import { keepSuggestionAuthors, noteSuggestionAuthor, type SuggestionAuthorKey } from './repo';
 import { logError } from '../../platform/log';
@@ -187,6 +189,11 @@ export interface Admission {
    */
   maxRole?: Role;
   /**
+   * The user co-owns the board (#122, boards' resolveCoOwner — never a client's word): with an
+   * uncapped socket they may protect items like the owner. Re-resolved on every access refresh.
+   */
+  coOwner?: boolean;
+  /**
    * How this socket's role is resolved again on every access refresh (default: the user's role on
    * the board, `getBoardAccess`). A board embedded on another site (#2) re-checks there that
    * embedding is still allowed; null closes the socket like lost access.
@@ -216,6 +223,8 @@ interface Conn {
   access: Role;
   /** See Admission.maxRole. */
   maxRole?: Role;
+  /** See Admission.coOwner. */
+  coOwner: boolean;
   /** The role the socket's user has on the board, NOT capped by `maxRole`. */
   ownAccess: Role;
   /**
@@ -270,6 +279,12 @@ function layerMessage(wire: string, write: (e: encoding.Encoder) => void): Uint8
 }
 
 const canEdit = (role: Role | null) => role === 'owner' || role === 'editor';
+/**
+ * May this socket protect items or change protected ones (`mayProtect`)? Its owner, or a co-owner
+ * (#122) whose socket isn't capped below what they may do (a live view in an AI assistant writing
+ * at most as an editor protects nothing, like an owner's capped one).
+ */
+const mayProtectOn = (conn: { access: Role; coOwner: boolean; maxRole?: Role }) => mayProtect(conn.access, conn.coOwner && (!conn.maxRole || conn.maxRole === 'owner'));
 
 /** Who reads the board's layers over this socket (see Conn.readRole). */
 const layerReader = (c: Conn) => ({ userId: c.userId, role: c.readRole });
@@ -663,6 +678,7 @@ class Room {
       doc.getMap<unknown>(VOTING_COLLECTION);
       if (participant) for (const n of PARTICIPANT_LAYER_ROOTS) doc.getMap<unknown>(n);
       prepareServerCollections(doc);
+      const overrides = mayProtectOn(conn);
       doc.transact((tr) => {
         Y.applyUpdate(doc, update);
         fixed = guardVotes(tr, doc, this.doc, { userId: conn.userId, participant });
@@ -672,6 +688,8 @@ class Room {
           fixed = guardDrafts(tr, doc, this.doc) || fixed;
         }
         if (addTypes) fixed = revertForbiddenAdds(tr, doc.getMap<unknown>(ELEMENTS), new Set(addTypes), (id) => this.existsElsewhere(doc, id)) > 0 || fixed;
+        // Protected locks hold in the layers too (a hidden frame's contents; protectedLock.ts).
+        if (!overrides) fixed = guardProtectedLocks(tr, doc.getMap<unknown>(ELEMENTS), (id) => this.existsElsewhere(doc, id)) > 0 || fixed;
         // A new draft during an anonymous private mode is nobody's (#44, attribution.ts).
         const creator = creatorOf(conn.userId, isPrivateLayer(name), this.doc);
         fixed = guardAttribution(tr, doc.getMap<unknown>(ELEMENTS), creator, (id) => this.knownAttribution(doc, id)) > 0 || fixed;
@@ -981,6 +999,7 @@ class Room {
       role: eff.role,
       access,
       maxRole: a.maxRole,
+      coOwner: a.coOwner === true,
       ownAccess: a.role,
       readRole: access === a.role ? eff.role : effectiveAccess(a.role, a.userId, session).role,
       limits: eff.limits,
@@ -1083,12 +1102,15 @@ class Room {
       const addTypes = conn.limits?.addTypes;
       let fixed = false;
       let moved: MovedEntry[] = [];
+      const overrides = mayProtectOn(conn);
       this.doc.transact((tr) => {
         Y.applyUpdate(this.doc, update);
         fixed = guardSession(tr, this.doc, { userId: conn.userId, access: conn.access });
         fixed = guardVotes(tr, this.doc, this.doc, conn.userId) || fixed;
         fixed = guardServerCollections(tr, this.doc) || fixed;
         if (addTypes) fixed = revertForbiddenAdds(tr, this.doc.getMap<unknown>(ELEMENTS), new Set(addTypes), (id) => this.existsElsewhere(this.doc, id)) > 0 || fixed;
+        // Only the owner changes protected items (protectedLock.ts).
+        if (!overrides) fixed = guardProtectedLocks(tr, this.doc.getMap<unknown>(ELEMENTS), (id) => this.existsElsewhere(this.doc, id)) > 0 || fixed;
         // Who made an element is the server's to say (attribution.ts, KAI-222).
         fixed = guardAttribution(tr, this.doc.getMap<unknown>(ELEMENTS), conn.userId, (id) => this.knownAttribution(this.doc, id)) > 0 || fixed;
         // Element content written here for an element in a layer goes to that layer (elementContent.ts).
@@ -1207,10 +1229,17 @@ class Room {
 
   private async doRefreshAccess(): Promise<void> {
     const conns = [...this.conns.values()];
-    const roles = await Promise.all(conns.map(async (c) => (c.resolveRole ? await c.resolveRole() : (await getBoardAccess(this.id, c.userId)).role)));
+    const resolved = await Promise.all(
+      conns.map(async (c) => {
+        if (c.resolveRole) return { role: await c.resolveRole(), coOwner: false };
+        const a = await getBoardAccess(this.id, c.userId);
+        return { role: a.role, coOwner: a.coOwner };
+      }),
+    );
     conns.forEach((conn, i) => {
       if (!this.conns.has(conn.ws)) return; // left meanwhile
-      const own = roles[i];
+      const own = resolved[i].role;
+      conn.coOwner = resolved[i].coOwner;
       const role = own && capRole(own, conn.maxRole);
       if (!own || !role) {
         conn.ws.close(4403, 'Access revoked');
@@ -1629,11 +1658,21 @@ export async function readBoardView(boardId: string, reader: BoardReader): Promi
  * and saved before this resolves. Collaborators see one remote change (they cannot undo it with
  * Ctrl+Z, like any change someone else makes). Returns the plan's result next to what changed.
  */
+/**
+ * The actor as the server knows them (#122): whether an editor co-owns the board comes from boards
+ * (resolveCoOwner), never from the caller — protected locks follow it.
+ */
+async function withCoOwner(boardId: string, actor: BoardActor): Promise<BoardActor> {
+  if (actor.coOwner !== undefined || actor.role !== 'editor') return actor;
+  return { ...actor, coOwner: (await getBoardAccess(boardId, actor.userId)).coOwner };
+}
+
 export async function changeBoard<T extends { change: BoardChange }>(
   boardId: string,
   actor: BoardActor,
   plan: (view: BoardView) => T,
 ): Promise<T & { applied: AppliedChange }> {
+  actor = await withCoOwner(boardId, actor);
   return withLiveRoom(boardId, async (room) => {
     // Hidden frames' contents go to the editors layer (view.ts): have it, even on a board without one yet.
     room.layer(EDITORS_LAYER);
@@ -1673,6 +1712,7 @@ export async function proposeSuggestions<T extends { change: BoardChange; conten
   opts: { description: string; author?: SuggestionAuthor },
   plan: (view: BoardView) => T,
 ): Promise<T & { records: SuggestionRecord[] }> {
+  actor = await withCoOwner(boardId, actor);
   const author = opts.author ?? (await suggestionAuthorOf(actor));
   const out = await withLiveRoom(boardId, async (room) => {
     requireEditing(room, actor);

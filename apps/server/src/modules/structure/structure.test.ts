@@ -99,6 +99,20 @@ it('places a structure "near X" beside X on free space and never on top of anyth
   }
 });
 
+it('stickies an agent asks for as large rectangles come out that size in a grid that never overlaps, one small square among them as asked, and an unknown size is refused', () => {
+  const view: BoardView = { elements: [], collection: () => new Map(), seesHidden: true, suggestions: [], version: '' };
+  let k = 0;
+  const plan = planStructure(
+    { structure: { kind: 'stickies', shape: 'rect', size: 'l', items: ['a', 'b', { text: 'c', shape: 'square', size: 's' }, 'd'] } },
+    view,
+    () => `new${k++}`,
+  );
+  const made = plan.change.create!;
+  expect(made.map((d) => [d.w, d.h])).toEqual([[420, 280], [420, 280], [140, 140], [420, 280]]);
+  for (let i = 0; i < made.length; i++) for (let j = i + 1; j < made.length; j++) expect(overlap(made[i], made[j])).toBe(false);
+  expect(() => planStructure({ structure: { kind: 'stickies', size: 'xl', items: ['a'] } as never }, view, () => `x${k++}`)).toThrow(/size/);
+});
+
 it("stickies an agent adds beside someone's cluster come back from the outline as their own cluster, never folded into it", async () => {
   // A 2 × 2 cluster of 200-unit stickies, 24 apart: the outline links boxes this size up to 60 apart.
   const theirs = [sticky('t1', 0, 0), sticky('t2', 224, 0), sticky('t3', 0, 224), sticky('t4', 224, 224)];

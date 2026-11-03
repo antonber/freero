@@ -31,9 +31,11 @@ const base = (id: string, x: number, y: number, w: number, h: number, frameId?: 
   ...(frameId ? { frameId } : {}),
 });
 
-export function sticky(id: string, x: number, y: number, text: string, color: StickyColor, size = STICKY_SIZE, frameId?: string | null): ElementDraft {
+/** `size`: a side (a square) or w × h (a shape and size preset, `stickyDims`). */
+export function sticky(id: string, x: number, y: number, text: string, color: StickyColor, size: number | { w: number; h: number } = STICKY_SIZE, frameId?: string | null): ElementDraft {
+  const { w, h } = typeof size === 'number' ? { w: size, h: size } : size;
   return {
-    ...base(id, x, y, size, size, frameId),
+    ...base(id, x, y, w, h, frameId),
     type: 'sticky',
     color,
     text: plainToRichText(text),

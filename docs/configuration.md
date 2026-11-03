@@ -89,6 +89,8 @@ Links in emails point at `PUBLIC_URL` (in development: the origin the request ca
 
 | Variable | Default | Description |
 |---|---|---|
+| `SIGNUPS` | `open` | Who may create an account on this server. `open`: anyone. `invite-only`: an address with a live board or workspace invite, at one of `SIGNUP_DOMAINS`, at a domain a workspace here verified with "Add new sign-ups" on, or an operator's (`OPERATOR_EMAILS`); applies to signup with a password and to a first sign-in with Google / Microsoft. Accounts a workspace's own identity provider or directory makes (SSO, SCIM) are vouched for by a workspace that proved the domain, so they pass. Everyone else is told the server is by invitation. |
+| `SIGNUP_DOMAINS` | — | Comma-separated domains (`example.com`) whose addresses may always sign up on an `invite-only` server (your own organization's). |
 | `ACCOUNT_DELETION_GRACE_DAYS` | `14` | After someone deletes their account, how long they can log in and restore it before it is purged (`0` = at the next purge run). |
 | `ACCOUNT_PURGE_INTERVAL_SECONDS` | `3600` | How often each instance looks for accounts to purge. One instance purges at a time (Postgres advisory lock); a purge cut short is finished by the next run. |
 | `SESSION_RECHECK_SECONDS` | `60` | How often each instance re-checks the sessions behind its open board and notification sockets against the database and closes those whose session is gone (deleted by the admin CLI or SQL, expired, account suspended). Sessions ended through the app close their sockets at once; this bounds the delay for everything else. |
@@ -223,6 +225,18 @@ The event stream and workspace webhooks: [events.md](events.md).
 | `WEBHOOK_MAX_ATTEMPTS` | `7` | Attempts per delivery before it is marked failed (it stays in the delivery log, and admins can send it again). |
 | `WEBHOOK_DISABLE_AFTER_FAILURES` | `15` | Failed attempts in a row (any delivery) after which an endpoint is turned off, audited and its creator emailed. |
 
+## Audit log streaming to a SIEM
+
+Owners/admins of a team workspace stream its audit log to Splunk (HTTP Event Collector), Microsoft Sentinel (Logs Ingestion API), an HTTPS collector or syslog over TLS from the admin console (Audit log tab). SIEMs that pull use `GET /api/v1/workspaces/<id>/audit` with an `audit:read` token instead.
+
+| Variable | Default | Description |
+|---|---|---|
+| `SIEM` | `true` | Audit log streaming. `false` is the instance-wide switch: the admin console's streams and their routes are gone (404) and nothing is sent; streams are kept. |
+| `SIEM_PRIVATE_ENDPOINTS` | `false` | Streams may go to plain `http` and private / loopback addresses (a SIEM on your own network). Off: `https` / TLS only, private addresses refused when a stream is added and again when connecting. |
+| `SIEM_TIMEOUT_SECONDS` | `15` | How long one attempt waits for the SIEM. |
+| `SIEM_RETRY_BASE_MS` | `10000` | The first retry's delay after a failed batch; each further one is 4× longer, at most 6 hours. A failed batch is never skipped: the stream waits and resends from the same event. |
+| `SIEM_AZURE_AUTHORITY` | `https://login.microsoftonline.com` | Where Microsoft Sentinel streams get their Entra ID token (`<authority>/<tenant>/oauth2/v2.0/token`). Change it only for tests (sovereign clouds are not supported yet: their Azure Monitor scope differs). |
+
 ## Slack link unfurls
 
 Previews of Freero board links in Slack, through a Slack app you create: [integrations/slack.md](integrations/slack.md). Off unless both are set.
@@ -253,6 +267,7 @@ They are static HTML: canonical links, Open Graph tags, structured data and the 
 | `FREERO_SITE_DIST` | `apps/site/dist` | The built site to serve. Without a build there, `/` behaves as with `SITE=false`. |
 | `SITE_ANALYTICS_SRC` | — | Privacy-friendly analytics for the marketing pages only (never the app): an `https` script URL (Plausible, Umami, a self-hosted counter…), added with `defer` at the end of each page's `<head>`. Its origin is added to those pages' CSP `script-src` and `connect-src`. Unset: no analytics, no third-party request at all. |
 | `SITE_ANALYTICS_ATTRS` | — | `data-*` attributes for that script, comma-separated `key=value` (`domain=whiteboard.example.com` → `data-domain="whiteboard.example.com"`; Umami: `website-id=…`). |
+| `GA_MEASUREMENT_ID` | — | Google Analytics 4 for the marketing pages and the app: a GA4 web stream's measurement id (`G-…`; a `UA-…` id is refused at startup). Visitors get a consent banner (Accept and Decline side by side; Global Privacy Control or Do Not Track count as Decline) and Google's script loads only after Accept, with Consent Mode v2 (ad storage, ad user data and ad personalisation always denied, Google signals off, cookies at most 13 months). The app reports pages by route with ids removed (`/board/<id>` → `/board`) and generic titles, from a hidden same-origin frame (`/analytics-frame`), never from the page that shows boards; it never runs in the live board view for assistants (`/embed/*`), the operators' console or the OAuth consent screen. Events: `sign_up` and `login` (method only), `board_created`, `template_used` (the public template id). "Cookie settings" in the site's footer and the app's Help menu change the choice. The pages' CSP adds `https://www.googletagmanager.com` to `script-src`, Google's collection hosts to `connect-src` and `'self'` to `frame-src`. The privacy policy describes it (and the cookies) when it is set. Unset: no Google script, banner, frame or CSP change anywhere. In GA's stream settings you may leave enhanced measurement on: in the app it only sees the empty analytics frame. |
 | `SITE_INDEXNOW_KEY` | — | An [IndexNow](https://www.indexnow.org/) key (8–128 letters, digits or dashes; generate one with `openssl rand -hex 16`). The server answers `/<key>.txt` with it, which proves to Bing, Yandex, Seznam, Naver and the other IndexNow engines that you control this host; then `node scripts/indexnow.mjs --site <PUBLIC_URL> [--since YYYY-MM-DD]` after a deploy submits the sitemap's pages (or only those changed since a day). Unset: nothing is served. Google doesn't use IndexNow: submit the sitemap in Search Console. |
 
 ### Legal pages and support (`/privacy`, `/terms`, `/acceptable-use`, `/support`)
@@ -264,7 +279,7 @@ derives from its own configuration: retention periods (`ACCOUNT_DELETION_GRACE_D
 `DATA_EXPORT_TTL_HOURS`, `EVENTS_RETENTION_DAYS`, `MODERATION_KEEP_REMOVED_DAYS`, `PROBLEM_RETENTION_DAYS`), the email
 provider's host (`SMTP_URL`), the storage (`S3_*`), the AI provider (`AI_PROVIDER`, `AI_BASE_URL`,
 `AI_WORKSPACE_KEYS`), error tracking (`ERROR_REPORTING_DSN`'s host) and analytics
-(`SITE_ANALYTICS_SRC`). Abuse and security contacts come from `ABUSE_CONTACT_EMAIL` and
+(`GA_MEASUREMENT_ID`, `SITE_ANALYTICS_SRC`). Abuse and security contacts come from `ABUSE_CONTACT_EMAIL` and
 `SECURITY_CONTACT`.
 
 **The guard:** until `SITE_LEGAL_OPERATOR` is set, the three legal pages show a "Draft: not in

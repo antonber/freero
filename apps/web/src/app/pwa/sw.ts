@@ -14,7 +14,7 @@
 export type Strategy = 'bypass' | 'navigate' | 'cache-first';
 
 /** Static shell files served from the cache (besides /assets/*). */
-export const SHELL_FILES = ['/offline.html', '/manifest.webmanifest', '/freero.svg', '/icons/icon-192.png', '/icons/icon-512.png'];
+export const SHELL_FILES = ['/offline.html', '/manifest.webmanifest', '/freero.svg', '/icons/icon-192.png', '/icons/icon-512.png', '/theme-boot.js'];
 export const OFFLINE_PAGE = '/offline.html';
 const CACHE_PREFIX = 'freero-shell-';
 const NEVER = /^\/(api|ws|uploads)(\/|$)/;

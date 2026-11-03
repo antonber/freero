@@ -11,7 +11,7 @@ import { formatShortcut } from '../runtime/shortcuts';
 const WITH_SELECTION = [
   ['engine.cut', 'engine.copy', 'engine.paste', 'engine.duplicate'],
   ['engine.bringToFront', 'engine.bringForward', 'engine.sendBackward', 'engine.sendToBack'],
-  ['engine.group', 'engine.ungroup', 'engine.lock', 'engine.copyLink'],
+  ['engine.group', 'engine.ungroup', 'engine.lock', 'engine.protectLock', 'engine.copyLink'],
 ];
 const WITHOUT_SELECTION = [['engine.paste', 'engine.selectAll', 'engine.zoomToFit']];
 

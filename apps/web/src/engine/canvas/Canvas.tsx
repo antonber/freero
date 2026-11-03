@@ -14,6 +14,7 @@ import type { Registered } from '../runtime/registry';
 import type { ToolDefinition } from '../api';
 import { publicCursor } from '../editor/layers';
 import { LONG_PRESS_MS, routePress, TOUCH_HIT_PX, TOUCH_SLOP_PX } from '../interaction/touch';
+import { LASSO_TOOL } from '../interaction/selectTool';
 import './canvas.css';
 
 const DOUBLE_CLICK_MS = 400;
@@ -163,7 +164,7 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
       if (!edge || !gesture) return stopEdge();
       edge.raf = null;
       const kind = ui.getState().transforming;
-      const v = kind === 'translate' || kind === 'marquee' ? edgeScrollVelocity(edge.screen, edge.area) : { x: 0, y: 0 };
+      const v = kind === 'translate' || kind === 'marquee' || kind === 'lasso' ? edgeScrollVelocity(edge.screen, edge.area) : { x: 0, y: 0 };
       if (!v.x && !v.y) return;
       const cam = editor.getCamera();
       userCamera({ x: cam.x + v.x / cam.zoom, y: cam.y + v.y / cam.zoom, zoom: cam.zoom });
@@ -172,7 +173,7 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
     };
     const followEdge = (e: PointerEvent, screen: Point) => {
       const kind = ui.getState().transforming;
-      if (kind !== 'translate' && kind !== 'marquee') return stopEdge();
+      if (kind !== 'translate' && kind !== 'marquee' && kind !== 'lasso') return stopEdge();
       edge ??= { e, screen, area: editor.getSafeArea(), raf: null };
       edge.e = e;
       edge.screen = screen;
@@ -291,7 +292,7 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
       core.interaction.handle = t.closest('[data-handle]')?.getAttribute('data-handle') ?? null;
       gesture = { pointerId: e.pointerId, tool, cancelled: false };
       editor.beginGesture();
-      if (tool.def.id !== 'select') ui.setState({ transforming: 'tool' });
+      if (tool.def.id !== 'select' && tool.def.id !== LASSO_TOOL) ui.setState({ transforming: 'tool' });
       core.interaction.cancel = () => {
         if (!gesture) return;
         gesture.cancelled = true;
@@ -521,7 +522,8 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
       aria-roledescription="whiteboard"
       aria-label={`Board canvas: ${core.hostRef.current.board.title}`}
       aria-describedby={helpId}
-      style={{ background: shownBackground(settings.background, theme), cursor }}
+      // The background as shown, also for what knocks the canvas out (connector labels): theme.ts.
+      style={{ background: shownBackground(settings.background, theme), cursor, ['--fr-canvas-paper' as string]: shownBackground(settings.background, theme) }}
     >
       <p id={helpId} className="fr-sr-only">
         Tab and Shift+Tab move through the items in reading order, a frame’s items right after it; Alt+arrow keys jump to
@@ -531,8 +533,8 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
       </p>
       <Grid />
       <div ref={worldRef} className="fr-world">
-        {/* Board content (and the tool's ghost of what it would add): drawn in its own colours, through
-            the dark filter on a dark page (theme.ts); the world overlays above are chrome. */}
+        {/* Board content (and the tool's ghost of what it would add): drawn in its own colours, its
+            default inks light on a dark page (theme.ts); the world overlays above are chrome. */}
         <div className="fr-world__items fr-paper">
           <WorldElements />
           {Preview && !spaceHeld && (

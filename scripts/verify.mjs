@@ -3584,7 +3584,9 @@ async function ssoChecks() {
         const resp = idp.buildResponse({ email, inResponseTo: request.id, acsUrl: request.acsUrl, audience: request.issuer, ...o });
         const acs = await postToAcs(b, request.acsUrl, resp, relay, idp);
         const fin = acs.location?.includes('/saml/finish') ? await b.fetch(acs.location) : null;
-        if (acs.location !== '/login?error=sso_failed' || b.jar.has('freero_session')) accepted.push(`${name}: ${acs.status} ${acs.location} ${fin?.location ?? ''}`);
+        // Unsolicited: refused with its own message while the workspace doesn't allow IdP-initiated sign-in (#107).
+        const want = name === 'unsolicited' ? '/login?error=sso_unsolicited' : '/login?error=sso_failed';
+        if (acs.location !== want || b.jar.has('freero_session')) accepted.push(`${name}: ${acs.status} ${acs.location} ${fin?.location ?? ''}`);
       }
       assert(accepted.length === 0, `accepted: ${accepted.join('; ')}`);
     });
@@ -3623,6 +3625,37 @@ async function ssoChecks() {
       const acs = await postToAcs(b, request.acsUrl, idp.buildResponse({ email: `ceo-${stamp}@gmail.test`, inResponseTo: request.id, acsUrl: request.acsUrl, audience: request.issuer }), relay, idp);
       const fin = await b.fetch(acs.location);
       assert(fin.location === '/login?error=sso_domain' && !b.jar.has('freero_session'), `${acs.location} -> ${fin.location}`);
+    });
+
+    await check('IdP-initiated SAML (#107): refused while the switch is off; with it on, the app tile signs in once (same-origin RelayState only), and a replayed response is refused', async () => {
+      const acsUrl = `${new URL(`http://127.0.0.1:${port}`).origin}/api/sso/${ws.id}/saml/acs`;
+      const audience = `http://127.0.0.1:${port}/api/sso/${ws.id}/saml/metadata`;
+      const tile = (email) => idp.buildResponse({ email, acsUrl, audience });
+      const off = await postToAcs(new Browser(port), acsUrl, tile(at('tile-off')), '/board/x', idp);
+      assert(off.location === '/login?error=sso_unsolicited', `with the switch off: ${off.status} ${off.location}`);
+      const on = await O.req('PUT', sso('/connection'), { protocol: 'saml', enabled: true, idpInitiated: true });
+      assert(on.status === 200 && on.json.connection.idpInitiated === true && on.json.connection.saml, on.text);
+      const b = new Browser(port);
+      const response = tile(at('tile-user'));
+      const acs = await postToAcs(b, acsUrl, response, 'https://evil.example/steal', idp);
+      assert(acs.status === 303 && acs.location.includes('/saml/finish'), `acs: ${acs.status} ${acs.location}`);
+      const fin = await b.fetch(acs.location);
+      assert(fin.location === `/app?ws=${ws.id}` && b.jar.has('freero_session'), `finish: ${fin.location}`);
+      assert((await b.fetch('/api/auth/me')).json.user.email === at('tile-user'), 'signed in as someone else');
+      const again = await postToAcs(new Browser(port), acsUrl, response, '', idp);
+      assert(again.location === '/login?error=sso_failed', `replayed: ${again.location}`);
+      // Back off: the rest of the group runs as before.
+      assert((await O.req('PUT', sso('/connection'), { protocol: 'saml', enabled: true, idpInitiated: false })).json.connection.idpInitiated === false, 'not off');
+    });
+
+    await check('domain control (#64): admins see the verified accounts at the domain; with "Block other team workspaces" someone there is refused a team workspace naming the admins', async () => {
+      const dc = await O.req('GET', sso('/domain-control'));
+      assert(dc.status === 200 && dc.json.domains.includes(domain) && dc.json.accounts.some((a) => a.email === B.email && a.status === 'outside'), dc.text);
+      assert((await B.req('GET', sso('/domain-control'))).status === 404, 'a non-member reads domain control');
+      assert((await O.req('PUT', sso('/domain-control'), { blockWorkspaces: true })).json.blockWorkspaces === true, 'block not on');
+      const refused = await B.req('POST', '/api/workspaces', { name: 'Shadow team' });
+      assert(refused.status === 403 && refused.json.code === 'workspace_creation_blocked' && refused.json.error.includes('SsoOwner'), `${refused.status} ${refused.text}`);
+      assert((await O.req('PUT', sso('/domain-control'), { blockWorkspaces: false })).status === 200, 'block not off');
     });
 
     await check('discovery routes an address at the domain to the IdP (by domain only); "Enforce SSO" needs an owner as break-glass', async () => {
@@ -5662,6 +5695,55 @@ async function facilitationChecks() {
       await waitFor(() => vm(ol).get(`kv2:${P.id}`)?.elementIds?.join() === 'c', 5000, 'the sealed ballot within budget to be revealed');
       vm(ol).delete('session');
       for (const c of [pl, ol]) c.destroy();
+    });
+
+    await check('protected lock: an editor’s raw socket can’t unlock, move, unprotect or delete the owner’s protected sticky, nor protect its own (nobody receives it, the editor converges); a facilitator can’t either (any editor can start a session); the owner can', async () => {
+      fac(f).delete('session');
+      await waitFor(() => p.role === 'editor' && !p.limits && f.role === 'editor', 5000, 'no session');
+      const note = (patch) => ({ id: 'prot', type: 'sticky', x: 0, y: 0, w: 200, h: 200, color: 'navy', text: 'Agenda', locked: true, lockProtected: true, ...patch });
+      const seenAtOwner = [];
+      els(o).observe(() => seenAtOwner.push(JSON.stringify(els(o).get('prot') ?? null)));
+      els(o).set('prot', note());
+      await waitFor(() => els(p).get('prot')?.lockProtected === true, 5000, 'the protected sticky to reach the editor');
+      els(p).set('prot', note({ x: 999, locked: false, lockProtected: false }));
+      els(p).set('mine', { id: 'mine', type: 'sticky', x: 300, y: 0, w: 200, h: 200, locked: true, lockProtected: true });
+      await settled(p, [o]);
+      els(p).delete('prot');
+      await settled(p, [o]);
+      await waitFor(() => els(p).get('prot')?.x === 0 && els(p).get('prot')?.lockProtected === true, 5000, 'the editor to converge on the protected sticky');
+      await waitFor(() => els(o).get('mine')?.locked === true, 5000, "the editor's own sticky to arrive");
+      assert(!els(o).get('mine').lockProtected && !els(p).get('mine')?.lockProtected, 'an editor protected an item');
+      assert(seenAtOwner.every((s) => !s.includes('999') && s !== 'null'), `the owner received a forbidden change: ${seenAtOwner.join(' ')}`);
+      fac(f).set('session', session({}));
+      await waitFor(() => fac(o).get('session')?.by === F.id && els(f).get('prot')?.lockProtected === true, 5000, 'the facilitation session');
+      els(f).set('prot', note({ x: 40, locked: false, lockProtected: false }));
+      await settled(f, [o]);
+      await waitFor(() => els(f).get('prot')?.x === 0 && els(f).get('prot')?.lockProtected === true, 5000, 'the facilitator to converge');
+      assert(seenAtOwner.every((s) => !s.includes('"x":40')), 'the owner received the facilitator’s unlock');
+      fac(f).delete('session');
+      els(o).set('prot', note({ x: 40, locked: false, lockProtected: false }));
+      await waitFor(() => els(p).get('prot')?.locked === false && els(p).get('prot')?.x === 40, 5000, 'the owner to unlock it for everyone');
+
+      // #122: a co-owner may protect and unprotect like the owner — decided by the server from the
+      // membership (its socket's role still reads 'editor'), and only while they are one.
+      els(o).set('prot', note({ x: 0 }));
+      await waitFor(() => els(p).get('prot')?.lockProtected === true, 5000, 'the re-protected sticky to reach the participant');
+      assert((await O.req('PATCH', `/api/boards/${board.id}/members/${P.id}`, { role: 'coowner' })).status === 200, 'make the participant a co-owner');
+      await waitFor(async () => (await P.req('GET', `/api/boards/${board.id}`)).json.board?.coOwner === true, 5000, 'the participant to co-own the board');
+      assert(p.role === 'editor', `a co-owner's socket role must read editor, got ${p.role}`);
+      els(p).set('prot', note({ x: 77 }));
+      els(p).set('coProt', { id: 'coProt', type: 'sticky', x: 600, y: 0, w: 200, h: 200, locked: true, lockProtected: true });
+      await waitFor(() => els(o).get('prot')?.x === 77 && els(o).get('coProt')?.lockProtected === true, 5000, 'the co-owner’s change of a protected item and its own protection to reach the owner');
+      els(f).set('coProt', { id: 'coProt', type: 'sticky', x: 999, y: 0, w: 200, h: 200, locked: false });
+      await settled(f, [o]);
+      await waitFor(() => els(f).get('coProt')?.x === 600 && els(f).get('coProt')?.lockProtected === true, 5000, 'a plain editor to converge on the co-owner’s protected sticky');
+      assert((await O.req('PATCH', `/api/boards/${board.id}/members/${P.id}`, { role: 'editor' })).status === 200, 'back to editor');
+      await waitFor(async () => !(await P.req('GET', `/api/boards/${board.id}`)).json.board?.coOwner, 5000, 'the co-ownership to end');
+      // The refresh after the role change has run once the REST answer says so; prove it on the socket.
+      els(p).set('prot', note({ x: 5 }));
+      await settled(p, [o]);
+      await waitFor(() => els(p).get('prot')?.x === 77, 5000, 'the former co-owner to converge: protection is the owner’s again');
+      assert(els(o).get('prot')?.x === 77, 'a former co-owner changed a protected item');
     });
 
     await check('the session ends when the facilitator has been gone for the grace period, lifting every limit', async () => {

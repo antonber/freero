@@ -158,6 +158,26 @@
   border-radius: 2px;
 }
 
+/* A lasso loop being drawn (#111). */
+.fr-ov-lasso {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.fr-ov-lasso path {
+  fill: var(--fr-select-fill);
+  fill-rule: evenodd;
+  stroke: var(--fr-select);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+  stroke-linejoin: round;
+}
+
 .fr-ov-hint {
   position: absolute;
   left: 0;

@@ -1,9 +1,9 @@
 import { PenLine as PenLineIcon } from 'lucide-react';
 import { memo, useMemo } from 'react';
 import type { PenElement } from '@freero/shared';
-import { defineElement, type ElementRenderProps, type NewElement } from '@engine';
+import { canvasInk, defineElement, type ElementRenderProps, type NewElement } from '@engine';
 import { HIGHLIGHTER_OPACITY, PEN_COLORS, PEN_WIDTHS } from './lib/constants';
-import { strokeDistance, strokePath, unpack } from './lib/stroke';
+import { strokeDistance, strokePath, strokePoints, unpack } from './lib/stroke';
 import './pen.css';
 
 const PenView = memo(function PenView({ element }: ElementRenderProps<PenElement>) {
@@ -16,8 +16,10 @@ const PenView = memo(function PenView({ element }: ElementRenderProps<PenElement
       viewBox={`0 0 ${baseW || 1} ${baseH || 1}`}
       preserveAspectRatio="none"
       aria-hidden
+      // Default ink turns light on a dark page (theme.ts canvasInk); the doc keeps the colour.
+      style={{ color: canvasInk(stroke) }}
     >
-      <path d={d} fill={stroke} fillOpacity={highlighter ? HIGHLIGHTER_OPACITY : 1} />
+      <path d={d} fill="currentColor" fillOpacity={highlighter ? HIGHLIGHTER_OPACITY : 1} />
     </svg>
   );
 });
@@ -44,6 +46,8 @@ export default defineElement({
   Component: PenView,
   // Hits within the engine's screen tolerance of the ink; the eraser asks the same distance.
   distanceTo: (el, local) => strokeDistance(el, local),
+  // A lasso set to "inside" takes a stroke when most of its ink is in the loop (#111).
+  lassoPoints: (el) => strokePoints(el),
   // Highlighter ink multiplies with what's beneath (overlaps darken like real markers). It must
   // sit on the positioned wrapper: that is the stacking context the blend composites against.
   wrapperStyle: (el) => (el.highlighter ? { mixBlendMode: 'multiply' } : undefined),

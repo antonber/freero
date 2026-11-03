@@ -9,7 +9,8 @@ import type { AuditAction, AuditIntegrity, AuditMetadata, AuditValue } from '@fr
 import type { AuditEvent as PlatformAuditEvent } from '../../platform/audit';
 import { currentRequestContext } from '../../platform/requestContext';
 import { logError } from '../../platform/log';
-import { ChainVerifier } from './chain';
+import { mac, macMatches } from '../../platform/secrets';
+import { AnchorCheck, ChainVerifier, type Anchor } from './chain';
 import * as repo from './repo';
 import type { EventFilter, StoredEvent } from './repo';
 
@@ -131,8 +132,9 @@ export async function verifyWorkspaceAudit(workspaceId: string): Promise<AuditIn
 }
 
 export async function verifyChain(chain: string): Promise<AuditIntegrity> {
-  const head = await repo.getHead(chain);
+  const [head, anchors] = await Promise.all([repo.getHead(chain), repo.anchorsOf(chain)]);
   const verifier = new ChainVerifier(head);
+  const signed = new AnchorCheck(anchors, head, anchorSigned);
   let events = 0;
   let firstAt: number | null = null;
   let lastAt: number | null = null;
@@ -143,13 +145,65 @@ export async function verifyChain(chain: string): Promise<AuditIntegrity> {
       events++;
       firstAt ??= e.createdAt;
       lastAt = e.createdAt;
+      signed.push(e);
       if (!verifier.push(e)) break read;
     }
     if (batch.length < VERIFY_BATCH) break;
     after = batch[batch.length - 1].seq;
   }
-  const problem = verifier.finish();
-  return { ok: problem === null, events, firstAt, lastAt, headHash: head && head.seq > 0 ? head.hash : null, problem };
+  const problem = verifier.finish() ?? signed.finish();
+  const live = anchors.filter((a) => a.seq > (head?.prunedSeq ?? 0));
+  return {
+    ok: problem === null,
+    events,
+    firstAt,
+    lastAt,
+    headHash: head && head.seq > 0 ? head.hash : null,
+    problem,
+    anchors: { checked: signed.checked, lastAt: live.at(-1)?.anchoredAt ?? null },
+  };
+}
+
+// ---- anchors: signed checkpoints of chain heads (#17) ----
+
+const anchorMessage = (a: Anchor) => `audit.anchor:v1:${a.chain}:${a.seq}:${a.hash}:${a.anchoredAt}`;
+
+/** The server's signature of a checkpoint (HMAC under SESSION_SECRET, hex). */
+export const signAnchor = (a: Anchor): string => mac(anchorMessage(a)).toString('hex');
+/** Whether `a.mac` is this server's signature of the checkpoint (any configured secret: rotation). */
+export const anchorSigned = (a: Anchor & { mac: string }): boolean => /^[0-9a-f]{64}$/.test(a.mac) && macMatches(anchorMessage(a), Buffer.from(a.mac, 'hex'));
+
+/** Signs the head of every chain that moved since its last checkpoint (the audit:anchor job). Idempotent. */
+export async function anchorChains(now = Date.now()): Promise<number> {
+  let n = 0;
+  for (;;) {
+    const heads = await repo.headsToAnchor(500);
+    for (const h of heads) {
+      const a = { ...h, anchoredAt: now };
+      await repo.insertAnchor({ ...a, mac: signAnchor(a) });
+    }
+    n += heads.length;
+    if (heads.length < 500) return n;
+  }
+}
+
+/** A workspace log's head as of now, signed by this server (what SIEM streams receive as a checkpoint). */
+export async function signedWorkspaceHead(workspaceId: string, now = Date.now()): Promise<{ chain: string; seq: number; hash: string; at: number; signature: string } | null> {
+  const chain = workspaceChain(workspaceId);
+  const head = await repo.getHead(chain);
+  if (!head || head.seq === 0) return null;
+  const a = { chain, seq: head.seq, hash: head.hash, anchoredAt: now };
+  return { chain, seq: head.seq, hash: head.hash, at: now, signature: signAnchor(a) };
+}
+
+/** A workspace log's events after `afterSeq`, in order (SIEM streams: their cursor is the seq). */
+export function workspaceEventsAfter(workspaceId: string, afterSeq: number, limit: number): Promise<StoredEvent[]> {
+  return repo.chainEvents(workspaceChain(workspaceId), afterSeq, limit);
+}
+
+/** The newest seq of a workspace's log (0: empty). */
+export async function workspaceHeadSeq(workspaceId: string): Promise<number> {
+  return (await repo.getHead(workspaceChain(workspaceId)))?.seq ?? 0;
 }
 
 /**

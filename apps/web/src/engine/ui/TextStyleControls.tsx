@@ -22,6 +22,7 @@ import { Button, ColorSwatches, IconButton, Input, Menu, Popover, SegmentedContr
 import type { Editor } from '../api';
 import { useEditingId, useTextFormatState } from '../hooks';
 import { FONT_VARS } from '../text/autofit';
+import { FONTS, fontOf, type FontGroup } from '../text/fonts';
 import './textStyle.css';
 
 /** Several selected items disagree on a value. */
@@ -35,12 +36,10 @@ export function commonValue<E, T>(items: readonly E[], get: (item: E) => T): Mix
   return items.every((e) => get(e) === first) ? first : MIXED;
 }
 
-export const FONT_FAMILY_OPTIONS: ReadonlyArray<{ value: FontFamily; label: string }> = [
-  { value: 'sans', label: 'Sans' },
-  { value: 'serif', label: 'Serif' },
-  { value: 'mono', label: 'Mono' },
-  { value: 'hand', label: 'Handwritten' },
-];
+export const FONT_FAMILY_OPTIONS: ReadonlyArray<{ value: FontFamily; label: string; group: FontGroup }> = (Object.keys(FONTS) as FontFamily[]).map(
+  (value) => ({ value, label: FONTS[value].label, group: FONTS[value].group }),
+);
+const FONT_GROUPS: FontGroup[] = ['Sans', 'Serif', 'Mono', 'Handwritten'];
 
 export const TEXT_COLOR_PALETTE: readonly string[] = [
   '#17162B', '#4B4A63', '#8A89A3', '#FFFFFF', '#5B3FF0', '#2F80ED',
@@ -89,25 +88,31 @@ function ColorBar({ color }: { color: Mixed<string> }) {
 export function FontFamilyControl({ value, onChange }: { value: Mixed<FontFamily>; onChange: (family: FontFamily) => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLButtonElement>(null);
-  const label = value === MIXED ? 'Mixed' : (FONT_FAMILY_OPTIONS.find((f) => f.value === value)?.label ?? value);
+  const label = value === MIXED ? 'Mixed' : fontOf(value).label;
   return (
     <>
       <ToolbarButton ref={ref} label="Font" wide aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        <span style={{ fontFamily: value === MIXED ? undefined : FONT_VARS[value] }}>{label}</span>
+        <span className="fr-textstyle-font" style={{ fontFamily: value === MIXED ? undefined : fontOf(value).css }}>
+          {label}
+        </span>
         <ChevronDown size={14} aria-hidden />
       </ToolbarButton>
       <Menu
         open={open}
         onClose={() => setOpen(false)}
         anchor={ref.current}
-        minWidth={160}
+        minWidth={200}
         aria-label="Font"
-        items={FONT_FAMILY_OPTIONS.map((f) => ({
-          id: f.value,
-          label: <span style={{ fontFamily: FONT_VARS[f.value] }}>{f.label}</span>,
-          checked: f.value === value,
-          onSelect: () => onChange(f.value),
-        }))}
+        // Grouped, each name in its own face (opening the menu is what loads the faces).
+        items={FONT_GROUPS.flatMap((group) => [
+          { heading: group },
+          ...FONT_FAMILY_OPTIONS.filter((f) => f.group === group).map((f) => ({
+            id: f.value,
+            label: <span style={{ fontFamily: FONT_VARS[f.value] }}>{f.label}</span>,
+            checked: f.value === value,
+            onSelect: () => onChange(f.value),
+          })),
+        ])}
       />
     </>
   );

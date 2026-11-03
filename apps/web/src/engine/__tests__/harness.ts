@@ -125,3 +125,21 @@ export function drag(
 export function click(core: EngineCore, at: Point, opts: { shift?: boolean; alt?: boolean; tool?: string } = {}) {
   drag(core, at, at, { ...opts, steps: 0 });
 }
+
+/** Presses at the first point and drags through the others (a freehand path), with a tool. */
+export function dragPath(core: EngineCore, path: Point[], opts: { shift?: boolean; alt?: boolean; tool?: string; step?: number } = {}) {
+  const tool = core.registry.toolsById.get(opts.tool ?? 'select')!;
+  core.interaction.clickCount = 1;
+  core.editor.beginGesture();
+  dispatchToolPointer(core, tool, 'onPointerDown', toolEvent(core, path[0], opts));
+  // Pointer moves every `step` world units along the path, like a real drag.
+  const step = opts.step ?? 5;
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1];
+    const b = path[i];
+    const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / step));
+    for (let k = 1; k <= n; k++) dispatchToolPointer(core, tool, 'onPointerMove', toolEvent(core, { x: a.x + ((b.x - a.x) * k) / n, y: a.y + ((b.y - a.y) * k) / n }, opts));
+  }
+  dispatchToolPointer(core, tool, 'onPointerUp', toolEvent(core, path[path.length - 1], opts));
+  core.editor.endGesture();
+}

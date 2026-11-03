@@ -46,5 +46,5 @@ export function describeElement(editor: Editor, el: BoardElement): string {
   }
   text = (text ?? '').replace(/\s+/g, ' ').trim();
   if (text.length > SPOKEN_TEXT_MAX) text = `${text.slice(0, SPOKEN_TEXT_MAX - 1)}…`;
-  return `${type}${text ? `: ${text}` : ''}${el.locked ? ' (locked)' : ''}`;
+  return `${type}${text ? `: ${text}` : ''}${el.locked ? (el.lockProtected ? ' (locked by the owner)' : ' (locked)') : ''}`;
 }

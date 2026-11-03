@@ -2,8 +2,20 @@
 // Memberships of a deleted board (or user) are removed by the database (ON DELETE CASCADE).
 import type { Role } from '@freero/shared';
 import * as repo from './repo';
+import type { Membership } from './roles';
 
-export { resolveRole, resolveGuestRole, atLeast, isLinkAccess, ROLE_RANK, type WorkspaceAccess } from './roles';
+export { resolveRole, resolveGuestRole, resolveCoOwner, managesSharing, atLeast, isLinkAccess, ROLE_RANK, type WorkspaceAccess, type Membership } from './roles';
+
+/** The user's direct membership on a board — its role and whether it is a co-owner's (#122) — or null. */
+export async function getMembership(boardId: string, userId: string): Promise<Membership | null> {
+  const m = await repo.getMembership(boardId, userId);
+  return m ? { role: m.role, coOwner: m.coOwner } : null;
+}
+
+/** The boards the user co-owns through a membership (#122; the resolver still decides whether it counts). */
+export async function coOwnedBoardIds(userId: string): Promise<Set<string>> {
+  return new Set((await repo.listByUser(userId)).filter((m) => m.coOwner).map((m) => m.boardId));
+}
 
 /** Ends the user's direct memberships on these boards (removed from the boards' workspace). */
 export async function removeBoardMemberships(boardIds: string[], userId: string): Promise<void> {

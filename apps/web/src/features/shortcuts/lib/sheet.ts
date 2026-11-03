@@ -9,6 +9,11 @@ export interface SheetRow {
   label: string;
   /** Display-ready bindings ('?' instead of 'shift+/'), alternatives in order. */
   keys: string[];
+  /**
+   * The keys are alternatives ("Ctrl+] or Page Up"): a command's are, and any pair; a built-in
+   * key's longer list is one set (the four arrows).
+   */
+  alternatives: boolean;
 }
 
 export interface SheetSection {
@@ -54,7 +59,7 @@ export function buildSheet(entries: ShortcutEntry[], query: string, apple?: bool
     const haystack = [e.label, title, ...keys, ...keys.map((k) => formatShortcut(k, apple))].join(' ').toLowerCase();
     if (!words.every((w) => haystack.includes(w))) continue;
     const rows = sections.get(title) ?? [];
-    rows.push({ id: e.id, label: e.label, keys });
+    rows.push({ id: e.id, label: e.label, keys, alternatives: e.kind === 'command' || keys.length === 2 });
     sections.set(title, rows);
   }
   const rank = (t: string) => (FIXED.includes(t) ? FIXED.indexOf(t) : FIXED.length);

@@ -21,6 +21,7 @@ import { listProblems, problemDetail, problemScreenshot, sendProblemScreenshot, 
 import { backlinksForApi, resolveForApi, searchContent } from './objects';
 import { appendToDoc, createDocFor, listDocs, readDocFor } from './docs';
 import { getFeedback, postStatus, readStatusPost } from './controlRoom';
+import { workspaceAuditFor } from './audit';
 import * as api from './service';
 import OPENAPI from '../../../../../docs/api/openapi.json';
 
@@ -99,6 +100,8 @@ export default function apiRoutes(_ctx: ServerContext): Router {
 
   // ---- workspaces and boards ----
   endpoint('get', '/workspaces', 'boards:read', async (call) => ({ body: await api.listWorkspaces(call) }));
+  // A team workspace's audit log, for SIEMs that pull (#17; owners/admins).
+  endpoint('get', '/workspaces/:workspaceId/audit', 'audit:read', async (call) => ({ body: await workspaceAuditFor(call, call.req.params.workspaceId, call.req.query) }));
   endpoint('get', '/boards', 'boards:read', async (call) => ({ body: await api.searchBoards(call, call.req.query) }));
   endpoint('post', '/boards', 'boards:write', async (call) => ({ status: 201, body: await api.createBoard(call, body(call.req)) }));
   endpoint('get', '/boards/:boardId', 'boards:read', async (call) => ({ body: await api.getBoard(call, call.req.params.boardId) }));

@@ -29,6 +29,7 @@ The code is an ordinary iframe:
 |---|---|
 | `readonly=1` | read-only for everyone in this embed |
 | `frame=<item id>` | start zoomed to this frame (any item id works; *Copy link to item* gives one as `?item=`) |
+| `theme=dark` | dark chrome and canvas to match a dark page (board content keeps its colours); without it the embed is light, whatever the viewer picked in Freero |
 
 Switching embedding off stops every embed of the board at once, wherever it was pasted.
 

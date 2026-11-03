@@ -14,6 +14,7 @@ import { features } from '../board/features';
 import { createEmbedHost, toastNotify } from '../board/host';
 import { FullPageSpinner } from '../components/FullPageSpinner';
 import '../board/BoardPage.css';
+import { setThemeOverride } from '../lib/theme';
 
 type Theme = 'light' | 'dark';
 const asTheme = (v: unknown): Theme | null => (v === 'light' || v === 'dark' ? v : null);
@@ -39,12 +40,12 @@ function takeTicket(): string | null {
  */
 function useAssistantTheme(): void {
   useEffect(() => {
-    const root = document.documentElement;
+    // The assistant's theme overrides the person's own while this view is mounted (app/lib/theme.ts).
     const apply = (t: Theme | null) => {
-      if (t) root.setAttribute('data-theme', t);
+      if (t) setThemeOverride(t);
     };
     takeTicket(); // reads the theme it opened in with the ticket
-    apply(openedIn);
+    apply(openedIn ?? 'light'); // an assistant that says nothing gets the light view, as before
     const onMessage = (e: MessageEvent) => {
       if (e.source !== window.parent || window.parent === window) return;
       const d = e.data as { freeroEmbed?: unknown; theme?: unknown } | null;
@@ -53,7 +54,7 @@ function useAssistantTheme(): void {
     window.addEventListener('message', onMessage);
     return () => {
       window.removeEventListener('message', onMessage);
-      root.removeAttribute('data-theme');
+      setThemeOverride(null);
     };
   }, []);
 }

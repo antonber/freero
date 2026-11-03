@@ -33,6 +33,19 @@ export const STICKY_ACCENT: Record<StickyColor, string> = {
   lime: '#84CC16',
   gray: '#8A89A3',
   white: '#5B3FF0',
+  // Saturated and dark papers are strong already: the card keeps the paper itself.
+  sun: '#F5A524',
+  tangerine: '#F97316',
+  red: '#D93036',
+  magenta: '#C2338A',
+  purple: '#6A4BE0',
+  royal: '#1F66D1',
+  teal: '#0B7A7C',
+  pine: '#1E7A45',
+  navy: '#1F2A5C',
+  plum: '#5B2A6E',
+  cocoa: '#6B4A32',
+  charcoal: '#2A2938',
 };
 
 export type CardStatus = NonNullable<CardElement['status']>;

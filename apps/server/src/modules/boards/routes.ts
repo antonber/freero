@@ -1,15 +1,15 @@
 import { Router } from 'express';
-import type { BoardCallResponse, BoardSummary, GuestBoardInfo, GuestJoinResponse, LinkAccess } from '@freero/shared';
+import type { BoardCallResponse, BoardSharingSettings, BoardSummary, GuestBoardInfo, GuestJoinResponse, LinkAccess, MoveBoardResponse } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { badRequest, forbidden, handle, HttpError, notFound, unauthorized } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
 import { recordAuditQuietly } from '../audit/index';
 import { actorId, currentActor, currentUser, endGuestSession, guestFromCookieHeader, requireUser, requireUserOrGuest, startGuestSession } from '../auth/index';
-import { isLinkAccess } from '../members/index';
+import { isLinkAccess, managesSharing } from '../members/index';
 import { deleteUpload, saveUpload } from '../uploads/index';
 import { callOf, cleanCallUrl, jitsiAvailable } from './call';
 import { boardLifecycle } from './events';
-import { changeLinkProtection, checkVisitorPassword, hasLinkProtectionPatch, unlockLink } from './linkProtection';
+import { applyLinkProtection, checkVisitorPassword, cleanLinkProtection, hasLinkProtectionPatch, unlockLink } from './linkProtection';
 import * as repo from './repo';
 import {
   BOARD_FILTERS,
@@ -19,7 +19,11 @@ import {
   cleanDescription,
   checkEmbeddingChange,
   checkLinkAccessChange,
+  checkLinkPolicy,
+  cleanSharing,
   cleanTitle,
+  moveToWorkspace,
+  sharingSettingsChanged,
   embeddingChanged,
   createBoard,
   deleteForever,
@@ -94,38 +98,58 @@ export default function boardRoutes(_ctx: ServerContext): Router {
     handle(async (req, res) => {
       const user = currentUser(req);
       const body = (req.body ?? {}) as Record<string, unknown>;
-      const { board, role, access } = await requireAccess(req.params.id, user.id);
-      const patch: { title?: string; description?: string; linkAccess?: typeof board.linkAccess; embeddable?: boolean } = {};
+      const { board, role, access, coOwner } = await requireAccess(req.params.id, user.id);
+      // The owner and co-owners (#122) manage sharing: the link, its protection, embedding, the settings.
+      const manages = managesSharing(role, coOwner);
+      const patch: { title?: string; description?: string; linkAccess?: typeof board.linkAccess; embeddable?: boolean } & Partial<BoardSharingSettings> = {};
       if (body.title !== undefined) patch.title = cleanTitle(body.title);
       if (body.description !== undefined) patch.description = cleanDescription(body.description);
       if (body.linkAccess !== undefined) {
         if (!isLinkAccess(body.linkAccess)) throw badRequest('linkAccess must be none, viewer, commenter or editor');
-        checkLinkAccessChange(board, role, access, user, body.linkAccess);
+        checkLinkAccessChange(board, manages, access, user, body.linkAccess);
         patch.linkAccess = body.linkAccess;
       }
       if (body.embeddable !== undefined) {
         if (typeof body.embeddable !== 'boolean') throw badRequest('embeddable must be true or false');
-        checkEmbeddingChange(board, role, access, body.embeddable);
+        checkEmbeddingChange(board, manages, access, body.embeddable);
         patch.embeddable = body.embeddable;
       }
-      if (hasLinkProtectionPatch(body) && role !== 'owner') throw forbidden('Only the board owner can protect its link');
+      const sharing = cleanSharing(body.sharing);
+      if (Object.keys(sharing).length && !manages) throw forbidden('Only the board’s owner and co-owners can change its sharing settings');
+      Object.assign(patch, sharing);
+      if (hasLinkProtectionPatch(body) && !manages) throw forbidden('Only the board’s owner and co-owners can protect its link');
       if ((patch.title !== undefined || patch.description !== undefined) && role !== 'owner' && role !== 'editor')
         throw forbidden('You need editor access to rename this board');
+      // Validated before anything is stored: the link as the WHOLE change leaves it must meet the
+      // workspace's link policy (#39), so a link is never on without the password it requires.
+      const protection = hasLinkProtectionPatch(body) ? await cleanLinkProtection(body) : null;
+      if (patch.linkAccess !== undefined || protection)
+        checkLinkPolicy(
+          board,
+          {
+            ...(patch.linkAccess !== undefined ? { linkAccess: patch.linkAccess } : {}),
+            ...(protection?.passwordHash !== undefined ? { password: protection.passwordHash === null ? 'removed' : 'set' } : {}),
+            ...(protection?.expiresAt !== undefined ? { expiresAt: protection.expiresAt } : {}),
+          },
+          access.policies,
+        );
       if (body.projectId !== undefined) {
         if (body.projectId !== null && typeof body.projectId !== 'string') throw badRequest('projectId must be a project id or null');
         if ((body.projectId || null) !== board.projectId) await moveToProject(board, user.id, (body.projectId as string | null) || null);
       }
+      // Protection first: a link turned on in the same request is never live without it.
+      if (protection) await applyLinkProtection(board, user.id, protection);
       if (Object.keys(patch).length > 0)
         await repo.transaction(async () => {
           await repo.updateBoardFields(board.id, patch, Date.now());
           if (patch.title !== undefined && patch.title !== board.title)
             await repo.appendBoardEvent({ type: 'board.renamed', boardId: board.id, workspaceId: board.workspaceId, actorId: user.id, title: patch.title, from: board.title, to: patch.title });
         });
-      if (hasLinkProtectionPatch(body)) await changeLinkProtection(board, user.id, body);
       if (patch.title !== undefined && patch.title !== board.title)
         await boardLifecycle({ boardId: board.id, actorId: user.id, action: 'renamed', from: board.title, to: patch.title });
       if (patch.linkAccess !== undefined && patch.linkAccess !== board.linkAccess) await linkAccessChanged(board, user.id, patch.linkAccess);
       if (patch.embeddable !== undefined && patch.embeddable !== board.embeddable) await embeddingChanged(board, user.id, patch.embeddable);
+      await sharingSettingsChanged(board, user.id, sharing);
       const { board: updated, role: newRole, access: newAccess } = await requireAccess(board.id, user.id);
       res.json({ board: await toSummary(updated, user.id, newRole, newAccess) } satisfies Out);
     }),
@@ -217,9 +241,22 @@ export default function boardRoutes(_ctx: ServerContext): Router {
     handle(async (req, res) => {
       const user = currentUser(req);
       const { board, role, access } = await requireAccess(req.params.id, user.id);
-      await requireDownload(board, user.id, access, 'duplicate'); // a copy takes the content out of the workspace's control
-      const copy = await duplicateBoard(board, user.id, role);
+      await requireDownload(board, user.id, access, 'duplicate', role); // a copy takes the content out of the workspace's control
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const copy = await duplicateBoard(board, user.id, role, { workspaceId: body.workspaceId, projectId: body.projectId });
       res.status(201).json({ board: await summarize(copy, user.id, { starred: false, lastOpenedAt: null }) } satisfies Out);
+    }),
+  );
+
+  // Into another workspace (#124): the board's owner only (service.ts moveToWorkspace).
+  r.post(
+    '/boards/:id/move',
+    requireUser,
+    handle(async (req, res) => {
+      const user = currentUser(req);
+      const { board } = await requireAccess(req.params.id, user.id, 'owner');
+      const { board: moved, adjusted } = await moveToWorkspace(board, user.id, (req.body ?? {}) as Record<string, unknown>);
+      res.json({ board: await summarize(moved, user.id), adjusted } satisfies MoveBoardResponse);
     }),
   );
 

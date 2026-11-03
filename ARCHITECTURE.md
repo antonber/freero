@@ -134,6 +134,8 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | A kanban's saved views (`KanbanElement.views` / `activeView`: what cards show, density, colour-by, `groupBy`, `subGroupBy`, other fields' column settings, `filter`, `sort` and the manual order kept while sorted, the view `locked`; since 3a also its table tabs — columns, filter, sort, lock — and the tab everyone starts on; since 3b list, calendar and timeline tabs — a list's fields and grouping, a calendar's date field, a timeline's start / end fields, scale and swimlanes) and swimlane geometry (`lanes`) — read only through `@freero/shared` `views.ts` (`boardView`), `tabs.ts` (`viewTabs`, `projectionView`, `savedTabId`; entries of layouts a client doesn't know are kept when it writes, and so is an `activeView` naming one) and `projections.ts` (where a calendar or timeline places a card, what moving it writes) and `fields.ts` (`groupFieldId`); filters and sorts are evaluated only by `@freero/shared` `query.ts` (the free-form table's typed filter / sort too); the layout itself is `@freero/shared` `layout/kanban.ts` `planKanban` | `features/kanban` (View panel: "Save for everyone", density, group by, swimlanes, sort, lock); it keeps `colorCards` equal to "coloured by column" for older clients. Regrouping writes the old group field's values onto the cards from their positions in the same transaction, a drop into another swimlane writes that row's value (the layout's one write to card values), and the layout drops `manualOrder` once a cleared sort is undone. Server: `modules/api` `configure_view` (the saved view or a tab — `view`, `addView`, `name`, `active`, `remove` —, refused while locked by someone else) | `runCommand('kanban.setCardDisplay' / 'kanban.saveViewForEveryone' / 'kanban.groupBy' / 'kanban.setSwimlanes' / 'kanban.setMyFilter' / 'kanban.setSort' / 'kanban.lockView' / 'kanban.addTab' / 'kanban.addTableTab' / 'kanban.renameTab' / 'kanban.deleteTab')` |
 | A linked view (`KanbanViewElement`, type `kanbanview`, step 3c: a kanban's cards as a table, list, calendar or timeline elsewhere on its board — `sourceId` and one projection view, ids only, never a copy of the cards or their labels) — read only through `@freero/shared` `linkedViews.ts` (`linkedView`, `linkedSource`) | `features/kanban` (the second element of its `element.tsx`; "Add linked view ▸" in a kanban's context menu and tab menu, the View panel: name, layout, lock, "Save for everyone"); server `modules/api` `add_view` (placed beside the kanban, `linkedViewSpot`) and `configure_view` with the linked view's id | `runCommand('kanban.addLinkedView' / 'kanban.setMyLinkedView' / 'kanban.saveLinkedView' / 'kanban.configureLinkedView')`. Its edits write the real cards through `card.setValues`, as a tab's do. Copying keeps `sourceId` (with the kanban copied along, the engine's id remap points the copy at the kanban's copy); pasted onto another board without its kanban it is left out (`pasteContent`; step 3d makes it a cross-board view) |
 | A person's own view settings (personal overrides of a saved view, per board / item / view; a kanban also keeps the tab I look at under `_tab`, a table, list, calendar or timeline tab's own settings under its id, and focus mode's arrangement under `_focus`; a linked view its own settings under `_view`) | the engine's personal view state (`Editor.setPersonalView`, any role, never in the doc), kept through `Host.personalViews` → server `modules/personalviews` (`personal_views`); in this browser without it | the owning feature validates what it reads (`views.ts` `cleanOverride`) |
+| An item's protected lock (`BaseElement.lockProtected`, with `locked`) | the board owner and co-owners (`@freero/shared` `mayProtect(role, coOwner)`; #122: the server takes `coOwner` from boards' `resolveCoOwner` — a socket's `Admission.coOwner`, re-resolved on every access refresh and honoured only on an uncapped socket, and `BoardActor.coOwner`, which changeBoard / proposeSuggestions resolve themselves — never from a client; never a facilitator, since any editor can start a session), through `engine.protectLock` (Mod+Alt+Shift+L, context menu) and `engine.lock`; anyone else's socket change to a protected item (move, edit, unlock, unprotect, delete) or protecting one is undone by server `realtime/protectedLock.ts` in the transaction that applies it, in the shared doc and the layers (a move into or out of a hidden frame's layer keeps it); requests (API, MCP) are refused in `realtime/view.ts` `applyChange` | `Editor.mayProtect()`; the format toolbar shows a disabled shield to others. Clients that don't know the field see an ordinary lock, and their unlock is undone |
+| A person's app theme (System / Light / Dark: `users.color_theme`, `Account.theme`) and the page's `<html data-theme>` | server `modules/auth` (`PATCH /api/auth/me` `{ theme }`); in the browser `app/lib/theme.ts` is the only writer of `data-theme` (it also keeps the choice in localStorage for the first paint and for people without an account). A page that must follow its surroundings (the live view in an AI assistant) uses `setThemeOverride` while mounted; `public/theme-boot.js` sets the stored theme before the first paint. Chrome follows `ui/tokens.css`. Board content keeps its authored colours: only the live canvas is painted differently, at paint time and never in the doc (`engine/canvas/theme.ts`): a light background and light frame fills shown dark, the DEFAULT inks (`canvasInk`) light where they lie on the canvas — free text, lines, pen, icons, unfilled shapes, frame titles, mind-map branches — through CSS variables set on the live viewport only, so exports and thumbnails never change | `ThemeSwitch` / `useChooseTheme` (`app/components`): account settings → Appearance, the dashboard's account menu; on a board `Host.colorTheme` (`features/appearance`: board menu → Theme, and the command palette) |
 | Problem reports (`problem_reports`) and their screenshots (uploads' private images) | server `modules/problems` | its routes (the reporter; operators) and index (`/api/v1/operator/problems` in modules/api, the account purge, the data export) |
 | Decision snapshots (`decisions`) and their content (board versions of kind `decision`) | server `modules/decisions` / `modules/realtime` (`freezeBoard`) | `Host.decisions`; never written again once frozen |
 | When someone last had a board open (`board_seen`, "changes since your last visit") | server `modules/activity`, only from realtime's `onBoardLeft` (an account's board socket on that instance closed) | — (never a client's word; `GET /boards/:id/catch-up` reads it) |
@@ -239,7 +241,10 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   while its `when` holds (a kanban card's arrows move it between and within columns, where a nudge
   would only be laid back); when no such command applies the arrows work as usual.
 - `CommandDefinition.extraShortcuts?: string[]`: further bindings for the same command (listed in
-  the shortcut reference; menus show `shortcut`). Punctuation shortcuts match the typed character,
+  the shortcut reference; menus show `shortcut`). Every command's own `shortcut` is tried before
+  any command's extras, so an alias answers only where no command owning that key applies right
+  now (Mod+K: "Link to…" on one selected item, else the palette alias), whatever the feature order.
+  While text is edited, a key press that types a character (Option+1 on a Mac) is never a shortcut. Punctuation shortcuts match the typed character,
   and outside text editing AltGr + that character (Windows reports AltGr as Ctrl+Alt) also answers
   `mod+<character>`, so Ctrl+[ / Ctrl+] work where brackets need AltGr; Bring to front / Send to
   back also have Ctrl+Shift+↑ / ↓ on every layout.
@@ -952,6 +957,9 @@ Accessibility, touch and phones (KAI-108, KAI-139; conformance notes: docs/acces
 - `Host.reportProblem?({ role })`: opens the app's "Report a problem" dialog (absent for visitors and
   in the sandbox); `features/problem-report` puts it in the board menu with `mod+alt+p`. `fontEmbedCss(node)`
   is exported for the app's screenshot of the visible page (see "Problem reports").
+- `Host.track?(event: AnalyticsEvent)`: counts a product event from the closed list in
+  `@freero/shared` `analytics.ts` (absent in the sandbox, for guests and in embeds; a no-op unless
+  Google Analytics is on and accepted). See "Analytics".
 - Participants (parity rank 1, see "Participants" under Realtime): `Editor.isParticipant()` /
   `useParticipant()` (the role message's `participant`), `Editor.mayEdit(ids)` (an editor: any; a
   participant: only their own drafts — element writes, moves, resizes, text editing and Delete
@@ -959,6 +967,31 @@ Accessibility, touch and phones (KAI-108, KAI-139; conformance notes: docs/acces
   participant may add those when the rule sends them private, and gets the tools that add only
   them; their drafts join no container). Collections in `PARTICIPANT_WRITABLE` (`voting`,
   `estimation`) are writable for a participant, shared and private; the server decides which keys.
+
+Pen tools: lasso (#111) and smart drawing (#3):
+- Lasso: the engine's built-in `lasso` tool (`interaction/selectTool.ts`, `createSelectTool(core,
+  'lasso')`; in the "+" grid and the pen's flyout) is the select tool whose drag on empty canvas
+  draws a freeform loop (`UiState.lasso`, drawn by `overlay/Overlays.tsx`) instead of a marquee;
+  Alt+drag on empty canvas does the same with the select tool, Shift adds. What a loop takes is
+  `Editor.elementsInLasso(points, mode)` (`geometry/lasso.ts`): `'inside'` (default) = items wholly
+  in the loop, or — for a type with `ElementDefinition.lassoPoints(el)` (the pen's centerline) —
+  most of those points; `'touch'` = the marquee's rule (a rectangular loop takes what a marquee
+  over it would). Containers only when wholly inside; locked and hidden items never. The mode is
+  the lasso tool's option (its flyout: Inside / Touching, per browser). A finger draws a loop
+  like any non-select tool, until "pen draws, finger pans" makes fingers pan.
+- Smart drawing (`features/pen`, option `smart` in the pen's flyout, off by default; the pen only,
+  never the highlighter): `lib/recognise.ts` reads a finished stroke as a line, an arrow, a
+  closed rectangle / ellipse / triangle / diamond, a scratch-out, or nothing (pure geometry,
+  deterministic; tests run on frozen strokes in `lib/recordedStrokes.ts`). The ink is created by
+  the stroke's gesture as always; `Editor.afterGesture(fn)` then replaces it in an undo step of its
+  own (`lib/smart.ts`), so Undo once brings the ink back. Shapes go through the shape feature's
+  `shape.insert` command (`{ kind, x, y, w, h, rotation?, stroke?, strokeWidth?, fill?, id? }`),
+  lines and arrows through the connector feature's `connector.insert` (`{ from, to, endCap?,
+  stroke?, strokeWidth?, id? }`, ends attached to the items they land on): each feature stays the
+  single writer of its defaults. A scratch-out over items erases those it mostly covers (never
+  locked items or containers; a toast offers Undo); over nothing it stays ink. Resting the pen
+  650 ms straightens the stroke into a line; a Shift-ruled stroke stays ink. Participants'
+  drafts stay ink.
 
 ### Installable app (PWA, KAI-140)
 
@@ -1056,7 +1089,8 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
   The app's pages are never indexed: `index.html` has `robots noindex` and the SPA fallback sends
   `X-Robots-Tag: noindex`; robots.txt also disallows the app, boards, docs, embeds, the API, MCP,
   auth and invite paths. `SITE_ANALYTICS_SRC` adds an operator's analytics script to marketing
-  pages only, with its origin in their CSP. `SITE_INDEXNOW_KEY` serves `/<key>.txt` for IndexNow;
+  pages only, with its origin in their CSP; `GA_MEASUREMENT_ID` adds the Google Analytics runtime
+  (see "Analytics" below). The build itself never contains a script: both are added when served. `SITE_INDEXNOW_KEY` serves `/<key>.txt` for IndexNow;
   `scripts/indexnow.mjs` submits the live sitemaps' URLs (or those changed since a day) after a deploy.
 - **Legal pages** (`legal: true`: `/privacy`, `/terms`, `/acceptable-use`; drafts for legal review,
   written from the code and docs/operations.md's data map) and `/support` put `legal(key)` tokens
@@ -1084,6 +1118,42 @@ so they can be fast, crawlable and free of the app's bundle. Keyword plan: `docs
   internal link, the comparison publishing rule); `npm run verify -- --only site` runs it on a real
   server with a real session and with `SITE=false`, and fetches every sitemap URL (200, no
   redirect, no noindex, its own canonical).
+
+## Analytics (Google Analytics 4, `GA_MEASUREMENT_ID`; server `modules/analytics`, web `app/analytics`)
+
+Off unless the operator sets `GA_MEASUREMENT_ID` (the hosted service does; self-hosted servers get
+nothing: no script tag, no frame, `/analytics.js` and `/analytics-frame` answer 404, the CSP is
+byte-for-byte what it was). When on:
+
+- **Consent first (Consent Mode v2, basic).** `app/analytics/runtime.ts` is the one place that
+  decides: nothing from Google loads until the visitor chooses Accept in the banner (Accept and
+  Decline look the same; GPC / Do Not Track count as Decline; the choice lives in local storage
+  under `freero:analytics-consent` for 6 months). Google's tag then starts with all four consent
+  types denied and only `analytics_storage` granted; ad storage, ad user data, ad personalisation
+  and Google signals stay off. Decline (or withdrawing later through "Cookie settings": the site
+  footer, the app's Help menu, the privacy policy) deletes the `_ga*` cookies. The runtime has no
+  imports: `vite.config.ts` (`freero-analytics`) builds it alone into `dist/analytics.js`, and the
+  app imports the same functions.
+- **Marketing pages** (`modules/site`) get `<script src="/analytics.js" data-freero-ga=…>`; the
+  runtime runs Google's tag in the page itself (public content), reporting the path with the query
+  reduced to UTM tags and the referrer reduced to its origin.
+- **The app never runs Google's tag in its own document**, which holds board titles, content,
+  names and links that GA's automatic measurements (outbound clicks, file downloads, the tab title,
+  history changes) would read. The bridge (`app/analytics/bridge.ts`, mounted by `AppAnalytics`)
+  creates a hidden same-origin frame, `/analytics-frame` (only this origin may frame it), after
+  consent and posts it the page as `@freero/shared` `analyticsPage` reports it — every id and
+  token removed (`/board/<id>` → `/board`, unknown routes → `/not-found`), a generic title — and
+  events from the closed list `AnalyticsEvent` (`sign_up` / `login` with the method, `board_created`,
+  `template_used` with a built-in template's public id), validated by `analyticsEventParams`.
+  `/embed/*` (the assistants' live view, boards embedded on other sites, their sign-in popup),
+  `/operator*` and `/oauth/*` are never reported and never show the banner. Features
+  count events through `Host.track` (optional; the templates feature is the only user).
+- **Single writers:** the consent choice — `runtime.ts` `saveChoice` (banner buttons); page views —
+  `AppAnalytics` → `reportPage`; events — `track` (AuthContext, `api.createBoard`, `Host.track`).
+- **CSP** (`platform/security.ts`, only with the id; never on a page another site may frame —
+  `allowFraming`, `frameFromAnySite` — nor on `/embed/*`): `script-src` +
+  `https://www.googletagmanager.com`, `connect-src` + Google's collection hosts, `frame-src` +
+  `'self'`. The privacy policy's analytics tokens (`modules/site/legal.ts`) describe exactly this.
 
 ## UI kit (`ui/`) — exports from `@ui`
 
@@ -1160,10 +1230,13 @@ period, orchestrating the owning modules' exports), `notifications` (notificatio
 notification_prefs, pending_mentions, card_due_watch, board_change_digests: inbox, live delivery,
 email digests, due-date reminders, the "changes on your boards" email), `moderation` (moderation_items,
 moderation_actions: abuse reports, the operator queue, actions and appeals; see "Moderation"),
-`sso` (sso_domains, sso_connections, sso_flows, sso_saml_cache: per-workspace single sign-on),
+`sso` (sso_domains, sso_connections, sso_flows, sso_saml_cache: per-workspace single sign-on;
+sso_domain_policies, sso_domain_captures: domain control),
 `scim` (scim_tokens, scim_users, scim_groups, scim_group_members: SCIM 2.0 provisioning under
 `/scim/v2`), `privacy` (data_exports: personal and workspace data exports; see "Enterprise
-identity and data"), `audit` (audit_events, audit_chains: the append-only audit log), `admin` (no
+identity and data"), `audit` (audit_events, audit_chains, audit_anchors: the append-only audit log
+and signed checkpoints of its heads), `siem` (siem_sinks: the audit log streamed to workspaces'
+SIEMs; see "Audit log, admin console and workspace policies"), `admin` (no
 table: the admin console of team workspaces; see "Audit log, admin console and workspace
 policies"), `activity` (board_activity, board_seen: the activity feed and "changes since your last visit"; see "Activity" below), `ai`
 (ai_workspace_settings, ai_usage: AI board actions with a provider the operator or a workspace
@@ -1181,7 +1254,8 @@ see "Issue trackers" below), `search` (search_entries, search_sources: the searc
 through the outbox, `GET /search`), `events` (events, event_board_states, event_pending_boards: the
 event stream), `docs` (no table: the doc app — a doc is a boards container of kind 'doc' whose
 document realtime stores; see "Docs and native live embeds"), `site` (no table: serves the built
-marketing site at `/`; see "Marketing site"), `webhooks` (webhook_endpoints, webhook_deliveries: workspace webhooks) — the last
+marketing site at `/`; see "Marketing site"), `analytics` (no table: Google Analytics' settings
+endpoint, runtime and frame; see "Analytics"), `webhooks` (webhook_endpoints, webhook_deliveries: workspace webhooks) — the last
 three in "Search, the event stream and webhooks" below — `backup` (no table: `.freero` board
 backups, see below), `share` (no table: the installed app's share target, see "Installable app"), `slack` (no table: Slack link unfurls for the operator's Slack app, see "Integrations" below), `walkthroughs`
 (walkthroughs, walkthrough_views, walkthrough_comments) and `decisions` (decisions), in "Walkthroughs
@@ -1263,7 +1337,8 @@ reports" below).
   (board sockets) treats it as signed out. Emailed links carry 256-bit single-use tokens stored as
   sha256 and deleted on use (one `DELETE … RETURNING`, so two concurrent uses can't both win).
   Proving an address (verification link, reset, email change, an invite link mailed to it) fires
-  `onEmailVerified`, where members turns that address's pending invites into memberships; an
+  `onEmailVerified` — so does an account born verified (a provider or the organization's directory
+  vouched for it: `insertAccount`), where members turns that address's pending invites into memberships; an
   unverified account never picks up invites and can't invite or share by link.
 - Sign-in methods (`modules/auth`): `oidc.ts` is a generic OpenID Connect relying party
   (openid-client: authorization code + PKCE, state, nonce, id-token validation) configured by issuer
@@ -1508,7 +1583,9 @@ members with roles owner / admin / member / guest (separate from board roles).
   an account: see "Guests"), `liveEmbeds` (links may open as live frames; enforced by every
   viewer's client, the frames being third-party pages the CSP already confines), `boardEmbeds`
   (its boards may be embedded on other sites, #2; enforced by boards' `boardEmbedding`, which the
-  embed page's framing header, its sockets and oEmbed all ask). All other
+  embed page's framing header, its sockets and oEmbed all ask), `linkPassword` / `linkMaxDays`
+  (#39: what a board's link needs before it is turned on or changed; see "Co-owners, board
+  sharing settings and moving boards"). All other
   policies are enforced by the endpoint that does the work;
   `BoardSummary.permissions` only tells the UI.
 - Team templates (KAI-96): owners/admins of the workspace a template is shared with may unshare
@@ -1533,11 +1610,18 @@ members with roles owner / admin / member / guest (separate from board roles).
   tests, `SSO_DNS_SERVERS` for operators, never skipped). Only a VERIFIED domain counts, and one
   workspace at most holds it: it routes sign-ins (`GET /api/sso/discover`, by domain only), lets the
   workspace's IdP vouch for addresses at it, scopes SCIM provisioning and "Enforce SSO".
-- **SSO** (`sso/signIn.ts`): SP-initiated only. SAML via `@node-saml/node-saml` (signed assertion
-  required, audience = the workspace's entity ID, `validateInResponseTo: always`, assertion-ID
-  replay cache — both in `sso_saml_cache`, per workspace, shared by instances, consumed in one
-  statement) plus our Recipient check on the verified assertion; claims are read only from the
-  verified assertion. OIDC reuses `auth/oidc.ts`. The SAML POST is cross-site (the one
+- **SSO** (`sso/signIn.ts`): SAML via `@node-saml/node-saml` (signed assertion required, audience =
+  the workspace's entity ID, `validateInResponseTo: ifPresent`, assertion-ID replay cache kept until
+  the assertion's NotOnOrAfter — both in `sso_saml_cache`, per workspace, shared by instances,
+  consumed in one statement) plus our Recipient check on the verified assertion; claims are read
+  only from the verified assertion. A response that answers a request must answer one we sent,
+  once. **IdP-initiated** (#107; the IdP's app tile, an unsolicited response — which kind it is comes
+  from the VERIFIED InResponseTo only) is refused (`sso_unsolicited`) unless the connection's
+  `idp_initiated` switch is on (off by default); then its `Destination` must also be this ACS, its
+  RelayState counts only as a same-origin path (`unsolicitedReturnPath`), and the claims are parked
+  on a new flow bound by cookie to the browser that posted, finished by the same same-site GET
+  (same JIT, Enforce-SSO and audit, `initiatedBy: identity_provider`). Single logout and encrypted
+  assertions: #13. OIDC reuses `auth/oidc.ts`. The SAML POST is cross-site (the one
   `allowCrossSitePost` in `platform/security.ts`), so it only parks the verified claims on the flow;
   a same-site GET carrying the HttpOnly cookie set at start finishes it — only the browser that
   started a sign-in can complete it. Account rules: `auth.resolveDirectoryLogin` (identity
@@ -1550,6 +1634,22 @@ members with roles owner / admin / member / guest (separate from board roles).
   shortens that one session. Enforcing needs a sign-in that went through and an owner as
   break-glass (exempt while still an owner), and ends the domain's non-SSO sessions; pointing the
   connection at another IdP drops enforcement.
+- **Domain control** (#64, `sso/domainControl.ts`; any VERIFIED domain, with or without SSO): only
+  accounts that proved an address at the domain are listed or taken in (an unverified claim is
+  anyone's), and only the one workspace holding the domain verified can. Admins bring existing
+  accounts in: each is emailed, `sso_domain_captures` remembers the address and the date, and the
+  `sso:domain-capture` job makes them members after the grace period if the account still has
+  that address, verified, and the domain is still the workspace's (changing the address is the
+  opt-out); their own boards are never moved. "Add new sign-ups" (`sso_domain_policies`) joins an
+  account the moment it verifies an address there (auth's `onEmailVerified`). "Block other team
+  workspaces" refuses `createTeamWorkspace` through workspaces' `onTeamWorkspaceCreation` seam
+  (403 `workspace_creation_blocked`, naming the admins). Joins use the SSO default role. Audited:
+  `sso.domain_*`, `sso.workspace_creation_refused` (in the managing workspace's log).
+- **Invite-only servers** (`auth/signups.ts`, `SIGNUPS=invite-only`, for self-hosters): signup and a
+  first personal-provider sign-in make an account only for an address something expects —
+  `onSignupExpected` checks registered by members and workspaces (a live invite) and sso (a domain
+  that adds sign-ups), `SIGNUP_DOMAINS`, operators. Directory-made accounts (SSO JIT, SCIM) pass:
+  a workspace that proved the domain vouches for them.
 - **SCIM** (`scim/`): bearer tokens per workspace (sha256; rotate = swap in one step, or overlap).
   Filters (`filter.ts`) and PATCH (`patch.ts`) are generic over the resource JSON, as Okta and
   Entra send them. Provisioned people are accounts at verified domains; groups map, by admins in
@@ -1570,7 +1670,8 @@ members with roles owner / admin / member / guest (separate from board roles).
   enforcement, every SSO sign-in and refusal, just-in-time joins), `scim.*` (tokens, group
   mappings, provisioning, deprovisioning — actor null: the directory), `workspace.export_*` in the
   workspace's log; a person's own `account.export_*` only in their account's log (no fan-out).
-- **Seams**: `workspaces.onWorkspaceDeletionHold` (legal holds; refused deletion with 409).
+- **Seams**: `workspaces.onWorkspaceDeletionHold` (legal holds; refused deletion with 409),
+  `workspaces.onTeamWorkspaceCreation` (domain control), `auth.onSignupExpected` (invite-only).
 - **Admin console**: tabs Single sign-on and Provisioning next to Security; the workspace export
   under Data (pages/admin/AdminIdentity.tsx).
 
@@ -1615,7 +1716,7 @@ approval lets the requester in at once.
 
 ### Share-link password and expiry (`boards/linkProtection.ts`, KAI-145)
 
-- The owner may give a board's link a password (scrypt, auth's `hashPassword`) and an expiry. The
+- The owner (or a co-owner, #122) may give a board's link a password (scrypt, auth's `hashPassword`) and an expiry. The
   expiry is applied where a board is read (`repo.toBoard`: `linkAccess` reads 'none' from then on,
   for everyone, like an operator's block); a job (`boards:link-expiry`, every 10 s, one instance)
   re-checks the live sockets of links that just expired, so link-only visitors are disconnected.
@@ -1628,6 +1729,65 @@ approval lets the requester in at once.
   the link would let that person in after the password; `POST /boards/:id/link-unlock` (and the
   guest join / `/guest/boards/:id/unlock`) check it, rate limited per IP and per board + person,
   refusals audited (`board.link_password_refused`), changes audited (`board.link_protection_changed`).
+- A link-only visitor disconnected because the link just got a password (socket closed 4403) is
+  offered the password form in place: the board page (accounts and guests) re-asks for the board
+  through `Host.onConnectionEnded` and shows `LinkPassword` when the answer is
+  `link_password_required` (#39).
+
+### Co-owners, board sharing settings and moving boards (#122, #123, #39, #124)
+
+- **Co-owners** (`board_members.co_owner`, written only by members' repo; `role` stays 'editor'):
+  an editor membership that also manages the board's sharing. `members/roles.ts` `resolveCoOwner`
+  decides whether it counts (not while the workspace blocks the person, not for someone outside a
+  workspace with `externalSharing: 'none'` — exactly when `resolveRole` ignores the membership);
+  `managesSharing(role, coOwner)` (owner or co-owner) is the ONE check for members' roles,
+  removing people, revoking any invite, deciding (and being told about) access requests, the link and its password /
+  expiry, embedding (#2) and the board's sharing settings. Ownership itself — trash, delete,
+  transfer, moving to another workspace — stays `role === 'owner'` (`requireAccess(…, 'owner')`),
+  which a co-owner never is, and the owner holds no membership row, so nobody can change or remove
+  the owner's access. On the wire a co-owner reads `role: 'editor'` plus `coOwner: true`
+  (`BoardSummary`, `BoardMember`, the public API's Board / Doc / Member, MCP `search_boards`), and
+  the socket's role message says 'editor': a client — or a server instance, mid-deploy — that
+  doesn't know co-owners treats them as the editors they also are, never as owners. Setting it:
+  `PATCH /boards/:id/members/:userId { role: 'coowner' }` (any other role ends it), audited as
+  `board.member_role_changed` with the roles as PATCH takes them; member events carry
+  `coOwner` / `previousCoOwner`. Inside the board a co-owner is an editor (hidden frames, layers,
+  facilitation), except protected locks, which co-owners may set and lift like the owner (`mayProtect`).
+- **A board's own sharing settings** (#123; `boards.editors_can_share`, `boards.viewers_can_export`,
+  boards' repo; `PATCH /boards/:id { sharing }`, owners and co-owners, `board.sharing_settings_changed`).
+  "Editors can share" off: members' `requireMayInvite` refuses an editor's invite / resend with 403
+  `board_sharing_restricted` (the share dialog says why). "Viewers and commenters can copy and
+  export" off: boards' `requireDownload` — the one check behind exports, duplicates, templates,
+  backups, file downloads, the outline, the public API, MCP and AI — refuses viewers, commenters and
+  guests, like the workspace's downloads policy does (audited `board.download_refused`, `by:
+  'board'`); `BoardSummary.permissions.canExport` / `canCopy` tell the UI, and the engine puts
+  nothing on the clipboard when `Host.board.canCopy` is false. Both are ANDed with the workspace's
+  policies: a board can be stricter than its workspace, never looser. Nothing prevents a screenshot;
+  the dialog says so.
+- **Link policy** (#39; `workspaces.link_password`, `workspaces.link_max_days`): boards'
+  `checkLinkPolicy` checks the link as the whole PATCH leaves it (link access, password, expiry
+  validated together BEFORE anything is stored, protection written first), and `shareByLink` (an
+  app's "Share with team") the same way. Turning a link on (or back on) or changing its role needs
+  everything the policy asks; a link that stays as it is may be made safer step by step but never
+  weaker. Links that were on before the policy keep working; `GET /workspaces/:id/admin/link-compliance`
+  (boards' `linksOutOfPolicy`) lists them in the admin console. The policy change itself is
+  `workspace.policies_changed`.
+- **Moving a board to another workspace** (#124; `POST /boards/:id/move`, boards' `moveToWorkspace`):
+  its owner, a full member of the target (or it is their personal workspace), and the SOURCE's
+  downloads policy must let them take the content out (`via: 'move'`). One row update keeps the
+  id, content, comments, files, versions, memberships and pending invites; access is resolved from
+  the target from the next request on (old team access ends; the target's two-step requirement,
+  downloads, external sharing and guest policies apply). What the target forbids is turned off in
+  the same transaction — a link above its `linkSharing` is lowered, a link the owner couldn't share
+  there or without the password / expiry it requires is turned off, embedding off where
+  `boardEmbeds` is off — and returned as `adjusted`. Audited as `board.moved_workspace` in BOTH
+  workspaces, a `board.moved` event in each (`toWorkspace` / `fromWorkspace`), live sockets
+  re-resolved on every instance. Other modules keep their per-workspace state right through boards'
+  `onBoardMovedWorkspace` (after commit): trackers pause issues linked through the old team's
+  connections (`pauseLinksOutside`; `syncLink` refuses a team connection of another workspace than
+  the board's anyway). Team templates are copies with their own workspace and are not touched.
+  Duplicating takes `{ workspaceId, projectId }` (where the person may create boards, createBoard's
+  checks); the dashboard's Duplicate and "Move to another workspace" dialogs pick both.
 
 ### Activity (`modules/activity`, `realtime/changes.ts`, KAI-44)
 
@@ -1772,7 +1932,8 @@ audit and admin controls are the same code.
   accounts and accounts awaiting deletion. 401/403 carry a `WWW-Authenticate` challenge naming the
   protected-resource metadata (RFC 9728), as MCP clients expect.
 - **Scopes** (`API_SCOPES` in `@freero/shared`, one model for REST and MCP): `boards:read`,
-  `boards:write`, `boards:suggest`, `comments:write`, `members:read`, `members:write`. Effective
+  `boards:write`, `boards:suggest`, `comments:write`, `members:read`, `members:write`, `audit:read`
+  (a team workspace's audit log, for its owners/admins: `api/audit.ts`). Effective
   power = the person's role on the board AND the scope: a viewer's write-scoped token still can't
   write.
 - **Suggestions** (KAI-169, see "Suggestions" below): `POST /boards/:id/suggestions` (and
@@ -2352,7 +2513,22 @@ module isn't the natural call and for the operator CLI: modules/audit registers 
   pruned one, so an edited row, a gap, a dropped newest event or oldest events removed outside
   retention all show when the chain is checked (admin console "Integrity", `npm run admin --
   audit:verify <workspace>`). Someone with database write access could rewrite a whole chain and
-  its head; the head hash shown to admins (and in every export) is what they anchor elsewhere.
+  its head consistently; against that, the `audit:anchor` job (hourly) signs every head that moved
+  into `audit_anchors` (append-only; `seal`'s sibling `mac` under SESSION_SECRET, rotation-aware,
+  `chain.ts` `AnchorCheck`), and the check fails when a checkpoint still in retention doesn't match
+  the stored event at its seq — the rewriter can't sign their new head. Streams to a SIEM carry the
+  chain outside the database altogether (below).
+- **Streams to a SIEM** (#17, `modules/siem`, admin console Audit log tab): Splunk HEC, Microsoft
+  Sentinel (Entra ID client credentials → Logs Ingestion API), a generic HTTPS collector (signed
+  like webhooks) or syslog over TLS (certificate verified). Each sink's cursor is the seq of the
+  workspace chain `w:<id>` — handed out under the head's row lock, so seqs commit in order and a
+  cursor never passes an event still in flight. The `siem:deliver` job sends what follows the
+  cursor in order, at least once; a failed batch is retried with backoff, never skipped. Records
+  are the console's `AuditEvent` (admin's `toAuditEvents`) with their hashes, plus an hourly signed
+  `freero.audit.head`. Secrets (tokens, the collector URL, the signing secret) are one sealed blob,
+  never returned. Outbound like webhooks: https / TLS only, our own DNS check against private
+  addresses, no redirects (`SIEM_PRIVATE_ENDPOINTS` for on-prem). `SIEM=false` removes it. SIEMs
+  that pull use `GET /api/v1/workspaces/:id/audit` (`audit:read`, owners/admins; same cursor).
 - No foreign keys: the log outlives the workspaces, boards and accounts it names. Actor names are
   resolved when read (a deleted account reads "Deleted user"); targets keep the label they had.
 - Retention (`audit:retention` job, hourly): each workspace's `auditRetentionDays`, accounts' own

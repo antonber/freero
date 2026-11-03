@@ -2,8 +2,9 @@ import { StickyNote } from 'lucide-react';
 import { STICKY_COLORS } from '@freero/shared';
 import { defineTool, useToolGhost, useToolOptions } from '@engine';
 import { ColorSwatches } from '@ui';
-import { COLOR_HEX, COLOR_NAMES, DEFAULT_COLOR, STICKY_SIZE, TOOL_ID, colorFromHex, type StickyToolOptions } from './lib/constants';
+import { COLOR_HEX, COLOR_NAMES, DEFAULT_COLOR, TOOL_ID, colorFromHex, toolDims, type StickyToolOptions } from './lib/constants';
 import { stickyAt } from './lib/actions';
+import { BoxControl } from './lib/BoxControl';
 
 export default defineTool({
   id: TOOL_ID,
@@ -25,7 +26,7 @@ export default defineTool({
   },
 
   Options: ({ editor }) => {
-    const { color = DEFAULT_COLOR } = useToolOptions<StickyToolOptions>(TOOL_ID);
+    const { color = DEFAULT_COLOR, shape = 'square', size = 'm' } = useToolOptions<StickyToolOptions>(TOOL_ID);
     return (
       <div className="fr-sticky-options">
         <div className="fr-sticky-options__label">Sticky color</div>
@@ -34,9 +35,16 @@ export default defineTool({
           names={COLOR_NAMES}
           value={STICKY_COLORS[color]}
           onChange={(hex) => editor.setToolOptions(TOOL_ID, { color: colorFromHex(hex) })}
-          columns={4}
-          size={26}
+          columns={6}
+          size={24}
           aria-label="Sticky color"
+        />
+        <div className="fr-sticky-options__label">Shape and size</div>
+        <BoxControl
+          shape={shape}
+          size={size}
+          onShape={(next) => editor.setToolOptions(TOOL_ID, { shape: next })}
+          onSize={(next) => editor.setToolOptions(TOOL_ID, { size: next })}
         />
       </div>
     );
@@ -44,15 +52,17 @@ export default defineTool({
 
   // Ghost sticky following the cursor (world space).
   Preview: () => {
-    const p = useToolGhost({ w: STICKY_SIZE, h: STICKY_SIZE });
-    const { color = DEFAULT_COLOR } = useToolOptions<StickyToolOptions>(TOOL_ID);
+    const opts = useToolOptions<StickyToolOptions>(TOOL_ID);
+    const { w, h } = toolDims(opts);
+    const p = useToolGhost({ w, h });
+    const color = opts.color ?? DEFAULT_COLOR;
     if (!p) return null;
     return (
       <div
         className="fr-sticky-ghost"
         style={{
-          width: STICKY_SIZE,
-          height: STICKY_SIZE,
+          width: w,
+          height: h,
           background: STICKY_COLORS[color],
           transform: `translate(${p.x}px, ${p.y}px)`,
         }}

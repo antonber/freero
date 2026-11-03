@@ -1,14 +1,26 @@
 // Pure role resolution. owner > explicit member role > link access.
-import type { LinkAccess, Role } from '@freero/shared';
+import type { BoardMemberRole, LinkAccess, Role } from '@freero/shared';
 
 export const ROLE_RANK: Record<Role, number> = { viewer: 1, commenter: 2, editor: 3, owner: 4 };
 export const INVITABLE_ROLES = ['editor', 'commenter', 'viewer'] as const;
 export const LINK_ACCESS_VALUES: LinkAccess[] = ['none', 'viewer', 'commenter', 'editor'];
+/** What a member's role may be set to (#122: 'coowner' is an editor who also manages sharing). */
+export const BOARD_MEMBER_ROLES: readonly BoardMemberRole[] = ['coowner', ...INVITABLE_ROLES];
 
 export type MemberRole = (typeof INVITABLE_ROLES)[number];
 
 export const isMemberRole = (v: unknown): v is MemberRole => (INVITABLE_ROLES as readonly unknown[]).includes(v);
+export const isBoardMemberRole = (v: unknown): v is BoardMemberRole => (BOARD_MEMBER_ROLES as readonly unknown[]).includes(v);
 export const isLinkAccess = (v: unknown): v is LinkAccess => (LINK_ACCESS_VALUES as unknown[]).includes(v);
+
+/** A membership as stored: its role, and whether it is a co-owner's (only ever with role 'editor'). */
+export interface Membership {
+  role: MemberRole;
+  coOwner: boolean;
+}
+
+/** The role a membership is given as, the way PATCH /members takes it. */
+export const memberRoleOf = (m: Membership | null): BoardMemberRole | null => (!m ? null : m.coOwner && m.role === 'editor' ? 'coowner' : m.role);
 
 export function atLeast(role: Role | null, min: Role): boolean {
   return role !== null && ROLE_RANK[role] >= ROLE_RANK[min];
@@ -62,6 +74,20 @@ export function resolveRole(
   const link: Role | null = linkAccess === 'none' || outsider ? null : linkAccess;
   return higher(higher(member, ws?.teamRole ?? null), link);
 }
+
+/**
+ * Whether `userId` co-owns the board (#122): a co-owner membership that counts at all — it gives
+ * nothing while the workspace blocks them, nor to someone outside a workspace that allows no outside
+ * access (exactly when `resolveRole` ignores the membership), and the owner is no co-owner.
+ */
+export function resolveCoOwner(board: { ownerId: string }, userId: string | null, membership: Membership | null, ws?: WorkspaceAccess): boolean {
+  if (!userId || !membership?.coOwner || membership.role !== 'editor') return false;
+  if (ws?.blocked || userId === board.ownerId) return false;
+  return !(ws && !ws.inWorkspace && ws.outsidersBlocked);
+}
+
+/** Owners and co-owners manage a board's sharing (#122): members' roles, the link, embedding, the sharing settings. */
+export const managesSharing = (role: Role | null, coOwner: boolean): boolean => role === 'owner' || (coOwner && role === 'editor');
 
 /**
  * The role of a GUEST (a visitor without an account who joined this board by its link), or null:

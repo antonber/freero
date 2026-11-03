@@ -39,6 +39,10 @@ export interface Board {
   callJitsi: boolean;
   /** Its owner lets other sites embed it live (#2); what the embed shows still follows its sharing. */
   embeddable: boolean;
+  /** #123: editors may invite people (owners and co-owners always may). */
+  editorsCanShare: boolean;
+  /** #123: viewers and commenters may copy, duplicate, export and download it. */
+  viewersCanExport: boolean;
 }
 
 interface Row {
@@ -62,6 +66,8 @@ interface Row {
   call_url: string | null;
   call_jitsi: boolean;
   embeddable: boolean | null;
+  editors_can_share: boolean | null;
+  viewers_can_export: boolean | null;
 }
 
 // Link access is resolved here, once: everything that reads a board (roles, lists, sockets,
@@ -89,6 +95,8 @@ const toBoard = (r: Row, now = Date.now()): Board => ({
   callUrl: openCallUrl(r.call_url),
   callJitsi: r.call_jitsi,
   embeddable: r.embeddable === true,
+  editorsCanShare: r.editors_can_share !== false,
+  viewersCanExport: r.viewers_can_export !== false,
 });
 
 /** A board in service: not in the trash, not taken down by an operator. */
@@ -117,6 +125,9 @@ export interface BoardEventRecord {
   from?: string | null;
   to?: string | null;
   copyOf?: string;
+  /** [additive, #124] board.moved into another workspace: the one it left (in the target's event) / went to (in the source's). */
+  fromWorkspace?: string;
+  toWorkspace?: string;
   /** [additive] 'doc' when the container is a doc (KAI-162); absent for boards. */
   kind?: 'doc';
 }
@@ -400,16 +411,57 @@ export async function purgeTrashedBefore(
 /** Changes only the given fields, in one statement (concurrent PATCHes of different fields both stick). */
 export async function updateBoardFields(
   id: string,
-  patch: { title?: string; description?: string; linkAccess?: LinkAccess; embeddable?: boolean },
+  patch: { title?: string; description?: string; linkAccess?: LinkAccess; embeddable?: boolean; editorsCanShare?: boolean; viewersCanExport?: boolean },
   now: number,
 ): Promise<void> {
   await query(
     `UPDATE boards SET title = COALESCE($2, title), description = COALESCE($3, description),
        link_access = CASE WHEN link_blocked_at IS NULL THEN COALESCE($4, link_access) ELSE link_access END,
-       updated_at = GREATEST(updated_at, $5), embeddable = COALESCE($6, embeddable)
+       updated_at = GREATEST(updated_at, $5), embeddable = COALESCE($6, embeddable),
+       editors_can_share = COALESCE($7, editors_can_share), viewers_can_export = COALESCE($8, viewers_can_export)
      WHERE id = $1`,
-    [id, patch.title ?? null, patch.description ?? null, patch.linkAccess ?? null, new Date(now), patch.embeddable ?? null],
+    [
+      id,
+      patch.title ?? null,
+      patch.description ?? null,
+      patch.linkAccess ?? null,
+      new Date(now),
+      patch.embeddable ?? null,
+      patch.editorsCanShare ?? null,
+      patch.viewersCanExport ?? null,
+    ],
   );
+}
+
+/**
+ * Moves a live board into another workspace (#124) — and project there, or none — in the caller's
+ * transaction, with what the target's policies turned off: its stored link (`linkAccess`, when
+ * given) and embedding (`embeddable: false`). False when there is no such live board.
+ */
+export async function moveToWorkspace(
+  id: string,
+  to: { workspaceId: string; projectId: string | null; linkAccess?: LinkAccess; embeddable?: false },
+  now: number,
+): Promise<boolean> {
+  const rows = await query(
+    `UPDATE boards SET workspace_id = $2, project_id = $3, link_access = COALESCE($4, link_access),
+       embeddable = COALESCE($5, embeddable), updated_at = GREATEST(updated_at, $6)
+     WHERE id = $1 AND ${LIVE} RETURNING 1`,
+    [id, to.workspaceId, to.projectId, to.linkAccess ?? null, to.embeddable ?? null, new Date(now)],
+  );
+  return rows.length > 0;
+}
+
+/**
+ * Live boards of a workspace whose link is on (as stored, expiry or not; not blocked by an
+ * operator): what the admin console checks against the workspace's link policy (#39).
+ */
+export async function linkedBoardsIn(workspaceId: string): Promise<Board[]> {
+  return (
+    await query<Row>(`SELECT * FROM boards WHERE workspace_id = $1 AND ${LIVE} AND link_access <> 'none' AND link_blocked_at IS NULL ORDER BY updated_at DESC`, [
+      workspaceId,
+    ])
+  ).map((r) => toBoard(r));
 }
 
 /** Sets the thumbnail; returns the previous one (to delete its file), or undefined if no such board. */

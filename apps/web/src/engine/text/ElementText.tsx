@@ -117,7 +117,7 @@ function ElementTextImpl(props: ElementTextProps) {
     textAlign: align,
     fontSize,
     lineHeight: LINE_HEIGHT,
-    fontFamily: FONT_VARS[family],
+    fontFamily: FONT_VARS[family] ?? FONT_VARS.sans,
     color,
     ...props.style,
   };

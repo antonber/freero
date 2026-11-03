@@ -36,7 +36,13 @@ from the live registry, so it cannot drift).
 | Alt+F10 | Focus the format toolbar; ←/→, Home/End move along it. |
 | F6 / Shift+F6 | Move focus between the canvas, the tools, the board header, people & sharing, the format toolbar, an open side panel and the view controls. |
 | Alt+Shift+L | **Board as list**: the whole board as a tree (see below). |
-| Mod+/ | Command palette (every action, with why it is unavailable). |
+| Mod+/ or Mod+K | Command palette (every action, with why it is unavailable). With one item selected, Mod+K is "Link to…"; while typing, a text link. |
+| Shift+1 / Alt+1, Shift+2 / Alt+2, Shift+0 / Mod+0 | Zoom to fit, zoom to the selection, zoom to 100%. |
+| Mod+] / Page Up, Mod+[ / Page Down | Bring to front, send to back (a selected PDF turns its pages instead). |
+
+Aliases (Mod+K, Alt+1, Alt+2, Mod+0, Page Up / Down) match the keys people bring from other
+whiteboards. An alias never overrides a command whose own key it is, and a key that types a
+character while you write (Option+1 is "¡" on a Mac) types it. Alt+arrows stay item navigation.
 
 Tab on the canvas walks items rather than leaving the canvas (as in other whiteboards); F6 is the
 documented way between regions, and the canvas' accessible description says so (WCAG 2.1.2).

@@ -4,6 +4,8 @@ import type { BoardElement, ConnectorElement } from '@freero/shared';
 import {
   defineElement,
   ElementText,
+  canvasInk,
+  canvasPaper,
   richTextToPlain,
   useCanEdit,
   useEditingPart,
@@ -76,13 +78,13 @@ function Cap({ parts, color, paper, width }: { parts: CapShape[]; color: string;
             return shape.fill === 'ink' ? (
               <polygon key={i} points={pts(shape.points)} fill={color} stroke={color} strokeWidth={width * 0.5} strokeLinejoin="round" />
             ) : (
-              <polygon key={i} points={pts(shape.points)} fill={paper} stroke={color} strokeWidth={width} strokeLinejoin="round" />
+              <polygon key={i} points={pts(shape.points)} style={{ fill: paper }} stroke={color} strokeWidth={width} strokeLinejoin="round" />
             );
           case 'circle':
             return shape.fill === 'ink' ? (
               <circle key={i} cx={shape.c.x} cy={shape.c.y} r={shape.r} fill={color} />
             ) : (
-              <circle key={i} cx={shape.c.x} cy={shape.c.y} r={shape.r} fill={paper} stroke={color} strokeWidth={width} />
+              <circle key={i} cx={shape.c.x} cy={shape.c.y} r={shape.r} style={{ fill: paper }} stroke={color} strokeWidth={width} />
             );
           case 'line':
             return <line key={i} x1={shape.a.x} y1={shape.a.y} x2={shape.b.x} y2={shape.b.y} stroke={color} strokeWidth={width} strokeLinecap="round" />;
@@ -116,7 +118,8 @@ const ConnectorView = memo(function ConnectorView({ element: c, selected, editin
   if (!samePoly(drawnRoutes.get(c), geo.route.poly)) drawnRoutes.set(c, geo.route.poly);
 
   const sw = c.strokeWidth;
-  const color = c.stroke;
+  // Painted through `color` + currentColor: the default ink turns light on a dark page (theme.ts).
+  const color = 'currentColor';
   const { route } = geo;
   // Line jumps (board setting): hops over the lines beneath that cross this one. Curves cross
   // cleanly enough to tell apart, so they never hop (lines on top of them still do). Zoomed out
@@ -143,7 +146,7 @@ const ConnectorView = memo(function ConnectorView({ element: c, selected, editin
   const labelProps = { c, poly, editor, background, draggable: selected && canEdit && !editing };
   return (
     <>
-      <svg className="fr-cx" width="1" height="1" aria-hidden>
+      <svg className="fr-cx" width="1" height="1" aria-hidden style={{ color: canvasInk(c.stroke) }}>
         <g transform={`translate(${-c.x} ${-c.y})`}>
           {selected && <path className="fr-cx__halo" d={d} strokeWidth={sw + 8} />}
           <path
@@ -155,8 +158,8 @@ const ConnectorView = memo(function ConnectorView({ element: c, selected, editin
             strokeLinecap="round"
             strokeLinejoin="round"
           />
-          <Cap parts={capShape(c.startCap, route.poly[0], route.startTangent, sw)} color={color} paper={background} width={sw} />
-          <Cap parts={capShape(c.endCap, route.poly[route.poly.length - 1], route.endTangent, sw)} color={color} paper={background} width={sw} />
+          <Cap parts={capShape(c.startCap, route.poly[0], route.startTangent, sw)} color={color} paper={canvasPaper(background)} width={sw} />
+          <Cap parts={capShape(c.endCap, route.poly[route.poly.length - 1], route.endTangent, sw)} color={color} paper={canvasPaper(background)} width={sw} />
         </g>
       </svg>
       {/* Main label: the element's textField (Enter / double-click on it), or a new one being typed. */}
@@ -201,7 +204,7 @@ function LabelText(props: { c: ConnectorElement; part?: string; value?: string; 
       align="center"
       vAlign="middle"
       padding={0}
-      color="#17162B"
+      color={canvasInk('#17162B')}
       placeholder="Add text"
       style={{ position: 'relative', inset: 'auto', overflow: 'visible' }}
     />
@@ -262,7 +265,7 @@ function Label(props: {
   return (
     <div
       className={`fr-cx-label${props.editing ? ' is-editing' : ''}${props.draggable ? ' is-draggable' : ''}`}
-      style={{ left: at.x - c.x, top: at.y - c.y, background: props.background }}
+      style={{ left: at.x - c.x, top: at.y - c.y, background: canvasPaper(props.background) }}
       {...drag}
     >
       {props.children}

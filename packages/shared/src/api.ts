@@ -9,6 +9,14 @@ import type { BoardOutline } from './outline/types';
 import type { ActivityResults } from './ydoc';
 
 export type Role = 'owner' | 'editor' | 'commenter' | 'viewer';
+/**
+ * [additive, #122] A role a board member may be given (PATCH /boards/:id/members/:userId): the
+ * invitable roles plus 'coowner', an editor who also manages the board's sharing. A co-owner's
+ * `role` reads 'editor' everywhere (`BoardSummary`, `BoardMember`, the socket's role message) with
+ * `coOwner: true` beside it, so a client that doesn't know co-owners treats them as editors, never
+ * as owners.
+ */
+export type BoardMemberRole = Exclude<Role, 'owner'> | 'coowner';
 export type LinkAccess = 'none' | 'viewer' | 'commenter' | 'editor';
 
 export interface User {
@@ -86,7 +94,35 @@ export interface BoardSummary {
    * still follows the board's sharing exactly. Absent: off.
    */
   embeddable?: boolean;
+  /**
+   * [additive, #122] You co-own it: your `role` reads 'editor' (what clients that don't know
+   * co-owners understand) and you also manage its sharing — members' roles (not the owner's),
+   * invites, the link with its password and expiry, embedding and the sharing settings. Never its
+   * deletion, its transfer or the owner's own access.
+   */
+  coOwner?: boolean;
+  /**
+   * [additive, #123] The board's own sharing settings (its owner and co-owners change them), always
+   * within its workspace's policies: a board can be stricter than its workspace, never looser.
+   * Absent: both on.
+   */
+  sharing?: BoardSharingSettings;
 }
+
+/** [additive, #123] A board's own sharing settings (`BoardSummary.sharing`, PATCH /boards/:id `sharing`). */
+export interface BoardSharingSettings {
+  /** Editors may invite people (owners and co-owners always may). Off: an editor's invite is 403 `board_sharing_restricted`. */
+  editorsCanShare: boolean;
+  /**
+   * Viewers and commenters (guests too) may copy, duplicate, export, back up and download files
+   * from it. Off: those routes answer them 403 `downloads_restricted`, and their clipboard copy is off.
+   */
+  viewersCanExport: boolean;
+}
+/** `code` of a 403: the board's "Editors can share" is off (#123). */
+export const BOARD_SHARING_RESTRICTED = 'board_sharing_restricted';
+/** `code` of a 403 (#39): the workspace requires a password and/or an expiry on board links. */
+export const LINK_POLICY_REQUIRED = 'link_policy_required';
 
 /**
  * Computed by the server for the current user (role + workspace policies); the UI only reflects
@@ -119,6 +155,20 @@ export interface BoardPermissions {
    * Absent: allowed.
    */
   boardEmbeds?: boolean;
+  /**
+   * [additive, #122] You manage the board's sharing: its owner or a co-owner (members' roles, the
+   * link, its password and expiry, embedding, the sharing settings). Absent: `role === 'owner'`.
+   */
+  manageSharing?: boolean;
+  /** [additive, #123] You may invite people: owners, co-owners, and editors while "Editors can share" is on. Absent: owners and editors. */
+  invite?: boolean;
+  /** [additive, #123] You may copy its content to the clipboard (off for viewers and commenters when the board says so). Absent: yes. */
+  canCopy?: boolean;
+  /**
+   * [additive, #39] What the workspace requires of the board's link before it is turned on or
+   * changed: a password, and/or an expiry at most `maxDays` days ahead. Absent: nothing.
+   */
+  linkPolicy?: { passwordRequired: boolean; maxDays: number | null };
 }
 
 // ---- Board call (KAI-134) ----
@@ -265,7 +315,19 @@ export interface WorkspacePolicies {
    * embedding on in the share dialog); 'off' keeps every board out of other sites' frames.
    */
   boardEmbeds: 'on' | 'off';
+  /**
+   * [additive, #39] 'required': a board's link can only be turned on (or changed) with a password.
+   * Links that were already on keep working; the admin console lists the boards that don't comply.
+   */
+  linkPassword: 'optional' | 'required';
+  /**
+   * [additive, #39] Days (1–LINK_MAX_DAYS_LIMIT) a board's link may work at most: turning a link on
+   * or changing it needs an expiry no later than that many days ahead. null: no limit.
+   */
+  linkMaxDays: number | null;
 }
+/** The longest a workspace may let board links live without changing them (#39 `linkMaxDays`). */
+export const LINK_MAX_DAYS_LIMIT = 365;
 export interface WorkspaceSummary {
   id: string;
   name: string;
@@ -333,6 +395,8 @@ export interface BoardMember {
    * list them like anyone else.
    */
   team?: boolean;
+  /** [additive, #122] A co-owner: `role` reads 'editor', and they also manage the board's sharing. */
+  coOwner?: boolean;
 }
 
 // ---- Auth ----
@@ -341,7 +405,7 @@ export interface BoardMember {
 // POST /api/auth/logout   -> { ok: true }                     (clears cookie)
 // GET  /api/auth/session  -> SessionResponse (always 200; user null when signed out)
 // GET  /api/auth/me       -> AuthResponse | 401
-// PATCH /api/auth/me      body { name?, color?, avatarUrl?, timeZone? } -> AuthResponse
+// PATCH /api/auth/me      body { name?, color?, avatarUrl?, timeZone?, theme? } -> AuthResponse
 // PUT  /api/auth/me/avatar raw image body (PNG/JPEG/GIF/WebP) -> AuthResponse (resized server-side)
 // DELETE /api/auth/me/avatar -> AuthResponse
 //
@@ -481,11 +545,13 @@ export type OidcErrorCode =
   | 'wrong_account' // reauth: a different provider account than the one connected
   | 'suspended' // login: Freero's moderators suspended that account
   | 'sso_required' // the address's organization signs its people in only through its own SSO
+  | 'signup_closed' // an invite-only server (SIGNUPS=invite-only) and nothing here expects this address
   // Workspace single sign-on (/api/sso/…):
   | 'sso_unavailable' // the workspace has no enabled SSO connection, or its provider can't be reached
   | 'sso_failed' // the identity provider's answer was refused (signature, audience, expiry, replay, …) or expired
   | 'sso_domain' // the identity provider vouched for an address outside the workspace's verified domains
-  | 'sso_removed'; // the workspace's directory deprovisioned this person (SCIM)
+  | 'sso_removed' // the workspace's directory deprovisioned this person (SCIM)
+  | 'sso_unsolicited'; // the identity provider started the sign-in (its app tile) and the workspace doesn't allow that
 
 /**
  * 403 `code` when a way of signing in (password, reset link, a personal provider, signup) is
@@ -495,8 +561,14 @@ export type OidcErrorCode =
 export const SSO_REQUIRED = 'sso_required';
 
 /** The signed-in user's own account (other people only ever see `User`). */
+/** How the app looks for this person: follow the device, or always light / dark. */
+export type ColorThemePreference = 'system' | 'light' | 'dark';
+export const COLOR_THEME_PREFERENCES: readonly ColorThemePreference[] = ['system', 'light', 'dark'];
+
 export interface Account extends User {
   emailVerified: boolean;
+  /** [additive] Their app theme, kept with the account so it follows them to every device (absent: 'system'). */
+  theme?: ColorThemePreference;
   /**
    * IANA time zone ("Europe/Berlin"): due-date reminders, the "changes on your boards" email and
    * dates in emails follow it. Null until the app detects it from the browser (or you pick one).
@@ -548,7 +620,10 @@ export const ACCOUNT_SUSPENDED = 'account_suspended';
 // POST /api/sso/:workspaceId/saml/acs     <- the identity provider posts SAMLResponse + RelayState;
 //                                          303 to …/saml/finish, which signs in (bound to this browser)
 // GET  /api/sso/:workspaceId/oidc/callback -> 302 to `next`, /login/two-factor?next=…, or /login?error=sso_failed
-// IdP-initiated SAML (an unsolicited response) is refused: tiles in the IdP's portal link to /start.
+// IdP-initiated SAML (an unsolicited response, no InResponseTo: the IdP's app tile) is accepted at the
+// same ACS only while the connection's `idpInitiated` is on (off by default; refused with
+// /login?error=sso_unsolicited otherwise); its RelayState is honoured only as a same-origin path.
+// With it off, a tile can link to /start instead (SP-initiated).
 export interface SsoDomain {
   id: string;
   domain: string;
@@ -570,11 +645,15 @@ export interface SsoConnectionInfo {
   oidc: { issuer: string; clientId: string; hasClientSecret: boolean } | null;
   /** When a sign-in last went through it (enforcing needs one). */
   testedAt: number | null;
+  /** SAML: sign-ins started at the identity provider (its app tile) are accepted. Off by default. */
+  idpInitiated: boolean;
 }
 export interface SsoConnectionInput {
   protocol: SsoProtocol;
   enabled: boolean;
   defaultRole?: Exclude<WorkspaceRole, 'owner'>;
+  /** SAML: accept sign-ins started at the identity provider. Omitted: unchanged. */
+  idpInitiated?: boolean;
   /** SAML: the IdP's metadata XML, or its parts. */
   samlMetadataXml?: string;
   samlEntityId?: string;
@@ -594,6 +673,37 @@ export interface SsoSettings {
 export interface SsoDiscovery {
   sso: { workspaceName: string; startUrl: string; enforced: boolean } | null;
 }
+
+// ---- Domain control (#64; team workspaces with a VERIFIED domain; owners/admins; no SSO needed) ----
+// GET    /api/workspaces/:id/sso/domain-control                     -> DomainControlSettings
+// PUT    /api/workspaces/:id/sso/domain-control  body { captureSignups?, blockWorkspaces? } -> DomainControlSettings
+// POST   /api/workspaces/:id/sso/domain-control/captures body { userIds, graceDays } -> DomainControlSettings
+//        (each person is emailed; after the grace period they are a member, if their address is
+//        still verified and at the domain; their own boards stay theirs)
+// DELETE /api/workspaces/:id/sso/domain-control/captures/:userId     -> DomainControlSettings
+// With `blockWorkspaces`, POST /api/workspaces by someone at the domain is 403
+// { code: WORKSPACE_CREATION_BLOCKED } naming the workspace's admins.
+export interface DomainAccount {
+  userId: string;
+  name: string;
+  email: string;
+  /** member: already in the workspace; pending: joins at `joinsAt`; outside: neither. */
+  status: 'member' | 'pending' | 'outside';
+  joinsAt: number | null;
+}
+export interface DomainControlSettings {
+  /** The workspace's verified domains (domain control applies to these only). */
+  domains: string[];
+  /** Accounts that verify an address at the domains (sign-up, email change) join the workspace at once. */
+  captureSignups: boolean;
+  /** People at the domains can't create team workspaces of their own. */
+  blockWorkspaces: boolean;
+  /** Accounts at the domains that proved their address (unverified ones are never listed or taken in). */
+  accounts: DomainAccount[];
+}
+export const DOMAIN_CAPTURE_GRACE_DAYS = [7, 14, 30] as const;
+/** 403 `code` of POST /api/workspaces when the person's verified domain is managed by another workspace. */
+export const WORKSPACE_CREATION_BLOCKED = 'workspace_creation_blocked';
 
 // ---- Provisioning (SCIM 2.0, team workspaces; owners/admins manage it) ----
 // Base URL: <PUBLIC_URL>/scim/v2 (Users, Groups, ServiceProviderConfig, ResourceTypes, Schemas),
@@ -662,18 +772,47 @@ export interface DataExportInfo {
 // GET    /api/boards/:id           -> { board: BoardSummary }   (also records lastOpenedAt;
 //                                     if the user has no membership but linkAccess != 'none',
 //                                     returns the board with role = linkAccess)
-// PATCH  /api/boards/:id           body UpdateBoardRequest -> { board: BoardSummary }  (owner/editor; linkAccess owner only)
+// PATCH  /api/boards/:id           body UpdateBoardRequest -> { board: BoardSummary }  (owner/editor; linkAccess,
+//                                    link protection, embedding and `sharing`: owners and co-owners)
+// POST   /api/boards/:id/move      body MoveBoardRequest -> MoveBoardResponse  (#124; its owner, a full
+//                                    member of the target workspace — or the target is their personal
+//                                    one; the source's "downloads" policy must let them take it out.
+//                                    Same id, content, comments, files and versions; the target's
+//                                    policies apply at once: what they forbid is turned off, both
+//                                    workspaces audit it, connected people are re-checked)
 // DELETE /api/boards/:id           -> { ok: true }  (owner only) moves it to the trash: gone from every
 //                                    list and for every member (404, sockets closed 4403) until restored;
 //                                    deleted for good TRASH_RETENTION_DAYS later
 // POST   /api/boards/:id/restore   -> { board: BoardSummary }  (owner only; 404 unless in your trash;
 //                                    403 over the board quota)
 // DELETE /api/boards/:id/permanent -> { ok: true }  (owner only; only boards in the trash)
-// POST   /api/boards/:id/duplicate -> { board: BoardSummary }  (copies the Yjs state)
+// POST   /api/boards/:id/duplicate body DuplicateBoardRequest? -> { board: BoardSummary }  (copies the Yjs
+//                                    state; [additive, #124] into `workspaceId` / `projectId` when given —
+//                                    where you may create boards — else the source's when you may, else personal)
 // PUT    /api/boards/:id/star      -> { ok: true }
 // DELETE /api/boards/:id/star      -> { ok: true }
 // PUT    /api/boards/:id/thumbnail body { dataUrl: string } -> { ok: true } (editor+)
 export interface CreateBoardRequest { title?: string; description?: string; workspaceId?: string; projectId?: string | null }
+/** [additive, #124] Where a duplicate goes. */
+export interface DuplicateBoardRequest { workspaceId?: string; projectId?: string | null }
+/** [additive, #124] Where a board moves (another workspace you're in, a project there or none). */
+export interface MoveBoardRequest { workspaceId: string; projectId?: string | null }
+/**
+ * What the target workspace's policies turned off when a board moved there (#124):
+ * `link_lowered` / `link_off`: its link was above the workspace's maximum, or the workspace
+ * requires a password or a shorter expiry it didn't have; `embedding_off`: the workspace doesn't let
+ * its boards be embedded on other sites; `tracker_links_paused`: issues linked through the old
+ * workspace's tracker connections stop syncing (`count`).
+ */
+export type MoveAdjustment =
+  | { kind: 'link_lowered'; to: LinkAccess }
+  | { kind: 'link_off' }
+  | { kind: 'embedding_off' }
+  | { kind: 'tracker_links_paused'; count: number };
+export interface MoveBoardResponse {
+  board: BoardSummary;
+  adjusted: MoveAdjustment[];
+}
 
 /**
  * [additive, KAI-137] What restoring a `.freero` backup did (`POST /api/boards/restore-backup`, the file as
@@ -722,13 +861,18 @@ export interface UpdateBoardRequest {
   description?: string;
   linkAccess?: LinkAccess;
   projectId?: string | null;
-  /** [additive] Owner only (KAI-145): set / change the link's password, or null to remove it. */
+  /** [additive] Owners and co-owners (KAI-145, #122): set / change the link's password, or null to remove it. */
   linkPassword?: string | null;
-  /** [additive] Owner only (KAI-145): when the link stops working (epoch ms, future), or null. */
+  /** [additive] Owners and co-owners (KAI-145, #122): when the link stops working (epoch ms, future), or null. */
   linkExpiresAt?: number | null;
-  /** [additive] Owner only (#2): let other sites embed the board (`BoardSummary.embeddable`). */
+  /** [additive] Owners and co-owners (#2, #122): let other sites embed the board (`BoardSummary.embeddable`). */
   embeddable?: boolean;
+  /** [additive, #123] Owners and co-owners: change the board's sharing settings (`BoardSummary.sharing`); audited. */
+  sharing?: Partial<BoardSharingSettings>;
 }
+// A link change in one PATCH (linkAccess, linkPassword, linkExpiresAt together) is checked as a
+// whole against the workspace's link policy (#39): turning a link on with its password and expiry
+// in the same request works where the policy requires them.
 
 // ---- Version history ----
 // Editors and owners only: an older version can hold content someone removed before sharing the
@@ -814,18 +958,21 @@ export interface SaveTemplateRequest {
 // ---- Members / sharing ----
 // GET    /api/boards/:id/members              -> { members: BoardMember[] }
 // POST   /api/boards/:id/members  body InviteRequest -> InviteResponse
-//        (owner/editor with a verified email, else 403). An existing account becomes a member
+//        (owner, co-owner, or editor while the board's "Editors can share" is on — else 403
+//        `board_sharing_restricted` — with a verified email). An existing account becomes a member
 //        ({ member }); any other address gets a pending invite emailed to it ({ invite }). An editor
-//        re-inviting with a different role gets 409: only the owner changes roles.
-// PATCH  /api/boards/:id/members/:userId body { role } -> { member }   (owner only)
-// DELETE /api/boards/:id/members/:userId -> { ok: true } (owner, or self to leave)
+//        re-inviting with a different role gets 409: only owners and co-owners change roles.
+// PATCH  /api/boards/:id/members/:userId body { role: BoardMemberRole } -> { member }   (owner or co-owner;
+//        'coowner' makes them a co-owner, any other role ends it; audited)
+// DELETE /api/boards/:id/members/:userId -> { ok: true } (owner or co-owner, or self to leave)
+// Co-owners (#122) can never delete the board, transfer it or change the owner's access.
 export interface InviteRequest { email: string; role: Exclude<Role, 'owner'> }
 export type InviteResponse = { member: BoardMember; invite?: never } | { invite: PendingInvite; member?: never };
 
 // Pending invites (people without an account yet). The emailed link is /invite/<token>.
 // GET    /api/boards/:id/invites                    -> { invites: PendingInvite[] }  (owner/editor)
 // POST   /api/boards/:id/invites/:inviteId/resend   -> { invite: PendingInvite }     (new link + expiry; old link dies)
-// DELETE /api/boards/:id/invites/:inviteId          -> { ok: true }  (owner, or the editor who sent it)
+// DELETE /api/boards/:id/invites/:inviteId          -> { ok: true }  (owner or co-owner, or the editor who sent it)
 // GET    /api/invites/:token          -> { invite: InvitePreview } | 404 (unknown, used, revoked or expired)
 // POST   /api/invites/:token/accept   -> { boardId, role }  (signed in; single-use)
 export interface PendingInvite {
@@ -1780,12 +1927,14 @@ export const AUDIT_ACTIONS = {
   'board.purged': 'Board purged after trash retention',
   'board.transferred': 'Transferred board ownership',
   'board.moved': 'Moved a board to another project',
+  'board.moved_workspace': 'Moved a board to another workspace',
   'board.link_sharing_changed': 'Changed link sharing',
   'board.embedding_changed': 'Turned embedding on other sites on or off',
+  'board.sharing_settings_changed': 'Changed who may share, copy or export a board',
   'board.duplicated': 'Duplicated a board',
   'board.exported': 'Exported a board',
   'board.backup_restored': 'Restored a board from a backup file',
-  'board.download_refused': 'Was refused an export, copy or read of a board (downloads policy)',
+  'board.download_refused': 'Was refused an export, copy or read of a board (downloads policy or the board’s setting)',
   'board.file_downloaded': 'Downloaded a file from a board',
   'board.member_invited': 'Shared a board',
   'board.member_role_changed': 'Changed someone’s board access',
@@ -1852,6 +2001,12 @@ export const AUDIT_ACTIONS = {
   'sso.login': 'Signed in with single sign-on',
   'sso.login_refused': 'Single sign-on refused',
   'sso.member_provisioned': 'Joined through single sign-on (just in time)',
+  // Domain control (#64): accounts at a verified domain.
+  'sso.domain_control_changed': 'Changed domain control',
+  'sso.domain_capture_started': 'Told someone at a verified domain they will join the workspace',
+  'sso.domain_capture_cancelled': 'Stopped someone at a verified domain from joining',
+  'sso.domain_account_captured': 'Joined the workspace: account at a verified domain',
+  'sso.workspace_creation_refused': 'Was refused a new team workspace (domain managed by this workspace)',
   // Provisioning (modules/scim).
   'scim.token_created': 'Created a provisioning token',
   'scim.token_rotated': 'Rotated a provisioning token',
@@ -1875,6 +2030,10 @@ export const AUDIT_ACTIONS = {
   'webhook.secret_rotated': 'Rotated a webhook’s signing secret',
   'webhook.deleted': 'Removed a webhook',
   'webhook.disabled': 'A webhook was turned off after failing repeatedly',
+  // Audit streaming to a SIEM (modules/siem, #17). Never the secret.
+  'siem.sink_created': 'Started streaming the audit log to a SIEM',
+  'siem.sink_updated': 'Changed an audit log stream',
+  'siem.sink_deleted': 'Stopped streaming the audit log to a SIEM',
   // Issue-tracker sync (modules/trackers). Never credentials, never board text: issue keys, fields and outcomes.
   'tracker.connection_created': 'Connected an issue tracker',
   'tracker.connection_updated': 'Changed a tracker connection',
@@ -1918,6 +2077,73 @@ export interface AuditIntegrity {
   headHash: string | null;
   /** What is wrong, when not ok. */
   problem: string | null;
+  /**
+   * Signed checkpoints of the chain's head (#17): every hour the server signs the newest seq + hash
+   * with its own secret; each one still in retention must match the stored event at that seq, so a
+   * chain rewritten wholesale (head row included) shows. Streams to a SIEM carry the heads too.
+   */
+  anchors: { checked: number; lastAt: number | null };
+}
+
+// ---- Audit streaming to a SIEM (#17; team workspaces; owners/admins) ----
+// GET    /api/workspaces/:id/admin/siem                     -> { sinks: SiemSinkInfo[] }
+// POST   /api/workspaces/:id/admin/siem    body SiemSinkInput -> { sink, signingSecret? }  (https: the
+//        signing secret, shown once)
+// PATCH  /api/workspaces/:id/admin/siem/:sinkId body Partial<SiemSinkInput> -> { sink }  (a blank secret keeps the stored one)
+// POST   /api/workspaces/:id/admin/siem/:sinkId/test        -> { sink }  (sends a test record now)
+// DELETE /api/workspaces/:id/admin/siem/:sinkId             -> { ok }
+// Each sink receives every event of the workspace's audit log in order (cursor: its chain `seq`),
+// at least once, retried with backoff until it arrives; plus `freero.audit.head` checkpoints.
+// Secrets (HEC token, client secret, bearer token, signing secret) are sealed and never sent back.
+export type SiemKind = 'splunk' | 'sentinel' | 'https' | 'syslog';
+export const SIEM_KINDS: readonly SiemKind[] = ['splunk', 'sentinel', 'https', 'syslog'];
+export const SIEM_MAX_SINKS = 5;
+export interface SiemSettings {
+  /** splunk: the HTTP Event Collector's base URL (https://splunk.example.com:8088); https: the receiving URL. */
+  url?: string;
+  /** splunk */
+  index?: string;
+  sourcetype?: string;
+  /** sentinel (Azure Monitor Logs Ingestion API) */
+  endpoint?: string;
+  dcrId?: string;
+  stream?: string;
+  tenantId?: string;
+  clientId?: string;
+  /** syslog over TLS (RFC 5425) */
+  host?: string;
+  port?: number;
+  /** PEM of a private CA the syslog server's certificate is issued by (optional; public). */
+  caCert?: string;
+}
+export interface SiemSinkInput {
+  kind: SiemKind;
+  name?: string;
+  settings: SiemSettings;
+  /** splunk: HEC token; sentinel: client secret; https: optional bearer token. Never returned. */
+  secret?: string;
+  enabled?: boolean;
+}
+export interface SiemSinkInfo {
+  id: string;
+  kind: SiemKind;
+  name: string;
+  /** Non-secret settings, as saved. */
+  settings: SiemSettings;
+  /** Where it goes, shortened (no secrets). */
+  target: string;
+  hasSecret: boolean;
+  enabled: boolean;
+  /** ok: delivering; failing: the last attempt failed (retrying); paused: turned off. */
+  status: 'ok' | 'failing' | 'paused';
+  /** The newest event `seq` delivered, and how far the log is. */
+  deliveredSeq: number;
+  headSeq: number;
+  lastDeliveredAt: number | null;
+  lastError: string | null;
+  consecutiveFailures: number;
+  nextAttemptAt: number | null;
+  createdAt: number;
 }
 
 // ---- Admin console (KAI-47) and workspace policies (KAI-51) ----
@@ -1937,8 +2163,19 @@ export interface AuditIntegrity {
 // GET   /api/workspaces/:id/audit/export?format=csv|json&(same filters) -> the file (recorded as
 //       'audit.exported')
 // GET   /api/workspaces/:id/audit/integrity             -> { integrity: AuditIntegrity }
+// GET   /api/workspaces/:id/admin/link-compliance       -> { boards: LinkComplianceIssue[] }  (#39:
+//       boards whose link is on but doesn't meet the link policy — links from before it keep working)
 // POST  /api/boards/:id/exported  body { format }       -> { ok: true }  (the web app reports a
 //       client-side export so it is audited; refused like the export itself when not allowed)
+/** A board whose link is on but doesn't meet its workspace's link policy (#39). */
+export interface LinkComplianceIssue {
+  boardId: string;
+  title: string;
+  ownerName: string;
+  linkAccess: LinkAccess;
+  expiresAt: number | null;
+  problems: Array<'no_password' | 'no_expiry' | 'expiry_too_late'>;
+}
 export interface WorkspaceSettings {
   /** Everyone opening the workspace's boards needs two-step verification on (members can't turn it off). */
   requireTwoFactor: boolean;

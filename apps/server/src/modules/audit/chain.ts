@@ -110,3 +110,42 @@ export class ChainVerifier {
     return null;
   }
 }
+
+/** A signed checkpoint of a chain's head (#17): seq + hash, signed by the server when it was the head. */
+export interface Anchor {
+  chain: string;
+  seq: number;
+  hash: string;
+  anchoredAt: number;
+}
+
+/**
+ * Checks a chain's stored events (in seq order, fed one at a time) against its signed checkpoints:
+ * each checkpoint still in retention must carry the server's signature (`signed`), lie within the
+ * chain, and match the stored event at its seq. A chain rewritten wholesale — events and head
+ * consistent with each other — still fails here, since the rewriter can't sign its new head.
+ */
+export class AnchorCheck<A extends Anchor = Anchor> {
+  private readonly bySeq = new Map<number, A>();
+  private problem: string | null = null;
+  readonly checked: number;
+
+  constructor(anchors: A[], head: ChainHead | null, signed: (a: A) => boolean) {
+    const live = anchors.filter((a) => a.seq > (head?.prunedSeq ?? 0));
+    this.checked = live.length;
+    for (const a of live) {
+      if (!signed(a)) this.problem ??= `the checkpoint of event #${a.seq} is not signed by this server`;
+      else if (!head || a.seq > head.seq) this.problem ??= `the log ends before event #${a.seq}, which was signed on ${new Date(a.anchoredAt).toISOString()}`;
+      this.bySeq.set(a.seq, a);
+    }
+  }
+
+  push(e: StoredLink): void {
+    const a = this.bySeq.get(e.seq);
+    if (a && a.hash !== e.hash) this.problem ??= `event #${e.seq} is not the one signed on ${new Date(a.anchoredAt).toISOString()} (the log was rewritten)`;
+  }
+
+  finish(): string | null {
+    return this.problem;
+  }
+}

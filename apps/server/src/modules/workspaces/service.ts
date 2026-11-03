@@ -2,6 +2,8 @@
 // a workspace grants on its boards (asked by modules/boards for every access decision).
 import type { Request } from 'express';
 import {
+  LINK_MAX_DAYS_LIMIT,
+  WORKSPACE_CREATION_BLOCKED,
   WORKSPACE_SETTING_LIMITS,
   type LinkAccess,
   type Role,
@@ -19,6 +21,7 @@ import { newId } from '../../platform/ids';
 import { appUrl, renderMail, sendMailLater } from '../../platform/mail';
 import { recordAudit } from '../audit/index';
 import { getUser, getUsers, hasTwoFactor } from '../auth/index';
+import { creationRefusal } from './creation';
 import { deletionHoldOn } from './holds';
 import {
   boardIdsInWorkspace,
@@ -129,6 +132,9 @@ const teamOnly = (w: Workspace) => {
 };
 
 export async function createTeamWorkspace(userId: string, name: string): Promise<WorkspaceSummary> {
+  // An organization that manages this person's address may keep them to its own workspace (#64).
+  const refusal = await creationRefusal(userId, name);
+  if (refusal) throw new HttpError(403, refusal, WORKSPACE_CREATION_BLOCKED);
   const id = newId(12);
   await repo.transaction(async () => {
     const max = getConfig().maxWorkspacesPerUser;
@@ -163,6 +169,13 @@ function cleanPolicies(v: unknown): Partial<WorkspacePolicies> {
   pick('publicLinks', ['anyone', 'signedIn']);
   pick('liveEmbeds', ['on', 'off']);
   pick('boardEmbeds', ['on', 'off']);
+  pick('linkPassword', ['optional', 'required']);
+  if (p.linkMaxDays !== undefined) {
+    const d = p.linkMaxDays;
+    if (d !== null && (typeof d !== 'number' || !Number.isInteger(d) || d < 1 || d > LINK_MAX_DAYS_LIMIT))
+      throw badRequest(`policies.linkMaxDays must be a whole number of days from 1 to ${LINK_MAX_DAYS_LIMIT}, or null`);
+    out.linkMaxDays = d;
+  }
   return out;
 }
 

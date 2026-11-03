@@ -31,13 +31,25 @@
   "data": {
     "board.created": { "required": ["title"], "properties": { "title": { "type": "string" }, "copyOf": { "type": "string" } } },
     "board.renamed": { "required": ["title", "from", "to"], "properties": { "title": { "type": "string" }, "from": { "type": "string" }, "to": { "type": "string" } } },
-    "board.moved": { "required": ["title", "to"], "properties": { "title": { "type": "string" }, "to": { "type": ["string", "null"] } } },
+    "board.moved": {
+      "required": ["title", "to"],
+      "properties": { "title": { "type": "string" }, "to": { "type": ["string", "null"] }, "fromWorkspace": { "type": "string" }, "toWorkspace": { "type": "string" } }
+    },
     "board.trashed": { "required": ["title"], "properties": { "title": { "type": "string" } } },
     "board.restored": { "required": ["title"], "properties": { "title": { "type": "string" } } },
-    "member.added": { "required": ["userId", "role"], "properties": { "userId": { "type": "string" }, "role": { "enum": ["viewer", "commenter", "editor"] } } },
+    "member.added": {
+      "required": ["userId", "role"],
+      "properties": { "userId": { "type": "string" }, "role": { "enum": ["viewer", "commenter", "editor"] }, "coOwner": { "type": "boolean" } }
+    },
     "member.role_changed": {
       "required": ["userId", "role", "previousRole"],
-      "properties": { "userId": { "type": "string" }, "role": { "enum": ["viewer", "commenter", "editor"] }, "previousRole": { "enum": ["viewer", "commenter", "editor", null] } }
+      "properties": {
+        "userId": { "type": "string" },
+        "role": { "enum": ["viewer", "commenter", "editor"] },
+        "previousRole": { "enum": ["viewer", "commenter", "editor", null] },
+        "coOwner": { "type": "boolean" },
+        "previousCoOwner": { "type": "boolean" }
+      }
     },
     "member.removed": { "required": ["userId"], "properties": { "userId": { "type": "string" } } },
     "item.created": { "required": ["item"], "properties": { "item": { "$ref": "#/item" } } },

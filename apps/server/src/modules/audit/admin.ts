@@ -23,6 +23,7 @@ export default function auditAdmin(ctx: ServerContext): AdminCommand[] {
         args.print(`chain     ${chain}`);
         args.print(`events    ${r.events} (${iso(r.firstAt)} – ${iso(r.lastAt)})`);
         args.print(`head      ${r.headHash ?? '—'}`);
+        args.print(`anchors   ${r.anchors.checked} signed checkpoint(s) checked (newest ${iso(r.anchors.lastAt)})`);
         args.print(r.ok ? 'intact    yes' : `intact    NO: ${r.problem}`);
         if (!r.ok) throw new Error(`the audit log ${chain} is not intact`);
       },

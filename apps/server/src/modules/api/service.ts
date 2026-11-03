@@ -124,6 +124,7 @@ export function apiBoard(req: Request, b: BoardSummary): ApiBoard {
     description: b.description,
     url: boardUrl(req, b.id),
     role: b.role,
+    ...(b.coOwner ? { coOwner: true } : {}),
     workspaceId: b.workspaceId,
     projectId: b.projectId,
     owner: { id: b.ownerId, name: b.ownerName },

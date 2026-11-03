@@ -1,7 +1,7 @@
 // A picture of board content before it lands (AI results, "Insert from text"): the elements (and
 // items that would be moved, at their new places) drawn as a small SVG from their own data. Text is
 // set as React text children, never markup, so nothing in the content can inject HTML here.
-import { STICKY_COLORS, richTextToPlain, type BoardElement } from '@freero/shared';
+import { STICKY_COLORS, richTextToPlain, stickyInk, type BoardElement } from '@freero/shared';
 import './ElementsPreview.css';
 
 export interface ElementsPreviewProps {
@@ -18,11 +18,11 @@ const text = (el: BoardElement): string => {
   return richTextToPlain(e.text ?? '') || richTextToPlain(e.title ?? '');
 };
 
-function Box({ x, y, w, h, value, size, align = 'center', bold = false }: { x: number; y: number; w: number; h: number; value: string; size: number; align?: 'center' | 'left'; bold?: boolean }) {
+function Box({ x, y, w, h, value, size, align = 'center', bold = false, color }: { x: number; y: number; w: number; h: number; value: string; size: number; align?: 'center' | 'left'; bold?: boolean; color?: string }) {
   if (!value) return null;
   return (
     <foreignObject x={x} y={y} width={Math.max(1, w)} height={Math.max(1, h)}>
-      <div className={`fr-elements-preview__text fr-elements-preview__text--${align}`} style={{ fontSize: size, fontWeight: bold ? 600 : 400 }}>
+      <div className={`fr-elements-preview__text fr-elements-preview__text--${align}`} style={{ fontSize: size, fontWeight: bold ? 600 : 400, color }}>
         {value}
       </div>
     </foreignObject>
@@ -46,7 +46,7 @@ function draw(el: BoardElement, byId: Map<string, BoardElement>) {
       return (
         <g key={el.id}>
           <rect x={x} y={y} width={w} height={h} rx={4} fill={STICKY_COLORS[color as keyof typeof STICKY_COLORS] ?? STICKY_COLORS.yellow} />
-          <Box x={x + 10} y={y + 10} w={w - 20} h={h - 20} value={text(el)} size={20} />
+          <Box x={x + 10} y={y + 10} w={w - 20} h={h - 20} value={text(el)} size={20} color={stickyInk(color)} />
         </g>
       );
     }

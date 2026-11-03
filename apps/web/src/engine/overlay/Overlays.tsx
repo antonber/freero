@@ -1,14 +1,24 @@
 // Screen-space overlays: they stay constant size regardless of zoom.
 import { memo, type CSSProperties } from 'react';
 import { useStore } from 'zustand';
-import type { BoardElement, PresenceState } from '@freero/shared';
+import { isProtectedLock, type BoardElement, type PresenceState } from '@freero/shared';
 import { useCore } from '../context';
 import { useCamera, useElements, usePeers, useRole, useSelectedElements } from '../hooks';
 import { worldToScreen } from '../camera/camera';
 import { boundsOf, rectCenter } from '../geometry/geometry';
-import type { Camera } from '../api';
+import type { Camera, Point } from '../api';
 import { ALL_HANDLES, CORNER_HANDLES, type Handle } from '../geometry/transform';
-import { Lock, RotateCw } from 'lucide-react';
+import { Lock, RotateCw, ShieldCheck } from 'lucide-react';
+
+/** The lock badge: a shield on a protected lock (only the owner lifts it). */
+function LockBadge({ el }: { el: BoardElement }) {
+  const guarded = isProtectedLock(el);
+  return (
+    <div className="fr-ov-lock" title={guarded ? 'Locked by the board owner' : 'Locked'}>
+      {guarded ? <ShieldCheck size={11} strokeWidth={2.4} /> : <Lock size={11} strokeWidth={2.4} />}
+    </div>
+  );
+}
 import { readableTextColor } from '@ui';
 import './overlays.css';
 
@@ -80,11 +90,7 @@ function SelectionOverlay() {
           .filter((el) => !ownFrame(el))
           .map((el) => (
             <div key={el.id} className={`fr-ov-outline fr-ov-outline--member${el.locked ? ' is-locked' : ''}`} style={boxStyle(el, cam)}>
-              {el.locked && (
-                <div className="fr-ov-lock" title="Locked">
-                  <Lock size={11} strokeWidth={2.4} />
-                </div>
-              )}
+              {el.locked && <LockBadge el={el} />}
             </div>
           ))}
       <div className={`fr-ov-selection${editingId ? ' is-editing' : ''}${locked ? ' is-locked' : ''}`} style={style}>
@@ -101,7 +107,7 @@ function SelectionOverlay() {
             <RotateCw size={12} strokeWidth={2.4} />
           </div>
         )}
-        {locked && single && <div className="fr-ov-lock" title="Locked"><Lock size={11} strokeWidth={2.4} /></div>}
+        {locked && single && <LockBadge el={els[0]} />}
       </div>
     </>
   );
@@ -125,12 +131,19 @@ function HoverOverlay() {
   );
 }
 
+/** Screen-space SVG path of a lasso loop, closed back to where it began. */
+function lassoPath(points: Point[], cam: Camera): string {
+  const r = (n: number) => Math.round(n * 10) / 10;
+  return `M${points.map((p) => worldToScreen(cam, p)).map((p) => `${r(p.x)} ${r(p.y)}`).join(' L')} Z`;
+}
+
 function GuidesOverlay() {
   const core = useCore();
   const cam = useCamera();
   const guides = useStore(core.ui, (s) => s.guides);
   const gaps = useStore(core.ui, (s) => s.gaps);
   const marquee = useStore(core.ui, (s) => s.marquee);
+  const lasso = useStore(core.ui, (s) => s.lasso);
   const hint = useStore(core.ui, (s) => s.hint);
   return (
     <>
@@ -166,6 +179,11 @@ function GuidesOverlay() {
         const a = worldToScreen(cam, marquee);
         return <div className="fr-ov-marquee" style={{ left: a.x, top: a.y, width: marquee.w * cam.zoom, height: marquee.h * cam.zoom }} />;
       })()}
+      {lasso && lasso.length > 1 && (
+        <svg className="fr-ov-lasso" aria-hidden>
+          <path d={lassoPath(lasso, cam)} />
+        </svg>
+      )}
       {hint && (
         <div className="fr-ov-hint" style={{ transform: `translate(${hint.x + 14}px, ${hint.y + 18}px)` }}>
           {hint.text}

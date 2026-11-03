@@ -1,7 +1,9 @@
 // Built-in select tool: click / shift-click / marquee / move with snapping / resize / rotate /
 // double-click to edit. Pointer down → up runs inside one gesture (one undo step).
+// The lasso tool (#111) is the same tool whose drag on empty canvas draws a freeform loop instead
+// of a marquee; with the select tool, Alt+drag on empty canvas does that too.
 import type { BoardElement } from '@freero/shared';
-import type { Point, Rect, ToolDefinition, ToolPointerEvent } from '../api';
+import type { LassoMode, Point, Rect, ToolDefinition, ToolPointerEvent } from '../api';
 import type { EngineCore } from '../runtime/core';
 import type { DragPreviewState } from '../state/uiStore';
 import {
@@ -31,7 +33,18 @@ import {
 } from '../geometry/transform';
 import { translateElement } from '../editor/clipboard';
 import { viewportRect } from '../camera/camera';
-import { MousePointer2 } from 'lucide-react';
+import { LassoSelect, MousePointer2 } from 'lucide-react';
+
+/** The lasso tool's id; its options hold what a loop selects (`LassoOptions`). */
+export const LASSO_TOOL = 'lasso';
+export interface LassoOptions {
+  /** Items wholly inside the loop (default) or every item it touches. */
+  mode?: LassoMode;
+}
+/** Screen px between the points kept of a lasso loop. */
+const LASSO_STEP_PX = 3;
+/** Points added to a loop before its selection is worked out again while drawing. */
+const LASSO_REFRESH_POINTS = 4;
 
 const DRAG_THRESHOLD_PX = 3;
 const SNAP_PX = 6;
@@ -57,6 +70,7 @@ type State =
       others: Rect[];
     }
   | { kind: 'marquee'; start: Point; base: string[] }
+  | { kind: 'lasso'; points: Point[]; base: string[]; lastScreen: Point; counted: number }
   | {
       kind: 'resize';
       handle: Handle;
@@ -68,7 +82,7 @@ type State =
     }
   | { kind: 'rotate'; pivot: Point; startAngle: number; snapshot: BoardElement[]; single: boolean };
 
-export function createSelectTool(core: EngineCore): ToolDefinition {
+export function createSelectTool(core: EngineCore, variant: 'select' | 'lasso' = 'select'): ToolDefinition {
   let state: State = { kind: 'idle' };
   const ed = () => core.editor;
   const def = (el: BoardElement) => core.editor.getDefinition(el.type);
@@ -370,16 +384,22 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
 
   function finish() {
     state = { kind: 'idle' };
-    ui.setState({ transforming: null, guides: [], gaps: [], marquee: null, hint: null, dropTargetId: null, dragging: null, dragPreview: null });
+    ui.setState({ transforming: null, guides: [], gaps: [], marquee: null, lasso: null, hint: null, dropTargetId: null, dragging: null, dragPreview: null });
   }
 
+  /** Selects what the loop takes now (plus what Shift kept). */
+  function selectInLasso(s: Extract<State, { kind: 'lasso' }>) {
+    s.counted = s.points.length;
+    const mode = ed().getToolOptions<LassoOptions>(LASSO_TOOL).mode ?? 'inside';
+    const ids = ed().expandGroups(ed().elementsInLasso(s.points, mode).map((el) => el.id));
+    ed().select([...new Set([...s.base, ...ids])]);
+  }
+
+  const lassoTool = variant === 'lasso';
   return {
-    id: 'select',
-    label: 'Select',
-    icon: MousePointer2,
-    shortcut: 'v',
-    order: 0,
-    placement: 'main',
+    ...(lassoTool
+      ? ({ id: LASSO_TOOL, label: 'Lasso', icon: LassoSelect, order: 2, placement: 'more', cursor: 'crosshair' } as const)
+      : ({ id: 'select', label: 'Select', icon: MousePointer2, shortcut: 'v', order: 0, placement: 'main' } as const)),
     minRole: 'viewer',
     // Raw points: moves and resizes snap the dragged box themselves (grid, edges, spacing).
     snapToGrid: false,
@@ -438,6 +458,11 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
       }
       const base = e.shiftKey ? ed().getSelection() : [];
       if (!e.shiftKey) ed().clearSelection();
+      if (lassoTool || e.altKey) {
+        state = { kind: 'lasso', points: [e.point], base, lastScreen: e.screen, counted: 1 };
+        ui.setState({ transforming: 'lasso', lasso: [e.point] });
+        return;
+      }
       state = { kind: 'marquee', start: e.point, base };
       ui.setState({ transforming: 'marquee' });
     },
@@ -472,6 +497,14 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
           ui.setState({ marquee: rect });
           return;
         }
+        case 'lasso': {
+          if (distance(e.screen, state.lastScreen) < LASSO_STEP_PX) return;
+          state.points.push(e.point);
+          state.lastScreen = e.screen;
+          if (state.points.length - state.counted >= LASSO_REFRESH_POINTS) selectInLasso(state);
+          ui.setState({ lasso: state.points.slice() });
+          return;
+        }
         case 'resize':
           return applyResize(state, e);
         case 'rotate':
@@ -491,6 +524,8 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
             if (el && !el.locked && ed().mayEdit([el.id])) editAt(el, s.start);
           }
         }
+      } else if (s.kind === 'lasso') {
+        if (s.points.length > s.counted) selectInLasso(s);
       } else if (s.kind === 'translate') {
         updateMembership(s.snapshot.map((el) => el.id));
       } else if (s.kind === 'resize' && s.single) {

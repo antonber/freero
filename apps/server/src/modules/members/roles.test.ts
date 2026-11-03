@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { atLeast, isMemberRole, resolveGuestRole, resolveRole, type WorkspaceAccess } from './roles';
+import { atLeast, isMemberRole, resolveCoOwner, resolveGuestRole, resolveRole, type WorkspaceAccess } from './roles';
 
 const board = (linkAccess: 'none' | 'viewer' | 'commenter' | 'editor' = 'none') => ({ ownerId: 'owner', linkAccess });
 
@@ -54,6 +54,18 @@ describe('guests (visitors without an account on a shared link)', () => {
   it('lets no guest in where the workspace requires sign-in or keeps its boards to its own people', () => {
     expect(resolveGuestRole(board('viewer'), ws({ anonymousLinks: false }))).toBeNull();
     expect(resolveGuestRole(board('viewer'), ws({ outsidersBlocked: true }))).toBeNull();
+  });
+});
+
+describe('co-owners (#122)', () => {
+  const ws = (o: Partial<WorkspaceAccess> = {}): WorkspaceAccess => ({ teamRole: null, inWorkspace: false, outsidersBlocked: false, maxLink: 'editor', anonymousLinks: true, ...o });
+  const coOwner = { role: 'editor' as const, coOwner: true };
+
+  it('a co-owner shut out of the workspace (outsiders not allowed, deactivated) manages nothing there', () => {
+    expect(resolveCoOwner(board(), 'u1', coOwner, ws())).toBe(true);
+    expect(resolveCoOwner(board(), 'u1', coOwner, ws({ outsidersBlocked: true }))).toBe(false);
+    expect(resolveCoOwner(board(), 'u1', coOwner, ws({ outsidersBlocked: true, inWorkspace: true }))).toBe(true);
+    expect(resolveCoOwner(board(), 'u1', coOwner, ws({ blocked: 'deactivated' }))).toBe(false);
   });
 });
 

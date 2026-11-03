@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { EngineCore } from '../runtime/core';
 import type { ElementDefinition } from '../api';
-import { boxDef, bundle, click, drag, frameDef, makeCore } from './harness';
+import { boxDef, bundle, click, drag, dragPath, frameDef, makeCore } from './harness';
 
 let core: EngineCore;
 afterEach(() => core?.destroy());
@@ -108,6 +108,75 @@ describe('select tool', () => {
     const inside = box(20, 20, { frameId: frame });
     drag(core, { x: 500, y: 500 }, { x: 60, y: 60 }); // starts on empty canvas, clips the box corner
     expect(core.editor.getSelection()).toEqual([inside]);
+  });
+
+  describe('lasso', () => {
+    // Ink whose drawn points run along its horizontal centerline (what a pen stroke reports).
+    const inkDef: ElementDefinition<'pen'> = {
+      type: 'pen',
+      Component: () => null,
+      resize: 'free',
+      defaults: () => ({ type: 'pen', w: 200, h: 20, points: [], stroke: '#000', strokeWidth: 2, highlighter: false, baseW: 200, baseH: 20 }),
+      lassoPoints: (el) => Array.from({ length: 11 }, (_, i) => ({ x: (el.w * i) / 10, y: el.h / 2 })),
+    };
+    const withInk = () => makeCore({ bundles: [bundle('boxes', { elements: [boxDef, frameDef, inkDef] as ElementDefinition<any>[] })] });
+    const rectPath = (x0: number, y0: number, x1: number, y1: number) => [
+      { x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }, { x: x0, y: y0 },
+    ];
+    const selected = () => [...core.editor.getSelection()].sort();
+
+    it('a rectangular loop set to "touching" takes exactly what a marquee over the same area takes', () => {
+      core = makeCore();
+      const frame = core.editor.create({ type: 'frame', x: 0, y: 0, w: 400, h: 300 } as never);
+      box(20, 20, { frameId: frame }); // clipped at its corner
+      box(200, 380); // wholly inside
+      box(505, -45, { rotation: 45 }); // its bounding box reaches in, the turned square doesn't
+      box(700, 700); // outside
+      core.editor.create({ type: 'frame', x: 300, y: 320, w: 150, h: 150 } as never); // a frame wholly inside
+      drag(core, { x: 500, y: 500 }, { x: 60, y: 60 });
+      const marquee = selected();
+      core.editor.clearSelection();
+      core.editor.setToolOptions('lasso', { mode: 'touch' });
+      dragPath(core, rectPath(500, 500, 60, 60), { tool: 'lasso' });
+      expect(selected()).toEqual(marquee);
+      expect(marquee).toHaveLength(3);
+    });
+
+    it('"inside" takes items wholly in the loop and a stroke mostly in it, not an item it cuts through', () => {
+      core = withInk();
+      const whole = box(100, 100);
+      const cut = box(380, 100); // half out of the loop
+      const ink = core.editor.create({ type: 'pen', x: 260, y: 300 } as never); // 8 of its 11 points inside, its box not
+      const inkOut = core.editor.create({ type: 'pen', x: 340, y: 360 } as never); // 4 of 11 inside
+      dragPath(core, rectPath(50, 50, 410, 400), { tool: 'lasso' });
+      expect(selected()).toEqual([whole, ink].sort());
+      expect(selected()).not.toContain(cut);
+      expect(selected()).not.toContain(inkOut);
+    });
+
+    it('Alt+drag with the select tool draws a loop: an item in the mouth of a C-shaped loop is left out', () => {
+      core = makeCore();
+      const inBody = box(20, 20);
+      const inMouth = box(150, 150); // inside the loop's bounding box, outside the loop itself
+      // A "C": its opening on the right spans y 130..270 from x 140 to 300.
+      const c = [
+        { x: 0, y: 0 }, { x: 300, y: 0 }, { x: 300, y: 130 }, { x: 140, y: 130 }, { x: 140, y: 270 },
+        { x: 300, y: 270 }, { x: 300, y: 400 }, { x: 0, y: 400 }, { x: 0, y: 0 },
+      ];
+      dragPath(core, c, { alt: true });
+      expect(selected()).toEqual([inBody]);
+      expect(selected()).not.toContain(inMouth);
+    });
+
+    it('Shift adds a loop to the selection, and locked items are never taken', () => {
+      core = makeCore();
+      const kept = box(600, 600);
+      const a = box(100, 100);
+      box(250, 100, { locked: true });
+      core.editor.select([kept]);
+      dragPath(core, rectPath(50, 50, 400, 250), { tool: 'lasso', shift: true });
+      expect(selected()).toEqual([kept, a].sort());
+    });
   });
 
   it('shift-click toggles an element out of the selection', () => {

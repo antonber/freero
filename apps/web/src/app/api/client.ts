@@ -1,4 +1,5 @@
 import type {
+  Account,
   CreateProblemRequest,
   OwnProblemReport,
   ProblemListResponse,
@@ -44,6 +45,11 @@ import type {
   AdminMember,
   AuditEvent,
   AuditIntegrity,
+  BoardMemberRole,
+  DuplicateBoardRequest,
+  LinkComplianceIssue,
+  MoveBoardRequest,
+  MoveBoardResponse,
   WorkspaceSettings,
   WorkspaceUsage,
   AcceptInviteResponse,
@@ -86,6 +92,9 @@ import type {
   DataExportInfo,
   ScimGroupMapping,
   ScimSettings,
+  DomainControlSettings,
+  SiemSinkInfo,
+  SiemSinkInput,
   SsoConnectionInput,
   SsoDiscovery,
   SsoSettings,
@@ -126,6 +135,7 @@ import type {
 } from '@freero/shared';
 import type { BacklinksResponse, ResolveObjectsResponse, RestoreBackupResponse } from '@freero/shared';
 import { BACKUP_MEDIA_TYPE } from '@freero/shared';
+import { track } from '../analytics/bridge';
 import type {
   CreateDecisionRequest,
   CreateWalkthroughRequest,
@@ -206,7 +216,7 @@ export const api = {
   loginTwoFactor: (code: string) => request<AuthResponse>('POST', '/api/auth/login/two-factor', { code }),
   signup: (body: SignupRequest) => request<AuthResponse>('POST', '/api/auth/signup', body),
   logout: () => request<{ ok: true }>('POST', '/api/auth/logout'),
-  updateMe: (body: Partial<Pick<User, 'name' | 'color' | 'avatarUrl'>> & { timeZone?: string }) =>
+  updateMe: (body: Partial<Pick<Account, 'name' | 'color' | 'avatarUrl' | 'theme'>> & { timeZone?: string }) =>
     request<AuthResponse>('PATCH', '/api/auth/me', body),
   async uploadAvatar(file: Blob): Promise<AuthResponse> {
     const res = await fetch('/api/auth/me/avatar', {
@@ -283,8 +293,12 @@ export const api = {
         (scope.workspace ? `&workspace=${encodeURIComponent(scope.workspace)}` : '') +
         (scope.project ? `&project=${encodeURIComponent(scope.project)}` : ''),
     ),
+  // Every board the app creates (blank, from a template link, from shared images) is counted here.
   createBoard: (body: CreateBoardRequest = {}) =>
-    request<{ board: BoardSummary }>('POST', '/api/boards', body),
+    request<{ board: BoardSummary }>('POST', '/api/boards', body).then((r) => {
+      track({ name: 'board_created' });
+      return r;
+    }),
   getBoard: (id: string) => request<{ board: BoardSummary }>('GET', `/api/boards/${id}`),
   // docs (KAI-162): containers like boards — /api/boards/:id serves their summary, sharing, versions
   createDoc: (body: CreateDocRequest = {}) => request<CreateDocResponse>('POST', '/api/docs', body),
@@ -308,8 +322,11 @@ export const api = {
   deleteBoard: (id: string) => request<{ ok: true }>('DELETE', `/api/boards/${id}`),
   restoreBoard: (id: string) => request<{ board: BoardSummary }>('POST', `/api/boards/${id}/restore`),
   deleteBoardForever: (id: string) => request<{ ok: true }>('DELETE', `/api/boards/${id}/permanent`),
-  duplicateBoard: (id: string) =>
-    request<{ board: BoardSummary }>('POST', `/api/boards/${id}/duplicate`),
+  /** A copy, where you chose (#124) or else where the server places it (its workspace when you may, else personal). */
+  duplicateBoard: (id: string, to?: DuplicateBoardRequest) =>
+    request<{ board: BoardSummary }>('POST', `/api/boards/${id}/duplicate`, to ?? {}),
+  /** Into another workspace you're in (#124; its owner): what the target's policies turned off comes back too. */
+  moveBoard: (id: string, to: MoveBoardRequest) => request<MoveBoardResponse>('POST', `/api/boards/${id}/move`, to),
   /** Hands the board to `userId` (you keep editor access). */
   transferBoard: (id: string, userId: string) => request<{ board: BoardSummary }>('POST', `/api/boards/${id}/transfer`, { userId }),
   star: (id: string) => request<{ ok: true }>('PUT', `/api/boards/${id}/star`),
@@ -321,7 +338,7 @@ export const api = {
   listMembers: (id: string) =>
     request<{ members: BoardMember[] }>('GET', `/api/boards/${id}/members`),
   invite: (id: string, body: InviteRequest) => request<InviteResponse>('POST', `/api/boards/${id}/members`, body),
-  setMemberRole: (id: string, userId: string, role: Exclude<Role, 'owner'>) =>
+  setMemberRole: (id: string, userId: string, role: BoardMemberRole) =>
     request<{ member: BoardMember }>('PATCH', `/api/boards/${id}/members/${userId}`, { role }),
   removeMember: (id: string, userId: string) =>
     request<{ ok: true }>('DELETE', `/api/boards/${id}/members/${userId}`),
@@ -435,6 +452,13 @@ export const api = {
   removeSsoConnection: (id: string) => request<SsoSettings>('DELETE', `/api/workspaces/${encodeURIComponent(id)}/sso/connection`),
   enforceSso: (id: string, enforced: boolean, breakGlassUserId: string | null) =>
     request<SsoSettings & { sessionsEnded: number }>('POST', `/api/workspaces/${encodeURIComponent(id)}/sso/enforce`, { enforced, breakGlassUserId }),
+  domainControl: (id: string) => request<DomainControlSettings>('GET', `/api/workspaces/${encodeURIComponent(id)}/sso/domain-control`),
+  setDomainControl: (id: string, body: { captureSignups?: boolean; blockWorkspaces?: boolean }) =>
+    request<DomainControlSettings>('PUT', `/api/workspaces/${encodeURIComponent(id)}/sso/domain-control`, body),
+  captureDomainAccounts: (id: string, userIds: string[], graceDays: number) =>
+    request<DomainControlSettings & { started: number }>('POST', `/api/workspaces/${encodeURIComponent(id)}/sso/domain-control/captures`, { userIds, graceDays }),
+  cancelDomainCapture: (id: string, userId: string) =>
+    request<DomainControlSettings>('DELETE', `/api/workspaces/${encodeURIComponent(id)}/sso/domain-control/captures/${encodeURIComponent(userId)}`),
   discoverSso: (email: string, next: string) =>
     request<SsoDiscovery>('GET', `/api/sso/discover?email=${encodeURIComponent(email)}&next=${encodeURIComponent(next)}`),
   scimSettings: (id: string) => request<ScimSettings>('GET', `/api/workspaces/${encodeURIComponent(id)}/scim`),
@@ -457,6 +481,8 @@ export const api = {
 
   // admin console (owners/admins of a team workspace; checked by the server)
   adminUsage: (id: string) => request<{ usage: WorkspaceUsage }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/usage`),
+  /** Boards whose link is on but doesn't meet the workspace's link policy (#39). */
+  linkCompliance: (id: string) => request<{ boards: LinkComplianceIssue[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/link-compliance`),
   adminMembers: (id: string, q = '') =>
     request<{ members: AdminMember[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/members${q ? `?q=${encodeURIComponent(q)}` : ''}`),
   setMemberDeactivated: (id: string, userId: string, deactivated: boolean) =>
@@ -600,6 +626,14 @@ export const api = {
   resolveObjects: (uris: string[]) => request<ResolveObjectsResponse>('POST', '/api/objects/resolve', { uris }),
   backlinks: (uri: string) => request<BacklinksResponse>('GET', `/api/objects/backlinks?uri=${encodeURIComponent(uri)}`),
 
+  // audit streaming to a SIEM (#17): owners/admins; 404 when the server has none
+  siemSinks: (id: string) => request<{ sinks: SiemSinkInfo[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/siem`),
+  createSiemSink: (id: string, body: SiemSinkInput) =>
+    request<{ sink: SiemSinkInfo; signingSecret?: string }>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/siem`, body),
+  updateSiemSink: (id: string, sinkId: string, patch: Partial<SiemSinkInput> & { rotateSigningSecret?: boolean }) =>
+    request<{ sink: SiemSinkInfo; signingSecret?: string }>('PATCH', `/api/workspaces/${encodeURIComponent(id)}/admin/siem/${encodeURIComponent(sinkId)}`, patch),
+  testSiemSink: (id: string, sinkId: string) => request<{ sink: SiemSinkInfo }>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/siem/${encodeURIComponent(sinkId)}/test`),
+  deleteSiemSink: (id: string, sinkId: string) => request<{ ok: true }>('DELETE', `/api/workspaces/${encodeURIComponent(id)}/admin/siem/${encodeURIComponent(sinkId)}`),
   // webhooks (KAI-105): a team workspace's endpoints (owners/admins; 404 when the server has none)
   webhooks: (id: string) => request<WebhooksAdminResponse>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/webhooks`),
   createWebhook: (id: string, body: WebhookCreateRequest) => request<WebhookSecretResponse>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/webhooks`, body),

@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isGaMeasurementId } from '@freero/shared';
 
 export type RateLimitName =
   | 'api'
@@ -259,6 +260,13 @@ export interface Config {
    */
   operatorEmails: string[];
   /**
+   * Who may create an account here (#64, self-hosting): 'open' (anyone), or 'invite-only' — an
+   * address with a live board or workspace invite, at one of `allowedDomains`, at a domain whose
+   * verified workspace adds new sign-ups, an operator's, or one the organization's own identity
+   * provider or directory vouches for (SSO, SCIM).
+   */
+  signups: { mode: 'open' | 'invite-only'; allowedDomains: string[] };
+  /**
    * How long the kept copy of a file an operator removed is kept for a possible restore before it
    * is deleted for good (KAI-179); never while a report or appeal about it is open. 0: at the next run.
    */
@@ -297,6 +305,13 @@ export interface Config {
    * addresses only.
    */
   oauthClientMetadataLoopback: boolean;
+  /**
+   * Google Analytics 4 (GA_MEASUREMENT_ID, `G-…`): the marketing pages and the app measure page
+   * views and a few product events with it, only after the visitor accepts in the consent banner
+   * (modules/analytics; ARCHITECTURE.md "Analytics"). Null: no Google script, no banner, no CSP
+   * change, anywhere.
+   */
+  googleAnalyticsId: string | null;
   /**
    * The marketing site (apps/site, served by modules/site). Off: `/` sends everyone to `/app`, no
    * marketing page is served and robots.txt keeps crawlers off the whole instance.
@@ -359,6 +374,18 @@ export interface Config {
     maxAttempts: number;
     /** Failed attempts in a row after which Freero turns an endpoint off (and tells who made it). */
     disableAfterFailures: number;
+  };
+  /** Audit log streaming to workspaces' SIEMs (modules/siem, #17). */
+  siem: {
+    /** Off: no stream can be added and nothing is sent (the instance-wide switch). */
+    enabled: boolean;
+    /** Sinks may be plain http and private / loopback addresses (a SIEM on the operator's own network). */
+    privateEndpoints: boolean;
+    timeoutMs: number;
+    /** First retry delay; each further one is 4x longer, capped at 6 hours. */
+    retryBaseMs: number;
+    /** Where Microsoft Sentinel sinks get their Entra ID token (tests point it at a local mock). */
+    azureAuthority: string;
   };
   /**
    * Slack link unfurls (modules/slack, #88; docs/integrations/slack.md): the operator's Slack app.
@@ -595,6 +622,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     else analyticsAttrs[key] = i < 0 ? '' : pair.slice(i + 1).trim();
   }
   const siteAnalytics = analyticsSrc ? { src: analyticsSrc, attrs: analyticsAttrs } : null;
+  // GA_MEASUREMENT_ID=G-…: a GA4 web stream. A Universal Analytics id (UA-…) or a typo would load
+  // nothing and fail silently, so it is refused here.
+  const gaId = str('GA_MEASUREMENT_ID')?.toUpperCase() ?? null;
+  if (gaId !== null && !isGaMeasurementId(gaId))
+    problems.push(`GA_MEASUREMENT_ID must be a Google Analytics 4 measurement id such as G-AB12CD34EF (got "${gaId.slice(0, 40)}"; Universal Analytics UA-… ids no longer work)`);
   // IndexNow's own rule for a key: 8 to 128 characters of a-z, A-Z, 0-9 and dashes. Anything else
   // would make every submission fail later, far from the cause.
   const indexNowKey = str('SITE_INDEXNOW_KEY');
@@ -719,6 +751,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     .map((v) => v.trim().toLowerCase())
     .filter(Boolean);
   for (const e of operatorEmails) if (!EMAIL.test(e)) problems.push(`OPERATOR_EMAILS: "${e}" is not an email address`);
+  // Sign-ups (#64): open, or invite-only with an allow-list of domains.
+  const signupMode = (str('SIGNUPS') ?? 'open').toLowerCase();
+  if (signupMode !== 'open' && signupMode !== 'invite-only') problems.push('SIGNUPS must be open or invite-only');
+  const signupDomains = (str('SIGNUP_DOMAINS') ?? '')
+    .split(',')
+    .map((v) => v.trim().toLowerCase().replace(/^@/, ''))
+    .filter(Boolean);
+  for (const d of signupDomains) if (!/^[a-z0-9-]+([.][a-z0-9-]+)+$/.test(d)) problems.push(`SIGNUP_DOMAINS: ${d} is not a domain`);
   const abuseContactEmail = str('ABUSE_CONTACT_EMAIL');
   if (abuseContactEmail !== null && !EMAIL.test(abuseContactEmail)) problems.push('ABUSE_CONTACT_EMAIL must be an email address');
   // Live embeds (KAI-127): extra origins the operator lets boards frame. Origins only (no path),
@@ -857,6 +897,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     dataExportTtlMs: int('DATA_EXPORT_TTL_HOURS', 168, 1, 24 * 90) * 3_600_000,
     dataExportIntervalMs: int('DATA_EXPORT_INTERVAL_SECONDS', 15, 1, 86_400) * 1000,
     operatorEmails,
+    signups: { mode: signupMode === 'invite-only' ? 'invite-only' : 'open', allowedDomains: signupDomains },
     moderationKeepRemovedMs: int('MODERATION_KEEP_REMOVED_DAYS', 30, 0, 3650) * 86_400_000,
     moderationRetentionIntervalMs: int('MODERATION_RETENTION_INTERVAL_SECONDS', 3600, 1, 86_400) * 1000,
     problemRetentionMs: int('PROBLEM_RETENTION_DAYS', 90, 0, 3650) * 86_400_000,
@@ -866,6 +907,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     publicApi: bool('PUBLIC_API', true),
     openaiAppsChallenge: str('OPENAI_APPS_CHALLENGE'),
     oauthClientMetadataLoopback: bool('OAUTH_CLIENT_METADATA_LOOPBACK', false),
+    googleAnalyticsId: gaId !== null && isGaMeasurementId(gaId) ? gaId : null,
     site: {
       enabled: bool('SITE', true),
       dist: path.resolve(env.FREERO_SITE_DIST || path.join(REPO_ROOT, 'apps/site/dist')),
@@ -885,6 +927,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       retryBaseMs: int('WEBHOOK_RETRY_BASE_MS', 10_000, 10, 3_600_000),
       maxAttempts: int('WEBHOOK_MAX_ATTEMPTS', 7, 1, 20),
       disableAfterFailures: int('WEBHOOK_DISABLE_AFTER_FAILURES', 15, 1, 1000),
+    },
+    siem: {
+      enabled: bool('SIEM', true),
+      privateEndpoints: bool('SIEM_PRIVATE_ENDPOINTS', false),
+      timeoutMs: int('SIEM_TIMEOUT_SECONDS', 15, 1, 120) * 1000,
+      retryBaseMs: int('SIEM_RETRY_BASE_MS', 10_000, 10, 3_600_000),
+      azureAuthority: (url('SIEM_AZURE_AUTHORITY', ['https:', 'http:']) ?? 'https://login.microsoftonline.com').replace(/[/]+$/, ''),
     },
     slack: slackApp(),
     embedExtraOrigins,
