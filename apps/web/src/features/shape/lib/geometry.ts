@@ -16,6 +16,11 @@ export interface ShapeGeometry {
   details: Seg[];
   /** Detail strokes that are always dashed, whatever the line style (a lifeline's stem). */
   dashed?: Seg[];
+  /**
+   * [#133] The outline is only filled, never stroked: the details draw every visible edge (a data
+   * store open on one side). It still bounds hits, anchors and the text area.
+   */
+  open?: boolean;
 }
 
 const K = 0.5522847498; // cubic Bézier circle constant
@@ -635,7 +640,7 @@ function libraryGeometry(kind: ShapeKind, w: number, h: number): ShapeGeometry {
       };
     }
     default:
-      return wireframeGeometry(kind, w, h) ?? { outline: poly([P(0, 0), P(w, 0), P(w, h), P(0, h)]), details: none };
+      return processGeometry(kind, w, h) ?? wireframeGeometry(kind, w, h) ?? { outline: poly([P(0, 0), P(w, 0), P(w, h), P(0, h)]), details: none };
   }
 }
 
@@ -861,7 +866,8 @@ function wireframeTextBox(kind: ShapeKind, w: number, h: number): Rect | null {
       return { x: 0, y: 0, w: w / 3, h: Math.max(1, h - 4) };
     case 'wfNavBar': {
       const d = h * 0.5;
-      return { x: 18 + d, y: 0, w: Math.max(1, w * 0.4), h };
+      const x = Math.min(18 + d, w - 1);
+      return { x, y: 0, w: Math.max(1, Math.min(w * 0.4, w - x)), h };
     }
     case 'wfCard': {
       const ih = wf.cardImage(h);
@@ -878,6 +884,248 @@ function wireframeTextBox(kind: ShapeKind, w: number, h: number): Rect | null {
     case 'wfAvatar':
     case 'wfProgress':
       return { x: 0, y: 0, w, h };
+    default:
+      return null;
+  }
+}
+
+// ---- Value-stream mapping and data-flow symbols (#133): Freero's own drawings from simple
+// proportions of the box, like the sets above.
+
+/** Closed band of half-width `half` along an open polyline (mitred joins, bevelled when sharp). */
+function band(pts: Point[], half: number): Point[] {
+  const norm = (a: Point, b: Point, sign: number) => {
+    const l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    return P(((a.y - b.y) / l) * sign, ((b.x - a.x) / l) * sign);
+  };
+  const side = (sign: number): Point[] => {
+    const out: Point[] = [];
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      const nIn = i > 0 ? norm(pts[i - 1], p, sign) : null;
+      const nOut = i < pts.length - 1 ? norm(p, pts[i + 1], sign) : null;
+      if (!nIn || !nOut) {
+        const n = (nIn ?? nOut) as Point;
+        out.push(P(p.x + n.x * half, p.y + n.y * half));
+        continue;
+      }
+      const mx = nIn.x + nOut.x;
+      const my = nIn.y + nOut.y;
+      const ml = Math.hypot(mx, my);
+      const cos = ml / 2; // cosine of half the turn
+      if (cos < 0.4) out.push(P(p.x + nIn.x * half, p.y + nIn.y * half), P(p.x + nOut.x * half, p.y + nOut.y * half));
+      else out.push(P(p.x + (mx / ml) * (half / cos), p.y + (my / ml) * (half / cos)));
+    }
+    return out;
+  };
+  return [...side(1), ...side(-1).reverse()];
+}
+
+/** Points along a circle arc of radius `r` (angles in radians, y down). */
+function arc(r: number, from: number, to: number, n: number): Point[] {
+  return Array.from({ length: n + 1 }, (_, i) => {
+    const a = from + ((to - from) * i) / n;
+    return P(Math.cos(a) * r, Math.sin(a) * r);
+  });
+}
+
+/** A kaizen burst: uneven spikes, the same on every board. */
+const BURST: Point[] = (() => {
+  const reach = [1, 0.86, 0.97, 0.9, 1, 0.84, 0.95, 0.88, 1, 0.9, 0.93];
+  const lean = [0, 0.05, -0.04, 0.06, -0.02, 0.04, -0.05, 0.03, 0.05, -0.03, 0.02];
+  const n = reach.length;
+  const pts: Point[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = -Math.PI / 2 + (i * 2 * Math.PI) / n;
+    pts.push(P(Math.cos(a + lean[i]) * reach[i], Math.sin(a + lean[i]) * reach[i]));
+    pts.push(P(Math.cos(a + Math.PI / n) * 0.62, Math.sin(a + Math.PI / n) * 0.62));
+  }
+  return pts;
+})();
+
+/** A pull (withdrawal) arrow: three quarters of a thick ring, its head pointing clockwise. */
+const PULL: Point[] = (() => {
+  const a0 = -Math.PI / 4;
+  const a1 = (5 * Math.PI) / 4;
+  const tangent = P(-Math.sin(a1), Math.cos(a1));
+  const at = (r: number) => P(Math.cos(a1) * r, Math.sin(a1) * r);
+  const mid = at(0.8);
+  return [...arc(1, a0, a1, 24), at(1.18), P(mid.x + tangent.x * 0.5, mid.y + tangent.y * 0.5), at(0.42), ...arc(0.6, a1, a0, 24)];
+})();
+
+/** Name row of a VSM process box (the body below is for its operators). */
+const vsmHeader = (h: number) => Math.min(40, h * 0.36);
+/** Id row of a DFD process (its name goes below). */
+const processHeader = (h: number) => Math.min(32, h * 0.3);
+/** Width of the id compartment at a data store's closed end. */
+const storeTab = (w: number) => Math.min(40, w * 0.2);
+/** Depth of an external entity's raised edge. */
+const entityEdge = (m: number) => Math.min(10, m * 0.08);
+
+function processGeometry(kind: ShapeKind, w: number, h: number): ShapeGeometry | null {
+  const m = Math.min(w, h);
+  const none: Seg[] = [];
+  const box = () => poly([P(0, 0), P(w, 0), P(w, h), P(0, h)]);
+  switch (kind) {
+    // ---- value-stream mapping
+    case 'vsmProcess':
+      return { outline: box(), details: line(P(0, vsmHeader(h)), P(w, vsmHeader(h))) };
+    case 'vsmDataBox':
+      return { outline: box(), details: none };
+    case 'vsmSupplier': {
+      const wall = h * 0.38;
+      return {
+        outline: poly([P(0, h), P(0, wall), P(w / 3, 0), P(w / 3, wall), P((2 * w) / 3, 0), P((2 * w) / 3, wall), P(w, 0), P(w, h)]),
+        details: none,
+      };
+    }
+    case 'vsmInventory': {
+      const t = m * 0.08;
+      const top = h * 0.4;
+      const bottom = h * 0.66;
+      return {
+        outline: poly([P(w / 2, 0), P(w, h), P(0, h)]),
+        details: [...line(P(w / 2, top), P(w / 2, bottom)), ...line(P(w / 2 - t, top), P(w / 2 + t, top)), ...line(P(w / 2 - t, bottom), P(w / 2 + t, bottom))],
+      };
+    }
+    case 'vsmPush': {
+      const hl = Math.min(w * 0.36, h * 0.8);
+      const y0 = h * 0.24;
+      const y1 = h * 0.76;
+      const shaft = w - hl;
+      const slant = (y1 - y0) * 0.5;
+      const step = Math.max(8, (y1 - y0) * 0.9);
+      const stripes: Seg[] = [];
+      for (let x = step * 0.5; x + slant < shaft; x += step) stripes.push(...line(P(x + slant, y0), P(x, y1)));
+      return { outline: poly([P(0, y0), P(shaft, y0), P(shaft, 0), P(w, h / 2), P(shaft, h), P(shaft, y1), P(0, y1)]), details: stripes };
+    }
+    case 'vsmPull':
+      return { outline: poly(fitted(PULL, w, h)), details: none };
+    case 'vsmKaizen':
+      return { outline: poly(fitted(BURST, w, h)), details: none };
+    case 'vsmTruck': {
+      const body = h * 0.74;
+      const r = Math.min(h * 0.13, w * 0.08);
+      const wy = h - r;
+      return {
+        outline: [
+          ...poly([P(0, 0), P(w * 0.66, 0), P(w * 0.66, body), P(0, body)]),
+          ...poly([P(w * 0.7, h * 0.26), P(w * 0.86, h * 0.26), P(w, h * 0.5), P(w, body), P(w * 0.7, body)]),
+          ...circle(w * 0.16, wy, r),
+          ...circle(w * 0.46, wy, r),
+          ...circle(w * 0.85, wy, r),
+        ],
+        details: line(P(w * 0.76, h * 0.32), P(w * 0.84, h * 0.32), P(w * 0.92, h * 0.46), P(w * 0.76, h * 0.46), P(w * 0.76, h * 0.32)),
+      };
+    }
+    case 'vsmSupermarket': {
+      const t = Math.max(2, m * 0.08);
+      const pts = [P(0, 0), P(w, 0), P(w, h), P(0, h), P(0, h - t), P(w - t, h - t)];
+      for (const y of [(2 * h) / 3, h / 3]) pts.push(P(w - t, y + t / 2), P(0, y + t / 2), P(0, y - t / 2), P(w - t, y - t / 2));
+      pts.push(P(w - t, t), P(0, t));
+      return { outline: poly(pts), details: none };
+    }
+    case 'vsmFifo': {
+      const hl = Math.min(w * 0.12, h * 0.4);
+      const y = h - Math.min(12, h * 0.18);
+      return {
+        outline: box(),
+        open: true,
+        details: [
+          ...line(P(0, 0), P(w, 0)),
+          ...line(P(0, h), P(w, h)),
+          ...line(P(w * 0.2, y), P(w * 0.8, y)),
+          ...line(P(w * 0.8 - hl * 0.5, y - hl * 0.3), P(w * 0.8, y), P(w * 0.8 - hl * 0.5, y + hl * 0.3)),
+        ],
+      };
+    }
+    case 'vsmElectronic': {
+      const half = m * 0.08;
+      const head = Math.min(w * 0.22, h * 0.5);
+      const end = P(w - head, h * 0.74);
+      const shaft = band([P(0, h * 0.26), P(w * 0.56, h * 0.26), P(w * 0.4, h * 0.74), end], half);
+      const tip = [P(end.x - half * 0.2, end.y - head * 0.5), P(w, end.y), P(end.x - half * 0.2, end.y + head * 0.5)];
+      const fit = fitted([...shaft, ...tip], w, h);
+      return { outline: [...poly(fit.slice(0, shaft.length)), ...poly(fit.slice(shaft.length))], details: none };
+    }
+    case 'vsmKanban': {
+      const c = m * 0.28;
+      return { outline: poly([P(0, 0), P(w - c, 0), P(w, c), P(w, h), P(0, h)]), details: none };
+    }
+    case 'vsmSignal':
+      return { outline: poly([P(0, 0), P(w, 0), P(w / 2, h)]), details: none };
+    case 'vsmGoSee': {
+      // Two lenses and a bridge: a pair of glasses.
+      const lw = w * 0.46;
+      const b = h * 0.06;
+      return {
+        outline: [...ellipse(0, 0, lw, h), ...ellipse(w - lw, 0, lw, h), ...poly([P(lw * 0.98, h / 2 - b), P(w - lw * 0.98, h / 2 - b), P(w - lw * 0.98, h / 2 + b), P(lw * 0.98, h / 2 + b)])],
+        details: none,
+      };
+    }
+    // ---- data flow
+    case 'dfdProcess':
+      return { outline: roundRect(w, h, Math.min(16, m * 0.14)), details: line(P(0, processHeader(h)), P(w, processHeader(h))) };
+    case 'dfdMultiProcess': {
+      const i = Math.min(8, m * 0.07);
+      return { outline: ellipse(0, 0, w, h), details: ellipse(i, i, w - 2 * i, h - 2 * i) };
+    }
+    case 'dfdStore': {
+      const tab = storeTab(w);
+      return { outline: box(), open: true, details: [...line(P(w, 0), P(0, 0), P(0, h), P(w, h)), ...line(P(tab, 0), P(tab, h))] };
+    }
+    case 'dfdStoreLines':
+      return { outline: box(), open: true, details: [...line(P(0, 0), P(w, 0)), ...line(P(0, h), P(w, h))] };
+    case 'dfdExternal': {
+      const d = entityEdge(m);
+      return { outline: box(), details: line(P(d, h), P(d, d), P(w, d)) };
+    }
+    case 'dfdBoundary':
+      return { outline: roundRect(w, h, Math.min(20, m * 0.1)), details: none };
+    default:
+      return null;
+  }
+}
+
+/** Where a value-stream or data-flow kind's text goes (null: not one of them, or the whole box). */
+function processTextBox(kind: ShapeKind, w: number, h: number): Rect | null {
+  const m = Math.min(w, h);
+  const r = (x: number, y: number, rw: number, rh: number): Rect => ({ x: x * w, y: y * h, w: rw * w, h: rh * h });
+  switch (kind) {
+    case 'vsmProcess':
+      return { x: 0, y: 0, w, h: vsmHeader(h) };
+    case 'dfdProcess':
+      return { x: 0, y: processHeader(h), w, h: Math.max(1, h - processHeader(h)) };
+    case 'vsmSupplier':
+      return r(0.06, 0.42, 0.88, 0.54);
+    case 'vsmInventory':
+      return r(0.22, 0.68, 0.56, 0.3);
+    case 'vsmPush':
+      return { x: 0, y: 0, w: Math.max(1, w - Math.min(w * 0.36, h * 0.8)), h };
+    case 'vsmPull':
+      return r(0.28, 0.3, 0.44, 0.4);
+    case 'vsmKaizen':
+      return r(0.16, 0.26, 0.68, 0.48);
+    case 'vsmTruck':
+      return r(0.03, 0.04, 0.6, 0.66);
+    case 'vsmSupermarket':
+      return { x: 0, y: 0, w: Math.max(1, w - Math.max(2, m * 0.08)), h };
+    case 'vsmKanban':
+      return { x: 0, y: m * 0.12, w: Math.max(1, w - m * 0.14), h: Math.max(1, h - m * 0.12) };
+    case 'vsmSignal':
+      return r(0.25, 0.04, 0.5, 0.46);
+    case 'dfdMultiProcess':
+      return r(0.18, 0.18, 0.64, 0.64);
+    case 'dfdStore': {
+      const tab = storeTab(w);
+      return { x: tab, y: 0, w: Math.max(1, w - tab), h };
+    }
+    case 'dfdExternal': {
+      const d = entityEdge(m);
+      return { x: d, y: d, w: Math.max(1, w - d), h: Math.max(1, h - d) };
+    }
+    case 'dfdBoundary':
+      return { x: 8, y: 4, w: Math.max(1, w - 16), h: Math.min(32, h * 0.25) };
     default:
       return null;
   }
@@ -931,10 +1179,10 @@ export function toSvgPath(segs: Seg[], dx = 0, dy = 0): string {
  * Path data for drawing the shape with its stroke kept INSIDE the w×h bounds: the outline is
  * computed for a box inset by half the stroke on every side.
  */
-export function insetPaths(kind: ShapeKind, w: number, h: number, strokeWidth: number): { outline: string; details: string; dashed: string } {
+export function insetPaths(kind: ShapeKind, w: number, h: number, strokeWidth: number): { outline: string; details: string; dashed: string; open: boolean } {
   const half = Math.max(0, strokeWidth) / 2;
   const g = shapeGeometry(kind, Math.max(1, w - 2 * half), Math.max(1, h - 2 * half));
-  return { outline: toSvgPath(g.outline, half, half), details: toSvgPath(g.details, half, half), dashed: toSvgPath(g.dashed ?? [], half, half) };
+  return { outline: toSvgPath(g.outline, half, half), details: toSvgPath(g.details, half, half), dashed: toSvgPath(g.dashed ?? [], half, half), open: !!g.open };
 }
 
 const polyCache = new Map<string, Point[][]>();
@@ -1297,7 +1545,7 @@ export function textBox(kind: ShapeKind, w: number, h: number): Rect {
     case 'netUser':
       return r(0.1, 0.66, 0.8, 0.32);
     default:
-      return wireframeTextBox(kind, w, h) ?? { x: 0, y: 0, w, h };
+      return processTextBox(kind, w, h) ?? wireframeTextBox(kind, w, h) ?? { x: 0, y: 0, w, h };
   }
 }
 

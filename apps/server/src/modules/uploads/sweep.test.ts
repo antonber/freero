@@ -8,6 +8,7 @@ import { initStorage } from '../../platform/storage';
 import { createUser } from '../auth/index';
 import { createBoard } from '../boards/index';
 import { initBoardDoc } from '../realtime/index';
+import { addSticker, createSet, removeSticker } from '../stickers/index';
 import { saveUpload, uploadBytesUsed } from './store';
 import { sweepUploadsLocked, UPLOAD_GRACE_MS } from './sweep';
 
@@ -88,4 +89,18 @@ it('a stored file with no row (its row went with a deleted account, or it predat
   expect(await stored(url)).toBe(true); // first seen now, so it gets the whole grace period
   await sweepUploadsLocked(t0 + UPLOAD_GRACE_MS + HOUR);
   expect(await stored(url)).toBe(false);
+});
+
+it('a team sticker’s image is kept while its set holds it, even when no board shows it, and goes once it is removed from the set', async () => {
+  const owner = await user('Stickerer');
+  const board = await createBoard(owner.id, 'Workshop', '');
+  const set = await createSet(board.id, owner.id, { name: 'Ours' });
+  const sticker = await addSticker(set.id, owner.id, PNG, 'image/png', 'Wave');
+  const t0 = Date.now() + 10 * UPLOAD_GRACE_MS;
+  await sweepUploadsLocked(t0);
+  expect(await sweepUploadsLocked(t0 + 3 * UPLOAD_GRACE_MS)).toBe(0);
+  expect(await stored(sticker.url)).toBe(true);
+  await removeSticker(set.id, sticker.id, owner.id);
+  await sweepUploadsLocked(t0 + 6 * UPLOAD_GRACE_MS);
+  expect(await stored(sticker.url)).toBe(false);
 });

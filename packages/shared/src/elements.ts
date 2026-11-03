@@ -36,6 +36,7 @@ export type ElementType =
   | 'doc'
   | 'kanbanview'
   | 'diagram'
+  | 'chart'
   | 'stickypad'
   | 'icebreaker';
 
@@ -374,7 +375,32 @@ export type ShapeKind =
   | 'wfAvatar'
   | 'wfSlider'
   | 'wfModal'
-  | 'wfProgress';
+  | 'wfProgress'
+  // [additive] Value-stream mapping (#133): process box, data box, supplier / customer, inventory,
+  // push / pull / electronic flows, kaizen burst, shipment, supermarket, FIFO lane, kanban
+  // cards, go-see. Clients that don't know a kind draw its box.
+  | 'vsmProcess'
+  | 'vsmDataBox'
+  | 'vsmSupplier'
+  | 'vsmInventory'
+  | 'vsmPush'
+  | 'vsmPull'
+  | 'vsmKaizen'
+  | 'vsmTruck'
+  | 'vsmSupermarket'
+  | 'vsmFifo'
+  | 'vsmElectronic'
+  | 'vsmKanban'
+  | 'vsmSignal'
+  | 'vsmGoSee'
+  // [additive] Data-flow diagrams (#133): process, multiple process, data stores (closed at one
+  // end, or two lines), external entity, trust boundary.
+  | 'dfdProcess'
+  | 'dfdMultiProcess'
+  | 'dfdStore'
+  | 'dfdStoreLines'
+  | 'dfdExternal'
+  | 'dfdBoundary';
 
 export interface ShapeElement extends BaseElement, TextStyle {
   type: 'shape';
@@ -583,8 +609,14 @@ export interface CardBack {
 
 export interface EmojiElement extends BaseElement {
   type: 'emoji';
-  /** A single emoji grapheme or a stamp id like 'stamp:thumbsup'. */
+  /**
+   * A single emoji grapheme, a stamp or pack sticker id like 'stamp:thumbsup', or [additive, #138]
+   * a team sticker: 'img:/uploads/<name>' (an image from the workspace's sticker sets; clients
+   * show only their own server's uploads).
+   */
   emoji: string;
+  /** [additive, #138] A team sticker's name (its alt text and how it reads in the outline). */
+  name?: string;
 }
 
 /** A mind-map node; root nodes have parentId null. Edges are drawn from parentId. */
@@ -1123,6 +1155,29 @@ export interface DiagramLayer {
   locked?: true | null;
 }
 
+/** [additive, #137] How a chart draws its data. */
+export type ChartKind = 'bar' | 'stackedBar' | 'line' | 'area' | 'pie';
+
+/**
+ * [additive, #137] A chart drawn from a small data grid. Like a table, the element holds only the
+ * grid's STRUCTURE (row and series ids, in order) and how it is drawn; the cells — category labels,
+ * series names, values — live in the `chartCells` collection, one key per cell (charts.ts
+ * `chartCellKey`), so two people editing different cells never overwrite each other. A pie draws the
+ * first series. Older clients draw an "unsupported" box.
+ */
+export interface ChartElement extends BaseElement {
+  type: 'chart';
+  kind: ChartKind;
+  /** Plain text above the plot ('' = none). */
+  title: string;
+  /** Categories (x axis / pie slices), in order. Their labels are cells in column `CHART_LABEL`. */
+  rows: Array<{ id: string }>;
+  /** Series (bars / lines of one colour), in order. Their names are cells in row `CHART_HEAD`. */
+  series: Array<{ id: string; color?: string }>;
+  /** Show the legend (default true when there are two or more series, or for a pie). */
+  legend?: boolean;
+}
+
 /**
  * A diagram (#117; docs/design/diagrams.md): a container whose members — the items whose `frameId`
  * is the diagram, its shapes, frames (subgraphs) and the connectors between them — it keeps laid out
@@ -1169,6 +1224,7 @@ export type BoardElement =
   | DocElement
   | KanbanViewElement
   | DiagramElement
+  | ChartElement
   | StickyPadElement
   | IcebreakerElement;
 

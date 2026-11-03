@@ -2,7 +2,22 @@
 // (@freero/shared layout), place it on free space (never on existing content), and express it as
 // a BoardChange — new elements, moved items, table cells. Pure, so the same plan feeds every sink
 // (sinks.ts): the board itself, a preview, and later the suggestions layer (KAI-169).
-import { APART_GAP, layoutStructure, LayoutError, rotatedBounds, tableCellEntries, withDiagramLayout, withKanbanLayout, type BoardElement, type InsertStructureRequest, type Point } from '@freero/shared';
+import {
+  APART_GAP,
+  CHART_CELLS,
+  chartCellEntries,
+  layoutStructure,
+  LayoutError,
+  rotatedBounds,
+  tableCellEntries,
+  withDiagramLayout,
+  withKanbanLayout,
+  type BoardElement,
+  type ChartCopyContent,
+  type InsertStructureRequest,
+  type Point,
+  type TableCopyContent,
+} from '@freero/shared';
 import type { BoardChange, BoardView } from '../realtime/index';
 import { LOOSE as MOVABLE, placeLaid, type Placed } from './place';
 
@@ -52,8 +67,16 @@ export function planStructure(req: InsertStructureRequest, view: BoardView, newI
     for (const r of riders) if (r.attachedTo === m.id) update.push({ id: r.id, patch: { x: r.x + dx, y: r.y + dy, frameId } });
   }
   update.push(...placed.grow);
+  // Content kept outside elements goes where its element's feature keeps it: a table's cells, a
+  // chart's cells (#137).
   const cells: Record<string, string> = {};
-  for (const [tableId, content] of Object.entries(placed.content)) Object.assign(cells, tableCellEntries(tableId, content));
+  const chartCells: Record<string, string> = {};
+  const typeOf = new Map(placed.elements.map((e) => [e.id, e.type]));
+  for (const [id, content] of Object.entries(placed.content)) {
+    if (typeOf.get(id) === 'chart') Object.assign(chartCells, chartCellEntries(id, content as ChartCopyContent));
+    else Object.assign(cells, tableCellEntries(id, content as TableCopyContent));
+  }
+  const collections = { ...(Object.keys(cells).length ? { tableCells: cells } : {}), ...(Object.keys(chartCells).length ? { [CHART_CELLS]: chartCells } : {}) };
   // A kanban that took items is laid out as open boards would lay it out after the same drop:
   // sorted, filtered, in its swimlanes, each card's row value and status set.
   // A diagram that took steps reflows as open boards would lay it out after the same change (#117);
@@ -64,7 +87,7 @@ export function planStructure(req: InsertStructureRequest, view: BoardView, newI
     change: {
       create: laidOut.create as typeof placed.elements,
       update: laidOut.update,
-      ...(Object.keys(cells).length ? { collections: { tableCells: cells } } : {}),
+      ...(Object.keys(collections).length ? { collections } : {}),
     },
     placed: { ...placed, elements: laidOut.create as typeof placed.elements },
   };

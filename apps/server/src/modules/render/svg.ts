@@ -8,7 +8,9 @@
 // Pure: the caller hands it the elements (as the reader may see them), the board's collections
 // (table cells) and the pictures it may embed (data: URLs by upload URL); nothing is fetched here.
 import {
+  CHART_CELLS,
   STICKY_COLORS,
+  readChart,
   richTextToPlain,
   rotatedBounds,
   tableCellKey,
@@ -16,6 +18,8 @@ import {
   wrapLines,
   type BoardElement,
   type CardElement,
+  type ChartElement,
+  type EmojiElement,
   type ConnectorElement,
   type EmbedElement,
   type FrameElement,
@@ -271,6 +275,157 @@ function icon(el: IconElement): string {
   return `<svg x="${n(el.x)}" y="${n(el.y)}" width="${n(el.w)}" height="${n(el.h)}" viewBox="0 0 24 24" fill="none" stroke="${color(el.color, INK)}" stroke-width="${n(el.strokeWidth, 2)}" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
 }
 
+/** Round axis values covering [lo, hi] (about five). */
+function ticksFor(lo: number, hi: number): number[] {
+  if (lo === hi) hi = lo + 1;
+  const raw = (hi - lo) / 5;
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s >= raw) ?? 10 * mag;
+  const out: number[] = [];
+  for (let v = Math.floor(lo / step) * step; v <= hi + step * 1e-9; v += step) out.push(Math.round(v / step) * step);
+  if (out[out.length - 1] < hi) out.push(out[out.length - 1] + step);
+  return out;
+}
+
+const PIE_COLORS = ['#5B3FF0', '#1FBF96', '#F5A524', '#F0645A', '#3B8BF0', '#E2559B', '#8A6A00', '#4B4A63', '#A794FF', '#7FD9C0'];
+
+/** A chart (#137) from its cells, drawn like the app's: title, axes and bars / lines / areas, or a pie, and a legend. */
+function chart(el: ChartElement, cells: ReadonlyMap<string, unknown>): string {
+  const data = readChart(
+    { id: el.id, rows: Array.isArray(el.rows) ? el.rows : [], series: Array.isArray(el.series) ? el.series : [] },
+    (k) => {
+      const v = cells.get(k);
+      return typeof v === 'string' ? v : undefined;
+    },
+  );
+  const pad = 14;
+  const title = typeof el.title === 'string' ? el.title : '';
+  const titleH = title ? 26 : 0;
+  const pie = el.kind === 'pie';
+  const legend = (el.legend ?? (pie || data.series.length > 1)) ? (pie ? data.labels.map((l, i) => ({ name: l || `Slice ${i + 1}`, color: PIE_COLORS[i % PIE_COLORS.length] })) : data.series) : [];
+  const legendH = legend.length ? 24 : 0;
+  const box = { x: el.x + pad, y: el.y + pad + titleH, w: Math.max(10, el.w - 2 * pad), h: Math.max(10, el.h - 2 * pad - titleH - legendH) };
+  const parts: string[] = [];
+  if (title) parts.push(`<text x="${n(el.x + el.w / 2)}" y="${n(el.y + pad + 15)}" text-anchor="middle" font-family="${FONT}" font-size="15" font-weight="600" fill="${INK}">${esc(title.slice(0, 120))}</text>`);
+  if (pie) {
+    const values = (data.series[0]?.values ?? []).map((v) => (v && v > 0 ? v : 0));
+    const total = values.reduce((a, b) => a + b, 0);
+    const r = Math.max(4, Math.min(box.w, box.h) / 2 - 2);
+    const cx = box.x + box.w / 2;
+    const cy = box.y + box.h / 2;
+    let a = -Math.PI / 2;
+    values.forEach((v, i) => {
+      if (!v || !total) return;
+      const da = (v / total) * Math.PI * 2;
+      const c = PIE_COLORS[i % PIE_COLORS.length];
+      if (da >= Math.PI * 2 - 1e-6) parts.push(`<circle cx="${n(cx)}" cy="${n(cy)}" r="${n(r)}" fill="${c}"/>`);
+      else
+        parts.push(
+          `<path d="M${n(cx)} ${n(cy)}L${n(cx + Math.cos(a) * r)} ${n(cy + Math.sin(a) * r)}A${n(r)} ${n(r)} 0 ${da > Math.PI ? 1 : 0} 1 ${n(cx + Math.cos(a + da) * r)} ${n(cy + Math.sin(a + da) * r)}Z" fill="${c}" stroke="#FFFFFF" stroke-width="1.5"/>`,
+        );
+      a += da;
+    });
+  } else {
+    const stacked = el.kind === 'stackedBar';
+    let lo = 0;
+    let hi = 0;
+    data.labels.forEach((_, i) => {
+      let pos = 0;
+      let neg = 0;
+      for (const s of data.series) {
+        const v = s.values[i];
+        if (v === null || v === undefined) continue;
+        if (stacked) {
+          if (v >= 0) pos += v;
+          else neg += v;
+        } else {
+          hi = Math.max(hi, v);
+          lo = Math.min(lo, v);
+        }
+      }
+      if (stacked) {
+        hi = Math.max(hi, pos);
+        lo = Math.min(lo, neg);
+      }
+    });
+    const ticks = ticksFor(lo, hi);
+    const t0 = ticks[0];
+    const t1 = ticks[ticks.length - 1];
+    const axisW = Math.max(...ticks.map((t) => String(+t.toFixed(2)).length)) * 6.6 + 8;
+    const plot = { x: box.x + axisW, y: box.y + 6, w: Math.max(4, box.w - axisW), h: Math.max(4, box.h - 24) };
+    const y = (v: number) => plot.y + plot.h - ((v - t0) / (t1 - t0 || 1)) * plot.h;
+    const band = plot.w / Math.max(1, data.labels.length);
+    const cx = (i: number) => plot.x + band * (i + 0.5);
+    for (const t of ticks)
+      parts.push(
+        `<line x1="${n(plot.x)}" x2="${n(plot.x + plot.w)}" y1="${n(y(t))}" y2="${n(y(t))}" stroke="${MUTED}" stroke-opacity="${t === 0 ? 0.7 : 0.18}"/>` +
+          `<text x="${n(plot.x - 6)}" y="${n(y(t) + 4)}" text-anchor="end" font-family="${FONT}" font-size="11" fill="${MUTED}">${+t.toFixed(2)}</text>`,
+      );
+    data.labels.forEach((l, i) => parts.push(`<text x="${n(cx(i))}" y="${n(plot.y + plot.h + 14)}" text-anchor="middle" font-family="${FONT}" font-size="11" fill="${INK}">${esc(l.slice(0, Math.max(2, Math.floor(band / 6.6))))}</text>`));
+    if (el.kind === 'bar' || stacked) {
+      const groupW = band * 0.72;
+      const barW = stacked ? groupW : groupW / Math.max(1, data.series.length);
+      data.labels.forEach((_, i) => {
+        let pos = 0;
+        let neg = 0;
+        data.series.forEach((s, j) => {
+          const v = s.values[i];
+          if (!v) return;
+          const from = stacked ? (v >= 0 ? pos : neg) : 0;
+          const to = from + v;
+          if (stacked) {
+            if (v >= 0) pos = to;
+            else neg = to;
+          }
+          const x = cx(i) - groupW / 2 + (stacked ? 0 : j * barW);
+          parts.push(`<rect x="${n(x + (stacked ? 0 : 1))}" y="${n(Math.min(y(from), y(to)))}" width="${n(Math.max(1, barW - (stacked ? 0 : 2)))}" height="${n(Math.max(0.5, Math.abs(y(to) - y(from))))}" rx="${stacked ? 0 : n(Math.min(4, barW / 4))}" fill="${color(s.color, INK)}"/>`);
+        });
+      });
+    } else {
+      const base = y(Math.max(t0, Math.min(0, t1)));
+      for (const s of data.series) {
+        const pts = s.values.map((v, i) => (v === null || v === undefined ? null : [cx(i), y(v)]));
+        const runs: number[][][] = [];
+        let run: number[][] = [];
+        for (const p of pts) {
+          if (p) run.push(p);
+          else if (run.length) (runs.push(run), (run = []));
+        }
+        if (run.length) runs.push(run);
+        const c = color(s.color, INK);
+        for (const r of runs) {
+          if (el.kind === 'area') parts.push(`<path d="M${n(r[0][0])} ${n(base)}${r.map(([px, py]) => `L${n(px)} ${n(py)}`).join('')}L${n(r[r.length - 1][0])} ${n(base)}Z" fill="${c}" fill-opacity="0.22"/>`);
+          parts.push(`<path d="${r.map(([px, py], i) => `${i ? 'L' : 'M'}${n(px)} ${n(py)}`).join('')}" fill="none" stroke="${c}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`);
+          for (const [px, py] of r) parts.push(`<circle cx="${n(px)}" cy="${n(py)}" r="3.5" fill="${c}" stroke="#FFFFFF" stroke-width="1.5"/>`);
+        }
+      }
+    }
+  }
+  if (legend.length) {
+    let lx = el.x + pad;
+    const ly = el.y + el.h - pad - 12;
+    for (const it of legend.slice(0, 12)) {
+      const name = it.name.slice(0, 24);
+      parts.push(`<rect x="${n(lx)}" y="${n(ly)}" width="11" height="11" rx="3" fill="${color(it.color, INK)}"/><text x="${n(lx + 17)}" y="${n(ly + 9.5)}" font-family="${FONT}" font-size="11" fill="${INK}">${esc(name)}</text>`);
+      lx += 32 + name.length * 6.6;
+    }
+  }
+  return parts.join('');
+}
+
+/** An emoji item: a team sticker (#138) is its picture; a stamp or emoji is its name in a box. */
+function emoji(el: EmojiElement, data: string | null): string {
+  if (data) return `<image x="${n(el.x)}" y="${n(el.y)}" width="${n(el.w)}" height="${n(el.h)}" href="${esc(data)}" preserveAspectRatio="xMidYMid meet"/>`;
+  const v = String(el.emoji ?? '');
+  return placeholder(el, v.startsWith('stamp:') ? v.slice('stamp:'.length).replace(/[-_]/g, ' ') : v.startsWith('img:') ? (el.name ?? 'Sticker') : v);
+}
+
+/** The upload a team sticker shows (`img:/uploads/<name>`), or null. */
+export const stickerSrc = (el: BoardElement): string | null => {
+  const v = el.type === 'emoji' ? String((el as EmojiElement).emoji ?? '') : '';
+  return v.startsWith('img:/uploads/') ? v.slice('img:'.length) : null;
+};
+
 /** What a picture can't show (a player, a live embed, a type drawn nowhere else): a labelled box. */
 function placeholder(el: BoardElement, label: string): string {
   return (
@@ -336,7 +491,6 @@ const PLACEHOLDER_LABEL: Partial<Record<BoardElement['type'], (el: BoardElement)
   objectlink: () => 'Linked item',
   doc: () => 'Doc',
   code: (el) => String((el as { code?: string }).code ?? '').slice(0, 400),
-  emoji: (el) => String((el as { emoji?: string }).emoji ?? ''),
 };
 
 function draw(el: BoardElement, input: SvgInput): string {
@@ -367,6 +521,12 @@ function draw(el: BoardElement, input: SvgInput): string {
       return icon(el as IconElement);
     case 'connector':
       return connector(el as ConnectorElement);
+    case 'chart':
+      return chart(el as ChartElement, input.collection(CHART_CELLS));
+    case 'emoji': {
+      const src = stickerSrc(el);
+      return emoji(el as EmojiElement, src ? input.imageData(src) : null);
+    }
     default:
       return placeholder(el, PLACEHOLDER_LABEL[el.type]?.(el) ?? el.type);
   }

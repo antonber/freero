@@ -2,7 +2,8 @@
 // Mermaid diagram, a table) and the layout says WHERE, so agents and AI never pick coordinates.
 // Pure and deterministic (ids come from the caller's generator), so the server and the web
 // produce the same elements for the same input.
-import type { BoardElement, CardStatus, ShapeKind, StickyColor, TableCopyContent, StickyShape, StickySize } from '../elements';
+import type { BoardElement, CardStatus, ChartKind, ShapeKind, StickyColor, TableCopyContent, StickyShape, StickySize } from '../elements';
+import type { ChartCopyContent } from '../charts';
 
 /** A new element before it is written: the writer stamps stacking, author and times. */
 export type ElementDraft = BoardElement extends infer E
@@ -123,6 +124,11 @@ export type StructureInput =
   /** Rows of cells → a table (first row the header unless `header: false`). */
   | { kind: 'table'; rows: string[][]; header?: boolean }
   /**
+   * [additive, #137] Rows of cells → a chart: the first row is a corner cell then the series names,
+   * every other row a category label then its values (numbers). `type` default bar.
+   */
+  | { kind: 'chart'; rows: string[][]; type?: ChartKind; title?: string }
+  /**
    * [additive] A written note (a summary): a soft rounded card (a shape) with the title in bold and
    * the text's paragraphs and bullet lines kept.
    */
@@ -172,8 +178,8 @@ export interface ItemInput {
 /** What a layout produced, relative to its own top-left (0, 0). */
 export interface LaidOut {
   elements: ElementDraft[];
-  /** Content kept outside elements, by element id (table cells: TableCopyContent). */
-  content: Record<string, TableCopyContent>;
+  /** Content kept outside elements, by element id (a table's TableCopyContent, a chart's ChartCopyContent). */
+  content: Record<string, TableCopyContent | ChartCopyContent>;
   /** Existing elements moved into the result (their new top-left). */
   moves: Array<{ id: string; x: number; y: number }>;
   size: { w: number; h: number };

@@ -195,7 +195,7 @@ export class BoardChangeError extends Error {}
  */
 const REQUEST_CREATABLE: Record<ElementType, true | string> = {
   sticky: true, shape: true, text: true, connector: true, pen: true, frame: true, image: true, card: true, emoji: true, mindmap: true, table: true, embed: true,
-  icon: true, kanban: true, pdf: true, swimlane: true, objectlink: true, activity: true, code: true, timeline: true, timelinebar: true, kanbanview: true, diagram: true, stickypad: true, icebreaker: true,
+  icon: true, kanban: true, pdf: true, swimlane: true, objectlink: true, activity: true, code: true, timeline: true, timelinebar: true, kanbanview: true, diagram: true, stickypad: true, icebreaker: true, chart: true,
   media: 'app-only: its video or audio must be an upload of the person, sniffed and counted by modules/uploads',
   file: 'app-only: its attachment must be an upload of the person, sniffed and counted by modules/uploads, and is served through the board',
   doc: 'app-only for now: the web app places a doc it just created (Host.docs); a request makes a doc with /docs and links it',

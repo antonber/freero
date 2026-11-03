@@ -38,6 +38,9 @@ import type {
   ResolvedObject,
   Role,
   SessionLimits,
+  Sticker,
+  StickerSet,
+  StickersResponse,
   StrokeStyle,
   SuggestionRecord,
   SuggestionState,
@@ -109,6 +112,16 @@ export interface HostPersonalViews {
   list(): Promise<Array<{ itemId: string; viewId: string; settings: Record<string, unknown> }>>;
   /** null clears them (back to the saved view). */
   save(itemId: string, viewId: string, settings: Record<string, unknown> | null): Promise<void>;
+}
+
+/** [additive, #138] See `Host.stickers` (wire: @freero/shared `StickersResponse`). */
+export interface HostStickers {
+  list(): Promise<StickersResponse>;
+  createSet(name: string): Promise<StickerSet>;
+  /** Stores the image (PNG, SVG, WebP or GIF) through the server's upload checks and adds it. */
+  add(setId: string, file: Blob, name: string): Promise<Sticker>;
+  removeSet(setId: string): Promise<void>;
+  remove(setId: string, stickerId: string): Promise<void>;
 }
 
 /** [additive] Light, dark, or whatever the device uses. */
@@ -185,6 +198,12 @@ export interface Host {
    * in this browser only. Settings are opaque JSON to the host.
    */
   personalViews?: HostPersonalViews;
+  /**
+   * [additive, #138] The board's workspace's own sticker sets (server modules/stickers). Absent
+   * (offline sandbox, guests without an account, embeds): no team stickers. Rejections carry a
+   * message that can be shown (too large, not an image, not allowed).
+   */
+  stickers?: HostStickers;
   /**
    * [additive] WebSocket subprotocols the board's socket offers: how a page without the session
    * cookie signs in (a live view inside an AI assistant sends its short-lived token, KAI-171).

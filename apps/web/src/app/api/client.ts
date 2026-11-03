@@ -150,6 +150,7 @@ import type {
   WorkspaceRole,
   WorkspaceSummary,
 } from '@freero/shared';
+import type { Sticker, StickerSet, StickersResponse } from '@freero/shared';
 import type { BacklinksResponse, ResolveObjectsResponse, RestoreBackupResponse } from '@freero/shared';
 import { BACKUP_MEDIA_TYPE } from '@freero/shared';
 import { track } from '../analytics/bridge';
@@ -785,6 +786,22 @@ export const api = {
   uploadImage: (file: Blob) => upload('/api/uploads', file, file.type || 'application/octet-stream'),
   // any other file: an opaque attachment, only ever downloaded from its board
   uploadAttachment: (file: Blob) => upload('/api/uploads?as=attachment', file, 'application/octet-stream'),
+
+  // team sticker sets (#138): the board's workspace's own stickers
+  stickers: (boardId: string) => request<StickersResponse>('GET', `/api/boards/${encodeURIComponent(boardId)}/stickers`),
+  createStickerSet: (boardId: string, name: string) => request<{ set: StickerSet }>('POST', `/api/boards/${encodeURIComponent(boardId)}/sticker-sets`, { name }),
+  async addSticker(setId: string, file: Blob, name: string): Promise<Sticker> {
+    const path = `/api/sticker-sets/${encodeURIComponent(setId)}/stickers?name=${encodeURIComponent(name)}`;
+    const res = await fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as { error?: string } | null;
+      throw new ApiError(res.status, body?.error || 'Upload failed');
+    }
+    return ((await res.json()) as { sticker: Sticker }).sticker;
+  },
+  removeStickerSet: (setId: string) => request<{ ok: true }>('DELETE', `/api/sticker-sets/${encodeURIComponent(setId)}`),
+  removeSticker: (setId: string, stickerId: string) =>
+    request<{ ok: true }>('DELETE', `/api/sticker-sets/${encodeURIComponent(setId)}/stickers/${encodeURIComponent(stickerId)}`),
   /** The board as a `.freero` backup (downloads policy, audited; KAI-137), with the name the server gave it. */
   async downloadBackup(boardId: string): Promise<{ blob: Blob; name: string }> {
     const res = await fetch(`/api/boards/${encodeURIComponent(boardId)}/backup`, { credentials: 'same-origin' });

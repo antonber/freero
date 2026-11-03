@@ -10,6 +10,8 @@ import type { CallToolResult, ToolAnnotations } from '@modelcontextprotocol/serv
 import {
   API_MAX_DELETE_PER_CALL,
   API_MAX_ITEMS_PER_CALL,
+  CHART_KINDS,
+  CHART_LIMITS,
   API_MAX_URL_ITEMS_PER_CALL,
   blockText,
   DOC_EDIT_OPS,
@@ -23,6 +25,7 @@ import {
   STICKY_SIZES,
   UNTRUSTED_CONTENT_NOTICE,
   type ApiScope,
+  type ChartKind,
   type FieldType,
   type FilterOp,
   type StickyColor,
@@ -898,7 +901,7 @@ export const TOOLS: McpTool[] = [
     name: 'add_diagram',
     title: 'Add a diagram',
     description:
-      'Draws a diagram on a board, laid out by Freero: shapes joined by attached connectors, without overlaps. Give exactly one of: `mermaid` (a flowchart — subgraphs become frames —, a sequenceDiagram, a classDiagram — UML classes with their attributes and operations, inheritance, composition, multiplicities —, an erDiagram — entity tables with keys and crow’s-foot ends — or a stateDiagram-v2), `outline` (nested items, drawn as a mind map or a tree), `orgchart` (people and who they report to), or `graph` (nodes and edges). Flowcharts, class, ER, state and sequence diagrams, trees, org charts and graphs come as one diagram item (its id is the first returned) that keeps itself laid out when steps are added; give `into` a diagram’s id from the outline to add steps to that diagram instead. For a kanban use add_cards with columns. Needs permission to change boards.',
+      'Draws a diagram on a board, laid out by Freero: shapes joined by attached connectors, without overlaps. Give exactly one of: `mermaid` (a flowchart — subgraphs become frames —, a sequenceDiagram, a classDiagram — UML classes with their attributes and operations, inheritance, composition, multiplicities —, an erDiagram — entity tables with keys and crow’s-foot ends — or a stateDiagram-v2), `outline` (nested items, drawn as a mind map or a tree), `orgchart` (people and who they report to), `graph` (nodes and edges), or `chart` (a bar, stacked bar, line, area or pie chart from rows of numbers: people edit its data grid on the board afterwards). Flowcharts, class, ER, state and sequence diagrams, trees, org charts and graphs come as one diagram item (its id is the first returned) that keeps itself laid out when steps are added; give `into` a diagram’s id from the outline to add steps to that diagram instead. For a kanban use add_cards with columns. Needs permission to change boards.',
     scope: 'boards:write',
     annotations: ADD,
     input: {
@@ -933,13 +936,28 @@ export const TOOLS: McpTool[] = [
           direction: z.enum(['TB', 'BT', 'LR', 'RL']).optional(),
         })
         .optional(),
+      chart: z
+        .object({
+          type: z.enum(CHART_KINDS as unknown as [string, ...string[]]).optional().describe('bar (default), stackedBar, line, area or pie (a pie shows the first series).'),
+          title: z.string().max(200).optional(),
+          rows: z
+            .array(z.array(z.string().max(CHART_LIMITS.cell)).min(2).max(CHART_LIMITS.series + 1))
+            .min(2)
+            .max(CHART_LIMITS.rows + 1)
+            .describe('The data grid: the first row is a corner cell then the series names, e.g. [["", "2025", "2026"], ["Q1", "12", "18"], ["Q2", "15", "21"]]; every other row is a category then its numbers ("" for none).'),
+        })
+        .optional()
+        .describe('A chart drawn from a small data grid.'),
       near,
       into: z.string().min(1).max(200).optional().describe('A diagram on the board (its id from the outline) to draw into: the new steps join it and its layout makes room for them.'),
     },
     async run(call, a) {
-      const given = [a.mermaid, a.outline, a.orgchart, a.graph].filter((v) => v !== undefined).length;
-      if (given !== 1) throw new ArgumentError('Give exactly one of mermaid, outline, orgchart or graph.');
-      const structure: StructureInput = a.mermaid
+      const given = [a.mermaid, a.outline, a.orgchart, a.graph, a.chart].filter((v) => v !== undefined).length;
+      if (given !== 1) throw new ArgumentError('Give exactly one of mermaid, outline, orgchart, graph or chart.');
+      if (a.chart && a.into) throw new ArgumentError('A chart is its own item: leave out into.');
+      const structure: StructureInput = a.chart
+        ? { kind: 'chart', rows: a.chart.rows, ...(a.chart.type ? { type: a.chart.type as ChartKind } : {}), ...(a.chart.title ? { title: a.chart.title } : {}) }
+        : a.mermaid
         ? { kind: 'mermaid', source: a.mermaid }
         : a.orgchart
           ? { kind: 'orgchart', people: a.orgchart }
@@ -981,7 +999,7 @@ export const TOOLS: McpTool[] = [
     name: 'propose_changes',
     title: 'Propose changes',
     description:
-      'Proposes content for a board as suggestions that people with edit access accept or reject — the board itself does not change until they do. Takes the same structures as the add_ tools: { "kind": "stickies" | "clusters" | "kanban" | "items" | "note" | "table" | "mermaid" | "mindmap" | "tree" | "orgchart" | "graph", … } (docs/board-outline.md), and the same placement. Use it when this connection may only suggest, or when the person should review first; then open_board so they can.',
+      'Proposes content for a board as suggestions that people with edit access accept or reject — the board itself does not change until they do. Takes the same structures as the add_ tools: { "kind": "stickies" | "clusters" | "kanban" | "items" | "note" | "table" | "chart" | "mermaid" | "mindmap" | "tree" | "orgchart" | "graph", … } (docs/board-outline.md), and the same placement. Use it when this connection may only suggest, or when the person should review first; then open_board so they can.',
     scope: 'boards:suggest',
     annotations: ADD,
     // The suggestions layer (KAI-169) is a structure sink; offered once the server has it.
