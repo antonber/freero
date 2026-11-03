@@ -4,7 +4,7 @@
 import { memo, type PointerEvent as ReactPointerEvent } from 'react';
 import { StickyNote } from 'lucide-react';
 import { STICKY_COLORS, STICKY_INK, stickyInk, type StickyPadElement } from '@freero/shared';
-import { defineElement, useCanEdit, useEditor, useIsExporting, useParticipant, type Editor, type ElementRenderProps, type NewElement, type Point } from '@engine';
+import { defineElement, useCanEdit, useEditor, useIsExporting, useParticipant, type Editor, type ElementRenderProps, type LowDetailPaint, type NewElement, type Point } from '@engine';
 import { DEFAULT_COLOR, STICKY_SIZE, nearestColor } from './constants';
 import { stickyAt } from './actions';
 
@@ -120,6 +120,18 @@ const PadView = memo(function PadView({ element }: ElementRenderProps<StickyPadE
   );
 });
 
+/**
+ * Zoomed out to low detail (#131): the pad as a sticky — the sheets under it a shade darker, the
+ * top sheet in its paper with the glue strip. No shadows, no peel hint.
+ */
+function paintPad(el: StickyPadElement, p: LowDetailPaint) {
+  const paper = STICKY_COLORS[el.color] ?? STICKY_COLORS[DEFAULT_COLOR];
+  p.rect(PAD_STACK, PAD_STACK, el.w - PAD_STACK, el.h - PAD_STACK, paper);
+  p.rect(PAD_STACK, PAD_STACK, el.w - PAD_STACK, el.h - PAD_STACK, '#17162B', 0.12);
+  p.rect(0, 0, el.w - PAD_STACK, el.h - PAD_STACK, paper);
+  p.rect(0, 0, el.w - PAD_STACK, (el.h - PAD_STACK) * GLUE, '#17162B', 0.06);
+}
+
 export const padDefinition = defineElement({
   type: 'stickypad',
   label: { one: 'Sticky pad', many: 'Sticky pads' },
@@ -128,6 +140,7 @@ export const padDefinition = defineElement({
   rotatable: false,
   minSize: { w: 96, h: 96 },
   swatch: (el) => STICKY_COLORS[el.color] ?? STICKY_COLORS.yellow,
+  lowDetail: paintPad,
   sharedStyle: (el) => ({ fill: STICKY_COLORS[el.color] }),
   applySharedStyle: (_el, { fill }) => (fill ? { color: nearestColor(fill) } : null),
   defaults: (): Omit<NewElement<'stickypad'>, 'x' | 'y'> => ({

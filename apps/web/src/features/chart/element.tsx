@@ -1,7 +1,7 @@
 import { memo, useMemo } from 'react';
 import { BarChart3 } from 'lucide-react';
-import { readChart, type ChartElement } from '@freero/shared';
-import { defineElement, useCollection, type ElementRenderProps, type NewElement } from '@engine';
+import { CHART_COLORS, readChart, type ChartElement } from '@freero/shared';
+import { canvasInk, defineElement, useCollection, type ElementRenderProps, type LowDetailPaint, type NewElement } from '@engine';
 import { CELLS, gridRows, readContent, writeContent } from './lib/data';
 import { ChartView } from './lib/ChartView';
 import { DATA_PANEL } from './lib/constants';
@@ -20,6 +20,20 @@ const ChartItem = memo(function ChartItem({ element }: ElementRenderProps<ChartE
   );
 });
 
+/**
+ * Zoomed out to low detail (#131): the chart's plot area, washed with its first series' colour,
+ * and its axes in the default ink (light on a dark page) — the data itself is in a collection and
+ * unreadable at this size anyway.
+ */
+function paintChart(el: ChartElement, p: LowDetailPaint) {
+  const top = el.title ? 26 : 6;
+  const x0 = el.w * 0.08;
+  const y1 = el.h - 20;
+  if (y1 <= top) return;
+  p.rect(x0, top, el.w - x0, y1 - top, el.series[0]?.color || CHART_COLORS[0], 0.18);
+  p.line([{ x: x0, y: top }, { x: x0, y: y1 }, { x: el.w, y: y1 }], canvasInk('#17162B'), 2);
+}
+
 export default defineElement({
   type: 'chart',
   label: { one: 'Chart', many: 'Charts' },
@@ -28,6 +42,7 @@ export default defineElement({
   minSize: { w: 160, h: 120 },
   defaults: (): Omit<NewElement<'chart'>, 'x' | 'y'> => ({ type: 'chart', kind: 'bar', title: '', rows: [{ id: 'r1' }], series: [{ id: 's1' }], w: 480, h: 320 }),
   Component: ChartItem,
+  lowDetail: paintChart,
   swatch: () => '#5B3FF0',
   toPlainText(el, editor) {
     const rows = gridRows(editor.collection<string>(CELLS), el);

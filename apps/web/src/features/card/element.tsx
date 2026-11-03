@@ -11,6 +11,7 @@ import {
   useEditor,
   useIsExporting,
   type ElementRenderProps,
+  type LowDetailPaint,
   type NewElement,
 } from '@engine';
 import { Avatar } from '@ui';
@@ -234,6 +235,26 @@ function FlipCard({ element, front }: { element: CardElement; front: ReactNode }
   );
 }
 
+/**
+ * Zoomed out to low detail (#131): the side that shows — a turned flip card its back's paper, else
+ * the white card with its accent strip (the kanban's colour-by, as the full card shows it) — and
+ * two faint bars for its title. No shadow, no clip, no text layout.
+ */
+function paintCard(el: CardElement, p: LowDetailPaint) {
+  const alpha = p.presentation?.muted ? 0.4 : 1;
+  const radius = isBar(el) ? 6 : 10;
+  if (el.back && el.flipped) {
+    p.box({ fill: el.back.color || BACK_COLORS[0], radius, alpha });
+  } else {
+    p.box({ fill: '#FFFFFF', stroke: 'rgba(23, 22, 43, 0.12)', strokeWidth: 1, radius, alpha });
+    p.rect(0, 0, Math.min(6, el.w), el.h, p.presentation?.accent || el.color || DEFAULT_ACCENT, alpha);
+  }
+  if (isBar(el)) return;
+  const h = Math.min(10, el.h * 0.12);
+  p.rect(22, el.h * 0.22, (el.w - 36) * 0.86, h, '#17162B', 0.16 * alpha);
+  p.rect(22, el.h * 0.22 + h * 2, (el.w - 36) * 0.55, h, '#17162B', 0.16 * alpha);
+}
+
 export default defineElement({
   type: 'card',
   label: { one: 'Card', many: 'Cards' },
@@ -261,6 +282,7 @@ export default defineElement({
     tags: [],
   }),
   Component: CardView,
+  lowDetail: paintCard,
   // Both sides of a flip card (find on board, copy as text).
   toPlainText: (el) => [richTextToPlain(el.title), richTextToPlain(el.description), el.back ? richTextToPlain(el.back.title) : ''].filter(Boolean).join('\n'),
   // The back of a turned flip card is what a double-click edits.
