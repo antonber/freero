@@ -1232,7 +1232,9 @@ document realtime stores; see "Docs and native live embeds"), `site` (no table: 
 marketing site at `/`; see "Marketing site"), `analytics` (no table: Google Analytics' settings
 endpoint, runtime and frame; see "Analytics"), `webhooks` (webhook_endpoints, webhook_deliveries: workspace webhooks) — the last
 three in "Search, the event stream and webhooks" below — `backup` (no table: `.freero` board
-backups, see below), `share` (no table: the installed app's share target, see "Installable app"), `slack` (no table: Slack link unfurls for the operator's Slack app, see "Integrations" below), `walkthroughs`
+backups, see below), `share` (no table: the installed app's share target, see "Installable app"), `slack` (no table: Slack link unfurls for the operator's Slack app, see "Integrations" below), `teams` (no table: the
+Microsoft Teams app — its package, its pages framed by Teams, the bot's link previews — and the
+Microsoft 365 Copilot agent package, see "Microsoft Teams and Microsoft 365 Copilot" below), `walkthroughs`
 (walkthroughs, walkthrough_views, walkthrough_comments) and `decisions` (decisions), in "Walkthroughs
 and decision snapshots" below, `marketplace` (marketplace_listings: community listings of Apps &
 agents; see "Apps & agents" below), `personalviews` (personal_views: a person's own view settings on a
@@ -2171,6 +2173,43 @@ open, and a scope never widens (no foreign key: a board that is gone just sends 
   `docs/api/openapi.json` to the Swagger 2.0 those connectors require; `api/powerAutomate.test.ts`
   keeps the checked-in file in step and free of OpenAPI 3 constructs.
 
+### Microsoft Teams and Microsoft 365 Copilot (`modules/teams`, `app/teams`; #112, #113, #114; docs/integrations/teams.md)
+
+Off unless the operator sets the ids (`config.teams`: `TEAMS_APP_ID`, `TEAMS_BOT_ID`;
+`config.copilot`: `COPILOT_APP_ID` + `COPILOT_OAUTH_REFERENCE_ID`). No table, no new state: every
+piece reuses an owner that already exists.
+
+- **Packages are generated, never checked in**: `manifest.ts` (Teams app, manifest 1.19: a
+  configurable tab for channels, chats and meeting side panel / stage, the RSC permissions share to
+  stage needs, and with the bot a link `messageHandler` for the instance's host) and `copilot.ts`
+  (a declarative agent 1.6 whose action is an API plugin 2.4 with a `RemoteMCPServer` runtime at
+  `/mcp`, OAuth through the plugin vault). The plugin lists its tools from mcp's
+  `mcpToolDescriptions` (mcp's index: the `tools/list` descriptions, JSON Schema from the tools' zod
+  input), so the package can't drift from the server; write tools carry a confirmation. Icons are
+  rasterised from Freero's mark in `icons.ts` (no image dependency). Served per instance
+  (`/api/integrations/{teams/app-package,copilot/agent-package}`, `?version=`), by the CLI
+  (`teams:package`, `copilot:package`) and linked from the operator console.
+- **The tab is the public embed.** `app/teams/TeamsTabPage` renders `PublicEmbed`
+  (`app/embed/PublicEmbedPage`, which the plain embed also renders) with Teams' context and theme
+  (`teamsSdk.ts`, the only importer of `@microsoft/teams-js`): same `boardEmbedding` gate, same
+  board-bound member token, same visitor rule. The server frames `/teams/config` and `/teams/b/:id`
+  with `platform/security.ts` `frameFromOrigins(…, TEAMS_FRAME_ANCESTORS, reason)` — Microsoft's
+  documented Teams / Microsoft 365 hosts, never `*` — the latter only while `boardEmbedding` allows
+  it. `FrameGuard` lets those two paths render framed. Because no other site can frame it, the
+  Teams tab starts editing without the plain embed's visibility check (`editDirectly`).
+- **Sign-in without Teams SSO**: `teamsSignInWindow` (Teams' `authentication.authenticate`) opens
+  `/embed/connect/:id?teams=1` or `/teams/choose` (board picker; `allowOpener`) — first-party pages
+  with the session — which return their result (`TeamsSignInResult`, `TeamsChooseResult`) only
+  through `authentication.notifySuccess`, i.e. only to Teams' validated origins, never by
+  `postMessage` to an opener. Teams' desktop/mobile apps sign in in that window (`?client=`).
+- **Bot** (`bot.ts`, `botAuth.ts`): `POST /api/integrations/teams/messages` (`allowCrossSitePost`)
+  validates the Bot Connector's JWT itself (node:crypto over the JWKS from the OpenID metadata:
+  RS256, issuer, audience = `TEAMS_BOT_ID`, exp/nbf ± 5 min, `serviceurl` = the activity's,
+  `msteams` endorsement → 403; keys cached a day, an unknown `kid` refetches at most every five
+  minutes) and answers `composeExtension/queryLink` / `anonymousQueryLink` in the response with an
+  Adaptive Card from boards' `publicLinkPreview` (Slack's rule), untrusted text in `TextRun`s only.
+  Per-tenant `RATE_LIMIT_TEAMS_UNFURL`. Nothing calls the Bot Connector, so there is no bot secret.
+
 ### Walkthroughs and decision snapshots (`modules/walkthroughs`, `modules/decisions`; KAI-133, KAI-161)
 
 **Walkthroughs** are not screen videos. `features/walkthrough` records the narrator's voice (and
@@ -2237,7 +2276,8 @@ board, including people who join later: it is a deliberate publication of what e
   serves the built app page for `GET /embed/b/:id` and, only when `boardEmbedding` allows it,
   rewrites that one response with `frameFromAnySite` (`frame-ancestors *`, no XFO, CORP
   cross-origin). In development Vite serves the page and sets no framing headers. The web app's
-  `FrameGuard` renders nothing but `/embed/b/` and `/embed/board/` when framed, so in-app
+  `FrameGuard` renders nothing but `/embed/b/`, `/embed/board/` and the Teams tab pages (`/teams/b/`,
+  `/teams/config`, framed by Teams only) when framed, so in-app
   navigation inside an embed can never put the signed-in app under another site's UI.
 - **Visitors** open `/ws/embed/b/:id` with subprotocol `[PUBLIC_EMBED_WS_PROTOCOL]`: no cookie, no
   token, no row. Admitted as 'viewer' under an id no account or guest has (`guest_embed…`, so any

@@ -247,6 +247,20 @@ Previews of Freero board links in Slack, through a Slack app you create: [integr
 | `SLACK_BOT_TOKEN` | — | Your Slack app's bot token (`xoxb-…`, OAuth & Permissions), used for `chat.unfurl`. One without the other refuses to start. |
 | `SLACK_API_URL` | `https://slack.com/api` | Slack's Web API (tests point it at a stand-in). |
 
+## Microsoft Teams and Microsoft 365 Copilot
+
+A Teams app (a board as a tab and in meetings, link previews with a bot) and a Copilot agent, packaged
+for your instance: [integrations/teams.md](integrations/teams.md). Each is off unless its ids are set;
+`PUBLIC_URL` must be https.
+
+| Variable | Default | Description |
+|---|---|---|
+| `TEAMS_APP_ID` | — | The GUID of your Teams app. Turns on the app package (`/api/integrations/teams/app-package`, `npm run admin -- teams:package`) and lets Teams — only Teams — frame `/teams/config` and `/teams/b/<board>` (the latter while the board allows embedding). |
+| `TEAMS_BOT_ID` | — | Your Azure Bot's Microsoft App ID (needs `TEAMS_APP_ID`): link previews at `/api/integrations/teams/messages`, every request checked against the Bot Connector's signed JWT. No secret is needed. |
+| `TEAMS_BOT_OPENID_METADATA_URL` | `https://login.botframework.com/v1/.well-known/openidconfiguration` | The Bot Connector's OpenID metadata (tests point it at a stand-in). |
+| `COPILOT_APP_ID` | — | The GUID of your Copilot agent app. With the next one, turns on the agent package (`/api/integrations/copilot/agent-package`, `npm run admin -- copilot:package`). |
+| `COPILOT_OAUTH_REFERENCE_ID` | — | The OAuth client registration ID from the Teams Developer Portal, for Freero's OAuth app registered for Copilot. One without the other refuses to start. |
+
 ## Board calls
 
 | Variable | Default | Description |
@@ -381,6 +395,7 @@ public and reveal only `ok`/`error` per dependency (details go to the log).
 | `RATE_LIMIT_BACKUP` | `30/1h` | Per user: board backups (`.freero`) downloaded or restored — each reads or writes a whole board and its files (KAI-137). |
 | `RATE_LIMIT_WALKTHROUGH_COMMENT` | `120/10m` | Per person: comments on walkthroughs (each may notify the people it mentions and the walkthrough's author). |
 | `RATE_LIMIT_SLACK_UNFURL` | `50/1m` | Per Slack workspace: link previews Freero posts with `chat.unfurl` (Slack's own limit for it is about 50 a minute); past it, links stay without a preview. |
+| `RATE_LIMIT_TEAMS_UNFURL` | `120/1m` | Per Microsoft 365 tenant: link previews Freero answers in Teams (each reads a board; Teams caches one for 30 minutes); past it, links get no card. |
 
 Rule format: `<count>/<window>` with the window in `s`, `m`, `h` or `d` and an optional multiplier
 (`10/5m` = 10 per 5 minutes), or `off`. Windows are fixed (they reset `window` after the first hit).
