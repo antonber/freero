@@ -134,6 +134,9 @@ Features talk to each other only through the engine: elements, `editor.collectio
 | A person's own view settings (personal overrides of a saved view, per board / item / view; a kanban also keeps the tab I look at under `_tab`, a table, list, calendar or timeline tab's own settings under its id, and focus mode's arrangement under `_focus`; a linked view its own settings under `_view`) | the engine's personal view state (`Editor.setPersonalView`, any role, never in the doc), kept through `Host.personalViews` → server `modules/personalviews` (`personal_views`); in this browser without it | the owning feature validates what it reads (`views.ts` `cleanOverride`) |
 | Problem reports (`problem_reports`) and their screenshots (uploads' private images) | server `modules/problems` | its routes (the reporter; operators) and index (`/api/v1/operator/problems` in modules/api, the account purge, the data export) |
 | Decision snapshots (`decisions`) and their content (board versions of kind `decision`) | server `modules/decisions` / `modules/realtime` (`freezeBoard`) | `Host.decisions`; never written again once frozen |
+| When someone last had a board open (`board_seen`, "changes since your last visit") | server `modules/activity`, only from realtime's `onBoardLeft` (an account's board socket on that instance closed) | — (never a client's word; `GET /boards/:id/catch-up` reads it) |
+| A person's time zone (`users.time_zone`, IANA) | server `modules/auth` (`updateProfile`: `PATCH /auth/me` `timeZone`, validated by `platform/time.ts` `canonicalTimeZone`) | the app sets it once from the browser when it is unknown; the profile's Time zone field |
+| "Changes on your boards" subscriptions (`board_change_digests`: frequency, the window, when the next is due) | server `modules/notifications` (`boardChanges.ts`) | `PUT /notifications/prefs` `boardChanges`; its signed unsubscribe link (`list=board-changes`) |
 
 ### Host — the one typed contract between app and engine
 
@@ -393,7 +396,9 @@ absolutely positioned memoized component; off-screen elements are culled. Screen
   decision snapshots"): absent without a server; guests watch and open but don't record or comment.
   A command's `urlParam` run also gets `args.query` (every URL parameter: a walkthrough's `t`).
 - `Host.activity?.list(before?)` (additive): the board's activity feed as the server recorded
-  it (see "Activity"); `features/activity` shows it in a dock panel.
+  it (see "Activity"); `features/activity` shows it in a dock panel. `catchUp?()` /
+  `catchUpChanges?()` (additive): "changes since your last visit" (accounts only; absent for
+  guests and in the offline sandbox).
 - `Host.engage?` (additive, KAI-132): answering live activities (`state / answer / withdraw / ask /
   upvote / moderate / reveal / clear`). Answers go to the server, never into the doc; the board
   shows only the results the server publishes (see "Live activities"). Guests have it too.
@@ -1112,14 +1117,15 @@ templates; content is opaque engine JSON), `outline` (no table: the semantic boa
 `GET /boards/:id/outline`), `structure` (no table: layout from structure,
 `POST /boards/:id/insert-structure`), `accounts` (no table: the purge after the deletion grace
 period, orchestrating the owning modules' exports), `notifications` (notifications,
-notification_prefs: inbox, live delivery, email digests), `moderation` (moderation_items,
+notification_prefs, pending_mentions, card_due_watch, board_change_digests: inbox, live delivery,
+email digests, due-date reminders, the "changes on your boards" email), `moderation` (moderation_items,
 moderation_actions: abuse reports, the operator queue, actions and appeals; see "Moderation"),
 `sso` (sso_domains, sso_connections, sso_flows, sso_saml_cache: per-workspace single sign-on),
 `scim` (scim_tokens, scim_users, scim_groups, scim_group_members: SCIM 2.0 provisioning under
 `/scim/v2`), `privacy` (data_exports: personal and workspace data exports; see "Enterprise
 identity and data"), `audit` (audit_events, audit_chains: the append-only audit log), `admin` (no
 table: the admin console of team workspaces; see "Audit log, admin console and workspace
-policies"), `activity` (board_activity: the activity feed; see "Activity" below), `ai`
+policies"), `activity` (board_activity, board_seen: the activity feed and "changes since your last visit"; see "Activity" below), `ai`
 (ai_workspace_settings, ai_usage: AI board actions with a provider the operator or a workspace
 configures; see "AI" below), `apiauth` (api_tokens,
 oauth_clients, oauth_grants, oauth_codes, api_workspace_settings, api_workspace_credentials:
@@ -1169,7 +1175,9 @@ reports" below).
   user, the request's actor or the draft's author; a card arriving from the editors layer is not
   news). `notifications/cards.ts` settles each card's changes for `CARD_SETTLE_MS` (clicking through
   the picker notifies the last assignee once) into `card.assigned` / `card.due_changed`, and keeps
-  `card_due_watch`, from which the digest job sends `card.due_soon` the day before (UTC dates) —
+  `card_due_watch`, from which the digest job sends `card.due_soon` the day before in the
+  assignee's time zone (`users.time_zone`; UTC while unknown; a due date already past there is
+  dropped) —
   each re-checked on the board as the assignee sees it, one per card and due date. Each
   recipient must have access to the board; the author is never notified; one notification per
   person per message (`dedupe_key`; a mention wins over a reply). Types live in
@@ -1184,6 +1192,16 @@ reports" below).
   `NOTIFY_EMAIL_DELAY_SECONDS` as ONE digest (claim-then-send; a failed send is handed back),
   only to verified addresses, honoring per-type opt-outs and the master switch that the signed,
   session-less unsubscribe link (`List-Unsubscribe` one-click too) turns off.
+  "Changes on your boards" (`notifications/boardChanges.ts`, #46): opt-in per person, daily or
+  weekly (Monday), sent from 08:00 in their time zone (`next_at` is worked out when the window
+  moves; `nextDigestAt` steps by quarter hours so half-hour zones work). It summarises what OTHERS
+  did on boards they own or starred and can open, through activity's `boardChangesSince` (the
+  catch-up's rules; counts, people and board titles, never item content), each board linking to
+  `/board/<id>?changes=1` (`activity.showChanges`). Claim-then-send in the same digest job. Its
+  unsubscribe token is signed over the list name (`list=board-changes`): it stops only this email,
+  and an all-emails token can't be bent into it; the master switch stops it too.
+  Times in emails (security notices, export expiry, this digest) read in the recipient's time zone
+  (`platform/time.ts` `formatWhen`); calendar dates (due dates) stay dates.
 
 - Per-user quotas (boards, templates, team workspaces) count and insert in one transaction under
   a per-owner `pg_advisory_xact_lock(hashtext('<module>.quota'), hashtext(userId))`; a
@@ -1589,6 +1607,21 @@ approval lets the requester in at once.
 - `GET /boards/:id/activity` (anyone with access, guests too) and `GET /workspaces/:id/activity`
   (boards the reader can open there). The board panel is `features/activity` (`Host.activity`);
   the dashboard home shows the workspace feed.
+- Edit rows also keep the ids of the items they touched (`summary.ids`: added, changed, removed
+  with its type; at most `MAX_ACTIVITY_ITEMS` per list, `more` when cut) — ids only, never content.
+  An entry with items is a button: `locateEntry` highlights the ones still on the board (a
+  world-overlay of the feature, stepped through in the same bar) and says how many are gone.
+- Changes since your last visit (`activity/catchUp.ts`): realtime's `onBoardLeft` (an account's
+  board socket on this instance closed — tab closed, reload, dropped connection) moves the
+  person's `board_seen` marker forward. `GET /boards/:id/catch-up` (accounts) nets the activity
+  rows since it, as their role may see them, leaving out their own edits (an app acting for them
+  counts: it happened while they were away): one indexed read, offered on every open as the
+  feature's top-center bar. `GET …/catch-up/changes` (on "See recent changes") lists the items:
+  added / changed as the reader sees the board now (through the outline; a changed item's text
+  before, and removed items' text, from the newest version kept at or before the marker, viewer
+  rules), capped at `MAX_CATCH_UP_ITEMS`. The bar steps through the highlighted items; the
+  Activity dock lists them, removed ones struck through. Bursts are stored after a pause
+  (`ACTIVITY_IDLE_SECONDS`), so a change made seconds ago shows on the next visit, not this one.
 
 
 ### Board outline and layout from structure (KAI-166, KAI-167; format: docs/board-outline.md)
