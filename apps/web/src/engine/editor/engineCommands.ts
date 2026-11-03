@@ -48,7 +48,18 @@ export function createEngineCommands(core: EngineCore): CommandDefinition[] {
     { id: 'engine.redo', label: 'Redo', shortcut: 'mod+shift+z', run: (e) => e.redo() },
     { id: 'engine.redoAlt', label: 'Redo', shortcut: 'mod+y', run: (e) => e.redo() },
     { id: 'engine.cut', icon: Scissors, label: 'Cut', shortcut: 'mod+x', menus: ['context'], when: hasSel, disabledReason: NEEDS_SEL, run: (e) => e.cut() },
-    { id: 'engine.copy', icon: Copy, label: 'Copy', shortcut: 'mod+c', minRole: 'viewer', menus: ['context'], when: hasSel, disabledReason: NEEDS_SEL, run: (e) => e.copy() },
+    {
+      id: 'engine.copy',
+      icon: Copy,
+      label: 'Copy',
+      shortcut: 'mod+c',
+      minRole: 'viewer',
+      menus: ['context'],
+      // #123: off for viewers and commenters of a board whose owner turned copying off.
+      when: (e) => hasSel(e) && e.host.board.canCopy !== false,
+      disabledReason: (e) => (e.host.board.canCopy === false ? 'The board’s owner turned copying off for viewers and commenters' : NEEDS_SEL),
+      run: (e) => e.copy(),
+    },
     {
       id: 'engine.paste',
       icon: ClipboardPaste,

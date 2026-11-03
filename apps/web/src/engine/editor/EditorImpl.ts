@@ -917,8 +917,16 @@ export class EditorImpl implements Editor {
   }
 
   // ------------------------------------------------------------------ clipboard
-  /** Builds the clipboard payload for ids (with frame children), or null when empty. */
+  /**
+   * Builds the clipboard payload for ids (with frame children), or null when empty — or when the
+   * board doesn't let this person copy its content (`host.board.canCopy`, #123: viewers and
+   * commenters of a board whose owner turned that off), which it says once per attempt.
+   */
   buildClipboard(ids: string[]): { html: string; text: string; payload: ClipboardPayload } | null {
+    if (this.host.board.canCopy === false) {
+      if (ids.length) this.host.notify('The board’s owner doesn’t let viewers and commenters copy its content.', 'info');
+      return null;
+    }
     const snapshot = this.exportElements(ids);
     if (!snapshot) return null;
     const { elements } = snapshot;

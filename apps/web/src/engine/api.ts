@@ -113,6 +113,12 @@ export interface Host {
      */
     canExport?: boolean;
     /**
+     * [additive, #123] False when the board doesn't let this person copy its content to the
+     * clipboard (viewers and commenters, when its owner turned "copy and export" off). Copy then
+     * puts nothing on the clipboard and says why. Default true.
+     */
+    canCopy?: boolean;
+    /**
      * [additive] The team workspace the board belongs to, when the user is a full member of it:
      * templates saved from this board may be shared with that team (`saveTemplate`'s
      * `shareWithTeam`, `shareTemplate`). Null/absent: personal templates only.
