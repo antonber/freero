@@ -224,7 +224,7 @@ export class EditorImpl implements Editor {
   }
 
   mayProtect(): boolean {
-    return mayProtect(this.getRole());
+    return mayProtect(this.getRole(), this.core.hostRef.current.board.coOwner === true);
   }
 
   can(minRole: Role): boolean {

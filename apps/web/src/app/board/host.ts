@@ -127,6 +127,7 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
       role: board.role,
       canExport: board.permissions.canExport,
       canCopy: board.permissions.canCopy !== false,
+      coOwner: board.coOwner === true,
       team: deps.team ? { name: deps.team.name } : null,
       call: board.call ?? null,
       jitsiCalls: board.permissions.jitsiCalls === true,

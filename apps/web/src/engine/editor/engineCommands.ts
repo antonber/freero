@@ -27,7 +27,7 @@ import type { EngineCore } from '../runtime/core';
 import { nextZoomStep } from '../camera/camera';
 import { BACKGROUNDS, GRID_SIZES, GRID_STYLES } from './boardSettings';
 
-const PROTECTED_NOTE = 'Only the board owner can unlock a protected item.';
+const PROTECTED_NOTE = 'Only the board’s owner and co-owners can unlock a protected item.';
 
 /** Commands whose shortcut is display-only: the keyboard path is the native copy/cut/paste event. */
 export const NATIVE_CLIPBOARD_COMMANDS = new Set(['engine.copy', 'engine.cut', 'engine.paste']);
@@ -172,7 +172,7 @@ export function createEngineCommands(core: EngineCore): CommandDefinition[] {
       menus: ['context'],
       detail: (e) => (selected(e).length && selected(e).every(isProtectedLock) ? 'on' : undefined),
       when: (e) => hasSel(e) && e.mayProtect(),
-      disabledReason: 'Only the board owner can do this',
+      disabledReason: 'Only the board’s owner and co-owners can do this',
       run: (e) => {
         const els = selected(e);
         const protect = !els.every(isProtectedLock);

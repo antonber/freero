@@ -128,6 +128,11 @@ export interface Host {
      */
     canCopy?: boolean;
     /**
+     * [additive, #122] This person co-owns the board (role 'editor' that also manages it): they may
+     * protect items like the owner (`Editor.mayProtect`). A hint for the UI; the server decides.
+     */
+    coOwner?: boolean;
+    /**
      * [additive] The team workspace the board belongs to, when the user is a full member of it:
      * templates saved from this board may be shared with that team (`saveTemplate`'s
      * `shareWithTeam`, `shareTemplate`). Null/absent: personal templates only.
@@ -1339,7 +1344,8 @@ export interface Editor {
   can(minRole: Role): boolean;
   /**
    * [additive] May this user protect items (`BaseElement.lockProtected`), unprotect them or change
-   * a protected one? The board owner only (`@freero/shared` `mayProtect`). The server enforces it
+   * a protected one? The board owner and co-owners (`@freero/shared` `mayProtect`, #122:
+   * `Host.board.coOwner`). The server enforces it with the co-owner it resolves itself
    * (realtime/protectedLock.ts); the engine mirrors it in the lock commands and chrome.
    */
   mayProtect(): boolean;
