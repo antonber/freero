@@ -20,6 +20,9 @@ export interface MemberEventRecord {
   actorId: string | null;
   role: MemberRole | null;
   previousRole: MemberRole | null;
+  /** [additive, #122] A co-owner now / before (role 'editor' that also manages sharing). */
+  coOwner?: boolean;
+  previousCoOwner?: boolean;
   at: number;
 }
 /** Who changes a membership, when the change is to be recorded as an event. */
@@ -34,22 +37,24 @@ export interface MemberChangeBy {
  */
 async function recorded<T>(boardId: string, userId: string, by: MemberChangeBy | undefined, write: () => Promise<T>): Promise<T> {
   if (!by) return write();
+  type State = { role: MemberRole; co_owner: boolean };
   try {
     return await tx(async () => {
-      const before = (await one<{ role: MemberRole }>(`SELECT role FROM board_members WHERE board_id = $1 AND user_id = $2 FOR UPDATE`, [boardId, userId]))?.role ?? null;
+      const before = await one<State>(`SELECT role, co_owner FROM board_members WHERE board_id = $1 AND user_id = $2 FOR UPDATE`, [boardId, userId]);
       const out = await write();
       // The board (or account) is gone: the failed statement ended the transaction; roll it back.
       if (out === false || out === null) throw new Gone(out);
-      const after = (await one<{ role: MemberRole }>(`SELECT role FROM board_members WHERE board_id = $1 AND user_id = $2`, [boardId, userId]))?.role ?? null;
-      if (before === after) return out;
-      const type = before === null ? 'member.added' : after === null ? 'member.removed' : 'member.role_changed';
+      const after = await one<State>(`SELECT role, co_owner FROM board_members WHERE board_id = $1 AND user_id = $2`, [boardId, userId]);
+      if (before?.role === after?.role && before?.co_owner === after?.co_owner) return out;
+      const type = !before ? 'member.added' : !after ? 'member.removed' : 'member.role_changed';
       await appendOutbox(MEMBER_EVENTS_TOPIC, `${boardId}:${randomUUID()}`, {
         type,
         boardId,
         userId,
         actorId: by.actorId,
-        role: after,
-        previousRole: before,
+        role: after?.role ?? null,
+        previousRole: before?.role ?? null,
+        ...(after?.co_owner || before?.co_owner ? { coOwner: after?.co_owner === true, previousCoOwner: before?.co_owner === true } : {}),
         at: Date.now(),
       } satisfies MemberEventRecord);
       return out;
@@ -67,6 +72,8 @@ export interface MemberRow {
   boardId: string;
   userId: string;
   role: MemberRole;
+  /** A co-owner (#122): only ever with role 'editor'. */
+  coOwner: boolean;
   createdAt: number;
 }
 
@@ -74,10 +81,17 @@ interface Row {
   board_id: string;
   user_id: string;
   role: MemberRole;
+  co_owner: boolean | null;
   created_at: Date;
 }
 
-const toRow = (r: Row): MemberRow => ({ boardId: r.board_id, userId: r.user_id, role: r.role, createdAt: r.created_at.getTime() });
+const toRow = (r: Row): MemberRow => ({
+  boardId: r.board_id,
+  userId: r.user_id,
+  role: r.role,
+  coOwner: r.co_owner === true && r.role === 'editor',
+  createdAt: r.created_at.getTime(),
+});
 
 export async function getMembership(boardId: string, userId: string): Promise<MemberRow | null> {
   const r = await one<Row>(`SELECT * FROM board_members WHERE board_id = $1 AND user_id = $2`, [boardId, userId]);
@@ -92,7 +106,10 @@ export async function listByUser(userId: string): Promise<MemberRow[]> {
   return (await query<Row>(`SELECT * FROM board_members WHERE user_id = $1`, [userId])).map(toRow);
 }
 
-/** Adds (or re-roles) a member. Returns false if the board (or user) no longer exists. */
+/**
+ * Adds (or re-roles) a member. Returns false if the board (or user) no longer exists. A co-owner
+ * re-invited as an editor stays a co-owner; any other role ends it.
+ */
 export async function upsertMember(boardId: string, userId: string, role: MemberRole, now: number, by?: MemberChangeBy): Promise<boolean> {
   return recorded(boardId, userId, by, () => upsert(boardId, userId, role, now));
 }
@@ -100,7 +117,8 @@ async function upsert(boardId: string, userId: string, role: MemberRole, now: nu
   try {
     await query(
       `INSERT INTO board_members (board_id, user_id, role, created_at) VALUES ($1, $2, $3, $4)
-       ON CONFLICT (board_id, user_id) DO UPDATE SET role = excluded.role`,
+       ON CONFLICT (board_id, user_id) DO UPDATE SET role = excluded.role,
+         co_owner = board_members.co_owner AND excluded.role = 'editor'`,
       [boardId, userId, role, new Date(now)],
     );
     return true;
@@ -110,10 +128,15 @@ async function upsert(boardId: string, userId: string, role: MemberRole, now: nu
   }
 }
 
-/** Returns false if there was no such membership. */
-export async function setRole(boardId: string, userId: string, role: MemberRole, by?: MemberChangeBy): Promise<boolean> {
+/** Sets a member's role and whether they co-own (#122; only an editor can). False if there was no such membership. */
+export async function setRole(boardId: string, userId: string, role: MemberRole, by?: MemberChangeBy, coOwner = false): Promise<boolean> {
   return recorded(boardId, userId, by, async () => {
-    const rows = await query(`UPDATE board_members SET role = $3 WHERE board_id = $1 AND user_id = $2 RETURNING 1`, [boardId, userId, role]);
+    const rows = await query(`UPDATE board_members SET role = $3, co_owner = $4 WHERE board_id = $1 AND user_id = $2 RETURNING 1`, [
+      boardId,
+      userId,
+      role,
+      coOwner && role === 'editor',
+    ]);
     return rows.length > 0;
   });
 }
