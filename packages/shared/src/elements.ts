@@ -333,7 +333,32 @@ export type ShapeKind =
   | 'wfAvatar'
   | 'wfSlider'
   | 'wfModal'
-  | 'wfProgress';
+  | 'wfProgress'
+  // [additive] Value-stream mapping (#133): process box, data box, supplier / customer, inventory,
+  // push / pull / electronic flows, kaizen burst, shipment, supermarket, FIFO lane, kanban
+  // cards, go-see. Clients that don't know a kind draw its box.
+  | 'vsmProcess'
+  | 'vsmDataBox'
+  | 'vsmSupplier'
+  | 'vsmInventory'
+  | 'vsmPush'
+  | 'vsmPull'
+  | 'vsmKaizen'
+  | 'vsmTruck'
+  | 'vsmSupermarket'
+  | 'vsmFifo'
+  | 'vsmElectronic'
+  | 'vsmKanban'
+  | 'vsmSignal'
+  | 'vsmGoSee'
+  // [additive] Data-flow diagrams (#133): process, multiple process, data stores (closed at one
+  // end, or two lines), external entity, trust boundary.
+  | 'dfdProcess'
+  | 'dfdMultiProcess'
+  | 'dfdStore'
+  | 'dfdStoreLines'
+  | 'dfdExternal'
+  | 'dfdBoundary';
 
 export interface ShapeElement extends BaseElement, TextStyle {
   type: 'shape';

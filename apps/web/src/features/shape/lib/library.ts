@@ -16,7 +16,7 @@ export interface LibraryShape {
   h: number;
 }
 
-export type ShapeSetId = 'basic' | 'flowchart' | 'uml' | 'sequence' | 'bpmn' | 'erd' | 'network' | 'wireframe';
+export type ShapeSetId = 'basic' | 'flowchart' | 'uml' | 'sequence' | 'bpmn' | 'erd' | 'network' | 'wireframe' | 'valueStream' | 'dataFlow';
 
 export interface ShapeSet {
   id: ShapeSetId;
@@ -177,6 +177,47 @@ export const SHAPE_SETS: ShapeSet[] = [
       S('wfSlider', 'Slider', 240, 28, 'range volume track'),
       S('wfModal', 'Dialog', 420, 280, 'modal popup window overlay alert'),
       S('wfProgress', 'Progress bar', 240, 16, 'loading loader percent meter'),
+    ],
+  },
+  {
+    id: 'valueStream',
+    label: 'Value stream',
+    description: 'Lean value-stream mapping: processes, inventory, flows, kaizen bursts',
+    defaultOn: false,
+    shapes: [
+      S('vsmProcess', 'Process', 160, 120, 'vsm step operation work station lean'),
+      S('vsmDataBox', 'Data box', 160, 120, 'cycle time c/t changeover c/o uptime shifts metrics'),
+      S('vsmSupplier', 'Supplier / customer', 150, 110, 'outside source factory company client vendor'),
+      S('vsmInventory', 'Inventory', 90, 80, 'stock wip work in progress queue triangle'),
+      S('vsmPush', 'Push arrow', 160, 56, 'push flow material striped'),
+      S('vsmPull', 'Pull arrow', 80, 80, 'pull withdrawal circular material'),
+      S('arrowRight', 'Shipment arrow', 160, 56, 'shipment delivery finished goods'),
+      S('vsmTruck', 'Truck shipment', 150, 90, 'truck delivery transport logistics'),
+      S('vsmSupermarket', 'Supermarket', 80, 100, 'buffer store shelf pull system'),
+      S('vsmFifo', 'FIFO lane', 180, 56, 'first in first out lane queue sequence'),
+      S('vsmKanban', 'Kanban card', 100, 70, 'production withdrawal card signal'),
+      S('vsmSignal', 'Signal kanban', 90, 80, 'triangle batch trigger'),
+      S('vsmElectronic', 'Electronic information', 160, 80, 'information flow lightning edi email system'),
+      S('vsmKaizen', 'Kaizen burst', 140, 110, 'improvement idea problem burst star lean'),
+      S('netUser', 'Operator', 70, 90, 'person worker people'),
+      S('vsmGoSee', 'Go see', 120, 56, 'gemba glasses schedule look'),
+      S('umlNote', 'Note', 160, 100, 'comment'),
+    ],
+  },
+  {
+    id: 'dataFlow',
+    label: 'Data flow',
+    description: 'Processes, data stores, external entities and trust boundaries',
+    defaultOn: false,
+    shapes: [
+      S('dfdProcess', 'Process', 160, 110, 'dfd transform function gane sarson'),
+      S('ellipse', 'Process (circle)', 120, 120, 'dfd bubble yourdon demarco'),
+      S('dfdMultiProcess', 'Multiple process', 130, 130, 'dfd complex subsystem'),
+      S('dfdStore', 'Data store', 200, 56, 'dfd database file table storage'),
+      S('dfdStoreLines', 'Data store (open)', 200, 56, 'dfd database file yourdon parallel lines'),
+      S('dfdExternal', 'External entity', 160, 100, 'dfd terminator source sink actor system outside'),
+      S('dfdBoundary', 'Trust boundary', 420, 280, 'dfd threat model security zone dashed boundary'),
+      S('umlNote', 'Note', 160, 100, 'comment'),
     ],
   },
 ];

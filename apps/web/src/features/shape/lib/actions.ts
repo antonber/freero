@@ -57,6 +57,11 @@ const KIND_STYLE: Partial<Record<ShapeKind, Partial<ShapeStyle>>> = {
   wfProgress: wire('', { fill: '#FFFFFF' }),
   umlFragment: { fill: 'transparent', fillOpacity: 0, fontSize: 14, align: 'left' },
   umlActivation: { fill: '#F2F1F7' },
+  // Value stream / data flow (#133): a data box starts as the usual lines to fill in, a FIFO lane
+  // names itself, a trust boundary is a dashed see-through zone with its name in the corner.
+  vsmDataBox: { text: 'C/T =<br>C/O =<br>Uptime =<br>Shifts =', fontSize: 14, align: 'left', vAlign: 'top' },
+  vsmFifo: { text: '<b>FIFO</b>', fontSize: 14 },
+  dfdBoundary: { fill: 'transparent', fillOpacity: 0, strokeStyle: 'dashed', fontSize: 14, align: 'left', vAlign: 'top', text: 'Trust boundary' },
   erdEntity: {
     text: '<b>Entity</b><br>PK&nbsp; id<br>FK&nbsp; owner_id<br>name',
     fontSize: 14,
