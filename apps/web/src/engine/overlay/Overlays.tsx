@@ -6,7 +6,7 @@ import { useCore } from '../context';
 import { useCamera, useElements, usePeers, useRole, useSelectedElements } from '../hooks';
 import { worldToScreen } from '../camera/camera';
 import { boundsOf, rectCenter } from '../geometry/geometry';
-import type { Camera } from '../api';
+import type { Camera, Point } from '../api';
 import { ALL_HANDLES, CORNER_HANDLES, type Handle } from '../geometry/transform';
 import { Lock, RotateCw } from 'lucide-react';
 import { readableTextColor } from '@ui';
@@ -125,12 +125,19 @@ function HoverOverlay() {
   );
 }
 
+/** Screen-space SVG path of a lasso loop, closed back to where it began. */
+function lassoPath(points: Point[], cam: Camera): string {
+  const r = (n: number) => Math.round(n * 10) / 10;
+  return `M${points.map((p) => worldToScreen(cam, p)).map((p) => `${r(p.x)} ${r(p.y)}`).join(' L')} Z`;
+}
+
 function GuidesOverlay() {
   const core = useCore();
   const cam = useCamera();
   const guides = useStore(core.ui, (s) => s.guides);
   const gaps = useStore(core.ui, (s) => s.gaps);
   const marquee = useStore(core.ui, (s) => s.marquee);
+  const lasso = useStore(core.ui, (s) => s.lasso);
   const hint = useStore(core.ui, (s) => s.hint);
   return (
     <>
@@ -166,6 +173,11 @@ function GuidesOverlay() {
         const a = worldToScreen(cam, marquee);
         return <div className="fr-ov-marquee" style={{ left: a.x, top: a.y, width: marquee.w * cam.zoom, height: marquee.h * cam.zoom }} />;
       })()}
+      {lasso && lasso.length > 1 && (
+        <svg className="fr-ov-lasso" aria-hidden>
+          <path d={lassoPath(lasso, cam)} />
+        </svg>
+      )}
       {hint && (
         <div className="fr-ov-hint" style={{ transform: `translate(${hint.x + 14}px, ${hint.y + 18}px)` }}>
           {hint.text}

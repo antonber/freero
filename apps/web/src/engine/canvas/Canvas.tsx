@@ -14,6 +14,7 @@ import type { Registered } from '../runtime/registry';
 import type { ToolDefinition } from '../api';
 import { publicCursor } from '../editor/layers';
 import { LONG_PRESS_MS, routePress, TOUCH_HIT_PX, TOUCH_SLOP_PX } from '../interaction/touch';
+import { LASSO_TOOL } from '../interaction/selectTool';
 import './canvas.css';
 
 const DOUBLE_CLICK_MS = 400;
@@ -163,7 +164,7 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
       if (!edge || !gesture) return stopEdge();
       edge.raf = null;
       const kind = ui.getState().transforming;
-      const v = kind === 'translate' || kind === 'marquee' ? edgeScrollVelocity(edge.screen, edge.area) : { x: 0, y: 0 };
+      const v = kind === 'translate' || kind === 'marquee' || kind === 'lasso' ? edgeScrollVelocity(edge.screen, edge.area) : { x: 0, y: 0 };
       if (!v.x && !v.y) return;
       const cam = editor.getCamera();
       userCamera({ x: cam.x + v.x / cam.zoom, y: cam.y + v.y / cam.zoom, zoom: cam.zoom });
@@ -172,7 +173,7 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
     };
     const followEdge = (e: PointerEvent, screen: Point) => {
       const kind = ui.getState().transforming;
-      if (kind !== 'translate' && kind !== 'marquee') return stopEdge();
+      if (kind !== 'translate' && kind !== 'marquee' && kind !== 'lasso') return stopEdge();
       edge ??= { e, screen, area: editor.getSafeArea(), raf: null };
       edge.e = e;
       edge.screen = screen;
@@ -291,7 +292,7 @@ export function Canvas(props: { worldOverlay?: ReactNode; screenOverlay?: ReactN
       core.interaction.handle = t.closest('[data-handle]')?.getAttribute('data-handle') ?? null;
       gesture = { pointerId: e.pointerId, tool, cancelled: false };
       editor.beginGesture();
-      if (tool.def.id !== 'select') ui.setState({ transforming: 'tool' });
+      if (tool.def.id !== 'select' && tool.def.id !== LASSO_TOOL) ui.setState({ transforming: 'tool' });
       core.interaction.cancel = () => {
         if (!gesture) return;
         gesture.cancelled = true;

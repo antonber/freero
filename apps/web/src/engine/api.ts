@@ -71,6 +71,11 @@ export interface Suggestion extends SuggestionRecord {
 // ---------------------------------------------------------------------------
 export interface Point { x: number; y: number }
 export interface Rect { x: number; y: number; w: number; h: number }
+/**
+ * [additive, #111] What a lasso selects: items wholly inside the loop, or every item it encloses
+ * or crosses (the marquee's rule).
+ */
+export type LassoMode = 'inside' | 'touch';
 
 /** What paste / drag-and-drop offers to element importers (`ElementDefinition.importData`). */
 export interface ImportData {
@@ -672,6 +677,12 @@ export interface ElementDefinition<T extends ElementType = ElementType> {
    * Other features can ask it too (the eraser asks the pen's definition).
    */
   distanceTo?(element: ElementOf<T>, local: Point): number;
+  /**
+   * [additive, #111] Points (element-local, unrotated) that stand for what is drawn, for a lasso
+   * selection: with "inside" it counts as inside when most of them are (a pen stroke's ink), not
+   * only when its whole box is. Default: the box.
+   */
+  lassoPoints?(element: ElementOf<T>): Point[];
   /** Point on the outline for an anchor; default = bbox edge midpoints. */
   anchorPoint?(element: ElementOf<T>, anchor: 'top' | 'right' | 'bottom' | 'left'): Point;
   /**
@@ -1362,6 +1373,14 @@ export interface Editor {
   /** `tolerancePx` [additive]: how far (screen px) off an item still hits it (default 4; fingers get more). */
   hitTest(point: Point, opts?: { exclude?: string[]; types?: ElementType[]; tolerancePx?: number }): BoardElement | null;
   elementsInRect(rect: Rect, mode?: 'intersect' | 'contain'): BoardElement[];
+  /**
+   * [additive, #111] What a freeform loop (world points, closed by joining the last to the first)
+   * selects, in render order, hidden ones never: 'inside' = items within it (one with
+   * `lassoPoints` when most of those are), 'touch' = items it encloses or crosses (the marquee's
+   * rule: a rectangular loop takes what a marquee over it would). Containers (frames) count only
+   * when fully inside. Locked items are left out.
+   */
+  elementsInLasso(points: Point[], mode?: LassoMode): BoardElement[];
   getAnchorPoint(id: string, anchor: 'top' | 'right' | 'bottom' | 'left'): Point | null;
 
   // -- elements (writes; no-ops with a toast for read-only roles) --
@@ -1393,6 +1412,12 @@ export interface Editor {
    * ends that level (the outer gesture owns the writes).
    */
   cancelGesture(): void;
+  /**
+   * [additive, #3] Runs `fn` once the open gesture's undo step has closed (right away when no
+   * gesture is open), so its writes are an undo step of their own: a pen stroke that smart drawing
+   * turns into a shape undoes back to the ink first. Dropped when the gesture is cancelled.
+   */
+  afterGesture(fn: () => void): void;
   bringToFront(ids: string[]): void;
   sendToBack(ids: string[]): void;
   /**
