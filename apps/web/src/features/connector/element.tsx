@@ -19,6 +19,7 @@ import {
 } from '@engine';
 import {
   aabb,
+  capReach,
   capShape,
   capTrim,
   distToPoly,
@@ -31,8 +32,16 @@ import {
 } from './lib/geometry';
 import { avoidsObstacles, connectorGeometry, DEFAULT_STYLE, drawnRoutes, localAnchors, refreshCache } from './lib/model';
 import { isConnectable, liveObstacles, obstacleIndex, obstaclesBetween, sameRects } from './lib/obstacles';
+import { routesBeneath, sameRoutes } from './lib/beneath';
+import { jumpRadius, lineJumps, type Hop } from './lib/jumps';
 
 const NO_OBSTACLES: Rect[] = [];
+const NO_LINES: Point[][] = [];
+const NO_HOPS: Hop[] = [];
+/** Hops smaller than this on screen (half their width, px) aren't drawn. */
+const MIN_HOP_PX = 2;
+
+const samePoly = (a: Point[] | undefined, b: Point[]) => !!a && a.length === b.length && a.every((p, i) => p.x === b[i].x && p.y === b[i].y);
 
 /** Did a changed item land where this line runs (its stored bounds, with routing margin)? */
 function obstacleMovedNear(editor: Editor, c: ConnectorElement, changed: ReadonlySet<string>): boolean {
@@ -83,13 +92,13 @@ function Cap({ parts, color, paper, width }: { parts: CapShape[]; color: string;
   );
 }
 
-const ConnectorView = memo(function ConnectorView({ element: c, selected, editing }: ElementRenderProps<ConnectorElement>) {
+const ConnectorView = memo(function ConnectorView({ element: c, selected, editing, zoom }: ElementRenderProps<ConnectorElement>) {
   const editor = useEditor();
   // Subscribing to the attached elements is what keeps the line glued to them, for local and
   // remote moves alike, whatever the stored cache says.
   const a = useElement(c.start.elementId ?? null);
   const b = useElement(c.end.elementId ?? null);
-  const { background } = useSettings();
+  const { background, lineJumps: jumpsOn } = useSettings();
   const lookup = useCallback((id: string): BoardElement | undefined => (id === a?.id ? a : id === b?.id ? b : editor.getElement(id)), [a, b, editor]);
   // Items in the way of an elbow line: it re-routes only when THEIR boxes change, not on every
   // edit elsewhere on the board.
@@ -103,12 +112,26 @@ const ConnectorView = memo(function ConnectorView({ element: c, selected, editin
   );
   const obstacles = useElementsQuery(selectObstacles, sameRects);
   const geo = useMemo(() => connectorGeometry(c, lookup, localAnchors(editor), obstacles), [c, lookup, editor, obstacles]);
-  drawnRoutes.set(c, geo.route.poly);
+  // Kept when the lines above already computed the same route (routeOf): theirs stay unchanged.
+  if (!samePoly(drawnRoutes.get(c), geo.route.poly)) drawnRoutes.set(c, geo.route.poly);
 
   const sw = c.strokeWidth;
   const color = c.stroke;
   const { route } = geo;
-  const d = routePath(route, capTrim(c.startCap, sw), capTrim(c.endCap, sw), c.routing === 'elbow');
+  // Line jumps (board setting): hops over the lines beneath that cross this one. Curves cross
+  // cleanly enough to tell apart, so they never hop (lines on top of them still do). Zoomed out
+  // so far that a hop would be under two pixels, none are worked out (exports draw at full size).
+  const jumps = jumpsOn && c.routing !== 'curved' && jumpRadius(sw) * zoom >= MIN_HOP_PX;
+  const selectBeneath = useCallback((all: BoardElement[]) => (jumps ? routesBeneath(editor, all, c, route.poly) : NO_LINES), [jumps, editor, c, route.poly]);
+  const beneath = useElementsQuery(selectBeneath, sameRoutes);
+  const hops = useMemo(
+    () =>
+      beneath.length
+        ? lineJumps(route.poly, beneath, jumpRadius(sw), { start: capReach(c.startCap, sw), end: capReach(c.endCap, sw) })
+        : NO_HOPS,
+    [beneath, route.poly, sw, c.startCap, c.endCap],
+  );
+  const d = routePath(route, capTrim(c.startCap, sw), capTrim(c.endCap, sw), c.routing === 'elbow', hops);
   const editingPart = useEditingPart();
   const canEdit = useCanEdit();
   const live = editing ? parsePart(editingPart) : null;
