@@ -207,3 +207,29 @@ Pure logic in `@freero/shared` `layout/diagram.ts`: members, units, edges, the s
 - A diagram inserted from Mermaid keeps its drawn layout until its structure changes.
 - Out of focus is inert: a click outside the focused diagram selects nothing; Esc ends focus.
 - The server adds steps into a diagram laid out without overlaps.
+
+## As built (2026-11-03)
+
+- Shared: `packages/shared/src/layout/diagram.ts` (`planDiagram`, `withDiagramLayout`, `wrapInDiagram`,
+  `diagramSignature`, `diagramLayers`, `memberLayerId`, `hiddenByLayer`); `layoutStructure` wraps.
+  The engine's arrange runs up to three rounds per pass with the same `previous`; the plan is told
+  which members its own layout already moved (`moved`), so a reflow is never mistaken for a hand move.
+- Engine: `Editor.setFocus` / `getFocus` / `useFocus`, `getInteractiveElements` (hit tests, marquee,
+  lasso, selection, Tab walk), Esc after the selection; `isFolded` follows folded containers.
+- Feature `features/diagram`: element (title band with layout and layers chips and a focus button,
+  `arrange`, `hidesMember`, double-click adds a step), tool ("+" ▸ Diagram), commands (Insert diagram,
+  Make a diagram, Focus, Leave focus, Lay out again, Let the layout place it, Diagram layers…,
+  `diagram.setLayout`), format bar (layout picker, Lay out again, Layers, Focus), panels (layers dock,
+  focus bar), outline.
+- From text: containers' members keep their places on a source edit; "Re-lay out diagram" is offered
+  only for diagrams from before containers (and brings them into one).
+- Server: `realtime` knows the type; `modules/structure` (`placement.into` a diagram) and
+  `modules/api` (update and delete items) lay diagrams out in the same change; MCP `add_diagram`
+  `into`.
+
+Known limits:
+- The box hugs its members: a step dragged until its centre leaves the box leaves the diagram (the
+  container rule frames and kanbans follow), and a diagram that grows can come to overlap items
+  beside it (they are not taken in).
+- Old clients see hidden layers' items (see Rollout).
+- Lines from outside the diagram to a hidden step stay drawn.
