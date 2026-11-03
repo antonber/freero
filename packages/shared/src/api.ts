@@ -2293,6 +2293,14 @@ export interface SiemSinkInfo {
 // POST  /api/workspaces/:id/admin/members/:userId/reactivate  -> { member: AdminMember }
 //       A deactivated member keeps their role and boards but opens nothing in the workspace (not
 //       even boards they own) until reactivated; live connections are cut at once.
+// GET   /api/workspaces/:id/admin/boards?filter=link,public,guests,outside,inactive,archived&inactiveDays=&q=
+//       &sort=activity|title|owner|size|created|members&dir=asc|desc&offset=&limit=
+//                                                        -> AdminBoardsResponse  (content; #152; every
+//       board of the workspace, archived ones included; filters combine with AND)
+// POST  /api/workspaces/:id/admin/boards/:boardId/link-off          -> { ok: true }  (content; audited)
+// POST  /api/workspaces/:id/admin/boards/:boardId/remove-outsiders  -> { removed: number } (content;
+//       ends the board memberships of people outside the workspace; each audited)
+// POST  /api/workspaces/:id/admin/boards/:boardId/transfer  body { userId } -> { ok: true } (content; audited)
 // GET   /api/workspaces/:id/admin/trash                  -> { boards: AdminTrashedBoard[] }  (content; #153)
 // POST  /api/workspaces/:id/admin/trash/:boardId/restore -> { ok: true }  (content; audited, the owner's quota)
 // GET   /api/workspaces/:id/admin/settings              -> { settings: WorkspaceSettings }
@@ -2365,6 +2373,42 @@ export interface AdminMember extends WorkspaceMember {
   /** Boards they own in this workspace (trash excluded). */
   boards: number;
 }
+/**
+ * A board of the workspace as its content admins see it in the inventory (#152): metadata only —
+ * opening the board still needs access to it.
+ */
+export interface AdminBoardRow {
+  boardId: string;
+  kind: ObjectKind;
+  title: string;
+  ownerId: string;
+  ownerName: string;
+  projectId: string | null;
+  projectName: string | null;
+  /** What its link gives anyone who has it (expired or blocked: 'none'). */
+  linkAccess: LinkAccess;
+  /** The link also lets in visitors without an account (the workspace allows it and it has no password). */
+  publicLink: boolean;
+  linkPassword: boolean;
+  /** Direct memberships: everyone invited, of them the workspace's guests, and people outside the workspace. */
+  members: number;
+  guests: number;
+  outsiders: number;
+  /** Stored content (document, history, layers). */
+  bytes: number;
+  createdAt: number;
+  /** The latest edit, rename or open. */
+  lastActivityAt: number;
+  archivedAt: number | null;
+}
+export type AdminBoardFilter = 'link' | 'public' | 'guests' | 'outside' | 'inactive' | 'archived';
+export type AdminBoardSort = 'activity' | 'title' | 'owner' | 'size' | 'created' | 'members';
+export interface AdminBoardsResponse {
+  boards: AdminBoardRow[];
+  /** How many match the filters (pages: `offset` + `limit`). */
+  total: number;
+}
+
 /** A board in a workspace's trash as its content admins see it (#153): metadata only, never content. */
 export interface AdminTrashedBoard {
   boardId: string;

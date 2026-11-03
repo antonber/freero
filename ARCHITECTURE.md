@@ -2604,6 +2604,17 @@ security and retention settings, sharing policies, the audit log (filters, pagin
 add their own tabs with their own routes under `/workspaces/:id/admin/…`, checked with
 `admin/index.ts` `requireAdmin` (SSO and provisioning; AI, shown only when the server offers AI).
 
+**Board inventory** (#152; content admins; admin's `boardInventory`): `GET /workspaces/:id/admin/boards`
+composes boards' `inventoryBoards` (live boards, archived included, with the last activity and whether
+the link lets visitors in, as `resolveGuestRole` decides), members' `memberIdsOfBoards` (guests and
+people outside counted against the workspace's members), realtime's `storedBoardSizes` and the
+project names; filters (link, public, guests, outside, inactive N days, archived) combine with AND,
+sorted and paged in memory. Metadata only — opening a board still needs access. Fixes, each in
+the owning module, scoped to that workspace's boards (404 otherwise) and audited: boards'
+`turnOffLinkForWorkspace` (`board.link_sharing_changed`, `by: 'admin'`), members'
+`removeOutsideMembers` (`board.member_removed`, `reason: 'outside_workspace'`), boards'
+`transferForWorkspace` (transferBoard's rules: a non-guest member, the receiver's quota).
+
 **Admin roles** (#151; `workspace_members.admin_scopes`, workspaces' repo): an admin administers
 `members` (people, invites, roles, deactivation, groups), `content` (sharing policies, the board
 inventory, trash, archive, retention, templates, projects) and/or `security` (sign-in and session

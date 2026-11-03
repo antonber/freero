@@ -1,15 +1,17 @@
 // Admin console routes (contract: @freero/shared api.ts "Admin console"). Every route checks on the
 // server that the caller is an owner or admin of that team workspace (requireAdmin).
 import { Router, type Request } from 'express';
-import type { AdminMember, AdminTrashedBoard, AuditEvent, AuditIntegrity, LinkComplianceIssue, WorkspaceSettings, WorkspaceUsage } from '@freero/shared';
+import type { AdminBoardsResponse, AdminMember, AdminTrashedBoard, AuditEvent, AuditIntegrity, LinkComplianceIssue, WorkspaceSettings, WorkspaceUsage } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { badRequest, handle, notFound } from '../../platform/http';
 import { rateLimit } from '../../platform/rateLimit';
 import { recordAudit, verifyWorkspaceAudit } from '../audit/index';
 import { currentUser, getUsers, requireUser } from '../auth/index';
-import { linksOutOfPolicy, restoreForWorkspace, workspaceTrash } from '../boards/index';
+import { linksOutOfPolicy, restoreForWorkspace, transferForWorkspace, turnOffLinkForWorkspace, workspaceBoard, workspaceTrash } from '../boards/index';
+import { removeOutsideMembers } from '../members/index';
 import { getWorkspaceSettings, setMemberDeactivated, updateWorkspaceSettings } from '../workspaces/index';
-import { adminMembers, auditBatches, auditFilter, auditPage, CSV_COLUMNS, csvRow, requireAdmin, workspaceUsage } from './service';
+import { adminMembers, auditBatches, auditFilter, auditPage, boardInventory, CSV_COLUMNS, csvRow, inventoryQuery, requireAdmin, workspaceUsage } from './service';
+import { workspaceAdminFacts } from '../workspaces/index';
 
 const MAX_PAGE = 200;
 /** Members (with organisation-wide deactivation), settings and the audit log also serve an organisation (#108). */
@@ -59,6 +61,48 @@ export default function adminRoutes(_ctx: ServerContext): Router {
           }),
         ),
       });
+    }),
+  );
+
+  // #152: the board inventory (metadata only) and what its content admins fix from it.
+  const CONTENT = { scope: 'content' } as const;
+  r.get(
+    `${base}/admin/boards`,
+    requireUser,
+    handle(async (req, res) => {
+      await requireAdmin(req.params.id, currentUser(req).id, CONTENT);
+      res.json((await boardInventory(req.params.id, inventoryQuery(req.query))) satisfies AdminBoardsResponse);
+    }),
+  );
+  r.post(
+    `${base}/admin/boards/:boardId/link-off`,
+    requireUser,
+    handle(async (req, res) => {
+      const me = currentUser(req).id;
+      await requireAdmin(req.params.id, me, CONTENT);
+      await turnOffLinkForWorkspace(req.params.id, req.params.boardId, me);
+      res.json({ ok: true });
+    }),
+  );
+  r.post(
+    `${base}/admin/boards/:boardId/remove-outsiders`,
+    requireUser,
+    handle(async (req, res) => {
+      const me = currentUser(req).id;
+      await requireAdmin(req.params.id, me, CONTENT);
+      const board = await workspaceBoard(req.params.id, req.params.boardId);
+      const inWorkspace = new Set((await workspaceAdminFacts(req.params.id)).members.map((m) => m.userId));
+      res.json({ removed: await removeOutsideMembers(board, req.params.id, inWorkspace, me) });
+    }),
+  );
+  r.post(
+    `${base}/admin/boards/:boardId/transfer`,
+    requireUser,
+    handle(async (req, res) => {
+      const me = currentUser(req).id;
+      await requireAdmin(req.params.id, me, CONTENT);
+      await transferForWorkspace(req.params.id, req.params.boardId, me, req.body?.userId);
+      res.json({ ok: true });
     }),
   );
 

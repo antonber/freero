@@ -633,3 +633,38 @@ td > .fr-admin-pill:first-child {
   list-style: none;
   font-size: 13px;
 }
+
+/* The board inventory (#152). */
+.fr-admin-inventory__bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.fr-admin-inventory__bar .fr-admin__search {
+  flex: 1 1 220px;
+}
+.fr-admin-inventory__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 10px 0 12px;
+  font-size: 13px;
+}
+.fr-admin-inventory__days {
+  width: 56px;
+  margin: 0 4px;
+  padding: 1px 4px;
+  font: inherit;
+  color: var(--fr-ink);
+  background: var(--fr-surface);
+  border: 1px solid var(--fr-line-strong);
+  border-radius: var(--fr-radius-sm);
+}
+.fr-admin-inventory__pages {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}

@@ -102,6 +102,12 @@ export async function listByBoard(boardId: string): Promise<MemberRow[]> {
   return (await query<Row>(`SELECT * FROM board_members WHERE board_id = $1 ORDER BY created_at`, [boardId])).map(toRow);
 }
 
+/** The memberships of several boards (the admin inventory, #152). */
+export async function listByBoards(boardIds: string[]): Promise<MemberRow[]> {
+  if (!boardIds.length) return [];
+  return (await query<Row>(`SELECT * FROM board_members WHERE board_id = ANY($1::text[])`, [boardIds])).map(toRow);
+}
+
 export async function listByUser(userId: string): Promise<MemberRow[]> {
   return (await query<Row>(`SELECT * FROM board_members WHERE user_id = $1`, [userId])).map(toRow);
 }

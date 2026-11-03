@@ -16,6 +16,11 @@ export function storedBoardContent(boardIds: string[]): Promise<{ bytes: number;
   return repo.storedContentOf(boardIds, UPLOAD_REF_PATTERN).then((r) => ({ bytes: r.bytes, uploadNames: r.names }));
 }
 
+/** boardId -> bytes of its stored content (the admin inventory, #152). */
+export function storedBoardSizes(boardIds: string[]): Promise<Map<string, number>> {
+  return repo.storedSizesOf(boardIds);
+}
+
 export async function boardUploadReferences(among?: readonly string[]): Promise<string[]> {
   const found = new Set(await repo.matchesInStoredDocs(UPLOAD_REF_PATTERN, among ?? null));
   const wanted = among ? new Set(among) : undefined;

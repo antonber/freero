@@ -1,6 +1,8 @@
 // Public API of modules/members [S2].
 // Memberships of a deleted board (or user) are removed by the database (ON DELETE CASCADE).
 import type { Role } from '@freero/shared';
+import { recordAuditQuietly } from '../audit/index';
+import { refreshBoardAccess } from '../realtime/index';
 import * as repo from './repo';
 import type { Membership } from './roles';
 
@@ -58,6 +60,41 @@ export { MEMBER_EVENTS_TOPIC, type MemberEventRecord } from './repo';
 /** The explicit membership role of a user on a board (not counting ownership or link access). */
 export async function getMemberRole(boardId: string, userId: string): Promise<Role | null> {
   return (await repo.getMembership(boardId, userId))?.role ?? null;
+}
+
+/** boardId -> the user ids with a direct membership on it (the admin inventory, #152). */
+export async function memberIdsOfBoards(boardIds: string[]): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  for (const m of await repo.listByBoards(boardIds)) out.set(m.boardId, [...(out.get(m.boardId) ?? []), m.userId]);
+  return out;
+}
+
+/**
+ * A content admin ends the memberships of everyone on the board who isn't in its workspace (#152;
+ * the caller checked the scope and that the board is the workspace's). Each removal is audited;
+ * live sockets are re-resolved. Returns how many went.
+ */
+export async function removeOutsideMembers(
+  board: { id: string; title: string; kind: 'board' | 'doc' },
+  workspaceId: string,
+  inWorkspace: Set<string>,
+  actorId: string,
+): Promise<number> {
+  let removed = 0;
+  for (const m of await repo.listByBoard(board.id)) {
+    if (inWorkspace.has(m.userId)) continue;
+    if (!(await repo.removeMember(board.id, m.userId, { actorId }))) continue;
+    removed++;
+    await recordAuditQuietly({
+      action: 'board.member_removed',
+      workspaceId,
+      actorId,
+      target: { type: board.kind, id: board.id, label: board.title },
+      metadata: { userId: m.userId, left: false, by: 'admin', reason: 'outside_workspace' },
+    });
+  }
+  if (removed) await refreshBoardAccess(board.id);
+  return removed;
 }
 
 /** User ids with a direct membership on the board (not the owner, not team or link access). */

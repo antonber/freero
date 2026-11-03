@@ -30,6 +30,8 @@ import {
 export { createBoard, deleteBoardRowsInWorkspace, cleanUpDeletedBoards } from './service';
 // Legal holds (#157) keep boards from retention rules (#154).
 export { onBoardRetentionHold, type BoardHoldCheck } from './retention';
+// The admin inventory (#152; modules/admin checks the scope).
+export { inventoryBoards, turnOffLinkForWorkspace, transferForWorkspace, workspaceBoard } from './service';
 // The workspace's trash for its content admins (#153; modules/admin checks the scope).
 export { workspaceTrash, restoreForWorkspace } from './service';
 // The object registry (modules/objects): boards and items, checked like the board page checks them.

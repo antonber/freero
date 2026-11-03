@@ -369,10 +369,22 @@ export async function setArchived(id: string, at: number | null, by: string | nu
   );
 }
 
+// ---- the admin inventory (#152) ----
+
+/** Every live board of a workspace (archived ones included) with its last activity. */
+export async function inventoryOf(workspaceId: string): Promise<Array<Board & { lastActivityAt: number }>> {
+  const rows = await query<Row & { last_at: Date }>(
+    `SELECT b.*, ${LAST_ACTIVITY_OF('b')} AS last_at FROM boards b WHERE b.workspace_id = $1 AND b.deleted_at IS NULL AND b.removed_at IS NULL`,
+    [workspaceId],
+  );
+  return rows.map((r) => ({ ...toBoard(r), lastActivityAt: new Date(r.last_at).getTime() }));
+}
+
 // ---- retention of inactive boards (#154) ----
 
 /** A board's last activity: an edit or rename (updated_at), or anyone opening it. */
-const LAST_ACTIVITY = `GREATEST(b.updated_at, b.created_at, COALESCE((SELECT max(o.opened_at) FROM board_opens o WHERE o.board_id = b.id), b.created_at))`;
+const LAST_ACTIVITY_OF = (b: string) => `GREATEST(${b}.updated_at, ${b}.created_at, COALESCE((SELECT max(o.opened_at) FROM board_opens o WHERE o.board_id = ${b}.id), ${b}.created_at))`;
+const LAST_ACTIVITY = LAST_ACTIVITY_OF('b');
 /** Live, not archived, and nothing happened since `$2`. */
 const INACTIVE_SINCE = `b.deleted_at IS NULL AND b.removed_at IS NULL AND b.archived_at IS NULL AND ${LAST_ACTIVITY} <= $2`;
 

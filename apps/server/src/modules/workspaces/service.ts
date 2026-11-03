@@ -889,12 +889,15 @@ export { isManager };
 export async function workspaceAdminFacts(workspaceId: string): Promise<{
   members: Array<{ userId: string; role: WorkspaceRole; joinedAt: number; deactivated: boolean; adminScopes: AdminScope[] | null }>;
   projects: number;
+  /** Its projects' ids and names (the board inventory, #152). */
+  projectList: Array<{ id: string; name: string }>;
   pendingInvites: number;
 }> {
   const [members, projects, invites] = await Promise.all([repo.listMembers(workspaceId), repo.projectsIn([workspaceId]), repo.listInvites(workspaceId)]);
   return {
     members: members.map((m) => ({ userId: m.userId, role: m.role, joinedAt: m.createdAt, deactivated: m.deactivatedAt !== null, adminScopes: m.adminScopes })),
     projects: projects.length,
+    projectList: projects.map((p) => ({ id: p.id, name: p.name })),
     pendingInvites: invites.filter((i) => i.expiresAt > Date.now()).length,
   };
 }

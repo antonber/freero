@@ -897,6 +897,48 @@ export async function restoreFromTrash(boardId: string, userId: string): Promise
   return { ...board, deletedAt: null };
 }
 
+// ---- the admin inventory (#152) ----
+
+/** The workspace's live boards for its content admins (the caller checked the scope): what the inventory lists. */
+export async function inventoryBoards(workspaceId: string): Promise<Array<Board & { lastActivityAt: number; publicLink: boolean }>> {
+  const [boards, access] = await Promise.all([repo.inventoryOf(workspaceId), boardAccess('', { workspaceId, projectId: null })]);
+  // Visitors without an account get in by its link exactly when a guest would (resolveGuestRole).
+  return boards.map((b) => ({ ...b, publicLink: b.linkPasswordHash === null && resolveGuestRole(b, access) !== null }));
+}
+
+/** A board of THIS workspace (404 otherwise: the console reaches nothing elsewhere). */
+async function boardOfWorkspace(workspaceId: string, boardId: string): Promise<Board> {
+  const board = await repo.getBoard(boardId);
+  if (!board || board.workspaceId !== workspaceId) throw notFound('Board not found in this workspace');
+  return board;
+}
+
+/** A content admin turns a board's link off from the inventory (#152): audited, link visitors disconnected. */
+export async function turnOffLinkForWorkspace(workspaceId: string, boardId: string, actorId: string): Promise<void> {
+  const board = await boardOfWorkspace(workspaceId, boardId);
+  if (board.storedLinkAccess === 'none') return;
+  await repo.updateBoardFields(board.id, { linkAccess: 'none' }, Date.now());
+  await recordAudit({
+    action: 'board.link_sharing_changed',
+    workspaceId,
+    actorId,
+    target: boardTarget(board),
+    metadata: { from: board.storedLinkAccess, to: 'none', by: 'admin' },
+  });
+  await refreshBoardAccess(board.id);
+}
+
+/** A content admin hands a board of the workspace to one of its members (#152; transferBoard's rules and audit). */
+export async function transferForWorkspace(workspaceId: string, boardId: string, actorId: string, targetId: unknown): Promise<void> {
+  await transferBoard(await boardOfWorkspace(workspaceId, boardId), actorId, targetId);
+}
+
+/** The board of this workspace, for another module's admin action (members: removing outsiders). */
+export async function workspaceBoard(workspaceId: string, boardId: string): Promise<{ id: string; title: string; kind: ObjectKind }> {
+  const b = await boardOfWorkspace(workspaceId, boardId);
+  return { id: b.id, title: b.title, kind: b.kind };
+}
+
 // ---- archive and the workspace's trash (#153) ----
 
 /**

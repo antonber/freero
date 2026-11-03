@@ -3,6 +3,10 @@
 // point checks first that the caller is an owner or admin of the workspace (requireAdmin).
 import {
   AUDIT_ACTIONS,
+  type AdminBoardFilter,
+  type AdminBoardRow,
+  type AdminBoardSort,
+  type AdminBoardsResponse,
   type AdminMember,
   type AdminScope,
   type AuditAction,
@@ -13,8 +17,9 @@ import {
 import { badRequest } from '../../platform/http';
 import { listAuditEvents, type AuditFilter, type StoredAuditEvent } from '../audit/index';
 import { getUsers, securityStatusOf } from '../auth/index';
-import { boardIdsInWorkspace, workspaceBoardStats } from '../boards/index';
-import { storedBoardContent } from '../realtime/index';
+import { boardIdsInWorkspace, inventoryBoards, workspaceBoardStats } from '../boards/index';
+import { memberIdsOfBoards } from '../members/index';
+import { storedBoardContent, storedBoardSizes } from '../realtime/index';
 import { uploadBytesOf } from '../uploads/index';
 import { requireWorkspace, workspaceAdminFacts } from '../workspaces/index';
 
@@ -64,6 +69,106 @@ export async function adminMembers(workspaceId: string, q = ''): Promise<AdminMe
     });
   }
   return out;
+}
+
+// ---- the board inventory (#152) ----
+
+const BOARD_FILTERS: AdminBoardFilter[] = ['link', 'public', 'guests', 'outside', 'inactive', 'archived'];
+const BOARD_SORTS: AdminBoardSort[] = ['activity', 'title', 'owner', 'size', 'created', 'members'];
+const DAY_MS = 86_400_000;
+
+export interface InventoryQuery {
+  filters: AdminBoardFilter[];
+  inactiveDays: number;
+  q: string;
+  sort: AdminBoardSort;
+  dir: 'asc' | 'desc';
+  offset: number;
+  limit: number;
+}
+
+/** The inventory's query string. */
+export function inventoryQuery(q: Record<string, unknown>): InventoryQuery {
+  const str = (k: string) => (typeof q[k] === 'string' ? (q[k] as string) : '');
+  const filters = str('filter').split(',').map((f) => f.trim()).filter(Boolean) as AdminBoardFilter[];
+  for (const f of filters) if (!BOARD_FILTERS.includes(f)) throw badRequest(`filter must be among ${BOARD_FILTERS.join(', ')}`);
+  const sort = (str('sort') || 'activity') as AdminBoardSort;
+  if (!BOARD_SORTS.includes(sort)) throw badRequest(`sort must be one of ${BOARD_SORTS.join(', ')}`);
+  const int = (k: string, dflt: number, min: number, max: number) => {
+    const v = str(k);
+    if (!v) return dflt;
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < min || n > max) throw badRequest(`${k} must be a whole number from ${min} to ${max}`);
+    return n;
+  };
+  return {
+    filters,
+    inactiveDays: int('inactiveDays', 90, 1, 3650),
+    q: str('q').trim().toLowerCase().slice(0, 200),
+    sort,
+    dir: str('dir') === 'asc' ? 'asc' : str('dir') === 'desc' ? 'desc' : sort === 'title' || sort === 'owner' ? 'asc' : 'desc',
+    offset: int('offset', 0, 0, 1_000_000),
+    limit: int('limit', 50, 1, 200),
+  };
+}
+
+/**
+ * Every board of the workspace with its owner, project, how it is shared (link, guests, people
+ * outside) and when it was last used — metadata only, for its content admins (the caller checked).
+ */
+export async function boardInventory(workspaceId: string, iq: InventoryQuery, now = Date.now()): Promise<AdminBoardsResponse> {
+  const [boards, facts] = await Promise.all([inventoryBoards(workspaceId), workspaceAdminFacts(workspaceId)]);
+  const ids = boards.map((b) => b.id);
+  const [members, sizes, people] = await Promise.all([memberIdsOfBoards(ids), storedBoardSizes(ids), getUsers(boards.map((b) => b.ownerId))]);
+  const roles = new Map(facts.members.map((m) => [m.userId, m.role]));
+  const projects = new Map(facts.projectList.map((p) => [p.id, p.name]));
+  let rows: AdminBoardRow[] = boards.map((b) => {
+    const ms = members.get(b.id) ?? [];
+    return {
+      boardId: b.id,
+      kind: b.kind,
+      title: b.title,
+      ownerId: b.ownerId,
+      ownerName: people.get(b.ownerId)?.name ?? 'Deleted user',
+      projectId: b.projectId,
+      projectName: b.projectId ? (projects.get(b.projectId) ?? null) : null,
+      linkAccess: b.linkAccess,
+      publicLink: b.publicLink,
+      linkPassword: b.linkPasswordHash !== null,
+      members: ms.length,
+      guests: ms.filter((u) => roles.get(u) === 'guest').length,
+      outsiders: ms.filter((u) => !roles.has(u)).length,
+      bytes: sizes.get(b.id) ?? 0,
+      createdAt: b.createdAt,
+      lastActivityAt: b.lastActivityAt,
+      archivedAt: b.archivedAt,
+    };
+  });
+  const idleSince = now - iq.inactiveDays * DAY_MS;
+  const keep: Record<AdminBoardFilter, (r: AdminBoardRow) => boolean> = {
+    link: (r) => r.linkAccess !== 'none',
+    public: (r) => r.publicLink,
+    guests: (r) => r.guests > 0,
+    outside: (r) => r.outsiders > 0,
+    inactive: (r) => r.lastActivityAt <= idleSince,
+    archived: (r) => r.archivedAt !== null,
+  };
+  rows = rows.filter((r) => iq.filters.every((f) => keep[f](r)) && (!iq.q || r.title.toLowerCase().includes(iq.q) || r.ownerName.toLowerCase().includes(iq.q)));
+  const key: Record<AdminBoardSort, (r: AdminBoardRow) => number | string> = {
+    activity: (r) => r.lastActivityAt,
+    title: (r) => r.title.toLowerCase(),
+    owner: (r) => r.ownerName.toLowerCase(),
+    size: (r) => r.bytes,
+    created: (r) => r.createdAt,
+    members: (r) => r.members,
+  };
+  const sign = iq.dir === 'asc' ? 1 : -1;
+  rows.sort((a, b) => {
+    const x = key[iq.sort](a);
+    const y = key[iq.sort](b);
+    return (x < y ? -1 : x > y ? 1 : a.boardId < b.boardId ? -1 : 1) * sign;
+  });
+  return { boards: rows.slice(iq.offset, iq.offset + iq.limit), total: rows.length };
 }
 
 // ---- usage ----

@@ -1,5 +1,7 @@
 import type {
   Account,
+  AdminBoardSort,
+  AdminBoardsResponse,
   AdminScope,
   AdminTrashedBoard,
   OrganisationSummary,
@@ -512,6 +514,19 @@ export const api = {
   adminUsage: (id: string) => request<{ usage: WorkspaceUsage }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/usage`),
   /** Boards whose link is on but doesn't meet the workspace's link policy (#39). */
   linkCompliance: (id: string) => request<{ boards: LinkComplianceIssue[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/link-compliance`),
+  /** #152: the board inventory for the workspace's content admins, and what they fix from it. */
+  adminBoards: (id: string, p: { filter: string; inactiveDays: number; sort: AdminBoardSort; q: string; offset: number; limit: number }) =>
+    request<AdminBoardsResponse>(
+      'GET',
+      `/api/workspaces/${encodeURIComponent(id)}/admin/boards?` +
+        new URLSearchParams({ filter: p.filter, inactiveDays: String(p.inactiveDays), sort: p.sort, q: p.q, offset: String(p.offset), limit: String(p.limit) }).toString(),
+    ),
+  adminBoardLinkOff: (id: string, boardId: string) =>
+    request<{ ok: true }>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/boards/${encodeURIComponent(boardId)}/link-off`),
+  adminRemoveOutsiders: (id: string, boardId: string) =>
+    request<{ removed: number }>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/boards/${encodeURIComponent(boardId)}/remove-outsiders`),
+  adminTransferBoard: (id: string, boardId: string, userId: string) =>
+    request<{ ok: true }>('POST', `/api/workspaces/${encodeURIComponent(id)}/admin/boards/${encodeURIComponent(boardId)}/transfer`, { userId }),
   /** #153: the workspace's trash for its content admins, and restoring from it. */
   adminTrash: (id: string) => request<{ boards: AdminTrashedBoard[] }>('GET', `/api/workspaces/${encodeURIComponent(id)}/admin/trash`),
   adminRestoreBoard: (id: string, boardId: string) =>

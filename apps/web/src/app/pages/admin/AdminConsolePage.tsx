@@ -5,7 +5,7 @@
 // can't do.
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ChartColumn, Hourglass, KeyRound, Lock, Plug, ScrollText, Sparkles, Ticket, Trash2, UserCog, Users, Webhook } from 'lucide-react';
+import { ArrowLeft, ChartColumn, Hourglass, LayoutGrid, KeyRound, Lock, Plug, ScrollText, Sparkles, Ticket, Trash2, UserCog, Users, Webhook } from 'lucide-react';
 import { ADMIN_SCOPES, type AdminScope, type WorkspaceSummary } from '@freero/shared';
 import { Logo, Spinner } from '@ui';
 import { api } from '../../api/client';
@@ -21,6 +21,7 @@ import { AdminSiem, siemOffered } from './AdminSiem';
 import { AdminWebhooks, webhooksOffered } from './AdminWebhooks';
 import { AdminTrackers } from './AdminTrackers';
 import { AdminTrash } from './AdminTrash';
+import { AdminBoards } from './AdminBoards';
 import './admin.css';
 
 // `scopes` (#151): the admin scopes that use the tab (any of them); none: every admin.
@@ -28,6 +29,7 @@ const TABS = [
   { id: 'overview', label: 'Overview', icon: ChartColumn, scopes: [] },
   { id: 'members', label: 'Members', icon: Users, scopes: ['members'] },
   { id: 'security', label: 'Security', icon: Lock, scopes: ['security', 'content'] },
+  { id: 'boards', label: 'Boards', icon: LayoutGrid, scopes: ['content'] },
   { id: 'trash', label: 'Trash', icon: Trash2, scopes: ['content'] },
   { id: 'sso', label: 'Single sign-on', icon: KeyRound, scopes: ['security'] },
   { id: 'provisioning', label: 'Provisioning', icon: UserCog, scopes: ['security'] },
@@ -134,6 +136,7 @@ export function AdminConsolePage() {
             ) : null}
             {tab === 'security' ? <AdminSecurity key={workspace.organisation?.id ?? 'none'} workspace={workspace} onChanged={setWorkspace} /> : null}
             {tab === 'members' ? <AdminMembers workspace={workspace} /> : null}
+            {tab === 'boards' ? <AdminBoards workspace={workspace} /> : null}
             {tab === 'trash' ? <AdminTrash workspace={workspace} /> : null}
             {tab === 'sso' ? <AdminSso workspace={workspace} /> : null}
             {tab === 'provisioning' ? <AdminProvisioning workspace={workspace} /> : null}
