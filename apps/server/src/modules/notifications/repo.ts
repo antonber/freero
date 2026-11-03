@@ -1,4 +1,5 @@
-// The only writer of `notifications`, `notification_prefs`, `pending_mentions` and `card_due_watch` [S4].
+// The only writer of `notifications`, `notification_prefs`, `pending_mentions`, `card_due_watch` and
+// `board_change_digests` [S4].
 import { isForeignKeyViolation, one, query } from '../../platform/db';
 import type { NotificationData } from './types';
 
@@ -204,13 +205,17 @@ export async function setCardDueWatch(boardId: string, elementId: string, w: { a
   }
 }
 
-/** Cards due between `firstDay` and `lastDay` (YYYY-MM-DD, inclusive) not yet reminded of for that date. */
-export async function cardsDueBetween(firstDay: string, lastDay: string, limit: number): Promise<CardDueWatch[]> {
+/**
+ * Cards due between `firstDay` and `lastDay` (YYYY-MM-DD, inclusive) not yet reminded of for that
+ * date, in (due date, board, card) order; `after`: the page continues after that one.
+ */
+export async function cardsDueBetween(firstDay: string, lastDay: string, limit: number, after: CardDueWatch | null = null): Promise<CardDueWatch[]> {
   const rows = await query<{ board_id: string; element_id: string; assignee_id: string; due: string; title: string }>(
     `SELECT board_id, element_id, assignee_id, to_char(due_date, 'YYYY-MM-DD') AS due, title FROM card_due_watch
      WHERE due_date BETWEEN $1::date AND $2::date AND (reminded_for IS NULL OR reminded_for <> due_date)
-     ORDER BY due_date LIMIT $3`,
-    [firstDay, lastDay, limit],
+       AND ($4::date IS NULL OR (due_date, board_id, element_id) > ($4::date, $5, $6))
+     ORDER BY due_date, board_id, element_id LIMIT $3`,
+    [firstDay, lastDay, limit, after?.dueDate ?? null, after?.boardId ?? '', after?.elementId ?? ''],
   );
   return rows.map((r) => ({ boardId: r.board_id, elementId: r.element_id, assigneeId: r.assignee_id, dueDate: r.due, title: r.title }));
 }
@@ -218,4 +223,66 @@ export async function cardsDueBetween(firstDay: string, lastDay: string, limit: 
 /** The reminder for this due date went out (or there is nothing to remind of for it). */
 export async function markCardReminded(boardId: string, elementId: string, dueDate: string): Promise<void> {
   await query(`UPDATE card_due_watch SET reminded_for = $3::date WHERE board_id = $1 AND element_id = $2 AND due_date = $3::date`, [boardId, elementId, dueDate]);
+}
+
+// ---- "changes on your boards" emails (board_change_digests) ----
+
+export type DigestFrequency = 'daily' | 'weekly';
+
+export interface BoardChangeDigest {
+  userId: string;
+  frequency: DigestFrequency;
+  lastSentAt: number;
+  nextAt: number;
+}
+
+interface DigestRow {
+  user_id: string;
+  frequency: DigestFrequency;
+  last_sent_at: Date;
+  next_at: Date;
+}
+const toDigest = (r: DigestRow): BoardChangeDigest => ({ userId: r.user_id, frequency: r.frequency, lastSentAt: r.last_sent_at.getTime(), nextAt: r.next_at.getTime() });
+
+export async function boardChangeDigestOf(userId: string): Promise<BoardChangeDigest | null> {
+  const r = await one<DigestRow>(`SELECT * FROM board_change_digests WHERE user_id = $1`, [userId]);
+  return r ? toDigest(r) : null;
+}
+
+/**
+ * Turns the email on at `frequency` — the window starting `now` when it was off; `nextAt(from)`:
+ * when the next one is due for a window starting `from` — or off (null).
+ */
+export async function setBoardChangeDigest(userId: string, frequency: DigestFrequency | null, now: number, nextAt?: (from: number) => number): Promise<void> {
+  if (!frequency) {
+    await query(`DELETE FROM board_change_digests WHERE user_id = $1`, [userId]);
+    return;
+  }
+  const current = await boardChangeDigestOf(userId);
+  const from = current?.lastSentAt ?? now;
+  try {
+    await query(
+      `INSERT INTO board_change_digests (user_id, frequency, last_sent_at, next_at) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (user_id) DO UPDATE SET frequency = excluded.frequency, next_at = excluded.next_at`,
+      [userId, frequency, new Date(from), new Date(nextAt ? nextAt(from) : now)],
+    );
+  } catch (e) {
+    if (!isForeignKeyViolation(e)) throw e; // the account was deleted meanwhile
+  }
+}
+
+/** Subscribers whose email is due at `now`, the longest-waiting first. */
+export async function dueBoardChangeDigests(now: number, limit: number): Promise<BoardChangeDigest[]> {
+  return (await query<DigestRow>(`SELECT * FROM board_change_digests WHERE next_at <= $1 ORDER BY next_at LIMIT $2`, [new Date(now), limit])).map(toDigest);
+}
+
+/** Moves the window on (claim): false when another run already did. */
+export async function moveBoardChangeDigest(userId: string, from: { lastSentAt: number }, to: { lastSentAt: number; nextAt: number }): Promise<boolean> {
+  const rows = await query(`UPDATE board_change_digests SET last_sent_at = $3, next_at = $4 WHERE user_id = $1 AND last_sent_at = $2 RETURNING 1`, [
+    userId,
+    new Date(from.lastSentAt),
+    new Date(to.lastSentAt),
+    new Date(to.nextAt),
+  ]);
+  return rows.length > 0;
 }

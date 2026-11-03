@@ -5,10 +5,13 @@
 //   card.due_soon     a card assigned to you is due tomorrow (one reminder per due date).
 // Changes to one card are settled for CARD_SETTLE_MS before anyone is notified, so clicking
 // through the assignee picker (Ann, Bob, Ann) notifies Ann once — or nobody, if it ends where it
-// started. Reminders come from card_due_watch (kept from the same events), each re-checked
-// against the card as the assignee sees it on the board right before it is sent.
+// started. Reminders come from card_due_watch (kept from the same events), the day before in the
+// assignee's time zone, each re-checked against the card as the assignee sees it on the board
+// right before it is sent.
 import { isAnonymousAuthor, isGuestId, richTextToPlain } from '@freero/shared';
 import { logError } from '../../platform/log';
+import { addDays, localDate } from '../../platform/time';
+import { timeZonesOf } from '../auth/index';
 import { getBoardAccess, getBoardTitle } from '../boards/index';
 import { readBoardView, type CardAssignmentEvent } from '../realtime/index';
 import * as repo from './repo';
@@ -76,21 +79,39 @@ async function settle(first: CardAssignmentEvent, last: CardAssignmentEvent): Pr
   await notify({ userId: assignee, type: newAssignee ? 'card.assigned' : 'card.due_changed', actorId, boardId, data });
 }
 
-const DAY_MS = 86_400_000;
+const HOUR_MS = 3_600_000;
 const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 const REMINDER_BATCH = 200;
+/** Most cards one run looks at (the next run continues). */
+const REMINDER_MAX = 5000;
 
 /**
- * Reminds assignees of cards due tomorrow (UTC calendar days; also today, for a reminder a
- * stopped server missed). Each candidate is re-read on the board as its assignee sees it: a card
+ * Reminds assignees of cards due tomorrow — tomorrow where THEY are (their time zone; UTC while
+ * it isn't known), and today, for a reminder a stopped server missed. A due date already past
+ * there is not reminded of. Each candidate is re-read on the board as its assignee sees it: a card
  * gone, reassigned, re-dated or hidden from them is dropped instead. Idempotent; one reminder
  * per card and due date (the dedupe key holds even if marking it failed).
  */
 export async function sendDueReminders(now = Date.now()): Promise<number> {
   let sent = 0;
-  const due = await repo.cardsDueBetween(day(now), day(now + DAY_MS), REMINDER_BATCH);
+  // Every time zone's today and tomorrow lie within these days (UTC-12 … UTC+14).
+  const first = day(now - 12 * HOUR_MS);
+  const last = addDays(day(now + 14 * HOUR_MS), 1);
+  const due: repo.CardDueWatch[] = [];
+  for (let after: repo.CardDueWatch | null = null; due.length < REMINDER_MAX; ) {
+    const page = await repo.cardsDueBetween(first, last, REMINDER_BATCH, after);
+    due.push(...page);
+    if (page.length < REMINDER_BATCH) break;
+    after = page[page.length - 1];
+  }
+  const zones = await timeZonesOf([...new Set(due.map((w) => w.assigneeId))]);
   const byBoard = new Map<string, repo.CardDueWatch[]>();
-  for (const w of due) byBoard.set(w.boardId, [...(byBoard.get(w.boardId) ?? []), w]);
+  for (const w of due) {
+    const today = localDate(now, zones.get(w.assigneeId));
+    if (w.dueDate < today) await repo.markCardReminded(w.boardId, w.elementId, w.dueDate); // past there: too late
+    else if (w.dueDate <= addDays(today, 1)) byBoard.set(w.boardId, [...(byBoard.get(w.boardId) ?? []), w]);
+    // else: not tomorrow there yet
+  }
   for (const [boardId, watches] of byBoard) {
     const title = await getBoardTitle(boardId);
     for (const w of watches) {

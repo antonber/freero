@@ -1,11 +1,12 @@
 import { Router } from 'express';
-import type { NotificationType } from '@freero/shared';
+import type { BoardChangesFrequency, NotificationType } from '@freero/shared';
 import type { ServerContext } from '../../platform/context';
 import { badRequest, handle } from '../../platform/http';
 import { currentUser, requireUser } from '../auth/index';
 import { listFor, markRead, prefsFor, unsubscribe, updatePrefs } from './service';
 
 const MAX_IDS = 200;
+const FREQUENCIES: BoardChangesFrequency[] = ['off', 'daily', 'weekly'];
 
 export default function notificationRoutes(_ctx: ServerContext): Router {
   const r = Router();
@@ -15,10 +16,12 @@ export default function notificationRoutes(_ctx: ServerContext): Router {
   r.post(
     '/notifications/unsubscribe',
     handle(async (req, res) => {
-      const token = String(req.query.token ?? (req.body as { token?: unknown } | undefined)?.token ?? '');
-      const email = token ? await unsubscribe(token) : null;
+      const body = req.body as { token?: unknown; list?: unknown } | undefined;
+      const token = String(req.query.token ?? body?.token ?? '');
+      const list = req.query.list ?? body?.list;
+      const email = token ? await unsubscribe(token, list === undefined || list === '' ? undefined : String(list)) : null;
       if (!email) throw badRequest('This unsubscribe link is not valid.');
-      res.json({ ok: true, email });
+      res.json({ ok: true, email, list: list ? String(list) : 'all' });
     }),
   );
 
@@ -62,13 +65,16 @@ export default function notificationRoutes(_ctx: ServerContext): Router {
   r.put(
     '/notifications/prefs',
     handle(async (req, res) => {
-      const body = (req.body ?? {}) as { emailAll?: unknown; email?: unknown };
+      const body = (req.body ?? {}) as { emailAll?: unknown; email?: unknown; boardChanges?: unknown };
       if (body.emailAll !== undefined && typeof body.emailAll !== 'boolean') throw badRequest('emailAll must be true or false');
+      if (body.boardChanges !== undefined && !FREQUENCIES.includes(body.boardChanges as BoardChangesFrequency))
+        throw badRequest('boardChanges must be off, daily or weekly');
       if (body.email !== undefined && (typeof body.email !== 'object' || body.email === null)) throw badRequest('email must map types to true or false');
       res.json(
         await updatePrefs(currentUser(req).id, {
           emailAll: body.emailAll as boolean | undefined,
           email: body.email as Partial<Record<NotificationType, boolean>> | undefined,
+          boardChanges: body.boardChanges as BoardChangesFrequency | undefined,
         }),
       );
     }),
