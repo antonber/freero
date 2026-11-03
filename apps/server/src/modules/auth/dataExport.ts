@@ -12,6 +12,7 @@ export interface AccountDataExport {
     emailVerified: boolean;
     color: string;
     avatarUrl: string | null;
+    timeZone: string | null;
     createdAt: string;
     deletionScheduledFor: string | null;
   };
@@ -41,6 +42,7 @@ export async function exportAccountData(userId: string): Promise<AccountDataExpo
       emailVerified: user.emailVerified,
       color: user.color,
       avatarUrl: user.avatarUrl,
+      timeZone: user.timeZone,
       createdAt: iso(user.createdAt),
       deletionScheduledFor: user.deletionScheduledFor === null ? null : iso(user.deletionScheduledFor),
     },

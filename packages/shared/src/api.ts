@@ -81,6 +81,11 @@ export interface BoardSummary {
   linkProtection?: { password: boolean; expiresAt: number | null; expired: boolean; storedAccess: LinkAccess };
   /** [additive] The board's call (KAI-134): a meeting link its editors set, or a Jitsi room. */
   call?: BoardCall | null;
+  /**
+   * [additive] Its owner lets other sites embed it live (#2, `/embed/b/:id`): what the embed shows
+   * still follows the board's sharing exactly. Absent: off.
+   */
+  embeddable?: boolean;
 }
 
 /**
@@ -109,6 +114,11 @@ export interface BoardPermissions {
   liveEmbeds?: boolean;
   /** [additive] Further https origins the server's operator allows to be framed (`EMBED_EXTRA_ORIGINS`). */
   embedOrigins?: string[];
+  /**
+   * [additive] Its workspace lets its boards be embedded on other sites (policy `boardEmbeds`, #2).
+   * Absent: allowed.
+   */
+  boardEmbeds?: boolean;
 }
 
 // ---- Board call (KAI-134) ----
@@ -250,6 +260,11 @@ export interface WorkspacePolicies {
    * activated as live frames on its boards; 'off' keeps every link a preview card.
    */
   liveEmbeds: 'on' | 'off';
+  /**
+   * [additive] Whether its boards may be embedded live on other sites (#2: a board's owner turns
+   * embedding on in the share dialog); 'off' keeps every board out of other sites' frames.
+   */
+  boardEmbeds: 'on' | 'off';
 }
 export interface WorkspaceSummary {
   id: string;
@@ -326,7 +341,7 @@ export interface BoardMember {
 // POST /api/auth/logout   -> { ok: true }                     (clears cookie)
 // GET  /api/auth/session  -> SessionResponse (always 200; user null when signed out)
 // GET  /api/auth/me       -> AuthResponse | 401
-// PATCH /api/auth/me      body { name?, color?, avatarUrl? } -> AuthResponse
+// PATCH /api/auth/me      body { name?, color?, avatarUrl?, timeZone? } -> AuthResponse
 // PUT  /api/auth/me/avatar raw image body (PNG/JPEG/GIF/WebP) -> AuthResponse (resized server-side)
 // DELETE /api/auth/me/avatar -> AuthResponse
 //
@@ -482,6 +497,11 @@ export const SSO_REQUIRED = 'sso_required';
 /** The signed-in user's own account (other people only ever see `User`). */
 export interface Account extends User {
   emailVerified: boolean;
+  /**
+   * IANA time zone ("Europe/Berlin"): due-date reminders, the "changes on your boards" email and
+   * dates in emails follow it. Null until the app detects it from the browser (or you pick one).
+   */
+  timeZone: string | null;
   /** Set while the account is scheduled for deletion: it is purged at this instant unless restored. */
   deletionScheduledFor: number | null;
 }
@@ -706,6 +726,8 @@ export interface UpdateBoardRequest {
   linkPassword?: string | null;
   /** [additive] Owner only (KAI-145): when the link stops working (epoch ms, future), or null. */
   linkExpiresAt?: number | null;
+  /** [additive] Owner only (#2): let other sites embed the board (`BoardSummary.embeddable`). */
+  embeddable?: boolean;
 }
 
 // ---- Version history ----
@@ -868,6 +890,8 @@ export interface BoardAccessRequest {
 // emails or the member list, can't @mention, and get no notifications. Their comments are stored
 // under their guest id with the name "Guest · <name>" (the server refuses any other name for them).
 // Changing the link or the policy re-checks connected guests at once; expired guests are dropped.
+// A commenter guest takes part in votes, planning poker and private mode like any commenter while
+// the board lets them (participation.ts: their own ballot, pick and drafts only, server-enforced).
 // GET  /api/guest/boards/:id        -> GuestBoardInfo           (no session needed; 404: no such board)
 // POST /api/guest/boards/:id/join   body { name } -> GuestJoinResponse (rate limited per IP; 403 when
 //                                      the board doesn't let guests in)
@@ -930,6 +954,67 @@ export interface EmbedRedeemResponse {
   app: string;
 }
 
+// ---- Public live embeds on other sites (#2; docs/integrations/embedding.md) ----
+// Any site may frame /embed/b/:id[?readonly=1][&frame=<itemId>] while the board's owner allows
+// embedding (`BoardSummary.embeddable`) and its workspace's `boardEmbeds` policy is on; the page
+// is the ONLY one framable from anywhere (every other page stays frame-ancestors 'none'). What it
+// shows follows the board's sharing exactly, never more:
+// - a visitor without an account sees the board live, read-only, when its link lets visitors
+//   without an account in (as guests could; no password) — and no presence of theirs is shown;
+// - anyone else signs in through a first-party popup (/embed/connect/:id), which hands the frame a
+//   token for THIS board that acts with the person's own role (capped at viewer with readonly=1)
+//   and ends with their session. Editing starts only after a click inside the frame.
+// GET  /api/embed/b/:id                         -> PublicEmbedInfo  (no account needed)
+// POST /api/embed/b/:id/token  { readonly? }    -> PublicEmbedToken (session; first-party popup only)
+// POST /api/embed/b/:id/me     { token }        -> PublicEmbedMember (401: sign in again)
+// GET  /api/oembed?url=<board or embed URL>[&maxwidth][&maxheight] -> OEmbedResponse (public boards only)
+// Socket: /ws/embed/b/:id, subprotocols [PUBLIC_EMBED_WS_PROTOCOL] (visitor) or
+// [PUBLIC_EMBED_WS_PROTOCOL, token] (signed in), plus PUBLIC_EMBED_VIEW_ONLY to stay read-only.
+export const PUBLIC_EMBED_WS_PROTOCOL = 'freero.public-embed';
+/** A further subprotocol: this socket only reads, whatever the person may do (editing not started yet). */
+export const PUBLIC_EMBED_VIEW_ONLY = 'freero.view-only';
+/** `code` of a 403 from POST …/token: the person can't open the board (the popup offers to ask for access). */
+export const EMBED_NO_ACCESS = 'embed_no_access';
+/** Close code: too many visitors are watching this board's embeds right now (#60). */
+export const WS_CLOSE_EMBED_FULL = 4430;
+export type PublicEmbedInfo =
+  /** Embedding is off for it (or there is no such board): the same answer either way. */
+  | { status: 'off' }
+  /**
+   * `visitor`: what someone without an account may do here ('viewer'), or null (sign in).
+   * `title` only when a visitor may see the board.
+   */
+  | { status: 'on'; boardId: string; title: string | null; visitor: 'viewer' | null; boardUrl: string };
+export interface PublicEmbedToken {
+  token: string;
+  expiresAt: number;
+}
+export interface PublicEmbedMember {
+  user: { id: string; name: string; color: string; avatarUrl: string | null };
+  /** As that person sees it, with `role` capped by the token (readonly). */
+  board: BoardSummary;
+  boardUrl: string;
+  expiresAt: number;
+}
+/** What the connect popup tells the embed frame that opened it (window.opener, same origin only). */
+export type EmbedConnectMessage =
+  | { freeroEmbedConnect: 'token'; boardId: string; token: string; expiresAt: number }
+  | { freeroEmbedConnect: 'no-access'; boardId: string };
+export interface OEmbedResponse {
+  version: '1.0';
+  type: 'rich';
+  provider_name: string;
+  provider_url: string;
+  title: string;
+  html: string;
+  width: number;
+  height: number;
+  thumbnail_url?: string;
+  thumbnail_width?: number;
+  thumbnail_height?: number;
+  cache_age?: number;
+}
+
 // ---- Activity ----
 // What people did, one entry per person per burst of work ("Ann added 12 sticky notes in frame
 // “Ideas”"), derived on the server from changes it applied from that person's own socket and from
@@ -956,8 +1041,56 @@ export interface ActivityEntry {
   startedAt: number;
   /** When the burst ended (entries are ordered by it). */
   at: number;
+  /**
+   * kind 'edit': the items it added or changed, to find them on the board (some may be gone since;
+   * at most MAX_ACTIVITY_ITEMS per entry, `moreItems` when there were more), and how many it removed.
+   * Absent on entries recorded before items were kept.
+   */
+  items?: string[];
+  moreItems?: boolean;
+  removedItems?: number;
 }
 export interface ActivityResponse { entries: ActivityEntry[]; hasMore: boolean }
+/** Most items an activity entry keeps (per list: added, changed, removed). */
+export const MAX_ACTIVITY_ITEMS = 200;
+
+// ---- Changes since your last visit ----
+// The server keeps when each person last had a board open (their last socket on it closed). When
+// others changed it since, the board offers "See recent changes": what they added, changed and
+// removed, read from the activity feed (attributed changes only: your own edits are never news,
+// an app acting for you is), as you may see it now.
+// GET /api/boards/:id/catch-up          -> CatchUpSummary  (accounts; cheap: activity rows only)
+// GET /api/boards/:id/catch-up/changes  -> CatchUpChanges  (the items, with their text; removed ones
+//     as they read at the last version kept before your visit)
+export interface CatchUpSummary {
+  /** When you last had the board open (null: never, or before Freero kept it). */
+  since: number | null;
+  /** Net over everyone else's changes since then. */
+  counts: { added: number; changed: number; removed: number; comments: number };
+  /** Who made them (most active first; an app acting for someone is named "<app> for <person>"). */
+  people: Array<{ id: string | null; name: string; color: string; avatarUrl: string | null }>;
+}
+export interface CatchUpItem {
+  id: string;
+  /** Element type ('sticky', 'card', …). */
+  kind: string;
+  /** Its text now (a removed item: then; '' when unknown). */
+  text: string;
+  /** A changed item: its text before, when it differs. */
+  before?: string;
+  frame?: string;
+  /** Who changed it (names, last one first). */
+  by: string[];
+  at: number;
+}
+export interface CatchUpChanges extends CatchUpSummary {
+  added: CatchUpItem[];
+  changed: CatchUpItem[];
+  removed: CatchUpItem[];
+  /** More items changed than are listed (each list holds at most MAX_CATCH_UP_ITEMS). */
+  truncated: boolean;
+}
+export const MAX_CATCH_UP_ITEMS = 300;
 
 // ---- Board people ----
 // GET /api/boards/:id/people?ids=a,b,c -> { people: BoardPerson[] }  (any role on the board)
@@ -970,9 +1103,11 @@ export interface BoardPerson { id: string; name: string; color: string; avatarUr
 // GET  /api/notifications?before=<ms>&limit=<n> -> NotificationsResponse  (newest first; 30 by default)
 // POST /api/notifications/read   body { ids?: string[] } -> { unread }  (no ids: mark all read)
 // GET  /api/notifications/prefs  -> NotificationPrefs
-// PUT  /api/notifications/prefs  body { email?: { [type]: boolean }, emailAll?: boolean } -> NotificationPrefs
-// POST /api/notifications/unsubscribe?token=<t>  (no session needed: the signed link from a digest
-//      email, also its RFC 8058 one-click target) -> { ok: true, email } | 400
+// PUT  /api/notifications/prefs  body { email?: { [type]: boolean }, emailAll?: boolean,
+//      boardChanges?: BoardChangesFrequency } -> NotificationPrefs
+// POST /api/notifications/unsubscribe?token=<t>[&list=board-changes]  (no session needed: the signed
+//      link from a digest email, also its RFC 8058 one-click target) -> { ok: true, email, list } | 400
+//      (list 'board-changes': the "changes on your boards" email only; else every notification email)
 // WebSocket /ws/notifications (session cookie): the server sends a JSON NotificationsLiveMessage
 //      whenever the user's notifications change, whichever instance created them.
 //
@@ -1025,7 +1160,14 @@ export interface NotificationPrefs {
   /** Master switch for notification emails (the one-click unsubscribe turns it off). */
   emailAll: boolean;
   types: NotificationTypePref[];
+  /**
+   * "Changes on your boards": an email summarising what others changed on boards you own or
+   * starred, off unless you choose a frequency (daily: each morning; weekly: Monday morning, in
+   * your time zone). Its own unsubscribe link turns only it off; `emailAll` off stops it too.
+   */
+  boardChanges: BoardChangesFrequency;
 }
+export type BoardChangesFrequency = 'off' | 'daily' | 'weekly';
 export type NotificationsLiveMessage = { type: 'changed'; unread: number };
 
 // ---- Uploads ----
@@ -1148,6 +1290,13 @@ export interface RoleMessage {
    * but reads as the person — an owner / editor gets the editors layer (pending suggestions).
    */
   readRole?: Role;
+  /**
+   * [additive, parity rank 1] This commenter connection (a commenter, a guest, or someone a
+   * facilitator's lock made a commenter) may take part while the board lets them
+   * (participation.ts): write its own ballot, planning-poker pick and private-mode drafts. Sent
+   * again whenever that changes. Clients that don't know it simply don't offer taking part.
+   */
+  participant?: boolean;
 }
 /** What a facilitator limits for this connection (enforced by the server, mirrored by the client). */
 export interface SessionLimits {
@@ -1162,7 +1311,8 @@ export interface SessionLimits {
 // ---- Board layers (content the server withholds) ----
 // Besides the shared doc, a board has server-held LAYER docs that only some connections may
 // sync (see "Board layers" in ARCHITECTURE.md):
-//   'private'  one per user: only that user's sockets read it, and only while they may edit.
+//   'private'  one per user: only that user's sockets read it; written while they may edit, or
+//              as a participant (their ballot, pick and private-mode drafts only).
 //              Private-mode drafts and ballots of hidden votes live here until revealed.
 //   'editors'  owners/editors only: contents of hidden frames.
 // They travel over the board's socket (relayed between instances by the server), in an envelope:
@@ -1185,7 +1335,8 @@ export const BOARD_LAYERS: readonly BoardLayer[] = ['private', 'editors'];
 //            (ANONYMOUS_AUTHOR, no app, reveal-time timestamps) and without the comment threads
 //            on them (whose records name their writer: the author). Drafts written during an
 //            anonymous session are revealed so whatever the op says.
-// Only the private layers of people who may still edit the board are revealed; the server holds
+// Only the private layers of people who may still edit the board — or take part as participants
+// (RoleMessage.participant) — are revealed; the server holds
 // the sender's later messages until the op is applied, so it stays in order with them.
 export const WS_MESSAGE_LAYER_OP = 102;
 export interface LayerOp {
@@ -1629,6 +1780,7 @@ export const AUDIT_ACTIONS = {
   'board.transferred': 'Transferred board ownership',
   'board.moved': 'Moved a board to another project',
   'board.link_sharing_changed': 'Changed link sharing',
+  'board.embedding_changed': 'Turned embedding on other sites on or off',
   'board.duplicated': 'Duplicated a board',
   'board.exported': 'Exported a board',
   'board.backup_restored': 'Restored a board from a backup file',

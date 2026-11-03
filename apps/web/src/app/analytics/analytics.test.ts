@@ -91,14 +91,16 @@ describe('the app (the bridge to the analytics frame)', () => {
     expect(JSON.stringify(sent)).not.toMatch(/b0ardIdSecret|s3cret/);
   });
 
-  it('never measures nor asks in an assistant’s live board view, the operators’ console or the OAuth consent screen', async () => {
+  it('never measures nor asks in an embedded board (an assistant’s live view, another site’s embed and its sign-in pages), the operators’ console or the OAuth consent screen', async () => {
     startAppAnalytics();
-    reportPage('/embed/board/abc', '');
-    await settle();
-    expect(banner()).toBeNull(); // no choice yet, and still not asked there
+    for (const p of ['/embed/board/abc', '/embed/b/abc', '/embed/connect/abc', '/embed/signed-in']) {
+      reportPage(p, '');
+      await settle();
+      expect(banner(), p).toBeNull(); // no choice yet, and still not asked there
+    }
 
     localStorage.setItem(CONSENT_KEY, JSON.stringify({ choice: 'granted', at: Date.now() }));
-    for (const p of ['/operator', '/operator/boards/abc/preview', '/oauth/authorize']) {
+    for (const p of ['/embed/b/abc', '/embed/connect/abc', '/operator', '/operator/boards/abc/preview', '/oauth/authorize']) {
       reportPage(p, '');
       track({ name: 'board_created' });
     }

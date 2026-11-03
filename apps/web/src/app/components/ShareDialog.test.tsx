@@ -15,7 +15,7 @@ vi.mock('../api/client', async (importOriginal) => {
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const user = (id: string, name: string): Account => ({ id, name, email: `${id}@x.io`, color: '#1C7ED6', avatarUrl: null, createdAt: 0, emailVerified: true, deletionScheduledFor: null });
+const user = (id: string, name: string): Account => ({ id, name, email: `${id}@x.io`, color: '#1C7ED6', avatarUrl: null, createdAt: 0, emailVerified: true, deletionScheduledFor: null, timeZone: 'UTC' });
 const member = (id: string, name: string, role: Role): BoardMember => ({ userId: id, name, email: `${id}@x.io`, color: '#1C7ED6', avatarUrl: null, role });
 const MEMBERS = [member('u1', 'Ada', 'owner'), member('u2', 'Bob', 'editor'), member('u3', 'Cy', 'viewer')];
 const board = (role: Role): BoardSummary => ({

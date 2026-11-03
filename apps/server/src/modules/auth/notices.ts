@@ -11,7 +11,9 @@ import type { Request } from 'express';
 import { describeDevice } from '@freero/shared';
 import { appUrl, renderMail, sendMailLater } from '../../platform/mail';
 import { clientIp } from '../../platform/rateLimit';
+import { formatDay, formatWhen } from '../../platform/time';
 import { locateIp, maskIp } from './geoip';
+import * as repo from './repo';
 
 export type SecurityNotice =
   | { kind: 'password_changed' }
@@ -42,8 +44,6 @@ export type SecurityNotice =
   | { kind: 'new_sign_in'; method: string }
   | { kind: 'deletion_scheduled'; at: number };
 
-/** "Wed, 28 Oct 2026 17:03 UTC" */
-const when = (ms: number) => new Date(ms).toUTCString().replace(/:\d\d GMT$/, ' UTC');
 
 /** "j***@example.com": enough to recognise an address, not to learn someone else's. */
 export function maskEmail(email: string): string {
@@ -52,7 +52,7 @@ export function maskEmail(email: string): string {
 }
 
 /** "When: … · Device: Chrome on Windows · Where: Lyon, France" for the request that made the change. */
-function circumstances(req: Request | null, now: number): string {
+function circumstances(req: Request | null, now: number, when: (ms: number) => string): string {
   const parts = [`When: ${when(now)}`];
   if (req) {
     parts.push(`Device: ${describeDevice(req.get('user-agent') ?? '')}`);
@@ -77,8 +77,19 @@ const OUTRO = 'Freero sends this notice for every change to how your account is 
 
 /** Mails a security notice to `to` (the account's address — the previous one for email_changed). Never throws. */
 export function sendSecurityNotice(req: Request | null, to: string, notice: SecurityNotice, now = Date.now()): void {
+  // Times read in the account's time zone (UTC when unknown — or for a previous address).
+  sendMailLater(
+    repo.findUserByEmail(to).then(
+      (u) => composeNotice(req, to, notice, now, u?.timeZone ?? null),
+      () => composeNotice(req, to, notice, now, null),
+    ),
+  );
+}
+
+function composeNotice(req: Request | null, to: string, notice: SecurityNotice, now: number, zone: string | null) {
+  const when = (ms: number) => formatWhen(ms, zone);
   const reset = { label: 'Reset your password', url: appUrl(req, `/forgot-password?email=${encodeURIComponent(to)}`) };
-  const at = circumstances(req, now);
+  const at = circumstances(req, now, when);
   let m: { subject: string; title: string; paragraphs: string[]; action?: { label: string; url: string } };
   switch (notice.kind) {
     case 'password_changed':
@@ -277,7 +288,7 @@ export function sendSecurityNotice(req: Request | null, to: string, notice: Secu
         subject: 'Your Freero account will be deleted',
         title: 'Your account is scheduled for deletion',
         paragraphs: [
-          `Your Freero account and the boards you own will be deleted for good on ${when(notice.at).replace(/ \d\d:\d\d UTC$/, '')}. Every device was signed out.`,
+          `Your Freero account and the boards you own will be deleted for good on ${formatDay(notice.at, zone)}. Every device was signed out.`,
           at,
           'Changed your mind, or it wasn’t you? Log in before then and choose “Restore account”. If it wasn’t you, change your password right after.',
         ],
@@ -285,5 +296,5 @@ export function sendSecurityNotice(req: Request | null, to: string, notice: Secu
       };
       break;
   }
-  sendMailLater({ to, ...renderMail({ ...m, outro: OUTRO }) });
+  return { to, ...renderMail({ ...m, outro: OUTRO }) };
 }

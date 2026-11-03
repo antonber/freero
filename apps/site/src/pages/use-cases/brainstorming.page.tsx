@@ -26,7 +26,7 @@ export default definePage({
     },
     {
       q: 'How does dot voting work?',
-      a: 'Start voting, give each person 1 to 20 votes and choose whether all notes or only the selected ones can be voted on. With results hidden, ballots stay sealed on the server until voting ends; then the notes are ranked by votes.',
+      a: 'Start voting, give each person 1 to 99 votes, optionally cap the votes one note can get from one person or set a timer, and choose whether all notes or only the selected ones can be voted on. Votes are anonymous by default: ballots stay sealed on the server until voting ends and are counted without names. Then the notes are ranked by votes, and earlier rounds stay in the results history.',
     },
     {
       q: 'Is there a limit on sticky notes?',

@@ -11,8 +11,11 @@
 //
 // Access: rows about hidden frames' contents ('editors' layer) are shown to owners/editors only;
 // private layers are never observed (realtime/changes.ts). No element text is stored, only types,
-// counts and the title of the frame the changes were in (frames are visible to everyone).
+// counts, the title of the frame the changes were in (frames are visible to everyone) and the ids
+// of the items (capped), so an entry can take you to them and "changes since your last visit"
+// (catchUp.ts) can show them.
 import {
+  MAX_ACTIVITY_ITEMS,
   TRACKER_PROVIDERS,
   actingFor,
   guestDisplayName,
@@ -129,6 +132,19 @@ function editSummary(k: Bucket, titles: Map<string, string>): ActivitySummary | 
     ...(counts(k.removed) ? { removed: counts(k.removed) } : {}),
     ...(only && titles.get(only) !== undefined ? { frame: titles.get(only) } : {}),
     ...(named.length > 1 ? { frames: named.length } : {}),
+    ids: idsOf(k),
+  };
+}
+
+/** Which items a burst touched (ids only; each list cut at MAX_ACTIVITY_ITEMS). */
+function idsOf(k: Bucket): NonNullable<ActivitySummary['ids']> {
+  const cut = <T>(xs: T[]) => xs.slice(0, MAX_ACTIVITY_ITEMS);
+  const more = Math.max(k.added.size, k.changed.size, k.removed.size) > MAX_ACTIVITY_ITEMS;
+  return {
+    ...(k.added.size ? { added: cut([...k.added.keys()]) } : {}),
+    ...(k.changed.size ? { changed: cut([...k.changed.keys()]) } : {}),
+    ...(k.removed.size ? { removed: Object.fromEntries(cut([...k.removed])) } : {}),
+    ...(more ? { more: true } : {}),
   };
 }
 
@@ -342,17 +358,49 @@ async function present(rows: ActivityRow[], titles?: Map<string, string>): Promi
       boardId: r.boardId,
       ...(titles ? { boardTitle: titles.get(r.boardId) ?? 'Untitled board' } : {}),
       actor: u ? { id: u.id, name: u.name, color: u.color, avatarUrl: u.avatarUrl } : null,
-      actorName: r.summary.app ? actingFor({ name: r.summary.app }, name) : name,
+      actorName: actorNameOf(r, name),
       ...(r.summary.app ? { via: r.summary.app } : {}),
       kind: r.kind,
       text: describe(r, names),
       startedAt: r.startedAt,
       at: r.endedAt,
+      ...itemsOf(r),
     };
   });
 }
 
-const canSeeHidden = (role: Role | null) => role === 'owner' || role === 'editor';
+const actorNameOf = (r: ActivityRow, name: string) => (r.summary.app ? actingFor({ name: r.summary.app }, name) : name);
+
+/** Where an edit entry's items are (ids to find on the board). */
+function itemsOf(r: ActivityRow): Pick<ActivityEntry, 'items' | 'moreItems' | 'removedItems'> {
+  const ids = r.kind === 'edit' ? r.summary.ids : undefined;
+  if (!ids) return {};
+  const items = [...new Set([...(ids.added ?? []), ...(ids.changed ?? [])])].slice(0, MAX_ACTIVITY_ITEMS);
+  const removed = Object.values(r.summary.removed ?? {}).reduce((s, n) => s + n, 0);
+  return { items, ...(ids.more ? { moreItems: true } : {}), ...(removed ? { removedItems: removed } : {}) };
+}
+
+/** Names (accounts by their current profile, guests as stored) and profiles of these rows' actors. */
+export async function actorsOf(rows: ActivityRow[]): Promise<{
+  name: (r: ActivityRow) => string;
+  profile: (r: ActivityRow) => { id: string; name: string; color: string; avatarUrl: string | null } | null;
+}> {
+  const ids = [...new Set(rows.map((r) => r.actorId))];
+  const [users, guests] = await Promise.all([getUsers(ids.filter((id) => !isGuestId(id))), getGuests(ids.filter(isGuestId))]);
+  const base = (r: ActivityRow) => {
+    const g = guests.get(r.actorId);
+    return users.get(r.actorId)?.name ?? r.actorName ?? (g ? guestDisplayName(g.name) : 'Deleted user');
+  };
+  return {
+    name: (r) => actorNameOf(r, base(r)),
+    profile: (r) => {
+      const u = users.get(r.actorId);
+      return u ? { id: u.id, name: u.name, color: u.color, avatarUrl: u.avatarUrl } : null;
+    },
+  };
+}
+
+export const canSeeHidden = (role: Role | null) => role === 'owner' || role === 'editor';
 const pageOf = (opts: { before?: number | null; limit?: number }) => ({
   before: opts.before ?? null,
   limit: Math.min(MAX_LIMIT, Math.max(1, opts.limit ?? DEFAULT_LIMIT)),

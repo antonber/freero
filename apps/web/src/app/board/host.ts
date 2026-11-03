@@ -1,5 +1,14 @@
 // Builds the engine's Host — the one typed contract between the app shell and the engine.
-import { EMBED_WS_PROTOCOL, type BoardAiStatus, type BoardSummary, type BoardTrackersResponse, type EmbedRedeemResponse, type Role } from '@freero/shared';
+import {
+  EMBED_WS_PROTOCOL,
+  PUBLIC_EMBED_VIEW_ONLY,
+  PUBLIC_EMBED_WS_PROTOCOL,
+  type BoardAiStatus,
+  type BoardSummary,
+  type BoardTrackersResponse,
+  type EmbedRedeemResponse,
+  type Role,
+} from '@freero/shared';
 import { unavailableVersionHistory, type Host, type HostEngage, type HostUser } from '@engine';
 import type { ToastApi } from '@ui';
 import { track } from '../analytics/bridge';
@@ -143,7 +152,11 @@ export function createServerHost(board: BoardSummary, deps: HostDeps): Host {
     shareTemplate: shareTemplateWith(deps.team?.id ?? null),
     deleteTemplate,
     versions: versionHistory(board.id),
-    activity: { list: (before) => api.boardActivity(board.id, before) },
+    activity: {
+      list: (before) => api.boardActivity(board.id, before),
+      catchUp: () => api.boardCatchUp(board.id),
+      catchUpChanges: () => api.boardCatchUpChanges(board.id),
+    },
     importImage,
     fetchImage,
     report: reportOn(board.id),
@@ -261,6 +274,66 @@ export function createEmbedHost(view: EmbedRedeemResponse, deps: { notify: Host[
     saveThumbnail: async () => undefined,
     openShareDialog: () => deps.notify('Use “Share with team” above.', 'info'),
     navigate: openInFreero,
+    notify: deps.notify,
+    serverNow: () => Date.now(),
+    listMembers: async () => [view.user],
+    lookupUsers: async (ids) => (ids.includes(view.user.id) ? [view.user] : []),
+    inviteMember: inFreero('Inviting people'),
+    unfurl: inFreero('Link previews'),
+    listTemplates: async () => [],
+    loadTemplate: inFreero('Saved templates'),
+    saveTemplate: inFreero('Saving templates'),
+    shareTemplate: inFreero('Sharing templates'),
+    deleteTemplate: inFreero('Saved templates'),
+    versions: unavailableVersionHistory('Version history is in Freero itself.'),
+    importImage: inFreero('Copying images'),
+    fetchImage: inFreero('Copying images'),
+    report: inFreero('Reporting'),
+  };
+}
+
+/** What a board embedded on another site (#2, app/embed PublicEmbedPage) runs as. */
+export interface PublicEmbedView {
+  board: { id: string; title: string; role: Role; permissions?: BoardSummary['permissions']; call?: BoardSummary['call'] };
+  /** The person signed in from the embed, or a visitor without an account (`token` null). */
+  user: HostUser;
+  token: string | null;
+  /** The socket only reads (editing not started in the frame, or a read-only embed). */
+  viewOnly: boolean;
+  boardUrl: string;
+}
+
+/**
+ * The Host of a board embedded on another site (#2): its own socket (/ws/embed/b) signed in with
+ * the embed's board-bound token, or none for a visitor (read-only) — never the session cookie.
+ * Nothing navigates the frame: whatever would leave the board opens Freero in a new tab.
+ */
+export function createPublicEmbedHost(view: PublicEmbedView, deps: { notify: Host['notify']; onConnectionEnded: NonNullable<Host['onConnectionEnded']> }): Host {
+  const { board } = view;
+  const open = (path: string) => void window.open(new URL(path, view.boardUrl).toString(), '_blank', 'noopener');
+  const inFreero = (what: string) => () => Promise.reject(new Error(`${what}: open the board in Freero.`));
+  return {
+    user: view.user,
+    board: {
+      id: board.id,
+      title: board.title,
+      role: board.role,
+      canExport: false,
+      team: null,
+      signedIn: view.token !== null,
+      call: board.call ?? null,
+      embeds: board.permissions ? embedsOf(board.permissions) : { enabled: false, extraOrigins: [] },
+    },
+    syncUrl: `${wsBase()}/ws/embed/b`,
+    syncProtocols: [PUBLIC_EMBED_WS_PROTOCOL, ...(view.token ? [view.token] : []), ...(view.viewOnly ? [PUBLIC_EMBED_VIEW_ONLY] : [])],
+    onConnectionEnded: deps.onConnectionEnded,
+    uploadImage: inFreero('Adding images'),
+    uploadFile: inFreero('Adding files'),
+    uploadAttachment: inFreero('Adding files'),
+    renameBoard: inFreero('Renaming the board'),
+    saveThumbnail: async () => undefined,
+    openShareDialog: () => open(view.boardUrl),
+    navigate: (path) => open(path),
     notify: deps.notify,
     serverNow: () => Date.now(),
     listMembers: async () => [view.user],

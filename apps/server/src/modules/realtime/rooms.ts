@@ -47,6 +47,7 @@ import { WebSocket } from 'ws';
 import {
   FACILITATION_COLLECTION,
   VOTING_COLLECTION,
+  PARTICIPANT_WRITABLE,
   FACILITATION_KEY,
   WS_CLOSE_BOARD_REMOVED,
   WS_MESSAGE_LAYER,
@@ -81,7 +82,9 @@ import { guardVotes } from './votingRules';
 import { attributionOf, creatorOf, guardAttribution, type Attribution } from './attribution';
 import { guardServerCollections, prepareServerCollections, SERVER_COLLECTIONS } from './serverCollections';
 import { guardContentPlacement, placeElementContent, writeElementContent, type MovedEntry } from './elementContent';
-import { decideUpdate } from './filter';
+import { commenterMayApply, decideUpdate } from './filter';
+import { guardParticipantEstimates } from './estimationRules';
+import { guardDrafts, isParticipant, participationIsOpen, PARTICIPANT_LAYER_ROOTS } from './participation';
 import * as layerStore from './layerStore';
 import {
   applyLayerOp,
@@ -90,6 +93,7 @@ import {
   isPrivateLayer,
   mayRunLayerOp,
   mayWriteLayer,
+  participantMayWriteLayer,
   parseLayerOp,
   privateLayerOf,
   privateLayerOwner,
@@ -112,6 +116,7 @@ import {
   writeProposal,
 } from './suggestions';
 import { emitSuggestionsDecided, emitSuggestionsProposed } from './suggestionEvents';
+import { emitBoardLeft } from './visits';
 import { applyChange, BoardChangeError, viewOf, type AppliedChange, type BoardActor, type BoardChange, type BoardReader, type BoardView } from './view';
 import { newId } from '../../platform/ids';
 import { docStateFrom, readDocBlocks, writeDocBlocks } from './docContent';
@@ -179,6 +184,17 @@ export interface Admission {
    * through a connection that may only read, KAI-171): applied on admission and every refresh.
    */
   maxRole?: Role;
+  /**
+   * How this socket's role is resolved again on every access refresh (default: the user's role on
+   * the board, `getBoardAccess`). A board embedded on another site (#2) re-checks there that
+   * embedding is still allowed; null closes the socket like lost access.
+   */
+  resolveRole?: () => Promise<Role | null>;
+  /**
+   * An anonymous visitor of a board embedded on another site (#2): it publishes no presence (a
+   * public page's readers never crowd the board's people) and has no private layer.
+   */
+  visitor?: boolean;
 }
 export interface Refusal {
   code: number;
@@ -210,6 +226,11 @@ interface Conn {
   readRole: Role;
   /** What the facilitation session limits for this socket (null: nothing). */
   limits: SessionLimits | null;
+  /**
+   * A commenter (by access or a facilitator's lock) who may take part while the board lets them
+   * (participation.ts): its own ballot, pick and private-mode drafts.
+   */
+  participant: boolean;
   /** Guests: the author name their comments must carry (commentRules.ts). */
   authorName: string | undefined;
   /**
@@ -223,6 +244,9 @@ interface Conn {
   lastResync: number;
   /** While a layer op of this socket is being applied: its later messages, held in order. */
   held: Uint8Array[] | null;
+  /** See Admission.resolveRole / Admission.visitor. */
+  resolveRole?: () => Promise<Role | null>;
+  visitor: boolean;
 }
 
 /** One layer doc of a room (see "Board layers" above). */
@@ -248,10 +272,16 @@ const canEdit = (role: Role | null) => role === 'owner' || role === 'editor';
 /** Who reads the board's layers over this socket (see Conn.readRole). */
 const layerReader = (c: Conn) => ({ userId: c.userId, role: c.readRole });
 
-export function encodeRoleMessage(role: Role, limits?: SessionLimits | null, readRole?: Role): Uint8Array {
+export function encodeRoleMessage(role: Role, limits?: SessionLimits | null, readRole?: Role, participant?: boolean): Uint8Array {
   const e = encoding.createEncoder();
   encoding.writeVarUint(e, WS_MESSAGE_ROLE);
-  const msg: RoleMessage = { type: 'role', role, ...(limits ? { limits } : {}), ...(readRole && readRole !== role ? { readRole } : {}) };
+  const msg: RoleMessage = {
+    type: 'role',
+    role,
+    ...(limits ? { limits } : {}),
+    ...(readRole && readRole !== role ? { readRole } : {}),
+    ...(participant ? { participant: true } : {}),
+  };
   encoding.writeVarString(e, JSON.stringify(msg));
   return encoding.toUint8Array(e);
 }
@@ -605,6 +635,7 @@ class Room {
   private onLayerMessage(conn: Conn, decoder: decoding.Decoder): void {
     if (conn.kind !== 'board') return;
     const wire = decoding.readVarString(decoder);
+    if (conn.visitor && wire === 'private') return;
     const name = readableLayer(wire, layerReader(conn));
     if (!name) return;
     const { doc } = this.layer(name);
@@ -615,7 +646,11 @@ class Room {
       send(conn.ws, layerMessage(wire, (e) => syncProtocol.writeSyncStep1(e, doc)));
     } else if (syncType === syncProtocol.messageYjsSyncStep2 || syncType === syncProtocol.messageYjsUpdate) {
       const update = decoding.readVarUint8Array(decoder);
-      if (!mayWriteLayer(name, conn)) return;
+      // A participant (participation.ts) writes only its own private layer, and there only drafts,
+      // its ballot and its pick: an update reaching anything else comes from a forged client.
+      const participant = !mayWriteLayer(name, conn) && participantMayWriteLayer(name, conn);
+      if (!participant && !mayWriteLayer(name, conn)) return;
+      if (participant && !commenterMayApply(doc, update, conn.userId, conn.authorNames, undefined, PARTICIPANT_LAYER_ROOTS)) return;
       // Guards as for the shared doc (onUpdate): sealed ballots keep to the vote's budget too.
       const addTypes = conn.limits?.addTypes;
       // The guards run inside the transaction that applies the update: nobody else ever receives
@@ -624,11 +659,16 @@ class Room {
       let fixed = false;
       let decided: ReturnType<typeof guardSuggestionWrites>['decided'] = [];
       doc.getMap<unknown>(VOTING_COLLECTION);
+      if (participant) for (const n of PARTICIPANT_LAYER_ROOTS) doc.getMap<unknown>(n);
       prepareServerCollections(doc);
       doc.transact((tr) => {
         Y.applyUpdate(doc, update);
-        fixed = guardVotes(tr, doc, this.doc, conn.userId);
+        fixed = guardVotes(tr, doc, this.doc, { userId: conn.userId, participant });
         fixed = guardServerCollections(tr, doc) || fixed;
+        if (participant) {
+          fixed = guardParticipantEstimates(tr, doc, this.doc, conn.userId) || fixed;
+          fixed = guardDrafts(tr, doc, this.doc) || fixed;
+        }
         if (addTypes) fixed = revertForbiddenAdds(tr, doc.getMap<unknown>(ELEMENTS), new Set(addTypes), (id) => this.existsElsewhere(doc, id)) > 0 || fixed;
         // A new draft during an anonymous private mode is nobody's (#44, attribution.ts).
         const creator = creatorOf(conn.userId, isPrivateLayer(name), this.doc);
@@ -699,17 +739,24 @@ class Room {
   private setEffective(conn: Conn, session = readFacilitation(this.doc)): void {
     const next = effectiveAccess(conn.access, conn.userId, session);
     const nextRead = conn.ownAccess === conn.access ? next.role : effectiveAccess(conn.ownAccess, conn.userId, session).role;
-    if (sameEffective(next, { role: conn.role, limits: conn.limits }) && nextRead === conn.readRole) return;
+    const participant = conn.kind === 'board' && isParticipant(next.role, participationIsOpen(this.doc));
+    if (sameEffective(next, { role: conn.role, limits: conn.limits }) && nextRead === conn.readRole && participant === conn.participant) return;
     const couldWrite = conn.role !== 'viewer';
     const couldEdit = canEdit(conn.role);
     const couldRead = canEdit(conn.readRole);
+    const couldTakePart = conn.participant;
     conn.role = next.role;
     conn.limits = next.limits;
     conn.readRole = nextRead;
-    send(conn.ws, encodeRoleMessage(next.role, next.limits, nextRead));
+    conn.participant = participant;
+    send(conn.ws, encodeRoleMessage(next.role, next.limits, nextRead, participant));
     // Newly writable: ask the client for anything it has that we do not (writes dropped while the
     // board was locked included: they land now instead of leaving its doc diverged for good).
-    if ((!couldWrite && next.role !== 'viewer') || (!couldEdit && canEdit(next.role))) this.sendSyncStep1(conn);
+    if ((!couldWrite && next.role !== 'viewer') || (!couldEdit && canEdit(next.role)) || (!couldTakePart && participant)) this.sendSyncStep1(conn);
+    if (!couldTakePart && participant && !canEdit(next.role)) {
+      const own = this.layers.get(privateLayerOf(conn.userId));
+      if (own) send(conn.ws, layerMessage('private', (e) => syncProtocol.writeSyncStep1(e, own.doc)));
+    }
     if ((!couldEdit && canEdit(next.role)) || (!couldRead && canEdit(nextRead)))
       for (const [name, l] of this.layers) {
         const wire = wireNameFor(name, layerReader(conn));
@@ -756,9 +803,11 @@ class Room {
       .then((roles) => {
         if (this.destroyed || !this.conns.has(conn.ws) || !mayRunLayerOp(conn)) return;
         const docs = new Map<string, Y.Doc>();
+        // Participants' layers too, while the board lets them take part (participation.ts).
+        const open = participationIsOpen(this.doc);
         names.forEach((n, i) => {
           const l = this.layers.get(n);
-          if (l && canEdit(roles[i])) docs.set(n, l.doc);
+          if (l && (canEdit(roles[i]) || (roles[i] === 'commenter' && open))) docs.set(n, l.doc);
         });
         applyLayerOp(op, this.doc, docs, SERVER_ORIGIN);
       })
@@ -933,12 +982,15 @@ class Room {
       ownAccess: a.role,
       readRole: access === a.role ? eff.role : effectiveAccess(a.role, a.userId, session).role,
       limits: eff.limits,
+      participant: (a.kind ?? 'board') === 'board' && isParticipant(eff.role, participationIsOpen(this.doc)),
       authorName: a.authorName,
       authorNames: new Set(a.authorName !== undefined ? [a.authorName] : [a.identity.name, ...(a.authorNames ?? [])]),
       identity: { value: a.identity, at: Date.now(), loading: false },
       awarenessIds: new Set(),
       lastResync: 0,
       held: null,
+      resolveRole: a.resolveRole,
+      visitor: a.visitor === true,
     };
     this.conns.set(ws, conn);
 
@@ -946,7 +998,7 @@ class Room {
     ws.on('close', () => this.leave(conn));
 
     // 1) effective role, 2) sync step 1, 3) current awareness states, then what the client said.
-    send(ws, encodeRoleMessage(conn.role, conn.limits, conn.readRole));
+    send(ws, encodeRoleMessage(conn.role, conn.limits, conn.readRole, conn.participant));
     this.sendSyncStep1(conn);
     const states = this.awareness.getStates();
     if (states.size > 0) {
@@ -986,6 +1038,7 @@ class Room {
           break;
         }
         case MESSAGE_AWARENESS: {
+          if (conn.visitor) break;
           const update = sanitizeAwarenessUpdate(decoding.readVarUint8Array(decoder), {
             user: this.identityOf(conn),
             ownedElsewhere: (id) => {
@@ -1047,17 +1100,25 @@ class Room {
       return;
     }
     const hidden = this.layers.get(EDITORS_LAYER)?.doc;
-    if (decideUpdate(conn.role, this.doc, update, conn.userId, conn.authorNames, hidden?.share.has(COMMENTS_COLLECTION) ? hidden.getMap<unknown>(COMMENTS_COLLECTION) : undefined) === 'apply') {
+    const layered = hidden?.share.has(COMMENTS_COLLECTION) ? hidden.getMap<unknown>(COMMENTS_COLLECTION) : undefined;
+    if (decideUpdate(conn.role, this.doc, update, conn.userId, conn.authorNames, layered, conn.participant) === 'apply') {
       // A record for a thread that lives in the editors layer (a tab that had not seen it hidden)
       // goes there (elementContent.ts), never to the other sockets of the shared doc.
       const before = Y.encodeStateVector(this.doc);
       let moved: MovedEntry[] = [];
+      let fixed = false;
+      if (conn.participant) for (const name of PARTICIPANT_WRITABLE) this.doc.getMap<unknown>(name);
       this.doc.transact((tr) => {
         Y.applyUpdate(this.doc, update);
+        // A participant's own ballot and pick only (participation.ts).
+        if (conn.participant) {
+          fixed = guardVotes(tr, this.doc, this.doc, { userId: conn.userId, participant: true });
+          fixed = guardParticipantEstimates(tr, this.doc, this.doc, conn.userId) || fixed;
+        }
         moved = guardContentPlacement(tr, this.doc, { editors: this.layers.get(EDITORS_LAYER)?.doc, own: undefined }, SERVER_ORIGIN);
       }, conn.ws);
       this.reportMovedComments(moved, conn.userId);
-      if (moved.length) send(conn.ws, syncUpdateMessage(Y.encodeStateAsUpdate(this.doc, before)));
+      if (moved.length || fixed) send(conn.ws, syncUpdateMessage(Y.encodeStateAsUpdate(this.doc, before)));
       // Editing over the socket is activity: a workspace's idle limit must not sign out someone at work.
       if (syncType === syncProtocol.messageYjsUpdate) noteSessionActivity(conn.sessionKey);
       return;
@@ -1114,6 +1175,7 @@ class Room {
 
   leave(conn: Conn): void {
     if (!this.conns.delete(conn.ws)) return;
+    if (conn.kind === 'board') emitBoardLeft({ boardId: this.id, userId: conn.userId, at: Date.now() });
     if (conn.awarenessIds.size > 0)
       awarenessProtocol.removeAwarenessStates(this.awareness, [...conn.awarenessIds], null);
     this.checkFacilitator();
@@ -1143,7 +1205,7 @@ class Room {
 
   private async doRefreshAccess(): Promise<void> {
     const conns = [...this.conns.values()];
-    const roles = await Promise.all(conns.map(async (c) => (await getBoardAccess(this.id, c.userId)).role));
+    const roles = await Promise.all(conns.map(async (c) => (c.resolveRole ? await c.resolveRole() : (await getBoardAccess(this.id, c.userId)).role)));
     conns.forEach((conn, i) => {
       if (!this.conns.has(conn.ws)) return; // left meanwhile
       const own = roles[i];

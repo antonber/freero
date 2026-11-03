@@ -9,6 +9,8 @@ import {
   updateUserProfile,
   userIdsAtDomain as repoUserIdsAtDomain,
 } from './repo';
+// People's time zones (IANA; absent: not known yet — read as UTC): reminders and email dates.
+export { timeZonesOf } from './repo';
 
 export {
   requireUser,
@@ -21,11 +23,17 @@ export {
   normalizeEmail,
   userFromCookieHeader,
   sessionKeyFromCookieHeader,
+  // A board embedded on another site (#2, modules/embed) acts for the session that signed it in:
+  // its key, and the account behind a key (checked like a cookie), so it ends with that session.
+  currentSessionKey,
+  userFromSessionKey,
   // Live connections (board sockets, notification bells): closed when their session ends, also
   // when it ended in another process or silently (KAI-146).
   onSessionEnd,
   trackLiveSessions,
   onProfileChanged,
+  // A person's own profile change (name, colour, photo, time zone), validated as PATCH /auth/me.
+  updateProfile,
   onEmailVerified,
   markEmailVerified,
   // Operators (modules/moderation): suspended accounts can't sign in and lose every session.

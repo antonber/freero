@@ -30,7 +30,7 @@ beforeAll(async () => {
   await openTestDb({ FREERO_DOC_IDLE_MS: '100', PUBLIC_URL: 'http://freero.test' });
   registerProtectedResource('/mcp', 'Freero MCP server', { scopes: MCP_SCOPES, optInScopes: ['boards:write', 'comments:write'] });
   server = http.createServer();
-  ws = attachWebSockets(server, [embedWs({} as ServerContext)]);
+  ws = attachWebSockets(server, embedWs({ config: { embedMaxVisitors: 200 } } as ServerContext));
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   port = (server.address() as AddressInfo).port;
 });

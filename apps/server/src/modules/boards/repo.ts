@@ -37,6 +37,8 @@ export interface Board {
   callUrl: string | null;
   /** Use the board's own room on the operator's Jitsi instead. */
   callJitsi: boolean;
+  /** Its owner lets other sites embed it live (#2); what the embed shows still follows its sharing. */
+  embeddable: boolean;
 }
 
 interface Row {
@@ -59,6 +61,7 @@ interface Row {
   link_expires_at: Date | null;
   call_url: string | null;
   call_jitsi: boolean;
+  embeddable: boolean | null;
 }
 
 // Link access is resolved here, once: everything that reads a board (roles, lists, sockets,
@@ -85,6 +88,7 @@ const toBoard = (r: Row, now = Date.now()): Board => ({
   linkExpiresAt: r.link_expires_at ? r.link_expires_at.getTime() : null,
   callUrl: openCallUrl(r.call_url),
   callJitsi: r.call_jitsi,
+  embeddable: r.embeddable === true,
 });
 
 /** A board in service: not in the trash, not taken down by an operator. */
@@ -396,15 +400,15 @@ export async function purgeTrashedBefore(
 /** Changes only the given fields, in one statement (concurrent PATCHes of different fields both stick). */
 export async function updateBoardFields(
   id: string,
-  patch: { title?: string; description?: string; linkAccess?: LinkAccess },
+  patch: { title?: string; description?: string; linkAccess?: LinkAccess; embeddable?: boolean },
   now: number,
 ): Promise<void> {
   await query(
     `UPDATE boards SET title = COALESCE($2, title), description = COALESCE($3, description),
        link_access = CASE WHEN link_blocked_at IS NULL THEN COALESCE($4, link_access) ELSE link_access END,
-       updated_at = GREATEST(updated_at, $5)
+       updated_at = GREATEST(updated_at, $5), embeddable = COALESCE($6, embeddable)
      WHERE id = $1`,
-    [id, patch.title ?? null, patch.description ?? null, patch.linkAccess ?? null, new Date(now)],
+    [id, patch.title ?? null, patch.description ?? null, patch.linkAccess ?? null, new Date(now), patch.embeddable ?? null],
   );
 }
 

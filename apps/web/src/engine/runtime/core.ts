@@ -158,6 +158,7 @@ export function createCore(
   };
 
   // ---- store → ui/events
+  let endReported = false;
   disposers.push(
     // Items dragged over a folding part of a container stay in hand until dropped (EditorImpl.isFolded).
     ui.subscribe((s, p) => {
@@ -183,17 +184,22 @@ export function createCore(
     store.subscribeStatus(() => {
       ui.setState({ connection: store.status, synced: store.synced });
       core.emitter.emit('connection');
+      if (store.ended && !endReported) {
+        endReported = true;
+        core.hostRef.current.onConnectionEnded?.(store.ended);
+      }
     }),
     store.subscribeRole(() => {
       const role = store.serverRole ?? core.hostRef.current.board.role;
-      ui.setState({ role, limits: store.serverLimits });
+      ui.setState({ role, limits: store.serverLimits, participant: store.serverParticipant });
       // A facilitator just limited what may be added: put down a tool that adds something else.
       if (!core.editor.toolAllowed(ui.getState().toolId)) core.editor.setTool('select');
       // Live role change (e.g. promoted/demoted over REST): drop anything the new role can't do.
       if (ROLE_RANK[role] < ROLE_RANK.editor) {
-        if (ui.getState().editingId) core.editor.stopEditing();
+        const editing = ui.getState().editingId;
+        if (editing && !core.editor.mayEdit([editing])) core.editor.stopEditing();
         const tool = core.registry.toolsById.get(ui.getState().toolId);
-        if (tool && ROLE_RANK[role] < ROLE_RANK[tool.def.minRole ?? 'editor']) core.editor.setTool('select');
+        if (tool && !core.editor.canUseTool(tool.def)) core.editor.setTool('select');
         // Local undo history can't be replayed by a read-only role.
         store.clearUndo();
       }

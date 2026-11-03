@@ -10,7 +10,10 @@ import {
   cleanDescription,
   cleanTitle,
   createBoard,
+  checkEmbeddingChange,
   describeAccess,
+  embeddingChanged,
+  embeddingOf,
   guestRoleFor,
   listBoards,
   moveToTrash,
@@ -88,6 +91,34 @@ export async function publicLinkPreview(boardId: string): Promise<{ title: strin
   return { title: board.title, description: board.description, thumbnail: board.thumbnail };
 }
 
+/**
+ * Live embeds on other sites (#2, modules/embed): whether other sites may frame the board now —
+ * its owner allows it and its workspace's `boardEmbeds` policy is on — and what a visitor without
+ * an account may do there ('viewer' exactly when its link lets such visitors in, no password; null:
+ * sign in). Null for no such board, a doc, or embedding off: the same answer, so it tells nobody
+ * which. Who may do what once signed in is still `getBoardAccess`.
+ */
+export async function boardEmbedding(
+  boardId: string,
+): Promise<{ id: string; title: string; description: string; thumbnail: string | null; visitor: 'viewer' | null } | null> {
+  const e = await embeddingOf(boardId);
+  if (!e) return null;
+  const { board, visitor } = e;
+  return { id: board.id, title: board.title, description: board.description, thumbnail: board.thumbnail, visitor };
+}
+
+/**
+ * Turns embedding on other sites on or off as `userId`, by the share dialog's rules (the owner
+ * only; turning it on also needs the workspace's policy): audited, and open embeds re-checked.
+ */
+export async function setBoardEmbeddable(boardId: string, userId: string, embeddable: boolean): Promise<void> {
+  const { board, role, access } = await requireAccess(boardId, userId);
+  checkEmbeddingChange(board, role, access, embeddable);
+  if (board.embeddable === embeddable) return;
+  await repo.updateBoardFields(board.id, { embeddable }, Date.now());
+  await embeddingChanged(board, userId, embeddable);
+}
+
 /** Throws a 404/403 HttpError unless the user has at least `min` on the board. */
 export async function requireBoardAccess(
   boardId: string,
@@ -132,6 +163,21 @@ export async function requireBoardDownload(boardId: string, userId: string, via:
  */
 export async function boardsOpenableIn(userId: string, workspaceId: string): Promise<Array<{ id: string; title: string; role: Role }>> {
   return (await listBoards(userId, 'all', '', { workspaceId })).map((b) => ({ id: b.id, title: b.title, role: b.role }));
+}
+
+/**
+ * Boards (not docs) the user owns or starred and can open now, with their title and role: the
+ * "changes on your boards" email (modules/notifications). Trashed and taken-down ones are left out.
+ */
+export async function boardsOwnedOrStarredBy(userId: string): Promise<Array<{ id: string; title: string; role: Role }>> {
+  const ids = new Set([...(await repo.boardIdsOwnedBy(userId)), ...(await repo.starredBoardIds(userId))]);
+  const out: Array<{ id: string; title: string; role: Role }> = [];
+  for (const board of await repo.getBoards([...ids])) {
+    if (board.kind !== 'board') continue;
+    const { role } = await describeAccess(board, userId);
+    if (role) out.push({ id: board.id, title: board.title, role });
+  }
+  return out;
 }
 
 /** Where a (live) board is and who owns it, or null if there is no such board. */

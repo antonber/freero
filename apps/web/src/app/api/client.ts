@@ -48,9 +48,16 @@ import type {
   WorkspaceUsage,
   AcceptInviteResponse,
   ActivityResponse,
+  BoardChangesFrequency,
+  CatchUpChanges,
+  CatchUpSummary,
   GuestBoardInfo,
   GuestInfo,
   EmbedRedeemResponse,
+  BoardOutlineResponse,
+  PublicEmbedInfo,
+  PublicEmbedMember,
+  PublicEmbedToken,
   GuestJoinResponse,
   AccessRequestState,
   BoardAccessRequest,
@@ -200,7 +207,7 @@ export const api = {
   loginTwoFactor: (code: string) => request<AuthResponse>('POST', '/api/auth/login/two-factor', { code }),
   signup: (body: SignupRequest) => request<AuthResponse>('POST', '/api/auth/signup', body),
   logout: () => request<{ ok: true }>('POST', '/api/auth/logout'),
-  updateMe: (body: Partial<Pick<User, 'name' | 'color' | 'avatarUrl'>>) =>
+  updateMe: (body: Partial<Pick<User, 'name' | 'color' | 'avatarUrl'>> & { timeZone?: string }) =>
     request<AuthResponse>('PATCH', '/api/auth/me', body),
   async uploadAvatar(file: Blob): Promise<AuthResponse> {
     const res = await fetch('/api/auth/me/avatar', {
@@ -355,10 +362,18 @@ export const api = {
   leaveAsGuest: () => request<{ ok: true }>('POST', '/api/guest/leave'),
   // A live board view inside an AI assistant (KAI-171): the tool call's single-use ticket.
   redeemEmbed: (ticket: string) => request<EmbedRedeemResponse>('POST', '/api/embed/redeem', { ticket }),
+  // A board embedded on another site (#2): what it shows, the sign-in popup's token, who it acts for.
+  // The board's frames as the share dialog's embed options list them (frame titles survive any budget).
+  boardOutline: (id: string) => request<BoardOutlineResponse>('GET', `/api/boards/${encodeURIComponent(id)}/outline?comments=0&budget=2000`),
+  publicEmbed: (id: string) => request<PublicEmbedInfo>('GET', `/api/embed/b/${encodeURIComponent(id)}`),
+  publicEmbedToken: (id: string, readonly: boolean) => request<PublicEmbedToken>('POST', `/api/embed/b/${encodeURIComponent(id)}/token`, { readonly }),
+  publicEmbedMember: (id: string, token: string) => request<PublicEmbedMember>('POST', `/api/embed/b/${encodeURIComponent(id)}/me`, { token }),
 
   // activity
   boardActivity: (id: string, before?: number) =>
     request<ActivityResponse>('GET', `/api/boards/${encodeURIComponent(id)}/activity${before ? `?before=${before}` : ''}`),
+  boardCatchUp: (id: string) => request<CatchUpSummary>('GET', `/api/boards/${encodeURIComponent(id)}/catch-up`),
+  boardCatchUpChanges: (id: string) => request<CatchUpChanges>('GET', `/api/boards/${encodeURIComponent(id)}/catch-up/changes`),
   workspaceActivity: (id: string, before?: number) =>
     request<ActivityResponse>('GET', `/api/workspaces/${encodeURIComponent(id)}/activity${before ? `?before=${before}` : ''}`),
 
@@ -376,10 +391,14 @@ export const api = {
     request<NotificationsResponse>('GET', `/api/notifications${before ? `?before=${before}` : ''}`),
   markNotificationsRead: (ids?: string[]) => request<{ unread: number }>('POST', '/api/notifications/read', ids ? { ids } : {}),
   notificationPrefs: () => request<NotificationPrefs>('GET', '/api/notifications/prefs'),
-  setNotificationPrefs: (body: { emailAll?: boolean; email?: Partial<Record<NotificationType, boolean>> }) =>
+  setNotificationPrefs: (body: { emailAll?: boolean; email?: Partial<Record<NotificationType, boolean>>; boardChanges?: BoardChangesFrequency }) =>
     request<NotificationPrefs>('PUT', '/api/notifications/prefs', body),
-  unsubscribe: (token: string) =>
-    request<{ ok: true; email: string }>('POST', `/api/notifications/unsubscribe?token=${encodeURIComponent(token)}`),
+  /** `list` 'board-changes': only the "changes on your boards" email (its own link). */
+  unsubscribe: (token: string, list?: string) =>
+    request<{ ok: true; email: string; list: string }>(
+      'POST',
+      `/api/notifications/unsubscribe?token=${encodeURIComponent(token)}${list ? `&list=${encodeURIComponent(list)}` : ''}`,
+    ),
 
   // saved templates
   listTemplates: () => request<{ templates: SavedTemplateSummary[] }>('GET', '/api/templates'),

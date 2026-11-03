@@ -26,3 +26,5 @@ export * from './controlRoom';
 export * from './integrations';
 export * from './problems';
 export * from './analytics';
+export * from './embedCode';
+export * from './participation';

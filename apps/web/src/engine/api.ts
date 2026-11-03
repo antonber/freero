@@ -14,6 +14,8 @@ import type {
   ActivityAnswer,
   AnalyticsEvent,
   ActivityEntry,
+  CatchUpChanges,
+  CatchUpSummary,
   ActivityState,
   BoardCall,
   BoardCallResponse,
@@ -155,6 +157,13 @@ export interface Host {
    * cookie signs in (a live view inside an AI assistant sends its short-lived token, KAI-171).
    */
   syncProtocols?: string[];
+  /**
+   * [additive] The server closed the board's socket for good, with its close code: access gone
+   * (4401 / 4403), the board removed, or too many visitors on a board embedded on another site
+   * (WS_CLOSE_EMBED_FULL, #60). The board shows its own banner either way; a host that can offer
+   * more (an embed: sign in again, open in Freero) does it here. Called once per board load.
+   */
+  onConnectionEnded?(end: { code: number; reason: string }): void;
   uploadImage(file: Blob): Promise<{ url: string }>;
   /**
    * [additive] Stores a document (PDF) with the board's uploads, under the same per-account quota
@@ -319,8 +328,16 @@ export interface Host {
    * people did, one entry per person per burst of work, as the SERVER saw it — never content of
    * hidden frames for viewers/commenters, never private drafts. `before`: entries that ended before
    * this instant (paging). Absent in the offline sandbox.
+   *
+   * `catchUp` / `catchUpChanges` [additive]: "changes since your last visit" (wire: @freero/shared
+   * `CatchUpSummary` / `CatchUpChanges`) — what OTHER people changed since this person last had
+   * the board open, as the server recorded it. Absent for guests (no account to remember a visit).
    */
-  activity?: { list(before?: number): Promise<{ entries: ActivityEntry[]; hasMore: boolean }> };
+  activity?: {
+    list(before?: number): Promise<{ entries: ActivityEntry[]; hasMore: boolean }>;
+    catchUp?(): Promise<CatchUpSummary>;
+    catchUpChanges?(): Promise<CatchUpChanges>;
+  };
   /**
    * [additive] Reports this board, an item on it, an uploaded file it shows or a comment to
    * Freero's moderators (KAI-142). Anyone who can open the board may. Rejects with a message fit
@@ -1311,6 +1328,20 @@ export interface Editor {
   /** [additive] May this user add elements of `type` now (role and facilitator limits)? */
   mayAdd(type: ElementType): boolean;
   /**
+   * [additive, parity rank 1] This commenter (or guest) may take part in the facilitator's sessions
+   * while the board lets them (the server's role message `participant`; @freero/shared
+   * participation.ts): write their own ballot (`voting`), planning-poker pick (`estimation`) and,
+   * while private mode applies to them, private drafts of the types it makes private. The server
+   * enforces exactly that. False for owners and editors (they may do all of it anyway). Hook:
+   * useParticipant().
+   */
+  isParticipant(): boolean;
+  /**
+   * [additive] May this user change these elements: an editor any, a participant only their own
+   * drafts (in their private layer). Element writes check it and toast otherwise.
+   */
+  mayEdit(ids: readonly string[]): boolean;
+  /**
    * [additive] Element types the board's tools add, in toolbar order (each tool's
    * `ToolDefinition.creates`): what a facilitator can allow participants to add.
    */
@@ -1527,8 +1558,11 @@ export interface Editor {
    * feature owns it); null turns it off. Existing private elements stay private until revealed.
    * While a rule is set, this user's cursor is not shown to others where a new sticky would go
    * private (or over their private items), and presence never names private elements.
+   * `types` [additive]: the element types the rule can make private — a participant
+   * (isParticipant) may then add elements of those types that the rule sends private, and gets the
+   * tools that add only them.
    */
-  setPrivatePlacement(rule: ((el: BoardElement) => boolean) | null): void;
+  setPrivatePlacement(rule: ((el: BoardElement) => boolean) | null, opts?: { types?: readonly ElementType[] }): void;
   /**
    * [additive] This user's PRIVATE copy of a collection the scope owns (same ownership guard as
    * `collection`): synced only between this user's own tabs, never readable by anyone else until
