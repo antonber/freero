@@ -4,7 +4,7 @@
 import { abs, APP } from '../lib/site';
 import type { PageDef } from '../lib/define';
 import { LOGO_MARK_PATHS } from '../lib/brand';
-import { DraftBanner } from '../lib/legal';
+import { DraftBanner, UnderReview } from '../lib/legal';
 import { ClosingCta, Container, Faq } from './ui';
 
 export interface DocumentAssets {
@@ -129,6 +129,9 @@ function SiteFooter() {
         ['/privacy', 'Privacy policy'],
         ['/terms', 'Terms of service'],
         ['/acceptable-use', 'Acceptable use'],
+        ['/security', 'Security overview'],
+        ['/subprocessors', 'Subprocessors'],
+        ['/dpa', 'Data processing addendum'],
       ],
     },
   ];
@@ -200,7 +203,8 @@ function Breadcrumbs({ items }: { items: Crumb[] }) {
 export function Document({ page, pages, assets, crumbs, jsonLd }: { page: PageDef; pages: PageDef[]; assets: DocumentAssets; crumbs: Crumb[]; jsonLd: Record<string, unknown> }) {
   const url = abs(page.path);
   // A legal page is built as a draft; the server makes it indexable once it is in effect.
-  const indexable = page.index !== false && !page.legal;
+  // A page under review stays noindex until the operator approves it (and the server keeps it so).
+  const indexable = page.index !== false && !page.legal && !page.underReview;
   const ogAlt = `${page.sharedOg?.title ?? page.ogTitle ?? page.name}: Freero`;
   return (
     <html lang="en">
@@ -243,9 +247,10 @@ export function Document({ page, pages, assets, crumbs, jsonLd }: { page: PageDe
         <SiteHeader current={page.path} />
         <main id="main" tabIndex={-1}>
           {crumbs.length > 1 ? <Breadcrumbs items={crumbs} /> : null}
-          {page.legal ? (
+          {page.legal || page.underReview ? (
             <Container>
-              <DraftBanner />
+              {page.legal ? <DraftBanner /> : null}
+              {page.underReview ? <UnderReview /> : null}
             </Container>
           ) : null}
           <page.body pages={pages} />

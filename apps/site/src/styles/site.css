@@ -424,6 +424,42 @@ pre {
   background: var(--fr-warning-soft);
   font-weight: 600;
 }
+.legal-review {
+  margin: 24px 0 0;
+  padding: 10px 14px;
+  border-left: 4px solid var(--fr-warning);
+  background: var(--fr-warning-soft);
+  color: var(--fr-ink);
+}
+.legal-confirm {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--fr-warning-soft);
+  color: var(--fr-ink);
+  font-size: 0.9em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.legal-where {
+  display: block;
+  margin-top: 4px;
+  color: var(--fr-ink-3);
+  font-size: 0.9em;
+  font-weight: 400;
+}
+.legal-sign table {
+  table-layout: fixed;
+}
+.legal-sign thead th:first-child {
+  width: 30%;
+}
+.legal-sign tbody th {
+  white-space: normal;
+}
+.legal-sign td {
+  height: 2.6em;
+  border-left: 1px solid var(--fr-line);
+}
 .legal {
   max-width: 760px;
   padding: 32px 0 64px;
