@@ -4,8 +4,8 @@ import { closeTestDb, openTestDb } from '../../platform/testing';
 import { createUser } from '../auth/index';
 import { createTeamWorkspace } from '../workspaces/index';
 import { connectAudit } from './wiring';
-import { chainProblem, eventHash, GENESIS_HASH, type ChainHead, type StoredLink } from './chain';
-import { listAuditEvents, pruneAudit, recordAudit, setAccountScope, verifyWorkspaceAudit } from './service';
+import { AnchorCheck, chainProblem, eventHash, GENESIS_HASH, type ChainHead, type StoredLink } from './chain';
+import { anchorChains, anchorSigned, listAuditEvents, pruneAudit, recordAudit, setAccountScope, signAnchor, verifyWorkspaceAudit } from './service';
 
 beforeAll(() => openTestDb());
 afterAll(() => closeTestDb());
@@ -109,4 +109,48 @@ it('an account’s sign-in reaches the logs of the team workspaces it belongs to
   } finally {
     setAccountScope(() => []);
   }
+});
+
+/** The same chain with one event's content changed and every hash after it recomputed (and a matching head). */
+function rewritten(events: StoredLink[], seq: number): { events: StoredLink[]; head: ChainHead } {
+  const out: StoredLink[] = [];
+  let prev = GENESIS_HASH;
+  for (const e of events) {
+    const fields = { ...e, targetId: e.seq === seq ? 'someone-else' : e.targetId, prevHash: prev };
+    const hash = eventHash(fields);
+    out.push({ ...fields, hash });
+    prev = hash;
+  }
+  return { events: out, head: { seq: out.length, hash: prev, prunedSeq: 0, prunedHash: GENESIS_HASH } };
+}
+
+it('a log rewritten wholesale (events and head consistent) after its head was signed fails the signed checkpoint; a checkpoint the server did not sign is refused', () => {
+  const original = chainOf(5);
+  const checkpoint = { chain: 'w:x', seq: 5, hash: original.head.hash, anchoredAt: 1_000 };
+  const signed = [{ ...checkpoint, mac: signAnchor(checkpoint) }];
+  const check = (c: { events: StoredLink[]; head: ChainHead }, anchors: typeof signed) => {
+    const a = new AnchorCheck(anchors, c.head, anchorSigned);
+    for (const e of c.events) a.push(e);
+    return a.finish();
+  };
+  expect(check(original, signed)).toBeNull();
+
+  const forged = rewritten(original.events, 3);
+  expect(chainProblem(forged.events, forged.head)).toBeNull(); // the hash chain alone can't tell
+  expect(check(forged, signed)).toMatch(/#5 is not the one signed .*rewritten/);
+  // Re-signing the forged head without the server's secret doesn't pass.
+  const fake = { chain: 'w:x', seq: 5, hash: forged.head.hash, anchoredAt: 1_000, mac: 'ab'.repeat(32) };
+  expect(check(forged, [fake])).toMatch(/not signed by this server/);
+  // Dropping the newest events, the signed one with them, shows too.
+  expect(check({ events: original.events.slice(0, 4), head: { ...original.head, seq: 4, hash: original.events[3].hash } }, signed)).toMatch(/ends before event #5/);
+});
+
+it('the hourly checkpoints are stored for every chain that moved, and an untouched log verifies against them', async () => {
+  const ws = 'ws-anchored';
+  for (let i = 0; i < 3; i++) await recordAudit({ action: 'board.created', workspaceId: ws, actorId: 'u1' });
+  await anchorChains();
+  await recordAudit({ action: 'board.created', workspaceId: ws, actorId: 'u1' });
+  await anchorChains();
+  await anchorChains(); // nothing moved: no new checkpoint
+  expect(await verifyWorkspaceAudit(ws)).toMatchObject({ ok: true, events: 4, anchors: { checked: 2 } });
 });

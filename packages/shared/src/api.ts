@@ -481,11 +481,13 @@ export type OidcErrorCode =
   | 'wrong_account' // reauth: a different provider account than the one connected
   | 'suspended' // login: Freero's moderators suspended that account
   | 'sso_required' // the address's organization signs its people in only through its own SSO
+  | 'signup_closed' // an invite-only server (SIGNUPS=invite-only) and nothing here expects this address
   // Workspace single sign-on (/api/sso/…):
   | 'sso_unavailable' // the workspace has no enabled SSO connection, or its provider can't be reached
   | 'sso_failed' // the identity provider's answer was refused (signature, audience, expiry, replay, …) or expired
   | 'sso_domain' // the identity provider vouched for an address outside the workspace's verified domains
-  | 'sso_removed'; // the workspace's directory deprovisioned this person (SCIM)
+  | 'sso_removed' // the workspace's directory deprovisioned this person (SCIM)
+  | 'sso_unsolicited'; // the identity provider started the sign-in (its app tile) and the workspace doesn't allow that
 
 /**
  * 403 `code` when a way of signing in (password, reset link, a personal provider, signup) is
@@ -554,7 +556,10 @@ export const ACCOUNT_SUSPENDED = 'account_suspended';
 // POST /api/sso/:workspaceId/saml/acs     <- the identity provider posts SAMLResponse + RelayState;
 //                                          303 to …/saml/finish, which signs in (bound to this browser)
 // GET  /api/sso/:workspaceId/oidc/callback -> 302 to `next`, /login/two-factor?next=…, or /login?error=sso_failed
-// IdP-initiated SAML (an unsolicited response) is refused: tiles in the IdP's portal link to /start.
+// IdP-initiated SAML (an unsolicited response, no InResponseTo: the IdP's app tile) is accepted at the
+// same ACS only while the connection's `idpInitiated` is on (off by default; refused with
+// /login?error=sso_unsolicited otherwise); its RelayState is honoured only as a same-origin path.
+// With it off, a tile can link to /start instead (SP-initiated).
 export interface SsoDomain {
   id: string;
   domain: string;
@@ -576,11 +581,15 @@ export interface SsoConnectionInfo {
   oidc: { issuer: string; clientId: string; hasClientSecret: boolean } | null;
   /** When a sign-in last went through it (enforcing needs one). */
   testedAt: number | null;
+  /** SAML: sign-ins started at the identity provider (its app tile) are accepted. Off by default. */
+  idpInitiated: boolean;
 }
 export interface SsoConnectionInput {
   protocol: SsoProtocol;
   enabled: boolean;
   defaultRole?: Exclude<WorkspaceRole, 'owner'>;
+  /** SAML: accept sign-ins started at the identity provider. Omitted: unchanged. */
+  idpInitiated?: boolean;
   /** SAML: the IdP's metadata XML, or its parts. */
   samlMetadataXml?: string;
   samlEntityId?: string;
@@ -600,6 +609,37 @@ export interface SsoSettings {
 export interface SsoDiscovery {
   sso: { workspaceName: string; startUrl: string; enforced: boolean } | null;
 }
+
+// ---- Domain control (#64; team workspaces with a VERIFIED domain; owners/admins; no SSO needed) ----
+// GET    /api/workspaces/:id/sso/domain-control                     -> DomainControlSettings
+// PUT    /api/workspaces/:id/sso/domain-control  body { captureSignups?, blockWorkspaces? } -> DomainControlSettings
+// POST   /api/workspaces/:id/sso/domain-control/captures body { userIds, graceDays } -> DomainControlSettings
+//        (each person is emailed; after the grace period they are a member, if their address is
+//        still verified and at the domain; their own boards stay theirs)
+// DELETE /api/workspaces/:id/sso/domain-control/captures/:userId     -> DomainControlSettings
+// With `blockWorkspaces`, POST /api/workspaces by someone at the domain is 403
+// { code: WORKSPACE_CREATION_BLOCKED } naming the workspace's admins.
+export interface DomainAccount {
+  userId: string;
+  name: string;
+  email: string;
+  /** member: already in the workspace; pending: joins at `joinsAt`; outside: neither. */
+  status: 'member' | 'pending' | 'outside';
+  joinsAt: number | null;
+}
+export interface DomainControlSettings {
+  /** The workspace's verified domains (domain control applies to these only). */
+  domains: string[];
+  /** Accounts that verify an address at the domains (sign-up, email change) join the workspace at once. */
+  captureSignups: boolean;
+  /** People at the domains can't create team workspaces of their own. */
+  blockWorkspaces: boolean;
+  /** Accounts at the domains that proved their address (unverified ones are never listed or taken in). */
+  accounts: DomainAccount[];
+}
+export const DOMAIN_CAPTURE_GRACE_DAYS = [7, 14, 30] as const;
+/** 403 `code` of POST /api/workspaces when the person's verified domain is managed by another workspace. */
+export const WORKSPACE_CREATION_BLOCKED = 'workspace_creation_blocked';
 
 // ---- Provisioning (SCIM 2.0, team workspaces; owners/admins manage it) ----
 // Base URL: <PUBLIC_URL>/scim/v2 (Users, Groups, ServiceProviderConfig, ResourceTypes, Schemas),
@@ -1857,6 +1897,12 @@ export const AUDIT_ACTIONS = {
   'sso.login': 'Signed in with single sign-on',
   'sso.login_refused': 'Single sign-on refused',
   'sso.member_provisioned': 'Joined through single sign-on (just in time)',
+  // Domain control (#64): accounts at a verified domain.
+  'sso.domain_control_changed': 'Changed domain control',
+  'sso.domain_capture_started': 'Told someone at a verified domain they will join the workspace',
+  'sso.domain_capture_cancelled': 'Stopped someone at a verified domain from joining',
+  'sso.domain_account_captured': 'Joined the workspace: account at a verified domain',
+  'sso.workspace_creation_refused': 'Was refused a new team workspace (domain managed by this workspace)',
   // Provisioning (modules/scim).
   'scim.token_created': 'Created a provisioning token',
   'scim.token_rotated': 'Rotated a provisioning token',
@@ -1880,6 +1926,10 @@ export const AUDIT_ACTIONS = {
   'webhook.secret_rotated': 'Rotated a webhook’s signing secret',
   'webhook.deleted': 'Removed a webhook',
   'webhook.disabled': 'A webhook was turned off after failing repeatedly',
+  // Audit streaming to a SIEM (modules/siem, #17). Never the secret.
+  'siem.sink_created': 'Started streaming the audit log to a SIEM',
+  'siem.sink_updated': 'Changed an audit log stream',
+  'siem.sink_deleted': 'Stopped streaming the audit log to a SIEM',
   // Issue-tracker sync (modules/trackers). Never credentials, never board text: issue keys, fields and outcomes.
   'tracker.connection_created': 'Connected an issue tracker',
   'tracker.connection_updated': 'Changed a tracker connection',
@@ -1923,6 +1973,73 @@ export interface AuditIntegrity {
   headHash: string | null;
   /** What is wrong, when not ok. */
   problem: string | null;
+  /**
+   * Signed checkpoints of the chain's head (#17): every hour the server signs the newest seq + hash
+   * with its own secret; each one still in retention must match the stored event at that seq, so a
+   * chain rewritten wholesale (head row included) shows. Streams to a SIEM carry the heads too.
+   */
+  anchors: { checked: number; lastAt: number | null };
+}
+
+// ---- Audit streaming to a SIEM (#17; team workspaces; owners/admins) ----
+// GET    /api/workspaces/:id/admin/siem                     -> { sinks: SiemSinkInfo[] }
+// POST   /api/workspaces/:id/admin/siem    body SiemSinkInput -> { sink, signingSecret? }  (https: the
+//        signing secret, shown once)
+// PATCH  /api/workspaces/:id/admin/siem/:sinkId body Partial<SiemSinkInput> -> { sink }  (a blank secret keeps the stored one)
+// POST   /api/workspaces/:id/admin/siem/:sinkId/test        -> { sink }  (sends a test record now)
+// DELETE /api/workspaces/:id/admin/siem/:sinkId             -> { ok }
+// Each sink receives every event of the workspace's audit log in order (cursor: its chain `seq`),
+// at least once, retried with backoff until it arrives; plus `freero.audit.head` checkpoints.
+// Secrets (HEC token, client secret, bearer token, signing secret) are sealed and never sent back.
+export type SiemKind = 'splunk' | 'sentinel' | 'https' | 'syslog';
+export const SIEM_KINDS: readonly SiemKind[] = ['splunk', 'sentinel', 'https', 'syslog'];
+export const SIEM_MAX_SINKS = 5;
+export interface SiemSettings {
+  /** splunk: the HTTP Event Collector's base URL (https://splunk.example.com:8088); https: the receiving URL. */
+  url?: string;
+  /** splunk */
+  index?: string;
+  sourcetype?: string;
+  /** sentinel (Azure Monitor Logs Ingestion API) */
+  endpoint?: string;
+  dcrId?: string;
+  stream?: string;
+  tenantId?: string;
+  clientId?: string;
+  /** syslog over TLS (RFC 5425) */
+  host?: string;
+  port?: number;
+  /** PEM of a private CA the syslog server's certificate is issued by (optional; public). */
+  caCert?: string;
+}
+export interface SiemSinkInput {
+  kind: SiemKind;
+  name?: string;
+  settings: SiemSettings;
+  /** splunk: HEC token; sentinel: client secret; https: optional bearer token. Never returned. */
+  secret?: string;
+  enabled?: boolean;
+}
+export interface SiemSinkInfo {
+  id: string;
+  kind: SiemKind;
+  name: string;
+  /** Non-secret settings, as saved. */
+  settings: SiemSettings;
+  /** Where it goes, shortened (no secrets). */
+  target: string;
+  hasSecret: boolean;
+  enabled: boolean;
+  /** ok: delivering; failing: the last attempt failed (retrying); paused: turned off. */
+  status: 'ok' | 'failing' | 'paused';
+  /** The newest event `seq` delivered, and how far the log is. */
+  deliveredSeq: number;
+  headSeq: number;
+  lastDeliveredAt: number | null;
+  lastError: string | null;
+  consecutiveFailures: number;
+  nextAttemptAt: number | null;
+  createdAt: number;
 }
 
 // ---- Admin console (KAI-47) and workspace policies (KAI-51) ----

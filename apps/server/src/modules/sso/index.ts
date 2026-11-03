@@ -10,8 +10,8 @@ export async function defaultJoinRole(workspaceId: string): Promise<'admin' | 'm
   return (await repo.getConnection(workspaceId))?.defaultRole ?? 'member';
 }
 
-/** For a person's data export: workspaces where they are the break-glass owner. */
-export function ssoRolesOf(userId: string): Promise<Array<{ workspaceId: string; breakGlass: boolean }>> {
+/** For a person's data export: workspaces where they are the break-glass owner, or will join (domain control, `joinsAt`). */
+export function ssoRolesOf(userId: string): Promise<Array<{ workspaceId: string; breakGlass: boolean; joinsAt: number | null }>> {
   return repo.personalSsoData(userId);
 }
 
@@ -28,6 +28,7 @@ export async function ssoExportOf(workspaceId: string): Promise<unknown> {
       defaultRole: c.defaultRole,
       samlEntityId: c.samlEntityId,
       samlSsoUrl: c.samlSsoUrl,
+      idpInitiated: c.idpInitiated,
       oidcIssuer: c.oidcIssuer,
       oidcClientId: c.oidcClientId,
     },

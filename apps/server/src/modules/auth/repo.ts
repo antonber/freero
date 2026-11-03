@@ -401,6 +401,17 @@ export async function userIdsAtDomain(domain: string): Promise<string[]> {
   return (await query<{ id: string }>(`SELECT id FROM users WHERE split_part(email, '@', 2) = $1`, [domain])).map((r) => r.id);
 }
 
+/** Accounts whose address is at `domain` and proved (verified), oldest first; at most `limit`. */
+export async function verifiedUsersAtDomain(domain: string, limit: number): Promise<Array<{ id: string; name: string; email: string; createdAt: number }>> {
+  const rows = await query<{ id: string; name: string; email: string; created_at: Date }>(
+    `SELECT id, name, email, created_at FROM users
+     WHERE split_part(email, '@', 2) = $1 AND email_verified_at IS NOT NULL AND deletion_scheduled_for IS NULL
+     ORDER BY created_at, id LIMIT $2`,
+    [domain, limit],
+  );
+  return rows.map((r) => ({ id: r.id, name: r.name, email: r.email, createdAt: r.created_at.getTime() }));
+}
+
 export async function deleteExpiredSessions(now: number): Promise<void> {
   await query(`DELETE FROM sessions WHERE expires_at <= $1`, [new Date(now)]);
 }

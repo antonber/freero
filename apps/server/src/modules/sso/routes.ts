@@ -7,6 +7,7 @@ import { allowCrossSitePost } from '../../platform/security';
 import { currentUser, requireUser, safeReturnPath } from '../auth/index';
 import { requireWorkspaceRole } from '../workspaces/index';
 import { removeConnection, saveConnection, serviceProviderUrls, setEnforcement, ssoSettings } from './connections';
+import { cancelCapture, domainControlSettings, setDomainControl, startCaptures } from './domainControl';
 import { addDomain, removeDomain, verifyDomain } from './domains';
 import { discover } from './policy';
 import { oidcCallback, samlAcs, samlFinish, startSso } from './signIn';
@@ -62,6 +63,27 @@ export default function ssoRoutes(_ctx: ServerContext): Router {
     const ws = await manager(req);
     const sessionsEnded = await setEnforcement(req.params.id, { id: currentUser(req).id, role: ws.role }, req.body ?? {});
     res.json({ ...(await ssoSettings(req, req.params.id)), sessionsEnded });
+  }));
+
+  // ---- domain control (#64): verified domains, with or without SSO ----
+  r.get('/workspaces/:id/sso/domain-control', requireUser, handle(async (req, res) => {
+    await manager(req);
+    res.json(await domainControlSettings(req.params.id));
+  }));
+  r.put('/workspaces/:id/sso/domain-control', requireUser, handle(async (req, res) => {
+    await manager(req);
+    await setDomainControl(req.params.id, currentUser(req).id, req.body ?? {});
+    res.json(await domainControlSettings(req.params.id));
+  }));
+  r.post('/workspaces/:id/sso/domain-control/captures', requireUser, rateLimit('sso', 'user'), handle(async (req, res) => {
+    await manager(req);
+    const started = await startCaptures(req.params.id, currentUser(req).id, req.body ?? {});
+    res.json({ ...(await domainControlSettings(req.params.id)), started });
+  }));
+  r.delete('/workspaces/:id/sso/domain-control/captures/:userId', requireUser, handle(async (req, res) => {
+    await manager(req);
+    await cancelCapture(req.params.id, currentUser(req).id, req.params.userId);
+    res.json(await domainControlSettings(req.params.id));
   }));
 
   // ---- public: routing and the browser flows ----

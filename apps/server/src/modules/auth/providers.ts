@@ -14,6 +14,7 @@ import { sendSecurityNotice } from './notices';
 import { auditOwnAccount } from './service';
 import type { ProviderClaims } from './oidc';
 import * as repo from './repo';
+import { signupRefusal } from './signups';
 import { endSessionsOf, insertAccount, markEmailVerified, normalizeEmail, validEmail } from './service';
 
 export function providerConfig(id: string): OidcProviderConfig | null {
@@ -61,6 +62,7 @@ export async function resolveProviderLogin(provider: string, c: ProviderClaims, 
   if (!email || !validEmail(email)) return { error: 'no_email' };
   const user = await repo.findUserByEmail(email);
   if (user) return c.emailVerified ? { userId: user.id, link: linkOf(provider, c, email), created: false } : { error: 'email_in_use' };
+  if (await signupRefusal(email)) return { error: 'signup_closed' };
   const name = (c.name ?? email.split('@')[0]).slice(0, 80);
   try {
     const account = await insertAccount({ name, email, passwordHash: null, emailVerified: c.emailVerified }, linkOf(provider, c, email));

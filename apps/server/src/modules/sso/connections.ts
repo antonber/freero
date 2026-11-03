@@ -55,6 +55,7 @@ export async function ssoSettings(req: Request | null, workspaceId: string): Pro
           : null,
       oidc: c.protocol === 'oidc' && c.oidcIssuer && c.oidcClientId ? { issuer: c.oidcIssuer, clientId: c.oidcClientId, hasClientSecret: !!c.oidcClientSecret } : null,
       testedAt: c.testedAt,
+      idpInitiated: c.protocol === 'saml' && c.idpInitiated,
     },
     serviceProvider: serviceProviderUrls(req, workspaceId),
   };
@@ -74,6 +75,9 @@ export async function saveConnection(workspaceId: string, actorId: string, body:
   const defaultRole = body.defaultRole ?? prev?.defaultRole ?? 'member';
   if (!(DIRECTORY_ROLES as readonly string[]).includes(defaultRole)) throw badRequest('defaultRole must be admin, member or guest');
   const enabled = body.enabled === true;
+  // Omitted (enable/disable, default role): unchanged. Only SAML has IdP-initiated sign-in.
+  if (body.idpInitiated !== undefined && typeof body.idpInitiated !== 'boolean') throw badRequest('idpInitiated must be true or false');
+  const idpInitiated = protocol === 'saml' && (body.idpInitiated ?? (prev?.protocol === 'saml' && prev.idpInitiated));
 
   let saml = { entityId: null as string | null, ssoUrl: null as string | null, certs: null as string | null };
   let oidc = { issuer: null as string | null, clientId: null as string | null, secret: null as string | null };
@@ -119,6 +123,7 @@ export async function saveConnection(workspaceId: string, actorId: string, body:
         oidcIssuer: oidc.issuer,
         oidcClientId: oidc.clientId,
         oidcClientSecret: oidc.secret,
+        idpInitiated,
       },
       providerChanged,
       Date.now(),
@@ -132,6 +137,7 @@ export async function saveConnection(workspaceId: string, actorId: string, body:
         protocol,
         enabled,
         defaultRole,
+        idpInitiated,
         providerChanged,
         // A new provider turns enforcement off until a sign-in proves it.
         enforcementDropped: providerChanged && !!prev?.enforced,
