@@ -1,7 +1,7 @@
 // The only writer of `users`, `sessions`, `auth_tokens`, `auth_identities`, `auth_oidc_flows`,
 // `auth_challenges`, `user_totp`, `user_recovery_codes`, `auth_devices`,
 // `auth_two_factor_recoveries` and `guest_sessions` [S4].
-import type { Account } from '@freero/shared';
+import type { Account, ColorThemePreference } from '@freero/shared';
 import { isForeignKeyViolation, isUniqueViolation, one, query, tx } from '../../platform/db';
 
 interface UserRow {
@@ -16,6 +16,7 @@ interface UserRow {
   deletion_scheduled_for: Date | null;
   suspended_at: Date | null;
   password_via_link_at: Date | null;
+  color_theme: ColorThemePreference;
 }
 
 export interface UserWithHash extends Account {
@@ -37,6 +38,7 @@ const toUser = (r: UserRow): UserWithHash => ({
   createdAt: r.created_at.getTime(),
   emailVerified: r.email_verified_at !== null,
   deletionScheduledFor: r.deletion_scheduled_for?.getTime() ?? null,
+  theme: r.color_theme,
   passwordHash: r.password_hash,
   passwordViaLink: r.password_via_link_at !== null,
 });
@@ -83,15 +85,16 @@ export async function countUsers(): Promise<number> {
 /** Changes only the given fields, in one statement (no read-modify-write that could drop a concurrent edit). */
 export async function updateUserProfile(
   id: string,
-  patch: { name?: string; color?: string; avatarUrl?: string | null },
+  patch: { name?: string; color?: string; avatarUrl?: string | null; theme?: ColorThemePreference },
 ): Promise<void> {
   await query(
     `UPDATE users SET name = COALESCE($2, name), color = COALESCE($3, color),
        avatar_url = CASE WHEN $4 THEN $5 ELSE avatar_url END,
+       color_theme = COALESCE($6, color_theme),
        previous_names = CASE WHEN $2 IS NULL OR $2 = name THEN previous_names
                              ELSE (ARRAY[name] || array_remove(previous_names, name))[1:5] END
      WHERE id = $1`,
-    [id, patch.name ?? null, patch.color ?? null, patch.avatarUrl !== undefined, patch.avatarUrl ?? null],
+    [id, patch.name ?? null, patch.color ?? null, patch.avatarUrl !== undefined, patch.avatarUrl ?? null, patch.theme ?? null],
   );
 }
 

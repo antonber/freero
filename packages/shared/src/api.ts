@@ -326,7 +326,7 @@ export interface BoardMember {
 // POST /api/auth/logout   -> { ok: true }                     (clears cookie)
 // GET  /api/auth/session  -> SessionResponse (always 200; user null when signed out)
 // GET  /api/auth/me       -> AuthResponse | 401
-// PATCH /api/auth/me      body { name?, color?, avatarUrl? } -> AuthResponse
+// PATCH /api/auth/me      body { name?, color?, avatarUrl?, theme? } -> AuthResponse
 // PUT  /api/auth/me/avatar raw image body (PNG/JPEG/GIF/WebP) -> AuthResponse (resized server-side)
 // DELETE /api/auth/me/avatar -> AuthResponse
 //
@@ -480,8 +480,14 @@ export type OidcErrorCode =
 export const SSO_REQUIRED = 'sso_required';
 
 /** The signed-in user's own account (other people only ever see `User`). */
+/** How the app looks for this person: follow the device, or always light / dark. */
+export type ColorThemePreference = 'system' | 'light' | 'dark';
+export const COLOR_THEME_PREFERENCES: readonly ColorThemePreference[] = ['system', 'light', 'dark'];
+
 export interface Account extends User {
   emailVerified: boolean;
+  /** [additive] Their app theme, kept with the account so it follows them to every device (absent: 'system'). */
+  theme?: ColorThemePreference;
   /** Set while the account is scheduled for deletion: it is purged at this instant unless restored. */
   deletionScheduledFor: number | null;
 }

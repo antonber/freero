@@ -1,5 +1,6 @@
-// The page's colour theme (#89). The app sets `data-theme="dark"` on <html> where a page follows a
-// dark surrounding (a live board view in an AI assistant follows the assistant's theme). The chrome
+// The page's colour theme (#89). The app sets `data-theme="dark"` on <html> when the person chose
+// dark (or System on a dark device), and in a live board view inside an AI assistant that is dark
+// (app/lib/theme.ts). The chrome
 // follows through ui/tokens.css. The board's CONTENT keeps its light-theme colours (`.fr-paper`: the
 // same colours exports and thumbnails show, so nothing a person makes depends on who looks at it)
 // and is drawn through DARK_FILTER (canvas.css); the canvas background goes through the same

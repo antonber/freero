@@ -10,6 +10,7 @@ import { ExportList } from '../admin/AdminIdentity';
 import { TrackerConnections } from '../../components/TrackerConnections';
 import { ApiTokensSection, ConnectedAppsSection, DeveloperAppsSection } from './ApiSections';
 import { Section } from './Section';
+import { ThemeSwitch } from '../../components/ThemeSwitch';
 import { HelpMenu } from '../../problems/HelpMenu';
 import { MyProblems } from '../../problems/MyProblems';
 import { isReauthRequired, needsReauth, ReauthPrompt, SignInMethodsSection, TwoFactorSection } from './SecuritySections';
@@ -57,6 +58,13 @@ export function AccountSettingsPage() {
       <main className="fr-acct__main">
         <h1 className="fr-acct__title">Account settings</h1>
         <ProfileSection />
+        <Section
+          id="appearance"
+          title="Appearance"
+          description="Light or dark everywhere you sign in, or the same as your device. Boards keep their colours in exports and for everyone else."
+        >
+          <ThemeSwitch />
+        </Section>
         <EmailSection security={security} />
         <NotificationsSection />
         <SignInMethodsSection security={security} onChange={setSecurity} />

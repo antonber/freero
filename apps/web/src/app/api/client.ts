@@ -1,4 +1,5 @@
 import type {
+  Account,
   CreateProblemRequest,
   OwnProblemReport,
   ProblemListResponse,
@@ -199,7 +200,7 @@ export const api = {
   loginTwoFactor: (code: string) => request<AuthResponse>('POST', '/api/auth/login/two-factor', { code }),
   signup: (body: SignupRequest) => request<AuthResponse>('POST', '/api/auth/signup', body),
   logout: () => request<{ ok: true }>('POST', '/api/auth/logout'),
-  updateMe: (body: Partial<Pick<User, 'name' | 'color' | 'avatarUrl'>>) =>
+  updateMe: (body: Partial<Pick<Account, 'name' | 'color' | 'avatarUrl' | 'theme'>>) =>
     request<AuthResponse>('PATCH', '/api/auth/me', body),
   async uploadAvatar(file: Blob): Promise<AuthResponse> {
     const res = await fetch('/api/auth/me/avatar', {

@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { Account, User } from '@freero/shared';
 import { useLocation } from 'react-router-dom';
 import { api } from '../api/client';
+import { setThemePreference } from '../lib/theme';
 
 export interface AuthValue {
   /** The signed-in user, or null. `deletionScheduledFor` set: only the restore page is usable. */
@@ -16,7 +17,7 @@ export interface AuthValue {
   /** Re-fetches the session. */
   refresh(): Promise<Account | null>;
   /** Saves name/color; every open tab (boards included) picks the change up. */
-  updateProfile(patch: Partial<Pick<User, 'name' | 'color' | 'avatarUrl'>>): Promise<Account>;
+  updateProfile(patch: Partial<Pick<Account, 'name' | 'color' | 'avatarUrl' | 'theme'>>): Promise<Account>;
   /**
    * Adopts an account the server just returned (avatar change, password reset sign-in, restore)
    * — or null after it signed this tab out (deletion) — and tells the other tabs.
@@ -100,7 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [announce]);
 
-  const updateProfile = useCallback(async (patch: Partial<Pick<User, 'name' | 'color' | 'avatarUrl'>>) => {
+  const updateProfile = useCallback(async (patch: Partial<Pick<Account, 'name' | 'color' | 'avatarUrl' | 'theme'>>) => {
     const { user } = await api.updateMe(patch);
     setUser(user);
     announce();
@@ -111,6 +112,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(next);
     announce();
   }, [announce]);
+
+  // The account's theme wins over this browser's: it follows the person to every device.
+  const accountTheme = user?.theme;
+  useEffect(() => {
+    if (accountTheme) setThemePreference(accountTheme);
+  }, [accountTheme]);
 
   const value = useMemo<AuthValue>(
     () => ({ user, loading, login, completeTwoFactor, signup, logout, refresh, updateProfile, adopt }),

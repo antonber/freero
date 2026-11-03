@@ -103,9 +103,9 @@ button {
 }
 
 /* ---- Dark (#89) ----
-   A page that follows a dark surrounding sets data-theme="dark" on <html> (the live board view in an
-   AI assistant follows the assistant's theme). The chrome follows these; board content does not
-   (`.fr-paper` above). */
+   app/lib/theme.ts sets data-theme on <html>: the person's choice (System / Light / Dark), or the
+   assistant's theme in the live board view inside an AI assistant. The chrome follows these; board
+   content does not (`.fr-paper` above). */
 :root[data-theme='dark'] {
   color-scheme: dark;
   --fr-primary: #8f7bff;

@@ -12,6 +12,8 @@ export interface AccountDataExport {
     emailVerified: boolean;
     color: string;
     avatarUrl: string | null;
+    /** The app theme they chose (system, light or dark). */
+    theme: string;
     createdAt: string;
     deletionScheduledFor: string | null;
   };
@@ -41,6 +43,7 @@ export async function exportAccountData(userId: string): Promise<AccountDataExpo
       emailVerified: user.emailVerified,
       color: user.color,
       avatarUrl: user.avatarUrl,
+      theme: user.theme ?? 'system',
       createdAt: iso(user.createdAt),
       deletionScheduledFor: user.deletionScheduledFor === null ? null : iso(user.deletionScheduledFor),
     },

@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type { Request, RequestHandler, Response } from 'express';
-import { ACCOUNT_PENDING_DELETION, ACCOUNT_SUSPENDED, REAUTH_REQUIRED, SESSION_COOKIE, type Account, type AuditAction, type User } from '@freero/shared';
+import { ACCOUNT_PENDING_DELETION, ACCOUNT_SUSPENDED, COLOR_THEME_PREFERENCES, REAUTH_REQUIRED, SESSION_COOKIE, type Account, type AuditAction, type ColorThemePreference, type User } from '@freero/shared';
 import { getConfig } from '../../platform/config';
 import { badRequest, HttpError, parseCookies, unauthorized } from '../../platform/http';
 import { newId } from '../../platform/ids';
@@ -35,7 +35,7 @@ export function publicUser(u: User): User {
 }
 
 export function toAccount(u: Account): Account {
-  return { ...publicUser(u), emailVerified: u.emailVerified, deletionScheduledFor: u.deletionScheduledFor };
+  return { ...publicUser(u), emailVerified: u.emailVerified, deletionScheduledFor: u.deletionScheduledFor, theme: u.theme ?? 'system' };
 }
 
 export function normalizeEmail(email: unknown): string {
@@ -132,7 +132,7 @@ export async function confirmPassword(userId: string, password: unknown, session
 }
 
 export async function updateProfile(userId: string, body: Record<string, unknown>): Promise<Account> {
-  const patch: { name?: string; color?: string; avatarUrl?: string | null } = {};
+  const patch: { name?: string; color?: string; avatarUrl?: string | null; theme?: ColorThemePreference } = {};
   if (body.name !== undefined) {
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     if (!name || name.length > 80) throw badRequest('Name must be 1-80 characters');
@@ -149,7 +149,13 @@ export async function updateProfile(userId: string, body: Record<string, unknown
       throw badRequest('avatarUrl must be an /uploads URL, an http(s) URL or null');
     patch.avatarUrl = v as string | null;
   }
+  if (body.theme !== undefined) {
+    if (!COLOR_THEME_PREFERENCES.includes(body.theme as ColorThemePreference)) throw badRequest('theme must be system, light or dark');
+    patch.theme = body.theme as ColorThemePreference;
+  }
   await repo.updateUserProfile(userId, patch);
+  // Only what others see reaches open boards (a theme is the person's own).
+  if (patch.name === undefined && patch.color === undefined && patch.avatarUrl === undefined) return getAccount(userId);
   // Open boards take the new profile before we answer: a comment under the new name is accepted.
   await Promise.all(
     [...profileListeners].map((fn) => Promise.resolve(fn(userId)).catch((e) => logError('auth: a profile listener failed', e))),
