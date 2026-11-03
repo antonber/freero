@@ -78,6 +78,8 @@ export function startPresenting(editor: Editor, fromFrameId?: string | null) {
     position: start ? list.indexOf(start) : 0,
   });
   publish(editor, { presenting: { frameId: start?.id ?? null, startedAt: Date.now() } });
+  // The presenter sees how the room reacts (#144: features/presence counts, nothing is stored).
+  editor.runCommand('presence.countReactions', { on: true });
   showCurrent(editor, true);
 }
 
@@ -96,6 +98,7 @@ export function stopPresenting(editor: Editor) {
   presentStore(editor).setState({ presenting: false, laser: false });
   editor.setChromeHidden(false);
   publish(editor, { presenting: null });
+  editor.runCommand('presence.countReactions', { on: false });
 }
 
 /** Go to a slide by position (clamped). */

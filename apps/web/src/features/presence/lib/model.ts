@@ -6,8 +6,20 @@ import type { HostUser } from '@engine';
 export type Peer = PresenceState & { clientId: number };
 export type Viewport = NonNullable<PresenceState['viewport']>;
 
+/** The picker's first row; any other emoji is behind "More" (#144). */
 export const REACTIONS = ['👍', '❤️', '😂', '🎉', '🤔', '👏'] as const;
-export type Reaction = (typeof REACTIONS)[number];
+/** One emoji (a single grapheme of pictographs, modifiers, joiners, flags, keycaps). */
+export type Reaction = string;
+
+const EMOJI_ONLY = /^(?:[\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Regional_Indicator}\u200d\ufe0f\u20e3#*0-9])+$/u;
+/**
+ * Is `v` one emoji a peer may send (any emoji, #144)? Peers are untrusted: text, markup and long
+ * strings are refused; a reaction is drawn as text, never as HTML, either way.
+ */
+export function isReactionEmoji(v: unknown): v is Reaction {
+  if (typeof v !== 'string' || !v || v.length > 16 || !EMOJI_ONLY.test(v) || !/\p{Extended_Pictographic}|\p{Regional_Indicator}|⃣/u.test(v)) return false;
+  return [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(v)].length === 1;
+}
 
 /** What this feature publishes in PresenceState.ext.presence. */
 export interface PresenceExt {
@@ -24,7 +36,7 @@ export function readExt(peer: Pick<PresenceState, 'ext'>): PresenceExt {
   const r = raw as Record<string, unknown>;
   const out: PresenceExt = {};
   const reaction = r.reaction as PresenceExt['reaction'] | undefined;
-  if (reaction && typeof reaction.id === 'string' && (REACTIONS as readonly string[]).includes(reaction.emoji))
+  if (reaction && typeof reaction.id === 'string' && isReactionEmoji(reaction.emoji))
     out.reaction = { id: reaction.id, emoji: reaction.emoji, at: validPoint(reaction.at) };
   const summon = r.summon as PresenceExt['summon'] | undefined;
   if (summon && typeof summon.id === 'string') out.summon = { id: summon.id, viewport: validViewport(summon.viewport) };
@@ -134,4 +146,39 @@ export function takeToken(b: Bucket, now: number, capacity = BURST_CAPACITY, ref
   const tokens = Math.min(capacity, b.tokens + (now - b.at) / refillMs);
   if (tokens < 1) return { ok: false, bucket: { tokens, at: now } };
   return { ok: true, bucket: { tokens: tokens - 1, at: now } };
+}
+
+// ---------------------------------------------------------------------------
+// Reaction counts for the presenter / facilitator (#144)
+// ---------------------------------------------------------------------------
+/** How far back the counts look. */
+export const TALLY_WINDOW_MS = 5 * 60_000;
+
+export interface Tally {
+  /** Reactions counted, oldest first (arrival time on this client). */
+  events: Array<{ at: number; emoji: Reaction }>;
+  /** Per PERSON (all their tabs together), the same token bucket as sending. */
+  buckets: Map<string, Bucket>;
+}
+
+export const newTally = (): Tally => ({ events: [], buckets: new Map() });
+
+/**
+ * Counts one reaction from `userId`, unless that person is over the burst rate (a client that
+ * ignores the sender's limit, or many tabs, can't inflate the counts). Returns whether it counted.
+ */
+export function countReaction(t: Tally, userId: string, emoji: Reaction, now: number): boolean {
+  const { ok, bucket } = takeToken(t.buckets.get(userId) ?? { tokens: BURST_CAPACITY, at: now }, now);
+  t.buckets.set(userId, bucket);
+  if (!ok) return false;
+  t.events.push({ at: now, emoji });
+  while (t.events.length && t.events[0].at < now - TALLY_WINDOW_MS) t.events.shift();
+  return true;
+}
+
+/** Counts per emoji over the last TALLY_WINDOW_MS, most first. */
+export function tallyCounts(t: Tally, now: number): Array<{ emoji: Reaction; count: number }> {
+  const counts = new Map<Reaction, number>();
+  for (const e of t.events) if (e.at >= now - TALLY_WINDOW_MS) counts.set(e.emoji, (counts.get(e.emoji) ?? 0) + 1);
+  return [...counts].map(([emoji, count]) => ({ emoji, count })).sort((a, b) => b.count - a.count || (a.emoji < b.emoji ? -1 : 1));
 }

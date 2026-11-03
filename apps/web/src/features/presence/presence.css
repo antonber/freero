@@ -170,8 +170,66 @@
   gap: 2px;
 }
 
-.fr-presence-reactions.is-denied {
+.fr-presence-reactions {
+  align-items: center;
+}
+
+.fr-presence-reactions.is-denied,
+.fr-presence-reactions-more.is-denied {
   animation: fr-presence-nope 0.3s var(--fr-ease);
+}
+
+.fr-presence-reactions-more {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* Reaction counts for the presenter / facilitator (#144): a quiet card under the top-right cluster. */
+.fr-presence-tally {
+  position: absolute;
+  top: 72px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  max-width: 340px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--fr-surface);
+  box-shadow: var(--fr-shadow);
+  font: 600 13px/1.4 var(--fr-font);
+  color: var(--fr-ink);
+  pointer-events: auto;
+}
+
+.fr-presence-tally.is-presenting {
+  top: 16px;
+}
+
+.fr-presence-tally__title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fr-ink-3);
+}
+
+.fr-presence-tally__item span {
+  font-size: 16px;
+}
+
+.fr-presence-tally__none {
+  color: var(--fr-ink-3);
+  font-weight: 500;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fr-presence-reactions.is-denied,
+  .fr-presence-reactions-more.is-denied {
+    animation: none;
+  }
 }
 
 .fr-presence-reactions__btn {

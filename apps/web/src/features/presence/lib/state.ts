@@ -2,7 +2,7 @@
 import { createStore, useStore, type StoreApi } from 'zustand';
 import { nanoid } from 'nanoid';
 import type { Editor, Point } from '@engine';
-import { BURST_CAPACITY, takeToken, type Bucket, type PresenceExt, type Reaction, type Viewport } from './model';
+import { BURST_CAPACITY, REACTIONS, isReactionEmoji, newTally, takeToken, type Bucket, type PresenceExt, type Reaction, type Tally, type Viewport } from './model';
 
 export interface Burst {
   id: string;
@@ -18,6 +18,12 @@ export interface PresenceUi {
   bursts: Burst[];
   bucket: Bucket;
   ext: PresenceExt;
+  /** Presenting (features/present asks through `presence.countReactions`): count reactions. */
+  presenting: boolean;
+  /** Reactions counted for the presenter / facilitator (#144); a new object on every change. */
+  tally: Tally;
+  /** Emoji this person picked from "More" lately (this session). */
+  recent: Reaction[];
 }
 
 const stores = new WeakMap<Editor, StoreApi<PresenceUi>>();
@@ -30,6 +36,9 @@ export function presenceStore(editor: Editor): StoreApi<PresenceUi> {
       bursts: [],
       bucket: { tokens: BURST_CAPACITY, at: Date.now() },
       ext: {},
+      presenting: false,
+      tally: newTally(),
+      recent: [],
     }));
     stores.set(editor, s);
   }
@@ -74,11 +83,13 @@ export function showBurst(editor: Editor, burst: Omit<Burst, 'id'>) {
  * Returns false when throttled.
  */
 export function sendReaction(editor: Editor, emoji: Reaction, at: Point | null): boolean {
+  if (!isReactionEmoji(emoji)) return false;
   const store = presenceStore(editor);
   const { ok, bucket } = takeToken(store.getState().bucket, Date.now());
   store.setState({ bucket });
   if (!ok) return false;
   publish(editor, { reaction: { id: nanoid(10), emoji, at } });
+  if (!(REACTIONS as readonly string[]).includes(emoji)) store.setState((s) => ({ recent: [emoji, ...s.recent.filter((e) => e !== emoji)].slice(0, 8) }));
   const origin = burstOrigin(editor, at);
   showBurst(editor, { emoji, x: origin.x, y: origin.y, name: editor.user.name, color: editor.user.color });
   return true;

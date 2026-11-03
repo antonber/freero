@@ -32,6 +32,10 @@ export { SegmentedControl } from './SegmentedControl';
 export type { SegmentedControlProps, SegmentedOption } from './SegmentedControl';
 export { ElementsPreview } from './ElementsPreview';
 export type { ElementsPreviewProps } from './ElementsPreview';
+export { EmojiPicker } from './EmojiPicker';
+export type { EmojiPickerProps } from './EmojiPicker';
+export { EMOJI_CATEGORIES, searchEmojis } from './emojis';
+export type { EmojiCategory, EmojiEntry } from './emojis';
 
 // Helpers
 export { Icon, renderIcon } from './icon';
