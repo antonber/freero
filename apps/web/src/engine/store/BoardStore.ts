@@ -115,6 +115,8 @@ export class BoardStore {
   serverReadRole: Role | null = null;
   /** A facilitator's limits for this user, from the same role message (null: none). */
   serverLimits: SessionLimits | null = null;
+  /** This commenter may take part: own ballot, pick and private-mode drafts (RoleMessage.participant). */
+  serverParticipant = false;
 
   private history: UndoHistory;
   private placement: Placement = (_el, current) => current ?? 'shared';
@@ -184,6 +186,7 @@ export class BoardStore {
             this.serverRole = m.role;
             this.serverReadRole = m.readRole ?? null;
             this.serverLimits = m.limits && typeof m.limits === 'object' ? m.limits : null;
+            this.serverParticipant = m.participant === true;
             this.emit(this.roleListeners);
           }
         } catch {
@@ -226,6 +229,7 @@ export class BoardStore {
           this.serverRole = 'viewer';
           this.serverReadRole = null;
           this.serverLimits = null;
+          this.serverParticipant = false;
           this.emit(this.roleListeners);
         }
       });

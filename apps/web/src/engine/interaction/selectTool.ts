@@ -119,7 +119,8 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
   }
 
   function beginTranslate(start: Point, alt: boolean) {
-    if (!ed().can('editor')) return (state = { kind: 'idle' });
+    // Editors move anything; a participant only their own drafts (Editor.mayEdit).
+    if (!ed().can('editor') && (alt || !ed().mayEdit(movableSelection().map((el) => el.id)))) return (state = { kind: 'idle' });
     if (alt) {
       const sel = ed().getSelection().filter((id) => !ed().getElement(id)?.locked);
       if (sel.length) ed().duplicate(sel, { x: 0, y: 0 });
@@ -387,7 +388,7 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
       if (e.button !== 0) return;
       const handle = core.interaction.handle;
       const canEdit = ed().can('editor');
-      if (handle && canEdit) {
+      if (handle && ed().mayEdit(ed().getSelection())) {
         if (handle === 'rotate') beginRotate(e.point);
         else if (core.interaction.clickCount >= 2) fitToContent(handle as Handle);
         else beginResize(handle as Handle, e.point);
@@ -410,7 +411,7 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
           // Double-click: dive into a group, or edit text.
           if (target.groupId && sel.length > 1 && sel.includes(target.id)) {
             ed().select([target.id]);
-          } else if (canEdit && !editAt(target, e.point) && !target.locked) {
+          } else if (ed().mayEdit([target.id]) && !editAt(target, e.point) && !target.locked) {
             // [additive] No text there: the type's own double-click (image → crop mode).
             const reg = core.registry.elements.get(target.type);
             reg?.def.onDoubleClick?.(target as never, { editor: core.scoped(reg.feature), point: e.point });
@@ -487,7 +488,7 @@ export function createSelectTool(core: EngineCore): ToolDefinition {
           else if (sel.length === 1 && sel[0] === s.hitId) {
             const el = ed().getElement(s.hitId);
             // Click on an already-selected text element enters editing (the part under the pointer).
-            if (el && !el.locked && ed().can('editor')) editAt(el, s.start);
+            if (el && !el.locked && ed().mayEdit([el.id])) editAt(el, s.start);
           }
         }
       } else if (s.kind === 'translate') {
