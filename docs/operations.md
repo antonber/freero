@@ -258,7 +258,7 @@ What is sealed by the app today (audit, KAI-143):
 
 | Column | Protection |
 |---|---|
-| `user_totp.secret` (two-step), `ai_workspace_settings` API key, `sso_connections.oidc_client_secret`, `tracker_connections` credentials + webhook secret, `webhook_endpoints` URL + signing secret, `boards.call_url` | sealed (AES-256-GCM under `SESSION_SECRET`) |
+| `user_totp.secret` (two-step), `ai_workspace_settings` API key, `sso_connections.oidc_client_secret`, `tracker_connections` credentials + webhook secret, `webhook_endpoints` URL + signing secret, `siem_sinks.secrets_sealed` (HEC token / Entra client secret / bearer token, the HTTPS collector URL, the signing secret), `boards.call_url` | sealed (AES-256-GCM under `SESSION_SECRET`) |
 | `users.password_hash`, board link passwords | scrypt |
 | `sessions`, `guest_sessions`, `auth_tokens`, `auth_challenges`, `auth_devices`, `api_tokens`, `oauth_codes`, OAuth client secrets, `scim_tokens`, `user_recovery_codes`, OIDC / SSO flow `state` | sha256 only |
 | `auth_oidc_flows` / `sso_flows` PKCE verifier and nonce | plain, by decision: single use, deleted within minutes, and useless without the authorization code, which is never stored |
@@ -282,9 +282,18 @@ the resolver).
   listed signing certificate is accepted until the next save.
 - **What is refused** (`sso.login_refused` in the workspace's audit log, with the reason):
   responses that fail signature, audience, recipient, timestamps, InResponseTo or replay checks;
-  IdP-initiated (unsolicited) responses; addresses outside the workspace's verified domains;
-  deactivated members. The IdP's portal tile should point at `/api/sso/<workspace>/start`
-  (SP-initiated).
+  IdP-initiated (unsolicited) responses unless the workspace turned on "Allow sign-in from the
+  identity provider" (then also those not addressed to its ACS by `Destination`, and any second
+  post of an assertion ID until its `NotOnOrAfter`); addresses outside the workspace's verified
+  domains; deactivated members. With the switch off, the IdP's portal tile can point at
+  `/api/sso/<workspace>/start` (SP-initiated); with it on, the tile posts to the ACS and its
+  RelayState may name a same-origin path (`/board/<id>`) to land on.
+- **Domain control** (Single sign-on tab, any verified domain, SSO or not): "Add new sign-ups",
+  "Block other team workspaces", and bringing existing accounts at the domain in after an emailed
+  grace period (the `sso:domain-capture` job, every 10 minutes). Only accounts that verified their
+  address are listed or taken in. Someone whose account isn't a work account changes its address
+  before the date. All of it is in the workspace's audit log (`sso.domain_*`,
+  `sso.workspace_creation_refused`).
 - **Session length** is the workspace's session policy (Security tab), applied to the person like
   every other sign-in; a SAML `SessionNotOnOrAfter` can only shorten one SSO sign-in.
 - **SCIM tokens** are shown once and stored as sha256. A leaked token: Rotate it in the admin
@@ -326,13 +335,14 @@ workspace (modules/workspaces).
 | Board links unlocked with their password (when) | `board_link_unlocks` (boards) | no (an access fact, not content) | deleted | deleted with the boards |
 | What a directory sent about them (SCIM userName, externalId, name, email, active) | `scim_users`, `scim_group_members` (scim) | `memberships.json` → `directoryRecords` | deleted (cascade) | deleted (cascade) |
 | Break-glass role | `sso_connections.break_glass_user_id` (sso) | `memberships.json` → `singleSignOn` | cleared (SET NULL) | deleted (cascade) |
+| A workspace's pending capture of their account (domain control: the address, when they join, who started it) | `sso_domain_captures` (sso) | `memberships.json` → `singleSignOn` (`joinsAt`) | deleted (cascade) | deleted (cascade) |
 | Community listings they submitted to Apps & agents (name, description, links, category, the OAuth app named, the contact address for reviewers, review status and the reviewer's note) | `marketplace_listings` (marketplace) | `listings.json` | deleted (cascade) | — |
 | Abuse reports they filed, moderation actions about their content or account (suspension) | `moderation_items`, `moderation_actions` (moderation; reporter address only as an HMAC), `users.suspended_at` (auth) | not yet (follow-up: KAI-191) | person references cleared (SET NULL); the records stay as the operators' trail | items about its boards stay with their recorded target |
 | Problem reports they sent with “Report a problem”: the note, whether they may be contacted, a screenshot of their screen (unless they removed it), diagnostics (page path, board and role, release, browser, window size, scrubbed recent errors), the status and operators' note | `problem_reports` (problems) + screenshots in the private storage area (`confidential.<random>.<ext>`, never under `/uploads/`) | `problems/index.json` + `problems/<id>.<ext>` (the operators' note is not included) | deleted with their screenshots | — |
 | API tokens (sha256 only, name, scopes, times), apps they authorised (consents, codes, access/refresh tokens), apps they registered; where their credentials were used in team workspaces | `api_tokens`, `oauth_grants`, `oauth_codes`, `oauth_clients`, `api_workspace_credentials` (apiauth) | `api.json` (never a secret or hash) | deleted (cascade); revoked already when deletion is scheduled (signed out everywhere) | usage rows deleted (cascade) |
 | Data exports | `data_exports` + private ZIP files (privacy, uploads) | listed in `activity.json` | rows and files deleted by the export job within `DATA_EXPORT_INTERVAL_SECONDS` | workspace exports' rows and files deleted by the job |
 | Request logs | stdout (pino) → your log pipeline | no | not touched: user ids and IP addresses (never emails, bodies, query strings or tokens) — expire them in your log retention | — |
-| Audit log (sign-ins, sharing, exports, every API / MCP call: actor, IP, target, outcome) | `audit_events`, `audit_chains` (audit) | no (team admins read and export the workspace's log in the admin console) | kept until retention (`DEFAULT_AUDIT_RETENTION_DAYS`, a workspace's `auditRetentionDays`); actor read as "Deleted user"; no foreign keys | the workspace's chain kept until the default retention |
+| Audit log (sign-ins, sharing, exports, every API / MCP call: actor, IP, target, outcome) — and what was streamed to a workspace's SIEM (a copy outside Freero, under the customer's retention) | `audit_events`, `audit_chains`, `audit_anchors` (audit) | no (team admins read and export the workspace's log in the admin console) | kept until retention (`DEFAULT_AUDIT_RETENTION_DAYS`, a workspace's `auditRetentionDays`); actor read as "Deleted user"; no foreign keys | the workspace's chain kept until the default retention |
 | Board activity feed (who changed what kind of item, when) | `board_activity` (activity) | no | 90 days | deleted with the boards |
 | Guest sessions (a name, the board, sha256 of the cookie) | `guest_sessions` (auth) | — | — (no account) | expire after `GUEST_SESSION_HOURS` |
 | Error reports (`ERROR_REPORTING_DSN`): the error, request method and path, account id | the Sentry-compatible service you configure | no | outside Freero (that service's retention) | — |
@@ -550,7 +560,41 @@ runs), the restore happens when the server starts again.
 `u:<user id>` for an account's own chain, `freero` for operator actions on unowned content) and
 exits non-zero when it is not intact. Workspace admins run the same check from the admin console
 (Audit log → Integrity) and can export the log as CSV or JSON; each export carries every event's
-chain position and hashes, so it can be re-checked independently.
+chain position and hashes, so it can be re-checked independently. Every hour the `audit:anchor`
+job signs the head of each chain that moved (HMAC under `SESSION_SECRET`, kept in
+`audit_anchors`); the check compares every checkpoint still in retention with the stored event,
+so a log rewritten wholesale by someone with database access (events and head consistent) fails
+unless they also hold the server's secret. Rotating `SESSION_SECRET` keeps old checkpoints valid
+while the previous secret is listed in `SESSION_SECRET_PREVIOUS`. Workspaces that stream to a
+SIEM also hold the chain (every event's hashes plus hourly signed `freero.audit.head` records)
+outside this database.
+
+### Audit log streams (SIEM)
+
+Workspace admins add streams in the admin console (Audit log tab). The `siem:deliver` job (every
+5 s, one instance at a time) sends each stream the events after its cursor in order; a failure
+is retried with backoff (`SIEM_RETRY_BASE_MS`, at most 6 h apart) from the same event, so a SIEM
+that was down gets the backlog in order once it is back. Formats:
+
+- **Splunk**: HEC events (`POST <url>/services/collector/event`, `Authorization: Splunk <token>`),
+  `sourcetype` `freero:audit` unless set, `event` = the record below.
+- **Microsoft Sentinel**: an Entra ID app (client credentials) with the *Monitoring Metrics
+  Publisher* role on a data collection rule whose stream has the columns `TimeGenerated`,
+  `RecordType`, `EventId`, `Action`, `Description`, `WorkspaceId`, `ActorId`, `ActorName`,
+  `ActorEmail`, `TargetType`, `TargetId`, `TargetLabel`, `IpAddress`, `UserAgent`, `Metadata`
+  (dynamic), `Chain`, `Seq` (long), `PrevHash`, `Hash`, `Signature`.
+- **HTTPS**: `POST` of `{ source, workspaceId, records: [...] }` with
+  `Freero-Signature: t=<unix>,v1=<hex HMAC-SHA256 of "<t>.<body>">` (the secret is shown once) and
+  an optional bearer token.
+- **Syslog over TLS** (RFC 5425, port 6514 by default): one RFC 5424 message per record, facility
+  13 (log audit), the record as JSON. The server certificate is verified (public CAs, or the CA
+  PEM given). Syslog has no acknowledgement: a record counts as sent once TLS accepted it.
+
+A record is `{ type: "freero.audit.event", time, description, ...AuditEvent }` (id, action, actor,
+target, ip, userAgent, metadata, chain, seq, prevHash, hash), or `{ type: "freero.audit.head",
+chain, seq, hash, time, signature }` (the head, signed like the checkpoints above), or
+`freero.audit.test` from "Send test". A new stream starts at the current end of the log (export
+the history from the console).
 
 ## Account recovery: someone is locked out by two-step verification
 

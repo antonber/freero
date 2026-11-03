@@ -3626,6 +3626,37 @@ async function ssoChecks() {
       assert(fin.location === '/login?error=sso_domain' && !b.jar.has('freero_session'), `${acs.location} -> ${fin.location}`);
     });
 
+    await check('IdP-initiated SAML (#107): refused while the switch is off; with it on, the app tile signs in once (same-origin RelayState only), and a replayed response is refused', async () => {
+      const acsUrl = `${new URL(`http://127.0.0.1:${port}`).origin}/api/sso/${ws.id}/saml/acs`;
+      const audience = `http://127.0.0.1:${port}/api/sso/${ws.id}/saml/metadata`;
+      const tile = (email) => idp.buildResponse({ email, acsUrl, audience });
+      const off = await postToAcs(new Browser(port), acsUrl, tile(at('tile-off')), '/board/x', idp);
+      assert(off.location === '/login?error=sso_unsolicited', `with the switch off: ${off.status} ${off.location}`);
+      const on = await O.req('PUT', sso('/connection'), { protocol: 'saml', enabled: true, idpInitiated: true });
+      assert(on.status === 200 && on.json.connection.idpInitiated === true && on.json.connection.saml, on.text);
+      const b = new Browser(port);
+      const response = tile(at('tile-user'));
+      const acs = await postToAcs(b, acsUrl, response, 'https://evil.example/steal', idp);
+      assert(acs.status === 303 && acs.location.includes('/saml/finish'), `acs: ${acs.status} ${acs.location}`);
+      const fin = await b.fetch(acs.location);
+      assert(fin.location === `/app?ws=${ws.id}` && b.jar.has('freero_session'), `finish: ${fin.location}`);
+      assert((await b.fetch('/api/auth/me')).json.user.email === at('tile-user'), 'signed in as someone else');
+      const again = await postToAcs(new Browser(port), acsUrl, response, '', idp);
+      assert(again.location === '/login?error=sso_failed', `replayed: ${again.location}`);
+      // Back off: the rest of the group runs as before.
+      assert((await O.req('PUT', sso('/connection'), { protocol: 'saml', enabled: true, idpInitiated: false })).json.connection.idpInitiated === false, 'not off');
+    });
+
+    await check('domain control (#64): admins see the verified accounts at the domain; with "Block other team workspaces" someone there is refused a team workspace naming the admins', async () => {
+      const dc = await O.req('GET', sso('/domain-control'));
+      assert(dc.status === 200 && dc.json.domains.includes(domain) && dc.json.accounts.some((a) => a.email === B.email && a.status === 'outside'), dc.text);
+      assert((await B.req('GET', sso('/domain-control'))).status === 404, 'a non-member reads domain control');
+      assert((await O.req('PUT', sso('/domain-control'), { blockWorkspaces: true })).json.blockWorkspaces === true, 'block not on');
+      const refused = await B.req('POST', '/api/workspaces', { name: 'Shadow team' });
+      assert(refused.status === 403 && refused.json.code === 'workspace_creation_blocked' && refused.json.error.includes('SsoOwner'), `${refused.status} ${refused.text}`);
+      assert((await O.req('PUT', sso('/domain-control'), { blockWorkspaces: false })).status === 200, 'block not off');
+    });
+
     await check('discovery routes an address at the domain to the IdP (by domain only); "Enforce SSO" needs an owner as break-glass', async () => {
       const d = (await new Browser(port).fetch(`/api/sso/discover?email=${encodeURIComponent(at('anyone'))}&next=%2Fboard%2Fx`)).json.sso;
       assert(d && d.startUrl.startsWith(`/api/sso/${ws.id}/start?`) && d.startUrl.includes('next=%2Fboard%2Fx') && d.enforced === false, JSON.stringify(d));
