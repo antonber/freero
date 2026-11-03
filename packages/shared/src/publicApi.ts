@@ -224,6 +224,8 @@ export interface ApiBoard {
   description: string;
   url: string;
   role: string;
+  /** [additive, #122] You co-own it: `role` reads 'editor', and you also manage its sharing. */
+  coOwner?: boolean;
   workspaceId: string;
   projectId: string | null;
   owner: { id: string; name: string };
