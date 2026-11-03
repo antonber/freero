@@ -14,7 +14,7 @@
 // opens what the server wrote exactly like what it wrote itself. Doc content is untrusted: anything
 // unexpected is skipped, never thrown on.
 import * as Y from 'yjs';
-import { DOC_FRAGMENT, type DocBlock, type DocInline, type DocStyles, type DocTableCell, type DocTableContent, type DocText } from '@freero/shared';
+import { DOC_FRAGMENT, type DocBlock, type DocEdit, type DocInline, type DocStyles, type DocTableCell, type DocTableContent, type DocText } from '@freero/shared';
 
 const STYLE_MARKS: Array<keyof DocStyles> = ['bold', 'italic', 'underline', 'strike', 'code'];
 /** Deepest nesting read (untrusted content must not blow the stack). */
@@ -192,6 +192,78 @@ export function writeDocBlocks(doc: Y.Doc, blocks: DocBlock[], newId: () => stri
       blocks.map((b) => containerNode(b, newId, 0)),
     );
   });
+}
+
+/** A targeted edit that can't apply to the document as it is (no such block, not a heading): nothing changed. */
+export class DocEditError extends Error {}
+
+/** The block container with id `blockId` and the group it sits in (any depth), or null. */
+function findContainer(group: Y.XmlElement, blockId: string, depth = 0): { group: Y.XmlElement; index: number; container: Y.XmlElement } | null {
+  if (depth > MAX_DEPTH) return null;
+  const kids = group.toArray();
+  for (let i = 0; i < kids.length; i++) {
+    const c = kids[i];
+    if (!(c instanceof Y.XmlElement) || c.nodeName !== 'blockContainer') continue;
+    if (c.getAttribute('id') === blockId) return { group, index: i, container: c };
+    for (const part of c.toArray())
+      if (part instanceof Y.XmlElement && part.nodeName === 'blockGroup') {
+        const hit = findContainer(part, blockId, depth + 1);
+        if (hit) return hit;
+      }
+  }
+  return null;
+}
+
+/** A container's content node (paragraph, heading …). */
+const contentOf = (c: Y.XmlElement): Y.XmlElement | null => c.toArray().find((p): p is Y.XmlElement => p instanceof Y.XmlElement && p.nodeName !== 'blockGroup') ?? null;
+const headingLevel = (c: unknown): number | null => {
+  if (!(c instanceof Y.XmlElement) || c.nodeName !== 'blockContainer') return null;
+  const node = contentOf(c);
+  if (node?.nodeName !== 'heading') return null;
+  const level = Number(node.getAttribute('level') ?? 1);
+  return Number.isFinite(level) ? level : 1;
+};
+
+/**
+ * Applies a targeted edit (@freero/shared DocEdit, #61) to the document as it is now, in the
+ * caller's transaction: checked first (DocEditError, nothing written), then one change. Answers the
+ * ids of the blocks it wrote (none for a delete).
+ */
+export function applyDocEdit(doc: Y.Doc, edit: DocEdit, newId: () => string): string[] {
+  const root = doc.share.has(DOC_FRAGMENT) ? doc.getXmlFragment(DOC_FRAGMENT) : null;
+  const top = root?.toArray().find((c): c is Y.XmlElement => c instanceof Y.XmlElement && c.nodeName === 'blockGroup');
+  const at = top ? findContainer(top, edit.blockId) : null;
+  if (!top || !at) throw new DocEditError(`No block ${edit.blockId} in this doc`);
+  const blocks = edit.blocks ?? [];
+  if (edit.op !== 'delete' && !blocks.length) throw new DocEditError('Send the new content (markdown)');
+  // How many siblings the edit takes away, from `at.index`.
+  let span = 1;
+  if (edit.op === 'replaceSection') {
+    const level = headingLevel(at.container);
+    if (level === null) throw new DocEditError(`Block ${edit.blockId} is not a heading: replace it, or name a heading to replace its section`);
+    const siblings = at.group.toArray();
+    while (at.index + span < siblings.length) {
+      const next = headingLevel(siblings[at.index + span]);
+      if (next !== null && next <= level) break;
+      span++;
+    }
+  }
+  const keepId = edit.op === 'replace' || edit.op === 'replaceSection';
+  const written = blocks.map((b, i) => ({ ...b, id: i === 0 && keepId ? edit.blockId : newId() }));
+  doc.transact(() => {
+    if (edit.op === 'insertBefore') at.group.insert(at.index, written.map((b) => containerNode(b, newId, 0)));
+    else if (edit.op === 'insertAfter') at.group.insert(at.index + 1, written.map((b) => containerNode(b, newId, 0)));
+    else {
+      at.group.delete(at.index, span);
+      if (written.length) at.group.insert(at.index, written.map((b) => containerNode(b, newId, 0)));
+      // A doc is never left without a block to type in, and a nested group never empty.
+      else if (at.group.length === 0) {
+        if (at.group === top) at.group.insert(0, [containerNode({ type: 'paragraph', props: {}, content: [] }, newId, 0)]);
+        else at.group.parent instanceof Y.XmlElement && at.group.parent.delete(at.group.parent.toArray().indexOf(at.group), 1);
+      }
+    }
+  });
+  return edit.op === 'delete' ? [] : written.map((b) => b.id);
 }
 
 /** A fresh document state holding `blocks` (a new doc's first content). */

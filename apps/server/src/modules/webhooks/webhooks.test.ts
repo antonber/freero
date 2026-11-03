@@ -237,3 +237,29 @@ it('an endpoint scoped to an agent’s lane gets only what happens in it — its
     await r.close();
   }
 });
+
+it('an endpoint limited to a project gets only the events of that project’s boards, and a private project can’t be its filter', async () => {
+  const owner = await user('Producer');
+  const ws = await createTeamWorkspace(owner.id, 'Releases');
+  const launch = await createProject(ws.id, owner.id, { name: 'Launch', access: 'workspace' });
+  const secret = await createProject(ws.id, owner.id, { name: 'Acquisition', access: 'private' });
+  const inside = await createBoard(owner.id, 'Launch plan', '', 'none', { workspaceId: ws.id, projectId: launch.id });
+  const outside = await createBoard(owner.id, 'Hiring', '', 'none', { workspaceId: ws.id });
+  const r = await receiver();
+  try {
+    await expect(createEndpoint(ws.id, owner.id, { url: r.url, events: ['item.created'], projectId: secret.id })).rejects.toMatchObject({ status: 400 });
+    await expect(createEndpoint(ws.id, owner.id, { url: r.url, events: ['item.created'], projectId: launch.id, scope: `freero://board/${inside.id}` })).rejects.toMatchObject({ status: 400 });
+    const { endpoint } = await createEndpoint(ws.id, owner.id, { url: r.url, events: ['item.created'], projectId: launch.id });
+    expect(endpoint.projectId).toBe(launch.id);
+    await flow();
+    await save(inside.id, [sticky('in', 'Ship date', owner.id)]);
+    await save(outside.id, [sticky('out', 'Interview loop', owner.id)]);
+    await flow();
+    const got = r.got.map((x) => JSON.parse(x.body) as { board: { id: string } });
+    expect(got.map((e) => e.board.id)).toEqual([inside.id]);
+    // Cleared: every board again.
+    expect((await updateEndpoint(ws.id, owner.id, endpoint.id, { projectId: null })).projectId).toBeNull();
+  } finally {
+    await r.close();
+  }
+});

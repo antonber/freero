@@ -68,7 +68,12 @@ export interface EmbedSession {
 
 export const EMBED_SESSION_PREFIX = 'embed:';
 
-async function sessionOf(row: repo.EmbedRow, tokenHash: string, now: number): Promise<EmbedSession | null> {
+/**
+ * The credential a ticket or view token acts through, checked like the credential itself would be
+ * now: its personal token not paused or expired, the account usable, sign-in restrictions. Null when
+ * it no longer may act. (Scopes are left empty: the ticket says what it may do.)
+ */
+async function actingCredential(row: repo.EmbedRow, now: number): Promise<ApiCredential | null> {
   if (row.expiresAt <= now) return null;
   if (row.personalTokenId && (row.parentPausedAt !== null || (row.parentExpiresAt !== null && row.parentExpiresAt <= now))) return null;
   let account: Account;
@@ -80,22 +85,58 @@ async function sessionOf(row: repo.EmbedRow, tokenHash: string, now: number): Pr
   if (account.deletionScheduledFor !== null || (await isSuspended(account.id))) return null;
   if (await signInRestriction({ email: account.email, userId: account.id, method: row.issuedVia })) return null;
   return {
-    sessionKey: EMBED_SESSION_PREFIX + tokenHash,
-    boardId: row.boardId,
-    maxRole: row.maxRole,
-    expiresAt: row.expiresAt,
-    cred: {
-      tokenId: row.id,
-      credentialId: row.credentialId,
-      kind: row.grantId ? 'oauth' : 'personal',
-      label: row.label,
-      clientId: row.clientId,
-      scopes: [],
-      account,
-      grantId: row.grantId,
-      issuedVia: row.issuedVia,
-    },
+    tokenId: row.id,
+    credentialId: row.credentialId,
+    kind: row.grantId ? 'oauth' : 'personal',
+    label: row.label,
+    clientId: row.clientId,
+    scopes: [],
+    account,
+    grantId: row.grantId,
+    issuedVia: row.issuedVia,
   };
+}
+
+async function sessionOf(row: repo.EmbedRow, tokenHash: string, now: number): Promise<EmbedSession | null> {
+  const cred = await actingCredential(row, now);
+  if (!cred) return null;
+  return { sessionKey: EMBED_SESSION_PREFIX + tokenHash, boardId: row.boardId, maxRole: row.maxRole, expiresAt: row.expiresAt, cred };
+}
+
+// ---- board pictures drawn on the server (#33): a single-use download link per export ----
+
+export const EXPORT_TICKET_PREFIX = 'frx_';
+/** A download link works this long, once. */
+export const EXPORT_TICKET_MS = 15 * 60_000;
+
+/** A single-use ticket to download one export of `boardId` (`spec`: what to draw), acting for the credential's person. */
+export async function mintExportTicket(cred: ApiCredential, boardId: string, spec: Record<string, unknown>): Promise<{ ticket: string; expiresAt: number }> {
+  const ticket = EXPORT_TICKET_PREFIX + randomBytes(32).toString('base64url');
+  const now = Date.now();
+  await repo.insertExportTicket({
+    id: newId(16),
+    userId: cred.account.id,
+    boardId,
+    credentialId: cred.credentialId,
+    label: cred.label,
+    grantId: cred.kind === 'oauth' ? cred.grantId : null,
+    personalTokenId: cred.kind === 'personal' ? cred.tokenId : null,
+    issuedVia: cred.issuedVia,
+    ticketHash: hash(ticket),
+    spec,
+    expiresAt: now + EXPORT_TICKET_MS,
+    createdAt: now,
+  });
+  return { ticket, expiresAt: now + EXPORT_TICKET_MS };
+}
+
+/** Redeems an export ticket (once): the board, what to draw and the credential it acts through — or null (unknown, used, late, no longer valid). */
+export async function redeemExportTicket(ticket: string): Promise<{ boardId: string; spec: Record<string, unknown>; cred: ApiCredential } | null> {
+  if (typeof ticket !== 'string' || !ticket.startsWith(EXPORT_TICKET_PREFIX) || ticket.length > 200) return null;
+  const now = Date.now();
+  const row = await repo.redeemExportTicket(hash(ticket), now);
+  const cred = row && (await actingCredential(row, now));
+  return row && cred ? { boardId: row.boardId, spec: row.spec, cred } : null;
 }
 
 /** Redeems a ticket (once) for a view token; null when it is unknown, used, late or no longer valid. */

@@ -1636,6 +1636,12 @@ export interface EmbedProvider {
   /** 'video' plays; 'document' is a live view to scroll and click in. */
   kind: 'video' | 'document';
   frameOrigins: readonly string[];
+  /**
+   * [additive, #170] Hosts whose links the web app's parser reads for this provider
+   * (features/embed providers.ts); the public API takes embed items only on these (or an operator's
+   * allow-listed origin).
+   */
+  linkHosts: readonly string[];
   sandbox: string;
   allow: string;
 }
@@ -1644,14 +1650,15 @@ const VIDEO_SANDBOX = 'allow-scripts allow-same-origin allow-presentation allow-
 const VIDEO_ALLOW = 'autoplay; encrypted-media; fullscreen; picture-in-picture';
 
 export const EMBED_PROVIDERS: readonly EmbedProvider[] = [
-  { id: 'youtube', name: 'YouTube', kind: 'video', frameOrigins: ['https://www.youtube-nocookie.com'], sandbox: VIDEO_SANDBOX, allow: VIDEO_ALLOW },
-  { id: 'vimeo', name: 'Vimeo', kind: 'video', frameOrigins: ['https://player.vimeo.com'], sandbox: VIDEO_SANDBOX, allow: VIDEO_ALLOW },
-  { id: 'loom', name: 'Loom', kind: 'video', frameOrigins: ['https://www.loom.com'], sandbox: VIDEO_SANDBOX, allow: VIDEO_ALLOW },
+  { id: 'youtube', name: 'YouTube', kind: 'video', frameOrigins: ['https://www.youtube-nocookie.com'], linkHosts: ['youtube.com', 'youtu.be', 'youtube-nocookie.com'], sandbox: VIDEO_SANDBOX, allow: VIDEO_ALLOW },
+  { id: 'vimeo', name: 'Vimeo', kind: 'video', frameOrigins: ['https://player.vimeo.com'], linkHosts: ['vimeo.com', 'player.vimeo.com'], sandbox: VIDEO_SANDBOX, allow: VIDEO_ALLOW },
+  { id: 'loom', name: 'Loom', kind: 'video', frameOrigins: ['https://www.loom.com'], linkHosts: ['loom.com'], sandbox: VIDEO_SANDBOX, allow: VIDEO_ALLOW },
   {
     id: 'figma',
     name: 'Figma',
     kind: 'document',
     frameOrigins: ['https://www.figma.com'],
+    linkHosts: ['figma.com'],
     sandbox: 'allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox',
     allow: 'fullscreen; clipboard-write',
   },
@@ -1661,6 +1668,7 @@ export const EMBED_PROVIDERS: readonly EmbedProvider[] = [
     name: 'Google',
     kind: 'document',
     frameOrigins: ['https://docs.google.com'],
+    linkHosts: ['docs.google.com'],
     sandbox: 'allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms',
     allow: 'fullscreen; clipboard-write',
   },
@@ -1669,6 +1677,7 @@ export const EMBED_PROVIDERS: readonly EmbedProvider[] = [
     name: 'CodePen',
     kind: 'document',
     frameOrigins: ['https://codepen.io'],
+    linkHosts: ['codepen.io'],
     sandbox: 'allow-scripts allow-same-origin allow-popups allow-forms allow-modals',
     allow: 'clipboard-write',
   },
@@ -1677,6 +1686,7 @@ export const EMBED_PROVIDERS: readonly EmbedProvider[] = [
     name: 'CodeSandbox',
     kind: 'document',
     frameOrigins: ['https://codesandbox.io'],
+    linkHosts: ['codesandbox.io'],
     sandbox: 'allow-scripts allow-same-origin allow-popups allow-forms allow-modals',
     allow: 'clipboard-write',
   },
@@ -1684,6 +1694,23 @@ export const EMBED_PROVIDERS: readonly EmbedProvider[] = [
 
 /** Sandbox for pages on an operator's own allow-listed origin (`EMBED_EXTRA_ORIGINS`). */
 export const OPERATOR_EMBED_SANDBOX = 'allow-scripts allow-same-origin allow-popups allow-forms';
+
+/**
+ * The provider a link is on (its host, without www. / m.), or 'operator' for an https link on one
+ * of the operator's allow-listed origins; null for anything else. Hosts only: whether the link
+ * plays live is the web app's parse; elsewhere it is a preview card.
+ */
+export function embedProviderForUrl(url: string, extraOrigins: readonly string[] = []): EmbedProvider | 'operator' | null {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'https:' || u.username || u.password) return null;
+  const host = u.hostname.toLowerCase().replace(/^www\.|^m\./, '');
+  return EMBED_PROVIDERS.find((p) => p.linkHosts.includes(host)) ?? (extraOrigins.includes(u.origin) ? 'operator' : null);
+}
 
 /** Every origin a built-in provider is framed from (the CSP `frame-src`, before the operator's). */
 export const EMBED_FRAME_ORIGINS: readonly string[] = [...new Set(EMBED_PROVIDERS.flatMap((p) => p.frameOrigins))];

@@ -37,8 +37,10 @@ export {
   // written on requests (modules/docs, the API) in the editor's own node layout (docContent.ts).
   readDocContent,
   appendDocBlocks,
+  editDocBlocks,
   initDocContent,
 } from './rooms';
+export { DocEditError } from './docContent';
 // Suggestions (KAI-169): proposed changes in the editors layer (BoardView.suggestions reads them).
 // proposeSuggestions is THE seam for anything that wants people to review its change first —
 // the public API, structure insertion with target 'suggestions', and in-app AI (modules/ai).

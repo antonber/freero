@@ -1326,7 +1326,8 @@ document realtime stores; see "Docs and native live embeds"), `site` (no table: 
 marketing site at `/`; see "Marketing site"), `analytics` (no table: Google Analytics' settings
 endpoint, runtime and frame; see "Analytics"), `webhooks` (webhook_endpoints, webhook_deliveries: workspace webhooks) — the last
 three in "Search, the event stream and webhooks" below — `backup` (no table: `.freero` board
-backups, see below), `share` (no table: the installed app's share target, see "Installable app"), `slack` (no table: Slack link unfurls for the operator's Slack app, see "Integrations" below), `teams` (no table: the
+backups, see below), `render` (no table: boards drawn as PNG / SVG / PDF on the server, #33; see
+"Public API and OAuth"), `share` (no table: the installed app's share target, see "Installable app"), `slack` (no table: Slack link unfurls for the operator's Slack app, see "Integrations" below), `teams` (no table: the
 Microsoft Teams app — its package, its pages framed by Teams, the bot's link previews — and the
 Microsoft 365 Copilot agent package, see "Microsoft Teams and Microsoft 365 Copilot" below), `walkthroughs`
 (walkthroughs, walkthrough_views, walkthrough_comments, walkthrough_reactions) and `decisions` (decisions), in "Walkthroughs
@@ -2106,7 +2107,9 @@ audit and admin controls are the same code.
   protected-resource metadata (RFC 9728), as MCP clients expect.
 - **Scopes** (`API_SCOPES` in `@freero/shared`, one model for REST and MCP): `boards:read`,
   `boards:write`, `boards:suggest`, `comments:write`, `members:read`, `members:write`, `audit:read`
-  (a team workspace's audit log, for its owners/admins: `api/audit.ts`). Effective
+  (a team workspace's audit log, for its owners/admins: `api/audit.ts`), `webhooks:manage` (its
+  webhooks, for its owners/admins: `api/webhooks.ts` calls webhooks' own service — the admin check,
+  validation and `webhook.*` audit there, #48). Effective
   power = the person's role on the board AND the scope: a viewer's write-scoped token still can't
   write.
 - **Suggestions** (KAI-169, see "Suggestions" below): `POST /boards/:id/suggestions` (and
@@ -2189,6 +2192,39 @@ audit and admin controls are the same code.
   under their center (the app's rule), connectors attached by item id; patches only take fields the
   type has, re-apply the frame rule on moves and move a frame's contents with it. Saved templates
   seed new boards through `changeBoard` (the board is empty, so element ids are kept).
+  **Items from a URL** (#170: `image`, `embed`, `API_URL_ITEM_TYPES`): the server fetches the URL
+  BEFORE planning — unfurl's `importImageFromUrl` (safeFetch, bytes sniffed, `saveUpload` into the
+  person's uploads and quota, never hot-linked; the header's pixel size) and `embedPreview` (an https
+  link on an allow-listed provider, `embedProviderForUrl` over `EmbedProvider.linkHosts` + the
+  operator's `EMBED_EXTRA_ORIGINS`) — and hands `planCreate` what it fetched by input object, so a
+  caller can never set an item's `src` itself. Blocked addresses answer 422 `url_blocked`. They are
+  not proposable (a suggestion would carry a URL nobody fetched). **Boards**: rename
+  (`boards.updateBoardDetails`, the same `renameBoard` as the app's PATCH: `board.renamed` +
+  lifecycle), copy (`boards.duplicateBoardFor`: Duplicate's downloads check, placement and layers),
+  groups (`groupId`, as the editor's Group / Ungroup).
+  **What a request may create at all** is `realtime/view.ts` `REQUEST_CREATABLE`, a
+  `Record<ElementType, true | reason>`: a new element type doesn't compile until someone decides
+  there (#49). `media` and `file` are app-only on purpose — their `src` must be the person's own
+  upload, sniffed and counted by modules/uploads (a file card's download is served through the
+  board), and a request must never point an item at an `/uploads/<name>` it doesn't own; pictures
+  from a URL go through the server's own fetch instead (above). Uploading media / files over the API
+  would need an upload endpoint answering an ownership-checked token the creation presents.
+- **Pictures of a board** (#33, `modules/render`, `api/exports.ts`): no headless browser. `render/svg.ts`
+  draws the reader's view (realtime's `readBoardView`: hidden frames only for those who see them,
+  nobody's private drafts) from the shared element model — one small function per element type,
+  the app's colours and proportions, text wrapped with the layout kit's metrics, a labelled box for
+  what a picture can't show — with uploaded pictures inlined as data URLs (never fetched from
+  elsewhere); `render/raster.ts` rasterises it with resvg-wasm (MPL-2.0, no native code) and the
+  self-hosted Inter faces, and wraps the pixels in a one-page PDF written there. Bounded: 5000 items
+  (413), 8000 px a side and 40 MP (drawn smaller), 40 MB of pictures, `RATE_LIMIT_BOARD_RENDER`.
+  `POST /api/v1/boards/:id/export` is an export: boards' `recordBoardExport` (downloads policy, the
+  board's "viewers can copy and export", `board.exported`) before drawing. MCP `export_board` shows a
+  PNG preview (≤ 1600 px) and answers a single-use download link: an apiauth export ticket
+  (`api_export_tickets`, `frx_…`, sha256 only, 15 minutes, deleted with the app's consent or the
+  personal token), redeemed once at `GET /api/v1/exports/:ticket` (a DELETE … RETURNING), where the
+  credential is re-checked like an embed ticket's and the export checks run again. Files go out as
+  attachments with the sandbox CSP (an SVG never renders as a page of ours); board text in SVG is
+  escaped.
 - **GDPR**: a person's export carries `api.json` (their tokens without secrets, the apps they
   authorised and the apps they registered), from `apiauth.apiDataOf`.
 
@@ -2402,7 +2438,11 @@ An endpoint may be **scoped** (KAI-249, `webhook_endpoints.board_id` / `item_id`
 item link): one board's events, or only item and comment events about one item and what sits
 directly in it — events carry `containerId` (the item's `frameId`; `item.deleted` from the stored
 state) for that — e.g. an agent's control-room lane. A scope's board must be one the whole team can
-open, and a scope never widens (no foreign key: a board that is gone just sends nothing).
+open, and a scope never widens (no foreign key: a board that is gone just sends nothing). Or a
+**project** (#48, `webhook_endpoints.project_id`): one the whole team can open (`openToWholeTeam`),
+matched at fan-out against where the board is NOW (`boardsOpenToTheirTeam`'s `projectId`); not with a
+scope. Managed from `/api/v1/workspaces/:id/webhooks` too (`webhooks:manage`), and listed — never
+the secret or the full URL — in the workspace data export (`webhooksWorkspaceExportOf`).
 
 ### Integrations that need no third-party approval (#88; docs/integrations/)
 
@@ -2576,6 +2616,10 @@ board, including people who join later: it is a deliberate publication of what e
   dialog's "Copy embed code"; everything escaped). Only embeddable boards answer; only public ones
   with their title. `GET /board/:id` of a public embeddable board is served with
   `oembedDiscoveryTag` in its `<head>` (production build only), for unfurlers that read HTML.
+- **API / MCP** (`GET` / `PATCH /api/v1/boards/:id/embed`, MCP `embed_board`): reads the summary's
+  `embeddable` / `permissions.boardEmbeds` / `manageSharing` and `boardEmbedding`'s visitor, builds the
+  code with `boardEmbedCode`, and changes it only through `boards.setBoardEmbeddable` (the share
+  dialog's rule and audit event); a change needs `boards:write` even from the read-scoped MCP tool.
 - **Engine additions**: `?frame=<id>` (zoom to an item without selecting it), `Host.onConnectionEnded`
   (the server closed the socket for good, with its code: the embed page swaps to a card).
 
@@ -2595,7 +2639,12 @@ rules (or needed a generic grants table first). The object registry answers `boa
 boards, each only for its own kind, so `freero://board/<doc id>` resolves to nothing.
 `modules/docs` (no table) holds only what a document has: create (from Markdown, next to a board:
 its workspace/project when the person may create there), export as Markdown (downloads policy,
-audited `doc.exported`), append Markdown (the API). Its audit target is `{ type: 'doc' }`;
+audited `doc.exported`), append Markdown and targeted edits (the API, #61: `editDoc` → realtime's
+`editDocBlocks` → `docContent.applyDocEdit` — replace a block or a heading's section, insert before /
+after, delete — checked against the live document before anything is written; a replace keeps the
+first block's id, so comments on it stay). Comments on a doc over the API (#61, `api/docs.ts`) are
+the boards' records written through `changeBoard` on the doc's room (commenter rules, mention
+notifications) and read with `@freero/shared` `docThreads`, the editor's own assembler. Its audit target is `{ type: 'doc' }`;
 `doc.created` replaces `board.created`.
 
 **One Yjs doc per object, the same rooms.** realtime serves `/ws/docs/:id` next to `/ws/boards/:id`

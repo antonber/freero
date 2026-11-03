@@ -1073,6 +1073,21 @@ export async function purgeExpiredTrashLocked(now = Date.now()): Promise<number>
 }
 
 /**
+ * Changes a board's title and / or description as `actorId` (the caller checked they may: an owner
+ * or editor): one write, and a rename is the `board.renamed` event (outbox, same transaction) and
+ * the activity feed's lifecycle entry, like the board menu's rename.
+ */
+export async function renameBoard(board: Board, actorId: string, patch: { title?: string; description?: string }): Promise<void> {
+  if (patch.title === undefined && patch.description === undefined) return;
+  const renamed = patch.title !== undefined && patch.title !== board.title;
+  await repo.transaction(async () => {
+    await repo.updateBoardFields(board.id, patch, Date.now());
+    if (renamed) await repo.appendBoardEvent({ type: 'board.renamed', boardId: board.id, workspaceId: board.workspaceId, actorId, title: patch.title!, from: board.title, to: patch.title! });
+  });
+  if (renamed) await boardLifecycle({ boardId: board.id, actorId, action: 'renamed', from: board.title, to: patch.title });
+}
+
+/**
  * A copy of `source` owned by `userId`, with the source's current content: where they chose
  * (`where`, #124: a workspace and project they may create boards in — createBoard checks), else in
  * the same workspace and project when the user may create boards there, else in their personal

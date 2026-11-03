@@ -124,8 +124,8 @@ import { emitSuggestionsDecided, emitSuggestionsProposed } from './suggestionEve
 import { emitBoardLeft } from './visits';
 import { applyChange, BoardChangeError, viewOf, type AppliedChange, type BoardActor, type BoardChange, type BoardReader, type BoardView } from './view';
 import { newId } from '../../platform/ids';
-import { docStateFrom, readDocBlocks, writeDocBlocks } from './docContent';
-import type { DocBlock } from '@freero/shared';
+import { applyDocEdit, docStateFrom, readDocBlocks, writeDocBlocks } from './docContent';
+import type { DocBlock, DocEdit } from '@freero/shared';
 import type { SuggestionAuthor, SuggestionDecision, SuggestionRecord } from '@freero/shared';
 
 export const MESSAGE_SYNC = 0;
@@ -1973,6 +1973,19 @@ export async function appendDocBlocks(docId: string, actor: BoardActor, blocks: 
   await withLiveRoom(docId, async (room) => {
     room.doc.transact(() => writeDocBlocks(room.doc, blocks, () => newId(16)), new RequestOrigin(actor));
     await room.flush();
+  });
+}
+
+/**
+ * A targeted edit of a doc as `actor` (an owner or editor; the caller checked; #61): applied to the
+ * live document, published and saved before this resolves. DocEditError: nothing changed.
+ */
+export async function editDocBlocks(docId: string, actor: BoardActor, edit: DocEdit): Promise<string[]> {
+  return withLiveRoom(docId, async (room) => {
+    let ids: string[] = [];
+    room.doc.transact(() => (ids = applyDocEdit(room.doc, edit, () => newId(16))), new RequestOrigin(actor));
+    await room.flush();
+    return ids;
   });
 }
 
